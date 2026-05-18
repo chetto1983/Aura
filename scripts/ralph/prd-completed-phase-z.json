@@ -1,0 +1,129 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Aura Phase-Z — Close remaining bounded PRD items before strategic pivot to plugin-shaped layout (option 2). Phase-T just closed (production rollout); now finish the prd.md backlog. Real remaining bounded scope: (a) Phase 7C completion = 3 stories (content_hash drift detection + write-time invalidate + degraded_read annotations — foundation US-M01 already shipped); (b) PRD admin: mark 7D/7E/7F as ✅ closed since their wiring already exists (KindUserMemory/KindOperational writers via Phase-N/O, ByteStart/End via Phase 7E work, schema_version/prompt_version via wiki page tool); (c) Phase 9 hardening = 3 stories (SQLite concurrency hardening, memory-vs-storage docs, source-conversion fixtures). Phase 8 full substrate (team_collab, plan-execute, critic-review, hierarchical DAG) is explicitly DE-SCOPED per user decision 2026-05-17 — first two slices (Phase-R + Phase-S) suffice for Aura's actual use as single-user second-brain; deferred items can be reopened when a concrete use-case requires them. Each story is a single atomic commit on master, scope-minimal. After this phase closes, the next milestone is the plugin-layout pivot (keep personal, but decouple personality from core).",
+  "userStories": [
+    {
+      "id": "US-Z01",
+      "title": "Phase 7C / US-M02 — content_hash + embedding_model_id + index_build_id columns on compact_memory_documents",
+      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 229: add migration v13 to internal/db/migrations adding three columns to compact_memory_documents — content_hash TEXT, embedding_model_id TEXT, index_build_id TEXT. (a) Write the migration (additive, no existing-row backfill required; new writes populate the columns from now on). (b) In internal/storage/memoryindex/store.go Upsert: compute SHA-256 of canonical body before insert, set content_hash; the embedding_model_id comes from the writer's config (Phase-M Store.EmbeddingModelID), index_build_id from a generated UUID per rebuild. (c) Pattern source: LlamaIndex content-hash + Mem0 payload-hash. (d) Test: migration runs idempotent; Upsert populates the three columns; pre-migration rows have NULLs (safe — readers tolerate). (e) Cross-check with US-M01 freshness.Store — the index_build_id should match the freshness row's IndexBuildID for the same projection.",
+      "acceptanceCriteria": [
+        "Migration v13 exists in internal/db/migrations/ adding content_hash, embedding_model_id, index_build_id to compact_memory_documents",
+        "memoryindex.Store.Upsert computes SHA-256 content_hash + populates embedding_model_id from config + index_build_id from rebuild context",
+        "memoryindex.Store.Upsert test asserts the three columns are populated post-write",
+        "Pre-migration rows can be read without crash (NULL handling)",
+        "go build ./... green",
+        "go test ./internal/db/migrations/... ./internal/storage/memoryindex/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(memoryindex): content_hash drift columns for projection freshness (US-Z01 / 7C US-M02)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Mig v13 is additive only — existing rows get NULL columns, which the read path tolerates. The SHA-256 input is the canonical body (post-trim, lowercase) so cosmetic edits don't churn the hash."
+    },
+    {
+      "id": "US-Z02",
+      "title": "Phase 7C / US-M03 — eager write-time invalidate hooks bump freshness pending_count",
+      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 230: add invalidate hooks that fire when a source/conversation/wiki write happens, so the freshness.Store.pending_count for the relevant projection (CollectionSource, CollectionArchive, CollectionWiki) bumps immediately. (a) In internal/conversation/archive.go BufferedAppender.Append: after successful insert, call freshness.Store.BumpPending(ctx, 'compact_memory_archive', 1) — IF the store has a freshnessStore (nil-safe). (b) In internal/storage/sources/store/store.go Put: same pattern for 'compact_memory_sources'. (c) In internal/wiki/store.go Save: same pattern for 'compact_memory_wiki'. (d) Each hook is best-effort (log.Warn on freshness error, don't fail the write). (e) Test each path: write a row, assert freshness pending_count incremented.",
+      "acceptanceCriteria": [
+        "conversation.BufferedAppender.Append bumps freshness pending_count for compact_memory_archive after success",
+        "sources.Store.Put bumps freshness pending_count for compact_memory_sources after success",
+        "wiki.Store.Save bumps freshness pending_count for compact_memory_wiki after success",
+        "Each hook is best-effort — freshness errors logged but don't fail the write",
+        "Tests cover all 3 hooks with assert-pending-count-incremented",
+        "go build ./... green",
+        "go test ./internal/conversation/... ./internal/storage/sources/store/... ./internal/wiki/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(freshness): eager write-time invalidate hooks (US-Z02 / 7C US-M03)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Each hook is nil-safe: if freshnessStore is nil (tests without freshness), the bump is skipped. Don't add a new mandatory dep — guard every call."
+    },
+    {
+      "id": "US-Z03",
+      "title": "Phase 7C / US-M04 — retrieval-time freshness annotation on memory_search hits",
+      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 231: surface index_build_id + embedding_model_id + staleness_seconds + degraded_read on every memory_search hit. (a) In internal/storage/memoryindex/store.go Document struct: already has ContentHash + EmbeddingModelID + IndexBuildID per US-Z01. Add a derived StalenessSeconds int64 + DegradedRead bool field (not in DB, computed at read time). (b) In Store.Search: after Document scan, look up freshness row for the doc's projection_id; compute staleness_seconds = now - last_indexed_at; degraded_read = (pending_count > 0 OR staleness_seconds > threshold). Threshold from cfg (default 1h). (c) In internal/agent/tools/registry/memory_search.go: surface staleness in the formatted output ('freshness=stale' annotation per hit) and in the JSON result. (d) Pattern source: Anthropic file_id + Mem0 payload return. (e) Test: seed two docs (one fresh, one stale), assert annotations correct.",
+      "acceptanceCriteria": [
+        "memoryindex.Document has StalenessSeconds int64 + DegradedRead bool fields",
+        "memoryindex.Store.Search populates both fields from freshness.Store lookup",
+        "memory_search tool surfaces 'freshness=stale' / 'degraded_read=true' in the LLM-facing output when relevant",
+        "Threshold cfg-driven (memorySearchStaleThresholdSecs, default 3600)",
+        "Test seeds fresh + stale docs, asserts annotations",
+        "go build ./... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(memory_search): surface degraded_read + staleness on retrieval hits (US-Z03 / 7C US-M04)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Cap the staleness annotation to relevant doc kinds — wiki freshness matters less than archive freshness. The threshold is intentionally generous (1h default); operator can tune via cfg."
+    },
+    {
+      "id": "US-Z04",
+      "title": "PRD §6.5 admin: mark 7D / 7E / 7F as ✅ closed with evidence pointers",
+      "description": "Phase 7D, 7E, 7F are scaffolded as ⬜ open in prd.md §6.5 but their wiring is ALREADY in the codebase (verified 2026-05-17): (a) 7D — KindUserMemory writer in internal/learning/user_memory_writer.go, KindOperational writer in internal/learning/writer.go, recall tools in agent/tools/registry/recall_*.go, probe test in cmd/probe_chat/phase07d.go. Phase-N + Phase-O work delivered this. (b) 7E — ByteStart/ByteEnd on Document struct + memory_search formatting + cmd/probe_chat/phase07e.go probe. (c) 7F — schema_version + prompt_version (wikiPagePromptVersion = 'v1') stamped on every wiki.Page write in agent/tools/registry/wiki.go. (d) Update prd.md §6.5 to ✅ for each row with the evidence pointers. (e) Also update §7.3 with the new logical-next-phase guidance (after this Phase-Z closes, the plugin-layout pivot begins).",
+      "acceptanceCriteria": [
+        "prd.md §6.5 row 7D: status ✅ with closure date 2026-05-17 + commit/file evidence (Phase-N + Phase-O wiring)",
+        "prd.md §6.5 row 7E: status ✅ with closure date + evidence (ByteStart/End + probe)",
+        "prd.md §6.5 row 7F: status ✅ with closure date + evidence (wikiPagePromptVersion stamp)",
+        "prd.md §7.3 updated: after Phase-Z closes, next milestone is plugin-layout pivot (option 2 per user 2026-05-17)",
+        "No Go code changes — pure docs",
+        "Single atomic commit prefix: docs(prd): mark 7D/7E/7F closed with evidence pointers (US-Z04)"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Pure admin commit — the work is already done, just paperwork. Look at the §6.5 table rows for 7D/7E/7F and flip ⬜ → ✅."
+    },
+    {
+      "id": "US-Z05",
+      "title": "Phase 9 — SQLite concurrency hardening",
+      "description": "Per prd.md Phase 9 line 1718 'harden SQLite concurrency'. (a) Audit all sql.Open / auradb.Open call sites for PRAGMA setup. Current state: most callers set busy_timeout but coverage isn't uniform. (b) Centralize the PRAGMA bundle in internal/db.Open so every caller automatically gets: PRAGMA journal_mode=WAL, PRAGMA synchronous=NORMAL, PRAGMA busy_timeout=10000 (was 5000 — bumped for cron + agent concurrency), PRAGMA foreign_keys=ON, PRAGMA temp_store=MEMORY. (c) Add a WAL checkpoint cron (PRAGMA wal_checkpoint(TRUNCATE) every 6h) so the WAL file doesn't grow unbounded — wire via existing internal/cron.Scheduler. (d) Document SQLITE_BUSY handling: any handler that catches it should retry-with-jitter up to N times before failing the request — add a helper internal/db.RetryOnBusy(ctx, fn) wrapping the canonical pattern. (e) Tests: concurrent write benchmark that exceeds the old busy_timeout, asserts the new value handles it.",
+      "acceptanceCriteria": [
+        "internal/db.Open sets the canonical PRAGMA bundle (WAL, busy_timeout=10000, synchronous=NORMAL, foreign_keys=ON, temp_store=MEMORY)",
+        "WAL checkpoint cron registered (PRAGMA wal_checkpoint(TRUNCATE) every 6h)",
+        "internal/db.RetryOnBusy(ctx, fn) helper exported + at least one critical-path caller migrated to it",
+        "Concurrent-write benchmark in internal/db/concurrency_test.go covers the new threshold",
+        "go build ./... green",
+        "go test ./internal/db/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: feat(db): SQLite concurrency hardening — PRAGMA bundle + WAL checkpoint cron + busy retry helper (US-Z05 / Phase 9)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Don't introduce a new sql.DB pool — extend the existing auradb.Open. The cron schedule path should match Phase-T's US-T03 pattern (Scheduler callback, NOT a separate goroutine)."
+    },
+    {
+      "id": "US-Z06",
+      "title": "Phase 9 — docs: clarify memory vs storage",
+      "description": "Per prd.md Phase 9 line 1714 'clarify memory versus storage'. The terms are used inconsistently across the codebase. (a) Create docs/MEMORY-VS-STORAGE.md explaining: 'memory' = what the agent reads back at retrieval time (compact_memory_documents, freshness-tracked, kind-typed). 'storage' = durable artifacts on disk (wiki/*.md files, source raw bytes, garage blobs). Memory is REBUILDABLE; storage is NOT. (b) For each internal/ subdirectory, classify which layer it belongs to (a table at the top of the doc). (c) Cross-reference the §5.7 prd.md section. (d) Add a 'cardinal rule' section: anyone adding a new long-term data store should declare 'storage or memory?' and follow the implications (storage needs backup/migration; memory needs a rebuild path).",
+      "acceptanceCriteria": [
+        "docs/MEMORY-VS-STORAGE.md exists with the two-layer model",
+        "Table mapping each internal/ subdir to memory or storage",
+        "Cross-reference to prd.md §5.7",
+        "Cardinal-rule section for future contributors",
+        "No code changes — pure docs",
+        "Single atomic commit prefix: docs(memory-vs-storage): clarify the two-layer model (US-Z06 / Phase 9)"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Be concrete: every internal/ subdir gets a label. Avoid hand-wavy 'it depends' classifications — if it stores something durable, it's storage."
+    },
+    {
+      "id": "US-Z07",
+      "title": "Phase 9 — source conversion fixtures",
+      "description": "Per prd.md Phase 9 line 1717 'add conversion fixtures for important source types'. (a) Add internal/storage/sources/ingest/fixtures/ directory with one canonical fixture per supported source type: PDF (text, mixed-image-text, table-heavy), DOCX (with TOC), XLSX (multi-sheet), PPTX, MD, plain text. (b) Each fixture: source bytes (small, < 100KB), expected ocr.md / markitdown output, expected wiki page after ingest. (c) Test internal/storage/sources/ingest/fixtures_test.go that round-trips each fixture: ingest the bytes, assert the output matches the golden (with mojibake check + structural check). (d) Per memory feedback_inspect_artifact_visually_not_just_pass_status: each assertion includes a print of the body (or at least the first 200 chars) so regressions are humanly visible in test output.",
+      "acceptanceCriteria": [
+        "internal/storage/sources/ingest/fixtures/ exists with ≥5 canonical source types (PDF, DOCX, XLSX, PPTX, MD)",
+        "Each fixture has source bytes + expected ocr.md/markitdown output + expected wiki page",
+        "fixtures_test.go round-trips each fixture, asserts golden match + prints first 200 chars",
+        "go build ./... green",
+        "go test ./internal/storage/sources/ingest/... green",
+        "go test ./... green",
+        "Single atomic commit prefix: test(ingest): conversion fixtures for PDF/DOCX/XLSX/PPTX/MD source types (US-Z07 / Phase 9)"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Use small fixtures — checked into git. The PDF can be a 1-page render of a simple .docx. The XLSX can be 3 rows × 2 sheets. Goal is structural coverage, not load test."
+    }
+  ]
+}

@@ -1,129 +1,95 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Aura Phase-Z — Close remaining bounded PRD items before strategic pivot to plugin-shaped layout (option 2). Phase-T just closed (production rollout); now finish the prd.md backlog. Real remaining bounded scope: (a) Phase 7C completion = 3 stories (content_hash drift detection + write-time invalidate + degraded_read annotations — foundation US-M01 already shipped); (b) PRD admin: mark 7D/7E/7F as ✅ closed since their wiring already exists (KindUserMemory/KindOperational writers via Phase-N/O, ByteStart/End via Phase 7E work, schema_version/prompt_version via wiki page tool); (c) Phase 9 hardening = 3 stories (SQLite concurrency hardening, memory-vs-storage docs, source-conversion fixtures). Phase 8 full substrate (team_collab, plan-execute, critic-review, hierarchical DAG) is explicitly DE-SCOPED per user decision 2026-05-17 — first two slices (Phase-R + Phase-S) suffice for Aura's actual use as single-user second-brain; deferred items can be reopened when a concrete use-case requires them. Each story is a single atomic commit on master, scope-minimal. After this phase closes, the next milestone is the plugin-layout pivot (keep personal, but decouple personality from core).",
+  "description": "Phase-QA1 — fix what the 2026-05-18 Q&A pipeline dry-run discovered, before the next Q&A run designs+authors the 19 remaining P0 probes. Run produced docs/qa-{tool-surface,channel-surface,failure-modes,surface-summary,coverage-tools,coverage-channel-failure,triage,bug-log,verdict}.md plus baseline-run.json + lint-baseline.json (.planning/qa/) plus the .agents/skills/aura-qa-pipeline/ skill itself (v6, production-ready). Five concrete fixes here, each isolated and verifiable: (1) delete 2 unused functions in source.go (lint cleanup, mechanical); (2) add -smoke flag to probe_chat to enable category-filtered re-runs (skill v6 calls for it but it's not implemented); (3) decouple conversation_id from user_id at the /api/chat web channel — current wiring at cmd/aura/web_chat.go:401 collapses per-conversation scratchpad to one-note-per-user, contradicting agent_note tool's per-conversation contract (filed in qa-bug-log.md as US-QA21); (4) rewrite phase07d/phase07e Setup fixtures to write seed data via /api endpoints instead of direct sqlite write — current pattern refuses to run while Aura container holds the DB, causing 2 permanent FAILs in baseline-run.json (infra-skip, not product bug); (5) stabilize doc-pdf-roundtrip flake (2/4 fail per skill's flakiness protocol — LLM mistypes hex source_id when echoing) by either prompting verbatim-echo with example OR relaxing assertion to substring/prefix match. Each story = single atomic commit on master per memory feedback_master_direct_workflow + feedback_one_module_per_slice. Skill is at .agents/skills/aura-qa-pipeline/ (gitignored, but functional). After Phase-QA1 closes, the next phase (Phase-QA2) will run the full aura-qa-pipeline again on the remaining 19 P0 specs from docs/qa-triage.md.",
   "userStories": [
     {
-      "id": "US-Z01",
-      "title": "Phase 7C / US-M02 — content_hash + embedding_model_id + index_build_id columns on compact_memory_documents",
-      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 229: add migration v13 to internal/db/migrations adding three columns to compact_memory_documents — content_hash TEXT, embedding_model_id TEXT, index_build_id TEXT. (a) Write the migration (additive, no existing-row backfill required; new writes populate the columns from now on). (b) In internal/storage/memoryindex/store.go Upsert: compute SHA-256 of canonical body before insert, set content_hash; the embedding_model_id comes from the writer's config (Phase-M Store.EmbeddingModelID), index_build_id from a generated UUID per rebuild. (c) Pattern source: LlamaIndex content-hash + Mem0 payload-hash. (d) Test: migration runs idempotent; Upsert populates the three columns; pre-migration rows have NULLs (safe — readers tolerate). (e) Cross-check with US-M01 freshness.Store — the index_build_id should match the freshness row's IndexBuildID for the same projection.",
+      "id": "US-QA-FIX01",
+      "title": "Delete 2 unused functions in internal/agent/tools/registry/source.go (lint debt cleanup)",
+      "description": "Per .planning/qa/lint-baseline.json (frozen 2026-05-18), `internal/agent/tools/registry/source.go` contains 2 functions flagged by `unused` linter. These are the ONLY lint-debt issues in any tool package (the other 57 issues across the repo are in cmd/, internal/backup/, internal/llm/, internal/sandbox/, internal/storage/qdrant/ and are existing debt out-of-scope here). Memory `feedback_golangci_lint_catches_what_audits_miss` notes lint catches dead code that agent surveys miss — case in point. (a) Run `~/go/bin/golangci-lint run ./internal/agent/tools/registry/source.go --output.json.path=stdout 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); [print(i['Pos']['Filename']+':'+str(i['Pos']['Line']), i['Text']) for i in d['Issues'] if i['FromLinter']=='unused']\"` (or equivalent) to identify the exact two functions and their lines. (b) Read each function — confirm they're truly unused (no test references, no plugin reflective calls). If either has a hidden call site, leave it and document. (c) Delete the unused functions. (d) Run lint again — total issue count must drop from 59 to 57. (e) `go build ./...` + `go vet ./...` + `go test ./...` must all stay green. (f) Update `.planning/qa/lint-baseline.json` to the new count (the skill says new commits must not INCREASE lint count; deletions that REDUCE it are encouraged and require baseline refresh).",
       "acceptanceCriteria": [
-        "Migration v13 exists in internal/db/migrations/ adding content_hash, embedding_model_id, index_build_id to compact_memory_documents",
-        "memoryindex.Store.Upsert computes SHA-256 content_hash + populates embedding_model_id from config + index_build_id from rebuild context",
-        "memoryindex.Store.Upsert test asserts the three columns are populated post-write",
-        "Pre-migration rows can be read without crash (NULL handling)",
+        "golangci-lint v2 with `unused` enabled reports 0 issues in `internal/agent/tools/registry/source.go` after the change",
+        "Total repo lint issue count is 57 (was 59 before this commit) — verify by running golangci-lint run ./... and counting Issues array length",
         "go build ./... green",
-        "go test ./internal/db/migrations/... ./internal/storage/memoryindex/... green",
-        "go test ./... green",
-        "Single atomic commit prefix: feat(memoryindex): content_hash drift columns for projection freshness (US-Z01 / 7C US-M02)"
+        "go vet ./... green",
+        "go test ./... green (no test was relying on the deleted functions)",
+        ".planning/qa/lint-baseline.json refreshed with new count (regenerate via same command in docs/qa-verdict.md / skill SKILL.md Lint baseline section)",
+        "Single atomic commit prefix: chore(lint): delete 2 unused funcs in registry/source.go (Phase-QA1 / US-QA-FIX01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Mig v13 is additive only — existing rows get NULL columns, which the read path tolerates. The SHA-256 input is the canonical body (post-trim, lowercase) so cosmetic edits don't churn the hash."
+      "passes": false,
+      "notes": "Smallest, lowest-risk story — opens Phase-QA1 cleanly. If either 'unused' function turns out to be used reflectively (rare in Go but possible via init() side-effects), leave it and document the false positive in the commit message + add a `//nolint:unused` comment with rationale instead of deleting."
     },
     {
-      "id": "US-Z02",
-      "title": "Phase 7C / US-M03 — eager write-time invalidate hooks bump freshness pending_count",
-      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 230: add invalidate hooks that fire when a source/conversation/wiki write happens, so the freshness.Store.pending_count for the relevant projection (CollectionSource, CollectionArchive, CollectionWiki) bumps immediately. (a) In internal/conversation/archive.go BufferedAppender.Append: after successful insert, call freshness.Store.BumpPending(ctx, 'compact_memory_archive', 1) — IF the store has a freshnessStore (nil-safe). (b) In internal/storage/sources/store/store.go Put: same pattern for 'compact_memory_sources'. (c) In internal/wiki/store.go Save: same pattern for 'compact_memory_wiki'. (d) Each hook is best-effort (log.Warn on freshness error, don't fail the write). (e) Test each path: write a row, assert freshness pending_count incremented.",
+      "id": "US-QA-FIX02",
+      "title": "Add -smoke=<category> flag to cmd/probe_chat for category-filtered re-runs",
+      "description": "The 2026-05-18 Q&A skill v6 SMOKE TIER section (`references/dispatch-prompts.md` Phase 5 line ~543) says: 'Re-run a SMOKE TIER first: the failing case + all cases in the same subject category (same tool / channel / failure-mode family per qa-coverage-tools.md / qa-coverage-channel-failure.md), cap 8 cases. Random selection forbidden — select by infrastructure overlap with the fix.' But cmd/probe_chat/main.go currently only supports `-case=<exactname>` (single case) or no flag (all cases). There is no way to run a category subset. This story adds `-smoke=<category>` where category is one of: `tools-files`, `tools-memory`, `tools-source`, `tools-web`, `tools-scheduler`, `tools-agent-note`, `channels-telegram`, `channels-web`, `failure-modes-budget`, `failure-modes-phantom`, `markitdown`. The categorization comes from grouping cases.go entries by their primary subject. (a) Add a `caseCategory` field to the Case struct in cmd/probe_chat/types.go (or a parallel map[string][]string in cases.go keyed by category). (b) Add `-smoke string` flag in main.go that filters allCases() by category. (c) Document the categories in main.go usage comment block (lines 16-30) — list them inline so the LLM-readable code matches user behavior. (d) Test in three modes: `-smoke=markitdown` (should run only the 6 markitdown-* cases), `-smoke=channels-web` (cases tied to /api/chat web-bearer behavior), `-smoke=nonexistent` (should print error listing valid categories and exit non-zero). (e) Cap at 8 cases per category — if a category has more, take the first 8 alphabetically and emit a warning to stderr.",
       "acceptanceCriteria": [
-        "conversation.BufferedAppender.Append bumps freshness pending_count for compact_memory_archive after success",
-        "sources.Store.Put bumps freshness pending_count for compact_memory_sources after success",
-        "wiki.Store.Save bumps freshness pending_count for compact_memory_wiki after success",
-        "Each hook is best-effort — freshness errors logged but don't fail the write",
-        "Tests cover all 3 hooks with assert-pending-count-incremented",
-        "go build ./... green",
-        "go test ./internal/conversation/... ./internal/storage/sources/store/... ./internal/wiki/... green",
-        "go test ./... green",
-        "Single atomic commit prefix: feat(freshness): eager write-time invalidate hooks (US-Z02 / 7C US-M03)"
+        "cmd/probe_chat/types.go has Case.Category field OR cmd/probe_chat/cases.go has caseCategories map[string][]string with at least 8 named categories",
+        "cmd/probe_chat/main.go accepts `-smoke=<category>` flag (mutually exclusive with `-case`)",
+        "`go run ./cmd/probe_chat -smoke=markitdown -json` from D:/Aura runs exactly the 6 existing markitdown-* cases and outputs valid JSON",
+        "`go run ./cmd/probe_chat -smoke=nonexistent` exits non-zero with stderr message listing all valid categories",
+        "When a category exceeds 8 cases, only first 8 alphabetical are run + stderr warns",
+        "Usage comment block in main.go lines 16-30 documents the new flag",
+        "go vet ./... green, go build ./... green, go test ./... green",
+        "Single atomic commit prefix: feat(probe_chat): -smoke=<category> flag for SMOKE TIER re-runs (Phase-QA1 / US-QA-FIX02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Each hook is nil-safe: if freshnessStore is nil (tests without freshness), the bump is skipped. Don't add a new mandatory dep — guard every call."
+      "passes": false,
+      "notes": "Don't over-categorize — 8-12 categories is the right grain for a 21-case suite. Use the case prefix/keyword as the primary signal (e.g., all markitdown-*, all doc-*). Verify by running -smoke=markitdown against the live /api/chat — AURA_CHAT_TOKEN should be loadable from `.planning/qa/token.txt` if set during Phase-QA1 token bootstrap."
     },
     {
-      "id": "US-Z03",
-      "title": "Phase 7C / US-M04 — retrieval-time freshness annotation on memory_search hits",
-      "description": "Per docs/phase07c-mem0-elysia-patterns-2026-05-16.md line 231: surface index_build_id + embedding_model_id + staleness_seconds + degraded_read on every memory_search hit. (a) In internal/storage/memoryindex/store.go Document struct: already has ContentHash + EmbeddingModelID + IndexBuildID per US-Z01. Add a derived StalenessSeconds int64 + DegradedRead bool field (not in DB, computed at read time). (b) In Store.Search: after Document scan, look up freshness row for the doc's projection_id; compute staleness_seconds = now - last_indexed_at; degraded_read = (pending_count > 0 OR staleness_seconds > threshold). Threshold from cfg (default 1h). (c) In internal/agent/tools/registry/memory_search.go: surface staleness in the formatted output ('freshness=stale' annotation per hit) and in the JSON result. (d) Pattern source: Anthropic file_id + Mem0 payload return. (e) Test: seed two docs (one fresh, one stale), assert annotations correct.",
+      "id": "US-QA-FIX03",
+      "title": "Decouple conversation_id from user_id at /api/chat (US-QA21 design smell fix)",
+      "description": "Per docs/qa-bug-log.md (2026-05-18 triage of agent-note-roundtrip): `cmd/aura/web_chat.go:401` currently does `toolCtx = toolregistry.WithConversationID(toolCtx, e.userID)`, binding conversation_id to user_id. This collapses the agent_note tool's per-conversation scratchpad to one-note-per-user — violates the tool's docstring promise of per-conversation scoping (see internal/agent/tools/registry/agent_note.go line 14-17 with Get/Set/Append/Clear all taking conversationID). The triager filed this as US-QA21 / P2 design smell. This story implements the fix: (a) Read cmd/aura/web_chat.go around line 401 — understand the e struct + how userID is sourced. (b) Define what 'conversation' means for the web channel. Options: (i) Per-request — every /api/chat call is its own conversation (worst, loses memory). (ii) Per-thread — /api/chat accepts an optional thread_id parameter; if provided, conversation_id = `web:<thread_id>`; if absent, defaults to a session-scoped value derived from bearer (NOT user_id directly, but something like `web:<user_id>:default`). (iii) Per-bearer-token — each minted token = one conversation (clean but ties scratchpad lifecycle to token lifecycle). RECOMMENDED option (ii) with `web:<user_id>:<thread_id_or_default>` to preserve the existing default behavior while enabling explicit threading. (c) Add a `ThreadID` field to api.ChatRequest (optional string) and plumb it to e.userID context binding logic. (d) Backward-compat: requests without ThreadID get `web:<userID>:default` — same scratchpad as today but with a clearer namespacing. (e) Update cmd/probe_chat/cases.go agent-note-roundtrip Verify if needed — should still work because we kept the time-window query, but verify the stderr preview shows the new conversation_id format. (f) Add a regression test in internal/api/chat_test.go that sends 2 requests with different ThreadIDs and asserts agent_notes has 2 distinct rows.",
       "acceptanceCriteria": [
-        "memoryindex.Document has StalenessSeconds int64 + DegradedRead bool fields",
-        "memoryindex.Store.Search populates both fields from freshness.Store lookup",
-        "memory_search tool surfaces 'freshness=stale' / 'degraded_read=true' in the LLM-facing output when relevant",
-        "Threshold cfg-driven (memorySearchStaleThresholdSecs, default 3600)",
-        "Test seeds fresh + stale docs, asserts annotations",
-        "go build ./... green",
-        "go test ./... green",
-        "Single atomic commit prefix: feat(memory_search): surface degraded_read + staleness on retrieval hits (US-Z03 / 7C US-M04)"
+        "api.ChatRequest has new optional ThreadID string field (json:'thread_id,omitempty')",
+        "cmd/aura/web_chat.go:401 (or nearby) sets conversation_id = `web:<userID>:<thread_id_or_default>` instead of just userID",
+        "Default thread_id is 'default' (or similar single keyword) — documented in struct field tag/comment",
+        "New test in internal/api/chat_test.go (or web_chat_test.go) sends 2 chat requests with thread_id='a' and thread_id='b' and asserts 2 rows in agent_notes with distinct conversation_id values",
+        "Existing chat_test.go tests still pass (backward compat for omitted thread_id)",
+        "cmd/probe_chat baseline: agent-note-roundtrip still passes (uses time-window query, robust to conversation_id format change)",
+        "Skill probe stderr preview now shows conversation_id starting with 'web:' prefix (visual confirmation of new format)",
+        "go vet ./..., go build ./..., go test ./... all green",
+        "Single atomic commit prefix: fix(api): decouple conversation_id from user_id in /api/chat (Phase-QA1 / US-QA-FIX03 / US-QA21)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Cap the staleness annotation to relevant doc kinds — wiki freshness matters less than archive freshness. The threshold is intentionally generous (1h default); operator can tune via cfg."
+      "passes": false,
+      "notes": "Don't go further than per-thread namespacing — full per-conversation isolation (option iii) would require API breaking changes. Option (ii) preserves backward compat: requests without thread_id continue to behave as today. The `web:` prefix in conversation_id is intentional — makes it grep-able for 'all web-channel notes' vs other channels (telegram, cron) which use different formats."
     },
     {
-      "id": "US-Z04",
-      "title": "PRD §6.5 admin: mark 7D / 7E / 7F as ✅ closed with evidence pointers",
-      "description": "Phase 7D, 7E, 7F are scaffolded as ⬜ open in prd.md §6.5 but their wiring is ALREADY in the codebase (verified 2026-05-17): (a) 7D — KindUserMemory writer in internal/learning/user_memory_writer.go, KindOperational writer in internal/learning/writer.go, recall tools in agent/tools/registry/recall_*.go, probe test in cmd/probe_chat/phase07d.go. Phase-N + Phase-O work delivered this. (b) 7E — ByteStart/ByteEnd on Document struct + memory_search formatting + cmd/probe_chat/phase07e.go probe. (c) 7F — schema_version + prompt_version (wikiPagePromptVersion = 'v1') stamped on every wiki.Page write in agent/tools/registry/wiki.go. (d) Update prd.md §6.5 to ✅ for each row with the evidence pointers. (e) Also update §7.3 with the new logical-next-phase guidance (after this Phase-Z closes, the plugin-layout pivot begins).",
+      "id": "US-QA-FIX04",
+      "title": "Rewrite phase07d/e probe Setup to seed via API instead of direct DB write",
+      "description": "Per .planning/qa/baseline-run.json (2026-05-18 baseline), cmd/probe_chat case `phase07d-mixed-tier-recall` and `phase07e-source-span-read` both FAIL with transport_err: 'setup: probe_chat phase07{d,e} fixture would write data\\\\aura.db while the Docker Aura service is running; run inside Compose or stop it first with docker compose stop aura'. This is an INFRA test-pattern bug, not a product bug — the Setup function in cmd/probe_chat/phase07d.go (and phase07e.go) refuses to write seed data directly to data/aura.db when it detects Aura container is running (because concurrent writers would corrupt SQLite WAL). The right architectural fix: seed via Aura's own /api endpoints instead of direct DB write. (a) Read cmd/probe_chat/phase07d.go to identify exactly what fixtures are seeded (likely user-memory rows, operational-recall rows). (b) For each fixture, find the corresponding /api endpoint that writes them (e.g., /api/memory/user/set, /api/memory/operational/log) — search internal/api/router.go. If a matching endpoint exists, use it. If not, document the gap (skip this fixture and add a follow-up story). (c) Replace direct SQL writes with HTTP POSTs via env.APIClient. (d) Same for phase07e.go (likely source-span fixture — should use /api/sources POST instead). (e) Remove the 'container detected' guard from Setup, since API-driven seeding is concurrent-safe (Aura's own sqlite layer handles WAL). (f) Re-run probe_chat baseline: expect 21/21 PASS (or 20/21 with the 1 known FLAKE doc-pdf-roundtrip). (g) Update .planning/qa/baseline-run.json snapshot in docs/qa-verdict.md follow-ups if appropriate.",
       "acceptanceCriteria": [
-        "prd.md §6.5 row 7D: status ✅ with closure date 2026-05-17 + commit/file evidence (Phase-N + Phase-O wiring)",
-        "prd.md §6.5 row 7E: status ✅ with closure date + evidence (ByteStart/End + probe)",
-        "prd.md §6.5 row 7F: status ✅ with closure date + evidence (wikiPagePromptVersion stamp)",
-        "prd.md §7.3 updated: after Phase-Z closes, next milestone is plugin-layout pivot (option 2 per user 2026-05-17)",
-        "No Go code changes — pure docs",
-        "Single atomic commit prefix: docs(prd): mark 7D/7E/7F closed with evidence pointers (US-Z04)"
+        "cmd/probe_chat/phase07d.go Setup uses env.APIClient.Post (or equivalent) instead of env.DB.Exec for fixture seeding",
+        "cmd/probe_chat/phase07e.go Setup uses env.APIClient.Post (or equivalent) instead of env.DB.Exec for fixture seeding",
+        "The 'container running, refuse to write' guard removed from both Setup functions",
+        "go run ./cmd/probe_chat -case=phase07d-mixed-tier-recall -json (from D:/Aura with AURA_CHAT_TOKEN set) returns pass:true",
+        "go run ./cmd/probe_chat -case=phase07e-source-span-read -json (from D:/Aura with AURA_CHAT_TOKEN set) returns pass:true",
+        "Full baseline (go run ./cmd/probe_chat -json) shows at least 20/21 PASS (the 1 acceptable miss is the doc-pdf FLAKE classified 2/4 in docs/qa-bug-log.md — not regression from this fix)",
+        "go vet ./..., go build ./..., go test ./... green",
+        "Single atomic commit prefix: test(probe_chat): seed phase07d/e fixtures via API, drop direct-DB guard (Phase-QA1 / US-QA-FIX04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Pure admin commit — the work is already done, just paperwork. Look at the §6.5 table rows for 7D/7E/7F and flip ⬜ → ✅."
+      "passes": false,
+      "notes": "If a /api endpoint for a fixture doesn't exist, do NOT add a new endpoint just for testing — that scope-creeps into product changes. Instead, mark the specific fixture as 'requires-product-endpoint-US-QA-FIXxx' and skip just that fixture line, keeping the case as a partial seed. Document the gap. Most likely the endpoints already exist; if they don't, the right move is to file a follow-up story not to expand scope here."
     },
     {
-      "id": "US-Z05",
-      "title": "Phase 9 — SQLite concurrency hardening",
-      "description": "Per prd.md Phase 9 line 1718 'harden SQLite concurrency'. (a) Audit all sql.Open / auradb.Open call sites for PRAGMA setup. Current state: most callers set busy_timeout but coverage isn't uniform. (b) Centralize the PRAGMA bundle in internal/db.Open so every caller automatically gets: PRAGMA journal_mode=WAL, PRAGMA synchronous=NORMAL, PRAGMA busy_timeout=10000 (was 5000 — bumped for cron + agent concurrency), PRAGMA foreign_keys=ON, PRAGMA temp_store=MEMORY. (c) Add a WAL checkpoint cron (PRAGMA wal_checkpoint(TRUNCATE) every 6h) so the WAL file doesn't grow unbounded — wire via existing internal/cron.Scheduler. (d) Document SQLITE_BUSY handling: any handler that catches it should retry-with-jitter up to N times before failing the request — add a helper internal/db.RetryOnBusy(ctx, fn) wrapping the canonical pattern. (e) Tests: concurrent write benchmark that exceeds the old busy_timeout, asserts the new value handles it.",
+      "id": "US-QA-FIX05",
+      "title": "Stabilize doc-pdf-roundtrip flake — LLM mis-echoes hex source_id",
+      "description": "Per docs/qa-bug-log.md (2026-05-18 flake protocol): cmd/probe_chat case `doc-pdf-roundtrip` flaked 2/4 across re-runs. Failure pattern: the LLM mistypes the 16-char hex source_id when echoing it in the reply — e.g., quotes 'src_89ceda2013a00d59' when actual is 'src_89ceda2013d00a59' (one digit off), or quotes a completely different hash (wholesale hallucination). The PDF is created + persisted correctly each run; the failure is exclusively in the LLM's echo. Per skill v6 flakiness protocol: 2/4 fail = FLAKE, don't propose a fix yet, investigate determinism. This story IS that investigation + fix. Two complementary fixes (do BOTH): (a) **Prompt hardening** — rewrite the case's Prompt field in cmd/probe_chat/cases.go to instruct the LLM 'echo the source_id verbatim, character-for-character, no transformation' with a concrete example like 'if source_id is src_abc123, reply src_abc123'. (b) **Assertion relaxation** — modify the Verify function to accept any reply that contains the source_id PREFIX (`src_` + first 8 hex chars) rather than requiring full match. Rationale: the storage path is what's actually being tested, not the model's ability to copy a 16-char hex string. If the prefix matches, the model called the right tool and got the right source. Verify both fixes by running `go run ./cmd/probe_chat -case=doc-pdf-roundtrip -json` 5 times in a row — must pass ≥4/5 (re-classified from FLAKE to acceptable per skill rule '4/4 fail = real bug; 3/4 = suspect; 2/4 = flake' — we're targeting 4/5+ = not-flake).",
       "acceptanceCriteria": [
-        "internal/db.Open sets the canonical PRAGMA bundle (WAL, busy_timeout=10000, synchronous=NORMAL, foreign_keys=ON, temp_store=MEMORY)",
-        "WAL checkpoint cron registered (PRAGMA wal_checkpoint(TRUNCATE) every 6h)",
-        "internal/db.RetryOnBusy(ctx, fn) helper exported + at least one critical-path caller migrated to it",
-        "Concurrent-write benchmark in internal/db/concurrency_test.go covers the new threshold",
-        "go build ./... green",
-        "go test ./internal/db/... green",
-        "go test ./... green",
-        "Single atomic commit prefix: feat(db): SQLite concurrency hardening — PRAGMA bundle + WAL checkpoint cron + busy retry helper (US-Z05 / Phase 9)"
+        "cmd/probe_chat/cases.go doc-pdf-roundtrip Prompt field includes explicit 'echo source_id verbatim' instruction with example",
+        "cmd/probe_chat/cases.go doc-pdf-roundtrip Verify accepts reply containing the source_id prefix (first 12 chars = 'src_' + 8 hex) rather than exact 16-char match — OR uses substring containment with the full id (whichever is cleaner)",
+        "5-run loop: `for i in 1 2 3 4 5; do go run ./cmd/probe_chat -case=doc-pdf-roundtrip -json > /tmp/pdf-run-$i.json; done` results in ≥4/5 pass:true (acceptable rate; 5/5 ideal)",
+        "Update docs/qa-bug-log.md entry for doc-pdf-roundtrip: status changes from 'flake-monitoring (FLAKE classification)' to 'fixed in <SHA> by prompt-hardening + assertion-relaxation, 4/5 or 5/5 pass post-fix'",
+        "go vet ./..., go build ./..., go test ./... green",
+        "Single atomic commit prefix: test(probe_chat): stabilize doc-pdf-roundtrip — verbatim source_id echo + prefix assertion (Phase-QA1 / US-QA-FIX05)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Don't introduce a new sql.DB pool — extend the existing auradb.Open. The cron schedule path should match Phase-T's US-T03 pattern (Scheduler callback, NOT a separate goroutine)."
-    },
-    {
-      "id": "US-Z06",
-      "title": "Phase 9 — docs: clarify memory vs storage",
-      "description": "Per prd.md Phase 9 line 1714 'clarify memory versus storage'. The terms are used inconsistently across the codebase. (a) Create docs/MEMORY-VS-STORAGE.md explaining: 'memory' = what the agent reads back at retrieval time (compact_memory_documents, freshness-tracked, kind-typed). 'storage' = durable artifacts on disk (wiki/*.md files, source raw bytes, garage blobs). Memory is REBUILDABLE; storage is NOT. (b) For each internal/ subdirectory, classify which layer it belongs to (a table at the top of the doc). (c) Cross-reference the §5.7 prd.md section. (d) Add a 'cardinal rule' section: anyone adding a new long-term data store should declare 'storage or memory?' and follow the implications (storage needs backup/migration; memory needs a rebuild path).",
-      "acceptanceCriteria": [
-        "docs/MEMORY-VS-STORAGE.md exists with the two-layer model",
-        "Table mapping each internal/ subdir to memory or storage",
-        "Cross-reference to prd.md §5.7",
-        "Cardinal-rule section for future contributors",
-        "No code changes — pure docs",
-        "Single atomic commit prefix: docs(memory-vs-storage): clarify the two-layer model (US-Z06 / Phase 9)"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Be concrete: every internal/ subdir gets a label. Avoid hand-wavy 'it depends' classifications — if it stores something durable, it's storage."
-    },
-    {
-      "id": "US-Z07",
-      "title": "Phase 9 — source conversion fixtures",
-      "description": "Per prd.md Phase 9 line 1717 'add conversion fixtures for important source types'. (a) Add internal/storage/sources/ingest/fixtures/ directory with one canonical fixture per supported source type: PDF (text, mixed-image-text, table-heavy), DOCX (with TOC), XLSX (multi-sheet), PPTX, MD, plain text. (b) Each fixture: source bytes (small, < 100KB), expected ocr.md / markitdown output, expected wiki page after ingest. (c) Test internal/storage/sources/ingest/fixtures_test.go that round-trips each fixture: ingest the bytes, assert the output matches the golden (with mojibake check + structural check). (d) Per memory feedback_inspect_artifact_visually_not_just_pass_status: each assertion includes a print of the body (or at least the first 200 chars) so regressions are humanly visible in test output.",
-      "acceptanceCriteria": [
-        "internal/storage/sources/ingest/fixtures/ exists with ≥5 canonical source types (PDF, DOCX, XLSX, PPTX, MD)",
-        "Each fixture has source bytes + expected ocr.md/markitdown output + expected wiki page",
-        "fixtures_test.go round-trips each fixture, asserts golden match + prints first 200 chars",
-        "go build ./... green",
-        "go test ./internal/storage/sources/ingest/... green",
-        "go test ./... green",
-        "Single atomic commit prefix: test(ingest): conversion fixtures for PDF/DOCX/XLSX/PPTX/MD source types (US-Z07 / Phase 9)"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "Use small fixtures — checked into git. The PDF can be a 1-page render of a simple .docx. The XLSX can be 3 rows × 2 sheets. Goal is structural coverage, not load test."
+      "passes": false,
+      "notes": "Don't over-relax — if you accept arbitrary substring, the test loses signal. The prefix approach (src_ + 8 hex chars) is enough to distinguish: random 8 hex matches by accident in only 1/(16^8) ≈ 1 in 4 billion — sufficient probability bound for a test assertion. The full 16-char hex is overkill for a test that's really verifying 'did the right tool fire and produce the right artifact'."
     }
   ]
 }
