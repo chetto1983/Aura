@@ -170,7 +170,7 @@
         "Single atomic commit prefix: docs(qa): Phase-QA2 closure — coverage expansion (10 stories) + verdict update"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "If any of the 9 prior probe cases (US-QA-COV01..09) failed in the baseline rerun, classify each per skill rule (4/4 real, 2/4 FLAKE, etc) and append to qa-bug-log.md. Don't bundle bug-log entries into the verdict commit — those are separate commits. This story is JUST the closure doc."
     }
   ]
