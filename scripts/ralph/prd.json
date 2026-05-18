@@ -165,7 +165,7 @@
         "Single atomic commit prefix: test(qa): cron silent failure visibility (Phase-QA3 / US-QA-FIX16)"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "dispatcher_test.go already has cron infrastructure. Add a failure-injection variant."
     },
     {

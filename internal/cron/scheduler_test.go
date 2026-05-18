@@ -3,7 +3,10 @@ package cron
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -840,6 +843,80 @@ func TestNew_RejectsMissingDeps(t *testing.T) {
 	}
 	if _, err := New(Config{Store: &Store{}}); err == nil {
 		t.Error("expected error: missing dispatcher")
+	}
+}
+
+// TestScheduler_FailedDispatch_PersistsErrorAndLogsWarn proves that a silently
+// failing cron task (cron channel has no user-facing outbound) remains visible
+// to operators: the error is written to scheduled_tasks.last_error and a WARN
+// log line is emitted. This is the operator visibility contract for US-QA-FIX16.
+func TestScheduler_FailedDispatch_PersistsErrorAndLogsWarn(t *testing.T) {
+	store := newTestStore(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var logBuf strings.Builder
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelWarn}))
+
+	dispatcher := func(_ context.Context, _ *Task) error {
+		return errors.New("inject failure")
+	}
+
+	s, err := New(Config{
+		Store:        store,
+		Dispatcher:   dispatcher,
+		Logger:       logger,
+		TickInterval: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	// One-shot task already due — scheduler fires it on first tick.
+	dueAt := time.Now().UTC().Add(-time.Second)
+	mustUpsert(t, store, &Task{
+		Name:         "fail-task",
+		Kind:         KindReminder,
+		ScheduleKind: ScheduleAt,
+		ScheduleAt:   dueAt,
+		NextRunAt:    dueAt,
+		RecipientID:  "99",
+		Payload:      "body",
+	})
+
+	s.Start(ctx)
+	defer s.Stop()
+
+	// Poll until last_error is persisted (up to 2s).
+	deadline := time.Now().Add(2 * time.Second)
+	var got *Task
+	for time.Now().Before(deadline) {
+		time.Sleep(25 * time.Millisecond)
+		got, err = store.GetByName(ctx, "fail-task")
+		if err != nil {
+			t.Fatalf("GetByName: %v", err)
+		}
+		if got.LastError != "" {
+			break
+		}
+	}
+
+	// Gate 1: failure persisted to scheduled_tasks row (operator-discoverable via /api/tasks).
+	if got.LastError == "" {
+		t.Fatal("last_error not persisted after failed dispatch — silent failure invisible to operators")
+	}
+	if !strings.Contains(got.LastError, "inject failure") {
+		t.Errorf("last_error = %q, want to contain 'inject failure'", got.LastError)
+	}
+	// One-shot task on failure → StatusFailed (recurring tasks stay StatusActive with last_error set).
+	if got.Status != StatusFailed {
+		t.Errorf("status = %q, want %q", got.Status, StatusFailed)
+	}
+
+	// Gate 2: WARN log emitted (operator-discoverable via log tailing).
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, "dispatch failed") {
+		t.Errorf("WARN log 'dispatch failed' not found in scheduler output:\n%s", logOutput)
 	}
 }
 
