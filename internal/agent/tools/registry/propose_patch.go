@@ -11,7 +11,14 @@ import (
 
 	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/storage/memoryindex"
 )
+
+// operationalLessonWriter is the compact-memory write side for operational
+// auto-accept. Tests inject a fake; production wires *memoryindex.Store.
+type operationalLessonWriter interface {
+	Upsert(ctx context.Context, doc memoryindex.Document) error
+}
 
 // patchProposalInserter is the persistence side of propose_patch.
 // Tests inject a fake; production wires SQLPatchProposalStore.
@@ -34,14 +41,14 @@ type patchProposalRow struct {
 	ActorID       string // identity.ActorIDFromContext
 }
 
-// ProposePatchTool lets the LLM submit structured patch proposals for operator
-// review. Proposals land in proposed_updates with status=pending and are NEVER
-// applied without explicit operator approval.
+// ProposePatchTool lets the LLM submit structured patch proposals. Operational
+// lessons auto-accept (write directly to compact_memory_documents, no review).
+// Wiki and user_memory proposals land in proposed_updates with status=pending.
 //
 // This is the only mutation-adjacent tool available to write_proposal subagents.
-// ALL writes are review-gated — no direct mutations.
 type ProposePatchTool struct {
-	store patchProposalInserter
+	store    patchProposalInserter
+	opWriter operationalLessonWriter // non-nil → operational auto-accept (no review)
 }
 
 // NewProposePatchTool returns a ProposePatchTool backed by store.
@@ -53,10 +60,19 @@ func NewProposePatchTool(store patchProposalInserter) *ProposePatchTool {
 	return &ProposePatchTool{store: store}
 }
 
+// SetOperationalWriter injects a compact-memory writer so action=operational
+// proposals auto-accept into compact_memory_documents (no review queue).
+// Safe to call before or after registration.
+func (t *ProposePatchTool) SetOperationalWriter(w operationalLessonWriter) {
+	if t != nil {
+		t.opWriter = w
+	}
+}
+
 func (t *ProposePatchTool) Name() string { return "propose_patch" }
 
 func (t *ProposePatchTool) Description() string {
-	return `Submit a structured patch proposal for operator review. Proposals land in proposed_updates with status=pending and are visible in the dashboard /proposals review queue. Use action=wiki to suggest a wiki page edit, action=user_memory to surface a candidate user fact, action=operational to record an operational lesson. ALL writes are review-gated — no direct mutations.
+	return `Submit a structured patch proposal. action=operational auto-accepts into operational memory immediately (no review). action=wiki and action=user_memory land in the /proposals review queue pending operator approval.
 
 REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
   • action="wiki":         target_slug, body, change_summary
@@ -219,13 +235,34 @@ func (t *ProposePatchTool) executeOperational(ctx context.Context, args map[stri
 	if lesson == "" {
 		return "", fmt.Errorf("propose_patch operational: lesson is required: %w", llm.ErrSchemaValidation)
 	}
+	sig := proposePatchHash("operational", toolName, errorClass, lesson)
+
+	// Auto-accept path: write directly to compact_memory_documents when a writer
+	// is wired. Skips the review queue so Aura can recall lessons immediately.
+	if t.opWriter != nil {
+		doc := memoryindex.Document{
+			ID:        "operational:" + sig,
+			Kind:      memoryindex.KindOperational,
+			Title:     fmt.Sprintf("Lesson: %s %s", toolName, errorClass),
+			Body:      lesson,
+			Handle:    "operational:" + sig,
+			Status:    "active",
+			UpdatedAt: time.Now().UTC(),
+		}
+		if err := t.opWriter.Upsert(ctx, doc); err != nil {
+			return "", fmt.Errorf("propose_patch operational: %w", err)
+		}
+		return fmt.Sprintf("propose_patch: operational lesson for %q accepted and stored immediately", toolName), nil
+	}
+
+	// Fallback: write to proposed_updates review queue (opWriter not configured).
 	row := patchProposalRow{
 		Kind:          "operational_memory",
 		Fact:          lesson,
 		Action:        "new",
 		TargetSlug:    toolName,
 		Category:      errorClass,
-		SignatureHash: proposePatchHash("operational", toolName, errorClass, lesson),
+		SignatureHash: sig,
 		SourceRunID:   identity.RunIDFromContext(ctx),
 		ActorID:       identity.ActorIDFromContext(ctx),
 	}

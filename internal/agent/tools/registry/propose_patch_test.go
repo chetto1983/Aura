@@ -8,7 +8,36 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/storage/memoryindex"
 )
+
+// fakeOperationalWriter records Upsert calls for test assertions.
+type fakeOperationalWriter struct {
+	mu   sync.Mutex
+	docs []memoryindex.Document
+}
+
+func (f *fakeOperationalWriter) Upsert(_ context.Context, doc memoryindex.Document) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.docs = append(f.docs, doc)
+	return nil
+}
+
+func (f *fakeOperationalWriter) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.docs)
+}
+
+func (f *fakeOperationalWriter) first() memoryindex.Document {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.docs) == 0 {
+		return memoryindex.Document{}
+	}
+	return f.docs[0]
+}
 
 // fakePatchProposalStore is an in-memory patchProposalInserter for tests.
 type fakePatchProposalStore struct {
@@ -237,6 +266,83 @@ func TestProposePatch_MissingRequiredField(t *testing.T) {
 	}
 	if store.count() != 0 {
 		t.Errorf("expected 0 rows after validation failures, got %d", store.count())
+	}
+}
+
+// TestProposePatch_OperationalAutoAccept_WritesToCompactMemory verifies that when
+// an operationalLessonWriter is set, action=operational bypasses the review queue
+// and writes directly to compact_memory_documents with status=active.
+func TestProposePatch_OperationalAutoAccept_WritesToCompactMemory(t *testing.T) {
+	store := &fakePatchProposalStore{}
+	opWriter := &fakeOperationalWriter{}
+	tool := NewProposePatchTool(store)
+	tool.SetOperationalWriter(opWriter)
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"action":         "operational",
+		"tool_name":      "web_search",
+		"error_class":    "timeout",
+		"lesson":         "Retry with a shorter query on timeout.",
+		"change_summary": "Observed repeatedly.",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	// Must NOT write to proposal store (review queue).
+	if store.count() != 0 {
+		t.Errorf("proposal store: expected 0 rows (auto-accept skips review), got %d", store.count())
+	}
+	// Must write to compact_memory (auto-accept path).
+	if opWriter.count() != 1 {
+		t.Fatalf("compact_memory: expected 1 doc, got %d", opWriter.count())
+	}
+	doc := opWriter.first()
+	if doc.Kind != memoryindex.KindOperational {
+		t.Errorf("doc.Kind = %q, want %q", doc.Kind, memoryindex.KindOperational)
+	}
+	if doc.Status != "active" {
+		t.Errorf("doc.Status = %q, want %q", doc.Status, "active")
+	}
+	if !strings.Contains(doc.ID, "operational:") {
+		t.Errorf("doc.ID = %q: want 'operational:' prefix", doc.ID)
+	}
+	if !strings.Contains(doc.Title, "web_search") {
+		t.Errorf("doc.Title = %q: want tool_name 'web_search'", doc.Title)
+	}
+	if !strings.Contains(result, "accepted and stored immediately") {
+		t.Errorf("result %q: want 'accepted and stored immediately'", result)
+	}
+}
+
+// TestProposePatch_UserMemory_StillPendingWhenOpWriterSet verifies that
+// action=user_memory always routes to the review queue regardless of opWriter.
+func TestProposePatch_UserMemory_StillPendingWhenOpWriterSet(t *testing.T) {
+	store := &fakePatchProposalStore{}
+	opWriter := &fakeOperationalWriter{}
+	tool := NewProposePatchTool(store)
+	tool.SetOperationalWriter(opWriter)
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"action":         "user_memory",
+		"fact":           "User prefers concise replies.",
+		"category":       "preference",
+		"change_summary": "Observed from repeated requests.",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if store.count() != 1 {
+		t.Errorf("proposal store: expected 1 row (user_memory stays in review queue), got %d", store.count())
+	}
+	row := store.first()
+	if row.Kind != "user_memory" {
+		t.Errorf("kind = %q, want user_memory", row.Kind)
+	}
+	if opWriter.count() != 0 {
+		t.Errorf("compact_memory: expected 0 docs (user_memory never auto-accepts), got %d", opWriter.count())
+	}
+	if !strings.Contains(result, "pending operator review") {
+		t.Errorf("result %q: want 'pending operator review'", result)
 	}
 }
 

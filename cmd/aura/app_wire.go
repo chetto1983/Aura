@@ -189,10 +189,19 @@ func (a *App) wireBot(b *telegram.Bot) error {
 
 	// Memory recall tools are registered after memory rebuild so the index is populated.
 	a.registerMemoryRecallTools(cfg)
-	// ProposePatchTool — write_proposal subagent mutation gate (Phase-S US-S01).
-	// ALL writes are review-gated; proposals land in proposed_updates with status=pending.
+	// ProposePatchTool — operational proposals auto-accept (Phase-OP / US-OP01);
+	// wiki and user_memory proposals remain review-gated via proposed_updates.
 	if tool := tools.NewProposePatchTool(tools.NewSQLPatchProposalStore(a.deps.SchedDB.DB())); tool != nil {
+		tool.SetOperationalWriter(a.deps.MemoryStore)
 		a.deps.Tools.Register(tool)
+	}
+	// Migration: auto-accept any pre-OP01 pending operational proposals (US-OP01).
+	if a.deps.MemoryStore != nil {
+		if n, migrErr := learning.MigrateOperationalProposals(context.Background(), a.deps.SchedDB.DB(), a.deps.MemoryStore); migrErr != nil {
+			logger.Warn("operational proposals migration failed", "error", migrErr)
+		} else if n > 0 {
+			logger.Info("operational proposals migrated", "promoted", n)
+		}
 	}
 	// AgentNoteTool — per-conversation scratchpad for working memory (Phase-P, capability #4).
 	// The conversationIDProvider reads from context; US-P03 will set the value via
@@ -439,8 +448,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// Conversation archive read API.
 		Archive: archiveDB,
 		// Summaries review queue.
-		Summaries:     a.deps.SummariesStore,
-		SummariesWiki: a.deps.WikiStore,
+		Summaries:         a.deps.SummariesStore,
+		SummariesWiki:     a.deps.WikiStore,
+		OperationalMemory: a.deps.MemoryStore,
 		// Wiki maintenance issue queue.
 		Issues: issues,
 		// Runtime settings page.

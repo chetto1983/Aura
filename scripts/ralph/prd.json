@@ -16,7 +16,7 @@
         "Single atomic commit prefix: feat(propose_patch): auto-accept operational lessons (Phase-OP / US-OP01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Look at internal/learning/writer.go and internal/api/proposed_updates*.go. The kind enum likely lives in internal/learning/kind.go or similar."
     },
     {
