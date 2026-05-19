@@ -2209,3 +2209,93 @@ Phase-TJ scoreboard now: 3/8 (US-TJ01 49db267d, US-TJ02 f0093c4a, US-TJ03 [this 
 2026-05-19 Codex US-OP12 shipped: added default-off pre-call tool argument validation via AURA_OP12_PRECALL_VALIDATOR_ENABLED, schema-guided CoerceParams for stringified integers/numbers/booleans/enum-as-string/nested objects/arrays, ValidateBeforeCall required/type/enum checks, structured ValidationError tool_result JSON, registry Execute coerce -> validate -> invoke gate, and config/tests covering 12+ validator cases plus registry non-invocation on invalid args. Verification: go test ./internal/agent/tools/registry ./internal/agent ./internal/config; go test ./...; go vet ./...; go build ./... all passed.
 
 2026-05-19 Codex US-OP12b shipped: added default-off universal retry hint via AURA_OP12B_RETRY_HINT_ENABLED, idempotent suffix application in FormatToolError/FormatFatalToolError, validation/runtime/fatal/MCP-like error coverage, success-path no-suffix guard, and config tests. Verification: go test ./internal/agent/tools/registry ./internal/agent ./internal/config; go test ./...; go vet ./...; go build ./... all passed.
+
+## [2026-05-19 --:--] — US-FIX02 shipped as bdc4a164
+- Created internal/llm/usererror.go exposing UserMessageFor(err) that maps HTTP status/transport/message pattern to 5 fixed user-visible strings (rate-limited, network, auth, model-unavailable, unknown); replaced the two generic 'Sorry, I couldn't process' literals in loop.go:336 and chat_client.go:59,63.
+- Files touched: 6 (usererror.go new, usererror_test.go new, retry_test.go updated, loop.go, chat_client.go, prd.json)
+- Validation: go build/vet/test all green (llm, agent, channels/telegram packages)
+- LOC delta: +164 net (232 insertions, 68 deletions including retry_test.go comment cleanup)
+- Learnings:
+  - retry_test.go's local `const fallback` guards were updated to reference the package-level msgRateLimited constant — tests are in the same package (package llm) so unexported consts are accessible.
+  - The Classify() call in UserMessageFor is deferred to bucket-level fallback only; HTTP status + transport take priority to keep the mapping deterministic.
+---
+
+## [2026-05-19 18:00] — US-FIX01 shipped as 3784a9c0
+- Added gracefulFinalize helper and wired it into all 3 budget-exit paths (MaxElapsed, empty-LLM-response, MaxIterations) so AllowNoToolFinalization applies uniformly across the loop.
+- Files touched: 4 (internal/agent/loop.go, internal/agent/loop_test.go, cmd/probe_chat/client.go, scripts/ralph/prd.json)
+- Validation: go build/vet/test all green (full suite)
+- LOC delta: +91 / -16 net
+- Learnings:
+  - iterCancel must be set to nil after canceling in the MaxElapsed path so the deferred cancel in runLoop does not double-cancel unnecessarily.
+  - isEmptyProviderReply needed the budget-string check hoisted BEFORE the LLMCalls guard; graceful finalize adds an extra LLM call (LLMCalls≥2) that previously caused the guard to short-circuit and skip the string check.
+---
+
+## [2026-05-19 14:35] — US-FIX04 shipped as aa66ae0d
+- Added finalAnswerOnBudgetWithContext with 3 variants (step-cap / time-cap / no-tool) replacing raw lastToolResult passthrough.
+- Files touched: 7 (loop_dedup.go, loop.go, loop_test.go, runtask_test.go, probe_chat/client.go, probe_chat/cases.go, prd.json)
+- Validation: go build/vet/test all green (full suite)
+- LOC delta: +41 / -11 net
+- Learnings:
+  - runtask_test.go also asserted on the legacy "last result" string (appended to RunTask's max-iterations fallback), required update alongside loop_test.go.
+  - The `time` import was missing from loop_dedup.go; needed for time.Duration.Round in the new helper.
+---
+
+## [2026-05-19 --:--] — US-MM-INIT00 shipped as 77ae9832
+- Added internal/install/whisper.go + piper.go (EnsureWhisperModel + EnsurePiperVoice) and wired both into cmd/aura-init-models/main.go after EnsureEmbeddingModel; 6 new operator-override env vars in compose.yaml aura-init-models.environment block
+- Files touched: 7 (2 new .go source, 2 new _test.go, main.go modified, compose.yaml modified, prd.json flip)
+- Validation: go build/vet/test all green (full suite ~80 packages); docker compose config exits 0
+- LOC delta: +456/-59 net
+- Learnings:
+  - envOrDefault is package-private in embedding.go — whisper.go/piper.go can reuse it directly (same install package); no need to duplicate or export it
+  - sha256Hex helper in download_test.go is reusable from whisper_test.go/piper_test.go — same package `install`, test files share unexported symbols
+  - HF LFS metadata sha256 field (from /api/models/<model>?blobs=true JSON) gives the actual file content SHA-256, not the pointer SHA — it's the correct value for our DownloadOpts.SHA256 check
+  - JSON config files NOT in LFS (no `lfs` field in HF API siblings) must be downloaded and hashed locally; blobId is a SHA-1 (object storage), not SHA-256
+---
+
+## [2026-05-19 --:--] — US-MM-INIT01 shipped as 1b30ebc0
+- Added docker/whisper/Dockerfile (multi-stage: bookworm-slim builder with cmake/g++, bookworm-slim runtime with libgomp1+curl) and aura-whisper service in compose.yaml with full markitdown-mcp hardening pattern
+- Files touched: 3 (docker/whisper/Dockerfile new, compose.yaml +aura-whisper service + WHISPER_BASE_URL env, scripts/ralph/prd.json flip)
+- Validation: go build/vet/test all green; docker compose config exits 0
+- LOC delta: +107 net (Dockerfile 57 LOC + compose additions)
+- Learnings:
+  - download.go uses os.OpenFile with 0o644 perm for partial files → final model files are 0o644 world-readable → nobody:nogroup in whisper container can mmap ggml-small.bin via the ./data:/models:ro bind-mount (no permission issue)
+  - read_only:true + tmpfs /tmp works for whisper-server: temp audio uploads go to /tmp (world-writable tmpfs); model file is mmap'd read-only from mounted volume; no other writes needed
+  - PORT 8082 is non-privileged → nobody:nogroup can bind it without CAP_NET_BIND_SERVICE (same as markitdown on 3001)
+  - cmake --build --target whisper-server builds only that binary + its deps (whisper, ggml, common) — faster than building all examples
+---
+
+## [2026-05-19 22:00] — US-MM-INIT02 shipped as 383ae456
+- Added aura-piper sidecar: docker/piper/Dockerfile (python:3.11-slim, piper-tts) + docker/piper/server.py (stdlib HTTPServer, POST /v1/synthesize + GET /health) + compose.yaml service + PIPER_BASE_URL/AURA_TTS_ENABLED env on aura
+- Files touched: 4 (docker/piper/Dockerfile new, docker/piper/server.py new, compose.yaml +13 lines, scripts/ralph/prd.json passes flip)
+- Validation: go build/vet/test all green; docker compose config exits 0
+- LOC delta: +215
+- Learnings:
+  - piper-tts uses onnxruntime (not torch) so image stays lean; libgomp1 is the only extra apt dep needed on debian-slim
+  - read_only:true works for Python if HOME=/tmp + XDG_CACHE_HOME=/tmp/.cache redirect all runtime writes to tmpfs; PYTHONDONTWRITEBYTECODE=1 prevents .pyc creation
+  - Healthcheck CMD can use `python -c urllib.request.urlopen(...)` — avoids installing curl/wget on the python base image (unlike whisper sidecar which needed curl separately)
+  - Port 8083 is non-privileged → nobody:nogroup binds it without capability
+  - _voice_lock serializes concurrent synthesis: onnxruntime session not guaranteed thread-safe for same session object under concurrent infer calls
+---
+
+## [2026-05-19 16:40] — US-MM-A01 shipped as e14114c4
+- Substrate slice: KindAudio + StatusTranscribeComplete constants, extForKind/.ogg, validatePutInput allowlist, newVoiceHandler mirroring docHandler shape (concurrencyLimit=1), tele.OnVoice registration, bot.Stop() delegate, setup.go wiring, 2 unit tests.
+- Files touched: 9 (source.go, store.go, formats.go, voice_handler.go NEW, voice_handler_test.go NEW, handlers.go, bot.go, setup.go, prd.json)
+- Validation: go build/vet/test all green (full ./... suite)
+- LOC delta: +457 / -52
+- Learnings:
+  - validatePutInput in store.go has an EXPLICIT kind allowlist — new kinds MUST be added there AND in extForKind(). Missing either causes "invalid kind" error at Put time. The source.go constants alone are not enough.
+  - The "progressEditor called twice" spec means 1x sendMessage (initial) + 1x editMessageText (final) — not 2x editMessageText. Test counts each API method separately.
+  - KindAudio does NOT need formatsByExt entry — tele.OnVoice bypasses DetectUploadFormat entirely.
+---
+
+## [2026-05-19 22:30] — US-MM-A02 shipped as 9096844f
+- Whisper HTTP client (internal/llm/whisper/) + full voice transcription pipeline wired into voice_handler.go
+- Files touched: 10 (2 new: client.go + client_test.go; 8 modified: config, source.go, voice_handler.go, voice_handler_test.go, deps.go, setup.go, app.go, prd.json)
+- Validation: go build/vet/test all green (60+ packages)
+- LOC delta: +520 insertions, -35 deletions
+- Learnings:
+  - `writeNextToSource` in documents.go is package-level (same `telegram` pkg) — reusable from voice_handler.go without duplication
+  - `source.Repository` embeds `FileResolver` so `h.sources.Path(id, "original.ogg")` works directly
+  - Two Updates avoided by combining StatusTranscribeComplete + Transcript + OriginalDeletedAt in a single sources.Update call after the os.Remove
+  - WHISPER_BASE_URL defaults to "http://aura-whisper:8082" — nil whisper client on empty URL, graceful degradation preserved (A01 "ready for transcription" message path unchanged)
+---
