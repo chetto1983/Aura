@@ -1,122 +1,85 @@
-# QA Triage — 2026-05-18 — git_head: 3652fdf2
+# QA Triage - 2026-05-19 - git_head: c3b1f0085533aac961f37ce4d2d362146b4c205c
 
-Phase 2 synthesis of `qa-coverage-tools.md` (Auditor-1) and `qa-coverage-channel-failure.md` (Auditor-2). Ordered by ROI: P0 first with rationale, then P1, then P2 in appendix. Phase 3 cap is 20 specs; the 27 P0 below are narrowed to top 20 with the remaining 7 deferred.
+Phase 2 synthesis of `docs/qa-coverage-tools.md` and `docs/qa-coverage-channel-failure.md`.
 
-## Baseline numbers
+Baseline: `.planning/qa/baseline-run.json` is 30/30 PASS. The run used a fresh bearer token minted into `api_tokens` for allowlisted user `1148481707`; the plaintext is stored only in `.planning/qa/token.txt` for this local QA run. `.planning/qa/run-head.txt` is pinned to `c3b1f0085533aac961f37ce4d2d362146b4c205c`.
+
+## Baseline Numbers
 
 | Metric | Value |
-|---|---|
-| Tools (incl. swarm + mcp family) | 24 |
-| Cells (channel × failure mode) | 68 |
-| Total surface | 92 |
-| **probe_chat baseline pass rate** | **18/21 (85.7%)** |
-| **Real-bug failures** | 1 (agent-note-roundtrip) |
-| **Infra-skipped failures** | 2 (phase07d/e, fixture refuses live-container DB write) |
-| Tools COVERED E2E | 5 |
-| Tools PARTIAL E2E | 3 |
-| Tools MISSING E2E | 16 |
-| Cells COVERED | 4 |
-| Cells PARTIAL | 14 |
-| Cells MISSING | 31 |
-| Cells N/A | 12 |
-| Cells STATIC-INSUFFICIENT | 7 |
-| Lint debt (golangci-lint v2.12.2) | 59 issues |
-| Lint debt in tool packages | 2 (both unused in source.go) |
-| **P0 gaps** | **27** |
-| P1 gaps | 33 |
-| P2 gaps | 28 |
+|---|---:|
+| Probe cases | 30 |
+| Passing | 30 |
+| Failing | 0 |
+| Total tokens | 1,278,025 |
+| Sum elapsed_ms | 383,785 |
+| Tool P0 gaps | 11 |
+| Tool P1 gaps | 1 |
+| Channel/failure P0 gaps | 0 |
+| Channel/failure P1 gaps | 0 |
 
-## Top-20 P0 (Phase 3 spec queue)
+## P0 Gaps
 
-Ordered by ROI = (user-visible impact × likelihood of regression in prod) / (effort to write probe).
+All P0s below come from `docs/qa-coverage-tools.md`. The channel/failure matrix has no P0/P1 cells in this run, but many P2 partials are listed in the appendix.
 
-### Tools — 8 P0
+| ROI | Story ID | Gap | Rationale |
+|---:|---|---|---|
+| 1 | US-QA22 | `request_dashboard_token` E2E missing | Secret issuance path needs hashed DB row, out-of-band delivery, and sanitization ground truth. |
+| 2 | US-QA23 | `propose_patch` E2E missing | Memory/wiki proposal writes are high-risk for memory poisoning and governance regressions. |
+| 3 | US-QA24 | `ask_user` E2E missing | Pause/resume semantics are core Q&A behavior; unit sentinel coverage is not enough. |
+| 4 | US-QA25 | `subagent_dispatch` E2E partial | Baseline green uses infra-skip with zero successful `tool_attempts` rows for `subagent_dispatch`. |
+| 5 | US-QA26 | `run_aurabot_swarm` E2E missing | Full one-shot swarm run remains uncovered despite swarm being a major execution surface. |
+| 6 | US-QA27 | `list_swarm_tasks` E2E partial | Lifecycle probe asks for it, but ground truth only proves task completion, not list output. |
+| 7 | US-QA28 | `read_swarm_result` E2E partial | Lifecycle probe asks for it, but no `tool_attempts`/result-body assertion proves the read path. |
+| 8 | US-QA29 | `dev_tool` E2E missing | Tool management can mutate local tool scripts; live safety coverage is absent. |
+| 9 | US-QA30 | `tool_search` E2E missing | Tool retrieval/routing is untested through the live agent loop. |
+| 10 | US-QA31 | `daily_briefing` E2E missing | Read-only but highly compositional; needs live artifact/section assertions. |
+| 11 | US-QA32 | `web` E2E partial | Existing web-fetch probe verifies reply shape, not fetched bytes or durable evidence. |
 
-| # | ID | Gap | Why P0 | Adversarial? |
-|---|---|---|---|---|
-| 1 | US-QA01 | `agent_note` E2E fails: DB row missing after set (conversation_id='chat-cli') | **Real product bug in baseline** — production wiring | no (this IS the bug) |
-| 2 | US-QA02 | `execute_code` (sandbox-exec) — zero probe coverage | Largest sandbox blind spot; code execution risk | yes (malformed code) |
-| 3 | US-QA03 | `execute_shell` (sandbox-exec) — zero probe coverage | Same | yes (shell injection attempt) |
-| 4 | US-QA04 | `subagent_dispatch` (read-only but sandbox-adjacent) — zero probe coverage | Cross-agent delegation untested | yes (parent context leak) |
-| 5 | US-QA05 | `run_aurabot_swarm` (sandbox-exec, capability-gated) — zero probe coverage | Swarm spawn untested | yes (orphan child run) |
-| 6 | US-QA06 | `spawn_aurabot` (capability-gated) — zero probe coverage | Same family | yes (delegation deny case) |
-| 7 | US-QA07 | `ocr_source` (external-API mistral) — MISSING probe | High-value tool; ext API failure path untested | yes (mistral down) |
-| 8 | US-QA08 | `ingest_source` (storage-write, multi-LLM) — PARTIAL only | Composite ingest pipeline untested | yes (corrupt source) |
+## P1 Gaps
 
-### Channel × failure — 12 P0 (selected from 19 total)
+| Story ID | Gap | Rationale |
+|---|---|---|
+| US-QA33 | `source` unit PARTIAL | Source E2E is strong, but no unit test directly instantiates unified `SourceTool.Execute`. |
 
-| # | ID | Cell | Why P0 | Adversarial? |
-|---|---|---|---|---|
-| 9 | US-QA09 | (telegram, LLM rate-limited 429) — STATIC-INSUFFICIENT | User-visible 429 UX (fallback string?) — needs live probe | yes |
-| 10 | US-QA10 | (telegram, MaxElapsed 5min) — STATIC-INSUFFICIENT | Wrap-up wording: cap-acknowledge vs pretend-complete | yes |
-| 11 | US-QA11 | (telegram, MaxIterations) — PARTIAL | finalizeAnswerAfterBudget only fires when AllowNoToolFinalization on | yes |
-| 12 | US-QA12 | (telegram, empty LLM response) — MISSING | Common LLM degradation path | yes |
-| 13 | US-QA13 | (web, LLM 429) — MISSING | API client gets cryptic 503? Need to verify | yes |
-| 14 | US-QA14 | (web, empty LLM) — MISSING | Same as telegram but on /api/chat | yes |
-| 15 | US-QA15 | (telegram, qdrant outage) — MISSING | Memory tools degrade — UX? | yes |
-| 16 | US-QA16 | (telegram, embedding sidecar down) — MISSING | search_memory + tool_search both fail | yes |
-| 17 | US-QA17 | (telegram, phantom tool detection) — STATIC-INSUFFICIENT | Edit cleanup of phantom text | yes |
-| 18 | US-QA18 | (web, capability deny) — PARTIAL (unit only) | Already covered at unit level; promote to E2E | yes |
-| 19 | US-QA19 | (cron, MaxIterations / MaxElapsed) — MISSING | Silent channel must log + record run failure | yes |
-| 20 | US-QA20 | (swarm, child delegated authz failure) — MISSING | Parent must escalate vs silent fail | yes |
+## P2 Appendix
 
-**Total: 20 specs queued for Phase 3.**
+Tool P2 rows are currently covered enough for this QA run: `file`, `doc`, `wiki_page`, `task`, `search_memory`, `recall_operational`, `recall_user_memory`, `agent_note`, `execute_code`, `execute_shell`, and `spawn_aurabot`.
 
-## Deferred to next QA run (7 remaining P0)
+Channel/failure matrix: 72 cells total, 4 COVERED, 59 PARTIAL, 0 MISSING, 9 N/A. The PARTIAL set is not green in a deep sense; it means lower-level unit/probe coverage exists, while channel-specific fault injection is still missing. These are deferred because Phase 3 should first close the P0/P1 tool gaps.
 
-These are real P0 but bumped due to Phase 3 cap. Carried over to next run.
+Highest-value deferred P2 families:
 
-- (cron, LLM transient network error) — MISSING
-- (swarm, sandbox unavailable) — MISSING
-- (telegram, sandbox unavailable) — MISSING
-- (web, capability deny on api.runs / api.audit) — MISSING
-- (telegram, tool-call arg parse error) — STATIC-INSUFFICIENT
-- (web, MaxIterations finalize) — STATIC-INSUFFICIENT
-- (cron, duplicate tool call dedup) — MISSING
+- Telegram user-visible failure UX for LLM 429, empty response, phantom tool, MaxElapsed, and MaxIterations.
+- Web outage probes for Qdrant, embedding sidecar, SearXNG, Mistral OCR, MCP, and LLM hard-fail paths.
+- Cron silent-job observability for budget caps, malformed tool calls, duplicate dedup, and retry exhaustion.
+- Swarm child-run failure collection for sidecar outages, 429/transient LLM failures, phantom tool, and dedup.
 
-## Adversarial ratio check (rule 4 — ≥30%)
+## Spot Checks
 
-Of the 20 P0 specs above, **19 are adversarial** (the 1 exception is US-QA01 which IS the bug — not synthetically adversarial but a real failure to verify). Ratio = 19/20 = 95%. **Well above the 30% floor.**
+The orchestrator spot-checked representative rows against source and baseline evidence:
 
-## P1 inventory (33 total — bullet summary)
+- `daily_briefing` P0: `internal/agent/tools/registry/daily_briefing.go:83` has `Execute`; unit coverage exists in `daily_briefing_test.go`, and no `cmd/probe_chat` case references `daily_briefing`.
+- `subagent_dispatch` P0: `cmd/probe_chat/cases.go:925` defines the case; `.planning/qa/baseline-run.stderr.log` records `tool_attempts subagent_dispatch ... count=0` and `INFRA-SKIP`.
+- `run_aurabot_swarm` P0: unit Execute coverage exists in `internal/agent/tools/swarm/tools_test.go`, while `cmd/probe_chat` only covers `spawn_aurabot` lifecycle.
+- `web` P0: `cmd/probe_chat/cases.go:122` defines `web-fetch-summarize-context-engineering`; it asserts reply/tool shape, not fetched source bytes.
+- Web capability-deny channel/failure COVERED: `internal/api/chat_test.go:104` plus `cmd/probe_chat/cases.go:1112`; baseline stderr shows HTTP body and `authz_decisions` deny preview.
+- Cron capability-deny channel/failure COVERED: `internal/cron/dispatch_test.go:261` verifies a denied `cron.run` authz decision.
 
-- 5 P1 in tools (e.g., `tool_search`, `recall_user_memory` E2E missing)
-- 26 P1 in channel × failure (cron/swarm dominate — 10 MISSING each — most are operational-visibility gaps)
-- All 33 listed in `docs/qa-coverage-tools.md` and `docs/qa-coverage-channel-failure.md`
+## Deferred to Different Harness
 
-## P2 inventory (28 total)
+| Story ID | Gap | Reason |
+|---|---|---|
+| US-QA22 | `request_dashboard_token` E2E missing | `cmd/probe_chat` cannot observe the Telegram out-of-band token delivery channel; needs Telegram harness or injectable token sender. |
+| US-QA24 | `ask_user` E2E missing | Core pause/resume behavior is Telegram/resume-channel oriented; synchronous `/api/chat` probe cannot complete the user-answer roundtrip. |
+| US-QA25 | `subagent_dispatch` E2E partial | Current web probe reaches an infra-skip path with no successful `tool_attempts`; needs Telegram/AURABOT harness or direct runtime fixture. |
 
-- 9 P2 in tools (read-only tools with only-reply assertions)
-- 19 P2 in channel × failure (PARTIAL cells or low-impact N/A)
-- Appendix only; not queued for Phase 3
+## Phase 3 Queue
 
-## Spot-check evidence (rule 3 — orchestrator re-verifies auditor classifications)
+Proceed to Phase 3 test design for US-QA23, US-QA26 through US-QA33. US-QA22, US-QA24, and US-QA25 are deferred to a different harness. That leaves 9 probe-chat specs, below the Phase 3 cap of 20.
 
-Verified 3 rows from each auditor's matrix against codebase:
+Adversarial ratio target: at least 4 of 12 specs must be adversarial. Recommended adversarial specs: US-QA22 token delivery failure/sanitization, US-QA23 malicious memory proposal, US-QA24 invalid resume answer, US-QA25 missing Telegram/AURABOT context, US-QA29 unsafe dev_tool path, and US-QA32 fetch failure/blocked host.
 
-**Auditor-1 (tools)**:
-- `agent_note` PARTIAL E2E → `cmd/probe_chat/cases.go:746` does `env.DB.QueryRow(SELECT content FROM agent_notes WHERE conversation_id='chat-cli')` — that IS a ground-truth assertion. Classification revised from PARTIAL to COVERED-FAILING (case is COVERED structurally; the FAIL is the bug, not the coverage gap). ✓
-- `web` PARTIAL → `cases.go:122-149` Verify only checks `r.Reply` substrings. Confirmed PARTIAL. ✓
-- `execute_code` MISSING → grep cmd/probe_chat for "execute_code" returns no Case match. Confirmed MISSING. ✓
+## Phase 2 Verdict
 
-**Auditor-2 (channel × failure)**:
-- (swarm, capability deny) COVERED → `internal/chat/hub_swarm_test.go:170-198` (`TestHubSwarm_NoGenericGrantDenied`). Opened, confirmed authz_decisions row asserted. ✓
-- (web, capability deny) COVERED → `internal/api/chat_test.go:102-120` (`TestChatBearerMissingGrantDenied`). Opened, confirmed HTTP 403 + DB row. ✓
-- (cron, capability deny) COVERED → `internal/channels/cron/dispatcher_test.go:215-231`. Opened, confirmed `ErrUnauthorized` test. ✓
-
-All spot-checks pass.
-
-## Phase 3 architect dispatch context (for next phase)
-
-When Phase 3 fires:
-- 20 specs to design (≤ rule cap)
-- 19 adversarial / 1 bug-reproduction (≥ 30% floor satisfied)
-- Mix: 8 tool-focused + 12 channel×failure-focused
-- All have `currently_passing: false` or `STATIC-INSUFFICIENT`
-- Token-baseline: per-case elapsed_ms from baseline-run.json; for new specs (no baseline), default `NO-BASELINE — set after first green run`
-
-## Recommendation
-
-**Highest-ROI single fix to land FIRST** (before Phase 3 architect run): **US-QA01 / agent-note-roundtrip**. It's the only real product bug in the baseline. Triage with `gsd-debugger` to find the conversation_id mismatch root cause; fix; re-baseline. This unblocks all subsequent agent_note coverage and makes the baseline 19/21 = 90.5%.
-
-Phase 3 can then proceed on the remaining 19 P0 specs.
+PASS. Phase 2 stop condition is met: every P0 gap is listed with rationale and story ID, and the live baseline signal was captured before classification.
