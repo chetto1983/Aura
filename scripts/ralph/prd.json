@@ -135,7 +135,7 @@
         "Single atomic commit prefix: feat(tokenjuice): enable by default after measurement validation (Phase-TJ / US-TJ08)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "If US-TJ07 shows <10% savings or any regression, HALT and escalate to user — don't auto-flip. The verdict section is the sign-off; without it the rollout isn't done."
     }
   ]

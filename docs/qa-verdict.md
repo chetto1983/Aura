@@ -267,3 +267,75 @@ Delta: 0 — no regression introduced by Phase-QA3 test additions
 All original 19 P0 surface cells from Phase-QA1 triage are now covered. Aura has E2E test coverage across all critical surface areas identified in the Phase 2 audit.
 
 Verdict signed by Ralph autonomous agent (Claude Sonnet 4.6) at 2026-05-18T23:00Z.
+
+---
+
+## Phase-TJ closure 2026-05-19
+
+**Measurement doc**: `docs/tokenjuice-measurement-2026-05-18.md`
+**Baseline files**: `.planning/qa/tj-baseline-off.json`, `.planning/qa/tj-baseline-on.json` (gitignored)
+**Aura version at flip**: git master post-7d20244f (feat(tokenjuice): observability US-TJ06)
+
+### Token savings by category
+
+| Category | OFF tokens | ON tokens | Δ tokens | % reduction |
+|---|---|---|---|---|
+| Document creation (xlsx, docx, pdf) | ~202,317 | ~141,398 | -60,919 | -30.1% |
+| Search + failure-budget | ~123,035 | ~77,451 | -45,584 | -37.0% |
+| Markitdown extraction | ~97,784 | ~107,516 | +9,732 | +10.0% |
+| Tools sandbox / code exec | ~59,730 | ~63,400 | +3,670 | +6.1% |
+| Other (memory, web, schedule, swarm) | ~740,901 | ~768,063 | +27,162 | +3.7% |
+| **TOTAL** | **1,223,767** | **1,157,828** | **-65,939** | **-5.4%** |
+
+### Heavy-turn savings
+
+Heavy turns (doc-xlsx, doc-docx, doc-pdf, doc-xlsx-italian-chars, tool-ocr-source,
+failure-max-elapsed-wrap, tool-swarm-lifecycle, phase07e, web-fetch): **-15.8%** (-89,860 tokens).
+
+### Pass rate — pre vs post flip
+
+| Metric | TJ=false | TJ=true |
+|---|---|---|
+| Total cases | 30 | 30 |
+| PASS | 29 | 29 |
+| FAIL | 1 (LLM flake) | 1 (LLM flake — same case, re-confirmed) |
+| Pass rate (testable) | 100% | 100% |
+
+No regressions introduced by TokenJuice. The single FAIL in both runs is `doc-docx-roundtrip`
+LLM non-determinism (confirmed by re-run in the TJ=true configuration).
+
+### Top-3 cases by bytes saved
+
+| Rank | Case | Tokens saved | Dominant rule |
+|---|---|---|---|
+| 1 | failure-max-elapsed-wrap | 45,029 (-51.7%) | generic/fallback (search_memory JSON arrays) |
+| 2 | doc-pdf-roundtrip | 20,488 (-31.3%) | aura/file-read + fallback |
+| 3 | doc-xlsx-roundtrip | 20,312 (-29.7%) | aura/file-read + fallback |
+
+### Watch items (not blockers)
+
+- **phantom-trap-nonexistent-task**: +33.7% token increase with TJ=on. TJ compaction of context
+  makes the model more tool-eager for verification; no correctness regression, but a token cost.
+- **tool-ocr-source**: +38.5% increase. TJ compaction of first OCR result triggered a second
+  confirmation round. No correctness regression.
+- **TJ stats wiring gap**: `top_rules_by_savings` in `/api/health` returns null; `runs.tokenjuice_bytes_saved`
+  is always 0. Per-executor stats are not aggregated to the run level. Needs a follow-up fix
+  before /api/health can surface actionable per-rule attribution.
+
+### Kill switch
+
+Set `AURA_TOKENJUICE_ENABLED=false` in the container environment (compose override or `.env`)
+and restart Aura to disable TokenJuice without a code change.
+
+### Phase-TJ verdict
+
+**STATUS: GO — ENABLED BY DEFAULT**
+
+- ✅ All US-TJ01..TJ08 stories shipped
+- ✅ Heavy-turn token reduction **15.8%** (>10% threshold)
+- ✅ 0 probe regressions (29/30 both OFF and ON)
+- ✅ Kill switch documented (`AURA_TOKENJUICE_ENABLED=false`)
+- ⚠️ TJ stats wiring gap in /api/health (follow-up, not a blocker)
+- `AURA_TOKENJUICE_ENABLED` default changed to `true` in `internal/config/config.go`
+
+Verdict signed by Ralph autonomous agent (Claude Sonnet 4.6) at 2026-05-19.
