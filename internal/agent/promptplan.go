@@ -20,9 +20,9 @@ type AgentPromptPlan struct {
 }
 
 // ComposeAgentPrompt assembles the agent system prompt from config, runtime overlay,
-// skill manifest, and tool manifest. Channel-neutral: callers pre-render any
-// channel-specific strings before passing them in.
-func ComposeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsBlock, toolManifest string, now time.Time) AgentPromptPlan {
+// pinned operational rules, skill manifest, and tool manifest. Channel-neutral:
+// callers pre-render any channel-specific strings before passing them in.
+func ComposeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, pinnedOperational, skillsBlock, toolManifest string, now time.Time) AgentPromptPlan {
 	version := "aura-agent-v1"
 	if cfg != nil && strings.TrimSpace(cfg.PromptVersion) != "" {
 		version = strings.TrimSpace(cfg.PromptVersion)
@@ -34,6 +34,10 @@ func ComposeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, skillsB
 	if strings.TrimSpace(overlay) != "" {
 		content += "\n\n" + strings.TrimSpace(overlay)
 		modules = append(modules, "overlay")
+	}
+	if strings.TrimSpace(pinnedOperational) != "" {
+		content += "\n\n" + strings.TrimSpace(pinnedOperational)
+		modules = append(modules, "pinned-operational")
 	}
 	if strings.TrimSpace(skillsBlock) != "" {
 		content += "\n\n" + strings.TrimSpace(skillsBlock)

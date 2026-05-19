@@ -5,9 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"sync"
 	"time"
 
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -66,18 +68,19 @@ type Event struct {
 }
 
 type Invocation struct {
-	Client                  ChatClient
-	Executor                ToolExecutor
-	State                   State
-	PromptVersion           string
-	PromptHash              string
-	PromptModules           []string
-	Toolset                 string
-	ToolsetSelectReason     string
-	Tools                   []llm.ToolDefinition
-	ToolsProvider           func() []llm.ToolDefinition
-	Options                 Options
-	OnEvent                 func(Event)
+	Client              ChatClient
+	Executor            ToolExecutor
+	State               State
+	PromptVersion       string
+	PromptHash          string
+	PromptModules       []string
+	Toolset             string
+	ToolsetSelectReason string
+	Tools               []llm.ToolDefinition
+	ToolsProvider       func() []llm.ToolDefinition
+	Options             Options
+	OnEvent             func(Event)
+	PostTurn            PostTurnConfig
 	// Logger is the structured logger every Run uses. Nil falls back to
 	// slog.Default(). The runner attaches a per-invocation run_id correlation
 	// ID so multi-conversation logs can be disentangled (F-011, F-024).
@@ -87,16 +90,16 @@ type Invocation struct {
 // InvocationResult is the result of a Run call. Named InvocationResult to
 // avoid shadowing agent.Result, the background-task result type.
 type InvocationResult struct {
-	Text                    string
-	Delivered               bool
-	Stats                   Stats
-	RunID                   string
-	PromptVersion           string
-	PromptHash              string
-	PromptModules           []string
-	Toolset                 string
-	ToolsetSelectReason     string
-	ToolsExposed            []string
+	Text                string
+	Delivered           bool
+	Stats               Stats
+	RunID               string
+	PromptVersion       string
+	PromptHash          string
+	PromptModules       []string
+	Toolset             string
+	ToolsetSelectReason string
+	ToolsExposed        []string
 }
 
 func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
@@ -105,6 +108,10 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 		logger = slog.Default()
 	}
 	runID := newRunID()
+	durableRunID := identity.RunIDFromContext(ctx)
+	if durableRunID == "" {
+		durableRunID = runID
+	}
 	logger = logger.With("run_id", runID, "toolset", in.Toolset, "prompt_version", in.PromptVersion)
 	opts := in.Options
 	opts.Tools = in.Tools
@@ -157,11 +164,22 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 			ToolArgKeys: append([]string(nil), argKeys...),
 		})
 	}
+	var turnMu sync.Mutex
+	var turnToolCalls []TurnToolCall
 	previousOnToolEnd := opts.OnToolEnd
 	opts.OnToolEnd = func(callID, toolName string, success bool, elapsed time.Duration, preview string) {
 		if previousOnToolEnd != nil {
 			previousOnToolEnd(callID, toolName, success, elapsed, preview)
 		}
+		turnMu.Lock()
+		turnToolCalls = append(turnToolCalls, TurnToolCall{
+			ID:            callID,
+			Name:          toolName,
+			Success:       success,
+			Elapsed:       elapsed,
+			ResultPreview: preview,
+		})
+		turnMu.Unlock()
 		emitEvent(in, Event{
 			Type:              EventToolEnd,
 			RunID:             runID,
@@ -210,17 +228,26 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 	start := time.Now()
 	logger.Info("agent: invocation start", "tools_exposed", len(toolsExposed))
 	result, err := runLoop(ctx, in.Client, in.Executor, in.State, opts)
+	if len(in.PostTurn.Hooks) > 0 && in.PostTurn.Store != nil {
+		turn := postTurnRecordFromState(in.PostTurn.Record, in.State, durableRunID)
+		turnMu.Lock()
+		turn.ToolCalls = append(turn.ToolCalls, turnToolCalls...)
+		turnMu.Unlock()
+		postCfg := in.PostTurn
+		postCfg.Record = turn
+		FirePostTurnHooks(context.WithoutCancel(ctx), postCfg, logger)
+	}
 	out := InvocationResult{
-		Text:                    result.Text,
-		Delivered:               result.Delivered,
-		Stats:                   result.Stats,
-		RunID:                   runID,
-		PromptVersion:           in.PromptVersion,
-		PromptHash:              in.PromptHash,
-		PromptModules:           append([]string(nil), in.PromptModules...),
-		Toolset:                 in.Toolset,
-		ToolsetSelectReason:     in.ToolsetSelectReason,
-		ToolsExposed:            append([]string(nil), toolsExposed...),
+		Text:                result.Text,
+		Delivered:           result.Delivered,
+		Stats:               result.Stats,
+		RunID:               runID,
+		PromptVersion:       in.PromptVersion,
+		PromptHash:          in.PromptHash,
+		PromptModules:       append([]string(nil), in.PromptModules...),
+		Toolset:             in.Toolset,
+		ToolsetSelectReason: in.ToolsetSelectReason,
+		ToolsExposed:        append([]string(nil), toolsExposed...),
 	}
 	level := slog.LevelInfo
 	if err != nil {

@@ -23,6 +23,33 @@ const (
 	KindOperational = string(CollectionOperational)
 )
 
+const (
+	PriorityNormal   = "normal"
+	PriorityHigh     = "high"
+	PriorityCritical = "critical"
+)
+
+func NormalizePriority(value string) string {
+	priority, ok := ParsePriority(value)
+	if !ok {
+		return PriorityNormal
+	}
+	return priority
+}
+
+func ParsePriority(value string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "", PriorityNormal:
+		return PriorityNormal, true
+	case PriorityHigh:
+		return PriorityHigh, true
+	case PriorityCritical:
+		return PriorityCritical, true
+	default:
+		return "", false
+	}
+}
+
 // defaultSearchLimit caps memory-search results when the caller's Filter.Limit
 // is zero. Aligned with config.DefaultToolSearchTopK (20) per Phase-F: cap
 // LATENCY and COST, not CAPABILITY. The wiki/archive search is the core of
@@ -50,6 +77,9 @@ type Document struct {
 	ConversationID   int64
 	ProposalID       int64
 	Status           string
+	Priority         string
+	LastRecalledAt   time.Time
+	RecallCount      int
 	Entities         []string
 	Tags             []string
 	UpdatedAt        time.Time
@@ -196,6 +226,7 @@ func (s *Store) Upsert(ctx context.Context, doc Document) error {
 	if doc.Handle == "" {
 		doc.Handle = doc.ID
 	}
+	doc.Priority = NormalizePriority(doc.Priority)
 	if doc.UpdatedAt.IsZero() {
 		doc.UpdatedAt = s.now()
 	}
@@ -224,8 +255,8 @@ func (s *Store) Upsert(ctx context.Context, doc Document) error {
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT OR REPLACE INTO compact_memory_documents
-  (id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  (id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, priority, last_recalled_at, recall_count, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `,
 		doc.ID,
 		doc.Kind,
@@ -241,6 +272,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		doc.ConversationID,
 		doc.ProposalID,
 		doc.Status,
+		doc.Priority,
+		nullableTimeString(doc.LastRecalledAt),
+		doc.RecallCount,
 		entitiesJSON,
 		tagsJSON,
 		updatedAt,
@@ -315,6 +349,7 @@ func (s *Store) ReplaceKind(ctx context.Context, kind string, docs []Document) e
 		if doc.Handle == "" {
 			doc.Handle = doc.ID
 		}
+		doc.Priority = NormalizePriority(doc.Priority)
 		if doc.UpdatedAt.IsZero() {
 			doc.UpdatedAt = s.now()
 		}
@@ -323,11 +358,11 @@ func (s *Store) ReplaceKind(ctx context.Context, kind string, docs []Document) e
 		updatedAt := doc.UpdatedAt.UTC().Format(time.RFC3339Nano)
 		if _, err := tx.ExecContext(ctx, `
 INSERT INTO compact_memory_documents
-  (id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  (id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, priority, last_recalled_at, recall_count, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `,
 			doc.ID, doc.Kind, doc.Title, doc.Body, doc.Handle, doc.SourceID, doc.Page, doc.ChunkIndex, doc.ByteStart, doc.ByteEnd,
-			doc.ChatID, doc.ConversationID, doc.ProposalID, doc.Status, entitiesJSON, tagsJSON, updatedAt,
+			doc.ChatID, doc.ConversationID, doc.ProposalID, doc.Status, doc.Priority, nullableTimeString(doc.LastRecalledAt), doc.RecallCount, entitiesJSON, tagsJSON, updatedAt,
 			doc.ContentHash, doc.EmbeddingModelID, doc.IndexBuildID,
 		); err != nil {
 			return fmt.Errorf("memoryindex: insert document %s: %w", doc.ID, err)
@@ -516,6 +551,17 @@ func (s *Store) PurgeSource(ctx context.Context, sourceID string) error {
 	return s.deleteWhere(ctx, `kind = ? AND source_id = ?`, KindSource, sourceID)
 }
 
+// DeleteDocument removes a single compact-memory document and its projection
+// rows. Used by post-turn reconciliation when a candidate is judged duplicate
+// or stale.
+func (s *Store) DeleteDocument(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil
+	}
+	return s.deleteWhere(ctx, `id = ?`, id)
+}
+
 func (s *Store) deleteWhere(ctx context.Context, where string, args ...any) error {
 	if s == nil || s.db == nil {
 		return fmt.Errorf("memoryindex: store unavailable")
@@ -590,7 +636,7 @@ func (s *Store) SyncVector(ctx context.Context) (VectorReport, error) {
 
 func (s *Store) allDocuments(ctx context.Context) ([]Document, error) {
 	rows, err := s.db.QueryContext(ctx, `
-SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chunk_index, d.byte_start, d.byte_end, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chunk_index, d.byte_start, d.byte_end, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.priority, d.last_recalled_at, d.recall_count, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id
 FROM compact_memory_documents d
 ORDER BY d.kind, d.updated_at DESC, d.id
 `)
@@ -612,7 +658,7 @@ func (s *Store) FetchRecentOperational(ctx context.Context, limit int) ([]Docume
 		limit = 10
 	}
 	rows, err := s.db.QueryContext(ctx, `
-SELECT id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id
+SELECT id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, priority, last_recalled_at, recall_count, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id
 FROM compact_memory_documents
 WHERE kind = ?
 ORDER BY updated_at DESC
@@ -623,6 +669,174 @@ LIMIT ?
 	}
 	defer rows.Close()
 	return scanDocuments(rows, 1)
+}
+
+// FetchPinnedOperational returns Critical and High operational lessons in prompt
+// priority order. Normal lessons are intentionally excluded: they remain
+// available through recall/search instead of being pinned every turn.
+func (s *Store) FetchPinnedOperational(ctx context.Context, limit int) ([]Document, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("memoryindex: store unavailable")
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, priority, last_recalled_at, recall_count, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id
+FROM compact_memory_documents
+WHERE kind = ?
+  AND priority IN (?, ?)
+  AND status <> 'quarantine'
+ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 ELSE 2 END,
+         updated_at DESC,
+         id ASC
+LIMIT ?
+`, KindOperational, PriorityCritical, PriorityHigh, limit)
+	if err != nil {
+		return nil, fmt.Errorf("memoryindex: fetch pinned operational: %w", err)
+	}
+	defer rows.Close()
+	return scanDocuments(rows, 1)
+}
+
+// FetchOperationalForJudge returns active operational lessons considered by
+// the post-turn ADD/UPDATE/DELETE judge. Rows are newest-first and capped so
+// the judge prompt stays bounded.
+func (s *Store) FetchOperationalForJudge(ctx context.Context, limit int) ([]Document, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("memoryindex: store unavailable")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, kind, title, body, handle, source_id, page, chunk_index, byte_start, byte_end, chat_id, conversation_id, proposal_id, status, priority, last_recalled_at, recall_count, entities_json, tags_json, updated_at, content_hash, embedding_model_id, index_build_id
+FROM compact_memory_documents
+WHERE kind = ?
+  AND status = 'active'
+ORDER BY updated_at DESC, id ASC
+LIMIT ?
+`, KindOperational, limit)
+	if err != nil {
+		return nil, fmt.Errorf("memoryindex: fetch operational judge candidates: %w", err)
+	}
+	defer rows.Close()
+	return scanDocuments(rows, 1)
+}
+
+// MarkOperationalRecalled records that operational lessons were shown to the
+// model. It increments recall_count and sets last_recalled_at for active rows.
+func (s *Store) MarkOperationalRecalled(ctx context.Context, ids []string, recalledAt time.Time) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("memoryindex: store unavailable")
+	}
+	cleaned := uniqueTrimmed(ids)
+	if len(cleaned) == 0 {
+		return nil
+	}
+	if recalledAt.IsZero() {
+		recalledAt = s.now()
+	}
+	stamp := recalledAt.UTC().Format(time.RFC3339Nano)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("memoryindex: begin mark recalled: %w", err)
+	}
+	defer tx.Rollback()
+	for _, id := range cleaned {
+		if _, err := tx.ExecContext(ctx, `
+UPDATE compact_memory_documents
+SET recall_count = recall_count + 1,
+    last_recalled_at = ?
+WHERE id = ?
+  AND kind = ?
+  AND status = 'active'
+`, stamp, id, KindOperational); err != nil {
+			return fmt.Errorf("memoryindex: mark recalled %s: %w", id, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("memoryindex: commit mark recalled: %w", err)
+	}
+	return nil
+}
+
+type OperationalDecaySummary struct {
+	Scanned int
+	Deleted int
+	Kept    int
+}
+
+// DecayOperationalLessons deletes stale Normal-priority operational lessons.
+// Critical and High rows are excluded regardless of recall age.
+func (s *Store) DecayOperationalLessons(ctx context.Context, now time.Time, unrecalledTTL, updatedGrace time.Duration) (OperationalDecaySummary, error) {
+	if s == nil || s.db == nil {
+		return OperationalDecaySummary{}, fmt.Errorf("memoryindex: store unavailable")
+	}
+	if now.IsZero() {
+		now = s.now()
+	}
+	if unrecalledTTL <= 0 {
+		unrecalledTTL = 30 * 24 * time.Hour
+	}
+	if updatedGrace <= 0 {
+		updatedGrace = 7 * 24 * time.Hour
+	}
+	rows, err := s.db.QueryContext(ctx, `
+SELECT id, updated_at, last_recalled_at, recall_count
+FROM compact_memory_documents
+WHERE kind = ?
+  AND status = 'active'
+  AND priority = ?
+`, KindOperational, PriorityNormal)
+	if err != nil {
+		return OperationalDecaySummary{}, fmt.Errorf("memoryindex: list decay candidates: %w", err)
+	}
+	type candidate struct {
+		id             string
+		updatedAt      time.Time
+		lastRecalledAt time.Time
+		recallCount    int
+	}
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		var updatedAt string
+		var lastRecalledAt sql.NullString
+		if err := rows.Scan(&c.id, &updatedAt, &lastRecalledAt, &c.recallCount); err != nil {
+			rows.Close()
+			return OperationalDecaySummary{}, fmt.Errorf("memoryindex: scan decay candidate: %w", err)
+		}
+		c.updatedAt = parseRFC3339OrZero(updatedAt)
+		if lastRecalledAt.Valid {
+			c.lastRecalledAt = parseRFC3339OrZero(lastRecalledAt.String)
+		}
+		candidates = append(candidates, c)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return OperationalDecaySummary{}, fmt.Errorf("memoryindex: iterate decay candidates: %w", err)
+	}
+	rows.Close()
+
+	summary := OperationalDecaySummary{Scanned: len(candidates)}
+	updateCutoff := now.UTC().Add(-updatedGrace)
+	recallCutoff := now.UTC().Add(-unrecalledTTL)
+	for _, c := range candidates {
+		if c.updatedAt.IsZero() || c.updatedAt.After(updateCutoff) {
+			summary.Kept++
+			continue
+		}
+		if c.recallCount > 0 && !c.lastRecalledAt.IsZero() && c.lastRecalledAt.After(recallCutoff) {
+			summary.Kept++
+			continue
+		}
+		if err := s.DeleteDocument(ctx, c.id); err != nil {
+			return summary, fmt.Errorf("memoryindex: decay delete %s: %w", c.id, err)
+		}
+		summary.Deleted++
+	}
+	return summary, nil
 }
 
 func (s *Store) exactSearch(ctx context.Context, query string, filter Filter, limit int) ([]Document, error) {
@@ -640,7 +854,7 @@ func (s *Store) exactSearch(ctx context.Context, query string, filter Filter, li
 	args = append(args, filterArgs...)
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chunk_index, d.byte_start, d.byte_end, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chunk_index, d.byte_start, d.byte_end, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.priority, d.last_recalled_at, d.recall_count, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id
 FROM compact_memory_documents d
 WHERE (`+strings.Join(clauses, " OR ")+`)`+where+`
 ORDER BY length(d.id), d.id
@@ -662,7 +876,7 @@ func (s *Store) ftsSearch(ctx context.Context, query string, filter Filter, limi
 	args = append([]any{safeQuery}, args...)
 	args = append(args, limit)
 	rows, err := s.db.QueryContext(ctx, `
-SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chunk_index, d.byte_start, d.byte_end, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id, f.rank
+SELECT d.id, d.kind, d.title, d.body, d.handle, d.source_id, d.page, d.chunk_index, d.byte_start, d.byte_end, d.chat_id, d.conversation_id, d.proposal_id, d.status, d.priority, d.last_recalled_at, d.recall_count, d.entities_json, d.tags_json, d.updated_at, d.content_hash, d.embedding_model_id, d.index_build_id, f.rank
 FROM compact_memory_fts f
 JOIN compact_memory_documents d ON d.id = f.id
 WHERE compact_memory_fts MATCH ?`+where+`
@@ -707,22 +921,29 @@ func scanDocuments(rows *sql.Rows, fixedScore float64) ([]Document, error) {
 	for rows.Next() {
 		var doc Document
 		var entitiesJSON, tagsJSON, updatedAt string
+		var lastRecalledAt sql.NullString
 		if fixedScore > 0 {
-			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChunkIndex, &doc.ByteStart, &doc.ByteEnd, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt, &doc.ContentHash, &doc.EmbeddingModelID, &doc.IndexBuildID); err != nil {
+			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChunkIndex, &doc.ByteStart, &doc.ByteEnd, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &doc.Priority, &lastRecalledAt, &doc.RecallCount, &entitiesJSON, &tagsJSON, &updatedAt, &doc.ContentHash, &doc.EmbeddingModelID, &doc.IndexBuildID); err != nil {
 				return nil, err
 			}
 			doc.Score = fixedScore
 		} else {
 			var rank float64
-			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChunkIndex, &doc.ByteStart, &doc.ByteEnd, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &entitiesJSON, &tagsJSON, &updatedAt, &doc.ContentHash, &doc.EmbeddingModelID, &doc.IndexBuildID, &rank); err != nil {
+			if err := rows.Scan(&doc.ID, &doc.Kind, &doc.Title, &doc.Body, &doc.Handle, &doc.SourceID, &doc.Page, &doc.ChunkIndex, &doc.ByteStart, &doc.ByteEnd, &doc.ChatID, &doc.ConversationID, &doc.ProposalID, &doc.Status, &doc.Priority, &lastRecalledAt, &doc.RecallCount, &entitiesJSON, &tagsJSON, &updatedAt, &doc.ContentHash, &doc.EmbeddingModelID, &doc.IndexBuildID, &rank); err != nil {
 				return nil, err
 			}
 			doc.Score = 0.35 + cappedRatio(-rank, 12)*0.50
 		}
+		doc.Priority = NormalizePriority(doc.Priority)
 		doc.Entities = parseStringList(entitiesJSON)
 		doc.Tags = parseStringList(tagsJSON)
 		if ts, err := time.Parse(time.RFC3339Nano, updatedAt); err == nil {
 			doc.UpdatedAt = ts
+		}
+		if lastRecalledAt.Valid && strings.TrimSpace(lastRecalledAt.String) != "" {
+			if ts, err := time.Parse(time.RFC3339Nano, lastRecalledAt.String); err == nil {
+				doc.LastRecalledAt = ts
+			}
 		}
 		out = append(out, doc)
 	}
@@ -865,11 +1086,43 @@ func parseStringList(raw string) []string {
 	return uniqueNonEmpty(values)
 }
 
+func nullableTimeString(value time.Time) any {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339Nano)
+}
+
+func parseRFC3339OrZero(value string) time.Time {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return time.Time{}
+	}
+	if ts, err := time.Parse(time.RFC3339Nano, value); err == nil {
+		return ts
+	}
+	return time.Time{}
+}
+
 func uniqueNonEmpty(values []string) []string {
 	out := make([]string, 0, len(values))
 	seen := map[string]bool{}
 	for _, value := range values {
 		value = strings.ToLower(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func uniqueTrimmed(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
 		if value == "" || seen[value] {
 			continue
 		}

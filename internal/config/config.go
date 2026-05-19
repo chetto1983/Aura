@@ -30,6 +30,8 @@ const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
 const DefaultToolSearchBackend = "hybrid"
 const DefaultToolSearchTopK = 20
+const DefaultOP07NFailThreshold = 2
+const DefaultOP07RecentTurns = 10
 
 // Per-user gate configuration defaults (Phase 1 / CONC-01).
 const DefaultInboxSize = 8
@@ -49,31 +51,31 @@ type Config struct {
 	// MaxContextTokens is the LLM OUTPUT cap (passed as llm.Request.MaxTokens).
 	// The env var name is historical; see docs/aura-main-loop-limits-audit.md
 	// §3.1 for the misname analysis. Rename deferred to a future cleanup story.
-	MaxContextTokens      int     `envconfig:"MAX_CONTEXT_TOKENS" default:"16000"`
-	MaxHistoryMessages    int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
-	SoftBudget            float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
-	HardBudget            float64 `envconfig:"HARD_BUDGET" default:"20.0"`
-	CostInputPerMTokens   float64 `envconfig:"COST_INPUT_PER_M_TOKENS" default:"0.20"`
-	CostOutputPerMTokens  float64 `envconfig:"COST_OUTPUT_PER_M_TOKENS" default:"0.80"`
-	LogLevel              string  `envconfig:"LOG_LEVEL" default:"info"`
-	LogDir                string  `envconfig:"LOG_DIR" default:"./logs"`
-	LLMAPIKey             string  `envconfig:"LLM_API_KEY"`
-	LLMBaseURL            string  `envconfig:"LLM_BASE_URL"`
-	LLMModel              string  `envconfig:"LLM_MODEL"`
-	LLMMaxRetries         int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
-	WebSearchProvider     string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
-	SearXNGBaseURL        string  `envconfig:"SEARXNG_BASE_URL"`
-	MarkitdownURL         string  `envconfig:"MARKITDOWN_URL"`
-	MarkitdownTimeoutSec  int     `envconfig:"MARKITDOWN_TIMEOUT_SEC" default:"120"`
-	GarageS3Endpoint      string  `envconfig:"GARAGE_S3_ENDPOINT"`
-	GarageS3Region        string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
-	GarageS3Bucket        string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
-	GarageS3AccessKey     string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
-	GarageS3SecretKey     string  `envconfig:"GARAGE_S3_SECRET_KEY"`
-	QdrantURL             string  `envconfig:"QDRANT_URL"`
-	QdrantCollection      string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
-	QdrantAPIKey          string  `envconfig:"QDRANT_API_KEY"`
-	MemorySearchTimeoutMS         int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
+	MaxContextTokens               int     `envconfig:"MAX_CONTEXT_TOKENS" default:"16000"`
+	MaxHistoryMessages             int     `envconfig:"MAX_HISTORY_MESSAGES" default:"50"`
+	SoftBudget                     float64 `envconfig:"SOFT_BUDGET" default:"10.0"`
+	HardBudget                     float64 `envconfig:"HARD_BUDGET" default:"20.0"`
+	CostInputPerMTokens            float64 `envconfig:"COST_INPUT_PER_M_TOKENS" default:"0.20"`
+	CostOutputPerMTokens           float64 `envconfig:"COST_OUTPUT_PER_M_TOKENS" default:"0.80"`
+	LogLevel                       string  `envconfig:"LOG_LEVEL" default:"info"`
+	LogDir                         string  `envconfig:"LOG_DIR" default:"./logs"`
+	LLMAPIKey                      string  `envconfig:"LLM_API_KEY"`
+	LLMBaseURL                     string  `envconfig:"LLM_BASE_URL"`
+	LLMModel                       string  `envconfig:"LLM_MODEL"`
+	LLMMaxRetries                  int     `envconfig:"LLM_MAX_RETRIES" default:"5"`
+	WebSearchProvider              string  `envconfig:"WEB_SEARCH_PROVIDER" default:"disabled"`
+	SearXNGBaseURL                 string  `envconfig:"SEARXNG_BASE_URL"`
+	MarkitdownURL                  string  `envconfig:"MARKITDOWN_URL"`
+	MarkitdownTimeoutSec           int     `envconfig:"MARKITDOWN_TIMEOUT_SEC" default:"120"`
+	GarageS3Endpoint               string  `envconfig:"GARAGE_S3_ENDPOINT"`
+	GarageS3Region                 string  `envconfig:"GARAGE_S3_REGION" default:"garage"`
+	GarageS3Bucket                 string  `envconfig:"GARAGE_S3_BUCKET" default:"aura-artifacts"`
+	GarageS3AccessKey              string  `envconfig:"GARAGE_S3_ACCESS_KEY"`
+	GarageS3SecretKey              string  `envconfig:"GARAGE_S3_SECRET_KEY"`
+	QdrantURL                      string  `envconfig:"QDRANT_URL"`
+	QdrantCollection               string  `envconfig:"QDRANT_COLLECTION" default:"aura_memory_v1"`
+	QdrantAPIKey                   string  `envconfig:"QDRANT_API_KEY"`
+	MemorySearchTimeoutMS          int     `envconfig:"MEMORY_SEARCH_TIMEOUT_MS" default:"5000"`
 	MemorySearchStaleThresholdSecs int     `envconfig:"MEMORY_SEARCH_STALE_THRESHOLD_SECS" default:"3600"`
 	// Phase 02 governance knobs. Defaults match the constants we shipped in
 	// agent loop governance and tools/memory_search.go. Operators can
@@ -123,13 +125,19 @@ type Config struct {
 	// field" — matches default OpenAI gpt-4o, vanilla fakes, etc.
 	// DeepSeek V4 Flash via OpenRouter accepts "high" or "xhigh"; OpenAI
 	// gpt-5/o-series accepts the full set per model.
-	ReasoningEffort      string `envconfig:"AURA_REASONING_EFFORT" default:""`
-	TerminalToolPolicy   string `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
-	DelegationMode       string `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
-	TraceRetentionDays   int    `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
-	WorkspaceTools       string `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
-	WorkspaceRoot        string `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
-	RuntimeWorkspacePath string `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
+	ReasoningEffort             string `envconfig:"AURA_REASONING_EFFORT" default:""`
+	TerminalToolPolicy          string `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
+	DelegationMode              string `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
+	TraceRetentionDays          int    `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
+	WorkspaceTools              string `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
+	WorkspaceRoot               string `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
+	RuntimeWorkspacePath        string `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
+	OP07HeuristicEnabled        bool   `envconfig:"AURA_OP07_HEURISTIC_ENABLED" default:"false"`
+	OP07NFailThreshold          int    `envconfig:"AURA_OP07_NFAIL_THRESHOLD" default:"2"`
+	OP07RecentTurns             int    `envconfig:"AURA_OP07_RECENT_TURNS" default:"10"`
+	MemoryJudgeEnabled          bool   `envconfig:"AURA_MEMORY_JUDGE_ENABLED" default:"false"`
+	OP12PrecallValidatorEnabled bool   `envconfig:"AURA_OP12_PRECALL_VALIDATOR_ENABLED" default:"false"`
+	OP12RetryHintEnabled        bool   `envconfig:"AURA_OP12B_RETRY_HINT_ENABLED" default:"false"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
@@ -286,6 +294,12 @@ func Load() (*Config, error) {
 	if cfg.RuntimeWorkspacePath == "" {
 		cfg.RuntimeWorkspacePath = DefaultRuntimeWorkspacePath
 	}
+	cfg.OP07HeuristicEnabled = getEnvBool("AURA_OP07_HEURISTIC_ENABLED", false)
+	cfg.OP07NFailThreshold = normalizeIntRange(getEnvInt("AURA_OP07_NFAIL_THRESHOLD", DefaultOP07NFailThreshold), 1, 20, DefaultOP07NFailThreshold)
+	cfg.OP07RecentTurns = normalizeIntRange(getEnvInt("AURA_OP07_RECENT_TURNS", DefaultOP07RecentTurns), 1, 100, DefaultOP07RecentTurns)
+	cfg.MemoryJudgeEnabled = getEnvBool("AURA_MEMORY_JUDGE_ENABLED", false)
+	cfg.OP12PrecallValidatorEnabled = getEnvBool("AURA_OP12_PRECALL_VALIDATOR_ENABLED", false)
+	cfg.OP12RetryHintEnabled = getEnvBool("AURA_OP12B_RETRY_HINT_ENABLED", false)
 
 	cfg.MistralAPIKey = getSecretEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")

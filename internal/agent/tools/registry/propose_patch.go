@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,6 +30,10 @@ type patchProposalInserter interface {
 	Insert(ctx context.Context, row patchProposalRow) (bool, error)
 }
 
+type runOriginReader interface {
+	RunOrigin(ctx context.Context, runID string) (string, bool, error)
+}
+
 // patchProposalRow holds the fields written to proposed_updates.
 type patchProposalRow struct {
 	Kind          string // 'wiki' | 'user_memory' | 'operational_memory'
@@ -39,6 +44,7 @@ type patchProposalRow struct {
 	SignatureHash string // sha256(action+fields)[:16] for idempotency
 	SourceRunID   string // identity.RunIDFromContext
 	ActorID       string // identity.ActorIDFromContext
+	Status        string // defaults to 'pending'; quarantine rows set 'quarantine'
 }
 
 // ProposePatchTool lets the LLM submit structured patch proposals. Operational
@@ -47,8 +53,9 @@ type patchProposalRow struct {
 //
 // This is the only mutation-adjacent tool available to write_proposal subagents.
 type ProposePatchTool struct {
-	store    patchProposalInserter
-	opWriter operationalLessonWriter // non-nil → operational auto-accept (no review)
+	store        patchProposalInserter
+	opWriter     operationalLessonWriter // non-nil -> operational auto-accept (no review)
+	originReader runOriginReader
 }
 
 // NewProposePatchTool returns a ProposePatchTool backed by store.
@@ -57,7 +64,11 @@ func NewProposePatchTool(store patchProposalInserter) *ProposePatchTool {
 	if store == nil {
 		return nil
 	}
-	return &ProposePatchTool{store: store}
+	tool := &ProposePatchTool{store: store}
+	if reader, ok := store.(runOriginReader); ok {
+		tool.originReader = reader
+	}
+	return tool
 }
 
 // SetOperationalWriter injects a compact-memory writer so action=operational
@@ -69,10 +80,16 @@ func (t *ProposePatchTool) SetOperationalWriter(w operationalLessonWriter) {
 	}
 }
 
+func (t *ProposePatchTool) SetRunOriginReader(reader runOriginReader) {
+	if t != nil {
+		t.originReader = reader
+	}
+}
+
 func (t *ProposePatchTool) Name() string { return "propose_patch" }
 
 func (t *ProposePatchTool) Description() string {
-	return `Submit a structured patch proposal. action=operational auto-accepts into operational memory immediately (no review). action=wiki and action=user_memory land in the /proposals review queue pending operator approval.
+	return `Submit a structured patch proposal. action=operational auto-accepts into operational memory only when provenance and content-safety gates pass; suspicious content is quarantined for operator review. action=wiki and action=user_memory land in the /proposals review queue pending operator approval.
 
 REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
   • action="wiki":         target_slug, body, change_summary
@@ -125,6 +142,11 @@ func (t *ProposePatchTool) Parameters() map[string]any {
 			"lesson": map[string]any{
 				"type":        "string",
 				"description": "Lesson text describing the operational finding (action=operational only).",
+			},
+			"priority": map[string]any{
+				"type":        "string",
+				"enum":        []string{memoryindex.PriorityNormal, memoryindex.PriorityHigh, memoryindex.PriorityCritical},
+				"description": "Operational lesson priority. Defaults to normal. High/Critical lessons are pinned in the system prompt after review/security gates.",
 			},
 			"change_summary": map[string]any{
 				"type":        "string",
@@ -235,7 +257,46 @@ func (t *ProposePatchTool) executeOperational(ctx context.Context, args map[stri
 	if lesson == "" {
 		return "", fmt.Errorf("propose_patch operational: lesson is required: %w", llm.ErrSchemaValidation)
 	}
+	priority, ok := memoryindex.ParsePriority(stringArg(args, "priority"))
+	if !ok {
+		return "", fmt.Errorf("propose_patch operational: priority must be one of normal, high, critical: %w", llm.ErrSchemaValidation)
+	}
 	sig := proposePatchHash("operational", toolName, errorClass, lesson)
+	sourceRunID := identity.RunIDFromContext(ctx)
+
+	allowed, reason, err := t.operationalProvenanceAllowed(ctx, sourceRunID)
+	if err != nil {
+		return "", fmt.Errorf("propose_patch operational: %w", err)
+	}
+	if !allowed {
+		return proposePatchDecisionJSON(false, "provenance: "+reason), nil
+	}
+
+	contentDecision := inspectOperationalLessonContent(lesson, stringArg(args, "change_summary"))
+	if contentDecision.Action == operationalContentHardReject {
+		return proposePatchDecisionJSON(false, "content: "+contentDecision.Reason), nil
+	}
+	if contentDecision.Action == operationalContentQuarantine {
+		row := patchProposalRow{
+			Kind:          "operational_memory",
+			Fact:          lesson,
+			Action:        "new",
+			TargetSlug:    toolName,
+			Category:      errorClass,
+			SignatureHash: sig,
+			SourceRunID:   sourceRunID,
+			ActorID:       identity.ActorIDFromContext(ctx),
+			Status:        "quarantine",
+		}
+		created, err := t.store.Insert(ctx, row)
+		if err != nil {
+			return "", fmt.Errorf("propose_patch operational: quarantine: %w", err)
+		}
+		if !created {
+			return proposePatchDecisionJSON(false, "content: already quarantined"), nil
+		}
+		return proposePatchDecisionJSON(false, "content: quarantined: "+contentDecision.Reason), nil
+	}
 
 	// Auto-accept path: write directly to compact_memory_documents when a writer
 	// is wired. Skips the review queue so Aura can recall lessons immediately.
@@ -247,6 +308,7 @@ func (t *ProposePatchTool) executeOperational(ctx context.Context, args map[stri
 			Body:      lesson,
 			Handle:    "operational:" + sig,
 			Status:    "active",
+			Priority:  priority,
 			UpdatedAt: time.Now().UTC(),
 		}
 		if err := t.opWriter.Upsert(ctx, doc); err != nil {
@@ -263,7 +325,7 @@ func (t *ProposePatchTool) executeOperational(ctx context.Context, args map[stri
 		TargetSlug:    toolName,
 		Category:      errorClass,
 		SignatureHash: sig,
-		SourceRunID:   identity.RunIDFromContext(ctx),
+		SourceRunID:   sourceRunID,
 		ActorID:       identity.ActorIDFromContext(ctx),
 	}
 	created, err := t.store.Insert(ctx, row)
@@ -283,6 +345,43 @@ func proposePatchHash(action string, fields ...string) string {
 	parts = append(parts, fields...)
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return fmt.Sprintf("%x", sum[:])[:16]
+}
+
+func (t *ProposePatchTool) operationalProvenanceAllowed(ctx context.Context, runID string) (bool, string, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return false, "missing run_id", nil
+	}
+	if t.originReader == nil {
+		return false, "run_origin reader unavailable", nil
+	}
+	origin, ok, err := t.originReader.RunOrigin(ctx, runID)
+	if err != nil {
+		return false, "", err
+	}
+	if !ok {
+		return false, "run_origin missing for run_id " + runID, nil
+	}
+	origin = strings.TrimSpace(origin)
+	if origin == "user" {
+		return true, "", nil
+	}
+	if origin == "" {
+		origin = "unknown"
+	}
+	return false, "run_origin=" + origin, nil
+}
+
+func proposePatchDecisionJSON(accepted bool, reason string) string {
+	payload := map[string]any{"accepted": accepted}
+	if reason != "" {
+		payload["reason"] = reason
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Sprintf(`{"accepted":%t}`, accepted)
+	}
+	return string(encoded)
 }
 
 // SQLPatchProposalStore is the production patchProposalInserter backed by SQLite.
@@ -311,18 +410,41 @@ func (s *SQLPatchProposalStore) Insert(ctx context.Context, row patchProposalRow
 		return false, nil
 	}
 	provenanceJSON := fmt.Sprintf(`{"source_run_id":%q}`, row.SourceRunID)
+	status := strings.TrimSpace(row.Status)
+	if status == "" {
+		status = "pending"
+	}
 	now := time.Now().UTC().Format("2006-01-02 15:04:05")
 	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO proposed_updates
 		  (chat_id, fact, action, target_slug, similarity,
 		   source_turn_ids, category, related_slugs, provenance_json,
 		   status, kind, signature_hash, actor_id, created_at)
-		VALUES (0, ?, ?, ?, 1.0, '[]', ?, '[]', ?, 'pending', ?, ?, ?, ?)`,
+		VALUES (0, ?, ?, ?, 1.0, '[]', ?, '[]', ?, ?, ?, ?, ?, ?)`,
 		row.Fact, row.Action, row.TargetSlug, row.Category, provenanceJSON,
-		row.Kind, row.SignatureHash, row.ActorID, now,
+		status, row.Kind, row.SignatureHash, row.ActorID, now,
 	)
 	if err != nil {
 		return false, fmt.Errorf("patchProposalStore: insert: %w", err)
 	}
 	return true, nil
+}
+
+func (s *SQLPatchProposalStore) RunOrigin(ctx context.Context, runID string) (string, bool, error) {
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return "", false, nil
+	}
+	var origin string
+	err := s.db.QueryRowContext(ctx,
+		`SELECT run_origin FROM run_events WHERE run_id = ? ORDER BY seq ASC LIMIT 1`,
+		runID,
+	).Scan(&origin)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("patchProposalStore: run origin: %w", err)
+	}
+	return origin, true, nil
 }

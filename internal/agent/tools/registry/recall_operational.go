@@ -29,6 +29,10 @@ type RecallOperationalTool struct {
 	now            func() time.Time
 }
 
+type operationalRecallMarker interface {
+	MarkOperationalRecalled(ctx context.Context, ids []string, recalledAt time.Time) error
+}
+
 // NewRecallOperationalTool returns a recall_operational tool backed by the
 // given compact store. Returns nil when compact is nil.
 func NewRecallOperationalTool(compact compactMemorySearcher) *RecallOperationalTool {
@@ -156,6 +160,15 @@ func (t *RecallOperationalTool) Execute(ctx context.Context, args map[string]any
 
 	if len(filtered) == 0 {
 		return "no operational lessons yet", nil
+	}
+	if marker, ok := t.compact.(operationalRecallMarker); ok {
+		ids := make([]string, 0, len(filtered))
+		for _, doc := range filtered {
+			ids = append(ids, doc.ID)
+		}
+		if err := marker.MarkOperationalRecalled(searchCtx, ids, t.now().UTC()); err != nil {
+			return "", fmt.Errorf("recall_operational: mark recalled: %w", err)
+		}
 	}
 
 	return formatOperationalResults(filtered, degradedRead, t.now()), nil

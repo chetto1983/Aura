@@ -286,6 +286,24 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 		return "", err
 	}
 
+	if op12PrecallValidatorEnabled() {
+		schema := definitionForTool(t).Parameters
+		args = CoerceParams(args, schema)
+		validation := ValidateBeforeCall(name, args, schema)
+		if !validation.Valid {
+			if r.logger != nil {
+				r.logger.Warn(
+					"tool validation failed",
+					"tool", name,
+					"missing", validation.Missing,
+					"invalid_type_count", len(validation.InvalidType),
+					"invalid_enum_count", len(validation.InvalidEnum),
+				)
+			}
+			return "", &ValidationError{Tool: name, Result: validation}
+		}
+	}
+
 	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, defaultToolExecTimeout)

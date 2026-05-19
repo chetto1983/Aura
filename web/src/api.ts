@@ -325,6 +325,12 @@ export const api = {
     post<SummaryBatchResponse>(`/summaries/batch/approve`, { ids }),
   rejectSummaries: (ids: number[]) =>
     post<SummaryBatchResponse>(`/summaries/batch/reject`, { ids }),
+  quarantine: () =>
+    get<ProposedUpdate[]>('/quarantine'),
+  approveQuarantine: (id: number) =>
+    post<ProposedUpdate>(`/quarantine/${id}/approve`),
+  deleteQuarantine: (id: number) =>
+    post<{ ok: boolean; id: number }>(`/quarantine/${id}/delete`),
 
   // ---- maintenance issue queue (slice 12l) ----
   maintenanceIssues: (status?: string, severity?: string) =>

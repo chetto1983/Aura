@@ -66,6 +66,52 @@ func TestFormatFatalToolErrorReturnsPlainText(t *testing.T) {
 	}
 }
 
+func TestFormatToolErrorRetryHintEnabled(t *testing.T) {
+	t.Setenv("AURA_OP12B_RETRY_HINT_ENABLED", "true")
+
+	got := FormatToolError(errors.New("backend unavailable"))
+	if !strings.HasSuffix(got, retryHintSuffix) {
+		t.Fatalf("expected retry hint suffix, got %q", got)
+	}
+}
+
+func TestFormatToolErrorRetryHintOnValidationError(t *testing.T) {
+	t.Setenv("AURA_OP12B_RETRY_HINT_ENABLED", "true")
+
+	got := FormatToolError(&ValidationError{
+		Tool: "fake",
+		Result: ValidationResult{
+			Valid:       false,
+			Missing:     []string{"query"},
+			InvalidType: []TypeMismatch{},
+			InvalidEnum: []EnumMismatch{},
+			Hint:        "provide query",
+			Recoverable: true,
+		},
+	})
+	if !strings.Contains(got, `"validation_error"`) || !strings.HasSuffix(got, retryHintSuffix) {
+		t.Fatalf("expected structured validation payload with retry hint, got %q", got)
+	}
+}
+
+func TestFormatToolErrorRetryHintIdempotent(t *testing.T) {
+	t.Setenv("AURA_OP12B_RETRY_HINT_ENABLED", "true")
+
+	got := FormatToolError(errors.New("backend unavailable" + retryHintSuffix))
+	if strings.Count(got, retryHintSuffix) != 1 {
+		t.Fatalf("expected one retry hint suffix, got %q", got)
+	}
+}
+
+func TestFormatFatalToolErrorRetryHintEnabled(t *testing.T) {
+	t.Setenv("AURA_OP12B_RETRY_HINT_ENABLED", "true")
+
+	got := FormatFatalToolError(errors.New("permission denied"))
+	if !strings.HasSuffix(got, retryHintSuffix) {
+		t.Fatalf("expected retry hint suffix, got %q", got)
+	}
+}
+
 func TestFormatToolErrorHandlesNil(t *testing.T) {
 	if got := FormatToolError(nil); got != "" {
 		t.Fatalf("nil error should produce empty string, got %q", got)

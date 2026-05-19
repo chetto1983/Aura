@@ -11,16 +11,17 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"time"
 
+	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/api"
 	cronadapter "github.com/aura/aura/internal/channels/cron"
-	"github.com/aura/aura/internal/release"
 	silentadapter "github.com/aura/aura/internal/channels/silent"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
@@ -31,6 +32,7 @@ import (
 	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/opsfile"
+	"github.com/aura/aura/internal/release"
 	secretspkg "github.com/aura/aura/internal/secrets"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
@@ -304,6 +306,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		proposalStore: learning.NewSQLProposalStore(a.deps.Pool),
 	}
 	proposalSweeper := &proposalTTLSweeperAdapter{db: a.deps.Pool}
+	memoryDecay := &memoryDecayAdapter{store: a.deps.MemoryStore, logger: logger}
 	cronHandler := cron.NewHandler(cron.HandlerConfig{
 		Notifier:        b,
 		Wiki:            a.deps.Wiki,
@@ -315,6 +318,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Location:        loc,
 		Promoter:        lessonPromoter,
 		ProposalSweeper: proposalSweeper,
+		MemoryDecay:     memoryDecay,
 		BackupVerifier:  &backupVerifyAdapter{db: a.deps.Pool},
 		WALCheckpointer: &walCheckpointAdapter{db: a.deps.Pool},
 	})
@@ -425,6 +429,22 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		logger.Warn("failed to bootstrap wal-checkpoint task", "err", err)
 	}
 
+	// Bootstrap the daily operational memory decay task (idempotent upsert).
+	memoryDecayAt, err := cron.NextDailyRun("03:00", loc, time.Now())
+	if err != nil {
+		return fmt.Errorf("computing memory decay run: %w", err)
+	}
+	if _, err := a.deps.SchedDB.Upsert(context.Background(), &cron.Task{
+		Name:          "daily-memory-decay",
+		Kind:          cron.KindMemoryDecay,
+		ScheduleKind:  cron.ScheduleDaily,
+		ScheduleDaily: "03:00",
+		NextRunAt:     memoryDecayAt,
+		Status:        cron.StatusActive,
+	}); err != nil {
+		logger.Warn("failed to bootstrap daily memory decay task", "err", err)
+	}
+
 	// ---- Skill adapters (bridge auraskills → api interfaces) ----------------
 	skillRoots := skillSearchRoots(cfg)
 	skillsInstaller, err := auraskills.NewNPXInstaller(cfg.SkillsPath, cfg.SkillsInstallProjectDir)
@@ -459,11 +479,11 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Location:    loc,
 		// Surface reindex worker health via /api/health (US-A13c: moved from bot).
 		ReindexHealth: a.reindexHealth,
-		Version:   release.Version,
-		Commit:    release.Commit,
-		BuildDate: release.BuildDate,
-		StartedAt: time.Now().UTC(),
-		Logger:    logger,
+		Version:       release.Version,
+		Commit:        release.Commit,
+		BuildDate:     release.BuildDate,
+		StartedAt:     time.Now().UTC(),
+		Logger:        logger,
 		// Skills + MCP dashboard panels.
 		Skills: a.deps.Skills,
 		MCP:    a.deps.MCPClients,
@@ -547,6 +567,16 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 		tool.SetFreshnessStore(a.freshnessStore)
 		a.deps.Tools.Register(tool)
 	}
+}
+
+type memoryDecayAdapter struct {
+	store  *memoryindex.Store
+	logger *slog.Logger
+}
+
+func (a *memoryDecayAdapter) Decay(ctx context.Context) (scanned, deleted, kept int, err error) {
+	summary, err := agent.DecayCycle(ctx, a.store, time.Now().UTC(), a.logger)
+	return summary.Scanned, summary.Deleted, summary.Kept, err
 }
 
 // backupVerifyAdapter implements cron.BackupVerifier by snapshotting the live

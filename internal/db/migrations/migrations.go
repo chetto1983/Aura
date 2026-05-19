@@ -35,6 +35,9 @@ var registered = []Migration{
 	{Version: 17, Name: "add_compact_memory_source_span_columns", Up: addCompactMemorySourceSpanColumns},
 	{Version: 18, Name: "migrate_mistral_api_key_to_secrets", Up: migrateMistralAPIKeyToSecrets},
 	{Version: 19, Name: "add_tokenjuice_runs_columns", Up: addTokenJuiceRunsColumns},
+	{Version: 20, Name: "add_run_event_origin", Up: addRunEventOrigin},
+	{Version: 21, Name: "add_compact_memory_priority", Up: addCompactMemoryPriority},
+	{Version: 22, Name: "add_compact_memory_recall_decay", Up: addCompactMemoryRecallDecay},
 }
 
 type columnDef struct {
@@ -175,6 +178,9 @@ CREATE TABLE IF NOT EXISTS compact_memory_documents (
   conversation_id    INTEGER NOT NULL DEFAULT 0,
   proposal_id        INTEGER NOT NULL DEFAULT 0,
   status             TEXT NOT NULL DEFAULT '',
+  priority           TEXT NOT NULL DEFAULT 'normal',
+  last_recalled_at   TEXT NOT NULL DEFAULT '',
+  recall_count       INTEGER NOT NULL DEFAULT 0,
   entities_json      TEXT NOT NULL DEFAULT '[]',
   tags_json          TEXT NOT NULL DEFAULT '[]',
   updated_at         TEXT NOT NULL,
@@ -190,6 +196,10 @@ CREATE INDEX IF NOT EXISTS idx_compact_memory_source
   ON compact_memory_documents(source_id);
 CREATE INDEX IF NOT EXISTS idx_compact_memory_proposal
   ON compact_memory_documents(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_priority
+  ON compact_memory_documents(kind, priority, updated_at);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_recall_decay
+  ON compact_memory_documents(kind, priority, status, last_recalled_at, updated_at);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS compact_memory_fts
 USING fts5(id UNINDEXED, kind, title, body, handle, source_id, status, entities, tags);
@@ -367,6 +377,7 @@ CREATE TABLE IF NOT EXISTS run_events (
   causation_id    TEXT NOT NULL DEFAULT '',
   correlation_id  TEXT NOT NULL DEFAULT '',
   idempotency_key TEXT NOT NULL DEFAULT '',
+  run_origin      TEXT NOT NULL DEFAULT 'user',
   payload_json    TEXT NOT NULL DEFAULT '{}',
   redaction_level TEXT NOT NULL DEFAULT 'metadata',
   created_at      TEXT NOT NULL,
@@ -765,6 +776,7 @@ CREATE TABLE IF NOT EXISTS run_events (
   causation_id    TEXT NOT NULL DEFAULT '',
   correlation_id  TEXT NOT NULL DEFAULT '',
   idempotency_key TEXT NOT NULL DEFAULT '',
+  run_origin      TEXT NOT NULL DEFAULT 'user',
   payload_json    TEXT NOT NULL DEFAULT '{}',
   redaction_level TEXT NOT NULL DEFAULT 'metadata',
   created_at      TEXT NOT NULL,
@@ -1071,6 +1083,9 @@ CREATE TABLE IF NOT EXISTS compact_memory_documents (
   conversation_id INTEGER NOT NULL DEFAULT 0,
   proposal_id     INTEGER NOT NULL DEFAULT 0,
   status          TEXT NOT NULL DEFAULT '',
+  priority        TEXT NOT NULL DEFAULT 'normal',
+  last_recalled_at TEXT NOT NULL DEFAULT '',
+  recall_count    INTEGER NOT NULL DEFAULT 0,
   entities_json   TEXT NOT NULL DEFAULT '[]',
   tags_json       TEXT NOT NULL DEFAULT '[]',
   updated_at      TEXT NOT NULL
@@ -1083,6 +1098,10 @@ CREATE INDEX IF NOT EXISTS idx_compact_memory_source
   ON compact_memory_documents(source_id);
 CREATE INDEX IF NOT EXISTS idx_compact_memory_proposal
   ON compact_memory_documents(proposal_id);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_priority
+  ON compact_memory_documents(kind, priority, updated_at);
+CREATE INDEX IF NOT EXISTS idx_compact_memory_recall_decay
+  ON compact_memory_documents(kind, priority, status, last_recalled_at, updated_at);
 CREATE VIRTUAL TABLE IF NOT EXISTS compact_memory_fts
 USING fts5(id UNINDEXED, kind, title, body, handle, source_id, status, entities, tags);
 `)
@@ -1262,6 +1281,43 @@ func addTokenJuiceRunsColumns(ctx context.Context, tx *sql.Tx) error {
 		{Name: "tokenjuice_bytes_saved", SQL: "INTEGER NOT NULL DEFAULT 0"},
 		{Name: "tokenjuice_compactions_applied", SQL: "INTEGER NOT NULL DEFAULT 0"},
 	})
+}
+
+func addRunEventOrigin(ctx context.Context, tx *sql.Tx) error {
+	return addMissingColumns(ctx, tx, "run_events", []columnDef{
+		{Name: "run_origin", SQL: "TEXT NOT NULL DEFAULT 'user'"},
+	})
+}
+
+func addCompactMemoryPriority(ctx context.Context, tx *sql.Tx) error {
+	if err := addMissingColumns(ctx, tx, "compact_memory_documents", []columnDef{
+		{Name: "priority", SQL: "TEXT NOT NULL DEFAULT 'normal'"},
+	}); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+CREATE INDEX IF NOT EXISTS idx_compact_memory_priority
+  ON compact_memory_documents(kind, priority, updated_at);
+`); err != nil {
+		return fmt.Errorf("migrations: add compact memory priority index: %w", err)
+	}
+	return nil
+}
+
+func addCompactMemoryRecallDecay(ctx context.Context, tx *sql.Tx) error {
+	if err := addMissingColumns(ctx, tx, "compact_memory_documents", []columnDef{
+		{Name: "last_recalled_at", SQL: "TEXT NOT NULL DEFAULT ''"},
+		{Name: "recall_count", SQL: "INTEGER NOT NULL DEFAULT 0"},
+	}); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+CREATE INDEX IF NOT EXISTS idx_compact_memory_recall_decay
+  ON compact_memory_documents(kind, priority, status, last_recalled_at, updated_at);
+`); err != nil {
+		return fmt.Errorf("migrations: add compact memory recall decay index: %w", err)
+	}
+	return nil
 }
 
 func migrateMistralAPIKeyToSecrets(ctx context.Context, tx *sql.Tx) error {

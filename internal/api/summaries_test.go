@@ -15,6 +15,7 @@ import (
 
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/wiki"
 
 	_ "modernc.org/sqlite"
@@ -61,6 +62,19 @@ func seedSkillProposal(t *testing.T, db *sql.DB, action, status string) int64 {
 	return id
 }
 
+func seedOperationalQuarantine(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	res, err := db.ExecContext(context.Background(),
+		`INSERT INTO proposed_updates
+		  (chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status, kind, signature_hash)
+		 VALUES (0, 'Retry with a shorter query on timeout.', 'new', 'web_search', 1, '[]', 'timeout', '[]', '{"source_run_id":"run-1"}', 'quarantine', 'operational_memory', 'sig-quarantine')`)
+	if err != nil {
+		t.Fatalf("seed quarantine: %v", err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
 type fakeSummaryReviewRepository struct {
 	rows []summarizer.ProposedUpdate
 }
@@ -98,6 +112,30 @@ func (f *fakeSummaryReviewRepository) SetStatus(_ context.Context, id int64, new
 		}
 	}
 	return summarizer.ProposedUpdate{}, summarizer.ErrProposalNotFound
+}
+
+func assertAPIProposalScalar(t *testing.T, db *sql.DB, query string, want any, args ...any) {
+	t.Helper()
+	switch w := want.(type) {
+	case string:
+		var got string
+		if err := db.QueryRowContext(context.Background(), query, args...).Scan(&got); err != nil {
+			t.Fatalf("query scalar: %v", err)
+		}
+		if got != w {
+			t.Fatalf("scalar = %q, want %q", got, w)
+		}
+	case int64:
+		var got int64
+		if err := db.QueryRowContext(context.Background(), query, args...).Scan(&got); err != nil {
+			t.Fatalf("query scalar: %v", err)
+		}
+		if got != w {
+			t.Fatalf("scalar = %d, want %d", got, w)
+		}
+	default:
+		t.Fatalf("unsupported scalar want type %T", want)
+	}
 }
 
 func TestHandleSummariesAcceptsReviewRepositoryInterface(t *testing.T) {
@@ -171,6 +209,58 @@ func TestHandleSummariesList_Empty(t *testing.T) {
 	if len(body) != 0 {
 		t.Fatalf("want empty, got %d", len(body))
 	}
+}
+
+func TestHandleQuarantineListApproveDelete(t *testing.T) {
+	db, store := newSummariesDB(t)
+	id := seedOperationalQuarantine(t, db)
+	opMemory, err := memoryindex.NewStore(db)
+	if err != nil {
+		t.Fatalf("memoryindex.NewStore: %v", err)
+	}
+	router := NewRouter(Deps{Summaries: store, OperationalMemory: opMemory})
+
+	req := httptest.NewRequest("GET", "/quarantine", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("list want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var list []ProposedUpdate
+	if err := json.NewDecoder(w.Body).Decode(&list); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != id || list[0].Status != "quarantine" {
+		t.Fatalf("unexpected quarantine list: %#v", list)
+	}
+	if list[0].Kind != "operational_memory" || list[0].SignatureHash != "sig-quarantine" {
+		t.Fatalf("missing quarantine metadata: %#v", list[0])
+	}
+
+	req = httptest.NewRequest("POST", fmt.Sprintf("/quarantine/%d/approve", id), nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("approve want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var approved ProposedUpdate
+	if err := json.NewDecoder(w.Body).Decode(&approved); err != nil {
+		t.Fatalf("decode approve: %v", err)
+	}
+	if approved.Status != "accepted" {
+		t.Fatalf("approved status = %q, want accepted", approved.Status)
+	}
+	assertAPIProposalScalar(t, db, `SELECT status FROM proposed_updates WHERE id = ?`, "accepted", id)
+	assertAPIProposalScalar(t, db, `SELECT COUNT(*) FROM compact_memory_documents WHERE id = ? AND status = 'active'`, int64(1), "operational:sig-quarantine")
+
+	deleteID := seedOperationalQuarantine(t, db)
+	req = httptest.NewRequest("POST", fmt.Sprintf("/quarantine/%d/delete", deleteID), nil)
+	w = httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("delete want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	assertAPIProposalScalar(t, db, `SELECT COUNT(*) FROM proposed_updates WHERE id = ?`, int64(0), deleteID)
 }
 
 func TestHandleSummariesList_SkillProposalLifecycle(t *testing.T) {

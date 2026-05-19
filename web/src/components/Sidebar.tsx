@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import { toast } from 'sonner';
-import { LayoutDashboard, BookText, Network, Inbox, Calendar, Bot, Sparkles, Plug, ShieldCheck, MessagesSquare, FileCheck, Wrench, Archive, FolderTree, Settings as SettingsIcon, Sun, Moon, Contrast, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookText, Network, Inbox, Calendar, Bot, Sparkles, Plug, ShieldAlert, ShieldCheck, MessagesSquare, FileCheck, Wrench, Archive, FolderTree, Settings as SettingsIcon, Sun, Moon, Contrast, LogOut } from 'lucide-react';
 import { useAppTheme, type AppTheme } from '@/hooks/useAppTheme';
 import { useLocale } from '@/hooks/useLocale';
 import { api } from '@/api';
@@ -19,6 +19,7 @@ const ITEMS = [
   { to: '/pending', icon: ShieldCheck },
   { to: '/conversations', icon: MessagesSquare },
   { to: '/summaries', icon: FileCheck },
+  { to: '/quarantine', icon: ShieldAlert },
   { to: '/maintenance', icon: Wrench },
   { to: '/backups', icon: Archive },
   { to: '/files', icon: FolderTree },
@@ -37,6 +38,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/pending': 'sidebar.pending',
   '/conversations': 'sidebar.conversations',
   '/summaries': 'sidebar.summaries',
+  '/quarantine': 'sidebar.quarantine',
   '/maintenance': 'sidebar.maintenance',
   '/backups': 'sidebar.backups',
   '/files': 'sidebar.files',
@@ -54,10 +56,10 @@ const THEME_LABEL: Record<AppTheme, string> = {
   contrast: 'sidebar.highContrast',
 };
 
-// BrandMark is a stylized rendition of the Aura orb: a glowing disc
-// with the cyan-blue arrow-A from the logo. Stays as inline SVG so it
-// inherits color and tints with theme variables instead of needing a
-// PNG per palette.
+// BrandMark renders the Aura mark inline: a glowing disc cradling a
+// filled A whose left half tints with --primary (theme cyan) and right
+// half stays violet, wrapped by an asymmetric swirl + scattered sparkles.
+// Mirrors Logo/Logo.png at any DPI — SVG so it scales crisply at 16/24/36px.
 function BrandMark() {
   return (
     <svg
@@ -71,21 +73,53 @@ function BrandMark() {
     >
       <defs>
         <radialGradient id="aura-orb" cx="50%" cy="40%" r="60%">
-          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.8" />
-          <stop offset="55%" stopColor="var(--primary)" stopOpacity="0.18" />
+          <stop offset="0%" stopColor="var(--primary)" stopOpacity="0.85" />
+          <stop offset="55%" stopColor="var(--primary)" stopOpacity="0.2" />
           <stop offset="100%" stopColor="var(--primary)" stopOpacity="0" />
         </radialGradient>
+        <clipPath id="aura-a-left">
+          <rect x="0" y="0" width="20" height="40" />
+        </clipPath>
+        <clipPath id="aura-a-right">
+          <rect x="20" y="0" width="20" height="40" />
+        </clipPath>
       </defs>
       <circle cx="20" cy="20" r="18" fill="url(#aura-orb)" />
-      <circle cx="20" cy="20" r="14" stroke="var(--primary)" strokeOpacity="0.45" strokeWidth="1.2" />
-      {/* arrow-A glyph from the logo */}
+      {/* asymmetric swirl — suggests the logo's dynamic halo */}
       <path
-        d="M12 28 L20 11 L28 28 M16.5 22 L24 22 M24 11 L28 11 L28 15"
+        d="M6 24 C 6 12, 20 6, 32 12 C 38 16, 36 28, 28 33"
         stroke="var(--primary)"
-        strokeWidth="2.2"
+        strokeOpacity="0.55"
+        strokeWidth="0.9"
         strokeLinecap="round"
-        strokeLinejoin="round"
+        fill="none"
       />
+      <path
+        d="M11 9 C 16 7, 28 9, 34 18"
+        stroke="#c084fc"
+        strokeOpacity="0.45"
+        strokeWidth="0.7"
+        strokeLinecap="round"
+        fill="none"
+      />
+      {/* A — filled triangle with inner cutout, split cyan/violet via clipPath */}
+      <path
+        d="M10 31 L20 9 L30 31 L25 31 L23 25.5 L17 25.5 L15 31 Z M18 21.5 L20 16 L22 21.5 Z"
+        fill="var(--primary)"
+        clipPath="url(#aura-a-left)"
+        fillRule="evenodd"
+      />
+      <path
+        d="M10 31 L20 9 L30 31 L25 31 L23 25.5 L17 25.5 L15 31 Z M18 21.5 L20 16 L22 21.5 Z"
+        fill="#a855f7"
+        clipPath="url(#aura-a-right)"
+        fillRule="evenodd"
+      />
+      {/* scattered sparkle pricks — keep the energy/aura feel at small sizes */}
+      <circle cx="7.5" cy="14" r="0.9" fill="var(--primary)" opacity="0.9" />
+      <circle cx="33" cy="10" r="0.7" fill="#c084fc" opacity="0.85" />
+      <circle cx="34" cy="26" r="0.8" fill="#a855f7" opacity="0.8" />
+      <circle cx="9" cy="31" r="0.6" fill="var(--primary)" opacity="0.7" />
     </svg>
   );
 }

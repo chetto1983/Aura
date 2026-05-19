@@ -35,6 +35,7 @@ const (
 	KindProposalTTLSweep TaskKind = "proposal_ttl_sweep"
 	KindBackupVerify     TaskKind = "backup_verify"
 	KindWALCheckpoint    TaskKind = "wal_checkpoint"
+	KindMemoryDecay      TaskKind = "memory_decay"
 )
 
 // ScheduleKind enumerates how the scheduler computes a task's next run.

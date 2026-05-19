@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/aura/aura/internal/identity"
@@ -17,6 +18,10 @@ const (
 	DefaultSchemaVersion     = 1
 	RedactionMetadata        = "metadata"
 	EventAuthorizationDenied = "authorization_denied"
+	RunOriginUser            = "user"
+	RunOriginSubagent        = "subagent"
+	RunOriginSourceIngest    = "source_ingest"
+	RunOriginScheduler       = "scheduler"
 )
 
 type Store struct {
@@ -59,6 +64,7 @@ type Event struct {
 	CausationID    string
 	CorrelationID  string
 	IdempotencyKey string
+	RunOrigin      string
 	PayloadJSON    string
 	RedactionLevel string
 	CreatedAt      time.Time
@@ -105,6 +111,7 @@ type AppendEventParams struct {
 	CausationID      string
 	CorrelationID    string
 	IdempotencyKey   string
+	RunOrigin        string
 	Payload          map[string]any
 	PayloadJSON      string
 	RedactionLevel   string
@@ -244,6 +251,7 @@ WHERE id = ?`, params.RunID).Scan(runScanDest(&run)...); err != nil {
 		CausationID:    params.CausationID,
 		CorrelationID:  firstNonEmpty(params.CorrelationID, run.CorrelationID),
 		IdempotencyKey: params.IdempotencyKey,
+		RunOrigin:      deriveRunOrigin(params.RunOrigin, run),
 		PayloadJSON:    payloadJSON,
 		RedactionLevel: redactionLevel,
 		CreatedAt:      now,
@@ -252,8 +260,8 @@ WHERE id = ?`, params.RunID).Scan(runScanDest(&run)...); err != nil {
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO run_events (
   id, run_id, parent_run_id, seq, type, schema_version, actor_id, causation_id,
-  correlation_id, idempotency_key, payload_json, redaction_level, created_at
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  correlation_id, idempotency_key, run_origin, payload_json, redaction_level, created_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		event.ID,
 		event.RunID,
 		event.ParentRunID,
@@ -264,6 +272,7 @@ INSERT INTO run_events (
 		event.CausationID,
 		event.CorrelationID,
 		event.IdempotencyKey,
+		event.RunOrigin,
 		event.PayloadJSON,
 		event.RedactionLevel,
 		formatTime(event.CreatedAt),
@@ -309,7 +318,7 @@ func (s *Store) GetEvent(ctx context.Context, eventID string) (Event, error) {
 	var event Event
 	if err := s.db.QueryRowContext(ctx, `
 SELECT id, run_id, parent_run_id, seq, type, schema_version, actor_id, causation_id,
-       correlation_id, idempotency_key, payload_json, redaction_level, created_at
+       correlation_id, idempotency_key, run_origin, payload_json, redaction_level, created_at
 FROM run_events
 WHERE id = ?`, eventID).Scan(eventScanDest(&event)...); err != nil {
 		return Event{}, fmt.Errorf("runs: get event %q: %w", eventID, err)
@@ -320,7 +329,7 @@ WHERE id = ?`, eventID).Scan(eventScanDest(&event)...); err != nil {
 func (s *Store) Events(ctx context.Context, runID string) ([]Event, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT id, run_id, parent_run_id, seq, type, schema_version, actor_id, causation_id,
-       correlation_id, idempotency_key, payload_json, redaction_level, created_at
+       correlation_id, idempotency_key, run_origin, payload_json, redaction_level, created_at
 FROM run_events
 WHERE run_id = ?
 ORDER BY seq`, runID)
@@ -625,6 +634,7 @@ func eventScanDest(event *Event) []any {
 		&event.CausationID,
 		&event.CorrelationID,
 		&event.IdempotencyKey,
+		&event.RunOrigin,
 		&event.PayloadJSON,
 		&event.RedactionLevel,
 		scanTime(&event.CreatedAt, &createdAt),
@@ -759,6 +769,27 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func deriveRunOrigin(explicit string, run Run) string {
+	origin := strings.TrimSpace(explicit)
+	switch origin {
+	case RunOriginUser, RunOriginSubagent, RunOriginSourceIngest, RunOriginScheduler:
+		return origin
+	}
+	if strings.TrimSpace(run.ParentRunID) != "" {
+		return RunOriginSubagent
+	}
+	switch strings.TrimSpace(run.Channel) {
+	case "swarm":
+		return RunOriginSubagent
+	case "cron", "heartbeat", "scheduler":
+		return RunOriginScheduler
+	case "source_ingest":
+		return RunOriginSourceIngest
+	default:
+		return RunOriginUser
+	}
 }
 
 func newID(prefix string) string {

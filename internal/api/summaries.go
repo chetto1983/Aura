@@ -321,6 +321,8 @@ func proposalToDTO(p summarizer.ProposedUpdate) ProposedUpdate {
 		Provenance:     provenanceToDTO(p.Provenance),
 		SkillLifecycle: skillLifecycleToDTO(p),
 		Status:         p.Status,
+		Kind:           p.Kind,
+		SignatureHash:  p.SignatureHash,
 		CreatedAt:      p.CreatedAt.UTC().Format(time.RFC3339),
 	}
 }

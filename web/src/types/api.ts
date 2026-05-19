@@ -456,7 +456,9 @@ export interface ProposedUpdate {
   category?: string;
   related_slugs: string[];
   provenance?: ProposalProvenance;
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'quarantine' | 'accepted';
+  kind?: string;
+  signature_hash?: string;
   created_at: string;
 }
 

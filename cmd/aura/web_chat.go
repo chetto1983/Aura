@@ -19,6 +19,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/telegram"
 )
 
@@ -33,11 +34,17 @@ func newHubBackedWebChatService(cfg *config.Config, deps *telegram.Deps, logger 
 		return nil, nil
 	}
 	sessions := newWebChatSessions()
+	postTurnReader := webPostTurnFailureReader(deps.AttemptsRepo)
+	if postTurnReader == nil && deps.Pool != nil {
+		postTurnReader = attempts.NewSQLiteRepo(deps.Pool)
+	}
 	builder := &webInvocationBuilder{
-		depsGetter: depsGetter,
-		sessions:   sessions,
-		cfg:        cfg,
-		logger:     logger,
+		depsGetter:     depsGetter,
+		sessions:       sessions,
+		cfg:            cfg,
+		logger:         logger,
+		postTurnStore:  deps.MemoryStore,
+		postTurnReader: postTurnReader,
 	}
 	loop, err := chat.NewAgentLoopAdapter(builder.Build)
 	if err != nil {
@@ -78,13 +85,16 @@ func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, mess
 }
 
 type webInvocationBuilder struct {
-	depsGetter func() agent.RunTaskDeps
-	sessions   *webChatSessions
-	cfg        *config.Config
-	logger     *slog.Logger
+	depsGetter     func() agent.RunTaskDeps
+	sessions       *webChatSessions
+	cfg            *config.Config
+	logger         *slog.Logger
+	postTurnStore  *memoryindex.Store
+	postTurnReader agent.PostTurnFailureReader
+	priorityCaches sync.Map
 }
 
-func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.InboundMessage) (agent.Invocation, error) {
+func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.InboundMessage) (agent.Invocation, error) {
 	if b == nil || b.depsGetter == nil {
 		return agent.Invocation{}, errors.New("web chat: deps unavailable")
 	}
@@ -93,7 +103,11 @@ func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.
 		return agent.Invocation{}, errors.New("web chat: LLM unavailable")
 	}
 	userID := strings.TrimSpace(msg.PrincipalID)
+	turnIdx := b.sessions.messageCount(userID)
 	system := conversation.RenderSystemPrompt(time.Now(), time.Local)
+	if pinned := b.renderPinnedOperational(ctx, msg.ThreadID, turnIdx); pinned != "" {
+		system += "\n\n" + pinned
+	}
 	runID := ""
 	if run != nil {
 		runID = run.ID
@@ -131,9 +145,13 @@ func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.
 			toolTimeout:           toolTimeout,
 			terminalPolicyEnabled: b.terminalToolPolicyEnabled(),
 			tokenJuiceEnabled:     deps.TokenJuiceEnabled,
+			invalidatePinned: func() {
+				b.invalidatePinnedOperational(msg.ThreadID)
+			},
 		},
-		State: state,
-		Tools: toolDefs,
+		State:    state,
+		Tools:    toolDefs,
+		PostTurn: b.postTurnConfig(runID, msg, logger, deps),
 		Options: agent.Options{
 			MaxIterations:           deps.MaxIterations,
 			MaxToolResultChars:      b.maxToolResultChars(),
@@ -153,6 +171,71 @@ func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.
 		inv.Options.ToolResolver = deps.Tools.DefinitionFor
 	}
 	return inv, nil
+}
+
+func (b *webInvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {
+	if b == nil || b.postTurnStore == nil {
+		return ""
+	}
+	cacheKey := strings.TrimSpace(threadID)
+	if cacheKey == "" {
+		cacheKey = "web"
+	}
+	cacheAny, _ := b.priorityCaches.LoadOrStore(cacheKey, &memoryindex.PrioritySectionCache{})
+	cache, ok := cacheAny.(*memoryindex.PrioritySectionCache)
+	if !ok || cache == nil {
+		return memoryindex.RenderPrioritySection(ctx, b.postTurnStore)
+	}
+	return cache.Render(ctx, b.postTurnStore, turnIdx)
+}
+
+func (b *webInvocationBuilder) invalidatePinnedOperational(threadID string) {
+	if b == nil {
+		return
+	}
+	cacheKey := strings.TrimSpace(threadID)
+	if cacheKey == "" {
+		cacheKey = "web"
+	}
+	if cacheAny, ok := b.priorityCaches.Load(cacheKey); ok {
+		if cache, ok := cacheAny.(*memoryindex.PrioritySectionCache); ok {
+			cache.InvalidatePinSection()
+		}
+	}
+}
+
+func webPostTurnFailureReader(repo attempts.Repo) agent.PostTurnFailureReader {
+	if repo == nil {
+		return nil
+	}
+	reader, _ := repo.(agent.PostTurnFailureReader)
+	return reader
+}
+
+func (b *webInvocationBuilder) postTurnConfig(runID string, msg chat.InboundMessage, logger *slog.Logger, deps agent.RunTaskDeps) agent.PostTurnConfig {
+	if b == nil || b.cfg == nil {
+		return agent.PostTurnConfig{}
+	}
+	record := agent.TurnRecord{
+		RunID:       runID,
+		ThreadID:    msg.ThreadID,
+		UserMessage: msg.Text,
+	}
+	cfg := agent.NewHeuristicPostTurnConfig(
+		b.cfg.OP07HeuristicEnabled,
+		b.postTurnStore,
+		b.postTurnReader,
+		b.cfg.OP07NFailThreshold,
+		b.cfg.OP07RecentTurns,
+		logger,
+		record,
+	)
+	if hook := agent.NewMemoryJudgeHook(b.cfg.MemoryJudgeEnabled, deps.LLM, deps.Model, deps.ReasoningEffort, logger); hook != nil && b.postTurnStore != nil {
+		cfg.Store = b.postTurnStore
+		cfg.Record = record
+		cfg.Hooks = append(cfg.Hooks, hook)
+	}
+	return cfg
 }
 
 func (b *webInvocationBuilder) maxToolResultChars() int {
@@ -210,6 +293,15 @@ func (s *webChatSessions) begin(runID, userID, system, message string) *webAgent
 		s.active[runID] = state
 	}
 	return state
+}
+
+func (s *webChatSessions) messageCount(userID string) int {
+	if s == nil {
+		return 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.sessions[userID])
 }
 
 func (s *webChatSessions) commit(runID, userID string) {
@@ -288,6 +380,7 @@ type webToolExecutor struct {
 	toolTimeout           time.Duration
 	terminalPolicyEnabled bool
 	tokenJuiceEnabled     bool
+	invalidatePinned      func()
 }
 
 func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
@@ -300,6 +393,7 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 		terminal  string
 	}
 	outcomes := make([]outcome, len(calls))
+	pinnedWrite := webPinnedOperationalWriteInCalls(calls)
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for i, call := range calls {
@@ -369,6 +463,9 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 			}
 		}
 	}
+	if pinnedWrite && e.invalidatePinned != nil {
+		e.invalidatePinned()
+	}
 	summary := agent.ExecutionSummary{Results: make(map[string]string, len(outcomes))}
 	for _, item := range outcomes {
 		if item.awaiting != nil {
@@ -386,6 +483,24 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 		}
 	}
 	return summary
+}
+
+func webPinnedOperationalWriteInCalls(calls []llm.ToolCall) bool {
+	for _, call := range calls {
+		if call.Name != "propose_patch" {
+			continue
+		}
+		action, _ := call.Arguments["action"].(string)
+		if strings.TrimSpace(action) != "operational" {
+			continue
+		}
+		priority, _ := call.Arguments["priority"].(string)
+		switch memoryindex.NormalizePriority(priority) {
+		case memoryindex.PriorityCritical, memoryindex.PriorityHigh:
+			return true
+		}
+	}
+	return false
 }
 
 func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (string, map[string]any, string, error) {

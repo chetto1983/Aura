@@ -87,6 +87,11 @@ type ProposalTTLSweeper interface {
 	Sweep(ctx context.Context) (purged int, err error)
 }
 
+// MemoryDecayRunner removes stale low-priority operational lessons.
+type MemoryDecayRunner interface {
+	Decay(ctx context.Context) (scanned, deleted, kept int, err error)
+}
+
 // HandlerConfig wires a Handler's dispatch dependencies.
 type HandlerConfig struct {
 	Notifier        Notifier
@@ -100,6 +105,7 @@ type HandlerConfig struct {
 	Location        *time.Location
 	Promoter        LessonPromoter
 	ProposalSweeper ProposalTTLSweeper
+	MemoryDecay     MemoryDecayRunner
 	BackupVerifier  BackupVerifier
 	WALCheckpointer WALCheckpointer
 }
@@ -119,6 +125,7 @@ type Handler struct {
 	loc             *time.Location
 	promoter        LessonPromoter
 	proposalSweeper ProposalTTLSweeper
+	memoryDecay     MemoryDecayRunner
 	backupVerifier  BackupVerifier
 	walCheckpointer WALCheckpointer
 }
@@ -145,6 +152,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 		loc:             loc,
 		promoter:        cfg.Promoter,
 		proposalSweeper: cfg.ProposalSweeper,
+		memoryDecay:     cfg.MemoryDecay,
 		backupVerifier:  cfg.BackupVerifier,
 		walCheckpointer: cfg.WALCheckpointer,
 	}
@@ -162,6 +170,8 @@ func (h *Handler) Dispatch(ctx context.Context, task *Task) error {
 		return h.dispatchLessonPromotion(ctx)
 	case KindProposalTTLSweep:
 		return h.dispatchProposalTTLSweep(ctx)
+	case KindMemoryDecay:
+		return h.dispatchMemoryDecay(ctx)
 	case KindBackupVerify:
 		return h.dispatchBackupVerify(ctx)
 	case KindWALCheckpoint:
@@ -297,6 +307,18 @@ func (h *Handler) dispatchProposalTTLSweep(ctx context.Context) error {
 		return fmt.Errorf("proposal TTL sweep: %w", err)
 	}
 	h.logger.Info("proposal TTL sweep complete", "purged", purged)
+	return nil
+}
+
+func (h *Handler) dispatchMemoryDecay(ctx context.Context) error {
+	if h.memoryDecay == nil {
+		return fmt.Errorf("memory decay: runner unavailable")
+	}
+	scanned, deleted, kept, err := h.memoryDecay.Decay(ctx)
+	if err != nil {
+		return fmt.Errorf("memory decay: %w", err)
+	}
+	h.logger.Info("memory decay complete", "scanned", scanned, "deleted", deleted, "kept", kept)
 	return nil
 }
 

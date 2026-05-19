@@ -229,6 +229,9 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"conversation_id",
 		"proposal_id",
 		"status",
+		"priority",
+		"last_recalled_at",
+		"recall_count",
 		"entities_json",
 		"tags_json",
 		"updated_at",
@@ -310,6 +313,7 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"type",
 		"schema_version",
 		"idempotency_key",
+		"run_origin",
 		"payload_json",
 		"redaction_level",
 	})
@@ -574,8 +578,13 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 19 || first[0] != 1 || first[1] != 2 || first[2] != 3 || first[3] != 4 || first[4] != 5 || first[5] != 6 || first[6] != 7 || first[7] != 8 || first[8] != 9 || first[9] != 10 || first[10] != 11 || first[11] != 12 || first[12] != 13 || first[13] != 14 || first[14] != 15 || first[15] != 16 || first[16] != 17 || first[17] != 18 || first[18] != 19 {
-		t.Fatalf("applied versions = %v, want [1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19]", first)
+	if len(first) != 22 {
+		t.Fatalf("applied versions = %v, want 22 migrations", first)
+	}
+	for i, got := range first {
+		if want := i + 1; got != want {
+			t.Fatalf("applied versions = %v, want contiguous 1..22", first)
+		}
 	}
 }
 
@@ -690,9 +699,43 @@ INSERT INTO audit_events (
 	}
 
 	assertScalar(t, db, `SELECT parent_run_id FROM run_events WHERE id = 'event-1'`, "parent-1")
+	assertScalar(t, db, `SELECT run_origin FROM run_events WHERE id = 'event-1'`, "user")
 	assertScalar(t, db, `SELECT status FROM run_outbox WHERE id = 'outbox-1'`, "pending")
 	assertScalar(t, db, `SELECT run_id FROM run_idempotency_keys WHERE scope = 'inbound' AND key = 'inbound-1'`, "run-1")
 	assertScalar(t, db, `SELECT type FROM audit_events WHERE id = 'audit-1'`, "privileged_payload_read")
+}
+
+func TestCompactMemoryPriorityColumnAndIndex(t *testing.T) {
+	db := openTestDB(t)
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	_, err := db.Exec(`
+INSERT INTO compact_memory_documents (id, kind, title, body, handle, updated_at)
+VALUES ('op-priority-default', 'operational', 'Priority default', 'body', 'op-priority-default', '2026-05-19T00:00:00Z')
+`)
+	if err != nil {
+		t.Fatalf("insert compact memory row: %v", err)
+	}
+	assertScalar(t, db, `SELECT priority FROM compact_memory_documents WHERE id = 'op-priority-default'`, "normal")
+	assertScalar(t, db, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_compact_memory_priority'`, 1)
+}
+
+func TestCompactMemoryRecallDecayColumnsAndIndex(t *testing.T) {
+	db := openTestDB(t)
+	if err := Run(context.Background(), db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	_, err := db.Exec(`
+INSERT INTO compact_memory_documents (id, kind, title, body, handle, updated_at)
+VALUES ('op-recall-default', 'operational', 'Recall default', 'body', 'op-recall-default', '2026-05-19T00:00:00Z')
+`)
+	if err != nil {
+		t.Fatalf("insert compact memory row: %v", err)
+	}
+	assertScalar(t, db, `SELECT last_recalled_at FROM compact_memory_documents WHERE id = 'op-recall-default'`, "")
+	assertScalar(t, db, `SELECT recall_count FROM compact_memory_documents WHERE id = 'op-recall-default'`, 0)
+	assertScalar(t, db, `SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_compact_memory_recall_decay'`, 1)
 }
 
 func TestFreshAndUpgradedSchemasConverge(t *testing.T) {

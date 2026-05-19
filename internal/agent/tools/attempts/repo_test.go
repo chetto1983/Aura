@@ -34,6 +34,21 @@ func seedRun(t *testing.T, db *sql.DB, runID string) {
 	}
 }
 
+func seedRunInThread(t *testing.T, db *sql.DB, runID, threadID string, startedAt time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	_, err := db.ExecContext(ctx, `INSERT INTO runs (id, thread_id, channel, status, started_at, updated_at)
+		VALUES (?, ?, 'telegram', 'running', ?, ?)`,
+		runID,
+		threadID,
+		startedAt.UTC().Format(time.RFC3339Nano),
+		startedAt.UTC().Format(time.RFC3339Nano),
+	)
+	if err != nil {
+		t.Fatalf("seedRunInThread: %v", err)
+	}
+}
+
 func makeObs(runID, toolName, class string, offset time.Duration) tools.ToolObservation {
 	argsHash, argKeys := tools.ObservationArgsHash(map[string]any{"query": "test_value", "limit": 10})
 	return tools.ToolObservation{
@@ -268,6 +283,48 @@ func TestRecent_Limit(t *testing.T) {
 	}
 	if len(got) != 3 {
 		t.Errorf("Recent(limit=3) returned %d rows, want 3", len(got))
+	}
+}
+
+func TestRecentThreadFailuresUsesLastRunWindow(t *testing.T) {
+	db := openMigratedDB(t)
+	repo := attempts.NewSQLiteRepo(db)
+	ctx := context.Background()
+	base := time.Now().UTC()
+	seedRunInThread(t, db, "run-old", "thread-op", base.Add(-3*time.Minute))
+	seedRunInThread(t, db, "run-a", "thread-op", base.Add(-2*time.Minute))
+	seedRunInThread(t, db, "run-b", "thread-op", base.Add(-1*time.Minute))
+	seedRunInThread(t, db, "run-other", "thread-other", base)
+
+	for _, obs := range []tools.ToolObservation{
+		makeObs("run-old", "web_fetch", "io", -3*time.Minute),
+		makeObs("run-a", "web_fetch", "io", -2*time.Minute),
+		makeObs("run-b", "web_fetch", "io", -1*time.Minute),
+		makeObs("run-other", "web_fetch", "io", 0),
+	} {
+		if err := repo.Record(ctx, obs); err != nil {
+			t.Fatalf("Record(%s): %v", obs.RunID, err)
+		}
+	}
+
+	got, err := repo.RecentThreadFailures(ctx, "thread-op", "", 2)
+	if err != nil {
+		t.Fatalf("RecentThreadFailures: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("got %d failures, want 2: %+v", len(got), got)
+	}
+	gotRuns := []string{got[0].RunID, got[1].RunID}
+	if strings.Join(gotRuns, ",") != "run-b,run-a" {
+		t.Fatalf("run window = %v, want [run-b run-a]", gotRuns)
+	}
+
+	fallback, err := repo.RecentThreadFailures(ctx, "", "run-old", 10)
+	if err != nil {
+		t.Fatalf("RecentThreadFailures fallback: %v", err)
+	}
+	if len(fallback) != 1 || fallback[0].RunID != "run-old" {
+		t.Fatalf("fallback = %+v, want run-old", fallback)
 	}
 }
 

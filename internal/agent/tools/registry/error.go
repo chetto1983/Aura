@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+
+	"github.com/aura/aura/internal/llm"
 )
 
 // ClassifyToolError maps a tool error to a low-cardinality class label suitable
@@ -22,6 +24,9 @@ func ClassifyToolError(err error) string {
 	}
 	if errors.Is(err, context.Canceled) {
 		return "cancelled"
+	}
+	if errors.Is(err, llm.ErrSchemaValidation) {
+		return "validation"
 	}
 	msg := strings.ToLower(err.Error())
 	switch {
@@ -61,11 +66,18 @@ func FormatToolError(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
-	if hint := specificHint(msg); hint != "" {
-		return "Error: " + msg + "\n\n" + hint
+	var validationErr *ValidationError
+	if errors.As(err, &validationErr) {
+		return appendRetryHintIfEnabled(validationErr.Error())
 	}
-	return "Error: " + msg
+	msg := err.Error()
+	var out string
+	if hint := specificHint(msg); hint != "" {
+		out = "Error: " + msg + "\n\n" + hint
+	} else {
+		out = "Error: " + msg
+	}
+	return appendRetryHintIfEnabled(out)
 }
 
 // FormatFatalToolError exists for callsite intent only. Same wire format as
@@ -75,7 +87,23 @@ func FormatFatalToolError(err error) string {
 	if err == nil {
 		return ""
 	}
-	return "Error: " + err.Error()
+	return appendRetryHintIfEnabled("Error: " + err.Error())
+}
+
+const retryHintSuffix = " [Analyze the error above and try a different approach.]"
+
+func appendRetryHintIfEnabled(content string) string {
+	if !op12RetryHintEnabled() {
+		return content
+	}
+	return appendRetryHint(content)
+}
+
+func appendRetryHint(content string) string {
+	if strings.TrimSpace(content) == "" || strings.Contains(content, retryHintSuffix) {
+		return content
+	}
+	return strings.TrimRight(content, " \t\r\n") + retryHintSuffix
 }
 
 // specificHint returns information the LLM cannot infer from the message

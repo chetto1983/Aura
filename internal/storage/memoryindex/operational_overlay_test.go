@@ -101,6 +101,50 @@ func TestFetchRecentOperationalTop10From11(t *testing.T) {
 	}
 }
 
+func TestOperationalPriorityDefaultsAndPinnedFetch(t *testing.T) {
+	store := openTestStore(t)
+	ctx := context.Background()
+	base := time.Date(2026, 5, 18, 0, 0, 0, 0, time.UTC)
+
+	docs := []Document{
+		{ID: "op:normal", Kind: KindOperational, Title: "Normal", Body: "normal", UpdatedAt: base},
+		{ID: "op:high", Kind: KindOperational, Title: "High", Body: "high", Priority: PriorityHigh, UpdatedAt: base.Add(time.Second)},
+		{ID: "op:critical", Kind: KindOperational, Title: "Critical", Body: "critical", Priority: PriorityCritical, UpdatedAt: base.Add(-time.Second)},
+		{ID: "op:q", Kind: KindOperational, Title: "Quarantine", Body: "q", Priority: PriorityCritical, Status: "quarantine", UpdatedAt: base.Add(2 * time.Second)},
+	}
+	for _, doc := range docs {
+		if err := store.Upsert(ctx, doc); err != nil {
+			t.Fatalf("Upsert %s: %v", doc.ID, err)
+		}
+	}
+
+	recent, err := store.FetchRecentOperational(ctx, 10)
+	if err != nil {
+		t.Fatalf("FetchRecentOperational: %v", err)
+	}
+	var normal Document
+	for _, doc := range recent {
+		if doc.ID == "op:normal" {
+			normal = doc
+			break
+		}
+	}
+	if normal.Priority != PriorityNormal {
+		t.Fatalf("normal default priority = %q, want %q", normal.Priority, PriorityNormal)
+	}
+
+	pinned, err := store.FetchPinnedOperational(ctx, 10)
+	if err != nil {
+		t.Fatalf("FetchPinnedOperational: %v", err)
+	}
+	if len(pinned) != 2 {
+		t.Fatalf("pinned docs = %d, want 2: %+v", len(pinned), pinned)
+	}
+	if pinned[0].ID != "op:critical" || pinned[1].ID != "op:high" {
+		t.Fatalf("pinned order = [%s %s], want [op:critical op:high]", pinned[0].ID, pinned[1].ID)
+	}
+}
+
 func TestOperationalLessonsBlockBytesCap(t *testing.T) {
 	docs := []Document{
 		{ID: "a", Kind: KindOperational, Title: "Short", Body: "Short body."},

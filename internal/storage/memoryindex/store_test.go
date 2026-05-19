@@ -431,6 +431,82 @@ func TestStorePurgeSourceRespectsContextCancellation(t *testing.T) {
 	}
 }
 
+func TestStoreMarksOperationalRecalled(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	recalledAt := time.Date(2026, 5, 19, 10, 0, 0, 0, time.UTC)
+	doc := Document{
+		ID:        "operational:recall",
+		Kind:      KindOperational,
+		Title:     "Lesson: web_fetch timeout",
+		Body:      "Retry with a smaller page.",
+		Handle:    "operational:recall",
+		Status:    "active",
+		UpdatedAt: recalledAt.Add(-24 * time.Hour),
+	}
+	if err := store.Upsert(ctx, doc); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	if err := store.MarkOperationalRecalled(ctx, []string{doc.ID}, recalledAt); err != nil {
+		t.Fatalf("MarkOperationalRecalled: %v", err)
+	}
+	docs, err := store.FetchRecentOperational(ctx, 10)
+	if err != nil {
+		t.Fatalf("FetchRecentOperational: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("docs = %d, want 1", len(docs))
+	}
+	if docs[0].RecallCount != 1 || !docs[0].LastRecalledAt.Equal(recalledAt) {
+		t.Fatalf("recall fields = count %d at %s", docs[0].RecallCount, docs[0].LastRecalledAt)
+	}
+}
+
+func TestStoreDecayOperationalLessons(t *testing.T) {
+	ctx := context.Background()
+	store := openTestStore(t)
+	now := time.Date(2026, 5, 19, 12, 0, 0, 0, time.UTC)
+	docs := []Document{
+		{ID: "operational:old-never", Kind: KindOperational, Title: "Lesson: a", Body: "old never", Handle: "operational:old-never", Status: "active", Priority: PriorityNormal, UpdatedAt: now.AddDate(0, 0, -8)},
+		{ID: "operational:old-stale-recall", Kind: KindOperational, Title: "Lesson: b", Body: "old stale recall", Handle: "operational:old-stale-recall", Status: "active", Priority: PriorityNormal, RecallCount: 2, LastRecalledAt: now.AddDate(0, 0, -31), UpdatedAt: now.AddDate(0, 0, -40)},
+		{ID: "operational:recent-recall", Kind: KindOperational, Title: "Lesson: c", Body: "recent recall", Handle: "operational:recent-recall", Status: "active", Priority: PriorityNormal, RecallCount: 1, LastRecalledAt: now.AddDate(0, 0, -10), UpdatedAt: now.AddDate(0, 0, -40)},
+		{ID: "operational:young", Kind: KindOperational, Title: "Lesson: d", Body: "young", Handle: "operational:young", Status: "active", Priority: PriorityNormal, UpdatedAt: now.AddDate(0, 0, -6)},
+		{ID: "operational:high", Kind: KindOperational, Title: "Lesson: e", Body: "high", Handle: "operational:high", Status: "active", Priority: PriorityHigh, UpdatedAt: now.AddDate(0, 0, -100)},
+		{ID: "operational:critical", Kind: KindOperational, Title: "Lesson: f", Body: "critical", Handle: "operational:critical", Status: "active", Priority: PriorityCritical, UpdatedAt: now.AddDate(0, 0, -100)},
+		{ID: "operational:pending", Kind: KindOperational, Title: "Lesson: g", Body: "pending", Handle: "operational:pending", Status: "pending", Priority: PriorityNormal, UpdatedAt: now.AddDate(0, 0, -100)},
+	}
+	for _, doc := range docs {
+		if err := store.Upsert(ctx, doc); err != nil {
+			t.Fatalf("Upsert %s: %v", doc.ID, err)
+		}
+	}
+	summary, err := store.DecayOperationalLessons(ctx, now, 30*24*time.Hour, 7*24*time.Hour)
+	if err != nil {
+		t.Fatalf("DecayOperationalLessons: %v", err)
+	}
+	if summary.Scanned != 4 || summary.Deleted != 2 || summary.Kept != 2 {
+		t.Fatalf("summary = %+v, want scanned=4 deleted=2 kept=2", summary)
+	}
+	remaining, err := store.FetchRecentOperational(ctx, 20)
+	if err != nil {
+		t.Fatalf("FetchRecentOperational: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, doc := range remaining {
+		ids[doc.ID] = true
+	}
+	for _, deleted := range []string{"operational:old-never", "operational:old-stale-recall"} {
+		if ids[deleted] {
+			t.Fatalf("%s should have decayed", deleted)
+		}
+	}
+	for _, kept := range []string{"operational:recent-recall", "operational:young", "operational:high", "operational:critical", "operational:pending"} {
+		if !ids[kept] {
+			t.Fatalf("%s should remain", kept)
+		}
+	}
+}
+
 func TestStoreSourceIDFilter(t *testing.T) {
 	ctx := context.Background()
 	store := openTestStore(t)

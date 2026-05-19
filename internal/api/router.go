@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	"github.com/aura/aura/internal/agent/tools/attempts"
+	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/backup"
 	"github.com/aura/aura/internal/config"
@@ -325,6 +325,9 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /summaries/batch/reject", handleSummariesBatchReject(deps))
 	mux.HandleFunc("POST /summaries/{id}/approve", handleSummariesApprove(deps))
 	mux.HandleFunc("POST /summaries/{id}/reject", handleSummariesReject(deps))
+	mux.HandleFunc("GET /quarantine", handleQuarantineList(deps))
+	mux.HandleFunc("POST /quarantine/{id}/approve", handleQuarantineApprove(deps))
+	mux.HandleFunc("POST /quarantine/{id}/delete", handleQuarantineDelete(deps))
 
 	// Slice 12l.1: wiki maintenance issue queue.
 	mux.HandleFunc("GET /maintenance/issues", handleMaintenanceList(deps))

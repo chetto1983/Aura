@@ -480,7 +480,7 @@ type ToolWarningsResponse struct {
 
 // AuthzResponse is the body of GET /maintenance/authz.
 type AuthzResponse struct {
-	DenialRate24h         float64          `json:"denial_rate_24h"`
+	DenialRate24h         float64           `json:"denial_rate_24h"`
 	TopDeniedCapabilities []CapabilityCount `json:"top_denied_capabilities"`
 	RecentDenials         []RecentDenial    `json:"recent_denials"`
 }
@@ -572,6 +572,8 @@ type ProposedUpdate struct {
 	Provenance     Provenance      `json:"provenance,omitempty"`
 	SkillLifecycle *SkillLifecycle `json:"skill_lifecycle,omitempty"`
 	Status         string          `json:"status"`
+	Kind           string          `json:"kind,omitempty"`
+	SignatureHash  string          `json:"signature_hash,omitempty"`
 	CreatedAt      string          `json:"created_at"`
 }
 

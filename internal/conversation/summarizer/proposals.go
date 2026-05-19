@@ -219,6 +219,30 @@ func (s *SummariesStore) List(ctx context.Context, status string, limit int) ([]
 	return out, rows.Err()
 }
 
+func (s *SummariesStore) ListQuarantine(ctx context.Context, limit int) ([]ProposedUpdate, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, chat_id, fact, action, target_slug, similarity, source_turn_ids, category, related_slugs, provenance_json, status, kind, signature_hash, created_at
+		 FROM proposed_updates WHERE status = 'quarantine' ORDER BY created_at DESC LIMIT ?`,
+		limit)
+	if err != nil {
+		return nil, fmt.Errorf("summaries quarantine list: %w", err)
+	}
+	defer rows.Close()
+
+	out := []ProposedUpdate{}
+	for rows.Next() {
+		p, err := scanProposal(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // Get returns a single proposal by ID, or ErrProposalNotFound.
 func (s *SummariesStore) Get(ctx context.Context, id int64) (ProposedUpdate, error) {
 	row := s.db.QueryRowContext(ctx,
@@ -253,6 +277,44 @@ func (s *SummariesStore) SetStatus(ctx context.Context, id int64, newStatus stri
 		return ProposedUpdate{}, err
 	}
 	return ProposedUpdate{}, ErrProposalConflict
+}
+
+func (s *SummariesStore) SetStatusFrom(ctx context.Context, id int64, fromStatus string, newStatus string) (ProposedUpdate, error) {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE proposed_updates SET status = ? WHERE id = ? AND status = ?`, newStatus, id, fromStatus)
+	if err != nil {
+		return ProposedUpdate{}, fmt.Errorf("summaries set status from: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return ProposedUpdate{}, fmt.Errorf("summaries set status from rows affected: %w", err)
+	}
+	if affected == 1 {
+		return s.Get(ctx, id)
+	}
+	if _, err := s.Get(ctx, id); err != nil {
+		return ProposedUpdate{}, err
+	}
+	return ProposedUpdate{}, ErrProposalConflict
+}
+
+func (s *SummariesStore) DeleteStatus(ctx context.Context, id int64, status string) error {
+	res, err := s.db.ExecContext(ctx,
+		`DELETE FROM proposed_updates WHERE id = ? AND status = ?`, id, status)
+	if err != nil {
+		return fmt.Errorf("summaries delete status: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("summaries delete status rows affected: %w", err)
+	}
+	if affected == 1 {
+		return nil
+	}
+	if _, err := s.Get(ctx, id); err != nil {
+		return err
+	}
+	return ErrProposalConflict
 }
 
 // CreateUserMemoryProposal implements UserMemoryProposalWriter for SummariesStore.

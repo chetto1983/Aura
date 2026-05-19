@@ -115,6 +115,65 @@ func TestCreateRunAndEventsPersistActorID(t *testing.T) {
 	assertRunScalar(t, db, `SELECT COUNT(*) FROM run_events WHERE run_id = ? AND actor_id = ?`, 1, run.ID, "actor-session-1")
 }
 
+func TestAppendEventRecordsRunOrigin(t *testing.T) {
+	_, store := openStore(t)
+	ctx := context.Background()
+	started := time.Date(2026, 5, 15, 8, 0, 0, 0, time.UTC)
+
+	cases := []struct {
+		name        string
+		id          string
+		parentRunID string
+		channel     string
+		override    string
+		want        string
+	}{
+		{name: "user web run", id: "run-origin-user", channel: "web", want: RunOriginUser},
+		{name: "subagent parent", id: "run-origin-child", parentRunID: "run-parent", channel: "web", want: RunOriginSubagent},
+		{name: "swarm run", id: "run-origin-swarm", channel: "swarm", want: RunOriginSubagent},
+		{name: "scheduler run", id: "run-origin-cron", channel: "cron", want: RunOriginScheduler},
+		{name: "source ingest run", id: "run-origin-source", channel: "source_ingest", want: RunOriginSourceIngest},
+		{name: "explicit override", id: "run-origin-override", channel: "web", override: RunOriginScheduler, want: RunOriginScheduler},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			run, created, err := store.CreateOrGetRun(ctx, CreateRunParams{
+				ID:          tc.id,
+				ParentRunID: tc.parentRunID,
+				ThreadID:    "thread-" + tc.id,
+				Channel:     tc.channel,
+				Status:      "running",
+				StartedAt:   started,
+			})
+			if err != nil {
+				t.Fatalf("CreateOrGetRun: %v", err)
+			}
+			if !created {
+				t.Fatal("CreateOrGetRun created=false")
+			}
+			event, err := store.AppendEvent(ctx, AppendEventParams{
+				RunID:     run.ID,
+				Type:      "run_started",
+				RunOrigin: tc.override,
+			})
+			if err != nil {
+				t.Fatalf("AppendEvent: %v", err)
+			}
+			if event.RunOrigin != tc.want {
+				t.Fatalf("event.RunOrigin = %q, want %q", event.RunOrigin, tc.want)
+			}
+			stored, err := store.GetEvent(ctx, event.ID)
+			if err != nil {
+				t.Fatalf("GetEvent: %v", err)
+			}
+			if stored.RunOrigin != tc.want {
+				t.Fatalf("stored.RunOrigin = %q, want %q", stored.RunOrigin, tc.want)
+			}
+		})
+	}
+}
+
 func TestAppendEventAdvancesPerRunSeqAndSnapshot(t *testing.T) {
 	_, store := openStore(t)
 	ctx := context.Background()

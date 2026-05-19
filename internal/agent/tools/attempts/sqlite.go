@@ -145,6 +145,74 @@ LIMIT ?`, runID, toolName, n)
 	return attempts, nil
 }
 
+// RecentThreadFailures returns failures from the latest runs in a thread,
+// newest first. limit is a run-window, not a raw row count: US-OP07 learns
+// only from repeated failures visible in the last N turns.
+func (r *SQLiteRepo) RecentThreadFailures(ctx context.Context, threadID, runID string, limit int) ([]ToolAttempt, error) {
+	if r.db == nil {
+		return nil, ErrRepoUnavailable
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	threadID = strings.TrimSpace(threadID)
+	runID = strings.TrimSpace(runID)
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if threadID != "" {
+		rows, err = r.db.QueryContext(ctx, `
+WITH recent_runs AS (
+	SELECT id
+	FROM runs
+	WHERE thread_id = ?
+	ORDER BY started_at DESC
+	LIMIT ?
+)
+SELECT ta.id, ta.run_id, ta.tool_name, ta.tool_kind, ta.outcome, ta.class, ta.reason,
+       ta.error_redacted, ta.elapsed_ms, ta.started_at, ta.ended_at, ta.attempt_n
+FROM tool_attempts ta
+JOIN recent_runs rr ON rr.id = ta.run_id
+WHERE ta.outcome IN ('recoverable','blocked','fatal')
+ORDER BY ta.ended_at DESC`, threadID, limit)
+	} else if runID != "" {
+		rows, err = r.db.QueryContext(ctx, `
+SELECT id, run_id, tool_name, tool_kind, outcome, class, reason,
+       error_redacted, elapsed_ms, started_at, ended_at, attempt_n
+FROM tool_attempts
+WHERE run_id = ?
+  AND outcome IN ('recoverable','blocked','fatal')
+ORDER BY ended_at DESC`, runID)
+	} else {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("attempts: query recent thread failures: %w", err)
+	}
+	defer rows.Close()
+
+	var attempts []ToolAttempt
+	for rows.Next() {
+		var ta ToolAttempt
+		var startedAtStr, endedAtStr string
+		if err := rows.Scan(
+			&ta.ID, &ta.RunID, &ta.ToolName, &ta.ToolKind, &ta.Outcome,
+			&ta.Class, &ta.Reason, &ta.ErrorRedacted, &ta.ElapsedMS,
+			&startedAtStr, &endedAtStr, &ta.AttemptN,
+		); err != nil {
+			return nil, fmt.Errorf("attempts: scan recent thread failures: %w", err)
+		}
+		ta.StartedAt, _ = time.Parse(time.RFC3339Nano, startedAtStr)
+		ta.EndedAt, _ = time.Parse(time.RFC3339Nano, endedAtStr)
+		attempts = append(attempts, ta)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("attempts: iterate recent thread failures: %w", err)
+	}
+	return attempts, nil
+}
+
 // newAttemptID generates a unique row identifier for tool_attempts.
 func newAttemptID() string {
 	var buf [8]byte

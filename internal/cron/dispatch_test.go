@@ -31,6 +31,15 @@ type recordingJobRunner struct {
 	req        JobRequest
 }
 
+type fakeMemoryDecay struct {
+	calls int
+}
+
+func (f *fakeMemoryDecay) Decay(context.Context) (scanned, deleted, kept int, err error) {
+	f.calls++
+	return 3, 1, 2, nil
+}
+
 func (r *recordingJobRunner) RunJob(ctx context.Context, req JobRequest) (JobResult, error) {
 	r.calls++
 	r.actorID = identity.ActorIDFromContext(ctx)
@@ -195,6 +204,17 @@ func TestDispatch_Routing(t *testing.T) {
 		err := h.Dispatch(ctx, task)
 		if err == nil {
 			t.Fatal("expected error: agent_job is no longer handled by cron.Handler")
+		}
+	})
+
+	t.Run("memory_decay routes to decay runner", func(t *testing.T) {
+		decay := &fakeMemoryDecay{}
+		h2 := NewHandler(HandlerConfig{MemoryDecay: decay})
+		if err := h2.Dispatch(ctx, &Task{Kind: KindMemoryDecay, Name: "daily-memory-decay"}); err != nil {
+			t.Fatalf("Dispatch memory_decay: %v", err)
+		}
+		if decay.calls != 1 {
+			t.Fatalf("decay calls = %d, want 1", decay.calls)
 		}
 	})
 

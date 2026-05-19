@@ -62,6 +62,19 @@ func TestExecuteToolCallsErrorPropagation(t *testing.T) {
 	}
 }
 
+func TestExecuteToolCallsErrorAddsRetryHintWhenEnabled(t *testing.T) {
+	t.Setenv("AURA_OP12B_RETRY_HINT_ENABLED", "true")
+	runner := &stubToolRunner{names: []string{"mcp_fake"}, err: errors.New("mcp server unavailable")}
+	convCtx := conversation.NewContext(conversation.Config{})
+	calls := []llm.ToolCall{{ID: "call-1", Name: "mcp_fake"}}
+
+	summary := ExecuteToolCalls(context.Background(), runner, convCtx, "user1", 0, calls, true, nil)
+
+	if !strings.Contains(summary.LastResult, "[Analyze the error above and try a different approach.]") {
+		t.Fatalf("LastResult = %q, want retry hint", summary.LastResult)
+	}
+}
+
 func TestExecuteToolCallsSummaryAggregation(t *testing.T) {
 	runner := &stubToolRunner{names: []string{"tool_a", "tool_b"}, result: "ok"}
 	convCtx := conversation.NewContext(conversation.Config{})

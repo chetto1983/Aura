@@ -29,10 +29,11 @@ import (
 // internal/telegram remains a thin channel wrapper.
 type InvocationBuilder struct {
 	b              *tgtelegram.Bot
-	hub            *chat.Hub           // set after hub creation; used for ask_user resume routing
-	outbound       *Outbound           // canonical streaming path used by streamingChatClient
-	agentNoteStore *agentnote.Store    // nil when not configured; injected by NewHub
-	memoryStore    *memoryindex.Store  // nil when compact memory unavailable; injected by NewHub
+	hub            *chat.Hub          // set after hub creation; used for ask_user resume routing
+	outbound       *Outbound          // canonical streaming path used by streamingChatClient
+	agentNoteStore *agentnote.Store   // nil when not configured; injected by NewHub
+	memoryStore    *memoryindex.Store // nil when compact memory unavailable; injected by NewHub
+	priorityCaches sync.Map           // thread_id -> *memoryindex.PrioritySectionCache
 }
 
 // NewInvocationBuilder wraps a *telegram.Bot for use by NewHub.
@@ -74,6 +75,10 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	cfg := b.Config()
 	userID := msg.PrincipalID
 	turnStart := time.Now()
+	runID := ""
+	if run != nil {
+		runID = run.ID
+	}
 
 	session, _ := b.SessionStore().Begin(userID, conversation.Config{
 		MaxTokens:   cfg.MaxContextTokens,
@@ -106,7 +111,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	toolAllowlist := ib.modelToolNames()
 	toolReg := b.ToolRegistry()
 	toolManifest := tools.RenderToolManifest(toolReg.Definitions())
-	promptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), overlay, skillsBlock, toolManifest, time.Now())
+	pinnedOperational := ib.renderPinnedOperational(ctx, msg.ThreadID, convCtx.MessageCount())
+	promptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), overlay, pinnedOperational, skillsBlock, toolManifest, time.Now())
 	convCtx.SetSystemMessage(promptPlan.Content)
 
 	// Inject agent working-memory note from the previous turn (if any).
@@ -281,6 +287,25 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		defer toolMu.Unlock()
 		activeToolNames = stringx.AppendUnique(activeToolNames, names...)
 	}
+	var failureReader agent.PostTurnFailureReader
+	if repo := b.ToolAttemptsRepo(); repo != nil {
+		if reader, ok := repo.(agent.PostTurnFailureReader); ok {
+			failureReader = reader
+		} else if cfg.OP07HeuristicEnabled {
+			b.Logger().Warn("posthook: attempts repo does not support thread failure reads")
+		}
+	}
+	postTurnRecord := agent.TurnRecord{
+		RunID:       runID,
+		ThreadID:    msg.ThreadID,
+		UserMessage: userText,
+	}
+	postTurn := agent.NewHeuristicPostTurnConfig(cfg.OP07HeuristicEnabled, ib.memoryStore, failureReader, cfg.OP07NFailThreshold, cfg.OP07RecentTurns, b.Logger(), postTurnRecord)
+	if hook := agent.NewMemoryJudgeHook(cfg.MemoryJudgeEnabled, b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, b.Logger()); hook != nil && ib.memoryStore != nil {
+		postTurn.Store = ib.memoryStore
+		postTurn.Record = postTurnRecord
+		postTurn.Hooks = append(postTurn.Hooks, hook)
+	}
 
 	inv := agent.Invocation{
 		Client: chatClient,
@@ -289,10 +314,14 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 			if len(execution.DiscoveredTools) > 0 {
 				addActiveTools(execution.DiscoveredTools)
 			}
+			pinnedWrite := pinnedOperationalWriteInCalls(calls)
+			if pinnedWrite {
+				ib.invalidatePinnedOperational(msg.ThreadID)
+			}
 			// Hot-reload system prompt when the file tool writes to an overlay
 			// file so the NEXT LLM iteration in this conversation sees the
 			// updated rules without waiting for a new conversation.
-			if overlayWriteInCalls(calls) {
+			if overlayWriteInCalls(calls) || pinnedWrite {
 				newOverlay := conversation.LoadPromptOverlay(cfg.PromptOverlayPath)
 				if ib.memoryStore != nil {
 					if docs, fetchErr := ib.memoryStore.FetchRecentOperational(ctx, 10); fetchErr == nil {
@@ -301,7 +330,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 						}
 					}
 				}
-				newPromptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), newOverlay, skillsBlock, toolManifest, time.Now())
+				newPinnedOperational := ib.renderPinnedOperational(ctx, msg.ThreadID, convCtx.MessageCount())
+				newPromptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), newOverlay, newPinnedOperational, skillsBlock, toolManifest, time.Now())
 				convCtx.SetSystemMessage(newPromptPlan.Content)
 				b.Logger().Debug("overlay: hot-reloaded after file tool write to overlay file")
 			}
@@ -314,14 +344,15 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 				AwaitingUserInput: execution.AwaitingUserInput,
 			}
 		}),
-		State:                   convCtx,
-		PromptVersion:           promptPlan.Version,
-		PromptHash:              promptPlan.Hash,
-		PromptModules:           promptPlan.Modules,
-		Toolset:                 "registered",
-		ToolsetSelectReason:     "core tools plus Qdrant top-K=5 retrieval",
-		Tools:                   toolDefs,
-		ToolsProvider:           toolsProvider,
+		State:               convCtx,
+		PromptVersion:       promptPlan.Version,
+		PromptHash:          promptPlan.Hash,
+		PromptModules:       promptPlan.Modules,
+		Toolset:             "registered",
+		ToolsetSelectReason: "core tools plus Qdrant top-K=5 retrieval",
+		Tools:               toolDefs,
+		ToolsProvider:       toolsProvider,
+		PostTurn:            postTurn,
 		Options: agent.Options{
 			MaxIterations:           maxIterations,
 			TerminalToolPolicy:      ib.terminalToolPolicyEnabled(),
@@ -507,6 +538,55 @@ func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Contex
 		agent.WithTokenJuice(ib.b.TokenJuiceEnabled()))
 }
 
+func (ib *InvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {
+	if ib == nil || ib.memoryStore == nil {
+		return ""
+	}
+	cacheKey := strings.TrimSpace(threadID)
+	if cacheKey == "" {
+		cacheKey = "telegram"
+	}
+	cacheAny, _ := ib.priorityCaches.LoadOrStore(cacheKey, &memoryindex.PrioritySectionCache{})
+	cache, ok := cacheAny.(*memoryindex.PrioritySectionCache)
+	if !ok || cache == nil {
+		return memoryindex.RenderPrioritySection(ctx, ib.memoryStore)
+	}
+	return cache.Render(ctx, ib.memoryStore, turnIdx)
+}
+
+func (ib *InvocationBuilder) invalidatePinnedOperational(threadID string) {
+	if ib == nil {
+		return
+	}
+	cacheKey := strings.TrimSpace(threadID)
+	if cacheKey == "" {
+		cacheKey = "telegram"
+	}
+	if cacheAny, ok := ib.priorityCaches.Load(cacheKey); ok {
+		if cache, ok := cacheAny.(*memoryindex.PrioritySectionCache); ok {
+			cache.InvalidatePinSection()
+		}
+	}
+}
+
+func pinnedOperationalWriteInCalls(calls []llm.ToolCall) bool {
+	for _, call := range calls {
+		if call.Name != "propose_patch" {
+			continue
+		}
+		action, _ := call.Arguments["action"].(string)
+		if strings.TrimSpace(action) != "operational" {
+			continue
+		}
+		priority, _ := call.Arguments["priority"].(string)
+		switch memoryindex.NormalizePriority(priority) {
+		case memoryindex.PriorityCritical, memoryindex.PriorityHigh:
+			return true
+		}
+	}
+	return false
+}
+
 type askUserResumeInput struct {
 	CallID            string
 	Options           []string
@@ -600,4 +680,3 @@ func overlayWriteInCalls(calls []llm.ToolCall) bool {
 	}
 	return false
 }
-

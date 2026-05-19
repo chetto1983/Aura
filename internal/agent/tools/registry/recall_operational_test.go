@@ -69,6 +69,31 @@ func TestRecallOperationalTool_Populated(t *testing.T) {
 	}
 }
 
+func TestRecallOperationalToolMarksReturnedLessonsRecalled(t *testing.T) {
+	ctx := context.Background()
+	store := newTestMemoryIndex(t)
+	now := time.Date(2026, 5, 19, 9, 0, 0, 0, time.UTC)
+	doc := operationalLesson("mark", "web_fetch", "timeout", now.Add(-24*time.Hour))
+	if err := store.Upsert(ctx, doc); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	tool := NewRecallOperationalTool(store)
+	tool.now = func() time.Time { return now }
+	if _, err := tool.Execute(ctx, map[string]any{"query": "lesson"}); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	docs, err := store.FetchRecentOperational(ctx, 10)
+	if err != nil {
+		t.Fatalf("FetchRecentOperational: %v", err)
+	}
+	if len(docs) != 1 {
+		t.Fatalf("docs = %d, want 1", len(docs))
+	}
+	if docs[0].RecallCount != 1 || !docs[0].LastRecalledAt.Equal(now) {
+		t.Fatalf("recall fields = count %d at %s, want 1 at %s", docs[0].RecallCount, docs[0].LastRecalledAt, now)
+	}
+}
+
 // TestRecallOperationalTool_FilterByToolName returns only lessons for the
 // requested tool_name, excluding unrelated lessons.
 func TestRecallOperationalTool_FilterByToolName(t *testing.T) {

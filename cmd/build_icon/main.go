@@ -1,9 +1,12 @@
-// build_icon regenerates internal/tray/icon.ico from a source PNG in Logo/.
+// build_icon regenerates the four brand icon artefacts from Logo/Logo.png:
 //
-// The output is a multi-resolution ICO (16, 20, 24, 32, 40, 48, 64, 128, 256)
-// using Lanczos resampling so Windows can pick the best frame for the system
-// tray at any DPI instead of downsampling a single 256 frame on the fly. Each
-// frame is PNG-encoded inside the ICO container — supported by Windows Vista+.
+//   - internal/tray/icon.ico        — Windows tray fallback (multi-res ICO)
+//   - internal/tray/icon_app.ico    — Windows tray primary (multi-res ICO)
+//   - web/public/favicon.ico        — browser tab favicon (16/32/48 ICO)
+//   - web/public/apple-touch-icon.png — iOS home-screen icon (180×180 PNG)
+//
+// Each ICO is multi-resolution with PNG-encoded frames (Windows Vista+) using
+// Lanczos resampling so renderers can pick the best frame for the current DPI.
 //
 // Run from the repo root:
 //
@@ -11,7 +14,7 @@
 //
 // Pipeline: open → auto-crop to bright content + pad to square → apply
 // anti-aliased circular alpha mask (everything outside the inscribed circle
-// goes transparent) → resize per frame → per-size sharpening for tiny frames.
+// goes transparent) → resize per target → per-size sharpening for tiny frames.
 // Masking happens at full resolution so Lanczos smooths the edge naturally.
 package main
 
@@ -29,14 +32,32 @@ import (
 	"github.com/disintegration/imaging"
 )
 
-const (
-	srcPath = "Logo/loho new.png"
-	dstPath = "internal/tray/icon.ico"
-)
+const srcPath = "Logo/Logo.png"
+
+// targetICO describes one ICO output: file path + which frame sizes to embed.
+type targetICO struct {
+	path  string
+	sizes []int
+}
 
 // targetSizes mirrors the Microsoft "Icons in Win32" recommendation for tray
 // + taskbar coverage at 100%–250% DPI scaling.
-var targetSizes = []int{16, 20, 24, 32, 40, 48, 64, 128, 256}
+// Frame sizes per output. Microsoft's "Icons in Win32" recommends 16/20/24/32/40/48/64/128/256
+// for tray + taskbar coverage at 100–250% DPI; favicons need only 16/32/48 since browsers
+// pick from that subset.
+var (
+	trayICOSizes    = []int{16, 20, 24, 32, 40, 48, 64, 128, 256}
+	faviconICOSizes = []int{16, 32, 48}
+)
+
+var icoTargets = []targetICO{
+	{path: "internal/tray/icon.ico", sizes: trayICOSizes},
+	{path: "internal/tray/icon_app.ico", sizes: trayICOSizes},
+	{path: "web/public/favicon.ico", sizes: faviconICOSizes},
+}
+
+const applePNGPath = "web/public/apple-touch-icon.png"
+const applePNGSize = 180
 
 func main() {
 	if err := run(); err != nil {
@@ -54,14 +75,25 @@ func run() error {
 	square := cropToSquare(src)
 	circle := applyCircularMask(square)
 
-	entries := make([]icoEntry, 0, len(targetSizes))
-	for _, size := range targetSizes {
+	for _, target := range icoTargets {
+		if err := writeICOTarget(circle, target); err != nil {
+			return err
+		}
+	}
+
+	if err := writeApplePNG(circle); err != nil {
+		return err
+	}
+	return nil
+}
+
+// writeICOTarget renders one multi-resolution ICO at target.path with the given
+// frame sizes. Per-size sharpening boosts tiny frames so the dark-navy
+// background doesn't swallow the cyan/purple orb at 16/20/24 px.
+func writeICOTarget(circle image.Image, target targetICO) error {
+	entries := make([]icoEntry, 0, len(target.sizes))
+	for _, size := range target.sizes {
 		resized := imaging.Resize(circle, size, size, imaging.Lanczos)
-		// Smaller frames need more help: the dark navy background otherwise
-		// swallows the orb at 16/20/24 px, and Lanczos can dull edges. Boost
-		// brightness, contrast, saturation, and unsharp mask for the smallest
-		// frames; lighter touch for 32; nothing for 40+ where the original
-		// detail already reads cleanly.
 		switch {
 		case size <= 24:
 			resized = imaging.AdjustBrightness(resized, 12)
@@ -74,23 +106,38 @@ func run() error {
 		}
 		var buf bytes.Buffer
 		if err := png.Encode(&buf, resized); err != nil {
-			return fmt.Errorf("encode %dpx: %w", size, err)
+			return fmt.Errorf("encode %dpx for %s: %w", size, target.path, err)
 		}
 		entries = append(entries, icoEntry{size: size, png: buf.Bytes()})
 	}
 
-	out, err := os.Create(dstPath)
+	out, err := os.Create(target.path)
 	if err != nil {
-		return fmt.Errorf("create %s: %w", dstPath, err)
+		return fmt.Errorf("create %s: %w", target.path, err)
 	}
 	defer out.Close()
-
 	if err := writeICO(out, entries); err != nil {
-		return fmt.Errorf("write ico: %w", err)
+		return fmt.Errorf("write %s: %w", target.path, err)
 	}
+	stat, _ := os.Stat(target.path)
+	fmt.Printf("wrote %s (%d frames, %d bytes)\n", target.path, len(entries), stat.Size())
+	return nil
+}
 
-	stat, _ := os.Stat(dstPath)
-	fmt.Printf("wrote %s (%d frames, %d bytes)\n", dstPath, len(entries), stat.Size())
+// writeApplePNG emits a single 180×180 PNG for iOS Add-to-Home-Screen. iOS
+// applies its own rounded-corner mask, so we leave the source circle alone.
+func writeApplePNG(circle image.Image) error {
+	resized := imaging.Resize(circle, applePNGSize, applePNGSize, imaging.Lanczos)
+	out, err := os.Create(applePNGPath)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", applePNGPath, err)
+	}
+	defer out.Close()
+	if err := png.Encode(out, resized); err != nil {
+		return fmt.Errorf("encode %s: %w", applePNGPath, err)
+	}
+	stat, _ := os.Stat(applePNGPath)
+	fmt.Printf("wrote %s (%dpx, %d bytes)\n", applePNGPath, applePNGSize, stat.Size())
 	return nil
 }
 

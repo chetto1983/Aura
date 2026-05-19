@@ -21,7 +21,7 @@
         "Single atomic commit prefix: feat(security): memory-poisoning defense for operational writes (Phase-OP+ / US-OP10)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.5 + §2 US-OP10 BEFORE coding. STRICTNESS DECISION (locked 2026-05-19): quarantine-always + hard-reject only for 3-4 literal CVE strings. Italian false-positive testing is mandatory in AC."
     },
     {
@@ -42,7 +42,7 @@
         "Single atomic commit prefix: feat(posthook): heuristic lesson extraction from tool patterns + user negatives (Phase-OP+ / US-OP07)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.3 + §2 US-OP07 BEFORE coding. N-FAILURE THRESHOLD DECISION (locked 2026-05-19): default 2, env-gated. Disabled by default (AURA_OP07_HEURISTIC_ENABLED=false) for 2-week dogfood — turn on by editing settings or env var when ready."
     },
     {
@@ -64,7 +64,7 @@
         "Single atomic commit prefix: feat(priority-section): always-pin Critical/High operational lessons with 5-turn batched hot-reload (Phase-OP+ / US-OP09)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.4 + §2 US-OP09 BEFORE coding. PRIORITY DECISION (locked 2026-05-19): 3-level Normal/High/Critical. KV-CACHE DECISION: 5-turn batched refresh OR explicit invalidation (NOT every-turn refresh). Aura deviates from openhuman's session-freeze with conscious knowledge of the 10x-cost trade-off."
     },
     {
@@ -86,7 +86,7 @@
         "Single atomic commit prefix: feat(memory-judge): async LLM-judged ADD/UPDATE/DELETE on operational lessons (Phase-OP+ / US-OP06)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.1 + §1.2 + §2 US-OP06 + docs/phase-op-plus-mem0-research-2026-05-19.md BEFORE coding. MODEL DECISION (locked 2026-05-19): llm.Client from settings (NO hardcoded Sonnet, NO Gemma-2B sidecar). CADENCE DECISION: async post-turn batch (NOT sync-per-write)."
     },
     {
@@ -107,7 +107,7 @@
         "Single atomic commit prefix: feat(decay): TTL-based decay for unrecalled Normal-priority lessons (Phase-OP+ / US-OP11)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §2 US-OP11 BEFORE coding. WINDOW DECISION (locked 2026-05-19): 30 days unrecalled + 7-day grace period from updated_at. Critical/High exempt."
     },
     {
@@ -129,7 +129,7 @@
         "Single atomic commit prefix: feat(precall-validator): catch tool param errors before dispatch (Phase-OP+ / US-OP12)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §2 US-OP12 + docs/phase-op-plus-precall-validation-research-2026-05-19.md BEFORE coding. PIVOT 2026-05-19: location moved from executor.go to internal/tools/registry.go Registry.Execute (broader coverage including MCP); coercer step added (LLMs emit stringified numerics frequently); recoverable bool added (from elysia). Clean-room Go port of nanobot's three pieces — nanobot is MIT, code portable with attribution but cleaner to write from scratch given the small surface."
     },
     {
@@ -147,7 +147,7 @@
         "Single atomic commit prefix: feat(retry-hint): nanobot-style self-correction primer on tool errors (Phase-OP+ / US-OP12b)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §2 US-OP12b + docs/phase-op-plus-precall-validation-research-2026-05-19.md (nanobot section) BEFORE coding. ~30 LOC total, VERY LOW risk. Story added 2026-05-19 from precall-validation survey 'side win' — independent of US-OP12. Can run BEFORE US-OP12 if Ralph picks lowest-priority-pending and US-OP12 has any blocker. Nanobot source MIT-licensed — pattern attribution sufficient, no code copy."
     }
   ]
