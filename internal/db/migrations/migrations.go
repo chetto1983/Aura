@@ -34,6 +34,7 @@ var registered = []Migration{
 	{Version: 16, Name: "add_proposed_updates_actor_id", Up: addProposedUpdatesActorID},
 	{Version: 17, Name: "add_compact_memory_source_span_columns", Up: addCompactMemorySourceSpanColumns},
 	{Version: 18, Name: "migrate_mistral_api_key_to_secrets", Up: migrateMistralAPIKeyToSecrets},
+	{Version: 19, Name: "add_tokenjuice_runs_columns", Up: addTokenJuiceRunsColumns},
 }
 
 type columnDef struct {
@@ -1253,6 +1254,13 @@ func addCompactMemorySourceSpanColumns(ctx context.Context, tx *sql.Tx) error {
 		{Name: "chunk_index", SQL: "INTEGER NOT NULL DEFAULT 0"},
 		{Name: "byte_start", SQL: "INTEGER NOT NULL DEFAULT 0"},
 		{Name: "byte_end", SQL: "INTEGER NOT NULL DEFAULT 0"},
+	})
+}
+
+func addTokenJuiceRunsColumns(ctx context.Context, tx *sql.Tx) error {
+	return addMissingColumns(ctx, tx, "runs", []columnDef{
+		{Name: "tokenjuice_bytes_saved", SQL: "INTEGER NOT NULL DEFAULT 0"},
+		{Name: "tokenjuice_compactions_applied", SQL: "INTEGER NOT NULL DEFAULT 0"},
 	})
 }
 

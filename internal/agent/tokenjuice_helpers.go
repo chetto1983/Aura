@@ -70,6 +70,7 @@ func compactToolOutput(logger *slog.Logger, toolName string, args map[string]any
 		)
 	}
 	if r.Applied {
+		tokenjuice.RecordCompaction(r.RuleID, r.Stats.OriginalBytes, r.Stats.CompactedBytes)
 		return r.InlineText
 	}
 	return raw

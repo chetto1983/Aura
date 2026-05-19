@@ -102,7 +102,7 @@
         "Single atomic commit prefix: feat(tokenjuice): observability — runs aggregates + /api/health + dashboard (Phase-TJ / US-TJ06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Migration: next available v_NN in internal/db/migrations/. The runs table is hot — only add nullable columns to avoid lock storms."
     },
     {

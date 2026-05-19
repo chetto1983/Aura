@@ -56,6 +56,25 @@ type HealthRollup struct {
 	// Phase 2 D-16: reindex worker operational telemetry. Always present
 	// (zero value when worker is nil) so TypeScript strict types stay stable.
 	Reindex ReindexHealthResponse `json:"reindex"`
+	// Phase-TJ: rule-driven output compaction stats. Always present so
+	// TypeScript strict types stay stable; fields are zero when no compaction
+	// has occurred yet or when the feature flag is off.
+	TokenJuice TokenJuiceHealth `json:"tokenjuice"`
+}
+
+// TokenJuiceHealth surfaces process-level rule-driven output compaction stats.
+type TokenJuiceHealth struct {
+	Enabled         bool         `json:"enabled"`
+	TotalCalls      int64        `json:"total_calls"`
+	TotalBytesSaved int64        `json:"total_bytes_saved"`
+	AvgRatio        float64      `json:"avg_ratio"`
+	TopRules        []RuleSaving `json:"top_rules_by_savings"`
+}
+
+// RuleSaving pairs a rule ID with total bytes it saved since process start.
+type RuleSaving struct {
+	RuleID     string `json:"rule_id"`
+	BytesSaved int64  `json:"bytes_saved"`
 }
 
 // SandboxHealth reports whether local code execution is active. The desired

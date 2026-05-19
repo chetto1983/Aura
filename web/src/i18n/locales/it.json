@@ -830,6 +830,12 @@
   "health.started": "avviato",
   "health.never": "mai",
   "health.justNow": "adesso",
+  "health.tokenJuice": "TokenJuice",
+  "health.tokenJuiceDisabled": "disabilitato",
+  "health.tokenJuiceEnabled": "abilitato",
+  "health.tokenJuiceNoActivity": "nessuna compattazione",
+  "health.compactions": "compattazioni",
+  "health.bytesSaved": "byte risparmiati",
   "error.somethingWentWrong": "Qualcosa è andato storto",
   "error.toastDescription": "Controlla la console per lo stack completo."
 }

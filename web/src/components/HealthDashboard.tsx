@@ -58,6 +58,7 @@ export function HealthDashboard() {
 
         <SandboxCard sandbox={data.sandbox} />
         <EmbedCacheCard cache={data.embed_cache} />
+        <TokenJuiceCard tj={data.tokenjuice} />
       </div>
 
       <ProcessFooter process={data.process} />
@@ -101,6 +102,27 @@ function EmbedCacheCard({ cache }: { cache: { hits: number; misses: number } }) 
       <div className="text-3xl font-bold tabular-nums">{formatNumber(cache.hits)}</div>
       <div className="text-xs text-muted-foreground">
         {t('health.hits')} <span className="opacity-50">/</span> {formatNumber(cache.misses)} {t('health.misses')}
+      </div>
+    </Card>
+  );
+}
+
+function TokenJuiceCard({ tj }: { tj?: { enabled: boolean; total_calls: number; total_bytes_saved: number; avg_ratio: number; top_rules_by_savings: Array<{ rule_id: string; bytes_saved: number }> } }) {
+  const { t, formatNumber } = useLocale();
+  const enabled = tj?.enabled ?? false;
+  const calls = tj?.total_calls ?? 0;
+  const bytesSaved = tj?.total_bytes_saved ?? 0;
+  const subtitle = !enabled
+    ? t('health.tokenJuiceDisabled')
+    : calls === 0
+      ? t('health.tokenJuiceNoActivity')
+      : t('health.tokenJuiceEnabled');
+  return (
+    <Card title={t('health.tokenJuice')} subtitle={subtitle}>
+      <div className="text-3xl font-bold tabular-nums">{formatNumber(calls)}</div>
+      <div className="text-xs text-muted-foreground">
+        {t('health.compactions')} <span className="opacity-50">/</span>{' '}
+        {formatNumber(bytesSaved)} {t('health.bytesSaved')}
       </div>
     </Card>
   );

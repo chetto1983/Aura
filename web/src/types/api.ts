@@ -22,6 +22,15 @@ export interface HealthRollup {
   // Slice 11j — embedding cache hit/miss counters since process start.
   // Both zero when no cache is wired.
   embed_cache: { hits: number; misses: number };
+  // Phase-TJ — rule-driven output compaction stats. Always present (zero
+  // values before any compaction occurs or when the flag is off).
+  tokenjuice: {
+    enabled: boolean;
+    total_calls: number;
+    total_bytes_saved: number;
+    avg_ratio: number;
+    top_rules_by_savings: Array<{ rule_id: string; bytes_saved: number }>;
+  };
 }
 
 export interface WikiPageSummary {

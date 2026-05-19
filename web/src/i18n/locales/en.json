@@ -830,6 +830,12 @@
   "health.started": "started",
   "health.never": "never",
   "health.justNow": "just now",
+  "health.tokenJuice": "TokenJuice",
+  "health.tokenJuiceDisabled": "disabled",
+  "health.tokenJuiceEnabled": "enabled",
+  "health.tokenJuiceNoActivity": "no compactions yet",
+  "health.compactions": "compactions",
+  "health.bytesSaved": "bytes saved",
   "error.somethingWentWrong": "Something went wrong",
   "error.toastDescription": "Check the console for the full stack."
 }

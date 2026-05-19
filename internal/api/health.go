@@ -8,6 +8,7 @@ import (
 
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/sources/store"
+	"github.com/aura/aura/internal/tokenjuice"
 )
 
 // gitRevision is read once via debug.ReadBuildInfo. The result depends
@@ -107,6 +108,21 @@ func handleHealth(deps Deps) http.HandlerFunc {
 		// WARNING 12 of 2026-05-10 plan revision (closed without Phase 3 deferral).
 		if deps.ReindexHealth != nil {
 			rollup.Reindex = reindexHealthFromHealth(deps.ReindexHealth())
+		}
+
+		// Phase-TJ: process-level token-juice compaction stats.
+		snap := tokenjuice.SnapshotStats()
+		rollup.TokenJuice.TotalCalls = snap.TotalCalls
+		rollup.TokenJuice.TotalBytesSaved = snap.TotalBytesSaved
+		rollup.TokenJuice.AvgRatio = snap.AvgRatio
+		for _, r := range snap.TopRules {
+			rollup.TokenJuice.TopRules = append(rollup.TokenJuice.TopRules, RuleSaving{
+				RuleID:     r.RuleID,
+				BytesSaved: r.BytesSaved,
+			})
+		}
+		if deps.RuntimeConfig != nil {
+			rollup.TokenJuice.Enabled = deps.RuntimeConfig.TokenJuiceEnabled
 		}
 
 		writeJSON(w, deps.Logger, http.StatusOK, rollup)
