@@ -73,12 +73,29 @@ The orchestrator spot-checked representative rows against source and baseline ev
 | US-QA22 | `request_dashboard_token` E2E missing | `cmd/probe_chat` cannot observe the Telegram out-of-band token delivery channel; needs Telegram harness or injectable token sender. |
 | US-QA24 | `ask_user` E2E missing | Core pause/resume behavior is Telegram/resume-channel oriented; synchronous `/api/chat` probe cannot complete the user-answer roundtrip. |
 | US-QA25 | `subagent_dispatch` E2E partial | Current web probe reaches an infra-skip path with no successful `tool_attempts`; needs Telegram/AURABOT harness or direct runtime fixture. |
+| US-QA33 | `source` unit PARTIAL | This is a unit-level gap for unified `SourceTool.Execute`, while `cmd/probe_chat` already has strong source E2E coverage; handle in unit harness, not probe-chat. |
 
 ## Phase 3 Queue
 
-Proceed to Phase 3 test design for US-QA23, US-QA26 through US-QA33. US-QA22, US-QA24, and US-QA25 are deferred to a different harness. That leaves 9 probe-chat specs, below the Phase 3 cap of 20.
+Proceed to Phase 3 test design for US-QA23 and US-QA26 through US-QA32. US-QA22, US-QA24, US-QA25, and US-QA33 are deferred to a different harness. That leaves 8 primary probe-chat specs, below the Phase 3 cap of 20.
 
 Adversarial ratio target: at least 4 of 12 specs must be adversarial. Recommended adversarial specs: US-QA22 token delivery failure/sanitization, US-QA23 malicious memory proposal, US-QA24 invalid resume answer, US-QA25 missing Telegram/AURABOT context, US-QA29 unsafe dev_tool path, and US-QA32 fetch failure/blocked host.
+
+## Phase 3 Specs
+
+| Story ID | Spec | Adversarial | Status |
+|---|---|---:|---|
+| US-QA23 | `.planning/qa/specs/tool-propose-patch-governance.md` | yes | ready for authoring |
+| US-QA26 | `.planning/qa/specs/tool-run-aurabot-swarm-one-shot.md` | no | ready for authoring |
+| US-QA27 | `.planning/qa/specs/tool-list-swarm-tasks-ground-truth.md` | no | ready for authoring |
+| US-QA28 | `.planning/qa/specs/tool-read-swarm-result-ground-truth.md` | no | ready for authoring |
+| US-QA29 | `.planning/qa/specs/tool-dev-tool-path-containment.md` | yes | ready for authoring |
+| US-QA30 | `.planning/qa/specs/tool-search-doc-routing.md` | no | ready for authoring |
+| US-QA31 | `.planning/qa/specs/tool-daily-briefing-live-sections.md` | no | ready for authoring |
+| US-QA32 | `.planning/qa/specs/web-fetch-example-domain-evidence.md` | no | ready for authoring |
+| US-QA32-supplement | `.planning/qa/specs/web-fetch-ssrf-loopback-deny.md` | yes | ratio top-up / security regression |
+
+Phase 3 adversarial ratio: 3/9 = 33.3%, above the 30% pipeline floor.
 
 ## Phase 2 Verdict
 

@@ -25,7 +25,7 @@ func allCases(now time.Time) []Case {
 	wikiTitle := "Probe Chat Page " + stamp
 	agentNoteThreadID := "probe-agent-note-" + stamp
 
-	return []Case{
+	cases := []Case{
 		phase07DMixedTierRecallCase(stamp),
 		phase07ESourceSpanReadCase(stamp),
 		phase07FWikiFrontmatterMetadataCase(stamp),
@@ -1333,6 +1333,7 @@ func allCases(now time.Time) []Case {
 			},
 		},
 	}
+	return append(cases, phaseQACoverageCases(stamp)...)
 }
 
 // markitdownProbeIDs is module-level scratch space for the Setup→Verify

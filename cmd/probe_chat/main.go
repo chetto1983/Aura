@@ -66,10 +66,13 @@ var validSmokeCategories = []string{
 	"markitdown",
 	"tools-agent-note",
 	"tools-files",
+	"tools-dev",
 	"tools-memory",
 	"tools-sandbox",
 	"tools-scheduler",
 	"tools-source",
+	"tools-swarm",
+	"tools-registry",
 	"tools-web",
 }
 
