@@ -51,7 +51,7 @@
         "Single atomic commit prefix: feat(tokenjuice): reduce pipeline + grapheme-aware text helpers (Phase-TJ / US-TJ03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Grapheme clamp is THE hotspot per spec — uniseg.GraphemeBoundaries with byte iteration is faster than uniseg.Step + slice materialization. Bench BEFORE optimizing."
     },
     {

@@ -19,46 +19,8 @@ func Compact(in Input, opts Options) Result {
 }
 
 // CompactWithRules runs the engine with an explicit rule slice.
-// If rules contains no "generic/fallback" entry an in-memory fallback is
-// synthesized so the engine never panics (boot non-fatal per Aura convention).
-// Full reduce pipeline implemented in US-TJ02/TJ03; skeleton returns passthrough.
+// If rules contains no "generic/fallback" entry the engine degrades gracefully
+// to passthrough (boot non-fatal per Aura convention).
 func CompactWithRules(in Input, rules []*CompiledRule, opts Options) Result {
-	minBytes := opts.MinInputBytes
-	if minBytes == 0 {
-		minBytes = defaultMinInputBytes
-	}
-
-	origBytes := len(in.Stdout)
-
-	if origBytes < minBytes {
-		return Result{
-			InlineText: in.Stdout,
-			Applied:    false,
-			RuleID:     "none/too-small",
-			Stats: Stats{
-				ToolName:       in.ToolName,
-				OriginalBytes:  origBytes,
-				CompactedBytes: origBytes,
-				OriginalChars:  countTextChars(in.Stdout),
-				CompactedChars: countTextChars(in.Stdout),
-				Confidence:     0,
-			},
-		}
-	}
-
-	// Classify + reduce pipeline (US-TJ02/TJ03).
-	// Skeleton: passthrough until rules and reduce are wired in.
-	return Result{
-		InlineText: in.Stdout,
-		Applied:    false,
-		RuleID:     "none/no-rules",
-		Stats: Stats{
-			ToolName:       in.ToolName,
-			OriginalBytes:  origBytes,
-			CompactedBytes: origBytes,
-			OriginalChars:  countTextChars(in.Stdout),
-			CompactedChars: countTextChars(in.Stdout),
-			Confidence:     0,
-		},
-	}
+	return ReduceExecutionWithRules(in, rules, opts)
 }
