@@ -167,12 +167,6 @@ func clampTextMiddle(s string, maxChars int) string {
 	return head + marker + tail
 }
 
-// safeClamp is a grapheme-aware tail truncation (alias for clampText).
-// Used when the caller wants a safe cut that never splits a cluster.
-func safeClamp(s string, maxChars int) string {
-	return clampText(s, maxChars)
-}
-
 // pluralize returns "N noun" with basic English inflection rules.
 // Special-cases: already-pluralized words (passed/failed/skipped) → no suffix.
 func pluralize(count int, noun string) string {

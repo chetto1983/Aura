@@ -1070,7 +1070,6 @@ func allCases(now time.Time) []Case {
 					return fmt.Errorf("upload probe pdf: %w", err)
 				}
 				ocrProbeID = id
-				ocrProbeBefore = time.Now()
 				return nil
 			},
 			// PromptFn is evaluated after Setup, so ocrProbeID is already set.
@@ -1332,7 +1331,6 @@ var (
 	execShellBefore        time.Time
 	subagentDispatchBefore time.Time
 	ocrProbeID             string
-	ocrProbeBefore         time.Time
 	ingestProbeID          string
 	ingestExpectedSlug     string
 

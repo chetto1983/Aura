@@ -16,7 +16,7 @@
         "Single atomic commit prefix: chore(legacy): remove golangci-lint unused triplet (RECLAIM01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §1 + §Story RECLAIM01 BEFORE deleting. Verify with grep that no caller appeared since the survey (2026-05-19)."
     },
     {

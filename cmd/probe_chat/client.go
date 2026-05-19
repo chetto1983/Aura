@@ -324,11 +324,6 @@ func (e *Env) fetchUserID() (string, error) {
 	return strings.TrimSpace(who.UserID), nil
 }
 
-// sendChat sends a single message and returns the structured reply.
-func (e *Env) sendChat(prompt string) (ChatReply, error) {
-	return e.sendChatThread("", prompt)
-}
-
 func (e *Env) sendChatThread(threadID, prompt string) (ChatReply, error) {
 	chatURL := strings.TrimRight(e.APIBase, "/") + "/chat"
 	return sendChatWithThread(e.APIClient, chatURL, e.APIToken, prompt, threadID)
