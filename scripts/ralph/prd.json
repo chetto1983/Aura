@@ -53,7 +53,7 @@
         "Single atomic commit prefix: fix(agent): graceful finalize on all budget paths (US-FIX01)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "HIGHEST RISK story of Phase-FIX -- touches 3 hot exit paths in loop.go. Read loop.go fully BEFORE editing (lines 200-680, focus on iteration loop body + budget exits). The flag `AllowNoToolFinalization` is already set true in cmd/aura/web_chat.go:162 -- confirm Telegram path is equivalent. The existing MaxIterations-finalize wiring at loop.go:636-642 is the template -- port that shape to the other 2 paths via the helper. DO NOT change stats.StopReason values for existing paths (they are a stable telemetry contract); just ADD the new 'empty_llm_response' value. Update probe matchers AFTER the loop change so probe runs catch any regression. The helper must NOT call client.Chat() if AllowNoToolFinalization is false -- it must short-circuit to finalAnswerOnBudget."
     },
     {

@@ -403,9 +403,13 @@ func (e *Env) sendChatDenyCheck(token, message string) (forbidden bool, body str
 }
 
 func isEmptyProviderReply(reply ChatReply) bool {
-	if reply.ToolCalls != 0 || reply.Tokens != 0 || reply.LLMCalls != 1 {
-		return false
-	}
 	text := strings.TrimSpace(reply.Reply)
-	return text == "" || text == "I reached the per-turn budget without a usable result."
+	// Budget-exhaustion fallback: always treat as empty regardless of LLMCalls
+	// count — graceful finalize (US-FIX01) may add an extra LLM call before
+	// falling back to this string.
+	if text == "" || text == "I reached the per-turn budget without a usable result." {
+		return true
+	}
+	// Zero-content single-LLM-call with no tool activity: provider returned nothing.
+	return reply.ToolCalls == 0 && reply.Tokens == 0 && reply.LLMCalls == 1
 }

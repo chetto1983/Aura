@@ -264,13 +264,11 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			stats.MaxElapsedHit = true
 			stats.StopReason = "max_elapsed_hit"
 			logger.Warn("agent: max_elapsed_hit", "iteration", iteration, "elapsed_ms", time.Since(start).Milliseconds(), "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
-			answer := finalAnswerOnBudget(lastToolResult)
-			state.AddAssistantMessage(answer)
-			emitStats()
 			if iterCancel != nil {
 				iterCancel()
+				iterCancel = nil
 			}
-			return loopResult{Text: answer, Stats: stats}, nil
+			return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 		}
 		if iterCancel != nil {
 			iterCancel()
@@ -353,7 +351,9 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		if !resp.Response.HasToolCalls {
 			response := strings.TrimSpace(resp.Response.Content)
 			if response == "" {
-				response = finalAnswerOnBudget(lastToolResult)
+				stats.StopReason = "empty_llm_response"
+				iterCancel()
+				return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 			}
 			if opts.PhantomToolGuard != nil &&
 				stats.PhantomToolDetections < opts.PhantomToolGuard.RetriesAllowed() &&
@@ -633,17 +633,29 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		iterCancel()
 		iterCancel = nil
 	}
+	return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
+}
+
+// gracefulFinalize is the unified budget-exit handler used by all three
+// budget paths (MaxElapsed, empty-LLM-response, MaxIterations). When
+// AllowNoToolFinalization is true it attempts one extra LLM round via
+// finalizeAnswerAfterBudget; on failure or when the flag is false it falls
+// back to finalAnswerOnBudget. It always adds the assistant message and fires
+// emitStats before returning.
+func gracefulFinalize(ctx context.Context, client ChatClient, state State, opts Options, stats *Stats, lastToolResult string, emitStats func()) (loopResult, error) {
+	var answer string
 	if opts.AllowNoToolFinalization {
-		if answer, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, &stats); ok {
-			state.AddAssistantMessage(answer)
-			emitStats()
-			return loopResult{Text: answer, Stats: stats}, nil
+		if text, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, stats); ok {
+			answer = text
+		} else {
+			answer = finalAnswerOnBudget(lastToolResult)
 		}
+	} else {
+		answer = finalAnswerOnBudget(lastToolResult)
 	}
-	answer := finalAnswerOnBudget(lastToolResult)
 	state.AddAssistantMessage(answer)
 	emitStats()
-	return loopResult{Text: answer, Stats: stats}, nil
+	return loopResult{Text: answer, Stats: *stats}, nil
 }
 
 func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state State, opts Options, stats *Stats) (string, bool) {

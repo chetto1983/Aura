@@ -621,6 +621,65 @@ func TestRunLoopEmptyLLMResponseFallsBackToLastToolResult(t *testing.T) {
 	}
 }
 
+func TestRunLoopMaxElapsedTriggersGracefulFinalize(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_memory"}}}},
+		{Response: llm.Response{Content: "Risposta graceful dopo timeout."}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "risultato parziale")
+		time.Sleep(5 * time.Millisecond)
+		return ExecutionSummary{LastResult: "risultato parziale"}
+	}), state, Options{
+		MaxIterations:           3,
+		MaxElapsed:              time.Millisecond,
+		AllowNoToolFinalization: true,
+	})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if !result.Stats.MaxElapsedHit {
+		t.Fatal("MaxElapsedHit = false")
+	}
+	if result.Text != "Risposta graceful dopo timeout." {
+		t.Fatalf("answer = %q, want graceful finalization response", result.Text)
+	}
+	if client.requests != 2 {
+		t.Fatalf("LLM requests = %d, want 2 (tool turn + finalization)", client.requests)
+	}
+}
+
+func TestRunLoopEmptyLLMResponseTriggersGracefulFinalize(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_memory"}}}},
+		{Response: llm.Response{Content: ""}},
+		{Response: llm.Response{Content: "Risposta graceful dopo LLM vuoto."}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "risultato utile")
+		return ExecutionSummary{LastResult: "risultato utile"}
+	}), state, Options{
+		MaxIterations:           3,
+		AllowNoToolFinalization: true,
+	})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Stats.StopReason != "empty_llm_response" {
+		t.Fatalf("StopReason = %q, want 'empty_llm_response'", result.Stats.StopReason)
+	}
+	if result.Text != "Risposta graceful dopo LLM vuoto." {
+		t.Fatalf("answer = %q, want graceful finalization response", result.Text)
+	}
+	if client.requests != 3 {
+		t.Fatalf("LLM requests = %d, want 3 (tool round + empty round + finalization)", client.requests)
+	}
+}
+
 func TestRunLoopOnToolStartSkippedForDedupedCalls(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
