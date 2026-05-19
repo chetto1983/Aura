@@ -1,23 +1,36 @@
 <p align="center">
-  <img src="Logo/logo.png" alt="Aura logo" width="112">
+  <img src="Logo/logo.png" alt="Aura logo" width="320">
 </p>
 
 <h1 align="center">Aura</h1>
 
 <p align="center">
-  A private Telegram second brain that runs as a self-hosted Docker stack.
+  <em>A private Telegram second-brain that runs as a self-hosted Docker stack.</em>
 </p>
 
 <p align="center">
-  <a href="https://github.com/chetto1983/Aura/pkgs/container/aura"><img alt="Docker image" src="https://img.shields.io/badge/image-ghcr.io%2Fchetto1983%2Faura-2496ED"></a>
-  <a href="docs/container.md"><img alt="Install path" src="https://img.shields.io/badge/install-Docker%20Compose-0B6B50"></a>
-  <img alt="Go version" src="https://img.shields.io/badge/Go-1.26.2-00ADD8">
+  <a href="https://github.com/chetto1983/Aura/pkgs/container/aura"><img alt="Docker image" src="https://img.shields.io/badge/image-ghcr.io%2Fchetto1983%2Faura-2496ED?logo=docker&logoColor=white"></a>
+  <a href="docs/container.md"><img alt="Install path" src="https://img.shields.io/badge/install-Docker%20Compose-0B6B50?logo=docker&logoColor=white"></a>
+  <img alt="Go version" src="https://img.shields.io/badge/Go-1.26.2-00ADD8?logo=go&logoColor=white">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
-Aura is a personal assistant you own. It chats through your Telegram bot,
-ingests files into a local source inbox, builds a Markdown wiki, searches memory
-with embeddings, and gives you a dashboard for sources, tasks, settings,
-backups, skills, and health.
+---
+
+**Aura is a personal assistant you own.** It chats through your Telegram bot,
+ingests files into a local source inbox, builds a Markdown wiki you can read
+on disk, searches memory with embeddings, and gives you a dashboard for
+sources, tasks, settings, backups, skills, and health — all behind a single
+self-hosted Docker stack.
+
+### Why Aura?
+
+- 🔐 **Your data stays yours** — wiki on disk, SQLite local, no cloud storage required.
+- 💬 **Telegram-native** — your phone is the front door; no separate app to install.
+- 📚 **Self-building knowledge base** — drop a PDF, get an OCR'd Markdown page with `[[wiki-links]]`.
+- 🧠 **Learns from its own mistakes** — operational memory with priority pinning, decay, and a memory-poisoning guard ([Phase-OP+](docs/phase-op-plus-plan-2026-05-19.md)).
+- 🛠️ **Pluggable substrate** — MCP servers, skills, prompt overlays, capability gates — extend without forking.
+- 🐳 **One-command install** — `docker compose up -d`. Production hardening profile included.
 
 The supported install path is Docker Compose. Release tags publish only the
 container image at `ghcr.io/chetto1983/aura:<version>`.

@@ -32,7 +32,7 @@ import (
 	"github.com/disintegration/imaging"
 )
 
-const srcPath = "Logo/Logo.png"
+const srcPath = "Logo/logo.png"
 
 // targetICO describes one ICO output: file path + which frame sizes to embed.
 type targetICO struct {
