@@ -52,7 +52,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: web
-        run: npm ci
+        # `npm install` instead of `npm ci` so the build tolerates the
+        # cross-platform lock drift between Windows dev (no @emnapi/* Linux
+        # WASM bindings) and Linux CI. Switch back to `npm ci` once the
+        # lock is regenerated on Linux (e.g. via docker run node:22 npm i).
+        run: npm install --no-audit --no-fund
 
       - name: Build dashboard
         working-directory: web
