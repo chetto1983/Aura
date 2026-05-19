@@ -1273,6 +1273,15 @@ func allCases(now time.Time) []Case {
 			},
 		},
 
+		// transient_llm_retry — coverage note (US-FIX03).
+		// A full live probe for 429 retry is infeasible without a controllable
+		// LLM stub that returns HTTP 429 on demand. Coverage is provided by
+		// unit tests in internal/llm/retry_test.go:
+		//   TestRetry_429_RetrySuccess_NoFallback   — Send() path (web-chat / noStreamClient)
+		//   TestRetry_429_Stream_RetrySuccess_NoFallback — Stream() path (Telegram streaming)
+		// Both assert callCount==3 (two 429s then success) and that the fallback
+		// diagnostic string is never returned when retry succeeds.
+
 		// Phase-QA2 / US-QA-COV09 — swarm full lifecycle E2E.
 		// Exercises spawn_aurabot → list_swarm_tasks → read_swarm_result in one
 		// composite probe. The worker task counts vowels in "Aurabot" (answer: 4).

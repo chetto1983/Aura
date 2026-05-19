@@ -34,7 +34,7 @@
         "Single atomic commit prefix: fix(llm): retry coverage audit + Stream-path test + 429 retry test (US-FIX03)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "FIX03 is mostly verification: retry is wired at cmd/aura/helpers.go:64 (NewRetryClient) and llm.Client.Send is what noStreamClient.Chat delegates to. The risk is Telegram streaming (chat_client.go uses StreamConsumer / pane.go) -- if that path bypasses RetryClient.Stream, retry does not fire for streaming responses. Grep for `\\.Stream(` to confirm wrap reaches all consumers. Read internal/llm/retry.go BEFORE writing tests. If the probe_chat case is hard to wire (no easy way to inject a 429 from outside the LLM), instead extend an existing unit test in internal/llm/retry_test.go to also cover Stream() path, and document the probe-coverage gap in the commit msg."
     },
     {

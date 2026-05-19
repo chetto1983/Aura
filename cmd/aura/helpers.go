@@ -61,6 +61,10 @@ func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 		BaseURL: cfg.LLMBaseURL,
 		Model:   cfg.LLMModel,
 	})
+	// All client.Chat()/Stream() calls inherit retry via this wrap.
+	// Config: MaxRetries=cfg.LLMMaxRetries (default 5), BaseDelay=1s, MaxDelay=30s.
+	// Telegram streaming (streamingChatClient.llmc.Stream) and web-chat
+	// (noStreamClient.Send) both resolve through this single construction site.
 	return llm.NewRetryClient(openaiClient, llm.RetryConfig{
 		MaxRetries:          cfg.LLMMaxRetries,
 		BaseDelay:           time.Second,
