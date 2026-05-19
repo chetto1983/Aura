@@ -1,8 +1,0 @@
-# Phase-O: User Memory Promotion — Progress
-
-| Date | Actor | Story | SHA | Change | Verification |
-|------|-------|-------|-----|--------|--------------|
-| 2026-05-16 | Ralph | US-O01 | 2642ce0b | `triage.go` — `TargetLayer` type + `TargetWiki`/`TargetUserMemory` consts + `TriageCandidate` routing (person/preference/fact/todo → user_memory; project/empty → wiki) + `UserFactHandle` (SHA-256, 16-char prefix). 7-case test suite in `triage_test.go`. | go build/vet/test all green. |
-| 2026-05-16 | Ralph | US-O02 | b87503fe | `applier.go` branch on `TriageCandidate` before wiki resolution; `createUserMemoryProposal` inserts `proposed_updates` rows with kind='user_memory', handle=UserFactHandle, source_turn_ids preserved. Idempotency via handle dedup. Existing-fact detection via memoryindex.Store.Search at threshold 0.85 → ActionPatch. 4-case test suite in `triage_routing_test.go`. | go build/vet/test all green. |
-| 2026-05-16 | Ralph | US-O03 | 801af897 | `learning/user_memory_writer.go` — `WriteApprovedUserFact` writes `compact_memory_documents` rows with kind='user_memory', Tags=category, Phase 7C freshness fields. Wired into `api/summaries.go` approval-transition path mirroring US-N03. Idempotency via ON CONFLICT(Handle) DO UPDATE. `collections.go` CollectionUserMemory description updated from scaffold note. 4-case test suite in `user_memory_writer_test.go`. | go build/vet/test all green. |
-| 2026-05-16 | Ralph | US-O04 | (current) | `recall_user_memory` LLM tool in `internal/agent/tools/registry/recall_user_memory.go`; registered in `cmd/aura/app.go`; catalogue scan + examples eval updated; Phase-O closure docs; prd.md §6.5 and §7.2 updated. | go build/vet/test all green. |

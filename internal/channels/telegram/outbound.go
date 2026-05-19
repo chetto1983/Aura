@@ -144,7 +144,8 @@ func (o *Outbound) ConsumeStream(
 	// readyToFlush gates Outbound's edits. With a pane attached, reasoning
 	// flows through the pane (it reads cotSnapshot), so Outbound only acts
 	// on actual narrative content — preventing the reasoning-hijacks-pane
-	// race documented in docs/telegram-tool-ui-fix-2026-05-17.md. With no
+	// race documented in historical docs/telegram-tool-ui-fix-2026-05-17.md
+	// (removed 2026-05-19; see git history). With no
 	// pane (fixture / future channels) the legacy "reasoning OR content"
 	// trigger stays to preserve byte-parity snapshots.
 	readyToFlush := func() bool {

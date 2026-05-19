@@ -20,7 +20,7 @@ import (
 // The tool is the LLM's read-side window into Aura's persistent wiki, source
 // archive, conversation history, and proposed updates. It is the closest
 // equivalent of the "search engine over the wiki" sketched in the wiki design
-// notes (docs/llm-wiki.md, qmd reference): hybrid BM25 + cosine retrieval over
+// notes (historical docs/llm-wiki.md, removed 2026-05-19): hybrid BM25 + cosine retrieval over
 // the items the agent has curated over time.
 //
 // Output is plain markdown. There is no JSON envelope, no calibrated score

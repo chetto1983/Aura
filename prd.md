@@ -95,36 +95,26 @@ Implementation targets:
 
 ### 3.2 Planning-State Reconciliation
 
-Aura already has useful planning work in `.planning/`, but those files are not
-the execution queue for the deep refactor. They were written against an older
-module shape and several of their target paths are moved, deleted, or absorbed
-by this PRD.
+Aura had several legacy planning artifacts (`.planning/CONTEXT-ENGINEERING-ROADMAP.md`,
+`.planning/wave1/`, `.planning/wave2/`, `.planning/wave3-agent-swarm/`,
+`.planning/deep-refactor/Phase01..Phase10/`, and `docs/aura-restructure-prd*.md`).
+They were written against an older module shape and have been **cleaned out on
+2026-05-19** after the deep-refactor closed. The decisions they encoded survive
+in this PRD and in `.planning/aura-deep-refactor-decisions.json`. For provenance,
+inspect git history before commit `chore(docs): clean up legacy planning`.
 
-The rule:
+The rule (preserved for posterity):
 
-> Old waves may contribute requirements, examples, and tests. They must not
-> execute as-is when they conflict with the deep-refactor architecture.
+> Old waves contributed requirements, examples, and tests. They never executed
+> as-is when they conflicted with the deep-refactor architecture.
 
-Planning-state decisions:
+Operational consequence (current):
 
-| Plan | Decision | What Survives | Landing Path |
-| --- | --- | --- | --- |
-| `.planning/CONTEXT-ENGINEERING-ROADMAP.md` | Deferred and re-authored by phase | Prompt-cache discipline, deterministic prompt/tool ordering, retrieval capsule, scratchpad, compaction rules, subagent return hygiene | Baseline may run before Phase 1. Prompt/tool determinism lands in Phases 4-5. Working memory and retrieval capsule land in Phase 7. Subagent return hygiene lands in Phase 8. |
-| `.planning/wave1/fix_plan.md` | Superseded as a standalone queue | RRF, deferred tool discovery, vector-router removal, core toolset policy, probe harness | Tool discovery and tool-order work land in Phase 5. RRF and hybrid retrieval scoring land in Phase 7. The probe harness becomes Phase 5/7 verification, not a separate wave. |
-| `.planning/wave2/fix_plan.md` | Deferred into RAG/memory rebuild | Bidirectional backlinks, in-memory graph index, extraction deltas, multi-page touch, provenance markers | Lands in Phase 7 after memory layers, projection freshness, and `wiki.Store.WritePage` invariants are locked. `internal/wiki` remains the graph substrate; ingest/source paths must be re-authored against the new `storage/sources` layout. |
-| `.planning/wave3-agent-swarm/plan.md` | Superseded and re-authored after RunGraph decisions | Live phase visibility, OTel-style trace events, skill-as-code validation, role selection, proposal-only worker writes via `proposed_updates` | Lands in Phase 8 as part of policy-driven RunGraph and `team_collaboration`. Old assumptions such as permanent `max_spawn_depth=1`, fixed read-only-only workers, and lead-only result aggregation are not architecture. |
-
-Operational consequence:
-
-- Do not archive old planning files yet; they remain evidence.
-- Do not implement their file paths literally without checking the phase map
-  above.
-- If a future executor wants to run a wave, first create a small re-authored
-  phase plan against this PRD's module map.
 - Root `prd.md` and `.planning/aura-deep-refactor-decisions.json` are the
   current source of truth for direction.
-- `docs/aura-restructure-prd*.md` and review files are evidence for why the
-  reconciliation exists, not a competing route.
+- `.planning/deep-refactor/INDEX.md` is the executable phase-state pointer.
+- `.planning/dupl-report.txt` is the concrete duplicate-detection evidence
+  consumed by Ralph US-Axx stories.
 
 ---
 
@@ -389,8 +379,8 @@ Retention defaults:
 - canonical knowledge, sources, wiki pages, and indexes follow their own
   source-of-truth and delete/forget policies, not trace retention.
 
-Traceability for this area lives in
-`docs/observability-audit-retention-reference-map.md`.
+Traceability for this area lived in `docs/observability-audit-retention-reference-map.md`
+(removed 2026-05-19; see git history before `chore(docs): clean up legacy planning`).
 
 Question and approval state is part of `chat`, but question eligibility is part of the agent/runtime contract.
 
@@ -946,7 +936,8 @@ Implementation rules:
 - useful community reports may be promoted into wiki `synthesis` pages only through review/proposal flow,
 - Neo4j or another graph database is a future optional sidecar only, not a core dependency.
 
-Traceability for this area lives in `docs/graphrag-local-first-reference-map.md`.
+Traceability for this area lived in `docs/graphrag-local-first-reference-map.md`
+(removed 2026-05-19; see git history before `chore(docs): clean up legacy planning`).
 
 The agent tool surface should expose task-level graph tools rather than one polymorphic `graph(mode=...)` tool:
 
@@ -1112,7 +1103,8 @@ Default policies:
 
 Scheduled work must run as a delegated actor with explicit capabilities, expiry, tool allowlist, budget, and notification policy. A cron job is never implicitly the owner.
 
-Traceability for this area lives in `docs/cron-background-run-reference-map.md`.
+Traceability for this area lived in `docs/cron-background-run-reference-map.md`
+(removed 2026-05-19; see git history before `chore(docs): clean up legacy planning`).
 
 ### 5.13 `internal/api`
 
@@ -1641,12 +1633,10 @@ deliberately changed and the first benchmarkable runtime slice is locked.
 Phase08 consumes context capsule handles and does not implement remaining
 GraphRAG freshness or projection-quality work.
 
-Reference maps:
-
-- `docs/cron-background-run-reference-map.md`
-- `docs/agent-parallel-loop-2026-reference-map.md`
-- `docs/observability-audit-retention-reference-map.md`
-- `.planning/deep-refactor/Phase08_Cron_And_Swarm_RunGraph/{source.md,plan.md,benchmark.md,progress.md}`
+Reference maps: legacy `docs/*-reference-map.md` files and
+`.planning/deep-refactor/Phase08_*/` were removed 2026-05-19 (see git history
+before `chore(docs): clean up legacy planning`). The decisions they encoded
+survive in this PRD section and in `.planning/aura-deep-refactor-decisions.json`.
 
 Operating contract:
 
@@ -2050,7 +2040,7 @@ Aura becomes maintainable when every path enters through a channel or scheduled 
 
 ## 15. Web Chat Product Surface
 
-This section consolidates the chat-product requirements previously documented in `docs/chat-interface-prd.md`. That doc is preserved as historical evidence; the active requirements live here.
+This section consolidates the chat-product requirements that were previously documented in `docs/chat-interface-prd.md` (removed 2026-05-19; see git history before `chore(docs): clean up legacy planning` for the historical evidence). The active requirements live here.
 
 ### 15.1 Product Decisions (closed)
 
@@ -2243,13 +2233,13 @@ Use existing tokens — never raw Tailwind colors when a semantic Aura token exi
 - **Phase 8** (cron + silent channels): heartbeat/cron `DeliveryMode=silent` flow.
 - **Post-Phase 9**: SSE streaming endpoint hardening, model catalog v1, full UX polish.
 
-The slice ordering documented in the historical `docs/chat-interface-prd.md` §18 is superseded by the 9-phase plan; the requirements above survive.
+The slice ordering documented in the historical `docs/chat-interface-prd.md` §18 (removed 2026-05-19, see git history) is superseded by the 9-phase plan; the requirements above survive.
 
 ---
 
 ## 16. Decision Records (D1-D13)
 
-These are the cross-cutting decisions inherited from the predecessor `docs/aura-master-plan.md` (now historical). Each was validated by the deep-refactor work that followed. Authoritative ADR storage is `.planning/aura-deep-refactor-decisions.json`; this section is the human-readable narrative.
+These are the cross-cutting decisions inherited from the predecessor master plan (now in git history pre-2026-05-19; the `docs/aura-master-plan.md` file was removed during the 2026-05-19 doc cleanup). Each was validated by the deep-refactor work that followed. Authoritative ADR storage is `.planning/aura-deep-refactor-decisions.json`; this section is the human-readable narrative.
 
 ### D1. `agent.Runner` — cancel or extend?
 

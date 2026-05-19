@@ -1,8 +1,0 @@
-# Phase-Q: User Memory Write Guards — Progress
-
-| Date | Actor | Story | SHA | Change | Verification |
-|------|-------|-------|-----|--------|--------------|
-| 2026-05-16 | Ralph | US-Q01 | c0189ac4 | `WriteApprovedUserFact` gains `actor identity.Actor` + `authz identity.Authorizer` parameters; Authorize called with `CapabilityMemoryUserWrite`; denial returns `ErrPermissionDenied` + `slog.Warn` (actor_id + capability, never raw fact). Migration v16 adds `actor_id TEXT NOT NULL DEFAULT ''` to `proposed_updates`. 4-case test suite in `user_memory_writer_test.go`. | go build/vet/test all green. |
-| 2026-05-16 | Ralph | US-Q02 | 1133c03f | `internal/conversation/summarizer/question_gate.go` with `AmbiguityThreshold=0.7` + `ShouldGateUserMemoryWrite`. `createUserMemoryProposal` branches: Score≥0.7 → direct proposal; Score<0.7 → `chat_questions` row + question event, no direct write. Answer callbacks: approve → proposal; reject → no-op + slog.Info; free-text → Candidate.Fact replaced → proposal. 5-case test suite. | go build/vet/test all green. |
-| 2026-05-16 | Ralph | US-Q03 | 77837d57 | `internal/learning/write_guards_integration_test.go` — 2 scenarios: `TestUserMemoryWriteGuardsEndToEnd` (8-step assertion chain covering Q01+Q02) + `TestUserMemoryQuestionGateRejection` (No, scarta path). In-memory SQLite, identity fixtures, slog capture. No Docker, no live LLM. | go build/vet/test all green. |
-| 2026-05-16 | Ralph | US-Q04 | (this commit) | Phase-Q closure docs (plan.md, progress.md, benchmark.md); Phase09 parent progress.md updated; prd.md §6.5 Phase-Q row added; §7.2 Active write-policy marked CLOSED 2026-05-16; Phase 9 partial-close note added. | go build/vet/test all green. |

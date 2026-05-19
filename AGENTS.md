@@ -8,7 +8,7 @@ context anchor, not the conversation history.
 
 1. Existing code behavior and tests.
 2. `D:\Aura\CLAUDE.md`.
-3. `D:\Aura\prd.md` (north-star deep-refactor PRD; supersedes `docs/aura-master-plan.md` and earlier iterations — those are historical evidence per prd.md §3.2).
+3. `D:\Aura\prd.md` (north-star deep-refactor PRD; the predecessor `docs/aura-master-plan.md` and `docs/aura-restructure-prd*.md` were removed 2026-05-19, see git history for historical evidence).
 4. `D:\Aura\.planning\aura-deep-refactor-decisions.json`,
    `D:\Aura\.planning\deep-refactor\INDEX.md`, current handoff files, and the
    selected phase/sub-phase files for execution state.
@@ -36,14 +36,17 @@ Conversation context is not durable state. Reconstruct state from files.
 
 Aura resume memory:
 
-- If starting a fresh session for Aura work, read `D:\Aura\CONTINUE-HERE.md`
-  first when it exists.
-- Then read `D:\Aura\.planning\HANDOFF.json` and
-  `D:\Aura\.planning\deep-refactor\.continue-here.md` when present.
-- These files point to the active phase, last completed commit, next action,
-  required reading, decisions, and validation state.
-- Do not assume chat history is available. If these resume files conflict with
-  `prd.md` or the decision log, stop and name the conflict before acting.
+- If starting a fresh session for Aura work, read `D:\Aura\scripts\ralph\progress.txt`
+  for the most recent commit log + learnings (gitignored, local-only).
+- Then `git log --oneline -20` for the canonical SHA timeline.
+- Then `C:\Users\Davide\.claude\projects\d--Aura\memory\MEMORY.md` for
+  cross-session project facts and feedback.
+- The earlier resume mechanism (`CONTINUE-HERE.md`, `.planning/HANDOFF.json`,
+  `.planning/deep-refactor/.continue-here.md`) was retired 2026-05-19 — those
+  files lived in the deep-refactor era and went stale faster than they were
+  refreshed.
+- Do not assume chat history is available. If memory conflicts with `prd.md` or
+  the decision log, stop and name the conflict before acting.
 
 Codex memory rule:
 
@@ -57,24 +60,14 @@ Planning-state rule:
 - Root `D:/Aura/prd.md` plus
   `D:/Aura/.planning/aura-deep-refactor-decisions.json` are the active route for
   the deep refactor.
-- The executable state is
-  `D:/Aura/.planning/deep-refactor/INDEX.md`, the current resume/handoff files,
-  and the selected phase or sub-phase `source.md`, `plan.md`, `benchmark.md`,
-  and `progress.md`.
-- Existing `.planning/CONTEXT-ENGINEERING-ROADMAP.md`,
-  `.planning/wave1/fix_plan.md`, `.planning/wave2/fix_plan.md`, and
-  `.planning/wave3-agent-swarm/plan.md` remain evidence and requirement mines,
-  not executable queues.
-- Do not run old waves as-is. Re-author a bounded phase plan against the current
-  PRD module map before implementing.
-- Preserve useful old-wave ideas by landing them in the PRD phases:
-  context-engineering in Phases 4-8, Wave 1 in Phases 5 and 7, Wave 2 in Phase
-  7, and Wave 3 in Phase 8.
-- `docs/aura-restructure-prd*.md` review files explain why reconciliation was
-  needed; they are not a competing route.
-- `docs/aura-cleanup-execution-map.md` is orientation only. Do not treat it as
-  mandatory startup state or as a completion source when it disagrees with PRD,
-  handoff, phase progress, or code.
+- `D:/Aura/.planning/deep-refactor/INDEX.md` is the executable phase-state
+  pointer. The per-phase `source.md`/`plan.md`/`benchmark.md`/`progress.md`
+  files for the closed deep-refactor phases were removed 2026-05-19; their
+  decisions survive in this PRD plus the ADR JSON. For provenance, inspect git
+  history before `chore(docs): clean up legacy planning`.
+- The old wave plans (`CONTEXT-ENGINEERING-ROADMAP.md`, `wave1/`, `wave2/`,
+  `wave3-agent-swarm/`) and the restructure-prd review chain are likewise in
+  git history only — they are no longer evidence on disk.
 - Every planning document must have one visible role: canonical, resume,
   orientation, phase-plan, reference, evidence, or archive.
 
@@ -240,8 +233,9 @@ Cron is a scheduled entrypoint, not a private runtime.
 - Retries reuse the same fire id and idempotency key and go through
   workflow/outbox semantics.
 - Cancellation preserves schedule/fire/run history and prevents future fires.
-- Use `D:/Aura/docs/cron-background-run-reference-map.md` when working on cron,
-  background jobs, scheduled agent jobs, source watchers, or missed-run policy.
+- The legacy `docs/cron-background-run-reference-map.md` was removed 2026-05-19
+  (see git history). Use the relevant PRD section (5.12 cron + scheduling) and
+  `internal/cron/` source as ground truth instead.
 
 ### Memory Layers
 
@@ -293,11 +287,11 @@ Aura's wiki is a graph, not a folder of isolated Markdown pages.
 - Community detection and community reports are rebuildable projections with
   freshness state, not canonical knowledge. Promote useful reports into wiki
   synthesis pages only through review/proposal flow.
-- Use `D:/Aura/docs/graphrag-local-first-reference-map.md` when working on
-  wiki GraphRAG, graph scoring, community reports, or Neo4j-sidecar questions.
-- Use `D:/Aura/docs/agent-parallel-loop-2026-reference-map.md` when working on
-  swarm, subagents, parallel agent loops, orchestration traces, or worker
-  authority.
+- The legacy `docs/graphrag-local-first-reference-map.md` and
+  `docs/agent-parallel-loop-2026-reference-map.md` were removed 2026-05-19
+  (see git history). For GraphRAG/wiki/scoring, use PRD §7 + `internal/wiki/`,
+  `internal/storage/search/`. For swarm/subagents/parallel agent loops, use
+  PRD §8 + `internal/swarm/`, `internal/agentruntime/`.
 
 ### Swarm And Parallel Agent Loop
 
@@ -369,9 +363,10 @@ Aura must be inspectable without turning logs into a private-data landfill.
   payload artifacts 30 days, audit metadata 365 days.
 - Purges append tombstone/audit events and delete payload artifacts before
   metadata when causal integrity needs a redacted trail.
-- Use `D:/Aura/docs/observability-audit-retention-reference-map.md` when
-  working on tracing, logging, audit bundles, redaction, retention, dashboards,
-  exporters, or privileged trace payload access.
+- The legacy `docs/observability-audit-retention-reference-map.md` was removed
+  2026-05-19 (see git history). For tracing/logging/audit/retention, use the
+  relevant PRD section + `internal/logging/`, `internal/auth/`,
+  `internal/storage/runs/`.
 
 ### RAG Freshness
 
@@ -415,17 +410,16 @@ Development must make prior research easy to find again.
 For architecture, refactor, loop, agent, Telegram, tool, runtime, or storage
 work, read only the minimum needed, in this order:
 
-0. `D:\Aura\CONTINUE-HERE.md` if it exists
-1. `D:\Aura\.planning\HANDOFF.json` and
-   `D:\Aura\.planning\deep-refactor\.continue-here.md` if they exist
-2. `D:\Aura\CLAUDE.md`
-3. `D:\Aura\prd.md` (current PRD; `docs/aura-master-plan.md` is historical)
-4. `D:\Aura\.planning\deep-refactor\INDEX.md`
-5. The selected active phase or sub-phase folder
-6. `D:\Aura\.planning\progress.txt` if present; create or update only after a
-   slice actually ships
-7. `D:\Aura\scripts\ralph\prd.json` if working from the Ralph queue
-8. Directly affected source files
+1. `D:\Aura\CLAUDE.md`
+2. `D:\Aura\prd.md` (current PRD; the predecessor `docs/aura-master-plan.md`
+   was removed 2026-05-19, see git history)
+3. `D:\Aura\.planning\deep-refactor\INDEX.md` (phase-state pointer)
+4. `D:\Aura\scripts\ralph\progress.txt` for the recent commit log + learnings
+5. `D:\Aura\scripts\ralph\prd.json` if working from the Ralph queue
+6. `C:\Users\Davide\.claude\projects\d--Aura\memory\MEMORY.md` for
+   cross-session project facts (this is the new resume mechanism after the
+   `CONTINUE-HERE.md` + `.planning/HANDOFF.json` files were retired 2026-05-19)
+7. Directly affected source files
 
 Do not read the whole repository to feel safer. Make a small map, then act.
 
