@@ -15,7 +15,7 @@ plus 2 stories the web survey surfaced as non-optional.
 
 ## TL;DR
 
-- **6 stories** ready for Ralph (the 3 originals US-OP06/07/09 + 2 newly-surfaced US-OP10/11 + US-OP12 surfaced 2026-05-19 from Aura's own self-diagnosis in the recent conversation).
+- **7 stories** ready for Ralph (the 3 originals US-OP06/07/09 + 2 newly-surfaced US-OP10/11 + US-OP12 surfaced 2026-05-19 from Aura's self-diagnosis + US-OP12b surfaced 2026-05-19 from the nanobot precall-validation survey as an orthogonal ~30-LOC side win).
 - **Strategic deviations from the original sketches**:
   - **US-OP06**: async post-turn batch (not sync-per-write) per mem0's own war story.
   - **US-OP07**: trigger on N-failure pattern OR user negative signal — NOT single-failure
@@ -393,43 +393,46 @@ all have 3-9 validation failures each — the dominant failure class.
 record the validation events with structured cause). Otherwise US-OP12 can
 ship independently.
 
-**Files touched**:
-- NEW `internal/agent/precall_validator.go` (~150 LOC) — implements
+**Files touched** (revised 2026-05-19 after `docs/phase-op-plus-precall-validation-research-2026-05-19.md`
+survey — nanobot MIT is the textbook pattern; pivot location from
+`internal/agent/executor.go` to `internal/tools/registry.go` `Registry.Execute`
+for broader coverage including MCP-registered tools):
+- NEW `internal/tools/precall_validator.go` (~150 LOC) — implements
   `ValidateBeforeCall(toolName, params map[string]any, schema map[string]any) ValidationResult`.
   Three check kinds:
   - **required-key-missing**: required fields in schema not present in params
   - **invalid-type**: type mismatch (e.g., schema says `string`, args has `number`)
   - **invalid-enum**: value not in `enum` list when schema specifies one
-- NEW `internal/agent/precall_validator_test.go` (~250 LOC) — 12+ table-driven cases.
-- MODIFY `internal/agent/executor.go` — wire validator into the call dispatch
-  right before `tool.Execute()`. On validation failure: return a structured
-  tool_result with `{tool, validation_error: {missing[], invalid_type[], invalid_enum[], hint}}`
-  — the LLM sees it in the same round and can retry.
+- NEW `internal/tools/coercer.go` (~80 LOC) — runs BEFORE validate. LLMs
+  frequently emit stringified numerics ("5" instead of 5) or unquoted booleans;
+  coercer attempts simple cast to schema-declared type. Returns a new params
+  map; if coercion fails, the validator catches the type mismatch as before.
+- NEW `internal/tools/precall_validator_test.go` (~250 LOC) — 12+ table-driven cases
+  for validator + 6+ cases for coercer (stringified int, float, bool, enum-as-string).
+- MODIFY `internal/tools/registry.go` `Registry.Execute` — wire coerce+validate
+  into the dispatch right before tool.Execute(). On validation failure: return
+  structured tool_result `{tool, validation_error: {missing[], invalid_type[], invalid_enum[], hint, recoverable: bool}}`.
+  `recoverable=true` for missing-key / wrong-enum (LLM can fix same-turn);
+  `recoverable=false` for unparseable args (LLM needs a new strategy). Idea
+  borrowed from elysia's `Avoidable` vs `Unknown` error labeling.
 - MODIFY `cmd/probe_chat/cases.go` — add 1-2 cases that synthesize a tool call
   with missing required field, assert pre-call validator catches it without
   invoking the actual tool (zero HTTP roundtrip).
 
 **Schema migration**: None.
 
-**Acceptance criteria**:
-1. `internal/agent/precall_validator.go` exposes `ValidateBeforeCall(toolName string, params map[string]any, schema map[string]any) ValidationResult`.
-2. Three check kinds implemented: required-key-missing, invalid-type, invalid-enum.
-3. ValidationResult shape: `{valid bool, missing []string, invalid_type []TypeMismatch, invalid_enum []EnumMismatch, hint string}`.
-4. Integration in executor.go: validator runs BEFORE tool.Execute(); on
-   `!valid`, the tool is NOT invoked, and a structured tool_result is returned
-   to the LLM with the validation reason.
-5. The LLM sees the validation error in the same turn and can issue a corrected
-   tool call without a new HTTP roundtrip cost.
-6. Disabled by default via `AURA_OP12_PRECALL_VALIDATOR_ENABLED=false`;
-   flip to true after 2-week dogfood.
-7. Unit tests: 12+ cases covering all 3 check kinds individually, combinations,
-   schema with no constraints (pass-through), nil params (handled gracefully),
-   nil schema (pass-through, log warning).
-8. Integration test in cmd/probe_chat: synthesize tool call with missing
-   required field; assert validation_error in tool_result, assert tool.Execute
-   was NOT called.
-9. `go build ./... && go vet ./... && go test ./...` green.
-10. Single atomic commit prefix: `feat(precall-validator): catch tool param errors before dispatch (Phase-OP+ / US-OP12)`
+**Acceptance criteria** (revised 2026-05-19 after research):
+1. `internal/tools/precall_validator.go` exposes `ValidateBeforeCall(toolName string, params map[string]any, schema map[string]any) ValidationResult`.
+2. `internal/tools/coercer.go` exposes `CoerceParams(params map[string]any, schema map[string]any) map[string]any` — handles stringified numerics, "true"/"false" → bool, etc.
+3. Three check kinds implemented: required-key-missing, invalid-type, invalid-enum.
+4. ValidationResult shape: `{valid bool, missing []string, invalid_type []TypeMismatch, invalid_enum []EnumMismatch, hint string, recoverable bool}`. `recoverable=true` for missing-key + invalid-enum (LLM can fix same-turn); `recoverable=false` for unparseable JSON args (LLM needs different strategy).
+5. Integration in `internal/tools/registry.go` `Registry.Execute` (NOT executor.go — broader coverage including MCP tools): coerce → validate → invoke. On `!valid`: tool NOT invoked, structured tool_result returned to LLM with the validation reason.
+6. The LLM sees the validation error in the same turn and can issue a corrected tool call without a new HTTP roundtrip cost.
+7. Disabled by default via `AURA_OP12_PRECALL_VALIDATOR_ENABLED=false`; flip to true after 2-week dogfood.
+8. Unit tests: 12+ validator cases (all 3 check kinds individually, combinations, schema with no constraints pass-through, nil params graceful, nil schema pass-through+warning) + 6+ coercer cases (stringified int / float / bool / enum-as-string / nested object / array-of-stringified).
+9. Integration test in cmd/probe_chat: synthesize tool call with missing required field; assert validation_error in tool_result, assert tool.Execute was NOT called.
+10. `go build ./... && go vet ./... && go test ./...` green.
+11. Single atomic commit prefix: `feat(precall-validator): catch tool param errors before dispatch (Phase-OP+ / US-OP12)`
 
 **Risk**: LOW. Pure addition, gated by env var. If the validator is wrong it
 produces a false-negative validation error — the LLM retries and the original
@@ -442,6 +445,48 @@ tool+missing-field combination, US-OP07's N-failure trigger fires and writes
 an operational lesson with `cause="repeated validation failure: tool=X missing=Y"`.
 The next turn's system prompt (US-OP09 priority section) reminds Aura to
 include the field. Three stories chain into a self-healing loop.
+
+---
+
+### US-OP12b — Universal retry-hint suffix on tool errors (NEW, ~30 LOC ortogonale)
+
+**Goal**: every tool error (validation, runtime, network, MCP) gets a
+nanobot-style self-correction primer appended to the returned tool_result text.
+Field-proven pattern from `D:/tmp/nanobot/nanobot/agent/runner.py:801-825`:
+appending `[Analyze the error above and try a different approach.]` to error
+output causes the model to retry with a different strategy in the same turn
+~60% more often than without the hint (nanobot empirical claim).
+
+**Provenance**: surfaced 2026-05-19 by precall-validation research agent as a
+"side win" — independent of the validator infra. Orthogonal to US-OP12 — can
+ship before or after.
+
+**Pre-conditions**: None. Independent of all other Phase-OP+ stories.
+
+**Files touched**:
+- MODIFY `internal/tools/registry.go` `Registry.Execute` — wrap any non-nil
+  error from `tool.Execute()` to append the retry-hint suffix when serializing
+  the tool_result content. ~15 LOC change.
+- MODIFY `internal/agent/executor.go` — wrap MCP / external tool errors the
+  same way. ~15 LOC change.
+- NEW `internal/tools/retry_hint_test.go` — assert suffix appears on
+  validation error, runtime error, MCP error; assert suffix does NOT appear
+  on success path; assert suffix is omitted when error message already
+  contains the marker (idempotent).
+
+**Acceptance criteria**:
+1. All tool errors get suffix ` [Analyze the error above and try a different approach.]` appended.
+2. Suffix is idempotent — no double-append if upstream tool already added it.
+3. Success path unchanged (no suffix on success).
+4. Disabled by default via `AURA_OP12B_RETRY_HINT_ENABLED=false`; flip true after dogfood.
+5. Unit tests cover: validation error / runtime error / MCP error / success / idempotency.
+6. Integration test in cmd/probe_chat: force a tool error, assert suffix present in returned content.
+7. `go build ./... && go vet ./... && go test ./...` green.
+8. Single atomic commit prefix: `feat(retry-hint): nanobot-style self-correction primer on tool errors (Phase-OP+ / US-OP12b)`
+
+**Risk**: VERY LOW. Pure string append. Disable via env if it causes any LLM regression.
+
+**Estimate**: 0.25-0.5 session.
 
 ---
 
@@ -509,11 +554,14 @@ US-OP10 (security gate)   ─┐
                            │                 ├─→ US-OP11 (decay, uses recall metadata)
                            │                 │
                            │                 └─→ US-OP12 (precall validator, chains with US-OP07 N-failure)
-                           └───────────────────┘
+                           │                       │
+                           │                       └─→ US-OP12b (retry-hint suffix on tool errors)
+                           └─────────────────────────┘
 ```
 
-Sequential, single-story-exit per Ralph discipline. ~6 sessions total
-(US-OP12 added 2026-05-19 from Aura's own self-diagnosis).
+Sequential, single-story-exit per Ralph discipline. ~6.5 sessions total
+(US-OP12 added 2026-05-19 from Aura's self-diagnosis; US-OP12b added same day
+as ~30-LOC orthogonal side win from the nanobot precall research).
 
 ---
 
@@ -659,13 +707,17 @@ Phase-OP+ goes from "3 one-liners in a table" to "5 stories with full AC and fil
 ready for Ralph dispatch". The two newly-surfaced stories (US-OP10 security gate, US-OP11
 decay) are non-optional per 2025 research and would have been a regret-cost to skip.
 
-Total queue size: 6 stories (5 original + US-OP12 added 2026-05-19 from Aura's
-self-diagnosis). Total estimate: ~6 sessions. ROI: closes the "Aura learns by
-herself" loop that Phase-OP started, with defense + hygiene + pre-call
-validation built in from the start. The US-OP07 + US-OP09 + US-OP12 trio chains
-into a self-healing validation feedback loop: validation fails → counter
-increments → N-failure threshold fires → lesson written with priority=high →
-next turn's system prompt reminds Aura of the missing field → no more failure.
+Total queue size: 7 stories (5 original + US-OP12 from Aura's self-diagnosis
++ US-OP12b from the nanobot precall-validation research as orthogonal side
+win). Total estimate: ~6.5 sessions. ROI: closes the "Aura learns by herself"
+loop that Phase-OP started, with defense + hygiene + pre-call validation
++ universal self-correction primer built in from the start. The US-OP07 +
+US-OP09 + US-OP12 trio chains into a self-healing validation feedback loop:
+validation fails → counter increments → N-failure threshold fires → lesson
+written with priority=high → next turn's system prompt reminds Aura of the
+missing field → no more failure. US-OP12b layers on top: even when validation
+passes and the tool errors at runtime, the LLM gets a primer that boosts
+self-correction ~60% (nanobot empirical).
 
 Decision point for user: which open decisions in Section 5 to lock, then I can write the
 full `scripts/ralph/prd-phase-op-plus.json` and stage Ralph.
