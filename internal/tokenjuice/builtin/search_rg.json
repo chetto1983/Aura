@@ -1,0 +1,31 @@
+{
+  "id": "search/rg",
+  "family": "search",
+  "description": "Compact ripgrep output: keep file:line:match lines and match count.",
+  "match": {
+    "argv0": ["rg"]
+  },
+  "transforms": {
+    "stripAnsi": true,
+    "trimEmptyEdges": true,
+    "dedupeAdjacent": true
+  },
+  "filters": {
+    "keepPatterns": [
+      {"pattern": "^.+:\\d+[: ].+"},
+      {"pattern": "\\d+ match"}
+    ]
+  },
+  "summarize": {
+    "head": 20,
+    "tail": 10
+  },
+  "counters": [
+    {"name": "match", "pattern": "^.+:\\d+[: ].+"}
+  ],
+  "failure": {
+    "preserveOnFailure": true,
+    "head": 10,
+    "tail": 10
+  }
+}

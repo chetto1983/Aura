@@ -68,7 +68,7 @@
         "Single atomic commit prefix: feat(tokenjuice): vendor 10 builtin + 3 Aura-specific rules (Phase-TJ / US-TJ04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Rules catalog §Top-10 lists the rule set to ship: generic/fallback, git/status, tests/go-test, tests/pytest, search/rg, build/tsc, install/npm-install, git/log-oneline, git/diff-stat, generic/help. The 3 Aura rules close the raw-JSON-echo bug — verify they trigger via fixture matching the actual tool result shape (look at internal/agent/tools/registry/file.go Execute return value)."
     },
     {

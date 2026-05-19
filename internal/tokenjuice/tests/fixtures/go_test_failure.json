@@ -1,0 +1,12 @@
+{
+  "description": "go test failure: FAIL lines preserved, ok packages skipped, exit code + facts header",
+  "input": {
+    "toolName": "execute_shell",
+    "argv": ["go", "test", "./..."],
+    "exitCode": 1,
+    "stdout": "--- FAIL: TestFoo (0.01s)\n    foo_test.go:12: expected 1, got 2\n    Error: assertion failed\nFAIL github.com/example/foo 0.02s\nok  github.com/example/bar 0.01s\nok  github.com/example/baz 0.01s\nok  github.com/example/qux 0.01s\nok  github.com/example/alpha 0.01s\nok  github.com/example/beta 0.01s\nok  github.com/example/gamma 0.01s\nok  github.com/example/delta 0.01s\nok  github.com/example/epsilon 0.01s\nok  github.com/example/zeta 0.01s\nok  github.com/example/eta 0.01s\nok  github.com/example/theta 0.01s\nok  github.com/example/iota 0.01s\nFAIL"
+  },
+  "expectApplied": true,
+  "expectedContains": ["exit 1", "--- FAIL: TestFoo", "1 failed package"],
+  "expectedNotContains": ["ok  github.com/example/bar"]
+}

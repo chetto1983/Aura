@@ -1,0 +1,10 @@
+{
+  "description": "source{action=read}: long markdown document compacted via head/tail",
+  "input": {
+    "toolName": "source",
+    "argv": ["read"],
+    "stdout": "# Annual Report 2025\n\n## Executive Summary\nThis report covers performance across all business units.\n\n## Revenue\nTotal revenue reached $4.2B, up 12% year-over-year.\n\n## Operations\nOperational efficiency improved by 8% through automation initiatives.\n\n## Technology\nCloud migration completed for 90% of workloads.\n\n## Human Resources\nHeadcount grew to 12,400 employees globally.\n\n## Risk Management\nKey risks identified: market volatility, regulatory changes, cyber threats.\n\n## Compliance\nAll major compliance audits passed with no critical findings.\n\n## Strategy\nThree-year strategic plan focuses on AI integration and market expansion.\n\n## Financial Statements\nDetailed financial statements are provided in Appendix A.\n\n## Appendix A\nBalance sheet, income statement, and cash flow statement are attached.\n\n## Appendix B\nDetailed operational metrics by region and product line.\n\n## Appendix C\nRisk register and mitigation strategies for the upcoming fiscal year.\n\n## Appendix D\nEmployee satisfaction survey results and action plans.\n\n## Appendix E\nEnvironmental sustainability report and carbon footprint analysis.\n"
+  },
+  "expectApplied": true,
+  "expectedContains": ["Annual Report", "omitted"]
+}

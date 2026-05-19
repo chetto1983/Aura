@@ -1,0 +1,33 @@
+{
+  "id": "tests/pytest",
+  "family": "test-results",
+  "description": "Compact pytest output with preKeep counters so pass/fail counts survive keep-filtering.",
+  "counterSource": "preKeep",
+  "match": {
+    "commandIncludes": ["pytest"]
+  },
+  "transforms": {
+    "stripAnsi": true,
+    "trimEmptyEdges": true,
+    "dedupeAdjacent": true
+  },
+  "filters": {
+    "keepPatterns": [
+      {"pattern": "={5,}.*(?:failed|passed|error).*={5,}", "flags": "i"},
+      {"pattern": "^FAILED|^ERROR|^AssertionError|^E\\s+|::(FAILED|ERROR)$"}
+    ]
+  },
+  "summarize": {
+    "head": 6,
+    "tail": 16
+  },
+  "counters": [
+    {"name": "failed test", "pattern": "FAILED"},
+    {"name": "passed test", "pattern": "PASSED"}
+  ],
+  "failure": {
+    "preserveOnFailure": true,
+    "head": 8,
+    "tail": 24
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "description": "git status with modified and untracked files rewrites to M: notation",
+  "input": {
+    "toolName": "execute_shell",
+    "argv": ["git", "status"],
+    "stdout": "On branch main\n\nChanges not staged for commit:\n        modified:   internal/agent/executor.go\n        modified:   internal/agent/exec_helpers.go\n        modified:   internal/tokenjuice/reduce.go\n\nUntracked files:\n        internal/tokenjuice/builtin/git_status.json\n        internal/tokenjuice/builtin/tests_go_test.json\n        internal/tokenjuice/builtin/search_rg.json\n        internal/tokenjuice/builtin/build_tsc.json\n        internal/tokenjuice/builtin/install_npm_install.json\n        internal/tokenjuice/builtin/aura_file_read.json\n        internal/tokenjuice/builtin/aura_source_read.json\n\nno changes added to commit (use \"git add\" and/or \"git commit -a\")"
+  },
+  "expectApplied": true,
+  "expectedContains": ["M: internal/agent/executor.go", "M: internal/tokenjuice/reduce.go", "Changes not staged:"],
+  "expectedNotContains": ["On branch main", "no changes added", "modified:   internal"]
+}

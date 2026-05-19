@@ -1,0 +1,10 @@
+{
+  "description": "web{action=fetch}: large HTML page compacted via head/tail",
+  "input": {
+    "toolName": "web",
+    "argv": ["fetch"],
+    "stdout": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n<title>Go Documentation - Standard Library</title>\n</head>\n<body>\n<h1>Go Standard Library</h1>\n<p>The Go standard library provides essential packages for building programs.</p>\n<h2>fmt</h2>\n<p>Package fmt implements formatted I/O with functions analogous to C's printf and scanf.</p>\n<h2>os</h2>\n<p>Package os provides a platform-independent interface to operating system functionality.</p>\n<h2>io</h2>\n<p>Package io provides basic interfaces to I/O primitives.</p>\n<h2>strings</h2>\n<p>Package strings implements simple functions to manipulate UTF-8 encoded strings.</p>\n<h2>strconv</h2>\n<p>Package strconv implements conversions to and from string representations of basic data types.</p>\n<h2>errors</h2>\n<p>Package errors implements functions to manipulate errors.</p>\n<h2>log</h2>\n<p>Package log implements a simple logging package.</p>\n<h2>net/http</h2>\n<p>Package http provides HTTP client and server implementations.</p>\n<h2>encoding/json</h2>\n<p>Package json implements encoding and decoding of JSON as defined in RFC 7159.</p>\n<h2>sync</h2>\n<p>Package sync provides basic synchronization primitives such as mutual exclusion locks.</p>\n<h2>context</h2>\n<p>Package context defines the Context type, which carries deadlines, cancellation signals, and other request-scoped values.</p>\n</body>\n</html>\n"
+  },
+  "expectApplied": true,
+  "expectedContains": ["Go Standard Library", "omitted"]
+}

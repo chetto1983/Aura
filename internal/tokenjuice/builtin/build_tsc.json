@@ -1,0 +1,35 @@
+{
+  "id": "build/tsc",
+  "family": "build-typescript",
+  "description": "Compact tsc output: strip --diagnostics noise, surface TS errors and warnings.",
+  "onEmpty": "tsc: ok",
+  "match": {
+    "commandIncludes": ["tsc"]
+  },
+  "transforms": {
+    "stripAnsi": true,
+    "trimEmptyEdges": true,
+    "dedupeAdjacent": true
+  },
+  "filters": {
+    "skipPatterns": [
+      {"pattern": "^Files:|^Identifiers:|^Symbols:|^Types:|^Memory used:|^Assignability cache|^Language and Compiler|^I/O read time|^Parse time|^Bind time|^Check time|^Emit time|^Total time"}
+    ],
+    "keepPatterns": [
+      {"pattern": "TS\\d+|error TS|error:|warning TS|warning:|^Found \\d+ error"}
+    ]
+  },
+  "summarize": {
+    "head": 4,
+    "tail": 4
+  },
+  "counters": [
+    {"name": "error", "pattern": "error TS|error:", "flags": "i"},
+    {"name": "warning", "pattern": "warning TS|warning:", "flags": "i"}
+  ],
+  "failure": {
+    "preserveOnFailure": true,
+    "head": 6,
+    "tail": 8
+  }
+}

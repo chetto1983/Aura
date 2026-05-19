@@ -1,0 +1,29 @@
+{
+  "id": "git/status",
+  "family": "git-status",
+  "description": "Compact git status via porcelain rewriter (M:/A:/D:/R:/?? notation).",
+  "match": {
+    "argv0": ["git"],
+    "argvIncludes": [["status"]]
+  },
+  "transforms": {
+    "stripAnsi": true,
+    "trimEmptyEdges": true,
+    "dedupeAdjacent": true
+  },
+  "summarize": {
+    "head": 10,
+    "tail": 4
+  },
+  "counters": [
+    {"name": "modified file", "pattern": "^M:"},
+    {"name": "new file", "pattern": "^A:"},
+    {"name": "deleted file", "pattern": "^D:"},
+    {"name": "untracked file", "pattern": "^\\?\\?"}
+  ],
+  "failure": {
+    "preserveOnFailure": true,
+    "head": 12,
+    "tail": 12
+  }
+}

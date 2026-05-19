@@ -232,11 +232,15 @@ func applyRule(rule *CompiledRule, in Input, rawText string) (string, map[string
 	// Step 10: rule-specific post-processors (none for generic/fallback).
 	// git/status rewriter will be added in US-TJ04 postprocess.go.
 
-	// Step 11: counters.
+	// Step 10: rule-specific post-processors (git/status porcelain rewriter etc.).
+	lines = applyPostProcessor(rule.Rule.ID, lines)
+
+	// Step 11: counters — default postKeep (after keepPatterns + post-processors).
+	// Set counterSource:"preKeep" in the rule JSON to count before keepPatterns.
 	facts := map[string]int{}
-	counterSrc := preKeepLines
-	if rule.Rule.CounterSource != nil && *rule.Rule.CounterSource == "postKeep" {
-		counterSrc = lines
+	counterSrc := lines
+	if rule.Rule.CounterSource != nil && *rule.Rule.CounterSource == "preKeep" {
+		counterSrc = preKeepLines
 	}
 	for _, c := range rule.Compiled.Counters {
 		count := 0

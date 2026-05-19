@@ -1,0 +1,23 @@
+{
+  "id": "aura/source-read",
+  "family": "aura-tool",
+  "description": "Compact source{action=read} / read_source output via head/tail.",
+  "match": {
+    "toolNames": ["source", "read_source"],
+    "argvIncludes": [["read"]]
+  },
+  "transforms": {
+    "stripAnsi": true,
+    "trimEmptyEdges": true,
+    "dedupeAdjacent": true
+  },
+  "summarize": {
+    "head": 20,
+    "tail": 10
+  },
+  "failure": {
+    "preserveOnFailure": true,
+    "head": 20,
+    "tail": 20
+  }
+}
