@@ -1,142 +1,87 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Phase-TJ — port TokenJuice (rule-based tool-output compaction) to Go for Aura. Plan in docs/tokenjuice-aura-integration-plan.md (~13 KB, 11 sections). Algorithm spec in docs/tokenjuice-algorithm-spec.md. Rules catalog in docs/tokenjuice-rules-catalog.md. Test strategy in docs/tokenjuice-test-strategy.md. License: openhuman Rust port is GPLv3 — DO NOT copy .rs source. Rewrite from algorithm spec in Go. Upstream vincentkoc/tokenjuice MIT but easier to write 10 starter rules from scratch. Insertion at internal/agent/executor.go:92-94 (NOT loop.go) — before WrapUntrustedToolResult + limitToolContent. Single new dep github.com/rivo/uniseg (MIT, pure Go). 8 stories, 6-9 days estimated. After Phase-TJ: heavy-turn tool outputs auto-compacted, raw-JSON-echo bug stabilized (model never sees the blob), context-pressure reduced, tool budget effectively extended. Discovered need 2026-05-18 evening live in Telegram chat 1148481707: Aura dumped raw JSON of file action=read TOOLS.md (7112 chars) as her reply. TJ would compact to <100 chars metadata + head excerpt before the model sees it.",
+  "description": "RECLAIM — legacy code cleanup queue. 5 stories (~370 LOC reclaimable) surfaced by docs/legacy-deletion-survey-2026-05-19.md (gsd-codebase-mapper survey + golangci-lint -E unused -E unparam). Strict one-story-exit. ORDER: low-risk first (RECLAIM01), bigger-surface later (RECLAIM02). RECLAIM02 (retrieval capsule) is the biggest single win at ~200 LOC of zero-caller dead feature. After all 5 close, Phase-OP+ queue takes over (scripts/ralph/prd-phase-op-plus.json). DEFERRED: DEFER-A (unify agentExecutor.ExecuteToolCalls + agent.ExecuteToolCalls — high leverage, high risk, needs design phase) + DEFER-B (CompactCompletedToolResults — wait for Phase-TJ to fully close first since tokenjuice may replace it).",
   "userStories": [
     {
-      "id": "US-TJ01",
-      "title": "Package skeleton internal/tokenjuice/ — types, builtin rules dir, no-op API",
-      "description": "Create internal/tokenjuice/ package with: tokenjuice.go (public API skeleton: Compact, CompactStats, LoadBuiltinRules), types.go (Rule, CompiledRule, Input, Options, Result, Stats per docs/tokenjuice-algorithm-spec.md §Data structures), builtin/ subdir (empty for now, will host 10 JSON rule files in US-TJ04), tokenjuice_test.go (smoke test: Compact passes through if no rule matches). Add dep github.com/rivo/uniseg to go.mod (MIT pure-Go, for grapheme-aware text clamp per algorithm spec §Text helpers). The skeleton must compile + vet clean even though Compact returns the input unchanged.",
+      "id": "RECLAIM01",
+      "title": "golangci-lint unused triplet (~17 LOC, LOW risk)",
+      "description": "Delete the 3 symbols flagged by `~/go/bin/golangci-lint run -E unused ./...`: (a) cmd/probe_chat/cases.go:1335 `ocrProbeBefore` field + its L1073 assignment site; (b) cmd/probe_chat/client.go:328 `(*Env).sendChat` method; (c) internal/tokenjuice/text.go:172 `safeClamp` function. The tokenjuice safeClamp is currently unused — confirm Phase-TJ has closed before touching (queue stages this story first because TJ queue runs to completion before RECLAIM activates). If Phase-TJ added a safeClamp caller in TJ04-TJ08, leave it and document in commit message.",
       "acceptanceCriteria": [
-        "internal/tokenjuice/{tokenjuice,types,rules}.go files exist",
-        "Public API signatures match docs/tokenjuice-aura-integration-plan.md §Public API surface",
-        "internal/tokenjuice/builtin/ directory exists (empty, .gitkeep)",
-        "go.mod adds github.com/rivo/uniseg v0.4.x (or current stable)",
-        "Smoke test: Compact(Input{Stdout:'hello'}, Options{}) returns Applied:false + InlineText:'hello'",
-        "go build/vet/test green for internal/tokenjuice/",
-        "Single atomic commit prefix: feat(tokenjuice): package skeleton + types + builtin dir (Phase-TJ / US-TJ01)"
+        "cmd/probe_chat/cases.go: ocrProbeBefore field + its assignment removed",
+        "cmd/probe_chat/client.go: (*Env).sendChat method removed",
+        "internal/tokenjuice/text.go: safeClamp removed (unless Phase-TJ wired a caller)",
+        "~/go/bin/golangci-lint run -E unused ./... reports 0 issues",
+        "go build ./... && go test ./cmd/probe_chat/... ./internal/tokenjuice/... green",
+        "Single atomic commit prefix: chore(legacy): remove golangci-lint unused triplet (RECLAIM01)"
       ],
       "priority": 1,
-      "passes": true,
-      "notes": "Read docs/tokenjuice-algorithm-spec.md §1 Data structures + docs/tokenjuice-aura-integration-plan.md §Package layout BEFORE coding. No rule loading yet — LoadBuiltinRules returns []*CompiledRule{} (empty) for now."
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §1 + §Story RECLAIM01 BEFORE deleting. Verify with grep that no caller appeared since the survey (2026-05-19)."
     },
     {
-      "id": "US-TJ02",
-      "title": "Classify algorithm — rule matching with score-based selection",
-      "description": "Implement classify.go per docs/tokenjuice-algorithm-spec.md §3 Algorithm — classify. Score-based: priority*1000 + argv0*100 + commandIncludes*10 + toolNames*5. Best-match wins. Pseudocode in Go: func ClassifyExecution(input Input, rules []*CompiledRule) ClassificationResult. Returns matched rule + score, or nil rule + score=0 if no match. Add 1 hardcoded fallback rule in builtin/fallback.json (passes through with head/tail clamp at 200/200 chars) to exercise end-to-end. Unit tests cover: empty rules → nil match; single rule single match → that rule; competing rules → highest score wins; toolNames filter; commandIncludes filter; stdoutMatches regex filter.",
+      "id": "RECLAIM02",
+      "title": "Delete dead retrieval-capsule feature (~200 LOC, MED risk)",
+      "description": "internal/conversation/retrieval_capsule.go (`ComposeRetrievalCapsule` + `RetrievalCapsuleInput` + `DefaultRetrievalCapsuleMaxBytes`) has ZERO production callers — only its own test file. Companion field `RetrievalCapsulePresent` is plumbed through 5 types (agent.Invocation, agent.InvocationResult, agent.Snapshot, agent.TurnStats) but the only production writer hardcodes it to false at internal/channels/telegram/invocation_builder.go:329. Feature was scaffolded ('speculative wiki search results' per CLAUDE.md) but never wired. Either land the feature or delete the skeleton — this story is the delete path. Steps: (1) Delete internal/conversation/retrieval_capsule.go + retrieval_capsule_test.go entirely. (2) Remove RetrievalCapsulePresent field from the 5 types + assignments at runtime.go:226 and session.go:229. (3) Remove field-set at invocation_builder.go:329. (4) Drop assertions in runtime_test.go:28-50 and snapshot_builder_test.go:19-52.",
       "acceptanceCriteria": [
-        "internal/tokenjuice/classify.go implements ClassifyExecution per algorithm spec",
-        "Score formula matches spec §3 (priority*1000 + argv0*100 + commandIncludes*10 + toolNames*5)",
-        "builtin/fallback.json exists with passthrough+clamp behavior",
-        "Unit tests: empty rules, single match, competing rules, each filter type (≥6 cases)",
-        "go build/vet/test green",
-        "Single atomic commit prefix: feat(tokenjuice): classify algorithm with score-based rule matching (Phase-TJ / US-TJ02)"
+        "internal/conversation/retrieval_capsule.go deleted",
+        "internal/conversation/retrieval_capsule_test.go deleted",
+        "Zero `ComposeRetrievalCapsule` or `RetrievalCapsulePresent` references in production code (grep returns 0)",
+        "Zero unused-field warnings from go vet after delete",
+        "go build ./... && go test ./internal/agent/... ./internal/conversation/... ./internal/channels/telegram/... green",
+        "Single atomic commit prefix: chore(legacy): delete dead retrieval-capsule feature (RECLAIM02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Algorithm spec is the source of truth. The fallback rule unlocks E2E testing in US-TJ03 even before vendoring all 10 rules. Use Go's regexp/RE2 (NOT regexp/syntax with lookbehind) — all openhuman rules are RE2-compatible per spec."
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §2 + §Story RECLAIM02 BEFORE deleting. ~16 grep hits before, expect 0 after. Update CLAUDE.md if it still mentions 'speculative wiki search results' — that's the feature being removed."
     },
     {
-      "id": "US-TJ03",
-      "title": "Reduce pipeline + text helpers (graphemes, ANSI, dedupe, head/tail)",
-      "description": "Implement reduce.go (main reduction) and text.go (helpers) per docs/tokenjuice-algorithm-spec.md §4 Reduce + §5 Text helpers. Pipeline order: strip_ansi → normalize_lines → dedupe_adjacent → head_tail/clamp. Grapheme-aware clamp via github.com/rivo/uniseg (the perf hotspot — use byte-index iteration, not materialised cluster slice, per spec). Pass-through safety: MIN_COMPACT_INPUT_BYTES=512, MIN_COMPACT_RATIO=0.95 (skip compaction if input < 512B or ratio > 0.95). Failure-preserving: if exit_code != 0, use rule.failure.head/tail if present. Unit tests: tiny input passthrough, oversized input compact, CJK preserved (no UTF-8 boundary cut), ANSI stripped, dedup adjacent identical lines, head+tail with '(N more)' middle elision.",
+      "id": "RECLAIM03",
+      "title": "Remove TerminalToolFinalizationMessages + collapse 4 duplicate struct shapes (~80 LOC, LOW risk)",
+      "description": "Three sub-deletions: (a) internal/agent/terminal.go:114-121 `TerminalToolFinalizationMessages` — explicit 'retained for callers that compose the finalize prompt themselves' but grep shows ZERO production AND zero debug-harness callers; 3 unit tests keep it alive. Keep `terminalFinalizationPrompt` (used internally), delete only the public wrapper + its 3 tests (TestTerminalToolFinalizationMessagesAppendsPrompt, TestTerminalToolFinalizationMessagesForSearchMemoryInstructsCitation, TestTerminalToolFinalizationMessagesAppendsLLMPrompt). (b) internal/api/maintenance_attempts.go: `PerToolCounts` and `BudgetRow` are field-identical to `ToolOutcomeCounts` and `ToolBudgetRow` in internal/api/types.go. Drop the Row variants, use the JSON-tagged types directly in AttemptsStats, drop the field-by-field copy loops at L133-152. (c) Same in maintenance_authz.go: collapse `CapabilityCountRow` + `RecentDenialRow` into `CapabilityCount` + `RecentDenial`. Net result: 4 staticcheck S1016 issues gone.",
       "acceptanceCriteria": [
-        "internal/tokenjuice/reduce.go implements reduce_execution per spec §4",
-        "internal/tokenjuice/text.go has: stripAnsi, normalizeLines, dedupeAdjacent, headTail, safeClamp (grapheme-aware via uniseg)",
-        "Pass-through safety: input<512B OR ratio>0.95 returns Applied:false",
-        "Failure-preserving honored when exit_code != 0",
-        "Unit tests cover: tiny passthrough, oversized compact, CJK boundary, ANSI strip, dedup, head/tail elision (≥8 cases)",
-        "BenchmarkCompactLarge (1MB input) completes in <50ms",
-        "go build/vet/test green",
-        "Single atomic commit prefix: feat(tokenjuice): reduce pipeline + grapheme-aware text helpers (Phase-TJ / US-TJ03)"
+        "TerminalToolFinalizationMessages removed; terminalFinalizationPrompt kept",
+        "3 dependent test functions removed",
+        "PerToolCounts/BudgetRow/CapabilityCountRow/RecentDenialRow collapsed into the canonical Tool*/Capability*/Recent* types from internal/api/types.go",
+        "~/go/bin/golangci-lint run -E staticcheck ./... shows 4 fewer S1016 issues",
+        "go build ./... && go test ./internal/api/... ./internal/agent/... green",
+        "Single atomic commit prefix: chore(legacy): drop TerminalToolFinalizationMessages + collapse maintenance struct duplicates (RECLAIM03)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Grapheme clamp is THE hotspot per spec — uniseg.GraphemeBoundaries with byte iteration is faster than uniseg.Step + slice materialization. Bench BEFORE optimizing."
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §3 + §5 + §Story RECLAIM03. Two unrelated deletions packed in one story because both are low-risk + small surface. If the maintenance struct collapse turns out larger than expected, split into RECLAIM03a/03b."
     },
     {
-      "id": "US-TJ04",
-      "title": "Vendor 10 builtin rules + 3 Aura-specific rules + fixture tests",
-      "description": "Write 10 starter builtin rules to internal/tokenjuice/builtin/ per docs/tokenjuice-rules-catalog.md §Top-10. PLUS 3 Aura-specific rules (NEW): (a) aura/file-read — match toolNames=['file'] argvIncludes=['read'], reduce drops 'content' field keeps path+bytes+type+head_200_chars (FIXES the 2026-05-18 21:33 raw-JSON-echo bug live in Telegram); (b) aura/source-read — same for read_source/source action=read; (c) aura/web-fetch — match web action=fetch, summarise HTML head/title+first paragraph. All rules written from SCRATCH (don't copy openhuman GPLv3 sources — rewrite from spec). Add fixture tests in internal/tokenjuice/tests/fixtures/: 3 upstream patterns (git-status, npm-install, cargo-test) + 3 Aura ones (file-read-tools-md, source-read-pdf, web-fetch-html). Table-driven test runs each fixture through Compact + asserts expected output.",
+      "id": "RECLAIM04",
+      "title": "Inline triple-routing wrappers in telegram tool exec (~20 LOC, LOW risk)",
+      "description": "Three thin-wrapper deletions from the Phase 4/T leftover: (a) Drop internal/telegram/tool_exec_helpers.go:28 `(*Bot).ExecToolCalls` — it's a pure wrapper around lowercase `executeToolCalls`. Inline the body at the call site in internal/channels/telegram/invocation_builder.go:510. (b) The parameters `toolsExposed []string` and `readSkills []string` flow through 3 layers (Bot.ExecToolCalls → executeToolCalls → agent.ExecuteToolCalls) and are never read at the destination. Drop them from both `executeToolCalls` methods. This dead-codes `currentToolNames()` closure at invocation_builder.go:278 — delete it. (c) Drop internal/telegram/conversation_snapshot.go `loadOrchestrationSnapshot` (lowercase, unused outside tests). Inline at the test sites.",
       "acceptanceCriteria": [
-        "internal/tokenjuice/builtin/ contains ≥10 starter rules + 3 Aura-specific (.json files)",
-        "internal/tokenjuice/builtin/aura_file_read.json reduces file{action=read} output to <500 chars (path+bytes+head_200)",
-        "internal/tokenjuice/tests/fixtures/ contains ≥6 before/after fixtures",
-        "Fixture test passes: each fixture round-trips through Compact correctly",
-        "LoadBuiltinRules now returns ≥13 compiled rules (was 1 fallback)",
-        "go build/vet/test green",
-        "Single atomic commit prefix: feat(tokenjuice): vendor 10 builtin + 3 Aura-specific rules (Phase-TJ / US-TJ04)"
+        "(*Bot).ExecToolCalls removed, body inlined at the call site",
+        "toolsExposed + readSkills parameters dropped from executeToolCalls signatures",
+        "currentToolNames closure at invocation_builder.go:278 removed",
+        "loadOrchestrationSnapshot removed, callers inlined",
+        "go build ./... && go test ./internal/telegram/... ./internal/channels/telegram/... green",
+        "Single atomic commit prefix: chore(legacy): inline triple-routing telegram tool-exec wrappers (RECLAIM04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Rules catalog §Top-10 lists the rule set to ship: generic/fallback, git/status, tests/go-test, tests/pytest, search/rg, build/tsc, install/npm-install, git/log-oneline, git/diff-stat, generic/help. The 3 Aura rules close the raw-JSON-echo bug — verify they trigger via fixture matching the actual tool result shape (look at internal/agent/tools/registry/file.go Execute return value)."
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §4 + §Story RECLAIM04. These wrappers survived Phase 4/T (collapse agent runtime) because nobody noticed they had become pure pass-through after the migration."
     },
     {
-      "id": "US-TJ05",
-      "title": "Wire TokenJuice into agent loop at executor.go:92-94 — behind feature flag",
-      "description": "Per docs/tokenjuice-aura-integration-plan.md §Wiring: insert tokenjuice.Compact() call at internal/agent/executor.go:92-94, BEFORE WrapUntrustedToolResult and BEFORE limitToolContent. The mirror site at internal/agent/exec_helpers.go:145 also needs the call. Build Input from: ToolName=call.Name, Argv=argvFromArgs(call.Arguments) (helper to flatten JSON args into string slice for argvIncludes/commandIncludes matching), Stdout=raw tool output, ExitCode=exitCodeFromToolOutput(call.Name, raw) (helper that parses 'exit_code: %d\\nelapsed_ms: %d\\n\\n' prefix for execute_shell/execute_code, returns nil for other tools). Feature flag AURA_TOKENJUICE_ENABLED (default false initially, flipped in US-TJ08 after measurement). Log per-call stats at debug level: tool=X bytes_in=N bytes_out=M ratio=R rule=R applied=B.",
+      "id": "RECLAIM05",
+      "title": "Collapse constructor chains kept alive only by tests (~30 LOC + test churn, MED risk)",
+      "description": "Three constructor-chain collapses: (a) `NewExecuteCodeTool` → `NewExecuteCodeToolWithSender` → `NewExecuteCodeToolWithStore` → `NewExecuteCodeToolWithStoreAndRegistry` (4 levels, only the last is production). Pick ONE: either collapse to a single constructor + functional options, OR delete the unused (debug-only) variants and update tests to call the production constructor. Default: delete the variants (simpler, less churn). (b) `NewSearchMemoryTool` / `NewSearchMemoryToolWithTimeout` / `NewSearchMemoryToolConfigured` (3 levels) — production uses Configured, debug uses bare, the middle WithTimeout is a 2-line redirect. Delete WithTimeout. (c) Export `toolQdrantPointID` directly by renaming to `ToolQdrantPointID` (or vice-versa, pick canonical), drop the wrapper at internal/agent/tools/registry/registry_search_vector.go:315. Update tests accordingly.",
       "acceptanceCriteria": [
-        "executor.go:92-94 calls tokenjuice.Compact() before WrapUntrustedToolResult when AURA_TOKENJUICE_ENABLED=true",
-        "exec_helpers.go:145 mirror site also wired",
-        "exitCodeFromToolOutput helper parses execute_shell/execute_code prefix correctly",
-        "Default disabled (AURA_TOKENJUICE_ENABLED defaults false) — no behavior change unless flag set",
-        "Debug log emits per-call CompactionStats",
-        "Integration test: stub LLM + stub tool returning 5KB output, flag=true → state.Messages contains <500 chars; flag=false → unchanged 5KB",
-        "go build/vet/test green",
-        "Single atomic commit prefix: feat(agent): wire tokenjuice compaction at executor pre-envelope (Phase-TJ / US-TJ05)"
+        "NewExecuteCodeToolWithSender + NewExecuteCodeToolWithStore + NewExecuteCodeToolWithStoreAndRegistry removed (one canonical constructor remains)",
+        "NewSearchMemoryToolWithTimeout removed",
+        "ToolQdrantPointID wrapper collapsed (only one canonical name remains)",
+        "All tests updated to use canonical constructors; no test deletions beyond what the dropped constructors required",
+        "go build ./... && go test ./internal/agent/tools/registry/... ./cmd/aura/... green",
+        "Single atomic commit prefix: chore(legacy): collapse constructor chains kept alive only by tests (RECLAIM05)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Integration plan §Wiring is the exact insertion guide. Don't touch loop.go — the loop only dispatches; the executor writes. Feature flag default false is critical so this commit is risk-free."
-    },
-    {
-      "id": "US-TJ06",
-      "title": "Observability — /api/health surfaces TokenJuice stats + per-run aggregates in runs table",
-      "description": "Add observability for TokenJuice impact. (a) Per-call stats already logged in US-TJ05 — extend to aggregate per-run: add tokenjuice_bytes_saved + tokenjuice_compactions_applied columns to runs table (migration v_next). (b) Update internal/api/health_server.go to include a `tokenjuice` block in /api/health JSON: {enabled, total_calls, total_bytes_saved, avg_ratio, top_5_rules_by_savings}. (c) Web dashboard: small chart or stat card on the runs detail page showing per-run tokenjuice savings (web/src/components/RunDetail.tsx or wherever runs are shown). (d) Integration test: end-to-end run with tokenjuice enabled, query /api/health, assert numbers >0.",
-      "acceptanceCriteria": [
-        "Migration adds tokenjuice_bytes_saved + tokenjuice_compactions_applied to runs table",
-        "/api/health returns tokenjuice block with the documented fields",
-        "Web dashboard surfaces per-run savings (or top-5 rules)",
-        "Integration test asserts /api/health values populate post-run",
-        "go build/vet/test green + npm --prefix web run build green",
-        "Single atomic commit prefix: feat(tokenjuice): observability — runs aggregates + /api/health + dashboard (Phase-TJ / US-TJ06)"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "Migration: next available v_NN in internal/db/migrations/. The runs table is hot — only add nullable columns to avoid lock storms."
-    },
-    {
-      "id": "US-TJ07",
-      "title": "Measurement — baseline cmd/probe_chat suite with vs without TokenJuice",
-      "description": "Capture rigorous before/after measurement on the 30-case probe_chat suite. (a) Run baseline: AURA_TOKENJUICE_ENABLED=false, go run ./cmd/probe_chat -json > .planning/qa/tj-baseline-off.json. (b) Run with TJ: AURA_TOKENJUICE_ENABLED=true, same command > .planning/qa/tj-baseline-on.json. (c) Diff analysis: for each case, tokens_total before vs after, elapsed_ms before vs after, pass/fail before vs after. (d) Aggregate: total bytes saved, avg ratio, top rules, % token reduction on heavy turns (web_fetch, source_read, file_read of large files). (e) Write findings to docs/tokenjuice-measurement-2026-05-18.md. Success criterion: ≥10% avg token reduction with 0 probe regressions.",
-      "acceptanceCriteria": [
-        ".planning/qa/tj-baseline-off.json + tj-baseline-on.json both captured",
-        "docs/tokenjuice-measurement-2026-05-18.md exists with per-case + aggregate diff",
-        "0 probe regressions: every case that passed in -off also passes in -on",
-        "Heavy turns show ≥10% token reduction",
-        "Top-3 rules by bytes saved documented",
-        "go build/vet/test green (no code changes if measurement only — pure docs commit)",
-        "Single atomic commit prefix: docs(tokenjuice): before/after measurement on 30-case probe suite (Phase-TJ / US-TJ07)"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "AURA_CHAT_TOKEN must be valid for the suite. If token expired since 2026-05-25 re-mint per memory aura-token-bootstrap-db-insert. Run from D:/Aura repo root (not from cmd/probe_chat subdir — see memory ralph-sh-msys-path-bug for the cwd lesson)."
-    },
-    {
-      "id": "US-TJ08",
-      "title": "Closure — flip AURA_TOKENJUICE_ENABLED default to true + qa-verdict update",
-      "description": "After US-TJ07 confirms ≥10% savings + 0 regressions, flip the default. (a) Change AURA_TOKENJUICE_ENABLED default in internal/config/ from false to true. (b) Update docs/qa-verdict.md with a new section 'Phase-TJ closure' summarizing: total bytes saved across the suite, % reduction by tool category, post-TJ baseline pass rate (must equal pre-TJ pass rate). (c) Add memory entry to record the production rollout (or just rely on the docs). (d) Document the kill switch: setting AURA_TOKENJUICE_ENABLED=false rolls back without code change.",
-      "acceptanceCriteria": [
-        "AURA_TOKENJUICE_ENABLED default = true in config",
-        "docs/qa-verdict.md has 'Phase-TJ closure' section with measurement summary",
-        "Post-flip baseline rerun passes same case count as pre-flip",
-        "Kill switch documented (env var to disable)",
-        "go build/vet/test green",
-        "Single atomic commit prefix: feat(tokenjuice): enable by default after measurement validation (Phase-TJ / US-TJ08)"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "If US-TJ07 shows <10% savings or any regression, HALT and escalate to user — don't auto-flip. The verdict section is the sign-off; without it the rollout isn't done."
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §Story RECLAIM05. Test churn is the dominant cost — touching many test files. If it grows past ~30 LOC + ~80 LOC test churn, split into RECLAIM05a/05b/05c (one per chain)."
     }
   ]
 }
