@@ -28,6 +28,7 @@ import (
 	"github.com/aura/aura/internal/storage/reindex"
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
 	"github.com/aura/aura/internal/storage/sources/ocr"
@@ -285,6 +286,15 @@ func newApp(
 		logger.Info("markitdown sidecar configured", "url", url, "timeout_sec", cfg.MarkitdownTimeoutSec)
 	} else {
 		logger.Warn("markitdown sidecar not configured (set MARKITDOWN_URL); non-PDF uploads will fail")
+	}
+
+	// ---- Whisper sidecar (Phase-MM, US-MM-A02) ------------------------------
+	if url := strings.TrimSpace(cfg.WhisperBaseURL); url != "" {
+		timeout := time.Duration(cfg.WhisperTimeoutSec) * time.Second
+		deps.Whisper = whisper.New(url, timeout, logger)
+		logger.Info("whisper sidecar configured", "url", url, "timeout_sec", cfg.WhisperTimeoutSec)
+	} else {
+		logger.Info("whisper sidecar not configured (set WHISPER_BASE_URL to enable voice transcription)")
 	}
 
 	// ---- Ingest pipeline ----------------------------------------------------

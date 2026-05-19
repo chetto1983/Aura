@@ -2,10 +2,12 @@ package telegram
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path"
 	"regexp"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/llm/whisper"
 	source "github.com/aura/aura/internal/storage/sources/store"
 	tele "gopkg.in/telebot.v4"
 )
@@ -144,6 +147,104 @@ func TestVoiceHandlerAuthorizedVoiceStoresKindAudio(t *testing.T) {
 	}
 	if !strings.Contains(finalText, "✅ Stored") {
 		t.Fatalf("final progress edit %q does not contain '✅ Stored'", finalText)
+	}
+}
+
+func TestVoiceHandlerTranscription(t *testing.T) {
+	const expectedText = "ciao mondo prova"
+
+	// Mock whisper-server: accepts POST /inference, returns canned transcript.
+	whisperSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/inference" || r.Method != http.MethodPost {
+			http.Error(w, "unexpected", http.StatusNotFound)
+			return
+		}
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			http.Error(w, "bad multipart: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"text":%q}`, expectedText)
+	}))
+	defer whisperSrv.Close()
+
+	var calls []telegramAPICall
+	srv := newVoiceAPIServer(t, &calls)
+	defer srv.Close()
+
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sources := newDocumentTestSourceStore(t)
+	wc := whisper.New(whisperSrv.URL, 10*time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	h := newVoiceHandler(voiceHandlerConfig{
+		Bot:             tb,
+		Sources:         sources,
+		Whisper:         wc,
+		WhisperLanguage: "it",
+		Allowlist:       func(string) bool { return true },
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	t.Cleanup(h.Stop)
+
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender: &tele.User{ID: 123, Username: "owner"},
+		Chat:   &tele.Chat{ID: 123},
+		Voice: &tele.Voice{
+			File:     tele.File{FileID: "voice-1", FileSize: int64(len(fakeVoiceBytes))},
+			Duration: 5,
+		},
+	}})
+
+	if err := h.onVoiceMessage(ctx); err != nil {
+		t.Fatalf("onVoiceMessage() error = %v", err)
+	}
+
+	// Wait for transcription to complete (StatusTranscribeComplete).
+	var stored []*source.Source
+	waitUntil(t, 5*time.Second, func() bool {
+		var err error
+		stored, err = sources.List(source.ListFilter{Status: source.StatusTranscribeComplete})
+		return err == nil && len(stored) == 1
+	})
+	h.Stop()
+
+	s := stored[0]
+
+	// Transcript metadata must be populated.
+	if s.Transcript == nil {
+		t.Fatal("source.Transcript is nil after transcription")
+	}
+	if s.Transcript.Text != expectedText {
+		t.Fatalf("Transcript.Text = %q, want %q", s.Transcript.Text, expectedText)
+	}
+	if s.Transcript.Language != "it" {
+		t.Fatalf("Transcript.Language = %q, want it", s.Transcript.Language)
+	}
+	if s.Transcript.DurationS != 5.0 {
+		t.Fatalf("Transcript.DurationS = %.1f, want 5.0 (from voice.Duration)", s.Transcript.DurationS)
+	}
+
+	// OriginalDeletedAt must be set after audio purge.
+	if s.OriginalDeletedAt == nil {
+		t.Fatal("source.OriginalDeletedAt is nil; expected non-zero after audio purge")
+	}
+
+	// transcript.txt must exist with correct content.
+	transcriptPath := sources.Path(s.ID, "transcript.txt")
+	content, err := os.ReadFile(transcriptPath)
+	if err != nil {
+		t.Fatalf("transcript.txt missing: %v", err)
+	}
+	if string(content) != expectedText {
+		t.Fatalf("transcript.txt = %q, want %q", string(content), expectedText)
+	}
+
+	// original.ogg must be removed after successful transcription.
+	originalPath := sources.Path(s.ID, "original.ogg")
+	if _, statErr := os.Stat(originalPath); !os.IsNotExist(statErr) {
+		t.Fatalf("original.ogg should be deleted after transcription, os.Stat returned: %v", statErr)
 	}
 }
 

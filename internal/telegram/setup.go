@@ -103,11 +103,13 @@ func New(deps Deps) (*Bot, error) {
 	})
 
 	b.voice = newVoiceHandler(voiceHandlerConfig{
-		Bot:       tb,
-		Sources:   deps.Sources,
-		Allowlist: b.isAllowlisted,
-		Logger:    logger,
-		Parent:    deps.ParentCtx,
+		Bot:             tb,
+		Sources:         deps.Sources,
+		Whisper:         deps.Whisper,
+		WhisperLanguage: deps.Cfg.WhisperLanguage,
+		Allowlist:       b.isAllowlisted,
+		Logger:          logger,
+		Parent:          deps.ParentCtx,
 	})
 
 	b.registerHandlers()

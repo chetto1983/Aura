@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strconv"
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/llm/whisper"
 	source "github.com/aura/aura/internal/storage/sources/store"
 	tele "gopkg.in/telebot.v4"
 )
@@ -24,6 +26,9 @@ const voiceConcurrencyLimit = 1
 type voiceHandlerConfig struct {
 	Bot       *tele.Bot
 	Sources   source.Repository
+	// Whisper is optional. nil = store only, no transcription.
+	Whisper         *whisper.Client
+	WhisperLanguage string // defaults to "it" when empty
 	Allowlist func(userID string) bool
 	Logger    *slog.Logger
 	// Parent is the optional parent context. When non-nil the voiceHandler's
@@ -33,16 +38,18 @@ type voiceHandlerConfig struct {
 }
 
 type voiceHandler struct {
-	bot     *tele.Bot
-	sources source.Repository
-	allowed func(string) bool
-	logger  *slog.Logger
-	sem     chan struct{}
-	mu      sync.Mutex
-	closed  bool
-	wg      sync.WaitGroup
-	ctx     context.Context
-	cancel  context.CancelFunc
+	bot             *tele.Bot
+	sources         source.Repository
+	whisper         *whisper.Client
+	whisperLanguage string
+	allowed         func(string) bool
+	logger          *slog.Logger
+	sem             chan struct{}
+	mu              sync.Mutex
+	closed          bool
+	wg              sync.WaitGroup
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 func newVoiceHandler(cfg voiceHandlerConfig) *voiceHandler {
@@ -54,14 +61,20 @@ func newVoiceHandler(cfg voiceHandlerConfig) *voiceHandler {
 		parent = context.Background()
 	}
 	ctx, cancel := context.WithCancel(parent)
+	lang := cfg.WhisperLanguage
+	if lang == "" {
+		lang = "it"
+	}
 	return &voiceHandler{
-		bot:     cfg.Bot,
-		sources: cfg.Sources,
-		allowed: cfg.Allowlist,
-		logger:  cfg.Logger,
-		sem:     make(chan struct{}, voiceConcurrencyLimit),
-		ctx:     ctx,
-		cancel:  cancel,
+		bot:             cfg.Bot,
+		sources:         cfg.Sources,
+		whisper:         cfg.Whisper,
+		whisperLanguage: lang,
+		allowed:         cfg.Allowlist,
+		logger:          cfg.Logger,
+		sem:             make(chan struct{}, voiceConcurrencyLimit),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -137,10 +150,9 @@ func (h *voiceHandler) onVoiceMessage(c tele.Context) error {
 	return nil
 }
 
-// process downloads the OGG audio and stores it as an immutable source.
-// Each step edits the same progress message; failures replace its text with
-// a single-line error. US-MM-A02 extends this function to call whisper after
-// a successful store.
+// process downloads the OGG audio, stores it as an immutable source, and
+// (when a Whisper client is configured) transcribes it. Each step edits the
+// same progress message; failures replace its text with a single-line error.
 func (h *voiceHandler) process(ctx context.Context, userID string, voice *tele.Voice, progress *tele.Message) {
 	// Bounded concurrency: queue if a job is already in flight.
 	select {
@@ -178,11 +190,84 @@ func (h *voiceHandler) process(ctx context.Context, userID string, voice *tele.V
 		return
 	}
 
-	editor.set(fmt.Sprintf("✅ Stored · %s · %s · ready for transcription",
+	// Step 3: transcribe (skipped when Whisper client is nil).
+	if h.whisper == nil {
+		editor.set(fmt.Sprintf("✅ Stored · %s · %s · ready for transcription",
+			src.ID, formatSize(src.SizeBytes)))
+		h.logger.Info("voice stored (transcription disabled)",
+			"user_id", userID,
+			"source_id", src.ID,
+			"size_bytes", src.SizeBytes,
+		)
+		return
+	}
+
+	editor.set(fmt.Sprintf("📥 Stored · %s · %s · transcribing…",
 		src.ID, formatSize(src.SizeBytes)))
-	h.logger.Info("voice stored",
+
+	result, err := h.whisper.Transcribe(ctx, oggBytes, "audio/ogg", h.whisperLanguage)
+	if err != nil {
+		_, _ = h.sources.Update(src.ID, func(s *source.Source) error {
+			s.Status = source.StatusFailed
+			s.Error = err.Error()
+			return nil
+		})
+		editor.fail("Transcription failed: " + err.Error())
+		h.logger.Warn("whisper transcription failed",
+			"user_id", userID,
+			"source_id", src.ID,
+			"err", err,
+		)
+		return
+	}
+
+	// Step 4: write transcript.txt next to the source files.
+	if err := writeNextToSource(h.sources, src.ID, "transcript.txt", []byte(result.Text)); err != nil {
+		editor.fail("Write transcript failed: " + err.Error())
+		return
+	}
+
+	// Step 5: delete original.ogg — voice memos are privacy-sensitive;
+	// the transcript is the authoritative artifact. Only purge on success.
+	durationS := float64(voice.Duration)
+	originalPath := h.sources.Path(src.ID, "original.ogg")
+	var deletedAt *time.Time
+	if originalPath != "" {
+		if removeErr := os.Remove(originalPath); removeErr != nil && !os.IsNotExist(removeErr) {
+			h.logger.Warn("voice original purge failed", "source_id", src.ID, "err", removeErr)
+		} else {
+			t := time.Now().UTC()
+			deletedAt = &t
+		}
+	}
+
+	// Step 6: flip status + attach transcript metadata.
+	meta := &source.TranscriptMeta{
+		Text:      result.Text,
+		DurationS: durationS,
+		ElapsedMs: result.ElapsedMs,
+		Language:  h.whisperLanguage,
+	}
+	updated, err := h.sources.Update(src.ID, func(s *source.Source) error {
+		s.Status = source.StatusTranscribeComplete
+		s.Transcript = meta
+		s.OriginalDeletedAt = deletedAt
+		s.Error = ""
+		return nil
+	})
+	if err != nil {
+		editor.fail("Status update failed: " + err.Error())
+		return
+	}
+
+	h.logger.Info("voice transcribed",
 		"user_id", userID,
 		"source_id", src.ID,
-		"size_bytes", src.SizeBytes,
+		"duration_s", durationS,
+		"elapsed_ms", result.ElapsedMs,
+		"text_len", len(result.Text),
 	)
+
+	editor.set(fmt.Sprintf("✅ Transcribed · %s · %.0fs audio · %d chars · audio purged · ready for Hub dispatch",
+		updated.ID, durationS, len(result.Text)))
 }

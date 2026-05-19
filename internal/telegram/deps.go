@@ -25,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/storage/reindex"
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
 	"github.com/aura/aura/internal/storage/sources/ocr"
@@ -106,6 +107,9 @@ type Deps struct {
 	OCR        *ocr.Client
 	Markitdown markitdown.Converter
 	Ingest     *ingest.Pipeline
+	// Whisper is the optional speech-to-text client (Phase-MM, US-MM-A02).
+	// nil = transcription disabled (voice memos are stored but not transcribed).
+	Whisper *whisper.Client
 
 	// ---- Cron / scheduler ---------------------------------------------------
 	SchedDB        *cron.Store                // full concrete store (satisfies AgentJobRepository + Repository)

@@ -151,6 +151,12 @@ type Config struct {
 	OCRMaxPages             int    `envconfig:"OCR_MAX_PAGES" default:"500"`
 	OCRMaxFileMB            int    `envconfig:"OCR_MAX_FILE_MB" default:"100"`
 
+	// Whisper speech-to-text sidecar (Phase-MM, Wave 2).
+	// Points at the aura-whisper container's /inference endpoint.
+	WhisperBaseURL    string `envconfig:"WHISPER_BASE_URL" default:"http://aura-whisper:8082"`
+	WhisperLanguage   string `envconfig:"WHISPER_LANGUAGE" default:"it"`
+	WhisperTimeoutSec int    `envconfig:"WHISPER_TIMEOUT_SEC" default:"60"`
+
 	// TokenJuice rule-driven output compaction (Phase-TJ). Enabled by default after
 	// US-TJ07 confirmed 15.8% heavy-turn savings + 0 regressions. Set
 	// AURA_TOKENJUICE_ENABLED=false to disable without a code change.
@@ -309,6 +315,10 @@ func Load() (*Config, error) {
 	cfg.MistralOCRExtractFooter = getEnvBool("MISTRAL_OCR_EXTRACT_FOOTER", false)
 	cfg.OCRMaxPages = getEnvInt("OCR_MAX_PAGES", 500)
 	cfg.OCRMaxFileMB = getEnvInt("OCR_MAX_FILE_MB", 100)
+
+	cfg.WhisperBaseURL = getEnv("WHISPER_BASE_URL", "http://aura-whisper:8082")
+	cfg.WhisperLanguage = getEnv("WHISPER_LANGUAGE", "it")
+	cfg.WhisperTimeoutSec = getEnvInt("WHISPER_TIMEOUT_SEC", 60)
 
 	cfg.TokenJuiceEnabled = getEnvBool("AURA_TOKENJUICE_ENABLED", true)
 

@@ -84,6 +84,17 @@ const (
 	StatusTranscribeComplete Status = "transcribe_complete"
 )
 
+// TranscriptMeta holds the result of audio transcription (US-MM-A02).
+// Present only on KindAudio sources that have been successfully transcribed.
+// DurationS comes from tele.Voice.Duration (Telegram-supplied); ElapsedMs
+// is the wall-clock time of the Whisper /inference HTTP round-trip.
+type TranscriptMeta struct {
+	Text      string  `json:"text"`
+	DurationS float64 `json:"duration_s,omitempty"`
+	ElapsedMs int     `json:"elapsed_ms,omitempty"`
+	Language  string  `json:"language,omitempty"`
+}
+
 type ExtractionMeta struct {
 	ExtractorName    string   `json:"extractor_name,omitempty"`
 	ExtractorVersion string   `json:"extractor_version,omitempty"`
@@ -105,9 +116,15 @@ type Source struct {
 	SizeBytes int64           `json:"size_bytes"`
 	CreatedAt time.Time       `json:"created_at"`
 	Status    Status          `json:"status"`
-	OCRModel  string          `json:"ocr_model,omitempty"`
-	PageCount int             `json:"page_count,omitempty"`
-	Extract   *ExtractionMeta `json:"extract,omitempty"`
-	WikiPages []string        `json:"wiki_pages,omitempty"`
-	Error     string          `json:"error,omitempty"`
+	OCRModel          string          `json:"ocr_model,omitempty"`
+	PageCount         int             `json:"page_count,omitempty"`
+	Extract           *ExtractionMeta `json:"extract,omitempty"`
+	WikiPages         []string        `json:"wiki_pages,omitempty"`
+	Error             string          `json:"error,omitempty"`
+	// Transcript is set by the voice handler after successful whisper transcription.
+	// Non-nil only on KindAudio sources. omitempty keeps source.json unchanged for all other kinds.
+	Transcript        *TranscriptMeta `json:"transcript,omitempty"`
+	// OriginalDeletedAt records when original.ogg was purged post-transcription.
+	// nil = original still on disk (non-audio kinds never set this field).
+	OriginalDeletedAt *time.Time      `json:"original_deleted_at,omitempty"`
 }
