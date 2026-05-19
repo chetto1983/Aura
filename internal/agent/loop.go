@@ -640,8 +640,8 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 // budget paths (MaxElapsed, empty-LLM-response, MaxIterations). When
 // AllowNoToolFinalization is true it attempts one extra LLM round via
 // finalizeAnswerAfterBudget; on failure or when the flag is false it falls
-// back to finalAnswerOnBudget. It always adds the assistant message and fires
-// emitStats before returning.
+// back to finalAnswerOnBudgetWithContext. It always adds the assistant message
+// and fires emitStats before returning.
 func gracefulFinalize(ctx context.Context, client ChatClient, state State, opts Options, stats *Stats, lastToolResult string, emitStats func()) (loopResult, error) {
 	lastToolName := ""
 	if len(stats.ToolsCalled) > 0 {

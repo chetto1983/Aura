@@ -73,13 +73,6 @@ func DuplicateOrMaxCallsPolicy(maxCallsPerTool map[string]int, result func(llm.T
 	}
 }
 
-func finalAnswerOnBudget(lastToolResult string) string {
-	if result := strings.TrimSpace(lastToolResult); result != "" {
-		return result
-	}
-	return "I reached the per-turn budget without a usable result."
-}
-
 // finalAnswerOnBudgetWithContext returns a contextual budget-exhaustion message
 // that includes which cap fired, the last tool name, and a retry hint. It is
 // used by gracefulFinalize when AllowNoToolFinalization is false or the

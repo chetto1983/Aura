@@ -234,10 +234,7 @@ type wikiFileInfo struct {
 	ext  string
 }
 
-func loadWikiPageDocument(wikiDir, slug string, logger *slog.Logger) (Document, bool, error) {
-	if logger == nil {
-		logger = slog.Default()
-	}
+func loadWikiPageDocument(wikiDir, slug string, _ *slog.Logger) (Document, bool, error) {
 	slug = strings.TrimSpace(slug)
 	if slug == "" {
 		return Document{}, false, fmt.Errorf("wiki slug is required")
