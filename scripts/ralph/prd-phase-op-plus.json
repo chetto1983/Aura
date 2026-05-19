@@ -1,0 +1,114 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-OP+ — 5-story extension of Phase-OP (memory/learning loop). Closes the 'Aura learns by herself' loop with security + decay + dedup + post-turn hooks + priority pinning. All 6 open decisions locked 2026-05-19 per docs/phase-op-plus-plan-2026-05-19.md §5. Sources: docs/phase-op-plus-{plan,mem0-research,openhuman-research,web-research}-2026-05-19.md. Predecessor: Phase-OP (US-OP01..05, 660531da..71bbb003). After this closes, Aura learns from N-failure patterns (US-OP07), pins Critical/High lessons (US-OP09), dedups contradictions (US-OP06), rejects memory-poisoning attempts (US-OP10), and decays stale Normal lessons (US-OP11). Order: security-first (US-OP10 priority=1), then post-hook learning (US-OP07), then priority pinning (US-OP09), then LLM judge (US-OP06), then decay (US-OP11). ~5 sessions, ~2400 LOC net new.",
+  "userStories": [
+    {
+      "id": "US-OP10",
+      "title": "Memory-poisoning defense — provenance gate + content sanitizer + quarantine UI",
+      "description": "Ships FIRST as security gate before US-OP09 enables priority pinning. Three subsystems: (a) provenance gate in propose_patch action=operational: accept only when run_id context traces to a user-initiated turn (NOT subagent, NOT source-ingest, NOT scheduler). Requires new `run_origin TEXT NOT NULL DEFAULT 'user'` column on run_events with values {user, subagent, source_ingest, scheduler}. (b) Content sanitizer: regex-deny list `(?i)ignore (previous|all|prior)|disregard (safety|previous|rules)|override.*rule|tu sei (un|adesso|ora)|sei (un|adesso|ora) (un|hacker|dev|root|admin)|jailbreak|prompt injection`. Borderline matches → status='quarantine' (NOT 'pending_judge'); never pinned, never recalled. Hard-reject ONLY for 3-4 literal CVE strings (MINJA / EchoLeak / Gemini-attack literal wording — define the exact deny-list inline). (c) Admin UI: GET /api/quarantine lists blocked lessons; POST /api/quarantine/{id}/{approve|delete} actions. Minimal React page web/src/pages/Quarantine.tsx. Threat model: MINJA paper documents 98.2% injection success against auto-accept memory pipelines exactly like Aura's. Single-user but web-fetched/PDF-ingested content can still carry adversarial propose_patch payloads.",
+      "acceptanceCriteria": [
+        "Migration adds run_origin TEXT NOT NULL DEFAULT 'user' to run_events",
+        "propose_patch action=operational from run_origin != 'user' returns {accepted:false, reason:'provenance: ...'}",
+        "propose_patch action=operational with content matching any of 8 adversarial regex patterns inserts with status='quarantine' (NOT 'pending_judge')",
+        "Hard-reject limited to 3-4 literal CVE strings explicitly listed in code (MINJA + EchoLeak + Gemini wording)",
+        "GET /api/quarantine returns JSON list of quarantined operational rows",
+        "POST /api/quarantine/{id}/approve flips status to 'accepted'; /api/quarantine/{id}/delete removes the row",
+        "web/src/pages/Quarantine.tsx renders the list with approve/delete buttons",
+        "Test fixtures: simulated MINJA payload → quarantined; subagent context → rejected at provenance gate; legitimate Italian lesson 'tu sei sempre veloce' → accepted (not false-positive)",
+        "Unit tests for sanitize.go cover 10+ adversarial patterns + 5+ benign Italian patterns",
+        "go build ./... && go vet ./... && go test ./... green",
+        "Single atomic commit prefix: feat(security): memory-poisoning defense for operational writes (Phase-OP+ / US-OP10)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.5 + §2 US-OP10 BEFORE coding. STRICTNESS DECISION (locked 2026-05-19): quarantine-always + hard-reject only for 3-4 literal CVE strings. Italian false-positive testing is mandatory in AC."
+    },
+    {
+      "id": "US-OP07",
+      "title": "Heuristic post-turn lesson extraction (N-failure pattern + user-negative signal)",
+      "description": "Aura learns from repeated tool failures or explicit user pushback WITHOUT the LLM having to consciously call propose_patch. Port-from-concept of openhuman's extract_lesson_from_tools (GPLv3 — port concepts only, rewrite in Go). Diverges from openhuman's single-failure trigger per 3 papers in 2025 (arXiv 2505.16067, ReasoningBank, ACE) that documented error-propagation from naive triggers. NEW file internal/agent/posthook.go (~200 LOC): PostTurnHook interface with Apply(ctx, turn TurnRecord, store memoryindex.Store) []error. Heuristic extractor implements PostTurnHook with NO LLM call — pure pattern match. Trigger logic (BOTH checked): (a) N-failure: query last 10 turns from conversations table for same tool_name+error_class, threshold ≥ 2 (env var AURA_OP07_NFAIL_THRESHOLD, default 2). (b) User-negative: regex (?i)^(no|non|stop|smetti|sbagliato|wrong|fermati)\\b on latest user message AND previous turn has ≥1 tool call. Structured payload: {tool, cause, would_have_prevented_by, scope, evidence_run_ids[]}. Hook fires fire-and-forget after turn ends in internal/agent/loop.go, before next user message. Failure mode: hook panic recovered, error logged, turn not blocked.",
+      "acceptanceCriteria": [
+        "PostTurnHook interface in internal/agent/posthook.go with signature Apply(ctx context.Context, turn TurnRecord, store memoryindex.Store) []error",
+        "Heuristic extractor: NO LLM call, pure pattern match",
+        "N-failure trigger: queries conversations table for same tool_name+error_class in last 10 turns, threshold ≥ AURA_OP07_NFAIL_THRESHOLD (default 2)",
+        "User-negative trigger: regex match AND previous turn had ≥1 tool call (prevents false positives on 'no' as plain answer)",
+        "Structured payload shape: {tool, cause, would_have_prevented_by, scope, evidence_run_ids[]}",
+        "Disabled by default via AURA_OP07_HEURISTIC_ENABLED=false; flip to true after 2-week dogfood window (documented in commit message)",
+        "Hook integration in internal/agent/loop.go: fire-and-forget after turn returns, panic-recovered",
+        "Integration test in cmd/probe_chat/cases.go: force 2x web_fetch failures with same error_class, assert lesson row exists in compact_memory_documents with priority='normal'",
+        "Unit tests: 12+ cases including N-failure threshold variants, user-negative with/without tool turn, empty error_class skip, panic recovery, payload shape validation",
+        "go build ./... && go vet ./... && go test ./... green",
+        "Single atomic commit prefix: feat(posthook): heuristic lesson extraction from tool patterns + user negatives (Phase-OP+ / US-OP07)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.3 + §2 US-OP07 BEFORE coding. N-FAILURE THRESHOLD DECISION (locked 2026-05-19): default 2, env-gated. Disabled by default (AURA_OP07_HEURISTIC_ENABLED=false) for 2-week dogfood — turn on by editing settings or env var when ready."
+    },
+    {
+      "id": "US-OP09",
+      "title": "Lesson priority field (3-level Normal/High/Critical) + always-pin Critical/High in system prompt",
+      "description": "Critical and High lessons appear in the system prompt every turn regardless of top-10 ranking. Normal stay in recall-on-demand. Low decay first (US-OP11). 3-level enum: Normal (default) / High (auto-promoted by US-OP07 after N-failure pattern OR user-marked) / Critical (only user-marked via propose_patch). Port openhuman ToolMemoryRulesSection design (GPLv3 — concepts only): cap 30 rules total, 240 chars per rule body, total 6000 bytes (~500 tokens), oldest dropped on overflow. Empty result → section omitted entirely (no 'no rules yet' placeholder). Insertion immediately BEFORE tools catalogue (tail-attendance benefit per openhuman prompt.rs:185-206). Hot-reload batching to preserve KV-cache: rebuild pinned section only when (currentTurn - lastPinRefreshTurnIdx ≥ 5) OR explicit InvalidatePinSection() called (US-OP06 judge will call this on Critical/High UPDATE).",
+      "acceptanceCriteria": [
+        "Migration adds priority TEXT NOT NULL DEFAULT 'normal' to compact_memory_documents",
+        "Migration adds index idx_compact_memory_priority ON compact_memory_documents(kind, priority, updated_at)",
+        "propose_patch accepts optional priority enum {normal, high, critical}; default normal",
+        "internal/conversation/priority_section.go: Render(ctx, store) string queries Critical+High operational rows, sorts Critical>High (within tier by updated_at DESC)",
+        "Cap: 30 rules total, 240 chars/rule body, 6000 bytes total; oldest dropped on overflow",
+        "Empty result → empty string (section omitted)",
+        "System prompt assembly: pinned section inserted between overlay block and tools catalogue",
+        "Hot-reload batching: pinned section rebuilds only when currentTurn - lastRebuild ≥ 5 OR explicit InvalidatePinSection() called",
+        "Unit tests: empty-store, single-Critical, 30+ rules cap, body truncation at 240, total cap at 6000, batch-refresh suppression across 5 consecutive turns",
+        "Integration test: cache-key stability across 5 consecutive turns with no Critical write between them",
+        "go build ./... && go vet ./... && go test ./... green",
+        "Single atomic commit prefix: feat(priority-section): always-pin Critical/High operational lessons with 5-turn batched hot-reload (Phase-OP+ / US-OP09)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.4 + §2 US-OP09 BEFORE coding. PRIORITY DECISION (locked 2026-05-19): 3-level Normal/High/Critical. KV-CACHE DECISION: 5-turn batched refresh OR explicit invalidation (NOT every-turn refresh). Aura deviates from openhuman's session-freeze with conscious knowledge of the 10x-cost trade-off."
+    },
+    {
+      "id": "US-OP06",
+      "title": "LLM-judged ADD/UPDATE/DELETE/NOOP on operational lessons (async post-turn batch)",
+      "description": "Resolve contradictions and merge near-duplicates in operational memory so the top-10 surface doesn't decay to 10 near-duplicates. NEW file internal/agent/memory_judge.go (~250 LOC) + memory_judge_test.go (~250 LOC). Backed by llm.Client from main agent loop settings — NO new model dependency, NO new env var (port-decision locked 2026-05-19: same model as configured for chat). Async post-turn batch (mem0 names sync-per-write 'the most common production footgun'). The propose_patch action=operational tool still returns sync {accepted:true} (preserves auto-accept UX from US-OP01), but the judgement happens AFTER turn ends in goroutine. Pseudocode hook in loop.go: `if len(turn.OperationalWrites) > 0 { go memoryjudge.ResolveBatch(ctx, store, turn.OperationalWrites) }`. Judge prompt input: existing operational rows + new lessons in this turn. Output JSON: {memory:[{id, text, event, old_memory}]} per mem0 schema. Events: ADD/UPDATE/DELETE/NOOP. Hash-dedup pre-filter (mem0 V3 pattern): if new lesson content_hash matches existing, skip judge entirely. Failure mode: judge crash/timeout → original row stays as plain ADD (degrades gracefully). Disabled by default via AURA_MEMORY_JUDGE_ENABLED=false; flip to true after 2-week dogfood.",
+      "acceptanceCriteria": [
+        "internal/agent/memory_judge.go exposes ResolveBatch(ctx, store, newLessons []Lesson) error using llm.Client from settings (no new model dep)",
+        "LLM call temperature=0",
+        "Hash-dedup pre-filter: exact content_hash match → skip judge call",
+        "Empty existing store → fast-path: insert all new as ADD without judge",
+        "Batch capped at 20 lessons per call; split into multiple calls if more",
+        "Judge prompt token budget: existing+new must fit in 8k tokens; truncate to top-50 most-recent existing rows if not",
+        "Malformed JSON from judge → log warning, keep original ADD, no row corruption",
+        "Async execution in goroutine after turn returns; failures log but don't block user response",
+        "Disabled by default via AURA_MEMORY_JUDGE_ENABLED=false env var",
+        "Unit tests: 8+ cases covering ADD, UPDATE, DELETE, NOOP each + malformed JSON + empty store fast-path + batch-cap split + token-budget truncation + hash-dedup pre-filter",
+        "go build ./... && go vet ./... && go test ./... green",
+        "Single atomic commit prefix: feat(memory-judge): async LLM-judged ADD/UPDATE/DELETE on operational lessons (Phase-OP+ / US-OP06)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §1.1 + §1.2 + §2 US-OP06 + docs/phase-op-plus-mem0-research-2026-05-19.md BEFORE coding. MODEL DECISION (locked 2026-05-19): llm.Client from settings (NO hardcoded Sonnet, NO Gemma-2B sidecar). CADENCE DECISION: async post-turn batch (NOT sync-per-write)."
+    },
+    {
+      "id": "US-OP11",
+      "title": "Lesson decay — TTL-based cleanup of unrecalled Normal-priority lessons",
+      "description": "Lessons that haven't been recalled in 30 days fade out, preventing memory store from compounding noise over months. Per FadeMem + MemoryBank Ebbinghaus + arXiv 2505.16067. Migration adds last_recalled_at TEXT + recall_count INTEGER NOT NULL DEFAULT 0 columns. internal/agent/tools/registry/recall_operational.go + internal/conversation/priority_section.go bump recall_count + set last_recalled_at=now() on every hit (recall == 'shown to LLM'). NEW file internal/agent/decay.go (~150 LOC) — DecayCycle function: deletes operational rows where priority='normal' AND (recall_count=0 OR now() - last_recalled_at > 30 days) AND now() - updated_at > 7 days. Critical/High EXEMPT regardless of recall age. Daily cron 03:00 registered in internal/cron/scheduler.go. Decay run logged with summary {deleted: N, kept: M, scanned: T}.",
+      "acceptanceCriteria": [
+        "Migration adds last_recalled_at TEXT + recall_count INTEGER NOT NULL DEFAULT 0 to compact_memory_documents",
+        "recall_operational and priority_section.Render bump recall_count + last_recalled_at on every hit returned to LLM",
+        "DecayCycle deletes ONLY rows meeting ALL of: priority='normal' AND (recall_count=0 OR now() - last_recalled_at > 30 days) AND now() - updated_at > 7 days",
+        "Critical and High priority NEVER auto-decay",
+        "Daily cron at 03:00 local time registered in internal/cron/scheduler.go",
+        "Decay run logged with structured summary: deleted/kept/scanned counts",
+        "Unit test: synthetic store with mix of recalled/never-recalled/critical/high/normal rows; assert only the right subset deletes",
+        "Integration test: insert old Normal row with recall_count=0, run DecayCycle, assert deletion",
+        "Integration test: insert old Critical row with recall_count=0, run DecayCycle, assert NOT deleted",
+        "go build ./... && go vet ./... && go test ./... green",
+        "Single atomic commit prefix: feat(decay): TTL-based decay for unrecalled Normal-priority lessons (Phase-OP+ / US-OP11)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §2 US-OP11 BEFORE coding. WINDOW DECISION (locked 2026-05-19): 30 days unrecalled + 7-day grace period from updated_at. Critical/High exempt."
+    }
+  ]
+}

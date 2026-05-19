@@ -505,31 +505,32 @@ the prd.json before dispatch.)
 
 ---
 
-## 5. Open decisions for user before Ralph dispatch
+## 5. Locked decisions (2026-05-19)
 
-These are intentionally left for Davide to call:
+All 6 open decisions resolved with Davide. These are now AC inputs for the stories above.
 
-1. **US-OP06 judge model**: Sonnet 4.6 (canonical, cost ~$0.01-0.05/day) vs cheaper local
-   model (Gemma-2B via llama.cpp). Recommendation: start Sonnet, measure, switch if cost
-   becomes visible.
+1. **US-OP06 judge model**: ✅ **`llm.Client` from settings** — same LLM the main agent
+   loop uses (model + base URL + key read from SQLite settings). Zero new dependency,
+   zero new env var. If the user switches LLM provider later, the judge follows.
 
-2. **US-OP07 N-failure threshold default**: 2 (recommended by research) or 3 (more
-   conservative)? Recommendation: 2, gated by env var so adjustable post-dogfood.
+2. **US-OP07 N-failure threshold default**: ✅ **2** (env var
+   `AURA_OP07_NFAIL_THRESHOLD` keeps it adjustable post-dogfood).
 
-3. **US-OP09 priority count**: 3-level (Normal/High/Critical) per openhuman vs 2-level
-   (Normal/Pinned) for simplicity? Recommendation: 3-level — the High tier is where
-   auto-promoted heuristic lessons live before Critical (which only user can mark).
+3. **US-OP09 priority count**: ✅ **3-level** Normal / High / Critical. `Ord` derived
+   so Critical > High > Normal. `is_eager()` returns true for the top 2 (eligible for
+   always-pin in system prompt).
 
-4. **US-OP10 strictness**: hard-reject adversarial patterns vs always-quarantine for review?
-   Recommendation: quarantine for all matches, hard-reject only for known CVE patterns.
+4. **US-OP10 strictness**: ✅ **quarantine-always for adversarial pattern matches**;
+   hard-reject limited to 3-4 literal CVE strings (MINJA / EchoLeak / Gemini-attack
+   wording) where false-positive probability is near zero. Quarantine surface is
+   reversible via `/api/quarantine` admin review.
 
-5. **US-OP11 decay window**: 30 days (recommended) vs 60 vs 90? Recommendation: 30, since
-   Aura's working memory is small and Davide's daily-use volume means a 30-day window
-   captures 30+ conversations of evidence.
+5. **US-OP11 decay window**: ✅ **30 days** unrecalled + grace 7 days from updated_at.
+   Critical/High exempt from auto-decay regardless of recall age.
 
-6. **Ralph dispatch cadence**: 5 stories sequentially in one Ralph queue vs 2 separate
-   queues (security US-OP10 first, then the 4 OP+ stories)? Recommendation: single
-   queue, US-OP10 priority=1 ensures it ships first.
+6. **Ralph dispatch cadence**: ✅ **single queue**, US-OP10 priority=1 ensures security
+   gate ships first. See `scripts/ralph/prd-phase-op-plus.json` for the staged queue
+   (created same-day; staged for Ralph dispatch AFTER the RECLAIM queue closes).
 
 ---
 

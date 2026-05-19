@@ -1,0 +1,87 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "RECLAIM — legacy code cleanup queue. 5 stories (~370 LOC reclaimable) surfaced by docs/legacy-deletion-survey-2026-05-19.md (gsd-codebase-mapper survey + golangci-lint -E unused -E unparam). Strict one-story-exit. ORDER: low-risk first (RECLAIM01), bigger-surface later (RECLAIM02). RECLAIM02 (retrieval capsule) is the biggest single win at ~200 LOC of zero-caller dead feature. After all 5 close, Phase-OP+ queue takes over (scripts/ralph/prd-phase-op-plus.json). DEFERRED: DEFER-A (unify agentExecutor.ExecuteToolCalls + agent.ExecuteToolCalls — high leverage, high risk, needs design phase) + DEFER-B (CompactCompletedToolResults — wait for Phase-TJ to fully close first since tokenjuice may replace it).",
+  "userStories": [
+    {
+      "id": "RECLAIM01",
+      "title": "golangci-lint unused triplet (~17 LOC, LOW risk)",
+      "description": "Delete the 3 symbols flagged by `~/go/bin/golangci-lint run -E unused ./...`: (a) cmd/probe_chat/cases.go:1335 `ocrProbeBefore` field + its L1073 assignment site; (b) cmd/probe_chat/client.go:328 `(*Env).sendChat` method; (c) internal/tokenjuice/text.go:172 `safeClamp` function. The tokenjuice safeClamp is currently unused — confirm Phase-TJ has closed before touching (queue stages this story first because TJ queue runs to completion before RECLAIM activates). If Phase-TJ added a safeClamp caller in TJ04-TJ08, leave it and document in commit message.",
+      "acceptanceCriteria": [
+        "cmd/probe_chat/cases.go: ocrProbeBefore field + its assignment removed",
+        "cmd/probe_chat/client.go: (*Env).sendChat method removed",
+        "internal/tokenjuice/text.go: safeClamp removed (unless Phase-TJ wired a caller)",
+        "~/go/bin/golangci-lint run -E unused ./... reports 0 issues",
+        "go build ./... && go test ./cmd/probe_chat/... ./internal/tokenjuice/... green",
+        "Single atomic commit prefix: chore(legacy): remove golangci-lint unused triplet (RECLAIM01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §1 + §Story RECLAIM01 BEFORE deleting. Verify with grep that no caller appeared since the survey (2026-05-19)."
+    },
+    {
+      "id": "RECLAIM02",
+      "title": "Delete dead retrieval-capsule feature (~200 LOC, MED risk)",
+      "description": "internal/conversation/retrieval_capsule.go (`ComposeRetrievalCapsule` + `RetrievalCapsuleInput` + `DefaultRetrievalCapsuleMaxBytes`) has ZERO production callers — only its own test file. Companion field `RetrievalCapsulePresent` is plumbed through 5 types (agent.Invocation, agent.InvocationResult, agent.Snapshot, agent.TurnStats) but the only production writer hardcodes it to false at internal/channels/telegram/invocation_builder.go:329. Feature was scaffolded ('speculative wiki search results' per CLAUDE.md) but never wired. Either land the feature or delete the skeleton — this story is the delete path. Steps: (1) Delete internal/conversation/retrieval_capsule.go + retrieval_capsule_test.go entirely. (2) Remove RetrievalCapsulePresent field from the 5 types + assignments at runtime.go:226 and session.go:229. (3) Remove field-set at invocation_builder.go:329. (4) Drop assertions in runtime_test.go:28-50 and snapshot_builder_test.go:19-52.",
+      "acceptanceCriteria": [
+        "internal/conversation/retrieval_capsule.go deleted",
+        "internal/conversation/retrieval_capsule_test.go deleted",
+        "Zero `ComposeRetrievalCapsule` or `RetrievalCapsulePresent` references in production code (grep returns 0)",
+        "Zero unused-field warnings from go vet after delete",
+        "go build ./... && go test ./internal/agent/... ./internal/conversation/... ./internal/channels/telegram/... green",
+        "Single atomic commit prefix: chore(legacy): delete dead retrieval-capsule feature (RECLAIM02)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §2 + §Story RECLAIM02 BEFORE deleting. ~16 grep hits before, expect 0 after. Update CLAUDE.md if it still mentions 'speculative wiki search results' — that's the feature being removed."
+    },
+    {
+      "id": "RECLAIM03",
+      "title": "Remove TerminalToolFinalizationMessages + collapse 4 duplicate struct shapes (~80 LOC, LOW risk)",
+      "description": "Three sub-deletions: (a) internal/agent/terminal.go:114-121 `TerminalToolFinalizationMessages` — explicit 'retained for callers that compose the finalize prompt themselves' but grep shows ZERO production AND zero debug-harness callers; 3 unit tests keep it alive. Keep `terminalFinalizationPrompt` (used internally), delete only the public wrapper + its 3 tests (TestTerminalToolFinalizationMessagesAppendsPrompt, TestTerminalToolFinalizationMessagesForSearchMemoryInstructsCitation, TestTerminalToolFinalizationMessagesAppendsLLMPrompt). (b) internal/api/maintenance_attempts.go: `PerToolCounts` and `BudgetRow` are field-identical to `ToolOutcomeCounts` and `ToolBudgetRow` in internal/api/types.go. Drop the Row variants, use the JSON-tagged types directly in AttemptsStats, drop the field-by-field copy loops at L133-152. (c) Same in maintenance_authz.go: collapse `CapabilityCountRow` + `RecentDenialRow` into `CapabilityCount` + `RecentDenial`. Net result: 4 staticcheck S1016 issues gone.",
+      "acceptanceCriteria": [
+        "TerminalToolFinalizationMessages removed; terminalFinalizationPrompt kept",
+        "3 dependent test functions removed",
+        "PerToolCounts/BudgetRow/CapabilityCountRow/RecentDenialRow collapsed into the canonical Tool*/Capability*/Recent* types from internal/api/types.go",
+        "~/go/bin/golangci-lint run -E staticcheck ./... shows 4 fewer S1016 issues",
+        "go build ./... && go test ./internal/api/... ./internal/agent/... green",
+        "Single atomic commit prefix: chore(legacy): drop TerminalToolFinalizationMessages + collapse maintenance struct duplicates (RECLAIM03)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §3 + §5 + §Story RECLAIM03. Two unrelated deletions packed in one story because both are low-risk + small surface. If the maintenance struct collapse turns out larger than expected, split into RECLAIM03a/03b."
+    },
+    {
+      "id": "RECLAIM04",
+      "title": "Inline triple-routing wrappers in telegram tool exec (~20 LOC, LOW risk)",
+      "description": "Three thin-wrapper deletions from the Phase 4/T leftover: (a) Drop internal/telegram/tool_exec_helpers.go:28 `(*Bot).ExecToolCalls` — it's a pure wrapper around lowercase `executeToolCalls`. Inline the body at the call site in internal/channels/telegram/invocation_builder.go:510. (b) The parameters `toolsExposed []string` and `readSkills []string` flow through 3 layers (Bot.ExecToolCalls → executeToolCalls → agent.ExecuteToolCalls) and are never read at the destination. Drop them from both `executeToolCalls` methods. This dead-codes `currentToolNames()` closure at invocation_builder.go:278 — delete it. (c) Drop internal/telegram/conversation_snapshot.go `loadOrchestrationSnapshot` (lowercase, unused outside tests). Inline at the test sites.",
+      "acceptanceCriteria": [
+        "(*Bot).ExecToolCalls removed, body inlined at the call site",
+        "toolsExposed + readSkills parameters dropped from executeToolCalls signatures",
+        "currentToolNames closure at invocation_builder.go:278 removed",
+        "loadOrchestrationSnapshot removed, callers inlined",
+        "go build ./... && go test ./internal/telegram/... ./internal/channels/telegram/... green",
+        "Single atomic commit prefix: chore(legacy): inline triple-routing telegram tool-exec wrappers (RECLAIM04)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §4 + §Story RECLAIM04. These wrappers survived Phase 4/T (collapse agent runtime) because nobody noticed they had become pure pass-through after the migration."
+    },
+    {
+      "id": "RECLAIM05",
+      "title": "Collapse constructor chains kept alive only by tests (~30 LOC + test churn, MED risk)",
+      "description": "Three constructor-chain collapses: (a) `NewExecuteCodeTool` → `NewExecuteCodeToolWithSender` → `NewExecuteCodeToolWithStore` → `NewExecuteCodeToolWithStoreAndRegistry` (4 levels, only the last is production). Pick ONE: either collapse to a single constructor + functional options, OR delete the unused (debug-only) variants and update tests to call the production constructor. Default: delete the variants (simpler, less churn). (b) `NewSearchMemoryTool` / `NewSearchMemoryToolWithTimeout` / `NewSearchMemoryToolConfigured` (3 levels) — production uses Configured, debug uses bare, the middle WithTimeout is a 2-line redirect. Delete WithTimeout. (c) Export `toolQdrantPointID` directly by renaming to `ToolQdrantPointID` (or vice-versa, pick canonical), drop the wrapper at internal/agent/tools/registry/registry_search_vector.go:315. Update tests accordingly.",
+      "acceptanceCriteria": [
+        "NewExecuteCodeToolWithSender + NewExecuteCodeToolWithStore + NewExecuteCodeToolWithStoreAndRegistry removed (one canonical constructor remains)",
+        "NewSearchMemoryToolWithTimeout removed",
+        "ToolQdrantPointID wrapper collapsed (only one canonical name remains)",
+        "All tests updated to use canonical constructors; no test deletions beyond what the dropped constructors required",
+        "go build ./... && go test ./internal/agent/tools/registry/... ./cmd/aura/... green",
+        "Single atomic commit prefix: chore(legacy): collapse constructor chains kept alive only by tests (RECLAIM05)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §Story RECLAIM05. Test churn is the dominant cost — touching many test files. If it grows past ~30 LOC + ~80 LOC test churn, split into RECLAIM05a/05b/05c (one per chain)."
+    }
+  ]
+}
