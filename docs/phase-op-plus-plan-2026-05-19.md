@@ -15,7 +15,7 @@ plus 2 stories the web survey surfaced as non-optional.
 
 ## TL;DR
 
-- **5 stories** ready for Ralph (the 3 originals US-OP06/07/09 + 2 newly-surfaced US-OP10/11).
+- **6 stories** ready for Ralph (the 3 originals US-OP06/07/09 + 2 newly-surfaced US-OP10/11 + US-OP12 surfaced 2026-05-19 from Aura's own self-diagnosis in the recent conversation).
 - **Strategic deviations from the original sketches**:
   - **US-OP06**: async post-turn batch (not sync-per-write) per mem0's own war story.
   - **US-OP07**: trigger on N-failure pattern OR user negative signal — NOT single-failure
@@ -371,6 +371,80 @@ acceptance tests upfront.
 
 ---
 
+### US-OP12 — Pre-call schema validator middleware (NEW, surfaced 2026-05-19 by Aura's self-diagnosis)
+
+**Goal**: Catch validation errors BEFORE the tool dispatch. Today Aura discovers
+parameter mistakes only AFTER the tool runs and rejects them — wasted roundtrip
++ wasted tokens. A pre-call middleware in `internal/agent/executor.go` runs
+schema validation against `tool.Parameters()` BEFORE `tool.Execute()` and
+returns a structured `ValidationError` directly to the LLM if the args don't
+match. The LLM sees the error in the same turn and retries with corrected
+params — no HTTP roundtrip wasted.
+
+**Provenance**: Aura herself raised this idea unprompted in conversation
+2026-05-19 07:12 ("Mi mancano tre cose... 1. Un 'dry run' o validatore locale
+dei parametri. Io chiamo il tool e scopro solo dopo se un parametro è sbagliato.
+Se ci fosse un modo per validare gli argomenti contro lo schema prima
+dell'esecuzione, eviterei metà dei validation error."). The recent operational
+store snapshot (id 4415) shows 5 lessons total, of which `web`/`doc`/`source`/`file`
+all have 3-9 validation failures each — the dominant failure class.
+
+**Pre-conditions**: US-OP07 ideally landed first (the heuristic counter will
+record the validation events with structured cause). Otherwise US-OP12 can
+ship independently.
+
+**Files touched**:
+- NEW `internal/agent/precall_validator.go` (~150 LOC) — implements
+  `ValidateBeforeCall(toolName, params map[string]any, schema map[string]any) ValidationResult`.
+  Three check kinds:
+  - **required-key-missing**: required fields in schema not present in params
+  - **invalid-type**: type mismatch (e.g., schema says `string`, args has `number`)
+  - **invalid-enum**: value not in `enum` list when schema specifies one
+- NEW `internal/agent/precall_validator_test.go` (~250 LOC) — 12+ table-driven cases.
+- MODIFY `internal/agent/executor.go` — wire validator into the call dispatch
+  right before `tool.Execute()`. On validation failure: return a structured
+  tool_result with `{tool, validation_error: {missing[], invalid_type[], invalid_enum[], hint}}`
+  — the LLM sees it in the same round and can retry.
+- MODIFY `cmd/probe_chat/cases.go` — add 1-2 cases that synthesize a tool call
+  with missing required field, assert pre-call validator catches it without
+  invoking the actual tool (zero HTTP roundtrip).
+
+**Schema migration**: None.
+
+**Acceptance criteria**:
+1. `internal/agent/precall_validator.go` exposes `ValidateBeforeCall(toolName string, params map[string]any, schema map[string]any) ValidationResult`.
+2. Three check kinds implemented: required-key-missing, invalid-type, invalid-enum.
+3. ValidationResult shape: `{valid bool, missing []string, invalid_type []TypeMismatch, invalid_enum []EnumMismatch, hint string}`.
+4. Integration in executor.go: validator runs BEFORE tool.Execute(); on
+   `!valid`, the tool is NOT invoked, and a structured tool_result is returned
+   to the LLM with the validation reason.
+5. The LLM sees the validation error in the same turn and can issue a corrected
+   tool call without a new HTTP roundtrip cost.
+6. Disabled by default via `AURA_OP12_PRECALL_VALIDATOR_ENABLED=false`;
+   flip to true after 2-week dogfood.
+7. Unit tests: 12+ cases covering all 3 check kinds individually, combinations,
+   schema with no constraints (pass-through), nil params (handled gracefully),
+   nil schema (pass-through, log warning).
+8. Integration test in cmd/probe_chat: synthesize tool call with missing
+   required field; assert validation_error in tool_result, assert tool.Execute
+   was NOT called.
+9. `go build ./... && go vet ./... && go test ./...` green.
+10. Single atomic commit prefix: `feat(precall-validator): catch tool param errors before dispatch (Phase-OP+ / US-OP12)`
+
+**Risk**: LOW. Pure addition, gated by env var. If the validator is wrong it
+produces a false-negative validation error — the LLM retries and the original
+tool eventually catches the same problem. No corruption path.
+
+**Estimate**: 0.5-1 session.
+
+**Synergy with US-OP07**: when validation fails repeatedly for the same
+tool+missing-field combination, US-OP07's N-failure trigger fires and writes
+an operational lesson with `cause="repeated validation failure: tool=X missing=Y"`.
+The next turn's system prompt (US-OP09 priority section) reminds Aura to
+include the field. Three stories chain into a self-healing loop.
+
+---
+
 ### US-OP11 — Lesson decay (NEW, surfaced by web research)
 
 **Goal**: Lessons that haven't been recalled in N days fade out, preventing memory store
@@ -432,11 +506,14 @@ US-OP10 (security gate)   ─┐
                            │           │
                            │           └─→ US-OP06 (LLM judge, uses priority on UPDATE)
                            │                 │
-                           │                 └─→ US-OP11 (decay, uses recall metadata)
-                           └─────────────────┘
+                           │                 ├─→ US-OP11 (decay, uses recall metadata)
+                           │                 │
+                           │                 └─→ US-OP12 (precall validator, chains with US-OP07 N-failure)
+                           └───────────────────┘
 ```
 
-Sequential, single-story-exit per Ralph discipline. ~5 sessions total.
+Sequential, single-story-exit per Ralph discipline. ~6 sessions total
+(US-OP12 added 2026-05-19 from Aura's own self-diagnosis).
 
 ---
 
@@ -495,6 +572,15 @@ Save as `scripts/ralph/prd-phase-op-plus.json` when ready to dispatch:
       "priority": 5,
       "passes": false,
       "notes": "Critical/High exempt. Daily cron 03:00. 30-day unrecalled threshold."
+    },
+    {
+      "id": "US-OP12",
+      "title": "Pre-call schema validator middleware",
+      "description": "...",
+      "acceptanceCriteria": ["..."],
+      "priority": 6,
+      "passes": false,
+      "notes": "Surfaced 2026-05-19 by Aura's own self-diagnosis. Synergizes with US-OP07 N-failure counter and US-OP09 priority pin for a self-healing validation loop."
     }
   ]
 }
@@ -573,8 +659,13 @@ Phase-OP+ goes from "3 one-liners in a table" to "5 stories with full AC and fil
 ready for Ralph dispatch". The two newly-surfaced stories (US-OP10 security gate, US-OP11
 decay) are non-optional per 2025 research and would have been a regret-cost to skip.
 
-Total queue size: 5 stories. Total estimate: ~5 sessions. ROI: closes the "Aura learns by
-herself" loop that Phase-OP started, with defense and hygiene built in from the start.
+Total queue size: 6 stories (5 original + US-OP12 added 2026-05-19 from Aura's
+self-diagnosis). Total estimate: ~6 sessions. ROI: closes the "Aura learns by
+herself" loop that Phase-OP started, with defense + hygiene + pre-call
+validation built in from the start. The US-OP07 + US-OP09 + US-OP12 trio chains
+into a self-healing validation feedback loop: validation fails → counter
+increments → N-failure threshold fires → lesson written with priority=high →
+next turn's system prompt reminds Aura of the missing field → no more failure.
 
 Decision point for user: which open decisions in Section 5 to lock, then I can write the
 full `scripts/ralph/prd-phase-op-plus.json` and stage Ralph.

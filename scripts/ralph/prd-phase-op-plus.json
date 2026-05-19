@@ -1,7 +1,7 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Phase-OP+ — 5-story extension of Phase-OP (memory/learning loop). Closes the 'Aura learns by herself' loop with security + decay + dedup + post-turn hooks + priority pinning. All 6 open decisions locked 2026-05-19 per docs/phase-op-plus-plan-2026-05-19.md §5. Sources: docs/phase-op-plus-{plan,mem0-research,openhuman-research,web-research}-2026-05-19.md. Predecessor: Phase-OP (US-OP01..05, 660531da..71bbb003). After this closes, Aura learns from N-failure patterns (US-OP07), pins Critical/High lessons (US-OP09), dedups contradictions (US-OP06), rejects memory-poisoning attempts (US-OP10), and decays stale Normal lessons (US-OP11). Order: security-first (US-OP10 priority=1), then post-hook learning (US-OP07), then priority pinning (US-OP09), then LLM judge (US-OP06), then decay (US-OP11). ~5 sessions, ~2400 LOC net new.",
+  "description": "Phase-OP+ — 6-story extension of Phase-OP (memory/learning loop). Closes the 'Aura learns by herself' loop with security + decay + dedup + post-turn hooks + priority pinning + pre-call validation. All 6 open decisions locked 2026-05-19 per docs/phase-op-plus-plan-2026-05-19.md §5. Sources: docs/phase-op-plus-{plan,mem0-research,openhuman-research,web-research}-2026-05-19.md. Predecessor: Phase-OP (US-OP01..05, 660531da..71bbb003). After this closes, Aura learns from N-failure patterns (US-OP07), pins Critical/High lessons (US-OP09), dedups contradictions (US-OP06), rejects memory-poisoning attempts (US-OP10), decays stale Normal lessons (US-OP11), and catches parameter mistakes BEFORE dispatch (US-OP12). Order: security-first (US-OP10 priority=1), then post-hook learning (US-OP07), priority pinning (US-OP09), LLM judge (US-OP06), decay (US-OP11), precall validator (US-OP12). US-OP12 added 2026-05-19 from Aura's own self-diagnosis in conversation (id 4417). ~6 sessions, ~2550 LOC net new.",
   "userStories": [
     {
       "id": "US-OP10",
@@ -109,6 +109,27 @@
       "priority": 5,
       "passes": false,
       "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §2 US-OP11 BEFORE coding. WINDOW DECISION (locked 2026-05-19): 30 days unrecalled + 7-day grace period from updated_at. Critical/High exempt."
+    },
+    {
+      "id": "US-OP12",
+      "title": "Pre-call schema validator middleware — catch tool param errors BEFORE dispatch",
+      "description": "Today Aura discovers parameter mistakes only AFTER the tool runs and rejects them — wasted HTTP roundtrip + wasted tokens. This story adds a middleware in internal/agent/executor.go that runs schema validation against tool.Parameters() BEFORE tool.Execute() and returns a structured ValidationError directly to the LLM if the args don't match. The LLM sees the error in the same turn and retries with corrected params — zero HTTP roundtrip wasted on the failure case. PROVENANCE: Aura herself raised this idea unprompted in conversation 2026-05-19 07:12 ('Mi mancano tre cose... 1. Un dry run o validatore locale dei parametri. Io chiamo il tool e scopro solo dopo se un parametro è sbagliato'). The recent operational store snapshot (conversation id 4415) shows 5 lessons total, all of class `validation` failure — this is the dominant failure class for current Aura. NEW file internal/agent/precall_validator.go (~150 LOC) exposing ValidateBeforeCall(toolName string, params map[string]any, schema map[string]any) ValidationResult with 3 check kinds: (a) required-key-missing, (b) invalid-type, (c) invalid-enum. NEW file internal/agent/precall_validator_test.go (~250 LOC) with 12+ table-driven cases. MODIFY internal/agent/executor.go to wire validator into the call dispatch right before tool.Execute(). On failure: return structured tool_result {tool, validation_error: {missing[], invalid_type[], invalid_enum[], hint}}. MODIFY cmd/probe_chat/cases.go: add 1-2 cases that synthesize a tool call with missing required field, assert validator catches it without invoking the actual tool. SYNERGY: chains with US-OP07 N-failure counter (validation failures bump counter → lesson written with priority=high) and US-OP09 priority pin (the next turn's system prompt reminds Aura of the missing field) for a self-healing validation feedback loop.",
+      "acceptanceCriteria": [
+        "internal/agent/precall_validator.go exposes ValidateBeforeCall(toolName, params, schema) ValidationResult",
+        "Three check kinds implemented: required-key-missing, invalid-type, invalid-enum",
+        "ValidationResult shape: {valid bool, missing []string, invalid_type []TypeMismatch, invalid_enum []EnumMismatch, hint string}",
+        "Integration in executor.go: validator runs BEFORE tool.Execute(); on !valid the tool is NOT invoked",
+        "Structured tool_result on failure contains validation_error with missing[], invalid_type[], invalid_enum[], hint",
+        "LLM sees validation error in same turn — no new HTTP roundtrip needed for retry",
+        "Disabled by default via AURA_OP12_PRECALL_VALIDATOR_ENABLED=false; flip to true after 2-week dogfood (documented in commit message)",
+        "Unit tests: 12+ cases covering each check kind individually, combinations, schema with no constraints (pass-through), nil params (graceful), nil schema (pass-through + log warning)",
+        "Integration test in cmd/probe_chat: synthesize tool call with missing required field; assert validation_error in tool_result; assert tool.Execute was NOT called",
+        "go build ./... && go vet ./... && go test ./... green",
+        "Single atomic commit prefix: feat(precall-validator): catch tool param errors before dispatch (Phase-OP+ / US-OP12)"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Read docs/phase-op-plus-plan-2026-05-19.md §2 US-OP12 BEFORE coding. Story added 2026-05-19 from Aura's self-diagnosis. NO new external dependency (write minimal JSON schema validator in pure Go — 80% of failure modes are required-missing + wrong-enum + wrong-type, no need for full JSON Schema spec)."
     }
   ]
 }
