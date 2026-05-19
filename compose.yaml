@@ -79,6 +79,8 @@ services:
       MARKITDOWN_URL: "http://aura-markitdown:3001"
       MARKITDOWN_TIMEOUT_SEC: "120"
       WHISPER_BASE_URL: "http://aura-whisper:8082"
+      PIPER_BASE_URL: "http://aura-piper:8083"
+      AURA_TTS_ENABLED: "${AURA_TTS_ENABLED:-false}"
       TOOL_SEARCH_BACKEND: "${TOOL_SEARCH_BACKEND:-hybrid}"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_SKILL_ROUTING_MODE: "manifest"
@@ -313,6 +315,51 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+  # aura-piper sidecar — long-lived Piper TTS HTTP server for Italian speech
+  # synthesis. Loads it_IT-paola-medium.onnx once at startup to amortize the
+  # ~670 ms cold-start measured during the 2026-05-19 spike.
+  #
+  # POST /v1/synthesize  JSON {text, voice} → audio/wav (22 kHz mono PCM s16le)
+  # GET  /health         → 200 once voice is loaded
+  #
+  # Default OFF: AURA_TTS_ENABLED defaults to "false" — operator must explicitly
+  # set it to "true" to enable TTS. Never auto-triggered; user-initiated only.
+  # Wave 3 (US-MM-A04 speak_reply tool) wires the Go client to PIPER_BASE_URL.
+  #
+  # Voice files (ONNX + .json) are placed by aura-init-models into ./data/piper/
+  # before this service starts. aura does NOT depend_on aura-piper — sidecar
+  # failure does not block aura boot (graceful degradation, same as qdrant).
+  aura-piper:
+    build:
+      context: ./docker/piper
+      dockerfile: Dockerfile
+    image: aura-piper:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8083"
+    volumes:
+      - ./data/piper:/voices:ro
+    depends_on:
+      aura-init-models:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     read_only: true
     tmpfs:
       - /tmp:size=256m
