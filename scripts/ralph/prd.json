@@ -39,7 +39,7 @@
         "Single atomic commit prefix: feat(compose): aura-whisper sidecar with whisper.cpp baseline model (US-MM-INIT01)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: read compose.yaml in full to internalize the markitdown service shape (lines 251-277). Also read docker/markitdown/Dockerfile as the template style. Memory reference_whisper_cpp_binary_path is load-bearing: modern whisper.cpp (v1.8.4+) builds via CMake; binaries are at build/bin/, NOT a legacy /opt/whisper.cpp/main location. The upstream binary is `whisper-server` (with a hyphen), NOT `whisper_server`. The spike doc (docs/phase-mm-audio-spike-2026-05-19.md, sidecar topology + HTTP shapes section) is the design reference. DO NOT write a Python HTTP wrapper — use the upstream whisper-server binary directly. Aura's Go client (Wave 2) will adapt to whisper-server's native /inference shape. The host-side port 8082 is loopback-only per defense-in-depth: only aura (via docker network) reaches the sidecar in production. SCOPE: this story DOES NOT touch Go code (no Wave 2 wiring), does NOT add a Python wrapper, does NOT rewrap the HTTP shape. It ONLY adds the build context, the compose service, and the inert WHISPER_BASE_URL env on aura. ANTIPATTERN GUARD: if you find yourself writing internal/whisper/ or internal/audio/ code, STOP — that's Wave 2. Stay in docker/whisper/ + compose.yaml only. Image size target <1G is a soft target — final whisper.cpp build is ~50 MB binary + ggml-small.bin already on the mounted volume (not in the image). Use multi-stage build to keep the final image lean (build-stage has cmake/g++; runtime-stage has just the binary + libgomp1 / libstdc++6)."
     },
     {

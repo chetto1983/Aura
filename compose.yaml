@@ -78,6 +78,7 @@ services:
       EMBEDDING_OUTPUT_DIM: "256"
       MARKITDOWN_URL: "http://aura-markitdown:3001"
       MARKITDOWN_TIMEOUT_SEC: "120"
+      WHISPER_BASE_URL: "http://aura-whisper:8082"
       TOOL_SEARCH_BACKEND: "${TOOL_SEARCH_BACKEND:-hybrid}"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_SKILL_ROUTING_MODE: "manifest"
@@ -270,6 +271,48 @@ services:
       MARKITDOWN_ENABLE_PLUGINS: "False"
     ports:
       - "127.0.0.1:${MARKITDOWN_HOST_PORT:-3001}:3001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1G
+
+  # aura-whisper sidecar — long-lived whisper.cpp HTTP server for audio
+  # transcription. Loads ggml-small.bin once at startup to amortize the
+  # ~670 ms model-load cost (spike-measured 2026-05-19). Serves whisper-server's
+  # native POST /inference (multipart audio_file) endpoint.
+  #
+  # Wave 2 Go client (US-MM-A02) speaks to WHISPER_BASE_URL set below.
+  # aura does NOT depend_on aura-whisper — sidecar failure does not block boot
+  # (graceful degradation, same pattern as qdrant).
+  #
+  # Model file (ggml-small.bin, 466 MB) is placed by aura-init-models into
+  # ./data/ before this service starts.
+  aura-whisper:
+    build:
+      context: ./docker/whisper
+      dockerfile: Dockerfile
+    image: aura-whisper:local
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - ./data:/models:ro
+    depends_on:
+      aura-init-models:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8082/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     read_only: true
     tmpfs:
       - /tmp:size=256m
