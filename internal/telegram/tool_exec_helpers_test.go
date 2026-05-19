@@ -310,24 +310,6 @@ func seedTelegramToolRun(t *testing.T, db *sql.DB, runID string) {
 	}
 }
 
-func TestTerminalToolFinalizationMessagesAppendsLLMPrompt(t *testing.T) {
-	messages := []llm.Message{
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "file-1", Name: "write_file"}}},
-		{Role: "tool", ToolCallID: "file-1", Content: `{"ok":true}`},
-	}
-
-	got := agent.TerminalToolFinalizationMessages(messages, "write_file")
-	if len(got) != len(messages)+1 {
-		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
-	}
-	last := got[len(got)-1].Content
-	for _, want := range []string{"Do not call tools", "natural prose"} {
-		if !strings.Contains(last, want) {
-			t.Fatalf("terminal finalization instruction = %q, missing %q", last, want)
-		}
-	}
-}
-
 func TestLooksLikeToolCallMarkupRecognisesDSML(t *testing.T) {
 	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_file">`
 	if !agent.LooksLikeToolCallMarkup(raw) {

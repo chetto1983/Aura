@@ -15,22 +15,8 @@ type AuthzDecisionsReader interface {
 // AuthzStats is the aggregated view returned by GET /maintenance/authz.
 type AuthzStats struct {
 	DenialRate24h         float64
-	TopDeniedCapabilities []CapabilityCountRow
-	RecentDenials         []RecentDenialRow
-}
-
-// CapabilityCountRow is one entry in the top-denied-capabilities list.
-type CapabilityCountRow struct {
-	Capability string
-	Count      int
-}
-
-// RecentDenialRow is one denial event.
-type RecentDenialRow struct {
-	ActorID    string
-	Capability string
-	Reason     string
-	CreatedAt  string
+	TopDeniedCapabilities []CapabilityCount
+	RecentDenials         []RecentDenial
 }
 
 // SQLiteAuthzReader reads authz_decisions from a *sql.DB.
@@ -76,9 +62,9 @@ LIMIT 20`, cutoff)
 	}
 	defer capRows.Close()
 
-	var caps []CapabilityCountRow
+	var caps []CapabilityCount
 	for capRows.Next() {
-		var row CapabilityCountRow
+		var row CapabilityCount
 		if err := capRows.Scan(&row.Capability, &row.Count); err != nil {
 			return AuthzStats{}, err
 		}
@@ -100,9 +86,9 @@ LIMIT 50`)
 	}
 	defer denialRows.Close()
 
-	var denials []RecentDenialRow
+	var denials []RecentDenial
 	for denialRows.Next() {
-		var row RecentDenialRow
+		var row RecentDenial
 		if err := denialRows.Scan(&row.ActorID, &row.Capability, &row.Reason, &row.CreatedAt); err != nil {
 			return AuthzStats{}, err
 		}
@@ -137,25 +123,6 @@ func handleMaintenanceAuthz(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		caps := make([]CapabilityCount, 0, len(stats.TopDeniedCapabilities))
-		for _, c := range stats.TopDeniedCapabilities {
-			caps = append(caps, CapabilityCount{Capability: c.Capability, Count: c.Count})
-		}
-
-		denials := make([]RecentDenial, 0, len(stats.RecentDenials))
-		for _, d := range stats.RecentDenials {
-			denials = append(denials, RecentDenial{
-				ActorID:    d.ActorID,
-				Capability: d.Capability,
-				Reason:     d.Reason,
-				CreatedAt:  d.CreatedAt,
-			})
-		}
-
-		writeJSON(w, deps.Logger, http.StatusOK, AuthzResponse{
-			DenialRate24h:         stats.DenialRate24h,
-			TopDeniedCapabilities: caps,
-			RecentDenials:         denials,
-		})
+		writeJSON(w, deps.Logger, http.StatusOK, AuthzResponse(stats))
 	}
 }

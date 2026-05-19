@@ -134,37 +134,6 @@ func TestLooksLikeUnsafeFinalAnswer(t *testing.T) {
 	}
 }
 
-func TestTerminalToolFinalizationMessagesAppendsPrompt(t *testing.T) {
-	messages := []llm.Message{
-		{Role: "assistant", ToolCalls: []llm.ToolCall{{ID: "file-1", Name: "write_file"}}},
-		{Role: "tool", ToolCallID: "file-1", Content: `{"ok":true}`},
-	}
-
-	got := TerminalToolFinalizationMessages(messages, "write_file")
-	if len(got) != len(messages)+1 {
-		t.Fatalf("messages len = %d, want %d", len(got), len(messages)+1)
-	}
-	last := got[len(got)-1].Content
-	for _, want := range []string{"Do not call tools", "natural prose"} {
-		if !strings.Contains(last, want) {
-			t.Fatalf("terminal finalization instruction = %q, missing %q", last, want)
-		}
-	}
-}
-
-func TestTerminalToolFinalizationMessagesForSearchMemoryInstructsCitation(t *testing.T) {
-	got := TerminalToolFinalizationMessages(nil, "search_memory")
-	if len(got) != 1 {
-		t.Fatalf("messages len = %d, want 1", len(got))
-	}
-	last := got[0].Content
-	for _, want := range []string{"Do not call tools", "Answer the user's original request", "[[slug]]"} {
-		if !strings.Contains(last, want) {
-			t.Fatalf("search_memory finalization instruction = %q, want %q", last, want)
-		}
-	}
-}
-
 func TestLooksLikeToolCallMarkupRecognizesDSML(t *testing.T) {
 	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_file">`
 	if !LooksLikeToolCallMarkup(raw) {

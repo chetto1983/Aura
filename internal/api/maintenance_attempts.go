@@ -14,25 +14,8 @@ type ToolAttemptsReader interface {
 
 // AttemptsStats is the aggregated view returned by GET /maintenance/tool-attempts.
 type AttemptsStats struct {
-	PerTool                map[string]PerToolCounts
-	RetryBudgetConsumption []BudgetRow
-}
-
-// PerToolCounts holds 24h outcome bucket counts for one tool.
-type PerToolCounts struct {
-	OK          int
-	Recoverable int
-	Blocked     int
-	Fatal       int
-	Cancelled   int
-}
-
-// BudgetRow is one tool's daily attempt budget summary.
-type BudgetRow struct {
-	ToolName      string
-	AttemptsToday int
-	Budget        int
-	Percent       float64
+	PerTool                map[string]ToolOutcomeCounts
+	RetryBudgetConsumption []ToolBudgetRow
 }
 
 // dailyToolBudget is the static daily cap used to compute percent budget consumption.
@@ -68,10 +51,10 @@ ORDER BY tool_name`, cutoff)
 	}
 	defer rows.Close()
 
-	perTool := map[string]PerToolCounts{}
+	perTool := map[string]ToolOutcomeCounts{}
 	for rows.Next() {
 		var name string
-		var counts PerToolCounts
+		var counts ToolOutcomeCounts
 		if err := rows.Scan(&name, &counts.OK, &counts.Recoverable, &counts.Blocked, &counts.Fatal, &counts.Cancelled); err != nil {
 			return AttemptsStats{}, err
 		}
@@ -93,9 +76,9 @@ ORDER BY attempts_today DESC`, cutoff)
 	}
 	defer budgetRows.Close()
 
-	var budget []BudgetRow
+	var budget []ToolBudgetRow
 	for budgetRows.Next() {
-		var row BudgetRow
+		var row ToolBudgetRow
 		row.Budget = dailyToolBudget
 		if err := budgetRows.Scan(&row.ToolName, &row.AttemptsToday); err != nil {
 			return AttemptsStats{}, err
@@ -130,30 +113,6 @@ func handleMaintenanceToolAttempts(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		perTool := make(map[string]ToolOutcomeCounts, len(stats.PerTool))
-		for name, c := range stats.PerTool {
-			perTool[name] = ToolOutcomeCounts{
-				OK:          c.OK,
-				Recoverable: c.Recoverable,
-				Blocked:     c.Blocked,
-				Fatal:       c.Fatal,
-				Cancelled:   c.Cancelled,
-			}
-		}
-
-		budget := make([]ToolBudgetRow, 0, len(stats.RetryBudgetConsumption))
-		for _, b := range stats.RetryBudgetConsumption {
-			budget = append(budget, ToolBudgetRow{
-				ToolName:      b.ToolName,
-				AttemptsToday: b.AttemptsToday,
-				Budget:        b.Budget,
-				Percent:       b.Percent,
-			})
-		}
-
-		writeJSON(w, deps.Logger, http.StatusOK, ToolAttemptsResponse{
-			PerTool:                perTool,
-			RetryBudgetConsumption: budget,
-		})
+		writeJSON(w, deps.Logger, http.StatusOK, ToolAttemptsResponse(stats))
 	}
 }

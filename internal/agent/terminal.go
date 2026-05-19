@@ -111,15 +111,6 @@ func terminalFinalizationPrompt(terminalTool string, strict bool) llm.Message {
 	return llm.Message{Role: "user", Content: content}
 }
 
-// TerminalToolFinalizationMessages is retained for callers that compose the
-// finalize prompt themselves (tests, debug harnesses). FinalizeTerminalTool
-// no longer uses this helper — it builds the message list inline so the
-// retry path can swap prompts.
-func TerminalToolFinalizationMessages(messages []llm.Message, terminalTool string) []llm.Message {
-	out := governance.Apply(messages, 0, 0, 0)
-	return append(out, terminalFinalizationPrompt(terminalTool, false))
-}
-
 // markerCategory bitmask classifies known unsafe text markers.
 type markerCategory uint8
 

@@ -48,7 +48,7 @@
         "Single atomic commit prefix: chore(legacy): drop TerminalToolFinalizationMessages + collapse maintenance struct duplicates (RECLAIM03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §3 + §5 + §Story RECLAIM03. Two unrelated deletions packed in one story because both are low-risk + small surface. If the maintenance struct collapse turns out larger than expected, split into RECLAIM03a/03b."
     },
     {
