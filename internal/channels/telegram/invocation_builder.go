@@ -14,6 +14,7 @@ import (
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
@@ -275,11 +276,6 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	var currentStats agent.TurnStats
 	var toolMu sync.Mutex
 	activeToolNames := append([]string(nil), toolAllowlist...)
-	currentToolNames := func() []string {
-		toolMu.Lock()
-		defer toolMu.Unlock()
-		return append([]string(nil), activeToolNames...)
-	}
 	addActiveTools := func(names []string) {
 		toolMu.Lock()
 		defer toolMu.Unlock()
@@ -289,7 +285,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	inv := agent.Invocation{
 		Client: chatClient,
 		Executor: agent.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
-			execution := ib.executeToolCalls(ctx, c, convCtx, userID, calls, currentToolNames(), currentStats.ReadSkills)
+			execution := ib.executeToolCalls(ctx, c, convCtx, userID, calls)
 			if len(execution.DiscoveredTools) > 0 {
 				addActiveTools(execution.DiscoveredTools)
 			}
@@ -505,8 +501,10 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	return inv, nil
 }
 
-func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
-	return ib.b.ExecToolCalls(ctx, c, convCtx, userID, calls, toolsExposed, readSkills)
+func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall) agent.ToolExecutionSummary {
+	return agent.ExecuteToolCalls(ctx, ib.b.ToolRegistry(), convCtx, userID, tgtelegram.ChatIDFromTeleContext(c), calls, ib.b.TerminalToolPolicyEnabled(), ib.b.Logger(),
+		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), ib.b.ToolAttemptsRepo()),
+		agent.WithTokenJuice(ib.b.TokenJuiceEnabled()))
 }
 
 type askUserResumeInput struct {

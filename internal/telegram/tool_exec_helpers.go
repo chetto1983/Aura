@@ -19,7 +19,7 @@ func ChatIDFromTeleContext(c tele.Context) int64 {
 	return c.Chat().ID
 }
 
-func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
+func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall) agent.ToolExecutionSummary {
 	return agent.ExecuteToolCalls(ctx, b.ToolRegistry(), convCtx, userID, ChatIDFromTeleContext(c), calls, b.terminalToolPolicyEnabled(), b.logger,
 		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), b.ToolAttemptsRepo()),
 		agent.WithTokenJuice(b.tokenJuiceEnabled()))
@@ -32,10 +32,8 @@ func (b *Bot) tokenJuiceEnabled() bool {
 	return b.cfg.TokenJuiceEnabled
 }
 
-// ExecToolCalls is the exported entry point for channels/telegram.InvocationBuilder.
-func (b *Bot) ExecToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
-	return b.executeToolCalls(ctx, c, convCtx, userID, calls, toolsExposed, readSkills)
-}
+// TokenJuiceEnabled is the exported entry point for channels/telegram.InvocationBuilder.
+func (b *Bot) TokenJuiceEnabled() bool { return b.tokenJuiceEnabled() }
 
 func (b *Bot) maxToolLoopIterations() int {
 	cfg := b.cfg

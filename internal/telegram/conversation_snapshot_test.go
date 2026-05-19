@@ -26,7 +26,7 @@ func TestRuntimeSnapshotPreservesToolSignals(t *testing.T) {
 		TokensTotal:         15,
 	})
 
-	snap, ok := b.loadOrchestrationSnapshot("1148481707")
+	snap, ok := b.sessionStore().Snapshot("1148481707")
 	if !ok {
 		t.Fatal("snapshot missing")
 	}
@@ -55,10 +55,10 @@ func TestPruneOrchestrationSnapshotsHonorsTraceRetentionDays(t *testing.T) {
 
 	b.pruneOrchestrationSnapshots(now)
 
-	if _, ok := b.loadOrchestrationSnapshot("old"); ok {
+	if _, ok := b.sessionStore().Snapshot("old"); ok {
 		t.Fatal("old snapshot survived retention pruning")
 	}
-	if _, ok := b.loadOrchestrationSnapshot("fresh"); !ok {
+	if _, ok := b.sessionStore().Snapshot("fresh"); !ok {
 		t.Fatal("fresh snapshot was pruned")
 	}
 }

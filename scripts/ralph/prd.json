@@ -64,7 +64,7 @@
         "Single atomic commit prefix: chore(legacy): inline triple-routing telegram tool-exec wrappers (RECLAIM04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §4 + §Story RECLAIM04. These wrappers survived Phase 4/T (collapse agent runtime) because nobody noticed they had become pure pass-through after the migration."
     },
     {

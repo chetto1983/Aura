@@ -24,13 +24,6 @@ func (b *Bot) storeOrchestrationSnapshot(userID string, stats agent.TurnStats) {
 	b.pruneOrchestrationSnapshots(now)
 }
 
-func (b *Bot) loadOrchestrationSnapshot(userID string) (orchestrationSnapshot, bool) {
-	if b == nil {
-		return orchestrationSnapshot{}, false
-	}
-	return b.sessionStore().Snapshot(userID)
-}
-
 func (b *Bot) pruneOrchestrationSnapshots(now time.Time) {
 	if b == nil || b.cfg == nil || b.cfg.TraceRetentionDays <= 0 {
 		return

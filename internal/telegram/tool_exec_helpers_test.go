@@ -38,10 +38,8 @@ func authorizedTelegramToolContext(userID string) context.Context {
 }
 
 func TestExecuteToolCallsRunsRegistryToolRegardlessOfAdvertisedAllowlist(t *testing.T) {
-	// Registry is the single source of truth. The toolsExposed slice is kept
-	// for snapshot/logging only — execution never gates on it. A registered
-	// tool always runs, even when the model picked something outside the
-	// curated prompt-side allowlist (e.g. recovered from prior-turn memory).
+	// Registry is the single source of truth — execution never gates on the
+	// advertised allowlist. A registered tool always runs.
 	reg := tools.NewRegistry(nil)
 	target := &countingTelegramTool{name: "execute_code", result: "ran"}
 	reg.Register(target)
@@ -52,10 +50,7 @@ func TestExecuteToolCallsRunsRegistryToolRegardlessOfAdvertisedAllowlist(t *test
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
-		[]string{"search_memory"}, // narrower than registry
-		nil,
-	)
+		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}})
 
 	if target.calls != 1 {
 		t.Fatalf("execute_code called %d times, want 1", target.calls)
@@ -76,10 +71,7 @@ func TestExecuteToolCallsRunsDocumentToolWithoutSkillGate(t *testing.T) {
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "pdf-1", Name: "create_pdf"}},
-		[]string{"create_pdf"},
-		nil,
-	)
+		[]llm.ToolCall{{ID: "pdf-1", Name: "create_pdf"}})
 	if doc.calls != 1 {
 		t.Fatalf("protected tool calls = %d, want 1", doc.calls)
 	}
@@ -104,10 +96,7 @@ func TestExecuteToolCallsSameBatchSkillReadAndProtectedToolBothRun(t *testing.T)
 		[]llm.ToolCall{
 			{ID: "skill-1", Name: "read_file", Arguments: map[string]any{"path": ".agents/skills/document-pdf/SKILL.md"}},
 			{ID: "pdf-1", Name: "create_pdf"},
-		},
-		[]string{"read_file", "create_pdf"},
-		nil,
-	)
+		})
 
 	if len(summary.ReadSkillNames) != 1 || summary.ReadSkillNames[0] != "document-pdf" {
 		t.Fatalf("readSkillNames = %+v, want document-pdf", summary.ReadSkillNames)
@@ -131,10 +120,7 @@ func TestExecuteToolCallsTracksTerminalTools(t *testing.T) {
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
-		[]string{"execute_code"},
-		[]string{"systematic-debugging"},
-	)
+		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}})
 
 	if summary.TerminalTool != "execute_code" {
 		t.Fatalf("terminalTool = %q, want execute_code", summary.TerminalTool)
@@ -157,10 +143,7 @@ func TestExecuteToolCallsHonorsTerminalToolPolicyOff(t *testing.T) {
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}},
-		[]string{"execute_code"},
-		[]string{"systematic-debugging"},
-	)
+		[]llm.ToolCall{{ID: "exec-1", Name: "execute_code"}})
 
 	if summary.TerminalTool != "" {
 		t.Fatalf("terminalTool = %q, want disabled terminal policy", summary.TerminalTool)
@@ -186,10 +169,7 @@ func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "search-1", Name: "search_memory", Arguments: map[string]any{"query": "documents", "limit": float64(9)}}},
-		[]string{"search_memory"},
-		nil,
-	)
+		[]llm.ToolCall{{ID: "search-1", Name: "search_memory", Arguments: map[string]any{"query": "documents", "limit": float64(9)}}})
 
 	if !strings.Contains(summary.LastResult, "memory") {
 		t.Fatalf("lastResult = %q", summary.LastResult)
@@ -224,10 +204,7 @@ func TestExecuteToolCallsRecordsAttemptForHubRunID(t *testing.T) {
 	ctx := identity.WithRunID(authorizedTelegramToolContext("1148481707"), runID)
 
 	summary := b.executeToolCalls(ctx, nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "probe-1", Name: "context_probe", Arguments: map[string]any{"needle": "value"}}},
-		[]string{"context_probe"},
-		nil,
-	)
+		[]llm.ToolCall{{ID: "probe-1", Name: "context_probe", Arguments: map[string]any{"needle": "value"}}})
 
 	if summary.Results["probe-1"] != "ok" {
 		t.Fatalf("summary = %+v, want recorded tool result", summary)
@@ -261,10 +238,7 @@ func TestExecuteToolCallsPropagatesAskUserPause(t *testing.T) {
 		[]llm.ToolCall{{ID: "ask-1", Name: "ask_user", Arguments: map[string]any{
 			"question": "Continue?",
 			"kind":     "approval",
-		}}},
-		[]string{"ask_user"},
-		nil,
-	)
+		}}})
 
 	if summary.AwaitingUserInput == nil {
 		t.Fatalf("AwaitingUserInput is nil, summary = %+v", summary)
@@ -284,10 +258,7 @@ func TestFailedTerminalToolDoesNotStopTurn(t *testing.T) {
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "shell-1", Name: "execute_shell", Arguments: map[string]any{"command": "find /home/user"}}},
-		[]string{"execute_shell"},
-		nil,
-	)
+		[]llm.ToolCall{{ID: "shell-1", Name: "execute_shell", Arguments: map[string]any{"command": "find /home/user"}}})
 
 	if summary.TerminalTool != "" {
 		t.Fatalf("terminalTool = %q, want empty for failed terminal tool", summary.TerminalTool)
