@@ -21,15 +21,16 @@ import (
 // wrapping, then adds results to the shared state so subsequent LLM rounds
 // see them in the message history.
 type agentExecutor struct {
-	tools       *tools.Registry
-	state       State
-	logger      *slog.Logger
-	allowlist   []string
-	userID      string
-	runID       string
-	maxChars    int
-	toolTimeout time.Duration
-	repo        attempts.Repo // Phase-6 US-J03: synchronous observation persistence; nil = disabled
+	tools             *tools.Registry
+	state             State
+	logger            *slog.Logger
+	allowlist         []string
+	userID            string
+	runID             string
+	maxChars          int
+	toolTimeout       time.Duration
+	repo              attempts.Repo // Phase-6 US-J03: synchronous observation persistence; nil = disabled
+	tokenJuiceEnabled bool
 }
 
 var _ ToolExecutor = (*agentExecutor)(nil)
@@ -44,17 +45,19 @@ func newAgentExecutor(
 	maxChars int,
 	toolTimeout time.Duration,
 	repo attempts.Repo,
+	tokenJuiceEnabled bool,
 ) *agentExecutor {
 	return &agentExecutor{
-		tools:       reg,
-		state:       state,
-		logger:      logger,
-		allowlist:   allowlist,
-		userID:      userID,
-		runID:       runID,
-		maxChars:    maxChars,
-		toolTimeout: toolTimeout,
-		repo:        repo,
+		tools:             reg,
+		state:             state,
+		logger:            logger,
+		allowlist:         allowlist,
+		userID:            userID,
+		runID:             runID,
+		maxChars:          maxChars,
+		toolTimeout:       toolTimeout,
+		repo:              repo,
+		tokenJuiceEnabled: tokenJuiceEnabled,
 	}
 }
 
@@ -88,6 +91,9 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 				awaitErr.ToolCallID = call.ID
 				outcomes[i] = toolOutcome{id: call.ID, awaitingUser: awaitErr}
 				return
+			}
+			if e.tokenJuiceEnabled {
+				raw = compactToolOutput(e.logger, call.Name, call.Arguments, raw)
 			}
 			wrapped := WrapUntrustedToolResult(call.Name, raw)
 			outcomes[i] = toolOutcome{id: call.ID, content: limitToolContent(wrapped, e.maxChars)}

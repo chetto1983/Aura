@@ -21,7 +21,15 @@ func ChatIDFromTeleContext(c tele.Context) int64 {
 
 func (b *Bot) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, toolsExposed []string, readSkills []string) agent.ToolExecutionSummary {
 	return agent.ExecuteToolCalls(ctx, b.ToolRegistry(), convCtx, userID, ChatIDFromTeleContext(c), calls, b.terminalToolPolicyEnabled(), b.logger,
-		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), b.ToolAttemptsRepo()))
+		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), b.ToolAttemptsRepo()),
+		agent.WithTokenJuice(b.tokenJuiceEnabled()))
+}
+
+func (b *Bot) tokenJuiceEnabled() bool {
+	if b == nil || b.cfg == nil {
+		return false
+	}
+	return b.cfg.TokenJuiceEnabled
 }
 
 // ExecToolCalls is the exported entry point for channels/telegram.InvocationBuilder.

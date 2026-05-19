@@ -86,7 +86,7 @@
         "Single atomic commit prefix: feat(agent): wire tokenjuice compaction at executor pre-envelope (Phase-TJ / US-TJ05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Integration plan §Wiring is the exact insertion guide. Don't touch loop.go — the loop only dispatches; the executor writes. Feature flag default false is critical so this commit is risk-free."
     },
     {

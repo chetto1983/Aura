@@ -23,8 +23,9 @@ type ToolRunner interface {
 }
 
 type executeToolCallsConfig struct {
-	runID        string
-	attemptsRepo attempts.Repo
+	runID             string
+	attemptsRepo      attempts.Repo
+	tokenJuiceEnabled bool
 }
 
 // ExecuteToolCallsOption configures channel-neutral tool execution helpers.
@@ -36,6 +37,15 @@ func WithToolAttemptRecording(runID string, repo attempts.Repo) ExecuteToolCalls
 	return func(cfg *executeToolCallsConfig) {
 		cfg.runID = runID
 		cfg.attemptsRepo = repo
+	}
+}
+
+// WithTokenJuice enables or disables rule-driven output compaction for this
+// call batch. When enabled, each tool result is passed through tokenjuice.Compact
+// before WrapUntrustedToolResult, reducing context pressure on heavy turns.
+func WithTokenJuice(enabled bool) ExecuteToolCallsOption {
+	return func(cfg *executeToolCallsConfig) {
+		cfg.tokenJuiceEnabled = enabled
 	}
 }
 
@@ -117,6 +127,9 @@ func ExecuteToolCalls(
 				Class:     class,
 				Err:       err,
 			})
+			if err == nil && cfg.tokenJuiceEnabled {
+				result = compactToolOutput(logger, tc.Name, args, result)
+			}
 			readSkillName := ""
 			if err == nil && tc.Name == "read_file" {
 				readSkillName = SkillNameFromReadFileArgs(tc.Arguments)

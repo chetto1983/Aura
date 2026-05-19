@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -49,7 +50,7 @@ func TestExecutorRecordsAttemptOnToolError(t *testing.T) {
 	reg.Register(&fakeTool{name: "web_fetch", err: errors.New("i/o error: connection refused")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo)
+	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo, false)
 
 	calls := []llm.ToolCall{{ID: "call_err", Name: "web_fetch", Arguments: map[string]any{"url": "http://example.com"}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -91,7 +92,7 @@ func TestExecutorRecordsAttemptOnSuccess(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found it"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo, false)
 
 	calls := []llm.ToolCall{{ID: "call_ok", Name: "lookup", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -120,7 +121,7 @@ func TestExecutorMCPToolKindPersisted(t *testing.T) {
 	reg.Register(&fakeTool{name: "mcp_test_echo", err: errors.New("server unavailable")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo)
+	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo, false)
 
 	calls := []llm.ToolCall{{ID: "call_mcp", Name: "mcp_test_echo", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -143,7 +144,7 @@ func TestExecutorNilRepoSkipsSilently(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "ok"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil, false)
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -160,12 +161,60 @@ func TestExecutorRecordFailureDoesNotPropagateToResult(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{})
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{}, false)
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
 	if summary.Results["c1"] == "" {
 		t.Fatal("expected non-empty result even when repo.Record fails")
+	}
+}
+
+// TestExecutorTokenJuiceCompacts verifies that tokenJuice=true compacts a large
+// file-read output to <500 chars and tokenJuice=false leaves it unchanged.
+func TestExecutorTokenJuiceCompacts(t *testing.T) {
+	// Build >5 KB file-read JSON that triggers the aura/file-read rule.
+	bigContent := strings.Repeat("x", 4800)
+	bigOutput := `{"path":"workspace/TOOLS.md","type":"file","bytes":5000,"total_bytes":5000,"truncated":false,"encoding":"utf-8","content":"` + bigContent + `"}`
+
+	reg := tools.NewRegistry(nil)
+	reg.Register(&fakeTool{name: "file", result: bigOutput})
+	call := llm.ToolCall{ID: "c1", Name: "file", Arguments: map[string]any{"action": "read", "path": "workspace/TOOLS.md"}}
+
+	// flag=true: aura/file-read rule fires → output <500 chars, no "content": field
+	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
+	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true)
+	exec.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
+
+	var toolMsg *llm.Message
+	for i := range state.messages {
+		if state.messages[i].Role == "tool" {
+			toolMsg = &state.messages[i]
+			break
+		}
+	}
+	if toolMsg == nil {
+		t.Fatal("tokenjuice=true: no tool result message in state")
+	}
+	if len(toolMsg.Content) >= 500 {
+		t.Errorf("tokenjuice=true: expected compacted <500 chars, got %d", len(toolMsg.Content))
+	}
+	if strings.Contains(toolMsg.Content, `"content":`) {
+		t.Error("tokenjuice=true: content field should have been dropped")
+	}
+
+	// flag=false: raw output passes through unchanged (~5 KB)
+	state2 := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
+	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false)
+	exec2.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
+
+	for i := range state2.messages {
+		if state2.messages[i].Role == "tool" {
+			if len(state2.messages[i].Content) < 4000 {
+				t.Errorf("tokenjuice=false: expected ~5 KB output, got %d chars", len(state2.messages[i].Content))
+			}
+			break
+		}
 	}
 }
 

@@ -64,6 +64,9 @@ type RunTaskDeps struct {
 	// AttemptsRepo persists tool-call observations to tool_attempts (Phase-6
 	// US-J03). Nil disables persistence without affecting tool execution.
 	AttemptsRepo attempts.Repo
+	// TokenJuiceEnabled activates rule-driven tool-output compaction before
+	// the result enters the LLM conversation window.
+	TokenJuiceEnabled bool
 	// Per-call limits — read once at RunTask entry; runtime changes apply
 	// to the NEXT call, never to a call already in flight.
 	MaxIterations int

@@ -143,6 +143,10 @@ type Config struct {
 	OCRMaxPages             int    `envconfig:"OCR_MAX_PAGES" default:"500"`
 	OCRMaxFileMB            int    `envconfig:"OCR_MAX_FILE_MB" default:"100"`
 
+	// TokenJuice rule-driven output compaction (Phase-TJ). Default false until
+	// US-TJ07 measurement confirms ≥10 % savings and 0 probe regressions.
+	TokenJuiceEnabled bool `envconfig:"AURA_TOKENJUICE_ENABLED" default:"false"`
+
 	// Conversation archive (Phase 12a/12b)
 	ConvArchiveEnabled bool `envconfig:"CONV_ARCHIVE_ENABLED" default:"true"`
 
@@ -290,6 +294,8 @@ func Load() (*Config, error) {
 	cfg.MistralOCRExtractFooter = getEnvBool("MISTRAL_OCR_EXTRACT_FOOTER", false)
 	cfg.OCRMaxPages = getEnvInt("OCR_MAX_PAGES", 500)
 	cfg.OCRMaxFileMB = getEnvInt("OCR_MAX_FILE_MB", 100)
+
+	cfg.TokenJuiceEnabled = getEnvBool("AURA_TOKENJUICE_ENABLED", false)
 
 	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
 

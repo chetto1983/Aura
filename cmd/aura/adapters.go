@@ -231,11 +231,12 @@ func newRunTaskDeps(cfg *config.Config, deps *telegram.Deps) agent.RunTaskDeps {
 		PhantomGuard: &agent.PhantomToolGuard{
 			ToolNamesFn: deps.Tools.Names,
 		},
-		Logger:        deps.Logger,
-		AttemptsRepo:  attempts.NewSQLiteRepo(deps.Pool),
-		MaxIterations: maxIterations,
-		Timeout:       time.Duration(timeoutSec) * time.Second,
-		ToolTimeout:   time.Duration(timeoutSec) * time.Second,
+		Logger:            deps.Logger,
+		AttemptsRepo:      attempts.NewSQLiteRepo(deps.Pool),
+		TokenJuiceEnabled: cfg.TokenJuiceEnabled,
+		MaxIterations:     maxIterations,
+		Timeout:           time.Duration(timeoutSec) * time.Second,
+		ToolTimeout:       time.Duration(timeoutSec) * time.Second,
 	}
 }
 
