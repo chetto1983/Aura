@@ -1196,6 +1196,9 @@ func allCases(now time.Time) []Case {
 				reply := r.Reply
 				for _, ugly := range []string{
 					"I reached the per-turn budget",
+					"Per-turn cap reached",
+					"Per-turn step cap reached",
+					"Per-turn time cap reached",
 					"Sorry, I couldn't process",
 					"sorry, i couldn't process",
 				} {
@@ -1245,6 +1248,9 @@ func allCases(now time.Time) []Case {
 				var miss []string
 				for _, ugly := range []string{
 					"I reached the per-turn budget",
+					"Per-turn cap reached",
+					"Per-turn step cap reached",
+					"Per-turn time cap reached",
 					"Sorry, I couldn't process",
 					"sorry, i couldn't process",
 				} {

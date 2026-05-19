@@ -643,15 +643,19 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 // back to finalAnswerOnBudget. It always adds the assistant message and fires
 // emitStats before returning.
 func gracefulFinalize(ctx context.Context, client ChatClient, state State, opts Options, stats *Stats, lastToolResult string, emitStats func()) (loopResult, error) {
+	lastToolName := ""
+	if len(stats.ToolsCalled) > 0 {
+		lastToolName = stats.ToolsCalled[len(stats.ToolsCalled)-1]
+	}
 	var answer string
 	if opts.AllowNoToolFinalization {
 		if text, ok := finalizeAnswerAfterBudget(ctx, client, state, opts, stats); ok {
 			answer = text
 		} else {
-			answer = finalAnswerOnBudget(lastToolResult)
+			answer = finalAnswerOnBudgetWithContext(lastToolResult, lastToolName, stats.StopReason, opts)
 		}
 	} else {
-		answer = finalAnswerOnBudget(lastToolResult)
+		answer = finalAnswerOnBudgetWithContext(lastToolResult, lastToolName, stats.StopReason, opts)
 	}
 	state.AddAssistantMessage(answer)
 	emitStats()

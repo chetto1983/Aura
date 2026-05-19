@@ -407,7 +407,7 @@ func isEmptyProviderReply(reply ChatReply) bool {
 	// Budget-exhaustion fallback: always treat as empty regardless of LLMCalls
 	// count — graceful finalize (US-FIX01) may add an extra LLM call before
 	// falling back to this string.
-	if text == "" || text == "I reached the per-turn budget without a usable result." {
+	if text == "" || text == "I reached the per-turn budget without a usable result." || strings.HasPrefix(text, "Per-turn ") {
 		return true
 	}
 	// Zero-content single-LLM-call with no tool activity: provider returned nothing.

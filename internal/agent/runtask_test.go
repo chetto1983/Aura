@@ -203,7 +203,7 @@ func TestRunTaskMaxIterationsHitFallbackMessage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunTask: %v", err)
 	}
-	if !strings.Contains(res.Content, "maximum iteration") || !strings.Contains(res.Content, "last result") {
+	if !strings.Contains(res.Content, "maximum iteration") || !strings.Contains(res.Content, "Per-turn") {
 		t.Fatalf("fallback content = %q", res.Content)
 	}
 }

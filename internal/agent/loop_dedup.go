@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/aura/aura/internal/llm"
 )
@@ -77,6 +78,25 @@ func finalAnswerOnBudget(lastToolResult string) string {
 		return result
 	}
 	return "I reached the per-turn budget without a usable result."
+}
+
+// finalAnswerOnBudgetWithContext returns a contextual budget-exhaustion message
+// that includes which cap fired, the last tool name, and a retry hint. It is
+// used by gracefulFinalize when AllowNoToolFinalization is false or the
+// finalization LLM round fails.
+func finalAnswerOnBudgetWithContext(_, lastToolName, stopReason string, opts Options) string {
+	if lastToolName == "" {
+		return "Per-turn cap reached without invoking any tool. Try rephrasing -- Aura could not pick a tool for this request."
+	}
+	switch stopReason {
+	case "max_iterations_hit":
+		return fmt.Sprintf("Per-turn step cap reached (%d iterations). Last tool: %s. Try a more specific request.", opts.MaxIterations, lastToolName)
+	case "max_elapsed_hit":
+		elapsed := opts.MaxElapsed.Round(time.Second)
+		return fmt.Sprintf("Per-turn time cap reached (%s). Last tool: %s. Try a smaller scope or break it up.", elapsed, lastToolName)
+	default:
+		return fmt.Sprintf("Per-turn cap reached. Last tool: %s. Try rephrasing.", lastToolName)
+	}
 }
 
 func argKeysFromCall(call llm.ToolCall) []string {

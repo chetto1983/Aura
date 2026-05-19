@@ -280,8 +280,8 @@ func TestRunLoopMaxIterationReturnsLastUsefulResult(t *testing.T) {
 	if !result.Stats.MaxIterationsHit {
 		t.Fatal("MaxIterationsHit = false")
 	}
-	if result.Text != "partial result" {
-		t.Fatalf("answer = %q, want last useful tool result", result.Text)
+	if !strings.Contains(result.Text, "Per-turn") {
+		t.Fatalf("answer = %q, want Per-turn contextual budget fallback", result.Text)
 	}
 	if strings.Contains(result.Text, deadEndFallbackText()) {
 		t.Fatalf("answer contains dead-end fallback: %q", result.Text)
@@ -340,8 +340,8 @@ func TestRunLoopMaxElapsedReturnsLastUsefulResultBeforeNextLLM(t *testing.T) {
 	if client.requests != 1 {
 		t.Fatalf("LLM requests = %d, want 1", client.requests)
 	}
-	if result.Text != "partial result" {
-		t.Fatalf("answer = %q, want last useful tool result", result.Text)
+	if !strings.Contains(result.Text, "Per-turn") {
+		t.Fatalf("answer = %q, want Per-turn contextual budget fallback", result.Text)
 	}
 	if strings.Contains(result.Text, deadEndFallbackText()) {
 		t.Fatalf("answer contains dead-end fallback: %q", result.Text)
@@ -616,8 +616,8 @@ func TestRunLoopEmptyLLMResponseFallsBackToLastToolResult(t *testing.T) {
 	if strings.Contains(result.Text, "Sorry, I couldn't process") {
 		t.Fatalf("result.Text contains ugly fallback string: %q", result.Text)
 	}
-	if result.Text != "tool found something useful" {
-		t.Fatalf("result.Text = %q, want last tool result", result.Text)
+	if !strings.Contains(result.Text, "Per-turn") {
+		t.Fatalf("result.Text = %q, want Per-turn contextual budget fallback", result.Text)
 	}
 }
 

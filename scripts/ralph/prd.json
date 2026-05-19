@@ -70,7 +70,7 @@
         "Single atomic commit prefix: fix(agent): budget fallback message with last-tool context (US-FIX04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Additive, low-risk closer story. Run AFTER FIX01 because the gracefulFinalize helper from FIX01 routes through this fallback. The new helper signature replaces finalAnswerOnBudget at all call sites -- keep the old function name as a deprecated wrapper if any external caller exists (grep first). DO NOT add emoji or markdown to the strings (CLAUDE.md: 'Never use emojis unless asked'). Time formatting: time.Duration.String() returns e.g. '5m0s' for 5 minutes which is fine -- use Round(time.Second) to avoid trailing nanos."
     }
   ]
