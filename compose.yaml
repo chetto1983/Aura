@@ -31,6 +31,12 @@ services:
       # these without rebuilding. SHA256 MUST be re-pinned alongside the URL.
       AURA_EMBEDDING_MODEL_URL: "${AURA_EMBEDDING_MODEL_URL:-}"
       AURA_EMBEDDING_MODEL_SHA256: "${AURA_EMBEDDING_MODEL_SHA256:-}"
+      AURA_WHISPER_MODEL_URL: "${AURA_WHISPER_MODEL_URL:-}"
+      AURA_WHISPER_MODEL_SHA256: "${AURA_WHISPER_MODEL_SHA256:-}"
+      AURA_PIPER_VOICE_URL: "${AURA_PIPER_VOICE_URL:-}"
+      AURA_PIPER_VOICE_SHA256: "${AURA_PIPER_VOICE_SHA256:-}"
+      AURA_PIPER_VOICE_CFG_URL: "${AURA_PIPER_VOICE_CFG_URL:-}"
+      AURA_PIPER_VOICE_CFG_SHA256: "${AURA_PIPER_VOICE_CFG_SHA256:-}"
     volumes:
       - ./data:/models   # shared with aura-llama-embed (rw here, ro there)
 

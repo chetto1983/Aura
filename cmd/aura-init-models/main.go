@@ -39,9 +39,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	progress := install.LogProgressFn(logger.With("model", install.EmbeddingModelFilename), 5*time.Second)
-	start := time.Now()
-	if err := install.EnsureEmbeddingModel(ctx, dataDir, progress); err != nil {
+	embStart := time.Now()
+	embProgress := install.LogProgressFn(logger.With("model", install.EmbeddingModelFilename), 5*time.Second)
+	if err := install.EnsureEmbeddingModel(ctx, dataDir, embProgress); err != nil {
 		logger.Error("embedding model fetch failed",
 			"data_dir", dataDir,
 			"url", install.EmbeddingModelURL,
@@ -52,7 +52,41 @@ func main() {
 	}
 	logger.Info("embedding model ready",
 		"filename", install.EmbeddingModelFilename,
-		"elapsed_sec", int(time.Since(start).Seconds()),
+		"elapsed_sec", int(time.Since(embStart).Seconds()),
+	)
+
+	whisperStart := time.Now()
+	whisperProgress := install.LogProgressFn(logger.With("model", install.WhisperModelFilename), 5*time.Second)
+	if err := install.EnsureWhisperModel(ctx, dataDir, whisperProgress); err != nil {
+		logger.Error("whisper model fetch failed",
+			"data_dir", dataDir,
+			"url", install.WhisperModelURL,
+			"sha256", install.WhisperModelSHA256,
+			"err", err.Error(),
+		)
+		os.Exit(1)
+	}
+	logger.Info("whisper model ready",
+		"filename", install.WhisperModelFilename,
+		"elapsed_sec", int(time.Since(whisperStart).Seconds()),
+	)
+
+	piperStart := time.Now()
+	piperProgress := install.LogProgressFn(logger.With("model", install.PiperVoiceFilename), 5*time.Second)
+	if err := install.EnsurePiperVoice(ctx, dataDir, piperProgress); err != nil {
+		logger.Error("piper voice fetch failed",
+			"data_dir", dataDir,
+			"voice_url", install.PiperVoiceURL,
+			"voice_sha256", install.PiperVoiceSHA256,
+			"cfg_url", install.PiperVoiceConfigURL,
+			"cfg_sha256", install.PiperVoiceConfigSHA256,
+			"err", err.Error(),
+		)
+		os.Exit(1)
+	}
+	logger.Info("piper voice ready",
+		"filename", install.PiperVoiceFilename,
+		"elapsed_sec", int(time.Since(piperStart).Seconds()),
 	)
 	os.Exit(0)
 }
