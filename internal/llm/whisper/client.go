@@ -10,6 +10,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -28,6 +30,11 @@ type Client struct {
 	baseURL string
 	httpc   *http.Client
 	logger  *slog.Logger
+	// Transcode normalizes non-WAV audio bytes into 16 kHz mono PCM WAV before
+	// they hit whisper-server (which only decodes WAV). Set at construction time
+	// or overwritten by tests with a pass-through. Returns the normalized bytes
+	// and the new mime type. Nil falls back to the default ffmpeg implementation.
+	Transcode func(ctx context.Context, audioBytes []byte, mimeType string) ([]byte, string, error)
 }
 
 // New creates a Client that posts audio to baseURL/inference. timeout=0
@@ -51,6 +58,23 @@ func New(baseURL string, timeout time.Duration, logger *slog.Logger) *Client {
 // Error on non-200: status code + body excerpt ≤200 chars (no full upstream body leaked).
 func (c *Client) Transcribe(ctx context.Context, audioBytes []byte, mimeType string, language string) (TranscribeResult, error) {
 	t0 := time.Now()
+
+	// whisper-server (whisper.cpp upstream) only decodes 16 kHz mono PCM WAV
+	// in its HTTP handler. Telegram voice memos are OGG/Opus; transcode via
+	// ffmpeg before sending so the contract "I take audio bytes, return text"
+	// holds for any codec the caller has.
+	if !isWavMime(mimeType) {
+		transcode := c.Transcode
+		if transcode == nil {
+			transcode = defaultTranscode
+		}
+		newBytes, newMime, err := transcode(ctx, audioBytes, mimeType)
+		if err != nil {
+			return TranscribeResult{}, fmt.Errorf("whisper: transcode %s: %w", mimeType, err)
+		}
+		audioBytes = newBytes
+		mimeType = newMime
+	}
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -133,4 +157,49 @@ func filenameFromMimeType(mimeType string) string {
 	default:
 		return "audio.ogg"
 	}
+}
+
+// isWavMime reports whether mimeType describes a WAV PCM container that
+// whisper-server can decode natively.
+func isWavMime(mimeType string) bool {
+	mt := strings.TrimSpace(strings.ToLower(mimeType))
+	switch {
+	case mt == "audio/wav", mt == "audio/wave", mt == "audio/x-wav":
+		return true
+	case strings.HasPrefix(mt, "audio/wav;"), strings.HasPrefix(mt, "audio/wave;"), strings.HasPrefix(mt, "audio/x-wav;"):
+		return true
+	}
+	return false
+}
+
+// defaultTranscode is the production transcoder: pipes audioBytes through
+// ffmpeg and returns 16 kHz mono 16-bit PCM WAV — the exact shape whisper-server
+// expects. Requires ffmpeg on PATH (the aura Dockerfile installs it).
+// ctx cancellation kills the subprocess. The mimeType argument is ignored
+// because ffmpeg auto-detects from the container header.
+func defaultTranscode(ctx context.Context, audioBytes []byte, _ string) ([]byte, string, error) {
+	cmd := exec.CommandContext(ctx, "ffmpeg",
+		"-hide_banner", "-loglevel", "error",
+		"-i", "pipe:0",
+		"-ar", "16000",
+		"-ac", "1",
+		"-c:a", "pcm_s16le",
+		"-f", "wav",
+		"pipe:1",
+	)
+	cmd.Stdin = bytes.NewReader(audioBytes)
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if len(msg) > 200 {
+			msg = msg[:200]
+		}
+		if msg == "" {
+			return nil, "", fmt.Errorf("ffmpeg: %w", err)
+		}
+		return nil, "", fmt.Errorf("ffmpeg: %w (%s)", err, msg)
+	}
+	return out.Bytes(), "audio/wav", nil
 }

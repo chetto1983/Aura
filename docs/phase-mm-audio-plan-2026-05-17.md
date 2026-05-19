@@ -1,7 +1,69 @@
 ﻿# Phase-MM Audio Implementation Plan
-**Date:** 2026-05-17  
-**Scope:** Audio IN (Whisper transcription) + Audio OUT (TTS)  
+**Date:** 2026-05-17
+**Scope:** Audio IN (Whisper transcription) + Audio OUT (TTS)
 **Target:** Mini-PC (16 cores shared, 4-thread sidecar budget), single Telegram user
+
+---
+
+## 📌 Status update — 2026-05-19
+
+**Wave 1.5 (sidecar substrate) and Wave 2 (audio IN) SHIPPED + E2E verified.**
+
+- Master HEAD with audio IN landed: see `git log --oneline` for `feat(audio):`
+  commits + the post-ship fixes (`fix(audio): whisper static link + piper-tts
+  1.4 synthesize_wav API`).
+- Substrate live:
+  - `aura-whisper` sidecar (whisper.cpp v1.8.4 CMake static build, 135 MB,
+    port 8082) loads `ggml-small.bin` from `./data/ggml-small.bin` (487 MB,
+    SHA-pinned in `internal/install/whisper.go`).
+  - `aura-piper` sidecar (Python http.server + `piper-tts` 1.4, 416 MB,
+    port 8083) loads `it_IT-paola-medium.onnx` from `./data/piper/` (61 MB
+    + 7 KB JSON, both SHA-pinned in `internal/install/piper.go`).
+  - `aura-init-models` extended to fetch both artifacts on first boot;
+    cache-hit re-runs exit in ~1 s.
+- Audio IN code:
+  - `internal/storage/sources/store/source.go`: `KindAudio`,
+    `StatusTranscribeComplete`, `TranscriptMeta`, `OriginalDeletedAt` added.
+  - `internal/telegram/voice_handler.go` (~280 LOC): `tele.OnVoice` handler
+    mirrors `documents.go` shape — download → SHA-dedupe store → whisper
+    transcribe → write `transcript.txt` → **delete `original.ogg`** (privacy:
+    voice memos are PII-equivalent; transcript supersedes the raw audio) →
+    dispatch transcript as `chat.InboundMessage` via `AfterTranscribeHook`.
+  - `internal/llm/whisper/client.go`: HTTP client to `aura-whisper` with an
+    injectable `Transcode` field (default ffmpeg pipeline OGG/Opus → 16 kHz
+    mono PCM WAV; tests inject a pass-through to stay codec-free).
+- UX: when the AfterTranscribeHook succeeds the voice handler **deletes the
+  progress chrome** so the chat shows only `[voice memo] → [assistant reply]`,
+  no "Transcribed..." ghost. On hook failure the progress stays with an error
+  tail so the user sees what broke.
+
+### Reality vs original plan
+
+- **Pipeline shape changed**: this doc originally proposed a CLI-shelling
+  whisper invocation. Wave 1.5 chose the sidecar HTTP shape instead (matches
+  `aura-markitdown` + `aura-llama-embed` precedent). The Go client speaks
+  `POST /inference` multipart to whisper-server upstream.
+- **whisper-server is WAV-only**: the upstream HTTP handler decodes only
+  16 kHz mono PCM WAV. Telegram voice is OGG/Opus. Aura transcodes via
+  ffmpeg (installed in the aura container) inside `whisper.Client.Transcode`.
+- **Model**: shipped `ggml-small.bin` baseline (multilanguage, validated 7 s
+  on a 3 s Italian memo). `litus-ai/whisper-small-ita` Italian-finetuned
+  upgrade is an env-var swap (`AURA_WHISPER_MODEL_URL` + `AURA_WHISPER_MODEL_SHA256`)
+  — the spike-doc conversion fix is still a follow-up.
+- **Italian voice**: shipped Paola from upstream `rhasspy/piper-voices`
+  (verified quality 2026-05-19 by user listening). Giorgio from
+  `kirys79/piper_italiano` was dropped — HF flagged 3 suspicious files in
+  that repo; Paola from the rhasspy team has no integrity flags.
+
+### Wave 3 (audio OUT) is the queued next step
+
+Substrate is live (`aura-piper` healthy on `127.0.0.1:8083`, synthesis
+verified: "Ciao Aura, sei collegata?" → 1.39 s mono 22 kHz WAV in 116 ms).
+**No Go code wires it yet.** The Wave 3 design adopts the hermes-agent
+per-chat `voice_mode` pattern (`off` | `voice_only` | `all`) with TTS sent
+**in addition to text**, never replacing it. See memory entry
+`reference-hermes-voice-mode-pattern` for the design and the proposed
+US-MM-A04 / A05 / A06 story breakdown.
 
 ---
 

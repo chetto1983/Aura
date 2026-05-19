@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -178,6 +179,11 @@ func TestVoiceHandlerTranscription(t *testing.T) {
 	}
 	sources := newDocumentTestSourceStore(t)
 	wc := whisper.New(whisperSrv.URL, 10*time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// Tests stay codec-free: bypass the ffmpeg transcode step (no ffmpeg on the
+	// dev / CI Windows runner) by treating the bytes as already-WAV.
+	wc.Transcode = func(_ context.Context, b []byte, _ string) ([]byte, string, error) {
+		return b, "audio/wav", nil
+	}
 	h := newVoiceHandler(voiceHandlerConfig{
 		Bot:             tb,
 		Sources:         sources,

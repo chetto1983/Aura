@@ -47,6 +47,9 @@ The default stack starts:
 - `garage-webui`: optional Garage admin UI behind a Compose profile.
 - `aura-llama-embed`: llama.cpp sidecar serving `embeddinggemma-300m` at 256-d MRL.
 - `aura-markitdown`: sidecar that converts docx/xlsx/pptx and 6 other formats to Markdown.
+- `aura-whisper`: whisper.cpp sidecar transcribing Telegram voice memos via `ggml-small.bin` (Phase-MM Wave 2).
+- `aura-piper`: Piper TTS sidecar with the Italian Paola voice (default `AURA_TTS_ENABLED=false`; gated for Wave 3).
+- `aura-init-models`: one-shot init container that fetches the embedding GGUF + Whisper GGML + Piper ONNX with SHA-256 verification before the dependent sidecars start.
 
 Primary user data stays in visible folders beside the Compose file:
 
@@ -192,7 +195,9 @@ flowchart LR
 | --- | --- | --- | --- |
 | Phase-Z | ✅ done 2026-05-17 | 7C completion + 7D/E/F admin + Phase 9 hardening | `prd.md §6.5` |
 | Phase-FIX | next | 4 stories: graceful-finalize all budget paths, diagnostic error messages, retry layer wiring, MaxIterations context | `prd.md §7.4` |
-| Phase-MM | planned | 9 stories in 3 waves: substrate ARCH + audio + image + TTS + E2E | [`docs/phase-mm-synthesis-2026-05-17.md`](docs/phase-mm-synthesis-2026-05-17.md) |
+| Phase-MM Wave 1.5 | ✅ done 2026-05-19 | aura-whisper + aura-piper sidecars + init-models extension (3 stories) | [`docs/phase-mm-audio-spike-2026-05-19.md`](docs/phase-mm-audio-spike-2026-05-19.md) |
+| Phase-MM Wave 2 | ✅ done 2026-05-19 | audio IN E2E: KindAudio + voice handler + whisper client + AfterTranscribeHook (3 stories) | [`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md) |
+| Phase-MM Wave 3 | planned | TTS reply (per-chat voice mode) + image flows (vision + Flux gen) | [`docs/phase-mm-synthesis-2026-05-17.md`](docs/phase-mm-synthesis-2026-05-17.md) |
 | Phase-U | planned | plugin manifest + loader + extract personality bundle + sample plugin | sketched in `prd.md §7.4` |
 | Phase 8 | gated on workload | multi-agent substrate (planner + critic + DAG) anchored to a concrete workload | de-scoped pending re-open |
 
@@ -255,12 +260,17 @@ flowchart TB
   style KIND fill:#ffe4e1,stroke:#cc0000
 ```
 
-**Red = substrate Wave 1 stories.** Defaults locked in by planning:
+**Red = substrate Wave 1 stories.** Wave 1.5 (sidecar substrate) + Wave 2
+(audio IN E2E) shipped 2026-05-19 — see
+[`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md)
+for the post-ship status block.
 
-- Audio IN: whisper.cpp local [`litus-ai/whisper-small-ita`](https://huggingface.co/litus-ai/whisper-small-ita), Italian-finetuned, CPU 4 threads (~5-10s/30s, $0)
-- Audio OUT: Piper local [`kirys79/piper_italiano`](https://huggingface.co/kirys79/piper_italiano), Italian voice (operator-toggled OFF by default, never auto-triggered)
-- Image IN: Anthropic Sonnet 4.6 vision via OpenRouter ($0.003/img)
-- Image OUT: Replicate Flux.1-schnell ($0.003/img)
+Defaults shipped:
+
+- **Audio IN ✅** whisper.cpp local with baseline `ggml-small.bin` (multilanguage, 487 MB, CPU 4 threads, ~3-7s on a 3s memo). `litus-ai/whisper-small-ita` finetuned model is an env-var swap when wanted
+- **Audio OUT (queued)** Piper local with [`rhasspy/piper-voices` Paola IT medium](https://huggingface.co/rhasspy/piper-voices/tree/main/it/it_IT/paola/medium) (61 MB ONNX, sidecar live, default OFF, never auto-triggered). Wave 3 wires the per-chat `voice_mode` UX
+- **Image IN (planned)** Anthropic Sonnet 4.6 vision via OpenRouter
+- **Image OUT (planned)** Replicate Flux.1-schnell
 
 All API providers are operator-overrideable; local fallbacks (Qwen2.5-VL,
 Stable Diffusion) become plugin-shaped opt-ins after Phase-U.
@@ -294,7 +304,7 @@ flowchart TB
     P1SK[skills/<br/>Davide skills]
     P1MCP[mcp.json<br/>Davide MCP servers]
     P1TOOL[tools curation<br/>memory + wiki + scheduler]
-    P1CAP[capabilities[]<br/>memory.* + tool.*]
+    P1CAP[capabilities<br/>memory.* + tool.*]
   end
 
   subgraph Plugin2["aura-marketer sample plugin"]
@@ -302,7 +312,7 @@ flowchart TB
     P2SK[skills/<br/>competitor-report]
     P2MCP[mcp.json<br/>SerpAPI + scraping]
     P2TOOL[tools curation<br/>web + source + propose_patch]
-    P2CAP[capabilities[]<br/>web.fetch + source.write]
+    P2CAP[capabilities<br/>web.fetch + source.write]
   end
 
   Plugin1 -. installed .-> REG

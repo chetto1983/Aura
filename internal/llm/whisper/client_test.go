@@ -26,7 +26,7 @@ func TestTranscribeHappyPath(t *testing.T) {
 	defer srv.Close()
 
 	c := whisper.New(srv.URL, 5*time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	result, err := c.Transcribe(context.Background(), []byte("fake ogg"), "audio/ogg", "it")
+	result, err := c.Transcribe(context.Background(), []byte("fake ogg"), "audio/wav", "it")
 	if err != nil {
 		t.Fatalf("Transcribe() error = %v", err)
 	}
@@ -45,7 +45,7 @@ func TestTranscribeErrorPath(t *testing.T) {
 	defer srv.Close()
 
 	c := whisper.New(srv.URL, 5*time.Second, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	_, err := c.Transcribe(context.Background(), []byte("fake"), "audio/ogg", "it")
+	_, err := c.Transcribe(context.Background(), []byte("fake"), "audio/wav", "it")
 	if err == nil {
 		t.Fatal("expected error on 500 response, got nil")
 	}
@@ -67,7 +67,7 @@ func TestTranscribeTimeout(t *testing.T) {
 	defer srv.Close()
 
 	c := whisper.New(srv.URL, 20*time.Millisecond, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	_, err := c.Transcribe(context.Background(), []byte("fake"), "audio/ogg", "it")
+	_, err := c.Transcribe(context.Background(), []byte("fake"), "audio/wav", "it")
 	if err == nil {
 		t.Fatal("expected timeout error, got nil")
 	}
@@ -99,9 +99,12 @@ func TestTranscribeMultipartFields(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	fakeAudio := []byte("synthetic ogg audio data")
+	// audio/wav skips the internal ffmpeg transcode path so capturedFileBytes
+	// equals the input bytes — exercises HTTP plumbing only. The transcode
+	// path requires ffmpeg on PATH and a real codec; unit tests stay codec-free.
+	fakeAudio := []byte("synthetic wav audio data")
 	c := whisper.New(srv.URL, 5*time.Second, nil)
-	_, err := c.Transcribe(context.Background(), fakeAudio, "audio/ogg", "fr")
+	_, err := c.Transcribe(context.Background(), fakeAudio, "audio/wav", "fr")
 	if err != nil {
 		t.Fatalf("Transcribe() error = %v", err)
 	}

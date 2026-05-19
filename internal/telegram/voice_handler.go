@@ -284,18 +284,30 @@ func (h *voiceHandler) process(ctx context.Context, userID string, voice *tele.V
 		"text_len", len(result.Text),
 	)
 
-	tail := "ready for ingest"
+	// Hub dispatch path: when AfterTranscribe is wired, the assistant reply
+	// will arrive through the normal telegramadapter outbound. Delete the
+	// progress chrome so the chat shows only [voice memo] -> [assistant reply],
+	// no "Transcribed..." ghost. On hook failure, keep the progress with the
+	// error tail so the user sees what went wrong.
 	if h.afterTranscribe != nil {
 		hookCtx, hookCancel := context.WithTimeout(ctx, time.Minute)
 		err := h.afterTranscribe(hookCtx, teleCtx, updated, result.Text)
 		hookCancel()
 		if err != nil {
 			h.logger.Warn("afterTranscribe hook failed", "source_id", src.ID, "err", err)
-			tail = fmt.Sprintf("agent dispatch failed: %s", err.Error())
-		} else {
-			tail = "agent reply incoming…"
+			editor.set(fmt.Sprintf("✅ Transcribed · %s · %.0fs audio · %d chars · audio purged · agent dispatch failed: %s",
+				updated.ID, durationS, len(result.Text), err.Error()))
+			return
 		}
+		if delErr := h.bot.Delete(progress); delErr != nil {
+			// Non-fatal: the chat still works, just keeps the ghost line.
+			h.logger.Debug("voice progress delete failed", "source_id", src.ID, "err", delErr)
+		}
+		return
 	}
-	editor.set(fmt.Sprintf("✅ Transcribed · %s · %.0fs audio · %d chars · audio purged · %s",
-		updated.ID, durationS, len(result.Text), tail))
+
+	// No Hub dispatch wired: leave the final progress message in place so the
+	// user has a confirmation (no assistant reply is coming to supersede it).
+	editor.set(fmt.Sprintf("✅ Transcribed · %s · %.0fs audio · %d chars · audio purged · ready for ingest",
+		updated.ID, durationS, len(result.Text)))
 }
