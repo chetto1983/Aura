@@ -119,7 +119,7 @@
         "Single atomic commit prefix: docs(tokenjuice): before/after measurement on 30-case probe suite (Phase-TJ / US-TJ07)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "AURA_CHAT_TOKEN must be valid for the suite. If token expired since 2026-05-25 re-mint per memory aura-token-bootstrap-db-insert. Run from D:/Aura repo root (not from cmd/probe_chat subdir — see memory ralph-sh-msys-path-bug for the cwd lesson)."
     },
     {
