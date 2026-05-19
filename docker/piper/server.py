@@ -81,22 +81,19 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
         # Serialize concurrent synthesis through a lock — onnxruntime session
         # is not guaranteed thread-safe for concurrent inference on the same
-        # session object.
-        t0 = time.monotonic()
-        with _voice_lock:
-            pcm = b"".join(_voice.synthesize_stream_raw(text))
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
-
-        sr = _voice.config.sample_rate
+        # session object. synthesize_wav() (piper-tts ≥1.4) auto-sets WAV
+        # format (channels/sampwidth/framerate) from the voice config.
         buf = io.BytesIO()
-        with wave.open(buf, "wb") as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)  # s16le — 2 bytes per sample
-            wf.setframerate(sr)
-            wf.writeframes(pcm)
+        t0 = time.monotonic()
+        with _voice_lock, wave.open(buf, "wb") as wf:
+            _voice.synthesize_wav(text, wf)
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
         wav_bytes = buf.getvalue()
 
-        duration_s = len(pcm) / (sr * 2)
+        # Re-open the framed WAV to read duration without trusting the
+        # raw-PCM-length heuristic (sampwidth may not be 2 on future voices).
+        with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+            duration_s = wf.getnframes() / float(wf.getframerate())
 
         self.send_response(200)
         self.send_header("Content-Type", "audio/wav")

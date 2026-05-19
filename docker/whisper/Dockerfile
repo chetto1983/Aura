@@ -28,9 +28,12 @@ WORKDIR /opt/whisper.cpp
 
 # Build whisper-server only (skips tests + other examples for faster build).
 # CMake resolves whisper-server's dependencies (whisper, ggml, common) automatically.
+# -DBUILD_SHARED_LIBS=OFF forces static linkage so the runtime stage doesn't need
+# libwhisper.so.1 / libggml.so / etc — the binary is self-contained.
 RUN cmake -B build \
         -DCMAKE_BUILD_TYPE=Release \
         -DWHISPER_BUILD_TESTS=OFF \
+        -DBUILD_SHARED_LIBS=OFF \
     && cmake --build build --target whisper-server -j$(nproc)
 
 # ── runtime stage ─────────────────────────────────────────────────────────────
