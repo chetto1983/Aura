@@ -1,11 +1,15 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
+	source "github.com/aura/aura/internal/storage/sources/store"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -107,6 +111,7 @@ func New(deps Deps) (*Bot, error) {
 		Sources:         deps.Sources,
 		Whisper:         deps.Whisper,
 		WhisperLanguage: deps.Cfg.WhisperLanguage,
+		AfterTranscribe: buildAfterTranscribeHook(b),
 		Allowlist:       b.isAllowlisted,
 		Logger:          logger,
 		Parent:          deps.ParentCtx,
@@ -115,4 +120,43 @@ func New(deps Deps) (*Bot, error) {
 	b.registerHandlers()
 	b.installBotCommands()
 	return b, nil
+}
+
+// buildAfterTranscribeHook returns an AfterTranscribeHook that dispatches the
+// voice transcript into the agent loop via b.hub. The closure captures b so
+// the hub reference is resolved lazily (SetHub is called after New returns).
+// ChannelDataKeyContext ("tele_context") stashes the original tele.Context so
+// the Telegram outbound adapter can route the assistant reply to the correct chat.
+func buildAfterTranscribeHook(b *Bot) AfterTranscribeHook {
+	return func(ctx context.Context, teleCtx tele.Context, src *source.Source, transcript string) error {
+		if b.hub == nil {
+			return nil
+		}
+		principalID := ""
+		if sender := teleCtx.Sender(); sender != nil {
+			principalID = strconv.FormatInt(sender.ID, 10)
+		}
+		threadID := ""
+		if tgChat := teleCtx.Chat(); tgChat != nil {
+			threadID = strconv.FormatInt(tgChat.ID, 10)
+		}
+		msg := chat.InboundMessage{
+			Channel:     chat.ChannelTelegram,
+			PrincipalID: principalID,
+			ThreadID:    threadID,
+			Text:        transcript,
+			Attachments: []chat.AttachmentRef{{
+				SourceID: src.ID,
+				MimeType: "audio/ogg",
+				Status:   "transcribe_complete",
+			}},
+			Mode:      chat.DeliveryModeStreaming,
+			CreatedAt: time.Now().UTC(),
+			ChannelData: map[string]any{
+				"tele_context": teleCtx,
+			},
+		}
+		_, err := b.hub.ReceiveMessage(b.telegramHubContext(ctx, principalID), msg)
+		return err
+	}
 }

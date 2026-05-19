@@ -21,16 +21,27 @@ import (
 // mini-PC, so serializing to 1 avoids queueing pressure at the sidecar.
 const voiceConcurrencyLimit = 1
 
+// AfterTranscribeHook is invoked once a voice source reaches StatusTranscribeComplete.
+// teleCtx is the original Telegram context captured from the voice handler goroutine
+// closure, so the hook can route the agent reply to the correct Telegram chat.
+// Returning an error is logged but the transcript is already durable on disk —
+// the voice memo will not be re-sent and the source is not rolled back.
+type AfterTranscribeHook func(ctx context.Context, teleCtx tele.Context, src *source.Source, transcript string) error
+
 // voiceHandlerConfig is the per-Bot wiring for voice memo ingestion
 // (US-MM-A01: store; US-MM-A02: transcribe; US-MM-A03: Hub dispatch).
 type voiceHandlerConfig struct {
-	Bot       *tele.Bot
-	Sources   source.Repository
+	Bot     *tele.Bot
+	Sources source.Repository
 	// Whisper is optional. nil = store only, no transcription.
 	Whisper         *whisper.Client
 	WhisperLanguage string // defaults to "it" when empty
-	Allowlist func(userID string) bool
-	Logger    *slog.Logger
+	// AfterTranscribe is optional. When set it is called after StatusTranscribeComplete
+	// is persisted so the transcript can be dispatched into the agent loop.
+	// nil = transcript stored on disk only; no Hub dispatch.
+	AfterTranscribe AfterTranscribeHook
+	Allowlist       func(userID string) bool
+	Logger          *slog.Logger
 	// Parent is the optional parent context. When non-nil the voiceHandler's
 	// internal context derives from it so App shutdown propagates without a
 	// separate Stop() call. Nil falls back to context.Background().
@@ -42,6 +53,7 @@ type voiceHandler struct {
 	sources         source.Repository
 	whisper         *whisper.Client
 	whisperLanguage string
+	afterTranscribe AfterTranscribeHook
 	allowed         func(string) bool
 	logger          *slog.Logger
 	sem             chan struct{}
@@ -70,6 +82,7 @@ func newVoiceHandler(cfg voiceHandlerConfig) *voiceHandler {
 		sources:         cfg.Sources,
 		whisper:         cfg.Whisper,
 		whisperLanguage: lang,
+		afterTranscribe: cfg.AfterTranscribe,
 		allowed:         cfg.Allowlist,
 		logger:          cfg.Logger,
 		sem:             make(chan struct{}, voiceConcurrencyLimit),
@@ -145,15 +158,18 @@ func (h *voiceHandler) onVoiceMessage(c tele.Context) error {
 
 	go func() {
 		defer h.finishWork()
-		h.process(h.ctx, userID, voice, progress)
+		h.process(h.ctx, userID, voice, c, progress)
 	}()
 	return nil
 }
 
 // process downloads the OGG audio, stores it as an immutable source, and
-// (when a Whisper client is configured) transcribes it. Each step edits the
-// same progress message; failures replace its text with a single-line error.
-func (h *voiceHandler) process(ctx context.Context, userID string, voice *tele.Voice, progress *tele.Message) {
+// (when a Whisper client is configured) transcribes it. teleCtx is the original
+// Telegram context captured from onVoiceMessage's goroutine closure — it is
+// forwarded to AfterTranscribeHook so the hook can route the reply correctly.
+// Each step edits the same progress message; failures replace its text with a
+// single-line error.
+func (h *voiceHandler) process(ctx context.Context, userID string, voice *tele.Voice, teleCtx tele.Context, progress *tele.Message) {
 	// Bounded concurrency: queue if a job is already in flight.
 	select {
 	case h.sem <- struct{}{}:
@@ -268,6 +284,18 @@ func (h *voiceHandler) process(ctx context.Context, userID string, voice *tele.V
 		"text_len", len(result.Text),
 	)
 
-	editor.set(fmt.Sprintf("✅ Transcribed · %s · %.0fs audio · %d chars · audio purged · ready for Hub dispatch",
-		updated.ID, durationS, len(result.Text)))
+	tail := "ready for ingest"
+	if h.afterTranscribe != nil {
+		hookCtx, hookCancel := context.WithTimeout(ctx, time.Minute)
+		err := h.afterTranscribe(hookCtx, teleCtx, updated, result.Text)
+		hookCancel()
+		if err != nil {
+			h.logger.Warn("afterTranscribe hook failed", "source_id", src.ID, "err", err)
+			tail = fmt.Sprintf("agent dispatch failed: %s", err.Error())
+		} else {
+			tail = "agent reply incoming…"
+		}
+	}
+	editor.set(fmt.Sprintf("✅ Transcribed · %s · %.0fs audio · %d chars · audio purged · %s",
+		updated.ID, durationS, len(result.Text), tail))
 }
