@@ -128,7 +128,7 @@ func ExecuteToolCalls(
 				Err:       err,
 			})
 			if err == nil && cfg.tokenJuiceEnabled {
-				result = compactToolOutput(logger, tc.Name, args, result)
+				result = CompactToolOutput(logger, tc.Name, args, result)
 			}
 			readSkillName := ""
 			if err == nil && tc.Name == "read_file" {

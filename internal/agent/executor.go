@@ -93,7 +93,7 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 				return
 			}
 			if e.tokenJuiceEnabled {
-				raw = compactToolOutput(e.logger, call.Name, call.Arguments, raw)
+				raw = CompactToolOutput(e.logger, call.Name, call.Arguments, raw)
 			}
 			wrapped := WrapUntrustedToolResult(call.Name, raw)
 			outcomes[i] = toolOutcome{id: call.ID, content: limitToolContent(wrapped, e.maxChars)}

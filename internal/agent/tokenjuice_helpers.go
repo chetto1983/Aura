@@ -48,10 +48,10 @@ func exitCodeFromToolOutput(toolName, raw string) *int {
 	return nil
 }
 
-// compactToolOutput runs TokenJuice on a tool result and returns the (possibly
+// CompactToolOutput runs TokenJuice on a tool result and returns the (possibly
 // compacted) string. A debug log is emitted each call regardless of whether a
 // rule fired so the operator can observe the pass-through rate too.
-func compactToolOutput(logger *slog.Logger, toolName string, args map[string]any, raw string) string {
+func CompactToolOutput(logger *slog.Logger, toolName string, args map[string]any, raw string) string {
 	r := tokenjuice.Compact(tokenjuice.Input{
 		ToolName: toolName,
 		Argv:     argvFromArgs(args),

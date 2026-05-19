@@ -130,6 +130,7 @@ func (b *webInvocationBuilder) Build(_ context.Context, run *chat.Run, msg chat.
 			maxChars:              b.maxToolResultChars(),
 			toolTimeout:           toolTimeout,
 			terminalPolicyEnabled: b.terminalToolPolicyEnabled(),
+			tokenJuiceEnabled:     deps.TokenJuiceEnabled,
 		},
 		State: state,
 		Tools: toolDefs,
@@ -286,6 +287,7 @@ type webToolExecutor struct {
 	maxChars              int
 	toolTimeout           time.Duration
 	terminalPolicyEnabled bool
+	tokenJuiceEnabled     bool
 }
 
 func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
@@ -341,6 +343,9 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 				Class:     class,
 				Err:       err,
 			})
+			if err == nil && e.tokenJuiceEnabled {
+				content = agent.CompactToolOutput(e.logger, call.Name, executedArgs, content)
+			}
 			wrapped := agent.WrapUntrustedToolResult(call.Name, content)
 			outcomes[i] = outcome{
 				id:        call.ID,
