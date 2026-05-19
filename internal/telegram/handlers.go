@@ -29,6 +29,9 @@ func (b *Bot) registerHandlers() {
 	if b.docs != nil {
 		b.bot.Handle(tele.OnDocument, b.docs.onDocument)
 	}
+	if b.voice != nil {
+		b.bot.Handle(tele.OnVoice, b.voice.onVoiceMessage)
+	}
 }
 
 func (b *Bot) onMessage(c tele.Context) error {

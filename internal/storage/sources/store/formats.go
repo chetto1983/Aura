@@ -71,7 +71,7 @@ func SupportedUploadAccept() string {
 
 func ValidStatus(s Status) bool {
 	switch s {
-	case StatusStored, StatusExtracting, StatusOCRComplete, StatusExtractComplete, StatusIngested, StatusFailed:
+	case StatusStored, StatusExtracting, StatusOCRComplete, StatusExtractComplete, StatusIngested, StatusFailed, StatusTranscribeComplete:
 		return true
 	default:
 		return false

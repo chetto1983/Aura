@@ -64,18 +64,24 @@ const (
 	// /tmp/aura_out. It is persisted as ingested evidence but does not enter
 	// the OCR pipeline because the file type is arbitrary.
 	KindSandboxArtifact Kind = "sandbox_artifact"
+	// KindAudio covers voice memos received via Telegram (tele.OnVoice).
+	// Audio arrives as OGG/Opus; transcription is handled by aura-whisper
+	// (Wave 2, US-MM-A02). Unlike document kinds, KindAudio bypasses the
+	// markitdown/OCR path entirely — the pipeline is voice → store → whisper.
+	KindAudio Kind = "audio"
 )
 
 // Status tracks where a source is in the OCR/ingest pipeline.
 type Status string
 
 const (
-	StatusStored          Status = "stored"
-	StatusExtracting      Status = "extracting"
-	StatusOCRComplete     Status = "ocr_complete"
-	StatusExtractComplete Status = "extract_complete"
-	StatusIngested        Status = "ingested"
-	StatusFailed          Status = "failed"
+	StatusStored             Status = "stored"
+	StatusExtracting         Status = "extracting"
+	StatusOCRComplete        Status = "ocr_complete"
+	StatusExtractComplete    Status = "extract_complete"
+	StatusIngested           Status = "ingested"
+	StatusFailed             Status = "failed"
+	StatusTranscribeComplete Status = "transcribe_complete"
 )
 
 type ExtractionMeta struct {

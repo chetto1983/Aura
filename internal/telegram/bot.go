@@ -61,6 +61,7 @@ type Bot struct {
 	hub      *chat.Hub
 	started  atomic.Bool
 	docs     *docHandler
+	voice    *voiceHandler
 	dbg      debugDocState // debugDocs* aggregate
 
 	// ---- Bundled non-Telegram operational deps ----
@@ -278,6 +279,9 @@ func (b *Bot) Stop() {
 	}
 	if b.docs != nil {
 		b.docs.Stop()
+	}
+	if b.voice != nil {
+		b.voice.Stop()
 	}
 }
 

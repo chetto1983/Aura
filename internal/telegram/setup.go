@@ -102,6 +102,14 @@ func New(deps Deps) (*Bot, error) {
 		Parent:     deps.ParentCtx,
 	})
 
+	b.voice = newVoiceHandler(voiceHandlerConfig{
+		Bot:       tb,
+		Sources:   deps.Sources,
+		Allowlist: b.isAllowlisted,
+		Logger:    logger,
+		Parent:    deps.ParentCtx,
+	})
+
 	b.registerHandlers()
 	b.installBotCommands()
 	return b, nil
