@@ -333,7 +333,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				)
 				return loopResult{Text: content, Stats: stats}, nil
 			}
-			return loopResult{Text: "Sorry, I couldn't process your message. Please try again.", Stats: stats}, err
+			return loopResult{Text: llm.UserMessageFor(err), Stats: stats}, err
 		}
 		if opts.OnLLMDelta != nil && resp.Response.Content != "" {
 			opts.OnLLMDelta(resp.Response.Content)

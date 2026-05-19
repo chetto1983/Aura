@@ -56,11 +56,11 @@ func (c *streamingChatClient) Chat(ctx context.Context, messages []llm.Message, 
 	}
 	ch, err := c.llmc.Stream(ctx, req)
 	if err != nil {
-		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
+		return agent.ChatResponse{Response: llm.Response{Content: llm.UserMessageFor(err)}}, err
 	}
 	resp, delivered, err := c.outbound.ConsumeStream(c.teleCtx, ch, c.userID, c.placeholder, c.pane)
 	if err != nil {
-		return agent.ChatResponse{Response: llm.Response{Content: "Sorry, I couldn't process your message. Please try again."}}, err
+		return agent.ChatResponse{Response: llm.Response{Content: llm.UserMessageFor(err)}}, err
 	}
 	return agent.ChatResponse{Response: resp, Delivered: delivered}, nil
 }

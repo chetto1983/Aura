@@ -1,87 +1,77 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "RECLAIM — legacy code cleanup queue. 5 stories (~370 LOC reclaimable) surfaced by docs/legacy-deletion-survey-2026-05-19.md (gsd-codebase-mapper survey + golangci-lint -E unused -E unparam). Strict one-story-exit. ORDER: low-risk first (RECLAIM01), bigger-surface later (RECLAIM02). RECLAIM02 (retrieval capsule) is the biggest single win at ~200 LOC of zero-caller dead feature. After all 5 close, Phase-OP+ queue takes over (scripts/ralph/prd-phase-op-plus.json). DEFERRED: DEFER-A (unify agentExecutor.ExecuteToolCalls + agent.ExecuteToolCalls — high leverage, high risk, needs design phase) + DEFER-B (CompactCompletedToolResults — wait for Phase-TJ to fully close first since tokenjuice may replace it).",
+  "description": "Phase-FIX — UX error-message hardening. 4 stories targeting two generic fallback strings that hide diagnostic context today: 'Sorry, I couldn't process your message. Please try again.' (loop.go:336 + telegram/chat_client.go:59,63) and 'I reached the per-turn budget without a usable result.' (loop_dedup.go:79, emitted on MaxElapsed/empty-LLM/MaxIterations-without-finalize). PRD reference: prd.md §7.4. Brainstorm + ground-truth recon: today 2026-05-19, master at c3b1f008. Strict one-story-exit. ORDER: FIX02 (errori diagnostici, additive) -> FIX03 (retry audit, mostly verification) -> FIX01 (graceful finalize su tutti i budget paths, piu rischio) -> FIX04 (MaxIterations context msg, additive). NO env-var gate: these are pure UX fixes, ship enabled. After all 4 close, next queue is Phase-MM Wave 1 (3 ARCH stories: InboundMessage.Attachments / llm.Message.MultipartContent / source.Kind audio+image).",
   "userStories": [
     {
-      "id": "RECLAIM01",
-      "title": "golangci-lint unused triplet (~17 LOC, LOW risk)",
-      "description": "Delete the 3 symbols flagged by `~/go/bin/golangci-lint run -E unused ./...`: (a) cmd/probe_chat/cases.go:1335 `ocrProbeBefore` field + its L1073 assignment site; (b) cmd/probe_chat/client.go:328 `(*Env).sendChat` method; (c) internal/tokenjuice/text.go:172 `safeClamp` function. The tokenjuice safeClamp is currently unused — confirm Phase-TJ has closed before touching (queue stages this story first because TJ queue runs to completion before RECLAIM activates). If Phase-TJ added a safeClamp caller in TJ04-TJ08, leave it and document in commit message.",
+      "id": "US-FIX02",
+      "title": "Diagnostic LLM-error class in user-visible message",
+      "description": "Replace the two 'Sorry, I couldn't process your message. Please try again.' emission sites with a diagnostic message that includes error class (rate-limited / network / model-error / auth-error / unknown) + a one-line retry hint. Reuse the existing `internal/llm.Classify(err)` (retry.go:81) which already returns BucketPermanent | BucketTransient | BucketContent buckets + a cleaned string. Add a new helper `internal/llm/usererror.go` exposing `func UserMessageFor(err error) string` that maps the bucket + a finer sub-classification (HTTP 429 vs network timeout vs auth-failure vs model-not-found) to a short user-facing string + hint. NEVER leak err.Error() raw to the user (provider headers, tokens, URLs may appear there) -- only the classified label + a fixed hint string. Then update internal/agent/loop.go:336 and internal/channels/telegram/chat_client.go:59-63 to call the helper. Telemetry: keep err logged at warn level (already happens via existing logger.Warn calls); the change is user-facing only.",
       "acceptanceCriteria": [
-        "cmd/probe_chat/cases.go: ocrProbeBefore field + its assignment removed",
-        "cmd/probe_chat/client.go: (*Env).sendChat method removed",
-        "internal/tokenjuice/text.go: safeClamp removed (unless Phase-TJ wired a caller)",
-        "~/go/bin/golangci-lint run -E unused ./... reports 0 issues",
-        "go build ./... && go test ./cmd/probe_chat/... ./internal/tokenjuice/... green",
-        "Single atomic commit prefix: chore(legacy): remove golangci-lint unused triplet (RECLAIM01)"
+        "internal/llm/usererror.go created (or merged into existing classify.go if cleaner) exposing UserMessageFor(err error) string",
+        "Mapping covers at minimum: rate-limited (HTTP 429 / 'rate' substring in transient bucket) -> 'Aura is rate-limited by the LLM provider. Retrying automatically did not recover -- try again in ~30s.'; network/transient -> 'Network issue talking to the LLM. Try again.'; auth (HTTP 401/403) -> 'LLM auth failed -- check API key in /settings.'; model error (HTTP 404 / 'model' in permanent) -> 'LLM model unavailable -- check model name in /settings.'; unknown -> 'Aura could not reach the LLM. Try again.'",
+        "internal/agent/loop.go:336 emits UserMessageFor(err) instead of literal string",
+        "internal/channels/telegram/chat_client.go:59 + :63 both emit UserMessageFor(err) instead of literal string",
+        "Helper never leaks err.Error() content into the user string (assert via test that the function output is one of N fixed templates)",
+        "Unit tests in internal/llm/usererror_test.go cover all 5 classes via fake errors crafted to match each Classify bucket + sub-pattern",
+        "go build ./... && go vet ./... && go test ./internal/llm/... ./internal/agent/... ./internal/channels/telegram/... green",
+        "Single atomic commit prefix: fix(ux): diagnostic LLM-error messages with class + hint (US-FIX02)"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §1 + §Story RECLAIM01 BEFORE deleting. Verify with grep that no caller appeared since the survey (2026-05-19)."
+      "notes": "Read internal/llm/retry.go + internal/llm/classify.go (or wherever Classify is defined) BEFORE writing the helper. The existing Classify already does 80% of the work -- just need the user-facing mapping layer. NO env flag: this is pure UX, ship enabled. Avoid leaking provider URL, token, or model name into the user string (privacy invariant from CLAUDE.md). Existing retry_test.go references 'Sorry, I could not process your message. Please try again.' at lines 230 + 274 -- those tests will need their fallback constant updated to match the new templates or use a substring matcher; do not weaken the assertion, just update the expected text."
     },
     {
-      "id": "RECLAIM02",
-      "title": "Delete dead retrieval-capsule feature (~200 LOC, MED risk)",
-      "description": "internal/conversation/retrieval_capsule.go (`ComposeRetrievalCapsule` + `RetrievalCapsuleInput` + `DefaultRetrievalCapsuleMaxBytes`) has ZERO production callers — only its own test file. Companion field `RetrievalCapsulePresent` is plumbed through 5 types (agent.Invocation, agent.InvocationResult, agent.Snapshot, agent.TurnStats) but the only production writer hardcodes it to false at internal/channels/telegram/invocation_builder.go:329. Feature was scaffolded ('speculative wiki search results' per CLAUDE.md) but never wired. Either land the feature or delete the skeleton — this story is the delete path. Steps: (1) Delete internal/conversation/retrieval_capsule.go + retrieval_capsule_test.go entirely. (2) Remove RetrievalCapsulePresent field from the 5 types + assignments at runtime.go:226 and session.go:229. (3) Remove field-set at invocation_builder.go:329. (4) Drop assertions in runtime_test.go:28-50 and snapshot_builder_test.go:19-52.",
+      "id": "US-FIX03",
+      "title": "Audit retry wiring + Stream-path coverage + 429 retry test",
+      "description": "Retry is ALREADY wired in cmd/aura/helpers.go:64 via llm.NewRetryClient wrapping the OpenAI client at construction time. agent.ChatClient is the noStreamClient adapter (internal/agent/no_stream_client.go:31) that calls llm.Client.Send -- so every loop.go `client.Chat()` call benefits automatically. This story is AUDIT + COVERAGE, not new wiring. Steps: (1) Grep + verify the path: confirm cmd/aura/helpers.go:64 is the only construction site used in production (vs debug_llm); confirm telegram channel uses the same wrapped client (it should -- it goes through the same agentloop). (2) Read internal/llm/retry.go Stream() -- already implemented at retry.go:116 but verify it is the path Telegram streaming uses (chat_client.go uses streaming). If Telegram bypasses Stream wrapping, that is the bug to fix. (3) Add unit test in internal/llm/retry_test.go: simulate inner client returning HTTP 429 on first call + 200 on second -> assert retry kicks in + jittered backoff observed (mock time or assert callCount). (4) Add probe_chat case (in cmd/probe_chat/cases.go) that forces a transient failure path and verifies the response is not the fallback string. (5) Document the retry config knobs (MaxRetries=5, BaseDelay=1s, MaxDelay=30s from DefaultRetryConfig) in a short comment block above helpers.go:64. If the audit reveals Telegram bypasses the wrapper (Caso B), fix the construction site too.",
       "acceptanceCriteria": [
-        "internal/conversation/retrieval_capsule.go deleted",
-        "internal/conversation/retrieval_capsule_test.go deleted",
-        "Zero `ComposeRetrievalCapsule` or `RetrievalCapsulePresent` references in production code (grep returns 0)",
-        "Zero unused-field warnings from go vet after delete",
-        "go build ./... && go test ./internal/agent/... ./internal/conversation/... ./internal/channels/telegram/... green",
-        "Single atomic commit prefix: chore(legacy): delete dead retrieval-capsule feature (RECLAIM02)"
+        "internal/llm/retry_test.go has new test simulating 429->200 with assertion that retry fired (e.g., inner.callCount == 2 and final response succeeds)",
+        "Audit comment in cmd/aura/helpers.go above NewRetryClient call documents: 'All client.Chat()/Stream() calls inherit retry via this wrap.'",
+        "If Telegram streaming path bypasses RetryClient.Stream, fix at construction site (note in commit msg + add coverage test)",
+        "cmd/probe_chat/cases.go has 1 new case (suggested name: 'transient_llm_retry') that confirms the new test invariant (or a doc-comment update if a full probe round-trip is infeasible for a synthesized 429)",
+        "go build ./... && go vet ./... && go test ./internal/llm/... ./cmd/probe_chat/... green",
+        "Single atomic commit prefix: fix(llm): retry coverage audit + Stream-path test + 429 retry test (US-FIX03)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §2 + §Story RECLAIM02 BEFORE deleting. ~16 grep hits before, expect 0 after. Update CLAUDE.md if it still mentions 'speculative wiki search results' — that's the feature being removed."
+      "passes": false,
+      "notes": "FIX03 is mostly verification: retry is wired at cmd/aura/helpers.go:64 (NewRetryClient) and llm.Client.Send is what noStreamClient.Chat delegates to. The risk is Telegram streaming (chat_client.go uses StreamConsumer / pane.go) -- if that path bypasses RetryClient.Stream, retry does not fire for streaming responses. Grep for `\\.Stream(` to confirm wrap reaches all consumers. Read internal/llm/retry.go BEFORE writing tests. If the probe_chat case is hard to wire (no easy way to inject a 429 from outside the LLM), instead extend an existing unit test in internal/llm/retry_test.go to also cover Stream() path, and document the probe-coverage gap in the commit msg."
     },
     {
-      "id": "RECLAIM03",
-      "title": "Remove TerminalToolFinalizationMessages + collapse 4 duplicate struct shapes (~80 LOC, LOW risk)",
-      "description": "Three sub-deletions: (a) internal/agent/terminal.go:114-121 `TerminalToolFinalizationMessages` — explicit 'retained for callers that compose the finalize prompt themselves' but grep shows ZERO production AND zero debug-harness callers; 3 unit tests keep it alive. Keep `terminalFinalizationPrompt` (used internally), delete only the public wrapper + its 3 tests (TestTerminalToolFinalizationMessagesAppendsPrompt, TestTerminalToolFinalizationMessagesForSearchMemoryInstructsCitation, TestTerminalToolFinalizationMessagesAppendsLLMPrompt). (b) internal/api/maintenance_attempts.go: `PerToolCounts` and `BudgetRow` are field-identical to `ToolOutcomeCounts` and `ToolBudgetRow` in internal/api/types.go. Drop the Row variants, use the JSON-tagged types directly in AttemptsStats, drop the field-by-field copy loops at L133-152. (c) Same in maintenance_authz.go: collapse `CapabilityCountRow` + `RecentDenialRow` into `CapabilityCount` + `RecentDenial`. Net result: 4 staticcheck S1016 issues gone.",
+      "id": "US-FIX01",
+      "title": "Graceful finalize on ALL budget paths (MaxElapsed + empty-LLM + MaxIterations)",
+      "description": "Today `finalizeAnswerAfterBudget` (loop.go:649) is called only from the MaxIterations exit path (loop.go:637) and gated by AllowNoToolFinalization. Three other budget paths emit the generic 'I reached the per-turn budget without a usable result.' string directly via `finalAnswerOnBudget(lastToolResult)`: (a) MaxElapsed loop.go:267; (b) empty-LLM-response no-tool-calls loop.go:354-357; (c) MaxIterations fallback when AllowNoToolFinalization is false or the finalize round itself fails loop.go:643. Story: extract a single helper `gracefulFinalize(ctx, client, state, opts, stats, lastToolResult, stopReason)` that wraps the existing `finalizeAnswerAfterBudget` call + falls back to `finalAnswerOnBudget` if the finalize round returns false. Wire it into all 3 paths (MaxElapsed, empty-LLM, MaxIterations) -- preserving the existing AllowNoToolFinalization gate (only call the LLM-round helper when the flag is true, but ALWAYS pass through the helper so logging + telemetry are uniform). Add a new `stats.StopReason = 'empty_llm_response'` for path (b). Verify `cmd/aura/web_chat.go:162` (and Telegram path) already set AllowNoToolFinalization: true -- extend coverage if not.",
       "acceptanceCriteria": [
-        "TerminalToolFinalizationMessages removed; terminalFinalizationPrompt kept",
-        "3 dependent test functions removed",
-        "PerToolCounts/BudgetRow/CapabilityCountRow/RecentDenialRow collapsed into the canonical Tool*/Capability*/Recent* types from internal/api/types.go",
-        "~/go/bin/golangci-lint run -E staticcheck ./... shows 4 fewer S1016 issues",
-        "go build ./... && go test ./internal/api/... ./internal/agent/... green",
-        "Single atomic commit prefix: chore(legacy): drop TerminalToolFinalizationMessages + collapse maintenance struct duplicates (RECLAIM03)"
+        "New helper in internal/agent/loop.go `gracefulFinalize(...)` that encapsulates: AllowNoToolFinalization -> try finalizeAnswerAfterBudget; on success return text + stats updated; on failure or flag false return finalAnswerOnBudget(lastToolResult) + stats",
+        "MaxElapsed path (loop.go:262-273 region) calls gracefulFinalize instead of finalAnswerOnBudget directly",
+        "Empty-LLM-response path (loop.go:353-357 region) calls gracefulFinalize instead of inlining finalAnswerOnBudget; sets stats.StopReason = 'empty_llm_response'",
+        "MaxIterations exit path (loop.go:629-646 region) refactored to call gracefulFinalize -- same observable behavior as today, just routed through the helper",
+        "loop_test.go has a new test for MaxElapsed path (TestRunLoopMaxElapsedTriggersGracefulFinalize) and empty-LLM path (TestRunLoopEmptyLLMResponseTriggersGracefulFinalize). Existing MaxIterations finalize test remains green (adapt if helper signature changed)",
+        "Production wiring check: confirm Telegram path passes AllowNoToolFinalization: true (grep internal/channels/telegram/ for the opts construction); if it does not, add it",
+        "Probe assertion update: cmd/probe_chat/client.go:410 and cmd/probe_chat/cases.go:1198,1247 -- these match the 'I reached the per-turn budget' legacy string. Adjust the probe failure-mode matcher to accept EITHER the legacy text (still emitted when finalize fails / flag off) OR a sensible LLM-finalized response (any non-empty text without the legacy substring)",
+        "go build ./... && go vet ./... && go test ./internal/agent/... ./cmd/aura/... ./internal/chat/... ./cmd/probe_chat/... green",
+        "Single atomic commit prefix: fix(agent): graceful finalize on all budget paths (US-FIX01)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §3 + §5 + §Story RECLAIM03. Two unrelated deletions packed in one story because both are low-risk + small surface. If the maintenance struct collapse turns out larger than expected, split into RECLAIM03a/03b."
+      "passes": false,
+      "notes": "HIGHEST RISK story of Phase-FIX -- touches 3 hot exit paths in loop.go. Read loop.go fully BEFORE editing (lines 200-680, focus on iteration loop body + budget exits). The flag `AllowNoToolFinalization` is already set true in cmd/aura/web_chat.go:162 -- confirm Telegram path is equivalent. The existing MaxIterations-finalize wiring at loop.go:636-642 is the template -- port that shape to the other 2 paths via the helper. DO NOT change stats.StopReason values for existing paths (they are a stable telemetry contract); just ADD the new 'empty_llm_response' value. Update probe matchers AFTER the loop change so probe runs catch any regression. The helper must NOT call client.Chat() if AllowNoToolFinalization is false -- it must short-circuit to finalAnswerOnBudget."
     },
     {
-      "id": "RECLAIM04",
-      "title": "Inline triple-routing wrappers in telegram tool exec (~20 LOC, LOW risk)",
-      "description": "Three thin-wrapper deletions from the Phase 4/T leftover: (a) Drop internal/telegram/tool_exec_helpers.go:28 `(*Bot).ExecToolCalls` — it's a pure wrapper around lowercase `executeToolCalls`. Inline the body at the call site in internal/channels/telegram/invocation_builder.go:510. (b) The parameters `toolsExposed []string` and `readSkills []string` flow through 3 layers (Bot.ExecToolCalls → executeToolCalls → agent.ExecuteToolCalls) and are never read at the destination. Drop them from both `executeToolCalls` methods. This dead-codes `currentToolNames()` closure at invocation_builder.go:278 — delete it. (c) Drop internal/telegram/conversation_snapshot.go `loadOrchestrationSnapshot` (lowercase, unused outside tests). Inline at the test sites.",
+      "id": "US-FIX04",
+      "title": "Budget fallback message includes last-tool context",
+      "description": "When the graceful finalize from US-FIX01 fails OR AllowNoToolFinalization is false, today the user sees a single generic string from `finalAnswerOnBudget(lastToolResult)` (loop_dedup.go:79): 'I reached the per-turn budget without a usable result.' Story: enrich the fallback string with (a) which budget hit (max_iterations vs max_elapsed vs empty_llm_response) and (b) the last tool name + iteration count so the user has actionable context. Signature change: `finalAnswerOnBudgetWithContext(lastToolResult string, lastToolName string, stopReason string, opts Options) string`. Examples: max_iterations_hit + last tool 'web_search' + 8 iters -> 'Per-turn step cap reached (8 iterations). Last tool: web_search. Try a more specific request.'; max_elapsed_hit + last tool 'workspace_read' -> 'Per-turn time cap reached (5m0s). Last tool: workspace_read. Try a smaller scope or break it up.'; if zero tools called -> 'Per-turn cap reached without invoking any tool. Try rephrasing -- Aura could not pick a tool for this request.' The lastToolName is available from stats.ToolsCalled (last element). Keep the legacy single-arg `finalAnswerOnBudget` available as a thin wrapper for backward compat (no caller change needed beyond the helper definition).",
       "acceptanceCriteria": [
-        "(*Bot).ExecToolCalls removed, body inlined at the call site",
-        "toolsExposed + readSkills parameters dropped from executeToolCalls signatures",
-        "currentToolNames closure at invocation_builder.go:278 removed",
-        "loadOrchestrationSnapshot removed, callers inlined",
-        "go build ./... && go test ./internal/telegram/... ./internal/channels/telegram/... green",
-        "Single atomic commit prefix: chore(legacy): inline triple-routing telegram tool-exec wrappers (RECLAIM04)"
+        "internal/agent/loop_dedup.go: new function finalAnswerOnBudgetWithContext(lastToolResult, lastToolName, stopReason, opts) string with the 3 message variants documented above",
+        "loop.go call sites in MaxElapsed/MaxIterations/empty-LLM fallback paths (inside gracefulFinalize from US-FIX01) use the new contextual helper, passing the last entry of stats.ToolsCalled + stats.StopReason + opts",
+        "Empty-tool-list case ('zero tools called') renders the 'Try rephrasing' variant",
+        "Time format: MaxElapsed shows minutes via opts.MaxElapsed.Round(time.Second).String() (e.g., '5m0s'), not raw nanoseconds",
+        "Existing tests in loop_test.go that asserted on the legacy single-arg string updated to assert on the new contextual strings (use a substring matcher 'Per-turn ... cap reached' tolerant of the new shape; do NOT weaken the assertion)",
+        "go build ./... && go vet ./... && go test ./internal/agent/... ./internal/chat/... green",
+        "Single atomic commit prefix: fix(agent): budget fallback message with last-tool context (US-FIX04)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §4 + §Story RECLAIM04. These wrappers survived Phase 4/T (collapse agent runtime) because nobody noticed they had become pure pass-through after the migration."
-    },
-    {
-      "id": "RECLAIM05",
-      "title": "Collapse constructor chains kept alive only by tests (~30 LOC + test churn, MED risk)",
-      "description": "Three constructor-chain collapses: (a) `NewExecuteCodeTool` → `NewExecuteCodeToolWithSender` → `NewExecuteCodeToolWithStore` → `NewExecuteCodeToolWithStoreAndRegistry` (4 levels, only the last is production). Pick ONE: either collapse to a single constructor + functional options, OR delete the unused (debug-only) variants and update tests to call the production constructor. Default: delete the variants (simpler, less churn). (b) `NewSearchMemoryTool` / `NewSearchMemoryToolWithTimeout` / `NewSearchMemoryToolConfigured` (3 levels) — production uses Configured, debug uses bare, the middle WithTimeout is a 2-line redirect. Delete WithTimeout. (c) Export `toolQdrantPointID` directly by renaming to `ToolQdrantPointID` (or vice-versa, pick canonical), drop the wrapper at internal/agent/tools/registry/registry_search_vector.go:315. Update tests accordingly.",
-      "acceptanceCriteria": [
-        "NewExecuteCodeToolWithSender + NewExecuteCodeToolWithStore + NewExecuteCodeToolWithStoreAndRegistry removed (one canonical constructor remains)",
-        "NewSearchMemoryToolWithTimeout removed",
-        "ToolQdrantPointID wrapper collapsed (only one canonical name remains)",
-        "All tests updated to use canonical constructors; no test deletions beyond what the dropped constructors required",
-        "go build ./... && go test ./internal/agent/tools/registry/... ./cmd/aura/... green",
-        "Single atomic commit prefix: chore(legacy): collapse constructor chains kept alive only by tests (RECLAIM05)"
-      ],
-      "priority": 5,
-      "passes": true,
-      "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §Story RECLAIM05. Test churn is the dominant cost — touching many test files. If it grows past ~30 LOC + ~80 LOC test churn, split into RECLAIM05a/05b/05c (one per chain)."
+      "passes": false,
+      "notes": "Additive, low-risk closer story. Run AFTER FIX01 because the gracefulFinalize helper from FIX01 routes through this fallback. The new helper signature replaces finalAnswerOnBudget at all call sites -- keep the old function name as a deprecated wrapper if any external caller exists (grep first). DO NOT add emoji or markdown to the strings (CLAUDE.md: 'Never use emojis unless asked'). Time formatting: time.Duration.String() returns e.g. '5m0s' for 5 minutes which is fine -- use Round(time.Second) to avoid trailing nanos."
     }
   ]
 }

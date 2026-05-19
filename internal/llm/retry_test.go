@@ -223,11 +223,11 @@ func TestRetry_PermanentNoRetry(t *testing.T) {
 
 // TestRetry_429_RetrySuccess_NoFallback verifies that a 429 rate-limit error is
 // classified as TRANSIENT, retried, and on eventual success the response content
-// is the real LLM reply — never the "Sorry, I couldn't process" fallback
+// is the real LLM reply — never the rate-limited diagnostic fallback
 // emitted at internal/agent/loop.go:336. This guards the /api/chat (web) channel
 // path where noStreamClient.Chat delegates to Send().
 func TestRetry_429_RetrySuccess_NoFallback(t *testing.T) {
-	const fallback = "Sorry, I couldn't process your message. Please try again."
+	const fallback = msgRateLimited
 	const want = "llm reply after rate limit"
 
 	calls := 0
@@ -266,12 +266,12 @@ func TestRetry_429_RetrySuccess_NoFallback(t *testing.T) {
 
 // TestRetry_429_Stream_RetrySuccess_NoFallback verifies that a 429 rate-limit
 // error on the Stream path is classified as TRANSIENT, retried, and on eventual
-// success the streamed content is the real LLM reply — never the "Sorry, I
-// couldn't process" fallback emitted at internal/agent/loop.go:336.
+// success the streamed content is the real LLM reply — never the rate-limited
+// diagnostic fallback emitted at internal/agent/loop.go:336.
 // This guards the Telegram channel path where the agent loop calls
 // retry.Stream() for progressive-edit streaming.
 func TestRetry_429_Stream_RetrySuccess_NoFallback(t *testing.T) {
-	const fallback = "Sorry, I couldn't process your message. Please try again."
+	const fallback = msgRateLimited
 	const want = "streamed reply after rate limit"
 
 	calls := 0
