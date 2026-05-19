@@ -1,105 +1,47 @@
-﻿# Channel Surface — 2026-05-18 — git_head: 3652fdf2
+# Channel Surface — 2026-05-19 — git_head: 4e2eb06d3ce7c02044223b47d5e14a76d15ff4b3
 
-This document maps all four inbound/outbound channels in Aura: their entry points, delivery mechanisms, identity authorization, error paths, and user-visible failure UX.
+This map covers the four inbound/outbound surfaces that can trigger or return Aura conversation work: Telegram, Web `/api/chat`, Cron agent jobs, and Swarm child-agent execution. It follows the current source at `4e2eb06d3ce7c02044223b47d5e14a76d15ff4b3`.
 
----
+## telegram
 
-## Telegram
+- **Inbound entry**: `internal/telegram/handlers.go:27` registers `tele.OnText` to `onMessage`; `internal/telegram/handlers.go:34` starts message handling; `internal/telegram/handlers.go:45` routes accepted text into `routeTelegramContext`; `internal/telegram/handlers.go:49` handles `ask_user` callback choices; `internal/telegram/handlers.go:90` routes callback answers through the same Telegram context path. The turn enters the channel adapter when `routeTelegramContext` calls `b.hub.Receive(b.telegramHubContext(ctx, userID), chat.ChannelTelegram, c)` at `internal/telegram/handlers.go:129`.
+- **Outbound delivery**: `internal/channels/telegram/invocation_builder.go:206` sends the initial placeholder; `internal/channels/telegram/chat_client.go:57` streams LLM output through `Outbound.ConsumeStream`; `internal/channels/telegram/outbound.go:173` consumes stream deltas; `internal/channels/telegram/outbound.go:260` edits the final Telegram message; `internal/channels/telegram/outbound.go:318` sends overflow chunks; `internal/channels/telegram/invocation_builder.go:434` edits or sends the final assistant text when no streaming delivery happened.
+- **Joins chat.Hub at**: `internal/channels/telegram/invocation_builder.go:51` creates the `chat.AgentLoopAdapter`; `internal/channels/telegram/invocation_builder.go:55` creates the `chat.Hub`; `internal/channels/telegram/invocation_builder.go:60` registers the Telegram inbound adapter; `internal/channels/telegram/invocation_builder.go:61` registers the Telegram outbound adapter; `cmd/aura/main.go:364` attaches the hub to the Telegram bot with `bot.SetHub(hub)`.
+- **Authorizer**: Telegram first applies allowlist gating at `internal/telegram/handlers.go:37`. The hub context installs `identity.TelegramSessionActorID(userID)` and `identity.WithAuthority(ctx, b.authDB)` at `internal/telegram/handlers.go:146`. Tool authorization is invoked by `internal/agent/tools/registry/registry.go:342`, which requires an authorizer and calls `authorizer.Authorize` at `internal/agent/tools/registry/registry.go:353`; the concrete `identity.Store.Authorize` path starts at `internal/identity/store_auth.go:180`.
+- **Actor type**: telegram session actor. The actor ID shape is defined by `identity.TelegramSessionActorID` at `internal/identity/store_helpers.go:206`.
+- **Error path**: (a) Hub failure: `internal/chat/hub.go:291` returns lifecycle persistence failures, and `internal/chat/hub.go:371` returns agent-loop errors; Telegram logs hub receive failures at `internal/telegram/handlers.go:130` without sending a channel-level failure message. (b) LLM client failure: `internal/channels/telegram/chat_client.go:58` returns a generic apology when streaming fails; `internal/channels/telegram/chat_client.go:62` does the same when stream consumption fails; the generic result is returned with the error and then `internal/chat/hub.go:365` marks the run failed. (c) Tool execution failure: `internal/channels/telegram/invocation_builder.go:535` delegates tool calls into `agent.ExecuteToolCalls`; `internal/agent/exec_helpers.go:114` classifies and formats tool errors as tool results; `internal/agent/tools/registry/registry.go:318` logs concrete tool execution failures.
+- **Channel-layer retry/backoff**: `internal/telegram/setup.go:50` applies user-gate overflow messaging and `internal/telegram/setup.go:72` applies queued-work messaging. `internal/channels/telegram/invocation_builder.go:208` refreshes typing/status indicators every four seconds. `internal/channels/telegram/outbound.go:53` throttles Telegram edits. `internal/channels/telegram/outbound.go:290` retries edit delivery as plain text when entity parsing fails, and `internal/channels/telegram/outbound.go:318` uses plain-text fallback for extra chunks. There is no Telegram LLM retry beyond the configured LLM `RetryClient` created at `cmd/aura/helpers.go:57`.
+- **User-visible failure UX**: Hub receive failures before an invocation are log-only and the user may see no response. LLM streaming failures surface as `Sorry, I couldn't process that. Please try again.` from `internal/channels/telegram/chat_client.go:59` or `internal/channels/telegram/chat_client.go:63`. Tool failures usually appear as tool-error content inside the model's final answer, with status-pane tool start/end updates from `internal/channels/telegram/invocation_builder.go:394`. Non-allowlisted text messages are dropped after the allowlist check at `internal/telegram/handlers.go:37`; `/start` and login flows return explicit access or pending-approval messages from `internal/telegram/access.go:51`, `internal/telegram/access.go:56`, and `internal/telegram/access.go:70`.
 
-- **Inbound entry**: `internal/telegram/handlers.go:34` — `onMessage()` called by telebot`s `tele.OnText` handler. Validates allowlist, calls `routeTelegramContext()` which acquires a per-user actor via `UserGate.Acquire()` and enqueues a process closure invoking `hub.Receive(chat.ChannelTelegram, tele.Context)`.
+## web
 
-- **Outbound delivery**: `internal/channels/telegram/outbound.go:113` — `ConsumeStream()` reads tokens and progressively edits a Telegram message using `bot.Edit()` with entity-rendered markdown. Progressive edits respect 600ms throttle (`streamingEditThrottle`). Fallback: if entity edit fails, retry with plain text. Final edit strips CoT and status footer. Remainder pages sent via `bot.Send()`.
+- **Inbound entry**: `cmd/aura/main.go:382` mounts the API under `/api/`; `internal/api/router.go:236` registers `POST /chat`; `internal/api/chat.go:54` handles the request. The channel-specific service builds a `chat.InboundMessage` with `chat.ChannelWeb` and deferred delivery at `internal/channels/web/chat_service.go:57`, then enters the hub with `s.hub.ReceiveMessage(ctx, msg)` at `internal/channels/web/chat_service.go:69`.
+- **Outbound delivery**: `internal/channels/web/outbound.go:193` accepts outbound hub events into a per-run buffer; `internal/channels/web/outbound.go:67` accumulates deltas; `internal/channels/web/outbound.go:71` records final text; `internal/channels/web/outbound.go:118` waits for run completion or context cancellation; `internal/api/chat.go:111` writes the successful JSON response.
+- **Joins chat.Hub at**: `cmd/aura/web_chat.go:49` creates the `chat.AgentLoopAdapter`; `cmd/aura/web_chat.go:53` creates the `chat.Hub`; `cmd/aura/web_chat.go:58` registers the web outbound router; `cmd/aura/web_chat.go:59` exposes the hub-backed `ChatService`; `cmd/aura/app_wire.go:462` wires that service into API dependencies.
+- **Authorizer**: Bearer authentication is enforced by `auth.RequireBearer` at `internal/api/router.go:360`. The middleware validates the bearer token and installs an actor at `internal/api/auth/middleware.go:50`; it currently derives that actor with `identity.TelegramSessionActorID(userID)` at `internal/api/auth/middleware.go:86`. The `/api/chat` handler invokes `deps.Auth.Authorize` for `identity.CapabilityAPIChat` at `internal/api/chat.go:82`, then installs the same authority into the chat context at `internal/api/chat.go:95`. Tool authorization is invoked by `internal/agent/tools/registry/registry.go:342`.
+- **Actor type**: web bearer actor by channel semantics. Current code persists the bearer user as the same session-style actor ID returned by `identity.TelegramSessionActorID` at `internal/api/auth/middleware.go:86`.
+- **Error path**: (a) Hub failure: `internal/channels/web/chat_service.go:69` returns `runErr`; a nil run is returned as an error at `internal/channels/web/chat_service.go:70`; completed runs with `runErr` return a partial reply plus error at `internal/channels/web/chat_service.go:80`; `internal/api/chat.go:108` converts non-cancel errors to HTTP 500. (b) LLM client failure: `cmd/aura/web_chat.go:101` rejects missing LLM dependencies; runtime LLM errors propagate from `internal/agent/loop.go:322` through `internal/chat/agentloop.go:224` and `internal/chat/hub.go:365`; `internal/api/chat.go:108` returns `{"error":"chat failed: ..."}`. (c) Tool execution failure: `cmd/aura/web_chat.go:386` executes tool calls; `cmd/aura/web_chat.go:421` classifies tool errors; `cmd/aura/web_chat.go:469` adds formatted tool results back into the conversation; registry-level failures originate at `internal/agent/tools/registry/registry.go:318`.
+- **Channel-layer retry/backoff**: Not detected. The web channel buffers hub events and waits at `internal/channels/web/outbound.go:118`; it does not retry hub, LLM, or tool execution beyond the configured LLM `RetryClient` created at `cmd/aura/helpers.go:57`.
+- **User-visible failure UX**: Authentication failures return JSON errors from `internal/api/auth/middleware.go:55`, `internal/api/auth/middleware.go:71`, and `internal/api/auth/middleware.go:76`. Request validation returns JSON `400`/`403`/`503` errors from `internal/api/chat.go:56`, `internal/api/chat.go:61`, `internal/api/chat.go:65`, and `internal/api/chat.go:74`. Hub/LLM failures return HTTP 500 JSON from `internal/api/chat.go:108`, except context cancellation returns HTTP 408 at `internal/api/chat.go:104`. Tool failures are normally folded into the final model reply as tool-result text and can still produce HTTP 200 if the run completes.
 
-- **Joins chat.Hub at**: `internal/telegram/handlers.go:116` — `hub.Receive(b.telegramHubContext(ctx, userID), chat.ChannelTelegram, c)` inside process closure. Context enriched with actor ID via `identity.TelegramSessionActorID(userID)` and authority via auth database.
+## cron
 
-- **Authorizer**: `internal/telegram/handlers.go:37` — `isAllowlisted(userID)` checks allowlist before routing. Identity authorization via `hub.telegramHubContext()` → `identity.WithAuthority()`, binding bot`s auth DB.
+- **Inbound entry**: `cmd/aura/app.go:93` starts the scheduler; `internal/cron/scheduler.go:167` runs an immediate startup tick; `internal/cron/scheduler.go:171` runs subsequent ticks; `internal/cron/scheduler.go:182` loads due tasks; `internal/cron/scheduler.go:200` dispatches each due task. Agent jobs enter the chat channel through `internal/channels/cron/dispatcher.go:23`, which calls `d.hub.Receive(ctx, chat.ChannelCron, task)` for `cron.KindAgentJob`.
+- **Outbound delivery**: Cron agent jobs use the silent outbound adapter registered by `cmd/aura/app_wire.go:340`. `internal/channels/silent/outbound.go:38` constructs the cron silent adapter; `internal/channels/silent/outbound.go:66` logs error events; `internal/channels/silent/outbound.go:75` logs run completion; no assistant reply is sent to a user by this channel. Non-agent reminder tasks still use the Telegram notifier: `internal/cron/dispatch.go:264` calls `SendReminder`, implemented by `internal/telegram/bot.go:287`.
+- **Joins chat.Hub at**: `cmd/aura/app_wire.go:334` constructs the cron `AgentLoop`; `cmd/aura/app_wire.go:335` creates the cron `chat.Hub`; `cmd/aura/app_wire.go:339` registers the cron inbound adapter; `cmd/aura/app_wire.go:340` registers silent cron outbound; `cmd/aura/app_wire.go:341` creates the hub dispatcher consumed by the scheduler.
+- **Authorizer**: `internal/channels/cron/loop.go:82` delegates a cron actor before running an agent job. It uses a configured `identity.Delegator`; the concrete `identity.Store.DelegateActor` path starts at `internal/identity/store_auth.go:17` and authorizes delegated capabilities at `internal/identity/store_auth.go:34`. Cron delegated capabilities include `identity.CapabilityCronRun` and optionally `identity.CapabilityToolExecute` at `internal/channels/cron/loop.go:115`. Per-tool authorization still goes through `internal/agent/tools/registry/registry.go:342`.
+- **Actor type**: cron delegated actor. `internal/channels/cron/loop.go:101` delegates with `identity.ActorTypeCron`, and `internal/channels/cron/loop.go:109` installs the delegated actor ID into the context.
+- **Error path**: (a) Hub failure: `internal/channels/cron/dispatcher.go:23` returns hub errors to the scheduler; `internal/cron/scheduler.go:207` logs dispatch failures; `internal/cron/scheduler.go:221` persists the dispatch error into task state. (b) LLM client failure: cron agent execution calls `l.runner.RunJob(ctx, job)` at `internal/channels/cron/loop.go:57`; runner errors return at `internal/channels/cron/loop.go:65`, then `internal/chat/hub.go:365` marks the run failed and the scheduler persists the failure. (c) Tool execution failure: the background agent path runs through `internal/agent/runtask.go:80`; tool errors are formatted by `internal/agent/exec_helpers.go:114`; fatal runner errors are returned to `internal/channels/cron/loop.go:65`.
+- **Channel-layer retry/backoff**: The scheduler ticks every 30 seconds by default at `internal/cron/scheduler.go:15`. Dispatch failure does not retry immediately; recurring tasks advance to their next schedule at `internal/cron/scheduler.go:226`, while failed one-shot tasks are marked failed at `internal/cron/scheduler.go:249`. No cron channel retry/backoff wraps the LLM beyond the configured LLM `RetryClient` created at `cmd/aura/helpers.go:57`.
+- **User-visible failure UX**: Cron agent-job failures are not delivered to an end user; they are stored as task/run failure state and logged through `internal/cron/scheduler.go:207` and `internal/channels/silent/outbound.go:66`. Reminder tasks are visible as Telegram messages via `internal/telegram/bot.go:287`; notifier failures become dispatch errors through `internal/cron/dispatch.go:261`.
 
-- **Actor type**: Telegram session actor — `identity.TelegramSessionActorID(userID)`.
+## swarm
 
-- **Error path**:
-  - (a) Hub failure: `internal/telegram/handlers.go:129` — logs "hub receive failed" at error level; handler returns nil.
-  - (b) LLM client failure: `internal/channels/telegram/chat_client.go:59,63` — returns fallback content "Sorry, I couldn`t process your message. Please try again." with error logged.
-  - (c) Tool execution failure: Propagates as `EventError` through Hub to outbound adapter, logged at warn level.
-
-- **Channel-layer retry/backoff**: None; retry delegation to `RetryClient` (5 transient retries with exponential backoff, 3 content retries). Message delivery failures trigger fallback-to-plain-text.
-
-- **User-visible failure UX**: LLM/streaming failure → user sees "Sorry, I couldn`t process your message. Please try again." (internal/channels/telegram/chat_client.go:59,63). Non-allowlisted user → silent drop. Entity render failure → graceful fallback to plain markdown.
-
----
-
-## Web
-
-- **Inbound entry**: `internal/api/chat.go:50` — `handleChat()` HTTP `POST /chat` handler. Parses JSON `{user_id, message}`, validates message, authorizes via `deps.Auth.Authorize()` with capability `CapabilityAPIChat`, calls `deps.Chat.Chat(chatCtx, userID, message)`.
-
-- **Outbound delivery**: `internal/channels/web/outbound.go:193` — Single `Router` adapter (registered once at boot) routes each `OutboundEvent` to per-RunID `Buffer`. Buffer accumulates events into `Result` struct. `ChatService.Chat()` blocks on `buf.Wait(ctx)` until `EventDone`, returns `ChatReply{Reply, ElapsedMs, LLMCalls, ToolCalls, Tokens}`.
-
-- **Joins chat.Hub at**: `internal/channels/web/chat_service.go:69` — `s.hub.ReceiveMessage(ctx, msg)` with synthetic `InboundMessage` (channel=`ChannelWeb`, mode=`DeliveryModeDeferred`).
-
-- **Authorizer**: `internal/api/chat.go:74` — `deps.Auth.Authorize()` checks capability `CapabilityAPIChat` on resource type "api". Caller context enriched with `identity.WithAuthority()`.
-
-- **Actor type**: Web bearer actor — derived from authenticated user ID or request body user_id.
-
-- **Error path**:
-  - (a) Hub failure: `internal/channels/web/chat_service.go:70` — error propagates to handler, returns HTTP 500.
-  - (b) LLM client failure: Agent error surfaces as `EventError`, buffered, returned in `ChatReply`.
-  - (c) Tool execution failure: Same as LLM — buffered and returned in reply.
-
-- **Channel-layer retry/backoff**: None at adapter layer; LLM retry via `RetryClient`.
-
-- **User-visible failure UX**: Success → HTTP 200 with `ChatReply`. Authorization failure → HTTP 403 "missing api.chat grant". Bad request → HTTP 400. Chat failure → HTTP 200 with `ChatReply` containing error text (caller must inspect to detect failure). Timeout → HTTP 408.
-
----
-
-## Cron
-
-- **Inbound entry**: `internal/channels/cron/dispatcher.go:23` — `NewHubDispatcher()` wraps `cron.Dispatcher`. On task with `task.Kind == cron.KindAgentJob`, calls `hub.Receive()` which invokes `cronadapter.InboundAdapter.Normalize()` to convert `*cron.Task` to `InboundMessage` with channel=`ChannelCron`, mode=`DeliveryModeSilent`.
-
-- **Outbound delivery**: `internal/channels/silent/outbound.go:66` — `Deliver()` consumes `OutboundEvent`. `EventError` → logs at warn with run_id, thread_id, error text. `EventDone` → logs at info. `EventUsage` → logs at info with stats. No user notification; silent-mode tasks log to structured logs only.
-
-- **Joins chat.Hub at**: `internal/channels/cron/dispatcher.go:25` — `hub.Receive(ctx, chat.ChannelCron, task)`.
-
-- **Authorizer**: `internal/channels/cron/loop.go:52–112` — `CronAgentLoop.delegateCronActor()` calls `DelegateActor()` to create delegated actor with type `ActorTypeCron`. Parent actor required; tool allowlist enforced via delegated capabilities and constraints.
-
-- **Actor type**: Cron delegated actor — `identity.DelegatedActorID(identity.ActorTypeCron, parentActorID, scopeID)`.
-
-- **Error path**:
-  - (a) Hub failure: Error returned to cron scheduler; retry logic outside Hub.
-  - (b) LLM client failure: Handled inside `CronAgentLoop.Run()`, propagates as error from `runner.RunJob()`.
-  - (c) Tool execution failure: Error from `RunJob()`, emitted as `EventError`.
-
-- **Channel-layer retry/backoff**: None; cron scheduler owns retry. LLM-level retry via `RetryClient`.
-
-- **User-visible failure UX**: Success → silent, no message to user, logged at info. Failure → silent, logged at warn. No user notification; operator discovers via log monitoring.
-
----
-
-## Swarm
-
-- **Inbound entry**: `internal/swarm/hub_bridge.go:38–52` — `HubBridge.Run()` constructs synthetic `InboundMessage` with channel=`ChannelSwarm`, mode=`DeliveryModeSilent`, ParentRunID set to parent run ID, calls `hub.ReceiveMessage(ctx, msg)`. Alternatively, `HubBridge.Dispatch()` (line 59–87) constructs message with ChannelData carrying NodeSpec fields for one-way dispatch.
-
-- **Outbound delivery**: `internal/channels/silent/outbound.go` — Swarm uses silent adapter. Logs errors at warn, completion at info. Result captured in `run.Metadata["final_text"]` for parent to read.
-
-- **Joins chat.Hub at**: `internal/swarm/hub_bridge.go:46` — `hub.ReceiveMessage(ctx, msg)`. Hub records parent→child lineage via `run.Metadata["parent_run_id"]`.
-
-- **Authorizer**: `internal/chat/hub.go:340–351` — Before dispatch, `h.authorizeSwarmDispatch(ctx, msg, actorID)` checks authorization. Failure → `EventError` with payload {"error": "swarm_dispatch_denied"}, status `RunStatusFailed`.
-
-- **Actor type**: Swarm child actor — spawned from parent`s actor context via delegation. Child inherits parent`s authority model.
-
-- **Error path**:
-  - (a) Hub failure (authorization denied): `internal/chat/hub.go:341–350` — emits `EventError`, sets status `RunStatusFailed`, returns error to caller.
-  - (b) LLM client failure: Propagates as error from `hub.ReceiveMessage()` to `HubBridge.Run()` caller.
-  - (c) Tool execution failure: Same as LLM.
-
-- **Channel-layer retry/backoff**: None; swarm manager owns child-run retry policy. LLM-level retry via `RetryClient`.
-
-- **User-visible failure UX**: Success → result in `run.Metadata["final_text"]`, returned as `agent.Result.Content`. Authorization denied → parent receives error, must handle rendering. LLM/tool failure → parent receives error or partial result, must decide retry/escalation; no automatic user notification from Hub.
-
----
-
-## Cross-Channel Patterns
-
-**Authorization boundary**: All channels invoke authorization at distinct layers — Telegram allowlist + session actor, Web bearer token + capability check, Cron delegated actor with constraints, Swarm pre-dispatch authz + parent→child delegation.
-
-**Error handling strategy**: Hub collects errors into `run.Status` and `run.LastError` (durable), emits `EventError` opaquely, sets terminal status. LLM retry centralized in `RetryClient` (5 transient, 3 content). Channel-layer retry is nil; adapters log and let caller decide escalation.
-
-**Silent vs. streaming**: Telegram streams; web defers; cron and swarm are silent (logs only). This governs which adapters register for each channel`s delivery mode.
+- **Inbound entry**: Swarm work is triggered from LLM tool calls. The AuraBot manager tools are registered at `cmd/aura/app.go:451`; `internal/agent/tools/swarm/tools.go:71` executes `run_aurabot_swarm`; `internal/agent/tools/swarm/tools.go:202` executes `spawn_aurabot`. The subagent bridge tool is registered at `cmd/aura/main.go:366`; `internal/agent/tools/registry/subagent.go:193` routes `subagent_dispatch` actions; `internal/agent/tools/registry/subagent.go:301` spawns child nodes.
+- **Outbound delivery**: Direct AuraBot swarm tools return structured tool JSON to the parent agent at `internal/agent/tools/swarm/tools.go:122` and `internal/agent/tools/swarm/tools.go:248`. Subagent bridge children return child run IDs from `internal/agent/tools/registry/subagent.go:337`; collection waits for child runs at `internal/agent/tools/registry/subagent.go:362` and formats readable results at `internal/agent/tools/registry/subagent.go:375`. Child `chat.ChannelSwarm` runs use the silent outbound adapter from `internal/channels/silent/outbound.go:43`, so child messages are not sent directly to the user.
+- **Joins chat.Hub at**: The subagent bridge path joins the Telegram hub through `cmd/aura/main.go:366`, which builds `swarm.NewHubBridge(hub, "")`; `internal/swarm/hub_bridge.go:63` builds a `chat.ChannelSwarm` message; `internal/swarm/hub_bridge.go:79` calls `b.hub.ReceiveMessage(ctx, msg)`. Direct AuraBot manager tools do not join `chat.Hub`; `cmd/aura/adapters.go:143` runs child assignments through `agent.RunTask`.
+- **Authorizer**: Swarm tools require `identity.CapabilitySwarmSpawn` via `RequiredCapability` at `internal/agent/tools/swarm/tools.go:45` and `internal/agent/tools/swarm/tools.go:162`; the registry enforces this through `internal/agent/tools/registry/registry.go:342`. Manager child runs delegate `identity.ActorTypeSwarm` at `internal/swarm/manager.go:256` and install the delegated actor at `internal/swarm/manager.go:273`. Hub-bridged swarm dispatch performs an additional authorization check in `internal/chat/hub_swarm.go:92`, calls `authz.Authorize` at `internal/chat/hub_swarm.go:101`, and checks per-tool grants at `internal/chat/hub_swarm.go:119`.
+- **Actor type**: swarm child actor. Direct manager children use delegated `ActorTypeSwarm` from `internal/swarm/manager.go:256`; hub-bridged children carry `chat.ChannelSwarm` and tool grants through `internal/swarm/hub_bridge.go:63`.
+- **Error path**: (a) Hub failure: hub-bridge dispatch returns errors at `internal/swarm/hub_bridge.go:80`; `internal/agent/tools/registry/subagent.go:324` turns dispatch failures into node errors; direct manager runner failures mark tasks failed at `internal/swarm/manager.go:202` and mark the run failed at `internal/swarm/manager.go:221`. (b) LLM client failure: direct child runs call `agent.RunTask` at `cmd/aura/adapters.go:143`; LLM errors propagate from `internal/agent/runtask.go:96`, then manager failure handling runs at `internal/swarm/manager.go:202`. Hub child LLM errors propagate through `internal/chat/hub.go:365`; `internal/agent/tools/registry/subagent.go:362` reports failed child waits during collection. (c) Tool execution failure: child tool errors are formatted by `internal/agent/exec_helpers.go:114`; direct tool-result summaries are included by `internal/agent/tools/swarm/tools.go:464`; registry authorization or execution failures originate at `internal/agent/tools/registry/registry.go:342` and `internal/agent/tools/registry/registry.go:318`.
+- **Channel-layer retry/backoff**: Not detected. Swarm bounds execution with concurrency and timeouts instead: `internal/swarm/manager.go:151` uses the `maxActive` semaphore, `internal/agent/tools/swarm/delegation_policy.go:33` defines default worker timeout and result limits, and `internal/chat/hub_swarm.go:35` polls child run completion every 200ms. No swarm channel retry/backoff wraps LLM calls beyond the configured LLM `RetryClient` created at `cmd/aura/helpers.go:57`.
+- **User-visible failure UX**: Direct AuraBot swarm failures return tool JSON with `ok: false`, `status`, and `last_error` fields from `internal/agent/tools/swarm/tools.go:122`. Subagent spawn failures return a tool error from `internal/agent/tools/registry/subagent.go:337`; collection failures are rendered as markdown error lines at `internal/agent/tools/registry/subagent.go:375`. Child run output is silent unless the parent agent summarizes the tool JSON or collected markdown in its own final channel reply.

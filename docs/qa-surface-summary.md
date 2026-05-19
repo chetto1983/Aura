@@ -1,98 +1,125 @@
-# QA Surface Summary — 2026-05-18 — git_head: 3652fdf2
+# QA Surface Summary - 2026-05-19 - git_head: 4e2eb06d3ce7c02044223b47d5e14a76d15ff4b3
 
-Phase 1 synthesis of the Aura Q&A pipeline. Cross-references the three surveyor inventories produced this run.
+Phase 1 synthesis for the Aura Q&A pipeline. This phase is static discovery plus orchestrator spot-checking only; no live chat probe cases were executed.
 
 ## Inputs
 
-| File | Lines | Bytes | Surveyor agent |
-|------|-------|-------|----------------|
-| `docs/qa-tool-surface.md` | 56 | 11098 | gsd-codebase-mapper (retry — Explore was read-only) |
-| `docs/qa-channel-surface.md` | 105 | 8702 | Explore (wrote on first attempt) |
-| `docs/qa-failure-modes.md` | 33 | 17825 | gsd-codebase-mapper |
+| Artifact | Role | Result |
+|---|---|---|
+| `.planning/qa/run-head.txt` | pinned run head | `4e2eb06d3ce7c02044223b47d5e14a76d15ff4b3` |
+| `docs/qa-tool-surface.md` | LLM-callable tool inventory | 23 verified tools |
+| `docs/qa-channel-surface.md` | ingress/channel inventory | telegram, web, cron, swarm |
+| `docs/qa-failure-modes.md` | dependency and internal failure-mode matrix | external + internal modes mapped |
+| `.planning/qa/lint-baseline.json` | existing lint debt baseline | 55 issues |
 
-## Headline counts
+Previous Phase 1 inventories were versioned before this run:
 
-**Tool surface** (per `docs/qa-tool-surface.md` count summary):
-- 19 production static-registry tools (consolidated picobot surface — `file`, `source`, `web`, `doc` aggregate the sub-verbs via `action=` enum, not as separate registrations)
-- 4 swarm tools (gated by `AURABOT_ENABLED=true`)
-- N MCP-dynamic tools (operator-configured via `mcp.json`; discovery at `internal/mcp/client.go:203 loadTools()`, registration loop at `cmd/aura/app.go:493-505`)
-- 0 standalone curated-set tools (sets are role-allowlists referencing static-registry names)
-- 0 standalone skill-manifest tools (skills surface via `file` tool `action=read` against `SKILLS_PATH`, then enveloped as `read_skill` synthetic name in `internal/agent/untrusted.go:24`)
-- TOTAL: 23 + N
+- `docs/qa-tool-surface-previous.md`
+- `docs/qa-channel-surface-2026-05-18.md`
+- `docs/qa-failure-modes-previous.md`
+
+## Headline Counts
+
+Tool surface, per `docs/qa-tool-surface.md`:
+
+- static-registry: 19
+- curated-set: 0
+- skill-manifest: 0
+- mcp-dynamic: 0 configured in this workspace
+- swarm: 4
+- TOTAL: 23
 - `total_verified: true`
 
-**Channel surface**: 4 channels — telegram, web, cron, swarm. All converge at `chat.Hub.dispatch()`. LLM retry centralized in `RetryClient` (5 transient retries + 3 content retries); zero channel-layer retry.
+Channel surface, per `docs/qa-channel-surface.md`:
 
-**Failure-mode surface**:
-- 7 external dependencies mapped (qdrant, embedding sidecar, searxng, garage, mistral OCR, openai-compat LLM, MCP servers; **replicate not wired**, marked as planning-only)
-- 10 internal failure modes mapped (MaxElapsed, MaxIterations, empty LLM resp, tool-call parse error, sandbox unavailable, capability deny, phantom tool, dup-tool dedup, 429, transient net)
-- **7 cells flagged `STATIC-ANALYSIS-INSUFFICIENT`**: code reading alone cannot prove user-visible impact; needs live probe of running container
+- telegram inbound path
+- web `/api/chat` path
+- cron agent-job dispatch path
+- swarm hub bridge path
 
-## Spot-checks performed (rule 3 — verifiers re-derive from code, do not trust agent text)
+Failure-mode surface, per `docs/qa-failure-modes.md`:
 
-3 random rows verified per surveyor:
+- External dependency modes include Qdrant, embedding provider, SearxNG, Garage, Mistral OCR, OpenAI-compatible LLM, and MCP servers.
+- Internal modes include max elapsed, max iterations, empty LLM response, malformed tool call, sandbox unavailable, capability denial, phantom tool, duplicate tool result deduplication, 429 rate limiting, and transient network failure.
 
-**Tool surface — verified**:
-- `create_xlsx` row → `internal/agent/tools/registry/files_xlsx.go:35` (Name) + `:99` (Execute). Both resolve. ✓
-- `search_memory` row → `internal/agent/tools/registry/memory_search.go:161` (Execute). Resolves. ✓
-- `run_aurabot_swarm` row → `internal/agent/tools/swarm/tools.go:71` (Execute). Resolves. ✓
+Lint baseline:
 
-**Channel surface — verified**:
-- Telegram inbound `handlers.go:34` → `func (b *Bot) onMessage(c tele.Context) error` at exact line. ✓
-- Telegram `tele.OnText` handler registration at `handlers.go:27`. ✓
-- "Sorry, I couldn't process..." string at `internal/channels/telegram/chat_client.go:59,63`. Cross-checked earlier in this session — exists. ✓
+- `errcheck`: 50
+- `govet`: 2
+- `ineffassign`: 1
+- `staticcheck`: 2
+- total: 55
 
-**Failure-mode surface — verified**:
-- `MaxElapsedHit` field at `internal/agent/loop.go:189-190`. ✓
-- `MaxElapsedHit = true` at `loop.go:264` (table cites range 262-274). ✓
-- `MaxIterationsHit = true` at `loop.go:629`. ✓
-- Phantom guard log at `loop.go:363+` and `phantom_guard.go:90-123`. ✓
+Existing lint debt is the baseline for later QA phases; the pipeline must not increase it.
 
-All spot-checks pass. No surveyor re-dispatch needed.
+## Orchestrator Spot Checks
 
-## Cross-references and contradictions
+The orchestrator re-derived representative rows from source instead of trusting surveyor text.
 
-**No contradictions across the three inventories.** Cross-reference points that agree:
+Tool surface checks:
 
-- Channel-surface telegram error path (b) → `chat_client.go:59,63` matches failure-modes "LLM client failure" path
-- Channel-surface telegram outbound at `outbound.go:113` (600ms throttle) → consistent with phantom-tool failure-mode user-visible UX ("Telegram edits ~600ms throttle")
-- Failure-modes MCP-server boot is non-fatal at `cmd/aura/app.go:475` → tool-surface MCP discovery loop at `app.go:493-505` (same boot phase)
+- `file` resolves to `internal/agent/tools/registry/file.go:178`
+- `web` resolves to `internal/agent/tools/registry/web.go:115`
+- `execute_code` resolves to `internal/agent/tools/registry/exec.go:129`
+- `subagent_dispatch` resolves to `internal/agent/tools/registry/subagent.go:193`
 
-## Open questions surfaced
+Channel surface checks:
 
-Items that surveyors flagged as needing follow-up:
+- Telegram entry resolves to `internal/telegram/handlers.go:103`
+- Web chat entry resolves to `internal/channels/web/chat_service.go:57`
+- Cron agent-job dispatch resolves to `internal/channels/cron/dispatcher.go:13` and `internal/channels/cron/dispatcher.go:25`
+- Swarm hub bridge resolves to `internal/swarm/hub_bridge.go:59`
 
-1. **MCP tool count** is dynamic (depends on `mcp.json`). Phase 2 auditor needs to enumerate the LIVE runtime to get an exact count for the coverage matrix.
-2. **7 `STATIC-ANALYSIS-INSUFFICIENT` cells** in failure-modes — these require live probes to confirm user-visible impact:
-   - MaxElapsed wrap-up wording (does it acknowledge cap or pretend complete?)
-   - 429 burst retry latency
-   - Phantom-text replacement clean vs leaving residue in Telegram
-   - Plus 4 more
-3. **Replicate** is in planning docs but not wired — should be added to Phase-MM scope or removed from surveyor inventory next run.
+Failure-mode checks:
 
-## Pipeline-meta findings (skill v5 must address)
+- Qdrant health check resolves to `internal/storage/qdrant/client.go:58` and requests `/readyz`
+- Mistral OCR env key resolves to `internal/config/config.go:147` and `internal/config/config.go:306`
+- Malformed tool call classification resolves to `internal/llm/classify.go:30` and `internal/llm/classify.go:93`
+- Duplicate tool results resolve to `internal/agent/loop_dedup.go:25`
+- Max-iteration and phantom-tool paths resolve to `internal/agent/loop.go:189`, `internal/agent/loop.go:363`, and `internal/agent/loop.go:629`
 
-Two issues surfaced during Phase 1 execution that reveal **skill defects** to fix:
+## Repair Note
 
-1. **`subagent_type: Explore` is unreliable for surveyors.** Documented as read-only but in practice Surveyor-B wrote a file successfully while Surveyor-A failed. The skill says fallback is `gsd-codebase-mapper`; **promote it to primary** for surveyor roles. Re-dispatched Surveyor-A and Surveyor-C with `gsd-codebase-mapper` — both succeeded reliably.
-2. **Pre-flight bundles Phase 1 with Phase 2+ requirements.** Phase 1 is pure codebase read — does not need `AURA_CHAT_TOKEN`. Skill should make the token check Phase-2-onwards only, with a separate pre-Phase-2 gate.
+The first `docs/qa-failure-modes.md` pass contained stale or imprecise static references. A repair pass corrected:
 
-These two go into skill v5 changelog.
+- nonexistent `internal/agent/tools/registry/execute_code.go` references to `internal/agent/tools/registry/exec.go`
+- nonexistent `MISTRAL_BASE_URL` references to `MISTRAL_OCR_BASE_URL`
+- Garage credential wording
+- OCR client line ranges
 
-## Phase 1 verdict
+The orchestrator then verified that `docs/qa-failure-modes.md` no longer contains `execute_code.go` or `MISTRAL_BASE_URL`.
 
-**COMPLETE.** All four artifacts exist, all stop conditions met:
-- ✅ 3 surface inventories written with valid file:line refs
-- ✅ Spot-checks (≥3 rows per surveyor) pass
-- ✅ This summary cross-references all three
-- ✅ Git HEAD pinned in `.planning/qa/run-head.txt`
+## Phase 1 Verdict
 
-## Next phase
+PASS.
 
-Phase 2 (coverage audit) is gated on `AURA_CHAT_TOKEN` because it requires running `cmd/probe_chat -json` against the live `/api/chat` to capture `baseline-run.json`. The token mint via DB INSERT was blocked by the auto-mode classifier (correctly — it's a self-grant credential operation). User decision needed:
+Stop conditions met:
 
-- **Option A**: User authorizes the DB INSERT (mint a token by hashing a random plaintext + INSERT into `api_tokens` for user_id 1148481707). Quick, reversible.
-- **Option B**: User issues a token out-of-band via Telegram `/login` to the bot and shares the plaintext. Canonical flow.
-- **Option C**: User shares an existing token (from .env, password manager, etc.).
+- Three current surface inventories exist.
+- Prior inventories were preserved with versioned names.
+- Tool count is explicit and verified.
+- Representative rows were spot-checked from source.
+- Lint baseline was captured before live QA.
+- Git HEAD was pinned in `.planning/qa/run-head.txt`.
 
-Once token is set, Phase 2 dispatches 2 Auditor agents in parallel against the new surface inventories.
+## Phase 2 Readiness
+
+Ready:
+
+- `http://localhost:18080/health` returns `{"status":"alive"}` via `curl.exe`.
+- Docker services are running: `aura`, `qdrant`, and `searxng`.
+- Phase 1 artifacts are available for coverage-auditor agents.
+
+Blocked:
+
+- `AURA_CHAT_TOKEN` is missing, so the live `cmd/probe_chat -json` baseline must not run yet.
+
+Next command once a valid token is available:
+
+```powershell
+go run ./cmd/probe_chat -json
+```
+
+Expected Phase 2 first artifact:
+
+- `docs/qa-runs/baseline-run.json`

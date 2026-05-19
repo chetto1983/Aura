@@ -65,7 +65,9 @@ Closed or closable phase state captured in this sweep:
 
 Still open / not green:
 
-- Phase08 and Phase09 remain planned or scaffolded.
+- Phase08 now has a reconciled source-backed draft folder after the 2026-05-19
+  OpenHuman study, but it is not verified or ready for implementation.
+- Phase09 remains planned/scaffolded.
 - `Phase01/subphases/Phase01_Stabilize_Map` remains an orientation scaffold,
   not a separate verified implementation gate.
 
@@ -137,11 +139,16 @@ PhaseNN_Description/
 
 ## Next Operating Step
 
-Current canonical next slice: promote Phase08 or Phase09 before implementation.
-Phase07D, Phase07E, and Phase07F are closed with deterministic tests, live/chat
-`cmd/probe_chat` probes, and full repo gates. Before starting Phase08 or
-Phase09, promote its self-audited scaffold into a source-backed plan and
-benchmark.
+Current canonical next slice: promote Phase08's reconciled draft into a verified
+implementation plan before coding. The RECLAIM queue and Phase-OP+ queue are
+closed as of 2026-05-19; Phase-OP+ completed all seven stories
+US-OP10/07/09/06/11/12/12b with local `go test ./...`, `go vet ./...`, and
+`go build ./...` gates green. Phase07D, Phase07E, Phase07F, Phase-R, and
+Phase-S are closed with deterministic tests, live/chat `cmd/probe_chat` probes,
+and repo gates. Phase08 is no longer blocked as a whole on a concrete recurring
+workload; the workload gate now applies only to formal Hybrid DAG conditionals.
+The first candidate slice is US-P8-G payload summarizer, pending independent
+verification of `D:/Aura/.planning/deep-refactor/Phase08_Cron_And_Swarm_RunGraph`.
 
 Use `$aura-plan-builder` when the selected phase or sub-phase is still a
 self-audited scaffold, missing source/plan/benchmark coverage, or needs

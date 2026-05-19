@@ -1268,14 +1268,16 @@ After Phase-Z closes the bounded PRD backlog (7C completion + 7D/E/F admin +
 Phase 9 hardening), the next milestones are derived from two strategic
 decisions taken 2026-05-17:
 
-**Decision 1 — Phase 8 full substrate DE-SCOPED with re-open condition.**
-Phase-R (read-only fanout) + Phase-S (write_proposal) are sufficient for
-Aura's actual use as a single-user second-brain. The remaining Phase 8 scope
-(team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) is
-explicitly de-scoped until a **concrete recurring workload** requires it.
-Candidate use case: market research (decompose competitor research → parallel
-search → aggregate → critic review → publish). Phase 8 substrate is then
-designed *on top of that workload* rather than abstractly.
+**Decision 1 — Phase 8 substrate RE-OPENED for bounded non-hybrid work.**
+Phase-R (read-only fanout) + Phase-S (write_proposal) are sufficient for basic
+delegation, but the 2026-05-18 OpenHuman study showed that the useful remaining
+substrate is smaller than the original estimate. The concrete-workload gate now
+applies only to formal Hybrid DAG conditionals. Aura skips that pattern for now
+and uses batch re-planning instead. The re-opened bounded substrate is:
+payload summarizer, ownership/per-task context, tier/depth validation,
+planner JSON-DAG, critic review, and retry-with-feedback. Team collaboration,
+full cron RunGraph migration, and formal Hybrid DAG remain separate future
+closures when an actual workload proves they are needed.
 
 **Decision 2 — Plugin-shaped layout, no marketplace.**
 Aura's substrate is genuinely domain-agnostic (capability gates, tool
@@ -1294,7 +1296,7 @@ Davide's own use across multiple domains before opening externally.
 | **Phase-FIX** | UX error messages: graceful finalize on ALL budget paths (not just MaxToolCalls), diagnostic LLM-error messages, wire `internal/llm/retry.go` to every `client.Chat()` for 429/transient, surface MaxIterations hit with context (last tool + suggestion) | ~1 | After Phase-Z |
 | **Phase-MM** | Multimodal core: audio IN (Whisper), image IN (vision API), audio OUT (TTS), image OUT (generation) | ~4 | After Phase-FIX |
 | **Phase-U** | Plugin layout: plugin manifest format + loader + extract Davide's personality as a plugin + 1 sample plugin for a different domain (validation) | ~4-6 | After Phase-MM |
-| **Phase 8** | Multi-agent substrate (planner + critic + DAG) anchored to a concrete workload (market research or similar). Designed bottom-up from the workload | ~6-12 | When user names the concrete workload |
+| **Phase 8** | Reconciled multi-agent substrate: payload summarizer, ownership/per-task context, tier/depth lift, planner JSON-DAG, critic/retry; skip formal Hybrid DAG | ~2-3 minimum, ~8 full triad | After current cleanup/OP+ or parallel with Phase-MM; no workload gate except Hybrid DAG |
 
 **Why Phase-FIX before Phase-MM:** Two generic fallback strings surface on
 budget/error paths today — `"I reached the per-turn budget without a usable
@@ -1626,12 +1628,15 @@ Manual controls remain for bootstrap, debug, and explicit operator override.
 They are not the architecture and cannot be used as the only proof that Aura is
 autonomous.
 
-Planning status as of 2026-05-17: Phase07C-F are closed for their bounded
-subphase scopes, so Phase08 can be promoted next from its planning material. It
-is not `ready-for-implementation` until the open decisions are accepted or
-deliberately changed and the first benchmarkable runtime slice is locked.
-Phase08 consumes context capsule handles and does not implement remaining
-GraphRAG freshness or projection-quality work.
+Planning status as of 2026-05-19: Phase07C-F, Phase-R, and Phase-S are closed
+for their bounded scopes. Phase08 has been reconciled against the OpenHuman
+study in `docs/openhuman-multiagent-patterns-2026-05-18.md` and
+`docs/openhuman-harness-architecture-2026-05-18.md`. It is no longer blocked
+as a whole on a concrete recurring workload. It is still not
+`ready-for-implementation` until the first slice has a source-backed
+`plan.md`, `source.md`, `benchmark.md`, and an independent verification pass.
+Phase08 consumes existing child-run and proposal semantics and does not
+implement remaining GraphRAG freshness or projection-quality work.
 
 Reference maps: legacy `docs/*-reference-map.md` files and
 `.planning/deep-refactor/Phase08_*/` were removed 2026-05-19 (see git history
@@ -1689,29 +1694,33 @@ Swarm:
 - persists orchestration traces for spawn, delegate, task create/claim/complete, mailbox message, message/workspace update, tool call, return, aggregate, plan approval, stop, retry, cancellation, and budget events,
 - evaluates swarm by critical path, task quality, useful-agent utilization, protocol overhead, useful-message ratio, blocked-task latency, error amplification, cost, and trace debuggability rather than number of agents.
 
-Implementation order:
+Implementation order after the 2026-05-19 reconciliation:
 
-- **8A Planning and decision lock**: source-backed plan, benchmark contract, PRD
-  coverage matrix, independent verifier; done as a discussion-ready plan on
-  2026-05-16.
-- **8B Durable work substrate**: additive storage/contracts for `RunGraph`,
-  nodes, edges, context capsule refs, task board, mailbox, plan approvals, and
-  metadata-first trace events; no production dispatch change.
-- **8C Swarm child runs through normalized runtime**: production swarm work
-  creates canonical child `runs` or workflow-backed steps and cannot complete
-  only inside `swarm.Manager`.
-- **8D ScheduleFire store and policy**: materialize due work before execution
-  with `scheduled_task_fires`, schedule version, idempotency, missed/coalesced
-  policy, overlap defaults, retry, and cancellation state.
-- **8E Cron execution migration**: move `agent_job`, `run_now`, reminders, wiki
-  maintenance, source-watch, and silent jobs behind fire/run/workflow/outbox
-  semantics while preserving current user-visible behavior until benchmarks pass.
-- **8F Team collaboration runtime**: named teammates, race-safe task claiming,
-  durable addressed mailbox, plan approval gates, budget limits, and team trace
-  events.
-- **8G Autonomous runtime E2E and observability**: prove non-manual due/policy
-  work, policy approvals, restart safety, trace replay, and background-job
-  observability from SQLite rows.
+- **8A Reconciliation and benchmark lock**: source-backed phase folder,
+  benchmark contract, PRD coverage matrix, and independent verifier. The
+  reconciliation decision is recorded on 2026-05-19; verification remains
+  required before implementation.
+- **US-P8-G Payload summarizer**: replace hard truncation of oversized tool
+  results with a summarizer sub-agent or equivalent LLM compression contract,
+  preserving identifiers, source handles, errors, and key facts. This is the
+  first implementation slice because it is useful even without deeper Phase 8.
+- **US-P8-A Ownership/per-task context**: add explicit ownership boundaries and
+  per-task context fields to `spawn_parallel_agents` style dispatch.
+- **US-P8-D Tier and depth lift**: introduce agent tier metadata, loader or
+  registry validation, and lift the current depth ceiling from one level to a
+  bounded three-tier shape where workers are leaves.
+- **US-P8-B1 Planner JSON-DAG**: add a planner archetype that emits a strict
+  JSON DAG plus a validator and topological walker.
+- **US-P8-C Critic review**: add a critic prompt and one bounded retry loop when
+  critic output flags medium-or-higher issues.
+- **US-P8-F Retry-with-feedback**: generalize recoverable tool/subagent errors
+  into explicit bounded retry feedback.
+- **Deferred**: formal Hybrid DAG conditional branching. Re-plan after each
+  batch instead. Re-open formal branching only when a concrete workload proves
+  batch re-planning is insufficient.
+- **Deferred full-runtime work**: schedule-fire migration, team task board,
+  durable mailbox, and full autonomous runtime E2E remain Phase 8 follow-ons,
+  not blockers for the reconciled minimum viable substrate.
 
 Open decisions before implementation:
 
@@ -1723,7 +1732,7 @@ Open decisions before implementation:
   `scheduled_tasks`,
 - `NodeSpec.curated_context`: default to immutable capsule reference and
   metadata, not inline source bytes or Phase07C retrieval-owned state,
-- first implementation slice: default to Phase08B durable work substrate,
+- first implementation slice: default to US-P8-G payload summarizer,
 - `run_now` response: preserve synchronous semantics initially by waiting for
   terminal fire/run state,
 - reminder migration: do not remove direct reminder delivery until
@@ -1758,16 +1767,18 @@ Gate:
 **Phase 8 first-slice closed 2026-05-16 (read-only fanout subagent dispatch).** Phase-R
 (US-R01..R04) wired the read-only fanout primitive: NodeSpec + HubBridge.Dispatch +
 WaitForRun + `subagent_dispatch` LLM tool. Capability #5 from the "Aura come Claude
-Code" brainstorm is now closed. Full Phase 8 remaining scope (8B durable substrate,
-8C swarm normalization, 8D–8E cron migration, 8F team collaboration, 8G autonomous
-E2E) remains explicitly deferred.
+Code" brainstorm is now closed. The reconciled minimum viable Phase 8 substrate
+is no longer deferred as a whole; start from US-P8-G payload summarizer after
+the phase folder is verified.
 
 **Phase 8 second slice closed 2026-05-16 (write_proposal workers via propose_patch + TTL sweep).** Phase-S
 (US-S01..S04) extended the fanout primitive with `RiskTier='write_proposal'`: `propose_patch` tool
 (wiki / user_memory / operational actions, sha256[:16] idempotency, provenance), NodeSpec allowlist
 enforcement via `DirectWriteToolNames`, `subagent_dispatch` optional `risk_tier` per node, E2E
 integration test, and `SweepStaleProposals` TTL cron (daily 03:00, 30-day pending-only purge).
-Full Phase 8 (team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) remains deferred.
+Plan-execute, critic-review, and bounded hierarchy are re-opened as the
+reconciled Phase 8 substrate. Formal Hybrid DAG conditionals, full team
+collaboration, and cron RunGraph migration remain deferred follow-ons.
 
 ### Phase 9 - Memory and Source Discipline
 
