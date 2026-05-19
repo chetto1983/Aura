@@ -62,7 +62,6 @@ type Snapshot struct {
 	ToolsExposed            []string
 	ToolsCalled             []string
 	ReadSkills              []string
-	RetrievalCapsulePresent bool
 	LoopSteps               int
 	LLMCalls                int
 	ToolCalls               int
@@ -226,7 +225,6 @@ func NewSnapshotFromTurnStats(stats TurnStats, now time.Time) Snapshot {
 		ToolsExposed:            append([]string(nil), stats.ToolsExposed...),
 		ToolsCalled:             append([]string(nil), stats.ToolsCalled...),
 		ReadSkills:              append([]string(nil), stats.ReadSkills...),
-		RetrievalCapsulePresent: stats.RetrievalCapsulePresent,
 		LoopSteps:               stats.LoopSteps,
 		LLMCalls:                stats.LLMCalls,
 		ToolCalls:               stats.ToolCalls,

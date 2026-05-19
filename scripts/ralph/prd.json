@@ -32,7 +32,7 @@
         "Single atomic commit prefix: chore(legacy): delete dead retrieval-capsule feature (RECLAIM02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §2 + §Story RECLAIM02 BEFORE deleting. ~16 grep hits before, expect 0 after. Update CLAUDE.md if it still mentions 'speculative wiki search results' — that's the feature being removed."
     },
     {

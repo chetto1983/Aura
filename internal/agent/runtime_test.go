@@ -25,7 +25,6 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 		Toolset:                 "registered",
 		ToolsetSelectReason:     "test",
 		Tools:                   []llm.ToolDefinition{{Name: "search_memory"}},
-		RetrievalCapsulePresent: true,
 		Options:                 Options{MaxIterations: 1},
 		OnEvent: func(event Event) {
 			events = append(events, event)
@@ -45,9 +44,6 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 	}
 	if result.Toolset != "registered" || result.ToolsetSelectReason != "test" {
 		t.Fatalf("result toolset = %q/%q, want registered/test", result.Toolset, result.ToolsetSelectReason)
-	}
-	if !result.RetrievalCapsulePresent {
-		t.Fatal("RetrievalCapsulePresent = false, want true")
 	}
 	if len(events) < 3 {
 		t.Fatalf("events = %+v, want tools/stats/final", events)

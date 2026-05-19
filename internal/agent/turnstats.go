@@ -15,7 +15,6 @@ type TurnStats struct {
 	ToolsExposed            []string
 	ToolsCalled             []string
 	ReadSkills              []string
-	RetrievalCapsulePresent bool
 	SkillsRead              bool
 	SwarmUsed               bool
 	SandboxUsed             bool

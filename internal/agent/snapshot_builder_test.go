@@ -16,7 +16,6 @@ func TestNewSnapshotFromTurnStatsAllFieldsPropagate(t *testing.T) {
 		ToolsExposed:            []string{"tool-x", "tool-y"},
 		ToolsCalled:             []string{"tool-x"},
 		ReadSkills:              []string{"skill-1"},
-		RetrievalCapsulePresent: true,
 		LoopSteps:               3,
 		LLMCalls:                4,
 		ToolCalls:               2,
@@ -47,9 +46,6 @@ func TestNewSnapshotFromTurnStatsAllFieldsPropagate(t *testing.T) {
 	}
 	if snap.ToolsetSelectReason != "all tools exposed" {
 		t.Fatalf("ToolsetSelectReason = %q", snap.ToolsetSelectReason)
-	}
-	if snap.RetrievalCapsulePresent != true {
-		t.Fatal("RetrievalCapsulePresent = false, want true")
 	}
 	if snap.LoopSteps != 3 || snap.LLMCalls != 4 || snap.ToolCalls != 2 {
 		t.Fatalf("counters = steps %d llm %d tool %d", snap.LoopSteps, snap.LLMCalls, snap.ToolCalls)

@@ -76,7 +76,6 @@ type Invocation struct {
 	ToolsetSelectReason     string
 	Tools                   []llm.ToolDefinition
 	ToolsProvider           func() []llm.ToolDefinition
-	RetrievalCapsulePresent bool
 	Options                 Options
 	OnEvent                 func(Event)
 	// Logger is the structured logger every Run uses. Nil falls back to
@@ -98,7 +97,6 @@ type InvocationResult struct {
 	Toolset                 string
 	ToolsetSelectReason     string
 	ToolsExposed            []string
-	RetrievalCapsulePresent bool
 }
 
 func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
@@ -223,7 +221,6 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 		Toolset:                 in.Toolset,
 		ToolsetSelectReason:     in.ToolsetSelectReason,
 		ToolsExposed:            append([]string(nil), toolsExposed...),
-		RetrievalCapsulePresent: in.RetrievalCapsulePresent,
 	}
 	level := slog.LevelInfo
 	if err != nil {
