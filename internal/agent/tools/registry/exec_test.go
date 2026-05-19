@@ -14,7 +14,7 @@ import (
 )
 
 func TestExecuteCodeTool_NilManager(t *testing.T) {
-	tool := tools.NewExecuteCodeTool(nil)
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(nil, nil, nil, nil)
 	if tool != nil {
 		t.Fatal("expected nil tool when manager is nil")
 	}
@@ -27,7 +27,7 @@ func TestExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := tools.NewExecuteCodeTool(manager)
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(manager, nil, nil, nil)
 	desc := tool.Description()
 	for _, want := range []string{"Use create_xlsx/create_docx/create_pdf", "for simple documents", "AURA_OUT_DIR", "computed artifacts"} {
 		if !strings.Contains(desc, want) {
@@ -65,7 +65,7 @@ func (f *fakeSandboxExecutor) Execute(_ context.Context, code string, _ bool) (*
 
 func TestExecuteCodeToolAcceptsExecutorInterface(t *testing.T) {
 	executor := &fakeSandboxExecutor{result: &sandbox.Result{OK: true, Stdout: "ok", ExitCode: 0, ElapsedMs: 1}}
-	tool := tools.NewExecuteCodeTool(executor)
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(executor, nil, nil, nil)
 	if tool == nil {
 		t.Fatal("expected execute_code tool")
 	}
@@ -134,7 +134,7 @@ func TestExecuteCodeTool_DeliversArtifacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	sender := &execArtifactSender{}
-	tool := tools.NewExecuteCodeToolWithSender(manager, sender)
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(manager, sender, nil, nil)
 	if tool == nil {
 		t.Fatal("tool = nil")
 	}
@@ -183,7 +183,7 @@ func TestExecuteCodeTool_PersistsArtifactsAsSources(t *testing.T) {
 		t.Fatal(err)
 	}
 	sender := &execArtifactSender{}
-	tool := tools.NewExecuteCodeToolWithStore(manager, sender, store)
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(manager, sender, store, nil)
 	if tool == nil {
 		t.Fatal("tool = nil")
 	}
@@ -242,7 +242,7 @@ func TestExecuteCodeTool_PersistedScriptArtifactIsReadableSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tool := tools.NewExecuteCodeToolWithStore(manager, nil, store)
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(manager, nil, store, nil)
 	if tool == nil {
 		t.Fatal("tool = nil")
 	}

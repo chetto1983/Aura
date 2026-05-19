@@ -86,7 +86,7 @@ func TestSetupSandboxRuntime_ProcessRunnerEnablesCodeAndShell(t *testing.T) {
 	if mgr == nil {
 		t.Fatal("manager = nil, want configured manager")
 	}
-	if tools.NewExecuteCodeTool(mgr) == nil {
+	if tools.NewExecuteCodeToolWithStoreAndRegistry(mgr, nil, nil, nil) == nil {
 		t.Fatal("execute_code not registered with process runtime")
 	}
 	if tools.NewExecuteShellTool(mgr) == nil {

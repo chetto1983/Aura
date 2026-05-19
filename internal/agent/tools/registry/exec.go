@@ -26,25 +26,6 @@ type ExecuteShellTool struct {
 	manager sandbox.CommandExecutor
 }
 
-// NewExecuteCodeTool creates the execute_code tool. Returns nil if manager
-// is nil (sandbox not available).
-func NewExecuteCodeTool(manager sandbox.Executor) *ExecuteCodeTool {
-	return NewExecuteCodeToolWithStore(manager, nil, nil)
-}
-
-// NewExecuteCodeToolWithSender creates execute_code with optional artifact
-// delivery. The sender is used only when sandbox code emits artifacts.
-func NewExecuteCodeToolWithSender(manager sandbox.Executor, sender DocumentSender) *ExecuteCodeTool {
-	return NewExecuteCodeToolWithStore(manager, sender, nil)
-}
-
-// NewExecuteCodeToolWithStore creates execute_code with optional artifact
-// delivery and source persistence. The store is used only when sandbox code
-// emits artifacts.
-func NewExecuteCodeToolWithStore(manager sandbox.Executor, sender DocumentSender, sourceStore source.Writer) *ExecuteCodeTool {
-	return NewExecuteCodeToolWithStoreAndRegistry(manager, sender, sourceStore, nil)
-}
-
 // NewExecuteCodeToolWithStoreAndRegistry creates execute_code with optional
 // artifact delivery, source persistence, and bounded internal tool orchestration.
 func NewExecuteCodeToolWithStoreAndRegistry(manager sandbox.Executor, sender DocumentSender, sourceStore source.Writer, registry *Registry) *ExecuteCodeTool {

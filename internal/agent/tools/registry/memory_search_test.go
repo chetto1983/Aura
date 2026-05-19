@@ -292,7 +292,7 @@ func TestSearchMemoryToolWithTimeoutPassesDeadlineToWikiSearch(t *testing.T) {
 		Content: "search_memory calls should receive a bounded context.",
 		Score:   0.9,
 	}}}
-	tool := NewSearchMemoryToolWithTimeout(wiki, nil, 50*time.Millisecond)
+	tool := NewSearchMemoryToolConfigured(wiki, nil, 50*time.Millisecond, recencyHalfLifeWikiDays, recencyHalfLifeArchiveDays)
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "bounded memory", "scope": "wiki"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
@@ -309,7 +309,7 @@ func TestSearchMemoryToolWithTimeoutPassesDeadlineToWikiSearch(t *testing.T) {
 }
 
 func TestSearchMemoryToolWithTimeoutReturnsWarningOnWikiTimeout(t *testing.T) {
-	tool := NewSearchMemoryToolWithTimeout(blockingMemoryWikiSearch{}, nil, 10*time.Millisecond)
+	tool := NewSearchMemoryToolConfigured(blockingMemoryWikiSearch{}, nil, 10*time.Millisecond, recencyHalfLifeWikiDays, recencyHalfLifeArchiveDays)
 	start := time.Now()
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "slow qdrant", "scope": "wiki"})
 	if err != nil {

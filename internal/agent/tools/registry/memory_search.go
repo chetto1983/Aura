@@ -85,14 +85,7 @@ func (t *SearchMemoryTool) SetFreshnessStore(fs freshnessGetter) {
 }
 
 func NewSearchMemoryTool(wiki search.Searcher, compact compactMemorySearcher) *SearchMemoryTool {
-	return NewSearchMemoryToolWithTimeout(wiki, compact, searchMemoryDefaultTimeout)
-}
-
-// NewSearchMemoryToolWithTimeout uses the package-default half-lives. Callers
-// that need to override them (typically wiring from config) should use
-// NewSearchMemoryToolConfigured instead.
-func NewSearchMemoryToolWithTimeout(wiki search.Searcher, compact compactMemorySearcher, timeout time.Duration) *SearchMemoryTool {
-	return NewSearchMemoryToolConfigured(wiki, compact, timeout, recencyHalfLifeWikiDays, recencyHalfLifeArchiveDays)
+	return NewSearchMemoryToolConfigured(wiki, compact, searchMemoryDefaultTimeout, recencyHalfLifeWikiDays, recencyHalfLifeArchiveDays)
 }
 
 // NewSearchMemoryToolConfigured is the env-driven constructor. wikiHalfLife

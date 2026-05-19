@@ -74,9 +74,9 @@ func TestToolVectorIndexNilHealth(t *testing.T) {
 }
 
 func TestToolQdrantPointID(t *testing.T) {
-	id1 := toolQdrantPointID("execute_code")
-	id2 := toolQdrantPointID("execute_code")
-	id3 := toolQdrantPointID("execute_shell")
+	id1 := ToolQdrantPointID("execute_code")
+	id2 := ToolQdrantPointID("execute_code")
+	id3 := ToolQdrantPointID("execute_shell")
 	if id1 != id2 {
 		t.Fatalf("same name produced different ids: %q vs %q", id1, id2)
 	}

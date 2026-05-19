@@ -80,7 +80,7 @@
         "Single atomic commit prefix: chore(legacy): collapse constructor chains kept alive only by tests (RECLAIM05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Read docs/legacy-deletion-survey-2026-05-19.md §Story RECLAIM05. Test churn is the dominant cost — touching many test files. If it grows past ~30 LOC + ~80 LOC test churn, split into RECLAIM05a/05b/05c (one per chain)."
     }
   ]

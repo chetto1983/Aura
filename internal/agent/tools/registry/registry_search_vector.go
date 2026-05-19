@@ -313,10 +313,6 @@ func (idx *ToolVectorIndex) embed(ctx context.Context, texts []string) ([][]floa
 // Exported so toolindex.Reconciler can compute it the same way as the
 // search-side reader.
 func ToolQdrantPointID(name string) string {
-	return toolQdrantPointID(name)
-}
-
-func toolQdrantPointID(name string) string {
 	sum := sha256.Sum256([]byte("tool:" + name))
 	b := make([]byte, 16)
 	copy(b, sum[:16])
