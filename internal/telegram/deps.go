@@ -25,6 +25,7 @@ import (
 	"github.com/aura/aura/internal/storage/reindex"
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/audio"
 	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
@@ -67,6 +68,7 @@ type botRuntime struct {
 	agentNoteStore      *agentnote.Store
 	attemptsRepo        attempts.Repo
 	memoryStore         *memoryindex.Store
+	voicePolicy         audio.Store
 }
 
 // Deps holds the pre-built dependencies a Bot needs at construction time.
@@ -142,6 +144,10 @@ type Deps struct {
 	// ---- Budget -------------------------------------------------------------
 	Budget budget.Runtime
 
+	// ---- Audio policy -------------------------------------------------------
+	// VoicePolicy stores per-chat TTS mode (migration v23). Nil = all off.
+	VoicePolicy audio.Store
+
 	// ---- Agent note ---------------------------------------------------------
 	AgentNoteStore *agentnote.Store
 
@@ -173,6 +179,7 @@ func NewBot(deps Deps) *Bot {
 		budget:              deps.Budget,
 		agentNoteStore:      deps.AgentNoteStore,
 		attemptsRepo:        deps.AttemptsRepo,
+		voicePolicy:         deps.VoicePolicy,
 	}
 	return &Bot{
 		bot:    deps.Bot,

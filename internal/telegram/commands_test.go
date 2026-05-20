@@ -8,8 +8,11 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/audio"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
+	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/testutil"
 	"github.com/aura/aura/internal/agent/tools/registry"
 	tele "gopkg.in/telebot.v4"
 )
@@ -215,4 +218,164 @@ func (t commandFakeTool) Parameters() map[string]any {
 
 func (t commandFakeTool) Execute(context.Context, map[string]any) (string, error) {
 	return "ok", nil
+}
+
+// newVoiceBot creates a Bot wired with a real SQLiteStore (migration v23) for /voice tests.
+func newVoiceBot(t *testing.T, tb *tele.Bot) (*Bot, *audio.SQLiteStore) {
+	t.Helper()
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store := audio.NewSQLiteStore(db)
+	b := &Bot{
+		bot:    tb,
+		cfg:    &config.Config{Allowlist: []string{"123"}, AllowlistConfigured: true},
+		rt:     &botRuntime{voicePolicy: store},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	return b, store
+}
+
+func TestVoiceCommand_SetOn(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, store := newVoiceBot(t, tb)
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender:  &tele.User{ID: 123},
+		Chat:    &tele.Chat{ID: 123},
+		Text:    "/voice on",
+		Payload: "on",
+	}})
+	if err := b.onVoice(ctx); err != nil {
+		t.Fatalf("onVoice() error = %v", err)
+	}
+	mode, _ := store.Get(context.Background(), "123")
+	if mode != audio.ModeAll {
+		t.Errorf("voice mode = %q, want %q", mode, audio.ModeAll)
+	}
+	if got := countTelegramMethods(calls, "sendMessage"); got != 1 {
+		t.Fatalf("sendMessage calls = %d, want 1", got)
+	}
+	text, _ := calls[0].Body["text"].(string)
+	if !strings.Contains(text, "voce") {
+		t.Errorf("reply = %q, expected Italian voce confirmation", text)
+	}
+}
+
+func TestVoiceCommand_SetTTS(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, store := newVoiceBot(t, tb)
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender:  &tele.User{ID: 123},
+		Chat:    &tele.Chat{ID: 123},
+		Text:    "/voice tts",
+		Payload: "tts",
+	}})
+	if err := b.onVoice(ctx); err != nil {
+		t.Fatalf("onVoice() error = %v", err)
+	}
+	mode, _ := store.Get(context.Background(), "123")
+	if mode != audio.ModeVoiceOnly {
+		t.Errorf("voice mode = %q, want %q", mode, audio.ModeVoiceOnly)
+	}
+}
+
+func TestVoiceCommand_SetOff(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, store := newVoiceBot(t, tb)
+	ctx := context.Background()
+	// pre-set to all so we can verify it changes back to off
+	_ = store.Set(ctx, "123", audio.ModeAll)
+
+	tCtx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender:  &tele.User{ID: 123},
+		Chat:    &tele.Chat{ID: 123},
+		Text:    "/voice off",
+		Payload: "off",
+	}})
+	if err := b.onVoice(tCtx); err != nil {
+		t.Fatalf("onVoice() error = %v", err)
+	}
+	mode, _ := store.Get(ctx, "123")
+	if mode != audio.ModeOff {
+		t.Errorf("voice mode = %q, want %q", mode, audio.ModeOff)
+	}
+}
+
+func TestVoiceCommand_NoArgShowsCurrent(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, store := newVoiceBot(t, tb)
+	_ = store.Set(context.Background(), "123", audio.ModeVoiceOnly)
+
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender:  &tele.User{ID: 123},
+		Chat:    &tele.Chat{ID: 123},
+		Text:    "/voice",
+		Payload: "",
+	}})
+	if err := b.onVoice(ctx); err != nil {
+		t.Fatalf("onVoice() error = %v", err)
+	}
+	if got := countTelegramMethods(calls, "sendMessage"); got != 1 {
+		t.Fatalf("sendMessage calls = %d, want 1", got)
+	}
+	text, _ := calls[0].Body["text"].(string)
+	// reply must show current mode + usage
+	if !strings.Contains(text, "Modalità voce") {
+		t.Errorf("reply = %q, missing mode status", text)
+	}
+	if !strings.Contains(text, "/voice on") {
+		t.Errorf("reply = %q, missing usage hint", text)
+	}
+}
+
+func TestVoiceCommand_UnknownArgUsage(t *testing.T) {
+	var calls []telegramAPICall
+	srv := newTelegramAPIServer(t, &calls)
+	defer srv.Close()
+	tb, err := tele.NewBot(tele.Settings{URL: srv.URL, Token: "test", Offline: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := newVoiceBot(t, tb)
+	ctx := tele.NewContext(tb, tele.Update{Message: &tele.Message{
+		Sender:  &tele.User{ID: 123},
+		Chat:    &tele.Chat{ID: 123},
+		Text:    "/voice blah",
+		Payload: "blah",
+	}})
+	if err := b.onVoice(ctx); err != nil {
+		t.Fatalf("onVoice() error = %v", err)
+	}
+	text, _ := calls[0].Body["text"].(string)
+	if !strings.Contains(text, "/voice on") {
+		t.Errorf("usage reply = %q, missing /voice on", text)
+	}
+	if !strings.Contains(text, "/voice tts") {
+		t.Errorf("usage reply = %q, missing /voice tts", text)
+	}
+	if !strings.Contains(text, "/voice off") {
+		t.Errorf("usage reply = %q, missing /voice off", text)
+	}
 }

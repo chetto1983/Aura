@@ -26,6 +26,7 @@ func (b *Bot) registerHandlers() {
 	b.bot.Handle("\f"+AskUserCallbackUnique, b.onAskUserCallback)
 	b.bot.Handle(tele.OnText, b.onMessage)
 	b.bot.Handle("/status", b.onStatus)
+	b.bot.Handle("/voice", b.onVoice)
 	if b.docs != nil {
 		b.bot.Handle(tele.OnDocument, b.docs.onDocument)
 	}

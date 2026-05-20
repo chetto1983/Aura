@@ -578,12 +578,12 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 22 {
-		t.Fatalf("applied versions = %v, want 22 migrations", first)
+	if len(first) != 23 {
+		t.Fatalf("applied versions = %v, want 23 migrations", first)
 	}
 	for i, got := range first {
 		if want := i + 1; got != want {
-			t.Fatalf("applied versions = %v, want contiguous 1..22", first)
+			t.Fatalf("applied versions = %v, want contiguous 1..23", first)
 		}
 	}
 }

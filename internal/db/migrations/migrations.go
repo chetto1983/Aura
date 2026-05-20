@@ -38,6 +38,7 @@ var registered = []Migration{
 	{Version: 20, Name: "add_run_event_origin", Up: addRunEventOrigin},
 	{Version: 21, Name: "add_compact_memory_priority", Up: addCompactMemoryPriority},
 	{Version: 22, Name: "add_compact_memory_recall_decay", Up: addCompactMemoryRecallDecay},
+	{Version: 23, Name: "add_chat_settings_voice_mode", Up: addChatSettingsVoiceMode},
 }
 
 type columnDef struct {
@@ -1338,6 +1339,20 @@ func migrateMistralAPIKeyToSecrets(ctx context.Context, tx *sql.Tx) error {
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM settings WHERE key = 'MISTRAL_API_KEY'`); err != nil {
 		return fmt.Errorf("migrations: clear mistral setting: %w", err)
+	}
+	return nil
+}
+
+func addChatSettingsVoiceMode(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS chat_settings (
+  chat_id    TEXT PRIMARY KEY,
+  voice_mode TEXT NOT NULL DEFAULT 'off' CHECK(voice_mode IN ('off','voice_only','all')),
+  updated_at TEXT NOT NULL
+);
+`)
+	if err != nil {
+		return fmt.Errorf("migrations: add chat_settings: %w", err)
 	}
 	return nil
 }

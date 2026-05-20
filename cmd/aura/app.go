@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent/tools/attempts"
+	"github.com/aura/aura/internal/audio"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
 	"github.com/aura/aura/internal/agentnote"
@@ -531,6 +532,7 @@ func newApp(
 	}
 	deps.RunStore = runStore
 	deps.AttemptsRepo = attempts.NewSQLiteRepo(pool)
+	deps.VoicePolicy = audio.NewSQLiteStore(pool)
 
 	// ---- Budget tracker -----------------------------------------------------
 	deps.Budget = budget.NewTracker(budget.Config{

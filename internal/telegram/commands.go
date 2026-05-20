@@ -1,10 +1,12 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"github.com/aura/aura/internal/audio"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -54,6 +56,73 @@ func (b *Bot) onHelp(c tele.Context) error {
 		"/login - token dashboard",
 		"/start - accesso e onboarding",
 	}, "\n"))
+}
+
+// onVoice handles the /voice command.
+// /voice on → ModeAll (voice + text), /voice tts → ModeVoiceOnly, /voice off → ModeOff.
+// /voice with no argument shows the current mode and usage.
+func (b *Bot) onVoice(c tele.Context) error {
+	userID := strconv.FormatInt(c.Sender().ID, 10)
+	if !b.isAllowlisted(userID) {
+		return nil
+	}
+	chatID := strconv.FormatInt(c.Chat().ID, 10)
+	store := b.voicePolicyStore()
+	arg := strings.TrimSpace(c.Message().Payload)
+
+	if arg == "" {
+		mode, err := store.Get(context.Background(), chatID)
+		if err != nil {
+			b.logger.Warn("voice policy get failed", "chat_id", chatID, "error", err)
+			mode = audio.ModeOff
+		}
+		return c.Send(voiceModeStatus(mode) + "\n\n" + voiceModeUsage())
+	}
+
+	var newMode audio.Mode
+	switch arg {
+	case "on":
+		newMode = audio.ModeAll
+	case "tts":
+		newMode = audio.ModeVoiceOnly
+	case "off":
+		newMode = audio.ModeOff
+	default:
+		return c.Send(voiceModeUsage())
+	}
+
+	if err := store.Set(context.Background(), chatID, newMode); err != nil {
+		b.logger.Warn("voice policy set failed", "chat_id", chatID, "error", err)
+		return c.Send("Errore nell'aggiornamento della modalità voce.")
+	}
+	return c.Send("Modalità voce ora: " + voiceModeLabel(newMode))
+}
+
+// voicePolicyStore returns the voice policy store, falling back to NoopStore when nil.
+func (b *Bot) voicePolicyStore() audio.Store {
+	if b.rt != nil && b.rt.voicePolicy != nil {
+		return b.rt.voicePolicy
+	}
+	return audio.NoopStore{}
+}
+
+func voiceModeLabel(m audio.Mode) string {
+	switch m {
+	case audio.ModeAll:
+		return "voce + testo"
+	case audio.ModeVoiceOnly:
+		return "solo voce"
+	default:
+		return "off"
+	}
+}
+
+func voiceModeStatus(m audio.Mode) string {
+	return "Modalità voce attuale: " + voiceModeLabel(m)
+}
+
+func voiceModeUsage() string {
+	return "Opzioni: /voice on (voce + testo) · /voice tts (solo voce) · /voice off (solo testo)"
 }
 
 func (b *Bot) onTools(c tele.Context) error {
