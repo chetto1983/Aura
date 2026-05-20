@@ -41,7 +41,7 @@
         "Single atomic commit prefix: feat(wiki): wiki_path tool + /api/wiki/path BFS shortest-path (US-WIKI-A02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: read internal/wiki/graph_index.go Neighbors() (lines ~181-221) — it already does BFS with frontier expansion; ShortestPath shares the structure but adds parent tracking + early termination on hitting `to`. Standard textbook BFS — use map[string]string parent + queue ([]string or []struct{slug string; depth int}). HOLD RLock for the entire BFS (single read transaction). Path reconstruction: walk parent map backwards from `to` to `from`, reverse the slice. NO PRIORITY QUEUE — unweighted graph, BFS suffices. DO NOT change Neighbors() or the existing methods. DO NOT introduce a 'depth' field on NodeMeta. The narration string for the tool result is for the LLM consumer — keep it short and factual ('slug-a -> slug-b -> slug-c (2 hops)'), no emoji, no markdown. NO frontend widget in this story — A01 owns the visual surface; this is tool + API only (the LLM uses it via tool calls). If the user wants a 'Show path between two pages' panel, that's a follow-up. PROBE COVERAGE: optional — add a probe_chat case (cmd/probe_chat/cases.go) that uses wiki_path against a known-stable pair in the live wiki only if the case can be made non-flaky; otherwise document the deferral in the commit message."
     },
     {

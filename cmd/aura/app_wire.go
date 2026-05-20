@@ -301,6 +301,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if t := tools.NewRecallGodNodesTool(a.deps.WikiStore); t != nil {
 		a.deps.Tools.Register(t)
 	}
+	if t := tools.NewWikiPathTool(a.deps.WikiStore); t != nil {
+		a.deps.Tools.Register(t)
+	}
 
 	// ---- Cron scheduler -----------------------------------------------------
 	// Build a Handler from injected deps so cron no longer depends on *Bot directly.

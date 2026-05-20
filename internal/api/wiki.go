@@ -212,6 +212,50 @@ func handleWikiGodNodes(deps Deps) http.HandlerFunc {
 	}
 }
 
+func handleWikiPath(deps Deps) http.HandlerFunc {
+	type pathProvider interface {
+		WikiPath(from, to string, maxHops int) []string
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		provider, ok := deps.Wiki.(pathProvider)
+		if !ok {
+			writeError(w, deps.Logger, http.StatusNotImplemented, "wiki path not available")
+			return
+		}
+		from := strings.TrimSpace(r.URL.Query().Get("from"))
+		to := strings.TrimSpace(r.URL.Query().Get("to"))
+		if from == "" || to == "" {
+			writeError(w, deps.Logger, http.StatusBadRequest, "from and to query parameters required")
+			return
+		}
+		if !isValidSlug(from) || !isValidSlug(to) {
+			writeError(w, deps.Logger, http.StatusBadRequest, "invalid slug")
+			return
+		}
+		maxHops := 5
+		if s := r.URL.Query().Get("max_hops"); s != "" {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 || n > 20 {
+				writeError(w, deps.Logger, http.StatusBadRequest, "max_hops must be an integer between 1 and 20")
+				return
+			}
+			maxHops = n
+		}
+		path := provider.WikiPath(from, to, maxHops)
+		if len(path) == 0 {
+			writeJSON(w, deps.Logger, http.StatusOK, map[string]any{
+				"path":   nil,
+				"reason": strconv.Itoa(maxHops) + " hops limit reached — no path found",
+			})
+			return
+		}
+		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{
+			"path": path,
+			"hops": len(path) - 1,
+		})
+	}
+}
+
 // latestWikiMTime walks dir non-recursively and returns the newest .md
 // modification time, or zero if no pages exist.
 func latestWikiMTime(dir string) (time.Time, error) {

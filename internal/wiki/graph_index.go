@@ -301,3 +301,77 @@ func (g *GraphIndex) NodeCount() int {
 	defer g.mu.RUnlock()
 	return len(g.meta)
 }
+
+// ShortestPath returns the shortest undirected path (slug chain inclusive of
+// both endpoints) between from and to within maxHops hops. Returns nil when:
+//   - g is nil, maxHops ≤ 0, from or to absent from the index, or no path
+//     exists within maxHops hops.
+//
+// Returns [from] when from == to (and from is in the index).
+// BFS expands both outbound and inbound edges (same traversal as Neighbors).
+// The entire BFS runs under a single RLock.
+func (g *GraphIndex) ShortestPath(from, to string, maxHops int) []string {
+	if g == nil || maxHops <= 0 {
+		return nil
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	if _, ok := g.meta[from]; !ok {
+		return nil
+	}
+	if _, ok := g.meta[to]; !ok {
+		return nil
+	}
+	if from == to {
+		return []string{from}
+	}
+
+	// BFS with parent tracking. parent[slug] = the slug we arrived from.
+	// from is seeded with a sentinel so it's marked visited before the loop.
+	parent := map[string]string{from: ""}
+	queue := []string{from}
+
+	for hop := 0; hop < maxHops && len(queue) > 0; hop++ {
+		var next []string
+		for _, s := range queue {
+			for t := range g.outbound[s] {
+				if _, visited := parent[t]; visited {
+					continue
+				}
+				parent[t] = s
+				if t == to {
+					return graphReconstructPath(parent, from, to)
+				}
+				next = append(next, t)
+			}
+			for t := range g.inbound[s] {
+				if _, visited := parent[t]; visited {
+					continue
+				}
+				parent[t] = s
+				if t == to {
+					return graphReconstructPath(parent, from, to)
+				}
+				next = append(next, t)
+			}
+		}
+		queue = next
+	}
+	return nil
+}
+
+// graphReconstructPath walks the parent map backwards from to → from and
+// returns the reversed (correct-order) slug chain.
+func graphReconstructPath(parent map[string]string, from, to string) []string {
+	path := []string{to}
+	cur := to
+	for cur != from {
+		cur = parent[cur]
+		path = append(path, cur)
+	}
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
+	}
+	return path
+}

@@ -61,3 +61,13 @@ func (s *Store) TopNodes(topK int) []GodNode {
 	}
 	return s.graphIndex.TopByDegree(topK)
 }
+
+// WikiPath returns the shortest undirected path between two page slugs,
+// forwarding to GraphIndex.ShortestPath. Returns nil when no path exists
+// within maxHops or the store has no graph index.
+func (s *Store) WikiPath(from, to string, maxHops int) []string {
+	if s == nil || s.graphIndex == nil {
+		return nil
+	}
+	return s.graphIndex.ShortestPath(from, to, maxHops)
+}

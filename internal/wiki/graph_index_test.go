@@ -310,6 +310,89 @@ func TestGraphIndex_Depth2BallparkOnSyntheticChain(t *testing.T) {
 	}
 }
 
+func TestShortestPath_SameNode(t *testing.T) {
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "body", nil),
+	})
+	got := g.ShortestPath("alpha", "alpha", 5)
+	if len(got) != 1 || got[0] != "alpha" {
+		t.Fatalf("same-node path = %v, want [alpha]", got)
+	}
+}
+
+func TestShortestPath_DirectNeighbor(t *testing.T) {
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "[[beta]]", nil),
+		"beta":  makeTestPage("Beta", "leaf", nil),
+	})
+	got := g.ShortestPath("alpha", "beta", 5)
+	want := []string{"alpha", "beta"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("direct path = %v, want %v", got, want)
+	}
+}
+
+func TestShortestPath_3HopChain(t *testing.T) {
+	// alpha -> beta -> gamma -> delta
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "[[beta]]", nil),
+		"beta":  makeTestPage("Beta", "[[gamma]]", nil),
+		"gamma": makeTestPage("Gamma", "[[delta]]", nil),
+		"delta": makeTestPage("Delta", "leaf", nil),
+	})
+	got := g.ShortestPath("alpha", "delta", 5)
+	want := []string{"alpha", "beta", "gamma", "delta"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("3-hop path = %v, want %v", got, want)
+	}
+}
+
+func TestShortestPath_NoPath(t *testing.T) {
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "body", nil),
+		"beta":  makeTestPage("Beta", "body", nil),
+	})
+	got := g.ShortestPath("alpha", "beta", 5)
+	if got != nil {
+		t.Fatalf("expected nil for disconnected nodes, got %v", got)
+	}
+}
+
+func TestShortestPath_MaxHopsCap(t *testing.T) {
+	// alpha -> beta -> gamma -> delta: path exists at 3 hops; max_hops=2 returns nil
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "[[beta]]", nil),
+		"beta":  makeTestPage("Beta", "[[gamma]]", nil),
+		"gamma": makeTestPage("Gamma", "[[delta]]", nil),
+		"delta": makeTestPage("Delta", "leaf", nil),
+	})
+	if got := g.ShortestPath("alpha", "delta", 2); got != nil {
+		t.Fatalf("expected nil when path requires 3 hops but max_hops=2, got %v", got)
+	}
+	// max_hops=3 should find it.
+	if got := g.ShortestPath("alpha", "delta", 3); len(got) != 4 {
+		t.Fatalf("expected 4-node path at max_hops=3, got %v", got)
+	}
+}
+
+func TestShortestPath_UnknownSlug(t *testing.T) {
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "body", nil),
+	})
+	if got := g.ShortestPath("alpha", "nonexistent", 5); got != nil {
+		t.Fatalf("unknown to returns non-nil: %v", got)
+	}
+	if got := g.ShortestPath("nonexistent", "alpha", 5); got != nil {
+		t.Fatalf("unknown from returns non-nil: %v", got)
+	}
+}
+
 // _ = time.Now is a tiny hedge to keep the time import even if no test
 // touches the field directly — schema requires CreatedAt/UpdatedAt and
 // helper makeTestPage generates them.
