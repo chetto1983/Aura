@@ -57,6 +57,8 @@ func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStor
 		return nil, err
 	}
 	outbound := NewOutbound(logger)
+	outbound.SetTTS(b.TTSClient())
+	outbound.SetVoicePolicy(b.VoicePolicy())
 	hub.RegisterInbound(New())
 	hub.RegisterOutbound(outbound)
 	ib.hub = hub // Build is lazy (called per-message), so wiring here is safe.
@@ -249,6 +251,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	// Route streaming through the canonical channels/telegram.Outbound.
 	if ib.outbound == nil {
 		ib.outbound = NewOutbound(b.Logger())
+		ib.outbound.SetTTS(b.TTSClient())
+		ib.outbound.SetVoicePolicy(b.VoicePolicy())
 	}
 	chatClient := newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder, pane)
 

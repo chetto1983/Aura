@@ -26,6 +26,7 @@ import (
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/audio"
+	"github.com/aura/aura/internal/llm/pockettts"
 	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
@@ -69,6 +70,7 @@ type botRuntime struct {
 	attemptsRepo        attempts.Repo
 	memoryStore         *memoryindex.Store
 	voicePolicy         audio.Store
+	pocketttsClient     *pockettts.Client
 }
 
 // Deps holds the pre-built dependencies a Bot needs at construction time.
@@ -148,6 +150,10 @@ type Deps struct {
 	// VoicePolicy stores per-chat TTS mode (migration v23). Nil = all off.
 	VoicePolicy audio.Store
 
+	// PocketTTSClient is the optional TTS synthesis client (Phase-MM Wave 3).
+	// nil = TTS globally disabled (POCKETTTS_BASE_URL not set).
+	PocketTTSClient *pockettts.Client
+
 	// ---- Agent note ---------------------------------------------------------
 	AgentNoteStore *agentnote.Store
 
@@ -180,6 +186,7 @@ func NewBot(deps Deps) *Bot {
 		agentNoteStore:      deps.AgentNoteStore,
 		attemptsRepo:        deps.AttemptsRepo,
 		voicePolicy:         deps.VoicePolicy,
+		pocketttsClient:     deps.PocketTTSClient,
 	}
 	return &Bot{
 		bot:    deps.Bot,

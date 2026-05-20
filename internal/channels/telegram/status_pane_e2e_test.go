@@ -551,10 +551,17 @@ func newFakeBotServer(t *testing.T) (*callLog, *httptest.Server) {
 		id := seq
 		seqMu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprintf(w,
-			`{"ok":true,"result":{"message_id":%d,"chat":{"id":123},"date":1760000000,"text":"ok"}}`,
-			id,
-		)
+		if method == "sendVoice" {
+			_, _ = fmt.Fprintf(w,
+				`{"ok":true,"result":{"message_id":%d,"chat":{"id":123},"date":1760000000,"voice":{"file_id":"fid%d","file_unique_id":"fu%d","duration":1}}}`,
+				id, id, id,
+			)
+		} else {
+			_, _ = fmt.Fprintf(w,
+				`{"ok":true,"result":{"message_id":%d,"chat":{"id":123},"date":1760000000,"text":"ok"}}`,
+				id,
+			)
+		}
 	}))
 	return log, srv
 }

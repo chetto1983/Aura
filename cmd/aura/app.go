@@ -29,6 +29,7 @@ import (
 	"github.com/aura/aura/internal/storage/reindex"
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/llm/pockettts"
 	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
@@ -296,6 +297,15 @@ func newApp(
 		logger.Info("whisper sidecar configured", "url", url, "timeout_sec", cfg.WhisperTimeoutSec)
 	} else {
 		logger.Info("whisper sidecar not configured (set WHISPER_BASE_URL to enable voice transcription)")
+	}
+
+	// ---- Pocket-TTS sidecar (Phase-MM Wave 3, US-MM-A05) --------------------
+	if url := strings.TrimSpace(cfg.PocketttsBaseURL); url != "" {
+		timeout := time.Duration(cfg.PocketttsTimeoutSec) * time.Second
+		deps.PocketTTSClient = pockettts.New(url, timeout, logger)
+		logger.Info("pocket-tts sidecar configured", "url", url, "timeout_sec", cfg.PocketttsTimeoutSec)
+	} else {
+		logger.Info("pocket-tts sidecar not configured (set POCKETTTS_BASE_URL to enable TTS)")
 	}
 
 	// ---- Ingest pipeline ----------------------------------------------------

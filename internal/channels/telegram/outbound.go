@@ -5,15 +5,19 @@
 package telegramadapter
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/aura/aura/internal/audio"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/llm/pockettts"
 	tgtelegram "github.com/aura/aura/internal/telegram"
 	tele "gopkg.in/telebot.v4"
 )
@@ -60,6 +64,8 @@ const (
 // (internal/telegram), so Deliver only needs to log operational events.
 type Outbound struct {
 	logger *slog.Logger
+	tts    *pockettts.Client // nil → TTS globally disabled
+	policy audio.Store       // nil → treat all chats as ModeOff
 }
 
 var _ chat.OutboundAdapter = (*Outbound)(nil)
@@ -71,6 +77,50 @@ func NewOutbound(logger *slog.Logger) *Outbound {
 		logger = slog.Default()
 	}
 	return &Outbound{logger: logger}
+}
+
+// SetTTS wires the pocket-tts synthesis client. nil disables TTS globally.
+func (o *Outbound) SetTTS(c *pockettts.Client) { o.tts = c }
+
+// SetVoicePolicy wires the per-chat voice mode store.
+func (o *Outbound) SetVoicePolicy(p audio.Store) { o.policy = p }
+
+// maybeSpeak synthesizes TTS and sends a Telegram Voice message based on the
+// per-chat voice mode. Returns true only when mode=voice_only AND synthesis +
+// send succeeded (caller should suppress the text reply). All failure paths log
+// at WARN with tts_dispatch_failed and return false so the text path proceeds.
+// If tts or policy is nil (TTS not configured), this is a no-op returning false.
+func (o *Outbound) maybeSpeak(ctx context.Context, bot tele.API, recipient tele.Recipient, chatID, finalText string) bool {
+	if o.tts == nil || o.policy == nil || chatID == "" {
+		return false
+	}
+	mode, err := o.policy.Get(ctx, chatID)
+	if err != nil {
+		o.logger.Warn("tts_dispatch_failed: voice policy lookup error", "chat_id", chatID, "error", err)
+		return false
+	}
+	if !audio.ShouldSynth(mode) {
+		return false
+	}
+	result, err := o.tts.Synthesize(ctx, finalText, "")
+	if err != nil {
+		o.logger.Warn("tts_dispatch_failed: synthesis error", "chat_id", chatID, "error", err)
+		return false
+	}
+	voice := &tele.Voice{File: tele.FromReader(bytes.NewReader(result.Audio))}
+	if _, sendErr := bot.Send(recipient, voice); sendErr != nil {
+		o.logger.Warn("tts_dispatch_failed: voice send error", "chat_id", chatID, "error", sendErr)
+		return false
+	}
+	o.logger.Info("tts_synth_ok",
+		"chat_id", chatID,
+		"bytes", len(result.Audio),
+		"voice", result.Voice,
+		"language", result.Language,
+		"elapsed_ms", result.ElapsedMs,
+	)
+	// voice_only → suppress text (true); all → text still needed (false)
+	return audio.ShouldSuppressText(mode)
 }
 
 // Channel + Mode satisfy chat.OutboundAdapter.
@@ -267,13 +317,22 @@ func (o *Outbound) ConsumeStream(
 				if len(parts) == 0 {
 					break
 				}
-				if _, err := o.editMessage(c.Bot(), msg, parts[0], raw); err != nil {
-					o.logger.Warn("streaming final edit failed", "user_id", userID, "error", err)
+				// TTS dispatch: voice_only + synth success suppresses text.
+				// All other modes (off, all, synth-failure) fall through to text.
+				var chatID string
+				if chat := c.Chat(); chat != nil {
+					chatID = fmt.Sprintf("%d", chat.ID)
 				}
-				if pane != nil {
-					pane.MarkEdited()
+				textSuppressed := o.maybeSpeak(context.Background(), c.Bot(), c.Recipient(), chatID, raw)
+				if !textSuppressed {
+					if _, err := o.editMessage(c.Bot(), msg, parts[0], raw); err != nil {
+						o.logger.Warn("streaming final edit failed", "user_id", userID, "error", err)
+					}
+					if pane != nil {
+						pane.MarkEdited()
+					}
+					o.sendRemainder(c.Bot(), c.Recipient(), parts, 1)
 				}
-				o.sendRemainder(c.Bot(), c.Recipient(), parts, 1)
 			}
 			break
 		}

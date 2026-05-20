@@ -14,6 +14,7 @@ import (
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
+	"github.com/aura/aura/internal/audio"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/concurrency"
@@ -21,6 +22,7 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/llm/pockettts"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
 
@@ -111,6 +113,22 @@ func (b *Bot) AgentNoteStore() *agentnote.Store {
 		return nil
 	}
 	return b.rt.agentNoteStore
+}
+
+// VoicePolicy returns the per-chat TTS mode store (nil when not configured).
+func (b *Bot) VoicePolicy() audio.Store {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.voicePolicy
+}
+
+// TTSClient returns the pocket-tts synthesis client (nil when POCKETTTS_BASE_URL unset).
+func (b *Bot) TTSClient() *pockettts.Client {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.pocketttsClient
 }
 
 // Config returns the bot's configuration.
