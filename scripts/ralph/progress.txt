@@ -2299,3 +2299,50 @@ Phase-TJ scoreboard now: 3/8 (US-TJ01 49db267d, US-TJ02 f0093c4a, US-TJ03 [this 
   - Two Updates avoided by combining StatusTranscribeComplete + Transcript + OriginalDeletedAt in a single sources.Update call after the os.Remove
   - WHISPER_BASE_URL defaults to "http://aura-whisper:8082" — nil whisper client on empty URL, graceful degradation preserved (A01 "ready for transcription" message path unchanged)
 ---
+
+## [2026-05-19 17:05] — US-MM-A03 shipped as 66e99621
+- Wired AfterTranscribeHook into voice_handler so transcripts dispatch to the agent loop via chat.Hub.ReceiveMessage.
+- Files touched: 3 modified (voice_handler.go, setup.go, prd.json) + 1 created (voice_handler_e2e_test.go)
+- Validation: go build/vet/test ./internal/telegram/... all green (5 voice handler tests pass)
+- LOC delta: +360 net
+- Learnings:
+  - internal/channels/telegram (telegramadapter) imports internal/telegram — circular import blocks using telegramadapter.ChannelDataKeyContext in setup.go; used string literal "tele_context" directly.
+  - AfterTranscribeHook needs tele.Context in signature (not just ctx, src, transcript) because the Telegram outbound adapter needs ChannelData["tele_context"] to route the reply. The acceptance criteria's hook signature was approximate; production requirement won the tie.
+  - process() teleCtx parameter: the goroutine closure in onVoiceMessage captures c (tele.Context) and passes it down to process(), which forwards it to the hook — this is the "captured from voice handler closure" pattern the PRD described.
+  - buildAfterTranscribeHook captures b *Bot lazily: hub is nil at New() construction time, set by SetHub() in wireBot; nil check in hook is correct.
+  - Two pre-existing SQLite timeout flakes (internal/api + internal/agent/tools/registry) unrelated to this story; all story-affected packages green.
+---
+
+## [2026-05-20 10:00] — US-WIKI-A01 shipped as b46fe242
+- Added GodNode degree-centrality ranking: TopByDegree on GraphIndex, TopNodes on Store, recall_god_nodes tool, GET /api/wiki/godnodes, TopHubsCard widget in WikiPanel
+- Files touched: 14 source files (godnodes.go, godnodes_test.go, wiki_godnodes.go, registry_scan_test.go, wiki_godnodes_test.go, wiki.go, router.go, app_wire.go, api.ts, types/api.ts, en.json, it.json, WikiPanel.tsx, prd.json)
+- Validation: go build/vet/test all green; npm build + lint green
+- LOC delta: +618 (including rebuilt dist assets)
+- Learnings:
+  - TopByDegree must read g.inbound/g.outbound directly under its own RLock — calling g.Degree() (which acquires RLock internally) would deadlock
+  - TopByDegree must return nil (not empty slice) for empty index — tests assert nil
+  - API seedPage requires non-empty body string — wiki validation enforces "body is required"
+  - registry_scan_test requires Definition() to be non-default (ReadOnlyHint=true) for the tool to pass catalog scan
+---
+
+## [2026-05-20 --:--] — US-WIKI-A02 shipped as 84cda380
+- Added ShortestPath BFS to GraphIndex + wiki_path tool + GET /api/wiki/path endpoint + 6 graph tests + 5 API tests
+- Files touched: 10 (graph_index.go, godnodes.go, graph_index_test.go, wiki_path.go, registry_scan_test.go, wiki.go, router.go, wiki_path_test.go, app_wire.go, prd.json)
+- Validation: go build/vet/test all green (full suite)
+- LOC delta: +442
+- Learnings:
+  - ShortestPath parent sentinel for `from` must be "" (empty string) to distinguish "visited as start" from "unvisited"; using a nil map entry would require a different check
+  - BFS must check both outbound AND inbound maps per the story AC — matching the existing Neighbors() traversal direction
+  - graphReconstructPath is a private helper (not a method) since it only belongs to the ShortestPath impl; named with prefix to avoid collision with any future graph-level helpers
+---
+
+## [2026-05-20 10:00] — US-WIKI-A03 shipped as ee55b27d
+- Extended Page.Related from []string to []RelatedRef{Slug,Confidence} with custom UnmarshalYAML accepting bare strings (→EXTRACTED) and mapping form; CurrentSchemaVersion bumped 2→3; filteredRelatedSlugs() excludes AMBIGUOUS edges from search index by default
+- Files touched: 28 (schema.go, graph_index.go, graph.go, store.go, store_writes.go, memory_hygiene.go, parser.go, graph_documents.go, api/wiki.go, cron/wake.go, summarizer/applier.go, pipeline.go, registry/wiki.go, + 15 test files, prd.json)
+- Validation: go build/vet/test all green
+- LOC delta: +335/-97
+- Learnings:
+  - yaml.v3 custom UnmarshalYAML: switch on node.Kind (ScalarNode vs MappingNode); use alias type to break infinite recursion when decoding into a struct of the same type
+  - schema_version range change (==2 → 1..3) causes test that corrupts with schema_version:1 to silently pass — corruption must use schema_version:99 instead
+  - Search test "Schema version: 2" string was in the formatted graph content, not just JSON metadata; required a separate fix from the "schema_version": "2" JSON field fix
+---
