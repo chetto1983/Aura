@@ -70,24 +70,6 @@ func main() {
 		"filename", install.WhisperModelFilename,
 		"elapsed_sec", int(time.Since(whisperStart).Seconds()),
 	)
-
-	piperStart := time.Now()
-	piperProgress := install.LogProgressFn(logger.With("model", install.PiperVoiceFilename), 5*time.Second)
-	if err := install.EnsurePiperVoice(ctx, dataDir, piperProgress); err != nil {
-		logger.Error("piper voice fetch failed",
-			"data_dir", dataDir,
-			"voice_url", install.PiperVoiceURL,
-			"voice_sha256", install.PiperVoiceSHA256,
-			"cfg_url", install.PiperVoiceConfigURL,
-			"cfg_sha256", install.PiperVoiceConfigSHA256,
-			"err", err.Error(),
-		)
-		os.Exit(1)
-	}
-	logger.Info("piper voice ready",
-		"filename", install.PiperVoiceFilename,
-		"elapsed_sec", int(time.Since(piperStart).Seconds()),
-	)
 	os.Exit(0)
 }
 

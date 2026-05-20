@@ -33,10 +33,8 @@ services:
       AURA_EMBEDDING_MODEL_SHA256: "${AURA_EMBEDDING_MODEL_SHA256:-}"
       AURA_WHISPER_MODEL_URL: "${AURA_WHISPER_MODEL_URL:-}"
       AURA_WHISPER_MODEL_SHA256: "${AURA_WHISPER_MODEL_SHA256:-}"
-      AURA_PIPER_VOICE_URL: "${AURA_PIPER_VOICE_URL:-}"
-      AURA_PIPER_VOICE_SHA256: "${AURA_PIPER_VOICE_SHA256:-}"
-      AURA_PIPER_VOICE_CFG_URL: "${AURA_PIPER_VOICE_CFG_URL:-}"
-      AURA_PIPER_VOICE_CFG_SHA256: "${AURA_PIPER_VOICE_CFG_SHA256:-}"
+      # pocket-tts (Wave 3 TTS) downloads its own models at runtime via HuggingFace;
+      # no model prefetch step needed in aura-init-models.
     volumes:
       - ./data:/models   # shared with aura-llama-embed (rw here, ro there)
 
@@ -79,8 +77,8 @@ services:
       MARKITDOWN_URL: "http://aura-markitdown:3001"
       MARKITDOWN_TIMEOUT_SEC: "120"
       WHISPER_BASE_URL: "http://aura-whisper:8082"
-      PIPER_BASE_URL: "http://aura-piper:8083"
-      AURA_TTS_ENABLED: "${AURA_TTS_ENABLED:-false}"
+      POCKETTTS_BASE_URL: "http://aura-pocket-tts:8000"
+      AURA_TTS_ENABLED: "false"
       TOOL_SEARCH_BACKEND: "${TOOL_SEARCH_BACKEND:-hybrid}"
       AURA_PROMPT_VERSION: "aura-agent-v1"
       AURA_SKILL_ROUTING_MODE: "manifest"
@@ -327,42 +325,38 @@ services:
           cpus: "2.0"
           memory: 1G
 
-  # aura-piper sidecar — long-lived Piper TTS HTTP server for Italian speech
-  # synthesis. Loads it_IT-paola-medium.onnx once at startup to amortize the
-  # ~670 ms cold-start measured during the 2026-05-19 spike.
+  # aura-pocket-tts sidecar — Kyutai Pocket-TTS HTTP server for Italian speech
+  # synthesis (Wave 3 TTS, replaces aura-piper).
   #
-  # POST /v1/synthesize  JSON {text, voice} → audio/wav (22 kHz mono PCM s16le)
-  # GET  /health         → 200 once voice is loaded
+  # POST /tts   multipart {text, voice_url} → audio/wav (Transfer-Encoding: chunked)
+  # GET  /health → {"status": "healthy"}
   #
-  # Default OFF: AURA_TTS_ENABLED defaults to "false" — operator must explicitly
-  # set it to "true" to enable TTS. Never auto-triggered; user-initiated only.
-  # Wave 3 (US-MM-A04 speak_reply tool) wires the Go client to PIPER_BASE_URL.
+  # Default OFF: AURA_TTS_ENABLED is "false" in compose — operator enables via
+  # A07 Go wiring + /voice command. aura does NOT depend_on aura-pocket-tts;
+  # sidecar failure does not block aura boot (graceful degradation, same as qdrant).
   #
-  # Voice files (ONNX + .json) are placed by aura-init-models into ./data/piper/
-  # before this service starts. aura does NOT depend_on aura-piper — sidecar
-  # failure does not block aura boot (graceful degradation, same as qdrant).
-  aura-piper:
+  # Model download: pocket-tts auto-fetches italian_24l + giovanni voice from
+  # HuggingFace (~600 MB) on first boot into pockettts-hf-cache. Subsequent
+  # cold-starts hit the cache and load in ~10-30 s.
+  # Host port 8084 (8083 was Piper) to avoid stale-connection confusion.
+  aura-pocket-tts:
     build:
-      context: ./docker/piper
+      context: ./docker/pocket-tts
       dockerfile: Dockerfile
-    image: aura-piper:local
+    image: aura-pocket-tts:local
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8083:8083"
+      - "127.0.0.1:8084:8000"
     volumes:
-      - ./data/piper:/voices:ro
-    depends_on:
-      aura-init-models:
-        condition: service_completed_successfully
+      - pockettts-hf-cache:/root/.cache/huggingface
+    tmpfs:
+      - /tmp:size=512m
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health')"]
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
-    read_only: true
-    tmpfs:
-      - /tmp:size=256m
+      start_period: 300s
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
@@ -370,7 +364,7 @@ services:
       resources:
         limits:
           cpus: "2.0"
-          memory: 1G
+          memory: 4G
 
   test:
     build:
@@ -397,3 +391,4 @@ volumes:
   qdrant-storage:
   go-mod-cache:
   go-build-cache:
+  pockettts-hf-cache:
