@@ -263,6 +263,42 @@ func (e *Env) deleteAgentNote(conversationID string) error {
 	return err
 }
 
+// voiceDispatchesSince queries voice_dispatches for rows with chat_id and at >= since.
+// Returns the count of rows found. Used by TTS probe cases to verify dispatch ground truth.
+func (e *Env) voiceDispatchesSince(chatID string, since time.Time) (int, error) {
+	sinceStr := since.UTC().Format(time.RFC3339Nano)
+	if e.dockerDBReady() {
+		var rows []struct {
+			Count int `json:"count"`
+		}
+		query := `SELECT COUNT(*) AS count FROM voice_dispatches WHERE chat_id = ` +
+			sqliteQuote(chatID) + ` AND at >= ` + sqliteQuote(sinceStr) + `;`
+		raw, err := e.dockerSQLite(true, true, query)
+		if err != nil {
+			return 0, err
+		}
+		if len(raw) == 0 {
+			raw = []byte("[]")
+		}
+		if err := json.Unmarshal(raw, &rows); err != nil {
+			return 0, fmt.Errorf("decode docker voice_dispatches: %w", err)
+		}
+		if len(rows) == 0 {
+			return 0, nil
+		}
+		return rows[0].Count, nil
+	}
+	var n int
+	err := e.DB.QueryRow(
+		`SELECT COUNT(*) FROM voice_dispatches WHERE chat_id = ? AND at >= ?`,
+		chatID, sinceStr,
+	).Scan(&n)
+	if err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func sqliteQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }

@@ -7,6 +7,7 @@ package telegramadapter
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -66,6 +67,7 @@ type Outbound struct {
 	logger *slog.Logger
 	tts    *pockettts.Client // nil → TTS globally disabled
 	policy audio.Store       // nil → treat all chats as ModeOff
+	db     *sql.DB           // nil → voice_dispatches recording disabled
 }
 
 var _ chat.OutboundAdapter = (*Outbound)(nil)
@@ -84,6 +86,10 @@ func (o *Outbound) SetTTS(c *pockettts.Client) { o.tts = c }
 
 // SetVoicePolicy wires the per-chat voice mode store.
 func (o *Outbound) SetVoicePolicy(p audio.Store) { o.policy = p }
+
+// SetDispatchDB wires the SQLite pool used to record voice_dispatches rows.
+// nil disables recording (non-fatal: voice still works, just untracked).
+func (o *Outbound) SetDispatchDB(db *sql.DB) { o.db = db }
 
 // maybeSpeak synthesizes TTS and sends a Telegram Voice message based on the
 // per-chat voice mode. Returns true only when mode=voice_only AND synthesis +
@@ -119,6 +125,20 @@ func (o *Outbound) maybeSpeak(ctx context.Context, bot tele.API, recipient tele.
 		"language", result.Language,
 		"elapsed_ms", result.ElapsedMs,
 	)
+	if o.db != nil {
+		_, insertErr := o.db.ExecContext(ctx,
+			`INSERT INTO voice_dispatches (chat_id, bytes, voice, language, elapsed_ms, at) VALUES (?,?,?,?,?,?)`,
+			chatID,
+			len(result.Audio),
+			result.Voice,
+			result.Language,
+			result.ElapsedMs,
+			time.Now().UTC().Format(time.RFC3339Nano),
+		)
+		if insertErr != nil {
+			o.logger.Warn("voice_dispatch_record_failed", "chat_id", chatID, "error", insertErr)
+		}
+	}
 	// voice_only → suppress text (true); all → text still needed (false)
 	return audio.ShouldSuppressText(mode)
 }

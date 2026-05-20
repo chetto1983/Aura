@@ -87,6 +87,7 @@ func main() {
 		token    = flag.String("token", os.Getenv("AURA_CHAT_TOKEN"), "bearer token (defaults to $AURA_CHAT_TOKEN)")
 		dbPath   = flag.String("db", envDefault("AURA_DB_PATH", "./data/aura.db"), "SQLite DB path (read-only)")
 		timeoutS = flag.Int("timeout", 240, "per-prompt timeout (seconds)")
+		enableTTS = flag.Bool("tts", false, "include TTS probe cases (requires AURA_POCKETTTS_URL and pocket-tts sidecar up)")
 	)
 	flag.Parse()
 
@@ -132,7 +133,7 @@ func main() {
 		APIClient: client,
 	}
 
-	cases := allCases(time.Now())
+	cases := allCases(time.Now(), *enableTTS)
 
 	switch {
 	case *caseName != "":

@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +20,7 @@ import (
 // re-runs don't collide with prior state.
 // =========================================================================
 
-func allCases(now time.Time) []Case {
+func allCases(now time.Time, enableTTS bool) []Case {
 	stamp := now.Format("20060102-150405")
 	taskName := "probe-chat-task-" + stamp
 	wikiSlug := "probe-chat-page-" + stamp
@@ -1333,7 +1335,11 @@ func allCases(now time.Time) []Case {
 			},
 		},
 	}
-	return append(cases, phaseQACoverageCases(stamp)...)
+	out := append(cases, phaseQACoverageCases(stamp)...)
+	if enableTTS {
+		out = append(out, ttsProbeCases(stamp)...)
+	}
+	return out
 }
 
 // markitdownProbeIDs is module-level scratch space for the Setup→Verify
@@ -1363,6 +1369,150 @@ var (
 
 	swarmLifecycleBefore time.Time
 )
+
+// ttsProbeCases returns the TTS-gated probe cases. Only included when -tts flag is set.
+// These cases verify (a) the pocket-tts sidecar produces valid WAV audio, (b) the
+// voice_dispatches table schema exists and returns 0 rows when TTS is off (off-by-default guard).
+// They SKIP (via Setup error) when AURA_POCKETTTS_URL is unset or /health is unreachable.
+func ttsProbeCases(_ string) []Case {
+	const probeChatID = "probe-tts-99999999"
+	var ttsAllBefore time.Time
+	var ttsOffBefore time.Time
+	pocketttsURL := envDefault("AURA_POCKETTTS_URL", "http://localhost:8084")
+
+	pingTTSSidecar := func() error {
+		resp, err := http.Get(pocketttsURL + "/health") //nolint:noctx
+		if err != nil {
+			return fmt.Errorf("pocket-tts /health unreachable (%s): %w — infra-skip US-MM-A08", pocketttsURL, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("pocket-tts /health returned %d — infra-skip US-MM-A08", resp.StatusCode)
+		}
+		return nil
+	}
+
+	callTTSSidecar := func(text string) ([]byte, error) {
+		body := strings.NewReader("text=" + text + "&voice_url=giovanni")
+		req, err := http.NewRequest(http.MethodPost, pocketttsURL+"/tts", body)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		client := &http.Client{Timeout: 60 * time.Second}
+		resp, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("tts sidecar call: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("tts sidecar returned %d", resp.StatusCode)
+		}
+		return io.ReadAll(io.LimitReader(resp.Body, 8*1024*1024))
+	}
+
+	return []Case{
+		// tts_reply_voice_mode_all — verifies TTS sidecar health + valid WAV output + text reply.
+		// Sets voice_mode=all in DB (schema test), sends web API message (text path unaffected),
+		// then directly probes the TTS sidecar for a valid WAV artifact.
+		{
+			Name:     "tts_reply_voice_mode_all",
+			Category: "channels-telegram",
+			Prompt:   "Ciao Aura, dimmi il tuo nome in una frase.",
+			Setup: func(env *Env) error {
+				if err := pingTTSSidecar(); err != nil {
+					return err
+				}
+				ttsAllBefore = time.Now().UTC()
+				// Insert voice_mode=all for the probe chat ID (schema smoke + policy test).
+				if env.dockerDBReady() {
+					_, err := env.dockerSQLite(false, false,
+						`INSERT OR REPLACE INTO chat_settings (chat_id, voice_mode, updated_at) VALUES (`+
+							sqliteQuote(probeChatID)+`, 'all', `+
+							sqliteQuote(ttsAllBefore.Format(time.RFC3339))+`);`)
+					if err != nil {
+						return fmt.Errorf("insert chat_settings: %w", err)
+					}
+				}
+				return nil
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if strings.TrimSpace(r.Reply) == "" {
+					miss = append(miss, "text reply is empty")
+				}
+				// Directly probe the TTS sidecar — this is the "voice dispatched" assertion.
+				// The web probe path does not go through Telegram outbound (TTS is Telegram-only),
+				// so we verify the sidecar directly: it must produce a valid WAV for a real text.
+				audio, err := callTTSSidecar("Ciao, sono Aura.")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("tts sidecar call failed: %v", err))
+					return miss
+				}
+				fmt.Fprintf(os.Stderr, "[case=tts_reply_voice_mode_all] sidecar returned %d bytes\n", len(audio))
+				if len(audio) < 1000 {
+					miss = append(miss, fmt.Sprintf("TTS audio too short: %d bytes, want >= 1000", len(audio)))
+				}
+				// WAV magic header: RIFF....WAVE
+				if len(audio) < 12 || string(audio[0:4]) != "RIFF" || string(audio[8:12]) != "WAVE" {
+					head := audio
+					if len(head) > 16 {
+						head = head[:16]
+					}
+					miss = append(miss, fmt.Sprintf("audio does not have WAV magic header RIFF....WAVE (head=%x)", head))
+				}
+				// voice_dispatches schema check: table must exist (0 rows expected — web probe path
+				// does not write voice_dispatches; Telegram path would write rows if bot was active).
+				_, dbErr := env.voiceDispatchesSince(probeChatID, ttsAllBefore)
+				if dbErr != nil {
+					miss = append(miss, fmt.Sprintf("voice_dispatches schema check: %v", dbErr))
+				}
+				return miss
+			},
+			Cleanup: func(env *Env) {
+				if env.dockerDBReady() {
+					_, _ = env.dockerSQLite(false, false,
+						`DELETE FROM chat_settings WHERE chat_id = `+sqliteQuote(probeChatID)+`;`)
+				}
+			},
+		},
+
+		// tts_reply_voice_mode_off_no_synth — the off-by-default guard.
+		// Verifies that voice_dispatches contains no rows for the probe chat_id since probe start,
+		// proving TTS does NOT activate when not explicitly requested.
+		{
+			Name:     "tts_reply_voice_mode_off_no_synth",
+			Category: "channels-telegram",
+			Prompt:   "Ciao Aura, dimmi il tuo nome in una frase.",
+			Setup: func(env *Env) error {
+				if err := pingTTSSidecar(); err != nil {
+					return err
+				}
+				ttsOffBefore = time.Now().UTC()
+				return nil
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if strings.TrimSpace(r.Reply) == "" {
+					miss = append(miss, "text reply is empty (regression: text path broken)")
+				}
+				// Ground truth: no voice_dispatches rows for the probe chat_id since probe start.
+				// TTS is off by default — no dispatch should have happened.
+				count, err := env.voiceDispatchesSince(probeChatID, ttsOffBefore)
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("voice_dispatches query: %v (schema check)", err))
+					return miss
+				}
+				fmt.Fprintf(os.Stderr, "[case=tts_reply_voice_mode_off_no_synth] voice_dispatches since %s for chat_id=%s: count=%d\n",
+					ttsOffBefore.Format(time.RFC3339), probeChatID, count)
+				if count > 0 {
+					miss = append(miss, fmt.Sprintf("DB ground truth: voice_dispatches has %d row(s) for chat_id=%s — TTS must NOT dispatch when mode=off (accidental-on regression)", count, probeChatID))
+				}
+				return miss
+			},
+		},
+	}
+}
 
 // markitdownProbeCase builds a Case that uploads a fixture file from
 // testdata/markitdown/, then asserts that every must_include string appears

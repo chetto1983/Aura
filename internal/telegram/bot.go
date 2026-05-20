@@ -3,6 +3,7 @@ package telegram
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"strconv"
@@ -129,6 +130,14 @@ func (b *Bot) TTSClient() *pockettts.Client {
 		return nil
 	}
 	return b.rt.pocketttsClient
+}
+
+// Pool returns the shared SQLite pool (nil when not configured).
+func (b *Bot) Pool() *sql.DB {
+	if b == nil || b.rt == nil || b.rt.schedDB == nil {
+		return nil
+	}
+	return b.rt.schedDB.DB()
 }
 
 // Config returns the bot's configuration.

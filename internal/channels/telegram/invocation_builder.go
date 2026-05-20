@@ -59,6 +59,7 @@ func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStor
 	outbound := NewOutbound(logger)
 	outbound.SetTTS(b.TTSClient())
 	outbound.SetVoicePolicy(b.VoicePolicy())
+	outbound.SetDispatchDB(b.Pool())
 	hub.RegisterInbound(New())
 	hub.RegisterOutbound(outbound)
 	ib.hub = hub // Build is lazy (called per-message), so wiring here is safe.

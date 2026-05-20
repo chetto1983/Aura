@@ -39,6 +39,7 @@ var registered = []Migration{
 	{Version: 21, Name: "add_compact_memory_priority", Up: addCompactMemoryPriority},
 	{Version: 22, Name: "add_compact_memory_recall_decay", Up: addCompactMemoryRecallDecay},
 	{Version: 23, Name: "add_chat_settings_voice_mode", Up: addChatSettingsVoiceMode},
+	{Version: 24, Name: "add_voice_dispatches", Up: addVoiceDispatches},
 }
 
 type columnDef struct {
@@ -1353,6 +1354,25 @@ CREATE TABLE IF NOT EXISTS chat_settings (
 `)
 	if err != nil {
 		return fmt.Errorf("migrations: add chat_settings: %w", err)
+	}
+	return nil
+}
+
+func addVoiceDispatches(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS voice_dispatches (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id    TEXT NOT NULL,
+  bytes      INTEGER NOT NULL,
+  voice      TEXT NOT NULL,
+  language   TEXT NOT NULL,
+  elapsed_ms INTEGER NOT NULL,
+  at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voice_dispatches_chat_at ON voice_dispatches(chat_id, at);
+`)
+	if err != nil {
+		return fmt.Errorf("migrations: add voice_dispatches: %w", err)
 	}
 	return nil
 }
