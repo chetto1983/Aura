@@ -157,6 +157,11 @@ type Config struct {
 	WhisperLanguage   string `envconfig:"WHISPER_LANGUAGE" default:"it"`
 	WhisperTimeoutSec int    `envconfig:"WHISPER_TIMEOUT_SEC" default:"60"`
 
+	// Pocket-TTS text-to-speech sidecar (Phase-MM, Wave 3, US-MM-A05).
+	// Points at the aura-pocket-tts container's /tts endpoint. Empty = disabled.
+	PocketttsBaseURL    string `envconfig:"POCKETTTS_BASE_URL" default:""`
+	PocketttsTimeoutSec int    `envconfig:"POCKETTTS_TIMEOUT_SEC" default:"30"`
+
 	// TokenJuice rule-driven output compaction (Phase-TJ). Enabled by default after
 	// US-TJ07 confirmed 15.8% heavy-turn savings + 0 regressions. Set
 	// AURA_TOKENJUICE_ENABLED=false to disable without a code change.
@@ -319,6 +324,9 @@ func Load() (*Config, error) {
 	cfg.WhisperBaseURL = getEnv("WHISPER_BASE_URL", "http://aura-whisper:8082")
 	cfg.WhisperLanguage = getEnv("WHISPER_LANGUAGE", "it")
 	cfg.WhisperTimeoutSec = getEnvInt("WHISPER_TIMEOUT_SEC", 60)
+
+	cfg.PocketttsBaseURL = getEnv("POCKETTTS_BASE_URL", "")
+	cfg.PocketttsTimeoutSec = getEnvInt("POCKETTTS_TIMEOUT_SEC", 30)
 
 	cfg.TokenJuiceEnabled = getEnvBool("AURA_TOKENJUICE_ENABLED", true)
 
