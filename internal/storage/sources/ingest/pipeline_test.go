@@ -673,7 +673,7 @@ func TestCompile_MultiPageTouchWritesEntitiesAndConcepts(t *testing.T) {
 	if !strings.Contains(summary.Body, "[[alice]]") || !strings.Contains(summary.Body, "[[graph-memory]]") {
 		t.Fatalf("summary body missing extracted wikilinks:\n%s", summary.Body)
 	}
-	if !containsString(summary.Related, "alice") || !containsString(summary.Related, "graph-memory") {
+	if !wiki.RelatedContainsSlug(summary.Related, "alice") || !wiki.RelatedContainsSlug(summary.Related, "graph-memory") {
 		t.Fatalf("summary.Related missing entity/concept: %v", summary.Related)
 	}
 

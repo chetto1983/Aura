@@ -101,8 +101,8 @@ func BuildGraph(pages map[string]*Page) Graph {
 		for _, target := range ExtractWikiLinks(page.Body) {
 			addRef(target, "wikilink")
 		}
-		for _, target := range page.Related {
-			addRef(target, "related")
+		for _, ref := range page.Related {
+			addRef(ref.Slug, "related")
 		}
 	}
 

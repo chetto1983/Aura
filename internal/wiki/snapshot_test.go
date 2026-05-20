@@ -59,7 +59,7 @@ func TestSnapshotInvalidPage(t *testing.T) {
 		"title is required":           false,
 		"body is required":            false,
 		"too many tags (max 10)":      false,
-		"schema_version must be 2":    false,
+		"schema_version must be between 1 and 3": false,
 		"prompt_version is required":  false,
 		"created_at must be ISO 8601": false,
 		"updated_at must be ISO 8601": false,

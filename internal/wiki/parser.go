@@ -250,7 +250,7 @@ func MarshalMD(page *Page) ([]byte, error) {
 		Title:         page.Title,
 		Tags:          page.Tags,
 		Category:      page.Category,
-		Related:       page.Related,
+		Related:       RelatedSlugs(page.Related),
 		Sources:       page.Sources,
 		SchemaVersion: page.SchemaVersion,
 		PromptVersion: page.PromptVersion,

@@ -64,7 +64,7 @@ func (a *AutoApplier) applyNew(ctx context.Context, d Decision) error {
 		PromptVersion: "proposal_v1",
 		Title:         title,
 		Category:      d.Candidate.Category,
-		Related:       uniqueNonEmpty(d.Candidate.RelatedSlugs),
+		Related:       wiki.RelatedFromSlugs(uniqueNonEmpty(d.Candidate.RelatedSlugs)),
 		Tags:          []string{"auto-added"},
 		Sources:       sources,
 		CreatedAt:     now,
@@ -94,8 +94,8 @@ func (a *AutoApplier) applyPatch(ctx context.Context, d Decision) error {
 		}
 	}
 	for _, slug := range d.Candidate.RelatedSlugs {
-		if slug != "" && !containsStr(page.Related, slug) {
-			page.Related = append(page.Related, slug)
+		if slug != "" && !wiki.RelatedContainsSlug(page.Related, slug) {
+			page.Related = append(page.Related, wiki.RelatedRef{Slug: slug, Confidence: "EXTRACTED"})
 		}
 	}
 	page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)

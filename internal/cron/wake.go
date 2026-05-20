@@ -63,7 +63,7 @@ func agentJobWakePart(ctx context.Context, signal string, deps AgentJobWakeDeps)
 		if err != nil {
 			return "wiki:" + slug + ":missing", true
 		}
-		return fmt.Sprintf("wiki:%s:%s:%s:%s", slug, page.UpdatedAt, page.Title, strings.Join(page.Related, ",")), true
+		return fmt.Sprintf("wiki:%s:%s:%s:%s", slug, page.UpdatedAt, page.Title, strings.Join(wiki.RelatedSlugs(page.Related), ",")), true
 	}
 	if id, ok := strings.CutPrefix(signal, "source:"); ok {
 		if isNilWakeDep(deps.Sources) {

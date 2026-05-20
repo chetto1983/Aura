@@ -52,7 +52,7 @@ func seedPage(t *testing.T, s *wiki.Store, title, body string, related, sources 
 		PromptVersion: "v1",
 		CreatedAt:     now,
 		UpdatedAt:     now,
-		Related:       related,
+		Related:       wiki.RelatedFromSlugs(related),
 		Sources:       sources,
 	}
 	if err := s.WritePage(context.Background(), page); err != nil {
@@ -194,7 +194,7 @@ func TestWikiPage_Replace_PreservesUnsetFrontmatter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !containsStringSlice(got.Related, "existing-related") {
+	if !wiki.RelatedContainsSlug(got.Related, "existing-related") {
 		t.Fatalf("related not preserved: %v", got.Related)
 	}
 	if !containsStringSlice(got.Sources, "source:src_x") {

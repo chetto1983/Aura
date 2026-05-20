@@ -13,7 +13,7 @@ func TestBuildGraphNodesEdgesAndBrokenRefs(t *testing.T) {
 		"alpha": {
 			Title:    "Alpha",
 			Category: "test",
-			Related:  []string{"beta", "missing-related"},
+			Related:  RelatedFromSlugs([]string{"beta", "missing-related"}),
 			Body:     "See [[beta]], [[missing]], and [[alpha]].",
 		},
 		"beta": {

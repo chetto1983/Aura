@@ -177,7 +177,7 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		Category:      "sources",
 		Tags:          []string{"source", string(src.Kind)},
 		Sources:       []string{"source:" + sourceID},
-		Related:       related,
+		Related:       wiki.RelatedFromSlugs(related),
 		SchemaVersion: wiki.CurrentSchemaVersion,
 		PromptVersion: pagePromptVersion,
 		CreatedAt:     now,
@@ -471,7 +471,7 @@ func (p *Pipeline) upsertEntityPage(ctx context.Context, ent ExtractedEntity, so
 			Body:          buildEntityBody(ent, sourceID),
 			Category:      "entity",
 			Tags:          []string{"entity", ent.Type},
-			Related:       cleanedRelated(ent.RelatesTo, ent.Slug),
+			Related:       wiki.RelatedFromSlugs(cleanedRelated(ent.RelatesTo, ent.Slug)),
 			Sources:       []string{sourceTag},
 			SchemaVersion: wiki.CurrentSchemaVersion,
 			PromptVersion: PromptVersion(),
@@ -490,8 +490,8 @@ func (p *Pipeline) upsertEntityPage(ctx context.Context, ent ExtractedEntity, so
 		"\n\n## From source:" + sourceID + "\n\n" +
 		annotateProvenance(ent.ShortDescription, sourceID) + "\n"
 	for _, rel := range cleanedRelated(ent.RelatesTo, ent.Slug) {
-		if !containsString(existing.Related, rel) {
-			existing.Related = append(existing.Related, rel)
+		if !wiki.RelatedContainsSlug(existing.Related, rel) {
+			existing.Related = append(existing.Related, wiki.RelatedRef{Slug: rel, Confidence: "EXTRACTED"})
 		}
 	}
 	existing.UpdatedAt = now

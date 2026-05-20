@@ -28,6 +28,12 @@ type indexedWikiPage struct {
 }
 
 func parseIndexedWikiPage(slug, ext string, data []byte) (indexedWikiPage, error) {
+	return parseIndexedWikiPageOpts(slug, ext, data, false)
+}
+
+// parseIndexedWikiPageOpts is parseIndexedWikiPage with a confidence filter.
+// includeAmbiguous=true surfaces AMBIGUOUS edges (e.g. for the review queue).
+func parseIndexedWikiPageOpts(slug, ext string, data []byte, includeAmbiguous bool) (indexedWikiPage, error) {
 	var page *wiki.Page
 	var err error
 	if ext == ".md" {
@@ -41,14 +47,15 @@ func parseIndexedWikiPage(slug, ext string, data []byte) (indexedWikiPage, error
 	if strings.TrimSpace(page.Title) == "" {
 		page.Title = slug
 	}
-	outbound := mergeSlugs(wiki.ExtractWikiLinks(page.Body), page.Related)
+	relatedSlugs := filteredRelatedSlugs(page.Related, includeAmbiguous)
+	outbound := mergeSlugs(wiki.ExtractWikiLinks(page.Body), relatedSlugs)
 	return indexedWikiPage{
 		Slug:          slug,
 		Title:         page.Title,
 		Body:          page.Body,
 		Category:      page.Category,
 		Tags:          cleanGraphValues(page.Tags),
-		Related:       cleanGraphValues(page.Related),
+		Related:       cleanGraphValues(relatedSlugs),
 		Sources:       cleanGraphValues(page.Sources),
 		Outbound:      outbound,
 		Updated:       page.UpdatedAt,
@@ -57,6 +64,23 @@ func parseIndexedWikiPage(slug, ext string, data []byte) (indexedWikiPage, error
 		PromptVersion: strings.TrimSpace(page.PromptVersion),
 		Unversioned:   page.Unversioned,
 	}, nil
+}
+
+// filteredRelatedSlugs returns related slugs filtered by confidence.
+// AMBIGUOUS edges are excluded unless includeAmbiguous is true.
+// INFERRED edges are always included (semantically "downweighted" but real).
+func filteredRelatedSlugs(refs []wiki.RelatedRef, includeAmbiguous bool) []string {
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		if ref.Confidence == "AMBIGUOUS" && !includeAmbiguous {
+			continue
+		}
+		s := strings.TrimSpace(ref.Slug)
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func buildGraphDocuments(pages map[string]indexedWikiPage) []Document {

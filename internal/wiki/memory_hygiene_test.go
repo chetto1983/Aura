@@ -35,13 +35,13 @@ func TestCleanMemoryDryRunPlansSharedBrokenHubWithoutWriting(t *testing.T) {
 		Title:    "Trading Signal One",
 		Body:     "First signal.",
 		Category: "trading-signals",
-		Related:  []string{"segnali-di-trading"},
+		Related:  RelatedFromSlugs([]string{"segnali-di-trading"}),
 	})
 	putMemoryHygienePage(t, store, &Page{
 		Title:    "Trading Signal Two",
 		Body:     "Second signal.",
 		Category: "trading-signals",
-		Related:  []string{"segnali-di-trading"},
+		Related:  RelatedFromSlugs([]string{"segnali-di-trading"}),
 	})
 
 	report, err := store.CleanMemory(context.Background(), MemoryHygieneOptions{})
@@ -66,13 +66,13 @@ func TestCleanMemoryPlansSharedBrokenHubAcrossCategories(t *testing.T) {
 		Title:    "Installed Skills",
 		Body:     "Skill inventory.",
 		Category: "engineering",
-		Related:  []string{"aura-source-extraction"},
+		Related:  RelatedFromSlugs([]string{"aura-source-extraction"}),
 	})
 	putMemoryHygienePage(t, store, &Page{
 		Title:    "Source Note",
 		Body:     "Extracted source summary.",
 		Category: "sources",
-		Related:  []string{"aura-source-extraction"},
+		Related:  RelatedFromSlugs([]string{"aura-source-extraction"}),
 	})
 
 	report, err := store.CleanMemory(context.Background(), MemoryHygieneOptions{})
@@ -101,19 +101,19 @@ func TestCleanMemoryApplyCreatesHubsRepairsAliasesAndLeavesNoBrokenLinks(t *test
 		Title:    "Golem agente AI personale in Go",
 		Body:     "Uses [[golang-agenti-ai-personali]] as context.",
 		Category: "engineering",
-		Related:  []string{"goa-ai-framework"},
+		Related:  RelatedFromSlugs([]string{"goa-ai-framework"}),
 	})
 	putMemoryHygienePage(t, store, &Page{
 		Title:    "Trading Signal One",
 		Body:     "First signal.",
 		Category: "trading-signals",
-		Related:  []string{"segnali-di-trading"},
+		Related:  RelatedFromSlugs([]string{"segnali-di-trading"}),
 	})
 	putMemoryHygienePage(t, store, &Page{
 		Title:    "Trading Signal Two",
 		Body:     "Second signal.",
 		Category: "trading-signals",
-		Related:  []string{"segnali-di-trading"},
+		Related:  RelatedFromSlugs([]string{"segnali-di-trading"}),
 	})
 
 	report, err := store.CleanMemory(ctx, MemoryHygieneOptions{Apply: true})
@@ -131,10 +131,10 @@ func TestCleanMemoryApplyCreatesHubsRepairsAliasesAndLeavesNoBrokenLinks(t *test
 	if err != nil {
 		t.Fatalf("ReadPage(golem): %v", err)
 	}
-	if !slices.Contains(golem.Related, "goa-ai-framework-design-first-per-agenti-agentic") {
+	if !RelatedContainsSlug(golem.Related, "goa-ai-framework-design-first-per-agenti-agentic") {
 		t.Fatalf("golem related = %v, want canonical goa slug", golem.Related)
 	}
-	if slices.Contains(golem.Related, "goa-ai-framework") {
+	if RelatedContainsSlug(golem.Related, "goa-ai-framework") {
 		t.Fatalf("golem related still has broken alias: %v", golem.Related)
 	}
 	if want := "[[golang-e-agenti-ai-personali-interessi-e-panoramica]]"; !strings.Contains(golem.Body, want) {
@@ -234,7 +234,7 @@ func TestCleanMemoryApplyRenamesOpaqueSourceSlugAndUpdatesReferences(t *testing.
 	putMemoryHygienePage(t, store, &Page{
 		Title:    "PMS Project Notes",
 		Category: "projects",
-		Related:  []string{oldSlug},
+		Related:  RelatedFromSlugs([]string{oldSlug}),
 		Body:     "Evidence is in [[" + oldSlug + "]].",
 	})
 
@@ -259,10 +259,10 @@ func TestCleanMemoryApplyRenamesOpaqueSourceSlugAndUpdatesReferences(t *testing.
 	if err != nil {
 		t.Fatalf("ReadPage(project): %v", err)
 	}
-	if strings.Contains(project.Body, oldSlug) || slices.Contains(project.Related, oldSlug) {
+	if strings.Contains(project.Body, oldSlug) || RelatedContainsSlug(project.Related, oldSlug) {
 		t.Fatalf("project still references old slug: body=%q related=%v", project.Body, project.Related)
 	}
-	if !strings.Contains(project.Body, "[["+newSlug+"]]") || !slices.Contains(project.Related, newSlug) {
+	if !strings.Contains(project.Body, "[["+newSlug+"]]") || !RelatedContainsSlug(project.Related, newSlug) {
 		t.Fatalf("project missing new slug: body=%q related=%v", project.Body, project.Related)
 	}
 

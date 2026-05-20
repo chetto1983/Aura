@@ -337,7 +337,7 @@ func TestHandleSummariesApprove_HappyPath(t *testing.T) {
 	if got := ws.written[0].Category; got != "project" {
 		t.Fatalf("written category = %q, want project", got)
 	}
-	if len(ws.written[0].Related) != 1 || ws.written[0].Related[0] != "aura" {
+	if len(ws.written[0].Related) != 1 || ws.written[0].Related[0].Slug != "aura" {
 		t.Fatalf("written related = %#v, want [aura]", ws.written[0].Related)
 	}
 }

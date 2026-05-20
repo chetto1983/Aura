@@ -125,8 +125,8 @@ func (g *GraphIndex) upsertLocked(slug string, page *Page) {
 			newTargets[t] = true
 		}
 	}
-	for _, t := range page.Related {
-		t = Slug(t)
+	for _, ref := range page.Related {
+		t := Slug(ref.Slug)
 		if t != "" && t != slug {
 			newTargets[t] = true
 		}

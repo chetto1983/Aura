@@ -3,6 +3,8 @@ package wiki
 import (
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestSchema_UnversionedRoundTrip(t *testing.T) {
@@ -242,5 +244,122 @@ func TestSlug(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("Slug(%q) = %q, want %q", tt.input, got, tt.want)
 		}
+	}
+}
+
+// validPageBase returns a Page that satisfies Validate for schema v3.
+func validPageBase() *Page {
+	return &Page{
+		Title:         "Test",
+		Body:          "Content",
+		SchemaVersion: CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-01-01T00:00:00Z",
+		UpdatedAt:     "2026-01-01T00:00:00Z",
+	}
+}
+
+func TestRelatedRef_BareStringParsesAsExtracted(t *testing.T) {
+	input := `
+related:
+  - slug-a
+  - slug-b
+`
+	var result struct {
+		Related []RelatedRef `yaml:"related"`
+	}
+	if err := yaml.Unmarshal([]byte(input), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(result.Related) != 2 {
+		t.Fatalf("len = %d, want 2", len(result.Related))
+	}
+	for i, ref := range result.Related {
+		if ref.Confidence != "EXTRACTED" {
+			t.Errorf("[%d] confidence = %q, want EXTRACTED", i, ref.Confidence)
+		}
+	}
+	if result.Related[0].Slug != "slug-a" || result.Related[1].Slug != "slug-b" {
+		t.Errorf("slugs = %v/%v, want slug-a/slug-b", result.Related[0].Slug, result.Related[1].Slug)
+	}
+}
+
+func TestRelatedRef_ExplicitConfidence(t *testing.T) {
+	input := `
+related:
+  - slug: foo
+    confidence: INFERRED
+  - slug: bar
+    confidence: AMBIGUOUS
+  - slug: baz
+`
+	var result struct {
+		Related []RelatedRef `yaml:"related"`
+	}
+	if err := yaml.Unmarshal([]byte(input), &result); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(result.Related) != 3 {
+		t.Fatalf("len = %d, want 3", len(result.Related))
+	}
+	if result.Related[0].Confidence != "INFERRED" {
+		t.Errorf("foo confidence = %q, want INFERRED", result.Related[0].Confidence)
+	}
+	if result.Related[1].Confidence != "AMBIGUOUS" {
+		t.Errorf("bar confidence = %q, want AMBIGUOUS", result.Related[1].Confidence)
+	}
+	if result.Related[2].Confidence != "EXTRACTED" {
+		t.Errorf("baz confidence = %q, want EXTRACTED (default)", result.Related[2].Confidence)
+	}
+}
+
+func TestRelatedRef_InvalidConfidenceFails(t *testing.T) {
+	p := validPageBase()
+	p.Related = []RelatedRef{{Slug: "foo", Confidence: "BOGUS"}}
+	if err := Validate(p); err == nil {
+		t.Fatal("expected validation error for unknown confidence value")
+	}
+}
+
+func TestPage_SchemaV2_LegacyRelatedStillParses(t *testing.T) {
+	input := "---\ntitle: Legacy\nbody: body\nrelated:\n  - alpha\n  - beta\nschema_version: 2\nprompt_version: v1\ncreated_at: \"2026-01-01T00:00:00Z\"\nupdated_at: \"2026-01-01T00:00:00Z\"\n---\nbody\n"
+	page, err := ParseMD([]byte(input))
+	if err != nil {
+		t.Fatalf("ParseMD: %v", err)
+	}
+	if len(page.Related) != 2 {
+		t.Fatalf("len(Related) = %d, want 2", len(page.Related))
+	}
+	for i, ref := range page.Related {
+		if ref.Confidence != "EXTRACTED" {
+			t.Errorf("[%d] confidence = %q, want EXTRACTED", i, ref.Confidence)
+		}
+	}
+	// schema_version=2 must still pass Validate (backward compat).
+	if err := Validate(page); err != nil {
+		t.Fatalf("Validate schema v2: %v", err)
+	}
+}
+
+func TestPage_SchemaV3_RoundTrip(t *testing.T) {
+	page := validPageBase()
+	page.Related = []RelatedRef{
+		{Slug: "a", Confidence: "EXTRACTED"},
+		{Slug: "b", Confidence: "INFERRED"},
+	}
+	data, err := MarshalMD(page)
+	if err != nil {
+		t.Fatalf("MarshalMD: %v", err)
+	}
+	back, err := ParseMD(data)
+	if err != nil {
+		t.Fatalf("ParseMD round-trip: %v", err)
+	}
+	if len(back.Related) != 2 {
+		t.Fatalf("round-trip len(Related) = %d, want 2", len(back.Related))
+	}
+	// MarshalMD writes bare slugs → re-parsed as EXTRACTED.
+	if back.Related[0].Slug != "a" || back.Related[1].Slug != "b" {
+		t.Errorf("slugs = %v/%v", back.Related[0].Slug, back.Related[1].Slug)
 	}
 }

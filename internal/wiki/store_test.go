@@ -472,7 +472,7 @@ func TestRepairLinkContinuesAfterWriteFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read bad-page.md: %v", err)
 	}
-	badText := strings.Replace(string(badBytes), "schema_version: 2", "schema_version: 1", 1)
+	badText := strings.Replace(string(badBytes), "schema_version: 3", "schema_version: 99", 1)
 	if err := os.WriteFile(badPath, []byte(badText), 0o644); err != nil {
 		t.Fatalf("corrupt bad-page.md: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestRepairLinkUpdatesRelatedFrontmatter(t *testing.T) {
 			Title:         "Needs Related Repair",
 			Body:          "No body wiki link here.",
 			Category:      "debug",
-			Related:       []string{"broken-link"},
+			Related:       RelatedFromSlugs([]string{"broken-link"}),
 			SchemaVersion: CurrentSchemaVersion,
 			PromptVersion: "v1",
 			CreatedAt:     now,
@@ -548,7 +548,7 @@ func TestRepairLinkUpdatesRelatedFrontmatter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadPage: %v", err)
 	}
-	if len(repaired.Related) != 1 || repaired.Related[0] != "fixed-link" {
+	if len(repaired.Related) != 1 || repaired.Related[0].Slug != "fixed-link" {
 		t.Fatalf("Related = %#v, want fixed-link", repaired.Related)
 	}
 }

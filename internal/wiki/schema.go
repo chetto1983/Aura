@@ -3,28 +3,71 @@ package wiki
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-const CurrentSchemaVersion = 2
+const CurrentSchemaVersion = 3
 
 var promptVersionRe = regexp.MustCompile(`^(v[0-9]+|ingest_v[0-9]+|proposal_v[0-9]+|summarizer_v[0-9]+)$`)
 var wikiLinkRe = regexp.MustCompile(`\[\[([a-z0-9-]+)\]\]`)
 
+// validConfidences is the set of accepted Confidence values for RelatedRef.
+var validConfidences = map[string]bool{
+	"EXTRACTED": true,
+	"INFERRED":  true,
+	"AMBIGUOUS": true,
+	"":          true, // empty defaults to EXTRACTED on read
+}
+
+// RelatedRef is a typed entry in a page's `related:` frontmatter list.
+// It supports both the legacy bare-string form and the new dict form:
+//
+//	related: [slug-a, slug-b]             → Confidence defaults to "EXTRACTED"
+//	related: [{slug: foo, confidence: INFERRED}]
+type RelatedRef struct {
+	Slug       string `yaml:"slug"`
+	Confidence string `yaml:"confidence,omitempty"`
+}
+
+// UnmarshalYAML accepts either a scalar string (bare slug) or a mapping
+// ({slug: ..., confidence: ...}) so legacy pages parse without rewriting.
+func (r *RelatedRef) UnmarshalYAML(node *yaml.Node) error {
+	switch node.Kind {
+	case yaml.ScalarNode:
+		r.Slug = node.Value
+		r.Confidence = "EXTRACTED"
+	case yaml.MappingNode:
+		// Use an alias to avoid infinite recursion with the custom unmarshaler.
+		type relatedRefAlias RelatedRef
+		var alias relatedRefAlias
+		if err := node.Decode(&alias); err != nil {
+			return err
+		}
+		*r = RelatedRef(alias)
+		if r.Confidence == "" {
+			r.Confidence = "EXTRACTED"
+		}
+	default:
+		return fmt.Errorf("wiki: RelatedRef must be a string or mapping, got %v", node.Tag)
+	}
+	return nil
+}
+
 // Page represents a wiki page with YAML frontmatter and markdown body.
 type Page struct {
-	Title         string   `yaml:"title"`
-	Tags          []string `yaml:"tags,omitempty"`
-	Category      string   `yaml:"category,omitempty"`
-	Related       []string `yaml:"related,omitempty"`
-	Sources       []string `yaml:"sources,omitempty"`
-	SchemaVersion int      `yaml:"schema_version"`
-	PromptVersion string   `yaml:"prompt_version"`
-	CreatedAt     string   `yaml:"created_at"`
-	UpdatedAt     string   `yaml:"updated_at"`
+	Title         string       `yaml:"title"`
+	Tags          []string     `yaml:"tags,omitempty"`
+	Category      string       `yaml:"category,omitempty"`
+	Related       []RelatedRef `yaml:"related,omitempty"`
+	Sources       []string     `yaml:"sources,omitempty"`
+	SchemaVersion int          `yaml:"schema_version"`
+	PromptVersion string       `yaml:"prompt_version"`
+	CreatedAt     string       `yaml:"created_at"`
+	UpdatedAt     string       `yaml:"updated_at"`
 
 	// Unversioned indicates the most recent on-disk write did not produce a
 	// git commit (commit failed or git is unavailable). The page IS saved on
@@ -35,6 +78,57 @@ type Page struct {
 	// Body holds the markdown content below the frontmatter.
 	// Not serialized in YAML — written after the --- delimiter.
 	Body string `yaml:"-"`
+}
+
+// RelatedSlugs returns the slug strings from a slice of RelatedRef.
+func RelatedSlugs(refs []RelatedRef) []string {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]string, len(refs))
+	for i, r := range refs {
+		out[i] = r.Slug
+	}
+	return out
+}
+
+// RelatedFromSlugs converts bare slug strings into EXTRACTED RelatedRefs.
+func RelatedFromSlugs(slugs []string) []RelatedRef {
+	if len(slugs) == 0 {
+		return nil
+	}
+	out := make([]RelatedRef, len(slugs))
+	for i, s := range slugs {
+		out[i] = RelatedRef{Slug: s, Confidence: "EXTRACTED"}
+	}
+	return out
+}
+
+// RelatedContainsSlug reports whether any RelatedRef in refs has the given slug.
+func RelatedContainsSlug(refs []RelatedRef, slug string) bool {
+	for _, r := range refs {
+		if r.Slug == slug {
+			return true
+		}
+	}
+	return false
+}
+
+// RelatedAppendSlug appends a new EXTRACTED RelatedRef for slug if not already
+// present, then sorts the slice by slug for deterministic diffs. Returns the
+// (possibly new) slice.
+func RelatedAppendSlug(refs []RelatedRef, slug string) []RelatedRef {
+	if RelatedContainsSlug(refs, slug) {
+		return refs
+	}
+	refs = append(refs, RelatedRef{Slug: slug, Confidence: "EXTRACTED"})
+	RelatedSortBySlugs(refs)
+	return refs
+}
+
+// RelatedSortBySlugs sorts a RelatedRef slice in-place by Slug ascending.
+func RelatedSortBySlugs(refs []RelatedRef) {
+	sort.Slice(refs, func(i, j int) bool { return refs[i].Slug < refs[j].Slug })
 }
 
 // ValidationError contains all validation failures for a wiki page.
@@ -90,9 +184,12 @@ func Validate(page *Page) error {
 		errs = append(errs, "category exceeds 50 characters")
 	}
 
-	for i, rel := range page.Related {
-		if len(rel) > 100 {
-			errs = append(errs, fmt.Sprintf("related[%d] exceeds 100 characters", i))
+	for i, ref := range page.Related {
+		if len(ref.Slug) > 100 {
+			errs = append(errs, fmt.Sprintf("related[%d] slug exceeds 100 characters", i))
+		}
+		if !validConfidences[ref.Confidence] {
+			errs = append(errs, fmt.Sprintf("related[%d] confidence %q must be EXTRACTED, INFERRED, AMBIGUOUS, or empty", i, ref.Confidence))
 		}
 	}
 
@@ -105,8 +202,8 @@ func Validate(page *Page) error {
 		}
 	}
 
-	if page.SchemaVersion != CurrentSchemaVersion {
-		errs = append(errs, fmt.Sprintf("schema_version must be %d", CurrentSchemaVersion))
+	if page.SchemaVersion < 1 || page.SchemaVersion > CurrentSchemaVersion {
+		errs = append(errs, fmt.Sprintf("schema_version must be between 1 and %d", CurrentSchemaVersion))
 	}
 
 	if page.PromptVersion == "" {

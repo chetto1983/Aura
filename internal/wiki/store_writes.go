@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -265,12 +264,11 @@ func (s *Store) addBacklink(ctx context.Context, targetSlug, writerSlug string) 
 	}
 
 	// Idempotency: if writerSlug already related, nothing to do.
-	if slices.Contains(target.Related, writerSlug) {
+	if RelatedContainsSlug(target.Related, writerSlug) {
 		return nil
 	}
 
-	target.Related = append(target.Related, writerSlug)
-	sort.Strings(target.Related) // canonical order for stable diffs
+	target.Related = RelatedAppendSlug(target.Related, writerSlug)
 	target.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 
 	if err := Validate(target); err != nil {
@@ -484,9 +482,9 @@ func (s *Store) RepairLink(ctx context.Context, brokenSlug, fixedSlug string) er
 			page.Body = strings.ReplaceAll(page.Body, old, replacement)
 			changed = true
 		}
-		for i, rel := range page.Related {
-			if rel == brokenSlug {
-				page.Related[i] = fixedSlug
+		for i := range page.Related {
+			if page.Related[i].Slug == brokenSlug {
+				page.Related[i].Slug = fixedSlug
 				changed = true
 			}
 		}

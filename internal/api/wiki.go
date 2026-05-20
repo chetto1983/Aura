@@ -130,7 +130,7 @@ func pageFrontmatter(p *wiki.Page) map[string]any {
 		fm["tags"] = slices.Clone(p.Tags)
 	}
 	if len(p.Related) > 0 {
-		fm["related"] = slices.Clone(p.Related)
+		fm["related"] = wiki.RelatedSlugs(p.Related)
 	}
 	if len(p.Sources) > 0 {
 		fm["sources"] = slices.Clone(p.Sources)

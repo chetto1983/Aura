@@ -195,7 +195,7 @@ func TestSearchMemoryTool_WikiFrontmatterMetadata(t *testing.T) {
 	}
 	for _, want := range []string{
 		"[wiki] [[phase07f-metadata]]",
-		"schema=2",
+		"schema=3",
 		"prompt=ingest_v2",
 		"created=2026-05-01T10:00:00Z",
 		"unversioned=true",

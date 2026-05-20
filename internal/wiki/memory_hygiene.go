@@ -196,7 +196,7 @@ func (s *Store) CleanMemory(ctx context.Context, opts MemoryHygieneOptions) (*Me
 				continue
 			}
 			if !pageReferencesSlug(item.page, hubSlug) {
-				item.page.Related = appendUniqueSorted(item.page.Related, hubSlug)
+				item.page.Related = RelatedAppendSlug(item.page.Related, hubSlug)
 				changed = true
 			}
 		}
@@ -519,8 +519,8 @@ func pageGraphRefs(page *Page) []graphRef {
 		seen["body:"+link] = true
 		refs = append(refs, graphRef{target: link, location: "body"})
 	}
-	for _, rel := range page.Related {
-		rel = strings.TrimSpace(rel)
+	for _, rref := range page.Related {
+		rel := strings.TrimSpace(rref.Slug)
 		if rel == "" || seen["related:"+rel] {
 			continue
 		}
@@ -693,20 +693,21 @@ func titleFromSlug(slug string) string {
 
 func replaceRelated(page *Page, broken, fixed string) bool {
 	changed := false
-	next := make([]string, 0, len(page.Related))
+	next := make([]RelatedRef, 0, len(page.Related))
 	seen := make(map[string]bool)
-	for _, rel := range page.Related {
-		if rel == broken {
-			rel = fixed
+	for _, ref := range page.Related {
+		s := ref.Slug
+		if s == broken {
+			s = fixed
 			changed = true
 		}
-		if rel == "" || seen[rel] {
+		if s == "" || seen[s] {
 			continue
 		}
-		seen[rel] = true
-		next = append(next, rel)
+		seen[s] = true
+		next = append(next, RelatedRef{Slug: s, Confidence: ref.Confidence})
 	}
-	sort.Strings(next)
+	RelatedSortBySlugs(next)
 	page.Related = next
 	return changed
 }
@@ -715,7 +716,7 @@ func pageReferencesSlug(page *Page, slug string) bool {
 	if strings.Contains(page.Body, "[["+slug+"]]") {
 		return true
 	}
-	return hasString(page.Related, slug)
+	return RelatedContainsSlug(page.Related, slug)
 }
 
 func stripAutoSourcePreview(page *Page) bool {

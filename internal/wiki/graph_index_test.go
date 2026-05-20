@@ -14,7 +14,7 @@ func makeTestPage(title, body string, related []string) *Page {
 	return &Page{
 		Title:         title,
 		Body:          body,
-		Related:       related,
+		Related:       RelatedFromSlugs(related),
 		SchemaVersion: CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     now,

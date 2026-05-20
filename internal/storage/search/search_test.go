@@ -145,7 +145,7 @@ func TestLoadWikiDocumentsBuildsGraphCards(t *testing.T) {
 		Title:         "Beta Legal Review",
 		Body:          "Review links to [[alpha-contract]] before renewal.",
 		Category:      "project",
-		Related:       []string{"alpha-contract"},
+		Related:       wiki.RelatedFromSlugs([]string{"alpha-contract"}),
 		SchemaVersion: wiki.CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
@@ -185,7 +185,7 @@ func TestLoadWikiDocumentsPromotesFrontmatterMetadata(t *testing.T) {
 		Body:          "Phase07F sentinel frontmatter body linked to [[graph-target]].",
 		Category:      "concept",
 		Tags:          []string{"rag", "frontmatter"},
-		Related:       []string{"graph-target"},
+		Related:       wiki.RelatedFromSlugs([]string{"graph-target"}),
 		Sources:       []string{"src_phase07f", "https://example.test/ref"},
 		SchemaVersion: wiki.CurrentSchemaVersion,
 		PromptVersion: "ingest_v2",
@@ -201,7 +201,7 @@ func TestLoadWikiDocumentsPromotesFrontmatterMetadata(t *testing.T) {
 
 	pageDoc := findDoc(t, docs, "phase07f-metadata")
 	for key, want := range map[string]string{
-		"schema_version": "2",
+		"schema_version": "3",
 		"prompt_version": "ingest_v2",
 		"created_at":     created,
 		"updated_at":     updated,
@@ -215,7 +215,7 @@ func TestLoadWikiDocumentsPromotesFrontmatterMetadata(t *testing.T) {
 
 	graphDoc := findDoc(t, docs, "graph:node:phase07f-metadata")
 	for key, want := range map[string]string{
-		"schema_version": "2",
+		"schema_version": "3",
 		"prompt_version": "ingest_v2",
 		"created_at":     created,
 		"sources":        "src_phase07f,https://example.test/ref",
@@ -226,7 +226,7 @@ func TestLoadWikiDocumentsPromotesFrontmatterMetadata(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"Schema version: 2",
+		"Schema version: 3",
 		"Prompt version: ingest_v2",
 		"Created: " + created,
 		"Unversioned: true",
@@ -460,7 +460,7 @@ func TestRebuildSQLiteWikiDocumentsClearsStaleAndIndexesGraph(t *testing.T) {
 		Title:         "Beta Review",
 		Body:          "Review links to [[alpha-contract]].",
 		Category:      "project",
-		Related:       []string{"alpha-contract"},
+		Related:       wiki.RelatedFromSlugs([]string{"alpha-contract"}),
 		SchemaVersion: wiki.CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     time.Now().UTC().Format(time.RFC3339),

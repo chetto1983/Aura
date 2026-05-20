@@ -73,7 +73,7 @@ func (e *testEnv) seedPage(title, body, category string, related []string) *wiki
 		Title:         title,
 		Body:          body,
 		Category:      category,
-		Related:       related,
+		Related:       wiki.RelatedFromSlugs(related),
 		SchemaVersion: wiki.CurrentSchemaVersion,
 		PromptVersion: "v1",
 		CreatedAt:     now,

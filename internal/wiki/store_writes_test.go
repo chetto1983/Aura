@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -392,7 +391,7 @@ func TestWritePage_AddsBacklinkOnNewLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadPage target: %v", err)
 	}
-	if !slices.Contains(target.Related, "writer") {
+	if !RelatedContainsSlug(target.Related, "writer") {
 		t.Fatalf("target.Related = %v, want it to contain 'writer'", target.Related)
 	}
 }
@@ -422,8 +421,8 @@ func TestWritePage_BacklinkIdempotent(t *testing.T) {
 		t.Fatal(err)
 	}
 	count := 0
-	for _, rel := range target.Related {
-		if rel == "writer" {
+	for _, ref := range target.Related {
+		if ref.Slug == "writer" {
 			count++
 		}
 	}
@@ -450,7 +449,7 @@ func TestWritePage_BacklinkSkipsSelfReference(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if slices.Contains(read.Related, "self") {
+	if RelatedContainsSlug(read.Related, "self") {
 		t.Fatalf("self-reference should not be added: %v", read.Related)
 	}
 }
@@ -482,7 +481,7 @@ func TestWritePage_BacklinkPreservesManualRelated(t *testing.T) {
 	s := newWritesTestStore(t)
 	target := &Page{
 		Title: "Target", Body: "target body",
-		Related:       []string{"manual-entry"},
+		Related:       RelatedFromSlugs([]string{"manual-entry"}),
 		SchemaVersion: CurrentSchemaVersion, PromptVersion: "v1",
 		CreatedAt: "2026-05-12T00:00:00Z", UpdatedAt: "2026-05-12T00:00:00Z",
 	}
@@ -502,10 +501,10 @@ func TestWritePage_BacklinkPreservesManualRelated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(read.Related, "manual-entry") {
+	if !RelatedContainsSlug(read.Related, "manual-entry") {
 		t.Fatalf("manual entry lost: %v", read.Related)
 	}
-	if !slices.Contains(read.Related, "writer") {
+	if !RelatedContainsSlug(read.Related, "writer") {
 		t.Fatalf("auto backlink missing: %v", read.Related)
 	}
 }
@@ -538,7 +537,7 @@ func TestWritePage_BacklinkAddsOnUpdateNewLink(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(beta.Related, "writer") {
+	if !RelatedContainsSlug(beta.Related, "writer") {
 		t.Fatalf("beta.Related missing writer after update: %v", beta.Related)
 	}
 }

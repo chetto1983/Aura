@@ -538,11 +538,11 @@ func (s *Store) lintAt(ctx context.Context, now time.Time) ([]LintIssue, error) 
 			}
 		}
 
-		for _, rel := range page.Related {
-			if !slugSet[rel] {
+		for _, ref := range page.Related {
+			if !slugSet[ref.Slug] {
 				issues = append(issues, LintIssue{
 					Slug:    slug,
-					Message: fmt.Sprintf("broken related ref: %s", rel),
+					Message: fmt.Sprintf("broken related ref: %s", ref.Slug),
 					Kind:    "broken_link", Severity: "high",
 				})
 			}
