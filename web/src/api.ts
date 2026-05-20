@@ -3,6 +3,7 @@ import type {
   WikiPageSummary,
   WikiPage,
   Graph,
+  GodNodesResponse,
   SourceSummary,
   SourceDetail,
   SourceMarkdown,
@@ -191,6 +192,8 @@ export const api = {
   wikiPage: (slug: string) =>
     get<WikiPage>(`/wiki/page?slug=${encodeURIComponent(slug)}`),
   wikiGraph: () => get<Graph>('/wiki/graph'),
+  wikiGodNodes: (topK = 10) =>
+    get<GodNodesResponse>(`/wiki/godnodes?top_k=${topK}`),
   sources: (q?: { status?: string; kind?: string }) =>
     get<SourceSummary[]>('/sources' + qs(q)),
   source: (id: string) => get<SourceDetail>(`/sources/${id}`),

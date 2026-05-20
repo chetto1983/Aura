@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, BookText } from 'lucide-react';
+import { RefreshCw, BookText, Network } from 'lucide-react';
 import { api } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { useLocale } from '@/hooks/useLocale';
@@ -82,6 +82,8 @@ export function WikiPanel() {
           {t('wiki.rebuildIndex')}
         </button>
       </header>
+
+      <TopHubsCard />
 
       <div className="flex flex-wrap items-center gap-2">
         <input
@@ -185,6 +187,43 @@ export function WikiPanel() {
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+function TopHubsCard() {
+  const { t } = useLocale();
+  const fetcher = useCallback(() => api.wikiGodNodes(10), []);
+  const { data } = useApi(fetcher);
+
+  const nodes = data?.nodes ?? [];
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <Network size={14} className="text-muted-foreground" />
+        <span className="text-sm font-medium">{t('wiki.godnodes.title')}</span>
+      </div>
+      {nodes.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{t('wiki.godnodes.empty')}</p>
+      ) : (
+        <ol className="space-y-1">
+          {nodes.map((n) => (
+            <li key={n.slug} className="flex items-center justify-between gap-2">
+              <Link
+                to={`/wiki/${n.slug}`}
+                className="text-xs text-primary underline-offset-2 hover:underline truncate"
+                title={n.title}
+              >
+                {n.title}
+              </Link>
+              <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                ↔{n.total}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

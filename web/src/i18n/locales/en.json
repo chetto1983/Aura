@@ -287,6 +287,8 @@
   "wiki.toast.rebuilding": "Rebuilding wiki index…",
   "wiki.toast.rebuilt": "Wiki index rebuilt",
   "wiki.toast.rebuildFailed": "Rebuild failed",
+  "wiki.godnodes.title": "Top hubs",
+  "wiki.godnodes.empty": "No pages indexed yet",
   "sources.title": "Sources",
   "sources.errorTitle": "Failed to load sources",
   "sources.emptyHint": "No sources yet — drop a PDF, TXT, MD, JSON, CSV, XLSX, or DOCX above, or upload one in Telegram.",

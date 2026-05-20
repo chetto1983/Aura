@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -166,6 +167,49 @@ func isValidSlug(s string) bool {
 		}
 	}
 	return true
+}
+
+func handleWikiGodNodes(deps Deps) http.HandlerFunc {
+	type godNodesProvider interface {
+		TopNodes(topK int) []wiki.GodNode
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		provider, ok := deps.Wiki.(godNodesProvider)
+		if !ok {
+			writeError(w, deps.Logger, http.StatusNotImplemented, "god nodes not available")
+			return
+		}
+		topK := 10
+		if s := r.URL.Query().Get("top_k"); s != "" {
+			n, err := strconv.Atoi(s)
+			if err != nil || n < 1 || n > 50 {
+				writeError(w, deps.Logger, http.StatusBadRequest, "top_k must be an integer between 1 and 50")
+				return
+			}
+			topK = n
+		}
+		nodes := provider.TopNodes(topK)
+		type nodeDTO struct {
+			Slug     string `json:"slug"`
+			Title    string `json:"title"`
+			Category string `json:"category,omitempty"`
+			In       int    `json:"in"`
+			Out      int    `json:"out"`
+			Total    int    `json:"total"`
+		}
+		dtos := make([]nodeDTO, len(nodes))
+		for i, n := range nodes {
+			dtos[i] = nodeDTO{
+				Slug:     n.Slug,
+				Title:    n.Title,
+				Category: n.Category,
+				In:       n.InDegree,
+				Out:      n.OutDegree,
+				Total:    n.TotalDegree,
+			}
+		}
+		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"nodes": dtos})
+	}
 }
 
 // latestWikiMTime walks dir non-recursively and returns the newest .md

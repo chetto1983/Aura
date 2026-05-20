@@ -287,6 +287,8 @@
   "wiki.toast.rebuilding": "Ricostruzione indice wiki…",
   "wiki.toast.rebuilt": "Indice wiki ricostruito",
   "wiki.toast.rebuildFailed": "Ricostruzione fallita",
+  "wiki.godnodes.title": "Hub principali",
+  "wiki.godnodes.empty": "Nessuna pagina indicizzata",
   "sources.title": "Fonti",
   "sources.errorTitle": "Caricamento fonti fallito",
   "sources.emptyHint": "Nessuna fonte — carica un PDF, TXT, MD, JSON, CSV, XLSX o DOCX qui sopra, oppure inviane uno su Telegram.",

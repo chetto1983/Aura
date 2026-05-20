@@ -238,6 +238,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /wiki/pages", handleWikiPages(deps))
 	mux.HandleFunc("GET /wiki/page", handleWikiPage(deps))
 	mux.HandleFunc("GET /wiki/graph", handleWikiGraph(deps))
+	mux.HandleFunc("GET /wiki/godnodes", handleWikiGodNodes(deps))
 
 	mux.HandleFunc("GET /sources", handleSourceList(deps))
 	mux.HandleFunc("GET /sources/{id}", handleSourceGet(deps))

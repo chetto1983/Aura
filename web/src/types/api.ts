@@ -75,6 +75,19 @@ export interface Graph {
   edges: GraphEdge[];
 }
 
+export interface GodNode {
+  slug: string;
+  title: string;
+  category?: string;
+  in: number;
+  out: number;
+  total: number;
+}
+
+export interface GodNodesResponse {
+  nodes: GodNode[];
+}
+
 export interface SourceSummary {
   id: string;
   // Generated artifacts share the source layout with uploaded files but skip
