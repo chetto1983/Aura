@@ -8,6 +8,7 @@ The register object is also callable as register(instance) per the story spec.
 """
 
 from aura.docx_converter import AuraDocxConverter
+from aura.pptx_converter import AuraPptxConverter
 from aura.xlsx_converter import AuraXlsxConverter
 
 
@@ -22,9 +23,10 @@ class _AuraPlugin:
 
     def register_converters(self, markitdown_instance, **kwargs) -> None:
         markitdown_instance.register_converter(AuraDocxConverter())
+        markitdown_instance.register_converter(AuraPptxConverter())
         markitdown_instance.register_converter(AuraXlsxConverter())
 
 
 register = _AuraPlugin()
 
-__all__ = ["register", "AuraDocxConverter", "AuraXlsxConverter"]
+__all__ = ["register", "AuraDocxConverter", "AuraPptxConverter", "AuraXlsxConverter"]
