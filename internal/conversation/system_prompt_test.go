@@ -123,6 +123,29 @@ func TestContextSetAgentNoteInjectsSection(t *testing.T) {
 	}
 }
 
+// TestStepCountRendered_AppearsInSystemPrompt verifies that RenderStepHint
+// produces the step counter string injected by the agent loop (US-LAT-01).
+func TestStepCountRendered_AppearsInSystemPrompt(t *testing.T) {
+	got := RenderStepHint(2, 5)
+	if got == "" {
+		t.Fatal("RenderStepHint(2, 5) returned empty string")
+	}
+	if !strings.Contains(got, "2/5") {
+		t.Errorf("step hint %q missing step counter 2/5", got)
+	}
+	// max <= 1 → empty (no pacing needed for single-step runs).
+	if s := RenderStepHint(1, 1); s != "" {
+		t.Errorf("RenderStepHint(1, 1) = %q, want empty", s)
+	}
+	if s := RenderStepHint(1, 0); s != "" {
+		t.Errorf("RenderStepHint(1, 0) = %q, want empty", s)
+	}
+	// step < 1 → empty.
+	if s := RenderStepHint(0, 5); s != "" {
+		t.Errorf("RenderStepHint(0, 5) = %q, want empty", s)
+	}
+}
+
 // TestContextSetAgentNoteEmptyInjectsNothing verifies that an empty note
 // does not add any extra section to the system message.
 func TestContextSetAgentNoteEmptyInjectsNothing(t *testing.T) {

@@ -864,3 +864,35 @@ func TestRunLoopAskUserClarificationPausesLoop(t *testing.T) {
 		t.Errorf("LLMCalls = %d, want 1 (loop should pause after one LLM call)", result.Stats.LLMCalls)
 	}
 }
+
+// TestMaxIter_ForcesFinalizeOnCap verifies that when MaxIterations is reached,
+// the loop injects a corrector message via PhantomCorrector and the final LLM
+// call returns a text answer (US-LAT-01 cap-hit behavior).
+func TestMaxIter_ForcesFinalizeOnCap(t *testing.T) {
+	state := newBudgetLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		// iteration 0: tool call (first iteration, not the cap)
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+			{ID: "t1", Name: "search", Arguments: map[string]any{"query": "test"}},
+		}}},
+		// iteration 1: final LLM call with toolDefs=nil (cap hit)
+		{Response: llm.Response{Content: "final answer from cap"}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, "search result")
+		return ExecutionSummary{LastResult: "search result"}
+	}), state, Options{MaxIterations: 2})
+
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != "final answer from cap" {
+		t.Errorf("Text = %q, want final answer from cap", result.Text)
+	}
+	// The corrector message must mention the step count so the LLM knows
+	// it's on the final iteration.
+	if !state.sawUserMessage("2/2") {
+		t.Error("expected cap-hit corrector message mentioning 2/2")
+	}
+}

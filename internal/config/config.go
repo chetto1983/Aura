@@ -14,7 +14,7 @@ const DefaultMemorySearchTimeoutMS = 5000
 const DefaultAuraBotTimeoutSec = 300
 const DefaultSandboxTimeoutSec = 120
 const DefaultSkillRoutingMode = "manifest"
-const DefaultAgentLoopMaxSteps = 100
+const DefaultAgentLoopMaxSteps = 5
 
 // Capability limits raised in Phase-F (2026-05-15): the agent caps LATENCY
 // and COST, not CAPABILITY. Per docs/aura-main-loop-limits-audit.md §3.5
@@ -118,7 +118,7 @@ type Config struct {
 	DashboardTokenTTLHours int    `envconfig:"DASHBOARD_TOKEN_TTL_HOURS" default:"720"`
 	PromptVersion          string `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	SkillRoutingMode       string `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
-	AgentLoopMaxSteps      int    `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"100"`
+	AgentLoopMaxSteps      int    `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"5"`
 	// ReasoningEffort drives the provider-side chain-of-thought field.
 	// Accepted values: "", "none", "minimal", "low", "medium", "high",
 	// "xhigh", "true"/"enabled". Empty means "do not emit any reasoning

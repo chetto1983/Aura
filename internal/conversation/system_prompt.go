@@ -119,6 +119,19 @@ Approval: ask_user(question="Delete wiki page 'old-contacts'? This cannot be und
 - A tool fails once with a transient error — retry silently; ask_user applies after three consecutive failures, not one.`
 }
 
+// RenderStepHint returns a brief per-iteration pacing line injected into the
+// agent loop context before each LLM call. Returns empty when max <= 1 (no
+// pacing needed for single-step runs) or when step is invalid.
+func RenderStepHint(step, max int) string {
+	if max <= 1 || step < 1 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"Sei al passo %d/%d. Se hai già le informazioni per rispondere, fallo ora. Evita tool call aggiuntive quando la risposta è già nel contesto.",
+		step, max,
+	)
+}
+
 func formatUTCOffset(offsetSec int) string {
 	sign := "+"
 	if offsetSec < 0 {

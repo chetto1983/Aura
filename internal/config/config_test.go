@@ -711,3 +711,31 @@ func TestNormalizeToolSearchBackend(t *testing.T) {
 		}
 	}
 }
+
+// TestMaxIter_DefaultIsFive verifies that AURA_AGENT_LOOP_MAX_STEPS defaults
+// to 5 (US-LAT-01: tight cap biases model toward single-shot answers).
+func TestMaxIter_DefaultIsFive(t *testing.T) {
+	if DefaultAgentLoopMaxSteps != 5 {
+		t.Fatalf("DefaultAgentLoopMaxSteps = %d, want 5", DefaultAgentLoopMaxSteps)
+	}
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AgentLoopMaxSteps != 5 {
+		t.Fatalf("Load().AgentLoopMaxSteps = %d, want 5", cfg.AgentLoopMaxSteps)
+	}
+}
+
+// TestMaxIter_EnvOverrides verifies that AURA_AGENT_LOOP_MAX_STEPS env var
+// overrides the default of 5 (US-LAT-01).
+func TestMaxIter_EnvOverrides(t *testing.T) {
+	t.Setenv("AURA_AGENT_LOOP_MAX_STEPS", "20")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.AgentLoopMaxSteps != 20 {
+		t.Fatalf("AgentLoopMaxSteps = %d, want 20 (env override)", cfg.AgentLoopMaxSteps)
+	}
+}
