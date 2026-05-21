@@ -194,6 +194,11 @@ type Stats struct {
 	// ToolCallsExecuted counts fresh (post-dedupe, post-budget-cap) tool calls
 	// actually dispatched. Distinct from ToolCalls which counts all announced.
 	ToolCallsExecuted int
+	// CacheReadTokens accumulates prompt tokens served from the provider's KV
+	// cache across all LLM calls in this run. Non-zero only when the provider
+	// confirmed a cache hit (OpenAI: prompt_tokens_details.cached_tokens;
+	// Anthropic: cache_read_input_tokens).
+	CacheReadTokens int
 }
 
 // MaxIterationsCeiling is a hard upper bound on opts.MaxIterations.

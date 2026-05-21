@@ -139,6 +139,14 @@ type Config struct {
 	MemoryJudgeEnabled          bool   `envconfig:"AURA_MEMORY_JUDGE_ENABLED" default:"false"`
 	OP12PrecallValidatorEnabled bool   `envconfig:"AURA_OP12_PRECALL_VALIDATOR_ENABLED" default:"false"`
 	OP12RetryHintEnabled        bool   `envconfig:"AURA_OP12B_RETRY_HINT_ENABLED" default:"false"`
+	// PromptCacheEnabled, when true, injects Anthropic-style cache_control
+	// markers on the static system-message prefix. Effective only when the
+	// configured LLM provider is heuristically recognised as cache-capable
+	// (openrouter.ai, anthropic.com, or a model name containing "claude" or
+	// "deepseek"). Safe to enable for OpenRouter/Anthropic-backed deployments;
+	// providers that reject the format receive a silent one-shot retry without
+	// markers.
+	PromptCacheEnabled bool `envconfig:"AURA_PROMPT_CACHE_ENABLED" default:"false"`
 
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,

@@ -72,11 +72,17 @@ type Response struct {
 // CompletionTokens (and therefore in TotalTokens) so existing budget
 // math is unchanged; treat it as a finer-grained breakdown rather than a
 // separate counter to add on top.
+//
+// CacheReadTokens, when non-zero, is the count of prompt tokens served from
+// the provider's KV cache (OpenAI: prompt_tokens_details.cached_tokens;
+// Anthropic: cache_read_input_tokens). Non-zero only when the static prefix
+// was marked with cache_control and the provider confirmed a cache hit.
 type TokenUsage struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
 	ReasoningTokens  int
+	CacheReadTokens  int
 }
 
 // Token represents a streaming response chunk.

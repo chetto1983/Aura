@@ -181,6 +181,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		stats.TokensPrompt += resp.Response.Usage.PromptTokens
 		stats.TokensCompletion += resp.Response.Usage.CompletionTokens
 		stats.TokensTotal += resp.Response.Usage.TotalTokens
+		stats.CacheReadTokens += resp.Response.Usage.CacheReadTokens
 		if opts.EstimateCost != nil {
 			stats.CostUSD += opts.EstimateCost(resp.Response.Usage)
 		}
@@ -550,6 +551,7 @@ func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state Sta
 	stats.TokensPrompt += resp.Response.Usage.PromptTokens
 	stats.TokensCompletion += resp.Response.Usage.CompletionTokens
 	stats.TokensTotal += resp.Response.Usage.TotalTokens
+	stats.CacheReadTokens += resp.Response.Usage.CacheReadTokens
 	if opts.EstimateCost != nil {
 		stats.CostUSD += opts.EstimateCost(resp.Response.Usage)
 	}

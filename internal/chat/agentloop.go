@@ -193,14 +193,15 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 		_ = emit(OutboundEvent{
 			Type: EventUsage,
 			Payload: map[string]any{
-				"llm_calls":         stats.LLMCalls,
-				"tool_calls":        stats.ToolCalls,
-				"loop_steps":        stats.LoopSteps,
-				"tokens_prompt":     stats.TokensPrompt,
-				"tokens_completion": stats.TokensCompletion,
-				"tokens_total":      stats.TokensTotal,
-				"cost_usd":          stats.CostUSD,
-				"terminal_tool":     stats.TerminalTool,
+				"llm_calls":          stats.LLMCalls,
+				"tool_calls":         stats.ToolCalls,
+				"loop_steps":         stats.LoopSteps,
+				"tokens_prompt":      stats.TokensPrompt,
+				"tokens_completion":  stats.TokensCompletion,
+				"tokens_total":       stats.TokensTotal,
+				"cache_read_tokens":  stats.CacheReadTokens,
+				"cost_usd":           stats.CostUSD,
+				"terminal_tool":      stats.TerminalTool,
 			},
 		})
 		if run != nil {

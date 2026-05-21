@@ -37,6 +37,9 @@ type Result struct {
 	CostUSD          float64
 	ElapsedMs        int64
 	TerminalTool     string
+	// CacheReadTokens is non-zero when the provider confirmed a prompt-cache
+	// hit; carries the count of input tokens served from the KV cache.
+	CacheReadTokens int
 	// ToolsUsed lists the unique tool names invoked during the run, in the
 	// order first seen. Captured from EventToolStart events so callers can
 	// observe which tools the agent picked without parsing logs. Used by
@@ -112,6 +115,9 @@ func (b *Buffer) apply(ev chat.OutboundEvent) {
 		}
 		if v, ok := ev.Payload["terminal_tool"].(string); ok {
 			b.result.TerminalTool = v
+		}
+		if v, ok := ev.Payload["cache_read_tokens"].(int); ok {
+			b.result.CacheReadTokens = v
 		}
 	case chat.EventError:
 		if v, ok := ev.Payload["error"].(string); ok {

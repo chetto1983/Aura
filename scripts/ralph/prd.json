@@ -155,7 +155,7 @@
         "Single atomic commit prefix: feat(llm): provider prompt caching enabled for static prefix (US-LAT-07)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/llm/client.go IN FULL — understand current request shape (chat completions vs Anthropic format). (2) Read internal/config/config.go for LLM_MODEL / LLM_BASE_URL — what provider/model configured. (3) Check OpenRouter docs (passed through to DeepSeek/Anthropic) for cache_control passthrough behavior — OpenRouter passes cache_control through for supported upstream models. (4) DeepSeek context caching: cache_control={type:'ephemeral'} on system messages, TTL ~1h. PROVIDER DETECTION: probe via small test request OR check base_url + model name heuristically. If unsure, default NO cache (safe). MEASUREMENT: add 'cache_hit' field to ChatReply (or parallel observability field). Bench harness captures elapsed_ms — add TTFT capture if not present. SCOPE DISCIPLINE: DO NOT change LLM client architecture. ONLY add cache_control marker injection at right message boundary. NO new provider integration. NO new fallback model. INVARIANT: when caching disabled/unsupported, behavior byte-identical to today. PERF NOTE: cache hit on ~16KB system block charges 10% normal token rate. TTFT reduction is the immediate latency win Aura needs."
     }
   ]

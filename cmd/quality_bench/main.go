@@ -56,6 +56,7 @@ type ChatReply struct {
 	ToolCalls int      `json:"tool_calls"`
 	Tokens    int      `json:"tokens"`
 	LLMCalls  int      `json:"llm_calls"`
+	CacheHit  bool     `json:"cache_hit,omitempty"`
 	ToolsUsed []string `json:"tools_used,omitempty"`
 }
 
@@ -92,6 +93,7 @@ type QueryResult struct {
 	ExpectedSlugs     []string        `json:"expected_slugs,omitempty"`
 	Reply             string          `json:"reply,omitempty"`
 	Pass              bool            `json:"pass"`
+	CacheHit          bool            `json:"cache_hit,omitempty"`
 	LatencyMS         int64           `json:"latency_ms"`
 	ToolCalls         int             `json:"tool_calls"`
 	ToolsUsed         []string        `json:"tools_used,omitempty"`
@@ -294,6 +296,7 @@ func main() {
 
 			qr.Reply = reply.Reply
 			qr.ToolCalls = reply.ToolCalls
+			qr.CacheHit = reply.CacheHit
 			qr.ToolsUsed = reply.ToolsUsed
 			qr.Pass = strings.Contains(
 				strings.ToLower(reply.Reply),

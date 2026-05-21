@@ -37,6 +37,10 @@ type ChatReply struct {
 	LLMCalls  int    `json:"llm_calls"`
 	ToolCalls int    `json:"tool_calls"`
 	Tokens    int    `json:"tokens"`
+	// CacheHit is true when at least one prompt token was served from the
+	// provider's KV cache during this turn. Signals that the static prefix
+	// was successfully cached, which reduces both latency and input cost.
+	CacheHit bool `json:"cache_hit,omitempty"`
 	// ToolsUsed lists the unique tool names invoked during the run, in the
 	// order first seen. Populated from EventToolStart events by the web
 	// outbound adapter. Used by quality-bench to verify tool-selection

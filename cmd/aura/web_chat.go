@@ -81,6 +81,7 @@ func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, mess
 		LLMCalls:  reply.LLMCalls,
 		ToolCalls: reply.ToolCalls,
 		Tokens:    reply.Tokens,
+		CacheHit:  reply.CacheHit,
 		ToolsUsed: reply.ToolsUsed,
 	}, err
 }

@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -13,10 +12,12 @@ import (
 
 // OpenAIClient implements Client using an OpenAI-compatible HTTP API.
 type OpenAIClient struct {
-	apiKey     string
-	baseURL    string
-	model      string
-	httpClient *http.Client
+	apiKey         string
+	baseURL        string
+	model          string
+	httpClient     *http.Client
+	cacheEnabled   bool // whether to inject cache_control on requests
+	cacheSupported bool // whether the provider heuristic confirmed cache support
 }
 
 // OpenAIConfig holds configuration for the OpenAI-compatible client.
@@ -24,16 +25,29 @@ type OpenAIConfig struct {
 	APIKey  string
 	BaseURL string
 	Model   string
+	// CacheEnabled, when true, injects Anthropic-style cache_control markers
+	// on the static system-message prefix. Has no effect when the configured
+	// provider is not heuristically recognised as cache-capable.
+	CacheEnabled bool
 }
 
 // NewOpenAIClient creates a new OpenAI-compatible HTTP client.
 func NewOpenAIClient(cfg OpenAIConfig) *OpenAIClient {
 	baseURL := strings.TrimRight(cfg.BaseURL, "/")
+	supported := false
+	if cfg.CacheEnabled {
+		supported = DetectCacheSupport(baseURL, cfg.Model)
+		if !supported {
+			logCacheSkip(baseURL, cfg.Model)
+		}
+	}
 	return &OpenAIClient{
-		apiKey:     cfg.APIKey,
-		baseURL:    baseURL,
-		model:      cfg.Model,
-		httpClient: &http.Client{},
+		apiKey:         cfg.APIKey,
+		baseURL:        baseURL,
+		model:          cfg.Model,
+		httpClient:     &http.Client{},
+		cacheEnabled:   cfg.CacheEnabled && supported,
+		cacheSupported: supported,
 	}
 }
 
@@ -99,11 +113,16 @@ type streamOptionsJSON struct {
 	IncludeUsage bool `json:"include_usage"`
 }
 
+// chatMessage is the wire shape for a single message in the conversation.
+// CacheBreakpoint controls MarshalJSON: when true the content is emitted as
+// a content-block array with a cache_control marker instead of a plain string.
+// The json:"-" tag prevents the field from appearing in any fallback marshal path.
 type chatMessage struct {
-	Role       string         `json:"role"`
-	Content    *string        `json:"content,omitempty"`
-	ToolCalls  []toolCallJSON `json:"tool_calls,omitempty"`
-	ToolCallID string         `json:"tool_call_id,omitempty"`
+	Role            string         `json:"role"`
+	Content         *string        `json:"content,omitempty"`
+	ToolCalls       []toolCallJSON `json:"tool_calls,omitempty"`
+	ToolCallID      string         `json:"tool_call_id,omitempty"`
+	CacheBreakpoint bool           `json:"-"`
 }
 
 type chatResponse struct {
@@ -114,17 +133,16 @@ type chatResponse struct {
 	Usage usageJSON `json:"usage"`
 }
 
-// usageJSON covers both the older OpenAI shape (prompt/completion/total
-// only) and the reasoning-aware shape OpenAI introduced for o-series /
-// gpt-5* and that OpenRouter mirrors for reasoning-capable models.
-// completion_tokens_details.reasoning_tokens lets the caller separate
-// "tokens spent thinking" from "tokens shown to the user" so cost
-// attribution and prompt-budget heuristics can act on the breakdown.
+// usageJSON covers the older OpenAI shape, the reasoning-aware shape, and the
+// provider-side prompt-cache shape. prompt_tokens_details.cached_tokens is the
+// OpenAI/OpenRouter field; cache_read_input_tokens is the Anthropic field.
 type usageJSON struct {
 	PromptTokens           int                         `json:"prompt_tokens"`
 	CompletionTokens       int                         `json:"completion_tokens"`
 	TotalTokens            int                         `json:"total_tokens"`
 	CompletionTokensDetail *completionTokensDetailJSON `json:"completion_tokens_details,omitempty"`
+	PromptTokensDetails    *promptTokensDetailsJSON    `json:"prompt_tokens_details,omitempty"`
+	CacheReadInputTokens   int                         `json:"cache_read_input_tokens,omitempty"`
 }
 
 type completionTokensDetailJSON struct {
@@ -186,6 +204,8 @@ type streamChunk struct {
 		CompletionTokens       int                         `json:"completion_tokens"`
 		TotalTokens            int                         `json:"total_tokens"`
 		CompletionTokensDetail *completionTokensDetailJSON `json:"completion_tokens_details,omitempty"`
+		PromptTokensDetails    *promptTokensDetailsJSON    `json:"prompt_tokens_details,omitempty"`
+		CacheReadInputTokens   int                         `json:"cache_read_input_tokens,omitempty"`
 	} `json:"usage"`
 }
 
@@ -205,36 +225,45 @@ type toolCallDeltaJSON struct {
 	} `json:"function"`
 }
 
-// Send makes a non-streaming call to the LLM.
-func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) {
-	model := req.Model
-	if model == "" {
-		model = c.model
-	}
+// isCacheDecline reports whether a provider HTTP status signals rejection of
+// the cache_control content-block format, so the caller can retry without markers.
+func isCacheDecline(code int) bool {
+	return code == http.StatusBadRequest || code == http.StatusUnprocessableEntity
+}
 
-	chatReq := chatRequest{
-		Model:       model,
-		Temperature: req.Temperature,
-		Stream:      false,
+// convertMessages converts a []Message to []chatMessage, allocating a fresh
+// slice so callers that inject cache markers don't affect the input.
+func convertMessages(msgs []Message) []chatMessage {
+	out := make([]chatMessage, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, convertMessage(m))
 	}
-	applyReasoning(&chatReq, req.ReasoningEffort)
-	chatReq.Tools = convertToolDefinitions(req.Tools)
-	for _, m := range req.Messages {
-		chatReq.Messages = append(chatReq.Messages, convertMessage(m))
-	}
+	return out
+}
 
+// buildHTTPRequest marshals chatReq and returns an authenticated POST request
+// pointed at the chat completions endpoint.
+func (c *OpenAIClient) buildHTTPRequest(ctx context.Context, chatReq chatRequest) (*http.Request, error) {
 	body, err := json.Marshal(chatReq)
 	if err != nil {
-		return Response{}, fmt.Errorf("marshaling request: %w", err)
+		return nil, fmt.Errorf("marshaling request: %w", err)
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
+	r, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return Response{}, fmt.Errorf("creating request: %w", err)
+		return nil, fmt.Errorf("creating request: %w", err)
 	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Authorization", "Bearer "+c.apiKey)
+	return r, nil
+}
 
+// sendHTTP executes a non-streaming request and fully parses the response,
+// including optional prompt-cache token counts.
+func (c *OpenAIClient) sendHTTP(ctx context.Context, chatReq chatRequest) (Response, error) {
+	httpReq, err := c.buildHTTPRequest(ctx, chatReq)
+	if err != nil {
+		return Response{}, err
+	}
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
 		return Response{}, fmt.Errorf("sending request: %w", err)
@@ -250,7 +279,6 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 	if err := json.NewDecoder(resp.Body).Decode(&chatResp); err != nil {
 		return Response{}, fmt.Errorf("decoding response: %w", err)
 	}
-
 	if len(chatResp.Choices) == 0 {
 		return Response{}, fmt.Errorf("no choices in response")
 	}
@@ -261,9 +289,19 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 		return Response{}, err
 	}
 
-	var reasoningTokens int
+	usage := TokenUsage{
+		PromptTokens:     chatResp.Usage.PromptTokens,
+		CompletionTokens: chatResp.Usage.CompletionTokens,
+		TotalTokens:      chatResp.Usage.TotalTokens,
+	}
 	if chatResp.Usage.CompletionTokensDetail != nil {
-		reasoningTokens = chatResp.Usage.CompletionTokensDetail.ReasoningTokens
+		usage.ReasoningTokens = chatResp.Usage.CompletionTokensDetail.ReasoningTokens
+	}
+	if chatResp.Usage.PromptTokensDetails != nil {
+		usage.CacheReadTokens = chatResp.Usage.PromptTokensDetails.CachedTokens
+	}
+	if chatResp.Usage.CacheReadInputTokens > 0 {
+		usage.CacheReadTokens = chatResp.Usage.CacheReadInputTokens
 	}
 	return Response{
 		Content:          msg.Content,
@@ -271,13 +309,59 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 		ToolCalls:        toolCalls,
 		Reasoning:        msg.Reasoning,
 		ReasoningDetails: cloneRawJSON(msg.ReasoningDetails),
-		Usage: TokenUsage{
-			PromptTokens:     chatResp.Usage.PromptTokens,
-			CompletionTokens: chatResp.Usage.CompletionTokens,
-			TotalTokens:      chatResp.Usage.TotalTokens,
-			ReasoningTokens:  reasoningTokens,
-		},
+		Usage:            usage,
 	}, nil
+}
+
+// streamHTTP opens a streaming connection and returns the open *http.Response.
+// The caller owns the response body and must close it (readSSEStream does this).
+func (c *OpenAIClient) streamHTTP(ctx context.Context, chatReq chatRequest) (*http.Response, error) {
+	httpReq, err := c.buildHTTPRequest(ctx, chatReq)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("sending request: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, &APIError{StatusCode: resp.StatusCode, Body: redact(string(respBody))}
+	}
+	return resp, nil
+}
+
+// Send makes a non-streaming call to the LLM.
+// When cacheEnabled, the last system message is annotated with an
+// Anthropic-style cache_control marker so the static prompt prefix is cached
+// at the provider. A 400 or 422 response triggers one retry without markers
+// (graceful fallback for providers that reject the format).
+func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) {
+	model := req.Model
+	if model == "" {
+		model = c.model
+	}
+	msgs := convertMessages(req.Messages)
+	if c.cacheEnabled {
+		msgs = injectCacheControl(msgs)
+	}
+	chatReq := chatRequest{
+		Model:       model,
+		Temperature: req.Temperature,
+		Messages:    msgs,
+	}
+	applyReasoning(&chatReq, req.ReasoningEffort)
+	chatReq.Tools = convertToolDefinitions(req.Tools)
+
+	result, err := c.sendHTTP(ctx, chatReq)
+	if err != nil {
+		if apiErr, ok := err.(*APIError); ok && isCacheDecline(apiErr.StatusCode) && c.cacheEnabled {
+			chatReq.Messages = convertMessages(req.Messages)
+			result, err = c.sendHTTP(ctx, chatReq)
+		}
+	}
+	return result, err
 }
 
 // cloneRawJSON copies a json.RawMessage so the caller cannot mutate the
@@ -292,50 +376,38 @@ func cloneRawJSON(raw json.RawMessage) []byte {
 }
 
 // Stream makes a streaming call to the LLM, returning a channel of tokens.
+// Same cache-inject + 400/422-retry semantics as Send.
 func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, error) {
 	model := req.Model
 	if model == "" {
 		model = c.model
 	}
-
+	msgs := convertMessages(req.Messages)
+	if c.cacheEnabled {
+		msgs = injectCacheControl(msgs)
+	}
 	chatReq := chatRequest{
 		Model:         model,
 		Temperature:   req.Temperature,
 		Stream:        true,
 		StreamOptions: &streamOptionsJSON{IncludeUsage: true},
+		Messages:      msgs,
 	}
 	applyReasoning(&chatReq, req.ReasoningEffort)
 	chatReq.Tools = convertToolDefinitions(req.Tools)
-	for _, m := range req.Messages {
-		chatReq.Messages = append(chatReq.Messages, convertMessage(m))
-	}
 
-	body, err := json.Marshal(chatReq)
+	resp, err := c.streamHTTP(ctx, chatReq)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling request: %w", err)
+		if apiErr, ok := err.(*APIError); ok && isCacheDecline(apiErr.StatusCode) && c.cacheEnabled {
+			chatReq.Messages = convertMessages(req.Messages)
+			resp, err = c.streamHTTP(ctx, chatReq)
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(body))
-	if err != nil {
-		return nil, fmt.Errorf("creating request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
-
-	resp, err := c.httpClient.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("sending request: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		return nil, &APIError{StatusCode: resp.StatusCode, Body: redact(string(respBody))}
-	}
-
 	ch := make(chan Token, 64)
 	go c.readSSEStream(resp.Body, ch)
-
 	return ch, nil
 }
 
@@ -488,121 +560,4 @@ func closeJSONStackForRune(b *strings.Builder, stack []rune, closer rune) []rune
 	}
 	b.WriteRune(closer)
 	return stack
-}
-
-// readSSEStream reads Server-Sent Events from the response body.
-//
-// Tool-call streaming protocol (OpenAI-compat): the model emits a series
-// of delta chunks where the first chunk for each tool call slot carries
-// id/type/function.name and possibly a leading function.arguments
-// fragment, and subsequent chunks for the same `index` carry only
-// further function.arguments fragments. We accumulate per-index state
-// here so the caller never has to reassemble partial argument JSON.
-// On terminal chunk (FinishReason set or [DONE]) we materialize the
-// accumulated state as fully-parsed []ToolCall and emit it on the final
-// Done=true token.
-func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
-	defer close(ch)
-	defer body.Close()
-
-	type accum struct {
-		id      string
-		name    string
-		argsBuf strings.Builder
-	}
-	toolBuf := map[int]*accum{}
-	var indices []int // preserve insertion order so emitted ToolCalls are stable
-	var usage TokenUsage
-
-	finish := func() {
-		if len(toolBuf) == 0 {
-			ch <- Token{Done: true, Usage: usage}
-			return
-		}
-		calls := make([]ToolCall, 0, len(toolBuf))
-		for _, idx := range indices {
-			a := toolBuf[idx]
-			args, err := parseToolCallArguments(a.name, a.argsBuf.String())
-			if err != nil {
-				ch <- Token{Err: err, Done: true}
-				return
-			}
-			calls = append(calls, ToolCall{ID: a.id, Name: a.name, Arguments: args})
-		}
-		ch <- Token{ToolCalls: calls, Usage: usage, Done: true}
-	}
-
-	scanner := bufio.NewScanner(body)
-	// Default scanner buffer (64KB) is too small for chunked streams that
-	// occasionally land on a single oversized line.
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		if data == "[DONE]" {
-			finish()
-			return
-		}
-
-		var chunk streamChunk
-		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			continue
-		}
-		// End-of-stream usage chunk: empty Choices, populated Usage.
-		if chunk.Usage != nil {
-			usage = TokenUsage{
-				PromptTokens:     chunk.Usage.PromptTokens,
-				CompletionTokens: chunk.Usage.CompletionTokens,
-				TotalTokens:      chunk.Usage.TotalTokens,
-			}
-			if chunk.Usage.CompletionTokensDetail != nil {
-				usage.ReasoningTokens = chunk.Usage.CompletionTokensDetail.ReasoningTokens
-			}
-		}
-		if len(chunk.Choices) == 0 {
-			continue
-		}
-		choice := chunk.Choices[0]
-
-		// Surface reasoning deltas as they arrive so UIs can show the
-		// model's chain-of-thought live instead of stalling on a placeholder
-		// while the provider thinks. Empty everywhere except reasoning-
-		// capable providers (DeepSeek V4 Flash, OpenAI o-series / gpt-5*).
-		if choice.Delta.Reasoning != "" {
-			ch <- Token{Reasoning: choice.Delta.Reasoning}
-		}
-		if choice.Delta.Content != "" {
-			ch <- Token{Content: choice.Delta.Content}
-		}
-		for _, tc := range choice.Delta.ToolCalls {
-			a, ok := toolBuf[tc.Index]
-			if !ok {
-				a = &accum{}
-				toolBuf[tc.Index] = a
-				indices = append(indices, tc.Index)
-			}
-			if tc.ID != "" {
-				a.id = tc.ID
-			}
-			if tc.Function.Name != "" {
-				a.name = tc.Function.Name
-			}
-			if tc.Function.Arguments != "" {
-				a.argsBuf.WriteString(tc.Function.Arguments)
-			}
-		}
-		// Do not finish on finish_reason alone. OpenAI-compatible streams can
-		// send the usage summary in a later empty-choices chunk, followed by
-		// [DONE]. Returning here would drop token/cost accounting for providers
-		// that honor stream_options.include_usage.
-	}
-
-	if err := scanner.Err(); err != nil {
-		ch <- Token{Err: fmt.Errorf("stream read: %w", err), Done: true}
-		return
-	}
-	finish()
 }

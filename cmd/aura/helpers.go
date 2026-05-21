@@ -57,9 +57,10 @@ func skillSearchRoots(cfg *config.Config) []string {
 func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	_ = logger
 	openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{
-		APIKey:  cfg.LLMAPIKey,
-		BaseURL: cfg.LLMBaseURL,
-		Model:   cfg.LLMModel,
+		APIKey:       cfg.LLMAPIKey,
+		BaseURL:      cfg.LLMBaseURL,
+		Model:        cfg.LLMModel,
+		CacheEnabled: cfg.PromptCacheEnabled,
 	})
 	// All client.Chat()/Stream() calls inherit retry via this wrap.
 	// Config: MaxRetries=cfg.LLMMaxRetries (default 5), BaseDelay=1s, MaxDelay=30s.

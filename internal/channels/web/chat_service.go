@@ -25,6 +25,9 @@ type ChatReply struct {
 	LLMCalls  int
 	ToolCalls int
 	Tokens    int
+	// CacheHit is true when at least one LLM call in this run was served
+	// (partially) from the provider's prompt cache.
+	CacheHit bool
 	// ToolsUsed lists the unique tool names invoked during the run, in the
 	// order first seen. Captured from EventToolStart events by Buffer.apply.
 	// Used by quality-bench to verify tool-selection (e.g., did Aura use
@@ -90,6 +93,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 			LLMCalls:  res.LLMCalls,
 			ToolCalls: res.ToolCalls,
 			Tokens:    res.TokensTotal,
+			CacheHit:  res.CacheReadTokens > 0,
 			ToolsUsed: res.ToolsUsed,
 		}, runErr
 	}
@@ -100,6 +104,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 		LLMCalls:  res.LLMCalls,
 		ToolCalls: res.ToolCalls,
 		Tokens:    res.TokensTotal,
+		CacheHit:  res.CacheReadTokens > 0,
 		ToolsUsed: res.ToolsUsed,
 	}, nil
 }
