@@ -98,7 +98,7 @@
         "Single atomic commit prefix: chore(tools): description audit — operational markers, no user-facing language (US-DRIFT-05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read docs/restructure-research/codex-output-discipline-2026-05-21.md and docs/restructure-research/cli-printing-press-output-discipline-2026-05-21.md for the exact pattern. (2) GREP `internal/agent/tools/registry/ -E 'Description\\(\\) string'` to find every tool. SCOPE DISCIPLINE: DO NOT change the parameters / schema / Execute() logic of any tool. Only the Description() strings. KEEP IT TIGHT: the goal is OPERATIONAL clarity, not poetry. 1-2 sentences for the main action + per-action required-parameter line + behavioral marker prefix. NO REDESIGN: this story is a sweep, not a rewrite. If a tool's current description is structurally sound (e.g., wiki_page is — it has REQUIRED PARAMETERS BY ACTION already), just add the marker prefix ('Destructive.' for the writer-only nature) and leave the rest. AUDIT REPORT IN COMMIT BODY: for each tool, a 1-3 line diff showing the OLD first sentence vs the NEW first sentence. Helps reviewers spot regressions. TEST CALIBRATION: the marker enforcement test should be data-driven — iterate every Tool registered, assert the description's first non-whitespace line matches one of the allowed prefixes via a small regex. If a tool legitimately doesn't fit any prefix, add a 4th allowed prefix RATHER than skipping the tool."
     }
   ]

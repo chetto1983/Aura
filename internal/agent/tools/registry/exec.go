@@ -84,7 +84,7 @@ func (t *ExecuteCodeTool) Definition() ToolDefinition {
 }
 
 func (t *ExecuteCodeTool) Description() string {
-	return "Execute Python code in Aura's configured runtime. In Docker this runs directly inside the Aura container with the same mounted workspace access AND the same network reachability as Aura — there is no network isolation; any HTTP call from the script can reach localhost and the Aura private network. " +
+	return "Execute Python code in Aura's configured runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying; never dump raw output to the user. In Docker this runs directly inside the Aura container with the same mounted workspace access AND the same network reachability as Aura — there is no network isolation; any HTTP call from the script can reach localhost and the Aura private network. " +
 		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
 		"For multi-step workflows, pass tools_allowed and have the script write $AURA_OUT_DIR/aura_tool_calls.json with calls [{\"tool\":\"name\",\"args\":{...}}]; Aura executes only those active-turn tools after the script exits. " +
 		"Use loops, transforms, retries, and structured JSON output inside one script instead of many model/backend round trips. " +
@@ -361,7 +361,7 @@ func (t *ExecuteShellTool) Definition() ToolDefinition {
 }
 
 func (t *ExecuteShellTool) Description() string {
-	return "Execute a shell command inside Aura's configured process runtime. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura — there is no network isolation. " +
+	return "Execute a shell command inside Aura's configured process runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying; never dump raw output to the user. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura — there is no network isolation. " +
 		"Use this only for explicit operator/developer diagnostics, shell commands, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, DNS/network checks, filesystem inspection, and runtime smoke checks when file tools or execute_code are not enough. " +
 		"Prefer this container CLI surface over adding one-off native tools for broad diagnostics. The runtime image ships a full developer CLI: " +
 		"text/data (rg/jq/yq/sqlite3/bat/fd/fzf/sed/awk), git+gh (GitHub CLI for PRs/issues/releases), HTTP (curl/wget/httpie's `http`), " +

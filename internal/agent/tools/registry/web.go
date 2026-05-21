@@ -53,10 +53,9 @@ REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
 
 Actions (pick one via the "action" field):
 
-  • search — query a SearXNG-backed web index. Returns ranked results
-    with title, URL, and snippet. Required: query. Optional: max_results
-    (default 5, capped at 10). Use this when the user asks an open-ended
-    question that benefits from current information.
+  • search — query a SearXNG-backed web index. Returns top-5 results
+    (title, URL, snippet) by default; max 10 with max_results. Required: query.
+    Use this when the user asks an open-ended question that benefits from current information.
 
   • fetch — download one URL and extract the main text and links.
     Required: url. The fetch is bounded (~2 MiB body, ~12 KiB extracted

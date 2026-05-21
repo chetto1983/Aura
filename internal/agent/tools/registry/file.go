@@ -79,7 +79,7 @@ Actions (pick one via the "action" field):
     (default workspace root), limit (default 200, max 1000). Sensitive
     paths (.env, .git, *.db, wiki/raw, secrets/) are hidden.
 
-  • read — fetch one file. Required: path. Optional: max_bytes
+  • read — fetch one file. Returns file bytes, 16384-byte cap at the agent boundary. Required: path. Optional: max_bytes
     (default 64KB, max 512KB). Oversize files are truncated, not
     rejected. Directories return a listing instead of an error.
     Binary files come back base64-encoded with encoding="base64".

@@ -108,7 +108,7 @@ Actions (pick one via the "action" field):
     failed), kind filter (pdf | text | url | xlsx | docx | csv | json |
     markdown), limit (default 20, max 100).
 
-  • read — fetch the extracted markdown of one source. Required: source_id.
+  • read — fetch the extracted markdown of one source. Returns source archive bytes, 16384-byte cap. Required: source_id.
     Optional: mode (metadata | ocr | excerpt), byte_start/byte_end, and
     max_bytes (legacy hint). Returns ocr.md for PDFs (OCR via Mistral
     Document AI), extract.md for other kinds, or the original text body for

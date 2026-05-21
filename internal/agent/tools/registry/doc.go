@@ -54,7 +54,7 @@ func (t *DocTool) Definition() ToolDefinition {
 
 func (t *DocTool) Description() string {
 	return `Generate a document (.xlsx / .docx / .pdf) from a structured spec and persist it as a source.
-Optionally deliver to the user's Telegram chat.
+Returns a workspace path, not content — use deliver=true (default) to send the file to Telegram.
 
 REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
   • action="xlsx": filename, sheets
