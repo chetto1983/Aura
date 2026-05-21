@@ -621,6 +621,38 @@ func TestRunLoopEmptyLLMResponseFallsBackToLastToolResult(t *testing.T) {
 	}
 }
 
+// TestRunLoopEmptyLLMContentDoesNotLeakRawToolBytes is a regression gate
+// against the picobot anti-pattern (loop.go ~283-285, ~350-352 in picobot's
+// internal/agent/loop.go) where the runtime substitutes finalContent =
+// lastToolResult when the LLM returns empty content after tool execution.
+// Aura's gracefulFinalize → finalAnswerOnBudgetWithContext discards
+// lastToolResult via its blank first param (_), so raw tool bytes never reach
+// the user-facing reply. This test asserts that invariant holds so any future
+// change to gracefulFinalize that accidentally re-introduces the substitution
+// fails loudly.
+func TestRunLoopEmptyLLMContentDoesNotLeakRawToolBytes(t *testing.T) {
+	const sentinel = "RAW_TOOL_BYTES_SHOULD_NEVER_BE_USER_VISIBLE"
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "execute_code", Arguments: map[string]any{"code": "df.head(90)"}}}}},
+		{Response: llm.Response{Content: ""}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		state.AddToolResultMessage(calls[0].ID, sentinel)
+		return ExecutionSummary{LastResult: sentinel}
+	}), state, Options{MaxIterations: 3})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if strings.Contains(result.Text, sentinel) {
+		t.Fatalf("user-facing reply leaked raw tool bytes (sentinel present): reply=%q", result.Text)
+	}
+	if strings.TrimSpace(result.Text) == "" {
+		t.Fatal("user-facing reply is empty — expected a formatted budget message, not silence")
+	}
+}
+
 func TestRunLoopMaxElapsedTriggersGracefulFinalize(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
