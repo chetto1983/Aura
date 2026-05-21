@@ -240,6 +240,12 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 	toolCallExecutions := map[string]int{}
 	globalToolCallsExecuted := 0
 	finalizing := false
+	// consecutiveAllDupIter counts iterations in a row where every call the
+	// model produced was a duplicate of an earlier-in-turn call. After two
+	// such iterations the loop force-finalizes — the model is stuck in a
+	// tight retry loop (live 2026-05-21: xlsx voice-memo test saw 22 LLM
+	// rounds in 105s, all reading the same wiki page over and over).
+	consecutiveAllDupIter := 0
 	calledThisTurn := map[string]bool{}
 	emitStats := func() {
 		if opts.OnStats != nil {
@@ -579,6 +585,31 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				stub = budgetCapToolResult(opts.MaxToolCalls)
 			}
 			state.AddToolResultMessage(duplicate.ID, WrapUntrustedToolResult(duplicate.Name, stub))
+		}
+		// All-duplicate-iteration guard: when the model produced zero fresh
+		// calls AND at least one duplicate, it's spinning. One such iter is
+		// recoverable noise (warning bounce); two in a row is a stuck loop
+		// and force-finalizes with a hard nudge to the corrector. Without
+		// this, the model can burn full MaxIterations re-issuing the same
+		// dead call (observed 2026-05-21, xlsx test: 22 LLM rounds, 24 tool
+		// calls in 105s, all duplicates of one file/read, reply empty).
+		allDuplicates := len(freshCalls) == 0 && len(duplicateToolCalls) > 0
+		if allDuplicates {
+			consecutiveAllDupIter++
+		} else {
+			consecutiveAllDupIter = 0
+		}
+		if !finalizing && consecutiveAllDupIter >= 2 {
+			finalizing = true
+			if corrector, ok := state.(PhantomCorrector); ok {
+				corrector.AddUserMessage("Stop. The last two LLM rounds produced only duplicate tool calls — you are in a retry loop. Do NOT call any tool again. Finalize NOW with a concise answer based on the evidence already in this turn. If the data the user asked for is genuinely not present in what you have, say so explicitly instead of trying again.")
+			} else {
+				logger.Warn("agent: all_dup_finalize_no_corrector",
+					"iteration", iteration,
+					"consecutive_all_dup", consecutiveAllDupIter,
+					"reason", "state_lacks_AddUserMessage",
+				)
+			}
 		}
 		if !finalizing && opts.MaxToolCalls > 0 && globalToolCallsExecuted >= opts.MaxToolCalls {
 			finalizing = true
