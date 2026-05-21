@@ -35,6 +35,10 @@ docs/quality-bench/
     └── ...
 ```
 
+Note: older drafts mentioned `ground-truth.json`; the committed harness now
+derives Recall@5 ground truth from the source detail returned after ingest
+(`wiki_pages`) unless a query explicitly provides `expected_slug(s)`.
+
 ## File types covered
 
 One fixture per Aura-accepted format (10 total). Image formats skipped — Wave 2.9.5 gate still closed.
@@ -58,12 +62,12 @@ One fixture per Aura-accepted format (10 total). Image formats skipped — Wave 
 # 1. Build current Aura
 docker compose up -d --build aura
 
-# 2. Run the harness (TBD path)
+# 2. Run the harness
 go run ./cmd/quality_bench \
   --queries docs/quality-bench/queries.json \
-  --ground-truth docs/quality-bench/ground-truth.json \
   --fixtures docs/quality-bench/fixtures/ \
-  --out docs/quality-bench/runs/$(date +%Y-%m-%d)-<label>.json
+  --out docs/quality-bench/runs/$(date +%Y-%m-%d)-<label>.json \
+  --quality-gate closure97
 
 # 3. Snapshot update
 go run ./cmd/quality_bench --snapshot-append \
@@ -79,7 +83,7 @@ What the harness does per fixture:
 4. Record: pass/fail, latency, tool-call count
 5. After all 10 fixtures: aggregate into 4 KPIs
 
-## The 4 KPIs
+## The 5 KPIs
 
 | Metric | What it measures | Aura "Good" target |
 |---|---|---|
@@ -89,6 +93,9 @@ What the harness does per fixture:
 | **avg tool-calls** | LLM tool invocations per query (lower = found faster) | ≤3 |
 
 Industry context (BEIR 2026): top dense+rerank gets nDCG@10 = 57-60 on heterogeneous. Aura is narrow-domain (~200-500 pages, single-user) so we aim higher than the open-domain median.
+
+Closure target overrides the wave ramp: pass rate >=97%, Recall@5 >=97%,
+p95 E2E <=10s, p95 direct search <=500ms, avg tool-calls <=2.
 
 ## Target progression across waves
 
@@ -100,6 +107,20 @@ Industry context (BEIR 2026): top dense+rerank gets nDCG@10 = 57-60 on heterogen
 | Post-C (reranker) | +2 waves | ≥18 | ≥90% | ≤10s |
 
 A wave that misses its target = **do not advance** to the next. Re-plan instead.
+
+## Closure gate
+
+The product-closure gate is stricter than the wave ramp:
+
+```powershell
+go run ./cmd/quality_bench --quality-gate closure97
+```
+
+`closure97` fails the process after writing the run artifact unless pass rate
+and Recall@5 are both at least 97%, p95 chat latency is at most 10s, direct
+wiki-search p95 is at most 500ms, and average tool-calls are at most 2. Direct
+Recall@5 uses `/api/wiki/search` and checks whether the wiki slug created by
+ingesting the source appears in the top-5 results.
 
 ## Rules
 
