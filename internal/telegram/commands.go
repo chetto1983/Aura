@@ -19,6 +19,7 @@ func botCommands() []tele.Command {
 		{Text: "help", Description: "Comandi disponibili"},
 		{Text: "clear", Description: "Cancella la conversazione"},
 		{Text: "tools", Description: "Mostra strumenti visibili"},
+		{Text: "voice", Description: "Modalità voce: on / tts / off"},
 		{Text: "login", Description: "Apri dashboard"},
 	}
 }
@@ -53,6 +54,7 @@ func (b *Bot) onHelp(c tele.Context) error {
 		"/status - stato runtime",
 		"/tools - strumenti visibili",
 		"/clear - cancella la conversazione",
+		"/voice - modalità voce (on/tts/off)",
 		"/login - token dashboard",
 		"/start - accesso e onboarding",
 	}, "\n"))

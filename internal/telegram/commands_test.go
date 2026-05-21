@@ -26,7 +26,7 @@ func TestBotCommandsMenu(t *testing.T) {
 			t.Fatalf("command %q has empty description", command.Text)
 		}
 	}
-	want := []string{"start", "status", "help", "clear", "tools", "login"}
+	want := []string{"start", "status", "help", "clear", "tools", "voice", "login"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("commands = %v, want %v", got, want)
 	}
@@ -162,7 +162,7 @@ func TestOnHelpRepliesToAllowlistedUser(t *testing.T) {
 		t.Fatalf("onHelp() error = %v, want nil", err)
 	}
 	text, _ := calls[0].Body["text"].(string)
-	for _, want := range []string{"/status", "/tools", "/clear", "/login"} {
+	for _, want := range []string{"/status", "/tools", "/clear", "/voice", "/login"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("help reply = %q, missing %q", text, want)
 		}
