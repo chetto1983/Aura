@@ -26,6 +26,10 @@ type Client interface {
 	CreateCollection(ctx context.Context, collection string, vectorSize int) error
 	DeleteCollection(ctx context.Context, collection string) error
 	CollectionInfo(ctx context.Context, collection string) (CollectionInfo, error)
+	// ScrollSlugs pages through all points in a collection and returns the
+	// doc_id payload field of each point. Returns nil (not an error) when the
+	// collection is empty or does not exist.
+	ScrollSlugs(ctx context.Context, collection string) ([]string, error)
 }
 
 // httpClient is the concrete HTTP-based Qdrant client.
@@ -212,6 +216,48 @@ func (c *httpClient) CollectionInfo(ctx context.Context, collection string) (Col
 		return CollectionInfo{}, fmt.Errorf("qdrant collection info decode: %w", err)
 	}
 	return out.Result, nil
+}
+
+// ScrollSlugs pages through all points in the named collection using Qdrant's
+// scroll API and returns the doc_id payload field from each point.
+// Returns nil (not an error) when the collection is empty or does not exist.
+func (c *httpClient) ScrollSlugs(ctx context.Context, collection string) ([]string, error) {
+	var docIDs []string
+	var offset any // nil on first call; next_page_offset thereafter
+	endpoint := c.baseURL + "/collections/" + url.PathEscape(collection) + "/points/scroll"
+	for {
+		body := map[string]any{
+			"limit":        250,
+			"with_payload": true,
+			"with_vector":  false,
+		}
+		if offset != nil {
+			body["offset"] = offset
+		}
+		data, err := c.doRequest(ctx, http.MethodPost, endpoint, body, http.StatusOK, http.StatusNotFound)
+		if err != nil {
+			return nil, fmt.Errorf("qdrant scroll: %w", err)
+		}
+		var out struct {
+			Result struct {
+				Points         []ScrollPoint `json:"points"`
+				NextPageOffset any           `json:"next_page_offset"`
+			} `json:"result"`
+		}
+		if err := json.Unmarshal(data, &out); err != nil {
+			return nil, fmt.Errorf("qdrant scroll decode: %w", err)
+		}
+		for _, pt := range out.Result.Points {
+			if id := pt.Payload["doc_id"]; id != "" {
+				docIDs = append(docIDs, id)
+			}
+		}
+		if out.Result.NextPageOffset == nil {
+			break
+		}
+		offset = out.Result.NextPageOffset
+	}
+	return docIDs, nil
 }
 
 // WaitForReady blocks until the Qdrant instance is healthy or timeout expires.

@@ -14,6 +14,12 @@ type ScoredPoint struct {
 	Payload map[string]string `json:"payload"`
 }
 
+// ScrollPoint is a point returned from a Qdrant scroll (list-all) request.
+type ScrollPoint struct {
+	ID      any               `json:"id"`
+	Payload map[string]string `json:"payload"`
+}
+
 // CollectionInfo holds metadata about a Qdrant collection.
 // Sourced from GET /collections/{name} response field "result".
 type CollectionInfo struct {

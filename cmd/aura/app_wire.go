@@ -125,6 +125,21 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// Wire the ToolVectorIndex on the registry for the search path.
 	a.deps.Tools.PrepareVectorReader(toolReaderConfig)
 
+	// ---- Wiki orphan reconciler (Qdrant + FTS5 cleanup for deleted pages) ---
+	// Purges Qdrant vectors and FTS5 rows for wiki pages that have been deleted
+	// from disk (e.g. manual deletes bypassing wiki.Store.DeletePage).
+	if a.deps.QdrantClient != nil && cfg.QdrantCollection != "" && cfg.WikiPath != "" {
+		wikiReconciler := search.NewWikiOrphanReconciler(search.WikiOrphanReconcilerConfig{
+			QdrantClient: a.deps.QdrantClient,
+			Collection:   cfg.QdrantCollection,
+			DB:           a.deps.Pool,
+			WikiDir:      cfg.WikiPath,
+			Logger:       logger.With("component", "wiki-orphan-reconciler"),
+		})
+		wikiReconciler.Reconcile(context.Background(), search.WikiOrphanReasonBoot)
+		a.startBg(wikiReconciler.Run)
+	}
+
 	// ---- Conversation archive ------------------------------------------------
 	var archiveDB conversation.ArchiveRepository
 	if cfg.ConvArchiveEnabled {
