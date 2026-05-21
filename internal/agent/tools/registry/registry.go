@@ -333,6 +333,12 @@ func (r *Registry) Execute(ctx context.Context, name string, args map[string]any
 		return "", err
 	}
 
+	// Apply output cap at the tool-result boundary. This prevents raw tool
+	// bytes (e.g., 90-row DataFrames from execute_code) from reaching the
+	// agent loop uncapped. Cap is per-tool via Definition().OutputCap.
+	def := definitionForTool(t)
+	result, _ = applyOutputCap(result, def.OutputCap)
+
 	if r.logger != nil {
 		r.logger.Info("tool completed", "tool", name, "elapsed", elapsed, "bytes", len(result))
 	}

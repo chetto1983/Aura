@@ -44,6 +44,12 @@ type ToolDefinition struct {
 	// VisibilityTier controls when this tool appears in the LLM's active pool.
 	// Default: VisibilityActiveTurn (set by normalizeToolDefinition).
 	VisibilityTier VisibilityTier
+
+	// OutputCap controls byte/row trimming applied at the registry Execute
+	// boundary before results reach the agent loop. Zero values resolve to
+	// DefaultOutputMaxBytes / DefaultOutputMaxRows. Bypass=true skips the
+	// cap entirely (for tools that return paths, not content).
+	OutputCap OutputCap
 }
 
 // ToolDefinitionProvider lets tools own their LangChain-style definition

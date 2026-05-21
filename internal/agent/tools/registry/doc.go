@@ -47,6 +47,8 @@ func (t *DocTool) Definition() ToolDefinition {
 		Description:    t.Description(),
 		Parameters:     t.Parameters(),
 		VisibilityTier: VisibilityDeferred,
+		// doc returns a workspace path, not content — bypass the byte/row cap.
+		OutputCap: OutputCap{Bypass: true},
 	}
 }
 

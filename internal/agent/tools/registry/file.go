@@ -57,6 +57,9 @@ func (t *FileTool) Definition() ToolDefinition {
 		Parameters:      t.Parameters(),
 		DestructiveHint: true, // write/patch actions can overwrite workspace files
 		VisibilityTier:  VisibilityDeferred,
+		// file action=read may legitimately return a 50 KB page the user asked
+		// for verbatim — use a wider byte cap than the default 8192.
+		OutputCap: OutputCap{MaxBytes: 16384},
 	}
 }
 
