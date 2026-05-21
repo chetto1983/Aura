@@ -5,6 +5,113 @@ import (
 	"sync"
 )
 
+// P99Degree returns the 99th-percentile total degree (|outbound|+|inbound|)
+// across all page-level nodes in the index. Returns 50 when the index is
+// empty or has too few nodes (safety floor matching the graphify convention).
+func (g *GraphIndex) P99Degree() int {
+	if g == nil {
+		return 50
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	var degrees []int
+	for slug := range g.meta {
+		if !isSubnodeID(slug) {
+			degrees = append(degrees, len(g.outbound[slug])+len(g.inbound[slug]))
+		}
+	}
+	if len(degrees) == 0 {
+		return 50
+	}
+	sort.Ints(degrees)
+	p99idx := int(float64(len(degrees)) * 0.99)
+	if p99idx >= len(degrees) {
+		p99idx = len(degrees) - 1
+	}
+	if degrees[p99idx] < 50 {
+		return 50
+	}
+	return degrees[p99idx]
+}
+
+// NeighborsHubAware is like Neighbors but skips expanding THROUGH any node
+// whose total degree (|outbound|+|inbound|) is ≥ skipDegree. Hub nodes are
+// still included in the result set when they are first reached; they just
+// don't contribute further expansion. The starting node is always expanded
+// regardless of its degree. When skipDegree ≤ 0, behaviour is identical
+// to Neighbors (no hub avoidance). Results are sorted alphabetically.
+func (g *GraphIndex) NeighborsHubAware(slug string, depth, skipDegree int) []string {
+	if g == nil || depth <= 0 {
+		return nil
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	isHub := func(s string) bool {
+		if skipDegree <= 0 || s == slug {
+			return false
+		}
+		return len(g.outbound[s])+len(g.inbound[s]) >= skipDegree
+	}
+
+	seen := map[string]bool{slug: true}
+	frontier := []string{slug}
+	for hop := 0; hop < depth; hop++ {
+		var next []string
+		addIfNew := func(t string) {
+			if !seen[t] {
+				seen[t] = true
+				next = append(next, t)
+			}
+		}
+		for _, s := range frontier {
+			if isHub(s) {
+				// Reachable but we don't expand through it.
+				continue
+			}
+			for t := range g.outbound[s] {
+				addIfNew(t)
+			}
+			for t := range g.inbound[s] {
+				addIfNew(t)
+			}
+			// Subnode expansion rules (same as Neighbors).
+			if isSubnodeID(s) {
+				parent := subnodeParentSlug(s)
+				addIfNew(parent)
+				if pm, ok := g.meta[parent]; ok {
+					for _, sub := range pm.Subnodes {
+						addIfNew(parent + "#" + sub.AnchorSlug)
+					}
+				}
+				for t := range g.outbound[parent] {
+					addIfNew(t)
+				}
+			} else {
+				if m, ok := g.meta[s]; ok {
+					for _, sub := range m.Subnodes {
+						addIfNew(s + "#" + sub.AnchorSlug)
+					}
+				}
+			}
+		}
+		if len(next) == 0 {
+			break
+		}
+		frontier = next
+	}
+
+	out := make([]string, 0, len(seen)-1)
+	for s := range seen {
+		if s == slug {
+			continue
+		}
+		out = append(out, s)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // GraphIndex is an in-memory adjacency index over the wiki graph used by
 // the retrieval layer (Wave 3) to traverse [[wiki-link]] + `related:`
 // edges at query time without re-scanning disk. It is maintained by the

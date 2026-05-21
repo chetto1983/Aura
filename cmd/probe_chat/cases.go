@@ -31,6 +31,7 @@ func allCases(now time.Time, enableTTS bool) []Case {
 		phase07DMixedTierRecallCase(stamp),
 		phase07ESourceSpanReadCase(stamp),
 		phase07FWikiFrontmatterMetadataCase(stamp),
+		wikiSubgraphDeltaCase(stamp),
 
 		// 1. Pure conversational — no tools needed, no phantom risk.
 		{

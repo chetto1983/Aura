@@ -71,3 +71,49 @@ func (s *Store) WikiPath(from, to string, maxHops int) []string {
 	}
 	return s.graphIndex.ShortestPath(from, to, maxHops)
 }
+
+// PersonalizedPageRank runs PPR seeded on seeds with the supplied alpha and
+// iter count. Returns nil when the store has no graph index.
+func (s *Store) PersonalizedPageRank(seeds []string, alpha float64, iter int) map[string]float64 {
+	if s == nil || s.graphIndex == nil {
+		return nil
+	}
+	return PersonalizedPageRank(s.graphIndex, seeds, alpha, iter)
+}
+
+// P99Degree returns the 99th-percentile total degree across wiki page nodes.
+// Returns 50 as a safety floor when the store has no graph index.
+func (s *Store) P99Degree() int {
+	if s == nil || s.graphIndex == nil {
+		return 50
+	}
+	return s.graphIndex.P99Degree()
+}
+
+// NeighborsHubAware returns slugs reachable from slug within depth hops,
+// skipping expansion through hub nodes with total degree ≥ skipDegree.
+// Returns nil when the store has no graph index.
+func (s *Store) NeighborsHubAware(slug string, depth, skipDegree int) []string {
+	if s == nil || s.graphIndex == nil {
+		return nil
+	}
+	return s.graphIndex.NeighborsHubAware(slug, depth, skipDegree)
+}
+
+// NodeMeta returns the cached NodeMeta for slug and an ok flag.
+// Returns false when the store has no graph index or the slug is unknown.
+func (s *Store) NodeMeta(slug string) (NodeMeta, bool) {
+	if s == nil || s.graphIndex == nil {
+		return NodeMeta{}, false
+	}
+	return s.graphIndex.Meta(slug)
+}
+
+// OutNeighbors returns the page-level outbound neighbors of slug.
+// Returns nil when the store has no graph index.
+func (s *Store) OutNeighbors(slug string) []string {
+	if s == nil || s.graphIndex == nil {
+		return nil
+	}
+	return s.graphIndex.OutNeighbors(slug)
+}

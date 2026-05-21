@@ -1,0 +1,295 @@
+package tools
+
+import (
+	"context"
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/wiki"
+)
+
+const (
+	wikiSubgraphDefaultDepth        = 2
+	wikiSubgraphMaxDepth            = 3
+	wikiSubgraphDefaultBudgetTokens = 1500
+	wikiSubgraphMaxBudgetTokens     = 4000
+	wikiSubgraphTopK                = 10 // initial hybrid search width
+	wikiSubgraphSeedTopK            = 5  // seeds passed to PPR
+	wikiSubgraphPPRTopK             = 5  // top PPR nodes used as BFS seeds
+	wikiSubgraphSnippetMaxChars     = 200
+	wikiSubgraphCharsPerToken       = 3 // ~3 chars/token for IT+EN mixed content
+	wikiSubgraphGapRatio            = 0.2
+)
+
+// WikiSubgraphTool returns a token-budgeted wiki subgraph for a query.
+// It chains: hybrid FTS+vector search → PPR re-ranking → hub-aware BFS →
+// byte-range snippet rendering, replacing the 7-call navigation pattern
+// with a single tool call.
+type WikiSubgraphTool struct {
+	store    *wiki.Store
+	searcher search.Searcher
+}
+
+// NewWikiSubgraphTool creates the tool. Returns nil when either dep is nil.
+func NewWikiSubgraphTool(store *wiki.Store, searcher search.Searcher) *WikiSubgraphTool {
+	if store == nil || searcher == nil {
+		return nil
+	}
+	return &WikiSubgraphTool{store: store, searcher: searcher}
+}
+
+func (t *WikiSubgraphTool) Name() string { return "wiki_subgraph" }
+
+func (t *WikiSubgraphTool) Description() string {
+	return "Retrieve a token-budgeted subgraph of the wiki for a query. Uses hybrid search + Personalised PageRank seeding + hub-aware BFS to return the most relevant sections of the wiki in one call. Prefer this over multiple search_memory + read_file round-trips when exploring a connected topic."
+}
+
+func (t *WikiSubgraphTool) Parameters() map[string]any {
+	return map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"query": map[string]any{
+				"type":        "string",
+				"description": "Natural-language query to seed the subgraph retrieval.",
+			},
+			"depth": map[string]any{
+				"type":        "integer",
+				"description": fmt.Sprintf("BFS expansion depth from PPR seed nodes (default %d, max %d).", wikiSubgraphDefaultDepth, wikiSubgraphMaxDepth),
+				"minimum":     1,
+				"maximum":     wikiSubgraphMaxDepth,
+			},
+			"budget_tokens": map[string]any{
+				"type":        "integer",
+				"description": fmt.Sprintf("Approximate token budget for the rendered subgraph (default %d, max %d).", wikiSubgraphDefaultBudgetTokens, wikiSubgraphMaxBudgetTokens),
+				"minimum":     1,
+				"maximum":     wikiSubgraphMaxBudgetTokens,
+			},
+		},
+		"required": []string{"query"},
+	}
+}
+
+func (t *WikiSubgraphTool) Definition() ToolDefinition {
+	return ToolDefinition{
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		IdempotentHint: true,
+		VisibilityTier: VisibilityActiveTurn,
+	}
+}
+
+func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if t == nil {
+		return "", fmt.Errorf("wiki_subgraph: tool unavailable")
+	}
+	query, err := requiredString(args, "query")
+	if err != nil {
+		return "", fmt.Errorf("wiki_subgraph: %w", err)
+	}
+	depth := intArg(args, "depth", wikiSubgraphDefaultDepth, 1, wikiSubgraphMaxDepth)
+	budgetTokens := intArg(args, "budget_tokens", wikiSubgraphDefaultBudgetTokens, 1, wikiSubgraphMaxBudgetTokens)
+
+	// ── Step 1: Hybrid search for seed candidates (topK = 10). ──────────────
+	var seedResults []search.Result
+	if hybrid, ok := t.searcher.(search.HybridSearcher); ok {
+		seedResults, err = hybrid.SearchHybrid(ctx, query, wikiSubgraphTopK)
+	} else {
+		seedResults, err = t.searcher.Search(ctx, query, wikiSubgraphTopK)
+	}
+	if err != nil || len(seedResults) == 0 {
+		return "wiki_subgraph: no wiki pages found for query", nil
+	}
+
+	// ── Step 2: Top-5 seeds with gap-ratio cutoff (0.2 × top_score). ────────
+	topScore := float64(seedResults[0].Score)
+	var seeds []string
+	for _, r := range seedResults {
+		if len(seeds) >= wikiSubgraphSeedTopK {
+			break
+		}
+		if topScore > 0 && float64(r.Score) < wikiSubgraphGapRatio*topScore {
+			break
+		}
+		seeds = append(seeds, r.Slug)
+	}
+	if len(seeds) == 0 {
+		seeds = []string{seedResults[0].Slug}
+	}
+
+	// ── Step 3: Personalised PageRank (alpha=0.15, 30 iter). ────────────────
+	pprScores := t.store.PersonalizedPageRank(seeds, 0.15, 30)
+
+	// ── Step 4: Top-5 PPR-ranked nodes as BFS seeds. ─────────────────────────
+	type scoredSlug struct {
+		slug  string
+		score float64
+	}
+	ranked := make([]scoredSlug, 0, len(pprScores))
+	for slug, score := range pprScores {
+		ranked = append(ranked, scoredSlug{slug, score})
+	}
+	sort.Slice(ranked, func(i, j int) bool {
+		if ranked[i].score != ranked[j].score {
+			return ranked[i].score > ranked[j].score
+		}
+		return ranked[i].slug < ranked[j].slug
+	})
+	pprSeeds := make([]string, 0, wikiSubgraphPPRTopK)
+	for _, rs := range ranked {
+		if len(pprSeeds) >= wikiSubgraphPPRTopK {
+			break
+		}
+		pprSeeds = append(pprSeeds, rs.slug)
+	}
+	if len(pprSeeds) == 0 {
+		pprSeeds = seeds
+	}
+
+	// ── Step 5: Hub-aware BFS from the PPR seeds. ────────────────────────────
+	skipDegree := t.store.P99Degree()
+
+	// BFS level-by-level so we can track depth-from-nearest-seed accurately.
+	depthMap := make(map[string]int) // slug → min depth from any seed
+	for _, seed := range pprSeeds {
+		depthMap[seed] = 0
+	}
+	frontier := make([]string, len(pprSeeds))
+	copy(frontier, pprSeeds)
+	for hop := 1; hop <= depth; hop++ {
+		var next []string
+		for _, slug := range frontier {
+			for _, nb := range t.store.NeighborsHubAware(slug, 1, skipDegree) {
+				if _, ok := depthMap[nb]; !ok {
+					depthMap[nb] = hop
+					next = append(next, nb)
+				}
+			}
+		}
+		frontier = next
+	}
+
+	// ── Step 6: Render within the token budget. ──────────────────────────────
+	budgetChars := budgetTokens * wikiSubgraphCharsPerToken
+
+	// Sort: seeds first (depth=0), then ascending depth, then alphabetical.
+	type visitedNode struct {
+		slug  string
+		depth int
+	}
+	nodes := make([]visitedNode, 0, len(depthMap))
+	for slug, d := range depthMap {
+		nodes = append(nodes, visitedNode{slug, d})
+	}
+	sort.Slice(nodes, func(i, j int) bool {
+		if nodes[i].depth != nodes[j].depth {
+			return nodes[i].depth < nodes[j].depth
+		}
+		return nodes[i].slug < nodes[j].slug
+	})
+
+	// Cache page reads for edge-confidence lookups.
+	pageCache := make(map[string]*wiki.Page)
+	readPage := func(slug string) *wiki.Page {
+		if p, ok := pageCache[slug]; ok {
+			return p
+		}
+		p, readErr := t.store.ReadPage(slug)
+		if readErr != nil {
+			return nil
+		}
+		pageCache[slug] = p
+		return p
+	}
+
+	var sb strings.Builder
+
+	// NODE lines.
+	for _, n := range nodes {
+		if sb.Len() >= budgetChars {
+			break
+		}
+		meta, hasMeta := t.store.NodeMeta(n.slug)
+		title := n.slug
+		if hasMeta && meta.Title != "" {
+			title = meta.Title
+		}
+		header := fmt.Sprintf("NODE %s [%s | depth=%d]\n", n.slug, title, n.depth)
+		if sb.Len()+len(header) >= budgetChars {
+			break
+		}
+		sb.WriteString(header)
+
+		// For subnodes, add the byte-range snippet from B04.
+		if wiki.IsSubnodeID(n.slug) {
+			raw := t.store.SubgraphSnippet(n.slug)
+			if len(raw) > 0 {
+				snippet := strings.TrimSpace(string(raw))
+				if len(snippet) > wikiSubgraphSnippetMaxChars {
+					snippet = snippet[:wikiSubgraphSnippetMaxChars]
+				}
+				snippet = strings.TrimSpace(snippet)
+				if snippet != "" && sb.Len()+len(snippet)+1 < budgetChars {
+					sb.WriteString(snippet)
+					sb.WriteString("\n")
+				}
+			}
+		}
+	}
+
+	// EDGE lines (page-level edges only, both endpoints in visited set).
+	edgesSeen := make(map[string]bool)
+	for _, n := range nodes {
+		if sb.Len() >= budgetChars {
+			break
+		}
+		slug := n.slug
+		if wiki.IsSubnodeID(slug) {
+			continue
+		}
+		// Build confidence map from this page's related: entries.
+		confMap := make(map[string]string)
+		if p := readPage(slug); p != nil {
+			for _, ref := range p.Related {
+				confMap[wiki.Slug(ref.Slug)] = ref.Confidence
+			}
+		}
+		for _, target := range t.store.OutNeighbors(slug) {
+			if _, inVisited := depthMap[target]; !inVisited {
+				continue
+			}
+			edgeKey := slug + "\x00" + target
+			if edgesSeen[edgeKey] {
+				continue
+			}
+			edgesSeen[edgeKey] = true
+			conf, hasConf := confMap[target]
+			if !hasConf {
+				conf = "EXTRACTED" // body [[wiki-link]]
+			}
+			edge := fmt.Sprintf("EDGE %s --%s--> %s\n", slug, conf, target)
+			if sb.Len()+len(edge) < budgetChars {
+				sb.WriteString(edge)
+			}
+		}
+	}
+
+	result := sb.String()
+	if result == "" {
+		return "wiki_subgraph: no content in visited subgraph", nil
+	}
+	// Apply budget truncation at a clean newline boundary.
+	if len(result) > budgetChars {
+		truncated := result[:budgetChars]
+		if idx := strings.LastIndex(truncated, "\n"); idx > 0 {
+			truncated = truncated[:idx+1]
+		}
+		result = truncated + "[truncated: budget_tokens exceeded]\n"
+	}
+	return result, nil
+}
+
+var _ Tool = (*WikiSubgraphTool)(nil)

@@ -134,11 +134,14 @@ func headingAnchorSlug(text string) string {
 	return Slug(strings.TrimSpace(text))
 }
 
-// isSubnodeID reports whether slug represents a subnode (contains '#').
+// IsSubnodeID reports whether slug represents a subnode (contains '#').
 // Page slugs only contain [a-z0-9-], so '#' unambiguously marks a subnode.
-func isSubnodeID(slug string) bool {
+// The unexported alias isSubnodeID is preserved for package-internal callers.
+func IsSubnodeID(slug string) bool {
 	return strings.ContainsRune(slug, '#')
 }
+
+func isSubnodeID(slug string) bool { return IsSubnodeID(slug) }
 
 // subnodeParentSlug returns the page slug portion of a subnode ID.
 func subnodeParentSlug(id string) string {
