@@ -41,7 +41,7 @@
         "Single atomic commit prefix: chore(prompts): single-shot bias rules — codex/nanobot convergence (US-LAT-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read docs/restructure-research/codex-fast-lookup-2026-05-21.md and nanobot-fast-lookup-2026-05-21.md for the exact rules cited. (2) Read CURRENT runtime-workspace/AGENT.md IN FULL — recent commits canonicalized it; understand the existing structure before adding. (3) Read SOUL.md to find the right Voice-section insertion point. STYLE DISCIPLINE: rules in Italian, tight (1-2 sentences each), no fluff. Numbered list (not bullets) so the LLM can reference them. SCOPE DISCIPLINE: this is the FOUNDATIONAL prompt change — ALL other stories in this prd (US-LAT-01..06) rely on these rules being in place. NO code, NO tool changes. INVARIANT: existing Stile risposta + Anti-pattern + Memoria sections stay intact. NEW section is COMPLEMENTARY. If anything in the old text contradicts (e.g., a rule saying 'always plan first'), REPLACE it and document the swap in the commit body."
     },
     {
