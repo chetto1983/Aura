@@ -25,6 +25,7 @@ func TestDescriptionAuditMarkers(t *testing.T) {
 		&AskUserTool{},
 		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
+		&TextResponseTool{},
 		&ToolSearchTool{},
 		&SearchMemoryTool{},
 		&RecallOperationalTool{},
@@ -98,7 +99,7 @@ func TestDescriptionAuditSpecificPhrases(t *testing.T) {
 // descriptionFirstLine returns the first non-empty line of a tool description,
 // with leading and trailing whitespace trimmed.
 func descriptionFirstLine(desc string) string {
-	for _, line := range strings.Split(desc, "\n") {
+	for line := range strings.SplitSeq(desc, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			return line
 		}

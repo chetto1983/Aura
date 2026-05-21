@@ -1,60 +1,79 @@
-# Utente
+# User
 
 <!--
-This file holds the user-specific profile and collaboration rules.
-At first boot Aura copies it to /runtime-workspace/USER.md where the user
-edits it freely. The defaults below are intentionally generic — replace
-the {{placeholders}} with your own values (or rewrite entirely).
+User-specific profile + collaboration rules. At first boot Aura copies
+this to /runtime-workspace/USER.md where the operator edits it freely.
+Defaults below are intentionally generic — replace the {{placeholders}}
+with your own values (or rewrite entirely).
 
-Recommended length: 150–400 words. Anything Aura needs to remember
-durably about you should live here (or in the wiki, linked from here).
+Recommended length: 150-400 words. Anything Aura needs to remember
+durably about you belongs here (or in the wiki, linked from here).
 -->
 
-## Profilo
+## Profile
 
-- **Nome**: {{TUO_NOME}}
-- **Lingua**: {{LINGUA_PRINCIPALE}} (rispondi sempre nella lingua dell'utente; codice/path/comandi restano verbatim)
-- **Località**: {{CITTA_REGIONE}} (geografia rilevante per meteo/eventi locali — Aura lo userà per disambiguare "vicino" / "qui")
-- **Ruolo**: {{RUOLO_PROFESSIONALE}}
-- **Genere preferito per Aura**: {{maschile|femminile|neutro}} (per pronome quando parla di sé)
+- **Name**: {{YOUR_NAME}}
+- **Primary language**: {{PRIMARY_LANGUAGE}} (Aura always replies in this
+  language; code / paths / commands stay verbatim)
+- **Location**: {{CITY_REGION}} (geography relevant for weather / local
+  events / disambiguating "near here")
+- **Role**: {{PROFESSIONAL_ROLE}}
+- **Preferred gender for Aura's self-pronouns**: {{masculine|feminine|neuter}}
 
-Per dettagli sensibili (indirizzo completo, codice fiscale, contatti famiglia) prefersci creare una pagina wiki `[[{{slug-utente}}]]` linkata a questo file. Non citarli proattivamente nelle risposte.
+For sensitive details (full address, ID numbers, family contacts) prefer
+creating a wiki page `[[{{user-slug}}]]` linked from here. Aura should
+not cite these proactively in replies.
 
-## Come collaboriamo
+## How we collaborate
 
-Personalizza queste regole secondo i tuoi flussi:
+Personalize these to your workflow:
 
-- **Workflow git**: master-direct (commit diretti) vs feature-branch + PR. Aura adatta i suoi commit a questo.
-- **Cosa scrivere senza chiedere**: piccoli fix locali (yes/no), refactor multi-file (chiedi), modifiche schema DB (chiedi sempre).
-- **Verbosità delle risposte**: tonalità preferita (breve/dettagliata), commenti nel codice (sì/no), spiegazioni passo-passo (per task complessi).
-- **`git push` discipline**: mai senza istruzione esplicita nel turno corrente. Un'approvazione precedente NON si applica al nuovo push.
-- **Probe / test discipline**: ogni test E2E deve cross-check contro ground truth (filesystem, DB, API), non solo l'output stringato.
+- **Git workflow**: master-direct (commit straight to master) vs feature
+  branch + PR. Aura adapts her commit habits to this.
+- **What to write without asking**: small local fixes (yes/no), multi-file
+  refactor (ask), DB schema changes (always ask).
+- **Reply verbosity**: preferred tone (short / detailed), code comments
+  (yes / no), step-by-step explanations (for complex tasks).
+- **`git push` discipline**: never without explicit instruction in the
+  current turn. Previous approval does NOT apply to a new push.
+- **Probe / test discipline**: every E2E test must cross-check against
+  ground truth (filesystem, DB, API), not just the stringified output.
 
-## Vincoli ricordati (NON re-litigare)
+## Remembered constraints (do not re-litigate)
 
-Lista qui le decisioni stabili che Aura non deve riproporre di rinegoziare a ogni turno. Esempi:
+List the stable decisions Aura should not propose to renegotiate every
+turn. Examples:
 
-- Stack tecnologico locked (es. "PostgreSQL 16, no MongoDB", "embedding model X locked")
-- Convenzioni di naming / branching / commit message
-- Risorse hardware (es. "mini-PC condiviso, sidecar ≤4 thread")
-- Tool preferiti per task specifici (es. "preferisci `ripgrep` a `grep`", "no Python sandbox per quick scripts, usa Go nativo")
+- Locked tech stack (e.g. "PostgreSQL 16, no MongoDB", "embedding model X
+  locked")
+- Naming / branching / commit message conventions
+- Hardware resources (e.g. "shared mini-PC, sidecar ≤4 threads")
+- Preferred tools for specific tasks (e.g. "prefer `ripgrep` over `grep`",
+  "no Python sandbox for quick scripts, use native Go")
 
-Quando Aura propone qualcosa che viola un vincolo, citalo esplicitamente nel rifiuto.
+When Aura proposes something that violates a constraint, she must cite
+the constraint explicitly in her refusal.
 
-## Stack di reference
+## Reference stack
 
-Punti di accesso live al sistema (Aura li usa quando l'utente chiede "ho perso X" / "verifica Y"):
+Live entry points to the system (Aura uses these when the user asks
+"I lost X" / "verify Y"):
 
-- **Live debug**: API REST / DB queries / log files
-- **Probe canonico**: `cmd/probe_chat` per testare comportamenti end-to-end
-- **Memory dir dell'agente che mantiene Aura**: dove vivono invarianti + feedback registrati
+- **Live debug**: REST API / DB queries / log files
+- **Canonical probe**: `cmd/probe_chat` for end-to-end behavioral tests
+- **Maintainer memory dir**: where invariants + recorded feedback live
 
-## Anti-pattern dell'utente
+## User anti-patterns
 
-Pattern che ti irritano e che Aura deve evitare:
+Patterns the user finds irritating and Aura must avoid:
 
-- "Stale legacy" — file/test/doc orfani lasciati dopo refactor
-- "Sovraingegnerizzazione preventiva" — design speculative invece di iterazione tight
-- "Verify superficial" — PASS basato su una check-list scritta dall'agente stesso, non sull'apertura del body reale
-- "Phantom tool claim" — dichiarare di aver fatto X quando il tool result dice il contrario
-- "Politeness fluff" — "grazie in anticipo", "spero di esserti utile", "fammi sapere se hai altre domande" non richiesti
+- **Stale legacy** — orphan files / tests / docs left behind after a
+  refactor
+- **Preemptive over-engineering** — speculative design instead of tight
+  iteration
+- **Superficial verify** — PASS based on a checklist the agent wrote
+  itself, not on inspecting the real body
+- **Phantom tool claim** — claiming X was done when the tool result says
+  otherwise
+- **Politeness fluff** — "thanks in advance", "hope this helps", "let me
+  know if you have more questions" when not requested

@@ -124,8 +124,8 @@ func TestEnsureLayoutUsesEmbeddedPublicAgentWhenRootAgentExists(t *testing.T) {
 	if string(got) == "root runtime agent\n" {
 		t.Fatalf("runtime AGENT.md copied root AGENT.md")
 	}
-	assertContains(t, string(got), "Runtime e comportamento operativo")
-	assertContains(t, string(got), "Regole Strette")
+	assertContains(t, string(got), "Aura — Runtime Contract")
+	assertContains(t, string(got), "Hard Rules — NEVER violate")
 }
 
 func TestEnsureLayoutCreatesEmbeddedPublicSkills(t *testing.T) {

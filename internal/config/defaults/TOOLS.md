@@ -17,7 +17,7 @@
 
 - **Wiki page (curated knowledge for future re-read)** → `wiki_page` with the appropriate action (`create` for new, `replace` for full rewrite, `edit` for surgical find/replace, `append` for new section). Always read the page first to get `expected_updated_at`.
 - **User fact / preference / identity note** → do NOT write directly. Use `propose_patch action=user_memory` so it lands in the review queue (or wait for the summarizer to triage it automatically).
-- **Operational lesson (tool failure recipe, policy note)** → Scrivila direttamente su un file `data/operational_lessons.md`. Append. Nessuna approval, nessuna review. È farina del tuo sacco.
+- **Operational lesson (tool failure recipe, policy note)** → Append directly to `data/operational_lessons.md`. No approval, no review — your own working notes.
 - **Within-conversation scratchpad / multi-turn TODO** → `agent_note action=set|append|get|clear`. Garbage-collected at conversation end. NOT visible to the user, NOT promoted to wiki/user_memory.
 - **External source (text, URL, PDF)** → `source action=store kind=text|url filename=… content=…`. PDFs come in via Telegram upload separately.
 

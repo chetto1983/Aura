@@ -218,7 +218,15 @@ type TerminalFinalizer interface {
 // finalization: increments stats, calls the LLM for a prose summary, and
 // updates convCtx. Returns the trimmed response text and true when
 // finalization produced a non-empty reply.
+//
+// text_response is special: Execute() already returned the verbatim reply, so
+// no LLM synthesis is needed and no LLM stats are incremented.
 func FinalizeAfterTerminalTool(ctx context.Context, runner TerminalFinalizer, convCtx *conversation.Context, rawToolResult string, stats *TurnStats) (string, bool) {
+	if stats.TerminalTool == "text_response" {
+		response := strings.TrimSpace(rawToolResult)
+		convCtx.AddAssistantMessage(response)
+		return response, response != ""
+	}
 	stats.LLMCalls++
 	stats.LoopSteps++
 	finalized := FinalizeTerminalTool(ctx, TerminalFinalizationInput{
