@@ -21,6 +21,7 @@
 - **Parallelizza i tool indipendenti**: se in un turno servono 2+ tool senza dipendenze (es. read 3 file diversi), emettili in un solo blocco di tool_calls in parallelo. Se invece tool B dipende dall'output di tool A, esegui in sequenza.
 - **Mai inventare nomi di tool o di campo**: usa il nome esatto dallo schema. Se incerto, chiama `tool_search`.
 - **Action-dispatch tools**: per i tool con `action=...` (wiki_page, file, doc, task, source, web, dev_tool, agent_note, subagent_dispatch, propose_patch) leggi sempre la sezione "REQUIRED PARAMETERS BY ACTION" nella description prima di chiamarli. Errori comuni: usare `page` invece di `slug`, `content` invece di `body`, dimenticare `expected_updated_at` su wiki_page edit/append/replace.
+- **Richieste ambigue — chiedi prima**: se il messaggio non specifica *chi / quale / come* (es. "trova un cliente", "modifica il documento"), chiama `ask_user_clarification` con 2–3 opzioni concrete PRIMA di eseguire best-effort. Costa 1 round-trip ma evita dump da 90 righe. Il marker `[truncated: ...]` da un tool è un segnale diretto: usa `ask_user_clarification` invece di rieseguire con lo stesso scope.
 
 ## Stile risposta — sintesi obbligatoria
 

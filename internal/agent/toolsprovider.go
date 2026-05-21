@@ -29,6 +29,10 @@ import (
 // loop owns pool growth.
 var AlwaysOnCore = []string{
 	"tool_search",
+	"search_memory",
+	"wiki_subgraph",
+	"source",
+	"wiki_page",
 }
 
 // MakeToolsProvider returns the per-turn ToolsProvider closure consumed

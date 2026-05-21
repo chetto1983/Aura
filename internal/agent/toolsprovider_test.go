@@ -22,20 +22,19 @@ func coreStubDefs(names []string) []llm.ToolDefinition {
 	return out
 }
 
-func TestAlwaysOnCore_ContainsToolSearch(t *testing.T) {
-	// Deferred-tools rollout (2026-05-12): the always-on seed must
-	// include tool_search so the model can discover deferred tools.
-	// If this assertion fails, the manifest-in-system-prompt pattern
-	// has nothing to back it.
-	found := false
+func TestAlwaysOnCore_ContainsWikiFastPath(t *testing.T) {
+	// The seed must include tool_search for deferred discovery, plus the
+	// wiki/source retrieval path so ordinary wiki Q&A can resolve in <=2
+	// tool calls instead of spending one call merely finding the retrieval tool.
+	want := []string{"tool_search", "search_memory", "wiki_subgraph", "source", "wiki_page"}
+	seen := make(map[string]bool, len(AlwaysOnCore))
 	for _, name := range AlwaysOnCore {
-		if name == "tool_search" {
-			found = true
-			break
-		}
+		seen[name] = true
 	}
-	if !found {
-		t.Fatalf("AlwaysOnCore must contain tool_search; got %v", AlwaysOnCore)
+	for _, name := range want {
+		if !seen[name] {
+			t.Fatalf("AlwaysOnCore missing %q; got %v", name, AlwaysOnCore)
+		}
 	}
 }
 

@@ -304,6 +304,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		a.deps.Tools.Register(tool)
 	}
 	a.deps.Tools.Register(&tools.AskUserTool{})
+	a.deps.Tools.Register(&tools.AskUserClarificationTool{})
 	if tokenTool := tools.NewRequestDashboardTokenTool(a.deps.AuthDB, b, b.IsAllowlisted); tokenTool != nil {
 		a.deps.Tools.Register(tokenTool)
 	}

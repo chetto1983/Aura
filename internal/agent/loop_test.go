@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/llm"
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 )
 
 func TestRunLoopNoToolCallsReturnsAssistantText(t *testing.T) {
@@ -821,4 +822,45 @@ func (s *budgetLoopState) sawUserMessage(substr string) bool {
 		}
 	}
 	return false
+}
+
+// TestRunLoopAskUserClarificationPausesLoop verifies that when the LLM calls
+// ask_user_clarification, the loop pauses (StopReason=waiting_for_user) after
+// exactly one LLM call — identical semantics to ask_user.
+func TestRunLoopAskUserClarificationPausesLoop(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{
+			HasToolCalls: true,
+			ToolCalls: []llm.ToolCall{
+				{ID: "clarify-1", Name: "ask_user_clarification", Arguments: map[string]any{
+					"question": "Quale cliente cerchi?",
+					"options": []any{
+						map[string]any{"label": "Per nome", "value": "by_name"},
+						map[string]any{"label": "Per codice", "value": "by_code"},
+						map[string]any{"label": "Mostrami i primi 5", "value": "first5"},
+					},
+				}},
+			},
+		}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		return ExecutionSummary{
+			AwaitingUserInput: &tools.ErrAwaitingUserInput{
+				Question: "Quale cliente cerchi?",
+				Options:  []string{"Per nome", "Per codice", "Mostrami i primi 5"},
+				Kind:     "clarification",
+			},
+		}
+	}), state, Options{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Stats.StopReason != "waiting_for_user" {
+		t.Errorf("StopReason = %q, want waiting_for_user", result.Stats.StopReason)
+	}
+	if result.Stats.LLMCalls != 1 {
+		t.Errorf("LLMCalls = %d, want 1 (loop should pause after one LLM call)", result.Stats.LLMCalls)
+	}
 }

@@ -115,10 +115,11 @@ func toolResultPreview(result string) string {
 // MaxToolResultPreviewChars caps the preview string emitted on OnToolEnd.
 const MaxToolResultPreviewChars = 200
 
-// findAskUserCall returns the index of the first ask_user call in calls, or -1.
+// findAskUserCall returns the index of the first ask_user or
+// ask_user_clarification call in calls, or -1.
 func findAskUserCall(calls []llm.ToolCall) int {
 	for i, call := range calls {
-		if call.Name == "ask_user" {
+		if call.Name == "ask_user" || call.Name == "ask_user_clarification" {
 			return i
 		}
 	}

@@ -104,6 +104,7 @@ func buildEvalRegistry() *tools.Registry {
 func nativeEvalTools() []tools.Tool {
 	return []tools.Tool{
 		&tools.AskUserTool{},
+		&tools.AskUserClarificationTool{},
 		&tools.RequestDashboardTokenTool{},
 		&tools.ToolSearchTool{},
 		&tools.SearchMemoryTool{},

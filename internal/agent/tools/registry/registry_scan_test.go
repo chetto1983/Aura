@@ -29,6 +29,7 @@ func TestCatalogueScanNativeTools(t *testing.T) {
 	// to satisfy any nil-guard in normalizeToolDefinition.
 	toolsToCheck := []Tool{
 		&AskUserTool{},
+		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&ToolSearchTool{},
 		&SearchMemoryTool{},
@@ -72,6 +73,7 @@ func TestCatalogueScanNativeTools(t *testing.T) {
 func TestCatalogueAlwaysOnTools(t *testing.T) {
 	alwaysOn := []Tool{
 		&AskUserTool{},
+		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&ToolSearchTool{},
 	}
@@ -122,6 +124,7 @@ func TestCatalogueOpenWorldTools(t *testing.T) {
 func TestCatalogueReadOnlyHintConsistency(t *testing.T) {
 	toolsToCheck := []Tool{
 		&AskUserTool{},
+		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&ToolSearchTool{},
 		&SearchMemoryTool{},

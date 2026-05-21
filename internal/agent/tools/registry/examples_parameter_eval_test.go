@@ -25,6 +25,7 @@ import (
 func TestExamplesParameterEval(t *testing.T) {
 	toolsToCheck := []Tool{
 		&AskUserTool{},
+		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&ToolSearchTool{},
 		&SearchMemoryTool{},
