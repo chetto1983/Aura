@@ -35,7 +35,7 @@
         "Single atomic commit prefix: fix(db): settings.updated_at default to CURRENT_TIMESTAMP (US-WIKI-FIX-07)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/db/migrations/migrations.go to see the migration registry pattern + numbering scheme. (2) `sqlite3 /data/aura.db '.schema settings'` already done — confirmed updated_at NOT NULL no default. (3) Sqlite ALTER COLUMN limitation: must use rename+recreate trick. (4) Check if any code explicitly relies on updated_at being NOT NULL — likely yes (read-side parses it as time.Time). Default = NULL would break that; CURRENT_TIMESTAMP is safe."
     },
     {

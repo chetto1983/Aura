@@ -578,12 +578,12 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 24 {
-		t.Fatalf("applied versions = %v, want 24 migrations", first)
+	if len(first) != 25 {
+		t.Fatalf("applied versions = %v, want 25 migrations", first)
 	}
 	for i, got := range first {
 		if want := i + 1; got != want {
-			t.Fatalf("applied versions = %v, want contiguous 1..24", first)
+			t.Fatalf("applied versions = %v, want contiguous 1..25", first)
 		}
 	}
 }
@@ -1112,6 +1112,71 @@ func assertIndexes(t *testing.T, db *sql.DB, table string, names []string) {
 			t.Fatalf("%s missing index %s: %v", table, name, err)
 		}
 	}
+}
+
+func TestSettingsTimestampDefaultsAdded(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if err := Run(ctx, db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// settings: INSERT without updated_at must succeed and auto-fill.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO settings (key, value) VALUES ('TEST_KEY', 'TEST_VALUE')`,
+	); err != nil {
+		t.Fatalf("INSERT INTO settings without updated_at: %v", err)
+	}
+	var settingsUpdatedAt string
+	if err := db.QueryRowContext(ctx,
+		`SELECT updated_at FROM settings WHERE key = 'TEST_KEY'`,
+	).Scan(&settingsUpdatedAt); err != nil {
+		t.Fatalf("query settings updated_at: %v", err)
+	}
+	if settingsUpdatedAt == "" {
+		t.Fatal("settings.updated_at is empty after INSERT without explicit value")
+	}
+
+	// secrets: INSERT without updated_at must succeed.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO secrets (key, value) VALUES ('TEST_SECRET', 'TEST_SECRET_VAL')`,
+	); err != nil {
+		t.Fatalf("INSERT INTO secrets without updated_at: %v", err)
+	}
+	var secretsUpdatedAt string
+	if err := db.QueryRowContext(ctx,
+		`SELECT updated_at FROM secrets WHERE key = 'TEST_SECRET'`,
+	).Scan(&secretsUpdatedAt); err != nil {
+		t.Fatalf("query secrets updated_at: %v", err)
+	}
+	if secretsUpdatedAt == "" {
+		t.Fatal("secrets.updated_at is empty after INSERT without explicit value")
+	}
+
+	// chat_settings: INSERT without updated_at must succeed.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO chat_settings (chat_id) VALUES ('chat-test')`,
+	); err != nil {
+		t.Fatalf("INSERT INTO chat_settings without updated_at: %v", err)
+	}
+	var chatSettingsUpdatedAt string
+	if err := db.QueryRowContext(ctx,
+		`SELECT updated_at FROM chat_settings WHERE chat_id = 'chat-test'`,
+	).Scan(&chatSettingsUpdatedAt); err != nil {
+		t.Fatalf("query chat_settings updated_at: %v", err)
+	}
+	if chatSettingsUpdatedAt == "" {
+		t.Fatal("chat_settings.updated_at is empty after INSERT without explicit value")
+	}
+
+	// Existing rows are preserved with their original updated_at values.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at) VALUES ('TZ', 'UTC', '2026-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("INSERT INTO settings with explicit updated_at: %v", err)
+	}
+	assertScalar(t, db, `SELECT updated_at FROM settings WHERE key = 'TZ'`, "2026-01-01T00:00:00Z")
 }
 
 func TestRegisteredReturnsCopy(t *testing.T) {
