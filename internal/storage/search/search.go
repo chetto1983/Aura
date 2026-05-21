@@ -145,6 +145,22 @@ type Searcher interface {
 	IsIndexed() bool
 }
 
+// HybridSearcher extends Searcher with a 3-channel hybrid search combining
+// exact title-match, FTS5 BM25, and vector cosine via RRF fusion.
+// Implemented by qdrantRepository when wired with NewQdrantRepositoryWithDB.
+type HybridSearcher interface {
+	Searcher
+	SearchHybrid(ctx context.Context, query string, topK int) ([]Result, error)
+}
+
+// HybridRepository combines the full Repository boundary with HybridSearcher.
+// Returned by NewQdrantRepositoryWithDB; implements Repository so it can be
+// assigned wherever a Repository is expected.
+type HybridRepository interface {
+	Repository
+	SearchHybrid(ctx context.Context, query string, topK int) ([]Result, error)
+}
+
 // WikiPageReindexer is the wiki index maintenance boundary used after one wiki
 // page changes.
 type WikiPageReindexer interface {

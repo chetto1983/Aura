@@ -274,7 +274,13 @@ func (t *SearchMemoryTool) searchWiki(ctx context.Context, query string, limit i
 	if !t.wiki.IsIndexed() {
 		return nil, []string{"wiki index not ready"}
 	}
-	results, err := t.wiki.Search(ctx, query, limit)
+	var results []search.Result
+	var err error
+	if hybrid, ok := t.wiki.(search.HybridSearcher); ok {
+		results, err = hybrid.SearchHybrid(ctx, query, limit)
+	} else {
+		results, err = t.wiki.Search(ctx, query, limit)
+	}
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return nil, []string{"wiki search timed out"}
