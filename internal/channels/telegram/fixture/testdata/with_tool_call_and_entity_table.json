@@ -5,7 +5,8 @@
       "PromptTokens": 0,
       "CompletionTokens": 0,
       "TotalTokens": 20,
-      "ReasoningTokens": 0
+      "ReasoningTokens": 0,
+      "CacheReadTokens": 0
     },
     "HasToolCalls": true,
     "ToolCalls": [
