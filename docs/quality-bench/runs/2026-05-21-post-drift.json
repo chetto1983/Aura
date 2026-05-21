@@ -1,0 +1,2271 @@
+{
+  "date": "2026-05-21",
+  "label": "post-drift",
+  "base_url": "http://localhost:18080/api",
+  "total_queries": 20,
+  "passes": 20,
+  "pass_rate": 1,
+  "recall_queries": 20,
+  "recall_hits": 11,
+  "recall_at5": 0.55,
+  "p95_latency_ms": 37905,
+  "p95_search_latency_ms": 75,
+  "avg_tool_calls": 3.3,
+  "gate": {
+    "profile": "closure97",
+    "min_pass_rate": 0.97,
+    "min_recall_at5": 0.97,
+    "max_p95_latency_ms": 10000,
+    "max_p95_search_latency_ms": 500,
+    "max_avg_tool_calls": 2,
+    "passed": false,
+    "failures": [
+      "recall@5 0.55 \u003c 0.97",
+      "p95_latency_ms 37905 \u003e 10000",
+      "avg_tool_calls 3.30 \u003e 2.00"
+    ]
+  },
+  "fixtures": [
+    {
+      "fixture_id": "tika-xlsx",
+      "file": "tika-testEXCEL.xlsx",
+      "format": "xlsx",
+      "source_id": "src_960ba8f1cfa5838b",
+      "wiki_pages": [
+        "source-tika-testexcel"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "tika-xlsx",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:tika-xlsx:q1",
+          "text": "Cosa contiene il foglio Excel del fixture Tika?",
+          "expected_substring": "Numbers and their Squares",
+          "expected_slugs": [
+            "source-tika-testexcel"
+          ],
+          "reply": "Ecco il contenuto del foglio Excel **tika-testEXCEL.xlsx** (source: `src_960ba8f1cfa5838b`):\n\nIl file ha un unico foglio chiamato **Feuil1** con una tabella semplice: **Numeri e i loro quadrati** (Numbers and their Squares).\n\n| Number | Square |\n|--------|--------|\n| 1 | 1 |\n| 2 | 4 |\n| 3 | 9 |\n| 4 | 16 |\n| 5 | 25 |\n| 6 | 36 |\n| 7 | 49 |\n| 8 | 64 |\n| 9 | 81 |\n| 10 | 100 |\n| 11 | 121 |\n| 12 | 144 |\n| 13 | 169 |\n\n(La prima riga è un'intestazione descrittiva: \"Sample Excel Worksheet - Numbers and their Squares\", poi c'è la riga con le intestazioni \"Number\" / \"Square\", e i dati numerici veri partono dal numero 1.)\n\nÈ un file fixture usato per testare l'estrazione di Apache Tika — semplice, pulito, volutamente minimale.",
+          "pass": true,
+          "latency_ms": 37905,
+          "tool_calls": 12,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "wiki_subgraph",
+            "source"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 61,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "source-tika-testexcel",
+              "title": "Source: tika-testEXCEL",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_960ba8f1cfa5838b` - Filename: tika-testEXCEL.xlsx - Kind: xlsx - Status: ingested - Size: 9453 bytes - SHA2...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "source-tika-testexcel.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "xlsx"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "microsoft-excel",
+              "title": "Microsoft Excel",
+              "snippet": "...ept — extracted from sources._ ## From source:src_960ba8f1cfa5838b A spreadsheet application developed by Microsoft. The source file mentions it was written and saved in Microsoft Excel X for Mac Service Release 1. ^[src_960ba8f1cfa5838b]",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "microsoft-excel.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "concept"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-tika-testword",
+              "title": "Source: tika-testWORD",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_67797f5691cb5346` - Filename: tika-testWORD.docx - Kind: docx - Status: ingested - Size: 13436 bytes - SHA2...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-tika-testword.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "docx"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "apache-tika",
+              "title": "Apache Tika",
+              "snippet": "Apache Tika # Apache Tika _Type: project — extracted from sources._ ## From source:src_67797f5691cb5346 Apache Tika is a toolkit for detecting and extracting metadata and text from various document formats. ^[src_67797f5691cb5346]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "apache-tika.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "project"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "source-tika-testppt",
+              "title": "Source: tika-testPPT",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_730a6ade20208eaa` - Filename: tika-testPPT.pptx - Kind: pptx - Status: ingested - Size: 36518 bytes - SHA25...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "source-tika-testppt.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "pptx"
+              ],
+              "sources": [
+                "source:src_730a6ade20208eaa"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "tika-xlsx",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:tika-xlsx:q2",
+          "text": "Qual è il quadrato di 12 nel foglio Excel Tika?",
+          "expected_substring": "144",
+          "expected_slugs": [
+            "source-tika-testexcel"
+          ],
+          "reply": "Nel foglio **tika-testEXCEL.xlsx** c'è una tabella \"Number → Square\" e per **12** il quadrato è **144**.",
+          "pass": true,
+          "latency_ms": 20488,
+          "tool_calls": 6,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "source"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 64,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "graph_node",
+              "slug": "simatic-s7-1200-g2-plc-siemens-seconda-generazione",
+              "title": "SIMATIC S7-1200 G2 â€” PLC Siemens seconda generazione",
+              "snippet": "...4:12:42Z Summary: # SIMATIC S7-1200 G2 â€” PLC Siemens seconda generazione Il SIMATIC S7-1200 G2 Ã¨ il PLC compatto di seconda generazione di Siemens, in commercio da marzo 2025. Sostituisce la famiglia S7-1200 (G1). ## Prestazioni e...",
+              "score": 0.026229508,
+              "score_exact": 0.016393442,
+              "score_fts": 0.009836066
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "source-tika-testexcel",
+              "title": "Source: tika-testEXCEL",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_960ba8f1cfa5838b` - Filename: tika-testEXCEL.xlsx - Kind: xlsx - Status: ingested - Size: 9453 bytes - SHA2...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "source-tika-testexcel.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "xlsx"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "square-of-a-number",
+              "title": "Square of a Number",
+              "snippet": "...lf. The source contains a table listing numbers from 1 to 15 and their squares, illustrating this arithmetic operation. ^[src_960ba8f1cfa5838b] ### Key claims \u003e Sample Excel Worksheet - Numbers and their Squares ^[src_960ba8f1cfa5838b] \u003e Nu...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "square-of-a-number.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "microsoft-excel",
+              "title": "Microsoft Excel",
+              "snippet": "...ept — extracted from sources._ ## From source:src_960ba8f1cfa5838b A spreadsheet application developed by Microsoft. The source file mentions it was written and saved in Microsoft Excel X for Mac Service Release 1. ^[src_960ba8f1cfa5838b]",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "microsoft-excel.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "concept"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "aura-quality-bench",
+              "title": "Aura Quality-Bench",
+              "snippet": "Aura Quality-Bench # Aura Quality-Bench _Theme extracted from sources._ ## From source:src_d22bbddaa7d76ef2 A benchmark for evaluating the quality of Aura's document processing and knowledge extraction pipelines. It uses manually verified d...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "aura-quality-bench.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "tika-docx",
+      "file": "tika-testWORD.docx",
+      "format": "docx",
+      "source_id": "src_67797f5691cb5346",
+      "wiki_pages": [
+        "source-tika-testword"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "tika-docx",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:tika-docx:q1",
+          "text": "Quale URL del progetto Apache Tika è citato nel documento Word di test Tika?",
+          "expected_substring": "tika.apache.org",
+          "expected_slugs": [
+            "source-tika-testword"
+          ],
+          "reply": "L'URL citato nel documento Word è **http://tika.apache.org/**.",
+          "pass": true,
+          "latency_ms": 42389,
+          "tool_calls": 9,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "source"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 54,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "graph_node",
+              "slug": "source-test-pms-gestione-richieste-offerta",
+              "title": "Source Test Pms Gestione Richieste Offerta",
+              "snippet": "Graph node [[source-test-pms-gestione-richieste-offerta]] Title: Source Test Pms Gestione Richieste Offerta Category: progetti Tags: hub, memory-quality Outbound links: pms-project-management-saas Backlinks: davide, pms-project-management-s...",
+              "score": 0.026070861,
+              "score_exact": 0.016393442,
+              "score_fts": 0.009677419
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "source-tika-testword",
+              "title": "Source: tika-testWORD",
+              "snippet": "...493b4291e8d5f16e81e65` - Stored: 2026-05-21T08:43:45Z ## Extracted Entities - [[apache-tika]] — Apache Tika (project) — Apache Tika is a toolkit for detecting and extracting metadata and text from various document formats. - [[apache-po...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "source-tika-testword.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "docx"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-tika-testexcel",
+              "title": "Source: tika-testEXCEL",
+              "snippet": "Source: tika-testEXCEL # Source: tika-testEXCEL.xlsx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_960ba8f1cfa5838b` - Filename: tika-testEXC...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "source-tika-testexcel.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "xlsx"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "source-tika-testppt",
+              "title": "Source: tika-testPPT",
+              "snippet": "Source: tika-testPPT # Source: tika-testPPT.pptx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_730a6ade20208eaa` - Filename: tika-testPPT.ppt...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-tika-testppt.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "pptx"
+              ],
+              "sources": [
+                "source:src_730a6ade20208eaa"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "apache-tika",
+              "title": "Apache Tika",
+              "snippet": "Apache Tika # Apache Tika _Type: project — extracted from sources._ ## From source:src_67797f5691cb5346 Apache Tika is a toolkit for detecting and extracting metadata and text from various document formats. ^[src_67797f5691cb5346]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "apache-tika.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "project"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "tika-docx",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:tika-docx:q2",
+          "text": "Quali livelli di heading sono presenti nel documento Word Tika?",
+          "expected_substring": "Heading Level",
+          "expected_slugs": [
+            "source-tika-testword"
+          ],
+          "reply": "Nel documento **tika-testWORD.docx** sono presenti questi livelli di heading:\n\n| Livello | Esempi |\n|---------|--------|\n| **H1** (`#`) | Main Heading, Heading Level 1 |\n| **H2** (`##`) | Heading Level 2 |\n| **H3** (`###`) | Heading Level 3 |\n\nOltre a questi, c'è anche un **titolo del documento** (\"Sample Word Document Title\") e un **sottotitolo** (\"And now for a subtitle\") che Tika ha estratto come testo semplice, non come heading Markdown.",
+          "pass": true,
+          "latency_ms": 11622,
+          "tool_calls": 3,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "source"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 71,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "source-tika-testword",
+              "title": "Source: tika-testWORD",
+              "snippet": "...a-testWORD # Source: tika-testWORD.docx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_67797f5691cb5346` - Filename: tika-testWORD.docx - Kind...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "source-tika-testword.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "docx"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "bookmark",
+              "title": "Bookmark",
+              "snippet": "...5346 Bookmarks in documents allow linking to specific locations. The document contains bookmarks to headings. ^[src_67797f5691cb5346] ### Key claims \u003e This links to The Main Heading Bookmark and The Level 3 Bookmark. ^[src_67797f5691cb5346]",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "bookmark.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-tika-testexcel",
+              "title": "Source: tika-testEXCEL",
+              "snippet": "...testEXCEL # Source: tika-testEXCEL.xlsx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_960ba8f1cfa5838b` - Filename: tika-testEXCEL.xlsx - Kin...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-tika-testexcel.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "xlsx"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "source-tika-testppt",
+              "title": "Source: tika-testPPT",
+              "snippet": "...ika-testPPT # Source: tika-testPPT.pptx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_730a6ade20208eaa` - Filename: tika-testPPT.pptx - Kind:...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "source-tika-testppt.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "pptx"
+              ],
+              "sources": [
+                "source:src_730a6ade20208eaa"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "microsoft-word",
+              "title": "Microsoft Word",
+              "snippet": "Microsoft Word # Microsoft Word _Theme extracted from sources._ ## From source:src_67797f5691cb5346 Microsoft Word is a word processor developed by Microsoft. The document is a sample Word file showcasing formatting, tables, and bookmarks....",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "microsoft-word.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "tika-pptx",
+      "file": "tika-testPPT.pptx",
+      "format": "pptx",
+      "source_id": "src_730a6ade20208eaa",
+      "wiki_pages": [
+        "source-tika-testppt"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "tika-pptx",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:tika-pptx:q1",
+          "text": "Qual è il titolo della prima slide del PowerPoint Tika?",
+          "expected_substring": "Attachment Test",
+          "expected_slugs": [
+            "source-tika-testppt"
+          ],
+          "reply": "Il titolo della prima slide è **\"Attachment Test\"**.",
+          "pass": true,
+          "latency_ms": 11048,
+          "tool_calls": 4,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "source"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 49,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "source-tika-testppt",
+              "title": "Source: tika-testPPT",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_730a6ade20208eaa` - Filename: tika-testPPT.pptx - Kind: pptx - Status: ingested - Size: 36518 bytes - SHA25...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "source-tika-testppt.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "pptx"
+              ],
+              "sources": [
+                "source:src_730a6ade20208eaa"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "source-tika-testexcel",
+              "title": "Source: tika-testEXCEL",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_960ba8f1cfa5838b` - Filename: tika-testEXCEL.xlsx - Kind: xlsx - Status: ingested - Size: 9453 bytes - SHA2...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "source-tika-testexcel.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "xlsx"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-tika-testword",
+              "title": "Source: tika-testWORD",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_67797f5691cb5346` - Filename: tika-testWORD.docx - Kind: docx - Status: ingested - Size: 13436 bytes - SHA2...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-tika-testword.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "docx"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "apache-tika",
+              "title": "Apache Tika",
+              "snippet": "Apache Tika # Apache Tika _Type: project — extracted from sources._ ## From source:src_67797f5691cb5346 Apache Tika is a toolkit for detecting and extracting metadata and text from various document formats. ^[src_67797f5691cb5346]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "apache-tika.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "project"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "microsoft-word",
+              "title": "Microsoft Word",
+              "snippet": "...oft Word is a word processor developed by Microsoft. The document is a sample Word file showcasing formatting, tables, and bookmarks. ^[src_67797f5691cb5346] ### Key claims \u003e This is a sample Microsoft Word Document. ^[src_67797f5691cb5346]",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "microsoft-word.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "tika-pptx",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:tika-pptx:q2",
+          "text": "Quale parola compare nella slide 'Different words to test against' del PowerPoint Tika, oltre a 'Hello'?",
+          "expected_substring": "Watershed",
+          "expected_slugs": [
+            "source-tika-testppt"
+          ],
+          "reply": "Oltre a \"Hello\", nella slide **\"Different words to test against\"** compaiono queste parole:\n\n- **Quest**\n- **Watershed**\n- **Avalanche**\n- **Black Panther**\n- **Mystery**\n- **Banking**\n- **Investment**\n\nEcco il contenuto completo della slide:\n\n\u003e Quest  \n\u003e Hello  \n\u003e Watershed  \n\u003e Avalanche  \n\u003e Black Panther  \n\u003e Mystery  \n\u003e Banking  \n\u003e Investment\n\nFonte: [`src_730a6ade20208eaa`](wiki:tika-test-powerpoint) (tika-testPPT.pptx)",
+          "pass": true,
+          "latency_ms": 14747,
+          "tool_calls": 4,
+          "tools_used": [
+            "search_memory",
+            "source"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 75,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "graph_node",
+              "slug": "source-test-pms-gestione-richieste-offerta",
+              "title": "Source Test Pms Gestione Richieste Offerta",
+              "snippet": "Graph node [[source-test-pms-gestione-richieste-offerta]] Title: Source Test Pms Gestione Richieste Offerta Category: progetti Tags: hub, memory-quality Outbound links: pms-project-management-saas Backlinks: davide, pms-project-management-s...",
+              "score": 0.026070861,
+              "score_exact": 0.016393442,
+              "score_fts": 0.009677419
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "source-tika-testppt",
+              "title": "Source: tika-testPPT",
+              "snippet": "Source: tika-testPPT # Source: tika-testPPT.pptx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_730a6ade20208eaa` - Filename: tika-testPPT.ppt...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "source-tika-testppt.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "pptx"
+              ],
+              "sources": [
+                "source:src_730a6ade20208eaa"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-tika-testword",
+              "title": "Source: tika-testWORD",
+              "snippet": "Source: tika-testWORD # Source: tika-testWORD.docx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_67797f5691cb5346` - Filename: tika-testWORD....",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "source-tika-testword.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "docx"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "source-tika-testexcel",
+              "title": "Source: tika-testEXCEL",
+              "snippet": "Source: tika-testEXCEL # Source: tika-testEXCEL.xlsx Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_960ba8f1cfa5838b` - Filename: tika-testEXC...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-tika-testexcel.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "xlsx"
+              ],
+              "sources": [
+                "source:src_960ba8f1cfa5838b"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "microsoft-word",
+              "title": "Microsoft Word",
+              "snippet": "Microsoft Word # Microsoft Word _Theme extracted from sources._ ## From source:src_67797f5691cb5346 Microsoft Word is a word processor developed by Microsoft. The document is a sample Word file showcasing formatting, tables, and bookmarks....",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "microsoft-word.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_67797f5691cb5346"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "istat-csv",
+      "file": "istat-covid-regioni.csv",
+      "format": "csv",
+      "source_id": "src_7c07214f20441012",
+      "wiki_pages": [
+        "source-istat-covid-regioni"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "istat-csv",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:istat-csv:q1",
+          "text": "Qual è il numero totale di casi COVID registrati per la regione Lombardia secondo i dati della Protezione Civile?",
+          "expected_substring": "4.391.944",
+          "expected_slugs": [
+            "source-istat-covid-regioni"
+          ],
+          "reply": "Secondo l'ultimo dato pubblicato nel repository ufficiale della **Protezione Civile** (dataset `dpc-covid19-ita-regioni-latest.csv`, aggiornato al **8 gennaio 2025**), il totale dei casi COVID-19 registrati in **Lombardia** è:\n\n**4.391.944** casi totali.\n\nEcco la riga completa dei dati lombardi di quel bollettino:\n\n| Indicatore | Valore |\n|---|---|\n| Totale positivi attuali | 956 |\n| Ricoverati con sintomi | 110 |\n| Terapia intensiva | 3 |\n| Dimessi/guariti | 4.342.249 |\n| Deceduti | 48.739 |\n| **Totale casi** | **4.391.944** |\n| Tamponi totali | 47.797.178 |\n\nFonte: [Protezione Civile – GitHub pcm-dpc/COVID-19](https://github.com/pcm-dpc/COVID-19)",
+          "pass": true,
+          "latency_ms": 29031,
+          "tool_calls": 8,
+          "tools_used": [
+            "web",
+            "execute_shell"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 59,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "regional-covid-19-metrics",
+              "title": "Regional COVID-19 Metrics",
+              "snippet": "...s performed, and test positivity rates. Some regions have notes indicating data quality issues or revisions, such as missing ICU data or negative deltas due to address changes. ^[src_7c07214f20441012] ### Key claims \u003e Per problemi tecnici i...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "regional-covid-19-metrics.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "source-istat-covid-regioni",
+              "title": "Source: istat-covid-regioni",
+              "snippet": "...s performed, and test positivity rates. Some regions have notes indicating data quality issues or revisions, such as missing ICU data or negative deltas due to address changes. - [[data-automation-and-revision-issues]] — Data Automation a...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "source-istat-covid-regioni.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "csv"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "covid-19-data-surveillance-system",
+              "title": "COVID-19 Data Surveillance System",
+              "snippet": "...ic. ^[src_7c07214f20441012] ### Key claims \u003e Il dato incremento casi confermati è composto da 9, cioè 8 ''nuovi positivi\" e 1 ''reinfezione''. ^[src_7c07214f20441012] \u003e Il dato odierno dei casi per la provincia, risultato negativo rispett...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "covid-19-data-surveillance-system.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "covid-19-pandemic-in-italy",
+              "title": "COVID-19 pandemic in Italy",
+              "snippet": "...— extracted from sources._ ## From source:src_7c07214f20441012 The ongoing COVID-19 pandemic affecting Italy, with regional data reported as of January 8, 2025, including hospitalizations, cases, tests, and deaths. ^[src_7c07214f20441012]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "covid-19-pandemic-in-italy.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "concept"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "dipartimento-della-protezione-civile",
+              "title": "Dipartimento della Protezione Civile",
+              "snippet": "Dipartimento della Protezione Civile # Dipartimento della Protezione Civile _Type: org — extracted from sources._ ## From source:src_7c07214f20441012 The Italian Civil Protection Department responsible for coordinating COVID-19 data colle...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "dipartimento-della-protezione-civile.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "org"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "istat-csv",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:istat-csv:q2",
+          "text": "Quanti decessi COVID sono stati registrati in Emilia-Romagna nel dataset della Protezione Civile?",
+          "expected_substring": "20.158",
+          "expected_slugs": [
+            "source-istat-covid-regioni"
+          ],
+          "reply": "**20.158 deceduti** — è il totale cumulativo registrato per l'Emilia-Romagna nel dataset regionale della Protezione Civile, all'ultimo aggiornamento disponibile (8 gennaio 2025).",
+          "pass": true,
+          "latency_ms": 18034,
+          "tool_calls": 4,
+          "tools_used": [
+            "web",
+            "execute_code"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 80,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "regional-covid-19-metrics",
+              "title": "Regional COVID-19 Metrics",
+              "snippet": "Regional COVID-19 Metrics # Regional COVID-19 Metrics _Theme extracted from sources._ ## From source:src_7c07214f20441012 The table presents per-region metrics including hospitalized with symptoms, intensive care, total hospitalized, home i...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "regional-covid-19-metrics.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "covid-19-data-surveillance-system",
+              "title": "COVID-19 Data Surveillance System",
+              "snippet": "COVID-19 Data Surveillance System # COVID-19 Data Surveillance System _Theme extracted from sources._ ## From source:src_7c07214f20441012 The Italian COVID-19 surveillance system collects daily data on hospitalizations, ICU admissions, posi...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "covid-19-data-surveillance-system.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-istat-covid-regioni",
+              "title": "Source: istat-covid-regioni",
+              "snippet": "Source: istat-covid-regioni # Source: istat-covid-regioni.csv Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_7c07214f20441012` - Filename: ist...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-istat-covid-regioni.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "csv"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "dipartimento-della-protezione-civile",
+              "title": "Dipartimento della Protezione Civile",
+              "snippet": "...Civile _Type: org — extracted from sources._ ## From source:src_7c07214f20441012 The Italian Civil Protection Department responsible for coordinating COVID-19 data collection and publication across Italian regions. ^[src_7c07214f20441012]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "dipartimento-della-protezione-civile.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "org"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "covid-19-pandemic-in-italy",
+              "title": "COVID-19 pandemic in Italy",
+              "snippet": "COVID-19 pandemic in Italy # COVID-19 pandemic in Italy _Type: concept — extracted from sources._ ## From source:src_7c07214f20441012 The ongoing COVID-19 pandemic affecting Italy, with regional data reported as of January 8, 2025, includ...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "covid-19-pandemic-in-italy.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "concept"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "arxiv-pdf",
+      "file": "arxiv-enigma.pdf",
+      "format": "pdf",
+      "source_id": "src_8f2eb56ec4cbf6dc",
+      "wiki_pages": [
+        "source-arxiv-enigma"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "arxiv-pdf",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:arxiv-pdf:q1",
+          "text": "Chi sono gli autori del paper arXiv sulla decifratura di Enigma?",
+          "expected_substring": "Violante",
+          "expected_slugs": [
+            "source-arxiv-enigma"
+          ],
+          "reply": "Gli autori del paper **arXiv:2008.03122** — *\"Sulla decifratura di Enigma – Come un reverendo del XVIII secolo contribuì alla sconfitta degli U-boot tedeschi durante la Seconda Guerra Mondiale\"* — sono **Fabio S. Priuli** e **Claudia Violante**.\n\nIl paper (in italiano) esplora il contributo del teorema di Bayes e della probabilità soggettiva nel lavoro di decifratura a Bletchley Park durante la WWII.",
+          "pass": true,
+          "latency_ms": 15828,
+          "tool_calls": 4,
+          "tools_used": [
+            "web"
+          ],
+          "recall_at5": false,
+          "search_latency_ms": 51,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "enigma-machine",
+              "title": "Enigma machine",
+              "snippet": "Enigma machine # Enigma machine _Theme extracted from sources._ ## From source:src_8f2eb56ec4cbf6dc A cipher machine used by Germany during World War II, combining rotors and a plugboard to create a polyalphabetic substitution cipher with a...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "enigma-machine.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_8f2eb56ec4cbf6dc"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "bayes-theorem",
+              "title": "Bayes' theorem",
+              "snippet": "...ts of messages in depth, dramatically reducing the search space for the bombe machines. ^[src_8f2eb56ec4cbf6dc] ### Key claims \u003e Il teorema di Bayes fornisce una formula di importanza cruciale per compiere correttamente il processo di infer...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "bayes-theorem.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_8f2eb56ec4cbf6dc"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "scritchmus",
+              "title": "Scritchmus",
+              "snippet": "...di Enigma considerati. ^[src_8f2eb56ec4cbf6dc] \u003e Al termine della procedura possono esserci varie situazioni: Nessun alfabeto cifrante è compatibile con le catene usate... Un solo alfabeto cifrante è compatibile con le catene... Più alf...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "scritchmus.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_8f2eb56ec4cbf6dc"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "banburismus",
+              "title": "Banburismus",
+              "snippet": "...messaggio rispetto all'altro... è possibile associare il fattore di Bayes-Turing o peso delle evidenze, che è legato alla odd (o quota) che si può associare alla verosimiglianza che i due messaggi siano in depth. ^[src_8f2eb56ec4cbf6dc]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "banburismus.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_8f2eb56ec4cbf6dc"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "gordon-welchman",
+              "title": "Gordon Welchman",
+              "snippet": "...sources._ ## From source:src_8f2eb56ec4cbf6dc British mathematician recruited to Bletchley Park who improved the bombe design and developed methods to exploit cribs even without loops, accelerating Enigma decryption. ^[src_8f2eb56ec4cbf6dc]",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "gordon-welchman.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_8f2eb56ec4cbf6dc"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "arxiv-pdf",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:arxiv-pdf:q2",
+          "text": "Di cosa tratta il paper arXiv 2008.03122?",
+          "expected_substring": "Enigma",
+          "expected_slugs": [
+            "source-arxiv-enigma"
+          ],
+          "reply": "Il paper **arXiv 2008.03122** (luglio 2020, autore Fabio Priuli) è intitolato:\n\n\u003e **\"Sulla decifratura di Enigma — Come un reverendo del XVIII secolo contribuì alla sconfitta degli U-boot tedeschi durante la Seconda Guerra Mondiale\"**\n\nÈ scritto in **italiano** e tratta del contributo che il **teorema di Bayes** (il \"reverendo del XVIII secolo\" è Thomas Bayes) e le idee della **probabilità soggettiva** diedero al lavoro dei crittografi di **Bletchley Park** per decifrare i messaggi cifrati con le macchine Enigma durante la Seconda Guerra Mondiale, contribuendo così alla sconfitta degli U-boot tedeschi nell'Atlantico.",
+          "pass": true,
+          "latency_ms": 8604,
+          "tool_calls": 2,
+          "tools_used": [
+            "web"
+          ],
+          "recall_at5": false,
+          "search_latency_ms": 74,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "bayes-theorem",
+              "title": "Bayes' theorem",
+              "snippet": "...ace for the bombe machines. ^[src_8f2eb56ec4cbf6dc] ### Key claims \u003e Il teorema di Bayes fornisce una formula di importanza cruciale per compiere correttamente il processo di inferenza, ossia per passare dalla probabilità degli effetti ril...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "bayes-theorem.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_8f2eb56ec4cbf6dc"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "aura-quality-bench",
+              "title": "Aura Quality-Bench",
+              "snippet": "...utori italiani' to assess accuracy and completeness. ^[src_d22bbddaa7d76ef2] ### Key claims \u003e dataset di test per Aura quality-bench ^[src_d22bbddaa7d76ef2] \u003e Fatti verificabili contro le rispettive voci Wikipedia IT ^[src_d22bbddaa7d76ef2]",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "aura-quality-bench.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-istat-covid-regioni",
+              "title": "Source: istat-covid-regioni",
+              "snippet": "...gioni # Source: istat-covid-regioni.csv Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_7c07214f20441012` - Filename: istat-covid-regioni.csv -...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-istat-covid-regioni.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "csv"
+              ],
+              "sources": [
+                "source:src_7c07214f20441012"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "bayes-turing-factor",
+              "title": "Bayes-Turing factor",
+              "snippet": "...er of letter matches in overlapping message segments. A factor greater than 1 indicated support for the hypothesis that the messages were in depth at that shift. ^[src_8f2eb56ec4cbf6dc] ### Key claims \u003e Il fattore di Bayes-Turing che altro...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "bayes-turing-factor.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_8f2eb56ec4cbf6dc"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "source-probe-ocr-20260519-133828",
+              "title": "Source: probe-ocr-20260519-133828",
+              "snippet": "...# Source: probe-ocr-20260519-133828.pdf Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_d124372cf3fdd80d` - Filename: probe-ocr-20260519-133828...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "source-probe-ocr-20260519-133828.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "pdf"
+              ],
+              "sources": [
+                "source:src_d124372cf3fdd80d"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-galileo-html",
+      "file": "wiki-galileo.html",
+      "format": "html",
+      "source_id": "src_cbb00001d6952f85",
+      "wiki_pages": [
+        "source-wiki-galileo"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-galileo-html",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-galileo-html:q1",
+          "text": "Quando è nato Galileo Galilei secondo la fonte HTML di Wikipedia?",
+          "expected_substring": "1564",
+          "expected_slugs": [
+            "source-wiki-galileo"
+          ],
+          "reply": "Secondo la fonte HTML della pagina Wikipedia italiana, Galileo Galilei nacque a **Pisa, il 15 febbraio 1564** (e morì ad Arcetri l'8 gennaio 1642).",
+          "pass": true,
+          "latency_ms": 20271,
+          "tool_calls": 3,
+          "tools_used": [
+            "web"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 53,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "galileo-galilei",
+              "title": "Galileo Galilei",
+              "snippet": "Galileo Galilei # Galileo Galilei _Type: person — extracted from sources._ ## From source:src_1170ec3344c01e74 Italian physicist, astronomer, philosopher, and mathematician (1564–1642) who played a major role in the scientific revolutio...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "galileo-galilei.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "source-wiki-galileo",
+              "title": "Source: wiki-galileo",
+              "snippet": "Source: wiki-galileo # Source: wiki-galileo.html Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_cbb00001d6952f85` - Filename: wiki-galileo.htm...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "source-wiki-galileo.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "html"
+              ],
+              "sources": [
+                "source:src_cbb00001d6952f85"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "graph_node",
+              "slug": "davide",
+              "title": "Davide",
+              "snippet": "...sacchi-giuseppe-s-p-a, source-uta Updated: 2026-05-08T18:34:36Z Summary: Davide è lo sviluppatore di Aura. ## Dati personali - Nome: Davide Marchetto - Nato il: 25 dicembre 1983 - Indirizzo: Via Mazzini 2, 12023 Caraglio (CN) - Codice Fisc...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "scientific-method-metodo-galileiano",
+              "title": "Scientific Method (Metodo galileiano)",
+              "snippet": "...s the language of nature. ^[src_1170ec3344c01e74] ### Key claims \u003e La filosofia è scritta in questo grandissimo libro che continuamente ci sta aperto innanzi a gli occhi (io dico l'universo), ma non si può intendere se prima non s'impara...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "scientific-method-metodo-galileiano.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "telescope-cannocchiale-galileiano",
+              "title": "Telescope (Cannocchiale galileiano)",
+              "snippet": "...galileiano) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Galileo improved the design of the telescope around 1609, using it for astronomical observations that revolutionized understanding of the cosmos. He discovered...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "telescope-cannocchiale-galileiano.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "wiki-galileo-html",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-galileo-html:q2",
+          "text": "In quale città morì Galileo Galilei?",
+          "expected_substring": "Arcetri",
+          "expected_slugs": [
+            "source-wiki-galileo"
+          ],
+          "reply": "Galileo Galilei morì ad **Arcetri**, una frazione di **Firenze** (Toscana), l'8 gennaio 1642. La villa dove trascorse gli ultimi anni sotto custodia domiciliare è oggi il Museo Galileo.",
+          "pass": true,
+          "latency_ms": 5751,
+          "tool_calls": 0,
+          "recall_at5": false,
+          "search_latency_ms": 44,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "galileo-galilei",
+              "title": "Galileo Galilei",
+              "snippet": "...e:src_1170ec3344c01e74 Italian physicist, astronomer, philosopher, and mathematician (1564–1642) who played a major role in the scientific revolution, introduced the scientific method, and championed heliocentrism. ^[src_1170ec3344c01e74]",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "galileo-galilei.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "galilean-relativity-principio-della-relativit-galileiana",
+              "title": "Galilean Relativity (Principio della relatività galileiana)",
+              "snippet": "Galilean Relativity (Principio della relatività galileiana) # Galilean Relativity (Principio della relatività galileiana) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Galileo enunciated the principle that the laws o...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "galilean-relativity-principio-della-relativit-galileiana.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "scientific-method-metodo-galileiano",
+              "title": "Scientific Method (Metodo galileiano)",
+              "snippet": "...no) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Galileo introduced a new approach to science based on 'sensate esperienze' (sensory experiments) and 'necessarie dimostrazioni' (necessary mathematical demonstrations)....",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "scientific-method-metodo-galileiano.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "university-of-pisa-studio-di-pisa",
+              "title": "University of Pisa (Studio di Pisa)",
+              "snippet": "...ype: org — extracted from sources._ ## From source:src_1170ec3344c01e74 Italian university where Galileo studied medicine and later held a mathematics chair from 1589 to 1592, and where his early experiments began. ^[src_1170ec3344c01e74]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "university-of-pisa-studio-di-pisa.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "org"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "roman-inquisition-santuffizio",
+              "title": "Roman Inquisition (Sant'Uffizio)",
+              "snippet": "Roman Inquisition (Sant'Uffizio) # Roman Inquisition (Sant'Uffizio) _Type: org — extracted from sources._ ## From source:src_1170ec3344c01e74 The tribunal of the Catholic Church that investigated and condemned Galileo for heresy in 1633,...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "roman-inquisition-santuffizio.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "org"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-galileo-md",
+      "file": "wiki-galileo.md",
+      "format": "md",
+      "source_id": "src_1170ec3344c01e74",
+      "wiki_pages": [
+        "source-wiki-galileo-1170ec"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-galileo-md",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-galileo-md:q1",
+          "text": "Dove nacque Galileo Galilei?",
+          "expected_substring": "Pisa",
+          "expected_slugs": [
+            "source-wiki-galileo-1170ec"
+          ],
+          "reply": "Galileo Galilei nacque a **Pisa**, il 15 febbraio 1564.",
+          "pass": true,
+          "latency_ms": 13129,
+          "tool_calls": 0,
+          "recall_at5": false,
+          "search_latency_ms": 45,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "galileo-galilei",
+              "title": "Galileo Galilei",
+              "snippet": "Galileo Galilei # Galileo Galilei _Type: person — extracted from sources._ ## From source:src_1170ec3344c01e74 Italian physicist, astronomer, philosopher, and mathematician (1564–1642) who played a major role in the scientific revolutio...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "galileo-galilei.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "galilean-relativity-principio-della-relativit-galileiana",
+              "title": "Galilean Relativity (Principio della relatività galileiana)",
+              "snippet": "...galileiana) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Galileo enunciated the principle that the laws of motion are the same in all uniformly moving frames of reference. He illustrated this with the example of a shi...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "galilean-relativity-principio-della-relativit-galileiana.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "carlo-collodi",
+              "title": "Carlo Collodi",
+              "snippet": "Carlo Collodi # Carlo Collodi _Type: person — extracted from sources._ ## From source:src_98c23e4f7b02dc1a Carlo Collodi, pseudonym of Carlo Lorenzini (24 November 1826 – 26 October 1890), was an Italian writer and journalist, best know...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "carlo-collodi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "scientific-method-metodo-galileiano",
+              "title": "Scientific Method (Metodo galileiano)",
+              "snippet": "...galileiano) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Galileo introduced a new approach to science based on 'sensate esperienze' (sensory experiments) and 'necessarie dimostrazioni' (necessary mathematical demonstr...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "scientific-method-metodo-galileiano.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "graph_node",
+              "slug": "davide",
+              "title": "Davide",
+              "snippet": "Graph node [[davide]] Title: Davide Category: personale Tags: profilo, sviluppatore Outbound links: aura-operating-memory, davide, monica-ricotto, source-marchetto-davide-ddt-n-90, source-test-pms-gestione-richieste-offerta, source-uta Back...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692
+            }
+          ]
+        },
+        {
+          "fixture_id": "wiki-galileo-md",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-galileo-md:q2",
+          "text": "Quali furono le attività principali di Galileo Galilei oltre a fisico?",
+          "expected_substring": "astronomo",
+          "expected_slugs": [
+            "source-wiki-galileo-1170ec"
+          ],
+          "reply": "Oltre che fisico, Galileo Galilei fu:\n\n- **Astronomo** – perfezionò il telescopio (non lo inventò, ma lo migliorò enormemente) e fece scoperte rivoluzionarie: i satelliti di Giove, le fasi di Venere, le montagne lunari, le macchie solari. Queste osservazioni sostennero il modello eliocentrico copernicano.\n\n- **Matematico** – professore di matematica a Pisa e poi a Padova, applicò la matematica allo studio dei moti naturali, gettando le basi della fisica moderna.\n\n- **Filosofo / Filosofo della scienza** – formulò il **metodo scientifico** basato su osservazione, esperimenti e verifiche matematiche, separando la scienza dall'autorità aristotelica.\n\n- **Inventore e ingegnere** – costruì il **termoscopio** (antenato del termometro), un **compasso geometrico-militare**, e migliorò il **cannocchiale** trasformandolo in strumento scientifico.\n\n- **Scrittore e divulgatore** – scrisse capolavori della letteratura scientifica come *Il Saggiatore* e il *Dialogo sopra i due massimi sistemi del mondo*, in italiano (non in latino), rendendo la scienza accessibile a un pubblico più ampio.\n\n- **Accademico** – fu membro dell'**Accademia dei Lincei**, una delle prime società scientifiche europee.\n\nIn sintesi: non solo fisico, ma una figura poliedrica che incarna la rivoluzione scientifica del Seicento.",
+          "pass": true,
+          "latency_ms": 24837,
+          "tool_calls": 6,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "web"
+          ],
+          "recall_at5": false,
+          "search_latency_ms": 64,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "galileo-galilei",
+              "title": "Galileo Galilei",
+              "snippet": "Galileo Galilei # Galileo Galilei _Type: person — extracted from sources._ ## From source:src_1170ec3344c01e74 Italian physicist, astronomer, philosopher, and mathematician (1564–1642) who played a major role in the scientific revolutio...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "galileo-galilei.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "scientific-method-metodo-galileiano",
+              "title": "Scientific Method (Metodo galileiano)",
+              "snippet": "...tendere se prima non s'impara a intender la lingua, e conoscer i caratteri, ne' quali è scritto. Egli è scritto in lingua matematica... ^[src_1170ec3344c01e74] \u003e Il metodo che seguiremo sarà quello di far dipendere quel che si dice da qu...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "scientific-method-metodo-galileiano.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "telescope-cannocchiale-galileiano",
+              "title": "Telescope (Cannocchiale galileiano)",
+              "snippet": "Telescope (Cannocchiale galileiano) # Telescope (Cannocchiale galileiano) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Galileo improved the design of the telescope around 1609, using it for astronomical observations t...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "telescope-cannocchiale-galileiano.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "galilean-relativity-principio-della-relativit-galileiana",
+              "title": "Galilean Relativity (Principio della relatività galileiana)",
+              "snippet": "Galilean Relativity (Principio della relatività galileiana) # Galilean Relativity (Principio della relatività galileiana) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Galileo enunciated the principle that the laws o...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "galilean-relativity-principio-della-relativit-galileiana.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "principle-of-inertia-principio-di-inerzia",
+              "title": "Principle of Inertia (Principio di inerzia)",
+              "snippet": "Principle of Inertia (Principio di inerzia) # Principle of Inertia (Principio di inerzia) _Theme extracted from sources._ ## From source:src_1170ec3344c01e74 Through experiments with inclined planes and thought experiments, Galileo formulat...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "principle-of-inertia-principio-di-inerzia.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_1170ec3344c01e74"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-dante-txt",
+      "file": "wiki-dante.txt",
+      "format": "txt",
+      "source_id": "src_d410fb24696c71c6",
+      "wiki_pages": [
+        "source-wiki-dante"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-dante-txt",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-dante-txt:q1",
+          "text": "In quale città italiana nacque Dante Alighieri?",
+          "expected_substring": "Firenze",
+          "expected_slugs": [
+            "source-wiki-dante"
+          ],
+          "reply": "Dante Alighieri nacque a **Firenze**, nel 1265.",
+          "pass": true,
+          "latency_ms": 3711,
+          "tool_calls": 0,
+          "recall_at5": false,
+          "search_latency_ms": 48,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "dante-alighieri",
+              "title": "Dante Alighieri",
+              "snippet": "...politician, considered the father of the Italian language and author of the Divine Comedy. ^[src_d410fb24696c71c6] ## From source:src_d22bbddaa7d76ef2 Italian poet born 1265 in Florence, died 1321 in Ravenna. Author of the Divine Comedy, V...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "dante-alighieri.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d410fb24696c71c6",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "giovanni-boccaccio",
+              "title": "Giovanni Boccaccio",
+              "snippet": "...humanist, author of the Decameron and biographer of Dante. ^[src_d410fb24696c71c6] ## From source:src_d22bbddaa7d76ef2 Italian writer born 1313 in Certaldo, died 1375. Known for the Decameron, Filocolo, and Teseida. ^[src_d22bbddaa7d76ef2]",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "giovanni-boccaccio.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d410fb24696c71c6",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "societ-dante-alighieri",
+              "title": "Società Dante Alighieri",
+              "snippet": "Società Dante Alighieri # Società Dante Alighieri _Type: org — extracted from sources._ ## From source:src_d410fb24696c71c6 Organization dedicated to promoting the Italian language and culture, named after Dante. ^[src_d410fb24696c71c6]",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "societ-dante-alighieri.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "org"
+              ],
+              "sources": [
+                "source:src_d410fb24696c71c6"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "alessandro-manzoni",
+              "title": "Alessandro Manzoni",
+              "snippet": "...# Alessandro Manzoni _Type: person — extracted from sources._ ## From source:src_d22bbddaa7d76ef2 Italian novelist and poet born 1785 in Milan, died 1873. Author of I promessi sposi, Il cinque maggio, and Adelchi. ^[src_d22bbddaa7d76ef2]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "alessandro-manzoni.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "carlo-collodi",
+              "title": "Carlo Collodi",
+              "snippet": "...s._ ## From source:src_98c23e4f7b02dc1a Carlo Collodi, pseudonym of Carlo Lorenzini (24 November 1826 – 26 October 1890), was an Italian writer and journalist, best known as the author of the children's classic 'Le avventure di Pinocchio'...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "carlo-collodi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "wiki-dante-txt",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-dante-txt:q2",
+          "text": "Qual è l'opera capolavoro di Dante Alighieri, considerata il massimo della letteratura italiana?",
+          "expected_substring": "Divina Commedia",
+          "expected_slugs": [
+            "source-wiki-dante"
+          ],
+          "reply": "La **Divina Commedia**. Scritta in terzine di endecasillabi in volgare fiorentino, racconta il viaggio ultraterreno di Dante attraverso Inferno, Purgatorio e Paradiso. Composta tra il 1304 e il 1321, è il pilastro della letteratura italiana e una delle opere più tradotte e studiate al mondo.",
+          "pass": true,
+          "latency_ms": 3972,
+          "tool_calls": 0,
+          "recall_at5": false,
+          "search_latency_ms": 69,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "graph_node",
+              "slug": "aura-operating-memory",
+              "title": "Aura Operating Memory",
+              "snippet": "...Hub per memoria operativa di Aura: skill installate, fonti ingestite, regole di qualita e stato della knowledge base. ## Pagine collegate - [[aura-skills-installate]] - fonti-ingestite - [[davide]] ## Regole - Le skill sono memoria procedur...",
+              "score": 0.016393442,
+              "score_exact": 0.016393442
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "divina-commedia",
+              "title": "Divina Commedia",
+              "snippet": "Divina Commedia # Divina Commedia _Theme extracted from sources._ ## From source:src_d410fb24696c71c6 Epic poem by Dante, describing his journey through Hell, Purgatory, and Paradise. It is considered the greatest work of Italian literature...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "divina-commedia.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_d410fb24696c71c6"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "italian-literature",
+              "title": "Italian Literature",
+              "snippet": "...language, encompassing poetry, prose, drama, and philosophical texts from the medieval period to the present day. The dataset highlights major authors and their contributions. ^[src_d22bbddaa7d76ef2] ### Key claims \u003e autori italiani ^[src_d...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "italian-literature.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "dante-alighieri",
+              "title": "Dante Alighieri",
+              "snippet": "...and politician, considered the father of the Italian language and author of the Divine Comedy. ^[src_d410fb24696c71c6] ## From source:src_d22bbddaa7d76ef2 Italian poet born 1265 in Florence, died 1321 in Ravenna. Author of the Divine Comedy...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "dante-alighieri.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d410fb24696c71c6",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "convivio",
+              "title": "Convivio",
+              "snippet": "...e knowledge accessible. ^[src_d410fb24696c71c6] ### Key claims \u003e Il Convivio... è il grande manifesto del fine 'civile' che la letteratura deve avere ^[src_d410fb24696c71c6] \u003e E io adunque... a' piedi di coloro che seggiono [nella mensa de...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "convivio.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_d410fb24696c71c6"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-collodi-epub",
+      "file": "wiki-collodi.epub",
+      "format": "epub",
+      "source_id": "src_98c23e4f7b02dc1a",
+      "wiki_pages": [
+        "source-wiki-collodi"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-collodi-epub",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-collodi-epub:q1",
+          "text": "Qual è il vero nome di Carlo Collodi, l'autore di Pinocchio?",
+          "expected_substring": "Lorenzini",
+          "expected_slugs": [
+            "source-wiki-collodi"
+          ],
+          "reply": "Il vero nome di Carlo Collodi è **Carlo Lorenzini**. Era fiorentino, nato il 24 novembre 1826 e morto il 26 ottobre 1890. Il suo pseudonimo deriva dal nome del piccolo paese toscano di Collodi (oggi frazione di Pescia), dove sua madre era originaria.",
+          "pass": true,
+          "latency_ms": 10452,
+          "tool_calls": 1,
+          "tools_used": [
+            "search_memory"
+          ],
+          "recall_at5": true,
+          "search_latency_ms": 56,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "carlo-collodi",
+              "title": "Carlo Collodi",
+              "snippet": "...1890), was an Italian writer and journalist, best known as the author of the children's classic 'Le avventure di Pinocchio'. ^[src_98c23e4f7b02dc1a] ## From source:src_d22bbddaa7d76ef2 Italian author born 1826 in Florence, died 1890. Creat...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "carlo-collodi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "le-avventure-di-pinocchio",
+              "title": "Le avventure di Pinocchio",
+              "snippet": "...wooden puppet who becomes a real boy. ^[src_98c23e4f7b02dc1a] ### Key claims \u003e È divenuto celebre per essere stato l'autore del romanzo *Le avventure di Pinocchio. Storia di un burattino*, spesso noto semplicemente come *Pinocchio*, diven...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "le-avventure-di-pinocchio.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "source-wiki-collodi",
+              "title": "Source: wiki-collodi",
+              "snippet": "...ed by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_98c23e4f7b02dc1a` - Filename: wiki-collodi.epub - Kind: epub - Status: ingested - Size: 24083 bytes - SHA25...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "source-wiki-collodi.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "epub"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "fondazione-nazionale-carlo-collodi",
+              "title": "Fondazione nazionale Carlo Collodi",
+              "snippet": "Fondazione nazionale Carlo Collodi # Fondazione nazionale Carlo Collodi _Type: org — extracted from sources._ ## From source:src_98c23e4f7b02dc1a Italian foundation established in 1962 to promote and disseminate the works of Carlo Collodi...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "fondazione-nazionale-carlo-collodi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "org"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "gianni-greco",
+              "title": "Gianni Greco",
+              "snippet": "...ources._ ## From source:src_98c23e4f7b02dc1a Italian writer and journalist, author of the 2018 essay 'Quel copione di Collodi (Pinocchio non fu il primo naso)', arguing that Pinocchio was inspired by earlier sources. ^[src_98c23e4f7b02dc1a]",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "gianni-greco.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "wiki-collodi-epub",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:wiki-collodi-epub:q2",
+          "text": "In quale città nacque Carlo Collodi?",
+          "expected_substring": "Firenze",
+          "expected_slugs": [
+            "source-wiki-collodi"
+          ],
+          "reply": "Carlo Collodi, il cui vero nome era Carlo Lorenzini, nacque a **Firenze** il 24 novembre 1826.",
+          "pass": true,
+          "latency_ms": 6199,
+          "tool_calls": 0,
+          "recall_at5": true,
+          "search_latency_ms": 67,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "carlo-collodi",
+              "title": "Carlo Collodi",
+              "snippet": "...s._ ## From source:src_98c23e4f7b02dc1a Carlo Collodi, pseudonym of Carlo Lorenzini (24 November 1826 – 26 October 1890), was an Italian writer and journalist, best known as the author of the children's classic 'Le avventure di Pinocchio'...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "carlo-collodi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "source-wiki-collodi",
+              "title": "Source: wiki-collodi",
+              "snippet": "Source: wiki-collodi # Source: wiki-collodi.epub Auto-generated by the ingest pipeline. Edit freely; rerunning ingest_source on this source will refresh this page. ## Metadata - Source ID: `src_98c23e4f7b02dc1a` - Filename: wiki-collodi.epu...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "source-wiki-collodi.md",
+              "category": "sources",
+              "tags": [
+                "source",
+                "epub"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "fondazione-nazionale-carlo-collodi",
+              "title": "Fondazione nazionale Carlo Collodi",
+              "snippet": "...i _Type: org — extracted from sources._ ## From source:src_98c23e4f7b02dc1a Italian foundation established in 1962 to promote and disseminate the works of Carlo Collodi, with a focus on 'Le avventure di Pinocchio'. ^[src_98c23e4f7b02dc1a]",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "fondazione-nazionale-carlo-collodi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "org"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "le-avventure-di-pinocchio",
+              "title": "Le avventure di Pinocchio",
+              "snippet": "Le avventure di Pinocchio # Le avventure di Pinocchio _Theme extracted from sources._ ## From source:src_98c23e4f7b02dc1a The novel 'Le avventure di Pinocchio. Storia di un burattino' by Carlo Collodi, first serialized in 1881 and published...",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "le-avventure-di-pinocchio.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "daniela-marcheschi",
+              "title": "Daniela Marcheschi",
+              "snippet": "...2dc1a Italian literary scholar and biographer, curator of the national edition of Carlo Collodi's works and president of the Fondazione Nazionale Carlo Collodi. She has published extensively on Collodi and his works. ^[src_98c23e4f7b02dc1a]",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "daniela-marcheschi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "autori-json",
+      "file": "autori-italiani.json",
+      "format": "json",
+      "source_id": "src_d22bbddaa7d76ef2",
+      "wiki_pages": [
+        "source-autori-italiani"
+      ],
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "autori-json",
+          "query_id": "q1",
+          "thread_id": "quality-bench:20260521t124122-639802100z:autori-json:q1",
+          "text": "Quale autore italiano vinse il Premio Nobel per la letteratura nel 1934?",
+          "expected_substring": "Pirandello",
+          "expected_slugs": [
+            "source-autori-italiani"
+          ],
+          "reply": "Luigi Pirandello.",
+          "pass": true,
+          "latency_ms": 2232,
+          "tool_calls": 0,
+          "recall_at5": false,
+          "search_latency_ms": 60,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "luigi-pirandello",
+              "title": "Luigi Pirandello",
+              "snippet": "...extracted from sources._ ## From source:src_d22bbddaa7d76ef2 Italian playwright and novelist born 1867 in Agrigento, died 1936. Nobel laureate 1934. Known for Il fu Mattia Pascal and Sei personaggi in cerca d'autore. ^[src_d22bbddaa7d76ef2]",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "luigi-pirandello.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 2,
+              "kind": "wiki_page",
+              "slug": "italian-literature",
+              "title": "Italian Literature",
+              "snippet": "...works written in the Italian language, encompassing poetry, prose, drama, and philosophical texts from the medieval period to the present day. The dataset highlights major authors and their contributions. ^[src_d22bbddaa7d76ef2] ### Key cla...",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "italian-literature.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "autori-italiani",
+              "title": "Autori Italiani",
+              "snippet": "...ing from the Middle Ages to the 20th century, including poets, novelists, and philosophers. The dataset is hand-crafted for testing Aura's document processing pipeline. ^[src_d22bbddaa7d76ef2] ### Key claims \u003e Venti autori italiani con dati...",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "autori-italiani.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "umberto-eco",
+              "title": "Umberto Eco",
+              "snippet": "...mberto Eco _Type: person — extracted from sources._ ## From source:src_d22bbddaa7d76ef2 Italian novelist and semiotician born 1932 in Alessandria, died 2016. Author of Il nome della rosa and Il pendolo di Foucault. ^[src_d22bbddaa7d76ef2]",
+              "score": 0.0125,
+              "score_vector": 0.0125,
+              "file_path": "umberto-eco.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "le-avventure-di-pinocchio",
+              "title": "Le avventure di Pinocchio",
+              "snippet": "...^[src_98c23e4f7b02dc1a] ### Key claims \u003e È divenuto celebre per essere stato l'autore del romanzo *Le avventure di Pinocchio. Storia di un burattino*, spesso noto semplicemente come *Pinocchio*, diventato uno dei grandi classici della lett...",
+              "score": 0.012307692,
+              "score_vector": 0.012307692,
+              "file_path": "le-avventure-di-pinocchio.md",
+              "category": "concept",
+              "tags": [
+                "concept"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a"
+              ]
+            }
+          ]
+        },
+        {
+          "fixture_id": "autori-json",
+          "query_id": "q2",
+          "thread_id": "quality-bench:20260521t124122-639802100z:autori-json:q2",
+          "text": "Qual è il vero nome di Italo Svevo, l'autore de 'La coscienza di Zeno'?",
+          "expected_substring": "Schmitz",
+          "expected_slugs": [
+            "source-autori-italiani"
+          ],
+          "reply": "Il vero nome di Italo Svevo era **Aron Hector Schmitz** (poi italianizzato in **Ettore Schmitz**). Nato a Trieste nel 1861 da una famiglia ebrea, adottò lo pseudonimo \"Italo Svevo\" per unire simbolicamente le due culture — italiana (Italo) e tedesca/sveva (Svevo) — che convivevano nella sua città natale.",
+          "pass": true,
+          "latency_ms": 6431,
+          "tool_calls": 0,
+          "recall_at5": false,
+          "search_latency_ms": 67,
+          "search_results": [
+            {
+              "rank": 1,
+              "kind": "wiki_page",
+              "slug": "davide",
+              "title": "Davide",
+              "snippet": "Davide Davide Ã¨ lo sviluppatore di Aura. ## Dati personali - Nome: Davide Marchetto - Indirizzo: Via Mazzini 2, 12023 Caraglio (CN) - Codice Fiscale: MRCDVD83T25D205Y - Veicolo: GM647FE ## Relazioni - [[monica-ricotto]] â€” Sposati...",
+              "score": 0.026229508,
+              "score_exact": 0.016393442,
+              "score_fts": 0.009836066
+            },
+            {
+              "rank": 2,
+              "kind": "graph_node",
+              "slug": "davide",
+              "title": "Davide",
+              "snippet": "Graph node [[davide]] Title: Davide Category: personale Tags: profilo, sviluppatore Outbound links: aura-operating-memory, davide, monica-ricotto, source-marchetto-davide-ddt-n-90, source-test-pms-gestione-richieste-offerta, source-uta Back...",
+              "score": 0.025806451,
+              "score_exact": 0.016129032,
+              "score_fts": 0.009677419
+            },
+            {
+              "rank": 3,
+              "kind": "wiki_page",
+              "slug": "carlo-collodi",
+              "title": "Carlo Collodi",
+              "snippet": "...1890), was an Italian writer and journalist, best known as the author of the children's classic 'Le avventure di Pinocchio'. ^[src_98c23e4f7b02dc1a] ## From source:src_d22bbddaa7d76ef2 Italian author born 1826 in Florence, died 1890. Creat...",
+              "score": 0.013114754,
+              "score_vector": 0.013114754,
+              "file_path": "carlo-collodi.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_98c23e4f7b02dc1a",
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 4,
+              "kind": "wiki_page",
+              "slug": "eugenio-montale",
+              "title": "Eugenio Montale",
+              "snippet": "...io Montale # Eugenio Montale _Type: person — extracted from sources._ ## From source:src_d22bbddaa7d76ef2 Italian poet born 1896 in Genoa, died 1981. Nobel laureate 1975. Famous for Ossi di seppia and Le occasioni. ^[src_d22bbddaa7d76ef2]",
+              "score": 0.012903226,
+              "score_vector": 0.012903226,
+              "file_path": "eugenio-montale.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            },
+            {
+              "rank": 5,
+              "kind": "wiki_page",
+              "slug": "italo-calvino",
+              "title": "Italo Calvino",
+              "snippet": "...om sources._ ## From source:src_d22bbddaa7d76ef2 Italian writer born 1923 in Santiago de las Vegas, died 1985. Known for Il sentiero dei nidi di ragno, Le città invisibili, and Se una notte d'inverno un viaggiatore. ^[src_d22bbddaa7d76ef2]",
+              "score": 0.012698413,
+              "score_vector": 0.012698413,
+              "file_path": "italo-calvino.md",
+              "category": "entity",
+              "tags": [
+                "entity",
+                "person"
+              ],
+              "sources": [
+                "source:src_d22bbddaa7d76ef2"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-COMPOSITE — meta-tools che incorporano workflow comuni, riducendo la surface dei tool primitivi che l'LLM vede. Pattern lifted da D:/tmp/graphify/graphify/serve.py: UN tool MCP `query_graph` ritorna risposta completa, l'agente non orchestra nulla. Applicato ad Aura: 5 meta-tool che sostituiscono i pattern multi-call più frequenti (find_in_sources, extract_records, create_file_from_data, summarize_source, plus wiki_subgraph già esistente). Trigger 2026-05-21 dopo conferma live (turn 4715-4717): Aura riceve 'Trova un cliente e stampalo' su xlsx 90 righe, usa execute_code per leggere tutto, poi dumpa wall-of-text 36s. Phase-DISCIPLINE (in flight) caps il dump LATO TOOL; questa fase RIDUCE la randomness di tool selection mostrando all'LLM meno tool ma più potenti. DIPENDE da Phase-DISCIPLINE: Tool struct con OutputCap field + boundOutput wrapper + tool-description style già canonicalizzati. Eseguire DOPO Phase-DISCIPLINE chiusa. STRICT one-story-exit per scripts/ralph/CLAUDE.md.",
+  "userStories": [
+    {
+      "id": "US-COMP-01",
+      "title": "extract_records — meta-tool that filters source rows without LLM round-trips",
+      "description": "Replace the (source + execute_code + LLM-filter) chain with one tool that reads a structured source's rows, filters by criteria, and returns ≤limit rows in a clean envelope. (a) NEW TOOL internal/agent/tools/registry/extract_records.go: ExtractRecordsTool. Parameters: source_id (required), criteria (object, optional — keys are column names, values are exact/contains/regex match), limit (int, default 10, max 50), columns (optional []string — project only these columns). (b) EXECUTE: (i) fetch source via internal/storage/sources/store; (ii) parse extract.md — leverage the structured frontmatter from Wave B B03/B08* plugins (sheet_row_counts / slide_count / heading_counts / row markers ###); (iii) for tabular sources (xlsx/csv): split on `### Row N` headings, parse `- col: value` bullets; (iv) apply criteria filter (each entry = AND match); (v) return JSON envelope `{source_id, total_matches, returned, rows:[{col:val,...}], next_cursor:''}`. (c) NON-TABULAR FALLBACK: if extract.md has no `### Row N` markers, return error 'source is not tabular; use find_in_sources or summarize_source instead'. (d) BOUNDS: respect OutputCap from US-DRIFT-02 (default 8 KiB stays, but the envelope structure tends to fit since each row is ~100 chars × 10 rows = 1 KB). (e) DESC: 'Read-only. Returns top-{limit} rows from a tabular source matching criteria. Use this INSTEAD of execute_code on Python DataFrames. Use for: \"Trova il cliente X\", \"Quali righe hanno colonna Y = Z\", \"Mostrami i primi N\".' (f) TEST: TestExtractRecords_TabularXlsx_FiltersByCriteria, TestExtractRecords_NonTabularFails, TestExtractRecords_LimitCapsResults, TestExtractRecords_RegisterAndExecute. (g) AGENT.md (runtime + defaults) gains a bullet in the existing 'Stile risposta' section: 'Per filtri su file tabulari (xlsx/csv) usa extract_records, NON execute_code.' (h) registry_scan_test adds extract_records to expected catalog.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/extract_records.go implements ExtractRecordsTool with parameters {source_id, criteria, limit, columns}",
+        "Tabular detection via structured frontmatter fields OR `### Row N` markers from Wave B plugins",
+        "criteria matching supports {col: 'exact'} (default), {col: {contains: 'sub'}} and {col: {regex: '.*'}} forms; AND across entries",
+        "Returns JSON envelope: {source_id, total_matches, returned, rows[], next_cursor}; cursor for pagination v0 = ''",
+        "limit default 10, max 50 — anything higher returns ErrSchemaValidation",
+        "Non-tabular sources (e.g., a PDF text dump with no row structure) return an error pointing to find_in_sources or summarize_source",
+        "Tool description starts with 'Read-only.' marker (per US-DRIFT-05) and explicitly says 'INSTEAD of execute_code on Python DataFrames'",
+        "4 tests in extract_records_test.go: tabular happy path + non-tabular error + limit cap + registry registration",
+        "AGENT.md + internal/config/defaults/AGENT.md both gain the bullet steering to extract_records",
+        "registry_scan_test.go catalog updated",
+        "go build ./... && go vet ./... && go test ./... -count=1 green",
+        "Live smoke: rebuild Aura + send /api/chat 'Trova un cliente con email contenente agrimat' against the ingested ruocci xlsx — assert reply contains a SINGLE row (AGRIMAT) AND tools_used contains 'extract_records' (NOT 'execute_code')",
+        "Single atomic commit prefix: feat(tools): extract_records meta-tool — filter tabular sources without execute_code (US-COMP-01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read the wave B plugin outputs in docker/markitdown/aura-plugins/aura/{xlsx,docx,html}_converter.py — those define the `### Row N` / `### Slide N` / `### {heading}` markers this tool depends on. (2) Read internal/storage/sources/store/ for fetching source archives + extract.md path. (3) Read internal/agent/tools/registry/ pattern for one existing tool to copy the boilerplate (e.g., read_source). (4) Read US-DRIFT-02 output (boundOutput wrapper) so the envelope respects OutputCap. PARSE DISCIPLINE: regex-only parsing of extract.md — `^### Row (\\d+)$` for row boundaries, `^- (\\w+): (.+)$` for cell bullets. Skip headings that aren't `### Row` (e.g., `## Sheet:`). FILTER MATCHING: exact-match string compare default; if criteria value is a map with 'contains' / 'regex' key, use that. Case-insensitive by default (most user queries are). Italian diacritic-strip via stringx (already exists in Aura). PAGINATION: v0 is single-page — next_cursor='' always. v1 can add real cursors. SCOPE DISCIPLINE: ONLY tabular extract. NO xlsx file generation here — that's US-COMP-04. NO new sources, NO ingest changes. INVARIANT: if extract.md has 0 matches, return total_matches=0, rows=[], no error."
+    },
+    {
+      "id": "US-COMP-02",
+      "title": "find_in_sources — meta-tool that searches across ingested sources without LLM round-trips",
+      "description": "Replace the (search_memory + read_source + LLM-search) chain with one tool that does FTS5+vector hybrid retrieval over the source corpus and returns top-N synthesized chunks. (a) NEW TOOL internal/agent/tools/registry/find_in_sources.go: FindInSourcesTool. Parameters: query (required string), source_id (optional — scope to ONE source), top_k (default 5, max 10). (b) EXECUTE: (i) call the wiki hybrid search backend that already serves search_memory — leverage compact_memory_fts + the recent fix(search) commit c7a82f1c for stop-word handling; (ii) filter results by kind=source (and optionally source_id) — kind already in the FTS5 schema; (iii) return JSON envelope `{query, total_hits, returned, chunks:[{source_id, snippet:..., score, byte_offset}], suggestion?: 'Use extract_records for tabular filter OR summarize_source for narrative summary'}`. (c) SUGGESTION FIELD: empty by default; populated when the chunks span >3 sources (suggesting the user should narrow). (d) DESC: 'Read-only. Returns top-{top_k} chunks across ingested sources matching {query}. Use for: \"Cosa dice il documento X su Y\", \"Cerca menzioni di Z\". Use INSTEAD of search_memory when the answer is in user-uploaded sources.' (e) AGENT.md bullet: 'Per cercare in file caricati usa find_in_sources, NON search_memory (che è per la wiki). search_memory rimane per pagine wiki create da Aura.' (f) TEST: TestFindInSources_HappyPath, TestFindInSources_ScopedToSourceID, TestFindInSources_SuggestsNarrowingOnManySources, TestFindInSources_RegisterAndExecute.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/find_in_sources.go implements FindInSourcesTool",
+        "Parameters: {query, source_id?, top_k=5(max 10)}; >10 returns ErrSchemaValidation",
+        "Uses the existing hybrid search backend (FTS5 + vector RRF from c7a82f1c) filtered by kind='source'",
+        "Returns JSON envelope {query, total_hits, returned, chunks[], suggestion?}",
+        "suggestion field populated when results span >3 distinct sources",
+        "Tool description starts with 'Read-only.' marker and explicitly distinguishes from search_memory (sources vs wiki pages)",
+        "AGENT.md + defaults gain the steering bullet",
+        "4 tests: happy path + scoped + suggestion trigger + registry",
+        "registry_scan_test catalog updated",
+        "go build ./... && go vet ./... && go test ./... -count=1 green",
+        "Live smoke: send /api/chat 'Cosa dice il file Ruocci su Lombardia?' — assert reply built from find_in_sources (NOT search_memory or read_source), tools_used=['find_in_sources']",
+        "Single atomic commit prefix: feat(tools): find_in_sources meta-tool — cross-source hybrid search with envelope (US-COMP-02)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/agent/tools/registry/memory_search.go for the existing search_memory wiring — find_in_sources is the parallel tool scoped to kind=source. (2) Read internal/storage/search/qdrant.go for the hybrid search method (commit e4ec64be added it). (3) The FTS5 schema (`compact_memory_fts`) has kind column already — verify. SCOPE DISCIPLINE: do NOT change search_memory behavior. find_in_sources is a NEW endpoint scoped to source-kind hits. Same backend, different filter. NO new index. SCORING: passthrough from hybrid backend — don't reweight. ENVELOPE FORMAT: stable, documented in the tool description, so future tools (Aura's reply renderer) can parse if needed. BOUND OUTPUT: respect OutputCap default — at top_k=5 × snippet≤300 chars = ≤1.5 KB envelope, well under 8 KiB cap. SUGGESTION HEURISTIC: count distinct source_ids in returned chunks; if >3, set suggestion to the canned string. Don't try to be clever — fixed threshold."
+    },
+    {
+      "id": "US-COMP-03",
+      "title": "summarize_source — meta-tool that returns a structured source summary without dumping",
+      "description": "Replace the (read_source + execute_code dump + LLM summarize) chain with one tool that reads extract.md, parses structure, and returns a compact bullet summary. (a) NEW TOOL internal/agent/tools/registry/summarize_source.go: SummarizeSourceTool. Parameters: source_id (required), focus (optional string — narrows the summary to that aspect, e.g., 'autori' or 'tabella vendite'), max_bullets (default 7, max 12). (b) EXECUTE: (i) fetch source + extract.md via internal/storage/sources/store; (ii) read frontmatter (sheets, slides, chapters, heading_counts from Wave B plugins); (iii) sample first paragraph + last paragraph + 3 middle blocks; (iv) call LLM with a TIGHT prompt asking for max_bullets bullets summarizing the source (or aspect if focus set), bullet ≤25 words each, in Italian. (v) Return JSON envelope `{source_id, structure:{kind, total_chunks, heading_count}, bullets:[...], focus_applied: bool}`. (c) DETERMINISTIC: temperature=0 for the LLM call. (d) SCOPE: structure-aware — for tabular sources (xlsx), bullets describe COLUMNS + sample values; for narrative (epub/html), bullets describe THEMES + key entities; for slides (pptx), bullets describe AGENDA. (e) DESC: 'Read-only. Returns ≤{max_bullets} bullets summarizing a source (optionally focused on a specific aspect). Use for: \"Di cosa parla X\", \"Riassumi il documento Y\". Use INSTEAD of execute_code + raw dump.' (f) TEST: TestSummarizeSource_TabularReturnsColumns, TestSummarizeSource_NarrativeReturnsThemes, TestSummarizeSource_FocusApplies, TestSummarizeSource_RegisterAndExecute.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/summarize_source.go implements SummarizeSourceTool",
+        "Parameters: {source_id, focus?, max_bullets=7(max 12)}",
+        "LLM call uses temperature=0 + tight prompt template (committed as a constant in summarize_source.go, not loaded from a file)",
+        "Returns JSON envelope {source_id, structure{kind, total_chunks, heading_count}, bullets[], focus_applied}",
+        "Bullets ≤25 words each, in Italian, max_bullets honored",
+        "Structure-aware: tabular sources surface column names + ranges; narrative sources surface themes; slides surface agenda",
+        "Tool description starts with 'Read-only.' marker and explicitly says 'INSTEAD of execute_code + raw dump'",
+        "AGENT.md gains a bullet steering toward summarize_source",
+        "4 tests covering tabular + narrative + focus + registry — stubbed LLM with deterministic response so the test is reproducible",
+        "registry_scan_test catalog updated",
+        "go build ./... && go vet ./... && go test ./... -count=1 green",
+        "Live smoke: /api/chat 'Riassumi ruocci email.xlsx' — assert reply has ≤7 bullets, no row dump, tools_used=['summarize_source']",
+        "Single atomic commit prefix: feat(tools): summarize_source meta-tool — structured source summary (US-COMP-03)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/agent/tools/registry/source.go for the existing source action=read pattern. (2) Read internal/llm/client.go (or similar) for the LLM Stream/Send interface to make a side LLM call from a tool. SIDE LLM CALL DISCIPLINE: this tool fires an LLM call OUTSIDE the agent loop. The agent receives the BULLETS, not the raw chunks. Use a small model if possible (config flag MaxToolResultChars / similar); fall back to the main LLM. TEMPERATURE=0 for reproducibility. PROMPT TEMPLATE: keep it tight. Example: 'Riassumi questa fonte in ESATTAMENTE {N} bullet, ognuno ≤25 parole. {focus_clause}. Struttura: {kind} con {chunk_count} sezioni. Contenuto:\\n{sample}.' STRUCTURE DETECTION: kind=xlsx → tabular; kind=docx/html/md → narrative; kind=pptx → slides; kind=pdf → narrative (default). SCOPE DISCIPLINE: do NOT change ingest. NO new sources, no new schema. This is a READ-ONLY meta-tool that orchestrates an LLM side-call."
+    },
+    {
+      "id": "US-COMP-04",
+      "title": "create_file_from_data — meta-tool that filters records and creates an xlsx/docx/pdf in one call",
+      "description": "Replace the (source + execute_code + doc xlsx) chain — the EXACT pattern that broke 2026-05-21 (Aura took 36s + dumped 90 rows for 'crea un file excel'). One tool that filters records (via extract_records logic) and emits a doc artifact. (a) NEW TOOL internal/agent/tools/registry/create_file_from_data.go: CreateFileFromDataTool. Parameters: format (required, enum: 'xlsx'|'docx'|'pdf'), source_id (required), criteria (optional, same shape as extract_records), columns (optional []string), output_filename (required string), title (optional, for docx/pdf — default = source filename basename). (b) EXECUTE: (i) reuse the extract_records logic to get filtered rows (call into the same helper used by US-COMP-01); (ii) call doc action={format} via the existing doc tool wiring — pass {sheets:[{name, rows:[{col:val,...}]}]} for xlsx; pass {blocks:[...]} for docx/pdf; (iii) verify the file lands at /workspace/{output_filename}; (iv) return JSON envelope `{format, output_path, row_count, source_id, summary: '90 righe, 4 colonne — top 10 visualizzate' }`. (c) NO LIMIT cap on the GENERATED file (doc tool already handles 10k rows). limit=0 here means ALL filtered rows. (d) DESC: 'Read+Write. Filters rows from a source AND creates the requested xlsx/docx/pdf in ONE call. Use for: \"Crea un xlsx con i clienti di tipo X\", \"Genera un PDF riepilogo\". Use INSTEAD of (source + execute_code + doc xlsx).' (e) TEST: TestCreateFileFromData_Xlsx_FilteredRows, TestCreateFileFromData_Docx_WithTitle, TestCreateFileFromData_NoCriteria_AllRows, TestCreateFileFromData_RegisterAndExecute.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/create_file_from_data.go implements CreateFileFromDataTool",
+        "Parameters: {format, source_id, criteria?, columns?, output_filename, title?}",
+        "Reuses extract_records filter logic (NOT duplicated — call into a shared helper in extract_records.go)",
+        "Delegates file generation to existing doc tool internals (action=xlsx|docx|pdf)",
+        "Returns envelope {format, output_path, row_count, source_id, summary}",
+        "No row limit on generated file — outputs ALL filtered rows",
+        "Tool description starts with 'Read+Write.' marker (per US-DRIFT-05) and explicitly says 'INSTEAD of (source + execute_code + doc xlsx)'",
+        "AGENT.md gains a bullet: 'Per generare file da fonti caricate usa create_file_from_data, NON execute_code + doc separately.'",
+        "4 tests: xlsx happy path + docx with title + no-criteria-all-rows + registry",
+        "registry_scan_test catalog updated",
+        "go build ./... && go vet ./... && go test ./... -count=1 green",
+        "Live smoke: /api/chat 'Crea un xlsx con tutti i clienti di ruocci email.xlsx' — assert reply contains the output path, tools_used=['create_file_from_data'], NO execute_code in tools_used, elapsed_ms ≤10s",
+        "Single atomic commit prefix: feat(tools): create_file_from_data meta-tool — filter + doc artifact in one call (US-COMP-04)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read US-COMP-01 output — extract_records helper must be exported / shared. (2) Read the existing doc tool implementation in internal/agent/tools/registry/files_xlsx.go (or similar) to understand the row format expected. (3) Read internal/agent/tools/registry/files_*.go for docx/pdf shape. ROW FORMAT CONVERSION: extract_records returns rows as []map[string]any; doc tool expects {sheets:[{name, rows:[ [v1,v2,...] (positional) ]}]} for xlsx. Convert by ordering columns alphabetically OR per the `columns` parameter (if given). HEADER ROW: emit column names as the first row. DOCX/PDF FORMAT: render rows as a single markdown table block — use the doc tool's blocks parameter. ATOMIC: if file generation fails, return error WITHOUT side effects (no partial file). NO new file extension validation — doc tool already validates. SCOPE DISCIPLINE: NO new source types. NO inference of criteria from natural language ('clienti di tipo X' must be passed as criteria={tipo:'X'}). The LLM is responsible for translating user intent into criteria. INVARIANT: if criteria is empty + columns empty, output ALL rows + ALL columns. If criteria filters to 0 rows, return envelope with row_count=0 + a header-only file."
+    },
+    {
+      "id": "US-COMP-05",
+      "title": "Tool surface cleanup — hide primitive tools the LLM should NOT pick directly",
+      "description": "After US-COMP-01..04 ship, the agent has 4 new meta-tools that cover the common workflows. To stop the LLM from STILL randomly picking execute_code / execute_shell, we need to either (a) hide them or (b) mark them as 'last-resort'. Pattern: cli-printing-press uses description markers ('Destructive.', 'Read-only.') to teach the LLM by description-shape. (a) UPDATE descriptions of the primitive tools that the meta-tools now cover: (i) execute_code → 'LAST RESORT. Computation only. Do NOT use to read sources (use find_in_sources / extract_records / summarize_source), do NOT use to create files (use create_file_from_data), do NOT use to dump output. If you cannot accomplish the goal with a meta-tool, then and only then call this.'; (ii) execute_shell → same LAST RESORT pattern with the same list of meta-tools to prefer first. (iii) source action=read → 'LAST RESORT. Returns raw source bytes. Prefer summarize_source / extract_records / find_in_sources for typical asks. Use this ONLY when the meta-tools fail.'; (iv) file action=read on workspace files → 'For wiki pages use wiki_subgraph or search_memory. For ingested sources use the meta-tools listed above. Direct file reads are for /workspace/ files NOT in the wiki/source surface.' (b) AGENT.md (runtime + defaults) gains a NEW section `## Selezione tool — preferenze fisse`: a 10-line table mapping intent → first-choice meta-tool, with primitives as fallback. (c) AGENT.md anti-pattern section gains: 'Chiamare execute_code per leggere/filtrare/sommare un source ingerito — VIETATO se esiste un meta-tool (extract_records, find_in_sources, summarize_source).' (d) NO new tools, NO removed tools, NO Execute() logic change — only description strings + AGENT.md prose. (e) DESCRIPTION AUDIT TEST from US-DRIFT-05 should still pass — extend it to verify the LAST RESORT prefix where applicable.",
+      "acceptanceCriteria": [
+        "execute_code description starts with 'LAST RESORT.' and explicitly lists the meta-tools to prefer (find_in_sources, extract_records, summarize_source, create_file_from_data)",
+        "execute_shell description has the same LAST RESORT pattern",
+        "source action=read description starts with 'LAST RESORT.' for the read action specifically (other actions like store remain normal)",
+        "file action=read description disambiguates wiki vs source vs generic workspace files",
+        "AGENT.md + internal/config/defaults/AGENT.md both gain a `## Selezione tool — preferenze fisse` section with the intent-to-tool table",
+        "Anti-pattern section bullet added",
+        "US-DRIFT-05 description audit test extended to enforce LAST RESORT prefix on the 4 primitives above",
+        "No tools removed, no Execute() logic changed",
+        "go build ./... && go vet ./... && go test ./internal/agent/tools/registry/... -count=1 green",
+        "Live smoke: /api/chat with 3 prompts ('Trova un cliente', 'Cosa dice il documento', 'Crea un xlsx riepilogo') — assert NONE of them use execute_code/execute_shell in tools_used; all use meta-tools",
+        "Single atomic commit prefix: chore(tools): mark primitives as last-resort + selection-preference table in AGENT.md (US-COMP-05)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read all 4 prior COMP stories' shipped tool descriptions. (2) Read internal/agent/tools/registry/exec.go for execute_code / execute_shell. (3) Read internal/agent/tools/registry/source.go for source.Description(). (4) Read AGENT.md (runtime + defaults) to find the right insertion point — after 'Esecuzione e tool' section, before 'Memoria e wiki'. SCOPE DISCIPLINE: NO logic change to primitives. NO removal. JUST description text + AGENT.md prose. INVARIANT: existing tests for execute_code / execute_shell / source / file should pass — those test BEHAVIOR, not descriptions. The description audit test (DRIFT-05) is the one that gets extended. TONE: 'LAST RESORT' is intentionally STRONG — softer phrasing like 'consider using' has historically failed (Aura ignored TOOLS.md 'prefer this over execute_code' hint earlier today). NO HIDING via removing from registry — that would break edge cases legitimately needing the primitive. The technique is BEHAVIORAL via description-shape pressure."
+    }
+  ]
+}
