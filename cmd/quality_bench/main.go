@@ -86,6 +86,7 @@ type WikiSearchReply struct {
 type QueryResult struct {
 	FixtureID         string          `json:"fixture_id"`
 	QueryID           string          `json:"query_id"`
+	ThreadID          string          `json:"thread_id,omitempty"`
 	Text              string          `json:"text"`
 	ExpectedSubstring string          `json:"expected_substring"`
 	ExpectedSlugs     []string        `json:"expected_slugs,omitempty"`
@@ -203,6 +204,7 @@ func main() {
 		Label:   *label,
 		BaseURL: *baseURL,
 	}
+	runThreadPrefix := "quality-bench:" + time.Now().UTC().Format("20060102T150405.000000000Z")
 
 	for _, fx := range bench.Fixtures {
 		fmt.Printf("\n=== Fixture: %s (%s) ===\n", fx.ID, fx.File)
@@ -260,6 +262,7 @@ func main() {
 			qr := QueryResult{
 				FixtureID:         fx.ID,
 				QueryID:           q.ID,
+				ThreadID:          benchThreadID(runThreadPrefix, fx.ID, q.ID),
 				Text:              q.Text,
 				ExpectedSubstring: q.ExpectedSubstring,
 				ExpectedSlugs:     expectedSlugs(q, fr.WikiPages),
@@ -279,7 +282,7 @@ func main() {
 			}
 
 			t0 := time.Now()
-			reply, err := sendChat(client, *baseURL, *token, q.Text)
+			reply, err := sendChat(client, *baseURL, *token, q.Text, qr.ThreadID)
 			qr.LatencyMS = time.Since(t0).Milliseconds()
 
 			if err != nil {
@@ -573,9 +576,13 @@ func sendWikiSearch(client *http.Client, baseURL, token, query string, topK int)
 	return reply, nil
 }
 
-func sendChat(client *http.Client, baseURL, token, message string) (ChatReply, error) {
+func sendChat(client *http.Client, baseURL, token, message, threadID string) (ChatReply, error) {
 	url := strings.TrimRight(baseURL, "/") + "/chat"
-	payload, _ := json.Marshal(map[string]string{"message": message})
+	requestBody := map[string]string{"message": message}
+	if strings.TrimSpace(threadID) != "" {
+		requestBody["thread_id"] = threadID
+	}
+	payload, _ := json.Marshal(requestBody)
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(payload))
 	if err != nil {
 		return ChatReply{}, fmt.Errorf("build request: %w", err)
@@ -599,6 +606,44 @@ func sendChat(client *http.Client, baseURL, token, message string) (ChatReply, e
 		return ChatReply{}, fmt.Errorf("decode reply: %w (raw: %s)", err, truncate(string(body), 200))
 	}
 	return reply, nil
+}
+
+func benchThreadID(runPrefix, fixtureID, queryID string) string {
+	return strings.Join([]string{
+		cleanThreadPart(runPrefix),
+		cleanThreadPart(fixtureID),
+		cleanThreadPart(queryID),
+	}, ":")
+}
+
+func cleanThreadPart(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "unknown"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(value) {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		switch {
+		case ok:
+			b.WriteRune(r)
+			lastDash = false
+		case r == '-' || r == '_' || r == ':':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if out == "" {
+		return "unknown"
+	}
+	return out
 }
 
 func expectedSlugs(q Query, fixtureSlugs []string) []string {

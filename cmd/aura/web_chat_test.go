@@ -206,6 +206,30 @@ func TestWebToolExecutorCarriesVisibleToolContext(t *testing.T) {
 	}
 }
 
+func TestWebChatSessionsAreScopedByThread(t *testing.T) {
+	sessions := newWebChatSessions()
+
+	threadA := sessions.begin("run-a", "alice", "thread-a", "system a", "hello a")
+	threadA.AddAssistantMessage("answer from thread a")
+	sessions.commit("run-a", "alice", "thread-a")
+
+	threadB := sessions.begin("run-b", "alice", "thread-b", "system b", "hello b")
+	if containsMessageContent(threadB.Messages(), "answer from thread a") {
+		t.Fatal("thread-b inherited thread-a history")
+	}
+	threadB.AddAssistantMessage("answer from thread b")
+	sessions.commit("run-b", "alice", "thread-b")
+
+	threadAAgain := sessions.begin("run-c", "alice", "thread-a", "system a2", "next a")
+	msgs := threadAAgain.Messages()
+	if !containsMessageContent(msgs, "answer from thread a") {
+		t.Fatal("thread-a did not retain its own history")
+	}
+	if containsMessageContent(msgs, "answer from thread b") {
+		t.Fatal("thread-a inherited thread-b history")
+	}
+}
+
 func TestAgentJobRunnerAdapterPassesRequestRunID(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := toolregistry.NewRegistry(logger)
@@ -279,4 +303,13 @@ func assertWebChatScalar(t *testing.T, db *sql.DB, query string, want int, args 
 	if got != want {
 		t.Fatalf("scalar = %d, want %d\nquery: %s", got, want, query)
 	}
+}
+
+func containsMessageContent(messages []llm.Message, want string) bool {
+	for _, msg := range messages {
+		if msg.Content == want {
+			return true
+		}
+	}
+	return false
 }

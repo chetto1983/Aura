@@ -73,7 +73,7 @@ func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, mess
 	if err != nil {
 		a.sessions.rollback(reply.RunID)
 	} else {
-		a.sessions.commit(reply.RunID, userID)
+		a.sessions.commit(reply.RunID, userID, threadID)
 	}
 	return api.ChatReply{
 		Reply:     reply.Reply,
@@ -104,7 +104,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		return agent.Invocation{}, errors.New("web chat: LLM unavailable")
 	}
 	userID := strings.TrimSpace(msg.PrincipalID)
-	turnIdx := b.sessions.messageCount(userID)
+	turnIdx := b.sessions.messageCount(userID, msg.ThreadID)
 	system := conversation.RenderSystemPrompt(time.Now(), time.Local)
 	if pinned := b.renderPinnedOperational(ctx, msg.ThreadID, turnIdx); pinned != "" {
 		system += "\n\n" + pinned
@@ -113,7 +113,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	if run != nil {
 		runID = run.ID
 	}
-	state := b.sessions.begin(runID, userID, system, msg.Text)
+	state := b.sessions.begin(runID, userID, msg.ThreadID, system, msg.Text)
 	allowlist := cleanWebToolList(nil)
 	var toolDefs []llm.ToolDefinition
 	if deps.Tools != nil {
@@ -282,11 +282,12 @@ func newWebChatSessions() *webChatSessions {
 	}
 }
 
-func (s *webChatSessions) begin(runID, userID, system, message string) *webAgentState {
+func (s *webChatSessions) begin(runID, userID, threadID, system, message string) *webAgentState {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.gcLocked()
-	messages := llm.CloneMessages(s.sessions[userID])
+	key := webChatSessionKey(userID, threadID)
+	messages := llm.CloneMessages(s.sessions[key])
 	messages = setSystemMessage(messages, system)
 	messages = append(messages, llm.Message{Role: "user", Content: message})
 	state := &webAgentState{messages: messages}
@@ -296,16 +297,16 @@ func (s *webChatSessions) begin(runID, userID, system, message string) *webAgent
 	return state
 }
 
-func (s *webChatSessions) messageCount(userID string) int {
+func (s *webChatSessions) messageCount(userID, threadID string) int {
 	if s == nil {
 		return 0
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return len(s.sessions[userID])
+	return len(s.sessions[webChatSessionKey(userID, threadID)])
 }
 
-func (s *webChatSessions) commit(runID, userID string) {
+func (s *webChatSessions) commit(runID, userID, threadID string) {
 	if runID == "" {
 		return
 	}
@@ -316,8 +317,9 @@ func (s *webChatSessions) commit(runID, userID string) {
 		return
 	}
 	delete(s.active, runID)
-	s.sessions[userID] = trimWebMessages(state.Messages())
-	s.updated[userID] = time.Now()
+	key := webChatSessionKey(userID, threadID)
+	s.sessions[key] = trimWebMessages(state.Messages())
+	s.updated[key] = time.Now()
 }
 
 func (s *webChatSessions) rollback(runID string) {
@@ -337,6 +339,15 @@ func (s *webChatSessions) gcLocked() {
 			delete(s.updated, userID)
 		}
 	}
+}
+
+func webChatSessionKey(userID, threadID string) string {
+	userID = strings.TrimSpace(userID)
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		threadID = "default"
+	}
+	return userID + "\x00" + threadID
 }
 
 type webAgentState struct {
