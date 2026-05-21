@@ -265,10 +265,8 @@ services:
     # `command` only supplies args, not the binary.
     command: ["--http", "--host", "0.0.0.0", "--port", "3001"]
     environment:
-      # Plugins disabled by default — only the converters in the upstream
-      # markitdown core run. Re-enable via dashboard if a user installs a
-      # custom plugin under ./docker/markitdown/plugins/.
-      MARKITDOWN_ENABLE_PLUGINS: "False"
+      # Aura ships local converters for structured retrieval (xlsx rows first).
+      MARKITDOWN_ENABLE_PLUGINS: "True"
     ports:
       - "127.0.0.1:${MARKITDOWN_HOST_PORT:-3001}:3001"
     read_only: true
