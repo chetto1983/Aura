@@ -27,11 +27,16 @@ type GraphIndex struct {
 // without forcing a disk re-read. Title, category, tags are stable
 // enough that the index can serve as the source of truth for any UI
 // or scoring layer that doesn't need the page body.
+//
+// Subnodes is populated for PAGE nodes and holds the H2/H3 heading sections
+// derived from the page body at index time. Subnode nodes registered in meta
+// under "<page>#<anchor>" keys have a nil Subnodes slice.
 type NodeMeta struct {
 	Slug     string
 	Title    string
 	Category string
 	Tags     []string
+	Subnodes []SubnodeMeta // non-nil only for page (not subnode) entries
 }
 
 // NewGraphIndex returns an empty index ready for population.
@@ -112,12 +117,26 @@ func (g *GraphIndex) RemoveNode(slug string) {
 		}
 	}
 	delete(g.inbound, slug)
+
+	// Remove subnode meta entries before dropping the page meta.
+	if m, ok := g.meta[slug]; ok {
+		for _, sub := range m.Subnodes {
+			delete(g.meta, slug+"#"+sub.AnchorSlug)
+		}
+	}
 	delete(g.meta, slug)
 }
 
 // upsertLocked is the shared write path for LoadFromPages and
 // RefreshPage. Caller MUST hold g.mu.Lock().
 func (g *GraphIndex) upsertLocked(slug string, page *Page) {
+	// Remove any stale subnode meta entries from a previous version of this page.
+	if old, ok := g.meta[slug]; ok {
+		for _, sub := range old.Subnodes {
+			delete(g.meta, slug+"#"+sub.AnchorSlug)
+		}
+	}
+
 	// Compute the canonical edge set: body wikilinks ∪ frontmatter related.
 	newTargets := make(map[string]bool)
 	for _, t := range ExtractWikiLinks(page.Body) {
@@ -166,18 +185,40 @@ func (g *GraphIndex) upsertLocked(slug string, page *Page) {
 	// leak into the index.
 	tagsCopy := make([]string, len(page.Tags))
 	copy(tagsCopy, page.Tags)
+
+	// Parse H2/H3 subnodes from the page body.
+	subnodes := buildSubnodes([]byte(page.Body))
+
 	g.meta[slug] = NodeMeta{
 		Slug:     slug,
 		Title:    page.Title,
 		Category: page.Category,
 		Tags:     tagsCopy,
+		Subnodes: subnodes,
+	}
+
+	// Register each subnode as its own meta entry so HasNode/Meta work on subnode IDs.
+	for _, sub := range subnodes {
+		g.meta[slug+"#"+sub.AnchorSlug] = NodeMeta{
+			Slug:     slug + "#" + sub.AnchorSlug,
+			Title:    sub.HeadingText,
+			Category: page.Category,
+			Tags:     tagsCopy,
+		}
 	}
 }
 
-// Neighbors returns slugs reachable from `slug` within `depth` hops
-// in either direction (outbound OR inbound edges), excluding `slug`
-// itself. depth<=0 returns nil. Results are sorted alphabetically for
-// deterministic test fixtures.
+// Neighbors returns slugs reachable from `slug` within `depth` hops,
+// excluding `slug` itself. Traversal follows outbound + inbound graph
+// edges for all nodes plus two heading-subnode rules:
+//
+//   - From a PAGE node: its H2/H3 subnodes are included as depth-1 neighbors.
+//   - From a SUBNODE ID (<page>#<anchor>): the parent page, all sibling
+//     subnodes on that page, and the parent page's outbound edges are
+//     included as depth-1 neighbors.
+//
+// depth<=0 returns nil. Results are sorted alphabetically for deterministic
+// test fixtures.
 func (g *GraphIndex) Neighbors(slug string, depth int) []string {
 	if g == nil || depth <= 0 {
 		return nil
@@ -189,17 +230,39 @@ func (g *GraphIndex) Neighbors(slug string, depth int) []string {
 	frontier := []string{slug}
 	for hop := 0; hop < depth; hop++ {
 		var next []string
+		addIfNew := func(t string) {
+			if !seen[t] {
+				seen[t] = true
+				next = append(next, t)
+			}
+		}
 		for _, s := range frontier {
+			// Standard outbound / inbound edge traversal.
 			for t := range g.outbound[s] {
-				if !seen[t] {
-					seen[t] = true
-					next = append(next, t)
-				}
+				addIfNew(t)
 			}
 			for t := range g.inbound[s] {
-				if !seen[t] {
-					seen[t] = true
-					next = append(next, t)
+				addIfNew(t)
+			}
+			// Subnode expansion rules.
+			if isSubnodeID(s) {
+				// Subnode → parent + siblings + parent's outbound targets.
+				parent := subnodeParentSlug(s)
+				addIfNew(parent)
+				if pm, ok := g.meta[parent]; ok {
+					for _, sub := range pm.Subnodes {
+						addIfNew(parent + "#" + sub.AnchorSlug)
+					}
+				}
+				for t := range g.outbound[parent] {
+					addIfNew(t)
+				}
+			} else {
+				// Page → include its subnodes.
+				if m, ok := g.meta[s]; ok {
+					for _, sub := range m.Subnodes {
+						addIfNew(s + "#" + sub.AnchorSlug)
+					}
 				}
 			}
 		}

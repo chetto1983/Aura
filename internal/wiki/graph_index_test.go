@@ -393,6 +393,36 @@ func TestShortestPath_UnknownSlug(t *testing.T) {
 	}
 }
 
+func TestNeighbors_PageReturnsSubnodes(t *testing.T) {
+	// Page with two H2 sections: Neighbors(1) must include both subnode IDs.
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "## Section One\n\nContent.\n\n## Section Two\n\nMore.\n", nil),
+	})
+	got := g.Neighbors("alpha", 1)
+	want := []string{"alpha#section-one", "alpha#section-two"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Neighbors(alpha,1) = %v, want %v", got, want)
+	}
+}
+
+func TestNeighbors_SubnodeReturnsParentAndSiblings(t *testing.T) {
+	// page-a has two subnodes and links to page-b via related:.
+	// Neighbors("page-a#first", 1) must return parent + sibling + parent's outbound.
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"page-a": makeTestPage("PageA", "## First\n\nContent.\n\n## Second\n\nMore.\n", []string{"page-b"}),
+		"page-b": makeTestPage("PageB", "Leaf.", nil),
+	})
+	got := g.Neighbors("page-a#first", 1)
+	mustContain := []string{"page-a", "page-a#second", "page-b"}
+	for _, want := range mustContain {
+		if !slices.Contains(got, want) {
+			t.Errorf("Neighbors(page-a#first,1) missing %q; got %v", want, got)
+		}
+	}
+}
+
 // _ = time.Now is a tiny hedge to keep the time import even if no test
 // touches the field directly — schema requires CreatedAt/UpdatedAt and
 // helper makeTestPage generates them.
