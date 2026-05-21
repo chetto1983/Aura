@@ -93,9 +93,10 @@ func New(cfg Config) (*Pipeline, error) {
 
 // Result captures the outcome of a Compile call.
 type Result struct {
-	Slug     string // wiki slug of the summary page, always set on success
-	Created  bool   // true on first compile, false when the source was already ingested
-	PageNote string // user-facing one-liner suitable for Telegram progress UX
+	Slug              string   // wiki slug of the summary page, always set on success
+	Created           bool     // true on first compile, false when the source was already ingested
+	MaterializedPages []string // structured source sub-pages written after the summary
+	PageNote          string   // user-facing one-liner suitable for Telegram progress UX
 }
 
 // Compile writes (or refreshes) the source summary page for sourceID and
@@ -129,20 +130,12 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 	title := p.resolveTitle(buildTitle(src, sourceID), sourceID)
 	slug := wiki.Slug(title)
 
-	if src.Status == source.StatusIngested && len(src.WikiPages) == 1 && src.WikiPages[0] == slug {
-		return Result{
-			Slug:     slug,
-			Created:  false,
-			PageNote: fmt.Sprintf("already compiled as [[%s]]", slug),
-		}, nil
-	}
-
 	markdownName := sourceMarkdownName(src)
 	mdPath := p.sources.Path(sourceID, markdownName)
 	if mdPath == "" {
 		return Result{}, fmt.Errorf("ingest: invalid path for %s", sourceID)
 	}
-	_, err = os.ReadFile(mdPath)
+	body, err := os.ReadFile(mdPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if markdownName == "ocr.md" {
@@ -153,6 +146,24 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		return Result{}, fmt.Errorf("ingest: read %s: %w", markdownName, err)
 	}
 
+	structured := parseStructuredExtract(string(body), title, slug)
+	currentSlugs := []string{slug}
+	if structured != nil {
+		for _, section := range structured.Sections {
+			currentSlugs = append(currentSlugs, section.Slug)
+		}
+	}
+
+	if src.Status == source.StatusIngested && slices.Equal(src.WikiPages, currentSlugs) {
+		materialized := currentSlugs[1:]
+		return Result{
+			Slug:              slug,
+			Created:           false,
+			MaterializedPages: materialized,
+			PageNote:          compiledPageNote(slug, materialized, true),
+		}, nil
+	}
+
 	// Wave 2.4 — multi-page touch: when an Extractor is configured,
 	// run a single LLM call to derive entities + concepts + links from
 	// the source body. The resulting delta enriches the source summary
@@ -161,17 +172,28 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 	// the source summary is written. On extractor failure the pipeline
 	// degrades to the single-page compatibility behavior — better one page
 	// than no ingest at all.
-	body, _ := os.ReadFile(mdPath)
-	delta := p.extractGraphPatch(ctx, sourceID, string(body))
+	delta := ExtractionDelta{}
+	if structured == nil {
+		delta = p.extractGraphPatch(ctx, sourceID, string(body))
+	}
 
 	pageBody := buildSummaryBody(src, markdownName, delta)
 	pagePromptVersion := "ingest_v1"
 	if delta.TotalItems() > 0 {
 		pagePromptVersion = PromptVersion()
 	}
+	if structured != nil {
+		pageBody = buildStructuredSummaryBody(src, markdownName, delta, structured.Sections)
+		pagePromptVersion = structuredPromptVersion
+	}
 
 	now := p.now().UTC().Format(time.RFC3339)
 	related := derivedRelatedSlugs(delta, slug)
+	if structured != nil {
+		for _, section := range structured.Sections {
+			related = append(related, section.Slug)
+		}
+	}
 	page := &wiki.Page{
 		Title:         title,
 		Body:          pageBody,
@@ -187,6 +209,21 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 
 	if err := p.wiki.WritePage(ctx, page); err != nil {
 		return Result{}, fmt.Errorf("ingest: write page: %w", err)
+	}
+	writtenSlugs := []string{slug}
+	if structured != nil {
+		for _, section := range structured.Sections {
+			sectionPage := buildStructuredSectionPage(src, slug, section, now)
+			if err := p.wiki.WritePage(ctx, sectionPage); err != nil {
+				for _, written := range writtenSlugs {
+					if delErr := p.wiki.DeletePage(ctx, written); delErr != nil {
+						p.logger.Warn("ingest: structured rollback delete failed", "slug", written, "err", delErr)
+					}
+				}
+				return Result{}, fmt.Errorf("ingest: write structured section %s: %w", section.Slug, err)
+			}
+			writtenSlugs = append(writtenSlugs, section.Slug)
+		}
 	}
 
 	// Wave 2.4 — multi-page touch: write or merge each extracted
@@ -204,11 +241,11 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 		)
 	}
 
-	staleSlugs := staleSlugsToDelete(src.WikiPages, slug)
+	staleSlugs := staleSlugsToDeleteMany(src.WikiPages, currentSlugs)
 
 	if _, err := p.sources.Update(sourceID, func(s *source.Source) error {
 		s.Status = source.StatusIngested
-		s.WikiPages = []string{slug}
+		s.WikiPages = currentSlugs
 		s.Error = ""
 		return nil
 	}); err != nil {
@@ -225,8 +262,10 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 	}
 
 	if p.search != nil {
-		if err := p.search.ReindexWikiPage(ctx, slug); err != nil {
-			p.logger.Warn("ingest: reindex failed; page is still readable", "slug", slug, "err", err)
+		for _, pageSlug := range currentSlugs {
+			if err := p.search.ReindexWikiPage(ctx, pageSlug); err != nil {
+				p.logger.Warn("ingest: reindex failed; page is still readable", "slug", pageSlug, "err", err)
+			}
 		}
 	}
 
@@ -238,9 +277,10 @@ func (p *Pipeline) Compile(ctx context.Context, sourceID string) (Result, error)
 	)
 
 	return Result{
-		Slug:     slug,
-		Created:  true,
-		PageNote: fmt.Sprintf("compiled as [[%s]]", slug),
+		Slug:              slug,
+		Created:           true,
+		MaterializedPages: currentSlugs[1:],
+		PageNote:          compiledPageNote(slug, currentSlugs[1:], false),
 	}, nil
 }
 
@@ -295,13 +335,34 @@ func shortID(sourceID string) string {
 // match the freshly-computed slug. Used to clean up after a slug-rule
 // change or filename rename so the wiki doesn't accumulate dead pages.
 func staleSlugsToDelete(prev []string, current string) []string {
+	return staleSlugsToDeleteMany(prev, []string{current})
+}
+
+func staleSlugsToDeleteMany(prev []string, current []string) []string {
+	keep := make(map[string]struct{}, len(current))
+	for _, s := range current {
+		if s != "" {
+			keep[s] = struct{}{}
+		}
+	}
 	out := make([]string, 0, len(prev))
 	for _, s := range prev {
-		if s != "" && s != current {
+		if _, ok := keep[s]; s != "" && !ok {
 			out = append(out, s)
 		}
 	}
 	return out
+}
+
+func compiledPageNote(slug string, materialized []string, already bool) string {
+	prefix := "compiled"
+	if already {
+		prefix = "already compiled"
+	}
+	if len(materialized) == 0 {
+		return fmt.Sprintf("%s as [[%s]]", prefix, slug)
+	}
+	return fmt.Sprintf("%s as [[%s]] + %d materialized section pages", prefix, slug, len(materialized))
 }
 
 // buildTitle returns a human-readable wiki title derived from the source's

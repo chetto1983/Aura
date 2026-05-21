@@ -13,25 +13,27 @@ import (
 // It mirrors the relevant fields of UploadResponse (slice 10c.1) so the
 // frontend can use the same toast formatter for both.
 type IngestResponse struct {
-	ID         string   `json:"id"`
-	Status     string   `json:"status"`
-	Filename   string   `json:"filename"`
-	WikiPages  []string `json:"wiki_pages,omitempty"`
-	IngestNote string   `json:"ingest_note,omitempty"`
-	Note       string   `json:"note,omitempty"`
+	ID                string   `json:"id"`
+	Status            string   `json:"status"`
+	Filename          string   `json:"filename"`
+	WikiPages         []string `json:"wiki_pages,omitempty"`
+	MaterializedPages []string `json:"materialized_pages,omitempty"`
+	IngestNote        string   `json:"ingest_note,omitempty"`
+	Note              string   `json:"note,omitempty"`
 }
 
 // ReocrResponse is the JSON body returned by POST /sources/{id}/reocr. It
 // covers both successful re-OCR and re-OCR-then-auto-ingest paths.
 type ReocrResponse struct {
-	ID         string   `json:"id"`
-	Status     string   `json:"status"`
-	Filename   string   `json:"filename"`
-	PageCount  int      `json:"page_count,omitempty"`
-	WikiPages  []string `json:"wiki_pages,omitempty"`
-	IngestNote string   `json:"ingest_note,omitempty"`
-	OCRError   string   `json:"ocr_error,omitempty"`
-	Note       string   `json:"note,omitempty"`
+	ID                string   `json:"id"`
+	Status            string   `json:"status"`
+	Filename          string   `json:"filename"`
+	PageCount         int      `json:"page_count,omitempty"`
+	WikiPages         []string `json:"wiki_pages,omitempty"`
+	MaterializedPages []string `json:"materialized_pages,omitempty"`
+	IngestNote        string   `json:"ingest_note,omitempty"`
+	OCRError          string   `json:"ocr_error,omitempty"`
+	Note              string   `json:"note,omitempty"`
 }
 
 // handleSourceIngest re-runs the ingest pipeline against a source whose
@@ -78,12 +80,13 @@ func handleSourceIngest(deps Deps) http.HandlerFunc {
 			fresh = rec
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, IngestResponse{
-			ID:         fresh.ID,
-			Status:     string(fresh.Status),
-			Filename:   fresh.Filename,
-			WikiPages:  fresh.WikiPages,
-			IngestNote: note,
-			Note:       "ingested · " + note,
+			ID:                fresh.ID,
+			Status:            string(fresh.Status),
+			Filename:          fresh.Filename,
+			WikiPages:         fresh.WikiPages,
+			MaterializedPages: materializedPages(fresh.WikiPages),
+			IngestNote:        note,
+			Note:              "ingested · " + note,
 		})
 	}
 }
@@ -183,11 +186,12 @@ func handleSourceReocr(deps Deps) http.HandlerFunc {
 		}
 
 		resp := ReocrResponse{
-			ID:        updated.ID,
-			Status:    string(updated.Status),
-			Filename:  updated.Filename,
-			PageCount: updated.PageCount,
-			WikiPages: updated.WikiPages,
+			ID:                updated.ID,
+			Status:            string(updated.Status),
+			Filename:          updated.Filename,
+			PageCount:         updated.PageCount,
+			WikiPages:         updated.WikiPages,
+			MaterializedPages: materializedPages(updated.WikiPages),
 		}
 
 		if deps.Ingest != nil {
@@ -202,6 +206,7 @@ func handleSourceReocr(deps Deps) http.HandlerFunc {
 				if fresh, ferr := deps.Sources.Get(id); ferr == nil {
 					resp.Status = string(fresh.Status)
 					resp.WikiPages = fresh.WikiPages
+					resp.MaterializedPages = materializedPages(fresh.WikiPages)
 				}
 				resp.Note = "re-OCR + ingested · " + note
 			}

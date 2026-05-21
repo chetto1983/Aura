@@ -194,29 +194,31 @@ type WikiSearchResponse struct {
 // (mime_type, sha256, size_bytes, ocr_model, error) that the table view
 // doesn't need.
 type SourceSummary struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Filename  string    `json:"filename"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	PageCount int       `json:"page_count,omitempty"`
-	WikiPages []string  `json:"wiki_pages,omitempty"`
+	ID                string    `json:"id"`
+	Kind              string    `json:"kind"`
+	Filename          string    `json:"filename"`
+	Status            string    `json:"status"`
+	CreatedAt         time.Time `json:"created_at"`
+	PageCount         int       `json:"page_count,omitempty"`
+	WikiPages         []string  `json:"wiki_pages,omitempty"`
+	MaterializedPages []string  `json:"materialized_pages,omitempty"`
 }
 
 // SourceDetail is the response of GET /sources/{id}.
 type SourceDetail struct {
-	ID        string    `json:"id"`
-	Kind      string    `json:"kind"`
-	Filename  string    `json:"filename"`
-	MimeType  string    `json:"mime_type,omitempty"`
-	SHA256    string    `json:"sha256"`
-	SizeBytes int64     `json:"size_bytes"`
-	CreatedAt time.Time `json:"created_at"`
-	Status    string    `json:"status"`
-	OCRModel  string    `json:"ocr_model,omitempty"`
-	PageCount int       `json:"page_count,omitempty"`
-	WikiPages []string  `json:"wiki_pages,omitempty"`
-	Error     string    `json:"error,omitempty"`
+	ID                string    `json:"id"`
+	Kind              string    `json:"kind"`
+	Filename          string    `json:"filename"`
+	MimeType          string    `json:"mime_type,omitempty"`
+	SHA256            string    `json:"sha256"`
+	SizeBytes         int64     `json:"size_bytes"`
+	CreatedAt         time.Time `json:"created_at"`
+	Status            string    `json:"status"`
+	OCRModel          string    `json:"ocr_model,omitempty"`
+	PageCount         int       `json:"page_count,omitempty"`
+	WikiPages         []string  `json:"wiki_pages,omitempty"`
+	MaterializedPages []string  `json:"materialized_pages,omitempty"`
+	Error             string    `json:"error,omitempty"`
 }
 
 // SourceOCR is the response of GET /sources/{id}/ocr.

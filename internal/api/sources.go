@@ -31,13 +31,14 @@ func handleSourceList(deps Deps) http.HandlerFunc {
 		out := make([]SourceSummary, 0, len(records))
 		for _, rec := range records {
 			out = append(out, SourceSummary{
-				ID:        rec.ID,
-				Kind:      string(rec.Kind),
-				Filename:  rec.Filename,
-				Status:    string(rec.Status),
-				CreatedAt: rec.CreatedAt.UTC(),
-				PageCount: rec.PageCount,
-				WikiPages: rec.WikiPages,
+				ID:                rec.ID,
+				Kind:              string(rec.Kind),
+				Filename:          rec.Filename,
+				Status:            string(rec.Status),
+				CreatedAt:         rec.CreatedAt.UTC(),
+				PageCount:         rec.PageCount,
+				WikiPages:         rec.WikiPages,
+				MaterializedPages: materializedPages(rec.WikiPages),
 			})
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, out)
@@ -62,18 +63,19 @@ func handleSourceGet(deps Deps) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, SourceDetail{
-			ID:        rec.ID,
-			Kind:      string(rec.Kind),
-			Filename:  rec.Filename,
-			MimeType:  rec.MimeType,
-			SHA256:    rec.SHA256,
-			SizeBytes: rec.SizeBytes,
-			CreatedAt: rec.CreatedAt.UTC(),
-			Status:    string(rec.Status),
-			OCRModel:  rec.OCRModel,
-			PageCount: rec.PageCount,
-			WikiPages: rec.WikiPages,
-			Error:     rec.Error,
+			ID:                rec.ID,
+			Kind:              string(rec.Kind),
+			Filename:          rec.Filename,
+			MimeType:          rec.MimeType,
+			SHA256:            rec.SHA256,
+			SizeBytes:         rec.SizeBytes,
+			CreatedAt:         rec.CreatedAt.UTC(),
+			Status:            string(rec.Status),
+			OCRModel:          rec.OCRModel,
+			PageCount:         rec.PageCount,
+			WikiPages:         rec.WikiPages,
+			MaterializedPages: materializedPages(rec.WikiPages),
+			Error:             rec.Error,
 		})
 	}
 }

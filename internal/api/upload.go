@@ -24,15 +24,16 @@ const defaultMaxUploadMB = 100
 
 // UploadResponse is the JSON body returned by POST /sources/upload.
 type UploadResponse struct {
-	ID         string   `json:"id"`
-	Status     string   `json:"status"`
-	Duplicate  bool     `json:"duplicate"`
-	Filename   string   `json:"filename"`
-	PageCount  int      `json:"page_count,omitempty"`
-	WikiPages  []string `json:"wiki_pages,omitempty"`
-	IngestNote string   `json:"ingest_note,omitempty"`
-	OCRError   string   `json:"ocr_error,omitempty"`
-	Note       string   `json:"note,omitempty"` // human-friendly summary line
+	ID                string   `json:"id"`
+	Status            string   `json:"status"`
+	Duplicate         bool     `json:"duplicate"`
+	Filename          string   `json:"filename"`
+	PageCount         int      `json:"page_count,omitempty"`
+	WikiPages         []string `json:"wiki_pages,omitempty"`
+	MaterializedPages []string `json:"materialized_pages,omitempty"`
+	IngestNote        string   `json:"ingest_note,omitempty"`
+	OCRError          string   `json:"ocr_error,omitempty"`
+	Note              string   `json:"note,omitempty"` // human-friendly summary line
 }
 
 // handleSourceUpload accepts a multipart source upload. PDFs go through OCR;
@@ -101,12 +102,13 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 		}
 
 		resp := UploadResponse{
-			ID:        src.ID,
-			Status:    string(src.Status),
-			Duplicate: dup,
-			Filename:  src.Filename,
-			PageCount: src.PageCount,
-			WikiPages: src.WikiPages,
+			ID:                src.ID,
+			Status:            string(src.Status),
+			Duplicate:         dup,
+			Filename:          src.Filename,
+			PageCount:         src.PageCount,
+			WikiPages:         src.WikiPages,
+			MaterializedPages: materializedPages(src.WikiPages),
 		}
 
 		if dup {
@@ -119,6 +121,7 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 				resp.Status = string(updated.Status)
 				resp.PageCount = updated.PageCount
 				resp.WikiPages = updated.WikiPages
+				resp.MaterializedPages = materializedPages(updated.WikiPages)
 				resp.Note = note
 				writeJSON(w, deps.Logger, http.StatusOK, resp)
 				return
@@ -222,6 +225,7 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 				if fresh, ferr := deps.Sources.Get(src.ID); ferr == nil {
 					resp.Status = string(fresh.Status)
 					resp.WikiPages = fresh.WikiPages
+					resp.MaterializedPages = materializedPages(fresh.WikiPages)
 				}
 				resp.Note = fmt.Sprintf("ingested · %d page(s) · %s", pageCount, note)
 			}
