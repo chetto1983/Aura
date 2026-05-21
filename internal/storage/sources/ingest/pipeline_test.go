@@ -240,9 +240,16 @@ func TestCompile_HappyPath(t *testing.T) {
 		// re-read of an ingested source page should never say ocr_complete.
 		"Status: ingested",
 		"## Extracted Markdown",
+		`source(action="reprocess", source_id="` + src.ID + `", stages=["ingest"])`,
+		`source(action="read", source_id="` + src.ID + `")`,
 	} {
 		if !strings.Contains(page.Body, want) {
 			t.Errorf("body missing %q in:\n%s", want, page.Body)
+		}
+	}
+	for _, retired := range []string{"read" + "_source", "ingest" + "_source", "ocr" + "_source"} {
+		if strings.Contains(page.Body, retired) {
+			t.Errorf("source summary should use source(action=...) guidance, found %q in:\n%s", retired, page.Body)
 		}
 	}
 	for _, leak := range []string{"## Preview", "The quick brown fox"} {
@@ -302,8 +309,8 @@ func TestCompile_Idempotent(t *testing.T) {
 func TestCompile_MissingOCR(t *testing.T) {
 	env := newTestPipeline(t)
 	p, srcStore := env.pipeline, env.sources
-	// Status = ocr_complete but no ocr.md on disk → error pointing at the
-	// recovery path (run ocr_source first).
+	// Status = ocr_complete but no ocr.md on disk → error points at the
+	// canonical source dispatcher recovery path.
 	src, _, err := srcStore.Put(context.Background(), source.PutInput{
 		Kind:     source.KindPDF,
 		Filename: "no-ocr.pdf",
@@ -320,10 +327,14 @@ func TestCompile_MissingOCR(t *testing.T) {
 		t.Fatalf("Update: %v", err)
 	}
 
+	wantHint := `source(action="reprocess", source_id="` + src.ID + `", stages=["ocr", "ingest"])`
+	retiredOCRHint := "ocr" + "_source"
 	if _, err := p.Compile(context.Background(), src.ID); err == nil {
 		t.Fatal("expected ocr.md-missing error")
-	} else if !strings.Contains(err.Error(), "ocr.md missing") || !strings.Contains(err.Error(), "ocr_source") {
-		t.Errorf("error should hint ocr_source: %v", err)
+	} else if !strings.Contains(err.Error(), "ocr.md missing") ||
+		!strings.Contains(err.Error(), wantHint) ||
+		strings.Contains(err.Error(), retiredOCRHint) {
+		t.Errorf("error should hint canonical source dispatcher: %v", err)
 	}
 }
 
