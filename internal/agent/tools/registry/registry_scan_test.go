@@ -49,6 +49,7 @@ func TestCatalogueScanNativeTools(t *testing.T) {
 		&ExecuteShellTool{},
 		&DevToolTool{},
 		&DailyBriefingTool{loc: time.Local, now: time.Now},
+		&SearchTool{},
 	}
 
 	var failures []string
@@ -112,6 +113,7 @@ func TestCatalogueOpenWorldTools(t *testing.T) {
 	openWorld := []Tool{
 		&WebTool{},
 		&SearchMemoryTool{}, // wiki content drifts as pages are updated
+		&SearchTool{},       // wiki content drifts as pages are written
 	}
 	for _, tool := range openWorld {
 		def := definitionForTool(tool)
@@ -146,6 +148,7 @@ func TestCatalogueReadOnlyHintConsistency(t *testing.T) {
 		&ExecuteShellTool{},
 		&DevToolTool{},
 		&DailyBriefingTool{loc: time.Local, now: time.Now},
+		&SearchTool{},
 	}
 	for _, tool := range toolsToCheck {
 		def := definitionForTool(tool)

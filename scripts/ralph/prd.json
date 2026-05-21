@@ -133,7 +133,7 @@
         "Single atomic commit prefix: feat(agent): stream-time parallel tool dispatch (US-LAT-06)"
       ],
       "priority": 6,
-      "passes": true,
+      "passes": false,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read docs/restructure-research/codex-fast-lookup-2026-05-21.md carefully — exact pattern in session/turn.rs:1750-1891 (FuturesOrdered) + tools/parallel.rs:88 (RwLock for read-share). (2) Read internal/agent/loop.go IN FULL — understand the current serial dispatch path. (3) Read internal/llm/client.go (or similar) for the streaming interface — what events arrive (tool_use_delta, tool_use_done, content_done, message_done). (4) Read internal/agent/executor.go for ExecuteToolCalls — what it expects as input and returns. ARCHITECTURE: the StreamDispatcher is a NEW layer between the LLM stream consumer and the tool executor. The loop subscribes to LLM events; on tool_use_done, calls dispatcher.Submit. The dispatcher fans out across maxConcurrent goroutines (semaphore pattern: `sem := make(chan struct{}, maxConcurrent)`). Results land in a per-toolCallID slot. On message_done, the loop calls dispatcher.Wait() which blocks until all submitted tools complete, then returns the ordered results. PHANTOM CORRECTOR HOOK: before Submit, check phantomGuard.ShouldDedupCurrent(toolCall). If dup, set result = '[deduped]' WITHOUT executing. RWLOCK PATTERN (optional v1): tools registered as 'parallel_safe' (read-only by description audit US-DRIFT-05) share a read lock; writers take write lock. v0 ignores this — all tools run with simple semaphore. SCOPE DISCIPLINE: DO NOT change tool implementations. DO NOT change LLM client. DO NOT add new tools. ONLY the dispatch path. THIS IS THE BIGGEST STORY of the prd — write thorough tests. INVARIANT: if maxConcurrent==1, behavior is byte-identical to the current serial path. PERF MEASUREMENT: the benchmark MUST measure actual numbers, not estimates. Use httptest.NewServer with a fake LLM that streams 3 tool_use events 50ms apart, and a fake tool that sleeps 500ms. Serial = 1.5s+overhead, parallel = ~500ms+overhead."
     },
     {
@@ -155,7 +155,7 @@
         "Single atomic commit prefix: feat(llm): provider prompt caching enabled for static prefix (US-LAT-07)"
       ],
       "priority": 7,
-      "passes": true,
+      "passes": false,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/llm/client.go IN FULL — understand current request shape (chat completions vs Anthropic format). (2) Read internal/config/config.go for LLM_MODEL / LLM_BASE_URL — what provider/model configured. (3) Check OpenRouter docs (passed through to DeepSeek/Anthropic) for cache_control passthrough behavior — OpenRouter passes cache_control through for supported upstream models. (4) DeepSeek context caching: cache_control={type:'ephemeral'} on system messages, TTL ~1h. PROVIDER DETECTION: probe via small test request OR check base_url + model name heuristically. If unsure, default NO cache (safe). MEASUREMENT: add 'cache_hit' field to ChatReply (or parallel observability field). Bench harness captures elapsed_ms — add TTFT capture if not present. SCOPE DISCIPLINE: DO NOT change LLM client architecture. ONLY add cache_control marker injection at right message boundary. NO new provider integration. NO new fallback model. INVARIANT: when caching disabled/unsupported, behavior byte-identical to today. PERF NOTE: cache hit on ~16KB system block charges 10% normal token rate. TTFT reduction is the immediate latency win Aura needs."
     }
   ]

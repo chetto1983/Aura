@@ -43,6 +43,7 @@ func TestDescriptionAuditMarkers(t *testing.T) {
 		&ExecuteShellTool{},
 		&DevToolTool{},
 		&DailyBriefingTool{loc: time.Local, now: time.Now},
+		&SearchTool{},
 	}
 
 	// Matches: "Destructive." | "Read-only." | "Returns " | action verb

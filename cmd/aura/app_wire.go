@@ -579,11 +579,15 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 	if cfg == nil {
 		cfg = &config.Config{}
 	}
-	if tool := tools.NewSearchMemoryToolConfigured(a.deps.SearchRepo, a.deps.MemoryStore,
+	searchMemTool := tools.NewSearchMemoryToolConfigured(a.deps.SearchRepo, a.deps.MemoryStore,
 		time.Duration(cfg.MemorySearchTimeoutMS)*time.Millisecond,
-		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays); tool != nil {
-		tool.SetFreshnessStore(a.freshnessStore)
-		a.deps.Tools.Register(tool)
+		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays)
+	if searchMemTool != nil {
+		searchMemTool.SetFreshnessStore(a.freshnessStore)
+		a.deps.Tools.Register(searchMemTool)
+	}
+	if st := tools.NewSearchTool(searchMemTool, a.deps.WikiStore, tools.NewReadSourceTool(a.deps.Sources)); st != nil {
+		a.deps.Tools.Register(st)
 	}
 	if tool := tools.NewRecallOperationalTool(a.deps.MemoryStore); tool != nil {
 		tool.SetFreshnessStore(a.freshnessStore)
