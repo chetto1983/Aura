@@ -1345,6 +1345,40 @@ wired) → Audio OUT (TTS for hands-free) → Image OUT (generation tool) →
 Video IN (ffmpeg + Whisper + frame sampling, complex pipeline) → Video OUT
 (skip, rare use, heavy cost).
 
+### 7.5 Post-DRIFT phase catalog (2026-05-21)
+
+After Phase-DRIFT shipped (boundOutput cap + response-style prompt + text_response audit prep + ask_user_clarification + description audit) the user mandated a structured restructure backed by research, not speculative design. Seven parallel scouts read curated production sources (D:/tmp/{codex, elysia, nanobot, picobot, cli-printing-press, hermes-agent, openhuman, recursive-llm}), online 2026 state-of-the-art, and audited Aura's own codebase. Outputs in `docs/research-2026-05-21/` — cross-analysis in `ANALYSIS-DEEP.md`, executive summary in `MASTER-SYNTHESIS.md`.
+
+The catalog below formalizes 8 new phases derived from convergent evidence (4-source agreement is the bar). They are sequenced AFTER Phase-WIKI-B (still the unconditional blocker) except Phase-BUG which is concurrent because it fixes a live bug invalidating bench data.
+
+| Phase | Scope (1-line) | Sessions | LOC delta | Trigger |
+| --- | --- | --- | --- | --- |
+| **Phase-BUG** | Critical bug fixes from cleanup audit + scout #7 — overlay loading on `/api/chat`, `logging→api` boundary inversion, errcheck-hidden real bugs (health JSON, backup gzip), `appendUniqueSorted` dead-code | ~1 session | -30 + 2 bugs fixed | **NOW** — concurrent with Phase-WIKI-B; fixes web bench invalidation |
+| **Phase-CACHE** | Provider prompt caching (`prompt_cache_key=thread_id`) + server-driven `end_turn` termination + description ≤200 char audit + `lastToolResult` empty-reply fallback + untrusted-content snippet upgrade. Five small wins, one phase. | ~1 session | ~+100 / -50 | After Phase-WIKI-B Wave A |
+| **Phase-OUT** | Output discipline stack: truncate-middle + exec wrapper, spill-to-disk + reference envelope, repeated-lookup throttle, `tasks_completed_string` inline state, length-recovery, orphan tool_call backfill, skip-empty-assistant persist. | ~2 sessions | ~+520 | After Phase-CACHE |
+| **Phase-CONS** | Web ↔ Telegram 1+1 consolidation — CONS-02..08 (CONS-01 lives in Phase-BUG). New `internal/agentcore.Builder` + `PerTurnHooks`. Web gains 7 missing features (streaming, voice, ask_user, soft-budget, compaction, archive). | ~3 sessions | net -90 (dedup -810 + parity +720) | After Phase-OUT |
+| **Phase-TOOL** | Tool surface reduction — `os.Root` sandboxing first (-150 LOC), then kitchen-sink action-enum collapse for `source_*` + `scheduler_*` + `wiki_*` (-1100 LOC), then `read_only`/`exclusive`/`concurrency_safe` flags per-tool. Surface 22 → ~10. | ~2 sessions | -1250 | After Phase-CONS |
+| **Phase-CTX** | Context engineering substrate — `ContextEngine` ABC (hermes), `ContextCompressor` with `SUMMARY_PREFIX` + scaled budget + tool-result pruning + JSON-arg sanitizer + streaming scrubber, `payload_summarizer` with circuit breaker (openhuman), inline auto-compaction at 70% (codex). | ~3 sessions | ~+900 | After Phase-TOOL |
+| **Phase-STREAM** | Stream-time parallel tool dispatch — Codex `FuturesOrdered` pattern adapted to Go goroutines, parallel-friendly `RwLock` gate per-tool, `terminal_outcome_reached` atomic for cancel-after-finish race. Bundle with `end_turn` (lands in Phase-CACHE) for clean termination contract. | ~1 session | ~+200 | After Phase-CTX |
+| **Phase-CLEAN3** | Codebase audit follow-through — generic `mcpSetupHandler[T]` fold, `files_docx/pdf/xlsx` parameterised registrar, god-file splits (migrations 1431→24 files, probe_chat cases 1587→5 files, memoryindex/store 1143→4 files), api/types split, ~10 production dupl-cluster folds, errcheck noise cleanup, stale-comment fictions. | ~2 sessions | -700 | After Phase-STREAM |
+
+Plan files (one `plan.md` per phase, plus `INDEX.md`): `.planning/post-drift-2026-05-21/`.
+
+**Implications for existing phases (§7.4):**
+
+- **Phase-KV** (staged, cache work) — partially absorbed by Phase-CACHE for the small wins (`prompt_cache_key`, `end_turn`, description audit). Remaining Phase-KV scope (full byte-faithfulness audit per ds4 issue #62 + 20-block lookback) stays distinct; revisit after Phase-CACHE measures real cache-hit improvement.
+- **Phase 8** (DE-SCOPED, gated on concrete workload) — openhuman scout produced concrete code references (TOML `AgentDefinition`, `AgentTier`, `validate_tier_hierarchy`, three spawn primitives). Phase 8 no longer needs design — only a workload trigger. When the trigger arrives, Phase 8 implementation cost drops from ~6-12 sessions to ~2-3 (memory `reference_phase8_substrate_revised_2026-05-18` confirms).
+- **Phase-WIKI-B Wave B/C** — Online research confirmed `bge-reranker-v2-m3` as the pick (or `Qwen3-Reranker-0.6B` as drop-in swap). Reranker sidecar deploy is a Wave B/C add (Docker compose entry + `aura-init-models` extension + new `internal/llm/reranker` adapter), ~3-5 days work. Document in Wave-B plan when it gets fleshed out.
+
+**Anti-patterns reaffirmed across 4+ scouts — explicit DO-NOT-LIFT list for future maintainers:**
+
+- ❌ Fast-path classifier bypassing the agent loop (picobot has it; codex/elysia/nanobot/openhuman reject). vLLM Semantic Router is *replica routing*, not *loop bypass* — orthogonal concern.
+- ❌ LLM-as-reranker for retrieval (picobot two-tier ranker; cross-encoder reranker is the consensus, see Aura memory `feedback_minillm_cpu_not_viable_for_tool_retrieval`).
+- ❌ Compaction at 100% context (wait too long → forced summarization, signal lost; compact at 70-80%).
+- ❌ Silent truncation (always emit a marker the model recognizes; missing marker → hallucinated completeness).
+- ❌ Defaults-on for expensive tools in autonomous contexts (hermes $4.63 cron incident).
+- ❌ Wrapping every API endpoint as an MCP tool (Anthropic explicit anti-pattern; tool metadata = 40-50% of context in worst case).
+
 ---
 
 ## 7. Migration Strategy
