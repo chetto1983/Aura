@@ -1,0 +1,191 @@
+{
+  "_meta": {
+    "version": "1",
+    "compiled_at": "2026-05-21",
+    "description": "Aura quality-bench query set — 10 fixtures, 2 queries each, 20 total. Each query has a verifiable expected_substring readable in the source file. Used by cmd/quality_bench against Aura's /api/sources + /api/chat + /api/wiki/search endpoints.",
+    "case_insensitive_match": true,
+    "license": "CC0-1.0"
+  },
+  "fixtures": [
+    {
+      "id": "tika-xlsx",
+      "file": "tika-testEXCEL.xlsx",
+      "format": "xlsx",
+      "pipeline": "markitdown",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Cosa contiene il foglio Excel del fixture Tika?",
+          "expected_substring": "Numbers and their Squares"
+        },
+        {
+          "id": "q2",
+          "text": "Qual è il quadrato di 12 nel foglio Excel Tika?",
+          "expected_substring": "144"
+        }
+      ]
+    },
+    {
+      "id": "tika-docx",
+      "file": "tika-testWORD.docx",
+      "format": "docx",
+      "pipeline": "markitdown",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Quale URL del progetto Apache Tika è citato nel documento Word di test Tika?",
+          "expected_substring": "tika.apache.org"
+        },
+        {
+          "id": "q2",
+          "text": "Quali livelli di heading sono presenti nel documento Word Tika?",
+          "expected_substring": "Heading Level"
+        }
+      ]
+    },
+    {
+      "id": "tika-pptx",
+      "file": "tika-testPPT.pptx",
+      "format": "pptx",
+      "pipeline": "markitdown",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Qual è il titolo della prima slide del PowerPoint Tika?",
+          "expected_substring": "Attachment Test"
+        },
+        {
+          "id": "q2",
+          "text": "Quale parola compare nella slide 'Different words to test against' del PowerPoint Tika, oltre a 'Hello'?",
+          "expected_substring": "Watershed"
+        }
+      ]
+    },
+    {
+      "id": "istat-csv",
+      "file": "istat-covid-regioni.csv",
+      "format": "csv",
+      "pipeline": "markitdown",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Qual è il numero totale di casi COVID registrati per la regione Lombardia secondo i dati della Protezione Civile?",
+          "expected_substring": "4.391.944"
+        },
+        {
+          "id": "q2",
+          "text": "Quanti decessi COVID sono stati registrati in Emilia-Romagna nel dataset della Protezione Civile?",
+          "expected_substring": "20.158"
+        }
+      ]
+    },
+    {
+      "id": "arxiv-pdf",
+      "file": "arxiv-enigma.pdf",
+      "format": "pdf",
+      "pipeline": "mistral_ocr",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Chi sono gli autori del paper arXiv sulla decifratura di Enigma?",
+          "expected_substring": "Violante"
+        },
+        {
+          "id": "q2",
+          "text": "Di cosa tratta il paper arXiv 2008.03122?",
+          "expected_substring": "Enigma"
+        }
+      ]
+    },
+    {
+      "id": "wiki-galileo-html",
+      "file": "wiki-galileo.html",
+      "format": "html",
+      "pipeline": "markitdown",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Quando è nato Galileo Galilei secondo la fonte HTML di Wikipedia?",
+          "expected_substring": "1564"
+        },
+        {
+          "id": "q2",
+          "text": "In quale città morì Galileo Galilei?",
+          "expected_substring": "Arcetri"
+        }
+      ]
+    },
+    {
+      "id": "wiki-galileo-md",
+      "file": "wiki-galileo.md",
+      "format": "md",
+      "pipeline": "passthrough",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Dove nacque Galileo Galilei?",
+          "expected_substring": "Pisa"
+        },
+        {
+          "id": "q2",
+          "text": "Quali furono le attività principali di Galileo Galilei oltre a fisico?",
+          "expected_substring": "astronomo"
+        }
+      ]
+    },
+    {
+      "id": "wiki-dante-txt",
+      "file": "wiki-dante.txt",
+      "format": "txt",
+      "pipeline": "passthrough",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "In quale città italiana nacque Dante Alighieri?",
+          "expected_substring": "Firenze"
+        },
+        {
+          "id": "q2",
+          "text": "Qual è l'opera capolavoro di Dante Alighieri, considerata il massimo della letteratura italiana?",
+          "expected_substring": "Divina Commedia"
+        }
+      ]
+    },
+    {
+      "id": "wiki-collodi-epub",
+      "file": "wiki-collodi.epub",
+      "format": "epub",
+      "pipeline": "markitdown",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Qual è il vero nome di Carlo Collodi, l'autore di Pinocchio?",
+          "expected_substring": "Lorenzini"
+        },
+        {
+          "id": "q2",
+          "text": "In quale città nacque Carlo Collodi?",
+          "expected_substring": "Firenze"
+        }
+      ]
+    },
+    {
+      "id": "autori-json",
+      "file": "autori-italiani.json",
+      "format": "json",
+      "pipeline": "markitdown",
+      "queries": [
+        {
+          "id": "q1",
+          "text": "Quale autore italiano vinse il Premio Nobel per la letteratura nel 1934?",
+          "expected_substring": "Pirandello"
+        },
+        {
+          "id": "q2",
+          "text": "Qual è il vero nome di Italo Svevo, l'autore de 'La coscienza di Zeno'?",
+          "expected_substring": "Schmitz"
+        }
+      ]
+    }
+  ]
+}

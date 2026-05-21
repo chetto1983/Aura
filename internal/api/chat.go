@@ -37,6 +37,12 @@ type ChatReply struct {
 	LLMCalls  int    `json:"llm_calls"`
 	ToolCalls int    `json:"tool_calls"`
 	Tokens    int    `json:"tokens"`
+	// ToolsUsed lists the unique tool names invoked during the run, in the
+	// order first seen. Populated from EventToolStart events by the web
+	// outbound adapter. Used by quality-bench to verify tool-selection
+	// (e.g., did Aura call web_search when only wiki tools were appropriate?).
+	// Empty when no tools were called or the channel doesn't track tool names.
+	ToolsUsed []string `json:"tools_used,omitempty"`
 }
 
 // ChatRequest is the POST /chat request body.

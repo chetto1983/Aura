@@ -25,6 +25,11 @@ type ChatReply struct {
 	LLMCalls  int
 	ToolCalls int
 	Tokens    int
+	// ToolsUsed lists the unique tool names invoked during the run, in the
+	// order first seen. Captured from EventToolStart events by Buffer.apply.
+	// Used by quality-bench to verify tool-selection (e.g., did Aura use
+	// web_search when only wiki tools were appropriate?).
+	ToolsUsed []string
 }
 
 // ChatService is the production bridge from api.ChatService onto chat.Hub.
@@ -85,6 +90,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 			LLMCalls:  res.LLMCalls,
 			ToolCalls: res.ToolCalls,
 			Tokens:    res.TokensTotal,
+			ToolsUsed: res.ToolsUsed,
 		}, runErr
 	}
 	return ChatReply{
@@ -94,6 +100,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 		LLMCalls:  res.LLMCalls,
 		ToolCalls: res.ToolCalls,
 		Tokens:    res.TokensTotal,
+		ToolsUsed: res.ToolsUsed,
 	}, nil
 }
 

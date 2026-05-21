@@ -37,8 +37,14 @@ type Result struct {
 	CostUSD          float64
 	ElapsedMs        int64
 	TerminalTool     string
+	// ToolsUsed lists the unique tool names invoked during the run, in the
+	// order first seen. Captured from EventToolStart events so callers can
+	// observe which tools the agent picked without parsing logs. Used by
+	// the quality-bench harness to verify tool-selection decisions.
+	ToolsUsed []string
 
-	startedAt time.Time
+	startedAt    time.Time
+	toolsUsedSet map[string]struct{}
 }
 
 // Buffer collects events for a single run. Created by Router.NewBuffer
@@ -53,8 +59,11 @@ type Buffer struct {
 
 func newBuffer() *Buffer {
 	return &Buffer{
-		done:   make(chan struct{}),
-		result: Result{startedAt: time.Now()},
+		done: make(chan struct{}),
+		result: Result{
+			startedAt:    time.Now(),
+			toolsUsedSet: make(map[string]struct{}),
+		},
 	}
 }
 
@@ -74,6 +83,13 @@ func (b *Buffer) apply(ev chat.OutboundEvent) {
 		}
 		if d, ok := ev.Payload["delivered"].(bool); ok {
 			b.result.Delivered = d
+		}
+	case chat.EventToolStart:
+		if name, ok := ev.Payload["tool"].(string); ok && name != "" {
+			if _, seen := b.result.toolsUsedSet[name]; !seen {
+				b.result.toolsUsedSet[name] = struct{}{}
+				b.result.ToolsUsed = append(b.result.ToolsUsed, name)
+			}
 		}
 	case chat.EventUsage:
 		if v, ok := ev.Payload["llm_calls"].(int); ok {

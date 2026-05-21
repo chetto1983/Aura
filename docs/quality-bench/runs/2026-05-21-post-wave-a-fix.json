@@ -1,0 +1,342 @@
+{
+  "date": "2026-05-21",
+  "label": "post-wave-a-fix",
+  "base_url": "http://localhost:18080/api",
+  "total_queries": 20,
+  "passes": 18,
+  "pass_rate": 0.9,
+  "p95_latency_ms": 77308,
+  "avg_tool_calls": 3.25,
+  "fixtures": [
+    {
+      "fixture_id": "tika-xlsx",
+      "file": "tika-testEXCEL.xlsx",
+      "format": "xlsx",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "tika-xlsx",
+          "query_id": "q1",
+          "text": "Cosa contiene il foglio Excel del fixture Tika?",
+          "expected_substring": "Numbers and their Squares",
+          "reply": "Il file **tika-testEXCEL.xlsx** (usato come fixture per testare Apache Tika) contiene **3 fogli**:\n\n### Feuil1 — il foglio principale\n- **Titolo:** *Sample Excel Worksheet - Numbers and their Squares*\n- Una tabella con numeri da **1 a 15** e i rispettivi **quadrati**:\n  | Number | Square |\n  |--------|--------|\n  | 1 | 1 |\n  | 2 | 4 |\n  | 3 | 9 |\n  | … | … |\n  | 15 | 225 |\n- Nota in fondo: *\"Written and saved in Microsoft Excel X for Mac Service Release 1.\"*\n\n### Feuil2 e Feuil3\n- Entrambi **vuoti**.\n\nIn pratica è un file di test minimale per verificare che Tika estragga correttamente dati numerici e formule (il quadrato) da un foglio Excel.",
+          "pass": true,
+          "latency_ms": 23551,
+          "tool_calls": 3,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "source"
+          ]
+        },
+        {
+          "fixture_id": "tika-xlsx",
+          "query_id": "q2",
+          "text": "Qual è il quadrato di 12 nel foglio Excel Tika?",
+          "expected_substring": "144",
+          "reply": "Dal foglio **Feuil1** del file `tika-testEXCEL.xlsx`, il quadrato di **12** è **144** (12² = 144).",
+          "pass": true,
+          "latency_ms": 3759,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "tika-docx",
+      "file": "tika-testWORD.docx",
+      "format": "docx",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "tika-docx",
+          "query_id": "q1",
+          "text": "Quale URL del progetto Apache Tika è citato nel documento Word di test Tika?",
+          "expected_substring": "tika.apache.org",
+          "reply": "Nel documento **tika-testWORD.docx** l'unico URL citato è di **Apache POI** (non Tika):\n\n\u003e **Apache POI:** [http://poi.apache.org/](http://poi.apache.org/)\n\nÈ un riferimento alla libreria che Apache POI (usata da Tika internamente per estrarre i file Office) — nel documento di test compare come esempio di link.",
+          "pass": false,
+          "latency_ms": 77308,
+          "tool_calls": 10,
+          "tools_used": [
+            "search_memory",
+            "source",
+            "file"
+          ]
+        },
+        {
+          "fixture_id": "tika-docx",
+          "query_id": "q2",
+          "text": "Quali livelli di heading sono presenti nel documento Word Tika?",
+          "expected_substring": "Heading Level",
+          "reply": "Dal **tika-testWORD.docx** emergono **3 livelli di heading**:\n\n- **H1** (due occorrenze): *Main Heading* e *Heading Level 1*\n- **H2**: *Heading Level 2*\n- **H3**: *Heading Level 3*",
+          "pass": true,
+          "latency_ms": 3536,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "tika-pptx",
+      "file": "tika-testPPT.pptx",
+      "format": "pptx",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "tika-pptx",
+          "query_id": "q1",
+          "text": "Qual è il titolo della prima slide del PowerPoint Tika?",
+          "expected_substring": "Attachment Test",
+          "reply": "Il titolo della prima slide è **Attachment Test** (sottotitolo: *Rajiv*).",
+          "pass": true,
+          "latency_ms": 14616,
+          "tool_calls": 2,
+          "tools_used": [
+            "source"
+          ]
+        },
+        {
+          "fixture_id": "tika-pptx",
+          "query_id": "q2",
+          "text": "Quale parola compare nella slide 'Different words to test against' del PowerPoint Tika, oltre a 'Hello'?",
+          "expected_substring": "Watershed",
+          "reply": "Dalla slide 3 *\"Different words to test against\"* — oltre a **Hello** — compaiono queste parole:\n\n- **Quest**\n- **Watershed**\n- **Avalanche**\n- **Black Panther**\n- **Mystery**\n- **Banking**\n- **Investment**",
+          "pass": true,
+          "latency_ms": 4753,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "istat-csv",
+      "file": "istat-covid-regioni.csv",
+      "format": "csv",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "istat-csv",
+          "query_id": "q1",
+          "text": "Qual è il numero totale di casi COVID registrati per la regione Lombardia secondo i dati della Protezione Civile?",
+          "expected_substring": "4.391.944",
+          "reply": "Dalla riga della **Lombardia** (codice_regione 03) nel dataset della Protezione Civile (aggiornato al 2025-01-08), il **totale dei casi COVID registrati** è:\n\n**4.391.944**\n\nEcco il dettaglio della riga:\n- `totale_casi`: **4.391.944**\n- `dimessi_guariti`: 4.342.249\n- `deceduti`: 48.739\n- `totale_positivi` (attuali): 956\n- `terapia_intensiva`: 3",
+          "pass": true,
+          "latency_ms": 116933,
+          "tool_calls": 25,
+          "tools_used": [
+            "search_memory",
+            "file",
+            "source",
+            "execute_shell",
+            "execute_code"
+          ]
+        },
+        {
+          "fixture_id": "istat-csv",
+          "query_id": "q2",
+          "text": "Quanti decessi COVID sono stati registrati in Emilia-Romagna nel dataset della Protezione Civile?",
+          "expected_substring": "20.158",
+          "reply": "Nel dataset della Protezione Civile (aggiornato all'8 gennaio 2025), in **Emilia-Romagna** sono stati registrati **20.158 decessi** COVID.\n\nDettaglio della riga:\n- `deceduti`: **20.158**\n- `totale_casi`: 2.226.840\n- `dimessi_guariti`: 2.205.615\n- `totale_positivi` (attuali): 1.067\n- `ricoverati_con_sintomi`: 370\n- `terapia_intensiva`: 13",
+          "pass": true,
+          "latency_ms": 30093,
+          "tool_calls": 4,
+          "tools_used": [
+            "source"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "arxiv-pdf",
+      "file": "arxiv-enigma.pdf",
+      "format": "pdf",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "arxiv-pdf",
+          "query_id": "q1",
+          "text": "Chi sono gli autori del paper arXiv sulla decifratura di Enigma?",
+          "expected_substring": "Violante",
+          "reply": "L'unico autore del paper arXiv **\"Sulla decifratura di Enigma — Come un reverendo del XVIII secolo contribuì alla sconfitta degli U-boot tedeschi durante la Seconda Guerra Mondiale\"** (arXiv:2008.03122) è **Fabio Priuli**.\n\nÈ un articolo singolo, scritto in italiano, che esplora il contributo del teorema di Bayes e della probabilità soggettiva nel lavoro di decifratura dei messaggi Enigma a Bletchley Park durante la Seconda Guerra Mondiale.",
+          "pass": false,
+          "latency_ms": 34055,
+          "tool_calls": 5,
+          "tools_used": [
+            "web"
+          ]
+        },
+        {
+          "fixture_id": "arxiv-pdf",
+          "query_id": "q2",
+          "text": "Di cosa tratta il paper arXiv 2008.03122?",
+          "expected_substring": "Enigma",
+          "reply": "Il paper **arXiv:2008.03122** — *\"Sulla decifratura di Enigma — Come un reverendo del XVIII secolo contribuì alla sconfitta degli U-boot tedeschi durante la Seconda Guerra Mondiale\"* — è un articolo di **Fabio Priuli** (singolo autore, in italiano) che esplora il contributo del **teorema di Bayes** e della **probabilità soggettiva** al lavoro di decifratura dei messaggi cifrati con le macchine Enigma a Bletchley Park durante la Seconda Guerra Mondiale.\n\nIn particolare, spiega come le idee del reverendo **Thomas Bayes** (XVIII secolo), formalizzate poi da **Pierre-Simon Laplace**, furono applicate dai crittografi britannici — tra cui **Alan Turing** — per sviluppare metodi statistici (come il *Banburismus*) che permisero di ridurre lo spazio di ricerca delle chiavi Enigma e contribuirono in modo significativo alla sconfitta degli U-boot tedeschi nell'Atlantico.",
+          "pass": true,
+          "latency_ms": 8827,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-galileo-html",
+      "file": "wiki-galileo.html",
+      "format": "html",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "wiki-galileo-html",
+          "query_id": "q1",
+          "text": "Quando è nato Galileo Galilei secondo la fonte HTML di Wikipedia?",
+          "expected_substring": "1564",
+          "reply": "Secondo il sorgente HTML della pagina Wikipedia italiana, Galileo Galilei **nacque il 15 febbraio 1564** a Pisa.\n\nNel codice HTML si trova testualmente: `\u003cp id=\"mwxw\"\u003eGalileo Galilei nacque il 15 febbraio 1564 a \u003ca ...\u003ePisa\u003c/a\u003e...`",
+          "pass": true,
+          "latency_ms": 43731,
+          "tool_calls": 5,
+          "tools_used": [
+            "web",
+            "execute_code"
+          ]
+        },
+        {
+          "fixture_id": "wiki-galileo-html",
+          "query_id": "q2",
+          "text": "In quale città morì Galileo Galilei?",
+          "expected_substring": "Arcetri",
+          "reply": "Galileo Galilei morì ad **Arcetri**, una frazione di **Firenze**.\n\nNel codice HTML della pagina Wikipedia si legge: *\"la morte di Galilei che sopraggiungerà diciannove giorni dopo nella notte dell'8 gennaio 1642 ad Arcetri\"*, e la pagina è categorizzata tra i \"Morti ad Arcetri\".",
+          "pass": true,
+          "latency_ms": 17007,
+          "tool_calls": 2,
+          "tools_used": [
+            "web",
+            "execute_code"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-galileo-md",
+      "file": "wiki-galileo.md",
+      "format": "md",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "wiki-galileo-md",
+          "query_id": "q1",
+          "text": "Dove nacque Galileo Galilei?",
+          "expected_substring": "Pisa",
+          "reply": "A **Pisa**, secondo la fonte HTML di Wikipedia: *\"Galileo Galilei nacque il 15 febbraio 1564 a Pisa\"*.",
+          "pass": true,
+          "latency_ms": 4254,
+          "tool_calls": 0
+        },
+        {
+          "fixture_id": "wiki-galileo-md",
+          "query_id": "q2",
+          "text": "Quali furono le attività principali di Galileo Galilei oltre a fisico?",
+          "expected_substring": "astronomo",
+          "reply": "Dalla fonte HTML di Wikipedia, le attività principali di Galileo Galilei nel template Bio sono:\n\n- **Fisico** (attività principale)\n- **Astronomo**\n- **Filosofo**\n- **Matematico**\n- **Scrittore**",
+          "pass": true,
+          "latency_ms": 29308,
+          "tool_calls": 3,
+          "tools_used": [
+            "execute_code"
+          ]
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-dante-txt",
+      "file": "wiki-dante.txt",
+      "format": "txt",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "wiki-dante-txt",
+          "query_id": "q1",
+          "text": "In quale città italiana nacque Dante Alighieri?",
+          "expected_substring": "Firenze",
+          "reply": "Secondo la fonte HTML di Wikipedia, Dante Alighieri nacque a **Firenze**.\n\nNel template Bio si trova: `\"LuogoNascita\":{\"wt\":\"Firenze\"}`.",
+          "pass": true,
+          "latency_ms": 14341,
+          "tool_calls": 2,
+          "tools_used": [
+            "web",
+            "execute_code"
+          ]
+        },
+        {
+          "fixture_id": "wiki-dante-txt",
+          "query_id": "q2",
+          "text": "Qual è l'opera capolavoro di Dante Alighieri, considerata il massimo della letteratura italiana?",
+          "expected_substring": "Divina Commedia",
+          "reply": "La **Divina Commedia**.",
+          "pass": true,
+          "latency_ms": 4099,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-collodi-epub",
+      "file": "wiki-collodi.epub",
+      "format": "epub",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "wiki-collodi-epub",
+          "query_id": "q1",
+          "text": "Qual è il vero nome di Carlo Collodi, l'autore di Pinocchio?",
+          "expected_substring": "Lorenzini",
+          "reply": "Il vero nome di Carlo Collodi è **Carlo Lorenzo Filippo Giovanni Lorenzini**.",
+          "pass": true,
+          "latency_ms": 10562,
+          "tool_calls": 1,
+          "tools_used": [
+            "web"
+          ]
+        },
+        {
+          "fixture_id": "wiki-collodi-epub",
+          "query_id": "q2",
+          "text": "In quale città nacque Carlo Collodi?",
+          "expected_substring": "Firenze",
+          "reply": "A **Firenze**.",
+          "pass": true,
+          "latency_ms": 5737,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "autori-json",
+      "file": "autori-italiani.json",
+      "format": "json",
+      "ingested": false,
+      "queries": [
+        {
+          "fixture_id": "autori-json",
+          "query_id": "q1",
+          "text": "Quale autore italiano vinse il Premio Nobel per la letteratura nel 1934?",
+          "expected_substring": "Pirandello",
+          "reply": "**Luigi Pirandello**.",
+          "pass": true,
+          "latency_ms": 15393,
+          "tool_calls": 2,
+          "tools_used": [
+            "web"
+          ]
+        },
+        {
+          "fixture_id": "autori-json",
+          "query_id": "q2",
+          "text": "Qual è il vero nome di Italo Svevo, l'autore de 'La coscienza di Zeno'?",
+          "expected_substring": "Schmitz",
+          "reply": "Il vero nome di Italo Svevo è **Aron Hector Schmitz**.",
+          "pass": true,
+          "latency_ms": 8215,
+          "tool_calls": 1,
+          "tools_used": [
+            "web"
+          ]
+        }
+      ]
+    }
+  ]
+}

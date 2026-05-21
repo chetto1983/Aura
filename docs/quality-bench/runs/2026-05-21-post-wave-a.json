@@ -1,0 +1,302 @@
+{
+  "date": "2026-05-21",
+  "label": "post-wave-a",
+  "base_url": "http://localhost:18080/api",
+  "total_queries": 20,
+  "passes": 15,
+  "pass_rate": 0.75,
+  "p95_latency_ms": 43042,
+  "avg_tool_calls": 1.9,
+  "fixtures": [
+    {
+      "fixture_id": "tika-xlsx",
+      "file": "tika-testEXCEL.xlsx",
+      "format": "xlsx",
+      "source_id": "src_960ba8f1cfa5838b",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "tika-xlsx",
+          "query_id": "q1",
+          "text": "Cosa contiene il foglio Excel del fixture Tika?",
+          "expected_substring": "Numbers and their Squares",
+          "reply": "Il file **tika-testEXCEL.xlsx** è un classico fixture di test per Apache Tika. Contiene 3 fogli:\n\n**Feuil1** — l'unico con dati:\n- Titolo: *Sample Excel Worksheet - Numbers and their Squares*\n- Due colonne: **Number** e **Square**, con i numeri da **1 a 15** e i rispettivi **quadrati** (1, 4, 9, 16, 25, 36, 49, 64, 81, 100, 121, 144, 169, 196, 225).\n- In fondo una nota: *\"Written and saved in Microsoft Excel X for Mac Service Release 1.\"*\n\n**Feuil2** e **Feuil3** — completamente vuoti.\n\nInsomma, un dataset minimale usato per verificare che Tika estragga correttamente numeri, formule e struttura da un file `.xlsx`.",
+          "pass": true,
+          "latency_ms": 25246,
+          "tool_calls": 4
+        },
+        {
+          "fixture_id": "tika-xlsx",
+          "query_id": "q2",
+          "text": "Qual è il quadrato di 12 nel foglio Excel Tika?",
+          "expected_substring": "144",
+          "reply": "144. Come riportato nel foglio, alla riga **Number=12** corrisponde **Square=144** (12 × 12).",
+          "pass": true,
+          "latency_ms": 6480,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "tika-docx",
+      "file": "tika-testWORD.docx",
+      "format": "docx",
+      "source_id": "src_67797f5691cb5346",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "tika-docx",
+          "query_id": "q1",
+          "text": "Quale URL di Apache è citato nel documento Word di test Tika?",
+          "expected_substring": "tika.apache.org",
+          "reply": "Nel documento **tika-testWORD.docx** è citato l'URL:\n\n**`http://poi.apache.org/`** \n\n— il sito di Apache POI, la libreria Java per manipolare documenti Office, spesso usata in combinazione con Tika nei test.",
+          "pass": false,
+          "latency_ms": 25244,
+          "tool_calls": 4
+        },
+        {
+          "fixture_id": "tika-docx",
+          "query_id": "q2",
+          "text": "Quali livelli di heading sono presenti nel documento Word Tika?",
+          "expected_substring": "Heading Level",
+          "reply": "Nel documento **tika-testWORD.docx** sono presenti heading di **livello 1, 2 e 3**:\n\n- **H1**: *Main Heading* e *Heading Level 1*\n- **H2**: *Heading Level 2*\n- **H3**: *Heading Level 3*\n\nOltre al titolo principale *Sample Word Document Title* e un sottotitolo, che però non sono marcati come heading nei metadati strutturali.",
+          "pass": true,
+          "latency_ms": 6784,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "tika-pptx",
+      "file": "tika-testPPT.pptx",
+      "format": "pptx",
+      "source_id": "src_730a6ade20208eaa",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "tika-pptx",
+          "query_id": "q1",
+          "text": "Qual è il titolo della prima slide del PowerPoint Tika?",
+          "expected_substring": "Attachment Test",
+          "reply": "Non ho dati sufficienti in questo contesto: non ho mai interrogato né visto alcun file PowerPoint nei risultati delle ricerche precedenti. Se mi permetti di fare un'altra ricerca nel prossimo giro, posso trovarlo.",
+          "pass": false,
+          "latency_ms": 13165,
+          "tool_calls": 0
+        },
+        {
+          "fixture_id": "tika-pptx",
+          "query_id": "q2",
+          "text": "Quale parola compare nella slide 'Different words to test against' del PowerPoint Tika, oltre a 'Hello'?",
+          "expected_substring": "Watershed",
+          "reply": "Nella slide **\"Different words to test against\"** del file **tika-testPPT.pptx**, oltre a *Hello*, compaiono queste parole:\n\n- **Quest**\n- **Watershed**\n- **Avalanche**\n- **Black Panther**\n- **Mystery**\n- **Banking**\n- **Investment**\n\n7 parole in totale, elencate in ordine verticale nella slide.",
+          "pass": true,
+          "latency_ms": 23955,
+          "tool_calls": 3
+        }
+      ]
+    },
+    {
+      "fixture_id": "istat-csv",
+      "file": "istat-covid-regioni.csv",
+      "format": "csv",
+      "source_id": "src_7c07214f20441012",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "istat-csv",
+          "query_id": "q1",
+          "text": "Qual è il numero totale di casi COVID registrati per la regione Lombardia secondo i dati della Protezione Civile?",
+          "expected_substring": "4391944",
+          "reply": "Secondo l'ultimo file pubblicato dalla **Protezione Civile** (dataset ufficiale GitHub, aggiornato al **8 gennaio 2025**), il totale dei casi COVID registrati per la **Lombardia** è:\n\n**4.391.944** casi totali\n\nNel dettaglio:\n- **Dimessi/guariti**: 4.342.249\n- **Deceduti**: 48.739\n- **Positivi attuali**: 956\n\nNota: il dataset della Protezione Civile non viene più aggiornato dal gennaio 2025 (fine dello stato di emergenza). I dati più recenti (settembre 2025) mostrano una ripresa dei contagi — circa 2.052 nuovi casi a settimana in Italia — ma la Lombardia rimane la regione con il maggior numero storico di casi accumulati.",
+          "pass": false,
+          "latency_ms": 43042,
+          "tool_calls": 6
+        },
+        {
+          "fixture_id": "istat-csv",
+          "query_id": "q2",
+          "text": "Quanti decessi COVID sono stati registrati in Emilia-Romagna nel dataset della Protezione Civile?",
+          "expected_substring": "20158",
+          "reply": "**20.158 decessi** — è il dato registrato per l'Emilia-Romagna nell'ultimo dataset della Protezione Civile (8 gennaio 2025).",
+          "pass": false,
+          "latency_ms": 9390,
+          "tool_calls": 1
+        }
+      ]
+    },
+    {
+      "fixture_id": "arxiv-pdf",
+      "file": "arxiv-enigma.pdf",
+      "format": "pdf",
+      "source_id": "src_8f2eb56ec4cbf6dc",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "arxiv-pdf",
+          "query_id": "q1",
+          "text": "Chi sono gli autori del paper arXiv sulla decifratura di Enigma?",
+          "expected_substring": "Violante",
+          "reply": "L'autore del paper arXiv **\"Learning the Enigma with Recurrent Neural Networks\"** (arXiv:1708.07576) è **Sam Greydanus** — single author. Il paper mostra come una RNN con LSTM possa imparare a decifrare il cifrario di Enigma.",
+          "pass": false,
+          "latency_ms": 103288,
+          "tool_calls": 9
+        },
+        {
+          "fixture_id": "arxiv-pdf",
+          "query_id": "q2",
+          "text": "Di cosa tratta il paper arXiv 2008.03122?",
+          "expected_substring": "Enigma",
+          "reply": "Il paper **arXiv:2008.03122** si intitola **\"Sulla decifratura di Enigma — Come un reverendo del XVIII secolo contribuì alla sconfitta degli U-boot tedeschi durante la Seconda Guerra Mondiale\"**, scritto in italiano da **Fabio Priuli** (luglio 2020).\n\nTratta del contributo del **teorema di Bayes** (da qui \"il reverendo del XVIII secolo\", Thomas Bayes) e delle idee della **probabilità soggettiva** nel lavoro di decifratura dei messaggi cifrati con Enigma a **Bletchley Park** durante la Seconda Guerra Mondiale.",
+          "pass": true,
+          "latency_ms": 16815,
+          "tool_calls": 1
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-galileo-html",
+      "file": "wiki-galileo.html",
+      "format": "html",
+      "source_id": "src_cbb00001d6952f85",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-galileo-html",
+          "query_id": "q1",
+          "text": "Quando è nato Galileo Galilei secondo la fonte HTML di Wikipedia?",
+          "expected_substring": "1564",
+          "reply": "Secondo il sorgente HTML/raw di Wikipedia, Galileo Galilei è nato il **15 febbraio 1564**.",
+          "pass": true,
+          "latency_ms": 38911,
+          "tool_calls": 4
+        },
+        {
+          "fixture_id": "wiki-galileo-html",
+          "query_id": "q2",
+          "text": "In quale città morì Galileo Galilei?",
+          "expected_substring": "Arcetri",
+          "reply": "Dai dati che ho già della pagina Wikipedia (`action=raw`), il campo `LuogoMorte` è **Arcetri**. Arcetri è una località collinare nei pressi di Firenze, dove Galileo trascorse gli ultimi anni sotto arresti domiciliari.\n\nMorì quindi ad **Arcetri** (oggi una frazione del comune di **Firenze**). La città di riferimento è **Firenze**.",
+          "pass": true,
+          "latency_ms": 12701,
+          "tool_calls": 1
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-galileo-md",
+      "file": "wiki-galileo.md",
+      "format": "md",
+      "source_id": "src_1170ec3344c01e74",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-galileo-md",
+          "query_id": "q1",
+          "text": "Dove nacque Galileo Galilei?",
+          "expected_substring": "Pisa",
+          "reply": "Dal sorgente Wikipedia: `LuogoNascita = Pisa`.\n\nGalileo Galilei nacque a **Pisa**, il 15 febbraio 1564.",
+          "pass": true,
+          "latency_ms": 13250,
+          "tool_calls": 0
+        },
+        {
+          "fixture_id": "wiki-galileo-md",
+          "query_id": "q2",
+          "text": "Quali furono le attività principali di Galileo Galilei oltre a fisico?",
+          "expected_substring": "astronomo",
+          "reply": "Dai campi del template Bio nella pagina Wikipedia, le sue attività principali furono:\n\n1. **Fisico** (già menzionato)\n2. **Astronomo**\n3. **Filosofo**\n4. **Matematico**\n5. **Scrittore**\n\nOltre a fisico, dunque: astronomo, filosofo, matematico e scrittore.",
+          "pass": true,
+          "latency_ms": 6215,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-dante-txt",
+      "file": "wiki-dante.txt",
+      "format": "txt",
+      "source_id": "src_d410fb24696c71c6",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-dante-txt",
+          "query_id": "q1",
+          "text": "In quale città italiana nacque Dante Alighieri?",
+          "expected_substring": "Firenze",
+          "reply": "Dante Alighieri nacque a **Firenze**.",
+          "pass": true,
+          "latency_ms": 16490,
+          "tool_calls": 2
+        },
+        {
+          "fixture_id": "wiki-dante-txt",
+          "query_id": "q2",
+          "text": "Qual è l'opera capolavoro di Dante Alighieri, considerata il massimo della letteratura italiana?",
+          "expected_substring": "Divina Commedia",
+          "reply": "L'opera capolavoro di Dante Alighieri è la **Divina Commedia**, universalmente considerata la massima opera della letteratura italiana e uno dei più grandi capolavori della letteratura mondiale.",
+          "pass": true,
+          "latency_ms": 5869,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "wiki-collodi-epub",
+      "file": "wiki-collodi.epub",
+      "format": "epub",
+      "source_id": "src_98c23e4f7b02dc1a",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "wiki-collodi-epub",
+          "query_id": "q1",
+          "text": "Qual è il vero nome di Carlo Collodi, l'autore di Pinocchio?",
+          "expected_substring": "Lorenzini",
+          "reply": "Il vero nome di Carlo Collodi è **Carlo Lorenzo Filippo Giovanni Lorenzini**.",
+          "pass": true,
+          "latency_ms": 9224,
+          "tool_calls": 1
+        },
+        {
+          "fixture_id": "wiki-collodi-epub",
+          "query_id": "q2",
+          "text": "In quale città nacque Carlo Collodi?",
+          "expected_substring": "Firenze",
+          "reply": "Nacque a **Firenze**, il 24 novembre 1826.",
+          "pass": true,
+          "latency_ms": 3811,
+          "tool_calls": 0
+        }
+      ]
+    },
+    {
+      "fixture_id": "autori-json",
+      "file": "autori-italiani.json",
+      "format": "json",
+      "source_id": "src_d22bbddaa7d76ef2",
+      "ingested": true,
+      "queries": [
+        {
+          "fixture_id": "autori-json",
+          "query_id": "q1",
+          "text": "Quale autore italiano vinse il Premio Nobel per la letteratura nel 1934?",
+          "expected_substring": "Pirandello",
+          "reply": "**Luigi Pirandello** — drammaturgo, scrittore e poeta italiano, insignito del Nobel per la letteratura nel 1934.",
+          "pass": true,
+          "latency_ms": 13622,
+          "tool_calls": 1
+        },
+        {
+          "fixture_id": "autori-json",
+          "query_id": "q2",
+          "text": "Qual è il vero nome di Italo Svevo, l'autore de 'La coscienza di Zeno'?",
+          "expected_substring": "Schmitz",
+          "reply": "Il vero nome di Italo Svevo è **Aron Hector Schmitz**.",
+          "pass": true,
+          "latency_ms": 9130,
+          "tool_calls": 1
+        }
+      ]
+    }
+  ]
+}

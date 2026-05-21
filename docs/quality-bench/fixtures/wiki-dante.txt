@@ -1,0 +1,814 @@
+
+Dante Alighieri<a href=\"./Wikipedia:Politica_di_protezione_delle_pagine#Protezione_parziale\" title=\"Questa pagina è semiprotetta. Può essere modificata solo da utenti registrati\" id=\"mwBA\"><img alt=\"Questa pagina è semiprotetta. Può essere modificata solo da utenti registrati\" resource=\"./File:Semi-protection-shackle-itwiki.svg\" src=\"//upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Semi-protection-shackle-itwiki.svg/40px-Semi-protection-shackle-itwiki.svg.png\" decoding=\"async\" data-file-width=\"512\" data-file-height=\"512\" data-file-type=\"drawing\" height=\"30\" width=\"30\" srcset=\"//upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Semi-protection-shackle-itwiki.svg/60px-Semi-protection-shackle-itwiki.svg.png 2x\" class=\"mw-file-element\" id=\"mwBQ\"/></a></span>","parts":[{"template":{"target":{"wt":"Protetta","href":"./Template:Protetta"},"params":{},"i":0}}]}' id="mwBg"/>
+body:not(.skin-minerva) .mw-parser-output .hatnote.nota-disambigua{clear:both;margin-top:0;padding:.05em .5em}.mw-parser-output .hatnote-content{align-items:center;display:flex}.mw-parser-output .hatnote-icon{flex-shrink:0}.mw-parser-output .hatnote-icon img{display:flex}.mw-parser-output .hatnote-text{font-style:italic}body:not(.skin-minerva) .mw-parser-output .hatnote{border:1px solid #CCC;display:flex;margin:.5em 0;padding:.2em .5em}body:not(.skin-minerva) .mw-parser-output .hatnote-text{padding-left:.5em}body.skin-minerva .mw-parser-output .hatnote-icon{padding-right:8px}body.skin-minerva .mw-parser-output .hatnote-icon img{height:auto;width:16px}body.skin--responsive .mw-parser-output .hatnote a.new{color:#d73333}body.skin--responsive .mw-parser-output .hatnote a.new:visited{color:#a55858}
+ Disambiguazione – Se stai cercando altri significati, vedi Dante Alighieri (disambigua).
+
+ Disambiguazione – "Dante" rimanda qui. Se stai cercando altri significati, vedi Dante (disambigua).
+
+.mw-parser-output .sinottico{background-color:#f8f9fa;border:1px solid #c8ccd1;border-spacing:0;clear:right;float:right;font-size:95%;line-height:1.4em;margin:0 0 1em 1.5em;width:280px}.mw-parser-output .sinottico caption{font-weight:bold}.mw-parser-output .sinottico>tbody>tr>th:not(:only-child),.mw-parser-output .sinottico_annidata>tbody>tr>th:not(:only-child){background-color:#f3f3f3;border-right:1px solid #e5e5e8;text-align:left;vertical-align:top}.mw-parser-output .sinottico>tbody>tr:not(:last-child)>td,.mw-parser-output .sinottico>tbody>tr:not(:last-child)>th,.mw-parser-output .sinottico_annidata>tbody>tr>td,.mw-parser-output .sinottico_annidata>tbody>tr>th{border-bottom:1px solid #e0e0e0}.mw-parser-output .sinottico>tbody>tr>td,.mw-parser-output .sinottico>tbody>tr>th:not(:only-child),.mw-parser-output .sinottico_annidata>tbody>tr>td,.mw-parser-output .sinottico_annidata>tbody>tr>th:not(:only-child){padding:.25em .4em}.mw-parser-output .sinottico>tbody>tr>td,.mw-parser-output .sinottico_annidata>tbody>tr>td{vertical-align:middle}.mw-parser-output .sinottico>tbody>tr>td>hr:only-child{margin:0.4em 0.2em}.mw-parser-output .sinottico ul{margin:0 0 0 1em;padding:0}.mw-parser-output .sinottico_annidata{border-spacing:0;margin:0 -.4em;width:calc(100% + calc(.4em*2))}.mw-parser-output .sinottico_annidata:last-child{margin-bottom:-.2em}.mw-parser-output .sinottico_annidata:last-child>tbody>tr:last-child>td,.mw-parser-output .sinottico_annidata:last-child>tbody>tr:last-child>th{border-bottom:none}.mw-parser-output .sinottico_divisione+.sinottico_divisione>th,.mw-parser-output .sinottico_testata+.sinottico_divisione>th{border-top:2px solid #f8f9fa}.mw-parser-output .sinottico_divisione th{background-color:#eeeeee;padding:.15em .4em;text-align:center}.mw-parser-output .sinottico_piede{text-align:center;font-size:90%;background:#EFEFEF}.mw-parser-output .sinottico_piede2{background-color:white;font-size:xx-small;padding-bottom:0;text-align:right}.mw-parser-output .sinottico_sottotitolo{font-size:80%}.mw-parser-output .sinottico_testata th{background-color:#dedede;font-size:116%;padding:.2em .4em;text-align:center}.mw-parser-output .sinottico_testo_centrale{text-align:center}Dante AlighieriSandro Botticelli, Ritratto di Dante, tempera su tela, 1495, Ginevra, collezione privata
+Priore del Comune di FirenzeDurata mandato15 giugno 1300 –15 agosto 1300
+
+Membro del Consiglio dei CentoDurata mandatomaggio 1296 –settembre 1296
+
+Dati generaliFazione politicaGuelfi bianchi
+Professionescrittore, politico
+
+{{Treccani|dante-alighieri|Dante Alighieri|v = |accesso = 5 aprile 2016}}</ref><ref>{{Cita libro|autore=Guglielmo Gorni|editore=Laterza|titolo=Dante: Storia di un visionario||anno=2011|}}</ref><ref>{{Cita TV|autore=Alessandro Barbero|wkautore=Alessandro Barbero|titolo=Alighieri Durante, detto Dante|canale=Rai Storia|wkcanale=Rai Storia|url=https://www.raiplay.it/video/2020/12/Alighieri-Durante-detto-Dante-6879a919-d770-47f3-8bfe-55be7583eda9.html|accesso=14 settembre 2021|minuto=9|secondo=04}}</ref>"},"AnnoMorte":{"wt":"1321"},"Epoca":{"wt":"1200"},"Epoca2":{"wt":"1300"},"Attività":{"wt":"poeta"},"Attività2":{"wt":"scrittore"},"Attività3":{"wt":"politico"},"Nazionalità":{"wt":"italiano"}},"i":0}}]}' id="mwDw">Dante Alighieri, o Alighiero, battezzato Durante di Alighiero degli Alighieri e anche noto con il solo nome di Dante, della famiglia Alighieri (Firenze, tra il 14 maggio e il 13 giugno 1265 – Ravenna, notte tra il 13 e il 14 settembre[1][2][3] 1321), è stato un poeta, scrittore e politico italiano.
+
+Il nome "Dante", secondo la testimonianza di Jacopo Alighieri, è un ipocoristico di Durante[N 1]; nei documenti era seguito dal patronimico Alagherii o dal gentilizio de Alagheriis, mentre la variante "Alighieri" si affermò solo con l'avvento di Boccaccio.
+
+Viene considerato il padre della lingua italiana; la sua fama è dovuta alla paternità della Comedìa, divenuta celebre come Divina Commedia e universalmente considerata la più grande opera scritta in lingua italiana e uno dei maggiori capolavori della letteratura mondiale[4]. Espressione della cultura medievale, filtrata attraverso la lirica del Dolce stil novo, la Commedia è anche veicolo allegorico della salvezza umana, che si concretizza nel toccare i drammi dei dannati, le pene purgatoriali e le glorie celesti, permettendo a Dante di offrire al lettore uno spaccato di morale ed etica.
+
+Importante linguista, teorico politico e filosofo, Dante spaziò all'interno dello scibile umano, segnando profondamente la letteratura italiana dei secoli successivi e la stessa cultura occidentale, tanto da essere soprannominato il "Sommo Poeta" o, per antonomasia, il "Poeta"[5]. Dante, le cui spoglie si trovano a Ravenna nella tomba costruita nel 1780 da Camillo Morigia, in epoca romantica divenne il principale simbolo dell'identità nazionale italiana[6]. Da lui prende il nome il principale ente della diffusione della lingua italiana nel mondo, la Società Dante Alighieri[7], mentre gli studi critici e filologici sono mantenuti vivi dalla Società dantesca.
+
+Biografia
+Stemma Alighieri
+Le origini
+La data di nascita e il mito di Boccaccio
+Casa di Dante a Firenze
+La data di nascita di Dante non è conosciuta con esattezza, anche se solitamente viene indicata attorno al 1265. Tale datazione è ricavata sulla base di alcune allusioni autobiografiche riportate nella Vita Nova e nella cantica dell'Inferno, che comincia con il celeberrimo verso Nel mezzo del cammin di nostra vita. Postulando le ipotesi, infatti, che la metà della vita dell'uomo sia, per Dante, il trentacinquesimo anno di vita[8][9] e che il viaggio immaginario fosse avvenuto nel 1300, allora si risalirebbe di conseguenza al 1265. Oltre alle elucubrazioni dei critici, viene in supporto di tale ipotesi un contemporaneo di Dante, lo storico fiorentino Giovanni Villani il quale, nella sua Nova Cronica, riporta che «questo Dante morì in esilio del comune di Firenze in età di circa 56 anni»[10]: una prova che confermerebbe tale idea. Altra testimonianza è riportata da Giovanni Boccaccio che, nelle sue ricerche sulla vita dell'amato Dante, conobbe a Ravenna ser Piero di messer Giardino da Ravenna, amico di Dante durante l'esilio di quest'ultimo nella città romagnola: il poeta avrebbe raccontato a Piero poco prima di spirare di aver compiuto 56 anni nel mese di maggio[11]. Alcuni versi del Paradiso suggeriscono inoltre che egli nacque sotto il segno dei Gemelli, quindi in un periodo compreso fra il 14 maggio e il 13 giugno[12].
+
+Tuttavia, se sconosciuto è il giorno della sua nascita, certo invece è quello del battesimo: il 27 marzo 1266, di Sabato santo[13][14]. Quel giorno vennero portati al sacro fonte tutti i nati dell'anno per una solenne cerimonia collettiva. Dante venne battezzato con il nome di Durante, poi sincopato in Dante[15], in ricordo di un parente ghibellino[16]. Pregna di rimandi classici è la leggenda narrata da Giovanni Boccaccio ne Il Trattatello in laude di Dante riguardo alla nascita del poeta: secondo Boccaccio, la madre di Dante, poco prima di darlo alla luce, ebbe una visione e sognò di trovarsi sotto un alloro altissimo, in mezzo a un vasto prato con una sorgente zampillante insieme al piccolo Dante appena partorito e di vedere il bimbo tendere la piccola mano verso le fronde, mangiare le bacche e trasformarsi in un magnifico pavone[17][18].
+
+La famiglia paterna e materna
+body:not(.skin-minerva) .mw-parser-output .vedi-anche{font-size:95%}
+ Lo stesso argomento in dettaglio: Alighieri.
+
+Luca Signorelli, Dante, affresco, 1499-1502, particolare tratto dalle Storie degli ultimi giorni, cappella di San Brizio, Duomo di Orvieto
+Dante apparteneva agli Alighieri, una famiglia di secondaria importanza all'interno dell'élite sociale fiorentina che, negli ultimi due secoli, aveva raggiunto una certa agiatezza economica. Benché Dante affermi che la sua famiglia discendesse dagli antichi Romani[19], il parente più lontano di cui egli fa nome è il trisavolo Cacciaguida degli Elisei[20], fiorentino vissuto intorno al 1100 e cavaliere nella seconda crociata al seguito dell'imperatore Corrado III[21].
+
+Come sottolinea Arnaldo D'Addario sull'Enciclopedia dantesca, la famiglia degli Alighieri (che prese tale nominativo dalla famiglia della moglie di Cacciaguida[21]) e che risultava abitare nel sesto di Porta San Piero[22], passò da uno status nobiliare meritocratico[23] a uno borghese agiato, ma meno prestigioso sul piano sociale[24][N 2]. Il nonno paterno di Dante, Bellincione, era infatti un popolano e un popolano sposò la sorella di Dante[18]. Il figlio di Bellincione (e padre di Dante), Aleghiero o Alighiero di Bellincione, svolgeva la professione di compsor (cambiavalute), con la quale riuscì a procurare un dignitoso decoro alla numerosa famiglia[25][26]. Grazie alla scoperta di due pergamene conservate nell’Archivio Diocesano di Lucca, però, si viene a sapere che il padre di Dante avrebbe fatto anche l'usuraio (dando adito alla Tenzone tra l'Alighieri e l'amico Forese Donati[27]), traendo degli arricchimenti tramite la sua posizione di procuratore giudiziale presso il tribunale di Firenze[28]. Era inoltre un guelfo, ma senza ambizioni politiche: per questo i ghibellini non lo esiliarono dopo la battaglia di Montaperti, come fecero con altri guelfi, giudicandolo un avversario non pericoloso[18].
+
+La madre di Dante si chiamava Bella degli Abati[N 3], figlia di Durante Scolaro[29] (è probabile che i genitori di Dante abbiano dato al figlio il nome del nonno[30]) e appartenente a un'importante famiglia ghibellina locale[18]. Il figlio Dante non la citerà mai tra i suoi scritti, col risultato che di lei possediamo pochissime notizie biografiche. Bella morì quando Dante aveva cinque o sei anni e Alighiero, che probabilmente aveva già quarant'anni quando Dante nacque[31] e che morì in base alle fonti nel 1282-1283[32], presto si risposò, forse tra il 1275 e il 1278[33], con Lapa di Chiarissimo Cialuffi. Da questo matrimonio nacquero Francesco e Tana Alighieri (Gaetana)[34] e forse anche – ma potrebbe essere stata anche figlia di Bella degli Abati – un'altra figlia ricordata dal Boccaccio come moglie del banditore fiorentino Leone Poggi e madre di Andrea Poggi[33] il quale, secondo la testimonianza sempre di Boccaccio, assomigliava in modo impressionante allo zio Dante[35]. Si ritiene che Dante alluda alla sorella dal nome ignoto in Vita nuova (Vita nova) XXIII, 11-12, chiamandola «donna giovane e gentile [...] di propinquissima sanguinitade congiunta»[33].
+
+La formazione intellettuale
+I primi studi e Brunetto Latini
+Codice miniato raffigurante Brunetto Latini, Biblioteca Medicea-Laurenziana, Plut. 42.19, Brunetto Latino, Il Tesoro, fol. 72, secoli XIII-XIV
+Della formazione di Dante non si conosce molto[36]. Con ogni probabilità seguì l'iter educativo proprio dell'epoca, che si basava sulla formazione presso un grammatico (conosciuto anche con il nome di doctor puerorum, probabilmente) con il quale apprendere prima i rudimenti linguistici, per poi approdare allo studio delle arti liberali, pilastro dell'educazione medioevale[37][38]: aritmetica, geometria, musica, astronomia da un lato (quadrivio); dialettica, grammatica e retorica dall'altro (trivio). Come si può dedurre da Convivio II, 12, 2-4, l'importanza del latino quale veicolo del sapere era fondamentale per la formazione dello studente, in quanto la ratio studiorum si basava essenzialmente sulla lettura di Cicerone e di Virgilio da un lato e del latino medievale dall'altro (Arrigo da Settimello, in particolare)[39].
+
+L'educazione ufficiale era poi accompagnata dai contatti "informali" con gli stimoli culturali provenienti ora da altolocati ambienti cittadini, ora dal contatto diretto con viaggiatori e mercanti stranieri che importavano, in Toscana, le novità filosofiche e letterarie dei rispettivi Paesi d'origine[39]. Dante ebbe la fortuna di incontrare, negli anni ottanta, il politico ed erudito fiorentino Ser Brunetto Latini, reduce da un lungo soggiorno in Francia sia come ambasciatore della Repubblica, sia come esiliato politico[40]. L'effettiva influenza di Ser Brunetto sul giovane Dante è stata oggetto di studio da parte di Francesco Mazzoni[41] prima, e di Giorgio Inglese poi[42]. Entrambi i filologi, nei loro studi, cercarono di inquadrare l'eredità dell'autore del Tresor sulla formazione intellettuale del giovane concittadino. Dante, da parte sua, ricordò commosso la figura del Latini nella Commedia, rimarcandone l'umanità e l'affetto ricevuto: la cara e buona imagine paterna<br />di voi quando nel mondo ad ora ad ora<br />m'insegnavate come l'uom s'etterna [...]"},"2":{"wt":"[[s:Divina Commedia/Inferno/Canto XV#82-85|''Inferno'', Canto XV, vv. 82-85]]"}},"i":0}}]}' id="mwAYg">.mw-parser-output .itwiki-template-citazione{margin-bottom:.5em;font-size:95%;padding-left:2.4em;padding-right:1.2em}.mw-parser-output .itwiki-template-citazione-doppia{display:flex;gap:1.2em}.mw-parser-output .itwiki-template-citazione-doppia>div{width:0;flex:1 1 0}.mw-parser-output .itwiki-template-citazione-footer{padding:0 1.2em 0 0;margin:0;font-size:smaller}
+«[...] e or m'accora,la cara e buona imagine paternadi voi quando nel mondo ad ora ad oram'insegnavate come l'uom s'etterna [...]»
+(Inferno, Canto XV, vv. 82-85)
+
+La basilica di Santa Maria Novella a Firenze, dove Dante studiò filosofia oltreché teologia.
+Da questi versi, Dante espresse chiaramente l'apprezzamento di una letteratura intesa nel suo senso "civico"[37][43], nell'accezione di utilità civica. La comunità in cui vive il poeta, infatti, ne serberà il ricordo anche dopo la morte di quest'ultimo. Umberto Bosco e Giovanni Reggio, inoltre, rimarcano l'analogia tra il messaggio dantesco e quello manifestato da Brunetto nel Tresor, come si evince dalla volgarizzazione toscana dell'opera realizzata da Bono Giamboni[44].
+
+Lo studio della filosofia
+
+«E da questo imaginare cominciai ad andare là dov’ella [la Donna Gentile] si dimostrava veracemente, cioè ne le scuole de li religiosi e a le disputazioni de li filosofanti. Sì che in picciol tempo, forse di trenta mesi, cominciai tanto a sentire de la sua dolcezza, che lo suo amore cacciava e distruggeva ogni altro pensiero.»
+(Convivio, 12 7)
+
+Dante, all'indomani della morte dell'amata Beatrice (in un periodo oscillante tra il 1291 e il 1294/1295)[45], cominciò a raffinare la propria cultura filosofica frequentando le scuole organizzate dai domenicani di Santa Maria Novella e dai francescani di Santa Croce[46]; se gli ultimi erano ereditari del pensiero di Bonaventura da Bagnoregio, i primi erano ereditari della lezione aristotelico-tomista di Tommaso d'Aquino, permettendo a Dante di approfondire (forse grazie all'ascolto diretto del celebre studioso Fra' Remigio de' Girolami)[47] il Filosofo per eccellenza della cultura medievale[48]. Enrico Malato sottolinea però come presso la chiesa di Santa Maria Novella, più che la filosofia, si insegnasse la teologia tomista, motivo per cui si deve credere che Dante in quegli anni non si erudì solo di filosofia, ma anche di teologia[49]. Inoltre, la lettura dei commenti di intellettuali che si opponevano all'interpretazione tomista (quali l'arabo Averroè), permise a Dante di adottare una sensibilità «polifonica dell'aristotelismo»[50].
+
+I presunti legami con Bologna e Parigi
+Giorgio Vasari, Sei poeti toscani (da destra: Cavalcanti, Dante, Boccaccio, Petrarca, Cino da Pistoia e Guittone d'Arezzo), pittura a olio, 1544, conservata presso il Minneapolis Institute of Art, Minneapolis. Considerato uno dei maggiori lirici volgari del XIII secolo, Cavalcanti fu la guida e il primo interlocutore poetico di Dante, quest'ultimo poco più giovane di lui.
+Alcuni critici ritengono che Dante abbia soggiornato a Bologna[51]. Anche Giulio Ferroni ritiene certa la presenza di Dante nella città felsinea: «un memoriale bolognese del notaio Enrichetto delle Querce attesta (in una forma linguistica locale) il sonetto Non mi poriano già mai fare ammenda: la circostanza viene considerata indizio pressoché certo di una presenza di Dante a Bologna anteriore a questa data»[52]. Entrambi ritengono che Dante abbia studiato presso l'Università di Bologna, ma non vi sono prove in proposito[53].
+
+Invece è molto probabile che Dante soggiornasse a Bologna tra l'estate del 1286 e quella del 1287[54], dove conobbe Bartolomeo da Bologna[55], alla cui interpretazione teologica dell'Empireo Dante in parte aderisce. Riguardo al soggiorno parigino, ci sono invece parecchi dubbi: in un passo del Paradiso, (Che, leggendo nel Vico de li Strami, silogizzò invidïosi veri)[56], Dante alluderebbe alla Rue du Fouarre, dove si svolgevano le lezioni della Sorbona. Questo ha fatto pensare a qualche commentatore, in modo puramente congetturale, che Dante possa essersi realmente recato a Parigi tra il 1309 e il 1310[57][58]. Come riassume Alessandro Barbero, la formazione intellettuale di Dante doveva essersi svolta pressappoco secondo questo iter:
+
+«Il probabile percorso degli studi di Dante si presenta dunque più o meno così. Un primo maestro, un doctor puerorum, assunto a contratto dalla famiglia, gli insegnò prima a leggere e poi a scrivere, e contemporaneamente lo introdusse ai primi rudimenti della lingua latina [...] Successivamente un altro maestro, un doctor gramatice, gli avrà impartito un insegnamento più avanzato del latino, e gli elementi di base delle altre arti liberali. Durante l'adolescenza, Brunetto Latini gli insegnò l'arte dell'epistolografia, l'ars dictaminis [...] Poi, inotrno ai vent'anni, Dante - orfano di padre, ripetiamolo, e dunque padrone della propria vita - andò a Bologna a perfezionarsi frequentando la facoltà di arti, e approfondendo ulteriormente la retorica. Divenne così, come scriverà Giovanni Villani, "rettorico perfetto tanto in dittare, versificare, come in aringa parlare": padrone, cioè di tutti i mezzi espressivi, dalla poesia al discorso politico.»
+(Barbero, p. 91)
+
+La lirica volgare. Dante e l'incontro con Cavalcanti
+
+ Lo stesso argomento in dettaglio: Dolce stil novo.
+
+Ritratto immaginario di Guido Cavalcanti, tratta dall'edizione delle Rime del 1813.
+Dante ebbe inoltre modo di partecipare alla vivace cultura letteraria ruotante intorno alla lirica volgare. Negli anni sessanta del XIII secolo, in Toscana giunsero i primi influssi della "Scuola siciliana", movimento poetico sorto intorno alla corte di Federico II di Svevia e che rielaborò le tematiche amorose della lirica provenzale. I letterati toscani, subendo gli influssi delle liriche di Giacomo da Lentini e di Guido delle Colonne, svilupparono una lirica orientata sia verso l'amor cortese, ma anche verso la politica e l'impegno civile[59]. Guittone d'Arezzo e Bonaggiunta Orbicciani, vale a dire i principali esponenti della cosiddetta scuola siculo-toscana, ebbero un seguace nella figura del fiorentino Chiaro Davanzati[60], il quale importò il nuovo codice poetico all'interno delle mura della sua città. Fu proprio a Firenze, però, che alcuni giovani poeti (capeggiati dal nobile Guido Cavalcanti) espressero il loro dissenso nei confronti della complessità stilistica e linguistica dei siculo-toscani, propugnando al contrario una lirica più dolce e soave: il dolce stil novo[61].
+
+Dante si trovò nel pieno di questo dibattito letterario: nelle sue prime opere è evidente il legame (seppur tenue)[62] sia con la poesia toscana di Guittone e di Bonagiunta[63], sia con quella più schiettamente occitana[64]. Presto, però, il giovane si legò ai dettami della poetica stilnovista, cambiamento favorito dall'amicizia che lo legava al più anziano Cavalcanti[65].
+
+Il matrimonio con Gemma Donati
+Quando Dante aveva dodici anni, nel 1277, fu concordato il suo matrimonio con Gemma, figlia di Messer Manetto Donati, che successivamente sposò all'età di vent'anni nel 1285[37][66]. Decidere matrimoni in età così precoce era abbastanza comune a quell'epoca; lo si faceva con una cerimonia importante, che richiedeva atti formali sottoscritti davanti a un notaio. La famiglia a cui Gemma apparteneva – i Donati – era una delle più importanti nella Firenze tardo-medievale (al contrario degli Alighieri era di rango magnatizio[67]) e in seguito divenne il punto di riferimento per lo schieramento politico opposto a quello del poeta, vale a dire i guelfi neri.
+
+Il matrimonio tra i due non dovette essere molto felice, secondo la tradizione raccolta dal Boccaccio e fatta propria poi nell'Ottocento da Vittorio Imbriani[68]. Dante non scrisse infatti un solo verso alla moglie, mentre di costei non ci sono pervenute notizie sull'effettiva presenza al fianco del marito durante l'esilio. Comunque sia, l'unione generò quattro figli. Giovanni, il primogenito[66], poi Jacopo, Pietro, Antonia. Pietro fu giudice a Verona e l'unico che continuò la stirpe degli Alighieri, in quanto Jacopo scelse di seguire la carriera ecclesiastica, mentre Antonia divenne monaca con il nome di Sorella Beatrice, sembra nel convento delle Olivetane a Ravenna[66]. Giovanni, della cui esistenza si è sempre dubitato, è attestato da un documento di un notaio fiorentino recante la data del 20 maggio 1314, la cui scoperta fu fatta nel 1940 da Renato Piattoli ma mai pubblicata –, è stato riscoperto nel 2016 con la pubblicazione della nuova edizione del Corpo Diplomatico Dantesco[69][70].
+
+Impegni politici e militari
+
+ Lo stesso argomento in dettaglio: Guelfi bianchi e neri e Storia di Firenze § Gli Ordinamenti di Giustizia.
+
+Giovanni Villani, Corso Donati fa liberare dei prigionieri, in Cronaca, XIV secolo. Corso Donati, esponente di punta dei Neri, fu acerrimo nemico di Dante, il quale lancerà contro di lui violenti attacchi nei suoi scritti[71].
+Poco dopo il matrimonio, Dante cominciò a partecipare come cavaliere ad alcune campagne militari che Firenze stava conducendo contro i suoi nemici esterni, tra cui Arezzo (battaglia di Campaldino dell'11 giugno 1289) e Pisa (presa di Caprona, 16 agosto 1289)[37]. Successivamente, nel 1294, avrebbe fatto parte della delegazione di cavalieri che scortò Carlo Martello d'Angiò (figlio di Carlo II d'Angiò) che nel frattempo si trovava a Firenze[72]. L'attività politica prese Dante a partire dai primi anni 1290, in un periodo quanto mai convulso per la Repubblica. Nel 1293 entrarono in vigore gli Ordinamenti di Giustizia di Giano Della Bella, che escludevano l'antica nobiltà dalla politica e permettevano al ceto borghese di ottenere ruoli nella Repubblica, purché iscritti a un'Arte. Dante fu escluso dalla politica cittadina fino al 6 luglio del 1295, quando furono promulgati i Temperamenti, leggi che ridiedero diritto ai nobili di rivestire ruoli istituzionali, purché si immatricolassero alle Arti[37]. Dante, pertanto, si iscrisse all'Arte dei Medici e Speziali[73][74].
+
+L'esatta serie dei suoi incarichi politici non è conosciuta, poiché i verbali delle assemblee sono andati perduti. Comunque, attraverso altre fonti, si è potuta ricostruire buona parte della sua attività: fu nel Consiglio del popolo dal novembre 1295 all'aprile 1296[75][76]; fu nel gruppo dei "Savi", che nel dicembre 1296 rinnovarono le norme per l'elezione dei priori, i massimi rappresentanti di ciascuna Arte che avrebbero occupato, per un bimestre, il ruolo istituzionale più importante della Repubblica; dal maggio al dicembre del 1296 fece parte del Consiglio dei Cento[75]. Fu inviato talvolta nella veste di ambasciatore, come nel maggio del 1300 a San Gimignano[77]. In base alle considerazioni di Barbero ricavate dagli interventi che Dante tenne nei vari organi del Comune di Firenze, il poeta si pose sempre su una linea moderata a favore del popolo contro le ingerenze e le violenze dei magnati[78].
+
+Nel frattempo, all'interno del partito guelfo fiorentino si produsse una frattura gravissima tra il gruppo capeggiato dai Donati, fautori di una politica conservatrice e aristocratica (guelfi neri), e quello invece fautore di una politica moderatamente popolare (guelfi bianchi), capeggiato dalla famiglia Cerchi[79]. La scissione, dovuta anche a motivi di carattere politico ed economico (i Donati, esponenti dell'antica nobiltà, erano stati surclassati in potenza dai Cerchi, considerati dai primi dei parvenu)[79], generò una guerra intestina cui Dante non si sottrasse schierandosi, moderatamente, dalla parte dei guelfi bianchi[75][80].
+
+Lo scontro con Bonifacio VIII (1300)
+Sentenza dell'esilio di Dante, in una copia post 1465
+Nell'anno 1300, Dante fu eletto uno dei sette priori per il bimestre 15 giugno-15 agosto[75][81]. Nonostante l'appartenenza al partito guelfo, egli cercò sempre di osteggiare le ingerenze del suo acerrimo nemico papa Bonifacio VIII, dal poeta intravisto come supremo emblema della decadenza morale della Chiesa. Con l'arrivo del cardinale Matteo d'Acquasparta, inviato dal pontefice in qualità di paciere (ma in realtà spedito per ridimensionare la potenza dei guelfi bianchi, in quel periodo in piena ascesa sui neri[82][83]), Dante riuscì a ostacolare il suo operato. Sempre durante il suo priorato, Dante approvò il grave provvedimento con cui furono esiliati, nel tentativo di riportare la pace all'interno dello Stato, otto esponenti dei guelfi neri e sette di quelli bianchi, compreso Guido Cavalcanti[84] che di lì a poco morirà in Sarzana. Questo provvedimento ebbe serie ripercussioni sugli sviluppi degli eventi futuri: non solo si rivelò una disposizione inutile (i guelfi neri temporeggiarono prima di partire per l'Umbria, il posto destinato al loro confino)[85], ma fece rischiare un colpo di Stato da parte dei guelfi neri stessi, grazie al segreto supporto del cardinale d'Acquasparta[85]. Inoltre, il provvedimento attirò sui suoi fautori (incluso Dante stesso) sia l'odio della parte nera che la diffidenza degli "amici" bianchi: i primi, ovviamente, per la ferita inferta; i secondi, per il colpo dato al loro partito da parte di un suo stesso membro. Nel frattempo, le relazioni tra Bonifacio e il governo dei bianchi peggiorarono ulteriormente a partire dal mese di settembre, allorché i nuovi priori (succeduti al collegio di cui fece parte Dante) revocarono immediatamente il bando per i bianchi[85], mostrando la loro partigianeria e dando così al legato papale cardinale d'Acquasparta modo di scagliare l'anatema su Firenze[85]. In vista dell'invio di Carlo di Valois a Firenze, mandato dal papa come nuovo paciere (ma di fatto conquistatore) al posto del cardinale d'Acquasparta, la Repubblica spedì a Roma, nel tentativo di distogliere il papa dalle sue mire egemoniche, un'ambasceria di cui faceva parte essenziale anche Dante, accompagnato da Maso Minerbetti e da Corazza da Signa[82].
+
+L'inizio dell'esilio (1301-1304)
+Carlo di Valois e la caduta dei bianchi
+Tommaso da Modena, Benedetto XI, affresco, anni '50 del XIV secolo, Sala del Capitolo, Seminario di Treviso. Il beato papa Boccasini, trevigiano, nel suo breve pontificato cercò di riportare la pace all'interno di Firenze, inviando il cardinale Niccolò da Prato come paciere. È l'unico pontefice su cui Dante non proferì alcuna condanna, ma neanche verso il quale manifestò pieno apprezzamento, tanto da non comparire nella Commedia[86].
+Dante si trovava quindi a Roma[87], sembra trattenuto oltre misura da Bonifacio VIII[88], quando Carlo di Valois entrò a Firenze il giorno di Ognissanti del 1301.[89] Questi, al primo subbuglio cittadino, prese pretesto per far arrestare i capi dei guelfi bianchi con un colpo di mano, mentre i guelfi neri, tornati in città, scatenavano la loro vendetta contro gli avversari politici con assassini e incendi[90]. Il 9 novembre 1301 i nuovi padroni di Firenze imposero alla suprema magistratura, quella di podestà, Cante Gabrielli da Gubbio[89], il quale apparteneva alla fazione dei guelfi neri della sua città natia e diede inizio a una politica di sistematica persecuzione degli esponenti politici di parte bianca ostili al papa, fatto che si risolse alla fine nella loro uccisione o nell'espulsione da Firenze.[75] A seguito di un processo istruito dal giudice Paolo da Gubbio per il crimine di baratteria, Dante (considerato reo confesso in quanto contumace) venne condannato dal podestà Gabrielli dapprima, il 27 gennaio 1302, alla confisca delle proprietà, e successivamente, il 10 marzo, al rogo[91]. Da quel momento, Dante non rivide più la sua patria.
+
+Il testo integrale delle sentenze di condanna è stato pubblicato nel volume a cura di Dante Ricci ''Il processo di Dante'', Firenze, Arnaud editore, 1967 (nuova edizione con una presentazione di [[Morris L. Ghezzi]], Udine, Mimesi, 2011); {{Cita|Malato|p. 49}}.</ref>"}},"i":0}}]}' id="mwA2A">
+«Alighieri Dante è condannato per baratteria, frode, falsità, dolo, malizia, inique pratiche estortive, proventi illeciti, pederastia, e lo si condanna a 5000 fiorini di multa, interdizione perpetua dai pubblici uffici, esilio perpetuo (in contumacia), e se lo si prende, al rogo, così che muoia”»
+(Libro del chiodo - Archivio di Stato di Firenze - 10 marzo 1302[92])
+
+I tentativi di rientro e la battaglia di Lastra (1304)
+Dopo la cacciata da Firenze, Dante assieme agli altri maggiorenti bianchi si alleò ai Ghibellini, con l'obiettivo di riprendere il potere in città. L'8 Giugno 1302 è elencato tra i maggiori rappresentanti dei Ghibellini e dei Guelfi Bianchi in occasione di una riunione tra questi e la famiglia degli Ubaldini, in quella che prese il nome di Congiura di San Godenzo.[93] Dopo il fallimento delle operazioni militari del 1302, Dante, in qualità di capitano dell'esercito degli esuli, organizzò insieme a Scarpetta Ordelaffi, capo del partito ghibellino e signore di Forlì (presso il quale Dante si era rifugiato)[94][N 4], un nuovo tentativo di rientrare a Firenze. L'impresa fu però sfortunata: il podestà di Firenze, Fulcieri da Calboli (un altro forlivese, nemico degli Ordelaffi), riuscì ad avere la meglio nella battaglia nei pressi del castello di Pulicciano, nei pressi di Arezzo[95]. Fallita anche l'azione diplomatica, nell'estate del 1304, del cardinale Niccolò da Prato[96], legato pontificio di papa Benedetto XI (sul quale Dante aveva riposto molte speranze)[97][98], il 20 luglio dello stesso anno i bianchi, riuniti alla Lastra, una località a pochi chilometri da Firenze, decisero di intraprendere un nuovo attacco militare contro i neri[99]. Dante, ritenendo corretto aspettare un momento politicamente più favorevole, si schierò contro l'ennesima lotta armata, trovandosi in minoranza al punto che i più intransigenti formularono su di lui dei sospetti di tradimento; pertanto decise di non partecipare alla battaglia e di prendere le distanze dal gruppo. Come preventivato dallo stesso, la battaglia di Lastra fu un vero e proprio fallimento con la morte di quattrocento uomini fra ghibellini e bianchi[99]. Il messaggio profetico ci arriva da Cacciaguida: farà la prova; sì ch'a te fia bello<br />averti fatta parte per te stesso."},"2":{"wt":"[[s:Divina Commedia/Paradiso/Canto XVII#riga66|''Paradiso'' XVII, vv. 67-69]]"}},"i":0}}]}' id="mwA5s">
+«Di sua bestialitate il suo processofarà la prova; sì ch'a te fia belloaverti fatta parte per te stesso.»
+(Paradiso XVII, vv. 67-69)
+
+La prima fase dell'esilio (1304-1310)
+Tra Forlì e la Lunigiana dei Malaspina
+Il castello-palazzo vescovile di Castelnuovo dove Dante nel 1306 pacificò i rapporti tra i Marchesi Malaspina e i Vescovi-Conti di Luni
+Dante fu, dopo la battaglia della Lastra, ospite di diverse corti e famiglie della Romagna, fra cui gli stessi Ordelaffi. Il soggiorno forlivese non durò a lungo, in quanto l'esule si spostò prima a Bologna (1305), poi a Padova nel 1306 e infine nella Marca Trevigiana[57] presso Gherardo III da Camino[100]. Da qui, Dante fu chiamato in Lunigiana da Moroello Malaspina (quello di Giovagallo, visto che più membri della famiglia portavano questo nome)[101], col quale il poeta entrò forse in contatto grazie a un amico comune, il poeta Cino da Pistoia[102]. In Lunigiana (regione in cui giunse nella primavera del 1306), Dante ebbe l'occasione di negoziare la missione diplomatica per un'ipotesi di pace tra i Malaspina, «potenti in un'ampia zona di passaggio fra la Riviera di Levante, l'Appennino e la pianura padana, da Bocca di Magra su per la Lunigiana e il passo della Cisa fino al Piacentino»[103], e il vescovo-conte di Luni, Antonio Nuvolone da Camilla (1297 – 1307)[104]. In qualità di procuratore plenipotenziario dei Malaspina, Dante riuscì a far firmare da ambo le parti la pace di Castelnuovo del 6 ottobre del 1306[58][104], successo che gli fece guadagnare la stima e la gratitudine dei suoi protettori. L'ospitalità malaspiniana è celebrata nel Canto VIII del Purgatorio, dove al termine del componimento Dante formula alla figura di Corrado Malaspina il Giovane l'elogio del casato[105]: 
+«[...] e io vi giuro.../... che vostra gente onrata.../ sola và dritta e 'l mal cammin dispregia.»
+(Pg VIII, vv. 127-132)
+
+Nel 1307[106], dopo aver lasciato la Lunigiana, Dante si trasferì nel Casentino, dove fu ospite, secondo Boccaccio[107], di Guido Salvatico dei conti Guidi, conti di Battifolle e signori di Poppi, presso i quali iniziò a stendere la cantica dell'Inferno[58].
+
+La discesa di Arrigo VII (1310-1313)
+Monumento a Dante Alighieri a Villafranca in Lunigiana presso la tomba sacello dei MalaspinaFrançois-Xavier Fabre, Ritratto di Ugo Foscolo, pittura, 1813, Biblioteca Nazionale Centrale di Firenze
+Il Ghibellin fuggiasco
+Il soggiorno nel Casentino durò pochissimo tempo: tra il 1308 e il 1310 si può infatti ipotizzare che il poeta risiedesse prima a Lucca e poi a Parigi, anche se non è possibile valutare con certezza il soggiorno transalpino come già precedentemente esposto: Barbero, raccogliendo le testimonianze sia dei primi commentatori di Dante che di quelli successivi, pensa che al massimo il poeta possa essersi spinto fino alla corte papale di Avignone, pur sottolineando che questa sia solo una mera ipotesi poco fondata[108]. Dante, molto più probabilmente, si trovava a Forlì nel 1310[106], dove ebbe la notizia, nel mese di ottobre[58], della discesa in Italia del nuovo imperatore Arrigo VII, succeduto ad Alberto I d'Asburgo morto assassinato il 1º maggio del 1308[109]. Dante guardò a quella spedizione con grande speranza, in quanto vi intravedeva non soltanto la fine dell'anarchia politica italiana[N 5], ma anche la concreta possibilità di rientrare finalmente a Firenze[58]. Infatti l'imperatore fu salutato dai ghibellini italiani e dai fuoriusciti politici guelfi, connubio che spinse il poeta ad avvicinarsi alla fazione imperiale italiana capeggiata dagli Scaligeri di Verona[110]. Dante, che secondo una delle ricostruzioni [N 6] tra il 1308 e il 1311 stava scrivendo il De Monarchia, manifestò le sue aperte simpatie imperiali, scagliando una violenta lettera contro i fiorentini il 31 marzo del 1311[58], unici tra i Comuni italiani a non aver inviato dei propri rappresentanti a Losanna per omaggiare l'imperatore[111], e giungendo, sulla base di quanto affermato nell'epistola indirizzata ad Arrigo VII, a incontrare l'imperatore stesso in un colloquio privato[112]. Non sorprende, pertanto, che Ugo Foscolo giungerà a definire Dante come un ghibellino: Che allegrò l’ira al Ghibellin fuggiasco."},"2":{"wt":"[[Ugo Foscolo]], ''[[Dei sepolcri]]'', [[s:Pagina:Opere scelte di Ugo Foscolo II.djvu/70|vv. 173-174]]"}},"i":0}}]}' id="mwBEQ">
+«E tu prima, Firenze, udivi il carmeChe allegrò l’ira al Ghibellin fuggiasco.»
+(Ugo Foscolo, Dei sepolcri, vv. 173-174)
+
+Nel frattempo Arrigo, dopo aver risolto dei problemi nel Nord Italia, si diresse a Genova e da lì a Pisa[N 7], sua grande sostenitrice: è possibile che Dante fosse al suo seguito[113]. Nel 1312, dopo essere stato incoronato nella Basilica del Laterano dal legato papale Niccolò da Prato il 1º agosto 1312, l'imperatore assediò Firenze dal 19 settembre fino al 1º novembre senza ottenere la sudditanza della città toscana[114]. Il sogno dantesco di una Renovatio Imperii si infrangerà il 24 agosto del 1313, quando l'imperatore venne a mancare, improvvisamente, a Buonconvento[115]. Se già la morte violenta di Corso Donati, avvenuta il 6 ottobre del 1308 per mano di Rossellino Della Tosa (l'esponente più intransigente dei guelfi neri)[106], aveva fatto crollare le speranze di Dante[N 8], la morte dell'imperatore diede un colpo mortale ai tentativi del poeta di rientrare definitivamente a Firenze[106].
+Busto di Dante Alighieri presso il Castello di Poppi
+
+Gli ultimi anni
+Cangrande della Scala, in un ritratto immaginario del XVII secolo. Abilissimo politico e grande condottiero, Cangrande fu mecenate della cultura e dei letterati in particolare, stringendo amicizia con Dante.
+Il soggiorno veronese (1313-1318)
+
+ Lo stesso argomento in dettaglio: Della Scala.
+
+All'indomani della morte improvvisa dell'imperatore, Dante accolse l'invito di Cangrande della Scala a risiedere presso la sua corte di Verona[58]. Dante aveva già avuto modo, in passato, di risiedere nella città veneta, in quegli anni nel pieno della sua potenza. Petrocchi, come delineato prima nel suo saggio Itinerari danteschi e poi nella Vita di Dante[116] ricorda come Dante fosse già stato ospite, per pochi mesi tra il 1303 e il 1304, presso Bartolomeo della Scala, fratello maggiore di Cangrande. Quando poi Bartolomeo morì, nel marzo del 1304, Dante fu costretto a lasciare Verona in quanto il suo successore, Alboino, non era in buoni rapporti col poeta[117]. Alla morte di Alboino, il 29 novembre 1311[118], divenne suo successore il fratello Cangrande[119], tra i capi dei ghibellini italiani e protettore (oltreché amico) di Dante[119]. Fu in virtù di questo legame che Cangrande chiamò a sé l'esule fiorentino e i suoi figli Pietro e Jacopo, dando loro sicurezza e protezione dai vari nemici che si erano fatti negli anni. L'amicizia e la stima tra i due uomini fu tale che Dante esaltò, nella cantica del Paradiso – composta per la maggior parte durante il soggiorno veronese –, il suo generoso patrono in un panegirico per bocca dell'avo Cacciaguida: sarà la cortesia del gran Lombardo<br />che 'n su la scala porta il santo uccello;<br />ch'in te avrà sì benigno riguardo,<br />che del fare e del chieder, tra voi due,<br />fia primo quel che tra l'altri è più tardo\n\n[...]\n\nLe sue magnificenze conosciute<br />saranno ancora, sì che' suoi nemici<br />non ne potran tener le lingue mute.<br />A lui t’aspetta e a’ suoi benefici;<br />per lui fia trasmutata molta gente,<br />cambiando condizion ricchi e mendici;"},"2":{"wt":"[[s:Divina Commedia/Paradiso/Canto XVII|''Paradiso'' XVII, vv. 70-75, 85-90]]"}},"i":0}}]}' id="mwBJ8">
+«Lo primo tuo refugio e 'l primo ostellosarà la cortesia del gran Lombardoche 'n su la scala porta il santo uccello;ch'in te avrà sì benigno riguardo,che del fare e del chieder, tra voi due,fia primo quel che tra l'altri è più tardo
+
+[...]
+
+Le sue magnificenze conosciutesaranno ancora, sì che' suoi nemicinon ne potran tener le lingue mute.A lui t’aspetta e a’ suoi benefici;per lui fia trasmutata molta gente,cambiando condizion ricchi e mendici;»
+(Paradiso XVII, vv. 70-75, 85-90)
+
+Nel 2018 è stata scoperta da Paolo Pellegrini, docente dell'Università di Verona, una nuova lettera, scritta probabilmente proprio da Dante nel mese di agosto del 1312 e spedita da Cangrande al nuovo imperatore Enrico VII; essa modificherebbe sostanzialmente la data del soggiorno veronese del poeta, anticipando il suo arrivo al 1312, ed escluderebbe le ipotesi che volevano Dante a Pisa o in Lunigiana tra il 1312 ed il 1316[120].
+
+Il soggiorno ravennate (1318-1321)
+
+Andrea Pierini, Dante legge la Divina Commedia alla corte di Guido Novello, 1850, dipinto a olio, Palazzo Pitti-Galleria D'Arte Moderna, Firenze
+Dante, L'arzana de' Veneziani
+Dante, per motivi ancora sconosciuti, si allontanò da Verona per approdare, nel 1318, a Ravenna, presso la corte di Guido Novello da Polenta, uomo «poco più giovane di Dante...[che] apparteneva a quella grande aristocrazia dell'Appennino che da tempo stava imponendo il suo dominio sui Comuni della Romagna»[121]. I critici hanno cercato di comprendere le cause dell'allontanamento di Dante dalla città scaligera, visti gli ottimi rapporti che intercorrevano tra Dante e Cangrande. Augusto Torre ipotizzò una missione politica a Ravenna, affidatagli dallo stesso suo protettore[122]; altri pongono le cause in una crisi momentanea tra Dante e Cangrande, oppure nell'attrattiva di far parte di una corte di letterati tra i quali il signore stesso (cioè Guido Novello), che si professava tale[123]; ancora, chi pensa che Dante, uomo fiero e indipendente, resosi conto di essere diventato un cortigiano a tutti gli effetti, preferì prendere congedo dagli Scaligeri[124]. Tuttavia, i rapporti con Verona non cessarono del tutto, come testimoniato dalla presenza di Dante nella città veneta il 20 gennaio 1320, per discutere la Quaestio de aqua et terra, l'ultima sua opera latina[125].
+
+Gli ultimi tre anni di vita trascorsero relativamente tranquilli nella città romagnola, durante i quali Dante creò un cenacolo letterario frequentato dai figli Pietro e Jacopo[62][126] e da alcuni giovani letterati locali, tra i quali Pieraccio Tedaldi e Giovanni Quirini[127]. Per conto del signore di Ravenna svolse occasionali ambascerie politiche[128], come quella che lo condusse a Venezia. All'epoca, la città lagunare era in attrito con Guido Novello a causa di attacchi continui alle sue navi da parte delle galee ravennati[129] e il doge, infuriato, si alleò con Forlì per muovere guerra a Guido Novello; questi, ben sapendo di non disporre dei mezzi necessari per fronteggiare tale invasione, chiese a Dante di intercedere per lui davanti al Senato veneziano. 
+Carlo Wostry, I funerali di Dante, inchiostro e acquerello su carta, Museo e Casa Dante, Ravenna.
+Gli studiosi si sono domandati perché Guido Novello avesse pensato proprio all'ultracinquantenne poeta come suo rappresentante: alcuni ritengono che sia stato scelto Dante per quella missione in quanto amico degli Ordelaffi, signori di Forlì, e quindi in grado di trovare più facilmente una via per comporre le divergenze in campo[130].
+
+La morte e i funerali
+L'ambasceria di Dante sortì un buon effetto per la sicurezza di Ravenna, ma fu fatale al poeta che, di ritorno dalla città lagunare, contrasse la malaria mentre passava dalle paludose Valli di Comacchio[106]. Le febbri portarono velocemente il poeta cinquantaseienne alla morte, che avvenne a Ravenna nella notte tra il 13 e il 14 settembre 1321[106][131]. I funerali, in pompa magna, furono officiati nella chiesa di San Pier Maggiore (oggi San Francesco) a Ravenna, alla presenza delle massime autorità cittadine e dei figli[132]. La morte improvvisa di Dante suscitò ampio rammarico nel mondo letterario, come dimostrato da Cino da Pistoia nella sua canzone Su per la costa, Amor, de l'alto monte[133].
+
+Le spoglie mortali
+Le "tombe" di Dante
+
+ Lo stesso argomento in dettaglio: Tomba di Dante.
+
+La tomba di Dante a Ravenna, realizzata da Camillo Morigia
+Dante trovò inizialmente sepoltura in un'urna di marmo posta nella chiesa ove si tennero i funerali[134]. Quando la città di Ravenna passò poi sotto il controllo della Serenissima, il podestà Bernardo Bembo (padre del ben più celebre Pietro) ordinò all'architetto Pietro Lombardi, nel 1483, di realizzare un grande monumento che ornasse la tomba del poeta[134]. Tale risistemazione erase il sonetto "Inclita fama cuius universum penetrat orbem" attribuito benché non unanimemente a Menghino Mezzani, secondo alcuni studiosi ivi inciso[135]. Ritornata la città, al principio del XVI secolo, agli Stati della Chiesa, i legati pontifici trascurarono le sorti della tomba di Dante, la quale cadde presto in rovina. Nel corso dei due secoli successivi furono compiuti solo due tentativi per porre rimedio alle disastrose condizioni in cui il sepolcro versava: il primo fu nel 1692, quando il cardinale legato per le Romagne Domenico Maria Corsi e il prolegato Giovanni Salviati, entrambi di nobili famiglie fiorentine, provvidero a restaurarla[136]. Nonostante fossero passati pochi decenni, il monumento funebre fu rovinato a causa del sollevamento del terreno sottostante la chiesa, cosa che spinse il cardinale legato Luigi Valenti Gonzaga a incaricare l'architetto Camillo Morigia, nel 1780, di progettare il tempietto neoclassico tuttora visibile[134].
+
+Le travagliate vicende dei resti
+I resti mortali di Dante furono oggetto di diatribe tra i ravennati e i fiorentini già dopo qualche decennio la sua morte, quando l'autore della Commedia fu "riscoperto" dai suoi concittadini grazie alla propaganda operata da Boccaccio[137]. Se i fiorentini rivendicavano le spoglie in quanto concittadini dello scomparso (già nel 1429 il Comune richiese ai Da Polenta la restituzione dei resti[138]), i ravennati volevano che rimanessero nel luogo dove il poeta morì[139], ritenendo che i fiorentini non si meritassero i resti di un uomo che avevano dispregiato in vita. Per sottrarre i resti del poeta a un possibile trafugamento da parte di Firenze (rischio divenuto concreto sotto i papi medicei Leone X e Clemente VII)[139], i frati francescani[140] tolsero le ossa dal sepolcro realizzato da Pietro Lombardi, nascondendole in un luogo segreto[139] e rendendo poi, di fatto, il monumento del Morigia un cenotafio. Quando nel 1810 Napoleone ordinò la soppressione degli ordini religiosi, i frati, che di generazione in generazione si erano tramandati il luogo ove si trovavano i resti, decisero di nasconderle in una porta murata dell'attiguo oratorio del quadrarco di Braccioforte[139]. Le spoglie rimasero in quel luogo fino al 1865, allorché un muratore, intento a restaurare il convento in occasione del VI centenario della nascita del poeta, scoprì casualmente sotto una porta murata una piccola cassetta di legno, recante delle iscrizioni in latino a firma di un certo frate Antonio Santi (1677)[139], le quali riportavano che nella scatola erano contenute le ossa di Dante. Effettivamente, all'interno della cassetta fu ritrovato uno scheletro pressoché integro[141]; si provvide allora a riaprire l'urna nel tempietto del Morigia, che fu trovata vuota, fatte salve tre falangi[142], che risultarono combaciare con i resti rinvenuti sotto la porta murata, certificandone l'effettiva autenticità[142]. La salma fu ricomposta, esposta per qualche mese in un'urna di cristallo e quindi ritumulata all'interno del tempietto del Morigia, in una cassa di noce protetta da un cofano di piombo. Nel sepolcro di Dante, sotto un piccolo altare si trova l'epigrafe in versi latini dettati da Bernardo da Canaccio per volere di Guido Novello, ma incisi soltanto nel 1357[143]:
+L'Epitaffio realizzato da Bernardo da Canaccio per la tomba di Dante.
+{{Cita libro|autore1=Ludovico Frati|autore2=[[Corrado Ricci]]|titolo=Il sepolcro di Dante. Documenti raccolti|url=https://archive.org/details/ilsepolcrodidant00fratuoft/page/4/mode/1up|città=Bologna|editore=Stab. tip. succ. Monti|anno=1889|p=4}}</ref>"},"3":{"wt":"{{maiuscoletto|Iura Monarchiae, Superos, Phlegetonta lacusque<br/> Lustrando cecini, voluerunt fata quousque.<br/> Sed quia pars cessit melioribus hospita castris<br/> Actoremque suum petiit felicior astris,<br/> Hic claudor Dantes, patriis extorris ab oris,<br/> Quem genuit parvi Florentia mater amoris.}}"},"lingua":{"wt":"la"}},"i":0}}]}' id="mwBYw">
+
+(latino)«Iura Monarchiae, Superos, Phlegetonta lacusque Lustrando cecini, voluerunt fata quousque. Sed quia pars cessit melioribus hospita castris Actoremque suum petiit felicior astris, Hic claudor Dantes, patriis extorris ab oris, Quem genuit parvi Florentia mater amoris.»
+
+(italiano)«I diritti della monarchia, gli dei superni e le paludi del Flegetonte visitando cantai, finché volle il destino. Poiché però l'anima andò ospite in luoghi migliori e più beata raggiunse tra le stelle il suo Creatore, qui sono racchiuso io Dante, esule dalla patria terra, che generò Firenze, madre di poco amore.»
+(Epitaffium ad sepulcrum Dantis[144])
+
+Il vero volto di Dante
+Il più antico ritratto documentato di Dante Alighieri conosciuto, Palazzo dell'Arte dei Giudici e Notai, Firenze. Databile intorno al 1336-1337, l'affresco è di scuola giottesca[145] ed è il ritratto iconografico del poeta più vicino a quello ricostruito nel 2007.
+Come si può ben vedere dai vari dipinti a lui dedicati, il volto del poeta era assai spigoloso, con la faccia torva e col celeberrimo naso aquilino, come figura nel dipinto di Botticelli posto nella sezione introduttiva. Fu Giovanni Boccaccio, nel suo Trattatello in laude di Dante, a fornire questa descrizione fisica: 
+«Fu adunque questo nostro poeta di mediocre statura [...] Il suo volto fu lungo, e il naso aquilino, e gli occhi anzi grossi che piccioli, le mascelle grandi, e dal labbro di sotto era quel di sopra avanzato; e il colore era bruno, e i capelli e la barba spessi, neri e crespi, e sempre nella faccia malinconico e pensoso.»
+(Trattatello in laude di Dante, XX)
+
+Gli studi compiuti dagli antropologi, però, smentirono gran parte della letteratura artistica dantesca nel corso dei secoli. Nel 1921, in occasione del seicentenario della morte di Dante, l'antropologo dell'Università di Bologna Fabio Frassetto fu autorizzato dalle autorità a studiare il cranio del poeta, risultato mancante della mandibola[146]. Nonostante i mezzi dell'epoca e un risultato di indagine non pienamente soddisfacente, Frassetto può già dedurre che il volto "psicologico" tramandatoci nel corso dei secoli non corrisponde a quello "fisico". Difatti, nel 2007, grazie a una squadra guidata da Giorgio Gruppioni, antropologo sempre dell'Università di Bologna, si riuscì a realizzare un volto i cui tratti somatici corrisponderebbero al 95% a quello reale[146]. Partendo dal cranio ricostruito da Frassetto, il volto reale di Dante è risultato (grazie al contributo del biologo dell'Università di Pisa Francesco Mallegni e dello scultore Gabriele Mallegni)[147] sicuramente non bello, ma privo di quel naso aquilino così accentuato dagli artisti di età rinascimentale e molto più vicino a quello, risalente pochi anni dopo la morte del poeta, di scuola giottesca.
+
+Il pensiero e la poetica
+Introduzione
+Parlare del Dante pensatore e poeta significa, innanzitutto, riconoscerci davanti a una magnifica cattedrale medievale, ricca di ogni fibra vitale della cultura letteraria, filosofica, teologica e artistica propria dell’età di mezzo. Nella sua produzione Dante, infatti, si sofferma su variegati aspetti che trattano proprio delle questioni del suo tempo, come per esempio il valore della lingua volgare ora emergente, ora dei rapporti tra Chiesa e Stato, ora del ruolo della filosofia morale nella vita umana quale strumento del vivere civile e dell’elevazione dell’uomo stesso, ora della personificazione della donna amata nella Teologia come veicolo di Salvezza. L’esaltazione di Beatrice quale veicolo della Salvezza è uno dei perni su cui si fonda uno dei capolavori della produzione letteraria mondiale, ossia la Divina Commedia. Quest’ultima, considerata la summa del pensiero dantesco e di quello medievale[148], è stata paragonata per la sua complessità e maestosità da Frédéric Ozanam nel suo Dante et la philosophie catholique au treizième siècle a una cattedrale gotica[149]: lì l’arte, la poesia, la visione dell’Ultraterreno, il discernimento dell’animo umano (Francesco de Sanctis la chiama anche la commedia dell’anima[150]) alla luce della ragione sostenuta dalla fede nel corso del viaggio del protagonista/cantore diventano un tutt’uno in maniera armonica e sublime fino a dissolversi nella visione di Dio nell’ultimo canto del Paradiso.
+Andrea del Castagno, Dante Alighieri, nel Ciclo degli uomini e donne illustri, affresco, tra il 1448 e il 1451, Galleria degli Uffizi, Firenze
+Il ruolo del volgare e l'ottica "civile" della letteratura
+Il ruolo della lingua volgare, definita da Dante nel De Vulgari come Hec est nostra vera prima locutio[151] («il nostro primo vero linguaggio», nella traduzione italiana)[152], fu fondamentale per lo sviluppo del suo programma letterario. Con Dante, infatti, il volgare assunse lo stato di lingua colta e letteraria, grazie alla ferrea volontà, da parte del poeta fiorentino, di trovare un veicolo linguistico comune tra gli italiani, perlomeno tra i governanti[153]. Egli, nei primi passi del De Vulgari, esporrà chiaramente la sua predilezione per la lingua colloquiale e materna rispetto a quella latina, finta e artificiale: 
+
+(latino)«Harum quoque duarum nobilior est vulgaris: tum quia prima fuit humano generi usitata; tum quia totus orbis ipsa perfruitur, licet in diversas prolationes et vocabula sit divisa; tum quia naturalis est nobis, cum illa potius artificialis existat.»
+
+(italiano)«La più nobile di queste due lingue è il volgare, sia perché fu la prima a essere usata dal genere umano, sia perché tutto il mondo ne fruisce (pur nelle diversità di pronuncia e di vocabolario che la dividono), sia perché ci è naturale, mentre l’altra è piuttosto artificiale.»
+(De Vulgari Eloquentia I, 1,4)
+
+Proposito della produzione letteraria volgare dantesca è infatti quella di essere fruibile da parte del pubblico dei lettori, cercando di abbattere il muro tra i ceti colti (abituati a interagire fra di loro in latino) e quelli più popolari, affinché anche questi ultimi potessero apprendere contenuti filosofici e morali fino ad allora relegati nell'ambiente accademico. Si ha quindi una visione della letteratura intesa come strumento al servizio della società, come verrà esposto programmaticamente nel Convivio: 
+«E io adunque... a' piedi di coloro che seggiono [nella mensa dei dotti] ricolgo di quello che da loro cade, e conosco la misera vita di quelli che dietro m’ho lasciati, per la dolcezza ch'io sento in quello che a poco a poco ricolgo, misericordievolmente mosso, non me dimenticando, per li miseri alcuna cosa ho riservata, la quale a li occhi loro, già è più tempo, ho dimostrata; e in ciò li ho fatti maggiormente vogliosi.»
+(Convivio, I, 10)
+
+Alla scelta di Dante di utilizzare la lingua volgare per scrivere alcune delle sue opere possono avere influito notevolmente le opere di Andrea da Grosseto, letterato del Duecento che utilizzava la lingua volgare da lui parlata, il dialetto grossetano dell'epoca, per la traduzione di opere prosaiche in latino, come i trattati di Albertano da Brescia[154].
+
+La poetica
+Il «plurilinguismo» dantesco
+
+ Lo stesso argomento in dettaglio: Rota Vergilii.
+
+Con questa felice espressione, il critico letterario Gianfranco Contini ha individuato la straordinaria versatilità di Dante, all'interno delle Rime, nel saper usare più registri linguistici con disinvoltura e grazia armonica[155]. Come già esposto prima, Dante manifesta un'aperta curiosità per la struttura "genetica" della lingua materna degli italiani, concentrandosi sulle espressioni dell'eloquio quotidiano, sui motti e battute più o meno raffinate. Questa tendenza a inquadrare la ricchezza testuale della lingua materna spinge il letterato fiorentino a realizzare un affresco variopinto finora mai creato nella lirica volgare italiana, come esposto lucidamente da Giulio Ferroni:
+«Rispetto alla produzione poetica del volgare italiano della seconda metà del secolo XIII, la Commedia amplia notevolmente gli orizzonti sintattici e lessicali: la varietà stilistica... crea una variazione di registri, attingendo sia alla lingua bassa sia a quella nobile. Dante trae spunti dalla letteratura latina... o da quella in volgare, ma nello stesso tempo ha uno spiccato interesse per il linguaggio parlato, colloquiale, anche nelle forme più vivaci, aggressive e popolaresche.»
+(Ferroni, p. 28)
+
+Raffaello Sanzio, Disputa del Sacramento, dettaglio raffigurante Dante, 1509-1510 ca, Stanza della Segnatura, Palazzo Pontificio, Vaticano. Raffaello inserisce Dante tra teologi e dottori della Chiesa, in quanto il poeta fiorentino era ritenuto filosofo e teologo di chiara fama per le opere da lui lasciate in materia religiosa.
+Come rimarca Guglielmo Barucci: «Non siamo dunque di fronte [nelle Rime] a una progressiva evoluzione dello stile di Dante, ma alla compresenza – anche nello stesso periodo – di forme e stili diversi»[156]. La capacità con cui Dante passa, all'interno delle Rime, dalle tematiche amorose a quelle politiche, da quelle morali a quelle burlesche, troverà il supremo raffinamento all'interno della Commedia, riuscendo a calibrare la tripartizione stilistica denominata Rota Vergilii, secondo la quale a un determinato argomento deve corrispondere un determinato registro stilistico[157]. Nella Commedia, in cui le tre cantiche corrispondono ai tre stili "umile", "mezzano" e "sublime", la rigida tripartizione teorica scema davanti alle esigenze narrative dello scrittore, per cui all'interno dell'Inferno (che dovrebbe corrispondere allo stile più basso), troviamo passi e luoghi di altissima levatura stilistica e drammatica, quali l'incontro con Francesca da Rimini e Ulisse. Il plurilinguismo, secondo un'analisi più strettamente lessicale, risente anch'esso dei numerosi idiomi di cui era infarcita la lingua letteraria dell'epoca: vi si trovano infatti latinismi, gallicismi e, ovviamente, volgare fiorentino[158].
+
+Lo Stilnovismo dantesco: tra biografismo e spiritualizzazione
+Dante ebbe un ruolo fondamentale nel far approdare la lirica volgare a nuove conquiste, non soltanto dal punto di vista tecnico-linguistico, ma anche da quello prettamente contenutistico. La spiritualizzazione della figura dell'amata Beatrice e l'impianto vagamente storico in cui la vicenda amorosa è inserita, determinarono la nascita di tratti del tutto particolari all'interno dello stilnovismo[159]. La presenza della figura idealizzata della donna amata (la cosiddetta donna angelo) è un topos ricorrente in Lapo Gianni, Guido Cavalcanti e Cino da Pistoia, ma in Dante assume una dimensione più storicizzata di quella degli altri rimatori[N 9]. La produzione dantesca, per la sua profondità filosofica può essere confrontata soltanto con quella del maestro Cavalcanti, rispetto alla quale la divergenza consiste nella differente concezione dell'amore. Se Beatrice è l'angelo che opera la conversione spirituale di Dante sulla Terra e che gli dona la beatitudine celeste[N 10], la donna amata da Cavalcanti è invece foriera di sofferenza, dolore che allontanerà progressivamente l'uomo da quella catarsi divina teorizzata dall'Alighieri[160]. Altro traguardo raggiunto da Dante è l'aver saputo far emergere l'introspezione psicologica e l'autobiografismo: praticamente ignoti al Medioevo, queste due dimensioni guardano già al Petrarca e, più lontano ancora, alla letteratura umanistica. Dante così è il primo, tra i letterati italiani, a "scomporsi" tra il sé inteso come personaggio e l'altro io inteso come narratore delle proprie vicende. Così Contini, riprendendo il filo tracciato dallo studioso statunitense Charles Singleton, parla dell'operazione poetica e narrativa dantesca: 
+«Va citato a titolo d'onor l'italianista americano Charles Singleton, che in un suo saggio penetrante... ha notato come nell'io di Dante... convergano l'uomo in generale, soggetto del vivere e dell'agire, e l'individuo storico, titolare di un'esperienza determinata hic et nunc, in un certo spazio e in un certo tempo; Io trascendentale (con la maiuscola), diremmo oggi, e io (con la minuscola) esistenziale.»
+(Gianfranco Contini, Un'idea di Dante, pp. 34-35)
+
+Beatrice e la «donna angelo»
+
+ Lo stesso argomento in dettaglio: Beatrice Portinari e Vita nuova.
+
+Henry Holiday, Dante incontra Beatrice al ponte Santa Trinita, dipinto a olio, 1883, Walker Art Gallery, Liverpool
+
+«L'amore per la bella fanciulla involta di drappo sanguigno, ch'egli chiama Beatrice, ha tutt'i caratteri di un primo amore giovanile, nella sua purezza e verginità, più nell'immaginazione che nel cuore. Beatrice è più simile a sogno, a fantasma, a ideale celeste che a realtà distinta e che procura effetti proprii. Uno sguardo, un saluto è tutta la storia di questo amore. Beatrice morì angiolo, prima che fosse donna, e l'amore non ebbe tempo di divenire una passione, come si direbbe oggi, rimase un sogno ed un sospiro.»
+(Francesco de Sanctis, Storia della letteratura italiana [1870], Morano, Napoli 1890, p. 59.)
+
+Così De Sanctis, padre della storiografia letteraria italiana, scrisse sulla donna amata dal poeta, Beatrice. Benché si cerchi tutt'oggi di comprendere in che cosa consistesse realmente, per Dante, l'amore nei confronti di Beatrice Portinari (presunta identificazione storica della Beatrice della Vita Nova), si può solo concludere con certezza l'importanza che tale amore ebbe per la cultura letteraria italiana. È nel nome di questo amore che Dante ha dato la sua impronta al Dolce stil novo, aprendo la sua "seconda fase poetica" (in cui manifesta la sua piena originalità rispetto ai modelli passati)[161] e conducendo i poeti e gli scrittori a scoprire i temi dell'amore in un modo mai così enfatizzato prima. L'amore per Beatrice (come in modo differente Francesco Petrarca mostrerà per la sua Laura) sarà il punto di partenza per la formulazione del suo manifesto poetico, nuova concezione dell'amor cortese sublimato dalla sua intensa sensibilità religiosa (il culto mariano con le laudi arrivato a Dante attraverso le correnti pauperistiche del Duecento, dai Francescani in poi) e, pertanto, privata degli elementi sensuali e carnali tipici della lirica provenzale. Tale formulazione poetica, culminata con la poesia della lode[162], approderà, dopo la morte della Beatrice "terrena", alla ricerca filosofica prima (la Donna pietosa) e a quella teologica poi (l'apparizione in sogno di Beatrice che spinge Dante a ritornare a lei dopo il traviamento filosofico, critica che si farà più dura in Purgatorio, XXX)[163]. Tale allegorizzazione dell'amata, intesa come veicolo di salvezza, segna definitivamente il distacco dalla tematica amorosa e spinge Dante verso la vera sapienza, cioè luce abbacinante e impenetrabile che avvolge Dio nel Paradiso. Beatrice si conferma, pertanto, in quel ruolo salvifico tipico degli angeli, che reca non solo all'amato, ma a tutti gli uomini quella beatitudine di cui si accennava prima[164]. Mantenendo una funzione allegorica, Dante frappone un valore numerologico alla figura di Beatrice[N 11]. È infatti all'età di nove anni che la incontra per la prima volta, poi nell'ora nona avviene un successivo incontro. Di lei dirà pure: «non soffre di stare in un altro numero se non nel nove».
+
+Dalle rime «amorose» a quelle «petrose»
+Dopo la fine dell'esperienza amorosa, Dante si concentrò sempre più su una poesia caratterizzata dalla riflessione filosofico-politica, che assumerà tratti duri e sofferenti nelle rime della seconda metà degli anni novanta, chiamate anche rime «petrose», in quanto incentrate sulla figura di una certa «donna petra», completamente antitetica alle "donne che avete intelletto d'Amore" e alla dolcezza e beatitudine che infonde Beatrice nel cuore di Dante[165][166]. Infatti, come riportano Salvatore Guglielmino e Hermann Grosser, la poesia dantesca perse quella dolcezza e leggiadria propria della lirica della Vita nova, per assumere connotati aspri e difficili: 
+«... l'esperienza delle rime petrose, che si riallacciano all'esperienza del trobar clus [poetare difficile] di Arnaut Daniel, costituisce un fondamentale esercizio di stile aspro (di contro a quello dolce dello stilnovismo).»
+(Guglielmino-Grosser, p. 151)
+
+Le fonti e i modelli letterari
+Rafael Flores, Dante y Virgilio visitando el Infierno, pittura a olio, 1855, Museo nacional de arte, Città del Messico
+Dante e il mondo classico
+
+Dante ebbe un profondo amore nei confronti dell'antichità classica e della sua cultura: ne sono prova la devozione per Virgilio, l'altissimo rispetto per Cesare e per le numerose fonti greche e latine da lui usate per la costruzione del mondo immaginario della Commedia (e di cui la citazione de «li spiriti magni» in If IV sono un riferimento esplicito degli autori su cui si poggiava la cultura dantesca)[167]. Nella Commedia, il poeta glorifica l'élite morale e intellettuale del mondo antico nel Limbo, luogo piacevole e ameno alle porte dell'Inferno dove i giusti morti senza battesimo vivono, senza però non provare dolore per la mancata beatitudine[168]. Al contrario di quanto faranno Petrarca e Boccaccio, Dante si dimostrò un uomo ancora legato appieno alla visione medievale che l'uomo aveva della civiltà greca e latina, poiché inquadrava quest'ultima all'interno della storia della salvezza propugnata dal cristianesimo, certezza basata sulla dottrina medievale dell'esegesi detta dei quattro sensi (letterale, simbolico, allegorico e anagogico) con cui si cercava di individuare il messaggio cristiano negli autori antichi[169]. Virgilio è visto da Dante non nella sua dimensione storica e culturale di intellettuale latino dell'età augustea, quanto in quella profetico-soteriologica[170]: fu lui, infatti, a predire la nascita di Gesù Cristo nella IV Egloga delle Bucoliche e così fu glorificato dai cristiani medievali[171]. Oltre a questa dimensione mitica della figura di Virgilio, Dante guardò a lui come supremo modello letterario e morale, come evidenziato nel proemio del Poema: vagliami 'l lungo studio e l' grande amore<br />che m'ha fatto cercar lo tuo volume.<br />Tu se' lo mio maestro e 'l mio autore,<br />tu se' solo colui da cu' io tolsi<br />lo bello stilo che m'ha fatto onore."},"2":{"wt":"''[[Inferno (Divina Commedia)|Inferno]]'', [[s:Divina Commedia/Inferno/Canto I|If I, 82-87]]"}},"i":0}}]}' id="mwBtM">
+«O de li altri poeti onore e lume,vagliami 'l lungo studio e l' grande amoreche m'ha fatto cercar lo tuo volume.Tu se' lo mio maestro e 'l mio autore,tu se' solo colui da cu' io tolsilo bello stilo che m'ha fatto onore.»
+(Inferno, If I, 82-87)Gustave Doré, Lucifero, 1861-1868. L'incisione dell'artista francese riprende la descrizione fatta dal poeta in If XXXIV, la quale a sua volta era tratta da un affresco presente nel Battistero di San Giovanni.
+L'iconografia medievale
+Dante fu influenzato moltissimo dal mondo che lo circondava, traendo spunto sia dalla dimensione artistica in senso stretto (busti, bassorilievi e affreschi presenti nelle chiese), sia da quanto poteva vedere nella sua vita quotidiana. Barbara Reynolds riporta di come
+
+«Dante [fosse] aduso a casi di tortura, morte di stenti, omicidio, tradimento, adulterio, sodomia e bestialità. Immagini del male si trovavano illustrate ovunque. La cupola del battistero di San Giovanni Battista, ad esempio, era decorata a mosaici...ove si trovavano raffigurati l'inferno, il purgatorio, il paradiso, il giudizio universale e, di particolare rilevanza nella Commedia, una grottesca immagine di Satana [...] I diavoli e i tormenti dell'Inferno non sono invenzioni della personale fantasia dantesca. Tali terrificanti moniti...erano recitati in rima dai cantastorie ambulanti, costituivano temi di prediche e di allestimenti scenici.»
+(Reynolds, pp. 27-28)
+
+Gli episodi di Malacoda, Barbariccia e della masnada comparsi in If XXI, XXII e XXIII, dunque, non sono ascrivibili soltanto all'immaginario personale del poeta, ma sono ricavati, nella loro potente e degradante caricatura iconografica, da quanto il poeta poteva scorgere nelle chiese e/o nelle vie di Firenze attraverso spettacoli allegorici. Oltre alle fonti iconografiche, c'erano però anche dei testi che presentavano il demonio con tratti disumani e bestiali: in primo luogo, la visione di Tundale dell'XI secolo, in cui è descritto il demonio che divora le anime dei dannati, ma anche le cronache di Giacomino da Verona e di Bonvesin de la Riva[172]. Gli stessi paesaggi della Commedia ricalcano la descrizione delle città medievali: la presenza di fortificazioni (il castello del Limbo, le mura della città di Dite), i ponti presenti sulle Malebolge, gli accenni, nel canto XV, alle imponenti dighe di Bruges e di Padova[173] e le stesse pene infernali sono una trasposizione visiva della "cultura" medievale in senso lato.
+
+Dante tra cristianesimo e Islam
+Influenza fondamentale fu anche quella esercitata dalla produzione letteraria appartenente al cristianesimo e, in un certo grado, anche alla religione islamica[174]. La Bibbia è sicuramente il libro cui Dante attinge maggiormente: echi ne troviamo, oltre ai tantissimi della Commedia, anche nella Vita nova (per esempio, l'episodio della morte di Beatrice ricalca quello di Cristo sul Calvario)[175] e nel De vulgari eloquentia (l'episodio della torre di Babele quale origine delle lingue, presente nel I libro). Oltre alla produzione strettamente sacra, Dante attinse anche alla produzione religiosa medievale, prendendo spunto, per esempio, dalla Visio sancti Pauli del V secolo, opera narrante l'ascesa dell'apostolo delle genti al terzo cielo del Paradiso[176]. Oltre alle fonti letterarie cristiane, Dante sarebbe giunto in possesso, sulla base di quanto ha scritto la filologa Maria Corti, del Libro della Scala, opera escatologica araba tradotta in castigliano, francese antico e latino per conto del re Alfonso X[176][177]. Un esempio concreto lo troviamo nel concetto islamico di spirito della vita (rūh al hayāh) che è considerato come "aria" che esce dalla cavità del cuore. Dante a tal proposito scrive: «...spirito della vita, lo quale dimora nella secretissima camera de lo cuore»[178]. Lo storico spagnolo Asín Palacios ha espresso tutte le posizioni di Dante in merito alle sue conoscenze islamiche nel testo L’escatologia islamica nella Divina Commedia[179].
+
+Il ruolo della filosofia nella produzione dantesca
+Aristotele, copia romana del 117-138 d.C. circa
+Come si è detto già nella parte biografica Dante, dopo la morte di Beatrice, si immerse nello studio della filosofia. Dal Convivio sappiamo che Dante aveva letto il De consolatione philosophiae di Boezio e il De amicitia di Cicerone[180] e che poi cominciò a prender parte alle dispute filosofiche che i due principali ordini religiosi (Francescani e Domenicani) pubblicamente o indirettamente tennero in Firenze, gli uni spiegando la dottrina dei mistici e di San Bonaventura, gli altri presentando le teorie di San Tommaso d'Aquino. Il critico Bruno Nardi[181] evidenzia i tratti salienti del pensiero filosofico dantesco che, pur avendo una base nel tomismo, presenta anche altri aspetti tra cui un evidente influsso del neoplatonismo (ad esempio dallo Pseudo-Dionigi l'Areopagita nelle gerarchie angeliche del Paradiso)[182]. Nonostante gli influssi di scuola platonica, Dante subì maggiormente l'influsso di Aristotele, che nella seconda metà del XIII secolo conobbe l'apogeo nell'Europa medievale[183].
+
+Aristotele nella produzione poetica
+La produzione poetica dantesca risentì di due opere aristoteliche in particolare: la Fisica e l'Etica Nicomachea. La descrizione del mondo naturale da parte del filosofo di Stagira, accanto alla tradizione medica risalente a Galeno, fu la fonte principale cui Dante e Cavalcanti attinsero per l'elaborazione della cosiddetta «dottrina degli spiriti»[184]. Attraverso i commenti redatti da Averroè e da Alberto Magno[185], Dante affermò che il funzionamento del corpo umano fosse dovuto alla presenza di vari spiriti in determinati organi, dai quali nascevano poi sentimenti corrispondenti allo stimolo proveniente dall'esterno. Alla presenza di Beatrice, tali spiriti entravano in subbuglio, suscitando in Dante violente reazioni emotive e assumendo, come nel caso sotto riportato, anche una volontà propria, resa efficace attraverso la figura retorica della prosopopea:
+«Apparve vestita di nobilissimo colore, umile e onesto, sanguigno, cinta e ornata a la guisa che a la sua giovanissima etade si convenia.
+In quello punto dico veracemente che lo spirito de la vita, lo quale dimora ne la secretissima camera de lo cuore, cominciò a tremare sì fortemente, che apparia ne li menimi polsi orribilmente; e tremando disse queste parole: "Ecce deus fortior me, qui veniens dominabitur michi".
+In quello punto lo spirito animale, lo quale dimora ne l’alta camera ne la quale tutti li spiriti sensitivi portano le loro percezioni, si cominciò a maravigliare molto, e parlando spezialmente a li spiriti del viso, sì disse queste parole: "Apparuit iam beatitudo vestra".
+In quello punto lo spirito naturale, lo quale dimora in quella parte ove si ministra lo nutrimento nostro, cominciò a piangere, e piangendo disse queste parole: "Heu miser, quia frequenter impeditus ero deinceps!".»
+(Vita Nova, II, 3-6)
+
+Sandro Botticelli, La mappa dell'Inferno, tra il 1480 e il 1490, Biblioteca Apostolica Vaticana. La divisione dell'Inferno e degli altri due regni dell'Oltretomba sono debitori dell'etica aristotelica
+Ancor più significativa fu l'influenza di Aristotele all'interno della Commedia, dove si fece sentire la presenza dell'Etica Nicomachea, oltreché della Fisica. Da quest'ultima, Dante accolse la struttura cosmologica del Creato (impianto profondamente debitore anche dell'astronomo egiziano Tolomeo)[186], adattandola poi alla fede cristiana[185]; dall'Etica, invece, prese spunto per l'ordinata e razionale organizzazione del suo mondo ultraterreno, suddividendolo in varie sottounità (gironi nell'Inferno, cornici nel Purgatorio e cieli nel Paradiso) dove porre determinate categorie di anime in base alle colpe/virtù commesse in vita[187].
+
+Aristotele nella produzione sociopolitica
+Nell'ambito politico, Dante crede con Aristotele e san Tommaso d'Aquino che lo Stato abbia un fondamento razionale e naturale, basato su legami gerarchici in grado di dare stabilità e ordine interno. Nardi aggiunge poi che «pur riconoscendo che lo schema generale della sua metafisica è quello della scolastica cristiana, è certo che egli vi ha inserito taluni particolari caratteristici, come la produzione mediata del mondo inferiore e quella intorno all'origine dell'anima umana risultante del concorso dell'atto creatore coll'opera della natura»[181].
+
+L'esoterismo dantesco
+Diversi autori hanno trattato gli aspetti esoterici delle opere di Dante forse determinati dall'ormai accertata adesione alla setta dei Fedeli d'Amore. Lo schema e i contenuti stessi della Divina Commedia farebbero emergere chiari riferimenti. Sotto questo aspetto sono di notevole importanza il lavoro di Guenon, L'esoterismo di Dante e il testo di Luigi Valli, Il linguaggio segreto di Dante e dei Fedeli d'Amore[188][189]. A partire dal XIX secolo diversi autori hanno sostenuto la tesi che Dante potesse essere stato un cristiano eretico: tra questi Ugo Foscolo[190], Gabriele Rossetti[191] e Eugène Aroux[192]. Più recentemente Maria Soresina ha avanzato l'ipotesi che fosse il catarismo l'eresia dantesca[193].
+
+Opere
+Il Fiore e Detto d'Amore
+
+ Lo stesso argomento in dettaglio: Il Fiore (poemetto) e Detto d'Amore.
+
+Due opere poetiche in volgare di argomento, lessico e stile affini e collocate in un periodo cronologico che va dal 1283 al 1287, sono state attribuite con una certa sicurezza a Dante dalla critica novecentesca, soprattutto a partire dal lavoro del filologo dantesco Gianfranco Contini[194]. Comunque, come rimarca Giulio Ferroni, persiste tra i critici letterari l'opinione che Il Fiore e il Detto d'Amore, due poemetti che prendono spunto dal capolavoro medievale in lingua d'oil Roman de la rose, siano in realtà opere di dubbia paternità dantesca[62].
+
+Le Rime
+
+ Lo stesso argomento in dettaglio: Le Rime.
+
+Dante Gabriel Rossetti, Beata Beatrix, dipinto a olio, 1872, Chicago Art Institute
+Le Rime sono una raccolta messa insieme e ordinata da moderni editori, che riunisce il complesso della produzione lirica dantesca dalle prove giovanili a quelle dell'età matura (le prime sono datate intorno al 1284)[62] divise tra Rime giovanili e Rime dell'esilio per distinguere due gruppi di liriche assai distanti per il tono e gli argomenti affrontati. Le Rime giovanili comprendono componimenti che riflettono le varie tendenze della lirica cortese del tempo, quella guittoniana, quella guinizelliana e quella cavalcantiana, passando da tematiche amorose a giocose tenzoni dallo sfondo velatamente erotico-giocoso con Forese Donati (sfidato nella Tenzone con Forese) e con Dante da Maiano[195].
+
+Vita Nova
+
+ Lo stesso argomento in dettaglio: Vita nuova.
+
+La Vita Nova può essere considerata il "romanzo" autobiografico di Dante, in cui si celebra l'amore per Beatrice, presentata con tutte le caratteristiche proprie dello stilnovismo dantesco. Racconto della vita spirituale e della evoluzione poetica del Poeta, resa come exemplum, la Vita nova è un prosimetro (brano caratterizzato dall'alternanza tra prosa e versi) e risulta strutturata in quarantadue (o trentuno)[196] capitoli in prosa collegati in una storia omogenea, che spiega una serie di testi poetici composti in tempi differenti, tra cui hanno particolare rilevanza la canzone-manifesto Donne ch'avete intelletto d'amore e il celebre sonetto Tanto gentile e tanto onesta pare. Secondo buona parte degli studiosi, per la forma del prosimetro, Dante si sarebbe ispirato alle razos provenzali (ovvero le "ragioni") che servivano a spiegare le ragioni da cui scaturivano le liriche; e alla De consolatione philosophiae di Severino Boezio[159]. L'opera è consacrata all'amore per Beatrice e fu composta probabilmente tra il 1292 e il 1293[159]. La composizione delle rime si può far risalire, secondo la cronologia che Dante fornisce, tra il 1283 come risulta dal sonetto A ciascun alma presa e dopo il giugno del 1291, anniversario della morte di Beatrice. Per stabilire con una certa sicurezza la data della composizione del libro nel suo insieme organico, ultimamente la critica è propensa ad avvalersi del 1300, data non superabile, che corrisponde alla morte del destinatario Guido Cavalcanti: "Questo mio primo amico a cui io ciò scrivo" (Vita nova, XXX, 3).
+
+Convivio
+
+ Lo stesso argomento in dettaglio: Convivio.
+Monumento a Dante in Piazza Santa Croce a Firenze (1865)
+Il Convivio (scritta tra il 1303 e il 1308)[197] dal latino convivium, ovvero "banchetto" (di sapienza), è la prima delle opere di Dante scritta subito dopo il forzato allontanamento di Firenze ed è il grande manifesto del fine "civile" che la letteratura deve avere nel consorzio umano. L'opera consiste in un commento a varie canzoni dottrinali poste all'incipit, una vera e propria enciclopedia dei saperi più importanti per coloro che vogliano dedicarsi all'attività pubblica e civile senza aver compiuto gli studi regolari[159]. È pertanto scritta in volgare per essere appunto capita da chi non ha avuto la possibilità in precedenza di studiare il latino. L'incipit del Convivio fa capire chiaramente che l'autore è un grande conoscitore e seguace di Aristotele; questi, infatti, viene citato con il termine "Lo Filosofo"[198]. L'incipit in questo caso spiega a chi è rivolta quest'opera e a chi non è rivolta: soltanto coloro che non hanno potuto conoscere la scienza dovrebbero accedervi. Questi sono stati impediti da due tipi di ragioni:
+interne: malformazioni fisiche, vizi e malizia;
+esterne: cura familiare, civile e difetto di luogo di nascita.
+Dante ritiene beati i pochi che possono partecipare alla mensa della scienza, dove si mangia il "pane degli angeli", e miseri coloro che si accontentano di mangiare il cibo delle pecore. Dante non siede alla mensa, ma è fuggito da coloro che mangiano il pastume e ha raccolto quello che cade dalla mensa degli eletti per crearne un altro banchetto. L'autore allestirà un banchetto e servirà una vivanda (i componimenti in versi) accompagnata dal pane (la prosa) necessario per assimilarne l'essenza. Saranno invitati a sedersi solo coloro che erano stati impediti da cura familiare e civile, mentre i pigri sarebbero stati ai loro piedi per raccogliere le briciole[199].
+
+De vulgari eloquentia
+
+ Lo stesso argomento in dettaglio: De vulgari eloquentia.
+
+Una copia del 1577 del De vulgari eloquentia
+Contemporaneo al Convivio, il De vulgari eloquentia è un trattato in latino scritto da Dante tra il 1303 e il 1304[200]. Composto da un primo libro intero e da 14 capitoli del secondo libro, era inizialmente destinato a comprendere quattro libri. Pur affrontando il tema della lingua volgare, fu scritto in latino perché gli interlocutori a cui Dante si rivolse appartenevano all'élite culturale del tempo[201], che forte della tradizione della letteratura classica riteneva il latino senz'altro superiore a qualsiasi volgare, ma anche per conferire alla lingua volgare una maggior dignità: il latino era infatti usato soltanto per scrivere di legge, religione e trattati internazionali, cioè argomenti della massima importanza. Dante si lanciò in un'appassionata difesa del volgare, dicendo che meritava di diventare una lingua illustre in grado di competere se non uguagliare la lingua di Virgilio, sostenendo però che per diventare una lingua in grado di trattare argomenti importanti il volgare doveva essere[202]:
+
+illustre (in quanto luminoso e quindi capace di dare lustro a chi ne fa uso nello scritto);
+cardinale (tale che intorno a esso ruotassero come una porta intorno al cardine, i volgari regionali);
+aulico (reso nobile dal suo uso dotto, tale da esser parlato nella reggia);
+curiale (come linguaggio delle corti italiane, e da essere adoperato negli atti politici di un sovrano).
+
+Con tali termini intendeva l'assoluta dignità del volgare anche come lingua letteraria, non più come lingua esclusivamente popolare. Dopo avere ammesso la grande dignità del siciliano illustre, la prima lingua letteraria assunta a dignità nazionale, passa in rassegna tutti gli altri volgari italiani trovando nell'uno alcune, nell'altro altre delle qualità che sommate dovrebbero costituire la lingua italiana. Dante vede nell'italiano la Panthera redolens dei bestiari medievali, animale che attrae la sua preda (qui lo scrittore) con il suo irresistibile profumo, che Dante sente in tutti i volgari regionali, e in particolare nel siciliano, senza però riuscire mai a vederla materializzarsi[203]: manca in effetti ancora una lingua italiana utilizzabile in tutti i suoi registri, da tutti gli strati della popolazione della penisola italica. Per farla riapparire era dunque necessario attingere alle opere dei letterati italiani finora apparsi, cercando così di delineare un canone linguistico e letterario comune[204].
+
+De Monarchia
+
+ Lo stesso argomento in dettaglio: Monarchia (Dante).
+
+Francesco Bini, codice contenente il De Monarchia di Dante (bml, ashburnham 619), datato intorno al 1390 e conservato alla Biblioteca Medicea Laurenziana. 
+L'opera venne composta in occasione della discesa in Italia dell'imperatore Enrico VII di Lussemburgo tra il 1310 e il 1313. Si compone di tre libri ed è la summa del pensiero politico dantesco[205]. Nel primo Dante afferma la necessità di un impero universale e autonomo, e riconosce questo impero come unica forma di governo capace di garantire unità e pace. Nel secondo riconosce la legittimità del diritto dell'impero da parte dei Romani. Nel terzo libro Dante dimostra che l'autorità del monarca è una volontà divina[206], e quindi dipende da Dio: non è soggetta all'autorità del pontefice; al contempo, però, l'imperatore deve mostrare rispetto nei confronti del pontefice, Vicario di Dio in Terra[207]. La posizione dantesca è per più aspetti originale, poiché si oppone decisivamente alla tradizione politica narrata dalla donazione di Costantino: il De Monarchia è in contrasto tanto con i sostenitori della concezione ierocratica[208], quanto con i sostenitori dell'autonomia politica e religiosa dei sovrani nazionali rispetto all'imperatore e al papa.
+
+Commedia
+
+ Lo stesso argomento in dettaglio: Divina Commedia.
+
+Domenico di Michelino, Dante ed i tre regni, 1465, Firenze, Santa Maria del Fiore
+La Comedìa — titolo originale dell'opera: successivamente Giovanni Boccaccio attribuì l'aggettivo "Divina" al poema dantesco[209] — è il capolavoro del poeta fiorentino ed è considerata la più importante testimonianza letteraria della civiltà medievale nonché una delle più grandi opere della letteratura universale[210]. Viene definita "comedia" in quanto scritta in stile "comico", ovvero non aulico. Un'altra interpretazione si fonda sul fatto che il poema inizia da situazioni piene di dolore e paura e finisce con la pace e la sublimità della visione di Dio. Dante iniziò a lavorare all'opera intorno al 1300 (anno giubilare, tanto che egli data al 7 aprile di quell'anno il suo viaggio nella selva oscura) e la continuò nel resto della vita, pubblicando le cantiche man mano che le completava[211]. Si hanno notizie di copie manoscritte dell'Inferno intorno al 1313, mentre il Purgatorio fu pubblicato nei due anni successivi. Il Paradiso, iniziato forse nel 1316, fu pubblicato man mano che si completavano i canti negli ultimi anni di vita del poeta. Il poema è diviso in tre libri o cantiche, ciascuno formato da 33 canti (tranne l'Inferno che ne presenta 34, poiché il primo funge da proemio all'intero poema) e a cui corrispondono i tre stili della Rota Vergilii[212]; ogni canto si compone di terzine di endecasillabi (la terzina dantesca).
+Incipit della Divina Commedia nell'editio princeps del 1472
+La Commedia tende a una rappresentazione ampia e drammatica della realtà, ben lontana dalla pedante poesia didattica medievale, ma intrisa di una spiritualità cristiana nuova che si mescola alla passione politica e agli interessi letterari del poeta. Si narra di un viaggio immaginario nei tre regni dell'aldilà, nei quali si proiettano il bene e il male del mondo terreno, compiuto dal poeta stesso, quale "simbolo" dell'umanità[186], sotto la guida della ragione e della fede. Il percorso tortuoso e arduo di Dante, il cui linguaggio diventa sempre più complesso quanto più egli sale verso il Paradiso, rappresenta, sotto metafora, anche il difficile processo di maturazione linguistica del volgare illustre, che si emancipa dai confini angusti municipali per far assurgere il volgare fiorentino al di sopra delle altre varianti del volgare italiano, arricchendolo nel contempo con il loro contatto[213]. Dante è accompagnato sia nell'Inferno che nel Purgatorio dal suo maestro Virgilio; in Paradiso da Beatrice e, infine, da san Bernardo.
+
+Le Epistole e l'Epistola XIII a Cangrande della Scala
+
+ Lo stesso argomento in dettaglio: Epistole (Dante Alighieri) ed Epistola XIII a Cangrande della Scala.
+
+Ruolo rilevante hanno le 13 Epistole scritte da Dante durante gli anni dell'esilio. Tra le principali epistole, incentrate principalmente su questioni politiche (relative alla discesa di Arrigo VII) e religiose (lettera indirizzata ai cardinali italiani riuniti, nel 1314, per eleggere il successore di Clemente V)[214]. L'Epistola XIII a Cangrande della Scala, risalente agli anni tra il 1316 e 1320[215], è l'ultima e la più rilevante delle epistole attualmente conservate (benché si dubiti in parte della sua autenticità)[215]. Essa contiene la dedica del Paradiso al signore di Verona, nonché importanti indicazioni per la lettura della Commedia: il soggetto (la condizione delle anime dopo la morte), la pluralità dei sensi, il titolo (che deriva dal fatto che inizia in modo aspro e triste e si conclude con il lieto fine), la finalità dell'opera che non è solo speculativa, ma pratica poiché mira a rimuovere i viventi dallo stato di miseria per portarli alla felicità[216].
+
+Egloghe
+
+ Lo stesso argomento in dettaglio: Egloghe (Dante Alighieri).
+
+Le Egloghe sono due componimenti di carattere bucolico scritti in lingua latina tra il 1319 e il 1321 a Ravenna, facenti parte di una corrispondenza con Giovanni del Virgilio, intellettuale bolognese[217], i cui due componimenti finiscono sotto il titolo di Egloga I e Egloga III, mentre quelli danteschi sono l'Egloga II e Egloga IV. La corrispondenza/tenzone fra i due nacque quando Virgilio rimproverò Dante di voler conquistare la corona poetica scrivendo in volgare e non in latino, critica che suscitò la reazione di Dante e la composizione delle Egloghe, visto che Giovanni del Virgilio aveva inviato a Dante tale componimento latino e che, secondo la dottrina medievale della responsio, l'interlocutore doveva rispondere con il genere usato per primo[218].Il sistema dell'Universo secondo l'egiziano Tolomeo, teoria fatta propria da Dante stesso
+
+La Quaestio de aqua et terra
+
+ Lo stesso argomento in dettaglio: Quaestio de aqua et terra.
+
+La trattazione filosofica continuò fino alla fine della vita del poeta. Il 20 gennaio 1320, Dante si recò nuovamente a Verona per discutere, nella chiesa di Sant'Elena, la struttura del cosmo secondo i cardini aristotelico-tolemaici che, in quel periodo, erano già oggetto di studio privilegiato per la composizione del Paradiso. Dante, qui, sostiene come la Terra si trovasse al centro dell'universo, circondata dal mondo sublunare (composto da terra, acqua, aria e fuoco) e di come l'acqua si trovi al di sopra della sfera terrestre. Da qui, la trattazione filosofica caratterizzata dalla disputatio con gli avversari[219].
+
+La fortuna in Italia e nel mondo
+
+ Lo stesso argomento in dettaglio: Critica e filologia dantesca.
+
+In Italia
+Jacopo da Ponte, Ritratto del cardinale Pietro Bembo. La posizione bembiana segnò un punto di svolta negativo per la produzione dantesca
+Dante ebbe una risonanza e una fama pressoché immediata in Italia. Già a partire dalla seconda metà del XIV secolo, il Boccaccio iniziò una vera e propria diffusione del culto dantesco, culminata prima nella composizione del Trattatello in laude di Dante e poi nelle Esposizioni sopra la commedia[220]. L'eredità del Boccaccio fu raccolta, durante la fase del primo umanesimo, dal cancelliere della Repubblica Fiorentina Leonardo Bruni, che compose la Vita di Dante Alighieri (1436) e che contribuì al perdurare del mito dantesco nelle generazioni dei letterati (Agnolo Poliziano, Lorenzo de' Medici e Luigi Pulci) e degli artisti (Sandro Botticelli) fiorentini della seconda metà del Quattrocento[221]. La parabola dantesca cominciò tuttavia a scemare a partire dal 1525, allorché il cardinale Pietro Bembo, nelle Prose della volgar lingua, stabilì la superiorità del Petrarca in campo poetico e del Boccaccio per la prosa. Tale canone escluderà il Dante della Commedia in quanto difficile da imitare, determinandone un declino (nonostante le appassionate difese di Michelangelo prima e di Giambattista Vico poi) che perdurerà per tutto il Seicento e il Settecento, a causa anche della messa all'Indice del De Monarchia. Solamente con l'età romantica e risorgimentale[222] Dante riacquisì un ruolo di primo piano in quanto simbolo dell'italianità e della solitudine propria dell'eroe romantico. L'alto valore letterario della Commedia, consacrato da De Sanctis nella sua Storia della letteratura italiana e riconfermato poi da Carducci, Pascoli e Benedetto Croce, troverà nel XX secolo[223] appassionati studiosi e cultori in Gianfranco Contini, Umberto Bosco, Natalino Sapegno, Giorgio Petrocchi, Maria Corti e, negli ultimi anni, in Marco Santagata.
+
+Sempre nel Novecento e nel Duemila, vari pontefici hanno dedicato pensieri di stima per l'Alighieri: Benedetto XV, Paolo VI, Giovanni Paolo II l'hanno ricordato per il suo altissimo valore artistico morale; Benedetto XVI per la finezza teologica; papa Francesco per il valore soteriologico della Commedia[224][225][226][227][228][229].
+
+Nel mondo
+Eugène Delacroix, La barca di Dante, olio su tela, 1822, Museo del Louvre, Parigi
+Tra il Quattrocento e il XXI secolo, Dante conobbe fasi alterne nei restanti Paesi del mondo, influenzati da fattori storici e culturali a seconda delle regioni geografiche di appartenenza:
+Inghilterra[230]: Geoffrey Chaucer, oltre al modello del Decameron, si ispirò anche alla Commedia, traendo spunto dalle tragedie dell'Inferno quali quella del Conte Ugolino. Ignorato pressoché nei secoli XV e XVI secolo, il poeta fiorentino trovò un grandissimo estimatore in John Milton, che prese spunto dall'immaginario dantesco per la creazione dell'universo del suo Paradise Lost. Con il Romanticismo, Dante fu ammirato da letterati (William Blake, William Wordsworth, Samuel Taylor Coleridge, George Gordon Byron e Alfred Tennyson) e pittori (Dante Gabriel Rossetti e i preraffaelliti, oltre che da William Bell Scott), che lo considerarono un vero e proprio maestro di poesia e di arte. Nel XX secolo, Edward Morgan Forster si ispirò alla selva oscura per l'Omnibus celeste e Thomas Stearns Eliot (poeta di origine statunitense naturalizzato inglese), grandissimo estimatore della Divina Commedia, ne sottolinea il profondo ascendente sulla gran parte delle sue opere e in particolare su The Waste Land (La Terra Desolata, 1922), uno dei suoi saggi dedicati a Dante ora raccolti nel volume Scritti su Dante[231].
+Estimatore della Vita Nova, Ralph Waldo Emerson fece conoscere il nome di Dante negli Stati Uniti d'America
+Francia[232]: a parte alcuni codici di Christine de Pizan, Dante non fu conosciuto approfonditamente in Francia fino alla discesa, nel 1494, di Carlo VIII. Sotto Francesco I, Dante si diffuse grazie anche alla cosiddetta Scuola lionese, fondata da mercanti italiani che esportarono d'oltralpe la Commedia. Le successive critiche bembiane e il diffondersi del petrarchismo oscurarono la fama di Dante in terra di Francia, cosa che fu favorita dai poeti de La Pléiade e dal classicismo francese sotto Luigi XIV. Aspramente criticato poi da Voltaire, Dante riconobbe un certo successo nel XIX secolo grazie alle lezioni tenute da Claude Fauriel e da Abel-François Villemain.
+Germania[233]: la Germania conobbe, come la Francia, relativamente tardi Dante. L'interesse per il Sommo Poeta, al contrario delle altre nazioni europee, toccò però un vero e proprio culmine nel corso della riforma protestante, per via dei contenuti polemici anticlericali presenti nel De Monarchia. Il Dante della Commedia fu scoperto solo in età Romantica grazie a August Wilhelm von Schlegel, ai filosofi Friedrich Schelling e Hegel e al filologo Karl Witte.
+Spagna[234]: precoce fu invece la conoscenza di Dante in Spagna grazie a opere, datate tra il XIV e il XV secolo, quali il Cancionero de Baena e Enrique de Aragón. La Spagna, esponente di spicco della controriforma, condannò violentemente l'anticlericalismo dantesco, determinandone un vero e proprio eclissamento che perdurò fino al 1829, con l'arrivo del Romanticismo. Fondamentali risultarono le traduzioni della Commedia in prosa ad opera di Miguel Aranda y Sanjuán (1868) e in versi del Conde de Cheste (1879).
+Americhe[235]: già nel corso del XIX secolo, lo statunitense Ralph Waldo Emerson importò sul suolo americano la Vita Nova, decretando un interesse sempre maggiore nella letteratura americana grazie a Ezra Pound ed Henry Miller. Nel mondo ispanofono, invece, si segnala il culto che l'argentino Jorge Luis Borges ha manifestato per la Commedia.
+
+Nella cultura di massa
+
+ Lo stesso argomento in dettaglio: Dante Alighieri nella cultura di massa.
+
+Dante nella faccia nazionale dei 2 euro italiani
+Nel corso del XX secolo, la figura di Dante è stata oggetto di numerose iniziative affinché fosse diffuso presso il grande pubblico. In occasione del cinquantenario dell'Unità d'Italia, la Milano Films[236] e la Helios Film[237] realizzarono i due primi lungometraggi dedicati all'Inferno, lavori che suscitarono reazioni sia positive che negative (queste ultime dovute alla presenza di elementi erotici). Un nuovo sceneggiato (Dante) è uscito nel 2022, con Pupi Avati come regista.[238]
+
+Nei decenni successivi, le celebrazioni nazionali dantesche, come il seicentenario della morte nel 1921 e il settecentenario della nascita nel 1965, sensibilizzarono il popolo italiano sull'eredità del Sommo Poeta, anche grazie allo sceneggiato televisivo Vita di Dante, realizzato nel 1965 in occasione del settecentenario.[239] Nel corso della seconda metà del Novecento, l'opera di sensibilizzazione si avvalse inoltre dell'emissione di lire raffiguranti il volto di Dante[240] (oltre che di fumetti della Disney ispirati all'Inferno).[241][242]Roberto Benigni in Tutto Dante a Padova, 2008Grazie alla televisione, la diffusione dell'opera di Dante raggiunse un pubblico sempre più ampio: Vittorio Gassman, Vittorio Sermonti e Roberto Benigni recitarono i versi della Commedia in manifestazioni pubbliche. Nel resto del mondo, invece, Dante ha ispirato la realizzazione di alcuni film (quali Seven)[243] e di alcuni manga (come le opere di Gō Nagai) e videogiochi (tra cui Dante's Inferno).[244]
+
+Personaggi e luoghi dell'Inferno sono stati scelti dall'Unione Astronomica Internazionale per dare i nomi a formazioni geologiche sulla superficie di Io, satellite di Giove.[245] Inoltre nel 1998 il ritratto di Dante Alighieri dipinto da Raffaello Sanzio è stato scelto come faccia nazionale della moneta da 2 euro italiana.[246] Nel 2020 la Repubblica Italiana ha stabilito il 25 marzo quale data per commemorare annualmente la figura di Dante; tale giornata nazionale è stata denominata Dantedì.[247]
+
+Note
+Esplicative
+↑ Contini 1970, pp. 895-901
+«l'Alighieri era per solito designato con l'ipocorismo 'Dante' (unicamente in un atto del 1343, rogato in favore del figlio Iacopo, il defunto padre è denominato "Durante, ol. vocatus Dante, cd. Alagherii")»
+
+↑ Barbero, p. 45 ricorda che la famiglia di Dante non era appartenente alla nobiltà ma, dal momento che questa veniva ricordata col cognome "Alagherii", indicava che la famiglia del poeta era superiore a molte altre famiglie cittadine. Per la precisione lo storico dice: «Non è la nobiltà, ma è l'emergere dalla massa».
+↑ Barbero, p. 49.
+↑ L'informazione dell'incontro tra Dante e Scarpetta Ordelaffi è stata data dall'umanista Flavio Biondo, originario appunto di Forli. Cfr. Barbero, p. 175.
+↑ Già da parecchi anni, l'Italia era stravolta da guerre civili tra le fazioni dei guelfi e ghibellini. Inoltre, dal 1305, papa Clemente V trasferì la sua corte ad Avignone, mentre l'imperatore Alberto I d'Asburgo preferiva non intromettersi nelle questioni italiane, suscitando la violenza indignazione dantesca nella celebra apostrofe politica in Pg VI, 97-99: «O Alberto tedesco ch'abbandoni/costei [l'Italia] ch'è fatta indomita e selvaggia,/e dovresti inforcar li suoi arcioni...»
+↑ Un'altra ricostruzione propone di datare l'opera a prima del 1308, quando l'Impero era in balia dei Principe elettore prima dell'elezione di Enrico VII di Lussemburgo, mentre un'altra ancora propone che sia stata composta nel 1313, dopo la morte di Enrico VIII: entrambi momenti di sbando in cui Dante avrebbe cercato di fondare ideologicamente l'Impero. Nel caso della composizione durante il regno di Enrico VIII, l'opera sarebbe servita a legittimare la sua politica. Grimaldi, p. 29.
+↑ È in quest'occasione che Dante, a Pisa, incontrò il suo vecchio amico Ser Petracco e il figlio di lui poco meno che decenne Francesco, secondo quanto riportato da lui stesso nelle Familiares XXI, 15 indirizzata proprio a Boccaccio. Vedasi la voce su Francesco Petrarca al riguardo e Barbero, pp. 236-237.
+↑ In quanto l'ascesa della fazione ancora più agguerrita dei Neri impedì definitivamente agli esiliati di rientrare a Firenze. Non a caso nel 1315 non solo Dante, ma anche i suoi figli Jacopo e Pietro furono banditi e messi a morte da Firenze perché non si erano presentati al'amnistia del 1315 (cfr. Barbero, p. 247).
+↑ . L'ambientazione della Vita nova, per quanto infarcita di visioni oniriche e di stilemi simbolici, è contornata dal paesaggio della Firenze medievale, in cui vengono rievocate le figure non solo di Beatrice, ma anche di Guido Cavalcanti (Vita nova III, 14: «... io chiamo primo de li miei amici...»), la probabile allusione alle operazioni militari del 1289 (Vita Nova IX,1: «Appresso la morte di questa donna alquanti die avvenne cosa per la quale me convenne partire de la sopradetta cittade e ire verso quelle parti dov'era la gentile donna ch'era stata mia difesa...»), la morte di Folco Portinari, padre di Beatrice (Vita nova XXII, 1: «Appresso ciò non molti dì passati, sì come piacque al glorioso sire lo quale non negoe la morte a sé, colui che era stato genitore di tanta maraviglia quanta si vedea ch'era questa nobilissima Beatrice, di questa vita uscendo, a la gloria etternale se ne gio veracemente») e via dicendo.
+↑ Il nome Beatrice assumerà soprattutto nella Divina Commedia la sua reale importanza, in quanto, etimologicamente parlando, significa Portatrice di Beatitudine, tanto che solo questa figura potrà condurre Dante lungo il percorso del Paradiso.
+↑ Il numero nove, non a caso, è un multiplo del numero tre che, nella numerologia ebraico-cristiana, rappresenta la perfezione di Dio, in quanto simboleggiante le tre persone della Trinità. Si veda Chines, p. 51.
+
+Bibliografiche
+↑ Dante Alighieri, in Treccani.it – Enciclopedie on line, Roma, Istituto dell'Enciclopedia Italiana. URL consultato il 5 aprile 2016.
+↑ Guglielmo Gorni, Dante: Storia di un visionario, Laterza, 2011.
+↑ Alessandro Barbero, Alighieri Durante, detto Dante, Rai Storia,  a 9 min 04 s. URL consultato il 14 settembre 2021.
+↑ H. Bloom, Il Canone occidentale.
+↑ Sara Marchesi e Maria Grazia Vasta (a cura di), Dante Alighieri, su letteratura.it, maggio 2007. URL consultato il 3 giugno 2015.
+↑ Fulvio Conti, Il Sommo italiano. Dante e l'identità della nazione, Roma, Carocci editore, 2021. URL consultato il 29 gennaio 2024.
+↑ Società Dante Alighieri – il Mondo in Italiano, su ladante.it, Società Dante Alighieri. URL consultato il 3 giugno 2015.
+↑ Dante espone questa sua convinzione in Convivio IV, XXIII 9: «Là dove sia lo punto sommo di questo arco, per quella disaguaglianza che detta è di sopra, è forte da sapere; ma ne li più io credo tra il trentesimo e quarantesimo anno, e io credo che ne li perfettamente naturati esso ne sia nel trentacinquesimo anno».
+↑ I critici letterari Umberto Bosco e Giovanni Reggio sostengono che Dante fu influenzato da un passo estratto dalla Bibbia: «L'opinione era ricalcata d'altronde su un passo biblico: "Dies annorum nostrorum sunt septuaginta anni" (Psalmus 90 (89), 10).)» (Dante Alighieri, La Divina Commedia, a cura di Umberto Bosco e Giovanni Reggio, Vol. 1 Inferno, p. 7).
+↑ Villani, p. 135.
+↑ Barbero, p. 61.
+↑ Ferroni, p. 3.
+↑ Moreali, p. 457.
+↑ Malato, p. 31.
+↑ Barbero, p. 63 ricorda come i diminutivi fossero comuni nella Firenze medioevale.
+↑ Marchi, p. 15.
+↑ Giovanni Boccaccio, Trattatello in Laude di Dante,  Capitolo II – Patria e maggiori di Dante. URL consultato il 20 maggio 2015.
+1 2 3 4 Marchi, p. 14.
+↑ Inferno, XV, v. 76.
+↑ Si veda Paradiso, XV 135.
+1 2 Cacciaguida, su Dante online, Società dantesca italiana. URL consultato il 6 giugno 2015.
+↑ Barbero, p. 69.
+↑ Riguardo al dibattito sulla nobiltà della famiglia Alighieri, si consultino: Carpi; Barbi
+↑ D'Addario.
+↑ D'Addario 1960.
+↑ Andrea Mazzucchi, I genitori, su internetculturale.it, Internet culturale, 2012. URL consultato il 4 febbraio 2024.
+↑ LXXIV, su it.wikisource.org.
+↑ Dante, "il padre Alighiero di Bellincione era un usuraio: la prova in due pergamene", su Il Fatto Quotidiano, 1º febbraio 2017. URL consultato il 2 febbraio 2017.
+↑ Reynolds, p. 15.
+↑ Malato, p. 32.
+↑ Barbero, pp. 37-38.
+↑ Barbero, p. 51.
+1 2 3 Petrocchi, p. 12.
+↑ Non tutti sono concordi nell'attribuire a Tana la maternità di Lapa di Chiarissimo Cialuffi. Guardasi Barbero, p. 66: «E dunque Tana era sorella di Dante a tutti gli effetti, figlia di Alighiero e Bella...»
+↑ Barbero, p. 66.
+↑ Barbero, p. 84.
+1 2 3 4 5 Ferroni, p. 4.
+↑ Di Marco, p. 56.
+1 2 Petrocchi, p. 13.
+↑ Andrea Mazzucchi, Brunetto Latini, su internetculturale.it, Internet culturale, 2012. URL consultato il 4 febbraio 2024.
+↑ Mazzoni.
+↑ Inglese.
+↑ L'ultimo verso, infatti, ricorda molto il Somnium Scipionis di Cicerone, ove gli uomini resisi illustri per i loro meriti civili trovano finalmente pace in una sorta di "paradiso", eternandosi (come dice appunto Dante).
+↑ Bosco-Reggio, p. 248, nota 85.
+↑ Andrea Mazzucchi, I francescani di Santa Croce e i domenicani di Santa Maria Novella, su internetculturale.it, Internet Culturale. URL consultato il 4 febbraio 2024.
+↑ Barbero, p. 86.
+↑ Reynolds, p. 20.
+↑ Gilson, pp. 136-137.
+↑ Malato, pp. 39-40.
+↑ Andrea Mazzucchi, Dante Alighieri. Aristotele: 'l maestro di color che sanno, su internetculturale.it, Internet Culturale. URL consultato il 4 febbraio 2024.
+↑ Tra questi Giorgio Petrocchi, come si evince dalla sua da quest'affermazione: Petrocchi, Vita di Dante, p. 22
+↑ (Cronologia della vita di Dante - 1287. URL consultato il 2 ottobre 2019 (archiviato dall'url originale il 1º aprile 2015).).
+↑ Carlo Marchesi, Dante Alighieri. Soggiorno a Bologna, su bolognaracconta.com. URL consultato il 16 novembre 2017 (archiviato dall'url originale il 22 luglio 2014).
+↑ Barbero, p. 90.
+↑ Guidubaldi.
+↑ Paradiso, X, 133-138.
+1 2 Andrea Mazzucchi, I primi anni dell’esilio (1302-1310), su internetculturale.it, Internet Culturale. URL consultato il 4 febbraio 2024.
+1 2 3 4 5 6 7 Ferroni, p. 6.
+↑ Chines, p. 35.
+↑ Contini 2006, pp. 75-76.
+↑ Chines, p. 39.
+1 2 3 4 Ferroni, p. 7.
+↑ Si veda il rapporto polemico con l'Orbicciani in Purgatorio XXIV, vv. 52-62, ove viene stesa anche la prima definizione di Stil novo.
+↑ La conoscenza del provenzale da parte di Dante è ricostruibile sia dalle citazioni contenute nel De vulgari eloquentia sia dai versi provenzali inseriti nel Purgatorio (Canto XXVI, vv. 140-147).
+↑ Si veda, come approfondimento, Petrocchi, pp. 35-48 (Dalle rime guittoniane alla Vita Nova)
+1 2 3 Piattoli.
+↑ Barbero, p. 125.
+↑ Andrea Mazzucchi, La moglie: Gemma Donati, su internetculturale.it, Internet culturale. URL consultato il 4 febbraio 2024.
+↑ Laura Regnicoli, Nuovi documenti sul padre e su un figlio di Dante, in Enrico Malato e Andrea Mazzucchi (a cura di), Dante fra il settecentocinquantenario della nascita (2015) e il settecentenario della morte (2021), II, Roma, Salerno Editrice, 2016,  pp. 817-833, ISBN 9788829005192.
+↑ Si chiamava Giovanni il primo figlio maschio di Dante Alighieri, su La Stampa, 26 dicembre 2016. URL consultato il 10 marzo 2024.
+↑ Dante accenna alla morte violenta di Corso Donati nel Purgatorio XXIV, vv. 82-84, mettendo la profezia post eventum in bocca al fratello di lui, Forese: «"Or va", diss'el; "che quei che più n'ha colpa,/vegg'ïo a coda d'una bestia tratto/inver' la valle ove mai non si scolpa./La bestia ad ogne passo va più ratto,/crescendo sempre, fin ch'ella il percuote,/e lascia il corpo vilmente disfatto». La tematica della cavalcata infernale è un topos letterario ben noto nella letteratura medievale: verrà ripreso, infatti, sia da Giovanni Boccaccio, sia da Jacopo Passavanti.
+↑ Dante stesso citerà Carlo Martello d'Angiò nella Divina Commedia (Paradiso VIII, v. 31 e IX, v. 1).
+↑ Andrea Mazzucchi, L’Arte dei Medici e degli Speziali, su internetculturale.it, Internet culturale, 2012. URL consultato il 4 febbraio 2024.
+↑ Barbero, p. 129.
+1 2 3 4 5 Ferroni, p. 5.
+↑ Barbero, p. 128.
+↑ Bacci.
+↑ Barbero, p. 134.
+1 2 Pampaloni.
+↑ Barbero, p. 136.
+↑ Petrocchi, p. 80.
+1 2 Petrocchi, p. 79.
+↑ Barbero, pp. 141-142.
+↑ Petrocchi, p. 81.
+1 2 3 4 Petrocchi, p. 82.
+↑ Pizzinat, p. 323
+«... Benedetto XI: l'unico papa di quel periodo che non ebbe giudizi negativi da parte dell'Alighieri...»
+
+↑ Marco Santagata, La condanna a morte, su lavitadidante.it, Mondadori, 2012. URL consultato il 2 ottobre 2019 (archiviato dall'url originale il 19 febbraio 2015).
+↑ Andrea Mazzucchi, Bonifacio VIII: lo principe d’i novi Farisei, su internetculturale.it. URL consultato il 5 agosto 2025.
+1 2 Ciappelli.
+↑ Barbero, pp. 152-153.
+↑ Barbero, pp. 155-157.
+↑ Il testo integrale delle sentenze di condanna è stato pubblicato nel volume a cura di Dante Ricci Il processo di Dante, Firenze, Arnaud editore, 1967 (nuova edizione con una presentazione di Morris L. Ghezzi, Udine, Mimesi, 2011); Malato, p. 49.
+↑ Barbero, pp. 172-175
+↑ Petrocchi, p. 93.
+↑ Barbero, p. 176.
+↑ «... 10 giugno: Niccolò da Prato lascia Firenze; ultima decade di giugno: i Neri consolidano il loro potere in città impadronendosi di tutte le cariche pubbliche». (Petrocchi, p. 97).
+↑ Petrocchi, p. 95.
+↑ Barbero, p. 179.
+1 2 Petrocchi, p. 97.
+↑ Guglielmino-Grosser, p. 145.
+↑ Saffiotti Bernardi.
+↑ Andrea Mazzucchi, La Lunigiana, su internetculturale.it, Internet culturale, 2012. URL consultato il 4 febbraio 2024.
+↑ Barbero, p. 210.
+1 2 Giuseppe Benelli, Il VII centenario della venuta di Dante in Lunigiana (PDF), su gruppocarige.it,  p. 39. URL consultato il 1º novembre 2023 (archiviato dall'url originale il 7 agosto 2016).
+↑ Marco Santagata, Dante in Lunigiana, su lavitadidante.it, Mondadori, 2012. URL consultato il 2 ottobre 2019 (archiviato dall'url originale il 4 marzo 2016).
+1 2 3 4 5 6 Marco Santagata, Cronologia della vita di Dante, su lavitadidante.it, Mondadori, 2012. URL consultato il 2 ottobre 2019 (archiviato dall'url originale il 1º aprile 2015).
+↑ Barbero, p. 215.
+↑ Barbero, p. 220: «...non tutti i dantisti sono persuasi da queste notizie così circostanziate, e molti si dimostrano scettici sul soggiorno parigino, preferendo ipotizzare che Dante, se davvero andò in Francia....si sia fermato alla corte papale di Avignone».
+↑ Barbero, p. 224.
+↑ Petrocchi, p. 148.
+↑ Barbero, p. 229.
+↑ Marco Santagata, Dante a Milano, su lavitadidante.it, Mondadori, 2012. URL consultato il 2 ottobre 2019 (archiviato dall'url originale il 20 maggio 2015).
+↑ Barbero, p. 236.
+↑ Barbero, p. 239; p. 240.
+↑ Petrocchi, p. 154.
+↑ Petrocchi, p. 94.
+↑ Dante stesso, in Convivio IV, XVI, 6, non ne elogia le qualità umane. Si veda:Varanini
+↑ Barbero, p. 247.
+1 2 Andrea Mazzucchi, Cangrande della Scala, su internetculturale.it, Internet Culturale. URL consultato il 4 febbraio 2024.
+↑ Scoperta una nuova lettera di Dante che riscrive il suo esilio, in Repubblica. URL consultato il 17 ottobre 2018.
+↑ Barbero, p. 258.
+↑ Torre.
+↑ Marco Santagata, Cronologia della vita di Dante, su lavitadidante.it, Mondadori, 2012. URL consultato il 2 ottobre 2019 (archiviato dall'url originale il 1º aprile 2015).«Le cause della partenza sono ignote: forse un accresciuto disagio per l’ambiente scaligero (di cui resterebbe testimonianza nell’aneddoto riferito da Petrarca, Rerum memorandarum libri II 83: Cangrande chiede a Dante come mai non riesce a rendersi gradito al pari di un buffone di corte, il poeta risponde che gli uomini apprezzano chi è simile a loro), forse la fama di amico delle lettere goduta dal nuovo signore o la possibilità di trovare una sistemazione ai figli (in questo periodo Pietro ottiene il rettorato di due chiese ravennati, S. Maria in Zenzanigola e S. Simone del Muro).»
+↑ Barbero, p. 255.
+↑ Petrocchi, p. 199.
+↑ Come sottolineato da Petrocchi, pp. 198-199, Dante fu raggiunto dal resto della famiglia, compresa (forse) la moglie Gemma.
+↑ Petrocchi, p. 198.
+↑ «... si può dedurre che il signore di Ravenna volle impegnarlo, e forse più volte, in ambascerie e relazioni cancelleresche, mai in un servizio continuo e ufficiale di segretario...» (Petrocchi, p. 198).
+↑ Petrocchi, p. 221.
+↑ Dall'Onda, p. 158.
+↑ Petrocchi, p. 222.
+↑ VI centenario dantesco, p. 6.
+↑ Andrea Mazzucchelli, La morte e le celebrazioni funebri, su internetculturale.it, Internet Culturale. URL consultato il 4 febbraio 2024.
+1 2 3 VI centenario dantesco, p. 7.
+↑ Mara Caretto, Fortuna e ricezione di Dante nel Trecento relatore Saverio Bellomo (PDF), su unitesi.unive.it, Università Ca'Foscari, 2013,  p. 52.
+↑ Bencivenni Pelli, p. 148.
+↑ «La diffusione della biografia di Boccaccio sortì i suoi effetti. Nel 1373 i cittadini di Firenze avanzarono istanza ai priori per l'organizzazione di una serie di pubbliche lezioni sulla Commedia» (Reynolds, p. 430).
+↑ Tettoni-Saladini, Allighieri.
+1 2 3 4 5 Toni di Rossi, Ravenna - Tomba di Dante, su tonidirossi.it. URL consultato il 18 maggio 2015.
+↑ Basilica di San Francesco, su turismo.ra.it, Ravenna. Turismo e cultura, 3 giugno 2015. URL consultato il 4 giugno 2015.«L'attuale denominazione si deve ai frati minori francescani che, tra il 1261 e il 1810, e poi di nuovo tra il 1949 sino a oggi, la scelsero come loro sede.»
+↑ La morte di Dante e il giallo delle sue spoglie, su foliamagazine.it, Folia. URL consultato il 4 giugno 2015.«Al suo interno si trovavano ossa “ben conservate, consistenti, non rose da tarli di colore rosso scuro, e quasi in numero da completare uno scheletro” (secondo le parole di Primo Uccellini, autore della Relazione storica sulla avventurosa scoperta delle ossa di Dante Alighieri, 1865)»
+1 2 La morte di Dante e il giallo delle sue spoglie, su foliamagazine.it, Folia. URL consultato il 4 giugno 2015.
+↑ Marconi: «Giovanni Boccaccio, nella vita di Dante, racconta che Guido Novello aveva bandito un concorso per l'epigrafe sulla nuova tomba di Dante che egli aveva intenzione di far erigere; in questa occasione appunto il C. avrebbe composto l'esastico "Iura monarchiae" fatto incidere da lui intorno al 1357, dopo la morte di Guido Novello, sul vecchio sepolcro».
+↑ Ludovico Frati e Corrado Ricci, Il sepolcro di Dante. Documenti raccolti, Bologna, Stab. tip. succ. Monti, 1889,  p. 4.
+↑ Mara Amorevoli, Ma quale naso aquilino ecco il vero viso di Dante, in la Repubblica.it, 8 marzo 2005 (archiviato dall'url originale il 24 maggio 2015).
+1 2 Cinzia dal Maso, Più dolce, ecco il vero volto di Dante. Via il profilo spigoloso del Sommo Poeta, in La Repubblica.it, 11 gennaio 2007. URL consultato il 24 maggio 2015.
+↑ Giorgio Grupponi, Ricostruzione del volto di Dante, su ilgiornale.it, fenici.unibo. URL consultato il 24 maggio 2015.
+↑ Ledda, p. 5.
+↑ (FR) Fréderic Ozanam, Dante et la philosophie catholique au treizième siècle, Parigi, Debécourt, 1839,  p. 24, OCLC 562447127. URL consultato il 2 febbraio 2024.
+↑ De Sanctis, p. 153.
+↑ De Vulgari Eloquentia I, II 1.
+
+↑ Cecchin.
+↑ Marco Santagata, La promozione del volgare, su lavitadidante.it, Mondadori, 2012. URL consultato il 2 ottobre 2019 (archiviato dall'url originale il 4 marzo 2016).
+↑ Selmi, p. 389.
+↑ Contini 1992
+«Dei più visibili e sommari attributi che pertengono a Dante, il primo è il plurilinguismo.»
+
+↑ Guglielmo Barucci, Dante e il pluristilismo delle "Rime", su oilproject.org, oilproject. URL consultato il 19 maggio 2015.
+↑ Mengaldo
+«... Dante non fa che ereditare una nozione, la tripartizione degli stili, che è un luogo comune di tutta la retorica medievale, a sua volta derivato da più modelli della latinità classica e tarda [...] Momento fondamentale nella storia di queste dottrine è quello in cui, dapprima con Donato e con Servio, lo schema dei tre gradi di stili è applicato alle tre opere di Virgilio, che ne divengono esempio paradigmatico, rispettivamente le Bucoliche di stile umile o basso, le Georgiche del mezzano o mediocre, l'Eneide del grave o sublime o grandiloquus»
+
+↑ Guglielmino-Grosser, p. 170.
+1 2 3 4 Ferroni, p. 8.
+↑ Matilde Quarti, Guido Cavalcanti: la poetica e lo Stilnovo, su oilproject.org, oilproject. URL consultato il 19 maggio 2015.
+↑ Guglielmino-Grosser, p. 147.
+↑ La “Vita Nova” di Dante: il capitolo 26 e la poesia della lode, su oilproject.org, Oilproject. URL consultato il 21 maggio 2015.
+↑ Andrea Cortellessa, "Purgatorio", Canto 30: commento critico, su oilproject.org, Oilproject. URL consultato il 21 maggio 2015.«Quando Beatrice “passa a seconda vita”, cioè muore, Dante commise la sua colpa: mutò vita; perse la diritta via, la retta via; “si tolse a me e diessi altrui”. Questa non è gelosia di donna viva, ma è allegoria di una perdita di ruolo, di significato dell’esistenza che Dante evidentemente aveva sofferto»
+↑ Come manifestato nel sonetto programmatico Tanto gentile e tanto onesta pare (Vita Nova XXVI), Dante estende a tutti gli uomini i benefici della vista di Beatrice («Mostrasi sì piacente a chi la mira,/che dà per li occhi una dolcezza al core,/che 'ntender no la può chi no la prova»).
+↑ Luca Ghirimoldi, Dante, "Così nel mio parlar voglio esser aspro": analisi e commento, su oilproject.org, Oilproject. URL consultato il 4 giugno 2015.
+↑ Chines, p. 54.
+↑ «Tutto questo consesso di filosofi, poeti, moralisti e scienziati rappresenta le credenziali scientifiche di Dante, la sua "bibliografia" di riferimento, le fonti autorevoli di quanto si accingeva a scrivere su inferno, purgatorio e paradiso» (Reynolds, p. 150)
+↑ «Quivi, secondo che per ascoltare,/non avea pianto mai che di sospiri/che l'aura etterna facevan tremare» (Inferno IV, vv. 25-27); «... s'elli hanno mercedi,/non basta, perché non ebber battesmo,/ch'è porta de la fede che tu credi;/e s'e’ furon dinanzi al cristianesmo,/non adorar debitamente a Dio:/e di questi cotai son io medesmo./Per tai difetti, non per altro rio,/semo perduti, e sol di tanto offesi/che sanza speme vivemo in disio». (Inferno IV, vv. 34-42)
+↑ Lisa Pericoli, La "Commedia" di Dante: fonti e modelli, su oilproject.org, oilproject. URL consultato il 21 maggio 2015.«Né si può dimenticare che alla base della rilettura dei “classici” c’è sempre, nella mentalità medievale, la teoria dei “quattro sensi” dell’interpretazione: il senso letterale (che trasmette la “lettera” del testo, ovvero il suo riferirsi al mondo reale), quello allegorico (in cui dietro la storia fittizia c’è un senso recondito da scoprire), quello morale (relativo all’insegnamento etico che si può desumere dalle pagine scritte) e quello anagogico (che reinterpreta il contenuto dell’opera in ottica spiritual-salvifica).»
+↑ Francesco Lamendola, Il culto di Virgilio nel medioevo, su centrostudilaruna.it, Centro Studi La Runa, 2 aprile 2010. URL consultato il 21 maggio 2015.
+↑ Cova, p. 66.
+↑ Gabriella Giudici, Il diavolo, ossessione medievale, su gabriellagiudici.it. URL consultato il 22 maggio 2015.
+↑ Quali Fiamminghi tra Guizzante e Bruggia, / temendo 'l fiotto che 'nver' lor s'avventa, / fanno lo schermo perché 'l mar si fuggia; // e quali Padoan lungo la Brenta, / per difender lor ville e lor castelli, / anzi che Carentana il caldo senta (Inferno XV, vv. 4-9)
+↑ Giuseppe Gabrieli, Dante e l'Oriente, Bologna, Nicola Zanichelli editore, 1910. Più dibattute le tesi di Miguel Asín Palacios, La escatología musulmana en la Divina Comedia, Madrid, Real Academia. Española, 1919.
+↑ Foster.
+1 2 Lisa Pericoli, La Commedia di Dante: fonti e modelli, su oilproject.org, Oilproject. URL consultato il 21 maggio 2015.
+↑ Maria Corti. Dante e l'Islam, su emsf.rai.it, Rai Educational, 20 aprile 2000. URL consultato il 27 maggio 2019 (archiviato dall'url originale il 25 novembre 2015).
+↑ Alberto Ventura, Sapienza Sufi, Roma, Edizioni mediterranee, 2016,  p. 17, ISBN 978-88-272-2653-7.
+↑ Miguel Asín Palacios, Dante e l'Islam, EST, 1994. URL consultato il 5 ottobre 2017.
+↑ Malato, p. 39.
+1 2 Nardi, pp. 1150-1253.
+↑ Ferroni, p. 23.
+↑ De Matteis: «Le opere di A[ristotele]...erano divenute, attorno alla metà del XIII secolo, i testi fondamentali e pressoché unici su cui si insegnava la filosofia nelle facoltà delle Arti»; «Sicché l'aristotelismo, dalla metà del secolo, viene a costituire la ‛ filosofia ' per eccellenza e unica, cui tutti i maestri fanno riferimento».
+↑ Mugnai.
+1 2 Dendi.
+1 2 Guglielmino-Grosser, p. 164.
+↑ Anselmi-Ruozzi, p. 223
+«... l'inferno dantesco è fondamentalmente tripartito. Nei primi sei cerchi sono punti i colpevoli di incontinenza, nel settimo quelli di violenza, nell'ottavo e nel nono quelli di frode. Questa tripartizione è dovuta in parte all'Etica Nicomachea di Aristotele, dall'altra al De Officiis di Cicerone, quest'ultimo mediato dal Corpus iuris civilis di Giustiniano.»
+
+↑ Luigi Valli, Il linguaggio segreto di Dante e dei «Fedeli d'Amore» (PDF).
+↑ L'esoterismo di Dante Alighieri Dante segreto Celato Fedeli D'amore Rosa Croce, 11 novembre 2013. URL consultato il 26 dicembre 2016.
+↑ Discorso sul testo della Commedia di Dante., Londra, Pickering, 1826.
+↑ La Beatrice di Dante. Ragionamenti critici., Londra, stampato a spese dell'A., 1842.
+↑ Dante hérétique, révolutionnaire et socialiste. Révélations d'un catholique sur le Moyen Age., Paris, Jules Renouard et C.ie libraires-éditeurs, 1854.
+↑ Maria Soresina, Libertà va cercando. Il catarismo nella Commedia di Dante, Bergamo, Moretti & Vitali, 2009.
+↑ Contini 1970; Chines, p. 53.
+↑ Chines, p. 53.
+↑ L'edizione critica tradizionale di Barbi, 1921, conta 42 capitoli; quella di Gorni, 1996, ne rivede la suddivisione, contandone 31.
+↑ Giulio Ferroni, Dante e il nuovo mondo letterario, p. 12.
+↑ «Sì come dice lo Filosofo nel principio de la Prima Filosofia, tutti li uomini naturalmente desiderano di sapere». (Convivio I, 1)
+↑ «Ma vegna qua qualunque è [per cura] familiare o civile ne la umana fame rimaso, e ad una mensa con li altri simili impediti s'assetti; e a li loro piedi si pongano tutti quelli che per pigrizia si sono stati, che non sono degni di più alto sedere: e quelli e questi prendano la mia vivanda col pane, che la far[à] loro e gustare e patire.» (Convivio I, 13)
+↑ Ferroni, p. 14.
+↑ Chines, p. 58.
+↑ Ferroni, p. 15.
+↑ Andrea Cortellessa, Il "De vulgari eloquentia" di Dante: riassunto e analisi del testo, su oilproject.org, oilproject. URL consultato il 22 maggio 2015.
+↑ Il De vulgari eloquentia, su divinacommedia.weebly.com. URL consultato il 18 giugno 2015.
+↑ Ricci.
+↑ Chines, p. 62.
+↑ De Monarchia III, 15.
+↑ Guglielmino-Grosser, p. 157.
+↑ Luca Ghirimoldi, "Divina Commedia": riassunto e analisi dell'opera, su oilproject.org, Oilproject. URL consultato il 22 maggio 2015.
+↑ Guglielmino-Grosser, p. 158.
+↑ Secondo una notizia tramandata dal Boccaccio, da Benvenuto e dall'anonimo fiorentino, i primi sette canti sarebbero stati composti a Firenze prima dell'esilio. Rimasti a Firenze e ritrovati da sua moglie, sarebbero stati consegnati al poeta durante il suo soggiorno in Lunigiana, dove avrebbe ripreso la composizione dell'opera. Sulla questione si veda: Ferretti 1935 e Ferretti 1950
+↑ Si guardi la sezione dedicata allo stile.
+↑ Leonardo Rossi, La Lingua della Commedia, su treccani.it. URL consultato il 27 febbraio 2018 (archiviato dall'url originale il 26 giugno 2015).«Ebbene, in un quadro tanto eterogeneo Dante sa vedere, profeticamente, ciò che nessun altro aveva visto: la possibilità stessa di un unitario spazio letterario italiano [...] E sarà la fama del poema, attestata già mentre Dante era in vita, ad assicurare al volgare fiorentino il prestigio necessario per travalicare i confini della Toscana e raggiungere ampi strati sociali, non solo quelli di più alta cultura.»
+↑ Pastore Stocchi.
+1 2 Ferroni, p. 18.
+↑ Dante - Riassunti - Epistole, su italica.rai.it. URL consultato il 1º aprile 2025 (archiviato dall'url originale il 9 febbraio 2006).
+↑ Barbero, pp. 260-261.
+↑ Martellotti.
+↑ Pastore Stocchi-2.
+↑ Andrea Mazzucchi Internet culturale, Giovanni Boccaccio, su internetculturale.it, Internet culturale, 2012. URL consultato il 4 febbraio 2024.
+↑ Giuseppe Leonelli, Dante e la Divina Letteratura: un successo lungo 700 anni, in Repubblica.it, 4 settembre 2007. URL consultato il 12 giugno 2015.
+↑ Giovanni Belardelli, Patriota Dante, padre di tutti gli italiani, in Corriere della Sera, 1º settembre 2008,  p. 35. URL consultato il 26 novembre 2017 (archiviato dall'url originale il 26 giugno 2015).
+↑ Dario Pisano, Dante nella poesia del primo Novecento, su flaneri.com, Flaneri, 21 febbraio 2012. URL consultato il 12 giugno 2015flaneri.com.
+↑ Benedetto XV.
+↑ Paolo VI.
+↑ Giovanni Paolo II.
+↑ Benedetto XVI, Angelus dell'8 dicembre 2006, su w2.vatican.va, Libreria Editrice Vaticana, 8 dicembre 2006. URL consultato il 24 maggio 2015.
+↑ Francesco, Messaggio del Santo Padre Francesco al Presidente del Pontificio Consiglio della Cultura in occasione della celebrazione del 750º anniversario della nascita di Dante Alighieri, su w2.vatican.va, Libreria Editrice Vaticana, 4 maggio 2015. URL consultato il 24 maggio 2015.
+↑ Francesco, Lettera Apostolica Candor Lucis aeternae del Santo Padre Francesco nel VII Centenario della morte di Dante Alighieri, su press.vatican.va, Bollettino della Sala Stampa della Santa Sede, 25 marzo 2021. URL consultato il 25 marzo 2021.
+↑ Vincenzo Salerno, La “Commedia” di Dante in Inghilterra. Da Geoffrey Chaucer a W. M. Rossetti, su web.tiscali.it, LIBROITALIANO. Editrice Letteraria Internazionale. URL consultato il 12 giugno 2015.
+↑ Eliot.
+↑ Bernardi-Ceserani.
+↑ Brancucci-Elwert.
+↑ Brancucci-Arce.
+↑ Mocan.
+↑ L’Inferno – Francesco Bertolini, Giuseppe de Liguoro, Adolfo Padovan (1911), su emutofu.com, 17 agosto 2011. URL consultato l'8 giugno 2015.
+↑ Pro Loco Velletri, Sul Monte Artemisio rivive l’Inferno di Dante della Helios Film, su prolocodivelletri.it. URL consultato il 18 agosto 2019 (archiviato dall'url originale il 2 marzo 2016).
+↑ Pietro Ferraro, Dante: video intervista a cast e regista del film di Pupi Avati al cinema dal 29 settembre, su Cineblog, 26 settembre 2022. URL consultato l'8 ottobre 2022.
+↑ Vita di Dante, su raiplay.it, RaiPlay. URL consultato il 4 febbraio 2024.
+↑ Monete e Cartamoneta d'Italia, Unificato, 2015,  p. 96, ISBN 88-95874-58-7.
+↑ Alberto Brambilla, Le origini de “L’Inferno di Topolino”? In un diario scolastico, su fumettologica.it, Fumettologica, 30 ottobre 2013. URL consultato il 24 maggio 2015.
+↑ L'inferno di Paperino, su inducks.org, inducks. URL consultato il 24 maggio 2015.
+↑ Bianca Garavelli, Dante e la Commedia nel cinema, su treccani.it, Treccani scuola, 4 aprile 2008. URL consultato il 16 novembre 2017 (archiviato dall'url originale il 19 ottobre 2015).
+↑ Dante's Inferno, su ea.com, Electronic Arts Italia. URL consultato il 16 novembre 2017.
+↑ (EN) Categories for Naming Features on Planets and Satellites, su Gazetteer of Planetary Nomenclature. URL consultato il 4 febbraio 2024.
+↑ Dante nella filatelia mondiale, in Dante, XIII, 2016, DOI:10.19272/201605401006. URL consultato il 21 gennaio 2026.
+↑ Dante Alighieri entra in calendario: il 25 marzo sarà "Dantedì", su la Repubblica, 17 gennaio 2020. URL consultato il 4 novembre 2020.
+
+Bibliografia
+
+ Lo stesso argomento in dettaglio: Wikipedia:Bibliografia/Dante Alighieri.
+
+La bibliografia sulla vita e sull'opera di Dante è sterminata; normalmente, il primo strumento di ricerca è l'Enciclopedia dantesca, dell'Istituto dell'Enciclopedia italiana Treccani, Roma, 1970-1978, consultabile anche on line. Si possono utilizzare anche le risorse informatiche, in primo luogo la bibliografia consultabile sul sito della Società Dantesca Italiana. Per la bibliografia cartacea si rimanda alla voce bibliografia su Dante. In questo luogo, si segnala la bibliografia utilizzata per la redazione scientifica della voce:
+Dante Alighieri, Divina Commedia, ora in: Umberto Bosco e Giovanni Reggio (a cura di), Inferno, in Divina Commedia, vol. 1, Firenze, Le Monnier, 2002, ISBN 88-00-41242-4.
+Gian Mario Anselmi e Gino Ruozzi (a cura di), Luoghi della letteratura italiana, Milano, Mondadori, 2003, ISBN 88-424-9017-2. URL consultato il 21 maggio 2015.
+Michele Barbi, Nuovi studi sulla famiglia Alighieri, in Studi Danteschi, n. 10, 1925,  pp. 101-104.
+Orazio Bacci, Dante ambasciatore di Firenze al comune di San Gimignano: discorso letto nella sala del comune di San Gimignano il 7 maggio 1899, Firenze, L.S. Olschki, 1899.
+Alessandro Barbero, Dante, Bari-Roma, Editori Laterza, 2020, ISBN 978-88-581-4164-9.
+Giuseppe Bencivenni Pelli, Memorie per servire alla vita di Dante Alighieri e alla storia della sua famiglia, 2ª ed., Firenze, Guglielmo Piatti, 1823, SBN FOGE012659. URL consultato il 16 ottobre 2015.
+Benedetto XV, In praeclara summorum, Città del Vaticano, Libreria Editrice Vaticana, 30 aprile 1921. URL consultato il 24 maggio 2015.
+Harold Bloom, Il Canone occidentale. I libri e le scuole delle età, traduzione di Francesco Saba Sardi, Milano, Bompiani, 1996, ISBN 88-452-2869-X.
+Filippo Brancucci e Joaquín Arce, Spagna, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 12 giugno 2015.
+Filippo Brancucci e Theodor W. Elwert, Germania, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 12 giugno 2015.
+Umberto Carpi, La nobiltà di Dante, Firenze, Polistampa, 2004, ISBN 978-88-8304-753-4.
+Sirio A. Chimenz, ALIGHIERI, Dante, in Dizionario biografico degli italiani, vol. 2, Roma, Istituto dell'Enciclopedia Italiana, 1960. URL consultato il 10 giugno 2015.
+Loredana Chines, Giorgio Forni, Giuseppe Ledda e Elisabetta Menetti, Dalle Origini al Cinquecento, a cura di Ezio Raimondi, collana La letteratura italiana, Milano, Bruno Mondadori, 2007, ISBN 978-88-424-9164-4.
+Giovanni Ciappelli, Cante Gabrielli, in Dizionario biografico degli italiani, vol. 51, Roma, Istituto dell'Enciclopedia Italiana, 1960. URL consultato il 17 maggio 2015.
+Gianfranco Contini, Il Fiore e il Detto d’amore: attribuibili a Dante Alighieri, in Opere minori di Dante Alighieri, Milano, Classici Ricciardi-Mondadori, 1970, ISBN 88-7817-104-2.
+Gianfranco Contini, Letteratura italiana delle origini, 3ª ed., Firenze, Sansoni Editore, 2006  [1970], ISBN 88-383-1866-2.
+Pier Vincenzo Cova, Arbusta iuvant. Le Bucoliche e scelta delle Georgiche di Virgilio, 2ª ed., Torino, G. B. Petrini, 1961, SBN MOD0596178.
+Arnaldo D'Addario, Alighieri, Alighiero, in Dizionario biografico degli italiani, vol. 2, Roma, Istituto dell'Enciclopedia Italiana, 1960. URL consultato il 3 giugno 2015.
+Arnaldo D'Addario, Alighieri, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 16 ottobre 2015.
+Alberto Dendi, Elisabetta Severina, Alessandra Aretini, Moduli di letteratura italiana ed europea, Milano, Carlo Signorelli Editore, 2002, ISBN 88-434-0920-4., riportato su: Dante - Biblioteca della Letteratura Italiana, su letteraturaitaliana.net, Pianetascuola-Einaudi. URL consultato il 21 maggio 2015.
+Maria C. De Matteis, Aristotele, a cura di Umberto Bosco, collana Enciclopedia dantesca, Roma, Istituto della Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 2 febbraio 2024.
+Francesco de Sanctis, Storia della letteratura italiana, Napoli, Morano, 1890  [1870], SBN TO01185344.
+Luigi Di Marco, La compagnia dei magi: per la formazione degli strateghi d'impresa, Milano, F. Angeli, 2004,  p. 56, ISBN 88-464-5212-7. URL consultato il 16 maggio 2015.
+Thomas Stearns Eliot, Scritti su Dante, a cura di Roberto Sanesi, Milano, Bompiani, 1994, ISBN 978-88-452-5037-8.
+Giovanni Ferretti, I due tempi di composizione della Divina Commedia, collana Biblioteca di cultura moderna, n°268, Bari, Laterza, 1935, SBN TSA0021529.
+Giovanni Ferretti, Saggi danteschi, Firenze, Le Monnier, 1950, SBN RAV0195466.
+Giulio Ferroni, Dante e il nuovo mondo letterario: la crisi del mondo comunale (1300-1380), in Giulio Ferroni (a cura di), Storia della letteratura italiana, vol. 2, Milano, Mondadori, 2006, SBN IEI0250845.
+Kenelm Foster, Cristo, in Enciclopedia dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 4 giugno 2015.
+Marco Grimaldi, Filologia dantesca, Roma, Carocci, 2021, ISBN 9788829005192.
+Étienne Gilson, Dante e la filosofia, a cura di Sergio Cristaldi, Milano, Jaca Book, 1987, ISBN 88-16-40193-1.
+Giovanni Paolo II, Redemptoris Mater, Città del Vaticano, Libreria Editrice Vaticana, 25 marzo 1987, ISBN 88-209-1569-3. URL consultato il 24 maggio 2015.
+Salvatore Guglielmino e Hermann Grosser, Storia letteraria dal Duecento al Cinquecento, in Il sistema letterario, vol. 1, 1ª ed., Milano, G. Principato, marzo 2000, ISBN 88-416-1309-2.
+Egidio Guidubaldi, Bartolomeo da Bologna, in Enciclopedia Dantesca, Roma, Istituto della Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 16 ottobre 2015.
+Giorgio Inglese, Brunetto Latini, in Dizionario biografico degli italiani, vol. 64, Roma, Istituto dell'Enciclopedia Italiana, 2005. URL consultato il 16 maggio 2015.
+Giuseppe Ledda, Introduzione: un progetto di ricerca collettivo per lo studio di Dante e della molteplicità delle culture nell'Europa medievale, in Giuseppe Ledda (a cura di), Dante e la molteplicità delle culture nell'Europa Medievale, Bologna, Fondazione Bologna University Press, 2022,  pp. 5-11, ISBN 979-12-5477-032-0.
+Enrico Malato, Dante, collana Storia della letteratura italiana, vol. 1, Milano, RCS MediaGroup, 2015, SBN MIL0908436.
+Cesare Marchi, Dante, Milano, RCS, 2006, SBN RMS1556199.
+Sergio Marconi, Canaccio, Bernardo, in Dizionario biografico degli italiani, vol. 17, Roma, Istituto dell'Enciclopedia Italiana, 1974. URL consultato il 18 maggio 2015.
+Guido Martellotti, Egloghe, in Enciclopedia Dantesca, Roma, Istituto della Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 22 maggio 2015.
+Francesco Mazzoni, Latini, Brunetto, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Roma, Istituto della Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 16 maggio 2015.
+Pier Vincenzo Mengaldo, stili, Dottrina degli, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Roma, Istituto della Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 19 maggio 2015.
+Mira Mocan, Dante e le letterature straniere, collana Treccani scuola, Treccani.it, 14 maggio 2008F. URL consultato il 16 novembre 2017.
+Giambattista Moreali, Il Duomo in chiaro – Pietre, versi ed enigmi, Modena, Edizioni SIGEM, 2014,  p. 457, ISBN 978-88-7387-041-8.
+Paolo Mugnai, spirito, a cura di Umberto Bosco, collana Enciclopedia dantesca, Roma, Istituto della Enciclopedia Italiana, 1970, SBN LI30012137. URL consultato il 1º febbraio 2024.
+Bruno Nardi, Filosofia di Dante, in Grande antologia filosofica, IV, Milano, Marzorati, 1954,  pp. 1150-1253, SBN RAV0161593.
+Guido Pampaloni, Bianchi e Neri, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Roma, Istituto della Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 17 maggio 2015.
+(LA) Paolo VI, Altissimi cantus, Città del Vaticano, Libreria Editrice Vaticana, 7 dicembre 1965, OCLC 799513886. URL consultato il 24 maggio 2015.
+Pietro Desiderio Pasolini Dall'Onda, Delle antiche relazioni fra Venezia e Ravenna, Firenze, M. Cellini e c., 1874,  p. 158, SBN UBO1787124. URL consultato il 26 maggio 2015.
+Manlio Pastore Stocchi, Epistole, in Umberto Bosco (a cura di), Enciclopedia dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 22 maggio 2015.
+Manlio Pastore Stocchi, Quaestio de aqua et terra, in Umberto Bosco (a cura di), Enciclopedia dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RAV0018895. URL consultato il 22 maggio 2015.
+Giorgio Petrocchi, Vita di Dante, 5ª ed., Roma; Bari, Editori Laterza, 2008, ISBN 978-88-420-4354-6.
+Renato Piattoli, Donati, Gemma, in Umberto Bosco (a cura di), Enciclopedia dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 16 maggio 2015.
+Andrea Pizzinat, Camino e i da Camino: Un paese, la sua gente, il suo casato, Oderzo (TV), Edizioni Tredieci, 2009,  p. 323, ISBN 978-88-8388-158-9. URL consultato il 3 giugno 2015.
+Barbara Reynolds, Dante: la vita e l'opera, a cura di Alessio Catania, Milano, Longanesi, 2007, ISBN 978-88-304-2436-4.
+Pier Giorgio Ricci, Monarchia, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 22 maggio 2015.
+Simonetta Saffiotti Bernardi, Malaspina, Moroello, in Umberto Bosco (a cura di), Enciclopedia dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 3 giugno 2015.
+Simonetta Saffiotti Bernardi e Remo Ceserani, Francia, in Umberto Bosco (a cura di), Enciclopedia Dantesca, Roma, Istituto dell'Enciclopedia Italiana, 1970, SBN RLZ0163867. URL consultato il 12 giugno 2015.
+Francesco Selmi, Dei Trattati morali di Albertano da Brescia, volgarizzamento inedito fatto nel 1268 da Andrea da Grosseto, collana Collezione di opere inedite o rare pubblicate dalla Commissione per i testi di lingua, Bologna, G. Romagnoli, 1873,  p. 389, SBN SBL0416863.
+Leone Tettoni - Francesco Saladini, Teatro araldico, ovvero Raccolta generale delle armi ed insegne gentilizi e delle più illustri e nobili casate, vol. 7, Milano, Claudio Wilmant, 1847, SBN TO00902625. URL consultato il 18 luglio 2018.
+Augusto Torre, L'ambasceria di Dante a Venezia, in Almanacco Ravennate, Ravenna, Camera di commercio industria e agricoltura di Ravenna, 1959, SBN RAV0079557.
+Gian Maria Varanini, Della Scala, Alboino, in Dizionario biografico degli italiani, vol. 37, Roma, Istituto dell'Enciclopedia Italiana, 1989. URL consultato il 18 maggio 2015.
+Giovanni Villani, Istorie Fiorentine di Giovanni Villani, vol. V, Milano, Società Tipografica de’ Classici Italiani, 1802,  p. 135. URL consultato il 3 giugno 2015.
+Comitato cattolico per l'omaggio a Dante Alighieri (a cura di), Il VI centenario dantesco: Bollettino del Comitato cattolico per l'omaggio a Dante Alighieri, vol. 1-4, Ravenna, Bollettino, 1914, SBN TO00178871. URL consultato il 16 ottobre 2015.
+
+Voci correlate
+Alighieri
+Critica e filologia dantesca
+Dante Alighieri nella cultura di massa
+Lapidi della Divina Commedia di Firenze
+Lapidi della Divina Commedia di Siena
+Firenze medievale
+Casa di Dante
+Tomba di Dante
+Centro dantesco dei Frati minori conventuali
+Giovanni Boccaccio
+Francesco Petrarca
+Guido Novello da Polenta
+Studi danteschi
+Enciclopedia dantesca
+Società Dantesca Italiana
+Deutsche Dante-Gesellschaft
+
+Altri progetti
+Altri progetti
+Wikisource
+Wikisource
+Wikiquote
+Wikibooks
+Wikimedia Commons Wikisource contiene una pagina dedicata a Dante Alighieri
+ Wikisource contiene una pagina in lingua latina dedicata a Dante Alighieri
+ Wikiquote contiene citazioni di o su Dante Alighieri
+ Wikibooks contiene testi o manuali su Dante Alighieri
+ Wikimedia Commons contiene immagini o altri file su Dante Alighieri
+
+Collegamenti esterni
+
+Dante Alighièri, su Treccani.it – Enciclopedie on line, Istituto dell'Enciclopedia Italiana. 
+Michele Barbi, DANTE ALIGHIERI, in Enciclopedia Italiana, Istituto dell'Enciclopedia Italiana, 1931. 
+Dante Alighieri, in Dizionario di storia, Istituto dell'Enciclopedia Italiana, 2010. 
+Dante Alighieri, in Dizionario di filosofia, Istituto dell'Enciclopedia Italiana, 2009. 
+Gennaro Sasso, Dante nella poetica machiavelliana, in Enciclopedia machiavelliana, Istituto dell'Enciclopedia Italiana, 2014. 
+Giuseppe Ledda, Dante Alighieri, in Storia della civiltà europea a cura di Umberto Eco, Istituto dell'Enciclopedia Italiana, 2014. 
+(EN) Ricardo J. Quinones, Dante, su Enciclopedia Britannica, Encyclopædia Britannica, Inc. 
+(EN) Dante Alighieri, in Jewish Encyclopedia, Funk and Wagnalls. 
+(EN) Wetherbee, Winthrop e Aleksander, Jason, Dante Alighieri, su Stanford Encyclopedia of Philosophy, 29 gennaio 2001. 
+(EN) Dante Alighieri, su The Encyclopedia of Science Fiction. 
+(EN) Dante Alighieri, in Cyclopædia of Biblical, Theological, and Ecclesiastical Literature, Harper. 
+(PT) Dante Alighieri, su Enciclopédia Itaú Cultural, Itaú Cultural. 
+Dante Alighieri, su BeWeb, Conferenza Episcopale Italiana. 
+(DE) Dante Alighieri, su ALCUIN, Università di Ratisbona. 
+Opere di Dante Alighieri, su Liber Liber. 
+Opere di Dante Alighieri / Dante Alighieri (altra versione) / Dante Alighieri (altra versione) / Dante Alighieri (altra versione), su MLOL, Horizons Unlimited. 
+(EN) Opere di Dante Alighieri, su Open Library, Internet Archive. 
+(EN) Audiolibri di Dante Alighieri, su LibriVox. 
+(EN) Opere riguardanti Dante Alighieri, su Open Library, Internet Archive. 
+(EN) Bibliografia di Dante Alighieri, su Internet Speculative Fiction Database, Al von Ruff. 
+(EN) Dante Alighieri, su Goodreads. 
+(FR) Bibliografia su Dante Alighieri, su Les Archives de littérature du Moyen Âge. 
+(EN) Dante Alighieri, in Catholic Encyclopedia, Robert Appleton Company. 
+Dante Alighieri, su Discografia nazionale della canzone italiana, Istituto centrale per i beni sonori ed audiovisivi. 
+Dante Alighieri, in Archivio storico Ricordi, Ricordi & C. 
+Dante Alighieri, su Last.fm, CBS Interactive. 
+(EN) Spartiti o libretti di Dante Alighieri, su International Music Score Library Project, Project Petrucci LLC. 
+(EN) Dante Alighieri, su AllMusic, All Media Network. 
+(EN) Dante Alighieri, su Discogs, Zink Media. 
+(EN) Dante Alighieri, su MusicBrainz, MetaBrainz Foundation. 
+(EN) Dante Alighieri, su MyAnimeList. 
+(EN) Dante Alighieri / Dante Alighieri (altra versione), su Comic Vine, Fandom. 
+(EN) Dante Alighieri, su IMDb, IMDb.com. 
+(EN) Dante Alighieri, su AFI Catalog of Feature Films, American Film Institute. 
+(DE, EN) Dante Alighieri, su filmportal.de. 
+Andrea Mazzucchi, Amedeo Quondam, Italo Pantani, Giuliana Zagra et alii (a cura di), Dante Alighieri, su Internet culturale, Internet Culturale. URL consultato il 4 febbraio 2024.
+Dante online, su danteonline.it, Società Dantesca Italiana. URL consultato il 4 febbraio 2024., per la consultazione online delle opere dantesche e informazioni bio/bibliografiche
+DanteSources, su dantesources.dantenetwork.it, Istituto di Scienza e Tecnologie dell’Informazione "A. Faedo" (CNR Pisa) e Dipartimento di Filologia, Letteratura e Linguistica (Università di Pisa), 2013. URL consultato il 4 febbraio 2024., per la consultazione on-line di informazioni relative alle fonti dantesche
+Centro Dantesco dei Frati Minori Conventuali, Ravenna, su centrodantesco.it. URL consultato il 18 maggio 2015.
+Museo Casa di Dante, Firenze, su museocasadidante.it, Unione Fiorentina. URL consultato il 18 maggio 2015.
+Dante Alighieri compie 750 anni: celebrazioni ed eventi, su centenaridanteschi.it. URL consultato il 16 novembre 2017.
+
+.mw-parser-output .navbox{border:1px solid #aaa;clear:both;margin:auto;padding:2px;width:100%}.mw-parser-output .navbox th{padding-left:1em;padding-right:1em;text-align:center}.mw-parser-output .navbox>tbody>tr:first-child>th{background:#ccf;font-size:90%;width:100%;color:var(--color-base,black)}.mw-parser-output .navbox_navbar{float:left;margin:0;padding:0 10px 0 0;text-align:left;width:6em}.mw-parser-output .navbox_title{font-size:110%}.mw-parser-output .navbox_abovebelow{background:#ddf;font-size:90%;font-weight:normal}.mw-parser-output .navbox_group{background:#ddf;font-size:90%;padding:0 10px;white-space:nowrap}.mw-parser-output .navbox_list{font-size:90%;width:100%}.mw-parser-output .navbox_list a{white-space:nowrap}html:not(.vector-feature-night-mode-enabled) .mw-parser-output .navbox_odd{background:#fdfdfd;color:var(--color-base,black)}html:not(.vector-feature-night-mode-enabled) .mw-parser-output .navbox_even{background:#f7f7f7;color:var(--color-base,black)}.mw-parser-output .navbox a.mw-selflink{color:var(--color-base,black)}.mw-parser-output .navbox_center{text-align:center}.mw-parser-output .navbox .navbox_image{padding-left:7px;vertical-align:middle;width:0}.mw-parser-output .navbox+.navbox{margin-top:-1px}.mw-parser-output .navbox .mw-collapsible-toggle{font-weight:normal;text-align:right;width:7em}body.skin--responsive .mw-parser-output .navbox_image img{max-width:none!important}.mw-parser-output .subnavbox{margin:-3px;width:100%}.mw-parser-output .subnavbox_group{background:#e6e6ff;padding:0 10px}@media screen{html.skin-theme-clientpref-night .mw-parser-output .navbox>tbody>tr:first-child>th{background:var(--background-color-interactive)!important}html.skin-theme-clientpref-night .mw-parser-output .navbox th{color:var(--color-base)!important}html.skin-theme-clientpref-night .mw-parser-output .navbox_abovebelow,html.skin-theme-clientpref-night .mw-parser-output .navbox_group{background:var(--background-color-interactive-subtle)!important}html.skin-theme-clientpref-night .mw-parser-output .subnavbox_group{background:var(--background-color-neutral-subtle)!important}}@media screen and (prefers-color-scheme:dark){html.skin-theme-clientpref-os .mw-parser-output .navbox>tbody>tr:first-child>th{background:var(--background-color-interactive)!important}html.skin-theme-clientpref-os .mw-parser-output .navbox th{color:var(--color-base)!important}html.skin-theme-clientpref-os .mw-parser-output .navbox_abovebelow,html.skin-theme-clientpref-os .mw-parser-output .navbox_group{background:var(--background-color-interactive-subtle)!important}html.skin-theme-clientpref-os .mw-parser-output .subnavbox_group{background:var(--background-color-neutral-subtle)!important}}V · D · MDante AlighieriOpere in latinoDe vulgari eloquentia · Monarchia · Egloghe · Epistole · Quaestio de aqua et terraOpere in volgareVita nuova · Le Rime · Convivio · Tenzone con Forese (attribuita) · Il Fiore (attribuita) · Detto d'Amore (attribuita)Divina CommediaInferno · Purgatorio · ParadisoSonettiA ciascun'alma presa e gentil core · Al poco giorno e al gran cerchio d'ombra · Amore e 'l cor gentil sono una cosa · Donne ch'avete intelletto d'amore · Guido, i' vorrei che tu e Lapo ed io · Ne li occhi porta la mia donna Amore · Tanto gentile e tanto onesta parePoeticaTerzina dantesca · Contrappasso · Exemplum · Rota VergiliiCritica e filologia dantescaPietro Alighieri · Jacopo della Lana · Beccario de' Beccaria · Giovanni Boccaccio (Esposizioni sopra la Commedia) · Leonardo Bruni · Martino Paolo Nibia · Cristoforo Landino · Willibald Pirckheimer · Jacopo Corbinelli · Pompeo Venturi · Saverio Bettinelli · Giovanni Jacopo Dionisi · Baldassarre Lombardi · Giambattista Giuliani · Francesco de Sanctis · Giovanni Pascoli · Francesco D'Ovidio · Luigi Tonelli · Karl Vossler · Bruno Nardi · Franco Lanza · Benedetto Croce · Michele Barbi · Guglielmo Gorni · Stefano Ignudi · Gianfranco Contini · Giorgio Pasquali · Francesco Mazzoni · Pio Rajna · Carlo Grabher · Mario Casella · Antonino Pagliaro · Natalino Sapegno · Umberto Bosco · Giovanni Reggio · Giorgio Petrocchi · Aldo Vallone · Maria Corti · Franca Brambilla Ageno · Nicolò Mineo · Vittorio Sermonti · Marco Santagata · Erich Auerbach · Charles Singleton · Jorge Luis Borges · Emilio Pasquini · Enrico Malato · Federico Sanguineti · Saverio Bellomo · Giorgio Inglese · Bianca Garavelli · Società Dantesca Italiana · Enciclopedia dantesca · Lectura Dantis · Studi danteschi · Deutsche Dante-Gesellschaft · Bibliografia dantescaCodici danteschiCodice Palatino 313 · Manoscritto Landiano · Codice Trivulziano 1080 · Laurenziano Pluteo 90 sup. 125 · Codice Urbinate Latino 365 · Dante Estense · Codice Strozzi 152 · Codice Filippino · Holkham misc. 48 · Ms. Yates Thompson 36 · Cod. Vaticano lat. 3199Dante e l'arteAprès une lecture de Dante: Fantasia quasi Sonata · Dante-Symphonie · L'Inferno (film 1911 Milano Films) · L'Inferno (film 1911 Helios Film) · Dante e Beatrice (film) · Dante · Il mistero di Dante · Danteum · Dante con la Divina Commedia · Ritratto di Dante (Botticelli) · Dante incontra Beatrice al ponte Santa Trinita · Dantes AdriacusPersonaggilegati a DanteBeatrice Portinari · Bonifacio VIII · Cacciaguida · Cangrande I della Scala · Cecco d'Ascoli · Forese Donati · Frate Ilaro · Giotto · Giovanni Boccaccio · Guido Cavalcanti · Lapo Gianni · Brunetto Latini · Guido Novello da Polenta · Giovanni del Virgilio · Scarpetta Ordelaffi · Corso Donati · Vieri de' Cerchi · Cino da Pistoia · Arrigo VII di LussemburgoFamiglia AlighieriAlighiero di Bellincione · Bella degli Abati · Francesco Alighieri · Gemma Donati · Jacopo Alighieri · Pietro Alighieri · Bernardo Alighieri · Dante II Alighieri · Leonardo Alighieri · Pietro III Alighieri · Dante III Alighieri · Francesco Alighieri (1500-1562) · Lodovico Alighieri · Pietro IV Alighieri · Ginevra AlighieriDante nella cultura di massaDante (cratere) · Dante Park · L'Inferno (film) · L'Inferno (film 1924) · La nave di Satana · Vita di Dante · Mao Dante · Dante's Inferno (film 2007) · Dante's Inferno (videogioco 1986) · Dante's Inferno (videogioco 2010) · Dante's Inferno: An Animated Epic · Dante Alighieri (nave da battaglia) · Casa di Dante · Casa di Dante in Roma · Casa di Dante in Lunigiana · Tomba di Dante · Traduzioni della Divina commedia · La profezia di Dante · Società Dante Alighieri · Tutto Dante · L'Inferno di Topolino · La Divina Mimesis · The Dante Project
+V · D · M Le tre corone fiorentine della lingua italiana Dante Alighieri · Francesco Petrarca · Giovanni Boccaccio ·  · Divina Commedia · Canzoniere · Decameron
+V · D · MPoesia italiana del DuecentoScuola sicilianaPoeti principaliFederico II di Svevia · Giacomo da Lentini · Ruggiero Amico · Odo delle Colonne · Rinaldo d'Aquino · Arrigo Testa · Guido delle Colonne · Pier della Vigna · Stefano Protonotaro · Mazzeo di Ricco · Jacopo Mostacci · Percivalle Doria · Re Enzo · Giacomino Pugliese · Cielo d'Alcamo · Tommaso di Sasso · Giovanni di Brienne · Compagnetto da Prato · Paganino da Serzana · Filippo da Messina · Neri PoponiManoscrittiVaticano Latino 3793 · Laurenziano Rediano 9OpereRosa fresca aulentissima · Meravigliosamente · Pir meu cori alligrariRimatori toscani di transizioneGuittone d'Arezzo · Bonagiunta Orbicciani · Chiaro Davanzati · Compiuta Donzella · Brunetto Latini · Monte AndreaDolce stil novoPrecursoriGuido GuinizelliStilnovistiGuido Cavalcanti · Dante Alighieri · Lapo Gianni · Gianni Alfani · Dino Frescobaldi · Cino da Pistoia
+.mw-parser-output .CdA{border:1px solid #aaa;width:100%;margin:auto;font-size:90%;padding:2px}.mw-parser-output .CdA th{background-color:#f2f2f2;font-weight:bold;width:20%}@media screen{html.skin-theme-clientpref-night .mw-parser-output .CdA{border-color:#54595D}html.skin-theme-clientpref-night .mw-parser-output .CdA th{background-color:#202122}}@media screen and (prefers-color-scheme:dark){html.skin-theme-clientpref-os .mw-parser-output .CdA{border-color:#54595D}html.skin-theme-clientpref-os .mw-parser-output .CdA th{background-color:#202122}}Controllo di autoritàVIAF (EN) 97105654 · ISNI (EN) 0000 0001 2144 6210 · SBN CFIV008732 · BAV 495/345466 · CERL cnp01453940 · Europeana agent/base/59792 · ULAN (EN) 500265888 · LCCN (EN) n78095495 · GND (DE) 118523708 · BNE (ES) XX1153531 (data) · BNF (FR) cb118985852 (data) · J9U (EN, HE) 987007260382005171 · NSK (HR) 981005657351009366 · NDL (EN, JA) 00437214 · CONOR.SI (SL) 6182499
+.mw-parser-output .itwiki-template-occhiello{width:100%;line-height:25px;border:1px solid #CCF;background-color:#F0EEFF;box-sizing:border-box}.mw-parser-output .itwiki-template-occhiello-progetto{background-color:#FAFAFA}@media screen{html.skin-theme-clientpref-night .mw-parser-output .itwiki-template-occhiello{background-color:#202122;border-color:#54595D}html.skin-theme-clientpref-night .mw-parser-output .itwiki-template-occhiello-progetto{background-color:#282929}}@media screen and (prefers-color-scheme:dark){html.skin-theme-clientpref-os .mw-parser-output .itwiki-template-occhiello{background-color:#202122;border-color:#54595D}html.skin-theme-clientpref-os .mw-parser-output .itwiki-template-occhiello-progetto{background-color:#282929}} </span>","txt":" "}]],"caption":"Biografie"}'> Portale Biografie </span>","txt":" "}]],"caption":"Letteratura"}'> Portale Letteratura </span>","txt":" "}]],"caption":"Medioevo"}'> Portale Medioevo </span>","txt":" "}]],"caption":"Storia d'Italia"}'> Portale Storia d'Italia
+.mw-parser-output .itwiki-template-vetrina{clear:both;padding:1em 0.5em 0.5em 0.5em;margin-top:.5em;border:1px solid var(--border-color-base,#a2a9b1);font-size:95%;background-color:var(--background-color-interactive-subtle,#f8f9fa)}<a href=\"./Wikipedia:Vetrina\" title=\"Questa è una voce in vetrina. Clicca qui per maggiori informazioni\" id=\"mwEqs\"><img alt=\"Questa è una voce in vetrina. Clicca qui per maggiori informazioni\" resource=\"./File:Crystal_Clear_action_bookmark.svg\" src=\"//upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Crystal_Clear_action_bookmark.svg/40px-Crystal_Clear_action_bookmark.svg.png\" decoding=\"async\" data-file-width=\"128\" data-file-height=\"128\" data-file-type=\"drawing\" height=\"30\" width=\"30\" srcset=\"//upload.wikimedia.org/wikipedia/commons/thumb/c/c0/Crystal_Clear_action_bookmark.svg/60px-Crystal_Clear_action_bookmark.svg.png 2x\" class=\"mw-file-element\" id=\"mwEqw\"/></a></span>"}' id="mwEq0"/>
+Wikimedaglia
+Questa è una voce in vetrina, identificata come una delle migliori voci prodotte dalla comunità.È stata riconosciuta come tale il giorno 6 luglio 2015 — vai alla segnalazione.Naturalmente sono ben accetti suggerimenti e modifiche che migliorino ulteriormente il lavoro svolto.
+
+Segnalazioni  ·  Criteri di ammissione  ·  Voci in vetrina in altre lingue  ·  Voci in vetrina in altre lingue senza equivalente su it.wiki
+

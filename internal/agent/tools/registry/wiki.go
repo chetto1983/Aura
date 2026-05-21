@@ -211,16 +211,13 @@ func (t *WikiPageTool) Execute(ctx context.Context, args map[string]any) (string
 	case "append":
 		return t.doAppend(ctx, args)
 	case "read", "view", "get", "show":
-		// QW-1: cross-tool hint. wiki_page is a writer tool; reads go through
-		// the file tool (any workspace file) or read_source (source archives).
-		// Observed live 2026-05-21: the model called wiki_page action=read,
-		// hit UnknownActionError, then re-routed manually — costing a turn.
-		// Suggesting the right tool inline saves that round.
-		slug := strings.TrimSpace(stringArg(args, "slug"))
-		if slug != "" {
-			return "", fmt.Errorf("wiki_page is a writer tool. To read wiki/%s.md call file({\"action\":\"read\",\"path\":\"wiki/%s.md\"}). For source archives use read_source({\"source_id\":\"src_xxx\"}): %w", slug, slug, llm.ErrSchemaValidation)
-		}
-		return "", fmt.Errorf("wiki_page is a writer tool (create/replace/edit/append). Reads go through file({\"action\":\"read\",\"path\":\"wiki/<slug>.md\"}) or read_source({\"source_id\":\"src_xxx\"}): %w", llm.ErrSchemaValidation)
+		// QW-2 (2026-05-21): the model kept calling wiki_page action=read despite
+		// the writer-only hint. Each rejection cost a turn. Switched to silent
+		// passthrough: serve the read from t.store.ReadPage. Description still
+		// nudges callers to use file({action:read}) but if they slip we return
+		// the content instead of erroring. Saves a tool round-trip per
+		// occurrence.
+		return t.doRead(ctx, args)
 	case "":
 		return "", ActionRequiredError("wiki_page", wikiValidActions, args, wikiActionHints, "create")
 	default:
@@ -241,6 +238,50 @@ var (
 		{Name: "create", RequiredKeys: []string{"title", "body"}},
 	}
 )
+
+// doRead serves wiki_page action=read/view/get/show as a silent passthrough.
+// The tool is conceptually writer-only but the LLM keeps calling read on it.
+// Returning the page content (instead of an error) saves a tool round-trip.
+// A trailing hint nudges the caller toward file({action:read}) for next time
+// without blocking the current turn.
+func (t *WikiPageTool) doRead(_ context.Context, args map[string]any) (string, error) {
+	slug := strings.TrimSpace(stringArg(args, "slug"))
+	if slug == "" {
+		return "", fmt.Errorf("wiki_page read: slug is required: %w", llm.ErrSchemaValidation)
+	}
+	page, err := t.store.ReadPage(slug)
+	if err != nil {
+		return "", fmt.Errorf("wiki_page read [[%s]]: %w", slug, err)
+	}
+	var sb strings.Builder
+	sb.WriteString("# ")
+	sb.WriteString(page.Title)
+	sb.WriteString("\n")
+	sb.WriteString("slug: ")
+	sb.WriteString(slug)
+	sb.WriteString("\n")
+	if page.UpdatedAt != "" {
+		sb.WriteString("updated_at: ")
+		sb.WriteString(page.UpdatedAt)
+		sb.WriteString("\n")
+	}
+	if page.Category != "" {
+		sb.WriteString("category: ")
+		sb.WriteString(page.Category)
+		sb.WriteString("\n")
+	}
+	if len(page.Tags) > 0 {
+		sb.WriteString("tags: ")
+		sb.WriteString(strings.Join(page.Tags, ", "))
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+	sb.WriteString(page.Body)
+	sb.WriteString("\n\n---\nhint: for next reads prefer file({\"action\":\"read\",\"path\":\"wiki/")
+	sb.WriteString(slug)
+	sb.WriteString(".md\"}). wiki_page is intended for writes.\n")
+	return sb.String(), nil
+}
 
 // doCreate writes a brand-new page. expected_updated_at is implicitly
 // the '' create-only sentinel — the wiki Store rejects the write with
