@@ -119,6 +119,16 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 	if len(seeds) == 0 {
 		seeds = []string{seedResults[0].Slug}
 	}
+	seedSet := make(map[string]bool, len(seeds))
+	for _, seed := range seeds {
+		seedSet[seed] = true
+	}
+	selectedSearchResults := make([]search.Result, 0, len(seeds))
+	for _, r := range seedResults {
+		if seedSet[r.Slug] {
+			selectedSearchResults = append(selectedSearchResults, r)
+		}
+	}
 
 	// ── Step 3: Personalised PageRank (alpha=0.15, 30 iter). ────────────────
 	pprScores := t.store.PersonalizedPageRank(seeds, 0.15, 30)
@@ -206,10 +216,43 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 	}
 
 	var sb strings.Builder
+	sb.WriteString("CAPSULE wiki_subgraph\n")
+	sb.WriteString(fmt.Sprintf("QUERY %s\n", wikiSubgraphOneLine(query)))
+	sb.WriteString(fmt.Sprintf(
+		"TRAVERSAL bfs depth=%d budget_tokens=%d nodes=%d hub_skip_degree=%d\n",
+		depth,
+		budgetTokens,
+		len(nodes),
+		skipDegree,
+	))
+	sb.WriteString("SEARCH_SEEDS\n")
+	for _, r := range selectedSearchResults {
+		sb.WriteString(wikiSubgraphSearchSeedLine(r))
+	}
+	sb.WriteString("PPR_SEEDS\n")
+	for _, seed := range pprSeeds {
+		sb.WriteString(wikiSubgraphPPRSeedLine(seed, pprScores[seed]))
+	}
+	sb.WriteString("CONTENT\n")
+
+	if budgetChars <= sb.Len() {
+		sb.WriteString("[truncated: budget_tokens too small for nodes/edges; increase budget_tokens or use a narrower query]\n")
+		return sb.String(), nil
+	}
+	truncated := false
+	appendWithinBudget := func(text string) bool {
+		if sb.Len()+len(text) > budgetChars {
+			truncated = true
+			return false
+		}
+		sb.WriteString(text)
+		return true
+	}
 
 	// NODE lines.
 	for _, n := range nodes {
 		if sb.Len() >= budgetChars {
+			truncated = true
 			break
 		}
 		meta, hasMeta := t.store.NodeMeta(n.slug)
@@ -218,10 +261,9 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 			title = meta.Title
 		}
 		header := fmt.Sprintf("NODE %s [%s | depth=%d]\n", n.slug, title, n.depth)
-		if sb.Len()+len(header) >= budgetChars {
+		if !appendWithinBudget(header) {
 			break
 		}
-		sb.WriteString(header)
 
 		// For subnodes, add the byte-range snippet from B04.
 		if wiki.IsSubnodeID(n.slug) {
@@ -232,9 +274,8 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 					snippet = snippet[:wikiSubgraphSnippetMaxChars]
 				}
 				snippet = strings.TrimSpace(snippet)
-				if snippet != "" && sb.Len()+len(snippet)+1 < budgetChars {
-					sb.WriteString(snippet)
-					sb.WriteString("\n")
+				if snippet != "" {
+					appendWithinBudget(snippet + "\n")
 				}
 			}
 		}
@@ -244,6 +285,7 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 	edgesSeen := make(map[string]bool)
 	for _, n := range nodes {
 		if sb.Len() >= budgetChars {
+			truncated = true
 			break
 		}
 		slug := n.slug
@@ -271,25 +313,43 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 				conf = "EXTRACTED" // body [[wiki-link]]
 			}
 			edge := fmt.Sprintf("EDGE %s --%s--> %s\n", slug, conf, target)
-			if sb.Len()+len(edge) < budgetChars {
-				sb.WriteString(edge)
-			}
+			appendWithinBudget(edge)
 		}
 	}
 
 	result := sb.String()
-	if result == "" {
-		return "wiki_subgraph: no content in visited subgraph", nil
-	}
-	// Apply budget truncation at a clean newline boundary.
 	if len(result) > budgetChars {
-		truncated := result[:budgetChars]
-		if idx := strings.LastIndex(truncated, "\n"); idx > 0 {
-			truncated = truncated[:idx+1]
+		cut := result[:budgetChars]
+		if idx := strings.LastIndex(cut, "\n"); idx > 0 {
+			cut = cut[:idx+1]
 		}
-		result = truncated + "[truncated: budget_tokens exceeded]\n"
+		result = cut
+		truncated = true
+	}
+	if truncated {
+		result += "[truncated: budget_tokens exceeded; increase budget_tokens or use a narrower query]\n"
 	}
 	return result, nil
+}
+
+func wikiSubgraphOneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func wikiSubgraphSearchSeedLine(r search.Result) string {
+	return fmt.Sprintf(
+		"SEARCH_SEED %s score=%.3f exact=%.3f fts=%.3f vector=%.3f title=%q\n",
+		r.Slug,
+		r.Score,
+		r.ScoreExact,
+		r.ScoreFTS,
+		r.ScoreVector,
+		wikiSubgraphOneLine(r.Title),
+	)
+}
+
+func wikiSubgraphPPRSeedLine(slug string, score float64) string {
+	return fmt.Sprintf("PPR_SEED %s score=%.6f\n", slug, score)
 }
 
 var _ Tool = (*WikiSubgraphTool)(nil)

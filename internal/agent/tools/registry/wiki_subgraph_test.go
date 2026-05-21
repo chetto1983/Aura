@@ -67,9 +67,9 @@ func newSubgraphTestStore(t *testing.T, pages map[string]*wiki.Page) *wiki.Store
 
 func TestWikiSubgraph_HappyPath(t *testing.T) {
 	pages := map[string]*wiki.Page{
-		"customer-delta":   {Title: "Customer Delta", Body: "Customer Delta has code 615827. [[supplier-acme]]"},
-		"supplier-acme":    {Title: "Supplier Acme", Body: "Supplier Acme delivers to [[customer-delta]]."},
-		"unrelated-node":   {Title: "Unrelated Node", Body: "Completely unrelated content."},
+		"customer-delta": {Title: "Customer Delta", Body: "Customer Delta has code 615827. [[supplier-acme]]"},
+		"supplier-acme":  {Title: "Supplier Acme", Body: "Supplier Acme delivers to [[customer-delta]]."},
+		"unrelated-node": {Title: "Unrelated Node", Body: "Completely unrelated content."},
 	}
 	store := newSubgraphTestStore(t, pages)
 
@@ -85,8 +85,8 @@ func TestWikiSubgraph_HappyPath(t *testing.T) {
 	}
 
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"query":        "delta automazioni codice cliente",
-		"depth":        float64(1),
+		"query":         "delta automazioni codice cliente",
+		"depth":         float64(1),
 		"budget_tokens": float64(500),
 	})
 	if err != nil {
@@ -100,6 +100,53 @@ func TestWikiSubgraph_HappyPath(t *testing.T) {
 	}
 	if !strings.Contains(result, "customer-delta") {
 		t.Errorf("result missing seeded page 'customer-delta':\n%s", result)
+	}
+}
+
+func TestWikiSubgraph_QueryCapsuleHeaderShowsSeedsAndSignals(t *testing.T) {
+	pages := map[string]*wiki.Page{
+		"customer-delta": {Title: "Customer Delta", Body: "Customer Delta has code 615827. [[supplier-acme]]"},
+		"supplier-acme":  {Title: "Supplier Acme", Body: "Supplier Acme delivers to [[customer-delta]]."},
+	}
+	store := newSubgraphTestStore(t, pages)
+
+	searcher := &fakeSubgraphSearcher{
+		results: []search.Result{
+			{
+				Slug:        "customer-delta",
+				Title:       "Customer Delta",
+				Score:       0.95,
+				ScoreExact:  0.80,
+				ScoreFTS:    0.70,
+				ScoreVector: 0.20,
+			},
+			{Slug: "supplier-acme", Title: "Supplier Acme", Score: 0.10},
+		},
+	}
+	tool := NewWikiSubgraphTool(store, searcher)
+
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"query":         "delta automazioni codice cliente",
+		"depth":         float64(1),
+		"budget_tokens": float64(500),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	mustContain := []string{
+		"CAPSULE wiki_subgraph",
+		"QUERY delta automazioni codice cliente",
+		"TRAVERSAL bfs depth=1 budget_tokens=500",
+		"SEARCH_SEED customer-delta score=0.950 exact=0.800 fts=0.700 vector=0.200 title=\"Customer Delta\"",
+		"PPR_SEED customer-delta",
+		"CONTENT",
+		"NODE customer-delta",
+	}
+	for _, want := range mustContain {
+		if !strings.Contains(result, want) {
+			t.Errorf("result missing %q:\n%s", want, result)
+		}
 	}
 }
 
@@ -135,16 +182,21 @@ func TestWikiSubgraph_BudgetTruncation(t *testing.T) {
 
 	// budget_tokens=1 → only 3 chars; should truncate with marker.
 	result, err := tool.Execute(context.Background(), map[string]any{
-		"query":        "delta",
+		"query":         "delta",
 		"budget_tokens": float64(1),
 	})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	// With budget_tokens=1 (3 chars) the header alone overflows,
-	// so we should get either truncation or the no-content message.
-	// Either is acceptable; just ensure no panic.
-	_ = result
+	if !strings.Contains(result, "CAPSULE wiki_subgraph") {
+		t.Fatalf("tiny budget should still return query capsule header, got:\n%s", result)
+	}
+	if !strings.Contains(result, "truncated") {
+		t.Fatalf("tiny budget should return an actionable truncation marker, got:\n%s", result)
+	}
+	if !strings.Contains(result, "increase budget_tokens") || !strings.Contains(result, "narrower query") {
+		t.Fatalf("truncation marker should tell the model how to recover, got:\n%s", result)
+	}
 }
 
 func TestWikiSubgraph_NilDeps(t *testing.T) {
