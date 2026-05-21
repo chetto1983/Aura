@@ -5,6 +5,7 @@ import (
 	"context"
 	"log/slog"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -757,7 +758,12 @@ func (f *fakeLoopClient) Chat(context.Context, []llm.Message, []llm.ToolDefiniti
 	return ChatResponse{}, nil
 }
 
+// fakeLoopState is shared between the main loop goroutine and the
+// StreamDispatcher tool-execution goroutines (US-LAT-06). Every mutation
+// of the messages slice MUST acquire the mutex; otherwise the race
+// detector trips on AddAssistantMessage ↔ AddToolResultMessage.
 type fakeLoopState struct {
+	mu       sync.Mutex
 	messages []llm.Message
 }
 
@@ -766,28 +772,40 @@ func newFakeLoopState() *fakeLoopState {
 }
 
 func (s *fakeLoopState) Messages() []llm.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return append([]llm.Message(nil), s.messages...)
 }
 
 func (s *fakeLoopState) TrackTokens(llm.TokenUsage) {}
 
 func (s *fakeLoopState) AddAssistantMessage(content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.messages = append(s.messages, llm.Message{Role: "assistant", Content: content})
 }
 
 func (s *fakeLoopState) AddAssistantToolCallMessage(content string, calls []llm.ToolCall) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.messages = append(s.messages, llm.Message{Role: "assistant", Content: content, ToolCalls: calls})
 }
 
 func (s *fakeLoopState) AddToolResultMessage(id, content string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.messages = append(s.messages, llm.Message{Role: "tool", ToolCallID: id, Content: content})
 }
 
 func (s *fakeLoopState) last() llm.Message {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.messages[len(s.messages)-1]
 }
 
 func (s *fakeLoopState) toolResult(id string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, msg := range s.messages {
 		if msg.Role == "tool" && msg.ToolCallID == id {
 			return msg.Content
