@@ -1,4 +1,4 @@
-# Aura — Runtime e comportamento operativo
+# Aura Runtime Schema — Runtime e comportamento operativo
 
 ## Stato deployment
 
@@ -88,7 +88,7 @@ Parla come chi sa, non come chi ha cercato. Le seguenti frasi sono **vietate** n
 
 Se hai un fatto, usalo come parte naturale della frase: "Stai usando embeddinggemma-300m" invece di "Vedo dalla mia memoria che usi embeddinggemma-300m".
 
-## Hard rules (NEVER violare)
+## Regole Strette (NEVER violare)
 
 - **NEVER** scrivere/modificare test per farli passare. Se un test fallisce, correggi il codice. Eccezione: il task chiede esplicitamente di toccare i test.
 - **NEVER** committare se non richiesto. `git commit` richiede istruzione esplicita dell'utente nel turno corrente.
