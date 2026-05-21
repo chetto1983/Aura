@@ -14,7 +14,8 @@
 
 | Phase | Plan | Sessions | LOC delta | Status |
 | --- | --- | ---: | ---: | --- |
-| [Phase-BUG](Phase-BUG/plan.md) | Critical bug fixes — overlay loading, logging boundary, errcheck-hidden bugs | ~1 | -30 + 2 bugs | 🔴 ship immediately, concurrent with Phase-WIKI-B |
+| [Phase-WIKI-FIX](Phase-WIKI-FIX/plan.md) | Substrate bug sweep — FTS5 sync, dim-change ergonomics, dedup, system-page filter, admin reindex | ~1-2 | +450 | 🔴 **priority-0 blocker** for Phase-WIKI-B Wave A (2026-05-22 bench diagnosis) |
+| [Phase-BUG](Phase-BUG/plan.md) | Critical bug fixes — overlay loading, logging boundary, errcheck-hidden bugs | ~1 | -30 + 2 bugs | 🔴 ship immediately, concurrent with Phase-WIKI-FIX |
 | [Phase-CACHE](Phase-CACHE/plan.md) | Provider prompt caching + small wins | ~1 | ~+100 / -50 | 🟡 after Phase-WIKI-B Wave A |
 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline stack (truncate, spill, throttle, tasks_completed, length-recovery) | ~2 | ~+520 | 🟡 after Phase-CACHE |
 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) | ~3 | net -90 | 🟡 after Phase-OUT |
@@ -38,11 +39,12 @@
 
 ## Sequencing rules
 
-1. **Phase-WIKI-B is the unconditional blocker** — every phase except Phase-BUG runs AFTER Phase-WIKI-B Wave A closes.
-2. **Phase-BUG runs concurrent** — it fixes a live bug invalidating web bench data; not waiting.
-3. **Per-phase deep refactor** — each Ralph story MUST include `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated, on every file touched (CLAUDE.md rule).
-4. **One story = one commit** — granularity preserved per `feedback_one_module_per_slice`. No batching except for mechanical sed-style refactor with very low risk.
-5. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large single-commit collapse, -360 LOC) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic before deleting the legacy code path.
+1. **Phase-WIKI-FIX is the priority-0 blocker** — surfaced by the 2026-05-22 direct retrieval bench. FTS5 mirror has 17 rows vs 150+ pages on disk → hybrid fusion silently runs on 1/3 channels. Without it, Phase-WIKI-B Wave A measures nothing useful (RRF over empty FTS = RRF over 1 channel). See [Phase-WIKI-FIX/plan.md](Phase-WIKI-FIX/plan.md) and memory `project_2026-05-22_substrate_bench_diagnosis`.
+2. **Phase-WIKI-B Wave A** ships AFTER Phase-WIKI-FIX, not before.
+3. **Phase-BUG runs concurrent** — it fixes a live bug invalidating web bench data; not waiting.
+4. **Per-phase deep refactor** — each Ralph story MUST include `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated, on every file touched (CLAUDE.md rule).
+5. **One story = one commit** — granularity preserved per `feedback_one_module_per_slice`. No batching except for mechanical sed-style refactor with very low risk.
+6. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large single-commit collapse, -360 LOC) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic before deleting the legacy code path.
 
 ---
 
