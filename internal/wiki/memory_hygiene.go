@@ -732,15 +732,6 @@ func stripAutoSourcePreview(page *Page) bool {
 	return true
 }
 
-func appendUniqueSorted(values []string, value string) []string {
-	if value == "" || hasString(values, value) {
-		return values
-	}
-	values = append(values, value)
-	sort.Strings(values)
-	return values
-}
-
 func hasString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

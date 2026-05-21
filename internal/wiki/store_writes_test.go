@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/storage/reindex"
 )
 
@@ -138,7 +140,7 @@ func TestWritePage_ETagInsideMutex_NoTOCTOU(t *testing.T) {
 	var wins, conflicts int
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
@@ -299,6 +301,50 @@ func TestUnversionedReWriteValidatesPage(t *testing.T) {
 
 // Compile-time check: ensure ConflictError implements the error interface.
 var _ error = (*ConflictError)(nil)
+
+// inMemFTS5Syncer is a test-only FTS5PageSyncer backed by a *sql.DB with a
+// real SQLite FTS5 table. It avoids importing internal/storage/search (which
+// imports wiki, creating a cycle) by issuing the SQL directly.
+type inMemFTS5Syncer struct {
+	db *sql.DB
+}
+
+func (s *inMemFTS5Syncer) SyncPage(ctx context.Context, slug string, page *Page) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM wiki_documents WHERE id = ?`, slug); err != nil {
+		return err
+	}
+	content := page.Title + "\n" + page.Body
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO wiki_documents (id, content, metadata, title) VALUES (?, ?, ?, ?)`,
+		slug, content, "{}", page.Title)
+	return err
+}
+
+func (s *inMemFTS5Syncer) RemovePage(ctx context.Context, slug string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM wiki_documents WHERE id = ?`, slug)
+	return err
+}
+
+func (s *inMemFTS5Syncer) CountDocs(ctx context.Context) (int, error) {
+	var n int
+	return n, s.db.QueryRowContext(ctx, `SELECT count(*) FROM wiki_documents`).Scan(&n)
+}
+
+// newFTS5TestDB creates an in-memory SQLite database with the wiki_documents
+// FTS5 virtual table. Uses auradb.Open to register the modernc sqlite driver.
+func newFTS5TestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := auradb.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open in-memory db: %v", err)
+	}
+	if _, err := db.Exec(`CREATE VIRTUAL TABLE wiki_documents USING fts5(id, content, metadata, title)`); err != nil {
+		db.Close()
+		t.Fatalf("create fts5 table: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+	return db
+}
 
 // recordingSubmitter records submitted reindex jobs for test assertions.
 type recordingSubmitter struct {
@@ -539,5 +585,49 @@ func TestWritePage_BacklinkAddsOnUpdateNewLink(t *testing.T) {
 	}
 	if !RelatedContainsSlug(beta.Related, "writer") {
 		t.Fatalf("beta.Related missing writer after update: %v", beta.Related)
+	}
+}
+
+// TestFTS5Syncer_WritePage_UpsertAndDelete verifies that WritePage calls
+// FTS5PageSyncer.SyncPage synchronously and DeletePage calls RemovePage.
+// Uses a real SQLite FTS5 in-memory table so MATCH queries are authoritative.
+func TestFTS5Syncer_WritePage_UpsertAndDelete(t *testing.T) {
+	db := newFTS5TestDB(t)
+	s := newWritesTestStore(t)
+	s.SetFTS5Syncer(&inMemFTS5Syncer{db: db})
+
+	p := &Page{
+		Title:         "Galileo Galilei",
+		Body:          "Italian astronomer who improved the telescope.",
+		Category:      "science",
+		SchemaVersion: CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-05-22T00:00:00Z",
+		UpdatedAt:     "2026-05-22T00:00:00Z",
+	}
+	if err := s.WritePage(context.Background(), p); err != nil {
+		t.Fatalf("WritePage: %v", err)
+	}
+
+	// FTS5 MATCH should find the slug immediately after write (synchronous).
+	var gotID string
+	if err := db.QueryRow(`SELECT id FROM wiki_documents WHERE wiki_documents MATCH 'galileo' LIMIT 1`).Scan(&gotID); err != nil {
+		t.Fatalf("FTS5 MATCH after write: %v", err)
+	}
+	wantSlug := Slug("Galileo Galilei")
+	if gotID != wantSlug {
+		t.Fatalf("id = %q, want %q", gotID, wantSlug)
+	}
+
+	// Delete the page — FTS5 row must be removed.
+	if err := s.DeletePage(context.Background(), wantSlug); err != nil {
+		t.Fatalf("DeletePage: %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM wiki_documents WHERE id = ?`, wantSlug).Scan(&count); err != nil {
+		t.Fatalf("count after delete: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("FTS5 row not removed on delete: count=%d, want 0", count)
 	}
 }

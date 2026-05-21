@@ -134,6 +134,14 @@ func (s *Store) writePageLocked(ctx context.Context, slug string, page *Page, ex
 		return nil, err
 	}
 
+	// Sync to FTS5 mirror synchronously (FTS5 is authoritative for the keyword
+	// channel and must not lag behind disk state — Phase WIKI-FIX-01).
+	if s.fts5Syncer != nil {
+		if syncErr := s.fts5Syncer.SyncPage(ctx, slug, page); syncErr != nil {
+			s.logger.Warn("wiki: FTS5 sync failed on write", "slug", slug, "error", syncErr)
+		}
+	}
+
 	if s.freshnessStore != nil {
 		if bErr := s.freshnessStore.BumpPending(ctx, "compact_memory_wiki", 1); bErr != nil {
 			s.logger.Warn("wiki: freshness bump failed", "slug", slug, "error", bErr)
@@ -327,6 +335,13 @@ func (s *Store) DeletePage(ctx context.Context, slug string) error {
 
 	if !removed {
 		return fmt.Errorf("deleting wiki page %s: file not found", slug)
+	}
+
+	// Sync FTS5 mirror removal synchronously (Phase WIKI-FIX-01).
+	if s.fts5Syncer != nil {
+		if syncErr := s.fts5Syncer.RemovePage(ctx, slug); syncErr != nil {
+			s.logger.Warn("wiki: FTS5 sync failed on delete", "slug", slug, "error", syncErr)
+		}
 	}
 
 	s.logger.Info("wiki page deleted", "slug", slug)

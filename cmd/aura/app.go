@@ -212,6 +212,15 @@ func newApp(
 	deps.WikiStore = wikiStore
 	deps.Wiki = wikiStore
 
+	// ---- FTS5 page syncer (wiki write hook) ---------------------------------
+	// Wire unconditionally: pool is always available, FTS5 mirror lives in the
+	// same SQLite DB. This ensures the keyword-search channel stays in sync
+	// even when Qdrant is disabled. ReconcileFTS5Mirror catches stale/empty
+	// mirrors on restart (Phase WIKI-FIX-01).
+	fts5Syncer := search.NewWikiFTS5Syncer(pool, logger)
+	wikiStore.SetFTS5Syncer(fts5Syncer)
+	wikiStore.ReconcileFTS5Mirror(context.Background())
+
 	// ---- Search engine (embed + Qdrant vector search) -----------------------
 	var embedFn search.EmbeddingFunction
 	var batchEmbedFn search.BatchEmbeddingFunction

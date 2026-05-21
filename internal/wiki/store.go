@@ -32,6 +32,7 @@ type Store struct {
 	gitCommitFunc func(ctx context.Context, filename, action string) error
 
 	reindexSubmitter reindex.Submitter // optional; set via SetReindexSubmitter (Phase 2 INDEX-01)
+	fts5Syncer       FTS5PageSyncer    // optional; set via SetFTS5Syncer (FIX-01)
 	toc              tocCache          // in-memory TOC cache; rebuilt on every WritePage/DeletePage
 	freshnessStore   *freshness.Store  // optional; set via SetFreshnessStore
 
@@ -506,7 +507,7 @@ func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
 	return s.lintAt(ctx, time.Now().UTC())
 }
 
-func (s *Store) lintAt(ctx context.Context, now time.Time) ([]LintIssue, error) {
+func (s *Store) lintAt(_ context.Context, now time.Time) ([]LintIssue, error) {
 	slugs, err := s.ListPages()
 	if err != nil {
 		return nil, err
