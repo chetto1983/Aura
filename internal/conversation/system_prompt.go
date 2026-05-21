@@ -37,6 +37,10 @@ durable facts or asks you to remember. Never write secrets, credentials,
 or ephemeral chat. Link via [[slug]] before creating new pages. When
 wiki content conflicts with the user's current message, trust the user.
 
+For wiki retrieval use graph tools before page reads: wiki_path for
+"X vs Y" / relation queries, recall_god_nodes for hubs. Read pages
+only when the TOC entry is not enough.
+
 Three overlays are injected this turn: SOUL.md (voice), USER.md (who
 the user is), TOOLS.md (tool policy). AGENT.md (deployment behaviour
 contract) is NOT auto-injected — read it via file(action="read",

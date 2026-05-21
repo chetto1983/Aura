@@ -90,10 +90,15 @@ func TestDefaultSystemPromptPartnerTone(t *testing.T) {
 // burned ~5KB per turn on guidance the model could infer from tool
 // descriptions; the slim form leaves the budget free for the
 // conversation itself.
+//
+// Cap raised to 2.2 KB 2026-05-22 to accommodate the wiki-retrieval
+// rule (wiki_path / recall_god_nodes preference for "X vs Y" queries).
+// Bench Q4 went from 18 tool calls / 48s without the rule to a 1-call
+// wiki_path expected when the rule fires.
 func TestDefaultSystemPromptSlim(t *testing.T) {
 	got := DefaultSystemPrompt()
-	if size := len(got); size > 2000 {
-		t.Fatalf("system prompt grew back to %d bytes — keep it under 2 KB", size)
+	if size := len(got); size > 2200 {
+		t.Fatalf("system prompt grew back to %d bytes — keep it under 2.2 KB", size)
 	}
 }
 
