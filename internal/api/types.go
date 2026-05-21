@@ -162,6 +162,34 @@ type GraphEdge = wiki.GraphEdge
 // Graph is the response of GET /wiki/graph.
 type Graph = wiki.Graph
 
+// WikiSearchHit is one direct wiki retrieval hit from GET /wiki/search. It is
+// intentionally compact: callers get enough ranking evidence to benchmark
+// Recall@K without receiving full wiki page bodies.
+type WikiSearchHit struct {
+	Rank        int      `json:"rank"`
+	Kind        string   `json:"kind"`
+	Slug        string   `json:"slug"`
+	Title       string   `json:"title"`
+	Snippet     string   `json:"snippet,omitempty"`
+	Score       float32  `json:"score"`
+	ScoreExact  float32  `json:"score_exact,omitempty"`
+	ScoreFTS    float32  `json:"score_fts,omitempty"`
+	ScoreVector float32  `json:"score_vector,omitempty"`
+	FilePath    string   `json:"file_path,omitempty"`
+	Category    string   `json:"category,omitempty"`
+	Tags        []string `json:"tags,omitempty"`
+	Sources     []string `json:"sources,omitempty"`
+}
+
+// WikiSearchResponse is the body returned by GET /wiki/search?q=...
+type WikiSearchResponse struct {
+	Query     string          `json:"query"`
+	TopK      int             `json:"top_k"`
+	Indexed   bool            `json:"indexed"`
+	ElapsedMS int64           `json:"elapsed_ms"`
+	Results   []WikiSearchHit `json:"results"`
+}
+
 // SourceSummary is one row of GET /sources. It omits high-volume fields
 // (mime_type, sha256, size_bytes, ocr_model, error) that the table view
 // doesn't need.

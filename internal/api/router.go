@@ -129,6 +129,12 @@ type Deps struct {
 	// rebuild.
 	WikiSearch WikiReindexer
 
+	// WikiSearcher is the read-side wiki retrieval engine used by
+	// GET /wiki/search and the quality benchmark's Recall@K probe. It is
+	// separate from WikiSearch because the file manager only needs the
+	// reindex hook, while this endpoint needs query access.
+	WikiSearcher search.Searcher
+
 	SkillsAdmin bool
 
 	// Pending-approval pipeline. Bot wires the real implementation;
@@ -238,6 +244,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /wiki/pages", handleWikiPages(deps))
 	mux.HandleFunc("GET /wiki/page", handleWikiPage(deps))
 	mux.HandleFunc("GET /wiki/graph", handleWikiGraph(deps))
+	mux.HandleFunc("GET /wiki/search", handleWikiSearch(deps))
 	mux.HandleFunc("GET /wiki/godnodes", handleWikiGodNodes(deps))
 	mux.HandleFunc("GET /wiki/path", handleWikiPath(deps))
 

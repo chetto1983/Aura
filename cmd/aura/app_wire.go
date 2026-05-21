@@ -530,7 +530,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		WorkspaceDir: cfg.WorkspaceRoot,
 		SkillsDir:    cfg.SkillsPath,
 		// WikiSearch reindexes after dashboard wiki writes/renames/deletes.
-		WikiSearch: a.deps.SearchRepo,
+		WikiSearch:   a.deps.SearchRepo,
+		WikiSearcher: a.deps.SearchRepo,
 		// Pending-approval pipeline.
 		PendingApprover: b,
 		// Conversation archive read API.

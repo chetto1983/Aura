@@ -14,6 +14,7 @@ import (
 
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/storage/sources/store"
 	"github.com/aura/aura/internal/wiki"
 )
@@ -27,6 +28,27 @@ type testEnv struct {
 	sources *source.Store
 	sched   *cron.Store
 	router  http.Handler
+}
+
+type fakeAPISearcher struct {
+	indexed    bool
+	results    []search.Result
+	query      string
+	topK       int
+	hybridUsed bool
+}
+
+func (f *fakeAPISearcher) IsIndexed() bool { return f.indexed }
+
+func (f *fakeAPISearcher) Search(_ context.Context, query string, topK int) ([]search.Result, error) {
+	f.query = query
+	f.topK = topK
+	return f.results, nil
+}
+
+func (f *fakeAPISearcher) SearchHybrid(_ context.Context, query string, topK int) ([]search.Result, error) {
+	f.hybridUsed = true
+	return f.Search(context.Background(), query, topK)
 }
 
 func newTestEnv(t *testing.T) *testEnv {
@@ -412,6 +434,89 @@ func TestWikiGraph_PrefersMaterializedCache(t *testing.T) {
 	}
 	if len(got.Nodes) != 1 || got.Nodes[0].ID != "cached" {
 		t.Fatalf("graph = %+v, want cached graph", got)
+	}
+}
+
+func TestWikiSearch_HappyPathUsesHybridSearcher(t *testing.T) {
+	e := newTestEnv(t)
+	searcher := &fakeAPISearcher{
+		indexed: true,
+		results: []search.Result{{
+			Kind:        "wiki_page",
+			Slug:        "delta-automazioni",
+			Title:       "Delta Automazioni",
+			Content:     "Delta Automazioni\nCliente 615827. Referente rossi@delta.it.",
+			Score:       0.9,
+			ScoreExact:  0.4,
+			ScoreFTS:    0.3,
+			ScoreVector: 0.2,
+			FilePath:    "delta-automazioni.md",
+			Category:    "client",
+			Tags:        []string{"crm"},
+			Sources:     []string{"src_delta"},
+		}},
+	}
+	e.router = NewRouter(Deps{
+		Wiki:         e.wiki,
+		Sources:      e.sources,
+		Scheduler:    e.sched,
+		WikiSearcher: searcher,
+	})
+
+	rr := e.do("GET", "/wiki/search?q=Delta%20Automazioni&top_k=5")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	if !searcher.hybridUsed {
+		t.Fatal("SearchHybrid was not used")
+	}
+	if searcher.query != "Delta Automazioni" || searcher.topK != 5 {
+		t.Fatalf("query/topK = %q/%d", searcher.query, searcher.topK)
+	}
+	var got WikiSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Results) != 1 {
+		t.Fatalf("results = %d, want 1", len(got.Results))
+	}
+	hit := got.Results[0]
+	if hit.Rank != 1 || hit.Slug != "delta-automazioni" || hit.ScoreExact == 0 || hit.ScoreFTS == 0 || hit.ScoreVector == 0 {
+		t.Fatalf("hit = %+v", hit)
+	}
+	if !strings.Contains(hit.Snippet, "Cliente 615827") {
+		t.Fatalf("snippet = %q", hit.Snippet)
+	}
+}
+
+func TestWikiSearch_BadInputsAndUnavailable(t *testing.T) {
+	e := newTestEnv(t)
+	for _, tc := range []struct {
+		name   string
+		path   string
+		status int
+	}{
+		{"missing query", "/wiki/search", http.StatusBadRequest},
+		{"bad top_k", "/wiki/search?q=x&top_k=100", http.StatusBadRequest},
+		{"unavailable", "/wiki/search?q=x", http.StatusServiceUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rr := e.do("GET", tc.path)
+			if rr.Code != tc.status {
+				t.Fatalf("status %d, want %d, body %s", rr.Code, tc.status, rr.Body)
+			}
+		})
+	}
+
+	e.router = NewRouter(Deps{
+		Wiki:         e.wiki,
+		Sources:      e.sources,
+		Scheduler:    e.sched,
+		WikiSearcher: &fakeAPISearcher{indexed: false},
+	})
+	rr := e.do("GET", "/wiki/search?q=x")
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, want 503, body %s", rr.Code, rr.Body)
 	}
 }
 
