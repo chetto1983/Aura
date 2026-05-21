@@ -1,8 +1,14 @@
 // Package search is Aura's read-side wiki retrieval. Qdrant is the only vector
 // backend (the in-memory chromem-go path that used to live here was deleted
 // once Qdrant became required infrastructure). SQLite FTS5 remains as the
-// keyword-side companion: every wiki page is mirrored there at index time so
-// search() can hybridize cosine similarity with BM25-style lexical hits.
+// keyword-side companion: every wiki page is mirrored there at index time.
+//
+// Hybrid fusion state (2026-05-21): mergeHybridResults below implements
+// reciprocal-rank fusion across ScoreExact + ScoreFTS + ScoreVector, but
+// qdrantRepository.Search ships vector-only — only compact-memory currently
+// drives the hybrid path. Wiki search through qdrantRepository.Search hits
+// Qdrant cosine alone. Phase-WIKI-B US-WIKI-B02 wires FTS5 + exact into the
+// wiki path so the fusion actually fuses for the wiki use case too.
 package search
 
 import (

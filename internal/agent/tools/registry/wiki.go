@@ -69,7 +69,9 @@ func (t *WikiPageTool) Definition() ToolDefinition {
 }
 
 func (t *WikiPageTool) Description() string {
-	return `Create, replace, edit, or append to a wiki page.
+	return `Create, replace, edit, or append to a wiki page. WRITER ONLY — does NOT read.
+To READ a wiki page, call file({"action":"read","path":"wiki/<slug>.md"}).
+To READ a source archive, call read_source({"source_id":"src_xxx"}).
 
 REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
   • action="create":  title, body
@@ -208,6 +210,17 @@ func (t *WikiPageTool) Execute(ctx context.Context, args map[string]any) (string
 		return t.doEdit(ctx, args)
 	case "append":
 		return t.doAppend(ctx, args)
+	case "read", "view", "get", "show":
+		// QW-1: cross-tool hint. wiki_page is a writer tool; reads go through
+		// the file tool (any workspace file) or read_source (source archives).
+		// Observed live 2026-05-21: the model called wiki_page action=read,
+		// hit UnknownActionError, then re-routed manually — costing a turn.
+		// Suggesting the right tool inline saves that round.
+		slug := strings.TrimSpace(stringArg(args, "slug"))
+		if slug != "" {
+			return "", fmt.Errorf("wiki_page is a writer tool. To read wiki/%s.md call file({\"action\":\"read\",\"path\":\"wiki/%s.md\"}). For source archives use read_source({\"source_id\":\"src_xxx\"}): %w", slug, slug, llm.ErrSchemaValidation)
+		}
+		return "", fmt.Errorf("wiki_page is a writer tool (create/replace/edit/append). Reads go through file({\"action\":\"read\",\"path\":\"wiki/<slug>.md\"}) or read_source({\"source_id\":\"src_xxx\"}): %w", llm.ErrSchemaValidation)
 	case "":
 		return "", ActionRequiredError("wiki_page", wikiValidActions, args, wikiActionHints, "create")
 	default:
