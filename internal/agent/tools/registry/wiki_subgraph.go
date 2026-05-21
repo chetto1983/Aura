@@ -43,7 +43,7 @@ func NewWikiSubgraphTool(store *wiki.Store, searcher search.Searcher) *WikiSubgr
 func (t *WikiSubgraphTool) Name() string { return "wiki_subgraph" }
 
 func (t *WikiSubgraphTool) Description() string {
-	return "Retrieve a token-budgeted subgraph of the wiki for a query. Uses hybrid search + Personalised PageRank seeding + hub-aware BFS to return the most relevant sections of the wiki in one call. Prefer this over multiple search_memory + read_file round-trips when exploring a connected topic."
+	return "Retrieve a token-budgeted subgraph of the wiki for a query. Uses hybrid search + Personalised PageRank seeding + hub-aware BFS to return the most relevant sections of the wiki in one call. Prefer this over multiple search_memory + file action=read round-trips when exploring a connected topic."
 }
 
 func (t *WikiSubgraphTool) Parameters() map[string]any {

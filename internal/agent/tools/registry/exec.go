@@ -89,7 +89,7 @@ func (t *ExecuteCodeTool) Description() string {
 		"For multi-step workflows, pass tools_allowed and have the script write $AURA_OUT_DIR/aura_tool_calls.json with calls [{\"tool\":\"name\",\"args\":{...}}]; Aura executes only those active-turn tools after the script exits. " +
 		"Use loops, transforms, retries, and structured JSON output inside one script instead of many model/backend round trips. " +
 		"The execution process is ephemeral; durable state should be written through workspace tools or emitted as artifacts. " +
-		"Use create_xlsx/create_docx/create_pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
+		"Use doc action=xlsx/docx/pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
 		"To return files, write them under the AURA_OUT_DIR environment variable (a per-call directory, e.g. import os; out=os.environ['AURA_OUT_DIR']); Aura collects plain files from that directory, persists them as sandbox_artifact sources, and delivers them to Telegram when possible. The internal tool-call manifest is control data and is not persisted as a user artifact. " +
 		"Use timeout to override the per-call limit (1-600s, default server 300s)."
 }

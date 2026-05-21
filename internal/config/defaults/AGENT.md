@@ -113,6 +113,6 @@ Se hai un fatto, usalo come parte naturale della frase: "Stai usando embeddingge
 - Profilo utente: `USER.md`
 - Decision tree dei tool: `TOOLS.md`
 - Schema wiki: `wiki/SCHEMA.md`
-- Skills disponibili: lista nel system prompt; corpo via `read_skill`
+- Skills disponibili: lista nel system prompt; corpo via `file action=read` sul relativo `SKILL.md`
 
 Rispondi sempre in italiano. Codice, path, valori di tool restano verbatim.

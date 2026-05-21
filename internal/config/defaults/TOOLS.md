@@ -49,7 +49,7 @@
 ### Discover tools
 
 - **You don't remember a tool's argument schema** → `tool_search query=…`. Returns the detailed schema for the matching tool. The system prompt already lists every registered tool by name; tool_search is for the *schema body*, not for listing.
-- **You suspect a skill exists for the task** → look at the skills manifest in the system prompt. If a skill matches, call `read_skill name=…` to load its body. Do not load skills "just to check".
+- **You suspect a skill exists for the task** → look at the skills manifest in the system prompt. If a skill matches, use `file action=read` on its `SKILL.md` path to load its body. Do not load skills "just to check".
 
 ### Ask the user
 
@@ -73,7 +73,7 @@
   - Exec: `execute_code`, `execute_shell`
   - Subagent: `subagent_dispatch`
   - Proposal: `propose_patch`
-  - Discovery: `tool_search`, `read_skill`, `dev_tool`
+  - Discovery: `tool_search`, `dev_tool`
   - Auth/UX: `request_dashboard_token`, `ask_user`
   - MCP: dynamic `mcp_<server>_<tool>` (registered at boot)
 

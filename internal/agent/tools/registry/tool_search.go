@@ -69,7 +69,7 @@ func (t *ToolSearchTool) Definition() ToolDefinition {
 		VisibilityTier: VisibilityAlwaysOn,
 		Examples: []ToolCallExample{
 			{
-				Description: "User asks for a Word document with a news summary; you don't have create_docx in the current pool.",
+				Description: "User asks for a Word document with a news summary; you need the doc tool schema.",
 				Arguments:   map[string]any{"query": "genera file Word con sommario notizie", "limit": 5},
 			},
 			{

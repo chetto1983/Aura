@@ -964,9 +964,9 @@ func allCases(now time.Time, enableTTS bool) []Case {
 			},
 		},
 
-		// Phase-QA2 / US-QA-COV05 — ingest_source composite pipeline E2E.
+		// Phase-QA2 / US-QA-COV05 — source action=reprocess ingest E2E.
 		// Uploads a small markdown source (→extract_complete), asks Aura to call
-		// ingest_source on it, then verifies the generated wiki summary page exists
+		// source action=reprocess on it, then verifies the generated wiki summary page exists
 		// at the expected deterministic slug via the API.
 		// Ground truth: fetchWikiPage returns 200 + body contains the source ID.
 		{
@@ -996,13 +996,13 @@ func allCases(now time.Time, enableTTS bool) []Case {
 				return nil
 			},
 			PromptFn: func() string {
-				return "Usa ingest_source sul source_id " + ingestProbeID +
-					" per creare una pagina wiki. Conferma con lo slug della pagina creata."
+				return "Usa il tool source con action=reprocess, source_id " + ingestProbeID +
+					" e stages=[\"ingest\"] per creare una pagina wiki. Conferma con lo slug della pagina creata."
 			},
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
-					miss = append(miss, "expected >= 1 tool call (ingest_source), got 0")
+					miss = append(miss, "expected >= 1 tool call (source action=reprocess ingest), got 0")
 				}
 				// Ground truth: the wiki page must exist at the expected slug and
 				// must contain the source ID in its body (the ingest pipeline writes
@@ -1013,7 +1013,7 @@ func allCases(now time.Time, enableTTS bool) []Case {
 					return miss
 				}
 				if missing {
-					miss = append(miss, fmt.Sprintf("wiki page %q not found (404) — ingest_source did not create the page or slug derivation changed", ingestExpectedSlug))
+					miss = append(miss, fmt.Sprintf("wiki page %q not found (404) — source action=reprocess did not create the page or slug derivation changed", ingestExpectedSlug))
 					return miss
 				}
 				fmt.Fprintf(os.Stderr, "[case=tool-ingest-source] wiki page %q preview: %s\n",
@@ -1041,9 +1041,9 @@ func allCases(now time.Time, enableTTS bool) []Case {
 			},
 		},
 
-		// Phase-QA2 / US-QA-COV04 — ocr_source external-API E2E (Mistral OCR).
+		// Phase-QA2 / US-QA-COV04 — source action=reprocess OCR E2E (Mistral OCR).
 		// Uploads a synthetic one-page PDF with a known probe stamp, asks Aura
-		// to OCR it via ocr_source, then verifies the extracted text appears in
+		// to OCR it via source action=reprocess, then verifies the extracted text appears in
 		// the ocr.md sidecar fetched from the API (ground truth, not reply text).
 		//
 		// INFRA NOTE: requires MISTRAL_API_KEY set in the container. If OCR is
@@ -1077,12 +1077,12 @@ func allCases(now time.Time, enableTTS bool) []Case {
 			},
 			// PromptFn is evaluated after Setup, so ocrProbeID is already set.
 			PromptFn: func() string {
-				return "Usa ocr_source sul source_id " + ocrProbeID + ". Mostrami una riga di testo trovata."
+				return "Usa il tool source con action=reprocess, source_id " + ocrProbeID + " e stages=[\"ocr\"]. Mostrami una riga di testo trovata."
 			},
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
-					miss = append(miss, "expected >= 1 tool call (ocr_source), got 0 — check if MISTRAL_API_KEY is set and ocr_source tool is registered")
+					miss = append(miss, "expected >= 1 tool call (source action=reprocess ocr), got 0 — check if MISTRAL_API_KEY is set and source OCR stage is registered")
 				}
 				// Ground truth: fetch the ocr.md sidecar via the sources markdown
 				// API. For PDFs, /api/sources/{id}/markdown returns ocr.md content.
