@@ -248,7 +248,7 @@ func (d DirectoryWikiFiles) ListWikiFiles(context.Context) ([]WikiFile, error) {
 
 func rawLeakMessage(body string) string {
 	if strings.Contains(body, "\n## Preview\n") || strings.HasPrefix(body, "## Preview\n") {
-		return "compiled wiki page contains raw OCR/source preview; keep raw text under wiki/raw and read_source"
+		return "compiled wiki page contains raw OCR/source preview; keep raw text under wiki/raw and source(action=\"read\")"
 	}
 	if strings.Count(body, "â") >= 3 {
 		return "compiled wiki page contains repeated replacement characters, likely bad extraction text"

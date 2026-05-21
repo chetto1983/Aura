@@ -41,6 +41,7 @@ func TestDefaultSystemPromptDoesNotAdvertiseSpecializedTools(t *testing.T) {
 		"Use execute_code for:",
 		"/tmp/aura_out",
 		"Use list_files for directory inventory",
+		"schedule_task",
 		"For project or file audits",
 	} {
 		if strings.Contains(got, forbidden) {

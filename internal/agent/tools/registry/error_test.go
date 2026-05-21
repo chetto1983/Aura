@@ -36,8 +36,8 @@ func TestFormatToolErrorPreservesUnderlyingMessage(t *testing.T) {
 
 func TestFormatToolErrorDirectoryHint(t *testing.T) {
 	got := FormatToolError(errors.New("read_file: workspace: wiki is a directory"))
-	if !strings.Contains(got, "list_files") {
-		t.Fatalf("expected list_files hint, got %q", got)
+	if !strings.Contains(got, `file(action="list")`) {
+		t.Fatalf("expected file(action=list) hint, got %q", got)
 	}
 }
 

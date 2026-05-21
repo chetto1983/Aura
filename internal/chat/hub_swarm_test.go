@@ -139,7 +139,7 @@ func TestHubSwarm_GenericGrantCoversTools(t *testing.T) {
 	h := newHub(t, loop)
 	h.RegisterOutbound(&testhelpers.FakeOutbound{Ch: chat.ChannelSwarm, Md: chat.DeliveryModeSilent})
 
-	// Allow generic tool.execute only — NO granular tool.execute.web_search.
+	// Allow generic tool.execute only — NO granular tool.execute.web.
 	authz := &swarmFakeAuthorizer{
 		allow: map[identity.Capability]bool{
 			identity.CapabilityToolExecute: true,
@@ -152,7 +152,7 @@ func TestHubSwarm_GenericGrantCoversTools(t *testing.T) {
 		Mode:        chat.DeliveryModeSilent,
 		PrincipalID: "user-1",
 		ChannelData: map[string]any{
-			"tool_allowlist": []string{"web_search"},
+			"tool_allowlist": []string{"web"},
 		},
 	})
 	if err != nil {
@@ -183,7 +183,7 @@ func TestHubSwarm_NoGenericGrantDenied(t *testing.T) {
 		Mode:        chat.DeliveryModeSilent,
 		PrincipalID: "user-1",
 		ChannelData: map[string]any{
-			"tool_allowlist": []string{"web_search"},
+			"tool_allowlist": []string{"web"},
 		},
 	})
 	if err == nil {

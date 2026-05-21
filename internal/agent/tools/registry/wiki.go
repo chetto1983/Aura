@@ -71,7 +71,7 @@ func (t *WikiPageTool) Definition() ToolDefinition {
 func (t *WikiPageTool) Description() string {
 	return `Create, replace, edit, or append to a wiki page. WRITER ONLY — does NOT read.
 To READ a wiki page, call file({"action":"read","path":"wiki/<slug>.md"}).
-To READ a source archive, call read_source({"source_id":"src_xxx"}).
+To READ a source archive, call source({"action":"read","source_id":"src_xxx"}).
 
 REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
   • action="create":  title, body

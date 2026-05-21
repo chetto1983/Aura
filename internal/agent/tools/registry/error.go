@@ -113,7 +113,7 @@ func specificHint(msg string) string {
 	lower := strings.ToLower(msg)
 	switch {
 	case strings.Contains(lower, "is a directory"):
-		return "Hint: this path is a directory. Use list_files to enumerate it, then read individual files."
+		return "Hint: this path is a directory. Use file(action=\"list\") to enumerate it, then file(action=\"read\") for individual files."
 	case strings.Contains(lower, "shell command failed") &&
 		(strings.Contains(lower, "syntax error") ||
 			strings.Contains(lower, "redirection") ||

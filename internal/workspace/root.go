@@ -192,7 +192,7 @@ type ReadResult struct {
 	EntriesHint string     `json:"hint,omitempty"`
 }
 
-// ReadBest is the permissive read used by the read_file tool. It never
+// ReadBest is the permissive read used by file(action="read"). It never
 // errors on oversize (truncates) or on directories (lists). It only
 // errors on missing paths, permission boundaries, or sensitive paths.
 //
@@ -221,7 +221,7 @@ func (r *Root) ReadBest(rel string, maxBytes int) (ReadResult, error) {
 			Path:        cleanRel,
 			Type:        "directory",
 			Entries:     entries,
-			EntriesHint: "Use list_files for paging or different limits; pass an entry's path back to read_file to read it.",
+			EntriesHint: "Use file(action=\"list\") for paging or different limits; pass an entry's path back to file(action=\"read\") to read it.",
 		}, nil
 	}
 	if isBinaryExtension(cleanRel) && info.Size() > smallBinaryReadLimit {

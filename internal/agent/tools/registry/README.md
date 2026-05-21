@@ -6,7 +6,7 @@ package owns:
 
 - The `Tool` interface, the `Registry` that dispatches calls by name, and the
   optional vector index that ranks tools by relevance to the live turn.
-- The 25+ built-in tools (memory, web, sources, scheduler, files, wiki,
+- The built-in tools (memory, web, sources, scheduler, files, wiki,
   workspace, sandbox, auth).
 - Adapters that surface MCP-server tools as ordinary `Tool` instances
   (`MCPTool`, name-mangled as `mcp_<server>_<tool>`).
@@ -58,24 +58,27 @@ and `CategorizedTool` / `MultiCategorizedTool` to opt into category gating.
 | `args.go` | `stringArg`, `stringSliceArg`, `cleanStrings` — boundary-trimming. |
 | `context.go` | Per-call context keys: user ID, active-turn allowlist. |
 | `web_common.go` | `requiredString`, `intArg`, `truncateForToolContext` (UTF-8 safe), `formatFetchResult`, `formatSearchResults`. |
-| `searxng.go` | `web_search` against a SearXNG instance. |
-| `direct_fetch.go` | `web_fetch` with SSRF-blocking dialer, env-driven loopback override, http.DetectContentType sniff. |
+| `web.go` | `web` dispatcher (`action=search|fetch`) over SearXNG search and direct URL fetch. |
+| `searxng.go` | SearXNG search helper used by `web(action=search)`. |
+| `direct_fetch.go` | Direct fetch helper used by `web(action=fetch)` with SSRF-blocking dialer, env-driven loopback override, http.DetectContentType sniff. |
 | `memory_search.go` | `search_memory` — hybrid wiki + compact-memory query, recency-weighted. |
 | `tool_search.go` | Internal tool-discovery (used by the agent loop's tool ranking). |
-| `source.go` | Shared formatters and `readBoundedFile` for source tools. |
-| `source_store.go` | `store_source` (kind=text/url, validates absolute URLs). |
-| `source_ocr.go` | `ocr_source` — Mistral OCR with 64 MiB PDF cap and write rollback on metadata failure. |
-| `source_read.go` | `read_source` — modes: metadata, ocr, excerpt. |
-| `source_list.go` | `list_sources` + `lint_sources`. |
-| `source_delete.go` | `delete_source` (memoryindex first, then files). |
-| `scheduler.go` | `schedule_task` / `list_tasks` / `cancel_task` / `run_task_now`. 5-min minimum interval. |
+| `source_unified.go` | `source` dispatcher (`action=list|read|store|reprocess|delete|lint`). |
+| `source.go` | Shared formatters and `readBoundedFile` for source helpers. |
+| `source_store.go` | Store helper used by `source(action=store)` (kind=text/url, validates absolute URLs). |
+| `source_ocr.go` | OCR helper used by `source(action=reprocess, stages=["ocr"])` with 64 MiB PDF cap and write rollback on metadata failure. |
+| `source_read.go` | Read helper used by `source(action=read)`; modes: metadata, ocr, excerpt. |
+| `source_list.go` | List/lint helpers used by `source(action=list|lint)`. |
+| `source_delete.go` | Delete helper used by `source(action=delete)` (memoryindex first, then files). |
+| `scheduler.go` | `task` dispatcher (`action=schedule|list|cancel|run_now`). 5-min minimum interval. |
 | `files.go` | `DocumentSender`, caption sanitizer, `stringifyCell`. |
 | `files_xlsx.go` | `create_xlsx`. |
 | `files_docx.go` | `create_docx`. |
 | `files_pdf.go` | `create_pdf`. |
 | `files_blocks.go` | Shared `blockShape` + `parseBlockShapes` used by docx/pdf. |
-| `wiki.go` | `write_wiki_page` — server-managed schema/prompt versions. |
-| `workspace_files.go` | `read_file`, `write_file`, `apply_patch`, `list_files`, `search_files`. |
+| `wiki.go` | `wiki_page` writer with server-managed schema/prompt versions. |
+| `file.go` | `file` dispatcher (`action=list|read|search|write|patch`). |
+| `workspace_files.go` | Workspace file helpers used by `file`. |
 | `workspace_validation.go` | Server-managed file denylist + wiki/skill validation. |
 | `exec.go` | `execute_code` / `execute_shell` + internal manifest orchestration (parallel, per-call timeout, escalation blocklist). |
 | `auth.go` | `request_dashboard_token` — privileged; blocked from internal manifests. |
@@ -91,7 +94,7 @@ and `CategorizedTool` / `MultiCategorizedTool` to opt into category gating.
 
 ### LLM contract
 
-- **Names** are stable identifiers (`web_fetch`, `search_memory`, …). They
+- **Names** are stable identifiers (`web`, `source`, `search_memory`, …). They
   appear in tool calls, telemetry, and the agent loop's allowlist. Renaming
   one is a breaking change for any prompt that references it by name.
 - **Descriptions** are read every turn by the LLM. Keep them imperative,
@@ -132,7 +135,7 @@ and `CategorizedTool` / `MultiCategorizedTool` to opt into category gating.
   shared state with a mutex (and never hold one across HTTP — see
   `ToolVectorIndex.Search` for the snapshot pattern).
 - `Registry.Execute` imposes a default 5-minute deadline when the caller
-  did not attach one. Tools that have stricter needs (web_fetch 30s,
+  did not attach one. Tools that have stricter needs (web fetch 30s,
   execute_code 1-300s) set their own first; this is defense-in-depth for
   the worst case where a tool ignores ctx entirely.
 

@@ -119,7 +119,7 @@ func TestParentSpawnsTwoWriteProposalSubagentsAndCollectsProposals(t *testing.T)
 		})
 
 		// write_proposal allowlist: propose_patch + reads (no direct write tools).
-		wpAllowlist := []string{"propose_patch", "search_memory", "web_search"}
+		wpAllowlist := []string{"propose_patch", "search_memory", "web"}
 
 		// Dispatch child A — wiki proposal.
 		specA := NodeSpec{

@@ -49,7 +49,7 @@ func TestStoreRunAndTaskLifecycle(t *testing.T) {
 		Role:          "librarian",
 		Subject:       "read index",
 		Prompt:        "read",
-		ToolAllowlist: []string{"read_file", "read_file", "list_files"},
+		ToolAllowlist: []string{"file", "file", "search_memory"},
 	})
 	if err != nil {
 		t.Fatalf("CreateTask: %v", err)
@@ -91,7 +91,7 @@ func TestStoreRunAndTaskLifecycle(t *testing.T) {
 	if gotTask.TokensPrompt != 7 || gotTask.TokensCompletion != 11 || gotTask.TokensTotal != 18 {
 		t.Fatalf("task tokens = prompt:%d completion:%d total:%d", gotTask.TokensPrompt, gotTask.TokensCompletion, gotTask.TokensTotal)
 	}
-	if len(gotTask.ToolAllowlist) != 2 || gotTask.ToolAllowlist[0] != "read_file" || gotTask.ToolAllowlist[1] != "list_files" {
+	if len(gotTask.ToolAllowlist) != 2 || gotTask.ToolAllowlist[0] != "file" || gotTask.ToolAllowlist[1] != "search_memory" {
 		t.Fatalf("allowlist = %+v", gotTask.ToolAllowlist)
 	}
 }

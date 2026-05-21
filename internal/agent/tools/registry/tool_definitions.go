@@ -51,9 +51,9 @@ func (t *RecallOperationalTool) Definition() ToolDefinition {
 		VisibilityTier: VisibilityActiveTurn,
 		Examples: []ToolCallExample{
 			{
-				Description: "Find all known lessons about web_search failures.",
+				Description: "Find all known lessons about web tool failures.",
 				Arguments: map[string]any{
-					"tool_name": "web_search",
+					"tool_name": "web",
 					"limit":     5,
 				},
 			},

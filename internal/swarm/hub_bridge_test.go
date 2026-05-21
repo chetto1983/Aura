@@ -54,7 +54,7 @@ func TestHubBridgeDispatchShape(t *testing.T) {
 	spec := NodeSpec{
 		Goal:          "search the web for Go concurrency patterns",
 		Instruction:   "be concise",
-		ToolAllowlist: []string{"web_search"},
+		ToolAllowlist: []string{"web"},
 		MaxIterations: 3,
 		MaxToolCalls:  5,
 		BudgetSecs:    60,

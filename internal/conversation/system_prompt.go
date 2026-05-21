@@ -13,7 +13,7 @@ Ground truth for what you did is the visible tool_result blocks. If one isn't th
 
 The wiki is your long-term memory. Update it when the user shares durable facts (preferences, projects, contacts, recurring workflows) or asks you to remember something. Don't write secrets, credentials, or trivial chat. Link to existing pages when relevant before creating new ones. When memory conflicts with the user's current message, trust the user and update the wiki if it matters.
 
-There's a runtime workspace with operator notes: AGENT.md (how you should behave in this deployment), SOUL.md (voice), USER.md (who the user is), TOOLS.md (tool policy). SOUL.md, USER.md, and TOOLS.md are already injected into this turn's context. AGENT.md is not — open it with read_file when the deployment context matters, the way a teammate would skim a project README.
+There's a runtime workspace with operator notes: AGENT.md (how you should behave in this deployment), SOUL.md (voice), USER.md (who the user is), TOOLS.md (tool policy). SOUL.md, USER.md, and TOOLS.md are already injected into this turn's context. AGENT.md is not — open it with file(action="read", path="AGENT.md") when the deployment context matters, the way a teammate would skim a project README.
 
 Cite sources only when the user asks for evidence ("why", "show sources", "prove it"). Use [[slug]] for wiki pages and src_xxx for sources.
 
@@ -31,7 +31,7 @@ func DefaultSystemPrompt() string {
 // RenderSystemPrompt returns the base system prompt plus runtime context.
 //
 // The runtime context gives the model the current local time, UTC time,
-// user timezone, and schedule_task argument conventions. This helps the
+// user timezone, and task(action="schedule") argument conventions. This helps the
 // model reliably handle requests such as "remind me at 5pm" or "in 60 seconds".
 //
 // loc is the user's effective timezone.
@@ -60,7 +60,7 @@ func RenderRuntimeContext(now time.Time, loc *time.Location) string {
 
 When the user asks to schedule, remind, or defer something, prefer relative durations or local wall-clock times.
 
-The schedule_task tool accepts:
+The task tool accepts action="schedule" with:
 - in: relative duration, such as "60s", "5m", "2h", "1d". The server resolves this to absolute UTC.
 - at_local: local wall-clock time without timezone, such as "2026-04-30T17:00:00". The server interprets this in the user's timezone.
 - at: absolute UTC ISO8601, such as "2026-04-30T15:00:00Z". Use only when you are certain about UTC math.
@@ -115,7 +115,7 @@ Approval: ask_user(question="Delete wiki page 'old-contacts'? This cannot be und
 
 ### Counter-examples — do NOT call ask_user
 
-- "Remind me tomorrow at 9" — all required slots are present; call schedule_task directly.
+- "Remind me tomorrow at 9" — all required slots are present; call task(action="schedule") directly.
 - A tool fails once with a transient error — retry silently; ask_user applies after three consecutive failures, not one.`
 }
 

@@ -176,7 +176,7 @@ func TestSubagentDispatch_SpawnMixedTier(t *testing.T) {
 			map[string]any{
 				"goal":           "propose update",
 				"risk_tier":      "write_proposal",
-				"tool_allowlist": []any{"propose_patch", "web_search"},
+				"tool_allowlist": []any{"propose_patch", "web"},
 			},
 		},
 	})
@@ -269,6 +269,18 @@ func TestSubagentDispatch_SpawnWriteProposalDefaultAllowlist(t *testing.T) {
 	}
 	if !hasPatch {
 		t.Errorf("expected default allowlist to contain propose_patch; got: %v", dispatched.ToolAllowlist)
+	}
+	retiredNames := map[string]bool{
+		"web_search":  true,
+		"web_fetch":   true,
+		"list_memory": true,
+		"read_memory": true,
+		"read_skill":  true,
+	}
+	for _, name := range dispatched.ToolAllowlist {
+		if retiredNames[name] {
+			t.Fatalf("default allowlist contains retired tool %q: %v", name, dispatched.ToolAllowlist)
+		}
 	}
 	if dispatched.RiskTier != "write_proposal" {
 		t.Errorf("expected RiskTier=write_proposal, got %q", dispatched.RiskTier)

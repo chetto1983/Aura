@@ -489,7 +489,7 @@ func formatMemoryResults(query string, results []memoryResult, warnings []string
 		}
 		// Surface the handle when it is a richer follow-up token than the
 		// identifier alone (e.g. a source's page-targeted "source:src_xxx#page=2").
-		// This is what read_source / read_memory consume for precise re-reads.
+		// This is what source(action=read) consumes for precise re-reads.
 		if r.Handle != "" && r.Handle != r.Identifier {
 			fmt.Fprintf(&sb, " handle=%s", r.Handle)
 		}

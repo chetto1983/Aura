@@ -576,7 +576,7 @@ func TestProposePatch_WriteProposalAllowlistBlocksDirectWrites(t *testing.T) {
 	reg.Register(NewProposePatchTool(store))
 	reg.Register(&WikiPageTool{}) // direct write tool — must be filtered out
 
-	writeProposalAllowlist := []string{"propose_patch", "search_memory", "web_search"}
+	writeProposalAllowlist := []string{"propose_patch", "search_memory", "web"}
 	defs := reg.DefinitionsFor(writeProposalAllowlist)
 
 	inAllowlist := map[string]bool{}

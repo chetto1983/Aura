@@ -44,12 +44,11 @@ var subagentDirectWriteTools = []string{
 // read-only tools.
 var writeProposalDefaultAllowlist = []string{
 	"propose_patch",
-	"web_search",
-	"web_fetch",
+	"web",
 	"search_memory",
-	"list_memory",
-	"read_memory",
-	"read_skill",
+	"recall_operational",
+	"recall_user_memory",
+	"wiki_subgraph",
 }
 
 // enforceWriteProposalNodeAllowlist returns the effective allowlist for a

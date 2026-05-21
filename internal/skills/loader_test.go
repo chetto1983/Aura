@@ -207,7 +207,7 @@ func TestPromptBlock(t *testing.T) {
 	if strings.Contains(block, "Use alpha carefully.") {
 		t.Fatalf("PromptBlock() unexpectedly leaked body content:\n%s", block)
 	}
-	if !strings.Contains(block, "read_file") || !strings.Contains(block, "search_files") {
+	if !strings.Contains(block, `action="read"`) || !strings.Contains(block, `action="search"`) {
 		t.Fatalf("PromptBlock() missing file-tool skill inspection instruction:\n%s", block)
 	}
 	for _, want := range []string{"that exact file only", "Do not read skill directories", "multiple descriptions clearly apply"} {
