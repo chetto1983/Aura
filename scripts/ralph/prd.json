@@ -54,7 +54,7 @@
         "Single atomic commit prefix: chore(prompts): response-style block — synthesize, never restate tool output (US-DRIFT-03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read runtime-workspace/AGENT.md IN FULL — recent commits canonicalized the tool surface. (2) Read internal/config/defaults/AGENT.md — these MUST stay in sync. (3) Read docs/restructure-research/openhuman-output-discipline-2026-05-21.md for the exact 50-line block to mirror. (4) Read docs/restructure-research/codex-output-discipline-2026-05-21.md for the verbosity-budget wording. STYLE: write in Italian, with code/tool names/file paths in backticks verbatim. KEEP IT TIGHT: ~50 lines including the 4 examples. Don't pad with redundant 'be polite' rules — the existing 'Linguaggio di memoria' section already forbids fluff. INVARIANT: this section is COMPLEMENTARY to existing sections (Modalità conversazione, Esecuzione e tool). It must not contradict any existing rule. If a contradiction emerges, document it in the commit body — do NOT silently overwrite. EXAMPLES DISCIPLINE: each example shows USER prompt + AURA reply. Replies must be REALISTIC — 1-3 sentences for points + a clarification question for vague asks. NO PROMPT INJECTION DEMOS — examples are positive only. SCOPE DISCIPLINE: no code, no tool changes, no description rewrites. ONLY the AGENT.md prose."
     },
     {
