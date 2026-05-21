@@ -362,18 +362,6 @@ func TestReadFileOversizeReturnsTruncated(t *testing.T) {
 	}
 }
 
-func TestNewWorkspaceFileToolsReturnsExpectedTools(t *testing.T) {
-	got := NewWorkspaceFileTools(newWorkspaceToolRoot(t))
-	names := make([]string, 0, len(got))
-	for _, tool := range got {
-		names = append(names, tool.Name())
-	}
-	want := strings.Join([]string{"list_files", "read_file", "search_files", "write_file", "apply_patch"}, ",")
-	if strings.Join(names, ",") != want {
-		t.Fatalf("tool names = %v", names)
-	}
-}
-
 func newWorkspaceToolRoot(t *testing.T) *workspace.Root {
 	t.Helper()
 	root, err := workspace.New(t.TempDir())

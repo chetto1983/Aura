@@ -1,15 +1,15 @@
 {"prompt":"remember that my favorite color is blue","expected_tool":"write_wiki_page"}
 {"prompt":"search my memory for project ideas","expected_tool":"search_memory"}
-{"prompt":"remind me to call mom at 6pm tomorrow","expected_tool":"schedule_task"}
-{"prompt":"list every scheduled task I have","expected_tool":"list_tasks"}
+{"prompt":"remind me to call mom at 6pm tomorrow","expected_tool":"task"}
+{"prompt":"list every scheduled task I have","expected_tool":"task"}
 {"prompt":"give me a dashboard login link","expected_tool":"request_dashboard_token"}
-{"prompt":"search the web for AI safety news","expected_tool":"web_search"}
-{"prompt":"fetch the content of https://example.com","expected_tool":"web_fetch"}
-{"prompt":"upload this PDF as a source","expected_tool":"store_source"}
-{"prompt":"OCR the document I uploaded","expected_tool":"ocr_source"}
-{"prompt":"ingest the source into the wiki","expected_tool":"ingest_source"}
-{"prompt":"create an Excel report of last quarter's data","expected_tool":"create_xlsx"}
-{"prompt":"build a Word document for the proposal","expected_tool":"create_docx"}
-{"prompt":"generate a PDF invoice","expected_tool":"create_pdf"}
+{"prompt":"search the web for AI safety news","expected_tool":"web"}
+{"prompt":"fetch the content of https://example.com","expected_tool":"web"}
+{"prompt":"upload this PDF as a source","expected_tool":"source"}
+{"prompt":"OCR the document I uploaded","expected_tool":"source"}
+{"prompt":"ingest the source into the wiki","expected_tool":"source"}
+{"prompt":"create an Excel report of last quarter's data","expected_tool":"doc"}
+{"prompt":"build a Word document for the proposal","expected_tool":"doc"}
+{"prompt":"generate a PDF invoice","expected_tool":"doc"}
 {"prompt":"write a Python script to count words","expected_tool":"execute_code"}
-{"prompt":"save this text to a file in the workspace","expected_tool":"write_file"}
+{"prompt":"save this text to a file in the workspace","expected_tool":"file"}

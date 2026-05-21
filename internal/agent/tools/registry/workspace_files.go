@@ -16,19 +16,6 @@ const (
 	workspacePatchMaxBytes    = 1024 * 1024
 )
 
-func NewWorkspaceFileTools(root *workspace.Root) []Tool {
-	if root == nil {
-		return nil
-	}
-	return []Tool{
-		NewListFilesTool(root),
-		NewReadFileTool(root),
-		NewSearchFilesTool(root),
-		NewWriteFileTool(root),
-		NewApplyPatchTool(root),
-	}
-}
-
 type ListFilesTool struct {
 	root *workspace.Root
 }

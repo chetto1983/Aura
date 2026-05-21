@@ -27,7 +27,7 @@ type scenario struct {
 }
 
 func main() {
-	liveWeb := flag.Bool("live-web", false, "run real web_search and web_fetch calls with WEB_SEARCH_PROVIDER")
+	liveWeb := flag.Bool("live-web", false, "run real web action=search/fetch calls with WEB_SEARCH_PROVIDER")
 	var keepWorkspace bool
 	flag.BoolVar(&keepWorkspace, "keep-workspace", false, "keep the temporary workspace directory after the run")
 	flag.Parse()
@@ -68,14 +68,11 @@ func main() {
 	}
 
 	reg := tools.NewRegistry(logger)
-	for _, tool := range tools.NewWorkspaceFileTools(root) {
-		reg.Register(tool)
-	}
+	reg.Register(tools.NewFileTool(root))
 	if *liveWeb {
 		switch webSearchProvider {
 		case "searxng":
-			reg.Register(tools.NewSearXNGSearchTool(searxngBaseURL))
-			reg.Register(tools.NewDirectWebFetchTool())
+			reg.Register(tools.NewWebTool(searxngBaseURL))
 		default:
 			fmt.Println("FAIL: set WEB_SEARCH_PROVIDER=searxng when using -live-web")
 			os.Exit(1)
@@ -90,54 +87,54 @@ func main() {
 
 	scenarios := []scenario{
 		{
-			name: "write_file",
-			prompt: "Remember this exact durable fact using write_file at notes/aura-natural-tool-smoke-marker.md: " +
+			name: "file_write",
+			prompt: "Remember this exact durable fact using file action=write at notes/aura-natural-tool-smoke-marker.md: " +
 				"Project Aura natural tool smoke marker is cerulean-731. " +
 				"Use a concise markdown note with title Aura Natural Tool Smoke Marker.",
-			wantTools: []string{"write_file"},
+			wantTools: []string{"file"},
 		},
 		{
-			name:      "read_written_file",
-			prompt:    "Use read_file to read notes/aura-natural-tool-smoke-marker.md and tell me the marker.",
-			wantTools: []string{"read_file"},
+			name:      "file_read_written",
+			prompt:    "Use file action=read to read notes/aura-natural-tool-smoke-marker.md and tell me the marker.",
+			wantTools: []string{"file"},
 			wantText:  []string{"cerulean-731"},
 		},
 		{
-			name:      "read_seeded_file",
-			prompt:    "Use read_file to read notes/seeded-tool-smoke-marker.md and tell me the marker.",
-			wantTools: []string{"read_file"},
+			name:      "file_read_seeded",
+			prompt:    "Use file action=read to read notes/seeded-tool-smoke-marker.md and tell me the marker.",
+			wantTools: []string{"file"},
 			wantText:  []string{"magenta-284"},
 		},
 		{
-			name:      "search_files",
-			prompt:    "Use search_files to search markdown notes for seeded tool smoke marker magenta and report the saved marker.",
-			wantTools: []string{"search_files"},
+			name:      "file_search",
+			prompt:    "Use file action=search to search markdown notes for seeded tool smoke marker magenta and report the saved marker.",
+			wantTools: []string{"file"},
 			wantText:  []string{"magenta-284"},
 		},
 		{
-			name:      "apply_patch",
-			prompt:    "Use apply_patch to replace magenta-284 with magenta-285 in notes/seeded-tool-smoke-marker.md, then read_file to report the updated marker.",
-			wantTools: []string{"apply_patch", "read_file"},
+			name:      "file_patch",
+			prompt:    "Use file action=patch to replace magenta-284 with magenta-285 in notes/seeded-tool-smoke-marker.md, then file action=read to report the updated marker.",
+			wantTools: []string{"file"},
 			wantText:  []string{"magenta-285"},
 		},
 		{
-			name:      "list_files",
-			prompt:    "Use list_files to list the notes directory and tell me which smoke marker files are there.",
-			wantTools: []string{"list_files"},
+			name:      "file_list",
+			prompt:    "Use file action=list to list the notes directory and tell me which smoke marker files are there.",
+			wantTools: []string{"file"},
 			wantText:  []string{"seeded-tool-smoke-marker.md", "aura-natural-tool-smoke-marker.md"},
 		},
 	}
 	if *liveWeb {
 		scenarios = append(scenarios,
 			scenario{
-				name:      "web_search",
-				prompt:    "Use web search to find the official SearXNG search API documentation. Reply with one source URL.",
+				name:      "web_action_search",
+				prompt:    "Use web action=search to find the official SearXNG search API documentation. Reply with one source URL.",
 				wantTools: []string{"web"},
 				wantText:  []string{"searxng"},
 			},
 			scenario{
-				name:      "web_fetch",
-				prompt:    "Fetch https://docs.searxng.org/dev/search_api.html and summarize the SearXNG JSON search API in one sentence.",
+				name:      "web_action_fetch",
+				prompt:    "Use web action=fetch on https://docs.searxng.org/dev/search_api.html and summarize the SearXNG JSON search API in one sentence.",
 				wantTools: []string{"web"},
 				wantText:  []string{"SearXNG"},
 			},
@@ -147,7 +144,7 @@ func main() {
 	fmt.Printf("Natural tool smoke test\n")
 	fmt.Printf("model=%s base_url=%s live_web=%v workspace=%s\n", model, baseURL, *liveWeb, workspaceDir)
 	fmt.Printf("llm_api_key=SET\n")
-	fmt.Printf("web_search_provider=%s searxng_base_url=%s\n", webSearchProvider, searxngBaseURL)
+	fmt.Printf("web_provider=%s searxng_base_url=%s\n", webSearchProvider, searxngBaseURL)
 	fmt.Println()
 
 	failures := 0

@@ -1,5 +1,5 @@
 // debug_ingest is the slice-9 natural-prompt smoke harness for the
-// source / ingest / workspace-file / scheduler tools.
+// source / file / scheduler dispatcher tools.
 //
 //	go run ./cmd/debug_ingest               # all default scenarios
 //	go run ./cmd/debug_ingest -keep-wiki    # keep temp wiki for inspection
@@ -13,7 +13,7 @@
 // Pre-seeds:
 //   - one stored text source (kind=text, status=stored)
 //   - one ocr_complete source with a hand-written ocr.md so
-//     ingest_source has something to compile
+//     source action=reprocess has something to compile
 package main
 
 import (
@@ -152,17 +152,11 @@ func main() {
 	}
 
 	reg := tools.NewRegistry(logger)
-	reg.Register(tools.NewStoreSourceTool(srcStore))
-	reg.Register(tools.NewReadSourceTool(srcStore))
-	reg.Register(tools.NewListSourcesTool(srcStore))
-	reg.Register(tools.NewLintSourcesTool(srcStore))
-	reg.Register(tools.NewIngestSourceTool(pipeline))
+	reg.Register(tools.NewSourceTool(srcStore, srcStore, srcStore, srcStore, nil, pipeline, nil))
 	if tool := tools.NewSearchMemoryTool(nil, memoryIndex); tool != nil {
 		reg.Register(tool)
 	}
-	for _, tool := range tools.NewWorkspaceFileTools(workspaceRoot) {
-		reg.Register(tool)
-	}
+	reg.Register(tools.NewFileTool(workspaceRoot))
 	if tool := tools.NewTaskTool(schedStore, debugRunTaskNowRunner{store: schedStore}, time.Local); tool != nil {
 		reg.Register(tool)
 	}
@@ -178,45 +172,45 @@ func main() {
 
 	scenarios := []scenario{
 		{
-			name:      "list_sources",
-			prompt:    "Use the source tools to show me every source currently stored. Don't filter.",
-			wantTools: []string{"list_sources"},
+			name:      "source_list",
+			prompt:    "Use source action=list to show me every source currently stored. Don't filter.",
+			wantTools: []string{"source"},
 			wantText:  []string{storedID, ocrID},
 		},
 		{
-			name:      "read_source_metadata",
-			prompt:    fmt.Sprintf("Read the metadata for source %s and tell me its filename.", storedID),
-			wantTools: []string{"read_source"},
+			name:      "source_read_metadata",
+			prompt:    fmt.Sprintf("Use source action=read with mode=metadata for source %s and tell me its filename.", storedID),
+			wantTools: []string{"source"},
 			wantText:  []string{"smoke-note.txt"},
 		},
 		{
-			name:      "lint_sources",
-			prompt:    "Run a lint pass over all sources and tell me which ones are awaiting OCR or awaiting ingest.",
-			wantTools: []string{"lint_sources"},
+			name:      "source_lint",
+			prompt:    "Use source action=lint over all sources and tell me which ones are awaiting OCR or awaiting ingest.",
+			wantTools: []string{"source"},
 			wantText:  []string{ocrID},
 		},
 		{
-			name:      "ingest_source",
-			prompt:    fmt.Sprintf("The source %s is ready to ingest. Compile it into a wiki page using the ingest tool.", ocrID),
-			wantTools: []string{"ingest_source"},
+			name:      "source_reprocess_ingest",
+			prompt:    fmt.Sprintf("The source %s is ready to ingest. Use source action=reprocess with stages=[\"ingest\"] to compile it into a wiki page.", ocrID),
+			wantTools: []string{"source"},
 			wantText:  []string{"compiled"},
 		},
 		{
-			name:      "list_workspace_files_after_ingest",
-			prompt:    "Use list_files on the workspace root to list markdown wiki files after ingest. Tell me the source page filename.",
-			wantTools: []string{"list_files"},
+			name:      "file_list_after_ingest",
+			prompt:    "Use file action=list on the workspace root to list markdown wiki files after ingest. Tell me the source page filename.",
+			wantTools: []string{"file"},
 			wantText:  []string{"source-aura-debug-ingest-fixture"},
 		},
 		{
-			name:      "search_ingested_wiki_file",
-			prompt:    "Use search_files over markdown files to find the ingested marker gold-742 and report the source page evidence.",
-			wantTools: []string{"search_files"},
+			name:      "file_search_ingested_wiki",
+			prompt:    "Use file action=search over markdown files to find the ingested marker gold-742 and report the source page evidence.",
+			wantTools: []string{"file"},
 			wantText:  []string{"gold-742", "source-aura-debug-ingest-fixture"},
 		},
 		{
-			name:      "write_audit_file",
-			prompt:    "Use write_file to create audit/smoke-log.md with action \"smoke-test\", then read_file it back and report the action.",
-			wantTools: []string{"write_file", "read_file"},
+			name:      "file_write_audit",
+			prompt:    "Use file action=write to create audit/smoke-log.md with action \"smoke-test\", then file action=read it back and report the action.",
+			wantTools: []string{"file"},
 			wantText:  []string{"smoke-test"},
 		},
 		{
@@ -232,44 +226,44 @@ func main() {
 			wantText:  []string{"Memory evidence", "gold-742", ocrID, "page=1"},
 		},
 		{
-			name:      "schedule_task_in",
-			prompt:    "Schedule a wiki maintenance pass to run in 90 seconds. Use the relative-duration field. Name it slice9-smoke.",
+			name:      "task_schedule_in",
+			prompt:    "Use task action=schedule to schedule a wiki maintenance pass to run in 90 seconds. Use the relative-duration field. Name it slice9-smoke.",
 			wantTools: []string{"task"},
 			wantText:  []string{"slice9-smoke"},
 		},
 		{
-			name:      "schedule_task_every_minutes",
-			prompt:    "Schedule a wiki maintenance pass every 60 minutes. Name it slice17-every-smoke.",
+			name:      "task_schedule_every_minutes",
+			prompt:    "Use task action=schedule to schedule a wiki maintenance pass every 60 minutes. Name it slice17-every-smoke.",
 			wantTools: []string{"task"},
 			wantText:  []string{"slice17-every-smoke", "every 60 minutes"},
 		},
 		{
-			name:      "schedule_task_weekdays",
-			prompt:    "Schedule a reminder every business day at 10:00 local time. Name it slice17-weekday-smoke and set the reminder text to weekday smoke.",
+			name:      "task_schedule_weekdays",
+			prompt:    "Use task action=schedule to schedule a reminder every business day at 10:00 local time. Name it slice17-weekday-smoke and set the reminder text to weekday smoke.",
 			wantTools: []string{"task"},
 			wantText:  []string{"slice17-weekday-smoke", "mon,tue,wed,thu,fri"},
 		},
 		{
 			name:      "schedule_agent_job",
-			prompt:    "Schedule a propose-only agent job every 60 minutes. Name it slice17-agent-smoke. Its goal is to check Aura sources and propose useful wiki updates.",
+			prompt:    "Use task action=schedule to schedule a propose-only agent job every 60 minutes. Name it slice17-agent-smoke. Its goal is to check Aura sources and propose useful wiki updates.",
 			wantTools: []string{"task"},
 			wantText:  []string{"slice17-agent-smoke", "agent_job", "every 60 minutes"},
 		},
 		{
-			name:      "run_task_now",
+			name:      "task_run_now",
 			prompt:    "Esegui adesso il task schedulato slice17-agent-smoke. Usa l'azione run_now del tool task, non creare un nuovo swarm.",
 			wantTools: []string{"task"},
-			wantText:  []string{"slice17-agent-smoke", "completed", "debug run_task_now"},
+			wantText:  []string{"slice17-agent-smoke", "completed", "debug task action=run_now"},
 		},
 		{
-			name:      "list_tasks",
-			prompt:    "List every scheduled task you currently know about.",
+			name:      "task_list",
+			prompt:    "Use task action=list to list every scheduled task you currently know about.",
 			wantTools: []string{"task"},
 			wantText:  []string{"slice9-smoke", "slice17-every-smoke", "slice17-weekday-smoke", "slice17-agent-smoke"},
 		},
 		{
-			name:      "cancel_task",
-			prompt:    "Cancel the slice9-smoke task we just scheduled.",
+			name:      "task_cancel",
+			prompt:    "Use task action=cancel to cancel the slice9-smoke task we just scheduled.",
 			wantTools: []string{"task"},
 			wantText:  []string{"slice9-smoke"},
 		},
@@ -320,7 +314,7 @@ func main() {
 }
 
 // seed creates two sources: a plain text source (status=stored) and an
-// ocr_complete PDF source with a hand-written ocr.md so ingest_source
+// ocr_complete PDF source with a hand-written ocr.md so source action=reprocess
 // has something to compile without needing a live Mistral OCR call.
 func seed(ctx context.Context, store *source.Store) (storedID, ocrID string, err error) {
 	stored, _, err := store.Put(ctx, source.PutInput{
@@ -344,7 +338,7 @@ func seed(ctx context.Context, store *source.Store) (storedID, ocrID string, err
 		return "", "", fmt.Errorf("put pdf source: %w", err)
 	}
 
-	ocrMD := fmt.Sprintf("# Source OCR: %s\n\nSource ID: %s\nModel: fixture\n\n## Page 1\n\nThe slice 9 ingest fixture marker is gold-742. This text exists so ingest_source has a real preview to embed.\n",
+	ocrMD := fmt.Sprintf("# Source OCR: %s\n\nSource ID: %s\nModel: fixture\n\n## Page 1\n\nThe slice 9 ingest fixture marker is gold-742. This text exists so source action=reprocess has a real preview to embed.\n",
 		"aura-debug-ingest-fixture.pdf", ocrSrc.ID)
 	if err := os.WriteFile(store.Path(ocrSrc.ID, "ocr.md"), []byte(ocrMD), 0o644); err != nil {
 		return "", "", fmt.Errorf("write ocr.md: %w", err)
@@ -417,7 +411,7 @@ func (r debugRunTaskNowRunner) RunTaskNow(ctx context.Context, name string) (too
 		return tools.RunTaskNowResult{}, err
 	}
 	if task.Kind != cron.KindAgentJob {
-		return tools.RunTaskNowResult{}, fmt.Errorf("debug run_task_now: task %q is kind %s", task.Name, task.Kind)
+		return tools.RunTaskNowResult{}, fmt.Errorf("debug task action=run_now: task %q is kind %s", task.Name, task.Kind)
 	}
 	if err := r.store.RecordManualRun(ctx, task.ID, time.Now().UTC(), ""); err != nil {
 		return tools.RunTaskNowResult{}, err
@@ -427,7 +421,7 @@ func (r debugRunTaskNowRunner) RunTaskNow(ctx context.Context, name string) (too
 		Name:      task.Name,
 		Kind:      string(task.Kind),
 		Status:    "completed",
-		Summary:   "debug run_task_now completed for saved agent_job",
+		Summary:   "debug task action=run_now completed for saved agent_job",
 		LLMCalls:  1,
 		ToolCalls: 1,
 		ElapsedMS: 25,
@@ -438,7 +432,7 @@ func (r debugRunTaskNowRunner) RunTaskNow(ctx context.Context, name string) (too
 func runScenario(ctx context.Context, client llm.Client, reg *tools.Registry, model, prompt string) ([]string, string, []string, error) {
 	// Reminder reach into context isn't exercised here (the harness runs
 	// outside Telegram), but threading a synthetic user ID lets the
-	// reminder branch of schedule_task work uniformly. Wiki-maintenance
+	// reminder branch of task action=schedule work uniformly. Wiki-maintenance
 	// scheduling — the only kind we test — doesn't need it.
 	ctx = tools.WithUserID(ctx, "debug-ingest-harness")
 

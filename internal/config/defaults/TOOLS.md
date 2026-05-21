@@ -66,9 +66,9 @@
   - File: `file`, `workspace_write`, `workspace_read`
   - Wiki: `wiki_page`
   - Memory: `search_memory`, `recall_user_memory`, `recall_operational`, `agent_note`
-  - Source: `source`, `read_source`, `ocr_source`, `ingest_source`, `store_source`
-  - Web: `web`, `web_search`, `web_fetch`
-  - Doc: `doc`, `create_xlsx`, `create_docx`, `create_pdf`
+  - Source: `source`
+  - Web: `web`
+  - Doc: `doc`
   - Schedule: `task`
   - Exec: `execute_code`, `execute_shell`
   - Subagent: `subagent_dispatch`
