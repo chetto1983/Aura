@@ -76,6 +76,9 @@ type ToolBriefer interface {
 type Options struct {
 	MaxIterations int
 	MaxElapsed    time.Duration
+	// ParallelTools caps the number of tool calls dispatched concurrently per
+	// LLM iteration. 0 defaults to 4. Set via AURA_AGENT_PARALLEL_TOOLS.
+	ParallelTools int
 	// DisableInBatchDedup skips the DedupeToolCalls pre-pass so every call
 	// announced in a single LLM response enters the execution path, even
 	// when multiple calls share identical (name, arguments). Defaults to

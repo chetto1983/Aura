@@ -115,7 +115,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	toolReg := b.ToolRegistry()
 	toolManifest := tools.RenderToolManifest(toolReg.Definitions())
 	pinnedOperational := ib.renderPinnedOperational(ctx, msg.ThreadID, convCtx.MessageCount())
-	promptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), overlay, pinnedOperational, skillsBlock, toolManifest, time.Now())
+	wikiTOC := b.WikiTOC()
+	promptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), overlay, pinnedOperational, skillsBlock, toolManifest, wikiTOC, time.Now())
 	convCtx.SetSystemMessage(promptPlan.Content)
 
 	// Inject agent working-memory note from the previous turn (if any).
@@ -336,7 +337,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 					}
 				}
 				newPinnedOperational := ib.renderPinnedOperational(ctx, msg.ThreadID, convCtx.MessageCount())
-				newPromptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), newOverlay, newPinnedOperational, skillsBlock, toolManifest, time.Now())
+				newPromptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), newOverlay, newPinnedOperational, skillsBlock, toolManifest, wikiTOC, time.Now())
 				convCtx.SetSystemMessage(newPromptPlan.Content)
 				b.Logger().Debug("overlay: hot-reloaded after file tool write to overlay file")
 			}
@@ -360,6 +361,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		PostTurn:            postTurn,
 		Options: agent.Options{
 			MaxIterations:           maxIterations,
+			ParallelTools:           cfg.AgentParallelTools,
 			TerminalToolPolicy:      ib.terminalToolPolicyEnabled(),
 			AllowNoToolFinalization: true,
 			MaxToolResultChars:      cfg.MaxToolResultChars,

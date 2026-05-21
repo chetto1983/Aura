@@ -5,12 +5,16 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 
 	"github.com/aura/aura/internal/llm"
 )
 
 // Context manages the conversation state for a single conversation.
+// mu serializes all reads and writes so StreamDispatcher goroutines can call
+// AddToolResultMessage concurrently without a data race.
 type Context struct {
+	mu               sync.RWMutex
 	messages         []llm.Message
 	summary          string
 	transcript       []string
@@ -54,18 +58,24 @@ func NewContext(cfg Config) *Context {
 
 // AddUserMessage appends a user message and manages context if needed.
 func (c *Context) AddUserMessage(content string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.messages = append(c.messages, llm.Message{Role: "user", Content: content})
 	c.transcript = append(c.transcript, "user: "+content)
 }
 
 // AddAssistantMessage appends an assistant message.
 func (c *Context) AddAssistantMessage(content string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.messages = append(c.messages, llm.Message{Role: "assistant", Content: content})
 	c.transcript = append(c.transcript, "assistant: "+content)
 }
 
 // AddAssistantToolCallMessage appends an assistant message containing tool calls.
 func (c *Context) AddAssistantToolCallMessage(content string, toolCalls []llm.ToolCall) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.messages = append(c.messages, llm.Message{Role: "assistant", Content: content, ToolCalls: toolCalls})
 	if content != "" {
 		c.transcript = append(c.transcript, "assistant: "+content)
@@ -74,6 +84,8 @@ func (c *Context) AddAssistantToolCallMessage(content string, toolCalls []llm.To
 
 // AddToolResultMessage appends a tool result correlated to an assistant tool call.
 func (c *Context) AddToolResultMessage(toolCallID string, content string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.messages = append(c.messages, llm.Message{Role: "tool", Content: content, ToolCallID: toolCallID})
 }
 
@@ -276,6 +288,8 @@ func (c *Context) LatestUserMessageText() string {
 
 // Messages returns the current message list, prepending the summary if one exists.
 func (c *Context) Messages() []llm.Message {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 	if c.summary == "" {
 		return c.messages
 	}

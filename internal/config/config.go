@@ -119,6 +119,7 @@ type Config struct {
 	PromptVersion          string `envconfig:"AURA_PROMPT_VERSION" default:"aura-agent-v1"`
 	SkillRoutingMode       string `envconfig:"AURA_SKILL_ROUTING_MODE" default:"manifest"`
 	AgentLoopMaxSteps      int    `envconfig:"AURA_AGENT_LOOP_MAX_STEPS" default:"20"`
+	AgentParallelTools     int    `envconfig:"AURA_AGENT_PARALLEL_TOOLS" default:"4"`
 	// ReasoningEffort drives the provider-side chain-of-thought field.
 	// Accepted values: "", "none", "minimal", "low", "medium", "high",
 	// "xhigh", "true"/"enabled". Empty means "do not emit any reasoning

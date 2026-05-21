@@ -375,7 +375,11 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				}
 			}
 			toolBatchStart := time.Now()
-			execution = executor.ExecuteToolCalls(iterCtx, freshCalls)
+			disp := newStreamDispatcher(executor, opts.ParallelTools)
+			for _, call := range freshCalls {
+				disp.Submit(iterCtx, call)
+			}
+			execution = disp.Wait(iterCtx)
 			stats.ToolCallsExecuted += len(freshCalls)
 			toolBatchElapsed := time.Since(toolBatchStart)
 			if opts.OnToolEnd != nil {
