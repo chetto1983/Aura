@@ -14,6 +14,7 @@ package conversation
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -210,6 +211,16 @@ func RenderStepHint(step, max int) string {
 		"You are at step %d/%d. If you already have enough information to answer, do so now. Avoid additional tool calls when the answer is already in the context.",
 		step, max,
 	)
+}
+
+// InjectWikiTOC appends a wiki TOC block to content using delimiter markers
+// so the agent can see every page title/slug/summary without a search call.
+// Returns content unchanged when toc is empty.
+func InjectWikiTOC(content, toc string) string {
+	if strings.TrimSpace(toc) == "" {
+		return content
+	}
+	return content + "\n\n--- WIKI TOC START ---\n" + strings.TrimRight(toc, "\n") + "\n--- WIKI TOC END ---"
 }
 
 func formatUTCOffset(offsetSec int) string {

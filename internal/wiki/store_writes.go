@@ -72,6 +72,9 @@ func (s *Store) WritePage(ctx context.Context, page *Page, expectedUpdatedAt ...
 	// Phase 2 (GRAPH-01): bidirectional backlink maintenance.
 	newBodyLinks := ExtractWikiLinks(page.Body)
 	s.maintainBacklinks(ctx, slug, prevBodyLinks, newBodyLinks)
+
+	// Rebuild TOC cache asynchronously so the next turn has the updated index.
+	go s.RebuildTOC()
 	return nil
 }
 
@@ -348,6 +351,7 @@ func (s *Store) DeletePage(ctx context.Context, slug string) error {
 	if s.graphIndex != nil {
 		s.graphIndex.RemoveNode(slug)
 	}
+	go s.RebuildTOC()
 	return nil
 }
 

@@ -201,7 +201,7 @@ func TestClarificationProtocolHasExamples(t *testing.T) {
 // TestClarificationProtocolIncludedInComposedPrompt verifies that
 // ComposeAgentPrompt embeds the Clarification and Approval Protocol section.
 func TestClarificationProtocolIncludedInComposedPrompt(t *testing.T) {
-	plan := ComposeAgentPrompt(nil, nil, "", "", "", "", time.Now())
+	plan := ComposeAgentPrompt(nil, nil, "", "", "", "", "", time.Now())
 	if !strings.Contains(plan.Content, "Clarification and Approval Protocol") {
 		t.Error("composed prompt missing 'Clarification and Approval Protocol' section")
 	}

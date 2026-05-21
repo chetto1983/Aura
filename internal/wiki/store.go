@@ -32,6 +32,7 @@ type Store struct {
 	gitCommitFunc func(ctx context.Context, filename, action string) error
 
 	reindexSubmitter reindex.Submitter // optional; set via SetReindexSubmitter (Phase 2 INDEX-01)
+	toc              tocCache          // in-memory TOC cache; rebuilt on every WritePage/DeletePage
 	freshnessStore   *freshness.Store  // optional; set via SetFreshnessStore
 
 	// graphIndex is the in-memory adjacency layer over the wiki graph
@@ -140,6 +141,10 @@ func NewStore(dir string, logger *slog.Logger) (*Store, error) {
 	if err := s.loadGraphIndex(); err != nil {
 		s.logger.Warn("graph index warm-up failed; running with empty index", "error", err)
 	}
+
+	// Warm the TOC cache at boot so the first system prompt build has it
+	// immediately. Errors are logged-and-ignored — empty TOC is safe.
+	s.RebuildTOC()
 
 	return s, nil
 }
@@ -589,11 +594,3 @@ func memoryDecayIssue(slug, updatedAt string, now time.Time) (LintIssue, bool) {
 	}, true
 }
 
-func sortedCategoryKeys(m map[string][]indexEntry) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}

@@ -184,6 +184,15 @@ func (b *Bot) ToolRegistry() *tools.Registry {
 	return b.rt.tools
 }
 
+// WikiTOC returns the cached wiki TOC string for injection into the system prompt.
+// Returns "" when the wiki store is unavailable or the cache has not yet been built.
+func (b *Bot) WikiTOC() string {
+	if b.rt == nil || b.rt.wikiTOCFn == nil {
+		return ""
+	}
+	return b.rt.wikiTOCFn()
+}
+
 // ToolAttemptsRepo returns the tool observation repository used by chat turns.
 func (b *Bot) ToolAttemptsRepo() attempts.Repo {
 	if b == nil || b.rt == nil {

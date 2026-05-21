@@ -20,9 +20,9 @@ type AgentPromptPlan struct {
 }
 
 // ComposeAgentPrompt assembles the agent system prompt from config, runtime overlay,
-// pinned operational rules, skill manifest, and tool manifest. Channel-neutral:
-// callers pre-render any channel-specific strings before passing them in.
-func ComposeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, pinnedOperational, skillsBlock, toolManifest string, now time.Time) AgentPromptPlan {
+// pinned operational rules, skill manifest, tool manifest, and the inline wiki TOC.
+// Channel-neutral: callers pre-render any channel-specific strings before passing them in.
+func ComposeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, pinnedOperational, skillsBlock, toolManifest, wikiTOC string, now time.Time) AgentPromptPlan {
 	version := "aura-agent-v1"
 	if cfg != nil && strings.TrimSpace(cfg.PromptVersion) != "" {
 		version = strings.TrimSpace(cfg.PromptVersion)
@@ -31,6 +31,10 @@ func ComposeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, pinnedO
 	content := conversation.RenderSystemPrompt(now, loc)
 	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Discovery: the catalog below lists every tool you have. Call tool_search to fetch input schemas, OR invoke any tool by name and the agent loop will load its schema for this turn.\n\nChoose tools autonomously when they help. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
 	content += "\n\n" + conversation.ClarificationAndApprovalProtocol()
+	if injected := conversation.InjectWikiTOC(content, wikiTOC); injected != content {
+		content = injected
+		modules = append(modules, "wiki-toc")
+	}
 	if strings.TrimSpace(overlay) != "" {
 		content += "\n\n" + strings.TrimSpace(overlay)
 		modules = append(modules, "overlay")

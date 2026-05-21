@@ -189,6 +189,10 @@ wiki first is mandatory.
 - **`agent_note`**: scratchpad for the current turn within the same
   conversation. Use it for multi-step TODOs during a long conversation.
   Cleared at conversation end.
+- **Wiki TOC is always in this prompt** (between `--- WIKI TOC START ---`
+  and `--- WIKI TOC END ---` markers). If the slug you need is visible in
+  the TOC, read it directly with `search action=read slug=<slug>` — do NOT
+  call `search action=search` first; that extra round-trip adds latency.
 
 ## 8. Blast Radius — Reversibility Discipline
 

@@ -71,6 +71,7 @@ type botRuntime struct {
 	memoryStore         *memoryindex.Store
 	voicePolicy         audio.Store
 	pocketttsClient     *pockettts.Client
+	wikiTOCFn           func() string // nil when wiki store unavailable
 }
 
 // Deps holds the pre-built dependencies a Bot needs at construction time.
@@ -187,6 +188,9 @@ func NewBot(deps Deps) *Bot {
 		attemptsRepo:        deps.AttemptsRepo,
 		voicePolicy:         deps.VoicePolicy,
 		pocketttsClient:     deps.PocketTTSClient,
+	}
+	if deps.WikiStore != nil {
+		rt.wikiTOCFn = deps.WikiStore.GetCachedTOC
 	}
 	return &Bot{
 		bot:    deps.Bot,
