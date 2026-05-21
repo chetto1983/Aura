@@ -11,6 +11,7 @@ import (
 
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
+	"github.com/aura/aura/internal/stringx"
 )
 
 // sqliteSearcher provides full-text search via SQLite + FTS5.
@@ -219,21 +220,60 @@ func (s *sqliteSearcher) search(ctx context.Context, query string, topK int) ([]
 // FTS5 query syntax is operator-rich, so punctuation such as /, comma, and
 // apostrophes must not be passed through as query syntax.
 func escapeFTS5Query(query string) string {
-	fields := strings.FieldsFunc(query, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
-	})
+	fields := significantSearchTerms(query)
 	if len(fields) == 0 {
 		return ""
 	}
-	out := make([]string, 0, len(fields))
-	seen := make(map[string]bool, len(fields))
-	for _, field := range fields {
-		field = strings.ToLower(strings.TrimSpace(field))
-		if field == "" || seen[field] {
+	return strings.Join(fields, " OR ")
+}
+
+var lowSignalSearchTerms = map[string]bool{
+	"a": true, "ad": true, "al": true, "allo": true, "alla": true, "alle": true, "ai": true, "agli": true,
+	"che": true, "chi": true, "come": true, "con": true, "cosa": true,
+	"da": true, "dal": true, "dalla": true, "dalle": true, "dei": true, "del": true, "della": true, "delle": true, "di": true, "dove": true,
+	"e": true, "ed": true, "era": true, "erano": true,
+	"gli": true, "ha": true, "il": true, "in": true, "la": true, "le": true, "lo": true,
+	"nel": true, "nella": true, "nelle": true, "nello": true, "per": true, "qual": true, "quale": true, "quali": true, "quando": true, "quanti": true, "quanto": true,
+	"secondo": true, "sono": true, "su": true, "tra": true, "un": true, "una": true,
+	"and": true, "are": true, "for": true, "from": true, "how": true, "of": true, "the": true, "to": true, "what": true, "when": true, "where": true, "which": true, "who": true, "with": true,
+}
+
+func significantSearchTerms(query string) []string {
+	raw := tokenizeSearchQuery(query)
+	filtered := make([]string, 0, len(raw))
+	seen := make(map[string]bool, len(raw))
+	for _, term := range raw {
+		if len(term) < 2 || lowSignalSearchTerms[term] || seen[term] {
 			continue
 		}
-		seen[field] = true
-		out = append(out, field)
+		seen[term] = true
+		filtered = append(filtered, term)
 	}
-	return strings.Join(out, " OR ")
+	if len(filtered) > 0 {
+		return filtered
+	}
+	seen = make(map[string]bool, len(raw))
+	for _, term := range raw {
+		if len(term) < 2 || seen[term] {
+			continue
+		}
+		seen[term] = true
+		filtered = append(filtered, term)
+	}
+	return filtered
+}
+
+func tokenizeSearchQuery(query string) []string {
+	fields := strings.FieldsFunc(query, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_'
+	})
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
+			continue
+		}
+		out = append(out, stringx.StripDiacritics(strings.ToLower(field)))
+	}
+	return out
 }

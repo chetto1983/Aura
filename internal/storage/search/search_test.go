@@ -324,6 +324,20 @@ func TestSQLiteSearchTokenizesPunctuationQueries(t *testing.T) {
 	}
 }
 
+func TestEscapeFTS5QueryDropsLowSignalQuestionTerms(t *testing.T) {
+	got := escapeFTS5Query("Qual è il numero totale di casi COVID registrati per la regione Lombardia?")
+	for _, noisy := range []string{"qual", "e", "il", "di", "per", "la"} {
+		if strings.Contains(" OR "+got+" OR ", " OR "+noisy+" OR ") {
+			t.Fatalf("query %q still contains low-signal term %q", got, noisy)
+		}
+	}
+	for _, want := range []string{"numero", "totale", "casi", "covid", "registrati", "regione", "lombardia"} {
+		if !strings.Contains(" OR "+got+" OR ", " OR "+want+" OR ") {
+			t.Fatalf("query %q missing term %q", got, want)
+		}
+	}
+}
+
 func TestSQLiteSearchReturnsFrontmatterMetadata(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "aura.db")

@@ -236,8 +236,7 @@ func ftsSearchDB(ctx context.Context, db *sql.DB, query string, topK int, logger
 // diacritic-stripped query token (case-insensitive substring match).
 // ScoreExact is 1.0; missing pages get no entry (not score 0.0).
 func exactMatchDB(ctx context.Context, db *sql.DB, query string, topK int, logger *slog.Logger) []Result {
-	queryStripped := stringx.StripDiacritics(strings.ToLower(query))
-	tokens := strings.Fields(queryStripped)
+	tokens := significantSearchTerms(query)
 	if len(tokens) == 0 {
 		return nil
 	}
