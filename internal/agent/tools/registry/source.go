@@ -88,6 +88,21 @@ func readSourceMarkdownBytes(store source.FileResolver, src *source.Source) ([]b
 		return nil, fmt.Errorf("read_source: %w", err)
 	}
 
+	// Fallback: markitdown extraction (xlsx/docx/pptx/epub/html/zip and the
+	// other non-OCR formats) writes the canonical markdown to extract.md, not
+	// ocr.md. ocr.md is only produced by the Mistral OCR pipeline for PDFs and
+	// image sources. Try extract.md before falling through to the kind-specific
+	// originals — this is the bug discovered 2026-05-21 (xlsx voice-memo test),
+	// where read_source kept returning "ocr.md not found" even though the
+	// fully-extracted markdown table sat right next to it.
+	if extractPath := store.Path(src.ID, "extract.md"); extractPath != "" {
+		if extractRaw, extractErr := os.ReadFile(extractPath); extractErr == nil {
+			return extractRaw, nil
+		} else if !errors.Is(extractErr, os.ErrNotExist) {
+			return nil, fmt.Errorf("read_source: %w", extractErr)
+		}
+	}
+
 	switch src.Kind {
 	case source.KindText:
 		return readOriginalContentBytes(store, src.ID, "original.txt")
@@ -99,7 +114,7 @@ func readSourceMarkdownBytes(store source.FileResolver, src *source.Source) ([]b
 		}
 		return readOriginalContentBytes(store, src.ID, source.OriginalFilenameForKind(src.Kind, src.Filename))
 	}
-	return nil, fmt.Errorf("read_source: ocr.md not found for %s (status=%s); run ocr_source first", src.ID, src.Status)
+	return nil, fmt.Errorf("read_source: ocr.md / extract.md not found for %s (status=%s); run ocr_source or re-ingest the source", src.ID, src.Status)
 }
 
 func isReadableSandboxArtifact(src *source.Source) bool {
