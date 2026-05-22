@@ -1,13 +1,18 @@
 package tools
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/storage/sources/store"
+	"github.com/xuri/excelize/v2"
 )
 
 // docTestStore is a minimal source.Writer that captures bytes per Put.
@@ -72,6 +77,21 @@ func TestDocTool_Schema(t *testing.T) {
 	}
 }
 
+func TestDocTool_RegistersAsSingleDocumentSurface(t *testing.T) {
+	registry := NewRegistry(nil)
+	tool := NewDocTool(&docTestStore{}, nil)
+	registry.Register(tool)
+
+	if got := registry.Names(); len(got) != 1 || got[0] != "doc" {
+		t.Fatalf("registry names = %#v, want [doc]", got)
+	}
+	for _, legacy := range []string{"create_xlsx", "create_docx", "create_pdf", "create_document"} {
+		if registry.Get(legacy) != nil {
+			t.Fatalf("legacy document tool %q must not be registered", legacy)
+		}
+	}
+}
+
 func TestDocTool_MissingAction(t *testing.T) {
 	tool := NewDocTool(&docTestStore{}, nil)
 	_, err := tool.Execute(t.Context(), map[string]any{})
@@ -109,6 +129,7 @@ func TestDocTool_XLSXDispatches(t *testing.T) {
 	if len(store.puts) != 1 || store.puts[0].Kind != source.KindXLSX {
 		t.Fatalf("expected one xlsx put, got: %+v", store.puts)
 	}
+	assertXLSXCell(t, store.puts[0].Bytes, "S1", "A1", "a")
 }
 
 func TestDocTool_DOCXDispatches(t *testing.T) {
@@ -127,6 +148,7 @@ func TestDocTool_DOCXDispatches(t *testing.T) {
 	if len(store.puts) != 1 || store.puts[0].Kind != source.KindDOCX {
 		t.Fatalf("expected one docx put, got: %+v", store.puts)
 	}
+	assertZipPartContains(t, store.puts[0].Bytes, "word/document.xml", "Body")
 }
 
 func TestDocTool_PDFDispatches(t *testing.T) {
@@ -145,4 +167,50 @@ func TestDocTool_PDFDispatches(t *testing.T) {
 	if len(store.puts) != 1 || store.puts[0].Kind != source.KindPDFGen {
 		t.Fatalf("expected one pdf put, got: %+v", store.puts)
 	}
+	if !bytes.HasPrefix(store.puts[0].Bytes, []byte("%PDF-")) {
+		t.Fatalf("pdf bytes missing %%PDF header: %q", store.puts[0].Bytes[:min(len(store.puts[0].Bytes), 8)])
+	}
+}
+
+func assertXLSXCell(t *testing.T, body []byte, sheet, cell, want string) {
+	t.Helper()
+	f, err := excelize.OpenReader(bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("xlsx OpenReader: %v", err)
+	}
+	defer f.Close()
+	got, err := f.GetCellValue(sheet, cell)
+	if err != nil {
+		t.Fatalf("xlsx GetCellValue: %v", err)
+	}
+	if got != want {
+		t.Fatalf("xlsx %s!%s = %q, want %q", sheet, cell, got, want)
+	}
+}
+
+func assertZipPartContains(t *testing.T, body []byte, part, want string) {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(body), int64(len(body)))
+	if err != nil {
+		t.Fatalf("zip.NewReader: %v", err)
+	}
+	for _, f := range zr.File {
+		if f.Name != part {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open %s: %v", part, err)
+		}
+		defer rc.Close()
+		b, err := io.ReadAll(rc)
+		if err != nil {
+			t.Fatalf("read %s: %v", part, err)
+		}
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("%s missing %q:\n%s", part, want, string(b))
+		}
+		return
+	}
+	t.Fatalf("zip part %q not found", part)
 }
