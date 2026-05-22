@@ -1,72 +1,99 @@
-# Post-DRIFT Phase Plans — 2026-05-21
+# Post-DRIFT Phase Plans — 2026-05-21 (updated 2026-05-22)
 
-**Provenance:** Seven parallel scouts read `D:/tmp/{codex, elysia, nanobot, picobot, cli-printing-press, hermes-agent, openhuman, recursive-llm}`, 2026 online state-of-the-art, and audited Aura's own codebase. Outputs in `docs/research-2026-05-21/`. Cross-analysis in `ANALYSIS-DEEP.md` (conflicts, hidden dependencies, gaps). Executive summary in `MASTER-SYNTHESIS.md`. PRD entry: `prd.md` §7.5.
+**Provenance:** Multiple parallel research scouts read `D:/tmp/{codex, elysia, nanobot, picobot, cli-printing-press, hermes-agent, openhuman, recursive-llm, graphify}` + 2026 online state-of-the-art, plus exhaustive Aura per-module audit. Research outputs in `docs/research-2026-05-21/` and `docs/research-2026-05-22/`. PRD entry: `prd.md` §7.5.
 
-**Mandate (user 2026-05-21):**
+**Mandate (user 2026-05-21..22, verbatim, in order):**
+
 1. "Andiamo con calma analizzando tutto" — careful analysis before action.
 2. "Consolidate 1 inbound + 1 outbound for all web and telegram no duplication and must have same level" — Phase-CONS.
-3. "Ogni modulo toccato dovrà subire un refactor profondo togliendo tutta la legacy e le parti morte" — every touch = deep refactor in same commit (CLAUDE.md DEEP REFACTOR ON TOUCH rule).
-4. "Tutti i prompt in EN, output IT via direttiva esplicita" — overlays already restructured EN-only 2026-05-21.
+3. "Ogni modulo toccato dovrà subire un refactor profondo togliendo tutta la legacy e le parti morte" — every touch = deep refactor in same commit.
+4. "Tutti i prompt in EN, output IT via direttiva esplicita" — overlays restructured EN-only.
+5. "Togli il rag dei tool è una cagata; alla fine basta il search tool come hai te" — Phase-TOOL.
+6. "Attaccare tutti i moduli uno per volta e renderli testati efficenti e bloat free al 100%" → option (B): Phase-MODERNIZE = INFRA + Wave-1 god-splits.
+7. "(a) poi (b) poi (c)" — locked sequence post-MODERNIZE: Phase-OUT → Phase-CTX → Phase-CONS.
+8. "Fold Phase-AGENT into Phase-OUT + cerca pattern affidabili" — budget enforcement stories US-OUT-07/08/09 backed by 2-scout convergent research.
 
 ---
 
-## Phase index
+## Phase index — current order of operations
 
-| Phase | Plan | Sessions | LOC delta | Status |
-| --- | --- | ---: | ---: | --- |
-| [Phase-WIKI-FIX](Phase-WIKI-FIX/plan.md) | Substrate bug sweep — FTS5 sync, dim-change ergonomics, dedup, system-page filter, admin reindex | ~1-2 | +450 | ✅ **shipped 2026-05-22** — 8/8 Ralph commits, FTS hit 0→20/20, scores discriminating |
-| [Phase-TOOL](Phase-TOOL/plan.md) | Tool surface + RAG cleanup — KILL tool RAG entirely (user 2026-05-22 verbatim), kitchen-sink collapses (3 triples), description audit EN-only ≤200char, MCP supervisor (list_changed + circuit + reconnect), compact collection dim-mismatch detect | ~3-4 | net **-4000** (cleanup) | 🟡 **in flight** — Ralph kicked 2026-05-22 evening on `prd-phase-tool-staged.json` |
-| [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | Infra hygiene (depguard v2 + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md scoreboard) + Wave-1 god-file splits (top 10 violators, mechanical) | ~3 | +540 (infra) + 0 (splits) | 🟣 **staged** — kicks after Phase-TOOL ships; Ralph queue `prd-phase-modernize-staged.json` |
-| [Phase-BUG](Phase-BUG/plan.md) | Critical bug fixes — overlay loading, logging boundary, errcheck-hidden bugs | ~1 | -30 + 2 bugs | 🔴 ship immediately, concurrent with Phase-WIKI-FIX |
-| [Phase-CACHE](Phase-CACHE/plan.md) | Provider prompt caching + small wins | ~1 | ~+100 / -50 | 🟡 after Phase-WIKI-B Wave A |
-| [Phase-OUT](Phase-OUT/plan.md) | Output discipline stack (truncate, spill, throttle, tasks_completed, length-recovery) | ~2 | ~+520 | 🟡 after Phase-CACHE |
-| [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) | ~3 | net -90 | 🟡 after Phase-OUT |
-| [Phase-TOOL](Phase-TOOL/plan.md) | Tool surface reduction (`os.Root` + kitchen-sink collapse) | ~2 | -1250 | 🟡 after Phase-CONS |
-| [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction) | ~3 | ~+900 | 🟡 after Phase-TOOL |
-| [Phase-STREAM](Phase-STREAM/plan.md) | Stream-time parallel tool dispatch | ~1 | ~+200 | 🟡 after Phase-CTX |
-| [Phase-CLEAN3](Phase-CLEAN3/plan.md) | Codebase audit follow-through (god-file splits + dupl folds + errcheck) | ~2 | -700 | 🟡 after Phase-STREAM |
+| # | Phase | Plan | Sessions | LOC delta | Status |
+| --- | --- | --- | ---: | ---: | --- |
+| 1 | [Phase-WIKI-FIX](Phase-WIKI-FIX/plan.md) | Substrate bug sweep — FTS5 sync, dim ergonomics, dedup, system-page filter, admin reindex | ~1-2 | +450 | ✅ **shipped 2026-05-22** — 8/8 Ralph commits, FTS hit 0→20/20 |
+| 2 | [Phase-TOOL](Phase-TOOL/plan.md) | KILL tool RAG entirely + 18 orphan deletes + description audit + 3 kitchen-sink collapses + MCP supervisor + compact dim-fix | ~3-4 | net **-4000** | 🟡 **in flight** Ralph `prd-phase-tool-staged.json` |
+| 3 | [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | ~3 | +540 | 🟣 staged — kicks after TOOL |
+| 4 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | ~3 | ~+720 | 🟣 staged — locked next after MODERNIZE |
+| 5 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | 🟣 staged — after OUT |
+| 6 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🟣 staged — after CTX |
+| 7 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | 🟣 staged — parallel-safe, kicks anytime after OUT |
+| 8 | [Phase-BUG](Phase-BUG/plan.md) | Critical bug fixes — `/api/chat` overlay loading, `logging→api` boundary, errcheck-hidden bugs | ~1 | -30 + 2 bugs | 🔴 ship anytime — concurrent with any phase |
+| 9 | [Phase-CACHE](Phase-CACHE/plan.md) | Provider prompt caching (`prompt_cache_key=thread_id`) + `end_turn` + description audit + small wins | ~1 | ~+50 | 🟣 staged — ship anytime; small enough to fold into a feature phase opportunistically |
 
-**Total**: ~15 sessions, **net ~ -750 LOC** with significant feature additions on web (streaming, voice, ask_user, archive).
+**Estimated total: ~18 sessions** to close the post-DRIFT backlog.
 
-**Expected end-state if all phases land:**
-- p95 latency 10s → 3-5s (cache hit + parallel dispatch + lookup throttle + compaction)
-- Bench strict-pass 3/20 → 12-15/20
-- Tools 22 → ~10
-- 0 god-files >600 LOC
-- 0 production dupl clusters
-- 1+1 transport shape (web/telegram parity)
-- golangci-lint clean across touched files
+---
+
+## Cancelled / absorbed phases (kept for archive)
+
+| Phase | Status | Reason |
+| --- | --- | --- |
+| Phase-STREAM | ⚪ ABSORBED into Step 1.LAT US-LAT-06 (already shipped) | Stream-time parallel tool dispatch is live in production. Phase-STREAM plan superseded. |
+| Phase-CLEAN3 | ⚪ ABSORBED into Phase-MODERNIZE Wave B | 10 god-file splits planned originally; folded into Phase-MODERNIZE. |
+| Phase-WIKI-B Wave A US-WIKI-B02 | ⚪ DONE de facto by Phase-WIKI-FIX FIX-01 | Hybrid FTS+vec+exact fusion already works; FTS5 mirror sync was the missing piece. |
+| Phase-WIKI-B Wave A US-WIKI-B01 | ⚪ CANCELLED | `wiki_subgraph` new tool conflicts with Phase-TOOL "no new tools" direction. |
+| Phase-WIKI-B Wave A US-WIKI-B04 | ↪️ RE-SCOPED to Phase-WIKI-SUBNODES | Independent 1-session story, no longer needs Wave-A umbrella. |
+| Phase-WIKI-B Wave B/C | 🟣 deferred indefinitely | Markitdown plugins + reranker + Leiden clustering — reconsider after Phase-CONS ships if bench reveals plateau. |
 
 ---
 
 ## Sequencing rules
 
-1. **Phase-WIKI-FIX is the priority-0 blocker** — surfaced by the 2026-05-22 direct retrieval bench. FTS5 mirror has 17 rows vs 150+ pages on disk → hybrid fusion silently runs on 1/3 channels. Without it, Phase-WIKI-B Wave A measures nothing useful (RRF over empty FTS = RRF over 1 channel). See [Phase-WIKI-FIX/plan.md](Phase-WIKI-FIX/plan.md) and memory `project_2026-05-22_substrate_bench_diagnosis`.
-2. **Phase-WIKI-B Wave A** ships AFTER Phase-WIKI-FIX, not before.
-3. **Phase-BUG runs concurrent** — it fixes a live bug invalidating web bench data; not waiting.
-4. **Per-phase deep refactor** — each Ralph story MUST include `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated, on every file touched (CLAUDE.md rule).
-5. **One story = one commit** — granularity preserved per `feedback_one_module_per_slice`. No batching except for mechanical sed-style refactor with very low risk.
-6. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large single-commit collapse, -360 LOC) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic before deleting the legacy code path.
+1. **Phase-WIKI-FIX is the priority-0 blocker** — ✅ closed 2026-05-22; substrate retrieval healthy (FTS 20/20, p95 75ms).
+2. **Phase-TOOL kills the tool RAG + cleans tool surface** — Ralph in flight; closes the live 30-call thrash root cause + dim-mismatch logs.
+3. **Phase-MODERNIZE before any further feature phase** — sets the CI gates (depguard + deadcode + 600-LOC) so every subsequent commit benefits from cleanup-on-touch enforcement.
+4. **Phase-OUT next (locked)** — output discipline + the 3 budget stories that prevent the 28-LLM-call thrash from recurring.
+5. **Phase-CTX after OUT** — context engineering substrate; payload_summarizer + auto-compaction at 70% are upstream of any further memory work.
+6. **Phase-CONS after CTX** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
+7. **Phase-WIKI-SUBNODES + Phase-BUG + Phase-CACHE are parallel-safe** — can ship in any session that has spare cycles.
+8. **Per-phase deep refactor** — every Ralph story includes `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated on touched files (CLAUDE.md rule).
+9. **One story = one commit** per `feedback_one_module_per_slice`. No batching except mechanical sed-style refactor with very low risk.
+10. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large -360 LOC single commit) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic.
 
 ---
 
 ## Anti-patterns reaffirmed across 4+ scouts (DO NOT LIFT)
 
-- ❌ Fast-path classifier bypassing agent loop (picobot has, codex/elysia/nanobot/openhuman reject)
-- ❌ LLM-as-reranker for retrieval (use cross-encoder)
-- ❌ Compaction at 100% context (compact at 70-80%)
-- ❌ Silent truncation without marker
-- ❌ Defaults-on for expensive tools in autonomous contexts
-- ❌ Wrapping every API endpoint as an MCP tool
+- ❌ **Vector embedding for tool routing** — 0/7 production systems use it; killed in Phase-TOOL.
+- ❌ **Fast-path classifier bypassing agent loop** — picobot has it; codex/elysia/nanobot/openhuman reject.
+- ❌ **LLM-as-reranker for retrieval** — use cross-encoder.
+- ❌ **Compaction at 100% context** — compact at 70-80% (Anthropic 2026).
+- ❌ **Silent truncation without marker** — always emit a marker the LLM recognizes.
+- ❌ **Defaults-on for expensive tools in autonomous contexts** — Hermes $4.63 incident.
+- ❌ **Wrapping every API endpoint as an MCP tool** — Anthropic 2026 "Writing tools for agents".
+- ❌ **Prompt-pressure budget warnings** — Hermes removed in #7915 ("models give up prematurely"). Code-level enforcement is signal; prompt-level pressure is noise. This is the lesson behind Phase-OUT US-OUT-07/08/09.
+- ❌ **Big-bang horizontal cleanup sweep** — IBM/McKinsey 2026 evidence: 40-50% slower + 30-40% costlier than incremental. Phase-MODERNIZE Wave B is bounded to top-10 gods exactly to avoid this.
+
+---
+
+## Live evidence motivating each phase (so we can show our work)
+
+| Phase | Live evidence |
+| --- | --- |
+| Phase-WIKI-FIX | Direct bench 2026-05-22: FTS5 mirror had 17 rows vs 150+ pages on disk; score 0.013 uniform; recurring `Vector dimension error` every 10 min in logs |
+| Phase-TOOL | Log 2026-05-22 05:11: `elapsed_ms=179668 llm_calls=28 tool_calls=33 delivered=false`. Agent thrashed 30+ `web_search`/`web_fetch` with 4 ignored 404s. Tool RAG dim-mismatch error every 10 min |
+| Phase-MODERNIZE | Per-module audit 2026-05-22: 28 god files >500 LOC (8 violate the 600 cap), 103 dupl clusters, 0 unused symbols, 6 TODO total — real debt is god files + dupl |
+| Phase-OUT (budget stories) | Same live evidence as Phase-TOOL; budget enforcement is what prevents the thrash from recurring after Phase-TOOL kills the immediate trigger |
+| Phase-CTX | Long-conversation context window saturation observed during multi-step debug sessions (memory `feedback_aura_as_product` 70%-threshold requirement) |
+| Phase-CONS | Web-channel feature parity gap: 7 features missing (streaming, voice, markdown, soft-budget, compaction, tools_allowed, tools_used) per `feedback_web_telegram_parity_full_fix` |
 
 ---
 
 ## Cross-references
 
-- **Existing PRD §7.4 roadmap** — Phase-KV partially absorbed by Phase-CACHE; remainder revisited after Phase-CACHE measures cache-hit improvement.
-- **Phase 8 substrate** (DE-SCOPED in §7.4) — openhuman scout produced concrete code references; implementation cost drops from 6-12 sessions to 2-3 when workload trigger arrives. No new phase needed; augment existing slot.
-- **Phase-WIKI-B Wave B/C** — Online research confirmed `bge-reranker-v2-m3` reranker pick; sidecar deploy is Wave B/C add (~3-5 days), document in that plan when fleshed out.
+- **Phase 8 substrate** (DE-SCOPED in prd.md §7.4) — openhuman scout produced concrete code references; cost drops 6-12 → 2-3 sessions when workload trigger arrives.
+- **MCP Roundup** (deferred from §7.4) — survey/score/swap best community MCPs; gated on Phase-MCP-UI which is gated on Phase-TOOL closure.
+- **Phase-U plugin layout** (deferred from §7.4) — domain plugins; gated on Phase-MM Wave 2/3 audio + Phase-CTX substrate.
 
 ---
 
-*Updated: 2026-05-21. Each phase's `plan.md` is the source of truth for that phase's scope and stories. Update progress inline as stories ship.*
+*Updated 2026-05-22. Each phase's `plan.md` is the source of truth for that phase's scope and stories. Update progress inline as stories ship.*
