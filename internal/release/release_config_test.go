@@ -42,7 +42,12 @@ func TestDockerImageWorkflowPublishesGHCRImageOnTags(t *testing.T) {
 	requireContains(t, body, "workflow_dispatch:")
 	requireContains(t, body, "packages: write")
 	requireContains(t, body, "REGISTRY: ghcr.io")
-	requireContains(t, body, "IMAGE_NAME: chetto1983/aura")
+	requireContains(t, body, "matrix:")
+	requireContains(t, body, "- image: aura")
+	requireContains(t, body, "- image: aura-whisper")
+	requireContains(t, body, "- image: aura-pocket-tts")
+	requireContains(t, body, "- image: aura-markitdown")
+	requireContains(t, body, "${{ env.REGISTRY }}/chetto1983/${{ matrix.image }}")
 	requireContains(t, body, "actions/checkout@v6")
 	requireContains(t, body, "docker/setup-qemu-action@v4")
 	requireContains(t, body, "docker/setup-buildx-action@v4")
@@ -64,6 +69,9 @@ func TestComposeImageOverrideUsesPublishedImage(t *testing.T) {
 	body := readFile(t, filepath.Join(root, "compose.image.yaml"))
 
 	requireContains(t, body, "ghcr.io/chetto1983/aura:latest")
+	requireContains(t, body, "ghcr.io/chetto1983/aura-whisper:latest")
+	requireContains(t, body, "ghcr.io/chetto1983/aura-pocket-tts:latest")
+	requireContains(t, body, "ghcr.io/chetto1983/aura-markitdown:latest")
 	requireContains(t, body, "build: null")
 	requireContains(t, body, "pull_policy: always")
 }
