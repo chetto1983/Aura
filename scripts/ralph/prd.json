@@ -148,7 +148,7 @@
         "Single atomic commit prefix: refactor(wiki): split memory_hygiene.go into hygiene/renames/hubs/repairs (US-MOD-SPLIT-05)"
       ],
       "priority": 10,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Verify appendUniqueSorted (or equivalent dead helper if any) is gone in the new files — Phase-WIKI-FIX-related cleanup pass."
     },
     {

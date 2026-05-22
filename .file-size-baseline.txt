@@ -10,7 +10,6 @@
 #
 1587 cmd/probe_chat/cases.go
 790 cmd/quality_bench/main.go
-751 internal/wiki/memory_hygiene.go
 740 internal/api/auth/store.go
 733 internal/storage/sources/ingest/pipeline.go
 725 internal/storage/search/qdrant.go
