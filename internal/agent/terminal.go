@@ -97,13 +97,6 @@ func terminalFinalizationPrompt(terminalTool string, strict bool) llm.Message {
 	if toolName == "" {
 		toolName = "the terminal tool"
 	}
-	if toolName == "search_memory" {
-		content := "search_memory returned a recency-weighted hit list above. Do not call tools. Answer the user's original request in their language, using the hits as background. Cite [[slug]] for wiki pages and src_xxxx for sources when relevant. Be concise and conversational."
-		if strict {
-			content = "RETRY. " + content + " Your previous attempt emitted tool-call markup or empty text — do not do that. Plain prose only."
-		}
-		return llm.Message{Role: "user", Content: content}
-	}
 	content := fmt.Sprintf("The %q tool just finished. Do not call tools. Answer the user in their language, conversationally, using the tool results above. Describe what you did and what you found. No JSON, no tool-call markup, no internal markers like exit_code or source_id — just natural prose.", toolName)
 	if strict {
 		content = "RETRY. " + content + " Your previous attempt was empty or contained tool-call markup. Reply now in plain prose; the user is waiting."

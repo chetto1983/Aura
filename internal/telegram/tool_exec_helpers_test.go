@@ -161,29 +161,30 @@ func TestMaxToolLoopIterationsHonorsRuntimeConfigInsteadOfToolsetHardCap(t *test
 	}
 }
 
-func TestSearchMemoryArgumentsForceCallerChatID(t *testing.T) {
+func TestSearchArgumentsForceCallerChatID(t *testing.T) {
 	reg := tools.NewRegistry(nil)
-	search := &countingTelegramTool{name: "search_memory", result: "memory"}
-	reg.Register(search)
+	searchTool := &countingTelegramTool{name: "search", result: "memory"}
+	reg.Register(searchTool)
 	b := &Bot{cfg: &config.Config{}, rt: &botRuntime{tools: reg}}
 	convCtx := conversation.NewContext(conversation.Config{})
 
 	summary := b.executeToolCalls(authorizedTelegramToolContext("1148481707"), nil, convCtx, "1148481707",
-		[]llm.ToolCall{{ID: "search-1", Name: "search_memory", Arguments: map[string]any{"query": "documents", "limit": float64(9)}}})
+		[]llm.ToolCall{{ID: "search-1", Name: "search", Arguments: map[string]any{"action": "search", "query": "documents", "top_k": float64(9)}}})
 
 	if !strings.Contains(summary.LastResult, "memory") {
 		t.Fatalf("lastResult = %q", summary.LastResult)
 	}
+	// ToolArgumentsForTool injects the caller's chat_id, overriding any model-supplied value.
 	args := agent.ToolArgumentsForTool(
-		"search_memory",
-		map[string]any{"query": "private notes", "chat_id": float64(999), "limit": float64(9)},
+		"search",
+		map[string]any{"action": "search", "query": "private notes", "chat_id": float64(999), "top_k": float64(9)},
 		42,
 	)
 	if got := args["chat_id"]; got != float64(42) {
 		t.Fatalf("chat_id = %#v, want 42", got)
 	}
-	if got := args["limit"]; got != float64(9) {
-		t.Fatalf("limit = %#v, want model-provided limit preserved", got)
+	if got := args["top_k"]; got != float64(9) {
+		t.Fatalf("top_k = %#v, want model-provided limit preserved", got)
 	}
 }
 

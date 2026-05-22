@@ -237,6 +237,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	}
 	a.deps.Tools.Register(&tools.AskUserTool{})
 	a.deps.Tools.Register(&tools.AskUserClarificationTool{})
+	a.deps.Tools.Register(&tools.TextResponseTool{})
 	if tokenTool := tools.NewRequestDashboardTokenTool(a.deps.AuthDB, b, b.IsAllowlisted); tokenTool != nil {
 		a.deps.Tools.Register(tokenTool)
 	}
@@ -518,7 +519,6 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 		cfg.RecencyHalfLifeWikiDays, cfg.RecencyHalfLifeArchiveDays)
 	if searchMemTool != nil {
 		searchMemTool.SetFreshnessStore(a.freshnessStore)
-		a.deps.Tools.Register(searchMemTool)
 	}
 	if st := tools.NewSearchTool(searchMemTool, a.deps.WikiStore, tools.NewReadSourceTool(a.deps.Sources)); st != nil {
 		a.deps.Tools.Register(st)

@@ -154,10 +154,13 @@ func TestRegisterMemoryRecallToolsWiresTypedTiersAndFreshness(t *testing.T) {
 	}
 	app.registerMemoryRecallTools(app.deps.Cfg)
 
-	for _, name := range []string{"search_memory", "recall_operational", "recall_user_memory"} {
+	for _, name := range []string{"search", "recall_operational", "recall_user_memory"} {
 		if registry.Get(name) == nil {
 			t.Fatalf("expected %s to be registered", name)
 		}
+	}
+	if registry.Get("search_memory") != nil {
+		t.Fatal("search_memory must NOT be registered (deprecated, replaced by search)")
 	}
 
 	userOut, err := registry.Get("recall_user_memory").Execute(ctx, map[string]any{
@@ -205,13 +208,14 @@ func TestRegisterMemoryRecallToolsWiresTypedTiersAndFreshness(t *testing.T) {
 		proposalToken,
 	})
 
-	searchOut, err := registry.Get("search_memory").Execute(ctx, map[string]any{
-		"query": mixedQuery,
-		"scope": "all",
-		"limit": 10,
+	searchOut, err := registry.Get("search").Execute(ctx, map[string]any{
+		"action": "search",
+		"query":  mixedQuery,
+		"zone":   "all",
+		"top_k":  10,
 	})
 	if err != nil {
-		t.Fatalf("search_memory: %v", err)
+		t.Fatalf("search: %v", err)
 	}
 	assertContainsAll(t, "broad memory search", searchOut, []string{
 		sourceToken,

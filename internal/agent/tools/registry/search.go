@@ -133,6 +133,8 @@ func (t *SearchTool) Execute(ctx context.Context, args map[string]any) (string, 
 }
 
 // doSearch delegates to SearchMemoryTool after translating zone → scope.
+// chat_id is passed through when present so archive results are scoped to
+// the current conversation (injected by ToolArgumentsForTool upstream).
 func (t *SearchTool) doSearch(ctx context.Context, args map[string]any) (string, error) {
 	if t.searchMem == nil {
 		return "", fmt.Errorf("search: search backend unavailable")
@@ -144,6 +146,9 @@ func (t *SearchTool) doSearch(ctx context.Context, args map[string]any) (string,
 	}
 	if topK, ok := args["top_k"]; ok {
 		delegateArgs["limit"] = topK
+	}
+	if chatID, ok := args["chat_id"]; ok {
+		delegateArgs["chat_id"] = chatID
 	}
 	return t.searchMem.Execute(ctx, delegateArgs)
 }

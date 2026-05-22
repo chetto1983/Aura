@@ -53,11 +53,11 @@ const (
 // considered "context-cheap" and can be summarized to a stub once newer
 // equivalents exist. Other tool results carry decisions and stay verbatim.
 var compactableTools = map[string]bool{
-	"file":          true,
-	"execute_code":  true,
+	"file":         true,
+	"execute_code": true,
 	"execute_shell": true,
-	"web":           true,
-	"search_memory": true,
+	"web":          true,
+	"search":       true,
 }
 
 // Apply runs the full governance transform chain in the order required for

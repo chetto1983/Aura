@@ -20,10 +20,10 @@ type ToolExecutionSummary struct {
 }
 
 // ToolArgumentsForTool injects channel-specific context into tool arguments.
-// For search_memory it adds chat_id so the memory store can scope results
-// to the current conversation. All other tools pass args through unchanged.
+// For the search tool it adds chat_id so the memory store can scope archive
+// results to the current conversation. All other tools pass args through unchanged.
 func ToolArgumentsForTool(name string, args map[string]any, chatID int64) map[string]any {
-	if name != "search_memory" {
+	if name != "search" {
 		return args
 	}
 	out := make(map[string]any, len(args)+1)

@@ -115,8 +115,7 @@ func NewSearchMemoryToolConfigured(wiki search.Searcher, compact compactMemorySe
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
 
 func (t *SearchMemoryTool) Description() string {
-	return "Search Aura's persistent memory — curated wiki pages, ingested sources, conversation archive, proposed updates. Results are recency-weighted: fresh operational notes outrank stale ones; curated wiki pages age slowly. Returns top-10 hits, INTERNAL — synthesize before replying; cite hits as [[slug]] for wiki and src_xxxx for sources, never echo raw results to the user. Results are a short markdown list, one line per hit, with an optional snippet. Compact memory hits may include a freshness=indexed_at/model/build annotation and degraded_read=true when the index is known to be stale." +
-		"\nDEPRECATED: use search(action=search, query=…) instead — output is identical."
+	return "Search Aura's persistent memory — curated wiki pages, ingested sources, conversation archive, proposed updates. Results are recency-weighted: fresh operational notes outrank stale ones; curated wiki pages age slowly. Returns top-10 hits, INTERNAL — synthesize before replying; cite hits as [[slug]] for wiki and src_xxxx for sources, never echo raw results to the user. Results are a short markdown list, one line per hit, with an optional snippet. Compact memory hits may include a freshness=indexed_at/model/build annotation and degraded_read=true when the index is known to be stale."
 }
 
 func (t *SearchMemoryTool) Parameters() map[string]any {
@@ -221,8 +220,7 @@ func (t *SearchMemoryTool) Execute(ctx context.Context, args map[string]any) (st
 	if len(results) > limit {
 		results = results[:limit]
 	}
-	result := formatMemoryResults(query, results, warnings, now)
-	return result + "\n[DEPRECATED: use search(action=search) instead of search_memory]", nil
+	return formatMemoryResults(query, results, warnings, now), nil
 }
 
 func (t *SearchMemoryTool) searchContext(ctx context.Context) (context.Context, context.CancelFunc) {

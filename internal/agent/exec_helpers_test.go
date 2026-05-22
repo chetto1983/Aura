@@ -109,9 +109,9 @@ func TestExecuteToolCallsRecordsToolAttempt(t *testing.T) {
 	seedExecutorRun(t, db, runID)
 
 	repo := attempts.NewSQLiteRepo(db)
-	runner := &stubToolRunner{names: []string{"search_memory"}, result: "found memory"}
+	runner := &stubToolRunner{names: []string{"search"}, result: "found memory"}
 	convCtx := conversation.NewContext(conversation.Config{})
-	calls := []llm.ToolCall{{ID: "call-1", Name: "search_memory", Arguments: map[string]any{"query": "docs"}}}
+	calls := []llm.ToolCall{{ID: "call-1", Name: "search", Arguments: map[string]any{"action": "search", "query": "docs"}}}
 
 	summary := ExecuteToolCalls(context.Background(), runner, convCtx, "user1", 42, calls, true, nil,
 		WithToolAttemptRecording(runID, repo))
@@ -122,7 +122,7 @@ func TestExecuteToolCallsRecordsToolAttempt(t *testing.T) {
 	var outcome, argKeys string
 	err := db.QueryRowContext(context.Background(),
 		`SELECT outcome, arg_keys_json FROM tool_attempts WHERE run_id = ? AND tool_name = ?`,
-		runID, "search_memory").Scan(&outcome, &argKeys)
+		runID, "search").Scan(&outcome, &argKeys)
 	if err != nil {
 		t.Fatalf("tool_attempts row missing: %v", err)
 	}

@@ -129,18 +129,20 @@ func TestSearch_ZoneFilter(t *testing.T) {
 	}
 }
 
-// TestSearch_DeprecatedAliases_StillWork verifies that search_memory still
-// executes successfully and includes the DEPRECATED redirect hint in its output.
-func TestSearch_DeprecatedAliases_StillWork(t *testing.T) {
+// TestSearch_SearchMemoryInternalExecution verifies that SearchMemoryTool still
+// executes without error when used as the internal delegate of SearchTool.
+// search_memory is no longer registered in the LLM-facing tool catalog; it is
+// an internal implementation detail of the unified "search" tool.
+func TestSearch_SearchMemoryInternalExecution(t *testing.T) {
 	ctx := context.Background()
 	index := newTestMemoryIndex(t)
 	tool := NewSearchMemoryTool(nil, index)
 
 	out, err := tool.Execute(ctx, map[string]any{"query": "anything"})
 	if err != nil {
-		t.Fatalf("search_memory Execute: %v", err)
+		t.Fatalf("SearchMemoryTool.Execute (internal): %v", err)
 	}
-	if !strings.Contains(out, "DEPRECATED") {
-		t.Errorf("search_memory output missing deprecation hint:\n%s", out)
+	if strings.Contains(out, "DEPRECATED") {
+		t.Errorf("SearchMemoryTool output must not contain DEPRECATED hint (it is now internal-only):\n%s", out)
 	}
 }

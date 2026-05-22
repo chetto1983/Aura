@@ -67,7 +67,7 @@
         "Single atomic commit prefix: fix(tools): wire text_response + drop deprecated search_memory zombie (US-TOOL-03)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Independent of US-TOOL-01 and US-TOOL-02. Can ship parallel. GROUND-TRUTH: read internal/agent/terminal.go end-to-end before deciding the text_response approach; read the search_memory file to confirm DEPRECATED marker; read unified search registration site for the replacement contract."
     },
     {
