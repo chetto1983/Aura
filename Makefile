@@ -1,4 +1,4 @@
-.PHONY: all build test run fmt vet clean web web-build compose-up compose-test download-models file-size-check registry-diff
+.PHONY: all build test run fmt vet clean web web-build compose-up compose-test download-models file-size-check registry-diff module-health
 
 all: test build
 
@@ -55,3 +55,6 @@ file-size-check:
 
 registry-diff:
 	bash scripts/registry-diff.sh
+
+module-health:
+	go run ./cmd/module_health

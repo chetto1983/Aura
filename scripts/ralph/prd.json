@@ -76,7 +76,7 @@
         "Single atomic commit prefix: feat(ops): module health scoreboard generator (US-MOD-INFRA-05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Largest INFRA story (~250 LOC). GROUND-TRUTH: read the per-module audit at docs/research-2026-05-22/ for the table shape; the script must produce equivalent output. Cap the script itself at 250 LOC — if it grows, split into table generator + report writer."
     },
     {
