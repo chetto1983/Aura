@@ -1,5 +1,74 @@
 version: "2"
+
 linters:
+  enable:
+    - depguard
+  settings:
+    depguard:
+      rules:
+        agent-core-boundary:
+          list-mode: lax
+          files:
+            - "**/internal/agent/**/*.go"
+            - "!**/internal/agent/tools/**/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: "github.com/aura/aura/internal/channels"
+              desc: "prd.md section 9: agent core must not import channel adapters"
+            - pkg: "github.com/aura/aura/internal/api"
+              desc: "prd.md section 9: agent core must not import API delivery"
+            - pkg: "github.com/aura/aura/internal/telegram"
+              desc: "prd.md section 9: agent core must not import Telegram delivery"
+            - pkg: "github.com/aura/aura/internal/storage/qdrant"
+              desc: "prd.md section 9: agent core must not import concrete Qdrant adapters"
+            - pkg: "github.com/aura/aura/internal/storage/sources"
+              desc: "prd.md section 9: agent core must not import source-parser storage details"
+            - pkg: "github.com/aura/aura/internal/db"
+              desc: "prd.md section 9: agent core must not import concrete SQLite packages"
+        memory-boundary:
+          list-mode: lax
+          files:
+            - "**/internal/agentnote/**/*.go"
+            - "**/internal/wiki/**/*.go"
+            - "**/internal/storage/memoryindex/**/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: "github.com/aura/aura/internal/channels"
+              desc: "prd.md section 9: memory layers must not import channel adapters"
+        storage-boundary:
+          list-mode: lax
+          files:
+            - "**/internal/storage/**/*.go"
+            - "**/internal/db/**/*.go"
+            - "**/internal/dbrecovery/**/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: "github.com/aura/aura/internal/agent"
+              desc: "prd.md section 9: storage must not import agent runtime policy"
+        rag-boundary:
+          list-mode: lax
+          files:
+            - "**/internal/storage/search/**/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: "github.com/aura/aura/internal/channels"
+              desc: "prd.md section 9: RAG/search must not import channel adapters"
+        learning-boundary:
+          list-mode: lax
+          files:
+            - "**/internal/learning/**/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: "github.com/aura/aura/internal/channels"
+              desc: "prd.md section 9: learning must not import channel adapters"
+        tool-boundary:
+          list-mode: lax
+          files:
+            - "**/internal/agent/tools/**/*.go"
+            - "!**/*_test.go"
+          deny:
+            - pkg: "github.com/aura/aura/internal/chat"
+              desc: "prd.md section 9: tools must not import chat unless explicitly reviewed"
   exclusions:
     paths:
       - "web/node_modules"

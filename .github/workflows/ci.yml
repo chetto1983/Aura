@@ -21,6 +21,12 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Depguard architecture boundary
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          args: --enable-only=depguard --new-from-rev=HEAD~1 ./...
+
       - name: Go vet
         run: go vet ./...
 
