@@ -533,6 +533,13 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// WikiSearch reindexes after dashboard wiki writes/renames/deletes.
 		WikiSearch:   a.deps.SearchRepo,
 		WikiSearcher: a.deps.SearchRepo,
+		// WikiIndexRebuilder backs POST /api/wiki/reindex (admin-gated).
+		WikiIndexRebuilder: func() search.WikiIndexRebuilder {
+			if r, ok := a.deps.SearchRepo.(search.WikiIndexRebuilder); ok {
+				return r
+			}
+			return nil
+		}(),
 		// Pending-approval pipeline.
 		PendingApprover: b,
 		// Conversation archive read API.

@@ -179,6 +179,13 @@ type DocumentIndexer interface {
 	Index(ctx context.Context, id string, content string, metadata map[string]string) error
 }
 
+// WikiIndexRebuilder triggers a full Qdrant collection rebuild. Used by
+// POST /api/wiki/reindex. When dryRun is true, returns current stats without
+// modifying the collection.
+type WikiIndexRebuilder interface {
+	RebuildWikiIndex(ctx context.Context, dryRun bool) (QdrantRebuildReport, error)
+}
+
 // Repository is the full search/index boundary implemented by qdrantRepository.
 type Repository interface {
 	Searcher

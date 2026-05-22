@@ -830,3 +830,133 @@ func TestRebuildQdrantWikiDocumentsSkipOnEmbedError(t *testing.T) {
 		t.Fatalf("upserted points count = %d, want 4", upsertedCount)
 	}
 }
+
+// TestRebuildQdrantWikiDocumentsDimMismatchAutoRebuild verifies that when the
+// existing collection reports a different vector size than cfg.OutputDim, the
+// warm-cache is bypassed and a full rebuild is triggered.
+func TestRebuildQdrantWikiDocumentsDimMismatchAutoRebuild(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Page One",
+		Body:          "Content for dim mismatch test.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	var sawDelete, sawCreate, sawUpsert bool
+	embedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			// Return existing collection with VectorSize=128, but cfg.OutputDim=5.
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":10,"indexed_vectors_count":10,"config":{"params":{"vectors":{"size":128,"distance":"Cosine"}}}}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+
+	// cfg.OutputDim=5; server returns existing VectorSize=128 → mismatch → full rebuild.
+	report, err := RebuildQdrantWikiDocuments(context.Background(), wikiDir, countingEmbed, QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		OutputDim:  5, // keywordEmbedding returns 5-dim vectors
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildQdrantWikiDocuments: %v", err)
+	}
+	if !sawDelete {
+		t.Fatal("expected DeleteCollection to be called on dim mismatch")
+	}
+	if !sawCreate {
+		t.Fatal("expected CreateCollection to be called on dim mismatch")
+	}
+	if !sawUpsert {
+		t.Fatal("expected Upsert to be called on dim mismatch")
+	}
+	if embedCalls == 0 {
+		t.Fatal("expected embed calls on dim-mismatch rebuild")
+	}
+	if report.PriorVectorSize != 128 {
+		t.Fatalf("PriorVectorSize = %d, want 128", report.PriorVectorSize)
+	}
+}
+
+// TestRebuildQdrantWikiDocumentsDimMismatchSkippedByEnv verifies that when
+// cfg.SkipDimMismatchRebuild is true, the warm-cache is still used despite the
+// dimension mismatch.
+func TestRebuildQdrantWikiDocumentsDimMismatchSkippedByEnv(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Page One",
+		Body:          "Content for skip-env test.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	var sawDelete bool
+	embedCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":10,"indexed_vectors_count":10,"config":{"params":{"vectors":{"size":128,"distance":"Cosine"}}}}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	countingEmbed := func(ctx context.Context, text string) ([]float32, error) {
+		embedCalls++
+		return keywordEmbedding(ctx, text)
+	}
+
+	// SkipDimMismatchRebuild=true → warm-cache hit despite VectorSize=128 vs OutputDim=5.
+	report, err := RebuildQdrantWikiDocuments(context.Background(), wikiDir, countingEmbed, QdrantConfig{
+		BaseURL:                server.URL,
+		Collection:             "aura_memory_v1",
+		OutputDim:              5,
+		SkipDimMismatchRebuild: true,
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildQdrantWikiDocuments: %v", err)
+	}
+	if sawDelete {
+		t.Fatal("expected NO DeleteCollection when SkipDimMismatchRebuild=true")
+	}
+	if embedCalls != 0 {
+		t.Fatalf("embed called %d times on skipped-env warm-cache, want 0", embedCalls)
+	}
+	if report.PriorVectorSize != 128 {
+		t.Fatalf("PriorVectorSize = %d, want 128", report.PriorVectorSize)
+	}
+}

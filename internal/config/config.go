@@ -110,7 +110,12 @@ type Config struct {
 	// meaningful for MRL-trained models) trades a tiny MTEB delta for
 	// 3x-6x smaller Qdrant vectors and cosine compute. Aura targets 256
 	// in production.
-	EmbeddingOutputDim     int    `envconfig:"EMBEDDING_OUTPUT_DIM" default:"0"`
+	EmbeddingOutputDim        int  `envconfig:"EMBEDDING_OUTPUT_DIM" default:"0"`
+	// NoRebuildOnDimMismatch, when true, suppresses the automatic Qdrant
+	// collection rebuild that fires when EMBEDDING_OUTPUT_DIM changes. Set
+	// AURA_NO_REBUILD_ON_DIM_MISMATCH=true if you want to manage collection
+	// migration manually (e.g. swap collection names instead of rebuilding).
+	NoRebuildOnDimMismatch bool `envconfig:"AURA_NO_REBUILD_ON_DIM_MISMATCH" default:"false"`
 	DBPath                 string `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort               string `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
 	Timezone               string `envconfig:"AURA_TIMEZONE"`

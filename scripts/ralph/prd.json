@@ -141,7 +141,7 @@
         "Single atomic commit prefix: feat(wiki): admin reindex endpoint + boot dim-mismatch auto-detect (US-WIKI-FIX-04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "LARGEST STORY in the phase. DEPENDS ON FIX-02 (cache key dim) and FIX-03 (skip-and-continue) for safe rebuild. Don't ship before those. GROUND-TRUTH: (1) read internal/storage/search/qdrant.go warm-cache block lines 425-470 — the existing comment WR-03 explicitly says vector_size isn't exposed; the sentinel-probe workaround is the cleanest path. (2) read internal/api/router.go to find admin-token gated route registration pattern (look for SkillsAdmin). (3) read internal/storage/search/qdrant.go RebuildQdrantWikiDocuments to confirm signature. SCOPE DISCIPLINE: NO new metrics endpoint. NO new dashboard surface. Just the JSON endpoint + boot mismatch detect. Dashboard wiring is follow-up if user requests it."
     }
   ]

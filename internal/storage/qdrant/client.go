@@ -209,13 +209,31 @@ func (c *httpClient) CollectionInfo(ctx context.Context, collection string) (Col
 		return CollectionInfo{}, fmt.Errorf("qdrant collection info returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
 
+	// Use a richer intermediate struct to extract the nested vector size
+	// from result.config.params.vectors.size (unnamed/default vector config).
 	var out struct {
-		Result CollectionInfo `json:"result"`
+		Result struct {
+			Status              string `json:"status"`
+			PointsCount         uint64 `json:"points_count"`
+			IndexedVectorsCount uint64 `json:"indexed_vectors_count"`
+			Config              struct {
+				Params struct {
+					Vectors struct {
+						Size int `json:"size"`
+					} `json:"vectors"`
+				} `json:"params"`
+			} `json:"config"`
+		} `json:"result"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return CollectionInfo{}, fmt.Errorf("qdrant collection info decode: %w", err)
 	}
-	return out.Result, nil
+	return CollectionInfo{
+		Status:              out.Result.Status,
+		PointsCount:         out.Result.PointsCount,
+		IndexedVectorsCount: out.Result.IndexedVectorsCount,
+		VectorSize:          out.Result.Config.Params.Vectors.Size,
+	}, nil
 }
 
 // ScrollSlugs pages through all points in the named collection using Qdrant's

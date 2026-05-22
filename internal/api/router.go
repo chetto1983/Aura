@@ -135,6 +135,11 @@ type Deps struct {
 	// reindex hook, while this endpoint needs query access.
 	WikiSearcher search.Searcher
 
+	// WikiIndexRebuilder triggers a full Qdrant collection rebuild.
+	// POST /api/wiki/reindex (admin-gated). Optional — when nil the endpoint
+	// returns 503.
+	WikiIndexRebuilder search.WikiIndexRebuilder
+
 	SkillsAdmin bool
 
 	// Pending-approval pipeline. Bot wires the real implementation;
@@ -272,6 +277,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /files/{root}/mkdir", handleFilesMkdir(deps))
 	mux.HandleFunc("POST /files/{root}/rename", handleFilesRename(deps))
 	mux.HandleFunc("POST /wiki/index/rebuild", handleWikiRebuild(deps))
+	mux.HandleFunc("POST /wiki/reindex", handleWikiReindex(deps))
 	mux.HandleFunc("POST /wiki/log", handleWikiAppendLog(deps))
 	mux.HandleFunc("POST /tasks", handleTaskUpsert(deps))
 	mux.HandleFunc("POST /tasks/{name}/cancel", handleTaskCancel(deps))

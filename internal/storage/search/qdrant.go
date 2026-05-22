@@ -26,6 +26,11 @@ type QdrantConfig struct {
 	APIKey     string
 	BatchSize  int
 	Client     *http.Client
+	// OutputDim, when > 0, enables dim-mismatch detection at boot: if the
+	// existing collection's vector size differs from OutputDim the collection
+	// is dropped and rebuilt unless SkipDimMismatchRebuild is true.
+	OutputDim             int
+	SkipDimMismatchRebuild bool
 }
 
 // PagesIndexedUnknown is the sentinel value for QdrantRebuildReport.PagesIndexed
@@ -48,7 +53,11 @@ type QdrantRebuildReport struct {
 	// failed during a warm-cache hit; callers should not interpret it as zero.
 	PagesIndexed int          `json:"pages_indexed"`
 	VectorSize   int          `json:"vector_size"`
-	SkippedDocs  []SkippedDoc `json:"skipped_docs,omitempty"`
+	// PriorVectorSize is the collection's vector dimension before this rebuild.
+	// Zero when no prior collection existed or the dim was not exposed by the
+	// Qdrant API. Useful to detect whether a rebuild changed the dimension.
+	PriorVectorSize int          `json:"prior_vector_size,omitempty"`
+	SkippedDocs     []SkippedDoc `json:"skipped_docs,omitempty"`
 }
 
 type qdrantSearcher struct {
@@ -67,6 +76,11 @@ type qdrantRepository struct {
 	indexed          bool
 	mu               sync.RWMutex
 	db               *sql.DB // optional; enables SearchHybrid when non-nil
+	// expectedDim and skipDimRebuild control boot-time dim-mismatch detection.
+	// When expectedDim > 0 and the existing collection's vector size differs,
+	// the collection is auto-rebuilt unless skipDimRebuild is true.
+	expectedDim    int
+	skipDimRebuild bool
 }
 
 // NewQdrantSearcher creates a read-only Qdrant-backed semantic searcher.
@@ -99,6 +113,8 @@ func NewQdrantRepository(cfg QdrantConfig, embedFn EmbeddingFunction, wikiDir st
 		collectionQdrant: primary.collection,
 		wikiDir:          wikiDir,
 		logger:           logger,
+		expectedDim:      cfg.OutputDim,
+		skipDimRebuild:   cfg.SkipDimMismatchRebuild,
 	}, nil
 }
 
@@ -121,6 +137,8 @@ func NewQdrantRepositoryWithDB(cfg QdrantConfig, embedFn EmbeddingFunction, wiki
 		wikiDir:          wikiDir,
 		logger:           logger,
 		db:               db,
+		expectedDim:      cfg.OutputDim,
+		skipDimRebuild:   cfg.SkipDimMismatchRebuild,
 	}, nil
 }
 
@@ -374,7 +392,7 @@ func (r *qdrantRepository) Index(ctx context.Context, id string, content string,
 }
 
 func (r *qdrantRepository) IndexWikiPages(ctx context.Context) error {
-	_, err := rebuildQdrantWikiDocumentsWithClient(ctx, r.wikiDir, r.embedFn, r.client, r.collectionQdrant, r.logger)
+	_, err := rebuildQdrantWikiDocumentsWithClient(ctx, r.wikiDir, r.embedFn, r.client, r.collectionQdrant, r.expectedDim, r.skipDimRebuild, r.logger)
 	if err != nil {
 		return err
 	}
@@ -382,6 +400,35 @@ func (r *qdrantRepository) IndexWikiPages(ctx context.Context) error {
 	r.indexed = true
 	r.mu.Unlock()
 	return nil
+}
+
+// RebuildWikiIndex triggers a full Qdrant collection rebuild. When dryRun is
+// true it queries the current state and returns a report without modifying
+// anything. Implements search.WikiIndexRebuilder.
+func (r *qdrantRepository) RebuildWikiIndex(ctx context.Context, dryRun bool) (QdrantRebuildReport, error) {
+	if dryRun {
+		info, err := r.client.CollectionInfo(ctx, r.collectionQdrant)
+		if err != nil {
+			return QdrantRebuildReport{Collection: r.collectionQdrant}, err
+		}
+		_, pages, _ := loadWikiDocuments(r.wikiDir, r.logger)
+		cur := saturateUint64ToInt(info.PointsCount)
+		return QdrantRebuildReport{
+			Collection:      r.collectionQdrant,
+			DocsIndexed:     cur,
+			PagesIndexed:    pages,
+			VectorSize:      info.VectorSize,
+			PriorVectorSize: info.VectorSize,
+		}, nil
+	}
+	report, err := rebuildQdrantWikiDocumentsWithClient(ctx, r.wikiDir, r.embedFn, r.client, r.collectionQdrant, r.expectedDim, r.skipDimRebuild, r.logger)
+	if err != nil {
+		return report, err
+	}
+	r.mu.Lock()
+	r.indexed = true
+	r.mu.Unlock()
+	return report, nil
 }
 
 func (r *qdrantRepository) ReindexWikiPage(ctx context.Context, slug string) error {
@@ -412,13 +459,15 @@ func RebuildQdrantWikiDocuments(ctx context.Context, wikiDir string, embedFn Emb
 	if err != nil {
 		return QdrantRebuildReport{}, err
 	}
-	return rebuildQdrantWikiDocumentsWithClient(ctx, wikiDir, embedFn, client, collection, logger)
+	return rebuildQdrantWikiDocumentsWithClient(ctx, wikiDir, embedFn, client, collection, cfg.OutputDim, cfg.SkipDimMismatchRebuild, logger)
 }
 
 // rebuildQdrantWikiDocumentsWithClient implements the rebuild logic using an
-// already-constructed qdrant.Client and collection name. This avoids needing to
-// reconstruct credentials from the client interface.
-func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, embedFn EmbeddingFunc, client qdrant.Client, collection string, logger *slog.Logger) (QdrantRebuildReport, error) {
+// already-constructed qdrant.Client and collection name. expectedDim, when > 0,
+// enables boot-time dim-mismatch detection: if the existing collection's vector
+// size differs from expectedDim the warm-cache is bypassed and a full rebuild
+// runs (unless skipDimRebuild is true, which skips it with a warning instead).
+func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, embedFn EmbeddingFunc, client qdrant.Client, collection string, expectedDim int, skipDimRebuild bool, logger *slog.Logger) (QdrantRebuildReport, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -430,49 +479,77 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 	}
 
 	// QDRANT-01 warm-cache short-circuit: if the collection already exists with
-	// points, skip the rebuild and reuse the cached vectors.
-	//
-	// WR-03 / T-01-24 (accepted): CollectionInfo does not expose the existing
-	// collection's vector size or distance metric, so a warm-cache hit cannot
-	// detect schema drift from an EMBEDDING_MODEL swap (e.g. 1024 → 1536 dim).
-	// Subsequent Search calls will surface the dimension mismatch as a clear
-	// Qdrant error. Operator runbook: DELETE the collection (or set fresh
-	// QDRANT_COLLECTION) before changing embedding models. Phase 2 hardening
-	// candidate: extend CollectionInfo with vector_size and assert here.
+	// points, skip the rebuild and reuse the cached vectors — UNLESS a
+	// dim-mismatch is detected (US-WIKI-FIX-04).
 	info, infoErr := client.CollectionInfo(ctx, collection)
+	priorVectorSize := 0
 	if infoErr != nil {
 		// Defensive fallback: a transient probe failure must not block startup.
 		// Continue with the full rebuild path -- correctness > performance.
 		logger.Warn("qdrant collection info probe failed; proceeding with full rebuild", "collection", collection, "error", infoErr)
-	} else if info.PointsCount > 0 {
-		// Still load pages so PagesIndexed is meaningful in the report.
-		// W2: surface the loadWikiDocuments error at warn level instead of swallowing it.
-		_, pages, loadErr := loadWikiDocuments(wikiDir, logger)
-		// WR-05: distinguish "load failed → count unknown" from "load succeeded →
-		// 0 pages on disk". Use PagesIndexedUnknown (-1) as the sentinel so
-		// downstream consumers (e.g. /api/health, debug_qdrant) do not silently
-		// report 0 pages when the enumeration failed.
-		pagesIndexed := pages
-		if loadErr != nil {
-			logger.Warn("warm-cache hit: pages_on_disk count unavailable", "error", loadErr, "collection", collection)
-			pagesIndexed = PagesIndexedUnknown
-		}
-		// WR-01: saturate uint64 → int conversion. On 32-bit platforms the
-		// naked int(info.PointsCount) would wrap for values above MaxInt32.
-		// Aura is unlikely to ever index >2 billion points but the guard
-		// keeps the report sane on every architecture.
-		docsIndexed := saturateUint64ToInt(info.PointsCount)
-		if loadErr != nil {
-			logger.Info("qdrant warm-cache hit (pages_on_disk unavailable)", "collection", collection, "points_count", info.PointsCount)
+	} else {
+		priorVectorSize = info.VectorSize
+	}
+
+	if infoErr == nil && info.PointsCount > 0 {
+		// Dim-mismatch detection: compare existing collection dim against configured target.
+		if expectedDim > 0 && info.VectorSize > 0 && info.VectorSize != expectedDim {
+			if skipDimRebuild {
+				logger.Warn("qdrant collection dim check: mismatch, skipped by env",
+					"collection", collection, "current", info.VectorSize, "expected", expectedDim, "action", "skipped_by_env")
+				docsIndexed := saturateUint64ToInt(info.PointsCount)
+				_, pages, loadErr := loadWikiDocuments(wikiDir, logger)
+				pagesIndexed := pages
+				if loadErr != nil {
+					pagesIndexed = PagesIndexedUnknown
+				}
+				return QdrantRebuildReport{
+					Collection:      collection,
+					PagesIndexed:    pagesIndexed,
+					DocsIndexed:     docsIndexed,
+					VectorSize:      info.VectorSize,
+					PriorVectorSize: priorVectorSize,
+				}, nil
+			}
+			// Fall through to full rebuild — dim mismatch, drop and recreate.
+			logger.Warn("qdrant collection dim check: mismatch, triggering auto-rebuild",
+				"collection", collection, "current", info.VectorSize, "expected", expectedDim, "action", "rebuild")
 		} else {
-			logger.Info("qdrant warm-cache hit, skipping rebuild", "collection", collection, "points_count", info.PointsCount, "pages_on_disk", pages)
+			// Warm-cache hit: collection exists and dim is correct (or unknown).
+			if expectedDim > 0 && info.VectorSize > 0 {
+				logger.Info("qdrant collection dim check",
+					"collection", collection, "current", info.VectorSize, "expected", expectedDim, "action", "match")
+			}
+			// Still load pages so PagesIndexed is meaningful in the report.
+			// W2: surface the loadWikiDocuments error at warn level instead of swallowing it.
+			_, pages, loadErr := loadWikiDocuments(wikiDir, logger)
+			// WR-05: distinguish "load failed → count unknown" from "load succeeded →
+			// 0 pages on disk". Use PagesIndexedUnknown (-1) as the sentinel so
+			// downstream consumers (e.g. /api/health, debug_qdrant) do not silently
+			// report 0 pages when the enumeration failed.
+			pagesIndexed := pages
+			if loadErr != nil {
+				logger.Warn("warm-cache hit: pages_on_disk count unavailable", "error", loadErr, "collection", collection)
+				pagesIndexed = PagesIndexedUnknown
+			}
+			// WR-01: saturate uint64 → int conversion. On 32-bit platforms the
+			// naked int(info.PointsCount) would wrap for values above MaxInt32.
+			// Aura is unlikely to ever index >2 billion points but the guard
+			// keeps the report sane on every architecture.
+			docsIndexed := saturateUint64ToInt(info.PointsCount)
+			if loadErr != nil {
+				logger.Info("qdrant warm-cache hit (pages_on_disk unavailable)", "collection", collection, "points_count", info.PointsCount)
+			} else {
+				logger.Info("qdrant warm-cache hit, skipping rebuild", "collection", collection, "points_count", info.PointsCount, "pages_on_disk", pages)
+			}
+			return QdrantRebuildReport{
+				Collection:      collection,
+				PagesIndexed:    pagesIndexed,
+				DocsIndexed:     docsIndexed, // W1: live points count, not 0
+				VectorSize:      0,
+				PriorVectorSize: priorVectorSize,
+			}, nil
 		}
-		return QdrantRebuildReport{
-			Collection:   collection,
-			PagesIndexed: pagesIndexed,
-			DocsIndexed:  docsIndexed, // W1: live points count, not 0
-			VectorSize:   0,
-		}, nil
 	}
 
 	docs, pages, err := loadWikiDocuments(wikiDir, logger)
@@ -520,9 +597,10 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 
 	if len(points) == 0 {
 		return QdrantRebuildReport{
-			Collection:   collection,
-			PagesIndexed: pages,
-			SkippedDocs:  skipped,
+			Collection:      collection,
+			PagesIndexed:    pages,
+			SkippedDocs:     skipped,
+			PriorVectorSize: priorVectorSize,
 		}, fmt.Errorf("rebuild: all %d documents failed to embed", len(docs))
 	}
 
@@ -536,11 +614,12 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 		return QdrantRebuildReport{}, err
 	}
 	return QdrantRebuildReport{
-		Collection:   collection,
-		DocsIndexed:  len(points),
-		PagesIndexed: pages,
-		VectorSize:   vectorSize,
-		SkippedDocs:  skipped,
+		Collection:      collection,
+		DocsIndexed:     len(points),
+		PagesIndexed:    pages,
+		VectorSize:      vectorSize,
+		PriorVectorSize: priorVectorSize,
+		SkippedDocs:     skipped,
 	}, nil
 }
 

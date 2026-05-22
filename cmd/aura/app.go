@@ -248,9 +248,11 @@ func newApp(
 			logger.Warn("QDRANT_URL is required for wiki vector search; search disabled")
 		} else {
 			searchEngine, err := search.NewQdrantRepositoryWithDB(search.QdrantConfig{
-				BaseURL:    cfg.QdrantURL,
-				Collection: cfg.QdrantCollection,
-				APIKey:     cfg.QdrantAPIKey,
+				BaseURL:               cfg.QdrantURL,
+				Collection:            cfg.QdrantCollection,
+				APIKey:                cfg.QdrantAPIKey,
+				OutputDim:             cfg.EmbeddingOutputDim,
+				SkipDimMismatchRebuild: cfg.NoRebuildOnDimMismatch,
 			}, embedFn, cfg.WikiPath, pool, logger)
 			if err != nil {
 				logger.Warn("failed to create qdrant search backend, search disabled", "error", err)
