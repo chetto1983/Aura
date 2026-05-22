@@ -190,7 +190,7 @@
         "Single atomic commit prefix: refactor(ingest): split pipeline.go into pipeline/entity/concept/provenance (US-MOD-SPLIT-07)"
       ],
       "priority": 13,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03."
     },
     {
