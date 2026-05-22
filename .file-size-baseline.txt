@@ -10,7 +10,6 @@
 #
 1587 cmd/probe_chat/cases.go
 790 cmd/quality_bench/main.go
-740 internal/api/auth/store.go
 733 internal/storage/sources/ingest/pipeline.go
 689 internal/channels/telegram/invocation_builder.go
 653 internal/storage/search/search.go

@@ -176,7 +176,7 @@
         "Single atomic commit prefix: refactor(api/auth): split store.go into tokens/pending/identity (US-MOD-SPLIT-06)"
       ],
       "priority": 12,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03. AUTH module — extra care: don't break the bearer-token path. Test pass = trust signal; manual: `curl -H Authorization: Bearer $TOK http://localhost:18080/api/wiki` post-rebuild."
     },
     {
