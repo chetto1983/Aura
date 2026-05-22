@@ -47,13 +47,17 @@ func EmbedCacheNamespace(baseURL, model string) string {
 // uniquely identifies the document version, so a cache miss happens
 // only when content (or model) actually changed.
 //
-// The cache key is (content_sha, model). Callers should pass
+// The cache key is (content_sha, model, output_dim). Callers should pass
 // EmbedCacheNamespace(baseURL, model) as model so changing either
 // EMBEDDING_BASE_URL or EMBEDDING_MODEL invalidates entries automatically.
-// Stale entries linger but cost nothing — pruning is a manual op.
+// output_dim=0 is a sentinel for "unknown"; legacy rows written before
+// migration 26 carry output_dim=0 and are treated as cache-misses for any
+// non-zero configured dim so stale wrong-dimension vectors are never served.
+// Stale entries at the correct dim linger but cost nothing — pruning is a manual op.
 type EmbedCache struct {
 	db         *sql.DB
 	model      string
+	outputDim  int
 	inner      EmbeddingFunc
 	batchInner BatchEmbeddingFunction
 	logger     *slog.Logger
@@ -71,7 +75,8 @@ type EmbedCacheStatsReader interface {
 // inner is nil, the cache short-circuits to an error on miss — useful
 // for tests where we want to verify cache hits without spinning up a
 // real embedding provider.
-func OpenEmbedCache(dbPath, model string, inner EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
+// outputDim must match cfg.EmbeddingOutputDim; 0 means native (unknown) dim.
+func OpenEmbedCache(dbPath, model string, outputDim int, inner EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
 	if dbPath == "" {
 		return nil, errors.New("embed cache: dbPath required")
 	}
@@ -83,7 +88,7 @@ func OpenEmbedCache(dbPath, model string, inner EmbeddingFunc, logger *slog.Logg
 		_ = db.Close()
 		return nil, fmt.Errorf("embed cache: migrate: %w", err)
 	}
-	c, err := NewEmbedCacheWithDB(db, model, inner, logger)
+	c, err := NewEmbedCacheWithDB(db, model, outputDim, inner, logger)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -93,15 +98,16 @@ func OpenEmbedCache(dbPath, model string, inner EmbeddingFunc, logger *slog.Logg
 }
 
 // NewEmbedCacheWithDB wraps a caller-owned migrated SQLite pool.
-func NewEmbedCacheWithDB(db *sql.DB, model string, inner EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
-	return NewEmbedCacheWithBatchWithDB(db, model, inner, nil, logger)
+// outputDim must match cfg.EmbeddingOutputDim; 0 means native (unknown) dim.
+func NewEmbedCacheWithDB(db *sql.DB, model string, outputDim int, inner EmbeddingFunc, logger *slog.Logger) (*EmbedCache, error) {
+	return NewEmbedCacheWithBatchWithDB(db, model, outputDim, inner, nil, logger)
 }
 
-func NewEmbedCacheWithBatchWithDB(db *sql.DB, model string, inner EmbeddingFunc, batchInner BatchEmbeddingFunction, logger *slog.Logger) (*EmbedCache, error) {
+func NewEmbedCacheWithBatchWithDB(db *sql.DB, model string, outputDim int, inner EmbeddingFunc, batchInner BatchEmbeddingFunction, logger *slog.Logger) (*EmbedCache, error) {
 	if db == nil {
 		return nil, errors.New("embed cache: db required")
 	}
-	return &EmbedCache{db: db, model: model, inner: inner, batchInner: batchInner, logger: logger, owned: false}, nil
+	return &EmbedCache{db: db, model: model, outputDim: outputDim, inner: inner, batchInner: batchInner, logger: logger, owned: false}, nil
 }
 
 // Close releases the SQLite handle. Idempotent.
@@ -246,7 +252,9 @@ func (c *EmbedCache) cached(ctx context.Context, text string) ([]float32, bool, 
 	key := contentSHA(text)
 
 	var blob []byte
-	row := c.db.QueryRowContext(ctx, "SELECT embedding FROM embedding_cache WHERE content_sha = ? AND model = ?", key, c.model)
+	row := c.db.QueryRowContext(ctx,
+		"SELECT embedding FROM embedding_cache WHERE content_sha = ? AND model = ? AND output_dim = ?",
+		key, c.model, c.outputDim)
 	switch err := row.Scan(&blob); {
 	case err == nil:
 		c.hits.Add(1)
@@ -256,7 +264,9 @@ func (c *EmbedCache) cached(ctx context.Context, text string) ([]float32, bool, 
 		}
 		// Corrupt entry: log + delete + fall through to fresh embed.
 		c.logger.Warn("embed cache: corrupt blob, refetching", "sha", key, "error", decErr)
-		_, _ = c.db.ExecContext(ctx, "DELETE FROM embedding_cache WHERE content_sha = ? AND model = ?", key, c.model)
+		_, _ = c.db.ExecContext(ctx,
+			"DELETE FROM embedding_cache WHERE content_sha = ? AND model = ? AND output_dim = ?",
+			key, c.model, c.outputDim)
 	case errors.Is(err, sql.ErrNoRows):
 		// proceed to miss
 	default:
@@ -268,8 +278,8 @@ func (c *EmbedCache) cached(ctx context.Context, text string) ([]float32, bool, 
 func (c *EmbedCache) store(ctx context.Context, text string, vec []float32) {
 	key := contentSHA(text)
 	if _, err := c.db.ExecContext(ctx,
-		"INSERT OR REPLACE INTO embedding_cache (content_sha, model, embedding, created_at) VALUES (?, ?, ?, ?)",
-		key, c.model, encodeFloats(vec), time.Now().UTC(),
+		"INSERT OR REPLACE INTO embedding_cache (content_sha, model, output_dim, embedding, created_at) VALUES (?, ?, ?, ?, ?)",
+		key, c.model, c.outputDim, encodeFloats(vec), time.Now().UTC(),
 	); err != nil {
 		c.logger.Warn("embed cache: write failed", "error", err)
 	}

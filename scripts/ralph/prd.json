@@ -87,7 +87,7 @@
         "Single atomic commit prefix: fix(embed): include output_dim in cache key (US-WIKI-FIX-02)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/storage/search/embed_cache.go fully — it's only ~300 LOC. (2) `.schema embedding_cache` already known: (content_sha, model, embedding BLOB, created_at, PK (content_sha, model)). (3) Migration recipe: ATTACH new schema, INSERT SELECT, DROP old, RENAME — standard pattern visible in existing migrations. (4) The lookup function probably has signature Embed(content) — needs to grow Embed(content, outputDim) OR read outputDim from cfg via the cache constructor. Pick the cleaner one."
     },
     {

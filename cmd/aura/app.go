@@ -236,7 +236,7 @@ func newApp(
 			cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey,
 			cfg.EmbeddingModel, cfg.EmbeddingOutputDim, nil)
 		cacheNamespace := search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel)
-		cache, err := search.NewEmbedCacheWithBatchWithDB(pool, cacheNamespace, embedFn, batchEmbedFn, logger)
+		cache, err := search.NewEmbedCacheWithBatchWithDB(pool, cacheNamespace, cfg.EmbeddingOutputDim, embedFn, batchEmbedFn, logger)
 		if err != nil {
 			logger.Warn("embed cache unavailable, falling back to uncached embedding", "error", err)
 		} else {

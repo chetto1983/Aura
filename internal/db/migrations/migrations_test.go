@@ -578,12 +578,12 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 25 {
-		t.Fatalf("applied versions = %v, want 25 migrations", first)
+	if len(first) != 26 {
+		t.Fatalf("applied versions = %v, want 26 migrations", first)
 	}
 	for i, got := range first {
 		if want := i + 1; got != want {
-			t.Fatalf("applied versions = %v, want contiguous 1..25", first)
+			t.Fatalf("applied versions = %v, want contiguous 1..26", first)
 		}
 	}
 }
@@ -1177,6 +1177,68 @@ func TestSettingsTimestampDefaultsAdded(t *testing.T) {
 		t.Fatalf("INSERT INTO settings with explicit updated_at: %v", err)
 	}
 	assertScalar(t, db, `SELECT updated_at FROM settings WHERE key = 'TZ'`, "2026-01-01T00:00:00Z")
+}
+
+func TestEmbedCacheOutputDimMigration(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if err := Run(ctx, db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// output_dim column must exist with DEFAULT 0.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO embedding_cache (content_sha, model, embedding, created_at) VALUES ('sha-test', 'model-test', x'01020304', '2026-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("INSERT without output_dim: %v", err)
+	}
+	var dim int
+	if err := db.QueryRowContext(ctx,
+		`SELECT output_dim FROM embedding_cache WHERE content_sha = 'sha-test'`,
+	).Scan(&dim); err != nil {
+		t.Fatalf("SELECT output_dim: %v", err)
+	}
+	if dim != 0 {
+		t.Fatalf("output_dim DEFAULT = %d, want 0", dim)
+	}
+
+	// Two rows: same sha+model, different output_dim → separate rows.
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO embedding_cache (content_sha, model, output_dim, embedding, created_at) VALUES ('sha-x', 'model-y', 256, x'01020304', '2026-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("INSERT dim=256: %v", err)
+	}
+	if _, err := db.ExecContext(ctx,
+		`INSERT INTO embedding_cache (content_sha, model, output_dim, embedding, created_at) VALUES ('sha-x', 'model-y', 768, x'05060708', '2026-01-01T00:00:00Z')`,
+	); err != nil {
+		t.Fatalf("INSERT dim=768: %v", err)
+	}
+	var count int
+	if err := db.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM embedding_cache WHERE content_sha = 'sha-x' AND model = 'model-y'`,
+	).Scan(&count); err != nil {
+		t.Fatalf("count rows: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("dim=256 and dim=768 should be separate rows: got %d, want 2", count)
+	}
+
+	// Lookup by dim is isolated.
+	var blob256, blob768 []byte
+	if err := db.QueryRowContext(ctx,
+		`SELECT embedding FROM embedding_cache WHERE content_sha = 'sha-x' AND model = 'model-y' AND output_dim = 256`,
+	).Scan(&blob256); err != nil {
+		t.Fatalf("lookup dim=256: %v", err)
+	}
+	if err := db.QueryRowContext(ctx,
+		`SELECT embedding FROM embedding_cache WHERE content_sha = 'sha-x' AND model = 'model-y' AND output_dim = 768`,
+	).Scan(&blob768); err != nil {
+		t.Fatalf("lookup dim=768: %v", err)
+	}
+	if string(blob256) == string(blob768) {
+		t.Fatal("dim=256 and dim=768 blobs are identical; expected different embeddings")
+	}
 }
 
 func TestRegisteredReturnsCopy(t *testing.T) {

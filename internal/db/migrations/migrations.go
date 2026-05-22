@@ -41,6 +41,7 @@ var registered = []Migration{
 	{Version: 23, Name: "add_chat_settings_voice_mode", Up: addChatSettingsVoiceMode},
 	{Version: 24, Name: "add_voice_dispatches", Up: addVoiceDispatches},
 	{Version: 25, Name: "add_timestamp_defaults", Up: addTimestampDefaults},
+	{Version: 26, Name: "embed_cache_output_dim", Up: addEmbedCacheOutputDim},
 }
 
 type columnDef struct {
@@ -158,9 +159,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_wiki_issues_key
 CREATE TABLE IF NOT EXISTS embedding_cache (
   content_sha TEXT NOT NULL,
   model       TEXT NOT NULL,
+  output_dim  INTEGER NOT NULL DEFAULT 0,
   embedding   BLOB NOT NULL,
   created_at  TIMESTAMP NOT NULL,
-  PRIMARY KEY (content_sha, model)
+  PRIMARY KEY (content_sha, model, output_dim)
 );
 
 CREATE VIRTUAL TABLE IF NOT EXISTS wiki_documents
@@ -1451,6 +1453,45 @@ func addTimestampDefaults(ctx context.Context, tx *sql.Tx) error {
 		}
 		if _, err := tx.ExecContext(ctx, `DROP TABLE `+spec.backupName); err != nil {
 			return fmt.Errorf("migrations: drop %s backup: %w", spec.name, err)
+		}
+	}
+	return nil
+}
+
+// addEmbedCacheOutputDim extends the embedding_cache primary key with
+// output_dim so that vectors at different MRL truncation sizes are stored
+// separately. Old rows get output_dim=0 (sentinel = "unknown dim"); the
+// cache treats them as misses for any non-zero configured dim, preventing
+// wrong-dimension vectors from being served after a dim change.
+func addEmbedCacheOutputDim(ctx context.Context, tx *sql.Tx) error {
+	exists, err := txTableExists(ctx, tx, "embedding_cache")
+	if err != nil {
+		return fmt.Errorf("migrations: check embedding_cache exists: %w", err)
+	}
+	if !exists {
+		return nil
+	}
+	steps := []struct {
+		desc string
+		sql  string
+	}{
+		{"rename", `ALTER TABLE embedding_cache RENAME TO _embedding_cache_bak_mig26`},
+		{"recreate", `CREATE TABLE embedding_cache (
+  content_sha TEXT NOT NULL,
+  model       TEXT NOT NULL,
+  output_dim  INTEGER NOT NULL DEFAULT 0,
+  embedding   BLOB NOT NULL,
+  created_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (content_sha, model, output_dim)
+)`},
+		// output_dim omitted → DEFAULT 0 applied to all legacy rows.
+		{"copy", `INSERT INTO embedding_cache (content_sha, model, embedding, created_at)
+  SELECT content_sha, model, embedding, created_at FROM _embedding_cache_bak_mig26`},
+		{"drop", `DROP TABLE _embedding_cache_bak_mig26`},
+	}
+	for _, step := range steps {
+		if _, err := tx.ExecContext(ctx, step.sql); err != nil {
+			return fmt.Errorf("migrations: embed_cache_output_dim %s: %w", step.desc, err)
 		}
 	}
 	return nil

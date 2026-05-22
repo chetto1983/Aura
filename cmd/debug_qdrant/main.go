@@ -115,7 +115,7 @@ func main() {
 	embedFn := createEmbeddingFunc(cfg)
 	if cfg.DBPath != "" {
 		cacheNamespace := search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel)
-		if cache, err := search.OpenEmbedCache(cfg.DBPath, cacheNamespace, embedFn, slog.New(slog.NewTextHandler(io.Discard, nil))); err == nil {
+		if cache, err := search.OpenEmbedCache(cfg.DBPath, cacheNamespace, cfg.EmbeddingOutputDim, embedFn, slog.New(slog.NewTextHandler(io.Discard, nil))); err == nil {
 			defer cache.Close()
 			embedFn = cache.EmbedFunc()
 		}
@@ -133,7 +133,7 @@ type queryCacheConfig struct {
 	EmbeddingModel   string
 }
 
-type openEmbedCacheFunc func(string, string, search.EmbeddingFunction, *slog.Logger) (*search.EmbedCache, error)
+type openEmbedCacheFunc func(string, string, int, search.EmbeddingFunction, *slog.Logger) (*search.EmbedCache, error)
 
 func maybeWrapQueryEmbeddingWithCache(cfg queryCacheConfig, embedFn search.EmbeddingFunction, logger *slog.Logger, openCache openEmbedCacheFunc) (search.EmbeddingFunction, func()) {
 	// Query/compare smoke is documented as non-mutating. Do not open the

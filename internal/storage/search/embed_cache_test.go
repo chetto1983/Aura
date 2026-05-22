@@ -27,10 +27,10 @@ func counterFn(invocations *atomic.Uint64, vec []float32) EmbeddingFunc {
 	}
 }
 
-func newCache(t *testing.T, model string, inner EmbeddingFunc) *EmbedCache {
+func newCache(t *testing.T, model string, outputDim int, inner EmbeddingFunc) *EmbedCache {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
-	c, err := OpenEmbedCache(dbPath, model, inner, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c, err := OpenEmbedCache(dbPath, model, outputDim, inner, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("OpenEmbedCache: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestNewEmbedCacheWithDBCloseDoesNotCloseSharedDB(t *testing.T) {
 	}
 	defer db.Close()
 
-	c, err := NewEmbedCacheWithDB(db, "mistral-embed", nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c, err := NewEmbedCacheWithDB(db, "mistral-embed", 0, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("NewEmbedCacheWithDB: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestNewEmbedCacheWithDBDoesNotCreateSchema(t *testing.T) {
 	}
 	defer db.Close()
 
-	if _, err := NewEmbedCacheWithDB(db, "mistral-embed", nil, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+	if _, err := NewEmbedCacheWithDB(db, "mistral-embed", 0, nil, slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("NewEmbedCacheWithDB: %v", err)
 	}
 
@@ -89,7 +89,7 @@ func TestNewEmbedCacheWithDBDoesNotCreateSchema(t *testing.T) {
 
 func TestEmbedCache_HitSkipsUpstream(t *testing.T) {
 	var invocations atomic.Uint64
-	c := newCache(t, "mistral-embed", counterFn(&invocations, []float32{1, 2, 3}))
+	c := newCache(t, "mistral-embed", 0, counterFn(&invocations, []float32{1, 2, 3}))
 
 	// First call → miss → upstream called.
 	v1, err := c.Embed(context.Background(), "hello world")
@@ -124,7 +124,7 @@ func TestEmbedCache_HitSkipsUpstream(t *testing.T) {
 
 func TestEmbedCache_DifferentTextMisses(t *testing.T) {
 	var invocations atomic.Uint64
-	c := newCache(t, "mistral-embed", counterFn(&invocations, []float32{1}))
+	c := newCache(t, "mistral-embed", 0, counterFn(&invocations, []float32{1}))
 
 	if _, err := c.Embed(context.Background(), "alpha"); err != nil {
 		t.Fatal(err)
@@ -147,7 +147,7 @@ func TestEmbedCacheBatchEmbedChunksAndSplitsLargeBatches(t *testing.T) {
 		t.Fatalf("Run migrations: %v", err)
 	}
 	calls := 0
-	cache, err := NewEmbedCacheWithBatchWithDB(db, "mistral-embed", nil, func(_ context.Context, texts []string) ([][]float32, error) {
+	cache, err := NewEmbedCacheWithBatchWithDB(db, "mistral-embed", 0, nil, func(_ context.Context, texts []string) ([][]float32, error) {
 		calls++
 		if len(texts) > 4 {
 			return nil, errors.New("too many tokens overall")
@@ -194,7 +194,7 @@ func TestEmbedCache_ProviderNamespaceIsolation(t *testing.T) {
 	nsB := EmbedCacheNamespace("https://example.test/v1", model)
 
 	var invocationsA atomic.Uint64
-	cA, err := OpenEmbedCache(dbPath, nsA, counterFn(&invocationsA, []float32{1, 2}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cA, err := OpenEmbedCache(dbPath, nsA, 0, counterFn(&invocationsA, []float32{1, 2}), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestEmbedCache_ProviderNamespaceIsolation(t *testing.T) {
 	_ = cA.Close()
 
 	var invocationsB atomic.Uint64
-	cB, err := OpenEmbedCache(dbPath, nsB, counterFn(&invocationsB, []float32{3, 4}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cB, err := OpenEmbedCache(dbPath, nsB, 0, counterFn(&invocationsB, []float32{3, 4}), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +220,7 @@ func TestEmbedCache_ProviderNamespaceIsolation(t *testing.T) {
 func TestEmbedCache_ModelKeyIsolation(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	var invocationsA atomic.Uint64
-	cA, err := OpenEmbedCache(dbPath, "model-a", counterFn(&invocationsA, []float32{1, 2}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cA, err := OpenEmbedCache(dbPath, "model-a", 0, counterFn(&invocationsA, []float32{1, 2}), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestEmbedCache_ModelKeyIsolation(t *testing.T) {
 
 	// Reopen with a different model — must NOT hit the cached row.
 	var invocationsB atomic.Uint64
-	cB, err := OpenEmbedCache(dbPath, "model-b", counterFn(&invocationsB, []float32{1, 2}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cB, err := OpenEmbedCache(dbPath, "model-b", 0, counterFn(&invocationsB, []float32{1, 2}), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,7 +247,7 @@ func TestEmbedCache_ModelKeyIsolation(t *testing.T) {
 func TestEmbedCache_PersistsAcrossOpens(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "cache.db")
 	var invocations1 atomic.Uint64
-	c1, err := OpenEmbedCache(dbPath, "mistral-embed", counterFn(&invocations1, []float32{1, 2, 3}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c1, err := OpenEmbedCache(dbPath, "mistral-embed", 0, counterFn(&invocations1, []float32{1, 2, 3}), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestEmbedCache_PersistsAcrossOpens(t *testing.T) {
 
 	// Second process — fresh in-memory state — must hit the row written above.
 	var invocations2 atomic.Uint64
-	c2, err := OpenEmbedCache(dbPath, "mistral-embed", counterFn(&invocations2, []float32{1, 2, 3}), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c2, err := OpenEmbedCache(dbPath, "mistral-embed", 0, counterFn(&invocations2, []float32{1, 2, 3}), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -303,11 +303,11 @@ func TestEmbedCache_FloatRoundTrip(t *testing.T) {
 
 func TestEmbedCache_CorruptBlobIsRecovered(t *testing.T) {
 	var invocations atomic.Uint64
-	c := newCache(t, "mistral-embed", counterFn(&invocations, []float32{1, 2, 3}))
+	c := newCache(t, "mistral-embed", 0, counterFn(&invocations, []float32{1, 2, 3}))
 	// Inject a bogus row whose blob length isn't a multiple of 4.
 	if _, err := c.db.Exec(
-		`INSERT INTO embedding_cache(content_sha, model, embedding, created_at) VALUES (?, ?, ?, ?)`,
-		contentSHA("hi"), "mistral-embed", []byte{0x01, 0x02, 0x03}, "2026-01-01T00:00:00Z",
+		`INSERT INTO embedding_cache(content_sha, model, output_dim, embedding, created_at) VALUES (?, ?, ?, ?, ?)`,
+		contentSHA("hi"), "mistral-embed", 0, []byte{0x01, 0x02, 0x03}, "2026-01-01T00:00:00Z",
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +321,7 @@ func TestEmbedCache_CorruptBlobIsRecovered(t *testing.T) {
 }
 
 func TestEmbedCache_UpstreamErrorIsReturned(t *testing.T) {
-	c := newCache(t, "mistral-embed", func(_ context.Context, _ string) ([]float32, error) {
+	c := newCache(t, "mistral-embed", 0, func(_ context.Context, _ string) ([]float32, error) {
 		return nil, errors.New("api down")
 	})
 	if _, err := c.Embed(context.Background(), "anything"); err == nil {
@@ -330,8 +330,57 @@ func TestEmbedCache_UpstreamErrorIsReturned(t *testing.T) {
 }
 
 func TestEmbedCache_NilUpstreamErrorsOnMiss(t *testing.T) {
-	c := newCache(t, "mistral-embed", nil)
+	c := newCache(t, "mistral-embed", 0, nil)
 	if _, err := c.Embed(context.Background(), "miss"); err == nil {
 		t.Fatal("expected error on miss with nil upstream")
+	}
+}
+
+func TestEmbedCache_DimIsolation(t *testing.T) {
+	// Insert via dim=256 cache; lookup via dim=768 cache must miss.
+	// Then confirm dim=256 lookup hits.
+	dbPath := filepath.Join(t.TempDir(), "dim-iso.db")
+	vec256 := []float32{1, 2, 3}
+	vec768 := []float32{4, 5, 6}
+	var calls256, calls768 atomic.Uint64
+
+	c256, err := OpenEmbedCache(dbPath, "model", 256, counterFn(&calls256, vec256), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("open dim=256: %v", err)
+	}
+	if _, err := c256.Embed(context.Background(), "text"); err != nil {
+		t.Fatalf("embed dim=256: %v", err)
+	}
+	_ = c256.Close()
+
+	// Different dim — must miss despite same content_sha and model.
+	c768, err := OpenEmbedCache(dbPath, "model", 768, counterFn(&calls768, vec768), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("open dim=768: %v", err)
+	}
+	if _, err := c768.Embed(context.Background(), "text"); err != nil {
+		t.Fatalf("embed dim=768: %v", err)
+	}
+	if calls768.Load() != 1 {
+		t.Fatalf("dim=768 should miss dim=256 row; got %d upstream calls (want 1)", calls768.Load())
+	}
+	_ = c768.Close()
+
+	// Re-open dim=256 — must hit without calling upstream again.
+	var calls256b atomic.Uint64
+	c256b, err := OpenEmbedCache(dbPath, "model", 256, counterFn(&calls256b, vec256), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("reopen dim=256: %v", err)
+	}
+	defer c256b.Close()
+	got, err := c256b.Embed(context.Background(), "text")
+	if err != nil {
+		t.Fatalf("embed hit dim=256: %v", err)
+	}
+	if calls256b.Load() != 0 {
+		t.Fatalf("dim=256 warm hit should not call upstream; got %d calls", calls256b.Load())
+	}
+	if len(got) != len(vec256) || got[0] != vec256[0] {
+		t.Fatalf("cached dim=256 vector mismatch: %v", got)
 	}
 }
