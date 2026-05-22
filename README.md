@@ -48,8 +48,8 @@ The default stack starts:
 - `aura-llama-embed`: llama.cpp sidecar serving `embeddinggemma-300m` at 256-d MRL.
 - `aura-markitdown`: sidecar that converts docx/xlsx/pptx and 6 other formats to Markdown.
 - `aura-whisper`: whisper.cpp sidecar transcribing Telegram voice memos via `ggml-small.bin` (Phase-MM Wave 2).
-- `aura-piper`: Piper TTS sidecar with the Italian Paola voice (default `AURA_TTS_ENABLED=false`; gated for Wave 3).
-- `aura-init-models`: one-shot init container that fetches the embedding GGUF + Whisper GGML + Piper ONNX with SHA-256 verification before the dependent sidecars start.
+- `aura-pocket-tts`: Kyutai Pocket-TTS sidecar with the Italian Giovanni voice (Phase-MM Wave 3, INT8, ~200ms first-chunk; default `AURA_TTS_ENABLED=false`).
+- `aura-init-models`: one-shot init container that fetches the embedding GGUF + Whisper GGML with SHA-256 verification before the dependent sidecars start. Pocket-TTS downloads its own models at runtime.
 
 Primary user data stays in visible folders beside the Compose file:
 
@@ -103,16 +103,16 @@ flowchart TB
     LRN[(learning<br/>tool_attempts → lessons)]
   end
 
-  subgraph Tools["Tool Registry (internal/agent/tools/registry)"]
-    SEARCH[search_memory<br/>recall_user_memory<br/>recall_operational]
+  subgraph Tools["Tool Registry (internal/agent/tools/registry) — v0.3.0 post-TOOL kitchen-sink collapses"]
+    SEARCH[search<br/>unified: action=read/search<br/>over wiki + sources + memory]
     WEBT[web_search / web_fetch]
-    SRCT[store_source / ocr_source<br/>read_source]
-    SCHED[schedule_task / list_tasks]
+    SRCT[source<br/>unified action enum]
+    TASKT[task<br/>mode=create/list/cancel]
+    DOCT[create_document<br/>format=xlsx/docx/pdf]
+    WSPT[workspace<br/>action=read/write/list]
     SKILL[read_skill]
     AUTH[request_dashboard_token]
-    FILES[create_xlsx/docx/pdf]
-    MCP[mcp_*]
-    WSP[workspace_*]
+    MCP[mcp_* + tools-overrides.json sidecar]
     EXECT[execute_code / execute_shell]
     PROPOSE[propose_patch<br/>RiskTier=write_proposal]
     SUBA[subagent_dispatch]
@@ -165,41 +165,43 @@ classification of every `internal/` subdir.
 
 ## Roadmap
 
-Aura's PRD lives at [`prd.md`](prd.md). The 2026-05-17 milestone closed
-Phase-T (production rollout) and Phase-Z (bounded PRD wrap-up). The next
-phases are documented in [`prd.md §7.4`](prd.md) with detailed planning
-docs in [`docs/`](docs/).
+Aura's PRD lives at [`prd.md`](prd.md). The 2026-05-22 release **v0.3.0**
+closed three back-to-back substrate milestones (174 commits since v0.2.0):
+Step 1.LAT (latency), Phase-WIKI-FIX (retrieval substrate), Phase-TOOL
+(tool surface + kill-the-RAG). Active planning lives in
+[`.planning/post-drift-2026-05-21/INDEX.md`](.planning/post-drift-2026-05-21/INDEX.md).
 
 ```mermaid
 flowchart LR
-  Z[Phase-Z<br/>DONE 2026-05-17] --> FIX[Phase-FIX<br/>4 stories ~1s]
-  FIX --> MM1[MM Wave 1<br/>3 ARCH stories<br/>BLOCKING]
-  MM1 --> MM2[MM Wave 2<br/>2 audio + 2 image<br/>PARALLEL]
-  MM2 --> MM3[MM Wave 3<br/>TTS + E2E<br/>FINAL]
-  MM3 --> U[Phase-U<br/>plugin layout<br/>4-6 stories]
-  U --> P8{Concrete workload<br/>identified?}
-  P8 -->|yes| P8Y[Phase-8 substrate<br/>anchored to workload]
-  P8 -->|not yet| WAIT[wait for use case]
+  V03[v0.3.0 — 2026-05-22<br/>Step 1.LAT + WIKI-FIX + TOOL<br/>DONE 25 stories] --> BUG[Phase-BUG<br/>3 stories ~1s<br/>NEXT]
+  BUG --> MOD[Phase-MODERNIZE<br/>5 INFRA + 10 god-splits<br/>~3s]
+  MOD --> OUT[Phase-OUT<br/>output discipline +<br/>budget enforcement<br/>9 stories ~3s]
+  OUT --> CTX[Phase-CTX<br/>context engineering<br/>~3s]
+  CTX --> CONS[Phase-CONS<br/>web/telegram 1+1<br/>~3s]
+  CTX --> SUB[Phase-WIKI-SUBNODES<br/>parallel ~1s]
 
-  style Z fill:#90ee90,stroke:#009900
-  style FIX fill:#ffd700,stroke:#cc9900
-  style MM1 fill:#ffd700,stroke:#cc9900
-  style MM2 fill:#fff4d6,stroke:#bf9000
-  style MM3 fill:#fff4d6,stroke:#bf9000
-  style U fill:#d6e9ff,stroke:#0070d0
-  style P8Y fill:#ffe4e1,stroke:#cc0000
-  style WAIT fill:#f0f0f0,stroke:#666666
+  style V03 fill:#90ee90,stroke:#009900
+  style BUG fill:#ffd700,stroke:#cc9900
+  style MOD fill:#fff4d6,stroke:#bf9000
+  style OUT fill:#fff4d6,stroke:#bf9000
+  style CTX fill:#d6e9ff,stroke:#0070d0
+  style CONS fill:#d6e9ff,stroke:#0070d0
+  style SUB fill:#e6e6ff,stroke:#666699
 ```
 
 | Phase | Status | Scope | Reference |
 | --- | --- | --- | --- |
-| Phase-Z | ✅ done 2026-05-17 | 7C completion + 7D/E/F admin + Phase 9 hardening | `prd.md §6.5` |
-| Phase-FIX | next | 4 stories: graceful-finalize all budget paths, diagnostic error messages, retry layer wiring, MaxIterations context | `prd.md §7.4` |
-| Phase-MM Wave 1.5 | ✅ done 2026-05-19 | aura-whisper + aura-piper sidecars + init-models extension (3 stories) | [`docs/phase-mm-audio-spike-2026-05-19.md`](docs/phase-mm-audio-spike-2026-05-19.md) |
-| Phase-MM Wave 2 | ✅ done 2026-05-19 | audio IN E2E: KindAudio + voice handler + whisper client + AfterTranscribeHook (3 stories) | [`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md) |
-| Phase-MM Wave 3 | planned | TTS reply (per-chat voice mode) + image flows (vision + Flux gen) | [`docs/phase-mm-synthesis-2026-05-17.md`](docs/phase-mm-synthesis-2026-05-17.md) |
-| Phase-U | planned | plugin manifest + loader + extract personality bundle + sample plugin | sketched in `prd.md §7.4` |
-| Phase 8 | gated on workload | multi-agent substrate (planner + critic + DAG) anchored to a concrete workload | de-scoped pending re-open |
+| **v0.3.0 release** | ✅ shipped 2026-05-22 | 174 commits / 25 stories across Step 1.LAT + Phase-WIKI-FIX + Phase-TOOL — see [release notes](https://github.com/chetto1983/Aura/releases/tag/v0.3.0) | tag `v0.3.0` |
+| Phase-MM Wave 1.5 | ✅ done 2026-05-19 | aura-whisper + (later pocket-tts) sidecars + init-models extension | [`docs/phase-mm-audio-spike-2026-05-19.md`](docs/phase-mm-audio-spike-2026-05-19.md) |
+| Phase-MM Wave 2 | ✅ done 2026-05-19 | audio IN E2E: KindAudio + voice handler + whisper client + AfterTranscribeHook | [`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md) |
+| Phase-MM Wave 3 | ✅ done 2026-05-20 | TTS reply via Kyutai Pocket-TTS (Giovanni IT voice, INT8, ~200ms first-chunk); per-chat voice mode | [`docs/phase-mm-synthesis-2026-05-17.md`](docs/phase-mm-synthesis-2026-05-17.md) |
+| **Phase-BUG** | 🔴 NEXT | 3 verified-still-present bugs — `/api/chat` overlay loading, `logging→api` boundary (590 transitive deps), errcheck-hidden silent failures | [`.planning/post-drift-2026-05-21/Phase-BUG/plan.md`](.planning/post-drift-2026-05-21/Phase-BUG/plan.md) |
+| Phase-MODERNIZE | 🟣 staged | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | [`.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md`](.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md) |
+| Phase-OUT | 🟣 staged | Output discipline stack + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | [`.planning/post-drift-2026-05-21/Phase-OUT/plan.md`](.planning/post-drift-2026-05-21/Phase-OUT/plan.md) |
+| Phase-CTX | 🟣 staged | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | [`.planning/post-drift-2026-05-21/Phase-CTX/plan.md`](.planning/post-drift-2026-05-21/Phase-CTX/plan.md) |
+| Phase-CONS | 🟣 staged | Web ↔ Telegram 1+1 consolidation — substantive web feature additions (streaming, voice, ask_user, archive) | [`.planning/post-drift-2026-05-21/Phase-CONS/plan.md`](.planning/post-drift-2026-05-21/Phase-CONS/plan.md) |
+| Phase-U | 🟣 planned | Plugin manifest + loader + extract personality bundle + sample plugin | sketched in `prd.md §7.4` |
+| Phase 8 | ⚪ gated on workload | Multi-agent substrate (planner + critic + DAG) anchored to a concrete workload | de-scoped pending re-open |
 
 ## Multimodal target (Phase-MM)
 
@@ -268,7 +270,7 @@ for the post-ship status block.
 Defaults shipped:
 
 - **Audio IN ✅** whisper.cpp local with baseline `ggml-small.bin` (multilanguage, 487 MB, CPU 4 threads, ~3-7s on a 3s memo). `litus-ai/whisper-small-ita` finetuned model is an env-var swap when wanted
-- **Audio OUT (queued)** Piper local with [`rhasspy/piper-voices` Paola IT medium](https://huggingface.co/rhasspy/piper-voices/tree/main/it/it_IT/paola/medium) (61 MB ONNX, sidecar live, default OFF, never auto-triggered). Wave 3 wires the per-chat `voice_mode` UX
+- **Audio OUT ✅** Kyutai Pocket-TTS local with Giovanni IT voice (INT8, RTF 0.61, ~200ms first-chunk streaming). Per-chat `voice_mode` (off / voice_only / all) — default OFF, never auto-triggered. Wave 3 closed 2026-05-20
 - **Image IN (planned)** Anthropic Sonnet 4.6 vision via OpenRouter
 - **Image OUT (planned)** Replicate Flux.1-schnell
 
