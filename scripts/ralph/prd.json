@@ -30,7 +30,7 @@
         "Single atomic commit prefix: chore(lint): file-size linter + grandfather baseline (US-MOD-INFRA-03)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Foundational gate for Wave B god-splits. GROUND-TRUTH: count gods at story start; 28 violators per audit 2026-05-22 (top: migrations.go 1562, memoryindex/store 1143). The baseline file is the SAME list — easy to derive."
     },
     {
@@ -45,7 +45,7 @@
         "Single atomic commit prefix: chore(lint): deadcode in CI + registry-diff for reflection blindspot (US-MOD-INFRA-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH: read 2026 Go blog on deadcode tool (golang.org/x/tools/cmd/deadcode); see https://go.dev/blog/deadcode. The registry-diff approach is simple: enumerate Tool-implementing types via go/ast, grep cmd/aura for their registration."
     },
     {

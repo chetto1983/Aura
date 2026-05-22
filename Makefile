@@ -1,4 +1,4 @@
-.PHONY: all build test run fmt vet clean web web-build compose-up compose-test download-models
+.PHONY: all build test run fmt vet clean web web-build compose-up compose-test download-models file-size-check registry-diff
 
 all: test build
 
@@ -49,3 +49,9 @@ compose-up:
 
 compose-test:
 	docker compose --profile test run --rm test
+
+file-size-check:
+	bash scripts/check-file-size.sh .file-size-baseline.txt
+
+registry-diff:
+	bash scripts/registry-diff.sh

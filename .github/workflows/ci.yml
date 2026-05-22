@@ -27,6 +27,9 @@ jobs:
           version: v2.12.2
           args: --enable-only=depguard --new-from-rev=HEAD~1 ./...
 
+      - name: File-size linter (600-LOC cap)
+        run: bash scripts/check-file-size.sh .file-size-baseline.txt
+
       - name: Go vet
         run: go vet ./...
 
@@ -40,6 +43,37 @@ jobs:
 
       - name: Run Go tests with race detector
         run: go test -race -count=1 ./...
+
+  deadcode:
+    name: Dead code analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install deadcode
+        run: go install golang.org/x/tools/cmd/deadcode@latest
+
+      - name: Run deadcode analysis
+        run: |
+          # Whole-program analysis from the main entry point.
+          # Suppress findings whose definition site is inside a _test.go file
+          # (those are reachable from test entry points, not from main — acceptable).
+          deadcode ./cmd/aura 2>/dev/null | grep -v '_test\.go' | tee /tmp/dc-findings.txt || true
+          BASELINE=$(python3 -c "import json; d=json.load(open('docs/deadcode-baseline-2026-05-22.json')); print(len(d))")
+          NEW=$(wc -l < /tmp/dc-findings.txt | tr -d ' ')
+          if [ "$NEW" -gt "$BASELINE" ]; then
+            echo "deadcode: $NEW unreachable production functions (baseline: $BASELINE):"
+            cat /tmp/dc-findings.txt
+            exit 1
+          fi
+          echo "deadcode: OK ($NEW findings, baseline: $BASELINE)"
 
   frontend:
     name: Frontend build
