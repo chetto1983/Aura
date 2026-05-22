@@ -21,6 +21,9 @@ func handleMCPServers(deps Deps) http.HandlerFunc {
 				ToolCount: len(tools),
 				Tools:     make([]MCPToolInfo, 0, len(tools)),
 			}
+			if reporter, ok := c.(mcp.OverrideWarningReporter); ok {
+				summary.OverrideWarnings = reporter.OverrideWarnings()
+			}
 			for _, tool := range tools {
 				summary.Tools = append(summary.Tools, MCPToolInfo{
 					Name:        tool.Name,

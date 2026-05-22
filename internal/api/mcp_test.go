@@ -107,6 +107,34 @@ func TestMCPServers_ReturnsToolMetadata(t *testing.T) {
 	}
 }
 
+func TestMCPStatus_ReturnsOverrideWarnings(t *testing.T) {
+	c := mcpFakeServer(t, "search", "Search the index")
+	mcp.ApplyToolDescriptionOverrides([]mcp.ConnectedClient{c}, map[string]string{
+		"mcp_srv1_search": "Search with local operator context",
+		"typo_key":        "Does not match",
+	})
+	router := NewRouter(Deps{MCP: []mcp.ConnectedClient{c}})
+
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, httptest.NewRequest("GET", "/mcp/status", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var got []MCPServerSummary
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 server, got %d", len(got))
+	}
+	if got[0].Tools[0].Description != "Search with local operator context" {
+		t.Fatalf("description = %q", got[0].Tools[0].Description)
+	}
+	if len(got[0].OverrideWarnings) != 1 || got[0].OverrideWarnings[0] != "typo_key" {
+		t.Fatalf("override warnings = %#v", got[0].OverrideWarnings)
+	}
+}
+
 func TestMCPServers_HandlesNilClient(t *testing.T) {
 	router := NewRouter(Deps{MCP: []mcp.ConnectedClient{nil}})
 	rr := httptest.NewRecorder()

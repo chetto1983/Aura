@@ -284,10 +284,11 @@ type MCPToolInfo struct {
 // connected successfully at boot show up here; failed connections are
 // warned in logs but not yet surfaced to the dashboard (deferred to 11d).
 type MCPServerSummary struct {
-	Name      string        `json:"name"`
-	Transport string        `json:"transport"` // "stdio" or "http"
-	ToolCount int           `json:"tool_count"`
-	Tools     []MCPToolInfo `json:"tools"`
+	Name             string        `json:"name"`
+	Transport        string        `json:"transport"` // "stdio" or "http"
+	ToolCount        int           `json:"tool_count"`
+	Tools            []MCPToolInfo `json:"tools"`
+	OverrideWarnings []string      `json:"override_warnings,omitempty"`
 }
 
 // ConnectorProviderSummary is the dashboard-facing configuration card for

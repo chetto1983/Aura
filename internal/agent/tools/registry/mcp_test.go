@@ -64,6 +64,20 @@ func TestMCPToolNameAndDescription(t *testing.T) {
 	}
 }
 
+func TestMCPToolDescriptionReflectsClientOverride(t *testing.T) {
+	client := newTestMCPServer(t, "ping", `{"type":"object"}`)
+	tool := NewMCPTool(client, "srv1", client.Tools()[0])
+
+	client.ApplyToolDescriptionOverrides(map[string]string{
+		"mcp_srv1_ping": "Ping with operator-tuned wording",
+	})
+
+	desc := tool.Description()
+	if !strings.Contains(desc, "Ping with operator-tuned wording") {
+		t.Fatalf("description did not reflect override: %q", desc)
+	}
+}
+
 func TestMCPToolParametersPassThroughSchema(t *testing.T) {
 	client := newTestMCPServer(t, "ping", `{"type":"object","properties":{"x":{"type":"string"}}}`)
 	tool := NewMCPTool(client, "srv1", client.Tools()[0])

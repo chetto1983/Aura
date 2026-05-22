@@ -44,7 +44,11 @@ type Client struct {
 	transportKind string
 	transport     transport
 	nextID        atomic.Int64
+	toolsMu       sync.RWMutex
+	upstreamTools []Tool
 	tools         []Tool
+	overrideWarns []string
+	overrides     map[string]string
 }
 
 // Server describes one connected MCP server and its advertised tools.
@@ -100,7 +104,46 @@ func (c *Client) Name() string { return c.name }
 func (c *Client) Transport() string { return c.transportKind }
 
 // Tools returns the tools discovered from this server.
-func (c *Client) Tools() []Tool { return c.tools }
+func (c *Client) Tools() []Tool {
+	c.toolsMu.RLock()
+	defer c.toolsMu.RUnlock()
+	return cloneTools(c.tools)
+}
+
+// OverrideWarnings returns override keys that did not match any connected MCP
+// tool. The API uses this to surface typos instead of silently ignoring them.
+func (c *Client) OverrideWarnings() []string {
+	c.toolsMu.RLock()
+	defer c.toolsMu.RUnlock()
+	return append([]string(nil), c.overrideWarns...)
+}
+
+// SetOverrideWarnings stores unmatched override keys for diagnostics.
+func (c *Client) SetOverrideWarnings(warnings []string) {
+	c.toolsMu.Lock()
+	defer c.toolsMu.Unlock()
+	c.overrideWarns = append([]string(nil), warnings...)
+}
+
+// ApplyToolDescriptionOverrides rebuilds the visible tool list from the
+// upstream tools/list response, applying the current sidecar overrides.
+func (c *Client) ApplyToolDescriptionOverrides(overrides map[string]string) []string {
+	c.toolsMu.Lock()
+	defer c.toolsMu.Unlock()
+
+	c.overrides = cloneStringMap(overrides)
+	c.rebuildToolsLocked()
+
+	matched := make([]string, 0)
+	for _, tool := range c.upstreamTools {
+		for _, key := range toolOverrideKeys(c.name, tool.Name) {
+			if _, ok := c.overrides[key]; ok {
+				matched = append(matched, key)
+			}
+		}
+	}
+	return matched
+}
 
 // CallTool invokes a tool on the MCP server and returns its concatenated
 // text content. isError responses are surfaced as a Go error so the calling
@@ -201,7 +244,13 @@ func (c *Client) initialize() error {
 }
 
 func (c *Client) loadTools() error {
-	result, err := c.request("tools/list", nil)
+	return c.RefreshTools(context.Background())
+}
+
+// RefreshTools re-reads tools/list from the server and updates the visible
+// tool catalogue while preserving any local description overrides.
+func (c *Client) RefreshTools(ctx context.Context) error {
+	result, err := c.requestCtx(ctx, "tools/list", nil)
 	if err != nil {
 		return fmt.Errorf("tools/list: %w", err)
 	}
@@ -211,8 +260,49 @@ func (c *Client) loadTools() error {
 	if err := json.Unmarshal(result, &resp); err != nil {
 		return fmt.Errorf("parse tools/list: %w", err)
 	}
-	c.tools = resp.Tools
+	c.setDiscoveredTools(resp.Tools)
 	return nil
+}
+
+func (c *Client) setDiscoveredTools(tools []Tool) {
+	c.toolsMu.Lock()
+	defer c.toolsMu.Unlock()
+	c.upstreamTools = cloneTools(tools)
+	c.rebuildToolsLocked()
+}
+
+func (c *Client) rebuildToolsLocked() {
+	tools := cloneTools(c.upstreamTools)
+	for i := range tools {
+		keys := toolOverrideKeys(c.name, tools[i].Name)
+		for _, key := range keys {
+			if desc, ok := c.overrides[key]; ok {
+				tools[i].Description = desc
+				break
+			}
+		}
+	}
+	c.tools = tools
+}
+
+func cloneTools(tools []Tool) []Tool {
+	if len(tools) == 0 {
+		return nil
+	}
+	out := make([]Tool, len(tools))
+	copy(out, tools)
+	return out
+}
+
+func cloneStringMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // rpcRequest / rpcResponse / rpcError are JSON-RPC 2.0 envelopes.
