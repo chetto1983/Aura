@@ -1,4 +1,4 @@
-package api
+package logging
 
 import (
 	"bytes"
@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-func TestHealthSanitizeHandlerRedactsSecrets(t *testing.T) {
+func TestSanitizeHandlerRedactsSecrets(t *testing.T) {
 	var buf bytes.Buffer
 	inner := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
-	handler := NewHealthSanitizeHandler(inner)
+	handler := NewSanitizeHandler(inner)
 	logger := slog.New(handler)
 
 	logger.Info("test message", "api_key", "sk-secret-12345", "token", "abc123", "username", "alice")
@@ -30,10 +30,10 @@ func TestHealthSanitizeHandlerRedactsSecrets(t *testing.T) {
 	}
 }
 
-func TestHealthSanitizeHandlerPassesNonSecrets(t *testing.T) {
+func TestSanitizeHandlerPassesNonSecrets(t *testing.T) {
 	var buf bytes.Buffer
 	inner := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo})
-	handler := NewHealthSanitizeHandler(inner)
+	handler := NewSanitizeHandler(inner)
 	logger := slog.New(handler)
 
 	logger.Info("test", "user_id", "123", "duration", "5s")
@@ -44,5 +44,40 @@ func TestHealthSanitizeHandlerPassesNonSecrets(t *testing.T) {
 	}
 	if !strings.Contains(output, "5s") {
 		t.Error("duration should not be redacted")
+	}
+}
+
+func TestIsSecretKey(t *testing.T) {
+	tests := []struct {
+		key    string
+		secret bool
+	}{
+		{"api_key", true},
+		{"token", true},
+		{"password", true},
+		{"secret", true},
+		{"cookie", true},
+		{"credential", true},
+		{"auth", true},
+		{"apikey", true},
+		{"api-key", true},
+		{"token_refresh", true},
+		{"auth_header", true},
+		{"secret_key", true},
+		{"user_id", false},
+		{"duration", false},
+		{"message", false},
+		{"status", false},
+		{"author", false},
+		{"authority", false},
+		{"authorized", false},
+		{"authentication", false},
+	}
+
+	for _, tt := range tests {
+		got := isSecretKey(tt.key)
+		if got != tt.secret {
+			t.Errorf("isSecretKey(%q) = %v, want %v", tt.key, got, tt.secret)
+		}
 	}
 }

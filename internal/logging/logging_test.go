@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-
-	"github.com/aura/aura/internal/api"
 )
 
 func TestSetupCreatesLogger(t *testing.T) {
@@ -30,7 +28,7 @@ func TestSetupLevels(t *testing.T) {
 func TestSanitizeIntegration(t *testing.T) {
 	var buf bytes.Buffer
 	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})
-	sanitized := api.NewHealthSanitizeHandler(handler)
+	sanitized := NewSanitizeHandler(handler)
 	testLogger := slog.New(sanitized)
 
 	testLogger.Info("test", "api_key", "sk-secret", "user_id", "alice")

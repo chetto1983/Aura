@@ -38,7 +38,7 @@
         "Single atomic commit prefix: fix(logging): invert internal/api dependency — restore leaf contract (US-BUG-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Cleans the foundation that every subsequent module-cleanup pass benefits from. GROUND-TRUTH: read internal/logging/zap_slog.go end-to-end (file is small — ~167 LOC); the internal/api import is on line 9. Determine the EXACT shape needed (HealthSnapshot interface or LogSink writer) before designing. SCOPE: only invert this specific dependency. Other internal/logging usage stays as-is."
     },
     {
