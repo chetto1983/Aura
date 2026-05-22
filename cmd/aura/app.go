@@ -409,9 +409,11 @@ func newApp(
 		collection := search.CompactMemoryQdrantCollection(cfg.QdrantCollection)
 		compactVectorHealth.SetEnabled(true, collection)
 		qindex, err := search.NewCompactMemoryQdrantIndexWithBatch(search.QdrantConfig{
-			BaseURL:    cfg.QdrantURL,
-			Collection: collection,
-			APIKey:     cfg.QdrantAPIKey,
+			BaseURL:               cfg.QdrantURL,
+			Collection:            collection,
+			APIKey:                cfg.QdrantAPIKey,
+			OutputDim:             cfg.EmbeddingOutputDim,
+			SkipDimMismatchRebuild: cfg.NoRebuildOnDimMismatch,
 		}, embedFn, batchEmbedFn, logger)
 		if err != nil {
 			logger.Warn("compact qdrant memory mirror unavailable; using SQLite compact memory only", "error", err)

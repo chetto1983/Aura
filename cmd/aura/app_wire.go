@@ -485,10 +485,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		RuntimeConfig:        cfg,
 		ApplyRuntimeSettings: b.RuntimeSettingsApplier(a.deps),
 		Restart:              a.restart,
-		// Phase-H closure: route secret-shaped dashboard writes to the
-		// secrets store so dashboard rotations actually update what
-		// applySecretsToConfig reads at boot
-		// (docs/settings-audit-2026-05-15.md).
+		// Phase-H: secret writes go through SecretsStore so dashboard rotations update what boot reads.
 		SecretsStore: secretspkg.NewSQLiteStore(a.deps.Pool),
 		// AuraBot swarm observability.
 		Swarm: a.deps.SwarmStore,
@@ -499,6 +496,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		AuthzDecisions: api.NewSQLiteAuthzReader(a.deps.Pool),
 		// US-T05: tool attempt observability.
 		ToolAttemptsStats: api.NewSQLiteToolAttemptsReader(a.deps.Pool),
+		// US-TOOL-10: compact memory reindex endpoint.
+		CompactRebuilder: a.deps.MemoryStore,
 	})
 
 	logger.Info("tool registry built",

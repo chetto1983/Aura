@@ -555,3 +555,96 @@ func TestCompactMemoryQdrantCollectionIsSeparateFromWikiCollection(t *testing.T)
 		t.Fatalf("collection = %q", got)
 	}
 }
+
+func TestCompactMemoryQdrantDimMismatchTriggersRebuild(t *testing.T) {
+	var sawDelete, sawCreate, sawUpsert bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			// Existing collection: 10 points, dim=5 (old model).
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":10,"indexed_vectors_count":10,"config":{"params":{"vectors":{"size":5}}}}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	index, err := NewCompactMemoryQdrantIndexWithBatch(QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1_compact",
+		// expectedDim=8 differs from stored dim=5 → must trigger rebuild.
+		OutputDim: 8,
+	}, keywordEmbedding, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewCompactMemoryQdrantIndexWithBatch: %v", err)
+	}
+	_, err = index.Recreate(context.Background(), []memoryindex.Document{{
+		ID:   "archive:dm1",
+		Kind: memoryindex.KindArchive,
+		Body: "dim mismatch test body",
+	}})
+	if err != nil {
+		t.Fatalf("Recreate: %v", err)
+	}
+	if !sawDelete || !sawCreate || !sawUpsert {
+		t.Fatalf("dim-mismatch rebuild: delete=%v create=%v upsert=%v", sawDelete, sawCreate, sawUpsert)
+	}
+}
+
+func TestCompactMemoryQdrantDimMismatchSkippedByEnv(t *testing.T) {
+	var sawDelete, sawCreate, sawUpsert bool
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1_compact":
+			// Existing collection: 10 points, dim=5 (old model).
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"result":{"status":"green","points_count":10,"indexed_vectors_count":10,"config":{"params":{"vectors":{"size":5}}}}}`)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawDelete = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact":
+			sawCreate = true
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1_compact/points":
+			sawUpsert = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	index, err := NewCompactMemoryQdrantIndexWithBatch(QdrantConfig{
+		BaseURL:                server.URL,
+		Collection:             "aura_memory_v1_compact",
+		OutputDim:              8,
+		SkipDimMismatchRebuild: true,
+	}, keywordEmbedding, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewCompactMemoryQdrantIndexWithBatch: %v", err)
+	}
+	_, err = index.Recreate(context.Background(), []memoryindex.Document{{
+		ID:   "archive:dm2",
+		Kind: memoryindex.KindArchive,
+		Body: "dim mismatch skip test body",
+	}})
+	if err != nil {
+		t.Fatalf("Recreate: %v", err)
+	}
+	// With SkipDimMismatchRebuild=true the collection must NOT be touched.
+	if sawDelete || sawCreate || sawUpsert {
+		t.Fatalf("skip-dim-rebuild: expected no Qdrant writes, got delete=%v create=%v upsert=%v", sawDelete, sawCreate, sawUpsert)
+	}
+}

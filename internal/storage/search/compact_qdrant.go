@@ -13,11 +13,16 @@ import (
 )
 
 type CompactMemoryQdrantIndex struct {
-	client       qdrant.Client
-	collection   string
-	embedFn      EmbeddingFunction
-	batchEmbedFn BatchEmbeddingFunction
-	logger       *slog.Logger
+	client         qdrant.Client
+	collection     string
+	embedFn        EmbeddingFunction
+	batchEmbedFn   BatchEmbeddingFunction
+	logger         *slog.Logger
+	// expectedDim and skipDimRebuild control boot-time dim-mismatch detection.
+	// When expectedDim > 0 and the existing collection's vector size differs,
+	// the collection is auto-rebuilt unless skipDimRebuild is true.
+	expectedDim    int
+	skipDimRebuild bool
 }
 
 func CompactMemoryQdrantCollection(base string) string {
@@ -43,7 +48,15 @@ func NewCompactMemoryQdrantIndexWithBatch(cfg QdrantConfig, embedFn EmbeddingFun
 	if err != nil {
 		return nil, err
 	}
-	return &CompactMemoryQdrantIndex{client: client, collection: collection, embedFn: embedFn, batchEmbedFn: batchEmbedFn, logger: logger}, nil
+	return &CompactMemoryQdrantIndex{
+		client:         client,
+		collection:     collection,
+		embedFn:        embedFn,
+		batchEmbedFn:   batchEmbedFn,
+		logger:         logger,
+		expectedDim:    cfg.OutputDim,
+		skipDimRebuild: cfg.SkipDimMismatchRebuild,
+	}, nil
 }
 
 func (i *CompactMemoryQdrantIndex) Recreate(ctx context.Context, docs []memoryindex.Document) (memoryindex.VectorReport, error) {
@@ -58,22 +71,68 @@ func (i *CompactMemoryQdrantIndex) Recreate(ctx context.Context, docs []memoryin
 	}
 
 	// QDRANT-01 warm-cache short-circuit: reuse the existing collection if it
-	// already has points instead of re-embedding every document.
-	//
-	// WR-03 / T-01-24 (accepted): vector-size drift from EMBEDDING_MODEL swaps
-	// is not detected here because CollectionInfo does not expose the stored
-	// vector size. Search queries will fail loudly with a Qdrant dimension
-	// error if the operator changes models without rebuilding the collection.
+	// already has points instead of re-embedding every document. Dim-mismatch
+	// detection (US-TOOL-10) bypasses the cache when expectedDim > 0 and the
+	// stored vector size diverges — same pattern as wiki collection.
 	info, infoErr := i.client.CollectionInfo(ctx, i.collection)
 	if infoErr != nil {
 		i.logger.Warn("compact qdrant warm-cache probe failed; proceeding with full rebuild", "collection", i.collection, "error", infoErr)
-	} else if info.PointsCount > 0 {
-		i.logger.Info("compact qdrant warm-cache hit, skipping rebuild", "collection", i.collection, "points_count", info.PointsCount)
-		return memoryindex.VectorReport{
-			Collection: i.collection,
-		}, nil
 	}
 
+	if infoErr == nil && info.PointsCount > 0 {
+		// Dim-mismatch detection: compare existing collection dim against configured target.
+		if i.expectedDim > 0 && info.VectorSize > 0 && info.VectorSize != i.expectedDim {
+			if i.skipDimRebuild {
+				i.logger.Warn("compact qdrant dim check: mismatch, skipped by env",
+					"collection", i.collection, "current", info.VectorSize, "expected", i.expectedDim, "action", "skipped_by_env")
+				return memoryindex.VectorReport{Collection: i.collection}, nil
+			}
+			// Fall through to full rebuild — dim mismatch, drop and recreate.
+			i.logger.Warn("compact qdrant dim check: mismatch, triggering auto-rebuild",
+				"collection", i.collection, "current", info.VectorSize, "expected", i.expectedDim, "action", "rebuild")
+		} else {
+			if i.expectedDim > 0 && info.VectorSize > 0 {
+				i.logger.Info("compact qdrant dim check",
+					"collection", i.collection, "current", info.VectorSize, "expected", i.expectedDim, "action", "match")
+			}
+			i.logger.Info("compact qdrant warm-cache hit, skipping rebuild", "collection", i.collection, "points_count", info.PointsCount)
+			return memoryindex.VectorReport{Collection: i.collection}, nil
+		}
+	}
+
+	return i.rebuildFromDocs(ctx, docs)
+}
+
+// ForceRebuild always rebuilds the compact Qdrant collection from docs,
+// bypassing the warm-cache check. Used by POST /api/compact/reindex.
+func (i *CompactMemoryQdrantIndex) ForceRebuild(ctx context.Context, docs []memoryindex.Document) (memoryindex.CompactRebuildReport, error) {
+	if i == nil || i.client == nil {
+		return memoryindex.CompactRebuildReport{}, fmt.Errorf("compact qdrant index unavailable")
+	}
+
+	// Capture prior state before rebuild.
+	info, _ := i.client.CollectionInfo(ctx, i.collection)
+	priorVectorSize := info.VectorSize
+
+	if len(docs) == 0 {
+		_ = i.client.DeleteCollection(ctx, i.collection)
+		return memoryindex.CompactRebuildReport{Collection: i.collection, PriorVectorSize: priorVectorSize}, nil
+	}
+	report, err := i.rebuildFromDocs(ctx, docs)
+	if err != nil {
+		return memoryindex.CompactRebuildReport{}, err
+	}
+	return memoryindex.CompactRebuildReport{
+		Collection:      report.Collection,
+		PointsIndexed:   report.DocsIndexed,
+		VectorSize:      report.VectorSize,
+		PriorVectorSize: priorVectorSize,
+	}, nil
+}
+
+// rebuildFromDocs deletes the existing collection, creates a new one, and
+// upserts all points derived from docs.
+func (i *CompactMemoryQdrantIndex) rebuildFromDocs(ctx context.Context, docs []memoryindex.Document) (memoryindex.VectorReport, error) {
 	points, vectorSize, err := i.pointsForDocuments(ctx, docs)
 	if err != nil {
 		return memoryindex.VectorReport{}, err

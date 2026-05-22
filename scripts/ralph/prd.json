@@ -36,7 +36,7 @@
         "Single atomic commit prefix: fix(compact): dim-mismatch auto-detect + auto-rebuild for compact collection (US-TOOL-10)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "PARALLEL with US-TOOL-01 — different collection, no overlap. Can ship same session. GROUND-TRUTH: (1) internal/storage/memoryindex/ — find the compact qdrant writer. (2) Read US-WIKI-FIX-04 commit aad25d7f to understand the pattern. (3) Pattern lift is mechanical — copy the dim-detect block, change collection name + cfg field reference."
     },
     {
