@@ -120,7 +120,7 @@
         "Single atomic commit prefix: refactor(api): split types.go per domain (US-MOD-SPLIT-04)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Lowest-risk story in Wave B. Each domain file is just declarations moved."
     },
     {
