@@ -155,6 +155,8 @@ func handleWikiSearch(deps Deps) http.HandlerFunc {
 			return
 		}
 
+		results = dedupeResultsBySlug(results)
+
 		hits := make([]WikiSearchHit, 0, len(results))
 		rank := 0
 		for _, result := range results {
@@ -193,6 +195,32 @@ func handleWikiSearch(deps Deps) http.HandlerFunc {
 			Results:   hits,
 		})
 	}
+}
+
+// dedupeResultsBySlug removes duplicate results that share the same slug,
+// keeping the highest-scored entry (first-seen when results are already in
+// descending score order). This collapses the wiki_page + graph_node pair
+// that loadWikiDocuments emits per page into a single user-facing hit.
+// Results with an empty slug are passed through unchanged.
+func dedupeResultsBySlug(results []search.Result) []search.Result {
+	if len(results) <= 1 {
+		return results
+	}
+	seen := make(map[string]struct{}, len(results))
+	out := make([]search.Result, 0, len(results))
+	for _, r := range results {
+		slug := strings.ToLower(strings.TrimSpace(r.Slug))
+		if slug == "" {
+			out = append(out, r)
+			continue
+		}
+		if _, ok := seen[slug]; ok {
+			continue
+		}
+		seen[slug] = struct{}{}
+		out = append(out, r)
+	}
+	return out
 }
 
 // isSystemResult reports whether a search result is a system/internal page

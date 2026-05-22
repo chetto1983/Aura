@@ -122,7 +122,7 @@
         "Single atomic commit prefix: fix(qdrant): dedupe wiki search results by slug (US-WIKI-FIX-06)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "AUDIT FIRST. If the audit shows it's an intentional dual-emission (page-content + graph-card both point to the same slug), the right fix is dedup-at-query-time. If it's a bug, the right fix is upsert-side. Don't commit one or the other before reading: (1) internal/storage/search/qdrant.go loadWikiDocuments — does it emit one doc or two per page? (2) The qdrant /points/scroll output for slug=davide. (3) the graph index — does it also push graph cards into qdrant under graph:node:* prefix? SCOPE: if the audit balloons (e.g. a wider 'kind' field architecture), split into FIX-06a (audit doc) + FIX-06b (fix) — keep this story one-commit."
     },
     {

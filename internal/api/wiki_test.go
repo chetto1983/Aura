@@ -217,6 +217,90 @@ func TestWikiSearch_SystemFilter_TagBased(t *testing.T) {
 	}
 }
 
+// TestWikiSearch_DedupeBySlug verifies that when the search backend returns
+// both a wiki_page and a graph_node for the same slug (distinct-by-design
+// dual-emission from loadWikiDocuments), only the highest-scored entry survives
+// in the /wiki/search response. Reproduces the autori-json q2 observed bug
+// where slug "davide" appeared twice in top-5 results.
+func TestWikiSearch_DedupeBySlug(t *testing.T) {
+	searcher := &fakeAPISearcher{
+		indexed: true,
+		results: []search.Result{
+			// wiki_page scores higher than graph_node for the same slug — wiki_page must win.
+			{Kind: "wiki_page", Slug: "davide", Title: "Davide", Score: 0.90},
+			{Kind: "graph_node", Slug: "davide", Title: "Davide Node", Score: 0.85},
+			{Kind: "wiki_page", Slug: "aura", Title: "Aura", Score: 0.70},
+		},
+	}
+	e := newTestEnvWithSearcher(t, searcher)
+
+	rr := e.do("GET", "/wiki/search?q=davide")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp WikiSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	davideCount := 0
+	for _, hit := range resp.Results {
+		if hit.Slug == "davide" {
+			davideCount++
+		}
+	}
+	if davideCount != 1 {
+		t.Errorf("slug 'davide' appears %d times, want exactly 1", davideCount)
+	}
+	for _, hit := range resp.Results {
+		if hit.Slug == "davide" && hit.Kind != "wiki_page" {
+			t.Errorf("kept kind=%q for slug 'davide', want 'wiki_page' (highest score)", hit.Kind)
+		}
+	}
+	// The non-duplicate slug must still be present.
+	found := false
+	for _, hit := range resp.Results {
+		if hit.Slug == "aura" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected slug 'aura' in results after dedup, but it was absent")
+	}
+}
+
+// TestWikiSearch_DedupeBySlug_RanksRemainSequential verifies that rank numbering
+// stays gapless after dedup removes a duplicate entry.
+func TestWikiSearch_DedupeBySlug_RanksRemainSequential(t *testing.T) {
+	searcher := &fakeAPISearcher{
+		indexed: true,
+		results: []search.Result{
+			{Kind: "wiki_page", Slug: "davide", Title: "Davide", Score: 0.90},
+			{Kind: "graph_node", Slug: "davide", Title: "Davide Node", Score: 0.85},
+			{Kind: "wiki_page", Slug: "aura", Title: "Aura", Score: 0.70},
+			{Kind: "wiki_page", Slug: "progetto", Title: "Progetto", Score: 0.60},
+		},
+	}
+	e := newTestEnvWithSearcher(t, searcher)
+
+	rr := e.do("GET", "/wiki/search?q=davide")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp WikiSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for i, hit := range resp.Results {
+		if hit.Rank != i+1 {
+			t.Errorf("result[%d].Rank=%d, want %d (sequential after dedup)", i, hit.Rank, i+1)
+		}
+	}
+	if len(resp.Results) != 3 {
+		t.Errorf("expected 3 results after dedup (4 raw - 1 dup), got %d", len(resp.Results))
+	}
+}
+
 // TestWikiSearch_SystemFilter_RanksAreSequential verifies that after filtering,
 // the returned Rank values are sequential (1, 2, 3...) not sparse.
 func TestWikiSearch_SystemFilter_RanksAreSequential(t *testing.T) {
