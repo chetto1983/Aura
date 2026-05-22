@@ -9,7 +9,6 @@
 # Format: <LOC> <path-relative-to-repo-root>  (sorted by LOC descending)
 #
 1587 cmd/probe_chat/cases.go
-1143 internal/storage/memoryindex/store.go
 812 internal/storage/runs/store.go
 790 cmd/quality_bench/main.go
 772 internal/api/types.go

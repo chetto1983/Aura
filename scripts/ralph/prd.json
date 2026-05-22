@@ -106,7 +106,7 @@
         "Single atomic commit prefix: refactor(memoryindex): split store.go into core/search/archive/helpers (US-MOD-SPLIT-02)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Touched by Phase-WIKI-FIX FIX-01 (FTS sync) — verify those changes are preserved post-split."
     },
     {
