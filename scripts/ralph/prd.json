@@ -134,7 +134,7 @@
         "Single atomic commit prefix: refactor(runs): split store.go into run/event/outbox/audit (US-MOD-SPLIT-03)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Cross-package interfaces stable — interface declarations in types.go-equivalent files stay in package root."
     },
     {
