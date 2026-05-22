@@ -28,12 +28,24 @@ ARG MAIL_MCP_SHA256=44f010966050b2391bcf88bdaf2e42e2396068ee16b8ba7fd3165c923882
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-      bat build-essential ca-certificates curl dnsutils fd-find ffmpeg file \
-      fzf git gnupg htop httpie imagemagick iproute2 iputils-ping jq less \
-      libcap2-bin lsof mtr-tiny nano ncdu net-tools netcat-openbsd nmap \
-      openssh-client pandoc procps python3 python3-pip python3-venv ripgrep \
+      build-essential ca-certificates curl dnsutils ffmpeg file \
+      git gnupg imagemagick iproute2 iputils-ping jq less \
+      libcap2-bin lsof net-tools netcat-openbsd nmap \
+      openssh-client procps python3 python3-pip python3-venv ripgrep \
       rsync socat sqlite3 strace tcpdump traceroute tree tzdata unzip vim \
       wget whois xz-utils yq zip \
+    # 2026-05-22 slim pass dropped 9 redundant tools the LLM never actually
+    # reaches for (bake-size win: ~250 MB). Each removed package has an
+    # always-installed equivalent already in the apt list:
+    #   bat        → cat / less
+    #   fd-find    → find / ripgrep
+    #   fzf        → no interactive use in container
+    #   htop       → procps `top`
+    #   httpie     → curl + jq
+    #   mtr-tiny   → traceroute
+    #   nano       → vim
+    #   ncdu       → du / tree
+    #   pandoc     → aura-markitdown sidecar
     # GitHub CLI (gh) lives in its own apt repo — pull keyring, register source,
     # install in one layer so the keyring doesn't leak into the final image
     # without being used.
@@ -45,10 +57,6 @@ RUN apt-get update \
     && apt-get update \
     && apt-get install -y --no-install-recommends gh \
     && rm -rf /var/lib/apt/lists/* \
-    # Debian renames bat→batcat and fd-find→fdfind to avoid binary collisions
-    # with other packages; restore the canonical names the LLM expects.
-    && ln -sf /usr/bin/batcat /usr/local/bin/bat \
-    && ln -sf /usr/bin/fdfind /usr/local/bin/fd \
     && useradd --system --uid 10001 --home-dir /data --shell /usr/sbin/nologin aura \
     && mkdir -p /data/logs /wiki /skills /app/runtime \
     && chown -R aura:aura /data /wiki /skills /app \
@@ -64,10 +72,24 @@ RUN apt-get update \
 # Python packages baked into the image so execute_code has the same library
 # surface the old Pyodide bundle provided. Without these, the LLM naturally
 # writes `import requests` / `import openpyxl` and crashes on stdlib-only.
+#
+# Post-install strip removes __pycache__, *.pyi typing stubs, and test trees
+# shipped inside numpy/pandas/pillow/matplotlib wheels (~120 MB savings).
+# Does NOT strip wheel-bundled .libs/ (numpy.libs has libgfortran/libopenblas
+# with section alignment that even `strip --strip-debug` breaks). PYTHONDONT-
+# WRITEBYTECODE in env (set further down) keeps __pycache__ from being
+# regenerated at runtime.
 RUN pip3 install --no-cache-dir --break-system-packages \
       requests beautifulsoup4 lxml pillow \
       numpy pandas pyarrow python-calamine openpyxl xlrd \
-      pyyaml python-dateutil pytz regex python-docx matplotlib
+      pyyaml python-dateutil pytz regex python-docx matplotlib \
+    && find /usr/local/lib/python3*/dist-packages /usr/lib/python3/dist-packages \
+            -depth -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
+    && find /usr/local/lib/python3*/dist-packages /usr/lib/python3/dist-packages \
+            -type f \( -name '*.pyc' -o -name '*.pyi' \) -delete 2>/dev/null || true \
+    && find /usr/local/lib/python3*/dist-packages /usr/lib/python3/dist-packages \
+            -depth -type d \( -name 'tests' -o -name 'test' -o -name 'docs' -o -name 'doc' \) \
+            ! -path '*.libs*' -exec rm -rf {} + 2>/dev/null || true
 
 RUN wget -qO /tmp/mail-mcp.tar.xz "https://github.com/tecnologicachile/mail-mcp/releases/download/v${MAIL_MCP_VERSION}/mail-mcp-x86_64-unknown-linux-gnu.tar.xz" \
     && echo "${MAIL_MCP_SHA256}  /tmp/mail-mcp.tar.xz" | sha256sum -c - \
@@ -96,6 +118,7 @@ USER aura
 WORKDIR /app
 
 ENV AURA_HEADLESS=true \
+    PYTHONDONTWRITEBYTECODE=1 \
     HTTP_PORT=0.0.0.0:8080 \
     DB_PATH=/data/aura.db \
     LOG_DIR=/data/logs \
