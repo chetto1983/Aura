@@ -1,0 +1,164 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-TOOL — tool surface + collection hygiene milestone. 4-scout research 2026-05-22 (docs/research-2026-05-22/{tool-rag-patterns,tool-lifecycle-patterns,aura-tool-surface-audit,tool-collapse-namespace-patterns}.md) + live log analysis surfaced: 29 native tools registered + 18 orphan unregistered Tool types (~1500 LOC dead), 8 duplication clusters (~-2490 LOC removable), tool RAG over-engineering (Qdrant aura_tool_search_v2 at 256d while embed at 768d — recurring dim-mismatch error every 10min), agent thrash on real query (28 LLM calls / 33 tool calls / 180s / never delivered — log 2026-05-22 05:11). User mandate 2026-05-22 verbatim: 'mettere a posto tutti i tool pulire la merda che ci gira attorno. il rag deve auto-aggiornare sui nuovi tool, non hardcoded'. Then update 2026-05-22: 'togli il rag dei tool è una cagata che abbiamo fatto e consolida agli altri pattern. poi metti a posto tutte le collection come abbimao fatto nella memoria'. Locked direction: KILL tool RAG entirely (no replacement), all tools always-on in manifest (picobot/nanobot/openhuman pattern), kitchen-sink collapse for triple-tool duplicates, MCP supervisor with list_changed + circuit breaker + reconnect (Hermes pattern), and dim-mismatch detect for the remaining compact collection. Net LOC delta: ~-4500 cleanup + ~+470 new = net -4000. Plan + acceptance per story: .planning/post-drift-2026-05-21/Phase-TOOL/plan.md. STRICT one-story-exit per scripts/ralph/CLAUDE.md.",
+  "userStories": [
+    {
+      "id": "US-TOOL-01",
+      "title": "KILL tool RAG — delete tool_search + index package + Qdrant collection; all tools always-on in manifest",
+      "description": "User mandate 2026-05-22: 'togli il rag dei tool è una cagata'. 4-scout convergence: 0/7 production agent systems use vector embedding for tool routing. picobot/nanobot/openhuman expose flat always-loaded manifests. Aura over-engineered with Qdrant aura_tool_search_v2 + reconciler + drift detection. The whole stack goes. (a) DELETE internal/agent/tools/index/ entirely (reconciler, qdrant adapter, fsnotify watcher, tests). (b) DELETE internal/agent/tools/registry/tool_search.go + its tests. (c) MODIFY cmd/aura/app.go + cmd/aura/app_wire.go to drop reconciler init + tool_search registration. (d) Manual via Qdrant API: DELETE collection aura_tool_search_v2. (e) AUDIT system-prompt manifest token count after Phase-TOOL collapses; assert it stays under 1000 tokens — the always-loaded budget. (f) Boot log emits 'tool registry: N tools active' for ops visibility. NO BM25 replacement, NO new index — picobot pattern is just a flat map[name]Tool that the system prompt iterates. After Phase-TOOL collapses (US-TOOL-05/06/07) the catalog is ~12-15 tools × ~180 char description = ~2700 char ≈ ~700 prompt tokens. Within budget for always-loaded.",
+      "acceptanceCriteria": [
+        "grep -rn aura_tool_search_v2 internal/ cmd/ returns 0 results",
+        "grep -rn 'internal/agent/tools/index' internal/ cmd/ returns 0 results — the entire package is gone",
+        "grep -rn 'tool_search' internal/ cmd/ returns 0 results in production code (historical comments allowed)",
+        "docker logs aura-aura-1 --since 30m | grep -i 'toolindex reconcile' shows ZERO entries 30 min after restart",
+        "docker logs aura-aura-1 --since 30m | grep -i 'Vector dimension error' shows ZERO entries",
+        "curl -s http://localhost:6333/collections | grep -c aura_tool_search_v2 returns 0",
+        "Boot log emits structured entry: msg='tool registry built', tools=<count>, tokens=<estimate>",
+        "go build ./... && go vet ./... && go test ./internal/agent/tools/... ./cmd/aura/... -count=1 green",
+        "golangci-lint run on touched files clean; LOC delta visible -700",
+        "Single atomic commit prefix: feat(tools): kill tool RAG entirely; all tools always-on in manifest (US-TOOL-01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "HIGHEST IMPACT story in the phase. Architectural cleanup. GROUND-TRUTH BEFORE EDIT: (1) read internal/agent/tools/index/ in full — reconciler.go is the main file (~500 LOC); also includes qdrant adapter + fsnotify watcher. (2) read internal/agent/tools/registry/tool_search.go and grep for its registration site. (3) audit cmd/aura/app.go around line 230-260 for reconciler init. (4) curl http://localhost:6333/collections to confirm aura_tool_search_v2 exists pre-deletion. SCOPE DISCIPLINE: this is DELETION only — no new BM25, no new package, no clever replacement. The system-prompt manifest already lists all tools today (that's how tool_search gets its candidate set); we just stop ALSO routing through Qdrant. Token budget post-cleanup: assert in CI."
+    },
+    {
+      "id": "US-TOOL-10",
+      "title": "Apply Phase-WIKI-FIX dim-mismatch detect + auto-rebuild to aura_memory_v1_compact",
+      "description": "Phase-WIKI-FIX FIX-04 added dim-mismatch detection + auto-rebuild for aura_memory_v1 (the wiki collection). The compact memory collection aura_memory_v1_compact still suffers the same class of bug. Replicate the fix: (a) Boot-time dim probe vs cfg.EmbeddingOutputDim; auto-rebuild on mismatch unless AURA_NO_REBUILD_ON_DIM_MISMATCH set. (b) Reuse the rebuild skip-and-continue logic from FIX-03. (c) Extend POST /api/wiki/reindex to also cover compact, OR add POST /api/compact/reindex if the semantics warrant separation. (d) NOTE: aura_tool_search_v2 is killed entirely by US-TOOL-01, no fix needed for it. (e) GROUND-TRUTH: read internal/storage/memoryindex/ for compact collection owner; read the FIX-04 code in internal/storage/search/qdrant.go for the dim-detect pattern; replicate.",
+      "acceptanceCriteria": [
+        "Boot: UPDATE settings SET value='256' WHERE key='EMBEDDING_OUTPUT_DIM' followed by docker compose restart aura → aura_memory_v1_compact collection auto-rebuilt at 256d, logged",
+        "POST /api/compact/reindex (or unified endpoint) returns JSON {collection, points_indexed, pages_indexed, skipped, elapsed_ms, vector_size, prior_vector_size}",
+        "docker logs aura-aura-1 --since 1h shows no silent dim mismatch on compact collection",
+        "AURA_NO_REBUILD_ON_DIM_MISMATCH=true skips the auto-rebuild path; logged",
+        "go test ./internal/storage/memoryindex/... ./internal/api/... -count=1 green",
+        "Single atomic commit prefix: fix(compact): dim-mismatch auto-detect + auto-rebuild for compact collection (US-TOOL-10)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "PARALLEL with US-TOOL-01 — different collection, no overlap. Can ship same session. GROUND-TRUTH: (1) internal/storage/memoryindex/ — find the compact qdrant writer. (2) Read US-WIKI-FIX-04 commit aad25d7f to understand the pattern. (3) Pattern lift is mechanical — copy the dim-detect block, change collection name + cfg field reference."
+    },
+    {
+      "id": "US-TOOL-02",
+      "title": "Delete 18 unregistered orphan Tool types (~-1500 LOC dead)",
+      "description": "Scout 3 found 18 Tool-implementing types in internal/agent/tools/registry/ that are registered in code but never wired in the production composition root (cmd/aura/app.go / app_wire.go). Most are the 11 verb-tools behind source/file/web/doc dispatchers — they're internal-only, dispatched by name from their parent dispatcher, never LLM-facing. Their LLM contracts (Name(), Description(), Parameters()) are dead code. Delete them + their tests + inline the verb logic into the parent dispatchers. Full audit list in docs/research-2026-05-22/aura-tool-surface-audit.md §6.",
+      "acceptanceCriteria": [
+        "Every type implementing Tool interface in internal/agent/tools/registry/ has at least one registration site in cmd/aura/ (proven by grep)",
+        "Parent dispatchers (source, file, web, doc) implement the verb logic inline; no separate Tool type for individual verbs",
+        "go test ./internal/agent/tools/... -count=1 green",
+        "Probe suite (cmd/probe_chat) passes; no probe relies on a deleted tool",
+        "LOC delta visible: -1500 across prod + tests",
+        "Single atomic commit prefix: chore(tools): delete 18 unregistered orphan Tool types (US-TOOL-02)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "GROUND-TRUTH: read docs/research-2026-05-22/aura-tool-surface-audit.md §6 first — the orphan list with file paths is there. DO NOT INVENT. Verify each tool's status before deletion by grepping for its Name() return value in cmd/aura/. SCOPE: deletion only, no behavior change to parent dispatchers (verb logic stays where it was used)."
+    },
+    {
+      "id": "US-TOOL-03",
+      "title": "Fix text_response registration + remove search_memory zombie",
+      "description": "Two registry hygiene fixes in one story. (a) text_response is referenced by name in internal/agent/terminal.go:222 (hard-coded terminal detection) but NEVER registered in the production composition root (Scout 3 P0). Either properly register it via the standard path OR remove the hard-coded reference and use the IsTerminal() method dispatch. Pick the cleaner path after reading the surrounding terminal logic. (b) search_memory self-declares DEPRECATED in its Description() but is still registered alongside the unified search tool that replaced it. Remove the registration; remove the tool file; update any test that still references it.",
+      "acceptanceCriteria": [
+        "text_response is either properly registered AND used via the standard tool path, OR the hard-coded reference removed and IsTerminal() dispatch used uniformly",
+        "Tool catalog at boot includes search but NOT search_memory",
+        "All probe cases still pass",
+        "go test ./internal/agent/... ./cmd/aura/... -count=1 green",
+        "Single atomic commit prefix: fix(tools): wire text_response + drop deprecated search_memory zombie (US-TOOL-03)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Independent of US-TOOL-01 and US-TOOL-02. Can ship parallel. GROUND-TRUTH: read internal/agent/terminal.go end-to-end before deciding the text_response approach; read the search_memory file to confirm DEPRECATED marker; read unified search registration site for the replacement contract."
+    },
+    {
+      "id": "US-TOOL-04",
+      "title": "Description quality audit — EN-only + ≤200 char + structural markers",
+      "description": "Three audit dimensions in one story (after US-TOOL-02 + US-TOOL-03 clean the deck). (a) EN-only: text_response and ask_user_clarification carry IT paragraphs in their descriptions (Scout 3 P1). Per feedback_all_prompts_in_english_only, all instructional text must be EN. Rewrite. (b) ≤200 char: extend description_audit_test.go with len(tool.Description()) <= 200 assertion. Sweep all catalogued tools; trim verbose ones. (c) Structural markers from cli-printing-press internal/mcpdesc/compose.go:69-96: first sentence is action verb + Returns clause; followed by Required:/Optional: argument hints; auto-suffix Destructive. on DELETE-class, Partial update. on PATCH-class.",
+      "acceptanceCriteria": [
+        "go test ./internal/agent/tools/registry/... -count=1 green with new ≤200 char assertion",
+        "No Description() returns text containing common IT words (gli, agli, nella, dei, delle) — quick test lint",
+        "Auto-suffix logic applied to MCP-derived descriptions (read overrides US-TOOL-08 first if shipped)",
+        "Bench delta documented in commit body: prompt token count drops 500-1500 tokens (depends on tool count post-collapses)",
+        "Single atomic commit prefix: chore(tools): description audit — EN-only + 200char cap + structural markers (US-TOOL-04)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-02 + US-TOOL-03 (no orphans to lint; correct registration set). GROUND-TRUTH: read internal/agent/tools/registry/description_audit_test.go to see the existing first-line marker test; extend it. Read picobot-cpp-patterns.md from 2026-05-21 research for the 200-char convention precedent."
+    },
+    {
+      "id": "US-TOOL-05",
+      "title": "Collapse schedule_task / list_tasks / cancel_task → task(mode=create|list|cancel)",
+      "description": "Kitchen-sink action-enum collapse. picobot cron.go shape (internal/agent/tools/cron.go:25-62) and codex automation_update(mode) both prove the shape. Three tools become one with mode enum + per-mode argument schema. The internal dispatch goes to the existing three handler functions; only the LLM-facing surface collapses. Confirm acceptance against picobot's exact action-enum form (Parameters JSON Schema with action.enum field).",
+      "acceptanceCriteria": [
+        "Registry contains ONE task tool with mode enum {create, list, cancel}",
+        "Per-mode argument schema validated (e.g. mode=create requires when/text; mode=cancel requires task_id)",
+        "Probe: each mode works end-to-end; reply text references the action correctly",
+        "Net LOC delta visible: ~-150 (existing leaf files deleted)",
+        "Single atomic commit prefix: feat(tools): collapse schedule_task/list/cancel → task(mode=) (US-TOOL-05)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-04 (description audit sets the description quality baseline). GROUND-TRUTH: read picobot internal/agent/tools/cron.go in full. Map Aura's existing schedule_task/list_tasks/cancel_task handlers to per-mode dispatch."
+    },
+    {
+      "id": "US-TOOL-06",
+      "title": "Collapse create_xlsx / create_docx / create_pdf → create_document(format=xlsx|docx|pdf)",
+      "description": "Same kitchen-sink shape. The three file-generation tools have 90%+ identical scaffolding (per codebase-cleanup-audit 2026-05-21 §3.1 row 2). Collapse to one tool with format enum + per-format builder dispatch.",
+      "acceptanceCriteria": [
+        "Registry contains ONE create_document tool with format enum {xlsx, docx, pdf}",
+        "Per-format builder retained; only the registry surface collapses",
+        "Probe: artifact-level verification per feedback_inspect_artifact_visually_not_just_pass_status — open produced xlsx/docx/pdf, assert structure",
+        "Net LOC delta visible: ~-300 (largest file-level clone in the repo)",
+        "Single atomic commit prefix: feat(tools): collapse create_xlsx/docx/pdf → create_document(format=) (US-TOOL-06)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-04. GROUND-TRUTH: read internal/agent/tools/registry/files_docx.go + files_pdf.go + files_xlsx.go end-to-end — they're the largest documented clone (Phase-CLEAN3 reference). Use one parameterised registrar pattern."
+    },
+    {
+      "id": "US-TOOL-07",
+      "title": "Collapse workspace_write / workspace_read / list_memory / read_memory → workspace(action=read|write|list)",
+      "description": "Picobot FilesystemTool shape (internal/agent/tools/filesystem.go:40-60). Four read/write/list-shaped tools sharing the path schema collapse to one. IMPORTANT: edit_memory and delete_memory (and forget_memory) keep separate identities — their schemas diverge enough that collapsing them obscures intent. Only the cleanly-overlapping four collapse.",
+      "acceptanceCriteria": [
+        "Registry contains ONE workspace tool with action enum {read, write, list}",
+        "edit_memory, delete_memory, forget_memory KEEP their own registration (audit list documented in commit body)",
+        "LLM tool-selection accuracy probe: queries that previously called workspace_write now call workspace(action=write) consistently",
+        "Net LOC delta visible: ~-250",
+        "Single atomic commit prefix: feat(tools): collapse workspace_* + memory_* readers → workspace(action=) (US-TOOL-07)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-04. Don't over-collapse memory tools — edit/delete/forget have distinct semantics."
+    },
+    {
+      "id": "US-TOOL-08",
+      "title": "MCP description override sidecar (tools-overrides.json) with fsnotify reload",
+      "description": "Lift cli-printing-press internal/mcpoverrides/overrides.go:73-100. A user-editable runtime-workspace/tools-overrides.json (or extension of mcp.json) provides per-tool-name description overrides for noisy upstream MCP descriptions. Loaded once at boot + on tools-overrides.json write (fsnotify). Unmatched override keys SURFACE as warnings so typos don't silently no-op. Override format: {\"server_tool_name\": \"new description text\"}. After this, US-TOOL-04 description audit can also apply auto-suffix logic to overridden descriptions.",
+      "acceptanceCriteria": [
+        "Writing an override entry for an existing MCP tool name → next-boot description reflects the override",
+        "Typo override key (no matching tool name) → warning logged at boot, listed in /api/mcp/status",
+        "fsnotify on the file → live reload without restart; new tool catalog refresh on next turn",
+        "go test ./internal/mcp/... -count=1 green with new override tests",
+        "Single atomic commit prefix: feat(mcp): tools-overrides.json sidecar for description tuning (US-TOOL-08)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "Independent of all other stories. GROUND-TRUTH: read cli-printing-press internal/mcpoverrides/overrides.go end-to-end (~119 LOC). Aura's MCP registration site is internal/agent/tools/registry/mcp.go — apply override at registration time."
+    },
+    {
+      "id": "US-TOOL-09",
+      "title": "MCP supervisor — tools/list_changed listener + per-server circuit breaker + reconnect",
+      "description": "Three Hermes patterns folded into one MCP-layer story (all updates apply to the in-memory tool registry — there is no tool RAG to push to after US-TOOL-01). (a) notifications/tools/list_changed listener (mcp_tool.py:1088-1129): when an MCP server pushes a list-changed notification, re-fetch its tools list, diff against in-memory registry, upsert/remove tools so the system-prompt manifest picks them up on the next turn. (b) Per-server circuit breaker (mcp_tool.py:1711-1755): N consecutive failures from one MCP server → server marked unhealthy, its tools temporarily removed from the registry until manual or scheduled retry. Other MCP servers and native tools keep working. (c) Exponential-backoff reconnect (mcp_tool.py:1504-1660): on stdio child crash or HTTP server unreachable, automatic reconnect with backoff.",
+      "acceptanceCriteria": [
+        "Kill an MCP stdio child mid-conversation → next iter, child auto-restarted with backoff; agent doesn't crash",
+        "MCP server pushes tools/list_changed → new tool visible in next-turn manifest within 5 sec without restart",
+        "3 consecutive failures from server X → circuit opens, logged warning; manifest stops listing server X tools; other tools still callable",
+        "go test ./internal/mcp/... ./internal/agent/tools/registry/... -count=1 green",
+        "Single atomic commit prefix: feat(mcp): supervisor with list_changed + circuit breaker + reconnect (US-TOOL-09)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-01 (no BM25 push — just in-memory registry update) and ideally US-TOOL-08 (override sidecar). LARGEST STORY in the phase. GROUND-TRUTH: read Hermes tools/mcp_tool.py around lines 1088-1755 — three nested patterns. Port to Go using context.Context + chan struct{} where Hermes uses asyncio. Write unit tests for the supervisor with mock MCP servers BEFORE integration."
+    }
+  ]
+}

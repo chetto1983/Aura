@@ -1,8 +1,8 @@
 {
   "_meta": {
-    "version": "1",
-    "compiled_at": "2026-05-21",
-    "description": "Aura quality-bench query set — 10 fixtures, 2 queries each, 20 total. Each query has a verifiable expected_substring readable in the source file. Used by cmd/quality_bench against Aura's /api/sources + /api/chat + /api/wiki/search endpoints.",
+    "version": "2",
+    "compiled_at": "2026-05-22",
+    "description": "Aura quality-bench query set — 10 fixtures, 2 queries each, 20 total. Each query has a verifiable expected_substring readable in the source file AND expected_slugs (≥1) corresponding to the wiki page(s) where the answer is grounded. Used by cmd/quality_bench against Aura's /api/sources + /api/chat + /api/wiki/search endpoints. expected_slugs added 2026-05-22 to wire Recall@5 measurement after Phase-WIKI-FIX restored hybrid fusion.",
     "case_insensitive_match": true,
     "license": "CC0-1.0"
   },
@@ -16,12 +16,14 @@
         {
           "id": "q1",
           "text": "Cosa contiene il foglio Excel del fixture Tika?",
-          "expected_substring": "Numbers and their Squares"
+          "expected_substring": "Numbers and their Squares",
+          "expected_slugs": ["source-tika-testexcel", "square-of-a-number", "microsoft-excel"]
         },
         {
           "id": "q2",
           "text": "Qual è il quadrato di 12 nel foglio Excel Tika?",
-          "expected_substring": "144"
+          "expected_substring": "144",
+          "expected_slugs": ["square-of-a-number", "source-tika-testexcel"]
         }
       ]
     },
@@ -34,12 +36,14 @@
         {
           "id": "q1",
           "text": "Quale URL del progetto Apache Tika è citato nel documento Word di test Tika?",
-          "expected_substring": "tika.apache.org"
+          "expected_substring": "tika.apache.org",
+          "expected_slugs": ["apache-tika", "source-tika-testword"]
         },
         {
           "id": "q2",
           "text": "Quali livelli di heading sono presenti nel documento Word Tika?",
-          "expected_substring": "Heading Level"
+          "expected_substring": "Heading Level",
+          "expected_slugs": ["source-tika-testword", "microsoft-word"]
         }
       ]
     },
@@ -52,12 +56,14 @@
         {
           "id": "q1",
           "text": "Qual è il titolo della prima slide del PowerPoint Tika?",
-          "expected_substring": "Attachment Test"
+          "expected_substring": "Attachment Test",
+          "expected_slugs": ["source-tika-testppt"]
         },
         {
           "id": "q2",
           "text": "Quale parola compare nella slide 'Different words to test against' del PowerPoint Tika, oltre a 'Hello'?",
-          "expected_substring": "Watershed"
+          "expected_substring": "Watershed",
+          "expected_slugs": ["source-tika-testppt"]
         }
       ]
     },
@@ -70,12 +76,14 @@
         {
           "id": "q1",
           "text": "Qual è il numero totale di casi COVID registrati per la regione Lombardia secondo i dati della Protezione Civile?",
-          "expected_substring": "4.391.944"
+          "expected_substring": "4.391.944",
+          "expected_slugs": ["source-istat-covid-regioni", "regional-covid-19-metrics", "covid-19-pandemic-in-italy"]
         },
         {
           "id": "q2",
           "text": "Quanti decessi COVID sono stati registrati in Emilia-Romagna nel dataset della Protezione Civile?",
-          "expected_substring": "20.158"
+          "expected_substring": "20.158",
+          "expected_slugs": ["source-istat-covid-regioni", "regional-covid-19-metrics", "covid-19-pandemic-in-italy"]
         }
       ]
     },
@@ -88,12 +96,14 @@
         {
           "id": "q1",
           "text": "Chi sono gli autori del paper arXiv sulla decifratura di Enigma?",
-          "expected_substring": "Violante"
+          "expected_substring": "Violante",
+          "expected_slugs": ["source-arxiv-enigma"]
         },
         {
           "id": "q2",
           "text": "Di cosa tratta il paper arXiv 2008.03122?",
-          "expected_substring": "Enigma"
+          "expected_substring": "Enigma",
+          "expected_slugs": ["source-arxiv-enigma", "enigma-machine"]
         }
       ]
     },
@@ -106,12 +116,14 @@
         {
           "id": "q1",
           "text": "Quando è nato Galileo Galilei secondo la fonte HTML di Wikipedia?",
-          "expected_substring": "1564"
+          "expected_substring": "1564",
+          "expected_slugs": ["galileo-galilei", "source-wiki-galileo"]
         },
         {
           "id": "q2",
           "text": "In quale città morì Galileo Galilei?",
-          "expected_substring": "Arcetri"
+          "expected_substring": "Arcetri",
+          "expected_slugs": ["galileo-galilei", "source-wiki-galileo"]
         }
       ]
     },
@@ -124,12 +136,14 @@
         {
           "id": "q1",
           "text": "Dove nacque Galileo Galilei?",
-          "expected_substring": "Pisa"
+          "expected_substring": "Pisa",
+          "expected_slugs": ["galileo-galilei", "source-wiki-galileo-1170ec"]
         },
         {
           "id": "q2",
           "text": "Quali furono le attività principali di Galileo Galilei oltre a fisico?",
-          "expected_substring": "astronomo"
+          "expected_substring": "astronomo",
+          "expected_slugs": ["galileo-galilei", "source-wiki-galileo-1170ec"]
         }
       ]
     },
@@ -142,12 +156,14 @@
         {
           "id": "q1",
           "text": "In quale città italiana nacque Dante Alighieri?",
-          "expected_substring": "Firenze"
+          "expected_substring": "Firenze",
+          "expected_slugs": ["dante-alighieri", "source-wiki-dante"]
         },
         {
           "id": "q2",
           "text": "Qual è l'opera capolavoro di Dante Alighieri, considerata il massimo della letteratura italiana?",
-          "expected_substring": "Divina Commedia"
+          "expected_substring": "Divina Commedia",
+          "expected_slugs": ["divina-commedia", "dante-alighieri", "source-wiki-dante"]
         }
       ]
     },
@@ -160,12 +176,14 @@
         {
           "id": "q1",
           "text": "Qual è il vero nome di Carlo Collodi, l'autore di Pinocchio?",
-          "expected_substring": "Lorenzini"
+          "expected_substring": "Lorenzini",
+          "expected_slugs": ["carlo-collodi", "source-wiki-collodi"]
         },
         {
           "id": "q2",
           "text": "In quale città nacque Carlo Collodi?",
-          "expected_substring": "Firenze"
+          "expected_substring": "Firenze",
+          "expected_slugs": ["carlo-collodi", "source-wiki-collodi"]
         }
       ]
     },
@@ -178,12 +196,14 @@
         {
           "id": "q1",
           "text": "Quale autore italiano vinse il Premio Nobel per la letteratura nel 1934?",
-          "expected_substring": "Pirandello"
+          "expected_substring": "Pirandello",
+          "expected_slugs": ["luigi-pirandello", "autori-italiani", "source-autori-italiani"]
         },
         {
           "id": "q2",
           "text": "Qual è il vero nome di Italo Svevo, l'autore de 'La coscienza di Zeno'?",
-          "expected_substring": "Schmitz"
+          "expected_substring": "Schmitz",
+          "expected_slugs": ["autori-italiani", "source-autori-italiani", "italian-literature"]
         }
       ]
     }
