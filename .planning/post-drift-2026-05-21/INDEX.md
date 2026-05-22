@@ -15,7 +15,8 @@
 | Phase | Plan | Sessions | LOC delta | Status |
 | --- | --- | ---: | ---: | --- |
 | [Phase-WIKI-FIX](Phase-WIKI-FIX/plan.md) | Substrate bug sweep — FTS5 sync, dim-change ergonomics, dedup, system-page filter, admin reindex | ~1-2 | +450 | ✅ **shipped 2026-05-22** — 8/8 Ralph commits, FTS hit 0→20/20, scores discriminating |
-| [Phase-TOOL](Phase-TOOL/plan.md) | Tool surface + RAG cleanup — KILL tool RAG entirely (user 2026-05-22 verbatim), kitchen-sink collapses (3 triples), description audit EN-only ≤200char, MCP supervisor (list_changed + circuit + reconnect), compact collection dim-mismatch detect | ~3-4 | net **-4000** (cleanup) | 🔴 **next milestone** — agent thrash 28LLM/33tools/180s on live query proves substrate not enough |
+| [Phase-TOOL](Phase-TOOL/plan.md) | Tool surface + RAG cleanup — KILL tool RAG entirely (user 2026-05-22 verbatim), kitchen-sink collapses (3 triples), description audit EN-only ≤200char, MCP supervisor (list_changed + circuit + reconnect), compact collection dim-mismatch detect | ~3-4 | net **-4000** (cleanup) | 🟡 **in flight** — Ralph kicked 2026-05-22 evening on `prd-phase-tool-staged.json` |
+| [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | Infra hygiene (depguard v2 + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md scoreboard) + Wave-1 god-file splits (top 10 violators, mechanical) | ~3 | +540 (infra) + 0 (splits) | 🟣 **staged** — kicks after Phase-TOOL ships; Ralph queue `prd-phase-modernize-staged.json` |
 | [Phase-BUG](Phase-BUG/plan.md) | Critical bug fixes — overlay loading, logging boundary, errcheck-hidden bugs | ~1 | -30 + 2 bugs | 🔴 ship immediately, concurrent with Phase-WIKI-FIX |
 | [Phase-CACHE](Phase-CACHE/plan.md) | Provider prompt caching + small wins | ~1 | ~+100 / -50 | 🟡 after Phase-WIKI-B Wave A |
 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline stack (truncate, spill, throttle, tasks_completed, length-recovery) | ~2 | ~+520 | 🟡 after Phase-CACHE |
