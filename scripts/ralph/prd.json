@@ -29,7 +29,7 @@
         ".file-size-baseline.txt committed alongside the script, sorted by LOC descending",
         "Single atomic commit prefix: chore(lint): file-size linter + grandfather baseline (US-MOD-INFRA-03)"
       ],
-      "priority": 1,
+      "priority": 2,
       "passes": true,
       "notes": "Foundational gate for Wave B god-splits. GROUND-TRUTH: count gods at story start; 28 violators per audit 2026-05-22 (top: migrations.go 1562, memoryindex/store 1143). The baseline file is the SAME list — easy to derive."
     },
@@ -44,7 +44,7 @@
         "Baseline file docs/deadcode-baseline-2026-05-22.json committed (current 0 findings expected per audit)",
         "Single atomic commit prefix: chore(lint): deadcode in CI + registry-diff for reflection blindspot (US-MOD-INFRA-02)"
       ],
-      "priority": 2,
+      "priority": 3,
       "passes": true,
       "notes": "GROUND-TRUTH: read 2026 Go blog on deadcode tool (golang.org/x/tools/cmd/deadcode); see https://go.dev/blog/deadcode. The registry-diff approach is simple: enumerate Tool-implementing types via go/ast, grep cmd/aura for their registration."
     },
@@ -59,8 +59,8 @@
         "Bypass via git commit --no-verify documented in INSTALL.md",
         "Single atomic commit prefix: chore(dev): lefthook pre-commit hooks (opt-in) (US-MOD-INFRA-04)"
       ],
-      "priority": 3,
-      "passes": false,
+      "priority": 4,
+      "passes": true,
       "notes": "Smallest INFRA story. lefthook config is ~20 lines YAML. Don't FORCE lefthook on solo workflow — opt-in only."
     },
     {
@@ -75,7 +75,7 @@
         "Makefile target `make module-health` works",
         "Single atomic commit prefix: feat(ops): module health scoreboard generator (US-MOD-INFRA-05)"
       ],
-      "priority": 3,
+      "priority": 5,
       "passes": false,
       "notes": "Largest INFRA story (~250 LOC). GROUND-TRUTH: read the per-module audit at docs/research-2026-05-22/ for the table shape; the script must produce equivalent output. Cap the script itself at 250 LOC — if it grows, split into table generator + report writer."
     },
@@ -90,7 +90,7 @@
         ".file-size-baseline.txt updated to remove migrations.go entry",
         "Single atomic commit prefix: refactor(db): split migrations.go into per-migration files (US-MOD-SPLIT-01)"
       ],
-      "priority": 4,
+      "priority": 6,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03 (file-size baseline + linter). HIGHEST-PRIORITY split because every future migration touches the file. Zero behavior change — just file move. Use `git mv` is fine but go files get gofmt'd; rename + check tests."
     },
@@ -105,7 +105,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(memoryindex): split store.go into core/search/archive/helpers (US-MOD-SPLIT-02)"
       ],
-      "priority": 4,
+      "priority": 7,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Touched by Phase-WIKI-FIX FIX-01 (FTS sync) — verify those changes are preserved post-split."
     },
@@ -119,7 +119,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(api): split types.go per domain (US-MOD-SPLIT-04)"
       ],
-      "priority": 5,
+      "priority": 8,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Lowest-risk story in Wave B. Each domain file is just declarations moved."
     },
@@ -133,7 +133,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(runs): split store.go into run/event/outbox/audit (US-MOD-SPLIT-03)"
       ],
-      "priority": 5,
+      "priority": 9,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Cross-package interfaces stable — interface declarations in types.go-equivalent files stay in package root."
     },
@@ -147,7 +147,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(wiki): split memory_hygiene.go into hygiene/renames/hubs/repairs (US-MOD-SPLIT-05)"
       ],
-      "priority": 6,
+      "priority": 10,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Verify appendUniqueSorted (or equivalent dead helper if any) is gone in the new files — Phase-WIKI-FIX-related cleanup pass."
     },
@@ -161,7 +161,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(qdrant): split qdrant.go into client/index/hybrid (US-MOD-SPLIT-08)"
       ],
-      "priority": 6,
+      "priority": 11,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03. CAREFUL: file recently touched by Phase-WIKI-FIX (commits 9871da0c, 54ec17a9, aad25d7f). Preserve all four behaviors: FTS5 sync hook, skip-and-continue on rebuild, dim-mismatch auto-detect, admin reindex endpoint logic. Read those commit diffs before splitting."
     },
@@ -175,7 +175,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(api/auth): split store.go into tokens/pending/identity (US-MOD-SPLIT-06)"
       ],
-      "priority": 7,
+      "priority": 12,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03. AUTH module — extra care: don't break the bearer-token path. Test pass = trust signal; manual: `curl -H Authorization: Bearer $TOK http://localhost:18080/api/wiki` post-rebuild."
     },
@@ -189,7 +189,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(ingest): split pipeline.go into pipeline/entity/concept/provenance (US-MOD-SPLIT-07)"
       ],
-      "priority": 7,
+      "priority": 13,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03."
     },
@@ -203,7 +203,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(cron): split dispatch.go into dispatch/handlers/agentjob_prompt (US-MOD-SPLIT-10)"
       ],
-      "priority": 8,
+      "priority": 14,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03."
     },
@@ -217,7 +217,7 @@
         ".file-size-baseline.txt updated",
         "Single atomic commit prefix: refactor(search): extract types.go from search.go (US-MOD-SPLIT-09)"
       ],
-      "priority": 8,
+      "priority": 15,
       "passes": false,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Smallest pick in Wave B — borderline (file is just over 600). Worth doing anyway because it sets the pattern for cleanup-on-touch in this package."
     }

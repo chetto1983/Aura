@@ -1,0 +1,27 @@
+# lefthook.yml — Opt-in pre-commit quality gates for Aura.
+#
+# INSTALL:   lefthook install     (run once after cloning)
+# UNINSTALL: lefthook uninstall
+# BYPASS:    git commit --no-verify  (see INSTALL.md — emergency only)
+#
+# Requires: golangci-lint  (https://golangci-lint.run/usage/install/ or
+#                           go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest)
+# Optional: dupl           (go install github.com/mibk/dupl@latest)
+
+pre-commit:
+  parallel: false
+  commands:
+    lint:
+      name: golangci-lint (new violations on staged Go files)
+      glob: "**/*.go"
+      run: golangci-lint run --new-from-rev=HEAD {staged_files}
+
+    dupl:
+      name: dupl clone detection (staged Go files; skipped when dupl not installed)
+      glob: "**/*.go"
+      run: command -v dupl >/dev/null 2>&1 && dupl -t 60 {staged_files} || echo "[info] dupl not installed — skipping clone check"
+
+    file-size:
+      name: file-size 600-LOC cap (whole tree; staged Go files gate)
+      glob: "**/*.go"
+      run: bash scripts/check-file-size.sh .file-size-baseline.txt

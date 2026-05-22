@@ -216,3 +216,42 @@ go run ./cmd/debug_searxng -base-url http://127.0.0.1:8088 -q "aura search test"
 ```
 
 See [docs/container.md](docs/container.md) for the full stack and release gate.
+
+### Local Git Hooks (opt-in)
+
+Pre-commit quality gates are available via [lefthook](https://github.com/evilmartians/lefthook).
+They are **opt-in** — the hooks do not activate unless you run `lefthook install`.
+
+**Install:**
+
+```bash
+# Install lefthook (one-time)
+go install github.com/evilmartians/lefthook@latest
+
+# Activate the hooks in your local clone (one-time per clone)
+lefthook install
+```
+
+Once installed, every `git commit` runs:
+
+| Hook | What it checks |
+| ---- | -------------- |
+| `lint` | `golangci-lint run --new-from-rev=HEAD` on staged `.go` files |
+| `dupl` | `dupl -t 60` clone detection on staged `.go` files (skipped if `dupl` is not installed) |
+| `file-size` | 600-LOC cap for all non-test, non-generated `.go` files |
+
+**Uninstall:**
+
+```bash
+lefthook uninstall
+```
+
+**Emergency bypass:**
+
+> ⚠️ **Red flag:** bypassing hooks hides quality regressions. Use only when the lint
+> environment is broken and you have a time-critical fix. Re-run the CI checks
+> manually before pushing.
+
+```bash
+git commit --no-verify -m "your message"
+```
