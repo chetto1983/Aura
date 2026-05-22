@@ -77,6 +77,13 @@ func (t categorizedTool) RequiredCapability() identity.Capability {
 	return ""
 }
 
+func (t categorizedTool) Available() bool {
+	if provider, ok := t.Tool.(ToolAvailabilityProvider); ok {
+		return provider.Available()
+	}
+	return true
+}
+
 // Registry stores tools and dispatches tool calls by name.
 type Registry struct {
 	mu     sync.RWMutex
@@ -157,6 +164,9 @@ func (r *Registry) NamesByCategory(category string) []string {
 
 	names := make([]string, 0)
 	for name, tool := range r.tools {
+		if !toolAvailable(tool) {
+			continue
+		}
 		if !toolHasCategory(tool, category) {
 			continue
 		}
@@ -196,6 +206,9 @@ func (r *Registry) FullDefinitions() []ToolDefinition {
 	defer r.mu.RUnlock()
 	defs := make([]ToolDefinition, 0, len(r.tools))
 	for _, t := range r.tools {
+		if !toolAvailable(t) {
+			continue
+		}
 		defs = append(defs, definitionForTool(t))
 	}
 	return defs
@@ -208,6 +221,9 @@ func (r *Registry) Definitions() []llm.ToolDefinition {
 
 	defs := make([]llm.ToolDefinition, 0, len(r.tools))
 	for _, t := range r.tools {
+		if !toolAvailable(t) {
+			continue
+		}
 		defs = append(defs, definitionForTool(t).LLMDefinition())
 	}
 	return defs
@@ -229,6 +245,9 @@ func (r *Registry) DefinitionFor(name string) (llm.ToolDefinition, bool) {
 	if !ok {
 		return llm.ToolDefinition{}, false
 	}
+	if !toolAvailable(t) {
+		return llm.ToolDefinition{}, false
+	}
 	return definitionForTool(t).LLMDefinition(), true
 }
 
@@ -246,6 +265,9 @@ func (r *Registry) DefinitionsFor(allowlist []string) []llm.ToolDefinition {
 		seen[name] = true
 		t, ok := r.tools[name]
 		if !ok {
+			continue
+		}
+		if !toolAvailable(t) {
 			continue
 		}
 		defs = append(defs, definitionForTool(t).LLMDefinition())

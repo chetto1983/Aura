@@ -142,6 +142,58 @@ func TestHTTPClientCallToolError(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRefreshToolsPreservesOverrides(t *testing.T) {
+	tools := []Tool{{Name: "alpha", Description: "old alpha"}}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req rpcRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			_ = json.NewEncoder(w).Encode(rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: json.RawMessage(`{"capabilities":{}}`)})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			payload, _ := json.Marshal(struct {
+				Tools []Tool `json:"tools"`
+			}{Tools: tools})
+			_ = json.NewEncoder(w).Encode(rpcResponse{JSONRPC: "2.0", ID: req.ID, Result: payload})
+		}
+	}))
+	defer srv.Close()
+
+	client, err := NewHTTPClient("test", srv.URL, nil)
+	if err != nil {
+		t.Fatalf("NewHTTPClient: %v", err)
+	}
+	defer func() { _ = client.Close() }()
+
+	client.ApplyToolDescriptionOverrides(map[string]string{
+		"mcp_test_alpha": "operator alpha",
+	})
+	tools = []Tool{
+		{Name: "alpha", Description: "new alpha"},
+		{Name: "beta", Description: "beta"},
+	}
+	if err := client.RefreshTools(context.Background()); err != nil {
+		t.Fatalf("RefreshTools: %v", err)
+	}
+
+	got := client.Tools()
+	if len(got) != 2 {
+		t.Fatalf("tools length = %d, want 2: %#v", len(got), got)
+	}
+	if got[0].Name != "alpha" || got[0].Description != "operator alpha" {
+		t.Fatalf("alpha override not preserved: %#v", got[0])
+	}
+	if got[1].Name != "beta" || got[1].Description != "beta" {
+		t.Fatalf("beta tool not refreshed: %#v", got[1])
+	}
+}
+
 func TestHTTPClientSSEResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req rpcRequest

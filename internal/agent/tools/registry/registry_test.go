@@ -388,6 +388,35 @@ func TestRegistryDefinitionsForFiltersAndKeepsAllowlistOrder(t *testing.T) {
 	}
 }
 
+func TestRegistrySkipsUnavailableToolsFromCatalogSurfaces(t *testing.T) {
+	reg := NewRegistry(nil)
+	live := &availableFakeTool{name: "live", description: "read mail", available: true}
+	gone := &availableFakeTool{name: "gone", description: "read mail", available: false}
+	reg.Register(live)
+	reg.Register(WithCategory(gone, CategoryMCP))
+
+	if defs := reg.Definitions(); len(defs) != 1 || defs[0].Name != "live" {
+		t.Fatalf("Definitions() = %+v, want only live", defs)
+	}
+	if defs := reg.FullDefinitions(); len(defs) != 1 || defs[0].Name != "live" {
+		t.Fatalf("FullDefinitions() = %+v, want only live", defs)
+	}
+	if _, ok := reg.DefinitionFor("gone"); ok {
+		t.Fatal("DefinitionFor(gone) returned unavailable tool")
+	}
+	if defs := reg.DefinitionsFor([]string{"gone", "live"}); len(defs) != 1 || defs[0].Name != "live" {
+		t.Fatalf("DefinitionsFor() = %+v, want only live", defs)
+	}
+	if names := reg.NamesByCategory(CategoryMCP); len(names) != 0 {
+		t.Fatalf("NamesByCategory(MCP) = %+v, want unavailable category hidden", names)
+	}
+	for _, result := range reg.Search("mail", 5) {
+		if result.Name == "gone" {
+			t.Fatalf("Search returned unavailable tool: %+v", result)
+		}
+	}
+}
+
 func TestRegistrySearchFindsToolsByCapability(t *testing.T) {
 	reg := NewRegistry(nil)
 	reg.Register(definitionFakeTool{})
@@ -560,6 +589,27 @@ func (t namedDescribedTool) Parameters() map[string]any {
 	return map[string]any{"type": "object"}
 }
 func (t namedDescribedTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	return t.name, nil
+}
+
+type availableFakeTool struct {
+	name        string
+	description string
+	available   bool
+}
+
+func (t *availableFakeTool) Name() string { return t.name }
+func (t *availableFakeTool) Description() string {
+	if t.description == "" {
+		return "Fake tool"
+	}
+	return t.description
+}
+func (t *availableFakeTool) Parameters() map[string]any {
+	return map[string]any{"type": "object"}
+}
+func (t *availableFakeTool) Available() bool { return t.available }
+func (t *availableFakeTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	return t.name, nil
 }
 

@@ -97,7 +97,7 @@
         "Single atomic commit prefix: feat(tools): collapse schedule_task/list/cancel → task(mode=) (US-TOOL-05)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-TOOL-04 (description audit sets the description quality baseline). GROUND-TRUTH: read picobot internal/agent/tools/cron.go in full. Map Aura's existing schedule_task/list_tasks/cancel_task handlers to per-mode dispatch."
     },
     {
@@ -112,7 +112,7 @@
         "Single atomic commit prefix: feat(tools): collapse create_xlsx/docx/pdf → create_document(format=) (US-TOOL-06)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-TOOL-04. GROUND-TRUTH: read internal/agent/tools/registry/files_docx.go + files_pdf.go + files_xlsx.go end-to-end — they're the largest documented clone (Phase-CLEAN3 reference). Use one parameterised registrar pattern."
     },
     {
@@ -127,7 +127,7 @@
         "Single atomic commit prefix: feat(tools): collapse workspace_* + memory_* readers → workspace(action=) (US-TOOL-07)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-TOOL-04. Don't over-collapse memory tools — edit/delete/forget have distinct semantics."
     },
     {
@@ -142,7 +142,7 @@
         "Single atomic commit prefix: feat(mcp): tools-overrides.json sidecar for description tuning (US-TOOL-08)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Independent of all other stories. GROUND-TRUTH: read cli-printing-press internal/mcpoverrides/overrides.go end-to-end (~119 LOC). Aura's MCP registration site is internal/agent/tools/registry/mcp.go — apply override at registration time."
     },
     {
@@ -157,7 +157,7 @@
         "Single atomic commit prefix: feat(mcp): supervisor with list_changed + circuit breaker + reconnect (US-TOOL-09)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-TOOL-01 (no BM25 push — just in-memory registry update) and ideally US-TOOL-08 (override sidecar). LARGEST STORY in the phase. GROUND-TRUTH: read Hermes tools/mcp_tool.py around lines 1088-1755 — three nested patterns. Port to Go using context.Context + chan struct{} where Hermes uses asyncio. Write unit tests for the supervisor with mock MCP servers BEFORE integration."
     }
   ]

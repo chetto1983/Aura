@@ -11,17 +11,18 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent/tools/attempts"
-	"github.com/aura/aura/internal/audio"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/api/auth"
+	"github.com/aura/aura/internal/audio"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
-	"github.com/aura/aura/internal/mcp"
+	"github.com/aura/aura/internal/llm/pockettts"
+	"github.com/aura/aura/internal/llm/whisper"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/freshness"
 	"github.com/aura/aura/internal/storage/memoryindex"
@@ -29,8 +30,6 @@ import (
 	"github.com/aura/aura/internal/storage/reindex"
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
-	"github.com/aura/aura/internal/llm/pockettts"
-	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
 	"github.com/aura/aura/internal/storage/sources/ocr"
@@ -55,10 +54,14 @@ type App struct {
 	bgWg     sync.WaitGroup
 
 	// ---- Resources to clean up on Stop ----------------------------------------
-	archiver       conversation.ClosingTurnAppender // nil until wireBot
-	sched          *cron.Scheduler                  // nil until wireBot
-	api            http.Handler                     // nil until wireBot
-	freshnessStore *freshness.Store                 // seeded by newApp
+	archiver         conversation.ClosingTurnAppender // nil until wireBot
+	sched            *cron.Scheduler                  // nil until wireBot
+	api              http.Handler                     // nil until wireBot
+	freshnessStore   *freshness.Store                 // seeded by newApp
+	mcpOverridePath  string
+	mcpOverrideWatch bool
+	mcpRuntimes      []*mcpServerRuntime
+	mcpSupervisorRun bool
 }
 
 // startBg starts a background goroutine tracked by bgWg under bgCtx.
@@ -96,6 +99,8 @@ func (a *App) CompactMemoryHealth() memoryindex.VectorHealth {
 // Start starts the cron scheduler (non-blocking) and then starts Telegram
 // polling (blocking). Must be called in a goroutine from main.
 func (a *App) Start(bot *telegram.Bot) {
+	a.startMCPOverrideWatcher()
+	a.startMCPSupervisors()
 	if a.sched != nil {
 		a.sched.Start(a.bgCtx)
 	}
@@ -248,10 +253,10 @@ func newApp(
 			logger.Warn("QDRANT_URL is required for wiki vector search; search disabled")
 		} else {
 			searchEngine, err := search.NewQdrantRepositoryWithDB(search.QdrantConfig{
-				BaseURL:               cfg.QdrantURL,
-				Collection:            cfg.QdrantCollection,
-				APIKey:                cfg.QdrantAPIKey,
-				OutputDim:             cfg.EmbeddingOutputDim,
+				BaseURL:                cfg.QdrantURL,
+				Collection:             cfg.QdrantCollection,
+				APIKey:                 cfg.QdrantAPIKey,
+				OutputDim:              cfg.EmbeddingOutputDim,
 				SkipDimMismatchRebuild: cfg.NoRebuildOnDimMismatch,
 			}, embedFn, cfg.WikiPath, pool, logger)
 			if err != nil {
@@ -409,10 +414,10 @@ func newApp(
 		collection := search.CompactMemoryQdrantCollection(cfg.QdrantCollection)
 		compactVectorHealth.SetEnabled(true, collection)
 		qindex, err := search.NewCompactMemoryQdrantIndexWithBatch(search.QdrantConfig{
-			BaseURL:               cfg.QdrantURL,
-			Collection:            collection,
-			APIKey:                cfg.QdrantAPIKey,
-			OutputDim:             cfg.EmbeddingOutputDim,
+			BaseURL:                cfg.QdrantURL,
+			Collection:             collection,
+			APIKey:                 cfg.QdrantAPIKey,
+			OutputDim:              cfg.EmbeddingOutputDim,
 			SkipDimMismatchRebuild: cfg.NoRebuildOnDimMismatch,
 		}, embedFn, batchEmbedFn, logger)
 		if err != nil {
@@ -506,43 +511,7 @@ func newApp(
 		logger.Info("AuraBot swarm disabled (set AURABOT_ENABLED=true to enable)")
 	}
 
-	// ---- MCP servers --------------------------------------------------------
-	mcpServers, mcpErr := mcp.LoadServers(cfg.MCPServersPath)
-	if mcpErr != nil {
-		logger.Warn("MCP config load failed; continuing without MCP", "error", mcpErr, "path", cfg.MCPServersPath)
-	}
-	mcpClients := make([]mcp.ConnectedClient, 0, len(mcpServers))
-	for name, srv := range mcpServers {
-		srv.Env = mcp.NormalizeRuntimeEnv(name, srv.Env)
-		var cli *mcp.Client
-		var err error
-		switch {
-		case srv.Command != "":
-			cli, err = mcp.NewStdioClient(name, srv.Command, srv.Args, srv.Env)
-		case srv.URL != "":
-			cli, err = mcp.NewHTTPClient(name, srv.URL, srv.Headers)
-		}
-		if err != nil {
-			logger.Warn("MCP server unavailable", "server", name, "error", err)
-			continue
-		}
-		mcpClients = append(mcpClients, cli)
-		registeredTools := 0
-		for _, t := range cli.Tools() {
-			if !mcp.ToolEnabledForAura(name, srv.Env, t.Name) {
-				continue
-			}
-			tool := tools.NewMCPTool(cli, name, t)
-			if mcp.ToolAutonomousForAura(name, t.Name) {
-				toolRegistry.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
-			} else {
-				toolRegistry.Register(tool)
-			}
-			registeredTools++
-		}
-		logger.Info("MCP server registered", "server", name, "tools", len(cli.Tools()), "aura_tools", registeredTools)
-	}
-	deps.MCPClients = mcpClients
+	mcpOverridePath, mcpRuntimes := registerMCPServers(cfg, &deps, toolRegistry, logger)
 
 	// ---- Auth store ---------------------------------------------------------
 	authStore, err := auth.NewStoreWithDB(pool)
@@ -575,7 +544,15 @@ func newApp(
 	// shutdown propagates without needing a separate Stop() round-trip.
 	deps.ParentCtx = bgCtx
 
-	return &App{deps: deps, restart: restart, bgCtx: bgCtx, bgCancel: bgCancel, freshnessStore: freshnessStore}, nil
+	return &App{
+		deps:            deps,
+		restart:         restart,
+		bgCtx:           bgCtx,
+		bgCancel:        bgCancel,
+		freshnessStore:  freshnessStore,
+		mcpOverridePath: mcpOverridePath,
+		mcpRuntimes:     mcpRuntimes,
+	}, nil
 }
 
 // import-cycle adapters live in cmd/aura/adapters.go to keep this file focused

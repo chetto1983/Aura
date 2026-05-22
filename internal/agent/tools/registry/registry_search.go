@@ -41,6 +41,9 @@ func (r *Registry) Search(query string, limit int, excluded ...string) []ToolSea
 		if exclude[name] {
 			continue
 		}
+		if !toolAvailable(tool) {
+			continue
+		}
 		def := definitionForTool(tool)
 		tags := toolCategories(tool)
 		text := searchableToolText(def, tags)

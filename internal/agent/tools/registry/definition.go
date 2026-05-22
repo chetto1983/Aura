@@ -64,6 +64,19 @@ type ToolCapabilityProvider interface {
 	RequiredCapability() identity.Capability
 }
 
+// ToolAvailabilityProvider lets dynamic tools disappear from the LLM-facing
+// catalogue without tearing down their registered wrapper.
+type ToolAvailabilityProvider interface {
+	Available() bool
+}
+
+func toolAvailable(t Tool) bool {
+	if provider, ok := t.(ToolAvailabilityProvider); ok {
+		return provider.Available()
+	}
+	return true
+}
+
 func definitionForTool(t Tool) ToolDefinition {
 	if provider, ok := t.(ToolDefinitionProvider); ok {
 		def := provider.Definition()
