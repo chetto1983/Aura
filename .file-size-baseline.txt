@@ -11,5 +11,4 @@
 1587 cmd/probe_chat/cases.go
 790 cmd/quality_bench/main.go
 689 internal/channels/telegram/invocation_builder.go
-653 internal/storage/search/search.go
 650 cmd/aura/web_chat.go

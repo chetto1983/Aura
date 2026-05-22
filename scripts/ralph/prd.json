@@ -218,7 +218,7 @@
         "Single atomic commit prefix: refactor(search): extract types.go from search.go (US-MOD-SPLIT-09)"
       ],
       "priority": 15,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03. Smallest pick in Wave B — borderline (file is just over 600). Worth doing anyway because it sets the pattern for cleanup-on-touch in this package."
     }
   ]
