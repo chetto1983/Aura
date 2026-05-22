@@ -3,6 +3,11 @@ name = "aura-pocket-tts"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    # `torch` is listed as a direct dependency so the [tool.uv.sources] mapping
+    # below (pin to pytorch-cpu index) actually takes effect. Without this
+    # explicit entry, torch arrives as a transitive of pocket-tts and uv pulls
+    # the default PyPI CUDA wheel (~1 GB of nvidia-* libs).
+    "torch",
     "pocket-tts[quantize]==2.1.0",
 ]
 
