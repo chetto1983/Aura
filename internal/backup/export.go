@@ -161,8 +161,8 @@ func exportArchive(ctx context.Context, cfg Config, uploader Uploader, key strin
 	if err != nil {
 		return Result{}, fmt.Errorf("create temp archive: %w", err)
 	}
-	defer os.Remove(tmp.Name())
-	defer tmp.Close()
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	defer func() { _ = tmp.Close() }()
 
 	files, err := write(tmp, cfg)
 	if err != nil {
@@ -181,13 +181,20 @@ func exportArchive(ctx context.Context, cfg Config, uploader Uploader, key strin
 	return Result{Bucket: cfg.Bucket, Key: key, Bytes: size, Files: files}, nil
 }
 
-func writeFullRestoreArchive(w io.Writer, cfg Config) (int, error) {
+func writeFullRestoreArchive(w io.Writer, cfg Config) (total int, retErr error) {
 	gz := gzip.NewWriter(w)
-	defer gz.Close()
+	defer func() {
+		if err := gz.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("gzip close: %w", err)
+		}
+	}()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
+	defer func() {
+		if err := tw.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("tar close: %w", err)
+		}
+	}()
 
-	total := 0
 	addFile := func(src, name string) error {
 		n, err := addPath(tw, src, name)
 		total += n
@@ -224,11 +231,19 @@ func writeExtractionsArchive(w io.Writer, cfg Config) (int, error) {
 	})
 }
 
-func writeMemorySnapshotArchive(w io.Writer, cfg Config) (int, error) {
+func writeMemorySnapshotArchive(w io.Writer, cfg Config) (total int, retErr error) {
 	gz := gzip.NewWriter(w)
-	defer gz.Close()
+	defer func() {
+		if err := gz.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("gzip close: %w", err)
+		}
+	}()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
+	defer func() {
+		if err := tw.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("tar close: %w", err)
+		}
+	}()
 
 	wiki := strings.TrimSpace(cfg.WikiPath)
 	if wiki == "" {
@@ -252,13 +267,20 @@ func writeMemorySnapshotArchive(w io.Writer, cfg Config) (int, error) {
 	})
 }
 
-func writeEmbeddingIndexArchive(w io.Writer, cfg Config) (int, error) {
+func writeEmbeddingIndexArchive(w io.Writer, cfg Config) (total int, retErr error) {
 	gz := gzip.NewWriter(w)
-	defer gz.Close()
+	defer func() {
+		if err := gz.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("gzip close: %w", err)
+		}
+	}()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
+	defer func() {
+		if err := tw.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("tar close: %w", err)
+		}
+	}()
 
-	total := 0
 	add := func(src, name string) error {
 		n, err := addPath(tw, src, name)
 		total += n
@@ -280,18 +302,25 @@ func writeEmbeddingIndexArchive(w io.Writer, cfg Config) (int, error) {
 	return total, nil
 }
 
-func writeAuditBundleArchive(w io.Writer, cfg Config) (int, error) {
+func writeAuditBundleArchive(w io.Writer, cfg Config) (total int, retErr error) {
 	gz := gzip.NewWriter(w)
-	defer gz.Close()
+	defer func() {
+		if err := gz.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("gzip close: %w", err)
+		}
+	}()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
+	defer func() {
+		if err := tw.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("tar close: %w", err)
+		}
+	}()
 
 	paths := append([]string{}, cfg.AuditPaths...)
 	if strings.TrimSpace(cfg.LogDir) != "" {
 		paths = append([]string{cfg.LogDir}, paths...)
 	}
 
-	total := 0
 	seen := map[string]bool{}
 	for _, src := range paths {
 		src = strings.TrimSpace(src)
@@ -309,11 +338,19 @@ func writeAuditBundleArchive(w io.Writer, cfg Config) (int, error) {
 	return total, nil
 }
 
-func writeFilteredSourceArchive(w io.Writer, cfg Config, include func(name string) bool) (int, error) {
+func writeFilteredSourceArchive(w io.Writer, cfg Config, include func(name string) bool) (total int, retErr error) {
 	gz := gzip.NewWriter(w)
-	defer gz.Close()
+	defer func() {
+		if err := gz.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("gzip close: %w", err)
+		}
+	}()
 	tw := tar.NewWriter(gz)
-	defer tw.Close()
+	defer func() {
+		if err := tw.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("tar close: %w", err)
+		}
+	}()
 
 	raw := filepath.Join(strings.TrimSpace(cfg.WikiPath), "raw")
 	if strings.TrimSpace(cfg.WikiPath) == "" {
@@ -350,7 +387,7 @@ func addDBSnapshot(tw *tar.Writer, dbPath, archiveName string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	snapshotPath := filepath.Join(tmpDir, filepath.Base(dbPath))
 	if err := auradb.Snapshot(context.Background(), dbPath, snapshotPath); err != nil {
 		return 0, err
@@ -463,7 +500,7 @@ func addOneFile(tw *tar.Writer, src, name string, info os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	h, err := tar.FileInfoHeader(info, "")
 	if err != nil {

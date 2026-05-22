@@ -53,7 +53,7 @@
         "Single atomic commit prefix: fix(api,backup): propagate silent JSON-write + gzip-close failures (US-BUG-03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Surface-fix on these two files only — other errcheck noise stays for Phase-MODERNIZE INFRA-02 (deadcode + errcheck CI gate). GROUND-TRUTH: (1) grep -n 'json.NewEncoder' internal/api/health_server.go (3 sites). (2) grep -n 'gzip.NewWriter\\|tar.NewWriter' internal/backup/export.go (5+ sites). (3) Read both files end-to-end before patching — backup export especially is 478 LOC, the close chain is tricky."
     }
   ]

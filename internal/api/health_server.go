@@ -139,6 +139,13 @@ func (s *HealthServer) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
+// writeJSONResponse encodes v as JSON to w, logging a warning if the write fails.
+func (s *HealthServer) writeJSONResponse(w http.ResponseWriter, v any) {
+	if err := json.NewEncoder(w).Encode(v); err != nil && s.logger != nil {
+		s.logger.Warn("health: response write failed", "error", err)
+	}
+}
+
 func (s *HealthServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	status := HealthStatus{
 		Status:     "ok",
@@ -164,12 +171,12 @@ func (s *HealthServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if !allHealthy {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
-	json.NewEncoder(w).Encode(status)
+	s.writeJSONResponse(w, status)
 }
 
 func (s *HealthServer) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "alive"})
+	s.writeJSONResponse(w, map[string]string{"status": "alive"})
 }
 
 func (s *HealthServer) handleTelegram(w http.ResponseWriter, r *http.Request) {
@@ -182,11 +189,11 @@ func (s *HealthServer) handleTelegram(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if s.botUsername == "" {
 		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{"error": "telegram bot username unavailable"})
+		s.writeJSONResponse(w, map[string]string{"error": "telegram bot username unavailable"})
 		return
 	}
 	url := "https://t.me/" + s.botUsername
-	json.NewEncoder(w).Encode(HealthTelegramInfo{
+	s.writeJSONResponse(w, HealthTelegramInfo{
 		Username: s.botUsername,
 		URL:      url,
 		StartURL: url + "?start=login",

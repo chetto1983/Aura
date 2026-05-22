@@ -1,7 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -204,7 +207,9 @@ func TestUptimeInStatus(t *testing.T) {
 	s.handleStatus(w, req)
 
 	var status HealthStatus
-	json.NewDecoder(w.Body).Decode(&status)
+	if err := json.NewDecoder(w.Body).Decode(&status); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
 	if status.Uptime == "" {
 		t.Error("uptime should not be empty")
 	}
@@ -214,3 +219,53 @@ func TestUptimeInStatus(t *testing.T) {
 // that lived here previously asserted the QR/HTML response shape; they're
 // removed alongside the handler. The dashboard SPA owns / now and is
 // covered by internal/api/static_test.go.
+
+// failResponseWriter is an http.ResponseWriter whose Write always returns an error.
+type failResponseWriter struct {
+	header   http.Header
+	writeErr error
+}
+
+func (f *failResponseWriter) Header() http.Header {
+	if f.header == nil {
+		f.header = http.Header{}
+	}
+	return f.header
+}
+
+func (f *failResponseWriter) Write(_ []byte) (int, error) { return 0, f.writeErr }
+func (f *failResponseWriter) WriteHeader(_ int)           {}
+
+// captureSlogHandler captures slog message strings for test assertions.
+type captureSlogHandler struct {
+	msgs []string
+}
+
+func (h *captureSlogHandler) Enabled(_ context.Context, _ slog.Level) bool { return true }
+func (h *captureSlogHandler) Handle(_ context.Context, r slog.Record) error {
+	h.msgs = append(h.msgs, r.Message)
+	return nil
+}
+func (h *captureSlogHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h *captureSlogHandler) WithGroup(_ string) slog.Handler      { return h }
+
+func TestHealthWriteErrorLogged(t *testing.T) {
+	handler := &captureSlogHandler{}
+	logger := slog.New(handler)
+	s := NewHealthServer(HealthServerConfig{Addr: ":0"}, logger)
+
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	w := &failResponseWriter{writeErr: errors.New("broken pipe")}
+	s.handleHealth(w, req)
+
+	found := false
+	for _, msg := range handler.msgs {
+		if msg == "health: response write failed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'health: response write failed' warn log, got: %v", handler.msgs)
+	}
+}

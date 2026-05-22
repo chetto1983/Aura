@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -152,7 +153,7 @@ func TestAddOneFileToleratesGrowingLiveFile(t *testing.T) {
 		t.Fatalf("open append: %v", err)
 	}
 	if _, err := file.WriteString("-after"); err != nil {
-		file.Close()
+		_ = file.Close()
 		t.Fatalf("append: %v", err)
 	}
 	if err := file.Close(); err != nil {
@@ -238,7 +239,7 @@ func tarNames(t *testing.T, data []byte) []string {
 	if err != nil {
 		t.Fatalf("gzip: %v", err)
 	}
-	defer gz.Close()
+	defer func() { _ = gz.Close() }()
 	tr := tar.NewReader(gz)
 	var out []string
 	for {
@@ -297,4 +298,17 @@ func bodyForKey(t *testing.T, uploader *fakeUploader, key string) []byte {
 	}
 	t.Fatalf("upload %s not found in %+v", key, uploader.puts)
 	return nil
+}
+
+// errWriter is an io.Writer that always returns an error — simulates disk full.
+type errWriter struct{ err error }
+
+func (e *errWriter) Write(_ []byte) (int, error) { return 0, e.err }
+
+func TestWriteArchiveCloseErrorPropagated(t *testing.T) {
+	w := &errWriter{err: errors.New("disk full")}
+	_, err := writeFullRestoreArchive(w, Config{})
+	if err == nil {
+		t.Fatal("expected error when underlying writer fails (simulates disk-full at gzip/tar close), got nil")
+	}
 }
