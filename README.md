@@ -356,13 +356,28 @@ Prerequisites:
 - A Telegram bot token from [@BotFather](https://t.me/BotFather).
 - An OpenAI-compatible LLM endpoint.
 
+**PowerShell (Windows):**
+
 ```powershell
 git clone https://github.com/chetto1983/Aura
 cd Aura
 New-Item -ItemType Directory -Force data,runtime-workspace,garage | Out-Null
-$env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
+
+**Bash (macOS / Linux / WSL):**
+
+```bash
+git clone https://github.com/chetto1983/Aura
+cd Aura
+mkdir -p data runtime-workspace garage
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+`compose.image.yaml` pulls four images from GHCR: `aura`, `aura-whisper`,
+`aura-pocket-tts`, `aura-markitdown`. Cold first start: ~5-10 min. Without
+this overlay (`up -d --build`), the four sidecars compile from source —
+expect ~45-60 min cold.
 
 Open the setup wizard at `http://127.0.0.1:18080`.
 

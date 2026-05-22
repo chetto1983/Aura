@@ -35,12 +35,39 @@ path is manual-only for legacy testing.
 
 ## Step 2 - Start Aura
 
+The `compose.image.yaml` overlay pulls four pre-built images from GHCR:
+`aura` (chat + dashboard + tools), `aura-whisper` (audio IN sidecar),
+`aura-pocket-tts` (audio OUT sidecar, default OFF), and `aura-markitdown`
+(file conversion sidecar). Cold first start: **~5-10 min** (GHCR pulls
+in parallel + 2 small local init containers).
+
+**PowerShell (Windows):**
+
 ```powershell
 git clone https://github.com/chetto1983/Aura
 cd Aura
 New-Item -ItemType Directory -Force data,runtime-workspace,garage | Out-Null
-$env:AURA_IMAGE = "ghcr.io/chetto1983/aura:latest"
 docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+**Bash (macOS / Linux / WSL):**
+
+```bash
+git clone https://github.com/chetto1983/Aura
+cd Aura
+mkdir -p data runtime-workspace garage
+docker compose -f compose.yaml -f compose.image.yaml up -d
+```
+
+Pin a release by setting any of the image env vars before `up -d`
+(defaults to `:latest` for each):
+
+```bash
+AURA_IMAGE="ghcr.io/chetto1983/aura:v0.3.1" \
+AURA_WHISPER_IMAGE="ghcr.io/chetto1983/aura-whisper:v0.3.1" \
+AURA_POCKETTTS_IMAGE="ghcr.io/chetto1983/aura-pocket-tts:v0.3.1" \
+AURA_MARKITDOWN_IMAGE="ghcr.io/chetto1983/aura-markitdown:v0.3.1" \
+  docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
 
 If port `18080` is busy, pick another:
@@ -49,6 +76,11 @@ If port `18080` is busy, pick another:
 $env:AURA_HOST_PORT = "8080"
 docker compose -f compose.yaml -f compose.image.yaml up -d
 ```
+
+> **Note:** without the `compose.image.yaml` overlay (`docker compose up -d --build`
+> from the working tree), the four sidecars compile from source (whisper.cpp,
+> Kyutai TTS.cpp, Python+markitdown). Cold time: **~45-60 min**. Only use the
+> raw `up -d --build` path for development against local source changes.
 
 ## Step 3 - Finish Setup
 

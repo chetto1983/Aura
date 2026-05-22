@@ -1,5 +1,35 @@
+# compose.image.yaml — pull all 4 Aura images from GHCR instead of building locally.
+#
+# Combined with compose.yaml via:
+#   docker compose -f compose.yaml -f compose.image.yaml up -d
+#
+# Variables (all default to :latest; pin a tag via env):
+#   AURA_IMAGE             ghcr.io/chetto1983/aura:<tag>
+#   AURA_WHISPER_IMAGE     ghcr.io/chetto1983/aura-whisper:<tag>
+#   AURA_POCKETTTS_IMAGE   ghcr.io/chetto1983/aura-pocket-tts:<tag>
+#   AURA_MARKITDOWN_IMAGE  ghcr.io/chetto1983/aura-markitdown:<tag>
+#
+# Cold first start with this overlay: ~5-10 min (4 GHCR pulls in parallel +
+# 2 small local builds for init-models and garage-init).
+# Without this overlay: ~45-60 min (4 sidecars compiled from source).
+
 services:
   aura:
     image: ${AURA_IMAGE:-ghcr.io/chetto1983/aura:latest}
+    build: null
+    pull_policy: always
+
+  aura-whisper:
+    image: ${AURA_WHISPER_IMAGE:-ghcr.io/chetto1983/aura-whisper:latest}
+    build: null
+    pull_policy: always
+
+  aura-pocket-tts:
+    image: ${AURA_POCKETTTS_IMAGE:-ghcr.io/chetto1983/aura-pocket-tts:latest}
+    build: null
+    pull_policy: always
+
+  aura-markitdown:
+    image: ${AURA_MARKITDOWN_IMAGE:-ghcr.io/chetto1983/aura-markitdown:latest}
     build: null
     pull_policy: always

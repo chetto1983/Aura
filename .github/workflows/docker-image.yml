@@ -1,4 +1,4 @@
-name: Docker image
+name: Docker images
 
 on:
   push:
@@ -8,7 +8,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: chetto1983/aura
 
 permissions:
   contents: read
@@ -16,8 +15,28 @@ permissions:
 
 jobs:
   publish:
-    name: Build and publish image
+    name: Build and publish ${{ matrix.image }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: aura
+            context: .
+            dockerfile: ./Dockerfile
+            platforms: linux/amd64,linux/arm64
+          - image: aura-whisper
+            context: ./docker/whisper
+            dockerfile: ./docker/whisper/Dockerfile
+            platforms: linux/amd64,linux/arm64
+          - image: aura-pocket-tts
+            context: ./docker/pocket-tts
+            dockerfile: ./docker/pocket-tts/Dockerfile
+            platforms: linux/amd64,linux/arm64
+          - image: aura-markitdown
+            context: ./docker/markitdown
+            dockerfile: ./docker/markitdown/Dockerfile
+            platforms: linux/amd64,linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -39,23 +58,23 @@ jobs:
         id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/chetto1983/${{ matrix.image }}
           tags: |
             type=ref,event=tag
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
             type=sha,prefix=sha-
 
-      - name: Build and push Docker image
+      - name: Build and push ${{ matrix.image }}
         id: build
         uses: docker/build-push-action@v7
         with:
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platforms }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/chetto1983/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=${{ env.REGISTRY }}/chetto1983/${{ matrix.image }}:buildcache,mode=max
           provenance: true
           sbom: true
