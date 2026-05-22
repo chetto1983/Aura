@@ -52,7 +52,7 @@
         "Single atomic commit prefix: fix(qdrant): skip-and-continue on per-page embed error during rebuild (US-WIKI-FIX-03)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: Read internal/storage/search/qdrant.go lines 470-525. The current return-on-error pattern is at line ~484. The vector-size mismatch check at line ~491 is DIFFERENT — that one should stay a hard error (it indicates a config drift, not a content-length problem). SCOPE: only the per-doc embed failure path. Do not refactor the dim-mismatch path; that's FIX-04."
     },
     {

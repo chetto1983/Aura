@@ -3,6 +3,7 @@ package search
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -727,5 +728,105 @@ func TestQdrantRepositoryReturnsPrimaryResults(t *testing.T) {
 	}
 	if len(results) != 1 || results[0].Slug != "vector-only" {
 		t.Fatalf("results = %+v", results)
+	}
+}
+
+// TestRebuildQdrantWikiDocumentsSkipOnEmbedError verifies that when an embed call
+// fails for a specific doc, the rebuild skips that doc and continues indexing the
+// rest — returning nil error as long as at least one doc was indexed.
+func TestRebuildQdrantWikiDocumentsSkipOnEmbedError(t *testing.T) {
+	wikiDir := t.TempDir()
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Alpha Success",
+		Body:          "Normal content that embeds fine.",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+	writeTestMDPage(t, wikiDir, &wiki.Page{
+		Title:         "Beta Fail",
+		Body:          "ZZZMUSTFAIL context too large for embed sidecar",
+		Category:      "project",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     time.Now().UTC().Format(time.RFC3339),
+		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
+	})
+
+	// failingEmbed returns an error for any content containing the sentinel token.
+	// This covers: wiki_page:beta-fail (body has token) and graph:node:beta-fail
+	// (Summary line includes body excerpt). The graph index docs contain only slug+title,
+	// so they do NOT contain the token and embed fine.
+	failingEmbed := func(_ context.Context, text string) ([]float32, error) {
+		if strings.Contains(text, "ZZZMUSTFAIL") {
+			return nil, fmt.Errorf("input is larger than max context size (1024)")
+		}
+		return keywordEmbedding(context.Background(), text)
+	}
+
+	var upsertedCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
+			_, _ = w.Write([]byte("ready"))
+		case r.Method == http.MethodGet && r.URL.Path == "/collections/aura_memory_v1":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodDelete && r.URL.Path == "/collections/aura_memory_v1":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1":
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPut && r.URL.Path == "/collections/aura_memory_v1/points":
+			var body struct {
+				Points []json.RawMessage `json:"points"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode upsert body: %v", err)
+			}
+			upsertedCount += len(body.Points)
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected qdrant request: %s %s", r.Method, r.URL.String())
+		}
+	}))
+	defer server.Close()
+
+	report, err := RebuildQdrantWikiDocuments(context.Background(), wikiDir, failingEmbed, QdrantConfig{
+		BaseURL:    server.URL,
+		Collection: "aura_memory_v1",
+		BatchSize:  100,
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("RebuildQdrantWikiDocuments returned error for partial embed failure: %v", err)
+	}
+
+	// 2 pages × (1 wiki_page + 1 graph:node) + 1 graph:index:category:project + 1 graph:index:all = 6 total docs.
+	// beta-fail wiki_page + graph:node:beta-fail both contain the sentinel → 2 skipped.
+	if len(report.SkippedDocs) != 2 {
+		t.Fatalf("skipped docs count = %d, want 2; skipped = %v", len(report.SkippedDocs), report.SkippedDocs)
+	}
+	skippedIDs := make(map[string]string, len(report.SkippedDocs))
+	for _, s := range report.SkippedDocs {
+		skippedIDs[s.DocID] = s.Reason
+	}
+	if _, ok := skippedIDs["beta-fail"]; !ok {
+		t.Fatalf("expected beta-fail in skipped docs; got %v", report.SkippedDocs)
+	}
+	if _, ok := skippedIDs["graph:node:beta-fail"]; !ok {
+		t.Fatalf("expected graph:node:beta-fail in skipped docs; got %v", report.SkippedDocs)
+	}
+	for id, reason := range skippedIDs {
+		if reason == "" {
+			t.Fatalf("skipped doc %q has empty reason", id)
+		}
+	}
+
+	// 4 docs succeed: wiki_page:alpha-success, graph:node:alpha-success, graph:index:category:project, graph:index:all.
+	if report.DocsIndexed != 4 {
+		t.Fatalf("docs indexed = %d, want 4 (alpha wiki+graph + 2 index docs)", report.DocsIndexed)
+	}
+	if upsertedCount != 4 {
+		t.Fatalf("upserted points count = %d, want 4", upsertedCount)
 	}
 }

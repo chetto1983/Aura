@@ -34,14 +34,21 @@ type QdrantConfig struct {
 // not as "zero pages on disk" (WR-05).
 const PagesIndexedUnknown = -1
 
+// SkippedDoc records a wiki document that could not be embedded during a rebuild.
+type SkippedDoc struct {
+	DocID  string `json:"doc_id"`
+	Reason string `json:"reason"`
+}
+
 type QdrantRebuildReport struct {
 	Collection  string `json:"collection"`
 	DocsIndexed int    `json:"docs_indexed"`
 	// PagesIndexed is the number of wiki pages enumerated on disk during the
 	// rebuild. The value PagesIndexedUnknown (-1) means the disk enumeration
 	// failed during a warm-cache hit; callers should not interpret it as zero.
-	PagesIndexed int `json:"pages_indexed"`
-	VectorSize   int `json:"vector_size"`
+	PagesIndexed int          `json:"pages_indexed"`
+	VectorSize   int          `json:"vector_size"`
+	SkippedDocs  []SkippedDoc `json:"skipped_docs,omitempty"`
 }
 
 type qdrantSearcher struct {
@@ -477,14 +484,20 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 	}
 
 	points := make([]qdrant.Point, 0, len(docs))
+	var skipped []SkippedDoc
 	vectorSize := 0
 	for _, doc := range docs {
 		vector, err := embedFn(ctx, doc.Content)
 		if err != nil {
-			return QdrantRebuildReport{}, fmt.Errorf("embedding %s: %w", doc.ID, err)
+			logger.Warn("rebuild: skipping doc", "id", doc.ID, "error", err)
+			skipped = append(skipped, SkippedDoc{DocID: doc.ID, Reason: err.Error()})
+			continue
 		}
 		if len(vector) == 0 {
-			return QdrantRebuildReport{}, fmt.Errorf("embedding %s returned empty vector", doc.ID)
+			skipErr := fmt.Errorf("embedding returned empty vector")
+			logger.Warn("rebuild: skipping doc", "id", doc.ID, "error", skipErr)
+			skipped = append(skipped, SkippedDoc{DocID: doc.ID, Reason: skipErr.Error()})
+			continue
 		}
 		if vectorSize == 0 {
 			vectorSize = len(vector)
@@ -505,6 +518,14 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 		})
 	}
 
+	if len(points) == 0 {
+		return QdrantRebuildReport{
+			Collection:   collection,
+			PagesIndexed: pages,
+			SkippedDocs:  skipped,
+		}, fmt.Errorf("rebuild: all %d documents failed to embed", len(docs))
+	}
+
 	if err := client.DeleteCollection(ctx, collection); err != nil {
 		return QdrantRebuildReport{}, err
 	}
@@ -519,6 +540,7 @@ func rebuildQdrantWikiDocumentsWithClient(ctx context.Context, wikiDir string, e
 		DocsIndexed:  len(points),
 		PagesIndexed: pages,
 		VectorSize:   vectorSize,
+		SkippedDocs:  skipped,
 	}, nil
 }
 
