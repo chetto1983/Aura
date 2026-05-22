@@ -67,8 +67,6 @@ const (
 	KeySkillRoutingMode        = "AURA_SKILL_ROUTING_MODE"
 	KeyAgentLoopMaxSteps       = "AURA_AGENT_LOOP_MAX_STEPS"
 	KeyReasoningEffort         = "AURA_REASONING_EFFORT"
-	KeyToolSearchTopK          = "TOOL_SEARCH_TOP_K"
-	KeyToolSearchBackend       = "TOOL_SEARCH_BACKEND"
 	KeyMaxToolResultChars      = "MAX_TOOL_RESULT_CHARS"
 	KeyMicrocompactKeepRecent  = "MICROCOMPACT_KEEP_RECENT"
 	KeyMicrocompactMinChars    = "MICROCOMPACT_MIN_CHARS"
@@ -114,7 +112,6 @@ func OverridableKeys() []string {
 		KeyEmbeddingAPIKey, KeyEmbeddingBaseURL, KeyEmbeddingModel, KeyEmbeddingOutputDim,
 		KeyPromptVersion,
 		KeySkillRoutingMode, KeyAgentLoopMaxSteps, KeyReasoningEffort,
-		KeyToolSearchTopK, KeyToolSearchBackend,
 		KeyMaxToolResultChars, KeyMicrocompactKeepRecent, KeyMicrocompactMinChars,
 		KeyTerminalToolPolicy, KeyDelegationMode, KeyTraceRetentionDays,
 		KeyWorkspaceTools, KeyWorkspaceRoot,
@@ -212,8 +209,6 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 	cfg.SkillRoutingMode = NormalizeSkillRoutingMode(settingString(ctx, s, KeySkillRoutingMode, cfg.SkillRoutingMode))
 	cfg.AgentLoopMaxSteps = settingIntRange(ctx, s, KeyAgentLoopMaxSteps, cfg.AgentLoopMaxSteps, 1, 10000, DefaultAgentLoopMaxSteps)
 	cfg.ReasoningEffort = NormalizeReasoningEffort(settingString(ctx, s, KeyReasoningEffort, cfg.ReasoningEffort))
-	cfg.ToolSearchTopK = settingIntRange(ctx, s, KeyToolSearchTopK, cfg.ToolSearchTopK, 1, 50, DefaultToolSearchTopK)
-	cfg.ToolSearchBackend = NormalizeToolSearchBackend(settingString(ctx, s, KeyToolSearchBackend, cfg.ToolSearchBackend))
 	cfg.MaxToolResultChars = settingIntRange(ctx, s, KeyMaxToolResultChars, cfg.MaxToolResultChars, 1000, 500000, DefaultMaxToolResultChars)
 	cfg.MicrocompactKeepRecent = settingIntRange(ctx, s, KeyMicrocompactKeepRecent, cfg.MicrocompactKeepRecent, 1, 500, DefaultMicrocompactKeepRecent)
 	cfg.MicrocompactMinChars = settingIntRange(ctx, s, KeyMicrocompactMinChars, cfg.MicrocompactMinChars, 100, 100000, DefaultMicrocompactMinChars)

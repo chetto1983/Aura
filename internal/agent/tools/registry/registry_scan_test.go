@@ -32,7 +32,7 @@ func TestCatalogueScanNativeTools(t *testing.T) {
 		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
-		&ToolSearchTool{},
+
 		&SearchMemoryTool{},
 		&RecallOperationalTool{},
 		&RecallUserMemoryTool{},
@@ -78,7 +78,6 @@ func TestCatalogueAlwaysOnTools(t *testing.T) {
 		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
-		&ToolSearchTool{},
 	}
 	for _, tool := range alwaysOn {
 		def := definitionForTool(tool)
@@ -131,7 +130,7 @@ func TestCatalogueReadOnlyHintConsistency(t *testing.T) {
 		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
-		&ToolSearchTool{},
+
 		&SearchMemoryTool{},
 		&RecallOperationalTool{},
 		&RecallUserMemoryTool{},

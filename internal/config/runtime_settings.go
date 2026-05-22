@@ -33,7 +33,6 @@ func ApplyRuntimeSettings(ctx context.Context, store Reader, cfg *Config, manage
 	outputPerM := floatSetting(ctx, store, KeyCostOutputPerMTokens, "COST_OUTPUT_PER_M_TOKENS", cfg.CostOutputPerMTokens)
 	skillRoutingMode := NormalizeSkillRoutingMode(stringSetting(ctx, store, KeySkillRoutingMode, "AURA_SKILL_ROUTING_MODE", cfg.SkillRoutingMode))
 	agentLoopMaxSteps := intRangeSetting(ctx, store, KeyAgentLoopMaxSteps, "AURA_AGENT_LOOP_MAX_STEPS", cfg.AgentLoopMaxSteps, 1, 10000, DefaultAgentLoopMaxSteps)
-	toolSearchTopK := intRangeSetting(ctx, store, KeyToolSearchTopK, "TOOL_SEARCH_TOP_K", cfg.ToolSearchTopK, 1, 50, DefaultToolSearchTopK)
 	maxToolResultChars := intRangeSetting(ctx, store, KeyMaxToolResultChars, "MAX_TOOL_RESULT_CHARS", cfg.MaxToolResultChars, 1000, 500000, DefaultMaxToolResultChars)
 	microcompactKeepRecent := intRangeSetting(ctx, store, KeyMicrocompactKeepRecent, "MICROCOMPACT_KEEP_RECENT", cfg.MicrocompactKeepRecent, 1, 500, DefaultMicrocompactKeepRecent)
 	microcompactMinChars := intRangeSetting(ctx, store, KeyMicrocompactMinChars, "MICROCOMPACT_MIN_CHARS", cfg.MicrocompactMinChars, 100, 100000, DefaultMicrocompactMinChars)
@@ -55,7 +54,6 @@ func ApplyRuntimeSettings(ctx context.Context, store Reader, cfg *Config, manage
 	cfg.CostOutputPerMTokens = outputPerM
 	cfg.SkillRoutingMode = skillRoutingMode
 	cfg.AgentLoopMaxSteps = agentLoopMaxSteps
-	cfg.ToolSearchTopK = toolSearchTopK
 	cfg.MaxToolResultChars = maxToolResultChars
 	cfg.MicrocompactKeepRecent = microcompactKeepRecent
 	cfg.MicrocompactMinChars = microcompactMinChars
@@ -85,7 +83,6 @@ func ApplyRuntimeSettings(ctx context.Context, store Reader, cfg *Config, manage
 			"output_per_m_tokens", outputPerM,
 			"skill_routing_mode", skillRoutingMode,
 			"agent_loop_max_steps", agentLoopMaxSteps,
-			"tool_search_top_k", toolSearchTopK,
 			"max_tool_result_chars", maxToolResultChars,
 			"microcompact_keep_recent", microcompactKeepRecent,
 			"microcompact_min_chars", microcompactMinChars,

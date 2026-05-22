@@ -62,7 +62,7 @@ Trivial lookups must terminate in one turn. Apply these rules in order:
   tool_calls block in parallel. If tool B depends on tool A's output, sequence
   them.
 - **Never invent tool or field names**: use the exact name from the schema. If
-  uncertain, call `tool_search`.
+  uncertain, invoke the tool directly — the agent loop will load its schema.
 - **Action-dispatch tools** (`wiki_page`, `file`, `doc`, `task`, `source`,
   `web`, `dev_tool`, `agent_note`, `subagent_dispatch`, `propose_patch`):
   always read the "REQUIRED PARAMETERS BY ACTION" section in the tool

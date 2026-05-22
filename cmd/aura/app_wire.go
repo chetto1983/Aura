@@ -17,7 +17,6 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/agent/tools/attempts"
-	toolindex "github.com/aura/aura/internal/agent/tools/index"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/api"
@@ -60,70 +59,6 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if a.deps.MemoryStore != nil {
 		b.SetMemoryStore(a.deps.MemoryStore)
 	}
-
-	// ---- Tool vector index: reconciler + mcpwatch goroutines ----------------
-	toolReaderConfig := tools.ToolVectorConfig{
-		Backend:        cfg.ToolSearchBackend,
-		TopK:           cfg.ToolSearchTopK,
-		QdrantURL:      cfg.QdrantURL,
-		QdrantAPIKey:   cfg.QdrantAPIKey,
-		Collection:     tools.ToolSearchCollection,
-		EmbedBaseURL:   cfg.EmbeddingBaseURL,
-		EmbedAPIKey:    cfg.EmbeddingAPIKey,
-		EmbedModel:     cfg.EmbeddingModel,
-		EmbedOutputDim: cfg.EmbeddingOutputDim,
-	}
-	var reconciler *toolindex.Reconciler
-	if a.deps.QdrantClient != nil && a.deps.EmbedCache != nil && cfg.ToolSearchBackend != "fts" {
-		r, err := toolindex.New(toolindex.Config{
-			Provider:    a.deps.Tools,
-			Qdrant:      a.deps.QdrantClient,
-			Embedder:    a.deps.EmbedCache,
-			State:       toolindex.NewSQLiteStateStore(a.deps.Pool),
-			Collection:  tools.ToolSearchCollection,
-			VectorDim:   tools.ToolVectorDim(cfg.EmbeddingOutputDim),
-			EmbedModel:  search.EmbedCacheNamespace(cfg.EmbeddingBaseURL, cfg.EmbeddingModel),
-			EmbedTextFn: tools.SearchableEmbeddingTextForLLMDef,
-			PointIDFn:   tools.ToolQdrantPointID,
-			Logger:      logger.With("component", "toolindex"),
-		})
-		if err != nil {
-			logger.Warn("tool index reconciler unavailable", "error", err)
-		} else {
-			rep := r.Reconcile(context.Background(), toolindex.ReasonBoot)
-			logger.Info("tool index reconciled at boot",
-				"upserted", len(rep.Upserted), "deleted", len(rep.Deleted),
-				"unchanged", rep.Unchanged, "errors", len(rep.Errors),
-				"elapsed_ms", rep.ElapsedMs)
-			for i, e := range rep.Errors {
-				logger.Warn("tool index reconcile error", "idx", i, "err", e)
-			}
-			reconciler = r
-			// toolReconciler.Run goroutine lifecycle owned by App (US-A13c).
-			a.startBg(r.Run)
-
-			// fsnotify on mcp.json — debounced notification when the operator edits the file.
-			// mcpwatch goroutine lifecycle owned by App (US-A13c).
-			if cfg.MCPServersPath != "" {
-				watcher, werr := mcp.New(mcp.Config{
-					Path:     cfg.MCPServersPath,
-					Callback: func() { r.Notify(toolindex.ReasonMCPConfig) },
-					Logger:   logger.With("component", "mcpwatch"),
-				})
-				if werr != nil {
-					logger.Warn("mcp.json watcher unavailable", "error", werr)
-				} else {
-					a.startBg(func(ctx context.Context) {
-						if rerr := watcher.Run(ctx); rerr != nil {
-							logger.Warn("mcpwatch exited with error", "error", rerr)
-						}
-					})
-				}
-			}
-		}
-	}
-	// Wire the ToolVectorIndex on the registry for the search path.
-	a.deps.Tools.PrepareVectorReader(toolReaderConfig)
 
 	// ---- Wiki orphan reconciler (Qdrant + FTS5 cleanup for deleted pages) ---
 	// Purges Qdrant vectors and FTS5 rows for wiki pages that have been deleted
@@ -299,9 +234,6 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	}
 	if tool := tools.NewDevToolTool(a.deps.ToolReg); tool != nil {
 		a.deps.Tools.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
-	}
-	if tool := tools.NewToolSearchTool(a.deps.Tools); tool != nil {
-		a.deps.Tools.Register(tool)
 	}
 	a.deps.Tools.Register(&tools.AskUserTool{})
 	a.deps.Tools.Register(&tools.AskUserClarificationTool{})
@@ -522,8 +454,6 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		EmbedCache:    a.deps.EmbedCache,
 		CompactMemory: a.deps.CompactVectorHealth,
 		Sandbox:       a.deps.SandboxHealth,
-		// ToolReconciler backs POST /api/tools/reindex.
-		ToolReconciler: reconciler,
 		// SourcePurger for DELETE /sources/{id} compact memoryindex cleanup.
 		SourcePurger: a.deps.MemoryStore,
 		// Multi-root file manager.
@@ -571,11 +501,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		ToolAttemptsStats: api.NewSQLiteToolAttemptsReader(a.deps.Pool),
 	})
 
-	// Wave 2.10.b — late notify. Fire one final Notify so the debounced reconcile
-	// picks up every tool that landed in the registry during setup.
-	if reconciler != nil {
-		reconciler.Notify(toolindex.ReasonBoot)
-	}
+	logger.Info("tool registry built",
+		"tools", len(a.deps.Tools.Definitions()),
+		"tokens", tools.ManifestTokenEstimate(tools.RenderToolManifest(a.deps.Tools.Definitions())))
 	return nil
 }
 

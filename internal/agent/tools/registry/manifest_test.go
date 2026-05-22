@@ -73,14 +73,6 @@ func TestRenderToolManifest_KeepsFirstSentence(t *testing.T) {
 	}
 }
 
-func TestRenderToolManifest_IncludesUsageHint(t *testing.T) {
-	defs := []llm.ToolDefinition{{Name: "x", Description: "y"}}
-	got := RenderToolManifest(defs)
-	if !strings.Contains(got, "tool_search") {
-		t.Fatalf("manifest must mention tool_search:\n%s", got)
-	}
-}
-
 func TestRenderToolManifest_SizeBudgetFor68Tools(t *testing.T) {
 	// Synthesize 68 tools mirroring real Aura catalog size (built-in + MCP).
 	defs := make([]llm.ToolDefinition, 0, 68)

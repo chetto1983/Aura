@@ -29,7 +29,7 @@ func ComposeAgentPrompt(cfg *config.Config, loc *time.Location, overlay, pinnedO
 	}
 	modules := []string{"base", "runtime", "clarification-protocol", "registered-tools"}
 	content := conversation.RenderSystemPrompt(now, loc)
-	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Discovery: the catalog below lists every tool you have. Call tool_search to fetch input schemas, OR invoke any tool by name and the agent loop will load its schema for this turn.\n\nChoose tools autonomously when they help. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
+	content += fmt.Sprintf("\n\n## Aura Runtime\n- Prompt Version: %s\n- Tool Discovery: the catalog below lists every tool you have. Invoke any tool by name — the agent loop will load its full schema for this turn.\n\nChoose tools autonomously when they help. For multi-step work, prefer execute_code or execute_shell to inspect, loop, transform, and verify in one runtime pass instead of asking for many model tool-call rounds. Prefer direct answers when no tool is needed.", version)
 	content += "\n\n" + conversation.ClarificationAndApprovalProtocol()
 	if injected := conversation.InjectWikiTOC(content, wikiTOC); injected != content {
 		content = injected

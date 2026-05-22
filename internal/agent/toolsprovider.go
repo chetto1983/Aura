@@ -8,27 +8,11 @@ import (
 
 // AlwaysOnCore is the seed of the per-turn tool pool.
 //
-// Deferred-tools rollout (2026-05-12): the seed is now JUST tool_search.
-// Every other tool is discovered through one of two paths:
-//
-//  1. The model reads the catalog manifest in the system prompt and calls
-//     a tool by name directly. The agent loop's permissive-load path
-//     resolves the name via Registry.DefinitionFor and adds the schema
-//     to the pool for this turn.
-//
-//  2. The model calls tool_search(query) to retrieve candidate schemas;
-//     the executor's result is absorbed by the pool so the next LLM
-//     iteration sees the discovered tools in its tools array.
-//
-// Rationale (from the embed-vs-LLM benchmark, 2026-05-12): mini-LLM
-// rerankers on CPU exceed 1500ms p95 and are not viable as the routing
-// backend. Embedding cosine via the registry's existing hybrid Search
-// hits ~80ms p95 with 90% Hit@5 on a 64-query labeled dataset; the
-// model's own judgment over the manifest + permissive load covers the
-// remainder. No retrieval logic remains in toolsprovider — the agent
-// loop owns pool growth.
+// All tools are always-on: the manifest lists every registered tool by name
+// in the system prompt, and the agent loop's permissive-load path resolves
+// any name the model calls against the registry. This slice seeds the initial
+// pool with the highest-frequency retrieval tools so they're hot from turn 1.
 var AlwaysOnCore = []string{
-	"tool_search",
 	"search_memory",
 	"wiki_subgraph",
 	"source",
@@ -51,7 +35,7 @@ func MakeToolsProvider(
 	defsForFn func(names []string) []llm.ToolDefinition,
 	_ func() []llm.ToolDefinition, // defsAllFn — fallback retired, pool grows via permissive load
 	_ func() string, // latestUserMsgFn — retrieval no longer reads the message
-	_ func() int, // topKFn — top-K is a property of tool_search, not the seed
+	_ func() int, // topKFn — unused, kept for caller signature stability
 	_ *slog.Logger,
 ) func() []llm.ToolDefinition {
 	return func() []llm.ToolDefinition {

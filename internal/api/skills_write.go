@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
-
-	"github.com/aura/aura/internal/agent/tools/index"
 )
 
 // SkillInstaller is the boundary the API uses to add a skill from the
@@ -92,13 +90,6 @@ func handleSkillInstall(deps Deps) http.HandlerFunc {
 			})
 			return
 		}
-		// Wave 2.10.b — installed skill may change the read_skill manifest
-		// or add a new skill body description that affects the tool
-		// embedding. Nudge the reconciler; it debounces so a script that
-		// installs N skills back-to-back results in one pass.
-		if deps.ToolReconciler != nil {
-			deps.ToolReconciler.Notify(toolindex.ReasonSkillsChanged)
-		}
 		// Drop the prompt-side manifest cache (cacheTTL = 1s) so the next
 		// conversation turn sees the new skill set without waiting for the
 		// TTL window to expire.
@@ -135,9 +126,6 @@ func handleSkillDelete(deps Deps) http.HandlerFunc {
 			deps.Logger.Warn("api: skill delete failed", "name", name, "error", err)
 			writeError(w, deps.Logger, http.StatusInternalServerError, fmt.Sprintf("delete failed: %v", err))
 			return
-		}
-		if deps.ToolReconciler != nil {
-			deps.ToolReconciler.Notify(toolindex.ReasonSkillsChanged)
 		}
 		if deps.Skills != nil {
 			deps.Skills.Invalidate()

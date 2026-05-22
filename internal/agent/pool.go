@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"encoding/json"
 	"strings"
 	"sync"
 
@@ -10,20 +9,11 @@ import (
 
 // toolPool is the per-turn set of tool definitions visible to the LLM.
 //
-// The pool starts from Options.ToolsProvider() (typically the always-on
-// set, e.g. just tool_search in the deferred-tools rollout) and grows
-// monotonically during the turn via two paths:
-//
-//  1. Permissive-load: when the model emits a tool_call with a name that
-//     isn't yet in the pool — likely because it saw the name in the
-//     system-prompt manifest — the loop calls resolver(name) and adds
-//     the returned definition before dispatching. Avoids dead-end errors
-//     when the model bypasses tool_search.
-//
-//  2. tool_search absorption: when tool_search returns hits, the loop
-//     parses the names from the result JSON and pre-loads each so the
-//     next LLM step sees them in its tools array. This is what makes the
-//     pattern feel native: call tool_search, then call any returned tool.
+// The pool starts from Options.ToolsProvider() (the always-on set) and
+// grows monotonically during the turn via permissive-load: when the model
+// emits a tool_call with a name not yet in the pool — seen in the system
+// prompt manifest — the loop calls resolver(name) and adds the definition
+// before dispatching. No vector retrieval, no absorption path.
 //
 // The pool is per-turn (one runLoop invocation). State does not leak across
 // turns; the next turn starts fresh from ToolsProvider().
@@ -119,34 +109,3 @@ func (p *toolPool) EnsureLoaded(name string) bool {
 	return true
 }
 
-// AbsorbToolSearchResult parses a tool_search Execute() output (JSON
-// envelope with hits[].name) and ensures each named tool is in the
-// pool. Quiet on malformed JSON — the model still gets the human-
-// readable result string and can recover. Returns the number of tools
-// freshly loaded so callers can log it.
-func (p *toolPool) AbsorbToolSearchResult(result string) int {
-	if p == nil || strings.TrimSpace(result) == "" {
-		return 0
-	}
-	var parsed struct {
-		Hits []struct {
-			Name string `json:"name"`
-		} `json:"hits"`
-	}
-	// Result may be a "no tools matched" prose message — only try
-	// to unmarshal if it looks like JSON.
-	trimmed := strings.TrimSpace(result)
-	if !strings.HasPrefix(trimmed, "{") {
-		return 0
-	}
-	if err := json.Unmarshal([]byte(trimmed), &parsed); err != nil {
-		return 0
-	}
-	loaded := 0
-	for _, hit := range parsed.Hits {
-		if p.EnsureLoaded(hit.Name) {
-			loaded++
-		}
-	}
-	return loaded
-}

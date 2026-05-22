@@ -110,7 +110,7 @@ func (a *App) Stop(bot *telegram.Bot) {
 	if bot != nil {
 		bot.Stop()
 	}
-	// 2. Cancel background goroutines (toolReconciler, mcpwatch, etc.).
+	// 2. Cancel background goroutines (mcpwatch, opsfile-watcher, etc.).
 	if a.bgCancel != nil {
 		a.bgCancel()
 	}

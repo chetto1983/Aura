@@ -1,148 +1,164 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Phase-WIKI-FIX — substrate bug sweep surfaced by 2026-05-22 direct /api/wiki/search bench. Ten distinct bugs identified, consolidated into 8 atomic stories. Bench numbers (from inside docker network): p50=17ms, p95=55ms — latency fine. Recall@5 ~90-100% — substrate finds. BUT score 0.013 uniform across 20 queries → fusion gira ma con 1/3 canali perché `SELECT count(*) FROM wiki_documents` = 17 vs 150+ pages on disk. FTS5 mirror stale. Plus 8 step manuali per bumpare EMBEDDING_OUTPUT_DIM 256→768 (settings updated_at constraint, no auto-detect dim mismatch, embed n_ctx hard-cap 1024, rebuild bails on first error, cache key non include dim, no admin reindex endpoint, system page leak, davide ×2). Tutti substrate bugs, NESSUNO è agent loop. Phase-WIKI-FIX è priority-0 blocker per Phase-WIKI-B Wave A — RRF su FTS vuota = RRF su 1 canale = misurazione inutile della fusion. Plan + acceptance + verification probes per story: .planning/post-drift-2026-05-21/Phase-WIKI-FIX/plan.md. STRICT one-story-exit per scripts/ralph/CLAUDE.md.",
+  "description": "Phase-TOOL — tool surface + collection hygiene milestone. 4-scout research 2026-05-22 (docs/research-2026-05-22/{tool-rag-patterns,tool-lifecycle-patterns,aura-tool-surface-audit,tool-collapse-namespace-patterns}.md) + live log analysis surfaced: 29 native tools registered + 18 orphan unregistered Tool types (~1500 LOC dead), 8 duplication clusters (~-2490 LOC removable), tool RAG over-engineering (Qdrant aura_tool_search_v2 at 256d while embed at 768d — recurring dim-mismatch error every 10min), agent thrash on real query (28 LLM calls / 33 tool calls / 180s / never delivered — log 2026-05-22 05:11). User mandate 2026-05-22 verbatim: 'mettere a posto tutti i tool pulire la merda che ci gira attorno. il rag deve auto-aggiornare sui nuovi tool, non hardcoded'. Then update 2026-05-22: 'togli il rag dei tool è una cagata che abbiamo fatto e consolida agli altri pattern. poi metti a posto tutte le collection come abbimao fatto nella memoria'. Locked direction: KILL tool RAG entirely (no replacement), all tools always-on in manifest (picobot/nanobot/openhuman pattern), kitchen-sink collapse for triple-tool duplicates, MCP supervisor with list_changed + circuit breaker + reconnect (Hermes pattern), and dim-mismatch detect for the remaining compact collection. Net LOC delta: ~-4500 cleanup + ~+470 new = net -4000. Plan + acceptance per story: .planning/post-drift-2026-05-21/Phase-TOOL/plan.md. STRICT one-story-exit per scripts/ralph/CLAUDE.md.",
   "userStories": [
     {
-      "id": "US-WIKI-FIX-01",
-      "title": "FTS5 mirror auto-sync on wiki write/delete",
-      "description": "Today SELECT count(*) FROM wiki_documents = 17 (mostly legacy graph:node:* entries) while wiki disk has 150+ pages and Qdrant has 290 points. The hybrid fusion mergeHybridResults already wires 3 channels (exact, FTS, vector) into /api/wiki/search via SearchHybrid, but the FTS channel returns zero because the SQLite FTS5 mirror is empty/stale. This story makes the FTS5 mirror update SYNCHRONOUSLY in the same write transaction as WritePage/DeletePage. (a) AUDIT: grep `wiki_documents` writes — there's likely a writer in internal/storage/search/sqlite.go and possibly stale paths in internal/reindex/. Centralize into a single helper if currently scattered. (b) HOOK: internal/wiki/store_writes.go atomic write path must call FTS5 upsert. Existing Qdrant submitter is already wired (`s.SetReindexSubmitter(rw)`); the FTS5 sync should be IN-PROCESS sibling, not via the reindex worker (Qdrant is rebuildable; FTS5 mirror is authoritative for the FTS channel and must not lag). (c) DELETE PATH: same hook for DeletePage — remove the row immediately. (d) BOOT RECONCILER: on `wiki.NewStore` boot, count `wiki_documents` rows vs on-disk pages — if drift > 5%, log warning and trigger full rebuild from disk. (e) REGRESSION TEST: integration test in internal/wiki/store_writes_test.go that writes a page, calls `wiki_documents MATCH '<title token>'`, asserts hit. Delete the page, assert MATCH returns 0 rows.",
+      "id": "US-TOOL-01",
+      "title": "KILL tool RAG — delete tool_search + index package + Qdrant collection; all tools always-on in manifest",
+      "description": "User mandate 2026-05-22: 'togli il rag dei tool è una cagata'. 4-scout convergence: 0/7 production agent systems use vector embedding for tool routing. picobot/nanobot/openhuman expose flat always-loaded manifests. Aura over-engineered with Qdrant aura_tool_search_v2 + reconciler + drift detection. The whole stack goes. (a) DELETE internal/agent/tools/index/ entirely (reconciler, qdrant adapter, fsnotify watcher, tests). (b) DELETE internal/agent/tools/registry/tool_search.go + its tests. (c) MODIFY cmd/aura/app.go + cmd/aura/app_wire.go to drop reconciler init + tool_search registration. (d) Manual via Qdrant API: DELETE collection aura_tool_search_v2. (e) AUDIT system-prompt manifest token count after Phase-TOOL collapses; assert it stays under 1000 tokens — the always-loaded budget. (f) Boot log emits 'tool registry: N tools active' for ops visibility. NO BM25 replacement, NO new index — picobot pattern is just a flat map[name]Tool that the system prompt iterates. After Phase-TOOL collapses (US-TOOL-05/06/07) the catalog is ~12-15 tools × ~180 char description = ~2700 char ≈ ~700 prompt tokens. Within budget for always-loaded.",
       "acceptanceCriteria": [
-        "internal/wiki/store_writes.go WritePage triggers FTS5 upsert in the SAME function call (not via a goroutine), before returning",
-        "internal/wiki/store_writes.go DeletePage triggers FTS5 row removal",
-        "Boot reconciler in wiki.NewStore (or a small helper called from there) detects mirror drift and rebuilds from disk; logged with `wiki: FTS5 mirror rebuilt`",
-        "After running aura with all 150+ wiki pages on disk: docker exec aura-aura-1 sqlite3 /data/aura.db 'SELECT count(*) FROM wiki_documents' returns ≥ on-disk page count minus system pages",
-        "MATCH probe: docker exec aura-aura-1 sqlite3 /data/aura.db \"SELECT id FROM wiki_documents WHERE wiki_documents MATCH 'galileo' LIMIT 3\" returns galileo-galilei AND related pages",
-        "Bench rerun (per memory project_2026-05-22_substrate_bench_diagnosis) shows score_fts > 0 on ≥15/20 queries (today: 0/20)",
-        "go build ./... && go vet ./... && go test ./internal/wiki/... ./internal/storage/search/... -count=1 green",
-        "Single atomic commit prefix: fix(wiki): auto-sync FTS5 mirror on page write/delete (US-WIKI-FIX-01)"
+        "grep -rn aura_tool_search_v2 internal/ cmd/ returns 0 results",
+        "grep -rn 'internal/agent/tools/index' internal/ cmd/ returns 0 results — the entire package is gone",
+        "grep -rn 'tool_search' internal/ cmd/ returns 0 results in production code (historical comments allowed)",
+        "docker logs aura-aura-1 --since 30m | grep -i 'toolindex reconcile' shows ZERO entries 30 min after restart",
+        "docker logs aura-aura-1 --since 30m | grep -i 'Vector dimension error' shows ZERO entries",
+        "curl -s http://localhost:6333/collections | grep -c aura_tool_search_v2 returns 0",
+        "Boot log emits structured entry: msg='tool registry built', tools=<count>, tokens=<estimate>",
+        "go build ./... && go vet ./... && go test ./internal/agent/tools/... ./cmd/aura/... -count=1 green",
+        "golangci-lint run on touched files clean; LOC delta visible -700",
+        "Single atomic commit prefix: feat(tools): kill tool RAG entirely; all tools always-on in manifest (US-TOOL-01)"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "HIGHEST IMPACT STORY in the phase. Without this, every other fix (dedup, system filter, reindex endpoint) measures against a degenerate fusion (vector-only). GROUND-TRUTH BEFORE EDIT: (1) grep -rn 'wiki_documents' internal/storage/search/ internal/wiki/ to find all write paths. (2) Read internal/storage/search/sqlite.go in full — the FTS5 schema + existing writers live there. (3) Read internal/wiki/store_writes.go WritePage + DeletePage paths. (4) Check internal/reindex/ — is there a worker that's SUPPOSED to keep wiki_documents fresh? Maybe the worker exists but only listens on graph rebuild events, not page writes. (5) Audit: is the 17-entry stale state because the OLD schema was `graph:node:<slug>` prefixed and the migration to new schema never repopulated? If yes, this story includes the migration. SCOPE DISCIPLINE: NO changes to the hybrid fusion code (mergeHybridResults stays as-is). NO changes to Qdrant. NO new tools. Only the FTS5 mirror sync."
+      "notes": "HIGHEST IMPACT story in the phase. Architectural cleanup. GROUND-TRUTH BEFORE EDIT: (1) read internal/agent/tools/index/ in full — reconciler.go is the main file (~500 LOC); also includes qdrant adapter + fsnotify watcher. (2) read internal/agent/tools/registry/tool_search.go and grep for its registration site. (3) audit cmd/aura/app.go around line 230-260 for reconciler init. (4) curl http://localhost:6333/collections to confirm aura_tool_search_v2 exists pre-deletion. SCOPE DISCIPLINE: this is DELETION only — no new BM25, no new package, no clever replacement. The system-prompt manifest already lists all tools today (that's how tool_search gets its candidate set); we just stop ALSO routing through Qdrant. Token budget post-cleanup: assert in CI."
     },
     {
-      "id": "US-WIKI-FIX-07",
-      "title": "settings.updated_at default to CURRENT_TIMESTAMP",
-      "description": "Today INSERT INTO settings(key, value) VALUES(...) fails with 'NOT NULL constraint failed: settings.updated_at'. Witnessed during 2026-05-22 dim bump — operator forced to write `INSERT ... VALUES('K','V', datetime('now'))` instead of the natural form. Trivial fix: ALTER COLUMN settings.updated_at DEFAULT CURRENT_TIMESTAMP via new migration. Sqlite ALTER COLUMN is limited; the migration may need to recreate the table (rename old, create new with default, INSERT SELECT, drop old, rename new). Standard sqlite migration pattern. Also applies to other timestamp columns with NOT NULL without default — audit and fix in same migration.",
+      "id": "US-TOOL-10",
+      "title": "Apply Phase-WIKI-FIX dim-mismatch detect + auto-rebuild to aura_memory_v1_compact",
+      "description": "Phase-WIKI-FIX FIX-04 added dim-mismatch detection + auto-rebuild for aura_memory_v1 (the wiki collection). The compact memory collection aura_memory_v1_compact still suffers the same class of bug. Replicate the fix: (a) Boot-time dim probe vs cfg.EmbeddingOutputDim; auto-rebuild on mismatch unless AURA_NO_REBUILD_ON_DIM_MISMATCH set. (b) Reuse the rebuild skip-and-continue logic from FIX-03. (c) Extend POST /api/wiki/reindex to also cover compact, OR add POST /api/compact/reindex if the semantics warrant separation. (d) NOTE: aura_tool_search_v2 is killed entirely by US-TOOL-01, no fix needed for it. (e) GROUND-TRUTH: read internal/storage/memoryindex/ for compact collection owner; read the FIX-04 code in internal/storage/search/qdrant.go for the dim-detect pattern; replicate.",
       "acceptanceCriteria": [
-        "New migration file in internal/db/migrations/ with predictable ID prefix",
-        "After migration: sqlite3 ... \"INSERT INTO settings(key, value) VALUES('TEST_KEY','TEST_VALUE')\" succeeds without specifying updated_at",
-        "Existing settings rows preserved with their original updated_at values",
-        "Migration test in internal/db/migrations/migrations_test.go covers the new defaults",
-        "go test ./internal/db/... -count=1 green",
-        "Audit comment in migration body lists which other tables/columns had NOT NULL-no-default — fix them in the same migration or scope-defer with explicit list",
-        "Single atomic commit prefix: fix(db): settings.updated_at default to CURRENT_TIMESTAMP (US-WIKI-FIX-07)"
+        "Boot: UPDATE settings SET value='256' WHERE key='EMBEDDING_OUTPUT_DIM' followed by docker compose restart aura → aura_memory_v1_compact collection auto-rebuilt at 256d, logged",
+        "POST /api/compact/reindex (or unified endpoint) returns JSON {collection, points_indexed, pages_indexed, skipped, elapsed_ms, vector_size, prior_vector_size}",
+        "docker logs aura-aura-1 --since 1h shows no silent dim mismatch on compact collection",
+        "AURA_NO_REBUILD_ON_DIM_MISMATCH=true skips the auto-rebuild path; logged",
+        "go test ./internal/storage/memoryindex/... ./internal/api/... -count=1 green",
+        "Single atomic commit prefix: fix(compact): dim-mismatch auto-detect + auto-rebuild for compact collection (US-TOOL-10)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "PARALLEL with US-TOOL-01 — different collection, no overlap. Can ship same session. GROUND-TRUTH: (1) internal/storage/memoryindex/ — find the compact qdrant writer. (2) Read US-WIKI-FIX-04 commit aad25d7f to understand the pattern. (3) Pattern lift is mechanical — copy the dim-detect block, change collection name + cfg field reference."
+    },
+    {
+      "id": "US-TOOL-02",
+      "title": "Delete 18 unregistered orphan Tool types (~-1500 LOC dead)",
+      "description": "Scout 3 found 18 Tool-implementing types in internal/agent/tools/registry/ that are registered in code but never wired in the production composition root (cmd/aura/app.go / app_wire.go). Most are the 11 verb-tools behind source/file/web/doc dispatchers — they're internal-only, dispatched by name from their parent dispatcher, never LLM-facing. Their LLM contracts (Name(), Description(), Parameters()) are dead code. Delete them + their tests + inline the verb logic into the parent dispatchers. Full audit list in docs/research-2026-05-22/aura-tool-surface-audit.md §6.",
+      "acceptanceCriteria": [
+        "Every type implementing Tool interface in internal/agent/tools/registry/ has at least one registration site in cmd/aura/ (proven by grep)",
+        "Parent dispatchers (source, file, web, doc) implement the verb logic inline; no separate Tool type for individual verbs",
+        "go test ./internal/agent/tools/... -count=1 green",
+        "Probe suite (cmd/probe_chat) passes; no probe relies on a deleted tool",
+        "LOC delta visible: -1500 across prod + tests",
+        "Single atomic commit prefix: chore(tools): delete 18 unregistered orphan Tool types (US-TOOL-02)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/db/migrations/migrations.go to see the migration registry pattern + numbering scheme. (2) `sqlite3 /data/aura.db '.schema settings'` already done — confirmed updated_at NOT NULL no default. (3) Sqlite ALTER COLUMN limitation: must use rename+recreate trick. (4) Check if any code explicitly relies on updated_at being NOT NULL — likely yes (read-side parses it as time.Time). Default = NULL would break that; CURRENT_TIMESTAMP is safe."
+      "passes": false,
+      "notes": "GROUND-TRUTH: read docs/research-2026-05-22/aura-tool-surface-audit.md §6 first — the orphan list with file paths is there. DO NOT INVENT. Verify each tool's status before deletion by grepping for its Name() return value in cmd/aura/. SCOPE: deletion only, no behavior change to parent dispatchers (verb logic stays where it was used)."
     },
     {
-      "id": "US-WIKI-FIX-03",
-      "title": "Wiki rebuild skip-and-continue on per-page embed error",
-      "description": "internal/storage/search/qdrant.go rebuildQdrantWikiDocumentsWithClient (around line 414) bails on the FIRST embed error: `return QdrantRebuildReport{}, fmt.Errorf('embedding %s: %w', doc.ID, err)`. Witnessed live 2026-05-22: one wiki page exceeds embed sidecar context size (1247 tokens vs 1024 limit) → entire wiki collection left empty. Fix: log + skip + continue, accumulate skipped docs in the report. Result: index has best-effort coverage, operator sees what was skipped, can drill in.",
+      "id": "US-TOOL-03",
+      "title": "Fix text_response registration + remove search_memory zombie",
+      "description": "Two registry hygiene fixes in one story. (a) text_response is referenced by name in internal/agent/terminal.go:222 (hard-coded terminal detection) but NEVER registered in the production composition root (Scout 3 P0). Either properly register it via the standard path OR remove the hard-coded reference and use the IsTerminal() method dispatch. Pick the cleaner path after reading the surrounding terminal logic. (b) search_memory self-declares DEPRECATED in its Description() but is still registered alongside the unified search tool that replaced it. Remove the registration; remove the tool file; update any test that still references it.",
       "acceptanceCriteria": [
-        "QdrantRebuildReport grows a SkippedDocs []SkippedDoc{DocID string, Reason string} field",
-        "rebuild loop catches per-doc embed error, logs `logger.Warn('rebuild: skipping doc', 'id', doc.ID, 'error', err)`, appends to SkippedDocs, continues",
-        "Final error is returned ONLY if zero docs were indexed (all skipped); otherwise nil error + report contains skipped list",
-        "Vector size consistency check still applies — first SUCCESSFULLY embedded doc sets vectorSize; subsequent mismatches are still hard errors (different from embed-failed)",
-        "Test in internal/storage/search/qdrant_test.go (or wherever rebuild tests live) with mock embedFn that fails for one specific doc — assert other docs indexed + skipped doc in report",
-        "go test ./internal/storage/search/... -count=1 green",
-        "Single atomic commit prefix: fix(qdrant): skip-and-continue on per-page embed error during rebuild (US-WIKI-FIX-03)"
+        "text_response is either properly registered AND used via the standard tool path, OR the hard-coded reference removed and IsTerminal() dispatch used uniformly",
+        "Tool catalog at boot includes search but NOT search_memory",
+        "All probe cases still pass",
+        "go test ./internal/agent/... ./cmd/aura/... -count=1 green",
+        "Single atomic commit prefix: fix(tools): wire text_response + drop deprecated search_memory zombie (US-TOOL-03)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "GROUND-TRUTH BEFORE EDIT: Read internal/storage/search/qdrant.go lines 470-525. The current return-on-error pattern is at line ~484. The vector-size mismatch check at line ~491 is DIFFERENT — that one should stay a hard error (it indicates a config drift, not a content-length problem). SCOPE: only the per-doc embed failure path. Do not refactor the dim-mismatch path; that's FIX-04."
+      "passes": false,
+      "notes": "Independent of US-TOOL-01 and US-TOOL-02. Can ship parallel. GROUND-TRUTH: read internal/agent/terminal.go end-to-end before deciding the text_response approach; read the search_memory file to confirm DEPRECATED marker; read unified search registration site for the replacement contract."
     },
     {
-      "id": "US-WIKI-FIX-08",
-      "title": "Embed sidecar n_ctx default sane + boot smoke",
-      "description": "Embed sidecar llama-server declares `--ctx-size 2048` in compose.yaml but the EFFECTIVE per-slot n_ctx is 1024 because `--parallel 2` divides the budget. Witnessed live 2026-05-22 when a 1247-token wiki page hit `embeddings returned 400 Bad Request: input is larger than max context size (1024)`. Fix: (a) bump compose.yaml to `--ctx-size 4096 --batch-size 4096 --ubatch-size 4096` so per-slot is 2048 (matches the model's native n_ctx); (b) document the per-slot math in a comment next to the command; (c) add a boot smoke probe in aura-init-models (or aura itself at startup) that hits `http://aura-llama-embed:8080/props`, asserts default_generation_settings.n_ctx ≥ 2048, refuses to start if not. The compose.yaml bump is already on disk from the 2026-05-22 manual session — confirm + add the probe + add the comment.",
+      "id": "US-TOOL-04",
+      "title": "Description quality audit — EN-only + ≤200 char + structural markers",
+      "description": "Three audit dimensions in one story (after US-TOOL-02 + US-TOOL-03 clean the deck). (a) EN-only: text_response and ask_user_clarification carry IT paragraphs in their descriptions (Scout 3 P1). Per feedback_all_prompts_in_english_only, all instructional text must be EN. Rewrite. (b) ≤200 char: extend description_audit_test.go with len(tool.Description()) <= 200 assertion. Sweep all catalogued tools; trim verbose ones. (c) Structural markers from cli-printing-press internal/mcpdesc/compose.go:69-96: first sentence is action verb + Returns clause; followed by Required:/Optional: argument hints; auto-suffix Destructive. on DELETE-class, Partial update. on PATCH-class.",
       "acceptanceCriteria": [
-        "compose.yaml `--ctx-size`, `--batch-size`, `--ubatch-size` all set to 4096 (or higher); comment above the command explains: per-slot n_ctx = ctx-size / parallel",
-        "Boot smoke probe (aura-init-models OR a new dedicated check) hits /props on llama-embed, asserts effective n_ctx ≥ 2048, fails fast if not",
-        "Smoke probe documented in INSTALL.md or compose.yaml comment",
-        "Live: docker compose up -d aura-llama-embed; curl http://localhost:8081/props returns default_generation_settings.n_ctx >= 2048",
-        "Embed of a 1500-token wiki page succeeds (was 400 before)",
-        "Single atomic commit prefix: chore(embed): n_ctx per-slot math + boot smoke (US-WIKI-FIX-08)"
+        "go test ./internal/agent/tools/registry/... -count=1 green with new ≤200 char assertion",
+        "No Description() returns text containing common IT words (gli, agli, nella, dei, delle) — quick test lint",
+        "Auto-suffix logic applied to MCP-derived descriptions (read overrides US-TOOL-08 first if shipped)",
+        "Bench delta documented in commit body: prompt token count drops 500-1500 tokens (depends on tool count post-collapses)",
+        "Single atomic commit prefix: chore(tools): description audit — EN-only + 200char cap + structural markers (US-TOOL-04)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "Lightest story; mostly comments + one probe. The actual ctx-size bump may already be on disk — verify via `grep ctx-size compose.yaml`. If yes, the story collapses to: probe + comment + verify."
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-02 + US-TOOL-03 (no orphans to lint; correct registration set). GROUND-TRUTH: read internal/agent/tools/registry/description_audit_test.go to see the existing first-line marker test; extend it. Read picobot-cpp-patterns.md from 2026-05-21 research for the 200-char convention precedent."
     },
     {
-      "id": "US-WIKI-FIX-02",
-      "title": "Embed cache key includes output_dim",
-      "description": "embedding_cache PK today = (content_sha, model). When EMBEDDING_OUTPUT_DIM changes (256 → 768 or vice-versa) the cache returns OLD vectors at OLD dim, failing the rebuild consistency check (`returned vector size 768, want 256`) or worse poisoning Qdrant with mixed-dim points. Witnessed live 2026-05-22 — operator had to DELETE FROM embedding_cache manually after dim swap. Fix: extend cache key to (content_sha, model, output_dim) via SQLite migration. Legacy rows tagged with output_dim=0 OR with current cfg dim on best-effort basis (migration logs the choice).",
+      "id": "US-TOOL-05",
+      "title": "Collapse schedule_task / list_tasks / cancel_task → task(mode=create|list|cancel)",
+      "description": "Kitchen-sink action-enum collapse. picobot cron.go shape (internal/agent/tools/cron.go:25-62) and codex automation_update(mode) both prove the shape. Three tools become one with mode enum + per-mode argument schema. The internal dispatch goes to the existing three handler functions; only the LLM-facing surface collapses. Confirm acceptance against picobot's exact action-enum form (Parameters JSON Schema with action.enum field).",
       "acceptanceCriteria": [
-        "New migration adds `output_dim INTEGER NOT NULL DEFAULT 0` column to embedding_cache",
-        "Migration recreates the table (sqlite limit on ALTER PK): old PK (content_sha, model) → new PK (content_sha, model, output_dim)",
-        "Legacy rows preserved with output_dim=0 (sentinel for unknown); subsequent reads treat output_dim=0 as cache-miss (force re-embed) so we don't accidentally serve wrong-dim vectors",
-        "internal/storage/search/embed_cache.go lookup path takes output_dim parameter; writer path stores it",
-        "Migration test green",
-        "Test: insert two vectors at sha='X' model='Y' dim=256 then dim=768 → 2 rows; lookup at dim=256 returns 256d; lookup at dim=768 returns 768d",
-        "Live: bump EMBEDDING_OUTPUT_DIM via DB UPDATE, restart aura, observe re-embed happens (cache miss because legacy dim=0) NOT crash on dim mismatch",
-        "go test ./internal/storage/search/... ./internal/db/... -count=1 green",
-        "Single atomic commit prefix: fix(embed): include output_dim in cache key (US-WIKI-FIX-02)"
+        "Registry contains ONE task tool with mode enum {create, list, cancel}",
+        "Per-mode argument schema validated (e.g. mode=create requires when/text; mode=cancel requires task_id)",
+        "Probe: each mode works end-to-end; reply text references the action correctly",
+        "Net LOC delta visible: ~-150 (existing leaf files deleted)",
+        "Single atomic commit prefix: feat(tools): collapse schedule_task/list/cancel → task(mode=) (US-TOOL-05)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/storage/search/embed_cache.go fully — it's only ~300 LOC. (2) `.schema embedding_cache` already known: (content_sha, model, embedding BLOB, created_at, PK (content_sha, model)). (3) Migration recipe: ATTACH new schema, INSERT SELECT, DROP old, RENAME — standard pattern visible in existing migrations. (4) The lookup function probably has signature Embed(content) — needs to grow Embed(content, outputDim) OR read outputDim from cfg via the cache constructor. Pick the cleaner one."
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-04 (description audit sets the description quality baseline). GROUND-TRUTH: read picobot internal/agent/tools/cron.go in full. Map Aura's existing schedule_task/list_tasks/cancel_task handlers to per-mode dispatch."
     },
     {
-      "id": "US-WIKI-FIX-05",
-      "title": "Filter system/internal pages out of default /api/wiki/search",
-      "description": "Pages tagged with frontmatter category=system (aura-operating-memory, aura-quality-bench, future wiki-index, etc.) leak into normal user search results. Witnessed: `wiki-dante q2` top-1 is `aura-operating-memory` (a system page about Aura's own memory architecture, irrelevant to a Dante question). Fix: (a) at the /api/wiki/search handler, filter results where frontmatter.category == 'system' OR tags contains 'system'; (b) expose ?include_system=1 query param for dashboard/debug use; (c) audit currently-known system pages and add the category if missing.",
+      "id": "US-TOOL-06",
+      "title": "Collapse create_xlsx / create_docx / create_pdf → create_document(format=xlsx|docx|pdf)",
+      "description": "Same kitchen-sink shape. The three file-generation tools have 90%+ identical scaffolding (per codebase-cleanup-audit 2026-05-21 §3.1 row 2). Collapse to one tool with format enum + per-format builder dispatch.",
       "acceptanceCriteria": [
-        "Default GET /api/wiki/search?q=dante does NOT return any result with frontmatter.category == 'system'",
-        "GET /api/wiki/search?q=dante&include_system=1 includes them (verifies the filter is wired, not hardcoded)",
-        "internal/api/wiki.go handleWikiSearch reads ?include_system query param, defaults false, passes to search backend",
-        "Search backends (internal/storage/search/) accept the option and filter at result time (or earlier if cheap)",
-        "Audit list documented in commit body: which pages had no category and got tagged system? At minimum aura-operating-memory, aura-quality-bench, aura-source-extraction. Apply the frontmatter change atomically with the code change",
-        "Bench re-run: no system-tagged page appears in any default top-5 result",
-        "go test ./internal/api/... ./internal/storage/search/... -count=1 green",
-        "Single atomic commit prefix: feat(wiki): filter system-category pages from default search (US-WIKI-FIX-05)"
+        "Registry contains ONE create_document tool with format enum {xlsx, docx, pdf}",
+        "Per-format builder retained; only the registry surface collapses",
+        "Probe: artifact-level verification per feedback_inspect_artifact_visually_not_just_pass_status — open produced xlsx/docx/pdf, assert structure",
+        "Net LOC delta visible: ~-300 (largest file-level clone in the repo)",
+        "Single atomic commit prefix: feat(tools): collapse create_xlsx/docx/pdf → create_document(format=) (US-TOOL-06)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "DEPENDS ON FIX-01: this story is only useful AFTER the FTS5 mirror has the rows to filter. Ship FIX-01 first. GROUND-TRUTH: read internal/api/wiki.go handleWikiSearch end-to-end (lines 105-186) — the filter has to be threaded through to the search backend OR applied post-hoc in the response loop. Post-hoc is simpler (loop the results, skip system-category ones, top-up to topK if some get filtered out). Pre-filter at SQL is cleaner but more invasive. Pick post-hoc for v0."
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-04. GROUND-TRUTH: read internal/agent/tools/registry/files_docx.go + files_pdf.go + files_xlsx.go end-to-end — they're the largest documented clone (Phase-CLEAN3 reference). Use one parameterised registrar pattern."
     },
     {
-      "id": "US-WIKI-FIX-06",
-      "title": "Dedupe wiki index by slug across emitters",
-      "description": "Witnessed live: `autori-json q2` top-2 hits both have slug=davide, score 0.0262 each. Same slug appears twice in Qdrant. Investigation: is it page-content + graph:node:davide duplicate? Or a stale point that didn't get deleted on rebuild? Or a legitimate dual-emission (page-text + graph-card)? This story: AUDIT first, then FIX. (a) Open Qdrant /collections/aura_memory_v1/points/scroll with filter slug=davide — see the actual records. (b) If two records with different IDs (one `davide`, one `graph:node:davide`), confirm intent: are they intentionally separate retrieval surfaces? If yes, dedup at QUERY TIME via post-filter on slug. If no, fix the upsert path to emit one or the other (not both). (c) If two records with SAME ID (which shouldn't happen with Qdrant's PK), it's an upsert-vs-create bug.",
+      "id": "US-TOOL-07",
+      "title": "Collapse workspace_write / workspace_read / list_memory / read_memory → workspace(action=read|write|list)",
+      "description": "Picobot FilesystemTool shape (internal/agent/tools/filesystem.go:40-60). Four read/write/list-shaped tools sharing the path schema collapse to one. IMPORTANT: edit_memory and delete_memory (and forget_memory) keep separate identities — their schemas diverge enough that collapsing them obscures intent. Only the cleanly-overlapping four collapse.",
       "acceptanceCriteria": [
-        "Commit body documents the audit finding: are davide ×2 the same point twice, or distinct kinds (page+graph-card)?",
-        "If distinct-by-design: post-filter at /api/wiki/search dedupes by slug, keeps highest-scored kind, returns each slug at most once in top-k (and the score reflects merge — pick max for now)",
-        "If duplicate-by-bug: fix the upsert path; ensure single Qdrant point per (kind, slug)",
-        "Test in internal/storage/search/qdrant_test.go (or api/wiki_test.go) verifies dedup behavior",
-        "Live bench: 20-query bench output shows ZERO duplicate slugs in any top-5 (today: 1 confirmed in autori-json q2; may be more)",
-        "go test ./... -count=1 green",
-        "Single atomic commit prefix: fix(qdrant): dedupe wiki search results by slug (US-WIKI-FIX-06)"
+        "Registry contains ONE workspace tool with action enum {read, write, list}",
+        "edit_memory, delete_memory, forget_memory KEEP their own registration (audit list documented in commit body)",
+        "LLM tool-selection accuracy probe: queries that previously called workspace_write now call workspace(action=write) consistently",
+        "Net LOC delta visible: ~-250",
+        "Single atomic commit prefix: feat(tools): collapse workspace_* + memory_* readers → workspace(action=) (US-TOOL-07)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-04. Don't over-collapse memory tools — edit/delete/forget have distinct semantics."
+    },
+    {
+      "id": "US-TOOL-08",
+      "title": "MCP description override sidecar (tools-overrides.json) with fsnotify reload",
+      "description": "Lift cli-printing-press internal/mcpoverrides/overrides.go:73-100. A user-editable runtime-workspace/tools-overrides.json (or extension of mcp.json) provides per-tool-name description overrides for noisy upstream MCP descriptions. Loaded once at boot + on tools-overrides.json write (fsnotify). Unmatched override keys SURFACE as warnings so typos don't silently no-op. Override format: {\"server_tool_name\": \"new description text\"}. After this, US-TOOL-04 description audit can also apply auto-suffix logic to overridden descriptions.",
+      "acceptanceCriteria": [
+        "Writing an override entry for an existing MCP tool name → next-boot description reflects the override",
+        "Typo override key (no matching tool name) → warning logged at boot, listed in /api/mcp/status",
+        "fsnotify on the file → live reload without restart; new tool catalog refresh on next turn",
+        "go test ./internal/mcp/... -count=1 green with new override tests",
+        "Single atomic commit prefix: feat(mcp): tools-overrides.json sidecar for description tuning (US-TOOL-08)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "AUDIT FIRST. If the audit shows it's an intentional dual-emission (page-content + graph-card both point to the same slug), the right fix is dedup-at-query-time. If it's a bug, the right fix is upsert-side. Don't commit one or the other before reading: (1) internal/storage/search/qdrant.go loadWikiDocuments — does it emit one doc or two per page? (2) The qdrant /points/scroll output for slug=davide. (3) the graph index — does it also push graph cards into qdrant under graph:node:* prefix? SCOPE: if the audit balloons (e.g. a wider 'kind' field architecture), split into FIX-06a (audit doc) + FIX-06b (fix) — keep this story one-commit."
+      "passes": false,
+      "notes": "Independent of all other stories. GROUND-TRUTH: read cli-printing-press internal/mcpoverrides/overrides.go end-to-end (~119 LOC). Aura's MCP registration site is internal/agent/tools/registry/mcp.go — apply override at registration time."
     },
     {
-      "id": "US-WIKI-FIX-04",
-      "title": "Admin /api/wiki/reindex endpoint + dim-mismatch auto-detect",
-      "description": "Two operator-surface infrastructure gaps in one story (related code path). (a) NO HTTP endpoint to force a Qdrant rebuild — today the only path is `cmd/debug_qdrant`, requiring shell access. Add POST /api/wiki/reindex (admin-token gated) that calls RebuildQdrantWikiDocuments + returns the report as JSON. (b) Boot-time dim-mismatch silent failure: today qdrant warm-cache short-circuit (info.PointsCount > 0 → skip rebuild) HIDES dim drift. If operator bumps EMBEDDING_OUTPUT_DIM 256 → 768 without dropping the collection manually, aura silently keeps using the OLD 256d collection (because warm cache hits) and any new upserts crash with dim mismatch at runtime. Fix: at boot, query Qdrant /collections/<name> for params.vectors.size; if != cfg.EmbeddingOutputDim (or native dim when cfg=0), LOG WARN + DROP + RECREATE + REINDEX. Operator can opt out via AURA_NO_REBUILD_ON_DIM_MISMATCH env (defaults to false = auto-rebuild).",
+      "id": "US-TOOL-09",
+      "title": "MCP supervisor — tools/list_changed listener + per-server circuit breaker + reconnect",
+      "description": "Three Hermes patterns folded into one MCP-layer story (all updates apply to the in-memory tool registry — there is no tool RAG to push to after US-TOOL-01). (a) notifications/tools/list_changed listener (mcp_tool.py:1088-1129): when an MCP server pushes a list-changed notification, re-fetch its tools list, diff against in-memory registry, upsert/remove tools so the system-prompt manifest picks them up on the next turn. (b) Per-server circuit breaker (mcp_tool.py:1711-1755): N consecutive failures from one MCP server → server marked unhealthy, its tools temporarily removed from the registry until manual or scheduled retry. Other MCP servers and native tools keep working. (c) Exponential-backoff reconnect (mcp_tool.py:1504-1660): on stdio child crash or HTTP server unreachable, automatic reconnect with backoff.",
       "acceptanceCriteria": [
-        "internal/api/wiki.go gains handleWikiReindex POST handler; internal/api/router.go registers POST /api/wiki/reindex (admin-token gated like existing skill admin endpoints)",
-        "Response JSON: {collection, points_indexed, pages_indexed, skipped: [{doc_id, reason}], elapsed_ms, vector_size, prior_vector_size}",
-        "?dry_run=1 query param: report what WOULD happen (current dim, target dim, points-to-rebuild) without dropping",
-        "internal/storage/search/qdrant.go warm-cache short-circuit extended: when CollectionInfo returns vector_size, check against cfg.EmbeddingOutputDim; on mismatch, DROP + recreate + reindex unless AURA_NO_REBUILD_ON_DIM_MISMATCH=true",
-        "When Qdrant CollectionInfo does NOT expose vector_size directly (current limitation per WR-03 comment): probe by upserting a sentinel point with the configured dim; if 400 returned, drop+recreate",
-        "Boot log: `qdrant collection dim check`, `current=N`, `expected=M`, `action=match|rebuild|skipped_by_env`",
-        "Live: UPDATE settings SET value='256' WHERE key='EMBEDDING_OUTPUT_DIM'; docker compose restart aura → collection auto-rebuilt at 256d, no operator action",
-        "go test ./internal/api/... ./internal/storage/search/... -count=1 green",
-        "Single atomic commit prefix: feat(wiki): admin reindex endpoint + boot dim-mismatch auto-detect (US-WIKI-FIX-04)"
+        "Kill an MCP stdio child mid-conversation → next iter, child auto-restarted with backoff; agent doesn't crash",
+        "MCP server pushes tools/list_changed → new tool visible in next-turn manifest within 5 sec without restart",
+        "3 consecutive failures from server X → circuit opens, logged warning; manifest stops listing server X tools; other tools still callable",
+        "go test ./internal/mcp/... ./internal/agent/tools/registry/... -count=1 green",
+        "Single atomic commit prefix: feat(mcp): supervisor with list_changed + circuit breaker + reconnect (US-TOOL-09)"
       ],
       "priority": 4,
-      "passes": true,
-      "notes": "LARGEST STORY in the phase. DEPENDS ON FIX-02 (cache key dim) and FIX-03 (skip-and-continue) for safe rebuild. Don't ship before those. GROUND-TRUTH: (1) read internal/storage/search/qdrant.go warm-cache block lines 425-470 — the existing comment WR-03 explicitly says vector_size isn't exposed; the sentinel-probe workaround is the cleanest path. (2) read internal/api/router.go to find admin-token gated route registration pattern (look for SkillsAdmin). (3) read internal/storage/search/qdrant.go RebuildQdrantWikiDocuments to confirm signature. SCOPE DISCIPLINE: NO new metrics endpoint. NO new dashboard surface. Just the JSON endpoint + boot mismatch detect. Dashboard wiring is follow-up if user requests it."
+      "passes": false,
+      "notes": "DEPENDS ON US-TOOL-01 (no BM25 push — just in-memory registry update) and ideally US-TOOL-08 (override sidecar). LARGEST STORY in the phase. GROUND-TRUTH: read Hermes tools/mcp_tool.py around lines 1088-1755 — three nested patterns. Port to Go using context.Context + chan struct{} where Hermes uses asyncio. Write unit tests for the supervisor with mock MCP servers BEFORE integration."
     }
   ]
 }

@@ -28,8 +28,6 @@ const DefaultTraceRetentionDays = 30
 const DefaultWorkspaceTools = "enabled"
 const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
-const DefaultToolSearchBackend = "hybrid"
-const DefaultToolSearchTopK = 20
 const DefaultOP07NFailThreshold = 2
 const DefaultOP07RecentTurns = 10
 
@@ -87,8 +85,6 @@ type Config struct {
 	MicrocompactMinChars       int     `envconfig:"MICROCOMPACT_MIN_CHARS" default:"2000"`
 	RecencyHalfLifeWikiDays    float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_WIKI_DAYS" default:"180"`
 	RecencyHalfLifeArchiveDays float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_ARCHIVE_DAYS" default:"30"`
-	ToolSearchBackend          string  `envconfig:"TOOL_SEARCH_BACKEND" default:"hybrid"`
-	ToolSearchTopK             int     `envconfig:"TOOL_SEARCH_TOP_K" default:"5"`
 	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./runtime-workspace/wiki"`
 	PromptOverlayPath          string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
 	SkillsPath                 string  `envconfig:"SKILLS_PATH" default:"./skills"`
@@ -277,9 +273,6 @@ func Load() (*Config, error) {
 	cfg.QdrantAPIKey = getSecretEnv("QDRANT_API_KEY", "")
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
 	cfg.MemorySearchStaleThresholdSecs = getEnvInt("MEMORY_SEARCH_STALE_THRESHOLD_SECS", 3600)
-	cfg.ToolSearchBackend = NormalizeToolSearchBackend(getEnv("TOOL_SEARCH_BACKEND", DefaultToolSearchBackend))
-	cfg.ToolSearchTopK = normalizeIntRange(getEnvInt("TOOL_SEARCH_TOP_K", DefaultToolSearchTopK), 1, 50, DefaultToolSearchTopK)
-
 	cfg.WikiPath = getEnv("WIKI_PATH", "./runtime-workspace/wiki")
 	cfg.PromptOverlayPath = getEnv("PROMPT_OVERLAY_PATH", ".")
 	cfg.SkillsPath = getEnv("SKILLS_PATH", "./skills")
@@ -421,15 +414,6 @@ func NormalizeDelegationMode(value string) string {
 		return normalized
 	default:
 		return DefaultDelegationMode
-	}
-}
-
-func NormalizeToolSearchBackend(value string) string {
-	switch normalized := strings.ToLower(strings.TrimSpace(value)); normalized {
-	case "fts", "vector", "hybrid":
-		return normalized
-	default:
-		return DefaultToolSearchBackend
 	}
 }
 

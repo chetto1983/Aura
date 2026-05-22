@@ -15,7 +15,6 @@ func phaseQACoverageCases(stamp string) []Case {
 		qaProposePatchGovernanceCase(stamp),
 		qaReadSwarmResultGroundTruthCase(),
 		qaRunAuraBotSwarmOneShotCase(stamp),
-		qaToolSearchDocRoutingCase(),
 		qaWebFetchExampleDomainEvidenceCase(),
 		qaWebFetchSSRFLoopbackDenyCase(),
 	}

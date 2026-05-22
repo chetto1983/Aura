@@ -109,52 +109,6 @@ func qaRunAuraBotSwarmOneShotCase(stamp string) Case {
 	}
 }
 
-func qaToolSearchDocRoutingCase() Case {
-	var startedAt time.Time
-	return Case{
-		Name:     "tool-search-doc-routing",
-		Category: "tools-registry",
-		Prompt:   "Usa tool_search con query=\"genera un documento Word da blocchi strutturati\" e limit=5. Non creare file. Rispondi solo cosi: `tool=doc; schema=action, docx, blocks`.",
-		Setup: func(_ *Env) error {
-			startedAt = qaStartedAt()
-			return nil
-		},
-		Verify: func(r ChatReply, env *Env) []string {
-			var miss []string
-			counts, err := env.toolAttemptsSince(startedAt, "tool_search", "doc", "execute_code", "execute_shell")
-			if err != nil {
-				return []string{fmt.Sprintf("tool_attempts query: %v", err)}
-			}
-			if counts["tool_search"] == 0 {
-				miss = append(miss, "DB ground truth: no successful tool_search attempt")
-			}
-			rows, err := env.toolAttemptRowsSince(startedAt, []string{"tool_search"}, []string{"ok"})
-			if err != nil {
-				miss = append(miss, fmt.Sprintf("tool_search attempt rows: %v", err))
-			} else if len(rows) > 0 {
-				fmt.Fprintf(os.Stderr, "[case=tool-search-doc-routing] tool_search=%d doc=%d attempt=%s\n", counts["tool_search"], counts["doc"], truncate(fmt.Sprintf("arg_keys=%s outcome=%s", rows[0].ArgKeysJSON, rows[0].Outcome), 240))
-				if !strings.Contains(rows[0].ArgKeysJSON, "query") || !strings.Contains(rows[0].ArgKeysJSON, "limit") {
-					miss = append(miss, fmt.Sprintf("tool_search arg_keys_json = %s, want query+limit", rows[0].ArgKeysJSON))
-				}
-			}
-			for _, forbidden := range []string{"doc", "execute_code", "execute_shell"} {
-				if counts[forbidden] > 0 {
-					miss = append(miss, fmt.Sprintf("forbidden tool %s ran %d time(s)", forbidden, counts[forbidden]))
-				}
-			}
-			for _, m := range qaNeedleMissing(r.Reply, "tool=doc", "action", "docx") {
-				miss = append(miss, "reply "+m)
-			}
-			for _, bad := range []string{"source_id", "Sorry, I couldn't process", "Error:"} {
-				if strings.Contains(r.Reply, bad) {
-					miss = append(miss, fmt.Sprintf("reply contains forbidden %q", bad))
-				}
-			}
-			return miss
-		},
-	}
-}
-
 func qaWebFetchExampleDomainEvidenceCase() Case {
 	var startedAt time.Time
 	return Case{

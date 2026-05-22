@@ -272,7 +272,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		toolReg.DefinitionsFor,
 		toolReg.Definitions,
 		convCtx.LatestUserMessageText,
-		func() int { return cfg.ToolSearchTopK },
+		nil,
 		b.Logger(),
 	)
 	toolDefs := toolsProvider()

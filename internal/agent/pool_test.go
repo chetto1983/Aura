@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"sort"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
@@ -9,15 +8,15 @@ import (
 
 func TestNewToolPool_SeedsFromInitial(t *testing.T) {
 	defs := []llm.ToolDefinition{
-		{Name: "tool_search", Description: "Search tools"},
 		{Name: "search_memory", Description: "Search memory"},
+		{Name: "wiki_page", Description: "Wiki page"},
 	}
 	pool := newToolPool(defs, nil)
-	if !pool.Has("tool_search") {
-		t.Fatal("tool_search missing")
-	}
 	if !pool.Has("search_memory") {
 		t.Fatal("search_memory missing")
+	}
+	if !pool.Has("wiki_page") {
+		t.Fatal("wiki_page missing")
 	}
 	out := pool.Defs()
 	if len(out) != 2 {
@@ -83,40 +82,6 @@ func TestToolPool_EnsureLoadedIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestToolPool_AbsorbToolSearchResult(t *testing.T) {
-	resolver := func(name string) (llm.ToolDefinition, bool) {
-		return llm.ToolDefinition{Name: name, Description: "stub"}, true
-	}
-	pool := newToolPool(nil, resolver)
-
-	result := `{"query":"file word","hits":[
-		{"name":"create_docx","description":"Generate docx"},
-		{"name":"create_pdf","description":"Generate pdf"}
-	]}`
-	loaded := pool.AbsorbToolSearchResult(result)
-	if loaded != 2 {
-		t.Fatalf("expected 2 loaded, got %d", loaded)
-	}
-	if !pool.Has("create_docx") || !pool.Has("create_pdf") {
-		t.Fatalf("absorption failed: pool=%v", poolNames(pool))
-	}
-}
-
-func TestToolPool_AbsorbHandlesNonJSON(t *testing.T) {
-	pool := newToolPool(nil, func(string) (llm.ToolDefinition, bool) {
-		return llm.ToolDefinition{Name: "x"}, true
-	})
-	if n := pool.AbsorbToolSearchResult("No tools matched 'xyz'"); n != 0 {
-		t.Fatalf("prose result should absorb 0 tools, got %d", n)
-	}
-	if n := pool.AbsorbToolSearchResult(""); n != 0 {
-		t.Fatalf("empty result should absorb 0 tools, got %d", n)
-	}
-	if n := pool.AbsorbToolSearchResult("{malformed"); n != 0 {
-		t.Fatalf("malformed json should absorb 0 tools, got %d", n)
-	}
-}
-
 func TestToolPool_NilSafe(t *testing.T) {
 	var pool *toolPool
 	if pool.Has("x") {
@@ -125,20 +90,8 @@ func TestToolPool_NilSafe(t *testing.T) {
 	if pool.EnsureLoaded("x") {
 		t.Fatal("nil pool EnsureLoaded should be false")
 	}
-	if pool.AbsorbToolSearchResult("{}") != 0 {
-		t.Fatal("nil pool Absorb should be 0")
-	}
 	if pool.Defs() != nil {
 		t.Fatal("nil pool Defs should be nil")
 	}
 }
 
-func poolNames(p *toolPool) []string {
-	defs := p.Defs()
-	out := make([]string, 0, len(defs))
-	for _, d := range defs {
-		out = append(out, d.Name)
-	}
-	sort.Strings(out)
-	return out
-}

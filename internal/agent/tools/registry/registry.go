@@ -79,10 +79,9 @@ func (t categorizedTool) RequiredCapability() identity.Capability {
 
 // Registry stores tools and dispatches tool calls by name.
 type Registry struct {
-	mu          sync.RWMutex
-	tools       map[string]Tool
-	vectorIndex *ToolVectorIndex
-	logger      *slog.Logger
+	mu     sync.RWMutex
+	tools  map[string]Tool
+	logger *slog.Logger
 }
 
 // NewRegistry constructs an empty tool registry.
@@ -370,49 +369,6 @@ func authorizeToolExecution(ctx context.Context, name string, t Tool) (identity.
 		return decision, capability, fmt.Errorf("tool %q is not authorized for capability %q", name, capability)
 	}
 	return decision, capability, nil
-}
-
-// PrepareVectorReader wires the *ToolVectorIndex onto the registry as the
-// SEARCH path. Writes are owned by toolindex.Reconciler (Wave 2.10.b+);
-// this method just hooks up the query-side client so Registry.Search can
-// run vector cosine against the collection the Reconciler maintains.
-// When cfg.Backend is "fts" or the registry is nil, it is a no-op.
-// Readiness errors are non-fatal: vector search degrades to FTS when the
-// reader cannot be wired.
-func (r *Registry) PrepareVectorReader(cfg ToolVectorConfig) {
-	if r == nil || cfg.Backend == "fts" {
-		return
-	}
-	idx := NewToolVectorIndex(cfg, r.logger)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	if err := idx.Ready(ctx); err != nil {
-		r.logger.Warn("tool vector reader not ready, falling back to fts", "error", err)
-		return
-	}
-	r.SetVectorIndex(idx)
-	r.logger.Info("tool vector reader wired (writes via toolindex.Reconciler)", "backend", cfg.Backend)
-}
-
-func (r *Registry) SetVectorIndex(idx *ToolVectorIndex) {
-	if r == nil {
-		return
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.vectorIndex = idx
-}
-
-func (r *Registry) ToolVectorHealth() ToolVectorHealth {
-	if r == nil {
-		return ToolVectorHealth{Backend: "fts", Fallback: true}
-	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	if r.vectorIndex == nil {
-		return ToolVectorHealth{Backend: "fts", Fallback: true}
-	}
-	return r.vectorIndex.Health()
 }
 
 // sensitiveArgKeyRe matches argument key names that hint at credentials. The

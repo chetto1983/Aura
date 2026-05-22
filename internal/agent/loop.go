@@ -401,14 +401,6 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				if result, ok := execution.Results[call.ID]; ok {
 					seenToolCallsResult[key] = result
 				}
-				if call.Name == "tool_search" {
-					if result, ok := execution.Results[call.ID]; ok {
-						loaded := pool.AbsorbToolSearchResult(result)
-						if loaded > 0 {
-							logger.Debug("agent: tool_search_absorbed", "iteration", iteration, "loaded", loaded)
-						}
-					}
-				}
 			}
 		}
 		for _, duplicate := range duplicateToolCalls {

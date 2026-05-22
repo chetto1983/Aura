@@ -8,9 +8,7 @@ import (
 )
 
 // manifestDescLimit caps how much of each tool description goes into the
-// system-prompt manifest. The manifest lists every registered tool by
-// name + one-line description; full input schemas are deferred and pulled
-// via tool_search. Chosen to keep the whole block ~1000-1500 tokens even
+// system-prompt manifest. Chosen to keep the whole block ~1000-1500 tokens even
 // when MCP servers add 30+ tools.
 const manifestDescLimit = 70
 
@@ -18,10 +16,8 @@ const manifestDescLimit = 70
 // the system prompt. Format:
 //
 //	## Tool Catalog
-//	Every registered tool is listed below by name + short description. Full
-//	input schemas are NOT loaded — call tool_search(query) to fetch them
-//	for the tools you want to invoke, OR call a tool directly by name and
-//	the agent loop will permissive-load its schema for this turn.
+//	All tools are listed below by name + short description. Invoke any
+//	tool directly by name — the agent loop will load its full schema.
 //
 //	- create_docx — Generate a Word document (.docx) from blocks
 //	- create_xlsx — Generate an Excel workbook (.xlsx) from rows
@@ -41,7 +37,7 @@ func RenderToolManifest(defs []llm.ToolDefinition) string {
 
 	var b strings.Builder
 	b.WriteString("## Tool Catalog\n")
-	b.WriteString("Every registered tool is listed below by name and short description. Full input schemas are NOT loaded in this turn's pool — call tool_search(query) to fetch them, OR invoke a tool directly by name (the agent loop will load its schema for this turn).\n\n")
+	b.WriteString("All registered tools are listed below by name and short description. Invoke any tool directly by name — the agent loop will load its full schema for this turn.\n\n")
 	for _, d := range sorted {
 		b.WriteString("- ")
 		b.WriteString(d.Name)

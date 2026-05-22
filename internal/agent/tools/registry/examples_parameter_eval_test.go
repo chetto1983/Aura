@@ -27,7 +27,6 @@ func TestExamplesParameterEval(t *testing.T) {
 		&AskUserTool{},
 		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
-		&ToolSearchTool{},
 		&SearchMemoryTool{},
 		&RecallOperationalTool{},
 		&RecallUserMemoryTool{},

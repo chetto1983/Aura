@@ -23,10 +23,9 @@ func coreStubDefs(names []string) []llm.ToolDefinition {
 }
 
 func TestAlwaysOnCore_ContainsWikiFastPath(t *testing.T) {
-	// The seed must include tool_search for deferred discovery, plus the
-	// wiki/source retrieval path so ordinary wiki Q&A can resolve in <=2
-	// tool calls instead of spending one call merely finding the retrieval tool.
-	want := []string{"tool_search", "search_memory", "wiki_subgraph", "source", "wiki_page"}
+	// The seed must include the wiki/source retrieval path so ordinary wiki Q&A
+	// can resolve in <=2 tool calls without extra discovery overhead.
+	want := []string{"search_memory", "wiki_subgraph", "source", "wiki_page"}
 	seen := make(map[string]bool, len(AlwaysOnCore))
 	for _, name := range AlwaysOnCore {
 		seen[name] = true
@@ -39,17 +38,15 @@ func TestAlwaysOnCore_ContainsWikiFastPath(t *testing.T) {
 }
 
 func TestToolsProvider_ReturnsAlwaysOnSeed(t *testing.T) {
-	// Post-rollout: the closure returns exactly the always-on set,
-	// stateless and message-independent. Pool growth happens in
-	// agent.Run via permissive load and tool_search absorption,
-	// not here.
+	// The closure returns exactly the always-on set, stateless and
+	// message-independent. Pool growth happens in agent.Run via permissive load.
 	provider := MakeToolsProvider(
 		AlwaysOnCore,
 		nil,          // searchFn ignored
 		coreStubDefs, // defsForFn
 		nil,          // defsAllFn retired
 		nil,          // latestUserMsgFn — message no longer drives the seed
-		nil,          // topKFn — top-K is a tool_search property
+		nil,          // topKFn — unused
 		silentLogger(),
 	)
 	defs := provider()
@@ -84,7 +81,7 @@ func TestToolsProvider_DoesNotInvokeIgnoredCallbacks(t *testing.T) {
 			return ""
 		},
 		func() int {
-			t.Fatal("topKFn must not be called — top-K is a tool_search property")
+			t.Fatal("topKFn must not be called")
 			return 0
 		},
 		silentLogger(),

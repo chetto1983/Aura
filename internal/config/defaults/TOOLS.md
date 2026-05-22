@@ -48,7 +48,7 @@
 
 ### Discover tools
 
-- **You don't remember a tool's argument schema** → `tool_search query=…`. Returns the detailed schema for the matching tool. The system prompt already lists every registered tool by name; tool_search is for the *schema body*, not for listing.
+- **You don't remember a tool's argument schema** → invoke the tool directly by name; the agent loop will permissive-load its schema for this turn. All tools are listed by name in the system prompt manifest.
 - **You suspect a skill exists for the task** → look at the skills manifest in the system prompt. If a skill matches, use `file action=read` on its `SKILL.md` path to load its body. Do not load skills "just to check".
 
 ### Ask the user
@@ -73,13 +73,13 @@
   - Exec: `execute_code`, `execute_shell`
   - Subagent: `subagent_dispatch`
   - Proposal: `propose_patch`
-  - Discovery: `tool_search`, `dev_tool`
+  - Discovery: `dev_tool`
   - Auth/UX: `request_dashboard_token`, `ask_user`
   - MCP: dynamic `mcp_<server>_<tool>` (registered at boot)
 
 ## Hard rules (NEVER violate)
 
-- **NEVER** invent a tool name or an argument key. If unsure, call `tool_search` first.
+- **NEVER** invent a tool name or an argument key. If unsure, call the tool directly by name — the agent loop will load its schema.
 - **NEVER** describe an action without performing it in the same turn ("I'll check X" → call the tool now, don't defer).
 - **NEVER** end a turn with "I'll do X next time". Either do X now or explain why you can't.
 - **NEVER** retry the same failing call more than 3 times. After the 3rd failure, stop and report.

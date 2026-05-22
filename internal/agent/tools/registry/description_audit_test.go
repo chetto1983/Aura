@@ -26,7 +26,6 @@ func TestDescriptionAuditMarkers(t *testing.T) {
 		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
-		&ToolSearchTool{},
 		&SearchMemoryTool{},
 		&RecallOperationalTool{},
 		&RecallUserMemoryTool{},

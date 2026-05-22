@@ -569,19 +569,6 @@ func TestLoadCostPerMillionTokens(t *testing.T) {
 	}
 }
 
-func TestLoadToolSearchDefaults(t *testing.T) {
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if cfg.ToolSearchBackend != DefaultToolSearchBackend {
-		t.Fatalf("ToolSearchBackend = %q, want %q", cfg.ToolSearchBackend, DefaultToolSearchBackend)
-	}
-	if cfg.ToolSearchTopK != DefaultToolSearchTopK {
-		t.Fatalf("ToolSearchTopK = %d, want %d", cfg.ToolSearchTopK, DefaultToolSearchTopK)
-	}
-}
-
 func TestLoadOP07Defaults(t *testing.T) {
 	cfg, err := Load()
 	if err != nil {
@@ -635,80 +622,6 @@ func TestLoadOP07Env(t *testing.T) {
 	}
 	if !cfg.OP12RetryHintEnabled {
 		t.Fatal("OP12RetryHintEnabled = false, want true")
-	}
-}
-
-func TestLoadToolSearchBackend(t *testing.T) {
-	tests := []struct {
-		env  string
-		want string
-	}{
-		{"fts", "fts"},
-		{"vector", "vector"},
-		{"hybrid", "hybrid"},
-		{"FTS", "fts"},
-		{"Vector", "vector"},
-		{"Hybrid", "hybrid"},
-		{"  hybrid  ", "hybrid"},
-		{"unknown", "hybrid"},
-		{"", "hybrid"},
-	}
-	for _, tt := range tests {
-		t.Setenv("TOOL_SEARCH_BACKEND", tt.env)
-		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("TOOL_SEARCH_BACKEND=%q: unexpected error: %v", tt.env, err)
-		}
-		if cfg.ToolSearchBackend != tt.want {
-			t.Errorf("TOOL_SEARCH_BACKEND=%q -> %q, want %q", tt.env, cfg.ToolSearchBackend, tt.want)
-		}
-	}
-}
-
-func TestLoadToolSearchTopK(t *testing.T) {
-	tests := []struct {
-		env  string
-		want int
-	}{
-		{"3", 3},
-		{"5", 5},
-		{"10", 10},
-		{"30", 30},
-		{"50", 50},
-		{"0", DefaultToolSearchTopK},
-		{"51", DefaultToolSearchTopK},
-		{"-1", DefaultToolSearchTopK},
-	}
-	for _, tt := range tests {
-		t.Setenv("TOOL_SEARCH_TOP_K", tt.env)
-		cfg, err := Load()
-		if err != nil {
-			t.Fatalf("TOOL_SEARCH_TOP_K=%q: unexpected error: %v", tt.env, err)
-		}
-		if cfg.ToolSearchTopK != tt.want {
-			t.Errorf("TOOL_SEARCH_TOP_K=%q -> %d, want %d", tt.env, cfg.ToolSearchTopK, tt.want)
-		}
-	}
-}
-
-func TestNormalizeToolSearchBackend(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"fts", "fts"},
-		{"vector", "vector"},
-		{"hybrid", "hybrid"},
-		{"FTS", "fts"},
-		{"  vector  ", "vector"},
-		{"bad", "hybrid"},
-		{"", "hybrid"},
-	}
-	for _, tt := range tests {
-		got := NormalizeToolSearchBackend(tt.input)
-		if got != tt.want {
-			t.Errorf("NormalizeToolSearchBackend(%q) = %q, want %q", tt.input, got, tt.want)
-		}
 	}
 }
 
