@@ -175,16 +175,6 @@ func TestStoreSourceTool_TextAndDedup(t *testing.T) {
 	store := newTestSourceStore(t)
 	tool := NewStoreSourceTool(store)
 
-	if tool.Name() != "store_source" {
-		t.Fatalf("Name = %q", tool.Name())
-	}
-	if tool.Description() == "" {
-		t.Fatal("Description is empty")
-	}
-	if tool.Parameters()["type"] != "object" {
-		t.Fatal("Parameters not an object schema")
-	}
-
 	out, err := tool.Execute(context.Background(), map[string]any{
 		"kind":     "text",
 		"filename": "note.txt",
@@ -270,9 +260,6 @@ func TestReadSourceTool_Modes(t *testing.T) {
 	}
 
 	read := NewReadSourceTool(store)
-	if read.Name() != "read_source" {
-		t.Fatalf("name = %q", read.Name())
-	}
 
 	// metadata mode
 	meta, err := read.Execute(context.Background(), map[string]any{
@@ -458,9 +445,6 @@ func TestListSourcesTool_FilterAndLimit(t *testing.T) {
 	}
 
 	list := NewListSourcesTool(store)
-	if list.Parameters()["required"] != nil {
-		t.Fatal("list_sources should have no required params")
-	}
 
 	all, err := list.Execute(context.Background(), map[string]any{})
 	if err != nil {

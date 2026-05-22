@@ -20,38 +20,6 @@ func NewReadSourceTool(store source.Repository) *ReadSourceTool {
 	return &ReadSourceTool{store: store}
 }
 
-func (t *ReadSourceTool) Name() string { return "read_source" }
-
-func (t *ReadSourceTool) Description() string {
-	return "Read source metadata or extracted markdown by source ID. Modes: metadata, ocr (full ocr.md, capped at 8000 chars), excerpt (first ~4000 chars). Optional byte_start/byte_end return an exact text-artifact span."
-}
-
-func (t *ReadSourceTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"source_id": map[string]any{
-				"type":        "string",
-				"description": "Source ID (e.g. src_<16hex>).",
-			},
-			"mode": map[string]any{
-				"type":        "string",
-				"description": "metadata, ocr, or excerpt. Defaults to excerpt.",
-				"enum":        []string{"metadata", "ocr", "excerpt"},
-			},
-			"byte_start": map[string]any{
-				"type":        "integer",
-				"description": "Optional zero-based byte start in the source text artifact.",
-			},
-			"byte_end": map[string]any{
-				"type":        "integer",
-				"description": "Optional exclusive byte end in the source text artifact.",
-			},
-		},
-		"required": []string{"source_id"},
-	}
-}
-
 func (t *ReadSourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if t.store == nil {
 		return "", errors.New("read_source: source store unavailable")

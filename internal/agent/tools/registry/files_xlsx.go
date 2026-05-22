@@ -32,58 +32,6 @@ func NewCreateXLSXTool(store source.Writer, sender DocumentSender) *CreateXLSXTo
 	return &CreateXLSXTool{store: store, sender: sender}
 }
 
-func (t *CreateXLSXTool) Name() string { return "create_xlsx" }
-
-func (t *CreateXLSXTool) Description() string {
-	return "Generate an Excel workbook (.xlsx) from structured rows and persist it as a source. Optionally deliver the file to the user's Telegram chat. Prefer this over execute_code for ordinary spreadsheets, table exports, invoices, or reports. Cells are sanitized against formula injection; pure values only - no formulas."
-}
-
-func (t *CreateXLSXTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"filename": map[string]any{
-				"type":        "string",
-				"description": "User-visible filename. .xlsx suffix is appended if missing. Path separators are stripped.",
-			},
-			"sheets": map[string]any{
-				"type":        "array",
-				"description": "Workbook tabs. At least one is required. Empty workbooks are rejected.",
-				"minItems":    1,
-				"maxItems":    files.MaxSheets,
-				"items": map[string]any{
-					"type": "object",
-					"properties": map[string]any{
-						"name": map[string]any{
-							"type":        "string",
-							"description": "Sheet tab name (Excel-safe, 1-31 chars, sanitized).",
-						},
-						"rows": map[string]any{
-							"type":        "array",
-							"description": "Rows of cells. Each row is an array of cell values (strings, numbers, booleans).",
-							"items": map[string]any{
-								"type":  "array",
-								"items": map[string]any{"type": "string"},
-							},
-						},
-					},
-					"required": []string{"name", "rows"},
-				},
-			},
-			"deliver": map[string]any{
-				"type":        "boolean",
-				"description": "If true (default), also send the generated file to the user's Telegram chat. Set false to persist without delivery.",
-				"default":     true,
-			},
-			"caption": map[string]any{
-				"type":        "string",
-				"description": "Optional one-line caption sent with the document on delivery. Ignored when deliver=false.",
-			},
-		},
-		"required": []string{"filename", "sheets"},
-	}
-}
-
 func (t *CreateXLSXTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	spec, deliver, caption, err := parseCreateXLSXArgs(args)
 	if err != nil {

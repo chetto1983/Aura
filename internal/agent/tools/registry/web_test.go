@@ -33,9 +33,6 @@ func TestSearXNGSearchToolExecute(t *testing.T) {
 	defer server.Close()
 
 	tool := NewSearXNGSearchTool(server.URL)
-	if tool.Name() != "web_search" || tool.Description() == "" || tool.Parameters()["type"] != "object" {
-		t.Fatal("searxng web_search metadata is incomplete")
-	}
 	out, err := tool.Execute(t.Context(), map[string]any{"query": "aura", "max_results": float64(3)})
 	if err != nil {
 		t.Fatalf("Execute() error = %v", err)

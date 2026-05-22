@@ -24,25 +24,6 @@ func NewOCRSourceTool(store source.Repository, client *ocr.Client) *OCRSourceToo
 	return &OCRSourceTool{store: store, ocr: client}
 }
 
-func (t *OCRSourceTool) Name() string { return "ocr_source" }
-
-func (t *OCRSourceTool) Description() string {
-	return "Run Mistral OCR over a stored PDF source by source_id. Writes ocr.md and ocr.json next to the source and updates status to ocr_complete."
-}
-
-func (t *OCRSourceTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"source_id": map[string]any{
-				"type":        "string",
-				"description": "Source ID (e.g. src_<16hex>).",
-			},
-		},
-		"required": []string{"source_id"},
-	}
-}
-
 func (t *OCRSourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if t.store == nil {
 		return "", errors.New("ocr_source: source store unavailable")

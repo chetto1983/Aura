@@ -30,47 +30,6 @@ func NewSearXNGSearchTool(baseURL string) *SearXNGSearchTool {
 	}
 }
 
-func (t *SearXNGSearchTool) Name() string { return "web_search" }
-
-func (t *SearXNGSearchTool) Description() string {
-	return "Search the web for current information. Returns ranked results with titles, URLs, and snippets. " +
-		"Optional filters: category (general|news|science), language (e.g. 'it', 'en', 'all'), and " +
-		"time_range (day|week|month|year) for recency-bounded queries."
-}
-
-func (t *SearXNGSearchTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"query": map[string]any{
-				"type":        "string",
-				"description": "The web search query. Bang prefixes work: '!wp einstein' for Wikipedia, '!gh repo' for GitHub.",
-			},
-			"max_results": map[string]any{
-				"type":        "integer",
-				"description": "Max results to return. Defaults to 5, capped at 10.",
-				"minimum":     1,
-				"maximum":     10,
-			},
-			"category": map[string]any{
-				"type":        "string",
-				"enum":        []string{"general", "news", "science"},
-				"description": "Optional: route to a SearXNG category. 'news' for current events, 'science' for academic/arxiv, 'general' (default) for everything else.",
-			},
-			"language": map[string]any{
-				"type":        "string",
-				"description": "Optional: ISO language code ('it', 'en', 'fr', ...) or 'all'. Defaults to 'all'. Set to a specific code when the query is clearly in one language to improve recall.",
-			},
-			"time_range": map[string]any{
-				"type":        "string",
-				"enum":        []string{"day", "week", "month", "year"},
-				"description": "Optional: limit to recent results. Use 'day'/'week' when the query implies recency ('latest', 'today', 'recent', 'oggi', 'ultimi'), 'year' for evergreen-but-fresh queries.",
-			},
-		},
-		"required": []string{"query"},
-	}
-}
-
 func (t *SearXNGSearchTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	query, err := requiredString(args, "query")
 	if err != nil {

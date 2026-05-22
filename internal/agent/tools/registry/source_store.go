@@ -23,34 +23,6 @@ func NewStoreSourceTool(store source.Writer) *StoreSourceTool {
 	return &StoreSourceTool{store: store}
 }
 
-func (t *StoreSourceTool) Name() string { return "store_source" }
-
-func (t *StoreSourceTool) Description() string {
-	return "Store text or a URL as an immutable source for later ingest. PDFs are stored automatically when uploaded via Telegram."
-}
-
-func (t *StoreSourceTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"kind": map[string]any{
-				"type":        "string",
-				"description": "Source kind: 'text' or 'url'.",
-				"enum":        []string{"text", "url"},
-			},
-			"filename": map[string]any{
-				"type":        "string",
-				"description": "Display filename or short label (e.g. 'meeting-notes.txt' or 'arxiv-paper').",
-			},
-			"content": map[string]any{
-				"type":        "string",
-				"description": "For kind='text': the text body. For kind='url': the absolute URL.",
-			},
-		},
-		"required": []string{"kind", "filename", "content"},
-	}
-}
-
 func (t *StoreSourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if t.store == nil {
 		return "", errors.New("store_source: source store unavailable")

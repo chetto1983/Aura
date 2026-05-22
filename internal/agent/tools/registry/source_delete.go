@@ -34,25 +34,6 @@ func NewDeleteSourceTool(store *source.Store, purger sourcePurger) *DeleteSource
 	return &DeleteSourceTool{store: store, purger: purger}
 }
 
-func (t *DeleteSourceTool) Name() string { return "delete_source" }
-
-func (t *DeleteSourceTool) Description() string {
-	return "Permanently delete a source: removes the raw directory under wiki/raw/<id>/ from disk and purges its rows from the memoryindex (SQLite + Qdrant mirror). Wiki pages that referenced the source are left untouched. Confirm intent before calling; this is irreversible."
-}
-
-func (t *DeleteSourceTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"source_id": map[string]any{
-				"type":        "string",
-				"description": "Source ID (e.g. src_<16hex>). Must match the regex enforced by source.Store.",
-			},
-		},
-		"required": []string{"source_id"},
-	}
-}
-
 func (t *DeleteSourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	if t == nil || t.store == nil {
 		return "", errors.New("delete_source: source store unavailable")

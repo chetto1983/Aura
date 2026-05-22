@@ -146,25 +146,6 @@ func webFetchAllowLoopback() bool {
 	return false
 }
 
-func (t *DirectWebFetchTool) Name() string { return "web_fetch" }
-
-func (t *DirectWebFetchTool) Description() string {
-	return "Fetch a web page by URL and return its title, main content, and discovered links."
-}
-
-func (t *DirectWebFetchTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"url": map[string]any{
-				"type":        "string",
-				"description": "The URL to fetch.",
-			},
-		},
-		"required": []string{"url"},
-	}
-}
-
 func (t *DirectWebFetchTool) Execute(ctx context.Context, args map[string]any) (string, error) {
 	targetURL, err := requiredString(args, "url")
 	if err != nil {

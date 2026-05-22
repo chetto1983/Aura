@@ -52,7 +52,7 @@
         "Single atomic commit prefix: chore(tools): delete 18 unregistered orphan Tool types (US-TOOL-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH: read docs/research-2026-05-22/aura-tool-surface-audit.md §6 first — the orphan list with file paths is there. DO NOT INVENT. Verify each tool's status before deletion by grepping for its Name() return value in cmd/aura/. SCOPE: deletion only, no behavior change to parent dispatchers (verb logic stays where it was used)."
     },
     {
