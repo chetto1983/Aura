@@ -20,9 +20,9 @@
 | # | Phase | Plan | Sessions | LOC delta | Status |
 | --- | --- | --- | ---: | ---: | --- |
 | 1 | [Phase-WIKI-FIX](Phase-WIKI-FIX/plan.md) | Substrate bug sweep — FTS5 sync, dim ergonomics, dedup, system-page filter, admin reindex | ~1-2 | +450 | ✅ **shipped 2026-05-22** — 8/8 Ralph commits, FTS hit 0→20/20 |
-| 2 | [Phase-TOOL](Phase-TOOL/plan.md) | KILL tool RAG entirely + 18 orphan deletes + description audit + 3 kitchen-sink collapses + MCP supervisor + compact dim-fix | ~3-4 | net **-4000** | 🟡 **in flight** Ralph `prd-phase-tool-staged.json` |
-| 3 | [Phase-BUG](Phase-BUG/plan.md) | 3 verified-still-present critical bugs — `/api/chat` overlay loading (web users see slim prompt), `logging→api` boundary (590 transitive deps), errcheck-hidden silent failures (health JSON + backup gzip) | ~1 | +40 + 3 real bugs | 🔴 **NEXT** — user-locked 2026-05-22 to ship before MODERNIZE; Ralph `prd-phase-bug-staged.json` |
-| 4 | [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | ~3 | +540 | 🟣 staged — kicks after BUG |
+| 2 | [Phase-TOOL](Phase-TOOL/plan.md) | KILL tool RAG entirely + 18 orphan deletes + description audit + 3 kitchen-sink collapses + MCP supervisor + compact dim-fix | ~3-4 | net **-4000** | ✅ **closed 2026-05-22** — 10/10 stories (US-TOOL-01..10), commits `976260fa..227fd2be` + `9f6e5d57` |
+| 3 | [Phase-BUG](Phase-BUG/plan.md) | 3 verified-still-present critical bugs — `/api/chat` overlay loading (web users see slim prompt), `logging→api` boundary (590 transitive deps), errcheck-hidden silent failures (health JSON + backup gzip) | ~1 | +40 + 3 real bugs | ✅ **closed 2026-05-22** — 3/3 stories (US-BUG-01..03), commits `13b6926d`, `498893f8`, `d405e00b` |
+| 4 | [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | ~3 | +540 | 🔴 **NEXT** — kicks after Phase-BUG closure |
 | 5 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | ~3 | ~+720 | 🟣 staged — locked after MODERNIZE |
 | 6 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | 🟣 staged — after OUT |
 | 7 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🟣 staged — after CTX |
@@ -49,9 +49,9 @@
 ## Sequencing rules
 
 1. **Phase-WIKI-FIX is the priority-0 blocker** — ✅ closed 2026-05-22; substrate retrieval healthy (FTS 20/20, p95 75ms).
-2. **Phase-TOOL kills the tool RAG + cleans tool surface** — Ralph in flight; closes the live 30-call thrash root cause + dim-mismatch logs.
-3. **Phase-BUG next (locked 2026-05-22)** — 3 verified-still-present critical bugs; user re-prioritized ahead of MODERNIZE because they're visible-impact (invalidate web bench data, inflate build deps, hide silent corruption) while MODERNIZE is structural hygiene that benefits from cleanup-on-touch.
-4. **Phase-MODERNIZE before any further feature phase** — sets the CI gates (depguard + deadcode + 600-LOC) so every subsequent commit benefits from cleanup-on-touch enforcement.
+2. **Phase-TOOL kills the tool RAG + cleans tool surface** — ✅ closed 2026-05-22 (10/10 stories); removed the live 30-call thrash root cause + dim-mismatch logs.
+3. **Phase-BUG (locked 2026-05-22)** — ✅ closed 2026-05-22 (3/3 stories); 3 verified-still-present critical bugs fixed (web overlay loading, logging→api boundary, silent JSON/gzip failures).
+4. **Phase-MODERNIZE is NEXT before any further feature phase** — sets the CI gates (depguard + deadcode + 600-LOC) so every subsequent commit benefits from cleanup-on-touch enforcement.
 5. **Phase-OUT next (locked)** — output discipline + the 3 budget stories that prevent the 28-LLM-call thrash from recurring.
 6. **Phase-CTX after OUT** — context engineering substrate; payload_summarizer + auto-compaction at 70% are upstream of any further memory work.
 7. **Phase-CONS after CTX** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.

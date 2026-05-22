@@ -168,21 +168,22 @@ classification of every `internal/` subdir.
 Aura's PRD lives at [`prd.md`](prd.md). The 2026-05-22 release **v0.3.0**
 closed three back-to-back substrate milestones (174 commits since v0.2.0):
 Step 1.LAT (latency), Phase-WIKI-FIX (retrieval substrate), Phase-TOOL
-(tool surface + kill-the-RAG). Active planning lives in
+(tool surface + kill-the-RAG). Phase-BUG closed same-day post-tag
+(3 stories, US-BUG-01..03). Active planning lives in
 [`.planning/post-drift-2026-05-21/INDEX.md`](.planning/post-drift-2026-05-21/INDEX.md).
 
 ```mermaid
 flowchart LR
-  V03[v0.3.0 — 2026-05-22<br/>Step 1.LAT + WIKI-FIX + TOOL<br/>DONE 25 stories] --> BUG[Phase-BUG<br/>3 stories ~1s<br/>NEXT]
-  BUG --> MOD[Phase-MODERNIZE<br/>5 INFRA + 10 god-splits<br/>~3s]
+  V03[v0.3.0 — 2026-05-22<br/>Step 1.LAT + WIKI-FIX + TOOL<br/>DONE 25 stories] --> BUG[Phase-BUG<br/>3 stories<br/>DONE 2026-05-22]
+  BUG --> MOD[Phase-MODERNIZE<br/>5 INFRA + 10 god-splits<br/>~3s · NEXT]
   MOD --> OUT[Phase-OUT<br/>output discipline +<br/>budget enforcement<br/>9 stories ~3s]
   OUT --> CTX[Phase-CTX<br/>context engineering<br/>~3s]
   CTX --> CONS[Phase-CONS<br/>web/telegram 1+1<br/>~3s]
   CTX --> SUB[Phase-WIKI-SUBNODES<br/>parallel ~1s]
 
   style V03 fill:#90ee90,stroke:#009900
-  style BUG fill:#ffd700,stroke:#cc9900
-  style MOD fill:#fff4d6,stroke:#bf9000
+  style BUG fill:#90ee90,stroke:#009900
+  style MOD fill:#ffd700,stroke:#cc9900
   style OUT fill:#fff4d6,stroke:#bf9000
   style CTX fill:#d6e9ff,stroke:#0070d0
   style CONS fill:#d6e9ff,stroke:#0070d0
@@ -195,8 +196,8 @@ flowchart LR
 | Phase-MM Wave 1.5 | ✅ done 2026-05-19 | aura-whisper + (later pocket-tts) sidecars + init-models extension | [`docs/phase-mm-audio-spike-2026-05-19.md`](docs/phase-mm-audio-spike-2026-05-19.md) |
 | Phase-MM Wave 2 | ✅ done 2026-05-19 | audio IN E2E: KindAudio + voice handler + whisper client + AfterTranscribeHook | [`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md) |
 | Phase-MM Wave 3 | ✅ done 2026-05-20 | TTS reply via Kyutai Pocket-TTS (Giovanni IT voice, INT8, ~200ms first-chunk); per-chat voice mode | [`docs/phase-mm-synthesis-2026-05-17.md`](docs/phase-mm-synthesis-2026-05-17.md) |
-| **Phase-BUG** | 🔴 NEXT | 3 verified-still-present bugs — `/api/chat` overlay loading, `logging→api` boundary (590 transitive deps), errcheck-hidden silent failures | [`.planning/post-drift-2026-05-21/Phase-BUG/plan.md`](.planning/post-drift-2026-05-21/Phase-BUG/plan.md) |
-| Phase-MODERNIZE | 🟣 staged | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | [`.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md`](.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md) |
+| Phase-BUG | ✅ done 2026-05-22 | 3 critical bugs shipped (US-BUG-01..03) — `/api/chat` overlay loading wired (commit `13b6926d`), `logging→api` boundary inverted (commit `498893f8`), errcheck-hidden silent JSON/gzip failures propagated (commit `d405e00b`) | [`.planning/post-drift-2026-05-21/Phase-BUG/plan.md`](.planning/post-drift-2026-05-21/Phase-BUG/plan.md) |
+| **Phase-MODERNIZE** | 🔴 NEXT | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | [`.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md`](.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md) |
 | Phase-OUT | 🟣 staged | Output discipline stack + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | [`.planning/post-drift-2026-05-21/Phase-OUT/plan.md`](.planning/post-drift-2026-05-21/Phase-OUT/plan.md) |
 | Phase-CTX | 🟣 staged | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | [`.planning/post-drift-2026-05-21/Phase-CTX/plan.md`](.planning/post-drift-2026-05-21/Phase-CTX/plan.md) |
 | Phase-CONS | 🟣 staged | Web ↔ Telegram 1+1 consolidation — substantive web feature additions (streaming, voice, ask_user, archive) | [`.planning/post-drift-2026-05-21/Phase-CONS/plan.md`](.planning/post-drift-2026-05-21/Phase-CONS/plan.md) |
