@@ -105,7 +105,7 @@
         "Single atomic commit prefix: feat(wiki): filter system-category pages from default search (US-WIKI-FIX-05)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON FIX-01: this story is only useful AFTER the FTS5 mirror has the rows to filter. Ship FIX-01 first. GROUND-TRUTH: read internal/api/wiki.go handleWikiSearch end-to-end (lines 105-186) — the filter has to be threaded through to the search backend OR applied post-hoc in the response loop. Post-hoc is simpler (loop the results, skip system-category ones, top-up to topK if some get filtered out). Pre-filter at SQL is cleaner but more invasive. Pick post-hoc for v0."
     },
     {

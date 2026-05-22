@@ -122,6 +122,7 @@ func handleWikiSearch(deps Deps) http.HandlerFunc {
 			}
 			topK = n
 		}
+		includeSystem := strings.TrimSpace(r.URL.Query().Get("include_system")) == "1"
 		if deps.WikiSearcher == nil {
 			writeError(w, deps.Logger, http.StatusServiceUnavailable, "wiki search unavailable")
 			return
@@ -155,13 +156,21 @@ func handleWikiSearch(deps Deps) http.HandlerFunc {
 		}
 
 		hits := make([]WikiSearchHit, 0, len(results))
-		for i, result := range results {
+		rank := 0
+		for _, result := range results {
+			if !includeSystem && isSystemResult(result) {
+				continue
+			}
+			if len(hits) >= topK {
+				break
+			}
+			rank++
 			kind := strings.TrimSpace(result.Kind)
 			if kind == "" {
 				kind = "wiki_page"
 			}
 			hits = append(hits, WikiSearchHit{
-				Rank:        i + 1,
+				Rank:        rank,
 				Kind:        kind,
 				Slug:        result.Slug,
 				Title:       result.Title,
@@ -184,6 +193,21 @@ func handleWikiSearch(deps Deps) http.HandlerFunc {
 			Results:   hits,
 		})
 	}
+}
+
+// isSystemResult reports whether a search result is a system/internal page
+// that should be excluded from default user-facing search results. Matches
+// on category=="system" OR any tag=="system" (case-insensitive).
+func isSystemResult(r search.Result) bool {
+	if strings.EqualFold(strings.TrimSpace(r.Category), "system") {
+		return true
+	}
+	for _, tag := range r.Tags {
+		if strings.EqualFold(strings.TrimSpace(tag), "system") {
+			return true
+		}
+	}
+	return false
 }
 
 func loadWikiSummaries(store wiki.PageReader) ([]WikiPageSummary, error) {

@@ -8,8 +8,23 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aura/aura/internal/storage/search"
 	"github.com/aura/aura/internal/wiki"
 )
+
+// newTestEnvWithSearcher creates a testEnv whose router has WikiSearcher wired.
+func newTestEnvWithSearcher(t *testing.T, searcher search.Searcher) *testEnv {
+	t.Helper()
+	e := newTestEnv(t)
+	e.router = NewRouter(Deps{
+		Wiki:         e.wiki,
+		Sources:      e.sources,
+		Scheduler:    e.sched,
+		Markitdown:   &fakeMarkitdown{},
+		WikiSearcher: searcher,
+	})
+	return e
+}
 
 // newWikiPage returns a minimal valid wiki.Page with the given title.
 func newWikiPage(title string) *wiki.Page {
@@ -98,5 +113,134 @@ func TestWikiPage_UnversionedJSON_True(t *testing.T) {
 	}
 	if unv != true {
 		t.Fatalf("frontmatter[\"unversioned\"] = %v (%T), want true", unv, unv)
+	}
+}
+
+// TestWikiSearch_SystemFilter_DefaultExcludes verifies that pages with
+// category="system" are absent from default /wiki/search results.
+func TestWikiSearch_SystemFilter_DefaultExcludes(t *testing.T) {
+	searcher := &fakeAPISearcher{
+		indexed: true,
+		results: []search.Result{
+			{Slug: "aura-operating-memory", Title: "Operating Memory", Category: "system", Score: 0.9},
+			{Slug: "dante-alighieri", Title: "Dante Alighieri", Category: "author", Score: 0.8},
+			{Slug: "aura-quality-bench", Title: "Quality Bench", Category: "system", Score: 0.7},
+			{Slug: "divina-commedia", Title: "Divina Commedia", Category: "opera", Score: 0.6},
+		},
+	}
+	e := newTestEnvWithSearcher(t, searcher)
+
+	rr := e.do("GET", "/wiki/search?q=dante")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp WikiSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, hit := range resp.Results {
+		if hit.Category == "system" {
+			t.Errorf("default search returned system page %q", hit.Slug)
+		}
+	}
+	slugs := make([]string, 0, len(resp.Results))
+	for _, h := range resp.Results {
+		slugs = append(slugs, h.Slug)
+	}
+	// Non-system pages must still appear.
+	found := false
+	for _, s := range slugs {
+		if s == "dante-alighieri" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected dante-alighieri in results, got %v", slugs)
+	}
+}
+
+// TestWikiSearch_SystemFilter_IncludeSystemParam verifies that
+// ?include_system=1 surfaces system-category pages.
+func TestWikiSearch_SystemFilter_IncludeSystemParam(t *testing.T) {
+	searcher := &fakeAPISearcher{
+		indexed: true,
+		results: []search.Result{
+			{Slug: "aura-operating-memory", Title: "Operating Memory", Category: "system", Score: 0.9},
+			{Slug: "dante-alighieri", Title: "Dante Alighieri", Category: "author", Score: 0.8},
+		},
+	}
+	e := newTestEnvWithSearcher(t, searcher)
+
+	rr := e.do("GET", "/wiki/search?q=dante&include_system=1")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp WikiSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	found := false
+	for _, h := range resp.Results {
+		if h.Slug == "aura-operating-memory" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("include_system=1 should return system pages, but aura-operating-memory was absent")
+	}
+}
+
+// TestWikiSearch_SystemFilter_TagBased verifies that pages tagged "system"
+// (regardless of category) are also excluded from default results.
+func TestWikiSearch_SystemFilter_TagBased(t *testing.T) {
+	searcher := &fakeAPISearcher{
+		indexed: true,
+		results: []search.Result{
+			{Slug: "internal-notes", Title: "Internal Notes", Category: "", Tags: []string{"system", "meta"}, Score: 0.9},
+			{Slug: "galileo-galilei", Title: "Galileo Galilei", Category: "scientist", Score: 0.8},
+		},
+	}
+	e := newTestEnvWithSearcher(t, searcher)
+
+	rr := e.do("GET", "/wiki/search?q=galileo")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp WikiSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, hit := range resp.Results {
+		if hit.Slug == "internal-notes" {
+			t.Errorf("default search returned tag=system page %q", hit.Slug)
+		}
+	}
+}
+
+// TestWikiSearch_SystemFilter_RanksAreSequential verifies that after filtering,
+// the returned Rank values are sequential (1, 2, 3...) not sparse.
+func TestWikiSearch_SystemFilter_RanksAreSequential(t *testing.T) {
+	searcher := &fakeAPISearcher{
+		indexed: true,
+		results: []search.Result{
+			{Slug: "aura-operating-memory", Title: "System Page", Category: "system", Score: 0.95},
+			{Slug: "dante-alighieri", Title: "Dante Alighieri", Category: "author", Score: 0.8},
+			{Slug: "divina-commedia", Title: "Divina Commedia", Category: "opera", Score: 0.7},
+		},
+	}
+	e := newTestEnvWithSearcher(t, searcher)
+
+	rr := e.do("GET", "/wiki/search?q=dante")
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body %s", rr.Code, rr.Body)
+	}
+	var resp WikiSearchResponse
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for i, hit := range resp.Results {
+		if hit.Rank != i+1 {
+			t.Errorf("result[%d].Rank=%d, want %d (sequential after filter)", i, hit.Rank, i+1)
+		}
 	}
 }
