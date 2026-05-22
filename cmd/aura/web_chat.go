@@ -19,6 +19,7 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
+	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/telegram"
 )
@@ -45,6 +46,11 @@ func newHubBackedWebChatService(cfg *config.Config, deps *telegram.Deps, logger 
 		logger:         logger,
 		postTurnStore:  deps.MemoryStore,
 		postTurnReader: postTurnReader,
+		skillsLoader:   deps.Skills,
+		loc:            deps.Loc,
+	}
+	if deps.WikiStore != nil {
+		builder.wikiTOCFn = deps.WikiStore.GetCachedTOC
 	}
 	loop, err := chat.NewAgentLoopAdapter(builder.Build)
 	if err != nil {
@@ -94,6 +100,9 @@ type webInvocationBuilder struct {
 	postTurnStore  *memoryindex.Store
 	postTurnReader agent.PostTurnFailureReader
 	priorityCaches sync.Map
+	skillsLoader   *auraskills.Loader
+	wikiTOCFn      func() string
+	loc            *time.Location
 }
 
 func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.InboundMessage) (agent.Invocation, error) {
@@ -106,10 +115,38 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	}
 	userID := strings.TrimSpace(msg.PrincipalID)
 	turnIdx := b.sessions.messageCount(userID, msg.ThreadID)
-	system := conversation.RenderSystemPrompt(time.Now(), time.Local)
-	if pinned := b.renderPinnedOperational(ctx, msg.ThreadID, turnIdx); pinned != "" {
-		system += "\n\n" + pinned
+
+	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
+	if b.postTurnStore != nil {
+		if docs, fetchErr := b.postTurnStore.FetchRecentOperational(ctx, 10); fetchErr == nil {
+			if block := memoryindex.OperationalLessonsBlock(docs, 5120); block != "" {
+				overlay += "\n\n" + block
+			}
+		}
 	}
+	var skillsBlock string
+	if b.skillsLoader != nil {
+		if loadedSkills, loadErr := b.skillsLoader.LoadAll(); loadErr == nil {
+			if block := auraskills.PromptBlock(loadedSkills); block != "" {
+				skillsBlock = block
+			}
+		}
+	}
+	var wikiTOC string
+	if b.wikiTOCFn != nil {
+		wikiTOC = b.wikiTOCFn()
+	}
+	var toolManifest string
+	if deps.Tools != nil {
+		toolManifest = toolregistry.RenderToolManifest(deps.Tools.Definitions())
+	}
+	pinned := b.renderPinnedOperational(ctx, msg.ThreadID, turnIdx)
+	loc := b.loc
+	if loc == nil {
+		loc = time.Local
+	}
+	promptPlan := agent.ComposeAgentPrompt(b.cfg, loc, overlay, pinned, skillsBlock, toolManifest, wikiTOC, time.Now())
+	system := promptPlan.Content
 	runID := ""
 	if run != nil {
 		runID = run.ID
