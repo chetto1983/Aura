@@ -28,7 +28,12 @@ jobs:
           - image: aura-whisper
             context: ./docker/whisper
             dockerfile: ./docker/whisper/Dockerfile
-            platforms: linux/amd64,linux/arm64
+            # arm64 build crashes under QEMU on whisper.cpp v1.8.4: ggml-cpu CMake
+            # auto-detect generates `-march=armv8-a+...+noi8mm+sve` which the
+            # cross-compile assembler rejects ("must specify extensions to add
+            # before specifying those to remove"). Track upstream fix in
+            # ggerganov/whisper.cpp; revert to multi-platform once stable.
+            platforms: linux/amd64
           - image: aura-pocket-tts
             context: ./docker/pocket-tts
             dockerfile: ./docker/pocket-tts/Dockerfile
