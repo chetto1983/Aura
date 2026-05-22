@@ -119,6 +119,21 @@ func TestTaskTool_Schema(t *testing.T) {
 	}
 }
 
+func TestTaskTool_RegistersAsSingleSchedulerSurface(t *testing.T) {
+	registry := NewRegistry(nil)
+	tool := NewTaskTool(&fakeSchedulerRepository{}, nil, time.UTC)
+	registry.Register(tool)
+
+	if got := registry.Names(); len(got) != 1 || got[0] != "task" {
+		t.Fatalf("registry names = %#v, want [task]", got)
+	}
+	for _, legacy := range []string{"schedule_task", "list_tasks", "cancel_task", "run_task_now"} {
+		if registry.Get(legacy) != nil {
+			t.Fatalf("legacy scheduler tool %q must not be registered", legacy)
+		}
+	}
+}
+
 func TestTaskTool_MissingActionRejected(t *testing.T) {
 	tool := NewTaskTool(&fakeSchedulerRepository{}, nil, time.UTC)
 	_, err := tool.Execute(t.Context(), map[string]any{})
