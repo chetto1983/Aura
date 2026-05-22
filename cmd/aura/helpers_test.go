@@ -1,7 +1,11 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -100,6 +104,61 @@ func TestSetupSandboxRuntime_ProcessRunnerEnablesCodeAndShell(t *testing.T) {
 	}
 	if health.Runtime != workDir {
 		t.Fatalf("Runtime = %q, want %q", health.Runtime, workDir)
+	}
+}
+
+func TestCheckEmbedSidecarNCtx_PassesWhenAboveMin(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/props" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"default_generation_settings":{"n_ctx":2048}}`)
+	}))
+	defer srv.Close()
+
+	if err := checkEmbedSidecarNCtx(context.Background(), srv.URL+"/v1", 2048, slog.Default()); err != nil {
+		t.Fatalf("expected nil for n_ctx=2048 >= 2048, got %v", err)
+	}
+}
+
+func TestCheckEmbedSidecarNCtx_FailsWhenBelowMin(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"default_generation_settings":{"n_ctx":512}}`)
+	}))
+	defer srv.Close()
+
+	if err := checkEmbedSidecarNCtx(context.Background(), srv.URL+"/v1", 2048, slog.Default()); err == nil {
+		t.Fatal("expected error for n_ctx=512 < 2048, got nil")
+	}
+}
+
+func TestCheckEmbedSidecarNCtx_SkipsWhenUnreachable(t *testing.T) {
+	// Use a closed server to simulate an unreachable endpoint.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	srv.Close()
+
+	if err := checkEmbedSidecarNCtx(context.Background(), srv.URL+"/v1", 2048, slog.Default()); err != nil {
+		t.Fatalf("expected nil for unreachable endpoint, got %v", err)
+	}
+}
+
+func TestCheckEmbedSidecarNCtx_SkipsWhenNon200(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	if err := checkEmbedSidecarNCtx(context.Background(), srv.URL+"/v1", 2048, slog.Default()); err != nil {
+		t.Fatalf("expected nil for 404 response, got %v", err)
+	}
+}
+
+func TestCheckEmbedSidecarNCtx_SkipsWhenEmptyURL(t *testing.T) {
+	if err := checkEmbedSidecarNCtx(context.Background(), "", 2048, slog.Default()); err != nil {
+		t.Fatalf("expected nil for empty URL, got %v", err)
 	}
 }
 

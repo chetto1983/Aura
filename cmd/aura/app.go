@@ -229,6 +229,9 @@ func newApp(
 
 	if cfg.EmbeddingAPIKey != "" {
 		embedFn = createEmbeddingFunc(cfg)
+		if err := checkEmbedSidecarNCtx(context.Background(), cfg.EmbeddingBaseURL, 2048, logger); err != nil {
+			return nil, fmt.Errorf("embed sidecar n_ctx smoke check: %w", err)
+		}
 		batchEmbedFn = search.NewOpenAICompatBatchEmbeddingFunction(
 			cfg.EmbeddingBaseURL, cfg.EmbeddingAPIKey,
 			cfg.EmbeddingModel, cfg.EmbeddingOutputDim, nil)

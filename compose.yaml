@@ -226,6 +226,10 @@ services:
   aura-llama-embed:
     image: ghcr.io/ggml-org/llama.cpp:${LLAMA_EMBED_IMAGE_TAG:-server}
     restart: unless-stopped
+    # Per-slot effective n_ctx = --ctx-size / --parallel.
+    # 4096 / 2 = 2048 tokens per slot — matches embeddinggemma-300m native n_ctx.
+    # Aura's boot smoke probe asserts n_ctx >= 2048 via the /props endpoint;
+    # if you change --parallel, raise --ctx-size proportionally (n_ctx*parallel).
     command: >-
       -m /models/embeddinggemma-300m-Q4_0.gguf
       --embeddings --pooling mean

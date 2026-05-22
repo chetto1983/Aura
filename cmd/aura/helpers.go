@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"path/filepath"
 	"strings"
 	"time"
@@ -136,6 +140,59 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 		"workdir", cfg.WorkspaceRoot,
 		"detail", health.Detail)
 	return manager, health
+}
+
+// checkEmbedSidecarNCtx hits {embeddingBaseURL}/props (stripping /v1 suffix)
+// and asserts the llama.cpp effective per-slot n_ctx >= minNCtx.
+//
+// Returns nil when the endpoint is unreachable or the response is not a
+// recognisable llama.cpp /props payload (e.g. OpenAI or another provider).
+// Returns an error only when the endpoint responds with a parseable n_ctx below
+// minNCtx — a clear misconfiguration that will cause long inputs to be rejected
+// with HTTP 400. Callers should treat that as a fatal boot failure.
+func checkEmbedSidecarNCtx(ctx context.Context, embeddingBaseURL string, minNCtx int, logger *slog.Logger) error {
+	base := strings.TrimRight(strings.TrimSpace(embeddingBaseURL), "/")
+	base = strings.TrimSuffix(base, "/v1")
+	if base == "" {
+		return nil
+	}
+	propsURL := base + "/props"
+
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, propsURL, nil)
+	if err != nil {
+		return nil
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		logger.Debug("embed sidecar /props unreachable, skipping n_ctx check", "url", propsURL)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		logger.Debug("embed sidecar /props non-200, skipping n_ctx check", "status", resp.StatusCode, "url", propsURL)
+		return nil
+	}
+
+	var propsResp struct {
+		DefaultGenerationSettings struct {
+			NCtx int `json:"n_ctx"`
+		} `json:"default_generation_settings"`
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if err != nil || json.Unmarshal(data, &propsResp) != nil || propsResp.DefaultGenerationSettings.NCtx == 0 {
+		return nil // Not a llama.cpp /props response; skip.
+	}
+
+	nCtx := propsResp.DefaultGenerationSettings.NCtx
+	if nCtx < minNCtx {
+		return fmt.Errorf("embed sidecar effective n_ctx=%d < %d; per-slot n_ctx = --ctx-size / --parallel — bump compose.yaml --ctx-size so the quotient is >= %d", nCtx, minNCtx, minNCtx)
+	}
+	logger.Info("embed sidecar n_ctx check passed", "url", propsURL, "n_ctx", nCtx)
+	return nil
 }
 
 // seedProjectionState inserts the 5 canonical projection_state rows if they do

@@ -68,7 +68,7 @@
         "Single atomic commit prefix: chore(embed): n_ctx per-slot math + boot smoke (US-WIKI-FIX-08)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Lightest story; mostly comments + one probe. The actual ctx-size bump may already be on disk — verify via `grep ctx-size compose.yaml`. If yes, the story collapses to: probe + comment + verify."
     },
     {
