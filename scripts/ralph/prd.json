@@ -82,7 +82,7 @@
         "Single atomic commit prefix: chore(tools): description audit — EN-only + 200char cap + structural markers (US-TOOL-04)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-TOOL-02 + US-TOOL-03 (no orphans to lint; correct registration set). GROUND-TRUTH: read internal/agent/tools/registry/description_audit_test.go to see the existing first-line marker test; extend it. Read picobot-cpp-patterns.md from 2026-05-21 research for the 200-char convention precedent."
     },
     {

@@ -69,59 +69,7 @@ func (t *WikiPageTool) Definition() ToolDefinition {
 }
 
 func (t *WikiPageTool) Description() string {
-	return `Create, replace, edit, or append to a wiki page. WRITER ONLY — does NOT read.
-To READ a wiki page, call file({"action":"read","path":"wiki/<slug>.md"}).
-To READ a source archive, call source({"action":"read","source_id":"src_xxx"}).
-
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="create":  title, body
-  • action="replace": slug, body, expected_updated_at
-  • action="edit":    slug, old_text, new_text, expected_updated_at
-  • action="append":  slug, heading, body, expected_updated_at
-
-Common mistakes to avoid:
-  - DO NOT use "page" or "name" — the parameter is called "slug".
-  - DO NOT use "content" or "text" — the body parameter is called "body".
-  - For replace/edit/append you MUST first read the page (e.g. via file
-    action=read or search_memory) to get its current updated_at, then pass
-    that RFC3339 string as expected_updated_at. Skipping the read forces a
-    conflict retry.
-
-Action details:
-
-  • create  — write a brand-new page from scratch. Required: title, body.
-    Optional: category, tags, related, sources. Slug is derived from title.
-
-  • replace — overwrite an existing page's body (and optionally its
-    frontmatter). Required: slug, body, expected_updated_at. To update
-    metadata only, set body to the existing body (read it first).
-
-  • edit    — surgical find/replace on the page's body. Required: slug,
-    old_text, new_text, expected_updated_at. old_text MUST match exactly
-    one occurrence — provide enough context to disambiguate. new_text=""
-    deletes the match.
-
-  • append  — add a new ## section at the bottom of an existing page.
-    Required: slug, heading, body, expected_updated_at. Optional:
-    source_id — when given, each non-empty body line gets an ^[src_xxx]
-    provenance marker, and source_id is added to the Sources frontmatter.
-
-Concurrency: every action except "create" requires expected_updated_at
-(RFC3339 from the page you just read). On conflict the tool returns
-structured JSON {"error":"conflict", ...} — re-read and retry. "create"
-fails with a conflict if the slug already exists.
-
-Writing style (applies to create/replace/append body):
-- Use [[slug]] inline for every wiki page you reference — backlinks
-  are auto-maintained, do NOT mirror body links into "related:".
-- "related:" is only for intentional cross-references that don't
-  appear in body prose.
-- Categorize: "entity" (person/project/org), "concept" (theme/process),
-  or empty for ad-hoc notes. The "sources" category is reserved for
-  the ingest pipeline.
-- When citing claims from a specific source, append ^[src_xxx] per
-  claim (matches the ingest pipeline's provenance style). See
-  wiki/SCHEMA.md for full guidance.`
+	return "Destructive. Create, replace, edit, or append to a wiki page. WRITER ONLY - does NOT read. Required per action: create(title,body), replace/edit/append(slug,body,expected_updated_at)."
 }
 
 func (t *WikiPageTool) Parameters() map[string]any {

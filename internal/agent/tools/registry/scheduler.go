@@ -106,37 +106,7 @@ func (t *TaskTool) Definition() ToolDefinition {
 }
 
 func (t *TaskTool) Description() string {
-	return `Manage scheduled tasks (reminders, recurring wiki maintenance, bounded agent jobs).
-
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="schedule": name, kind, AND exactly one of (in | at_local | at | daily | every_minutes)
-  • action="list":     (none — status filter is optional)
-  • action="cancel":   name
-  • action="run_now":  name
-
-Actions (pick one via the "action" field):
-
-  • schedule — persist a one-shot or recurring task.
-    Required: name (unique identifier; re-using a name updates the existing task),
-    kind (reminder | wiki_maintenance | agent_job), and exactly one schedule field:
-      in            — relative duration ("60s", "5m", "2h", "1d", "2w")
-      at_local      — wall-clock in user TZ ("2026-04-30T17:00:00" or "2026-04-30 17:00")
-      at            — absolute ISO8601 UTC ("2026-04-30T15:00:00Z")
-      daily         — recurring local HH:MM, e.g. "03:00" (narrow with weekdays)
-      every_minutes — recurring interval (>=5)
-    Optional: payload (reminder text / agent_job goal-or-JSON),
-    weekdays (only with daily; e.g. ["mon","tue","wed","thu","fri"] for business days).
-
-  • list — surface every task. Optional: status filter (active | done | cancelled | failed).
-    Empty status returns everything.
-
-  • cancel — flip an active task to status=cancelled. Required: name.
-
-  • run_now — manually fire a saved task immediately without changing its
-    future schedule. Required: name. MVP supports agent_job kind.
-
-The "in" / "at_local" / "at" / "daily" / "every_minutes" fields are mutually
-exclusive — pick exactly one when scheduling.`
+	return "Manage scheduled tasks (reminders, agent jobs, wiki maintenance). action=schedule persists a task; action=list enumerates; action=cancel deactivates; action=run_now fires immediately."
 }
 
 func (t *TaskTool) Parameters() map[string]any {

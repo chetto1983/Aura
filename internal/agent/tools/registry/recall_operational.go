@@ -55,7 +55,7 @@ func (t *RecallOperationalTool) SetFreshnessStore(fs freshnessGetter) {
 func (t *RecallOperationalTool) Name() string { return "recall_operational" }
 
 func (t *RecallOperationalTool) Description() string {
-	return "Surface Aura's validated operational lessons (failed approaches, recurring tool errors, policy notes). Returns approved entries from operational memory only — pending proposals are NOT visible here. Filter by tool_name or error_class to narrow scope."
+	return "Surface Aura's validated operational lessons (failed approaches, recurring errors, policy notes). Returns approved entries only - pending proposals excluded. Optional: tool_name, error_class."
 }
 
 func (t *RecallOperationalTool) Parameters() map[string]any {

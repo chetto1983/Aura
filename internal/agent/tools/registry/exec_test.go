@@ -20,7 +20,7 @@ func TestExecuteCodeTool_NilManager(t *testing.T) {
 	}
 }
 
-func TestExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools(t *testing.T) {
+func TestExecuteCodeTool_DescriptionHasRequiredPhrases(t *testing.T) {
 	manager, err := sandbox.NewManager(sandbox.Config{
 		Runtime: fakeExecRuntime{result: &sandbox.Result{OK: true}},
 	})
@@ -29,7 +29,8 @@ func TestExecuteCodeTool_DescriptionDefersSimpleDocumentsToTypedTools(t *testing
 	}
 	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(manager, nil, nil, nil)
 	desc := tool.Description()
-	for _, want := range []string{"Use doc action=xlsx/docx/pdf", "for simple documents", "AURA_OUT_DIR", "computed artifacts"} {
+	// These phrases are mandated by TestDescriptionAuditSpecificPhrases; keep in sync.
+	for _, want := range []string{"Read-only stdout, capped, results are INTERNAL — synthesize before replying", "Ephemeral"} {
 		if !strings.Contains(desc, want) {
 			t.Fatalf("description missing %q:\n%s", want, desc)
 		}

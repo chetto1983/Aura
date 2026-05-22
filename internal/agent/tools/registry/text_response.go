@@ -19,9 +19,7 @@ var _ Tool = (*TextResponseTool)(nil)
 func (t *TextResponseTool) Name() string { return "text_response" }
 
 func (t *TextResponseTool) Description() string {
-	return `Reply directly to the user with the given text. Use this when you have the answer and no further tool calls are needed. The text you pass IS the message the user will receive verbatim. This terminates the turn.
-
-Per chiudere il turno con una risposta diretta, chiama text_response(text="<la tua risposta>"). Il testo passato È la risposta verbatim — niente formatting extra, niente re-quote. Testo vuoto non è ammesso.`
+	return "Reply directly to the user with the given text. Call when you have the final answer and no further tool calls are needed. The text argument is delivered verbatim. This terminates the turn."
 }
 
 func (t *TextResponseTool) Parameters() map[string]any {

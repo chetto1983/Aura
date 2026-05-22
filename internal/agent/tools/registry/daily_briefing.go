@@ -65,7 +65,7 @@ func (t *DailyBriefingTool) Definition() ToolDefinition {
 }
 
 func (t *DailyBriefingTool) Description() string {
-	return "Build a read-only daily briefing from Aura's tasks, pending wiki proposals, source inbox, wiki issues, and recent conversation archive. Use when the user asks what to do today, what changed, or for a morning briefing."
+	return "Build a read-only daily briefing from tasks, pending proposals, source inbox, wiki issues, and recent conversations. Use when the user asks what to do today, what changed, or for a summary."
 }
 
 func (t *DailyBriefingTool) Parameters() map[string]any {

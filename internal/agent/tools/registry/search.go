@@ -52,17 +52,7 @@ func (t *SearchTool) Definition() ToolDefinition {
 }
 
 func (t *SearchTool) Description() string {
-	return `Read-only. Unified knowledge lookup — wiki pages, ingested sources, conversation archive.
-Use INSTEAD of search_memory/list_memory/read_memory/read_source which are deprecated.
-
-action=search returns top-{top_k} hybrid hits across wiki + sources.
-action=list returns matching slugs (default zone=wiki, top 20).
-action=read returns the body of one page or source by slug.
-
-REQUIRED PARAMETERS BY ACTION:
-  • action="search": query (required), zone (wiki|source|all, default all), top_k (1-12, default 6)
-  • action="list":   (none) — optional: zone (default wiki), slug_prefix
-  • action="read":   slug (wiki slug or src_<16hex> for source)`
+	return "Read-only. Unified knowledge lookup over wiki pages, sources, and conversation archive. action=search queries (zone: wiki|source|all), action=list enumerates slugs, action=read fetches by slug."
 }
 
 func (t *SearchTool) Parameters() map[string]any {

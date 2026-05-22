@@ -52,7 +52,7 @@ func (t *RecallUserMemoryTool) SetFreshnessStore(fs freshnessGetter) {
 func (t *RecallUserMemoryTool) Name() string { return "recall_user_memory" }
 
 func (t *RecallUserMemoryTool) Description() string {
-	return "Surface validated user facts and preferences about the operator (name, location, interests, work context, habits, scheduled todos). Returns approved entries from user memory only — pending proposals are NOT visible here. Use category filter to narrow scope: person (identity), preference (likes/dislikes), fact (general claim), todo (scheduled item)."
+	return "Surface validated user facts about the operator (name, location, interests, habits, todos). Returns approved entries only. Optional: query, category (person|preference|fact|todo)."
 }
 
 func (t *RecallUserMemoryTool) Parameters() map[string]any {

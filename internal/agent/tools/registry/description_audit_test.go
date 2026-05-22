@@ -7,21 +7,12 @@ import (
 	"time"
 )
 
-// TestDescriptionAuditMarkers enforces that every catalogued tool description
-// starts with a recognised behavioral marker or an action verb in present tense.
-//
-// Allowed first-line patterns:
-//   - "Destructive."   — tool that can delete or overwrite data
-//   - "Read-only."     — tool that never writes to any store
-//   - "Returns "       — tool whose primary output is a structured payload
-//   - [A-Z][a-z]+[ ,] — action verb in present tense (Execute, Search, Manage, …)
-//
-// This is a forward-looking regression gate: any new catalogued tool without a
-// conforming description first line fails loudly, forcing the author to pick a marker.
-func TestDescriptionAuditMarkers(t *testing.T) {
-	// Zero-value construction is safe: Description() methods are hardcoded
-	// strings and never read struct fields. Same pattern as TestCatalogueScanNativeTools.
-	toolsToCheck := []Tool{
+// auditTools returns the canonical set of catalogued tool instances that the
+// description-audit tests enforce against. Zero-value construction is safe
+// because Description() methods are hardcoded strings and never read struct
+// fields.
+func auditTools() []Tool {
+	return []Tool{
 		&AskUserTool{},
 		&AskUserClarificationTool{},
 		&RequestDashboardTokenTool{},
@@ -44,13 +35,26 @@ func TestDescriptionAuditMarkers(t *testing.T) {
 		&DailyBriefingTool{loc: time.Local, now: time.Now},
 		&SearchTool{},
 	}
+}
 
+// TestDescriptionAuditMarkers enforces that every catalogued tool description
+// starts with a recognised behavioral marker or an action verb in present tense.
+//
+// Allowed first-line patterns:
+//   - "Destructive."   — tool that can delete or overwrite data
+//   - "Read-only."     — tool that never writes to any store
+//   - "Returns "       — tool whose primary output is a structured payload
+//   - [A-Z][a-z]+[ ,] — action verb in present tense (Execute, Search, Manage, …)
+//
+// This is a forward-looking regression gate: any new catalogued tool without a
+// conforming description first line fails loudly, forcing the author to pick a marker.
+func TestDescriptionAuditMarkers(t *testing.T) {
 	// Matches: "Destructive." | "Read-only." | "Returns " | action verb
 	// (one CamelCase word followed by a space or comma, e.g. "Execute Python",
 	// "Search Aura's", "Read, write", "Create, replace").
 	allowed := regexp.MustCompile(`^(Destructive\.|Read-only\.|Returns |[A-Z][a-z]+[ ,])`)
 
-	for _, tool := range toolsToCheck {
+	for _, tool := range auditTools() {
 		firstLine := descriptionFirstLine(tool.Description())
 		if !allowed.MatchString(firstLine) {
 			t.Errorf(
@@ -59,6 +63,30 @@ func TestDescriptionAuditMarkers(t *testing.T) {
 					"Prepend one of the allowed markers, or extend the allowed regexp in this test.",
 				tool.Name(), firstLine,
 			)
+		}
+	}
+}
+
+// TestDescriptionAuditLenCap enforces that every catalogued tool description
+// stays within 200 bytes so the always-loaded manifest token budget stays bounded.
+func TestDescriptionAuditLenCap(t *testing.T) {
+	for _, tool := range auditTools() {
+		if n := len(tool.Description()); n > 200 {
+			t.Errorf("%s: description is %d bytes (> 200 cap): %q",
+				tool.Name(), n, tool.Description())
+		}
+	}
+}
+
+// TestDescriptionAuditNoItalianWords enforces that tool descriptions contain no
+// Italian words. Per feedback_all_prompts_in_english_only, all instructional
+// text must be in English; mixing languages degrades LLM rule-following.
+func TestDescriptionAuditNoItalianWords(t *testing.T) {
+	itWords := regexp.MustCompile(`\b(gli|agli|nella|dei|delle)\b`)
+	for _, tool := range auditTools() {
+		if itWords.MatchString(tool.Description()) {
+			t.Errorf("%s: description contains Italian words: %q",
+				tool.Name(), tool.Description())
 		}
 	}
 }

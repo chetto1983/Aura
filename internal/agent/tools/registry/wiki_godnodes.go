@@ -32,7 +32,7 @@ func NewRecallGodNodesTool(store *wiki.Store) *RecallGodNodesTool {
 func (t *RecallGodNodesTool) Name() string { return "recall_god_nodes" }
 
 func (t *RecallGodNodesTool) Description() string {
-	return "List the most-connected wiki pages by degree centrality (in+out edges). Use this as a project overview when starting a conversation or summarizing what Aura knows — the top hubs are the load-bearing concepts in the knowledge graph."
+	return "List the most-connected wiki pages by degree centrality. Returns top hub concepts in the knowledge graph - use as project overview when starting a session. Optional: top_k (default 10, max 50)."
 }
 
 func (t *RecallGodNodesTool) Parameters() map[string]any {

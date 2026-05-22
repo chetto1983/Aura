@@ -84,14 +84,7 @@ func (t *ExecuteCodeTool) Definition() ToolDefinition {
 }
 
 func (t *ExecuteCodeTool) Description() string {
-	return "Execute Python code in Aura's configured runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying; never dump raw output to the user. In Docker this runs directly inside the Aura container with the same mounted workspace access AND the same network reachability as Aura — there is no network isolation; any HTTP call from the script can reach localhost and the Aura private network. " +
-		"Use this for calculations, data processing, simulations, or any task that requires running code. " +
-		"For multi-step workflows, pass tools_allowed and have the script write $AURA_OUT_DIR/aura_tool_calls.json with calls [{\"tool\":\"name\",\"args\":{...}}]; Aura executes only those active-turn tools after the script exits. " +
-		"Use loops, transforms, retries, and structured JSON output inside one script instead of many model/backend round trips. " +
-		"The execution process is ephemeral; durable state should be written through workspace tools or emitted as artifacts. " +
-		"Use doc action=xlsx/docx/pdf for simple documents; use this for computed artifacts, plots, custom data exports, or workflows that genuinely need code. " +
-		"To return files, write them under the AURA_OUT_DIR environment variable (a per-call directory, e.g. import os; out=os.environ['AURA_OUT_DIR']); Aura collects plain files from that directory, persists them as sandbox_artifact sources, and delivers them to Telegram when possible. The internal tool-call manifest is control data and is not persisted as a user artifact. " +
-		"Use timeout to override the per-call limit (1-600s, default server 300s)."
+	return "Execute Python code in Aura's runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying. Use for code, data transforms, or structured output. Ephemeral sandbox."
 }
 
 func (t *ExecuteCodeTool) Parameters() map[string]any {
@@ -361,18 +354,7 @@ func (t *ExecuteShellTool) Definition() ToolDefinition {
 }
 
 func (t *ExecuteShellTool) Description() string {
-	return "Execute a shell command inside Aura's configured process runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying; never dump raw output to the user. In Docker this runs inside the Aura container, in the configured workspace, with the same filesystem, network, Python, pip, git, and CLI access as Aura — there is no network isolation. " +
-		"Use this only for explicit operator/developer diagnostics, shell commands, tests, builds, package checks, pip installs, git status/diff/log, sqlite/jq/rg/curl diagnostics, DNS/network checks, filesystem inspection, and runtime smoke checks when file tools or execute_code are not enough. " +
-		"Prefer this container CLI surface over adding one-off native tools for broad diagnostics. The runtime image ships a full developer CLI: " +
-		"text/data (rg/jq/yq/sqlite3/bat/fd/fzf/sed/awk), git+gh (GitHub CLI for PRs/issues/releases), HTTP (curl/wget/httpie's `http`), " +
-		"network (nmap/tcpdump/traceroute/mtr/dig/whois/nc/socat — see note below on --privileged), " +
-		"docs (pandoc for md↔docx↔html↔pdf), media (ffmpeg for audio/video, imagemagick 6 — use `convert`/`identify`/`mogrify`, NOT `magick` which is v7-only), " +
-		"runtimes (python3 with `pip install <pkg>` working out-of-the-box for user installs into /data/.local — incl. preinstalled numpy/pandas/openpyxl/requests/bs4/lxml/pillow/matplotlib — and node22 with `npm install -g <pkg>` working into /data/.npm-global, both pre-wired onto PATH; also build-essential/gcc/make), " +
-		"file/disk (rsync, tree, ncdu, file, less, xz/zip/unzip), and system (ssh/scp, strace, lsof, htop, procps, iproute2). " +
-		"Do not use this for ordinary conversation, broad capability questions, memory answers, or self-status unless the user explicitly asks to inspect the runtime/container or to see raw command output. " +
-		"Commands are bounded by the server timeout and output limits. Prefer narrow, reversible commands; avoid destructive commands unless the user explicitly asked for them. " +
-		"Use timeout to override the per-call limit (1-600s, default server 300s). Deep network scans (nmap -sV --script default on /24) typically need 300-500s; give them headroom. " +
-		"Network: the container has cap_net_raw+cap_net_admin on nmap and tcpdump, but the runtime is non-root (uid 10001). For nmap -O (OS detection), -sS (SYN scan), or any raw-socket scan, ALWAYS pass --privileged — without it nmap rejects with \"requires root privileges\" even though the capabilities are present. Example: `nmap --privileged -O -F target`."
+	return "Execute a shell command in Aura's container runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying. Use for diagnostics, CLI tools, git, curl, and filesystem ops."
 }
 
 func (t *ExecuteShellTool) Parameters() map[string]any {

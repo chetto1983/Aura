@@ -48,32 +48,7 @@ func (t *DevToolTool) Definition() ToolDefinition {
 }
 
 func (t *DevToolTool) Description() string {
-	return `Manage the Python script registry used by execute_code.
-
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="list": (none)
-  • action="read": name
-  • action="save": name, description, code
-
-Actions (pick one via the "action" field):
-
-  • list — enumerate every registered script (name, description, params).
-    No arguments. Call this BEFORE writing new code — a snippet may
-    already exist for the task.
-
-  • read — fetch the source code of one script. Required: name.
-    Use this to understand what an existing script does before reusing
-    or extending it.
-
-  • save — persist a script as a permanent, reusable tool.
-    Required: name (lowercase_underscores), description (one-liner),
-    code (Python source). Optional: params ("filepath (str), n (int)"),
-    usage ("when the user uploaded a CSV"). Call this AFTER a successful
-    execute_code run that solved a reusable problem so the next session
-    can pick it up via list+read.
-
-The scripts here are not the same as the built-in Aura tools. They are
-user snippets the Python sandbox can execute on demand.`
+	return "Manage the Python script registry used by execute_code. action=list enumerates scripts; action=read fetches source code; action=save persists a reusable snippet. Required: varies."
 }
 
 func (t *DevToolTool) Parameters() map[string]any {

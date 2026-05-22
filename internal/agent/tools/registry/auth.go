@@ -52,7 +52,7 @@ func (t *RequestDashboardTokenTool) Definition() ToolDefinition {
 }
 
 func (t *RequestDashboardTokenTool) Description() string {
-	return "Mint a fresh bearer token for this user's dashboard session and send it to them via Telegram. Use when the user asks for dashboard access, login link, or token. The token is delivered out-of-band — never echo it in your reply."
+	return "Mint a bearer token and deliver it to the user via Telegram. Use when the user asks for dashboard access or a login link. The token is out-of-band - never echo it in your reply."
 }
 
 func (t *RequestDashboardTokenTool) Parameters() map[string]any {

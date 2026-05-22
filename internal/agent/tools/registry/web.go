@@ -45,23 +45,7 @@ func (t *WebTool) Definition() ToolDefinition {
 }
 
 func (t *WebTool) Description() string {
-	return `Search the web or fetch a single URL.
-
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="search": query
-  • action="fetch":  url
-
-Actions (pick one via the "action" field):
-
-  • search — query a SearXNG-backed web index. Returns top-5 results
-    (title, URL, snippet) by default; max 10 with max_results. Required: query.
-    Use this when the user asks an open-ended question that benefits from current information.
-
-  • fetch — download one URL and extract the main text and links.
-    Required: url. The fetch is bounded (~2 MiB body, ~12 KiB extracted
-    text, 30s timeout) and SSRF-gated: loopback / private / link-local /
-    cloud-metadata IPs are refused. Use this when you have a specific
-    page in mind — typically as a follow-up to a search result.`
+	return "Search the web or fetch a single URL. action=search requires query, Returns top-5 results by default (max 10). action=fetch requires url, returns extracted text (~12 KiB, SSRF-gated)."
 }
 
 func (t *WebTool) Parameters() map[string]any {

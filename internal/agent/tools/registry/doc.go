@@ -53,31 +53,7 @@ func (t *DocTool) Definition() ToolDefinition {
 }
 
 func (t *DocTool) Description() string {
-	return `Generate a document (.xlsx / .docx / .pdf) from a structured spec and persist it as a source.
-Returns a workspace path, not content — use deliver=true (default) to send the file to Telegram.
-
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="xlsx": filename, sheets
-  • action="docx": filename  (plus at least one of: title, blocks)
-  • action="pdf":  filename  (plus at least one of: title, blocks)
-
-Actions (pick one via the "action" field):
-
-  • xlsx — Excel workbook. Required: filename, sheets (array of {name, rows}).
-    Each row is an array of cell values (strings, numbers, booleans). Cells
-    are sanitized against formula injection (no leading =/+/-/@). Prefer this
-    over execute_code for ordinary spreadsheets, table exports, invoices.
-
-  • docx — Word document. Required: filename. Provide title and/or blocks
-    (heading | paragraph | bullet | table). At least one of (title, blocks)
-    is required. Prefer this over execute_code for reports, memos, write-ups.
-
-  • pdf — PDF document with the same block grammar as docx. Required:
-    filename. Provide title and/or blocks. Prefer this over execute_code
-    when the deliverable should be print-final (contracts, invoices).
-
-Shared optional params across all actions: deliver (default true) sends to
-the caller's Telegram chat; caption is a one-line annotation on delivery.`
+	return "Generate a document (.xlsx / .docx / .pdf) from a spec and persist as a source. Returns a workspace path, not content - deliver=true (default) sends the file to Telegram. Required: filename."
 }
 
 func (t *DocTool) Parameters() map[string]any {

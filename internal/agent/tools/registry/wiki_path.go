@@ -32,7 +32,7 @@ func NewWikiPathTool(store *wiki.Store) *WikiPathTool {
 func (t *WikiPathTool) Name() string { return "wiki_path" }
 
 func (t *WikiPathTool) Description() string {
-	return "Find the shortest path between two wiki pages via their [[wiki-link]] / related: edges. Returns the slug chain connecting them (e.g. 'X -> Y -> Z (2 hops)') or reports that no path exists within the hop limit. Useful for answering 'how is concept X connected to concept Y?'."
+	return "Find the shortest path between two wiki pages via [[wiki-link]] edges. Returns the slug chain or no-path-found. Required: from_slug, to_slug. Optional: max_hops (default 5, max 20)."
 }
 
 func (t *WikiPathTool) Parameters() map[string]any {

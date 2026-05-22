@@ -19,11 +19,7 @@ var _ Tool = (*AskUserClarificationTool)(nil)
 func (t *AskUserClarificationTool) Name() string { return "ask_user_clarification" }
 
 func (t *AskUserClarificationTool) Description() string {
-	return `Read-only. Pause the current task and ask the user a structured clarification question with 2-4 concrete options.
-
-Quando una richiesta è ambigua (es. 'trova un cliente' senza criterio), chiama PRIMA ask_user_clarification con 2-3 opzioni concrete invece di best-effort. Costa 1 round trip ma evita un dump da 90 righe.
-
-options carries explicit label+value pairs (max 4). The channel renders labels as a numbered list; the user's pick resolves to the corresponding value. free_text_allowed (default true) accepts replies outside the listed options.`
+	return "Read-only. Pause and ask a structured clarification with 2-4 concrete options. Required: question. Optional: options (label+value pairs, max 4), free_text_allowed (default true)."
 }
 
 func (t *AskUserClarificationTool) Parameters() map[string]any {

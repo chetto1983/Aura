@@ -43,7 +43,7 @@ func NewWikiSubgraphTool(store *wiki.Store, searcher search.Searcher) *WikiSubgr
 func (t *WikiSubgraphTool) Name() string { return "wiki_subgraph" }
 
 func (t *WikiSubgraphTool) Description() string {
-	return "Retrieve a token-budgeted subgraph of the wiki for a query. Uses hybrid search + Personalised PageRank seeding + hub-aware BFS to return the most relevant sections of the wiki in one call. Prefer this over multiple search_memory + file action=read round-trips when exploring a connected topic."
+	return "Retrieve a token-budgeted wiki subgraph for a query. Chains hybrid search + PageRank + BFS in one call. Required: query. Optional: depth (1-3, default 2), budget_tokens (default 1500, max 4000)."
 }
 
 func (t *WikiSubgraphTool) Parameters() map[string]any {
@@ -217,14 +217,9 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 
 	var sb strings.Builder
 	sb.WriteString("CAPSULE wiki_subgraph\n")
-	sb.WriteString(fmt.Sprintf("QUERY %s\n", wikiSubgraphOneLine(query)))
-	sb.WriteString(fmt.Sprintf(
-		"TRAVERSAL bfs depth=%d budget_tokens=%d nodes=%d hub_skip_degree=%d\n",
-		depth,
-		budgetTokens,
-		len(nodes),
-		skipDegree,
-	))
+	fmt.Fprintf(&sb, "QUERY %s\n", wikiSubgraphOneLine(query))
+	fmt.Fprintf(&sb, "TRAVERSAL bfs depth=%d budget_tokens=%d nodes=%d hub_skip_degree=%d\n",
+		depth, budgetTokens, len(nodes), skipDegree)
 	sb.WriteString("SEARCH_SEEDS\n")
 	for _, r := range selectedSearchResults {
 		sb.WriteString(wikiSubgraphSearchSeedLine(r))

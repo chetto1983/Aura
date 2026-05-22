@@ -90,48 +90,7 @@ func (t *SourceTool) Definition() ToolDefinition {
 }
 
 func (t *SourceTool) Description() string {
-	return `Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX, CSV, JSON, MD).
-Lifecycle: stored → ocr_complete | extract_complete → ingested.
-
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="list":      (none)
-  • action="read":      source_id
-  • action="store":     kind, filename, content
-  • action="reprocess": source_id
-  • action="delete":    source_id
-  • action="lint":      (none)
-
-Actions (pick one via the "action" field):
-
-  • list — enumerate stored sources. Optional: status filter
-    (stored | extracting | ocr_complete | extract_complete | ingested |
-    failed), kind filter (pdf | text | url | xlsx | docx | csv | json |
-    markdown), limit (default 20, max 100).
-
-  • read — fetch the extracted markdown of one source. Returns source archive bytes, 16384-byte cap. Required: source_id.
-    Optional: mode (metadata | ocr | excerpt), byte_start/byte_end, and
-    max_bytes (legacy hint). Returns ocr.md for PDFs (OCR via Mistral
-    Document AI), extract.md for other kinds, or the original text body for
-    KindText/URL.
-
-  • store — persist new text or a URL as an immutable source. Required:
-    kind (text | url), filename, content. PDFs are stored automatically
-    when uploaded via Telegram — this action does not accept binary
-    content over the LLM channel.
-
-  • reprocess — re-run extraction pipeline on an existing source.
-    Required: source_id. Optional: stages (default ["ingest"]; allowed
-    values "ocr" and "ingest"). Stage "ocr" only works for PDFs and
-    requires OCR backend configured. Stage "ingest" regenerates the
-    summary wiki page + entity/concept graph from extract.md or ocr.md.
-
-  • delete — permanently remove a source: raw files + memoryindex rows.
-    Required: source_id. Wiki pages that referenced the source are left
-    in place (operator decides). Irreversible — confirm intent.
-
-  • lint — corpus-wide audit. No arguments. Returns broken references,
-    orphan source dirs, stale OCR, missing extract.md, sources stuck in
-    intermediate status.`
+	return "Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX). action=read Returns source archive bytes, 16384-byte cap. Actions: list, read, store, reprocess, delete, lint. Required: varies."
 }
 
 func (t *SourceTool) Parameters() map[string]any {

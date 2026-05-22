@@ -115,7 +115,7 @@ func NewSearchMemoryToolConfigured(wiki search.Searcher, compact compactMemorySe
 func (t *SearchMemoryTool) Name() string { return "search_memory" }
 
 func (t *SearchMemoryTool) Description() string {
-	return "Search Aura's persistent memory — curated wiki pages, ingested sources, conversation archive, proposed updates. Results are recency-weighted: fresh operational notes outrank stale ones; curated wiki pages age slowly. Returns top-10 hits, INTERNAL — synthesize before replying; cite hits as [[slug]] for wiki and src_xxxx for sources, never echo raw results to the user. Results are a short markdown list, one line per hit, with an optional snippet. Compact memory hits may include a freshness=indexed_at/model/build annotation and degraded_read=true when the index is known to be stale."
+	return "Search Aura's persistent memory - wiki pages, sources, conversation archive, proposed updates. Returns top-10 hits, INTERNAL — synthesize before replying; cite as [[slug]] or src_xxx."
 }
 
 func (t *SearchMemoryTool) Parameters() map[string]any {

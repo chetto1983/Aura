@@ -32,24 +32,7 @@ var _ Tool = (*AskUserTool)(nil)
 func (t *AskUserTool) Name() string { return "ask_user" }
 
 func (t *AskUserTool) Description() string {
-	return `Pause the current task and ask the user a clarifying question or request approval before proceeding.
-
-USE ask_user ONLY for these cardinal cases:
-1. A required slot is missing and cannot be inferred (e.g. "schedule a meeting" — with whom? when?).
-2. The request is genuinely ambiguous with two or more viable interpretations that lead to different actions.
-3. You are about to take an irreversible or destructive action (e.g. delete data, cancel a task, overwrite a file).
-4. The action requires permission escalation (e.g. accessing private data, spending money, installing software).
-5. You are about to write a durable user-memory update without an explicit instruction to do so.
-6. Three or more consecutive tool failures have occurred with recoverable errors and you need user guidance.
-
-DO NOT use ask_user when:
-- The instruction is clear and complete — just execute it.
-- The action is low-risk and easily reversible.
-- The answer can be found by reading the wiki, prior context, or using a search or read tool.
-- Only phrasing or formatting is unclear (pick a reasonable default and proceed).
-
-kind="clarification": provide 2–4 short options that reflect the most likely user intents. Free-text reply is always accepted.
-kind="approval": omit options — canonical choices (approve_once / approve_session / approve_persist / deny / cancel) are supplied by the channel.`
+	return "Pause the agent and ask the user a clarifying question or request approval. Required: question. Optional: options (2-4 choices), kind (clarification|approval, default clarification)."
 }
 
 func (t *AskUserTool) Parameters() map[string]any {
