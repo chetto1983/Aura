@@ -204,7 +204,7 @@
         "Single atomic commit prefix: refactor(cron): split dispatch.go into dispatch/handlers/agentjob_prompt (US-MOD-SPLIT-10)"
       ],
       "priority": 14,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03."
     },
     {

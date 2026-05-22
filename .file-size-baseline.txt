@@ -13,4 +13,3 @@
 689 internal/channels/telegram/invocation_builder.go
 653 internal/storage/search/search.go
 650 cmd/aura/web_chat.go
-643 internal/cron/dispatch.go
