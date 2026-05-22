@@ -162,7 +162,7 @@
         "Single atomic commit prefix: refactor(qdrant): split qdrant.go into client/index/hybrid (US-MOD-SPLIT-08)"
       ],
       "priority": 11,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03. CAREFUL: file recently touched by Phase-WIKI-FIX (commits 9871da0c, 54ec17a9, aad25d7f). Preserve all four behaviors: FTS5 sync hook, skip-and-continue on rebuild, dim-mismatch auto-detect, admin reindex endpoint logic. Read those commit diffs before splitting."
     },
     {
