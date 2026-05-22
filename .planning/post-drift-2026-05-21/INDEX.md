@@ -21,12 +21,12 @@
 | --- | --- | --- | ---: | ---: | --- |
 | 1 | [Phase-WIKI-FIX](Phase-WIKI-FIX/plan.md) | Substrate bug sweep — FTS5 sync, dim ergonomics, dedup, system-page filter, admin reindex | ~1-2 | +450 | ✅ **shipped 2026-05-22** — 8/8 Ralph commits, FTS hit 0→20/20 |
 | 2 | [Phase-TOOL](Phase-TOOL/plan.md) | KILL tool RAG entirely + 18 orphan deletes + description audit + 3 kitchen-sink collapses + MCP supervisor + compact dim-fix | ~3-4 | net **-4000** | 🟡 **in flight** Ralph `prd-phase-tool-staged.json` |
-| 3 | [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | ~3 | +540 | 🟣 staged — kicks after TOOL |
-| 4 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | ~3 | ~+720 | 🟣 staged — locked next after MODERNIZE |
-| 5 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | 🟣 staged — after OUT |
-| 6 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🟣 staged — after CTX |
-| 7 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | 🟣 staged — parallel-safe, kicks anytime after OUT |
-| 8 | [Phase-BUG](Phase-BUG/plan.md) | Critical bug fixes — `/api/chat` overlay loading, `logging→api` boundary, errcheck-hidden bugs | ~1 | -30 + 2 bugs | 🔴 ship anytime — concurrent with any phase |
+| 3 | [Phase-BUG](Phase-BUG/plan.md) | 3 verified-still-present critical bugs — `/api/chat` overlay loading (web users see slim prompt), `logging→api` boundary (590 transitive deps), errcheck-hidden silent failures (health JSON + backup gzip) | ~1 | +40 + 3 real bugs | 🔴 **NEXT** — user-locked 2026-05-22 to ship before MODERNIZE; Ralph `prd-phase-bug-staged.json` |
+| 4 | [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | ~3 | +540 | 🟣 staged — kicks after BUG |
+| 5 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | ~3 | ~+720 | 🟣 staged — locked after MODERNIZE |
+| 6 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | 🟣 staged — after OUT |
+| 7 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🟣 staged — after CTX |
+| 8 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | 🟣 staged — parallel-safe, kicks anytime after OUT |
 | 9 | [Phase-CACHE](Phase-CACHE/plan.md) | Provider prompt caching (`prompt_cache_key=thread_id`) + `end_turn` + description audit + small wins | ~1 | ~+50 | 🟣 staged — ship anytime; small enough to fold into a feature phase opportunistically |
 
 **Estimated total: ~18 sessions** to close the post-DRIFT backlog.
@@ -50,14 +50,15 @@
 
 1. **Phase-WIKI-FIX is the priority-0 blocker** — ✅ closed 2026-05-22; substrate retrieval healthy (FTS 20/20, p95 75ms).
 2. **Phase-TOOL kills the tool RAG + cleans tool surface** — Ralph in flight; closes the live 30-call thrash root cause + dim-mismatch logs.
-3. **Phase-MODERNIZE before any further feature phase** — sets the CI gates (depguard + deadcode + 600-LOC) so every subsequent commit benefits from cleanup-on-touch enforcement.
-4. **Phase-OUT next (locked)** — output discipline + the 3 budget stories that prevent the 28-LLM-call thrash from recurring.
-5. **Phase-CTX after OUT** — context engineering substrate; payload_summarizer + auto-compaction at 70% are upstream of any further memory work.
-6. **Phase-CONS after CTX** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
-7. **Phase-WIKI-SUBNODES + Phase-BUG + Phase-CACHE are parallel-safe** — can ship in any session that has spare cycles.
-8. **Per-phase deep refactor** — every Ralph story includes `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated on touched files (CLAUDE.md rule).
-9. **One story = one commit** per `feedback_one_module_per_slice`. No batching except mechanical sed-style refactor with very low risk.
-10. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large -360 LOC single commit) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic.
+3. **Phase-BUG next (locked 2026-05-22)** — 3 verified-still-present critical bugs; user re-prioritized ahead of MODERNIZE because they're visible-impact (invalidate web bench data, inflate build deps, hide silent corruption) while MODERNIZE is structural hygiene that benefits from cleanup-on-touch.
+4. **Phase-MODERNIZE before any further feature phase** — sets the CI gates (depguard + deadcode + 600-LOC) so every subsequent commit benefits from cleanup-on-touch enforcement.
+5. **Phase-OUT next (locked)** — output discipline + the 3 budget stories that prevent the 28-LLM-call thrash from recurring.
+6. **Phase-CTX after OUT** — context engineering substrate; payload_summarizer + auto-compaction at 70% are upstream of any further memory work.
+7. **Phase-CONS after CTX** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
+8. **Phase-WIKI-SUBNODES + Phase-CACHE are parallel-safe** — can ship in any session that has spare cycles.
+9. **Per-phase deep refactor** — every Ralph story includes `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated on touched files (CLAUDE.md rule).
+10. **One story = one commit** per `feedback_one_module_per_slice`. No batching except mechanical sed-style refactor with very low risk.
+11. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large -360 LOC single commit) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic.
 
 ---
 

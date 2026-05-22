@@ -1,0 +1,60 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-BUG — 3 critical bugs surfaced by 2026-05-21 research scouts, all verified STILL present in master 2026-05-22 (grep evidence in plan.md): (1) /api/chat overlay loading — cmd/aura/web_chat.go:109 uses RenderSystemPrompt with no overlays, web users see slim base prompt while Telegram sees full personality, invalidates web bench data; (2) internal/logging imports internal/api at zap_slog.go:9 inflating transitive deps 590 vs <50 expected; (3) errcheck-hidden silent failures — health_server.go:167,172,185 unchecked json.Encode + backup/export.go 5+ unchecked gzip/tar close paths cause silent corruption on disk-full / client-disconnect. US-BUG-04 (appendUniqueSorted dead code) ALREADY CLEANED per 2026-05-22 grep — dropped from queue. Per CLAUDE.md 'BUGS ARE ALWAYS FIXED WHEN FOUND'. User decision 2026-05-22: ships immediately after Phase-TOOL completes, BEFORE Phase-MODERNIZE. Plan: .planning/post-drift-2026-05-21/Phase-BUG/plan.md. STRICT one-story-exit per scripts/ralph/CLAUDE.md.",
+  "userStories": [
+    {
+      "id": "US-BUG-01",
+      "title": "Fix /api/chat overlay loading — wire AGENT.md/SOUL.md/USER.md/TOOLS.md into web channel",
+      "description": "Web channel today uses conversation.RenderSystemPrompt(now, loc) at cmd/aura/web_chat.go:109 — base prompt + runtime block ONLY, no operator overlays. Telegram uses agent.ComposeAgentPrompt(...) which loads AGENT.md/SOUL.md/USER.md/TOOLS.md. Web users see a slim base prompt; Telegram users see the full agent personality. ALL web bench data is therefore measuring a DIFFERENT system than production Telegram. FIX: extract the overlay-loading logic into a shared function that both transports call. Specific shape: read internal/channels/telegram/invocation_builder.go::buildPromptPlan() (around line 200-300) and pull the overlay-loading branch into a new internal/conversation/promptplan.go::ComposePromptForChannel(channel, now, loc, store) that returns the assembled system prompt + the prompt-modules manifest. Both transports then call this single function. NOTE on web_chat.go LOC: currently 612 LOC (over 600 cap per CLAUDE.md). The overlay fix replaces a 1-line call with a 1-line call (LOC neutral) — flag web_chat.go for Phase-MODERNIZE god-split OR fold into this commit IF the split is clean.",
+      "acceptanceCriteria": [
+        "internal/conversation/promptplan.go (or equivalent) exports a shared ComposePromptForChannel function that loads overlays + base + runtime block",
+        "cmd/aura/web_chat.go:109 calls the shared function (no more bare RenderSystemPrompt)",
+        "internal/channels/telegram/invocation_builder.go calls the same shared function (no more inlined overlay loading)",
+        "Byte-equality probe: identical query to /api/chat and to Telegram fixture produce byte-identical system prompts (modulo timestamp block)",
+        "Personality probe: curl -d '{\"message\":\"come ti chiami?\"}' /api/chat returns Italian-by-default response driven by SOUL.md",
+        "Old web-channel bench data marked OBSOLETE in commit body; new bench scheduled",
+        "go test ./internal/conversation/... ./internal/channels/... ./internal/api/... ./cmd/aura/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: fix(web): wire operator overlays into /api/chat prompt (US-BUG-01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "HIGHEST IMPACT story in the phase. GROUND-TRUTH: (1) read cmd/aura/web_chat.go around line 109 first — see the current RenderSystemPrompt call. (2) read internal/channels/telegram/invocation_builder.go for buildPromptPlan() function — that's where the overlay-loading lives today. (3) read internal/agent/promptplan.go if exists — ComposeAgentPrompt may already be there; the refactor moves the overlay-loading layer ABOVE it. (4) check overlay files exist: ls runtime-workspace/{AGENT,SOUL,USER,TOOLS}.md. SCOPE: bug fix only. Do not refactor the broader composition root. If web_chat.go ends >600 LOC post-fix, flag for Phase-MODERNIZE — don't expand scope mid-story."
+    },
+    {
+      "id": "US-BUG-02",
+      "title": "Invert internal/logging → internal/api dependency — restore leaf contract",
+      "description": "internal/logging/zap_slog.go:9 imports internal/api to satisfy a health-shape interface. Logging is supposed to be a LEAF — depends only on zap + slog + stdlib. Today's wrong-direction import inflates internal/logging's transitive deps from <20 to 590 (verified 2026-05-21 audit). Every package that imports internal/logging (~30+ packages including agent core) drags internal/api along, slowing builds and breaking test isolation. FIX: invert the dependency. internal/api provides its own logging adapter; internal/logging exports a small interface (e.g. HealthLogger or LogSink) that internal/api implements at registration time. (a) read internal/logging/zap_slog.go end-to-end (282 LOC total in the logging package per audit). (b) identify the exact use case — what does logging need from internal/api? Likely a health-status struct OR a writer that posts JSON to a debug endpoint. (c) if it's a struct shape: define a minimal interface in internal/logging (e.g. `type HealthSnapshot interface { Status() string; ... }`) and have internal/api implement it. (d) if it's a writer: define `LogSink interface { Write([]byte) error }` in internal/logging and have internal/api provide an adapter. (e) update internal/logging/logging_test.go which also imports internal/api — use a local mock implementing the new interface.",
+      "acceptanceCriteria": [
+        "go list -f '{{.ImportPath}} {{len .Deps}}' ./internal/logging returns count <50 (was 590 per 2026-05-21 audit)",
+        "grep -rn '\"github.com/aura/aura/internal/api\"' internal/logging/ returns 0 results",
+        "internal/logging/zap_slog.go has no import of internal/api",
+        "internal/logging/logging_test.go uses a local mock — no internal/api import either",
+        "Adapter wiring lives in cmd/aura/app.go (composition root), not inside internal/logging",
+        "No NEW import of internal/api from any package outside cmd/aura/ and internal/api/ itself",
+        "go build ./... && go test ./... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: fix(logging): invert internal/api dependency — restore leaf contract (US-BUG-02)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "Cleans the foundation that every subsequent module-cleanup pass benefits from. GROUND-TRUTH: read internal/logging/zap_slog.go end-to-end (file is small — ~167 LOC); the internal/api import is on line 9. Determine the EXACT shape needed (HealthSnapshot interface or LogSink writer) before designing. SCOPE: only invert this specific dependency. Other internal/logging usage stays as-is."
+    },
+    {
+      "id": "US-BUG-03",
+      "title": "Fix errcheck-hidden silent failures — health JSON write + backup gzip close",
+      "description": "Two real bugs hiding inside the 50-item errcheck noise from 2026-05-21 audit. Both involve unchecked Write/Encode/Close calls that silently corrupt user-visible output. (a) internal/api/health_server.go — silent JSON-write failure on /health: lines 167, 172, 185 call json.NewEncoder(w).Encode(...) and discard the error. If the HTTP write fails mid-response (e.g. client disconnect), the server logs nothing AND sends a half-truncated 200 response that monitoring tools parse as 'OK'. Wrap with explicit logging via deps.Logger.Warn('health: response write failed', 'error', err). (b) internal/backup/export.go — silent gzip-flush + tar-writer failure: 5+ sites (lines 185, 228, 256, 284, 313 per grep 2026-05-22) call gzip.NewWriter(w) and tar.NewWriter(gz) and don't propagate close-time errors. On disk-full mid-backup, the file truncates without error, leaving an 'OK' status code AND a corrupted tarball on disk. Audit every close path; ensure defer gz.Close() + defer tw.Close() propagate via named return or wrapped panic-recovery. Tests covering the error paths added to internal/api/health_server_test.go and internal/backup/export_test.go.",
+      "acceptanceCriteria": [
+        "Simulated client-disconnect mid-write on /health → Logger.Warn('health: response write failed', ...) fires; observable in log fixture test",
+        "Simulated disk-full (or write-to-/dev/full on Linux) during backup → BackupExport(...) returns non-nil error; existing partial tarball deleted or marked invalid",
+        "go test ./internal/api/... ./internal/backup/... -count=1 green (including new error-path tests)",
+        "golangci-lint run --no-config --default=none -E errcheck ./internal/api/health_server.go ./internal/backup/export.go reports 0 unchecked errors on these two files",
+        "Single atomic commit prefix: fix(api,backup): propagate silent JSON-write + gzip-close failures (US-BUG-03)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Surface-fix on these two files only — other errcheck noise stays for Phase-MODERNIZE INFRA-02 (deadcode + errcheck CI gate). GROUND-TRUTH: (1) grep -n 'json.NewEncoder' internal/api/health_server.go (3 sites). (2) grep -n 'gzip.NewWriter\\|tar.NewWriter' internal/backup/export.go (5+ sites). (3) Read both files end-to-end before patching — backup export especially is 478 LOC, the close chain is tricky."
+    }
+  ]
+}
