@@ -2,10 +2,11 @@ package config
 
 import (
 	"context"
+	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"testing"
-
 )
 
 func TestApplyBestDefaultsMigratesLegacyRowsOnce(t *testing.T) {
@@ -148,6 +149,21 @@ func TestApplyBestDefaultsMovesPromptOverlayFromDataToWorkspaceAfterMigration(t 
 	}
 	assertChanged(t, changes, KeyPromptOverlayPath)
 	assertSetting(t, s, KeyPromptOverlayPath, "/workspace")
+}
+
+func TestDefaultPromptDocsUseCurrentUnifiedToolNames(t *testing.T) {
+	for _, path := range []string{"defaults/AGENT.md", "defaults/TOOLS.md"} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile(%s): %v", path, err)
+		}
+		text := string(body)
+		for _, forbidden := range []string{"workspace_write", "workspace_read", "list_memory", "read_memory", "search_memory"} {
+			if strings.Contains(text, forbidden) {
+				t.Fatalf("%s still references retired LLM-facing tool %q", path, forbidden)
+			}
+		}
+	}
 }
 
 func containerDefaultsConfig() *Config {

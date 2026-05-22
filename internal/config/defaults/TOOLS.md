@@ -5,7 +5,7 @@
 ### Find information
 
 - **Already know slug / file path / source id** → use `file action=read` or quote the `[[slug]]` directly. Do NOT search.
-- **Vague topic, unknown location** → `search_memory` (wiki + compact archive + sources fused).
+- **Vague topic, unknown location** → `search action=search query=… zone=all` (wiki + compact archive + sources fused).
 - **Personal fact about the user** → `recall_user_memory` (filtered to approved user_memory entries).
 - **Past tool failure pattern** → `recall_operational` (filtered to validated operational lessons; pending proposals NOT visible here).
 - **Web fact, current event, version number** → `web action=search` for ranked results; `web action=fetch` for a single URL you already have.
@@ -63,9 +63,9 @@
 - **Action-dispatch tools have per-action required fields**: every action-dispatch tool (`wiki_page`, `file`, `doc`, `task`, `source`, `web`, `dev_tool`, `agent_note`, `subagent_dispatch`, `propose_patch`) opens its description with `REQUIRED PARAMETERS BY ACTION`. Read it before calling. Common mistakes: `page` instead of `slug`, `content` instead of `body`, omitting `expected_updated_at` on wiki_page edit/append/replace.
 - **Tool argument privacy**: tool argument *values* (URLs with tokens, raw secrets, source bytes) are not logged by the runtime; you also should not echo them verbatim in your reply when not needed.
 - **Tool name reference (no description here — see schema)**:
-  - File: `file`, `workspace_write`, `workspace_read`
+  - File: `file`
   - Wiki: `wiki_page`
-  - Memory: `search_memory`, `recall_user_memory`, `recall_operational`, `agent_note`
+  - Memory: `search`, `recall_user_memory`, `recall_operational`, `agent_note`
   - Source: `source`
   - Web: `web`
   - Doc: `doc`
