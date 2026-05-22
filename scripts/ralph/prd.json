@@ -91,7 +91,7 @@
         "Single atomic commit prefix: refactor(db): split migrations.go into per-migration files (US-MOD-SPLIT-01)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-MOD-INFRA-03 (file-size baseline + linter). HIGHEST-PRIORITY split because every future migration touches the file. Zero behavior change — just file move. Use `git mv` is fine but go files get gofmt'd; rename + check tests."
     },
     {
