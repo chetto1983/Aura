@@ -599,6 +599,7 @@ func TestRunLoopOnToolEndReportsErrorSentinelAsFailure(t *testing.T) {
 }
 
 func TestRunLoopEmptyLLMResponseFallsBackToLastToolResult(t *testing.T) {
+	const toolResult = "tool found something useful"
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "x"}}}}},
@@ -606,34 +607,25 @@ func TestRunLoopEmptyLLMResponseFallsBackToLastToolResult(t *testing.T) {
 	}}
 
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
-		state.AddToolResultMessage(calls[0].ID, "tool found something useful")
-		return ExecutionSummary{LastResult: "tool found something useful"}
+		state.AddToolResultMessage(calls[0].ID, toolResult)
+		return ExecutionSummary{LastResult: toolResult}
 	}), state, Options{MaxIterations: 3})
 	if err != nil {
 		t.Fatalf("runLoop returned error: %v", err)
 	}
-	if strings.TrimSpace(result.Text) == "" {
-		t.Fatalf("result.Text is empty — expected graceful fallback to last tool result, got empty")
-	}
-	if strings.Contains(result.Text, "Sorry, I couldn't process") {
-		t.Fatalf("result.Text contains ugly fallback string: %q", result.Text)
-	}
-	if !strings.Contains(result.Text, "Per-turn") {
-		t.Fatalf("result.Text = %q, want Per-turn contextual budget fallback", result.Text)
+	// US-CACHE-04: lastToolResult is returned directly as the reply.
+	if result.Text != toolResult {
+		t.Fatalf("result.Text = %q, want lastToolResult %q", result.Text, toolResult)
 	}
 }
 
-// TestRunLoopEmptyLLMContentDoesNotLeakRawToolBytes is a regression gate
-// against the picobot anti-pattern (loop.go ~283-285, ~350-352 in picobot's
-// internal/agent/loop.go) where the runtime substitutes finalContent =
-// lastToolResult when the LLM returns empty content after tool execution.
-// Aura's gracefulFinalize → finalAnswerOnBudgetWithContext discards
-// lastToolResult via its blank first param (_), so raw tool bytes never reach
-// the user-facing reply. This test asserts that invariant holds so any future
-// change to gracefulFinalize that accidentally re-introduces the substitution
-// fails loudly.
-func TestRunLoopEmptyLLMContentDoesNotLeakRawToolBytes(t *testing.T) {
-	const sentinel = "RAW_TOOL_BYTES_SHOULD_NEVER_BE_USER_VISIBLE"
+// TestRunLoopLastToolResultFallback verifies US-CACHE-04: when the LLM emits
+// an empty response after a tool execution (no text, no tool calls), the loop
+// returns lastToolResult as the user-facing reply instead of a generic budget
+// message. This is the "LLM treats tool result as the final answer" shortcut:
+// the tool already produced the reply and the model correctly stayed silent.
+func TestRunLoopLastToolResultFallback(t *testing.T) {
+	const toolResult = "42\n--- tool produced the answer"
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "execute_code", Arguments: map[string]any{"code": "df.head(90)"}}}}},
@@ -641,17 +633,18 @@ func TestRunLoopEmptyLLMContentDoesNotLeakRawToolBytes(t *testing.T) {
 	}}
 
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
-		state.AddToolResultMessage(calls[0].ID, sentinel)
-		return ExecutionSummary{LastResult: sentinel}
+		state.AddToolResultMessage(calls[0].ID, toolResult)
+		return ExecutionSummary{LastResult: toolResult}
 	}), state, Options{MaxIterations: 3})
 	if err != nil {
 		t.Fatalf("runLoop returned error: %v", err)
 	}
-	if strings.Contains(result.Text, sentinel) {
-		t.Fatalf("user-facing reply leaked raw tool bytes (sentinel present): reply=%q", result.Text)
+	if result.Text != toolResult {
+		t.Fatalf("user-facing reply = %q, want lastToolResult %q", result.Text, toolResult)
 	}
-	if strings.TrimSpace(result.Text) == "" {
-		t.Fatal("user-facing reply is empty — expected a formatted budget message, not silence")
+	// Only 2 LLM calls: tool round + empty round; no graceful finalization round.
+	if client.requests != 2 {
+		t.Fatalf("LLM requests = %d, want 2 (tool round + empty round)", client.requests)
 	}
 }
 
@@ -693,9 +686,11 @@ func TestRunLoopEmptyLLMResponseTriggersGracefulFinalize(t *testing.T) {
 		{Response: llm.Response{Content: "Risposta graceful dopo LLM vuoto."}},
 	}}
 
+	// LastResult is empty so the fallback (US-CACHE-04) does not fire;
+	// gracefulFinalize still runs and calls the third LLM round.
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		state.AddToolResultMessage(calls[0].ID, "risultato utile")
-		return ExecutionSummary{LastResult: "risultato utile"}
+		return ExecutionSummary{LastResult: ""}
 	}), state, Options{
 		MaxIterations:           3,
 		AllowNoToolFinalization: true,

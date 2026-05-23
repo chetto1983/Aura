@@ -192,6 +192,16 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		if !resp.Response.HasToolCalls {
 			response := strings.TrimSpace(resp.Response.Content)
 			if response == "" {
+				// lastToolResult fallback (US-CACHE-04): when the LLM emits empty
+				// text and no tool calls after a tool has already been executed,
+				// it is treating the tool result as the final answer. Surface it
+				// directly rather than falling back to a generic budget message.
+				if lastToolResult != "" {
+					state.AddAssistantMessage(lastToolResult)
+					emitStats()
+					iterCancel()
+					return loopResult{Text: lastToolResult, Stats: stats}, nil
+				}
 				stats.StopReason = "empty_llm_response"
 				iterCancel()
 				return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)

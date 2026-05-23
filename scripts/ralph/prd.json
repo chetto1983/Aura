@@ -69,7 +69,7 @@
         "Single atomic commit prefix: fix(agent): lastToolResult empty-reply fallback (US-CACHE-04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "Trivial (~3 LOC). Bundle with US-CACHE-05 (also trivial prompt-text change) if mechanical. R0 zero risk."
     },
     {
