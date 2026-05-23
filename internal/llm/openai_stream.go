@@ -31,10 +31,13 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 	toolBuf := map[int]*accum{}
 	var indices []int // preserve insertion order so emitted ToolCalls are stable
 	var usage TokenUsage
+	// capturedEndTurn holds the end_turn field from the finish-reason chunk.
+	// Providers that omit the field leave it nil (no-signal).
+	var capturedEndTurn *bool
 
 	finish := func() {
 		if len(toolBuf) == 0 {
-			ch <- Token{Done: true, Usage: usage}
+			ch <- Token{Done: true, Usage: usage, EndTurn: capturedEndTurn}
 			return
 		}
 		calls := make([]ToolCall, 0, len(toolBuf))
@@ -47,7 +50,7 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 			}
 			calls = append(calls, ToolCall{ID: a.id, Name: a.name, Arguments: args})
 		}
-		ch <- Token{ToolCalls: calls, Usage: usage, Done: true}
+		ch <- Token{ToolCalls: calls, Usage: usage, Done: true, EndTurn: capturedEndTurn}
 	}
 
 	scanner := bufio.NewScanner(body)
@@ -90,6 +93,13 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 			continue
 		}
 		choice := chunk.Choices[0]
+
+		// Capture end_turn from the finish-reason chunk. Only update when
+		// the field is explicitly present (non-nil pointer from JSON) so a
+		// later usage-only chunk with no end_turn doesn't overwrite it.
+		if choice.FinishReason != nil && choice.EndTurn != nil {
+			capturedEndTurn = choice.EndTurn
+		}
 
 		// Surface reasoning deltas as they arrive so UIs can show the
 		// model's chain-of-thought live instead of stalling on a placeholder

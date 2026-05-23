@@ -11,7 +11,8 @@
     "HasToolCalls": false,
     "ToolCalls": null,
     "Reasoning": "Considering options carefully so the answer is concise. The user wants a short reply.",
-    "ReasoningDetails": null
+    "ReasoningDetails": null,
+    "EndTurn": null
   },
   "delivered": true,
   "calls": [

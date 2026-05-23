@@ -218,6 +218,13 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			}
 			state.AddAssistantMessage(response)
 			emitStats()
+			// Server-driven end_turn: explicit false means the provider
+			// wants another sampling round even without a tool call.
+			// nil (absent field) and true both use existing exit semantics.
+			// MaxIterations remains the emergency brake in all cases.
+			if resp.Response.EndTurn != nil && !*resp.Response.EndTurn {
+				continue
+			}
 			iterCancel()
 			if resp.Delivered {
 				return loopResult{Text: response, Delivered: true, Stats: stats}, nil

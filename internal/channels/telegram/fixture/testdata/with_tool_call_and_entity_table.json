@@ -17,7 +17,8 @@
       }
     ],
     "Reasoning": "",
-    "ReasoningDetails": null
+    "ReasoningDetails": null,
+    "EndTurn": null
   },
   "delivered": false,
   "calls": [

@@ -701,6 +701,134 @@ func TestPromptCacheKeySerialization(t *testing.T) {
 	}
 }
 
+// TestOpenAIClientStreamEndTurnParsing verifies that end_turn carried on
+// the finish-reason SSE chunk propagates to the final Done=true token.
+// Providers that omit the field leave Token.EndTurn nil (no-signal path).
+func TestOpenAIClientStreamEndTurnParsing(t *testing.T) {
+	boolPtr := func(b bool) *bool { return &b }
+	cases := []struct {
+		name        string
+		finishChunk string
+		wantEndTurn *bool
+	}{
+		{
+			name:        "end_turn=false propagated",
+			finishChunk: `{"choices":[{"delta":{},"finish_reason":"stop","end_turn":false}]}`,
+			wantEndTurn: boolPtr(false),
+		},
+		{
+			name:        "end_turn=true propagated",
+			finishChunk: `{"choices":[{"delta":{},"finish_reason":"stop","end_turn":true}]}`,
+			wantEndTurn: boolPtr(true),
+		},
+		{
+			name:        "end_turn absent gives nil",
+			finishChunk: `{"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+			wantEndTurn: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.WriteHeader(http.StatusOK)
+				flusher, _ := w.(http.Flusher)
+				for _, chunk := range []string{
+					`{"choices":[{"delta":{"content":"hello"}}]}`,
+					tc.finishChunk,
+					`[DONE]`,
+				} {
+					_, _ = w.Write([]byte("data: " + chunk + "\n\n"))
+					flusher.Flush()
+				}
+			}))
+			defer server.Close()
+
+			client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m"})
+			ch, err := client.Stream(context.Background(), Request{
+				Messages: []Message{{Role: "user", Content: "hi"}},
+			})
+			if err != nil {
+				t.Fatalf("Stream error: %v", err)
+			}
+			var finalTok Token
+			for tok := range ch {
+				if tok.Done {
+					finalTok = tok
+					break
+				}
+			}
+			if tc.wantEndTurn == nil {
+				if finalTok.EndTurn != nil {
+					t.Errorf("EndTurn = %v, want nil", *finalTok.EndTurn)
+				}
+			} else {
+				if finalTok.EndTurn == nil {
+					t.Errorf("EndTurn = nil, want %v", *tc.wantEndTurn)
+				} else if *finalTok.EndTurn != *tc.wantEndTurn {
+					t.Errorf("EndTurn = %v, want %v", *finalTok.EndTurn, *tc.wantEndTurn)
+				}
+			}
+		})
+	}
+}
+
+// TestOpenAIClientSendEndTurnParsing verifies that end_turn on a non-streaming
+// choice propagates to Response.EndTurn. Providers that omit the field leave
+// Response.EndTurn nil.
+func TestOpenAIClientSendEndTurnParsing(t *testing.T) {
+	boolPtr := func(b bool) *bool { return &b }
+	cases := []struct {
+		name        string
+		body        string
+		wantEndTurn *bool
+	}{
+		{
+			name:        "end_turn=false propagated",
+			body:        `{"choices":[{"message":{"role":"assistant","content":"hi"},"end_turn":false}]}`,
+			wantEndTurn: boolPtr(false),
+		},
+		{
+			name:        "end_turn=true propagated",
+			body:        `{"choices":[{"message":{"role":"assistant","content":"hi"},"end_turn":true}]}`,
+			wantEndTurn: boolPtr(true),
+		},
+		{
+			name:        "end_turn absent gives nil",
+			body:        `{"choices":[{"message":{"role":"assistant","content":"hi"}}]}`,
+			wantEndTurn: nil,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+
+			client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "m"})
+			resp, err := client.Send(context.Background(), Request{
+				Messages: []Message{{Role: "user", Content: "hi"}},
+			})
+			if err != nil {
+				t.Fatalf("Send error: %v", err)
+			}
+			if tc.wantEndTurn == nil {
+				if resp.EndTurn != nil {
+					t.Errorf("EndTurn = %v, want nil", *resp.EndTurn)
+				}
+			} else {
+				if resp.EndTurn == nil {
+					t.Errorf("EndTurn = nil, want %v", *tc.wantEndTurn)
+				} else if *resp.EndTurn != *tc.wantEndTurn {
+					t.Errorf("EndTurn = %v, want %v", *resp.EndTurn, *tc.wantEndTurn)
+				}
+			}
+		})
+	}
+}
+
 func TestOpenAIClientSendReasoningWireFormat(t *testing.T) {
 	cases := []struct {
 		name        string

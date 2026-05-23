@@ -65,6 +65,12 @@ type ToolCall struct {
 // DeepSeek / o-series; empty everywhere else). ReasoningDetails is the
 // opaque structured array providers want the caller to round-trip on the
 // next turn — kept as raw bytes so we never lose fidelity.
+//
+// EndTurn, when non-nil, reflects the provider's end_turn signal on the
+// final streaming token or non-streaming finish choice. Explicit false means
+// the server wants another agent-loop sampling round even without a tool call.
+// nil means "no signal" (self-hosted or provider that omits the field) and is
+// treated identically to true — existing exit semantics apply.
 type Response struct {
 	Content          string
 	Usage            TokenUsage
@@ -72,6 +78,7 @@ type Response struct {
 	ToolCalls        []ToolCall
 	Reasoning        string
 	ReasoningDetails []byte
+	EndTurn          *bool
 }
 
 // TokenUsage tracks token consumption for a single LLM call.
@@ -110,6 +117,10 @@ type TokenUsage struct {
 // Usage is populated only on the final token when the provider honors
 // stream_options.include_usage. Providers that omit usage leave it zero, so
 // callers must tolerate that.
+//
+// EndTurn is non-nil only on the final (Done=true) token, when the provider
+// includes an end_turn field on the finish-reason chunk. Explicit false means
+// the server requests another agent-loop round. nil means no signal emitted.
 type Token struct {
 	Content string
 	// Reasoning is the chain-of-thought delta produced by reasoning-capable
@@ -122,6 +133,7 @@ type Token struct {
 	ToolCalls []ToolCall
 	Usage     TokenUsage
 	Done      bool
+	EndTurn   *bool
 	Err       error
 }
 

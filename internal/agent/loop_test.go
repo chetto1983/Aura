@@ -914,3 +914,79 @@ func TestMaxIter_ForcesFinalizeOnCap(t *testing.T) {
 		t.Error("expected cap-hit corrector message mentioning 2/2")
 	}
 }
+
+// TestRunLoopEndTurnFalseForcesContinuation verifies that an explicit
+// end_turn=false on a no-tool-call response forces another sampling round
+// instead of returning. The loop should run until the next response
+// (which has no end_turn signal) exits normally.
+func TestRunLoopEndTurnFalseForcesContinuation(t *testing.T) {
+	endTurnFalse := false
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "step 1", EndTurn: &endTurnFalse}},
+		{Response: llm.Response{Content: "step 2"}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != "step 2" {
+		t.Fatalf("Text = %q, want step 2", result.Text)
+	}
+	if result.Stats.LLMCalls != 2 {
+		t.Fatalf("LLMCalls = %d, want 2 (end_turn=false forced a second round)", result.Stats.LLMCalls)
+	}
+}
+
+// TestRunLoopEndTurnTrueExitsNormally verifies that explicit end_turn=true
+// exits the loop on the first non-tool-call response (same as nil — existing
+// semantics, no extra round forced).
+func TestRunLoopEndTurnTrueExitsNormally(t *testing.T) {
+	endTurnTrue := true
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "final answer", EndTurn: &endTurnTrue}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != "final answer" {
+		t.Fatalf("Text = %q, want final answer", result.Text)
+	}
+	if result.Stats.LLMCalls != 1 {
+		t.Fatalf("LLMCalls = %d, want 1 (end_turn=true exits immediately)", result.Stats.LLMCalls)
+	}
+}
+
+// TestRunLoopEndTurnNilFallsBackToExistingExit verifies that nil EndTurn
+// (self-hosted or provider that omits the field) falls back to existing
+// exit semantics — no regression.
+func TestRunLoopEndTurnNilFallsBackToExistingExit(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "answer"}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != "answer" {
+		t.Fatalf("Text = %q, want answer", result.Text)
+	}
+	if result.Stats.LLMCalls != 1 {
+		t.Fatalf("LLMCalls = %d, want 1 (nil EndTurn exits on first response)", result.Stats.LLMCalls)
+	}
+}

@@ -130,6 +130,8 @@ type chatResponse struct {
 	Choices []struct {
 		Message      messageResponseJSON `json:"message"`
 		FinishReason string              `json:"finish_reason"`
+		// EndTurn is an optional server-driven signal; nil means absent.
+		EndTurn *bool `json:"end_turn,omitempty"`
 	} `json:"choices"`
 	Usage usageJSON `json:"usage"`
 }
@@ -196,6 +198,9 @@ type streamChunk struct {
 			ToolCalls []toolCallDeltaJSON `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason *string `json:"finish_reason"`
+		// EndTurn is an optional server-driven signal carried on the
+		// finish-reason chunk; nil means the field was absent.
+		EndTurn *bool `json:"end_turn,omitempty"`
 	} `json:"choices"`
 	// Usage chunk arrives at end-of-stream when stream_options.include_usage
 	// is set. Empty Choices in that final chunk signals it's the usage
@@ -311,6 +316,7 @@ func (c *OpenAIClient) sendHTTP(ctx context.Context, chatReq chatRequest) (Respo
 		Reasoning:        msg.Reasoning,
 		ReasoningDetails: cloneRawJSON(msg.ReasoningDetails),
 		Usage:            usage,
+		EndTurn:          chatResp.Choices[0].EndTurn,
 	}, nil
 }
 

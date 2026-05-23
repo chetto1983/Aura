@@ -36,7 +36,7 @@
         "Single atomic commit prefix: feat(agent): server-driven end_turn termination (US-CACHE-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Bundle with US-CACHE-01 ONLY if mechanical (same file llm/client.go) and small. Otherwise separate commit per one-story-exit. R3 mitigation: null vs false explicit handling."
     },
     {

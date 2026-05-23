@@ -11,7 +11,8 @@
     "HasToolCalls": false,
     "ToolCalls": null,
     "Reasoning": "",
-    "ReasoningDetails": null
+    "ReasoningDetails": null,
+    "EndTurn": null
   },
   "delivered": true,
   "calls": [
