@@ -42,7 +42,7 @@
         "Single atomic commit prefix: feat(agent): tool_search — name-only/keyword/select query forms (US-DEFER-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-DEFER-01 (needs the Deferred flag + split renderer in place). Implementation is heuristic-only — substring + token-overlap is enough. NO embedding, NO LLM call. Production parity with Claude Code's behavior is the validation target."
     },
     {
