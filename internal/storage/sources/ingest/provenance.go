@@ -86,6 +86,29 @@ func cleanedRelated(related []string, ownSlug string) []string {
 	return out
 }
 
+// mergeAliases appends entries from incoming whose case-fold (ToLower+TrimSpace)
+// is not already present in existing. First-occurrence casing is preserved; new
+// duplicates are dropped silently. Empty entries in incoming are skipped.
+func mergeAliases(existing, incoming []string) []string {
+	seen := make(map[string]bool, len(existing))
+	for _, a := range existing {
+		seen[strings.ToLower(strings.TrimSpace(a))] = true
+	}
+	result := existing
+	for _, a := range incoming {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		key := strings.ToLower(a)
+		if !seen[key] {
+			seen[key] = true
+			result = append(result, a)
+		}
+	}
+	return result
+}
+
 func containsString(haystack []string, needle string) bool {
 	for _, s := range haystack {
 		if s == needle {

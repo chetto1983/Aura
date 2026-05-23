@@ -22,6 +22,7 @@ func (p *Pipeline) upsertConceptPage(ctx context.Context, c ExtractedConcept, so
 			Body:          buildConceptBody(c, sourceID),
 			Category:      "concept",
 			Tags:          []string{"concept"},
+			Aliases:       c.Aliases,
 			Sources:       []string{sourceTag},
 			SchemaVersion: wiki.CurrentSchemaVersion,
 			PromptVersion: PromptVersion(),
@@ -35,6 +36,7 @@ func (p *Pipeline) upsertConceptPage(ctx context.Context, c ExtractedConcept, so
 		return nil
 	}
 	existing.Sources = append(existing.Sources, sourceTag)
+	existing.Aliases = mergeAliases(existing.Aliases, c.Aliases)
 	existing.Body = strings.TrimRight(existing.Body, "\n") +
 		"\n\n## From source:" + sourceID + "\n\n" +
 		annotateProvenance(c.Summary, sourceID) + "\n"

@@ -16,7 +16,7 @@ import (
 // changes so wiki pages emitted under an old prompt can be
 // re-extracted on demand. Matches the wiki schema regex for
 // PromptVersion: prefix `ingest_v` + integer.
-const extractorPromptVersion = "ingest_v2"
+const extractorPromptVersion = "ingest_v3"
 
 // extractorMaxItems caps the total entities + concepts the LLM may
 // return per source. Higher numbers add cost without proportional
@@ -60,6 +60,7 @@ type ExtractedEntity struct {
 	Type             string   `json:"type"`
 	ShortDescription string   `json:"short_description"`
 	RelatesTo        []string `json:"relates_to,omitempty"`
+	Aliases          []string `json:"aliases,omitempty"`
 }
 
 // ExtractedConcept is a theme, topic, or process the source discusses
@@ -71,6 +72,7 @@ type ExtractedConcept struct {
 	Title     string   `json:"title"`
 	Summary   string   `json:"summary"`
 	KeyClaims []string `json:"key_claims,omitempty"`
+	Aliases   []string `json:"aliases,omitempty"`
 }
 
 // ExtractedLink names a directed relation between two extracted slugs
@@ -198,6 +200,7 @@ func buildExtractionPrompt(req ExtractionRequest) string {
 	b.WriteString("- entity.type must be one of: person, project, org, concept.\n")
 	b.WriteString("- link.type must be one of: mentions, uses, extends, contradicts, derived_from.\n")
 	b.WriteString("- Links may reference slugs from this output or from the existing list.\n")
+	b.WriteString("- For each entity/concept, emit ALL surface forms you saw in the source text under aliases. Example: if the source contains \"art. 1218 c.c.\", \"articolo 1218 codice civile\", and \"1218 cc\", emit ONE entity with aliases=[all three]. Aliases preserve the writer's original capitalization + punctuation. Omit aliases when no surface-form variations exist.\n")
 	b.WriteString("- Return strict JSON. No prose. No markdown fences. No commentary.\n\n")
 	b.WriteString("Existing wiki slugs you may link to:\n")
 	b.WriteString(existingBlock)
@@ -209,10 +212,10 @@ func buildExtractionPrompt(req ExtractionRequest) string {
 	b.WriteString("Output schema (return JSON matching this exactly):\n")
 	b.WriteString(`{
   "entities": [
-    {"slug": "...", "title": "...", "type": "person|project|org|concept", "short_description": "1-2 sentences"}
+    {"slug": "...", "title": "...", "type": "person|project|org|concept", "short_description": "1-2 sentences", "aliases": ["surface form 1", "surface form 2"]}
   ],
   "concepts": [
-    {"slug": "...", "title": "...", "summary": "2-3 sentences", "key_claims": ["verbatim quote", "..."]}
+    {"slug": "...", "title": "...", "summary": "2-3 sentences", "key_claims": ["verbatim quote", "..."], "aliases": ["surface form 1", "..."]}
   ],
   "links": [
     {"from_slug": "...", "to_slug": "...", "type": "mentions|uses|extends|contradicts|derived_from"}
@@ -291,6 +294,18 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		ent.Title = strings.TrimSpace(ent.Title)
 		ent.Type = strings.TrimSpace(ent.Type)
 		ent.ShortDescription = strings.TrimSpace(ent.ShortDescription)
+		cleaned := ent.Aliases[:0]
+		for _, alias := range ent.Aliases {
+			alias = strings.TrimSpace(alias)
+			if alias == "" {
+				continue
+			}
+			if len(alias) > 200 {
+				return fmt.Errorf("entity %d (%s): alias too long (%d chars, max 200)", i, ent.Slug, len(alias))
+			}
+			cleaned = append(cleaned, alias)
+		}
+		ent.Aliases = cleaned
 		if !slugRe.MatchString(ent.Slug) || strings.Contains(ent.Slug, "--") {
 			return fmt.Errorf("entity %d: invalid slug %q", i, ent.Slug)
 		}
@@ -320,6 +335,18 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		c.Slug = strings.TrimSpace(c.Slug)
 		c.Title = strings.TrimSpace(c.Title)
 		c.Summary = strings.TrimSpace(c.Summary)
+		cleanedC := c.Aliases[:0]
+		for _, alias := range c.Aliases {
+			alias = strings.TrimSpace(alias)
+			if alias == "" {
+				continue
+			}
+			if len(alias) > 200 {
+				return fmt.Errorf("concept %d (%s): alias too long (%d chars, max 200)", i, c.Slug, len(alias))
+			}
+			cleanedC = append(cleanedC, alias)
+		}
+		c.Aliases = cleanedC
 		if !slugRe.MatchString(c.Slug) || strings.Contains(c.Slug, "--") {
 			return fmt.Errorf("concept %d: invalid slug %q", i, c.Slug)
 		}

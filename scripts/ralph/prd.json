@@ -42,7 +42,7 @@
         "Single atomic commit prefix: feat(ingest): extractor emits aliases per entity (US-GRAPH-04)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-GRAPH-01 (needs Aliases field in Page schema). Self-learning property: more documents = more aliases accumulate per entity = more robust injection downstream. Risk R1: LLM may emit duplicate aliases or noise — applyExtractionDelta dedupe + 200-char cap mitigates. Risk R2: prompt growth — keep the alias instruction TIGHT (≤4 sentences) to avoid context bloat."
     },
     {

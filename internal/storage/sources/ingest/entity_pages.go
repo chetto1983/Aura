@@ -22,6 +22,7 @@ func (p *Pipeline) upsertEntityPage(ctx context.Context, ent ExtractedEntity, so
 			Body:          buildEntityBody(ent, sourceID),
 			Category:      "entity",
 			Tags:          []string{"entity", ent.Type},
+			Aliases:       ent.Aliases,
 			Related:       wiki.RelatedFromSlugs(cleanedRelated(ent.RelatesTo, ent.Slug)),
 			Sources:       []string{sourceTag},
 			SchemaVersion: wiki.CurrentSchemaVersion,
@@ -36,6 +37,7 @@ func (p *Pipeline) upsertEntityPage(ctx context.Context, ent ExtractedEntity, so
 		return nil
 	}
 	existing.Sources = append(existing.Sources, sourceTag)
+	existing.Aliases = mergeAliases(existing.Aliases, ent.Aliases)
 	existing.Body = strings.TrimRight(existing.Body, "\n") +
 		"\n\n## From source:" + sourceID + "\n\n" +
 		annotateProvenance(ent.ShortDescription, sourceID) + "\n"
