@@ -11,10 +11,13 @@ import (
 // EntityCandidate names an entity/concept page that can be auto-linked
 // from other pages' bodies. Title is what the writer typed (e.g.
 // "Siemens", "PSA di Arese Aldo SAS"); Slug is the wiki page id
-// (lowercase-hyphen).
+// (lowercase-hyphen). Aliases carries all surface forms from the page's
+// frontmatter aliases list (US-GRAPH-01), so injection matches any of
+// them in addition to the canonical Title.
 type EntityCandidate struct {
-	Title string
-	Slug  string
+	Title   string
+	Slug    string
+	Aliases []string
 }
 
 // InjectionReport describes which pages gained which links.
@@ -51,12 +54,33 @@ var fencedBlockRe = regexp.MustCompile("```[\\s\\S]*?```|`[^`\\n]+`|<!--[\\s\\S]
 // linked.
 var existingWikilinkRe = regexp.MustCompile(`\[\[[^\]]+\]\]`)
 
+// matchEntry is an internal (matchString, targetSlug) pair built from a
+// candidate's Title plus each of its Aliases.
+type matchEntry struct {
+	str  string
+	slug string
+}
+
+// matchOccurrence records a single match position in the masked text.
+type matchOccurrence struct {
+	start, end int
+	slug       string
+}
+
 // InjectEntityLinks scans body for unlinked occurrences of each
-// candidate Title and wraps them in [[Slug]]. The match is
-// case-insensitive and word-bounded (matches "Siemens" but not
-// "siemensless" or "Siemens's"). Existing [[...]] spans and code
-// fences are protected. selfSlug, when non-empty, excludes the page's
-// own slug from candidates so a page never auto-links to itself.
+// candidate Title and all candidate Aliases, and wraps them in
+// [[Slug]]. The match is case-insensitive and uses word boundaries
+// where the match string begins/ends with a word character. Existing
+// [[...]] spans and code fences are protected. selfSlug, when
+// non-empty, excludes the page's own slug from candidates so a page
+// never auto-links to itself.
+//
+// All match strings (titles + aliases) are sorted by length DESC before
+// scanning so longer strings win over shorter ones at any given position
+// (e.g. "Codice Civile" wins over "Codice" in "Codice Civile").
+// Matches are found in the original masked text first, then applied
+// non-overlappingly — this prevents a shorter alias from matching
+// inside an already-injected [[slug]] span.
 //
 // Returns the rewritten body and the slugs that were injected (in
 // stable sort order).
@@ -65,43 +89,88 @@ func InjectEntityLinks(body string, candidates []EntityCandidate, selfSlug strin
 		return body, nil
 	}
 
-	// Mask code fences + existing wikilinks with placeholders so the
-	// title scanner ignores anything inside them. We rebuild the
-	// original spans back in place after the rewrites.
-	masked, restoreMasked := maskProtectedSpans(body)
-
-	// Order candidates by Title length DESCENDING so the longer phrase
-	// wins when one title is a substring of another (e.g. "STEP 7
-	// Professional V16" must match before "STEP 7").
-	sorted := append([]EntityCandidate(nil), candidates...)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		return len(sorted[i].Title) > len(sorted[j].Title)
-	})
-
-	injected := make(map[string]bool)
-	out := masked
-	for _, cand := range sorted {
-		title := strings.TrimSpace(cand.Title)
+	// Expand each candidate into (matchString, slug) pairs: title + each alias.
+	expanded := make([]matchEntry, 0, len(candidates)*3)
+	for _, cand := range candidates {
 		slug := strings.TrimSpace(cand.Slug)
-		if title == "" || slug == "" || slug == selfSlug {
+		if slug == "" || slug == selfSlug {
 			continue
 		}
-		pattern := wholeWordPattern(title)
+		title := strings.TrimSpace(cand.Title)
+		if title != "" {
+			expanded = append(expanded, matchEntry{str: title, slug: slug})
+		}
+		for _, alias := range cand.Aliases {
+			alias = strings.TrimSpace(alias)
+			if alias != "" {
+				expanded = append(expanded, matchEntry{str: alias, slug: slug})
+			}
+		}
+	}
+	if len(expanded) == 0 {
+		return body, nil
+	}
+
+	// Sort by match-string length DESC so longer aliases / titles are
+	// found first and win at any given text position.
+	sort.SliceStable(expanded, func(i, j int) bool {
+		return len(expanded[i].str) > len(expanded[j].str)
+	})
+
+	// Mask code fences + existing wikilinks with placeholders so the
+	// scanner ignores anything inside them.
+	masked, restoreMasked := maskProtectedSpans(body)
+
+	// Single-pass: collect ALL match positions across ALL patterns in the
+	// original masked text before making any substitutions. This prevents
+	// a shorter pattern from matching inside a [[slug]] injected by a
+	// longer pattern earlier in the loop.
+	var occurrences []matchOccurrence
+	for _, e := range expanded {
+		pattern := wholeWordPattern(e.str)
 		re, err := regexp.Compile(`(?i)` + pattern)
 		if err != nil {
 			continue
 		}
-		replaced := false
-		out = re.ReplaceAllStringFunc(out, func(match string) string {
-			replaced = true
-			return "[[" + slug + "]]"
-		})
-		if replaced {
-			injected[slug] = true
+		for _, loc := range re.FindAllStringIndex(masked, -1) {
+			occurrences = append(occurrences, matchOccurrence{
+				start: loc[0],
+				end:   loc[1],
+				slug:  e.slug,
+			})
 		}
 	}
 
-	out = restoreMasked(out)
+	if len(occurrences) == 0 {
+		return body, nil
+	}
+
+	// Sort occurrences by start position. On same start, prefer the
+	// longer match (larger end) — this is guaranteed by the expanded
+	// order (length-DESC) preserved via SliceStable, but we re-sort
+	// explicitly for correctness when building the output.
+	sort.SliceStable(occurrences, func(i, j int) bool {
+		if occurrences[i].start != occurrences[j].start {
+			return occurrences[i].start < occurrences[j].start
+		}
+		return occurrences[i].end > occurrences[j].end
+	})
+
+	// Apply non-overlapping replacements left to right.
+	injected := make(map[string]bool)
+	var sb strings.Builder
+	cursor := 0
+	for _, occ := range occurrences {
+		if occ.start < cursor {
+			continue // overlaps with an already-applied match — skip
+		}
+		sb.WriteString(masked[cursor:occ.start])
+		sb.WriteString("[[" + occ.slug + "]]")
+		injected[occ.slug] = true
+		cursor = occ.end
+	}
+	sb.WriteString(masked[cursor:])
+	out := restoreMasked(sb.String())
 
 	if len(injected) == 0 {
 		return body, nil
@@ -115,20 +184,42 @@ func InjectEntityLinks(body string, candidates []EntityCandidate, selfSlug strin
 	return out, slugs
 }
 
-// wholeWordPattern turns a title into a regex that matches the title
-// at word boundaries. Existing regex metacharacters in the title are
-// escaped. We accept ASCII word boundaries (\b) and treat hyphens +
-// apostrophes as part of the surrounding word so "PSA's" is not a
-// match for "PSA".
-func wholeWordPattern(title string) string {
-	escaped := regexp.QuoteMeta(title)
-	return `\b` + escaped + `\b`
+// wholeWordPattern turns a match string into a regex pattern with word
+// boundaries where the match string starts/ends with an ASCII word
+// character ([0-9A-Za-z_]). Regex metacharacters in the string are
+// escaped via regexp.QuoteMeta — no pattern characters are interpreted
+// from the input.
+//
+// Smart boundary: `\b` is added at the start only when the first byte
+// of s is a word char, and at the end only when the last byte is a
+// word char. This lets aliases ending in punctuation (e.g.
+// "art. 1218 c.c.") match correctly without a trailing `\b` that
+// would otherwise fail when the next character is also non-word.
+func wholeWordPattern(s string) string {
+	if s == "" {
+		return ""
+	}
+	escaped := regexp.QuoteMeta(s)
+	var prefix, suffix string
+	if isASCIIWordChar(s[0]) {
+		prefix = `\b`
+	}
+	if isASCIIWordChar(s[len(s)-1]) {
+		suffix = `\b`
+	}
+	return prefix + escaped + suffix
+}
+
+// isASCIIWordChar reports whether b is in the ASCII word-character set
+// ([0-9A-Za-z_]) that Go's regex engine uses for \b boundaries.
+func isASCIIWordChar(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
 
 // maskProtectedSpans replaces code fences + inline code + HTML comments
-// + existing wikilinks with placeholder strings of the same length so
-// the title scanner doesn't recurse into them. The returned restore
-// function reverses the substitution after the scanner finishes.
+// + existing wikilinks with placeholder strings so the title scanner
+// doesn't recurse into them. The returned restore function reverses the
+// substitution after the scanner finishes.
 func maskProtectedSpans(body string) (string, func(string) string) {
 	type span struct {
 		start, end int
@@ -186,6 +277,12 @@ func maskProtectedSpans(body string) (string, func(string) string) {
 // post-write and by CleanMemory as a maintenance pass. Returns a
 // report describing what changed. Pages are rewritten via
 // store.WritePage so FTS5/GraphIndex/Qdrant/git stay in sync.
+//
+// The candidate list includes each linkable page's Title AND all
+// frontmatter Aliases (US-GRAPH-02), so injection triggers on any
+// surface form seen in the source corpus. report.Links maps each
+// updated page slug to the list of injected entity slugs (len gives
+// the per-page injected count).
 func (s *Store) InjectAcrossWiki(ctx context.Context) (*InjectionReport, error) {
 	pages, err := s.memoryPages()
 	if err != nil {
@@ -201,7 +298,11 @@ func (s *Store) InjectAcrossWiki(ctx context.Context) (*InjectionReport, error) 
 		if title == "" {
 			continue
 		}
-		candidates = append(candidates, EntityCandidate{Title: title, Slug: item.slug})
+		candidates = append(candidates, EntityCandidate{
+			Title:   title,
+			Slug:    item.slug,
+			Aliases: item.page.Aliases,
+		})
 	}
 
 	report := &InjectionReport{Pages: len(pages), Links: map[string][]string{}}

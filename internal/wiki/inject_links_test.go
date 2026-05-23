@@ -150,3 +150,93 @@ func TestIsLinkableCategory(t *testing.T) {
 		}
 	}
 }
+
+// --- US-GRAPH-02: alias-aware injection tests ---
+
+// TestInjectEntityLinks_AliasMatchAlone verifies that a body containing
+// only the alias form (not the canonical Title) still gets linked.
+func TestInjectEntityLinks_AliasMatchAlone(t *testing.T) {
+	body := "The document mentions Siemens AG as supplier."
+	candidates := []EntityCandidate{
+		{Title: "Siemens", Slug: "siemens", Aliases: []string{"Siemens AG", "SIEMENS"}},
+	}
+	out, injected := InjectEntityLinks(body, candidates, "")
+	if len(injected) != 1 || injected[0] != "siemens" {
+		t.Fatalf("injected = %v, want [siemens]", injected)
+	}
+	if !strings.Contains(out, "[[siemens]] as supplier") {
+		t.Errorf("alias not wrapped:\n%s", out)
+	}
+}
+
+// TestInjectEntityLinks_TitleOrAliasMatch verifies that both the
+// canonical title and an alias form in the same body get linked to the
+// same slug.
+func TestInjectEntityLinks_TitleOrAliasMatch(t *testing.T) {
+	body := "Siemens (also known as Siemens AG) supplies components."
+	candidates := []EntityCandidate{
+		{Title: "Siemens", Slug: "siemens", Aliases: []string{"Siemens AG"}},
+	}
+	out, injected := InjectEntityLinks(body, candidates, "")
+	if len(injected) != 1 || injected[0] != "siemens" {
+		t.Fatalf("injected = %v, want [siemens]", injected)
+	}
+	if strings.Count(out, "[[siemens]]") != 2 {
+		t.Errorf("expected 2 [[siemens]] occurrences:\n%s", out)
+	}
+}
+
+// TestInjectEntityLinks_AliasLongestWins verifies that when two
+// different slugs claim aliases of different lengths covering the same
+// text, the longer alias wins (e.g. "Codice Civile" beats "Codice").
+func TestInjectEntityLinks_AliasLongestWins(t *testing.T) {
+	body := "Codice Civile"
+	candidates := []EntityCandidate{
+		{Title: "Codice", Slug: "codice", Aliases: []string{"Codice"}},
+		{Title: "Codice Civile", Slug: "codice-civile", Aliases: []string{"Codice Civile"}},
+	}
+	out, injected := InjectEntityLinks(body, candidates, "")
+	if len(injected) != 1 || injected[0] != "codice-civile" {
+		t.Fatalf("injected = %v, want [codice-civile]; output:\n%s", injected, out)
+	}
+	if out != "[[codice-civile]]" {
+		t.Errorf("expected [[codice-civile]], got:\n%s", out)
+	}
+}
+
+// TestInjectEntityLinks_AliasCaseFolding verifies that alias matching
+// is case-insensitive (alias stored as "Siemens AG" matches "SIEMENS AG").
+func TestInjectEntityLinks_AliasCaseFolding(t *testing.T) {
+	body := "Supplier SIEMENS AG delivered parts."
+	candidates := []EntityCandidate{
+		{Title: "Siemens", Slug: "siemens", Aliases: []string{"Siemens AG"}},
+	}
+	out, injected := InjectEntityLinks(body, candidates, "")
+	if len(injected) != 1 || injected[0] != "siemens" {
+		t.Fatalf("injected = %v, want [siemens]", injected)
+	}
+	if !strings.Contains(out, "[[siemens]] delivered") {
+		t.Errorf("case-folded alias not wrapped:\n%s", out)
+	}
+}
+
+// TestInjectEntityLinks_AliasSpecialCharsEscaped verifies that aliases
+// containing dots and apostrophes are matched via regexp.QuoteMeta
+// (literal match, no regex interpretation). Both forms get wrapped.
+func TestInjectEntityLinks_AliasSpecialCharsEscaped(t *testing.T) {
+	body := "ai sensi dell'art. 1218 c.c. e dell'art. 1218 cc"
+	candidates := []EntityCandidate{
+		{
+			Title:   "Art. 1218 c.c.",
+			Slug:    "art-1218-cc",
+			Aliases: []string{"art. 1218 c.c.", "art. 1218 cc"},
+		},
+	}
+	out, injected := InjectEntityLinks(body, candidates, "")
+	if len(injected) != 1 || injected[0] != "art-1218-cc" {
+		t.Fatalf("injected = %v, want [art-1218-cc]", injected)
+	}
+	if strings.Count(out, "[[art-1218-cc]]") != 2 {
+		t.Errorf("expected 2 [[art-1218-cc]] occurrences:\n%s", out)
+	}
+}
