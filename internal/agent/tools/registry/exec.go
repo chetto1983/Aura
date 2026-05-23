@@ -84,7 +84,14 @@ func (t *ExecuteCodeTool) Definition() ToolDefinition {
 }
 
 func (t *ExecuteCodeTool) Description() string {
-	return "Execute Python code in Aura's runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying. Use for code, data transforms, or structured output. Ephemeral sandbox."
+	return `Execute Python code in Aura's Ephemeral sandbox runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying.
+
+EXAMPLES — copy the shape exactly:
+
+  execute_code({"code":"print(sum(range(1,101)))"})
+  execute_code({"code":"import json; print(json.dumps({\"x\":1,\"y\":2}))","timeout":10})
+
+Only "code" is REQUIRED.`
 }
 
 func (t *ExecuteCodeTool) Parameters() map[string]any {
@@ -93,29 +100,33 @@ func (t *ExecuteCodeTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"code": map[string]any{
 				"type":        "string",
-				"description": "Python code to execute in the sandbox",
+				"description": "REQUIRED. Python code to execute in the sandbox.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Per-call timeout in seconds (1-600). Defaults to the server timeout (300s). Lower for quick checks, higher for long computations or deep network scans.",
+				"description": "Optional. Per-call timeout in seconds (1-600). Defaults to 300s. Raise for long computations.",
 				"minimum":     1,
 				"maximum":     600,
 			},
 			"tools_allowed": map[string]any{
 				"type":        "array",
-				"description": "Optional tool names visible in this turn. Required when the script writes aura_tool_calls.json for internal tool orchestration.",
+				"description": "Optional. Tool names visible to internal orchestration when the script writes aura_tool_calls.json.",
 				"items": map[string]any{
 					"type": "string",
 				},
 			},
 			"max_calls": map[string]any{
 				"type":        "integer",
-				"description": "Maximum internal tool calls to execute from aura_tool_calls.json. Defaults to 10 and is capped at 20.",
+				"description": "Optional. Max internal tool calls from aura_tool_calls.json. Default 10, cap 20.",
 				"minimum":     1,
 				"maximum":     20,
 			},
 		},
 		"required": []string{"code"},
+		"examples": []any{
+			map[string]any{"code": "print(sum(range(1,101)))"},
+			map[string]any{"code": "import json; print(json.dumps({\"x\":1,\"y\":2}))", "timeout": 10},
+		},
 	}
 }
 
@@ -354,7 +365,15 @@ func (t *ExecuteShellTool) Definition() ToolDefinition {
 }
 
 func (t *ExecuteShellTool) Description() string {
-	return "Execute a shell command in Aura's container runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying. Use for diagnostics, CLI tools, git, curl, and filesystem ops."
+	return `Execute a shell command in Aura's container runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying.
+
+EXAMPLES — copy the shape exactly:
+
+  execute_shell({"command":"uname -a"})
+  execute_shell({"command":"ls /workspace/wiki | head -5"})
+  execute_shell({"command":"curl -sSL https://example.com | head -c 200","timeout":15})
+
+Only "command" is REQUIRED.`
 }
 
 func (t *ExecuteShellTool) Parameters() map[string]any {
@@ -363,16 +382,21 @@ func (t *ExecuteShellTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"command": map[string]any{
 				"type":        "string",
-				"description": "Shell command to execute in the Aura runtime workspace.",
+				"description": "REQUIRED. Shell command to execute in the Aura runtime workspace.",
 			},
 			"timeout": map[string]any{
 				"type":        "integer",
-				"description": "Per-call timeout in seconds (1-600). Defaults to the server timeout (300s). Raise for deep network scans, large pkg installs, or long-running diagnostics.",
+				"description": "Optional. Per-call timeout in seconds (1-600). Defaults to 300s.",
 				"minimum":     1,
 				"maximum":     600,
 			},
 		},
 		"required": []string{"command"},
+		"examples": []any{
+			map[string]any{"command": "uname -a"},
+			map[string]any{"command": "ls /workspace/wiki | head -5"},
+			map[string]any{"command": "curl -sSL https://example.com | head -c 200", "timeout": 15},
+		},
 	}
 }
 

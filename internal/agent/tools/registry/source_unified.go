@@ -90,7 +90,7 @@ func (t *SourceTool) Definition() ToolDefinition {
 }
 
 func (t *SourceTool) Description() string {
-	return `Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX).
+	return `Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX). action=read Returns source archive bytes, 16384-byte cap.
 
 EXAMPLES — copy the shape exactly:
 
