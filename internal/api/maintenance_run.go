@@ -23,6 +23,8 @@ type MaintenanceReport struct {
 	RenameCount     int      `json:"rename_count"`
 	HubsCreated     int      `json:"hubs_created"`
 	LinksInjected   int      `json:"links_injected"`
+	DedupClusters   int      `json:"dedup_clusters"`
+	DedupMerges     int      `json:"dedup_merges"`
 }
 
 // linkInjector is the optional capability satisfied by *wiki.Store. The
@@ -72,6 +74,20 @@ func handleMaintenanceRun(deps Deps) http.HandlerFunc {
 				deps.Logger.Warn("api: link-injection pass failed", "error", err)
 			} else if ir != nil {
 				resp.LinksInjected = ir.Updated
+			}
+		}
+
+		// Entity-dedup pass: merges near-duplicate entity/concept pages
+		// detected by embedding cosine similarity + optional LLM tiebreaker.
+		// Runs last so alias + link injection is already in place before
+		// candidates are evaluated. Skipped silently when the dedup backend
+		// is not configured (Qdrant absent).
+		if deduper, ok := deps.Wiki.(entityDeduplicator); ok && deduper != nil {
+			if dr, dedupErr := deduper.DeduplicateEntities(r.Context(), wiki.DedupOptions{}); dedupErr != nil {
+				deps.Logger.Warn("api: dedup step failed", "error", dedupErr)
+			} else if dr != nil {
+				resp.DedupClusters = len(dr.Clusters)
+				resp.DedupMerges = dr.MergesApplied
 			}
 		}
 

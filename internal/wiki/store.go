@@ -52,6 +52,13 @@ type Store struct {
 	// (US-GRAPH-01). Built at boot by warmAliasIndex and refreshed
 	// incrementally by WritePage / DeletePage.
 	aliasIndex *AliasIndex
+
+	// dedupMu prevents concurrent DeduplicateEntities runs (US-GRAPH-03).
+	// It does NOT block concurrent WritePage calls — operators must run
+	// dedup only during maintenance windows.
+	dedupMu      sync.Mutex
+	dedupSearcher DedupSearcher   // optional; set via SetDedupBackend
+	dedupLLM     DedupLLMCaller  // optional; set via SetDedupLLM
 }
 
 // PageCatalog is the read side for enumerating wiki pages.

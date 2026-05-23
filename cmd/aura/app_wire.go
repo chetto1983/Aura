@@ -9,13 +9,9 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
-	"log/slog"
-	"os"
 	"time"
 
-	"github.com/aura/aura/internal/agent"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
@@ -26,8 +22,6 @@ import (
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
-	auradb "github.com/aura/aura/internal/db"
-	"github.com/aura/aura/internal/dbrecovery"
 	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/opsfile"
@@ -422,6 +416,15 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		return fmt.Errorf("wire web chat hub: %w", err)
 	}
 
+	// ---- Entity dedup backend (US-GRAPH-03) ----------------------------------
+	// Wire the Qdrant-backed DedupSearcher so DeduplicateEntities can find
+	// near-duplicate entity/concept pages via cosine similarity. The adapter
+	// wraps the same search.Searcher used by wiki search so no second embedder
+	// is needed. Skipped when SearchRepo is nil (Qdrant not configured).
+	if a.deps.SearchRepo != nil && a.deps.WikiStore != nil {
+		a.deps.WikiStore.SetDedupBackend(&searcherDedupAdapter{searcher: a.deps.SearchRepo})
+	}
+
 	// ---- HTTP API router (dashboard + /api endpoints) -----------------------
 	// App owns the api handler; App.APIHandler() exposes it to main.go (US-A13c).
 	a.api = api.NewRouter(api.Deps{
@@ -533,68 +536,3 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 	}
 }
 
-type memoryDecayAdapter struct {
-	store  *memoryindex.Store
-	logger *slog.Logger
-}
-
-func (a *memoryDecayAdapter) Decay(ctx context.Context) (scanned, deleted, kept int, err error) {
-	summary, err := agent.DecayCycle(ctx, a.store, time.Now().UTC(), a.logger)
-	return summary.Scanned, summary.Deleted, summary.Kept, err
-}
-
-// backupVerifyAdapter implements cron.BackupVerifier by snapshotting the live
-// DB into a temp file, verifying it with dbrecovery.VerifyBackup, then cleaning up.
-// Uses the shared sql.DB pool (not the dbPath) so the VACUUM INTO runs through
-// the pool's existing connection — opening a second sql.DB on the same file
-// triggers SQLITE_CANTOPEN (error 14) in DELETE-mode contention with the
-// rollback journal. See live debug 2026-05-18.
-type backupVerifyAdapter struct {
-	db *sql.DB
-}
-
-// walCheckpointAdapter implements cron.WALCheckpointer by running
-// PRAGMA wal_checkpoint(TRUNCATE) on the live database pool.
-type walCheckpointAdapter struct {
-	db *sql.DB
-}
-
-func (a *walCheckpointAdapter) Checkpoint(ctx context.Context) error {
-	return auradb.RetryOnBusy(ctx, func() error {
-		_, err := a.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
-		return err
-	})
-}
-
-func (a *backupVerifyAdapter) Verify(ctx context.Context) (cron.BackupVerifyResult, error) {
-	tmp, err := os.CreateTemp("", "aura-backup-verify-*.db")
-	if err != nil {
-		return cron.BackupVerifyResult{}, fmt.Errorf("create temp file: %w", err)
-	}
-	tmpPath := tmp.Name()
-	tmp.Close()
-	defer func() {
-		_ = os.Remove(tmpPath)
-		_ = os.Remove(tmpPath + "-wal")
-		_ = os.Remove(tmpPath + "-shm")
-	}()
-
-	if err := auradb.SnapshotFromPool(ctx, a.db, tmpPath); err != nil {
-		return cron.BackupVerifyResult{}, fmt.Errorf("snapshot: %w", err)
-	}
-
-	minRows := map[string]int{
-		"principals":      0,
-		"actors":          0,
-		"conversations":   0,
-		"scheduled_tasks": 1,
-	}
-	report, err := dbrecovery.VerifyBackup(ctx, tmpPath, minRows)
-	if err != nil {
-		return cron.BackupVerifyResult{}, err
-	}
-	return cron.BackupVerifyResult{
-		IntegrityStatus: report.IntegrityStatus,
-		RowCounts:       report.RowCounts,
-	}, nil
-}

@@ -356,6 +356,10 @@ func NewRouter(deps Deps) http.Handler {
 	// batch ingest without waiting for the next tick.
 	mux.HandleFunc("POST /maintenance/run", handleMaintenanceRun(deps))
 
+	// US-GRAPH-03: on-demand entity dedup via embedding cosine + LLM tiebreaker.
+	// ?dry_run=1 previews merges without writing. Admin-gated; maintenance-window only.
+	mux.HandleFunc("POST /maintenance/dedup", handleMaintenanceDedup(deps))
+
 	// US-T04: authz decisions observability.
 	mux.HandleFunc("GET /maintenance/authz", handleMaintenanceAuthz(deps))
 

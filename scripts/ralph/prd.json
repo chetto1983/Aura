@@ -92,7 +92,7 @@
         "Single atomic commit prefix: feat(wiki): embedding-based entity dedup + LLM tiebreaker (US-GRAPH-03)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-GRAPH-01 (aliases survive merge), US-GRAPH-04 (aliases from extraction). Most expensive story (~400 LOC) but the one that delivers the substrate guarantee. RISK R3: LLM tiebreaker cost — capped at 50 pairs per run, ~$0.05 with Claude Haiku, acceptable for batch operation. RISK R4: false-positive merge of distinct entities with similar embeddings (e.g. 'art. 1218 c.c.' vs 'art. 1218 c.p.' — Codice Civile vs Codice Penale). Mitigation: LLM tiebreaker handles edge cases; raise CosineAutoMerge to 0.95 if false-positives observed in real corpora. RISK R5: deadlock during concurrent WritePage. Mitigation: single global lock with explicit comment + run during maintenance window only."
     },
     {
