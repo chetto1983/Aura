@@ -240,6 +240,17 @@ export const api = {
     ),
   filesDelete: (root: string, path: string) =>
     del<{ root: string; path: string; deleted: boolean }>(`/files/${root}/file` + qs({ path })),
+  // filesBulkDelete cascades a list of root-relative paths through the
+  // wiki-aware delete pipeline in one round-trip. Used by the FilesPanel
+  // multi-select flow so the operator can clean up the 876 phantom row
+  // pages produced by the broken xlsx converter (now fixed at the source
+  // in commit ac5e1670) without 876 sequential HTTP requests.
+  filesBulkDelete: (root: string, paths: string[]) =>
+    post<{
+      root: string;
+      deleted: string[];
+      failed?: Array<{ path: string; error: string }>;
+    }>(`/files/${root}/delete-many`, { paths }),
   filesMkdir: (root: string, path: string) =>
     post<{ root: string; path: string; created: boolean }>(`/files/${root}/mkdir` + qs({ path })),
   filesRename: (root: string, from: string, to: string) =>

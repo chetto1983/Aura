@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -256,6 +257,108 @@ func TestHandleFilesDelete_WikiMarkdownGoesThroughStoreDeletePage(t *testing.T) 
 	}
 	if _, err := e.wiki.ReadPage("to-be-deleted"); err == nil {
 		t.Fatal("wiki.ReadPage should error for deleted page")
+	}
+}
+
+func TestHandleFilesBulkDelete_WikiMarkdownGoesThroughStoreDeletePage(t *testing.T) {
+	e := newTestEnv(t)
+	pages := []string{"alpha-page", "beta-page", "gamma-page"}
+	for _, slug := range pages {
+		seedWikiPage(t, e, slug, nil)
+	}
+
+	deps := Deps{
+		Wiki:    e.wiki,
+		WikiDir: e.wiki.Dir(),
+		Logger:  cascadeTestLogger(),
+	}
+	body, _ := json.Marshal(fileBulkDeleteRequest{Paths: []string{"alpha-page.md", "beta-page.md", "gamma-page.md"}})
+	req := httptest.NewRequest(http.MethodPost, "/files/wiki/delete-many", io.NopCloser(strings.NewReader(string(body))))
+	req.SetPathValue("root", "wiki")
+	w := httptest.NewRecorder()
+	handleFilesBulkDelete(deps)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var resp fileBulkDeleteResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Deleted) != len(pages) {
+		t.Fatalf("deleted = %v, want %v", resp.Deleted, pages)
+	}
+	if len(resp.Failed) != 0 {
+		t.Fatalf("failed = %v, want none", resp.Failed)
+	}
+	for _, slug := range pages {
+		if _, err := os.Stat(filepath.Join(e.wiki.Dir(), slug+".md")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("page %s still on disk: err=%v", slug, err)
+		}
+		if _, err := e.wiki.ReadPage(slug); err == nil {
+			t.Fatalf("wiki.ReadPage(%s) succeeded after bulk delete", slug)
+		}
+	}
+}
+
+func TestHandleFilesBulkDelete_ReportsPartialFailure(t *testing.T) {
+	e := newTestEnv(t)
+	seedWikiPage(t, e, "real-page", nil)
+
+	deps := Deps{
+		Wiki:    e.wiki,
+		WikiDir: e.wiki.Dir(),
+		Logger:  cascadeTestLogger(),
+	}
+	body, _ := json.Marshal(fileBulkDeleteRequest{
+		Paths: []string{"real-page.md", "ghost-page.md", "another-ghost.md"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/files/wiki/delete-many", io.NopCloser(strings.NewReader(string(body))))
+	req.SetPathValue("root", "wiki")
+	w := httptest.NewRecorder()
+	handleFilesBulkDelete(deps)(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", w.Code, w.Body.String())
+	}
+	var resp fileBulkDeleteResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Deleted) != 1 || resp.Deleted[0] != "real-page.md" {
+		t.Fatalf("deleted = %v, want [real-page.md]", resp.Deleted)
+	}
+	if len(resp.Failed) != 2 {
+		t.Fatalf("failed = %v, want 2 entries", resp.Failed)
+	}
+}
+
+func TestHandleFilesBulkDelete_RejectsEmptyAndOversize(t *testing.T) {
+	e := newTestEnv(t)
+	deps := Deps{Wiki: e.wiki, WikiDir: e.wiki.Dir(), Logger: cascadeTestLogger()}
+
+	// Empty paths array.
+	body, _ := json.Marshal(fileBulkDeleteRequest{Paths: []string{}})
+	req := httptest.NewRequest(http.MethodPost, "/files/wiki/delete-many", io.NopCloser(strings.NewReader(string(body))))
+	req.SetPathValue("root", "wiki")
+	w := httptest.NewRecorder()
+	handleFilesBulkDelete(deps)(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("empty paths: status = %d, want 400", w.Code)
+	}
+
+	// Over the cap.
+	over := make([]string, fileBulkDeleteMax+1)
+	for i := range over {
+		over[i] = fmt.Sprintf("page-%d.md", i)
+	}
+	body2, _ := json.Marshal(fileBulkDeleteRequest{Paths: over})
+	req2 := httptest.NewRequest(http.MethodPost, "/files/wiki/delete-many", io.NopCloser(strings.NewReader(string(body2))))
+	req2.SetPathValue("root", "wiki")
+	w2 := httptest.NewRecorder()
+	handleFilesBulkDelete(deps)(w2, req2)
+	if w2.Code != http.StatusBadRequest {
+		t.Fatalf("oversize paths: status = %d, want 400", w2.Code)
 	}
 }
 

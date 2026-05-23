@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ExternalLink, Maximize2, Search } from 'lucide-react';
+import { ExternalLink, Maximize2, RefreshCw, Search } from 'lucide-react';
 import ForceGraph2D from 'react-force-graph-2d';
 import type { ForceGraphMethods } from 'react-force-graph-2d';
 import { useNavigate } from 'react-router-dom';
@@ -34,7 +34,20 @@ function colorFor(category: string | undefined): string {
 export default function WikiGraphView() {
   const { t } = useLocale();
   const fetcher = useCallback(() => api.wikiGraph(), []);
-  const { data, loading, error } = useApi(fetcher);
+  const { data, loading, error, refetch } = useApi(fetcher);
+
+  // The graph is computed once on mount and useApi does not poll. After
+  // the operator deletes a source (or bulk-deletes wiki pages) the canvas
+  // would otherwise stay stuck on stale nodes. Re-fetch when the tab
+  // regains visibility so navigating back from /files updates the view
+  // without a hard reload.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refetch();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [refetch]);
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<ForceGraphMethods<ForceNode, ForceLink> | undefined>(undefined);
@@ -113,6 +126,16 @@ export default function WikiGraphView() {
         <Button type="button" variant="outline" onClick={fitGraph} title={t('graph.fitHint')}>
           <Maximize2 />
           {t('graph.fit')}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => refetch()}
+          disabled={loading}
+          title={t('graph.refreshHint')}
+        >
+          <RefreshCw className={loading ? 'animate-spin' : undefined} />
+          {t('graph.refresh')}
         </Button>
         <div className="ml-auto text-sm text-muted-foreground" aria-live="polite">
           {t('graph.counts', { nodes: nodes.length, edges: edges.length })}

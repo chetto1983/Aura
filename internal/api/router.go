@@ -272,6 +272,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /files/{root}/file", handleFilesRead(deps))
 	mux.HandleFunc("PUT /files/{root}/file", handleFilesWrite(deps))
 	mux.HandleFunc("DELETE /files/{root}/file", handleFilesDelete(deps))
+	mux.HandleFunc("POST /files/{root}/delete-many", handleFilesBulkDelete(deps))
 	mux.HandleFunc("POST /files/{root}/mkdir", handleFilesMkdir(deps))
 	mux.HandleFunc("POST /files/{root}/rename", handleFilesRename(deps))
 	mux.HandleFunc("POST /wiki/index/rebuild", handleWikiRebuild(deps))

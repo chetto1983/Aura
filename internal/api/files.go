@@ -65,6 +65,35 @@ type fileMoveRequest struct {
 	To   string `json:"to"`
 }
 
+// fileBulkDeleteRequest is the body accepted by POST /files/{root}/delete-many.
+// Paths are root-relative (no leading slash); the handler resolves each via
+// resolveFileRoot, exactly like the single-file delete. wiki .md files go
+// through wiki.Store.DeletePage so the FTS5 + GraphIndex + Qdrant + git +
+// TOC cascade fires on every page — equivalent to N single deletes but
+// without 2N HTTP roundtrips.
+type fileBulkDeleteRequest struct {
+	Paths []string `json:"paths"`
+}
+
+// fileBulkDeleteResponse reports per-path success/failure so the frontend
+// can render a "X of N deleted" toast and surface the failed paths.
+type fileBulkDeleteResponse struct {
+	Root    string                 `json:"root"`
+	Deleted []string               `json:"deleted"`
+	Failed  []fileBulkDeleteFailed `json:"failed,omitempty"`
+}
+
+type fileBulkDeleteFailed struct {
+	Path  string `json:"path"`
+	Error string `json:"error"`
+}
+
+// fileBulkDeleteMax caps how many paths a single bulk-delete request may
+// reference. Set high enough to cover the 876-row-pages cleanup case but
+// low enough that a runaway client can't tie up the server with a
+// pathological payload.
+const fileBulkDeleteMax = 2000
+
 // fileMaxBytes caps the response body for GET /files/{root}/file. Larger
 // files are truncated and the dashboard surfaces a "truncated" warning.
 const fileMaxBytes = 1 << 20 // 1 MiB
@@ -349,67 +378,111 @@ func handleFilesWrite(deps Deps) http.HandlerFunc {
 	}
 }
 
-// handleFilesDelete removes a file or empty directory. wiki/sources deletes
-// cascade to the vector index.
+// handleFilesDelete removes a file or empty directory. Wiki .md deletes
+// cascade through Wiki.DeletePage; sources hold immutable PDFs that must
+// go through DELETE /sources/{id} (memoryindex cascade); everything else
+// is plain os.Remove[All]. See deleteOneFile for the full routing.
 func handleFilesDelete(deps Deps) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		root := r.PathValue("root")
 		rel := r.URL.Query().Get("path")
-		dirAbs, abs, err := resolveFileRoot(deps, root, rel)
-		if err != nil {
-			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
-			return
-		}
-		if abs == dirAbs {
-			writeError(w, deps.Logger, http.StatusBadRequest, "refusing to delete the root itself")
-			return
-		}
-		info, err := os.Stat(abs)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "path not found")
-				return
+		if err := deleteOneFile(r.Context(), deps, root, rel); err != nil {
+			msg := err.Error()
+			status := http.StatusInternalServerError
+			switch {
+			case strings.HasPrefix(msg, "path not found"):
+				status = http.StatusNotFound
+			case strings.HasPrefix(msg, "refusing to delete"),
+				strings.HasPrefix(msg, "delete a source via DELETE"),
+				strings.Contains(msg, "invalid root"):
+				status = http.StatusBadRequest
 			}
-			writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
+			writeError(w, deps.Logger, status, msg)
 			return
 		}
-		// Allow recursive directory deletion only for non-source roots —
-		// sources hold immutable PDFs that must go through DELETE /sources/{id}
-		// (which also purges the memoryindex). Deleting from the raw/
-		// subtree by hand would leave the index pointing at gone files.
-		if info.IsDir() && root == "sources" {
-			writeError(w, deps.Logger, http.StatusBadRequest, "delete a source via DELETE /sources/{id} to keep the memoryindex consistent")
-			return
-		}
+		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{
+			"root":    root,
+			"path":    filepath.ToSlash(rel),
+			"deleted": true,
+		})
+	}
+}
 
-		// Top-level wiki .md pages: route through Wiki.DeletePage so
-		// FTS5, GraphIndex, Qdrant, git, and TOC stay in sync. Raw
-		// os.Remove leaves stale rows in FTS5 + GraphIndex because the
-		// reindex worker only updates Qdrant. See comment on
-		// wiki.Store.DeletePage for the full cleanup surface.
-		if !info.IsDir() && root == "wiki" && deps.Wiki != nil && strings.HasSuffix(rel, ".md") && !strings.Contains(filepath.ToSlash(rel), "/") {
-			slug := strings.TrimSuffix(rel, ".md")
-			if err := deps.Wiki.DeletePage(r.Context(), slug); err != nil {
-				writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
-				return
-			}
-			writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"root": root, "path": filepath.ToSlash(rel), "deleted": true})
+// deleteOneFile is the per-path delete used by both DELETE /files/{root}/file
+// (single) and POST /files/{root}/delete-many (bulk). Routes wiki .md pages
+// through Wiki.DeletePage to keep FTS5 / GraphIndex / Qdrant / git / TOC
+// in sync. Other paths use os.Remove[All]. Returns a non-nil error on any
+// failure; the caller decides whether to abort or continue.
+func deleteOneFile(ctx context.Context, deps Deps, root, rel string) error {
+	dirAbs, abs, err := resolveFileRoot(deps, root, rel)
+	if err != nil {
+		return err
+	}
+	if abs == dirAbs {
+		return fmt.Errorf("refusing to delete the root itself")
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("path not found: %s", rel)
+		}
+		return err
+	}
+	if info.IsDir() && root == "sources" {
+		return fmt.Errorf("delete a source via DELETE /sources/{id} to keep the memoryindex consistent")
+	}
+	if !info.IsDir() && root == "wiki" && deps.Wiki != nil && strings.HasSuffix(rel, ".md") && !strings.Contains(filepath.ToSlash(rel), "/") {
+		slug := strings.TrimSuffix(rel, ".md")
+		return deps.Wiki.DeletePage(ctx, slug)
+	}
+	if info.IsDir() {
+		if err := os.RemoveAll(abs); err != nil {
+			return err
+		}
+	} else {
+		if err := os.Remove(abs); err != nil {
+			return err
+		}
+	}
+	reindexWikiIfApplicable(ctx, deps, root, rel)
+	return nil
+}
+
+// handleFilesBulkDelete accepts a list of root-relative paths and deletes
+// each via deleteOneFile. Best-effort: a single failure does NOT abort
+// the rest; the response separates successes from failures so the frontend
+// can render "X / N deleted; Y failed: ..." accurately. Capped at
+// fileBulkDeleteMax paths to bound work per request.
+func handleFilesBulkDelete(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		root := r.PathValue("root")
+		var body fileBulkDeleteRequest
+		if err := decodeJSONBody(r, &body); err != nil {
+			writeError(w, deps.Logger, http.StatusBadRequest, "invalid request: "+err.Error())
 			return
 		}
-
-		if info.IsDir() {
-			if err := os.RemoveAll(abs); err != nil {
-				writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
-				return
-			}
-		} else {
-			if err := os.Remove(abs); err != nil {
-				writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
-				return
-			}
+		if len(body.Paths) == 0 {
+			writeError(w, deps.Logger, http.StatusBadRequest, "paths must contain at least one entry")
+			return
 		}
-		reindexWikiIfApplicable(r.Context(), deps, root, rel)
-		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"root": root, "path": filepath.ToSlash(rel), "deleted": true})
+		if len(body.Paths) > fileBulkDeleteMax {
+			writeError(w, deps.Logger, http.StatusBadRequest,
+				fmt.Sprintf("too many paths: %d (max %d)", len(body.Paths), fileBulkDeleteMax))
+			return
+		}
+		resp := fileBulkDeleteResponse{Root: root, Deleted: []string{}}
+		for _, rel := range body.Paths {
+			if err := deleteOneFile(r.Context(), deps, root, rel); err != nil {
+				deps.Logger.Warn("files: bulk delete failed", "root", root, "path", rel, "error", err)
+				resp.Failed = append(resp.Failed, fileBulkDeleteFailed{
+					Path:  filepath.ToSlash(rel),
+					Error: err.Error(),
+				})
+				continue
+			}
+			resp.Deleted = append(resp.Deleted, filepath.ToSlash(rel))
+		}
+		writeJSON(w, deps.Logger, http.StatusOK, resp)
 	}
 }
 

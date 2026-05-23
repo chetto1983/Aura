@@ -17,7 +17,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Filemanager, Willow, WillowDark } from '@svar-ui/react-filemanager';
 import '@svar-ui/react-filemanager/all.css';
 import { useTranslation } from 'react-i18next';
-import { HardDrive } from 'lucide-react';
+import { HardDrive, RefreshCw, Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { api, ApiError } from '@/api';
@@ -86,6 +86,7 @@ export function FilesPanel() {
   const [items, setItems] = useState<SvarItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const requestSeq = useRef(0);
 
   const refresh = useCallback(async () => {
@@ -109,7 +110,53 @@ export function FilesPanel() {
     void Promise.resolve().then(refresh);
   }, [refresh]);
 
-  const handleDelete = useCallback(
+  // Reset filter when switching roots — the slug pattern that's useful
+  // on wiki is irrelevant on workspace, and a stale filter would
+  // silently hide entries the operator expects to see. Wrapped in a
+  // callback so we don't setState inside an effect (cascading-render
+  // lint).
+  const switchRoot = useCallback((next: FileRoot) => {
+    setRoot(next);
+    setQuery('');
+  }, []);
+
+  // Substring filter on the recursive tree. Folders that contain a match
+  // are also kept so svar can render the path down to the match. Empty
+  // query short-circuits to identity to avoid the work for the common case.
+  const filteredItems = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return items;
+    const matchingFileIds = new Set<string>();
+    for (const item of items) {
+      if (item.type === 'file' && item.id.toLowerCase().includes(needle)) {
+        matchingFileIds.add(item.id);
+      }
+    }
+    if (matchingFileIds.size === 0) return [];
+    // Include every ancestor folder of every matched file so the tree
+    // can render the path. Folder ids carry trailing-no-slash by svar
+    // convention (e.g. '/notes' for items inside '/notes/...').
+    const keep = new Set<string>(matchingFileIds);
+    for (const id of matchingFileIds) {
+      const parts = id.split('/');
+      // i=1 to skip the empty string from the leading '/'.
+      for (let i = 1; i < parts.length - 1; i += 1) {
+        keep.add('/' + parts.slice(1, i + 1).join('/'));
+      }
+    }
+    return items.filter((item) => keep.has(item.id));
+  }, [items, query]);
+
+  const filteredFileCount = useMemo(
+    () => filteredItems.filter((i) => i.type === 'file').length,
+    [filteredItems],
+  );
+  const totalFileCount = useMemo(
+    () => items.filter((i) => i.type === 'file').length,
+    [items],
+  );
+
+  const handleDeleteSingle = useCallback(
     async (id: string) => {
       const path = stripLeadingSlash(id);
       // Sources need the dedicated endpoint so the memoryindex stays
@@ -242,11 +289,76 @@ export function FilesPanel() {
   // (the index signature `[key: ${"on"}${string}]: ...` accepts anything
   // starting with "on") but the widget never invoked it, leaving every
   // click, delete, rename, and mkdir as a silent no-op.
+  // handleBulkDelete is the multi-select path. Routes through the
+  // /delete-many endpoint so a 876-page wiki cleanup is ONE HTTP
+  // roundtrip instead of N. Source folders (src_xxx top-level) split
+  // off and run through the per-source cascade flow because each one
+  // needs its own preview + confirm.
+  const handleBulkDelete = useCallback(
+    async (ids: string[]) => {
+      const sourceIds: string[] = [];
+      const bulkPaths: string[] = [];
+      for (const id of ids) {
+        const seg = stripLeadingSlash(id).split('/');
+        if (root === 'sources' && seg.length === 1 && seg[0].startsWith('src_')) {
+          sourceIds.push(id);
+        } else {
+          bulkPaths.push(stripLeadingSlash(id));
+        }
+      }
+
+      for (const id of sourceIds) {
+        // Each src_xxx delete fires its own cascade-preview modal so the
+        // operator sees per-source impact (tracked pages + orphan refs).
+        await handleDeleteSingle(id);
+      }
+      if (bulkPaths.length === 0) return;
+
+      const ok = await confirmModal({
+        title: t('files.bulkDelete.confirmTitle', { count: bulkPaths.length }),
+        description:
+          root === 'wiki'
+            ? t('files.bulkDelete.confirmBodyWiki', { count: bulkPaths.length })
+            : t('files.bulkDelete.confirmBodyGeneric', { count: bulkPaths.length }),
+        destructive: true,
+        confirmLabel: t('files.delete.confirmAction'),
+      });
+      if (!ok) return;
+
+      try {
+        const resp = await api.filesBulkDelete(root, bulkPaths);
+        const deletedCount = resp.deleted.length;
+        const failedCount = resp.failed?.length ?? 0;
+        if (failedCount === 0) {
+          toast.success(t('files.bulkDelete.success', { count: deletedCount }));
+        } else {
+          toast.error(
+            t('files.bulkDelete.partial', {
+              deleted: deletedCount,
+              total: deletedCount + failedCount,
+              failed: failedCount,
+            }),
+          );
+        }
+        await refresh();
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.message : (err as Error).message);
+      }
+    },
+    [root, refresh, t, handleDeleteSingle],
+  );
+
   const initApi = useCallback(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (api: any) => {
       api.on('delete-files', (ev: { ids?: string[] }) => {
-        (ev?.ids ?? []).forEach((id) => void handleDelete(id));
+        const ids = ev?.ids ?? [];
+        if (ids.length === 0) return;
+        if (ids.length === 1) {
+          void handleDeleteSingle(ids[0]);
+          return;
+        }
+        void handleBulkDelete(ids);
       });
       api.on('rename-file', (ev: { id?: string; name?: string; newId?: string }) => {
         // svar pre-computes the new id; fall back to id+name if we got
@@ -269,7 +381,7 @@ export function FilesPanel() {
         if (target && target !== '/') void handleMkdir(target);
       });
     },
-    [handleDelete, handleRename, handleMkdir],
+    [handleDeleteSingle, handleBulkDelete, handleRename, handleMkdir],
   );
 
   const rootSize = useMemo(
@@ -288,13 +400,45 @@ export function FilesPanel() {
               <button
                 key={key}
                 type="button"
-                onClick={() => setRoot(key)}
+                onClick={() => switchRoot(key)}
                 className={cn(root === key && 'is-active')}
               >
                 <span className={cn('files-root-dot', ROOT_ACCENTS[key])} />
                 {t(labelKey)}
               </button>
             ))}
+          </div>
+          <div className="files-toolbar-actions">
+            <div className="files-search">
+              <Search size={14} aria-hidden="true" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder={t('files.search.placeholder')}
+                aria-label={t('files.search.label')}
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="files-search-clear"
+                  onClick={() => setQuery('')}
+                  aria-label={t('files.search.clear')}
+                >
+                  <X size={14} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              className="files-refresh-btn"
+              onClick={() => void refresh()}
+              disabled={loading}
+              title={t('files.refresh')}
+              aria-label={t('files.refresh')}
+            >
+              <RefreshCw size={14} aria-hidden="true" className={loading ? 'is-spinning' : undefined} />
+            </button>
           </div>
         </header>
 
@@ -311,6 +455,12 @@ export function FilesPanel() {
           </div>
         </div>
 
+        {query.trim() !== '' && (
+          <div className="files-filter-banner" role="status">
+            {t('files.search.matchCount', { matched: filteredFileCount, total: totalFileCount })}
+          </div>
+        )}
+
         <div className="files-window-body files-window-body-native">
           <main className="files-manager-pane">
             {error && (
@@ -321,7 +471,7 @@ export function FilesPanel() {
                 <div className="files-loading">{t('files.loading')}</div>
               ) : (
                 <ThemeShell>
-                  <Filemanager data={items} init={initApi} mode="table" preview />
+                  <Filemanager data={filteredItems} init={initApi} mode="table" preview />
                 </ThemeShell>
               )}
             </div>

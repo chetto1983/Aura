@@ -12,3 +12,4 @@
 790 cmd/quality_bench/main.go
 689 internal/channels/telegram/invocation_builder.go
 650 cmd/aura/web_chat.go
+621 internal/agent/loop.go
