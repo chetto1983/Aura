@@ -113,7 +113,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	}
 	toolAllowlist := ib.modelToolNames()
 	toolReg := b.ToolRegistry()
-	toolManifest := tools.RenderToolManifest(toolReg.Definitions())
+	toolManifest := tools.RenderSplitManifest(toolReg.FullDefinitions())
 	pinnedOperational := ib.renderPinnedOperational(ctx, msg.ThreadID, convCtx.MessageCount())
 	wikiTOC := b.WikiTOC()
 	promptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), overlay, pinnedOperational, skillsBlock, toolManifest, wikiTOC, time.Now())

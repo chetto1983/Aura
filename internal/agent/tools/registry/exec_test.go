@@ -449,6 +449,64 @@ func containsAll(s string, parts ...string) bool {
 	return true
 }
 
+// TestExecuteCodeTool_DefinitionIsDeferred verifies AC: execute_code has
+// VisibilityTier=VisibilityDeferred so it lands in the deferred section of
+// RenderSplitManifest and is excluded from the always-on schema pool.
+func TestExecuteCodeTool_DefinitionIsDeferred(t *testing.T) {
+	executor := &fakeSandboxExecutor{result: &sandbox.Result{OK: true}}
+	tool := tools.NewExecuteCodeToolWithStoreAndRegistry(executor, nil, nil, nil)
+	if tool == nil {
+		t.Fatal("expected non-nil execute_code tool")
+	}
+	def := tool.Definition()
+	if !def.IsDeferred() {
+		t.Fatalf("execute_code must be Deferred; got VisibilityTier=%q", def.VisibilityTier)
+	}
+}
+
+// TestExecuteShellTool_DefinitionIsDeferred verifies AC: execute_shell has
+// VisibilityTier=VisibilityDeferred so it lands in the deferred section of
+// RenderSplitManifest and is excluded from the always-on schema pool.
+func TestExecuteShellTool_DefinitionIsDeferred(t *testing.T) {
+	executor := &fakeCommandExecutor{result: &sandbox.Result{OK: true}}
+	tool := tools.NewExecuteShellTool(executor)
+	if tool == nil {
+		t.Fatal("expected non-nil execute_shell tool")
+	}
+	def := tool.Definition()
+	if !def.IsDeferred() {
+		t.Fatalf("execute_shell must be Deferred; got VisibilityTier=%q", def.VisibilityTier)
+	}
+}
+
+// TestRenderSplitManifest_ExecuteToolsInDeferredSection is the manifest probe
+// AC: with real execute_code and execute_shell definitions, both tools appear
+// in the deferred section and NOT in the always-on catalog.
+func TestRenderSplitManifest_ExecuteToolsInDeferredSection(t *testing.T) {
+	codeExec := &fakeSandboxExecutor{result: &sandbox.Result{OK: true}}
+	codeTool := tools.NewExecuteCodeToolWithStoreAndRegistry(codeExec, nil, nil, nil)
+	shellExec := &fakeCommandExecutor{result: &sandbox.Result{OK: true}}
+	shellTool := tools.NewExecuteShellTool(shellExec)
+
+	defs := []tools.ToolDefinition{codeTool.Definition(), shellTool.Definition()}
+	got := tools.RenderSplitManifest(defs)
+
+	const deferredHeader = "## Deferred tools (call tool_search to load schema)"
+	if !strings.Contains(got, deferredHeader) {
+		t.Fatalf("deferred section header missing in manifest:\n%s", got)
+	}
+	deferredStart := strings.Index(got, deferredHeader)
+	deferredSection := got[deferredStart:]
+	for _, name := range []string{"execute_code", "execute_shell"} {
+		if !strings.Contains(deferredSection, "- "+name) {
+			t.Errorf("tool %q missing from deferred section:\n%s", name, deferredSection)
+		}
+		if deferredStart > 0 && strings.Contains(got[:deferredStart], "- "+name) {
+			t.Errorf("tool %q leaked into always-on section:\n%s", name, got[:deferredStart])
+		}
+	}
+}
+
 type fakeInternalTool struct{}
 
 func (fakeInternalTool) Name() string { return "fake_internal" }

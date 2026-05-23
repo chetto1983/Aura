@@ -138,7 +138,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	}
 	var toolManifest string
 	if deps.Tools != nil {
-		toolManifest = toolregistry.RenderToolManifest(deps.Tools.Definitions())
+		toolManifest = toolregistry.RenderSplitManifest(deps.Tools.FullDefinitions())
 	}
 	pinned := b.renderPinnedOperational(ctx, msg.ThreadID, turnIdx)
 	loc := b.loc

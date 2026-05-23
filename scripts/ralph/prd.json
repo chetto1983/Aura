@@ -61,7 +61,7 @@
         "Single atomic commit prefix: feat(agent): defer execute_code + execute_shell — first cut at lazy schema (US-DEFER-03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-DEFER-01 + US-DEFER-02. This is the validating story — proves the infrastructure works end-to-end with two real production tools. After this lands, future tools (especially MCP-driven ones) can be deferred trivially by setting the flag at registration. RISK: LLM may fail to call tool_search and just try to invoke execute_shell directly. That's actually OK because runtime dispatch doesn't need the schema — but the LLM may get arg shape wrong without seeing the schema. Mitigation: the AGENT.md hint is the prompt-side instruction. If empirically the LLM struggles, a future story can add an inline 'this tool requires tool_search first' note in the deferred manifest entry."
     }
   ]

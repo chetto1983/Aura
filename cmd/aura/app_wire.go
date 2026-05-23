@@ -503,7 +503,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 
 	logger.Info("tool registry built",
 		"tools", len(a.deps.Tools.Definitions()),
-		"tokens", tools.ManifestTokenEstimate(tools.RenderToolManifest(a.deps.Tools.Definitions())))
+		"tokens", tools.ManifestTokenEstimate(tools.RenderSplitManifest(a.deps.Tools.FullDefinitions())))
 	return nil
 }
 

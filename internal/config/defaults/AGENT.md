@@ -69,6 +69,13 @@ Trivial lookups must terminate in one turn. Apply these rules in order:
   description before calling. Common mistakes: `page` instead of `slug`,
   `content` instead of `body`, omitting `expected_updated_at` on
   `wiki_page edit/append/replace`.
+- **Deferred tools** — tools listed under "## Deferred tools (call
+  tool_search to load schema)" in the Tool Catalog are available but not
+  pre-loaded into this turn. To invoke one, call
+  `tool_search(query="select:<name>")` to get the full parameter schema,
+  then invoke the tool normally in the next call. `execute_code` and
+  `execute_shell` are deferred — load their schema before first use in a
+  session.
 - **Ambiguous requests — ask first**: if the message does not specify *which
   / what / how* (e.g. "find a customer", "edit the document"), call
   `ask_user_clarification` with 2-3 concrete options BEFORE best-effort
