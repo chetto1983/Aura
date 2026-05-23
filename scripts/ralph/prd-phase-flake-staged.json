@@ -1,0 +1,24 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-FLAKE — fix the wiki test suite flake that surfaces ~1/3 of full-suite runs. Two tests fail in alternation when run together: TestFTS5Syncer_WritePage_UpsertAndDelete (file 'galileo-galilei.md' not found by DeletePage right after WritePage succeeded) and TestCleanMemoryApplyCreatesHubsRepairsAliasesAndLeavesNoBrokenLinks (failure context less clear; same suite). Both PASS in isolation. The pattern points at shared state across tests in internal/wiki — most likely the go-git index lock on Windows or the async TOC rebuild goroutine still running when the next test starts a fresh Store. Verified pre-existing as of 2026-05-23 commit 01237c02 (HEAD before this story lands): toggle source_refs.go in/out does not affect the flake — it reproduces on master without my changes.",
+  "userStories": [
+    {
+      "id": "US-FLAKE-01",
+      "title": "Diagnose + fix wiki suite flake",
+      "description": "Reproduce: `go test ./internal/wiki/ -count=10 -timeout 240s` — expect 2-5 failures. Investigate both failing tests for shared state. Top suspects in order of likelihood: (a) `go s.RebuildTOC()` fired at the end of WritePage/DeletePage is racing with the next test's Store init — the previous test's tempdir is cleaned by t.Cleanup while RebuildTOC still holds a file handle, causing the new test's WritePage to write to a phantom location; (b) go-git's `.git/index.lock` file leaking between Stores when tempdirs are reused by Go's testing infrastructure (unlikely — t.TempDir() returns unique paths per test, but worth confirming); (c) Windows-specific filesystem coherence: WritePage's atomic temp+rename may not be visible to DeletePage's os.Remove if buffered. Likely fix: wait for RebuildTOC to finish before WritePage returns OR scope it under a t.Cleanup-safe sync.WaitGroup the Store exposes. Don't change test isolation rules — fix the production code path that's racing.",
+      "acceptanceCriteria": [
+        "Root cause documented in commit body (which goroutine / which shared resource was racing)",
+        "`go test ./internal/wiki/ -count=10 -timeout 300s` passes consistently — no failures across 10 runs",
+        "Same fix produces deterministic results when run with -race flag: `go test ./internal/wiki/ -race -count=3 -timeout 300s` green",
+        "If the fix touches WritePage / DeletePage, add a regression test that fires WritePage + immediate DeletePage in a tight loop with concurrent Store reads — must pass under -race",
+        "golangci-lint clean on touched files",
+        "Per-module deep refactor on touch: any file you change in internal/wiki/ gets dead code + dupl + LOC-cap audit",
+        "Single atomic commit prefix: fix(wiki): eliminate test suite flake (US-FLAKE-01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "GROUND-TRUTH: before guessing, run `go test ./internal/wiki/ -count=10 -timeout 300s -v 2>&1 | tee /tmp/flake.log` and grep for the actual failure mode each iteration produces. Pattern may differ across runs (sometimes FTS5 test fails, sometimes CleanMemory test). The shared root cause likely involves a goroutine outliving its parent test's t.Cleanup. Discovered during the 2026-05-23 cascade work: removing source_refs.go made the test pass ONCE then fail next run — so my new file is not the cause, it's just a timing perturbation that surfaced the latent race."
+    }
+  ]
+}

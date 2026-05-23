@@ -345,6 +345,11 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /maintenance/issues", handleMaintenanceList(deps))
 	mux.HandleFunc("POST /maintenance/issues/{id}/resolve", handleMaintenanceResolve(deps))
 
+	// Manual trigger for wiki.Store.CleanMemory — same routine the cron
+	// maintenance job runs, exposed so the operator can re-run after a
+	// batch ingest without waiting for the next tick.
+	mux.HandleFunc("POST /maintenance/run", handleMaintenanceRun(deps))
+
 	// US-T04: authz decisions observability.
 	mux.HandleFunc("GET /maintenance/authz", handleMaintenanceAuthz(deps))
 
