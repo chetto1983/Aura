@@ -69,7 +69,26 @@ func (t *WikiPageTool) Definition() ToolDefinition {
 }
 
 func (t *WikiPageTool) Description() string {
-	return "Destructive. Create, replace, edit, or append to a wiki page. WRITER ONLY - does NOT read. Required per action: create(title,body), replace/edit/append(slug,body,expected_updated_at)."
+	return `Create, replace, edit, or append to a wiki page. Destructive — overwrites or extends real markdown on disk.
+
+EXAMPLES — copy the shape exactly:
+
+  wiki_page({"action":"create","title":"Davide Marchetto","body":"# Davide\nUtente principale di Aura."})
+  wiki_page({"action":"replace","slug":"todo-list","body":"# Todo\n- nuova lista"})
+  wiki_page({"action":"edit","slug":"davide-marchetto","old_text":"Utente principale","new_text":"Operatore principale"})
+  wiki_page({"action":"append","slug":"davide-marchetto","heading":"Preferenze","body":"- caffè\n- macchina silenziosa"})
+
+The "action" field is REQUIRED. Valid values: "create", "replace", "edit", "append".
+
+Per-action required fields:
+  • create  → title AND body (no slug — derived from title)
+  • replace → slug AND body
+  • edit    → slug AND old_text AND new_text
+  • append  → slug AND heading AND body
+
+expected_updated_at is OPTIONAL for replace/edit/append in single-user mode: omit it and the tool uses the current on-disk timestamp. Supply it only when you have just read the page and want an explicit concurrency check.
+
+Optional fields for create/replace: category, tags (array), related (array of slugs — DO NOT mirror body [[wiki-links]] here, those auto-backlink), sources (array). append accepts source_id to auto-emit ^[src_xxx] provenance markers on each non-empty body line.`
 }
 
 func (t *WikiPageTool) Parameters() map[string]any {
@@ -81,66 +100,76 @@ func (t *WikiPageTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"create", "replace", "edit", "append"},
-				"description": "Which mutation to apply: create (new page), replace (overwrite body), edit (find/replace), append (add a section).",
+				"description": `REQUIRED. "create" = new page, "replace" = overwrite body, "edit" = find/replace inside body, "append" = add ## section at bottom.`,
 			},
 			"title": map[string]any{
 				"type":        "string",
-				"description": "Page title. Required for create. Optional for replace (preserves existing if omitted). Ignored for edit/append.",
+				"description": `Required when action="create". Optional for "replace" (preserves existing if omitted). Ignored for "edit"/"append".`,
 			},
 			"slug": map[string]any{
 				"type":        "string",
-				"description": "Target page slug (lowercase, dash-separated). Required for replace/edit/append. Ignored for create — derived from title there.",
+				"description": `Required when action="replace"/"edit"/"append". Lowercase, dash-separated. Ignored for "create" — derived from title.`,
 			},
 			"body": map[string]any{
 				"type":        "string",
-				"description": "For create/replace: the full markdown body. For append: the new section's content only (the heading is added separately). Ignored for edit.",
+				"description": `Required when action="create"/"replace"/"append". For "create"/"replace": full markdown body. For "append": the new section's content only (heading is separate). Ignored for "edit".`,
 			},
 			"expected_updated_at": map[string]any{
 				"type":        "string",
-				"description": "RFC3339 timestamp from the page you just read. Required for replace/edit/append. For create, leave empty or omit — the create path uses the '' create-only sentinel automatically.",
+				"description": `Optional. RFC3339 timestamp for an explicit concurrency check (replace/edit/append). When omitted, the tool uses the current on-disk timestamp — safe in single-user mode. Ignored for "create".`,
 			},
 			"category": map[string]any{
 				"type":        "string",
-				"description": "Optional category. Common values: 'entity', 'concept', or empty. Applied on create/replace.",
+				"description": `Optional, applied on create/replace. Common values: "entity", "concept", or empty.`,
 			},
 			"tags": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional tag list. Applied on create/replace.",
+				"description": `Optional, applied on create/replace. Tag list.`,
 			},
 			"related": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional list of slugs for INTENTIONAL cross-references that don't appear as [[wiki-links]] in body. Body [[wiki-links]] already produce auto-backlinks — DO NOT mirror body links here. Applied on create/replace.",
+				"description": `Optional, applied on create/replace. Slugs for INTENTIONAL cross-references that don't appear as [[wiki-links]] in body. Body [[wiki-links]] already produce auto-backlinks — do not mirror them here.`,
 			},
 			"sources": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "Optional list of source URLs or src_xxx identifiers. Applied on create/replace.",
+				"description": `Optional, applied on create/replace. Source URLs or src_xxx identifiers.`,
 			},
 			"old_text": map[string]any{
 				"type":        "string",
-				"description": "edit only: the exact substring to find. Must match exactly one occurrence in the page body.",
+				"description": `Required when action="edit". Exact substring to find — must match exactly one occurrence in the page body.`,
 			},
 			"new_text": map[string]any{
 				"type":        "string",
-				"description": "edit only: replacement text. Empty string deletes the match.",
+				"description": `Required when action="edit". Replacement text. Empty string deletes the match.`,
 			},
 			"heading": map[string]any{
 				"type":        "string",
-				"description": "append only: the ## section heading text (without the leading '## ').",
+				"description": `Required when action="append". The ## section heading text, without the leading '## '.`,
 			},
 			"source_id": map[string]any{
 				"type":        "string",
-				"description": "append only, optional: when provided, each non-empty body line in the new section gets an ^[src_xxx] provenance marker appended, and source_id is added to Sources if not already there.",
+				"description": `Optional, action="append" only. When provided, each non-empty body line in the new section gets an ^[src_xxx] provenance marker, and source_id is added to Sources.`,
 			},
 		},
 		"oneOf": ActionDispatchOneOf([]ActionVariant{
 			{Name: "create", RequiredKeys: []string{"title", "body"}},
-			{Name: "replace", RequiredKeys: []string{"slug", "body", "expected_updated_at"}},
-			{Name: "edit", RequiredKeys: []string{"slug", "old_text", "new_text", "expected_updated_at"}},
-			{Name: "append", RequiredKeys: []string{"slug", "heading", "body", "expected_updated_at"}},
+			{Name: "replace", RequiredKeys: []string{"slug", "body"}},
+			{Name: "edit", RequiredKeys: []string{"slug", "old_text", "new_text"}},
+			{Name: "append", RequiredKeys: []string{"slug", "heading", "body"}},
 		}),
+		// JSON Schema "examples" — concrete shapes. expected_updated_at
+		// intentionally omitted from these examples so the model learns
+		// the safe single-user shape; supply it only when you've just
+		// read the page and want an explicit concurrency check.
+		"examples": []any{
+			map[string]any{"action": "create", "title": "Davide Marchetto", "body": "# Davide\nUtente principale di Aura."},
+			map[string]any{"action": "replace", "slug": "todo-list", "body": "# Todo\n- nuova lista"},
+			map[string]any{"action": "edit", "slug": "davide-marchetto", "old_text": "Utente principale", "new_text": "Operatore principale"},
+			map[string]any{"action": "append", "slug": "davide-marchetto", "heading": "Preferenze", "body": "- caffè\n- macchina silenziosa"},
+		},
 	}
 }
 
@@ -275,12 +304,17 @@ func (t *WikiPageTool) doReplace(ctx context.Context, args map[string]any) (stri
 	if strings.TrimSpace(body) == "" {
 		return "", fmt.Errorf("wiki_page replace: body is required: %w", llm.ErrSchemaValidation)
 	}
-	if expected == "" {
-		return "", fmt.Errorf("wiki_page replace: expected_updated_at is required: %w", llm.ErrSchemaValidation)
-	}
 	existing, err := t.store.ReadPage(slug)
 	if err != nil {
 		return "", fmt.Errorf("wiki_page replace: read existing: %w", err)
+	}
+	// expected_updated_at is OPTIONAL (single-user mode 2026-05-24):
+	// when omitted, use whatever timestamp is currently on disk so the
+	// conflict check passes. The LLM no longer has to chain a file(read)
+	// just to extract the frontmatter timestamp — fixes the 15-call
+	// wiki edit loop observed in single-tool-mode validation.
+	if expected == "" {
+		expected = existing.UpdatedAt
 	}
 	title := strings.TrimSpace(stringArg(args, "title"))
 	if title == "" {
@@ -318,12 +352,13 @@ func (t *WikiPageTool) doEdit(ctx context.Context, args map[string]any) (string,
 	if oldText == "" {
 		return "", fmt.Errorf("wiki_page edit: old_text is required: %w", llm.ErrSchemaValidation)
 	}
-	if expected == "" {
-		return "", fmt.Errorf("wiki_page edit: expected_updated_at is required: %w", llm.ErrSchemaValidation)
-	}
 	existing, err := t.store.ReadPage(slug)
 	if err != nil {
 		return "", fmt.Errorf("wiki_page edit: read existing: %w", err)
+	}
+	// expected_updated_at OPTIONAL (single-user, see doReplace comment).
+	if expected == "" {
+		expected = existing.UpdatedAt
 	}
 	occurrences := strings.Count(existing.Body, oldText)
 	switch occurrences {
@@ -365,12 +400,13 @@ func (t *WikiPageTool) doAppend(ctx context.Context, args map[string]any) (strin
 	if strings.TrimSpace(body) == "" {
 		return "", fmt.Errorf("wiki_page append: body is required: %w", llm.ErrSchemaValidation)
 	}
-	if expected == "" {
-		return "", fmt.Errorf("wiki_page append: expected_updated_at is required: %w", llm.ErrSchemaValidation)
-	}
 	existing, err := t.store.ReadPage(slug)
 	if err != nil {
 		return "", fmt.Errorf("wiki_page append: read existing: %w", err)
+	}
+	// expected_updated_at OPTIONAL (single-user, see doReplace comment).
+	if expected == "" {
+		expected = existing.UpdatedAt
 	}
 	annotatedBody := body
 	if sourceID != "" {
