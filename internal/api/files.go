@@ -381,6 +381,22 @@ func handleFilesDelete(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "delete a source via DELETE /sources/{id} to keep the memoryindex consistent")
 			return
 		}
+
+		// Top-level wiki .md pages: route through Wiki.DeletePage so
+		// FTS5, GraphIndex, Qdrant, git, and TOC stay in sync. Raw
+		// os.Remove leaves stale rows in FTS5 + GraphIndex because the
+		// reindex worker only updates Qdrant. See comment on
+		// wiki.Store.DeletePage for the full cleanup surface.
+		if !info.IsDir() && root == "wiki" && deps.Wiki != nil && strings.HasSuffix(rel, ".md") && !strings.Contains(filepath.ToSlash(rel), "/") {
+			slug := strings.TrimSuffix(rel, ".md")
+			if err := deps.Wiki.DeletePage(r.Context(), slug); err != nil {
+				writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())
+				return
+			}
+			writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"root": root, "path": filepath.ToSlash(rel), "deleted": true})
+			return
+		}
+
 		if info.IsDir() {
 			if err := os.RemoveAll(abs); err != nil {
 				writeError(w, deps.Logger, http.StatusInternalServerError, err.Error())

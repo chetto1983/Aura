@@ -255,6 +255,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("GET /sources/{id}/ocr", handleSourceOCR(deps))
 	mux.HandleFunc("GET /sources/{id}/markdown", handleSourceMarkdown(deps))
 	mux.HandleFunc("GET /sources/{id}/raw", handleSourceRaw(deps))
+	mux.HandleFunc("GET /sources/{id}/derived", handleSourceDerived(deps))
 
 	// Browser PDF upload — same write surface as Telegram. Auth-gated by
 	// the outer middleware below; the original requireLoopback gate from
