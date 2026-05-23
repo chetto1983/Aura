@@ -55,7 +55,7 @@
         "Single atomic commit prefix: feat(agent): repeated external-lookup throttle — 2-strike dedup (US-OUT-03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "RISK R2: 2-strike may be strict for legitimate iterative research. The number 2 is production-tested from nanobot — don't tune higher without bench evidence. PARALLEL with US-OUT-04 (no dependency)."
     },
     {

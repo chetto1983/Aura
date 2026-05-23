@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	"github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
@@ -35,6 +36,10 @@ type agentExecutor struct {
 	// (US-OUT-02). Empty string disables spill; routing falls back to inline
 	// truncation via limitToolContent.
 	spillDir string
+	// repeatedLookup tracks per-turn external lookup calls for web_search,
+	// web_fetch, and search_memory (US-OUT-03). After MaxRepeats identical
+	// targets, subsequent calls are short-circuited with a blocked error.
+	repeatedLookup *governance.RepeatedLookupCounter
 }
 
 var _ ToolExecutor = (*agentExecutor)(nil)
@@ -64,6 +69,7 @@ func newAgentExecutor(
 		repo:              repo,
 		tokenJuiceEnabled: tokenJuiceEnabled,
 		spillDir:          spillDir,
+		repeatedLookup:    governance.NewRepeatedLookupCounter(),
 	}
 }
 
@@ -211,6 +217,14 @@ func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (
 	}
 	if strings.TrimSpace(e.userID) != "" {
 		toolCtx = tools.WithUserID(toolCtx, e.userID)
+	}
+	// US-OUT-03: short-circuit repeated external lookups before dispatch.
+	if e.repeatedLookup != nil {
+		if blockErr := e.repeatedLookup.Check(call.Name, call.Arguments); blockErr != nil {
+			obs := buildObs("blocked", blockErr)
+			recordObs(obs)
+			return tools.FormatFatalToolError(blockErr), obs, nil
+		}
 	}
 	out, err := e.tools.Execute(toolCtx, call.Name, call.Arguments)
 	elapsedMs := time.Since(startedAt).Milliseconds()
