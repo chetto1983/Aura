@@ -16,7 +16,7 @@ import (
 // changes so wiki pages emitted under an old prompt can be
 // re-extracted on demand. Matches the wiki schema regex for
 // PromptVersion: prefix `ingest_v` + integer.
-const extractorPromptVersion = "ingest_v3"
+const extractorPromptVersion = "ingest_v4"
 
 // extractorMaxItems caps the total entities + concepts the LLM may
 // return per source. Higher numbers add cost without proportional
@@ -37,11 +37,16 @@ var entityTypes = map[string]bool{
 
 // linkTypes is the closed set of relation types between extracted nodes.
 var linkTypes = map[string]bool{
-	"mentions":     true,
-	"uses":         true,
-	"extends":      true,
-	"contradicts":  true,
-	"derived_from": true,
+	"mentions":               true,
+	"cites":                  true,
+	"applies":                true,
+	"implements":             true,
+	"references":             true,
+	"extends":                true,
+	"contradicts":            true,
+	"depends_on":             true,
+	"derived_from":           true,
+	"semantically_similar_to": true,
 }
 
 // slugRe mirrors the wiki [[wiki-link]] regex (internal/wiki/schema.go:15)
@@ -198,7 +203,8 @@ func buildExtractionPrompt(req ExtractionRequest) string {
 	b.WriteString("- Each item has a stable slug: lowercase, words joined by hyphens, no spaces.\n")
 	b.WriteString("- Reuse an existing wiki slug verbatim when the entity matches — do NOT mint a near-duplicate.\n")
 	b.WriteString("- entity.type must be one of: person, project, org, concept.\n")
-	b.WriteString("- link.type must be one of: mentions, uses, extends, contradicts, derived_from.\n")
+	b.WriteString("- link.type must be one of: mentions, cites, applies, implements, references, extends, contradicts, depends_on, derived_from, semantically_similar_to.\n")
+	b.WriteString("  Type guidance: cites=source A cites norm B as authority; applies=judgement A applies norm B; implements=project A implements spec B; references=A links to B for context; extends=A extends/subclasses B; contradicts=A conflicts with B; depends_on=A requires B; derived_from=A originates from B; semantically_similar_to=A and B express the same concept.\n")
 	b.WriteString("- Links may reference slugs from this output or from the existing list.\n")
 	b.WriteString("- For each entity/concept, emit ALL surface forms you saw in the source text under aliases. Example: if the source contains \"art. 1218 c.c.\", \"articolo 1218 codice civile\", and \"1218 cc\", emit ONE entity with aliases=[all three]. Aliases preserve the writer's original capitalization + punctuation. Omit aliases when no surface-form variations exist.\n")
 	b.WriteString("- Return strict JSON. No prose. No markdown fences. No commentary.\n\n")
@@ -218,7 +224,7 @@ func buildExtractionPrompt(req ExtractionRequest) string {
     {"slug": "...", "title": "...", "summary": "2-3 sentences", "key_claims": ["verbatim quote", "..."], "aliases": ["surface form 1", "..."]}
   ],
   "links": [
-    {"from_slug": "...", "to_slug": "...", "type": "mentions|uses|extends|contradicts|derived_from"}
+    {"from_slug": "...", "to_slug": "...", "type": "mentions|cites|applies|implements|references|extends|contradicts|depends_on|derived_from|semantically_similar_to"}
   ]
 }`)
 	return b.String()

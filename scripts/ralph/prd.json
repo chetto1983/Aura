@@ -117,7 +117,7 @@
         "Single atomic commit prefix: feat(wiki): typed edges + colored graph (US-GRAPH-05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Independent of US-GRAPH-03 (can ship in any order after 01+04). Adds the semantic-graph dimension graphify cites as foundational. Most subjective to LLM quality — older models will default to 'mentions' for most links until prompt is calibrated. Calibration is observed via the 'cites % of total edges' acceptance criterion. NOT in scope: edge type editing in the UI (operators can only see, not edit). Future story can add type-aware queries (e.g. 'which sources CITE art. 1218?' vs 'which sources MENTION it?')."
     }
   ]

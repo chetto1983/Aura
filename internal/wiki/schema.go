@@ -2,6 +2,7 @@ package wiki
 
 import (
 	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -13,7 +14,35 @@ import (
 const CurrentSchemaVersion = 3
 
 var promptVersionRe = regexp.MustCompile(`^(v[0-9]+|ingest_v[0-9]+|proposal_v[0-9]+|summarizer_v[0-9]+)$`)
-var wikiLinkRe = regexp.MustCompile(`\[\[([a-z0-9-]+)\]\]`)
+
+// wikiLinkRe matches [[slug]] and [[slug|type]] — captures only the slug.
+var wikiLinkRe = regexp.MustCompile(`\[\[([a-z0-9-]+)(?:\|[a-z][a-z_]*)?\]\]`)
+
+// wikiLinkTypedRe captures both slug (group 1) and optional edge type (group 2).
+var wikiLinkTypedRe = regexp.MustCompile(`\[\[([a-z0-9-]+)(?:\|([a-z][a-z_]*))?\]\]`)
+
+// validEdgeTypes is the closed set of typed edge labels for [[slug|type]] syntax.
+var validEdgeTypes = map[string]bool{
+	"mentions":               true,
+	"cites":                  true,
+	"applies":                true,
+	"implements":             true,
+	"references":             true,
+	"extends":                true,
+	"contradicts":            true,
+	"depends_on":             true,
+	"derived_from":           true,
+	"semantically_similar_to": true,
+}
+
+// WikiLinkEdge is a typed outbound edge from [[slug]] or [[slug|type]] syntax.
+type WikiLinkEdge struct {
+	Slug string
+	Type string // one of validEdgeTypes; defaults to "mentions"
+}
+
+// ValidEdgeType reports whether t is a recognised edge type.
+func ValidEdgeType(t string) bool { return validEdgeTypes[t] }
 
 // validConfidences is the set of accepted Confidence values for RelatedRef.
 var validConfidences = map[string]bool{
@@ -231,7 +260,7 @@ func Validate(page *Page) error {
 	return nil
 }
 
-// ExtractWikiLinks returns unique [[slug]] references from the markdown body.
+// ExtractWikiLinks returns unique slug strings from [[slug]] and [[slug|type]] body syntax.
 func ExtractWikiLinks(body string) []string {
 	matches := wikiLinkRe.FindAllStringSubmatch(body, -1)
 	seen := make(map[string]bool)
@@ -242,6 +271,32 @@ func ExtractWikiLinks(body string) []string {
 			seen[slug] = true
 			links = append(links, slug)
 		}
+	}
+	return links
+}
+
+// ExtractWikiLinksTyped returns unique typed edges from [[slug]] and [[slug|type]] syntax.
+// Plain [[slug]] defaults to "mentions". Unknown types fall back to "mentions" with a warning.
+// Dedup is by slug — first occurrence wins when the same slug appears multiple times.
+func ExtractWikiLinksTyped(body string) []WikiLinkEdge {
+	matches := wikiLinkTypedRe.FindAllStringSubmatch(body, -1)
+	seen := make(map[string]bool)
+	var links []WikiLinkEdge
+	for _, m := range matches {
+		slug := m[1]
+		if seen[slug] {
+			continue
+		}
+		seen[slug] = true
+		edgeType := "mentions"
+		if m[2] != "" {
+			if validEdgeTypes[m[2]] {
+				edgeType = m[2]
+			} else {
+				slog.Warn("wiki: unknown edge type in [[slug|type]], falling back to mentions", "slug", slug, "type", m[2])
+			}
+		}
+		links = append(links, WikiLinkEdge{Slug: slug, Type: edgeType})
 	}
 	return links
 }

@@ -28,9 +28,12 @@ type WikiPage struct {
 // GraphNode is one vertex in GET /wiki/graph.
 type GraphNode = wiki.GraphNode
 
-// GraphEdge is one directed link in GET /wiki/graph. Type is one of
-// "wikilink" (a [[slug]] inside the body) or "related" (frontmatter
-// related: [...]).
+// GraphEdge is one directed link in GET /wiki/graph. Type is one of the
+// semantic edge types (mentions, cites, applies, implements, references,
+// extends, contradicts, depends_on, derived_from, semantically_similar_to)
+// for body [[slug|type]] links, or "related" for frontmatter related:[...]
+// entries. Old graph.json files with type "wikilink" remain valid — the
+// frontend treats unknown types as gray.
 type GraphEdge = wiki.GraphEdge
 
 // Graph is the response of GET /wiki/graph.

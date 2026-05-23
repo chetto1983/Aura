@@ -106,10 +106,11 @@ func (g *GraphIndex) NeighborsHubAware(slug string, depth, skipDegree int) []str
 // seed slug by either direction equally; the explicit Out/In accessors
 // let callers stick to a single direction when they need to.
 type GraphIndex struct {
-	mu       sync.RWMutex
-	outbound map[string]map[string]bool // slug -> set of slugs it links to
-	inbound  map[string]map[string]bool // slug -> set of slugs that link to it
-	meta     map[string]NodeMeta        // slug -> snapshot of node metadata
+	mu        sync.RWMutex
+	outbound  map[string]map[string]bool   // slug -> set of slugs it links to
+	inbound   map[string]map[string]bool   // slug -> set of slugs that link to it
+	meta      map[string]NodeMeta          // slug -> snapshot of node metadata
+	edgeTypes map[string]map[string]string // from -> to -> edge type
 }
 
 // NodeMeta carries the lightweight per-node info retrieval ranking needs
@@ -131,9 +132,10 @@ type NodeMeta struct {
 // NewGraphIndex returns an empty index ready for population.
 func NewGraphIndex() *GraphIndex {
 	return &GraphIndex{
-		outbound: make(map[string]map[string]bool),
-		inbound:  make(map[string]map[string]bool),
-		meta:     make(map[string]NodeMeta),
+		outbound:  make(map[string]map[string]bool),
+		inbound:   make(map[string]map[string]bool),
+		meta:      make(map[string]NodeMeta),
+		edgeTypes: make(map[string]map[string]string),
 	}
 }
 
@@ -149,6 +151,7 @@ func (g *GraphIndex) LoadFromPages(pages map[string]*Page) {
 	g.outbound = make(map[string]map[string]bool, len(pages))
 	g.inbound = make(map[string]map[string]bool, len(pages))
 	g.meta = make(map[string]NodeMeta, len(pages))
+	g.edgeTypes = make(map[string]map[string]string, len(pages))
 
 	for slug, page := range pages {
 		if page == nil {
@@ -194,6 +197,8 @@ func (g *GraphIndex) RemoveNode(slug string) {
 		}
 	}
 	delete(g.outbound, slug)
+	// Drop edge types for outgoing edges from this slug.
+	delete(g.edgeTypes, slug)
 	// Remove this slug as a target of edges. Each source loses an
 	// outbound entry pointing at slug. We keep the source nodes — they
 	// still exist on disk and may just have a now-broken ref.
@@ -202,6 +207,12 @@ func (g *GraphIndex) RemoveNode(slug string) {
 			delete(set, slug)
 			if len(set) == 0 {
 				delete(g.outbound, source)
+			}
+		}
+		if srcTypes := g.edgeTypes[source]; srcTypes != nil {
+			delete(srcTypes, slug)
+			if len(srcTypes) == 0 {
+				delete(g.edgeTypes, source)
 			}
 		}
 	}
@@ -228,15 +239,20 @@ func (g *GraphIndex) upsertLocked(slug string, page *Page) {
 
 	// Compute the canonical edge set: body wikilinks ∪ frontmatter related.
 	newTargets := make(map[string]bool)
-	for _, t := range ExtractWikiLinks(page.Body) {
-		if t != "" && t != slug {
-			newTargets[t] = true
+	newEdgeTypes := make(map[string]string)
+	for _, te := range ExtractWikiLinksTyped(page.Body) {
+		if te.Slug != "" && te.Slug != slug {
+			newTargets[te.Slug] = true
+			newEdgeTypes[te.Slug] = te.Type
 		}
 	}
 	for _, ref := range page.Related {
 		t := Slug(ref.Slug)
 		if t != "" && t != slug {
 			newTargets[t] = true
+			if _, exists := newEdgeTypes[t]; !exists {
+				newEdgeTypes[t] = "related"
+			}
 		}
 	}
 
@@ -268,6 +284,12 @@ func (g *GraphIndex) upsertLocked(slug string, page *Page) {
 			g.inbound[target] = set
 		}
 		set[slug] = true
+	}
+	// Store edge types for this node's outgoing edges.
+	if len(newEdgeTypes) == 0 {
+		delete(g.edgeTypes, slug)
+	} else {
+		g.edgeTypes[slug] = newEdgeTypes
 	}
 
 	// Snapshot metadata. Tags is copied so later page mutations don't
@@ -456,6 +478,23 @@ func (g *GraphIndex) NodeCount() int {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return len(g.meta)
+}
+
+// EdgeType returns the stored edge type for the directed edge from → to.
+// Returns "mentions" when no specific type is recorded (existing edges at warm
+// time without explicit [[slug|type]] syntax default to "mentions").
+func (g *GraphIndex) EdgeType(from, to string) string {
+	if g == nil {
+		return "mentions"
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if m := g.edgeTypes[from]; m != nil {
+		if t := m[to]; t != "" {
+			return t
+		}
+	}
+	return "mentions"
 }
 
 // ShortestPath returns the shortest undirected path (slug chain inclusive of

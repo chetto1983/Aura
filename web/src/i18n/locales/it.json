@@ -460,6 +460,7 @@
   "graph.matches": "{{count}} risultati",
   "graph.openPage": "Apri pagina",
   "graph.empty": "Nessun nodo nel grafo. Le pagine wiki appariranno qui dopo l'elaborazione di fonti o conversazioni.",
+  "graph.edgeTypes": "Tipi di collegamento",
   "wikiPage.loading": "Caricamento...",
   "wikiPage.back": "← torna alla wiki",
   "wikiPage.notFound": "Pagina non trovata",

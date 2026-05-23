@@ -423,6 +423,58 @@ func TestNeighbors_SubnodeReturnsParentAndSiblings(t *testing.T) {
 	}
 }
 
+func TestGraphIndex_EdgeTypesStoredAndRetrieved(t *testing.T) {
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"ruling": makeTestPage("Ruling", "[[art-1218|cites]] and [[acme]]", nil),
+		"art-1218": makeTestPage("Art 1218", "", nil),
+		"acme":     makeTestPage("Acme", "", nil),
+	})
+	if got := g.EdgeType("ruling", "art-1218"); got != "cites" {
+		t.Errorf("EdgeType(ruling, art-1218) = %q, want cites", got)
+	}
+	if got := g.EdgeType("ruling", "acme"); got != "mentions" {
+		t.Errorf("EdgeType(ruling, acme) = %q, want mentions", got)
+	}
+}
+
+func TestGraphIndex_EdgeTypeRelatedFrontmatter(t *testing.T) {
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "No body links.", []string{"beta"}),
+		"beta":  makeTestPage("Beta", "", nil),
+	})
+	if got := g.EdgeType("alpha", "beta"); got != "related" {
+		t.Errorf("EdgeType(alpha, beta) = %q, want related", got)
+	}
+}
+
+func TestGraphIndex_EdgeTypeBodyWinsOverRelated(t *testing.T) {
+	g := NewGraphIndex()
+	// Same target appears in both body (as cites) and related.
+	// Body wikilink type must win.
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "[[beta|cites]]", []string{"beta"}),
+		"beta":  makeTestPage("Beta", "", nil),
+	})
+	if got := g.EdgeType("alpha", "beta"); got != "cites" {
+		t.Errorf("EdgeType(alpha, beta) = %q, want cites (body wins over related)", got)
+	}
+}
+
+func TestGraphIndex_RemoveNodeCleansEdgeTypes(t *testing.T) {
+	g := NewGraphIndex()
+	g.LoadFromPages(map[string]*Page{
+		"alpha": makeTestPage("Alpha", "[[beta|cites]]", nil),
+		"beta":  makeTestPage("Beta", "", nil),
+	})
+	g.RemoveNode("alpha")
+	// After removal, EdgeType must return default "mentions" (not "cites").
+	if got := g.EdgeType("alpha", "beta"); got != "mentions" {
+		t.Errorf("after RemoveNode, EdgeType = %q, want mentions (default)", got)
+	}
+}
+
 // _ = time.Now is a tiny hedge to keep the time import even if no test
 // touches the field directly — schema requires CreatedAt/UpdatedAt and
 // helper makeTestPage generates them.

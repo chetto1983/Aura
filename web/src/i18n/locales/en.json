@@ -460,6 +460,7 @@
   "graph.matches": "{{count}} matches",
   "graph.openPage": "Open page",
   "graph.empty": "No graph nodes yet. Wiki pages appear here after sources or conversations are ingested.",
+  "graph.edgeTypes": "Edge types",
   "wikiPage.loading": "Loading...",
   "wikiPage.back": "← back to wiki",
   "wikiPage.notFound": "Page not found",

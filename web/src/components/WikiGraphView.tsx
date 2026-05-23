@@ -27,8 +27,44 @@ const CATEGORY_COLORS: Record<string, string> = {
   default: '#94a3b8',
 };
 
+// Edge type color map — matches wiki [[slug|type]] semantics.
+// Unknown or legacy types (wikilink) fall back to the default gray.
+const EDGE_TYPE_COLORS: Record<string, string> = {
+  cites: '#3b82f6',
+  applies: '#10b981',
+  contradicts: '#ef4444',
+  depends_on: '#f59e0b',
+  references: '#06b6d4',
+  semantically_similar_to: '#8b5cf6',
+  mentions: '#94a3b8',
+  implements: '#84cc16',
+  extends: '#f97316',
+  derived_from: '#ec4899',
+  related: '#d4a3a3',
+  default: '#94a3b8',
+};
+
+// Ordered legend entries (omit internal defaults from the visible list).
+const EDGE_TYPE_LEGEND: [string, string][] = [
+  ['cites', EDGE_TYPE_COLORS.cites],
+  ['applies', EDGE_TYPE_COLORS.applies],
+  ['contradicts', EDGE_TYPE_COLORS.contradicts],
+  ['depends_on', EDGE_TYPE_COLORS.depends_on],
+  ['references', EDGE_TYPE_COLORS.references],
+  ['implements', EDGE_TYPE_COLORS.implements],
+  ['extends', EDGE_TYPE_COLORS.extends],
+  ['derived_from', EDGE_TYPE_COLORS.derived_from],
+  ['semantically_similar_to', EDGE_TYPE_COLORS.semantically_similar_to],
+  ['mentions', EDGE_TYPE_COLORS.mentions],
+  ['related', EDGE_TYPE_COLORS.related],
+];
+
 function colorFor(category: string | undefined): string {
   return CATEGORY_COLORS[category ?? ''] ?? CATEGORY_COLORS.default;
+}
+
+function edgeColorFor(type: string | undefined): string {
+  return EDGE_TYPE_COLORS[type ?? ''] ?? EDGE_TYPE_COLORS.default;
 }
 
 export default function WikiGraphView() {
@@ -142,6 +178,18 @@ export default function WikiGraphView() {
           {normalizedQuery && <span className="ml-2">{t('graph.matches', { count: matchCount })}</span>}
         </div>
       </div>
+      {/* Edge-type legend — always visible when graph has nodes */}
+      {nodes.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2 text-xs text-muted-foreground">
+          <span className="font-medium">{t('graph.edgeTypes')}:</span>
+          {EDGE_TYPE_LEGEND.map(([type, color]) => (
+            <span key={type} className="flex items-center gap-1">
+              <span style={{ backgroundColor: color }} className="inline-block size-2 shrink-0 rounded-full" />
+              {type}
+            </span>
+          ))}
+        </div>
+      )}
       {selectedNode && (
         <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-2 text-sm">
           <span className="font-medium">{selectedNode.title}</span>
@@ -170,7 +218,7 @@ export default function WikiGraphView() {
             return colorFor(n.category);
           }}
           nodeLabel={(n: ForceNode) => `${n.title}${n.category ? ` (${n.category})` : ''}`}
-          linkColor={(l: ForceLink) => (l.type === 'wikilink' ? '#a3a3a3' : '#d4a3a3')}
+          linkColor={(l: ForceLink) => edgeColorFor(l.type)}
           linkWidth={(l: ForceLink) => (selectedId && (linkEndpointId(l.source) === selectedId || linkEndpointId(l.target) === selectedId) ? 2 : 1)}
           onNodeClick={(n) => setSelectedId((n as ForceNode).id)}
           cooldownTicks={100}

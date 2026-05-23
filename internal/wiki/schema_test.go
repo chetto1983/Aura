@@ -341,6 +341,66 @@ func TestPage_SchemaV2_LegacyRelatedStillParses(t *testing.T) {
 	}
 }
 
+func TestExtractWikiLinksTyped_PlainSlugDefaultsMentions(t *testing.T) {
+	links := ExtractWikiLinksTyped("see [[alpha]] and [[beta]]")
+	if len(links) != 2 {
+		t.Fatalf("len = %d, want 2", len(links))
+	}
+	for _, l := range links {
+		if l.Type != "mentions" {
+			t.Errorf("slug %q type = %q, want mentions", l.Slug, l.Type)
+		}
+	}
+}
+
+func TestExtractWikiLinksTyped_KnownTypePreserved(t *testing.T) {
+	links := ExtractWikiLinksTyped("[[siemens|cites]] and [[acme|depends_on]]")
+	if len(links) != 2 {
+		t.Fatalf("len = %d, want 2", len(links))
+	}
+	if links[0].Slug != "siemens" || links[0].Type != "cites" {
+		t.Errorf("got %+v, want {siemens cites}", links[0])
+	}
+	if links[1].Slug != "acme" || links[1].Type != "depends_on" {
+		t.Errorf("got %+v, want {acme depends_on}", links[1])
+	}
+}
+
+func TestExtractWikiLinksTyped_UnknownTypeFallsBackToMentions(t *testing.T) {
+	links := ExtractWikiLinksTyped("[[foo|bogustype]]")
+	if len(links) != 1 {
+		t.Fatalf("len = %d, want 1", len(links))
+	}
+	if links[0].Type != "mentions" {
+		t.Errorf("type = %q, want mentions for unknown edge type", links[0].Type)
+	}
+}
+
+func TestExtractWikiLinksTyped_DedupBySlugs(t *testing.T) {
+	links := ExtractWikiLinksTyped("[[alpha]] then [[alpha|cites]]")
+	if len(links) != 1 {
+		t.Fatalf("expected 1 unique slug, got %d: %+v", len(links), links)
+	}
+	if links[0].Slug != "alpha" || links[0].Type != "mentions" {
+		t.Errorf("got %+v, want {alpha mentions} (first occurrence wins)", links[0])
+	}
+}
+
+func TestExtractWikiLinks_HandlesTypeSuffix(t *testing.T) {
+	// ExtractWikiLinks must return slugs from both [[slug]] and [[slug|type]] syntax.
+	slugs := ExtractWikiLinks("[[alpha|cites]] and [[beta]]")
+	if len(slugs) != 2 {
+		t.Fatalf("len = %d, want 2: %v", len(slugs), slugs)
+	}
+	found := map[string]bool{}
+	for _, s := range slugs {
+		found[s] = true
+	}
+	if !found["alpha"] || !found["beta"] {
+		t.Errorf("slugs = %v, want [alpha beta]", slugs)
+	}
+}
+
 func TestPage_SchemaV3_RoundTrip(t *testing.T) {
 	page := validPageBase()
 	page.Related = []RelatedRef{

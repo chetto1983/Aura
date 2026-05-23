@@ -64,10 +64,24 @@ export interface GraphNode {
   category?: string;
 }
 
+export type EdgeType =
+  | 'mentions'
+  | 'cites'
+  | 'applies'
+  | 'implements'
+  | 'references'
+  | 'extends'
+  | 'contradicts'
+  | 'depends_on'
+  | 'derived_from'
+  | 'semantically_similar_to'
+  | 'related'
+  | 'wikilink'; // legacy — old graph.json files; treated as default/gray
+
 export interface GraphEdge {
   source: string;
   target: string;
-  type: 'wikilink' | 'related';
+  type: EdgeType;
 }
 
 export interface Graph {

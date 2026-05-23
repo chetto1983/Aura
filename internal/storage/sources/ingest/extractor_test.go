@@ -85,7 +85,7 @@ func TestLLMExtractor_TolaratesMarkdownFencesAroundJSON(t *testing.T) {
 
 func TestLLMExtractor_RejectsOverLimit(t *testing.T) {
 	var entries strings.Builder
-	for i := 0; i < extractorMaxItems+1; i++ {
+	for i := range extractorMaxItems + 1 {
 		if i > 0 {
 			entries.WriteByte(',')
 		}
@@ -139,7 +139,7 @@ func TestLLMExtractor_CanonicalizeRemapsLinkReferences(t *testing.T) {
 			{"slug":"aura","title":"Aura","type":"project","short_description":"d"}
 		],
 		"concepts":[],
-		"links":[{"from_slug":"davide","to_slug":"aura","type":"uses"}]
+		"links":[{"from_slug":"davide","to_slug":"aura","type":"extends"}]
 	}`}
 	ex := NewLLMExtractor(fake, "model")
 	delta, err := ex.Extract(context.Background(), ExtractionRequest{SourceID: "src", Body: "b"})
@@ -307,5 +307,42 @@ func TestPromptVersion_MatchesWikiRegex(t *testing.T) {
 	pv := PromptVersion()
 	if !strings.HasPrefix(pv, "ingest_v") {
 		t.Fatalf("PromptVersion %q must start with ingest_v", pv)
+	}
+}
+
+func TestLLMExtractor_AcceptsAllNewLinkTypes(t *testing.T) {
+	newTypes := []string{"cites", "applies", "implements", "references", "depends_on", "semantically_similar_to"}
+	for _, lt := range newTypes {
+		t.Run(lt, func(t *testing.T) {
+			fake := &fakeLLMClient{response: `{
+				"entities":[
+					{"slug":"a","title":"A","type":"concept","short_description":"d"},
+					{"slug":"b","title":"B","type":"concept","short_description":"d"}
+				],
+				"concepts":[],
+				"links":[{"from_slug":"a","to_slug":"b","type":"` + lt + `"}]
+			}`}
+			ex := NewLLMExtractor(fake, "model")
+			delta, err := ex.Extract(context.Background(), ExtractionRequest{SourceID: "src", Body: "b"})
+			if err != nil {
+				t.Fatalf("Extract should accept link type %q: %v", lt, err)
+			}
+			if delta.Links[0].Type != lt {
+				t.Fatalf("link type = %q, want %q", delta.Links[0].Type, lt)
+			}
+		})
+	}
+}
+
+func TestBuildExtractionPrompt_ContainsNewLinkTypes(t *testing.T) {
+	prompt := buildExtractionPrompt(ExtractionRequest{SourceID: "src", Body: "body"})
+	for _, lt := range []string{"cites", "applies", "implements", "references", "depends_on", "semantically_similar_to"} {
+		if !strings.Contains(prompt, lt) {
+			t.Errorf("prompt missing link type %q", lt)
+		}
+	}
+	// Prompt should contain type guidance examples.
+	if !strings.Contains(prompt, "Type guidance:") {
+		t.Error("prompt missing Type guidance line")
 	}
 }

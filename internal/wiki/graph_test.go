@@ -34,8 +34,8 @@ func TestBuildGraphNodesEdgesAndBrokenRefs(t *testing.T) {
 		t.Fatalf("nodes = %d, want 3: %+v", len(graph.Nodes), graph.Nodes)
 	}
 	wantEdges := map[string]string{
-		"alpha->beta": "wikilink",
-		"beta->alpha": "wikilink",
+		"alpha->beta": "mentions",
+		"beta->alpha": "mentions",
 	}
 	if len(graph.Edges) != len(wantEdges) {
 		t.Fatalf("edges = %d, want %d: %+v", len(graph.Edges), len(wantEdges), graph.Edges)
@@ -63,6 +63,26 @@ func TestBuildGraphNodesEdgesAndBrokenRefs(t *testing.T) {
 	}
 	if got := strings.Join(graph.Orphans, ","); got != "orphan" {
 		t.Fatalf("orphans = %q, want orphan", got)
+	}
+}
+
+func TestBuildGraphTypedEdges(t *testing.T) {
+	pages := map[string]*Page{
+		"ruling": {Title: "Ruling", Body: "[[art-1218|cites]] supplies [[acme]]."},
+		"art-1218": {Title: "Art 1218", Body: ""},
+		"acme": {Title: "Acme", Body: ""},
+	}
+	graph := BuildGraph(pages)
+
+	edgeMap := make(map[string]string)
+	for _, e := range graph.Edges {
+		edgeMap[e.Source+"->"+e.Target] = e.Type
+	}
+	if got := edgeMap["ruling->art-1218"]; got != "cites" {
+		t.Fatalf("ruling->art-1218 type = %q, want cites", got)
+	}
+	if got := edgeMap["ruling->acme"]; got != "mentions" {
+		t.Fatalf("ruling->acme type = %q, want mentions (plain [[slug]])", got)
 	}
 }
 

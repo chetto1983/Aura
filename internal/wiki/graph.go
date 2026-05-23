@@ -98,8 +98,8 @@ func BuildGraph(pages map[string]*Page) Graph {
 			degree[slug]++
 			degree[target]++
 		}
-		for _, target := range ExtractWikiLinks(page.Body) {
-			addRef(target, "wikilink")
+		for _, link := range ExtractWikiLinksTyped(page.Body) {
+			addRef(link.Slug, link.Type)
 		}
 		for _, ref := range page.Related {
 			addRef(ref.Slug, "related")
