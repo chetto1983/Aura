@@ -1,225 +1,86 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Phase-MODERNIZE — infrastructure hygiene + Wave-1 god-file splits. 3-scout research 2026-05-22 (docs/research-2026-05-22/{module-hygiene-2026-state-of-art,dtmp-module-shape-survey,...}.md) + per-module audit surfaced: Aura has 50+ modules, 71k LOC internal, 28 god files >500 LOC (8 violate the 600 cap), 103 dupl clusters, but 0 unused symbols and 6 TODO total (Aura is genuinely clean on dead-code/TODO). The real debt sits in god files + dupl + missing CI gates. User-locked direction (option B 2026-05-22): set up infrastructure FIRST (depguard + deadcode + file-size linter + lefthook + MODULE-HEALTH.md generator) so cleanup-on-touch is enforced going forward, then ship 10 god-file splits as a one-shot Wave 1. Remaining 18 gods cleanup naturally on next-touch in feature phases. Net LOC delta: +540 (infra tooling) + 0 (god splits rebalance) = +540. STRICT one-story-exit per scripts/ralph/CLAUDE.md.",
+  "description": "Phase-MODERNIZE Wave C — Dedup. Wave A (SPLIT-01..10) finishes file-move work; Wave C kills the residual duplications surfaced by docs/MODULE-HEALTH.md (61 dupl clusters across 18 modules as of 2026-05-22, dominated by api=9, agent=8, cron=6, storage=5, config=5). Each story names the helper to extract + the call sites to update + the exact verification (dupl -t 60 cluster gone + go test green + golangci-lint clean on touched files). Per memory project_aura_limpida_dedup_commitment.",
   "userStories": [
     {
-      "id": "US-MOD-INFRA-01",
-      "title": "depguard v2 enforcing prd.md §9 forbidden dependency rules",
-      "description": "Add .golangci.yml with depguard v2 strict-mode rules from prd.md §9. Forbidden imports: agent → channels/*, agent → api, agent → telegram, memory → channels/*, storage → agent, learning → channels/*, rag → channels/*, tools → chat. CI fails on new violation. Existing violations (audited at story start) are baselined via //nolint:depguard // pre-existing — track in MODULE-HEALTH per offending import. Tracked file `docs/depguard-baseline-2026-05-22.md` lists every grandfathered violation with module → offending import → reason → planned-fix story. (a) Read prd.md §9 in full to capture every forbidden direction. (b) Audit current violations by running depguard with new config; record the count + sites BEFORE adding nolint comments. (c) Add nolint comments with the file:line + reason. (d) Wire CI failure on NEW violations only (--new-from-rev=HEAD~1).",
+      "id": "US-MOD-DEDUP-00",
+      "title": "Regenerate dupl-report — fresh baseline post-Wave A",
+      "description": "Wave A god-splits redistributed LOC. Old .planning/dupl-report.txt is from 2026-05-14 (stale). (a) Install dupl if missing: `go install github.com/mibk/dupl@latest`. (b) Run `~/go/bin/dupl -t 60 ./...` and write the full output to .planning/dupl-report-2026-05-22.txt sorted by cluster size descending. (c) Generate a top-20 summary at docs/dupl-summary-2026-05-22.md grouped by package. (d) Keep the OLD .planning/dupl-report.txt as .planning/dupl-report-2026-05-14.txt (rename, not delete). This story is the precondition for DEDUP-01..04 — without a fresh report, the later stories can't target real clusters.",
       "acceptanceCriteria": [
-        "golangci-lint run --new-from-rev=HEAD~1 ./... fails when a new forbidden import is added in a test commit",
-        "Baselined nolint comments documented in docs/depguard-baseline-2026-05-22.md",
-        "CI passes on master with the new linter enabled",
-        "Test: a synthetic commit adding `import agent → channels/telegram` is rejected by the CI gate",
-        "Single atomic commit prefix: chore(lint): depguard v2 enforcing §9 forbidden deps (US-MOD-INFRA-01)"
+        ".planning/dupl-report-2026-05-22.txt exists with current `dupl -t 60` output",
+        ".planning/dupl-report-2026-05-14.txt = the old stale report (renamed from dupl-report.txt)",
+        "docs/dupl-summary-2026-05-22.md exists with top-20 production-code clusters grouped by package (counts, file:line refs, line span)",
+        "go test ./... green (sanity)",
+        "Single atomic commit prefix: chore(dedup): regenerate dupl-report fresh post-Wave A (US-MOD-DEDUP-00)"
       ],
       "priority": 1,
       "passes": true,
-      "notes": "GROUND-TRUTH: (1) read prd.md §9 Dependency Rules in full. (2) check existing .golangci.yml. (3) audit current violations FIRST (count + sites) before adding nolint — the baseline file must be complete. SCOPE: linter wiring only, no code fixes. Code fixes are in other stories."
+      "notes": "Precondition for DEDUP-01..04. If dupl isn't installed, install it first. The summary helps the NEXT iter pick concrete targets."
     },
     {
-      "id": "US-MOD-INFRA-03",
-      "title": "File-size linter caps at 600 LOC + grandfather baseline",
-      "description": "Custom shell script (or GitHub Action) in CI that fails on any non-test, non-generated .go file >600 LOC. Existing 28 violators grandfathered via .file-size-baseline.txt listing path + current LOC. CI fails only when a file in baseline GROWS, or a new file appears >600 LOC. Generated files (*_gen.go, web/dist) excluded. (a) Write the script. (b) Run it against current tree to produce the baseline. (c) Wire into CI. (d) Add bypass mechanism for legit large files (e.g. test fixtures): `// file-size-exempt: <reason>` comment.",
+      "id": "US-MOD-DEDUP-01",
+      "title": "Extract internal/api error-handling helper — kill ~6+ api dupl cluster",
+      "description": "Top dupl cluster per stale 2026-05-14 report is the os.ErrNotExist + Logger.Warn + 500 boilerplate repeated in internal/api/sources.go (4 sites at lines ~55-63, 94-102, 115-123, 231-239), internal/api/sources_write.go (3 sites), internal/api/skills.go, internal/api/swarm.go, internal/api/tasks.go. Line numbers may have shifted post-Wave A; consult .planning/dupl-report-2026-05-22.txt (from DEDUP-00) for current line refs. (a) Read 2-3 representative sites to confirm the exact pattern. (b) Create internal/api/error_helpers.go with `writeReadError(w http.ResponseWriter, deps Deps, err error, opName, id string)` — handles the `if errors.Is(err, os.ErrNotExist) { 404 } else { Logger.Warn + 500 }` pattern. (c) Update every duplicate call site to use the helper. (d) Run dupl -t 60 ./internal/api after the change — the largest api cluster MUST be reduced from 9 to ≤3. (e) go test ./internal/api/... -count=1 green.",
       "acceptanceCriteria": [
-        "CI green on master with new linter; new file at 700 LOC added in test commit fails CI",
-        "Existing files in baseline pass at their current size; growing one past baseline by 50 LOC fails",
-        "Generated files excluded (test with a *_gen.go at 1500 LOC passes)",
-        ".file-size-baseline.txt committed alongside the script, sorted by LOC descending",
-        "Single atomic commit prefix: chore(lint): file-size linter + grandfather baseline (US-MOD-INFRA-03)"
+        "internal/api/error_helpers.go (or equivalent) exports writeReadError or similar single-shot helper",
+        "≥6 call sites in internal/api updated to use the new helper (verified via git diff line count showing ≥50 lines deleted from the duplicated blocks)",
+        "dupl -t 60 ./internal/api/... reports the os.ErrNotExist cluster reduced to ≤3 occurrences (from ~10 sites)",
+        "go test ./internal/api/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(api): extract writeReadError helper — kill os.ErrNotExist dupl (US-MOD-DEDUP-01)"
       ],
       "priority": 2,
-      "passes": true,
-      "notes": "Foundational gate for Wave B god-splits. GROUND-TRUTH: count gods at story start; 28 violators per audit 2026-05-22 (top: migrations.go 1562, memoryindex/store 1143). The baseline file is the SAME list — easy to derive."
+      "passes": false,
+      "notes": "PRECONDITION: DEDUP-00 done. Read 3 sites first to confirm the pattern is uniform; if some sites have subtle differences (e.g. different opName, different default error msg), keep them out of the dedup and document why."
     },
     {
-      "id": "US-MOD-INFRA-02",
-      "title": "deadcode in CI + DIY registry-diff for reflection blindspot",
-      "description": "Wire `golang.org/x/tools/cmd/deadcode` (first-party RTA-based, sound about reflection per 2026 Go blog) into .github/workflows/ci.yml as a separate job. Output JSON, post-process to suppress test-only callers. Fail CI on NEW findings; baseline existing (audit 2026-05-22 reported 0 unused — confirm + commit baseline). Scout 1 noted the reflection blindspot for tool registries: add a DIY registry-diff script as part of the same story. The script enumerates types implementing the Tool interface vs registrations in cmd/aura/app.go + cmd/aura/app_wire.go; reports any Tool type that's not wired in production composition.",
+      "id": "US-MOD-DEDUP-02",
+      "title": "Consolidate config/store.go Get* fallback pattern — fold to parseOrFallback helper",
+      "description": "internal/config/store.go has the same 8-line `v, err := s.Get(ctx, key); if err != nil || strings.TrimSpace(v) == \"\" { return fallback }; parsed, err := parse(v); if err != nil { return fallback }; return parsed` pattern in GetInt (line 128-138), GetFloat (line ~142-152), GetBool (line ~156-166). Extract: `parseOrFallback[T any](ctx, key string, fallback T, parser func(string) (T, error)) T` — non-generic-typed helper if generics complicate, two-step `getTrimmed(ctx, key)` + per-type parser composition works too. Fold GetInt/GetFloat/GetBool to a single call site each. Tests in internal/config/store_test.go (if existing) stay green; if no test exists for these, the dupl reduction itself proves correctness.",
       "acceptanceCriteria": [
-        "CI deadcode job green on master",
-        "Adding an unused exported function in a test commit fails CI",
-        "scripts/registry-diff.sh detects an orphan Tool type when one is added in test (synthetic orphan in a probe directory)",
-        "Baseline file docs/deadcode-baseline-2026-05-22.json committed (current 0 findings expected per audit)",
-        "Single atomic commit prefix: chore(lint): deadcode in CI + registry-diff for reflection blindspot (US-MOD-INFRA-02)"
+        "internal/config/store.go has a single parseOrFallback (or getTrimmed) helper used by GetInt + GetFloat + GetBool",
+        "Each Get* function body ≤4 lines (down from 11)",
+        "dupl -t 60 ./internal/config/... reports 0 clusters in store.go for the Get* triple",
+        "go test ./internal/config/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(config): fold GetInt/GetFloat/GetBool via parseOrFallback helper (US-MOD-DEDUP-02)"
       ],
       "priority": 3,
-      "passes": true,
-      "notes": "GROUND-TRUTH: read 2026 Go blog on deadcode tool (golang.org/x/tools/cmd/deadcode); see https://go.dev/blog/deadcode. The registry-diff approach is simple: enumerate Tool-implementing types via go/ast, grep cmd/aura for their registration."
+      "passes": false,
+      "notes": "PRECONDITION: DEDUP-00 done. Generic helper preferred for Go 1.21+; fallback to per-type duplication-of-just-one-line if generics make the call site uglier."
     },
     {
-      "id": "US-MOD-INFRA-04",
-      "title": "lefthook pre-commit hooks (opt-in for solo dev)",
-      "description": "Add lefthook.yml with: golangci-lint run on touched files, dupl -t 60 on touched files, file-size check on touched files. Documented as opt-in (`lefthook install`) so the solo workflow can skip when intentional. Lefthook's incremental mode keeps the hooks fast (<3s per commit on the typical 1-5 file change). Document the bypass (--no-verify) in INSTALL.md with explicit red-flag warning.",
+      "id": "US-MOD-DEDUP-03",
+      "title": "Consolidate 3-way agent-job spec dupe (swarm/cron/agent)",
+      "description": "Per stale dupl-report a 13-line block appears in internal/agent/tools/swarm/tools.go:516-528, internal/cron/agent_job.go:165-177, internal/swarm/store.go:436-448 — likely an agent-job spec build/marshal pattern. Line numbers may have shifted; reconsult .planning/dupl-report-2026-05-22.txt. (a) Read all 3 sites and confirm they're structurally identical (same fields/order/operations). If subtle differences exist, document them and bail (mark passes:false with explanation). (b) Decide where the shared helper lives — internal/swarm is the natural home for agent-job spec construction. Create internal/swarm/jobspec.go with `BuildAgentJobSpec(...)` or equivalent. (c) Update the 3 call sites. (d) Verify dupl no longer reports the 3-way cluster.",
       "acceptanceCriteria": [
-        "lefthook.yml committed",
-        "lefthook install succeeds (lefthook >=1.0)",
-        "Staging a file with a new lint error blocks the commit",
-        "Bypass via git commit --no-verify documented in INSTALL.md",
-        "Single atomic commit prefix: chore(dev): lefthook pre-commit hooks (opt-in) (US-MOD-INFRA-04)"
+        "internal/swarm/jobspec.go exports a single shared helper for the agent-job spec build/marshal pattern (or, if homes diverge, the helper lives in the lowest-common-ancestor package without creating a new dep edge)",
+        "All 3 sites updated; the 13-line duplicate block deleted from 2 of the 3 (kept only in the helper file)",
+        "dupl -t 60 ./internal/... no longer reports this 3-way cluster",
+        "go test ./internal/swarm/... ./internal/cron/... ./internal/agent/tools/swarm/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(swarm): consolidate 3-way agent-job spec dupe into jobspec.go (US-MOD-DEDUP-03)"
       ],
+      "notes": "PRECONDITION: DEDUP-00. If reading 3 sites reveals they DIVERGED post-Wave A (no longer 13-identical), mark this story passes:false with explanation in the notes and exit — don't force-dedup non-identical code. The point is reducing real duplication.",
       "priority": 4,
-      "passes": true,
-      "notes": "Smallest INFRA story. lefthook config is ~20 lines YAML. Don't FORCE lefthook on solo workflow — opt-in only."
+      "passes": false
     },
     {
-      "id": "US-MOD-INFRA-05",
-      "title": "MODULE-HEALTH.md weekly generator (cmd/module_health)",
-      "description": "New Go script cmd/module_health/main.go that generates docs/MODULE-HEALTH.md with per-module health table: LOC prod/test, test ratio, god count, dupl cluster count (via dupl -t 60 JSON output bucketed by module), last-touched date (git log), dependency violations (parsed from depguard baseline US-MOD-INFRA-01), TODO/FIXME density. Cron-runnable weekly via Aura's existing cron OR `make module-health` target. Sort by priority score = (inbound × 2) + (LOC/100) + (god_count × 5) + (dep_violations × 10).",
+      "id": "US-MOD-DEDUP-04",
+      "title": "Final pass — top-N residual production dupl clusters per fresh report",
+      "description": "After DEDUP-00..03 land, run `dupl -t 60 ./...` again and identify the next 2-3 largest PRODUCTION dupl clusters (skip *_test.go). For each, attempt one extraction iff: (a) the dupe block is ≥10 lines, (b) the call sites are all in one or two packages (no new cross-package dep edge), (c) the helper signature is obvious from the duplicated block (no design judgment required). If a cluster fails any of those gates, document it in docs/dupl-summary-2026-05-22.md with a one-sentence note and SKIP. Commit ONLY the extractions that pass all 3 gates.",
       "acceptanceCriteria": [
-        "go run ./cmd/module_health writes docs/MODULE-HEALTH.md in <5 sec",
-        "Output matches manual audit (LOC totals within 1%)",
-        "Output sorted by priority score descending",
-        "Initial run committed alongside the story so the baseline is visible at HEAD",
-        "Makefile target `make module-health` works",
-        "Single atomic commit prefix: feat(ops): module health scoreboard generator (US-MOD-INFRA-05)"
+        "0..3 production dupl clusters reduced from this story (count documented in commit body)",
+        "Skipped clusters documented in docs/dupl-summary-2026-05-22.md with one-sentence reasoning each",
+        "Net dupl -t 60 production cluster count down by at least 5 vs pre-Wave-C baseline (verified by comparing dupl-report counts before/after Wave C as a whole)",
+        "go test ./... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(dedup): final pass — kill N residual production clusters (US-MOD-DEDUP-04)"
       ],
       "priority": 5,
-      "passes": true,
-      "notes": "Largest INFRA story (~250 LOC). GROUND-TRUTH: read the per-module audit at docs/research-2026-05-22/ for the table shape; the script must produce equivalent output. Cap the script itself at 250 LOC — if it grows, split into table generator + report writer."
-    },
-    {
-      "id": "US-MOD-SPLIT-01",
-      "title": "Split internal/db/migrations/migrations.go (1562 LOC → 24 per-migration files)",
-      "description": "Mechanical move: each addXxx migration function into its own file m20XX_<name>.go. The Migration registry slice + Run/validateRegistered/ensureMigrationTable stay in migrations.go (~250 LOC). The naming uses the migration version + a short kebab-case slug.",
-      "acceptanceCriteria": [
-        "go test ./internal/db/... -count=1 green; migration order preserved (verified by existing TestMigrationOrder)",
-        "Every migration file ≤80 LOC",
-        "Runner file ≤300 LOC",
-        ".file-size-baseline.txt updated to remove migrations.go entry",
-        "Single atomic commit prefix: refactor(db): split migrations.go into per-migration files (US-MOD-SPLIT-01)"
-      ],
-      "priority": 6,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03 (file-size baseline + linter). HIGHEST-PRIORITY split because every future migration touches the file. Zero behavior change — just file move. Use `git mv` is fine but go files get gofmt'd; rename + check tests."
-    },
-    {
-      "id": "US-MOD-SPLIT-02",
-      "title": "Split internal/storage/memoryindex/store.go (1143 LOC → 4 files)",
-      "description": "Split along existing seams: store_core.go (Document CRUD + FTS upsert), store_search.go (ftsSearch + exactSearch + RRF merge), store_archive.go (operational decay + pin + purge), store_helpers.go (utility funcs lines 1050+). Package-private bindings between helpers preserved.",
-      "acceptanceCriteria": [
-        "4 files ≤350 LOC each",
-        "go test ./internal/storage/memoryindex/... -count=1 green",
-        "golangci-lint clean",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(memoryindex): split store.go into core/search/archive/helpers (US-MOD-SPLIT-02)"
-      ],
-      "priority": 7,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03. Touched by Phase-WIKI-FIX FIX-01 (FTS sync) — verify those changes are preserved post-split."
-    },
-    {
-      "id": "US-MOD-SPLIT-04",
-      "title": "Split internal/api/types.go (771 LOC → 6 domain files)",
-      "description": "Pure type-decl rebalancing into types_health.go, types_wiki.go, types_sources.go, types_mcp.go, types_mail.go, types_skills.go. Zero behavior risk — only struct/interface/const declarations move.",
-      "acceptanceCriteria": [
-        "6 files ≤180 LOC each",
-        "go build ./... clean; go test ./internal/api/... -count=1 green",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(api): split types.go per domain (US-MOD-SPLIT-04)"
-      ],
-      "priority": 8,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03. Lowest-risk story in Wave B. Each domain file is just declarations moved."
-    },
-    {
-      "id": "US-MOD-SPLIT-03",
-      "title": "Split internal/storage/runs/store.go (812 LOC → 4 files)",
-      "description": "Split into store_run.go (Run CRUD + idempotency), store_event.go (Event CRUD with versioning), store_outbox.go (outbox enqueue + delivery state), store_audit.go (authz_decisions insertion).",
-      "acceptanceCriteria": [
-        "4 files ≤250 LOC each",
-        "go test ./internal/storage/runs/... -count=1 green",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(runs): split store.go into run/event/outbox/audit (US-MOD-SPLIT-03)"
-      ],
-      "priority": 9,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03. Cross-package interfaces stable — interface declarations in types.go-equivalent files stay in package root."
-    },
-    {
-      "id": "US-MOD-SPLIT-05",
-      "title": "Split internal/wiki/memory_hygiene.go (751 LOC → 4 files)",
-      "description": "Split into hygiene.go (CleanMemory orchestration entry), renames.go (page rename + opaque-slug planning), hubs.go (hub writing), repairs.go (broken-link repair).",
-      "acceptanceCriteria": [
-        "4 files ≤250 LOC each",
-        "go test ./internal/wiki/... -count=1 green",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(wiki): split memory_hygiene.go into hygiene/renames/hubs/repairs (US-MOD-SPLIT-05)"
-      ],
-      "priority": 10,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03. Verify appendUniqueSorted (or equivalent dead helper if any) is gone in the new files — Phase-WIKI-FIX-related cleanup pass."
-    },
-    {
-      "id": "US-MOD-SPLIT-08",
-      "title": "Split internal/storage/search/qdrant.go (725 LOC → 3 files)",
-      "description": "Split into qdrant_client.go (HTTP wrapper + collection lifecycle including warm-cache logic), qdrant_index.go (batch index + reindex including Phase-WIKI-FIX-03 skip-and-continue), qdrant_hybrid.go (SearchHybrid + ftsSearchDB + exactMatchDB). Phase-WIKI-FIX dim-detect logic STAYS in the lifecycle helper.",
-      "acceptanceCriteria": [
-        "3 files ≤320 LOC each",
-        "go test ./internal/storage/search/... -count=1 green; Phase-WIKI-FIX FTS regression test passes",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(qdrant): split qdrant.go into client/index/hybrid (US-MOD-SPLIT-08)"
-      ],
-      "priority": 11,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03. CAREFUL: file recently touched by Phase-WIKI-FIX (commits 9871da0c, 54ec17a9, aad25d7f). Preserve all four behaviors: FTS5 sync hook, skip-and-continue on rebuild, dim-mismatch auto-detect, admin reindex endpoint logic. Read those commit diffs before splitting."
-    },
-    {
-      "id": "US-MOD-SPLIT-06",
-      "title": "Split internal/api/auth/store.go (740 LOC → 3 files)",
-      "description": "Split into store_tokens.go (TokenIssuer/Reader/Revoker/Writer CRUD with sha256 hashing), store_pending.go (pending + allowed users), store_identity_backfill.go (identity backfill helpers).",
-      "acceptanceCriteria": [
-        "3 files ≤280 LOC each",
-        "go test ./internal/api/auth/... -count=1 green",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(api/auth): split store.go into tokens/pending/identity (US-MOD-SPLIT-06)"
-      ],
-      "priority": 12,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03. AUTH module — extra care: don't break the bearer-token path. Test pass = trust signal; manual: `curl -H Authorization: Bearer $TOK http://localhost:18080/api/wiki` post-rebuild."
-    },
-    {
-      "id": "US-MOD-SPLIT-07",
-      "title": "Split internal/storage/sources/ingest/pipeline.go (733 LOC → 4 files)",
-      "description": "Split into pipeline.go (compile/extract orchestration), entity_pages.go (entity-page upsert), concept_pages.go (concept-page upsert), provenance.go (provenance + preview helpers).",
-      "acceptanceCriteria": [
-        "4 files ≤200 LOC each",
-        "go test ./internal/storage/sources/... -count=1 green",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(ingest): split pipeline.go into pipeline/entity/concept/provenance (US-MOD-SPLIT-07)"
-      ],
-      "priority": 13,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03."
-    },
-    {
-      "id": "US-MOD-SPLIT-10",
-      "title": "Split internal/cron/dispatch.go (643 LOC → 3 files)",
-      "description": "Split into dispatch.go (Dispatch/RunNow routing), dispatch_handlers.go (per-job handlers: reminder, wiki maint, lesson, ttl, decay, agent-job), agentjob_prompt.go (agent-job prompt assembly).",
-      "acceptanceCriteria": [
-        "3 files ≤300 LOC each",
-        "go test ./internal/cron/... -count=1 green",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(cron): split dispatch.go into dispatch/handlers/agentjob_prompt (US-MOD-SPLIT-10)"
-      ],
-      "priority": 14,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03."
-    },
-    {
-      "id": "US-MOD-SPLIT-09",
-      "title": "Split internal/storage/search/search.go (653 LOC → 2 files)",
-      "description": "Split types/interfaces into types.go; keep orchestration + fusion (mergeHybridResults) + helpers in search.go. mergeHybridResults stays in search.go because it's still 'orchestration of fusion' rather than 'type declaration'.",
-      "acceptanceCriteria": [
-        "2 files ≤400 LOC each",
-        "go test ./internal/storage/search/... -count=1 green",
-        ".file-size-baseline.txt updated",
-        "Single atomic commit prefix: refactor(search): extract types.go from search.go (US-MOD-SPLIT-09)"
-      ],
-      "priority": 15,
-      "passes": true,
-      "notes": "DEPENDS ON US-MOD-INFRA-03. Smallest pick in Wave B — borderline (file is just over 600). Worth doing anyway because it sets the pattern for cleanup-on-touch in this package."
+      "passes": false,
+      "notes": "PRECONDITION: DEDUP-00..03 done. CONSERVATIVE: it's better to commit 1 valid extraction than 3 hasty ones. If only 0 clusters meet all 3 gates, commit just the documentation update — story still ships as a documentation pass."
     }
   ]
 }
