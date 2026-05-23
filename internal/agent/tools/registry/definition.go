@@ -116,6 +116,13 @@ func requiredCapabilityForTool(t Tool) identity.Capability {
 	return definitionForTool(t).RequiredCapability
 }
 
+// IsDeferred reports whether this tool is excluded from the default LLM schema
+// pool and must be discovered on-demand via the tool_search tool. Equivalent
+// to checking VisibilityTier == VisibilityDeferred.
+func (d ToolDefinition) IsDeferred() bool {
+	return d.VisibilityTier == VisibilityDeferred
+}
+
 func (d ToolDefinition) LLMDefinition() llm.ToolDefinition {
 	return llm.ToolDefinition{
 		Name:        d.Name,

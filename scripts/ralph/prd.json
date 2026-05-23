@@ -18,7 +18,7 @@
         "Single atomic commit prefix: feat(agent): Deferred flag + split manifest renderer (US-DEFER-01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation story — US-DEFER-02 + 03 depend on it. Don't add deferred tools in this commit; just the infrastructure. The split renderer must be byte-identical when zero tools are deferred."
     },
     {
