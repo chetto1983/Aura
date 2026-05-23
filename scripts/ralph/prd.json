@@ -73,7 +73,7 @@
         "Single atomic commit prefix: feat(agent): tasks_completed inline state block — kill tool-repeat relapse (US-OUT-04)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "PARALLEL with US-OUT-03 (no dependency). RISK R3 mitigated by 'only when >0 tool calls'. KV-cache impact: per-iter mutation of prompt suffix — that's expected; only the prefix needs to stay stable for cache, and this goes in the suffix."
     },
     {

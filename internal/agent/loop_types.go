@@ -10,6 +10,7 @@ import (
 
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -199,6 +200,10 @@ type Stats struct {
 	// confirmed a cache hit (OpenAI: prompt_tokens_details.cached_tokens;
 	// Anthropic: cache_read_input_tokens).
 	CacheReadTokens int
+	// TurnActions accumulates per-tool-call entries for the "## Already done
+	// this turn" block injected into the system prompt on subsequent iterations
+	// (US-OUT-04). One entry per fresh executed tool call; resets per Run.
+	TurnActions []conversation.TaskEntry
 }
 
 // MaxIterationsCeiling is a hard upper bound on opts.MaxIterations.

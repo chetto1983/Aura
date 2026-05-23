@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -148,6 +147,13 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			if capsule := opts.Briefer.Brief(iterCtx, opts.BrieferRunID, toolNames, availableSet); capsule != "" {
 				messagesForModel = conversation.InjectSystemExtras(messagesForModel, capsule)
 			}
+		}
+		// US-OUT-04: inject "## Already done this turn" block when at least one
+		// tool call has been made this turn. Placed after the briefer capsule and
+		// before the step hint so the model has an at-a-glance ledger of its own
+		// actions and does not repeat queries it already tried.
+		if block := conversation.RenderAlreadyDoneBlock(stats.TurnActions); block != "" {
+			messagesForModel = conversation.InjectSystemExtras(messagesForModel, block)
 		}
 		// Step counter (US-LAT-01): inject per-iteration pacing hint into the
 		// single system message so there is exactly ONE role=system at [0].
@@ -399,6 +405,17 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			}
 			execution = disp.Wait(iterCtx)
 			stats.ToolCallsExecuted += len(freshCalls)
+			// Append fresh call outcomes to TurnActions ledger (US-OUT-04).
+			for _, call := range freshCalls {
+				if result, ok := execution.Results[call.ID]; ok {
+					stats.TurnActions = append(stats.TurnActions, conversation.TaskEntry{
+						ToolName:     call.Name,
+						ArgsSummary:  argsSummaryFor(call.Name, call.Arguments),
+						Status:       toolCallStatus(result),
+						BriefOutcome: toolCallBriefOutcome(result),
+					})
+				}
+			}
 			toolBatchElapsed := time.Since(toolBatchStart)
 			if opts.OnToolEnd != nil {
 				for _, call := range freshCalls {
@@ -574,22 +591,3 @@ func finalizeAnswerAfterBudget(ctx context.Context, client ChatClient, state Sta
 	return text, true
 }
 
-func SkillNameFromReadFileArgs(args map[string]any) string {
-	value, ok := args["path"]
-	if !ok {
-		return ""
-	}
-	path := strings.TrimSpace(fmt.Sprint(value))
-	if path == "" {
-		return ""
-	}
-	parts := strings.Split(filepath.ToSlash(path), "/")
-	if len(parts) < 2 || parts[len(parts)-1] != "SKILL.md" {
-		return ""
-	}
-	name := strings.TrimSpace(parts[len(parts)-2])
-	if name == "" || strings.EqualFold(name, "skills") {
-		return ""
-	}
-	return name
-}

@@ -1,5 +1,7 @@
 package agent
 
+import "github.com/aura/aura/internal/conversation"
+
 // TurnStats aggregates per-turn counters for structured logging and snapshot storage.
 // Channel-neutral: the Telegram channel populates channel-specific fields
 // (PromptVersion, Toolset, ToolsExposed) before calling From to merge agent loop stats.
@@ -24,6 +26,9 @@ type TurnStats struct {
 	TokensCompletion        int
 	TokensTotal             int
 	CostUSD                 float64
+	// TurnActions records per-tool-call details for the "## Already done this
+	// turn" block (US-OUT-04).
+	TurnActions []conversation.TaskEntry
 }
 
 // From populates agent-loop–tracked fields from stats, preserving caller-set metadata
@@ -43,6 +48,7 @@ func (s TurnStats) From(stats Stats) TurnStats {
 	s.TokensCompletion = stats.TokensCompletion
 	s.TokensTotal = stats.TokensTotal
 	s.CostUSD = stats.CostUSD
+	s.TurnActions = append([]conversation.TaskEntry(nil), stats.TurnActions...)
 	return s
 }
 

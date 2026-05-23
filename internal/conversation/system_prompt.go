@@ -272,3 +272,33 @@ func formatUTCOffset(offsetSec int) string {
 
 	return fmt.Sprintf("UTC%s%02d:%02d", sign, hours, minutes)
 }
+
+// TaskEntry records one tool-call observation for the "## Already done this
+// turn" context block injected by the agent loop (US-OUT-04).
+type TaskEntry struct {
+	ToolName     string
+	ArgsSummary  string // brief hint, never raw credentials
+	Status       string // e.g. "SUCCESSFUL", "SUCCESSFUL but no results", "FAILED"
+	BriefOutcome string // first ~80 chars of the result as a quick preview
+}
+
+// RenderAlreadyDoneBlock produces the per-iteration "## Already done this turn"
+// block injected into the system prompt before the step hint. Returns empty
+// string when entries is empty so callers skip injection on the first iteration.
+func RenderAlreadyDoneBlock(entries []TaskEntry) string {
+	if len(entries) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	sb.WriteString("## Already done this turn")
+	for i, e := range entries {
+		fmt.Fprintf(&sb, "\n<task_%d>\n", i+1)
+		fmt.Fprintf(&sb, "<action>%s(%s)</action>\n", e.ToolName, e.ArgsSummary)
+		fmt.Fprintf(&sb, "<result>%s</result>", e.Status)
+		if e.BriefOutcome != "" {
+			fmt.Fprintf(&sb, "\n<reasoning>%s</reasoning>", e.BriefOutcome)
+		}
+		fmt.Fprintf(&sb, "\n</task_%d>", i+1)
+	}
+	return sb.String()
+}

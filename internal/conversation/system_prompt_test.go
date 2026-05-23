@@ -174,6 +174,86 @@ func TestContextSetAgentNoteEmptyInjectsNothing(t *testing.T) {
 	}
 }
 
+// TestRenderAlreadyDoneBlock_Empty verifies that an empty entries list returns
+// an empty string so callers can cheaply skip injection on the first iteration.
+func TestRenderAlreadyDoneBlock_Empty(t *testing.T) {
+	if got := RenderAlreadyDoneBlock(nil); got != "" {
+		t.Fatalf("RenderAlreadyDoneBlock(nil) = %q, want empty", got)
+	}
+	if got := RenderAlreadyDoneBlock([]TaskEntry{}); got != "" {
+		t.Fatalf("RenderAlreadyDoneBlock([]) = %q, want empty", got)
+	}
+}
+
+// TestRenderAlreadyDoneBlock_SingleEntry verifies the XML envelope produced for
+// one tool call: header, task_1 tag, action, result, reasoning, closing tag.
+func TestRenderAlreadyDoneBlock_SingleEntry(t *testing.T) {
+	entries := []TaskEntry{
+		{
+			ToolName:     "search_memory",
+			ArgsSummary:  `"hello world"`,
+			Status:       "SUCCESSFUL but no results",
+			BriefOutcome: "No wiki pages matched",
+		},
+	}
+	got := RenderAlreadyDoneBlock(entries)
+	for _, want := range []string{
+		"## Already done this turn",
+		"<task_1>",
+		`<action>search_memory("hello world")</action>`,
+		"<result>SUCCESSFUL but no results</result>",
+		"<reasoning>No wiki pages matched</reasoning>",
+		"</task_1>",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("block missing %q:\n%s", want, got)
+		}
+	}
+}
+
+// TestRenderAlreadyDoneBlock_MultipleEntries verifies sequential task_N tags
+// for multiple tool calls.
+func TestRenderAlreadyDoneBlock_MultipleEntries(t *testing.T) {
+	entries := []TaskEntry{
+		{ToolName: "web_search", ArgsSummary: `"golang"`, Status: "SUCCESSFUL"},
+		{ToolName: "web_fetch", ArgsSummary: `"https://go.dev"`, Status: "FAILED", BriefOutcome: "Error: 404"},
+	}
+	got := RenderAlreadyDoneBlock(entries)
+	for _, want := range []string{"<task_1>", "</task_1>", "<task_2>", "</task_2>"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("block missing %q:\n%s", want, got)
+		}
+	}
+	// task_1 must appear before task_2.
+	if strings.Index(got, "<task_1>") > strings.Index(got, "<task_2>") {
+		t.Errorf("task order wrong:\n%s", got)
+	}
+}
+
+// TestRenderAlreadyDoneBlock_EmptyBriefOutcome verifies that the reasoning
+// line is omitted when BriefOutcome is empty.
+func TestRenderAlreadyDoneBlock_EmptyBriefOutcome(t *testing.T) {
+	entries := []TaskEntry{
+		{ToolName: "search_memory", ArgsSummary: `"X"`, Status: "SUCCESSFUL"},
+	}
+	got := RenderAlreadyDoneBlock(entries)
+	if strings.Contains(got, "<reasoning>") {
+		t.Errorf("block should NOT contain reasoning when BriefOutcome is empty:\n%s", got)
+	}
+}
+
+// TestRenderAlreadyDoneBlock_MarkerPresence verifies the block is recognized as
+// a structured section (not arbitrary content) by checking the header literal.
+func TestRenderAlreadyDoneBlock_MarkerPresence(t *testing.T) {
+	entries := []TaskEntry{
+		{ToolName: "web_search", ArgsSummary: `"test"`, Status: "SUCCESSFUL"},
+	}
+	got := RenderAlreadyDoneBlock(entries)
+	if !strings.HasPrefix(got, "## Already done this turn") {
+		t.Errorf("block must start with header, got:\n%s", got)
+	}
+}
+
 // TestInjectSystemExtras verifies that per-turn extras (briefer capsule, step
 // hint) are merged into the existing system message at [0] rather than
 // prepended as new role=system messages. Exactly ONE system message must exist
