@@ -139,7 +139,12 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 
 		stats.LLMCalls++
 		stats.LoopSteps++
-		messagesForModel := governance.Apply(state.Messages(), opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
+		// US-OUT-06: scrub orphan/missing tool results before each LLM call to
+		// prevent provider 400 errors on malformed history (SQLite WAL recovery,
+		// ask_user interruption, etc.). governance.Apply chains the remaining
+		// transforms (microcompact, truncate) on the already-clean slice.
+		rawHistory := governance.ScrubOrphanToolCalls(state.Messages())
+		messagesForModel := governance.Apply(rawHistory, opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
 		if opts.Briefer != nil && len(toolDefs) > 0 {
 			availableSet := make(map[string]struct{}, len(toolDefs))
 			toolNames := make([]string, 0, len(toolDefs))

@@ -111,7 +111,7 @@
         "Single atomic commit prefix: feat(agent): orphan tool_call backfill + skip empty-assistant on persist (US-OUT-06)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-OUT-01..05 being stable. RISK R4: silent history mutation — every change logged for visibility. Last story in the output-discipline group; budget stories follow."
     },
     {

@@ -219,6 +219,64 @@ func TestArchiveStore_ToolCallID_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestArchiveStore_Append_SkipsEmptyAssistant verifies that an assistant turn
+// with no content and no tool_calls is silently discarded and never written
+// to the conversations table (US-OUT-06).
+func TestArchiveStore_Append_SkipsEmptyAssistant(t *testing.T) {
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	emptyAssistant := conversation.Turn{
+		ChatID: 99, UserID: 5, TurnIndex: 0,
+		Role:      "assistant",
+		Content:   "",
+		ToolCalls: "",
+	}
+	if err := store.Append(context.Background(), emptyAssistant); err != nil {
+		t.Fatalf("Append returned unexpected error: %v", err)
+	}
+
+	got, err := store.ListByChat(context.Background(), 99, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("want 0 rows (empty assistant skipped), got %d: %+v", len(got), got)
+	}
+}
+
+// TestArchiveStore_Append_PreservesAssistantWithToolCalls ensures an assistant
+// turn that has tool_calls JSON (but no text content) is NOT skipped — it
+// carries tool invocation state that the history needs.
+func TestArchiveStore_Append_PreservesAssistantWithToolCalls(t *testing.T) {
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	turn := conversation.Turn{
+		ChatID: 88, UserID: 2, TurnIndex: 0,
+		Role:      "assistant",
+		Content:   "",
+		ToolCalls: `[{"id":"tc1","name":"file","arguments":{}}]`,
+	}
+	if err := store.Append(context.Background(), turn); err != nil {
+		t.Fatalf("Append returned unexpected error: %v", err)
+	}
+
+	got, err := store.ListByChat(context.Background(), 88, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("want 1 row (assistant with tool_calls preserved), got %d", len(got))
+	}
+}
+
 // TestArchiveStore_Get_Found verifies Get happy path and non-zero CreatedAt.
 func TestArchiveStore_Get_Found(t *testing.T) {
 	db := testutil.OpenTestDB(t, migrations.Run)

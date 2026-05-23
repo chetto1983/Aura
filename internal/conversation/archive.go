@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,8 +106,18 @@ func NewArchiveStore(db *sql.DB) (*ArchiveStore, error) {
 }
 
 // Append inserts a single Turn. Returns ErrDuplicateTurn if a row with the
-// same (chat_id, turn_index) already exists.
+// same (chat_id, turn_index) already exists. Empty assistant messages (no
+// content, no tool_calls) are silently skipped — they are semantically empty
+// and would poison subsequent provider API calls if replayed.
 func (s *ArchiveStore) Append(ctx context.Context, t Turn) error {
+	if t.Role == "assistant" && strings.TrimSpace(t.Content) == "" && t.ToolCalls == "" {
+		slog.Default().Warn("archive: skip_empty_assistant_turn",
+			"chat_id", t.ChatID,
+			"turn_index", t.TurnIndex,
+		)
+		return nil
+	}
+
 	const q = `
 		INSERT INTO conversations
 			(chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
