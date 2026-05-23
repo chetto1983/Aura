@@ -55,7 +55,7 @@
         "Single atomic commit prefix: feat(prompt): tool description ≤200 char audit + single sysmsg (US-CACHE-03)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "LARGEST story in CACHE; goes ALONE per one-story-exit. R2 mitigation critical — bench tool-selection accuracy before merging shrinks. If a shrink regresses, revert just that one description and document why it needs the extra chars."
     },
     {

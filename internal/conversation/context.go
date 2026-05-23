@@ -286,23 +286,24 @@ func (c *Context) LatestUserMessageText() string {
 	return ""
 }
 
-// Messages returns the current message list, prepending the summary if one exists.
+// Messages returns the current message list. When a rolling summary exists it is
+// folded into the system message at [0] (appended after a blank line) so the
+// LLM sees exactly ONE role=system message per turn — a requirement for maximum
+// prompt-cache hit rate (InjectSystemExtras / picobot §3).
 func (c *Context) Messages() []llm.Message {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.summary == "" {
 		return c.messages
 	}
-	summaryMsg := llm.Message{Role: "system", Content: "Summary of earlier conversation:\n" + c.summary}
-	// Replace the system message if one exists, otherwise prepend
+	summaryText := "Summary of earlier conversation:\n" + c.summary
 	if len(c.messages) > 0 && c.messages[0].Role == "system" {
-		result := make([]llm.Message, 0, len(c.messages)+1)
-		result = append(result, c.messages[0])
-		result = append(result, summaryMsg)
-		result = append(result, c.messages[1:]...)
+		result := make([]llm.Message, len(c.messages))
+		copy(result, c.messages)
+		result[0].Content += "\n\n" + summaryText
 		return result
 	}
-	return append([]llm.Message{summaryMsg}, c.messages...)
+	return append([]llm.Message{{Role: "system", Content: summaryText}}, c.messages...)
 }
 
 // EstimatedTokens returns a rough token estimate (4 chars per token).

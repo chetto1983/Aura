@@ -146,13 +146,13 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				toolNames = append(toolNames, t.Name)
 			}
 			if capsule := opts.Briefer.Brief(iterCtx, opts.BrieferRunID, toolNames, availableSet); capsule != "" {
-				messagesForModel = append([]llm.Message{{Role: "system", Content: capsule}}, messagesForModel...)
+				messagesForModel = conversation.InjectSystemExtras(messagesForModel, capsule)
 			}
 		}
-		// Step counter (US-LAT-01): inject per-iteration pacing hint so the
-		// model sees its progress and self-terminates early on simple queries.
+		// Step counter (US-LAT-01): inject per-iteration pacing hint into the
+		// single system message so there is exactly ONE role=system at [0].
 		if hint := conversation.RenderStepHint(iteration+1, opts.MaxIterations); hint != "" {
-			messagesForModel = append([]llm.Message{{Role: "system", Content: hint}}, messagesForModel...)
+			messagesForModel = conversation.InjectSystemExtras(messagesForModel, hint)
 		}
 		if opts.OnLLMStart != nil {
 			opts.OnLLMStart(iteration, len(messagesForModel), len(toolDefs))

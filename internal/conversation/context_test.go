@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
@@ -223,11 +224,10 @@ func TestMessagesWithSummary(t *testing.T) {
 		t.Fatalf("Messages() without summary = %d, want 1", len(msgs))
 	}
 
-	// Simulate having a summary
+	// No prior system message: summary appears as standalone system[0].
 	ctx.summary = "Previous conversation was about greetings."
 	msgs = ctx.Messages()
 
-	// Should include summary as a system message
 	hasSummary := false
 	for _, m := range msgs {
 		if m.Role == "system" && m.Content == "Summary of earlier conversation:\nPrevious conversation was about greetings." {
@@ -235,7 +235,67 @@ func TestMessagesWithSummary(t *testing.T) {
 		}
 	}
 	if !hasSummary {
-		t.Error("Messages() should include summary system message")
+		t.Error("Messages() should include summary system message when no prior system exists")
+	}
+
+	// Single-sysmsg invariant: exactly one role=system in the output.
+	systemCount := 0
+	for _, m := range msgs {
+		if m.Role == "system" {
+			systemCount++
+		}
+	}
+	if systemCount != 1 {
+		t.Errorf("Messages() with summary emitted %d system messages, want exactly 1", systemCount)
+	}
+}
+
+// TestMessagesWithSummaryFoldsIntoExistingSystem verifies that when a system
+// message already exists at [0], the rolling summary is appended to it (not
+// inserted as a second system message) so the single-sysmsg invariant holds.
+func TestMessagesWithSummaryFoldsIntoExistingSystem(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 4000, Logger: slog.Default()})
+	ctx.SetSystemMessage("base prompt")
+	ctx.AddUserMessage("Hello")
+
+	ctx.summary = "Prior turn context."
+	msgs := ctx.Messages()
+
+	// Exactly one system message.
+	var sysMsgs []llm.Message
+	for _, m := range msgs {
+		if m.Role == "system" {
+			sysMsgs = append(sysMsgs, m)
+		}
+	}
+	if len(sysMsgs) != 1 {
+		t.Fatalf("want exactly 1 system message, got %d: %+v", len(sysMsgs), sysMsgs)
+	}
+
+	// System[0] must contain both the base prompt and the summary.
+	content := sysMsgs[0].Content
+	if !strings.Contains(content, "base prompt") {
+		t.Errorf("system[0] missing base prompt: %q", content)
+	}
+	if !strings.Contains(content, "Prior turn context.") {
+		t.Errorf("system[0] missing summary text: %q", content)
+	}
+	// Summary must appear AFTER the base prompt.
+	baseIdx := strings.Index(content, "base prompt")
+	summaryIdx := strings.Index(content, "Prior turn context.")
+	if summaryIdx < baseIdx {
+		t.Errorf("summary appears before base prompt: baseIdx=%d summaryIdx=%d", baseIdx, summaryIdx)
+	}
+
+	// The base context must not be mutated.
+	rawMsgs := ctx.Messages()
+	for _, m := range rawMsgs {
+		if m.Role == "system" && strings.Contains(m.Content, "Prior turn context.") {
+			// Verify the content still includes the base — both must be present.
+			if !strings.Contains(m.Content, "base prompt") {
+				t.Errorf("re-read system message inconsistent: %q", m.Content)
+			}
+		}
 	}
 }
 

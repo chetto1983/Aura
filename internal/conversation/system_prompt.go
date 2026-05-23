@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/aura/aura/internal/llm"
 )
 
 const defaultSystemPrompt = `You are Aura, a self-hosted second brain assistant for one primary user.
@@ -225,6 +227,38 @@ func InjectWikiTOC(content, toc string) string {
 		return content
 	}
 	return content + "\n\n--- WIKI TOC START ---\n" + strings.TrimRight(toc, "\n") + "\n--- WIKI TOC END ---"
+}
+
+// InjectSystemExtras appends each non-empty extra string to the system message
+// at messages[0], separated by a blank line. If no system message exists at [0],
+// a new one is prepended. Callers use this to merge briefer capsules, step hints,
+// and summaries into a single system message for maximum prompt-cache hit rate
+// (picobot §3: stable prefix = base + overlay + per-turn extras in that order).
+//
+// The returned slice is always a fresh allocation so the input is never mutated.
+func InjectSystemExtras(msgs []llm.Message, extras ...string) []llm.Message {
+	var sb strings.Builder
+	for _, s := range extras {
+		s = strings.TrimSpace(s)
+		if s == "" {
+			continue
+		}
+		if sb.Len() > 0 {
+			sb.WriteString("\n\n")
+		}
+		sb.WriteString(s)
+	}
+	extra := sb.String()
+	if extra == "" {
+		return msgs
+	}
+	if len(msgs) > 0 && msgs[0].Role == "system" {
+		out := make([]llm.Message, len(msgs))
+		copy(out, msgs)
+		out[0].Content += "\n\n" + extra
+		return out
+	}
+	return append([]llm.Message{{Role: "system", Content: extra}}, msgs...)
 }
 
 func formatUTCOffset(offsetSec int) string {

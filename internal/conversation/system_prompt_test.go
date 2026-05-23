@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/aura/aura/internal/llm"
 )
 
 func TestRenderRuntimeContextUsesExactOffset(t *testing.T) {
@@ -168,5 +170,71 @@ func TestContextSetAgentNoteEmptyInjectsNothing(t *testing.T) {
 	}
 	if content != "base prompt" {
 		t.Fatalf("system message changed unexpectedly: %q", content)
+	}
+}
+
+// TestInjectSystemExtras verifies that per-turn extras (briefer capsule, step
+// hint) are merged into the existing system message at [0] rather than
+// prepended as new role=system messages. Exactly ONE system message must exist
+// after each InjectSystemExtras call — the picobot §3 single-sysmsg invariant.
+func TestInjectSystemExtras(t *testing.T) {
+	base := []llm.Message{
+		{Role: "system", Content: "base prompt"},
+		{Role: "user", Content: "hello"},
+	}
+
+	// Single extra appended to existing system[0].
+	got := InjectSystemExtras(base, "capsule")
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (no new messages added)", len(got))
+	}
+	if got[0].Role != "system" {
+		t.Fatalf("got[0].Role = %q, want system", got[0].Role)
+	}
+	if !strings.Contains(got[0].Content, "base prompt") {
+		t.Errorf("system[0] missing base prompt: %q", got[0].Content)
+	}
+	if !strings.Contains(got[0].Content, "capsule") {
+		t.Errorf("system[0] missing capsule extra: %q", got[0].Content)
+	}
+
+	// Multiple extras joined in order.
+	got2 := InjectSystemExtras(base, "hint-A", "hint-B")
+	combined := got2[0].Content
+	aIdx := strings.Index(combined, "hint-A")
+	bIdx := strings.Index(combined, "hint-B")
+	if aIdx < 0 || bIdx < 0 || aIdx > bIdx {
+		t.Errorf("extras out of order in system[0]: %q", combined)
+	}
+
+	// Empty extras → input returned unchanged.
+	same := InjectSystemExtras(base, "", "   ")
+	if same[0].Content != "base prompt" {
+		t.Errorf("empty extras mutated system[0]: %q", same[0].Content)
+	}
+
+	// No prior system message → new system[0] created, original messages shifted.
+	noneBase := []llm.Message{{Role: "user", Content: "hi"}}
+	got3 := InjectSystemExtras(noneBase, "extra")
+	if len(got3) != 2 {
+		t.Fatalf("len = %d, want 2 (new system + user)", len(got3))
+	}
+	if got3[0].Role != "system" || got3[0].Content != "extra" {
+		t.Errorf("new system[0] = %+v, want {system, extra}", got3[0])
+	}
+	if got3[1].Role != "user" {
+		t.Errorf("got3[1] = %+v, want user", got3[1])
+	}
+
+	// Input slice is not mutated (safe for shared state).
+	if base[0].Content != "base prompt" {
+		t.Errorf("InjectSystemExtras mutated input: base[0].Content = %q", base[0].Content)
+	}
+
+	// After injection, exactly ONE system message in the output.
+	for i, m := range got {
+		if i > 0 && m.Role == "system" {
+			t.Errorf("extra system message at index %d: %+v", i, m)
+		}
 	}
 }
