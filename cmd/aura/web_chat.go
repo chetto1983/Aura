@@ -170,7 +170,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		logger = slog.Default()
 	}
 	inv := agent.Invocation{
-		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort),
+		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort, msg.ThreadID),
 		Executor: &webToolExecutor{
 			tools:                 deps.Tools,
 			state:                 state,

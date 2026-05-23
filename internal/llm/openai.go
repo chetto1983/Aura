@@ -60,6 +60,7 @@ type chatRequest struct {
 	Tools           []toolWrapper      `json:"tools,omitempty"`
 	ReasoningEffort string             `json:"reasoning_effort,omitempty"`
 	Reasoning       *reasoningJSON     `json:"reasoning,omitempty"`
+	PromptCacheKey  string             `json:"prompt_cache_key,omitempty"`
 }
 
 // applyReasoning fills both wire shapes from a single user-facing value.
@@ -347,9 +348,10 @@ func (c *OpenAIClient) Send(ctx context.Context, req Request) (Response, error) 
 		msgs = injectCacheControl(msgs)
 	}
 	chatReq := chatRequest{
-		Model:       model,
-		Temperature: req.Temperature,
-		Messages:    msgs,
+		Model:          model,
+		Temperature:    req.Temperature,
+		Messages:       msgs,
+		PromptCacheKey: req.PromptCacheKey,
 	}
 	applyReasoning(&chatReq, req.ReasoningEffort)
 	chatReq.Tools = convertToolDefinitions(req.Tools)
@@ -387,11 +389,12 @@ func (c *OpenAIClient) Stream(ctx context.Context, req Request) (<-chan Token, e
 		msgs = injectCacheControl(msgs)
 	}
 	chatReq := chatRequest{
-		Model:         model,
-		Temperature:   req.Temperature,
-		Stream:        true,
-		StreamOptions: &streamOptionsJSON{IncludeUsage: true},
-		Messages:      msgs,
+		Model:          model,
+		Temperature:    req.Temperature,
+		Stream:         true,
+		StreamOptions:  &streamOptionsJSON{IncludeUsage: true},
+		Messages:       msgs,
+		PromptCacheKey: req.PromptCacheKey,
 	}
 	applyReasoning(&chatReq, req.ReasoningEffort)
 	chatReq.Tools = convertToolDefinitions(req.Tools)

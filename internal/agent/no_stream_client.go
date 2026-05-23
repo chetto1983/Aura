@@ -15,16 +15,20 @@ type noStreamClient struct {
 	model           string
 	temperature     *float64
 	reasoningEffort string
+	promptCacheKey  string
 }
 
 // NewNoStreamClient returns a ChatClient that delegates each Chat call to
 // llm.Client.Send with the given per-run parameters.
-func NewNoStreamClient(client llm.Client, model string, temperature *float64, reasoningEffort string) ChatClient {
+// promptCacheKey, when non-empty, is forwarded as prompt_cache_key on every
+// LLM request so providers can reuse the KV-cached static prefix across turns.
+func NewNoStreamClient(client llm.Client, model string, temperature *float64, reasoningEffort string, promptCacheKey string) ChatClient {
 	return &noStreamClient{
 		client:          client,
 		model:           model,
 		temperature:     temperature,
 		reasoningEffort: reasoningEffort,
+		promptCacheKey:  promptCacheKey,
 	}
 }
 
@@ -35,6 +39,7 @@ func (c *noStreamClient) Chat(ctx context.Context, messages []llm.Message, toolD
 		Temperature:     c.temperature,
 		Tools:           toolDefs,
 		ReasoningEffort: c.reasoningEffort,
+		PromptCacheKey:  c.promptCacheKey,
 	})
 	return ChatResponse{Response: resp, Delivered: false}, err
 }

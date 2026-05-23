@@ -616,6 +616,91 @@ func TestOpenAIClientSendOmitsReasoningTokensWhenAbsent(t *testing.T) {
 // the top-level reasoning_effort string (OpenAI o-series / gpt-5*) and
 // the nested reasoning object (OpenRouter / DeepSeek V4 Flash / Anthropic
 // passthroughs). Providers without reasoning support ignore unknown fields.
+// TestPromptCacheKeySerialization verifies that a non-empty PromptCacheKey on
+// the Request is forwarded as "prompt_cache_key" in the JSON body for both
+// Send and Stream, and that an empty key produces no field in the body.
+func TestPromptCacheKeySerialization(t *testing.T) {
+	cases := []struct {
+		name           string
+		promptCacheKey string
+		wantPresent    bool
+	}{
+		{name: "non-empty key forwarded", promptCacheKey: "thread-abc123", wantPresent: true},
+		{name: "empty key omitted", promptCacheKey: "", wantPresent: false},
+	}
+
+	for _, tc := range cases {
+		t.Run("Send/"+tc.name, func(t *testing.T) {
+			var body []byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ = io.ReadAll(r.Body)
+				_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}],"usage":{"total_tokens":1}}`))
+			}))
+			defer server.Close()
+
+			client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "test"})
+			_, err := client.Send(context.Background(), Request{
+				Messages:       []Message{{Role: "user", Content: "hi"}},
+				PromptCacheKey: tc.promptCacheKey,
+			})
+			if err != nil {
+				t.Fatalf("Send error: %v", err)
+			}
+			var parsed map[string]any
+			if err := json.Unmarshal(body, &parsed); err != nil {
+				t.Fatalf("body not JSON: %v\n%s", err, body)
+			}
+			got, present := parsed["prompt_cache_key"].(string)
+			if present != tc.wantPresent {
+				t.Errorf("prompt_cache_key present = %t, want %t\nbody=%s", present, tc.wantPresent, body)
+			}
+			if tc.wantPresent && got != tc.promptCacheKey {
+				t.Errorf("prompt_cache_key = %q, want %q\nbody=%s", got, tc.promptCacheKey, body)
+			}
+		})
+
+		t.Run("Stream/"+tc.name, func(t *testing.T) {
+			var body []byte
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ = io.ReadAll(r.Body)
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.WriteHeader(http.StatusOK)
+				flusher, _ := w.(http.Flusher)
+				_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\n"))
+				flusher.Flush()
+				_, _ = w.Write([]byte("data: [DONE]\n\n"))
+				flusher.Flush()
+			}))
+			defer server.Close()
+
+			client := NewOpenAIClient(OpenAIConfig{APIKey: "k", BaseURL: server.URL, Model: "test"})
+			ch, err := client.Stream(context.Background(), Request{
+				Messages:       []Message{{Role: "user", Content: "hi"}},
+				PromptCacheKey: tc.promptCacheKey,
+			})
+			if err != nil {
+				t.Fatalf("Stream error: %v", err)
+			}
+			for tok := range ch {
+				if tok.Done {
+					break
+				}
+			}
+			var parsed map[string]any
+			if err := json.Unmarshal(body, &parsed); err != nil {
+				t.Fatalf("body not JSON: %v\n%s", err, body)
+			}
+			got, present := parsed["prompt_cache_key"].(string)
+			if present != tc.wantPresent {
+				t.Errorf("prompt_cache_key present = %t, want %t\nbody=%s", present, tc.wantPresent, body)
+			}
+			if tc.wantPresent && got != tc.promptCacheKey {
+				t.Errorf("prompt_cache_key = %q, want %q\nbody=%s", got, tc.promptCacheKey, body)
+			}
+		})
+	}
+}
+
 func TestOpenAIClientSendReasoningWireFormat(t *testing.T) {
 	cases := []struct {
 		name        string

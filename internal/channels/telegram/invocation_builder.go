@@ -256,7 +256,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		ib.outbound.SetTTS(b.TTSClient())
 		ib.outbound.SetVoicePolicy(b.VoicePolicy())
 	}
-	chatClient := newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, ib.outbound, c, userID, placeholder, pane)
+	chatClient := newStreamingChatClient(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, msg.ThreadID, ib.outbound, c, userID, placeholder, pane)
 
 	maxIterations := ib.maxToolLoopIterations()
 	// No hardcoded per-tool caps — DuplicatePolicy alone protects against

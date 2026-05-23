@@ -25,6 +25,15 @@ type Request struct {
 	// flag and also accepts the nested `reasoning: {effort: "..."}` object.
 	// The openai.go transport emits BOTH so the request is portable.
 	ReasoningEffort string
+
+	// PromptCacheKey, when non-empty, is forwarded as the prompt_cache_key
+	// field in the OpenAI-compatible request body. DeepSeek V4 Flash and
+	// compatible providers use this as a stable KV-cache key so the static
+	// system-prompt prefix is reused across turns on the same thread.
+	// Providers that do not recognise the field silently ignore it.
+	// Anthropic-native adapters (future) will translate this to
+	// cache_control: ephemeral breakpoints instead.
+	PromptCacheKey string
 }
 
 // Message represents a single message in a conversation.
