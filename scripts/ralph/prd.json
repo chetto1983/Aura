@@ -37,7 +37,7 @@
         "Single atomic commit prefix: feat(agent): spill-to-disk + reference envelope for oversize tool output (US-OUT-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-OUT-01 (truncate is still the floor when spill is unavailable). RISK R1: LRU sweep tested under concurrent session activity — write the sweeper test FIRST per plan.md."
     },
     {

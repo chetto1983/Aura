@@ -67,6 +67,10 @@ type RunTaskDeps struct {
 	// TokenJuiceEnabled activates rule-driven tool-output compaction before
 	// the result enters the LLM conversation window.
 	TokenJuiceEnabled bool
+	// SpillDir is the runtime-workspace base directory for spilled tool results
+	// (US-OUT-02). Empty string disables spill; routing falls back to inline
+	// truncation.
+	SpillDir string
 	// Per-call limits — read once at RunTask entry; runtime changes apply
 	// to the NEXT call, never to a call already in flight.
 	MaxIterations int

@@ -31,6 +31,10 @@ type agentExecutor struct {
 	toolTimeout       time.Duration
 	repo              attempts.Repo // Phase-6 US-J03: synchronous observation persistence; nil = disabled
 	tokenJuiceEnabled bool
+	// spillDir is the runtime-workspace base directory for spilled tool results
+	// (US-OUT-02). Empty string disables spill; routing falls back to inline
+	// truncation via limitToolContent.
+	spillDir string
 }
 
 var _ ToolExecutor = (*agentExecutor)(nil)
@@ -46,6 +50,7 @@ func newAgentExecutor(
 	toolTimeout time.Duration,
 	repo attempts.Repo,
 	tokenJuiceEnabled bool,
+	spillDir string,
 ) *agentExecutor {
 	return &agentExecutor{
 		tools:             reg,
@@ -58,6 +63,7 @@ func newAgentExecutor(
 		toolTimeout:       toolTimeout,
 		repo:              repo,
 		tokenJuiceEnabled: tokenJuiceEnabled,
+		spillDir:          spillDir,
 	}
 }
 
@@ -96,6 +102,19 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 				raw = CompactToolOutput(e.logger, call.Name, call.Arguments, raw)
 			}
 			wrapped := WrapUntrustedToolResult(call.Name, raw)
+			// Route to spill when payload exceeds SpillThresholdBytes and a
+			// spill directory is configured (US-OUT-02). Falls back to inline
+			// truncation when spill is disabled or the write fails.
+			if e.spillDir != "" && len(wrapped) > tools.SpillThresholdBytes {
+				sessionID := e.runID
+				if sessionID == "" {
+					sessionID = e.userID
+				}
+				if envelope, spillErr := tools.SpillOutput(e.spillDir, sessionID, call.ID, wrapped); spillErr == nil {
+					outcomes[i] = toolOutcome{id: call.ID, content: envelope}
+					return
+				}
+			}
 			outcomes[i] = toolOutcome{id: call.ID, content: limitToolContent(wrapped, e.maxChars)}
 		}(i, callCopy)
 	}

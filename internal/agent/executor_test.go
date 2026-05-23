@@ -50,7 +50,7 @@ func TestExecutorRecordsAttemptOnToolError(t *testing.T) {
 	reg.Register(&fakeTool{name: "web_fetch", err: errors.New("i/o error: connection refused")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo, false)
+	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo, false, "")
 
 	calls := []llm.ToolCall{{ID: "call_err", Name: "web_fetch", Arguments: map[string]any{"url": "http://example.com"}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -92,7 +92,7 @@ func TestExecutorRecordsAttemptOnSuccess(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found it"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo, false)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo, false, "")
 
 	calls := []llm.ToolCall{{ID: "call_ok", Name: "lookup", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -121,7 +121,7 @@ func TestExecutorMCPToolKindPersisted(t *testing.T) {
 	reg.Register(&fakeTool{name: "mcp_test_echo", err: errors.New("server unavailable")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo, false)
+	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo, false, "")
 
 	calls := []llm.ToolCall{{ID: "call_mcp", Name: "mcp_test_echo", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -144,7 +144,7 @@ func TestExecutorNilRepoSkipsSilently(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "ok"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil, false)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil, false, "")
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -161,7 +161,7 @@ func TestExecutorRecordFailureDoesNotPropagateToResult(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{}, false)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{}, false, "")
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -183,7 +183,7 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 
 	// flag=true: aura/file-read rule fires → output <500 chars, no "content": field
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true)
+	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true, "")
 	exec.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
 
 	var toolMsg *llm.Message
@@ -205,7 +205,7 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 
 	// flag=false: raw output passes through unchanged (~5 KB)
 	state2 := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false)
+	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false, "")
 	exec2.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
 
 	for i := range state2.messages {
