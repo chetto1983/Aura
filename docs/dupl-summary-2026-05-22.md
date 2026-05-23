@@ -94,7 +94,13 @@ Debug harness duplication — lower priority (not production serving path), incl
 |-------|----------------|--------------------------|
 | DEDUP-01 | registry#1 + registry#2 (files_docx/pdf/xlsx) | ~411 |
 | DEDUP-02 | config/store.go GetInt/GetFloat/GetBool (score ~22, not in top 20) | ~22 |
-| DEDUP-03 | 3-way agent-job spec (not detected — may have been resolved by Wave A splits) | ~0-40 |
+| DEDUP-03 | 3-way agent-job spec (confirmed dissolved by Wave A splits — no jobspec.go needed) | 0 |
 | DEDUP-04 | registry#3 + api#1 + api#2 + telegram#1 (recall / setup_locale / mcp_setup / documents) | ~280 |
 
-**Note**: DEDUP-03's original 3-way cluster (`swarm/tools.go:516`, `cron/agent_job.go:165`, `swarm/store.go:436`) does **not appear** in the fresh report — the Wave A splits likely dissolved it. DEDUP-03 should verify this and close with a documentation note if confirmed resolved.
+**Note (DEDUP-03 — verified 2026-05-23)**: The original 3-way cluster (`swarm/tools.go:516-528`, `cron/agent_job.go:165-177`, `swarm/store.go:436-448`) is **confirmed dissolved** by Wave A splits. Evidence:
+- `internal/swarm/store.go` ends at line 435 — the original cluster range 436-448 no longer exists.
+- `internal/cron/agent_job.go:165-177` now contains `fallbackAgentJobTools` / `containsString` helpers (different code).
+- `internal/agent/tools/swarm/tools.go:516-528` now contains `workerRolesForPolicy` / `defaultDelegationRoles` (different code).
+- `dupl -t 60 internal/ cmd/` reports 0 matches involving any of these three files.
+- `go test ./internal/swarm/... ./internal/cron/... ./internal/agent/tools/swarm/...` all green.
+No `internal/swarm/jobspec.go` is needed — the dedup goal is already achieved.
