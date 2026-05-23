@@ -14,6 +14,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -152,9 +153,7 @@ func lifecyclePayload(run *Run, ev OutboundEvent) map[string]any {
 	case EventQuestionAnswered:
 		copyPayloadKeys(payload, ev.Payload, "question_id", "answered_message_id", "selected_option_count", "has_free_text", "redaction_level")
 	case EventUsage:
-		for k, v := range durableStats(ev.Payload) {
-			payload[k] = v
-		}
+		maps.Copy(payload, durableStats(ev.Payload))
 	case EventMessageDone:
 		copyPayloadKeys(payload, ev.Payload, "delivered")
 		if preview := textPreview(ev.Content); preview != "" {
@@ -253,6 +252,7 @@ func durableStats(payload map[string]any) map[string]any {
 		"tokens_total",
 		"cost_usd",
 		"terminal_tool",
+		"stop_reason",
 	)
 	return stats
 }

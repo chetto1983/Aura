@@ -153,7 +153,7 @@
         "Single atomic commit prefix: feat(agent): OR-of-four budget guard (iter + tokens + wall-clock + cost) (US-OUT-08)"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-OUT-07 for the BudgetExhausted shape (stop_reason classification reuses it). RISK R6: cost-budget requires accurate per-iter cost — fallback to other signals on missing UsageInfo."
     },
     {

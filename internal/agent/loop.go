@@ -40,6 +40,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 	if opts.MaxElapsed <= 0 {
 		opts.MaxElapsed = DefaultMaxElapsed
 	}
+	applyBudgetDefaults(&opts)
 	start := time.Now()
 	var lastToolResult string
 	var stats Stats
@@ -76,11 +77,17 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 	}()
 
 	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
+		// OR-of-four guard (US-OUT-08): iter at loop boundary; token/wall-clock/cost below.
+		if checkTokenBudget(&stats, opts, logger, iteration) {
+			if iterCancel != nil { iterCancel(); iterCancel = nil }
+			return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
+		}
+		// Signal 3: wall-clock.
 		remaining := opts.MaxElapsed - time.Since(start)
 		if remaining <= 0 {
 			stats.MaxElapsedHit = true
-			stats.StopReason = "max_elapsed_hit"
-			logger.Warn("agent: max_elapsed_hit", "iteration", iteration, "elapsed_ms", time.Since(start).Milliseconds(), "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
+			stats.StopReason = governance.StopReasonWallClock
+			logger.Warn("agent: wall_clock_exceeded", "iteration", iteration, "elapsed_ms", time.Since(start).Milliseconds(), "max_elapsed_ms", opts.MaxElapsed.Milliseconds())
 			if iterCancel != nil {
 				iterCancel()
 				iterCancel = nil
@@ -95,6 +102,10 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		if finalizing && opts.CompleteOnDeadline && opts.FinalizationTimeout > 0 {
 			iterCancel()
 			iterCtx, iterCancel = context.WithTimeout(ctx, opts.FinalizationTimeout)
+		}
+		if checkCostBudget(&stats, opts, logger, iteration) {
+			if iterCancel != nil { iterCancel(); iterCancel = nil }
+			return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 		}
 		if opts.BeforeLLM != nil {
 			if message, stop := opts.BeforeLLM(); stop {
@@ -256,7 +267,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 					iterCancel()
 					return loopResult{Text: lastToolResult, Stats: stats}, nil
 				}
-				stats.StopReason = "empty_llm_response"
+				stats.StopReason = governance.StopReasonEmptyResponse
 				iterCancel()
 				return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 			}
@@ -571,7 +582,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 	}
 
 	stats.MaxIterationsHit = true
-	stats.StopReason = "max_iterations_hit"
+	stats.StopReason = governance.StopReasonMaxIterations
 	logger.Warn("agent: max_iterations_hit", "iterations", opts.MaxIterations, "elapsed_ms", time.Since(start).Milliseconds(), "tools_called", len(stats.ToolsCalled))
 	if iterCancel != nil {
 		iterCancel()

@@ -1227,3 +1227,147 @@ func TestRunLoopTurnActionsAccumulateAcrossIterations(t *testing.T) {
 		t.Fatalf("executor called %d times, want 2", callN)
 	}
 }
+
+// TestOrOfFourTokenBudgetExceededStopReason verifies US-OUT-08 signal 2:
+// when cumulative token usage exceeds MaxTokens, stop_reason is token_budget_exceeded
+// and the second LLM call is never made.
+func TestOrOfFourTokenBudgetExceededStopReason(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{
+			HasToolCalls: true,
+			ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "search_memory"}},
+			Usage:        llm.TokenUsage{TotalTokens: 600_000},
+		}},
+		{Response: llm.Response{Content: "should not be reached"}},
+	}}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "ok")
+		}
+		return ExecutionSummary{LastResult: "ok"}
+	}), state, Options{MaxIterations: 10, MaxTokens: 500_000})
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Stats.StopReason != "token_budget_exceeded" {
+		t.Errorf("StopReason = %q, want token_budget_exceeded", result.Stats.StopReason)
+	}
+	if client.requests != 1 {
+		t.Errorf("LLM requests = %d, want 1 (second call must not fire)", client.requests)
+	}
+}
+
+// TestOrOfFourWallClockStopReason verifies US-OUT-08 signal 3:
+// the stop_reason string is "wall_clock_exceeded" (renamed from max_elapsed_hit).
+func TestOrOfFourWallClockStopReason(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "c1", Name: "search_memory"}}}},
+		{Response: llm.Response{Content: "too late"}},
+	}}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "partial")
+		}
+		time.Sleep(5 * time.Millisecond)
+		return ExecutionSummary{LastResult: "partial"}
+	}), state, Options{MaxIterations: 3, MaxElapsed: time.Millisecond})
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Stats.StopReason != "wall_clock_exceeded" {
+		t.Errorf("StopReason = %q, want wall_clock_exceeded", result.Stats.StopReason)
+	}
+	if !result.Stats.MaxElapsedHit {
+		t.Error("MaxElapsedHit = false, want true")
+	}
+}
+
+// TestOrOfFourCostBudgetExceededStopReason verifies US-OUT-08 signal 4:
+// when estimated cost exceeds MaxCostUSD, stop_reason is cost_budget_exceeded.
+func TestOrOfFourCostBudgetExceededStopReason(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{
+			HasToolCalls: true,
+			ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "search_memory"}},
+			Usage:        llm.TokenUsage{TotalTokens: 100},
+		}},
+		{Response: llm.Response{Content: "should not be reached"}},
+	}}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "ok")
+		}
+		return ExecutionSummary{LastResult: "ok"}
+	}), state, Options{
+		MaxIterations: 10,
+		MaxCostUSD:    1.0,
+		EstimateCost:  func(llm.TokenUsage) float64 { return 25.0 },
+	})
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Stats.StopReason != "cost_budget_exceeded" {
+		t.Errorf("StopReason = %q, want cost_budget_exceeded", result.Stats.StopReason)
+	}
+	if client.requests != 1 {
+		t.Errorf("LLM requests = %d, want 1 (second call must not fire)", client.requests)
+	}
+}
+
+// TestOrOfFourIterCapPreservesMaxIterationsHit verifies US-OUT-08 legacy behavior:
+// when only the iter cap fires (with low tokens/cost), stop_reason is still
+// max_iterations_hit.
+func TestOrOfFourIterCapPreservesMaxIterationsHit(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "c1", Name: "search_memory"}}}},
+		{Response: llm.Response{Content: "done"}},
+	}}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "result")
+		}
+		return ExecutionSummary{LastResult: "result"}
+	}), state, Options{MaxIterations: 1}) // one iteration hits the iter cap
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Stats.StopReason != "max_iterations_hit" {
+		t.Errorf("StopReason = %q, want max_iterations_hit", result.Stats.StopReason)
+	}
+	if !result.Stats.MaxIterationsHit {
+		t.Error("MaxIterationsHit = false, want true")
+	}
+}
+
+// TestOrOfFourCostBudgetFallbackWhenNoEstimateCost verifies US-OUT-08 R6:
+// when EstimateCost is nil, the cost cap never fires even with a tiny MaxCostUSD.
+func TestOrOfFourCostBudgetFallbackWhenNoEstimateCost(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "c1", Name: "search_memory"}}}},
+		{Response: llm.Response{Content: "success despite tiny MaxCostUSD"}},
+	}}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "result")
+		}
+		return ExecutionSummary{LastResult: "result"}
+	}), state, Options{
+		MaxIterations: 5,
+		MaxCostUSD:    0.001, // tiny cap — must NOT fire when EstimateCost is nil
+		EstimateCost:  nil,
+	})
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Stats.StopReason == "cost_budget_exceeded" {
+		t.Error("cost_budget_exceeded fired when EstimateCost is nil — R6 fallback broken")
+	}
+	if result.Text != "success despite tiny MaxCostUSD" {
+		t.Errorf("Text = %q, want success message", result.Text)
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	governance "github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -82,11 +83,15 @@ func finalAnswerOnBudgetWithContext(_, lastToolName, stopReason string, opts Opt
 		return "Per-turn cap reached without invoking any tool. Try rephrasing -- Aura could not pick a tool for this request."
 	}
 	switch stopReason {
-	case "max_iterations_hit":
+	case governance.StopReasonMaxIterations:
 		return fmt.Sprintf("Per-turn step cap reached (%d iterations). Last tool: %s. Try a more specific request.", opts.MaxIterations, lastToolName)
-	case "max_elapsed_hit":
+	case governance.StopReasonWallClock:
 		elapsed := opts.MaxElapsed.Round(time.Second)
 		return fmt.Sprintf("Per-turn time cap reached (%s). Last tool: %s. Try a smaller scope or break it up.", elapsed, lastToolName)
+	case governance.StopReasonTokenBudget:
+		return fmt.Sprintf("Per-turn token cap reached (%d tokens). Last tool: %s. Try a more targeted request.", opts.MaxTokens, lastToolName)
+	case governance.StopReasonCostBudget:
+		return fmt.Sprintf("Per-turn cost cap reached ($%.2f). Last tool: %s. Try a more targeted request.", opts.MaxCostUSD, lastToolName)
 	default:
 		return fmt.Sprintf("Per-turn cap reached. Last tool: %s. Try rephrasing.", lastToolName)
 	}

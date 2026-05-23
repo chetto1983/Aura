@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/aura/aura/internal/agent"
 )
@@ -147,9 +148,7 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 			// Pass the payload through opaquely so a forward-compatible
 			// adapter can choose to render it.
 			payload := map[string]any{}
-			for k, v := range event.QuestionPayload {
-				payload[k] = v
-			}
+			maps.Copy(payload, event.QuestionPayload)
 			if event.ToolName != "" {
 				payload["tool"] = event.ToolName
 			}
@@ -202,6 +201,7 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 				"cache_read_tokens":  stats.CacheReadTokens,
 				"cost_usd":           stats.CostUSD,
 				"terminal_tool":      stats.TerminalTool,
+				"stop_reason":        stats.StopReason,
 			},
 		})
 		if run != nil {
@@ -216,6 +216,7 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 				"tokens_completion": stats.TokensCompletion,
 				"cost_usd":          stats.CostUSD,
 				"terminal_tool":     stats.TerminalTool,
+				"stop_reason":       stats.StopReason,
 			}
 			run.Metadata["final_text"] = result.Text
 			run.Metadata["delivered"] = result.Delivered

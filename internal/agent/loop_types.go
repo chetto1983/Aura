@@ -117,6 +117,15 @@ type Options struct {
 	// OnToolEnd fires once per fresh tool call after the executor batch returns.
 	OnToolEnd       func(callID, toolName string, success bool, elapsed time.Duration, preview string)
 	TerminalHandler TerminalHandler
+	// MaxTokens caps cumulative prompt+completion tokens across all LLM calls
+	// in this turn (US-OUT-08, OR-of-four guard, signal 2). 0 uses
+	// governance.DefaultMaxTokens (500_000).
+	MaxTokens int
+	// MaxCostUSD caps estimated USD cost across all LLM calls in this turn
+	// (US-OUT-08, OR-of-four guard, signal 4). 0 uses
+	// governance.DefaultMaxCostUSD ($20). Skipped when EstimateCost is nil
+	// (R6 safety: never block on cost alone when provider returns no usage data).
+	MaxCostUSD float64
 	// MaxToolResultChars caps each tool message size before going to the LLM.
 	MaxToolResultChars int
 	// MicrocompactKeepRecent / MicrocompactMinChars control the rolling
