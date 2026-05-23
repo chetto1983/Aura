@@ -375,13 +375,14 @@ func TestWikiGraph_BuildsEdgesAndDropsDangling(t *testing.T) {
 	if len(got.Nodes) != 2 {
 		t.Errorf("nodes = %d, want 2", len(got.Nodes))
 	}
-	// Expected edges: alpha->beta wikilink, alpha->beta related (deduped
-	// by alpha's seen set so only one survives — first wins is wikilink),
-	// beta->alpha wikilink (deduped from two occurrences). Dangling ghost
-	// edge dropped.
+	// Expected edges: alpha->beta + beta->alpha. Pre-US-GRAPH-05 these
+	// carried the generic type "wikilink"; after the typed-edges
+	// rollout (commit 5556319b) untyped [[slug]] body wikilinks default
+	// to "mentions" — the bottom rung of the {cites, applies, contradicts,
+	// depends_on, references, ...} hierarchy.
 	wantEdges := map[string]string{
-		"alpha->beta": "wikilink",
-		"beta->alpha": "wikilink",
+		"alpha->beta": "mentions",
+		"beta->alpha": "mentions",
 	}
 	if len(got.Edges) != len(wantEdges) {
 		t.Fatalf("edges = %d, want %d: %+v", len(got.Edges), len(wantEdges), got.Edges)
