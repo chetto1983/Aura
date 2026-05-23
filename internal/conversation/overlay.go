@@ -13,7 +13,10 @@ import (
 // AGENT.md is Aura's runtime workspace note, readable through file tools when
 // needed. It is deliberately not injected into the system prompt. AGENTS.md is
 // also excluded because it contains repository development instructions.
-var overlayFiles = []string{"SOUL.md", "USER.md", "TOOLS.md"}
+// TOOLS.md was retired 2026-05-24: tool guidance lives inside each tool's
+// Description (where the model actually consumes it) — a separate overlay file
+// duplicated the surface and rotted independently.
+var overlayFiles = []string{"SOUL.md", "USER.md"}
 
 // overlayWatchedFiles is the set of overlay basenames that, when written by
 // the file tool, trigger a mid-conversation system-prompt hot-reload. Includes
@@ -23,7 +26,6 @@ var overlayFiles = []string{"SOUL.md", "USER.md", "TOOLS.md"}
 var overlayWatchedFiles = map[string]struct{}{
 	"SOUL.md":  {},
 	"USER.md":  {},
-	"TOOLS.md": {},
 	"OPS.md":   {},
 	"AGENT.md": {},
 }
@@ -39,10 +41,6 @@ var defaultPromptOverlayFiles = map[string]string{
 	"SOUL.md": `# Soul
 
 Aura risponde in modo naturale, diretto e umano. Usa i tool come strumenti interni: il risultato tecnico serve per capire, non per essere incollato all'utente. Quando non serve un tool, risponde direttamente.
-`,
-	"TOOLS.md": `# Tool Policy
-
-Usa shell e codice solo per richieste esplicite di diagnostica, comandi, file, build, test, installazioni o verifiche tecniche. Dopo un tool, sintetizza sempre in linguaggio naturale salvo richiesta esplicita di output grezzo.
 `,
 }
 

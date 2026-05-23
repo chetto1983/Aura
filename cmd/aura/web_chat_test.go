@@ -60,6 +60,29 @@ func (f *fakeToolCallingLLM) Stream(context.Context, llm.Request) (<-chan llm.To
 	return ch, nil
 }
 
+type fakeTextResponseLLM struct {
+	calls int
+}
+
+func (f *fakeTextResponseLLM) Send(context.Context, llm.Request) (llm.Response, error) {
+	f.calls++
+	return llm.Response{
+		HasToolCalls: true,
+		ToolCalls: []llm.ToolCall{{
+			ID:        "call-text",
+			Name:      "text_response",
+			Arguments: map[string]any{"text": "  Ciao Davide, fatto.  "},
+		}},
+		Usage: llm.TokenUsage{PromptTokens: 7, CompletionTokens: 5, TotalTokens: 12},
+	}, nil
+}
+
+func (f *fakeTextResponseLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, error) {
+	ch := make(chan llm.Token)
+	close(ch)
+	return ch, nil
+}
+
 func TestHubBackedWebChatPersistsRunAndActor(t *testing.T) {
 	db := testutil.OpenTestDB(t, nil)
 	if err := migrations.Run(context.Background(), db); err != nil {

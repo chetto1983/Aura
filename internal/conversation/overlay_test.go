@@ -36,7 +36,8 @@ func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 	mustWrite(t, filepath.Join(dir, "SOUL.md"), "I am Aura.")
 	mustWrite(t, filepath.Join(dir, "AGENT.md"), "runtime notes are file-readable only")
 	mustWrite(t, filepath.Join(dir, "USER.md"), "Operator is Davide.")
-	mustWrite(t, filepath.Join(dir, "TOOLS.md"), "Use tools carefully.")
+	// TOOLS.md retired 2026-05-24; if present it must be ignored.
+	mustWrite(t, filepath.Join(dir, "TOOLS.md"), "stale tool policy that should not load")
 	mustWrite(t, filepath.Join(dir, "RANDOM.md"), "ignore me")
 	mustWrite(t, filepath.Join(dir, "AGENTS.md"), "dev-only instructions")
 
@@ -53,11 +54,11 @@ func TestLoadPromptOverlayReadsKnownFiles(t *testing.T) {
 	if !strings.Contains(got, "Operator is Davide.") {
 		t.Error("missing USER body")
 	}
-	if !strings.Contains(got, "## TOOLS") {
-		t.Error("missing TOOLS section")
+	if strings.Contains(got, "## TOOLS") {
+		t.Error("TOOLS section must not appear (overlay retired)")
 	}
-	if !strings.Contains(got, "Use tools carefully.") {
-		t.Error("missing TOOLS body")
+	if strings.Contains(got, "stale tool policy that should not load") {
+		t.Error("TOOLS.md body must not be injected (overlay retired)")
 	}
 	if strings.Contains(got, "ignore me") {
 		t.Error("RANDOM.md should not appear in overlay")
@@ -88,23 +89,22 @@ func TestLoadPromptOverlaySkipsBlankFiles(t *testing.T) {
 	}
 }
 
-func TestEnsurePromptOverlayDefaultsCreatesSoulAndToolsOnly(t *testing.T) {
+func TestEnsurePromptOverlayDefaultsCreatesSoulOnly(t *testing.T) {
 	dir := t.TempDir()
 
 	if err := EnsurePromptOverlayDefaults(dir); err != nil {
 		t.Fatalf("EnsurePromptOverlayDefaults() error = %v", err)
 	}
 
-	for _, name := range []string{"SOUL.md", "TOOLS.md"} {
-		body, err := os.ReadFile(filepath.Join(dir, name))
-		if err != nil {
-			t.Fatalf("expected %s to be created: %v", name, err)
-		}
-		if strings.TrimSpace(string(body)) == "" {
-			t.Fatalf("%s is blank", name)
-		}
+	body, err := os.ReadFile(filepath.Join(dir, "SOUL.md"))
+	if err != nil {
+		t.Fatalf("expected SOUL.md to be created: %v", err)
 	}
-	for _, name := range []string{"AGENT.md", "AGENTS.md"} {
+	if strings.TrimSpace(string(body)) == "" {
+		t.Fatalf("SOUL.md is blank")
+	}
+	// TOOLS.md retired 2026-05-24; defaults must not recreate it.
+	for _, name := range []string{"TOOLS.md", "AGENT.md", "AGENTS.md"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
 			t.Fatalf("%s should not be created, err=%v", name, err)
 		}
@@ -129,13 +129,14 @@ func TestEnsurePromptOverlayDefaultsDoesNotOverwrite(t *testing.T) {
 }
 
 func TestIsOverlayFileName(t *testing.T) {
-	watched := []string{"SOUL.md", "USER.md", "TOOLS.md", "OPS.md", "AGENT.md"}
+	watched := []string{"SOUL.md", "USER.md", "OPS.md", "AGENT.md"}
 	for _, name := range watched {
 		if !IsOverlayFileName(name) {
 			t.Errorf("expected %s to be an overlay watched file", name)
 		}
 	}
-	notWatched := []string{"RANDOM.md", "tools.md", "agent.md", "AGENTS.md", ""}
+	// TOOLS.md retired 2026-05-24 — must not be watched any more.
+	notWatched := []string{"RANDOM.md", "TOOLS.md", "tools.md", "agent.md", "AGENTS.md", ""}
 	for _, name := range notWatched {
 		if IsOverlayFileName(name) {
 			t.Errorf("expected %s to NOT be an overlay watched file", name)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -104,16 +105,52 @@ func NewRegistry(logger *slog.Logger) *Registry {
 // genuinely want override semantics get them, but a misbehaving MCP server (or
 // a refactor that resurrects a retired tool) cannot silently shadow a
 // built-in. Returns true when the registration replaced an existing entry.
+//
+// Registration honors the AURA_TOOL_ALLOWLIST env var: when set to a non-empty
+// comma-separated list, only tools whose names appear there are admitted.
+// Unset or empty allows all tools (back-compat default). Used during the
+// single-tool-mode rewrite to bring tools online one at a time.
 func (r *Registry) Register(t Tool) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	name := t.Name()
+	if !toolAllowedByEnvAllowlist(name) {
+		if r.logger != nil {
+			r.logger.Info("tool registry: gated by AURA_TOOL_ALLOWLIST, skipping", "tool", name)
+		}
+		return false
+	}
 	_, existed := r.tools[name]
 	if existed && r.logger != nil {
 		r.logger.Warn("tool registry: replacing existing registration", "tool", name)
 	}
 	r.tools[name] = t
 	return existed
+}
+
+// toolAllowedByEnvAllowlist returns true unless AURA_TOOL_ALLOWLIST is set and
+// name is absent from its comma-separated list. Trimmed entries are compared
+// case-insensitively. An env value of "*" or "all" admits every tool — useful
+// for explicit overrides in test/dev contexts.
+func toolAllowedByEnvAllowlist(name string) bool {
+	raw := strings.TrimSpace(os.Getenv("AURA_TOOL_ALLOWLIST"))
+	if raw == "" {
+		return true
+	}
+	lowerName := strings.ToLower(name)
+	for _, entry := range strings.Split(raw, ",") {
+		entry = strings.ToLower(strings.TrimSpace(entry))
+		if entry == "" {
+			continue
+		}
+		if entry == "*" || entry == "all" {
+			return true
+		}
+		if entry == lowerName {
+			return true
+		}
+	}
+	return false
 }
 
 // Get returns a registered tool by name.
