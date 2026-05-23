@@ -64,7 +64,7 @@ func (t *FileTool) Definition() ToolDefinition {
 }
 
 func (t *FileTool) Description() string {
-	return "Read, write, list, search, or patch files in Aura's workspace. action=read Returns file bytes, 16384-byte cap. Actions: list, read, search, write, patch. Required: varies by action."
+	return `Read, write, list, search, or patch workspace files. action=read Returns file bytes, 16384-byte cap. Required action: list/read/search/write/patch; write/patch can modify files.`
 }
 
 func (t *FileTool) Parameters() map[string]any {
@@ -76,44 +76,44 @@ func (t *FileTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"list", "read", "search", "write", "patch"},
-				"description": "Which filesystem operation to perform.",
+				"description": `REQUIRED. "list" = directory listing, "read" = file bytes, "search" = substring across workspace, "write" = create/overwrite, "patch" = find/replace inside a file.`,
 			},
 			"path": map[string]any{
 				"type":        "string",
-				"description": "Relative path. Required for read/write/patch. Optional for list (default root). Ignored for search (use globs).",
+				"description": `Required for "read"/"write"/"patch". Optional for "list" (defaults to workspace root). Ignored for "search".`,
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "list: max entries (default 200, max 1000). search: max matches (default 50, max 200). Ignored for other actions.",
+				"description": `Optional. action="list": max entries (default 200, max 1000). action="search": max matches (default 50, max 200).`,
 			},
 			"max_bytes": map[string]any{
 				"type":        "integer",
-				"description": "read only: max bytes to return (default 65536, max 524288). Oversize files are truncated.",
+				"description": `Optional, action="read" only. Max bytes to return (default 65536, max 524288). Oversize files are truncated.`,
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "write only: UTF-8 file content.",
+				"description": `Required when action="write". UTF-8 file content.`,
 			},
 			"pattern": map[string]any{
 				"type":        "string",
-				"description": "search only: case-insensitive substring to find.",
+				"description": `Required when action="search". Case-insensitive substring to find.`,
 			},
 			"globs": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string"},
-				"description": "search only, optional: relative glob filters (e.g. ['**/*.go', '*.md']).",
+				"description": `Optional, action="search" only. Relative glob filters (e.g. ["**/*.go", "*.md"]).`,
 			},
 			"old": map[string]any{
 				"type":        "string",
-				"description": "patch only: exact text to replace.",
+				"description": `Required when action="patch". Exact text to replace.`,
 			},
 			"new": map[string]any{
 				"type":        "string",
-				"description": "patch only: replacement text. Empty string deletes the match.",
+				"description": `Required when action="patch". Replacement text. Empty string deletes the match.`,
 			},
 			"replace_all": map[string]any{
 				"type":        "boolean",
-				"description": "patch only: replace every occurrence (default false; non-unique match errors otherwise).",
+				"description": `Optional, action="patch" only. Replace every occurrence (default false; non-unique match errors otherwise).`,
 			},
 		},
 		"oneOf": ActionDispatchOneOf([]ActionVariant{
@@ -123,6 +123,15 @@ func (t *FileTool) Parameters() map[string]any {
 			{Name: "write", RequiredKeys: []string{"path", "content"}},
 			{Name: "patch", RequiredKeys: []string{"path", "old", "new"}},
 		}),
+		// JSON Schema "examples" - concrete shapes models read before
+		// the description, reducing action-field omissions.
+		"examples": []any{
+			map[string]any{"action": "list", "path": "wiki"},
+			map[string]any{"action": "read", "path": "AGENT.md"},
+			map[string]any{"action": "search", "pattern": "TODO", "globs": []string{"**/*.go"}},
+			map[string]any{"action": "write", "path": "notes/draft.md", "content": "# Title\nbody..."},
+			map[string]any{"action": "patch", "path": "notes/draft.md", "old": "old line", "new": "new line"},
+		},
 	}
 }
 
