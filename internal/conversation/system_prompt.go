@@ -5,8 +5,8 @@
 //     present. Loaded into every turn, every channel.
 //  2. RenderRuntimeContext — the wall-clock block. Always present, dynamic.
 //  3. ClarificationAndApprovalProtocol + the operator overlays
-//     (AGENT.md / SOUL.md / TOOLS.md / USER.md) injected by ComposeAgentPrompt
-//     for interactive chat turns.
+//     (SOUL.md / USER.md) injected by ComposeAgentPrompt for interactive chat
+//     turns. AGENT.md stays file-tool readable on demand.
 //
 // All prompt text is English. The user-facing reply language is governed by
 // §10 of the base prompt (Italian by default, mirrors the user's input).

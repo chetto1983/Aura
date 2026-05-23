@@ -103,6 +103,9 @@ func TestEnsurePromptOverlayDefaultsCreatesSoulOnly(t *testing.T) {
 	if strings.TrimSpace(string(body)) == "" {
 		t.Fatalf("SOUL.md is blank")
 	}
+	if !strings.Contains(string(body), "Aura replies naturally") {
+		t.Fatalf("SOUL.md default is not the English runtime overlay:\n%s", body)
+	}
 	// TOOLS.md retired 2026-05-24; defaults must not recreate it.
 	for _, name := range []string{"TOOLS.md", "AGENT.md", "AGENTS.md"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {

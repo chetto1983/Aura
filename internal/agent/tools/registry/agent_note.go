@@ -38,27 +38,28 @@ func NewAgentNoteTool(store *agentnote.Store, conversationIDProvider func(ctx co
 func (t *AgentNoteTool) Name() string { return "agent_note" }
 
 func (t *AgentNoteTool) Description() string {
-	return `A per-conversation scratchpad for your own working memory (todo list, intermediate findings, plan). Use set to replace, append to add a new line, get to read, clear to delete. The note is scoped to the current conversation and garbage-collected at conversation end. NOT visible to the user; NOT promoted to wiki or user memory.
+	return `Per-conversation scratchpad for your own working memory (todo list, plan, intermediate findings). Private to this conversation, not visible to the user, not promoted to wiki or user memory.
 
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="set":    content
-  • action="append": line
-  • action="get":    (none)
-  • action="clear":  (none)
+EXAMPLES — copy the shape exactly:
 
-Actions (pick one via the "action" field):
+  agent_note({"action":"set","content":"todo:\n- fetch wiki page\n- summarise"})
+  agent_note({"action":"append","line":"step done at 14:32"})
+  agent_note({"action":"get"})
+  agent_note({"action":"clear"})
 
-  • set    — replace the entire note. Required: content (string).
-             Returns "ok (N chars)" where N is the new byte length.
+The "action" field is REQUIRED on every call. Valid values: "set", "append", "get", "clear".
 
-  • append — add a new line to the note. Required: line (string).
-             If the note is empty, sets content=line with no leading
-             newline. Returns "ok (note now N chars, M lines)".
+Per-action required fields:
+  • set    → also send "content" (string, full new note body)
+  • append → also send "line"    (string, single line appended)
+  • get    → no other fields
+  • clear  → no other fields
 
-  • get    — read the current note. Returns the full content in a
-             fenced code block. Returns "(empty)" when no note exists.
-
-  • clear  — delete the note. Returns "cleared".`
+Returns:
+  • set    → "ok (N chars)"
+  • append → "ok (note now N chars, M lines)"
+  • get    → the note inside a fenced code block, or "(empty)"
+  • clear  → "cleared"`
 }
 
 var agentNoteActions = []string{"set", "append", "get", "clear"}
@@ -75,15 +76,15 @@ func (t *AgentNoteTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        agentNoteActions,
-				"description": "Which action to perform on the scratchpad note.",
+				"description": `REQUIRED. Pick one of: "set" (replace, also send content), "append" (add line, also send line), "get" (read), "clear" (delete).`,
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "Full note content (action=set only).",
+				"description": `Required when action="set". The full new note body.`,
 			},
 			"line": map[string]any{
 				"type":        "string",
-				"description": "Single line to add to the note (action=append only).",
+				"description": `Required when action="append". A single line to add.`,
 			},
 		},
 		"required": []string{"action"},
@@ -93,6 +94,16 @@ func (t *AgentNoteTool) Parameters() map[string]any {
 			{Name: "get"},
 			{Name: "clear"},
 		}),
+		// JSON Schema "examples" — top-level concrete calls. Models that
+		// honour the field (Gemma, Claude with tool-use) read these before
+		// the human-readable description, which fixes the "missing action"
+		// failure observed on Telegram turn #143-144 (2026-05-23 dump).
+		"examples": []any{
+			map[string]any{"action": "set", "content": "todo:\n- step 1\n- step 2"},
+			map[string]any{"action": "append", "line": "step 1 done"},
+			map[string]any{"action": "get"},
+			map[string]any{"action": "clear"},
+		},
 	}
 }
 
