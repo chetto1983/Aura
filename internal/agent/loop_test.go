@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -1369,5 +1370,156 @@ func TestOrOfFourCostBudgetFallbackWhenNoEstimateCost(t *testing.T) {
 	}
 	if result.Text != "success despite tiny MaxCostUSD" {
 		t.Errorf("Text = %q, want success message", result.Text)
+	}
+}
+
+// fakeLoopClientWithSynthesisError is a test client whose second call (the
+// synthesis round) returns a controlled error, used to verify US-OUT-09 R7:
+// synthesis errors must fall back to partial work, not recurse.
+type fakeLoopClientWithSynthesisError struct {
+	mainResponse ChatResponse
+	synthErr     error
+	requests     int
+}
+
+func (c *fakeLoopClientWithSynthesisError) Chat(_ context.Context, _ []llm.Message, _ []llm.ToolDefinition) (ChatResponse, error) {
+	c.requests++
+	if c.requests == 1 {
+		return c.mainResponse, nil
+	}
+	return ChatResponse{}, c.synthErr
+}
+
+// TestForceFinalizeSynthesisOnTokenBudget verifies US-OUT-09: when token budget
+// is exceeded and AllowNoToolFinalization=true, a synthesis LLM call fires with
+// the Hermes prompt naming "token_budget_exceeded", producing a non-empty reply.
+func TestForceFinalizeSynthesisOnTokenBudget(t *testing.T) {
+	state := newFakeLoopState()
+	client := &captureLoopClient{
+		responses: []ChatResponse{
+			{Response: llm.Response{
+				HasToolCalls: true,
+				ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "search_memory"}},
+				Usage:        llm.TokenUsage{TotalTokens: 600_000},
+			}},
+			{Response: llm.Response{Content: "token_budget_exceeded — partial answer from synthesis"}},
+		},
+	}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "partial evidence")
+		}
+		return ExecutionSummary{LastResult: "partial evidence"}
+	}), state, Options{
+		MaxIterations:           10,
+		MaxTokens:               500_000,
+		AllowNoToolFinalization: true,
+	})
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Stats.StopReason != "token_budget_exceeded" {
+		t.Errorf("StopReason = %q, want token_budget_exceeded", result.Stats.StopReason)
+	}
+	if result.Text == "" {
+		t.Fatal("synthesis reply must be non-empty")
+	}
+	// Verify the synthesis prompt sent to the LLM contains the stop_reason.
+	client.mu.Lock()
+	captured := client.captured
+	client.mu.Unlock()
+	if len(captured) < 2 {
+		t.Fatalf("expected 2 LLM calls (tool round + synthesis), got %d", len(captured))
+	}
+	synthCall := captured[1]
+	lastMsg := synthCall[len(synthCall)-1]
+	if !strings.Contains(lastMsg.Content, "token_budget_exceeded") {
+		t.Errorf("synthesis prompt must mention stop_reason; got %q", lastMsg.Content)
+	}
+}
+
+// TestForceFinalizeSynthesisOnCostBudget verifies US-OUT-09: when cost budget
+// is exceeded and AllowNoToolFinalization=true, a synthesis LLM call fires with
+// the Hermes prompt naming "cost_budget_exceeded".
+func TestForceFinalizeSynthesisOnCostBudget(t *testing.T) {
+	state := newFakeLoopState()
+	client := &captureLoopClient{
+		responses: []ChatResponse{
+			{Response: llm.Response{
+				HasToolCalls: true,
+				ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "web_search"}},
+			}},
+			{Response: llm.Response{Content: "cost_budget_exceeded — here is partial work"}},
+		},
+	}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "search result")
+		}
+		return ExecutionSummary{LastResult: "search result"}
+	}), state, Options{
+		MaxIterations:           10,
+		MaxCostUSD:              1.0,
+		EstimateCost:            func(llm.TokenUsage) float64 { return 25.0 },
+		AllowNoToolFinalization: true,
+	})
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Stats.StopReason != "cost_budget_exceeded" {
+		t.Errorf("StopReason = %q, want cost_budget_exceeded", result.Stats.StopReason)
+	}
+	if result.Text == "" {
+		t.Fatal("synthesis reply must be non-empty")
+	}
+	client.mu.Lock()
+	captured := client.captured
+	client.mu.Unlock()
+	if len(captured) < 2 {
+		t.Fatalf("expected 2 LLM calls (tool round + synthesis), got %d", len(captured))
+	}
+	synthCall := captured[1]
+	lastMsg := synthCall[len(synthCall)-1]
+	if !strings.Contains(lastMsg.Content, "cost_budget_exceeded") {
+		t.Errorf("synthesis prompt must mention stop_reason; got %q", lastMsg.Content)
+	}
+}
+
+// TestForceFinalizeSynthesisErrorFallsBackToPartialWork verifies US-OUT-09 R7:
+// when the synthesis LLM call itself fails, gracefulFinalize falls back to
+// finalAnswerOnBudgetWithContext (non-empty partial work) — no recursive finalize.
+func TestForceFinalizeSynthesisErrorFallsBackToPartialWork(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClientWithSynthesisError{
+		mainResponse: ChatResponse{Response: llm.Response{
+			HasToolCalls: true,
+			ToolCalls:    []llm.ToolCall{{ID: "c1", Name: "search_memory"}},
+			Usage:        llm.TokenUsage{TotalTokens: 600_000},
+		}},
+		synthErr: errors.New("upstream LLM unavailable"),
+	}
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, c := range calls {
+			state.AddToolResultMessage(c.ID, "partial data")
+		}
+		return ExecutionSummary{LastResult: "partial data"}
+	}), state, Options{
+		MaxIterations:           10,
+		MaxTokens:               500_000,
+		AllowNoToolFinalization: true,
+	})
+	if err != nil {
+		t.Fatalf("runLoop: %v", err)
+	}
+	if result.Text == "" {
+		t.Fatal("R7: synthesis error must produce non-empty fallback reply (not empty)")
+	}
+	// Fallback is finalAnswerOnBudgetWithContext which contains "Per-turn".
+	if !strings.Contains(result.Text, "Per-turn") {
+		t.Errorf("R7 fallback text = %q, want Per-turn contextual message", result.Text)
+	}
+	// Synthesis call was attempted (requests == 2), then error → fallback.
+	if client.requests != 2 {
+		t.Errorf("requests = %d, want 2 (main + synthesis attempt)", client.requests)
 	}
 }

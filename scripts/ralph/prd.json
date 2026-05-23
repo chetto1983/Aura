@@ -175,7 +175,7 @@
         "Single atomic commit prefix: feat(agent): force-finalize on budget exhaustion (Hermes pattern) (US-OUT-09)"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-OUT-08 for the stop_reason enum. RISK R7: synthesis itself costs $ + adds latency — cap at ONE call, no recursive finalize. Anti-pattern: prompt-pressure warnings in the synthesis prompt — keep it terse and factual per Hermes #7915 lesson. THIS is the story that produces measurable bench delta vs the 2026-05-22 thrash."
     }
   ]
