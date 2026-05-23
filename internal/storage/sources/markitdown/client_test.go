@@ -27,10 +27,10 @@ type fakeSidecar struct {
 	response    string
 	responseErr string
 
-	calls       int
-	lastURI     string
-	lastBytes   []byte
-	lastMime    string
+	calls     int
+	lastURI   string
+	lastBytes []byte
+	lastMime  string
 }
 
 type rpcRequest struct {
@@ -52,15 +52,6 @@ func newFakeSidecar(t *testing.T) *fakeSidecar {
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(f.srv.Close)
 	return f
-}
-
-// URL is the base URL Aura's client should be pointed at. The sidecar mounts
-// the MCP endpoint at the root, mirroring markitdown-mcp's /mcp path because
-// the client appends "/mcp" itself.
-func (f *fakeSidecar) URL() string {
-	// Strip "/mcp" — the real sidecar serves it as a sub-path; httptest mounts
-	// everything at "/". The Aura client will append "/mcp" so we trim it.
-	return f.srv.URL
 }
 
 func (f *fakeSidecar) handle(w http.ResponseWriter, r *http.Request) {
@@ -131,8 +122,7 @@ func parseDataURI(uri string) (mime, payload string, ok bool) {
 
 // newClientForFake wires a Client that targets the fake sidecar. The fake
 // mounts the MCP endpoint at "/" (httptest default); the real sidecar uses
-// "/mcp". To keep production code unchanged, the test points the client at
-// fake.URL() and adjusts mcpPath via a stripped baseURL.
+// "/mcp". The fake's catch-all handler accepts the appended /mcp suffix.
 func newClientForFake(f *fakeSidecar) *Client {
 	// Production code appends "/mcp" to the base URL. The fake serves
 	// everything at "/", so we set baseURL to the fake URL with a trailing

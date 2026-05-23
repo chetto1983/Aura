@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -310,27 +309,4 @@ ORDER BY COUNT(*) DESC`, offset, minOccurrences)
 		return nil, fmt.Errorf("attempts: iterate aggregate: %w", err)
 	}
 	return result, nil
-}
-
-// CanonicalArgsJSON marshals args with sorted keys for a stable SHA-256 hash
-// across LLM re-orderings. Values are consumed only for hashing and are never
-// stored in the DB — only the key names and the resulting hash are persisted.
-func CanonicalArgsJSON(args map[string]any) []byte {
-	if len(args) == 0 {
-		return []byte("{}")
-	}
-	keys := make([]string, 0, len(args))
-	for k := range args {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	ordered := make(map[string]any, len(args))
-	for _, k := range keys {
-		ordered[k] = args[k]
-	}
-	b, err := json.Marshal(ordered)
-	if err != nil {
-		return []byte("{}")
-	}
-	return b
 }

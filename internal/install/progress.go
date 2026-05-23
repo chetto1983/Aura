@@ -21,9 +21,6 @@ import (
 // responsibility.
 type ProgressFn func(bytesDone, bytesTotal int64)
 
-// NopProgressFn is a no-op suitable for tests that don't care about progress.
-func NopProgressFn(_, _ int64) {}
-
 // LogProgressFn returns a ProgressFn that emits one slog line every interval.
 // The first update fires immediately so the user sees something in the logs
 // without waiting for the first tick. Final 100% is always reported.

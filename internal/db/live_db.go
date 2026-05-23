@@ -27,10 +27,6 @@ func RefuseLiveDockerDBWrite(ctx context.Context, dbPath, operation string, aura
 	return fmt.Errorf("%s would write %s while the Docker Aura service is running; run inside Compose or stop it first with `docker compose stop aura`", operation, filepath.Join("data", "aura.db"))
 }
 
-func RefuseLiveDockerDBWriteWithCompose(ctx context.Context, dbPath, operation string) error {
-	return RefuseLiveDockerDBWrite(ctx, dbPath, operation, IsComposeAuraRunning)
-}
-
 func IsComposeAuraRunning(ctx context.Context) (bool, error) {
 	if ctx == nil {
 		ctx = context.Background()

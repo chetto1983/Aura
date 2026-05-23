@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -46,9 +45,9 @@ type Watcher struct {
 
 // Config wires the watcher.
 type Config struct {
-	Path     string   // file to watch (e.g. /workspace/mcp.json)
+	Path     string        // file to watch (e.g. /workspace/mcp.json)
 	Debounce time.Duration // default 500 ms
-	Callback Callback // required
+	Callback Callback      // required
 	Logger   *slog.Logger
 }
 
@@ -169,12 +168,3 @@ const relevantOps = fsnotify.Create | fsnotify.Write | fsnotify.Rename | fsnotif
 // Path returns the absolute watched path. Useful for assertions and
 // startup logging from the wiring layer.
 func (w *Watcher) Path() string { return w.path }
-
-// trimNullByte is a defense-in-depth helper for paths from fsnotify on
-// some platforms that occasionally include trailing nul bytes. Unused
-// in current code but available if a platform-specific quirk surfaces.
-func trimNullByte(s string) string {
-	return strings.TrimRight(s, "\x00")
-}
-
-var _ = trimNullByte // retain for future use

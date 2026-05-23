@@ -70,16 +70,6 @@ func NewWikiOrphanReconciler(cfg WikiOrphanReconcilerConfig) *WikiOrphanReconcil
 	}
 }
 
-// Notify enqueues a reconcile request. Non-blocking: if the channel is full
-// a reconcile is already queued and will cover the same state.
-func (r *WikiOrphanReconciler) Notify(reason WikiOrphanReason) {
-	select {
-	case r.notify <- reason:
-	default:
-		r.cfg.Logger.Debug("wiki orphan reconciler: notify dropped (queue full)", "reason", reason)
-	}
-}
-
 // Reconcile is the synchronous primitive. A mutex serialises concurrent
 // callers so Qdrant scroll + delete operations never overlap.
 func (r *WikiOrphanReconciler) Reconcile(ctx context.Context, reason WikiOrphanReason) WikiOrphanReport {

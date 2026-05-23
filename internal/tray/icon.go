@@ -1,3 +1,5 @@
+//go:build windows
+
 package tray
 
 func chooseTrayIcon(primary, fallback []byte) []byte {

@@ -14,22 +14,22 @@ type UploadFormat struct {
 }
 
 var formatsByExt = map[string]UploadFormat{
-	".pdf":   {Kind: KindPDF, MimeType: "application/pdf", OriginalName: "original.pdf"},
-	".txt":   {Kind: KindText, MimeType: "text/plain; charset=utf-8", OriginalName: "original.txt"},
-	".md":    {Kind: KindMarkdown, MimeType: "text/markdown; charset=utf-8", OriginalName: "original.md"},
-	".json":  {Kind: KindJSON, MimeType: "application/json", OriginalName: "original.json"},
-	".csv":   {Kind: KindCSV, MimeType: "text/csv; charset=utf-8", OriginalName: "original.csv"},
-	".xlsx":  {Kind: KindXLSX, MimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", OriginalName: "original.xlsx"},
-	".docx":  {Kind: KindDOCX, MimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", OriginalName: "original.docx"},
-	".pptx":  {Kind: KindPPTX, MimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", OriginalName: "original.pptx"},
-	".epub":  {Kind: KindEPUB, MimeType: "application/epub+zip", OriginalName: "original.epub"},
-	".html":  {Kind: KindHTML, MimeType: "text/html; charset=utf-8", OriginalName: "original.html"},
-	".htm":   {Kind: KindHTML, MimeType: "text/html; charset=utf-8", OriginalName: "original.html"},
-	".zip":   {Kind: KindZIP, MimeType: "application/zip", OriginalName: "original.zip"},
-	".png":   {Kind: KindImage, MimeType: "image/png", OriginalName: "original.png"},
-	".jpg":   {Kind: KindImage, MimeType: "image/jpeg", OriginalName: "original.jpg"},
-	".jpeg":  {Kind: KindImage, MimeType: "image/jpeg", OriginalName: "original.jpg"},
-	".webp":  {Kind: KindImage, MimeType: "image/webp", OriginalName: "original.webp"},
+	".pdf":  {Kind: KindPDF, MimeType: "application/pdf", OriginalName: "original.pdf"},
+	".txt":  {Kind: KindText, MimeType: "text/plain; charset=utf-8", OriginalName: "original.txt"},
+	".md":   {Kind: KindMarkdown, MimeType: "text/markdown; charset=utf-8", OriginalName: "original.md"},
+	".json": {Kind: KindJSON, MimeType: "application/json", OriginalName: "original.json"},
+	".csv":  {Kind: KindCSV, MimeType: "text/csv; charset=utf-8", OriginalName: "original.csv"},
+	".xlsx": {Kind: KindXLSX, MimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", OriginalName: "original.xlsx"},
+	".docx": {Kind: KindDOCX, MimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", OriginalName: "original.docx"},
+	".pptx": {Kind: KindPPTX, MimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", OriginalName: "original.pptx"},
+	".epub": {Kind: KindEPUB, MimeType: "application/epub+zip", OriginalName: "original.epub"},
+	".html": {Kind: KindHTML, MimeType: "text/html; charset=utf-8", OriginalName: "original.html"},
+	".htm":  {Kind: KindHTML, MimeType: "text/html; charset=utf-8", OriginalName: "original.html"},
+	".zip":  {Kind: KindZIP, MimeType: "application/zip", OriginalName: "original.zip"},
+	".png":  {Kind: KindImage, MimeType: "image/png", OriginalName: "original.png"},
+	".jpg":  {Kind: KindImage, MimeType: "image/jpeg", OriginalName: "original.jpg"},
+	".jpeg": {Kind: KindImage, MimeType: "image/jpeg", OriginalName: "original.jpg"},
+	".webp": {Kind: KindImage, MimeType: "image/webp", OriginalName: "original.webp"},
 }
 
 func DetectUploadFormat(filename, mimeType string) (UploadFormat, error) {
@@ -50,23 +50,6 @@ func DetectUploadFormat(filename, mimeType string) (UploadFormat, error) {
 		format.MimeType = mt
 	}
 	return format, nil
-}
-
-func SupportedUploadAccept() string {
-	// Image extensions intentionally absent — see DetectUploadFormat for
-	// the Wave 2.9.5 gate. They are still registered in formatsByExt so
-	// 2.9.5 can flip the gate without touching the table.
-	return strings.Join([]string{
-		".pdf", ".txt", ".md", ".json", ".csv",
-		".xlsx", ".docx", ".pptx",
-		".epub", ".html", ".htm", ".zip",
-		"application/pdf",
-		"text/plain", "text/markdown", "text/html", "text/csv",
-		"application/json", "application/zip", "application/epub+zip",
-		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-		"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-	}, ",")
 }
 
 func ValidStatus(s Status) bool {

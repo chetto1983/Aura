@@ -13,7 +13,6 @@ package search
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"os"
@@ -36,22 +35,6 @@ func RebuildSQLiteWikiDocuments(ctx context.Context, wikiDir, dbPath string, log
 	}
 	defer sqlite.Close()
 
-	docs, pageCount, err := loadWikiDocuments(wikiDir, logger)
-	if err != nil {
-		return 0, 0, err
-	}
-	if err := indexSQLiteDocuments(ctx, sqlite, docs); err != nil {
-		return 0, 0, err
-	}
-	return len(docs), pageCount, nil
-}
-
-// RebuildSQLiteWikiDocumentsWithDB is the caller-owned-pool variant.
-func RebuildSQLiteWikiDocumentsWithDB(ctx context.Context, wikiDir string, db *sql.DB, logger *slog.Logger) (docsIndexed int, pagesIndexed int, err error) {
-	sqlite, err := newSqliteSearcherWithDB(db, logger)
-	if err != nil {
-		return 0, 0, err
-	}
 	docs, pageCount, err := loadWikiDocuments(wikiDir, logger)
 	if err != nil {
 		return 0, 0, err

@@ -62,10 +62,10 @@ jobs:
 
       - name: Run deadcode analysis
         run: |
-          # Whole-program analysis from the main entry point.
-          # Suppress findings whose definition site is inside a _test.go file
-          # (those are reachable from test entry points, not from main — acceptable).
-          deadcode ./cmd/aura 2>/dev/null | grep -v '_test\.go' | tee /tmp/dc-findings.txt || true
+          # Whole-program analysis across commands plus internal package tests.
+          # This keeps command-only/debug entrypoints and test-covered package
+          # contracts from being misclassified as dead in Aura's multi-command repo.
+          deadcode -test ./cmd/... ./internal/... 2>/dev/null | grep -v '_test\.go' | tee /tmp/dc-findings.txt || true
           BASELINE=$(python3 -c "import json; d=json.load(open('docs/deadcode-baseline-2026-05-22.json')); print(len(d))")
           NEW=$(wc -l < /tmp/dc-findings.txt | tr -d ' ')
           if [ "$NEW" -gt "$BASELINE" ]; then

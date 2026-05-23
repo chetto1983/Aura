@@ -38,16 +38,6 @@ func ShouldGateUserMemoryWrite(c Candidate) bool {
 	return TriageCandidate(c) == TargetUserMemory && c.Score < AmbiguityThreshold
 }
 
-// UserMemoryQuestionText formats the canonical gate question text.
-func UserMemoryQuestionText(c Candidate) string {
-	return fmt.Sprintf("Vuoi che ricordi: %s? (categoria: %s, score: %.2f)", c.Fact, c.Category, c.Score)
-}
-
-// UserMemoryQuestionOptions returns the fixed ordered reply options.
-func UserMemoryQuestionOptions() []string {
-	return []string{AnswerApprove, AnswerReject, AnswerModify}
-}
-
 // ApplyUserMemoryAnswer processes a user's reply to a gated question and takes
 // the appropriate action:
 //   - AnswerReject ("No, scarta"): no-op + slog.Info.

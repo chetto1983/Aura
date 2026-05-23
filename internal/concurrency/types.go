@@ -57,13 +57,3 @@ type Config struct {
 	// should hand off to a separate goroutine for any external I/O (Pitfall 4).
 	OnQueueNotice func(userID string)
 }
-
-// DefaultConfig returns a Config with defaults matching decisions.
-// QueueNoticeAfter is left at 0 (disabled) -- the caller controls this.
-func DefaultConfig() Config {
-	return Config{
-		InboxSize:         8,
-		EvictionThreshold: 30 * time.Minute,
-		SweepInterval:     60 * time.Second,
-	}
-}

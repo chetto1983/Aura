@@ -100,14 +100,6 @@ func RunIDFromContext(ctx context.Context) string {
 	return ""
 }
 
-func WithEventID(ctx context.Context, eventID string) context.Context {
-	eventID = strings.TrimSpace(eventID)
-	if eventID == "" {
-		return ctx
-	}
-	return context.WithValue(ctx, eventIDContextKey{}, eventID)
-}
-
 func EventIDFromContext(ctx context.Context) string {
 	if v, ok := ctx.Value(eventIDContextKey{}).(string); ok {
 		return v

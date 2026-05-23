@@ -23,15 +23,15 @@ var wikiLinkTypedRe = regexp.MustCompile(`\[\[([a-z0-9-]+)(?:\|([a-z][a-z_]*))?\
 
 // validEdgeTypes is the closed set of typed edge labels for [[slug|type]] syntax.
 var validEdgeTypes = map[string]bool{
-	"mentions":               true,
-	"cites":                  true,
-	"applies":                true,
-	"implements":             true,
-	"references":             true,
-	"extends":                true,
-	"contradicts":            true,
-	"depends_on":             true,
-	"derived_from":           true,
+	"mentions":                true,
+	"cites":                   true,
+	"applies":                 true,
+	"implements":              true,
+	"references":              true,
+	"extends":                 true,
+	"contradicts":             true,
+	"depends_on":              true,
+	"derived_from":            true,
 	"semantically_similar_to": true,
 }
 
@@ -40,9 +40,6 @@ type WikiLinkEdge struct {
 	Slug string
 	Type string // one of validEdgeTypes; defaults to "mentions"
 }
-
-// ValidEdgeType reports whether t is a recognised edge type.
-func ValidEdgeType(t string) bool { return validEdgeTypes[t] }
 
 // validConfidences is the set of accepted Confidence values for RelatedRef.
 var validConfidences = map[string]bool{

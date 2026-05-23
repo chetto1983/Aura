@@ -32,14 +32,6 @@ func LoadBuiltinRules() []*CompiledRule {
 	return cachedBuiltin()
 }
 
-// LoadRules loads rules according to opts.
-func LoadRules(opts LoadOptions) ([]*CompiledRule, error) {
-	if opts.Builtin {
-		return LoadBuiltinRules(), nil
-	}
-	return []*CompiledRule{}, nil
-}
-
 // loadFromFS reads all *.json files in dir within fsys and returns compiled rules.
 func loadFromFS(fsys fs.FS, dir string) ([]*CompiledRule, error) {
 	entries, err := fs.ReadDir(fsys, dir)
@@ -118,7 +110,7 @@ func compilePatternWithFlags(pattern, flags string) (*regexp.Regexp, error) {
 	if flags == "" {
 		return regexp.Compile(pattern)
 	}
-	return regexp.Compile("(?"+flags+")"+pattern)
+	return regexp.Compile("(?" + flags + ")" + pattern)
 }
 
 // syntheticFallback returns a minimal in-memory generic/fallback rule.
@@ -127,8 +119,8 @@ func syntheticFallback() []*CompiledRule {
 	head, tail := 8, 8
 	return []*CompiledRule{{
 		Rule: Rule{
-			ID:     "generic/fallback",
-			Family: "generic",
+			ID:        "generic/fallback",
+			Family:    "generic",
 			Summarize: &RuleSummarize{Head: &head, Tail: &tail},
 			Transforms: &RuleTransforms{
 				StripAnsi:      true,
