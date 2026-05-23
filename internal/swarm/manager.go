@@ -109,7 +109,12 @@ func (m *Manager) Limits() (maxActive int, maxDepth int) {
 }
 
 // UpdateLimits changes the concurrency/delegation limits used by subsequent runs.
+// Safe to call on a nil Manager (no-op) — when AURABOT swarm is disabled the
+// bot wires a nil Manager and runtime settings still flow through this path.
 func (m *Manager) UpdateLimits(maxActive, maxDepth int) {
+	if m == nil {
+		return
+	}
 	maxActive, maxDepth = normalizeLimits(maxActive, maxDepth)
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -150,6 +150,16 @@ func TestManagerRespectsMaxActive(t *testing.T) {
 	}
 }
 
+// Regression: 2026-05-23 panic seen in production when AURABOT swarm is
+// disabled — bot wires a nil Manager but runtime-settings updates still
+// reach UpdateLimits via the settings PATCH path. Calling on nil must no-op.
+func TestManagerUpdateLimitsNilReceiverNoop(t *testing.T) {
+	t.Parallel()
+	var m *Manager
+	// Must not panic — production hit a nil-pointer dereference here.
+	m.UpdateLimits(4, 3)
+}
+
 func TestManagerUpdateLimitsAffectsNextRun(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
