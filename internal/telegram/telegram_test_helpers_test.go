@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"path"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -24,6 +25,7 @@ var fakeTelegramPDFBytes = []byte("%PDF-1.7\n% aura telegram document test\n")
 // /file/* requests return fakeTelegramPDFBytes as application/pdf.
 func newTelegramAPIServer(t *testing.T, calls *[]telegramAPICall) *httptest.Server {
 	t.Helper()
+	var mu sync.Mutex
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/file/") {
 			w.Header().Set("Content-Type", "application/pdf")
@@ -34,7 +36,9 @@ func newTelegramAPIServer(t *testing.T, calls *[]telegramAPICall) *httptest.Serv
 		var body map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		method := path.Base(r.URL.Path)
+		mu.Lock()
 		*calls = append(*calls, telegramAPICall{Method: method, Body: body})
+		mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		if method == "getFile" {
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"file_id":"doc-1","file_path":"documents/test.pdf","file_size":36}}`))
