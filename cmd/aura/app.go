@@ -214,6 +214,10 @@ func newApp(
 		logger.Info("wiki migration completed", "pages_migrated", migrated)
 	}
 	wikiStore.RebuildGraph(context.Background())
+	// Phase-FS-LAYOUT (2026-05-23): wire the external sources path so
+	// wiki rename hooks read source.json + extract.md from the new
+	// location, not the legacy <wikiPath>/raw.
+	wikiStore.SetSourcesDir(cfg.SourcesPath)
 	deps.WikiStore = wikiStore
 	deps.Wiki = wikiStore
 
@@ -280,7 +284,14 @@ func newApp(
 	}
 
 	// ---- Source store -------------------------------------------------------
-	sourceStore, err := source.NewStore(cfg.WikiPath, logger)
+	// 2026-05-23 layout split: sources moved from <wikiPath>/raw to a
+	// sibling directory so /files/wiki shows only LLM-curated pages.
+	// Migration is one-shot: if the legacy wiki/raw still exists with
+	// content and the new SourcesPath is empty, move it before NewStore.
+	if err := migrateLegacyWikiRaw(cfg.WikiPath, cfg.SourcesPath, logger); err != nil {
+		logger.Warn("legacy wiki/raw migration", "error", err)
+	}
+	sourceStore, err := source.NewStore(cfg.SourcesPath, logger)
 	if err != nil {
 		return nil, fmt.Errorf("creating source store: %w", err)
 	}

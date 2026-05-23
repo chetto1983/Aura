@@ -150,7 +150,7 @@ func pageSourceID(page *Page) string {
 
 func (s *Store) semanticSourceHeading(sourceID string) string {
 	for _, name := range []string{"extract.md", "ocr.md"} {
-		data, err := os.ReadFile(filepath.Join(s.dir, "raw", sourceID, name))
+		data, err := os.ReadFile(filepath.Join(s.sourceFilesRoot(), sourceID, name))
 		if err != nil {
 			continue
 		}
@@ -159,6 +159,26 @@ func (s *Store) semanticSourceHeading(sourceID string) string {
 		}
 	}
 	return ""
+}
+
+// sourceFilesRoot returns the directory where ingested source artifacts
+// live. After Phase-FS-LAYOUT (2026-05-23) this is configured via
+// SetSourcesDir from cfg.SourcesPath; pre-split deployments fall back to
+// the legacy <wikiDir>/raw layout so existing fixtures keep working
+// until the migration in cmd/aura.migrateLegacyWikiRaw runs.
+func (s *Store) sourceFilesRoot() string {
+	if s.sourcesDir != "" {
+		return s.sourcesDir
+	}
+	return filepath.Join(s.dir, "raw")
+}
+
+// SetSourcesDir wires the external sources path the wiki store reads
+// from when resolving source artifacts. Called once at boot by
+// cmd/aura.app wiring. Empty value leaves the store on the legacy
+// <wikiDir>/raw fallback.
+func (s *Store) SetSourcesDir(dir string) {
+	s.sourcesDir = dir
 }
 
 func truncateTitle(title string) string {
@@ -174,7 +194,7 @@ func truncateTitle(title string) string {
 }
 
 func (s *Store) updateSourceWikiPages(sourceID, oldSlug, newSlug string) error {
-	path := filepath.Join(s.dir, "raw", sourceID, "source.json")
+	path := filepath.Join(s.sourceFilesRoot(), sourceID, "source.json")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

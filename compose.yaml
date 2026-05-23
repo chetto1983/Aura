@@ -9,6 +9,7 @@ services:
       - ./data:/data
       - ./runtime-workspace:/workspace
       - aura-wiki:/workspace/wiki
+      - aura-sources:/workspace/sources
       - aura-skills:/workspace/skills
 
   # aura-init-models — one-shot init container. Fetches large model artifacts
@@ -54,6 +55,7 @@ services:
       HOME: "/data"
       NPM_CONFIG_CACHE: "/data/.npm"
       WIKI_PATH: "/workspace/wiki"
+      SOURCES_PATH: "/workspace/sources"
       SKILLS_PATH: "/workspace/skills"
       SKILLS_INSTALL_PROJECT_DIR: "/workspace/skills"
       MCP_SERVERS_PATH: "/workspace/mcp.json"
@@ -110,6 +112,7 @@ services:
       - ./runtime-workspace:/workspace
       - ./data:/data
       - aura-wiki:/workspace/wiki
+      - aura-sources:/workspace/sources
       - aura-skills:/workspace/skills
     depends_on:
       aura-secrets:
@@ -389,6 +392,7 @@ services:
 volumes:
   searxng-cache:
   aura-wiki:
+  aura-sources:
   aura-skills:
   qdrant-storage:
   go-mod-cache:

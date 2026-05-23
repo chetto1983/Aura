@@ -18,6 +18,7 @@ type LayoutConfig struct {
 	DBPath               string
 	LogDir               string
 	WikiPath             string
+	SourcesPath          string
 	SkillsPath           string
 	MCPServersPath       string
 	PromptOverlayPath    string
@@ -32,8 +33,8 @@ func EnsureLayout(cfg LayoutConfig) error {
 	dirs := []string{
 		runtimeWorkspacePath,
 		filepath.Join(runtimeWorkspacePath, "wiki"),
-		filepath.Join(runtimeWorkspacePath, "wiki", "raw"),
 		filepath.Join(runtimeWorkspacePath, "wiki", "graph"),
+		filepath.Join(runtimeWorkspacePath, "sources"),
 		filepath.Join(runtimeWorkspacePath, "skills"),
 		filepath.Join(runtimeWorkspacePath, "inbox"),
 		cfg.LogDir,
@@ -43,7 +44,10 @@ func EnsureLayout(cfg LayoutConfig) error {
 		parentDir(cfg.MCPServersPath),
 	}
 	if strings.TrimSpace(cfg.WikiPath) != "" {
-		dirs = append(dirs, cfg.WikiPath, filepath.Join(cfg.WikiPath, "raw"))
+		dirs = append(dirs, cfg.WikiPath)
+	}
+	if strings.TrimSpace(cfg.SourcesPath) != "" {
+		dirs = append(dirs, cfg.SourcesPath)
 	}
 	for _, dir := range dirs {
 		if err := mkdir(dir); err != nil {

@@ -23,6 +23,7 @@ const (
 	KeyLogLevel                = "LOG_LEVEL"
 	KeyLogDir                  = "LOG_DIR"
 	KeyWikiPath                = "WIKI_PATH"
+	KeySourcesPath             = "SOURCES_PATH"
 	KeySkillsPath              = "SKILLS_PATH"
 	KeySkillsInstallProjectDir = "SKILLS_INSTALL_PROJECT_DIR"
 	KeyMCPServersPath          = "MCP_SERVERS_PATH"
@@ -106,7 +107,7 @@ func OverridableKeys() []string {
 		KeyTelegramToken,
 		KeyAllowlist,
 		KeyHTTPPort, KeyTimezone, KeyHeadless, KeyDBPath,
-		KeyLogLevel, KeyLogDir, KeyWikiPath, KeySkillsPath, KeySkillsInstallProjectDir,
+		KeyLogLevel, KeyLogDir, KeyWikiPath, KeySourcesPath, KeySkillsPath, KeySkillsInstallProjectDir,
 		KeyMCPServersPath, KeyPromptOverlayPath, KeyDashboardTokenTTLHours,
 		KeyMaxContextTokens, KeyMaxHistoryMessages,
 		KeySoftBudget, KeyHardBudget, KeyCostInputPerMTokens, KeyCostOutputPerMTokens,
@@ -167,6 +168,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 	cfg.LogLevel = settingString(ctx, s, KeyLogLevel, cfg.LogLevel)
 	cfg.LogDir = settingString(ctx, s, KeyLogDir, cfg.LogDir)
 	cfg.WikiPath = settingString(ctx, s, KeyWikiPath, cfg.WikiPath)
+	cfg.SourcesPath = settingString(ctx, s, KeySourcesPath, cfg.SourcesPath)
 	cfg.SkillsPath = settingString(ctx, s, KeySkillsPath, cfg.SkillsPath)
 	cfg.SkillsInstallProjectDir = settingString(ctx, s, KeySkillsInstallProjectDir, cfg.SkillsInstallProjectDir)
 	cfg.MCPServersPath = settingString(ctx, s, KeyMCPServersPath, cfg.MCPServersPath)
@@ -264,11 +266,18 @@ func settingString(ctx context.Context, s Reader, key, fallback string) string {
 }
 
 func settingInt(ctx context.Context, s Reader, key string, fallback int) int {
+	return settingParse(ctx, s, key, fallback, strconv.Atoi)
+}
+
+// settingParse is the shared read-trim-parse-or-fallback path used by
+// settingInt + settingBool. Extracted to kill the dupl clone the file
+// accumulated as more typed accessors were added.
+func settingParse[T any](ctx context.Context, s Reader, key string, fallback T, parse func(string) (T, error)) T {
 	v, err := s.Get(ctx, key)
 	if err != nil || strings.TrimSpace(v) == "" {
 		return fallback
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(v))
+	n, err := parse(strings.TrimSpace(v))
 	if err != nil {
 		return fallback
 	}
@@ -296,14 +305,6 @@ func settingFloat(ctx context.Context, s Reader, key string, fallback float64) f
 }
 
 func settingBool(ctx context.Context, s Reader, key string, fallback bool) bool {
-	v, err := s.Get(ctx, key)
-	if err != nil || strings.TrimSpace(v) == "" {
-		return fallback
-	}
-	b, err := strconv.ParseBool(strings.TrimSpace(v))
-	if err != nil {
-		return fallback
-	}
-	return b
+	return settingParse(ctx, s, key, fallback, strconv.ParseBool)
 }
 

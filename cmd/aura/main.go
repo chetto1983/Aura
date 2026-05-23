@@ -217,6 +217,7 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		DBPath:               cfg.DBPath,
 		LogDir:               cfg.LogDir,
 		WikiPath:             cfg.WikiPath,
+		SourcesPath:          cfg.SourcesPath,
 		SkillsPath:           cfg.SkillsPath,
 		MCPServersPath:       cfg.MCPServersPath,
 		PromptOverlayPath:    cfg.PromptOverlayPath,

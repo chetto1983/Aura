@@ -116,10 +116,13 @@ func (d Deps) fileRootResolver(name string) (string, error) {
 		}
 		return d.WikiDir, nil
 	case "sources":
+		if d.SourcesDir != "" {
+			return d.SourcesDir, nil // Phase-FS-LAYOUT: split from wiki/raw
+		}
 		if d.WikiDir == "" {
 			return "", errors.New("sources root not configured")
 		}
-		return filepath.Join(d.WikiDir, "raw"), nil
+		return filepath.Join(d.WikiDir, "raw"), nil // legacy fallback
 	case "workspace":
 		if d.WorkspaceDir == "" {
 			return "", errors.New("workspace root not configured")

@@ -63,7 +63,7 @@
         "Single atomic commit prefix: feat(wiki): alias-aware InjectAcrossWiki via AliasIndex (US-GRAPH-02)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-GRAPH-01 (AliasIndex API). After this lands, /maintenance/run picks up the new aliases automatically — no API change needed; the same endpoint shipped 2026-05-23 (commit d9b4a2c1) calls InjectAcrossWiki which now uses aliases. The alias index is consulted ONCE per InjectAcrossWiki invocation (snapshot then iterate), so concurrent writes during a maintenance run don't deadlock."
     },
     {

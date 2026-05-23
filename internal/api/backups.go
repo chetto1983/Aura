@@ -100,15 +100,16 @@ func backupService(w http.ResponseWriter, r *http.Request, deps Deps) (BackupSer
 func backupConfigFromRuntime(deps Deps) backup.Config {
 	cfg := deps.RuntimeConfig
 	return backup.Config{
-		Endpoint:   cfg.GarageS3Endpoint,
-		Region:     cfg.GarageS3Region,
-		Bucket:     cfg.GarageS3Bucket,
-		AccessKey:  cfg.GarageS3AccessKey,
-		SecretKey:  cfg.GarageS3SecretKey,
-		DBPath:     cfg.DBPath,
-		WikiPath:   cfg.WikiPath,
-		SkillsPath: cfg.SkillsPath,
-		LogDir:     cfg.LogDir,
-		AuditPaths: []string{"reports"},
+		Endpoint:    cfg.GarageS3Endpoint,
+		Region:      cfg.GarageS3Region,
+		Bucket:      cfg.GarageS3Bucket,
+		AccessKey:   cfg.GarageS3AccessKey,
+		SecretKey:   cfg.GarageS3SecretKey,
+		DBPath:      cfg.DBPath,
+		WikiPath:    cfg.WikiPath,
+		SourcesPath: cfg.SourcesPath,
+		SkillsPath:  cfg.SkillsPath,
+		LogDir:      cfg.LogDir,
+		AuditPaths:  []string{"reports"},
 	}
 }

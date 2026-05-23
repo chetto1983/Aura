@@ -86,6 +86,17 @@ type Config struct {
 	RecencyHalfLifeWikiDays    float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_WIKI_DAYS" default:"180"`
 	RecencyHalfLifeArchiveDays float64 `envconfig:"MEMORY_RECENCY_HALFLIFE_ARCHIVE_DAYS" default:"30"`
 	WikiPath                   string  `envconfig:"WIKI_PATH" default:"./runtime-workspace/wiki"`
+	// SourcesPath is the on-disk root for ingested source artifacts
+	// (original PDFs, OCR outputs, extract.md, source.json). Previously
+	// nested under WikiPath as wiki/raw/, the layout split out 2026-05-23
+	// so the /files/wiki view shows only operator-relevant wiki pages
+	// and operators cannot accidentally nuke raw artifacts from the wiki
+	// browser. Default sits next to the wiki dir, not inside it. Empty
+	// value triggers legacy fallback to WikiPath/raw at NewStore time so
+	// existing deployments without the new env var keep working until
+	// the migration step (see cmd/aura migrateSourcesLayout) moves the
+	// data to the new location.
+	SourcesPath                string  `envconfig:"SOURCES_PATH" default:"./runtime-workspace/sources"`
 	PromptOverlayPath          string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
 	SkillsPath                 string  `envconfig:"SKILLS_PATH" default:"./skills"`
 	SkillsInstallProjectDir    string  `envconfig:"SKILLS_INSTALL_PROJECT_DIR"`
@@ -301,6 +312,7 @@ func Load() (*Config, error) {
 	cfg.MemorySearchTimeoutMS = getEnvInt("MEMORY_SEARCH_TIMEOUT_MS", DefaultMemorySearchTimeoutMS)
 	cfg.MemorySearchStaleThresholdSecs = getEnvInt("MEMORY_SEARCH_STALE_THRESHOLD_SECS", 3600)
 	cfg.WikiPath = getEnv("WIKI_PATH", "./runtime-workspace/wiki")
+	cfg.SourcesPath = getEnv("SOURCES_PATH", "./runtime-workspace/sources")
 	cfg.PromptOverlayPath = getEnv("PROMPT_OVERLAY_PATH", ".")
 	cfg.SkillsPath = getEnv("SKILLS_PATH", "./skills")
 	cfg.SkillsInstallProjectDir = getEnv("SKILLS_INSTALL_PROJECT_DIR", "")

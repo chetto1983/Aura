@@ -24,11 +24,12 @@ type Config struct {
 	AccessKey string
 	SecretKey string
 
-	DBPath     string
-	WikiPath   string
-	SkillsPath string
-	LogDir     string
-	AuditPaths []string
+	DBPath      string
+	WikiPath    string
+	SourcesPath string // Phase-FS-LAYOUT (2026-05-23): dedicated path for ingested sources; legacy fallback to <WikiPath>/raw when empty
+	SkillsPath  string
+	LogDir      string
+	AuditPaths  []string
 }
 
 type Result struct {
@@ -352,8 +353,16 @@ func writeFilteredSourceArchive(w io.Writer, cfg Config, include func(name strin
 		}
 	}()
 
-	raw := filepath.Join(strings.TrimSpace(cfg.WikiPath), "raw")
-	if strings.TrimSpace(cfg.WikiPath) == "" {
+	// Phase-FS-LAYOUT (2026-05-23): sources moved out of <WikiPath>/raw.
+	// Prefer the dedicated SourcesPath; fall back to the legacy
+	// subdir layout when the new path is empty so old configs work.
+	raw := strings.TrimSpace(cfg.SourcesPath)
+	if raw == "" {
+		if wp := strings.TrimSpace(cfg.WikiPath); wp != "" {
+			raw = filepath.Join(wp, "raw")
+		}
+	}
+	if raw == "" {
 		return 0, nil
 	}
 	return addFilteredDir(tw, raw, "sources", func(rel string, d os.DirEntry) bool {

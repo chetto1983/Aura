@@ -69,18 +69,24 @@ type Repository interface {
 	FileResolver
 }
 
-// NewStore creates a source store rooted at <wikiDir>/raw/. The directory is
-// created if missing.
-func NewStore(wikiDir string, logger *slog.Logger) (*Store, error) {
-	rawDir := filepath.Join(wikiDir, "raw")
-	if err := os.MkdirAll(rawDir, 0o755); err != nil {
-		return nil, fmt.Errorf("source: create raw dir: %w", err)
+// NewStore creates a source store rooted at sourcesDir. The directory
+// is created if missing. Pre-2026-05-23 callers used to pass wikiDir
+// and the store would create <wikiDir>/raw internally; the layout was
+// split out so the /files/wiki dashboard view shows only LLM-curated
+// pages, not raw ingested artifacts. Callers MUST pass the absolute
+// sources path directly (cfg.SourcesPath).
+func NewStore(sourcesDir string, logger *slog.Logger) (*Store, error) {
+	if sourcesDir == "" {
+		return nil, fmt.Errorf("source: sources directory is required")
+	}
+	if err := os.MkdirAll(sourcesDir, 0o755); err != nil {
+		return nil, fmt.Errorf("source: create sources dir: %w", err)
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	return &Store{
-		rawDir: rawDir,
+		rawDir: sourcesDir,
 		logger: logger,
 		now:    func() time.Time { return time.Now().UTC() },
 	}, nil

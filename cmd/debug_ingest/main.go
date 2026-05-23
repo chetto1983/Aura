@@ -82,7 +82,9 @@ func main() {
 		fmt.Printf("FAIL: wiki.NewStore: %v\n", err)
 		os.Exit(1)
 	}
-	srcStore, err := source.NewStore(wikiDir, logger)
+	// Phase-FS-LAYOUT (2026-05-23): debug_ingest keeps the legacy
+	// layout (sources under wikiDir/raw) for fixture compatibility.
+	srcStore, err := source.NewStore(filepath.Join(wikiDir, "raw"), logger)
 	if err != nil {
 		fmt.Printf("FAIL: source.NewStore: %v\n", err)
 		os.Exit(1)

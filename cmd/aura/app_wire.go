@@ -457,8 +457,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		Sandbox:       a.deps.SandboxHealth,
 		// SourcePurger for DELETE /sources/{id} compact memoryindex cleanup.
 		SourcePurger: a.deps.MemoryStore,
-		// Multi-root file manager.
-		WikiDir:      cfg.WikiPath,
+		WikiDir:      cfg.WikiPath, // sources moved out via Phase-FS-LAYOUT
+		SourcesDir:   cfg.SourcesPath,
 		WorkspaceDir: cfg.WorkspaceRoot,
 		SkillsDir:    cfg.SkillsPath,
 		// WikiSearch reindexes after dashboard wiki writes/renames/deletes.

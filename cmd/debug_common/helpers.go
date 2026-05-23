@@ -80,7 +80,12 @@ func (h *Harness) TempSourceStore(prefix string, keep bool) (*source.Store, stri
 	if keep {
 		fmt.Printf("temp wiki: %s\n", wikiDir)
 	}
-	store, err := source.NewStore(wikiDir, logger)
+	// Per Phase-FS-LAYOUT (2026-05-23) the source store roots itself
+	// on a sourcesDir passed by the caller — not derived from wikiDir.
+	// Debug helpers keep the legacy layout (sources under wiki/raw) by
+	// passing the same path so existing fixtures continue to work.
+	sourcesDir := filepath.Join(wikiDir, "raw")
+	store, err := source.NewStore(sourcesDir, logger)
 	if err != nil {
 		cleanup()
 		h.Fail("source.NewStore: %v", err)

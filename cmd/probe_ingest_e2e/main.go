@@ -100,7 +100,9 @@ func main() {
 	if err != nil {
 		die("wiki.NewStore: %v", err)
 	}
-	srcStore, err := source.NewStore(wikiDir, logger)
+	// Phase-FS-LAYOUT (2026-05-23): keep legacy <wikiDir>/raw layout
+	// inside the probe to avoid divergence with stored fixtures.
+	srcStore, err := source.NewStore(filepath.Join(wikiDir, "raw"), logger)
 	if err != nil {
 		die("source.NewStore: %v", err)
 	}

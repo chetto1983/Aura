@@ -110,9 +110,15 @@ type Deps struct {
 
 	// File-manager roots for /files/{root}/... endpoints. Empty values
 	// disable the matching root (the endpoint returns a "root not
-	// configured" error). WikiDir backs both wiki and sources (sources is
-	// resolved as WikiDir/raw, where Aura keeps ingested PDFs).
+	// configured" error). Pre-2026-05-23: WikiDir backed BOTH wiki and
+	// sources (the sources root resolved as WikiDir/raw). Phase-FS-LAYOUT
+	// split sources out so /files/wiki shows only LLM-curated pages and
+	// SourcesDir holds raw ingested artifacts (PDFs, OCR md, source.json).
+	// SourcesDir is optional — when empty, sources resolution falls back
+	// to WikiDir/raw to keep older deployments working until the
+	// migration step in cmd/aura runs.
 	WikiDir      string
+	SourcesDir   string
 	WorkspaceDir string
 	SkillsDir    string
 

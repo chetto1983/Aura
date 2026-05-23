@@ -48,10 +48,12 @@ func TestStorePutCreatesSource(t *testing.T) {
 		t.Errorf("CreatedAt is zero")
 	}
 
-	if _, err := os.Stat(filepath.Join(dir, "raw", src.ID, "original.pdf")); err != nil {
+	// Phase-FS-LAYOUT (2026-05-23): NewStore now takes the sources dir
+	// directly (no implicit "raw" subdir). Files live at <dir>/<src.ID>.
+	if _, err := os.Stat(filepath.Join(dir, src.ID, "original.pdf")); err != nil {
 		t.Errorf("original.pdf missing: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "raw", src.ID, "source.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, src.ID, "source.json")); err != nil {
 		t.Errorf("source.json missing: %v", err)
 	}
 }

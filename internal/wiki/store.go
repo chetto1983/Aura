@@ -20,6 +20,11 @@ import (
 // Store manages wiki page storage with atomic writes and git tracking.
 type Store struct {
 	dir     string
+	// sourcesDir is the root for ingested source artifacts. Pre-Phase-FS-LAYOUT
+	// (2026-05-23) sources lived at <dir>/raw; the layout split moves them to a
+	// sibling directory. Empty value falls back to <dir>/raw for backwards
+	// compatibility — set explicitly via SetSourcesDir at boot.
+	sourcesDir string
 	mu      sync.Map   // per-file mutex: slug -> *sync.Mutex
 	gitMu   sync.Mutex // serializes git operations
 	indexMu sync.Mutex // serializes index.md updates
