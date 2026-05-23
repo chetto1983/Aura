@@ -206,6 +206,15 @@ type Stats struct {
 	TurnActions []conversation.TaskEntry
 }
 
+// maxLengthRecoveries caps the number of finish_reason='length' text-recovery
+// injections per turn (US-OUT-05). After this many recoveries the loop returns
+// the partial text rather than injecting another prompt.
+const maxLengthRecoveries = 3
+
+// lengthRecoveryPrompt is the literal user-side message injected when the LLM
+// hits the context window mid-response (finish_reason='length', text only).
+const lengthRecoveryPrompt = "Output limit reached. Continue exactly where you left off — no recap, no apology."
+
 // MaxIterationsCeiling is a hard upper bound on opts.MaxIterations.
 // Raised from 50 in Phase-F: per docs/aura-main-loop-limits-audit.md §3.5,
 // Aura caps LATENCY (MaxElapsed = 5 min) and COST (HardBudget = $20), not

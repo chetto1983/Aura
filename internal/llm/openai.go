@@ -317,6 +317,7 @@ func (c *OpenAIClient) sendHTTP(ctx context.Context, chatReq chatRequest) (Respo
 		ReasoningDetails: cloneRawJSON(msg.ReasoningDetails),
 		Usage:            usage,
 		EndTurn:          chatResp.Choices[0].EndTurn,
+		FinishReason:     chatResp.Choices[0].FinishReason,
 	}, nil
 }
 

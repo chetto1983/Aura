@@ -326,6 +326,7 @@ func (o *Outbound) ConsumeStream(
 				Usage:        tok.Usage,
 				Reasoning:    strings.TrimSpace(cotBuf.String()),
 				EndTurn:      tok.EndTurn,
+				FinishReason: tok.FinishReason,
 			}
 			// Final edit: drop both the CoT prefix AND the statusPane
 			// footer so the user sees only the clean answer.

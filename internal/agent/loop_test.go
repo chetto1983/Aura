@@ -1096,6 +1096,106 @@ func TestRunLoopAlreadyDoneBlockAbsentOnFirstIteration(t *testing.T) {
 	}
 }
 
+// TestRunLoopFinishReasonLengthDropsToolCalls verifies US-OUT-05 rail 1:
+// when finish_reason='length' AND tool_calls are present the calls are DROPPED
+// and the executor is NOT invoked. The loop continues on the next iteration.
+func TestRunLoopFinishReasonLengthDropsToolCalls(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{
+			HasToolCalls: true,
+			ToolCalls:    []llm.ToolCall{{ID: "call-1", Name: "web_search", Arguments: map[string]any{"q": "test"}}},
+			FinishReason: "length",
+		}},
+		{Response: llm.Response{Content: "final after length drop"}},
+	}}
+	executed := false
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, _ []llm.ToolCall) ExecutionSummary {
+		executed = true
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 4})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if executed {
+		t.Fatal("executor MUST NOT be called when finish_reason='length' with tool calls")
+	}
+	if result.Text != "final after length drop" {
+		t.Fatalf("Text = %q, want final after length drop", result.Text)
+	}
+	if client.requests != 2 {
+		t.Fatalf("LLM requests = %d, want 2 (length-drop iteration + final)", client.requests)
+	}
+}
+
+// TestRunLoopFinishReasonLengthInjectsRecoveryPrompt verifies US-OUT-05 rail 2:
+// when finish_reason='length' AND non-blank text AND no tool_calls, the loop
+// adds a user-side recovery prompt so the model continues from where it stopped.
+func TestRunLoopFinishReasonLengthInjectsRecoveryPrompt(t *testing.T) {
+	state := newBudgetLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "partial answer...", FinishReason: "length"}},
+		{Response: llm.Response{Content: "completed answer"}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 5})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != "completed answer" {
+		t.Fatalf("Text = %q, want completed answer", result.Text)
+	}
+	if !state.sawUserMessage("Output limit reached") {
+		t.Fatal("expected recovery prompt injected as user message")
+	}
+	if client.requests != 2 {
+		t.Fatalf("LLM requests = %d, want 2 (length-recovery + final)", client.requests)
+	}
+}
+
+// TestRunLoopFinishReasonLengthRecoveryCap verifies US-OUT-05 recovery counter:
+// after 3 injections the 4th finish_reason='length' text response terminates the
+// loop with the partial text rather than injecting another prompt.
+func TestRunLoopFinishReasonLengthRecoveryCap(t *testing.T) {
+	state := newBudgetLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{Content: "partial 1", FinishReason: "length"}},
+		{Response: llm.Response{Content: "partial 2", FinishReason: "length"}},
+		{Response: llm.Response{Content: "partial 3", FinishReason: "length"}},
+		{Response: llm.Response{Content: "partial 4", FinishReason: "length"}},
+		{Response: llm.Response{Content: "should not reach here"}},
+	}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 10})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	// 4th finish should terminate with partial 4, not reach the 5th response.
+	if result.Text != "partial 4" {
+		t.Fatalf("Text = %q, want partial 4 (cap exceeded, returns partial)", result.Text)
+	}
+	// Exactly 3 recovery messages injected, not 4.
+	recoveryCount := 0
+	for _, msg := range state.messages {
+		if msg.Role == "user" && strings.Contains(msg.Content, "Output limit reached") {
+			recoveryCount++
+		}
+	}
+	if recoveryCount != 3 {
+		t.Fatalf("recovery messages = %d, want exactly 3 (maxLengthRecoveries)", recoveryCount)
+	}
+	// 4 LLM calls, not 5.
+	if client.requests != 4 {
+		t.Fatalf("LLM requests = %d, want 4 (terminates after 4th length-finish)", client.requests)
+	}
+}
+
 // TestRunLoopTurnActionsAccumulateAcrossIterations verifies that Stats.TurnActions
 // grows with each fresh tool call and is accessible after the run.
 func TestRunLoopTurnActionsAccumulateAcrossIterations(t *testing.T) {

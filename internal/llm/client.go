@@ -71,6 +71,11 @@ type ToolCall struct {
 // the server wants another agent-loop sampling round even without a tool call.
 // nil means "no signal" (self-hosted or provider that omits the field) and is
 // treated identically to true — existing exit semantics apply.
+//
+// FinishReason mirrors the provider's stop-reason: "stop" (normal), "length"
+// (output truncated at context window), "tool_calls" (model requested tools).
+// Empty when the provider omits the field. The agent loop branches on "length"
+// to drop truncated tool JSON and inject recovery prompts (US-OUT-05).
 type Response struct {
 	Content          string
 	Usage            TokenUsage
@@ -79,6 +84,7 @@ type Response struct {
 	Reasoning        string
 	ReasoningDetails []byte
 	EndTurn          *bool
+	FinishReason     string `json:",omitempty"`
 }
 
 // TokenUsage tracks token consumption for a single LLM call.
@@ -130,11 +136,14 @@ type Token struct {
 	// user sees progress instead of a stall, and can ignore it once the
 	// Content stream begins. Empty when the provider does not surface it.
 	Reasoning string
-	ToolCalls []ToolCall
-	Usage     TokenUsage
-	Done      bool
-	EndTurn   *bool
-	Err       error
+	ToolCalls    []ToolCall
+	Usage        TokenUsage
+	Done         bool
+	EndTurn      *bool
+	// FinishReason is set on the final Done=true token; mirrors the provider's
+	// finish_reason ("stop", "length", "tool_calls"). Empty when absent.
+	FinishReason string
+	Err          error
 }
 
 // Client is the interface for LLM providers.

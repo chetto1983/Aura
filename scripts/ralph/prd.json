@@ -91,7 +91,7 @@
         "Single atomic commit prefix: feat(agent): length-recovery + ignore-tool-calls-on-length safety rails (US-OUT-05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Depends on US-OUT-01..04 being stable (history-shape changes need a stable substrate). GROUND-TRUTH: read internal/agent/loop.go where finish_reason is consumed today; identify the exact spot for the branch."
     },
     {

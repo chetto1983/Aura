@@ -34,10 +34,13 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 	// capturedEndTurn holds the end_turn field from the finish-reason chunk.
 	// Providers that omit the field leave it nil (no-signal).
 	var capturedEndTurn *bool
+	// capturedFinishReason holds the finish_reason from the first choice chunk
+	// that carries it. Empty when the provider omits the field.
+	var capturedFinishReason string
 
 	finish := func() {
 		if len(toolBuf) == 0 {
-			ch <- Token{Done: true, Usage: usage, EndTurn: capturedEndTurn}
+			ch <- Token{Done: true, Usage: usage, EndTurn: capturedEndTurn, FinishReason: capturedFinishReason}
 			return
 		}
 		calls := make([]ToolCall, 0, len(toolBuf))
@@ -50,7 +53,7 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 			}
 			calls = append(calls, ToolCall{ID: a.id, Name: a.name, Arguments: args})
 		}
-		ch <- Token{ToolCalls: calls, Usage: usage, Done: true, EndTurn: capturedEndTurn}
+		ch <- Token{ToolCalls: calls, Usage: usage, Done: true, EndTurn: capturedEndTurn, FinishReason: capturedFinishReason}
 	}
 
 	scanner := bufio.NewScanner(body)
@@ -94,11 +97,14 @@ func (c *OpenAIClient) readSSEStream(body io.ReadCloser, ch chan<- Token) {
 		}
 		choice := chunk.Choices[0]
 
-		// Capture end_turn from the finish-reason chunk. Only update when
-		// the field is explicitly present (non-nil pointer from JSON) so a
-		// later usage-only chunk with no end_turn doesn't overwrite it.
-		if choice.FinishReason != nil && choice.EndTurn != nil {
-			capturedEndTurn = choice.EndTurn
+		// Capture finish_reason and end_turn from the finish-reason chunk. Only
+		// update when FinishReason is explicitly present so a later usage-only
+		// chunk cannot overwrite the already-captured values.
+		if choice.FinishReason != nil {
+			capturedFinishReason = *choice.FinishReason
+			if choice.EndTurn != nil {
+				capturedEndTurn = choice.EndTurn
+			}
 		}
 
 		// Surface reasoning deltas as they arrive so UIs can show the
