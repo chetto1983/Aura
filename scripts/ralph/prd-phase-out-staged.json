@@ -1,0 +1,182 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-OUT — Output discipline + budget enforcement. 9 atomic stories (6 output discipline + 3 budget enforcement) backed by 2026 production evidence: nanobot/codex/elysia + arXiv 2511.17006 BATS benchmark + Sattyam Jain $47K postmortem + Hermes ChatCompletionHelper. Plan: .planning/post-drift-2026-05-21/Phase-OUT/plan.md. Live evidence motivating budget stories: 2026-05-22 log elapsed_ms=179668 llm_calls=28 tool_calls=33 delivered=false (agent thrash 30+ web_search/fetch). Phase-TOOL killed the immediate trigger (tool RAG); Phase-OUT installs the floor at runtime-supervisor layer. Per-module deep refactor on touch is mandatory per CLAUDE.md.",
+  "userStories": [
+    {
+      "id": "US-OUT-01",
+      "title": "Centralized truncate-middle + exec output wrapper",
+      "description": "Centralize byte-budget truncation. New internal/agent/tools/truncate.go exports TruncateMiddle(s string, maxBytes int) string — UTF-8-safe walk of char_indices for prefix_end + suffix_start, inserts '…N tokens truncated…' marker the model recognizes (not silent). Add a token-variant TruncateMiddleByTokens for token-budgeted callers. Swap internal/agent/executor.go::limitToolContent (currently line ~99) to call TruncateMiddle. Add structural wrapper for exec/file tool output so model sees `Exit code:`, `Wall time:`, `Total output lines:`, `Output:` framing even when body is gutted (model still gets structural signal). Source pattern: Codex core/src/utils/string/src/truncate.rs:7-69 + core/src/tools/mod.rs:64-89.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/truncate.go exists with TruncateMiddle(s string, maxBytes int) string + UTF-8-safe boundaries",
+        "Marker '…N tokens truncated…' (or equivalent literal) present in truncated output; model would parse it as a marker not as content",
+        "go test ./internal/agent/tools/... -count=1 green with new tests covering: middle-truncate, marker presence, UTF-8 boundary safety, empty input, input-smaller-than-budget no-op",
+        "Probe: a 50 KB synthetic output → TruncateMiddle(s, 8192) returns ≤ 8 KB with head + tail + marker",
+        "internal/agent/executor.go::limitToolContent uses TruncateMiddle (or equivalent) — no in-place truncation logic survives in executor.go",
+        "Exec wrapper present: when tool result is from execute_bash / execute_code / file_read, body is wrapped with `Exit code: N\\nWall time: Xms\\nTotal output lines: L\\nOutput:\\n<body>`",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: feat(agent): centralized truncate-middle + exec output wrapper (US-OUT-01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation story — every subsequent OUT story uses TruncateMiddle as floor. GROUND-TRUTH: read internal/agent/executor.go around line 99 first; see how limitToolContent currently works."
+    },
+    {
+      "id": "US-OUT-02",
+      "title": "Spill-to-disk + reference envelope for oversize tool output",
+      "description": "When tool output > max_tool_result_chars (default 8 KB), persist full payload to runtime-workspace/tool-results/<session_id>/<call_id>.<ext> and replace inline content with a reference envelope: `[tool result spilled to disk]\\npath: /workspace/tool-results/...\\noriginal_size_bytes: N\\npreview (first 1200 chars):\\n<truncated>`. New tool read_tool_result(path) OR extend workspace_read to accept the spill path. LRU+age sweeper (32 sessions, 7-day TTL) piggybacks on every persist — no separate daemon. Spill is the upgrade path from US-OUT-01 truncation when payload is too large to summarize in-line. Source: nanobot utils/helpers.py:322-368, :272-287, :297-309.",
+      "acceptanceCriteria": [
+        "New internal/agent/tools/registry/spilloutput.go (or equivalent) handles the spill+envelope pipeline",
+        "internal/storage/sweep/lru_age.go (or equivalent) implements LRU+age policy: 32 sessions, 7-day TTL, sweep runs on every persist",
+        "Probe: tool returning 100 KB → on-disk file exists at runtime-workspace/tool-results/<session>/<id>.txt; LLM sees envelope with path + 1200-char preview (header + body)",
+        "Test: after 33 sessions persisted with spill, the oldest session directory is evicted by sweep",
+        "Test: after 7+ days TTL, file is purged regardless of session count",
+        "read_tool_result(path) tool added OR workspace_read accepts paths under /workspace/tool-results/",
+        "boundoutput.go (or wherever the truncate threshold is applied) routes to spill instead of inline truncation when payload > spill_threshold (configurable; default 8 KB inline → above, spill)",
+        "go test ./internal/agent/tools/... ./internal/storage/sweep/... green",
+        "Single atomic commit prefix: feat(agent): spill-to-disk + reference envelope for oversize tool output (US-OUT-02)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "DEPENDS ON US-OUT-01 (truncate is still the floor when spill is unavailable). RISK R1: LRU sweep tested under concurrent session activity — write the sweeper test FIRST per plan.md."
+    },
+    {
+      "id": "US-OUT-03",
+      "title": "Repeated external-lookup throttle — 2-strike hash-based dedup",
+      "description": "Per-turn signature counter for web_search (by query, lowercased+trimmed), web_fetch (by URL), and search_memory (by query). After 2 hits of the same target in a single turn, short-circuit the 3rd call with a hard error: 'Error: repeated external lookup blocked. Use the results you already have to answer, or try a meaningfully different source.' The error is fed back as the tool result so the LLM sees it. Constant: _MAX_REPEAT_EXTERNAL_LOOKUPS = 2. Counter resets per turn (NOT per session). Source: nanobot utils/runtime.py:68-102. Kills the 30-web_search thrash pattern (2026-05-22 evidence: 33 tool_calls with 4 ignored 404s).",
+      "acceptanceCriteria": [
+        "New internal/agent/governance/repeated_lookup.go exports a per-turn signature-counter with MaxRepeats=2 default",
+        "internal/agent/executor.go wires the counter BEFORE Execute() for web_search / web_fetch / search_memory tool names",
+        "Probe: synthetic turn calls web_search(\"foo\") twice → both run; third call returns blocked error inline as tool result",
+        "Probe: web_fetch with same URL — same shape (URL normalized: trim, lowercase host, strip trailing /, query params preserved)",
+        "Probe: search_memory with same query — same shape",
+        "Test: counter resets between turns — 2 sequential turns each with 2 web_search(\"foo\") calls both succeed (4 total) — the 5th in turn 3 would block",
+        "go test ./internal/agent/governance/... ./internal/agent/... green",
+        "Single atomic commit prefix: feat(agent): repeated external-lookup throttle — 2-strike dedup (US-OUT-03)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "RISK R2: 2-strike may be strict for legitimate iterative research. The number 2 is production-tested from nanobot — don't tune higher without bench evidence. PARALLEL with US-OUT-04 (no dependency)."
+    },
+    {
+      "id": "US-OUT-04",
+      "title": "tasks_completed_string inline state block — kill 'I haven't searched yet' relapse",
+      "description": "Inject a `## Already done this turn` block into the per-iteration system prompt (per-turn, NOT cross-turn — chat history covers cross-turn). XML-tagged per-turn action ledger: `<task_N><action>search_memory(\"X\")</action><result>SUCCESSFUL but no results</result><reasoning>brief</reasoning></task_N>`. Injection point: BEFORE the per-iteration step hint, AFTER the system prompt's static sections. Cost: ~200-500 tokens/turn — only inject when turn has >0 tool calls (R3 mitigation). Source: elysia tree/objects.py:759-798. Kills the 'I haven't searched yet, let me search' relapse pattern.",
+      "acceptanceCriteria": [
+        "internal/agent/turnstats.go extended to track per-turn tool calls with shape {tool_name, args_summary, status, brief_outcome}",
+        "Render function in internal/conversation/system_prompt.go produces the `## Already done this turn` block with `<task_N>...</task_N>` entries",
+        "internal/agent/loop.go injects the rendered block AFTER static sys-prompt and BEFORE step hint, ONLY when turn has ≥1 prior tool call",
+        "Probe: agent calls search_memory(\"X\") returning empty → next iteration's system prompt contains `<task_1>...search_memory(\"X\")...(SUCCESSFUL but no results)...</task_1>`",
+        "Probe: the 'I haven't searched yet, let me search' relapse is NOT triggered after a prior empty-result call (verified via probe_chat scenario)",
+        "Token-cost gate: when no prior tool calls in turn, the block is OMITTED — verified by inspecting rendered prompt for an early-iter no-call turn",
+        "go test ./internal/agent/... ./internal/conversation/... green",
+        "Single atomic commit prefix: feat(agent): tasks_completed inline state block — kill tool-repeat relapse (US-OUT-04)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "PARALLEL with US-OUT-03 (no dependency). RISK R3 mitigated by 'only when >0 tool calls'. KV-cache impact: per-iter mutation of prompt suffix — that's expected; only the prefix needs to stay stable for cache, and this goes in the suffix."
+    },
+    {
+      "id": "US-OUT-05",
+      "title": "Length-recovery + ignore-tool-calls-on-length safety rails",
+      "description": "Two safety rails in internal/agent/loop.go. (1) When LLM emits tool calls AND finish_reason='length', IGNORE the tool calls (likely truncated JSON → unsafe to execute) and log a structured warning. The model gets fed back the partial text only, no tool execution. (2) When LLM hits output cap with partial text response (finish_reason='length' with non-blank text and no tool_calls), append user-side recovery prompt: 'Output limit reached. Continue exactly where you left off — no recap, no apology.' Cap at 3 such recoveries per turn to prevent recovery-loop. Source: nanobot runner.py:398-403, :437-456.",
+      "acceptanceCriteria": [
+        "internal/agent/loop.go branches on finish_reason='length' BEFORE dispatching tool calls",
+        "When finish_reason='length' AND tool_calls present → tool_calls DROPPED, logged as zap warn with reason; control returns to next iteration with partial text in history",
+        "When finish_reason='length' AND non-blank text AND no tool_calls → next user message appends literal recovery prompt",
+        "Recovery counter capped at 3 per turn — verified by mock test that emits 4 length-finishes in a row; the 4th does NOT append recovery, terminates with error or partial reply",
+        "Test: mock LLM emits finish_reason='length' with tool_calls → tools NOT executed",
+        "Test: mock LLM emits finish_reason='length' with text only → next call's user message contains recovery literal",
+        "go test ./internal/agent/... green",
+        "Single atomic commit prefix: feat(agent): length-recovery + ignore-tool-calls-on-length safety rails (US-OUT-05)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "Depends on US-OUT-01..04 being stable (history-shape changes need a stable substrate). GROUND-TRUTH: read internal/agent/loop.go where finish_reason is consumed today; identify the exact spot for the branch."
+    },
+    {
+      "id": "US-OUT-06",
+      "title": "Orphan tool_call backfill + skip empty-assistant on persist",
+      "description": "Two history-cleanup operations to prevent provider 400 'invalid tool_calls' errors after history corruption (e.g. SQLite WAL recovery per memory feedback_sqlite_wal_windows_corruption). (1) BEFORE every LLM call, strip role:tool messages whose tool_call_id doesn't match any prior assistant tool_calls. Insert synthetic '[Tool result unavailable — call was interrupted or lost]' for declared assistant tool_calls that never got a result. (2) When persisting to conversation archive, SKIP assistant messages with neither content nor tool_calls — they poison subsequent prompts. Both operations logged for /api/insights visibility (R4 mitigation). Source: nanobot runner.py:1070-1094, :1096-1135, loop.py:1444-1445.",
+      "acceptanceCriteria": [
+        "New internal/agent/governance/history_hygiene.go exports ScrubOrphanToolCalls(history) and IsAssistantEmpty(msg)",
+        "internal/agent/loop.go calls ScrubOrphanToolCalls(history) BEFORE EACH LLM round",
+        "internal/conversation/archive.go skips persisting assistant messages where Content is empty AND ToolCalls is empty",
+        "Test: history with declared tool_call_id 'abc' + no matching tool result → ScrubOrphanToolCalls inserts placeholder synthetic tool result with tool_call_id='abc' and content='[Tool result unavailable — call was interrupted or lost]'",
+        "Test: history with role:tool tool_call_id='xyz' + no prior assistant tool_call_id='xyz' → that tool message is STRIPPED",
+        "Test: assistant message with empty Content and empty ToolCalls → not persisted; verified by querying conversations table after the simulated turn",
+        "Probe: replay a known-broken-history scenario (use feedback_sqlite_wal_windows_corruption recovery as template) → no provider 400 returned",
+        "Every backfill/skip logged structured (zap) for /api/insights consumption",
+        "go test ./internal/agent/... ./internal/conversation/... green",
+        "Single atomic commit prefix: feat(agent): orphan tool_call backfill + skip empty-assistant on persist (US-OUT-06)"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Depends on US-OUT-01..05 being stable. RISK R4: silent history mutation — every change logged for visibility. Last story in the output-discipline group; budget stories follow."
+    },
+    {
+      "id": "US-OUT-07",
+      "title": "Per-tool-class budget caps (web=3, wiki=20, exec=2, source=8, scheduler=5, ask_user=3, default=10)",
+      "description": "Add a per-tool-class budget enforced inside internal/agent/executor.go. tool_class() helper maps tool name → class via regex/prefix rules: `web_*` → web, `read_source|store_source|ingest_source|ocr_source` → source, `search_memory|read_memory|list_memory|forget_memory` → wiki, `execute_code|execute_bash` → exec, `schedule_*|list_tasks|cancel_task` → scheduler, `ask_user|request_dashboard_token` → ask_user, others → default. Class → cap mapping configurable via env vars (AURA_TOOL_BUDGET_<CLASS>) + runtime settings table, with defaults: web=3, wiki=20, exec=2, source=8, scheduler=5, ask_user=3, default=10. Counter is per-turn (resets per agent.Run invocation, NOT per session). When a tool's class hits cap → the tool call is rejected at executor level with structured error fed back as tool result: 'Error: <class> budget exhausted (<n>/<cap>). Use a different tool class or finalize with what you have.' Source: arXiv 2511.17006 + BATS benchmark.",
+      "acceptanceCriteria": [
+        "New internal/agent/governance/budget.go exports a per-turn tool-class budget tracker + tool_class(name) string helper",
+        "tool_class() unit-tested: web_search→web, web_fetch→web, read_source→source, search_memory→wiki, execute_bash→exec, schedule_task→scheduler, ask_user→ask_user, foo_unknown→default",
+        "internal/agent/executor.go calls budget.Check(class, name) BEFORE Execute(); on cap-hit returns the structured error inline as tool result",
+        "Default caps (web=3, wiki=20, exec=2, source=8, scheduler=5, ask_user=3, default=10) hardcoded as constants in budget.go",
+        "Env vars AURA_TOOL_BUDGET_WEB / WIKI / EXEC / SOURCE / SCHEDULER / ASK_USER / DEFAULT override defaults at boot (int 1..100, fail-soft to default on parse error)",
+        "Runtime settings table key tool_budget_web (etc.) overrides env at applier.go layer (per existing pattern in internal/config/applier.go)",
+        "Probe: turn that calls web_search 4 times in a row → 4th call returns budget-exhausted error inline; LLM sees the error in tool_result content",
+        "Test: counter resets per turn — 2 sequential turns with 3 web calls each both succeed (6 web calls total across 2 turns)",
+        "Test: setting AURA_TOOL_BUDGET_WEB=10 via DB updates → reflects in agent runtime after restart",
+        "go test ./internal/agent/governance/... ./internal/agent/... ./internal/config/... green",
+        "Single atomic commit prefix: feat(agent): per-tool-class budget caps with runtime override (US-OUT-07)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "Independent of US-OUT-01..06 (can run in parallel). RISK R5: per-class caps may be too low for legitimate complex queries — defaults are tunable via dashboard; first 2 weeks log every cap-hit so we tune empirically."
+    },
+    {
+      "id": "US-OUT-08",
+      "title": "OR-of-four budget guard: iter + tokens + wall-clock + cost",
+      "description": "Replace the current single-signal MaxIterations cap with an OR-of-four guard at the TOP of every iteration in internal/agent/loop.go. Signals: (1) iterations >= MaxIterations (existing — keep), (2) tokens_total >= MaxTokens (new — default 500k via MAX_CONTEXT_TOKENS setting), (3) wall_clock >= MaxElapsed (existing — Aura has AURABOT_TIMEOUT_SEC=120s; lower to 60s default), (4) cost_usd >= MaxCost (new — defaults to HARD_BUDGET, currently 20). When any signal trips, set stop_reason = the specific signal enum and trigger US-OUT-09 force-finalize. The four reasons are structured-logged as run_events with the trigger so /api/runs/<id> can show which signal fired. Source: Sattyam Jain $47K LangChain postmortem + Hermes ChatCompletionHelper — production failure mode in 2026 is single-signal blindness.",
+      "acceptanceCriteria": [
+        "New internal/agent/governance/guard.go exports a StopReason enum: max_iterations_hit, token_budget_exceeded, wall_clock_exceeded, cost_budget_exceeded, empty_llm_response",
+        "internal/agent/loop.go top-of-iteration checks all four signals in defined order (cheapest signal first: iter, then tokens, then wall_clock, then cost)",
+        "Defaults: MaxIterations existing, MaxTokens=500_000, MaxElapsed=60s (lowered from 120s), MaxCost=20 USD",
+        "Test: turn that exceeds tokens but stays under iter cap → trips stop_reason=token_budget_exceeded",
+        "Test: turn that's slow (>60s) but few tool calls → trips stop_reason=wall_clock_exceeded",
+        "Test: turn that costs >20 USD → trips stop_reason=cost_budget_exceeded",
+        "Test: turn that hits iter cap with low tokens/cost → still trips stop_reason=max_iterations_hit (legacy behavior preserved)",
+        "Probe: /api/runs/<id> JSON exposes stop_reason field with one of the four values",
+        "Cost-budget fallback (R6): when usage missing from provider response, fall back to other 3 signals; never block on cost alone — verified by mock test with no UsageInfo in response",
+        "go test ./internal/agent/... green",
+        "Single atomic commit prefix: feat(agent): OR-of-four budget guard (iter + tokens + wall-clock + cost) (US-OUT-08)"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "DEPENDS ON US-OUT-07 for the BudgetExhausted shape (stop_reason classification reuses it). RISK R6: cost-budget requires accurate per-iter cost — fallback to other signals on missing UsageInfo."
+    },
+    {
+      "id": "US-OUT-09",
+      "title": "Force-finalize on budget exhaustion (Hermes pattern)",
+      "description": "When US-OUT-07 OR US-OUT-08 trips a budget signal, fire ONE additional LLM call with tool_choice='none' (no tools available) and a user-side prompt: 'Budget exhausted (signal: <stop_reason>). Synthesize the best answer you have from the context so far. Be honest about what's missing.' The single synthesis turn produces a useful reply instead of the current error='context canceled' empty reply. The synthesis turn IS counted in wall-clock + cost but NOT iter (it's a leaf step). If synthesis itself errors, return the partial work directly without further LLM recursion (R7 mitigation: cap at ONE synthesis call, no recursive finalize). Source: Hermes agent/chat_completion_helpers.py:925 _force_synthesis_turn — production-validated for user-facing agents. Telegram is user-facing → silent failure is unacceptable.",
+      "acceptanceCriteria": [
+        "internal/agent/loop.go extends existing gracefulFinalize to be triggered on token_budget_exceeded / wall_clock_exceeded / cost_budget_exceeded (currently only max_iterations_hit + empty_llm_response)",
+        "Synthesis prompt is a constant string in internal/agent/governance/finalize.go or equivalent; includes a {stop_reason} placeholder for injection",
+        "Synthesis call uses tool_choice='none' (provider-specific: OpenAI 'none', Anthropic equivalent) — no tools dispatched",
+        "Probe: induce wall-clock budget exhaustion (mock LLM with 30s response × 3 turns) → user gets a synthesis reply like 'I was working on X but ran out of time; here is what I have so far: ...' NOT empty/error",
+        "Probe: induce cost budget exhaustion → same synthesis reply pattern with cost_budget_exceeded mentioned",
+        "Probe: induce token budget exhaustion → same synthesis reply pattern with token_budget_exceeded mentioned",
+        "Synthesis turn logged as run_event with stop_reason — dashboard /api/runs/<id> shows 'agent budget hit X at turn N — synthesized from partial work'",
+        "R7 mitigation: synthesis errors → partial work returned directly; verified by mock that makes the synthesis call itself fail → partial work surfaced, no recursive finalize",
+        "Five stop_reasons supported end-to-end: max_iterations_hit, empty_llm_response, token_budget_exceeded, wall_clock_exceeded, cost_budget_exceeded",
+        "go test ./internal/agent/... green",
+        "Live thrash regression test: re-run the 2026-05-22 scenario (query that triggers web_search → 404 → retry loop). Pre-fix bench: 28 LLM calls / 33 tool calls / 180s / empty reply. Post-fix targets: ≤8 LLM calls, ≤6 tool calls, ≤30s, NON-empty synthesis reply with explicit stop_reason mention. Document outcome in docs/quality-bench/runs/post-out-2026-XX-XX.md",
+        "Single atomic commit prefix: feat(agent): force-finalize on budget exhaustion (Hermes pattern) (US-OUT-09)"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "DEPENDS ON US-OUT-08 for the stop_reason enum. RISK R7: synthesis itself costs $ + adds latency — cap at ONE call, no recursive finalize. Anti-pattern: prompt-pressure warnings in the synthesis prompt — keep it terse and factual per Hermes #7915 lesson. THIS is the story that produces measurable bench delta vs the 2026-05-22 thrash."
+    }
+  ]
+}

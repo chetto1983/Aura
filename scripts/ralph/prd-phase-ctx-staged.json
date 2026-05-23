@@ -1,0 +1,113 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-CTX — Context Engineering Substrate. 5 stories (~+900 LOC, 3 sessions). Plan: .planning/post-drift-2026-05-21/Phase-CTX/plan.md. Builds the layered tool-output compression stack: ContextEngine ABC + ContextCompressor (hermes) + payload_summarizer trait (openhuman) + auto-compact at 70% threshold (Codex). Critical integration note 2026-05-23: TokenJuice (internal/tokenjuice, already live) is layer-1 deterministic rule compactor; US-CTX-03 payload_summarizer is layer-2 LLM-based detour for non-matched oversize results. Both complement, not replace. Aura is AHEAD on layer-1 (semantic counters + porcelain rewriters) vs openhuman's dumb byte truncation, so the integration point is AFTER TokenJuice rules fail OR result still >threshold. Per-module deep refactor on touch mandatory per CLAUDE.md.",
+  "userStories": [
+    {
+      "id": "US-CTX-01",
+      "title": "ContextEngine interface + default no-op impl",
+      "description": "Define internal/conversation.ContextEngine interface: Name() string, ShouldCompress(promptTokens int) bool, Compress(messages []llm.Message, currentTokens int, focusTopic string) []llm.Message, UpdateFromResponse(usage llm.Usage). Default impl wraps current behavior (50-msg cap → returns unchanged once below cap). Agent loop reads counters from engine instead of inline. Foundation story — US-CTX-02..05 all depend on this. Source: hermes agent/context_engine.py.",
+      "acceptanceCriteria": [
+        "internal/conversation/engine.go defines ContextEngine interface with the 4 methods above",
+        "internal/conversation/engine.go has DefaultContextEngine implementation that wraps current 50-msg sliding window behavior — returns messages unchanged once count ≤ 50",
+        "internal/agent/loop.go calls engine.ShouldCompress() + engine.Compress() instead of inline 50-msg cap logic",
+        "internal/chat/agentloop.go threads ContextEngine through the run context",
+        "go test ./internal/conversation/... ./internal/agent/... ./internal/chat/... -count=1 green",
+        "Existing long-conversation tests pass — DefaultContextEngine MUST be byte-identical to current behavior at the boundary",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: feat(conversation): ContextEngine interface + default no-op impl (US-CTX-01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation story. DefaultContextEngine = byte-identical to current behavior, so regression risk is zero. Future engines (US-CTX-02 ContextCompressor, US-CTX-04 AutoCompactEngine) just implement the interface and swap in via config."
+    },
+    {
+      "id": "US-CTX-02",
+      "title": "ContextCompressor with SUMMARY_PREFIX + scaled budget + tool-result pre-pruning",
+      "description": "New internal/conversation/compressor.go implementing ContextEngine with hermes patterns: (a) SUMMARY_PREFIX filter-safe summarizer preamble (the production-tested handoff prompt — every word is load-bearing per R2). (b) Scaled summary budget: min 2000 tokens, 20% ratio, max 12000 tokens. (c) Tool-result pre-pruning (deterministic 1-liner replacement: `[search_files] content search for 'X' in agent/ -> 12 matches`). (d) JSON-arg sanitization preserving validity (recursively shrink string leaves to ≤200 chars; never produce invalid JSON). (e) Streaming context-tag scrubber that handles `<memory-context>...</memory-context>` split across chunks. (f) Image-aware token budgeting (_IMAGE_TOKEN_ESTIMATE = 1600 per image, matches Claude Code).",
+      "acceptanceCriteria": [
+        "internal/conversation/compressor.go implements ContextEngine interface",
+        "SUMMARY_PREFIX constant present as a multiline string (lift from hermes — every word load-bearing, do not tune without bench)",
+        "Compressor.Compress() applies: pre-pruning → JSON-arg sanitization → streaming-tag scrub → summary call → reassembly",
+        "Test: golden test on SUMMARY_PREFIX byte-stability (any change requires explicit test update)",
+        "Test: JSON-arg truncation produces VALID JSON — round-trip via json.Unmarshal asserts no schema break",
+        "Test: streaming scrubber removes `<memory-context>...</memory-context>` even when split across 2-3 chunks",
+        "Test: image-aware budgeting counts 1600 tokens per image_url message item",
+        "internal/conversation/compressor_test.go covers all 5 patterns above",
+        "golangci-lint clean on touched files; LOC ≤600 per file",
+        "Single atomic commit prefix: feat(conversation): ContextCompressor with SUMMARY_PREFIX + scaled budget (US-CTX-02)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "DEPENDS ON US-CTX-01. R2: SUMMARY_PREFIX is production-tested hermes prompt — do NOT tune without bench evidence. Lift verbatim from hermes/agent/context_compressor.py."
+    },
+    {
+      "id": "US-CTX-03",
+      "title": "payload_summarizer trait with threshold gating + circuit breaker (openhuman pattern)",
+      "description": "Trait-based interception of oversized tool results BEFORE they enter agent history. INTEGRATION NOTE: this is layer-2 of the compression stack — sits AFTER internal/tokenjuice (already-live layer-1 rule compactor). Trigger only when TokenJuice rule fails OR rule-compacted output is still >threshold. PayloadSummarizer interface with MaybeSummarize(toolName, parentTaskHint, raw) returning *SummarizedPayload (nil = pass-through). Pass-through guards: (a) below threshold_tokens → skip (no LLM call worth the round-trip), (b) above max_payload_tokens → skip (too expensive, fall through to spill/truncation), (c) circuit breaker tripped (3 consecutive failures in session → disabled for rest of session), (d) summary length >= raw length → reject (summary didn't shrink, pass raw), (e) parent-only scope (summarizer agent itself MUST get nil to prevent recursive dispatch — openhuman observed this in production and now ships with payload_summarizer DISABLED by default). Token estimate `chars/4` (model-agnostic). Summarizer agent prompt: lift from D:/tmp/openhuman/src/openhuman/agent/agents/summarizer/prompt.md as Aura's internal/agent/agents/summarizer/SKILL.md fixture — extraction contract preserves IDs/URLs/paths as required, drops markup noise.",
+      "acceptanceCriteria": [
+        "internal/agent/governance/payload_summarizer.go exposes PayloadSummarizer interface + SubagentPayloadSummarizer struct",
+        "SummarizedPayload struct: {Summary string, OriginalBytes int, SummaryBytes int}",
+        "Threshold knobs configurable via env: AURA_PAYLOAD_THRESHOLD_TOKENS (default 4096 — Aura's models smaller context than openhuman's 500K), AURA_PAYLOAD_MAX_TOKENS (default 32000)",
+        "Circuit breaker: 3 consecutive MaybeSummarize failures → returns nil + logs warning + disabled for rest of session; success resets counter",
+        "Reject when summary.len() >= raw.len() — pass raw through",
+        "internal/agent/agents/summarizer/SKILL.md fixture present, lifted from openhuman summarizer prompt (extraction contract — IDs/URLs/paths preserved)",
+        "internal/agent/executor.go hooks PayloadSummarizer AFTER TokenJuice compaction — only fires when TokenJuice rule was fallback OR output still oversized post-compaction",
+        "Wiring guard: when current agent is `summarizer` itself, payload_summarizer field is nil (R1 mitigation — prevent recursive dispatch)",
+        "Test: tool result ≥ threshold AND TokenJuice fallback → summarizer fires; result replaces inline",
+        "Test: tool result ≥ max_payload_tokens → summarizer SKIPS (returns nil); raw passes through to next layer (spill/truncation)",
+        "Test: 3 consecutive summarizer failures → breaker trips; subsequent results pass raw with warning logged",
+        "Test: summary.len() >= raw.len() → reject, pass raw",
+        "Test: summarizer agent invocation receives payload_summarizer=nil (recursive dispatch prevented)",
+        "Test: when TokenJuice rule MATCH succeeds AND output ≤ threshold → summarizer NOT called (layer-1 win, no layer-2 cost)",
+        "go test ./internal/agent/governance/... ./internal/agent/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: feat(agent): payload_summarizer with circuit breaker + TokenJuice integration (US-CTX-03)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-CTX-01 + US-CTX-02 (uses the summarization LLM call shape). R1 (HIGHEST RISK): openhuman ships with payload_summarizer threshold_tokens=0 (disabled) because of observed recursive dispatch. Aura's R1 mitigation: explicit nil wiring for summarizer agent + 3-strike breaker. TokenJuice integration note: it's complementary, not replaced — TokenJuice catches well-known patterns deterministically, summarizer catches the long-tail."
+    },
+    {
+      "id": "US-CTX-04",
+      "title": "AutoCompactEngine — token-budget compaction at 70% threshold (replace 50-msg cap)",
+      "description": "New ContextEngine implementation: AutoCompactEngine. Triggers compaction at 70% of model context window (instead of waiting for 100% / 50-msg cap). Two-scope budget tracking: `Total` (everything in prompt) vs `BodyAfterPrefix` (so overlays + initial-context stay 'free' against cache). Switches Aura's conversation cap semantics from message-count to token-budget. Replace MaxConversationMessages config (currently 50) with MaxConversationTokens (default = 70% of model context window from llm config). Source: Codex core/src/session/turn.rs:301-358, :655-705. Online §3.2 — Anthropic effective context engineering 2026.",
+      "acceptanceCriteria": [
+        "internal/conversation/auto_compact.go implements ContextEngine — wraps ContextCompressor (US-CTX-02) but with 70% threshold trigger",
+        "Two-scope budget tracker: Total bytes vs BodyAfterPrefix bytes — overlays + initial-context excluded from BodyAfterPrefix",
+        "internal/config/config.go: MaxConversationMessages REPLACED by MaxConversationTokens; default = (llm.ModelContextWindow * 0.70) when unset",
+        "internal/agent/loop.go calls AutoCompactEngine.ShouldCompress(currentTokens) BEFORE each LLM call",
+        "Test: 70% threshold triggers Compress(); below threshold passes through unchanged",
+        "Test: two-scope tracking — overlays change does NOT change BodyAfterPrefix count",
+        "Probe: 200-turn debug conversation no longer loses early premise (sliding window dropped it before; auto-compact preserves)",
+        "Backward-compat shim: MaxConversationMessages env var still honored if set, but logs deprecation warning + maps to token approximation",
+        "go test ./internal/conversation/... ./internal/agent/... ./internal/config/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: feat(conversation): AutoCompactEngine token-budget compaction at 70% (US-CTX-04)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "DEPENDS ON US-CTX-01 + US-CTX-02. R3: switching from msg-count to token-budget changes cap semantics — default token-budget high enough that current 50-msg conversations don't trigger unexpectedly mid-deploy. Backward-compat shim documented."
+    },
+    {
+      "id": "US-CTX-05",
+      "title": "Wire payload_summarizer + AutoCompactEngine onto agent loop + /api/metrics counters",
+      "description": "Replace DefaultContextEngine with AutoCompactEngine (US-CTX-04) by default and register PayloadSummarizer (US-CTX-03) on the orchestrator session. Add config envs: AURA_CTX_ENGINE (default 'auto_compact'), AURA_PAYLOAD_SUMMARIZER (default 'true', but explicit 'false' for summarizer agent itself), AURA_PAYLOAD_THRESHOLD_TOKENS (default 4096), AURA_PAYLOAD_MAX_TOKENS (default 32000). Expose counters via /api/metrics: ctx_compactions_total, payload_summarizations_total, payload_summarizer_breaker_trips_total, ctx_compactions_skipped_total (for visibility).",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go wires AutoCompactEngine as default ContextEngine; falls back to DefaultContextEngine when AURA_CTX_ENGINE=default",
+        "PayloadSummarizer registered only on orchestrator session (NOT on summarizer/welcome/researcher sub-agents)",
+        "/api/metrics exposes the 4 counters listed above as Prometheus-style text",
+        "Smoke: long conversation with intentionally big tool results → both compaction (visible in ctx_compactions_total) AND payload_summarizer (visible in payload_summarizations_total) fire",
+        "Smoke: induce 3 consecutive summarizer failures (mock summarizer that errors) → payload_summarizer_breaker_trips_total increments",
+        "Long-conversation probe: 100+ turn debug agent retains early premise (test against ground-truth wiki page)",
+        "Bench: re-grade strict-pass on cmd/probe_chat — expected +2-4 cases recovered on long-conversation failures",
+        "go test ./internal/agent/... ./cmd/aura/... ./internal/api/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: feat(agent): wire auto-compact + payload_summarizer + /api/metrics counters (US-CTX-05)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "DEPENDS ON US-CTX-01..04. Closing story — proves the full stack works end-to-end with metrics observability. /api/metrics counters are the visibility surface to know if/when compaction is over-firing or summarizer breaker is tripping in production."
+    }
+  ]
+}

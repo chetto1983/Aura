@@ -1,0 +1,243 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-CONS — Web↔Telegram 1+1 consolidation + assistant-ui React webchat. 12 stories total, ~5 sessions. WAVE A backend (CONS-02..08, 7 stories): collapse duplicated InvocationBuilders + Hubs + executors; ship streaming/voice/ask_user/archive parity on web. WAVE B frontend (CONS-09..13, 5 stories): adopt assistant-ui (https://github.com/assistant-ui/assistant-ui) via useDataStreamRuntime, mount Thread/Composer/Message primitives on Aura dashboard. Backend SSE in CONS-07 is upgraded to speak Vercel AI SDK data-stream protocol so the assistant-ui runtime works out of the box. Plan source: .planning/post-drift-2026-05-21/Phase-CONS/plan.md + Wave B extension 2026-05-23. Net LOC delta: ~-90 (Wave A dedup) + ~+800 (Wave B frontend) = +710. Per-module deep refactor on touch per CLAUDE.md.",
+  "userStories": [
+    {
+      "id": "US-CONS-02",
+      "title": "Collapse webChatSessions + webAgentState onto agent.SessionStore + conversation.Context",
+      "description": "Replace cmd/aura/web_chat.go::webChatSessions (bespoke map[string][]llm.Message with idle eviction) with calls to the shared agent.SessionStore (key: web:<userID>:<threadID>). Replace webAgentState (flat []llm.Message shim, no TrackTokens, no compaction) with conversation.Context so web gets the full conversation discipline for free. Source: docs/research-2026-05-21/web-telegram-consolidation.md scout #7.",
+      "acceptanceCriteria": [
+        "cmd/aura/web_chat.go no longer defines webChatSessions or webAgentState — both replaced by agent.SessionStore + conversation.Context",
+        "Web turn uses agent.SessionStore with key 'web:<userID>:<threadID>'",
+        "Web turn uses conversation.Context (same as telegram) — TrackTokens + tool-result compaction work for free",
+        "trimWebMessages helper deleted (replaced by Context.Trim)",
+        "Probe: 3 turns same thread_id → turn 3 prompt includes context from turns 1+2; convCtx.TotalTokensUsed() accurately tracks across turns",
+        "Probe: huge tool result triggers CompactCompletedToolResults — round N+1 prompt has tool_result ≤1200 chars",
+        "go test ./internal/channels/web/... ./cmd/aura/... -count=1 green",
+        "LOC delta: +60 / -240 = -180; cmd/aura/web_chat.go down by ~180 LOC",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(web): collapse webChatSessions onto agent.SessionStore + conversation.Context (US-CONS-02)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "DEPENDS ON Phase-BUG US-BUG-01 (shipped 13b6926d) which already wired shared composeAgentPrompt. Wave A first story; sets up the consolidation foundation."
+    },
+    {
+      "id": "US-CONS-03",
+      "title": "Collapse webToolExecutor onto agent.ExecuteToolCalls",
+      "description": "Delete webToolExecutor.ExecuteToolCalls (bespoke goroutine-per-call). Replace with direct call to agent.ExecuteToolCalls(ctx, deps.Tools, convCtx, userID, conversationID, calls, terminalPolicyEnabled, logger, opts...). Add missing WithToolAttemptRecording + WithTokenJuice options that telegram already gets for free.",
+      "acceptanceCriteria": [
+        "cmd/aura/web_chat.go webToolExecutor + helpers deleted",
+        "Web turn calls agent.ExecuteToolCalls directly with WithToolAttemptRecording + WithTokenJuice options enabled (telegram parity)",
+        "go test ./internal/agent/... ./cmd/aura/... -count=1 green",
+        "Probe parity: QA-phase suite end-to-end on both transports → identical failure classes and identical tools_used[] entries (modulo LLM nondeterminism)",
+        "LOC delta: +30 / -180 = -150",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(web): collapse webToolExecutor onto agent.ExecuteToolCalls (US-CONS-03)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-02. Closes the duplicated tool-execution path between web and telegram."
+    },
+    {
+      "id": "US-CONS-04",
+      "title": "Promote agentcore.Builder to own full agent.Invocation construction",
+      "description": "Move agent.Invocation construction (Options, ToolsProvider, BeforeTool/BeforeLLM/RecordUsage/EstimateCost/TerminalHandler, PhantomToolGuard, PostTurn, MaxIterations) out of BOTH InvocationBuilders (telegram + web) into agentcore.Builder.Build. Transports supply only PerTurnHooks{ChatClient, OnPlaceholderReady, OnStreamChunk, OnFinal, OnAskUser, OnSoftBudget}. Single source of truth for what an Aura agent invocation looks like.",
+      "acceptanceCriteria": [
+        "internal/agentcore/invocation.go new, owns full agent.Invocation construction",
+        "internal/channels/telegram/invocation_builder.go shrunk to transport-specific hooks only",
+        "cmd/aura/web_chat.go shrunk to transport-specific hooks only; new cmd/aura/web_chat_hooks.go for the hook impl",
+        "Feature flag AURA_AGENTCORE_BUILDER=true for 1 week of live traffic before deleting legacy",
+        "Transcript-comparison probe: same query through both paths → identical tool-call sequence (names + arg_keys); response text may vary ≤5% (LLM nondeterminism)",
+        "go test ./... -count=1 green including internal/channels/telegram/fixture/byte_parity_test.go",
+        "dupl -t 60 internal/agentcore/ internal/channels/ cmd/aura/web_chat*.go reports no cluster ≥60 tokens",
+        "Every touched file ≤600 LOC (telegram invocation_builder.go currently 688 — must drop below cap)",
+        "LOC delta: +420 / -780 = -360 (LARGEST single commit in phase)",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(agentcore): promote Builder to own full Invocation construction (US-CONS-04)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-03. THE BIG ONE — largest LOC delta in Aura's history (-360). Feature flag is mandatory for risk mitigation. Existing byte-parity test is the safety net."
+    },
+    {
+      "id": "US-CONS-05",
+      "title": "Single Hub: collapse web + telegram Hubs into one",
+      "description": "Move Hub construction from internal/channels/telegram/invocation_builder.go::NewHub AND cmd/aura/web_chat.go::newHubBackedWebChatService into cmd/aura/app.go (composition root). Register both inbound (telegramadapter.New() + new webadapter.New()) and both outbound (telegramadapter.Outbound + webadapter.Router) on the SAME Hub. Cron Hub stays separate (different lifecycle).",
+      "acceptanceCriteria": [
+        "cmd/aura/app.go owns Hub construction with both transports registered",
+        "cmd/aura/app_wire.go threads the shared Hub to telegram + web bootstraps",
+        "internal/channels/telegram/invocation_builder.go::NewHub DELETED",
+        "cmd/aura/web_chat.go::newHubBackedWebChatService DELETED; web_chat takes injected *chat.Hub",
+        "internal/channels/web/inbound.go new — webadapter.New() with Subject/Reply parsing",
+        "Hub round-trip test: ChannelTelegram + ChannelWeb run dispatches stay channel-scoped",
+        "New test: ChannelWeb run dispatches ONLY to web outbound (zero deliveries to telegram outbound — verifies the routing guard)",
+        "go test ./... -run TestHub -count=1 green",
+        "LOC delta: +120 / -180 = -60",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(hub): collapse web + telegram into a single Hub (US-CONS-05)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-04. Closes the THREE-Hub anomaly down to TWO (shared web+telegram + separate cron). Foundation for CONS-06..08 parity work."
+    },
+    {
+      "id": "US-CONS-06",
+      "title": "Feature parity wave 1 — soft-budget + context compaction + archive on web",
+      "description": "Wire missing telegram-side post-turn features onto web via the shared agentcore.Build (now inside Build after CONS-04). Add BudgetWarning string to ChatReply. Add OnSoftBudget hook that writes budget_warning into ChatReply. Conversation archive append now runs for web turns (today only telegram archived).",
+      "acceptanceCriteria": [
+        "internal/api/chat.go ChatReply adds budget_warning string field (optional)",
+        "internal/channels/web/chat_service.go OnSoftBudget hook writes ChatReply.budget_warning when soft budget tripped",
+        "internal/conversation/archive.go web turns persisted with channel='web' (verified by querying conversations table)",
+        "cmd/aura/web_chat_hooks.go wires OnSoftBudget to the existing budget runtime",
+        "web/src/api/chat.ts reads budget_warning field (frontend follow-up; documented even if not rendered in this story)",
+        "Probe: induce soft_budget (mock budget runtime trips) → ChatReply.budget_warning non-empty in response",
+        "Probe: conversations SQLite table has rows tagged channel=web after web turns (test queries the table)",
+        "LOC delta: +120 (additive feature)",
+        "go test ./internal/channels/web/... ./internal/api/... -count=1 green",
+        "Single atomic commit prefix: feat(web): soft-budget + context compaction + archive parity (US-CONS-06)"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-05. First parity story — additive, low risk."
+    },
+    {
+      "id": "US-CONS-07",
+      "title": "Web streaming via SSE — Vercel AI SDK data-stream protocol compatible",
+      "description": "New internal/channels/web/streaming_outbound.go registers (ChannelWeb, DeliveryModeStreaming). New POST /chat/stream (SSE) endpoint flushes ONE SSE frame per chat.OutboundEvent. Wire format MUST match the Vercel AI SDK data-stream protocol so assistant-ui's useDataStreamRuntime works out of the box (Wave B prereq). Web ChatClient becomes NewStreamingChatClient that flushes llm.Token chunks. Buffered POST /chat stays for non-stream clients (backward compat). Source: docs/ai-sdk-stream-protocol.md (research output 2026-05-23) + Vercel AI SDK docs.",
+      "acceptanceCriteria": [
+        "internal/channels/web/streaming_outbound.go new — registers Web+Streaming delivery mode",
+        "internal/channels/web/sse_chat_client.go new — flushes llm.Token chunks as SSE frames in Vercel AI SDK data-stream wire format (prefix-encoded text/data/tool-call/tool-result/finish frames)",
+        "New endpoint POST /api/chat/stream returns SSE with data: <vercel-prefixed>\\n frames",
+        "Header X-Accel-Buffering: no emitted (nginx-proxy compat)",
+        "Buffered POST /api/chat still works (backward compat — old non-streaming clients unaffected)",
+        "Probe: curl -N against /api/chat/stream produces stream of data: <prefix><payload>\\n\\n frames matching Vercel data-stream protocol",
+        "Probe: first byte <500ms; final byte p95 ≤8s on cached wiki_subgraph query",
+        "Vercel data-stream protocol conformance test: 5 representative event shapes (text-delta, tool-call, tool-result, finish, error) produce frames the Vercel ai library can parse",
+        "LOC delta: +280",
+        "go test ./internal/channels/web/... ./internal/api/... -count=1 green",
+        "Single atomic commit prefix: feat(web): SSE streaming via Vercel AI SDK data-stream protocol (US-CONS-07)"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-06. CRITICAL Wave B prereq — wire format MUST match Vercel AI SDK data-stream protocol so assistant-ui's useDataStreamRuntime({api:'/api/chat/stream'}) works out of the box. Research the exact prefix format from D:/tmp/assistant-ui/packages/react-data-stream and Vercel ai SDK docs before implementing. Don't roll our own SSE shape."
+    },
+    {
+      "id": "US-CONS-08",
+      "title": "Web voice + ask_user parity",
+      "description": "TTS synthesis on web as audio_url field (in-memory TTL cache, served via GET /chat/audio/{cache_id}). EventQuestionRequested becomes pending_question ChatReply field (buffered mode) + typed SSE frame in data-stream protocol (streaming mode). Follow-up POST /chat/answer/{question_id} resumes the run.",
+      "acceptanceCriteria": [
+        "internal/channels/web/voice_outbound.go new — pocket-tts client + in-memory TTL cache (1h TTL, 100MB cap)",
+        "GET /api/chat/audio/{cache_id} serves OGG/Opus audio bytes (content-type: audio/ogg; >1024 bytes for non-empty replies)",
+        "ChatReply adds optional pending_question field with {id, question, options[], kind: approval|clarification|secret|selection}",
+        "SSE streaming emits typed pending_question frame (Vercel data-stream protocol extension or compatible custom event-type)",
+        "POST /api/chat/answer/{question_id} resumes the run; final reply contains post-answer text",
+        "Probe: /api/chat?voice=all returns ChatReply with audio_url; GET that URL returns OGG audio >1024 bytes",
+        "Probe: agent calls ask_user → ChatReply has pending_question{id, question, options[]}; follow-up POST /api/chat/answer/{id} resumes the same run; final reply contains post-answer reply",
+        "LOC delta: +320",
+        "go test ./internal/channels/web/... ./internal/api/... -count=1 green",
+        "Single atomic commit prefix: feat(web): voice + ask_user parity on web (US-CONS-08)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-07. CLOSES Wave A backend consolidation. Next story (US-CONS-09) starts Wave B frontend."
+    },
+    {
+      "id": "US-CONS-09",
+      "title": "Add assistant-ui dependencies + minimal AssistantRuntimeProvider mount",
+      "description": "Install assistant-ui packages into web/. Add a new route /chat in the dashboard mounted at internal/api/dist via go:embed. Minimal AssistantRuntimeProvider wrapping a Thread + Composer + ThreadList using useDataStreamRuntime({api: '/api/chat/stream'}). Auth via existing Aura bearer token (X-Aura-Token header set in headers callback). No tool-call rendering yet (that's CONS-11). No voice/attachments (CONS-12, CONS-13). This story proves the runtime+backend handshake works end-to-end with text-only conversation.",
+      "acceptanceCriteria": [
+        "web/package.json adds @assistant-ui/react + @assistant-ui/react-data-stream + tailwindcss deps (assistant-ui depends on tailwind)",
+        "web/src/pages/Chat.tsx new — full-screen Thread + Composer using useDataStreamRuntime",
+        "web/src/lib/assistant-runtime.ts new — runtime factory that reads thread_id from URL or generates new one, passes Aura bearer token via headers callback",
+        "Router (App.tsx) adds /chat route",
+        "npm --prefix web run build green; bundle size delta documented (expected +250-400 KB minified gzip — assistant-ui is the dep)",
+        "Smoke: docker compose up; open http://localhost:18080/chat; type 'ciao' → assistant streams reply via SSE; messages render with markdown",
+        "Auth flow: missing token redirects to /login (existing pattern); valid token authenticates the stream",
+        "go test ./internal/api/... -count=1 green (no Go-side change in this story, but verify embed picks up new dist)",
+        "LOC delta: ~+150 (new TS files) + package.json + lock changes",
+        "Single atomic commit prefix: feat(web/ui): mount assistant-ui Thread on /chat via useDataStreamRuntime (US-CONS-09)"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-07 (data-stream protocol on backend). FIRST Wave B story — proves the runtime+backend handshake without tool/voice complexity. Reference: D:/tmp/assistant-ui/examples/with-assistant-transport/ + packages/react-data-stream/README.md. NPM lockfile cross-platform: per memory feedback_npm_lock_cross_platform_drift, regen lock via docker node:22 if Windows-local install drifts."
+    },
+    {
+      "id": "US-CONS-10",
+      "title": "Markdown render + code highlighting + i18n in assistant-ui chat UI",
+      "description": "Wire assistant-ui's built-in markdown renderer + code highlighting + i18n. Set message render to use the same wiki-link rendering Aura's wiki dashboard uses (so [[slug]] in chat replies link to /wiki/page/<slug>). i18n: chat UI strings (input placeholder, send button, retry, etc.) translated to Italian to match Aura's IT-default UX (existing web/src/i18n/it.json pattern).",
+      "acceptanceCriteria": [
+        "Thread renders markdown (bold/italic/lists/code blocks/links) — verified by sending a reply with markdown content",
+        "Code blocks have syntax highlighting (assistant-ui uses shiki or similar)",
+        "[[wiki-slug]] in message body renders as clickable link to /wiki/page/<slug> using existing Aura wiki-link parser",
+        "i18n: chat UI strings translated to it.json (composer placeholder, send button, retry button, copy button, regenerate button)",
+        "go test + npm test green",
+        "Smoke: send a message containing ```python\\nprint(1)\\n``` → reply renders with syntax-highlighted Python code block",
+        "LOC delta: ~+100",
+        "Single atomic commit prefix: feat(web/ui): markdown + code highlight + i18n in assistant-ui chat (US-CONS-10)"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-09. The wiki-link integration is the Aura-specific bit — bridges chat UX with Aura's wiki ecosystem."
+    },
+    {
+      "id": "US-CONS-11",
+      "title": "Tool-call render-as-component (generative UI) in assistant-ui",
+      "description": "Render Aura tool calls as React components in the Thread (assistant-ui's generative UI pattern). When backend emits a tool-call SSE frame, the Thread shows a collapsible component with tool name + summarized args + status (running/done/error). Click to expand → shows full args + result. Tool calls to specific tools (wiki_page, web_search) get richer custom components: wiki_page → link card; web_search → search-results card with first 3 results.",
+      "acceptanceCriteria": [
+        "web/src/components/chat/ToolCallComponent.tsx generic renderer (tool name + args summary + status indicator)",
+        "web/src/components/chat/tools/WikiPageCard.tsx specialized renderer for wiki_page tool calls",
+        "web/src/components/chat/tools/WebSearchCard.tsx specialized renderer for web_search tool calls (top-3 results)",
+        "assistant-ui Thread config registers the tool-call renderer via makeAssistantTool or equivalent",
+        "Smoke: send 'cerca info su Torino' → reply shows web_search tool call as a collapsible card with the top-3 results",
+        "Smoke: send 'mostra wiki di X' → reply shows wiki_page tool call as a link card with title preview",
+        "go test + npm test green",
+        "LOC delta: ~+250",
+        "Single atomic commit prefix: feat(web/ui): tool-call render-as-component (generative UI) (US-CONS-11)"
+      ],
+      "priority": 10,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-09 + US-CONS-10. The KEY win of assistant-ui — tool calls become UI affordances, not opaque text blobs. Aura-specific tool renderers are where domain UX lives."
+    },
+    {
+      "id": "US-CONS-12",
+      "title": "ask_user pending-question UI flow in assistant-ui",
+      "description": "When backend emits pending_question (CONS-08), assistant-ui Thread renders an inline question card with the question text + options as buttons (approval/clarification/selection) OR a free-text input (clarification kind). On user pick/submit, POST to /api/chat/answer/{id} via the runtime. UI shows 'waiting…' while the run resumes. Final reply renders normally afterwards.",
+      "acceptanceCriteria": [
+        "web/src/components/chat/PendingQuestion.tsx renders question card with kind-specific UI (buttons for approval/selection, textarea for clarification, password input for secret_input)",
+        "Free-text 'other' fallback always available for clarification kind",
+        "On submit → POST /api/chat/answer/{id} with body {answer: string}; runtime resumes via existing SSE channel",
+        "Loading state visible during the resume",
+        "Smoke: agent calls ask_user with kind=approval, options=['approve','deny'] → UI shows 2 buttons; click 'approve' → run resumes and final reply renders",
+        "Smoke: agent calls ask_user with kind=clarification → UI shows textarea; type answer + send → resume + final reply",
+        "go test + npm test green",
+        "LOC delta: ~+180",
+        "Single atomic commit prefix: feat(web/ui): ask_user pending-question UI flow (US-CONS-12)"
+      ],
+      "priority": 11,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-08 (backend pending_question + /api/chat/answer endpoint) + US-CONS-09. Important UX surface — turns a backend protocol into a usable interactive question."
+    },
+    {
+      "id": "US-CONS-13",
+      "title": "Voice playback + attachments + voice dictation in assistant-ui",
+      "description": "Three additive features. (a) Audio playback: when backend emits audio_url (CONS-08), assistant-ui Thread renders an audio player below the assistant message (HTML5 <audio> with controls). (b) Attachments: Composer accepts file drops/picks; uploads to /api/sources/upload (existing endpoint); on success, attachment appears as composer chip, sent with the message as a source_id reference. (c) Voice dictation: assistant-ui's built-in voice-dictation button uses browser SpeechRecognition API for STT input (no backend round-trip needed for input — Aura whisper sidecar is for voice memo storage, separate path).",
+      "acceptanceCriteria": [
+        "Audio playback: when ChatReply contains audio_url, the message UI includes <audio controls src='/api/chat/audio/{id}'>",
+        "Attachments: drag a PDF onto the composer → upload to /api/sources/upload → source_id chip appears in composer → submit sends the source_id as part of the message metadata",
+        "Voice dictation: composer mic button activates SpeechRecognition (browser API); transcribed text appears in composer input as the user speaks; submit on stop or manual send",
+        "Backward compat: existing /api/sources/upload endpoint unchanged (same multipart contract)",
+        "Smoke: voice=all enabled → assistant reply has playable audio control",
+        "Smoke: drag a small PDF onto composer → uploads → chip appears → submit → backend receives message with attached source_id",
+        "Smoke: tap mic → speak 'cerca torino' → text appears → submit → search runs",
+        "go test + npm test green",
+        "LOC delta: ~+200",
+        "Single atomic commit prefix: feat(web/ui): voice playback + attachments + voice dictation (US-CONS-13)"
+      ],
+      "priority": 12,
+      "passes": false,
+      "notes": "DEPENDS ON US-CONS-08 (audio_url backend) + US-CONS-09. CLOSES Wave B. Voice dictation is BROWSER-side (SpeechRecognition API) — no whisper round-trip for chat input (different path from voice memo storage which uses whisper sidecar)."
+    }
+  ]
+}

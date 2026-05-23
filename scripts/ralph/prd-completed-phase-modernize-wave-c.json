@@ -1,0 +1,86 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-MODERNIZE Wave C — Dedup. Wave A (SPLIT-01..10) finishes file-move work; Wave C kills the residual duplications surfaced by docs/MODULE-HEALTH.md (61 dupl clusters across 18 modules as of 2026-05-22, dominated by api=9, agent=8, cron=6, storage=5, config=5). Each story names the helper to extract + the call sites to update + the exact verification (dupl -t 60 cluster gone + go test green + golangci-lint clean on touched files). Per memory project_aura_limpida_dedup_commitment.",
+  "userStories": [
+    {
+      "id": "US-MOD-DEDUP-00",
+      "title": "Regenerate dupl-report — fresh baseline post-Wave A",
+      "description": "Wave A god-splits redistributed LOC. Old .planning/dupl-report.txt is from 2026-05-14 (stale). (a) Install dupl if missing: `go install github.com/mibk/dupl@latest`. (b) Run `~/go/bin/dupl -t 60 ./...` and write the full output to .planning/dupl-report-2026-05-22.txt sorted by cluster size descending. (c) Generate a top-20 summary at docs/dupl-summary-2026-05-22.md grouped by package. (d) Keep the OLD .planning/dupl-report.txt as .planning/dupl-report-2026-05-14.txt (rename, not delete). This story is the precondition for DEDUP-01..04 — without a fresh report, the later stories can't target real clusters.",
+      "acceptanceCriteria": [
+        ".planning/dupl-report-2026-05-22.txt exists with current `dupl -t 60` output",
+        ".planning/dupl-report-2026-05-14.txt = the old stale report (renamed from dupl-report.txt)",
+        "docs/dupl-summary-2026-05-22.md exists with top-20 production-code clusters grouped by package (counts, file:line refs, line span)",
+        "go test ./... green (sanity)",
+        "Single atomic commit prefix: chore(dedup): regenerate dupl-report fresh post-Wave A (US-MOD-DEDUP-00)"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Precondition for DEDUP-01..04. If dupl isn't installed, install it first. The summary helps the NEXT iter pick concrete targets."
+    },
+    {
+      "id": "US-MOD-DEDUP-01",
+      "title": "Extract internal/api error-handling helper — kill ~6+ api dupl cluster",
+      "description": "Top dupl cluster per stale 2026-05-14 report is the os.ErrNotExist + Logger.Warn + 500 boilerplate repeated in internal/api/sources.go (4 sites at lines ~55-63, 94-102, 115-123, 231-239), internal/api/sources_write.go (3 sites), internal/api/skills.go, internal/api/swarm.go, internal/api/tasks.go. Line numbers may have shifted post-Wave A; consult .planning/dupl-report-2026-05-22.txt (from DEDUP-00) for current line refs. (a) Read 2-3 representative sites to confirm the exact pattern. (b) Create internal/api/error_helpers.go with `writeReadError(w http.ResponseWriter, deps Deps, err error, opName, id string)` — handles the `if errors.Is(err, os.ErrNotExist) { 404 } else { Logger.Warn + 500 }` pattern. (c) Update every duplicate call site to use the helper. (d) Run dupl -t 60 ./internal/api after the change — the largest api cluster MUST be reduced from 9 to ≤3. (e) go test ./internal/api/... -count=1 green.",
+      "acceptanceCriteria": [
+        "internal/api/error_helpers.go (or equivalent) exports writeReadError or similar single-shot helper",
+        "≥6 call sites in internal/api updated to use the new helper (verified via git diff line count showing ≥50 lines deleted from the duplicated blocks)",
+        "dupl -t 60 ./internal/api/... reports the os.ErrNotExist cluster reduced to ≤3 occurrences (from ~10 sites)",
+        "go test ./internal/api/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(api): extract writeReadError helper — kill os.ErrNotExist dupl (US-MOD-DEDUP-01)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "PRECONDITION: DEDUP-00 done. Read 3 sites first to confirm the pattern is uniform; if some sites have subtle differences (e.g. different opName, different default error msg), keep them out of the dedup and document why."
+    },
+    {
+      "id": "US-MOD-DEDUP-02",
+      "title": "Consolidate config/store.go Get* fallback pattern — fold to parseOrFallback helper",
+      "description": "internal/config/store.go has the same 8-line `v, err := s.Get(ctx, key); if err != nil || strings.TrimSpace(v) == \"\" { return fallback }; parsed, err := parse(v); if err != nil { return fallback }; return parsed` pattern in GetInt (line 128-138), GetFloat (line ~142-152), GetBool (line ~156-166). Extract: `parseOrFallback[T any](ctx, key string, fallback T, parser func(string) (T, error)) T` — non-generic-typed helper if generics complicate, two-step `getTrimmed(ctx, key)` + per-type parser composition works too. Fold GetInt/GetFloat/GetBool to a single call site each. Tests in internal/config/store_test.go (if existing) stay green; if no test exists for these, the dupl reduction itself proves correctness.",
+      "acceptanceCriteria": [
+        "internal/config/store.go has a single parseOrFallback (or getTrimmed) helper used by GetInt + GetFloat + GetBool",
+        "Each Get* function body ≤4 lines (down from 11)",
+        "dupl -t 60 ./internal/config/... reports 0 clusters in store.go for the Get* triple",
+        "go test ./internal/config/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(config): fold GetInt/GetFloat/GetBool via parseOrFallback helper (US-MOD-DEDUP-02)"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "PRECONDITION: DEDUP-00 done. Generic helper preferred for Go 1.21+; fallback to per-type duplication-of-just-one-line if generics make the call site uglier."
+    },
+    {
+      "id": "US-MOD-DEDUP-03",
+      "title": "Consolidate 3-way agent-job spec dupe (swarm/cron/agent)",
+      "description": "Per stale dupl-report a 13-line block appears in internal/agent/tools/swarm/tools.go:516-528, internal/cron/agent_job.go:165-177, internal/swarm/store.go:436-448 — likely an agent-job spec build/marshal pattern. Line numbers may have shifted; reconsult .planning/dupl-report-2026-05-22.txt. (a) Read all 3 sites and confirm they're structurally identical (same fields/order/operations). If subtle differences exist, document them and bail (mark passes:false with explanation). (b) Decide where the shared helper lives — internal/swarm is the natural home for agent-job spec construction. Create internal/swarm/jobspec.go with `BuildAgentJobSpec(...)` or equivalent. (c) Update the 3 call sites. (d) Verify dupl no longer reports the 3-way cluster.",
+      "acceptanceCriteria": [
+        "internal/swarm/jobspec.go exports a single shared helper for the agent-job spec build/marshal pattern (or, if homes diverge, the helper lives in the lowest-common-ancestor package without creating a new dep edge)",
+        "All 3 sites updated; the 13-line duplicate block deleted from 2 of the 3 (kept only in the helper file)",
+        "dupl -t 60 ./internal/... no longer reports this 3-way cluster",
+        "go test ./internal/swarm/... ./internal/cron/... ./internal/agent/tools/swarm/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(swarm): consolidate 3-way agent-job spec dupe into jobspec.go (US-MOD-DEDUP-03)"
+      ],
+      "notes": "PRECONDITION: DEDUP-00. If reading 3 sites reveals they DIVERGED post-Wave A (no longer 13-identical), mark this story passes:false with explanation in the notes and exit — don't force-dedup non-identical code. The point is reducing real duplication. RESOLVED 2026-05-23: Wave A splits dissolved the cluster entirely — swarm/store.go ends at line 435 (cluster was 436-448), other sites contain wholly different functions. No jobspec.go needed; dupl -t 60 confirms 0 matches across all 3 files. Goal (cluster gone) achieved without extraction.",
+      "priority": 4,
+      "passes": true
+    },
+    {
+      "id": "US-MOD-DEDUP-04",
+      "title": "Final pass — top-N residual production dupl clusters per fresh report",
+      "description": "After DEDUP-00..03 land, run `dupl -t 60 ./...` again and identify the next 2-3 largest PRODUCTION dupl clusters (skip *_test.go). For each, attempt one extraction iff: (a) the dupe block is ≥10 lines, (b) the call sites are all in one or two packages (no new cross-package dep edge), (c) the helper signature is obvious from the duplicated block (no design judgment required). If a cluster fails any of those gates, document it in docs/dupl-summary-2026-05-22.md with a one-sentence note and SKIP. Commit ONLY the extractions that pass all 3 gates.",
+      "acceptanceCriteria": [
+        "0..3 production dupl clusters reduced from this story (count documented in commit body)",
+        "Skipped clusters documented in docs/dupl-summary-2026-05-22.md with one-sentence reasoning each",
+        "Net dupl -t 60 production cluster count down by at least 5 vs pre-Wave-C baseline (verified by comparing dupl-report counts before/after Wave C as a whole)",
+        "go test ./... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: refactor(dedup): final pass — kill N residual production clusters (US-MOD-DEDUP-04)"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "PRECONDITION: DEDUP-00..03 done. CONSERVATIVE: it's better to commit 1 valid extraction than 3 hasty ones. If only 0 clusters meet all 3 gates, commit just the documentation update — story still ships as a documentation pass. RESOLVED 2026-05-23: 6 extractions applied across 7 files; production clusters 41 → 34 (net −7). Skipped: setup_locale (map literals), mcp_setup/mcp_database_setup (typed generics), exec.go nil-executor (typed nil semantics), tool_definitions boilerplate."
+    }
+  ]
+}

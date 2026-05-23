@@ -1,0 +1,68 @@
+{
+  "project": "Aura",
+  "branchName": "master",
+  "description": "Phase-DEFER — lift Anthropic Claude Code's deferred-tools pattern into Aura's tool registry, starting with execute_code + execute_shell. Pre-cursor to Phase-MCP-UI: when MCP server count grows, having the deferred infrastructure in place means tools enter as name-only manifest entries, with full JSON schema loaded lazily via tool_search. Today: kills the always-on schema cost of execute_code (~400 tokens) and execute_shell (~400 tokens) — those are heavyweight tools the LLM doesn't need every turn. Source pattern: Anthropic Claude Code's ToolSearch behavior (verbatim, see chat 2026-05-23 — deferred tools listed by name in system reminder, schema fetched via `ToolSearch(query=\"select:<name>\")`). NOT to be confused with Phase-TOOL's killed tool RAG router (embedding-based intercept of agent loop) — this is tool_search-as-TOOL (LLM-invokable, heuristic-only). 3 stories, ~250 LOC. Per-module deep refactor on touch mandatory per CLAUDE.md.",
+  "userStories": [
+    {
+      "id": "US-DEFER-01",
+      "title": "Tool registry — add Deferred flag + split manifest renderer",
+      "description": "Add `Deferred bool` to the Tool registration interface (likely internal/agent/tools/registry.go or wherever ToolSpec lives). Default false (backward-compatible — every existing tool stays always-on until explicitly marked). Update the manifest renderer that builds the system-prompt tool surface so it emits TWO sections: (a) always-on tools → full JSON schema in the LLM-facing manifest, (b) deferred tools → just `{name, brief_description}` (one line, ≤200 chars). The deferred section is rendered as a compact list the LLM can recognize as 'these exist but call tool_search to invoke them'. Per memory project_openhuman_is_architectural_target + the Claude Code 2026-05-23 chat: deferred name-only entries cost ~50 bytes vs ~500-2000 for full schema. No new dependency. Source pattern: `harness/tool_filter.rs` (openhuman) + Claude Code system reminder behavior (Anthropic). GROUND-TRUTH: read internal/agent/tools/registry.go::Tool interface + the manifest builder (likely in internal/conversation/system_prompt.go or internal/agent/promptplan.go) before writing the split.",
+      "acceptanceCriteria": [
+        "ToolSpec (or equivalent registration struct) has a `Deferred bool` field; existing tools default to Deferred=false (no behavior change for current production)",
+        "Manifest renderer splits into 'always-on' (full schema) + 'deferred' (name + 1-line desc only)",
+        "Deferred section rendered with a recognizable marker, e.g. `## Deferred tools (call tool_search to load schema)` followed by a YAML/markdown list",
+        "Probe: render manifest with 25 always-on + 0 deferred → output byte-identical to current behavior (regression-safe)",
+        "Probe: render manifest with 23 always-on + 2 deferred (mock) → deferred section appears; always-on schema for the 2 deferred is NOT in output",
+        "go test ./internal/agent/tools/... ./internal/conversation/... -count=1 green",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: feat(agent): Deferred flag + split manifest renderer (US-DEFER-01)"
+      ],
+      "priority": 1,
+      "passes": false,
+      "notes": "Foundation story — US-DEFER-02 + 03 depend on it. Don't add deferred tools in this commit; just the infrastructure. The split renderer must be byte-identical when zero tools are deferred."
+    },
+    {
+      "id": "US-DEFER-02",
+      "title": "tool_search tool — name-only / keyword / select query forms",
+      "description": "Add `tool_search` as a real always-on tool in internal/agent/tools/registry/tool_search.go. The LLM calls it when it wants to invoke a deferred tool: `tool_search(query: \"select:execute_code\")` → returns the full JSON schema. Three query forms (mirror Claude Code's ToolSearch verbatim where possible): (a) `select:Name1,Name2` — exact name fetch, deterministic; (b) `keyword1 keyword2` — heuristic search by name + description with TF-IDF-style scoring; (c) `+required keyword` — require term + rank by remaining. Result is a JSON envelope: `{tools: [{name, description, parameters: {...full JSON Schema...}}]}` — the LLM gets the schema inline as a tool result. From the NEXT turn, the LLM can invoke the deferred tool by name as normal (the registry will accept the call regardless of schema-load state — schema is for the LLM's prompt, runtime dispatch doesn't need it pre-loaded). Implementation: pure CPU heuristic (no embedding, no LLM-as-router — Phase-TOOL killed those anti-patterns). max_results parameter (default 5, max 20). Source pattern: openhuman harness/tool_filter.rs + Claude Code's verbatim ToolSearch interface.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/tool_search.go exposes ToolSearchTool implementing the Tool interface",
+        "Name() returns \"tool_search\"; ToolSpec.Deferred = false (it's always-on; THE entry point to deferred tools)",
+        "Description: 'Fetches full schema definitions for deferred tools so they can be called. Use query=\"select:<name>\" for exact fetch, or keyword query for heuristic search.'",
+        "Parameters: `query: string (required)`, `max_results: int (default 5, max 20)`",
+        "select: query form returns ALL named tools with full schema; missing names produce a clear error in the result",
+        "Keyword query form ranks tools by `name_match_score * 2 + desc_match_score`, returns top-N by score",
+        "`+term` query form: term MUST appear in name OR description; remaining terms used for ranking",
+        "Returns JSON envelope: `{tools: [{name, description, parameters}]}` — parameters is the full JSON Schema object",
+        "Probe: tool_search(query=\"select:execute_code\") → returns execute_code's full schema in 1 tool entry",
+        "Probe: tool_search(query=\"code execute\") → returns execute_code + execute_shell with execute_code ranked higher (exact name match wins)",
+        "Probe: tool_search(query=\"select:nonexistent_tool\") → returns clear error 'no tools matched'",
+        "go test ./internal/agent/tools/registry/... -count=1 green with explicit tests for each query form",
+        "golangci-lint clean on touched files",
+        "Single atomic commit prefix: feat(agent): tool_search — name-only/keyword/select query forms (US-DEFER-02)"
+      ],
+      "priority": 2,
+      "passes": false,
+      "notes": "DEPENDS ON US-DEFER-01 (needs the Deferred flag + split renderer in place). Implementation is heuristic-only — substring + token-overlap is enough. NO embedding, NO LLM call. Production parity with Claude Code's behavior is the validation target."
+    },
+    {
+      "id": "US-DEFER-03",
+      "title": "Mark execute_code + execute_shell deferred + integration test",
+      "description": "Set ToolSpec.Deferred = true on execute_code and execute_shell registrations. Verify end-to-end: (a) the system prompt no longer carries the full JSON schema for these two; (b) the deferred section lists them with 1-line description; (c) a probe scenario where the LLM is asked to run code → the LLM either calls tool_search first (correct discovery flow) OR the prompt biasing ensures it knows to do so. Add a brief hint in the orchestrator/SOUL.md or AGENT.md overlay so the LLM understands the deferred protocol: 'Tools listed under \"Deferred tools\" are available but not pre-loaded. Call tool_search(query=\"select:<name>\") to load the full schema, then invoke normally.' Token-budget verify: render before/after, log the byte/token delta in commit body.",
+      "acceptanceCriteria": [
+        "internal/agent/tools/registry/exec.go (or wherever execute_code + execute_shell register) sets Deferred=true",
+        "Manifest probe: render a representative system prompt → execute_code schema NOT in always-on section, execute_code listed in deferred section with 1-line desc",
+        "Same for execute_shell",
+        "Token-budget probe: render BEFORE this commit and AFTER → byte/token delta documented in commit body (expected: -800 to -1200 tokens / -3 to -5 KB)",
+        "AGENT.md overlay (or SOUL.md, whichever holds the operating-mode rules) updated with a brief paragraph explaining the deferred protocol so the LLM understands the pattern. EN-only per memory feedback_all_prompts_in_english_only.",
+        "Probe E2E: simulate a user message 'run echo hello' → the LLM either (a) calls tool_search(query=\"select:execute_shell\") first then invokes, OR (b) invokes execute_shell directly relying on the runtime dispatch (which works because dispatch doesn't need the schema in the prompt — only the LLM needs it for arg shape). Both flows are acceptable; document which flow the production LLM picks",
+        "go test ./internal/agent/... -count=1 green",
+        "Existing exec-related tests (TestExecuteCode, TestExecuteShell, sandbox probes) all green — runtime dispatch path unchanged",
+        "Single atomic commit prefix: feat(agent): defer execute_code + execute_shell — first cut at lazy schema (US-DEFER-03)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "DEPENDS ON US-DEFER-01 + US-DEFER-02. This is the validating story — proves the infrastructure works end-to-end with two real production tools. After this lands, future tools (especially MCP-driven ones) can be deferred trivially by setting the flag at registration. RISK: LLM may fail to call tool_search and just try to invoke execute_shell directly. That's actually OK because runtime dispatch doesn't need the schema — but the LLM may get arg shape wrong without seeing the schema. Mitigation: the AGENT.md hint is the prompt-side instruction. If empirically the LLM struggles, a future story can add an inline 'this tool requires tool_search first' note in the deferred manifest entry."
+    }
+  ]
+}
