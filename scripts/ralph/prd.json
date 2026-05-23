@@ -79,8 +79,8 @@
         "Single atomic commit prefix: refactor(dedup): final pass — kill N residual production clusters (US-MOD-DEDUP-04)"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "PRECONDITION: DEDUP-00..03 done. CONSERVATIVE: it's better to commit 1 valid extraction than 3 hasty ones. If only 0 clusters meet all 3 gates, commit just the documentation update — story still ships as a documentation pass."
+      "passes": true,
+      "notes": "PRECONDITION: DEDUP-00..03 done. CONSERVATIVE: it's better to commit 1 valid extraction than 3 hasty ones. If only 0 clusters meet all 3 gates, commit just the documentation update — story still ships as a documentation pass. RESOLVED 2026-05-23: 6 extractions applied across 7 files; production clusters 41 → 34 (net −7). Skipped: setup_locale (map literals), mcp_setup/mcp_database_setup (typed generics), exec.go nil-executor (typed nil semantics), tool_definitions boilerplate."
     }
   ]
 }

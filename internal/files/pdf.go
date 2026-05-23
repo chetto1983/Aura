@@ -54,31 +54,7 @@ const (
 
 // SanitizePDFFilename forces .pdf suffix; same shape as
 // SanitizeFilename / SanitizeDOCXFilename.
-func SanitizePDFFilename(in string) string {
-	clean := strings.TrimSpace(in)
-	if idx := strings.LastIndexAny(clean, `/\`); idx >= 0 {
-		clean = clean[idx+1:]
-	}
-	clean = invalidFilenameChar.ReplaceAllString(clean, "")
-	clean = strings.TrimSpace(clean)
-	clean = strings.TrimRightFunc(clean, trimDotsAndSpaces)
-	lower := strings.ToLower(clean)
-	if !strings.HasSuffix(lower, ".pdf") {
-		clean = strings.TrimSuffix(clean, ".") + ".pdf"
-	}
-	if clean == ".pdf" || clean == "" {
-		clean = "document.pdf"
-	}
-	if len(clean) > MaxFilenameLen {
-		stem := strings.TrimSuffix(clean, ".pdf")
-		keep := max(MaxFilenameLen-len(".pdf"), 1)
-		if len(stem) > keep {
-			stem = stem[:keep]
-		}
-		clean = stem + ".pdf"
-	}
-	return clean
-}
+func SanitizePDFFilename(in string) string { return sanitizeFilenameExt(in, ".pdf", "document") }
 
 // BuildPDF renders spec into a PDF byte stream. Returns the rendered
 // bytes plus the canonicalized filename.

@@ -84,7 +84,12 @@ const (
 )
 
 // SanitizeDOCXFilename mirrors SanitizeFilename but forces .docx.
-func SanitizeDOCXFilename(in string) string {
+func SanitizeDOCXFilename(in string) string { return sanitizeFilenameExt(in, ".docx", "document") }
+
+// sanitizeFilenameExt is the shared body of SanitizeDOCXFilename and
+// SanitizePDFFilename. ext must include the leading dot; defaultBase is used
+// when the cleaned name would otherwise be empty or equal to the bare ext.
+func sanitizeFilenameExt(in, ext, defaultBase string) string {
 	clean := strings.TrimSpace(in)
 	if idx := strings.LastIndexAny(clean, `/\`); idx >= 0 {
 		clean = clean[idx+1:]
@@ -93,19 +98,19 @@ func SanitizeDOCXFilename(in string) string {
 	clean = strings.TrimSpace(clean)
 	clean = strings.TrimRightFunc(clean, trimDotsAndSpaces)
 	lower := strings.ToLower(clean)
-	if !strings.HasSuffix(lower, ".docx") {
-		clean = strings.TrimSuffix(clean, ".") + ".docx"
+	if !strings.HasSuffix(lower, ext) {
+		clean = strings.TrimSuffix(clean, ".") + ext
 	}
-	if clean == ".docx" || clean == "" {
-		clean = "document.docx"
+	if clean == ext || clean == "" {
+		clean = defaultBase + ext
 	}
 	if len(clean) > MaxFilenameLen {
-		stem := strings.TrimSuffix(clean, ".docx")
-		keep := max(MaxFilenameLen-len(".docx"), 1)
+		stem := strings.TrimSuffix(clean, ext)
+		keep := max(MaxFilenameLen-len(ext), 1)
 		if len(stem) > keep {
 			stem = stem[:keep]
 		}
-		clean = stem + ".docx"
+		clean = stem + ext
 	}
 	return clean
 }

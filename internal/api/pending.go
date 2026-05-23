@@ -57,30 +57,20 @@ func handlePendingList(deps Deps) http.HandlerFunc {
 }
 
 func handlePendingApprove(deps Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if deps.PendingApprover == nil {
-			writeError(w, deps.Logger, http.StatusServiceUnavailable, "approval pipeline unavailable")
-			return
-		}
-		id := r.PathValue("id")
-		if !telegramIDRe.MatchString(id) {
-			writeError(w, deps.Logger, http.StatusBadRequest, "invalid telegram id")
-			return
-		}
-		if err := deps.PendingApprover.ApproveAccess(r.Context(), id); err != nil {
-			if errors.Is(err, auth.ErrInvalid) {
-				writeError(w, deps.Logger, http.StatusNotFound, "no pending request for that user")
-				return
-			}
-			deps.Logger.Warn("api: pending approve", "user_id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "approve failed")
-			return
-		}
-		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"ok": true, "user_id": id})
-	}
+	return handlePendingAction(deps, func(ctx context.Context, id string) error {
+		return deps.PendingApprover.ApproveAccess(ctx, id)
+	}, "approve")
 }
 
 func handlePendingDeny(deps Deps) http.HandlerFunc {
+	return handlePendingAction(deps, func(ctx context.Context, id string) error {
+		return deps.PendingApprover.DenyAccess(ctx, id)
+	}, "deny")
+}
+
+// handlePendingAction is the shared body for approve and deny: validates the
+// path id, calls action, maps auth.ErrInvalid to 404.
+func handlePendingAction(deps Deps, action func(context.Context, string) error, name string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if deps.PendingApprover == nil {
 			writeError(w, deps.Logger, http.StatusServiceUnavailable, "approval pipeline unavailable")
@@ -91,13 +81,13 @@ func handlePendingDeny(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid telegram id")
 			return
 		}
-		if err := deps.PendingApprover.DenyAccess(r.Context(), id); err != nil {
+		if err := action(r.Context(), id); err != nil {
 			if errors.Is(err, auth.ErrInvalid) {
 				writeError(w, deps.Logger, http.StatusNotFound, "no pending request for that user")
 				return
 			}
-			deps.Logger.Warn("api: pending deny", "user_id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "deny failed")
+			deps.Logger.Warn("api: pending "+name, "user_id", id, "error", err)
+			writeError(w, deps.Logger, http.StatusInternalServerError, name+" failed")
 			return
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, map[string]any{"ok": true, "user_id": id})

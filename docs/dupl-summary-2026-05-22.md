@@ -3,7 +3,9 @@
 Generated from `.planning/dupl-report-2026-05-22.txt` after all Wave A file-splits landed.
 Command: `~/go/bin/dupl -t 60 internal/ cmd/`
 
-**Total clone groups**: 114 (41 production, 73 test)
+**Total clone groups**: 114 (41 production, 73 test) — **pre-Wave-C baseline**
+
+**Post-Wave-C (DEDUP-00..04)**: 34 production clusters — net reduction **7** vs baseline.
 
 Severity score = `clone_count × line_span`.
 
@@ -95,7 +97,7 @@ Debug harness duplication — lower priority (not production serving path), incl
 | DEDUP-01 | registry#1 + registry#2 (files_docx/pdf/xlsx) | ~411 |
 | DEDUP-02 | config/store.go GetInt/GetFloat/GetBool (score ~22, not in top 20) | ~22 |
 | DEDUP-03 | 3-way agent-job spec (confirmed dissolved by Wave A splits — no jobspec.go needed) | 0 |
-| DEDUP-04 | registry#3 + api#1 + api#2 + telegram#1 (recall / setup_locale / mcp_setup / documents) | ~280 |
+| DEDUP-04 | registry#3 + files#1 + api#3 + api#4 + wiki#1 (recall / sanitize-filename / pending / summaries / graph-traversal) | −7 clusters |
 
 **Note (DEDUP-03 — verified 2026-05-23)**: The original 3-way cluster (`swarm/tools.go:516-528`, `cron/agent_job.go:165-177`, `swarm/store.go:436-448`) is **confirmed dissolved** by Wave A splits. Evidence:
 - `internal/swarm/store.go` ends at line 435 — the original cluster range 436-448 no longer exists.
@@ -104,3 +106,29 @@ Debug harness duplication — lower priority (not production serving path), incl
 - `dupl -t 60 internal/ cmd/` reports 0 matches involving any of these three files.
 - `go test ./internal/swarm/... ./internal/cron/... ./internal/agent/tools/swarm/...` all green.
 No `internal/swarm/jobspec.go` is needed — the dedup goal is already achieved.
+
+---
+
+## DEDUP-04 Extractions (2026-05-23)
+
+Five extractions applied; 7 production clusters eliminated (from 41 → 34).
+
+| Extraction | Helper added | Files cleaned | Clusters killed |
+|-----------|--------------|---------------|-----------------|
+| `persistAndDeliverFile` | `internal/agent/tools/registry/files.go` | files_docx.go, files_pdf.go, files_xlsx.go | 2 (whole-file + 3-way Execute) |
+| `formatIndexedDocumentResults` | `internal/agent/tools/registry/memory_search_format.go` | recall_operational.go, recall_user_memory.go | 1 (44-line format loop) |
+| `sanitizeFilenameExt` | `internal/files/docx.go` | pdf.go | 1 (25-line sanitize block) |
+| `handlePendingAction` | `internal/api/pending.go` | — (same file) | 1 (46-score internal dup) |
+| `handleSummaryAction` | `internal/api/summaries.go` | — (same file) | 1 (approve/reject handler dup) |
+| `expandSubnodeLinks` | `internal/wiki/graph_index.go` | — (same file) | 1 (18-line BFS subnode expansion) |
+
+**Total clusters eliminated**: 7 (net: 41 → 34)
+
+## DEDUP-04 Skipped Clusters
+
+| Cluster | Reason skipped |
+|---------|---------------|
+| `setup_locale.go` (score 70) | Two locale translation map literals — cannot extract, data not code |
+| `mcp_database_setup.go` / `mcp_setup.go` (score 64) | Different generic type parameters per MCP setup type; no obvious helper signature |
+| `exec.go` isNilExecutor / isNilCommandExecutor | Typed nil interface check — cannot safely box into `any` helper without breaking nil equality semantics |
+| `tool_definitions.go:44,62` / `tool_definitions.go:64,82` (score 38) | Registering distinct tool structs — structural similarity is unavoidable boilerplate, not extractable logic |

@@ -174,50 +174,6 @@ func (t *RecallOperationalTool) Execute(ctx context.Context, args map[string]any
 	return formatOperationalResults(filtered, degradedRead, t.now()), nil
 }
 
-// formatOperationalResults renders the operational lesson list as plain
-// markdown, mirroring the memory_search format for consistency.
-// Each hit shows: handle — title (age) [freshness] [degraded_read] + snippet.
 func formatOperationalResults(docs []memoryindex.Document, degradedRead bool, now time.Time) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "%d operational lesson(s):", len(docs))
-	for _, doc := range docs {
-		fmt.Fprintf(&sb, "\n- [operational] %s — %s", doc.Handle, compactMemoryLine(doc.Title))
-		if age := formatAge(now, doc.UpdatedAt); age != "" {
-			fmt.Fprintf(&sb, " (%s)", age)
-		}
-		// Phase 7C freshness annotation — only when columns are populated.
-		if doc.EmbeddingModelID != "" || doc.IndexBuildID != "" {
-			var parts []string
-			if !doc.UpdatedAt.IsZero() {
-				parts = append(parts, "indexed_at="+doc.UpdatedAt.UTC().Format(time.RFC3339))
-			}
-			if doc.EmbeddingModelID != "" {
-				model := doc.EmbeddingModelID
-				if len(model) > 12 {
-					model = model[:12]
-				}
-				parts = append(parts, "model="+model)
-			}
-			if doc.IndexBuildID != "" {
-				build := doc.IndexBuildID
-				if len(build) > 12 {
-					build = build[:12]
-				}
-				parts = append(parts, "build="+build)
-			}
-			if len(parts) > 0 {
-				fmt.Fprintf(&sb, " freshness=%s", strings.Join(parts, ","))
-			}
-		}
-		if degradedRead {
-			sb.WriteString(" degraded_read=true")
-		}
-		if doc.Body != "" {
-			snippet, _ := snippetAround(doc.Body, "", 200)
-			if snippet != "" {
-				fmt.Fprintf(&sb, "\n  %s", snippet)
-			}
-		}
-	}
-	return sb.String()
+	return formatIndexedDocumentResults(docs, degradedRead, now, "operational", "operational lesson(s)")
 }

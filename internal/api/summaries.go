@@ -55,35 +55,20 @@ func handleSummariesList(deps Deps) http.HandlerFunc {
 }
 
 func handleSummariesApprove(deps Deps) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, ok := pathParamInt64(w, deps.Logger, r, "id")
-		if !ok {
-			return
-		}
-		if deps.Summaries == nil {
-			writeError(w, deps.Logger, http.StatusNotFound, "summaries store unavailable")
-			return
-		}
-
-		proposal, err := approveSummaryProposal(r.Context(), deps, id)
-		if err != nil {
-			if errors.Is(err, summarizer.ErrProposalNotFound) {
-				writeError(w, deps.Logger, http.StatusNotFound, "proposal not found")
-				return
-			}
-			if errors.Is(err, summarizer.ErrProposalConflict) {
-				writeError(w, deps.Logger, http.StatusConflict, "proposal already decided")
-				return
-			}
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to approve proposal")
-			return
-		}
-
-		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(proposal))
-	}
+	return handleSummaryAction(deps, func(ctx context.Context, id int64) (summarizer.ProposedUpdate, error) {
+		return approveSummaryProposal(ctx, deps, id)
+	}, "failed to approve proposal")
 }
 
 func handleSummariesReject(deps Deps) http.HandlerFunc {
+	return handleSummaryAction(deps, func(ctx context.Context, id int64) (summarizer.ProposedUpdate, error) {
+		return deps.Summaries.SetStatus(ctx, id, "rejected")
+	}, "failed to reject proposal")
+}
+
+// handleSummaryAction is the shared body of handleSummariesApprove and
+// handleSummariesReject: validate path id, call action, map proposal errors.
+func handleSummaryAction(deps Deps, action func(context.Context, int64) (summarizer.ProposedUpdate, error), failMsg string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, ok := pathParamInt64(w, deps.Logger, r, "id")
 		if !ok {
@@ -93,7 +78,7 @@ func handleSummariesReject(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusNotFound, "summaries store unavailable")
 			return
 		}
-		updated, err := deps.Summaries.SetStatus(r.Context(), id, "rejected")
+		result, err := action(r.Context(), id)
 		if err != nil {
 			if errors.Is(err, summarizer.ErrProposalNotFound) {
 				writeError(w, deps.Logger, http.StatusNotFound, "proposal not found")
@@ -103,10 +88,10 @@ func handleSummariesReject(deps Deps) http.HandlerFunc {
 				writeError(w, deps.Logger, http.StatusConflict, "proposal already decided")
 				return
 			}
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to reject proposal")
+			writeError(w, deps.Logger, http.StatusInternalServerError, failMsg)
 			return
 		}
-		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(updated))
+		writeJSON(w, deps.Logger, http.StatusOK, proposalToDTO(result))
 	}
 }
 

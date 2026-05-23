@@ -56,7 +56,7 @@ func (g *GraphIndex) NeighborsHubAware(slug string, depth, skipDegree int) []str
 
 	seen := map[string]bool{slug: true}
 	frontier := []string{slug}
-	for hop := 0; hop < depth; hop++ {
+	for range depth {
 		var next []string
 		addIfNew := func(t string) {
 			if !seen[t] {
@@ -75,25 +75,7 @@ func (g *GraphIndex) NeighborsHubAware(slug string, depth, skipDegree int) []str
 			for t := range g.inbound[s] {
 				addIfNew(t)
 			}
-			// Subnode expansion rules (same as Neighbors).
-			if isSubnodeID(s) {
-				parent := subnodeParentSlug(s)
-				addIfNew(parent)
-				if pm, ok := g.meta[parent]; ok {
-					for _, sub := range pm.Subnodes {
-						addIfNew(parent + "#" + sub.AnchorSlug)
-					}
-				}
-				for t := range g.outbound[parent] {
-					addIfNew(t)
-				}
-			} else {
-				if m, ok := g.meta[s]; ok {
-					for _, sub := range m.Subnodes {
-						addIfNew(s + "#" + sub.AnchorSlug)
-					}
-				}
-			}
+			g.expandSubnodeLinks(s, addIfNew)
 		}
 		if len(next) == 0 {
 			break
@@ -335,7 +317,7 @@ func (g *GraphIndex) Neighbors(slug string, depth int) []string {
 
 	seen := map[string]bool{slug: true}
 	frontier := []string{slug}
-	for hop := 0; hop < depth; hop++ {
+	for range depth {
 		var next []string
 		addIfNew := func(t string) {
 			if !seen[t] {
@@ -351,27 +333,7 @@ func (g *GraphIndex) Neighbors(slug string, depth int) []string {
 			for t := range g.inbound[s] {
 				addIfNew(t)
 			}
-			// Subnode expansion rules.
-			if isSubnodeID(s) {
-				// Subnode → parent + siblings + parent's outbound targets.
-				parent := subnodeParentSlug(s)
-				addIfNew(parent)
-				if pm, ok := g.meta[parent]; ok {
-					for _, sub := range pm.Subnodes {
-						addIfNew(parent + "#" + sub.AnchorSlug)
-					}
-				}
-				for t := range g.outbound[parent] {
-					addIfNew(t)
-				}
-			} else {
-				// Page → include its subnodes.
-				if m, ok := g.meta[s]; ok {
-					for _, sub := range m.Subnodes {
-						addIfNew(s + "#" + sub.AnchorSlug)
-					}
-				}
-			}
+			g.expandSubnodeLinks(s, addIfNew)
 		}
 		if len(next) == 0 {
 			break
@@ -388,6 +350,30 @@ func (g *GraphIndex) Neighbors(slug string, depth int) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// expandSubnodeLinks adds subnode-aware graph links for node s to the
+// addIfNew accumulator. Called by Neighbors and NeighborsHubAware.
+// Callers must hold g.mu.RLock.
+func (g *GraphIndex) expandSubnodeLinks(s string, addIfNew func(string)) {
+	if isSubnodeID(s) {
+		parent := subnodeParentSlug(s)
+		addIfNew(parent)
+		if pm, ok := g.meta[parent]; ok {
+			for _, sub := range pm.Subnodes {
+				addIfNew(parent + "#" + sub.AnchorSlug)
+			}
+		}
+		for t := range g.outbound[parent] {
+			addIfNew(t)
+		}
+	} else {
+		if m, ok := g.meta[s]; ok {
+			for _, sub := range m.Subnodes {
+				addIfNew(s + "#" + sub.AnchorSlug)
+			}
+		}
+	}
 }
 
 // OutNeighbors returns directly-linked-FROM targets of `slug`.

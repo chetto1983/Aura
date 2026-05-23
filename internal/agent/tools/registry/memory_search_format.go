@@ -299,6 +299,53 @@ func compactMemoryLine(value string) string {
 	return strings.Join(strings.Fields(value), " ")
 }
 
+// formatIndexedDocumentResults renders a memoryindex.Document slice as plain
+// markdown. Called by formatOperationalResults and formatUserMemoryResults with
+// per-kind labels, so the two tools share identical formatting logic.
+func formatIndexedDocumentResults(docs []memoryindex.Document, degradedRead bool, now time.Time, kindTag, countLabel string) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "%d %s:", len(docs), countLabel)
+	for _, doc := range docs {
+		fmt.Fprintf(&sb, "\n- [%s] %s — %s", kindTag, doc.Handle, compactMemoryLine(doc.Title))
+		if age := formatAge(now, doc.UpdatedAt); age != "" {
+			fmt.Fprintf(&sb, " (%s)", age)
+		}
+		if doc.EmbeddingModelID != "" || doc.IndexBuildID != "" {
+			var parts []string
+			if !doc.UpdatedAt.IsZero() {
+				parts = append(parts, "indexed_at="+doc.UpdatedAt.UTC().Format(time.RFC3339))
+			}
+			if doc.EmbeddingModelID != "" {
+				model := doc.EmbeddingModelID
+				if len(model) > 12 {
+					model = model[:12]
+				}
+				parts = append(parts, "model="+model)
+			}
+			if doc.IndexBuildID != "" {
+				build := doc.IndexBuildID
+				if len(build) > 12 {
+					build = build[:12]
+				}
+				parts = append(parts, "build="+build)
+			}
+			if len(parts) > 0 {
+				fmt.Fprintf(&sb, " freshness=%s", strings.Join(parts, ","))
+			}
+		}
+		if degradedRead {
+			sb.WriteString(" degraded_read=true")
+		}
+		if doc.Body != "" {
+			snippet, _ := snippetAround(doc.Body, "", 200)
+			if snippet != "" {
+				fmt.Fprintf(&sb, "\n  %s", snippet)
+			}
+		}
+	}
+	return sb.String()
+}
+
 // followUpHandle returns a tool invocation or wiki-link that the LLM can use
 // to expand a memory hit into its full content. Only tool names that exist in
 // the registry are used — no invented names.

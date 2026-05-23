@@ -2,12 +2,11 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 
 	"github.com/aura/aura/internal/files"
-	"github.com/aura/aura/internal/storage/sources/store"
+	source "github.com/aura/aura/internal/storage/sources/store"
 )
 
 // CreateXLSXTool generates a workbook from a structured spec, persists
@@ -37,61 +36,16 @@ func (t *CreateXLSXTool) Execute(ctx context.Context, args map[string]any) (stri
 	if err != nil {
 		return "", err
 	}
-
 	body, name, err := files.BuildXLSX(spec)
 	if err != nil {
 		return "", err
 	}
-
-	src, dup, err := t.store.Put(ctx, source.PutInput{
+	return persistAndDeliverFile(ctx, t.store, t.sender, "create_xlsx", source.PutInput{
 		Kind:     source.KindXLSX,
 		Filename: name,
 		MimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		Bytes:    body,
-	})
-	if err != nil {
-		return "", fmt.Errorf("create_xlsx: persist: %w", err)
-	}
-	// Generated files never go through OCR + ingest; mark ingested up
-	// front so dashboard's source list shows them in the right bucket.
-	if src.Status != source.StatusIngested {
-		updated, err := t.store.Update(src.ID, func(s *source.Source) error {
-			s.Status = source.StatusIngested
-			return nil
-		})
-		if err == nil {
-			src = updated
-		}
-	}
-
-	if deliver {
-		userID := UserIDFromContext(ctx)
-		if userID == "" {
-			return "", errors.New("create_xlsx: deliver=true but no user context (call from Telegram or set deliver=false)")
-		}
-		if t.sender == nil {
-			return "", errors.New("create_xlsx: deliver=true but no DocumentSender configured")
-		}
-		if err := t.sender.SendDocumentToUser(userID, name, body, caption); err != nil {
-			// Persistence already succeeded — surface the delivery failure
-			// but tell the LLM the file is recoverable from sources.
-			return "", fmt.Errorf("create_xlsx: persisted as %s but delivery failed: %w", src.ID, err)
-		}
-	}
-
-	resp := map[string]any{
-		"source_id":  src.ID,
-		"filename":   name,
-		"size_bytes": src.SizeBytes,
-		"sha256":     src.SHA256,
-		"duplicate":  dup,
-		"delivered":  deliver,
-	}
-	out, err := json.Marshal(resp)
-	if err != nil {
-		return "", fmt.Errorf("create_xlsx: marshal response: %w", err)
-	}
-	return string(out), nil
+	}, deliver, caption)
 }
 
 // parseCreateXLSXArgs lifts the LLM's loosely-typed JSON into a typed

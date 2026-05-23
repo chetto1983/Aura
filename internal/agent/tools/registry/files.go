@@ -1,6 +1,7 @@
 // Package tools — files.go holds the shared bits used by every document
 // generator (create_xlsx, create_docx, create_pdf): the DocumentSender
-// boundary, LLM caption sanitization, and the cell-stringifier.
+// boundary, LLM caption sanitization, the cell-stringifier, and the
+// persist→deliver→marshal helper that all three Execute methods share.
 //
 // Per-tool implementations live next door:
 //   - files_xlsx.go   — CreateXLSXTool + parseCreateXLSXArgs
@@ -13,9 +14,12 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	source "github.com/aura/aura/internal/storage/sources/store"
 )
 
 // maxDocumentCaptionChars matches Telegram's documented caption cap so a
@@ -49,6 +53,59 @@ func sanitizeDocumentCaption(raw string) string {
 // future refactor can fold them together once a third sender shows up.
 type DocumentSender interface {
 	SendDocumentToUser(userID, filename string, body []byte, caption string) error
+}
+
+// persistAndDeliverFile handles the shared persist → status-update → deliver →
+// marshal sequence that all file-creation tools (xlsx, docx, pdf) execute after
+// building the file body. Generated files are marked ingested immediately so
+// the dashboard shows them in the right bucket without a separate OCR step.
+func persistAndDeliverFile(
+	ctx context.Context,
+	st source.Writer,
+	sender DocumentSender,
+	toolName string,
+	input source.PutInput,
+	deliver bool,
+	caption string,
+) (string, error) {
+	src, dup, err := st.Put(ctx, input)
+	if err != nil {
+		return "", fmt.Errorf("%s: persist: %w", toolName, err)
+	}
+	if src.Status != source.StatusIngested {
+		updated, err := st.Update(src.ID, func(s *source.Source) error {
+			s.Status = source.StatusIngested
+			return nil
+		})
+		if err == nil {
+			src = updated
+		}
+	}
+	if deliver {
+		userID := UserIDFromContext(ctx)
+		if userID == "" {
+			return "", fmt.Errorf("%s: deliver=true but no user context (call from Telegram or set deliver=false)", toolName)
+		}
+		if sender == nil {
+			return "", fmt.Errorf("%s: deliver=true but no DocumentSender configured", toolName)
+		}
+		if err := sender.SendDocumentToUser(userID, input.Filename, input.Bytes, caption); err != nil {
+			return "", fmt.Errorf("%s: persisted as %s but delivery failed: %w", toolName, src.ID, err)
+		}
+	}
+	resp := map[string]any{
+		"source_id":  src.ID,
+		"filename":   input.Filename,
+		"size_bytes": src.SizeBytes,
+		"sha256":     src.SHA256,
+		"duplicate":  dup,
+		"delivered":  deliver,
+	}
+	out, err := json.Marshal(resp)
+	if err != nil {
+		return "", fmt.Errorf("%s: marshal response: %w", toolName, err)
+	}
+	return string(out), nil
 }
 
 // stringifyCell coerces whatever the LLM put in a cell slot to a string.

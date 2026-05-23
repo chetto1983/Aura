@@ -155,49 +155,6 @@ func docHasTag(doc memoryindex.Document, tag string) bool {
 	return false
 }
 
-// formatUserMemoryResults renders the user memory list as plain markdown,
-// mirroring the recall_operational format for consistency.
 func formatUserMemoryResults(docs []memoryindex.Document, degradedRead bool, now time.Time) string {
-	var sb strings.Builder
-	fmt.Fprintf(&sb, "%d user fact(s):", len(docs))
-	for _, doc := range docs {
-		fmt.Fprintf(&sb, "\n- [user_memory] %s — %s", doc.Handle, compactMemoryLine(doc.Title))
-		if age := formatAge(now, doc.UpdatedAt); age != "" {
-			fmt.Fprintf(&sb, " (%s)", age)
-		}
-		// Phase 7C freshness annotation — only when columns are populated.
-		if doc.EmbeddingModelID != "" || doc.IndexBuildID != "" {
-			var parts []string
-			if !doc.UpdatedAt.IsZero() {
-				parts = append(parts, "indexed_at="+doc.UpdatedAt.UTC().Format(time.RFC3339))
-			}
-			if doc.EmbeddingModelID != "" {
-				model := doc.EmbeddingModelID
-				if len(model) > 12 {
-					model = model[:12]
-				}
-				parts = append(parts, "model="+model)
-			}
-			if doc.IndexBuildID != "" {
-				build := doc.IndexBuildID
-				if len(build) > 12 {
-					build = build[:12]
-				}
-				parts = append(parts, "build="+build)
-			}
-			if len(parts) > 0 {
-				fmt.Fprintf(&sb, " freshness=%s", strings.Join(parts, ","))
-			}
-		}
-		if degradedRead {
-			sb.WriteString(" degraded_read=true")
-		}
-		if doc.Body != "" {
-			snippet, _ := snippetAround(doc.Body, "", 200)
-			if snippet != "" {
-				fmt.Fprintf(&sb, "\n  %s", snippet)
-			}
-		}
-	}
-	return sb.String()
+	return formatIndexedDocumentResults(docs, degradedRead, now, "user_memory", "user fact(s)")
 }
