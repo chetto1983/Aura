@@ -85,7 +85,7 @@
         "Single atomic commit prefix: chore(prompt): untrusted-content snippet upgrade (US-CACHE-05)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Trivial prompt-text change. Bundle with US-CACHE-04 if mechanical (one commit covering both). Zero risk per plan.md."
     }
   ]
