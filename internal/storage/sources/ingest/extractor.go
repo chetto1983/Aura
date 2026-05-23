@@ -22,7 +22,16 @@ const extractorPromptVersion = "ingest_v4"
 // return per source. Higher numbers add cost without proportional
 // recall improvement at Aura's personal-corpus scale; below 5 means
 // the pipeline degenerates to a single summary card.
-const extractorMaxItems = 15
+// extractorMaxItems is the soft cap on entities+concepts the validator
+// keeps. The LLM may legitimately emit more for an information-dense
+// source (a textbook docx, a multi-product xlsx); validateExtraction
+// now truncates rather than rejecting, so partial extraction is always
+// better than the empty single-page fallback. 2026-05-23 docx ingest
+// ("Corso Base Robot.docx") emitted 19 items against the previous
+// hard cap of 15 — the fail produced 0 entity pages and a useless
+// graph. Raised to 30 + truncation behaviour to fit the real-world
+// distribution.
+const extractorMaxItems = 30
 
 // entityTypes is the closed set of entity categories the extractor
 // will accept. Anything outside this set is rejected at validation —
@@ -284,8 +293,22 @@ func validateExtraction(delta *ExtractionDelta, existingSlugs []string) error {
 		return fmt.Errorf("nil delta")
 	}
 	canonicalizeSlugs(delta)
+	// Soft cap: truncate excess items instead of failing the whole
+	// extraction. The single-page fallback that previously kicked in
+	// produced a stub source page with zero entity links — worse than
+	// keeping the first N items the LLM emitted (which are typically
+	// the most salient since the model prioritises them).
 	if delta.TotalItems() > extractorMaxItems {
-		return fmt.Errorf("delta has %d items, max %d", delta.TotalItems(), extractorMaxItems)
+		overflow := delta.TotalItems() - extractorMaxItems
+		// Trim concepts first (concepts are more compressible than entities),
+		// then entities. Links pointing at trimmed items get pruned below.
+		for delta.TotalItems() > extractorMaxItems && len(delta.Concepts) > 0 {
+			delta.Concepts = delta.Concepts[:len(delta.Concepts)-1]
+		}
+		for delta.TotalItems() > extractorMaxItems && len(delta.Entities) > 0 {
+			delta.Entities = delta.Entities[:len(delta.Entities)-1]
+		}
+		_ = overflow // intentional: drop count is implicit from before/after
 	}
 
 	known := make(map[string]bool, len(existingSlugs)+delta.TotalItems())
