@@ -150,7 +150,13 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		ocrCtx, cancel := context.WithTimeout(r.Context(), uploadOCRTimeout)
+		// Detach from r.Context() so a browser disconnect mid-upload doesn't
+		// cancel the in-flight Mistral OCR call. Mistral takes 30-60 s on a
+		// real PDF; some browsers/proxies drop TCP keepalive sooner. The
+		// upload row is already persisted; the user reopens the dashboard
+		// and sees the source in either ocr_complete or failed status.
+		// WithoutCancel preserves request values (auth, trace IDs).
+		ocrCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadOCRTimeout)
 		defer cancel()
 		ocrRes, err := deps.OCR.Process(ocrCtx, ocr.ProcessInput{PDFBytes: body})
 		if err != nil {
@@ -211,9 +217,10 @@ func handleSourceUpload(deps Deps) http.HandlerFunc {
 		resp.Status = string(updated.Status)
 		resp.PageCount = updated.PageCount
 
-		// Step 5 — auto-ingest (optional).
+		// Step 5 — auto-ingest (optional). Same detach reason as the OCR
+		// call: ingest can take tens of seconds and survives client drop.
 		if deps.Ingest != nil {
-			ingCtx, ingCancel := context.WithTimeout(r.Context(), uploadOCRTimeout)
+			ingCtx, ingCancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadOCRTimeout)
 			note, err := deps.Ingest.AfterOCR(ingCtx, updated)
 			ingCancel()
 			if err != nil {

@@ -66,7 +66,9 @@ func handleSourceIngest(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(r.Context(), uploadOCRTimeout)
+		// Detach from r.Context() — ingest can run long; browser drop
+		// must not abort it. See internal/api/upload.go for the rationale.
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadOCRTimeout)
 		defer cancel()
 		note, err := deps.Ingest.AfterOCR(ctx, rec)
 		if err != nil {
@@ -138,7 +140,9 @@ func handleSourceReocr(deps Deps) http.HandlerFunc {
 			return
 		}
 
-		ocrCtx, cancel := context.WithTimeout(r.Context(), uploadOCRTimeout)
+		// Detach from r.Context() — reocr is the same Mistral OCR call as
+		// upload.go and must survive a browser drop. See upload.go rationale.
+		ocrCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadOCRTimeout)
 		defer cancel()
 		ocrRes, err := deps.OCR.Process(ocrCtx, ocr.ProcessInput{PDFBytes: body})
 		if err != nil {
@@ -195,7 +199,8 @@ func handleSourceReocr(deps Deps) http.HandlerFunc {
 		}
 
 		if deps.Ingest != nil {
-			ingCtx, ingCancel := context.WithTimeout(r.Context(), uploadOCRTimeout)
+			// Detach: ingest-after-reocr must survive browser drop too.
+			ingCtx, ingCancel := context.WithTimeout(context.WithoutCancel(r.Context()), uploadOCRTimeout)
 			note, err := deps.Ingest.AfterOCR(ingCtx, updated)
 			ingCancel()
 			if err != nil {
