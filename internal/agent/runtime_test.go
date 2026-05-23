@@ -3,6 +3,8 @@ package agent
 import (
 	"context"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aura/aura/internal/llm"
@@ -18,14 +20,14 @@ func TestRunEmitsToolsStatsAndFinalEvents(t *testing.T) {
 		Executor: ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
 			return ExecutionSummary{}
 		}),
-		State:                   state,
-		PromptVersion:           "test",
-		PromptHash:              "hash",
-		PromptModules:           []string{"base"},
-		Toolset:                 "registered",
-		ToolsetSelectReason:     "test",
-		Tools:                   []llm.ToolDefinition{{Name: "search_memory"}},
-		Options:                 Options{MaxIterations: 1},
+		State:               state,
+		PromptVersion:       "test",
+		PromptHash:          "hash",
+		PromptModules:       []string{"base"},
+		Toolset:             "registered",
+		ToolsetSelectReason: "test",
+		Tools:               []llm.ToolDefinition{{Name: "search_memory"}},
+		Options:             Options{MaxIterations: 1},
 		OnEvent: func(event Event) {
 			events = append(events, event)
 		},
@@ -73,12 +75,12 @@ func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
 		{Response: llm.Response{Content: "all good"}},
 	}}
 	var events []Event
-	executed := 0
+	var executed atomic.Int64
 
 	_, err := Run(context.Background(), Invocation{
 		Client: client,
 		Executor: ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
-			executed += len(calls)
+			executed.Add(int64(len(calls)))
 			results := map[string]string{}
 			for _, call := range calls {
 				state.AddToolResultMessage(call.ID, "result for "+call.Name)
@@ -102,8 +104,8 @@ func TestRunEmitsStreamingLifecycleEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if executed != 2 {
-		t.Fatalf("executor ran %d calls, want 2", executed)
+	if got := executed.Load(); got != 2 {
+		t.Fatalf("executor ran %d calls, want 2", got)
 	}
 
 	var kinds []EventType
@@ -274,17 +276,28 @@ func (s *scriptedRTClient) Chat(context.Context, []llm.Message, []llm.ToolDefini
 }
 
 type fakeRTState struct {
+	mu       sync.Mutex
 	messages []llm.Message
 }
 
-func (f *fakeRTState) Messages() []llm.Message    { return f.messages }
+func (f *fakeRTState) Messages() []llm.Message {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]llm.Message(nil), f.messages...)
+}
 func (f *fakeRTState) TrackTokens(llm.TokenUsage) {}
 func (f *fakeRTState) AddAssistantMessage(content string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.messages = append(f.messages, llm.Message{Role: "assistant", Content: content})
 }
 func (f *fakeRTState) AddAssistantToolCallMessage(content string, calls []llm.ToolCall) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.messages = append(f.messages, llm.Message{Role: "assistant", Content: content, ToolCalls: calls})
 }
 func (f *fakeRTState) AddToolResultMessage(id, content string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.messages = append(f.messages, llm.Message{Role: "tool", ToolCallID: id, Content: content})
 }
