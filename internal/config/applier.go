@@ -86,6 +86,16 @@ const (
 	KeyConvArchiveEnabled      = "CONV_ARCHIVE_ENABLED"
 	KeySandboxEnabled          = "SANDBOX_ENABLED"
 	KeySandboxTimeoutSec       = "SANDBOX_TIMEOUT_SEC"
+
+	// Per-class tool budget caps (US-OUT-07). Dashboard keys use lowercase
+	// snake_case; env vars use AURA_TOOL_BUDGET_<CLASS>.
+	KeyToolBudgetWeb       = "tool_budget_web"
+	KeyToolBudgetWiki      = "tool_budget_wiki"
+	KeyToolBudgetExec      = "tool_budget_exec"
+	KeyToolBudgetSource    = "tool_budget_source"
+	KeyToolBudgetScheduler = "tool_budget_scheduler"
+	KeyToolBudgetAskUser   = "tool_budget_ask_user"
+	KeyToolBudgetDefault   = "tool_budget_default"
 )
 
 // OverridableKeys returns every key the applier touches. Callers (e.g. the
@@ -121,6 +131,8 @@ func OverridableKeys() []string {
 		KeyOCRMaxPages, KeyOCRMaxFileMB,
 		KeyConvArchiveEnabled,
 		KeySandboxEnabled, KeySandboxTimeoutSec,
+		KeyToolBudgetWeb, KeyToolBudgetWiki, KeyToolBudgetExec, KeyToolBudgetSource,
+		KeyToolBudgetScheduler, KeyToolBudgetAskUser, KeyToolBudgetDefault,
 	}
 }
 
@@ -231,6 +243,16 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 
 	cfg.SandboxEnabled = settingBool(ctx, s, KeySandboxEnabled, cfg.SandboxEnabled)
 	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
+
+	// Per-class tool budget caps (US-OUT-07). Clamped to [1,100]; invalid rows
+	// leave the env-loaded value intact (fail-soft).
+	cfg.ToolBudgetWeb = settingIntRange(ctx, s, KeyToolBudgetWeb, cfg.ToolBudgetWeb, 1, 100, cfg.ToolBudgetWeb)
+	cfg.ToolBudgetWiki = settingIntRange(ctx, s, KeyToolBudgetWiki, cfg.ToolBudgetWiki, 1, 100, cfg.ToolBudgetWiki)
+	cfg.ToolBudgetExec = settingIntRange(ctx, s, KeyToolBudgetExec, cfg.ToolBudgetExec, 1, 100, cfg.ToolBudgetExec)
+	cfg.ToolBudgetSource = settingIntRange(ctx, s, KeyToolBudgetSource, cfg.ToolBudgetSource, 1, 100, cfg.ToolBudgetSource)
+	cfg.ToolBudgetScheduler = settingIntRange(ctx, s, KeyToolBudgetScheduler, cfg.ToolBudgetScheduler, 1, 100, cfg.ToolBudgetScheduler)
+	cfg.ToolBudgetAskUser = settingIntRange(ctx, s, KeyToolBudgetAskUser, cfg.ToolBudgetAskUser, 1, 100, cfg.ToolBudgetAskUser)
+	cfg.ToolBudgetDefault = settingIntRange(ctx, s, KeyToolBudgetDefault, cfg.ToolBudgetDefault, 1, 100, cfg.ToolBudgetDefault)
 }
 
 func settingString(ctx context.Context, s Reader, key, fallback string) string {

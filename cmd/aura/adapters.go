@@ -234,6 +234,7 @@ func newRunTaskDeps(cfg *config.Config, deps *telegram.Deps) agent.RunTaskDeps {
 		Logger:            deps.Logger,
 		AttemptsRepo:      attempts.NewSQLiteRepo(deps.Pool),
 		TokenJuiceEnabled: cfg.TokenJuiceEnabled,
+		BudgetCaps:        cfg.ToolBudgetCaps(),
 		MaxIterations:     maxIterations,
 		Timeout:           time.Duration(timeoutSec) * time.Second,
 		ToolTimeout:       time.Duration(timeoutSec) * time.Second,

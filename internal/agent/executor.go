@@ -40,6 +40,10 @@ type agentExecutor struct {
 	// web_fetch, and search_memory (US-OUT-03). After MaxRepeats identical
 	// targets, subsequent calls are short-circuited with a blocked error.
 	repeatedLookup *governance.RepeatedLookupCounter
+	// budget tracks per-turn per-class tool call caps (US-OUT-07). One tracker
+	// per agentExecutor (= one per turn); cap exhaustion returns a structured
+	// error as the tool result so the LLM sees it inline.
+	budget *governance.BudgetTracker
 }
 
 var _ ToolExecutor = (*agentExecutor)(nil)
@@ -56,6 +60,7 @@ func newAgentExecutor(
 	repo attempts.Repo,
 	tokenJuiceEnabled bool,
 	spillDir string,
+	budgetCaps map[string]int,
 ) *agentExecutor {
 	return &agentExecutor{
 		tools:             reg,
@@ -70,6 +75,7 @@ func newAgentExecutor(
 		tokenJuiceEnabled: tokenJuiceEnabled,
 		spillDir:          spillDir,
 		repeatedLookup:    governance.NewRepeatedLookupCounter(),
+		budget:            governance.NewBudgetTracker(budgetCaps),
 	}
 }
 
@@ -224,6 +230,15 @@ func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (
 			obs := buildObs("blocked", blockErr)
 			recordObs(obs)
 			return tools.FormatFatalToolError(blockErr), obs, nil
+		}
+	}
+	// US-OUT-07: per-turn per-class budget cap.
+	if e.budget != nil {
+		class := governance.ToolClass(call.Name)
+		if capErr := e.budget.Check(class, call.Name); capErr != nil {
+			obs := buildObs("blocked", capErr)
+			recordObs(obs)
+			return tools.FormatFatalToolError(capErr), obs, nil
 		}
 	}
 	out, err := e.tools.Execute(toolCtx, call.Name, call.Arguments)

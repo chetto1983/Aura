@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func TestExecutorRecordsAttemptOnToolError(t *testing.T) {
 	reg.Register(&fakeTool{name: "web_fetch", err: errors.New("i/o error: connection refused")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo, false, "")
+	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo, false, "", nil)
 
 	calls := []llm.ToolCall{{ID: "call_err", Name: "web_fetch", Arguments: map[string]any{"url": "http://example.com"}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -92,7 +93,7 @@ func TestExecutorRecordsAttemptOnSuccess(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found it"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo, false, "")
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo, false, "", nil)
 
 	calls := []llm.ToolCall{{ID: "call_ok", Name: "lookup", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -121,7 +122,7 @@ func TestExecutorMCPToolKindPersisted(t *testing.T) {
 	reg.Register(&fakeTool{name: "mcp_test_echo", err: errors.New("server unavailable")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo, false, "")
+	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo, false, "", nil)
 
 	calls := []llm.ToolCall{{ID: "call_mcp", Name: "mcp_test_echo", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -144,7 +145,7 @@ func TestExecutorNilRepoSkipsSilently(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "ok"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil, false, "")
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil, false, "", nil)
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -161,7 +162,7 @@ func TestExecutorRecordFailureDoesNotPropagateToResult(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{}, false, "")
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{}, false, "", nil)
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -183,7 +184,7 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 
 	// flag=true: aura/file-read rule fires → output <500 chars, no "content": field
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true, "")
+	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true, "", nil)
 	exec.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
 
 	var toolMsg *llm.Message
@@ -205,7 +206,7 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 
 	// flag=false: raw output passes through unchanged (~5 KB)
 	state2 := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false, "")
+	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false, "", nil)
 	exec2.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
 
 	for i := range state2.messages {
@@ -214,6 +215,67 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 				t.Errorf("tokenjuice=false: expected ~5 KB output, got %d chars", len(state2.messages[i].Content))
 			}
 			break
+		}
+	}
+}
+
+// TestExecutorBudgetCapBlocksFourthWebCall verifies the probe from US-OUT-07:
+// a turn that calls web_search 4 times (cap=3) has the 4th call blocked with
+// a budget-exhausted error returned inline as the tool result.
+// Distinct queries are used so the repeated-lookup guard (US-OUT-03) does not
+// fire before the budget check.
+func TestExecutorBudgetCapBlocksFourthWebCall(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	reg.Register(&fakeTool{name: "web_search", result: "some results"})
+
+	state := newAgentState([]llm.Message{{Role: "user", Content: "search"}})
+	// Default caps: web=3. Pass nil to use defaults.
+	exec := newAgentExecutor(reg, state, nil, []string{"web_search"}, "", "run-budget-test", 0, 0, nil, false, "", nil)
+
+	// Calls 1–3 use distinct queries to avoid repeatedLookup guard; all must succeed.
+	for i := range 3 {
+		calls := []llm.ToolCall{{ID: fmt.Sprintf("c%d", i+1), Name: "web_search", Arguments: map[string]any{"query": fmt.Sprintf("query-%d", i+1)}}}
+		summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
+		res := summary.Results[fmt.Sprintf("c%d", i+1)]
+		if strings.Contains(res, "budget exhausted") {
+			t.Fatalf("call %d should succeed, got blocked: %s", i+1, res)
+		}
+	}
+	// 4th call with a new unique query — blocked by budget, not repeated-lookup.
+	calls4 := []llm.ToolCall{{ID: "c4", Name: "web_search", Arguments: map[string]any{"query": "query-4"}}}
+	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls4)
+	res := summary.Results["c4"]
+	if !strings.Contains(res, "budget exhausted") {
+		t.Errorf("4th call should be blocked by budget, got: %s", res)
+	}
+	if !strings.Contains(res, "web") {
+		t.Errorf("error should name the class, got: %s", res)
+	}
+}
+
+// TestExecutorBudgetCounterResetsPerTurn verifies that two sequential turns
+// (= two separate executors) each get a fresh budget: 3+3=6 web calls total,
+// all succeed.
+func TestExecutorBudgetCounterResetsPerTurn(t *testing.T) {
+	reg := tools.NewRegistry(nil)
+	reg.Register(&fakeTool{name: "web_search", result: "ok"})
+
+	makeExec := func(id string) *agentExecutor {
+		state := newAgentState([]llm.Message{{Role: "user", Content: "search"}})
+		return newAgentExecutor(reg, state, nil, []string{"web_search"}, "", id, 0, 0, nil, false, "", nil)
+	}
+
+	for turn := range 2 {
+		exec := makeExec(fmt.Sprintf("run-budget-reset-turn%d", turn))
+		for i := range 3 {
+			// Use distinct queries per call to avoid the repeated-lookup guard.
+			q := fmt.Sprintf("turn%d-query%d", turn, i)
+			calls := []llm.ToolCall{{ID: fmt.Sprintf("c%d", i+1), Name: "web_search", Arguments: map[string]any{"query": q}}}
+			summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
+			res := summary.Results[fmt.Sprintf("c%d", i+1)]
+			if strings.Contains(res, "budget exhausted") {
+				t.Errorf("turn%d call%d should succeed, got blocked: %s", turn+1, i+1, res)
+			}
 		}
 	}
 }

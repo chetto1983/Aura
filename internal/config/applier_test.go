@@ -404,3 +404,57 @@ func TestIsOverridable(t *testing.T) {
 		t.Errorf("random key shouldn't be overridable")
 	}
 }
+
+// TestApplyToConfigToolBudgetDBOverride verifies US-OUT-07: setting
+// tool_budget_web=10 via the DB settings table overrides the env-loaded
+// default (3) after ApplyToConfig runs — the "after restart" scenario.
+func TestApplyToConfigToolBudgetDBOverride(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	// Simulate env-loaded config with default caps.
+	cfg := &Config{
+		ToolBudgetWeb:       3,
+		ToolBudgetWiki:      20,
+		ToolBudgetExec:      2,
+		ToolBudgetSource:    8,
+		ToolBudgetScheduler: 5,
+		ToolBudgetAskUser:   3,
+		ToolBudgetDefault:   10,
+	}
+
+	// DB row overrides web cap to 10.
+	if err := s.Set(ctx, KeyToolBudgetWeb, "10"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	ApplyToConfig(ctx, s, cfg)
+
+	if cfg.ToolBudgetWeb != 10 {
+		t.Errorf("ToolBudgetWeb = %d, want 10", cfg.ToolBudgetWeb)
+	}
+	// Other caps should remain at their env defaults.
+	if cfg.ToolBudgetWiki != 20 {
+		t.Errorf("ToolBudgetWiki = %d, want 20 (unchanged)", cfg.ToolBudgetWiki)
+	}
+
+	// ToolBudgetCaps() must reflect the override.
+	caps := cfg.ToolBudgetCaps()
+	if caps["web"] != 10 {
+		t.Errorf("ToolBudgetCaps()[web] = %d, want 10", caps["web"])
+	}
+	if caps["wiki"] != 20 {
+		t.Errorf("ToolBudgetCaps()[wiki] = %d, want 20", caps["wiki"])
+	}
+
+	// All budget keys must be dashboard-overridable.
+	for _, key := range []string{
+		KeyToolBudgetWeb, KeyToolBudgetWiki, KeyToolBudgetExec,
+		KeyToolBudgetSource, KeyToolBudgetScheduler, KeyToolBudgetAskUser,
+		KeyToolBudgetDefault,
+	} {
+		if !IsOverridable(key) {
+			t.Errorf("%s should be overridable", key)
+		}
+	}
+}

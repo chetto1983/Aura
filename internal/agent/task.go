@@ -76,4 +76,8 @@ type RunTaskDeps struct {
 	MaxIterations int
 	Timeout       time.Duration
 	ToolTimeout   time.Duration
+	// BudgetCaps overrides the per-class tool call caps for this turn
+	// (US-OUT-07). Keys match governance.Class* constants ("web", "wiki", ...).
+	// Nil uses the hardcoded defaults from governance.NewBudgetTracker.
+	BudgetCaps map[string]int
 }

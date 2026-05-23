@@ -194,6 +194,33 @@ type Config struct {
 	InboxQueueNoticeAfter   time.Duration `envconfig:"AURA_INBOX_QUEUE_NOTICE_AFTER"`
 	InactivityThreshold     time.Duration `envconfig:"AURA_INACTIVITY_THRESHOLD"`
 	InactivitySweepInterval time.Duration `envconfig:"AURA_INACTIVITY_SWEEP_INTERVAL"`
+
+	// Per-class tool budget caps (US-OUT-07). One tracker per agent turn; caps
+	// bound runaway tool loops at class granularity. Tunable via env +
+	// runtime settings table (tool_budget_web etc.). Values outside [1,100]
+	// are clamped to the hardcoded defaults at NewBudgetTracker time.
+	ToolBudgetWeb       int `envconfig:"AURA_TOOL_BUDGET_WEB"`
+	ToolBudgetWiki      int `envconfig:"AURA_TOOL_BUDGET_WIKI"`
+	ToolBudgetExec      int `envconfig:"AURA_TOOL_BUDGET_EXEC"`
+	ToolBudgetSource    int `envconfig:"AURA_TOOL_BUDGET_SOURCE"`
+	ToolBudgetScheduler int `envconfig:"AURA_TOOL_BUDGET_SCHEDULER"`
+	ToolBudgetAskUser   int `envconfig:"AURA_TOOL_BUDGET_ASK_USER"`
+	ToolBudgetDefault   int `envconfig:"AURA_TOOL_BUDGET_DEFAULT"`
+}
+
+// ToolBudgetCaps returns the per-class budget cap map derived from the config.
+// Keys match the governance package's Class* constants ("web", "wiki", etc.)
+// so callers can pass the map directly to governance.NewBudgetTracker.
+func (c *Config) ToolBudgetCaps() map[string]int {
+	return map[string]int{
+		"web":       c.ToolBudgetWeb,
+		"wiki":      c.ToolBudgetWiki,
+		"exec":      c.ToolBudgetExec,
+		"source":    c.ToolBudgetSource,
+		"scheduler": c.ToolBudgetScheduler,
+		"ask_user":  c.ToolBudgetAskUser,
+		"default":   c.ToolBudgetDefault,
+	}
 }
 
 // IsAllowlisted checks if a Telegram user ID is in the allowlist.
@@ -350,6 +377,17 @@ func Load() (*Config, error) {
 	cfg.InboxQueueNoticeAfter = getEnvDuration("AURA_INBOX_QUEUE_NOTICE_AFTER", DefaultInboxQueueNoticeAfter)
 	cfg.InactivityThreshold = getEnvDuration("AURA_INACTIVITY_THRESHOLD", DefaultInactivityThreshold)
 	cfg.InactivitySweepInterval = getEnvDuration("AURA_INACTIVITY_SWEEP_INTERVAL", DefaultInactivitySweepInterval)
+
+	// Per-class tool budget caps (US-OUT-07). Env vars override hardcoded defaults;
+	// runtime settings table further overrides at applier.go. Values outside [1,100]
+	// fall back to the hardcoded constant at NewBudgetTracker construction time.
+	cfg.ToolBudgetWeb = normalizeIntRange(getEnvInt("AURA_TOOL_BUDGET_WEB", 3), 1, 100, 3)
+	cfg.ToolBudgetWiki = normalizeIntRange(getEnvInt("AURA_TOOL_BUDGET_WIKI", 20), 1, 100, 20)
+	cfg.ToolBudgetExec = normalizeIntRange(getEnvInt("AURA_TOOL_BUDGET_EXEC", 2), 1, 100, 2)
+	cfg.ToolBudgetSource = normalizeIntRange(getEnvInt("AURA_TOOL_BUDGET_SOURCE", 8), 1, 100, 8)
+	cfg.ToolBudgetScheduler = normalizeIntRange(getEnvInt("AURA_TOOL_BUDGET_SCHEDULER", 5), 1, 100, 5)
+	cfg.ToolBudgetAskUser = normalizeIntRange(getEnvInt("AURA_TOOL_BUDGET_ASK_USER", 3), 1, 100, 3)
+	cfg.ToolBudgetDefault = normalizeIntRange(getEnvInt("AURA_TOOL_BUDGET_DEFAULT", 10), 1, 100, 10)
 
 	return cfg, nil
 }

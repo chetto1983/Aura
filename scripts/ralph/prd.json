@@ -132,7 +132,7 @@
         "Single atomic commit prefix: feat(agent): per-tool-class budget caps with runtime override (US-OUT-07)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "Independent of US-OUT-01..06 (can run in parallel). RISK R5: per-class caps may be too low for legitimate complex queries — defaults are tunable via dashboard; first 2 weeks log every cap-hit so we tune empirically."
     },
     {
