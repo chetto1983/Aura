@@ -11,6 +11,15 @@ import (
 
 const structuredPromptVersion = "ingest_v3"
 
+// MaxStructuredSections caps how many '### heading' sections a single
+// source extract.md may materialize into separate wiki pages. The cap
+// is a safety net for pathological converter output (e.g. xlsx → one
+// '### Row N' per row, which produced 876 single-row wiki pages from
+// one workbook in 2026-05-23). When the cap is exceeded the splitter
+// returns nil so the source becomes one wiki page with H2/H3 subnodes
+// instead of N small fragments.
+const MaxStructuredSections = 50
+
 var structuredHeadingRe = regexp.MustCompile(`(?m)^###\s+(.+?)\s*$`)
 
 type structuredExtract struct {
@@ -34,6 +43,9 @@ func parseStructuredExtract(raw, parentTitle, parentSlug string) *structuredExtr
 	}
 	matches := structuredHeadingRe.FindAllStringSubmatchIndex(normalized, -1)
 	if len(matches) < 3 {
+		return nil
+	}
+	if len(matches) > MaxStructuredSections {
 		return nil
 	}
 	sections := make([]structuredSection, 0, len(matches))
@@ -66,11 +78,11 @@ func leadingFrontmatter(markdown string) (string, bool) {
 		return "", false
 	}
 	rest := body[len("---\n"):]
-	end := strings.Index(rest, "\n---")
-	if end < 0 {
+	front, _, ok := strings.Cut(rest, "\n---")
+	if !ok {
 		return "", false
 	}
-	return rest[:end], true
+	return front, true
 }
 
 func hasStructuredFrontmatter(frontmatter string) bool {

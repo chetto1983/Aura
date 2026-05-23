@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -133,5 +134,45 @@ author: "Aura Test"
 	}
 	if _, err := os.Stat(env.sources.Path(updated.ID, source.ExtractMarkdownFile)); err != nil {
 		t.Fatalf("extract.md should remain in raw source store: %v", err)
+	}
+}
+
+// TestStructuredExtractCapsAtMaxSections is the safety net guarding
+// against the xlsx row-explosion failure mode (2026-05-23): when a
+// converter emits more than MaxStructuredSections '### heading'
+// sections, parseStructuredExtract returns nil so the source becomes
+// one wiki page with H2/H3 subnodes instead of N small fragments.
+func TestStructuredExtractCapsAtMaxSections(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("---\nworkbook_title: \"big.xlsx\"\nsheet_row_counts:\n  \"S\": ")
+	fmt.Fprintf(&b, "%d", MaxStructuredSections+1)
+	b.WriteString("\n---\n\n## Sheet: S\n\n")
+	for i := 1; i <= MaxStructuredSections+1; i++ {
+		fmt.Fprintf(&b, "### Row %d\n- col: v%d\n\n", i, i)
+	}
+	got := parseStructuredExtract(b.String(), "Big", "source-big")
+	if got != nil {
+		t.Fatalf("expected nil when section count %d exceeds cap %d, got %d sections",
+			MaxStructuredSections+1, MaxStructuredSections, len(got.Sections))
+	}
+}
+
+// TestStructuredExtractMaterializesAtCapLimit confirms the cap is
+// inclusive — exactly MaxStructuredSections sections still materialize
+// (only the strictly-larger case is rejected).
+func TestStructuredExtractMaterializesAtCapLimit(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("---\nslide_count: ")
+	fmt.Fprintf(&b, "%d", MaxStructuredSections)
+	b.WriteString("\n---\n\n")
+	for i := 1; i <= MaxStructuredSections; i++ {
+		fmt.Fprintf(&b, "### Slide %d\nbody %d\n\n", i, i)
+	}
+	got := parseStructuredExtract(b.String(), "Deck", "source-deck")
+	if got == nil {
+		t.Fatalf("expected non-nil at section count = cap (%d)", MaxStructuredSections)
+	}
+	if len(got.Sections) != MaxStructuredSections {
+		t.Fatalf("sections = %d, want %d", len(got.Sections), MaxStructuredSections)
 	}
 }
