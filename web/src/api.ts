@@ -245,7 +245,26 @@ export const api = {
   filesRename: (root: string, from: string, to: string) =>
     post<{ root: string; from: string; to: string }>(`/files/${root}/rename`, { from, to }),
   deleteSource: (id: string) =>
-    del<{ id: string; status: string; memory_purged: boolean; memory_purge_warning?: string }>(`/sources/${id}`),
+    del<{
+      id: string;
+      status: string;
+      memory_purged: boolean;
+      memory_purge_warning?: string;
+      wiki_pages_deleted?: string[];
+      wiki_pages_failed?: string[];
+      orphan_references?: string[];
+      orphan_scan_error?: string;
+    }>(`/sources/${id}`),
+  // sourceDerived previews what DELETE /sources/{id} will touch — used by
+  // FilesPanel before showing the cascade confirmation modal so the
+  // operator sees the wiki page count before committing.
+  sourceDerived: (id: string) =>
+    get<{
+      id: string;
+      filename?: string;
+      tracked_pages: string[];
+      referencing_pages: string[];
+    }>(`/sources/${id}/derived`),
 
   // ---- write actions (slice 10c) ----
   ingestSource: (id: string) =>

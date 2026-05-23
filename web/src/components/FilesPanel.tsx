@@ -23,6 +23,7 @@ import { toast } from 'sonner';
 import { api, ApiError } from '@/api';
 import { useAppTheme } from '@/hooks/useAppTheme';
 import { cn } from '@/lib/utils';
+import { confirm as confirmModal } from '@/lib/confirmModal';
 
 type FileRoot = 'wiki' | 'sources' | 'workspace' | 'skills';
 
@@ -113,19 +114,80 @@ export function FilesPanel() {
       const path = stripLeadingSlash(id);
       // Sources need the dedicated endpoint so the memoryindex stays
       // consistent — the multi-root delete blocks recursive removal.
+      // Before firing DELETE we fetch /sources/{id}/derived so the
+      // confirm modal can list the cascade impact (tracked wiki pages
+      // cascade-deleted; referencing pages left in place as orphans).
       if (root === 'sources') {
-        // svar gives us the folder/file id; for sources, top-level dirs
-        // are src_xxx. If the operator nuked one of those, route to the
-        // memoryindex-aware endpoint.
         const segments = path.split('/');
         if (segments.length === 1 && segments[0].startsWith('src_')) {
+          const srcId = segments[0];
+          let tracked = 0;
+          let referencing = 0;
           try {
-            const resp = await api.deleteSource(segments[0]);
-            toast.success(
-              resp.memory_purged
-                ? t('files.delete.sourceFull', { id: segments[0] })
-                : t('files.delete.sourceWarning', { id: segments[0], warning: resp.memory_purge_warning ?? '' }),
-            );
+            const preview = await api.sourceDerived(srcId);
+            tracked = preview.tracked_pages.length;
+            // Referencing includes the tracked ones (full scan). Orphans
+            // = pages that reference the source but are not tracked.
+            const trackedSet = new Set(preview.tracked_pages);
+            referencing = preview.referencing_pages.filter((s) => !trackedSet.has(s)).length;
+          } catch (err) {
+            // Preview failed — proceed with a generic confirmation
+            // rather than blocking the delete entirely. Worst case the
+            // operator just doesn't see the page count up front.
+            toast.error(err instanceof ApiError ? err.message : (err as Error).message);
+          }
+
+          let body: string;
+          if (tracked === 0 && referencing === 0) {
+            body = t('files.delete.confirmSourceBodyZero');
+          } else if (referencing === 0) {
+            body = t('files.delete.confirmSourceBodyTracked', { tracked });
+          } else if (tracked === 0) {
+            body = t('files.delete.confirmSourceBodyOrphans', { orphans: referencing });
+          } else {
+            body =
+              t('files.delete.confirmSourceBodyTracked', { tracked }) +
+              ' ' +
+              t('files.delete.confirmSourceBodyOrphans', { orphans: referencing });
+          }
+
+          const ok = await confirmModal({
+            title: t('files.delete.confirmSourceTitle', { id: srcId }),
+            description: body,
+            destructive: true,
+            confirmLabel: t('files.delete.confirmAction'),
+          });
+          if (!ok) return;
+
+          try {
+            const resp = await api.deleteSource(srcId);
+            const deleted = resp.wiki_pages_deleted?.length ?? 0;
+            const failed = resp.wiki_pages_failed?.length ?? 0;
+            const orphans = resp.orphan_references?.length ?? 0;
+            if (!resp.memory_purged) {
+              toast.error(
+                t('files.delete.sourceWarning', { id: srcId, warning: resp.memory_purge_warning ?? '' }),
+              );
+            } else if (failed > 0) {
+              toast.error(
+                t('files.delete.sourceCascadePartial', {
+                  id: srcId,
+                  tracked: deleted,
+                  total: deleted + failed,
+                  failed,
+                }),
+              );
+            } else if (orphans > 0) {
+              toast.success(
+                t('files.delete.sourceCascadeOrphans', {
+                  id: srcId,
+                  tracked: deleted,
+                  orphans,
+                }),
+              );
+            } else {
+              toast.success(t('files.delete.sourceCascade', { id: srcId, tracked: deleted }));
+            }
             await refresh();
             return;
           } catch (err) {
