@@ -47,7 +47,7 @@
         "Single atomic commit prefix: refactor(config): fold GetInt/GetFloat/GetBool via parseOrFallback helper (US-MOD-DEDUP-02)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "PRECONDITION: DEDUP-00 done. Generic helper preferred for Go 1.21+; fallback to per-type duplication-of-just-one-line if generics make the call site uglier."
     },
     {

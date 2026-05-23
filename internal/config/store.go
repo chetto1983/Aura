@@ -122,47 +122,37 @@ func (s *Store) GetString(ctx context.Context, key, fallback string) string {
 	return v
 }
 
-// GetInt returns the integer value for key or fallback when missing /
-// unparseable. Mirrors getEnvInt's "fail-soft" behavior in env.go so
-// settings semantics match env semantics exactly.
-func (s *Store) GetInt(ctx context.Context, key string, fallback int) int {
+// parseOrFallback fetches key, trims whitespace, then calls parser on the
+// trimmed value. Returns fallback on any error or blank value.
+func parseOrFallback[T any](ctx context.Context, s *Store, key string, fallback T, parser func(string) (T, error)) T {
 	v, err := s.Get(ctx, key)
 	if err != nil || strings.TrimSpace(v) == "" {
 		return fallback
 	}
-	n, err := strconv.Atoi(strings.TrimSpace(v))
+	parsed, err := parser(strings.TrimSpace(v))
 	if err != nil {
 		return fallback
 	}
-	return n
+	return parsed
+}
+
+// GetInt returns the integer value for key or fallback when missing /
+// unparseable. Mirrors getEnvInt's "fail-soft" behavior in env.go so
+// settings semantics match env semantics exactly.
+func (s *Store) GetInt(ctx context.Context, key string, fallback int) int {
+	return parseOrFallback(ctx, s, key, fallback, strconv.Atoi)
 }
 
 // GetFloat returns the float value for key or fallback when missing /
 // unparseable.
 func (s *Store) GetFloat(ctx context.Context, key string, fallback float64) float64 {
-	v, err := s.Get(ctx, key)
-	if err != nil || strings.TrimSpace(v) == "" {
-		return fallback
-	}
-	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-	if err != nil {
-		return fallback
-	}
-	return f
+	return parseOrFallback(ctx, s, key, fallback, func(v string) (float64, error) { return strconv.ParseFloat(v, 64) })
 }
 
 // GetBool returns the boolean value for key or fallback when missing /
 // unparseable.
 func (s *Store) GetBool(ctx context.Context, key string, fallback bool) bool {
-	v, err := s.Get(ctx, key)
-	if err != nil || strings.TrimSpace(v) == "" {
-		return fallback
-	}
-	b, err := strconv.ParseBool(strings.TrimSpace(v))
-	if err != nil {
-		return fallback
-	}
-	return b
+	return parseOrFallback(ctx, s, key, fallback, strconv.ParseBool)
 }
 
 // Set writes value for key, replacing any existing row.
