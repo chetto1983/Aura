@@ -324,19 +324,46 @@ func (s *Store) DeletePage(ctx context.Context, slug string) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	// Try .md first, then .yaml
+	// Try .md first, then .yaml. Per-extension os.Remove may fail with
+	// (a) ErrNotExist when the file truly is not on disk, or (b) a
+	// transient Windows ACCESS_DENIED when an open handle on the file
+	// (typically go-git's worktree.Add holding the worktree blob open,
+	// or an antivirus scan briefly locking the freshly-written file)
+	// has not been released yet. The retry loop tolerates the
+	// transient case and surfaces the actual underlying error when the
+	// file genuinely is locked beyond the backoff window. Without the
+	// retry, the wiki test suite flaked ~70% of in-suite runs (commit
+	// cec0b081 cycle) because TestFTS5Syncer_WritePage_UpsertAndDelete
+	// hit a tight WritePage → DeletePage sequence faster than go-git
+	// released the worktree handle.
 	var removed bool
 	var filename string
+	var lastErr error
 	for _, ext := range []string{".md", ".yaml"} {
 		path := filepath.Join(s.dir, slug+ext)
-		if err := os.Remove(path); err == nil {
-			removed = true
-			filename = slug + ext
+		for attempt := 0; attempt < 5; attempt++ {
+			err := os.Remove(path)
+			if err == nil {
+				removed = true
+				filename = slug + ext
+				break
+			}
+			if errors.Is(err, os.ErrNotExist) {
+				// Truly absent for this extension — try the next one.
+				break
+			}
+			lastErr = err
+			time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
+		}
+		if removed {
 			break
 		}
 	}
 
 	if !removed {
+		if lastErr != nil {
+			return fmt.Errorf("deleting wiki page %s: %w", slug, lastErr)
+		}
 		return fmt.Errorf("deleting wiki page %s: file not found", slug)
 	}
 
@@ -395,6 +422,15 @@ func (s *Store) readPageLocked(slug string) (*Page, error) {
 // writeAtomic writes data to path via temp+rename. Caller MUST already
 // hold the per-slug fileMutex. Factored from the existing inline shape
 // in store.go to keep WritePage readable.
+//
+// The os.Rename retry tolerates transient Windows ACCESS_DENIED when an
+// open handle on the destination file (typically go-git's worktree
+// holding a blob open from a recent commit, or an antivirus scan) has
+// not been released yet. Without the retry, the wiki test suite flaked
+// ~30% of in-suite runs because TestCleanMemoryApplyCreatesHubs hits a
+// dense rename cycle while previous gitCommit handles are still
+// draining. Linux/macOS rename-over-open-file works the first time so
+// the retry is effectively a no-op there.
 func writeAtomic(dir, slug, path string, data []byte) error {
 	tmp, err := os.CreateTemp(dir, slug+".*.tmp")
 	if err != nil {
@@ -407,11 +443,16 @@ func writeAtomic(dir, slug, path string, data []byte) error {
 		return fmt.Errorf("writing temp file: %w", err)
 	}
 	tmp.Close()
-	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return fmt.Errorf("renaming temp file: %w", err)
+	var renameErr error
+	for attempt := 0; attempt < 5; attempt++ {
+		renameErr = os.Rename(tmpName, path)
+		if renameErr == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
 	}
-	return nil
+	_ = os.Remove(tmpName)
+	return fmt.Errorf("renaming temp file: %w", renameErr)
 }
 
 // MigrateYAMLToMD performs a one-time migration of all .yaml wiki pages to .md format.

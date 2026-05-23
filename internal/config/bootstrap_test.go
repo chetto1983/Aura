@@ -15,12 +15,15 @@ func TestEnsureLayoutCreatesRuntimeWorkspace(t *testing.T) {
 		t.Fatalf("EnsureLayout: %v", err)
 	}
 
+	// Phase-FS-LAYOUT (2026-05-23): sources moved out of wiki/raw to a
+	// sibling 'sources/' dir so the wiki view shows only LLM-curated
+	// pages. EnsureLayout no longer creates wiki/raw.
 	for _, path := range []string{
 		"runtime-workspace/AGENT.md",
 		"runtime-workspace/HEARTBEAT.md",
 		"runtime-workspace/mcp.json",
 		"runtime-workspace/wiki",
-		"runtime-workspace/wiki/raw",
+		"runtime-workspace/sources",
 		"runtime-workspace/wiki/index.md",
 		"runtime-workspace/wiki/log.md",
 		"runtime-workspace/wiki/graph",
@@ -69,6 +72,7 @@ func TestEnsureLayoutCreatesParentDirsForDBLogsSkillsAndMCP(t *testing.T) {
 		DBPath:               filepath.Join(root, "data", "db", "aura.db"),
 		LogDir:               filepath.Join(root, "data", "logs"),
 		WikiPath:             filepath.Join(root, "wiki"),
+		SourcesPath:          filepath.Join(root, "sources"),
 		SkillsPath:           filepath.Join(root, "runtime", "skills"),
 		MCPServersPath:       filepath.Join(root, "data", "mcp", "mcp.json"),
 		PromptOverlayPath:    filepath.Join(root, "runtime", "prompt"),
@@ -82,7 +86,7 @@ func TestEnsureLayoutCreatesParentDirsForDBLogsSkillsAndMCP(t *testing.T) {
 		filepath.Dir(cfg.DBPath),
 		cfg.LogDir,
 		cfg.WikiPath,
-		filepath.Join(cfg.WikiPath, "raw"),
+		cfg.SourcesPath, // Phase-FS-LAYOUT: was filepath.Join(cfg.WikiPath, "raw")
 		cfg.SkillsPath,
 		filepath.Dir(cfg.MCPServersPath),
 		cfg.PromptOverlayPath,
@@ -151,6 +155,7 @@ func testLayoutConfig(root string) LayoutConfig {
 		DBPath:               filepath.Join(root, "data", "aura.db"),
 		LogDir:               filepath.Join(root, "data", "logs"),
 		WikiPath:             filepath.Join(root, "wiki"),
+		SourcesPath:          filepath.Join(root, "sources"),
 		SkillsPath:           filepath.Join(root, "skills"),
 		MCPServersPath:       filepath.Join(root, "data", "mcp.json"),
 		PromptOverlayPath:    filepath.Join(root, "prompt"),
