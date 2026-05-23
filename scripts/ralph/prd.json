@@ -18,7 +18,7 @@
         "Single atomic commit prefix: feat(agent): centralized truncate-middle + exec output wrapper (US-OUT-01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation story — every subsequent OUT story uses TruncateMiddle as floor. GROUND-TRUTH: read internal/agent/executor.go around line 99 first; see how limitToolContent currently works."
     },
     {

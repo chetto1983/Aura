@@ -194,6 +194,10 @@ func (e *agentExecutor) executeOneTool(ctx context.Context, call llm.ToolCall) (
 		toolCtx = tools.WithUserID(toolCtx, e.userID)
 	}
 	out, err := e.tools.Execute(toolCtx, call.Name, call.Arguments)
+	elapsedMs := time.Since(startedAt).Milliseconds()
+	if err == nil && isExecTool(call.Name) {
+		out = wrapExecOutput(out, elapsedMs)
+	}
 	if err != nil {
 		var awaitErr *tools.ErrAwaitingUserInput
 		if errors.As(err, &awaitErr) {
@@ -243,3 +247,43 @@ var (
 	redactURLCredentialsRe = regexp.MustCompile(`([?&](?i:token|api[_-]?key|secret|auth|bearer)=)[^&\s"]+`)
 	redactBase64BlobRe     = regexp.MustCompile(`[A-Za-z0-9+/]{40,}={0,2}`)
 )
+
+// isExecTool reports whether toolName is an execution tool that benefits from
+// the structured Exit code / Wall time / Lines envelope.
+func isExecTool(name string) bool {
+	return name == "execute_code" || name == "execute_shell"
+}
+
+// wrapExecOutput reformats the raw output from an exec tool into a structured
+// envelope that preserves key metadata even when the body is later truncated
+// by TruncateMiddle. execute_code and execute_shell already prefix their output
+// with "exit_code: N\nelapsed_ms: M\n\n"; those lines are parsed, stripped, and
+// re-expressed in the canonical capitalized form.
+func wrapExecOutput(raw string, elapsedMs int64) string {
+	exitCode := 0
+	body := raw
+
+	// Parse and strip the leading "exit_code: N" line.
+	if firstLine, rest, found := strings.Cut(body, "\n"); found && strings.HasPrefix(firstLine, "exit_code:") {
+		after, _ := strings.CutPrefix(firstLine, "exit_code:")
+		if _, err := fmt.Sscanf(strings.TrimSpace(after), "%d", &exitCode); err != nil {
+			exitCode = 0
+		}
+		body = rest
+		// Strip the "elapsed_ms: M" line that follows.
+		if secondLine, rest2, found2 := strings.Cut(body, "\n"); found2 && strings.HasPrefix(secondLine, "elapsed_ms:") {
+			body = rest2
+		}
+		// Strip the blank separator line.
+		body = strings.TrimPrefix(body, "\n")
+	}
+
+	lines := strings.Count(body, "\n") + 1
+	if strings.TrimSpace(body) == "" {
+		lines = 0
+	}
+	return fmt.Sprintf(
+		"Exit code: %d\nWall time: %dms\nTotal output lines: %d\nOutput:\n%s",
+		exitCode, elapsedMs, lines, body,
+	)
+}

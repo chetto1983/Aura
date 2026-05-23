@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	truncate "github.com/aura/aura/internal/agent/tools"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
 )
@@ -44,19 +45,14 @@ func cleanToolList(values []string) []string {
 	return out
 }
 
-// limitToolContent truncates content to maxChars runes. Zero means unlimited.
+// limitToolContent truncates content to at most maxChars bytes using middle-
+// truncation (TruncateMiddle) so the model sees both head and tail even when
+// the result is capped. Zero means unlimited.
 func limitToolContent(content string, maxChars int) string {
 	if maxChars <= 0 {
 		return content
 	}
-	runes := []rune(content)
-	if len(runes) <= maxChars {
-		return content
-	}
-	if maxChars <= 16 {
-		return string(runes[:maxChars])
-	}
-	return string(runes[:maxChars-15]) + "\n...[truncated]"
+	return truncate.TruncateMiddle(content, maxChars)
 }
 
 // runTaskToolDefs returns the subset of tool definitions from reg that appear
