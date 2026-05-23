@@ -48,7 +48,22 @@ func (t *DevToolTool) Definition() ToolDefinition {
 }
 
 func (t *DevToolTool) Description() string {
-	return "Manage the Python script registry used by execute_code. action=list enumerates scripts; action=read fetches source code; action=save persists a reusable snippet. Required: varies."
+	return `Manage the Python script registry used by execute_code.
+
+EXAMPLES — copy the shape exactly:
+
+  dev_tool({"action":"list"})
+  dev_tool({"action":"read","name":"csv_describe"})
+  dev_tool({"action":"save","name":"csv_describe","description":"basic stats over a CSV","params":"filepath (str)","code":"import pandas as pd\nprint(pd.read_csv(filepath).describe())","usage":"user uploaded a CSV"})
+
+action REQUIRED; valid: "list", "read", "save".
+
+Per-action required:
+  • list → nothing
+  • read → name
+  • save → name AND description AND code  (params/usage optional but recommended)
+
+Use lowercase_underscores names. Re-save with the same name to update an existing script.`
 }
 
 func (t *DevToolTool) Parameters() map[string]any {
@@ -88,6 +103,18 @@ func (t *DevToolTool) Parameters() map[string]any {
 			{Name: "read", RequiredKeys: []string{"name"}},
 			{Name: "save", RequiredKeys: []string{"name", "description", "code"}},
 		}),
+		"examples": []any{
+			map[string]any{"action": "list"},
+			map[string]any{"action": "read", "name": "csv_describe"},
+			map[string]any{
+				"action":      "save",
+				"name":        "csv_describe",
+				"description": "basic stats over a CSV",
+				"params":      "filepath (str)",
+				"code":        "import pandas as pd\nprint(pd.read_csv(filepath).describe())",
+				"usage":       "user uploaded a CSV",
+			},
+		},
 	}
 }
 
