@@ -42,6 +42,11 @@ type Store struct {
 	// stays in sync with .md frontmatter + body wikilinks without a
 	// re-scan. Wave 3 retrieval traverses it for BFS expansion.
 	graphIndex *GraphIndex
+
+	// aliasIndex maps normalized alias strings to canonical page slugs
+	// (US-GRAPH-01). Built at boot by warmAliasIndex and refreshed
+	// incrementally by WritePage / DeletePage.
+	aliasIndex *AliasIndex
 }
 
 // PageCatalog is the read side for enumerating wiki pages.
@@ -129,7 +134,7 @@ func NewStore(dir string, logger *slog.Logger) (*Store, error) {
 		logger = slog.Default()
 	}
 
-	s := &Store{dir: dir, logger: logger, graphIndex: NewGraphIndex()}
+	s := &Store{dir: dir, logger: logger, graphIndex: NewGraphIndex(), aliasIndex: NewAliasIndex()}
 
 	if err := s.initGit(); err != nil {
 		return nil, fmt.Errorf("initializing git repo: %w", err)
@@ -141,6 +146,13 @@ func NewStore(dir string, logger *slog.Logger) (*Store, error) {
 	// next page write populates it). loadGraphIndex lives in store_graph.go.
 	if err := s.loadGraphIndex(); err != nil {
 		s.logger.Warn("graph index warm-up failed; running with empty index", "error", err)
+	}
+
+	// GRAPH-01: warm the alias index from on-disk pages. Pages are processed
+	// in mtime order (oldest first) so that the first-write-wins conflict
+	// policy is deterministic across restarts. Errors are logged-and-ignored.
+	if err := s.warmAliasIndex(); err != nil {
+		s.logger.Warn("alias index warm-up failed; running with empty index", "error", err)
 	}
 
 	// Warm the TOC cache at boot so the first system prompt build has it
@@ -494,104 +506,5 @@ func (s *Store) appendLog(ctx context.Context, action, slug string) {
 	}
 }
 
-// LintIssue represents a problem found by Lint.
-type LintIssue struct {
-	Slug     string
-	Message  string
-	Kind     string
-	Severity string
-}
-
-// Lint checks the wiki for broken links, missing categories, and memory decay.
-func (s *Store) Lint(ctx context.Context) ([]LintIssue, error) {
-	return s.lintAt(ctx, time.Now().UTC())
-}
-
-func (s *Store) lintAt(_ context.Context, now time.Time) ([]LintIssue, error) {
-	slugs, err := s.ListPages()
-	if err != nil {
-		return nil, err
-	}
-
-	slugSet := make(map[string]bool, len(slugs))
-	for _, s := range slugs {
-		slugSet[s] = true
-	}
-
-	var issues []LintIssue
-	for _, slug := range slugs {
-		page, err := s.ReadPage(slug)
-		if err != nil {
-			issues = append(issues, LintIssue{Slug: slug, Message: "failed to read page", Kind: "read_error", Severity: "medium"})
-			continue
-		}
-
-		if page.Category == "" {
-			issues = append(issues, LintIssue{Slug: slug, Message: "missing category", Kind: "missing_category", Severity: "low"})
-		}
-
-		if issue, ok := memoryDecayIssue(slug, page.UpdatedAt, now); ok {
-			issues = append(issues, issue)
-		}
-
-		for _, link := range ExtractWikiLinks(page.Body) {
-			if !slugSet[link] {
-				issues = append(issues, LintIssue{
-					Slug:    slug,
-					Message: fmt.Sprintf("broken link: [[%s]]", link),
-					Kind:    "broken_link", Severity: "high",
-				})
-			}
-		}
-
-		for _, ref := range page.Related {
-			if !slugSet[ref.Slug] {
-				issues = append(issues, LintIssue{
-					Slug:    slug,
-					Message: fmt.Sprintf("broken related ref: %s", ref.Slug),
-					Kind:    "broken_link", Severity: "high",
-				})
-			}
-		}
-	}
-
-	// Sort for deterministic output
-	sort.Slice(issues, func(i, j int) bool {
-		if issues[i].Slug != issues[j].Slug {
-			return issues[i].Slug < issues[j].Slug
-		}
-		return issues[i].Message < issues[j].Message
-	})
-
-	return issues, nil
-}
-
-func memoryDecayIssue(slug, updatedAt string, now time.Time) (LintIssue, bool) {
-	updated, err := time.Parse(time.RFC3339, updatedAt)
-	if err != nil {
-		return LintIssue{
-			Slug: slug, Message: "invalid updated_at for decay check",
-			Kind: "invalid_metadata", Severity: "medium",
-		}, true
-	}
-	age := now.Sub(updated)
-	if age < memoryDecayMediumAge {
-		return LintIssue{}, false
-	}
-	days := int(age.Hours() / 24)
-	severity := "medium"
-	if age >= memoryDecayHighAge {
-		severity = "high"
-	}
-	decay := age.Hours() / memoryDecayHighAge.Hours()
-	if decay > 1 {
-		decay = 1
-	}
-	return LintIssue{
-		Slug:     slug,
-		Message:  fmt.Sprintf("memory decay: updated_at %s is %d days old (decay=%.2f)", updated.UTC().Format(time.RFC3339), days, decay),
-		Kind:     "memory_decay",
-		Severity: severity,
-	}, true
-}
+// LintIssue and Lint/lintAt/memoryDecayIssue are in store_lint.go.
 

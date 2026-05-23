@@ -20,7 +20,7 @@
         "Single atomic commit prefix: feat(wiki): aliases + AliasIndex with O(1) resolve (US-GRAPH-01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation story — GRAPH-02 + 03 + 04 all depend on this. Keep the index in-memory only for now (no SQLite mirror) — 10k pages × 5 aliases × 100 bytes each = 5MB, fits easily. Future-proof: SQLite FTS5 alias mirror is a later story when the wiki grows past 100k pages."
     },
     {

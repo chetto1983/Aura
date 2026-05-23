@@ -60,6 +60,7 @@ func (r *RelatedRef) UnmarshalYAML(node *yaml.Node) error {
 // Page represents a wiki page with YAML frontmatter and markdown body.
 type Page struct {
 	Title         string       `yaml:"title"`
+	Aliases       []string     `yaml:"aliases,omitempty"`
 	Tags          []string     `yaml:"tags,omitempty"`
 	Category      string       `yaml:"category,omitempty"`
 	Related       []RelatedRef `yaml:"related,omitempty"`
@@ -148,7 +149,7 @@ func ParseYAML(data []byte) (*Page, error) {
 		return nil, fmt.Errorf("YAML parse error: %w", err)
 	}
 	// Older .yaml files had a "content" field. Try to extract it as Body.
-	var raw map[string]interface{}
+	var raw map[string]any
 	if err := yaml.Unmarshal(data, &raw); err == nil {
 		if content, ok := raw["content"].(string); ok && page.Body == "" {
 			page.Body = content

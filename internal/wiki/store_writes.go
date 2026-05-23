@@ -196,12 +196,15 @@ func (s *Store) writePageLocked(ctx context.Context, slug string, page *Page, ex
 	}
 
 	// GRAPH-02: refresh the in-memory adjacency index so retrieval sees
-	// the new outbound edges immediately. Refresh happens INSIDE the
-	// critical section so concurrent writes to other slugs serialize
-	// against the index's own RWMutex, not against this slug's file
-	// mutex. The index's per-call locking is cheap.
+	// the new outbound edges immediately.
 	if s.graphIndex != nil {
 		s.graphIndex.RefreshPage(slug, page)
+	}
+
+	// GRAPH-01: refresh the alias index for this slug so alias-aware link
+	// injection and ResolveAlias callers see the updated aliases immediately.
+	if s.aliasIndex != nil {
+		s.aliasIndex.Set(slug, page.Aliases)
 	}
 	return prevBodyLinks, nil
 }
@@ -357,14 +360,14 @@ func (s *Store) DeletePage(ctx context.Context, slug string) error {
 		_ = s.reindexSubmitter.Submit(reindex.Job{Slug: slug, Op: reindex.OpDelete})
 	}
 
-	// GRAPH-02: purge the slug from the in-memory adjacency index so
-	// downstream retrieval doesn't traverse into a deleted node. Pages
-	// that still reference the deleted slug retain a body [[wikilink]]
-	// that will surface as a broken ref in the materialized graph but
-	// are dropped from the in-mem outbound set (the link goes nowhere
-	// at traversal time).
+	// GRAPH-02: purge the slug from the in-memory adjacency index.
 	if s.graphIndex != nil {
 		s.graphIndex.RemoveNode(slug)
+	}
+
+	// GRAPH-01: purge the slug's aliases from the alias index.
+	if s.aliasIndex != nil {
+		s.aliasIndex.Remove(slug)
 	}
 	go s.RebuildTOC()
 	return nil

@@ -237,6 +237,7 @@ func MarshalMD(page *Page) ([]byte, error) {
 	// Marshal frontmatter fields (excluding Body which has yaml:"-")
 	fm := struct {
 		Title         string   `yaml:"title"`
+		Aliases       []string `yaml:"aliases,omitempty"`
 		Tags          []string `yaml:"tags,omitempty"`
 		Category      string   `yaml:"category,omitempty"`
 		Related       []string `yaml:"related,omitempty"`
@@ -245,9 +246,10 @@ func MarshalMD(page *Page) ([]byte, error) {
 		PromptVersion string   `yaml:"prompt_version"`
 		CreatedAt     string   `yaml:"created_at"`
 		UpdatedAt     string   `yaml:"updated_at"`
-		Unversioned   bool     `yaml:"unversioned,omitempty"` // PHASE 2 ADD (D-19)
+		Unversioned   bool     `yaml:"unversioned,omitempty"`
 	}{
 		Title:         page.Title,
+		Aliases:       page.Aliases,
 		Tags:          page.Tags,
 		Category:      page.Category,
 		Related:       RelatedSlugs(page.Related),
@@ -256,7 +258,7 @@ func MarshalMD(page *Page) ([]byte, error) {
 		PromptVersion: page.PromptVersion,
 		CreatedAt:     page.CreatedAt,
 		UpdatedAt:     page.UpdatedAt,
-		Unversioned:   page.Unversioned, // PHASE 2 ADD (D-19)
+		Unversioned:   page.Unversioned,
 	}
 
 	fmData, err := yaml.Marshal(&fm)
