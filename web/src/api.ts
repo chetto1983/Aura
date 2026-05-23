@@ -374,6 +374,18 @@ export const api = {
     get<AuthzResponse>('/maintenance/authz'),
   maintenanceToolAttempts: () =>
     get<ToolAttemptsResponse>('/maintenance/tool-attempts'),
+  // maintenanceRun fires CleanMemory + the cross-wiki link-injection
+  // pass on demand. Returns the report so the dashboard can show
+  // "16 pages gained backlinks" toasts.
+  maintenanceRun: () =>
+    post<{
+      pages: number;
+      orphans?: string[];
+      broken_link_count: number;
+      rename_count: number;
+      hubs_created: number;
+      links_injected: number;
+    }>('/maintenance/run', {}),
 
   // ---- conversation cleanup (slice 14) ----
   conversationStats: () =>

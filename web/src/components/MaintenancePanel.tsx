@@ -1,10 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Wrench, ExternalLink } from 'lucide-react';
+import { Wrench, ExternalLink, Play } from 'lucide-react';
 import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ErrorCard } from '@/components/common/ErrorCard';
-import { api } from '@/api';
+import { api, ApiError } from '@/api';
 import { useApi } from '@/hooks/useApi';
 import { useLocale } from '@/hooks/useLocale';
 import type { WikiIssue, AuthzResponse, ToolAttemptsResponse, ToolOutcomeCounts } from '@/types/api';
@@ -29,12 +30,54 @@ type StatusFilter = 'open' | 'resolved' | 'all';
 export function MaintenancePanel() {
   const { t } = useLocale();
   const [activeTab, setActiveTab] = useState<'issues' | 'authz' | 'tool-attempts'>('issues');
+  const [running, setRunning] = useState(false);
+
+  // runNow fires the on-demand maintenance pass: CleanMemory (link
+  // sanity + hub suggestions + orphan detection) PLUS the cross-wiki
+  // link-injection pass that walks every page body and wraps unlinked
+  // entity-title mentions with [[slug]]. The latter is what reconnects
+  // a graph where two sources share an entity (e.g. both reference
+  // 'Siemens') but the per-source ingest left them as separate
+  // clusters.
+  const runNow = useCallback(async () => {
+    setRunning(true);
+    try {
+      const r = await api.maintenanceRun();
+      const orphanCount = r.orphans?.length ?? 0;
+      toast.success(
+        t('maintenance.runReport', {
+          pages: r.pages,
+          injected: r.links_injected,
+          broken: r.broken_link_count,
+          orphans: orphanCount,
+          hubs: r.hubs_created,
+          renames: r.rename_count,
+        }),
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : (err as Error).message);
+    } finally {
+      setRunning(false);
+    }
+  }, [t]);
 
   return (
     <div className="p-6 space-y-4">
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('maintenance.title')}</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">{t('maintenance.subtitle')}</p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">{t('maintenance.title')}</h1>
+          <p className="text-xs text-muted-foreground mt-0.5">{t('maintenance.subtitle')}</p>
+        </div>
+        <Button
+          type="button"
+          variant="default"
+          onClick={runNow}
+          disabled={running}
+          title={t('maintenance.runHint')}
+        >
+          <Play className={running ? 'animate-pulse' : undefined} />
+          {running ? t('maintenance.running') : t('maintenance.runNow')}
+        </Button>
       </header>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'issues' | 'authz' | 'tool-attempts')}>
