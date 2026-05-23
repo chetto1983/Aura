@@ -77,6 +77,10 @@ func (t *DailyBriefingTool) Parameters() map[string]any {
 				"description": "Maximum rows per section. Defaults to 5.",
 			},
 		},
+		"examples": []any{
+			map[string]any{},
+			map[string]any{"limit": 10},
+		},
 	}
 }
 

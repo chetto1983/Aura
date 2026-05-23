@@ -89,7 +89,7 @@ services:
       # text_response so we can validate each tool individually as it is
       # cleaned up. Override with "*" (or "all") in the host shell to
       # restore the full registry. Leave unset = allow all.
-      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,execute_code,execute_shell,doc,task,dev_tool,propose_patch}"
+      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,execute_code,execute_shell,doc,task,dev_tool,propose_patch,daily_briefing,search,recall_operational,recall_user_memory,recall_god_nodes,request_dashboard_token,ask_user,ask_user_clarification,read_tool_result,wiki_subgraph,wiki_path}"
       AURA_TERMINAL_TOOL_POLICY: "on"
       AURA_DELEGATION_MODE: "fast"
       AURA_TRACE_RETENTION_DAYS: "30"

@@ -57,6 +57,10 @@ func (t *AskUserTool) Parameters() map[string]any {
 			},
 		},
 		"required": []string{"question"},
+		"examples": []any{
+			map[string]any{"question": "Quale progetto vuoi che apra?", "options": []string{"Aura", "Gamma", "Mostrami tutti"}, "kind": "clarification"},
+			map[string]any{"question": "Eliminare la pagina wiki 'old-contacts'? Operazione irreversibile.", "kind": "approval"},
+		},
 	}
 }
 

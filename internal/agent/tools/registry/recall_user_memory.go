@@ -75,6 +75,12 @@ func (t *RecallUserMemoryTool) Parameters() map[string]any {
 				"maximum":     recallUserMemoryMaxLimit,
 			},
 		},
+		"examples": []any{
+			map[string]any{},
+			map[string]any{"query": "preferenze caffè"},
+			map[string]any{"category": "preference"},
+			map[string]any{"category": "todo", "limit": 10},
+		},
 	}
 }
 

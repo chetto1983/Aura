@@ -68,6 +68,10 @@ func (t *WikiSubgraphTool) Parameters() map[string]any {
 			},
 		},
 		"required": []string{"query"},
+		"examples": []any{
+			map[string]any{"query": "metodi di calibrazione robot"},
+			map[string]any{"query": "lezioni operative", "depth": 2, "budget_tokens": 2000},
+		},
 	}
 }
 

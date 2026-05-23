@@ -55,6 +55,10 @@ func (t *WikiPathTool) Parameters() map[string]any {
 			},
 		},
 		"required": []string{"from_slug", "to_slug"},
+		"examples": []any{
+			map[string]any{"from_slug": "robot", "to_slug": "frame"},
+			map[string]any{"from_slug": "davide-marchetto", "to_slug": "lezioni-operative", "max_hops": 4},
+		},
 	}
 }
 
