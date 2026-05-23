@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -72,7 +73,7 @@ func migrateLegacyWikiRaw(wikiPath, sourcesPath string, logger *slog.Logger) err
 	for _, ent := range legacyEntries {
 		from := filepath.Join(legacy, ent.Name())
 		to := filepath.Join(sourcesPath, ent.Name())
-		if err := os.Rename(from, to); err != nil {
+		if err := moveAcrossDevices(from, to); err != nil {
 			return fmt.Errorf("move %s → %s: %w", from, to, err)
 		}
 		moved++
@@ -88,6 +89,71 @@ func migrateLegacyWikiRaw(wikiPath, sourcesPath string, logger *slog.Logger) err
 		logger.Debug("could not remove empty legacy raw dir", "path", legacy, "error", err)
 	}
 	return nil
+}
+
+// moveAcrossDevices moves a directory tree (or single file) from src to
+// dst tolerating cross-filesystem boundaries. os.Rename suffices on
+// same-fs moves (linux ext4, macOS APFS, host-bind-mount); compose-style
+// named volumes mount each path on a separate overlayfs device so the
+// kernel returns EXDEV ("invalid cross-device link") and the bare
+// Rename fails. The fallback walks the tree, recreates the directory
+// hierarchy at dst, copies file contents, then removes src.
+func moveAcrossDevices(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if !strings.Contains(err.Error(), "cross-device") && !strings.Contains(err.Error(), "EXDEV") {
+		return err
+	}
+
+	if err := copyTree(src, dst); err != nil {
+		return fmt.Errorf("cross-device copy: %w", err)
+	}
+	if err := os.RemoveAll(src); err != nil {
+		return fmt.Errorf("cross-device cleanup: %w", err)
+	}
+	return nil
+}
+
+func copyTree(src, dst string) error {
+	info, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return copyFile(src, dst, info.Mode())
+	}
+	if err := os.MkdirAll(dst, info.Mode()); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	for _, ent := range entries {
+		s := filepath.Join(src, ent.Name())
+		d := filepath.Join(dst, ent.Name())
+		if err := copyTree(s, d); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func copyFile(src, dst string, mode os.FileMode) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = in.Close() }()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
 
 func absEq(a, b string) bool {
