@@ -61,17 +61,6 @@ func (p *toolPool) Defs() []llm.ToolDefinition {
 	return out
 }
 
-// Has reports whether the named tool is currently in the pool.
-func (p *toolPool) Has(name string) bool {
-	if p == nil {
-		return false
-	}
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	_, ok := p.loaded[name]
-	return ok
-}
-
 // EnsureLoaded guarantees a definition for `name` is in the pool when
 // possible. Returns true when the tool is now (or already was) in the
 // pool. Returns false when the resolver is absent OR the resolver
@@ -108,4 +97,3 @@ func (p *toolPool) EnsureLoaded(name string) bool {
 	p.loaded[def.Name] = def
 	return true
 }
-

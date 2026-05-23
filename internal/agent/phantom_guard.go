@@ -278,30 +278,6 @@ func (g *PhantomToolGuard) minContent() int {
 	return 40
 }
 
-// containsAsWord reports whether needle appears in haystack with
-// non-word characters (or boundary) on both sides. needle must be
-// non-empty. Both args must be lowercased by the caller — this is
-// the hot path; we don't want to ToLower on every call.
-func containsAsWord(haystack, needle string) bool {
-	if needle == "" {
-		return false
-	}
-	rest := haystack
-	for {
-		i := strings.Index(rest, needle)
-		if i < 0 {
-			return false
-		}
-		left := i == 0 || !isWordChar(rest[i-1])
-		end := i + len(needle)
-		right := end == len(rest) || !isWordChar(rest[end])
-		if left && right {
-			return true
-		}
-		rest = rest[i+1:]
-	}
-}
-
 func isWordChar(b byte) bool {
 	switch {
 	case b >= 'a' && b <= 'z':

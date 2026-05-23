@@ -12,10 +12,10 @@ func TestNewToolPool_SeedsFromInitial(t *testing.T) {
 		{Name: "wiki_page", Description: "Wiki page"},
 	}
 	pool := newToolPool(defs, nil)
-	if !pool.Has("search_memory") {
+	if !poolHasDef(pool, "search_memory") {
 		t.Fatal("search_memory missing")
 	}
-	if !pool.Has("wiki_page") {
+	if !poolHasDef(pool, "wiki_page") {
 		t.Fatal("wiki_page missing")
 	}
 	out := pool.Defs()
@@ -30,10 +30,10 @@ func TestToolPool_IgnoresEmptyNamesInSeed(t *testing.T) {
 		{Name: "real", Description: "ok"},
 	}
 	pool := newToolPool(defs, nil)
-	if pool.Has("") {
+	if poolHasDef(pool, "") {
 		t.Fatal("pool kept an empty-name def")
 	}
-	if !pool.Has("real") {
+	if !poolHasDef(pool, "real") {
 		t.Fatal("real missing")
 	}
 }
@@ -57,8 +57,8 @@ func TestToolPool_EnsureLoadedFromResolver(t *testing.T) {
 	if !pool.EnsureLoaded("create_docx") {
 		t.Fatal("EnsureLoaded should resolve create_docx")
 	}
-	if !pool.Has("create_docx") {
-		t.Fatal("Has should report create_docx after EnsureLoaded")
+	if !poolHasDef(pool, "create_docx") {
+		t.Fatal("Defs should include create_docx after EnsureLoaded")
 	}
 	if pool.EnsureLoaded("xyzzy") {
 		t.Fatal("EnsureLoaded should return false for unknown tool")
@@ -84,9 +84,6 @@ func TestToolPool_EnsureLoadedIsIdempotent(t *testing.T) {
 
 func TestToolPool_NilSafe(t *testing.T) {
 	var pool *toolPool
-	if pool.Has("x") {
-		t.Fatal("nil pool Has should be false")
-	}
 	if pool.EnsureLoaded("x") {
 		t.Fatal("nil pool EnsureLoaded should be false")
 	}
@@ -95,3 +92,11 @@ func TestToolPool_NilSafe(t *testing.T) {
 	}
 }
 
+func poolHasDef(pool *toolPool, name string) bool {
+	for _, def := range pool.Defs() {
+		if def.Name == name {
+			return true
+		}
+	}
+	return false
+}

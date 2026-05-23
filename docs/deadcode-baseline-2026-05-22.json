@@ -1,13 +1,4 @@
 [
-  "internal/agent/answerpolicy.go:12:6: unreachable func: UserRequestedRawOutput",
-  "internal/agent/answerpolicy.go:41:6: unreachable func: LatestUserText",
-  "internal/agent/governance/history_hygiene.go:42:6: unreachable func: IsAssistantEmpty",
-  "internal/agent/memory_judge.go:109:6: unreachable func: WithMemoryJudgeNow",
-  "internal/agent/memory_judge.go:95:6: unreachable func: WithMemoryJudgeLimits",
-  "internal/agent/phantom_guard.go:285:6: unreachable func: containsAsWord",
-  "internal/agent/pool.go:65:20: unreachable func: toolPool.Has",
-  "internal/agent/terminal.go:170:6: unreachable func: LooksLikeInternalToolResult",
-  "internal/agent/terminal.go:176:6: unreachable func: LooksLikeUnsafeFinalAnswer",
   "internal/agent/tools/attempts/briefer.go:27:6: unreachable func: NewBriefing",
   "internal/agent/tools/attempts/briefer.go:42:19: unreachable func: Briefer.Brief",
   "internal/agent/tools/attempts/sqlite.go:318:6: unreachable func: CanonicalArgsJSON",

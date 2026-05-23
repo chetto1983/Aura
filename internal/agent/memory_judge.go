@@ -92,28 +92,6 @@ func WithMemoryJudgeLogger(logger *slog.Logger) MemoryJudgeOption {
 	}
 }
 
-func WithMemoryJudgeLimits(batchSize, existingLimit, promptBudgetBytes int) MemoryJudgeOption {
-	return func(cfg *memoryJudgeConfig) {
-		if batchSize > 0 {
-			cfg.maxBatchSize = batchSize
-		}
-		if existingLimit > 0 {
-			cfg.existingLimit = existingLimit
-		}
-		if promptBudgetBytes > 0 {
-			cfg.promptBudgetBytes = promptBudgetBytes
-		}
-	}
-}
-
-func WithMemoryJudgeNow(now func() time.Time) MemoryJudgeOption {
-	return func(cfg *memoryJudgeConfig) {
-		if now != nil {
-			cfg.now = now
-		}
-	}
-}
-
 // ResolveBatch reconciles just-written operational lessons against the existing
 // operational store. It is intentionally best-effort: malformed judge output or
 // LLM failure returns/logs an error without corrupting the rows already added by

@@ -104,85 +104,21 @@ func terminalFinalizationPrompt(terminalTool string, strict bool) llm.Message {
 	return llm.Message{Role: "user", Content: content}
 }
 
-// markerCategory bitmask classifies known unsafe text markers.
-type markerCategory uint8
-
-const (
-	categoryToolCall  markerCategory = 1 << iota // tool-call markup
-	categoryInternal                             // internal/diagnostic noise
-	categoryFinal                                // unsafe final-answer content
-)
-
-var unsafeMarkers = []struct {
-	marker     string
-	categories markerCategory
-}{
-	{"tool_calls", categoryToolCall | categoryInternal | categoryFinal},
-	{`"tool_calls"`, categoryToolCall | categoryFinal},
-	{"<tool_call", categoryToolCall},
-	{"dsml", categoryToolCall},
-	{"invoke name=", categoryToolCall},
-	{"parameter name=", categoryToolCall},
-
-	{"source_id", categoryInternal | categoryFinal},
-	{"tokens_prompt", categoryInternal},
-	{"tokens_completion", categoryInternal},
-	{"tokens_total", categoryInternal | categoryFinal},
-	{"llm_calls", categoryInternal},
-	{"elapsed_ms", categoryInternal | categoryFinal},
-	{"exit_code", categoryInternal},
-	{"exit_code:", categoryFinal},
-	{"workspace_root", categoryInternal | categoryFinal},
-	{"top_dirs_in_workspace", categoryInternal | categoryFinal},
-	{"/var/lib/", categoryInternal | categoryFinal},
-	{"filesystem", categoryInternal},
-	{"mounted on", categoryInternal},
-	{"overlay", categoryInternal},
-	{"tmpfs", categoryInternal},
-	{"--- stderr ---", categoryInternal},
-	{"stdout:", categoryInternal},
-	{"stderr:", categoryInternal},
-	{"cmd:", categoryInternal},
-	{"cwd:", categoryInternal},
-
-	{"memory evidence for", categoryFinal},
-	{"evidence envelope:", categoryFinal},
-	{`"ok":false`, categoryFinal},
-}
-
-func containsAnyMarker(text string, cat markerCategory) bool {
-	lower := strings.ToLower(text)
-	for _, entry := range unsafeMarkers {
-		if entry.categories&cat == 0 {
-			continue
-		}
-		if strings.Contains(lower, entry.marker) {
-			return true
-		}
-	}
-	return false
+var toolCallMarkupMarkers = []string{
+	"tool_calls",
+	`"tool_calls"`,
+	"<tool_call",
+	"dsml",
+	"invoke name=",
+	"parameter name=",
 }
 
 func LooksLikeToolCallMarkup(text string) bool {
-	return containsAnyMarker(text, categoryToolCall)
-}
-
-func LooksLikeInternalToolResult(text string) bool {
-	return containsAnyMarker(text, categoryInternal)
-}
-
-// LooksLikeUnsafeFinalAnswer reports content that should not reach the end
-// user as-is.
-func LooksLikeUnsafeFinalAnswer(text string) bool {
-	if containsAnyMarker(text, categoryFinal) {
-		return true
-	}
-	trimmed := strings.TrimSpace(text)
-	if len(trimmed) < 4 {
-		return false
-	}
-	if (trimmed[0] == '{' && trimmed[len(trimmed)-1] == '}') || (trimmed[0] == '[' && trimmed[len(trimmed)-1] == ']') {
-		return containsAnyMarker(trimmed, categoryInternal|categoryToolCall)
+	lower := strings.ToLower(text)
+	for _, marker := range toolCallMarkupMarkers {
+		if strings.Contains(lower, marker) {
+			return true
+		}
 	}
 	return false
 }

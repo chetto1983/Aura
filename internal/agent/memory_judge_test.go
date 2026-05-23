@@ -258,7 +258,7 @@ func TestResolveBatchTruncatesExistingCandidates(t *testing.T) {
 	lesson := seedJudgeLesson(t, store, "", "web_fetch", "timeout", "new lesson")
 	client := &fakeMemoryJudgeClient{responses: []string{`{"memory":[]}`}}
 
-	if err := ResolveBatch(context.Background(), store, []Lesson{lesson}, WithMemoryJudgeClient(client, "fake", ""), WithMemoryJudgeLimits(20, 50, 8192)); err != nil {
+	if err := ResolveBatch(context.Background(), store, []Lesson{lesson}, WithMemoryJudgeClient(client, "fake", "")); err != nil {
 		t.Fatalf("ResolveBatch: %v", err)
 	}
 	if len(client.requests) != 1 {

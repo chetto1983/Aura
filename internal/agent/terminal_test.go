@@ -118,22 +118,6 @@ func TestFinalizeTerminalToolStrictPromptOnRetry(t *testing.T) {
 	}
 }
 
-func TestLooksLikeUnsafeFinalAnswer(t *testing.T) {
-	for _, raw := range []string{
-		`Evidence envelope: {"items":[]}`,
-		"exit_code: 0\nelapsed_ms: 3",
-		`{"source_id":"src_1","tokens_total":123}`,
-		"workspace_root=/workspace",
-	} {
-		if !LooksLikeUnsafeFinalAnswer(raw) {
-			t.Fatalf("LooksLikeUnsafeFinalAnswer(%q) = false, want true", raw)
-		}
-	}
-	if LooksLikeUnsafeFinalAnswer("Ho trovato il documento e te lo riassumo.") {
-		t.Fatal("LooksLikeUnsafeFinalAnswer(natural text) = true, want false")
-	}
-}
-
 func TestLooksLikeToolCallMarkupRecognizesDSML(t *testing.T) {
 	raw := `<｜｜DSML｜｜tool_calls><｜｜DSML｜｜invoke name="write_file">`
 	if !LooksLikeToolCallMarkup(raw) {

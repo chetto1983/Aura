@@ -2,7 +2,6 @@ package governance
 
 import (
 	"log/slog"
-	"strings"
 
 	"github.com/aura/aura/internal/llm"
 )
@@ -33,12 +32,4 @@ func ScrubOrphanToolCalls(history []llm.Message) []llm.Message {
 	}
 
 	return history
-}
-
-// IsAssistantEmpty reports whether msg is an assistant message with neither
-// text content nor tool calls. Such messages are semantically empty and
-// should be skipped when persisting to the conversation archive to prevent
-// poisoning subsequent provider API calls.
-func IsAssistantEmpty(msg llm.Message) bool {
-	return msg.Role == "assistant" && strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0
 }

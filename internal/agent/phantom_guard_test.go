@@ -100,8 +100,8 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 			wantPhantom: false,
 		},
 		{
-			name: "didactic — tool name inside fenced code block (no claim)",
-			content: "Il flow è questo:\n\n```\n1. Chiamo wiki_page(action=\"append\", ...)\n2. Aggiorno l'indice\n```\n\nFammi sapere se vuoi più dettagli.",
+			name:        "didactic — tool name inside fenced code block (no claim)",
+			content:     "Il flow è questo:\n\n```\n1. Chiamo wiki_page(action=\"append\", ...)\n2. Aggiorno l'indice\n```\n\nFammi sapere se vuoi più dettagli.",
 			wantPhantom: false,
 		},
 		{
@@ -138,10 +138,10 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 			wantPhantom:    false,
 		},
 		{
-			name:        "mixed — past claim ABOUT a tool that WAS called (no phantom)",
-			content:     "Ho cercato online con search_memory e trovato tre pagine pertinenti. Eccole.",
+			name:           "mixed — past claim ABOUT a tool that WAS called (no phantom)",
+			content:        "Ho cercato online con search_memory e trovato tre pagine pertinenti. Eccole.",
 			calledThisTurn: map[string]bool{"search_memory": true},
-			wantPhantom: false,
+			wantPhantom:    false,
 		},
 		{
 			name: "in-proximity claim about an UNcalled tool (real phantom, far-paragraph other claim does not save us)",
@@ -229,30 +229,6 @@ func TestPhantomToolGuard_CorrectionTextOverride(t *testing.T) {
 	guard := &PhantomToolGuard{CorrectionMessage: "custom override"}
 	if got := guard.CorrectionText(); got != "custom override" {
 		t.Fatalf("override not honored: got %q", got)
-	}
-}
-
-func TestContainsAsWord(t *testing.T) {
-	cases := []struct {
-		haystack string
-		needle   string
-		want     bool
-	}{
-		{"ho schedulato il task wave-x", "task", true},
-		{"tasks pending in the queue", "task", false}, // plural
-		{"multitasking is hard", "task", false},      // substring
-		{"task!", "task", true},                       // trailing punct
-		{"...task", "task", true},                     // leading punct
-		{"task", "task", true},                        // exact
-		{"the tasking system", "task", false},        // suffix-extended
-		{"", "task", false},                           // empty haystack
-		{"task", "", false},                           // empty needle
-	}
-	for _, tc := range cases {
-		got := containsAsWord(tc.haystack, tc.needle)
-		if got != tc.want {
-			t.Errorf("containsAsWord(%q, %q) = %v, want %v", tc.haystack, tc.needle, got, tc.want)
-		}
 	}
 }
 
