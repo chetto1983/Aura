@@ -31,7 +31,7 @@
         "Single atomic commit prefix: refactor(api): extract writeReadError helper — kill os.ErrNotExist dupl (US-MOD-DEDUP-01)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "PRECONDITION: DEDUP-00 done. Read 3 sites first to confirm the pattern is uniform; if some sites have subtle differences (e.g. different opName, different default error msg), keep them out of the dedup and document why."
     },
     {

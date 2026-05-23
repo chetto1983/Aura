@@ -1,9 +1,7 @@
 package api
 
 import (
-	"errors"
 	"net/http"
-	"os"
 	"regexp"
 )
 
@@ -48,13 +46,7 @@ func handleSkillGet(deps Deps) http.HandlerFunc {
 			return
 		}
 		skill, err := deps.Skills.LoadByName(name)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "skill not found")
-				return
-			}
-			deps.Logger.Warn("api: read skill", "name", name, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read skill")
+		if writeReadError(w, deps, err, "skill not found", "api: read skill", "failed to read skill", "name", name) {
 			return
 		}
 		body := skill.Content

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 	"os"
 
@@ -53,13 +52,7 @@ func handleSourceGet(deps Deps) http.HandlerFunc {
 			return
 		}
 		rec, err := deps.Sources.Get(id)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
-				return
-			}
-			deps.Logger.Warn("api: get source", "id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read source")
+		if writeReadError(w, deps, err, "source not found", "api: get source", "failed to read source", "id", id) {
 			return
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, SourceDetail{
@@ -93,13 +86,7 @@ func handleSourceOCR(deps Deps) http.HandlerFunc {
 			return
 		}
 		data, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "ocr.md not found for this source")
-				return
-			}
-			deps.Logger.Warn("api: read ocr.md", "id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read ocr.md")
+		if writeReadError(w, deps, err, "ocr.md not found for this source", "api: read ocr.md", "failed to read ocr.md", "id", id) {
 			return
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, SourceOCR{Markdown: string(data)})
@@ -114,13 +101,7 @@ func handleSourceMarkdown(deps Deps) http.HandlerFunc {
 			return
 		}
 		rec, err := deps.Sources.Get(id)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
-				return
-			}
-			deps.Logger.Warn("api: get source for markdown", "id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read source")
+		if writeReadError(w, deps, err, "source not found", "api: get source for markdown", "failed to read source", "id", id) {
 			return
 		}
 		name := source.ExtractMarkdownFile
@@ -133,13 +114,7 @@ func handleSourceMarkdown(deps Deps) http.HandlerFunc {
 			return
 		}
 		data, err := os.ReadFile(path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, name+" not found for this source")
-				return
-			}
-			deps.Logger.Warn("api: read source markdown", "id", id, "file", name, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read "+name)
+		if writeReadError(w, deps, err, name+" not found for this source", "api: read source markdown", "failed to read "+name, "id", id, "file", name) {
 			return
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, SourceMarkdown{Markdown: string(data), File: name})
@@ -230,13 +205,7 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 			return
 		}
 		rec, err := deps.Sources.Get(id)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, "source not found")
-				return
-			}
-			deps.Logger.Warn("api: get source for raw", "id", id, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read source")
+		if writeReadError(w, deps, err, "source not found", "api: get source for raw", "failed to read source", "id", id) {
 			return
 		}
 		asset, ok := rawAssetForSource(rec)
@@ -250,13 +219,7 @@ func handleSourceRaw(deps Deps) http.HandlerFunc {
 			return
 		}
 		f, err := os.Open(path)
-		if err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				writeError(w, deps.Logger, http.StatusNotFound, asset.filename+" not found")
-				return
-			}
-			deps.Logger.Warn("api: open raw file", "id", id, "file", asset.filename, "error", err)
-			writeError(w, deps.Logger, http.StatusInternalServerError, "failed to read "+asset.filename)
+		if writeReadError(w, deps, err, asset.filename+" not found", "api: open raw file", "failed to read "+asset.filename, "id", id, "file", asset.filename) {
 			return
 		}
 		defer f.Close()
