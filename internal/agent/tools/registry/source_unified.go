@@ -90,7 +90,30 @@ func (t *SourceTool) Definition() ToolDefinition {
 }
 
 func (t *SourceTool) Description() string {
-	return "Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX). action=read Returns source archive bytes, 16384-byte cap. Actions: list, read, store, reprocess, delete, lint. Required: varies."
+	return `Manage uploaded sources (PDFs, text, URLs, DOCX, XLSX).
+
+EXAMPLES — copy the shape exactly:
+
+  source({"action":"list"})
+  source({"action":"list","status":"ingested","limit":50})
+  source({"action":"read","source_id":"src_0ec1b02e112f0ca4"})
+  source({"action":"store","kind":"text","filename":"note.txt","content":"plain text body"})
+  source({"action":"store","kind":"url","filename":"article","content":"https://example.com/page"})
+  source({"action":"reprocess","source_id":"src_0ec1b02e112f0ca4","stages":["ingest"]})
+  source({"action":"delete","source_id":"src_0ec1b02e112f0ca4"})
+  source({"action":"lint"})
+
+The "action" field is REQUIRED. Valid values: "list", "read", "store", "reprocess", "delete", "lint".
+
+Per-action required fields:
+  • list      → nothing
+  • read      → source_id
+  • store     → kind ("text" or "url") AND filename AND content
+  • reprocess → source_id (stages optional, defaults to ["ingest"])
+  • delete    → source_id
+  • lint      → nothing
+
+PDFs are uploaded via Telegram, not via this tool. Read returns ocr.md / extract.md text (default 4000-byte cap, max 8000).`
 }
 
 func (t *SourceTool) Parameters() map[string]any {
@@ -102,54 +125,54 @@ func (t *SourceTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"list", "read", "store", "reprocess", "delete", "lint"},
-				"description": "Which operation: list (enumerate), read (fetch markdown), store (persist text/URL), reprocess (re-run ocr/ingest), delete (remove), lint (audit).",
+				"description": `REQUIRED. "list", "read", "store", "reprocess", "delete", or "lint".`,
 			},
 			"source_id": map[string]any{
 				"type":        "string",
-				"description": "Required for read/reprocess/delete. Pattern: src_<16hex>.",
+				"description": `Required when action="read"/"reprocess"/"delete". Pattern: src_<16hex>.`,
 			},
 			"status": map[string]any{
 				"type":        "string",
 				"enum":        []string{"", "stored", "extracting", "ocr_complete", "extract_complete", "ingested", "failed"},
-				"description": "list only, optional: filter by lifecycle status.",
+				"description": `Optional, action="list" only. Filter by lifecycle status.`,
 			},
 			"kind": map[string]any{
 				"type":        "string",
-				"description": "list only, optional: filter by kind. store only, required: 'text' or 'url'.",
+				"description": `Required when action="store" ("text" or "url"). Optional filter when action="list".`,
 			},
 			"limit": map[string]any{
 				"type":        "integer",
-				"description": "list only, optional: max results (default 20, max 100).",
+				"description": `Optional, action="list" only. Max results (default 20, max 100).`,
 			},
 			"max_bytes": map[string]any{
 				"type":        "integer",
-				"description": "read only, optional: max bytes to return (default 4000, max 8000).",
+				"description": `Optional, action="read" only. Max bytes to return (default 4000, max 8000).`,
 			},
 			"mode": map[string]any{
 				"type":        "string",
 				"enum":        []string{"metadata", "ocr", "excerpt"},
-				"description": "read only, optional: metadata, ocr, or excerpt.",
+				"description": `Optional, action="read" only. "metadata", "ocr" (full extracted text), or "excerpt" (first chunk).`,
 			},
 			"byte_start": map[string]any{
 				"type":        "integer",
-				"description": "read only, optional: zero-based byte start in the source text artifact.",
+				"description": `Optional, action="read" only. Zero-based byte start in the source text artifact.`,
 			},
 			"byte_end": map[string]any{
 				"type":        "integer",
-				"description": "read only, optional: exclusive byte end in the source text artifact.",
+				"description": `Optional, action="read" only. Exclusive byte end in the source text artifact.`,
 			},
 			"filename": map[string]any{
 				"type":        "string",
-				"description": "store only: display filename / short label.",
+				"description": `Required when action="store". Display filename / short label.`,
 			},
 			"content": map[string]any{
 				"type":        "string",
-				"description": "store only: for kind='text' the body, for kind='url' the absolute http(s) URL.",
+				"description": `Required when action="store". For kind="text" the body text; for kind="url" the absolute http(s) URL.`,
 			},
 			"stages": map[string]any{
 				"type":        "array",
 				"items":       map[string]any{"type": "string", "enum": []string{"ocr", "ingest"}},
-				"description": "reprocess only, optional: which stages to re-run (default ['ingest']). 'ocr' requires KindPDF + OCR backend.",
+				"description": `Optional, action="reprocess" only. Which stages to re-run (default ["ingest"]). "ocr" requires KindPDF + OCR backend.`,
 			},
 		},
 		"oneOf": ActionDispatchOneOf([]ActionVariant{
@@ -160,6 +183,17 @@ func (t *SourceTool) Parameters() map[string]any {
 			{Name: "delete", RequiredKeys: []string{"source_id"}},
 			{Name: "lint", RequiredKeys: nil},
 		}),
+		// JSON Schema "examples" — concrete shapes models read before
+		// the description.
+		"examples": []any{
+			map[string]any{"action": "list"},
+			map[string]any{"action": "read", "source_id": "src_0ec1b02e112f0ca4"},
+			map[string]any{"action": "store", "kind": "text", "filename": "note.txt", "content": "plain text body"},
+			map[string]any{"action": "store", "kind": "url", "filename": "article", "content": "https://example.com/page"},
+			map[string]any{"action": "reprocess", "source_id": "src_0ec1b02e112f0ca4", "stages": []string{"ingest"}},
+			map[string]any{"action": "delete", "source_id": "src_0ec1b02e112f0ca4"},
+			map[string]any{"action": "lint"},
+		},
 	}
 }
 
