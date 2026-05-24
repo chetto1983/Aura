@@ -90,8 +90,8 @@
         "internal/api/chat.go ChatReply adds budget_warning string field (optional)",
         "internal/channels/web/chat_service.go OnSoftBudget hook writes ChatReply.budget_warning when soft budget tripped",
         "internal/conversation/archive.go web turns persisted with channel='web' (verified by querying conversations table)",
-        "cmd/aura/web_chat_hooks.go wires OnSoftBudget to the existing budget runtime",
-        "web/src/api/chat.ts reads budget_warning field (frontend follow-up; documented even if not rendered in this story)",
+        "cmd/aura/web_chat.go wires OnSoftBudget to the existing budget runtime",
+        "web/src/api.ts + web/src/types/api.ts type the buffered /api/chat reply, including budget_warning (frontend follow-up; documented even if not rendered in this story)",
         "Probe: induce soft_budget (mock budget runtime trips) → ChatReply.budget_warning non-empty in response",
         "Probe: conversations SQLite table has rows tagged channel=web after web turns (test queries the table)",
         "LOC delta: +120 (additive feature)",
@@ -99,8 +99,8 @@
         "Single atomic commit prefix: feat(web): soft-budget + context compaction + archive parity (US-CONS-06)"
       ],
       "priority": 5,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-05. First parity story — additive, low risk."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Buffered web chat now records budget usage through the shared budget runtime, surfaces soft-budget warnings as ChatReply.budget_warning through chat.EventUsage and /api/chat JSON, and archives web turns through conversation.ArchiveConversationTurns. conversations.channel was added with default telegram plus idempotent current-schema backfill; tests assert web rows persist as channel='web'. web/src/api.ts and web/src/types/api.ts type the buffered /api/chat response including budget_warning. Dedicated slice QA passed targeted package tests, npm --prefix web run build, go vet ./..., go build ./..., touched-path golangci-lint, touched-file dupl, git diff --check, and go test ./... -count=1."
     },
     {
       "id": "US-CONS-07",

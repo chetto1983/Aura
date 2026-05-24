@@ -11,6 +11,7 @@ import (
 	webadapter "github.com/aura/aura/internal/channels/web"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/telegram"
 )
 
@@ -22,13 +23,20 @@ type sharedChatHub struct {
 
 // newSharedChatHub is the composition-root owner for the user-facing chat Hub.
 // Web and Telegram share this Hub; cron keeps a separate lifecycle in wireBot.
-func newSharedChatHub(cfg *config.Config, deps *telegram.Deps, bot *telegram.Bot, logger *slog.Logger) (*sharedChatHub, error) {
+func newSharedChatHub(
+	cfg *config.Config,
+	deps *telegram.Deps,
+	bot *telegram.Bot,
+	logger *slog.Logger,
+	archiveRepo conversation.ArchiveRepository,
+	archiveAppender conversation.TurnAppender,
+) (*sharedChatHub, error) {
 	if deps == nil {
 		return nil, errors.New("shared chat hub: deps are required")
 	}
 	builders := make(map[chat.Channel]chat.InvocationBuilder, 2)
 
-	webBuilder, webSessions := newWebInvocationBuilder(cfg, deps, logger)
+	webBuilder, webSessions := newWebInvocationBuilder(cfg, deps, logger, deps.Budget, archiveRepo, archiveAppender)
 	if webBuilder != nil {
 		builders[chat.ChannelWeb] = webBuilder.Build
 	}

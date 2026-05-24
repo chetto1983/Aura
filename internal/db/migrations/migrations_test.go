@@ -458,6 +458,7 @@ INSERT INTO conversations (user_id, role, content) VALUES (2002, 'user', 'retire
 
 	assertColumns(t, db, "conversations", []string{
 		"id",
+		"channel",
 		"chat_id",
 		"user_id",
 		"turn_index",

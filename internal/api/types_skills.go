@@ -64,6 +64,7 @@ type SkillDeleteResponse struct {
 // ConversationTurn is one row of GET /conversations.
 type ConversationTurn struct {
 	ID             int64  `json:"id"`
+	Channel        string `json:"channel"`
 	ChatID         int64  `json:"chat_id"`
 	UserID         int64  `json:"user_id"`
 	TurnIndex      int64  `json:"turn_index"`
@@ -83,6 +84,7 @@ type ConversationTurn struct {
 // is the raw JSON string from the DB so the frontend can parse/expand it.
 type ConversationDetail struct {
 	ID             int64  `json:"id"`
+	Channel        string `json:"channel"`
 	ChatID         int64  `json:"chat_id"`
 	UserID         int64  `json:"user_id"`
 	TurnIndex      int64  `json:"turn_index"`

@@ -24,6 +24,7 @@ type recordingChatService struct {
 	identityActorID   string
 	authorizerPresent bool
 	message           string
+	reply             ChatReply
 }
 
 func (s *recordingChatService) Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error) {
@@ -34,7 +35,10 @@ func (s *recordingChatService) Chat(ctx context.Context, userID, threadID, messa
 	s.identityActorID = identity.ActorIDFromContext(ctx)
 	_, s.authorizerPresent = identity.AuthorizerFromContext(ctx)
 	s.message = message
-	return ChatReply{Reply: "ok"}, nil
+	if s.reply.Reply == "" {
+		s.reply.Reply = "ok"
+	}
+	return s.reply, nil
 }
 
 func TestChatBearerActorContext(t *testing.T) {
@@ -86,6 +90,23 @@ SELECT COUNT(*)
 FROM authz_decisions
 WHERE actor_id = ? AND capability = ? AND resource_type = ? AND resource_id = ? AND decision = ?
 `, 2, identity.TelegramSessionActorID("alice"), identity.CapabilityAPIChat, "api", "chat", identity.DecisionAllow)
+}
+
+func TestChatReplyIncludesBudgetWarning(t *testing.T) {
+	env := newChatAuthEnv(t, "alice")
+	env.chat.reply = ChatReply{Reply: "ok", BudgetWarning: "soft budget hit"}
+
+	rr := env.doChat(t, env.token, `{"message":"hello"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
+	}
+	var body ChatReply
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+	if body.BudgetWarning != "soft budget hit" {
+		t.Fatalf("budget_warning = %q", body.BudgetWarning)
+	}
 }
 
 func TestChatBearerRejectsBodyUserOverride(t *testing.T) {

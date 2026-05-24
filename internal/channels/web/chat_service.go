@@ -32,6 +32,9 @@ type ChatReply struct {
 	// Used by quality-bench to verify tool-selection (e.g., did Aura use
 	// web_search when only wiki tools were appropriate?).
 	ToolsUsed []string
+	// BudgetWarning is populated once when the shared budget runtime crosses
+	// its soft threshold during this turn.
+	BudgetWarning string
 }
 
 // ChatService is the production bridge from api.ChatService onto chat.Hub.
@@ -82,25 +85,27 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 	}
 	if runErr != nil {
 		return ChatReply{
-			RunID:     run.ID,
-			Reply:     res.FinalContent,
-			ElapsedMs: res.ElapsedMs,
-			LLMCalls:  res.LLMCalls,
-			ToolCalls: res.ToolCalls,
-			Tokens:    res.TokensTotal,
-			CacheHit:  res.CacheReadTokens > 0,
-			ToolsUsed: res.ToolsUsed,
+			RunID:         run.ID,
+			Reply:         res.FinalContent,
+			ElapsedMs:     res.ElapsedMs,
+			LLMCalls:      res.LLMCalls,
+			ToolCalls:     res.ToolCalls,
+			Tokens:        res.TokensTotal,
+			CacheHit:      res.CacheReadTokens > 0,
+			ToolsUsed:     res.ToolsUsed,
+			BudgetWarning: res.BudgetWarning,
 		}, runErr
 	}
 	return ChatReply{
-		RunID:     run.ID,
-		Reply:     res.FinalContent,
-		ElapsedMs: res.ElapsedMs,
-		LLMCalls:  res.LLMCalls,
-		ToolCalls: res.ToolCalls,
-		Tokens:    res.TokensTotal,
-		CacheHit:  res.CacheReadTokens > 0,
-		ToolsUsed: res.ToolsUsed,
+		RunID:         run.ID,
+		Reply:         res.FinalContent,
+		ElapsedMs:     res.ElapsedMs,
+		LLMCalls:      res.LLMCalls,
+		ToolCalls:     res.ToolCalls,
+		Tokens:        res.TokensTotal,
+		CacheHit:      res.CacheReadTokens > 0,
+		ToolsUsed:     res.ToolsUsed,
+		BudgetWarning: res.BudgetWarning,
 	}, nil
 }
 

@@ -13,7 +13,9 @@ import (
 	"github.com/aura/aura/internal/agent"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/api"
+	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/identity"
@@ -172,6 +174,96 @@ SELECT COUNT(*)
 FROM run_events
 WHERE actor_id = ? AND type IN ('run_started', 'message_done', 'usage', 'done')
 `, 4, actorID)
+}
+
+func TestHubBackedWebChatReportsSoftBudgetWarning(t *testing.T) {
+	db := testutil.OpenTestDB(t, nil)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	runStore, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	tracker := budget.NewTracker(budget.Config{
+		SoftBudget:           0.000001,
+		HardBudget:           1,
+		InputCostPerMTokens:  1,
+		OutputCostPerMTokens: 1,
+	}, logger)
+	svc, err := newTestWebChatService(
+		&config.Config{
+			LLMModel:             "fake-web-chat",
+			AuraBotMaxIterations: 4,
+			CostInputPerMTokens:  1,
+			CostOutputPerMTokens: 1,
+		},
+		&telegram.Deps{
+			LLM:      fakeWebChatLLM{},
+			RunStore: runStore,
+			Tools:    toolregistry.NewRegistry(logger),
+			Logger:   logger,
+			Budget:   tracker,
+		},
+		logger,
+	)
+	if err != nil {
+		t.Fatalf("newTestWebChatService: %v", err)
+	}
+
+	reply, err := svc.Chat(context.Background(), "alice", "default", "hello")
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if !strings.Contains(reply.BudgetWarning, "Soft budget reached") {
+		t.Fatalf("BudgetWarning = %q", reply.BudgetWarning)
+	}
+}
+
+func TestHubBackedWebChatArchivesConversationTurns(t *testing.T) {
+	db := testutil.OpenTestDB(t, nil)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	runStore, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	archiveStore, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatalf("NewArchiveStore: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	svc, err := newTestWebChatServiceWithArchive(
+		&config.Config{LLMModel: "fake-web-chat", AuraBotMaxIterations: 4},
+		&telegram.Deps{
+			LLM:      fakeWebChatLLM{},
+			RunStore: runStore,
+			Tools:    toolregistry.NewRegistry(logger),
+			Logger:   logger,
+		},
+		logger,
+		archiveStore,
+		archiveStore,
+	)
+	if err != nil {
+		t.Fatalf("newTestWebChatServiceWithArchive: %v", err)
+	}
+	if _, err := svc.Chat(context.Background(), "alice", "default", "archive this web turn"); err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+
+	assertWebChatScalar(t, db, `
+SELECT COUNT(*)
+FROM conversations
+WHERE channel = 'web' AND role = 'user' AND content = 'archive this web turn'
+`, 1)
+	assertWebChatScalar(t, db, `
+SELECT COUNT(*)
+FROM conversations
+WHERE channel = 'web' AND role = 'assistant' AND content = 'WEB_HUB_OK' AND llm_calls = 1
+`, 1)
 }
 
 func TestHubBackedWebChatRecordsToolAttempts(t *testing.T) {
@@ -558,7 +650,17 @@ func TestSwarmRunnerAdapterPassesContextRunID(t *testing.T) {
 }
 
 func newTestWebChatService(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (api.ChatService, error) {
-	shared, err := newSharedChatHub(cfg, deps, nil, logger)
+	return newTestWebChatServiceWithArchive(cfg, deps, logger, nil, nil)
+}
+
+func newTestWebChatServiceWithArchive(
+	cfg *config.Config,
+	deps *telegram.Deps,
+	logger *slog.Logger,
+	archiveRepo conversation.ArchiveRepository,
+	archiveAppender conversation.TurnAppender,
+) (api.ChatService, error) {
+	shared, err := newSharedChatHub(cfg, deps, nil, logger, archiveRepo, archiveAppender)
 	if err != nil {
 		return nil, err
 	}

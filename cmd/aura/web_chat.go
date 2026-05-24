@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
+	"hash/fnv"
 	"log/slog"
 	"strings"
 	"sync"
@@ -15,6 +17,7 @@ import (
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentcore"
 	"github.com/aura/aura/internal/api"
+	"github.com/aura/aura/internal/budget"
 	webadapter "github.com/aura/aura/internal/channels/web"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
@@ -25,7 +28,14 @@ import (
 	"github.com/aura/aura/internal/telegram"
 )
 
-func newWebInvocationBuilder(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (*webInvocationBuilder, *agent.SessionStore) {
+func newWebInvocationBuilder(
+	cfg *config.Config,
+	deps *telegram.Deps,
+	logger *slog.Logger,
+	budgetRuntime budget.Runtime,
+	archiveRepo conversation.ArchiveRepository,
+	archiveAppender conversation.TurnAppender,
+) (*webInvocationBuilder, *agent.SessionStore) {
 	depsGetter := newWebChatDepsGetter(cfg, deps)
 	if depsGetter == nil {
 		return nil, nil
@@ -36,14 +46,17 @@ func newWebInvocationBuilder(cfg *config.Config, deps *telegram.Deps, logger *sl
 		postTurnReader = attempts.NewSQLiteRepo(deps.Pool)
 	}
 	builder := &webInvocationBuilder{
-		depsGetter:     depsGetter,
-		sessionStore:   sessionStore,
-		cfg:            cfg,
-		logger:         logger,
-		postTurnStore:  deps.MemoryStore,
-		postTurnReader: postTurnReader,
-		skillsLoader:   deps.Skills,
-		loc:            deps.Loc,
+		depsGetter:      depsGetter,
+		sessionStore:    sessionStore,
+		cfg:             cfg,
+		logger:          logger,
+		postTurnStore:   deps.MemoryStore,
+		postTurnReader:  postTurnReader,
+		skillsLoader:    deps.Skills,
+		loc:             deps.Loc,
+		budgetRuntime:   budgetRuntime,
+		archiveRepo:     archiveRepo,
+		archiveAppender: archiveAppender,
 	}
 	if deps.WikiStore != nil {
 		builder.wikiTOCFn = deps.WikiStore.GetCachedTOC
@@ -70,27 +83,31 @@ type apiChatServiceAdapter struct {
 func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, message string) (api.ChatReply, error) {
 	reply, err := a.svc.Chat(ctx, userID, threadID, message)
 	return api.ChatReply{
-		Reply:     reply.Reply,
-		ElapsedMs: reply.ElapsedMs,
-		LLMCalls:  reply.LLMCalls,
-		ToolCalls: reply.ToolCalls,
-		Tokens:    reply.Tokens,
-		CacheHit:  reply.CacheHit,
-		ToolsUsed: reply.ToolsUsed,
+		Reply:         reply.Reply,
+		ElapsedMs:     reply.ElapsedMs,
+		LLMCalls:      reply.LLMCalls,
+		ToolCalls:     reply.ToolCalls,
+		Tokens:        reply.Tokens,
+		CacheHit:      reply.CacheHit,
+		ToolsUsed:     reply.ToolsUsed,
+		BudgetWarning: reply.BudgetWarning,
 	}, err
 }
 
 type webInvocationBuilder struct {
-	depsGetter     func() agent.RunTaskDeps
-	sessionStore   *agent.SessionStore
-	cfg            *config.Config
-	logger         *slog.Logger
-	postTurnStore  *memoryindex.Store
-	postTurnReader agent.PostTurnFailureReader
-	priorityCaches sync.Map
-	skillsLoader   *auraskills.Loader
-	wikiTOCFn      func() string
-	loc            *time.Location
+	depsGetter      func() agent.RunTaskDeps
+	sessionStore    *agent.SessionStore
+	cfg             *config.Config
+	logger          *slog.Logger
+	postTurnStore   *memoryindex.Store
+	postTurnReader  agent.PostTurnFailureReader
+	priorityCaches  sync.Map
+	skillsLoader    *auraskills.Loader
+	wikiTOCFn       func() string
+	loc             *time.Location
+	budgetRuntime   budget.Runtime
+	archiveRepo     conversation.ArchiveRepository
+	archiveAppender conversation.TurnAppender
 }
 
 func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.InboundMessage) (agent.Invocation, error) {
@@ -152,6 +169,8 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	system := promptPlan.Content
 	convCtx.SetSystemMessage(system)
 	convCtx.AddUserMessage(msg.Text)
+	preLoopIdx := convCtx.MessageCount()
+	turnStart := time.Now()
 	runID := ""
 	if run != nil {
 		runID = run.ID
@@ -228,6 +247,21 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 			PhantomToolGuard:        deps.PhantomGuard,
 			DisableInBatchDedup:     true,
 			AllowNoToolFinalization: true,
+			BeforeLLM: func() (string, bool) {
+				if b.budgetRuntime != nil && b.budgetRuntime.IsHardBudgetExceeded() {
+					logger.Warn("web chat hard budget exceeded", "session_key", sessionKey)
+					return "Budget limit reached. LLM calls are temporarily halted.", true
+				}
+				return "", false
+			},
+			RecordUsage: func(usage llm.TokenUsage) {
+				if b.budgetRuntime != nil {
+					b.budgetRuntime.RecordUsage(usage)
+				}
+			},
+			EstimateCost: func(usage llm.TokenUsage) float64 {
+				return agent.EstimateUsageCost(usage, b.cfg.CostInputPerMTokens, b.cfg.CostOutputPerMTokens)
+			},
 			// text_response is the canonical terminal tool: Execute()
 			// already returned the verbatim reply, so we must exit the
 			// loop on it instead of feeding the wrapped tool_result back
@@ -252,9 +286,20 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		},
 		Logger: logger,
 		OnEvent: func(event agent.Event) {
-			if event.Type != agent.EventFinal {
+			switch event.Type {
+			case agent.EventStats:
+				if warning := b.consumeSoftBudgetWarning(); warning != "" && run != nil {
+					if run.Metadata == nil {
+						run.Metadata = map[string]any{}
+					}
+					run.Metadata["budget_warning"] = warning
+				}
+				return
+			case agent.EventFinal:
+			default:
 				return
 			}
+			b.archiveWebTurn(context.Background(), logger, msg, userID, convCtx, preLoopIdx, event.Stats, time.Since(turnStart).Milliseconds())
 			compacted := convCtx.CompactCompletedToolResults(conversation.ToolResultCompactionPolicy{
 				MaxChars:       1200,
 				KeepRecentFull: 2,
@@ -272,6 +317,60 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		return agent.Invocation{}, err
 	}
 	return inv, nil
+}
+
+func (b *webInvocationBuilder) consumeSoftBudgetWarning() string {
+	if b == nil || b.budgetRuntime == nil || !b.budgetRuntime.ShouldNotifySoftBudget() {
+		return ""
+	}
+	status := b.budgetRuntime.Status()
+	return fmt.Sprintf("Soft budget reached ($%.2f / $%.2f). LLM calls continue until hard budget is hit.", status.TotalCost, status.SoftBudget)
+}
+
+func (b *webInvocationBuilder) archiveWebTurn(
+	ctx context.Context,
+	logger *slog.Logger,
+	msg chat.InboundMessage,
+	userID string,
+	convCtx *conversation.Context,
+	preLoopIdx int,
+	stats agent.Stats,
+	elapsedMS int64,
+) {
+	if b == nil || b.archiveRepo == nil || b.archiveAppender == nil || convCtx == nil {
+		return
+	}
+	chatID := webArchiveID("chat", msg.ThreadID)
+	nextIndex := int64(0)
+	if maxIdx, err := b.archiveRepo.MaxTurnIndex(ctx, chatID); err == nil {
+		nextIndex = maxIdx + 1
+	} else if logger != nil {
+		logger.Warn("web archive: max turn_index lookup failed", "thread_id", msg.ThreadID, "error", err)
+	}
+	conversation.ArchiveConversationTurns(ctx, logger, b.archiveAppender, conversation.ArchiveTurnInput{
+		Channel:      string(chat.ChannelWeb),
+		ChatID:       chatID,
+		UserID:       webArchiveID("user", userID),
+		NextIndex:    nextIndex,
+		UserText:     msg.Text,
+		LoopMessages: convCtx.MessagesSince(preLoopIdx),
+		LLMCalls:     stats.LLMCalls,
+		ToolCalls:    stats.ToolCalls,
+		ElapsedMS:    elapsedMS,
+		TokensIn:     convCtx.TotalTokensUsed(),
+	})
+}
+
+func webArchiveID(kind, value string) int64 {
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(kind))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(strings.TrimSpace(value)))
+	id := int64(h.Sum64() & 0x7fffffffffffffff)
+	if id == 0 {
+		return 1
+	}
+	return id
 }
 
 func (b *webInvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {

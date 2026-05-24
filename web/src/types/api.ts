@@ -378,10 +378,30 @@ export interface PendingDecisionResponse {
   user_id: string;
 }
 
+// Buffered web chat endpoint. The assistant-ui route added later uses the
+// streaming endpoint; this keeps the existing POST /api/chat contract typed.
+export interface ChatRequest {
+  user_id?: string;
+  message: string;
+  thread_id?: string;
+}
+
+export interface ChatReply {
+  reply: string;
+  elapsed_ms: number;
+  llm_calls: number;
+  tool_calls: number;
+  tokens: number;
+  cache_hit?: boolean;
+  tools_used?: string[];
+  budget_warning?: string;
+}
+
 // Slice 12j — conversation archive read surface.
 
 export interface ConversationTurn {
   id: number;
+  channel: string;
   chat_id: number;
   user_id: number;
   turn_index: number;
@@ -399,6 +419,7 @@ export interface ConversationTurn {
 
 export interface ConversationDetail {
   id: number;
+  channel: string;
   chat_id: number;
   user_id: number;
   turn_index: number;

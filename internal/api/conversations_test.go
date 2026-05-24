@@ -118,7 +118,7 @@ func seedTurn(t *testing.T, store *conversation.ArchiveStore, turn conversation.
 func TestHandleConversationList_HappyPath(t *testing.T) {
 	_, store := newConvTestEnv(t)
 	seedTurn(t, store, conversation.Turn{ChatID: 42, UserID: 1, TurnIndex: 0, Role: "user", Content: "hello"})
-	seedTurn(t, store, conversation.Turn{ChatID: 42, UserID: 1, TurnIndex: 1, Role: "assistant", Content: "hi"})
+	seedTurn(t, store, conversation.Turn{Channel: "web", ChatID: 42, UserID: 1, TurnIndex: 1, Role: "assistant", Content: "hi"})
 
 	router := NewRouter(Deps{Archive: store})
 	req := httptest.NewRequest("GET", "/conversations?chat_id=42&limit=10", nil)
@@ -134,6 +134,9 @@ func TestHandleConversationList_HappyPath(t *testing.T) {
 	}
 	if len(body) != 2 {
 		t.Fatalf("want 2 turns, got %d", len(body))
+	}
+	if body[0].Channel != "web" {
+		t.Fatalf("channel = %q, want web", body[0].Channel)
 	}
 }
 

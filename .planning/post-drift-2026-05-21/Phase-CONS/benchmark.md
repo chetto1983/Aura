@@ -217,6 +217,35 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
 - **PRD gate:** self-audited slice QA before atomic commit.
 
+## US-CONS-06 - Web Soft-Budget, Compaction, And Archive Parity
+
+### B-CONS-06-A: Web Soft-Budget Reply Field
+
+- **Command:** `go test ./cmd/aura ./internal/api ./internal/channels/web -run "TestHubBackedWebChatReportsSoftBudgetWarning|TestChatReplyIncludesBudgetWarning|TestChatService" -count=1`
+- **Fixture:** fake web LLM with token usage, shared budget tracker with tiny soft budget, buffered web router, and API JSON handler.
+- **Artifact:** `api.ChatReply` / `webadapter.ChatReply` values and JSON response body.
+- **Ground truth:** `budget_warning` is non-empty once the shared budget runtime crosses the soft threshold; the JSON field is emitted to the API response.
+- **Pass threshold:** exact non-empty warning assertions pass.
+- **PRD gate:** web surfaces the same soft-budget warning behavior Telegram already sends.
+
+### B-CONS-06-B: Web Archive Rows
+
+- **Command:** `go test ./cmd/aura ./internal/conversation ./internal/db/migrations -run "TestHubBackedWebChatArchivesConversationTurns|TestArchiveStore_AppendPreservesChannel|TestArchiveStore_AppendAndList" -count=1`
+- **Fixture:** isolated SQLite DB, current migrations, `conversation.ArchiveStore`, and hub-backed web chat.
+- **Artifact:** `conversations` rows.
+- **Ground truth:** web turns append user and assistant rows with `channel='web'`; legacy/default archive writes still read back as `channel='telegram'`.
+- **Pass threshold:** exact row counts and channel values pass.
+- **PRD gate:** web turns are durable archive facts, not transient HTTP replies only.
+
+### B-CONS-06-C: Dedicated Slice QA
+
+- **Command:** `go test ./cmd/aura ./internal/channels/web ./internal/api ./internal/conversation ./internal/db/migrations ./internal/chat -count=1`; `npm --prefix web run build`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/chat ./internal/channels/web ./internal/conversation ./internal/db/migrations --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/api/chat.go internal/api/chat_test.go internal/api/conversations.go internal/api/conversations_test.go internal/channels/web/chat_service.go internal/channels/web/chat_service_test.go internal/channels/web/outbound.go internal/chat/agentloop.go internal/conversation/archive.go internal/conversation/archive_internal_test.go internal/conversation/archive_test.go internal/conversation/archive_turns.go internal/db/migrations/m01_create_current_schema.go internal/db/migrations/migrations_test.go`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** touched packages plus full repository Go test suite.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** no compile/vet/lint/web-build regressions; touched-file duplication is zero; full Go suite passes after web budget/archive parity.
+- **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
+- **PRD gate:** self-audited slice QA before atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -226,7 +255,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-03 | Completed by B-CONS-03-A..D above | fake tool registry + hub-backed web turn using shared executor | web calls `agent.ExecuteToolCalls`; tool attempts and visible tool context match current behavior | no `webToolExecutor` symbols; tool attempt row and captured context fields correct |
 | CONS-04 | Completed by B-CONS-04A..C above | web + Telegram builder source gate, Telegram byte-parity fixture, full Go suite | web and Telegram invoke `agentcore.Builder`; no transport-owned non-empty `agent.Invocation` literal; no no-op runtime flag shim | adoption/parity tests pass; fixture and full suite pass |
 | CONS-05 | Completed by B-CONS-05-A..C above | shared Hub with fake web and Telegram outbound adapters; source negative check | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound; duplicate Hub constructors are gone | zero cross-channel deliveries; stale constructor symbols absent |
-| CONS-06 | `go test ./internal/channels/web ./internal/api ./cmd/aura -run "Budget|Archive|Compaction" -count=1` | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
+| CONS-06 | Completed by B-CONS-06-A..C above | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
 | CONS-07 | `go test ./internal/channels/web ./internal/api -run "SSE|DataStream|Streaming" -count=1` plus `curl -N` probe | local SSE endpoint and parser fixture | frames are valid Vercel AI SDK data-stream frames; headers include `text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` | first byte <500ms in live probe; all fixture frames parse |
 | CONS-08 | `go test ./internal/channels/web ./internal/api ./internal/chat -run "Voice|AskUser|Question" -count=1` | fake TTS and fake ask_user tool | `audio_url` serves OGG bytes; pending question persists and answer resumes same run | audio >1024 bytes; question row waiting->answered |
 | CONS-09 | `npm --prefix web run build` plus browser probe | assistant-ui `/chat` route against local backend | text-only stream renders in Thread and composer can send | visible streamed assistant message |

@@ -20,6 +20,7 @@ var ErrDuplicateTurn = errors.New("conversation: duplicate (chat_id, turn_index)
 // Turn is a single archived message from a conversation.
 type Turn struct {
 	ID             int64
+	Channel        string
 	ChatID         int64
 	UserID         int64
 	TurnIndex      int64
@@ -120,15 +121,19 @@ func (s *ArchiveStore) Append(ctx context.Context, t Turn) error {
 
 	const q = `
 		INSERT INTO conversations
-			(chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
+			(channel, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
 			 llm_calls, tool_calls_count, elapsed_ms, tokens_in, tokens_out)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	toolCalls := sql.NullString{String: t.ToolCalls, Valid: t.ToolCalls != ""}
 	toolCallID := sql.NullString{String: t.ToolCallID, Valid: t.ToolCallID != ""}
+	channel := strings.TrimSpace(t.Channel)
+	if channel == "" {
+		channel = "telegram"
+	}
 
 	_, err := s.db.ExecContext(ctx, q,
-		t.ChatID, t.UserID, t.TurnIndex, t.Role, t.Content,
+		channel, t.ChatID, t.UserID, t.TurnIndex, t.Role, t.Content,
 		toolCalls, toolCallID,
 		t.LLMCalls, t.ToolCallsCount, t.ElapsedMS, t.TokensIn, t.TokensOut,
 	)
@@ -144,7 +149,7 @@ func (s *ArchiveStore) Append(ctx context.Context, t Turn) error {
 // ListByChat returns up to limit turns for chatID, ordered newest-first.
 func (s *ArchiveStore) ListByChat(ctx context.Context, chatID int64, limit int) ([]Turn, error) {
 	const q = `
-		SELECT id, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
+		SELECT id, channel, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
 		       llm_calls, tool_calls_count, elapsed_ms, tokens_in, tokens_out, created_at
 		FROM conversations
 		WHERE chat_id = ?
@@ -174,7 +179,7 @@ func (s *ArchiveStore) ListByChat(ctx context.Context, chatID int64, limit int) 
 // projections do not silently drop older archive rows.
 func (s *ArchiveStore) ListAll(ctx context.Context, limit int) ([]Turn, error) {
 	q := `
-		SELECT id, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
+		SELECT id, channel, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
 		       llm_calls, tool_calls_count, elapsed_ms, tokens_in, tokens_out, created_at
 		FROM conversations
 		ORDER BY created_at DESC`
@@ -295,7 +300,7 @@ func (s *ArchiveStore) Stats(ctx context.Context) (ArchiveStats, error) {
 // Get returns a single Turn by its primary key, or sql.ErrNoRows if absent.
 func (s *ArchiveStore) Get(ctx context.Context, id int64) (Turn, error) {
 	const q = `
-		SELECT id, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
+		SELECT id, channel, chat_id, user_id, turn_index, role, content, tool_calls, tool_call_id,
 		       llm_calls, tool_calls_count, elapsed_ms, tokens_in, tokens_out, created_at
 		FROM conversations
 		WHERE id = ?`
@@ -323,7 +328,7 @@ func scanTurn(r turnScanner) (Turn, error) {
 		createdAt  string
 	)
 	if err := r.Scan(
-		&t.ID, &t.ChatID, &t.UserID, &t.TurnIndex, &t.Role, &t.Content,
+		&t.ID, &t.Channel, &t.ChatID, &t.UserID, &t.TurnIndex, &t.Role, &t.Content,
 		&toolCalls, &toolCallID,
 		&t.LLMCalls, &t.ToolCallsCount, &t.ElapsedMS, &t.TokensIn, &t.TokensOut,
 		&createdAt,

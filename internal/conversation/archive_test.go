@@ -53,6 +53,32 @@ func TestArchiveStore_AppendAndList(t *testing.T) {
 	if got[0].Content != "hello" {
 		t.Fatalf("content mismatch: %q", got[0].Content)
 	}
+	if got[0].Channel != "telegram" {
+		t.Fatalf("channel mismatch: %q", got[0].Channel)
+	}
+}
+
+func TestArchiveStore_AppendPreservesChannel(t *testing.T) {
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	turn := conversation.Turn{
+		Channel: "web", ChatID: 42, UserID: 7, TurnIndex: 0,
+		Role: "user", Content: "hello web",
+	}
+	if err := store.Append(context.Background(), turn); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.ListByChat(context.Background(), 42, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0].Channel != "web" {
+		t.Fatalf("turns = %+v, want channel web", got)
+	}
 }
 
 func TestArchiveStore_AppendIdempotentTurnIndex(t *testing.T) {

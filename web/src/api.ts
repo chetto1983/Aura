@@ -31,6 +31,8 @@ import type {
   MCPInvokeResponse,
   PendingUserSummary,
   PendingDecisionResponse,
+  ChatRequest,
+  ChatReply,
   ConversationTurn,
   ConversationDetail,
   ProposedUpdate,
@@ -333,6 +335,10 @@ export const api = {
     post<PendingDecisionResponse>(`/pending-users/${encodeURIComponent(id)}/approve`),
   denyPendingUser: (id: string) =>
     post<PendingDecisionResponse>(`/pending-users/${encodeURIComponent(id)}/deny`),
+
+  // ---- buffered web chat compatibility endpoint ----
+  chat: (req: ChatRequest) =>
+    post<ChatReply>('/chat', req),
 
   // ---- conversation archive (slice 12j) ----
   conversations: (chatId?: number, limit?: number, hasTools?: boolean) =>

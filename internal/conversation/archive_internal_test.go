@@ -27,7 +27,7 @@ func TestIsDuplicateError_NonDuplicate(t *testing.T) {
 func TestScanTurn_RFC3339Fallback(t *testing.T) {
 	row := &fakeScanner{
 		values: []any{
-			int64(1), int64(10), int64(5), int64(0),
+			int64(1), "telegram", int64(10), int64(5), int64(0),
 			"user", "hello",
 			sql.NullString{Valid: false}, sql.NullString{Valid: false},
 			0, 0, int64(0), 0, 0,
@@ -50,7 +50,7 @@ func TestScanTurn_RFC3339Fallback(t *testing.T) {
 func TestScanTurn_BadTimestamp(t *testing.T) {
 	row := &fakeScanner{
 		values: []any{
-			int64(1), int64(10), int64(5), int64(0),
+			int64(1), "telegram", int64(10), int64(5), int64(0),
 			"user", "hello",
 			sql.NullString{Valid: false}, sql.NullString{Valid: false},
 			0, 0, int64(0), 0, 0,

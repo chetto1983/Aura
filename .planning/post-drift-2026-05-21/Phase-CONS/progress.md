@@ -13,30 +13,33 @@
 | 2026-05-24 | US-CONS-04B | passed | `go test ./internal/channels/telegram ./internal/channels/telegram/fixture -count=1`; `go test ./internal/agentcore -count=1`; `go test ./internal/channels/telegram/... ./internal/agentcore ./internal/chat ./cmd/aura -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/channels/telegram ./internal/agentcore --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/channels/telegram/invocation_builder.go internal/agentcore`; `git diff --check`; `go test ./... -count=1`. | Telegram invocation assembly now also uses `internal/agentcore.Builder`; Telegram-only rendering, status pane, archive, prompt hot reload, ask_user, and soft budget hooks remain in the adapter. US-CONS-04 remains open for the explicit feature-flag/parity closure. |
 | 2026-05-24 | US-CONS-04C | passed | `go test ./internal/agentcore -run "TestAgentCoreBuilderAdoptedByWebAndTelegram|TestAgentCoreBuilderDoesNotAddRuntimeFlagShim" -count=1`; `go test ./internal/channels/telegram/fixture -run TestSnapshotsByteParity -count=1`; `go test ./internal/agentcore ./internal/channels/telegram/fixture ./cmd/aura ./internal/channels/telegram -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/agentcore ./internal/channels/telegram ./cmd/aura --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/agentcore internal/channels/telegram/invocation_builder.go cmd/aura/web_chat.go`; `git diff --check`; `go test ./... -count=1`. | Closed US-CONS-04 with a real adoption/parity gate: both web and Telegram call `agentcore.Builder.Build` with `agentcore.InvocationInput`; no transport owns a non-empty `agent.Invocation` literal; no no-op `AURA_AGENTCORE_BUILDER` runtime flag was introduced; Telegram byte-parity fixture and full Go suite pass. |
 | 2026-05-24 | US-CONS-05 | passed | `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub|TestInbound|TestChatService" -count=1`; `go test ./cmd/aura ./internal/channels/web ./internal/channels/telegram ./internal/chat -count=1`; `rg -n "newHubBackedWebChatService|telegramadapter\.NewHub|func NewHub|injected by NewHub" cmd/aura internal/channels/telegram internal/channels/web`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/chat ./internal/channels/web ./internal/channels/telegram --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/app_wire.go cmd/aura/main.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/channels/web internal/channels/telegram/invocation_builder.go internal/chat/hub_test.go`; `git diff --check`; `go test ./... -count=1`. | Shared web+Telegram Hub lives in `cmd/aura/chat_hub.go`, threaded from `app_wire.go` to Telegram and `/api/chat`. `telegramadapter.NewHub` and `newHubBackedWebChatService` are gone; web requests now use `webadapter.New()` normalization. Cron Hub stays separate. Negative `rg` exited 1 as expected. |
+| 2026-05-24 | US-CONS-06 | passed | `go test ./cmd/aura -run "TestHubBackedWebChat(ReportsSoftBudgetWarning|ArchivesConversationTurns|UsesSessionStoreContext|CompactsToolResultsBeforeNextTurn)" -count=1`; `go test ./internal/api -run "Test(ChatReplyIncludesBudgetWarning|HandleConversationList_HappyPath)" -count=1`; `go test ./internal/channels/web -run "TestChatService|TestInbound" -count=1`; `go test ./internal/conversation -run "TestArchive(Store_Append|Store_AppendPreservesChannel|ConversationTurns)|TestScanTurn|TestListByChat" -count=1`; `go test ./internal/db/migrations -count=1`; `go test ./cmd/aura ./internal/channels/web ./internal/api ./internal/conversation ./internal/db/migrations ./internal/chat -count=1`; `npm --prefix web run build`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/chat ./internal/channels/web ./internal/conversation ./internal/db/migrations --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/api/chat.go internal/api/chat_test.go internal/api/conversations.go internal/api/conversations_test.go internal/channels/web/chat_service.go internal/channels/web/chat_service_test.go internal/channels/web/outbound.go internal/chat/agentloop.go internal/conversation/archive.go internal/conversation/archive_internal_test.go internal/conversation/archive_test.go internal/conversation/archive_turns.go internal/db/migrations/m01_create_current_schema.go internal/db/migrations/migrations_test.go`; `git diff --check`; `go test ./... -count=1`. | Web buffered chat now uses the shared budget runtime for hard-budget preflight, usage recording, and soft-budget warning propagation. `/api/chat` emits `budget_warning`; `web/src/api.ts` and `web/src/types/api.ts` type it; web turns append durable archive rows with `channel='web'`; existing web context compaction regressions remain green. Negative checks: stale `web/src/api/chat.ts` does not exist, stale `cmd/aura/web_chat_hooks.go` acceptance was repaired, and touched-file `dupl` reports zero clone groups. |
 
 ## Current Slice
 
-**US-CONS-06:** add web parity for soft-budget response, context compaction behavior, and conversation archive rows.
+**US-CONS-07:** add web streaming via SSE using the Vercel AI SDK data-stream protocol.
 
 Pre-edit map:
 
+- `docs/ai-sdk-stream-protocol.md`
+- `D:/tmp/assistant-ui/templates/minimal/app/api/chat/route.ts`
+- `D:/tmp/assistant-ui/packages/react-data-stream`
 - `internal/api/chat.go`
-- `internal/channels/web/chat_service.go`
+- `internal/api/router.go`
 - `internal/channels/web/outbound.go`
+- `internal/channels/web/chat_service.go`
+- `internal/chat/agentloop.go`
 - `cmd/aura/web_chat.go`
 - `cmd/aura/chat_hub.go`
-- `internal/conversation/archive.go`
-- `internal/conversation/archive_test.go`
-- `internal/storage/runs/`
-- `internal/channels/web/`
 
 Dedicated QA target:
 
-- web soft-budget test with mock budget runtime and exact `budget_warning` JSON field
-- web archive test asserting durable conversation rows with `channel='web'` or equivalent web chat identity marker
-- context compaction regression tests from US-CONS-02 remain green
+- parser/fixture tests for exact Vercel AI SDK data-stream frames
+- SSE endpoint probe asserts `text/event-stream`, `Cache-Control: no-cache`, frame termination, and flush behavior
+- buffered POST `/api/chat` remains backward compatible
+- assistant-ui source contract is cited before implementation
 - `go vet ./...`
 - `go build ./...`
 - `golangci-lint run <touched packages> --timeout=10m --new-from-rev=HEAD`
-- `dupl -t 60 <touched web/API/archive files>`
+- `dupl -t 60 <touched web/API/SSE files>`
 - `git diff --check`

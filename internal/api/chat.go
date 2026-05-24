@@ -46,7 +46,8 @@ type ChatReply struct {
 	// outbound adapter. Used by quality-bench to verify tool-selection
 	// (e.g., did Aura call web_search when only wiki tools were appropriate?).
 	// Empty when no tools were called or the channel doesn't track tool names.
-	ToolsUsed []string `json:"tools_used,omitempty"`
+	ToolsUsed     []string `json:"tools_used,omitempty"`
+	BudgetWarning string   `json:"budget_warning,omitempty"`
 }
 
 // ChatRequest is the POST /chat request body.

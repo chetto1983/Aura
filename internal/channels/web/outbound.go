@@ -45,6 +45,9 @@ type Result struct {
 	// observe which tools the agent picked without parsing logs. Used by
 	// the quality-bench harness to verify tool-selection decisions.
 	ToolsUsed []string
+	// BudgetWarning carries the one-time soft-budget warning for buffered web
+	// clients when the shared budget runtime crosses its soft threshold.
+	BudgetWarning string
 
 	startedAt    time.Time
 	toolsUsedSet map[string]struct{}
@@ -118,6 +121,9 @@ func (b *Buffer) apply(ev chat.OutboundEvent) {
 		}
 		if v, ok := ev.Payload["cache_read_tokens"].(int); ok {
 			b.result.CacheReadTokens = v
+		}
+		if v, ok := ev.Payload["budget_warning"].(string); ok {
+			b.result.BudgetWarning = v
 		}
 	case chat.EventError:
 		if v, ok := ev.Payload["error"].(string); ok {

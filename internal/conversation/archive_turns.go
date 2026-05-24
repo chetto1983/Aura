@@ -11,6 +11,7 @@ import (
 // ArchiveTurnInput carries all per-turn data needed to persist a conversation
 // turn to the archive. It is channel-neutral: no Telegram types referenced.
 type ArchiveTurnInput struct {
+	Channel      string
 	ChatID       int64
 	UserID       int64
 	NextIndex    int64
@@ -33,6 +34,10 @@ func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 	}
 
 	nextIdx := input.NextIndex
+	channel := input.Channel
+	if channel == "" {
+		channel = "telegram"
+	}
 	appendTurn := func(turn Turn) {
 		if err := archiver.Append(ctx, turn); err != nil {
 			logger.Error("archive: append failed",
@@ -44,6 +49,7 @@ func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 	}
 
 	appendTurn(Turn{
+		Channel:   channel,
 		ChatID:    input.ChatID,
 		UserID:    input.UserID,
 		TurnIndex: nextIdx,
@@ -54,6 +60,7 @@ func ArchiveConversationTurns(ctx context.Context, logger *slog.Logger, archiver
 
 	for i, msg := range input.LoopMessages {
 		turn := Turn{
+			Channel:    channel,
 			ChatID:     input.ChatID,
 			UserID:     input.UserID,
 			TurnIndex:  nextIdx,

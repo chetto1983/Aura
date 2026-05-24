@@ -64,6 +64,7 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_due
 
 CREATE TABLE IF NOT EXISTS conversations (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  channel           TEXT NOT NULL DEFAULT 'telegram',
   chat_id           INTEGER NOT NULL,
   user_id           INTEGER NOT NULL,
   turn_index        INTEGER NOT NULL,
@@ -485,6 +486,9 @@ func createCurrentSchema(ctx context.Context, tx *sql.Tx) error {
 	if _, err := tx.ExecContext(ctx, currentSchemaSQL); err != nil {
 		return fmt.Errorf("migrations: create current schema: %w", err)
 	}
+	if err := ensureConversationChannelColumn(ctx, tx); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -501,6 +505,20 @@ func dropLegacyConversationsWithoutChatID(ctx context.Context, tx *sql.Tx) error
 	}
 	if _, err := tx.ExecContext(ctx, `DROP TABLE conversations`); err != nil {
 		return fmt.Errorf("migrations: drop retired conversations table: %w", err)
+	}
+	return nil
+}
+
+func ensureConversationChannelColumn(ctx context.Context, tx *sql.Tx) error {
+	cols, err := txTableColumns(ctx, tx, "conversations")
+	if err != nil {
+		return err
+	}
+	if _, ok := cols["channel"]; ok {
+		return nil
+	}
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE conversations ADD COLUMN channel TEXT NOT NULL DEFAULT 'telegram'`); err != nil {
+		return fmt.Errorf("migrations: add conversations.channel: %w", err)
 	}
 	return nil
 }

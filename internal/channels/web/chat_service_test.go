@@ -46,7 +46,7 @@ func TestChatService_HappyPath(t *testing.T) {
 		runID:  "run-happy",
 		events: []chat.OutboundEvent{
 			{Type: chat.EventMessageDone, Content: "result"},
-			{Type: chat.EventUsage, Payload: map[string]any{"llm_calls": 1, "tool_calls": 0, "tokens_total": 42}},
+			{Type: chat.EventUsage, Payload: map[string]any{"llm_calls": 1, "tool_calls": 0, "tokens_total": 42, "budget_warning": "soft budget hit"}},
 			{Type: chat.EventDone, Payload: map[string]any{"status": "completed"}},
 		},
 	}
@@ -66,6 +66,9 @@ func TestChatService_HappyPath(t *testing.T) {
 	}
 	if reply.Tokens != 42 {
 		t.Fatalf("Tokens = %d", reply.Tokens)
+	}
+	if reply.BudgetWarning != "soft budget hit" {
+		t.Fatalf("BudgetWarning = %q", reply.BudgetWarning)
 	}
 	if hub.lastMsg.ThreadID != "web:user-1:default" {
 		t.Fatalf("ThreadID = %q, want web:user-1:default", hub.lastMsg.ThreadID)

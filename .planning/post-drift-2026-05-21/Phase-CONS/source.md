@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-06. CONS-02..05 are committed; next add web parity for soft-budget, context compaction behavior, and archive rows.
+**Current slice:** US-CONS-07. CONS-02..06 are committed; next add web streaming with the Vercel AI SDK data-stream protocol.
 
 ## Objective
 
@@ -106,6 +106,14 @@ Checked 2026-05-24:
 - Delete `newHubBackedWebChatService`; web chat now receives an injected `*chat.Hub` and `webadapter.Router`.
 - Add `internal/channels/web/inbound.go` so `/api/chat` goes through `Hub.Receive(ChannelWeb, raw)` and the same inbound-adapter normalization path as Telegram.
 - Keep cron Hub creation unchanged in `app_wire.go` because it has a distinct lifecycle and silent outbound policy.
+
+## Adopted For US-CONS-06
+
+- Add `budget_warning` to the buffered web/API reply path and carry it through `chat.EventUsage` so clients do not need log parsing.
+- Wire web turns to the same budget runtime used by Telegram: hard-budget preflight, usage recording, and cost estimation.
+- Add `conversations.channel` with default `telegram` plus an idempotent migration so web archive rows can be asserted directly as `channel='web'`.
+- Archive web turns through `conversation.ArchiveConversationTurns` using deterministic web archive IDs for `chat_id` and `user_id`.
+- Keep web's existing post-turn tool-result compaction and context enforcement, and protect it with existing US-CONS-02 regression tests.
 
 ## Rejected For US-CONS-02
 

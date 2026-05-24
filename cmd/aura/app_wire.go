@@ -388,7 +388,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if err != nil {
 		logger.Warn("skill proposal applier unavailable", "error", err)
 	}
-	sharedHub, err := newSharedChatHub(cfg, &a.deps, b, logger)
+	sharedHub, err := newSharedChatHub(cfg, &a.deps, b, logger, archiveDB, a.archiver)
 	if err != nil {
 		return fmt.Errorf("wire shared chat hub: %w", err)
 	}

@@ -197,20 +197,26 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 	}
 	if statsCaptured {
 		stats := lastStats.Stats
+		payload := map[string]any{
+			"llm_calls":         stats.LLMCalls,
+			"tool_calls":        stats.ToolCalls,
+			"loop_steps":        stats.LoopSteps,
+			"tokens_prompt":     stats.TokensPrompt,
+			"tokens_completion": stats.TokensCompletion,
+			"tokens_total":      stats.TokensTotal,
+			"cache_read_tokens": stats.CacheReadTokens,
+			"cost_usd":          stats.CostUSD,
+			"terminal_tool":     stats.TerminalTool,
+			"stop_reason":       stats.StopReason,
+		}
+		if run != nil && run.Metadata != nil {
+			if warning, _ := run.Metadata["budget_warning"].(string); warning != "" {
+				payload["budget_warning"] = warning
+			}
+		}
 		_ = emit(OutboundEvent{
-			Type: EventUsage,
-			Payload: map[string]any{
-				"llm_calls":          stats.LLMCalls,
-				"tool_calls":         stats.ToolCalls,
-				"loop_steps":         stats.LoopSteps,
-				"tokens_prompt":      stats.TokensPrompt,
-				"tokens_completion":  stats.TokensCompletion,
-				"tokens_total":       stats.TokensTotal,
-				"cache_read_tokens":  stats.CacheReadTokens,
-				"cost_usd":           stats.CostUSD,
-				"terminal_tool":      stats.TerminalTool,
-				"stop_reason":        stats.StopReason,
-			},
+			Type:    EventUsage,
+			Payload: payload,
 		})
 		if run != nil {
 			if run.Metadata == nil {

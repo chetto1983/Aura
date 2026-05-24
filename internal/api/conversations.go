@@ -121,22 +121,27 @@ func handleConversationCompactions(deps Deps) http.HandlerFunc {
 }
 
 func turnToDTO(t conversation.Turn) ConversationTurn {
-	return ConversationTurn{
-		ID:             t.ID,
-		ChatID:         t.ChatID,
-		UserID:         t.UserID,
-		TurnIndex:      t.TurnIndex,
-		Role:           t.Role,
-		Content:        t.Content,
-		ToolCalls:      t.ToolCalls,
-		ToolCallID:     t.ToolCallID,
-		LLMCalls:       t.LLMCalls,
-		ToolCallsCount: t.ToolCallsCount,
-		ElapsedMS:      t.ElapsedMS,
-		TokensIn:       t.TokensIn,
-		TokensOut:      t.TokensOut,
-		CreatedAt:      t.CreatedAt.UTC().Format(time.RFC3339),
+	channel := t.Channel
+	if channel == "" {
+		channel = "telegram"
 	}
+	dto := ConversationTurn{}
+	dto.ID = t.ID
+	dto.Channel = channel
+	dto.ChatID = t.ChatID
+	dto.UserID = t.UserID
+	dto.TurnIndex = t.TurnIndex
+	dto.Role = t.Role
+	dto.Content = t.Content
+	dto.ToolCalls = t.ToolCalls
+	dto.ToolCallID = t.ToolCallID
+	dto.LLMCalls = t.LLMCalls
+	dto.ToolCallsCount = t.ToolCallsCount
+	dto.ElapsedMS = t.ElapsedMS
+	dto.TokensIn = t.TokensIn
+	dto.TokensOut = t.TokensOut
+	dto.CreatedAt = t.CreatedAt.UTC().Format(time.RFC3339)
+	return dto
 }
 
 func compactionToDTO(conversationID int64, event conversation.CompactionEvent) ConversationCompaction {
