@@ -2,12 +2,9 @@ package api
 
 import (
 	"net/http"
-	"regexp"
-)
 
-// skillNameRe mirrors the loader's allowed character set so a malicious
-// name in the URL can't escape the skills directory.
-var skillNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	"github.com/aura/aura/internal/skills"
+)
 
 // maxSkillBodyChars caps the body returned by GET /skills/{name} so a
 // runaway SKILL.md can't blow out the dashboard's fetch buffer. Matches
@@ -41,7 +38,7 @@ func handleSkillGet(deps Deps) http.HandlerFunc {
 			return
 		}
 		name := r.PathValue("name")
-		if !skillNameRe.MatchString(name) {
+		if !skills.ValidSkillName(name) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid skill name")
 			return
 		}

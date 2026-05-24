@@ -46,7 +46,7 @@
         "Single atomic commit prefix: feat(tools): skill(action=list|catalog|install|info|remove) action-enum (US-DOCSKL-02)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/skills/{catalog,admin,loader}.go IN FULL to see the in-process API shape. (2) Read internal/api/skills_write.go to see how /api/skills/install validates the request — replicate (don't re-implement) the validation in the tool. (3) Read internal/agent/tools/registry/task.go for the canonical action-enum tool pattern (action + per-action args + dispatch + denial). EVIDENCE from 2026-05-24 19:42 DB row: user 'Puoi installare skills?' → Aura 'non ho un comando specifico chiamato install_skill', then phantom-guard fired when Aura tried to fake-invoke. After this story ships, that exact prompt MUST trigger skill(action=list) or skill(action=catalog) — verify in live test 2. ADMIN GATE VISIBILITY: per feedback_no_regex_for_nlp, the denial schema MUST be structured JSON the LLM can reliably parse — NOT a free-text 'sorry, permission denied'. Schema: {error:'capability_denied', capability:'<cap>', hint:'<actionable>', schema:'denial'}. The LLM then communicates the gate to the user honestly (not pretends to succeed). NO scope creep: do NOT add skill creation/edit (those are file-tool territory if you want to author a skill manually). do NOT modify SKILLS_ADMIN gate semantics (existing behavior preserved). JUST surface the existing HTTP handlers as a tool with a clean denial schema."
     }
   ]

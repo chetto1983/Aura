@@ -1,7 +1,7 @@
 # Phase-DOCSKL Benchmark Contract
 
 **Role:** benchmark
-**Status:** US-DOCSKL-01 passed 2026-05-24, US-DOCSKL-02 pending
+**Status:** US-DOCSKL-01 and US-DOCSKL-02 passed 2026-05-24
 **Rule:** Smoke checks are prechecks only. DOCSKL stories pass only when tests
 and probes assert source-store bytes, API JSON, logs, or parsed artifacts.
 
@@ -102,7 +102,8 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** catalog parse/search, local skill loading, install validation, delete validation, and loader cache invalidation still pass before tool wiring.
 - **Pass threshold:** all selected tests pass.
 - **PRD gate:** preserve the existing skill lifecycle backend.
-- **Result:** pending for US-DOCSKL-02.
+- **Result:** PASS 2026-05-24. `go test ./internal/skills ./internal/api -run "Test(Catalog|Loader|SkillInstall|SkillDelete|Skill)" -count=1`
+  passed before tool wiring and after shared validation refactor.
 
 ### B-DOCSKL-02-B: Skill Tool Unit Coverage
 
@@ -112,7 +113,8 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** read actions return compact structured data; write actions with no admin capability return `{schema:"denial", error:"capability_denied"}`; admin write actions call existing install/remove dependencies and invalidate loader cache.
 - **Pass threshold:** exact schema assertions pass and the race run is green.
 - **PRD gate:** LLM can honestly surface skill capability state without phantom tool claims.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. `go test ./internal/agent/tools/registry ./internal/skills -count=1 -race`
+  passed with `CC=D:\tmp\w64devkit\bin\x86_64-w64-mingw32-gcc-16.1.0.exe`.
 
 ### B-DOCSKL-02-C: Skill Live Probe And Admin Denial
 
@@ -127,7 +129,17 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** first two replies use `tools_used=["skill"]`; catalog mentions at least three entries matching API ground truth; install without admin produces visible denial, not success text; logs show zero phantom-guard warnings for the three turns.
 - **Pass threshold:** exact tool usage, API comparison, and denial assertions pass.
 - **PRD gate:** skill lifecycle is LLM-callable with honest capability gating.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. `docker compose build aura` and
+  `docker compose up -d aura` passed. Live `/api/chat` probes for
+  `Lista le skill installate`, `Mostrami il catalogo skills disponibili`, and
+  `Installa la skill frontend-design da anthropics/skills` each produced
+  exactly `tools_used=["skill"]`. Runtime settings reported
+  `SKILLS_ADMIN=true`, so the live install probe validated the admin-success
+  branch: `GET /api/skills` returned `frontend-design` after install. Catalog
+  ground truth from `GET /api/skills/catalog?limit=5` returned 5 entries; first
+  three were `find-skills`, `frontend-design`,
+  `vercel-react-best-practices`. Container logs for the probe window had
+  `phantom_tool` matches = 0.
 
 ### B-DOCSKL-02-D: Dedicated Slice QA
 
@@ -137,7 +149,15 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** tool does not loop back through HTTP, does not bypass admin gates, does not expose raw full skill bodies by default, and does not mutate local skills on denied writes.
 - **Pass threshold:** PASS verdict only if tests and negative checks pass.
 - **PRD gate:** dedicated QA before the atomic local commit.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. Diff review confirmed the tool calls
+  `internal/skills` loader/catalog/install/delete directly, shares validation
+  with the dashboard API through `internal/skills/validation.go`, does not use
+  HTTP loopback, caps `info` content at 16000 chars, and returns structured
+  `{schema:"denial", error:"capability_denied"}` for non-admin or missing
+  capability write attempts. Unit tests cover list, catalog, info, install
+  denied by disabled admin, install denied by missing capability, install
+  success, remove denied, remove success, invalid inputs, nil deps, and
+  description length.
 
 ## Residue Gate
 
@@ -146,4 +166,6 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Artifact:** status output.
 - **Ground truth:** only intentional files are staged/committed; no generated probe artifacts remain in the repo; `D:/tmp` probe scripts/screenshots are outside git.
 - **Pass threshold:** clean or only explicitly named unrelated user files.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. `git status --short --untracked-files=all`
+  showed only the intended DOCSKL-02 source, test, wiring, allowlist, and phase
+  state files before staging.

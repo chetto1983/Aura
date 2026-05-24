@@ -387,6 +387,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if err != nil {
 		logger.Warn("skills deleter unavailable", "error", err)
 	}
+	if tool := tools.NewSkillTool(a.deps.Skills, a.deps.SkillsCatalog, skillsInstaller, skillsDeleter, cfg.SkillsAdmin); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
 	skillProposalApplier, err := auraskills.NewFSProposalApplier(skillRoots[0])
 	if err != nil {
 		logger.Warn("skill proposal applier unavailable", "error", err)

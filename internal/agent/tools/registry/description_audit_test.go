@@ -22,6 +22,7 @@ func auditTools() []Tool {
 		&SourceTool{},
 		&FileTool{},
 		&CreateDocumentTool{},
+		&SkillTool{},
 		&ExecuteCodeTool{},
 		&ExecuteShellTool{},
 		&ProposePatchTool{},

@@ -1,12 +1,13 @@
-﻿package api
+package api
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
+
+	"github.com/aura/aura/internal/skills"
 )
 
 // SkillInstaller is the boundary the API uses to add a skill from the
@@ -26,16 +27,6 @@ type SkillDeleter interface {
 // ErrSkillNotFound is returned by SkillDeleter when the named skill
 // does not exist on disk.
 var ErrSkillNotFound = errors.New("skill not found")
-
-// catalogSourceRE constrains accepted Source values for the install
-// endpoint. The catalog returns either a github shorthand
-// (`user/repo`), a github URL, or an npm package. We accept the same
-// safe character set those forms use and never invoke a shell, so the
-// risk surface is the npx subprocess itself, not interpolation.
-var catalogSourceRE = regexp.MustCompile(`^[A-Za-z0-9@:._/\-]{1,200}$`)
-
-// catalogSkillIDRE matches the skills.sh skillId format.
-var catalogSkillIDRE = regexp.MustCompile(`^[A-Za-z0-9._\-]{1,64}$`)
 
 // installSkillRequest is the body of POST /skills/install.
 type installSkillRequest struct {
@@ -64,11 +55,11 @@ func handleSkillInstall(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusBadRequest, "source is required")
 			return
 		}
-		if !catalogSourceRE.MatchString(req.Source) || strings.Contains(req.Source, "..") {
+		if !skills.ValidCatalogSource(req.Source) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid source")
 			return
 		}
-		if req.SkillID != "" && !catalogSkillIDRE.MatchString(req.SkillID) {
+		if !skills.ValidCatalogSkillID(req.SkillID) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid skill_id")
 			return
 		}
@@ -114,7 +105,7 @@ func handleSkillDelete(deps Deps) http.HandlerFunc {
 			return
 		}
 		name := r.PathValue("name")
-		if !skillNameRe.MatchString(name) {
+		if !skills.ValidSkillName(name) {
 			writeError(w, deps.Logger, http.StatusBadRequest, "invalid skill name")
 			return
 		}
