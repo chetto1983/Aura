@@ -6,11 +6,14 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/aura/aura/internal/agent"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/identity"
@@ -37,6 +40,48 @@ func (fakeWebChatLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, er
 	ch := make(chan llm.Token)
 	close(ch)
 	return ch, nil
+}
+
+type recordingWebChatLLM struct {
+	mu        sync.Mutex
+	requests  []llm.Request
+	responses []llm.Response
+}
+
+func (f *recordingWebChatLLM) Send(_ context.Context, req llm.Request) (llm.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.requests = append(f.requests, cloneLLMRequest(req))
+	idx := len(f.requests) - 1
+	if idx < len(f.responses) {
+		return f.responses[idx], nil
+	}
+	return llm.Response{
+		Content: "recording fallback",
+		Usage:   llm.TokenUsage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2},
+	}, nil
+}
+
+func (f *recordingWebChatLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, error) {
+	ch := make(chan llm.Token)
+	close(ch)
+	return ch, nil
+}
+
+func (f *recordingWebChatLLM) Requests() []llm.Request {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]llm.Request, len(f.requests))
+	for i, req := range f.requests {
+		out[i] = cloneLLMRequest(req)
+	}
+	return out
+}
+
+func cloneLLMRequest(req llm.Request) llm.Request {
+	req.Messages = llm.CloneMessages(req.Messages)
+	req.Tools = append([]llm.ToolDefinition(nil), req.Tools...)
+	return req
 }
 
 type fakeToolCallingLLM struct {
@@ -220,6 +265,138 @@ WHERE r.channel = 'web' AND ta.tool_name = 'text_response' AND ta.outcome = 'ok'
 `, 1)
 }
 
+func TestHubBackedWebChatUsesSessionStoreContext(t *testing.T) {
+	llmClient := &recordingWebChatLLM{responses: []llm.Response{
+		{Content: "answer from first turn", Usage: llm.TokenUsage{TotalTokens: 10}},
+		{Content: "answer from second turn", Usage: llm.TokenUsage{TotalTokens: 20}},
+		{Content: "answer from third turn", Usage: llm.TokenUsage{TotalTokens: 30}},
+	}}
+	adapter, _ := newTestWebChatAdapter(t, llmClient, nil)
+	ctx := identity.WithActorID(context.Background(), identity.TelegramSessionActorID("alice"))
+
+	for _, message := range []string{"first web turn", "second web turn", "third web turn"} {
+		if _, err := adapter.Chat(ctx, "alice", "default", message); err != nil {
+			t.Fatalf("Chat(%q): %v", message, err)
+		}
+	}
+
+	reqs := llmClient.Requests()
+	if len(reqs) != 3 {
+		t.Fatalf("requests = %d, want 3", len(reqs))
+	}
+	thirdPrompt := reqs[2].Messages
+	for _, want := range []string{
+		"first web turn",
+		"answer from first turn",
+		"second web turn",
+		"answer from second turn",
+		"third web turn",
+	} {
+		if !containsMessageContent(thirdPrompt, want) {
+			t.Fatalf("third prompt missing %q\nmessages=%+v", want, thirdPrompt)
+		}
+	}
+	convCtx, ok := adapter.sessionStore.Load("web:alice:default")
+	if !ok {
+		t.Fatal("session store missing web:alice:default")
+	}
+	if got := convCtx.TotalTokensUsed(); got != 60 {
+		t.Fatalf("TotalTokensUsed = %d, want 60", got)
+	}
+	if adapter.sessionStore.IsActive("web:alice:default") {
+		t.Fatal("web session active marker was not cleared after final event")
+	}
+}
+
+func TestHubBackedWebChatSessionStoreScopesThreads(t *testing.T) {
+	llmClient := &recordingWebChatLLM{responses: []llm.Response{
+		{Content: "answer from thread a"},
+		{Content: "answer from thread b"},
+		{Content: "follow-up from thread a"},
+	}}
+	adapter, _ := newTestWebChatAdapter(t, llmClient, nil)
+	ctx := identity.WithActorID(context.Background(), identity.TelegramSessionActorID("alice"))
+
+	if _, err := adapter.Chat(ctx, "alice", "thread-a", "hello a"); err != nil {
+		t.Fatalf("Chat thread-a: %v", err)
+	}
+	if _, err := adapter.Chat(ctx, "alice", "thread-b", "hello b"); err != nil {
+		t.Fatalf("Chat thread-b: %v", err)
+	}
+	if _, err := adapter.Chat(ctx, "alice", "thread-a", "next a"); err != nil {
+		t.Fatalf("Chat thread-a follow-up: %v", err)
+	}
+
+	reqs := llmClient.Requests()
+	if len(reqs) != 3 {
+		t.Fatalf("requests = %d, want 3", len(reqs))
+	}
+	threadAFollowUp := reqs[2].Messages
+	if !containsMessageContent(threadAFollowUp, "answer from thread a") {
+		t.Fatal("thread-a follow-up did not retain thread-a history")
+	}
+	if containsMessageContent(threadAFollowUp, "answer from thread b") {
+		t.Fatal("thread-a follow-up inherited thread-b history")
+	}
+	if _, ok := adapter.sessionStore.Load("web:alice:thread-a"); !ok {
+		t.Fatal("session store missing thread-a context")
+	}
+	if _, ok := adapter.sessionStore.Load("web:alice:thread-b"); !ok {
+		t.Fatal("session store missing thread-b context")
+	}
+}
+
+func TestHubBackedWebChatCompactsToolResultsBeforeNextTurn(t *testing.T) {
+	llmClient := &recordingWebChatLLM{responses: []llm.Response{
+		{
+			HasToolCalls: true,
+			ToolCalls: []llm.ToolCall{
+				{ID: "call-large-1", Name: "large_context_probe"},
+				{ID: "call-large-2", Name: "large_context_probe"},
+				{ID: "call-large-3", Name: "large_context_probe"},
+			},
+		},
+		{Content: "tool turn complete"},
+		{Content: "next turn complete"},
+	}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := toolregistry.NewRegistry(logger)
+	registry.Register(largeContextProbeTool{})
+	adapter, _ := newTestWebChatAdapter(t, llmClient, registry)
+	ctx := identity.WithActorID(
+		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
+		identity.TelegramSessionActorID("alice"),
+	)
+
+	if _, err := adapter.Chat(ctx, "alice", "default", "call the large probe"); err != nil {
+		t.Fatalf("first Chat: %v", err)
+	}
+	if _, err := adapter.Chat(ctx, "alice", "default", "continue after compaction"); err != nil {
+		t.Fatalf("second Chat: %v", err)
+	}
+
+	reqs := llmClient.Requests()
+	if len(reqs) != 3 {
+		t.Fatalf("requests = %d, want 3", len(reqs))
+	}
+	toolMessages := filterToolMessages(reqs[2].Messages)
+	if len(toolMessages) != 3 {
+		t.Fatalf("tool messages = %d, want 3\nmessages=%+v", len(toolMessages), reqs[2].Messages)
+	}
+	var compacted int
+	for _, msg := range toolMessages {
+		if strings.Contains(msg.Content, "[tool result compacted]") {
+			compacted++
+			if len(msg.Content) > 1200 {
+				t.Fatalf("compacted tool result length = %d, want <=1200", len(msg.Content))
+			}
+		}
+	}
+	if compacted != 1 {
+		t.Fatalf("compacted tool results = %d, want 1", compacted)
+	}
+}
+
 type webChatAllowAuthorizer struct{}
 
 func (webChatAllowAuthorizer) Authorize(_ context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
@@ -250,12 +427,23 @@ func (t *webChatContextProbeTool) Execute(ctx context.Context, _ map[string]any)
 	return "ok", nil
 }
 
+type largeContextProbeTool struct{}
+
+func (largeContextProbeTool) Name() string { return "large_context_probe" }
+func (largeContextProbeTool) Description() string {
+	return "returns a large deterministic payload"
+}
+func (largeContextProbeTool) Parameters() map[string]any { return map[string]any{} }
+func (largeContextProbeTool) Execute(context.Context, map[string]any) (string, error) {
+	return strings.Repeat("large-result-payload ", 220), nil
+}
+
 func TestWebToolExecutorCarriesVisibleToolContext(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := toolregistry.NewRegistry(logger)
 	probe := &webChatContextProbeTool{}
 	registry.Register(probe)
-	state := &webAgentState{}
+	state := conversation.NewContext(conversation.Config{})
 	exec := &webToolExecutor{
 		tools:     registry,
 		state:     state,
@@ -316,30 +504,6 @@ func TestExtractLastTextResponseArgIgnoresWrongShapes(t *testing.T) {
 	}
 	if got := extractLastTextResponseArg(msgs); got != "" {
 		t.Fatalf("extractLastTextResponseArg() = %q, want empty", got)
-	}
-}
-
-func TestWebChatSessionsAreScopedByThread(t *testing.T) {
-	sessions := newWebChatSessions()
-
-	threadA := sessions.begin("run-a", "alice", "thread-a", "system a", "hello a")
-	threadA.AddAssistantMessage("answer from thread a")
-	sessions.commit("run-a", "alice", "thread-a")
-
-	threadB := sessions.begin("run-b", "alice", "thread-b", "system b", "hello b")
-	if containsMessageContent(threadB.Messages(), "answer from thread a") {
-		t.Fatal("thread-b inherited thread-a history")
-	}
-	threadB.AddAssistantMessage("answer from thread b")
-	sessions.commit("run-b", "alice", "thread-b")
-
-	threadAAgain := sessions.begin("run-c", "alice", "thread-a", "system a2", "next a")
-	msgs := threadAAgain.Messages()
-	if !containsMessageContent(msgs, "answer from thread a") {
-		t.Fatal("thread-a did not retain its own history")
-	}
-	if containsMessageContent(msgs, "answer from thread b") {
-		t.Fatal("thread-a inherited thread-b history")
 	}
 }
 
@@ -407,6 +571,47 @@ func TestSwarmRunnerAdapterPassesContextRunID(t *testing.T) {
 	}
 }
 
+func newTestWebChatAdapter(t *testing.T, llmClient llm.Client, registry *toolregistry.Registry) (*apiChatServiceAdapter, *sql.DB) {
+	t.Helper()
+	db := testutil.OpenTestDB(t, nil)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	runStore, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if registry == nil {
+		registry = toolregistry.NewRegistry(logger)
+	}
+	svc, err := newHubBackedWebChatService(
+		&config.Config{
+			LLMModel:             "fake-web-chat",
+			AuraBotMaxIterations: 4,
+			MaxHistoryMessages:   50,
+			MaxContextTokens:     16000,
+			TerminalToolPolicy:   "on",
+		},
+		&telegram.Deps{
+			LLM:      llmClient,
+			Pool:     db,
+			RunStore: runStore,
+			Tools:    registry,
+			Logger:   logger,
+		},
+		logger,
+	)
+	if err != nil {
+		t.Fatalf("newHubBackedWebChatService: %v", err)
+	}
+	adapter, ok := svc.(*apiChatServiceAdapter)
+	if !ok {
+		t.Fatalf("service type = %T, want *apiChatServiceAdapter", svc)
+	}
+	return adapter, db
+}
+
 func assertWebChatScalar(t *testing.T, db *sql.DB, query string, want int, args ...any) {
 	t.Helper()
 	var got int
@@ -425,4 +630,14 @@ func containsMessageContent(messages []llm.Message, want string) bool {
 		}
 	}
 	return false
+}
+
+func filterToolMessages(messages []llm.Message) []llm.Message {
+	var out []llm.Message
+	for _, msg := range messages {
+		if msg.Role == "tool" {
+			out = append(out, msg)
+		}
+	}
+	return out
 }

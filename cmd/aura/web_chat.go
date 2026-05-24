@@ -24,24 +24,19 @@ import (
 	"github.com/aura/aura/internal/telegram"
 )
 
-const (
-	webChatMaxMessages = 30
-	webChatIdleTTL     = 30 * time.Minute
-)
-
 func newHubBackedWebChatService(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (api.ChatService, error) {
 	depsGetter := newWebChatDepsGetter(cfg, deps)
 	if depsGetter == nil {
 		return nil, nil
 	}
-	sessions := newWebChatSessions()
+	sessionStore := agent.NewSessionStore()
 	postTurnReader := webPostTurnFailureReader(deps.AttemptsRepo)
 	if postTurnReader == nil && deps.Pool != nil {
 		postTurnReader = attempts.NewSQLiteRepo(deps.Pool)
 	}
 	builder := &webInvocationBuilder{
 		depsGetter:     depsGetter,
-		sessions:       sessions,
+		sessionStore:   sessionStore,
 		cfg:            cfg,
 		logger:         logger,
 		postTurnStore:  deps.MemoryStore,
@@ -66,21 +61,16 @@ func newHubBackedWebChatService(cfg *config.Config, deps *telegram.Deps, logger 
 	if svc == nil {
 		return nil, errors.New("web chat hub service unavailable")
 	}
-	return &apiChatServiceAdapter{svc: svc, sessions: sessions}, nil
+	return &apiChatServiceAdapter{svc: svc, sessionStore: sessionStore}, nil
 }
 
 type apiChatServiceAdapter struct {
-	svc      *webadapter.ChatService
-	sessions *webChatSessions
+	svc          *webadapter.ChatService
+	sessionStore *agent.SessionStore
 }
 
 func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, message string) (api.ChatReply, error) {
 	reply, err := a.svc.Chat(ctx, userID, threadID, message)
-	if err != nil {
-		a.sessions.rollback(reply.RunID)
-	} else {
-		a.sessions.commit(reply.RunID, userID, threadID)
-	}
 	return api.ChatReply{
 		Reply:     reply.Reply,
 		ElapsedMs: reply.ElapsedMs,
@@ -94,7 +84,7 @@ func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, mess
 
 type webInvocationBuilder struct {
 	depsGetter     func() agent.RunTaskDeps
-	sessions       *webChatSessions
+	sessionStore   *agent.SessionStore
 	cfg            *config.Config
 	logger         *slog.Logger
 	postTurnStore  *memoryindex.Store
@@ -114,7 +104,22 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		return agent.Invocation{}, errors.New("web chat: LLM unavailable")
 	}
 	userID := strings.TrimSpace(msg.PrincipalID)
-	turnIdx := b.sessions.messageCount(userID, msg.ThreadID)
+	logger := deps.Logger
+	if logger == nil {
+		logger = b.logger
+	}
+	if logger == nil {
+		logger = slog.Default()
+	}
+	sessionKey := webSessionKey(userID, msg.ThreadID)
+	session, _ := b.sessionStore.Begin(sessionKey, conversation.Config{
+		MaxTokens:   b.cfg.MaxContextTokens,
+		MaxMessages: b.cfg.MaxHistoryMessages,
+		Summarizer:  deps.LLM,
+		Logger:      logger,
+	})
+	convCtx := session.Conversation()
+	turnIdx := convCtx.MessageCount()
 
 	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
 	if b.postTurnStore != nil {
@@ -147,11 +152,12 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	}
 	promptPlan := agent.ComposeAgentPrompt(b.cfg, loc, overlay, pinned, skillsBlock, toolManifest, wikiTOC, time.Now())
 	system := promptPlan.Content
+	convCtx.SetSystemMessage(system)
+	convCtx.AddUserMessage(msg.Text)
 	runID := ""
 	if run != nil {
 		runID = run.ID
 	}
-	state := b.sessions.begin(runID, userID, msg.ThreadID, system, msg.Text)
 	allowlist := cleanWebToolList(nil)
 	var toolDefs []llm.ToolDefinition
 	if deps.Tools != nil {
@@ -161,13 +167,6 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	toolTimeout := deps.ToolTimeout
 	if toolTimeout <= 0 {
 		toolTimeout = deps.Timeout
-	}
-	logger := deps.Logger
-	if logger == nil {
-		logger = b.logger
-	}
-	if logger == nil {
-		logger = slog.Default()
 	}
 	// US-CTX-04/05: wire AutoCompactEngine when enabled and MaxConversationTokens is set.
 	var ctxEngine conversation.ContextEngine
@@ -191,7 +190,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort, msg.ThreadID),
 		Executor: &webToolExecutor{
 			tools:                 deps.Tools,
-			state:                 state,
+			state:                 convCtx,
 			logger:                logger,
 			allowlist:             allowlist,
 			userID:                userID,
@@ -207,7 +206,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 				b.invalidatePinnedOperational(msg.ThreadID)
 			},
 		},
-		State:    state,
+		State:    convCtx,
 		Tools:    toolDefs,
 		PostTurn: b.postTurnConfig(runID, msg, logger, deps),
 		Options: agent.Options{
@@ -231,16 +230,32 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 				if terminalTool != "text_response" {
 					return "", false, false
 				}
-				text := extractLastTextResponseArg(state.Messages())
+				text := extractLastTextResponseArg(convCtx.Messages())
 				if text == "" {
 					return "", false, false
 				}
-				state.AddAssistantMessage(text)
+				convCtx.AddAssistantMessage(text)
 				return text, false, true
 			},
 			Logger: logger,
 		},
 		Logger: logger,
+		OnEvent: func(event agent.Event) {
+			if event.Type != agent.EventFinal {
+				return
+			}
+			compacted := convCtx.CompactCompletedToolResults(conversation.ToolResultCompactionPolicy{
+				MaxChars:       1200,
+				KeepRecentFull: 2,
+			})
+			if compacted > 0 {
+				logger.Info("web chat tool results compacted", "session_key", sessionKey, "count", compacted)
+			}
+			if err := convCtx.EnforceLimit(context.Background()); err != nil {
+				logger.Error("web chat context enforcement failed", "session_key", sessionKey, "error", err)
+			}
+			session.Finish()
+		},
 	}
 	if deps.Tools != nil {
 		inv.ToolsProvider = func() []llm.ToolDefinition {
@@ -298,6 +313,21 @@ func (b *webInvocationBuilder) postTurnConfig(runID string, msg chat.InboundMess
 	return cfg
 }
 
+func webSessionKey(userID, threadID string) string {
+	threadID = strings.TrimSpace(threadID)
+	if strings.HasPrefix(threadID, "web:") {
+		return threadID
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		userID = "anonymous"
+	}
+	if threadID == "" {
+		threadID = "default"
+	}
+	return "web:" + userID + ":" + threadID
+}
+
 func (b *webInvocationBuilder) maxToolResultChars() int {
 	if b == nil || b.cfg == nil {
 		return 0
@@ -326,134 +356,10 @@ func (b *webInvocationBuilder) terminalToolPolicyEnabled() bool {
 	return config.NormalizeTerminalToolPolicy(b.cfg.TerminalToolPolicy) != "off"
 }
 
-type webChatSessions struct {
-	mu       sync.Mutex
-	sessions map[string][]llm.Message
-	active   map[string]*webAgentState
-	updated  map[string]time.Time
-}
-
-func newWebChatSessions() *webChatSessions {
-	return &webChatSessions{
-		sessions: make(map[string][]llm.Message),
-		active:   make(map[string]*webAgentState),
-		updated:  make(map[string]time.Time),
-	}
-}
-
-func (s *webChatSessions) begin(runID, userID, threadID, system, message string) *webAgentState {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.gcLocked()
-	key := webChatSessionKey(userID, threadID)
-	messages := llm.CloneMessages(s.sessions[key])
-	messages = setSystemMessage(messages, system)
-	messages = append(messages, llm.Message{Role: "user", Content: message})
-	state := &webAgentState{messages: messages}
-	if runID != "" {
-		s.active[runID] = state
-	}
-	return state
-}
-
-func (s *webChatSessions) messageCount(userID, threadID string) int {
-	if s == nil {
-		return 0
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return len(s.sessions[webChatSessionKey(userID, threadID)])
-}
-
-func (s *webChatSessions) commit(runID, userID, threadID string) {
-	if runID == "" {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	state, ok := s.active[runID]
-	if !ok {
-		return
-	}
-	delete(s.active, runID)
-	key := webChatSessionKey(userID, threadID)
-	s.sessions[key] = trimWebMessages(state.Messages())
-	s.updated[key] = time.Now()
-}
-
-func (s *webChatSessions) rollback(runID string) {
-	if runID == "" {
-		return
-	}
-	s.mu.Lock()
-	delete(s.active, runID)
-	s.mu.Unlock()
-}
-
-func (s *webChatSessions) gcLocked() {
-	cutoff := time.Now().Add(-webChatIdleTTL)
-	for userID, updated := range s.updated {
-		if updated.Before(cutoff) {
-			delete(s.sessions, userID)
-			delete(s.updated, userID)
-		}
-	}
-}
-
-func webChatSessionKey(userID, threadID string) string {
-	userID = strings.TrimSpace(userID)
-	threadID = strings.TrimSpace(threadID)
-	if threadID == "" {
-		threadID = "default"
-	}
-	return userID + "\x00" + threadID
-}
-
-type webAgentState struct {
-	messages []llm.Message
-}
-
-var _ agent.State = (*webAgentState)(nil)
-var _ agent.PhantomCorrector = (*webAgentState)(nil)
-
-func (s *webAgentState) Messages() []llm.Message {
-	return llm.CloneMessages(s.messages)
-}
-
-func (s *webAgentState) TrackTokens(llm.TokenUsage) {}
-
-func (s *webAgentState) AddUserMessage(content string) {
-	s.messages = append(s.messages, llm.Message{Role: "user", Content: content})
-}
-
-func (s *webAgentState) AddAssistantMessage(content string) {
-	s.messages = append(s.messages, llm.Message{Role: "assistant", Content: content})
-}
-
-func (s *webAgentState) AddAssistantToolCallMessage(content string, calls []llm.ToolCall) {
-	s.messages = append(s.messages, llm.Message{Role: "assistant", Content: content, ToolCalls: calls})
-}
-
-func (s *webAgentState) AddToolResultMessage(id, content string) {
-	s.messages = append(s.messages, llm.Message{Role: "tool", Content: content, ToolCallID: id})
-}
-
 // webToolExecutor and its helpers live in web_chat_executor.go — they were
 // hoisted out 2026-05-24 to keep this file under the 600-LOC cap when the
 // TerminalHandler wiring landed for text_response. See
 // extractLastTextResponseArg below for the helper that bridges to it.
-
-func setSystemMessage(messages []llm.Message, system string) []llm.Message {
-	system = strings.TrimSpace(system)
-	if system == "" {
-		return messages
-	}
-	if len(messages) > 0 && messages[0].Role == "system" {
-		messages[0].Content = system
-		return messages
-	}
-	return append([]llm.Message{{Role: "system", Content: system}}, messages...)
-}
 
 // extractLastTextResponseArg scans messages newest-to-oldest looking for an
 // assistant tool_call to text_response and returns the trimmed `text`
@@ -479,14 +385,6 @@ func extractLastTextResponseArg(messages []llm.Message) string {
 		}
 	}
 	return ""
-}
-
-func trimWebMessages(messages []llm.Message) []llm.Message {
-	if len(messages) <= webChatMaxMessages {
-		return llm.CloneMessages(messages)
-	}
-	drop := len(messages) - webChatMaxMessages
-	return llm.CloneMessages(messages[drop:])
 }
 
 // cloneToolArgs + limitToolContent live in web_chat_executor.go.

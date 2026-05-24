@@ -20,8 +20,8 @@
         "Single atomic commit prefix: refactor(web): collapse webChatSessions onto agent.SessionStore + conversation.Context (US-CONS-02)"
       ],
       "priority": 1,
-      "passes": false,
-      "notes": "DEPENDS ON Phase-BUG US-BUG-01 (shipped 13b6926d) which already wired shared composeAgentPrompt. Wave A first story; sets up the consolidation foundation."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24 in this slice. cmd/aura/web_chat.go now uses agent.SessionStore keyed by web:<userID>:<threadID> and conversation.Context as the web State; webChatSessions/webAgentState/trimWebMessages dead code removed. Dedicated tests prove 3-turn retention, thread isolation, token tracking, and post-turn tool-result compaction on the next prompt. DEPENDS ON Phase-BUG US-BUG-01 (shipped 13b6926d) which already wired shared composeAgentPrompt."
     },
     {
       "id": "US-CONS-03",
