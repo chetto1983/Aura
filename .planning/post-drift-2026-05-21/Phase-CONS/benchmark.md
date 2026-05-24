@@ -246,6 +246,44 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
 - **PRD gate:** self-audited slice QA before atomic commit.
 
+## US-CONS-07 - Web SSE UI Message Stream
+
+### B-CONS-07-A: Web Streaming Adapter Frames
+
+- **Command:** `go test ./internal/channels/web -run "Test(StreamRouter|Inbound)" -count=1`
+- **Fixture:** `StreamRouter` with an in-memory writer, live `llm.Token` channel, tool start/end events, and duplicate aggregated `EventMessageDelta`.
+- **Artifact:** emitted SSE bytes parsed as JSON frames.
+- **Ground truth:** frames include `start`, `text-start`, two live `text-delta` chunks with both `textDelta` and `delta`, `text-end`, `tool-call-start`, `tool-call-end`, `tool-result`, `finish`, and literal `data: [DONE]`.
+- **Pass threshold:** parsed frame types and payload fields match exactly; duplicate aggregated final content is not emitted as a third `text-delta`; duplicate active thread returns `ErrStreamAlreadyActive`.
+- **PRD gate:** web streaming is a channel adapter concern, not a second agent loop.
+
+### B-CONS-07-B: API Stream Contract
+
+- **Command:** `go test ./internal/api -run "TestChatStream|TestChatReplyIncludesBudgetWarning" -count=1`
+- **Fixture:** fake `ChatStreamService`, legacy `{message, thread_id}` body, assistant-ui `{messages, threadId}` body, and unavailable-service negative path.
+- **Artifact:** `httptest.ResponseRecorder` status, headers, body, and fake service capture.
+- **Ground truth:** `POST /chat/stream` sets `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `x-vercel-ai-ui-message-stream: v1`; assistant-ui message arrays resolve the latest user text; unavailable service returns 503.
+- **Pass threshold:** exact header values, exact captured user/thread/message fields, `[DONE]` terminator present, 503 negative path passes.
+- **PRD gate:** `/api/chat/stream` becomes Wave B's backend runtime contract while `/api/chat` remains compatible.
+
+### B-CONS-07-C: Hub-Backed Streaming Service
+
+- **Command:** `go test ./cmd/aura -run "TestWebChatStream|TestHubBackedWebChat" -count=1`
+- **Fixture:** shared web+Telegram Hub with fake streaming LLM, in-memory SSE writer, and SQLite run store.
+- **Artifact:** captured LLM request, SSE bytes, flush count, and `runs` row.
+- **Ground truth:** streaming web turns call `llm.Client.Stream` (not `Send`), include the user message in the LLM request, emit token frames as `text-delta`, terminate with `[DONE]`, and persist a completed `runs` row for `thread_id='web:alice:default'`.
+- **Pass threshold:** `streamCalled=true`, `sendCalled=false`, exactly two text-delta frames for `Hel`/`lo`, completed run row count is 1.
+- **PRD gate:** shared Hub supports web streaming mode without regressing buffered web chat.
+
+### B-CONS-07-D: Dedicated Slice QA
+
+- **Command:** `go test ./cmd/aura ./internal/channels/web ./internal/api ./internal/chat -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web ./internal/chat --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/web_chat.go cmd/aura/web_chat_stream.go cmd/aura/web_chat_test.go internal/api/chat.go internal/api/chat_stream.go internal/api/chat_test.go internal/api/router.go internal/channels/web/chat_client.go internal/channels/web/chat_service.go internal/channels/web/inbound.go internal/channels/web/inbound_test.go internal/channels/web/sse_chat_client.go internal/channels/web/streaming_outbound.go internal/channels/web/streaming_outbound_test.go`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** touched packages plus full repository Go test suite.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** no compile/vet/lint regressions; touched-file duplication is zero; full Go suite passes after adding web streaming.
+- **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
+- **PRD gate:** self-audited slice QA before atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -256,7 +294,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-04 | Completed by B-CONS-04A..C above | web + Telegram builder source gate, Telegram byte-parity fixture, full Go suite | web and Telegram invoke `agentcore.Builder`; no transport-owned non-empty `agent.Invocation` literal; no no-op runtime flag shim | adoption/parity tests pass; fixture and full suite pass |
 | CONS-05 | Completed by B-CONS-05-A..C above | shared Hub with fake web and Telegram outbound adapters; source negative check | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound; duplicate Hub constructors are gone | zero cross-channel deliveries; stale constructor symbols absent |
 | CONS-06 | Completed by B-CONS-06-A..C above | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
-| CONS-07 | `go test ./internal/channels/web ./internal/api -run "SSE|DataStream|Streaming" -count=1` plus `curl -N` probe | local SSE endpoint and parser fixture | frames are valid Vercel AI SDK data-stream frames; headers include `text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` | first byte <500ms in live probe; all fixture frames parse |
+| CONS-07 | Completed by B-CONS-07-A..D above | local SSE endpoint, parser fixture, shared Hub streaming service | frames are valid AI SDK UI Message Stream SSE frames; headers include `text/event-stream`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `x-vercel-ai-ui-message-stream: v1`; shared Hub calls `llm.Stream` | all fixture frames parse; stream terminates with `[DONE]`; buffered `/chat` tests still pass |
 | CONS-08 | `go test ./internal/channels/web ./internal/api ./internal/chat -run "Voice|AskUser|Question" -count=1` | fake TTS and fake ask_user tool | `audio_url` serves OGG bytes; pending question persists and answer resumes same run | audio >1024 bytes; question row waiting->answered |
 | CONS-09 | `npm --prefix web run build` plus browser probe | assistant-ui `/chat` route against local backend | text-only stream renders in Thread and composer can send | visible streamed assistant message |
 | CONS-10 | `npm --prefix web run build` plus markdown fixture probe | markdown/code/wiki-link assistant message | GFM, code block, and `[[slug]]` render correctly | DOM assertions pass |

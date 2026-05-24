@@ -1,7 +1,7 @@
 {
   "project": "Aura",
   "branchName": "master",
-  "description": "Phase-CONS — Web↔Telegram 1+1 consolidation + assistant-ui React webchat. 12 stories total, ~5 sessions. WAVE A backend (CONS-02..08, 7 stories): collapse duplicated InvocationBuilders + Hubs + executors; ship streaming/voice/ask_user/archive parity on web. WAVE B frontend (CONS-09..13, 5 stories): adopt assistant-ui (https://github.com/assistant-ui/assistant-ui) via useDataStreamRuntime, mount Thread/Composer/Message primitives on Aura dashboard. Backend SSE in CONS-07 is upgraded to speak Vercel AI SDK data-stream protocol so the assistant-ui runtime works out of the box. Plan source: .planning/post-drift-2026-05-21/Phase-CONS/plan.md + Wave B extension 2026-05-23. REFERENCE EVIDENCE: docs/research-2026-05-24-cons-tmp-survey.md surveys openhuman/assistant-ui/hermes/nanobot for concrete per-story patterns — read FIRST before each story (CONS-05 single Hub = openhuman channels/routes.rs broadcast, CONS-06 microcompact = openhuman context/microcompact.rs 0.8x threshold, CONS-07 SSE wire format = assistant-ui templates/minimal/app/api/chat/route.ts Vercel AI SDK frames, CONS-08 voice = openhuman ttsClient.ts + hermes per-chat voice_mode + ask_user is STUB-ONLY in openhuman so design from scratch with HashMap<question_id, ResponseChannel> + 5min SQLite TTL). Net LOC delta: ~-90 (Wave A dedup) + ~+800 (Wave B frontend) = +710. Per-module deep refactor on touch per CLAUDE.md.",
+  "description": "Phase-CONS — Web↔Telegram 1+1 consolidation + assistant-ui React webchat. 12 stories total, ~5 sessions. WAVE A backend (CONS-02..08, 7 stories): collapse duplicated InvocationBuilders + Hubs + executors; ship streaming/voice/ask_user/archive parity on web. WAVE B frontend (CONS-09..13, 5 stories): adopt assistant-ui (https://github.com/assistant-ui/assistant-ui) via useDataStreamRuntime, mount Thread/Composer/Message primitives on Aura dashboard. Backend SSE in CONS-07 is upgraded to speak the current Vercel AI SDK UI Message Stream protocol so the assistant-ui runtime works out of the box without opting into legacy data-stream mode. Plan source: .planning/post-drift-2026-05-21/Phase-CONS/plan.md + Wave B extension 2026-05-23. REFERENCE EVIDENCE: docs/research-2026-05-24-cons-tmp-survey.md surveys openhuman/assistant-ui/hermes/nanobot for concrete per-story patterns — read FIRST before each story (CONS-05 single Hub = openhuman channels/routes.rs broadcast, CONS-06 microcompact = openhuman context/microcompact.rs 0.8x threshold, CONS-07 SSE wire format = assistant-ui packages/react-data-stream default ui-message-stream + AI SDK Stream Protocol docs, CONS-08 voice = openhuman ttsClient.ts + hermes per-chat voice_mode + ask_user is STUB-ONLY in openhuman so design from scratch with HashMap<question_id, ResponseChannel> + 5min SQLite TTL). Net LOC delta: ~-90 (Wave A dedup) + ~+800 (Wave B frontend) = +710. Per-module deep refactor on touch per CLAUDE.md.",
   "userStories": [
     {
       "id": "US-CONS-02",
@@ -104,34 +104,35 @@
     },
     {
       "id": "US-CONS-07",
-      "title": "Web streaming via SSE — Vercel AI SDK data-stream protocol compatible",
-      "description": "New internal/channels/web/streaming_outbound.go registers (ChannelWeb, DeliveryModeStreaming). New POST /chat/stream (SSE) endpoint flushes ONE SSE frame per chat.OutboundEvent. Wire format MUST match the Vercel AI SDK data-stream protocol so assistant-ui's useDataStreamRuntime works out of the box (Wave B prereq). Web ChatClient becomes NewStreamingChatClient that flushes llm.Token chunks. Buffered POST /chat stays for non-stream clients (backward compat). Source: docs/ai-sdk-stream-protocol.md (research output 2026-05-23) + Vercel AI SDK docs.",
+      "title": "Web streaming via SSE — Vercel AI SDK UI Message Stream compatible",
+      "description": "New internal/channels/web/streaming_outbound.go registers (ChannelWeb, DeliveryModeStreaming). New POST /chat/stream (SSE) endpoint flushes AI SDK UI Message Stream SSE frames. Wire format MUST match the current Vercel AI SDK UI Message Stream protocol so assistant-ui's useDataStreamRuntime works out of the box (Wave B prereq). Web ChatClient becomes NewStreamingChatClient that flushes llm.Token chunks. Buffered POST /chat stays for non-stream clients (backward compat). Source: D:/tmp/assistant-ui/packages/react-data-stream + D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/ui-message-stream + current AI SDK Stream Protocol docs.",
       "acceptanceCriteria": [
         "internal/channels/web/streaming_outbound.go new — registers Web+Streaming delivery mode",
-        "internal/channels/web/sse_chat_client.go new — flushes llm.Token chunks as SSE frames in Vercel AI SDK data-stream wire format (prefix-encoded text/data/tool-call/tool-result/finish frames)",
-        "New endpoint POST /api/chat/stream returns SSE with data: <vercel-prefixed>\\n frames",
+        "internal/channels/web/sse_chat_client.go new — flushes llm.Token chunks as SSE frames in Vercel AI SDK UI Message Stream wire format (JSON text/tool/result/finish frames)",
+        "New endpoint POST /api/chat/stream returns SSE with data: {JSON}\\n\\n frames plus data: [DONE]\\n\\n",
         "Header X-Accel-Buffering: no emitted (nginx-proxy compat)",
+        "Header x-vercel-ai-ui-message-stream: v1 emitted (AI SDK UI custom-backend compat)",
         "Buffered POST /api/chat still works (backward compat — old non-streaming clients unaffected)",
-        "Probe: curl -N against /api/chat/stream produces stream of data: <prefix><payload>\\n\\n frames matching Vercel data-stream protocol",
+        "Probe: curl -N against /api/chat/stream produces stream of data: {JSON}\\n\\n frames matching Vercel UI Message Stream protocol",
         "Probe: first byte <500ms; final byte p95 ≤8s on cached wiki_subgraph query",
-        "Vercel data-stream protocol conformance test: 5 representative event shapes (text-delta, tool-call, tool-result, finish, error) produce frames the Vercel ai library can parse",
+        "Vercel UI Message Stream protocol conformance test: 5 representative event shapes (text-delta, tool-call, tool-result, finish, error) produce frames the Vercel ai library can parse",
         "LOC delta: +280",
         "go test ./internal/channels/web/... ./internal/api/... -count=1 green",
-        "Single atomic commit prefix: feat(web): SSE streaming via Vercel AI SDK data-stream protocol (US-CONS-07)"
+        "Single atomic commit prefix: feat(web): SSE streaming via Vercel AI SDK UI Message Stream (US-CONS-07)"
       ],
       "priority": 6,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-06. CRITICAL Wave B prereq — wire format MUST match Vercel AI SDK data-stream protocol so assistant-ui's useDataStreamRuntime({api:'/api/chat/stream'}) works out of the box. Research the exact prefix format from D:/tmp/assistant-ui/packages/react-data-stream and Vercel ai SDK docs before implementing. Don't roll our own SSE shape."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Web streaming now uses the current Vercel AI SDK UI Message Stream SSE contract: /api/chat/stream emits text/event-stream, Cache-Control: no-cache, no-transform, X-Accel-Buffering: no, x-vercel-ai-ui-message-stream: v1, JSON data frames, and data: [DONE]. The shared Hub registers web DeliveryModeStreaming through StreamRouter, web streaming turns call llm.Client.Stream and emit token deltas as text-delta frames, duplicate aggregate deltas are suppressed, and buffered /api/chat remains deferred/backward-compatible. Dedicated tests cover stream frames, tool frames, active-thread rejection, assistant-ui request parsing, unavailable-service negative path, LLM Stream-vs-Send ground truth, and SQLite completed run row."
     },
     {
       "id": "US-CONS-08",
       "title": "Web voice + ask_user parity",
-      "description": "TTS synthesis on web as audio_url field (in-memory TTL cache, served via GET /chat/audio/{cache_id}). EventQuestionRequested becomes pending_question ChatReply field (buffered mode) + typed SSE frame in data-stream protocol (streaming mode). Follow-up POST /chat/answer/{question_id} resumes the run.",
+      "description": "TTS synthesis on web as audio_url field (in-memory TTL cache, served via GET /chat/audio/{cache_id}). EventQuestionRequested becomes pending_question ChatReply field (buffered mode) + typed SSE frame in UI Message Stream protocol (streaming mode). Follow-up POST /chat/answer/{question_id} resumes the run.",
       "acceptanceCriteria": [
         "internal/channels/web/voice_outbound.go new — pocket-tts client + in-memory TTL cache (1h TTL, 100MB cap)",
         "GET /api/chat/audio/{cache_id} serves OGG/Opus audio bytes (content-type: audio/ogg; >1024 bytes for non-empty replies)",
         "ChatReply adds optional pending_question field with {id, question, options[], kind: approval|clarification|secret|selection}",
-        "SSE streaming emits typed pending_question frame (Vercel data-stream protocol extension or compatible custom event-type)",
+        "SSE streaming emits typed pending_question frame (Vercel UI Message Stream data-* extension or compatible custom event-type)",
         "POST /api/chat/answer/{question_id} resumes the run; final reply contains post-answer text",
         "Probe: /api/chat?voice=all returns ChatReply with audio_url; GET that URL returns OGG audio >1024 bytes",
         "Probe: agent calls ask_user → ChatReply has pending_question{id, question, options[]}; follow-up POST /api/chat/answer/{id} resumes the same run; final reply contains post-answer reply",
@@ -161,7 +162,7 @@
       ],
       "priority": 8,
       "passes": false,
-      "notes": "DEPENDS ON US-CONS-07 (data-stream protocol on backend). FIRST Wave B story — proves the runtime+backend handshake without tool/voice complexity. Reference: D:/tmp/assistant-ui/examples/with-assistant-transport/ + packages/react-data-stream/README.md. NPM lockfile cross-platform: per memory feedback_npm_lock_cross_platform_drift, regen lock via docker node:22 if Windows-local install drifts."
+      "notes": "DEPENDS ON US-CONS-07 (UI Message Stream protocol on backend). FIRST Wave B story — proves the runtime+backend handshake without tool/voice complexity. Reference: D:/tmp/assistant-ui/examples/with-assistant-transport/ + packages/react-data-stream/README.md. NPM lockfile cross-platform: per memory feedback_npm_lock_cross_platform_drift, regen lock via docker node:22 if Windows-local install drifts."
     },
     {
       "id": "US-CONS-10",

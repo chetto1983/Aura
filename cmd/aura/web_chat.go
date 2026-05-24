@@ -35,6 +35,7 @@ func newWebInvocationBuilder(
 	budgetRuntime budget.Runtime,
 	archiveRepo conversation.ArchiveRepository,
 	archiveAppender conversation.TurnAppender,
+	streamRouter *webadapter.StreamRouter,
 ) (*webInvocationBuilder, *agent.SessionStore) {
 	depsGetter := newWebChatDepsGetter(cfg, deps)
 	if depsGetter == nil {
@@ -57,6 +58,7 @@ func newWebInvocationBuilder(
 		budgetRuntime:   budgetRuntime,
 		archiveRepo:     archiveRepo,
 		archiveAppender: archiveAppender,
+		streamRouter:    streamRouter,
 	}
 	if deps.WikiStore != nil {
 		builder.wikiTOCFn = deps.WikiStore.GetCachedTOC
@@ -108,6 +110,7 @@ type webInvocationBuilder struct {
 	budgetRuntime   budget.Runtime
 	archiveRepo     conversation.ArchiveRepository
 	archiveAppender conversation.TurnAppender
+	streamRouter    *webadapter.StreamRouter
 }
 
 func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.InboundMessage) (agent.Invocation, error) {
@@ -211,8 +214,12 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		}
 		toolResolver = deps.Tools.DefinitionFor
 	}
+	chatClient := agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort, msg.ThreadID)
+	if msg.Mode == chat.DeliveryModeStreaming {
+		chatClient = webadapter.NewStreamingChatClient(deps.LLM, deps.Model, deps.ReasoningEffort, msg.ThreadID, b.streamRouter)
+	}
 	inv, err := (agentcore.Builder{}).Build(agentcore.InvocationInput{
-		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort, msg.ThreadID),
+		Client: chatClient,
 		Executor: agent.ToolExecutorFunc(func(execCtx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
 			summary := agent.ExecuteToolCalls(
 				execCtx,

@@ -397,6 +397,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if err != nil {
 		return fmt.Errorf("wire web chat service: %w", err)
 	}
+	webStreamChat := newWebStreamChatService(sharedHub.hub, sharedHub.webStreamRouter)
 
 	// ---- Entity dedup backend (US-GRAPH-03) ----------------------------------
 	// Wire the Qdrant-backed DedupSearcher so DeduplicateEntities can find
@@ -478,8 +479,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// Phase-H: secret writes go through SecretsStore so dashboard rotations update what boot reads.
 		SecretsStore: secretspkg.NewSQLiteStore(a.deps.Pool),
 		// AuraBot swarm observability.
-		Swarm: a.deps.SwarmStore,
-		Chat:  webChat,
+		Swarm:      a.deps.SwarmStore,
+		Chat:       webChat,
+		ChatStream: webStreamChat,
 		// Phase-6 US-J06: operator tool-warning channel.
 		ToolWarnings: attempts.NewSQLiteRepo(a.deps.Pool),
 		// US-T04: authz decisions observability.

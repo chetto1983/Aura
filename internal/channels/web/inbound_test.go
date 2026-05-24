@@ -61,6 +61,24 @@ func TestInboundNormalizeDefaultsAnonymousThread(t *testing.T) {
 	}
 }
 
+func TestInboundNormalizePreservesStreamingMode(t *testing.T) {
+	msg, err := New().Normalize(context.Background(), InboundRequest{
+		UserID:   "alice",
+		ThreadID: "live",
+		Message:  "stream this",
+		Mode:     chat.DeliveryModeStreaming,
+	})
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if msg.Mode != chat.DeliveryModeStreaming {
+		t.Fatalf("Mode = %q, want streaming", msg.Mode)
+	}
+	if msg.ThreadID != "web:alice:live" {
+		t.Fatalf("ThreadID = %q", msg.ThreadID)
+	}
+}
+
 func TestInboundNormalizeRejectsWrongRawPayload(t *testing.T) {
 	if _, err := New().Normalize(context.Background(), "bad"); err == nil {
 		t.Fatal("expected error for wrong raw payload")

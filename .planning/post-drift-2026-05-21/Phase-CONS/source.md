@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-07. CONS-02..06 are committed; next add web streaming with the Vercel AI SDK data-stream protocol.
+**Current slice:** US-CONS-08. CONS-02..07 are committed; next add web voice + ask_user parity on top of the verified UI Message Stream backend.
 
 ## Objective
 
@@ -18,7 +18,7 @@ Consolidate web and Telegram into one channel-neutral agent path without losing 
 | `.planning/post-drift-2026-05-21/Phase-CONS/plan.md` | Original backend plan, CONS-02..08. | Keep backend sequencing but repair missing source/benchmark/progress files. |
 | `scripts/ralph/prd-phase-cons-staged.json` | Detailed current queue, CONS-02..13, including Wave B assistant-ui. | Use as detailed story queue after planning repair. |
 | `docs/research-2026-05-21/web-telegram-consolidation.md` | Audit finds duplicated web/Telegram invocation builders, duplicate web session/state, duplicate tool executor, separate hubs, and web feature drift. | CONS-02 starts with the lowest-risk duplicate: web session/state. |
-| `docs/research-2026-05-24-cons-tmp-survey.md` | D:/tmp survey locks assistant-ui, SSE data-stream, openhuman microcompact/route patterns, and ask_user gaps. | Use for later CONS-07..13, not for CONS-02 implementation. |
+| `docs/research-2026-05-24-cons-tmp-survey.md` | D:/tmp survey locked assistant-ui, SSE streaming, openhuman microcompact/route patterns, and ask_user gaps. US-CONS-07 refreshed the exact protocol from local `assistant-ui` source and current AI SDK docs before implementation. | Use current UI Message Stream for CONS-07/Wave B; do not implement legacy data-stream unless the frontend explicitly opts into `protocol: "data-stream"`. |
 
 ## Aura Code Evidence
 
@@ -47,6 +47,10 @@ Consolidate web and Telegram into one channel-neutral agent path without losing 
 | `D:/tmp/openhuman/src/openhuman/webhooks/router.rs` | Route ownership is explicit and isolated by key. | Keep channel/thread keying explicit; do not share web and Telegram thread state accidentally. |
 | `D:/tmp/hermes-agent/AGENTS.md` | UI owns presentation; Python/core owns sessions, tools, model calls. Prompt-cache policy warns against mutating past context mid-conversation except compaction. | Adopt separation: backend owns conversation context; frontend Wave B must not create a second memory model. |
 | `D:/tmp/assistant-ui/templates/minimal/app/api/chat/route.ts` | Assistant-ui expects streaming runtime contracts later. | Do not shape CONS-02 around frontend concerns. |
+| `D:/tmp/assistant-ui/packages/react-data-stream/src/useDataStreamRuntime.ts` | `protocol` defaults to `"ui-message-stream"`; `"data-stream"` is explicitly legacy. | US-CONS-07 backend must emit UI Message Stream by default for Wave B. |
+| `D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/ui-message-stream/UIMessageStream.ts` | Decoder parses SSE `data:` events, JSON objects, and the literal `[DONE]` terminator. | US-CONS-07 frames are `data: {...}\n\n` plus `data: [DONE]\n\n`. |
+| `D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/ui-message-stream/chunk-types.ts` | Local accepted chunks include `start`, `text-start`, `text-delta` with `textDelta`, `text-end`, `tool-call-start`, `tool-call-end`, `tool-result`, `finish`, and `error`. | Implement these core chunks first; carry both `textDelta` and `delta` on text deltas for current docs/local compatibility. |
+| `D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/data-stream/DataStream.ts` | Legacy data-stream uses `text/plain` plus `x-vercel-ai-data-stream`; it is selected only when the runtime option sets `protocol: "data-stream"`. | Reject for Aura default because Wave B wants zero extra frontend protocol override. |
 
 ## 2026 Practice Sweep
 
@@ -57,6 +61,7 @@ Checked 2026-05-24:
 | WHATWG HTML Living Standard, Server-sent events, last updated 2026-05-19: `https://html.spec.whatwg.org/dev/server-sent-events.html` | SSE is a UTF-8 event stream with named events and `text/event-stream`. | CONS-07 benchmark must assert wire format; no custom hidden streaming transport. |
 | MDN "Using server-sent events": `https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events` | Use `text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no`, custom `event:` fields, and flush per event. | CONS-07 benchmark must assert headers and frame termination. |
 | Go `net/http.ResponseController.Flush`: `https://go.dev/pkg/net/http/#ResponseController.Flush` | Go handlers can explicitly flush buffered data to the client. | CONS-07 should use Go-native flush semantics. |
+| AI SDK UI "Stream Protocols", checked 2026-05-24: `https://ai-sdk.dev/docs/ai-sdk-ui/stream-protocol` | Custom backends use SSE and must set `x-vercel-ai-ui-message-stream: v1`; text deltas use start/delta/end and streams terminate with `[DONE]`. | CONS-07 upgrades the stale queue wording from legacy data-stream to UI Message Stream. |
 | OpenAI Agents SDK streaming guide: `https://openai.github.io/openai-agents-js/guides/streaming/` | Stream consumers inspect generic run events while preserving provider-specific raw events only when needed. | Agentcore/event contracts should stay transport-neutral. |
 | Anthropic Context Engineering cookbook, published 2026-03-20: `https://platform.claude.com/cookbook/tool-use-context-engineering-context-engineering-tools` | Long-running agents need explicit memory, compaction, and tool-result clearing strategies; context is finite. | CONS-02 must prove web now benefits from `conversation.Context` compaction/token tracking. |
 | Anthropic harness design, published 2026-03-24: `https://www.anthropic.com/engineering/harness-design-long-running-apps` | Use tractable chunks, explicit sprint contracts, and a separate evaluator/QA pass when the work is beyond trivial. | Each CONS story gets its own benchmark and QA, not a phase-wide smoke run. |
@@ -115,6 +120,15 @@ Checked 2026-05-24:
 - Archive web turns through `conversation.ArchiveConversationTurns` using deterministic web archive IDs for `chat_id` and `user_id`.
 - Keep web's existing post-turn tool-result compaction and context enforcement, and protect it with existing US-CONS-02 regression tests.
 
+## Adopted For US-CONS-07
+
+- Add a streaming web outbound adapter registered as `(ChannelWeb, DeliveryModeStreaming)` on the shared user-facing Hub.
+- Add `POST /api/chat/stream` as an SSE endpoint; the internal router path remains `POST /chat/stream` because `cmd/aura` mounts API routes under `/api`.
+- Emit AI SDK UI Message Stream frames, not legacy prefix-coded data-stream frames: `data: {"type":"start"}`, `text-start`, `text-delta`, `text-end`, `tool-call-start`, `tool-call-end`, `tool-result`, `finish`, then `data: [DONE]`.
+- Set `Content-Type: text/event-stream; charset=utf-8`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, and `x-vercel-ai-ui-message-stream: v1`.
+- Use `llm.Client.Stream` for web streaming turns and write token deltas as they arrive; suppress duplicate full-content deltas at the SSE sink when the agent lifecycle later emits the aggregated `EventMessageDelta`.
+- Keep buffered `POST /api/chat` unchanged and backed by `DeliveryModeDeferred`.
+
 ## Rejected For US-CONS-02
 
 - No single Hub change; that is US-CONS-05.
@@ -122,7 +136,12 @@ Checked 2026-05-24:
 - No web SSE, voice, ask_user UI, or assistant-ui dependency; those start after the backend consolidation gates.
 - No production DB mutation for planning evidence. Handler/unit tests should use isolated SQLite fixtures.
 
+## Rejected For US-CONS-07
+
+- Do not emit legacy `0:"text"\n` data-stream lines. Local `useDataStreamRuntime` defaults to UI Message Stream, and the local legacy decoder expects raw prefix lines rather than SSE `data:` JSON.
+- Do not add assistant-ui frontend dependencies in this slice; Wave B starts after the backend stream contract is verified.
+
 ## Open Questions Carried Forward
 
-- CONS-07 must lock the Vercel AI SDK data-stream frame schema from current package docs/source before implementation.
+- CONS-07 locked the Vercel AI SDK UI Message Stream schema from current package docs/source before implementation.
 - CONS-08 must design durable ask_user resume for browser close/reopen; D:/tmp examples only provide partial stubs.

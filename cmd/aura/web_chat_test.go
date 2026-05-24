@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"io"
@@ -130,6 +131,43 @@ func (f *fakeTextResponseLLM) Stream(context.Context, llm.Request) (<-chan llm.T
 	return ch, nil
 }
 
+type fakeStreamingWebChatLLM struct {
+	mu           sync.Mutex
+	sendCalled   bool
+	streamCalled bool
+	requests     []llm.Request
+}
+
+func (f *fakeStreamingWebChatLLM) Send(context.Context, llm.Request) (llm.Response, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sendCalled = true
+	return llm.Response{Content: "send fallback"}, nil
+}
+
+func (f *fakeStreamingWebChatLLM) Stream(_ context.Context, req llm.Request) (<-chan llm.Token, error) {
+	f.mu.Lock()
+	f.streamCalled = true
+	f.requests = append(f.requests, cloneLLMRequest(req))
+	f.mu.Unlock()
+	ch := make(chan llm.Token, 3)
+	ch <- llm.Token{Content: "Hel"}
+	ch <- llm.Token{Content: "lo"}
+	ch <- llm.Token{Done: true, Usage: llm.TokenUsage{PromptTokens: 4, CompletionTokens: 2, TotalTokens: 6}}
+	close(ch)
+	return ch, nil
+}
+
+func (f *fakeStreamingWebChatLLM) Snapshot() (streamCalled bool, sendCalled bool, requests []llm.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]llm.Request, len(f.requests))
+	for i, req := range f.requests {
+		out[i] = cloneLLMRequest(req)
+	}
+	return f.streamCalled, f.sendCalled, out
+}
+
 func TestHubBackedWebChatPersistsRunAndActor(t *testing.T) {
 	db := testutil.OpenTestDB(t, nil)
 	if err := migrations.Run(context.Background(), db); err != nil {
@@ -174,6 +212,72 @@ SELECT COUNT(*)
 FROM run_events
 WHERE actor_id = ? AND type IN ('run_started', 'message_done', 'usage', 'done')
 `, 4, actorID)
+}
+
+func TestWebChatStreamUsesLLMStreamAndUIMessageFrames(t *testing.T) {
+	db := testutil.OpenTestDB(t, nil)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	runStore, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	llmClient := &fakeStreamingWebChatLLM{}
+	shared, err := newSharedChatHub(
+		&config.Config{LLMModel: "fake-stream", AuraBotMaxIterations: 2},
+		&telegram.Deps{
+			LLM:      llmClient,
+			RunStore: runStore,
+			Tools:    toolregistry.NewRegistry(logger),
+			Logger:   logger,
+		},
+		nil,
+		logger,
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("newSharedChatHub: %v", err)
+	}
+	svc := newWebStreamChatService(shared.hub, shared.webStreamRouter)
+	if svc == nil {
+		t.Fatal("newWebStreamChatService returned nil")
+	}
+	var buf bytes.Buffer
+	flushes := 0
+	if err := svc.ChatStream(context.Background(), "alice", "default", "hello stream", &buf, func() { flushes++ }); err != nil {
+		t.Fatalf("ChatStream: %v", err)
+	}
+	streamCalled, sendCalled, requests := llmClient.Snapshot()
+	if !streamCalled || sendCalled {
+		t.Fatalf("streamCalled=%v sendCalled=%v", streamCalled, sendCalled)
+	}
+	if len(requests) != 1 || !containsMessageContent(requests[0].Messages, "hello stream") {
+		t.Fatalf("requests = %+v", requests)
+	}
+	if flushes < 4 {
+		t.Fatalf("flushes = %d, want >=4", flushes)
+	}
+	body := buf.String()
+	if !strings.Contains(body, `"type":"text-delta"`) || !strings.Contains(body, `"textDelta":"Hel"`) || !strings.Contains(body, `"textDelta":"lo"`) {
+		t.Fatalf("stream body missing text deltas:\n%s", body)
+	}
+	if strings.Count(body, `"type":"text-delta"`) != 2 {
+		t.Fatalf("text-delta frame count = %d, body:\n%s", strings.Count(body, `"type":"text-delta"`), body)
+	}
+	if !strings.HasSuffix(body, "data: [DONE]\n\n") {
+		t.Fatalf("stream missing [DONE]:\n%s", body)
+	}
+	if !strings.Contains(body, `"type":"start"`) || !strings.Contains(body, `"type":"finish"`) {
+		t.Fatalf("stream missing start/finish frames:\n%s", body)
+	}
+	assertWebChatScalar(t, db, `
+SELECT COUNT(*)
+FROM runs
+WHERE channel = 'web' AND thread_id = 'web:alice:default' AND status = 'completed'
+`, 1)
 }
 
 func TestHubBackedWebChatReportsSoftBudgetWarning(t *testing.T) {

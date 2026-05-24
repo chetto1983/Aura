@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -25,6 +26,30 @@ type recordingChatService struct {
 	authorizerPresent bool
 	message           string
 	reply             ChatReply
+}
+
+type recordingChatStreamService struct {
+	calls    int
+	userID   string
+	threadID string
+	message  string
+}
+
+func (s *recordingChatStreamService) ChatStream(_ context.Context, userID, threadID, message string, w io.Writer, flush func()) error {
+	s.calls++
+	s.userID = userID
+	s.threadID = threadID
+	s.message = message
+	_, _ = io.WriteString(w, "data: {\"type\":\"start\",\"messageId\":\"msg_test\"}\n\n")
+	_, _ = io.WriteString(w, "data: {\"type\":\"text-start\",\"id\":\"text_test\"}\n\n")
+	_, _ = io.WriteString(w, "data: {\"type\":\"text-delta\",\"id\":\"text_test\",\"textDelta\":\"ok\",\"delta\":\"ok\"}\n\n")
+	_, _ = io.WriteString(w, "data: {\"type\":\"text-end\",\"id\":\"text_test\"}\n\n")
+	_, _ = io.WriteString(w, "data: {\"type\":\"finish\",\"finishReason\":\"stop\",\"usage\":{\"inputTokens\":1,\"outputTokens\":1}}\n\n")
+	_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	if flush != nil {
+		flush()
+	}
+	return nil
 }
 
 func (s *recordingChatService) Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error) {
@@ -106,6 +131,75 @@ func TestChatReplyIncludesBudgetWarning(t *testing.T) {
 	}
 	if body.BudgetWarning != "soft budget hit" {
 		t.Fatalf("budget_warning = %q", body.BudgetWarning)
+	}
+}
+
+func TestChatStreamHeadersAndLegacyBody(t *testing.T) {
+	stream := &recordingChatStreamService{}
+	router := NewRouter(Deps{ChatStream: stream})
+
+	req := httptest.NewRequest(http.MethodPost, "/chat/stream", strings.NewReader(`{"user_id":"alice","thread_id":"live","message":"ciao"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
+	}
+	if stream.calls != 1 || stream.userID != "alice" || stream.threadID != "live" || stream.message != "ciao" {
+		t.Fatalf("stream call = calls=%d user=%q thread=%q message=%q", stream.calls, stream.userID, stream.threadID, stream.message)
+	}
+	if got := rr.Header().Get("Content-Type"); got != "text/event-stream; charset=utf-8" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := rr.Header().Get("Cache-Control"); got != "no-cache, no-transform" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+	if got := rr.Header().Get("X-Accel-Buffering"); got != "no" {
+		t.Fatalf("X-Accel-Buffering = %q", got)
+	}
+	if got := rr.Header().Get("x-vercel-ai-ui-message-stream"); got != "v1" {
+		t.Fatalf("ui message header = %q", got)
+	}
+	if !strings.Contains(rr.Body.String(), `"type":"text-delta"`) || !strings.HasSuffix(rr.Body.String(), "data: [DONE]\n\n") {
+		t.Fatalf("stream body = %q", rr.Body.String())
+	}
+}
+
+func TestChatStreamExtractsAssistantUIMessage(t *testing.T) {
+	stream := &recordingChatStreamService{}
+	router := NewRouter(Deps{ChatStream: stream})
+	body := `{
+		"threadId":"thread-from-ui",
+		"messages":[
+			{"role":"assistant","content":"old"},
+			{"role":"user","content":[{"type":"text","text":"ciao"},{"type":"text","text":"mondo"}]}
+		]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/chat/stream", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
+	}
+	if stream.threadID != "thread-from-ui" {
+		t.Fatalf("threadID = %q", stream.threadID)
+	}
+	if stream.message != "ciao\nmondo" {
+		t.Fatalf("message = %q", stream.message)
+	}
+}
+
+func TestChatStreamUnavailable(t *testing.T) {
+	router := NewRouter(Deps{})
+	req := httptest.NewRequest(http.MethodPost, "/chat/stream", strings.NewReader(`{"message":"hello"}`))
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+	if rr.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
 	}
 }
 

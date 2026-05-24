@@ -109,7 +109,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 	}, nil
 }
 
-func webThreadID(userID, threadID string) string {
+func ThreadID(userID, threadID string) string {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		userID = "anonymous"

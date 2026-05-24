@@ -14,30 +14,33 @@
 | 2026-05-24 | US-CONS-04C | passed | `go test ./internal/agentcore -run "TestAgentCoreBuilderAdoptedByWebAndTelegram|TestAgentCoreBuilderDoesNotAddRuntimeFlagShim" -count=1`; `go test ./internal/channels/telegram/fixture -run TestSnapshotsByteParity -count=1`; `go test ./internal/agentcore ./internal/channels/telegram/fixture ./cmd/aura ./internal/channels/telegram -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/agentcore ./internal/channels/telegram ./cmd/aura --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/agentcore internal/channels/telegram/invocation_builder.go cmd/aura/web_chat.go`; `git diff --check`; `go test ./... -count=1`. | Closed US-CONS-04 with a real adoption/parity gate: both web and Telegram call `agentcore.Builder.Build` with `agentcore.InvocationInput`; no transport owns a non-empty `agent.Invocation` literal; no no-op `AURA_AGENTCORE_BUILDER` runtime flag was introduced; Telegram byte-parity fixture and full Go suite pass. |
 | 2026-05-24 | US-CONS-05 | passed | `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub|TestInbound|TestChatService" -count=1`; `go test ./cmd/aura ./internal/channels/web ./internal/channels/telegram ./internal/chat -count=1`; `rg -n "newHubBackedWebChatService|telegramadapter\.NewHub|func NewHub|injected by NewHub" cmd/aura internal/channels/telegram internal/channels/web`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/chat ./internal/channels/web ./internal/channels/telegram --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/app_wire.go cmd/aura/main.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/channels/web internal/channels/telegram/invocation_builder.go internal/chat/hub_test.go`; `git diff --check`; `go test ./... -count=1`. | Shared web+Telegram Hub lives in `cmd/aura/chat_hub.go`, threaded from `app_wire.go` to Telegram and `/api/chat`. `telegramadapter.NewHub` and `newHubBackedWebChatService` are gone; web requests now use `webadapter.New()` normalization. Cron Hub stays separate. Negative `rg` exited 1 as expected. |
 | 2026-05-24 | US-CONS-06 | passed | `go test ./cmd/aura -run "TestHubBackedWebChat(ReportsSoftBudgetWarning|ArchivesConversationTurns|UsesSessionStoreContext|CompactsToolResultsBeforeNextTurn)" -count=1`; `go test ./internal/api -run "Test(ChatReplyIncludesBudgetWarning|HandleConversationList_HappyPath)" -count=1`; `go test ./internal/channels/web -run "TestChatService|TestInbound" -count=1`; `go test ./internal/conversation -run "TestArchive(Store_Append|Store_AppendPreservesChannel|ConversationTurns)|TestScanTurn|TestListByChat" -count=1`; `go test ./internal/db/migrations -count=1`; `go test ./cmd/aura ./internal/channels/web ./internal/api ./internal/conversation ./internal/db/migrations ./internal/chat -count=1`; `npm --prefix web run build`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/chat ./internal/channels/web ./internal/conversation ./internal/db/migrations --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/api/chat.go internal/api/chat_test.go internal/api/conversations.go internal/api/conversations_test.go internal/channels/web/chat_service.go internal/channels/web/chat_service_test.go internal/channels/web/outbound.go internal/chat/agentloop.go internal/conversation/archive.go internal/conversation/archive_internal_test.go internal/conversation/archive_test.go internal/conversation/archive_turns.go internal/db/migrations/m01_create_current_schema.go internal/db/migrations/migrations_test.go`; `git diff --check`; `go test ./... -count=1`. | Web buffered chat now uses the shared budget runtime for hard-budget preflight, usage recording, and soft-budget warning propagation. `/api/chat` emits `budget_warning`; `web/src/api.ts` and `web/src/types/api.ts` type it; web turns append durable archive rows with `channel='web'`; existing web context compaction regressions remain green. Negative checks: stale `web/src/api/chat.ts` does not exist, stale `cmd/aura/web_chat_hooks.go` acceptance was repaired, and touched-file `dupl` reports zero clone groups. |
+| 2026-05-24 | US-CONS-07 | passed | `go test ./internal/channels/web -run "Test(StreamRouter|Inbound)" -count=1`; `go test ./internal/api -run "TestChatStream|TestChatReplyIncludesBudgetWarning" -count=1`; `go test ./cmd/aura -run "TestWebChatStream|TestHubBackedWebChat" -count=1`; `go test ./cmd/aura ./internal/channels/web ./internal/api ./internal/chat -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web ./internal/chat --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/web_chat.go cmd/aura/web_chat_stream.go cmd/aura/web_chat_test.go internal/api/chat.go internal/api/chat_stream.go internal/api/chat_test.go internal/api/router.go internal/channels/web/chat_client.go internal/channels/web/chat_service.go internal/channels/web/inbound.go internal/channels/web/inbound_test.go internal/channels/web/sse_chat_client.go internal/channels/web/streaming_outbound.go internal/channels/web/streaming_outbound_test.go`; `git diff --check`; `go test ./... -count=1`; `lefthook run pre-commit` pre-stage skip recorded, commit hook will rerun after staging. | Web streaming now uses AI SDK UI Message Stream, not legacy data-stream. Ground truth: parsed SSE JSON frames include `start`, `text-start`, live `text-delta`, `text-end`, `tool-call-start`, `tool-call-end`, `tool-result`, `finish`, and `[DONE]`; API headers include `x-vercel-ai-ui-message-stream: v1`; assistant-ui request bodies extract latest user text; hub-backed service calls `llm.Client.Stream` instead of `Send`; SQLite has a completed `runs` row for `web:alice:default`; buffered `/api/chat` tests still pass. Self-audited slice QA PASS; negative checks cover unavailable stream service and duplicate active stream. |
 
 ## Current Slice
 
-**US-CONS-07:** add web streaming via SSE using the Vercel AI SDK data-stream protocol.
+**US-CONS-08:** add web voice + ask_user parity after the verified UI Message Stream backend.
 
 Pre-edit map:
 
-- `docs/ai-sdk-stream-protocol.md`
-- `D:/tmp/assistant-ui/templates/minimal/app/api/chat/route.ts`
-- `D:/tmp/assistant-ui/packages/react-data-stream`
 - `internal/api/chat.go`
 - `internal/api/router.go`
 - `internal/channels/web/outbound.go`
+- `internal/channels/web/streaming_outbound.go`
+- `internal/channels/web/sse_chat_client.go`
 - `internal/channels/web/chat_service.go`
 - `internal/chat/agentloop.go`
 - `cmd/aura/web_chat.go`
 - `cmd/aura/chat_hub.go`
+- `D:/tmp/openhuman`
+- `D:/tmp/hermes-agent`
+- `D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/ui-message-stream/chunk-types.ts`
 
 Dedicated QA target:
 
-- parser/fixture tests for exact Vercel AI SDK data-stream frames
-- SSE endpoint probe asserts `text/event-stream`, `Cache-Control: no-cache`, frame termination, and flush behavior
-- buffered POST `/api/chat` remains backward compatible
-- assistant-ui source contract is cited before implementation
+- fake TTS/audio cache tests assert OGG bytes and content-type
+- pending-question tests assert buffered `pending_question` and streaming `data-*` frame
+- answer/resume tests assert same question/run thread moves waiting -> answered
+- browser-close/reopen durability decision recorded before implementation
 - `go vet ./...`
 - `go build ./...`
 - `golangci-lint run <touched packages> --timeout=10m --new-from-rev=HEAD`

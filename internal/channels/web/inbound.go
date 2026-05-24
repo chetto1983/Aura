@@ -18,6 +18,7 @@ type InboundRequest struct {
 	ThreadID    string
 	Message     string
 	Attachments []chat.AttachmentRef
+	Mode        chat.DeliveryMode
 	CreatedAt   time.Time
 }
 
@@ -40,6 +41,10 @@ func (*Inbound) Normalize(_ context.Context, raw any) (chat.InboundMessage, erro
 	if userID == "" {
 		userID = "anonymous"
 	}
+	mode := req.Mode
+	if mode == "" {
+		mode = chat.DeliveryModeDeferred
+	}
 	createdAt := req.CreatedAt
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
@@ -48,10 +53,10 @@ func (*Inbound) Normalize(_ context.Context, raw any) (chat.InboundMessage, erro
 		ID:          strings.TrimSpace(req.ID),
 		Channel:     chat.ChannelWeb,
 		PrincipalID: userID,
-		ThreadID:    webThreadID(userID, req.ThreadID),
+		ThreadID:    ThreadID(userID, req.ThreadID),
 		Text:        strings.TrimSpace(req.Message),
 		Attachments: append([]chat.AttachmentRef(nil), req.Attachments...),
-		Mode:        chat.DeliveryModeDeferred,
+		Mode:        mode,
 		CreatedAt:   createdAt,
 	}, nil
 }

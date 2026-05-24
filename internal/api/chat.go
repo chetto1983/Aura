@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -27,6 +28,12 @@ func actorIDFromRequest(r *http.Request) string {
 // so the chat pipe shares the live LLM client + tool registry the bot uses.
 type ChatService interface {
 	Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error)
+}
+
+// ChatStreamService drives the streaming /chat/stream endpoint. The handler
+// owns HTTP auth and headers; the channel adapter owns UI message frames.
+type ChatStreamService interface {
+	ChatStream(ctx context.Context, userID, threadID, message string, w io.Writer, flush func()) error
 }
 
 // ChatReply is the JSON shape the endpoint returns. Stats fields mirror the
@@ -82,33 +89,9 @@ func handleChat(deps Deps) http.HandlerFunc {
 		if threadID == "" {
 			threadID = "default"
 		}
-		authUserID := userIDFromRequest(r)
-		chatCtx := r.Context()
-		userID := authUserID
-		if authUserID != "" {
-			if bodyUserID := strings.TrimSpace(req.UserID); bodyUserID != "" && bodyUserID != authUserID {
-				writeError(w, deps.Logger, http.StatusForbidden, "authenticated user_id override is forbidden")
-				return
-			}
-			decision, err := deps.Auth.Authorize(r.Context(), identity.AuthorizeParams{
-				ActorID:    actorIDFromRequest(r),
-				Capability: identity.CapabilityAPIChat,
-				Resource:   identity.ResourceRef{Type: "api", ID: "chat"},
-			})
-			if err != nil {
-				writeError(w, deps.Logger, http.StatusInternalServerError, "authorization failed")
-				return
-			}
-			if decision.Decision != identity.DecisionAllow {
-				writeError(w, deps.Logger, http.StatusForbidden, "missing api.chat grant")
-				return
-			}
-			chatCtx = identity.WithAuthority(chatCtx, deps.Auth)
-		} else {
-			userID = strings.TrimSpace(req.UserID)
-		}
-		if userID == "" {
-			userID = "chat-cli"
+		chatCtx, userID, ok := authorizeChatRequest(w, r, deps, req.UserID)
+		if !ok {
+			return
 		}
 		reply, err := deps.Chat.Chat(chatCtx, userID, threadID, message)
 		if err != nil {
@@ -121,4 +104,36 @@ func handleChat(deps Deps) http.HandlerFunc {
 		}
 		writeJSON(w, deps.Logger, http.StatusOK, reply)
 	}
+}
+
+func authorizeChatRequest(w http.ResponseWriter, r *http.Request, deps Deps, bodyUserID string) (context.Context, string, bool) {
+	authUserID := userIDFromRequest(r)
+	chatCtx := r.Context()
+	userID := authUserID
+	if authUserID != "" {
+		if bodyUserID := strings.TrimSpace(bodyUserID); bodyUserID != "" && bodyUserID != authUserID {
+			writeError(w, deps.Logger, http.StatusForbidden, "authenticated user_id override is forbidden")
+			return nil, "", false
+		}
+		decision, err := deps.Auth.Authorize(r.Context(), identity.AuthorizeParams{
+			ActorID:    actorIDFromRequest(r),
+			Capability: identity.CapabilityAPIChat,
+			Resource:   identity.ResourceRef{Type: "api", ID: "chat"},
+		})
+		if err != nil {
+			writeError(w, deps.Logger, http.StatusInternalServerError, "authorization failed")
+			return nil, "", false
+		}
+		if decision.Decision != identity.DecisionAllow {
+			writeError(w, deps.Logger, http.StatusForbidden, "missing api.chat grant")
+			return nil, "", false
+		}
+		chatCtx = identity.WithAuthority(chatCtx, deps.Auth)
+	} else {
+		userID = strings.TrimSpace(bodyUserID)
+	}
+	if userID == "" {
+		userID = "chat-cli"
+	}
+	return chatCtx, userID, true
 }

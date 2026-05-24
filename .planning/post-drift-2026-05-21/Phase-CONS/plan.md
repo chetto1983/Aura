@@ -84,12 +84,13 @@ Planning contract repaired 2026-05-24:
 
 ### US-CONS-07 — Feature parity wave 2: streaming on web (SSE)
 
-- **Scope:** New `internal/channels/web/streaming_outbound.go` registers `(ChannelWeb, DeliveryModeStreaming)`. New `POST /chat/stream` (SSE) endpoint flushes one SSE frame per `chat.OutboundEvent`. Web ChatClient becomes `NewStreamingChatClient` that flushes `llm.Token` chunks. Buffered `POST /chat` stays for non-stream clients.
+- **Scope:** New `internal/channels/web/streaming_outbound.go` registers `(ChannelWeb, DeliveryModeStreaming)`. New `POST /chat/stream` (SSE) endpoint flushes Vercel AI SDK UI Message Stream frames. Web ChatClient becomes `NewStreamingChatClient` that flushes `llm.Token` chunks. Buffered `POST /chat` stays for non-stream clients.
 - **Files:** NEW [internal/channels/web/streaming_outbound.go](internal/channels/web/streaming_outbound.go); NEW [internal/channels/web/sse_chat_client.go](internal/channels/web/sse_chat_client.go); MODIFY [internal/api/router.go](internal/api/router.go), [internal/api/chat.go](internal/api/chat.go); MODIFY [cmd/aura/web_chat_hooks.go](cmd/aura/web_chat_hooks.go).
 - **LOC delta:** +280.
 - **Acceptance:**
   - `go test ./internal/channels/web/...` green with SSE-frame assertion test.
-  - `curl -N` against `/api/chat/stream` produces stream of `data: {...}\n\n` frames.
+  - `curl -N` against `/api/chat/stream` produces stream of `data: {...}\n\n` frames plus `data: [DONE]\n\n`.
+  - Header: `x-vercel-ai-ui-message-stream: v1` emitted (AI SDK UI custom-backend compat).
   - First byte <500ms; final byte p95 ≤8s on cached `wiki_subgraph` query.
   - Header: `X-Accel-Buffering: no` emitted (nginx-proxy compat).
 - **Dependency:** US-CONS-06 + Phase-STREAM (parallel dispatch shares the same `llm.Client.Stream` restructure — bundle if possible).
@@ -110,13 +111,13 @@ Planning contract repaired 2026-05-24:
 
 CONS-09..13 are frontend/product stories and are intentionally blocked behind the backend protocol:
 
-- **US-CONS-09** mounts assistant-ui `/chat` with `useDataStreamRuntime` once CONS-07 speaks Vercel AI SDK data-stream frames.
+- **US-CONS-09** mounts assistant-ui `/chat` with `useDataStreamRuntime` once CONS-07 speaks Vercel AI SDK UI Message Stream frames.
 - **US-CONS-10** adds markdown/code/wiki-link rendering and Italian UI strings.
 - **US-CONS-11** renders tool calls as React components.
 - **US-CONS-12** turns backend `pending_question` into ask_user UI.
 - **US-CONS-13** adds voice playback, source attachments, and browser-side dictation.
 
-Do not start Wave B until CONS-07's data-stream benchmark passes. The backend wire format is the contract.
+Do not start Wave B until CONS-07's UI Message Stream benchmark passes. The backend wire format is the contract.
 
 ---
 

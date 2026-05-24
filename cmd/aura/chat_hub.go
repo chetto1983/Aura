@@ -18,6 +18,7 @@ import (
 type sharedChatHub struct {
 	hub             *chat.Hub
 	webRouter       *webadapter.Router
+	webStreamRouter *webadapter.StreamRouter
 	webSessionStore *agent.SessionStore
 }
 
@@ -36,7 +37,8 @@ func newSharedChatHub(
 	}
 	builders := make(map[chat.Channel]chat.InvocationBuilder, 2)
 
-	webBuilder, webSessions := newWebInvocationBuilder(cfg, deps, logger, deps.Budget, archiveRepo, archiveAppender)
+	webStreamRouter := webadapter.NewStreamRouter()
+	webBuilder, webSessions := newWebInvocationBuilder(cfg, deps, logger, deps.Budget, archiveRepo, archiveAppender, webStreamRouter)
 	if webBuilder != nil {
 		builders[chat.ChannelWeb] = webBuilder.Build
 	}
@@ -63,6 +65,7 @@ func newSharedChatHub(
 	webRouter := webadapter.NewRouter()
 	hub.RegisterInbound(webadapter.New())
 	hub.RegisterOutbound(webRouter)
+	hub.RegisterOutbound(webStreamRouter)
 
 	if bot != nil {
 		telegramOutbound = telegramadapter.NewOutbound(logger)
@@ -77,6 +80,7 @@ func newSharedChatHub(
 	return &sharedChatHub{
 		hub:             hub,
 		webRouter:       webRouter,
+		webStreamRouter: webStreamRouter,
 		webSessionStore: webSessions,
 	}, nil
 }
