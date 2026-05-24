@@ -1,3 +1,4 @@
+import { useCallback, useState } from 'react';
 import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
@@ -11,6 +12,12 @@ import {
 import { ArrowUp, Bot, MessageCircle, Plus } from 'lucide-react';
 import { Markdown } from '@/components/Markdown';
 import { AuraToolUIRegistrations } from '@/components/chat/AuraToolUIRegistrations';
+import { PendingQuestion } from '@/components/chat/PendingQuestion';
+import {
+  isPendingQuestionPart,
+  normalizePendingQuestionPayload,
+  type PendingQuestionPayload,
+} from '@/components/chat/PendingQuestion.helpers';
 import { ToolCallComponent } from '@/components/chat/ToolCallComponent';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuraAssistantRuntime, useAuraChatThreadID } from '@/lib/assistant-runtime';
@@ -19,7 +26,18 @@ import { cn } from '@/lib/utils';
 export default function ChatPage() {
   const { t } = useLocale();
   const [threadID, startNewThread] = useAuraChatThreadID();
-  const runtime = useAuraAssistantRuntime(threadID);
+  const [pendingQuestionState, setPendingQuestionState] = useState<{
+    threadID: string;
+    question: PendingQuestionPayload;
+  } | null>(null);
+  const handleStreamData = useCallback((data: { name: string; data: unknown }) => {
+    const question = normalizePendingQuestionPayload({ name: data.name, data: data.data });
+    if (question) setPendingQuestionState({ threadID, question });
+  }, [threadID]);
+  const runtime = useAuraAssistantRuntime(threadID, handleStreamData);
+  const pendingQuestion = pendingQuestionState?.threadID === threadID
+    ? pendingQuestionState.question
+    : null;
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
@@ -33,7 +51,12 @@ export default function ChatPage() {
               <p className="truncate text-xs text-muted-foreground">{threadID}</p>
             </div>
           </header>
-          <Thread t={t} />
+          <Thread
+            t={t}
+            threadID={threadID}
+            pendingQuestion={pendingQuestion}
+            onQuestionAnswered={() => setPendingQuestionState(null)}
+          />
         </section>
       </div>
     </AssistantRuntimeProvider>
@@ -79,7 +102,17 @@ function ThreadRail({ onNewThread }: { onNewThread: () => string }) {
   );
 }
 
-function Thread({ t }: { t: ReturnType<typeof useLocale>['t'] }) {
+function Thread({
+  t,
+  threadID,
+  pendingQuestion,
+  onQuestionAnswered,
+}: {
+  t: ReturnType<typeof useLocale>['t'];
+  threadID: string;
+  pendingQuestion: PendingQuestionPayload | null;
+  onQuestionAnswered: () => void;
+}) {
   return (
     <ThreadPrimitive.Root className="flex min-h-0 flex-1 flex-col">
       <ThreadPrimitive.Viewport className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto scroll-smooth px-4 py-6">
@@ -99,10 +132,20 @@ function Thread({ t }: { t: ReturnType<typeof useLocale>['t'] }) {
           <ThreadPrimitive.Messages
             components={{
               UserMessage,
-              AssistantMessage,
+              AssistantMessage: () => <AssistantMessage threadID={threadID} />,
             }}
           />
         </div>
+
+        {pendingQuestion && (
+          <div className="mx-auto w-full max-w-3xl">
+            <PendingQuestion
+              question={pendingQuestion}
+              threadID={threadID}
+              onAnswered={onQuestionAnswered}
+            />
+          </div>
+        )}
 
         <ThreadPrimitive.ViewportFooter className="sticky bottom-0 mt-auto bg-background/95 pt-2 backdrop-blur">
           <Composer placeholder={t('chat.composerPlaceholder')} sendLabel={t('chat.send')} />
@@ -144,7 +187,7 @@ function UserMessage() {
   );
 }
 
-function AssistantMessage() {
+function AssistantMessage({ threadID }: { threadID: string }) {
   const { t } = useLocale();
   return (
     <MessagePrimitive.Root className="flex items-start gap-3">
@@ -156,6 +199,12 @@ function AssistantMessage() {
           {({ part }) => {
             if (part.type === 'text') return <AssistantText />;
             if (part.type === 'tool-call') return part.toolUI ?? <ToolCallComponent {...part} />;
+            if (isPendingQuestionPart(part)) {
+              const pendingQuestion = normalizePendingQuestionPayload(part);
+              if (pendingQuestion) {
+                return <PendingQuestion question={pendingQuestion} threadID={threadID} />;
+              }
+            }
             return null;
           }}
         </MessagePrimitive.Parts>

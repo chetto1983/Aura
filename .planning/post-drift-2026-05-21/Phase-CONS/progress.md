@@ -23,9 +23,11 @@
 
 | 2026-05-24 | US-CONS-11 | passed | `npm --prefix web test -- ToolCallComponent.helpers.test.ts`; `go test ./internal/channels/web -run TestStreamRouterEmitsToolFrames -count=1`; `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`; `go test ./internal/channels/web -count=1`; Playwright desktop tool-card probe; Playwright mobile tool-card probe; `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `dupl -t 60 internal/channels/web/streaming_outbound.go internal/channels/web/streaming_outbound_test.go`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`. | Tool-call parts now render as assistant-ui generative UI components. Ground truth: browser fixture renders `web_search` top-3 cards, `wiki_page` link card to `/wiki/aura-phase-cons`, and generic `execute_shell` collapsible details; DOM never contains `SECRET_ARG_VALUE`, generic details show `[redacted]`, and mobile card width stays inside the chat section. Backend stream now emits `tool-call-delta.argsText` from `arg_keys` only, with values redacted. Screenshots: `D:/tmp/aura-chat-us-cons-11-tool-cards.png` and `D:/tmp/aura-chat-us-cons-11-tool-cards-mobile.png`. |
 
+| 2026-05-24 | US-CONS-12 | passed | `npm --prefix web test -- PendingQuestion.helpers.test.ts`; `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`; Playwright approval/clarification pending-question probe (`node D:/tmp/aura-us-cons-12-probe.cjs`); `go test ./internal/api -run "TestChatAnswerForwardsQuestionAnswer|TestChatReplyIncludesPendingQuestion|TestChatStream" -count=1`; `go test ./internal/channels/web -run "TestStreamRouterEmitsPendingQuestionFrame|TestChatService_AnswerNormalizesQuestionPayload|TestChatService_ReturnsPendingQuestion" -count=1`; `go test ./cmd/aura -run "TestWebChatAskUserPendingAndAnswerResume|TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`. | Assistant-ui `data-pending-question` frames are captured through `useDataStreamRuntime` `onData`, rendered as inline `PendingQuestion` cards, and answered through `/api/chat/answer/{id}`. Ground truth: approval card renders approve/deny buttons and posts `answer:"approve"` with thread scope and selected option id; clarification card renders textarea, posts the typed answer with thread scope, and both flows append the final reply as a normal assistant message. Screenshots: `D:/tmp/aura-chat-us-cons-12-approval.png` and `D:/tmp/aura-chat-us-cons-12-clarification.png`. |
+
 ## Current Slice
 
-**US-CONS-12:** render ask_user pending-question UI flow in assistant-ui.
+**US-CONS-13:** voice playback + attachments + voice dictation in assistant-ui.
 
 Pre-edit map:
 
@@ -34,20 +36,23 @@ Pre-edit map:
 - `web/src/components/chat/AuraToolUIRegistrations.tsx`
 - `web/src/components/chat/ToolCallComponent.tsx`
 - `web/src/components/chat/tools/`
-- `internal/channels/web/streaming_outbound.go`
-- `internal/channels/web/streaming_outbound_test.go`
+- `web/src/lib/assistant-runtime.ts`
+- `web/src/api.ts`
+- `web/src/types/api.ts`
 - `web/src/i18n/locales/en.json`
 - `web/src/i18n/locales/it.json`
 - `internal/api/dist/`
 - `D:/tmp/assistant-ui/apps/docs/content/docs/guides/tool-ui.mdx`
 - `D:/tmp/assistant-ui/templates/minimal/components/assistant-ui/thread.tsx`
-- `D:/tmp/assistant-ui/templates/minimal/components/assistant-ui/tool-fallback.tsx`
+- `D:/tmp/assistant-ui/templates/minimal/components/assistant-ui/attachment.tsx`
+- `D:/tmp/openhuman/src/ttsClient.ts`
+- `D:/tmp/hermes-agent/tools/voice_mode.py`
+- `D:/tmp/hermes-agent/tests/tools/test_voice_mode.py`
 
 Dedicated QA target:
 
 - `npm --prefix web run build`
-- browser fixture renders pending-question cards from `data-pending-question` frames
-- answer endpoint probe posts approval/clarification replies and resumes the run
+- browser fixture renders audio player, attachment chip/upload, and speech-recognition dictation mock
 - Italian + English chat strings remain complete
 - `go vet ./...`
 - `go build ./...`

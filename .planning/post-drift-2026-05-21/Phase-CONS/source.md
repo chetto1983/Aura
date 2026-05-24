@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-12. CONS-02..11 are implemented; next render ask_user pending-question UI on top of assistant-ui Thread.
+**Current slice:** US-CONS-13. CONS-02..12 are implemented; next add voice playback, attachments, and browser dictation to the assistant-ui chat route.
 
 ## Objective
 
@@ -210,6 +210,21 @@ Checked 2026-05-24:
 - Do not define frontend-executed tools for `wiki_page`, `web_search`, or `web`; Aura's backend remains the execution authority.
 - Do not add a second styling package or assistant-ui theme. Cards use Aura's existing Tailwind tokens and lucide icons.
 - Do not make the web card depend on the deprecated `web_search` tool name only; the current Aura manifest uses the consolidated `web` tool.
+
+## Adopted For US-CONS-12
+
+- Use `useDataStreamRuntime`'s `onData` callback for `data-pending-question` frames. The installed assistant-ui stream decoder stores `data-*` frames as message metadata, not visible content parts, so page-level state is the reliable rendering path.
+- Keep the backend `data-pending-question` UI Message Stream contract unchanged; it already exposes `id`, `question`, `options`, and `kind`.
+- Render the pending card inline in `web/src/pages/Chat.tsx` below the message list and above the composer, inside the `AssistantRuntimeProvider`, so answer submission can append the final `ChatReply` as a normal assistant message through the thread runtime.
+- Send `/api/chat/answer/{id}` with `answer`, current `thread_id`, and `selected_option_ids` for option clicks; this matches `internal/api/chat.go` and preserves durable same-thread resume.
+- Use concrete D:/tmp browser fixtures: approval frame with `options:["approve","deny"]` and clarification frame with free-text textarea. Screenshots are stored as `D:/tmp/aura-chat-us-cons-12-approval.png` and `D:/tmp/aura-chat-us-cons-12-clarification.png`.
+- Keep helper tests focused on payload normalization and answer-body construction so browser QA can focus on rendered behavior and API body assertions.
+
+## Rejected For US-CONS-12
+
+- Do not rely on `MessagePrimitive.Parts` alone for streamed `data-*` frames; local assistant-ui source shows those frames are emitted through `onData` and `metadata.unstable_data`, not rendered message content.
+- Do not start a second chat stream after answer submission. The existing backend answer endpoint resumes the durable question and returns a `ChatReply`; the UI appends that reply to the assistant thread.
+- Do not implement audio playback, file attachments, or dictation in this slice; those are the US-CONS-13 surface.
 
 ## Open Questions Carried Forward
 

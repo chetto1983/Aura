@@ -386,6 +386,22 @@ export interface ChatRequest {
   thread_id?: string;
 }
 
+export interface PendingQuestion {
+  id: string;
+  question: string;
+  options?: string[];
+  kind?: string;
+}
+
+export interface ChatAnswerRequest {
+  user_id?: string;
+  thread_id?: string;
+  answer: string;
+  message?: string;
+  free_text?: string;
+  selected_option_ids?: string[];
+}
+
 export interface ChatReply {
   reply: string;
   elapsed_ms: number;
@@ -395,6 +411,7 @@ export interface ChatReply {
   cache_hit?: boolean;
   tools_used?: string[];
   budget_warning?: string;
+  pending_question?: PendingQuestion;
 }
 
 // Slice 12j — conversation archive read surface.

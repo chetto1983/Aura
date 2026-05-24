@@ -217,8 +217,8 @@
         "Single atomic commit prefix: feat(web/ui): ask_user pending-question UI flow (US-CONS-12)"
       ],
       "priority": 11,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-08 (backend pending_question + /api/chat/answer endpoint) + US-CONS-09. Important UX surface — turns a backend protocol into a usable interactive question."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Assistant-ui data-* frames are captured through useDataStreamRuntime onData and rendered as an inline PendingQuestion card in the chat thread. Approval/selection render option buttons; clarification renders textarea free-text; secret_input renders password input. Submit calls POST /api/chat/answer/{id} with answer, thread_id, and selected_option_ids for option clicks, shows waiting, then appends the final ChatReply as a normal assistant message. Dedicated Playwright probes covered approval approve/deny rendering and clarification textarea flow with POST body assertions and screenshots in D:/tmp."
     },
     {
       "id": "US-CONS-13",

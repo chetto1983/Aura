@@ -32,6 +32,7 @@ import type {
   PendingUserSummary,
   PendingDecisionResponse,
   ChatRequest,
+  ChatAnswerRequest,
   ChatReply,
   ConversationTurn,
   ConversationDetail,
@@ -339,6 +340,8 @@ export const api = {
   // ---- buffered web chat compatibility endpoint ----
   chat: (req: ChatRequest) =>
     post<ChatReply>('/chat', req),
+  answerChatQuestion: (questionID: string, req: ChatAnswerRequest) =>
+    post<ChatReply>(`/chat/answer/${encodeURIComponent(questionID)}`, req),
 
   // ---- conversation archive (slice 12j) ----
   conversations: (chatId?: number, limit?: number, hasTools?: boolean) =>

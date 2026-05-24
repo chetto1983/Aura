@@ -433,6 +433,44 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands exit 0.
 - **PRD gate:** self-audited slice QA before the US-CONS-11 atomic commit.
 
+## US-CONS-12 - ask_user Pending Question UI
+
+### B-CONS-12-A: Pending Question Payload And Answer Body Helpers
+
+- **Command:** `npm --prefix web test -- PendingQuestion.helpers.test.ts`
+- **Fixture:** local assistant-ui-style `data-pending-question` part, metadata `{name:"pending-question", data:{...}}` entry, future label/value option object, and thread-scoped answer payload.
+- **Artifact:** Vitest helper assertions.
+- **Ground truth:** string options normalize to `{label,value}` pairs; metadata data entries are recognized; clarification/secret/missing-option kinds require text input; answer body includes `answer`, `thread_id`, and selected option id only for option clicks.
+- **Pass threshold:** all helper assertions pass.
+- **PRD gate:** frontend pending-question rendering uses the real stream data shape without hardcoding one-off browser fixtures.
+
+### B-CONS-12-B: Approval Browser Flow
+
+- **Command:** `node D:/tmp/aura-us-cons-12-probe.cjs`
+- **Fixture:** Vite dev server on `127.0.0.1:5180`, Playwright page `/chat?thread_id=web_probe_approval`, intercepted `/api/chat/stream` returning a UI Message Stream with `data-pending-question{id:"q-approval", question:"Deploy this slice?", options:["approve","deny"], kind:"approval"}`, and intercepted `/api/chat/answer/q-approval`.
+- **Artifact:** `D:/tmp/aura-chat-us-cons-12-approval.png` plus captured POST body.
+- **Ground truth:** the card renders two option buttons; clicking `approve` shows the waiting state; POST body contains `answer:"approve"`, `thread_id:"web_probe_approval"`, and `selected_option_ids:["approve"]`; final assistant reply text is visible in the thread.
+- **Pass threshold:** Playwright DOM and request-body assertions pass.
+- **PRD gate:** approval ask_user pauses are usable from the assistant-ui chat surface.
+
+### B-CONS-12-C: Clarification Browser Flow
+
+- **Command:** `node D:/tmp/aura-us-cons-12-probe.cjs`
+- **Fixture:** same Playwright/Vite probe, second page `/chat?thread_id=web_probe_clarification`, intercepted stream returning `data-pending-question{id:"q-clarify", question:"Which file should Aura inspect?", options:[], kind:"clarification"}`, and intercepted answer endpoint.
+- **Artifact:** `D:/tmp/aura-chat-us-cons-12-clarification.png` plus captured POST body.
+- **Ground truth:** the card renders a textarea free-text fallback; submitting `Inspect internal/agent/loop.go` shows waiting; POST body contains the same answer and `thread_id:"web_probe_clarification"`; final assistant reply text is visible in the thread.
+- **Pass threshold:** Playwright DOM and request-body assertions pass.
+- **PRD gate:** clarification ask_user pauses no longer require Telegram to unblock a web run.
+
+### B-CONS-12-D: Dedicated Slice QA
+
+- **Command:** `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`; `go test ./internal/api -run "TestChatAnswerForwardsQuestionAnswer|TestChatReplyIncludesPendingQuestion|TestChatStream" -count=1`; `go test ./internal/channels/web -run "TestStreamRouterEmitsPendingQuestionFrame|TestChatService_AnswerNormalizesQuestionPayload|TestChatService_ReturnsPendingQuestion" -count=1`; `go test ./cmd/aura -run "TestWebChatAskUserPendingAndAnswerResume|TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`; `lefthook run pre-commit`
+- **Fixture:** frontend chat route plus backend ask_user/stream contracts.
+- **Artifact:** command outputs in this slice run, rebuilt `internal/api/dist`, and Playwright screenshots.
+- **Ground truth:** frontend build/i18n/lint/test pass; backend pending question and answer tests still pass; broad Go gates pass; no whitespace or pre-commit regressions remain.
+- **Pass threshold:** all commands exit 0.
+- **PRD gate:** self-audited slice QA before the US-CONS-12 atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -448,7 +486,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-09 | Completed by B-CONS-09-A..D above | assistant-ui `/chat` route, intercepted UI Message Stream, backend stream tests | text-only stream renders in Thread; composer request sends bearer auth, `thread_id`, and latest user message | visible streamed assistant message plus backend stream tests green |
 | CONS-10 | Completed by B-CONS-10-A..D above | markdown/code/wiki-link assistant message | GFM, highlighted code block, and `[[slug]]` render correctly | DOM assertions pass on desktop and mobile; Go embed remains green |
 | CONS-11 | Completed by B-CONS-11-A..D above | SSE tool-call frames | generic and specialized tool cards render with status and summaries | DOM cards present; no secret args displayed |
-| CONS-12 | `npm --prefix web run build` plus ask_user browser probe | pending question frame and answer endpoint | options/free text submit resumes run | final assistant reply appears after answer |
+| CONS-12 | Completed by B-CONS-12-A..D above | pending question frame and answer endpoint | options/free text submit resumes run | final assistant reply appears after answer |
 | CONS-13 | `npm --prefix web run build` plus attachment/audio/dictation probes | fake audio URL, test PDF upload, browser speech mock | audio control plays URL; source chip sends source_id; dictated text enters composer | DOM/API assertions pass |
 
 ## Phase Completion Evidence

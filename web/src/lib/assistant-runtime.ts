@@ -54,7 +54,10 @@ export function useAuraChatThreadID(): [string, () => string] {
   return [threadID, startNewThread];
 }
 
-export function useAuraAssistantRuntime(threadID: string): AssistantRuntime {
+export function useAuraAssistantRuntime(
+  threadID: string,
+  onData?: (data: { type: string; name: string; data: unknown; transient?: boolean }) => void,
+): AssistantRuntime {
   const threadIDRef = useRef(threadID);
 
   useEffect(() => {
@@ -67,9 +70,10 @@ export function useAuraAssistantRuntime(threadID: string): AssistantRuntime {
       protocol: 'ui-message-stream' as const,
       headers: auraStreamHeaders,
       onResponse: handleStreamResponse,
+      onData,
       body: async () => ({ thread_id: threadIDRef.current }),
     }),
-    [],
+    [onData],
   );
 
   return useDataStreamRuntime(options);
