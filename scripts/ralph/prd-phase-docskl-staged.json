@@ -22,7 +22,7 @@
         "Single atomic commit prefix: feat(tools): restore create_document(format=pdf|xlsx|docx) action-enum (US-DOCSKL-01)"
       ],
       "priority": 1,
-      "passes": false,
+      "passes": true,
       "notes": "GROUND-TRUTH BEFORE EDIT: (1) Read internal/agent/tools/registry/files_pdf.go IN FULL — it shows the block-grammar contract (title + heading/paragraph/bullet/table). (2) Read files_xlsx.go + files_docx.go to confirm signature parity. (3) Read cmd/aura/app_wire.go around tool registry construction (grep 'NewSearchTool' or similar) — that's where you wire create_document. (4) Read compose.yaml AURA_TOOL_ALLOWLIST to know format. ARCHITECTURAL CONVENTION: action-enum per Aura (NOT split tools). The hermes/openhuman pattern was already validated for skill_manage; same pattern here. EVIDENCE from 2026-05-24 19:48 DB row: user asked 'Genera un file PDF di esempoi5'; Aura ran execute_code(`from fpdf import FPDF`); ModuleNotFoundError; recovered via `subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'fpdf'])`. After this story ships, that exact prompt MUST route to create_document(format='pdf', ...) — verify in live test 2. NO scope creep: do NOT add pptx in this story (separate format, separate lib choice); do NOT modify execute_code; do NOT touch the markitdown READ side. JUST consolidate the existing 3 dormant builders behind one action-enum facade + register + allowlist."
     },
     {

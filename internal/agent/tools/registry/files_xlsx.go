@@ -32,20 +32,7 @@ func NewCreateXLSXTool(store source.Writer, sender DocumentSender) *CreateXLSXTo
 }
 
 func (t *CreateXLSXTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	spec, deliver, caption, err := parseCreateXLSXArgs(args)
-	if err != nil {
-		return "", err
-	}
-	body, name, err := files.BuildXLSX(spec)
-	if err != nil {
-		return "", err
-	}
-	return persistAndDeliverFile(ctx, t.store, t.sender, "create_xlsx", source.PutInput{
-		Kind:     source.KindXLSX,
-		Filename: name,
-		MimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-		Bytes:    body,
-	}, deliver, caption)
+	return executeGeneratedDocument(ctx, args, t.store, t.sender, "create_xlsx", source.KindXLSX, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", parseCreateXLSXArgs, files.BuildXLSX)
 }
 
 // parseCreateXLSXArgs lifts the LLM's loosely-typed JSON into a typed

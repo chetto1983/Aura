@@ -19,8 +19,7 @@ const manifestDescLimit = 70
 //	All tools are listed below by name + short description. Invoke any
 //	tool directly by name — the agent loop will load its full schema.
 //
-//	- create_docx — Generate a Word document (.docx) from blocks
-//	- create_xlsx — Generate an Excel workbook (.xlsx) from rows
+//	- create_document - Create PDF, XLSX, or DOCX files
 //	- ...
 //
 // Sorted alphabetically for cache stability (the prompt-cache prefix

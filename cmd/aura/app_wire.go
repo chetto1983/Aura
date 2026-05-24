@@ -216,6 +216,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// ---- Bot-dependent tool registrations (need *Bot as sender/runner) -----
 	// Sandbox tools and wiki_page need b constructed and available. Registered before scheduler so they're
 	// live when the first Telegram message arrives.
+	if tool := tools.NewCreateDocumentTool(a.deps.Sources, b); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
 	if tool := tools.NewExecuteCodeToolWithStoreAndRegistry(a.deps.SandboxMgr, b, a.deps.Sources, a.deps.Tools); tool != nil {
 		a.deps.Tools.Register(tool)
 	}

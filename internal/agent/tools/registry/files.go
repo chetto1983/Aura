@@ -55,6 +55,11 @@ type DocumentSender interface {
 	SendDocumentToUser(userID, filename string, body []byte, caption string) error
 }
 
+type documentBuilderDeps struct {
+	store  source.Writer
+	sender DocumentSender
+}
+
 // persistAndDeliverFile handles the shared persist → status-update → deliver →
 // marshal sequence that all file-creation tools (xlsx, docx, pdf) execute after
 // building the file body. Generated files are marked ingested immediately so
@@ -94,18 +99,47 @@ func persistAndDeliverFile(
 		}
 	}
 	resp := map[string]any{
-		"source_id":  src.ID,
-		"filename":   input.Filename,
-		"size_bytes": src.SizeBytes,
-		"sha256":     src.SHA256,
-		"duplicate":  dup,
-		"delivered":  deliver,
+		"source_id":          src.ID,
+		"filename":           src.Filename,
+		"size_bytes":         src.SizeBytes,
+		"sha256":             src.SHA256,
+		"duplicate":          dup,
+		"delivered":          deliver,
+		"status":             "stored",
+		"follow_up_required": false,
 	}
 	out, err := json.Marshal(resp)
 	if err != nil {
 		return "", fmt.Errorf("%s: marshal response: %w", toolName, err)
 	}
 	return string(out), nil
+}
+
+func executeGeneratedDocument[T any](
+	ctx context.Context,
+	args map[string]any,
+	st source.Writer,
+	sender DocumentSender,
+	toolName string,
+	kind source.Kind,
+	mimeType string,
+	parse func(map[string]any) (T, bool, string, error),
+	build func(T) ([]byte, string, error),
+) (string, error) {
+	spec, deliver, caption, err := parse(args)
+	if err != nil {
+		return "", err
+	}
+	body, filename, err := build(spec)
+	if err != nil {
+		return "", err
+	}
+	return persistAndDeliverFile(ctx, st, sender, toolName, source.PutInput{
+		Kind:     kind,
+		Filename: filename,
+		MimeType: mimeType,
+		Bytes:    body,
+	}, deliver, caption)
 }
 
 // stringifyCell coerces whatever the LLM put in a cell slot to a string.

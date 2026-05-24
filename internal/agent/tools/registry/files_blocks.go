@@ -17,6 +17,65 @@ type blockShape struct {
 	Rows  [][]string
 }
 
+type blockDocumentArgs struct {
+	Filename string
+	Title    string
+	Shapes   []blockShape
+	Deliver  bool
+	Caption  string
+}
+
+func parseBlockDocumentArgs(tool string, args map[string]any) (blockDocumentArgs, error) {
+	filename, _ := args["filename"].(string)
+	if filename == "" {
+		return blockDocumentArgs{}, fmt.Errorf("%s: filename is required", tool)
+	}
+
+	title, _ := args["title"].(string)
+	shapes, err := parseBlockShapes(tool, args["blocks"])
+	if err != nil {
+		return blockDocumentArgs{}, err
+	}
+	if err := requireBlocksOrTitle(tool, title, len(shapes)); err != nil {
+		return blockDocumentArgs{}, err
+	}
+
+	deliver := true
+	if v, ok := args["deliver"].(bool); ok {
+		deliver = v
+	}
+	return blockDocumentArgs{
+		Filename: filename,
+		Title:    title,
+		Shapes:   shapes,
+		Deliver:  deliver,
+		Caption:  sanitizeDocumentCaption(stringArg(args, "caption")),
+	}, nil
+}
+
+func convertBlockShapes[T any](shapes []blockShape, convert func(blockShape) T) []T {
+	blocks := make([]T, 0, len(shapes))
+	for _, shape := range shapes {
+		blocks = append(blocks, convert(shape))
+	}
+	return blocks
+}
+
+func parseBlockDocumentSpec[TBlock, TSpec any](
+	tool string,
+	args map[string]any,
+	convert func(blockShape) TBlock,
+	makeSpec func(blockDocumentArgs, []TBlock) TSpec,
+) (TSpec, bool, string, error) {
+	parsed, err := parseBlockDocumentArgs(tool, args)
+	if err != nil {
+		var zero TSpec
+		return zero, false, "", err
+	}
+	blocks := convertBlockShapes(parsed.Shapes, convert)
+	return makeSpec(parsed, blocks), parsed.Deliver, parsed.Caption, nil
+}
+
 // parseBlockShapes lifts the LLM's loosely-typed "blocks" array into a
 // neutral slice. tool is the LLM-facing tool name so error messages stay
 // recognisable to the model.

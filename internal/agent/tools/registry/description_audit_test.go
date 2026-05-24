@@ -21,6 +21,7 @@ func auditTools() []Tool {
 		&TaskTool{loc: time.Local},
 		&SourceTool{},
 		&FileTool{},
+		&CreateDocumentTool{},
 		&ExecuteCodeTool{},
 		&ExecuteShellTool{},
 		&ProposePatchTool{},

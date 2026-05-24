@@ -1,7 +1,7 @@
 # Phase-DOCSKL Benchmark Contract
 
 **Role:** benchmark
-**Status:** benchmark-ready, self-audited 2026-05-24
+**Status:** US-DOCSKL-01 passed 2026-05-24, US-DOCSKL-02 pending
 **Rule:** Smoke checks are prechecks only. DOCSKL stories pass only when tests
 and probes assert source-store bytes, API JSON, logs, or parsed artifacts.
 
@@ -30,7 +30,8 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** dormant PDF/XLSX/DOCX builders still persist valid source records and bytes before facade wiring.
 - **Pass threshold:** all selected tests pass.
 - **PRD gate:** re-expose existing deterministic builders instead of runtime Python fallback.
-- **Result:** not run in planning repair.
+- **Result:** PASS 2026-05-24. Also rerun after facade changes inside the
+  focused tool gate below.
 
 ### B-DOCSKL-01-B: Facade Unit Coverage
 
@@ -40,7 +41,8 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** `format=pdf`, `format=xlsx`, and `format=docx` dispatch to the correct builder; unknown format is rejected; nil store returns nil; nil sender with `deliver=true` returns an explicit error.
 - **Pass threshold:** exact branch assertions pass and the race run is green.
 - **PRD gate:** one consolidated action-enum document tool with graceful failure modes.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. `go test ./internal/agent/tools/registry ./internal/files -run "TestCreateDocumentTool|TestCreate(PDF|XLSX|DOCX)Tool" -count=1 -race`
+  passed with `CC=D:\tmp\w64devkit\bin\x86_64-w64-mingw32-gcc-16.1.0.exe`.
 
 ### B-DOCSKL-01-C: App Wiring And Manifest Gate
 
@@ -50,7 +52,8 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** `create_document` is registered once; `create_pdf`, `create_xlsx`, and `create_docx` are not exposed as separate production tools; `compose.yaml` default allowlist contains `create_document`.
 - **Pass threshold:** exact tool-name assertions pass.
 - **PRD gate:** manifest remains lean after tool consolidation.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. `go test ./cmd/aura ./internal/agent/tools/registry -run "Test.*Tool|Test.*Allowlist|Test.*Manifest|Test.*CreateDocument|TestDescriptionAudit" -count=1`
+  passed.
 
 ### B-DOCSKL-01-D: Artifact Bytes Live Probe
 
@@ -65,7 +68,14 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** each reply uses `tools_used=["create_document"]`; no `execute_code`; no `pip install`; PDF bytes are `>1024` and text extraction contains `Test`; XLSX unzip contains `xl/sharedStrings.xml` with `Nome` and `Eta`; DOCX unzip contains `word/document.xml` with `Test`.
 - **Pass threshold:** all artifact assertions pass and `docker compose logs aura --since <window>` has zero `pip install` matches.
 - **PRD gate:** production behavior no longer depends on ad hoc Python package installs.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. `docker compose build aura` and
+  `docker compose up -d aura` passed; `/api/chat` live probes produced exactly
+  `tools_used=["create_document"]` for PDF/XLSX/DOCX. Verified raw artifacts:
+  PDF `src_42ab593ebea11a46` 1336 bytes with text `DOCSKL PDF 20260524231514`;
+  XLSX `src_1a8e8e07a1f9af47` 6071 bytes with sheet `Data` and strings
+  `Nome`, `Eta`, `20260524231514`; DOCX `src_a121fc9a31807095` 1189 bytes with
+  `word/document.xml` text `DOCSKL DOCX 20260524231514`. Container logs since
+  the probe window reported `pip_install=0` and `execute_code_tool=0`.
 
 ### B-DOCSKL-01-E: Dedicated Slice QA
 
@@ -75,7 +85,12 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** facade does not bypass existing builder validation, no split tools are registered, error messages are explicit, and no runtime Python/pip path is introduced.
 - **Pass threshold:** PASS verdict only if tests and negative checks pass.
 - **PRD gate:** dedicated QA before the atomic local commit.
-- **Result:** not run.
+- **Result:** PASS 2026-05-24. Diff review found one live-probe issue:
+  source-store dedup returned an existing XLSX source while the shared response
+  reported the requested filename. Fixed `persistAndDeliverFile` to report the
+  stored record filename and added
+  `TestCreateDocumentTool_DuplicateResponseUsesStoredFilename`. Unknown-format,
+  missing-spec, nil-store, and nil-sender tests pass.
 
 ## US-DOCSKL-02 - `skill`
 
@@ -87,7 +102,7 @@ Run these for every DOCSKL Go slice unless the story narrows them further:
 - **Ground truth:** catalog parse/search, local skill loading, install validation, delete validation, and loader cache invalidation still pass before tool wiring.
 - **Pass threshold:** all selected tests pass.
 - **PRD gate:** preserve the existing skill lifecycle backend.
-- **Result:** not run.
+- **Result:** pending for US-DOCSKL-02.
 
 ### B-DOCSKL-02-B: Skill Tool Unit Coverage
 
