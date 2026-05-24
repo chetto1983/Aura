@@ -188,6 +188,15 @@ type Config struct {
 	// does not expose a /models endpoint.
 	ModelContextWindow int `envconfig:"AURA_MODEL_CONTEXT_WINDOW"`
 
+	// Payload summarizer threshold knobs (US-CTX-03). Layer-2 LLM-based
+	// compaction that fires when TokenJuice rules fail OR output still oversized.
+	// PayloadThresholdTokens: minimum estimated token count to trigger the
+	// summarizer. Default 16384 sits above typical tool results but below a
+	// full wiki-page body. PayloadMaxTokens: upper bound above which the
+	// summarizer is skipped (payload too expensive to summarize; spill handles it).
+	PayloadThresholdTokens int `envconfig:"AURA_PAYLOAD_THRESHOLD_TOKENS"`
+	PayloadMaxTokens       int `envconfig:"AURA_PAYLOAD_MAX_TOKENS"`
+
 	// TokenJuice rule-driven output compaction (Phase-TJ). Enabled by default after
 	// US-TJ07 confirmed 15.8% heavy-turn savings + 0 regressions. Set
 	// AURA_TOKENJUICE_ENABLED=false to disable without a code change.
@@ -379,6 +388,10 @@ func Load() (*Config, error) {
 
 	// 0 means auto-detect from /models at boot; positive int overrides auto-detect.
 	cfg.ModelContextWindow = getEnvInt("AURA_MODEL_CONTEXT_WINDOW", 0)
+
+	// Payload summarizer thresholds (US-CTX-03). 0 → use package defaults.
+	cfg.PayloadThresholdTokens = getEnvInt("AURA_PAYLOAD_THRESHOLD_TOKENS", 0)
+	cfg.PayloadMaxTokens = getEnvInt("AURA_PAYLOAD_MAX_TOKENS", 0)
 
 	cfg.TokenJuiceEnabled = getEnvBool("AURA_TOKENJUICE_ENABLED", true)
 

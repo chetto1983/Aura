@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
@@ -80,4 +81,8 @@ type RunTaskDeps struct {
 	// (US-OUT-07). Keys match governance.Class* constants ("web", "wiki", ...).
 	// Nil uses the hardcoded defaults from governance.NewBudgetTracker.
 	BudgetCaps map[string]int
+	// PayloadSummarizer intercepts oversized tool results AFTER TokenJuice
+	// compaction (US-CTX-03). Nil disables payload summarization — MUST be nil
+	// for the summarizer sub-agent itself to prevent recursive dispatch (R1).
+	PayloadSummarizer governance.PayloadSummarizer
 }

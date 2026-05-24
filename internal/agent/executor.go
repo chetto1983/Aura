@@ -44,6 +44,10 @@ type agentExecutor struct {
 	// per agentExecutor (= one per turn); cap exhaustion returns a structured
 	// error as the tool result so the LLM sees it inline.
 	budget *governance.BudgetTracker
+	// payloadSummarizer intercepts oversized tool results AFTER TokenJuice
+	// compaction (US-CTX-03). Nil disables payload summarization — MUST be nil
+	// for the summarizer sub-agent itself to prevent recursive dispatch (R1).
+	payloadSummarizer governance.PayloadSummarizer
 }
 
 var _ ToolExecutor = (*agentExecutor)(nil)
@@ -61,6 +65,7 @@ func newAgentExecutor(
 	tokenJuiceEnabled bool,
 	spillDir string,
 	budgetCaps map[string]int,
+	payloadSummarizer governance.PayloadSummarizer,
 ) *agentExecutor {
 	return &agentExecutor{
 		tools:             reg,
@@ -76,6 +81,7 @@ func newAgentExecutor(
 		spillDir:          spillDir,
 		repeatedLookup:    governance.NewRepeatedLookupCounter(),
 		budget:            governance.NewBudgetTracker(budgetCaps),
+		payloadSummarizer: payloadSummarizer,
 	}
 }
 
@@ -112,6 +118,13 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 			}
 			if e.tokenJuiceEnabled {
 				raw = CompactToolOutput(e.logger, call.Name, call.Arguments, raw)
+			}
+			// US-CTX-03: layer-2 payload summarizer — fires when TokenJuice was a
+			// fallback (no rule matched) OR the compacted output is still oversized.
+			if e.payloadSummarizer != nil {
+				if sp := e.payloadSummarizer.MaybeSummarize(ctx, call.Name, "", raw); sp != nil {
+					raw = sp.Summary
+				}
 			}
 			wrapped := WrapUntrustedToolResult(call.Name, raw)
 			// Route to spill when payload exceeds SpillThresholdBytes and a

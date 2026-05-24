@@ -51,7 +51,7 @@ func TestExecutorRecordsAttemptOnToolError(t *testing.T) {
 	reg.Register(&fakeTool{name: "web_fetch", err: errors.New("i/o error: connection refused")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo, false, "", nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"web_fetch"}, "", runID, 0, 0, repo, false, "", nil, nil)
 
 	calls := []llm.ToolCall{{ID: "call_err", Name: "web_fetch", Arguments: map[string]any{"url": "http://example.com"}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -93,7 +93,7 @@ func TestExecutorRecordsAttemptOnSuccess(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found it"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo, false, "", nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", runID, 0, 0, repo, false, "", nil, nil)
 
 	calls := []llm.ToolCall{{ID: "call_ok", Name: "lookup", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -122,7 +122,7 @@ func TestExecutorMCPToolKindPersisted(t *testing.T) {
 	reg.Register(&fakeTool{name: "mcp_test_echo", err: errors.New("server unavailable")})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo, false, "", nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"mcp_test_echo"}, "", runID, 0, 0, repo, false, "", nil, nil)
 
 	calls := []llm.ToolCall{{ID: "call_mcp", Name: "mcp_test_echo", Arguments: map[string]any{}}}
 	exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -145,7 +145,7 @@ func TestExecutorNilRepoSkipsSilently(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "ok"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil, false, "", nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-nil-repo", 0, 0, nil, false, "", nil, nil)
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -162,7 +162,7 @@ func TestExecutorRecordFailureDoesNotPropagateToResult(t *testing.T) {
 	reg.Register(&fakeTool{name: "lookup", result: "found"})
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{}, false, "", nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"lookup"}, "", "run-repo-err", 0, 0, alwaysErrRepo{}, false, "", nil, nil)
 
 	calls := []llm.ToolCall{{ID: "c1", Name: "lookup", Arguments: map[string]any{}}}
 	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
@@ -184,7 +184,7 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 
 	// flag=true: aura/file-read rule fires → output <500 chars, no "content": field
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true, "", nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true, "", nil, nil)
 	exec.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
 
 	var toolMsg *llm.Message
@@ -206,7 +206,7 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 
 	// flag=false: raw output passes through unchanged (~5 KB)
 	state2 := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false, "", nil)
+	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false, "", nil, nil)
 	exec2.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
 
 	for i := range state2.messages {
@@ -230,7 +230,7 @@ func TestExecutorBudgetCapBlocksFourthWebCall(t *testing.T) {
 
 	state := newAgentState([]llm.Message{{Role: "user", Content: "search"}})
 	// Default caps: web=3. Pass nil to use defaults.
-	exec := newAgentExecutor(reg, state, nil, []string{"web_search"}, "", "run-budget-test", 0, 0, nil, false, "", nil)
+	exec := newAgentExecutor(reg, state, nil, []string{"web_search"}, "", "run-budget-test", 0, 0, nil, false, "", nil, nil)
 
 	// Calls 1–3 use distinct queries to avoid repeatedLookup guard; all must succeed.
 	for i := range 3 {
@@ -262,7 +262,7 @@ func TestExecutorBudgetCounterResetsPerTurn(t *testing.T) {
 
 	makeExec := func(id string) *agentExecutor {
 		state := newAgentState([]llm.Message{{Role: "user", Content: "search"}})
-		return newAgentExecutor(reg, state, nil, []string{"web_search"}, "", id, 0, 0, nil, false, "", nil)
+		return newAgentExecutor(reg, state, nil, []string{"web_search"}, "", id, 0, 0, nil, false, "", nil, nil)
 	}
 
 	for turn := range 2 {
@@ -277,6 +277,28 @@ func TestExecutorBudgetCounterResetsPerTurn(t *testing.T) {
 				t.Errorf("turn%d call%d should succeed, got blocked: %s", turn+1, i+1, res)
 			}
 		}
+	}
+}
+
+// TestExecutorNilPayloadSummarizerPassesThrough verifies the recursive-dispatch
+// prevention wiring (US-CTX-03 R1): when payloadSummarizer is nil (as it must be
+// for the summarizer sub-agent), large tool results pass through without any
+// summarization call — preventing recursive dispatch.
+func TestExecutorNilPayloadSummarizerPassesThrough(t *testing.T) {
+	// A large result that would trigger a real summarizer.
+	bigResult := strings.Repeat("x", 5000)
+	reg := tools.NewRegistry(nil)
+	reg.Register(&fakeTool{name: "search", result: bigResult})
+
+	state := newAgentState([]llm.Message{{Role: "user", Content: "find"}})
+	// payloadSummarizer = nil (last arg) — simulates summarizer sub-agent wiring.
+	exec := newAgentExecutor(reg, state, nil, []string{"search"}, "", "run-nil-ps", 0, 0, nil, false, "", nil, nil)
+
+	calls := []llm.ToolCall{{ID: "c1", Name: "search", Arguments: map[string]any{"query": "x"}}}
+	summary := exec.ExecuteToolCalls(authorizedExecCtx(), calls)
+	// Result should pass through; bigResult content preserved (after wrapping).
+	if !strings.Contains(summary.Results["c1"], "x") {
+		t.Fatal("expected large result to pass through unchanged with nil payloadSummarizer")
 	}
 }
 
