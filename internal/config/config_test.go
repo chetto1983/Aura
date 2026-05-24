@@ -676,3 +676,74 @@ func TestMaxIter_EnvOverrides(t *testing.T) {
 		t.Fatalf("AgentLoopMaxSteps = %d, want 20 (env override)", cfg.AgentLoopMaxSteps)
 	}
 }
+
+// TestCTXCompactPercent_Default verifies the default 0.50 (US-CTX-04).
+func TestCTXCompactPercent_Default(t *testing.T) {
+	t.Setenv("AURA_CTX_COMPACT_PERCENT", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXCompactPercent != 0.50 {
+		t.Fatalf("CTXCompactPercent = %v, want 0.50 (default)", cfg.CTXCompactPercent)
+	}
+}
+
+// TestCTXCompactPercent_ClampHigh verifies values above 0.90 are clamped (US-CTX-04).
+func TestCTXCompactPercent_ClampHigh(t *testing.T) {
+	t.Setenv("AURA_CTX_COMPACT_PERCENT", "1.5")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXCompactPercent != 0.90 {
+		t.Fatalf("CTXCompactPercent = %v, want 0.90 (clamped from 1.5)", cfg.CTXCompactPercent)
+	}
+}
+
+// TestCTXCompactPercent_ClampLow verifies values below 0.20 are clamped (US-CTX-04).
+func TestCTXCompactPercent_ClampLow(t *testing.T) {
+	t.Setenv("AURA_CTX_COMPACT_PERCENT", "0.05")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXCompactPercent != 0.20 {
+		t.Fatalf("CTXCompactPercent = %v, want 0.20 (clamped from 0.05)", cfg.CTXCompactPercent)
+	}
+}
+
+// TestCTXCompactPercent_ZeroDisables verifies 0 passes through and disables compaction (US-CTX-04).
+func TestCTXCompactPercent_ZeroDisables(t *testing.T) {
+	t.Setenv("AURA_CTX_COMPACT_PERCENT", "0")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXCompactPercent != 0 {
+		t.Fatalf("CTXCompactPercent = %v, want 0 (disabled)", cfg.CTXCompactPercent)
+	}
+}
+
+// TestCTXCompactScope_Default verifies the default scope is "total" (US-CTX-04).
+func TestCTXCompactScope_Default(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXCompactScope != "total" {
+		t.Fatalf("CTXCompactScope = %q, want total", cfg.CTXCompactScope)
+	}
+}
+
+// TestCTXCompactScope_BodyAfterPrefix verifies body_after_prefix normalisation (US-CTX-04).
+func TestCTXCompactScope_BodyAfterPrefix(t *testing.T) {
+	t.Setenv("AURA_CTX_COMPACT_SCOPE", "body_after_prefix")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXCompactScope != "body_after_prefix" {
+		t.Fatalf("CTXCompactScope = %q, want body_after_prefix", cfg.CTXCompactScope)
+	}
+}

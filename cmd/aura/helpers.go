@@ -96,6 +96,34 @@ func populateModelContextWindow(ctx context.Context, cfg *config.Config, logger 
 	applyModelContextWindowFallback(cfg, logger, err)
 }
 
+// populateMaxConversationTokens computes cfg.MaxConversationTokens from the
+// resolved ModelContextWindow and CTXCompactPercent. Call this immediately after
+// populateModelContextWindow.
+//
+// Backward-compat shim: if MAX_HISTORY_MESSAGES was set to a non-default value
+// (default = 50), a deprecation warning is logged and the legacy message count
+// is approximated at 500 tokens/message.
+func populateMaxConversationTokens(cfg *config.Config, logger *slog.Logger) {
+	const legacyDefault = 50
+	if cfg.MaxHistoryMessages != legacyDefault {
+		approx := cfg.MaxHistoryMessages * 500
+		cfg.MaxConversationTokens = approx
+		logger.Warn("MAX_HISTORY_MESSAGES is deprecated; set AURA_CTX_COMPACT_PERCENT to control token-budget compaction",
+			"max_history_messages", cfg.MaxHistoryMessages,
+			"approx_threshold_tokens", approx)
+		return
+	}
+	if cfg.CTXCompactPercent <= 0 || cfg.ModelContextWindow <= 0 {
+		return
+	}
+	cfg.MaxConversationTokens = int(float64(cfg.ModelContextWindow) * cfg.CTXCompactPercent)
+	logger.Info("context compaction threshold computed",
+		"model_context_window", cfg.ModelContextWindow,
+		"compact_percent", cfg.CTXCompactPercent,
+		"threshold_tokens", cfg.MaxConversationTokens,
+		"scope", cfg.CTXCompactScope)
+}
+
 func applyModelContextWindowFallback(cfg *config.Config, logger *slog.Logger, fetchErr error) {
 	if f := config.ContextWindowFallback(cfg.LLMModel); f > 0 {
 		cfg.ModelContextWindow = f

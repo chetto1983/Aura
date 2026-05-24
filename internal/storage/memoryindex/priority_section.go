@@ -86,6 +86,41 @@ func (c *PrioritySectionCache) InvalidatePinSection() {
 	c.mu.Unlock()
 }
 
+// RenderPinnedSectionWithCache renders the priority section for a thread,
+// using caches (a *sync.Map of *PrioritySectionCache keyed by thread) to avoid
+// recomputing across turns. cacheKey is strings.TrimSpace(threadID); when empty
+// defaultKey is used instead. Shared by the Telegram and web invocation builders
+// so the cache logic is not duplicated across packages.
+func RenderPinnedSectionWithCache(ctx context.Context, store PriorityOperationalStore, caches *sync.Map, threadID, defaultKey string, turnIdx int) string {
+	if store == nil {
+		return ""
+	}
+	cacheKey := strings.TrimSpace(threadID)
+	if cacheKey == "" {
+		cacheKey = defaultKey
+	}
+	cacheAny, _ := caches.LoadOrStore(cacheKey, &PrioritySectionCache{})
+	cache, ok := cacheAny.(*PrioritySectionCache)
+	if !ok || cache == nil {
+		return RenderPrioritySection(ctx, store)
+	}
+	return cache.Render(ctx, store, turnIdx)
+}
+
+// InvalidatePinnedSectionInCache marks the priority section stale for a thread,
+// so the next RenderPinnedSectionWithCache call re-fetches from the store.
+func InvalidatePinnedSectionInCache(caches *sync.Map, threadID, defaultKey string) {
+	cacheKey := strings.TrimSpace(threadID)
+	if cacheKey == "" {
+		cacheKey = defaultKey
+	}
+	if cacheAny, ok := caches.Load(cacheKey); ok {
+		if cache, ok := cacheAny.(*PrioritySectionCache); ok {
+			cache.InvalidatePinSection()
+		}
+	}
+}
+
 func renderPrioritySectionDocs(docs []Document) (string, []string) {
 	docs = append([]Document(nil), docs...)
 	sort.SliceStable(docs, func(i, j int) bool {

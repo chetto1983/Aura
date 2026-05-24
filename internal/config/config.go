@@ -188,6 +188,19 @@ type Config struct {
 	// does not expose a /models endpoint.
 	ModelContextWindow int `envconfig:"AURA_MODEL_CONTEXT_WINDOW"`
 
+	// CTXCompactPercent is the fraction of ModelContextWindow at which conversation
+	// compaction triggers (US-CTX-04). Clamped to [0.20, 0.90] when non-zero.
+	// Set AURA_CTX_COMPACT_PERCENT=0 to disable token-budget compaction entirely.
+	CTXCompactPercent float64 `envconfig:"AURA_CTX_COMPACT_PERCENT" default:"0.5"`
+	// CTXCompactScope controls which tokens count toward the compaction threshold.
+	// "total" (default) counts all accumulated tokens; "body_after_prefix" excludes
+	// the first-call prompt baseline (Codex prefill_input_tokens semantics).
+	CTXCompactScope string `envconfig:"AURA_CTX_COMPACT_SCOPE" default:"total"`
+	// MaxConversationTokens is the effective compaction threshold in tokens.
+	// Computed at boot by cmd/aura/helpers.go:populateMaxConversationTokens after
+	// ModelContextWindow is resolved. Zero means token-budget compaction is disabled.
+	MaxConversationTokens int
+
 	// Payload summarizer threshold knobs (US-CTX-03). Layer-2 LLM-based
 	// compaction that fires when TokenJuice rules fail OR output still oversized.
 	// PayloadThresholdTokens: minimum estimated token count to trigger the
@@ -389,6 +402,19 @@ func Load() (*Config, error) {
 	// 0 means auto-detect from /models at boot; positive int overrides auto-detect.
 	cfg.ModelContextWindow = getEnvInt("AURA_MODEL_CONTEXT_WINDOW", 0)
 
+	// CTXCompactPercent: clamp to [0.20, 0.90]; 0 disables token-budget compaction.
+	rawPercent := getEnvFloat("AURA_CTX_COMPACT_PERCENT", 0.50)
+	if rawPercent != 0 {
+		if rawPercent < 0.20 {
+			rawPercent = 0.20
+		} else if rawPercent > 0.90 {
+			rawPercent = 0.90
+		}
+	}
+	cfg.CTXCompactPercent = rawPercent
+	cfg.CTXCompactScope = normalizeCTXCompactScope(getEnv("AURA_CTX_COMPACT_SCOPE", "total"))
+	// MaxConversationTokens computed post-boot in cmd/aura/helpers.go after ModelContextWindow resolves.
+
 	// Payload summarizer thresholds (US-CTX-03). 0 → use package defaults.
 	cfg.PayloadThresholdTokens = getEnvInt("AURA_PAYLOAD_THRESHOLD_TOKENS", 0)
 	cfg.PayloadMaxTokens = getEnvInt("AURA_PAYLOAD_MAX_TOKENS", 0)
@@ -494,6 +520,15 @@ func NormalizeWorkspaceTools(value string) string {
 		return DefaultWorkspaceTools
 	default:
 		return DefaultWorkspaceTools
+	}
+}
+
+func normalizeCTXCompactScope(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "body_after_prefix", "body":
+		return "body_after_prefix"
+	default:
+		return "total"
 	}
 }
 

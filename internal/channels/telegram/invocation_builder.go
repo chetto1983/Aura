@@ -313,6 +313,14 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		postTurn.Hooks = append(postTurn.Hooks, hook)
 	}
 
+	// US-CTX-04: wire AutoCompactEngine when MaxConversationTokens is set.
+	// agentloop.go falls back to DefaultContextEngine when ContextEngine is nil.
+	var ctxEngine conversation.ContextEngine
+	if cfg.MaxConversationTokens > 0 && b.LLMClient() != nil {
+		compressor := conversation.NewContextCompressor(b.LLMClient(), cfg.ModelContextWindow)
+		ctxEngine = conversation.NewAutoCompactEngine(compressor, cfg.MaxConversationTokens, cfg.CTXCompactScope)
+	}
+
 	inv := agent.Invocation{
 		Client: chatClient,
 		Executor: agent.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
@@ -360,6 +368,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		ToolsProvider:       toolsProvider,
 		PostTurn:            postTurn,
 		Options: agent.Options{
+			ContextEngine:           ctxEngine,
 			MaxIterations:           maxIterations,
 			ParallelTools:           cfg.AgentParallelTools,
 			TerminalToolPolicy:      ib.terminalToolPolicyEnabled(),
@@ -546,34 +555,17 @@ func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Contex
 }
 
 func (ib *InvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {
-	if ib == nil || ib.memoryStore == nil {
+	if ib == nil {
 		return ""
 	}
-	cacheKey := strings.TrimSpace(threadID)
-	if cacheKey == "" {
-		cacheKey = "telegram"
-	}
-	cacheAny, _ := ib.priorityCaches.LoadOrStore(cacheKey, &memoryindex.PrioritySectionCache{})
-	cache, ok := cacheAny.(*memoryindex.PrioritySectionCache)
-	if !ok || cache == nil {
-		return memoryindex.RenderPrioritySection(ctx, ib.memoryStore)
-	}
-	return cache.Render(ctx, ib.memoryStore, turnIdx)
+	return memoryindex.RenderPinnedSectionWithCache(ctx, ib.memoryStore, &ib.priorityCaches, threadID, "telegram", turnIdx)
 }
 
 func (ib *InvocationBuilder) invalidatePinnedOperational(threadID string) {
 	if ib == nil {
 		return
 	}
-	cacheKey := strings.TrimSpace(threadID)
-	if cacheKey == "" {
-		cacheKey = "telegram"
-	}
-	if cacheAny, ok := ib.priorityCaches.Load(cacheKey); ok {
-		if cache, ok := cacheAny.(*memoryindex.PrioritySectionCache); ok {
-			cache.InvalidatePinSection()
-		}
-	}
+	memoryindex.InvalidatePinnedSectionInCache(&ib.priorityCaches, threadID, "telegram")
 }
 
 func pinnedOperationalWriteInCalls(calls []llm.ToolCall) bool {

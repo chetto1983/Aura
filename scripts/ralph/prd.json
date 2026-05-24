@@ -120,7 +120,7 @@
         "Single atomic commit prefix: feat(conversation): AutoCompactEngine token-budget compaction at 50% of model window (US-CTX-04)"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-CTX-00 + US-CTX-01 + US-CTX-02. R3: switching from msg-count to token-budget changes cap semantics — default token-budget high enough that current 50-msg conversations don't trigger unexpectedly mid-deploy. USER LOCKED 50% threshold (was 70% in plan) 2026-05-24. Backward-compat shim documented for the MaxConversationMessages → MaxConversationTokens transition."
     },
     {

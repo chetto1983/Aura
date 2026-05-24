@@ -159,7 +159,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		// always returns the full slice; compression is per-iteration and transient).
 		currentMsgs := state.Messages()
 		if opts.ContextEngine != nil && opts.ContextEngine.ShouldCompress(len(currentMsgs)) {
-			currentMsgs = opts.ContextEngine.Compress(currentMsgs, len(currentMsgs), "")
+			currentMsgs = opts.ContextEngine.Compress(currentMsgs, len(currentMsgs), lastUserMessageText(currentMsgs))
 		}
 		rawHistory := governance.ScrubOrphanToolCalls(currentMsgs)
 		messagesForModel := governance.Apply(rawHistory, opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
@@ -602,4 +602,15 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 	return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 }
 
-
+// lastUserMessageText returns the content of the last user-role message in msgs,
+// or "" when no user message exists. Used to thread the focus_topic into
+// ContextEngine.Compress so the compressor can bias the summary toward the
+// active request (Codex BeforeLastUserMessage invariant).
+func lastUserMessageText(msgs []llm.Message) string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == "user" {
+			return msgs[i].Content
+		}
+	}
+	return ""
+}

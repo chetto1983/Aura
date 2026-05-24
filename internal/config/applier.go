@@ -91,6 +91,10 @@ const (
 	// ModelContextWindow override (US-CTX-00). 0 = auto-detect from /models.
 	KeyModelContextWindow = "AURA_MODEL_CONTEXT_WINDOW"
 
+	// Context compaction knobs (US-CTX-04).
+	KeyCTXCompactPercent = "AURA_CTX_COMPACT_PERCENT"
+	KeyCTXCompactScope   = "AURA_CTX_COMPACT_SCOPE"
+
 	// Per-class tool budget caps (US-OUT-07). Dashboard keys use lowercase
 	// snake_case; env vars use AURA_TOOL_BUDGET_<CLASS>.
 	KeyToolBudgetWeb       = "tool_budget_web"
@@ -138,6 +142,7 @@ func OverridableKeys() []string {
 		KeyToolBudgetWeb, KeyToolBudgetWiki, KeyToolBudgetExec, KeyToolBudgetSource,
 		KeyToolBudgetScheduler, KeyToolBudgetAskUser, KeyToolBudgetDefault,
 		KeyModelContextWindow,
+		KeyCTXCompactPercent, KeyCTXCompactScope,
 	}
 }
 
@@ -254,6 +259,19 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 	if v := settingInt(ctx, s, KeyModelContextWindow, -1); v >= 0 {
 		cfg.ModelContextWindow = v
 	}
+
+	// Context compaction knobs (US-CTX-04). Clamp percent to [0.20, 0.90]; 0 disables.
+	if v := settingFloat(ctx, s, KeyCTXCompactPercent, -1); v >= 0 {
+		if v != 0 {
+			if v < 0.20 {
+				v = 0.20
+			} else if v > 0.90 {
+				v = 0.90
+			}
+		}
+		cfg.CTXCompactPercent = v
+	}
+	cfg.CTXCompactScope = normalizeCTXCompactScope(settingString(ctx, s, KeyCTXCompactScope, cfg.CTXCompactScope))
 
 	// Per-class tool budget caps (US-OUT-07). Clamped to [1,100]; invalid rows
 	// leave the env-loaded value intact (fail-soft).

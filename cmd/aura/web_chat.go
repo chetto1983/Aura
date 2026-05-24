@@ -167,6 +167,13 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	if logger == nil {
 		logger = slog.Default()
 	}
+	// US-CTX-04: wire AutoCompactEngine when MaxConversationTokens is set.
+	var ctxEngine conversation.ContextEngine
+	if b.cfg.MaxConversationTokens > 0 && deps.LLM != nil {
+		compressor := conversation.NewContextCompressor(deps.LLM, b.cfg.ModelContextWindow)
+		ctxEngine = conversation.NewAutoCompactEngine(compressor, b.cfg.MaxConversationTokens, b.cfg.CTXCompactScope)
+	}
+
 	inv := agent.Invocation{
 		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort, msg.ThreadID),
 		Executor: &webToolExecutor{
@@ -190,6 +197,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		Tools:    toolDefs,
 		PostTurn: b.postTurnConfig(runID, msg, logger, deps),
 		Options: agent.Options{
+			ContextEngine:           ctxEngine,
 			MaxIterations:           deps.MaxIterations,
 			MaxToolResultChars:      b.maxToolResultChars(),
 			MicrocompactKeepRecent:  b.microcompactKeepRecent(),
@@ -230,34 +238,17 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 }
 
 func (b *webInvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {
-	if b == nil || b.postTurnStore == nil {
+	if b == nil {
 		return ""
 	}
-	cacheKey := strings.TrimSpace(threadID)
-	if cacheKey == "" {
-		cacheKey = "web"
-	}
-	cacheAny, _ := b.priorityCaches.LoadOrStore(cacheKey, &memoryindex.PrioritySectionCache{})
-	cache, ok := cacheAny.(*memoryindex.PrioritySectionCache)
-	if !ok || cache == nil {
-		return memoryindex.RenderPrioritySection(ctx, b.postTurnStore)
-	}
-	return cache.Render(ctx, b.postTurnStore, turnIdx)
+	return memoryindex.RenderPinnedSectionWithCache(ctx, b.postTurnStore, &b.priorityCaches, threadID, "web", turnIdx)
 }
 
 func (b *webInvocationBuilder) invalidatePinnedOperational(threadID string) {
 	if b == nil {
 		return
 	}
-	cacheKey := strings.TrimSpace(threadID)
-	if cacheKey == "" {
-		cacheKey = "web"
-	}
-	if cacheAny, ok := b.priorityCaches.Load(cacheKey); ok {
-		if cache, ok := cacheAny.(*memoryindex.PrioritySectionCache); ok {
-			cache.InvalidatePinSection()
-		}
-	}
+	memoryindex.InvalidatePinnedSectionInCache(&b.priorityCaches, threadID, "web")
 }
 
 func webPostTurnFailureReader(repo attempts.Repo) agent.PostTurnFailureReader {

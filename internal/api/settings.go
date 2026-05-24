@@ -110,6 +110,8 @@ var settingsCatalog = []SettingItem{
 	{Key: config.KeyLLMMaxRetries, Group: "provider", Kind: "int", Min: floatPtr(0), Max: floatPtr(20), Label: "LLM max retries"},
 
 	{Key: config.KeyModelContextWindow, Group: "budget", Kind: "int", Min: floatPtr(0), Label: "Model context window (tokens)", Hint: "Override the auto-detected context window for compaction triggers. 0 = auto-detect from provider /models at boot."},
+	{Key: config.KeyCTXCompactPercent, Group: "budget", Kind: "float", Min: floatPtr(0), Max: floatPtr(0.9), Label: "Context compaction threshold (%)", Hint: "Fraction of model context window that triggers conversation compaction. Default 0.50 (50%). 0 = disabled. Clamped to [0.20, 0.90] when non-zero."},
+	{Key: config.KeyCTXCompactScope, Group: "budget", Kind: "enum", Options: []string{"total", "body_after_prefix"}, Label: "Context compaction scope", Hint: "'total' counts all tokens; 'body_after_prefix' excludes the initial system-prompt baseline (Codex prefill semantics)."},
 	{Key: config.KeyMaxContextTokens, Group: "budget", Kind: "int", Min: floatPtr(1024), Label: "Max context tokens"},
 	{Key: config.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Min: floatPtr(1), Label: "Max in-flight messages"},
 	{Key: config.KeySoftBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Soft budget (USD)"},
@@ -364,6 +366,10 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.Itoa(cfg.SandboxTimeoutSec)
 	case config.KeyModelContextWindow:
 		return strconv.Itoa(cfg.ModelContextWindow)
+	case config.KeyCTXCompactPercent:
+		return strconv.FormatFloat(cfg.CTXCompactPercent, 'f', -1, 64)
+	case config.KeyCTXCompactScope:
+		return cfg.CTXCompactScope
 	default:
 		return fallback
 	}

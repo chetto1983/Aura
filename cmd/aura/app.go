@@ -187,6 +187,7 @@ func newApp(
 	// Fetches context_length from provider /models; falls back to curated table
 	// then hard default 128000. Non-blocking; env AURA_MODEL_CONTEXT_WINDOW wins.
 	populateModelContextWindow(context.Background(), cfg, logger)
+	populateMaxConversationTokens(cfg, logger)
 
 	// ---- Qdrant client ------------------------------------------------------
 	if strings.TrimSpace(cfg.QdrantURL) != "" {
