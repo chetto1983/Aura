@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agents/summarizer"
+	"github.com/aura/aura/internal/agent/governance"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/chat"
@@ -28,12 +29,13 @@ import (
 // It keeps invocation construction beside the Telegram channel adapter so
 // internal/telegram remains a thin channel wrapper.
 type InvocationBuilder struct {
-	b              *tgtelegram.Bot
-	hub            *chat.Hub          // set after hub creation; used for ask_user resume routing
-	outbound       *Outbound          // canonical streaming path used by streamingChatClient
-	agentNoteStore *agentnote.Store   // nil when not configured; injected by NewHub
-	memoryStore    *memoryindex.Store // nil when compact memory unavailable; injected by NewHub
-	priorityCaches sync.Map           // thread_id -> *memoryindex.PrioritySectionCache
+	b                 *tgtelegram.Bot
+	hub               *chat.Hub          // set after hub creation; used for ask_user resume routing
+	outbound          *Outbound          // canonical streaming path used by streamingChatClient
+	agentNoteStore    *agentnote.Store   // nil when not configured; injected by NewHub
+	memoryStore       *memoryindex.Store // nil when compact memory unavailable; injected by NewHub
+	priorityCaches    sync.Map           // thread_id -> *memoryindex.PrioritySectionCache
+	payloadSummarizer governance.PayloadSummarizer // nil = disabled; wired by NewHub when config enables it
 }
 
 // NewInvocationBuilder wraps a *telegram.Bot for use by NewHub.
@@ -48,6 +50,12 @@ func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStor
 	ib := NewInvocationBuilder(b)
 	ib.agentNoteStore = b.AgentNoteStore()
 	ib.memoryStore = b.MemoryStore()
+	if cfg := b.Config(); cfg != nil && cfg.PayloadSummarizerEnabled && b.LLMClient() != nil {
+		ib.payloadSummarizer = governance.NewSubagentPayloadSummarizer(
+			b.LLMClient(), cfg.LLMModel, summarizer.Prompt,
+			cfg.PayloadThresholdTokens, cfg.PayloadMaxTokens,
+		)
+	}
 	adapter, err := chat.NewAgentLoopAdapter(ib.Build)
 	if err != nil {
 		return nil, err
@@ -313,10 +321,10 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		postTurn.Hooks = append(postTurn.Hooks, hook)
 	}
 
-	// US-CTX-04: wire AutoCompactEngine when MaxConversationTokens is set.
+	// US-CTX-04/05: wire AutoCompactEngine when enabled and MaxConversationTokens is set.
 	// agentloop.go falls back to DefaultContextEngine when ContextEngine is nil.
 	var ctxEngine conversation.ContextEngine
-	if cfg.MaxConversationTokens > 0 && b.LLMClient() != nil {
+	if cfg.CTXEngine != "default" && cfg.MaxConversationTokens > 0 && b.LLMClient() != nil {
 		compressor := conversation.NewContextCompressor(b.LLMClient(), cfg.ModelContextWindow)
 		ctxEngine = conversation.NewAutoCompactEngine(compressor, cfg.MaxConversationTokens, cfg.CTXCompactScope)
 	}
@@ -551,7 +559,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall) agent.ToolExecutionSummary {
 	return agent.ExecuteToolCalls(ctx, ib.b.ToolRegistry(), convCtx, userID, tgtelegram.ChatIDFromTeleContext(c), calls, ib.b.TerminalToolPolicyEnabled(), ib.b.Logger(),
 		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), ib.b.ToolAttemptsRepo()),
-		agent.WithTokenJuice(ib.b.TokenJuiceEnabled()))
+		agent.WithTokenJuice(ib.b.TokenJuiceEnabled()),
+		agent.WithPayloadSummarizer(ib.payloadSummarizer))
 }
 
 func (ib *InvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {
@@ -568,82 +577,6 @@ func (ib *InvocationBuilder) invalidatePinnedOperational(threadID string) {
 	memoryindex.InvalidatePinnedSectionInCache(&ib.priorityCaches, threadID, "telegram")
 }
 
-func pinnedOperationalWriteInCalls(calls []llm.ToolCall) bool {
-	for _, call := range calls {
-		if call.Name != "propose_patch" {
-			continue
-		}
-		action, _ := call.Arguments["action"].(string)
-		if strings.TrimSpace(action) != "operational" {
-			continue
-		}
-		priority, _ := call.Arguments["priority"].(string)
-		switch memoryindex.NormalizePriority(priority) {
-		case memoryindex.PriorityCritical, memoryindex.PriorityHigh:
-			return true
-		}
-	}
-	return false
-}
-
-type askUserResumeInput struct {
-	CallID            string
-	Options           []string
-	Kind              string
-	HasPendingCall    bool
-	Content           string
-	SelectedOptionIDs []string
-	Rejected          bool
-	RejectMessage     string
-}
-
-func prepareAskUserResumeInput(userText string, messages []llm.Message, durableOptions []string, durableKind string, hasDurablePending bool) (askUserResumeInput, bool) {
-	callID, options, kind, hasPendingCall := agent.PendingAskUserCall(messages)
-	if !hasPendingCall && !hasDurablePending {
-		return askUserResumeInput{}, false
-	}
-	if len(options) == 0 && len(durableOptions) > 0 {
-		options = durableOptions
-	}
-	if kind == "" {
-		kind = durableKind
-	}
-	options = askUserDisplayOptions(options, kind)
-	content, rejected, rejectMsg := parseAskUserReply(userText, options)
-	return askUserResumeInput{
-		CallID:            callID,
-		Options:           options,
-		Kind:              kind,
-		HasPendingCall:    hasPendingCall,
-		Content:           content,
-		SelectedOptionIDs: askUserSelectedOptionIDs(userText, options),
-		Rejected:          rejected,
-		RejectMessage:     rejectMsg,
-	}, true
-}
-
-func (ib *InvocationBuilder) checkBudgetQuota(c tele.Context, userID string, estimatedTokens int) error {
-	bgt := ib.b.BudgetRuntime()
-	if bgt == nil {
-		return nil
-	}
-	if bgt.IsHardBudgetExceeded() {
-		ib.b.Logger().Warn("hard budget exceeded, halting LLM call", "user_id", userID)
-		if _, err := c.Bot().Send(c.Recipient(), "Budget limit reached. LLM calls are temporarily halted."); err != nil {
-			ib.b.Logger().Warn("budget notice send failed", "error", err)
-		}
-		return fmt.Errorf("hard budget exceeded")
-	}
-	if !bgt.CanAfford(estimatedTokens, 500) {
-		ib.b.Logger().Warn("predicted cost exceeds hard budget, halting LLM call", "user_id", userID)
-		if _, err := c.Bot().Send(c.Recipient(), "Predicted cost would exceed budget. Please adjust your budget or wait."); err != nil {
-			ib.b.Logger().Warn("budget notice send failed", "error", err)
-		}
-		return fmt.Errorf("budget unaffordable")
-	}
-	return nil
-}
-
 func (ib *InvocationBuilder) modelToolNames() []string {
 	toolReg := ib.b.ToolRegistry()
 	if toolReg == nil {
@@ -658,24 +591,4 @@ func (ib *InvocationBuilder) maxToolLoopIterations() int {
 
 func (ib *InvocationBuilder) terminalToolPolicyEnabled() bool {
 	return ib.b.TerminalToolPolicyEnabled()
-}
-
-// overlayWriteInCalls reports whether any of the given tool calls wrote to an
-// overlay file (file tool, action write or patch, overlay-file basename). When
-// true the executor reloads the system prompt before the next LLM iteration.
-func overlayWriteInCalls(calls []llm.ToolCall) bool {
-	for _, call := range calls {
-		if call.Name != "file" {
-			continue
-		}
-		action, _ := call.Arguments["action"].(string)
-		if action != "write" && action != "patch" {
-			continue
-		}
-		pathVal, _ := call.Arguments["path"].(string)
-		if conversation.IsOverlayFileName(filepath.Base(pathVal)) {
-			return true
-		}
-	}
-	return false
 }

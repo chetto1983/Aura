@@ -242,6 +242,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /health", handleHealth(deps))
+	mux.HandleFunc("GET /metrics", handleMetrics(deps))
 
 	// Chat pipe for cmd/chat. Bearer-gated like everything else; the CLI
 	// reads its token from AURA_CHAT_TOKEN. Returns 503 when deps.Chat is

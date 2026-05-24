@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
-	"github.com/aura/aura/internal/storage/memoryindex"
 )
 
 type webToolExecutor struct {
@@ -30,6 +30,7 @@ type webToolExecutor struct {
 	toolTimeout           time.Duration
 	terminalPolicyEnabled bool
 	tokenJuiceEnabled     bool
+	payloadSummarizer     governance.PayloadSummarizer
 	invalidatePinned      func()
 }
 
@@ -43,7 +44,7 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 		terminal  string
 	}
 	outcomes := make([]outcome, len(calls))
-	pinnedWrite := webPinnedOperationalWriteInCalls(calls)
+	pinnedWrite := agent.PinnedOperationalWriteInCalls(calls)
 	done := make(chan struct{})
 	var wg sync.WaitGroup
 	for i, call := range calls {
@@ -90,6 +91,11 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 			if err == nil && e.tokenJuiceEnabled {
 				content = agent.CompactToolOutput(e.logger, call.Name, executedArgs, content)
 			}
+			if err == nil && e.payloadSummarizer != nil {
+				if sp := e.payloadSummarizer.MaybeSummarize(ctx, call.Name, "", content); sp != nil {
+					content = sp.Summary
+				}
+			}
 			wrapped := agent.WrapUntrustedToolResult(call.Name, content)
 			outcomes[i] = outcome{
 				id:        call.ID,
@@ -135,23 +141,6 @@ func (e *webToolExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.Tool
 	return summary
 }
 
-func webPinnedOperationalWriteInCalls(calls []llm.ToolCall) bool {
-	for _, call := range calls {
-		if call.Name != "propose_patch" {
-			continue
-		}
-		action, _ := call.Arguments["action"].(string)
-		if strings.TrimSpace(action) != "operational" {
-			continue
-		}
-		priority, _ := call.Arguments["priority"].(string)
-		switch memoryindex.NormalizePriority(priority) {
-		case memoryindex.PriorityCritical, memoryindex.PriorityHigh:
-			return true
-		}
-	}
-	return false
-}
 
 func (e *webToolExecutor) executeOne(ctx context.Context, call llm.ToolCall) (string, map[string]any, string, error) {
 	args := call.Arguments

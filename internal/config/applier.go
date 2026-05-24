@@ -95,6 +95,12 @@ const (
 	KeyCTXCompactPercent = "AURA_CTX_COMPACT_PERCENT"
 	KeyCTXCompactScope   = "AURA_CTX_COMPACT_SCOPE"
 
+	// Context engine + payload summarizer knobs (US-CTX-05).
+	KeyCTXEngine              = "AURA_CTX_ENGINE"
+	KeyPayloadSummarizer      = "AURA_PAYLOAD_SUMMARIZER"
+	KeyPayloadThresholdTokens = "AURA_PAYLOAD_THRESHOLD_TOKENS"
+	KeyPayloadMaxTokens       = "AURA_PAYLOAD_MAX_TOKENS"
+
 	// Per-class tool budget caps (US-OUT-07). Dashboard keys use lowercase
 	// snake_case; env vars use AURA_TOOL_BUDGET_<CLASS>.
 	KeyToolBudgetWeb       = "tool_budget_web"
@@ -143,6 +149,7 @@ func OverridableKeys() []string {
 		KeyToolBudgetScheduler, KeyToolBudgetAskUser, KeyToolBudgetDefault,
 		KeyModelContextWindow,
 		KeyCTXCompactPercent, KeyCTXCompactScope,
+		KeyCTXEngine, KeyPayloadSummarizer, KeyPayloadThresholdTokens, KeyPayloadMaxTokens,
 	}
 }
 
@@ -272,6 +279,16 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 		cfg.CTXCompactPercent = v
 	}
 	cfg.CTXCompactScope = normalizeCTXCompactScope(settingString(ctx, s, KeyCTXCompactScope, cfg.CTXCompactScope))
+
+	// Context engine + payload summarizer knobs (US-CTX-05).
+	cfg.CTXEngine = normalizeCTXEngine(settingString(ctx, s, KeyCTXEngine, cfg.CTXEngine))
+	cfg.PayloadSummarizerEnabled = settingBool(ctx, s, KeyPayloadSummarizer, cfg.PayloadSummarizerEnabled)
+	if v := settingInt(ctx, s, KeyPayloadThresholdTokens, 0); v > 0 {
+		cfg.PayloadThresholdTokens = v
+	}
+	if v := settingInt(ctx, s, KeyPayloadMaxTokens, 0); v > 0 {
+		cfg.PayloadMaxTokens = v
+	}
 
 	// Per-class tool budget caps (US-OUT-07). Clamped to [1,100]; invalid rows
 	// leave the env-loaded value intact (fail-soft).

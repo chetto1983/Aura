@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/conversation"
@@ -26,6 +27,7 @@ type executeToolCallsConfig struct {
 	runID             string
 	attemptsRepo      attempts.Repo
 	tokenJuiceEnabled bool
+	payloadSummarizer governance.PayloadSummarizer
 }
 
 // ExecuteToolCallsOption configures channel-neutral tool execution helpers.
@@ -46,6 +48,17 @@ func WithToolAttemptRecording(runID string, repo attempts.Repo) ExecuteToolCalls
 func WithTokenJuice(enabled bool) ExecuteToolCallsOption {
 	return func(cfg *executeToolCallsConfig) {
 		cfg.tokenJuiceEnabled = enabled
+	}
+}
+
+// WithPayloadSummarizer wires a Layer-2 LLM-based payload compactor into the
+// execution batch. When non-nil, each successful tool result is offered to the
+// summarizer after TokenJuice; MaybeSummarize returns nil for pass-through.
+// Pass nil (or omit) to disable — nil is the correct value for sub-agent calls
+// (RunTaskDeps) to prevent recursive summarizer dispatch.
+func WithPayloadSummarizer(ps governance.PayloadSummarizer) ExecuteToolCallsOption {
+	return func(cfg *executeToolCallsConfig) {
+		cfg.payloadSummarizer = ps
 	}
 }
 
@@ -129,6 +142,11 @@ func ExecuteToolCalls(
 			})
 			if err == nil && cfg.tokenJuiceEnabled {
 				result = CompactToolOutput(logger, tc.Name, args, result)
+			}
+			if err == nil && cfg.payloadSummarizer != nil {
+				if sp := cfg.payloadSummarizer.MaybeSummarize(ctx, tc.Name, "", result); sp != nil {
+					result = sp.Summary
+				}
 			}
 			readSkillName := ""
 			if err == nil && tc.Name == "read_file" {

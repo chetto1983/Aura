@@ -141,7 +141,7 @@
         "Single atomic commit prefix: feat(agent): wire auto-compact + payload_summarizer + /api/metrics counters (US-CTX-05)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-CTX-00..04. Closing story — proves the full stack works end-to-end with metrics observability. /api/metrics counters are the visibility surface to know if/when compaction is over-firing or summarizer breaker is tripping in production. Settings UI exposure makes the knobs editable from the dashboard without a restart."
     }
   ]

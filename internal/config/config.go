@@ -201,6 +201,16 @@ type Config struct {
 	// ModelContextWindow is resolved. Zero means token-budget compaction is disabled.
 	MaxConversationTokens int
 
+	// CTXEngine selects the ContextEngine implementation wired into agent loops.
+	// "auto_compact" (default): AutoCompactEngine fires at MaxConversationTokens.
+	// "default": message-count sliding window, no LLM-based compaction.
+	CTXEngine string `envconfig:"AURA_CTX_ENGINE" default:"auto_compact"`
+
+	// PayloadSummarizerEnabled enables the Layer-2 LLM-based payload summarizer
+	// (SubagentPayloadSummarizer) for the Telegram and web-chat agent paths.
+	// Disabled automatically when the circuit breaker trips (3 consecutive failures).
+	PayloadSummarizerEnabled bool `envconfig:"AURA_PAYLOAD_SUMMARIZER" default:"true"`
+
 	// Payload summarizer threshold knobs (US-CTX-03). Layer-2 LLM-based
 	// compaction that fires when TokenJuice rules fail OR output still oversized.
 	// PayloadThresholdTokens: minimum estimated token count to trigger the
@@ -413,6 +423,8 @@ func Load() (*Config, error) {
 	}
 	cfg.CTXCompactPercent = rawPercent
 	cfg.CTXCompactScope = normalizeCTXCompactScope(getEnv("AURA_CTX_COMPACT_SCOPE", "total"))
+	cfg.CTXEngine = normalizeCTXEngine(getEnv("AURA_CTX_ENGINE", "auto_compact"))
+	cfg.PayloadSummarizerEnabled = getEnvBool("AURA_PAYLOAD_SUMMARIZER", true)
 	// MaxConversationTokens computed post-boot in cmd/aura/helpers.go after ModelContextWindow resolves.
 
 	// Payload summarizer thresholds (US-CTX-03). 0 → use package defaults.
@@ -521,6 +533,13 @@ func NormalizeWorkspaceTools(value string) string {
 	default:
 		return DefaultWorkspaceTools
 	}
+}
+
+func normalizeCTXEngine(s string) string {
+	if strings.ToLower(strings.TrimSpace(s)) == "default" {
+		return "default"
+	}
+	return "auto_compact"
 }
 
 func normalizeCTXCompactScope(s string) string {

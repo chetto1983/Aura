@@ -34,10 +34,11 @@ while IFS= read -r file; do
     rel="${file#./}"
 
     # Exclusions
-    [[ "$rel" == *_test.go ]]  && continue
-    [[ "$rel" == *_gen.go ]]   && continue
-    [[ "$rel" == vendor/* ]]   && continue
-    [[ "$rel" == web/dist/* ]] && continue
+    [[ "$rel" == *_test.go ]]   && continue
+    [[ "$rel" == *_gen.go ]]    && continue
+    [[ "$rel" == vendor/* ]]    && continue
+    [[ "$rel" == web/dist/* ]]  && continue
+    [[ "$rel" == .claude/* ]]   && continue   # Claude Code state dir; worktrees are agent scratch space
 
     # Exempt marker in the first 10 lines
     if head -n 10 "$file" 2>/dev/null | grep -q "// file-size-exempt:"; then

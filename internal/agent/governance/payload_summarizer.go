@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -156,6 +157,7 @@ func (s *SubagentPayloadSummarizer) recordFailure(toolName string, err error) {
 	}
 	if s.failCount >= payloadBreakerMaxFails {
 		s.disabled = true
+		ctxmetrics.Global.PayloadBreakerTripsTotal.Add(1)
 		slog.Warn("payload_summarizer: circuit breaker tripped",
 			"consecutive_failures", s.failCount)
 	}
@@ -167,6 +169,7 @@ func (s *SubagentPayloadSummarizer) recordSuccess() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.failCount = 0
+	ctxmetrics.Global.PayloadSummarizationsTotal.Add(1)
 }
 
 // IsDisabled reports whether the circuit breaker is tripped.

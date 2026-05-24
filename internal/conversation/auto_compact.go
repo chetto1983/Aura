@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"sync"
 
+	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -139,6 +140,7 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 		e.mu.Lock()
 		e.CompressionCount++
 		e.mu.Unlock()
+		ctxmetrics.Global.CTXCompactionsTotal.Add(1)
 		slog.Debug("auto_compact: conversation compressed",
 			"msgs_before", len(messages),
 			"msgs_after", len(compressed),

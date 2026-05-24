@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agents/summarizer"
+	"github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/api"
@@ -167,11 +169,20 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	if logger == nil {
 		logger = slog.Default()
 	}
-	// US-CTX-04: wire AutoCompactEngine when MaxConversationTokens is set.
+	// US-CTX-04/05: wire AutoCompactEngine when enabled and MaxConversationTokens is set.
 	var ctxEngine conversation.ContextEngine
-	if b.cfg.MaxConversationTokens > 0 && deps.LLM != nil {
+	if b.cfg.CTXEngine != "default" && b.cfg.MaxConversationTokens > 0 && deps.LLM != nil {
 		compressor := conversation.NewContextCompressor(deps.LLM, b.cfg.ModelContextWindow)
 		ctxEngine = conversation.NewAutoCompactEngine(compressor, b.cfg.MaxConversationTokens, b.cfg.CTXCompactScope)
+	}
+
+	// US-CTX-05: wire payload summarizer (Layer-2 LLM-based compaction).
+	var payloadSummarizer governance.PayloadSummarizer
+	if b.cfg.PayloadSummarizerEnabled && deps.LLM != nil {
+		payloadSummarizer = governance.NewSubagentPayloadSummarizer(
+			deps.LLM, deps.Model, summarizer.Prompt,
+			b.cfg.PayloadThresholdTokens, b.cfg.PayloadMaxTokens,
+		)
 	}
 
 	inv := agent.Invocation{
@@ -189,6 +200,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 			toolTimeout:           toolTimeout,
 			terminalPolicyEnabled: b.terminalToolPolicyEnabled(),
 			tokenJuiceEnabled:     deps.TokenJuiceEnabled,
+			payloadSummarizer:     payloadSummarizer,
 			invalidatePinned: func() {
 				b.invalidatePinnedOperational(msg.ThreadID)
 			},

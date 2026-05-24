@@ -112,6 +112,7 @@ var settingsCatalog = []SettingItem{
 	{Key: config.KeyModelContextWindow, Group: "budget", Kind: "int", Min: floatPtr(0), Label: "Model context window (tokens)", Hint: "Override the auto-detected context window for compaction triggers. 0 = auto-detect from provider /models at boot."},
 	{Key: config.KeyCTXCompactPercent, Group: "budget", Kind: "float", Min: floatPtr(0), Max: floatPtr(0.9), Label: "Context compaction threshold (%)", Hint: "Fraction of model context window that triggers conversation compaction. Default 0.50 (50%). 0 = disabled. Clamped to [0.20, 0.90] when non-zero."},
 	{Key: config.KeyCTXCompactScope, Group: "budget", Kind: "enum", Options: []string{"total", "body_after_prefix"}, Label: "Context compaction scope", Hint: "'total' counts all tokens; 'body_after_prefix' excludes the initial system-prompt baseline (Codex prefill semantics)."},
+	{Key: config.KeyCTXEngine, Group: "budget", Kind: "enum", Options: []string{"auto_compact", "default"}, Label: "Context engine", Hint: "'auto_compact' triggers compaction at the token-budget threshold; 'default' uses message-count sliding window without LLM summarization."},
 	{Key: config.KeyMaxContextTokens, Group: "budget", Kind: "int", Min: floatPtr(1024), Label: "Max context tokens"},
 	{Key: config.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Min: floatPtr(1), Label: "Max in-flight messages"},
 	{Key: config.KeySoftBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Soft budget (USD)"},
@@ -126,6 +127,9 @@ var settingsCatalog = []SettingItem{
 	{Key: config.KeyMaxToolResultChars, Group: "agent", Kind: "int", Min: floatPtr(1000), Max: floatPtr(500000), Label: "Max tool result chars", Hint: "Cap per tool message before the LLM call; raise on large-context models"},
 	{Key: config.KeyMicrocompactKeepRecent, Group: "agent", Kind: "int", Min: floatPtr(1), Max: floatPtr(500), Label: "Microcompact keep recent", Hint: "Tool results older than the N most recent get collapsed to a one-line stub"},
 	{Key: config.KeyMicrocompactMinChars, Group: "agent", Kind: "int", Min: floatPtr(100), Max: floatPtr(100000), Label: "Microcompact min chars", Hint: "Tool results smaller than this are never compacted"},
+	{Key: config.KeyPayloadSummarizer, Group: "agent", Kind: "bool", Label: "Payload summarizer", Hint: "Layer-2 LLM-based compression for oversized tool results (>16k tokens estimated). Automatically trips a circuit breaker after 3 consecutive failures."},
+	{Key: config.KeyPayloadThresholdTokens, Group: "agent", Kind: "int", Min: floatPtr(1024), Label: "Payload summarizer threshold (tokens)", Hint: "Minimum estimated token count to trigger the payload summarizer. Default 16384."},
+	{Key: config.KeyPayloadMaxTokens, Group: "agent", Kind: "int", Min: floatPtr(1024), Label: "Payload summarizer max tokens", Hint: "Upper bound above which payload summarizer is skipped (payload too large; spill/truncation handles it). Default 65536."},
 	{Key: config.KeyTerminalToolPolicy, Group: "agent", Kind: "enum", Options: []string{"on", "off"}, Label: "Terminal tool policy"},
 	{Key: config.KeyDelegationMode, Group: "agent", Kind: "enum", Options: []string{"fast", "bounded", "async"}, Label: "Delegation mode"},
 	{Key: config.KeySkillsAdmin, Group: "agent", Kind: "bool", Label: "Skills admin (install/delete)"},
@@ -370,6 +374,14 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.FormatFloat(cfg.CTXCompactPercent, 'f', -1, 64)
 	case config.KeyCTXCompactScope:
 		return cfg.CTXCompactScope
+	case config.KeyCTXEngine:
+		return cfg.CTXEngine
+	case config.KeyPayloadSummarizer:
+		return strconv.FormatBool(cfg.PayloadSummarizerEnabled)
+	case config.KeyPayloadThresholdTokens:
+		return strconv.Itoa(cfg.PayloadThresholdTokens)
+	case config.KeyPayloadMaxTokens:
+		return strconv.Itoa(cfg.PayloadMaxTokens)
 	default:
 		return fallback
 	}

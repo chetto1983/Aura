@@ -5,9 +5,47 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/llm"
 	tgtelegram "github.com/aura/aura/internal/telegram"
 	tele "gopkg.in/telebot.v4"
 )
+
+type askUserResumeInput struct {
+	CallID            string
+	Options           []string
+	Kind              string
+	HasPendingCall    bool
+	Content           string
+	SelectedOptionIDs []string
+	Rejected          bool
+	RejectMessage     string
+}
+
+func prepareAskUserResumeInput(userText string, messages []llm.Message, durableOptions []string, durableKind string, hasDurablePending bool) (askUserResumeInput, bool) {
+	callID, options, kind, hasPendingCall := agent.PendingAskUserCall(messages)
+	if !hasPendingCall && !hasDurablePending {
+		return askUserResumeInput{}, false
+	}
+	if len(options) == 0 && len(durableOptions) > 0 {
+		options = durableOptions
+	}
+	if kind == "" {
+		kind = durableKind
+	}
+	options = askUserDisplayOptions(options, kind)
+	content, rejected, rejectMsg := parseAskUserReply(userText, options)
+	return askUserResumeInput{
+		CallID:            callID,
+		Options:           options,
+		Kind:              kind,
+		HasPendingCall:    hasPendingCall,
+		Content:           content,
+		SelectedOptionIDs: askUserSelectedOptionIDs(userText, options),
+		Rejected:          rejected,
+		RejectMessage:     rejectMsg,
+	}, true
+}
 
 var canonicalApprovalOptions = []string{"approve_once", "approve_session", "approve_persist", "deny", "cancel"}
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/sandbox"
 	"github.com/aura/aura/internal/storage/freshness"
@@ -122,6 +123,8 @@ func populateMaxConversationTokens(cfg *config.Config, logger *slog.Logger) {
 		"compact_percent", cfg.CTXCompactPercent,
 		"threshold_tokens", cfg.MaxConversationTokens,
 		"scope", cfg.CTXCompactScope)
+	ctxmetrics.GlobalGauges.ModelContextWindow = cfg.ModelContextWindow
+	ctxmetrics.GlobalGauges.CompactionThresholdTokens = cfg.MaxConversationTokens
 }
 
 func applyModelContextWindowFallback(cfg *config.Config, logger *slog.Logger, fetchErr error) {
