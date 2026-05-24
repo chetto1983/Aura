@@ -1,6 +1,6 @@
 ---
 name: aura-plan-builder
-description: Create, repair, audit, or resume Aura deep-refactor phase folders and implementation plans. Use whenever the user invokes this skill, mentions Aura phase planning, asks what deep-refactor slice is next, asks where the deep-refactor main plan lives, wants plan/source/benchmark/progress files prepared, says a phase plan is not ready/smart enough, asks to improve planning quality across phases, says to plan all sub-phases, or asks to make future agents operational. This skill should reconstruct the likely next phase or full parent-phase sub-phase set from CONTINUE-HERE/HANDOFF/prd.md/.planning/deep-refactor/INDEX.md instead of asking for a phase unless durable state conflicts.
+description: Use when the user invokes Aura plan work, asks what deep-refactor slice is next, asks where the Aura plan lives, wants source/plan/benchmark/progress files prepared or repaired, says planning docs are stale or not operational, asks to plan sub-phases, or asks to make future Aura agents implementation-ready.
 ---
 
 # Aura Plan Builder
@@ -65,13 +65,29 @@ Pick language lanes before creating or repairing any planning artifact:
 
 Point future agents to the right durable files:
 
-- `D:/Aura/prd.md` is the canonical deep-refactor route and phase source of
-  truth.
-- `D:/Aura/.planning/deep-refactor/INDEX.md` is the developer-facing execution
-  index for the phase folders under `D:/Aura/.planning/deep-refactor/`.
-- `D:/Aura/.planning/deep-refactor/.continue-here.md`,
-  `D:/Aura/CONTINUE-HERE.md`, and `D:/Aura/.planning/HANDOFF.json` are resume
-  pointers that may name the next likely slice.
+- `D:/Aura/PRD.md` is the canonical deep-refactor route and phase source of
+  truth. The tracked path may appear as `prd.md` on case-insensitive Windows;
+  treat those names as the same file.
+- `D:/Aura/.planning/post-drift-2026-05-21/INDEX.md` is the current post-drift
+  execution pointer: closed phases, active/next slice, and planning repair
+  status.
+- `D:/Aura/.planning/deep-refactor/INDEX.md` is the legacy phase-folder map and
+  provenance pointer for existing deep-refactor phase files. Use it to locate
+  old phase folders, not as the default "next slice" source when the post-drift
+  index is newer.
+- `D:/Aura/.planning/aura-deep-refactor-decisions.json` is the durable ADR
+  register for architectural decisions.
+- `D:/Aura/scripts/ralph/progress.txt` is local resume memory and recent shipped
+  learning. Read it for context; do not make it the canonical phase plan.
+- `D:/Aura/scripts/ralph/prd.json` is active only when the current user turn
+  explicitly selects Ralph queue execution.
+- Retired resume files such as `D:/Aura/CONTINUE-HERE.md`,
+  `D:/Aura/.planning/HANDOFF.json`, and
+  `D:/Aura/.planning/deep-refactor/.continue-here.md` are historical if found.
+  Do not recreate or update them.
+- Archived planning files under `D:/Aura/docs/_archive/` and old wave folders
+  are evidence only. They never override `PRD.md`, the ADR JSON, or the current
+  post-drift index.
 - For phase families with lettered sub-phases,
   `D:/Aura/.planning/deep-refactor/PhaseNN/plan.md` is the true parent/master
   plan. The descriptive unlettered PRD slice, such as
@@ -82,10 +98,10 @@ Point future agents to the right durable files:
 - Standalone phases with no lettered children may keep the existing
   `D:/Aura/.planning/deep-refactor/PhaseNN_Name/` layout until they become a
   phase family.
-- `D:/Aura/docs/aura-master-plan.md` is strategic background, not the main
-  execution index for `D:/Aura/.planning/deep-refactor`.
-- Old `.planning/wave*` files are evidence and requirement mines only; never
-  treat them as the active plan.
+- Every planning document must have one visible role: canonical, resume,
+  orientation, phase-plan, reference, evidence, or archive. If a file cannot be
+  assigned one role, repair, archive, or ignore it before using it to steer
+  implementation.
 
 ## GSD / Ralph Boundary
 
@@ -153,6 +169,29 @@ source can be cited as decoration; each row must name the decision it supports,
 the pattern Aura adopts, the pattern Aura rejects or defers, and the destination
 file that will own the decision.
 
+## Examples And 2026 Practice Gate
+
+Every Aura plan must include concrete prior art before it can be
+implementation-ready:
+
+- Search `D:/tmp` for local example projects, prototypes, reference repos, or
+  extracted experiments that match the slice. Use `rg --files D:/tmp` plus
+  targeted `rg` queries. Record the exact example paths inspected.
+- If no useful `D:/tmp` example exists, record the search queries and result as
+  `missing-example`, then make the absence visible in `source.md` and
+  `plan.md`.
+- Search current external sources for 2026 best practice when the slice depends
+  on architecture, provider APIs, protocol behavior, UI/frontend, security,
+  storage, scheduling, RAG, agent loops, observability, or tool execution.
+  Prefer official documentation, primary sources, maintained example repos,
+  standards, release notes, and current production-grade libraries.
+- Record what Aura adopts and what it rejects. "Best practice" is not evidence
+  unless it is tied to a source, date/context, and a concrete Aura decision.
+- A plan that lacks both a `D:/tmp` example sweep and a 2026 best-practice sweep
+  is `draft`, not `ready-for-implementation`.
+- If network access, credentials, or local examples are unavailable, mark the
+  source row `blocked` or `not found`; do not silently skip the gate.
+
 ## Direct Child Skill Map
 
 `aura-plan-builder` is the parent skill for planning. It may directly use or
@@ -163,9 +202,10 @@ translated back into Aura phase files:
 | --- | --- | --- |
 | Critical architecture phase before lock, especially Phase 4 runtime, Phase 5 tools, or Phase 7 RAG | `improve-codebase-architecture` | 3-4 design alternatives, chosen deep-module shape, rejected alternatives, RFC notes, source files, verification, residual risk |
 | The phase map is hard to see because implementation details or stale docs are dominating | `zoom-out` | Current source-of-truth map, module/caller map, active slice, deferred work |
-| A ready `plan.md` needs atomic executable slices or a derived queue | `to-issues` | Vertical slices with file ownership, dependencies, benchmark rows, and no new canonical route |
+| A ready `plan.md` needs atomic executable slices or a derived queue | `to-issues` | Aura phase slices with file ownership, dependencies, benchmark rows, and no external tracker publish unless explicitly requested |
 | Plan quality is uncertain or multiple reviewers disagree | `gsd-plan-checker` as read-only pattern source | BLOCKER/MAJOR/MINOR findings translated into `progress.md` and repaired in `plan.md` / `benchmark.md` |
 | The phase claims completion or readiness | `gsd-verifier` or an equivalent fresh verifier agent | Goal-backward verification against PRD gates, not task-count completion |
+| The user asks to push, deploy, publish, open a PR, or close CI for planned Aura work | `aura-implementation-loop` with implicit `github:github`, `github:yeet`, `github:gh-fix-ci`, or `finishing-a-development-branch` imports | plan-to-ship handoff only; planning skill does not push or open PRs |
 | The user asks to edit or create skills | `writing-skills` / `skill-creator` | Minimal skill patch, trigger-safe description, validation notes |
 
 Child-skill outputs are evidence, not authority. Record adopted and rejected
@@ -179,6 +219,9 @@ contract:
 
 - selected slice and explicit non-goals,
 - canonical store and transaction boundary,
+- `D:/tmp` examples inspected, with adopted/rejected patterns or
+  `missing-example` evidence,
+- current 2026 best-practice sources inspected, with adopted/rejected patterns,
 - affected source files and closest tests,
 - baseline commands and post-edit commands,
 - real debug probes for likely failures,
@@ -186,9 +229,13 @@ contract:
 - likely failure modes,
 - reproduction command for the highest-risk failure,
 - ground-truth probe that proves the behavior instead of only process health,
+- dedicated slice-QA scope: reviewer mode, files/diff to inspect, ground-truth
+  fact to assert, negative/adversarial check when relevant, and PASS/HOLD
+  threshold,
 - rollback or stop signal for unsafe drift,
 - residue expectation for files, queues, servers, traces, and generated output,
 - E2E metrics and pass/fail thresholds,
+- atomic local commit boundary and suggested commit message,
 
 Required `benchmark.md` rows for implementation-ready phases:
 
@@ -198,15 +245,23 @@ Required `benchmark.md` rows for implementation-ready phases:
 | Unit/integration | command, expected durable code or DB/API/artifact fact |
 | Real E2E | live command/probe, fixture/data source, full assistant/user-visible output, durable ground truth, latency/token/tool/artifact metrics |
 | Regression negative | what must not happen, such as impersonation, stale vector suppression, phantom tool claim, raw secret/log leak |
+| Dedicated slice QA | bounded QA command/reviewer prompt, exact diff/files to inspect, ground-truth assertion, negative/adversarial check, token/scope cap, PASS/HOLD verdict |
 | Residue gate | expected post-run state: no untracked generated junk, no stale queue promotion, no orphan dev server, no unrecorded handoff drift |
 
 Smoke readiness checks may appear only as prechecks and must never close a PRD
 gate.
 
-When the user asks "where is the main plan of
-`D:/Aura/.planning/deep-refactor`?", answer:
-`D:/Aura/.planning/deep-refactor/INDEX.md` for the phase-folder map, with
-`D:/Aura/prd.md` as the canonical PRD route.
+Slice QA is mandatory but bounded. Do not plan a full QA sweep for every slice.
+The full `aura-qa-pipeline` sweep is reserved for explicit validation sweeps,
+phase promotion, broad regression hunts, or user request. Ordinary slices need a
+dedicated micro-QA packet tied to their diff and benchmark row.
+
+When the user asks "where is the main plan of Aura?", answer:
+`D:/Aura/PRD.md` for the canonical route, with
+`D:/Aura/.planning/post-drift-2026-05-21/INDEX.md` for the current execution
+pointer. If they specifically ask where the old deep-refactor phase-folder map
+lives, answer `D:/Aura/.planning/deep-refactor/INDEX.md` and label it as the
+legacy/provenance map.
 
 ## Output Contract
 
@@ -274,32 +329,34 @@ explicitly asks for cleanup.
 
 1. Run `git status --short` and note unrelated dirty files. Do not revert them.
 2. Read the minimum Aura startup set:
-   `D:/Aura/CONTINUE-HERE.md` if present,
-   `D:/Aura/.planning/HANDOFF.json` if present,
-   `D:/Aura/.planning/deep-refactor/.continue-here.md` if present,
    `D:/Aura/AGENTS.md`, `D:/Aura/CLAUDE.md`,
-   `D:/Aura/prd.md`, `D:/Aura/.planning/deep-refactor/INDEX.md`, and
-   `D:/Aura/.planning/aura-deep-refactor-decisions.json`.
-   Read `D:/Aura/docs/aura-master-plan.md` only as historical evidence when a
-   phase decision needs predecessor context. Read `.planning/progress.txt` only
-   when the active slice needs the append-only progress log.
+   `D:/Aura/PRD.md`, `D:/Aura/.planning/aura-deep-refactor-decisions.json`,
+   `D:/Aura/.planning/post-drift-2026-05-21/INDEX.md`, and
+   `D:/Aura/scripts/ralph/progress.txt`.
+   Read `D:/Aura/.planning/deep-refactor/INDEX.md` only when a phase-folder map
+   or old phase provenance is needed.
+   Read archived docs only as historical evidence when a phase decision needs
+   predecessor context. Read active phase `progress.md` only when the active
+   slice needs the append-only phase log.
    Read `D:/Aura/scripts/ralph/prd.json` only when the task is explicitly
    queue/Ralph work.
 3. Infer the requested target before asking the user:
    - explicit user phase or folder wins,
    - if the user names a parent phase such as "Phase 1" and does not name a
      lettered sub-phase, enter Sub-Phase Sweep Mode for every matching parent
-     and lettered phase in `INDEX.md` and `prd.md`, placing lettered sub-phase
-     files under the true parent/master `PhaseNN/subphases/` directory,
-   - otherwise use `CONTINUE-HERE.md`, `HANDOFF.json.next_action`,
-     `HANDOFF.json.remaining_tasks[*].recommended_next`, and
-     `.planning/deep-refactor/.continue-here.md`,
-   - use `.planning/deep-refactor/INDEX.md` to map PRD phase names to phase
-     folders,
-   - otherwise inspect `.planning/deep-refactor/INDEX.md` and existing phase
+     and lettered phase in `PRD.md` plus the relevant index, placing lettered
+     sub-phase files under the true parent/master `PhaseNN/subphases/`
+     directory when deep-refactor phase folders are still the selected
+     artifact,
+   - otherwise use the current/next slice named by
+     `.planning/post-drift-2026-05-21/INDEX.md`,
+   - use `.planning/deep-refactor/INDEX.md` only to map old PRD phase names to
+     existing legacy phase folders,
+   - otherwise inspect `PRD.md`, the post-drift index, and existing phase
      folders for the next draft or incomplete phase after the last completed
      phase,
-   - otherwise use the lowest-numbered PRD phase that has no ready phase folder,
+   - otherwise use the lowest-numbered PRD phase or post-drift milestone that
+     has no ready planning artifact,
    - ask only when two durable sources conflict or the inferred action would
      edit an unexpected target.
 4. Infer mode before asking the user:
@@ -317,7 +374,7 @@ explicitly asks for cleanup.
    evidence.
    In Sub-Phase Sweep Mode, list every canonical sub-phase folder under the
    parent `subphases/` directory and every verifier pass that will be required.
-6. Locate the phase section in `prd.md` and extract every phase-relevant goal,
+6. Locate the phase section in `PRD.md` and extract every phase-relevant goal,
    step, gate, dependency, explicit non-goal, and "must/never" constraint into
    a working PRD coverage list.
 7. Inspect existing phase folders and old `.planning/` waves only as evidence.
@@ -325,10 +382,13 @@ explicitly asks for cleanup.
 8. In `create` or `repair`, create or update the phase folder with the required
    files. In `audit`, do not write.
 9. Search local sources first with `rg`: PRD, ADRs, docs, `.planning`, code,
-   tests, examples under `D:/tmp`, and existing reference maps.
-10. Search online sources when the phase depends on external practice, current
-   docs, papers, framework behavior, or protocol design. Prefer primary
-   sources.
+   tests, examples under `D:/tmp`, and existing reference maps. The `D:/tmp`
+   example sweep is mandatory for every plan.
+10. Search online sources for current 2026 best practice. Prefer primary
+   sources: official docs, standards, release notes, maintained example repos,
+   papers, and production-grade library docs. The 2026 practice sweep is
+   mandatory for every implementation-ready plan; mark it `blocked` or
+   `not found` only when the source cannot be accessed.
 11. If required sources are missing or uncertain, spawn focused research agents.
    Give each agent one narrow source question and ask for citations plus
    adopt/reject recommendations. Do not ask them to edit files.
@@ -352,9 +412,11 @@ explicitly asks for cleanup.
     `progress.md`; do not rely on chat memory for validation state. In `audit`
     mode, report findings only and do not write progress unless the user
     explicitly changes the task to repair.
-19. Do not create branches, PRs, pushes, or commits unless the user explicitly
-    asks for that git action in the current turn. The phase can be "ready for
-    discussion" without a commit.
+19. Do not create branches, PRs, or pushes unless the user explicitly asks for
+    that git action in the current turn. Planning-only readiness can be
+    "ready for discussion" without a commit. Any implementation or QA write
+    slice emitted by this plan must still close with one atomic local commit
+    before the next slice starts.
 
 ## Sub-Phase Sweep Mode
 
@@ -369,8 +431,9 @@ bounded slice at a time.
 
 Sweep workflow:
 
-1. Build a phase-family list from `D:/Aura/.planning/deep-refactor/INDEX.md`
-   and `D:/Aura/prd.md`.
+1. Build a phase-family list from `D:/Aura/PRD.md`, the post-drift index, and
+   `D:/Aura/.planning/deep-refactor/INDEX.md` only when old phase folders are
+   still relevant.
 2. Include the parent/master phase folder, the descriptive unlettered PRD
    slice, and every lettered child with the same numeric prefix. Canonical
    child paths live under:
@@ -416,11 +479,17 @@ gate. Repair misses before asking for verification:
   owner or reason if deferred.
 - Every implementation gate has at least one benchmark row or an explicit
   blocked/deferred explanation.
+- Every executable slice has a dedicated slice-QA row that is bounded to the
+  slice diff and names a ground-truth assertion. Full QA sweeps are not allowed
+  as the default per-slice plan.
 - Every benchmark row asserts ground truth and has a measurable pass/fail
   threshold. Smoke-only rows are labeled precheck and are not counted toward
   phase readiness.
 - Every source row says which decision it supports and what Aura rejects or
   avoids.
+- `source.md` contains a `D:/tmp` example sweep with exact paths or a
+  `missing-example` result, and a 2026 best-practice sweep with dated/current
+  source evidence or an explicit blocker.
 - Every open decision is isolated in `plan.md` with the consequence of each
   option.
 - The document language is coherent: no accidental mixed-language prose inside
@@ -447,12 +516,12 @@ such as `coverage-matrix.md` and link it from `plan.md`, `source.md`, and
 ## Smart Defaults
 
 When the user invokes this skill without a precise phase, do useful work from
-durable state instead of stopping. For the current Aura deep-refactor route,
-`CONTINUE-HERE.md`, `HANDOFF.json`, and `.planning/deep-refactor/.continue-here.md`
-are allowed to name the next likely slice. If they point to
-`Phase01A_Run_Event_Foundation`, resolve it to the canonical parent-owned path
-`Phase01/subphases/Phase01A_Run_Event_Foundation` when that
-parent/subphase relationship exists, then inspect it.
+durable state instead of stopping. For the current Aura route, use
+`D:/Aura/PRD.md`, `.planning/post-drift-2026-05-21/INDEX.md`, the ADR JSON, and
+recent shipped learnings from `scripts/ralph/progress.txt`. If an old phase
+folder is still selected, resolve lettered children to the canonical
+parent-owned path such as `Phase01/subphases/Phase01A_Run_Event_Foundation`
+when that parent/subphase relationship exists, then inspect it.
 
 Default first action for a likely next phase:
 
@@ -476,7 +545,7 @@ this shape:
 I inferred:
 - target: PhaseNN or PhaseNN/subphases/PhaseNNX_Name from <durable file/path>
 - mode: resume -> repair/audit because <file state>
-- source of truth: prd.md lines/section + decision log IDs; folder map from .planning/deep-refactor/INDEX.md
+- source of truth: PRD.md section + decision log IDs + post-drift index; old folder map from .planning/deep-refactor/INDEX.md only if relevant
 - files I may edit: <phase folder files>
 - verification: <commands or verifier pass>
 - language: chat=<user language>, files=<dominant file language>
@@ -508,6 +577,8 @@ that quotes the conflicting paths and asks which source should win.
 - local source files,
 - external sources,
 - example repositories or paths,
+- `D:/tmp` example paths inspected and search queries used,
+- current 2026 best-practice sources inspected,
 - what Aura adopts,
 - what Aura rejects,
 - audit status,
@@ -527,9 +598,12 @@ Every source row should answer: "What decision does this source support?"
 - PRD gate covered,
 - actual result or `not run`,
 - date and actor for each live result.
+- dedicated slice-QA packet definition for every executable slice.
 
 Do not call a phase complete if live benchmarks are missing.
 Do not call a phase complete if the only passing checks are smoke tests.
+Do not call an implementation slice complete if its dedicated slice QA is
+missing or replaced by a broad full-sweep plan.
 
 `progress.md` must be append-only and include:
 
@@ -618,5 +692,7 @@ Verifier result handling:
 - In `create` or `repair`, do not leave verifier findings only in chat; append
   the result and repair status to `progress.md`. In `audit`, do not write
   progress unless the user explicitly changes the task to repair.
-- Do not create branches, commits, PRs, or pushes automatically. Ask or wait for
-  explicit user instruction in the current turn.
+- Do not create branches, PRs, or pushes automatically. Ask or wait for explicit
+  user instruction in the current turn for remote actions. Planning-only runs do
+  not commit by themselves. For implementation and QA execution, require one
+  atomic local commit per verified slice before the next slice starts.

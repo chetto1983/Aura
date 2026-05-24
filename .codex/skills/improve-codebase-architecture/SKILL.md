@@ -1,9 +1,39 @@
 ---
 name: improve-codebase-architecture
-description: Find deepening opportunities in a codebase, informed by the domain language in CONTEXT.md and the decisions in docs/adr/. Use when the user wants to improve architecture, find refactoring opportunities, consolidate tightly-coupled modules, or make a codebase more testable and AI-navigable.
+description: Use when the user wants to improve Aura architecture, plan a critical refactor, find module ownership problems, compare architecture alternatives, or make a codebase slice more testable and AI-navigable.
 ---
 
 # Improve Codebase Architecture
+
+## Aura Overlay
+
+When this skill is used inside `D:/Aura`, Aura's repo rules override the generic
+process below:
+
+- Read the same minimum route as `$aura-implementation-loop`: `AGENTS.md`,
+  `CLAUDE.md`, `PRD.md`, `.planning/aura-deep-refactor-decisions.json`, the
+  post-drift index, recent `scripts/ralph/progress.txt`, and only the selected
+  phase/source files needed for the slice.
+- Treat `PRD.md` section 9 dependency rules as Aura's architecture map. Domain
+  policy must not import volatile delivery, storage, provider, UI, Telegram,
+  cron, Qdrant, SQLite row, or filesystem concerns directly.
+- Use `CONTEXT.md` or `docs/adr/` only if they actually exist in this repo.
+  Otherwise use `PRD.md`, the ADR JSON, phase files, package names, and local
+  tests as the vocabulary and decision source.
+- Before proposing alternatives, inspect concrete examples under `D:/tmp` and
+  current 2026 best-practice sources. Record exact example paths, source URLs or
+  doc names, adopted patterns, and rejected patterns. If none are available,
+  mark the gap explicitly instead of omitting the source step.
+- Produce 3-4 alternatives for critical phases, then a short RFC: chosen module
+  shape, rejected alternatives, source files, verification, remaining risk, and
+  the phase file that will own the decision.
+- Record adopted and rejected ideas in the active Aura `source.md`, `plan.md`,
+  `benchmark.md`, `progress.md`, or ADR JSON before implementation relies on
+  them.
+- Do not create branches, commits, pushes, PRs, issue tracker entries, or new
+  canonical planning routes from this skill.
+- If subagent tools are unavailable, do targeted `rg`/direct reads and label the
+  result `self-audited` rather than pretending independent review happened.
 
 Surface architectural friction and propose **deepening opportunities** — refactors that turn shallow modules into deep ones. The aim is testability and AI-navigability.
 
@@ -34,7 +64,9 @@ This skill is _informed_ by the project's domain model. The domain language give
 
 Read the project's domain glossary and any ADRs in the area you're touching first.
 
-Then use the Agent tool with `subagent_type=Explore` to walk the codebase. Don't follow rigid heuristics — explore organically and note where you experience friction:
+Then use available exploration helpers or direct `rg`/file reads to walk the
+codebase. Don't follow rigid heuristics - explore organically and note where
+you experience friction:
 
 - Where does understanding one concept require bouncing between many small modules?
 - Where are modules **shallow** — interface nearly as complex as the implementation?
@@ -53,19 +85,32 @@ Present a numbered list of deepening opportunities. For each candidate:
 - **Solution** — plain English description of what would change
 - **Benefits** — explained in terms of locality and leverage, and also in how tests would improve
 
-**Use CONTEXT.md vocabulary for the domain, and [LANGUAGE.md](LANGUAGE.md) vocabulary for the architecture.** If `CONTEXT.md` defines "Order," talk about "the Order intake module" — not "the FooBarHandler," and not "the Order service."
+For Aura, use `PRD.md`, ADR JSON, phase files, package names, and tests for
+domain vocabulary. For non-Aura projects that provide `CONTEXT.md`, use that
+domain vocabulary plus [LANGUAGE.md](LANGUAGE.md) vocabulary for architecture.
+If `CONTEXT.md` defines "Order," talk about "the Order intake module" - not
+"the FooBarHandler," and not "the Order service."
 
 **ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly (e.g. _"contradicts ADR-0007 — but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
 
-Do NOT propose interfaces yet. Ask the user: "Which of these would you like to explore?"
+For Aura critical phases, do propose the candidate module shapes as alternatives
+plus a recommended choice, because `$aura-plan-builder` needs a lockable RFC.
+For exploratory non-Aura use, ask the user: "Which of these would you like to
+explore?"
 
 ### 3. Grilling loop
 
 Once the user picks a candidate, drop into a grilling conversation. Walk the design tree with them — constraints, dependencies, the shape of the deepened module, what sits behind the seam, what tests survive.
 
-Side effects happen inline as decisions crystallize:
+Side effects happen inline as decisions crystallize. In Aura, side effects must
+go through Aura planning files or the ADR JSON; do not create or update
+`CONTEXT.md` unless the user explicitly selects a non-Aura workflow.
 
-- **Naming a deepened module after a concept not in `CONTEXT.md`?** Add the term to `CONTEXT.md` — same discipline as `/grill-with-docs` (see [CONTEXT-FORMAT.md](../grill-with-docs/CONTEXT-FORMAT.md)). Create the file lazily if it doesn't exist.
-- **Sharpening a fuzzy term during the conversation?** Update `CONTEXT.md` right there.
+- **Naming a deepened module after a concept not recorded anywhere?** In Aura,
+  propose the target phase file or ADR JSON entry that should own the term. In
+  non-Aura projects with `CONTEXT.md`, add the term there.
+- **Sharpening a fuzzy term during the conversation?** In Aura, record it in the
+  active phase files or ADR JSON only after the decision is accepted. In non-Aura
+  projects with `CONTEXT.md`, update `CONTEXT.md`.
 - **User rejects the candidate with a load-bearing reason?** Offer an ADR, framed as: _"Want me to record this as an ADR so future architecture reviews don't re-suggest it?"_ Only offer when the reason would actually be needed by a future explorer to avoid re-suggesting the same thing — skip ephemeral reasons ("not worth it right now") and self-evident ones. See [ADR-FORMAT.md](../grill-with-docs/ADR-FORMAT.md).
 - **Want to explore alternative interfaces for the deepened module?** See [INTERFACE-DESIGN.md](INTERFACE-DESIGN.md).
