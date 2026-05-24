@@ -12,6 +12,7 @@ import (
 	"github.com/aura/aura/internal/agent/agents/summarizer"
 	"github.com/aura/aura/internal/agent/governance"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agentcore"
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/conversation"
@@ -355,7 +356,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		ctxEngine = engine
 	}
 
-	inv := agent.Invocation{
+	inv, buildErr := (agentcore.Builder{}).Build(agentcore.InvocationInput{
 		Client: chatClient,
 		Executor: agent.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
 			execution := ib.executeToolCalls(ctx, c, convCtx, userID, calls)
@@ -571,6 +572,9 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 				session.Finish()
 			}
 		},
+	})
+	if buildErr != nil {
+		return agent.Invocation{}, buildErr
 	}
 	return inv, nil
 }

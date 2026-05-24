@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-04. CONS-02 and CONS-03 are committed; US-CONS-04A moved web invocation assembly onto `internal/agentcore.Builder`. Continue with Telegram builder wiring and the feature-flag/parity gate before marking US-CONS-04 complete.
+**Current slice:** US-CONS-04. CONS-02 and CONS-03 are committed; US-CONS-04A moved web invocation assembly onto `internal/agentcore.Builder`; US-CONS-04B moved Telegram invocation assembly onto the same builder. Continue with the feature-flag/parity gate before marking US-CONS-04 complete.
 
 ## Objective
 
@@ -82,6 +82,13 @@ Checked 2026-05-24:
 - Start with the web builder because CONS-02/03 already removed web's bespoke state and executor layers.
 - Keep Chat Hub, Telegram rendering, archive, and ask_user behavior unchanged until the next US-CONS-04 slice.
 - Do not mark US-CONS-04 complete until Telegram uses agentcore and the feature-flag/parity gate is recorded.
+
+## Adopted For US-CONS-04B
+
+- Wire Telegram's existing invocation literal through `internal/agentcore.Builder`.
+- Keep Telegram-only behavior in `internal/channels/telegram/invocation_builder.go`: status pane, ask_user rendering, prompt hot reload, archive, soft budget notification, and final Telegram delivery.
+- Use existing Telegram fixture tests plus full Go suite as the behavior-preserving safety net.
+- Leave US-CONS-04 open until the explicit `AURA_AGENTCORE_BUILDER` parity/closure evidence is recorded.
 
 ## Rejected For US-CONS-02
 
