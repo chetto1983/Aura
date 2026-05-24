@@ -91,4 +91,3 @@ func TestBootstrapMetaDefaults_HeadlessEnvOverride(t *testing.T) {
 		t.Error("Headless = false, want true (AURA_HEADLESS=true env wins over auto-detect)")
 	}
 }
-
