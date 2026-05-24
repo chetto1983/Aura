@@ -330,6 +330,62 @@ func TestAutoCompactEngine_CTXMetricIncrementOnSuccessfulCompress(t *testing.T) 
 	}
 }
 
+func TestAutoCompactEngine_HysteresisBlocksRepeatedCompaction(t *testing.T) {
+	e := newTestAutoCompact("short summary", 1000, ScopeTotal, 128000)
+	messages := []llm.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("first turn ", 20)},
+		{Role: "assistant", Content: strings.Repeat("assistant turn ", 20)},
+		{Role: "user", Content: "continue"},
+	}
+
+	e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 200, TotalTokens: 1100})
+	if !e.ShouldCompress(0) {
+		t.Fatal("initial ShouldCompress = false, want true")
+	}
+	e.Compress(messages, 1100, "continue")
+	if e.LastCompactionTurnIndex != 1 {
+		t.Fatalf("LastCompactionTurnIndex = %d, want 1", e.LastCompactionTurnIndex)
+	}
+	if e.cumulativeTotal != 0 || e.prefixSet {
+		t.Fatalf("post-compaction budget not reset: cumulative=%d prefixSet=%v", e.cumulativeTotal, e.prefixSet)
+	}
+	if e.ShouldCompress(0) {
+		t.Fatal("immediate ShouldCompress after compaction = true, want false")
+	}
+
+	for turn := 2; turn <= 3; turn++ {
+		e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 200, TotalTokens: 1100})
+		if e.ShouldCompress(0) {
+			t.Fatalf("turn %d ShouldCompress = true, want false inside hysteresis window", turn)
+		}
+	}
+
+	e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 200, TotalTokens: 1100})
+	if !e.ShouldCompress(0) {
+		t.Fatal("ShouldCompress after three post-compaction turns = false, want true")
+	}
+}
+
+func TestAutoCompactEngine_HysteresisCustomMinimum(t *testing.T) {
+	e := newTestAutoCompact("short summary", 1000, ScopeTotal, 128000)
+	e.MinTurnsBetweenCompactions = 1
+	messages := []llm.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("first turn ", 20)},
+		{Role: "assistant", Content: strings.Repeat("assistant turn ", 20)},
+		{Role: "user", Content: "continue"},
+	}
+
+	e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 200, TotalTokens: 1100})
+	e.Compress(messages, 1100, "continue")
+	e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 200, TotalTokens: 1100})
+
+	if !e.ShouldCompress(0) {
+		t.Fatal("ShouldCompress with MinTurnsBetweenCompactions=1 = false, want true after one turn")
+	}
+}
+
 // ---- UpdateFromResponse: prefix captured on first call ----------------------
 
 func TestAutoCompactEngine_UpdateFromResponse_CapturesPrefixOnFirstCall(t *testing.T) {

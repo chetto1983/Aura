@@ -5,7 +5,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-
 )
 
 // Settings are persisted in SQLite and overlaid after the database opens.
@@ -92,8 +91,9 @@ const (
 	KeyModelContextWindow = "AURA_MODEL_CONTEXT_WINDOW"
 
 	// Context compaction knobs (US-CTX-04).
-	KeyCTXCompactPercent = "AURA_CTX_COMPACT_PERCENT"
-	KeyCTXCompactScope   = "AURA_CTX_COMPACT_SCOPE"
+	KeyCTXCompactPercent             = "AURA_CTX_COMPACT_PERCENT"
+	KeyCTXCompactScope               = "AURA_CTX_COMPACT_SCOPE"
+	KeyCTXMinTurnsBetweenCompactions = "AURA_MIN_TURNS_BETWEEN_COMPACTIONS"
 
 	// Context engine + payload summarizer knobs (US-CTX-05).
 	KeyCTXEngine              = "AURA_CTX_ENGINE"
@@ -148,7 +148,7 @@ func OverridableKeys() []string {
 		KeyToolBudgetWeb, KeyToolBudgetWiki, KeyToolBudgetExec, KeyToolBudgetSource,
 		KeyToolBudgetScheduler, KeyToolBudgetAskUser, KeyToolBudgetDefault,
 		KeyModelContextWindow,
-		KeyCTXCompactPercent, KeyCTXCompactScope,
+		KeyCTXCompactPercent, KeyCTXCompactScope, KeyCTXMinTurnsBetweenCompactions,
 		KeyCTXEngine, KeyPayloadSummarizer, KeyPayloadThresholdTokens, KeyPayloadMaxTokens,
 	}
 }
@@ -279,6 +279,7 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 		cfg.CTXCompactPercent = v
 	}
 	cfg.CTXCompactScope = normalizeCTXCompactScope(settingString(ctx, s, KeyCTXCompactScope, cfg.CTXCompactScope))
+	cfg.CTXMinTurnsBetweenCompactions = settingIntRange(ctx, s, KeyCTXMinTurnsBetweenCompactions, cfg.CTXMinTurnsBetweenCompactions, 1, 1000, DefaultCTXMinTurnsBetweenCompactions)
 
 	// Context engine + payload summarizer knobs (US-CTX-05).
 	cfg.CTXEngine = normalizeCTXEngine(settingString(ctx, s, KeyCTXEngine, cfg.CTXEngine))
@@ -351,4 +352,3 @@ func settingFloat(ctx context.Context, s Reader, key string, fallback float64) f
 func settingBool(ctx context.Context, s Reader, key string, fallback bool) bool {
 	return settingParse(ctx, s, key, fallback, strconv.ParseBool)
 }
-

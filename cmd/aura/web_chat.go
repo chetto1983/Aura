@@ -173,7 +173,9 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	var ctxEngine conversation.ContextEngine
 	if b.cfg.CTXEngine != "default" && b.cfg.MaxConversationTokens > 0 && deps.LLM != nil {
 		compressor := conversation.NewContextCompressor(deps.LLM, b.cfg.ModelContextWindow)
-		ctxEngine = conversation.NewAutoCompactEngine(compressor, b.cfg.MaxConversationTokens, b.cfg.CTXCompactScope)
+		engine := conversation.NewAutoCompactEngine(compressor, b.cfg.MaxConversationTokens, b.cfg.CTXCompactScope)
+		engine.MinTurnsBetweenCompactions = b.cfg.CTXMinTurnsBetweenCompactions
+		ctxEngine = engine
 	}
 
 	// US-CTX-05: wire payload summarizer (Layer-2 LLM-based compaction).

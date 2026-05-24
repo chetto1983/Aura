@@ -244,6 +244,11 @@ func TestSettingsCatalogCoversLLMAndIsEditable(t *testing.T) {
 		config.KeyHardBudget,
 		config.KeyCostInputPerMTokens,
 		config.KeyCostOutputPerMTokens,
+		config.KeyModelContextWindow,
+		config.KeyCTXCompactPercent,
+		config.KeyCTXCompactScope,
+		config.KeyCTXMinTurnsBetweenCompactions,
+		config.KeyCTXEngine,
 
 		config.KeyPromptVersion,
 		config.KeySkillRoutingMode,

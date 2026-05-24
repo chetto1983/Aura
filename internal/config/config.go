@@ -30,6 +30,7 @@ const DefaultWorkspaceRoot = "."
 const DefaultRuntimeWorkspacePath = "./runtime-workspace"
 const DefaultOP07NFailThreshold = 2
 const DefaultOP07RecentTurns = 10
+const DefaultCTXMinTurnsBetweenCompactions = 3
 
 // Per-user gate configuration defaults (Phase 1 / CONC-01).
 const DefaultInboxSize = 8
@@ -96,33 +97,33 @@ type Config struct {
 	// existing deployments without the new env var keep working until
 	// the migration step (see cmd/aura migrateSourcesLayout) moves the
 	// data to the new location.
-	SourcesPath                string  `envconfig:"SOURCES_PATH" default:"./runtime-workspace/sources"`
-	PromptOverlayPath          string  `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
-	SkillsPath                 string  `envconfig:"SKILLS_PATH" default:"./skills"`
-	SkillsInstallProjectDir    string  `envconfig:"SKILLS_INSTALL_PROJECT_DIR"`
-	SkillsCatalogURL           string  `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
-	SkillsAdmin                bool    `envconfig:"SKILLS_ADMIN" default:"false"`
-	MCPServersPath             string  `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
-	AuraBotEnabled             bool    `envconfig:"AURABOT_ENABLED" default:"false"`
-	AuraBotMaxActive           int     `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
-	AuraBotMaxDepth            int     `envconfig:"AURABOT_MAX_DEPTH" default:"3"`
-	AuraBotTimeoutSec          int     `envconfig:"AURABOT_TIMEOUT_SEC" default:"300"`
-	AuraBotMaxIterations       int     `envconfig:"AURABOT_MAX_ITERATIONS" default:"100"`
-	EmbeddingAPIKey            string  `envconfig:"EMBEDDING_API_KEY"`
-	EmbeddingBaseURL           string  `envconfig:"EMBEDDING_BASE_URL"`
-	EmbeddingModel             string  `envconfig:"EMBEDDING_MODEL" default:"embeddinggemma"`
+	SourcesPath             string `envconfig:"SOURCES_PATH" default:"./runtime-workspace/sources"`
+	PromptOverlayPath       string `envconfig:"PROMPT_OVERLAY_PATH" default:"."`
+	SkillsPath              string `envconfig:"SKILLS_PATH" default:"./skills"`
+	SkillsInstallProjectDir string `envconfig:"SKILLS_INSTALL_PROJECT_DIR"`
+	SkillsCatalogURL        string `envconfig:"SKILLS_CATALOG_URL" default:"https://skills.sh/"`
+	SkillsAdmin             bool   `envconfig:"SKILLS_ADMIN" default:"false"`
+	MCPServersPath          string `envconfig:"MCP_SERVERS_PATH" default:"./mcp.json"`
+	AuraBotEnabled          bool   `envconfig:"AURABOT_ENABLED" default:"false"`
+	AuraBotMaxActive        int    `envconfig:"AURABOT_MAX_ACTIVE" default:"4"`
+	AuraBotMaxDepth         int    `envconfig:"AURABOT_MAX_DEPTH" default:"3"`
+	AuraBotTimeoutSec       int    `envconfig:"AURABOT_TIMEOUT_SEC" default:"300"`
+	AuraBotMaxIterations    int    `envconfig:"AURABOT_MAX_ITERATIONS" default:"100"`
+	EmbeddingAPIKey         string `envconfig:"EMBEDDING_API_KEY"`
+	EmbeddingBaseURL        string `envconfig:"EMBEDDING_BASE_URL"`
+	EmbeddingModel          string `envconfig:"EMBEDDING_MODEL" default:"embeddinggemma"`
 	// EmbeddingOutputDim activates Matryoshka Representation Learning
 	// truncation on the embedding response. 0 returns the model's native
 	// dim (e.g. 768 for embeddinggemma-300m). Setting to 256 or 128 (only
 	// meaningful for MRL-trained models) trades a tiny MTEB delta for
 	// 3x-6x smaller Qdrant vectors and cosine compute. Aura targets 256
 	// in production.
-	EmbeddingOutputDim        int  `envconfig:"EMBEDDING_OUTPUT_DIM" default:"0"`
+	EmbeddingOutputDim int `envconfig:"EMBEDDING_OUTPUT_DIM" default:"0"`
 	// NoRebuildOnDimMismatch, when true, suppresses the automatic Qdrant
 	// collection rebuild that fires when EMBEDDING_OUTPUT_DIM changes. Set
 	// AURA_NO_REBUILD_ON_DIM_MISMATCH=true if you want to manage collection
 	// migration manually (e.g. swap collection names instead of rebuilding).
-	NoRebuildOnDimMismatch bool `envconfig:"AURA_NO_REBUILD_ON_DIM_MISMATCH" default:"false"`
+	NoRebuildOnDimMismatch bool   `envconfig:"AURA_NO_REBUILD_ON_DIM_MISMATCH" default:"false"`
 	DBPath                 string `envconfig:"DB_PATH" default:"./aura.db"`
 	HTTPPort               string `envconfig:"HTTP_PORT" default:"127.0.0.1:8080"`
 	Timezone               string `envconfig:"AURA_TIMEZONE"`
@@ -138,15 +139,15 @@ type Config struct {
 	// field" — matches default OpenAI gpt-4o, vanilla fakes, etc.
 	// DeepSeek V4 Flash via OpenRouter accepts "high" or "xhigh"; OpenAI
 	// gpt-5/o-series accepts the full set per model.
-	ReasoningEffort             string `envconfig:"AURA_REASONING_EFFORT" default:""`
-	TerminalToolPolicy          string `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
-	DelegationMode              string `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
-	TraceRetentionDays          int    `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
-	WorkspaceTools              string `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
-	WorkspaceRoot               string `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
-	RuntimeWorkspacePath        string `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
-	OP07NFailThreshold          int    `envconfig:"AURA_OP07_NFAIL_THRESHOLD" default:"2"`
-	OP07RecentTurns             int    `envconfig:"AURA_OP07_RECENT_TURNS" default:"10"`
+	ReasoningEffort      string `envconfig:"AURA_REASONING_EFFORT" default:""`
+	TerminalToolPolicy   string `envconfig:"AURA_TERMINAL_TOOL_POLICY" default:"on"`
+	DelegationMode       string `envconfig:"AURA_DELEGATION_MODE" default:"fast"`
+	TraceRetentionDays   int    `envconfig:"AURA_TRACE_RETENTION_DAYS" default:"30"`
+	WorkspaceTools       string `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
+	WorkspaceRoot        string `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
+	RuntimeWorkspacePath string `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
+	OP07NFailThreshold   int    `envconfig:"AURA_OP07_NFAIL_THRESHOLD" default:"2"`
+	OP07RecentTurns      int    `envconfig:"AURA_OP07_RECENT_TURNS" default:"10"`
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
 	// and reusing chat/embedding keys would leak quota and access scope.
@@ -185,6 +186,9 @@ type Config struct {
 	// "total" (default) counts all accumulated tokens; "body_after_prefix" excludes
 	// the first-call prompt baseline (Codex prefill_input_tokens semantics).
 	CTXCompactScope string `envconfig:"AURA_CTX_COMPACT_SCOPE" default:"total"`
+	// CTXMinTurnsBetweenCompactions prevents repeated auto-compactions when a
+	// heavy turn keeps the context above threshold immediately after compression.
+	CTXMinTurnsBetweenCompactions int `envconfig:"AURA_MIN_TURNS_BETWEEN_COMPACTIONS" default:"3"`
 	// MaxConversationTokens is the effective compaction threshold in tokens.
 	// Computed at boot by cmd/aura/helpers.go:populateMaxConversationTokens after
 	// ModelContextWindow is resolved. Zero means token-budget compaction is disabled.
@@ -410,6 +414,7 @@ func Load() (*Config, error) {
 	}
 	cfg.CTXCompactPercent = rawPercent
 	cfg.CTXCompactScope = normalizeCTXCompactScope(getEnv("AURA_CTX_COMPACT_SCOPE", "total"))
+	cfg.CTXMinTurnsBetweenCompactions = normalizeIntRange(getEnvInt("AURA_MIN_TURNS_BETWEEN_COMPACTIONS", DefaultCTXMinTurnsBetweenCompactions), 1, 1000, DefaultCTXMinTurnsBetweenCompactions)
 	cfg.CTXEngine = normalizeCTXEngine(getEnv("AURA_CTX_ENGINE", "auto_compact"))
 	cfg.PayloadSummarizerEnabled = getEnvBool("AURA_PAYLOAD_SUMMARIZER", true)
 	// MaxConversationTokens computed post-boot in cmd/aura/helpers.go after ModelContextWindow resolves.
@@ -550,17 +555,17 @@ func normalizeIntRange(value, min, max, fallback int) int {
 // unavailable and AURA_MODEL_CONTEXT_WINDOW is not set. Add entries here for
 // any model not reachable via /models (self-hosted, private deployments, etc.).
 var contextWindowFallbacks = map[string]int{
-	"deepseek/deepseek-v4-flash":     163840,
-	"google/gemma-4-26b-a4b-it":      131072,
-	"anthropic/claude-sonnet-4":       200000,
-	"anthropic/claude-sonnet-4-5":     200000,
-	"anthropic/claude-opus-4":         200000,
-	"openai/gpt-4o":                   128000,
-	"openai/gpt-4.1":                  1047576,
-	"deepseek/deepseek-r1":            163840,
-	"deepseek/deepseek-r1-0528":       163840,
-	"meta-llama/llama-4-maverick":     524288,
-	"mistralai/mistral-large-2411":    131072,
+	"deepseek/deepseek-v4-flash":   163840,
+	"google/gemma-4-26b-a4b-it":    131072,
+	"anthropic/claude-sonnet-4":    200000,
+	"anthropic/claude-sonnet-4-5":  200000,
+	"anthropic/claude-opus-4":      200000,
+	"openai/gpt-4o":                128000,
+	"openai/gpt-4.1":               1047576,
+	"deepseek/deepseek-r1":         163840,
+	"deepseek/deepseek-r1-0528":    163840,
+	"meta-llama/llama-4-maverick":  524288,
+	"mistralai/mistral-large-2411": 131072,
 }
 
 // ContextWindowFallback returns the curated context window size for model.

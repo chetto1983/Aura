@@ -30,11 +30,11 @@ import (
 // internal/telegram remains a thin channel wrapper.
 type InvocationBuilder struct {
 	b                 *tgtelegram.Bot
-	hub               *chat.Hub          // set after hub creation; used for ask_user resume routing
-	outbound          *Outbound          // canonical streaming path used by streamingChatClient
-	agentNoteStore    *agentnote.Store   // nil when not configured; injected by NewHub
-	memoryStore       *memoryindex.Store // nil when compact memory unavailable; injected by NewHub
-	priorityCaches    sync.Map           // thread_id -> *memoryindex.PrioritySectionCache
+	hub               *chat.Hub                    // set after hub creation; used for ask_user resume routing
+	outbound          *Outbound                    // canonical streaming path used by streamingChatClient
+	agentNoteStore    *agentnote.Store             // nil when not configured; injected by NewHub
+	memoryStore       *memoryindex.Store           // nil when compact memory unavailable; injected by NewHub
+	priorityCaches    sync.Map                     // thread_id -> *memoryindex.PrioritySectionCache
 	payloadSummarizer governance.PayloadSummarizer // nil = disabled; wired by NewHub when config enables it
 }
 
@@ -326,7 +326,9 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	var ctxEngine conversation.ContextEngine
 	if cfg.CTXEngine != "default" && cfg.MaxConversationTokens > 0 && b.LLMClient() != nil {
 		compressor := conversation.NewContextCompressor(b.LLMClient(), cfg.ModelContextWindow)
-		ctxEngine = conversation.NewAutoCompactEngine(compressor, cfg.MaxConversationTokens, cfg.CTXCompactScope)
+		engine := conversation.NewAutoCompactEngine(compressor, cfg.MaxConversationTokens, cfg.CTXCompactScope)
+		engine.MinTurnsBetweenCompactions = cfg.CTXMinTurnsBetweenCompactions
+		ctxEngine = engine
 	}
 
 	inv := agent.Invocation{

@@ -737,3 +737,24 @@ func TestCTXCompactScope_BodyAfterPrefix(t *testing.T) {
 		t.Fatalf("CTXCompactScope = %q, want body_after_prefix", cfg.CTXCompactScope)
 	}
 }
+
+func TestCTXMinTurnsBetweenCompactions_Default(t *testing.T) {
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXMinTurnsBetweenCompactions != DefaultCTXMinTurnsBetweenCompactions {
+		t.Fatalf("CTXMinTurnsBetweenCompactions = %d, want %d", cfg.CTXMinTurnsBetweenCompactions, DefaultCTXMinTurnsBetweenCompactions)
+	}
+}
+
+func TestCTXMinTurnsBetweenCompactions_EnvOverride(t *testing.T) {
+	t.Setenv("AURA_MIN_TURNS_BETWEEN_COMPACTIONS", "7")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.CTXMinTurnsBetweenCompactions != 7 {
+		t.Fatalf("CTXMinTurnsBetweenCompactions = %d, want 7", cfg.CTXMinTurnsBetweenCompactions)
+	}
+}

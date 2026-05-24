@@ -15,6 +15,8 @@ import (
 )
 
 const (
+	DefaultMinTurnsBetweenCompactions = 3
+
 	// ScopeTotal tracks all accumulated tokens (overlays + conversation body)
 	// against the compaction threshold. Default scope.
 	ScopeTotal = "total"
@@ -39,17 +41,22 @@ type AutoCompactEngine struct {
 	inner           *ContextCompressor
 	ThresholdTokens int    // modelContextWindow * compactPercent
 	Scope           string // ScopeTotal | ScopeBodyAfterPrefix
+	// MinTurnsBetweenCompactions suppresses repeated compactions after a
+	// successful compression. Values <= 0 use DefaultMinTurnsBetweenCompactions.
+	MinTurnsBetweenCompactions int
 
 	mu              sync.Mutex
 	cumulativeTotal int  // sum of TotalTokens from all UpdateFromResponse calls
 	prefixBaseline  int  // first-call PromptTokens; baseline for ScopeBodyAfterPrefix
 	prefixSet       bool // true once prefixBaseline is captured
 
-	// Public counters — read by metrics and tests.
-	LastPromptTokens     int
-	LastCompletionTokens int
-	LastTotalTokens      int
-	CompressionCount     int
+	// Public counters - read by metrics and tests.
+	LastPromptTokens        int
+	LastCompletionTokens    int
+	LastTotalTokens         int
+	CompressionCount        int
+	TurnIndex               int
+	LastCompactionTurnIndex int
 }
 
 // NewAutoCompactEngine creates an AutoCompactEngine wrapping the given
@@ -60,9 +67,11 @@ func NewAutoCompactEngine(inner *ContextCompressor, thresholdTokens int, scope s
 		scope = ScopeTotal
 	}
 	return &AutoCompactEngine{
-		inner:           inner,
-		ThresholdTokens: thresholdTokens,
-		Scope:           scope,
+		inner:                      inner,
+		ThresholdTokens:            thresholdTokens,
+		Scope:                      scope,
+		MinTurnsBetweenCompactions: DefaultMinTurnsBetweenCompactions,
+		LastCompactionTurnIndex:    -1,
 	}
 }
 
@@ -79,6 +88,7 @@ func (e *AutoCompactEngine) UpdateFromResponse(usage llm.TokenUsage) {
 	e.LastPromptTokens = usage.PromptTokens
 	e.LastCompletionTokens = usage.CompletionTokens
 	e.LastTotalTokens = usage.TotalTokens
+	e.TurnIndex++
 	e.cumulativeTotal += usage.TotalTokens
 	if !e.prefixSet && usage.PromptTokens > 0 {
 		e.prefixBaseline = usage.PromptTokens
@@ -97,6 +107,9 @@ func (e *AutoCompactEngine) ShouldCompress(_ int) bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.ThresholdTokens <= 0 || e.cumulativeTotal <= 0 {
+		return false
+	}
+	if e.LastCompactionTurnIndex >= 0 && e.TurnIndex-e.LastCompactionTurnIndex < e.minTurnsBetweenCompactions() {
 		return false
 	}
 	effective := e.cumulativeTotal
@@ -146,14 +159,19 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 		compressed = append(compressed, prefix...)
 		compressed = append(compressed, compressedBody...)
 		e.mu.Lock()
+		cumulativeBefore := e.cumulativeTotal
 		e.CompressionCount++
+		e.LastCompactionTurnIndex = e.TurnIndex
+		e.cumulativeTotal = 0
+		e.prefixBaseline = 0
+		e.prefixSet = false
 		e.mu.Unlock()
 		ctxmetrics.Global.CTXCompactionsTotal.Add(1)
 		slog.Debug("auto_compact: conversation compressed",
 			"msgs_before", len(messages),
 			"msgs_after", len(compressed),
 			"threshold_tokens", e.ThresholdTokens,
-			"cumulative_tokens", e.cumulativeTotal,
+			"cumulative_tokens", cumulativeBefore,
 		)
 		return compressed
 	}
@@ -161,6 +179,13 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 }
 
 // --- package-private helpers -------------------------------------------------
+
+func (e *AutoCompactEngine) minTurnsBetweenCompactions() int {
+	if e.MinTurnsBetweenCompactions <= 0 {
+		return DefaultMinTurnsBetweenCompactions
+	}
+	return e.MinTurnsBetweenCompactions
+}
 
 // splitPrefixAndBody separates contiguous leading system messages from the
 // mutable conversation body. The prefix carries prompt overlays and must survive
