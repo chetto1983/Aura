@@ -29,9 +29,10 @@
 | 8 | Phase-GRAPH-FULL | Wiki aliases, alias-aware injection, embedding dedup, typed edges | ~1-2 | ~+2000 | ✅ **closed 2026-05-23** — commits `a410a440`, `6bb76d1a`, `875a50e8`, `5556319b`; graph rollback fix `6d96fd7b` |
 | 9 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | ✅ **closed 2026-05-24** — CTX-06 robustness, CTX-07 live bench, CTX-08 event log |
 | 10 | [Phase-CONS](Phase-CONS/plan.md) | Web<->Telegram 1+1 consolidation (CONS-02..13) plus assistant-ui webchat parity | ~5 | net +710 (dedup -810 + parity +720 + Wave B +800) | closed 2026-05-24 - CONS-02..13 shipped |
-| 11 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | ⚪ superseded by Phase-GRAPH-FULL unless a fresh benchmark reopens it |
+| 11 | [Phase-DOCSKL](Phase-DOCSKL/plan.md) | Restore deterministic document generation and add LLM-callable skill lifecycle tool access | ~1 | ~+520 | active 2026-05-24 - US-DOCSKL-01 first |
+| 12 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | ⚪ superseded by Phase-GRAPH-FULL unless a fresh benchmark reopens it |
 
-**Current next step:** Phase-CONS is closed locally through US-CONS-13. Before reopening later parity work, require a fresh benchmark gap rather than extending this phase by inertia.
+**Current next step:** Phase-DOCSKL is active. Execute US-DOCSKL-01 first, then US-DOCSKL-02, with one atomic commit and dedicated QA per story. Before reopening later CONS parity work, require a fresh benchmark gap rather than extending CONS by inertia.
 
 ---
 
