@@ -27,11 +27,11 @@
 | 6 | Phase-DEFER | Deferred tool manifest protocol and always-on/deferred split | ~1 | +65 | ✅ **closed 2026-05-23** — commits `50f8126e`, `1128aa81`, `e60541f6` |
 | 7 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + budget enforcement | ~3 | ~+720 | ✅ **closed 2026-05-23** — commits `c8a60b85..6aabfbda` |
 | 8 | Phase-GRAPH-FULL | Wiki aliases, alias-aware injection, embedding dedup, typed edges | ~1-2 | ~+2000 | ✅ **closed 2026-05-23** — commits `a410a440`, `6bb76d1a`, `875a50e8`, `5556319b`; graph rollback fix `6d96fd7b` |
-| 9 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | 🔴 **NEXT** — repair source/benchmark before code |
-| 10 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🟣 staged — after CTX |
+| 9 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | ✅ **closed 2026-05-24** — CTX-06 robustness, CTX-07 live bench, CTX-08 event log |
+| 10 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🔴 **NEXT** — start one bounded CONS slice |
 | 11 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | ⚪ superseded by Phase-GRAPH-FULL unless a fresh benchmark reopens it |
 
-**Current next step:** repair Phase-CTX planning artifacts (`source.md`, `benchmark.md`, `progress.md`) against the closed Phase-GRAPH-FULL baseline before coding.
+**Current next step:** start Phase-CONS from its local `source.md`, `plan.md`, `benchmark.md`, and `progress.md`; pick one bounded CONS story and keep the commit atomic.
 
 ---
 
@@ -58,8 +58,8 @@
 6. **Phase-DEFER is closed** — deferred tool manifest protocol is live.
 7. **Phase-OUT is closed** — output discipline + budget enforcement are live.
 8. **Phase-GRAPH-FULL is closed** — alias and typed-edge graph substrate is the new baseline.
-9. **Phase-CTX is NEXT** — context engineering substrate; payload_summarizer + auto-compaction at 70% are upstream of Phase-CONS.
-10. **Phase-CONS follows CTX** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
+9. **Phase-CTX is closed** — context engineering substrate, live benchmark, and compaction event debug visibility are shipped.
+10. **Phase-CONS is NEXT** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
 11. **Per-phase deep refactor** — every story includes `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated on touched files (CLAUDE.md rule).
 12. **One story = one commit** per `feedback_one_module_per_slice`. No batching except mechanical sed-style refactor with very low risk.
 13. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large -360 LOC single commit) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic.

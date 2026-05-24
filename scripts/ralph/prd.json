@@ -43,8 +43,8 @@
         "Single atomic commit prefix: feat(bench): Phase-CTX compaction bench + quality snapshot update (US-CTX-07)"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "Without this story Phase-CTX is committed but UNVALIDATED. 50% threshold is plausibly right for Claude (200k ctx) but possibly wrong for Gemma (131k) where 50% = 65k still leaves plenty of room. Bench produces the data to decide; tuning itself can be a 1-line config change in a future story. The 40% savings gate is the existence test — if NO model×fixture clears it, the compaction work earned nothing in production and we should rethink."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24 via commits 0b9fc290, f69c0d6f, and 2a65a92e. Added cmd/bench_ctx, committed fixture JSON, offline+live artifacts, and docs/aura-quality-snapshot.md Phase-CTX table. Live artifact .planning/post-drift-2026-05-21/Phase-CTX/bench-results-2026-05-24.json: rows=12, compacted_rows=3, quality_pass_rows=11, errors=0, gate_passed=true, best_savings_pct=99. DeepSeek and Claude long_session pass; Gemma long_session remains a tuning caveat."
     },
     {
       "id": "US-CTX-08",
@@ -65,8 +65,8 @@
         "Single atomic commit prefix: feat(observability): compaction event log + /api/conversations/:id/compactions endpoint (US-CTX-08)"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "Lowest priority of the 3 — Phase-CTX is functionally complete + validated after CTX-06 + CTX-07. This adds DEBUG VISIBILITY which is mandatory long-term but not blocking. If session runs short, CTX-08 can defer to a follow-up wave. ROI: 5x faster debugging when user reports 'Aura forgot X' or 'turn N took forever'."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24 in commit 1b5901d8. Added conversation_compactions metadata table, AutoCompactEngine recorder, memoryindex forwarding, and GET /conversations/{id}/compactions. Benchmark passed via go test ./internal/conversation ./internal/api -run Compaction -count=1 with SQLite/API field agreement plus 404 and 401 negative checks. Handler-level GET used isolated SQLite/httptest to avoid mutating production data."
     }
   ]
 }
