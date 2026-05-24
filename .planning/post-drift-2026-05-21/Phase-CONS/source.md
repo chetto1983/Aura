@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-10. CONS-02..09 are committed; next add markdown/code/wiki-link rendering on top of the mounted assistant-ui Thread.
+**Current slice:** US-CONS-11. CONS-02..10 are committed; next render tool-call UI components on top of assistant-ui Thread.
 
 ## Objective
 
@@ -151,6 +151,15 @@ Checked 2026-05-24:
 - Verify the frontend runtime with a Playwright browser probe that intercepts `/api/chat/stream` and returns the same UI Message Stream frames produced by the Go backend tests.
 - Keep markdown/code/wiki-link rendering, tool-call cards, ask_user cards, audio playback, attachments, and dictation out of this slice; those are US-CONS-10..13.
 
+## Adopted For US-CONS-10
+
+- Reuse Aura's existing `web/src/components/Markdown.tsx` renderer instead of adding a second chat-only markdown stack.
+- Add `rehype-highlight@7.0.2` because it is a small `react-markdown`-compatible highlighting plugin; reject Shiki for this slice because it would add a larger async highlighter surface before tool UI exists.
+- Convert `[[slug]]` and `[[slug|label]]` in the markdown text preprocessing layer to `Link to="/wiki/:slug"`, matching the existing dashboard route in `web/src/App.tsx`.
+- Keep wiki-link conversion out of fenced code blocks so code examples are not rewritten.
+- Override assistant-ui `Text` message parts only; leave tool/data/audio parts for US-CONS-11..13.
+- Use browser UI Message Stream fixtures as ground truth for rendered markdown, highlighted code, wiki links, external link safety, and mobile code-block width.
+
 ## Rejected For US-CONS-02
 
 - No single Hub change; that is US-CONS-05.
@@ -175,6 +184,12 @@ Checked 2026-05-24:
 - Do not add `@assistant-ui/styles` or a prebuilt assistant-ui theme. Aura owns visual density, shell navigation, and design tokens.
 - Do not pass auth through query params. The local `D:/tmp/openhuman` event-token pattern applies to EventSource-style SSE without headers, while Aura's assistant-ui runtime uses `fetch` and can send bearer headers.
 - Do not start live LLM/browser smoke as the completion benchmark. The slice benchmark uses a browser UI Message Stream fixture plus Go backend stream contract tests; live provider coverage remains a later integration gate when credentials/services are available.
+
+## Rejected For US-CONS-10
+
+- Do not implement `/wiki/page/:slug`; the current Aura router is `/wiki/:slug`.
+- Do not add copy/retry/regenerate UI controls yet. This slice localizes the strings and send button label, but action bars belong with richer message/tool UI.
+- Do not render tool-call, ask_user, audio, attachment, or dictation UI in the markdown slice.
 
 ## Open Questions Carried Forward
 

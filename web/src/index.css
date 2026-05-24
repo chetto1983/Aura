@@ -501,6 +501,22 @@ a:hover { text-decoration: underline; }
   line-height: 1.6;
 }
 .md pre code { background: transparent; color: inherit; padding: 0; }
+.md .hljs-keyword,
+.md .hljs-selector-tag,
+.md .hljs-title.function_ { color: #7c3aed; }
+.md .hljs-string,
+.md .hljs-attr,
+.md .hljs-symbol { color: #047857; }
+.md .hljs-number,
+.md .hljs-literal,
+.md .hljs-built_in { color: #b45309; }
+.md .hljs-comment { color: var(--text-dim); font-style: italic; }
+.md .hljs-variable,
+.md .hljs-params { color: #0f766e; }
+.md .aura-wiki-link {
+  border-bottom: 1px solid color-mix(in srgb, var(--brand-strong), transparent 55%);
+  text-decoration: none;
+}
 .md table {
   border-collapse: collapse;
   width: 100%;

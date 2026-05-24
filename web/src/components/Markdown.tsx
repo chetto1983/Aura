@@ -13,8 +13,10 @@
  * throw, we render the raw text instead of crashing the whole bubble.
  */
 import { Component } from 'react';
+import { Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
 
 interface Props {
   content: string;
@@ -37,8 +39,32 @@ class MarkdownErrorBoundary extends Component<
   }
 }
 
+function escapeMarkdownLabel(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/\]/g, '\\]');
+}
+
+function markdownWithWikiLinks(content: string): string {
+  let inFence = false;
+  return content
+    .split(/(\r?\n)/)
+    .map((line) => {
+      if (!line.includes('\n') && line.trimStart().startsWith('```')) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      return line.replace(/\[\[([A-Za-z0-9][A-Za-z0-9._-]*)(?:\|([^\]\n]+))?\]\]/g, (match, rawSlug: string, rawLabel?: string) => {
+        const slug = rawSlug.trim();
+        const label = escapeMarkdownLabel((rawLabel ?? slug).trim());
+        return `[${label}](/wiki/${encodeURIComponent(slug)})`;
+      });
+    })
+    .join('');
+}
+
 export function Markdown({ content, variant = 'default' }: Props) {
   const safe = content || '';
+  const rendered = markdownWithWikiLinks(safe);
   const fallback = (
     <span className="aura-md-fallback">{safe}</span>
   );
@@ -47,15 +73,19 @@ export function Markdown({ content, variant = 'default' }: Props) {
       <MarkdownErrorBoundary fallback={fallback} resetKey={String(safe.length)}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
+          rehypePlugins={[[rehypeHighlight, { detect: false, ignoreMissing: true }]]}
           skipHtml
           components={{
-            a: ({ node, ...props }) => {
+            a: ({ node, href = '', ...props }) => {
               void node;
-              return <a {...props} target="_blank" rel="noopener noreferrer" />;
+              if (href.startsWith('/wiki/')) {
+                return <Link {...props} to={href} className="aura-wiki-link" />;
+              }
+              return <a {...props} href={href} target="_blank" rel="noopener noreferrer" />;
             },
           }}
         >
-          {safe}
+          {rendered}
         </ReactMarkdown>
       </MarkdownErrorBoundary>
     </div>

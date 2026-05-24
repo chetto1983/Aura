@@ -359,6 +359,44 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands exit 0. `dupl` reports `Found total 0 clone groups`; it also emits Go-parser warnings for TS/TSX inputs, so frontend duplication/quality is enforced by `npm --prefix web run lint` and build in B-CONS-09-A.
 - **PRD gate:** self-audited slice QA before the US-CONS-09 atomic commit.
 
+## US-CONS-10 - Markdown, Code Highlighting, And Wiki Links
+
+### B-CONS-10-A: Frontend Build And Unit Gates
+
+- **Command:** `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`
+- **Fixture:** assistant-ui Chat page using Aura's Markdown renderer, `rehype-highlight@7.0.2`, and localized chat controls.
+- **Artifact:** production build assets under `internal/api/dist`, i18n audit output, ESLint output, and Vitest output.
+- **Ground truth:** build succeeds with `react-markdown@8`, `remark-gfm@3.0.1`, and `rehype-highlight@7.0.2`; all direct chat strings are translated in English and Italian; existing frontend unit tests still pass.
+- **Pass threshold:** all commands exit 0; i18n reports 896 keys and 690 direct `t()` keys.
+- **PRD gate:** markdown rendering is part of the usable assistant-ui chat surface, not a later manual formatting pass.
+
+### B-CONS-10-B: Browser Markdown Contract
+
+- **Command:** Playwright desktop probe against local Vite `/chat` with intercepted UI Message Stream markdown fixture.
+- **Fixture:** assistant text delta containing `**bold**`, a list, a Python fenced code block, `[[alpha-note|Alpha Note]]`, and an external link.
+- **Artifact:** `D:/tmp/aura-chat-us-cons-10-markdown.png`.
+- **Ground truth:** DOM contains `strong` text, a list item, `pre code.hljs.language-python` with nested highlight spans, `a[href="/wiki/alpha-note"]`, and the external link uses `target="_blank"`.
+- **Pass threshold:** all DOM assertions pass before screenshot.
+- **PRD gate:** assistant-ui renders Aura chat messages as structured UI, not plain text.
+
+### B-CONS-10-C: Mobile Code-Block Probe
+
+- **Command:** Playwright mobile probe against local Vite `/chat` with intercepted UI Message Stream markdown fixture.
+- **Fixture:** 390px-wide mobile viewport and a highlighted Python code block.
+- **Artifact:** `D:/tmp/aura-chat-us-cons-10-markdown-mobile.png`.
+- **Ground truth:** highlighted `pre code.hljs.language-python` renders and the code block width does not exceed the `main` viewport width.
+- **Pass threshold:** code block exists; `pre.width <= main.width`.
+- **PRD gate:** markdown/code support remains usable on mobile before later tool-card layouts are added.
+
+### B-CONS-10-D: Backend Embed And Repo QA
+
+- **Command:** `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** rebuilt `internal/api/dist` assets and existing backend stream contract tests.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** Go embed still compiles and backend UI Message Stream tests remain green after frontend markdown assets.
+- **Pass threshold:** all commands exit 0.
+- **PRD gate:** self-audited slice QA before the US-CONS-10 atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -372,7 +410,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-07 | Completed by B-CONS-07-A..D above | local SSE endpoint, parser fixture, shared Hub streaming service | frames are valid AI SDK UI Message Stream SSE frames; headers include `text/event-stream`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `x-vercel-ai-ui-message-stream: v1`; shared Hub calls `llm.Stream` | all fixture frames parse; stream terminates with `[DONE]`; buffered `/chat` tests still pass |
 | CONS-08 | Completed by B-CONS-08-A..D above | fake TTS/audio cache, fake ask_user tool, shared Hub with SQLite run store | `audio_url` serves OGG bytes; pending question is exposed in buffered/SSE modes; answer resumes the same durable question thread | audio >1024 bytes; question row waiting->answered; `question_answered` event persisted |
 | CONS-09 | Completed by B-CONS-09-A..D above | assistant-ui `/chat` route, intercepted UI Message Stream, backend stream tests | text-only stream renders in Thread; composer request sends bearer auth, `thread_id`, and latest user message | visible streamed assistant message plus backend stream tests green |
-| CONS-10 | `npm --prefix web run build` plus markdown fixture probe | markdown/code/wiki-link assistant message | GFM, code block, and `[[slug]]` render correctly | DOM assertions pass |
+| CONS-10 | Completed by B-CONS-10-A..D above | markdown/code/wiki-link assistant message | GFM, highlighted code block, and `[[slug]]` render correctly | DOM assertions pass on desktop and mobile; Go embed remains green |
 | CONS-11 | `npm --prefix web run build` plus tool-call fixture probe | SSE tool-call frames | generic and specialized tool cards render with status and summaries | DOM cards present; no secret args displayed |
 | CONS-12 | `npm --prefix web run build` plus ask_user browser probe | pending question frame and answer endpoint | options/free text submit resumes run | final assistant reply appears after answer |
 | CONS-13 | `npm --prefix web run build` plus attachment/audio/dictation probes | fake audio URL, test PDF upload, browser speech mock | audio control plays URL; source chip sends source_id; dictated text enters composer | DOM/API assertions pass |

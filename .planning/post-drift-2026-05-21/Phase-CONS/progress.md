@@ -19,28 +19,34 @@
 
 | 2026-05-24 | US-CONS-09 | passed | `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; Playwright route probe for `/chat` desktop/mobile; Playwright stream probe with intercepted UI Message Stream; `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames|TestWebChatAskUserPendingAndAnswerResume" -count=1`; `go test ./internal/api/... -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 web/src/pages/Chat.tsx web/src/lib/assistant-runtime.ts web/src/App.tsx web/src/components/Sidebar.tsx web/src/components/Shell.tsx`; `git diff --check`; `go test ./... -count=1`. | Wave B frontend started. Added assistant-ui runtime mount at `/chat`, lazy Chat chunk, runtime factory with URL `thread_id` generation, existing dashboard bearer auth, sidebar route, i18n keys, and rebuilt embedded dist. Ground truth: browser submit sends `Authorization: Bearer codex-browser-qa`, body `thread_id=web_*`, latest message role `user`, and renders streamed text `Ciao dal probe`; desktop/mobile render probes write `thread_id` into the URL and screenshots live at `D:/tmp/aura-chat-us-cons-09*.png`. Bundle delta documented: main index `533713 -> 534851` bytes (+1138), new lazy Chat chunk `208050` bytes / `57.36 KB` gzip. `dupl` is Go-parser-oriented and emitted TS parse warnings while still reporting zero clone groups; `npm lint`/build were the frontend quality gates. |
 
+| 2026-05-24 | US-CONS-10 | passed | `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`; Playwright desktop markdown/code/wiki-link probe; Playwright mobile code-block probe; `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`. | Assistant messages now render through Aura's Markdown renderer inside assistant-ui text parts. Ground truth: browser fixture renders `strong`, list item, `pre code.hljs.language-python` with nested highlight spans, wiki link `/wiki/alpha-note`, and external link target `_blank`; mobile code-block width stays within `main`. Added `rehype-highlight@7.0.2`, safe wiki-link preprocessing outside fenced code blocks, localized send/copy/retry/regenerate strings, and rebuilt dist. Bundle delta: Chat chunk `208050 -> 378980` bytes; new shared `remark-gfm` chunk `139770` bytes. |
+
 ## Current Slice
 
-**US-CONS-10:** add markdown/code/wiki-link rendering to the assistant-ui chat UI.
+**US-CONS-11:** render Aura tool calls as assistant-ui message components.
 
 Pre-edit map:
 
 - `web/src/pages/Chat.tsx`
-- `web/src/components/WikiPageView.tsx`
+- `web/src/components/chat/`
+- `web/src/components/MCPPanel.tsx`
 - `web/src/components/WikiPanel.tsx`
-- `rg "react-markdown|remark-gfm|\\[\\[" web/src`
+- `internal/channels/web/streaming_outbound.go`
+- `internal/channels/web/streaming_outbound_test.go`
+- `cmd/aura/web_chat_test.go`
 - `web/src/i18n/locales/en.json`
 - `web/src/i18n/locales/it.json`
 - `internal/api/dist/`
+- `D:/tmp/assistant-ui/apps/docs/components/docs/samples/action-bar-primitive.tsx`
 - `D:/tmp/assistant-ui/apps/docs/components/docs/samples/thread-primitive.tsx`
-- `D:/tmp/assistant-ui/apps/docs/components/docs/samples/message-primitive.tsx`
 - `D:/tmp/assistant-ui/packages/react/src/primitives/message/MessageParts.tsx`
+- `D:/tmp/assistant-ui/apps/registry/src/registry.ts`
 
 Dedicated QA target:
 
 - `npm --prefix web run build`
-- browser fixture renders bold/list/link/code markdown in assistant message
-- `[[slug]]` links route to the existing wiki page URL shape
+- browser fixture renders generic tool-call status cards from stream frames
+- specialized wiki/search tool cards hide raw secret args and expose useful links/results
 - Italian + English chat strings remain complete
 - `go vet ./...`
 - `go build ./...`

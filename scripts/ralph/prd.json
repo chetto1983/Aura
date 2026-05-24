@@ -179,8 +179,8 @@
         "Single atomic commit prefix: feat(web/ui): markdown + code highlight + i18n in assistant-ui chat (US-CONS-10)"
       ],
       "priority": 9,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-09. The wiki-link integration is the Aura-specific bit — bridges chat UX with Aura's wiki ecosystem."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Assistant messages now render through Aura's Markdown renderer inside assistant-ui text parts, with GFM, rehype-highlight code blocks, external links opened safely, and [[slug|label]] wiki links converted to the existing /wiki/:slug route. Composer send has localized aria/title text and chat UI strings are present in en/it. Browser QA intercepted UI Message Stream markdown and asserted strong/list/pre code.hljs.language-python/wiki link/external target; mobile probe asserted the highlighted code block stays within the viewport. Bundle delta documented: Chat chunk 208050 -> 378980 bytes after markdown/highlight support; remark-gfm shared chunk 139770 bytes."
     },
     {
       "id": "US-CONS-11",

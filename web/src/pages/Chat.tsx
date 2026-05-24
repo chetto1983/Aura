@@ -2,11 +2,14 @@ import {
   AssistantRuntimeProvider,
   ComposerPrimitive,
   MessagePrimitive,
+  MessagePartPrimitive,
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   ThreadPrimitive,
+  useMessagePartText,
 } from '@assistant-ui/react';
 import { ArrowUp, Bot, MessageCircle, Plus } from 'lucide-react';
+import { Markdown } from '@/components/Markdown';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuraAssistantRuntime, useAuraChatThreadID } from '@/lib/assistant-runtime';
 import { cn } from '@/lib/utils';
@@ -99,14 +102,14 @@ function Thread({ t }: { t: ReturnType<typeof useLocale>['t'] }) {
         </div>
 
         <ThreadPrimitive.ViewportFooter className="sticky bottom-0 mt-auto bg-background/95 pt-2 backdrop-blur">
-          <Composer placeholder={t('chat.composerPlaceholder')} />
+          <Composer placeholder={t('chat.composerPlaceholder')} sendLabel={t('chat.send')} />
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>
   );
 }
 
-function Composer({ placeholder }: { placeholder: string }) {
+function Composer({ placeholder, sendLabel }: { placeholder: string; sendLabel: string }) {
   return (
     <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl items-end gap-2 rounded-md border bg-card px-3 py-2 shadow-sm">
       <ComposerPrimitive.Input
@@ -117,6 +120,8 @@ function Composer({ placeholder }: { placeholder: string }) {
       <ComposerPrimitive.Send asChild>
         <button
           type="button"
+          aria-label={sendLabel}
+          title={sendLabel}
           className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-opacity disabled:opacity-40"
         >
           <ArrowUp className="size-4" />
@@ -130,7 +135,7 @@ function UserMessage() {
   return (
     <MessagePrimitive.Root className="flex justify-end">
       <div className="max-w-[80%] rounded-md bg-primary px-4 py-2.5 text-sm text-primary-foreground">
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Parts components={{ Text: UserText }} />
       </div>
     </MessagePrimitive.Root>
   );
@@ -144,11 +149,24 @@ function AssistantMessage() {
         <Bot className="size-4" />
       </div>
       <div className="min-w-0 max-w-[80%] rounded-md border bg-card px-4 py-2.5 text-sm">
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Parts components={{ Text: AssistantText }} />
         <MessagePrimitive.Error>
           <div className="mt-2 text-destructive">{t('chat.error')}</div>
         </MessagePrimitive.Error>
       </div>
     </MessagePrimitive.Root>
   );
+}
+
+function UserText() {
+  return (
+    <p className="whitespace-pre-wrap">
+      <MessagePartPrimitive.Text />
+    </p>
+  );
+}
+
+function AssistantText() {
+  const part = useMessagePartText();
+  return <Markdown content={part.text} />;
 }
