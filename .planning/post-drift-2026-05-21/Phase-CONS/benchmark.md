@@ -159,6 +159,35 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
 - **PRD gate:** self-audited slice QA before atomic commit.
 
+## US-CONS-04C - Agentcore Adoption Closure Gate
+
+### B-CONS-04C-A: Web And Telegram Builder Adoption Gate
+
+- **Command:** `go test ./internal/agentcore -run "TestAgentCoreBuilderAdoptedByWebAndTelegram|TestAgentCoreBuilderDoesNotAddRuntimeFlagShim" -count=1`
+- **Fixture:** source-level parser test over `cmd/aura/web_chat.go`, `internal/channels/telegram/invocation_builder.go`, and runtime/config files.
+- **Artifact:** parsed Go source and test output.
+- **Ground truth:** both transports call `agentcore.Builder.Build` with `agentcore.InvocationInput`; neither transport owns a non-empty `agent.Invocation` literal; runtime/config files do not add a no-op `AURA_AGENTCORE_BUILDER` shim after the legacy path was removed.
+- **Pass threshold:** exact source assertions pass.
+- **PRD gate:** `internal/agentcore.Builder` is the single invocation assembly owner for web and Telegram.
+
+### B-CONS-04C-B: Telegram Fixture Byte-Parity Closure
+
+- **Command:** `go test ./internal/channels/telegram/fixture -run TestSnapshotsByteParity -count=1`
+- **Fixture:** Telegram fixture snapshot suite.
+- **Artifact:** fixture test output.
+- **Ground truth:** Telegram rendering bytes remain stable after invocation construction moved behind `agentcore.Builder`.
+- **Pass threshold:** byte-parity test passes.
+- **PRD gate:** Telegram transport behavior did not drift while closing the builder migration.
+
+### B-CONS-04C-C: Dedicated Slice QA
+
+- **Command:** `go test ./internal/agentcore ./internal/channels/telegram/fixture ./cmd/aura ./internal/channels/telegram -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/agentcore ./internal/channels/telegram ./cmd/aura --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/agentcore internal/channels/telegram/invocation_builder.go cmd/aura/web_chat.go`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** touched packages plus full repository Go test suite.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** no compile/vet/lint regressions; touched-file duplication is zero; full Go suite passes after closing US-CONS-04.
+- **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
+- **PRD gate:** self-audited slice QA before atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -166,7 +195,7 @@ These rows are required before each later story can be called complete. Replace 
 | Story | Exact Command | Fixture / Artifact | Ground Truth | Pass Threshold |
 | --- | --- | --- | --- | --- |
 | CONS-03 | Completed by B-CONS-03-A..D above | fake tool registry + hub-backed web turn using shared executor | web calls `agent.ExecuteToolCalls`; tool attempts and visible tool context match current behavior | no `webToolExecutor` symbols; tool attempt row and captured context fields correct |
-| CONS-04 | Partially covered by B-CONS-04A and B-CONS-04B; remaining: feature-flag parity closure | legacy vs `AURA_AGENTCORE_BUILDER=true` transcript comparison | same tool-call sequence names + argument keys | exact sequence equality; response text drift <=5% where compared |
+| CONS-04 | Completed by B-CONS-04A..C above | web + Telegram builder source gate, Telegram byte-parity fixture, full Go suite | web and Telegram invoke `agentcore.Builder`; no transport-owned non-empty `agent.Invocation` literal; no no-op runtime flag shim | adoption/parity tests pass; fixture and full suite pass |
 | CONS-05 | `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub" -count=1` | shared Hub with fake web and Telegram outbound adapters | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound | zero cross-channel deliveries |
 | CONS-06 | `go test ./internal/channels/web ./internal/api ./cmd/aura -run "Budget|Archive|Compaction" -count=1` | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
 | CONS-07 | `go test ./internal/channels/web ./internal/api -run "SSE|DataStream|Streaming" -count=1` plus `curl -N` probe | local SSE endpoint and parser fixture | frames are valid Vercel AI SDK data-stream frames; headers include `text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` | first byte <500ms in live probe; all fixture frames parse |

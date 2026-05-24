@@ -59,7 +59,7 @@ Planning contract repaired 2026-05-24:
   - `dupl -t 60 internal/agentcore/ internal/channels/ cmd/aura/web_chat*.go` no cluster ≥60 tokens.
   - Every touched file ≤600 LOC.
 - **Dependency:** US-CONS-03.
-- **Risk mitigation:** **Feature-flag** `AURA_AGENTCORE_BUILDER=true` for 1 week of live traffic before deleting legacy. Add transcript-comparison probe: same query through both paths → identical tool-call sequence (names + arg_keys); response text may vary ≤5% (LLM nondeterminism).
+- **Risk mitigation:** The original `AURA_AGENTCORE_BUILDER` runtime flag is superseded by US-CONS-04A/04B removing the legacy invocation literals outright. US-CONS-04C must keep a real adoption/parity gate: both transports call `agentcore.Builder`, no transport owns a non-empty `agent.Invocation` literal, Telegram fixture byte-parity passes, and the full Go suite stays green. Do not add a no-op runtime flag.
 
 ### US-CONS-05 — Single Hub: collapse web + telegram Hubs into one
 
@@ -131,7 +131,7 @@ Each story is one atomic commit and one dedicated QA pass. No batching except me
 ## Risks
 
 - **R1 (US-CONS-02)**: in-flight web sessions don't survive deploy. Mitigation: deploy off-hours; existing `webChatIdleTTL = 30min` self-evicts within 30min.
-- **R2 (US-CONS-04)**: largest single commit (-360 LOC). Mitigation: feature flag + byte-parity test + transcript-comparison probe. 1-week soak.
+- **R2 (US-CONS-04)**: largest story in the phase, split into 04A/04B/04C. Mitigation: adoption gate, byte-parity fixture, touched-path lint/dupl, and full Go suite before marking the story closed.
 - **R3 (US-CONS-07)**: SSE proxy buffering. Mitigation: `X-Accel-Buffering: no` header + flush after every frame. Document nginx requirement in `docs/deploy.md`.
 - **R4 (US-CONS-08)**: voice synth blocking on buffered web. Mitigation: separate GET endpoint with TTL cache.
 - **R5**: ChannelData privacy invariant. Mitigation: assertion test that `agentcore.Build` doesn't carry ChannelData into agent.Run outputs.

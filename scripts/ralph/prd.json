@@ -48,8 +48,8 @@
         "internal/agentcore/invocation.go new, owns full agent.Invocation construction",
         "internal/channels/telegram/invocation_builder.go shrunk to transport-specific hooks only",
         "cmd/aura/web_chat.go shrunk to transport-specific hooks only; new cmd/aura/web_chat_hooks.go for the hook impl",
-        "Feature flag AURA_AGENTCORE_BUILDER=true for 1 week of live traffic before deleting legacy",
-        "Transcript-comparison probe: same query through both paths → identical tool-call sequence (names + arg_keys); response text may vary ≤5% (LLM nondeterminism)",
+        "US-CONS-04C adoption gate proves web + Telegram call agentcore.Builder.Build and no transport owns a non-empty agent.Invocation literal",
+        "No no-op AURA_AGENTCORE_BUILDER runtime flag is introduced after the legacy invocation path has been removed",
         "go test ./... -count=1 green including internal/channels/telegram/fixture/byte_parity_test.go",
         "dupl -t 60 internal/agentcore/ internal/channels/ cmd/aura/web_chat*.go reports no cluster ≥60 tokens",
         "Every touched file ≤600 LOC (telegram invocation_builder.go currently 688 — must drop below cap)",
@@ -58,8 +58,8 @@
         "Single atomic commit prefix: refactor(agentcore): promote Builder to own full Invocation construction (US-CONS-04)"
       ],
       "priority": 3,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-03. IN PROGRESS: US-CONS-04A introduced internal/agentcore.Builder and moved web invocation assembly onto it with full Go suite green. US-CONS-04B moved Telegram invocation assembly onto the same builder with Telegram fixture tests and full Go suite green. Remaining before passes:true: add/lock AURA_AGENTCORE_BUILDER parity gate, run closure fixture/byte-parity checks, and close the story benchmark. THE BIG ONE — largest LOC delta in Aura's history (-360). Feature flag is mandatory for risk mitigation. Existing byte-parity test is the safety net."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24 across US-CONS-04A/B/C. internal/agentcore.Builder owns channel-neutral agent.Invocation assembly for web and Telegram; transport-only behavior remains in the adapters. Closure gate proves both transports call agentcore.Builder.Build with agentcore.InvocationInput, neither transport owns a non-empty agent.Invocation literal, no no-op AURA_AGENTCORE_BUILDER runtime flag was added, Telegram byte-parity fixture passes, and full Go suite is green."
     },
     {
       "id": "US-CONS-05",

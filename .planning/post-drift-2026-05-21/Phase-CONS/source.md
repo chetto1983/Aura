@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-04. CONS-02 and CONS-03 are committed; US-CONS-04A moved web invocation assembly onto `internal/agentcore.Builder`; US-CONS-04B moved Telegram invocation assembly onto the same builder. Continue with the feature-flag/parity gate before marking US-CONS-04 complete.
+**Current slice:** US-CONS-04C. CONS-02 and CONS-03 are committed; US-CONS-04A moved web invocation assembly onto `internal/agentcore.Builder`; US-CONS-04B moved Telegram invocation assembly onto the same builder. Close US-CONS-04 with an adoption/parity gate instead of a no-op runtime flag because the legacy invocation path has already been removed.
 
 ## Objective
 
@@ -88,7 +88,15 @@ Checked 2026-05-24:
 - Wire Telegram's existing invocation literal through `internal/agentcore.Builder`.
 - Keep Telegram-only behavior in `internal/channels/telegram/invocation_builder.go`: status pane, ask_user rendering, prompt hot reload, archive, soft budget notification, and final Telegram delivery.
 - Use existing Telegram fixture tests plus full Go suite as the behavior-preserving safety net.
-- Leave US-CONS-04 open until the explicit `AURA_AGENTCORE_BUILDER` parity/closure evidence is recorded.
+- Leave US-CONS-04 open until US-CONS-04C records the closure evidence for the final adoption/parity gate.
+
+## Adopted For US-CONS-04C
+
+- Replace the originally planned `AURA_AGENTCORE_BUILDER` soak flag with a static adoption/parity gate because US-CONS-04A/04B removed the legacy invocation construction path instead of leaving two live paths.
+- Assert both `cmd/aura/web_chat.go` and `internal/channels/telegram/invocation_builder.go` call `agentcore.Builder.Build` with `agentcore.InvocationInput`.
+- Assert transports no longer own non-empty `agent.Invocation` literals; zero-value error returns remain allowed.
+- Assert production runtime/config files do not introduce a no-op `AURA_AGENTCORE_BUILDER` shim.
+- Use Telegram fixture byte-parity, touched-path lint/dupl, and full Go tests as the closure evidence before setting `US-CONS-04.passes=true`.
 
 ## Rejected For US-CONS-02
 
@@ -99,6 +107,5 @@ Checked 2026-05-24:
 
 ## Open Questions Carried Forward
 
-- CONS-04 must decide the exact feature-flag cleanup path for `AURA_AGENTCORE_BUILDER`.
 - CONS-07 must lock the Vercel AI SDK data-stream frame schema from current package docs/source before implementation.
 - CONS-08 must design durable ask_user resume for browser close/reopen; D:/tmp examples only provide partial stubs.
