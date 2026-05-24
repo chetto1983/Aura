@@ -107,9 +107,12 @@ func injectCacheControl(msgs []chatMessage) []chatMessage {
 
 // logCacheSkip logs a one-time warning when cache is enabled but the provider
 // heuristic says caching is unsupported, so operators know the feature is
-// inactive without polling metrics.
+// inactive without polling metrics. Prompt cache is always-on at the client
+// construction site (cmd/aura/helpers.go) and DetectCacheSupport is the only
+// gate; this warning fires for every non-cache-capable provider until the
+// operator switches to OpenRouter/Anthropic or a claude/deepseek model.
 func logCacheSkip(baseURL, model string) {
 	slog.Default().Warn("prompt cache disabled: provider not recognised as cache-capable",
 		"base_url", baseURL, "model", model,
-		"hint", "set AURA_PROMPT_CACHE_ENABLED=false to suppress this warning")
+		"hint", "switch to an OpenRouter/Anthropic base URL or a claude/deepseek model to enable prompt caching")
 }

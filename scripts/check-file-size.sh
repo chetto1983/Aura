@@ -26,6 +26,12 @@ if [[ -f "$BASELINE_FILE" ]]; then
     while read -r count path; do
         # Skip comment lines
         [[ "$count" == \#* ]] && continue
+        # Strip trailing CR (the repo's baseline file historically uses CRLF
+        # line endings on Windows; bash `read` keeps the CR which then breaks
+        # every key lookup against POSIX paths). Belt-and-braces: also trim
+        # any trailing whitespace.
+        path="${path%$'\r'}"
+        path="${path%"${path##*[![:space:]]}"}"
         BASELINE["$path"]="$count"
     done < "$BASELINE_FILE"
 fi
