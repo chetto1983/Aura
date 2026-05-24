@@ -455,6 +455,10 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		PendingApprover: b,
 		// Conversation archive read API.
 		Archive: archiveDB,
+		Compactions: func() conversation.CompactionReader {
+			reader, _ := archiveDB.(conversation.CompactionReader)
+			return reader
+		}(),
 		// Summaries review queue.
 		Summaries:         a.deps.SummariesStore,
 		SummariesWiki:     a.deps.WikiStore,

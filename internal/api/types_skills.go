@@ -98,6 +98,25 @@ type ConversationDetail struct {
 	CreatedAt      string `json:"created_at"`
 }
 
+// ConversationCompaction is one row of GET /conversations/{id}/compactions.
+type ConversationCompaction struct {
+	ID               int64  `json:"id"`
+	ConversationID   int64  `json:"conversation_id"`
+	RunID            string `json:"run_id,omitempty"`
+	ChatID           int64  `json:"chat_id"`
+	TurnIndex        int64  `json:"turn_index"`
+	Iteration        int    `json:"iteration"`
+	MessagesBefore   int    `json:"messages_before"`
+	MessagesAfter    int    `json:"messages_after"`
+	TokensBefore     int    `json:"tokens_before"`
+	TokensAfter      int    `json:"tokens_after"`
+	ThresholdTokens  int    `json:"threshold_tokens"`
+	CumulativeTokens int    `json:"cumulative_tokens"`
+	FocusPreview     string `json:"focus_preview,omitempty"`
+	ElapsedMS        int64  `json:"elapsed_ms"`
+	CreatedAt        string `json:"created_at"`
+}
+
 // ProposedUpdate is one row of GET /summaries (mirrors proposed_updates table).
 type ProposedUpdate struct {
 	ID             int64           `json:"id"`

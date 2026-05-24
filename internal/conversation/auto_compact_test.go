@@ -42,6 +42,15 @@ func newTestAutoCompact(summary string, thresholdTokens int, scope string, conte
 
 var _ ContextEngine = (*AutoCompactEngine)(nil)
 
+type recordingCompactionRecorder struct {
+	events []CompactionEvent
+}
+
+func (r *recordingCompactionRecorder) RecordCompaction(_ context.Context, event CompactionEvent) error {
+	r.events = append(r.events, event)
+	return nil
+}
+
 func TestPrefixProtectionKeepsSystemMessages(t *testing.T) {
 	// AC: 3 system messages + 50 body messages; compact returns all 3 system
 	// messages intact plus a summarized body.
@@ -82,6 +91,47 @@ func TestPrefixProtectionKeepsSystemMessages(t *testing.T) {
 	last := compressed[len(compressed)-1]
 	if last.Role != "user" || last.Content != "final question" {
 		t.Fatalf("last message = %+v, want user 'final question'", last)
+	}
+}
+
+func TestAutoCompactEngine_RecordsCompactionEvent(t *testing.T) {
+	const summary = "## Goal\nsummarized\n## Active Task\ncontinue"
+	e := newTestAutoCompact(summary, 1000, ScopeTotal, 128000)
+	recorder := &recordingCompactionRecorder{}
+	e.Recorder = recorder
+	e.RunID = "run-ctx-1"
+	e.ChatID = 42
+	e.ArchiveTurnIndex = 7
+	e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 300, TotalTokens: 1200})
+
+	messages := []llm.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("alpha ", 100)},
+		{Role: "assistant", Content: strings.Repeat("beta ", 100)},
+		{Role: "user", Content: "continue"},
+	}
+	compressed := e.Compress(messages, 1200, "Authorization: Bearer sample-token")
+	if len(compressed) >= len(messages) {
+		t.Fatalf("compressed len = %d, want shorter than %d", len(compressed), len(messages))
+	}
+	if len(recorder.events) != 1 {
+		t.Fatalf("recorded events = %d, want 1", len(recorder.events))
+	}
+	event := recorder.events[0]
+	if event.RunID != "run-ctx-1" || event.ChatID != 42 || event.TurnIndex != 7 || event.Iteration != 1 {
+		t.Fatalf("identity fields = %+v", event)
+	}
+	if event.MessagesBefore != len(messages) || event.MessagesAfter != len(compressed) {
+		t.Fatalf("message counts = before %d after %d", event.MessagesBefore, event.MessagesAfter)
+	}
+	if event.TokensBefore <= event.TokensAfter {
+		t.Fatalf("tokens before/after = %d/%d, want reduction", event.TokensBefore, event.TokensAfter)
+	}
+	if event.CumulativeTokens != 1200 || event.ThresholdTokens != 1000 {
+		t.Fatalf("token gate fields = %+v", event)
+	}
+	if event.FocusPreview != "[redacted]" {
+		t.Fatalf("FocusPreview = %q, want redacted", event.FocusPreview)
 	}
 }
 

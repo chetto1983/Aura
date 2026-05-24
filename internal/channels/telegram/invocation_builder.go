@@ -321,6 +321,24 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		postTurn.Hooks = append(postTurn.Hooks, hook)
 	}
 
+	archiveDB := b.ArchiveRepository()
+	archiveChatID := c.Chat().ID
+	var archiveNextIndex int64
+	var archiveNextIndexOnce sync.Once
+	resolveArchiveNextIndex := func() int64 {
+		archiveNextIndexOnce.Do(func() {
+			if archiveDB == nil {
+				return
+			}
+			if maxIdx, err := archiveDB.MaxTurnIndex(context.Background(), archiveChatID); err == nil {
+				archiveNextIndex = maxIdx + 1
+			} else {
+				b.Logger().Warn("archive: max turn_index lookup failed", "chat_id", archiveChatID, "error", err)
+			}
+		})
+		return archiveNextIndex
+	}
+
 	// US-CTX-04/05: wire AutoCompactEngine when enabled and MaxConversationTokens is set.
 	// agentloop.go falls back to DefaultContextEngine when ContextEngine is nil.
 	var ctxEngine conversation.ContextEngine
@@ -328,6 +346,12 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		compressor := conversation.NewContextCompressor(b.LLMClient(), cfg.ModelContextWindow)
 		engine := conversation.NewAutoCompactEngine(compressor, cfg.MaxConversationTokens, cfg.CTXCompactScope)
 		engine.MinTurnsBetweenCompactions = cfg.CTXMinTurnsBetweenCompactions
+		if recorder, ok := archiveDB.(conversation.CompactionRecorder); ok {
+			engine.Recorder = recorder
+			engine.RunID = runID
+			engine.ChatID = archiveChatID
+			engine.ArchiveTurnIndex = resolveArchiveNextIndex()
+		}
 		ctxEngine = engine
 	}
 
@@ -489,18 +513,11 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 
 				// Archive this turn.
 				archiveAppender := b.ArchiveAppender()
-				archiveDB := b.ArchiveRepository()
 				if archiveAppender != nil && archiveDB != nil {
 					archiveCtx := context.Background()
-					chatID := c.Chat().ID
-					nextIdx := int64(0)
-					if maxIdx, err := archiveDB.MaxTurnIndex(archiveCtx, chatID); err == nil {
-						nextIdx = maxIdx + 1
-					} else {
-						b.Logger().Warn("archive: max turn_index lookup failed", "chat_id", chatID, "error", err)
-					}
+					nextIdx := resolveArchiveNextIndex()
 					conversation.ArchiveConversationTurns(archiveCtx, b.Logger(), archiveAppender, conversation.ArchiveTurnInput{
-						ChatID:       chatID,
+						ChatID:       archiveChatID,
 						UserID:       c.Sender().ID,
 						NextIndex:    nextIdx,
 						UserText:     userText,

@@ -167,12 +167,24 @@ does not depend on the Ralph queue or chat memory.
 
 ### US-CTX-08 - Compaction event log
 
-- **Status:** follow-up after US-CTX-07.
+- **Status:** shipped 2026-05-24; storage/API event log and redaction checks
+  are in place.
 - **Goal:** persist per-compaction debug facts and expose them through
   `/api/conversations/:id/compactions`.
+- **Files:** `internal/conversation/compaction_events.go`,
+  `internal/conversation/auto_compact.go`,
+  `internal/db/migrations/m27_add_conversation_compactions.go`,
+  `internal/api/conversations.go`, `internal/api/router.go`,
+  `internal/channels/telegram/invocation_builder.go`, and
+  `internal/storage/memoryindex/rebuild.go`.
 - **Gate:** SQLite/API ground truth must prove per-event fields, not only
   aggregate metrics.
-- **Non-goal:** do not start US-CTX-08 before the benchmark evidence exists.
+- **Result:** `conversation_compactions` stores metadata-only rows keyed by
+  `chat_id + turn_index`, with `run_id`, message/token counts, elapsed time,
+  threshold/cumulative token fields, timestamp, and a redacted bounded focus
+  preview. The API returns the matching conversation id from the archive row.
+- **Non-goal:** raw prompts, full messages, tool outputs, and unredacted focus
+  text are not persisted.
 
 ---
 
@@ -193,7 +205,7 @@ does not depend on the Ralph queue or chat memory.
 | Compaction must preserve instructions and current user task | US-CTX-06 | `benchmark.md` row B-CTX-06 | `source.md` Codex/Hermes rows | shipped |
 | Phase must be validated with metrics, not "it ran" | US-CTX-07 | `benchmark.md` rows B-CTX-07-1..7 | `source.md` OpenAI/NIST/Chroma rows | self-audited; next slice bounded |
 | Bench must update product quality snapshot | US-CTX-07 | `benchmark.md` row B-CTX-07-6 | `docs/aura-quality-snapshot.md` pattern | planned |
-| Per-event debug visibility for compaction | US-CTX-08 | `benchmark.md` row B-CTX-08-1 | `source.md` ADR observability row | deferred after US-CTX-07 |
+| Per-event debug visibility for compaction | US-CTX-08 | `benchmark.md` row B-CTX-08-1 | `source.md` ADR observability row | shipped 2026-05-24 |
 
 ---
 

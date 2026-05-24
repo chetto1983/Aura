@@ -14,15 +14,18 @@ import (
 )
 
 var (
-	_ conversation.TurnAppender        = (*conversation.ArchiveStore)(nil)
-	_ conversation.ChatTurnReader      = (*conversation.ArchiveStore)(nil)
-	_ conversation.TurnReader          = (*conversation.ArchiveStore)(nil)
-	_ conversation.TurnDetailReader    = (*conversation.ArchiveStore)(nil)
-	_ conversation.TurnIndexReader     = (*conversation.ArchiveStore)(nil)
-	_ conversation.ArchiveStatsReader  = (*conversation.ArchiveStore)(nil)
-	_ conversation.ArchiveDeleter      = (*conversation.ArchiveStore)(nil)
-	_ conversation.ArchiveRepository   = (*conversation.ArchiveStore)(nil)
-	_ conversation.ClosingTurnAppender = (*conversation.BufferedAppender)(nil)
+	_ conversation.TurnAppender         = (*conversation.ArchiveStore)(nil)
+	_ conversation.ChatTurnReader       = (*conversation.ArchiveStore)(nil)
+	_ conversation.TurnReader           = (*conversation.ArchiveStore)(nil)
+	_ conversation.TurnDetailReader     = (*conversation.ArchiveStore)(nil)
+	_ conversation.TurnIndexReader      = (*conversation.ArchiveStore)(nil)
+	_ conversation.ArchiveStatsReader   = (*conversation.ArchiveStore)(nil)
+	_ conversation.ArchiveDeleter       = (*conversation.ArchiveStore)(nil)
+	_ conversation.ArchiveRepository    = (*conversation.ArchiveStore)(nil)
+	_ conversation.CompactionRecorder   = (*conversation.ArchiveStore)(nil)
+	_ conversation.CompactionReader     = (*conversation.ArchiveStore)(nil)
+	_ conversation.CompactionRepository = (*conversation.ArchiveStore)(nil)
+	_ conversation.ClosingTurnAppender  = (*conversation.BufferedAppender)(nil)
 )
 
 func TestArchiveStore_AppendAndList(t *testing.T) {

@@ -1,7 +1,7 @@
 # Phase-CTX Benchmark Contract
 
 **Role:** benchmark and slice-QA contract for Phase-CTX closure.
-**Status:** benchmark-ready for US-CTX-07A; live results not run yet.
+**Status:** US-CTX-08 benchmark passed 2026-05-24.
 **Ground-truth rule:** a row can pass only by asserting artifact bytes,
 SQLite/API facts, provider/tool response fields, or committed fixture data.
 Smoke checks are prechecks only.
@@ -18,7 +18,7 @@ Smoke checks are prechecks only.
 | B-CTX-07-5 | US-CTX-07B | threshold recommendation | inspect live bench JSON | live bench JSON | `recommended_threshold_pct` exists per model and records whether 50% should stay or be tuned. | all three active models have a recommendation; no code threshold change in same slice | tuning evidence | passed 2026-05-24; long_session recommends DeepSeek=50, Gemma=40, Claude=50 |
 | B-CTX-07-6 | US-CTX-07B | quality snapshot | `rg -n "Phase-CTX Compaction Benchmark" docs/aura-quality-snapshot.md` plus table inspection | `docs/aura-quality-snapshot.md` | New dated section summarizes fixture/model cells as `savings_pct/latency_ms/quality_pass` and links the JSON artifact path. | append-only section added; prior rows unchanged | product quality matrix | passed 2026-05-24 |
 | B-CTX-07-7 | US-CTX-07A/B | dedicated slice QA | `git diff -- cmd/bench_ctx internal/conversation/testdata/bench docs/aura-quality-snapshot.md .planning/post-drift-2026-05-21/Phase-CTX` plus targeted tests above | completed slice diff | QA packet records files inspected, artifact/schema fact, and negative fixture or missing-credential check. | PASS required before each atomic commit | slice QA | US-CTX-07A self-audited PASS 2026-05-24; US-CTX-07B live-prep self-audited PASS 2026-05-24; US-CTX-07B live snapshot self-audited PASS 2026-05-24 |
-| B-CTX-08-1 | US-CTX-08 | future storage/API | `go test ./internal/conversation ./internal/api -run Compaction -count=1` and live `GET /api/conversations/:id/compactions` probe | SQLite run/conversation with one compaction event | SQLite row and API response agree on conversation id, turn index, token fields, latency, timestamp, and redacted focus preview. | pass plus unauthorized/missing conversation negative check | debuggability | deferred |
+| B-CTX-08-1 | US-CTX-08 | storage/API | `go test ./internal/conversation ./internal/api -run Compaction -count=1` with handler-level `GET /conversations/{id}/compactions` probe | SQLite conversation row plus one `conversation_compactions` event | SQLite row and API response agree on conversation id, turn index, token fields, latency, timestamp, and redacted focus preview. | pass plus unauthorized/missing conversation negative check | debuggability | passed 2026-05-24; API 200/404/401 paths covered |
 
 ## Fixture Contract For US-CTX-07A
 

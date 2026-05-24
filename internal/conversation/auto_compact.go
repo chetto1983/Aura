@@ -7,8 +7,10 @@
 package conversation
 
 import (
+	"context"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/llm"
@@ -38,9 +40,13 @@ const (
 // The last user message is always preserved across compaction (Codex
 // BeforeLastUserMessage invariant) — the model always sees the current request.
 type AutoCompactEngine struct {
-	inner           *ContextCompressor
-	ThresholdTokens int    // modelContextWindow * compactPercent
-	Scope           string // ScopeTotal | ScopeBodyAfterPrefix
+	inner            *ContextCompressor
+	ThresholdTokens  int    // modelContextWindow * compactPercent
+	Scope            string // ScopeTotal | ScopeBodyAfterPrefix
+	Recorder         CompactionRecorder
+	RunID            string
+	ChatID           int64
+	ArchiveTurnIndex int64
 	// MinTurnsBetweenCompactions suppresses repeated compactions after a
 	// successful compression. Values <= 0 use DefaultMinTurnsBetweenCompactions.
 	MinTurnsBetweenCompactions int
@@ -130,6 +136,8 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 	if e.inner == nil || len(messages) < 2 {
 		return messages
 	}
+	startedAt := time.Now()
+	tokensBefore := estimateCompactionTokens(messages)
 	prefix, body := splitPrefixAndBody(messages)
 	if len(body) < 2 {
 		return messages
@@ -158,9 +166,16 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 		compressed := make([]llm.Message, 0, len(prefix)+len(compressedBody))
 		compressed = append(compressed, prefix...)
 		compressed = append(compressed, compressedBody...)
+		tokensAfter := estimateCompactionTokens(compressed)
 		e.mu.Lock()
 		cumulativeBefore := e.cumulativeTotal
 		e.CompressionCount++
+		iteration := e.CompressionCount
+		recorder := e.Recorder
+		runID := e.RunID
+		chatID := e.ChatID
+		archiveTurnIndex := e.ArchiveTurnIndex
+		thresholdTokens := e.ThresholdTokens
 		e.LastCompactionTurnIndex = e.TurnIndex
 		e.cumulativeTotal = 0
 		e.prefixBaseline = 0
@@ -174,6 +189,27 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 			"cumulative_tokens", cumulativeBefore,
 			"focus_topic_chars", len([]rune(focusTopic)),
 		)
+		if recorder != nil {
+			if err := recorder.RecordCompaction(context.Background(), CompactionEvent{
+				RunID:            runID,
+				ChatID:           chatID,
+				TurnIndex:        archiveTurnIndex,
+				Iteration:        iteration,
+				MessagesBefore:   len(messages),
+				MessagesAfter:    len(compressed),
+				TokensBefore:     tokensBefore,
+				TokensAfter:      tokensAfter,
+				ThresholdTokens:  thresholdTokens,
+				CumulativeTokens: cumulativeBefore,
+				FocusPreview:     RedactCompactionFocusPreview(focusTopic),
+				ElapsedMS:        time.Since(startedAt).Milliseconds(),
+			}); err != nil {
+				slog.Warn("auto_compact: compaction event record failed",
+					"chat_id", chatID,
+					"turn_index", archiveTurnIndex,
+					"error", err)
+			}
+		}
 		return compressed
 	}
 	return messages

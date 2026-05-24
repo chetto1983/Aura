@@ -264,3 +264,107 @@ func TestHandleConversationDetail_NotFound(t *testing.T) {
 		t.Fatalf("want 404, got %d", w.Code)
 	}
 }
+
+func TestHandleConversationCompactions_HappyPath(t *testing.T) {
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedTurn(t, store, conversation.Turn{
+		ChatID: 88, UserID: 2, TurnIndex: 12,
+		Role: "user", Content: "compact this turn",
+	})
+	listed, err := store.ListByChat(context.Background(), 88, 1)
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("list seeded turn: len=%d err=%v", len(listed), err)
+	}
+	conversationID := listed[0].ID
+	createdAt := time.Date(2026, 5, 24, 10, 30, 0, 0, time.UTC)
+	if err := store.RecordCompaction(context.Background(), conversation.CompactionEvent{
+		RunID:            "run-ctx-api",
+		ChatID:           88,
+		TurnIndex:        12,
+		Iteration:        1,
+		MessagesBefore:   20,
+		MessagesAfter:    5,
+		TokensBefore:     32000,
+		TokensAfter:      2200,
+		ThresholdTokens:  16000,
+		CumulativeTokens: 33000,
+		FocusPreview:     "phase ctx event log",
+		ElapsedMS:        456,
+		CreatedAt:        createdAt,
+	}); err != nil {
+		t.Fatalf("RecordCompaction: %v", err)
+	}
+
+	router := NewRouter(Deps{Archive: store, Compactions: store})
+	req := httptest.NewRequest("GET", fmt.Sprintf("/conversations/%d/compactions", conversationID), nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var body []ConversationCompaction
+	if err := json.NewDecoder(w.Body).Decode(&body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body) != 1 {
+		t.Fatalf("want 1 compaction, got %d", len(body))
+	}
+	got := body[0]
+	if got.ConversationID != conversationID || got.ChatID != 88 || got.TurnIndex != 12 {
+		t.Fatalf("identity fields = %+v", got)
+	}
+	if got.TokensBefore != 32000 || got.TokensAfter != 2200 || got.CumulativeTokens != 33000 {
+		t.Fatalf("token fields = %+v", got)
+	}
+	if got.FocusPreview != "phase ctx event log" || got.ElapsedMS != 456 {
+		t.Fatalf("debug fields = %+v", got)
+	}
+
+	var rowTurnIndex int64
+	var rowTokensBefore int
+	if err := db.QueryRow(`
+		SELECT turn_index, tokens_before
+		FROM conversation_compactions
+		WHERE chat_id = ? AND turn_index = ?`, 88, 12).Scan(&rowTurnIndex, &rowTokensBefore); err != nil {
+		t.Fatalf("query compaction row: %v", err)
+	}
+	if rowTurnIndex != got.TurnIndex || rowTokensBefore != got.TokensBefore {
+		t.Fatalf("SQLite/API mismatch: row turn/tokens=%d/%d api=%d/%d",
+			rowTurnIndex, rowTokensBefore, got.TurnIndex, got.TokensBefore)
+	}
+}
+
+func TestHandleConversationCompactions_NotFound(t *testing.T) {
+	db := testutil.OpenTestDB(t, migrations.Run)
+	store, err := conversation.NewArchiveStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	router := NewRouter(Deps{Archive: store, Compactions: store})
+	req := httptest.NewRequest("GET", "/conversations/9999/compactions", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("want 404, got %d", w.Code)
+	}
+}
+
+func TestHandleConversationCompactions_Unauthorized(t *testing.T) {
+	router := NewRouter(Deps{
+		Auth: &fakeDashboardAuthRepository{},
+		Allowlist: func(string) bool {
+			return true
+		},
+	})
+	req := httptest.NewRequest("GET", "/conversations/1/compactions", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", w.Code)
+	}
+}

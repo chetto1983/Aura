@@ -371,6 +371,22 @@ func (r *IndexingArchiveRepository) Append(ctx context.Context, turn conversatio
 	return appender.Append(ctx, turn)
 }
 
+func (r *IndexingArchiveRepository) RecordCompaction(ctx context.Context, event conversation.CompactionEvent) error {
+	recorder, ok := r.ArchiveRepository.(conversation.CompactionRecorder)
+	if !ok {
+		return fmt.Errorf("memoryindex: archive repository does not record compactions")
+	}
+	return recorder.RecordCompaction(ctx, event)
+}
+
+func (r *IndexingArchiveRepository) ListCompactionsForTurn(ctx context.Context, chatID, turnIndex int64) ([]conversation.CompactionEvent, error) {
+	reader, ok := r.ArchiveRepository.(conversation.CompactionReader)
+	if !ok {
+		return nil, fmt.Errorf("memoryindex: archive repository does not read compactions")
+	}
+	return reader.ListCompactionsForTurn(ctx, chatID, turnIndex)
+}
+
 func (r *IndexingArchiveRepository) DeleteByChat(ctx context.Context, chatID int64) (int64, error) {
 	if purgeErr := r.index.PurgeArchiveByChat(ctx, chatID); purgeErr != nil {
 		return 0, purgeErr

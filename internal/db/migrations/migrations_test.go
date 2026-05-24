@@ -46,23 +46,29 @@ USING fts5(id, content, metadata, title)
 
 func appliedVersions(t *testing.T, db *sql.DB) []int {
 	t.Helper()
-	rows, err := db.Query(`SELECT version FROM schema_migrations ORDER BY version`)
+	return queryColumn[int](t, db, `SELECT version FROM schema_migrations ORDER BY version`, "schema_migrations versions")
+}
+
+func queryColumn[T any](t *testing.T, db *sql.DB, query, label string) []T {
+	t.Helper()
+	rows, err := db.Query(query)
 	if err != nil {
-		t.Fatalf("query schema_migrations: %v", err)
+		t.Fatalf("query %s: %v", label, err)
 	}
-	defer rows.Close()
-	var versions []int
+	defer func() { _ = rows.Close() }()
+
+	var out []T
 	for rows.Next() {
-		var version int
-		if err := rows.Scan(&version); err != nil {
-			t.Fatalf("scan version: %v", err)
+		var value T
+		if err := rows.Scan(&value); err != nil {
+			t.Fatalf("scan %s: %v", label, err)
 		}
-		versions = append(versions, version)
+		out = append(out, value)
 	}
 	if err := rows.Err(); err != nil {
-		t.Fatalf("rows: %v", err)
+		t.Fatalf("%s rows: %v", label, err)
 	}
-	return versions
+	return out
 }
 
 func loadSQLFile(t *testing.T, path string) string {
@@ -162,6 +168,7 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"pending_users",
 		"scheduled_tasks",
 		"conversations",
+		"conversation_compactions",
 		"proposed_updates",
 		"wiki_issues",
 		"embedding_cache",
@@ -347,6 +354,22 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 		"payload_json",
 		"redaction_level",
 	})
+	assertColumns(t, db, "conversation_compactions", []string{
+		"id",
+		"run_id",
+		"chat_id",
+		"turn_index",
+		"iteration",
+		"messages_before",
+		"messages_after",
+		"tokens_before",
+		"tokens_after",
+		"threshold_tokens",
+		"cumulative_tokens",
+		"focus_preview",
+		"elapsed_ms",
+		"created_at",
+	})
 	assertIndexes(t, db, "runs", []string{
 		"idx_runs_status_updated",
 		"idx_runs_thread_updated",
@@ -367,6 +390,10 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 	assertIndexes(t, db, "audit_events", []string{
 		"idx_audit_events_type_created",
 		"idx_audit_events_actor_created",
+	})
+	assertIndexes(t, db, "conversation_compactions", []string{
+		"idx_conversation_compactions_turn",
+		"idx_conversation_compactions_run",
 	})
 	assertIndexes(t, db, "principals", []string{
 		"idx_principals_kind_status",
@@ -578,8 +605,8 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 26 {
-		t.Fatalf("applied versions = %v, want 26 migrations", first)
+	if len(first) != 27 {
+		t.Fatalf("applied versions = %v, want 27 migrations", first)
 	}
 	for i, got := range first {
 		if want := i + 1; got != want {
@@ -811,7 +838,7 @@ func tableSignatures(t *testing.T, db *sql.DB) []string {
 
 func schemaTables(t *testing.T, db *sql.DB) []string {
 	t.Helper()
-	rows, err := db.Query(`
+	return queryColumn[string](t, db, `
 SELECT name
 FROM sqlite_master
 WHERE type = 'table'
@@ -819,24 +846,7 @@ WHERE type = 'table'
   AND name NOT LIKE 'wiki_documents_%'
   AND name NOT LIKE 'compact_memory_fts_%'
 ORDER BY name
-`)
-	if err != nil {
-		t.Fatalf("query tables: %v", err)
-	}
-	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var table string
-		if err := rows.Scan(&table); err != nil {
-			t.Fatalf("scan table: %v", err)
-		}
-		tables = append(tables, table)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("table rows: %v", err)
-	}
-	return tables
+`, "schema tables")
 }
 
 func columnSignatures(t *testing.T, db *sql.DB, table string) []string {

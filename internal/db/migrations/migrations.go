@@ -42,6 +42,7 @@ var registered = []Migration{
 	{Version: 24, Name: "add_voice_dispatches", Up: addVoiceDispatches},
 	{Version: 25, Name: "add_timestamp_defaults", Up: addTimestampDefaults},
 	{Version: 26, Name: "embed_cache_output_dim", Up: addEmbedCacheOutputDim},
+	{Version: 27, Name: "add_conversation_compactions", Up: addConversationCompactions},
 }
 
 type columnDef struct {

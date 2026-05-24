@@ -148,7 +148,8 @@ type Deps struct {
 
 	// Slice 12c: conversation archive. Optional — when nil, list returns
 	// an empty array and detail returns 404.
-	Archive conversation.ArchiveRepository
+	Archive     conversation.ArchiveRepository
+	Compactions conversation.CompactionReader
 
 	// Slice 12k.1: summaries review queue. Optional — when nil, list returns
 	// empty array. SummariesWiki is the WikiWriter used to apply approved
@@ -332,6 +333,7 @@ func NewRouter(deps Deps) http.Handler {
 
 	// Slice 12c: conversation archive endpoints.
 	mux.HandleFunc("GET /conversations", handleConversationList(deps))
+	mux.HandleFunc("GET /conversations/{id}/compactions", handleConversationCompactions(deps))
 	mux.HandleFunc("GET /conversations/{id}", handleConversationDetail(deps))
 	// Slice 14: retention controls — stats + scoped cleanup.
 	mux.HandleFunc("GET /conversations/stats", handleConversationStats(deps))
