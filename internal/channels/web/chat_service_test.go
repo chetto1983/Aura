@@ -79,6 +79,59 @@ func TestChatService_HappyPath(t *testing.T) {
 	}
 }
 
+func TestChatService_ReturnsPendingQuestion(t *testing.T) {
+	router := NewRouter()
+	hub := &fakeHub{
+		router: router,
+		runID:  "run-question",
+		events: []chat.OutboundEvent{
+			{
+				ID:      "question-1",
+				Type:    chat.EventQuestionRequested,
+				Payload: map[string]any{"question": "Pick one", "options": []string{"alpha", "beta"}, "kind": "selection"},
+			},
+			{Type: chat.EventDone, Payload: map[string]any{"status": string(chat.RunStatusWaitingForUser)}},
+		},
+	}
+	svc := NewChatService(hub, router)
+	reply, err := svc.Chat(context.Background(), "user-1", "default", "ask")
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if reply.PendingQuestion == nil || reply.PendingQuestion.ID != "question-1" || reply.PendingQuestion.Question != "Pick one" {
+		t.Fatalf("PendingQuestion = %+v", reply.PendingQuestion)
+	}
+	if got := reply.PendingQuestion.Options; len(got) != 2 || got[1] != "beta" {
+		t.Fatalf("options = %v", got)
+	}
+}
+
+func TestChatService_AnswerNormalizesQuestionPayload(t *testing.T) {
+	router := NewRouter()
+	hub := &fakeHub{
+		router: router,
+		runID:  "run-answer",
+		events: []chat.OutboundEvent{
+			{Type: chat.EventMessageDone, Content: "resumed"},
+			{Type: chat.EventDone, Payload: map[string]any{"status": string(chat.RunStatusCompleted)}},
+		},
+	}
+	svc := NewChatService(hub, router)
+	reply, err := svc.Answer(context.Background(), "user-1", "default", "question-1", "2", []string{"2"})
+	if err != nil {
+		t.Fatalf("Answer: %v", err)
+	}
+	if reply.Reply != "resumed" {
+		t.Fatalf("Reply = %q", reply.Reply)
+	}
+	if hub.lastMsg.Question == nil || hub.lastMsg.Question.QuestionID != "question-1" || hub.lastMsg.Question.FreeText != "2" {
+		t.Fatalf("Question = %+v", hub.lastMsg.Question)
+	}
+	if got := hub.lastMsg.Question.SelectedOptionIDs; len(got) != 1 || got[0] != "2" {
+		t.Fatalf("SelectedOptionIDs = %v", got)
+	}
+}
+
 func TestChatService_ThreadIDFallback(t *testing.T) {
 	router := NewRouter()
 	hub := &fakeHub{

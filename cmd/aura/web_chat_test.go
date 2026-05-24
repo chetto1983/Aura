@@ -3,17 +3,14 @@ package main
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"io"
 	"log/slog"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/aura/aura/internal/agent"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
-	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
@@ -25,148 +22,6 @@ import (
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/testutil"
 )
-
-type fakeWebChatLLM struct{}
-
-func (fakeWebChatLLM) Send(context.Context, llm.Request) (llm.Response, error) {
-	return llm.Response{
-		Content: "WEB_HUB_OK",
-		Usage: llm.TokenUsage{
-			PromptTokens:     11,
-			CompletionTokens: 3,
-			TotalTokens:      14,
-		},
-	}, nil
-}
-
-func (fakeWebChatLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, error) {
-	ch := make(chan llm.Token)
-	close(ch)
-	return ch, nil
-}
-
-type recordingWebChatLLM struct {
-	mu        sync.Mutex
-	requests  []llm.Request
-	responses []llm.Response
-}
-
-func (f *recordingWebChatLLM) Send(_ context.Context, req llm.Request) (llm.Response, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.requests = append(f.requests, cloneLLMRequest(req))
-	idx := len(f.requests) - 1
-	if idx < len(f.responses) {
-		return f.responses[idx], nil
-	}
-	return llm.Response{
-		Content: "recording fallback",
-		Usage:   llm.TokenUsage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2},
-	}, nil
-}
-
-func (f *recordingWebChatLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, error) {
-	ch := make(chan llm.Token)
-	close(ch)
-	return ch, nil
-}
-
-func (f *recordingWebChatLLM) Requests() []llm.Request {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make([]llm.Request, len(f.requests))
-	for i, req := range f.requests {
-		out[i] = cloneLLMRequest(req)
-	}
-	return out
-}
-
-func cloneLLMRequest(req llm.Request) llm.Request {
-	req.Messages = llm.CloneMessages(req.Messages)
-	req.Tools = append([]llm.ToolDefinition(nil), req.Tools...)
-	return req
-}
-
-type fakeToolCallingLLM struct {
-	calls int
-}
-
-func (f *fakeToolCallingLLM) Send(context.Context, llm.Request) (llm.Response, error) {
-	f.calls++
-	if f.calls == 1 {
-		return llm.Response{
-			HasToolCalls: true,
-			ToolCalls:    []llm.ToolCall{{ID: "call-1", Name: "context_probe"}},
-		}, nil
-	}
-	return llm.Response{Content: "adapter ok"}, nil
-}
-
-func (f *fakeToolCallingLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, error) {
-	ch := make(chan llm.Token)
-	close(ch)
-	return ch, nil
-}
-
-type fakeTextResponseLLM struct {
-	calls int
-}
-
-func (f *fakeTextResponseLLM) Send(context.Context, llm.Request) (llm.Response, error) {
-	f.calls++
-	return llm.Response{
-		HasToolCalls: true,
-		ToolCalls: []llm.ToolCall{{
-			ID:        "call-text",
-			Name:      "text_response",
-			Arguments: map[string]any{"text": "  Ciao Davide, fatto.  "},
-		}},
-		Usage: llm.TokenUsage{PromptTokens: 7, CompletionTokens: 5, TotalTokens: 12},
-	}, nil
-}
-
-func (f *fakeTextResponseLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, error) {
-	ch := make(chan llm.Token)
-	close(ch)
-	return ch, nil
-}
-
-type fakeStreamingWebChatLLM struct {
-	mu           sync.Mutex
-	sendCalled   bool
-	streamCalled bool
-	requests     []llm.Request
-}
-
-func (f *fakeStreamingWebChatLLM) Send(context.Context, llm.Request) (llm.Response, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.sendCalled = true
-	return llm.Response{Content: "send fallback"}, nil
-}
-
-func (f *fakeStreamingWebChatLLM) Stream(_ context.Context, req llm.Request) (<-chan llm.Token, error) {
-	f.mu.Lock()
-	f.streamCalled = true
-	f.requests = append(f.requests, cloneLLMRequest(req))
-	f.mu.Unlock()
-	ch := make(chan llm.Token, 3)
-	ch <- llm.Token{Content: "Hel"}
-	ch <- llm.Token{Content: "lo"}
-	ch <- llm.Token{Done: true, Usage: llm.TokenUsage{PromptTokens: 4, CompletionTokens: 2, TotalTokens: 6}}
-	close(ch)
-	return ch, nil
-}
-
-func (f *fakeStreamingWebChatLLM) Snapshot() (streamCalled bool, sendCalled bool, requests []llm.Request) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make([]llm.Request, len(f.requests))
-	for i, req := range f.requests {
-		out[i] = cloneLLMRequest(req)
-	}
-	return f.streamCalled, f.sendCalled, out
-}
 
 func TestHubBackedWebChatPersistsRunAndActor(t *testing.T) {
 	db := testutil.OpenTestDB(t, nil)
@@ -278,6 +133,51 @@ SELECT COUNT(*)
 FROM runs
 WHERE channel = 'web' AND thread_id = 'web:alice:default' AND status = 'completed'
 `, 1)
+}
+
+func TestWebChatAskUserPendingAndAnswerResume(t *testing.T) {
+	llmClient := &fakeAskUserWebChatLLM{}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := toolregistry.NewRegistry(logger)
+	registry.Register(&toolregistry.AskUserTool{})
+	adapter, db := newTestWebChatAdapter(t, llmClient, registry)
+	ctx := identity.WithActorID(
+		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
+		identity.TelegramSessionActorID("alice"),
+	)
+
+	first, err := adapter.Chat(ctx, "alice", "default", "needs a choice")
+	if err != nil {
+		t.Fatalf("first Chat: %v", err)
+	}
+	if first.PendingQuestion == nil {
+		t.Fatalf("PendingQuestion nil in %#v", first)
+	}
+	if first.PendingQuestion.Question != "Which option?" || first.PendingQuestion.Kind != "selection" {
+		t.Fatalf("PendingQuestion = %+v", first.PendingQuestion)
+	}
+	if got := strings.Join(first.PendingQuestion.Options, ","); got != "alpha,beta" {
+		t.Fatalf("options = %q", got)
+	}
+	assertWebChatScalar(t, db, `SELECT COUNT(*) FROM chat_questions WHERE id = ? AND status = 'waiting' AND thread_id = 'web:alice:default' AND channel = 'web'`, 1, first.PendingQuestion.ID)
+
+	second, err := adapter.AnswerChat(ctx, "alice", "default", first.PendingQuestion.ID, "2", []string{"2"})
+	if err != nil {
+		t.Fatalf("AnswerChat: %v", err)
+	}
+	if second.Reply != "resumed with beta" {
+		t.Fatalf("reply = %q", second.Reply)
+	}
+	assertWebChatScalar(t, db, `SELECT COUNT(*) FROM chat_questions WHERE id = ? AND status = 'answered' AND answer_run_id <> ''`, 1, first.PendingQuestion.ID)
+	assertWebChatScalar(t, db, `SELECT COUNT(*) FROM run_events WHERE type = 'question_answered' AND causation_id = ?`, 1, first.PendingQuestion.ID)
+
+	requests := llmClient.Requests()
+	if len(requests) < 2 {
+		t.Fatalf("LLM requests = %d, want >=2", len(requests))
+	}
+	if !containsToolResult(requests[len(requests)-1].Messages, "ask-1", "beta") {
+		t.Fatalf("resume request missing ask_user tool result: %+v", requests[len(requests)-1].Messages)
+	}
 }
 
 func TestHubBackedWebChatReportsSoftBudgetWarning(t *testing.T) {
@@ -606,49 +506,6 @@ func TestHubBackedWebChatCompactsToolResultsBeforeNextTurn(t *testing.T) {
 	}
 }
 
-type webChatAllowAuthorizer struct{}
-
-func (webChatAllowAuthorizer) Authorize(_ context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
-	return identity.AuthorizationDecision{
-		ActorID:    params.ActorID,
-		Capability: params.Capability,
-		Resource:   params.Resource,
-		Decision:   identity.DecisionAllow,
-		Reason:     "test_allow",
-	}, nil
-}
-
-type webChatContextProbeTool struct {
-	allowed        []string
-	userID         string
-	conversationID string
-	runID          string
-}
-
-func (t *webChatContextProbeTool) Name() string { return "context_probe" }
-func (t *webChatContextProbeTool) Description() string {
-	return "records tool execution context"
-}
-func (t *webChatContextProbeTool) Parameters() map[string]any { return map[string]any{} }
-func (t *webChatContextProbeTool) Execute(ctx context.Context, _ map[string]any) (string, error) {
-	t.allowed = toolregistry.AllowedToolNamesFromContext(ctx)
-	t.userID = toolregistry.UserIDFromContext(ctx)
-	t.conversationID = toolregistry.ConversationIDFromContext(ctx)
-	t.runID = identity.RunIDFromContext(ctx)
-	return "ok", nil
-}
-
-type largeContextProbeTool struct{}
-
-func (largeContextProbeTool) Name() string { return "large_context_probe" }
-func (largeContextProbeTool) Description() string {
-	return "returns a large deterministic payload"
-}
-func (largeContextProbeTool) Parameters() map[string]any { return map[string]any{} }
-func (largeContextProbeTool) Execute(context.Context, map[string]any) (string, error) {
-	return strings.Repeat("large-result-payload ", 220), nil
-}
-
 func TestExtractLastTextResponseArgUsesNewestNonEmptyCall(t *testing.T) {
 	msgs := []llm.Message{
 		{
@@ -751,93 +608,4 @@ func TestSwarmRunnerAdapterPassesContextRunID(t *testing.T) {
 	if probe.runID != "swarm-run-123" {
 		t.Fatalf("probe runID = %q, want swarm-run-123", probe.runID)
 	}
-}
-
-func newTestWebChatService(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (api.ChatService, error) {
-	return newTestWebChatServiceWithArchive(cfg, deps, logger, nil, nil)
-}
-
-func newTestWebChatServiceWithArchive(
-	cfg *config.Config,
-	deps *telegram.Deps,
-	logger *slog.Logger,
-	archiveRepo conversation.ArchiveRepository,
-	archiveAppender conversation.TurnAppender,
-) (api.ChatService, error) {
-	shared, err := newSharedChatHub(cfg, deps, nil, logger, archiveRepo, archiveAppender)
-	if err != nil {
-		return nil, err
-	}
-	return newWebChatService(shared.hub, shared.webRouter, shared.webSessionStore)
-}
-
-func newTestWebChatAdapter(t *testing.T, llmClient llm.Client, registry *toolregistry.Registry) (*apiChatServiceAdapter, *sql.DB) {
-	t.Helper()
-	db := testutil.OpenTestDB(t, nil)
-	if err := migrations.Run(context.Background(), db); err != nil {
-		t.Fatalf("migrations: %v", err)
-	}
-	runStore, err := runstore.NewStore(db)
-	if err != nil {
-		t.Fatalf("NewStore: %v", err)
-	}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	if registry == nil {
-		registry = toolregistry.NewRegistry(logger)
-	}
-	svc, err := newTestWebChatService(
-		&config.Config{
-			LLMModel:             "fake-web-chat",
-			AuraBotMaxIterations: 4,
-			MaxHistoryMessages:   50,
-			MaxContextTokens:     16000,
-			TerminalToolPolicy:   "on",
-		},
-		&telegram.Deps{
-			LLM:      llmClient,
-			Pool:     db,
-			RunStore: runStore,
-			Tools:    registry,
-			Logger:   logger,
-		},
-		logger,
-	)
-	if err != nil {
-		t.Fatalf("newTestWebChatService: %v", err)
-	}
-	adapter, ok := svc.(*apiChatServiceAdapter)
-	if !ok {
-		t.Fatalf("service type = %T, want *apiChatServiceAdapter", svc)
-	}
-	return adapter, db
-}
-
-func assertWebChatScalar(t *testing.T, db *sql.DB, query string, want int, args ...any) {
-	t.Helper()
-	var got int
-	if err := db.QueryRowContext(context.Background(), query, args...).Scan(&got); err != nil {
-		t.Fatalf("query scalar: %v\nquery: %s", err, query)
-	}
-	if got != want {
-		t.Fatalf("scalar = %d, want %d\nquery: %s", got, want, query)
-	}
-}
-
-func containsMessageContent(messages []llm.Message, want string) bool {
-	for _, msg := range messages {
-		if msg.Content == want {
-			return true
-		}
-	}
-	return false
-}
-
-func filterToolMessages(messages []llm.Message) []llm.Message {
-	var out []llm.Message
-	for _, msg := range messages {
-		if msg.Role == "tool" {
-			out = append(out, msg)
-		}
-	}
-	return out
 }

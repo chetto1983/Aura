@@ -18,6 +18,7 @@ import (
 	"github.com/aura/aura/internal/agentcore"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/budget"
+	"github.com/aura/aura/internal/channels/askuser"
 	webadapter "github.com/aura/aura/internal/channels/web"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
@@ -84,16 +85,38 @@ type apiChatServiceAdapter struct {
 
 func (a *apiChatServiceAdapter) Chat(ctx context.Context, userID, threadID, message string) (api.ChatReply, error) {
 	reply, err := a.svc.Chat(ctx, userID, threadID, message)
+	return webReplyToAPI(reply), err
+}
+
+func (a *apiChatServiceAdapter) AnswerChat(ctx context.Context, userID, threadID, questionID, answer string, selectedOptionIDs []string) (api.ChatReply, error) {
+	reply, err := a.svc.Answer(ctx, userID, threadID, questionID, answer, selectedOptionIDs)
+	return webReplyToAPI(reply), err
+}
+
+func webReplyToAPI(reply webadapter.ChatReply) api.ChatReply {
 	return api.ChatReply{
-		Reply:         reply.Reply,
-		ElapsedMs:     reply.ElapsedMs,
-		LLMCalls:      reply.LLMCalls,
-		ToolCalls:     reply.ToolCalls,
-		Tokens:        reply.Tokens,
-		CacheHit:      reply.CacheHit,
-		ToolsUsed:     reply.ToolsUsed,
-		BudgetWarning: reply.BudgetWarning,
-	}, err
+		Reply:           reply.Reply,
+		ElapsedMs:       reply.ElapsedMs,
+		LLMCalls:        reply.LLMCalls,
+		ToolCalls:       reply.ToolCalls,
+		Tokens:          reply.Tokens,
+		CacheHit:        reply.CacheHit,
+		ToolsUsed:       reply.ToolsUsed,
+		BudgetWarning:   reply.BudgetWarning,
+		PendingQuestion: webPendingQuestionToAPI(reply.PendingQuestion),
+	}
+}
+
+func webPendingQuestionToAPI(q *webadapter.PendingQuestion) *api.PendingQuestion {
+	if q == nil {
+		return nil
+	}
+	return &api.PendingQuestion{
+		ID:       q.ID,
+		Question: q.Question,
+		Options:  append([]string(nil), q.Options...),
+		Kind:     q.Kind,
+	}
 }
 
 type webInvocationBuilder struct {
@@ -111,6 +134,13 @@ type webInvocationBuilder struct {
 	archiveRepo     conversation.ArchiveRepository
 	archiveAppender conversation.TurnAppender
 	streamRouter    *webadapter.StreamRouter
+	hub             *chat.Hub
+}
+
+func (b *webInvocationBuilder) AttachHub(hub *chat.Hub) {
+	if b != nil {
+		b.hub = hub
+	}
 }
 
 func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.InboundMessage) (agent.Invocation, error) {
@@ -171,7 +201,13 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	promptPlan := agent.ComposeAgentPrompt(b.cfg, loc, overlay, pinned, skillsBlock, toolManifest, wikiTOC, time.Now())
 	system := promptPlan.Content
 	convCtx.SetSystemMessage(system)
-	convCtx.AddUserMessage(msg.Text)
+	addedUserInput, resumeErr := b.addWebUserInput(ctx, run, msg, convCtx, session, logger)
+	if resumeErr != nil {
+		return agent.Invocation{}, resumeErr
+	}
+	if !addedUserInput {
+		convCtx.AddUserMessage(msg.Text)
+	}
 	preLoopIdx := convCtx.MessageCount()
 	turnStart := time.Now()
 	runID := ""
@@ -324,6 +360,82 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		return agent.Invocation{}, err
 	}
 	return inv, nil
+}
+
+func (b *webInvocationBuilder) addWebUserInput(
+	ctx context.Context,
+	run *chat.Run,
+	msg chat.InboundMessage,
+	convCtx *conversation.Context,
+	session *agent.Session,
+	logger *slog.Logger,
+) (bool, error) {
+	if b == nil || b.hub == nil || convCtx == nil {
+		return false, nil
+	}
+	pending, hasDurablePending, pendingErr := b.hub.PendingQuestion(ctx, msg.ThreadID, msg.Channel)
+	if pendingErr != nil && logger != nil {
+		logger.Warn("web ask_user: pending question lookup failed", "error", pendingErr)
+	}
+	status, hasThreadStatus := b.hub.ThreadRunStatus(msg.ThreadID)
+	if msg.Question == nil && !hasDurablePending && (!hasThreadStatus || status != chat.RunStatusWaitingForUser) {
+		return false, nil
+	}
+	answerText := strings.TrimSpace(msg.Text)
+	if answerText == "" && msg.Question != nil {
+		answerText = strings.TrimSpace(msg.Question.FreeText)
+		if answerText == "" && len(msg.Question.SelectedOptionIDs) == 1 {
+			answerText = strings.TrimSpace(msg.Question.SelectedOptionIDs[0])
+		}
+	}
+	resume, ok := askuser.PrepareResumeInput(answerText, convCtx.Messages(), pending.Options, pending.Kind, hasDurablePending)
+	if !ok {
+		return false, nil
+	}
+	if resume.Rejected {
+		if run != nil {
+			run.Status = chat.RunStatusWaitingForUser
+		}
+		if session != nil {
+			session.Finish()
+		}
+		return true, fmt.Errorf("ask_user: out-of-range reply, question still pending")
+	}
+	if hasDurablePending {
+		questionAnswer := chat.QuestionAnswer{
+			QuestionID:        pending.ID,
+			SelectedOptionIDs: resume.SelectedOptionIDs,
+			FreeText:          resume.Content,
+			AnsweredMessageID: msg.ID,
+		}
+		if msg.Question != nil {
+			if id := strings.TrimSpace(msg.Question.QuestionID); id != "" {
+				questionAnswer.QuestionID = id
+			}
+			if len(msg.Question.SelectedOptionIDs) > 0 {
+				questionAnswer.SelectedOptionIDs = append([]string(nil), msg.Question.SelectedOptionIDs...)
+			}
+			if msg.Question.AnsweredMessageID != "" {
+				questionAnswer.AnsweredMessageID = msg.Question.AnsweredMessageID
+			}
+		}
+		if recordErr := b.hub.RecordQuestionAnswer(ctx, run, msg, questionAnswer); recordErr != nil {
+			if logger != nil {
+				logger.Warn("web ask_user: failed to record question answer",
+					"question_id", questionAnswer.QuestionID,
+					"error", recordErr)
+			}
+			if msg.Question != nil {
+				return true, recordErr
+			}
+		}
+	}
+	if resume.HasPendingCall {
+		convCtx.AddToolResultMessage(resume.CallID, resume.Content)
+		return true, nil
+	}
+	convCtx.AddUserMessage("Answer to pending " + resume.Kind + " question: " + resume.Content)
+	return true, nil
 }
 
 func (b *webInvocationBuilder) consumeSoftBudgetWarning() string {

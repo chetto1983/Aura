@@ -14,6 +14,7 @@ package webadapter
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,9 +49,20 @@ type Result struct {
 	// BudgetWarning carries the one-time soft-budget warning for buffered web
 	// clients when the shared budget runtime crosses its soft threshold.
 	BudgetWarning string
+	// PendingQuestion is populated when ask_user pauses the run and the web
+	// client must render a question before the next turn can continue.
+	PendingQuestion *PendingQuestion
 
 	startedAt    time.Time
 	toolsUsedSet map[string]struct{}
+}
+
+// PendingQuestion is the web JSON/SSE projection of chat.EventQuestionRequested.
+type PendingQuestion struct {
+	ID       string   `json:"id"`
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
 }
 
 // Buffer collects events for a single run. Created by Router.NewBuffer
@@ -97,6 +109,8 @@ func (b *Buffer) apply(ev chat.OutboundEvent) {
 				b.result.ToolsUsed = append(b.result.ToolsUsed, name)
 			}
 		}
+	case chat.EventQuestionRequested:
+		b.result.PendingQuestion = pendingQuestionFromEvent(ev)
 	case chat.EventUsage:
 		if v, ok := ev.Payload["llm_calls"].(int); ok {
 			b.result.LLMCalls = v
@@ -140,6 +154,39 @@ func (b *Buffer) apply(ev chat.OutboundEvent) {
 		}
 	case chat.EventCancelled:
 		b.result.Status = "cancelled"
+	}
+}
+
+func pendingQuestionFromEvent(ev chat.OutboundEvent) *PendingQuestion {
+	question := strings.TrimSpace(stringPayload(ev.Payload, "question"))
+	if question == "" {
+		return nil
+	}
+	return &PendingQuestion{
+		ID:       strings.TrimSpace(ev.ID),
+		Question: question,
+		Options:  stringSlicePayload(ev.Payload, "options"),
+		Kind:     strings.TrimSpace(stringPayload(ev.Payload, "kind")),
+	}
+}
+
+func stringSlicePayload(payload map[string]any, key string) []string {
+	if payload == nil {
+		return nil
+	}
+	switch v := payload[key].(type) {
+	case []string:
+		return append([]string(nil), v...)
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	default:
+		return nil
 	}
 }
 

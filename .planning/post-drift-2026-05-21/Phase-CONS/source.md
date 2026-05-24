@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-08. CONS-02..07 are committed; next add web voice + ask_user parity on top of the verified UI Message Stream backend.
+**Current slice:** US-CONS-09. CONS-02..08 are committed; next mount the assistant-ui frontend on top of the verified UI Message Stream backend and web voice/ask_user contracts.
 
 ## Objective
 
@@ -129,6 +129,17 @@ Checked 2026-05-24:
 - Use `llm.Client.Stream` for web streaming turns and write token deltas as they arrive; suppress duplicate full-content deltas at the SSE sink when the agent lifecycle later emits the aggregated `EventMessageDelta`.
 - Keep buffered `POST /api/chat` unchanged and backed by `DeliveryModeDeferred`.
 
+## Adopted For US-CONS-08
+
+- Add a disposable in-memory `AudioCache` in `internal/api` because synthesized web audio is an HTTP retrieval artifact, not canonical chat state.
+- Keep the concrete `pockettts.Client` adapter in `cmd/aura/web_voice.go`; `internal/channels/web` stays provider-agnostic and only projects chat events.
+- Add `audio_url` to buffered `ChatReply` only when `voice=all|on|true|1`, Pocket-TTS is configured, and the assistant reply has text.
+- Serve cached audio through `GET /api/chat/audio/{cache_id}` with `Content-Type` from the synthesizer and `Cache-Control: private, max-age=3600`.
+- Project `chat.EventQuestionRequested` into buffered `pending_question` and streaming `data-pending-question` UI Message Stream frames.
+- Share Telegram and web ask_user answer parsing through `internal/channels/askuser` so numeric option handling, canonical approval options, and pending tool-result injection stay consistent.
+- Resume web answers through `POST /api/chat/answer/{question_id}` and the shared Hub; durable ground truth remains `chat_questions` plus `question_answered` run events.
+- Support browser close/reopen by looking up `Hub.PendingQuestion` and falling back to durable question options/kind even when the in-memory pending tool call is missing.
+
 ## Rejected For US-CONS-02
 
 - No single Hub change; that is US-CONS-05.
@@ -141,7 +152,14 @@ Checked 2026-05-24:
 - Do not emit legacy `0:"text"\n` data-stream lines. Local `useDataStreamRuntime` defaults to UI Message Stream, and the local legacy decoder expects raw prefix lines rather than SSE `data:` JSON.
 - Do not add assistant-ui frontend dependencies in this slice; Wave B starts after the backend stream contract is verified.
 
+## Rejected For US-CONS-08
+
+- Do not put the concrete Pocket-TTS client inside `internal/channels/web`; provider wiring belongs in `cmd/aura`, and the API only depends on the narrow `ChatVoiceService` interface.
+- Do not persist synthesized audio in SQLite or the wiki/source stores. Audio cache deletion must only break playback of the temporary URL, not Aura's belief about the conversation.
+- Do not duplicate Telegram ask_user parsing in web; the channel-neutral helper owns option display and numeric answer parsing.
+- Do not add assistant-ui UI cards in this slice; backend `pending_question`/`audio_url` contracts unblock CONS-12/13.
+
 ## Open Questions Carried Forward
 
 - CONS-07 locked the Vercel AI SDK UI Message Stream schema from current package docs/source before implementation.
-- CONS-08 must design durable ask_user resume for browser close/reopen; D:/tmp examples only provide partial stubs.
+- CONS-08 resolved durable ask_user resume by using `chat_questions` as the browser-close source of truth and injecting either the pending tool result or an explicit "Answer to pending ..." user message when only durable state survives.

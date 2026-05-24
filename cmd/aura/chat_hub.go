@@ -61,6 +61,9 @@ func newSharedChatHub(
 	if err != nil {
 		return nil, err
 	}
+	if webBuilder != nil {
+		webBuilder.AttachHub(hub)
+	}
 
 	webRouter := webadapter.NewRouter()
 	hub.RegisterInbound(webadapter.New())

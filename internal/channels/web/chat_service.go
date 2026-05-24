@@ -35,6 +35,9 @@ type ChatReply struct {
 	// BudgetWarning is populated once when the shared budget runtime crosses
 	// its soft threshold during this turn.
 	BudgetWarning string
+	// PendingQuestion is non-nil when ask_user paused the run and the client
+	// must answer before Aura can continue.
+	PendingQuestion *PendingQuestion
 }
 
 // ChatService is the production bridge from api.ChatService onto chat.Hub.
@@ -65,6 +68,20 @@ func NewChatService(hub HubReceiver, router *Router) *ChatService {
 // terminal Result. Returns a ChatReply identical in shape to the public
 // api.ChatReply so the HTTP handler stays byte-identical.
 func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error) {
+	return s.dispatch(ctx, userID, threadID, message, nil)
+}
+
+// Answer resumes a run paused by ask_user by recording a question answer and
+// dispatching the answer text through the same Hub path as a normal web turn.
+func (s *ChatService) Answer(ctx context.Context, userID, threadID, questionID, answer string, selectedOptionIDs []string) (ChatReply, error) {
+	return s.dispatch(ctx, userID, threadID, answer, &chat.QuestionAnswer{
+		QuestionID:        strings.TrimSpace(questionID),
+		SelectedOptionIDs: append([]string(nil), selectedOptionIDs...),
+		FreeText:          strings.TrimSpace(answer),
+	})
+}
+
+func (s *ChatService) dispatch(ctx context.Context, userID, threadID, message string, answer *chat.QuestionAnswer) (ChatReply, error) {
 	if s == nil || s.hub == nil || s.router == nil {
 		return ChatReply{}, errors.New("webadapter: hub unavailable")
 	}
@@ -72,6 +89,7 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 		UserID:   userID,
 		ThreadID: threadID,
 		Message:  message,
+		Question: answer,
 	})
 	if run == nil {
 		return ChatReply{}, runErr
@@ -94,6 +112,9 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 			CacheHit:      res.CacheReadTokens > 0,
 			ToolsUsed:     res.ToolsUsed,
 			BudgetWarning: res.BudgetWarning,
+			PendingQuestion: clonePendingQuestion(
+				res.PendingQuestion,
+			),
 		}, runErr
 	}
 	return ChatReply{
@@ -106,7 +127,22 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 		CacheHit:      res.CacheReadTokens > 0,
 		ToolsUsed:     res.ToolsUsed,
 		BudgetWarning: res.BudgetWarning,
+		PendingQuestion: clonePendingQuestion(
+			res.PendingQuestion,
+		),
 	}, nil
+}
+
+func clonePendingQuestion(q *PendingQuestion) *PendingQuestion {
+	if q == nil {
+		return nil
+	}
+	return &PendingQuestion{
+		ID:       q.ID,
+		Question: q.Question,
+		Options:  append([]string(nil), q.Options...),
+		Kind:     q.Kind,
+	}
 }
 
 func ThreadID(userID, threadID string) string {

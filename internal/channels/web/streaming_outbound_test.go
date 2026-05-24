@@ -137,6 +137,43 @@ func TestStreamRouterEmitsToolFrames(t *testing.T) {
 	}
 }
 
+func TestStreamRouterEmitsPendingQuestionFrame(t *testing.T) {
+	router := NewStreamRouter()
+	var buf bytes.Buffer
+	end, err := router.Begin("web:alice:question", &buf, nil)
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	defer end()
+
+	events := []chat.OutboundEvent{
+		{RunID: "run-question", ThreadID: "web:alice:question", Type: chat.EventRunStarted},
+		{
+			ID:       "question-1",
+			RunID:    "run-question",
+			ThreadID: "web:alice:question",
+			Type:     chat.EventQuestionRequested,
+			Payload:  map[string]any{"question": "Continue?", "options": []string{"yes", "no"}, "kind": "approval"},
+		},
+		{RunID: "run-question", ThreadID: "web:alice:question", Type: chat.EventDone, Payload: map[string]any{"status": string(chat.RunStatusWaitingForUser)}},
+	}
+	for _, ev := range events {
+		if err := router.Deliver(context.Background(), ev); err != nil {
+			t.Fatalf("Deliver %s: %v", ev.Type, err)
+		}
+	}
+
+	frames := parseUIMessageFrames(t, buf.String())
+	assertFrameType(t, frames, 1, "data-pending-question")
+	data, ok := frames[1]["data"].(map[string]any)
+	if !ok {
+		t.Fatalf("data frame payload = %#v", frames[1]["data"])
+	}
+	if data["id"] != "question-1" || data["question"] != "Continue?" || data["kind"] != "approval" {
+		t.Fatalf("pending question data = %#v", data)
+	}
+}
+
 func TestStreamRouterRejectsActiveThread(t *testing.T) {
 	router := NewStreamRouter()
 	var buf bytes.Buffer

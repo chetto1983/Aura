@@ -87,6 +87,7 @@ func TestAskUserQuestionMarkup_WithOptions(t *testing.T) {
 }
 
 func TestAskUserQuestionMarkup_ApprovalKindUsesCanonicalButtons(t *testing.T) {
+	canonicalApprovalOptions := askUserDisplayOptions(nil, "approval")
 	markup := askUserQuestionMarkup(nil, "approval")
 	if markup == nil {
 		t.Fatal("markup = nil, want approval inline keyboard")

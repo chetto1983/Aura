@@ -284,6 +284,43 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
 - **PRD gate:** self-audited slice QA before atomic commit.
 
+### B-CONS-08-A: Web Voice Audio Cache And Endpoint
+
+- **Command:** `go test ./internal/api -run "TestChatVoiceAllReturnsAudioURLAndServesBytes|TestChatAnswerForwardsQuestionAnswer|TestChatReplyIncludesPendingQuestion" -count=1`
+- **Fixture:** fake buffered chat service, fake voice synthesizer returning OGG bytes with `OggS` prefix, and bounded `AudioCache`.
+- **Artifact:** `/chat?voice=all` JSON response, `GET /chat/audio/{cache_id}` response, and fake service call capture.
+- **Ground truth:** `audio_url` is non-empty, voice receives the assistant reply text, audio endpoint returns `Content-Type: audio/ogg`, body length is greater than 1024 bytes, and body prefix is `OggS`.
+- **Pass threshold:** exact status 200 for both requests; exact content type; byte-length and prefix assertions pass; answer endpoint forwards `question_id`, answer text, and selected option IDs.
+- **PRD gate:** web buffered replies can attach temporary playable audio without persisting audio as canonical state.
+
+### B-CONS-08-B: Pending Question Buffered And Streaming Projection
+
+- **Command:** `go test ./internal/channels/web -run "Test(ChatService|StreamRouter|Inbound)" -count=1`; `go test ./internal/api -run "TestChat(ReplyIncludesPendingQuestion|Stream|ReplyIncludesBudgetWarning)" -count=1`
+- **Fixture:** fake Hub events with `chat.EventQuestionRequested`, buffered web router, and UI Message Stream parser.
+- **Artifact:** buffered `ChatReply.PendingQuestion` and parsed SSE frames.
+- **Ground truth:** buffered mode returns `pending_question{id, question, options[], kind}`; streaming mode emits a `data-pending-question` chunk whose `data` object carries the same fields.
+- **Pass threshold:** exact question ID/text/kind/options in buffered JSON and streaming frame; stream still terminates with `[DONE]`.
+- **PRD gate:** CONS-12 can render ask_user UI from the backend contract without guessing from assistant prose.
+
+### B-CONS-08-C: Durable Web ask_user Resume
+
+- **Command:** `go test ./cmd/aura -run "TestWebChatAskUserPendingAndAnswerResume" -count=1`
+- **Fixture:** shared Hub, SQLite run store, registered `AskUserTool`, authorized web actor, and fake LLM that first calls `ask_user` then finalizes after receiving the tool result.
+- **Artifact:** first `ChatReply`, second `AnswerChat` reply, SQLite `chat_questions`, SQLite `run_events`, and captured LLM request messages.
+- **Ground truth:** first reply has pending question `Which option?`; `chat_questions` row is `waiting` for `thread_id='web:alice:default'`; `AnswerChat(...,"2")` resumes with final text `resumed with beta`; the row becomes `answered` with non-empty `answer_run_id`; `run_events` includes `question_answered` with `causation_id=<question_id>`; final LLM request includes tool result `ask-1=beta`.
+- **Pass threshold:** all DB scalar assertions equal 1 and the captured tool result is present.
+- **PRD gate:** browser answer resumes the same durable question/run thread instead of starting an unrelated web turn.
+
+### B-CONS-08-D: Dedicated Slice QA
+
+- **Command:** `go test ./internal/channels/web ./internal/api ./internal/chat -run "Voice|AskUser|Question" -count=1`; `go test ./cmd/aura ./internal/channels/web ./internal/api ./internal/chat ./internal/channels/telegram -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web ./internal/channels/telegram ./internal/channels/askuser ./internal/chat --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/app_wire.go cmd/aura/chat_hub.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go cmd/aura/web_chat_helpers_test.go cmd/aura/web_voice.go internal/api/chat.go internal/api/chat_test.go internal/api/router.go internal/api/chat_audio.go internal/channels/askuser/askuser.go internal/channels/telegram/ask_user_resume.go internal/channels/telegram/ask_user_resume_test.go internal/channels/web/chat_service.go internal/channels/web/chat_service_test.go internal/channels/web/inbound.go internal/channels/web/outbound.go internal/channels/web/streaming_outbound.go internal/channels/web/streaming_outbound_test.go`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** touched packages, full Go repository suite, file-size split for `cmd/aura/web_chat_test.go`.
+- **Artifact:** command outputs in this slice run plus diff inspection.
+- **Ground truth:** no compile/vet/lint regressions; touched-file duplication is zero; `cmd/aura/web_chat.go` and `cmd/aura/web_chat_test.go` stay under 600 lines after helper split; full Go suite passes after voice/ask_user parity.
+- **Negative/adversarial check:** unauthenticated/misconfigured answer/audio services return non-success in API tests, active stream duplicate rejection remains covered, and the ask_user fixture requires an authorized actor before the tool pause can happen.
+- **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups`; LOC gate remains below 600 for production web chat and primary web chat test file.
+- **PRD gate:** self-audited slice QA before the US-CONS-08 atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -295,7 +332,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-05 | Completed by B-CONS-05-A..C above | shared Hub with fake web and Telegram outbound adapters; source negative check | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound; duplicate Hub constructors are gone | zero cross-channel deliveries; stale constructor symbols absent |
 | CONS-06 | Completed by B-CONS-06-A..C above | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
 | CONS-07 | Completed by B-CONS-07-A..D above | local SSE endpoint, parser fixture, shared Hub streaming service | frames are valid AI SDK UI Message Stream SSE frames; headers include `text/event-stream`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `x-vercel-ai-ui-message-stream: v1`; shared Hub calls `llm.Stream` | all fixture frames parse; stream terminates with `[DONE]`; buffered `/chat` tests still pass |
-| CONS-08 | `go test ./internal/channels/web ./internal/api ./internal/chat -run "Voice|AskUser|Question" -count=1` | fake TTS and fake ask_user tool | `audio_url` serves OGG bytes; pending question persists and answer resumes same run | audio >1024 bytes; question row waiting->answered |
+| CONS-08 | Completed by B-CONS-08-A..D above | fake TTS/audio cache, fake ask_user tool, shared Hub with SQLite run store | `audio_url` serves OGG bytes; pending question is exposed in buffered/SSE modes; answer resumes the same durable question thread | audio >1024 bytes; question row waiting->answered; `question_answered` event persisted |
 | CONS-09 | `npm --prefix web run build` plus browser probe | assistant-ui `/chat` route against local backend | text-only stream renders in Thread and composer can send | visible streamed assistant message |
 | CONS-10 | `npm --prefix web run build` plus markdown fixture probe | markdown/code/wiki-link assistant message | GFM, code block, and `[[slug]]` render correctly | DOM assertions pass |
 | CONS-11 | `npm --prefix web run build` plus tool-call fixture probe | SSE tool-call frames | generic and specialized tool cards render with status and summaries | DOM cards present; no secret args displayed |

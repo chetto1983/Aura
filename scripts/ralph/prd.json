@@ -141,8 +141,8 @@
         "Single atomic commit prefix: feat(web): voice + ask_user parity on web (US-CONS-08)"
       ],
       "priority": 7,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-07. CLOSES Wave A backend consolidation. Next story (US-CONS-09) starts Wave B frontend."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Backend web voice + ask_user parity is live: /chat?voice=all attaches audio_url through a disposable 1h/100MB in-memory AudioCache, GET /chat/audio/{id} serves audio/ogg bytes, buffered ChatReply exposes pending_question, streaming emits data-pending-question UI Message Stream chunks, and POST /chat/answer/{question_id} resumes through the shared Hub. Implementation kept Pocket-TTS wiring in cmd/aura/web_voice.go and the cache/endpoint in internal/api/chat_audio.go instead of putting provider code inside internal/channels/web. Dedicated tests assert audio bytes >1024 with OggS prefix, pending question JSON/SSE shape, chat_questions waiting->answered, question_answered run event, and final LLM tool result ask-1=beta. web_chat_test.go was split below 600 LOC. Wave B starts at US-CONS-09."
     },
     {
       "id": "US-CONS-09",

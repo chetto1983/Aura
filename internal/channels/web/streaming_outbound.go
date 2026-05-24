@@ -128,6 +128,8 @@ func (s *streamSink) apply(ev chat.OutboundEvent) error {
 		err = s.writeToolStart(ev)
 	case chat.EventToolEnd:
 		err = s.writeToolEnd(ev)
+	case chat.EventQuestionRequested:
+		err = s.writeQuestionRequested(ev)
 	case chat.EventUsage:
 		s.captureUsage(ev)
 	case chat.EventError:
@@ -150,6 +152,26 @@ func (s *streamSink) apply(ev chat.OutboundEvent) error {
 	}
 	s.flushNow()
 	return nil
+}
+
+func (s *streamSink) writeQuestionRequested(ev chat.OutboundEvent) error {
+	q := pendingQuestionFromEvent(ev)
+	if q == nil {
+		return nil
+	}
+	if err := s.ensureMessageStarted(ev); err != nil {
+		return err
+	}
+	return writeUIMessageChunk(s.w, map[string]any{
+		"type": "data-pending-question",
+		"id":   q.ID,
+		"data": map[string]any{
+			"id":       q.ID,
+			"question": q.Question,
+			"options":  q.Options,
+			"kind":     q.Kind,
+		},
+	})
 }
 
 func (s *streamSink) consumeTokens(ctx context.Context, ch <-chan llm.Token) (llm.Response, bool, error) {

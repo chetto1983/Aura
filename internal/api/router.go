@@ -194,9 +194,16 @@ type Deps struct {
 	// nil, POST /chat responds 503. cmd/aura wires this via agent.RunTask
 	// sharing the live LLM client and tool registry.
 	Chat ChatService
+	// ChatAnswer resumes runs paused by ask_user. Optional: when nil,
+	// POST /chat/answer/{question_id} responds 503.
+	ChatAnswer ChatAnswerService
 	// ChatStream is the SSE counterpart to Chat. Optional: when nil,
 	// POST /chat/stream responds 503 so buffered clients remain unaffected.
 	ChatStream ChatStreamService
+	// ChatVoice + ChatAudio expose optional web TTS. ChatAudio is a disposable
+	// cache only; canonical chat state remains in runs/chat_questions.
+	ChatVoice ChatVoiceService
+	ChatAudio *AudioCache
 
 	// ToolWarnings aggregates tool failure counts for GET /tool-warnings
 	// (Phase-6 / US-J06). Optional — when nil the endpoint returns an empty
@@ -252,6 +259,8 @@ func NewRouter(deps Deps) http.Handler {
 	// reads its token from AURA_CHAT_TOKEN. Returns 503 when deps.Chat is
 	// nil (test fixtures, or operator opted out).
 	mux.HandleFunc("POST /chat", handleChat(deps))
+	mux.HandleFunc("POST /chat/answer/{question_id}", handleChatAnswer(deps))
+	mux.HandleFunc("GET /chat/audio/{id}", handleChatAudio(deps))
 	mux.HandleFunc("POST /chat/stream", handleChatStream(deps))
 
 	mux.HandleFunc("GET /wiki/pages", handleWikiPages(deps))

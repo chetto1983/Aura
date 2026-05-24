@@ -18,6 +18,7 @@ type InboundRequest struct {
 	ThreadID    string
 	Message     string
 	Attachments []chat.AttachmentRef
+	Question    *chat.QuestionAnswer
 	Mode        chat.DeliveryMode
 	CreatedAt   time.Time
 }
@@ -49,6 +50,15 @@ func (*Inbound) Normalize(_ context.Context, raw any) (chat.InboundMessage, erro
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
+	question := cloneQuestionAnswer(req.Question)
+	if question != nil {
+		if question.FreeText == "" {
+			question.FreeText = strings.TrimSpace(req.Message)
+		}
+		if question.AnsweredMessageID == "" {
+			question.AnsweredMessageID = strings.TrimSpace(req.ID)
+		}
+	}
 	return chat.InboundMessage{
 		ID:          strings.TrimSpace(req.ID),
 		Channel:     chat.ChannelWeb,
@@ -56,9 +66,22 @@ func (*Inbound) Normalize(_ context.Context, raw any) (chat.InboundMessage, erro
 		ThreadID:    ThreadID(userID, req.ThreadID),
 		Text:        strings.TrimSpace(req.Message),
 		Attachments: append([]chat.AttachmentRef(nil), req.Attachments...),
+		Question:    question,
 		Mode:        mode,
 		CreatedAt:   createdAt,
 	}, nil
+}
+
+func cloneQuestionAnswer(q *chat.QuestionAnswer) *chat.QuestionAnswer {
+	if q == nil {
+		return nil
+	}
+	return &chat.QuestionAnswer{
+		QuestionID:        strings.TrimSpace(q.QuestionID),
+		SelectedOptionIDs: append([]string(nil), q.SelectedOptionIDs...),
+		FreeText:          strings.TrimSpace(q.FreeText),
+		AnsweredMessageID: strings.TrimSpace(q.AnsweredMessageID),
+	}
 }
 
 func normalizeInboundRequest(raw any) (InboundRequest, bool) {

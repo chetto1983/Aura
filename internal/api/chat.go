@@ -30,10 +30,23 @@ type ChatService interface {
 	Chat(ctx context.Context, userID, threadID, message string) (ChatReply, error)
 }
 
+// ChatAnswerService resumes an ask_user question for the web chat surface.
+type ChatAnswerService interface {
+	AnswerChat(ctx context.Context, userID, threadID, questionID, answer string, selectedOptionIDs []string) (ChatReply, error)
+}
+
 // ChatStreamService drives the streaming /chat/stream endpoint. The handler
 // owns HTTP auth and headers; the channel adapter owns UI message frames.
 type ChatStreamService interface {
 	ChatStream(ctx context.Context, userID, threadID, message string, w io.Writer, flush func()) error
+}
+
+// PendingQuestion is returned when ask_user pauses a web run.
+type PendingQuestion struct {
+	ID       string   `json:"id"`
+	Question string   `json:"question"`
+	Options  []string `json:"options,omitempty"`
+	Kind     string   `json:"kind,omitempty"`
 }
 
 // ChatReply is the JSON shape the endpoint returns. Stats fields mirror the
@@ -53,8 +66,10 @@ type ChatReply struct {
 	// outbound adapter. Used by quality-bench to verify tool-selection
 	// (e.g., did Aura call web_search when only wiki tools were appropriate?).
 	// Empty when no tools were called or the channel doesn't track tool names.
-	ToolsUsed     []string `json:"tools_used,omitempty"`
-	BudgetWarning string   `json:"budget_warning,omitempty"`
+	ToolsUsed       []string         `json:"tools_used,omitempty"`
+	BudgetWarning   string           `json:"budget_warning,omitempty"`
+	AudioURL        string           `json:"audio_url,omitempty"`
+	PendingQuestion *PendingQuestion `json:"pending_question,omitempty"`
 }
 
 // ChatRequest is the POST /chat request body.
@@ -64,6 +79,16 @@ type ChatRequest struct {
 	// ThreadID scopes the agent_note scratchpad to a named conversation thread.
 	// Omitting it is equivalent to "default".
 	ThreadID string `json:"thread_id,omitempty"`
+}
+
+// ChatAnswerRequest is the POST /chat/answer/{question_id} body.
+type ChatAnswerRequest struct {
+	UserID            string   `json:"user_id"`
+	ThreadID          string   `json:"thread_id,omitempty"`
+	Answer            string   `json:"answer,omitempty"`
+	Message           string   `json:"message,omitempty"`
+	FreeText          string   `json:"free_text,omitempty"`
+	SelectedOptionIDs []string `json:"selected_option_ids,omitempty"`
 }
 
 // handleChat is the POST /chat handler. The agent runs synchronously and the
@@ -102,6 +127,53 @@ func handleChat(deps Deps) http.HandlerFunc {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "chat failed: "+err.Error())
 			return
 		}
+		reply = maybeAttachVoice(r, deps, chatCtx, reply)
+		writeJSON(w, deps.Logger, http.StatusOK, reply)
+	}
+}
+
+func handleChatAnswer(deps Deps) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if deps.ChatAnswer == nil {
+			writeError(w, deps.Logger, http.StatusServiceUnavailable, "chat answer service is not configured")
+			return
+		}
+		questionID := strings.TrimSpace(r.PathValue("question_id"))
+		if questionID == "" {
+			writeError(w, deps.Logger, http.StatusBadRequest, "question_id is required")
+			return
+		}
+		var req ChatAnswerRequest
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024)).Decode(&req); err != nil {
+			writeError(w, deps.Logger, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+			return
+		}
+		answer := firstChatAnswerText(req.Answer, req.Message, req.FreeText)
+		if answer == "" && len(req.SelectedOptionIDs) == 1 {
+			answer = req.SelectedOptionIDs[0]
+		}
+		if strings.TrimSpace(answer) == "" {
+			writeError(w, deps.Logger, http.StatusBadRequest, "answer is required")
+			return
+		}
+		threadID := strings.TrimSpace(req.ThreadID)
+		if threadID == "" {
+			threadID = "default"
+		}
+		chatCtx, userID, ok := authorizeChatRequest(w, r, deps, req.UserID)
+		if !ok {
+			return
+		}
+		reply, err := deps.ChatAnswer.AnswerChat(chatCtx, userID, threadID, questionID, answer, req.SelectedOptionIDs)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				writeError(w, deps.Logger, http.StatusRequestTimeout, "client cancelled the chat request")
+				return
+			}
+			writeError(w, deps.Logger, http.StatusInternalServerError, "chat answer failed: "+err.Error())
+			return
+		}
+		reply = maybeAttachVoice(r, deps, chatCtx, reply)
 		writeJSON(w, deps.Logger, http.StatusOK, reply)
 	}
 }
@@ -136,4 +208,13 @@ func authorizeChatRequest(w http.ResponseWriter, r *http.Request, deps Deps, bod
 		userID = "chat-cli"
 	}
 	return chatCtx, userID, true
+}
+
+func firstChatAnswerText(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }

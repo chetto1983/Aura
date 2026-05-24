@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/api/auth"
 	auradb "github.com/aura/aura/internal/db"
@@ -19,12 +20,16 @@ import (
 
 type recordingChatService struct {
 	calls             int
+	answerCalls       int
 	userID            string
 	threadID          string
+	questionID        string
 	actorID           string
 	identityActorID   string
 	authorizerPresent bool
 	message           string
+	answer            string
+	selectedOptionIDs []string
 	reply             ChatReply
 }
 
@@ -64,6 +69,34 @@ func (s *recordingChatService) Chat(ctx context.Context, userID, threadID, messa
 		s.reply.Reply = "ok"
 	}
 	return s.reply, nil
+}
+
+func (s *recordingChatService) AnswerChat(ctx context.Context, userID, threadID, questionID, answer string, selectedOptionIDs []string) (ChatReply, error) {
+	s.answerCalls++
+	s.userID = userID
+	s.threadID = threadID
+	s.questionID = questionID
+	s.actorID = auth.ActorIDFromContext(ctx)
+	s.identityActorID = identity.ActorIDFromContext(ctx)
+	_, s.authorizerPresent = identity.AuthorizerFromContext(ctx)
+	s.answer = answer
+	s.selectedOptionIDs = append([]string(nil), selectedOptionIDs...)
+	if s.reply.Reply == "" {
+		s.reply.Reply = "answer ok"
+	}
+	return s.reply, nil
+}
+
+type recordingVoiceService struct {
+	calls int
+	text  string
+	audio ChatAudio
+}
+
+func (s *recordingVoiceService) Synthesize(_ context.Context, text string) (ChatAudio, error) {
+	s.calls++
+	s.text = text
+	return s.audio, nil
 }
 
 func TestChatBearerActorContext(t *testing.T) {
@@ -131,6 +164,101 @@ func TestChatReplyIncludesBudgetWarning(t *testing.T) {
 	}
 	if body.BudgetWarning != "soft budget hit" {
 		t.Fatalf("budget_warning = %q", body.BudgetWarning)
+	}
+}
+
+func TestChatReplyIncludesPendingQuestion(t *testing.T) {
+	env := newChatAuthEnv(t, "alice")
+	env.chat.reply = ChatReply{
+		Reply: "",
+		PendingQuestion: &PendingQuestion{
+			ID:       "question-1",
+			Question: "Which file?",
+			Options:  []string{"a.go", "b.go"},
+			Kind:     "clarification",
+		},
+	}
+
+	rr := env.doChat(t, env.token, `{"message":"ask"}`)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
+	}
+	var body ChatReply
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+	if body.PendingQuestion == nil || body.PendingQuestion.ID != "question-1" || body.PendingQuestion.Question != "Which file?" {
+		t.Fatalf("pending_question = %+v", body.PendingQuestion)
+	}
+	if got := strings.Join(body.PendingQuestion.Options, ","); got != "a.go,b.go" {
+		t.Fatalf("options = %q", got)
+	}
+}
+
+func TestChatVoiceAllReturnsAudioURLAndServesBytes(t *testing.T) {
+	chat := &recordingChatService{reply: ChatReply{Reply: "Ciao audio"}}
+	audioBytes := append([]byte("OggS"), []byte(strings.Repeat("x", 2048))...)
+	voice := &recordingVoiceService{audio: ChatAudio{Bytes: audioBytes, ContentType: "audio/ogg"}}
+	router := NewRouter(Deps{
+		Chat:      chat,
+		ChatVoice: voice,
+		ChatAudio: NewAudioCache(time.Hour, 100*1024*1024),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/chat?voice=all", strings.NewReader(`{"message":"hello"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
+	}
+	var body ChatReply
+	if err := json.NewDecoder(rr.Body).Decode(&body); err != nil {
+		t.Fatalf("decode reply: %v", err)
+	}
+	if body.AudioURL == "" {
+		t.Fatalf("audio_url empty in %#v", body)
+	}
+	if voice.calls != 1 || voice.text != "Ciao audio" {
+		t.Fatalf("voice call = %d text=%q", voice.calls, voice.text)
+	}
+
+	audioReq := httptest.NewRequest(http.MethodGet, strings.TrimPrefix(body.AudioURL, "/api"), nil)
+	audioRR := httptest.NewRecorder()
+	router.ServeHTTP(audioRR, audioReq)
+	if audioRR.Code != http.StatusOK {
+		t.Fatalf("audio status %d, body=%s", audioRR.Code, audioRR.Body)
+	}
+	if got := audioRR.Header().Get("Content-Type"); got != "audio/ogg" {
+		t.Fatalf("audio content-type = %q", got)
+	}
+	if audioRR.Body.Len() <= 1024 || !strings.HasPrefix(audioRR.Body.String(), "OggS") {
+		t.Fatalf("audio bytes len=%d prefix=%q", audioRR.Body.Len(), audioRR.Body.String()[:4])
+	}
+}
+
+func TestChatAnswerForwardsQuestionAnswer(t *testing.T) {
+	chat := &recordingChatService{}
+	router := NewRouter(Deps{ChatAnswer: chat})
+	req := httptest.NewRequest(http.MethodPost, "/chat/answer/question-1", strings.NewReader(`{
+		"user_id":"alice",
+		"thread_id":"default",
+		"answer":"2",
+		"selected_option_ids":["2"]
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
+	}
+	if chat.answerCalls != 1 || chat.userID != "alice" || chat.threadID != "default" || chat.questionID != "question-1" || chat.answer != "2" {
+		t.Fatalf("answer call = calls=%d user=%q thread=%q question=%q answer=%q", chat.answerCalls, chat.userID, chat.threadID, chat.questionID, chat.answer)
+	}
+	if got := strings.Join(chat.selectedOptionIDs, ","); got != "2" {
+		t.Fatalf("selectedOptionIDs = %q", got)
 	}
 }
 

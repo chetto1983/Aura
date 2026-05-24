@@ -398,6 +398,16 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		return fmt.Errorf("wire web chat service: %w", err)
 	}
 	webStreamChat := newWebStreamChatService(sharedHub.hub, sharedHub.webStreamRouter)
+	var webChatAnswer api.ChatAnswerService
+	if answer, ok := webChat.(api.ChatAnswerService); ok {
+		webChatAnswer = answer
+	}
+	var webChatVoice api.ChatVoiceService
+	var webChatAudio *api.AudioCache
+	if a.deps.PocketTTSClient != nil {
+		webChatVoice = webVoiceSynthesizer{client: a.deps.PocketTTSClient}
+		webChatAudio = api.NewAudioCache(time.Hour, 100*1024*1024)
+	}
 
 	// ---- Entity dedup backend (US-GRAPH-03) ----------------------------------
 	// Wire the Qdrant-backed DedupSearcher so DeduplicateEntities can find
@@ -481,7 +491,10 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// AuraBot swarm observability.
 		Swarm:      a.deps.SwarmStore,
 		Chat:       webChat,
+		ChatAnswer: webChatAnswer,
 		ChatStream: webStreamChat,
+		ChatVoice:  webChatVoice,
+		ChatAudio:  webChatAudio,
 		// Phase-6 US-J06: operator tool-warning channel.
 		ToolWarnings: attempts.NewSQLiteRepo(a.deps.Pool),
 		// US-T04: authz decisions observability.
