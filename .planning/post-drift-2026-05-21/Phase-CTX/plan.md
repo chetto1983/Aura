@@ -1,6 +1,6 @@
 # Phase-CTX — Context Engineering Substrate
 
-**Status:** 🟡 queued after Phase-TOOL
+**Status:** 🔴 next planning slice after Phase-GRAPH-FULL closure; repair benchmark before coding
 **Provenance:** hermes scout (§2.1 + §8 ContextEngine/ContextCompressor), openhuman scout (§5 payload_summarizer), Codex scout (#7 inline auto-compaction), online 2026 scout (§3 Anthropic effective context engineering + Chroma context-rot)
 **Estimated effort:** ~3 sessions
 **LOC delta:** ~+900

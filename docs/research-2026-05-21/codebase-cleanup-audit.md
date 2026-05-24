@@ -219,7 +219,7 @@ internal/storage/memoryindex/audit  371
 
 ## 6. Documentation rot
 
-- **`docs/legacy-deletion-survey-2026-05-19.md`** — survey of legacy deletion targets from 2 days ago, will likely be stale after next cleanup pass. Move to `docs/_archive/` once the recommended deletions land.
+- **`docs/_archive/stale-2026-05-24/legacy-deletion-survey-2026-05-19.md`** — survey of legacy deletion targets from 2026-05-19. Archived on 2026-05-24 after the recommended deletions and later cleanups landed.
 - **`internal/agent/README.md`** + **`internal/agent/tools/registry/README.md`** — not opened in audit, but worth a 10-min pass to ensure they reflect the current always-on-tools model (vs the deferred-tools rollout fiction).
 - **`CLAUDE.md`** — 207 lines, current. The "REUSABLE CODE" + "GOD CLASS" + "DEEP REFACTOR ON TOUCH" rules are well-stated and the audit confirms they're being followed except for the items above.
 - **`docs/aura-quality-snapshot.md`** — living doc; not surveyed but per `feedback_aura_as_product` it must stay current with the gate metrics.

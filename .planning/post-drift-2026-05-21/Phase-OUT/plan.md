@@ -1,6 +1,6 @@
 # Phase-OUT — Output Discipline + Budget Enforcement
 
-**Status:** 🟣 **next milestone after Phase-MODERNIZE** (user-locked sequence 2026-05-22)
+**Status:** ✅ closed 2026-05-23 (historical plan; do not execute as-is)
 **Provenance:** Codex (#5), nanobot (#1, #2, #3, #11, #13), elysia (#5, #6), plus 2 new scouts on tool-budget enforcement (`tool-budget-enforcement-patterns.md` + `tool-budget-2026-online.md`).
 **Estimated effort:** ~3 sessions, 9 atomic stories (6 output-discipline + 3 budget-enforcement)
 **LOC delta:** ~+720 (~+520 original + ~+200 budget stories)

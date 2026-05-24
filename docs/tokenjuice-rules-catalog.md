@@ -355,7 +355,7 @@ Required for matching:
 
 ## 4. Relevance scoring for Aura
 
-### 4.1 Aura's verbose-output tools (from `docs/qa-tool-surface.md`, snapshot 2026-05-18)
+### 4.1 Aura's verbose-output tools (from archived `docs/_archive/qa-2026-05-18-19/qa-tool-surface.md`, snapshot 2026-05-18)
 
 | Aura tool | Capability | Typical output verbosity | TokenJuice fit |
 |-----------|-----------|--------------------------|----------------|

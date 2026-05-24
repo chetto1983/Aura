@@ -1,6 +1,6 @@
 # Phase-STREAM — Stream-Time Parallel Tool Dispatch
 
-**Status:** 🟡 queued after Phase-CTX
+**Status:** ⚪ absorbed into Step 1.LAT US-LAT-06; do not execute as-is
 **Provenance:** Codex scout (#1 FuturesOrdered, #2 RwLock parallel-friendly, #10 terminal_outcome_reached), online 2026 scout (§1.3 parallel + streaming tool dispatch)
 **Estimated effort:** ~1 session
 **LOC delta:** ~+200

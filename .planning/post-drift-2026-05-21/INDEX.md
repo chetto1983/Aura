@@ -1,6 +1,6 @@
-# Post-DRIFT Phase Plans — 2026-05-21 (updated 2026-05-22)
+# Post-DRIFT Phase Plans — 2026-05-21 (updated 2026-05-24)
 
-**Provenance:** Multiple parallel research scouts read `D:/tmp/{codex, elysia, nanobot, picobot, cli-printing-press, hermes-agent, openhuman, recursive-llm, graphify}` + 2026 online state-of-the-art, plus exhaustive Aura per-module audit. Research outputs in `docs/research-2026-05-21/` and `docs/research-2026-05-22/`. PRD entry: `prd.md` §7.5.
+**Provenance:** Multiple parallel research scouts read `D:/tmp/{codex, elysia, nanobot, picobot, cli-printing-press, hermes-agent, openhuman, recursive-llm, graphify}` + 2026 online state-of-the-art, plus exhaustive Aura per-module audit. Research outputs in `docs/research-2026-05-21/` and `docs/research-2026-05-22/`. PRD entry: `PRD.md` section 7.5.
 
 **Mandate (user 2026-05-21..22, verbatim, in order):**
 
@@ -22,14 +22,16 @@
 | 1 | [Phase-WIKI-FIX](Phase-WIKI-FIX/plan.md) | Substrate bug sweep — FTS5 sync, dim ergonomics, dedup, system-page filter, admin reindex | ~1-2 | +450 | ✅ **shipped 2026-05-22** — 8/8 Ralph commits, FTS hit 0→20/20 |
 | 2 | [Phase-TOOL](Phase-TOOL/plan.md) | KILL tool RAG entirely + 18 orphan deletes + description audit + 3 kitchen-sink collapses + MCP supervisor + compact dim-fix | ~3-4 | net **-4000** | ✅ **closed 2026-05-22** — 10/10 stories (US-TOOL-01..10), commits `976260fa..227fd2be` + `9f6e5d57` |
 | 3 | [Phase-BUG](Phase-BUG/plan.md) | 3 verified-still-present critical bugs — `/api/chat` overlay loading (web users see slim prompt), `logging→api` boundary (590 transitive deps), errcheck-hidden silent failures (health JSON + backup gzip) | ~1 | +40 + 3 real bugs | ✅ **closed 2026-05-22** — 3/3 stories (US-BUG-01..03), commits `13b6926d`, `498893f8`, `d405e00b` |
-| 4 | [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | ~3 | +540 | 🔴 **NEXT** — kicks after Phase-BUG closure |
-| 5 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | ~3 | ~+720 | 🟣 staged — locked after MODERNIZE |
-| 6 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | 🟣 staged — after OUT |
-| 7 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🟣 staged — after CTX |
-| 8 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | 🟣 staged — parallel-safe, kicks anytime after OUT |
-| 9 | [Phase-CACHE](Phase-CACHE/plan.md) | Provider prompt caching (`prompt_cache_key=thread_id`) + `end_turn` + description audit + small wins | ~1 | ~+50 | 🟣 staged — ship anytime; small enough to fold into a feature phase opportunistically |
+| 4 | [Phase-MODERNIZE](Phase-MODERNIZE/plan.md) | INFRA gates + god-file splits | ~3 | +540 | ✅ **closed 2026-05-23** — commits `3dbef06e..3821bef1` |
+| 5 | [Phase-CACHE](Phase-CACHE/plan.md) | Provider prompt cache, `end_turn`, empty-reply fallback, untrusted snippet upgrade | ~1 | ~+50 | ✅ **closed 2026-05-23** — commits `5d875ada..dd833d68` |
+| 6 | Phase-DEFER | Deferred tool manifest protocol and always-on/deferred split | ~1 | +65 | ✅ **closed 2026-05-23** — commits `50f8126e`, `1128aa81`, `e60541f6` |
+| 7 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + budget enforcement | ~3 | ~+720 | ✅ **closed 2026-05-23** — commits `c8a60b85..6aabfbda` |
+| 8 | Phase-GRAPH-FULL | Wiki aliases, alias-aware injection, embedding dedup, typed edges | ~1-2 | ~+2000 | ✅ **closed 2026-05-23** — commits `a410a440`, `6bb76d1a`, `875a50e8`, `5556319b`; graph rollback fix `6d96fd7b` |
+| 9 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | 🔴 **NEXT** — repair source/benchmark before code |
+| 10 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🟣 staged — after CTX |
+| 11 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | ⚪ superseded by Phase-GRAPH-FULL unless a fresh benchmark reopens it |
 
-**Estimated total: ~18 sessions** to close the post-DRIFT backlog.
+**Current next step:** repair Phase-CTX planning artifacts (`source.md`, `benchmark.md`, `progress.md`) against the closed Phase-GRAPH-FULL baseline before coding.
 
 ---
 
@@ -51,14 +53,16 @@
 1. **Phase-WIKI-FIX is the priority-0 blocker** — ✅ closed 2026-05-22; substrate retrieval healthy (FTS 20/20, p95 75ms).
 2. **Phase-TOOL kills the tool RAG + cleans tool surface** — ✅ closed 2026-05-22 (10/10 stories); removed the live 30-call thrash root cause + dim-mismatch logs.
 3. **Phase-BUG (locked 2026-05-22)** — ✅ closed 2026-05-22 (3/3 stories); 3 verified-still-present critical bugs fixed (web overlay loading, logging→api boundary, silent JSON/gzip failures).
-4. **Phase-MODERNIZE is NEXT before any further feature phase** — sets the CI gates (depguard + deadcode + 600-LOC) so every subsequent commit benefits from cleanup-on-touch enforcement.
-5. **Phase-OUT next (locked)** — output discipline + the 3 budget stories that prevent the 28-LLM-call thrash from recurring.
-6. **Phase-CTX after OUT** — context engineering substrate; payload_summarizer + auto-compaction at 70% are upstream of any further memory work.
-7. **Phase-CONS after CTX** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
-8. **Phase-WIKI-SUBNODES + Phase-CACHE are parallel-safe** — can ship in any session that has spare cycles.
-9. **Per-phase deep refactor** — every Ralph story includes `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated on touched files (CLAUDE.md rule).
-10. **One story = one commit** per `feedback_one_module_per_slice`. No batching except mechanical sed-style refactor with very low risk.
-11. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large -360 LOC single commit) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic.
+4. **Phase-MODERNIZE is closed** — depguard, deadcode CI, LOC gates, lefthook, MODULE-HEALTH, and god-file splits are now enforcement substrate.
+5. **Phase-CACHE is closed** — provider prompt cache and `end_turn` are no longer staged work.
+6. **Phase-DEFER is closed** — deferred tool manifest protocol is live.
+7. **Phase-OUT is closed** — output discipline + budget enforcement are live.
+8. **Phase-GRAPH-FULL is closed** — alias and typed-edge graph substrate is the new baseline.
+9. **Phase-CTX is NEXT** — context engineering substrate; payload_summarizer + auto-compaction at 70% are upstream of Phase-CONS.
+10. **Phase-CONS follows CTX** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
+11. **Per-phase deep refactor** — every story includes `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated on touched files (CLAUDE.md rule).
+12. **One story = one commit** per `feedback_one_module_per_slice`. No batching except mechanical sed-style refactor with very low risk.
+13. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large -360 LOC single commit) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic.
 
 ---
 
@@ -97,4 +101,4 @@
 
 ---
 
-*Updated 2026-05-22. Each phase's `plan.md` is the source of truth for that phase's scope and stories. Update progress inline as stories ship.*
+*Updated 2026-05-24. Closed-phase plan files are historical evidence; the phase index plus `PRD.md` section 7.5 name the current order of operations.*

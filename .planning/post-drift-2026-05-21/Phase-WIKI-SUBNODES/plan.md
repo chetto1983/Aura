@@ -1,6 +1,6 @@
 # Phase-WIKI-SUBNODES — Heading-level subnodes for finer retrieval
 
-**Status:** 🟣 staged — kicks AFTER Phase-OUT (or in parallel — independent surface)
+**Status:** ⚪ superseded by Phase-GRAPH-FULL unless a fresh benchmark reopens heading subnodes
 **Provenance:** Originally US-WIKI-B04 in `scripts/ralph/prd-phase-wiki-b-wave-a-staged.json` (Phase-WIKI-B Wave A). Re-scoped 2026-05-22 after user decision: Wave A B02 fusion already shipped by Phase-WIKI-FIX FIX-01; Wave A B01 (`wiki_subgraph` new tool) cancelled per "no new tools" direction. B04 remains valuable as a standalone 1-session story.
 **Estimated effort:** ~1 session, 1 atomic story
 **LOC delta:** ~+250

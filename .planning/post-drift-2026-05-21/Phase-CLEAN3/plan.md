@@ -1,6 +1,6 @@
 # Phase-CLEAN3 — Codebase Audit Follow-Through
 
-**Status:** 🟡 queued after Phase-STREAM
+**Status:** ⚪ absorbed into Phase-MODERNIZE and cleanup-on-touch; do not execute as-is
 **Provenance:** codebase-cleanup-audit scout #6 (full deliverable `docs/research-2026-05-21/codebase-cleanup-audit.md`)
 **Estimated effort:** ~2 sessions
 **LOC delta:** -700

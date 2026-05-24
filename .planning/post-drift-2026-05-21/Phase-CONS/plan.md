@@ -1,6 +1,6 @@
 # Phase-CONS — Web ↔ Telegram 1+1 Consolidation
 
-**Status:** 🟡 queued after Phase-OUT
+**Status:** 🟣 staged after Phase-CTX
 **Provenance:** web-telegram-consolidation scout #7 (full deliverable `docs/research-2026-05-21/web-telegram-consolidation.md`)
 **Estimated effort:** ~3 sessions
 **LOC delta:** net -90 (dedup -810 + parity additions +720)

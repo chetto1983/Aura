@@ -859,7 +859,7 @@ git push origin master
 
 **Diff to revert (single commit):** the wiring is ~20 lines in `internal/agent/loop.go` (or `toolexec.go`) — wherever the tool-result string is assembled before being appended to `state.Messages`. The package `internal/tokenjuice/` stays, untouched, ready for re-wiring after fix.
 
-**Documentation note:** every rollback action is recorded in `docs/qa-bug-log.md` per QA-pipeline rule 5 ("Bug → regression case FIRST, fix AFTER"). The probe `tool-tokenjuice-disabled-flag` is the regression case that proves Tier 1 still works.
+**Documentation note:** this plan originally referenced the active QA bug log at `docs/qa-bug-log.md`. That 2026-05-18/19 QA surface is now archived at `docs/_archive/qa-2026-05-18-19/qa-bug-log.md`; new regressions should be recorded in the current phase benchmark/progress file instead. The probe `tool-tokenjuice-disabled-flag` is the regression case that proves Tier 1 still works.
 
 ---
 
@@ -884,9 +884,9 @@ Per `.agents/skills/aura-qa-pipeline/SKILL.md` "Performance baselines", every Ph
 > **TokenJuice is justified if, after one week of production usage:**
 > 1. **`tokens_input` per heavy probe (probes producing > 2 KB tool output before compaction) drops by ≥ 10 %** vs the pre-TokenJuice baseline captured immediately before US-TJ08 flips the default to enabled.
 > 2. **Zero probe regressions** — every probe that was PASS pre-TokenJuice remains PASS post-TokenJuice. A regression that is fixed within the same QA run does not count against this.
-> 3. **No P0 bug attributable to TokenJuice** opens in `docs/qa-bug-log.md` during the same week.
+> 3. **No P0 bug attributable to TokenJuice** opens in the current phase benchmark/progress file during the same week.
 >
-> If any of the three fails after one week, file an issue in `docs/qa-bug-log.md` titled `tokenjuice-roi-shortfall` and either tune the rule set (US-TJ09 — currently un-planned) OR roll back per Tier 3.
+> If any of the three fails after one week, file an issue in the current phase progress file titled `tokenjuice-roi-shortfall` and either tune the rule set (US-TJ09 — currently un-planned) OR roll back per Tier 3.
 
 ### Cost-savings sanity check
 
@@ -937,4 +937,4 @@ The integration plan referenced in the user's prompt sketches 8 user stories US-
 5. **Per-tool override of `maxInlineChars`.** Ship one global knob; instrument to see if differentiation is needed. No test.
 6. **Confidence-based "don't compact" guard.** Spec Open Q10. Out of scope; log confidence in `tool_attempts.compaction_classification_confidence` column for later analysis but don't gate on it.
 
-Each deferral is annotated in `docs/qa-triage.md` under a "Deferred to next run" section if any of the deferrals turns into observed pain in production.
+Each deferral was annotated in the archived `docs/_archive/qa-2026-05-18-19/qa-triage.md`; new deferrals should live in the active phase progress file.

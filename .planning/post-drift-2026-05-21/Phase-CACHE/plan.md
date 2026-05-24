@@ -1,6 +1,6 @@
 # Phase-CACHE — Provider Prompt Caching + Small Wins
 
-**Status:** 🟡 queued after Phase-WIKI-B Wave A
+**Status:** ✅ closed 2026-05-23 (historical plan; do not execute as-is)
 **Provenance:** Codex scout (#3, #4) + picobot scout (#3, #7, #13) + nanobot scout (#9) + online 2026 scout (§1.1, §2)
 **Estimated effort:** ~1 session
 **LOC delta:** ~+100 / -50

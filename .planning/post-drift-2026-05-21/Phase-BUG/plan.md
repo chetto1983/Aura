@@ -1,6 +1,6 @@
 # Phase-BUG — Critical bug fixes
 
-**Status:** 🔴 **NEXT MILESTONE** (user-locked 2026-05-22 — ships immediately after Phase-TOOL completes, before Phase-MODERNIZE)
+**Status:** ✅ closed 2026-05-22 (historical plan; do not execute as-is)
 **Provenance:** web-telegram-consolidation scout (2026-05-21) + codebase-cleanup-audit scout (2026-05-21) + live verification 2026-05-22
 **Estimated effort:** ~1 session, 3 atomic stories
 **LOC delta:** +50 / -10 = +40 + 3 real bugs fixed

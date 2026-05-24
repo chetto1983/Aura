@@ -4,33 +4,29 @@ This directory is the developer-facing execution map for the Aura deep
 refactor. The canonical product route remains `D:/Aura/prd.md`; this folder
 turns that route into bounded implementation units.
 
-Status: planning state refreshed on 2026-05-16 after Phase01C was pushed and
-GitHub Actions CI passed, then repaired through Phase07F closure on
-2026-05-17. The clean skeleton was recreated on 2026-05-15; some folders remain
-scaffolds, while the phase files now distinguish closed slices from not-run
-plans.
+Status: legacy deep-refactor execution map. It remains useful for provenance
+and pre-post-drift phase folders, but the current post-drift route is `PRD.md`
+section 7.5 plus `.planning/post-drift-2026-05-21/INDEX.md`. Do not treat this
+folder's old "next operating step" as the active queue without reconciling it
+against the PRD.
 
 ## Plan Authority
 
 Use this ladder when multiple files look like plans:
 
-1. `D:/Aura/prd.md` is the canonical PRD route and phase order.
+1. `D:/Aura/PRD.md` is the canonical PRD route and phase order.
 2. `D:/Aura/.planning/aura-deep-refactor-decisions.json` is the ADR route.
 3. `D:/Aura/.planning/deep-refactor/INDEX.md` is this execution folder map.
-4. `D:/Aura/CONTINUE-HERE.md`,
-   `D:/Aura/.planning/HANDOFF.json`, and
-   `D:/Aura/.planning/deep-refactor/.continue-here.md` name the current resume
-   state and next likely slice.
+4. `.planning/post-drift-2026-05-21/INDEX.md` is the current post-drift
+   execution pointer.
 5. Each phase or sub-phase folder owns only its local `plan.md`, `source.md`,
    `benchmark.md`, and `progress.md`.
 
 Historical and evidence-only files:
 
-- `D:/Aura/docs/aura-master-plan.md` is a historical predecessor, not the active
-  plan.
-- `D:/Aura/docs/aura-restructure-prd*.md`,
-  `D:/Aura/docs/chat-interface-prd.md`, and review files are evidence for why
-  the PRD exists.
+- Removed predecessors such as `docs/aura-master-plan.md`,
+  `docs/aura-restructure-prd*.md`, and `docs/chat-interface-prd.md` are
+  historical evidence in git history, not active files on disk.
 - Old wave/context plans may contribute requirements and tests, but must be
   re-authored into the PRD phase folders before implementation.
 
@@ -139,16 +135,10 @@ PhaseNN_Description/
 
 ## Next Operating Step
 
-Current canonical next slice: promote Phase08's reconciled draft into a verified
-implementation plan before coding. The RECLAIM queue and Phase-OP+ queue are
-closed as of 2026-05-19; Phase-OP+ completed all seven stories
-US-OP10/07/09/06/11/12/12b with local `go test ./...`, `go vet ./...`, and
-`go build ./...` gates green. Phase07D, Phase07E, Phase07F, Phase-R, and
-Phase-S are closed with deterministic tests, live/chat `cmd/probe_chat` probes,
-and repo gates. Phase08 is no longer blocked as a whole on a concrete recurring
-workload; the workload gate now applies only to formal Hybrid DAG conditionals.
-The first candidate slice is US-P8-G payload summarizer, pending independent
-verification of `D:/Aura/.planning/deep-refactor/Phase08_Cron_And_Swarm_RunGraph`.
+Current canonical next slice lives in `PRD.md` section 7.5 and
+`.planning/post-drift-2026-05-21/INDEX.md`: Phase-CTX planning repair after
+Phase-GRAPH-FULL closure. The Phase08 note below is historical until a fresh
+user request reopens cron/swarm RunGraph work.
 
 Use `$aura-plan-builder` when the selected phase or sub-phase is still a
 self-audited scaffold, missing source/plan/benchmark coverage, or needs

@@ -103,19 +103,17 @@ flowchart TB
     LRN[(learning<br/>tool_attempts → lessons)]
   end
 
-  subgraph Tools["Tool Registry (internal/agent/tools/registry) — v0.3.0 post-TOOL kitchen-sink collapses"]
-    SEARCH[search<br/>unified: action=read/search<br/>over wiki + sources + memory]
-    WEBT[web_search / web_fetch]
+  subgraph Tools["Tool Registry (internal/agent/tools/registry) - consolidated LLM surface"]
+    SEARCH[search<br/>actions: search/read/list<br/>lessons/user_facts/graph]
+    WEBT[web<br/>actions: search/fetch]
     SRCT[source<br/>unified action enum]
-    TASKT[task<br/>mode=create/list/cancel]
-    DOCT[create_document<br/>format=xlsx/docx/pdf]
-    WSPT[workspace<br/>action=read/write/list]
-    SKILL[read_skill]
-    AUTH[request_dashboard_token]
-    MCP[mcp_* + tools-overrides.json sidecar]
+    TASKT[task<br/>schedule/list/cancel/run_now]
+    FILET[file<br/>list/read/search/write/patch]
+    WIKIT[wiki_page<br/>write/edit/append/replace]
+    MCP[mcp_* dynamic tools]
     EXECT[execute_code / execute_shell]
+    ASK[ask_user / text_response]
     PROPOSE[propose_patch<br/>RiskTier=write_proposal]
-    SUBA[subagent_dispatch]
     ANOTE[agent_note]
   end
 
@@ -165,29 +163,34 @@ classification of every `internal/` subdir.
 
 ## Roadmap
 
-Aura's PRD lives at [`prd.md`](prd.md). The 2026-05-22 release **v0.3.0**
+Aura's PRD lives at [`PRD.md`](PRD.md). The 2026-05-22 release **v0.3.0**
 closed three back-to-back substrate milestones (174 commits since v0.2.0):
-Step 1.LAT (latency), Phase-WIKI-FIX (retrieval substrate), Phase-TOOL
-(tool surface + kill-the-RAG). Phase-BUG closed same-day post-tag
-(3 stories, US-BUG-01..03). Active planning lives in
+Step 1.LAT (latency), Phase-WIKI-FIX (retrieval substrate), and Phase-TOOL
+(tool surface + kill-the-RAG). Since then, Phase-BUG, Phase-MODERNIZE,
+Phase-CACHE, Phase-DEFER, Phase-OUT, and Phase-GRAPH-FULL have closed.
+The current post-drift planning pointer lives in
 [`.planning/post-drift-2026-05-21/INDEX.md`](.planning/post-drift-2026-05-21/INDEX.md).
 
 ```mermaid
 flowchart LR
-  V03[v0.3.0 — 2026-05-22<br/>Step 1.LAT + WIKI-FIX + TOOL<br/>DONE 25 stories] --> BUG[Phase-BUG<br/>3 stories<br/>DONE 2026-05-22]
-  BUG --> MOD[Phase-MODERNIZE<br/>5 INFRA + 10 god-splits<br/>~3s · NEXT]
-  MOD --> OUT[Phase-OUT<br/>output discipline +<br/>budget enforcement<br/>9 stories ~3s]
-  OUT --> CTX[Phase-CTX<br/>context engineering<br/>~3s]
+  V03[v0.3.0 - 2026-05-22<br/>Step 1.LAT + WIKI-FIX + TOOL<br/>DONE 25 stories] --> BUG[Phase-BUG<br/>3 stories<br/>DONE 2026-05-22]
+  BUG --> MOD[Phase-MODERNIZE<br/>INFRA + god-file splits<br/>DONE 2026-05-23]
+  MOD --> CACHE[Phase-CACHE<br/>prompt cache + end_turn<br/>DONE 2026-05-23]
+  CACHE --> DEFER[Phase-DEFER<br/>deferred tool manifest<br/>DONE 2026-05-23]
+  DEFER --> OUT[Phase-OUT<br/>output discipline + budgets<br/>DONE 2026-05-23]
+  OUT --> GRAPH[Phase-GRAPH-FULL<br/>aliases + dedup + typed edges<br/>DONE 2026-05-23]
+  GRAPH --> CTX[Phase-CTX<br/>context engineering<br/>NEXT planning slice]
   CTX --> CONS[Phase-CONS<br/>web/telegram 1+1<br/>~3s]
-  CTX --> SUB[Phase-WIKI-SUBNODES<br/>parallel ~1s]
 
   style V03 fill:#90ee90,stroke:#009900
   style BUG fill:#90ee90,stroke:#009900
-  style MOD fill:#ffd700,stroke:#cc9900
-  style OUT fill:#fff4d6,stroke:#bf9000
-  style CTX fill:#d6e9ff,stroke:#0070d0
+  style MOD fill:#90ee90,stroke:#009900
+  style CACHE fill:#90ee90,stroke:#009900
+  style DEFER fill:#90ee90,stroke:#009900
+  style OUT fill:#90ee90,stroke:#009900
+  style GRAPH fill:#90ee90,stroke:#009900
+  style CTX fill:#ffd700,stroke:#cc9900
   style CONS fill:#d6e9ff,stroke:#0070d0
-  style SUB fill:#e6e6ff,stroke:#666699
 ```
 
 | Phase | Status | Scope | Reference |
@@ -197,11 +200,14 @@ flowchart LR
 | Phase-MM Wave 2 | ✅ done 2026-05-19 | audio IN E2E: KindAudio + voice handler + whisper client + AfterTranscribeHook | [`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md) |
 | Phase-MM Wave 3 | ✅ done 2026-05-20 | TTS reply via Kyutai Pocket-TTS (Giovanni IT voice, INT8, ~200ms first-chunk); per-chat voice mode | [`docs/phase-mm-synthesis-2026-05-17.md`](docs/phase-mm-synthesis-2026-05-17.md) |
 | Phase-BUG | ✅ done 2026-05-22 | 3 critical bugs shipped (US-BUG-01..03) — `/api/chat` overlay loading wired (commit `13b6926d`), `logging→api` boundary inverted (commit `498893f8`), errcheck-hidden silent JSON/gzip failures propagated (commit `d405e00b`) | [`.planning/post-drift-2026-05-21/Phase-BUG/plan.md`](.planning/post-drift-2026-05-21/Phase-BUG/plan.md) |
-| **Phase-MODERNIZE** | 🔴 NEXT | 5 INFRA hygiene (depguard + deadcode + 600-LOC linter + lefthook + MODULE-HEALTH.md) + Wave-1 10 god-file splits | [`.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md`](.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md) |
-| Phase-OUT | 🟣 staged | Output discipline stack + 3 NEW budget enforcement stories (per-class budget, OR-of-four guard, force-finalize) | [`.planning/post-drift-2026-05-21/Phase-OUT/plan.md`](.planning/post-drift-2026-05-21/Phase-OUT/plan.md) |
-| Phase-CTX | 🟣 staged | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | [`.planning/post-drift-2026-05-21/Phase-CTX/plan.md`](.planning/post-drift-2026-05-21/Phase-CTX/plan.md) |
-| Phase-CONS | 🟣 staged | Web ↔ Telegram 1+1 consolidation — substantive web feature additions (streaming, voice, ask_user, archive) | [`.planning/post-drift-2026-05-21/Phase-CONS/plan.md`](.planning/post-drift-2026-05-21/Phase-CONS/plan.md) |
-| Phase-U | 🟣 planned | Plugin manifest + loader + extract personality bundle + sample plugin | sketched in `prd.md §7.4` |
+| **Phase-MODERNIZE** | done 2026-05-23 | INFRA gates + god-file splits | [`.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md`](.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md) |
+| Phase-CACHE | done 2026-05-23 | provider prompt cache, `end_turn`, empty-reply fallback, untrusted snippet upgrade | [`.planning/post-drift-2026-05-21/Phase-CACHE/plan.md`](.planning/post-drift-2026-05-21/Phase-CACHE/plan.md) |
+| Phase-DEFER | done 2026-05-23 | deferred tool manifest protocol and always-on/deferred split | commits `50f8126e`, `1128aa81`, `e60541f6` |
+| Phase-OUT | done 2026-05-23 | output discipline stack + budget enforcement | [`.planning/post-drift-2026-05-21/Phase-OUT/plan.md`](.planning/post-drift-2026-05-21/Phase-OUT/plan.md) |
+| Phase-GRAPH-FULL | done 2026-05-23 | wiki aliases, alias-aware injection, embedding dedup, typed edges | commits `a410a440`, `6bb76d1a`, `875a50e8`, `5556319b` |
+| **Phase-CTX** | NEXT planning slice | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | [`.planning/post-drift-2026-05-21/Phase-CTX/plan.md`](.planning/post-drift-2026-05-21/Phase-CTX/plan.md) |
+| Phase-CONS | staged after CTX | Web <-> Telegram 1+1 consolidation with substantive web feature parity | [`.planning/post-drift-2026-05-21/Phase-CONS/plan.md`](.planning/post-drift-2026-05-21/Phase-CONS/plan.md) |
+| Phase-U | planned | Plugin manifest + loader + extract personality bundle + sample plugin | sketched in `PRD.md` section 7.4 |
 | Phase 8 | ⚪ gated on workload | Multi-agent substrate (planner + critic + DAG) anchored to a concrete workload | de-scoped pending re-open |
 
 ## Multimodal target (Phase-MM)
@@ -347,7 +353,7 @@ new plugin loader.
 
 Plugins specialize *which model* (Whisper local vs Groq; Sonnet vs Qwen-VL)
 but never *whether the system sees audio* — that's substrate. See
-[`prd.md §7.4`](prd.md) for the substrate-vs-plugin classification rule.
+[`PRD.md` section 7.4](PRD.md) for the substrate-vs-plugin classification rule.
 
 ## Quick Start
 
@@ -452,7 +458,7 @@ The `Docker image` workflow publishes:
 - [Install guide](INSTALL.md)
 - [Container stack](docs/container.md)
 - [Operator runbook](docs/RUNBOOK.md) — cold install, upgrade, restore, secret rotation
-- [Product requirements](prd.md) — full PRD with phase status checklist (§6.5) and strategic roadmap (§7.4)
+- [Product requirements](PRD.md) - full PRD with phase status checklist and strategic roadmap
 - [Memory vs Storage](docs/MEMORY-VS-STORAGE.md) — two-layer model + `internal/` subdir classification
 - [Phase-MM synthesis](docs/phase-mm-synthesis-2026-05-17.md) — multimodal planning (9 stories, 3 waves)
-- [Audit reports](docs/) — 11 reports from the 2026-05-17 audit sweep (security / concurrency / dead-code / etc.)
+- [Archived evidence](docs/_archive/) - stale QA surfaces and superseded planning evidence kept for provenance

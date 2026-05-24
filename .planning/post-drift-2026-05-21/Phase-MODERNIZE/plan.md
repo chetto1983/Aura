@@ -1,6 +1,6 @@
 # Phase-MODERNIZE — Infra hygiene + Wave 1 god-file splits
 
-**Status:** 🟣 planned (kicks after Phase-TOOL ships)
+**Status:** ✅ closed 2026-05-23 (historical plan; do not execute as-is)
 **Provenance:** 3-scout research 2026-05-22 + per-module audit (this directory's research/)
 **Estimated effort:** ~3 sessions Ralph atomic, 15 stories
 **LOC delta:** ~+540 (infra tooling) + 0 net (god splits rebalance) = +540
