@@ -2,6 +2,7 @@ package conversation
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -40,6 +41,80 @@ func newTestAutoCompact(summary string, thresholdTokens int, scope string, conte
 // ---- compile-time interface check -------------------------------------------
 
 var _ ContextEngine = (*AutoCompactEngine)(nil)
+
+func TestPrefixProtectionKeepsSystemMessages(t *testing.T) {
+	// AC: 3 system messages + 50 body messages; compact returns all 3 system
+	// messages intact plus a summarized body.
+	const summary = "## Goal\nsummarized\n## Active Task\ntest task"
+	e := newTestAutoCompact(summary, 100, ScopeTotal, 128000)
+
+	messages := []llm.Message{
+		{Role: "system", Content: "base system"},
+		{Role: "system", Content: "tools overlay"},
+		{Role: "system", Content: "memory overlay"},
+	}
+	// 50 body messages: 24 user+assistant pairs + final user.
+	for i := range 24 {
+		messages = append(messages,
+			llm.Message{Role: "user", Content: strings.Repeat(fmt.Sprintf("user turn %d ", i), 3)},
+			llm.Message{Role: "assistant", Content: strings.Repeat(fmt.Sprintf("assistant turn %d ", i), 3)},
+		)
+	}
+	messages = append(messages, llm.Message{Role: "user", Content: "final question"})
+
+	compressed := e.Compress(messages, 0, "final question")
+
+	// All 3 system messages must appear at the start, verbatim.
+	if len(compressed) < 5 {
+		t.Fatalf("compressed len = %d, want >=5 (3 prefix + summary + last-user)", len(compressed))
+	}
+	for i := range 3 {
+		if compressed[i].Role != messages[i].Role || compressed[i].Content != messages[i].Content {
+			t.Fatalf("prefix[%d] = {Role:%s Content:%q}, want {Role:%s Content:%q}",
+				i, compressed[i].Role, compressed[i].Content, messages[i].Role, messages[i].Content)
+		}
+	}
+	// The summarized body follows the prefix.
+	if !strings.Contains(compressed[3].Content, summary) {
+		t.Fatalf("post-prefix message[3] does not contain summary; got %q", compressed[3].Content)
+	}
+	// Last message must be the last user message.
+	last := compressed[len(compressed)-1]
+	if last.Role != "user" || last.Content != "final question" {
+		t.Fatalf("last message = %+v, want user 'final question'", last)
+	}
+}
+
+func TestHysteresisBlocksRepeatedCompaction(t *testing.T) {
+	// AC: 3 consecutive ShouldCompress checks: first true, second/third false.
+	e := newTestAutoCompact("short summary", 1000, ScopeTotal, 128000)
+	e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 200, TotalTokens: 1100})
+
+	// Check 1: above threshold, no prior compaction.
+	if !e.ShouldCompress(0) {
+		t.Fatal("ShouldCompress check 1 = false, want true (above threshold)")
+	}
+
+	// Simulate compaction.
+	messages := []llm.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("body ", 50)},
+		{Role: "assistant", Content: strings.Repeat("reply ", 50)},
+		{Role: "user", Content: "continue"},
+	}
+	e.Compress(messages, 1100, "continue")
+
+	// Check 2: immediately after compaction.
+	if e.ShouldCompress(0) {
+		t.Fatal("ShouldCompress check 2 = true, want false (hysteresis gate)")
+	}
+	// Accumulate tokens for turn 2 inside the hysteresis window.
+	e.UpdateFromResponse(llm.TokenUsage{PromptTokens: 900, CompletionTokens: 200, TotalTokens: 1100})
+	// Check 3: turn 2 is still inside the hysteresis window.
+	if e.ShouldCompress(0) {
+		t.Fatal("ShouldCompress check 3 = true, want false (still in hysteresis window)")
+	}
+}
 
 // ---- Name -------------------------------------------------------------------
 

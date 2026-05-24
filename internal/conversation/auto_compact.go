@@ -167,11 +167,12 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 		e.prefixSet = false
 		e.mu.Unlock()
 		ctxmetrics.Global.CTXCompactionsTotal.Add(1)
-		slog.Debug("auto_compact: conversation compressed",
+		slog.Info("[compaction] auto_compact: conversation compressed",
 			"msgs_before", len(messages),
 			"msgs_after", len(compressed),
 			"threshold_tokens", e.ThresholdTokens,
 			"cumulative_tokens", cumulativeBefore,
+			"focus_topic_chars", len([]rune(focusTopic)),
 		)
 		return compressed
 	}
