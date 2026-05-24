@@ -198,8 +198,8 @@
         "Single atomic commit prefix: feat(web/ui): tool-call render-as-component (generative UI) (US-CONS-11)"
       ],
       "priority": 10,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-09 + US-CONS-10. The KEY win of assistant-ui — tool calls become UI affordances, not opaque text blobs. Aura-specific tool renderers are where domain UX lives."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Assistant-ui Thread now renders tool-call parts through a generic collapsible ToolCallComponent, registers wiki_page and web_search renderers with makeAssistantToolUI, and also maps Aura's consolidated web action tool to the search card. Backend UI Message Stream now emits tool-call-delta argsText from arg_keys only, with values redacted before the browser sees them. Browser QA fixture asserted web_search top-3 cards, wiki_page /wiki/:slug link card, generic execute_shell details with [redacted], no SECRET_ARG_VALUE in DOM, and no mobile overflow. Full/broad gates run in this slice before commit."
     },
     {
       "id": "US-CONS-12",

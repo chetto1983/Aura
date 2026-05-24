@@ -21,32 +21,33 @@
 
 | 2026-05-24 | US-CONS-10 | passed | `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`; Playwright desktop markdown/code/wiki-link probe; Playwright mobile code-block probe; `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`. | Assistant messages now render through Aura's Markdown renderer inside assistant-ui text parts. Ground truth: browser fixture renders `strong`, list item, `pre code.hljs.language-python` with nested highlight spans, wiki link `/wiki/alpha-note`, and external link target `_blank`; mobile code-block width stays within `main`. Added `rehype-highlight@7.0.2`, safe wiki-link preprocessing outside fenced code blocks, localized send/copy/retry/regenerate strings, and rebuilt dist. Bundle delta: Chat chunk `208050 -> 378980` bytes; new shared `remark-gfm` chunk `139770` bytes. |
 
+| 2026-05-24 | US-CONS-11 | passed | `npm --prefix web test -- ToolCallComponent.helpers.test.ts`; `go test ./internal/channels/web -run TestStreamRouterEmitsToolFrames -count=1`; `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`; `go test ./internal/channels/web -count=1`; Playwright desktop tool-card probe; Playwright mobile tool-card probe; `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `dupl -t 60 internal/channels/web/streaming_outbound.go internal/channels/web/streaming_outbound_test.go`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`. | Tool-call parts now render as assistant-ui generative UI components. Ground truth: browser fixture renders `web_search` top-3 cards, `wiki_page` link card to `/wiki/aura-phase-cons`, and generic `execute_shell` collapsible details; DOM never contains `SECRET_ARG_VALUE`, generic details show `[redacted]`, and mobile card width stays inside the chat section. Backend stream now emits `tool-call-delta.argsText` from `arg_keys` only, with values redacted. Screenshots: `D:/tmp/aura-chat-us-cons-11-tool-cards.png` and `D:/tmp/aura-chat-us-cons-11-tool-cards-mobile.png`. |
+
 ## Current Slice
 
-**US-CONS-11:** render Aura tool calls as assistant-ui message components.
+**US-CONS-12:** render ask_user pending-question UI flow in assistant-ui.
 
 Pre-edit map:
 
 - `web/src/pages/Chat.tsx`
 - `web/src/components/chat/`
-- `web/src/components/MCPPanel.tsx`
-- `web/src/components/WikiPanel.tsx`
+- `web/src/components/chat/AuraToolUIRegistrations.tsx`
+- `web/src/components/chat/ToolCallComponent.tsx`
+- `web/src/components/chat/tools/`
 - `internal/channels/web/streaming_outbound.go`
 - `internal/channels/web/streaming_outbound_test.go`
-- `cmd/aura/web_chat_test.go`
 - `web/src/i18n/locales/en.json`
 - `web/src/i18n/locales/it.json`
 - `internal/api/dist/`
-- `D:/tmp/assistant-ui/apps/docs/components/docs/samples/action-bar-primitive.tsx`
-- `D:/tmp/assistant-ui/apps/docs/components/docs/samples/thread-primitive.tsx`
-- `D:/tmp/assistant-ui/packages/react/src/primitives/message/MessageParts.tsx`
-- `D:/tmp/assistant-ui/apps/registry/src/registry.ts`
+- `D:/tmp/assistant-ui/apps/docs/content/docs/guides/tool-ui.mdx`
+- `D:/tmp/assistant-ui/templates/minimal/components/assistant-ui/thread.tsx`
+- `D:/tmp/assistant-ui/templates/minimal/components/assistant-ui/tool-fallback.tsx`
 
 Dedicated QA target:
 
 - `npm --prefix web run build`
-- browser fixture renders generic tool-call status cards from stream frames
-- specialized wiki/search tool cards hide raw secret args and expose useful links/results
+- browser fixture renders pending-question cards from `data-pending-question` frames
+- answer endpoint probe posts approval/clarification replies and resumes the run
 - Italian + English chat strings remain complete
 - `go vet ./...`
 - `go build ./...`

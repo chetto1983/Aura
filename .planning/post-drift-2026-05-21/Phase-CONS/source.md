@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-11. CONS-02..10 are committed; next render tool-call UI components on top of assistant-ui Thread.
+**Current slice:** US-CONS-12. CONS-02..11 are implemented; next render ask_user pending-question UI on top of assistant-ui Thread.
 
 ## Objective
 
@@ -51,6 +51,9 @@ Consolidate web and Telegram into one channel-neutral agent path without losing 
 | `D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/ui-message-stream/UIMessageStream.ts` | Decoder parses SSE `data:` events, JSON objects, and the literal `[DONE]` terminator. | US-CONS-07 frames are `data: {...}\n\n` plus `data: [DONE]\n\n`. |
 | `D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/ui-message-stream/chunk-types.ts` | Local accepted chunks include `start`, `text-start`, `text-delta` with `textDelta`, `text-end`, `tool-call-start`, `tool-call-end`, `tool-result`, `finish`, and `error`. | Implement these core chunks first; carry both `textDelta` and `delta` on text deltas for current docs/local compatibility. |
 | `D:/tmp/assistant-ui/packages/assistant-stream/src/core/serialization/data-stream/DataStream.ts` | Legacy data-stream uses `text/plain` plus `x-vercel-ai-data-stream`; it is selected only when the runtime option sets `protocol: "data-stream"`. | Reject for Aura default because Wave B wants zero extra frontend protocol override. |
+| `D:/tmp/assistant-ui/apps/docs/content/docs/guides/tool-ui.mdx` | UI-only tools defined elsewhere should use `makeAssistantToolUI`; the renderer receives args, result, and status. | Register Aura's backend-owned tool UIs without defining frontend execution tools. |
+| `D:/tmp/assistant-ui/templates/minimal/components/assistant-ui/thread.tsx` | Assistant messages render `part.toolUI ?? <ToolFallback {...part} />` inside `MessagePrimitive.Parts`. | Use the same generative UI pattern for Aura's assistant-ui Thread. |
+| `D:/tmp/assistant-ui/templates/minimal/components/assistant-ui/tool-fallback.tsx` | Generic tool fallback is collapsible, status-aware, and shows args/result on expansion. | Adopt the shape, but keep Aura's privacy rule: argument values are redacted before display. |
 
 ## 2026 Practice Sweep
 
@@ -65,6 +68,7 @@ Checked 2026-05-24:
 | OpenAI Agents SDK streaming guide: `https://openai.github.io/openai-agents-js/guides/streaming/` | Stream consumers inspect generic run events while preserving provider-specific raw events only when needed. | Agentcore/event contracts should stay transport-neutral. |
 | Anthropic Context Engineering cookbook, published 2026-03-20: `https://platform.claude.com/cookbook/tool-use-context-engineering-context-engineering-tools` | Long-running agents need explicit memory, compaction, and tool-result clearing strategies; context is finite. | CONS-02 must prove web now benefits from `conversation.Context` compaction/token tracking. |
 | Anthropic harness design, published 2026-03-24: `https://www.anthropic.com/engineering/harness-design-long-running-apps` | Use tractable chunks, explicit sprint contracts, and a separate evaluator/QA pass when the work is beyond trivial. | Each CONS story gets its own benchmark and QA, not a phase-wide smoke run. |
+| Assistant-ui local 2026 docs/source, checked 2026-05-24: `D:/tmp/assistant-ui/apps/docs/content/docs/guides/tools.mdx` | Pick one registration style per tool, centralize definitions, handle errors/loading states, and test tools in isolation plus the full assistant flow. | CONS-11 uses one UI-only registration layer plus helper unit tests and browser flow probes. |
 
 ## Adopted For US-CONS-02
 
@@ -160,6 +164,15 @@ Checked 2026-05-24:
 - Override assistant-ui `Text` message parts only; leave tool/data/audio parts for US-CONS-11..13.
 - Use browser UI Message Stream fixtures as ground truth for rendered markdown, highlighted code, wiki links, external link safety, and mobile code-block width.
 
+## Adopted For US-CONS-11
+
+- Render assistant-ui `tool-call` parts with `part.toolUI ?? <ToolCallComponent {...part} />`, matching the local assistant-ui minimal template.
+- Register backend-owned UI-only tool renderers with `makeAssistantToolUI` for `wiki_page` and `web_search`.
+- Also register Aura's consolidated `web` tool to the web-search card so the current manifest still gets a rich search UI after tool consolidation.
+- Keep argument values private: backend stream emits `tool-call-delta.argsText` from `arg_keys` only, with every value replaced by `[redacted]`.
+- Put argument/result details behind an expandable block; browser QA expands the generic card to assert redaction and result visibility.
+- Use structured browser fixtures for top-3 web search results and wiki link cards; real backend preview-only results fall back gracefully.
+
 ## Rejected For US-CONS-02
 
 - No single Hub change; that is US-CONS-05.
@@ -190,6 +203,13 @@ Checked 2026-05-24:
 - Do not implement `/wiki/page/:slug`; the current Aura router is `/wiki/:slug`.
 - Do not add copy/retry/regenerate UI controls yet. This slice localizes the strings and send button label, but action bars belong with richer message/tool UI.
 - Do not render tool-call, ask_user, audio, attachment, or dictation UI in the markdown slice.
+
+## Rejected For US-CONS-11
+
+- Do not expose raw tool argument values in the browser to satisfy the "full args" wording; Aura's tool argument privacy rule is stronger, so only keys and redacted placeholders render.
+- Do not define frontend-executed tools for `wiki_page`, `web_search`, or `web`; Aura's backend remains the execution authority.
+- Do not add a second styling package or assistant-ui theme. Cards use Aura's existing Tailwind tokens and lucide icons.
+- Do not make the web card depend on the deprecated `web_search` tool name only; the current Aura manifest uses the consolidated `web` tool.
 
 ## Open Questions Carried Forward
 

@@ -2,6 +2,7 @@ package webadapter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -312,12 +313,23 @@ func (s *streamSink) writeToolStart(ev chat.OutboundEvent) error {
 		toolName = "tool"
 	}
 	s.toolOpen[callID] = struct{}{}
-	return writeUIMessageChunk(s.w, map[string]any{
+	if err := writeUIMessageChunk(s.w, map[string]any{
 		"type":       "tool-call-start",
 		"id":         "part_" + safeFrameID(callID),
 		"toolCallId": callID,
 		"toolName":   toolName,
-	})
+	}); err != nil {
+		return err
+	}
+	if argsText := redactedArgsTextPayload(ev.Payload); argsText != "" {
+		if err := writeUIMessageChunk(s.w, map[string]any{
+			"type":     "tool-call-delta",
+			"argsText": argsText,
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *streamSink) writeToolEnd(ev chat.OutboundEvent) error {
@@ -513,4 +525,27 @@ func intPayload(payload map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func redactedArgsTextPayload(payload map[string]any) string {
+	keys := stringSlicePayload(payload, "arg_keys")
+	if len(keys) == 0 {
+		return ""
+	}
+	args := make(map[string]string, len(keys))
+	for _, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		args[key] = "[redacted]"
+	}
+	if len(args) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(args)
+	if err != nil {
+		return ""
+	}
+	return string(data)
 }

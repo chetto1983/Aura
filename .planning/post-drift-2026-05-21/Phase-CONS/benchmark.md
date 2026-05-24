@@ -397,6 +397,42 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands exit 0.
 - **PRD gate:** self-audited slice QA before the US-CONS-10 atomic commit.
 
+### B-CONS-11-A: Tool-Call Helpers And Stream Privacy
+
+- **Command:** `npm --prefix web test -- ToolCallComponent.helpers.test.ts`; `go test ./internal/channels/web -run TestStreamRouterEmitsToolFrames -count=1`
+- **Fixture:** helper unit tests with secret argument values; Go stream event with `arg_keys`.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** UI helper redacts `query`, `max_results`, and `api_key` values; Go stream emits `tool-call-delta.argsText` containing `[redacted]` and no secret values.
+- **Pass threshold:** both commands exit 0 and assertions prove redacted args.
+- **PRD gate:** tool calls render as components without leaking tool argument values.
+
+### B-CONS-11-B: Frontend Tool-Card Gates
+
+- **Command:** `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`; `npm --prefix web test`
+- **Fixture:** assistant-ui tool-call renderer files, i18n dictionaries, and rebuilt dashboard assets.
+- **Artifact:** command outputs in this slice run; built assets under `internal/api/dist`.
+- **Ground truth:** TypeScript/Vite compiles the assistant-ui registrations and card components; en/it keys are complete; lint accepts Fast Refresh boundaries; helper tests pass.
+- **Pass threshold:** all commands exit 0.
+- **PRD gate:** assistant-ui Thread registers tool-call renderers through supported UI-only registration.
+
+### B-CONS-11-C: Browser Tool-Card Probe
+
+- **Command:** local Vite dev server plus Playwright fixture on `/chat`.
+- **Fixture:** intercepted `/api/chat/stream` UI Message Stream containing `web_search`, `wiki_page`, and generic `execute_shell` tool calls; args include `SECRET_ARG_VALUE`.
+- **Artifact:** `D:/tmp/aura-chat-us-cons-11-tool-cards.png` and `D:/tmp/aura-chat-us-cons-11-tool-cards-mobile.png`.
+- **Ground truth:** web search card renders exactly the first three structured results; wiki card links to `/wiki/aura-phase-cons`; generic card expands to show `[redacted]`; DOM never contains `SECRET_ARG_VALUE`; mobile card width stays within the chat section.
+- **Pass threshold:** all DOM assertions pass on desktop and mobile.
+- **PRD gate:** rich tool-call UI, specialized Aura cards, and no secret args displayed.
+
+### B-CONS-11-D: Backend Embed And Repo QA
+
+- **Command:** `go test ./internal/channels/web -count=1`; `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames" -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api ./internal/channels/web --timeout=10m --new-from-rev=HEAD`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** rebuilt `internal/api/dist` assets plus backend UI Message Stream contract tests.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** Go embed compiles after frontend tool assets; stream tests still parse `tool-call-start`, `tool-call-delta`, `tool-call-end`, `tool-result`, `finish`, and `[DONE]`.
+- **Pass threshold:** all commands exit 0.
+- **PRD gate:** self-audited slice QA before the US-CONS-11 atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -411,7 +447,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-08 | Completed by B-CONS-08-A..D above | fake TTS/audio cache, fake ask_user tool, shared Hub with SQLite run store | `audio_url` serves OGG bytes; pending question is exposed in buffered/SSE modes; answer resumes the same durable question thread | audio >1024 bytes; question row waiting->answered; `question_answered` event persisted |
 | CONS-09 | Completed by B-CONS-09-A..D above | assistant-ui `/chat` route, intercepted UI Message Stream, backend stream tests | text-only stream renders in Thread; composer request sends bearer auth, `thread_id`, and latest user message | visible streamed assistant message plus backend stream tests green |
 | CONS-10 | Completed by B-CONS-10-A..D above | markdown/code/wiki-link assistant message | GFM, highlighted code block, and `[[slug]]` render correctly | DOM assertions pass on desktop and mobile; Go embed remains green |
-| CONS-11 | `npm --prefix web run build` plus tool-call fixture probe | SSE tool-call frames | generic and specialized tool cards render with status and summaries | DOM cards present; no secret args displayed |
+| CONS-11 | Completed by B-CONS-11-A..D above | SSE tool-call frames | generic and specialized tool cards render with status and summaries | DOM cards present; no secret args displayed |
 | CONS-12 | `npm --prefix web run build` plus ask_user browser probe | pending question frame and answer endpoint | options/free text submit resumes run | final assistant reply appears after answer |
 | CONS-13 | `npm --prefix web run build` plus attachment/audio/dictation probes | fake audio URL, test PDF upload, browser speech mock | audio control plays URL; source chip sends source_id; dictated text enters composer | DOM/API assertions pass |
 

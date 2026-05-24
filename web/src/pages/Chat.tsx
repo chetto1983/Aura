@@ -10,6 +10,8 @@ import {
 } from '@assistant-ui/react';
 import { ArrowUp, Bot, MessageCircle, Plus } from 'lucide-react';
 import { Markdown } from '@/components/Markdown';
+import { AuraToolUIRegistrations } from '@/components/chat/AuraToolUIRegistrations';
+import { ToolCallComponent } from '@/components/chat/ToolCallComponent';
 import { useLocale } from '@/hooks/useLocale';
 import { useAuraAssistantRuntime, useAuraChatThreadID } from '@/lib/assistant-runtime';
 import { cn } from '@/lib/utils';
@@ -21,6 +23,7 @@ export default function ChatPage() {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
+      <AuraToolUIRegistrations />
       <div className="flex h-full min-h-0 bg-background">
         <ThreadRail onNewThread={startNewThread} />
         <section className="flex min-w-0 flex-1 flex-col">
@@ -149,7 +152,13 @@ function AssistantMessage() {
         <Bot className="size-4" />
       </div>
       <div className="min-w-0 max-w-[80%] rounded-md border bg-card px-4 py-2.5 text-sm">
-        <MessagePrimitive.Parts components={{ Text: AssistantText }} />
+        <MessagePrimitive.Parts>
+          {({ part }) => {
+            if (part.type === 'text') return <AssistantText />;
+            if (part.type === 'tool-call') return part.toolUI ?? <ToolCallComponent {...part} />;
+            return null;
+          }}
+        </MessagePrimitive.Parts>
         <MessagePrimitive.Error>
           <div className="mt-2 text-destructive">{t('chat.error')}</div>
         </MessagePrimitive.Error>

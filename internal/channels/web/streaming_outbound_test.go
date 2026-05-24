@@ -112,7 +112,7 @@ func TestStreamRouterEmitsToolFrames(t *testing.T) {
 			RunID:    "run-tools",
 			ThreadID: "web:alice:tools",
 			Type:     chat.EventToolStart,
-			Payload:  map[string]any{"tool": "search", "tool_call_id": "call-1"},
+			Payload:  map[string]any{"tool": "search", "tool_call_id": "call-1", "arg_keys": []string{"query", "api_key"}},
 		},
 		{
 			RunID:    "run-tools",
@@ -130,10 +130,15 @@ func TestStreamRouterEmitsToolFrames(t *testing.T) {
 
 	frames := parseUIMessageFrames(t, buf.String())
 	assertFrameType(t, frames, 1, "tool-call-start")
-	assertFrameType(t, frames, 2, "tool-call-end")
-	assertFrameType(t, frames, 3, "tool-result")
-	if frames[3]["toolCallId"] != "call-1" {
-		t.Fatalf("toolCallId = %v", frames[3]["toolCallId"])
+	assertFrameType(t, frames, 2, "tool-call-delta")
+	assertFrameType(t, frames, 3, "tool-call-end")
+	assertFrameType(t, frames, 4, "tool-result")
+	argsText, _ := frames[2]["argsText"].(string)
+	if strings.Contains(argsText, "secret") || !strings.Contains(argsText, "[redacted]") {
+		t.Fatalf("tool-call-delta argsText = %q, want only redacted args", argsText)
+	}
+	if frames[4]["toolCallId"] != "call-1" {
+		t.Fatalf("toolCallId = %v", frames[4]["toolCallId"])
 	}
 }
 
