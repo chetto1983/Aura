@@ -103,6 +103,12 @@ func (t *WebTool) Parameters() map[string]any {
 }
 
 func (t *WebTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	// Auto-recover when the model used an action name as a param key,
+	// e.g. web({"search":"X"}) -> web({"action":"search","query":"X"}).
+	// Observed live 2026-05-24 turn #158; saves a full retry round.
+	if rewritten, ok := RewriteVerbKeyAsAction(args, webValidActions, webActionHints); ok {
+		args = rewritten
+	}
 	action := strings.TrimSpace(stringArg(args, "action"))
 	switch action {
 	case "search":

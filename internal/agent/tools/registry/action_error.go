@@ -43,6 +43,53 @@ func GuessActionFromArgs(supplied map[string]any, hints []ActionHint, fallback s
 	return best
 }
 
+// RewriteVerbKeyAsAction salvages the common LLM mistake of using an action
+// enum value as a parameter key, e.g. `web({"search":"hello"})` instead of
+// `web({"action":"search","query":"hello"})`. When supplied has a string
+// value under a key that matches a valid action, and that action has exactly
+// ONE required key, we set action + rename the verb key to the required
+// param name. Returns the new args map and true when a rewrite happened.
+//
+// Observed live 2026-05-24 Telegram turn #158 (web tool); the model
+// emitted the action name as a param key and the legacy ActionRequiredError
+// retry hint preserved the misnamed key, sending the model into a second
+// failure round.
+func RewriteVerbKeyAsAction(supplied map[string]any, validActions []string, hints []ActionHint) (map[string]any, bool) {
+	if _, hasAction := supplied["action"]; hasAction {
+		return supplied, false
+	}
+	for _, action := range validActions {
+		val, isString := supplied[action].(string)
+		if !isString || strings.TrimSpace(val) == "" {
+			continue
+		}
+		var requiredKey string
+		for _, hint := range hints {
+			if hint.Name != action {
+				continue
+			}
+			if len(hint.RequiredKeys) != 1 {
+				return supplied, false // ambiguous — needs explicit rewrite path
+			}
+			requiredKey = hint.RequiredKeys[0]
+		}
+		if requiredKey == "" {
+			return supplied, false
+		}
+		out := make(map[string]any, len(supplied)+1)
+		for k, v := range supplied {
+			if k == action {
+				continue
+			}
+			out[k] = v
+		}
+		out["action"] = action
+		out[requiredKey] = val
+		return out, true
+	}
+	return supplied, false
+}
+
 // ActionRequiredError builds a self-correcting error for action-enum
 // tools (file, source, task, web, dev_tool, doc). Tells the model:
 //   1. Which actions are valid
@@ -58,12 +105,31 @@ func GuessActionFromArgs(supplied map[string]any, hints []ActionHint, fallback s
 func ActionRequiredError(toolName string, validActions []string, supplied map[string]any, hints []ActionHint, fallbackAction string) error {
 	guess := GuessActionFromArgs(supplied, hints, fallbackAction)
 
-	// Build the retry example: supplied args + the guessed action.
+	// Build the retry example. Two passes:
+	//   1. Drop "action" (we add the guessed one ourselves).
+	//   2. When a supplied key matches a valid action name and that action
+	//      has a single required param, rewrite key to param. Otherwise the
+	//      retry hint would re-suggest the broken shape (observed live
+	//      2026-05-24: web({"search":"X"}) -> retry hint re-included
+	//      "search":"X" instead of "query":"X").
+	guessRequiredKey := ""
+	for _, hint := range hints {
+		if hint.Name == guess && len(hint.RequiredKeys) == 1 {
+			guessRequiredKey = hint.RequiredKeys[0]
+		}
+	}
 	example := map[string]any{"action": guess}
 	for k, v := range supplied {
-		if k != "action" {
-			example[k] = v
+		if k == "action" {
+			continue
 		}
+		if guessRequiredKey != "" && k == guess {
+			if s, ok := v.(string); ok {
+				example[guessRequiredKey] = s
+				continue
+			}
+		}
+		example[k] = v
 	}
 	exJSON, _ := json.Marshal(example)
 

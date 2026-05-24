@@ -111,6 +111,9 @@ func (t *AgentNoteTool) Execute(ctx context.Context, args map[string]any) (strin
 	if t == nil {
 		return "", errors.New("agent_note: tool unavailable")
 	}
+	if rewritten, ok := RewriteVerbKeyAsAction(args, agentNoteActions, agentNoteHints); ok {
+		args = rewritten
+	}
 	action := stringArg(args, "action")
 	if action == "" {
 		return "", ActionRequiredError("agent_note", agentNoteActions, args, agentNoteHints, "get")

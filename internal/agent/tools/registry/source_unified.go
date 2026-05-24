@@ -198,6 +198,9 @@ func (t *SourceTool) Parameters() map[string]any {
 }
 
 func (t *SourceTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if rewritten, ok := RewriteVerbKeyAsAction(args, sourceValidActions, sourceActionHints); ok {
+		args = rewritten
+	}
 	action := strings.TrimSpace(stringArg(args, "action"))
 	switch action {
 	case "list":

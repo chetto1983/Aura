@@ -181,6 +181,9 @@ func (t *ProposePatchTool) Execute(ctx context.Context, args map[string]any) (st
 	if t == nil {
 		return "", errors.New("propose_patch: tool unavailable")
 	}
+	if rewritten, ok := RewriteVerbKeyAsAction(args, proposePatchActions, proposePatchHints); ok {
+		args = rewritten
+	}
 	action := stringArg(args, "action")
 	if action == "" {
 		return "", ActionRequiredError("propose_patch", proposePatchActions, args, proposePatchHints, "wiki")

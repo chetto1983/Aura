@@ -90,6 +90,109 @@ func TestClosestActionMatch_ThresholdRespected(t *testing.T) {
 	}
 }
 
+func TestRewriteVerbKeyAsAction(t *testing.T) {
+	webHints := []ActionHint{
+		{Name: "fetch", RequiredKeys: []string{"url"}},
+		{Name: "search", RequiredKeys: []string{"query"}},
+	}
+	webActions := []string{"search", "fetch"}
+	cases := []struct {
+		name     string
+		supplied map[string]any
+		want     map[string]any
+		didWrite bool
+	}{
+		{
+			"web verb-key search rewritten to action+query",
+			map[string]any{"search": "latest news today"},
+			map[string]any{"action": "search", "query": "latest news today"},
+			true,
+		},
+		{
+			"web verb-key fetch rewritten to action+url",
+			map[string]any{"fetch": "https://example.com"},
+			map[string]any{"action": "fetch", "url": "https://example.com"},
+			true,
+		},
+		{
+			"already has action — left alone",
+			map[string]any{"action": "search", "query": "x"},
+			map[string]any{"action": "search", "query": "x"},
+			false,
+		},
+		{
+			"no verb key — left alone",
+			map[string]any{"query": "x"},
+			map[string]any{"query": "x"},
+			false,
+		},
+		{
+			"verb key with non-string value — left alone",
+			map[string]any{"search": 42},
+			map[string]any{"search": 42},
+			false,
+		},
+		{
+			"verb key with multi-required action left alone",
+			map[string]any{"save": "script body"},
+			map[string]any{"save": "script body"},
+			false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			actions := webActions
+			hints := webHints
+			if _, ok := tc.supplied["save"]; ok {
+				actions = []string{"list", "read", "save"}
+				hints = []ActionHint{{Name: "save", RequiredKeys: []string{"name", "description", "code"}}}
+			}
+			out, ok := RewriteVerbKeyAsAction(tc.supplied, actions, hints)
+			if ok != tc.didWrite {
+				t.Fatalf("rewrite signal = %v, want %v", ok, tc.didWrite)
+			}
+			if len(out) != len(tc.want) {
+				t.Fatalf("output size %d, want %d: %v", len(out), len(tc.want), out)
+			}
+			for k, v := range tc.want {
+				got, present := out[k]
+				if !present {
+					t.Fatalf("missing key %q in %v", k, out)
+				}
+				if got != v {
+					t.Fatalf("key %q = %v, want %v", k, got, v)
+				}
+			}
+		})
+	}
+}
+
+func TestActionRequiredError_RenamesVerbKey(t *testing.T) {
+	// Live regression 2026-05-24 turn #158: model called web with the
+	// action name used as a param key. Old retry hint preserved the bad
+	// key; the new one renames it to the action's required param.
+	webHints := []ActionHint{
+		{Name: "fetch", RequiredKeys: []string{"url"}},
+		{Name: "search", RequiredKeys: []string{"query"}},
+	}
+	err := ActionRequiredError("web",
+		[]string{"search", "fetch"},
+		map[string]any{"search": "latest news today"},
+		webHints,
+		"search",
+	)
+	msg := err.Error()
+	if !strings.Contains(msg, `"action":"search"`) {
+		t.Fatalf("retry hint missing action: %s", msg)
+	}
+	if !strings.Contains(msg, `"query":"latest news today"`) {
+		t.Fatalf("retry hint did not rename verb key 'search' → 'query': %s", msg)
+	}
+	if strings.Contains(msg, `"search":"latest news today"`) {
+		t.Fatalf("retry hint preserved broken verb key 'search': %s", msg)
+	}
+}
+
 func TestActionRequiredError_NoSuppliedArgs(t *testing.T) {
 	err := ActionRequiredError("source",
 		[]string{"list", "read", "store"},

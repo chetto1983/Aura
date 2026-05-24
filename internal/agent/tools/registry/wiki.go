@@ -177,6 +177,9 @@ func (t *WikiPageTool) Parameters() map[string]any {
 // argument validation happens inside each handler to keep the
 // top-level Execute readable.
 func (t *WikiPageTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if rewritten, ok := RewriteVerbKeyAsAction(args, wikiValidActions, wikiActionHints); ok {
+		args = rewritten
+	}
 	action := strings.TrimSpace(stringArg(args, "action"))
 	switch action {
 	case "create":

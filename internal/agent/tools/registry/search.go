@@ -131,6 +131,9 @@ var (
 )
 
 func (t *SearchTool) Execute(ctx context.Context, args map[string]any) (string, error) {
+	if rewritten, ok := RewriteVerbKeyAsAction(args, searchToolValidActions, searchToolActionHints); ok {
+		args = rewritten
+	}
 	action := strings.TrimSpace(stringArg(args, "action"))
 	switch action {
 	case "search":
