@@ -161,8 +161,8 @@
         "Single atomic commit prefix: feat(web/ui): mount assistant-ui Thread on /chat via useDataStreamRuntime (US-CONS-09)"
       ],
       "priority": 8,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-07 (UI Message Stream protocol on backend). FIRST Wave B story — proves the runtime+backend handshake without tool/voice complexity. Reference: D:/tmp/assistant-ui/examples/with-assistant-transport/ + packages/react-data-stream/README.md. NPM lockfile cross-platform: per memory feedback_npm_lock_cross_platform_drift, regen lock via docker node:22 if Windows-local install drifts."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Added @assistant-ui/react + @assistant-ui/react-data-stream, mounted /chat behind the existing dashboard auth gate, added web/src/lib/assistant-runtime.ts for UI Message Stream runtime wiring, and embedded the rebuilt Vite dist. Runtime reads/generates thread_id, writes it into the URL, sends it as body.thread_id, and uses the existing dashboard bearer token as Authorization. Browser QA used local assistant-ui/Vite with an intercepted UI Message Stream fixture: composer submit sent Authorization=Bearer codex-browser-qa, request body thread_id=web_*, latest message role=user, and rendered the streamed assistant delta. Desktop/mobile screenshots are in D:/tmp/aura-chat-us-cons-09*. Bundle delta documented: main index 533713 -> 534851 bytes (+1138); new lazy Chat chunk 208050 bytes / 57.36 KB gzip. Markdown/tool/ask_user/audio UI stay in US-CONS-10..13."
     },
     {
       "id": "US-CONS-10",

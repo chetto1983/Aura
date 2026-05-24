@@ -21,6 +21,8 @@
     "e2e:report": "playwright show-report"
   },
   "dependencies": {
+    "@assistant-ui/react": "^0.14.7",
+    "@assistant-ui/react-data-stream": "^0.12.13",
     "@fontsource-variable/geist": "^5.2.8",
     "@svar-ui/react-filemanager": "^2.5.0",
     "@tiptap/extension-link": "^3.22.4",

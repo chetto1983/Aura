@@ -321,6 +321,44 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups`; LOC gate remains below 600 for production web chat and primary web chat test file.
 - **PRD gate:** self-audited slice QA before the US-CONS-08 atomic commit.
 
+## US-CONS-09 - assistant-ui Runtime Mount
+
+### B-CONS-09-A: Frontend Build, i18n, And Bundle Delta
+
+- **Command:** `npm --prefix web run build`; `npm --prefix web run i18n:check`; `npm --prefix web run lint`
+- **Fixture:** Vite production build with `@assistant-ui/react`, `@assistant-ui/react-data-stream`, lazy `/chat` route, and embedded output under `internal/api/dist`.
+- **Artifact:** `internal/api/dist/index.html`, hashed assets, i18n audit output, ESLint output, and bundle sizes.
+- **Ground truth:** `/chat` builds as a lazy chunk; locale keys are present in both `en.json` and `it.json`; no ESLint errors.
+- **Pass threshold:** all commands exit 0; main bundle delta is bounded to `533713 -> 534851` bytes (+1138), and the new lazy `Chat` chunk is `208050` bytes minified / `57.36 KB` gzip.
+- **PRD gate:** assistant-ui is adopted without loading the chat runtime into the dashboard home route.
+
+### B-CONS-09-B: Browser Runtime Contract
+
+- **Command:** Playwright probe against local Vite `/chat` with `localStorage.aura_token='codex-browser-qa'` and intercepted `POST /api/chat/stream` returning UI Message Stream frames.
+- **Fixture:** desktop browser, assistant-ui `Thread` + `Composer`, request interception for `start`, `text-start`, `text-delta`, `text-end`, `finish`, and `[DONE]`.
+- **Artifact:** `D:/tmp/aura-chat-us-cons-09-stream.png` and captured request headers/body.
+- **Ground truth:** composer submit sends `Authorization: Bearer codex-browser-qa`; request body contains `thread_id` starting with `web_`; latest message role is `user`; streamed assistant delta `Ciao dal probe` renders in the Thread.
+- **Pass threshold:** exact header/body assertions pass and the assistant text is visible in the DOM before screenshot.
+- **PRD gate:** frontend runtime and backend stream schema handshake through assistant-ui's current `useDataStreamRuntime`.
+
+### B-CONS-09-C: Responsive Route Probe
+
+- **Command:** Playwright desktop + mobile render probes against local Vite `/chat`.
+- **Fixture:** existing dashboard auth gate with seeded bearer token and no live model request.
+- **Artifact:** `D:/tmp/aura-chat-us-cons-09.png` and `D:/tmp/aura-chat-us-cons-09-mobile.png`.
+- **Ground truth:** `/chat` renders inside the authenticated Shell, writes `thread_id` to the URL, shows the composer, and avoids desktop/mobile overlap.
+- **Pass threshold:** `main h1` is `Chat`, composer placeholder exists, URL includes `thread_id`, mobile composer width is at least 240px, and mobile header height is at least 40px.
+- **PRD gate:** the route is usable as Aura's first web chat surface before richer message components land.
+
+### B-CONS-09-D: Backend Contract And Repo QA
+
+- **Command:** `go test ./internal/api -count=1`; `go test ./cmd/aura -run "TestWebChatStreamUsesLLMStreamAndUIMessageFrames|TestWebChatAskUserPendingAndAnswerResume" -count=1`; `go test ./internal/api/... -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/api --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 web/src/pages/Chat.tsx web/src/lib/assistant-runtime.ts web/src/App.tsx web/src/components/Sidebar.tsx web/src/components/Shell.tsx`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** existing Go API/Hub stream tests plus the rebuilt embedded dist.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** backend still emits UI Message Stream frames and accepts assistant-ui request bodies; embedded assets compile; full Go suite remains green after new frontend assets.
+- **Pass threshold:** all commands exit 0. `dupl` reports `Found total 0 clone groups`; it also emits Go-parser warnings for TS/TSX inputs, so frontend duplication/quality is enforced by `npm --prefix web run lint` and build in B-CONS-09-A.
+- **PRD gate:** self-audited slice QA before the US-CONS-09 atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -333,7 +371,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-06 | Completed by B-CONS-06-A..C above | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
 | CONS-07 | Completed by B-CONS-07-A..D above | local SSE endpoint, parser fixture, shared Hub streaming service | frames are valid AI SDK UI Message Stream SSE frames; headers include `text/event-stream`, `Cache-Control: no-cache, no-transform`, `X-Accel-Buffering: no`, `x-vercel-ai-ui-message-stream: v1`; shared Hub calls `llm.Stream` | all fixture frames parse; stream terminates with `[DONE]`; buffered `/chat` tests still pass |
 | CONS-08 | Completed by B-CONS-08-A..D above | fake TTS/audio cache, fake ask_user tool, shared Hub with SQLite run store | `audio_url` serves OGG bytes; pending question is exposed in buffered/SSE modes; answer resumes the same durable question thread | audio >1024 bytes; question row waiting->answered; `question_answered` event persisted |
-| CONS-09 | `npm --prefix web run build` plus browser probe | assistant-ui `/chat` route against local backend | text-only stream renders in Thread and composer can send | visible streamed assistant message |
+| CONS-09 | Completed by B-CONS-09-A..D above | assistant-ui `/chat` route, intercepted UI Message Stream, backend stream tests | text-only stream renders in Thread; composer request sends bearer auth, `thread_id`, and latest user message | visible streamed assistant message plus backend stream tests green |
 | CONS-10 | `npm --prefix web run build` plus markdown fixture probe | markdown/code/wiki-link assistant message | GFM, code block, and `[[slug]]` render correctly | DOM assertions pass |
 | CONS-11 | `npm --prefix web run build` plus tool-call fixture probe | SSE tool-call frames | generic and specialized tool cards render with status and summaries | DOM cards present; no secret args displayed |
 | CONS-12 | `npm --prefix web run build` plus ask_user browser probe | pending question frame and answer endpoint | options/free text submit resumes run | final assistant reply appears after answer |

@@ -97,6 +97,7 @@ function useKeyboardShortcuts({ onShowHelp }: { onShowHelp: () => void }) {
           case 'v': dest = '/conversations'; break;
           case 'u': dest = '/summaries'; break;
           case 'x': dest = '/maintenance'; break;
+          case 'c': dest = '/chat'; break;
         }
         pendingG = false;
         if (timer) { clearTimeout(timer); timer = null; }
@@ -159,6 +160,7 @@ function ShortcutHelpDialog({
             <Row keys={['g', 'v']} desc={t('sidebar.conversations')} />
             <Row keys={['g', 'u']} desc={t('sidebar.summaries')} />
             <Row keys={['g', 'x']} desc={t('sidebar.maintenance')} />
+            <Row keys={['g', 'c']} desc={t('sidebar.chat')} />
           </tbody>
         </table>
         <div className="mt-4 flex justify-end">

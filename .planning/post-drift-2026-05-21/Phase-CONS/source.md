@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-09. CONS-02..08 are committed; next mount the assistant-ui frontend on top of the verified UI Message Stream backend and web voice/ask_user contracts.
+**Current slice:** US-CONS-10. CONS-02..09 are committed; next add markdown/code/wiki-link rendering on top of the mounted assistant-ui Thread.
 
 ## Objective
 
@@ -140,6 +140,17 @@ Checked 2026-05-24:
 - Resume web answers through `POST /api/chat/answer/{question_id}` and the shared Hub; durable ground truth remains `chat_questions` plus `question_answered` run events.
 - Support browser close/reopen by looking up `Hub.PendingQuestion` and falling back to durable question options/kind even when the in-memory pending tool call is missing.
 
+## Adopted For US-CONS-09
+
+- Add only `@assistant-ui/react` and `@assistant-ui/react-data-stream`; Tailwind already exists in Aura web, so the package install should not introduce a second styling stack.
+- Use `useDataStreamRuntime` with the default current `ui-message-stream` protocol. Do not opt into legacy `data-stream`.
+- Keep auth aligned with existing dashboard `api.ts`: pass `Authorization: Bearer <token>` from `web/src/lib/auth.ts` and keep the existing `/login` redirect gate.
+- Store the web chat thread as a URL `thread_id` when present, otherwise generate `web_<uuid>` and write it back with `history.replaceState`.
+- Send Aura's durable thread ID through `body.thread_id`; assistant-ui's internal thread list remains a UI concern.
+- Mount `/chat` as a lazy dashboard route and keep the Chat chunk separate from the main dashboard bundle.
+- Verify the frontend runtime with a Playwright browser probe that intercepts `/api/chat/stream` and returns the same UI Message Stream frames produced by the Go backend tests.
+- Keep markdown/code/wiki-link rendering, tool-call cards, ask_user cards, audio playback, attachments, and dictation out of this slice; those are US-CONS-10..13.
+
 ## Rejected For US-CONS-02
 
 - No single Hub change; that is US-CONS-05.
@@ -158,6 +169,12 @@ Checked 2026-05-24:
 - Do not persist synthesized audio in SQLite or the wiki/source stores. Audio cache deletion must only break playback of the temporary URL, not Aura's belief about the conversation.
 - Do not duplicate Telegram ask_user parsing in web; the channel-neutral helper owns option display and numeric answer parsing.
 - Do not add assistant-ui UI cards in this slice; backend `pending_question`/`audio_url` contracts unblock CONS-12/13.
+
+## Rejected For US-CONS-09
+
+- Do not add `@assistant-ui/styles` or a prebuilt assistant-ui theme. Aura owns visual density, shell navigation, and design tokens.
+- Do not pass auth through query params. The local `D:/tmp/openhuman` event-token pattern applies to EventSource-style SSE without headers, while Aura's assistant-ui runtime uses `fetch` and can send bearer headers.
+- Do not start live LLM/browser smoke as the completion benchmark. The slice benchmark uses a browser UI Message Stream fixture plus Go backend stream contract tests; live provider coverage remains a later integration gate when credentials/services are available.
 
 ## Open Questions Carried Forward
 

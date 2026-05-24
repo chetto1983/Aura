@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, NavLink } from 'react-router-dom';
 import { toast } from 'sonner';
-import { LayoutDashboard, BookText, Network, Inbox, Calendar, Bot, Sparkles, Plug, ShieldAlert, ShieldCheck, MessagesSquare, FileCheck, Wrench, Archive, FolderTree, Settings as SettingsIcon, Sun, Moon, Contrast, LogOut } from 'lucide-react';
+import { LayoutDashboard, BookText, Network, Inbox, Calendar, Bot, Sparkles, Plug, ShieldAlert, ShieldCheck, MessagesSquare, FileCheck, Wrench, Archive, FolderTree, MessageCircle, Settings as SettingsIcon, Sun, Moon, Contrast, LogOut } from 'lucide-react';
 import { useAppTheme, type AppTheme } from '@/hooks/useAppTheme';
 import { useLocale } from '@/hooks/useLocale';
 import { api } from '@/api';
@@ -23,6 +23,7 @@ const ITEMS = [
   { to: '/maintenance', icon: Wrench },
   { to: '/backups', icon: Archive },
   { to: '/files', icon: FolderTree },
+  { to: '/chat', icon: MessageCircle },
   { to: '/settings', icon: SettingsIcon },
 ];
 
@@ -42,6 +43,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/maintenance': 'sidebar.maintenance',
   '/backups': 'sidebar.backups',
   '/files': 'sidebar.files',
+  '/chat': 'sidebar.chat',
   '/settings': 'sidebar.settings',
 };
 
