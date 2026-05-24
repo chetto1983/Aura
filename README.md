@@ -28,7 +28,7 @@ self-hosted Docker stack.
 - 🔐 **Your data stays yours** — wiki on disk, SQLite local, no cloud storage required.
 - 💬 **Telegram-native** — your phone is the front door; no separate app to install.
 - 📚 **Self-building knowledge base** — drop a PDF, get an OCR'd Markdown page with `[[wiki-links]]`.
-- 🧠 **Learns from its own mistakes** — operational memory with priority pinning, decay, and a memory-poisoning guard ([Phase-OP+](docs/phase-op-plus-plan-2026-05-19.md)).
+- 🧠 **Learns from its own mistakes** — operational memory with priority pinning, decay, and a memory-poisoning guard.
 - 🛠️ **Pluggable substrate** — MCP servers, skills, prompt overlays, capability gates — extend without forking.
 - 🐳 **One-command install** — `docker compose up -d`. Production hardening profile included.
 
@@ -47,8 +47,8 @@ The default stack starts:
 - `garage-webui`: optional Garage admin UI behind a Compose profile.
 - `aura-llama-embed`: llama.cpp sidecar serving `embeddinggemma-300m` at 256-d MRL.
 - `aura-markitdown`: sidecar that converts docx/xlsx/pptx and 6 other formats to Markdown.
-- `aura-whisper`: whisper.cpp sidecar transcribing Telegram voice memos via `ggml-small.bin` (Phase-MM Wave 2).
-- `aura-pocket-tts`: Kyutai Pocket-TTS sidecar with the Italian Giovanni voice (Phase-MM Wave 3, INT8, ~200ms first-chunk; default `AURA_TTS_ENABLED=false`).
+- `aura-whisper`: whisper.cpp sidecar transcribing Telegram voice memos via `ggml-small.bin`.
+- `aura-pocket-tts`: Kyutai Pocket-TTS sidecar with the Italian Giovanni voice (INT8, ~200ms first-chunk; default `AURA_TTS_ENABLED=false`).
 - `aura-init-models`: one-shot init container that fetches the embedding GGUF + Whisper GGML with SHA-256 verification before the dependent sidecars start. Pocket-TTS downloads its own models at runtime.
 
 Primary user data stays in visible folders beside the Compose file:
@@ -61,7 +61,7 @@ Primary user data stays in visible folders beside the Compose file:
 
 Code execution runs Python directly inside the Aura container.
 
-## Architecture (current state — post 2026-05-17)
+## Architecture
 
 Five channels feed one Hub. The Hub routes inbound messages to a single
 agent loop and broadcasts outbound events back to whichever channel is
@@ -161,139 +161,32 @@ flowchart TB
 [`docs/MEMORY-VS-STORAGE.md`](docs/MEMORY-VS-STORAGE.md) for the full
 classification of every `internal/` subdir.
 
-## Roadmap
+## Multimodal
 
-Aura's PRD lives at [`PRD.md`](PRD.md). The 2026-05-22 release **v0.3.0**
-closed three back-to-back substrate milestones (174 commits since v0.2.0):
-Step 1.LAT (latency), Phase-WIKI-FIX (retrieval substrate), and Phase-TOOL
-(tool surface + kill-the-RAG). Since then, Phase-BUG, Phase-MODERNIZE,
-Phase-CACHE, Phase-DEFER, Phase-OUT, and Phase-GRAPH-FULL have closed.
-The current post-drift planning pointer lives in
-[`.planning/post-drift-2026-05-21/INDEX.md`](.planning/post-drift-2026-05-21/INDEX.md).
+Aura sees and speaks. Voice memos transcribe locally via Whisper, replies
+synthesize via Kyutai Pocket-TTS (Italian Giovanni voice, ~200ms first-chunk
+streaming, per-chat opt-in), photos route through Anthropic Sonnet 4.6 vision,
+and `generate_image` lets the agent create PNGs via Flux.1-schnell when asked.
 
-```mermaid
-flowchart LR
-  V03[v0.3.0 - 2026-05-22<br/>Step 1.LAT + WIKI-FIX + TOOL<br/>DONE 25 stories] --> BUG[Phase-BUG<br/>3 stories<br/>DONE 2026-05-22]
-  BUG --> MOD[Phase-MODERNIZE<br/>INFRA + god-file splits<br/>DONE 2026-05-23]
-  MOD --> CACHE[Phase-CACHE<br/>prompt cache + end_turn<br/>DONE 2026-05-23]
-  CACHE --> DEFER[Phase-DEFER<br/>deferred tool manifest<br/>DONE 2026-05-23]
-  DEFER --> OUT[Phase-OUT<br/>output discipline + budgets<br/>DONE 2026-05-23]
-  OUT --> GRAPH[Phase-GRAPH-FULL<br/>aliases + dedup + typed edges<br/>DONE 2026-05-23]
-  GRAPH --> CTX[Phase-CTX<br/>context engineering<br/>NEXT planning slice]
-  CTX --> CONS[Phase-CONS<br/>web/telegram 1+1<br/>~3s]
+Defaults:
 
-  style V03 fill:#90ee90,stroke:#009900
-  style BUG fill:#90ee90,stroke:#009900
-  style MOD fill:#90ee90,stroke:#009900
-  style CACHE fill:#90ee90,stroke:#009900
-  style DEFER fill:#90ee90,stroke:#009900
-  style OUT fill:#90ee90,stroke:#009900
-  style GRAPH fill:#90ee90,stroke:#009900
-  style CTX fill:#ffd700,stroke:#cc9900
-  style CONS fill:#d6e9ff,stroke:#0070d0
-```
+- **Audio IN** — whisper.cpp local, baseline `ggml-small.bin` (multilanguage, ~3-7s on a 3s memo); `litus-ai/whisper-small-ita` finetuned model is a swap.
+- **Audio OUT** — Kyutai Pocket-TTS local with Italian Giovanni voice (INT8, ~200ms first-chunk streaming). Per-chat `voice_mode` (off / voice_only / all), default off.
+- **Image IN** — Anthropic Sonnet 4.6 vision via OpenRouter.
+- **Image OUT** — Replicate Flux.1-schnell.
 
-| Phase | Status | Scope | Reference |
-| --- | --- | --- | --- |
-| **v0.3.0 release** | ✅ shipped 2026-05-22 | 174 commits / 25 stories across Step 1.LAT + Phase-WIKI-FIX + Phase-TOOL — see [release notes](https://github.com/chetto1983/Aura/releases/tag/v0.3.0) | tag `v0.3.0` |
-| Phase-MM Wave 1.5 | ✅ done 2026-05-19 | aura-whisper + (later pocket-tts) sidecars + init-models extension | [`docs/phase-mm-audio-spike-2026-05-19.md`](docs/phase-mm-audio-spike-2026-05-19.md) |
-| Phase-MM Wave 2 | ✅ done 2026-05-19 | audio IN E2E: KindAudio + voice handler + whisper client + AfterTranscribeHook | [`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md) |
-| Phase-MM Wave 3 | ✅ done 2026-05-20 | TTS reply via Kyutai Pocket-TTS (Giovanni IT voice, INT8, ~200ms first-chunk); per-chat voice mode | [`docs/phase-mm-synthesis-2026-05-17.md`](docs/phase-mm-synthesis-2026-05-17.md) |
-| Phase-BUG | ✅ done 2026-05-22 | 3 critical bugs shipped (US-BUG-01..03) — `/api/chat` overlay loading wired (commit `13b6926d`), `logging→api` boundary inverted (commit `498893f8`), errcheck-hidden silent JSON/gzip failures propagated (commit `d405e00b`) | [`.planning/post-drift-2026-05-21/Phase-BUG/plan.md`](.planning/post-drift-2026-05-21/Phase-BUG/plan.md) |
-| **Phase-MODERNIZE** | done 2026-05-23 | INFRA gates + god-file splits | [`.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md`](.planning/post-drift-2026-05-21/Phase-MODERNIZE/plan.md) |
-| Phase-CACHE | done 2026-05-23 | provider prompt cache, `end_turn`, empty-reply fallback, untrusted snippet upgrade | [`.planning/post-drift-2026-05-21/Phase-CACHE/plan.md`](.planning/post-drift-2026-05-21/Phase-CACHE/plan.md) |
-| Phase-DEFER | done 2026-05-23 | deferred tool manifest protocol and always-on/deferred split | commits `50f8126e`, `1128aa81`, `e60541f6` |
-| Phase-OUT | done 2026-05-23 | output discipline stack + budget enforcement | [`.planning/post-drift-2026-05-21/Phase-OUT/plan.md`](.planning/post-drift-2026-05-21/Phase-OUT/plan.md) |
-| Phase-GRAPH-FULL | done 2026-05-23 | wiki aliases, alias-aware injection, embedding dedup, typed edges | commits `a410a440`, `6bb76d1a`, `875a50e8`, `5556319b` |
-| **Phase-CTX** | NEXT planning slice | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | [`.planning/post-drift-2026-05-21/Phase-CTX/plan.md`](.planning/post-drift-2026-05-21/Phase-CTX/plan.md) |
-| Phase-CONS | staged after CTX | Web <-> Telegram 1+1 consolidation with substantive web feature parity | [`.planning/post-drift-2026-05-21/Phase-CONS/plan.md`](.planning/post-drift-2026-05-21/Phase-CONS/plan.md) |
-| Phase-U | planned | Plugin manifest + loader + extract personality bundle + sample plugin | sketched in `PRD.md` section 7.4 |
-| Phase 8 | ⚪ gated on workload | Multi-agent substrate (planner + critic + DAG) anchored to a concrete workload | de-scoped pending re-open |
+All providers are operator-overrideable; local fallbacks (Qwen2.5-VL, Stable Diffusion) become opt-in plugins.
 
-## Multimodal target (Phase-MM)
+## Plugin architecture
 
-Phase-MM adds audio + image flows on top of the same substrate. Only 3 ARCH
-stories (Wave 1) actually change shared code; the rest are additive paths
-that reuse the existing source store + tool registry.
+Aura's substrate is domain-neutral. Personality — overlay prompts, wiki,
+MCP wiring, tool curation, capability declarations — lives in installable
+bundles. The same Aura binary becomes a different assistant depending on
+which bundle is loaded.
 
 ```mermaid
 flowchart TB
-  subgraph TGV["Telegram (voice/photo)"]
-    VOICE[voice_handler<br/>NEW MM-AUDIO01]
-    PHOTO[photos.go<br/>NEW MM-IMAGE01]
-  end
-
-  subgraph SUB["Substrate change Wave 1"]
-    ATT[InboundMessage.Attachments<br/>ARCH01 populated]
-    MULTI[llm.Message.MultipartContent<br/>ARCH02 new field]
-    KIND[source.Kind +audio +image<br/>ARCH03 enum extension]
-  end
-
-  subgraph SRC["Source store (existing)"]
-    AUDIO[(KindAudio<br/>raw + transcript.txt)]
-    IMG[(KindImage<br/>raw + vision.md)]
-  end
-
-  subgraph WSP["Whisper sidecar"]
-    WHISP[whisper.cpp whisper-small-ita<br/>Italian finetuned · CPU 4 threads<br/>NEW MM-AUDIO02]
-  end
-
-  subgraph LLM2["LLM (Phase-MM enabled)"]
-    VISION[Sonnet 4.6 vision<br/>via OpenRouter<br/>multipart message]
-  end
-
-  subgraph TTSOUT["Audio OUT (operator-toggle)"]
-    PIPER[Piper TTS<br/>piper_italiano<br/>NEW MM-AUDIO03]
-    OGG[ffmpeg → .ogg/opus]
-  end
-
-  subgraph GEN["Image OUT"]
-    REPL[Replicate Flux.1-schnell<br/>generate_image tool<br/>NEW MM-IMAGE02]
-  end
-
-  VOICE --> ATT
-  PHOTO --> ATT
-  ATT --> AUDIO
-  ATT --> IMG
-  AUDIO --> WHISP
-  WHISP -->|transcript| MULTI
-  IMG -->|image_url| MULTI
-  MULTI --> VISION
-  VISION -->|text reply| PIPER
-  PIPER --> OGG
-  OGG -.->|TTS enabled| TGV
-  REPL -.->|generate tool call| IMG
-
-  style ATT fill:#ffe4e1,stroke:#cc0000
-  style MULTI fill:#ffe4e1,stroke:#cc0000
-  style KIND fill:#ffe4e1,stroke:#cc0000
-```
-
-**Red = substrate Wave 1 stories.** Wave 1.5 (sidecar substrate) + Wave 2
-(audio IN E2E) shipped 2026-05-19 — see
-[`docs/phase-mm-audio-plan-2026-05-17.md`](docs/phase-mm-audio-plan-2026-05-17.md)
-for the post-ship status block.
-
-Defaults shipped:
-
-- **Audio IN ✅** whisper.cpp local with baseline `ggml-small.bin` (multilanguage, 487 MB, CPU 4 threads, ~3-7s on a 3s memo). `litus-ai/whisper-small-ita` finetuned model is an env-var swap when wanted
-- **Audio OUT ✅** Kyutai Pocket-TTS local with Giovanni IT voice (INT8, RTF 0.61, ~200ms first-chunk streaming). Per-chat `voice_mode` (off / voice_only / all) — default OFF, never auto-triggered. Wave 3 closed 2026-05-20
-- **Image IN (planned)** Anthropic Sonnet 4.6 vision via OpenRouter
-- **Image OUT (planned)** Replicate Flux.1-schnell
-
-All API providers are operator-overrideable; local fallbacks (Qwen2.5-VL,
-Stable Diffusion) become plugin-shaped opt-ins after Phase-U.
-
-## Plugin layout target (Phase-U)
-
-Aura's substrate is genuinely domain-agnostic. Phase-U decouples
-personality (overlays + wiki + MCP wiring + tool curation + capability
-declarations) into installable bundles. The same Aura binary can become a
-different assistant depending on which plugin is loaded.
-
-```mermaid
-flowchart TB
-  subgraph Substrate["Substrate (unchanged from Phase-MM)"]
+  subgraph Substrate
     HUB[Chat Hub]
     LOOP[Agent Loop]
     TOOLS[Tool Registry]
@@ -302,25 +195,25 @@ flowchart TB
     IDENT[Identity + capability gates]
   end
 
-  subgraph Loader["Plugin Loader NEW Phase-U"]
+  subgraph Loader["Plugin Loader"]
     REG[installed_plugins table<br/>SQLite]
     INST[aura plugin install<br/>aura plugin list<br/>aura plugin remove]
     BOOT[Boot scanner<br/>reads manifest + applies]
   end
 
-  subgraph Plugin1["aura-personal default plugin"]
+  subgraph Plugin1["aura-personal default"]
     P1OV[overlays/<br/>SOUL+AGENT+USER+TOOLS.md]
-    P1SK[skills/<br/>Davide skills]
-    P1MCP[mcp.json<br/>Davide MCP servers]
-    P1TOOL[tools curation<br/>memory + wiki + scheduler]
+    P1SK[skills/]
+    P1MCP[mcp.json]
+    P1TOOL[tool curation<br/>memory + wiki + scheduler]
     P1CAP[capabilities<br/>memory.* + tool.*]
   end
 
-  subgraph Plugin2["aura-marketer sample plugin"]
+  subgraph Plugin2["aura-marketer sample"]
     P2OV[overlays/<br/>research persona]
     P2SK[skills/<br/>competitor-report]
     P2MCP[mcp.json<br/>SerpAPI + scraping]
-    P2TOOL[tools curation<br/>web + source + propose_patch]
+    P2TOOL[tool curation<br/>web + source + propose_patch]
     P2CAP[capabilities<br/>web.fetch + source.write]
   end
 
@@ -346,14 +239,8 @@ flowchart TB
   style Loader fill:#fff0e6,stroke:#cc6600
 ```
 
-**Green** = the current Davide deploy extracted as a plugin (no behavior
-change for the operator). **Blue** = a second plugin proving Aura can
-specialize; the substrate doesn't change between them. **Orange** = the
-new plugin loader.
-
-Plugins specialize *which model* (Whisper local vs Groq; Sonnet vs Qwen-VL)
-but never *whether the system sees audio* — that's substrate. See
-[`PRD.md` section 7.4](PRD.md) for the substrate-vs-plugin classification rule.
+Plugins specialize *which model* (Whisper local vs Groq; Sonnet vs Qwen-VL),
+but never *whether the system sees audio* — that part is substrate.
 
 ## Quick Start
 
@@ -458,7 +345,7 @@ The `Docker image` workflow publishes:
 - [Install guide](INSTALL.md)
 - [Container stack](docs/container.md)
 - [Operator runbook](docs/RUNBOOK.md) — cold install, upgrade, restore, secret rotation
-- [Product requirements](PRD.md) - full PRD with phase status checklist and strategic roadmap
+- [Product requirements](PRD.md) — full PRD with module map, contracts, and roadmap
 - [Memory vs Storage](docs/MEMORY-VS-STORAGE.md) — two-layer model + `internal/` subdir classification
-- [Phase-MM synthesis](docs/phase-mm-synthesis-2026-05-17.md) — multimodal planning (9 stories, 3 waves)
-- [Archived evidence](docs/_archive/) - stale QA surfaces and superseded planning evidence kept for provenance
+- [Vision](VISION.md) — the longer-form product story
+- [Archived evidence](docs/_archive/) — superseded planning artifacts kept for provenance
