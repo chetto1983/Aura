@@ -253,7 +253,8 @@ func runOne(ctx context.Context, opts benchOptions, model benchModel, fixture be
 
 	start := time.Now()
 	compressed := fixture.Messages
-	if preTokens >= thresholdTokens {
+	attemptedCompaction := preTokens >= thresholdTokens
+	if attemptedCompaction {
 		compressor := conversation.NewContextCompressor(client, model.ContextWindow)
 		compressed = compressor.Compress(fixture.Messages, preTokens, focusTopic(fixture))
 		result.Compacted = !sameMessages(fixture.Messages, compressed)
@@ -263,6 +264,12 @@ func runOne(ctx context.Context, opts benchOptions, model benchModel, fixture be
 	result.PostTokens = postTokens
 	result.SavingsPct = percentSavings(preTokens, postTokens)
 	result.QualityKeywordRetained = keywordRetained(compressed, fixture.Expected.Keyword)
+	if attemptedCompaction && !result.Compacted {
+		result.Error = "compaction attempted but did not produce a smaller context"
+		result.QualityKeywordRetained = false
+		result.RecommendedThresholdPct = recommendThreshold(preTokens, model.ContextWindow, result.SavingsPct, false)
+		return result
+	}
 	if opts.followup {
 		answer, err := followupAnswer(ctx, client, compressed)
 		if err != nil {
@@ -480,9 +487,9 @@ func newBenchClient(offline bool, modelID, keyword string) (llm.Client, error) {
 	if offline {
 		return &staticBenchClient{keyword: keyword}, nil
 	}
-	key := firstEnv("AURA_LLM_API_KEY", "OPENROUTER_API_KEY")
+	key := firstEnv("AURA_LLM_API_KEY", "LLM_API_KEY", "OPENROUTER_API_KEY", "OPENROUTER_KEY")
 	if key == "" {
-		return nil, errors.New("AURA_LLM_API_KEY or OPENROUTER_API_KEY required for live mode")
+		return nil, errors.New("AURA_LLM_API_KEY, LLM_API_KEY, OPENROUTER_API_KEY, or OPENROUTER_KEY required for live mode")
 	}
 	baseURL := firstEnv("AURA_LLM_BASE_URL", "OPENROUTER_BASE_URL", "LLM_BASE_URL")
 	if baseURL == "" {

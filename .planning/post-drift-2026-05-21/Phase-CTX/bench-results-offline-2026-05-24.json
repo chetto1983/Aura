@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-05-24T12:04:18Z",
+  "generated_at": "2026-05-24T12:11:56Z",
   "mode": "offline",
   "fixture_dir": "internal/conversation/testdata/bench",
   "threshold_pct": 0.5,
@@ -29,12 +29,12 @@
       "model": "deepseek/deepseek-v4-flash",
       "model_context_window": 163840,
       "fixture": "long_session",
-      "pre_tokens": 179982,
+      "pre_tokens": 113438,
       "post_tokens": 273,
       "savings_pct": 99,
-      "latency_ms": 3,
+      "latency_ms": 2,
       "quality_keyword_retained": true,
-      "recommended_threshold_pct": 45,
+      "recommended_threshold_pct": 50,
       "compacted": true
     },
     {
@@ -77,7 +77,7 @@
       "model": "google/gemma-4-26b-a4b-it",
       "model_context_window": 131072,
       "fixture": "long_session",
-      "pre_tokens": 179982,
+      "pre_tokens": 113438,
       "post_tokens": 273,
       "savings_pct": 99,
       "latency_ms": 2,
@@ -125,12 +125,12 @@
       "model": "anthropic/claude-sonnet-4",
       "model_context_window": 200000,
       "fixture": "long_session",
-      "pre_tokens": 179982,
+      "pre_tokens": 113438,
       "post_tokens": 273,
       "savings_pct": 99,
       "latency_ms": 1,
       "quality_keyword_retained": true,
-      "recommended_threshold_pct": 45,
+      "recommended_threshold_pct": 50,
       "compacted": true
     },
     {

@@ -1,6 +1,6 @@
 {
   "name": "long_session",
-  "description": "One hundred mixed turns with a large repeated body to cross every active model threshold.",
+  "description": "One hundred mixed turns with a repeated body sized to cross every active model threshold without oversized live prompts.",
   "expected": {
     "keyword": "ATLAS-99",
     "focus_topic": "Continue the long debug session and preserve ATLAS-99.",
@@ -19,12 +19,12 @@
         {
           "role": "user",
           "content": "Debug turn {{i}} for ATLAS-99: reproduce, inspect, patch, verify, and keep the first premise visible. ",
-          "repeat": 35
+          "repeat": 22
         },
         {
           "role": "assistant",
           "content": "Turn {{i}} result for ATLAS-99: notes collected, no final answer yet, continue from the latest user request. ",
-          "repeat": 35
+          "repeat": 22
         }
       ]
     }

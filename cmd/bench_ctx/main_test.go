@@ -107,6 +107,29 @@ func TestWriteRunCreatesArtifact(t *testing.T) {
 	}
 }
 
+func TestNewBenchClientLiveCredentialEnv(t *testing.T) {
+	for _, key := range []string{
+		"AURA_LLM_API_KEY",
+		"LLM_API_KEY",
+		"OPENROUTER_API_KEY",
+		"OPENROUTER_KEY",
+		"AURA_LLM_BASE_URL",
+		"OPENROUTER_BASE_URL",
+		"LLM_BASE_URL",
+	} {
+		t.Setenv(key, "")
+	}
+	if _, err := newBenchClient(false, "test-model", "KEYWORD"); err == nil {
+		t.Fatal("newBenchClient succeeded without a live key")
+	}
+
+	t.Setenv("LLM_API_KEY", "test-key")
+	t.Setenv("LLM_BASE_URL", "http://127.0.0.1")
+	if client, err := newBenchClient(false, "test-model", "KEYWORD"); err != nil || client == nil {
+		t.Fatalf("newBenchClient with LLM_API_KEY err=%v client=%T", err, client)
+	}
+}
+
 func TestRecommendThreshold(t *testing.T) {
 	tests := []struct {
 		name    string
