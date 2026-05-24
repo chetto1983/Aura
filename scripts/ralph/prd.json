@@ -37,8 +37,8 @@
         "Single atomic commit prefix: refactor(web): collapse webToolExecutor onto agent.ExecuteToolCalls (US-CONS-03)"
       ],
       "priority": 2,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-02. Closes the duplicated tool-execution path between web and telegram."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24 in this slice. cmd/aura/web_chat.go now calls agent.ExecuteToolCalls through agent.ToolExecutorFunc; cmd/aura/web_chat_executor.go was deleted. agent.ExecuteToolCalls gained WithConversationID and WithToolTimeout so web preserves visible tool context and per-tool deadlines while reusing shared attempt recording, TokenJuice, payload summarizer, terminal policy, and ask_user handling. Dedicated tests prove tool_attempt rows, allowed tool names, user_id, conversation_id, run_id propagation, and timeout behavior."
     },
     {
       "id": "US-CONS-04",

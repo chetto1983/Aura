@@ -26,12 +26,12 @@ func initialMessages(task Task) ([]llm.Message, error) {
 	return messages, nil
 }
 
-// cleanToolList trims, lowercases, and dedupes the LLM-or-config-supplied
+// CleanToolList trims, lowercases, and dedupes the LLM-or-config-supplied
 // tool allowlist. Lowercasing is defense-in-depth: tool names in the registry
 // are canonical snake_case, but if a future schema mismatch or operator typo
 // produces "Web_Fetch" the allowlist would otherwise silently miss
 // "web_fetch" emitted by the LLM (F-018).
-func cleanToolList(values []string) []string {
+func CleanToolList(values []string) []string {
 	seen := make(map[string]bool, len(values))
 	out := make([]string, 0, len(values))
 	for _, value := range values {

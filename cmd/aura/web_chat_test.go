@@ -13,7 +13,6 @@ import (
 	"github.com/aura/aura/internal/agent"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/identity"
@@ -185,7 +184,8 @@ func TestHubBackedWebChatRecordsToolAttempts(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := toolregistry.NewRegistry(logger)
-	registry.Register(&webChatContextProbeTool{})
+	probe := &webChatContextProbeTool{}
+	registry.Register(probe)
 	svc, err := newHubBackedWebChatService(
 		&config.Config{LLMModel: "fake-web-chat", AgentLoopMaxSteps: 4},
 		&telegram.Deps{
@@ -206,6 +206,18 @@ func TestHubBackedWebChatRecordsToolAttempts(t *testing.T) {
 	)
 	if _, err := svc.Chat(ctx, "alice", "default", "call the probe"); err != nil {
 		t.Fatalf("Chat: %v", err)
+	}
+	if !slices.Contains(probe.allowed, "context_probe") {
+		t.Fatalf("allowed = %+v, want context_probe visible", probe.allowed)
+	}
+	if probe.userID != "alice" {
+		t.Fatalf("userID = %q, want alice", probe.userID)
+	}
+	if probe.conversationID != "web:alice:default" {
+		t.Fatalf("conversationID = %q, want web:alice:default", probe.conversationID)
+	}
+	if probe.runID == "" {
+		t.Fatal("probe runID is empty")
 	}
 	assertWebChatScalar(t, db, `
 SELECT COUNT(*)
@@ -410,9 +422,10 @@ func (webChatAllowAuthorizer) Authorize(_ context.Context, params identity.Autho
 }
 
 type webChatContextProbeTool struct {
-	allowed []string
-	userID  string
-	runID   string
+	allowed        []string
+	userID         string
+	conversationID string
+	runID          string
 }
 
 func (t *webChatContextProbeTool) Name() string { return "context_probe" }
@@ -423,6 +436,7 @@ func (t *webChatContextProbeTool) Parameters() map[string]any { return map[strin
 func (t *webChatContextProbeTool) Execute(ctx context.Context, _ map[string]any) (string, error) {
 	t.allowed = toolregistry.AllowedToolNamesFromContext(ctx)
 	t.userID = toolregistry.UserIDFromContext(ctx)
+	t.conversationID = toolregistry.ConversationIDFromContext(ctx)
 	t.runID = identity.RunIDFromContext(ctx)
 	return "ok", nil
 }
@@ -436,35 +450,6 @@ func (largeContextProbeTool) Description() string {
 func (largeContextProbeTool) Parameters() map[string]any { return map[string]any{} }
 func (largeContextProbeTool) Execute(context.Context, map[string]any) (string, error) {
 	return strings.Repeat("large-result-payload ", 220), nil
-}
-
-func TestWebToolExecutorCarriesVisibleToolContext(t *testing.T) {
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	registry := toolregistry.NewRegistry(logger)
-	probe := &webChatContextProbeTool{}
-	registry.Register(probe)
-	state := conversation.NewContext(conversation.Config{})
-	exec := &webToolExecutor{
-		tools:     registry,
-		state:     state,
-		logger:    logger,
-		allowlist: []string{"context_probe", "other_visible"},
-		userID:    "alice",
-	}
-	ctx := identity.WithActorID(
-		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
-		identity.TelegramSessionActorID("alice"),
-	)
-	summary := exec.ExecuteToolCalls(ctx, []llm.ToolCall{{ID: "call-1", Name: "context_probe"}})
-	if summary.Results["call-1"] == "" {
-		t.Fatalf("summary = %+v", summary)
-	}
-	if !slices.Contains(probe.allowed, "context_probe") || !slices.Contains(probe.allowed, "other_visible") {
-		t.Fatalf("allowed = %+v", probe.allowed)
-	}
-	if probe.userID != "alice" {
-		t.Fatalf("userID = %q, want alice", probe.userID)
-	}
 }
 
 func TestExtractLastTextResponseArgUsesNewestNonEmptyCall(t *testing.T) {

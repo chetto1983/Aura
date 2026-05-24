@@ -115,7 +115,7 @@ goroutine receives it so a tool that mutates its input map cannot stomp a siblin
 
 ### Tool-allowlist case handling
 
-`cleanToolList` lowercases entries; comparisons at the gate lowercase the
+`CleanToolList` lowercases entries; comparisons at the gate lowercase the
 LLM-emitted `call.Name`. A case-mismatched tool name (e.g. `"Web_Fetch"`)
 cannot slip past or accidentally fail the gate.
 
@@ -144,7 +144,7 @@ logged (tool argument privacy rule).
 |---|---|
 | `task.go` | `Task`, `Result`, `RunTaskDeps` type definitions (the public API contract). |
 | `runtask.go` | `RunTask` — stateless one-shot function wrapping the loop. |
-| `runtask_helpers.go` | Private helpers: `initialMessages`, `cleanToolList`, `limitToolContent`. |
+| `runtask_helpers.go` | Shared helpers: `initialMessages`, `CleanToolList`, `limitToolContent`. |
 | `runtime.go` | `Run` — streaming-capable loop entry used by `chat.Hub`. |
 | `loop.go` | `runLoop` — the inner iteration engine (shared by both paths). |
 | `executor.go` | `agentExecutor` — parallel tool fan-out with per-tool timeout. |

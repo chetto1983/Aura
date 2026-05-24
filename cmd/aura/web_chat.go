@@ -158,10 +158,10 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	if run != nil {
 		runID = run.ID
 	}
-	allowlist := cleanWebToolList(nil)
+	allowlist := agent.CleanToolList(nil)
 	var toolDefs []llm.ToolDefinition
 	if deps.Tools != nil {
-		allowlist = cleanWebToolList(deps.Tools.Names())
+		allowlist = agent.CleanToolList(deps.Tools.Names())
 		toolDefs = deps.Tools.DefinitionsFor(allowlist)
 	}
 	toolTimeout := deps.ToolTimeout
@@ -188,24 +188,27 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 
 	inv := agent.Invocation{
 		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort, msg.ThreadID),
-		Executor: &webToolExecutor{
-			tools:                 deps.Tools,
-			state:                 convCtx,
-			logger:                logger,
-			allowlist:             allowlist,
-			userID:                userID,
-			conversationID:        msg.ThreadID,
-			runID:                 runID,
-			attemptsRepo:          deps.AttemptsRepo,
-			maxChars:              b.maxToolResultChars(),
-			toolTimeout:           toolTimeout,
-			terminalPolicyEnabled: b.terminalToolPolicyEnabled(),
-			tokenJuiceEnabled:     deps.TokenJuiceEnabled,
-			payloadSummarizer:     payloadSummarizer,
-			invalidatePinned: func() {
+		Executor: agent.ToolExecutorFunc(func(execCtx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
+			summary := agent.ExecuteToolCalls(
+				execCtx,
+				deps.Tools,
+				convCtx,
+				userID,
+				0,
+				calls,
+				b.terminalToolPolicyEnabled(),
+				logger,
+				agent.WithToolAttemptRecording(runID, deps.AttemptsRepo),
+				agent.WithTokenJuice(deps.TokenJuiceEnabled),
+				agent.WithPayloadSummarizer(payloadSummarizer),
+				agent.WithConversationID(msg.ThreadID),
+				agent.WithToolTimeout(toolTimeout),
+			)
+			if agent.PinnedOperationalWriteInCalls(calls) {
 				b.invalidatePinnedOperational(msg.ThreadID)
-			},
-		},
+			}
+			return webExecutionSummary(summary)
+		}),
 		State:    convCtx,
 		Tools:    toolDefs,
 		PostTurn: b.postTurnConfig(runID, msg, logger, deps),
@@ -328,6 +331,17 @@ func webSessionKey(userID, threadID string) string {
 	return "web:" + userID + ":" + threadID
 }
 
+func webExecutionSummary(summary agent.ToolExecutionSummary) agent.ExecutionSummary {
+	return agent.ExecutionSummary{
+		LastResult:        summary.LastResult,
+		FatalResult:       summary.FatalResult,
+		ReadSkillNames:    summary.ReadSkillNames,
+		TerminalTool:      summary.TerminalTool,
+		Results:           summary.Results,
+		AwaitingUserInput: summary.AwaitingUserInput,
+	}
+}
+
 func (b *webInvocationBuilder) maxToolResultChars() int {
 	if b == nil || b.cfg == nil {
 		return 0
@@ -356,16 +370,11 @@ func (b *webInvocationBuilder) terminalToolPolicyEnabled() bool {
 	return config.NormalizeTerminalToolPolicy(b.cfg.TerminalToolPolicy) != "off"
 }
 
-// webToolExecutor and its helpers live in web_chat_executor.go — they were
-// hoisted out 2026-05-24 to keep this file under the 600-LOC cap when the
-// TerminalHandler wiring landed for text_response. See
-// extractLastTextResponseArg below for the helper that bridges to it.
-
 // extractLastTextResponseArg scans messages newest-to-oldest looking for an
 // assistant tool_call to text_response and returns the trimmed `text`
 // argument verbatim. Used by web's TerminalHandler to close the loop with
 // the exact reply the model passed in, bypassing the untrusted-output
-// wrapper that webToolExecutor applies to every result.
+// wrapper that ExecuteToolCalls applies to every result.
 func extractLastTextResponseArg(messages []llm.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		m := messages[i]
@@ -386,5 +395,3 @@ func extractLastTextResponseArg(messages []llm.Message) string {
 	}
 	return ""
 }
-
-// cloneToolArgs + limitToolContent live in web_chat_executor.go.

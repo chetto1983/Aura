@@ -6,8 +6,10 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aura/aura/internal/agent/tools/attempts"
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/llm"
@@ -27,6 +29,43 @@ func (s *stubToolRunner) Names() []string { return s.names }
 func (s *stubToolRunner) Execute(_ context.Context, _ string, _ map[string]any) (string, error) {
 	s.calls.Add(1)
 	return s.result, s.err
+}
+
+type contextCaptureRunner struct {
+	names          []string
+	userID         chan string
+	conversation   chan string
+	allowedTools   chan []string
+	searchArgsSeen chan map[string]any
+}
+
+func newContextCaptureRunner(names ...string) *contextCaptureRunner {
+	return &contextCaptureRunner{
+		names:          names,
+		userID:         make(chan string, 1),
+		conversation:   make(chan string, 1),
+		allowedTools:   make(chan []string, 1),
+		searchArgsSeen: make(chan map[string]any, 1),
+	}
+}
+
+func (r *contextCaptureRunner) Names() []string { return r.names }
+
+func (r *contextCaptureRunner) Execute(ctx context.Context, _ string, args map[string]any) (string, error) {
+	r.userID <- tools.UserIDFromContext(ctx)
+	r.conversation <- tools.ConversationIDFromContext(ctx)
+	r.allowedTools <- tools.AllowedToolNamesFromContext(ctx)
+	r.searchArgsSeen <- args
+	return "ok", nil
+}
+
+type blockingToolRunner struct{}
+
+func (blockingToolRunner) Names() []string { return []string{"slow"} }
+
+func (blockingToolRunner) Execute(ctx context.Context, _ string, _ map[string]any) (string, error) {
+	<-ctx.Done()
+	return "", ctx.Err()
 }
 
 func TestExecuteToolCallsSuccessPath(t *testing.T) {
@@ -90,6 +129,44 @@ func TestExecuteToolCallsSummaryAggregation(t *testing.T) {
 	}
 	if got := runner.calls.Load(); got != 2 {
 		t.Fatalf("runner.calls = %d, want 2", got)
+	}
+}
+
+func TestExecuteToolCallsUsesConversationIDOption(t *testing.T) {
+	runner := newContextCaptureRunner("search", "context_probe")
+	convCtx := conversation.NewContext(conversation.Config{})
+	calls := []llm.ToolCall{{ID: "call-1", Name: "search", Arguments: map[string]any{"query": "docs"}}}
+
+	summary := ExecuteToolCalls(context.Background(), runner, convCtx, "alice", 42, calls, true, nil,
+		WithConversationID("web-thread-7"))
+
+	if summary.Results["call-1"] != "ok" {
+		t.Fatalf("summary = %+v", summary)
+	}
+	if got := <-runner.userID; got != "alice" {
+		t.Fatalf("userID = %q, want alice", got)
+	}
+	if got := <-runner.conversation; got != "web-thread-7" {
+		t.Fatalf("conversationID = %q, want web-thread-7", got)
+	}
+	if got := <-runner.allowedTools; !containsString(got, "search") || !containsString(got, "context_probe") {
+		t.Fatalf("allowed tools = %+v", got)
+	}
+	args := <-runner.searchArgsSeen
+	if args["chat_id"] != float64(42) {
+		t.Fatalf("chat_id = %#v, want float64(42)", args["chat_id"])
+	}
+}
+
+func TestExecuteToolCallsAppliesToolTimeout(t *testing.T) {
+	convCtx := conversation.NewContext(conversation.Config{})
+	calls := []llm.ToolCall{{ID: "call-1", Name: "slow"}}
+
+	summary := ExecuteToolCalls(context.Background(), blockingToolRunner{}, convCtx, "alice", 0, calls, true, nil,
+		WithToolTimeout(10*time.Millisecond))
+
+	if !strings.Contains(summary.Results["call-1"], "deadline exceeded") {
+		t.Fatalf("summary result = %q, want deadline exceeded", summary.Results["call-1"])
 	}
 }
 

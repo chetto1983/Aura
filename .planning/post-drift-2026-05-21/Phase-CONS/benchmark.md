@@ -72,13 +72,51 @@ For frontend Wave B slices:
 - **Pass threshold:** no production matches except commit/history text outside source tree.
 - **PRD gate:** one module per slice includes dead-code removal.
 
+## US-CONS-03 - Web Tool Executor Collapse
+
+### B-CONS-03-A: Shared Executor Options
+
+- **Command:** `go test ./internal/agent -run "TestExecuteToolCalls(SuccessPath|ErrorPropagation|SummaryAggregation|UsesConversationIDOption|AppliesToolTimeout|RecordsToolAttempt)$" -count=1`
+- **Fixture:** fake `ToolRunner` capturing `AllowedToolNamesFromContext`, `UserIDFromContext`, `ConversationIDFromContext`, search args, and a blocking runner for timeout.
+- **Artifact:** captured context fields and `tool_attempts` SQLite row.
+- **Ground truth:** `WithConversationID` overrides the chatID fallback without losing search `chat_id`; `WithToolTimeout` returns a deadline error through the shared result path; tool attempts still record argument keys.
+- **Pass threshold:** exact captured `userID`, `conversationID`, allowed tools, `chat_id`, and timeout error text.
+- **PRD gate:** web can reuse the shared executor without losing web-visible tool context.
+
+### B-CONS-03-B: Web Shared Executor Wiring
+
+- **Command:** `go test ./cmd/aura -run "TestHubBackedWebChat(RecordsToolAttempts|TerminatesOnTextResponseTool|UsesSessionStoreContext|SessionStoreScopesThreads|CompactsToolResultsBeforeNextTurn)$|TestExtractLastTextResponseArg" -count=1`
+- **Fixture:** hub-backed web chat with fake LLM and `context_probe` tool.
+- **Artifact:** captured probe fields plus SQLite `tool_attempts`.
+- **Ground truth:** web dispatch calls the shared executor; the tool sees the visible allowlist, `userID=alice`, `conversationID=web:alice:default`, a non-empty `runID`, and the `tool_attempts` row is linked to the web run.
+- **Pass threshold:** all captured fields match exactly and exactly one `tool_attempts` row exists for `context_probe`.
+- **PRD gate:** web and Telegram share tool execution discipline.
+
+### B-CONS-03-C: Removed Web Executor Dead Code
+
+- **Command:** `rg -n "webToolExecutor|web_chat_executor|TestWebToolExecutor|cleanWebToolList|cleanToolList\(" cmd/aura internal/agent`
+- **Fixture:** source tree after US-CONS-03 patch.
+- **Artifact:** `rg` output.
+- **Ground truth:** stale web executor symbols, stale direct executor tests, and duplicated web tool-list helper are absent from source.
+- **Pass threshold:** no matches; `rg` exits 1.
+- **PRD gate:** one module per slice includes dead-code removal.
+
+### B-CONS-03-D: Dedicated Slice QA
+
+- **Command:** `go test ./internal/agent/... ./cmd/aura/... -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/agent --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/agent/exec_helpers.go internal/agent/exec_helpers_test.go internal/agent/runtask.go internal/agent/runtask_helpers.go`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** touched packages plus full repository Go test suite.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** no compile/vet/lint regressions; touched-file duplication is zero; full Go suite passes after replacing the web executor.
+- **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
+- **PRD gate:** self-audited slice QA before atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
 
 | Story | Exact Command | Fixture / Artifact | Ground Truth | Pass Threshold |
 | --- | --- | --- | --- | --- |
-| CONS-03 | `go test ./internal/agent ./cmd/aura -run "TestExecuteToolCalls|TestHubBackedWebChat" -count=1` | fake tool registry + web turn using shared executor | web calls `agent.ExecuteToolCalls`; tool attempts and `tools_used` match current behavior | no `webToolExecutor` symbols; all tool attempt rows correct |
+| CONS-03 | Completed by B-CONS-03-A..D above | fake tool registry + hub-backed web turn using shared executor | web calls `agent.ExecuteToolCalls`; tool attempts and visible tool context match current behavior | no `webToolExecutor` symbols; tool attempt row and captured context fields correct |
 | CONS-04 | `go test ./... -run "TestInvocationBuilder|TestAgentCore|TestHubBackedWebChat" -count=1` plus Telegram byte-parity fixture | legacy vs `AURA_AGENTCORE_BUILDER=true` transcript comparison | same tool-call sequence names + argument keys | exact sequence equality; response text drift <=5% where compared |
 | CONS-05 | `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub" -count=1` | shared Hub with fake web and Telegram outbound adapters | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound | zero cross-channel deliveries |
 | CONS-06 | `go test ./internal/channels/web ./internal/api ./cmd/aura -run "Budget|Archive|Compaction" -count=1` | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |

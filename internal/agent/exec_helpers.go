@@ -28,6 +28,8 @@ type executeToolCallsConfig struct {
 	attemptsRepo      attempts.Repo
 	tokenJuiceEnabled bool
 	payloadSummarizer governance.PayloadSummarizer
+	conversationID    string
+	toolTimeout       time.Duration
 }
 
 // ExecuteToolCallsOption configures channel-neutral tool execution helpers.
@@ -59,6 +61,22 @@ func WithTokenJuice(enabled bool) ExecuteToolCallsOption {
 func WithPayloadSummarizer(ps governance.PayloadSummarizer) ExecuteToolCallsOption {
 	return func(cfg *executeToolCallsConfig) {
 		cfg.payloadSummarizer = ps
+	}
+}
+
+// WithConversationID overrides the default conversation identifier exposed to
+// tools. Omit it to keep the legacy chatID/userID fallback.
+func WithConversationID(conversationID string) ExecuteToolCallsOption {
+	return func(cfg *executeToolCallsConfig) {
+		cfg.conversationID = conversationID
+	}
+}
+
+// WithToolTimeout caps each individual tool execution. Omit or pass <=0 to use
+// the caller context without an additional per-tool deadline.
+func WithToolTimeout(timeout time.Duration) ExecuteToolCallsOption {
+	return func(cfg *executeToolCallsConfig) {
+		cfg.toolTimeout = timeout
 	}
 }
 
@@ -103,11 +121,32 @@ func ExecuteToolCalls(
 			defer wg.Done()
 			startedAt := time.Now()
 			conversationID := userID
-			if chatID > 0 {
+			if cfg.conversationID != "" {
+				conversationID = cfg.conversationID
+			} else if chatID > 0 {
 				conversationID = fmt.Sprintf("%d", chatID)
 			}
-			toolCtx := tools.WithConversationID(tools.WithAllowedToolNames(tools.WithUserID(ctx, userID), runner.Names()), conversationID)
 			args := ToolArgumentsForTool(tc.Name, tc.Arguments, chatID)
+			if runner == nil {
+				result := tools.FormatFatalToolError(errors.New("tool registry unavailable"))
+				RecordToolAttempt(ctx, logger, cfg.attemptsRepo, ToolAttemptRecordInput{
+					RunID:     cfg.runID,
+					ToolName:  tc.Name,
+					Arguments: args,
+					StartedAt: startedAt,
+					Elapsed:   time.Since(startedAt),
+					Class:     "error",
+				})
+				results[i] = outcome{id: tc.ID, tool: tc.Name, content: result}
+				return
+			}
+			toolCtx := ctx
+			var cancel context.CancelFunc
+			if cfg.toolTimeout > 0 {
+				toolCtx, cancel = context.WithTimeout(toolCtx, cfg.toolTimeout)
+				defer cancel()
+			}
+			toolCtx = tools.WithConversationID(tools.WithAllowedToolNames(tools.WithUserID(toolCtx, userID), runner.Names()), conversationID)
 			result, err := runner.Execute(toolCtx, tc.Name, args)
 			class := ""
 			var awaitErr *tools.ErrAwaitingUserInput
