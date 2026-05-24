@@ -104,7 +104,7 @@ func TestManagerRunExecutesAssignmentsAndPersistsResults(t *testing.T) {
 		CreatedBy: "user",
 		Assignments: []Assignment{
 			{Role: "librarian", Subject: "a", Prompt: "a", ToolAllowlist: []string{"file"}},
-			{Role: "critic", Subject: "b", Prompt: "b", ToolAllowlist: []string{"search_memory"}},
+			{Role: "critic", Subject: "b", Prompt: "b", ToolAllowlist: []string{"search"}},
 			{Role: "researcher", Subject: "c", Prompt: "c"},
 		},
 	})

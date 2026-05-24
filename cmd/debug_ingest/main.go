@@ -155,16 +155,16 @@ func main() {
 
 	reg := tools.NewRegistry(logger)
 	reg.Register(tools.NewSourceTool(srcStore, srcStore, srcStore, srcStore, nil, pipeline, nil))
-	if tool := tools.NewSearchMemoryTool(nil, memoryIndex); tool != nil {
+	if searchMem := tools.NewSearchMemoryTool(nil, memoryIndex); searchMem != nil {
+		tool := tools.NewSearchTool(searchMem, wikiStore, tools.NewReadSourceTool(srcStore))
 		reg.Register(tool)
 	}
 	reg.Register(tools.NewFileTool(workspaceRoot))
 	if tool := tools.NewTaskTool(schedStore, debugRunTaskNowRunner{store: schedStore}, time.Local); tool != nil {
 		reg.Register(tool)
 	}
-	if tool := tools.NewDailyBriefingTool(schedStore, srcStore, summariesStore, issuesStore, archiveStore, time.Local); tool != nil {
-		reg.Register(tool)
-	}
+	// daily_briefing tool retired 2026-05-24 (Phase 1 cleanup) — task list
+	// + source list + search cover the same surface via composition.
 
 	client := llm.NewOpenAIClient(llm.OpenAIConfig{
 		APIKey:  apiKey,
@@ -216,15 +216,9 @@ func main() {
 			wantText:  []string{"smoke-test"},
 		},
 		{
-			name:      "daily_briefing",
-			prompt:    "Dammi il briefing di oggi in 5 punti. Usa il briefing giornaliero se disponibile.",
-			wantTools: []string{"daily_briefing"},
-			wantText:  []string{"Daily briefing", "smoke-briefing", "briefing smoke issue", "aura-debug-ingest-fixture.pdf"},
-		},
-		{
-			name:      "search_memory",
-			prompt:    "Cerca nella memoria locale di Aura il marker gold-742 e dimmi quali evidenze trovi. Usa search_memory.",
-			wantTools: []string{"search_memory"},
+			name:      "search",
+			prompt:    "Cerca nella memoria locale di Aura il marker gold-742 usando search action=search e dimmi quali evidenze trovi.",
+			wantTools: []string{"search"},
 			wantText:  []string{"Memory evidence", "gold-742", ocrID, "page=1"},
 		},
 		{

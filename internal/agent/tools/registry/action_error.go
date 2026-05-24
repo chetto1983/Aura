@@ -92,10 +92,10 @@ func RewriteVerbKeyAsAction(supplied map[string]any, validActions []string, hint
 
 // ActionRequiredError builds a self-correcting error for action-enum
 // tools (search, file, source, task, web). Tells the model:
-//   1. Which actions are valid
-//   2. Which one its supplied keys most likely meant
-//   3. A ready-to-copy retry JSON with the guessed action plus its
-//      existing args
+//  1. Which actions are valid
+//  2. Which one its supplied keys most likely meant
+//  3. A ready-to-copy retry JSON with the guessed action plus its
+//     existing args
 //
 // The shape is deliberately verbose because the model reads error
 // strings as instructions on the next turn. Including the example call
@@ -224,9 +224,9 @@ func editDistance(a, b string) int {
 				cost = 0
 			}
 			cur[j] = minInt(
-				prev[j]+1,        // deletion
-				cur[j-1]+1,       // insertion
-				prev[j-1]+cost,   // substitution
+				prev[j]+1,      // deletion
+				cur[j-1]+1,     // insertion
+				prev[j-1]+cost, // substitution
 			)
 		}
 		prev, cur = cur, prev
@@ -269,8 +269,8 @@ type ActionVariant struct {
 
 // ActionDispatchOneOf builds a JSON Schema `oneOf` block that the LLM
 // reads as: "if action == X, then required = [action, ...]". This is
-// the structural fix for action-enum tools (wiki_page, file, doc, task,
-// source, dev_tool, web): the top-level `required: [action]` alone tells
+// the structural fix for action-enum tools (search, wiki_page, file, task,
+// source, web): the top-level `required: [action]` alone tells
 // the model the OTHER fields are optional, and models confidently emit
 // tool_calls with missing params. The oneOf variants are the only
 // reliable channel that survives prose-vs-schema conflicts.

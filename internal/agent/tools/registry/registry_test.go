@@ -531,14 +531,14 @@ func TestRegistryUsesToolDefinitionProvider(t *testing.T) {
 
 func TestKnownToolDefinitionsIncludeSpecificExamples(t *testing.T) {
 	reg := NewRegistry(nil)
-	reg.Register(NewSearchMemoryTool(fakeMemorySearchForExamples{}, nil))
+	reg.Register(NewSearchTool(NewSearchMemoryTool(fakeMemorySearchForExamples{}, nil), nil, nil))
 
-	defs := reg.DefinitionsFor([]string{"search_memory"})
+	defs := reg.DefinitionsFor([]string{"search"})
 	if len(defs) != 1 {
 		t.Fatalf("DefinitionsFor length = %d, want 1", len(defs))
 	}
-	if !strings.Contains(defs[0].Description, `search_memory(`) || !strings.Contains(defs[0].Description, `"query":"documenti e note disponibili in Aura"`) {
-		t.Fatalf("search_memory example missing:\n%s", defs[0].Description)
+	if !strings.Contains(defs[0].Description, `search(`) || !strings.Contains(defs[0].Description, `"action":"search"`) {
+		t.Fatalf("search example missing:\n%s", defs[0].Description)
 	}
 }
 

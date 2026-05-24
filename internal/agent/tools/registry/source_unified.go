@@ -14,7 +14,7 @@ import (
 // SourceTool consolidates the seven verb-tools (list_sources, read_source,
 // store_source, ingest_source, ocr_source, delete_source, lint_sources)
 // into a single action-enum surface. Same picobot pattern as wiki_page /
-// dev_tool / task / web / doc / file.
+// search / task / web / file.
 //
 //	action=list      — enumerate stored sources with optional filters
 //	action=read      — fetch ocr.md / extract.md by source_id

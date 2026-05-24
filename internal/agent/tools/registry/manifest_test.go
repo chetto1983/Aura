@@ -30,14 +30,14 @@ func TestRenderSplitManifest_EmptyReturnsEmpty(t *testing.T) {
 // the llm.ToolDefinition.Description == the plain ToolDefinition.Description.
 func TestRenderSplitManifest_ZeroDeferredByteIdentical(t *testing.T) {
 	names := []string{
-		"web", "create_docx", "search_memory", "schedule_task",
-		"file", "wiki", "execute_code", "source", "ask_user",
-		"text_response", "doc", "mcp_mail_search", "workspace_read",
-		"workspace_write", "ingest", "read_source", "store_source",
-		"delete_source", "list_source", "ocr_source", "search",
-		"recall_operational", "recall_user_memory", "agent_note",
+		"web", "search", "task", "file", "wiki_page",
+		"execute_code", "execute_shell", "source", "ask_user",
+		"text_response", "mcp_mail_search", "workspace_read",
+		"workspace_write", "ingest_source", "read_source", "store_source",
+		"delete_source", "list_source", "ocr_source", "propose_patch",
+		"agent_note", "install_skill", "delete_skill",
 	}
-	// 25 tools, all VisibilityActiveTurn (non-deferred).
+	// All VisibilityActiveTurn (non-deferred).
 	splitDefs := make([]ToolDefinition, len(names))
 	llmDefs := make([]llm.ToolDefinition, len(names))
 	for i, n := range names {

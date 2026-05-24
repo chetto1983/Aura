@@ -360,13 +360,6 @@ func newApp(
 	deps.SandboxMgr = sandboxMgr
 	deps.SandboxHealth = sandboxHealth
 
-	// ---- Tool registry ------------------------------------------------------
-	toolReg, err := tools.NewToolRegistry(wikiStore)
-	if err != nil {
-		logger.Warn("tool registry unavailable", "error", err)
-	}
-	deps.ToolReg = toolReg
-
 	toolRegistry := tools.NewRegistry(logger)
 	deps.Tools = toolRegistry
 

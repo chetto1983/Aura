@@ -54,7 +54,7 @@ type ScheduledTaskRunner interface {
 
 // TaskTool consolidates the scheduler verb tools (schedule_task, list_tasks,
 // cancel_task, run_task_now) into a single action-enum surface. Same
-// picobot pattern as wiki_page and dev_tool: one tool, one action enum
+// picobot pattern as wiki_page and file: one tool, one action enum
 // acting as the verb, so the LLM never has to discriminate between four
 // near-identical schedule entry points.
 //

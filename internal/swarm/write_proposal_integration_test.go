@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/chat"
 	silentadapter "github.com/aura/aura/internal/channels/silent"
+	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/identity"
 	runstore "github.com/aura/aura/internal/storage/runs"
@@ -119,7 +119,7 @@ func TestParentSpawnsTwoWriteProposalSubagentsAndCollectsProposals(t *testing.T)
 		})
 
 		// write_proposal allowlist: propose_patch + reads (no direct write tools).
-		wpAllowlist := []string{"propose_patch", "search_memory", "web"}
+		wpAllowlist := []string{"propose_patch", "search", "web"}
 
 		// Dispatch child A — wiki proposal.
 		specA := NodeSpec{

@@ -54,7 +54,7 @@ func TestNormalizeAgentJobPayload_ToolsetsSkillsAndContext(t *testing.T) {
 	got, err := NormalizeAgentJobPayload(`{
 		"goal":"Check markets",
 		"enabled_toolsets":["memory_read","web_research","memory_read"],
-		"tool_allowlist":["search_memory","web","file","search_memory"],
+		"tool_allowlist":["search","web","file","search"],
 		"skills":[" aura-implementation ","aura-implementation"],
 		"context_from":[" [[markets]] ","[[markets]]","source:src_123"],
 		"wake_if_changed":["wiki:markets","wiki:markets"]
@@ -69,7 +69,7 @@ func TestNormalizeAgentJobPayload_ToolsetsSkillsAndContext(t *testing.T) {
 	if !reflect.DeepEqual(got.EnabledToolsets, wantToolsets) {
 		t.Fatalf("EnabledToolsets = %+v, want %+v", got.EnabledToolsets, wantToolsets)
 	}
-	wantTools := []string{"search_memory", "web", "file"}
+	wantTools := []string{"search", "web", "file"}
 	if !reflect.DeepEqual(got.ToolAllowlist, wantTools) {
 		t.Fatalf("ToolAllowlist = %+v, want %+v", got.ToolAllowlist, wantTools)
 	}

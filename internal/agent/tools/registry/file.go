@@ -10,7 +10,7 @@ import (
 
 // FileTool consolidates the workspace verb-tools (list_files, read_file,
 // search_files, write_file, apply_patch) into a single action-enum
-// surface. Same picobot pattern as wiki_page / dev_tool / task / web /
+// surface. Same picobot pattern as search / wiki_page / task / web /
 // doc — one tool, one action enum acting as the verb.
 //
 //	action=list   — directory listing with limit

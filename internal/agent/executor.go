@@ -37,7 +37,7 @@ type agentExecutor struct {
 	// truncation via limitToolContent.
 	spillDir string
 	// repeatedLookup tracks per-turn external lookup calls for web_search,
-	// web_fetch, and search_memory (US-OUT-03). After MaxRepeats identical
+	// web, and search (US-OUT-03). After MaxRepeats identical
 	// targets, subsequent calls are short-circuited with a blocked error.
 	repeatedLookup *governance.RepeatedLookupCounter
 	// budget tracks per-turn per-class tool call caps (US-OUT-07). One tracker

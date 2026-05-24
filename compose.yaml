@@ -89,12 +89,12 @@ services:
       # text_response so we can validate each tool individually as it is
       # cleaned up. Override with "*" (or "all") in the host shell to
       # restore the full registry. Leave unset = allow all.
-      # Tool surface after 2026-05-24 consolidation. search action enum
-      # covers hybrid lookup + 2 recall variants (lessons/user_facts).
-      # Graph primitives stay standalone (graphify pattern). recall_*
-      # standalone entries are kept for the small probe corpus that
-      # invokes them directly — duplicated coverage via search(action=...).
-      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,execute_code,execute_shell,doc,task,dev_tool,propose_patch,daily_briefing,search,recall_operational,recall_user_memory,recall_god_nodes,request_dashboard_token,ask_user,ask_user_clarification,read_tool_result,wiki_subgraph,wiki_path}"
+      # Tool surface after 2026-05-24 consolidation. Deleted:
+      # dev_tool, daily_briefing, doc, subagent_dispatch, read_tool_result,
+      # request_dashboard_token, ask_user_clarification. Folded into search:
+      # recall_operational, recall_user_memory, recall_god_nodes,
+      # wiki_subgraph, wiki_path.
+      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,execute_code,execute_shell,task,propose_patch,search,ask_user}"
       AURA_TERMINAL_TOOL_POLICY: "on"
       AURA_DELEGATION_MODE: "fast"
       AURA_TRACE_RETENTION_DAYS: "30"

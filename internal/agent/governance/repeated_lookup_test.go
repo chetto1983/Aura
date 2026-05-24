@@ -56,6 +56,28 @@ func TestRepeatedLookupCounterSearchMemory(t *testing.T) {
 	}
 }
 
+func TestRepeatedLookupCounterUnifiedSearchAndWeb(t *testing.T) {
+	c := NewRepeatedLookupCounter()
+	for i := range MaxRepeats {
+		if err := c.Check("search", map[string]any{"action": "search", "query": "test query"}); err != nil {
+			t.Fatalf("search call %d should pass: %v", i+1, err)
+		}
+	}
+	if err := c.Check("search_memory", map[string]any{"query": "test query"}); err == nil {
+		t.Fatal("search_memory should share the unified search budget")
+	}
+
+	web := NewRepeatedLookupCounter()
+	for i := range MaxRepeats {
+		if err := web.Check("web", map[string]any{"action": "fetch", "url": "https://EXAMPLE.com/a/"}); err != nil {
+			t.Fatalf("web fetch call %d should pass: %v", i+1, err)
+		}
+	}
+	if err := web.Check("web_fetch", map[string]any{"url": "https://example.com/a"}); err == nil {
+		t.Fatal("web_fetch should share the unified web fetch budget")
+	}
+}
+
 func TestRepeatedLookupCounterNormalizesCaseAndWhitespace(t *testing.T) {
 	c := NewRepeatedLookupCounter()
 	if err := c.Check("web_search", map[string]any{"query": "  FOO  "}); err != nil {

@@ -3,7 +3,7 @@ package main
 // wireBot lives in this file (separated from cmd/aura/app.go) so app.go can
 // stay under the 600-LOC god-class threshold. wireBot is the per-bot wiring
 // pass that hooks the tool index, scheduler, conversation summarizer,
-// telegram channel adapter, and dashboard token request hook into the
+// telegram channel adapter, and dashboard token command flow into the
 // already-constructed App + deps + bot. It runs once, after newApp() returns
 // and before Start(bot).
 

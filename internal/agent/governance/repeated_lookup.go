@@ -18,8 +18,8 @@ const MaxRepeats = 2
 var ErrRepeatedLookup = errors.New("repeated external lookup blocked. Use the results you already have to answer, or try a meaningfully different source")
 
 // RepeatedLookupCounter tracks identical external lookup calls within a
-// single agent turn. Covered tools: web_search (by query), web_fetch (by
-// URL), search_memory (by query). After MaxRepeats identical targets, the
+// single agent turn. Covered tools: web/search (by query), web/fetch (by URL),
+// and search/search_memory (by query). After MaxRepeats identical targets, the
 // next call returns ErrRepeatedLookup so the LLM sees it as a tool result.
 //
 // Safe for concurrent use: parallel tool dispatches in the same iteration
@@ -66,12 +66,36 @@ func buildLookupSignature(toolName string, args map[string]any) (string, bool) {
 	case "web_fetch":
 		u, _ := args["url"].(string)
 		return "web_fetch:" + normalizeFetchURL(u), true
+	case "web":
+		switch strings.TrimSpace(strings.ToLower(stringValue(args["action"]))) {
+		case "search":
+			q, _ := args["query"].(string)
+			return "web_search:" + strings.ToLower(strings.TrimSpace(q)), true
+		case "fetch":
+			u, _ := args["url"].(string)
+			return "web_fetch:" + normalizeFetchURL(u), true
+		default:
+			return "", false
+		}
+	case "search":
+		if action := strings.TrimSpace(strings.ToLower(stringValue(args["action"]))); action != "" && action != "search" {
+			return "", false
+		}
+		q, _ := args["query"].(string)
+		return "search:" + strings.ToLower(strings.TrimSpace(q)), true
 	case "search_memory":
 		q, _ := args["query"].(string)
-		return "search_memory:" + strings.ToLower(strings.TrimSpace(q)), true
+		return "search:" + strings.ToLower(strings.TrimSpace(q)), true
 	default:
 		return "", false
 	}
+}
+
+func stringValue(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 // normalizeFetchURL normalizes a web_fetch URL for dedup:

@@ -11,12 +11,15 @@ import (
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/api/auth"
+	"github.com/aura/aura/internal/audio"
 	"github.com/aura/aura/internal/budget"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/conversation/summarizer"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/llm"
+	"github.com/aura/aura/internal/llm/pockettts"
+	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/mcp"
 	"github.com/aura/aura/internal/sandbox"
 	auraskills "github.com/aura/aura/internal/skills"
@@ -25,9 +28,6 @@ import (
 	"github.com/aura/aura/internal/storage/reindex"
 	runstore "github.com/aura/aura/internal/storage/runs"
 	"github.com/aura/aura/internal/storage/search"
-	"github.com/aura/aura/internal/audio"
-	"github.com/aura/aura/internal/llm/pockettts"
-	"github.com/aura/aura/internal/llm/whisper"
 	"github.com/aura/aura/internal/storage/sources/ingest"
 	"github.com/aura/aura/internal/storage/sources/markitdown"
 	"github.com/aura/aura/internal/storage/sources/ocr"
@@ -141,8 +141,7 @@ type Deps struct {
 	SkillsCatalog *auraskills.CatalogClient
 
 	// ---- Tool registry ------------------------------------------------------
-	Tools   *tools.Registry
-	ToolReg tools.ToolStore
+	Tools *tools.Registry
 
 	// ---- Budget -------------------------------------------------------------
 	Budget budget.Runtime

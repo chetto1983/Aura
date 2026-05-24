@@ -18,7 +18,7 @@ func TestToolPolicyReadOnlyPassthrough(t *testing.T) {
 // TestToolPolicyWriteProposalValid verifies a write_proposal spec with
 // propose_patch + read-only tools is accepted.
 func TestToolPolicyWriteProposalValid(t *testing.T) {
-	err := EnforceWriteProposalAllowlist([]string{"propose_patch", "web", "search_memory"})
+	err := EnforceWriteProposalAllowlist([]string{"propose_patch", "web", "search"})
 	if err != nil {
 		t.Fatalf("expected valid write_proposal allowlist to pass, got: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestToolPolicyWriteProposalValid(t *testing.T) {
 // TestToolPolicyWriteProposalMissingProposePatch verifies that a
 // write_proposal allowlist without propose_patch is rejected.
 func TestToolPolicyWriteProposalMissingProposePatch(t *testing.T) {
-	err := EnforceWriteProposalAllowlist([]string{"web", "search_memory"})
+	err := EnforceWriteProposalAllowlist([]string{"web", "search"})
 	if err == nil {
 		t.Fatal("expected error for write_proposal allowlist missing propose_patch, got nil")
 	}

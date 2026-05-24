@@ -85,7 +85,7 @@ func (h *Handler) agentJobPrompt(ctx context.Context, task *Task, payload AgentJ
 		fmt.Fprintf(&sb, "\n\nAttached skills: %s\nFind and read the matching SKILL.md files before relying on their procedures. Do not install, delete, or edit skills directly.", strings.Join(payload.Skills, ", "))
 	}
 	if len(payload.ContextFrom) > 0 {
-		fmt.Fprintf(&sb, "\n\nContext anchors: %s\nUse these anchors as the first retrieval targets, preferably via search_memory or narrow read tools before broad web/tool use.", strings.Join(payload.ContextFrom, ", "))
+		fmt.Fprintf(&sb, "\n\nContext anchors: %s\nUse these anchors as the first retrieval targets, preferably via search(action=\"search\") or narrow read tools before broad web/tool use.", strings.Join(payload.ContextFrom, ", "))
 		if prior := h.agentJobPriorOutputs(ctx, payload.ContextFrom); prior != "" {
 			fmt.Fprintf(&sb, "\n\nPrior job outputs:\n%s", prior)
 		}
