@@ -59,7 +59,7 @@
       ],
       "priority": 3,
       "passes": false,
-      "notes": "DEPENDS ON US-CONS-03. THE BIG ONE — largest LOC delta in Aura's history (-360). Feature flag is mandatory for risk mitigation. Existing byte-parity test is the safety net."
+      "notes": "DEPENDS ON US-CONS-03. IN PROGRESS: US-CONS-04A introduced internal/agentcore.Builder and moved web invocation assembly onto it with full Go suite green. Remaining before passes:true: wire Telegram builder through agentcore, add/lock AURA_AGENTCORE_BUILDER parity gate, run fixture/byte-parity checks, and close the story benchmark. THE BIG ONE — largest LOC delta in Aura's history (-360). Feature flag is mandatory for risk mitigation. Existing byte-parity test is the safety net."
     },
     {
       "id": "US-CONS-05",

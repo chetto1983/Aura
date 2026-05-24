@@ -2,11 +2,11 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-02 only. Do not start CONS-03+ until CONS-02 is committed and its benchmark passes.
+**Current slice:** US-CONS-04. CONS-02 and CONS-03 are committed; US-CONS-04A moved web invocation assembly onto `internal/agentcore.Builder`. Continue with Telegram builder wiring and the feature-flag/parity gate before marking US-CONS-04 complete.
 
 ## Objective
 
-Consolidate web and Telegram into one channel-neutral agent path without losing transport-specific UX. The first slice removes web's duplicate session/state layer so web uses the same `agent.SessionStore` and `conversation.Context` discipline that Telegram already uses.
+Consolidate web and Telegram into one channel-neutral agent path without losing transport-specific UX. The active backend objective is to move transport-independent `agent.Invocation` assembly into `internal/agentcore.Builder` while preserving transport hooks for Telegram rendering, web responses, ask_user, budget warnings, and finalization.
 
 ## Canonical Inputs
 
@@ -32,6 +32,9 @@ Consolidate web and Telegram into one channel-neutral agent path without losing 
 | `internal/channels/web/outbound.go` | Deferred `Router` buffers `chat.OutboundEvent` by run ID. | Keep unchanged for CONS-02; SSE comes later. |
 | `cmd/aura/web_chat_test.go` | Existing tests cover web run persistence, tool attempts, terminal `text_response`, tool context, and thread scoping through `webChatSessions`. | Replace thread-scoping tests with `SessionStore`/`Context` assertions. |
 | `internal/channels/web/chat_service_test.go` | Existing fake hub verifies deferred web bridge behavior. | Keep as transport bridge safety net. |
+| `internal/agent/runtime.go` | `agent.Invocation` is the stable runtime contract consumed by `agent.Run`. | `agentcore.Builder` should assemble this contract without importing Telegram/web delivery packages. |
+| `internal/chat/agentloop.go` | Chat Hub calls a per-channel `InvocationBuilder` and then translates `agent.Event` to outbound events. | Agentcore must sit below chat Hub and above transport adapters; the Hub contract stays unchanged in US-CONS-04. |
+| `internal/channels/telegram/invocation_builder.go` | Telegram still owns a large `agent.Invocation` literal plus transport finalization, archive, status pane, and ask_user rendering. | Next US-CONS-04 slice moves the literal assembly to agentcore while leaving Telegram-only hooks in this adapter. |
 
 ## D:/tmp Example Sweep
 
@@ -66,6 +69,19 @@ Checked 2026-05-24:
 - Keep `internal/channels/web` bridge unchanged in this slice.
 - Keep `webToolExecutor` unchanged until US-CONS-03.
 - Replace tests of removed `webChatSessions` with tests of retained context, token tracking, and tool-result compaction.
+
+## Adopted For US-CONS-03
+
+- Reuse `agent.ExecuteToolCalls` for web tool dispatch.
+- Preserve web-visible tool context with `WithConversationID` and `WithToolTimeout` options.
+- Delete the web-only executor and keep stale-symbol checks as negative QA.
+
+## Adopted For US-CONS-04A
+
+- Introduce `internal/agentcore.Builder` as the owner of channel-neutral `agent.Invocation` assembly.
+- Start with the web builder because CONS-02/03 already removed web's bespoke state and executor layers.
+- Keep Chat Hub, Telegram rendering, archive, and ask_user behavior unchanged until the next US-CONS-04 slice.
+- Do not mark US-CONS-04 complete until Telegram uses agentcore and the feature-flag/parity gate is recorded.
 
 ## Rejected For US-CONS-02
 

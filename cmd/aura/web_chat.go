@@ -13,6 +13,7 @@ import (
 	"github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/agentcore"
 	"github.com/aura/aura/internal/api"
 	webadapter "github.com/aura/aura/internal/channels/web"
 	"github.com/aura/aura/internal/chat"
@@ -186,7 +187,15 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		)
 	}
 
-	inv := agent.Invocation{
+	var toolsProvider func() []llm.ToolDefinition
+	var toolResolver func(string) (llm.ToolDefinition, bool)
+	if deps.Tools != nil {
+		toolsProvider = func() []llm.ToolDefinition {
+			return deps.Tools.DefinitionsFor(allowlist)
+		}
+		toolResolver = deps.Tools.DefinitionFor
+	}
+	inv, err := (agentcore.Builder{}).Build(agentcore.InvocationInput{
 		Client: agent.NewNoStreamClient(deps.LLM, deps.Model, nil, deps.ReasoningEffort, msg.ThreadID),
 		Executor: agent.ToolExecutorFunc(func(execCtx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
 			summary := agent.ExecuteToolCalls(
@@ -209,9 +218,10 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 			}
 			return webExecutionSummary(summary)
 		}),
-		State:    convCtx,
-		Tools:    toolDefs,
-		PostTurn: b.postTurnConfig(runID, msg, logger, deps),
+		State:         convCtx,
+		Tools:         toolDefs,
+		ToolsProvider: toolsProvider,
+		PostTurn:      b.postTurnConfig(runID, msg, logger, deps),
 		Options: agent.Options{
 			ContextEngine:           ctxEngine,
 			MaxIterations:           deps.MaxIterations,
@@ -240,7 +250,8 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 				convCtx.AddAssistantMessage(text)
 				return text, false, true
 			},
-			Logger: logger,
+			ToolResolver: toolResolver,
+			Logger:       logger,
 		},
 		Logger: logger,
 		OnEvent: func(event agent.Event) {
@@ -259,12 +270,9 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 			}
 			session.Finish()
 		},
-	}
-	if deps.Tools != nil {
-		inv.ToolsProvider = func() []llm.ToolDefinition {
-			return deps.Tools.DefinitionsFor(allowlist)
-		}
-		inv.Options.ToolResolver = deps.Tools.DefinitionFor
+	})
+	if err != nil {
+		return agent.Invocation{}, err
 	}
 	return inv, nil
 }

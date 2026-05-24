@@ -110,6 +110,35 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
 - **PRD gate:** self-audited slice QA before atomic commit.
 
+## US-CONS-04A - Agentcore Builder Web Adoption
+
+### B-CONS-04A-A: Builder Contract
+
+- **Command:** `go test ./internal/agentcore -count=1`
+- **Fixture:** fake `agent.ChatClient`, `agent.ToolExecutor`, and `agent.State`.
+- **Artifact:** built `agent.Invocation` and copied prompt/tool metadata.
+- **Ground truth:** required runtime fields are rejected when missing; prompt modules and tool definitions are copied so caller mutations cannot alter an already-built invocation.
+- **Pass threshold:** exact errors for missing client/executor/state and exact copied metadata.
+- **PRD gate:** `internal/agentcore.Builder` exists as the channel-neutral invocation assembly owner.
+
+### B-CONS-04A-B: Web Uses Agentcore Assembly
+
+- **Command:** `go test ./cmd/aura -run "TestHubBackedWebChat|TestExtractLastTextResponseArg" -count=1`
+- **Fixture:** existing hub-backed web tests with fake LLM, fake tool registry, terminal `text_response`, and session-store retention.
+- **Artifact:** API replies, captured LLM requests, session store state, and SQLite rows from the tests.
+- **Ground truth:** web behavior is unchanged while `cmd/aura/web_chat.go` obtains its `agent.Invocation` from `agentcore.Builder`.
+- **Pass threshold:** all selected web tests pass.
+- **PRD gate:** first transport moved to the shared builder without widening runtime behavior.
+
+### B-CONS-04A-C: Dedicated Slice QA
+
+- **Command:** `go test ./internal/agentcore ./cmd/aura ./internal/agent ./internal/chat -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/agentcore ./cmd/aura --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/agentcore cmd/aura/web_chat.go cmd/aura/web_chat_test.go`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** touched packages plus full repository Go test suite.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** no compile/vet/lint regressions; touched-file duplication is zero; full Go suite passes after web adopts agentcore assembly.
+- **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
+- **PRD gate:** self-audited slice QA before atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -117,7 +146,7 @@ These rows are required before each later story can be called complete. Replace 
 | Story | Exact Command | Fixture / Artifact | Ground Truth | Pass Threshold |
 | --- | --- | --- | --- | --- |
 | CONS-03 | Completed by B-CONS-03-A..D above | fake tool registry + hub-backed web turn using shared executor | web calls `agent.ExecuteToolCalls`; tool attempts and visible tool context match current behavior | no `webToolExecutor` symbols; tool attempt row and captured context fields correct |
-| CONS-04 | `go test ./... -run "TestInvocationBuilder|TestAgentCore|TestHubBackedWebChat" -count=1` plus Telegram byte-parity fixture | legacy vs `AURA_AGENTCORE_BUILDER=true` transcript comparison | same tool-call sequence names + argument keys | exact sequence equality; response text drift <=5% where compared |
+| CONS-04 | Partially covered by B-CONS-04A; remaining: Telegram builder wiring + feature-flag parity | legacy vs `AURA_AGENTCORE_BUILDER=true` transcript comparison | same tool-call sequence names + argument keys | exact sequence equality; response text drift <=5% where compared |
 | CONS-05 | `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub" -count=1` | shared Hub with fake web and Telegram outbound adapters | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound | zero cross-channel deliveries |
 | CONS-06 | `go test ./internal/channels/web ./internal/api ./cmd/aura -run "Budget|Archive|Compaction" -count=1` | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
 | CONS-07 | `go test ./internal/channels/web ./internal/api -run "SSE|DataStream|Streaming" -count=1` plus `curl -N` probe | local SSE endpoint and parser fixture | frames are valid Vercel AI SDK data-stream frames; headers include `text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` | first byte <500ms in live probe; all fixture frames parse |
