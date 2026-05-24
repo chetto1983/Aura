@@ -2,8 +2,10 @@ package conversation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -252,6 +254,26 @@ func TestAutoCompactEngine_CompressionCount_IncrementOnSuccess(t *testing.T) {
 	// Just verify it's non-negative.
 	if e.CompressionCount < before {
 		t.Errorf("CompressionCount went backward: %d → %d", before, e.CompressionCount)
+	}
+}
+
+func TestAutoCompactEngine_CTXMetricIncrementOnSuccessfulCompress(t *testing.T) {
+	oldCounters := ctxmetrics.Global
+	ctxmetrics.Global = &ctxmetrics.Counters{}
+	t.Cleanup(func() { ctxmetrics.Global = oldCounters })
+
+	e := newTestAutoCompact("short summary", 500, ScopeTotal, 128000)
+	messages := []llm.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: strings.Repeat("first turn ", 20)},
+		{Role: "assistant", Content: strings.Repeat("assistant turn ", 20)},
+		{Role: "user", Content: "continue"},
+	}
+
+	e.Compress(messages, 600, "continue")
+
+	if got := ctxmetrics.Global.CTXCompactionsTotal.Load(); got != 1 {
+		t.Fatalf("CTXCompactionsTotal = %d, want 1", got)
 	}
 }
 

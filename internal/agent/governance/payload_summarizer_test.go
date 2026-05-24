@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/agent/governance"
+	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -32,6 +33,13 @@ func (m *mockSummaryClient) Stream(_ context.Context, _ llm.Request) (<-chan llm
 
 // bigRaw returns a string of n bytes (above payload threshold when n/4 > threshold).
 func bigRaw(n int) string { return strings.Repeat("x", n) }
+
+func resetCTXMetrics(t *testing.T) {
+	t.Helper()
+	oldCounters := ctxmetrics.Global
+	ctxmetrics.Global = &ctxmetrics.Counters{}
+	t.Cleanup(func() { ctxmetrics.Global = oldCounters })
+}
 
 // TestPayloadSummarizer_BelowThreshold_SkipsLLM verifies guard 1: a result
 // below the token threshold passes through without any LLM call.
@@ -71,6 +79,8 @@ func TestPayloadSummarizer_AboveMax_SkipsLLM(t *testing.T) {
 // This covers the "tool result ≥ threshold AND TokenJuice fallback → summarizer
 // fires; result replaces inline" AC.
 func TestPayloadSummarizer_Success_ReturnsSummarizedPayload(t *testing.T) {
+	resetCTXMetrics(t)
+
 	raw := bigRaw(4000) // 4000 bytes = ~1000 tokens; threshold=100 triggers
 	summaryText := "short"
 	mock := &mockSummaryClient{response: summaryText}
@@ -91,6 +101,9 @@ func TestPayloadSummarizer_Success_ReturnsSummarizedPayload(t *testing.T) {
 	}
 	if mock.calls != 1 {
 		t.Errorf("expected 1 LLM call, got %d", mock.calls)
+	}
+	if got := ctxmetrics.Global.PayloadSummarizationsTotal.Load(); got != 1 {
+		t.Errorf("PayloadSummarizationsTotal = %d, want 1", got)
 	}
 }
 
@@ -118,6 +131,8 @@ func TestPayloadSummarizer_SummaryGTERaw_RejectsAndRecordsFailure(t *testing.T) 
 // the summarizer is disabled for the rest of the session and subsequent
 // calls return nil without hitting the LLM.
 func TestPayloadSummarizer_ThreeConsecutiveFailures_TripsBreaker(t *testing.T) {
+	resetCTXMetrics(t)
+
 	raw := bigRaw(400) // above threshold=10
 	mock := &mockSummaryClient{err: errors.New("LLM unavailable")}
 	s := governance.NewSubagentPayloadSummarizer(mock, "test-model", "", 10, 65536)
@@ -140,6 +155,9 @@ func TestPayloadSummarizer_ThreeConsecutiveFailures_TripsBreaker(t *testing.T) {
 	}
 	if mock.calls != prevCalls {
 		t.Error("post-breaker: LLM should not be called when circuit breaker is tripped")
+	}
+	if got := ctxmetrics.Global.PayloadBreakerTripsTotal.Load(); got != 1 {
+		t.Errorf("PayloadBreakerTripsTotal = %d, want 1", got)
 	}
 }
 

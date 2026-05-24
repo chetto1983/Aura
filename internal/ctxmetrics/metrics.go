@@ -8,7 +8,6 @@ import "sync/atomic"
 // Counters tracks event counts for the two compaction layers.
 type Counters struct {
 	CTXCompactionsTotal        atomic.Int64 // AutoCompactEngine Compress calls that changed the message slice
-	CTXCompactionsSkippedTotal atomic.Int64 // reserved; incremented when compaction is skipped at threshold
 	PayloadSummarizationsTotal atomic.Int64 // successful SubagentPayloadSummarizer reductions
 	PayloadBreakerTripsTotal   atomic.Int64 // circuit-breaker trips (3 consecutive LLM failures)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/aura/aura/internal/api/auth"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
+	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/sandbox"
 	runstore "github.com/aura/aura/internal/storage/runs"
@@ -47,6 +48,53 @@ func TestSkillSearchRootsIncludeSkillsPathCatalogLayouts(t *testing.T) {
 		if !helpersContains(roots, want) {
 			t.Fatalf("roots missing %q: %+v", want, roots)
 		}
+	}
+}
+
+func TestPopulateMaxConversationTokensUpdatesCTXMetricsGauges(t *testing.T) {
+	oldGauges := ctxmetrics.GlobalGauges
+	ctxmetrics.GlobalGauges = &ctxmetrics.Gauges{}
+	t.Cleanup(func() { ctxmetrics.GlobalGauges = oldGauges })
+
+	cfg := &config.Config{
+		MaxHistoryMessages: 50,
+		ModelContextWindow: 200000,
+		CTXCompactPercent:  0.5,
+		CTXCompactScope:    "total",
+	}
+	populateMaxConversationTokens(cfg, slog.Default())
+
+	if cfg.MaxConversationTokens != 100000 {
+		t.Fatalf("MaxConversationTokens = %d, want 100000", cfg.MaxConversationTokens)
+	}
+	if ctxmetrics.GlobalGauges.ModelContextWindow != 200000 {
+		t.Fatalf("ModelContextWindow gauge = %d, want 200000", ctxmetrics.GlobalGauges.ModelContextWindow)
+	}
+	if ctxmetrics.GlobalGauges.CompactionThresholdTokens != 100000 {
+		t.Fatalf("CompactionThresholdTokens gauge = %d, want 100000", ctxmetrics.GlobalGauges.CompactionThresholdTokens)
+	}
+}
+
+func TestPopulateMaxConversationTokensLegacyPathUpdatesCTXMetricsGauges(t *testing.T) {
+	oldGauges := ctxmetrics.GlobalGauges
+	ctxmetrics.GlobalGauges = &ctxmetrics.Gauges{}
+	t.Cleanup(func() { ctxmetrics.GlobalGauges = oldGauges })
+
+	cfg := &config.Config{
+		MaxHistoryMessages: 8,
+		ModelContextWindow: 123456,
+		CTXCompactPercent:  0,
+	}
+	populateMaxConversationTokens(cfg, slog.Default())
+
+	if cfg.MaxConversationTokens != 4000 {
+		t.Fatalf("MaxConversationTokens = %d, want 4000", cfg.MaxConversationTokens)
+	}
+	if ctxmetrics.GlobalGauges.ModelContextWindow != 123456 {
+		t.Fatalf("ModelContextWindow gauge = %d, want 123456", ctxmetrics.GlobalGauges.ModelContextWindow)
+	}
+	if ctxmetrics.GlobalGauges.CompactionThresholdTokens != 4000 {
+		t.Fatalf("CompactionThresholdTokens gauge = %d, want 4000", ctxmetrics.GlobalGauges.CompactionThresholdTokens)
 	}
 }
 

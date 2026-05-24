@@ -106,9 +106,13 @@ func populateModelContextWindow(ctx context.Context, cfg *config.Config, logger 
 // is approximated at 500 tokens/message.
 func populateMaxConversationTokens(cfg *config.Config, logger *slog.Logger) {
 	const legacyDefault = 50
+	ctxmetrics.GlobalGauges.ModelContextWindow = cfg.ModelContextWindow
+	ctxmetrics.GlobalGauges.CompactionThresholdTokens = 0
+
 	if cfg.MaxHistoryMessages != legacyDefault {
 		approx := cfg.MaxHistoryMessages * 500
 		cfg.MaxConversationTokens = approx
+		ctxmetrics.GlobalGauges.CompactionThresholdTokens = cfg.MaxConversationTokens
 		logger.Warn("MAX_HISTORY_MESSAGES is deprecated; set AURA_CTX_COMPACT_PERCENT to control token-budget compaction",
 			"max_history_messages", cfg.MaxHistoryMessages,
 			"approx_threshold_tokens", approx)
@@ -123,7 +127,6 @@ func populateMaxConversationTokens(cfg *config.Config, logger *slog.Logger) {
 		"compact_percent", cfg.CTXCompactPercent,
 		"threshold_tokens", cfg.MaxConversationTokens,
 		"scope", cfg.CTXCompactScope)
-	ctxmetrics.GlobalGauges.ModelContextWindow = cfg.ModelContextWindow
 	ctxmetrics.GlobalGauges.CompactionThresholdTokens = cfg.MaxConversationTokens
 }
 
