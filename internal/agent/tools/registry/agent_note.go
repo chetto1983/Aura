@@ -38,7 +38,7 @@ func NewAgentNoteTool(store *agentnote.Store, conversationIDProvider func(ctx co
 func (t *AgentNoteTool) Name() string { return "agent_note" }
 
 func (t *AgentNoteTool) Description() string {
-	return `Per-conversation scratchpad for your own working memory (todo list, plan, intermediate findings). Private to this conversation, not visible to the user, not promoted to wiki or user memory.
+	return `Manage per-conversation scratchpad for your own working memory (todo list, plan, intermediate findings). Private to this conversation, not visible to the user, not promoted to wiki or user memory.
 
 EXAMPLES — copy the shape exactly:
 

@@ -154,21 +154,24 @@ func TestRegisterMemoryRecallToolsWiresTypedTiersAndFreshness(t *testing.T) {
 	}
 	app.registerMemoryRecallTools(app.deps.Cfg)
 
-	for _, name := range []string{"search", "recall_operational", "recall_user_memory"} {
+	for _, name := range []string{"search"} {
 		if registry.Get(name) == nil {
 			t.Fatalf("expected %s to be registered", name)
 		}
 	}
-	if registry.Get("search_memory") != nil {
-		t.Fatal("search_memory must NOT be registered (deprecated, replaced by search)")
+	for _, name := range []string{"search_memory", "recall_operational", "recall_user_memory"} {
+		if registry.Get(name) != nil {
+			t.Fatalf("%s must NOT be registered (folded into search)", name)
+		}
 	}
 
-	userOut, err := registry.Get("recall_user_memory").Execute(ctx, map[string]any{
+	userOut, err := registry.Get("search").Execute(ctx, map[string]any{
+		"action":   "user_facts",
 		"query":    "dark mode",
 		"category": "preference",
 	})
 	if err != nil {
-		t.Fatalf("recall_user_memory: %v", err)
+		t.Fatalf("search user_facts: %v", err)
 	}
 	assertContainsAll(t, "user recall", userOut, []string{
 		"[user_memory]",
@@ -186,11 +189,12 @@ func TestRegisterMemoryRecallToolsWiresTypedTiersAndFreshness(t *testing.T) {
 		proposalToken,
 	})
 
-	operationalOut, err := registry.Get("recall_operational").Execute(ctx, map[string]any{
+	operationalOut, err := registry.Get("search").Execute(ctx, map[string]any{
+		"action":    "lessons",
 		"tool_name": "web_search",
 	})
 	if err != nil {
-		t.Fatalf("recall_operational: %v", err)
+		t.Fatalf("search lessons: %v", err)
 	}
 	assertContainsAll(t, "operational recall", operationalOut, []string{
 		"[operational]",

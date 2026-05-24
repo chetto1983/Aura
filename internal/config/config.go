@@ -149,8 +149,6 @@ type Config struct {
 	OP07NFailThreshold          int    `envconfig:"AURA_OP07_NFAIL_THRESHOLD" default:"2"`
 	OP07RecentTurns             int    `envconfig:"AURA_OP07_RECENT_TURNS" default:"10"`
 	MemoryJudgeEnabled          bool   `envconfig:"AURA_MEMORY_JUDGE_ENABLED" default:"false"`
-	OP12PrecallValidatorEnabled bool   `envconfig:"AURA_OP12_PRECALL_VALIDATOR_ENABLED" default:"false"`
-	OP12RetryHintEnabled        bool   `envconfig:"AURA_OP12B_RETRY_HINT_ENABLED" default:"false"`
 	// PromptCacheEnabled, when true, injects Anthropic-style cache_control
 	// markers on the static system-message prefix. Effective only when the
 	// configured LLM provider is heuristically recognised as cache-capable
@@ -355,8 +353,6 @@ func Load() (*Config, error) {
 	cfg.OP07NFailThreshold = normalizeIntRange(getEnvInt("AURA_OP07_NFAIL_THRESHOLD", DefaultOP07NFailThreshold), 1, 20, DefaultOP07NFailThreshold)
 	cfg.OP07RecentTurns = normalizeIntRange(getEnvInt("AURA_OP07_RECENT_TURNS", DefaultOP07RecentTurns), 1, 100, DefaultOP07RecentTurns)
 	cfg.MemoryJudgeEnabled = getEnvBool("AURA_MEMORY_JUDGE_ENABLED", false)
-	cfg.OP12PrecallValidatorEnabled = getEnvBool("AURA_OP12_PRECALL_VALIDATOR_ENABLED", false)
-	cfg.OP12RetryHintEnabled = getEnvBool("AURA_OP12B_RETRY_HINT_ENABLED", false)
 
 	cfg.MistralAPIKey = getSecretEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")

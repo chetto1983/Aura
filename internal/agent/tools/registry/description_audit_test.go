@@ -14,26 +14,17 @@ import (
 func auditTools() []Tool {
 	return []Tool{
 		&AskUserTool{},
-		&AskUserClarificationTool{},
-		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
-		&SearchMemoryTool{},
-		&RecallOperationalTool{},
-		&RecallUserMemoryTool{},
-		&RecallGodNodesTool{},
-		&WikiPathTool{},
-		&WikiSubgraphTool{},
+		&SearchTool{},
 		&WebTool{},
 		&WikiPageTool{},
 		&TaskTool{loc: time.Local},
 		&SourceTool{},
 		&FileTool{},
-		&DocTool{},
 		&ExecuteCodeTool{},
 		&ExecuteShellTool{},
-		&DevToolTool{},
-		&DailyBriefingTool{loc: time.Local, now: time.Now},
-		&SearchTool{},
+		&ProposePatchTool{},
+		&AgentNoteTool{},
 	}
 }
 
@@ -73,8 +64,9 @@ func TestDescriptionAuditMarkers(t *testing.T) {
 // Cap raised from 200 → 1500 on 2026-05-24 to fit the example-first rewrite:
 // every tool's description now leads with concrete EXAMPLES blocks that drove
 // schema-mismatch first-attempt failures to zero on the user-visible tools
-// (text_response, agent_note, web, file, wiki_page, source). 24 tools × 1500
-// ~= 36 KiB of always-loaded manifest, an acceptable cost.
+// (text_response, agent_note, web, file, wiki_page, source). The consolidated
+// tool surface keeps this budget bounded by folding recall/wiki graph actions
+// into search and structured clarification into ask_user.
 func TestDescriptionAuditLenCap(t *testing.T) {
 	const cap = 1500
 	for _, tool := range auditTools() {
@@ -110,15 +102,13 @@ func TestDescriptionAuditSpecificPhrases(t *testing.T) {
 		{&ExecuteCodeTool{}, "Read-only stdout, capped, results are INTERNAL — synthesize before replying"},
 		{&ExecuteShellTool{}, "Read-only stdout, capped, results are INTERNAL — synthesize before replying"},
 		// search_memory: results are INTERNAL; LLM must synthesize, not echo.
-		{&SearchMemoryTool{}, "Returns top-10 hits, INTERNAL — synthesize"},
+		{&SearchTool{}, "Unified knowledge lookup"},
 		// source action=read: cap so the LLM knows what to expect.
 		{&SourceTool{}, "Returns source archive bytes, 16384-byte cap"},
 		// file action=read: same cap signal.
 		{&FileTool{}, "Returns file bytes, 16384-byte cap"},
 		// web action=search: default result count explicit.
 		{&WebTool{}, "Returns top-5 results"},
-		// doc: emphasise that the output is a path, not inline content.
-		{&DocTool{}, "Returns a workspace path, not content"},
 	}
 
 	for _, c := range cases {

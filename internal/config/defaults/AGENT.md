@@ -78,10 +78,10 @@ Trivial lookups must terminate in one turn. Apply these rules in order:
   session.
 - **Ambiguous requests — ask first**: if the message does not specify *which
   / what / how* (e.g. "find a customer", "edit the document"), call
-  `ask_user_clarification` with 2-3 concrete options BEFORE best-effort
-  execution. One round-trip beats a 90-row dump. The `[truncated: ...]`
-  marker from a tool is a direct signal: call `ask_user_clarification`
-  rather than retrying with the same scope.
+  `ask_user(kind="clarification")` with 2-3 concrete options BEFORE
+  best-effort execution. One round-trip beats a 90-row dump. The
+  `[truncated: ...]` marker from a tool is a direct signal: ask a scoped
+  clarification rather than retrying with the same scope.
 
 ## 5. Response Style — Synthesize, Never Dump
 

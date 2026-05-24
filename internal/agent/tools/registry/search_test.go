@@ -5,6 +5,11 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/storage/search"
+	"github.com/aura/aura/internal/wiki"
 )
 
 // TestSearch_ActionSearch_HybridReturns verifies that action=search delegates
@@ -144,5 +149,51 @@ func TestSearch_SearchMemoryInternalExecution(t *testing.T) {
 	}
 	if strings.Contains(out, "DEPRECATED") {
 		t.Errorf("SearchMemoryTool output must not contain DEPRECATED hint (it is now internal-only):\n%s", out)
+	}
+}
+
+func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	compact := fakeCompactMemorySearch{docs: []memoryindex.Document{
+		operationalLesson("web-timeout", "web", "timeout", now),
+		userFact("user_memory:pref", "preference", "Prefers dark mode", now),
+	}}
+	store := newSubgraphTestStore(t, map[string]*wiki.Page{
+		"robot": {Title: "Robot", Body: "Robot connects to [[frame]]."},
+		"frame": {Title: "Frame", Body: "Frame supports [[robot]]."},
+	})
+	tool := NewSearchTool(NewSearchMemoryTool(nil, compact), store, nil).
+		WithRecallAndGraphActions(
+			NewRecallOperationalTool(compact),
+			NewRecallUserMemoryTool(compact),
+			NewRecallGodNodesTool(store),
+			NewWikiPathTool(store),
+			NewWikiSubgraphTool(store, &fakeSubgraphSearcher{results: []search.Result{
+				{Slug: "robot", Title: "Robot", Score: 0.95},
+			}}),
+		)
+
+	cases := []struct {
+		name string
+		args map[string]any
+		want string
+	}{
+		{name: "lessons", args: map[string]any{"action": "lessons", "tool_name": "web"}, want: "operational:web-timeout"},
+		{name: "user facts", args: map[string]any{"action": "user_facts", "category": "preference"}, want: "user_memory:pref"},
+		{name: "god nodes", args: map[string]any{"action": "god_nodes", "top_k": 2}, want: "robot"},
+		{name: "path", args: map[string]any{"action": "path", "from_slug": "robot", "to_slug": "frame"}, want: `"path":["robot","frame"]`},
+		{name: "subgraph", args: map[string]any{"action": "subgraph", "query": "robot", "depth": 1, "budget_tokens": 500}, want: "CAPSULE wiki_subgraph"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := tool.Execute(ctx, tc.args)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if !strings.Contains(out, tc.want) {
+				t.Fatalf("output missing %q:\n%s", tc.want, out)
+			}
+		})
 	}
 }

@@ -5,18 +5,19 @@
 // turn) and for scripting interactions.
 //
 // Configuration via environment variables:
-//   AURA_CHAT_URL    HTTP base URL of the Aura instance. Default: http://127.0.0.1:18080
-//   AURA_CHAT_TOKEN  Bearer token (mint one via the Telegram /start command
-//                    or with the request_dashboard_token LLM tool). Required.
-//   AURA_CHAT_USER   Optional user_id sent in the payload. Leave blank for
-//                    bearer-authenticated calls so Aura uses the token owner.
+//
+//	AURA_CHAT_URL    HTTP base URL of the Aura instance. Default: http://127.0.0.1:18080
+//	AURA_CHAT_TOKEN  Bearer token (mint one via the Telegram /start or /token
+//	                 command). Required.
+//	AURA_CHAT_USER   Optional user_id sent in the payload. Leave blank for
+//	                 bearer-authenticated calls so Aura uses the token owner.
 //
 // Usage:
 //
-//   $ AURA_CHAT_TOKEN=xxx go run ./cmd/chat
-//   > ciao, dimmi tre fatti su qdrant
-//   ... reply ...
-//   > Ctrl+D to exit
+//	$ AURA_CHAT_TOKEN=xxx go run ./cmd/chat
+//	> ciao, dimmi tre fatti su qdrant
+//	... reply ...
+//	> Ctrl+D to exit
 package main
 
 import (

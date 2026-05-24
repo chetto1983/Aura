@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aura/aura/internal/llm"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/llm"
 )
 
 func TestRunLoopNoToolCallsReturnsAssistantText(t *testing.T) {
@@ -838,22 +838,22 @@ func (s *budgetLoopState) sawUserMessage(substr string) bool {
 	return false
 }
 
-// TestRunLoopAskUserClarificationPausesLoop verifies that when the LLM calls
-// ask_user_clarification, the loop pauses (StopReason=waiting_for_user) after
-// exactly one LLM call — identical semantics to ask_user.
-func TestRunLoopAskUserClarificationPausesLoop(t *testing.T) {
+// TestRunLoopStructuredAskUserPausesLoop verifies that structured choices on
+// ask_user pause the loop after exactly one LLM call.
+func TestRunLoopStructuredAskUserPausesLoop(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{
 			HasToolCalls: true,
 			ToolCalls: []llm.ToolCall{
-				{ID: "clarify-1", Name: "ask_user_clarification", Arguments: map[string]any{
-					"question": "Quale cliente cerchi?",
+				{ID: "clarify-1", Name: "ask_user", Arguments: map[string]any{
+					"question": "Which customer are you looking for?",
 					"options": []any{
-						map[string]any{"label": "Per nome", "value": "by_name"},
-						map[string]any{"label": "Per codice", "value": "by_code"},
-						map[string]any{"label": "Mostrami i primi 5", "value": "first5"},
+						map[string]any{"label": "By name", "value": "by_name"},
+						map[string]any{"label": "By code", "value": "by_code"},
+						map[string]any{"label": "Show first 5", "value": "first5"},
 					},
+					"kind": "choice",
 				}},
 			},
 		}},
@@ -862,9 +862,9 @@ func TestRunLoopAskUserClarificationPausesLoop(t *testing.T) {
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		return ExecutionSummary{
 			AwaitingUserInput: &tools.ErrAwaitingUserInput{
-				Question: "Quale cliente cerchi?",
-				Options:  []string{"Per nome", "Per codice", "Mostrami i primi 5"},
-				Kind:     "clarification",
+				Question: "Which customer are you looking for?",
+				Options:  []string{"By name", "By code", "Show first 5"},
+				Kind:     "choice",
 			},
 		}
 	}), state, Options{MaxIterations: 5})
@@ -990,9 +990,9 @@ func TestRunLoopEndTurnNilFallsBackToExistingExit(t *testing.T) {
 // captureLoopClient is a test client that records every messages slice it
 // receives so tests can inspect what the loop sent to the LLM on each call.
 type captureLoopClient struct {
-	mu       sync.Mutex
-	captured [][]llm.Message
-	idx      int
+	mu        sync.Mutex
+	captured  [][]llm.Message
+	idx       int
 	responses []ChatResponse
 }
 

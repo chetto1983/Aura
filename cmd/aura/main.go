@@ -19,10 +19,8 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/api"
-	tools "github.com/aura/aura/internal/agent/tools/registry"
 	telegramadapter "github.com/aura/aura/internal/channels/telegram"
 	"github.com/aura/aura/internal/config"
-	"github.com/aura/aura/internal/swarm"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
 	"github.com/aura/aura/internal/logging"
@@ -32,7 +30,6 @@ import (
 	"github.com/aura/aura/internal/telegram"
 	"github.com/aura/aura/internal/tray"
 )
-
 
 const restartDelayEnv = "AURA_RESTART_DELAY_MS"
 const restartCooldown = 30 * time.Second
@@ -364,15 +361,6 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 		}
 		bot.SetHub(hub)
 
-		// Register SubagentDispatchTool now that hub is live (US-R03 read-only fanout).
-		// Adapters bridge local tool types ↔ swarm/chat concrete types without
-		// introducing import cycles in internal/agent/tools/registry.
-		if t := tools.NewSubagentDispatchTool(
-			&subagentBridgeAdapter{bridge: swarm.NewHubBridge(hub, "")},
-			&subagentHubAdapter{hub: hub},
-		); t != nil {
-			app.deps.Tools.Register(t)
-		}
 	}
 
 	healthServer.SetBotUsername(bot.Username())
@@ -572,4 +560,3 @@ func dashboardHost(port string) string {
 	}
 	return port
 }
-

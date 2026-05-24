@@ -29,27 +29,18 @@ func TestCatalogueScanNativeTools(t *testing.T) {
 	// to satisfy any nil-guard in normalizeToolDefinition.
 	toolsToCheck := []Tool{
 		&AskUserTool{},
-		&AskUserClarificationTool{},
-		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
 
-		&SearchMemoryTool{},
-		&RecallOperationalTool{},
-		&RecallUserMemoryTool{},
-		&RecallGodNodesTool{},
-		&WikiPathTool{},
-		&WikiSubgraphTool{},
+		&SearchTool{},
 		&WebTool{},
 		&WikiPageTool{},
 		&TaskTool{loc: time.Local},
 		&SourceTool{},
 		&FileTool{},
-		&DocTool{},
 		&ExecuteCodeTool{},
 		&ExecuteShellTool{},
-		&DevToolTool{},
-		&DailyBriefingTool{loc: time.Local, now: time.Now},
-		&SearchTool{},
+		&ProposePatchTool{},
+		&AgentNoteTool{},
 	}
 
 	var failures []string
@@ -70,13 +61,11 @@ func TestCatalogueScanNativeTools(t *testing.T) {
 	}
 }
 
-// TestCatalogueAlwaysOnTools verifies the three control-surface tools are
+// TestCatalogueAlwaysOnTools verifies the always-on control-surface tools are
 // marked VisibilityAlwaysOn.
 func TestCatalogueAlwaysOnTools(t *testing.T) {
 	alwaysOn := []Tool{
 		&AskUserTool{},
-		&AskUserClarificationTool{},
-		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
 	}
 	for _, tool := range alwaysOn {
@@ -91,12 +80,12 @@ func TestCatalogueAlwaysOnTools(t *testing.T) {
 // data carry DestructiveHint=true.
 func TestCatalogueDestructiveTools(t *testing.T) {
 	destructive := []Tool{
-		&SourceTool{},    // delete action
-		&FileTool{},      // write/patch actions
+		&SourceTool{},              // delete action
+		&FileTool{},                // write/patch actions
 		&TaskTool{loc: time.Local}, // cancel/run_now mutate tasks
 		&ExecuteCodeTool{},
 		&ExecuteShellTool{},
-		&WikiPageTool{},  // replace/edit can overwrite page content
+		&WikiPageTool{}, // replace/edit can overwrite page content
 	}
 	for _, tool := range destructive {
 		def := definitionForTool(tool)
@@ -127,27 +116,18 @@ func TestCatalogueOpenWorldTools(t *testing.T) {
 func TestCatalogueReadOnlyHintConsistency(t *testing.T) {
 	toolsToCheck := []Tool{
 		&AskUserTool{},
-		&AskUserClarificationTool{},
-		&RequestDashboardTokenTool{},
 		&TextResponseTool{},
 
-		&SearchMemoryTool{},
-		&RecallOperationalTool{},
-		&RecallUserMemoryTool{},
-		&RecallGodNodesTool{},
-		&WikiPathTool{},
-		&WikiSubgraphTool{},
+		&SearchTool{},
 		&WebTool{},
 		&WikiPageTool{},
 		&TaskTool{loc: time.Local},
 		&SourceTool{},
 		&FileTool{},
-		&DocTool{},
 		&ExecuteCodeTool{},
 		&ExecuteShellTool{},
-		&DevToolTool{},
-		&DailyBriefingTool{loc: time.Local, now: time.Now},
-		&SearchTool{},
+		&ProposePatchTool{},
+		&AgentNoteTool{},
 	}
 	for _, tool := range toolsToCheck {
 		def := definitionForTool(tool)

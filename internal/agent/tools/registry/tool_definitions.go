@@ -2,10 +2,12 @@ package tools
 
 func (t *ProposePatchTool) Definition() ToolDefinition {
 	return ToolDefinition{
-		Name:           t.Name(),
-		Description:    t.Description(),
-		Parameters:     t.Parameters(),
-		VisibilityTier: VisibilityActiveTurn,
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true,
+		IdempotentHint:  true,
+		VisibilityTier:  VisibilityActiveTurn,
 		Examples: []ToolCallExample{
 			{
 				Description: "Propose a wiki page edit for operator review.",
@@ -22,11 +24,11 @@ func (t *ProposePatchTool) Definition() ToolDefinition {
 
 func (t *SearchMemoryTool) Definition() ToolDefinition {
 	return ToolDefinition{
-		Name:          t.Name(),
-		Description:   t.Description(),
-		Parameters:    t.Parameters(),
-		ReadOnlyHint:  true,
-		OpenWorldHint: true,
+		Name:           t.Name(),
+		Description:    t.Description(),
+		Parameters:     t.Parameters(),
+		ReadOnlyHint:   true,
+		OpenWorldHint:  true,
 		VisibilityTier: VisibilityActiveTurn,
 		Examples: []ToolCallExample{
 			{
@@ -83,11 +85,12 @@ func (t *RecallUserMemoryTool) Definition() ToolDefinition {
 
 func (t *AgentNoteTool) Definition() ToolDefinition {
 	return ToolDefinition{
-		Name:           t.Name(),
-		Description:    t.Description(),
-		Parameters:     t.Parameters(),
-		IdempotentHint: false,
-		VisibilityTier: VisibilityActiveTurn,
+		Name:            t.Name(),
+		Description:     t.Description(),
+		Parameters:      t.Parameters(),
+		DestructiveHint: true,
+		IdempotentHint:  false,
+		VisibilityTier:  VisibilityActiveTurn,
 		Examples: []ToolCallExample{
 			{
 				Description: "Record a working plan for the current conversation.",
@@ -99,4 +102,3 @@ func (t *AgentNoteTool) Definition() ToolDefinition {
 		},
 	}
 }
-

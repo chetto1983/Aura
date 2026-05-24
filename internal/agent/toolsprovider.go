@@ -13,8 +13,7 @@ import (
 // any name the model calls against the registry. This slice seeds the initial
 // pool with the highest-frequency retrieval tools so they're hot from turn 1.
 var AlwaysOnCore = []string{
-	"search_memory",
-	"wiki_subgraph",
+	"search",
 	"source",
 	"wiki_page",
 }

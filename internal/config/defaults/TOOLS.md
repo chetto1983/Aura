@@ -53,28 +53,25 @@
 
 ### Ask the user
 
-- **Genuine ambiguity that blocks progress** → `ask_user question=… options=[…] kind=clarification|approval`. Wait for the answer before proceeding.
+- **Genuine ambiguity that blocks progress** → `ask_user question=... options=[...] kind=clarification|approval|choice`. Wait for the answer before proceeding.
 - **NOT for "should I continue?" rituals** — if the task verb was explicit, just do it.
 
 ## Cross-cutting rules
 
 - **Read before edit**: always `file action=read` or `wiki_page` read flow before modifying. Use `expected_updated_at` from the read for wiki edit/append/replace concurrency control.
 - **Parallel tool calls when independent**: if a turn needs N tools without dependencies, emit them in one tool_calls block in parallel. Sequence only when tool B depends on A's output.
-- **Action-dispatch tools have per-action required fields**: every action-dispatch tool (`wiki_page`, `file`, `doc`, `task`, `source`, `web`, `dev_tool`, `agent_note`, `subagent_dispatch`, `propose_patch`) opens its description with `REQUIRED PARAMETERS BY ACTION`. Read it before calling. Common mistakes: `page` instead of `slug`, `content` instead of `body`, omitting `expected_updated_at` on wiki_page edit/append/replace.
+- **Action-dispatch tools have per-action required fields**: every action-dispatch tool (`wiki_page`, `file`, `task`, `source`, `web`, `search`, `agent_note`, `propose_patch`) opens its description with per-action required fields. Read it before calling. Common mistakes: `page` instead of `slug`, `content` instead of `body`, omitting `expected_updated_at` on wiki_page edit/append/replace.
 - **Tool argument privacy**: tool argument *values* (URLs with tokens, raw secrets, source bytes) are not logged by the runtime; you also should not echo them verbatim in your reply when not needed.
 - **Tool name reference (no description here — see schema)**:
   - File: `file`
   - Wiki: `wiki_page`
-  - Memory: `search`, `recall_user_memory`, `recall_operational`, `agent_note`
+  - Memory/graph: `search`, `agent_note`
   - Source: `source`
   - Web: `web`
-  - Doc: `doc`
   - Schedule: `task`
   - Exec: `execute_code`, `execute_shell`
-  - Subagent: `subagent_dispatch`
   - Proposal: `propose_patch`
-  - Discovery: `dev_tool`
-  - Auth/UX: `request_dashboard_token`, `ask_user`
+  - Auth/UX: `ask_user`
   - MCP: dynamic `mcp_<server>_<tool>` (registered at boot)
 
 ## Hard rules (NEVER violate)

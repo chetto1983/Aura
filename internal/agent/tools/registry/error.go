@@ -66,18 +66,11 @@ func FormatToolError(err error) string {
 	if err == nil {
 		return ""
 	}
-	var validationErr *ValidationError
-	if errors.As(err, &validationErr) {
-		return appendRetryHintIfEnabled(validationErr.Error())
-	}
 	msg := err.Error()
-	var out string
 	if hint := specificHint(msg); hint != "" {
-		out = "Error: " + msg + "\n\n" + hint
-	} else {
-		out = "Error: " + msg
+		return "Error: " + msg + "\n\n" + hint
 	}
-	return appendRetryHintIfEnabled(out)
+	return "Error: " + msg
 }
 
 // FormatFatalToolError exists for callsite intent only. Same wire format as
@@ -87,23 +80,7 @@ func FormatFatalToolError(err error) string {
 	if err == nil {
 		return ""
 	}
-	return appendRetryHintIfEnabled("Error: " + err.Error())
-}
-
-const retryHintSuffix = " [Analyze the error above and try a different approach.]"
-
-func appendRetryHintIfEnabled(content string) string {
-	if !op12RetryHintEnabled() {
-		return content
-	}
-	return appendRetryHint(content)
-}
-
-func appendRetryHint(content string) string {
-	if strings.TrimSpace(content) == "" || strings.Contains(content, retryHintSuffix) {
-		return content
-	}
-	return strings.TrimRight(content, " \t\r\n") + retryHintSuffix
+	return "Error: " + err.Error()
 }
 
 // specificHint returns information the LLM cannot infer from the message

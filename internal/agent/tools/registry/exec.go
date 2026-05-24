@@ -208,11 +208,10 @@ const internalToolCallManifestName = "aura_tool_calls.json"
 // CLAUDE.md's "tools the LLM trusted in the active turn" allowlist sits on
 // top of this — both must permit the call for it to run.
 var blockedInternalToolCalls = map[string]bool{
-	"execute_code":            true,
-	"execute_shell":           true,
-	"request_dashboard_token": true,
-	"delete_source":           true,
-	"forget_memory":           true,
+	"execute_code":  true,
+	"execute_shell": true,
+	"delete_source": true,
+	"forget_memory": true,
 }
 
 // perInternalToolCallTimeout caps each call inside the manifest loop. A single

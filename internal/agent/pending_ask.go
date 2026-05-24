@@ -44,6 +44,12 @@ func PendingAskUserCall(messages []llm.Message) (toolCallID string, options []st
 					for _, item := range v {
 						if s, ok := item.(string); ok {
 							opts = append(opts, s)
+							continue
+						}
+						if m, ok := item.(map[string]any); ok {
+							if label, _ := m["label"].(string); label != "" {
+								opts = append(opts, label)
+							}
 						}
 					}
 				}

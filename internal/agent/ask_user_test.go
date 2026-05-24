@@ -94,6 +94,28 @@ func TestAskUserToolExecuteApprovalKind(t *testing.T) {
 	}
 }
 
+func TestAskUserToolExecuteStructuredOptions(t *testing.T) {
+	tool := &tools.AskUserTool{}
+	_, err := tool.Execute(context.Background(), map[string]any{
+		"question": "Which destination?",
+		"kind":     "choice",
+		"options": []any{
+			map[string]any{"label": "Production", "value": "prod"},
+			map[string]any{"label": "Staging", "value": "staging"},
+		},
+	})
+	var awaitErr *tools.ErrAwaitingUserInput
+	if !isErrAwaitingUserInput(err, &awaitErr) {
+		t.Fatalf("error is %T, want *ErrAwaitingUserInput", err)
+	}
+	if awaitErr.Kind != "choice" {
+		t.Errorf("Kind = %q, want choice", awaitErr.Kind)
+	}
+	if len(awaitErr.Options) != 2 || awaitErr.Options[0] != "Production" || awaitErr.Options[1] != "Staging" {
+		t.Errorf("Options = %v, want structured labels", awaitErr.Options)
+	}
+}
+
 func TestAskUserToolExecuteEmptyQuestionReturnsError(t *testing.T) {
 	tool := &tools.AskUserTool{}
 	_, err := tool.Execute(context.Background(), map[string]any{"question": ""})
@@ -244,6 +266,31 @@ func TestPendingAskUserCallFindsPending(t *testing.T) {
 	}
 	if kind != "clarification" {
 		t.Errorf("kind = %q, want clarification", kind)
+	}
+}
+
+func TestPendingAskUserCallReadsStructuredOptionLabels(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "assistant", ToolCalls: []llm.ToolCall{
+			{ID: "ask-1", Name: "ask_user", Arguments: map[string]any{
+				"question": "Which destination?",
+				"kind":     "choice",
+				"options": []any{
+					map[string]any{"label": "Production", "value": "prod"},
+					map[string]any{"label": "Staging", "value": "staging"},
+				},
+			}},
+		}},
+	}
+	_, opts, kind, ok := PendingAskUserCall(msgs)
+	if !ok {
+		t.Fatal("PendingAskUserCall returned ok=false, want true")
+	}
+	if kind != "choice" {
+		t.Errorf("kind = %q, want choice", kind)
+	}
+	if len(opts) != 2 || opts[0] != "Production" || opts[1] != "Staging" {
+		t.Errorf("options = %v, want structured labels", opts)
 	}
 }
 

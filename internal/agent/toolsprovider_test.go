@@ -25,7 +25,7 @@ func coreStubDefs(names []string) []llm.ToolDefinition {
 func TestAlwaysOnCore_ContainsWikiFastPath(t *testing.T) {
 	// The seed must include the wiki/source retrieval path so ordinary wiki Q&A
 	// can resolve in <=2 tool calls without extra discovery overhead.
-	want := []string{"search_memory", "wiki_subgraph", "source", "wiki_page"}
+	want := []string{"search", "source", "wiki_page"}
 	seen := make(map[string]bool, len(AlwaysOnCore))
 	for _, name := range AlwaysOnCore {
 		seen[name] = true

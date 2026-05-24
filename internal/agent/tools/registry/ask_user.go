@@ -11,7 +11,7 @@ import (
 type ErrAwaitingUserInput struct {
 	Question   string
 	Options    []string
-	Kind       string // "clarification" | "approval"
+	Kind       string // "clarification" | "approval" | "choice"
 	ToolCallID string
 }
 
@@ -32,7 +32,7 @@ var _ Tool = (*AskUserTool)(nil)
 func (t *AskUserTool) Name() string { return "ask_user" }
 
 func (t *AskUserTool) Description() string {
-	return "Pause the agent and ask the user a clarifying question or request approval. Required: question. Optional: options (2-4 choices), kind (clarification|approval, default clarification)."
+	return "Pause the agent and ask the user a clarification, approval, or structured choice. Required: question. Optional: options (2-4 strings or label/value choices), kind (clarification|approval|choice, default clarification)."
 }
 
 func (t *AskUserTool) Parameters() map[string]any {
@@ -44,22 +44,42 @@ func (t *AskUserTool) Parameters() map[string]any {
 				"description": "The question to present to the user. Be specific — include enough context for the user to answer without re-reading the full conversation.",
 			},
 			"options": map[string]any{
-				"type":        "array",
-				"items":       map[string]any{"type": "string"},
-				"minItems":    2,
-				"maxItems":    4,
-				"description": "Optional 2–4 short answer choices for clarification questions. Omit for approval requests (canonical options are auto-supplied). Each choice should be a distinct, actionable intent.",
+				"type":     "array",
+				"minItems": 2,
+				"maxItems": 4,
+				"items": map[string]any{
+					"oneOf": []any{
+						map[string]any{"type": "string"},
+						map[string]any{
+							"type": "object",
+							"properties": map[string]any{
+								"label": map[string]any{"type": "string", "description": "Text displayed to the user."},
+								"value": map[string]any{"type": "string", "description": "Machine-readable value for the choice."},
+							},
+							"required": []string{"label", "value"},
+						},
+					},
+				},
+				"description": "Optional 2-4 choices. Use strings for simple choices or {label,value} objects when the displayed label should map to a stable value.",
 			},
 			"kind": map[string]any{
 				"type":        "string",
-				"enum":        []string{"clarification", "approval"},
-				"description": "clarification = choosing between interpretations or supplying a missing slot; approval = confirming a risky or irreversible action. Default: clarification.",
+				"enum":        []string{"clarification", "approval", "choice"},
+				"description": "clarification = missing information; approval = confirming a risky action; choice = choosing one structured option. Default: clarification.",
 			},
 		},
 		"required": []string{"question"},
 		"examples": []any{
-			map[string]any{"question": "Quale progetto vuoi che apra?", "options": []string{"Aura", "Gamma", "Mostrami tutti"}, "kind": "clarification"},
-			map[string]any{"question": "Eliminare la pagina wiki 'old-contacts'? Operazione irreversibile.", "kind": "approval"},
+			map[string]any{"question": "Which project should I open?", "options": []string{"Aura", "Gamma", "Show all"}, "kind": "clarification"},
+			map[string]any{
+				"question": "Which destination should I use?",
+				"options": []any{
+					map[string]any{"label": "Production", "value": "prod"},
+					map[string]any{"label": "Staging", "value": "staging"},
+				},
+				"kind": "choice",
+			},
+			map[string]any{"question": "Delete wiki page 'old-contacts'? This cannot be undone.", "kind": "approval"},
 		},
 	}
 }
@@ -82,20 +102,9 @@ func (t *AskUserTool) Execute(_ context.Context, args map[string]any) (string, e
 		return "", fmt.Errorf("ask_user: question is required")
 	}
 
-	var opts []string
-	if raw, ok := args["options"]; ok {
-		switch v := raw.(type) {
-		case []string:
-			opts = append(opts, v...)
-		case []any:
-			for _, item := range v {
-				if s, ok := item.(string); ok {
-					if s = strings.TrimSpace(s); s != "" {
-						opts = append(opts, s)
-					}
-				}
-			}
-		}
+	opts, err := askUserOptionLabels(args["options"])
+	if err != nil {
+		return "", err
 	}
 
 	kind := "clarification"
@@ -108,4 +117,48 @@ func (t *AskUserTool) Execute(_ context.Context, args map[string]any) (string, e
 		Options:  opts,
 		Kind:     kind,
 	}
+}
+
+func askUserOptionLabels(raw any) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	var opts []string
+	switch v := raw.(type) {
+	case []string:
+		for _, item := range v {
+			if s := strings.TrimSpace(item); s != "" {
+				opts = append(opts, s)
+			}
+		}
+	case []any:
+		if len(v) > 4 {
+			return nil, fmt.Errorf("ask_user: options must have at most 4 entries")
+		}
+		for _, item := range v {
+			switch opt := item.(type) {
+			case string:
+				if s := strings.TrimSpace(opt); s != "" {
+					opts = append(opts, s)
+				}
+			case map[string]any:
+				label, _ := opt["label"].(string)
+				value, _ := opt["value"].(string)
+				label = strings.TrimSpace(label)
+				value = strings.TrimSpace(value)
+				switch {
+				case label != "":
+					opts = append(opts, label)
+				case value != "":
+					opts = append(opts, value)
+				}
+			}
+		}
+	default:
+		return nil, fmt.Errorf("ask_user: options must be an array")
+	}
+	if len(opts) > 4 {
+		return nil, fmt.Errorf("ask_user: options must have at most 4 entries")
+	}
+	return opts, nil
 }

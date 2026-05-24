@@ -25,21 +25,16 @@ import (
 func TestExamplesParameterEval(t *testing.T) {
 	toolsToCheck := []Tool{
 		&AskUserTool{},
-		&AskUserClarificationTool{},
-		&RequestDashboardTokenTool{},
-		&SearchMemoryTool{},
-		&RecallOperationalTool{},
-		&RecallUserMemoryTool{},
+		&SearchTool{},
 		&WebTool{},
 		&WikiPageTool{},
 		&TaskTool{loc: time.Local},
 		&SourceTool{},
 		&FileTool{},
-		&DocTool{},
 		&ExecuteCodeTool{},
 		&ExecuteShellTool{},
-		&DevToolTool{},
-		&DailyBriefingTool{loc: time.Local, now: time.Now},
+		&ProposePatchTool{},
+		&AgentNoteTool{},
 	}
 
 	var failures []string

@@ -384,13 +384,6 @@ func newApp(
 		logger.Info("workspace file tools disabled (set AURA_WORKSPACE_TOOLS=enabled to enable)")
 	}
 
-	// ---- read_tool_result (US-OUT-02) ---------------------------------------
-	// Always registered so the LLM can retrieve spilled tool results regardless
-	// of the workspace tools setting.
-	if cfg.RuntimeWorkspacePath != "" {
-		toolRegistry.Register(tools.NewReadToolResultTool(cfg.RuntimeWorkspacePath))
-	}
-
 	// ---- Skills loader ------------------------------------------------------
 	skillRoots := skillSearchRoots(cfg)
 	skillLoader := auraskills.NewLoader(skillRoots[0], skillRoots[1:]...)

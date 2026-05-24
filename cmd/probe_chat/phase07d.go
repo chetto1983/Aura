@@ -35,7 +35,7 @@ func phase07DMixedTierRecallCase(stamp string) Case {
 		Name:     "phase07d-mixed-tier-recall",
 		Category: "tools-memory",
 		Prompt: fmt.Sprintf(
-			"Phase07D live golden. Usa prima lo strumento recall_user_memory con query %q, poi usa recall_operational con la stessa query. Non usare search_memory. Rispondi citando esattamente questi due token e nessun altro token PHASE07D_LIVE: USER=%s OPERATIONAL=%s.",
+			"Phase07D live golden. Usa prima search con action=user_facts e query %q, poi search con action=lessons e la stessa query. Non usare action=search. Rispondi citando esattamente questi due token e nessun altro token PHASE07D_LIVE: USER=%s OPERATIONAL=%s.",
 			fixture.query,
 			fixture.userApprovedToken,
 			fixture.operationalToken,
@@ -185,18 +185,18 @@ func (f *phase07DMixedTierFixture) verify(r ChatReply, env *Env) []string {
 		miss = append(miss, "DB unavailable for tool_attempts ground truth")
 		return miss
 	}
-	counts, err := env.toolAttemptsSince(f.startedAt, "recall_user_memory", "recall_operational", "search_memory")
+	counts, err := env.toolAttemptsSince(f.startedAt, "search", "recall_user_memory", "recall_operational", "search_memory")
 	if err != nil {
 		miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
 		return miss
 	}
-	for _, toolName := range []string{"recall_user_memory", "recall_operational"} {
-		if counts[toolName] == 0 {
-			miss = append(miss, fmt.Sprintf("tool_attempts missing ok row for %s since %s", toolName, f.startedAt.Format(time.RFC3339Nano)))
-		}
+	if counts["search"] < 2 {
+		miss = append(miss, fmt.Sprintf("tool_attempts missing two search recall rows since %s (got %d)", f.startedAt.Format(time.RFC3339Nano), counts["search"]))
 	}
-	if counts["search_memory"] > 0 {
-		miss = append(miss, "probe used search_memory; expected explicit typed recall tools only")
+	for _, toolName := range []string{"recall_user_memory", "recall_operational", "search_memory"} {
+		if counts[toolName] > 0 {
+			miss = append(miss, fmt.Sprintf("probe used retired tool %s", toolName))
+		}
 	}
 	return miss
 }

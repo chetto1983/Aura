@@ -160,8 +160,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// ---- Operational lessons file watcher (US-OP02) ----------------------------
 	// Watches <WorkspaceRoot>/data/operational_lessons.md and re-ingests it into
 	// compact_memory_documents kind=operational on every write. Complements the
-	// propose_patch auto-accept path so recall_operational surfaces lessons from
-	// BOTH sources.
+	// propose_patch auto-accept path so search(action=lessons) surfaces lessons
+	// from BOTH sources.
 	if a.deps.MemoryStore != nil && cfg.WorkspaceRoot != "" {
 		opsAbsPath := opsfile.AbsPath(cfg.WorkspaceRoot)
 		// Boot ingest: surface any lessons already in the file before the first turn.
@@ -209,16 +209,12 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		a.deps.Tools.Register(tool)
 	}
 
-	// ---- Wiki issues store + daily briefing tool ----------------------------
+	// ---- Wiki issues store --------------------------------------------------
 	issues := cron.NewIssuesStore(a.deps.SchedDB.DB())
 	b.SetIssues(issues)
-	if tool := tools.NewDailyBriefingTool(a.deps.SchedDB, a.deps.Sources, a.deps.SummariesStore, issues, archiveDB, loc); tool != nil {
-		a.deps.Tools.Register(tool)
-	}
 
 	// ---- Bot-dependent tool registrations (need *Bot as sender/runner) -----
-	// Sandbox tools require b as DocumentSender; ToolSearch, token, doc, wiki_page
-	// need b constructed and available. Registered before scheduler so they're
+	// Sandbox tools and wiki_page need b constructed and available. Registered before scheduler so they're
 	// live when the first Telegram message arrives.
 	if tool := tools.NewExecuteCodeToolWithStoreAndRegistry(a.deps.SandboxMgr, b, a.deps.Sources, a.deps.Tools); tool != nil {
 		a.deps.Tools.Register(tool)
@@ -226,28 +222,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if tool := tools.NewExecuteShellTool(a.deps.SandboxMgr); tool != nil {
 		a.deps.Tools.Register(tool)
 	}
-	if tool := tools.NewDevToolTool(a.deps.ToolReg); tool != nil {
-		a.deps.Tools.Register(tools.WithCategory(tool, tools.CategoryAutonomous))
-	}
 	a.deps.Tools.Register(&tools.AskUserTool{})
-	a.deps.Tools.Register(&tools.AskUserClarificationTool{})
 	a.deps.Tools.Register(&tools.TextResponseTool{})
-	if tokenTool := tools.NewRequestDashboardTokenTool(a.deps.AuthDB, b, b.IsAllowlisted); tokenTool != nil {
-		a.deps.Tools.Register(tokenTool)
-	}
-	if docTool := tools.NewDocTool(a.deps.Sources, b); docTool != nil {
-		a.deps.Tools.Register(docTool)
-	}
 	if t := tools.NewWikiPageTool(a.deps.WikiStore, a.deps.ReindexWorker); t != nil {
-		a.deps.Tools.Register(t)
-	}
-	if t := tools.NewRecallGodNodesTool(a.deps.WikiStore); t != nil {
-		a.deps.Tools.Register(t)
-	}
-	if t := tools.NewWikiPathTool(a.deps.WikiStore); t != nil {
-		a.deps.Tools.Register(t)
-	}
-	if t := tools.NewWikiSubgraphTool(a.deps.WikiStore, a.deps.SearchRepo); t != nil {
 		a.deps.Tools.Register(t)
 	}
 
@@ -524,15 +501,21 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 		searchMemTool.SetFreshnessStore(a.freshnessStore)
 	}
 	if st := tools.NewSearchTool(searchMemTool, a.deps.WikiStore, tools.NewReadSourceTool(a.deps.Sources)); st != nil {
+		operational := tools.NewRecallOperationalTool(a.deps.MemoryStore)
+		if operational != nil {
+			operational.SetFreshnessStore(a.freshnessStore)
+		}
+		userMemory := tools.NewRecallUserMemoryTool(a.deps.MemoryStore)
+		if userMemory != nil {
+			userMemory.SetFreshnessStore(a.freshnessStore)
+		}
+		st.WithRecallAndGraphActions(
+			operational,
+			userMemory,
+			tools.NewRecallGodNodesTool(a.deps.WikiStore),
+			tools.NewWikiPathTool(a.deps.WikiStore),
+			tools.NewWikiSubgraphTool(a.deps.WikiStore, a.deps.SearchRepo),
+		)
 		a.deps.Tools.Register(st)
 	}
-	if tool := tools.NewRecallOperationalTool(a.deps.MemoryStore); tool != nil {
-		tool.SetFreshnessStore(a.freshnessStore)
-		a.deps.Tools.Register(tool)
-	}
-	if tool := tools.NewRecallUserMemoryTool(a.deps.MemoryStore); tool != nil {
-		tool.SetFreshnessStore(a.freshnessStore)
-		a.deps.Tools.Register(tool)
-	}
 }
-

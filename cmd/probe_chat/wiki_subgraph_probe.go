@@ -19,7 +19,7 @@ func wikiSubgraphDeltaCase(stamp string) Case {
 		Name:     "wiki-subgraph-delta-automazioni",
 		Category: "tools-wiki",
 		Prompt: fmt.Sprintf(
-			"Usa wiki_subgraph con query %q, depth 1. Dammi il codice cliente di Delta Automazioni.",
+			"Usa search con action=subgraph, query %q e depth 1. Dammi il codice cliente di Delta Automazioni.",
 			"codice cliente delta automazioni "+safeStamp,
 		),
 		Setup:   fixture.setup,
@@ -74,7 +74,7 @@ func (f *wikiSubgraphDeltaFixture) setup(env *Env) error {
 func (f *wikiSubgraphDeltaFixture) verify(r ChatReply, _ *Env) []string {
 	var miss []string
 	if r.ToolCalls == 0 {
-		miss = append(miss, "expected wiki_subgraph tool call, got 0")
+		miss = append(miss, "expected search action=subgraph tool call, got 0")
 	}
 	if !strings.Contains(r.Reply, f.clientCode) {
 		miss = append(miss, fmt.Sprintf("reply missing client code %q", f.clientCode))

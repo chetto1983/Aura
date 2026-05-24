@@ -153,8 +153,6 @@ func TestLoadSuccess(t *testing.T) {
 	os.Unsetenv("AURA_RUNTIME_WORKSPACE_PATH")
 	os.Unsetenv("SANDBOX_ENABLED")
 	os.Unsetenv("SANDBOX_TIMEOUT_SEC")
-	os.Unsetenv("AURA_OP12_PRECALL_VALIDATOR_ENABLED")
-	os.Unsetenv("AURA_OP12B_RETRY_HINT_ENABLED")
 
 	cfg, err := Load()
 	if err != nil {
@@ -586,12 +584,9 @@ func TestLoadOP07Defaults(t *testing.T) {
 	if cfg.MemoryJudgeEnabled {
 		t.Fatal("MemoryJudgeEnabled = true, want false")
 	}
-	if cfg.OP12PrecallValidatorEnabled {
-		t.Fatal("OP12PrecallValidatorEnabled = true, want false")
-	}
-	if cfg.OP12RetryHintEnabled {
-		t.Fatal("OP12RetryHintEnabled = true, want false")
-	}
+	// OP12_PRECALL_VALIDATOR_ENABLED + OP12B_RETRY_HINT_ENABLED retired
+	// 2026-05-24 — the gated precall validator + retry-hint suite was
+	// deleted after probe data showed zero observable benefit.
 }
 
 func TestLoadOP07Env(t *testing.T) {
@@ -599,8 +594,6 @@ func TestLoadOP07Env(t *testing.T) {
 	t.Setenv("AURA_OP07_NFAIL_THRESHOLD", "3")
 	t.Setenv("AURA_OP07_RECENT_TURNS", "25")
 	t.Setenv("AURA_MEMORY_JUDGE_ENABLED", "true")
-	t.Setenv("AURA_OP12_PRECALL_VALIDATOR_ENABLED", "true")
-	t.Setenv("AURA_OP12B_RETRY_HINT_ENABLED", "true")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -616,12 +609,6 @@ func TestLoadOP07Env(t *testing.T) {
 	}
 	if !cfg.MemoryJudgeEnabled {
 		t.Fatal("MemoryJudgeEnabled = false, want true")
-	}
-	if !cfg.OP12PrecallValidatorEnabled {
-		t.Fatal("OP12PrecallValidatorEnabled = false, want true")
-	}
-	if !cfg.OP12RetryHintEnabled {
-		t.Fatal("OP12RetryHintEnabled = false, want true")
 	}
 }
 

@@ -46,17 +46,17 @@ func defaultCaps() map[string]int {
 // Unknown names map to ClassDefault.
 func ToolClass(name string) string {
 	switch name {
-	case "web_search", "web_fetch":
+	case "web_search", "web_fetch", "web":
 		return ClassWeb
-	case "search_memory", "read_memory", "list_memory", "forget_memory":
+	case "search", "search_memory", "read_memory", "list_memory", "forget_memory":
 		return ClassWiki
 	case "execute_code", "execute_bash", "execute_shell":
 		return ClassExec
-	case "read_source", "store_source", "ingest_source", "ocr_source":
+	case "source", "read_source", "store_source", "ingest_source", "ocr_source":
 		return ClassSource
-	case "list_tasks", "cancel_task":
+	case "task", "list_tasks", "cancel_task":
 		return ClassScheduler
-	case "ask_user", "request_dashboard_token":
+	case "ask_user":
 		return ClassAskUser
 	}
 	// schedule_* prefix — matches any schedule tool variant
