@@ -7,6 +7,7 @@ import (
 	"maps"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/conversation"
 )
 
 // InvocationBuilder is the dependency-injection seam between chat Hub and the
@@ -76,6 +77,13 @@ func (a *AgentLoopAdapter) Run(ctx context.Context, run *Run, msg InboundMessage
 	inv, err := a.build(ctx, run, msg)
 	if err != nil {
 		return fmt.Errorf("chat: build invocation: %w", err)
+	}
+
+	// US-CTX-01: ensure a ContextEngine is always set so the loop can compress
+	// long conversations. The builder may override this with a smarter engine
+	// (AutoCompactEngine in US-CTX-04); the default cap mirrors MaxHistoryMessages.
+	if inv.Options.ContextEngine == nil {
+		inv.Options.ContextEngine = conversation.NewDefaultContextEngine(0)
 	}
 
 	previousOnEvent := inv.OnEvent

@@ -42,7 +42,7 @@
         "Single atomic commit prefix: feat(conversation): ContextEngine interface + default no-op impl (US-CTX-01)"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Foundation story #2. DefaultContextEngine = byte-identical to current behavior, so regression risk is zero. Future engines (US-CTX-03 ContextCompressor, US-CTX-05 AutoCompactEngine) just implement the interface and swap in via config. The hermes ABC has more methods than the Aura plan's original sketch — adopt the secondary-interface pattern so we don't force every impl to ship every method."
     },
     {

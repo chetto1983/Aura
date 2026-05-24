@@ -154,7 +154,14 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		// prevent provider 400 errors on malformed history (SQLite WAL recovery,
 		// ask_user interruption, etc.). governance.Apply chains the remaining
 		// transforms (microcompact, truncate) on the already-clean slice.
-		rawHistory := governance.ScrubOrphanToolCalls(state.Messages())
+		// US-CTX-01: apply ContextEngine compression before governance pass so
+		// the LLM sees a trimmed history without mutating the State (state.Messages()
+		// always returns the full slice; compression is per-iteration and transient).
+		currentMsgs := state.Messages()
+		if opts.ContextEngine != nil && opts.ContextEngine.ShouldCompress(len(currentMsgs)) {
+			currentMsgs = opts.ContextEngine.Compress(currentMsgs, len(currentMsgs), "")
+		}
+		rawHistory := governance.ScrubOrphanToolCalls(currentMsgs)
 		messagesForModel := governance.Apply(rawHistory, opts.MaxToolResultChars, opts.MicrocompactKeepRecent, opts.MicrocompactMinChars)
 		if opts.Briefer != nil && len(toolDefs) > 0 {
 			availableSet := make(map[string]struct{}, len(toolDefs))
@@ -207,6 +214,10 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		stats.TokensCompletion += resp.Response.Usage.CompletionTokens
 		stats.TokensTotal += resp.Response.Usage.TotalTokens
 		stats.CacheReadTokens += resp.Response.Usage.CacheReadTokens
+		// US-CTX-01: record token usage in the engine for threshold calculations.
+		if opts.ContextEngine != nil {
+			opts.ContextEngine.UpdateFromResponse(resp.Response.Usage)
+		}
 		if opts.EstimateCost != nil {
 			stats.CostUSD += opts.EstimateCost(resp.Response.Usage)
 		}

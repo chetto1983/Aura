@@ -170,6 +170,11 @@ type Options struct {
 	// RetryBudgetRepo is the attempts.Repo consulted by the retry-budget check.
 	// When nil the check is skipped (feature-flag-ready: set to nil to disable).
 	RetryBudgetRepo attempts.Repo
+	// ContextEngine, when non-nil, is called before each LLM round to compress
+	// the conversation history and after each LLM response to record token usage.
+	// When nil the loop skips all engine calls (no compression).
+	// Default for all chat paths: conversation.DefaultContextEngine (50-msg cap).
+	ContextEngine conversation.ContextEngine
 }
 
 // loopResult is the internal result of one runLoop invocation.
