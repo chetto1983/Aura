@@ -1,0 +1,56 @@
+{
+  "name": "tool_heavy_research",
+  "description": "Thirty turns plus five large tool results around one research task.",
+  "expected": {
+    "keyword": "CALYPSO-42",
+    "focus_topic": "Summarize the supplier-risk research while preserving CALYPSO-42.",
+    "turns": 30,
+    "tool_results": 5
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are Aura. Keep tool evidence bounded and preserve task identifiers."
+    }
+  ],
+  "repeat_groups": [
+    {
+      "count": 30,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Research turn {{i}}: supplier risk note CALYPSO-42 needs concise evidence."
+        },
+        {
+          "role": "assistant",
+          "content": "Turn {{i}} tracked. I will preserve CALYPSO-42 and avoid repeating raw evidence."
+        }
+      ]
+    },
+    {
+      "count": 5,
+      "messages": [
+        {
+          "role": "assistant",
+          "content": "",
+          "tool_calls": [
+            {
+              "id": "call_research_{{i}}",
+              "name": "web",
+              "arguments": {
+                "action": "fetch",
+                "query": "supplier risk CALYPSO-42"
+              }
+            }
+          ]
+        },
+        {
+          "role": "tool",
+          "tool_call_id": "call_research_{{i}}",
+          "content": "Evidence block {{i}} for CALYPSO-42: supplier exposure, renewal date, incident count, mitigation owner, and audit notes. ",
+          "repeat": 72
+        }
+      ]
+    }
+  ]
+}

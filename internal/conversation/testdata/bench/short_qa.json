@@ -1,0 +1,30 @@
+{
+  "name": "short_qa",
+  "description": "Ten ordinary Q&A turns with no tool results.",
+  "expected": {
+    "keyword": "ORCHID-17",
+    "focus_topic": "Remember the compact project code ORCHID-17.",
+    "turns": 10
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are Aura. Preserve user facts and answer the latest message."
+    }
+  ],
+  "repeat_groups": [
+    {
+      "count": 10,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Turn {{i}}: keep project keyword ORCHID-17 attached to the garden invoice task."
+        },
+        {
+          "role": "assistant",
+          "content": "Acknowledged turn {{i}}. ORCHID-17 remains the garden invoice task keyword."
+        }
+      ]
+    }
+  ]
+}

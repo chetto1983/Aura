@@ -1,0 +1,51 @@
+{
+  "name": "multimodal_visual",
+  "description": "Ten turns and eight image messages represented as OpenAI-style content parts.",
+  "expected": {
+    "keyword": "LUMEN-88",
+    "focus_topic": "Retain the visual inspection keyword LUMEN-88.",
+    "turns": 10,
+    "image_messages": 8
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are Aura. Preserve image-adjacent task context."
+    }
+  ],
+  "repeat_groups": [
+    {
+      "count": 10,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Visual turn {{i}}: compare label layout for LUMEN-88."
+        },
+        {
+          "role": "assistant",
+          "content": "Visual turn {{i}} stored. LUMEN-88 remains the inspection keyword."
+        }
+      ]
+    },
+    {
+      "count": 8,
+      "messages": [
+        {
+          "role": "user",
+          "content_parts": [
+            {
+              "type": "text",
+              "text": "Image {{i}} belongs to inspection keyword LUMEN-88."
+            },
+            {
+              "type": "image_url",
+              "image_url": {
+                "url": "data:image/png;base64,fixture{{i}}"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
