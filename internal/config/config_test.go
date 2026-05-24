@@ -612,6 +612,42 @@ func TestLoadOP07Env(t *testing.T) {
 	}
 }
 
+// TestModelContextWindowEnvOverride verifies that AURA_MODEL_CONTEXT_WINDOW env
+// var is loaded by Load() and takes precedence over any fallback or fetch (AC-a).
+func TestModelContextWindowEnvOverride(t *testing.T) {
+	t.Setenv("AURA_MODEL_CONTEXT_WINDOW", "200000")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.ModelContextWindow != 200000 {
+		t.Fatalf("ModelContextWindow = %d, want 200000 (env override)", cfg.ModelContextWindow)
+	}
+}
+
+// TestContextWindowFallback_KnownModel verifies that ContextWindowFallback
+// returns the curated value for a known OpenRouter model ID (AC-b).
+func TestContextWindowFallback_KnownModel(t *testing.T) {
+	got := ContextWindowFallback("deepseek/deepseek-v4-flash")
+	if got != 163840 {
+		t.Fatalf("ContextWindowFallback(deepseek/deepseek-v4-flash) = %d, want 163840", got)
+	}
+	got = ContextWindowFallback("anthropic/claude-sonnet-4")
+	if got != 200000 {
+		t.Fatalf("ContextWindowFallback(anthropic/claude-sonnet-4) = %d, want 200000", got)
+	}
+}
+
+// TestContextWindowFallback_UnknownModel verifies that ContextWindowFallback
+// returns 0 for unknown models; the caller must then apply the hard default of
+// 128000 (AC-c: "unknown model + no env + no fetch = hard default 128000").
+func TestContextWindowFallback_UnknownModel(t *testing.T) {
+	got := ContextWindowFallback("unknown/not-in-table-xyz-abc")
+	if got != 0 {
+		t.Fatalf("ContextWindowFallback(unknown) = %d, want 0 (caller must apply 128000 default)", got)
+	}
+}
+
 // TestMaxIter_DefaultIsTwenty verifies that AURA_AGENT_LOOP_MAX_STEPS defaults
 // to 20 (US-LAT-01: bounded cap that allows legitimate multi-step workflows
 // while preventing thrashing past 12+ tool calls observed in production).

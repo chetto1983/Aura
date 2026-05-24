@@ -109,6 +109,7 @@ var settingsCatalog = []SettingItem{
 	{Key: config.KeyLLMAPIKey, Group: "provider", Kind: "text", IsSecret: true, Label: "LLM API key"},
 	{Key: config.KeyLLMMaxRetries, Group: "provider", Kind: "int", Min: floatPtr(0), Max: floatPtr(20), Label: "LLM max retries"},
 
+	{Key: config.KeyModelContextWindow, Group: "budget", Kind: "int", Min: floatPtr(0), Label: "Model context window (tokens)", Hint: "Override the auto-detected context window for compaction triggers. 0 = auto-detect from provider /models at boot."},
 	{Key: config.KeyMaxContextTokens, Group: "budget", Kind: "int", Min: floatPtr(1024), Label: "Max context tokens"},
 	{Key: config.KeyMaxHistoryMessages, Group: "budget", Kind: "int", Min: floatPtr(1), Label: "Max in-flight messages"},
 	{Key: config.KeySoftBudget, Group: "budget", Kind: "float", Min: floatPtr(0), Label: "Soft budget (USD)"},
@@ -361,6 +362,8 @@ func activeSettingValue(cfg *config.Config, key, fallback string) string {
 		return strconv.FormatBool(cfg.SandboxEnabled)
 	case config.KeySandboxTimeoutSec:
 		return strconv.Itoa(cfg.SandboxTimeoutSec)
+	case config.KeyModelContextWindow:
+		return strconv.Itoa(cfg.ModelContextWindow)
 	default:
 		return fallback
 	}

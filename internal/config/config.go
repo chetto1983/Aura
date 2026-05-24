@@ -181,6 +181,13 @@ type Config struct {
 	PocketttsBaseURL    string `envconfig:"POCKETTTS_BASE_URL" default:""`
 	PocketttsTimeoutSec int    `envconfig:"POCKETTTS_TIMEOUT_SEC" default:"30"`
 
+	// ModelContextWindow is the LLM model's full input context window size in tokens.
+	// 0 (the default) means "auto-detect from the provider's /models endpoint at boot"
+	// (US-CTX-00). Set AURA_MODEL_CONTEXT_WINDOW to a positive integer to override
+	// the auto-detected value — useful for custom deployments or when the provider
+	// does not expose a /models endpoint.
+	ModelContextWindow int `envconfig:"AURA_MODEL_CONTEXT_WINDOW"`
+
 	// TokenJuice rule-driven output compaction (Phase-TJ). Enabled by default after
 	// US-TJ07 confirmed 15.8% heavy-turn savings + 0 regressions. Set
 	// AURA_TOKENJUICE_ENABLED=false to disable without a code change.
@@ -370,6 +377,9 @@ func Load() (*Config, error) {
 	cfg.PocketttsBaseURL = getEnv("POCKETTTS_BASE_URL", "")
 	cfg.PocketttsTimeoutSec = getEnvInt("POCKETTTS_TIMEOUT_SEC", 30)
 
+	// 0 means auto-detect from /models at boot; positive int overrides auto-detect.
+	cfg.ModelContextWindow = getEnvInt("AURA_MODEL_CONTEXT_WINDOW", 0)
+
 	cfg.TokenJuiceEnabled = getEnvBool("AURA_TOKENJUICE_ENABLED", true)
 
 	cfg.ConvArchiveEnabled = getEnvBool("CONV_ARCHIVE_ENABLED", true)
@@ -479,6 +489,31 @@ func normalizeIntRange(value, min, max, fallback int) int {
 		return fallback
 	}
 	return value
+}
+
+// contextWindowFallbacks maps known OpenRouter-style model IDs to their input
+// context window sizes in tokens. Used when the provider /models endpoint is
+// unavailable and AURA_MODEL_CONTEXT_WINDOW is not set. Add entries here for
+// any model not reachable via /models (self-hosted, private deployments, etc.).
+var contextWindowFallbacks = map[string]int{
+	"deepseek/deepseek-v4-flash":     163840,
+	"google/gemma-4-26b-a4b-it":      131072,
+	"anthropic/claude-sonnet-4":       200000,
+	"anthropic/claude-sonnet-4-5":     200000,
+	"anthropic/claude-opus-4":         200000,
+	"openai/gpt-4o":                   128000,
+	"openai/gpt-4.1":                  1047576,
+	"deepseek/deepseek-r1":            163840,
+	"deepseek/deepseek-r1-0528":       163840,
+	"meta-llama/llama-4-maverick":     524288,
+	"mistralai/mistral-large-2411":    131072,
+}
+
+// ContextWindowFallback returns the curated context window size for model.
+// Returns 0 when model is not in the curated table; callers should then apply
+// the hard default of 128000.
+func ContextWindowFallback(model string) int {
+	return contextWindowFallbacks[model]
 }
 
 func parseAllowlist(raw string) []string {

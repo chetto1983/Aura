@@ -58,6 +58,56 @@ func skillSearchRoots(cfg *config.Config) []string {
 	}
 }
 
+const modelContextWindowHardDefault = 128000
+
+// populateModelContextWindow fills cfg.ModelContextWindow via the resolution chain:
+//  1. env override (AURA_MODEL_CONTEXT_WINDOW > 0) — already loaded by config.Load(); skip fetch.
+//  2. fetch from provider /models endpoint.
+//  3. curated fallback table (config.ContextWindowFallback).
+//  4. hard default (128000).
+//
+// Non-blocking: a slow or unreachable provider causes fallback to (3)/(4), never
+// a startup failure.
+func populateModelContextWindow(ctx context.Context, cfg *config.Config, logger *slog.Logger) {
+	if cfg.ModelContextWindow > 0 {
+		logger.Info("model context window: using env override", "window", cfg.ModelContextWindow)
+		return
+	}
+	if cfg.LLMAPIKey == "" {
+		applyModelContextWindowFallback(cfg, logger, nil)
+		return
+	}
+	rawClient := llm.NewOpenAIClient(llm.OpenAIConfig{
+		APIKey:  cfg.LLMAPIKey,
+		BaseURL: cfg.LLMBaseURL,
+		Model:   cfg.LLMModel,
+	})
+	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	meta, err := rawClient.FetchModelMetadata(fetchCtx, cfg.LLMModel)
+	if err == nil && meta.ContextLength > 0 {
+		cfg.ModelContextWindow = meta.ContextLength
+		logger.Info("model context window: detected from provider",
+			"model", cfg.LLMModel,
+			"context_length", meta.ContextLength,
+			"max_completion_tokens", meta.MaxCompletionTokens)
+		return
+	}
+	applyModelContextWindowFallback(cfg, logger, err)
+}
+
+func applyModelContextWindowFallback(cfg *config.Config, logger *slog.Logger, fetchErr error) {
+	if f := config.ContextWindowFallback(cfg.LLMModel); f > 0 {
+		cfg.ModelContextWindow = f
+		logger.Warn("model context window: using curated fallback",
+			"model", cfg.LLMModel, "window", f, "fetch_error", fetchErr)
+		return
+	}
+	cfg.ModelContextWindow = modelContextWindowHardDefault
+	logger.Warn("model context window: using hard default",
+		"model", cfg.LLMModel, "window", modelContextWindowHardDefault, "fetch_error", fetchErr)
+}
+
 func createLLMClient(cfg *config.Config, logger *slog.Logger) llm.Client {
 	_ = logger
 	openaiClient := llm.NewOpenAIClient(llm.OpenAIConfig{

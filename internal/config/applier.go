@@ -88,6 +88,9 @@ const (
 	KeySandboxEnabled          = "SANDBOX_ENABLED"
 	KeySandboxTimeoutSec       = "SANDBOX_TIMEOUT_SEC"
 
+	// ModelContextWindow override (US-CTX-00). 0 = auto-detect from /models.
+	KeyModelContextWindow = "AURA_MODEL_CONTEXT_WINDOW"
+
 	// Per-class tool budget caps (US-OUT-07). Dashboard keys use lowercase
 	// snake_case; env vars use AURA_TOOL_BUDGET_<CLASS>.
 	KeyToolBudgetWeb       = "tool_budget_web"
@@ -134,6 +137,7 @@ func OverridableKeys() []string {
 		KeySandboxEnabled, KeySandboxTimeoutSec,
 		KeyToolBudgetWeb, KeyToolBudgetWiki, KeyToolBudgetExec, KeyToolBudgetSource,
 		KeyToolBudgetScheduler, KeyToolBudgetAskUser, KeyToolBudgetDefault,
+		KeyModelContextWindow,
 	}
 }
 
@@ -245,6 +249,11 @@ func ApplyToConfig(ctx context.Context, s Reader, cfg *Config) {
 
 	cfg.SandboxEnabled = settingBool(ctx, s, KeySandboxEnabled, cfg.SandboxEnabled)
 	cfg.SandboxTimeoutSec = settingInt(ctx, s, KeySandboxTimeoutSec, cfg.SandboxTimeoutSec)
+
+	// ModelContextWindow override (US-CTX-00). 0 = auto-detect; positive = manual override.
+	if v := settingInt(ctx, s, KeyModelContextWindow, -1); v >= 0 {
+		cfg.ModelContextWindow = v
+	}
 
 	// Per-class tool budget caps (US-OUT-07). Clamped to [1,100]; invalid rows
 	// leave the env-loaded value intact (fail-soft).

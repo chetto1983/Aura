@@ -183,6 +183,11 @@ func newApp(
 		logger.Warn("no LLM provider configured, bot will echo messages without LLM")
 	}
 
+	// ---- Model context window (US-CTX-00) -----------------------------------
+	// Fetches context_length from provider /models; falls back to curated table
+	// then hard default 128000. Non-blocking; env AURA_MODEL_CONTEXT_WINDOW wins.
+	populateModelContextWindow(context.Background(), cfg, logger)
+
 	// ---- Qdrant client ------------------------------------------------------
 	if strings.TrimSpace(cfg.QdrantURL) != "" {
 		qcli, err := qdrant.NewClient(qdrant.Config{
