@@ -79,7 +79,10 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 	for iteration := 0; iteration < opts.MaxIterations; iteration++ {
 		// OR-of-four guard (US-OUT-08): iter at loop boundary; token/wall-clock/cost below.
 		if checkTokenBudget(&stats, opts, logger, iteration) {
-			if iterCancel != nil { iterCancel(); iterCancel = nil }
+			if iterCancel != nil {
+				iterCancel()
+				iterCancel = nil
+			}
 			return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 		}
 		// Signal 3: wall-clock.
@@ -104,7 +107,10 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			iterCtx, iterCancel = context.WithTimeout(ctx, opts.FinalizationTimeout)
 		}
 		if checkCostBudget(&stats, opts, logger, iteration) {
-			if iterCancel != nil { iterCancel(); iterCancel = nil }
+			if iterCancel != nil {
+				iterCancel()
+				iterCancel = nil
+			}
 			return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 		}
 		if opts.BeforeLLM != nil {
@@ -600,17 +606,4 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		iterCancel = nil
 	}
 	return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
-}
-
-// lastUserMessageText returns the content of the last user-role message in msgs,
-// or "" when no user message exists. Used to thread the focus_topic into
-// ContextEngine.Compress so the compressor can bias the summary toward the
-// active request (Codex BeforeLastUserMessage invariant).
-func lastUserMessageText(msgs []llm.Message) string {
-	for i := len(msgs) - 1; i >= 0; i-- {
-		if msgs[i].Role == "user" {
-			return msgs[i].Content
-		}
-	}
-	return ""
 }

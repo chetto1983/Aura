@@ -754,6 +754,22 @@ func (f *fakeLoopClient) Chat(context.Context, []llm.Message, []llm.ToolDefiniti
 	return ChatResponse{}, nil
 }
 
+type recordingContextEngine struct {
+	should bool
+	focus  string
+}
+
+func (e *recordingContextEngine) Name() string { return "recording" }
+
+func (e *recordingContextEngine) UpdateFromResponse(llm.TokenUsage) {}
+
+func (e *recordingContextEngine) ShouldCompress(int) bool { return e.should }
+
+func (e *recordingContextEngine) Compress(messages []llm.Message, _ int, focusTopic string) []llm.Message {
+	e.focus = focusTopic
+	return messages
+}
+
 // fakeLoopState is shared between the main loop goroutine and the
 // StreamDispatcher tool-execution goroutines (US-LAT-06). Every mutation
 // of the messages slice MUST acquire the mutex; otherwise the race
@@ -812,6 +828,54 @@ func (s *fakeLoopState) toolResult(id string) string {
 
 func deadEndFallbackText() string {
 	return "Mi sono " + "fermato"
+}
+
+func TestLastUserMessageTextReturnsLastUserTruncatedRuneSafe(t *testing.T) {
+	long := strings.Repeat("x", focusTopicMaxRunes-1) + "è" + "tail"
+	got := lastUserMessageText([]llm.Message{
+		{Role: "user", Content: "old request"},
+		{Role: "assistant", Content: "reply"},
+		{Role: "user", Content: long},
+	})
+
+	if len([]rune(got)) != focusTopicMaxRunes {
+		t.Fatalf("focus runes = %d, want %d", len([]rune(got)), focusTopicMaxRunes)
+	}
+	if !strings.HasSuffix(got, "è") {
+		t.Fatalf("focus topic is not rune-safe truncated: %q", got[len(got)-8:])
+	}
+	if strings.Contains(got, "tail") {
+		t.Fatalf("focus topic was not truncated: %q", got)
+	}
+}
+
+func TestRunLoopContextEngineReceivesLastUserFocusTopic(t *testing.T) {
+	long := strings.Repeat("a", focusTopicMaxRunes+10)
+	state := &fakeLoopState{messages: []llm.Message{
+		{Role: "system", Content: "sys"},
+		{Role: "user", Content: "old"},
+		{Role: "assistant", Content: "prior"},
+		{Role: "user", Content: long},
+	}}
+	engine := &recordingContextEngine{should: true}
+	client := &fakeLoopClient{responses: []ChatResponse{{Response: llm.Response{Content: "done"}}}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 1, ContextEngine: engine})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != "done" {
+		t.Fatalf("Text = %q, want done", result.Text)
+	}
+	if len([]rune(engine.focus)) != focusTopicMaxRunes {
+		t.Fatalf("focus runes = %d, want %d", len([]rune(engine.focus)), focusTopicMaxRunes)
+	}
+	if engine.focus != strings.Repeat("a", focusTopicMaxRunes) {
+		t.Fatalf("focus = %q, want truncated last user text", engine.focus)
+	}
 }
 
 // budgetLoopState extends fakeLoopState with AddUserMessage so the
