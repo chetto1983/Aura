@@ -66,7 +66,7 @@
         "Single atomic commit prefix: feat(conversation): ContextCompressor with SUMMARY_PREFIX + scaled budget (US-CTX-02)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS ON US-CTX-01. R2: SUMMARY_PREFIX is production-tested hermes prompt — do NOT tune without bench evidence. Lift verbatim from hermes/agent/context_compressor.py:37-51 (exact bytes captured in agent survey 2026-05-24). The streaming FSM is the trickiest piece — covered in memory_manager.py:62-225 reference."
     },
     {
