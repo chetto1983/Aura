@@ -76,7 +76,6 @@ func attempt(runID, toolName, class string) attempts.ToolAttempt {
 func TestHeuristicPostTurnHookNFailureCases(t *testing.T) {
 	tests := []struct {
 		name      string
-		enabled   bool
 		threshold int
 		failures  []attempts.ToolAttempt
 		readerErr error
@@ -85,29 +84,19 @@ func TestHeuristicPostTurnHookNFailureCases(t *testing.T) {
 		wantCalls int
 	}{
 		{
-			name:      "disabled does nothing",
-			enabled:   false,
-			failures:  []attempts.ToolAttempt{attempt("run-1", "web_fetch", "io"), attempt("run-2", "web_fetch", "io")},
-			wantDocs:  0,
-			wantCalls: 0,
-		},
-		{
 			name:      "single failure below default threshold",
-			enabled:   true,
 			failures:  []attempts.ToolAttempt{attempt("run-1", "web_fetch", "io")},
 			wantDocs:  0,
 			wantCalls: 1,
 		},
 		{
 			name:      "two same tool and class writes one lesson",
-			enabled:   true,
 			failures:  []attempts.ToolAttempt{attempt("run-1", "web_fetch", "io"), attempt("run-2", "web_fetch", "io")},
 			wantDocs:  1,
 			wantCalls: 1,
 		},
 		{
 			name:      "threshold override requires three",
-			enabled:   true,
 			threshold: 3,
 			failures:  []attempts.ToolAttempt{attempt("run-1", "web_fetch", "io"), attempt("run-2", "web_fetch", "io")},
 			wantDocs:  0,
@@ -115,7 +104,6 @@ func TestHeuristicPostTurnHookNFailureCases(t *testing.T) {
 		},
 		{
 			name:      "threshold override satisfied by three",
-			enabled:   true,
 			threshold: 3,
 			failures:  []attempts.ToolAttempt{attempt("run-1", "web_fetch", "io"), attempt("run-2", "web_fetch", "io"), attempt("run-3", "web_fetch", "io")},
 			wantDocs:  1,
@@ -123,21 +111,18 @@ func TestHeuristicPostTurnHookNFailureCases(t *testing.T) {
 		},
 		{
 			name:      "different classes do not combine",
-			enabled:   true,
 			failures:  []attempts.ToolAttempt{attempt("run-1", "web_fetch", "io"), attempt("run-2", "web_fetch", "validation")},
 			wantDocs:  0,
 			wantCalls: 1,
 		},
 		{
 			name:      "empty class is skipped",
-			enabled:   true,
 			failures:  []attempts.ToolAttempt{attempt("run-1", "web_fetch", ""), attempt("run-2", "web_fetch", "")},
 			wantDocs:  0,
 			wantCalls: 1,
 		},
 		{
 			name:      "reader error is reported",
-			enabled:   true,
 			readerErr: errors.New("db down"),
 			wantDocs:  0,
 			wantErr:   true,
@@ -150,7 +135,6 @@ func TestHeuristicPostTurnHookNFailureCases(t *testing.T) {
 			store := openPostHookStore(t)
 			reader := &fakePostTurnFailureReader{failures: tt.failures, err: tt.readerErr}
 			hook := HeuristicPostTurnHook{
-				Enabled:        tt.enabled,
 				FailureReader:  reader,
 				NFailThreshold: tt.threshold,
 			}
@@ -193,7 +177,7 @@ func TestHeuristicPostTurnHookUserNegativeCases(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			store := openPostHookStore(t)
-			hook := HeuristicPostTurnHook{Enabled: true}
+			hook := HeuristicPostTurnHook{}
 			errs := hook.Apply(context.Background(), tt.turn, store)
 			if len(errs) > 0 {
 				t.Fatalf("Apply errors = %v", errs)
@@ -211,7 +195,7 @@ func TestHeuristicPostTurnHookPayloadShape(t *testing.T) {
 		attempt("run-b", "web_fetch", "io"),
 		attempt("run-a", "web_fetch", "io"),
 	}}
-	hook := HeuristicPostTurnHook{Enabled: true, FailureReader: reader}
+	hook := HeuristicPostTurnHook{FailureReader: reader}
 
 	errs := hook.Apply(context.Background(), TurnRecord{RunID: "run-now", ThreadID: "thread-1"}, store)
 	if len(errs) > 0 {

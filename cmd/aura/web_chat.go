@@ -281,7 +281,6 @@ func (b *webInvocationBuilder) postTurnConfig(runID string, msg chat.InboundMess
 		UserMessage: msg.Text,
 	}
 	cfg := agent.NewHeuristicPostTurnConfig(
-		b.cfg.OP07HeuristicEnabled,
 		b.postTurnStore,
 		b.postTurnReader,
 		b.cfg.OP07NFailThreshold,

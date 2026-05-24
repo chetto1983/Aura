@@ -65,19 +65,19 @@ type PostTurnFailureReader interface {
 	RecentThreadFailures(ctx context.Context, threadID, runID string, limit int) ([]attempts.ToolAttempt, error)
 }
 
-// HeuristicPostTurnHook implements US-OP07. It is disabled by default in
-// production wiring and only writes lessons when a repeated failure pattern or
-// explicit user-negative signal is backed by durable turn/tool evidence.
+// HeuristicPostTurnHook implements US-OP07. It writes operational lessons when
+// a repeated failure pattern or explicit user-negative signal is backed by
+// durable turn/tool evidence. Always-on since 2026-05-24 (the AURA_OP07_HEURISTIC_ENABLED
+// flag was removed); a nil memory store is the only thing that disables it.
 type HeuristicPostTurnHook struct {
-	Enabled        bool
 	FailureReader  PostTurnFailureReader
 	NFailThreshold int
 	RecentTurns    int
 	Logger         *slog.Logger
 }
 
-func NewHeuristicPostTurnConfig(enabled bool, store *memoryindex.Store, reader PostTurnFailureReader, threshold, recentTurns int, logger *slog.Logger, record TurnRecord) PostTurnConfig {
-	if !enabled || store == nil {
+func NewHeuristicPostTurnConfig(store *memoryindex.Store, reader PostTurnFailureReader, threshold, recentTurns int, logger *slog.Logger, record TurnRecord) PostTurnConfig {
+	if store == nil {
 		return PostTurnConfig{}
 	}
 	return PostTurnConfig{
@@ -85,7 +85,6 @@ func NewHeuristicPostTurnConfig(enabled bool, store *memoryindex.Store, reader P
 		Record: record,
 		Hooks: []PostTurnHook{
 			HeuristicPostTurnHook{
-				Enabled:        true,
 				FailureReader:  reader,
 				NFailThreshold: threshold,
 				RecentTurns:    recentTurns,
@@ -104,9 +103,6 @@ type postTurnLessonPayload struct {
 }
 
 func (h HeuristicPostTurnHook) Apply(ctx context.Context, turn TurnRecord, store *memoryindex.Store) []error {
-	if !h.Enabled {
-		return nil
-	}
 	if store == nil {
 		return []error{fmt.Errorf("posthook: memory store unavailable")}
 	}

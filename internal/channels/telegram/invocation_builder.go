@@ -305,7 +305,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	if repo := b.ToolAttemptsRepo(); repo != nil {
 		if reader, ok := repo.(agent.PostTurnFailureReader); ok {
 			failureReader = reader
-		} else if cfg.OP07HeuristicEnabled {
+		} else {
 			b.Logger().Warn("posthook: attempts repo does not support thread failure reads")
 		}
 	}
@@ -314,7 +314,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		ThreadID:    msg.ThreadID,
 		UserMessage: userText,
 	}
-	postTurn := agent.NewHeuristicPostTurnConfig(cfg.OP07HeuristicEnabled, ib.memoryStore, failureReader, cfg.OP07NFailThreshold, cfg.OP07RecentTurns, b.Logger(), postTurnRecord)
+	postTurn := agent.NewHeuristicPostTurnConfig(ib.memoryStore, failureReader, cfg.OP07NFailThreshold, cfg.OP07RecentTurns, b.Logger(), postTurnRecord)
 	if hook := agent.NewMemoryJudgeHook(cfg.MemoryJudgeEnabled, b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, b.Logger()); hook != nil && ib.memoryStore != nil {
 		postTurn.Store = ib.memoryStore
 		postTurn.Record = postTurnRecord

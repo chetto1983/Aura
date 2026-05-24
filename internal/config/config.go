@@ -145,7 +145,6 @@ type Config struct {
 	WorkspaceTools              string `envconfig:"AURA_WORKSPACE_TOOLS" default:"enabled"`
 	WorkspaceRoot               string `envconfig:"AURA_WORKSPACE_ROOT" default:"."`
 	RuntimeWorkspacePath        string `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
-	OP07HeuristicEnabled        bool   `envconfig:"AURA_OP07_HEURISTIC_ENABLED" default:"false"`
 	OP07NFailThreshold          int    `envconfig:"AURA_OP07_NFAIL_THRESHOLD" default:"2"`
 	OP07RecentTurns             int    `envconfig:"AURA_OP07_RECENT_TURNS" default:"10"`
 	MemoryJudgeEnabled          bool   `envconfig:"AURA_MEMORY_JUDGE_ENABLED" default:"false"`
@@ -380,7 +379,6 @@ func Load() (*Config, error) {
 	if cfg.RuntimeWorkspacePath == "" {
 		cfg.RuntimeWorkspacePath = DefaultRuntimeWorkspacePath
 	}
-	cfg.OP07HeuristicEnabled = getEnvBool("AURA_OP07_HEURISTIC_ENABLED", false)
 	cfg.OP07NFailThreshold = normalizeIntRange(getEnvInt("AURA_OP07_NFAIL_THRESHOLD", DefaultOP07NFailThreshold), 1, 20, DefaultOP07NFailThreshold)
 	cfg.OP07RecentTurns = normalizeIntRange(getEnvInt("AURA_OP07_RECENT_TURNS", DefaultOP07RecentTurns), 1, 100, DefaultOP07RecentTurns)
 	cfg.MemoryJudgeEnabled = getEnvBool("AURA_MEMORY_JUDGE_ENABLED", false)
