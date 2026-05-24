@@ -12,27 +12,31 @@
 | 2026-05-24 | US-CONS-04A | passed | `go test ./cmd/aura -run "TestHubBackedWebChat|TestExtractLastTextResponseArg" -count=1`; `go test ./internal/agent -run "TestRunTask|TestRuntime|TestToolsProvider" -count=1`; `go test ./internal/agentcore -count=1`; `go test ./cmd/aura -run "TestHubBackedWebChat|TestExtractLastTextResponseArg" -count=1`; `go test ./internal/agentcore ./cmd/aura ./internal/agent ./internal/chat -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/agentcore ./cmd/aura --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/agentcore cmd/aura/web_chat.go cmd/aura/web_chat_test.go`; `git diff --check`; `go test ./... -count=1`. | Introduced `internal/agentcore.Builder` and wired web invocation assembly through it. US-CONS-04 remains open: Telegram builder wiring, feature flag/parity probe, and final story closure are still pending. |
 | 2026-05-24 | US-CONS-04B | passed | `go test ./internal/channels/telegram ./internal/channels/telegram/fixture -count=1`; `go test ./internal/agentcore -count=1`; `go test ./internal/channels/telegram/... ./internal/agentcore ./internal/chat ./cmd/aura -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/channels/telegram ./internal/agentcore --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/channels/telegram/invocation_builder.go internal/agentcore`; `git diff --check`; `go test ./... -count=1`. | Telegram invocation assembly now also uses `internal/agentcore.Builder`; Telegram-only rendering, status pane, archive, prompt hot reload, ask_user, and soft budget hooks remain in the adapter. US-CONS-04 remains open for the explicit feature-flag/parity closure. |
 | 2026-05-24 | US-CONS-04C | passed | `go test ./internal/agentcore -run "TestAgentCoreBuilderAdoptedByWebAndTelegram|TestAgentCoreBuilderDoesNotAddRuntimeFlagShim" -count=1`; `go test ./internal/channels/telegram/fixture -run TestSnapshotsByteParity -count=1`; `go test ./internal/agentcore ./internal/channels/telegram/fixture ./cmd/aura ./internal/channels/telegram -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./internal/agentcore ./internal/channels/telegram ./cmd/aura --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 internal/agentcore internal/channels/telegram/invocation_builder.go cmd/aura/web_chat.go`; `git diff --check`; `go test ./... -count=1`. | Closed US-CONS-04 with a real adoption/parity gate: both web and Telegram call `agentcore.Builder.Build` with `agentcore.InvocationInput`; no transport owns a non-empty `agent.Invocation` literal; no no-op `AURA_AGENTCORE_BUILDER` runtime flag was introduced; Telegram byte-parity fixture and full Go suite pass. |
+| 2026-05-24 | US-CONS-05 | passed | `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub|TestInbound|TestChatService" -count=1`; `go test ./cmd/aura ./internal/channels/web ./internal/channels/telegram ./internal/chat -count=1`; `rg -n "newHubBackedWebChatService|telegramadapter\.NewHub|func NewHub|injected by NewHub" cmd/aura internal/channels/telegram internal/channels/web`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/chat ./internal/channels/web ./internal/channels/telegram --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/app_wire.go cmd/aura/main.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/channels/web internal/channels/telegram/invocation_builder.go internal/chat/hub_test.go`; `git diff --check`; `go test ./... -count=1`. | Shared web+Telegram Hub lives in `cmd/aura/chat_hub.go`, threaded from `app_wire.go` to Telegram and `/api/chat`. `telegramadapter.NewHub` and `newHubBackedWebChatService` are gone; web requests now use `webadapter.New()` normalization. Cron Hub stays separate. Negative `rg` exited 1 as expected. |
 
 ## Current Slice
 
-**US-CONS-05:** collapse web + Telegram Hubs into one shared Hub while keeping cron separate.
+**US-CONS-06:** add web parity for soft-budget response, context compaction behavior, and conversation archive rows.
 
 Pre-edit map:
 
-- `cmd/aura/app.go`
-- `cmd/aura/app_wire.go`
-- `internal/channels/telegram/invocation_builder.go`
+- `internal/api/chat.go`
+- `internal/channels/web/chat_service.go`
+- `internal/channels/web/outbound.go`
 - `cmd/aura/web_chat.go`
-- `internal/chat/`
+- `cmd/aura/chat_hub.go`
+- `internal/conversation/archive.go`
+- `internal/conversation/archive_test.go`
+- `internal/storage/runs/`
 - `internal/channels/web/`
-- `internal/channels/telegram/`
 
 Dedicated QA target:
 
-- `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub" -count=1`
-- shared Hub routing test: `ChannelWeb` dispatches only to web outbound and `ChannelTelegram` only to Telegram outbound
+- web soft-budget test with mock budget runtime and exact `budget_warning` JSON field
+- web archive test asserting durable conversation rows with `channel='web'` or equivalent web chat identity marker
+- context compaction regression tests from US-CONS-02 remain green
 - `go vet ./...`
 - `go build ./...`
 - `golangci-lint run <touched packages> --timeout=10m --new-from-rev=HEAD`
-- `dupl -t 60 <touched Hub/web/telegram files>`
+- `dupl -t 60 <touched web/API/archive files>`
 - `git diff --check`

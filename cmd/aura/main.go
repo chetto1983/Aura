@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/api"
-	telegramadapter "github.com/aura/aura/internal/channels/telegram"
 	"github.com/aura/aura/internal/config"
 	auradb "github.com/aura/aura/internal/db"
 	"github.com/aura/aura/internal/db/migrations"
@@ -349,18 +348,6 @@ func startAura(logger *slog.Logger, cleanupLog func(), cfg *config.Config) (_ fu
 	}
 	if err := app.wireBot(bot); err != nil {
 		return nil, activeLogger, fmt.Errorf("wire bot phase C: %w", err)
-	}
-
-	// Wire the Telegram Hub. NewHub lives in channels/telegram (which imports
-	// internal/telegram) to avoid an import cycle from internal/telegram back
-	// to channels/telegram.
-	{
-		hub, hubErr := telegramadapter.NewHub(bot, logger, app.deps.RunStore)
-		if hubErr != nil {
-			return nil, activeLogger, fmt.Errorf("create telegram hub: %w", hubErr)
-		}
-		bot.SetHub(hub)
-
 	}
 
 	healthServer.SetBotUsername(bot.Username())

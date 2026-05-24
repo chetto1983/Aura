@@ -63,8 +63,8 @@ Planning contract repaired 2026-05-24:
 
 ### US-CONS-05 — Single Hub: collapse web + telegram Hubs into one
 
-- **Scope:** Move Hub construction from `internal/channels/telegram/invocation_builder.go::NewHub` AND `cmd/aura/web_chat.go::newHubBackedWebChatService` into `cmd/aura/app.go` (composition root). Register both inbound (`telegramadapter.New()` + new `webadapter.New()`) and both outbound (`telegramadapter.Outbound` + `webadapter.Router`) on the SAME Hub. Cron Hub stays separate.
-- **Files:** MODIFY [cmd/aura/app.go](cmd/aura/app.go); MODIFY [cmd/aura/app_wire.go](cmd/aura/app_wire.go); MODIFY [internal/channels/telegram/invocation_builder.go](internal/channels/telegram/invocation_builder.go) (delete `NewHub`); MODIFY [cmd/aura/web_chat.go](cmd/aura/web_chat.go) (delete Hub construction, take injected `*chat.Hub`); NEW [internal/channels/web/inbound.go](internal/channels/web/inbound.go).
+- **Scope:** Move Hub construction from `internal/channels/telegram/invocation_builder.go::NewHub` AND `cmd/aura/web_chat.go::newHubBackedWebChatService` into the `cmd/aura` composition root (`chat_hub.go`, threaded by `app_wire.go`). Register both inbound (`telegramadapter.New()` + `webadapter.New()`) and both outbound (`telegramadapter.Outbound` + `webadapter.Router`) on the SAME Hub. Cron Hub stays separate.
+- **Files:** NEW [cmd/aura/chat_hub.go](cmd/aura/chat_hub.go); MODIFY [cmd/aura/app_wire.go](cmd/aura/app_wire.go); MODIFY [cmd/aura/main.go](cmd/aura/main.go); MODIFY [internal/channels/telegram/invocation_builder.go](internal/channels/telegram/invocation_builder.go) (delete `NewHub`); MODIFY [cmd/aura/web_chat.go](cmd/aura/web_chat.go) (delete Hub construction, take injected `*chat.Hub`); NEW [internal/channels/web/inbound.go](internal/channels/web/inbound.go).
 - **LOC delta:** +120 / -180 = -60.
 - **Acceptance:**
   - `go test ./... -run TestHub` green.

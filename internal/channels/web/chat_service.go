@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"strings"
-	"time"
 
 	"github.com/aura/aura/internal/chat"
 )
@@ -12,7 +11,7 @@ import (
 // HubReceiver is the narrow subset of chat.Hub this package needs. Lets
 // tests inject a fake without dragging the full Hub.
 type HubReceiver interface {
-	ReceiveMessage(ctx context.Context, msg chat.InboundMessage) (*chat.Run, error)
+	Receive(ctx context.Context, inboundChannel chat.Channel, raw any) (*chat.Run, error)
 }
 
 // ChatReply mirrors internal/api.ChatReply so the API package can call into
@@ -66,15 +65,11 @@ func (s *ChatService) Chat(ctx context.Context, userID, threadID, message string
 	if s == nil || s.hub == nil || s.router == nil {
 		return ChatReply{}, errors.New("webadapter: hub unavailable")
 	}
-	msg := chat.InboundMessage{
-		Channel:     chat.ChannelWeb,
-		PrincipalID: userID,
-		ThreadID:    webThreadID(userID, threadID),
-		Text:        message,
-		Mode:        chat.DeliveryModeDeferred,
-		CreatedAt:   time.Now().UTC(),
-	}
-	run, runErr := s.hub.ReceiveMessage(ctx, msg)
+	run, runErr := s.hub.Receive(ctx, chat.ChannelWeb, InboundRequest{
+		UserID:   userID,
+		ThreadID: threadID,
+		Message:  message,
+	})
 	if run == nil {
 		return ChatReply{}, runErr
 	}
@@ -114,6 +109,7 @@ func webThreadID(userID, threadID string) string {
 	if userID == "" {
 		userID = "anonymous"
 	}
+	threadID = strings.TrimSpace(threadID)
 	if threadID == "" {
 		threadID = "default"
 	}

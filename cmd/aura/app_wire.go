@@ -388,9 +388,14 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	if err != nil {
 		logger.Warn("skill proposal applier unavailable", "error", err)
 	}
-	webChat, err := newHubBackedWebChatService(cfg, &a.deps, logger)
+	sharedHub, err := newSharedChatHub(cfg, &a.deps, b, logger)
 	if err != nil {
-		return fmt.Errorf("wire web chat hub: %w", err)
+		return fmt.Errorf("wire shared chat hub: %w", err)
+	}
+	b.SetHub(sharedHub.hub)
+	webChat, err := newWebChatService(sharedHub.hub, sharedHub.webRouter, sharedHub.webSessionStore)
+	if err != nil {
+		return fmt.Errorf("wire web chat service: %w", err)
 	}
 
 	// ---- Entity dedup backend (US-GRAPH-03) ----------------------------------

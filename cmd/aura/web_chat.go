@@ -25,7 +25,7 @@ import (
 	"github.com/aura/aura/internal/telegram"
 )
 
-func newHubBackedWebChatService(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (api.ChatService, error) {
+func newWebInvocationBuilder(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (*webInvocationBuilder, *agent.SessionStore) {
 	depsGetter := newWebChatDepsGetter(cfg, deps)
 	if depsGetter == nil {
 		return nil, nil
@@ -48,16 +48,13 @@ func newHubBackedWebChatService(cfg *config.Config, deps *telegram.Deps, logger 
 	if deps.WikiStore != nil {
 		builder.wikiTOCFn = deps.WikiStore.GetCachedTOC
 	}
-	loop, err := chat.NewAgentLoopAdapter(builder.Build)
-	if err != nil {
-		return nil, err
+	return builder, sessionStore
+}
+
+func newWebChatService(hub *chat.Hub, router *webadapter.Router, sessionStore *agent.SessionStore) (api.ChatService, error) {
+	if sessionStore == nil {
+		return nil, nil
 	}
-	hub, err := chat.New(chat.Config{Loop: loop, LifecycleStore: deps.RunStore, Logger: logger})
-	if err != nil {
-		return nil, err
-	}
-	router := webadapter.NewRouter()
-	hub.RegisterOutbound(router)
 	svc := webadapter.NewChatService(hub, router)
 	if svc == nil {
 		return nil, errors.New("web chat hub service unavailable")

@@ -188,6 +188,35 @@ For frontend Wave B slices:
 - **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
 - **PRD gate:** self-audited slice QA before atomic commit.
 
+## US-CONS-05 - Shared Web And Telegram Hub
+
+### B-CONS-05-A: Channel-Scoped Shared Hub Routing
+
+- **Command:** `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub|TestInbound|TestChatService" -count=1`
+- **Fixture:** shared Hub with fake web and Telegram outbound adapters, web inbound adapter, and hub-backed web chat tests.
+- **Artifact:** delivered `chat.OutboundEvent` slices and web normalized `chat.InboundMessage`.
+- **Ground truth:** `ChannelWeb` dispatches reach only web outbound; `ChannelTelegram` dispatches reach only Telegram outbound; web requests are normalized by `webadapter.New()` with `web:<userID>:<threadID>` scoping.
+- **Pass threshold:** zero cross-channel deliveries; exact web thread ID and payload assertions pass.
+- **PRD gate:** web and Telegram share one user-facing Hub while staying channel-scoped.
+
+### B-CONS-05-B: Removed Duplicate Hub Constructors
+
+- **Command:** `rg -n "newHubBackedWebChatService|telegramadapter\\.NewHub|func NewHub|injected by NewHub" cmd/aura internal/channels/telegram internal/channels/web`
+- **Fixture:** source tree after US-CONS-05 patch.
+- **Artifact:** `rg` output.
+- **Ground truth:** web and Telegram no longer create separate user-facing Hubs.
+- **Pass threshold:** no matches; `rg` exits 1.
+- **PRD gate:** the THREE-Hub anomaly is reduced to shared web+Telegram plus separate cron.
+
+### B-CONS-05-C: Dedicated Slice QA
+
+- **Command:** `go test ./cmd/aura ./internal/channels/web ./internal/channels/telegram ./internal/chat -count=1`; `go vet ./...`; `go build ./...`; `golangci-lint run ./cmd/aura ./internal/chat ./internal/channels/web ./internal/channels/telegram --timeout=10m --new-from-rev=HEAD`; `dupl -t 60 cmd/aura/chat_hub.go cmd/aura/app_wire.go cmd/aura/main.go cmd/aura/web_chat.go cmd/aura/web_chat_test.go internal/channels/web internal/channels/telegram/invocation_builder.go internal/chat/hub_test.go`; `git diff --check`; `go test ./... -count=1`
+- **Fixture:** touched packages plus full repository Go test suite.
+- **Artifact:** command outputs in this slice run.
+- **Ground truth:** no compile/vet/lint regressions; touched-file duplication is zero; full Go suite passes after sharing the Hub.
+- **Pass threshold:** all commands pass; `dupl` reports `Found total 0 clone groups` for touched files.
+- **PRD gate:** self-audited slice QA before atomic commit.
+
 ## Planned Story Benchmarks
 
 These rows are required before each later story can be called complete. Replace placeholder test names with concrete tests inside that story's commit.
@@ -196,7 +225,7 @@ These rows are required before each later story can be called complete. Replace 
 | --- | --- | --- | --- | --- |
 | CONS-03 | Completed by B-CONS-03-A..D above | fake tool registry + hub-backed web turn using shared executor | web calls `agent.ExecuteToolCalls`; tool attempts and visible tool context match current behavior | no `webToolExecutor` symbols; tool attempt row and captured context fields correct |
 | CONS-04 | Completed by B-CONS-04A..C above | web + Telegram builder source gate, Telegram byte-parity fixture, full Go suite | web and Telegram invoke `agentcore.Builder`; no transport-owned non-empty `agent.Invocation` literal; no no-op runtime flag shim | adoption/parity tests pass; fixture and full suite pass |
-| CONS-05 | `go test ./internal/chat ./cmd/aura ./internal/channels/web ./internal/channels/telegram -run "TestHub" -count=1` | shared Hub with fake web and Telegram outbound adapters | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound | zero cross-channel deliveries |
+| CONS-05 | Completed by B-CONS-05-A..C above | shared Hub with fake web and Telegram outbound adapters; source negative check | ChannelWeb events reach only web outbound; ChannelTelegram events reach only Telegram outbound; duplicate Hub constructors are gone | zero cross-channel deliveries; stale constructor symbols absent |
 | CONS-06 | `go test ./internal/channels/web ./internal/api ./cmd/aura -run "Budget|Archive|Compaction" -count=1` | mock budget runtime + isolated SQLite archive | API reply includes `budget_warning`; `conversations` rows have `channel='web'` | exact JSON field and row count |
 | CONS-07 | `go test ./internal/channels/web ./internal/api -run "SSE|DataStream|Streaming" -count=1` plus `curl -N` probe | local SSE endpoint and parser fixture | frames are valid Vercel AI SDK data-stream frames; headers include `text/event-stream`, `Cache-Control: no-cache`, `X-Accel-Buffering: no` | first byte <500ms in live probe; all fixture frames parse |
 | CONS-08 | `go test ./internal/channels/web ./internal/api ./internal/chat -run "Voice|AskUser|Question" -count=1` | fake TTS and fake ask_user tool | `audio_url` serves OGG bytes; pending question persists and answer resumes same run | audio >1024 bytes; question row waiting->answered |

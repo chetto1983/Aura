@@ -3,7 +3,6 @@ package telegramadapter
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -33,22 +32,18 @@ type InvocationBuilder struct {
 	b                 *tgtelegram.Bot
 	hub               *chat.Hub                    // set after hub creation; used for ask_user resume routing
 	outbound          *Outbound                    // canonical streaming path used by streamingChatClient
-	agentNoteStore    *agentnote.Store             // nil when not configured; injected by NewHub
-	memoryStore       *memoryindex.Store           // nil when compact memory unavailable; injected by NewHub
+	agentNoteStore    *agentnote.Store             // nil when not configured; copied from Bot runtime
+	memoryStore       *memoryindex.Store           // nil when compact memory unavailable; copied from Bot runtime
 	priorityCaches    sync.Map                     // thread_id -> *memoryindex.PrioritySectionCache
-	payloadSummarizer governance.PayloadSummarizer // nil = disabled; wired by NewHub when config enables it
+	payloadSummarizer governance.PayloadSummarizer // nil = disabled; wired when config enables it
 }
 
-// NewInvocationBuilder wraps a *telegram.Bot for use by NewHub.
+// NewInvocationBuilder wraps a *telegram.Bot for the shared chat Hub.
 func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
-	return &InvocationBuilder{b: b}
-}
-
-// NewHub creates a chat.Hub wired with Telegram inbound/outbound adapters and
-// this bot's InvocationBuilder while avoiding an internal/telegram ->
-// internal/channels/telegram import cycle.
-func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStore) (*chat.Hub, error) {
-	ib := NewInvocationBuilder(b)
+	ib := &InvocationBuilder{b: b}
+	if b == nil {
+		return ib
+	}
 	ib.agentNoteStore = b.AgentNoteStore()
 	ib.memoryStore = b.MemoryStore()
 	if cfg := b.Config(); cfg != nil && cfg.PayloadSummarizerEnabled && b.LLMClient() != nil {
@@ -57,23 +52,18 @@ func NewHub(b *tgtelegram.Bot, logger *slog.Logger, lifecycle chat.LifecycleStor
 			cfg.PayloadThresholdTokens, cfg.PayloadMaxTokens,
 		)
 	}
-	adapter, err := chat.NewAgentLoopAdapter(ib.Build)
-	if err != nil {
-		return nil, err
+	return ib
+}
+
+// AttachHub completes the composition-root wiring after the shared chat.Hub
+// exists. Build is lazy (called per-message), so installing these references
+// after chat.New returns is safe.
+func (ib *InvocationBuilder) AttachHub(hub *chat.Hub, outbound *Outbound) {
+	if ib == nil {
+		return
 	}
-	hub, err := chat.New(chat.Config{Loop: adapter, LifecycleStore: lifecycle, Logger: logger})
-	if err != nil {
-		return nil, err
-	}
-	outbound := NewOutbound(logger)
-	outbound.SetTTS(b.TTSClient())
-	outbound.SetVoicePolicy(b.VoicePolicy())
-	outbound.SetDispatchDB(b.Pool())
-	hub.RegisterInbound(New())
-	hub.RegisterOutbound(outbound)
-	ib.hub = hub // Build is lazy (called per-message), so wiring here is safe.
+	ib.hub = hub
 	ib.outbound = outbound
-	return hub, nil
 }
 
 // Build is the chat.InvocationBuilder for the Telegram channel.

@@ -2,7 +2,7 @@
 
 **Role:** source
 **Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-04C. CONS-02 and CONS-03 are committed; US-CONS-04A moved web invocation assembly onto `internal/agentcore.Builder`; US-CONS-04B moved Telegram invocation assembly onto the same builder. Close US-CONS-04 with an adoption/parity gate instead of a no-op runtime flag because the legacy invocation path has already been removed.
+**Current slice:** US-CONS-06. CONS-02..05 are committed; next add web parity for soft-budget, context compaction behavior, and archive rows.
 
 ## Objective
 
@@ -97,6 +97,15 @@ Checked 2026-05-24:
 - Assert transports no longer own non-empty `agent.Invocation` literals; zero-value error returns remain allowed.
 - Assert production runtime/config files do not introduce a no-op `AURA_AGENTCORE_BUILDER` shim.
 - Use Telegram fixture byte-parity, touched-path lint/dupl, and full Go tests as the closure evidence before setting `US-CONS-04.passes=true`.
+
+## Adopted For US-CONS-05
+
+- Add `cmd/aura/chat_hub.go` as the composition-root helper that constructs one user-facing `chat.Hub` for web and Telegram.
+- Use a channel-multiplexing `chat.InvocationBuilder` so the single Hub can route `ChannelWeb` to `webInvocationBuilder.Build` and `ChannelTelegram` to `telegramadapter.InvocationBuilder.Build`.
+- Delete `telegramadapter.NewHub`; Telegram now exports only builder/outbound pieces and receives the shared Hub through `AttachHub`.
+- Delete `newHubBackedWebChatService`; web chat now receives an injected `*chat.Hub` and `webadapter.Router`.
+- Add `internal/channels/web/inbound.go` so `/api/chat` goes through `Hub.Receive(ChannelWeb, raw)` and the same inbound-adapter normalization path as Telegram.
+- Keep cron Hub creation unchanged in `app_wire.go` because it has a distinct lifecycle and silent outbound policy.
 
 ## Rejected For US-CONS-02
 

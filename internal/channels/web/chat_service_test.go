@@ -19,7 +19,15 @@ type fakeHub struct {
 	lastMsg chat.InboundMessage
 }
 
-func (h *fakeHub) ReceiveMessage(ctx context.Context, msg chat.InboundMessage) (*chat.Run, error) {
+func (h *fakeHub) Receive(ctx context.Context, inboundChannel chat.Channel, raw any) (*chat.Run, error) {
+	if inboundChannel != chat.ChannelWeb {
+		return nil, errors.New("unexpected channel")
+	}
+	inbound := New()
+	msg, err := inbound.Normalize(ctx, raw)
+	if err != nil {
+		return nil, err
+	}
 	h.lastMsg = msg
 	for _, ev := range h.events {
 		ev.RunID = h.runID

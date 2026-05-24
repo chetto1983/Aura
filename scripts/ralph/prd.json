@@ -64,13 +64,13 @@
     {
       "id": "US-CONS-05",
       "title": "Single Hub: collapse web + telegram Hubs into one",
-      "description": "Move Hub construction from internal/channels/telegram/invocation_builder.go::NewHub AND cmd/aura/web_chat.go::newHubBackedWebChatService into cmd/aura/app.go (composition root). Register both inbound (telegramadapter.New() + new webadapter.New()) and both outbound (telegramadapter.Outbound + webadapter.Router) on the SAME Hub. Cron Hub stays separate (different lifecycle).",
+      "description": "Move Hub construction from internal/channels/telegram/invocation_builder.go::NewHub AND cmd/aura/web_chat.go::newHubBackedWebChatService into the cmd/aura composition root (chat_hub.go threaded by app_wire.go). Register both inbound (telegramadapter.New() + webadapter.New()) and both outbound (telegramadapter.Outbound + webadapter.Router) on the SAME Hub. Cron Hub stays separate (different lifecycle).",
       "acceptanceCriteria": [
-        "cmd/aura/app.go owns Hub construction with both transports registered",
+        "cmd/aura/chat_hub.go owns Hub construction with both transports registered",
         "cmd/aura/app_wire.go threads the shared Hub to telegram + web bootstraps",
         "internal/channels/telegram/invocation_builder.go::NewHub DELETED",
         "cmd/aura/web_chat.go::newHubBackedWebChatService DELETED; web_chat takes injected *chat.Hub",
-        "internal/channels/web/inbound.go new — webadapter.New() with Subject/Reply parsing",
+        "internal/channels/web/inbound.go new — webadapter.New() normalizes user/thread/message into chat.InboundMessage",
         "Hub round-trip test: ChannelTelegram + ChannelWeb run dispatches stay channel-scoped",
         "New test: ChannelWeb run dispatches ONLY to web outbound (zero deliveries to telegram outbound — verifies the routing guard)",
         "go test ./... -run TestHub -count=1 green",
@@ -79,8 +79,8 @@
         "Single atomic commit prefix: refactor(hub): collapse web + telegram into a single Hub (US-CONS-05)"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-04. Closes the THREE-Hub anomaly down to TWO (shared web+telegram + separate cron). Foundation for CONS-06..08 parity work."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. cmd/aura/chat_hub.go now builds one shared web+Telegram Hub, app_wire.go injects it into Telegram and /api/chat, webadapter.New() normalizes web requests through Hub.Receive, telegramadapter.NewHub and newHubBackedWebChatService were deleted, cron Hub remains separate. Dedicated routing test proves ChannelWeb reaches only web outbound and ChannelTelegram only Telegram outbound."
     },
     {
       "id": "US-CONS-06",

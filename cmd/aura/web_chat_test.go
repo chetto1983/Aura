@@ -12,6 +12,7 @@ import (
 
 	"github.com/aura/aura/internal/agent"
 	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
+	"github.com/aura/aura/internal/api"
 	"github.com/aura/aura/internal/config"
 	"github.com/aura/aura/internal/cron"
 	"github.com/aura/aura/internal/db/migrations"
@@ -137,7 +138,7 @@ func TestHubBackedWebChatPersistsRunAndActor(t *testing.T) {
 		t.Fatalf("NewStore: %v", err)
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	svc, err := newHubBackedWebChatService(
+	svc, err := newTestWebChatService(
 		&config.Config{LLMModel: "fake-web-chat", AgentLoopMaxSteps: 4},
 		&telegram.Deps{
 			LLM:      fakeWebChatLLM{},
@@ -148,10 +149,10 @@ func TestHubBackedWebChatPersistsRunAndActor(t *testing.T) {
 		logger,
 	)
 	if err != nil {
-		t.Fatalf("newHubBackedWebChatService: %v", err)
+		t.Fatalf("newTestWebChatService: %v", err)
 	}
 	if svc == nil {
-		t.Fatal("newHubBackedWebChatService returned nil")
+		t.Fatal("newTestWebChatService returned nil")
 	}
 	actorID := identity.TelegramSessionActorID("alice")
 	reply, err := svc.Chat(identity.WithActorID(context.Background(), actorID), "alice", "default", "hello")
@@ -186,7 +187,7 @@ func TestHubBackedWebChatRecordsToolAttempts(t *testing.T) {
 	registry := toolregistry.NewRegistry(logger)
 	probe := &webChatContextProbeTool{}
 	registry.Register(probe)
-	svc, err := newHubBackedWebChatService(
+	svc, err := newTestWebChatService(
 		&config.Config{LLMModel: "fake-web-chat", AgentLoopMaxSteps: 4},
 		&telegram.Deps{
 			LLM:      &fakeToolCallingLLM{},
@@ -198,7 +199,7 @@ func TestHubBackedWebChatRecordsToolAttempts(t *testing.T) {
 		logger,
 	)
 	if err != nil {
-		t.Fatalf("newHubBackedWebChatService: %v", err)
+		t.Fatalf("newTestWebChatService: %v", err)
 	}
 	ctx := identity.WithActorID(
 		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
@@ -241,7 +242,7 @@ func TestHubBackedWebChatTerminatesOnTextResponseTool(t *testing.T) {
 	registry := toolregistry.NewRegistry(logger)
 	registry.Register(&toolregistry.TextResponseTool{})
 	llmClient := &fakeTextResponseLLM{}
-	svc, err := newHubBackedWebChatService(
+	svc, err := newTestWebChatService(
 		&config.Config{LLMModel: "fake-web-chat", AgentLoopMaxSteps: 4, TerminalToolPolicy: "on"},
 		&telegram.Deps{
 			LLM:      llmClient,
@@ -253,7 +254,7 @@ func TestHubBackedWebChatTerminatesOnTextResponseTool(t *testing.T) {
 		logger,
 	)
 	if err != nil {
-		t.Fatalf("newHubBackedWebChatService: %v", err)
+		t.Fatalf("newTestWebChatService: %v", err)
 	}
 	ctx := identity.WithActorID(
 		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
@@ -556,6 +557,14 @@ func TestSwarmRunnerAdapterPassesContextRunID(t *testing.T) {
 	}
 }
 
+func newTestWebChatService(cfg *config.Config, deps *telegram.Deps, logger *slog.Logger) (api.ChatService, error) {
+	shared, err := newSharedChatHub(cfg, deps, nil, logger)
+	if err != nil {
+		return nil, err
+	}
+	return newWebChatService(shared.hub, shared.webRouter, shared.webSessionStore)
+}
+
 func newTestWebChatAdapter(t *testing.T, llmClient llm.Client, registry *toolregistry.Registry) (*apiChatServiceAdapter, *sql.DB) {
 	t.Helper()
 	db := testutil.OpenTestDB(t, nil)
@@ -570,7 +579,7 @@ func newTestWebChatAdapter(t *testing.T, llmClient llm.Client, registry *toolreg
 	if registry == nil {
 		registry = toolregistry.NewRegistry(logger)
 	}
-	svc, err := newHubBackedWebChatService(
+	svc, err := newTestWebChatService(
 		&config.Config{
 			LLMModel:             "fake-web-chat",
 			AuraBotMaxIterations: 4,
@@ -588,7 +597,7 @@ func newTestWebChatAdapter(t *testing.T, llmClient llm.Client, registry *toolreg
 		logger,
 	)
 	if err != nil {
-		t.Fatalf("newHubBackedWebChatService: %v", err)
+		t.Fatalf("newTestWebChatService: %v", err)
 	}
 	adapter, ok := svc.(*apiChatServiceAdapter)
 	if !ok {

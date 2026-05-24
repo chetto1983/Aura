@@ -874,6 +874,43 @@ func TestRegisterOutbound_MultipleAdaptersFanout(t *testing.T) {
 	}
 }
 
+func TestHubRoutesWebAndTelegramOnSameHub(t *testing.T) {
+	loop := &testhelpers.RecordingLoop{Emits: []chat.OutboundEvent{{Type: chat.EventMessageDone, Content: "ok"}}}
+	h := newHub(t, loop)
+	h.RegisterInbound(&testhelpers.FakeInbound{
+		Ch:  chat.ChannelWeb,
+		Out: chat.InboundMessage{Channel: chat.ChannelWeb, ThreadID: "web-thread", Mode: chat.DeliveryModeDeferred},
+	})
+	h.RegisterInbound(&testhelpers.FakeInbound{
+		Ch:  chat.ChannelTelegram,
+		Out: chat.InboundMessage{Channel: chat.ChannelTelegram, ThreadID: "telegram-thread", Mode: chat.DeliveryModeStreaming},
+	})
+	webOut := &testhelpers.FakeOutbound{Ch: chat.ChannelWeb, Md: chat.DeliveryModeDeferred}
+	telegramOut := &testhelpers.FakeOutbound{Ch: chat.ChannelTelegram, Md: chat.DeliveryModeStreaming}
+	h.RegisterOutbound(webOut)
+	h.RegisterOutbound(telegramOut)
+
+	if _, err := h.Receive(context.Background(), chat.ChannelWeb, nil); err != nil {
+		t.Fatalf("Receive web: %v", err)
+	}
+	if len(webOut.Got) == 0 {
+		t.Fatal("web outbound received no events")
+	}
+	if len(telegramOut.Got) != 0 {
+		t.Fatalf("telegram outbound received web events: %+v", telegramOut.Got)
+	}
+
+	if _, err := h.Receive(context.Background(), chat.ChannelTelegram, nil); err != nil {
+		t.Fatalf("Receive telegram: %v", err)
+	}
+	if len(telegramOut.Got) == 0 {
+		t.Fatal("telegram outbound received no events")
+	}
+	if got := len(webOut.Got); got != 3 {
+		t.Fatalf("web outbound received telegram events; got %d total events", got)
+	}
+}
+
 // --- ThreadRunStatus -------------------------------------------------------
 
 func TestThreadRunStatus_UnknownThreadReturnsFalse(t *testing.T) {
