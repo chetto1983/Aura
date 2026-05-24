@@ -16,12 +16,12 @@ const (
 
 var toolsets = map[string][]string{
 	ToolsetMemoryRead: {
-		"search_memory",
+		"search",
 		"file",
 		"source",
 	},
 	ToolsetWikiReview: {
-		"search_memory",
+		"search",
 		"file",
 		"source",
 	},
@@ -34,10 +34,9 @@ var toolsets = map[string][]string{
 	ToolsetSandboxCode: {
 		"execute_code",
 		"execute_shell",
-		"dev_tool",
 	},
 	ToolsetSchedulerSafe: {
-		"search_memory",
+		"search",
 		"file",
 		"source",
 		"web",
@@ -46,12 +45,12 @@ var toolsets = map[string][]string{
 
 var rolePresets = map[string][]string{
 	"librarian": {
-		"search_memory",
+		"search",
 		"file",
 		"source",
 	},
 	"critic": {
-		"search_memory",
+		"search",
 		"file",
 		"source",
 	},
@@ -62,7 +61,7 @@ var rolePresets = map[string][]string{
 		"file",
 	},
 	"synthesizer": {
-		"search_memory",
+		"search",
 		"file",
 		"source",
 	},

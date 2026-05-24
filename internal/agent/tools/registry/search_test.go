@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/storage/memoryindex"
-	"github.com/aura/aura/internal/storage/search"
-	"github.com/aura/aura/internal/wiki"
 )
 
 // TestSearch_ActionSearch_HybridReturns verifies that action=search delegates
@@ -152,26 +150,22 @@ func TestSearch_SearchMemoryInternalExecution(t *testing.T) {
 	}
 }
 
-func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
+// TestSearch_FoldedRecallActions verifies that the operational + user memory
+// recall variants still serve through search(action="lessons"|"user_facts").
+// Graph primitives (god_nodes, subgraph, path) are NOT folded — they live
+// as standalone tools (recall_god_nodes, wiki_subgraph, wiki_path) per the
+// graphify pattern. See those tools' own tests for coverage.
+func TestSearch_FoldedRecallActions(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	compact := fakeCompactMemorySearch{docs: []memoryindex.Document{
 		operationalLesson("web-timeout", "web", "timeout", now),
 		userFact("user_memory:pref", "preference", "Prefers dark mode", now),
 	}}
-	store := newSubgraphTestStore(t, map[string]*wiki.Page{
-		"robot": {Title: "Robot", Body: "Robot connects to [[frame]]."},
-		"frame": {Title: "Frame", Body: "Frame supports [[robot]]."},
-	})
-	tool := NewSearchTool(NewSearchMemoryTool(nil, compact), store, nil).
-		WithRecallAndGraphActions(
+	tool := NewSearchTool(NewSearchMemoryTool(nil, compact), nil, nil).
+		WithRecallActions(
 			NewRecallOperationalTool(compact),
 			NewRecallUserMemoryTool(compact),
-			NewRecallGodNodesTool(store),
-			NewWikiPathTool(store),
-			NewWikiSubgraphTool(store, &fakeSubgraphSearcher{results: []search.Result{
-				{Slug: "robot", Title: "Robot", Score: 0.95},
-			}}),
 		)
 
 	cases := []struct {
@@ -181,9 +175,6 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 	}{
 		{name: "lessons", args: map[string]any{"action": "lessons", "tool_name": "web"}, want: "operational:web-timeout"},
 		{name: "user facts", args: map[string]any{"action": "user_facts", "category": "preference"}, want: "user_memory:pref"},
-		{name: "god nodes", args: map[string]any{"action": "god_nodes", "top_k": 2}, want: "robot"},
-		{name: "path", args: map[string]any{"action": "path", "from_slug": "robot", "to_slug": "frame"}, want: `"path":["robot","frame"]`},
-		{name: "subgraph", args: map[string]any{"action": "subgraph", "query": "robot", "depth": 1, "budget_tokens": 500}, want: "CAPSULE wiki_subgraph"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -195,5 +186,27 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 				t.Fatalf("output missing %q:\n%s", tc.want, out)
 			}
 		})
+	}
+}
+
+// TestSearch_GraphActionsErrorWhenDelegateMissing verifies that
+// search(action="god_nodes"|"subgraph"|"path") returns an explicit error
+// when the SearchTool was wired without the graph delegates (the
+// production wiring path after 2026-05-24: graph primitives are
+// standalone tools, NOT folded into search). Probes confirm the LLM
+// reaches for the standalone recall_god_nodes / wiki_subgraph /
+// wiki_path tools first; this test guards against silently succeeding
+// against a half-wired SearchTool.
+func TestSearch_GraphActionsErrorWhenDelegateMissing(t *testing.T) {
+	ctx := context.Background()
+	tool := &SearchTool{}
+	for _, action := range []string{"god_nodes", "subgraph", "path"} {
+		_, err := tool.Execute(ctx, map[string]any{"action": action})
+		if err == nil {
+			t.Fatalf("action=%q returned nil error, want unavailable error", action)
+		}
+		if !strings.Contains(err.Error(), "unavailable") {
+			t.Fatalf("action=%q error should mention unavailable delegate: %v", action, err)
+		}
 	}
 }

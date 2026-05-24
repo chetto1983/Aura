@@ -91,7 +91,7 @@ func RewriteVerbKeyAsAction(supplied map[string]any, validActions []string, hint
 }
 
 // ActionRequiredError builds a self-correcting error for action-enum
-// tools (file, source, task, web, dev_tool, doc). Tells the model:
+// tools (search, file, source, task, web). Tells the model:
 //   1. Which actions are valid
 //   2. Which one its supplied keys most likely meant
 //   3. A ready-to-copy retry JSON with the guessed action plus its

@@ -36,7 +36,6 @@ func TestRenderSplitManifest_ZeroDeferredByteIdentical(t *testing.T) {
 		"workspace_write", "ingest", "read_source", "store_source",
 		"delete_source", "list_source", "ocr_source", "search",
 		"recall_operational", "recall_user_memory", "agent_note",
-		"request_dashboard_token",
 	}
 	// 25 tools, all VisibilityActiveTurn (non-deferred).
 	splitDefs := make([]ToolDefinition, len(names))

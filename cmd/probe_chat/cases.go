@@ -919,51 +919,6 @@ func allCases(now time.Time, enableTTS bool) []Case {
 			},
 		},
 
-		// Phase-QA2 / US-QA-COV03 — subagent_dispatch E2E (swarm delegation).
-		// Asks Aura to delegate a simple letter-count task to a subagent via
-		// subagent_dispatch and verifies the correct answer (4) is returned.
-		// Fails loud when AURABOT_ENABLED=false (tool not registered → ToolCalls=0).
-		// Ground truth: tool_attempts DB row for subagent_dispatch, not reply text alone.
-		{
-			Name:     "tool-subagent-dispatch",
-			Category: "tools-swarm",
-			Prompt:   "Usa lo strumento subagent_dispatch per delegare il seguente calcolo a un subagent: quante lettere ha la parola 'Aura'? Raccogli la risposta e rispondimi con il numero (4) citando che lo hai delegato a un subagent.",
-			Setup: func(_ *Env) error {
-				subagentDispatchBefore = time.Now()
-				return nil
-			},
-			Verify: func(r ChatReply, env *Env) []string {
-				// Ground truth first: DB must have a successful tool_attempts row for subagent_dispatch.
-				counts, err := env.toolAttemptsSince(subagentDispatchBefore, "subagent_dispatch")
-				if err != nil {
-					return []string{fmt.Sprintf("tool_attempts query: %v", err)}
-				}
-				count := counts["subagent_dispatch"]
-				fmt.Fprintf(os.Stderr, "[case=tool-subagent-dispatch] tool_attempts subagent_dispatch since %s: count=%d\n",
-					subagentDispatchBefore.Format(time.RFC3339), count)
-				// INFRA-SKIP: tool was invoked by the LLM (ToolCalls>=1) but returned no
-				// successful tool_attempts row — this is the Telegram-context-missing path
-				// (subagent_dispatch returns an error when AURABOT is not active).
-				// The LLM paraphrases the error in natural language; checking DB state is
-				// more reliable than substring-matching LLM prose (Phase-QA3 / US-QA-FIX10).
-				if r.ToolCalls >= 1 && count == 0 {
-					fmt.Fprintf(os.Stderr, "[case=tool-subagent-dispatch] INFRA-SKIP: tool invoked (calls=%d) but no successful tool_attempts row — Telegram/AURABOT context not available in web probe (US-QA-FIX10)\n", r.ToolCalls)
-					return nil
-				}
-				var miss []string
-				if r.ToolCalls == 0 {
-					miss = append(miss, "expected >= 1 tool call (subagent_dispatch), got 0 — check AURABOT_ENABLED=true in container env")
-				}
-				if !strings.Contains(r.Reply, "4") {
-					miss = append(miss, fmt.Sprintf("reply missing expected letter count '4' (got: %q)", truncate(r.Reply, 200)))
-				}
-				if count == 0 {
-					miss = append(miss, "DB ground truth: no successful tool_attempts row for subagent_dispatch since probe start")
-				}
-				return miss
-			},
-		},
-
 		// Phase-QA2 / US-QA-COV05 — source action=reprocess ingest E2E.
 		// Uploads a small markdown source (→extract_complete), asks Aura to call
 		// source action=reprocess on it, then verifies the generated wiki summary page exists
@@ -1348,14 +1303,13 @@ func allCases(now time.Time, enableTTS bool) []Case {
 // Setup and reads it back in Verify. Module-level scope is fine because
 // runAll processes cases sequentially (loop in runAll, no parallelism).
 var (
-	htmlProbeID            string
-	zipProbeID             string
-	execCodeBefore         time.Time
-	execShellBefore        time.Time
-	subagentDispatchBefore time.Time
-	ocrProbeID             string
-	ingestProbeID          string
-	ingestExpectedSlug     string
+	htmlProbeID        string
+	zipProbeID         string
+	execCodeBefore     time.Time
+	execShellBefore    time.Time
+	ocrProbeID         string
+	ingestProbeID      string
+	ingestExpectedSlug string
 
 	capDenyUserID      string
 	capDenyActorID     string

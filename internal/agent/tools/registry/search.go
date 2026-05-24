@@ -9,17 +9,18 @@ import (
 	"github.com/aura/aura/internal/wiki"
 )
 
-// SearchTool is the unified read-only knowledge lookup surface that replaces
-// the fragmented search_memory / list_memory / read_memory / read_source pattern.
+// SearchTool is the read-only knowledge lookup surface that replaces the
+// fragmented search_memory/list_memory/read_memory/read_source pattern, folds
+// typed recall, and folds wiki graph reads into one action-enum tool.
 //
-//   - action=search — hybrid wiki+compact search (delegates to SearchMemoryTool)
-//   - action=list   — enumerate wiki page slugs with optional prefix filter
-//   - action=read   — fetch a wiki page body or source extract.md by slug
-//   - action=lessons — approved operational lessons
-//   - action=user_facts — approved user facts/preferences
-//   - action=god_nodes — most-connected wiki graph nodes
-//   - action=path — shortest wiki graph path
-//   - action=subgraph — query-seeded wiki subgraph capsule
+//   - action=search     - hybrid wiki+compact search
+//   - action=list       - enumerate wiki page slugs with optional prefix filter
+//   - action=read       - fetch a wiki page body or source extract.md by slug
+//   - action=lessons    - approved operational lessons
+//   - action=user_facts - approved user facts/preferences
+//   - action=god_nodes  - top wiki hubs by degree centrality
+//   - action=subgraph   - query-seeded wiki subgraph capsule
+//   - action=path       - shortest path between two wiki slugs
 type SearchTool struct {
 	searchMem         *SearchMemoryTool
 	wikiReader        wiki.PageReader
@@ -44,9 +45,19 @@ func NewSearchTool(searchMem *SearchMemoryTool, wikiReader wiki.PageReader, sour
 	}
 }
 
-// WithRecallAndGraphActions attaches implementation delegates for the folded
-// recall/wiki graph actions. The old tool names stay as internal types; only
-// the LLM-facing surface is consolidated into search(action=...).
+// WithRecallActions attaches operational + user-memory recall delegates so
+// search(action="lessons"|"user_facts") can serve them through one tool name.
+func (t *SearchTool) WithRecallActions(operational *RecallOperationalTool, userMemory *RecallUserMemoryTool) *SearchTool {
+	if t == nil {
+		return nil
+	}
+	t.operationalRecall = operational
+	t.userMemoryRecall = userMemory
+	return t
+}
+
+// WithRecallAndGraphActions attaches all folded delegates for the consolidated
+// LLM-facing search surface.
 func (t *SearchTool) WithRecallAndGraphActions(
 	operational *RecallOperationalTool,
 	userMemory *RecallUserMemoryTool,
@@ -57,8 +68,7 @@ func (t *SearchTool) WithRecallAndGraphActions(
 	if t == nil {
 		return nil
 	}
-	t.operationalRecall = operational
-	t.userMemoryRecall = userMemory
+	t.WithRecallActions(operational, userMemory)
 	t.godNodes = godNodes
 	t.wikiPath = wikiPath
 	t.wikiSubgraph = wikiSubgraph
@@ -80,9 +90,9 @@ func (t *SearchTool) Definition() ToolDefinition {
 }
 
 func (t *SearchTool) Description() string {
-	return `Read-only. Unified knowledge lookup over wiki pages, sources, and conversation archive.
+	return `Read-only. Unified knowledge lookup over wiki pages, sources, conversation archive, typed memory, and the wiki graph.
 
-EXAMPLES — copy the shape exactly:
+EXAMPLES - copy the shape exactly:
 
   search({"action":"search","query":"corso base robot","top_k":6})
   search({"action":"search","query":"davide preferences","zone":"wiki"})
@@ -91,23 +101,23 @@ EXAMPLES — copy the shape exactly:
   search({"action":"read","slug":"src_0ec1b02e112f0ca4"})
   search({"action":"lessons","tool_name":"web","limit":5})
   search({"action":"user_facts","category":"preference","limit":5})
-  search({"action":"god_nodes","top_k":8})
-  search({"action":"subgraph","query":"robot calibration","depth":2})
-  search({"action":"path","from_slug":"robot","to_slug":"frame"})
+  search({"action":"god_nodes","top_k":10})
+  search({"action":"subgraph","query":"robot calibration","depth":2,"budget_tokens":1500})
+  search({"action":"path","from_slug":"robot","to_slug":"frame","max_hops":5})
 
 action REQUIRED; valid: "search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path".
 
 Per-action required:
-  • search → query
-  • list   → nothing (slug_prefix optional filter)
-  • read   → slug (wiki slug OR src_<16hex>)
-  • lessons → nothing (query/tool_name/error_class optional)
-  • user_facts → nothing (query/category optional)
-  • god_nodes → nothing (top_k optional)
-  • subgraph → query
-  • path → from_slug AND to_slug
+  - search -> query
+  - list -> nothing (slug_prefix optional filter)
+  - read -> slug (wiki slug OR src_<16hex>)
+  - lessons -> nothing (query/tool_name/error_class optional)
+  - user_facts -> nothing (query/category optional)
+  - god_nodes -> nothing (top_k optional)
+  - subgraph -> query
+  - path -> from_slug and to_slug
 
-Optional: zone ("wiki"/"source"/"all"), top_k (1-12 default 6), limit (1-20 for recall actions).`
+Optional: zone ("wiki"/"source"/"all"), top_k (1-12 for search, 1-50 for god_nodes), limit (1-20 for recall actions), depth, budget_tokens, max_hops.`
 }
 
 func (t *SearchTool) Parameters() map[string]any {
@@ -119,11 +129,11 @@ func (t *SearchTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path"},
-				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (fetch body).",
+				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (fetch body), lessons (operational lessons), user_facts (user memory), god_nodes (top wiki hubs), subgraph (query-seeded graph capsule), path (shortest wiki path).",
 			},
 			"query": map[string]any{
 				"type":        "string",
-				"description": "Natural-language query. Required for action=search.",
+				"description": "Natural-language query. Required for action=search and action=subgraph.",
 			},
 			"slug": map[string]any{
 				"type":        "string",
@@ -136,7 +146,7 @@ func (t *SearchTool) Parameters() map[string]any {
 			},
 			"top_k": map[string]any{
 				"type":        "integer",
-				"description": "action=search/god_nodes max results (1-12 for search, up to 50 for god_nodes).",
+				"description": "action=search max results (1-12, default 6) or action=god_nodes max nodes (1-50, default 10).",
 				"minimum":     1,
 				"maximum":     50,
 			},
@@ -165,27 +175,27 @@ func (t *SearchTool) Parameters() map[string]any {
 			},
 			"from_slug": map[string]any{
 				"type":        "string",
-				"description": "action=path: start wiki slug.",
+				"description": "action=path: slug of the starting wiki page.",
 			},
 			"to_slug": map[string]any{
 				"type":        "string",
-				"description": "action=path: destination wiki slug.",
+				"description": "action=path: slug of the destination wiki page.",
 			},
 			"max_hops": map[string]any{
 				"type":        "integer",
-				"description": "action=path: maximum graph hops (default 5, max 20).",
+				"description": "action=path: maximum graph hops to traverse (1-20, default 5).",
 				"minimum":     1,
 				"maximum":     20,
 			},
 			"depth": map[string]any{
 				"type":        "integer",
-				"description": "action=subgraph: BFS expansion depth (1-3, default 2).",
+				"description": "action=subgraph: BFS expansion depth from ranked seed nodes (1-3, default 2).",
 				"minimum":     1,
 				"maximum":     3,
 			},
 			"budget_tokens": map[string]any{
 				"type":        "integer",
-				"description": "action=subgraph: approximate token budget (default 1500, max 4000).",
+				"description": "action=subgraph: approximate token budget for the rendered capsule (1-4000, default 1500).",
 				"minimum":     1,
 				"maximum":     4000,
 			},
@@ -208,9 +218,9 @@ func (t *SearchTool) Parameters() map[string]any {
 			map[string]any{"action": "read", "slug": "src_0ec1b02e112f0ca4"},
 			map[string]any{"action": "lessons", "tool_name": "web", "limit": 5},
 			map[string]any{"action": "user_facts", "category": "preference", "limit": 5},
-			map[string]any{"action": "god_nodes", "top_k": 8},
-			map[string]any{"action": "subgraph", "query": "robot calibration", "depth": 2},
-			map[string]any{"action": "path", "from_slug": "robot", "to_slug": "frame"},
+			map[string]any{"action": "god_nodes", "top_k": 10},
+			map[string]any{"action": "subgraph", "query": "robot calibration", "depth": 2, "budget_tokens": 1500},
+			map[string]any{"action": "path", "from_slug": "robot", "to_slug": "frame", "max_hops": 5},
 		},
 	}
 }
@@ -220,6 +230,7 @@ var (
 	searchToolActionHints  = []ActionHint{
 		{Name: "search", RequiredKeys: []string{"query"}},
 		{Name: "read", RequiredKeys: []string{"slug"}},
+		{Name: "subgraph", RequiredKeys: []string{"query"}},
 		{Name: "path", RequiredKeys: []string{"from_slug", "to_slug"}},
 	}
 )
@@ -253,7 +264,7 @@ func (t *SearchTool) Execute(ctx context.Context, args map[string]any) (string, 
 	}
 }
 
-// doSearch delegates to SearchMemoryTool after translating zone → scope.
+// doSearch delegates to SearchMemoryTool after translating zone -> scope.
 // chat_id is passed through when present so archive results are scoped to
 // the current conversation (injected by ToolArgumentsForTool upstream).
 func (t *SearchTool) doSearch(ctx context.Context, args map[string]any) (string, error) {
@@ -370,7 +381,7 @@ func (t *SearchTool) doGodNodes(ctx context.Context, args map[string]any) (strin
 
 func (t *SearchTool) doSubgraph(ctx context.Context, args map[string]any) (string, error) {
 	if t.wikiSubgraph == nil {
-		return "", fmt.Errorf("search subgraph: wiki subgraph unavailable")
+		return "", fmt.Errorf("search subgraph: wiki graph unavailable")
 	}
 	return t.wikiSubgraph.Execute(ctx, searchDelegateArgs(args, "query", "depth", "budget_tokens"))
 }

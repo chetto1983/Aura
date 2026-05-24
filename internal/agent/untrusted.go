@@ -19,10 +19,9 @@ import (
 // scheduler queries, etc.) intentionally bypass the envelope so the LLM does
 // not learn to ignore *every* tool result.
 var untrustedSourceTools = map[string]struct{}{
-	"web":            {},
-	"source":         {},
-	"read_skill":     {},
-	"daily_briefing": {},
+	"web":        {},
+	"source":     {},
+	"read_skill": {},
 }
 
 // IsUntrustedSourceTool reports whether a tool's output should be wrapped

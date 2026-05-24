@@ -20,15 +20,15 @@ func PendingAskUserCall(messages []llm.Message) (toolCallID string, options []st
 		}
 	}
 
-	// Walk backward through assistant messages looking for an unresolved ask_user
-	// or ask_user_clarification call.
+	// Walk backward through assistant messages looking for an unresolved
+	// ask_user call.
 	for i := len(messages) - 1; i >= 0; i-- {
 		msg := messages[i]
 		if msg.Role != "assistant" || len(msg.ToolCalls) == 0 {
 			continue
 		}
 		for _, call := range msg.ToolCalls {
-			if call.Name != "ask_user" && call.Name != "ask_user_clarification" {
+			if call.Name != "ask_user" {
 				continue
 			}
 			if resolved[call.ID] {

@@ -11,7 +11,7 @@ func TestResolveToolsetsComposesAndDedupes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveToolsets: %v", err)
 	}
-	want := []string{"search_memory", "file", "source", "web"}
+	want := []string{"search", "file", "source", "web"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("tools = %+v, want %+v", got, want)
 	}
@@ -54,13 +54,12 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 		"run_aurabot_swarm",
 		"execute_code",
 		"execute_shell",
-		"dev_tool",
 	} {
 		if slices.Contains(safe, forbidden) {
 			t.Fatalf("scheduler_safe includes forbidden tool %q: %+v", forbidden, safe)
 		}
 	}
-	for _, required := range []string{"search_memory", "file", "web"} {
+	for _, required := range []string{"search", "file", "web"} {
 		if !slices.Contains(safe, required) {
 			t.Fatalf("scheduler_safe missing %q: %+v", required, safe)
 		}
@@ -72,7 +71,7 @@ func TestSandboxCodeToolsetIsExplicit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveToolsets: %v", err)
 	}
-	want := []string{"execute_code", "execute_shell", "dev_tool"}
+	want := []string{"execute_code", "execute_shell"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("sandbox_code tools = %+v, want %+v", got, want)
 	}
@@ -88,11 +87,11 @@ func TestFilterAllowedCleansAndKeepsRequestedOrder(t *testing.T) {
 
 func TestRoleToolsMatchReadOnlyPresets(t *testing.T) {
 	tests := map[string][]string{
-		"librarian":   {"search_memory", "file", "source"},
-		"critic":      {"search_memory", "file", "source"},
+		"librarian":   {"search", "file", "source"},
+		"critic":      {"search", "file", "source"},
 		"researcher":  {"web"},
 		"skillsmith":  {"file"},
-		"synthesizer": {"search_memory", "file", "source"},
+		"synthesizer": {"search", "file", "source"},
 	}
 	for role, want := range tests {
 		got, ok := RoleTools(role)

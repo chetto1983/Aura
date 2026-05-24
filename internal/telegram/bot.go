@@ -209,8 +209,7 @@ func (b *Bot) ArchiveRepository() conversation.ArchiveRepository {
 	return b.rt.archiveDB
 }
 
-// SendToUser delivers a Telegram message to userID's direct chat. Used
-// by the request_dashboard_token tool. Satisfies tools.TokenSender.
+// SendToUser delivers a Telegram message to userID's direct chat.
 func (b *Bot) SendToUser(userID, message string) error {
 	chatID, err := strconv.ParseInt(userID, 10, 64)
 	if err != nil {

@@ -12,12 +12,8 @@ func renderToolDescription(name, description string, examples []ToolCallExample)
 	if len(examples) == 0 {
 		return description
 	}
-	// Show up to 5 examples per tool. The previous cap of 2 hid 3+ of the
-	// action variants on action-enum tools (file, source, task, dev_tool,
-	// doc) — observed live 2026-05-13 to drive the model into "I'll just
-	// call read_file" mode where it dropped the `action` field 4 times
-	// before recovering. Showing all valid actions inline costs ~500
-	// chars per enum tool but cuts the retry waste meaningfully.
+	// Show up to 5 examples per tool. The previous cap of 2 hid action
+	// variants on enum tools and caused repeated calls with missing action.
 	if len(examples) > 5 {
 		examples = examples[:5]
 	}
@@ -34,29 +30,21 @@ func renderToolDescription(name, description string, examples []ToolCallExample)
 
 func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 	switch name {
-	case "search_memory":
+	case "search":
 		return []ToolCallExample{
-			// Default broad search — prefer ONE call with limit=10 over
-			// multiple narrow calls. The model used to copy limit=3 from
-			// the example, then make 3-4 follow-up searches to cover the
-			// gap — observed live 2026-05-13. A higher default limit in
-			// the example cuts that retry pattern.
-			{Description: "Broad evidence sweep — prefer this single call over multiple narrow searches.", Arguments: map[string]any{"query": "wave 2.9 markitdown", "scope": "all", "limit": 10}},
-			{Description: "Wiki-only follow-up when you already have a slug to confirm.", Arguments: map[string]any{"query": "[[piano-di-miglioramento]]", "scope": "wiki", "limit": 5}},
+			{Description: "Broad evidence sweep; prefer this single call over multiple narrow searches.", Arguments: map[string]any{"action": "search", "query": "wave 2.9 markitdown", "zone": "all", "top_k": 10}},
+			{Description: "Wiki-only follow-up when you already have a slug to confirm.", Arguments: map[string]any{"action": "search", "query": "[[piano-di-miglioramento]]", "zone": "wiki", "top_k": 5}},
+			{Description: "Approved operational lessons for a tool.", Arguments: map[string]any{"action": "lessons", "tool_name": "web", "limit": 5}},
+			{Description: "Approved user facts or preferences.", Arguments: map[string]any{"action": "user_facts", "category": "preference", "limit": 5}},
+			{Description: "Wiki graph neighborhood capsule.", Arguments: map[string]any{"action": "subgraph", "query": "robot calibration", "depth": 2, "budget_tokens": 1500}},
 		}
 	case "file":
 		return []ToolCallExample{
 			{Description: "List entries under a workspace directory.", Arguments: map[string]any{"action": "list", "path": "wiki", "limit": 50}},
 			{Description: "Read a workspace file (UTF-8 or base64).", Arguments: map[string]any{"action": "read", "path": "wiki/index.md", "max_bytes": 4000}},
-			{Description: "Substring search across text files with glob filters.", Arguments: map[string]any{"action": "search", "pattern": "Riepilogo Aura", "globs": []any{"wiki/**/*.md"}, "limit": 10}},
-			{Description: "Atomic UTF-8 write.", Arguments: map[string]any{"action": "write", "path": "wiki/nuova-nota.md", "content": "# Nuova Nota\n\nContenuto."}},
-			{Description: "Exact text replacement inside one file.", Arguments: map[string]any{"action": "patch", "path": "wiki/nota.md", "old": "vecchio", "new": "nuovo"}},
-		}
-	case "doc":
-		return []ToolCallExample{
-			{Description: "Generate an Excel workbook from sheets+rows.", Arguments: map[string]any{"action": "xlsx", "filename": "riepilogo-aura.xlsx", "sheets": []any{map[string]any{"name": "Sintesi", "rows": []any{[]any{"Voce", "Valore"}, []any{"Fonti", "3"}}}}}},
-			{Description: "Generate a Word document from typed blocks.", Arguments: map[string]any{"action": "docx", "filename": "riepilogo-aura.docx", "title": "Riepilogo Aura", "blocks": []any{map[string]any{"kind": "heading", "level": 1, "text": "Riepilogo Aura"}, map[string]any{"kind": "paragraph", "text": "Sintesi breve basata sulle evidenze recuperate."}}}},
-			{Description: "Generate a PDF using the same block grammar as docx.", Arguments: map[string]any{"action": "pdf", "filename": "riepilogo-aura.pdf", "title": "Riepilogo Aura", "blocks": []any{map[string]any{"kind": "paragraph", "text": "Sintesi breve."}}}},
+			{Description: "Substring search across text files with glob filters.", Arguments: map[string]any{"action": "search", "pattern": "Aura summary", "globs": []any{"wiki/**/*.md"}, "limit": 10}},
+			{Description: "Atomic UTF-8 write.", Arguments: map[string]any{"action": "write", "path": "wiki/new-note.md", "content": "# New Note\n\nContent."}},
+			{Description: "Exact text replacement inside one file.", Arguments: map[string]any{"action": "patch", "path": "wiki/note.md", "old": "old", "new": "new"}},
 		}
 	case "execute_code":
 		return []ToolCallExample{{Arguments: map[string]any{"code": "from pathlib import Path\nPath('/tmp/aura_out/result.txt').write_text('ok')\nprint('ok')"}}}
@@ -64,9 +52,9 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		return []ToolCallExample{
 			{Description: "List ingested sources.", Arguments: map[string]any{"action": "list", "status": "ingested", "limit": 10}},
 			{Description: "Read the markdown body of a source.", Arguments: map[string]any{"action": "read", "source_id": "src_0123456789abcdef", "max_bytes": 4000}},
-			{Description: "Store a short text note as a source.", Arguments: map[string]any{"action": "store", "kind": "text", "filename": "nota.txt", "content": "Nota da salvare come fonte."}},
+			{Description: "Store a short text note as a source.", Arguments: map[string]any{"action": "store", "kind": "text", "filename": "note.txt", "content": "Note to save as source."}},
 			{Description: "Re-run the LLM ingest pipeline on an existing source.", Arguments: map[string]any{"action": "reprocess", "source_id": "src_0123456789abcdef", "stages": []any{"ingest"}}},
-			{Description: "Corpus audit — broken refs, orphans, stale OCR.", Arguments: map[string]any{"action": "lint"}},
+			{Description: "Corpus audit: broken refs, orphans, stale OCR.", Arguments: map[string]any{"action": "lint"}},
 		}
 	case "web":
 		return []ToolCallExample{
@@ -75,29 +63,19 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		}
 	case "task":
 		return []ToolCallExample{
-			{Arguments: map[string]any{"action": "schedule", "name": "health-check", "kind": "reminder", "payload": "Fai un breve health check di Aura.", "in": "1h"}},
+			{Arguments: map[string]any{"action": "schedule", "name": "health-check", "kind": "reminder", "payload": "Run a short Aura health check.", "in": "1h"}},
 			{Arguments: map[string]any{"action": "list", "status": "active"}},
 			{Arguments: map[string]any{"action": "cancel", "name": "health-check"}},
 			{Arguments: map[string]any{"action": "run_now", "name": "morning-watch"}},
 		}
-	case "daily_briefing":
-		return []ToolCallExample{{Arguments: map[string]any{"limit": 8}}}
-	case "request_dashboard_token":
-		return []ToolCallExample{{Arguments: map[string]any{"ttl_minutes": 60}}}
 	case "install_skill":
 		return []ToolCallExample{{Arguments: map[string]any{"name": "docx"}}}
 	case "delete_skill":
 		return []ToolCallExample{{Arguments: map[string]any{"name": "docx"}}}
 	case "settings_update":
 		return []ToolCallExample{{Arguments: map[string]any{"key": "AURA_AGENT_LOOP_MAX_STEPS", "value": "8"}}}
-	case "dev_tool":
-		return []ToolCallExample{
-			{Arguments: map[string]any{"action": "list"}},
-			{Arguments: map[string]any{"action": "read", "name": "csv_cleaner"}},
-			{Arguments: map[string]any{"action": "save", "name": "csv_cleaner", "description": "Strip blank rows from a CSV", "code": "import pandas as pd\\ndef run(filepath):\\n    pd.read_csv(filepath).dropna(how='all').to_csv(filepath, index=False)"}},
-		}
 	case "run_aurabot_swarm":
-		return []ToolCallExample{{Arguments: map[string]any{"task": "Analizza la memoria di Aura e riassumi i problemi principali.", "mode": "bounded"}}}
+		return []ToolCallExample{{Arguments: map[string]any{"task": "Analyze Aura memory and summarize the main issues.", "mode": "bounded"}}}
 	case "read_swarm_result":
 		return []ToolCallExample{{Arguments: map[string]any{"run_id": "swarm_123"}}}
 	case "list_swarm_tasks":
@@ -181,7 +159,7 @@ func exampleValueForProperty(field string, prop any) any {
 func exampleStringForField(field string) string {
 	switch strings.ToLower(field) {
 	case "query", "q":
-		return "aura memoria"
+		return "aura memory"
 	case "path":
 		return "wiki/index.md"
 	case "url":
@@ -193,7 +171,7 @@ func exampleStringForField(field string) string {
 	case "code":
 		return "print('ok')"
 	case "content":
-		return "contenuto"
+		return "content"
 	case "name":
 		return "example"
 	default:

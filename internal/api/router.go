@@ -232,8 +232,7 @@ const installTimeout = 90 * time.Second
 //
 // When deps.Auth is non-nil the entire mux is wrapped in RequireBearer.
 // No /api/* route is publicly reachable; tokens are minted out-of-band
-// via the Telegram /start or /login commands, or by the LLM-backed
-// request_dashboard_token tool. When deps.Auth is nil (test fixtures) the
+// via the Telegram /start, /login, or /token commands. When deps.Auth is nil (test fixtures) the
 // router is unwrapped so test cases don't have to mint a token to drive
 // the read endpoints.
 func NewRouter(deps Deps) http.Handler {
