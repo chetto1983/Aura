@@ -270,17 +270,18 @@ func TestResolveBatchTruncatesExistingCandidates(t *testing.T) {
 	}
 }
 
-func TestMemoryJudgeHookDisabledAndClientError(t *testing.T) {
+func TestMemoryJudgeHookClientError(t *testing.T) {
 	store := openPostHookStore(t)
-	hook := MemoryJudgeHook{Enabled: false}
-	if errs := hook.Apply(context.Background(), TurnRecord{OperationalWrites: []Lesson{{ToolName: "x", ErrorClass: "y", Text: "z"}}}, store); len(errs) != 0 {
-		t.Fatalf("disabled hook errs = %v, want none", errs)
-	}
-
 	seedJudgeDoc(t, store, memoryindex.Document{ID: "operational:old", Title: "Lesson: web_fetch timeout", Body: "old"})
 	lesson := seedJudgeLesson(t, store, "", "web_fetch", "timeout", "new lesson")
-	hook = MemoryJudgeHook{Enabled: true, Client: &fakeMemoryJudgeClient{err: errors.New("boom")}}
+	hook := MemoryJudgeHook{Client: &fakeMemoryJudgeClient{err: errors.New("boom")}}
 	if errs := hook.Apply(context.Background(), TurnRecord{OperationalWrites: []Lesson{lesson}}, store); len(errs) != 1 {
 		t.Fatalf("client error errs = %v, want one", errs)
+	}
+}
+
+func TestNewMemoryJudgeHookReturnsNilWhenClientNil(t *testing.T) {
+	if hook := NewMemoryJudgeHook(nil, "fake", "", nil); hook != nil {
+		t.Fatalf("NewMemoryJudgeHook(nil) = %v, want nil", hook)
 	}
 }

@@ -315,7 +315,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		UserMessage: userText,
 	}
 	postTurn := agent.NewHeuristicPostTurnConfig(ib.memoryStore, failureReader, cfg.OP07NFailThreshold, cfg.OP07RecentTurns, b.Logger(), postTurnRecord)
-	if hook := agent.NewMemoryJudgeHook(cfg.MemoryJudgeEnabled, b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, b.Logger()); hook != nil && ib.memoryStore != nil {
+	if hook := agent.NewMemoryJudgeHook(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, b.Logger()); hook != nil && ib.memoryStore != nil {
 		postTurn.Store = ib.memoryStore
 		postTurn.Record = postTurnRecord
 		postTurn.Hooks = append(postTurn.Hooks, hook)

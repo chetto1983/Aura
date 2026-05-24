@@ -147,8 +147,6 @@ type Config struct {
 	RuntimeWorkspacePath        string `envconfig:"AURA_RUNTIME_WORKSPACE_PATH" default:"./runtime-workspace"`
 	OP07NFailThreshold          int    `envconfig:"AURA_OP07_NFAIL_THRESHOLD" default:"2"`
 	OP07RecentTurns             int    `envconfig:"AURA_OP07_RECENT_TURNS" default:"10"`
-	MemoryJudgeEnabled          bool   `envconfig:"AURA_MEMORY_JUDGE_ENABLED" default:"false"`
-
 	// Mistral Document AI OCR. Keys are kept separate from LLM_API_KEY and
 	// EMBEDDING_API_KEY: OCR is a distinct capability with its own billing,
 	// and reusing chat/embedding keys would leak quota and access scope.
@@ -381,7 +379,6 @@ func Load() (*Config, error) {
 	}
 	cfg.OP07NFailThreshold = normalizeIntRange(getEnvInt("AURA_OP07_NFAIL_THRESHOLD", DefaultOP07NFailThreshold), 1, 20, DefaultOP07NFailThreshold)
 	cfg.OP07RecentTurns = normalizeIntRange(getEnvInt("AURA_OP07_RECENT_TURNS", DefaultOP07RecentTurns), 1, 100, DefaultOP07RecentTurns)
-	cfg.MemoryJudgeEnabled = getEnvBool("AURA_MEMORY_JUDGE_ENABLED", false)
 
 	cfg.MistralAPIKey = getSecretEnv("MISTRAL_API_KEY", "")
 	cfg.MistralOCRModel = getEnv("MISTRAL_OCR_MODEL", "mistral-ocr-latest")

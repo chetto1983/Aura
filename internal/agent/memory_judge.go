@@ -30,20 +30,22 @@ type Lesson struct {
 	ContentHash string
 }
 
+// MemoryJudgeHook reconciles just-written operational lessons against the
+// existing operational store after each agent turn. Always-on since 2026-05-24
+// (the AURA_MEMORY_JUDGE_ENABLED flag was removed); a nil LLM client is the
+// only thing that disables it (NewMemoryJudgeHook returns nil in that case).
 type MemoryJudgeHook struct {
-	Enabled         bool
 	Client          llm.Client
 	Model           string
 	ReasoningEffort string
 	Logger          *slog.Logger
 }
 
-func NewMemoryJudgeHook(enabled bool, client llm.Client, model, reasoningEffort string, logger *slog.Logger) PostTurnHook {
-	if !enabled || client == nil {
+func NewMemoryJudgeHook(client llm.Client, model, reasoningEffort string, logger *slog.Logger) PostTurnHook {
+	if client == nil {
 		return nil
 	}
 	return MemoryJudgeHook{
-		Enabled:         true,
 		Client:          client,
 		Model:           model,
 		ReasoningEffort: reasoningEffort,
@@ -52,7 +54,7 @@ func NewMemoryJudgeHook(enabled bool, client llm.Client, model, reasoningEffort 
 }
 
 func (h MemoryJudgeHook) Apply(ctx context.Context, turn TurnRecord, store *memoryindex.Store) []error {
-	if !h.Enabled || len(turn.OperationalWrites) == 0 {
+	if len(turn.OperationalWrites) == 0 {
 		return nil
 	}
 	err := ResolveBatch(ctx, store, turn.OperationalWrites,

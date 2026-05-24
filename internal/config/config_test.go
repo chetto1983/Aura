@@ -578,20 +578,18 @@ func TestLoadOP07Defaults(t *testing.T) {
 	if cfg.OP07RecentTurns != DefaultOP07RecentTurns {
 		t.Fatalf("OP07RecentTurns = %d, want %d", cfg.OP07RecentTurns, DefaultOP07RecentTurns)
 	}
-	if cfg.MemoryJudgeEnabled {
-		t.Fatal("MemoryJudgeEnabled = true, want false")
-	}
 	// OP12_PRECALL_VALIDATOR_ENABLED + OP12B_RETRY_HINT_ENABLED retired
 	// 2026-05-24 — the gated precall validator + retry-hint suite was
 	// deleted after probe data showed zero observable benefit.
 	// AURA_OP07_HEURISTIC_ENABLED retired 2026-05-24 — hook is now always-on,
 	// gated only by a nil memory store.
+	// AURA_MEMORY_JUDGE_ENABLED retired 2026-05-24 — hook is now always-on,
+	// gated only by a nil LLM client.
 }
 
 func TestLoadOP07Env(t *testing.T) {
 	t.Setenv("AURA_OP07_NFAIL_THRESHOLD", "3")
 	t.Setenv("AURA_OP07_RECENT_TURNS", "25")
-	t.Setenv("AURA_MEMORY_JUDGE_ENABLED", "true")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -601,9 +599,6 @@ func TestLoadOP07Env(t *testing.T) {
 	}
 	if cfg.OP07RecentTurns != 25 {
 		t.Fatalf("OP07RecentTurns = %d, want 25", cfg.OP07RecentTurns)
-	}
-	if !cfg.MemoryJudgeEnabled {
-		t.Fatal("MemoryJudgeEnabled = false, want true")
 	}
 }
 

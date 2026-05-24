@@ -288,7 +288,7 @@ func (b *webInvocationBuilder) postTurnConfig(runID string, msg chat.InboundMess
 		logger,
 		record,
 	)
-	if hook := agent.NewMemoryJudgeHook(b.cfg.MemoryJudgeEnabled, deps.LLM, deps.Model, deps.ReasoningEffort, logger); hook != nil && b.postTurnStore != nil {
+	if hook := agent.NewMemoryJudgeHook(deps.LLM, deps.Model, deps.ReasoningEffort, logger); hook != nil && b.postTurnStore != nil {
 		cfg.Store = b.postTurnStore
 		cfg.Record = record
 		cfg.Hooks = append(cfg.Hooks, hook)
