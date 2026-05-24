@@ -35,6 +35,28 @@ Living doc — one row per quality-bench run. Append on every Wave close.
 
 **Verdict**: 3/4 targets met. p95 fails on a single outlier. Wave A is on the cusp — proceed to Wave B but watch the pptx retrieval gap + arxiv tool-selection bug.
 
+## Phase-CTX Compaction Benchmark - 2026-05-24
+
+Source artifact: `.planning/post-drift-2026-05-21/Phase-CTX/bench-results-2026-05-24.json`.
+
+Live command: `docker compose --profile test run --rm --build -e LLM_API_KEY -e LLM_BASE_URL test go run ./cmd/bench_ctx --offline=false --fixtures internal/conversation/testdata/bench --models deepseek/deepseek-v4-flash,google/gemma-4-26b-a4b-it,anthropic/claude-sonnet-4 --out .planning/post-drift-2026-05-21/Phase-CTX/bench-results-2026-05-24.json`.
+
+Summary: rows=12, compacted_rows=3, quality_pass_rows=11, gate_passed=true, best_savings_pct=99. Secrets were loaded from the runtime SQLite `secrets` table into transient environment variables and were not printed.
+
+Cell format: `savings_pct / latency_ms / quality_keyword_retained`.
+
+| Model | long_session | multimodal_visual | short_qa | tool_heavy_research | Recommendation |
+| --- | --- | --- | --- | --- | --- |
+| `deepseek/deepseek-v4-flash` | `99 / 9320 / true` | `0 / 0 / true` | `0 / 0 / true` | `0 / 0 / true` | keep 50% for compaction-sized load |
+| `google/gemma-4-26b-a4b-it` | `99 / 9197 / false` | `0 / 0 / true` | `0 / 0 / true` | `0 / 0 / true` | treat as HOLD for summarizer use; JSON recommends 40% after quality miss |
+| `anthropic/claude-sonnet-4` | `99 / 10955 / true` | `0 / 0 / true` | `0 / 0 / true` | `0 / 0 / true` | keep 50% for compaction-sized load |
+
+Verdict: Phase-CTX compaction earns production value for the gate because at
+least one live model row has `savings_pct > 40` and
+`quality_keyword_retained=true`. Residual risk: Gemma compressed the long
+fixture but failed the keyword follow-up, so Gemma should not be selected as the
+default compaction summarizer without a follow-up threshold or prompt repair.
+
 ## Target reminders (from quality-bench README)
 
 | Wave        | Pass /20 | Recall@5 | p95 E2E | avg tool-calls |

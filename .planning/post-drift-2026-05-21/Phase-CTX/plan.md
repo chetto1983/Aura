@@ -145,7 +145,8 @@ does not depend on the Ralph queue or chat memory.
 
 ### US-CTX-07 - Compaction benchmark and quality snapshot
 
-- **Status:** next executable implementation slice.
+- **Status:** shipped 2026-05-24; live benchmark gate passed with a recorded
+  Gemma quality caveat.
 - **Goal:** prove the compaction substrate earns production value with
   repeatable fixture data, per-model savings/latency/quality metrics, and a
   `docs/aura-quality-snapshot.md` row.
@@ -156,9 +157,10 @@ does not depend on the Ralph queue or chat memory.
 - **Model set:** `deepseek/deepseek-v4-flash` (163840 ctx),
   `google/gemma-4-26b-a4b-it` (131072 ctx), and
   `anthropic/claude-sonnet-4` (200000 ctx).
-- **Gate:** at least one fixture x model result must show `savings_pct > 40`
-  and `quality_keyword_retained=true`; otherwise Phase-CTX is HOLD and the
-  next slice is threshold/strategy repair, not Phase-CONS.
+- **Gate:** passed. DeepSeek and Claude `long_session` live rows showed
+  `savings_pct=99` and `quality_keyword_retained=true`; Gemma showed
+  `savings_pct=99` but `quality_keyword_retained=false`, so Gemma remains a
+  tuning caveat rather than a default summarizer recommendation.
 - **Non-goals:** no threshold code change in this story unless the benchmark
   harness cannot run without it; threshold tuning is recorded as a follow-up
   candidate.
