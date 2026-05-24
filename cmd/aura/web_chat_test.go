@@ -60,6 +60,29 @@ func (f *fakeToolCallingLLM) Stream(context.Context, llm.Request) (<-chan llm.To
 	return ch, nil
 }
 
+type fakeTextResponseLLM struct {
+	calls int
+}
+
+func (f *fakeTextResponseLLM) Send(context.Context, llm.Request) (llm.Response, error) {
+	f.calls++
+	return llm.Response{
+		HasToolCalls: true,
+		ToolCalls: []llm.ToolCall{{
+			ID:        "call-text",
+			Name:      "text_response",
+			Arguments: map[string]any{"text": "  Ciao Davide, fatto.  "},
+		}},
+		Usage: llm.TokenUsage{PromptTokens: 7, CompletionTokens: 5, TotalTokens: 12},
+	}, nil
+}
+
+func (f *fakeTextResponseLLM) Stream(context.Context, llm.Request) (<-chan llm.Token, error) {
+	ch := make(chan llm.Token)
+	close(ch)
+	return ch, nil
+}
+
 func TestHubBackedWebChatPersistsRunAndActor(t *testing.T) {
 	db := testutil.OpenTestDB(t, nil)
 	if err := migrations.Run(context.Background(), db); err != nil {
@@ -147,6 +170,56 @@ WHERE r.channel = 'web' AND ta.tool_name = 'context_probe' AND ta.outcome = 'ok'
 `, 1)
 }
 
+func TestHubBackedWebChatTerminatesOnTextResponseTool(t *testing.T) {
+	t.Setenv("AURA_TOOL_ALLOWLIST", "")
+	db := testutil.OpenTestDB(t, nil)
+	if err := migrations.Run(context.Background(), db); err != nil {
+		t.Fatalf("migrations: %v", err)
+	}
+	runStore, err := runstore.NewStore(db)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	registry := toolregistry.NewRegistry(logger)
+	registry.Register(&toolregistry.TextResponseTool{})
+	llmClient := &fakeTextResponseLLM{}
+	svc, err := newHubBackedWebChatService(
+		&config.Config{LLMModel: "fake-web-chat", AgentLoopMaxSteps: 4, TerminalToolPolicy: "on"},
+		&telegram.Deps{
+			LLM:      llmClient,
+			Pool:     db,
+			RunStore: runStore,
+			Tools:    registry,
+			Logger:   logger,
+		},
+		logger,
+	)
+	if err != nil {
+		t.Fatalf("newHubBackedWebChatService: %v", err)
+	}
+	ctx := identity.WithActorID(
+		identity.WithAuthorizer(context.Background(), webChatAllowAuthorizer{}),
+		identity.TelegramSessionActorID("alice"),
+	)
+	reply, err := svc.Chat(ctx, "alice", "default", "rispondi via text_response")
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if reply.Reply != "Ciao Davide, fatto." {
+		t.Fatalf("reply = %q, want terminal text_response text", reply.Reply)
+	}
+	if llmClient.calls != 1 {
+		t.Fatalf("LLM calls = %d, want 1 terminal turn", llmClient.calls)
+	}
+	assertWebChatScalar(t, db, `
+SELECT COUNT(*)
+FROM tool_attempts ta
+JOIN runs r ON r.id = ta.run_id
+WHERE r.channel = 'web' AND ta.tool_name = 'text_response' AND ta.outcome = 'ok'
+`, 1)
+}
+
 type webChatAllowAuthorizer struct{}
 
 func (webChatAllowAuthorizer) Authorize(_ context.Context, params identity.AuthorizeParams) (identity.AuthorizationDecision, error) {
@@ -203,6 +276,46 @@ func TestWebToolExecutorCarriesVisibleToolContext(t *testing.T) {
 	}
 	if probe.userID != "alice" {
 		t.Fatalf("userID = %q, want alice", probe.userID)
+	}
+}
+
+func TestExtractLastTextResponseArgUsesNewestNonEmptyCall(t *testing.T) {
+	msgs := []llm.Message{
+		{
+			Role: "assistant",
+			ToolCalls: []llm.ToolCall{{
+				Name:      "text_response",
+				Arguments: map[string]any{"text": "old"},
+			}},
+		},
+		{Role: "tool", Content: "wrapped old result", ToolCallID: "old"},
+		{
+			Role: "assistant",
+			ToolCalls: []llm.ToolCall{
+				{Name: "search_memory", Arguments: map[string]any{"query": "ignored"}},
+				{Name: "text_response", Arguments: map[string]any{"text": "   "}},
+				{Name: "text_response", Arguments: map[string]any{"text": "  latest  "}},
+			},
+		},
+	}
+	if got := extractLastTextResponseArg(msgs); got != "latest" {
+		t.Fatalf("extractLastTextResponseArg() = %q, want latest", got)
+	}
+}
+
+func TestExtractLastTextResponseArgIgnoresWrongShapes(t *testing.T) {
+	msgs := []llm.Message{
+		{Role: "tool", Content: `{"text":"not assistant"}`},
+		{
+			Role: "assistant",
+			ToolCalls: []llm.ToolCall{
+				{Name: "text_response", Arguments: map[string]any{"text": 123}},
+				{Name: "search_memory", Arguments: map[string]any{"text": "wrong tool"}},
+			},
+		},
+	}
+	if got := extractLastTextResponseArg(msgs); got != "" {
+		t.Fatalf("extractLastTextResponseArg() = %q, want empty", got)
 	}
 }
 

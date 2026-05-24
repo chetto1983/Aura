@@ -45,7 +45,7 @@ func (t *WebTool) Definition() ToolDefinition {
 }
 
 func (t *WebTool) Description() string {
-	return "Search the web or fetch a single URL. action=search requires query, Returns top-5 results by default (max 10). action=fetch requires url, returns extracted text (~12 KiB, SSRF-gated)."
+	return `Search web or fetch one URL. Returns top-5 results by default (max 10). Search needs action="search"+query; fetch needs action="fetch"+url and returns ~12 KiB text+links, SSRF-gated.`
 }
 
 func (t *WebTool) Parameters() map[string]any {
@@ -57,41 +57,48 @@ func (t *WebTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"search", "fetch"},
-				"description": "Which operation: search (web index) or fetch (one URL).",
+				"description": `REQUIRED. "search" needs a query, "fetch" needs a url.`,
 			},
 			"query": map[string]any{
 				"type":        "string",
-				"description": "search only: the web search query.",
+				"description": `Required when action="search". The web search query string.`,
 			},
 			"max_results": map[string]any{
 				"type":        "integer",
 				"minimum":     1,
 				"maximum":     10,
-				"description": "search only, optional: max results to return (default 5).",
+				"description": `Optional, action="search" only. Max results to return (default 5).`,
 			},
 			"category": map[string]any{
 				"type":        "string",
 				"enum":        []string{"general", "news", "science"},
-				"description": "search only, optional: 'news' for current events, 'science' for academic/arxiv, 'general' (default) for everything else.",
+				"description": `Optional, action="search" only. 'news' for current events, 'science' for academic/arxiv, 'general' (default) for everything else.`,
 			},
 			"language": map[string]any{
 				"type":        "string",
-				"description": "search only, optional: ISO language code ('it', 'en', 'fr', 'all'). Pass when the query is clearly in one language.",
+				"description": `Optional, action="search" only. ISO language code ('it', 'en', 'fr', 'all').`,
 			},
 			"time_range": map[string]any{
 				"type":        "string",
 				"enum":        []string{"day", "week", "month", "year"},
-				"description": "search only, optional: recency filter. Use 'day'/'week' for queries implying 'recent'/'latest'/'oggi'.",
+				"description": `Optional, action="search" only. Recency filter - use 'day'/'week' for 'recent'/'latest'/'oggi'.`,
 			},
 			"url": map[string]any{
 				"type":        "string",
-				"description": "fetch only: the URL to fetch. http and https only.",
+				"description": `Required when action="fetch". The URL to fetch (http or https only).`,
 			},
 		},
 		"oneOf": ActionDispatchOneOf([]ActionVariant{
 			{Name: "search", RequiredKeys: []string{"query"}},
 			{Name: "fetch", RequiredKeys: []string{"url"}},
 		}),
+		// JSON Schema "examples" - concrete shapes models read before
+		// the description, fixing the schema-mismatch retry pattern.
+		"examples": []any{
+			map[string]any{"action": "search", "query": "Caraglio cronaca recente"},
+			map[string]any{"action": "search", "query": "latest CRISPR research", "category": "science", "time_range": "month"},
+			map[string]any{"action": "fetch", "url": "https://example.com/article"},
+		},
 	}
 }
 

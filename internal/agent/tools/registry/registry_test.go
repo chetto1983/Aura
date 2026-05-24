@@ -309,6 +309,54 @@ func TestRegistryRegisterCollisionReturnsTrue(t *testing.T) {
 	}
 }
 
+func TestRegistryRegisterHonorsToolAllowlist(t *testing.T) {
+	t.Setenv("AURA_TOOL_ALLOWLIST", "alpha, BETA")
+	reg := NewRegistry(nil)
+
+	reg.Register(namedFakeTool{name: "alpha"})
+	reg.Register(namedFakeTool{name: "beta"})
+	reg.Register(namedFakeTool{name: "gamma"})
+
+	got := reg.Names()
+	want := []string{"alpha", "beta"}
+	if len(got) != len(want) {
+		t.Fatalf("Names() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Names() = %#v, want %#v", got, want)
+		}
+	}
+	if reg.Get("gamma") != nil {
+		t.Fatal("gamma registered despite AURA_TOOL_ALLOWLIST")
+	}
+	if _, ok := reg.DefinitionFor("gamma"); ok {
+		t.Fatal("DefinitionFor(gamma) returned a skipped tool")
+	}
+}
+
+func TestRegistryRegisterAllowlistWildcardAndAllAllowEveryTool(t *testing.T) {
+	for _, value := range []string{"*", "all"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("AURA_TOOL_ALLOWLIST", value)
+			reg := NewRegistry(nil)
+			reg.Register(namedFakeTool{name: "alpha"})
+			reg.Register(namedFakeTool{name: "beta"})
+
+			got := reg.Names()
+			want := []string{"alpha", "beta"}
+			if len(got) != len(want) {
+				t.Fatalf("Names() = %#v, want %#v", got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("Names() = %#v, want %#v", got, want)
+				}
+			}
+		})
+	}
+}
+
 func TestRegistryExecuteMissingTool(t *testing.T) {
 	reg := NewRegistry(nil)
 	if _, err := reg.Execute(context.Background(), "missing", nil); err == nil {

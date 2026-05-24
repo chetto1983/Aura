@@ -81,6 +81,12 @@ func (t *RecallOperationalTool) Parameters() map[string]any {
 				"maximum":     recallOperationalMaxLimit,
 			},
 		},
+		"examples": []any{
+			map[string]any{},
+			map[string]any{"query": "tool failed because of missing field"},
+			map[string]any{"tool_name": "agent_note", "limit": 10},
+			map[string]any{"error_class": "schema_validation"},
+		},
 	}
 }
 

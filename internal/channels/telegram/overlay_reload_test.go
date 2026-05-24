@@ -13,9 +13,9 @@ func TestOverlayWriteInCalls(t *testing.T) {
 		want  bool
 	}{
 		{
-			name:  "write to TOOLS.md detected",
+			name:  "write to retired TOOLS.md ignored",
 			calls: []llm.ToolCall{{Name: "file", Arguments: map[string]any{"action": "write", "path": "TOOLS.md", "content": "x"}}},
-			want:  true,
+			want:  false,
 		},
 		{
 			name:  "patch to SOUL.md detected",

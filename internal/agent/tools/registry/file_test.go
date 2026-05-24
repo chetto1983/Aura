@@ -32,6 +32,34 @@ func TestFileTool_Schema(t *testing.T) {
 	if len(enum) != 5 {
 		t.Fatalf("action enum = %v, want [list read search write patch]", enum)
 	}
+	examples, _ := params["examples"].([]any)
+	if len(examples) < 5 {
+		t.Fatalf("examples = %#v, want one example for each action", examples)
+	}
+	requiredByAction := map[string]string{
+		"list":   "path",
+		"read":   "path",
+		"search": "pattern",
+		"write":  "content",
+		"patch":  "old",
+	}
+	seen := map[string]bool{}
+	for _, raw := range examples {
+		example, _ := raw.(map[string]any)
+		actionName, _ := example["action"].(string)
+		requiredKey, ok := requiredByAction[actionName]
+		if !ok {
+			continue
+		}
+		if _, ok := example[requiredKey]; ok {
+			seen[actionName] = true
+		}
+	}
+	for actionName := range requiredByAction {
+		if !seen[actionName] {
+			t.Fatalf("examples = %#v, missing usable %s example", examples, actionName)
+		}
+	}
 }
 
 func TestFileTool_MissingAction(t *testing.T) {

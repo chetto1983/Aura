@@ -106,7 +106,26 @@ func (t *TaskTool) Definition() ToolDefinition {
 }
 
 func (t *TaskTool) Description() string {
-	return "Manage scheduled tasks (reminders, agent jobs, wiki maintenance). action=schedule persists a task; action=list enumerates; action=cancel deactivates; action=run_now fires immediately."
+	return `Manage scheduled tasks (reminders, agent jobs, wiki maintenance).
+
+EXAMPLES — copy the shape exactly:
+
+  task({"action":"list"})
+  task({"action":"schedule","name":"morning-ping","kind":"reminder","payload":"Daily check-in","daily":"09:00"})
+  task({"action":"schedule","name":"in-five","kind":"reminder","payload":"five minute reminder","in":"5m"})
+  task({"action":"schedule","name":"weekly-recap","kind":"agent_job","payload":"summarise this week's notes","daily":"18:00","weekdays":["fri"]})
+  task({"action":"cancel","name":"morning-ping"})
+  task({"action":"run_now","name":"weekly-recap"})
+
+action REQUIRED; valid: "schedule", "list", "cancel", "run_now".
+
+Per-action required:
+  • list     → nothing (optional status filter)
+  • schedule → name AND kind AND exactly ONE of in / at_local / at / daily / every_minutes
+  • cancel   → name
+  • run_now  → name
+
+Schedule fields are mutually exclusive: in (relative "5m"/"2h"/"1d"), at_local ("YYYY-MM-DDTHH:MM"), at (UTC ISO8601), daily ("HH:MM" + optional weekdays), every_minutes (>=5).`
 }
 
 func (t *TaskTool) Parameters() map[string]any {
@@ -174,6 +193,14 @@ func (t *TaskTool) Parameters() map[string]any {
 			{Name: "cancel", RequiredKeys: []string{"name"}},
 			{Name: "run_now", RequiredKeys: []string{"name"}},
 		}),
+		"examples": []any{
+			map[string]any{"action": "list"},
+			map[string]any{"action": "schedule", "name": "morning-ping", "kind": "reminder", "payload": "Daily check-in", "daily": "09:00"},
+			map[string]any{"action": "schedule", "name": "in-five", "kind": "reminder", "payload": "five minute reminder", "in": "5m"},
+			map[string]any{"action": "schedule", "name": "weekly-recap", "kind": "agent_job", "payload": "summarise this week's notes", "daily": "18:00", "weekdays": []string{"fri"}},
+			map[string]any{"action": "cancel", "name": "morning-ping"},
+			map[string]any{"action": "run_now", "name": "weekly-recap"},
+		},
 	}
 }
 

@@ -53,7 +53,22 @@ func (t *DocTool) Definition() ToolDefinition {
 }
 
 func (t *DocTool) Description() string {
-	return "Generate a document (.xlsx / .docx / .pdf) from a spec and persist as a source. Returns a workspace path, not content - deliver=true (default) sends the file to Telegram. Required: filename."
+	return `Generate a document (.xlsx / .docx / .pdf) from a spec and persist as a source. Returns a workspace path, not content - deliver=true (default) sends the file to Telegram.
+
+EXAMPLES — copy the shape exactly:
+
+  doc({"action":"xlsx","filename":"report.xlsx","sheets":[{"name":"Data","rows":[["name","value"],["alpha","1"],["beta","2"]]}]})
+  doc({"action":"docx","filename":"note.docx","title":"Report","blocks":[{"kind":"heading","level":1,"text":"Intro"},{"kind":"paragraph","text":"body line"}]})
+  doc({"action":"pdf","filename":"summary.pdf","blocks":[{"kind":"heading","level":1,"text":"Title"},{"kind":"bullet","text":"point 1"}]})
+
+action REQUIRED; valid: "xlsx", "docx", "pdf".
+
+Per-action required:
+  • xlsx → filename AND sheets (array of {name, rows[][]})
+  • docx → filename (blocks optional but recommended)
+  • pdf  → filename (blocks optional but recommended)
+
+block kinds: "heading" (text+level 1-6), "paragraph" (text), "bullet" (text), "table" (rows[][]).`
 }
 
 func (t *DocTool) Parameters() map[string]any {
@@ -122,6 +137,39 @@ func (t *DocTool) Parameters() map[string]any {
 			{Name: "docx", RequiredKeys: []string{"filename"}},
 			{Name: "pdf", RequiredKeys: []string{"filename"}},
 		}),
+		"examples": []any{
+			map[string]any{
+				"action":   "xlsx",
+				"filename": "report.xlsx",
+				"sheets": []any{
+					map[string]any{
+						"name": "Data",
+						"rows": []any{
+							[]any{"name", "value"},
+							[]any{"alpha", "1"},
+							[]any{"beta", "2"},
+						},
+					},
+				},
+			},
+			map[string]any{
+				"action":   "docx",
+				"filename": "note.docx",
+				"title":    "Report",
+				"blocks": []any{
+					map[string]any{"kind": "heading", "level": 1, "text": "Intro"},
+					map[string]any{"kind": "paragraph", "text": "body line"},
+				},
+			},
+			map[string]any{
+				"action":   "pdf",
+				"filename": "summary.pdf",
+				"blocks": []any{
+					map[string]any{"kind": "heading", "level": 1, "text": "Title"},
+					map[string]any{"kind": "bullet", "text": "point 1"},
+				},
+			},
+		},
 	}
 }
 

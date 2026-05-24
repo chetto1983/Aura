@@ -52,7 +52,24 @@ func (t *SearchTool) Definition() ToolDefinition {
 }
 
 func (t *SearchTool) Description() string {
-	return "Read-only. Unified knowledge lookup over wiki pages, sources, and conversation archive. action=search queries (zone: wiki|source|all), action=list enumerates slugs, action=read fetches by slug."
+	return `Read-only. Unified knowledge lookup over wiki pages, sources, and conversation archive.
+
+EXAMPLES — copy the shape exactly:
+
+  search({"action":"search","query":"corso base robot","top_k":6})
+  search({"action":"search","query":"davide preferences","zone":"wiki"})
+  search({"action":"list","slug_prefix":"robot"})
+  search({"action":"read","slug":"davide-marchetto"})
+  search({"action":"read","slug":"src_0ec1b02e112f0ca4"})
+
+action REQUIRED; valid: "search", "list", "read".
+
+Per-action required:
+  • search → query
+  • list   → nothing (slug_prefix optional filter)
+  • read   → slug (wiki slug OR src_<16hex>)
+
+Optional: zone ("wiki"/"source"/"all"), top_k (1-12 default 6).`
 }
 
 func (t *SearchTool) Parameters() map[string]any {
@@ -95,6 +112,13 @@ func (t *SearchTool) Parameters() map[string]any {
 			{Name: "list", RequiredKeys: nil},
 			{Name: "read", RequiredKeys: []string{"slug"}},
 		}),
+		"examples": []any{
+			map[string]any{"action": "search", "query": "corso base robot", "top_k": 6},
+			map[string]any{"action": "search", "query": "davide preferences", "zone": "wiki"},
+			map[string]any{"action": "list", "slug_prefix": "robot"},
+			map[string]any{"action": "read", "slug": "davide-marchetto"},
+			map[string]any{"action": "read", "slug": "src_0ec1b02e112f0ca4"},
+		},
 	}
 }
 

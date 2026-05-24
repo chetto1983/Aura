@@ -89,12 +89,22 @@ func (t *ProposePatchTool) SetRunOriginReader(reader runOriginReader) {
 func (t *ProposePatchTool) Name() string { return "propose_patch" }
 
 func (t *ProposePatchTool) Description() string {
-	return `Submit a structured patch proposal. action=operational auto-accepts into operational memory only when provenance and content-safety gates pass; suspicious content is quarantined for operator review. action=wiki and action=user_memory land in the /proposals review queue pending operator approval.
+	return `Submit a structured patch proposal. action=operational auto-accepts when provenance and content-safety gates pass; action=wiki and action=user_memory land in the /proposals review queue pending operator approval.
 
-REQUIRED PARAMETERS BY ACTION (you MUST send all listed fields):
-  • action="wiki":         target_slug, body, change_summary
-  • action="user_memory":  fact, category, change_summary
-  • action="operational":  tool_name, error_class, lesson, change_summary`
+EXAMPLES — copy the shape exactly:
+
+  propose_patch({"action":"wiki","target_slug":"davide-marchetto","body":"# Davide\n\nUpdated profile body...","change_summary":"add caffé preference"})
+  propose_patch({"action":"user_memory","fact":"prefers espresso macchiato","category":"preference","change_summary":"observed during morning chat"})
+  propose_patch({"action":"operational","tool_name":"agent_note","error_class":"missing_action_field","lesson":"agent_note always needs action field — set/append/get/clear","change_summary":"observed 2026-05-24"})
+
+action AND change_summary REQUIRED on every call. Valid actions: "wiki", "user_memory", "operational".
+
+Per-action required:
+  • wiki        → target_slug AND body
+  • user_memory → fact AND category ("preference"/"fact"/"todo"/"person")
+  • operational → tool_name AND error_class AND lesson
+
+Optional priority ("normal"/"high"/"critical") on operational; high/critical lessons get pinned in the system prompt.`
 }
 
 var proposePatchActions = []string{"wiki", "user_memory", "operational"}
@@ -159,6 +169,11 @@ func (t *ProposePatchTool) Parameters() map[string]any {
 			{Name: "user_memory", RequiredKeys: []string{"fact", "category", "change_summary"}},
 			{Name: "operational", RequiredKeys: []string{"tool_name", "error_class", "lesson", "change_summary"}},
 		}),
+		"examples": []any{
+			map[string]any{"action": "wiki", "target_slug": "davide-marchetto", "body": "# Davide\n\nUpdated profile body...", "change_summary": "add caffé preference"},
+			map[string]any{"action": "user_memory", "fact": "prefers espresso macchiato", "category": "preference", "change_summary": "observed during morning chat"},
+			map[string]any{"action": "operational", "tool_name": "agent_note", "error_class": "missing_action_field", "lesson": "agent_note always needs action field — set/append/get/clear", "change_summary": "observed 2026-05-24"},
+		},
 	}
 }
 

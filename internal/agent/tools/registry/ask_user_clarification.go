@@ -49,6 +49,16 @@ func (t *AskUserClarificationTool) Parameters() map[string]any {
 			},
 		},
 		"required": []string{"question"},
+		"examples": []any{
+			map[string]any{
+				"question": "Per il weekend preferisci mare o montagna?",
+				"options": []any{
+					map[string]any{"label": "Mare", "value": "mare"},
+					map[string]any{"label": "Montagna", "value": "montagna"},
+				},
+				"free_text_allowed": true,
+			},
+		},
 	}
 }
 

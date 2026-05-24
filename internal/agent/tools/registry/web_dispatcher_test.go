@@ -27,6 +27,27 @@ func TestWebTool_Schema(t *testing.T) {
 	if len(enum) != 2 {
 		t.Fatalf("action enum = %v, want [search fetch]", enum)
 	}
+	examples, _ := params["examples"].([]any)
+	if len(examples) < 2 {
+		t.Fatalf("examples = %#v, want search and fetch examples", examples)
+	}
+	var sawSearch, sawFetch bool
+	for _, raw := range examples {
+		example, _ := raw.(map[string]any)
+		switch example["action"] {
+		case "search":
+			if _, ok := example["query"].(string); ok {
+				sawSearch = true
+			}
+		case "fetch":
+			if _, ok := example["url"].(string); ok {
+				sawFetch = true
+			}
+		}
+	}
+	if !sawSearch || !sawFetch {
+		t.Fatalf("examples = %#v, want action=search+query and action=fetch+url", examples)
+	}
 }
 
 func TestWebTool_MissingAction(t *testing.T) {

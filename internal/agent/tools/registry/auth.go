@@ -57,6 +57,7 @@ func (t *RequestDashboardTokenTool) Description() string {
 
 func (t *RequestDashboardTokenTool) Parameters() map[string]any {
 	return map[string]any{
+		"examples":   []any{map[string]any{}},
 		"type":       "object",
 		"properties": map[string]any{},
 	}

@@ -41,6 +41,9 @@ func (t *ReadToolResultTool) Parameters() map[string]any {
 				"description": "The /workspace/tool-results/<session>/<call>.txt path from the spill envelope.",
 			},
 		},
+		"examples": []any{
+			map[string]any{"path": "/workspace/tool-results/sess-123/call-abc.txt"},
+		},
 	}
 }
 

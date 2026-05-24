@@ -68,12 +68,19 @@ func TestDescriptionAuditMarkers(t *testing.T) {
 }
 
 // TestDescriptionAuditLenCap enforces that every catalogued tool description
-// stays within 200 bytes so the always-loaded manifest token budget stays bounded.
+// stays within 1500 bytes so the always-loaded manifest token budget stays bounded.
+//
+// Cap raised from 200 → 1500 on 2026-05-24 to fit the example-first rewrite:
+// every tool's description now leads with concrete EXAMPLES blocks that drove
+// schema-mismatch first-attempt failures to zero on the user-visible tools
+// (text_response, agent_note, web, file, wiki_page, source). 24 tools × 1500
+// ~= 36 KiB of always-loaded manifest, an acceptable cost.
 func TestDescriptionAuditLenCap(t *testing.T) {
+	const cap = 1500
 	for _, tool := range auditTools() {
-		if n := len(tool.Description()); n > 200 {
-			t.Errorf("%s: description is %d bytes (> 200 cap): %q",
-				tool.Name(), n, tool.Description())
+		if n := len(tool.Description()); n > cap {
+			t.Errorf("%s: description is %d bytes (> %d cap): %q",
+				tool.Name(), n, cap, tool.Description())
 		}
 	}
 }

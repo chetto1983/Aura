@@ -46,6 +46,10 @@ func (t *RecallGodNodesTool) Parameters() map[string]any {
 				"maximum":     godNodesMaxTopK,
 			},
 		},
+		"examples": []any{
+			map[string]any{},
+			map[string]any{"top_k": 5},
+		},
 	}
 }
 
