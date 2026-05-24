@@ -1,6 +1,6 @@
 # Phase-CTX — Context Engineering Substrate
 
-**Status:** 🔴 next planning slice after Phase-GRAPH-FULL closure; repair benchmark before coding
+**Status:** active closure slice; CTX substrate shipped, CTX-CLOSE source/benchmark repaired 2026-05-24
 **Provenance:** hermes scout (§2.1 + §8 ContextEngine/ContextCompressor), openhuman scout (§5 payload_summarizer), Codex scout (#7 inline auto-compaction), online 2026 scout (§3 Anthropic effective context engineering + Chroma context-rot)
 **Estimated effort:** ~3 sessions
 **LOC delta:** ~+900
@@ -123,6 +123,75 @@ US-CTX-01 (interface) → US-CTX-02 (default impl) → US-CTX-03 (payload summar
 - Token budget metric tracked per turn; expect p50 unchanged for short conversations, p99 dramatically lower for long conversations (compaction kicks in).
 - Long-conversation probe: 100+ turns, debug agent retains early premise (test against ground-truth wiki page).
 - Bench: re-grade strict-pass; expect +2-4 cases recovered on long-conversation failures.
+
+---
+
+## CTX-CLOSE slices
+
+These slices close Phase-CTX after the original substrate stories. They are
+translated from `scripts/ralph/prd.json` into this phase folder so future work
+does not depend on the Ralph queue or chat memory.
+
+### US-CTX-06 - AutoCompactEngine robustness
+
+- **Status:** shipped in commits `b792b343`, `9c5e0759`, `d56c4595`, and
+  locked by `0742d3ac`.
+- **Owned behavior:** prefix protection, hysteresis, focus topic capping and
+  loop wiring.
+- **Verification anchor:** `internal/conversation/auto_compact_test.go`,
+  `internal/agent/focus_topic_test.go`, and the slice QA packet in
+  `progress.md`.
+- **Non-goal:** no benchmark threshold tuning; that belongs to US-CTX-07.
+
+### US-CTX-07 - Compaction benchmark and quality snapshot
+
+- **Status:** next executable implementation slice.
+- **Goal:** prove the compaction substrate earns production value with
+  repeatable fixture data, per-model savings/latency/quality metrics, and a
+  `docs/aura-quality-snapshot.md` row.
+- **Files expected:** `cmd/bench_ctx/`,
+  `internal/conversation/testdata/bench/`,
+  `.planning/post-drift-2026-05-21/Phase-CTX/bench-results-<date>.json`, and
+  `docs/aura-quality-snapshot.md`.
+- **Model set:** `deepseek/deepseek-v4-flash` (163840 ctx),
+  `google/gemma-4-26b-a4b-it` (131072 ctx), and
+  `anthropic/claude-sonnet-4` (200000 ctx).
+- **Gate:** at least one fixture x model result must show `savings_pct > 40`
+  and `quality_keyword_retained=true`; otherwise Phase-CTX is HOLD and the
+  next slice is threshold/strategy repair, not Phase-CONS.
+- **Non-goals:** no threshold code change in this story unless the benchmark
+  harness cannot run without it; threshold tuning is recorded as a follow-up
+  candidate.
+
+### US-CTX-08 - Compaction event log
+
+- **Status:** follow-up after US-CTX-07.
+- **Goal:** persist per-compaction debug facts and expose them through
+  `/api/conversations/:id/compactions`.
+- **Gate:** SQLite/API ground truth must prove per-event fields, not only
+  aggregate metrics.
+- **Non-goal:** do not start US-CTX-08 before the benchmark evidence exists.
+
+---
+
+## Implementation Gates
+
+| Slice | Source Gate | Benchmark Gate | Slice QA | Commit Boundary |
+| --- | --- | --- | --- | --- |
+| US-CTX-06 | Closed by existing code/tests | Unit and delta lint passed in `progress.md` | `self-audited-slice-qa`, passed | `0742d3ac test(ctx): lock compaction robustness checks` |
+| US-CTX-07A | `source.md` rows for D:/tmp and 2026 eval practice | offline fixture parser/renderer and deterministic result artifact | diff + fixture bytes + negative malformed fixture | `feat(bench): add CTX compaction fixture runner` |
+| US-CTX-07B | live OpenRouter credentials available from env, no secret logging | container/test-profile bench run writes JSON and snapshot row | diff + artifact JSON + quality gate | `feat(bench): record Phase-CTX live compaction snapshot` |
+| US-CTX-08 | API/storage event schema mapped | SQLite row + API response + redaction check | diff + negative unauthorized/missing conversation check | `feat(observability): record compaction events` |
+
+## PRD Coverage Matrix
+
+| PRD / Queue Item | Plan Location | Benchmark Location | Source Evidence | Status |
+| --- | --- | --- | --- | --- |
+| Context is runtime state, not durable memory | Why this phase | `benchmark.md` rows B-CTX-07-3/4 | `source.md` ADR/local rows | covered |
+| Compaction must preserve instructions and current user task | US-CTX-06 | `benchmark.md` row B-CTX-06 | `source.md` Codex/Hermes rows | shipped |
+| Phase must be validated with metrics, not "it ran" | US-CTX-07 | `benchmark.md` rows B-CTX-07-1..7 | `source.md` OpenAI/NIST/Chroma rows | self-audited; next slice bounded |
+| Bench must update product quality snapshot | US-CTX-07 | `benchmark.md` row B-CTX-07-6 | `docs/aura-quality-snapshot.md` pattern | planned |
+| Per-event debug visibility for compaction | US-CTX-08 | `benchmark.md` row B-CTX-08-1 | `source.md` ADR observability row | deferred after US-CTX-07 |
 
 ---
 
