@@ -1,9 +1,10 @@
-# Phase-CONS — Web ↔ Telegram 1+1 Consolidation
+# Phase-CONS - Web <-> Telegram 1+1 Consolidation
 
-**Status:** 🟣 staged after Phase-CTX
+**Status:** active planning repaired 2026-05-24; first executable slice is US-CONS-02
 **Provenance:** web-telegram-consolidation scout #7 (full deliverable `docs/research-2026-05-21/web-telegram-consolidation.md`)
-**Estimated effort:** ~3 sessions
-**LOC delta:** net -90 (dedup -810 + parity additions +720)
+**Extended provenance:** `docs/research-2026-05-24-cons-tmp-survey.md`, `PRD.md` section 7.5, and `scripts/ralph/prd-phase-cons-staged.json`
+**Estimated effort:** ~5 sessions (Wave A backend CONS-02..08 + Wave B assistant-ui CONS-09..13)
+**LOC delta:** net +710 (Wave A dedup -810 + parity +720; Wave B frontend +800)
 
 ---
 
@@ -13,7 +14,14 @@ User mandate verbatim (2026-05-21): "we need consolidate 1 inbound and 1 outboun
 
 Today there are TWO InvocationBuilders (`internal/channels/telegram/invocation_builder.go` 688 LOC + `cmd/aura/web_chat.go` 612 LOC, both violate the 600-LOC rule) and THREE `chat.Hub` instances (telegram, web, cron). Web is functionally degraded in 7 features: streaming, voice, markdown render, soft-budget, context compaction, `tools_allowed`, `tools_used` (only `tools_used` works on both today).
 
-**CONS-01 lives in Phase-BUG** because it's the live bug fix (web missing overlays); the stories in this phase are CONS-02..08.
+**CONS-01 lives in Phase-BUG** because it's the live bug fix (web missing overlays); the executable queue for this phase starts at CONS-02. The original 2026-05-21 plan covered CONS-02..08. The 2026-05-24 Wave B extension adds CONS-09..13 for assistant-ui after the backend SSE/voice/ask_user contracts exist.
+
+Planning contract repaired 2026-05-24:
+
+- `source.md` now names Aura evidence, D:/tmp examples, and current 2026 references.
+- `benchmark.md` now defines per-slice ground-truth checks. Smoke tests are prechecks only.
+- `progress.md` now records phase status and will be appended after each atomic slice.
+- `scripts/ralph/prd-phase-cons-staged.json` is the detailed story queue for CONS-02..13.
 
 ---
 
@@ -98,9 +106,25 @@ Today there are TWO InvocationBuilders (`internal/channels/telegram/invocation_b
 
 ---
 
+## Wave B extension
+
+CONS-09..13 are frontend/product stories and are intentionally blocked behind the backend protocol:
+
+- **US-CONS-09** mounts assistant-ui `/chat` with `useDataStreamRuntime` once CONS-07 speaks Vercel AI SDK data-stream frames.
+- **US-CONS-10** adds markdown/code/wiki-link rendering and Italian UI strings.
+- **US-CONS-11** renders tool calls as React components.
+- **US-CONS-12** turns backend `pending_question` into ask_user UI.
+- **US-CONS-13** adds voice playback, source attachments, and browser-side dictation.
+
+Do not start Wave B until CONS-07's data-stream benchmark passes. The backend wire format is the contract.
+
+---
+
 ## Sequencing
 
-US-CONS-02 → US-CONS-03 → US-CONS-04 (the big one, feature-flagged) → US-CONS-05 → US-CONS-06 → US-CONS-07 → US-CONS-08. Each is one commit (no batching except US-CONS-04's flag-gated 1-week soak before legacy delete).
+US-CONS-02 -> US-CONS-03 -> US-CONS-04 (the big one, feature-flagged) -> US-CONS-05 -> US-CONS-06 -> US-CONS-07 -> US-CONS-08 -> US-CONS-09 -> US-CONS-10 -> US-CONS-11 -> US-CONS-12 -> US-CONS-13.
+
+Each story is one atomic commit and one dedicated QA pass. No batching except mechanical, low-risk edits that are explicitly named in the story and verified by the same benchmark.
 
 ---
 
@@ -116,10 +140,11 @@ US-CONS-02 → US-CONS-03 → US-CONS-04 (the big one, feature-flagged) → US-C
 
 ## Verification
 
-- `go test ./... -run "TestHub|TestChatService|TestInvocationBuilder|TestAgentCore"` green.
-- Byte-parity test (`internal/channels/telegram/fixture/byte_parity_test.go`) GREEN every commit.
-- `cmd/probe_chat` web case suite ON PAR with telegram suite (add web cases if missing).
-- Transport-cross probe: same query via both transports → reach parity on `tools_used[]`, `tool_calls`, `llm_calls`, reply substring.
+- `benchmark.md` is authoritative for phase evidence. It names the exact command, fixture, artifact, ground truth, threshold, and PRD gate for every story.
+- Smoke checks are allowed only as prechecks. A story is not done until its benchmark asserts rows, API fields, emitted frames, filesystem artifacts, captured LLM messages, or rendered UI state.
+- For CONS-02 first: prove web uses `agent.SessionStore` + `conversation.Context` by asserting retained thread context, token accounting, and tool-result compaction against captured request messages.
+- For every backend Go slice: run the narrow package tests, `go vet ./...`, `go build ./...`, `golangci-lint --new-from-rev=HEAD` on touched paths, `dupl -t 60` on touched paths, and the LOC gate.
+- For frontend Wave B: run `npm --prefix web run build` and browser/e2e verification against the running app.
 
 ---
 
