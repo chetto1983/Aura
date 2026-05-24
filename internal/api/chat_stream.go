@@ -10,11 +10,13 @@ import (
 )
 
 type chatStreamRequest struct {
-	UserID        string              `json:"user_id"`
-	Message       string              `json:"message"`
-	ThreadID      string              `json:"thread_id"`
-	ThreadIDCamel string              `json:"threadId"`
-	Messages      []chatStreamMessage `json:"messages"`
+	UserID        string                  `json:"user_id"`
+	Message       string                  `json:"message"`
+	ThreadID      string                  `json:"thread_id"`
+	ThreadIDCamel string                  `json:"threadId"`
+	Messages      []chatStreamMessage     `json:"messages"`
+	SourceIDs     []string                `json:"source_ids"`
+	Attachments   []chatAttachmentRequest `json:"attachments"`
 }
 
 type chatStreamMessage struct {
@@ -54,6 +56,12 @@ func handleChatStream(deps Deps) http.HandlerFunc {
 		if !ok {
 			return
 		}
+		attachments, err := chatAttachmentsFromRequest(req.SourceIDs, req.Attachments)
+		if err != nil {
+			writeError(w, deps.Logger, http.StatusBadRequest, err.Error())
+			return
+		}
+		chatCtx = withChatAttachments(chatCtx, attachments)
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			writeError(w, deps.Logger, http.StatusInternalServerError, "streaming is not supported")
@@ -68,7 +76,7 @@ func handleChatStream(deps Deps) http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		flusher.Flush()
 
-		err := deps.ChatStream.ChatStream(chatCtx, userID, threadID, message, w, flusher.Flush)
+		err = deps.ChatStream.ChatStream(chatCtx, userID, threadID, message, w, flusher.Flush)
 		if err != nil && !errors.Is(err, r.Context().Err()) && deps.Logger != nil {
 			deps.Logger.Warn("api: chat stream failed", "error", err)
 		}

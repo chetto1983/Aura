@@ -34,17 +34,21 @@ type recordingChatService struct {
 }
 
 type recordingChatStreamService struct {
-	calls    int
-	userID   string
-	threadID string
-	message  string
+	calls       int
+	userID      string
+	threadID    string
+	message     string
+	attachments []string
 }
 
-func (s *recordingChatStreamService) ChatStream(_ context.Context, userID, threadID, message string, w io.Writer, flush func()) error {
+func (s *recordingChatStreamService) ChatStream(ctx context.Context, userID, threadID, message string, w io.Writer, flush func()) error {
 	s.calls++
 	s.userID = userID
 	s.threadID = threadID
 	s.message = message
+	for _, attachment := range ChatAttachmentsFromContext(ctx) {
+		s.attachments = append(s.attachments, attachment.SourceID)
+	}
 	_, _ = io.WriteString(w, "data: {\"type\":\"start\",\"messageId\":\"msg_test\"}\n\n")
 	_, _ = io.WriteString(w, "data: {\"type\":\"text-start\",\"id\":\"text_test\"}\n\n")
 	_, _ = io.WriteString(w, "data: {\"type\":\"text-delta\",\"id\":\"text_test\",\"textDelta\":\"ok\",\"delta\":\"ok\"}\n\n")
@@ -318,6 +322,40 @@ func TestChatStreamExtractsAssistantUIMessage(t *testing.T) {
 	}
 	if stream.message != "ciao\nmondo" {
 		t.Fatalf("message = %q", stream.message)
+	}
+}
+
+func TestChatStreamForwardsSourceAttachments(t *testing.T) {
+	stream := &recordingChatStreamService{}
+	router := NewRouter(Deps{ChatStream: stream})
+	body := `{
+		"thread_id":"with-source",
+		"messages":[{"role":"user","content":[{"type":"text","text":"read this"}]}],
+		"source_ids":["src_0123456789abcdef"],
+		"attachments":[{"source_id":"src_abcdef0123456789","filename":"brief.pdf","mime_type":"application/pdf","size":1234}]
+	}`
+
+	req := httptest.NewRequest(http.MethodPost, "/chat/stream", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status %d, body=%s", rr.Code, rr.Body)
+	}
+	if got := strings.Join(stream.attachments, ","); got != "src_0123456789abcdef,src_abcdef0123456789" {
+		t.Fatalf("attachments = %q", got)
+	}
+
+	badReq := httptest.NewRequest(http.MethodPost, "/chat/stream", strings.NewReader(`{
+		"message":"read this",
+		"source_ids":["../escape"]
+	}`))
+	badReq.Header.Set("Content-Type", "application/json")
+	badRR := httptest.NewRecorder()
+	router.ServeHTTP(badRR, badReq)
+	if badRR.Code != http.StatusBadRequest {
+		t.Fatalf("bad source status = %d, body=%s", badRR.Code, badRR.Body)
 	}
 }
 

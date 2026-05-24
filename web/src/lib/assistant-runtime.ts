@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AssistantRuntime } from '@assistant-ui/react';
+import type { UseDataStreamRuntimeOptions } from '@assistant-ui/react-data-stream';
 import { useDataStreamRuntime } from '@assistant-ui/react-data-stream';
 import { clearToken, getToken } from '@/lib/auth';
 
@@ -57,12 +58,24 @@ export function useAuraChatThreadID(): [string, () => string] {
 export function useAuraAssistantRuntime(
   threadID: string,
   onData?: (data: { type: string; name: string; data: unknown; transient?: boolean }) => void,
+  runtimeOptions?: {
+    adapters?: UseDataStreamRuntimeOptions['adapters'];
+    extraBody?: () => Record<string, unknown> | undefined;
+    onFinish?: UseDataStreamRuntimeOptions['onFinish'];
+    onError?: UseDataStreamRuntimeOptions['onError'];
+    onCancel?: UseDataStreamRuntimeOptions['onCancel'];
+  },
 ): AssistantRuntime {
   const threadIDRef = useRef(threadID);
+  const extraBodyRef = useRef(runtimeOptions?.extraBody);
 
   useEffect(() => {
     threadIDRef.current = threadID;
   }, [threadID]);
+
+  useEffect(() => {
+    extraBodyRef.current = runtimeOptions?.extraBody;
+  }, [runtimeOptions?.extraBody]);
 
   const options = useMemo(
     () => ({
@@ -71,9 +84,16 @@ export function useAuraAssistantRuntime(
       headers: auraStreamHeaders,
       onResponse: handleStreamResponse,
       onData,
-      body: async () => ({ thread_id: threadIDRef.current }),
+      onFinish: runtimeOptions?.onFinish,
+      onError: runtimeOptions?.onError,
+      onCancel: runtimeOptions?.onCancel,
+      body: async () => ({
+        thread_id: threadIDRef.current,
+        ...(extraBodyRef.current?.() ?? {}),
+      }),
+      adapters: runtimeOptions?.adapters,
     }),
-    [onData],
+    [onData, runtimeOptions?.adapters, runtimeOptions?.onCancel, runtimeOptions?.onError, runtimeOptions?.onFinish],
   );
 
   return useDataStreamRuntime(options);

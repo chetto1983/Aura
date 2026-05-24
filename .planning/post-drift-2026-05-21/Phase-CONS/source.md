@@ -1,8 +1,8 @@
 # Phase-CONS Source Map
 
 **Role:** source
-**Status:** self-audited planning repair, 2026-05-24
-**Current slice:** US-CONS-13. CONS-02..12 are implemented; next add voice playback, attachments, and browser dictation to the assistant-ui chat route.
+**Status:** closed 2026-05-24 after US-CONS-13
+**Current slice:** none. CONS-02..13 are implemented and verified.
 
 ## Objective
 
@@ -14,7 +14,7 @@ Consolidate web and Telegram into one channel-neutral agent path without losing 
 | --- | --- | --- |
 | `PRD.md` section 7.5 | Phase-CONS is the next post-CTX phase; PRD expands the phase to CONS-02..13 and requires `internal/agentcore.Builder`, web parity, and assistant-ui later. | Repair this phase plan before code. |
 | `PRD.md` section 15 | Web chat is a first-class product surface; threads stay per-channel; `/api/chat` remains a compat wrapper over Chat Hub. | Do not add web-only runtime behavior; keep channel-neutral backend contracts. |
-| `.planning/post-drift-2026-05-21/INDEX.md` | Phase-CTX is closed; Phase-CONS is NEXT. | Start Phase-CONS now. |
+| `.planning/post-drift-2026-05-21/INDEX.md` | Phase-CTX is closed; Phase-CONS is closed through US-CONS-13. | Require a fresh benchmark gap before reopening CONS work. |
 | `.planning/post-drift-2026-05-21/Phase-CONS/plan.md` | Original backend plan, CONS-02..08. | Keep backend sequencing but repair missing source/benchmark/progress files. |
 | `scripts/ralph/prd-phase-cons-staged.json` | Detailed current queue, CONS-02..13, including Wave B assistant-ui. | Use as detailed story queue after planning repair. |
 | `docs/research-2026-05-21/web-telegram-consolidation.md` | Audit finds duplicated web/Telegram invocation builders, duplicate web session/state, duplicate tool executor, separate hubs, and web feature drift. | CONS-02 starts with the lowest-risk duplicate: web session/state. |
@@ -225,6 +225,19 @@ Checked 2026-05-24:
 - Do not rely on `MessagePrimitive.Parts` alone for streamed `data-*` frames; local assistant-ui source shows those frames are emitted through `onData` and `metadata.unstable_data`, not rendered message content.
 - Do not start a second chat stream after answer submission. The existing backend answer endpoint resumes the durable question and returns a `ChatReply`; the UI appends that reply to the assistant thread.
 - Do not implement audio playback, file attachments, or dictation in this slice; those are the US-CONS-13 surface.
+
+## Adopted For US-CONS-13
+
+- Use assistant-ui attachment primitives and `AttachmentAdapter` for composer chips, but upload immediately through Aura's existing `/api/sources/upload` endpoint and send only source references in chat metadata.
+- Use `WebSpeechDictationAdapter` and browser `SpeechRecognition` for chat dictation input. Aura's whisper sidecar remains separate voice-memo infrastructure, not part of this chat composer path.
+- Treat backend `audio_url` and streamed `data-audio-url` frames as the same UI concept: render a bounded HTML5 audio control only for `/api/chat/audio/{id}` paths.
+- Carry source references into the shared web Hub as `chat.AttachmentRef`, then format explicit `source_id` lines into the user-visible LLM request so the model can decide when to call the `source` tool.
+
+## Rejected For US-CONS-13
+
+- Do not embed uploaded file bytes into assistant-ui message bodies or LLM context; canonical source storage owns the bytes and chat sends `src_*` handles.
+- Do not delete canonical sources when a composer chip is removed. Removal detaches the pending message reference only.
+- Do not route chat dictation through server-side Whisper. That would conflate browser STT input with Aura's voice memo ingestion path and add latency without improving the CONS benchmark.
 
 ## Open Questions Carried Forward
 

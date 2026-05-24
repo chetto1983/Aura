@@ -18,10 +18,12 @@ export function PendingQuestion({
   question,
   threadID,
   onAnswered,
+  onAudioURL,
 }: {
   question: PendingQuestionPayload;
   threadID: string;
   onAnswered?: () => void;
+  onAudioURL?: (audioURL: string) => void;
 }) {
   const { t } = useLocale();
   const threadRuntime = useThreadRuntime({ optional: true });
@@ -77,6 +79,7 @@ export function PendingQuestion({
           question.id,
           buildAnswerRequest({ answer: trimmed, threadID, selectedOptionID }),
         );
+        if (reply.audio_url) onAudioURL?.(reply.audio_url);
         const appended = appendFinalReply(reply);
         if (!appended && reply.reply?.trim()) {
           setInlineReply(reply.reply.trim());
@@ -90,7 +93,7 @@ export function PendingQuestion({
         setState('error');
       }
     },
-    [appendFinalReply, onAnswered, question.id, state, t, threadID],
+    [appendFinalReply, onAnswered, onAudioURL, question.id, state, t, threadID],
   );
 
   return (

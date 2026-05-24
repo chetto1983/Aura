@@ -28,10 +28,10 @@
 | 7 | [Phase-OUT](Phase-OUT/plan.md) | Output discipline (truncate/spill/throttle/tasks_completed/length-recovery/orphan-backfill) + budget enforcement | ~3 | ~+720 | ✅ **closed 2026-05-23** — commits `c8a60b85..6aabfbda` |
 | 8 | Phase-GRAPH-FULL | Wiki aliases, alias-aware injection, embedding dedup, typed edges | ~1-2 | ~+2000 | ✅ **closed 2026-05-23** — commits `a410a440`, `6bb76d1a`, `875a50e8`, `5556319b`; graph rollback fix `6d96fd7b` |
 | 9 | [Phase-CTX](Phase-CTX/plan.md) | Context engineering substrate (ContextEngine + payload summarizer + auto-compaction at 70%) | ~3 | ~+900 | ✅ **closed 2026-05-24** — CTX-06 robustness, CTX-07 live bench, CTX-08 event log |
-| 10 | [Phase-CONS](Phase-CONS/plan.md) | Web↔Telegram 1+1 consolidation (CONS-02..08) — substantive web feature additions (streaming, voice, ask_user, archive) | ~3 | net -90 (dedup -810 + parity +720) | 🔴 **NEXT** — start one bounded CONS slice |
+| 10 | [Phase-CONS](Phase-CONS/plan.md) | Web<->Telegram 1+1 consolidation (CONS-02..13) plus assistant-ui webchat parity | ~5 | net +710 (dedup -810 + parity +720 + Wave B +800) | closed 2026-05-24 - CONS-02..13 shipped |
 | 11 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | ⚪ superseded by Phase-GRAPH-FULL unless a fresh benchmark reopens it |
 
-**Current next step:** start Phase-CONS from its local `source.md`, `plan.md`, `benchmark.md`, and `progress.md`; pick one bounded CONS story and keep the commit atomic.
+**Current next step:** Phase-CONS is closed locally through US-CONS-13. Before reopening later parity work, require a fresh benchmark gap rather than extending this phase by inertia.
 
 ---
 
@@ -59,7 +59,7 @@
 7. **Phase-OUT is closed** — output discipline + budget enforcement are live.
 8. **Phase-GRAPH-FULL is closed** — alias and typed-edge graph substrate is the new baseline.
 9. **Phase-CTX is closed** — context engineering substrate, live benchmark, and compaction event debug visibility are shipped.
-10. **Phase-CONS is NEXT** — web/telegram 1+1; CONS-04 large single-commit collapse requires the ContextEngine ABC from CTX to be stable.
+10. **Phase-CONS is closed** - web/telegram 1+1 backend consolidation plus assistant-ui Wave B shipped through US-CONS-13.
 11. **Per-phase deep refactor** — every story includes `golangci-lint clean` + `dupl -t 60 clean` + LOC ≤600 + dead-code removed + comments updated on touched files (CLAUDE.md rule).
 12. **One story = one commit** per `feedback_one_module_per_slice`. No batching except mechanical sed-style refactor with very low risk.
 13. **Feature-flagged risky merges** — Phase-CONS CONS-04 (large -360 LOC single commit) ships behind `AURA_AGENTCORE_BUILDER=true` flag for 1 week of live traffic.

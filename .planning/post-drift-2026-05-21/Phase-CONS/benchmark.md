@@ -487,7 +487,7 @@ These rows are required before each later story can be called complete. Replace 
 | CONS-10 | Completed by B-CONS-10-A..D above | markdown/code/wiki-link assistant message | GFM, highlighted code block, and `[[slug]]` render correctly | DOM assertions pass on desktop and mobile; Go embed remains green |
 | CONS-11 | Completed by B-CONS-11-A..D above | SSE tool-call frames | generic and specialized tool cards render with status and summaries | DOM cards present; no secret args displayed |
 | CONS-12 | Completed by B-CONS-12-A..D above | pending question frame and answer endpoint | options/free text submit resumes run | final assistant reply appears after answer |
-| CONS-13 | `npm --prefix web run build` plus attachment/audio/dictation probes | fake audio URL, test PDF upload, browser speech mock | audio control plays URL; source chip sends source_id; dictated text enters composer | DOM/API assertions pass |
+| CONS-13 | Completed by B-CONS-13-A..D above | fake audio URL, test PDF upload, browser speech mock | audio control plays URL; source chip sends source_id; dictated text enters composer | DOM/API assertions pass; `D:/tmp/aura-us-cons-13-probe.cjs` asserts upload, source metadata, audio URL, dictation text, and no source leakage |
 
 ## Phase Completion Evidence
 

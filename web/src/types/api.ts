@@ -411,6 +411,7 @@ export interface ChatReply {
   cache_hit?: boolean;
   tools_used?: string[];
   budget_warning?: string;
+  audio_url?: string;
   pending_question?: PendingQuestion;
 }
 

@@ -206,7 +206,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		return agent.Invocation{}, resumeErr
 	}
 	if !addedUserInput {
-		convCtx.AddUserMessage(msg.Text)
+		convCtx.AddUserMessage(webUserInputText(msg))
 	}
 	preLoopIdx := convCtx.MessageCount()
 	turnStart := time.Now()

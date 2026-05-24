@@ -38,10 +38,11 @@ func (s *webStreamChatService) ChatStream(ctx context.Context, userID, threadID,
 	}
 	defer end()
 	_, err = s.hub.Receive(ctx, chat.ChannelWeb, webadapter.InboundRequest{
-		UserID:   userID,
-		ThreadID: threadID,
-		Message:  message,
-		Mode:     chat.DeliveryModeStreaming,
+		UserID:      userID,
+		ThreadID:    threadID,
+		Message:     message,
+		Attachments: api.ChatAttachmentsFromContext(ctx),
+		Mode:        chat.DeliveryModeStreaming,
 	})
 	return err
 }

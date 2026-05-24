@@ -237,8 +237,8 @@
         "Single atomic commit prefix: feat(web/ui): voice playback + attachments + voice dictation (US-CONS-13)"
       ],
       "priority": 12,
-      "passes": false,
-      "notes": "DEPENDS ON US-CONS-08 (audio_url backend) + US-CONS-09. CLOSES Wave B. Voice dictation is BROWSER-side (SpeechRecognition API) — no whisper round-trip for chat input (different path from voice memo storage which uses whisper sidecar)."
+      "passes": true,
+      "notes": "SHIPPED 2026-05-24. Audio playback renders backend audio_url as an HTML5 audio control. Composer attachments upload through the unchanged multipart /api/sources/upload endpoint, keep only src_* references in chat payload metadata, and inject attached source context into the shared web Hub request. Browser dictation uses assistant-ui WebSpeechDictationAdapter and SpeechRecognition only; no whisper round-trip for chat input. Dedicated Playwright probe D:/tmp/aura-us-cons-13-probe.cjs asserted upload, source_id body metadata, rendered audio src /api/chat/audio/aud_probe, dictated text 'cerca torino', and no attachment leakage into the dictation-only submit. Screenshot: D:/tmp/aura-chat-us-cons-13.png."
     }
   ]
 }
