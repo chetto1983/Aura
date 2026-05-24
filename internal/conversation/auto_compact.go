@@ -117,26 +117,34 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 	if e.inner == nil || len(messages) < 2 {
 		return messages
 	}
+	prefix, body := splitPrefixAndBody(messages)
+	if len(body) < 2 {
+		return messages
+	}
 
 	// Snapshot the last user message before the compressor may drop it.
-	lastUser, hasLastUser := lastUserMessage(messages)
+	lastUser, hasLastUser := lastUserMessage(body)
 
-	// Delegate HOW to the inner compressor.
-	originalData := &messages[0]
-	compressed := e.inner.Compress(messages, currentTokens, focusTopic)
+	// Delegate HOW to the inner compressor for the mutable body only. Leading
+	// system overlays are part of the prompt prefix and must remain verbatim.
+	originalData := &body[0]
+	compressedBody := e.inner.Compress(body, currentTokens, focusTopic)
 
 	// Detect whether the compressor actually changed the slice (success path
 	// returns a newly allocated slice; failure path returns the input unchanged).
-	compressionHappened := len(compressed) > 0 && &compressed[0] != originalData
+	compressionHappened := len(compressedBody) > 0 && &compressedBody[0] != originalData
 
 	if compressionHappened {
 		// Re-append last user message if the compressor dropped it.
-		if hasLastUser && !containsUserContent(compressed, lastUser.Content) {
-			out := make([]llm.Message, len(compressed)+1)
-			copy(out, compressed)
-			out[len(compressed)] = lastUser
-			compressed = out
+		if hasLastUser && !containsUserContent(compressedBody, lastUser.Content) {
+			out := make([]llm.Message, len(compressedBody)+1)
+			copy(out, compressedBody)
+			out[len(compressedBody)] = lastUser
+			compressedBody = out
 		}
+		compressed := make([]llm.Message, 0, len(prefix)+len(compressedBody))
+		compressed = append(compressed, prefix...)
+		compressed = append(compressed, compressedBody...)
 		e.mu.Lock()
 		e.CompressionCount++
 		e.mu.Unlock()
@@ -147,11 +155,23 @@ func (e *AutoCompactEngine) Compress(messages []llm.Message, currentTokens int, 
 			"threshold_tokens", e.ThresholdTokens,
 			"cumulative_tokens", e.cumulativeTotal,
 		)
+		return compressed
 	}
-	return compressed
+	return messages
 }
 
 // --- package-private helpers -------------------------------------------------
+
+// splitPrefixAndBody separates contiguous leading system messages from the
+// mutable conversation body. The prefix carries prompt overlays and must survive
+// compaction byte-for-byte.
+func splitPrefixAndBody(messages []llm.Message) ([]llm.Message, []llm.Message) {
+	i := 0
+	for i < len(messages) && messages[i].Role == "system" {
+		i++
+	}
+	return messages[:i], messages[i:]
+}
 
 // lastUserMessage returns the last user-role message in msgs and true,
 // or a zero value and false when no user message is found.

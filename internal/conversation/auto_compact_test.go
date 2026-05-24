@@ -201,6 +201,59 @@ func TestAutoCompactEngine_Compress_PreservesLastUserMessage(t *testing.T) {
 	}
 }
 
+func TestAutoCompactEngine_Compress_PreservesLeadingSystemPrefix(t *testing.T) {
+	const summary = "compact body"
+	e := newTestAutoCompact(summary, 1000, ScopeTotal, 128000)
+
+	messages := []llm.Message{
+		{Role: "system", Content: "base system"},
+		{Role: "system", Content: "tools overlay"},
+		{Role: "system", Content: "memory overlay"},
+		{Role: "user", Content: strings.Repeat("first body turn ", 20)},
+		{Role: "assistant", Content: strings.Repeat("assistant body turn ", 20)},
+		{Role: "user", Content: "continue from here"},
+	}
+
+	compressed := e.Compress(messages, 1100, "continue from here")
+
+	if len(compressed) < 5 {
+		t.Fatalf("compressed len = %d, want prefix + summary + last user", len(compressed))
+	}
+	for i := range 3 {
+		if compressed[i].Role != messages[i].Role || compressed[i].Content != messages[i].Content {
+			t.Fatalf("prefix[%d] = %+v, want %+v", i, compressed[i], messages[i])
+		}
+	}
+	if compressed[3].Role != "user" || !strings.Contains(compressed[3].Content, summary) {
+		t.Fatalf("summary body message = %+v, want user summary containing %q", compressed[3], summary)
+	}
+	if compressed[len(compressed)-1].Role != "user" || compressed[len(compressed)-1].Content != "continue from here" {
+		t.Fatalf("last user not preserved at tail: %+v", compressed[len(compressed)-1])
+	}
+}
+
+func TestSplitPrefixAndBodyOnlyContiguousLeadingSystemMessages(t *testing.T) {
+	messages := []llm.Message{
+		{Role: "system", Content: "base"},
+		{Role: "system", Content: "overlay"},
+		{Role: "user", Content: "body"},
+		{Role: "system", Content: "body-local system-like note"},
+		{Role: "assistant", Content: "reply"},
+	}
+
+	prefix, body := splitPrefixAndBody(messages)
+
+	if len(prefix) != 2 {
+		t.Fatalf("prefix len = %d, want 2", len(prefix))
+	}
+	if len(body) != 3 {
+		t.Fatalf("body len = %d, want 3", len(body))
+	}
+	if body[1].Role != "system" || body[1].Content != "body-local system-like note" {
+		t.Fatalf("non-leading system message moved into prefix: body=%+v", body)
+	}
+}
+
 func TestAutoCompactEngine_Compress_LastUserPreserved_WhenCompressorFails(t *testing.T) {
 	// When the compressor returns the original (e.g. empty summary), the last
 	// user message is already in the original — AutoCompactEngine must not
