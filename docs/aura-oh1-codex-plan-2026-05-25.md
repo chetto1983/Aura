@@ -54,15 +54,15 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 | OH1-E | ✅ shipped | `aec6f61d` | `feat(agent): synthesize agentdef delegate tools` — delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. |
 | OH1-F | ✅ shipped | `13a59625` | `feat(agent): announce agentdef delegation` — channel scrubber + announce template for Telegram + web. |
 | OH1-G | ✅ shipped | `52bd2c99` | `feat(agent): migrate reflection to reflector archetype` — builtin `reflector` + reflection hook uses AGENTDEF delegate runner with direct fallback parity. |
-| OH1-H | ⬜ pending (interactive) | — | Deprecate `spawn_aurabot` / `run_aurabot_swarm` in overlays. |
+| OH1-H | ✅ closed (no-op) | _(plan-only closure; fill hash after commit)_ | Prompt surface already clean: `TOOLS.md` is retired/ignored and active/default prompt files do not mention `spawn_aurabot` / `run_aurabot_swarm`. |
 | OH1-I | ⬜ pending (post-telemetry) | — | Remove deprecated swarm tools after 7+ days of zero invocations. |
 
 **Freshness rule:** update this snapshot immediately after every atomic commit,
 and mark the currently edited slice as in-flight before continuing.
 
-**Next action:** prepare OH1-H overlay deprecation by inspecting current
-`runtime-workspace/AGENT.md` / `runtime-workspace/TOOLS.md` references and
-running a narrow prompt-surface check before any docs-only edit.
+**Next action:** run the post-G/H live probe from the Wave-OH1 ship gate, then
+hold OH1-I until telemetry shows 7+ days of zero `spawn_aurabot` /
+`run_aurabot_swarm` invocations.
 
 ---
 
@@ -581,7 +581,7 @@ the archetype path produces identical JSON for the same fixture turn.
 
 ---
 
-## 10. OH1-H — Deprecate spawn_aurabot in prompts (docs only) [INTERACTIVE] — ⬜ pending
+## 10. OH1-H — Deprecate spawn_aurabot in prompts (docs only) [INTERACTIVE] — ✅ closed (no-op)
 
 **Files**:
 - edit `runtime-workspace/AGENT.md` — remove references to
@@ -592,6 +592,18 @@ the archetype path produces identical JSON for the same fixture turn.
 **Acceptance**: probe a few turns; LLM no longer attempts the old
 tools. Telemetry counter on those tool invocations should trend to 0
 over N days.
+
+**Closure evidence (2026-05-25)**:
+- No prompt edit was needed. `runtime-workspace/TOOLS.md` is absent, and
+  `internal/conversation/overlay.go` documents that `TOOLS.md` was retired
+  on 2026-05-24 and is not injected into the system prompt.
+- `runtime-workspace/AGENT.md`, `internal/config/defaults/AGENT.md`,
+  `internal/config/defaults/TOOLS.md`, and `internal/conversation/` contain
+  zero `spawn_aurabot` / `run_aurabot_swarm` prompt references.
+- Verification: `rg -n "spawn_aurabot|run_aurabot_swarm" runtime-workspace internal\config\defaults internal\conversation`
+  returned no matches; `go test ./internal/conversation -run "TestLoadPromptOverlayReadsKnownFiles|TestEnsurePromptOverlayDefaultsCreatesSoulOnly|TestIsOverlayFileName" -count=1`
+  and `go test ./internal/config -run TestDefaultPromptDocsUseCurrentUnifiedToolNames -count=1`
+  passed.
 
 ---
 
