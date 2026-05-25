@@ -211,9 +211,30 @@ func TestCreateDocumentTool_NilSenderFailsOnlyWhenDelivering(t *testing.T) {
 	}
 }
 
-func TestCreateDocumentTool_DescriptionStaysShort(t *testing.T) {
+// TestCreateDocumentTool_DescriptionBudget pins the description to ~1.2 KB.
+// The 200-char cap was lifted on 2026-05-25 after chat 1148481707 turn 282
+// showed the model calling create_document(body=…, title=…) flat — the
+// terse one-liner did not teach the call shape. The new description leads
+// with three full-shape examples per format. The 1500-char ceiling keeps
+// the manifest from drifting into a prose dump.
+func TestCreateDocumentTool_DescriptionBudget(t *testing.T) {
 	tool, _ := newCreateDocumentTest(t, nil)
-	if n := len(tool.Description()); n > 200 {
-		t.Fatalf("description length = %d, want <= 200", n)
+	desc := tool.Description()
+	if n := len(desc); n > 1500 {
+		t.Fatalf("description length = %d, want <= 1500", n)
+	}
+	// The fix is content-bearing, not just looser — the description MUST
+	// surface the call shape and the canonical anti-pattern (flat args).
+	for _, want := range []string{
+		`"spec"`,
+		"create_document(",
+		"never pass",
+		`"format":"pdf"`,
+		`"format":"xlsx"`,
+		`"format":"docx"`,
+	} {
+		if !strings.Contains(desc, want) {
+			t.Errorf("description missing call-shape signal %q:\n%s", want, desc)
+		}
 	}
 }

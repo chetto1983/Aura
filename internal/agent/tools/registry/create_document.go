@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	source "github.com/aura/aura/internal/storage/sources/store"
@@ -92,7 +93,29 @@ func (t *CreateDocumentTool) Definition() ToolDefinition {
 }
 
 func (t *CreateDocumentTool) Description() string {
-	return "Create PDF, XLSX, or DOCX source artifacts from structured specs. Use instead of execute_code. After success, report source_id; do not call source to verify."
+	return `Create PDF, XLSX, or DOCX source artifacts from a structured spec. Use instead of execute_code.
+
+CALL SHAPE: create_document({"format": "pdf"|"xlsx"|"docx", "spec": {...}})
+
+The "spec" arg is REQUIRED and is a JSON object — never pass "body"/"title"/"content" at the top level.
+
+EXAMPLES — copy these shapes:
+
+  create_document({"format":"pdf","spec":{"filename":"report","title":"Report","blocks":[
+    {"kind":"heading","level":1,"text":"Section"},
+    {"kind":"paragraph","text":"Body text."},
+    {"kind":"bullet","text":"First point"}
+  ]}})
+
+  create_document({"format":"xlsx","spec":{"filename":"people","sheets":[
+    {"name":"Data","rows":[["Nome","Eta"],["Ada","37"]]}
+  ]}})
+
+  create_document({"format":"docx","spec":{"filename":"brief","title":"Brief","blocks":[
+    {"kind":"paragraph","text":"Document body."}
+  ]}})
+
+After success, report the returned source_id verbatim; do NOT call source(action=list/read) to verify.`
 }
 
 func (t *CreateDocumentTool) Parameters() map[string]any {
@@ -229,9 +252,7 @@ func documentSpecArgs(args map[string]any) (map[string]any, error) {
 		return nil, errors.New("create_document: spec must be an object")
 	}
 	out := make(map[string]any, len(spec))
-	for k, v := range spec {
-		out[k] = v
-	}
+	maps.Copy(out, spec)
 	return out, nil
 }
 
