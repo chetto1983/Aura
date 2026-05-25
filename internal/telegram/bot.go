@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
@@ -182,6 +183,14 @@ func (b *Bot) ToolRegistry() *tools.Registry {
 		return nil
 	}
 	return b.rt.tools
+}
+
+// AgentDefinitions returns the immutable AGENTDEF registry loaded at boot.
+func (b *Bot) AgentDefinitions() *agentdef.Registry {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.agentDefs
 }
 
 // WikiTOC returns the cached wiki TOC string for injection into the system prompt.

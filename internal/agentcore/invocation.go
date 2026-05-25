@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -28,6 +29,7 @@ type InvocationInput struct {
 	Options             agent.Options
 	OnEvent             func(agent.Event)
 	PostTurn            agent.PostTurnConfig
+	AgentDefs           *agentdef.Registry
 	Logger              *slog.Logger
 }
 
@@ -58,6 +60,7 @@ func (Builder) Build(input InvocationInput) (agent.Invocation, error) {
 		Options:             input.Options,
 		OnEvent:             input.OnEvent,
 		PostTurn:            input.PostTurn,
+		AgentDefs:           input.AgentDefs,
 		Logger:              input.Logger,
 	}, nil
 }

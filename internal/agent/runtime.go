@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agent/agentdef"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
@@ -81,6 +82,7 @@ type Invocation struct {
 	Options             Options
 	OnEvent             func(Event)
 	PostTurn            PostTurnConfig
+	AgentDefs           *agentdef.Registry
 	// Logger is the structured logger every Run uses. Nil falls back to
 	// slog.Default(). The runner attaches a per-invocation run_id correlation
 	// ID so multi-conversation logs can be disentangled (F-011, F-024).

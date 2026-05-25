@@ -282,6 +282,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 		State:         convCtx,
 		Tools:         toolDefs,
 		ToolsProvider: toolsProvider,
+		AgentDefs:     deps.AgentDefs,
 		PostTurn:      b.postTurnConfig(runID, msg, logger, deps),
 		Options: agent.Options{
 			ContextEngine:           ctxEngine,

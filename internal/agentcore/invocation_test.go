@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -34,6 +35,10 @@ func TestBuilderBuildsInvocation(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	toolDefs := []llm.ToolDefinition{{Name: "search"}}
 	promptModules := []string{"base", "tools"}
+	agentDefs, err := agentdef.NewRegistry(context.Background(), nil, nil)
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
 
 	inv, err := (Builder{}).Build(InvocationInput{
 		Client:              stubChatClient{},
@@ -47,6 +52,7 @@ func TestBuilderBuildsInvocation(t *testing.T) {
 		Tools:               toolDefs,
 		ToolsProvider:       func() []llm.ToolDefinition { return toolDefs },
 		Options:             agent.Options{MaxIterations: 7},
+		AgentDefs:           agentDefs,
 		Logger:              logger,
 	})
 	if err != nil {
@@ -67,7 +73,7 @@ func TestBuilderBuildsInvocation(t *testing.T) {
 	if inv.Tools[0].Name != "search" {
 		t.Fatalf("Tools aliased caller slice: %+v", inv.Tools)
 	}
-	if inv.ToolsProvider == nil || inv.Options.MaxIterations != 7 || inv.Logger != logger {
+	if inv.ToolsProvider == nil || inv.Options.MaxIterations != 7 || inv.Logger != logger || inv.AgentDefs != agentDefs {
 		t.Fatalf("invocation fields not preserved: %+v", inv)
 	}
 }

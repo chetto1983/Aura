@@ -400,6 +400,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		ToolsetSelectReason: "core tools plus Qdrant top-K=5 retrieval",
 		Tools:               toolDefs,
 		ToolsProvider:       toolsProvider,
+		AgentDefs:           b.AgentDefinitions(),
 		PostTurn:            postTurn,
 		Options: agent.Options{
 			ContextEngine:           ctxEngine,

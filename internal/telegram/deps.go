@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/agentnote"
@@ -69,6 +70,7 @@ type botRuntime struct {
 	agentNoteStore      *agentnote.Store
 	attemptsRepo        attempts.Repo
 	memoryStore         *memoryindex.Store
+	agentDefs           *agentdef.Registry
 	voicePolicy         audio.Store
 	pocketttsClient     *pockettts.Client
 	wikiTOCFn           func() string // nil when wiki store unavailable
@@ -127,8 +129,9 @@ type Deps struct {
 	CompactVectorHealth *memoryindex.VectorHealthTracker // for Started/Failed/Succeeded in Phase C
 
 	// ---- Agent / swarm ------------------------------------------------------
-	SwarmStore *swarm.Store   // full concrete store (satisfies swarm.Reader + swarm.Repository)
-	SwarmMgr   *swarm.Manager // nil when AURABOT_ENABLED=false
+	AgentDefs  *agentdef.Registry // immutable registry; empty in OH1-A until archetypes land
+	SwarmStore *swarm.Store       // full concrete store (satisfies swarm.Reader + swarm.Repository)
+	SwarmMgr   *swarm.Manager     // nil when AURABOT_ENABLED=false
 
 	// ---- Auth / MCP / sandbox -----------------------------------------------
 	AuthDB        auth.Repository
@@ -186,6 +189,7 @@ func NewBot(deps Deps) *Bot {
 		agentNoteStore:      deps.AgentNoteStore,
 		attemptsRepo:        deps.AttemptsRepo,
 		voicePolicy:         deps.VoicePolicy,
+		agentDefs:           deps.AgentDefs,
 		pocketttsClient:     deps.PocketTTSClient,
 	}
 	if deps.WikiStore != nil {

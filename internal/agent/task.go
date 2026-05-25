@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/governance"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
@@ -57,6 +58,7 @@ type Result struct {
 type RunTaskDeps struct {
 	LLM             llm.Client
 	Tools           *tools.Registry
+	AgentDefs       *agentdef.Registry
 	Model           string
 	ReasoningEffort string
 	RunID           string

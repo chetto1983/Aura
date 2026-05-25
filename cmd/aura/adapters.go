@@ -178,6 +178,7 @@ func newRunTaskDeps(cfg *config.Config, deps *telegram.Deps) agent.RunTaskDeps {
 	return agent.RunTaskDeps{
 		LLM:               deps.LLM,
 		Tools:             deps.Tools,
+		AgentDefs:         deps.AgentDefs,
 		Model:             cfg.LLMModel,
 		ReasoningEffort:   cfg.ReasoningEffort,
 		Logger:            deps.Logger,

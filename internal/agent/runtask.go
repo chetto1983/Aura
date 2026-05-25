@@ -52,10 +52,11 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 	client := NewNoStreamClient(deps.LLM, deps.Model, task.Temperature, deps.ReasoningEffort, task.UserID)
 
 	inv := Invocation{
-		Client:   client,
-		Executor: exec,
-		State:    state,
-		Tools:    runTaskToolDefs(deps.Tools, allowlist),
+		Client:    client,
+		Executor:  exec,
+		State:     state,
+		Tools:     runTaskToolDefs(deps.Tools, allowlist),
+		AgentDefs: deps.AgentDefs,
 		Options: Options{
 			MaxIterations:       maxIterations,
 			MaxToolCalls:        task.MaxToolCalls,

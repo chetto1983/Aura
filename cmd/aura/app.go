@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	swarmtools "github.com/aura/aura/internal/agent/tools/swarm"
@@ -368,6 +370,16 @@ func newApp(
 
 	toolRegistry := tools.NewRegistry(logger)
 	deps.Tools = toolRegistry
+
+	agentDefs, err := agentdef.NewRegistry(context.Background(), &agentdef.Loader{
+		UserDir: filepath.Join(cfg.RuntimeWorkspacePath, "agents"),
+		Logger:  logger,
+	}, &agentdef.Validator{Logger: logger})
+	if err != nil {
+		return nil, fmt.Errorf("loading agent definitions: %w", err)
+	}
+	deps.AgentDefs = agentDefs
+	logger.Info("agent definitions loaded", "count", agentDefs.Len())
 
 	if config.NormalizeWorkspaceTools(cfg.WorkspaceTools) == "enabled" {
 		workspaceRoot, err := workspace.New(cfg.WorkspaceRoot)
