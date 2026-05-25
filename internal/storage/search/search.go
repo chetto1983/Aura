@@ -33,7 +33,11 @@ func RebuildSQLiteWikiDocuments(ctx context.Context, wikiDir, dbPath string, log
 	if err != nil {
 		return 0, 0, err
 	}
-	defer sqlite.Close()
+	defer func() {
+		if closeErr := sqlite.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}()
 
 	docs, pageCount, err := loadWikiDocuments(wikiDir, logger)
 	if err != nil {
@@ -49,7 +53,7 @@ func indexSQLiteDocuments(ctx context.Context, sqlite *sqliteSearcher, docs []Do
 	if sqlite == nil {
 		return nil
 	}
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		if err := sqlite.clearOrRecreate(ctx); err != nil {
 			return err
 		}
@@ -123,12 +127,10 @@ func loadWikiDocuments(wikiDir string, logger *slog.Logger) ([]Document, int, er
 		}
 		name := entry.Name()
 		var slug, ext string
-		if strings.HasSuffix(name, ".md") {
-			slug = strings.TrimSuffix(name, ".md")
-			ext = ".md"
-		} else if strings.HasSuffix(name, ".yaml") {
-			slug = strings.TrimSuffix(name, ".yaml")
-			ext = ".yaml"
+		if s, ok := strings.CutSuffix(name, ".md"); ok {
+			slug, ext = s, ".md"
+		} else if s, ok := strings.CutSuffix(name, ".yaml"); ok {
+			slug, ext = s, ".yaml"
 		} else {
 			continue
 		}
@@ -219,15 +221,21 @@ func buildWikiMeta(slug, title, sizeStr string, fi wikiFileInfo, page indexedWik
 	return meta
 }
 
-// mergeHybridResults fuses ranked Result groups via Reciprocal Rank Fusion.
-// Each Result gets a fused score Σ_g (w_g / (k + rank_in_g + 1)). Results
-// with the same (kind, slug) accumulate contributions across groups; the
-// first-seen Result keeps its metadata. Returns the top-K by fused score.
+// mergeHybridResults fuses ranked Result groups via Reciprocal Rank Fusion,
+// then normalises every component into [0,1] so the LLM-facing score reads
+// as a confidence, not a raw RRF fraction.
 //
-// The Telegram-facing search call downstream of this still applies recency
-// decay; this layer only handles the join. The fused score overwrites
-// Result.Score so the recency multiplier sees a value comparable across
-// backends.
+// Raw RRF gives each Result Σ_g (w_g / (k + rank_in_g + 1)). With k=60 and
+// weights {1.0, 0.6, 0.8} the maximum possible fused score is 2.4/61 ≈ 0.0393
+// — a perfect top-1 hit across all three channels. A naïve display surfaces
+// that as score=0.04, which the agent reads as "almost zero" and over-searches
+// to compensate (observed in chat 1148481707 turns 263–286, four redundant
+// search calls for the same query). Dividing every component by the same
+// rrfMaxScore preserves component additivity (Score == Σ components) and
+// rescales the perfect hit to 1.00.
+//
+// Recency decay is applied downstream in memory_search.go; this layer only
+// handles the join.
 func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 	if topK <= 0 {
 		topK = 5
@@ -240,53 +248,43 @@ func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 		scoreVector float32
 	}
 	byKey := map[string]*entry{}
+	totalWeight := 0.0
 	for groupIdx, group := range groups {
-		weight := rrfWeightExtraResult
-		switch groupIdx {
-		case 0:
-			weight = rrfWeightExactResult
-		case 1:
-			weight = rrfWeightFTSResult
-		case 2:
-			weight = rrfWeightVectorResult
-		}
+		weight := rrfGroupWeight(groupIdx)
+		totalWeight += weight
 		for rank, result := range group {
 			key := resultKey(result)
 			if key == "" {
 				continue
 			}
 			contribution := float32(weight / float64(rrfK+rank+1))
-			if existing, ok := byKey[key]; ok {
-				existing.score += contribution
-				switch groupIdx {
-				case 0:
-					existing.scoreExact += contribution
-				case 1:
-					existing.scoreFTS += contribution
-				case 2:
-					existing.scoreVector += contribution
-				}
-				continue
+			existing, ok := byKey[key]
+			if !ok {
+				existing = &entry{result: result}
+				byKey[key] = existing
 			}
-			e := &entry{result: result, score: contribution}
+			existing.score += contribution
 			switch groupIdx {
 			case 0:
-				e.scoreExact = contribution
+				existing.scoreExact += contribution
 			case 1:
-				e.scoreFTS = contribution
+				existing.scoreFTS += contribution
 			case 2:
-				e.scoreVector = contribution
+				existing.scoreVector += contribution
 			}
-			byKey[key] = e
 		}
+	}
+	maxRRF := float32(totalWeight / float64(rrfK+1))
+	if maxRRF <= 0 {
+		maxRRF = 1
 	}
 	out := make([]Result, 0, len(byKey))
 	for _, e := range byKey {
 		r := e.result
-		r.Score = e.score
-		r.ScoreExact = e.scoreExact
-		r.ScoreFTS = e.scoreFTS
-		r.ScoreVector = e.scoreVector
+		r.Score = e.score / maxRRF
+		r.ScoreExact = e.scoreExact / maxRRF
+		r.ScoreFTS = e.scoreFTS / maxRRF
+		r.ScoreVector = e.scoreVector / maxRRF
 		out = append(out, r)
 	}
 	sortHybridResultsByScore(out)
@@ -294,6 +292,23 @@ func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 		out = out[:topK]
 	}
 	return out
+}
+
+// rrfGroupWeight returns the RRF channel weight for a group at the given
+// positional index. Group 0 is the exact-match channel, 1 is FTS, 2 is
+// vector; any further groups fall back to a smaller "extra" weight so an
+// over-fanning caller still gets sane fusion without code changes here.
+func rrfGroupWeight(groupIdx int) float64 {
+	switch groupIdx {
+	case 0:
+		return rrfWeightExactResult
+	case 1:
+		return rrfWeightFTSResult
+	case 2:
+		return rrfWeightVectorResult
+	default:
+		return rrfWeightExtraResult
+	}
 }
 
 // sortHybridResultsByScore orders fused results by descending Score with a

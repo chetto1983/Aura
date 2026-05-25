@@ -88,7 +88,8 @@ func TestMergeHybridResultsPreservesScoreComponents(t *testing.T) {
 
 // TestMergeHybridResultsMultiChannelAccumulatesComponents verifies that a
 // result appearing in all three channels accumulates each component and that
-// Score equals the sum of all three channel scores.
+// Score equals the sum of all three channel scores. After normalisation to
+// [0,1] both sides scale by the same constant, so the additive invariant holds.
 func TestMergeHybridResultsMultiChannelAccumulatesComponents(t *testing.T) {
 	r := Result{Kind: "wiki", Slug: "all-channels", Title: "All Channels"}
 
@@ -114,5 +115,74 @@ func TestMergeHybridResultsMultiChannelAccumulatesComponents(t *testing.T) {
 	wantSum := got.ScoreExact + got.ScoreFTS + got.ScoreVector
 	if got.Score != wantSum {
 		t.Errorf("Score=%v != ScoreExact+ScoreFTS+ScoreVector=%v", got.Score, wantSum)
+	}
+}
+
+// TestMergeHybridResultsNormalisesScoreToUnit asserts that a top-rank hit
+// across all three channels scores 1.0, not the raw RRF cap of 2.4/61
+// ≈ 0.039. The bug observed in chat 1148481707 turn 269 was that a
+// perfect-fit page surfaced as score=0.04, which the model read as
+// "almost zero" and re-searched four times. Normalisation fixes that
+// signal — see mergeHybridResults docstring for the rationale.
+func TestMergeHybridResultsNormalisesScoreToUnit(t *testing.T) {
+	r := Result{Kind: "wiki", Slug: "perfect-fit"}
+	results := mergeHybridResults("q", 10,
+		[]Result{r},
+		[]Result{r},
+		[]Result{r},
+	)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	got := results[0]
+	const tolerance = 1e-6
+	if diff := float64(got.Score) - 1.0; diff > tolerance || diff < -tolerance {
+		t.Errorf("perfect top-1 hit Score = %v, want ≈ 1.0", got.Score)
+	}
+	// Component fractions should equal weight / totalWeight (1.0/2.4, 0.6/2.4, 0.8/2.4).
+	wantExact := float32(rrfWeightExactResult / (rrfWeightExactResult + rrfWeightFTSResult + rrfWeightVectorResult))
+	wantFTS := float32(rrfWeightFTSResult / (rrfWeightExactResult + rrfWeightFTSResult + rrfWeightVectorResult))
+	wantVector := float32(rrfWeightVectorResult / (rrfWeightExactResult + rrfWeightFTSResult + rrfWeightVectorResult))
+	checkClose := func(name string, got, want float32) {
+		if d := got - want; d > tolerance || d < -tolerance {
+			t.Errorf("%s = %v, want ≈ %v", name, got, want)
+		}
+	}
+	checkClose("ScoreExact", got.ScoreExact, wantExact)
+	checkClose("ScoreFTS", got.ScoreFTS, wantFTS)
+	checkClose("ScoreVector", got.ScoreVector, wantVector)
+}
+
+// TestMergeHybridResultsSingleChannelPerfectHit asserts that a doc ranked #1
+// in exactly one channel reaches the full weight share of that channel —
+// 0.4167 for exact, 0.25 for FTS, 0.3333 for vector. This bounds the
+// "single backend votes strongly" case so the agent reads the channel
+// contribution correctly.
+func TestMergeHybridResultsSingleChannelPerfectHit(t *testing.T) {
+	totalWeight := rrfWeightExactResult + rrfWeightFTSResult + rrfWeightVectorResult
+	cases := []struct {
+		name      string
+		groupIdx  int
+		wantScore float32
+	}{
+		{"exact only", 0, float32(rrfWeightExactResult / totalWeight)},
+		{"fts only", 1, float32(rrfWeightFTSResult / totalWeight)},
+		{"vector only", 2, float32(rrfWeightVectorResult / totalWeight)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := Result{Kind: "wiki", Slug: "channel-only"}
+			groups := make([][]Result, 3)
+			groups[tc.groupIdx] = []Result{r}
+			results := mergeHybridResults("q", 10, groups...)
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+			got := results[0].Score
+			const tolerance = 1e-6
+			if d := got - tc.wantScore; d > tolerance || d < -tolerance {
+				t.Errorf("Score = %v, want ≈ %v", got, tc.wantScore)
+			}
+		})
 	}
 }
