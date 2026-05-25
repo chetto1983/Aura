@@ -51,8 +51,8 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 | OH1-B | ✅ shipped | `45c5fe02` | `feat(agent): migrate summarizer to agentdef` — first archetype; legacy `agents/summarizer/prompt.go` now a shim. |
 | OH1-C | ✅ shipped | `d0b24989` | `feat(agent): warn on agentdef tier violations` — warn-only validator + `DetectCycle(rootID)`. |
 | OH1-D | ✅ shipped | `a82f5284` | `feat(agent): enforce agentdef tier validation` — boot uses `EnforceTier: true`; summarizer still validates. |
-| OH1-E | 🟡 in flight | _(uncommitted)_ | Delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. Biggest commit (~600 LOC). |
-| OH1-F | ⬜ pending | — | Channel-scrubber + announce template for Telegram + web. |
+| OH1-E | ✅ shipped | `aec6f61d` | `feat(agent): synthesize agentdef delegate tools` — delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. |
+| OH1-F | 🟡 in flight | _(uncommitted)_ | Channel-scrubber + announce template for Telegram + web. |
 | OH1-G | ⬜ pending | — | Migrate reflection fork → `reflector` archetype. |
 | OH1-H | ⬜ pending (interactive) | — | Deprecate `spawn_aurabot` / `run_aurabot_swarm` in overlays. |
 | OH1-I | ⬜ pending (post-telemetry) | — | Remove deprecated swarm tools after 7+ days of zero invocations. |
@@ -60,7 +60,7 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 **Freshness rule:** update this snapshot immediately after every atomic commit,
 and mark the currently edited slice as in-flight before continuing.
 
-**Next action:** implement and verify OH1-E delegate synth (the heavy one).
+**Next action:** implement and verify OH1-F channel scrubber + announce template.
 
 ---
 
@@ -353,7 +353,7 @@ violated.
 
 ---
 
-## 7. OH1-E — DELEGATE-TOOL synth + DEDUP + over-delegation prefix (~600 LOC) [Codex] — 🟡 in flight (uncommitted)
+## 7. OH1-E — DELEGATE-TOOL synth + DEDUP + over-delegation prefix (~600 LOC) [Codex] — ✅ shipped `aec6f61d`
 
 **Goal**: the biggest commit. Per-turn synthesis of `delegate_<id>`
 tools, DEDUP against action tools, hardcoded over-delegation prefix,
@@ -508,7 +508,7 @@ clean; new `agentdef/delegate.go` ≤600 LOC; errcheck on runner.Run.
 
 ---
 
-## 8. OH1-F — Channel-scrubber + announce template (~80 LOC) [Codex] — ⬜ pending
+## 8. OH1-F — Channel-scrubber + announce template (~80 LOC) [Codex] — 🟡 in flight (uncommitted)
 
 **Goal**: user-facing visibility when chat tier delegates. Telegram
 thread and web chat both show the announce + final result, but NOT
