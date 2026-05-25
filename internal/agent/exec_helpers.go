@@ -107,6 +107,7 @@ func ExecuteToolCalls(
 	type outcome struct {
 		id            string
 		tool          string
+		arguments     map[string]any
 		content       string
 		readSkillName string
 		terminalTool  string
@@ -137,7 +138,7 @@ func ExecuteToolCalls(
 					Elapsed:   time.Since(startedAt),
 					Class:     "error",
 				})
-				results[i] = outcome{id: tc.ID, tool: tc.Name, content: result}
+				results[i] = outcome{id: tc.ID, tool: tc.Name, arguments: args, content: result}
 				return
 			}
 			toolCtx := ctx
@@ -198,6 +199,7 @@ func ExecuteToolCalls(
 			results[i] = outcome{
 				id:            tc.ID,
 				tool:          tc.Name,
+				arguments:     args,
 				content:       result,
 				readSkillName: readSkillName,
 				terminalTool:  terminalTool,
@@ -212,7 +214,8 @@ func ExecuteToolCalls(
 			summary.AwaitingUserInput = r.awaitingUser
 			continue
 		}
-		wrapped := WrapUntrustedToolResult(r.tool, r.content)
+		budgeted := budgetFreshToolResult(r.tool, r.arguments, r.content, 0)
+		wrapped := WrapUntrustedToolResult(r.tool, budgeted)
 		convCtx.AddToolResultMessage(r.id, wrapped)
 		summary.LastResult = r.content
 		summary.Results[r.id] = r.content

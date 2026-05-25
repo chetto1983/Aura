@@ -202,3 +202,34 @@ func TestExecuteToolCallsRecordsToolAttempt(t *testing.T) {
 		}
 	}
 }
+
+func TestExecuteToolCallsAppliesFreshToolResultBudgetToHistory(t *testing.T) {
+	raw := "HEAD-" + strings.Repeat("x", 40000) + "-TAIL"
+	runner := &stubToolRunner{names: []string{"search"}, result: raw}
+	convCtx := conversation.NewContext(conversation.Config{})
+	calls := []llm.ToolCall{{
+		ID:        "call-1",
+		Name:      "search",
+		Arguments: map[string]any{"action": "subgraph", "query": "aura"},
+	}}
+
+	summary := ExecuteToolCalls(context.Background(), runner, convCtx, "user1", 0, calls, true, nil)
+
+	if summary.Results["call-1"] != raw {
+		t.Fatalf("summary result should remain raw for caller-side handling")
+	}
+	msgs := convCtx.Messages()
+	if len(msgs) != 1 || msgs[0].Role != "tool" {
+		t.Fatalf("messages = %+v, want one tool result", msgs)
+	}
+	history := msgs[0].Content
+	if !strings.Contains(history, "HEAD-") {
+		t.Fatalf("history missing preserved head: %q", history[:min(len(history), 80)])
+	}
+	if strings.Contains(history, "-TAIL") {
+		t.Fatalf("history kept truncated tail")
+	}
+	if !strings.Contains(history, "bytes truncated by tool_result_budget") {
+		t.Fatalf("history missing budget trailer: %q", history)
+	}
+}

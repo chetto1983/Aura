@@ -126,21 +126,22 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 					raw = sp.Summary
 				}
 			}
-			wrapped := WrapUntrustedToolResult(call.Name, raw)
 			// Route to spill when payload exceeds SpillThresholdBytes and a
 			// spill directory is configured (US-OUT-02). Falls back to inline
 			// truncation when spill is disabled or the write fails.
-			if e.spillDir != "" && len(wrapped) > tools.SpillThresholdBytes {
+			wrappedForSpill := WrapUntrustedToolResult(call.Name, raw)
+			if e.spillDir != "" && len(wrappedForSpill) > tools.SpillThresholdBytes {
 				sessionID := e.runID
 				if sessionID == "" {
 					sessionID = e.userID
 				}
-				if envelope, spillErr := tools.SpillOutput(e.spillDir, sessionID, call.ID, wrapped); spillErr == nil {
+				if envelope, spillErr := tools.SpillOutput(e.spillDir, sessionID, call.ID, wrappedForSpill); spillErr == nil {
 					outcomes[i] = toolOutcome{id: call.ID, content: envelope}
 					return
 				}
 			}
-			outcomes[i] = toolOutcome{id: call.ID, content: limitToolContent(wrapped, e.maxChars)}
+			budgeted := budgetFreshToolResult(call.Name, call.Arguments, raw, e.maxChars)
+			outcomes[i] = toolOutcome{id: call.ID, content: WrapUntrustedToolResult(call.Name, budgeted)}
 		}(i, callCopy)
 	}
 	go func() {

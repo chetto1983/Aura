@@ -302,6 +302,38 @@ func TestExecutorNilPayloadSummarizerPassesThrough(t *testing.T) {
 	}
 }
 
+func TestAgentExecutorAppliesFreshToolResultBudgetHeadOnly(t *testing.T) {
+	raw := "HEAD-" + strings.Repeat("x", 2000) + "-TAIL"
+	reg := tools.NewRegistry(nil)
+	reg.Register(&fakeTool{name: "search", result: raw})
+
+	state := newAgentState([]llm.Message{{Role: "user", Content: "inspect graph evidence"}})
+	exec := newAgentExecutor(reg, state, nil, []string{"search"}, "", "run-budget-head", 512, 0, nil, false, "", nil, nil)
+
+	summary := exec.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{
+		{ID: "call-1", Name: "search", Arguments: map[string]any{"action": "subgraph", "query": "aura"}},
+	})
+
+	got := summary.Results["call-1"]
+	if !strings.Contains(got, "HEAD-") {
+		t.Fatalf("summary result missing preserved head: %q", got)
+	}
+	if strings.Contains(got, "-TAIL") {
+		t.Fatalf("summary result kept truncated tail")
+	}
+	if !strings.Contains(got, "bytes truncated by tool_result_budget") {
+		t.Fatalf("summary result missing budget trailer: %q", got)
+	}
+
+	msgs := state.Messages()
+	if len(msgs) != 2 || msgs[1].Role != "tool" {
+		t.Fatalf("messages = %+v, want one tool result after user", msgs)
+	}
+	if msgs[1].Content != got {
+		t.Fatalf("history result diverged from summary result")
+	}
+}
+
 // alwaysErrRepo satisfies attempts.Repo and always returns an error from every method.
 type alwaysErrRepo struct{}
 

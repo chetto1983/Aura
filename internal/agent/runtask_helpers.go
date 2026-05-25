@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/aura/aura/internal/agent/governance"
 	truncate "github.com/aura/aura/internal/agent/tools"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/llm"
@@ -53,6 +54,18 @@ func limitToolContent(content string, maxChars int) string {
 		return content
 	}
 	return truncate.TruncateMiddle(content, maxChars)
+}
+
+func budgetFreshToolResult(toolName string, args map[string]any, raw string, maxChars int) string {
+	budget := maxChars
+	if budget <= 0 {
+		budget = tools.FreshToolResultBudgetBytes
+		if governance.IsEvidenceClassTool(toolName, args) {
+			budget = tools.FreshEvidenceToolResultBudgetBytes
+		}
+	}
+	out, _ := tools.ApplyFreshToolResultBudget(raw, budget)
+	return out
 }
 
 // runTaskToolDefs returns the subset of tool definitions from reg that appear
