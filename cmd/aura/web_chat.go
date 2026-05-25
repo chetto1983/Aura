@@ -54,6 +54,7 @@ func newWebInvocationBuilder(
 		logger:          logger,
 		postTurnStore:   deps.MemoryStore,
 		postTurnReader:  postTurnReader,
+		reflectionHook:  agent.NewReflectionPostTurnHook(deps.LLM, cfg.LLMModel),
 		skillsLoader:    deps.Skills,
 		loc:             deps.Loc,
 		budgetRuntime:   budgetRuntime,
@@ -126,6 +127,7 @@ type webInvocationBuilder struct {
 	logger          *slog.Logger
 	postTurnStore   *memoryindex.Store
 	postTurnReader  agent.PostTurnFailureReader
+	reflectionHook  agent.PostTurnHook
 	priorityCaches  sync.Map
 	skillsLoader    *auraskills.Loader
 	wikiTOCFn       func() string
@@ -531,6 +533,11 @@ func (b *webInvocationBuilder) postTurnConfig(runID string, msg chat.InboundMess
 		record,
 	)
 	if hook := agent.NewMemoryJudgeHook(deps.LLM, deps.Model, deps.ReasoningEffort, logger); hook != nil && b.postTurnStore != nil {
+		cfg.Store = b.postTurnStore
+		cfg.Record = record
+		cfg.Hooks = append(cfg.Hooks, hook)
+	}
+	if hook := b.reflectionHook; hook != nil && b.postTurnStore != nil {
 		cfg.Store = b.postTurnStore
 		cfg.Record = record
 		cfg.Hooks = append(cfg.Hooks, hook)

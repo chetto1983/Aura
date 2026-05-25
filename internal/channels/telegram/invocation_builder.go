@@ -34,6 +34,7 @@ type InvocationBuilder struct {
 	outbound          *Outbound                    // canonical streaming path used by streamingChatClient
 	agentNoteStore    *agentnote.Store             // nil when not configured; copied from Bot runtime
 	memoryStore       *memoryindex.Store           // nil when compact memory unavailable; copied from Bot runtime
+	reflectionHook    agent.PostTurnHook           // best-effort post-turn extractor with per-session throttle
 	priorityCaches    sync.Map                     // thread_id -> *memoryindex.PrioritySectionCache
 	payloadSummarizer governance.PayloadSummarizer // nil = disabled; wired when config enables it
 }
@@ -46,6 +47,9 @@ func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
 	}
 	ib.agentNoteStore = b.AgentNoteStore()
 	ib.memoryStore = b.MemoryStore()
+	if cfg := b.Config(); cfg != nil {
+		ib.reflectionHook = agent.NewReflectionPostTurnHook(b.LLMClient(), cfg.LLMModel)
+	}
 	if cfg := b.Config(); cfg != nil && cfg.PayloadSummarizerEnabled && b.LLMClient() != nil {
 		ib.payloadSummarizer = governance.NewSubagentPayloadSummarizer(
 			b.LLMClient(), cfg.LLMModel, summarizer.Prompt,
@@ -307,6 +311,11 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	}
 	postTurn := agent.NewHeuristicPostTurnConfig(ib.memoryStore, failureReader, cfg.OP07NFailThreshold, cfg.OP07RecentTurns, b.Logger(), postTurnRecord)
 	if hook := agent.NewMemoryJudgeHook(b.LLMClient(), cfg.LLMModel, cfg.ReasoningEffort, b.Logger()); hook != nil && ib.memoryStore != nil {
+		postTurn.Store = ib.memoryStore
+		postTurn.Record = postTurnRecord
+		postTurn.Hooks = append(postTurn.Hooks, hook)
+	}
+	if hook := ib.reflectionHook; hook != nil && ib.memoryStore != nil {
 		postTurn.Store = ib.memoryStore
 		postTurn.Record = postTurnRecord
 		postTurn.Hooks = append(postTurn.Hooks, hook)

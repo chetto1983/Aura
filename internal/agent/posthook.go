@@ -41,6 +41,7 @@ type TurnRecord struct {
 	RunID                   string
 	ThreadID                string
 	UserMessage             string
+	AssistantText           string
 	ToolCalls               []TurnToolCall
 	OperationalWrites       []Lesson
 	PreviousTurnHadToolCall bool
@@ -89,6 +90,50 @@ func NewHeuristicPostTurnConfig(store *memoryindex.Store, reader PostTurnFailure
 			},
 		},
 	}
+}
+
+type reflectionPostTurnHook struct {
+	hook *learning.ReflectionHook
+}
+
+func NewReflectionPostTurnHook(client llm.Client, model string) PostTurnHook {
+	if client == nil {
+		return nil
+	}
+	return reflectionPostTurnHook{
+		hook: &learning.ReflectionHook{
+			Client: client,
+			Model:  model,
+		},
+	}
+}
+
+func (h reflectionPostTurnHook) Apply(ctx context.Context, turn TurnRecord, store *memoryindex.Store) []error {
+	if h.hook == nil {
+		return nil
+	}
+	return h.hook.Apply(ctx, learning.ReflectionTurn{
+		RunID:         turn.RunID,
+		ThreadID:      turn.ThreadID,
+		UserMessage:   turn.UserMessage,
+		AssistantText: turn.AssistantText,
+		ToolCalls:     reflectionToolCalls(turn.ToolCalls),
+	}, store)
+}
+
+func reflectionToolCalls(calls []TurnToolCall) []learning.ReflectionToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]learning.ReflectionToolCall, 0, len(calls))
+	for _, call := range calls {
+		out = append(out, learning.ReflectionToolCall{
+			Name:          call.Name,
+			Success:       call.Success,
+			ResultPreview: call.ResultPreview,
+		})
+	}
+	return out
 }
 
 type postTurnLessonPayload struct {
@@ -384,4 +429,3 @@ func postTurnSignature(parts ...string) string {
 	sum := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
 	return hex.EncodeToString(sum[:8])
 }
-

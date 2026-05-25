@@ -230,6 +230,7 @@ func Run(ctx context.Context, in Invocation) (InvocationResult, error) {
 	result, err := runLoop(ctx, in.Client, in.Executor, in.State, opts)
 	if len(in.PostTurn.Hooks) > 0 && in.PostTurn.Store != nil {
 		turn := postTurnRecordFromState(in.PostTurn.Record, in.State, durableRunID)
+		turn.AssistantText = result.Text
 		turnMu.Lock()
 		turn.ToolCalls = append(turn.ToolCalls, turnToolCalls...)
 		turnMu.Unlock()
