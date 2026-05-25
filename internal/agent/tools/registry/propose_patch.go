@@ -294,27 +294,9 @@ func (t *ProposePatchTool) executeOperational(ctx context.Context, args map[stri
 	if contentDecision.Action == operationalContentHardReject {
 		return proposePatchDecisionJSON(false, "content: "+contentDecision.Reason), nil
 	}
-	if contentDecision.Action == operationalContentQuarantine {
-		row := patchProposalRow{
-			Kind:          "operational_memory",
-			Fact:          lesson,
-			Action:        "new",
-			TargetSlug:    toolName,
-			Category:      errorClass,
-			SignatureHash: sig,
-			SourceRunID:   sourceRunID,
-			ActorID:       identity.ActorIDFromContext(ctx),
-			Status:        "quarantine",
-		}
-		created, err := t.store.Insert(ctx, row)
-		if err != nil {
-			return "", fmt.Errorf("propose_patch operational: quarantine: %w", err)
-		}
-		if !created {
-			return proposePatchDecisionJSON(false, "content: already quarantined"), nil
-		}
-		return proposePatchDecisionJSON(false, "content: quarantined: "+contentDecision.Reason), nil
-	}
+	// 2026-05-25: the regex quarantine stage was removed (see
+	// propose_patch_security.go docstring). Lessons that don't match a
+	// hard-reject literal proceed straight to the auto-accept path.
 
 	// Auto-accept path: write directly to compact_memory_documents when a writer
 	// is wired. Skips the review queue so Aura can recall lessons immediately.
