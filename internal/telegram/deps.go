@@ -71,6 +71,7 @@ type botRuntime struct {
 	attemptsRepo        attempts.Repo
 	memoryStore         *memoryindex.Store
 	agentDefs           *agentdef.Registry
+	swarmMgr            *swarm.Manager
 	voicePolicy         audio.Store
 	pocketttsClient     *pockettts.Client
 	wikiTOCFn           func() string // nil when wiki store unavailable
@@ -190,6 +191,7 @@ func NewBot(deps Deps) *Bot {
 		attemptsRepo:        deps.AttemptsRepo,
 		voicePolicy:         deps.VoicePolicy,
 		agentDefs:           deps.AgentDefs,
+		swarmMgr:            deps.SwarmMgr,
 		pocketttsClient:     deps.PocketTTSClient,
 	}
 	if deps.WikiStore != nil {

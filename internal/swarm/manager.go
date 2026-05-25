@@ -13,7 +13,7 @@ import (
 
 const (
 	defaultMaxActive = 2
-	defaultMaxDepth  = 1
+	defaultMaxDepth  = 3
 )
 
 type AgentRunner interface {
@@ -163,6 +163,15 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 		wg.Add(1)
 		go func(task *Task, assignment Assignment) {
 			defer wg.Done()
+			recordTaskFailure := func(logMessage string, err error) {
+				if logMessage != "" && m.logger != nil {
+					m.logger.Warn(logMessage, "run", run.ID, "task", task.ID, "role", assignment.Role, "error", err)
+				}
+				_ = m.store.FailTask(context.Background(), task.ID, err.Error())
+				mu.Lock()
+				failed = append(failed, err)
+				mu.Unlock()
+			}
 			if assignment.Depth > maxDepth {
 				err := fmt.Errorf("task depth %d exceeds max depth %d", assignment.Depth, maxDepth)
 				if markErr := m.store.FailTask(context.Background(), task.ID, err.Error()); markErr != nil {
@@ -194,24 +203,12 @@ func (m *Manager) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 			}
 			taskCtx, err := m.delegateAssignmentActor(ctx, run.ID, task, assignment)
 			if err != nil {
-				if m.logger != nil {
-					m.logger.Warn("swarm task delegation failed", "run", run.ID, "task", task.ID, "role", assignment.Role, "error", err)
-				}
-				_ = m.store.FailTask(context.Background(), task.ID, err.Error())
-				mu.Lock()
-				failed = append(failed, err)
-				mu.Unlock()
+				recordTaskFailure("swarm task delegation failed", err)
 				return
 			}
 			result, err := runner.Run(taskCtx, assignment.AgentTask())
 			if err != nil {
-				if m.logger != nil {
-					m.logger.Warn("swarm task failed", "run", run.ID, "task", task.ID, "role", assignment.Role, "error", err)
-				}
-				_ = m.store.FailTask(context.Background(), task.ID, err.Error())
-				mu.Lock()
-				failed = append(failed, err)
-				mu.Unlock()
+				recordTaskFailure("swarm task failed", err)
 				return
 			}
 			if err := m.store.CompleteTask(context.Background(), task.ID, result); err != nil {

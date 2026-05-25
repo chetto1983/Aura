@@ -11,6 +11,7 @@ const (
 const (
 	DefaultMaxIterations  = 20
 	DefaultMaxResultChars = 24000
+	DefaultChatArchetype  = "orchestrator"
 )
 
 type ToolScope struct {

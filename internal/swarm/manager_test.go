@@ -150,6 +150,17 @@ func TestManagerRespectsMaxActive(t *testing.T) {
 	}
 }
 
+func TestNewManagerDefaultMaxDepthIsThree(t *testing.T) {
+	manager, err := NewManager(ManagerConfig{Runner: &fakeRunner{}, Store: newTestStore(t)})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	_, maxDepth := manager.Limits()
+	if maxDepth != 3 {
+		t.Fatalf("default max depth = %d, want 3", maxDepth)
+	}
+}
+
 // Regression: 2026-05-23 panic seen in production when AURABOT swarm is
 // disabled — bot wires a nil Manager but runtime-settings updates still
 // reach UpdateLimits via the settings PATCH path. Calling on nil must no-op.

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/agents/summarizer"
 	"github.com/aura/aura/internal/agent/governance"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
@@ -15,11 +16,11 @@ import (
 	"github.com/aura/aura/internal/agentnote"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/conversation"
-	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/llm"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
 	"github.com/aura/aura/internal/stringx"
+	"github.com/aura/aura/internal/swarm"
 	tgtelegram "github.com/aura/aura/internal/telegram"
 
 	tele "gopkg.in/telebot.v4"
@@ -57,17 +58,6 @@ func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
 		)
 	}
 	return ib
-}
-
-// AttachHub completes the composition-root wiring after the shared chat.Hub
-// exists. Build is lazy (called per-message), so installing these references
-// after chat.New returns is safe.
-func (ib *InvocationBuilder) AttachHub(hub *chat.Hub, outbound *Outbound) {
-	if ib == nil {
-		return
-	}
-	ib.hub = hub
-	ib.outbound = outbound
 }
 
 // Build is the chat.InvocationBuilder for the Telegram channel.
@@ -116,7 +106,23 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	}
 	toolAllowlist := ib.modelToolNames()
 	toolReg := b.ToolRegistry()
-	toolManifest := tools.RenderSplitManifest(toolReg.FullDefinitions())
+	var delegateRunner agentdef.DelegateRunner
+	if mgr := b.SwarmManager(); mgr != nil {
+		delegateRunner = &swarm.ArchetypeRunner{Manager: mgr, Registry: b.AgentDefinitions()}
+	}
+	delegateTools := agentdef.WithArchetypeDelegates(
+		agentdef.DefaultChatArchetype,
+		b.AgentDefinitions(),
+		delegateRunner,
+		[]string{agentdef.DefaultChatArchetype},
+		toolAllowlist,
+		b.Logger(),
+	)
+	delegateDefs := agentdef.DelegateLLMDefinitions(delegateTools)
+	toolManifest := tools.RenderSplitManifest(agentdef.AppendUniqueFullDefinitions(
+		toolReg.FullDefinitions(),
+		agentdef.DelegateFullDefinitions(delegateTools),
+	))
 	pinnedOperational := ib.renderPinnedOperational(ctx, msg.ThreadID, convCtx.MessageCount())
 	wikiTOC := b.WikiTOC()
 	promptPlan := agent.ComposeAgentPrompt(cfg, b.TimeLocation(), overlay, pinnedOperational, skillsBlock, toolManifest, wikiTOC, time.Now())
@@ -272,8 +278,12 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	toolsProvider := agent.MakeToolsProvider(
 		agent.AlwaysOnCore,
 		toolReg.Search,
-		toolReg.DefinitionsFor,
-		toolReg.Definitions,
+		func(names []string) []llm.ToolDefinition {
+			return agentdef.AppendUniqueLLMDefinitions(toolReg.DefinitionsFor(names), delegateDefs)
+		},
+		func() []llm.ToolDefinition {
+			return agentdef.AppendUniqueLLMDefinitions(toolReg.Definitions(), delegateDefs)
+		},
 		convCtx.LatestUserMessageText,
 		nil,
 		b.Logger(),
@@ -290,7 +300,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 
 	var currentStats agent.TurnStats
 	var toolMu sync.Mutex
-	activeToolNames := append([]string(nil), toolAllowlist...)
+	activeToolNames := stringx.AppendUnique(append([]string(nil), toolAllowlist...), agent.ToolDefinitionNames(delegateDefs)...)
 	addActiveTools := func(names []string) {
 		toolMu.Lock()
 		defer toolMu.Unlock()
@@ -358,7 +368,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	inv, buildErr := (agentcore.Builder{}).Build(agentcore.InvocationInput{
 		Client: chatClient,
 		Executor: agent.ToolExecutorFunc(func(ctx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
-			execution := ib.executeToolCalls(ctx, c, convCtx, userID, calls)
+			execution := ib.executeToolCalls(ctx, c, convCtx, userID, calls, delegateTools)
 			if len(execution.DiscoveredTools) > 0 {
 				addActiveTools(execution.DiscoveredTools)
 			}
@@ -412,7 +422,12 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 			MicrocompactKeepRecent:  cfg.MicrocompactKeepRecent,
 			MicrocompactMinChars:    cfg.MicrocompactMinChars,
 			BeforeTool:              duplicatePolicy,
-			ToolResolver:            toolReg.DefinitionFor,
+			ToolResolver: func(name string) (llm.ToolDefinition, bool) {
+				if def, ok := agentdef.ResolveDelegateDefinition(delegateTools, name); ok {
+					return def, true
+				}
+				return toolReg.DefinitionFor(name)
+			},
 			BeforeLLM: func() (string, bool) {
 				if bgt := b.BudgetRuntime(); bgt != nil && bgt.IsHardBudgetExceeded() {
 					b.Logger().Warn("hard budget exceeded during tool loop", "user_id", userID)
@@ -574,41 +589,4 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		return agent.Invocation{}, buildErr
 	}
 	return inv, nil
-}
-
-func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall) agent.ToolExecutionSummary {
-	return agent.ExecuteToolCalls(ctx, ib.b.ToolRegistry(), convCtx, userID, tgtelegram.ChatIDFromTeleContext(c), calls, ib.b.TerminalToolPolicyEnabled(), ib.b.Logger(),
-		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), ib.b.ToolAttemptsRepo()),
-		agent.WithTokenJuice(ib.b.TokenJuiceEnabled()),
-		agent.WithPayloadSummarizer(ib.payloadSummarizer))
-}
-
-func (ib *InvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {
-	if ib == nil {
-		return ""
-	}
-	return memoryindex.RenderPinnedSectionWithCache(ctx, ib.memoryStore, &ib.priorityCaches, threadID, "telegram", turnIdx)
-}
-
-func (ib *InvocationBuilder) invalidatePinnedOperational(threadID string) {
-	if ib == nil {
-		return
-	}
-	memoryindex.InvalidatePinnedSectionInCache(&ib.priorityCaches, threadID, "telegram")
-}
-
-func (ib *InvocationBuilder) modelToolNames() []string {
-	toolReg := ib.b.ToolRegistry()
-	if toolReg == nil {
-		return nil
-	}
-	return toolReg.Names()
-}
-
-func (ib *InvocationBuilder) maxToolLoopIterations() int {
-	return ib.b.MaxToolLoopIterations()
-}
-
-func (ib *InvocationBuilder) terminalToolPolicyEnabled() bool {
-	return ib.b.TerminalToolPolicyEnabled()
 }

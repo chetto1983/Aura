@@ -34,6 +34,7 @@ type Task struct {
 	ToolAllowlist       []string
 	UserID              string
 	Temperature         *float64
+	MaxIterations       int
 	MaxToolCalls        int
 	MaxToolResultChars  int
 	FinalizationTimeout time.Duration
@@ -59,6 +60,7 @@ type RunTaskDeps struct {
 	LLM             llm.Client
 	Tools           *tools.Registry
 	AgentDefs       *agentdef.Registry
+	DelegateRunner  agentdef.DelegateRunner
 	Model           string
 	ReasoningEffort string
 	RunID           string

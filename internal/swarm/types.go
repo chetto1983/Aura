@@ -67,10 +67,16 @@ type Assignment struct {
 	Subject                   string
 	Prompt                    string
 	SystemPrompt              string
+	Archetype                 string
+	ModelOverride             string
+	ParentChain               []string
 	ToolAllowlist             []string
 	Depth                     int
 	UserID                    string
 	Temperature               *float64
+	MaxInputTokens            int
+	MaxOutputTokens           int
+	MaxIterations             int
 	MaxToolCalls              int
 	MaxToolResultChars        int
 	FinalizationTimeout       time.Duration
@@ -87,6 +93,7 @@ func (a Assignment) AgentTask() agent.Task {
 		ToolAllowlist:       a.ToolAllowlist,
 		UserID:              a.UserID,
 		Temperature:         a.Temperature,
+		MaxIterations:       a.MaxIterations,
 		MaxToolCalls:        a.MaxToolCalls,
 		MaxToolResultChars:  a.MaxToolResultChars,
 		FinalizationTimeout: a.FinalizationTimeout,

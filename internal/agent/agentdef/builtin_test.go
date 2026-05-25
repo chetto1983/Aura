@@ -25,6 +25,23 @@ func TestSummarizerArchetype_LoadsAtBoot(t *testing.T) {
 	}
 }
 
+func TestOrchestratorArchetype_DelegatesToSummarizer(t *testing.T) {
+	reg, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatalf("BuiltinRegistry: %v", err)
+	}
+	def, ok := reg.Get(DefaultChatArchetype)
+	if !ok {
+		t.Fatalf("%s archetype not found", DefaultChatArchetype)
+	}
+	if def.Tier != TierChat {
+		t.Fatalf("orchestrator tier = %q, want chat", def.Tier)
+	}
+	if len(def.Subagents) != 1 || def.Subagents[0].ID != "summarizer" {
+		t.Fatalf("orchestrator subagents = %+v, want summarizer", def.Subagents)
+	}
+}
+
 func TestSummarizerArchetype_PromptByteIdentical(t *testing.T) {
 	raw, err := fs.ReadFile(BuiltinFS, "builtin/summarizer/prompt.md")
 	if err != nil {

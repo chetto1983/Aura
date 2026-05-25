@@ -1,0 +1,22 @@
+{
+  "id": "orchestrator",
+  "display_name": "Aura Orchestrator",
+  "when_to_use": "Front-line Aura chat agent. Handles direct replies and delegates only when a specialist can do the work better.",
+  "prompt_path": "prompt.md",
+  "tier": "chat",
+  "tools": {},
+  "subagents": [
+    {
+      "id": "summarizer"
+    }
+  ],
+  "max_iterations": 100,
+  "max_input_tokens": 32768,
+  "max_output_tokens": 8192,
+  "max_result_chars": 24000,
+  "inherit_identity": true,
+  "inherit_memory": true,
+  "inherit_safety": true,
+  "inherit_skills": true,
+  "inherit_profile": true
+}

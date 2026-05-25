@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/api"
@@ -15,6 +16,7 @@ import (
 	"github.com/aura/aura/internal/identity"
 	"github.com/aura/aura/internal/learning"
 	auraskills "github.com/aura/aura/internal/skills"
+	"github.com/aura/aura/internal/swarm"
 	"github.com/aura/aura/internal/telegram"
 )
 
@@ -175,10 +177,15 @@ func newRunTaskDeps(cfg *config.Config, deps *telegram.Deps) agent.RunTaskDeps {
 	if maxIterations <= 0 {
 		maxIterations = 100
 	}
+	var delegateRunner agentdef.DelegateRunner
+	if deps.SwarmMgr != nil {
+		delegateRunner = &swarm.ArchetypeRunner{Manager: deps.SwarmMgr, Registry: deps.AgentDefs}
+	}
 	return agent.RunTaskDeps{
 		LLM:               deps.LLM,
 		Tools:             deps.Tools,
 		AgentDefs:         deps.AgentDefs,
+		DelegateRunner:    delegateRunner,
 		Model:             cfg.LLMModel,
 		ReasoningEffort:   cfg.ReasoningEffort,
 		Logger:            deps.Logger,

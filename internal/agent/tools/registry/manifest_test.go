@@ -122,6 +122,21 @@ func TestRenderSplitManifest_AllDeferredNoAlwaysOnSection(t *testing.T) {
 	}
 }
 
+func TestRenderSplitManifest_DeduplicatesByName(t *testing.T) {
+	defs := []ToolDefinition{
+		makeSplitDef("search", "first description.", VisibilityActiveTurn),
+		makeSplitDef("search", "duplicate description.", VisibilityActiveTurn),
+		makeSplitDef("delegate_summarizer", "Delegate once.", VisibilityActiveTurn),
+	}
+	got := RenderSplitManifest(defs)
+	if strings.Count(got, "- search") != 1 {
+		t.Fatalf("search rendered more than once:\n%s", got)
+	}
+	if strings.Contains(got, "duplicate description") {
+		t.Fatalf("duplicate definition won over first definition:\n%s", got)
+	}
+}
+
 func TestRenderToolManifest_EmptyReturnsEmpty(t *testing.T) {
 	if got := RenderToolManifest(nil); got != "" {
 		t.Fatalf("nil defs: got %q", got)

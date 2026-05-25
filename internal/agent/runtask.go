@@ -33,6 +33,9 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 	}
 
 	maxIterations := deps.MaxIterations
+	if task.MaxIterations > 0 {
+		maxIterations = task.MaxIterations
+	}
 	if maxIterations <= 0 {
 		maxIterations = defaultMaxIterations
 	}

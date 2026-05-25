@@ -100,6 +100,7 @@ func RenderSplitManifest(defs []ToolDefinition) string {
 	if len(defs) == 0 {
 		return ""
 	}
+	defs = dedupToolDefinitions(defs)
 
 	active := make([]ToolDefinition, 0, len(defs))
 	deferred := make([]ToolDefinition, 0)
@@ -160,4 +161,22 @@ func ManifestTokenEstimate(manifest string) int {
 		return 0
 	}
 	return len(manifest) / 4
+}
+
+func dedupToolDefinitions(defs []ToolDefinition) []ToolDefinition {
+	if len(defs) < 2 {
+		return defs
+	}
+	out := make([]ToolDefinition, 0, len(defs))
+	seen := make(map[string]bool, len(defs))
+	for _, def := range defs {
+		name := strings.TrimSpace(def.Name)
+		if name == "" || seen[name] {
+			continue
+		}
+		def.Name = name
+		seen[name] = true
+		out = append(out, def)
+	}
+	return out
 }

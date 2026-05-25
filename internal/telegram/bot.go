@@ -27,6 +27,7 @@ import (
 	"github.com/aura/aura/internal/llm/pockettts"
 	auraskills "github.com/aura/aura/internal/skills"
 	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/swarm"
 
 	tele "gopkg.in/telebot.v4"
 )
@@ -191,6 +192,14 @@ func (b *Bot) AgentDefinitions() *agentdef.Registry {
 		return nil
 	}
 	return b.rt.agentDefs
+}
+
+// SwarmManager returns the delegation manager used by AGENTDEF delegate tools.
+func (b *Bot) SwarmManager() *swarm.Manager {
+	if b == nil || b.rt == nil {
+		return nil
+	}
+	return b.rt.swarmMgr
 }
 
 // WikiTOC returns the cached wiki TOC string for injection into the system prompt.
