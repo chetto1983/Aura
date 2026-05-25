@@ -211,6 +211,9 @@ func TestRunCreatesCurrentFreshSchema(t *testing.T) {
 	assertColumns(t, db, "api_tokens", []string{
 		"expires_at",
 	})
+	assertColumns(t, db, "conversations", []string{
+		"channel",
+	})
 	assertColumns(t, db, "proposed_updates", []string{
 		"category",
 		"related_slugs",
@@ -559,6 +562,7 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 	assertScalar(t, db, `SELECT COUNT(*) FROM pending_users WHERE user_id = 'user-2'`, 1)
 	assertScalar(t, db, `SELECT COUNT(*) FROM scheduled_tasks WHERE name = 'daily-review'`, 1)
 	assertScalar(t, db, `SELECT content FROM conversations WHERE chat_id = 1001 AND turn_index = 1`, "remember migration safety")
+	assertScalar(t, db, `SELECT channel FROM conversations WHERE chat_id = 1001 AND turn_index = 1`, "telegram")
 	assertScalar(t, db, `SELECT fact FROM proposed_updates WHERE target_slug = 'migration-tests'`, "Aura has migration tests")
 	assertScalar(t, db, `SELECT COUNT(*) FROM wiki_issues WHERE slug = 'migration-tests'`, 1)
 	assertScalar(t, db, `SELECT COUNT(*) FROM embedding_cache WHERE content_sha = 'sha-1'`, 1)
@@ -606,14 +610,67 @@ func TestRunUpgradesV302SchemaPreservesRowsAndIsIdempotent(t *testing.T) {
 			t.Fatalf("applied versions changed after rerun: first=%v second=%v", first, second)
 		}
 	}
-	if len(first) != 27 {
-		t.Fatalf("applied versions = %v, want 27 migrations", first)
+	if len(first) != len(Registered()) {
+		t.Fatalf("applied versions = %v, want %d migrations", first, len(Registered()))
 	}
 	for i, got := range first {
 		if want := i + 1; got != want {
-			t.Fatalf("applied versions = %v, want contiguous 1..26", first)
+			t.Fatalf("applied versions = %v, want contiguous 1..%d", first, len(Registered()))
 		}
 	}
+}
+
+func TestRunRepairsAppliedDatabaseMissingConversationChannel(t *testing.T) {
+	db := openTestDB(t)
+	ctx := context.Background()
+
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE schema_migrations (
+  version INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+CREATE TABLE conversations (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id           INTEGER NOT NULL,
+  user_id           INTEGER NOT NULL,
+  turn_index        INTEGER NOT NULL,
+  role              TEXT NOT NULL,
+  content           TEXT NOT NULL,
+  tool_calls        TEXT,
+  tool_call_id      TEXT,
+  llm_calls         INTEGER NOT NULL DEFAULT 0,
+  tool_calls_count  INTEGER NOT NULL DEFAULT 0,
+  elapsed_ms        INTEGER NOT NULL DEFAULT 0,
+  tokens_in         INTEGER NOT NULL DEFAULT 0,
+  tokens_out        INTEGER NOT NULL DEFAULT 0,
+  created_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(chat_id, turn_index)
+);
+INSERT INTO conversations (chat_id, user_id, turn_index, role, content)
+VALUES (1001, 2002, 1, 'user', 'preserve me');
+`); err != nil {
+		t.Fatalf("create applied drift schema: %v", err)
+	}
+	for _, migration := range Registered() {
+		if migration.Version >= 28 {
+			continue
+		}
+		if _, err := db.ExecContext(ctx,
+			`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, '2026-05-25T00:00:00Z')`,
+			migration.Version, migration.Name,
+		); err != nil {
+			t.Fatalf("insert applied migration %d: %v", migration.Version, err)
+		}
+	}
+
+	if err := Run(ctx, db); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	assertColumns(t, db, "conversations", []string{"channel"})
+	assertScalar(t, db, `SELECT channel FROM conversations WHERE chat_id = 1001 AND turn_index = 1`, "telegram")
+	assertScalar(t, db, `SELECT content FROM conversations WHERE chat_id = 1001 AND turn_index = 1`, "preserve me")
 }
 
 func TestChatQuestionsTableIsUsable(t *testing.T) {

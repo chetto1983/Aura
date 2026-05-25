@@ -10,6 +10,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/aura/aura/internal/agent/tools/attempts"
@@ -164,33 +166,37 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// from BOTH sources.
 	if a.deps.MemoryStore != nil && cfg.WorkspaceRoot != "" {
 		opsAbsPath := opsfile.AbsPath(cfg.WorkspaceRoot)
-		// Boot ingest: surface any lessons already in the file before the first turn.
-		if n, ingestErr := opsfile.IngestFromPath(context.Background(), opsAbsPath, a.deps.MemoryStore); ingestErr != nil {
-			logger.Warn("opsfile boot ingest failed", "error", ingestErr)
-		} else if n > 0 {
-			logger.Info("operational lessons file ingested at boot", "count", n, "path", opsAbsPath)
-		}
-		// File watcher: re-ingest whenever Aura writes to the file via the file tool.
-		opsWatcher, werr := mcp.New(mcp.Config{
-			Path:     opsAbsPath,
-			Debounce: 500 * time.Millisecond,
-			Callback: func() {
-				if n, ingestErr := opsfile.IngestFromPath(context.Background(), opsAbsPath, a.deps.MemoryStore); ingestErr != nil {
-					logger.Warn("opsfile re-ingest failed", "error", ingestErr)
-				} else if n > 0 {
-					logger.Info("operational lessons re-ingested", "count", n)
-				}
-			},
-			Logger: logger.With("component", "opsfile-watcher"),
-		})
-		if werr != nil {
-			logger.Warn("opsfile watcher unavailable", "error", werr)
+		if err := os.MkdirAll(filepath.Dir(opsAbsPath), 0o755); err != nil {
+			logger.Warn("opsfile parent directory unavailable", "path", filepath.Dir(opsAbsPath), "error", err)
 		} else {
-			a.startBg(func(ctx context.Context) {
-				if rerr := opsWatcher.Run(ctx); rerr != nil {
-					logger.Warn("opsfile watcher exited with error", "error", rerr)
-				}
+			// Boot ingest: surface any lessons already in the file before the first turn.
+			if n, ingestErr := opsfile.IngestFromPath(context.Background(), opsAbsPath, a.deps.MemoryStore); ingestErr != nil {
+				logger.Warn("opsfile boot ingest failed", "error", ingestErr)
+			} else if n > 0 {
+				logger.Info("operational lessons file ingested at boot", "count", n, "path", opsAbsPath)
+			}
+			// File watcher: re-ingest whenever Aura writes to the file via the file tool.
+			opsWatcher, werr := mcp.New(mcp.Config{
+				Path:     opsAbsPath,
+				Debounce: 500 * time.Millisecond,
+				Callback: func() {
+					if n, ingestErr := opsfile.IngestFromPath(context.Background(), opsAbsPath, a.deps.MemoryStore); ingestErr != nil {
+						logger.Warn("opsfile re-ingest failed", "error", ingestErr)
+					} else if n > 0 {
+						logger.Info("operational lessons re-ingested", "count", n)
+					}
+				},
+				Logger: logger.With("component", "opsfile-watcher"),
 			})
+			if werr != nil {
+				logger.Warn("opsfile watcher unavailable", "error", werr)
+			} else {
+				a.startBg(func(ctx context.Context) {
+					if rerr := opsWatcher.Run(ctx); rerr != nil {
+						logger.Warn("opsfile watcher exited with error", "error", rerr)
+					}
+				})
+			}
 		}
 	}
 	// AgentNoteTool — per-conversation scratchpad for working memory (Phase-P, capability #4).
