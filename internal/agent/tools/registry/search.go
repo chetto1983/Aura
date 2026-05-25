@@ -22,6 +22,7 @@ import (
 //   - action=subgraph   - query-seeded wiki subgraph capsule
 //   - action=path       - shortest path between two wiki slugs
 //   - action=diff       - graph changes since a git ref or timestamp
+//   - action=surprises  - non-obvious wiki graph edges
 type SearchTool struct {
 	searchMem         *SearchMemoryTool
 	wikiReader        wiki.PageReader
@@ -32,6 +33,7 @@ type SearchTool struct {
 	wikiPath          *WikiPathTool
 	wikiSubgraph      *WikiSubgraphTool
 	wikiDiff          *WikiDiffTool
+	wikiSurprises     *WikiSurprisesTool
 }
 
 // NewSearchTool wires the unified search tool. Returns nil when all three
@@ -67,6 +69,7 @@ func (t *SearchTool) WithRecallAndGraphActions(
 	wikiPath *WikiPathTool,
 	wikiSubgraph *WikiSubgraphTool,
 	wikiDiff *WikiDiffTool,
+	wikiSurprises *WikiSurprisesTool,
 ) *SearchTool {
 	if t == nil {
 		return nil
@@ -76,6 +79,7 @@ func (t *SearchTool) WithRecallAndGraphActions(
 	t.wikiPath = wikiPath
 	t.wikiSubgraph = wikiSubgraph
 	t.wikiDiff = wikiDiff
+	t.wikiSurprises = wikiSurprises
 	return t
 }
 
@@ -108,8 +112,9 @@ EXAMPLES:
   search({"action":"subgraph","query":"robot calibration","depth":2,"budget_tokens":1500})
   search({"action":"path","from_slug":"robot","to_slug":"frame","max_hops":5})
   search({"action":"diff","since":"HEAD~1"})
+  search({"action":"surprises","top_k":5})
 
-action REQUIRED; valid: "search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff".
+action REQUIRED; valid: "search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "surprises".
 
 Per-action required:
   - search -> query
@@ -121,6 +126,7 @@ Per-action required:
   - subgraph -> query
   - path -> from_slug and to_slug
   - diff -> nothing (since optional timestamp/ref/hash)
+  - surprises -> nothing (top_k optional)
 
 Optional: zone ("wiki"/"source"/"all"), top_k, limit, depth, budget_tokens, max_hops, since.`
 }
@@ -133,8 +139,8 @@ func (t *SearchTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"action": map[string]any{
 				"type":        "string",
-				"enum":        []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff"},
-				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (fetch body), lessons (operational lessons), user_facts (user memory), god_nodes (top real-entity wiki hubs; operational/uncategorized hubs filtered out), subgraph (query-seeded graph capsule), path (shortest wiki path), diff (wiki graph changes since a git ref or timestamp).",
+				"enum":        []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "surprises"},
+				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (fetch body), lessons (operational lessons), user_facts (user memory), god_nodes (top real-entity wiki hubs; operational/uncategorized hubs filtered out), subgraph (query-seeded graph capsule), path (shortest wiki path), diff (wiki graph changes), surprises (non-obvious graph edges).",
 			},
 			"query": map[string]any{
 				"type":        "string",
@@ -219,6 +225,7 @@ func (t *SearchTool) Parameters() map[string]any {
 			{Name: "subgraph", RequiredKeys: []string{"query"}},
 			{Name: "path", RequiredKeys: []string{"from_slug", "to_slug"}},
 			{Name: "diff", RequiredKeys: nil},
+			{Name: "surprises", RequiredKeys: nil},
 		}),
 		"examples": []any{
 			map[string]any{"action": "search", "query": "corso base robot", "top_k": 6},
@@ -232,18 +239,20 @@ func (t *SearchTool) Parameters() map[string]any {
 			map[string]any{"action": "subgraph", "query": "robot calibration", "depth": 2, "budget_tokens": 1500},
 			map[string]any{"action": "path", "from_slug": "robot", "to_slug": "frame", "max_hops": 5},
 			map[string]any{"action": "diff", "since": "HEAD~1"},
+			map[string]any{"action": "surprises", "top_k": 5},
 		},
 	}
 }
 
 var (
-	searchToolValidActions = []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff"}
+	searchToolValidActions = []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "surprises"}
 	searchToolActionHints  = []ActionHint{
 		{Name: "search", RequiredKeys: []string{"query"}},
 		{Name: "read", RequiredKeys: []string{"slug"}},
 		{Name: "subgraph", RequiredKeys: []string{"query"}},
 		{Name: "path", RequiredKeys: []string{"from_slug", "to_slug"}},
 		{Name: "diff", RequiredKeys: nil},
+		{Name: "surprises", RequiredKeys: nil},
 	}
 )
 
@@ -271,6 +280,8 @@ func (t *SearchTool) Execute(ctx context.Context, args map[string]any) (string, 
 		return t.doPath(ctx, args)
 	case "diff":
 		return t.doDiff(ctx, args)
+	case "surprises":
+		return t.doSurprises(ctx, args)
 	case "":
 		return "", ActionRequiredError("search", searchToolValidActions, args, searchToolActionHints, "search")
 	default:
@@ -412,6 +423,13 @@ func (t *SearchTool) doDiff(ctx context.Context, args map[string]any) (string, e
 		return "", fmt.Errorf("search diff: wiki graph unavailable")
 	}
 	return t.wikiDiff.Execute(ctx, searchDelegateArgs(args, "since"))
+}
+
+func (t *SearchTool) doSurprises(ctx context.Context, args map[string]any) (string, error) {
+	if t.wikiSurprises == nil {
+		return "", fmt.Errorf("search surprises: wiki graph unavailable")
+	}
+	return t.wikiSurprises.Execute(ctx, searchDelegateArgs(args, "top_k"))
 }
 
 // readWikiPage returns JSON {slug, title, body, frontmatter} for a wiki page.
