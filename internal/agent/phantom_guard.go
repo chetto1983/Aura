@@ -71,22 +71,27 @@ type PhantomCorrector interface {
 //	                  When the model legitimately references a tool it already called,
 //	                  no phantom. When it references one it didn't, phantom.
 //
-// Live-debug fix (2026-05-13): the original detector
-// false-positived on didactic explanations — when the model explains how
-// it works ("Chiamo `wiki_page(action='append')`"), the tool name appears
-// in the prose but the model is not claiming to have executed anything.
-// The injected system correction lobotomized those replies in violation
-// of feedback_no_regex_for_nlp. Two heuristics reduce the false-positive
-// rate without losing the real phantom-claim signal:
+// Detection grounds in two structural signals only:
 //
-//  1. Strip code fences (``` blocks) and inline backticks before scanning.
-//     Tool names inside `code` markup are virtually always didactic —
-//     never paired with a real performative claim.
-//  2. Require a performative first-person past-tense verb near the tool
-//     name. The set of verbs is small + bilingual (Italian + English)
-//     because Aura's prompt is bilingual; coverage for other languages
-//     means a future user explaining in French/Spanish won't trigger,
-//     which is the right default (safer to skip than over-correct).
+//  1. The tool name appears as a bare word OUTSIDE code markup (` ` ` or
+//     ``` ``` ``` ```), since tool names inside code blocks are virtually
+//     always didactic references, never performative claims.
+//  2. The tool was NOT invoked anywhere in this turn (ground truth via
+//     the tool registry + calledThisTurn map).
+//
+// The previous version stacked a bilingual past-tense verb dictionary
+// on top of these signals to reduce false positives on didactic /
+// descriptive / future-tense prose. That dictionary was removed
+// 2026-05-25 per feedback_no_regex_for_nlp: hardcoded NL token lists
+// are the same fragile anti-pattern as regex on prose (language
+// coverage, paraphrase, tense). The trade-off: this version fires
+// MORE OFTEN on benign descriptive mentions ("wiki_page è il tool per
+// salvare"), which trigger a forced retry asking the model to either
+// invoke or retract. The cost of a false positive is one extra LLM
+// round; the cost of a false negative was a phantom claim shipped to
+// the user. The user-facing failure was the worse direction, and a
+// structural fix grounded in registry presence + code-markup scrubbing
+// is more honest than a bilingual verb list.
 func (g *PhantomToolGuard) LooksPhantom(content string, hasCallsInResp bool, calledThisTurn map[string]bool) bool {
 	if g == nil || g.ToolNamesFn == nil || hasCallsInResp {
 		return false
@@ -95,8 +100,6 @@ func (g *PhantomToolGuard) LooksPhantom(content string, hasCallsInResp bool, cal
 	if len(content) < g.minContent() {
 		return false
 	}
-	// Strip backticked / fenced spans before matching — those are
-	// didactic code references, never performative claims.
 	scrubbed := stripCodeMarkup(content)
 	scrubbedLower := strings.ToLower(scrubbed)
 	for _, name := range g.ToolNamesFn() {
@@ -106,29 +109,39 @@ func (g *PhantomToolGuard) LooksPhantom(content string, hasCallsInResp bool, cal
 		if calledThisTurn[name] {
 			continue
 		}
-		lname := strings.ToLower(name)
-		// Two signals must align: (a) the tool name appears as a bare
-		// word outside code markup AND (b) a past-tense first-person
-		// performative verb appears within the proximity window before
-		// the tool name. Both signals together = "I did X with tool" —
-		// a phantom claim. Either alone is fine: didactic ("you can use
-		// wiki_page to save things"), descriptive ("ho cercato online"
-		// without naming a tool), or prospective ("se vuoi salvo con
-		// wiki_page" — claim is in the future tense).
-		if hasPerformativeNear(scrubbedLower, lname, performativeWindow) {
+		if mentionsToolBareWord(scrubbedLower, strings.ToLower(name)) {
 			return true
 		}
 	}
 	return false
 }
 
-// performativeWindow is the character distance (looking backwards from
-// the tool name occurrence) within which we require a performative verb
-// to consider the mention a phantom claim. 120 chars ≈ one clause in
-// Italian or English — wide enough for "Ho schedulato il task per ..."
-// but narrow enough that "ho cercato online" at the start of a paragraph
-// won't pair with a "wiki_page" mention 500 chars later.
-const performativeWindow = 120
+// mentionsToolBareWord reports whether needle appears as a bare word
+// (word-boundary on both sides) anywhere in contentLower. Pre-lowercased
+// input. Replaces the old hasPerformativeNear that required a bilingual
+// verb to appear nearby — see LooksPhantom docstring for the rationale.
+func mentionsToolBareWord(contentLower, needle string) bool {
+	if needle == "" {
+		return false
+	}
+	rest := contentLower
+	cursor := 0
+	for {
+		i := strings.Index(rest, needle)
+		if i < 0 {
+			return false
+		}
+		absIdx := cursor + i
+		left := absIdx == 0 || !isWordChar(contentLower[absIdx-1])
+		end := absIdx + len(needle)
+		right := end == len(contentLower) || !isWordChar(contentLower[end])
+		if left && right {
+			return true
+		}
+		rest = rest[i+1:]
+		cursor = absIdx + 1
+	}
+}
 
 // stripCodeMarkup removes triple-backtick fenced blocks and single-backtick
 // inline spans so tool names appearing only as didactic code references
@@ -165,82 +178,6 @@ func stripCodeMarkup(s string) string {
 		i++
 	}
 	return b.String()
-}
-
-// hasPerformativeNear reports whether the tool name appears as a bare word
-// in contentLower AND a past-tense first-person performative verb appears
-// within `window` characters BEFORE that occurrence. Pre-lowercased input.
-//
-// Why "before only" and not "around": a real claim in natural prose is
-// "<verb> ... <tool name>" — the verb sets up the action, the tool name
-// names the instrument. The reverse ("<tool name> ... <verb>") is much
-// more often descriptive: "wiki_page is the tool I used yesterday" reads
-// as descriptive even though all the same words are present.
-//
-// Why proximity at all: without it, a single performative verb anywhere
-// in a long reply lights up every tool mention as phantom — including
-// mentions in legitimate prospective or descriptive context elsewhere
-// in the same message. Live debugging on a 5-iteration agent run on
-// 2026-05-13 caught exactly this regression.
-func hasPerformativeNear(contentLower, needle string, window int) bool {
-	if needle == "" {
-		return false
-	}
-	rest := contentLower
-	cursor := 0
-	for {
-		i := strings.Index(rest, needle)
-		if i < 0 {
-			return false
-		}
-		absIdx := cursor + i
-		// Word-boundary check on the needle.
-		left := absIdx == 0 || !isWordChar(contentLower[absIdx-1])
-		end := absIdx + len(needle)
-		right := end == len(contentLower) || !isWordChar(contentLower[end])
-		if left && right {
-			// Look back `window` chars for a performative verb.
-			from := absIdx - window
-			if from < 0 {
-				from = 0
-			}
-			lookback := contentLower[from:absIdx]
-			for _, verb := range performativeVerbs {
-				if strings.Contains(lookback, verb) {
-					return true
-				}
-			}
-		}
-		rest = rest[i+1:]
-		cursor = absIdx + 1
-	}
-}
-
-// performativeVerbs is the bilingual past-tense first-person verb list
-// used by hasPerformativeNear. Kept narrow on purpose — we'd rather miss
-// a phantom than fire on a normal explanation.
-var performativeVerbs = []string{
-	// Italian past-tense first-person + auxiliary
-	"ho schedulato", "ho chiamato", "ho invocato", "ho eseguito",
-	"ho creato", "ho salvato", "ho aggiunto", "ho scritto",
-	"ho letto", "ho cercato", "ho cancellato", "ho rimosso",
-	"ho fatto", "ho usato", "ho compilato", "ho aggiornato",
-	"ho lanciato", "ho avviato", "ho processato",
-	// Italian colloquial participle-led (clause start: "Eseguito X",
-	// "Schedulato X" — idiomatic post-action shorthand)
-	"eseguito ", "schedulato ", "salvato ", "creato ", "lanciato ",
-	"chiamato ", "invocato ", "aggiunto ", "fatto ", "rimosso ",
-	"cancellato ", "aggiornato ", "compilato ", "avviato ",
-	// English past-tense / present perfect
-	"i scheduled", "i called", "i invoked", "i executed",
-	"i created", "i saved", "i added", "i wrote", "i read",
-	"i searched", "i deleted", "i removed", "i ran", "i did",
-	"i used", "i compiled", "i updated", "i launched",
-	"i started", "i processed",
-	"i've scheduled", "i've called", "i've invoked", "i've executed",
-	"i've created", "i've saved", "i've added", "i've written",
-	"i've used", "i've updated",
-	"just scheduled", "just called", "just ran",
 }
 
 // CorrectionText returns the user-side message injected when phantom

@@ -93,7 +93,8 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 			wantPhantom:    true,
 		},
 
-		// --- Wave 2.10.b regression guards (live-debug 2026-05-13):
+		// --- Code-markup stripping still protects didactic mentions
+		// inside backticks / fenced blocks. Those NEVER fire.
 		{
 			name:        "didactic — tool name inside backticks (no claim)",
 			content:     "Ecco come funziono: di solito chiamo `wiki_page` quando devo salvare una pagina, e `task` per gli scheduling. È tutto qui, niente di magico.",
@@ -104,18 +105,24 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 			content:     "Il flow è questo:\n\n```\n1. Chiamo wiki_page(action=\"append\", ...)\n2. Aggiorno l'indice\n```\n\nFammi sapere se vuoi più dettagli.",
 			wantPhantom: false,
 		},
-		{
-			name:        "descriptive — present-tense how-it-works (no past claim)",
-			content:     "In genere chiamo wiki_page solo quando l'utente conferma. Non lo invoco mai per esempi ipotetici. Funziona così da sempre.",
-			wantPhantom: false,
-		},
-		{
-			name:        "descriptive — future-tense plan (no past claim yet)",
-			content:     "Adesso ti chiamo wiki_page per aggiornare la pagina, poi tornerò qui con il risultato.",
-			wantPhantom: false,
-		},
 
-		// --- Wave 2.10.b: real-claim path still fires when both signals align
+		// --- 2026-05-25 contract change: bilingual verb dictionary
+		// removed per feedback_no_regex_for_nlp. Tool name outside
+		// code markup + not called this turn now fires regardless of
+		// tense or framing. The trade-off is documented in
+		// LooksPhantom: false positive cost is one extra LLM round
+		// asking the model to invoke or retract; false negative cost
+		// was a phantom claim shipped to the user.
+		{
+			name:        "descriptive bare mention fires — model asked to invoke or retract",
+			content:     "In genere chiamo wiki_page solo quando l'utente conferma. Non lo invoco mai per esempi ipotetici. Funziona così da sempre.",
+			wantPhantom: true,
+		},
+		{
+			name:        "future-tense bare mention fires — model asked to invoke or retract",
+			content:     "Adesso ti chiamo wiki_page per aggiornare la pagina, poi tornerò qui con il risultato.",
+			wantPhantom: true,
+		},
 		{
 			name:        "real claim — italian past-tense performative + bare tool name",
 			content:     "Ho schedulato il reminder con task, è in coda per le 17 di oggi.",
@@ -126,25 +133,23 @@ func TestPhantomToolGuard_LooksPhantom(t *testing.T) {
 			content:     "I just called search_memory to pull the related pages — found three matches.",
 			wantPhantom: true,
 		},
-
-		// --- Wave 2.10.b: proximity check (live-debug 2026-05-13)
 		{
-			name: "mixed — past claim about A, prospective about B (out of proximity window)",
+			name: "long reply with single bare tool mention still fires",
 			content: "Ho cercato online le ultime informazioni e le ho già raccolte. " +
 				"Se vuoi posso anche salvarle nella tua knowledge base, dimmi te. " +
 				"Se confermi, userò wiki_page per scriverle nella pagina dedicata. " +
 				"In ogni caso, ecco il riassunto.",
 			calledThisTurn: map[string]bool{},
-			wantPhantom:    false,
+			wantPhantom:    true,
 		},
 		{
-			name:           "mixed — past claim ABOUT a tool that WAS called (no phantom)",
+			name:           "tool name in prose but tool WAS called this turn — no phantom (ground truth wins)",
 			content:        "Ho cercato online con search_memory e trovato tre pagine pertinenti. Eccole.",
 			calledThisTurn: map[string]bool{"search_memory": true},
 			wantPhantom:    false,
 		},
 		{
-			name: "in-proximity claim about an UNcalled tool (real phantom, far-paragraph other claim does not save us)",
+			name: "in-proximity claim about an UNcalled tool (real phantom case)",
 			content: "Buongiorno Davide.\n\nPer il primo punto, devo dire che ti ho già aggiornato la dashboard. " +
 				"Per il secondo, è una cosa che richiede un attimo di lavoro. " +
 				"Ho schedulato il task reminder-X per ricordartelo domani alle 9.",
