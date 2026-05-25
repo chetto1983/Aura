@@ -1,6 +1,9 @@
 package wiki
 
-import "sort"
+import (
+	"slices"
+	"sort"
+)
 
 // GodNode is a degree-centrality snapshot for one wiki page. The degree
 // counts are computed from the in-memory GraphIndex — no disk scan.
@@ -13,11 +16,57 @@ type GodNode struct {
 	TotalDegree int
 }
 
+// NodeSkipFunc decides whether a node should be excluded from a ranked
+// degree-centrality view. Returning true skips the node before topK
+// trimming so the caller still receives a full top-K window. Pass nil
+// to disable filtering (raw graph behavior).
+type NodeSkipFunc func(slug string, meta NodeMeta) bool
+
+// IsAuxiliaryHubNode reports whether a slug is an auto-generated or
+// operational page that should not surface in a god-node ranking.
+// Mirrors graphify analyze.py _is_file_node + _is_concept_node intent:
+// these nodes are connected by construction rather than because they
+// represent meaningful abstractions.
+//
+// Filters:
+//   - operational slugs (index, log, schema) — auto-generated catalogs
+//   - category "uncategorized" — the rebuild emits a uncategorized.md
+//     hub that links every orphan page
+//   - frontmatter tag "hub" — explicit "I am a hub" marker
+//   - empty Title — placeholder / never-written pages that survive as
+//     dangling [[link]] targets
+func IsAuxiliaryHubNode(slug string, meta NodeMeta) bool {
+	if IsOperationalSlug(slug) {
+		return true
+	}
+	if meta.Category == "uncategorized" {
+		return true
+	}
+	if slices.Contains(meta.Tags, "hub") {
+		return true
+	}
+	if meta.Title == "" {
+		return true
+	}
+	return false
+}
+
 // TopByDegree returns up to topK nodes ranked by TotalDegree (InDegree +
 // OutDegree) descending. Ties are broken alphabetically by slug for
 // deterministic output. Returns nil when g is nil or topK ≤ 0. Returns
 // all nodes when topK exceeds NodeCount.
+//
+// This is the raw graph view — operational slugs and auto-generated hubs
+// are included. Use TopByDegreeFiltered with IsAuxiliaryHubNode for the
+// user-facing god-node list.
 func (g *GraphIndex) TopByDegree(topK int) []GodNode {
+	return g.TopByDegreeFiltered(topK, nil)
+}
+
+// TopByDegreeFiltered returns up to topK nodes ranked by TotalDegree, with
+// skip applied BEFORE the topK trim so callers receive a full window of
+// non-skipped nodes. Pass nil skip to fall back to TopByDegree's raw view.
+func (g *GraphIndex) TopByDegreeFiltered(topK int, skip NodeSkipFunc) []GodNode {
 	if g == nil || topK <= 0 {
 		return nil
 	}
@@ -29,6 +78,9 @@ func (g *GraphIndex) TopByDegree(topK int) []GodNode {
 	}
 	nodes := make([]GodNode, 0, len(g.meta))
 	for slug, m := range g.meta {
+		if skip != nil && skip(slug, m) {
+			continue
+		}
 		in := len(g.inbound[slug])
 		out := len(g.outbound[slug])
 		nodes = append(nodes, GodNode{
@@ -39,6 +91,9 @@ func (g *GraphIndex) TopByDegree(topK int) []GodNode {
 			OutDegree:   out,
 			TotalDegree: in + out,
 		})
+	}
+	if len(nodes) == 0 {
+		return nil
 	}
 	sort.Slice(nodes, func(i, j int) bool {
 		if nodes[i].TotalDegree != nodes[j].TotalDegree {
@@ -53,13 +108,15 @@ func (g *GraphIndex) TopByDegree(topK int) []GodNode {
 }
 
 // TopNodes returns the top-K wiki pages by degree centrality from the
-// in-memory graph index. Returns nil when the store has no graph index
-// or topK ≤ 0.
+// in-memory graph index, filtered to user-facing entities (operational
+// catalogs, hub pages, and the auto-generated uncategorized hub are
+// excluded). Returns nil when the store has no graph index, topK ≤ 0,
+// or every node was filtered out.
 func (s *Store) TopNodes(topK int) []GodNode {
 	if s == nil || s.graphIndex == nil {
 		return nil
 	}
-	return s.graphIndex.TopByDegree(topK)
+	return s.graphIndex.TopByDegreeFiltered(topK, IsAuxiliaryHubNode)
 }
 
 // WikiPath returns the shortest undirected path between two page slugs,

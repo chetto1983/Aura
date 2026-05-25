@@ -130,3 +130,130 @@ func TestTopByDegree_TopKClamping(t *testing.T) {
 		t.Errorf("topK=1 (<nodeCount): len=%d, want 1", len(got))
 	}
 }
+
+// TestIsAuxiliaryHubNode covers the four classes the filter must reject
+// and the two it must accept (real entities + categorised concept pages
+// without the hub tag).
+func TestIsAuxiliaryHubNode(t *testing.T) {
+	cases := []struct {
+		name string
+		slug string
+		meta NodeMeta
+		want bool
+	}{
+		{"operational index", "index", NodeMeta{Title: "Wiki Index"}, true},
+		{"operational log", "log", NodeMeta{Title: "Log"}, true},
+		{"operational schema", "schema", NodeMeta{Title: "Schema"}, true},
+		{"category uncategorized", "uncategorized", NodeMeta{Title: "Uncategorized", Category: "uncategorized"}, true},
+		{"tag hub on real slug", "design-system", NodeMeta{Title: "Design System", Tags: []string{"hub", "design"}}, true},
+		{"empty title placeholder", "ghost", NodeMeta{}, true},
+		{"real entity person", "davide-marchetto", NodeMeta{Title: "Davide Marchetto", Category: "entity"}, false},
+		{"concept page", "robot", NodeMeta{Title: "Robot", Category: "concept"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := IsAuxiliaryHubNode(tc.slug, tc.meta); got != tc.want {
+				t.Errorf("IsAuxiliaryHubNode(%q, %+v) = %v, want %v", tc.slug, tc.meta, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTopByDegreeFiltered_SkipsAuxiliaryHubs builds a graph where the
+// auto-generated hubs are the highest-degree nodes (the realistic shape:
+// index.md links every page, uncategorized.md links every orphan) and
+// asserts the filter surfaces real entities instead.
+func TestTopByDegreeFiltered_SkipsAuxiliaryHubs(t *testing.T) {
+	pages := map[string]*Page{
+		"index": {
+			Title: "Wiki Index",
+			Body:  "[[davide-marchetto]] [[robot]] [[calandra]] [[albatech]]",
+		},
+		"uncategorized": {
+			Title:    "Uncategorized",
+			Category: "uncategorized",
+			Body:     "[[davide-marchetto]] [[robot]]",
+		},
+		"davide-marchetto": {
+			Title:    "Davide Marchetto",
+			Category: "entity",
+			Body:     "Person profile. Linked to [[robot]] and [[albatech]].",
+		},
+		"robot":    {Title: "Robot", Category: "concept", Body: "[[calandra]]"},
+		"calandra": {Title: "Calandra", Category: "concept"},
+		"albatech": {Title: "Albatech", Category: "entity"},
+	}
+	g := makeGodNodeIndex(pages)
+
+	// Raw view includes index + uncategorized hubs.
+	raw := g.TopByDegree(10)
+	if len(raw) != 6 {
+		t.Fatalf("raw len=%d, want 6 (all nodes)", len(raw))
+	}
+	rawTop := raw[0].Slug
+	if rawTop != "index" && rawTop != "davide-marchetto" {
+		t.Errorf("raw top=%q, want one of [index, davide-marchetto] (highest degree)", rawTop)
+	}
+
+	// Filtered view must drop both hubs.
+	filtered := g.TopByDegreeFiltered(10, IsAuxiliaryHubNode)
+	for _, n := range filtered {
+		if n.Slug == "index" || n.Slug == "uncategorized" {
+			t.Errorf("filter leaked hub %q: %+v", n.Slug, filtered)
+		}
+	}
+	if len(filtered) != 4 {
+		t.Fatalf("filtered len=%d, want 4 (real entities only)", len(filtered))
+	}
+	// davide-marchetto inbound: index, uncategorized, davide body → 3
+	// davide-marchetto outbound: robot, albatech → 2 → total 5, top.
+	if filtered[0].Slug != "davide-marchetto" {
+		t.Errorf("filtered top=%q, want davide-marchetto", filtered[0].Slug)
+	}
+}
+
+// TestTopByDegreeFiltered_FullWindowAfterFilter asserts that the topK
+// trim happens AFTER skip so the caller still receives topK real hits
+// when the graph contains many auxiliary hubs.
+func TestTopByDegreeFiltered_FullWindowAfterFilter(t *testing.T) {
+	pages := map[string]*Page{
+		"index":         {Title: "Wiki Index", Body: "[[a]] [[b]] [[c]] [[d]] [[e]]"},
+		"uncategorized": {Title: "Uncategorized", Category: "uncategorized", Body: "[[a]]"},
+		"hub-design":    {Title: "Design Hub", Tags: []string{"hub"}, Body: "[[a]] [[b]]"},
+		"a":             {Title: "A", Category: "entity"},
+		"b":             {Title: "B", Category: "entity"},
+		"c":             {Title: "C", Category: "entity"},
+		"d":             {Title: "D", Category: "entity"},
+		"e":             {Title: "E", Category: "entity"},
+	}
+	g := makeGodNodeIndex(pages)
+	filtered := g.TopByDegreeFiltered(3, IsAuxiliaryHubNode)
+	if len(filtered) != 3 {
+		t.Fatalf("filtered len=%d, want 3 (full window after filter)", len(filtered))
+	}
+	for _, n := range filtered {
+		if IsAuxiliaryHubNode(n.Slug, NodeMeta{Slug: n.Slug, Title: n.Title, Category: n.Category}) {
+			t.Errorf("auxiliary hub %q leaked into filtered top-K", n.Slug)
+		}
+	}
+}
+
+// TestTopByDegreeFiltered_NilSkipFallsBack asserts that passing nil skip
+// is equivalent to the raw TopByDegree view.
+func TestTopByDegreeFiltered_NilSkipFallsBack(t *testing.T) {
+	pages := map[string]*Page{
+		"index": {Title: "Wiki Index", Body: "[[a]]"},
+		"a":     {Title: "A"},
+	}
+	g := makeGodNodeIndex(pages)
+	raw := g.TopByDegree(10)
+	viaFiltered := g.TopByDegreeFiltered(10, nil)
+	if len(raw) != len(viaFiltered) {
+		t.Fatalf("nil skip len mismatch: raw=%d filtered=%d", len(raw), len(viaFiltered))
+	}
+	for i := range raw {
+		if raw[i].Slug != viaFiltered[i].Slug {
+			t.Errorf("nil skip rank %d: raw=%q filtered=%q", i, raw[i].Slug, viaFiltered[i].Slug)
+		}
+	}
+}

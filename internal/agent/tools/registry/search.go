@@ -129,7 +129,7 @@ func (t *SearchTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path"},
-				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (fetch body), lessons (operational lessons), user_facts (user memory), god_nodes (top wiki hubs), subgraph (query-seeded graph capsule), path (shortest wiki path).",
+				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (fetch body), lessons (operational lessons), user_facts (user memory), god_nodes (top real-entity wiki hubs — operational/uncategorized hubs filtered out), subgraph (query-seeded graph capsule), path (shortest wiki path).",
 			},
 			"query": map[string]any{
 				"type":        "string",
