@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -22,8 +21,6 @@ const (
 	DefaultPostTurnFailureThreshold = 2
 	DefaultPostTurnRecentTurns      = 10
 )
-
-var userNegativePattern = regexp.MustCompile(`(?i)^\s*(no|non|stop|smetti|sbagliato|wrong|fermati)\b`)
 
 // PostTurnConfig wires optional post-turn hooks into one agent invocation.
 // Hooks are intentionally best-effort: they may learn from the turn, but must
@@ -155,27 +152,17 @@ func (h HeuristicPostTurnHook) Apply(ctx context.Context, turn TurnRecord, store
 		}
 	}
 
-	if userNegativePattern.MatchString(turn.UserMessage) && turn.PreviousTurnHadToolCall {
-		tool := "previous_tool_call"
-		if len(turn.PreviousToolNames) > 0 && strings.TrimSpace(turn.PreviousToolNames[0]) != "" {
-			tool = strings.TrimSpace(turn.PreviousToolNames[0])
-		}
-		payload := postTurnLessonPayload{
-			Tool:                 tool,
-			Cause:                "user_negative_feedback",
-			WouldHavePreventedBy: "Pause and ask for correction before repeating the previous tool path.",
-			Scope:                "turn_feedback",
-			EvidenceRunIDs:       nonEmptyStrings(turn.RunID),
-		}
-		signature := postTurnSignature("user_negative", turn.RunID, tool)
-		if _, ok := written[signature]; !ok {
-			if err := writePostTurnLesson(ctx, store, signature, tool, "user_negative_feedback", payload); err != nil {
-				errs = append(errs, err)
-			} else {
-				logger.Info("posthook: operational lesson written", "trigger", "user_negative", "tool", tool)
-			}
-		}
-	}
+	// 2026-05-25: removed the userNegativePattern regex (matched
+	// "no|non|stop|smetti|sbagliato|wrong|fermati" at start of message).
+	// Per feedback_no_regex_for_nlp: hardcoded NL keyword sets are the
+	// same fragile anti-pattern as regex on prose — IT+EN coverage only,
+	// brittle on paraphrase ("non è quello che volevo"), no signal on
+	// sarcasm or implicit correction. The n_failure trigger above is
+	// the structurally-grounded path for learning from user feedback
+	// (operational lesson written when ≥ N tool calls in the same class
+	// fail). Explicit user negation should re-enter this hook only when
+	// surfaced via a structured channel (e.g. a thumbs-down reaction
+	// emoji or a /stop slash command) — not by parsing message prose.
 
 	return errs
 }
@@ -398,12 +385,3 @@ func postTurnSignature(parts ...string) string {
 	return hex.EncodeToString(sum[:8])
 }
 
-func nonEmptyStrings(values ...string) []string {
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if trimmed := strings.TrimSpace(value); trimmed != "" {
-			out = append(out, trimmed)
-		}
-	}
-	return out
-}

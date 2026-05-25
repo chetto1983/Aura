@@ -152,38 +152,31 @@ func TestHeuristicPostTurnHookNFailureCases(t *testing.T) {
 	}
 }
 
-func TestHeuristicPostTurnHookUserNegativeCases(t *testing.T) {
-	tests := []struct {
-		name     string
-		turn     TurnRecord
-		wantDocs int
-	}{
-		{
-			name:     "negative with previous tool writes",
-			turn:     TurnRecord{RunID: "run-neg", UserMessage: "no, sbagliato", PreviousTurnHadToolCall: true, PreviousToolNames: []string{"web_fetch"}},
-			wantDocs: 1,
-		},
-		{
-			name:     "negative without previous tool does not write",
-			turn:     TurnRecord{RunID: "run-neg", UserMessage: "wrong result", PreviousTurnHadToolCall: false},
-			wantDocs: 0,
-		},
-		{
-			name:     "non-negative with previous tool does not write",
-			turn:     TurnRecord{RunID: "run-neg", UserMessage: "ok continua", PreviousTurnHadToolCall: true, PreviousToolNames: []string{"web_fetch"}},
-			wantDocs: 0,
-		},
+// TestHeuristicPostTurnHookIgnoresUserMessageProse asserts the
+// 2026-05-25 contract: the hook NEVER classifies a turn as
+// "user_negative_feedback" by parsing UserMessage prose. The previous
+// userNegativePattern regex (`(?i)^\s*(no|non|stop|smetti|sbagliato|wrong|fermati)\b`)
+// was removed per feedback_no_regex_for_nlp. Negative-feedback learning
+// re-enters this hook only when a structured signal lands (reaction
+// emoji or /stop slash command); until then, the n_failure trigger is
+// the only operational-lesson path that fires.
+func TestHeuristicPostTurnHookIgnoresUserMessageProse(t *testing.T) {
+	cases := []TurnRecord{
+		{RunID: "run-a", UserMessage: "no, sbagliato", PreviousTurnHadToolCall: true, PreviousToolNames: []string{"web_fetch"}},
+		{RunID: "run-b", UserMessage: "wrong result", PreviousTurnHadToolCall: true, PreviousToolNames: []string{"web_fetch"}},
+		{RunID: "run-c", UserMessage: "stop fermati", PreviousTurnHadToolCall: true, PreviousToolNames: []string{"web_fetch"}},
+		{RunID: "run-d", UserMessage: "ok continua", PreviousTurnHadToolCall: true, PreviousToolNames: []string{"web_fetch"}},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, turn := range cases {
+		t.Run(turn.UserMessage, func(t *testing.T) {
 			store := openPostHookStore(t)
 			hook := HeuristicPostTurnHook{}
-			errs := hook.Apply(context.Background(), tt.turn, store)
+			errs := hook.Apply(context.Background(), turn, store)
 			if len(errs) > 0 {
 				t.Fatalf("Apply errors = %v", errs)
 			}
-			if got := len(fetchOperationalDocs(t, store)); got != tt.wantDocs {
-				t.Fatalf("operational docs = %d, want %d", got, tt.wantDocs)
+			if got := len(fetchOperationalDocs(t, store)); got != 0 {
+				t.Fatalf("operational docs = %d, want 0 (prose-based negative trigger removed)", got)
 			}
 		})
 	}
