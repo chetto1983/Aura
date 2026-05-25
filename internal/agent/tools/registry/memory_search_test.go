@@ -172,7 +172,12 @@ func TestSearchMemoryTool_GraphNodeEvidence(t *testing.T) {
 	}
 }
 
-func TestSearchMemoryTool_WikiFrontmatterMetadata(t *testing.T) {
+// TestSearchMemoryTool_WikiSlimFormat asserts the 2026-05-25 slim contract:
+// a wiki hit emits identifier + title + score + snippet, NOT the legacy
+// curator dump (schema_version, prompt_version, created_at, unversioned,
+// file=wiki/…, category, tags, related, sources). See formatMemoryResults
+// docstring for the rationale.
+func TestSearchMemoryTool_WikiSlimFormat(t *testing.T) {
 	created := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
 	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
 		indexed: true,
@@ -187,6 +192,10 @@ func TestSearchMemoryTool_WikiFrontmatterMetadata(t *testing.T) {
 			PromptVersion: "ingest_v2",
 			Unversioned:   true,
 			Sources:       []string{"src_phase07f", "https://example.test/ref"},
+			Tags:          []string{"rag", "frontmatter"},
+			Category:      "concept",
+			Related:       []string{"graph-target"},
+			FilePath:      "phase07f-metadata.md",
 		}},
 	}, nil)
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "phase07f metadata", "scope": "wiki"})
@@ -195,14 +204,28 @@ func TestSearchMemoryTool_WikiFrontmatterMetadata(t *testing.T) {
 	}
 	for _, want := range []string{
 		"[wiki] [[phase07f-metadata]]",
-		"schema=3",
-		"prompt=ingest_v2",
-		"created=2026-05-01T10:00:00Z",
-		"unversioned=true",
-		"sources=[src_phase07f,https://example.test/ref]",
+		"Phase07F Metadata",
+		"score=0.90",
+		"Phase07F metadata marker.",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+	for _, forbidden := range []string{
+		"schema=",
+		"prompt=",
+		"created=",
+		"unversioned=",
+		"sources=",
+		"tags=",
+		"category=",
+		"related=",
+		"file=wiki/",
+		"[exact=",
+	} {
+		if strings.Contains(out, forbidden) {
+			t.Fatalf("slim format must not emit %q:\n%s", forbidden, out)
 		}
 	}
 	if strings.Contains(out, `"schema_version"`) || strings.Contains(out, "Evidence envelope") {
@@ -672,10 +695,13 @@ func TestSearchMemoryTool_ToolRoleExcludedFromDefaultSearch(t *testing.T) {
 	}
 }
 
-// TestSearchMemoryTool_ScoreComponentsAndFollowUp verifies that
-// formatMemoryResults emits [exact=… fts=… vector=…] when any component is
-// non-zero AND the correct follow_up= token for each collection kind.
-func TestSearchMemoryTool_ScoreComponentsAndFollowUp(t *testing.T) {
+// TestSearchMemoryTool_FollowUpAndSlimFormat asserts the 2026-05-25 contract:
+// follow_up= is emitted for source/archive/proposal hits (where the
+// follow-up token is distinct from the identifier), but NOT for wiki hits
+// (where follow_up == identifier). The [exact=… fts=… vector=…] component
+// bracket is gone — it added noise without helping the agent decide
+// cite-or-dig.
+func TestSearchMemoryTool_FollowUpAndSlimFormat(t *testing.T) {
 	srcDoc := memoryindex.Document{
 		ID:          "src_aabb112233445566",
 		Kind:        memoryindex.KindSource,
@@ -739,70 +765,117 @@ func TestSearchMemoryTool_ScoreComponentsAndFollowUp(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	// source: bracket with exact score + source read follow_up
-	if !strings.Contains(out, "[exact=0.80") {
-		t.Errorf("source hit missing exact score bracket:\n%s", out)
-	}
-	if !strings.Contains(out, "follow_up=source(action=read,source_id=src_aabb112233445566,mode=ocr)") {
-		t.Errorf("source follow_up missing:\n%s", out)
-	}
-
-	// archive: bracket with fts score + search_memory follow_up
-	if !strings.Contains(out, "[archive]") {
-		t.Errorf("archive hit missing from output:\n%s", out)
-	}
-	if !strings.Contains(out, "fts=0.60") {
-		t.Errorf("archive hit missing fts score bracket:\n%s", out)
-	}
-	if !strings.Contains(out, "follow_up=search_memory(scope=archive)") {
-		t.Errorf("archive follow_up missing:\n%s", out)
+	// Each kind appears + its follow_up token (where distinct from identifier).
+	for _, want := range []string{
+		"[wiki] [[contract-overview]]",
+		"[source] src_aabb112233445566",
+		"[archive] conversation:42",
+		"[proposal] proposal:7",
+		"follow_up=source(action=read,source_id=src_aabb112233445566,mode=ocr)",
+		"follow_up=search_memory(scope=archive)",
+		"follow_up=search_memory(scope=proposals)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
 	}
 
-	// wiki: bracket with exact score + wiki-link follow_up
-	if !strings.Contains(out, "[wiki] [[contract-overview]]") {
-		t.Errorf("wiki hit missing from output:\n%s", out)
-	}
-	if !strings.Contains(out, "follow_up=[[contract-overview]]") {
-		t.Errorf("wiki follow_up missing:\n%s", out)
+	// Wiki hit: follow_up == identifier → must be suppressed (no redundant token).
+	if strings.Contains(out, "follow_up=[[contract-overview]]") {
+		t.Errorf("wiki follow_up must be suppressed when it duplicates the identifier:\n%s", out)
 	}
 
-	// proposal: bracket with vector score + search_memory follow_up
-	if !strings.Contains(out, "[proposal]") {
-		t.Errorf("proposal hit missing from output:\n%s", out)
-	}
-	if !strings.Contains(out, "vector=0.50") {
-		t.Errorf("proposal hit missing vector score bracket:\n%s", out)
-	}
-	if !strings.Contains(out, "follow_up=search_memory(scope=proposals)") {
-		t.Errorf("proposal follow_up missing:\n%s", out)
+	// Per-channel component bracket is gone — see formatMemoryResults docstring.
+	for _, forbidden := range []string{"[exact=", "fts=0.", "vector=0."} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("slim format must not emit %q:\n%s", forbidden, out)
+		}
 	}
 }
 
-// TestSearchMemoryTool_ZeroComponentsNoBracket verifies that hits with all-zero
-// component scores produce historical-shape output (no score bracket).
-func TestSearchMemoryTool_ZeroComponentsNoBracket(t *testing.T) {
+// TestSearchMemoryTool_SlimFormatLineBudget pins the per-hit byte budget
+// after the 2026-05-25 slim conversion. Before the conversion a single
+// fully-decorated wiki hit emitted ~300 chars of curator metadata before
+// the snippet; with a top-K of 6 that crowded the LLM with ~1.8 KB of
+// noise. After: the metadata line stays under 180 chars (≈ 60 tokens).
+// If this test starts failing it's a sign someone added a verbose field
+// back without flag-gating it.
+func TestSearchMemoryTool_SlimFormatLineBudget(t *testing.T) {
+	updated := time.Date(2026, 5, 25, 9, 45, 15, 0, time.UTC)
+	tool := NewSearchMemoryTool(fakeMemoryWikiSearch{
+		indexed: true,
+		results: []search.Result{{
+			Kind:          "wiki_page",
+			Slug:          "davide-marchetto",
+			Title:         "Davide Marchetto",
+			Content:       "Utente principale di Aura. Nome: Davide Marchetto. Data di nascita: 25 dicembre 1983. Residenza: Caraglio.",
+			Score:         0.92,
+			ScoreExact:    0.4,
+			ScoreFTS:      0.3,
+			ScoreVector:   0.22,
+			UpdatedAt:     updated,
+			CreatedAt:     updated,
+			SchemaVersion: wiki.CurrentSchemaVersion,
+			PromptVersion: "v1",
+			Category:      "entity",
+			Tags:          []string{"person", "owner"},
+			Related:       []string{"source-albatech", "source-davide-marchetto-ticket", "uncategorized"},
+			Sources:       []string{"source:src_d6aa05f2dabba88e", "source:src_31643bc8f66ffc60"},
+			FilePath:      "davide-marchetto.md",
+		}},
+	}, nil)
+	out, err := tool.Execute(context.Background(), map[string]any{"query": "davide marchetto", "scope": "wiki"})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	lines := strings.Split(out, "\n")
+	var hitLine string
+	for _, line := range lines {
+		if strings.HasPrefix(line, "- [wiki] ") {
+			hitLine = line
+			break
+		}
+	}
+	if hitLine == "" {
+		t.Fatalf("no hit line found in:\n%s", out)
+	}
+	const budget = 180
+	if len(hitLine) > budget {
+		t.Errorf("slim hit line len=%d exceeds %d-char budget:\n%s", len(hitLine), budget, hitLine)
+	}
+}
+
+// TestSearchMemoryTool_NoComponentBracket pins the 2026-05-25 contract:
+// the [exact=… fts=… vector=…] breakdown is never emitted, even when the
+// hit carries non-zero per-channel scores.
+func TestSearchMemoryTool_NoComponentBracket(t *testing.T) {
 	tool := NewSearchMemoryTool(nil, fakeCompactMemorySearch{docs: []memoryindex.Document{{
 		ID:     "archive:99",
 		Kind:   memoryindex.KindArchive,
 		Title:  "chat=1 turn=1",
-		Body:   "zero component scores",
+		Body:   "components present but bracket suppressed",
 		Handle: "conversation:99",
 		Score:  0.5,
-		// ScoreExact, ScoreFTS, ScoreVector all zero (default)
+		// non-zero components to ensure the format suppresses them regardless
+		ScoreExact:  0.4,
+		ScoreFTS:    0.3,
+		ScoreVector: 0.2,
 	}}})
 	out, err := tool.Execute(context.Background(), map[string]any{"query": "test", "scope": "archive"})
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if strings.Contains(out, "[exact=") {
-		t.Errorf("zero-component hit must not emit score bracket:\n%s", out)
+		t.Errorf("component bracket must never appear in slim format:\n%s", out)
 	}
 }
 
-// TestFreshnessTokenPresent verifies that formatMemoryResults emits a freshness=
-// token when EmbeddingModelID or IndexBuildID is non-empty, and does NOT emit
-// degraded_read=true when the projection status is 'fresh'.
-func TestFreshnessTokenPresent(t *testing.T) {
+// TestFreshnessTokenSuppressedWhenFresh asserts the 2026-05-25 slim
+// contract: a FRESH projection emits NEITHER freshness= NOR
+// degraded_read=true. Operational telemetry only surfaces when there is
+// an actual problem to report — keeping the per-hit line short enough
+// for the agent to scan a top-K window.
+func TestFreshnessTokenSuppressedWhenFresh(t *testing.T) {
 	indexedAt := time.Date(2026, 5, 14, 8, 21, 33, 0, time.UTC)
 	doc := memoryindex.Document{
 		ID:               "archive:42",
@@ -830,17 +903,10 @@ func TestFreshnessTokenPresent(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	if !strings.Contains(out, "freshness=indexed_at=2026-05-14T08:21:33Z") {
-		t.Errorf("expected indexed_at in freshness token:\n%s", out)
-	}
-	if !strings.Contains(out, "model=embeddingge") {
-		t.Errorf("expected model= (first 12 chars) in freshness token:\n%s", out)
-	}
-	if !strings.Contains(out, "build=01HXYZ8K2QR") {
-		t.Errorf("expected build= (first 12 chars) in freshness token:\n%s", out)
-	}
-	if strings.Contains(out, "degraded_read=true") {
-		t.Errorf("fresh projection must not emit degraded_read=true:\n%s", out)
+	for _, forbidden := range []string{"freshness=", "degraded_read=true"} {
+		if strings.Contains(out, forbidden) {
+			t.Errorf("fresh projection must not emit %q:\n%s", forbidden, out)
+		}
 	}
 }
 

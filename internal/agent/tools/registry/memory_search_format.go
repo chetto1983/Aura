@@ -10,153 +10,118 @@ import (
 )
 
 // formatMemoryResults renders the result list as plain markdown. No JSON
-// envelope, no "Evidence envelope:" appendix. Each line is short enough for
-// the model to scan, and a snippet (one line, trimmed) follows when present.
+// envelope, no "Evidence envelope:" appendix. Each hit is two lines max
+// so the agent can scan a top-K list without drowning in curator
+// metadata.
 //
 // Format (per hit):
 //
-//   - [kind] handle — title (age) score=0.92
-//     snippet text from the page
+//	- [kind] identifier — title  (age)  score=0.92
+//	  snippet text from the page
+//
+// Optional extras only when they add signal:
+//   - page=N / span=bytes=A-B   when the hit is a chunked source
+//   - handle=…                  when the precise re-read handle differs
+//   - follow_up=…               when the follow-up command differs from identifier
+//   - ⚠ stale freshness=indexed_at=…  ONLY when the index is degraded
+//
+// Removed in 2026-05-25 (chat 1148481707 turn 263 over-search bug): the
+// per-hit dump used to include schema_version, prompt_version, created_at,
+// unversioned, file=wiki/…, category, tags, related[], sources[], and the
+// [exact=… fts=… vector=…] component breakdown. With a top-K of 6 that
+// added ~1.5 KB of curator noise per call and the agent treated low raw
+// scores as "nothing matched", over-firing search to compensate. Snippet
+// + identifier + score is all the agent needs to decide cite-or-dig.
 func formatMemoryResults(query string, results []memoryResult, warnings []string, now time.Time) string {
 	var sb strings.Builder
 	cleanedWarnings := cleanWarnings(warnings)
 	if len(results) == 0 {
 		fmt.Fprintf(&sb, "No memory found for %q.", query)
-		if len(cleanedWarnings) > 0 {
-			sb.WriteString("\nWarnings:")
-			for _, warning := range cleanedWarnings {
-				fmt.Fprintf(&sb, "\n- %s", warning)
-			}
-		}
+		appendWarnings(&sb, cleanedWarnings)
 		return sb.String()
 	}
 	fmt.Fprintf(&sb, "%d memory hit(s) for %q:", len(results), query)
 	for _, r := range results {
-		fmt.Fprintf(&sb, "\n- [%s] %s", r.Kind, r.Identifier)
-		if r.Title != "" {
-			fmt.Fprintf(&sb, " — %s", compactMemoryLine(r.Title))
-		}
-		if r.Role != "" {
-			fmt.Fprintf(&sb, " role=%s", r.Role)
-		}
-		if r.Page > 0 {
-			fmt.Fprintf(&sb, " page=%d", r.Page)
-		}
-		if r.ByteEnd > r.ByteStart {
-			fmt.Fprintf(&sb, " span=bytes=%d-%d", r.ByteStart, r.ByteEnd)
-			if r.ChunkIndex > 0 {
-				fmt.Fprintf(&sb, " chunk=%d", r.ChunkIndex)
-			}
-		}
-		// Surface the handle when it is a richer follow-up token than the
-		// identifier alone (e.g. a source's page-targeted "source:src_xxx#page=2").
-		// This is what source(action=read) consumes for precise re-reads.
-		if r.Handle != "" && r.Handle != r.Identifier {
-			fmt.Fprintf(&sb, " handle=%s", r.Handle)
-		}
-		if age := formatAge(now, r.UpdatedAt); age != "" {
-			fmt.Fprintf(&sb, " (%s)", age)
-		}
-		fmt.Fprintf(&sb, " score=%.2f", r.Score)
-		if r.ScoreExact != 0 || r.ScoreFTS != 0 || r.ScoreVector != 0 {
-			fmt.Fprintf(&sb, " [exact=%.2f fts=%.2f vector=%.2f]", r.ScoreExact, r.ScoreFTS, r.ScoreVector)
-		}
-		if r.SchemaVersion > 0 {
-			fmt.Fprintf(&sb, " schema=%d", r.SchemaVersion)
-		}
-		if r.PromptVersion != "" {
-			fmt.Fprintf(&sb, " prompt=%s", r.PromptVersion)
-		}
-		if !r.CreatedAt.IsZero() {
-			fmt.Fprintf(&sb, " created=%s", r.CreatedAt.UTC().Format(time.RFC3339))
-		}
-		if r.Unversioned {
-			fmt.Fprintf(&sb, " unversioned=true")
-		}
-		if fu := followUpHandle(r); fu != "" {
-			fmt.Fprintf(&sb, " follow_up=%s", fu)
-		}
-		// Surface the on-disk file path so the model can read the page
-		// directly (read_file) without a second list_files round-trip
-		// (gap the model itself flagged in 2026-05-11 turn 2393).
-		if r.FilePath != "" {
-			fmt.Fprintf(&sb, " file=wiki/%s", r.FilePath)
-		}
-		if r.Category != "" {
-			fmt.Fprintf(&sb, " category=%s", r.Category)
-		}
-		if len(r.Tags) > 0 {
-			fmt.Fprintf(&sb, " tags=%s", strings.Join(r.Tags, ","))
-		}
-		if len(r.Related) > 0 {
-			// Cap the inline related list — pages with 20+ links would
-			// otherwise dwarf the snippet. The full list is reachable via
-			// read_file when the model wants the graph.
-			rel := r.Related
-			if len(rel) > 5 {
-				rel = rel[:5]
-			}
-			fmt.Fprintf(&sb, " related=[%s]", strings.Join(rel, ","))
-		}
-		if len(r.Sources) > 0 {
-			sources := r.Sources
-			if len(sources) > 5 {
-				sources = sources[:5]
-			}
-			fmt.Fprintf(&sb, " sources=[%s]", strings.Join(sources, ","))
-		}
-		// Freshness annotation: emitted when any freshness column is non-empty or
-		// the hit is marked degraded. Only compact-memory hits carry these fields.
-		{
-			var parts []string
-			if !r.IndexedAt.IsZero() {
-				parts = append(parts, "indexed_at="+r.IndexedAt.UTC().Format(time.RFC3339))
-			}
-			if r.EmbeddingModelID != "" {
-				model := r.EmbeddingModelID
-				if len(model) > 12 {
-					model = model[:12]
-				}
-				parts = append(parts, "model="+model)
-			}
-			if r.IndexBuildID != "" {
-				build := r.IndexBuildID
-				if len(build) > 12 {
-					build = build[:12]
-				}
-				parts = append(parts, "build="+build)
-			}
-			if r.DegradedRead {
-				parts = append(parts, "stale")
-			}
-			if len(parts) > 0 {
-				fmt.Fprintf(&sb, " freshness=%s", strings.Join(parts, ","))
-			}
-		}
-		if r.DegradedRead {
-			fmt.Fprintf(&sb, " degraded_read=true")
-		}
-		if r.Snippet != "" {
-			fmt.Fprintf(&sb, "\n  %s", r.Snippet)
-		}
+		writeMemoryHit(&sb, r, now)
 	}
-	if len(cleanedWarnings) > 0 {
-		sb.WriteString("\nWarnings:")
-		for _, warning := range cleanedWarnings {
-			fmt.Fprintf(&sb, "\n- %s", warning)
-		}
-	}
+	appendWarnings(&sb, cleanedWarnings)
 	return truncateForToolContext(sb.String(), maxSourceToolChars)
+}
+
+// writeMemoryHit renders one search hit with the slim 2026-05-25 contract.
+func writeMemoryHit(sb *strings.Builder, r memoryResult, now time.Time) {
+	fmt.Fprintf(sb, "\n- [%s] %s", r.Kind, r.Identifier)
+	if r.Title != "" {
+		fmt.Fprintf(sb, " — %s", compactMemoryLine(r.Title))
+	}
+	if r.Role != "" {
+		fmt.Fprintf(sb, " role=%s", r.Role)
+	}
+	if r.Page > 0 {
+		fmt.Fprintf(sb, " page=%d", r.Page)
+	}
+	if r.ByteEnd > r.ByteStart {
+		fmt.Fprintf(sb, " span=bytes=%d-%d", r.ByteStart, r.ByteEnd)
+		if r.ChunkIndex > 0 {
+			fmt.Fprintf(sb, " chunk=%d", r.ChunkIndex)
+		}
+	}
+	if r.Handle != "" && r.Handle != r.Identifier {
+		fmt.Fprintf(sb, " handle=%s", r.Handle)
+	}
+	if age := formatAge(now, r.UpdatedAt); age != "" {
+		fmt.Fprintf(sb, " (%s)", age)
+	}
+	fmt.Fprintf(sb, " score=%.2f", r.Score)
+	if fu := followUpHandle(r); fu != "" && fu != r.Identifier {
+		fmt.Fprintf(sb, " follow_up=%s", fu)
+	}
+	if r.DegradedRead {
+		sb.WriteString(" degraded_read=true")
+		if freshness := formatFreshnessAnnotation(r); freshness != "" {
+			fmt.Fprintf(sb, " freshness=%s", freshness)
+		}
+	}
+	if r.Snippet != "" {
+		fmt.Fprintf(sb, "\n  %s", r.Snippet)
+	}
+}
+
+// formatFreshnessAnnotation builds the freshness= value when the hit is
+// degraded. Emits only operationally-useful tokens (indexed_at, model,
+// build) — collapsed into a single comma list to keep the line short.
+func formatFreshnessAnnotation(r memoryResult) string {
+	var parts []string
+	if !r.IndexedAt.IsZero() {
+		parts = append(parts, "indexed_at="+r.IndexedAt.UTC().Format(time.RFC3339))
+	}
+	if r.EmbeddingModelID != "" {
+		parts = append(parts, "model="+truncateForToolContext(r.EmbeddingModelID, 12))
+	}
+	if r.IndexBuildID != "" {
+		parts = append(parts, "build="+truncateForToolContext(r.IndexBuildID, 12))
+	}
+	if r.DegradedRead {
+		parts = append(parts, "stale")
+	}
+	return strings.Join(parts, ",")
+}
+
+func appendWarnings(sb *strings.Builder, warnings []string) {
+	if len(warnings) == 0 {
+		return
+	}
+	sb.WriteString("\nWarnings:")
+	for _, warning := range warnings {
+		fmt.Fprintf(sb, "\n- %s", warning)
+	}
 }
 
 func formatAge(now, updated time.Time) string {
 	if updated.IsZero() {
 		return ""
 	}
-	d := now.Sub(updated)
-	if d < 0 {
-		d = 0
-	}
+	d := max(now.Sub(updated), 0)
 	switch {
 	case d < time.Hour:
 		return fmt.Sprintf("%dm ago", int(d.Minutes()))
@@ -223,20 +188,12 @@ func snippetAround(text, query string, limit int) (string, int) {
 	if limit <= 0 || len(clean) <= limit {
 		return compactMemoryLine(clean), offset
 	}
-	if offset < 0 {
-		offset = 0
-	}
-	start := offset - limit/3
-	if start < 0 {
-		start = 0
-	}
+	offset = max(offset, 0)
+	start := max(offset-limit/3, 0)
 	end := start + limit
 	if end > len(clean) {
 		end = len(clean)
-		start = end - limit
-		if start < 0 {
-			start = 0
-		}
+		start = max(end-limit, 0)
 	}
 	snippet := strings.TrimSpace(clean[start:end])
 	if start > 0 {
