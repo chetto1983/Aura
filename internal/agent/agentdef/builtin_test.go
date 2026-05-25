@@ -42,12 +42,37 @@ func TestOrchestratorArchetype_DelegatesToSummarizer(t *testing.T) {
 	}
 }
 
+func TestReflectorArchetype_LoadsAtBoot(t *testing.T) {
+	def, err := BuiltinDefinition("reflector")
+	if err != nil {
+		t.Fatalf("BuiltinDefinition: %v", err)
+	}
+	if def.DisplayName != "Reflection Extractor" || def.Tier != TierWorker {
+		t.Fatalf("unexpected reflector metadata: %+v", def)
+	}
+	if def.MaxIterations != 1 || def.MaxInputTokens != 16384 || def.MaxOutputTokens != 2048 || def.MaxResultChars != 8000 {
+		t.Fatalf("unexpected reflector limits: %+v", def)
+	}
+	if len(def.Tools.Named) != 0 || !def.InheritSafety {
+		t.Fatalf("unexpected reflector scope: %+v", def)
+	}
+}
+
 func TestSummarizerArchetype_PromptByteIdentical(t *testing.T) {
-	raw, err := fs.ReadFile(BuiltinFS, "builtin/summarizer/prompt.md")
+	assertBuiltinPromptByteIdentical(t, "summarizer")
+}
+
+func TestReflectorArchetype_PromptByteIdentical(t *testing.T) {
+	assertBuiltinPromptByteIdentical(t, "reflector")
+}
+
+func assertBuiltinPromptByteIdentical(t *testing.T, id string) {
+	t.Helper()
+	raw, err := fs.ReadFile(BuiltinFS, "builtin/"+id+"/prompt.md")
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	def, err := BuiltinDefinition("summarizer")
+	def, err := BuiltinDefinition(id)
 	if err != nil {
 		t.Fatalf("BuiltinDefinition: %v", err)
 	}

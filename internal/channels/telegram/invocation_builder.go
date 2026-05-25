@@ -49,7 +49,11 @@ func NewInvocationBuilder(b *tgtelegram.Bot) *InvocationBuilder {
 	ib.agentNoteStore = b.AgentNoteStore()
 	ib.memoryStore = b.MemoryStore()
 	if cfg := b.Config(); cfg != nil {
-		ib.reflectionHook = agent.NewReflectionPostTurnHook(b.LLMClient(), cfg.LLMModel)
+		var runner agentdef.DelegateRunner
+		if mgr := b.SwarmManager(); mgr != nil {
+			runner = &swarm.ArchetypeRunner{Manager: mgr, Registry: b.AgentDefinitions()}
+		}
+		ib.reflectionHook = agent.NewReflectionPostTurnHookWithRunner(b.LLMClient(), cfg.LLMModel, runner)
 	}
 	if cfg := b.Config(); cfg != nil && cfg.PayloadSummarizerEnabled && b.LLMClient() != nil {
 		ib.payloadSummarizer = governance.NewSubagentPayloadSummarizer(

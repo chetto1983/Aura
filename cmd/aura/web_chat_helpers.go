@@ -17,7 +17,20 @@ import (
 	"github.com/aura/aura/internal/conversation"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/storage/memoryindex"
+	"github.com/aura/aura/internal/swarm"
+	"github.com/aura/aura/internal/telegram"
 )
+
+func newWebReflectionHook(deps *telegram.Deps, cfg *config.Config) agent.PostTurnHook {
+	if deps == nil || cfg == nil {
+		return nil
+	}
+	var runner agentdef.DelegateRunner
+	if deps.SwarmMgr != nil {
+		runner = &swarm.ArchetypeRunner{Manager: deps.SwarmMgr, Registry: deps.AgentDefs}
+	}
+	return agent.NewReflectionPostTurnHookWithRunner(deps.LLM, cfg.LLMModel, runner)
+}
 
 func (b *webInvocationBuilder) announceDelegates(ctx context.Context, msg chat.InboundMessage, runID string, calls []llm.ToolCall, delegateTools []toolregistry.Tool) {
 	if b == nil || b.streamRouter == nil || msg.Mode != chat.DeliveryModeStreaming {

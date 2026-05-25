@@ -52,7 +52,7 @@ func newWebInvocationBuilder(
 		logger:          logger,
 		postTurnStore:   deps.MemoryStore,
 		postTurnReader:  postTurnReader,
-		reflectionHook:  agent.NewReflectionPostTurnHook(deps.LLM, cfg.LLMModel),
+		reflectionHook:  newWebReflectionHook(deps, cfg),
 		skillsLoader:    deps.Skills,
 		loc:             deps.Loc,
 		budgetRuntime:   budgetRuntime,

@@ -10,21 +10,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/storage/memoryindex"
 )
 
-const KindReflection = "reflection"
+const (
+	KindReflection     = "reflection"
+	ReflectorArchetype = "reflector"
+)
 
-const reflectionExtractionPrompt = `You are an extraction assistant. Read the conversation turn below and
-emit STRICT JSON with four arrays:
-  - observations: factual things you noticed about the user or context
-  - patterns: recurring behaviors or preferences (not single events)
-  - user_preferences: explicit or strongly-implied likes/dislikes
-  - user_reflections: things the user said about themselves
-
-Rules: JSON only. No prose. Empty arrays allowed. Max 3 items per array.
-Each item <= 200 chars. Do NOT capture PII or third-party names.`
+var reflectionExtractionPrompt = agentdef.MustBuiltinPrompt(ReflectorArchetype)
 
 type ReflectionExtract struct {
 	Observations    []string `json:"observations"`
@@ -48,17 +44,18 @@ type ReflectionToolCall struct {
 }
 
 type ReflectionHook struct {
-	Client        llm.Client
-	Model         string
-	MaxPerSession int
-	MinTurnTokens int
+	Client         llm.Client
+	DelegateRunner agentdef.DelegateRunner
+	Model          string
+	MaxPerSession  int
+	MinTurnTokens  int
 
 	sessionCount map[string]int
 	mu           sync.Mutex
 }
 
 func (h *ReflectionHook) Apply(ctx context.Context, turn ReflectionTurn, store *memoryindex.Store) []error {
-	if h == nil || h.Client == nil {
+	if h == nil || (h.Client == nil && h.DelegateRunner == nil) {
 		return nil
 	}
 	if store == nil {
@@ -87,18 +84,11 @@ func (h *ReflectionHook) Apply(ctx context.Context, turn ReflectionTurn, store *
 	h.sessionCount[sessionKey]++
 	h.mu.Unlock()
 
-	resp, err := h.Client.Send(ctx, llm.Request{
-		Model:       h.Model,
-		Temperature: llm.Float64Ptr(0),
-		Messages: []llm.Message{
-			{Role: "system", Content: reflectionExtractionPrompt},
-			{Role: "user", Content: renderReflectionTurn(turn)},
-		},
-	})
+	raw, err := h.extract(ctx, turn)
 	if err != nil {
-		return []error{fmt.Errorf("reflection_fork: extract: %w", err)}
+		return []error{err}
 	}
-	extract, err := parseReflectionExtract(resp.Content)
+	extract, err := parseReflectionExtract(raw)
 	if err != nil {
 		return []error{err}
 	}
@@ -109,6 +99,29 @@ func (h *ReflectionHook) Apply(ctx context.Context, turn ReflectionTurn, store *
 		return []error{err}
 	}
 	return nil
+}
+
+func (h *ReflectionHook) extract(ctx context.Context, turn ReflectionTurn) (string, error) {
+	prompt := renderReflectionTurn(turn)
+	if h.DelegateRunner != nil {
+		raw, err := h.DelegateRunner.Run(ctx, ReflectorArchetype, prompt, "", []string{ReflectorArchetype})
+		if err != nil {
+			return "", fmt.Errorf("reflection_fork: delegate reflector: %w", err)
+		}
+		return raw, nil
+	}
+	resp, err := h.Client.Send(ctx, llm.Request{
+		Model:       h.Model,
+		Temperature: llm.Float64Ptr(0),
+		Messages: []llm.Message{
+			{Role: "system", Content: reflectionExtractionPrompt},
+			{Role: "user", Content: prompt},
+		},
+	})
+	if err != nil {
+		return "", fmt.Errorf("reflection_fork: extract: %w", err)
+	}
+	return resp.Content, nil
 }
 
 func parseReflectionExtract(raw string) (ReflectionExtract, error) {

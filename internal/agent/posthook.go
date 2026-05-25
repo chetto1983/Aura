@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/tools/attempts"
 	"github.com/aura/aura/internal/learning"
 	"github.com/aura/aura/internal/llm"
@@ -97,13 +98,18 @@ type reflectionPostTurnHook struct {
 }
 
 func NewReflectionPostTurnHook(client llm.Client, model string) PostTurnHook {
-	if client == nil {
+	return NewReflectionPostTurnHookWithRunner(client, model, nil)
+}
+
+func NewReflectionPostTurnHookWithRunner(client llm.Client, model string, runner agentdef.DelegateRunner) PostTurnHook {
+	if client == nil && runner == nil {
 		return nil
 	}
 	return reflectionPostTurnHook{
 		hook: &learning.ReflectionHook{
-			Client: client,
-			Model:  model,
+			Client:         client,
+			DelegateRunner: runner,
+			Model:          model,
 		},
 	}
 }

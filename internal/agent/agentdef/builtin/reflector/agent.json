@@ -1,0 +1,15 @@
+{
+  "id": "reflector",
+  "display_name": "Reflection Extractor",
+  "when_to_use": "Extract strict JSON reflection observations from one completed Aura turn for the learning pipeline.",
+  "prompt_path": "prompt.md",
+  "model_hint": "fast",
+  "temperature": 0,
+  "tools": { "named": [] },
+  "tier": "worker",
+  "max_iterations": 1,
+  "max_input_tokens": 16384,
+  "max_output_tokens": 2048,
+  "max_result_chars": 8000,
+  "inherit_safety": true
+}
