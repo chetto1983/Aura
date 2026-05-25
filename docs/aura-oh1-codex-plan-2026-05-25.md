@@ -52,15 +52,15 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 | OH1-C | ✅ shipped | `d0b24989` | `feat(agent): warn on agentdef tier violations` — warn-only validator + `DetectCycle(rootID)`. |
 | OH1-D | ✅ shipped | `a82f5284` | `feat(agent): enforce agentdef tier validation` — boot uses `EnforceTier: true`; summarizer still validates. |
 | OH1-E | ✅ shipped | `aec6f61d` | `feat(agent): synthesize agentdef delegate tools` — delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. |
-| OH1-F | 🟡 in flight | _(uncommitted)_ | Channel-scrubber + announce template for Telegram + web. |
-| OH1-G | ⬜ pending | — | Migrate reflection fork → `reflector` archetype. |
+| OH1-F | ✅ shipped | `13a59625` | `feat(agent): announce agentdef delegation` — channel scrubber + announce template for Telegram + web. |
+| OH1-G | 🟡 in flight | _(uncommitted)_ | Migrate reflection fork → `reflector` archetype. |
 | OH1-H | ⬜ pending (interactive) | — | Deprecate `spawn_aurabot` / `run_aurabot_swarm` in overlays. |
 | OH1-I | ⬜ pending (post-telemetry) | — | Remove deprecated swarm tools after 7+ days of zero invocations. |
 
 **Freshness rule:** update this snapshot immediately after every atomic commit,
 and mark the currently edited slice as in-flight before continuing.
 
-**Next action:** implement and verify OH1-F channel scrubber + announce template.
+**Next action:** implement and verify OH1-G reflection fork → `reflector` archetype.
 
 ---
 
@@ -508,7 +508,7 @@ clean; new `agentdef/delegate.go` ≤600 LOC; errcheck on runner.Run.
 
 ---
 
-## 8. OH1-F — Channel-scrubber + announce template (~80 LOC) [Codex] — 🟡 in flight (uncommitted)
+## 8. OH1-F — Channel-scrubber + announce template (~80 LOC) [Codex] — ✅ shipped `13a59625`
 
 **Goal**: user-facing visibility when chat tier delegates. Telegram
 thread and web chat both show the announce + final result, but NOT
@@ -546,7 +546,7 @@ a long source → thread shows announce + summary, no child tool trace.
 
 ---
 
-## 9. OH1-G — Migrate REFLECTION-FORK → `reflector` archetype (~30 LOC delta) [Codex] — ⬜ pending
+## 9. OH1-G — Migrate REFLECTION-FORK → `reflector` archetype (~30 LOC delta) [Codex] — 🟡 in flight (uncommitted)
 
 **Goal**: replace the fork-and-restrict from RFL-S1 with a proper
 archetype-driven path.
