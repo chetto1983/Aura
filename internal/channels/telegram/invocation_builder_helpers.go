@@ -28,11 +28,21 @@ func (ib *InvocationBuilder) AttachHub(hub *chat.Hub, outbound *Outbound) {
 }
 
 func (ib *InvocationBuilder) executeToolCalls(ctx context.Context, c tele.Context, convCtx *conversation.Context, userID string, calls []llm.ToolCall, delegateTools []tools.Tool) agent.ToolExecutionSummary {
+	ib.announceDelegates(c, calls, delegateTools)
 	runner := agentdef.NewToolOverlay(ib.b.ToolRegistry(), delegateTools)
 	return agent.ExecuteToolCalls(ctx, runner, convCtx, userID, tgtelegram.ChatIDFromTeleContext(c), calls, ib.b.TerminalToolPolicyEnabled(), ib.b.Logger(),
 		agent.WithToolAttemptRecording(identity.RunIDFromContext(ctx), ib.b.ToolAttemptsRepo()),
 		agent.WithTokenJuice(ib.b.TokenJuiceEnabled()),
 		agent.WithPayloadSummarizer(ib.payloadSummarizer))
+}
+
+func (ib *InvocationBuilder) announceDelegates(c tele.Context, calls []llm.ToolCall, delegateTools []tools.Tool) {
+	if ib == nil || ib.b == nil {
+		return
+	}
+	for _, text := range agentdef.AnnouncementsForCalls(delegateTools, calls) {
+		ib.b.SendAssistantText(c, text)
+	}
 }
 
 func (ib *InvocationBuilder) renderPinnedOperational(ctx context.Context, threadID string, turnIdx int) string {

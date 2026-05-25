@@ -1,0 +1,6 @@
+{{- if .DisplayName -}}
+🤝 Delegating to **{{.DisplayName}}**...
+{{- else -}}
+🤝 Delegating to **{{.Archetype}}**...
+{{- end }}
+{{- if .ModelOverride }} _(model: {{.ModelOverride}})_{{ end }}

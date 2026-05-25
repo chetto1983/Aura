@@ -278,6 +278,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	inv, err := (agentcore.Builder{}).Build(agentcore.InvocationInput{
 		Client: chatClient,
 		Executor: agent.ToolExecutorFunc(func(execCtx context.Context, calls []llm.ToolCall) agent.ExecutionSummary {
+			b.announceDelegates(execCtx, msg, runID, calls, delegateTools)
 			summary := agent.ExecuteToolCalls(
 				execCtx,
 				agentdef.NewToolOverlay(deps.Tools, delegateTools),

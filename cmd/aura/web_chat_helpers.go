@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/agent"
+	"github.com/aura/aura/internal/agent/agentdef"
 	"github.com/aura/aura/internal/agent/tools/attempts"
+	toolregistry "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/channels/askuser"
 	"github.com/aura/aura/internal/chat"
 	"github.com/aura/aura/internal/config"
@@ -16,6 +18,20 @@ import (
 	"github.com/aura/aura/internal/llm"
 	"github.com/aura/aura/internal/storage/memoryindex"
 )
+
+func (b *webInvocationBuilder) announceDelegates(ctx context.Context, msg chat.InboundMessage, runID string, calls []llm.ToolCall, delegateTools []toolregistry.Tool) {
+	if b == nil || b.streamRouter == nil || msg.Mode != chat.DeliveryModeStreaming {
+		return
+	}
+	for _, text := range agentdef.AnnouncementsForCalls(delegateTools, calls) {
+		_ = b.streamRouter.Deliver(ctx, chat.OutboundEvent{
+			Type:     chat.EventMessageDelta,
+			RunID:    runID,
+			ThreadID: msg.ThreadID,
+			Content:  text + "\n\n",
+		})
+	}
+}
 
 func (b *webInvocationBuilder) addWebUserInput(
 	ctx context.Context,
