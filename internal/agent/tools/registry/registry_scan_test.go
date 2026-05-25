@@ -38,7 +38,6 @@ func TestCatalogueScanNativeTools(t *testing.T) {
 		&SourceTool{},
 		&FileTool{},
 		&ExecuteCodeTool{},
-		&ExecuteShellTool{},
 		&ProposePatchTool{},
 		&AgentNoteTool{},
 	}
@@ -84,7 +83,6 @@ func TestCatalogueDestructiveTools(t *testing.T) {
 		&FileTool{},                // write/patch actions
 		&TaskTool{loc: time.Local}, // cancel/run_now mutate tasks
 		&ExecuteCodeTool{},
-		&ExecuteShellTool{},
 		&WikiPageTool{}, // replace/edit can overwrite page content
 	}
 	for _, tool := range destructive {
@@ -125,7 +123,6 @@ func TestCatalogueReadOnlyHintConsistency(t *testing.T) {
 		&SourceTool{},
 		&FileTool{},
 		&ExecuteCodeTool{},
-		&ExecuteShellTool{},
 		&ProposePatchTool{},
 		&AgentNoteTool{},
 	}

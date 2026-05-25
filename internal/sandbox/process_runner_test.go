@@ -4,7 +4,6 @@ import (
 	"context"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -64,31 +63,6 @@ func TestProcessRunnerReportsPythonAvailability(t *testing.T) {
 	}
 	if availability.Kind != RuntimeKindProcess {
 		t.Fatalf("kind = %q, want process", availability.Kind)
-	}
-}
-
-func TestProcessRunnerExecutesShellCommandInWorkDir(t *testing.T) {
-	runner, err := NewProcessRunner(ProcessRunnerConfig{
-		WorkDir: t.TempDir(),
-		Timeout: 10 * time.Second,
-	})
-	if err != nil {
-		t.Fatalf("NewProcessRunner() error = %v", err)
-	}
-
-	command := "pwd"
-	if runtime.GOOS == "windows" {
-		command = "cd"
-	}
-	result, err := runner.ExecuteCommand(context.Background(), command, false)
-	if err != nil {
-		t.Fatalf("ExecuteCommand() error = %v", err)
-	}
-	if !result.OK {
-		t.Fatalf("result.OK = false, stderr=%q", result.Stderr)
-	}
-	if !strings.Contains(result.Stdout, filepath.Clean(runner.workDir)) {
-		t.Fatalf("stdout = %q, want workdir %q", result.Stdout, runner.workDir)
 	}
 }
 

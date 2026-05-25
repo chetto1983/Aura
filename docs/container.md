@@ -12,11 +12,14 @@ signals.
 - `garage-webui`: optional Garage admin UI behind the `garage-ui` Compose
   profile.
 - code execution runs Python directly inside the `aura` container for
-  `execute_code`, DOCX, XLSX, charts, and generated artifacts. The same
-  process runtime also exposes `execute_shell` for container-scoped shell
-  commands, tests, builds, `pip`, `git`, `rg`, `jq`, `sqlite3`, and runtime
-  diagnostics. Python packages installed with `pip install ...` go to
-  `/data/.local` for the non-root Aura user.
+  `execute_code`, DOCX, XLSX, charts, and generated artifacts. There is no
+  `execute_shell` tool — arbitrary shell access was removed because the
+  isolated container runtime couldn't deliver the streaming, working-dir
+  persistence, and live PATH semantics the LLM needed; for filesystem
+  changes use the `file` tool (list/read/search/write/patch/remove/move/
+  copy/tree/info/resolve), and for scripted work use `execute_code`.
+  Python packages installed with `pip install ...` go to `/data/.local`
+  for the non-root Aura user.
 - `qdrant`: local vector database sidecar for rebuildable wiki/memory
   embeddings.
 - `test`: optional developer test container with Go 1.26.2, Node 22, and the

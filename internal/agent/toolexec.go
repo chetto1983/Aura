@@ -37,5 +37,5 @@ func ToolArgumentsForTool(name string, args map[string]any, chatID int64) map[st
 // IsTerminalTool reports whether a tool name is treated as a "terminal" tool —
 // one whose output is delivered directly to the user without a follow-up LLM round.
 func IsTerminalTool(name string) bool {
-	return name == "execute_code" || name == "execute_shell" || name == "text_response" || IsFileGenerationTool(name)
+	return name == "execute_code" || name == "text_response" || IsFileGenerationTool(name)
 }

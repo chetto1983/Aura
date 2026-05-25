@@ -31,7 +31,7 @@ func TestRenderSplitManifest_EmptyReturnsEmpty(t *testing.T) {
 func TestRenderSplitManifest_ZeroDeferredByteIdentical(t *testing.T) {
 	names := []string{
 		"web", "search", "task", "file", "wiki_page",
-		"execute_code", "execute_shell", "source", "ask_user",
+		"execute_code", "source", "ask_user",
 		"text_response", "mcp_mail_search", "workspace_read",
 		"workspace_write", "ingest_source", "read_source", "store_source",
 		"delete_source", "list_source", "ocr_source", "propose_patch",
@@ -69,7 +69,7 @@ func TestRenderSplitManifest_DeferredSectionAppearsAndActiveSectionExcludesDefer
 	}
 	deferred := []ToolDefinition{
 		makeSplitDef("execute_code", "Execute Python code in the sandbox.", VisibilityDeferred),
-		makeSplitDef("execute_shell", "Execute shell commands in the runtime.", VisibilityDeferred),
+		makeSplitDef("file", "Manipulate workspace files.", VisibilityDeferred),
 	}
 	all := append(active, deferred...)
 
@@ -84,7 +84,7 @@ func TestRenderSplitManifest_DeferredSectionAppearsAndActiveSectionExcludesDefer
 	// Both deferred tool names must appear in the deferred section (after the marker).
 	deferredSectionStart := strings.Index(got, deferredHeader)
 	deferredSection := got[deferredSectionStart:]
-	for _, name := range []string{"execute_code", "execute_shell"} {
+	for _, name := range []string{"execute_code", "file"} {
 		if !strings.Contains(deferredSection, "- "+name) {
 			t.Errorf("deferred tool %q missing from deferred section:\n%s", name, deferredSection)
 		}
@@ -92,7 +92,7 @@ func TestRenderSplitManifest_DeferredSectionAppearsAndActiveSectionExcludesDefer
 
 	// Deferred tools must NOT appear in the always-on (Tool Catalog) section.
 	catalogSection := got[:deferredSectionStart]
-	for _, name := range []string{"execute_code", "execute_shell"} {
+	for _, name := range []string{"execute_code", "file"} {
 		if strings.Contains(catalogSection, "- "+name) {
 			t.Errorf("deferred tool %q leaked into always-on catalog section:\n%s", name, catalogSection)
 		}
@@ -111,7 +111,7 @@ func TestRenderSplitManifest_DeferredSectionAppearsAndActiveSectionExcludesDefer
 func TestRenderSplitManifest_AllDeferredNoAlwaysOnSection(t *testing.T) {
 	defs := []ToolDefinition{
 		makeSplitDef("execute_code", "Execute Python code.", VisibilityDeferred),
-		makeSplitDef("execute_shell", "Execute shell commands.", VisibilityDeferred),
+		makeSplitDef("file", "Manipulate workspace files.", VisibilityDeferred),
 	}
 	got := RenderSplitManifest(defs)
 	if strings.Contains(got, "## Tool Catalog") {

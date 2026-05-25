@@ -48,7 +48,7 @@ func TestFinalizeTerminalToolUsesNoToolLLMAndTracksUsage(t *testing.T) {
 func TestFinalizeTerminalToolRetriesOnFailedSynthesis(t *testing.T) {
 	var attempts atomic.Int32
 	result := FinalizeTerminalTool(context.Background(), TerminalFinalizationInput{
-		TerminalTool:  "execute_shell",
+		TerminalTool:  "execute_code",
 		RawToolResult: "exit_code: 0\n\nconnection refused",
 		Send: func(_ context.Context, _ llm.Request) (llm.Response, error) {
 			n := attempts.Add(1)

@@ -172,14 +172,14 @@ func qaDevToolPathContainmentCase(stamp string) Case {
 		},
 		Verify: func(r ChatReply, env *Env) []string {
 			var miss []string
-			counts, err := env.toolAttemptsSince(startedAt, "dev_tool", "file", "source", "wiki_page", "execute_code", "execute_shell")
+			counts, err := env.toolAttemptsSince(startedAt, "dev_tool", "file", "source", "wiki_page", "execute_code")
 			if err != nil {
 				return []string{fmt.Sprintf("tool_attempts query: %v", err)}
 			}
 			if counts["dev_tool"] < 2 {
 				miss = append(miss, fmt.Sprintf("expected at least 2 dev_tool attempts, got %d", counts["dev_tool"]))
 			}
-			for _, forbidden := range []string{"file", "source", "wiki_page", "execute_code", "execute_shell"} {
+			for _, forbidden := range []string{"file", "source", "wiki_page", "execute_code"} {
 				if counts[forbidden] > 0 {
 					miss = append(miss, fmt.Sprintf("forbidden tool %s ran %d time(s)", forbidden, counts[forbidden]))
 				}

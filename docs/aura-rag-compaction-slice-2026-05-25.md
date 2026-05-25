@@ -203,7 +203,7 @@ the deep-refactor checklist in the same commit.
   ```
 - **Acceptance**:
   - 8 sub-tests covering each evidence-class case + 3 non-evidence
-    controls (`execute_shell`, `web(search)`, `create_document`).
+    controls (`execute_code`, `web(search)`, `create_document`).
   - 1 integration test: feed a 20KB CAPSULE through executor with a
     summarizer that records every call — assert ZERO summariser
     invocations for `search(action=subgraph)`.

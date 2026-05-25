@@ -141,9 +141,6 @@ func TestSetupSandboxRuntime_ProcessRunnerEnablesCodeAndShell(t *testing.T) {
 	if tools.NewExecuteCodeToolWithStoreAndRegistry(mgr, nil, nil, nil) == nil {
 		t.Fatal("execute_code not registered with process runtime")
 	}
-	if tools.NewExecuteShellTool(mgr) == nil {
-		t.Fatal("execute_shell not registered with process runtime")
-	}
 	if !health.Available {
 		t.Fatalf("health.Available = false, detail=%q", health.Detail)
 	}

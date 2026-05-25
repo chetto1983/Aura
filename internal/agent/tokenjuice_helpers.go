@@ -9,7 +9,9 @@ import (
 )
 
 // argvFromArgs extracts an argv-style slice from tool arguments.
-// For execute_shell/execute_code the "command" field is split on whitespace.
+// For execute_code the "command" field is split on whitespace (legacy
+// shape; execute_code itself carries "code", but TokenJuice rules also
+// match argv shapes coming from MCP-wrapped tools).
 // For other tools the "action" field becomes argv[0] when present.
 func argvFromArgs(args map[string]any) []string {
 	if cmd, ok := args["command"].(string); ok && cmd != "" {
@@ -21,8 +23,8 @@ func argvFromArgs(args map[string]any) []string {
 	return nil
 }
 
-// commandFromArgs returns the raw command string for execute_shell/execute_code,
-// or "" for tools that carry no command string.
+// commandFromArgs returns the raw command string for execute_code (or any
+// future tool that carries a "command" arg), or "" otherwise.
 func commandFromArgs(args map[string]any) string {
 	if cmd, ok := args["command"].(string); ok {
 		return cmd
@@ -31,11 +33,9 @@ func commandFromArgs(args map[string]any) string {
 }
 
 // exitCodeFromToolOutput parses the "exit_code: N" prefix produced by
-// execute_shell and execute_code. Returns nil for all other tool names.
+// execute_code. Returns nil for all other tool names.
 func exitCodeFromToolOutput(toolName, raw string) *int {
-	switch toolName {
-	case "execute_shell", "execute_code":
-	default:
+	if toolName != "execute_code" {
 		return nil
 	}
 	for _, line := range strings.SplitN(raw, "\n", 4) {

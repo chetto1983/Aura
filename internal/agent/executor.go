@@ -313,13 +313,13 @@ var (
 // isExecTool reports whether toolName is an execution tool that benefits from
 // the structured Exit code / Wall time / Lines envelope.
 func isExecTool(name string) bool {
-	return name == "execute_code" || name == "execute_shell"
+	return name == "execute_code"
 }
 
 // wrapExecOutput reformats the raw output from an exec tool into a structured
 // envelope that preserves key metadata even when the body is later truncated
-// by TruncateMiddle. execute_code and execute_shell already prefix their output
-// with "exit_code: N\nelapsed_ms: M\n\n"; those lines are parsed, stripped, and
+// by TruncateMiddle. execute_code already prefixes its output with
+// "exit_code: N\nelapsed_ms: M\n\n"; those lines are parsed, stripped, and
 // re-expressed in the canonical capitalized form.
 func wrapExecOutput(raw string, elapsedMs int64) string {
 	exitCode := 0

@@ -79,43 +79,6 @@ func TestExecuteCodeToolAcceptsExecutorInterface(t *testing.T) {
 	}
 }
 
-type fakeCommandExecutor struct {
-	result  *sandbox.Result
-	command string
-}
-
-func (f *fakeCommandExecutor) ExecuteCommand(_ context.Context, command string, _ bool) (*sandbox.Result, error) {
-	f.command = command
-	return f.result, nil
-}
-
-func TestExecuteShellToolAcceptsCommandExecutorInterface(t *testing.T) {
-	executor := &fakeCommandExecutor{result: &sandbox.Result{OK: true, Stdout: "shell ok\n", ExitCode: 0, ElapsedMs: 2}}
-	tool := tools.NewExecuteShellTool(executor)
-	if tool == nil {
-		t.Fatal("expected execute_shell tool")
-	}
-	out, err := tool.Execute(context.Background(), map[string]any{"command": "echo shell ok"})
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if executor.command != "echo shell ok" || !strings.Contains(out, "shell ok") {
-		t.Fatalf("command=%q out=%q", executor.command, out)
-	}
-}
-
-func TestExecuteShellToolNotRegisteredForNonProcessManager(t *testing.T) {
-	manager, err := sandbox.NewManager(sandbox.Config{
-		Runtime: fakeExecRuntime{result: &sandbox.Result{OK: true}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tool := tools.NewExecuteShellTool(manager); tool != nil {
-		t.Fatal("expected execute_shell to stay disabled for non-process runtimes")
-	}
-}
-
 func TestExecuteCodeTool_DeliversArtifacts(t *testing.T) {
 	manager, err := sandbox.NewManager(sandbox.Config{
 		Runtime: fakeExecRuntime{result: &sandbox.Result{
@@ -464,31 +427,14 @@ func TestExecuteCodeTool_DefinitionIsDeferred(t *testing.T) {
 	}
 }
 
-// TestExecuteShellTool_DefinitionIsDeferred verifies AC: execute_shell has
-// VisibilityTier=VisibilityDeferred so it lands in the deferred section of
-// RenderSplitManifest and is excluded from the always-on schema pool.
-func TestExecuteShellTool_DefinitionIsDeferred(t *testing.T) {
-	executor := &fakeCommandExecutor{result: &sandbox.Result{OK: true}}
-	tool := tools.NewExecuteShellTool(executor)
-	if tool == nil {
-		t.Fatal("expected non-nil execute_shell tool")
-	}
-	def := tool.Definition()
-	if !def.IsDeferred() {
-		t.Fatalf("execute_shell must be Deferred; got VisibilityTier=%q", def.VisibilityTier)
-	}
-}
-
 // TestRenderSplitManifest_ExecuteToolsInDeferredSection is the manifest probe
-// AC: with real execute_code and execute_shell definitions, both tools appear
-// in the deferred section and NOT in the always-on catalog.
+// AC: with the real execute_code definition, the tool appears in the deferred
+// section and NOT in the always-on catalog.
 func TestRenderSplitManifest_ExecuteToolsInDeferredSection(t *testing.T) {
 	codeExec := &fakeSandboxExecutor{result: &sandbox.Result{OK: true}}
 	codeTool := tools.NewExecuteCodeToolWithStoreAndRegistry(codeExec, nil, nil, nil)
-	shellExec := &fakeCommandExecutor{result: &sandbox.Result{OK: true}}
-	shellTool := tools.NewExecuteShellTool(shellExec)
 
-	defs := []tools.ToolDefinition{codeTool.Definition(), shellTool.Definition()}
+	defs := []tools.ToolDefinition{codeTool.Definition()}
 	got := tools.RenderSplitManifest(defs)
 
 	const deferredHeader = "## Deferred tools (call tool_search to load schema)"
@@ -497,13 +443,12 @@ func TestRenderSplitManifest_ExecuteToolsInDeferredSection(t *testing.T) {
 	}
 	deferredStart := strings.Index(got, deferredHeader)
 	deferredSection := got[deferredStart:]
-	for _, name := range []string{"execute_code", "execute_shell"} {
-		if !strings.Contains(deferredSection, "- "+name) {
-			t.Errorf("tool %q missing from deferred section:\n%s", name, deferredSection)
-		}
-		if deferredStart > 0 && strings.Contains(got[:deferredStart], "- "+name) {
-			t.Errorf("tool %q leaked into always-on section:\n%s", name, got[:deferredStart])
-		}
+	name := "execute_code"
+	if !strings.Contains(deferredSection, "- "+name) {
+		t.Errorf("tool %q missing from deferred section:\n%s", name, deferredSection)
+	}
+	if deferredStart > 0 && strings.Contains(got[:deferredStart], "- "+name) {
+		t.Errorf("tool %q leaked into always-on section:\n%s", name, got[:deferredStart])
 	}
 }
 

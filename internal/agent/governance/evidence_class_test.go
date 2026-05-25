@@ -17,7 +17,7 @@ func TestIsEvidenceClassTool(t *testing.T) {
 		{"source list", "source", map[string]any{"action": "list"}, false},
 		{"task list", "task", map[string]any{"action": "list"}, true},
 		{"task schedule", "task", map[string]any{"action": "schedule"}, false},
-		{"execute shell control", "execute_shell", nil, false},
+		{"execute code control", "execute_code", nil, false},
 		{"web control", "web", map[string]any{"action": "search"}, false},
 		{"create document control", "create_document", map[string]any{"format": "pdf"}, false},
 	}

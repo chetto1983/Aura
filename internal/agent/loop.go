@@ -333,7 +333,7 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				}
 			case "run_aurabot_swarm":
 				stats.SwarmUsed = true
-			case "execute_code", "execute_shell":
+			case "execute_code":
 				stats.SandboxUsed = true
 			}
 		}

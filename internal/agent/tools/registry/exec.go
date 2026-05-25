@@ -21,11 +21,6 @@ type ExecuteCodeTool struct {
 	registry    *Registry
 }
 
-// ExecuteShellTool lets the LLM run shell commands in Aura's process runtime.
-type ExecuteShellTool struct {
-	manager sandbox.CommandExecutor
-}
-
 // NewExecuteCodeToolWithStoreAndRegistry creates execute_code with optional
 // artifact delivery, source persistence, and bounded internal tool orchestration.
 func NewExecuteCodeToolWithStoreAndRegistry(manager sandbox.Executor, sender DocumentSender, sourceStore source.Writer, registry *Registry) *ExecuteCodeTool {
@@ -35,30 +30,7 @@ func NewExecuteCodeToolWithStoreAndRegistry(manager sandbox.Executor, sender Doc
 	return &ExecuteCodeTool{manager: manager, sender: sender, sourceStore: sourceStore, registry: registry}
 }
 
-func NewExecuteShellTool(manager sandbox.CommandExecutor) *ExecuteShellTool {
-	if isNilCommandExecutor(manager) {
-		return nil
-	}
-	if runtime, ok := manager.(interface{ RuntimeKind() sandbox.RuntimeKind }); ok && runtime.RuntimeKind() != sandbox.RuntimeKindProcess {
-		return nil
-	}
-	return &ExecuteShellTool{manager: manager}
-}
-
 func isNilExecutor(manager sandbox.Executor) bool {
-	if manager == nil {
-		return true
-	}
-	v := reflect.ValueOf(manager)
-	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return v.IsNil()
-	default:
-		return false
-	}
-}
-
-func isNilCommandExecutor(manager sandbox.CommandExecutor) bool {
 	if manager == nil {
 		return true
 	}
@@ -209,7 +181,6 @@ const internalToolCallManifestName = "aura_tool_calls.json"
 // top of this — both must permit the call for it to run.
 var blockedInternalToolCalls = map[string]bool{
 	"execute_code":  true,
-	"execute_shell": true,
 	"delete_source": true,
 	"forget_memory": true,
 }
@@ -349,94 +320,6 @@ func marshalInternalToolResults(results internalToolCallResults) (string, error)
 		return "", err
 	}
 	return string(body), nil
-}
-
-func (t *ExecuteShellTool) Name() string { return "execute_shell" }
-
-func (t *ExecuteShellTool) Definition() ToolDefinition {
-	return ToolDefinition{
-		Name:            t.Name(),
-		Description:     t.Description(),
-		Parameters:      t.Parameters(),
-		DestructiveHint: true, // shell commands can modify filesystem, network, and runtime state
-		VisibilityTier:  VisibilityDeferred,
-	}
-}
-
-func (t *ExecuteShellTool) Description() string {
-	return `Execute a shell command in Aura's container runtime. Read-only stdout, capped, results are INTERNAL — synthesize before replying.
-
-EXAMPLES — copy the shape exactly:
-
-  execute_shell({"command":"uname -a"})
-  execute_shell({"command":"ls /workspace/wiki | head -5"})
-  execute_shell({"command":"curl -sSL https://example.com | head -c 200","timeout":15})
-
-Only "command" is REQUIRED.`
-}
-
-func (t *ExecuteShellTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"command": map[string]any{
-				"type":        "string",
-				"description": "REQUIRED. Shell command to execute in the Aura runtime workspace.",
-			},
-			"timeout": map[string]any{
-				"type":        "integer",
-				"description": "Optional. Per-call timeout in seconds (1-600). Defaults to 300s.",
-				"minimum":     1,
-				"maximum":     600,
-			},
-		},
-		"required": []string{"command"},
-		"examples": []any{
-			map[string]any{"command": "uname -a"},
-			map[string]any{"command": "ls /workspace/wiki | head -5"},
-			map[string]any{"command": "curl -sSL https://example.com | head -c 200", "timeout": 15},
-		},
-	}
-}
-
-func (t *ExecuteShellTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	command, ok := args["command"].(string)
-	if !ok || strings.TrimSpace(command) == "" {
-		return "", fmt.Errorf("command is required and must be a string")
-	}
-
-	timeoutSec := intArg(args, "timeout", 0, 0, 600)
-	if timeoutSec > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
-		defer cancel()
-	}
-
-	// Process runtime shares the Aura container network; hard-code the runtime
-	// arg to false. Future namespaced runtimes can re-expose this through the schema.
-	result, err := t.manager.ExecuteCommand(ctx, command, false)
-	if err != nil {
-		return "", fmt.Errorf("shell command failed: %w", err)
-	}
-	if !result.OK {
-		detail := strings.TrimSpace(result.Stderr)
-		if detail == "" {
-			detail = strings.TrimSpace(result.Stdout)
-		}
-		return "", fmt.Errorf("shell command failed (exit=%d): %s", result.ExitCode, detail)
-	}
-
-	out := fmt.Sprintf("exit_code: %d\nelapsed_ms: %d\n\n%s", result.ExitCode, result.ElapsedMs, result.Stdout)
-	if strings.TrimSpace(result.Stderr) != "" {
-		out += fmt.Sprintf("\n--- stderr ---\n%s", result.Stderr)
-	}
-	if len(result.Artifacts) > 0 {
-		out += "\n\nartifacts:"
-		for _, artifact := range result.Artifacts {
-			out += fmt.Sprintf("\n- %s (%d bytes, %s)", artifact.Name, artifact.SizeBytes, artifact.MimeType)
-		}
-	}
-	return out, nil
 }
 
 type persistedArtifact struct {

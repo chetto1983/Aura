@@ -59,12 +59,6 @@ type Executor interface {
 	Execute(ctx context.Context, code string, allowNetwork bool) (*Result, error)
 }
 
-// CommandExecutor is the narrow execute_shell runtime surface. Only runtimes
-// that intentionally expose a process shell implement it.
-type CommandExecutor interface {
-	ExecuteCommand(ctx context.Context, command string, allowNetwork bool) (*Result, error)
-}
-
 // CodeValidator validates generated Python before execution or persistence.
 type CodeValidator interface {
 	ValidateCode(code string) error
@@ -122,24 +116,6 @@ func (m *Manager) Execute(ctx context.Context, code string, allowNetwork bool) (
 		return nil, err
 	}
 	return m.runtime.Execute(ctx, code, allowNetwork)
-}
-
-// ExecuteCommand runs a shell command in runtimes that explicitly support it.
-func (m *Manager) ExecuteCommand(ctx context.Context, command string, allowNetwork bool) (*Result, error) {
-	if strings.TrimSpace(command) == "" {
-		return nil, errors.New("sandbox: command must not be empty")
-	}
-	if len(command) > 20_000 {
-		return nil, errors.New("sandbox: command exceeds 20KB limit")
-	}
-	if m == nil || m.runtime == nil {
-		return nil, errors.New("sandbox: runtime is required")
-	}
-	executor, ok := m.runtime.(CommandExecutor)
-	if !ok {
-		return nil, errors.New("sandbox: runtime does not support shell commands")
-	}
-	return executor.ExecuteCommand(ctx, command, allowNetwork)
 }
 
 // IsAvailable reports whether the configured runtime can execute code.

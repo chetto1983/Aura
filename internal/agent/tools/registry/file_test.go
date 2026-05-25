@@ -29,19 +29,25 @@ func TestFileTool_Schema(t *testing.T) {
 	props, _ := params["properties"].(map[string]any)
 	action, _ := props["action"].(map[string]any)
 	enum, _ := action["enum"].([]string)
-	if len(enum) != 5 {
-		t.Fatalf("action enum = %v, want [list read search write patch]", enum)
+	if len(enum) != 11 {
+		t.Fatalf("action enum = %v, want 11 actions (list read search write patch remove move copy tree info resolve)", enum)
 	}
 	examples, _ := params["examples"].([]any)
-	if len(examples) < 5 {
-		t.Fatalf("examples = %#v, want one example for each action", examples)
+	if len(examples) < 11 {
+		t.Fatalf("examples = %#v, want one example per action", examples)
 	}
 	requiredByAction := map[string]string{
-		"list":   "path",
-		"read":   "path",
-		"search": "pattern",
-		"write":  "content",
-		"patch":  "old",
+		"list":    "path",
+		"read":    "path",
+		"search":  "pattern",
+		"write":   "content",
+		"patch":   "old",
+		"remove":  "path",
+		"move":    "src",
+		"copy":    "src",
+		"tree":    "path",
+		"info":    "path",
+		"resolve": "name",
 	}
 	seen := map[string]bool{}
 	for _, raw := range examples {

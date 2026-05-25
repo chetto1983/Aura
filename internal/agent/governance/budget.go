@@ -50,7 +50,7 @@ func ToolClass(name string) string {
 		return ClassWeb
 	case "search", "search_memory", "read_memory", "list_memory", "forget_memory":
 		return ClassWiki
-	case "execute_code", "execute_bash", "execute_shell":
+	case "execute_code":
 		return ClassExec
 	case "source", "read_source", "store_source", "ingest_source", "ocr_source":
 		return ClassSource

@@ -25,7 +25,7 @@
 // the bubble passed through (Aura's progressive edits) and asserts:
 //
 //   - the "🛠 Sto lavorando…" status header appeared at least once
-//   - a known tool name (search_memory / web_search / execute_shell)
+//   - a known tool name (search_memory / web_search / execute_code)
 //     appeared at least once
 //   - the final body is a clean answer (no 🛠 / no 🧠 chrome)
 //

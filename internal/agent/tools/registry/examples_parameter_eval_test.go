@@ -32,7 +32,6 @@ func TestExamplesParameterEval(t *testing.T) {
 		&SourceTool{},
 		&FileTool{},
 		&ExecuteCodeTool{},
-		&ExecuteShellTool{},
 		&ProposePatchTool{},
 		&AgentNoteTool{},
 	}

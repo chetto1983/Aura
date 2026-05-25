@@ -874,51 +874,6 @@ func allCases(now time.Time, enableTTS bool) []Case {
 			},
 		},
 
-		// Phase-QA2 / US-QA-COV02 — execute_shell sandbox E2E.
-		// Asks Aura to run a deterministic echo command via execute_shell and
-		// verifies the stamped marker appears in the reply. Skips gracefully
-		// when sandbox.enabled=false (infra-skip US-QA-COV02-INFRA).
-		// Ground truth: tool_attempts DB row for execute_shell, not reply text alone.
-		{
-			Name:     "tool-execute-shell",
-			Category: "tools-sandbox",
-			Prompt:   fmt.Sprintf("Usa execute_shell per eseguire il comando: echo PROBE_SHELL_OK_%s. Mostrami l'output letterale.", stamp),
-			Setup: func(env *Env) error {
-				enabled, err := env.fetchSandboxEnabled()
-				if err != nil {
-					return fmt.Errorf("health check failed: %w", err)
-				}
-				if !enabled {
-					return fmt.Errorf("sandbox disabled (sandbox.enabled=false in /api/health) — infra-skip US-QA-COV02-INFRA")
-				}
-				execShellBefore = time.Now()
-				return nil
-			},
-			Verify: func(r ChatReply, env *Env) []string {
-				var miss []string
-				if r.ToolCalls == 0 {
-					miss = append(miss, "expected >= 1 tool call (execute_shell), got 0")
-				}
-				marker := "PROBE_SHELL_OK_" + stamp
-				if !strings.Contains(r.Reply, marker) {
-					miss = append(miss, fmt.Sprintf("reply missing expected shell marker %q (got: %q)", marker, truncate(r.Reply, 200)))
-				}
-				// Ground truth: DB must have a successful tool_attempts row for execute_shell.
-				counts, err := env.toolAttemptsSince(execShellBefore, "execute_shell")
-				if err != nil {
-					miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
-					return miss
-				}
-				count := counts["execute_shell"]
-				fmt.Fprintf(os.Stderr, "[case=tool-execute-shell] tool_attempts execute_shell since %s: count=%d\n",
-					execShellBefore.Format(time.RFC3339), count)
-				if count == 0 {
-					miss = append(miss, "DB ground truth: no successful tool_attempts row for execute_shell since probe start")
-				}
-				return miss
-			},
-		},
-
 		// Phase-QA2 / US-QA-COV05 — source action=reprocess ingest E2E.
 		// Uploads a small markdown source (→extract_complete), asks Aura to call
 		// source action=reprocess on it, then verifies the generated wiki summary page exists
@@ -1306,7 +1261,6 @@ var (
 	htmlProbeID        string
 	zipProbeID         string
 	execCodeBefore     time.Time
-	execShellBefore    time.Time
 	ocrProbeID         string
 	ingestProbeID      string
 	ingestExpectedSlug string

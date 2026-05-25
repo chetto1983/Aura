@@ -190,7 +190,7 @@ func TestMicrocompactClearsStaleMultiCallBatchAndIsIdempotent(t *testing.T) {
 	calls := []llm.ToolCall{
 		{ID: "old-a", Name: "search"},
 		{ID: "old-b", Name: "web"},
-		{ID: "old-c", Name: "execute_shell"},
+		{ID: "old-c", Name: "execute_code"},
 	}
 	msgs = append(msgs, llm.Message{Role: "assistant", ToolCalls: calls})
 	for _, call := range calls {
