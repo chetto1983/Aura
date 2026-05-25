@@ -24,6 +24,7 @@ import (
 //   - action=diff       - graph changes since a git ref or timestamp
 //   - action=gaps       - isolated or under-linked wiki pages
 //   - action=surprises  - non-obvious wiki graph edges
+//   - action=suggest_questions - concrete graph-grounded questions to ask next
 type SearchTool struct {
 	searchMem         *SearchMemoryTool
 	wikiReader        wiki.PageReader
@@ -36,6 +37,7 @@ type SearchTool struct {
 	wikiDiff          *WikiDiffTool
 	wikiGaps          *WikiGapsTool
 	wikiSurprises     *WikiSurprisesTool
+	wikiQuestions     *WikiSuggestQuestionsTool
 }
 
 // NewSearchTool wires the unified search tool. Returns nil when all three
@@ -73,6 +75,7 @@ func (t *SearchTool) WithRecallAndGraphActions(
 	wikiDiff *WikiDiffTool,
 	wikiGaps *WikiGapsTool,
 	wikiSurprises *WikiSurprisesTool,
+	wikiQuestions *WikiSuggestQuestionsTool,
 ) *SearchTool {
 	if t == nil {
 		return nil
@@ -84,6 +87,7 @@ func (t *SearchTool) WithRecallAndGraphActions(
 	t.wikiDiff = wikiDiff
 	t.wikiGaps = wikiGaps
 	t.wikiSurprises = wikiSurprises
+	t.wikiQuestions = wikiQuestions
 	return t
 }
 
@@ -102,7 +106,7 @@ func (t *SearchTool) Definition() ToolDefinition {
 }
 
 func (t *SearchTool) Description() string {
-	return `Read-only. Unified knowledge lookup over wiki, sources, typed memory, archive, and graph.
+	return `Read-only. Unified knowledge lookup.
 
 EXAMPLES:
 
@@ -117,8 +121,9 @@ EXAMPLES:
   search({"action":"diff","since":"HEAD~1"})
   search({"action":"gaps","top_k":10})
   search({"action":"surprises","top_k":5})
+  search({"action":"suggest_questions","top_k":5})
 
-action REQUIRED: search, list, read, lessons, user_facts, god_nodes, subgraph, path, diff, gaps, surprises.
+action REQUIRED: search, list, read, lessons, user_facts, god_nodes, subgraph, path, diff, gaps, surprises, suggest_questions.
 
 Per-action required:
   - search -> query
@@ -132,8 +137,9 @@ Per-action required:
   - diff -> nothing (since optional timestamp/ref/hash)
   - gaps -> nothing (top_k optional)
   - surprises -> nothing (top_k optional)
+  - suggest_questions -> nothing (top_k optional)
 
-Optional: zone ("wiki"/"source"/"all"), top_k, limit, depth, budget_tokens, max_hops, since.`
+Optional: zone, top_k, limit, depth, budget_tokens, max_hops, since.`
 }
 
 func (t *SearchTool) Parameters() map[string]any {
@@ -144,8 +150,8 @@ func (t *SearchTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"action": map[string]any{
 				"type":        "string",
-				"enum":        []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "gaps", "surprises"},
-				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (markdown page/source), lessons (operational lessons), user_facts (user memory), god_nodes (top real-entity wiki hubs; operational/uncategorized hubs filtered out), subgraph (query-seeded graph capsule), path (shortest wiki path), diff (wiki graph changes), gaps (isolated or under-linked wiki pages), surprises (non-obvious graph edges).",
+				"enum":        []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "gaps", "surprises", "suggest_questions"},
+				"description": "Operation: search, list, read, lessons, user_facts, god_nodes, subgraph, path, diff, gaps, surprises, suggest_questions.",
 			},
 			"query": map[string]any{
 				"type":        "string",
@@ -162,7 +168,7 @@ func (t *SearchTool) Parameters() map[string]any {
 			},
 			"top_k": map[string]any{
 				"type":        "integer",
-				"description": "action=search max results (1-12, default 6), action=god_nodes max nodes (1-50, default 10), action=gaps max slugs (1-50, default 20), or action=surprises max edges (1-20, default 5).",
+				"description": "action=search max results; god_nodes/gaps/surprises/suggest_questions result cap.",
 				"minimum":     1,
 				"maximum":     50,
 			},
@@ -232,6 +238,7 @@ func (t *SearchTool) Parameters() map[string]any {
 			{Name: "diff", RequiredKeys: nil},
 			{Name: "gaps", RequiredKeys: nil},
 			{Name: "surprises", RequiredKeys: nil},
+			{Name: "suggest_questions", RequiredKeys: nil},
 		}),
 		"examples": []any{
 			map[string]any{"action": "search", "query": "corso base robot", "top_k": 6},
@@ -247,12 +254,13 @@ func (t *SearchTool) Parameters() map[string]any {
 			map[string]any{"action": "diff", "since": "HEAD~1"},
 			map[string]any{"action": "gaps", "top_k": 10},
 			map[string]any{"action": "surprises", "top_k": 5},
+			map[string]any{"action": "suggest_questions", "top_k": 5},
 		},
 	}
 }
 
 var (
-	searchToolValidActions = []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "gaps", "surprises"}
+	searchToolValidActions = []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "gaps", "surprises", "suggest_questions"}
 	searchToolActionHints  = []ActionHint{
 		{Name: "search", RequiredKeys: []string{"query"}},
 		{Name: "read", RequiredKeys: []string{"slug"}},
@@ -261,6 +269,7 @@ var (
 		{Name: "diff", RequiredKeys: nil},
 		{Name: "gaps", RequiredKeys: nil},
 		{Name: "surprises", RequiredKeys: nil},
+		{Name: "suggest_questions", RequiredKeys: nil},
 	}
 )
 
@@ -292,6 +301,8 @@ func (t *SearchTool) Execute(ctx context.Context, args map[string]any) (string, 
 		return t.doGaps(ctx, args)
 	case "surprises":
 		return t.doSurprises(ctx, args)
+	case "suggest_questions":
+		return t.doSuggestQuestions(ctx, args)
 	case "":
 		return "", ActionRequiredError("search", searchToolValidActions, args, searchToolActionHints, "search")
 	default:
@@ -447,6 +458,13 @@ func (t *SearchTool) doSurprises(ctx context.Context, args map[string]any) (stri
 		return "", fmt.Errorf("search surprises: wiki graph unavailable")
 	}
 	return t.wikiSurprises.Execute(ctx, searchDelegateArgs(args, "top_k"))
+}
+
+func (t *SearchTool) doSuggestQuestions(ctx context.Context, args map[string]any) (string, error) {
+	if t.wikiQuestions == nil {
+		return "", fmt.Errorf("search suggest_questions: wiki graph unavailable")
+	}
+	return t.wikiQuestions.Execute(ctx, searchDelegateArgs(args, "top_k"))
 }
 
 // readWikiPage returns a compact markdown capsule for LLM-facing wiki reads.

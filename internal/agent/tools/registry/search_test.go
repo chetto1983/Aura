@@ -274,6 +274,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 			NewWikiDiffTool(store),
 			NewWikiGapsTool(store),
 			NewWikiSurprisesTool(store),
+			NewWikiSuggestQuestionsTool(store),
 		)
 
 	cases := []struct {
@@ -289,6 +290,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 		{name: "diff", args: map[string]any{"action": "diff", "since": "HEAD"}, want: `"summary":"no changes"`},
 		{name: "gaps", args: map[string]any{"action": "gaps", "top_k": 2}, want: `"slugs":["island"]`},
 		{name: "surprises", args: map[string]any{"action": "surprises", "top_k": 2}, want: `"confidence":"EXTRACTED"`},
+		{name: "suggest questions", args: map[string]any{"action": "suggest_questions", "top_k": 2}, want: "suggested question(s)"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -303,6 +305,49 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 	}
 }
 
+func TestSearchTool_SuggestQuestionsAction(t *testing.T) {
+	ctx := context.Background()
+	store := newSubgraphTestStore(t, map[string]*wiki.Page{
+		"alpha": {
+			Title:    "Alpha",
+			Category: "project",
+			Body:     "Alpha.",
+			Related:  []wiki.RelatedRef{{Slug: "beta", Confidence: wiki.ConfidenceAmbiguous}},
+		},
+		"beta":   {Title: "Beta", Category: "person", Body: "Beta."},
+		"bridge": {Title: "Bridge", Category: "system", Body: "[[entity-a]] [[concept-a]]"},
+		"entity-a": {
+			Title:    "Entity A",
+			Category: "entity",
+			Body:     "Entity.",
+		},
+		"concept-a": {
+			Title:    "Concept A",
+			Category: "concept",
+			Body:     "Concept.",
+		},
+	})
+	tool := NewSearchTool(nil, store, nil).
+		WithRecallAndGraphActions(nil, nil, nil, nil, nil, nil, nil, nil, NewWikiSuggestQuestionsTool(store))
+
+	out, err := tool.Execute(ctx, map[string]any{"action": "suggest_questions", "top_k": 4})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "suggested question(s) for the current wiki:") {
+		t.Fatalf("unexpected capsule header:\n%s", out)
+	}
+	for _, want := range []string{
+		"- [ambiguous_edge] What is the exact relationship between [[alpha]] and [[beta]]?",
+		"- [bridge_node] Why does [[bridge]] connect concept to entity?",
+		"why:",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 // TestSearch_GraphActionsErrorWhenDelegateMissing verifies that
 // search(action="god_nodes"|"subgraph"|"path") returns an explicit error
 // when the SearchTool was wired without the graph delegates (the
@@ -314,7 +359,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 func TestSearch_GraphActionsErrorWhenDelegateMissing(t *testing.T) {
 	ctx := context.Background()
 	tool := &SearchTool{}
-	for _, action := range []string{"god_nodes", "subgraph", "path", "diff", "gaps", "surprises"} {
+	for _, action := range []string{"god_nodes", "subgraph", "path", "diff", "gaps", "surprises", "suggest_questions"} {
 		_, err := tool.Execute(ctx, map[string]any{"action": action})
 		if err == nil {
 			t.Fatalf("action=%q returned nil error, want unavailable error", action)
