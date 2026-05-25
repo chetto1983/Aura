@@ -66,6 +66,19 @@ func hybridQdrantServer(t *testing.T, points []map[string]interface{}) *httptest
 	return srv
 }
 
+func hybridQdrantPoint(slug string, score float64, page *wiki.Page) map[string]interface{} {
+	return map[string]interface{}{
+		"id":    qdrantPointID(slug),
+		"score": score,
+		"payload": map[string]string{
+			"slug":    slug,
+			"title":   page.Title,
+			"content": page.Title + "\n" + page.Body,
+			"kind":    "wiki_page",
+		},
+	}
+}
+
 // TestSearchHybrid_NoisePageDownranked ensures a page with high vector
 // similarity but no query token in its title is outranked by a page whose
 // title literally contains the query term.
@@ -100,26 +113,8 @@ func TestSearchHybrid_NoisePageDownranked(t *testing.T) {
 	// Qdrant intentionally returns noise page first (higher cosine) to simulate
 	// the pure-vector failure mode. Hybrid fusion must correct this.
 	qdrantPoints := []map[string]interface{}{
-		{
-			"id":    qdrantPointID(noiseSlug),
-			"score": 0.92,
-			"payload": map[string]string{
-				"slug":    noiseSlug,
-				"title":   noise.Title,
-				"content": noise.Title + "\n" + noise.Body,
-				"kind":    "wiki_page",
-			},
-		},
-		{
-			"id":    qdrantPointID(legitimateSlug),
-			"score": 0.71,
-			"payload": map[string]string{
-				"slug":    legitimateSlug,
-				"title":   legitimate.Title,
-				"content": legitimate.Title + "\n" + legitimate.Body,
-				"kind":    "wiki_page",
-			},
-		},
+		hybridQdrantPoint(noiseSlug, 0.92, noise),
+		hybridQdrantPoint(legitimateSlug, 0.71, legitimate),
 	}
 
 	srv := hybridQdrantServer(t, qdrantPoints)
@@ -189,6 +184,139 @@ func TestSearchHybrid_DiacriticInsensitiveMatch(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("diacritic-insensitive exact match did not return slug %q; exactResults: %+v", slug, exactResults)
+	}
+}
+
+func TestExactMatchTier_PreservesHyphenatedSlugAsSingleToken(t *testing.T) {
+	terms := exactSearchTerms("davide-marchetto")
+	if len(terms) == 0 || terms[0] != "davide-marchetto" {
+		t.Fatalf("terms = %#v, want full hyphenated slug first", terms)
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	exact := &wiki.Page{
+		Title:         "Davide Marchetto",
+		Body:          "Personal profile.",
+		Category:      "person",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	noise := &wiki.Page{
+		Title:         "Davide Notes",
+		Body:          "Mentions Davide Marchetto in body text.",
+		Category:      "note",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	_, db := hybridTestSetup(t, []*wiki.Page{noise, exact})
+
+	results := exactMatchDB(context.Background(), db, "davide-marchetto", 10, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if len(results) == 0 {
+		t.Fatal("exactMatchDB returned no results")
+	}
+	if results[0].Slug != "davide-marchetto" {
+		t.Fatalf("top slug = %q, want davide-marchetto; results=%+v", results[0].Slug, results)
+	}
+	if results[0].ScoreExact < 0.9 {
+		t.Fatalf("top exact score = %v, want >= 0.9", results[0].ScoreExact)
+	}
+}
+
+func TestExactMatchTier_PrefixBeatsSubstring(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	prefix := &wiki.Page{
+		Title:         "Robot Arm",
+		Body:          "Industrial arm.",
+		Category:      "machine",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	substring := &wiki.Page{
+		Title:         "Collaborative Robot",
+		Body:          "Cobot notes.",
+		Category:      "machine",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	_, db := hybridTestSetup(t, []*wiki.Page{substring, prefix})
+
+	results := exactMatchDB(context.Background(), db, "robot", 10, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if len(results) < 2 {
+		t.Fatalf("results = %+v, want at least prefix and substring hits", results)
+	}
+	if results[0].Slug != "robot-arm" {
+		t.Fatalf("top slug = %q, want prefix slug robot-arm; results=%+v", results[0].Slug, results)
+	}
+}
+
+func TestExactMatchTier_IDFDownweightsCommonTerms(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	pages := []*wiki.Page{
+		{Title: "Robot Alpha", Body: "Robot.", Category: "machine", SchemaVersion: wiki.CurrentSchemaVersion, PromptVersion: "v1", CreatedAt: now, UpdatedAt: now},
+		{Title: "Robot Beta", Body: "Robot.", Category: "machine", SchemaVersion: wiki.CurrentSchemaVersion, PromptVersion: "v1", CreatedAt: now, UpdatedAt: now},
+		{Title: "Collaborative Robot", Body: "Robot.", Category: "machine", SchemaVersion: wiki.CurrentSchemaVersion, PromptVersion: "v1", CreatedAt: now, UpdatedAt: now},
+	}
+	_, db := hybridTestSetup(t, pages)
+
+	results := exactMatchDB(context.Background(), db, "robot collaborative", 10, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if len(results) == 0 {
+		t.Fatal("exactMatchDB returned no results")
+	}
+	if results[0].Slug != "collaborative-robot" {
+		t.Fatalf("top slug = %q, want collaborative-robot; results=%+v", results[0].Slug, results)
+	}
+}
+
+func TestSearchHybrid_LiteralSlugPinnedAboveVectorAndFTS(t *testing.T) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	exact := &wiki.Page{
+		Title:         "Davide Marchetto",
+		Body:          "Personal profile.",
+		Category:      "person",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	noise := &wiki.Page{
+		Title:         "Davide Notes",
+		Body:          "Davide Marchetto Davide Marchetto Davide Marchetto.",
+		Category:      "note",
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	}
+	wikiDir, db := hybridTestSetup(t, []*wiki.Page{noise, exact})
+	noiseSlug := wiki.Slug(noise.Title)
+	exactSlug := wiki.Slug(exact.Title)
+	qdrantPoints := []map[string]interface{}{
+		hybridQdrantPoint(noiseSlug, 0.99, noise),
+		hybridQdrantPoint(exactSlug, 0.50, exact),
+	}
+	srv := hybridQdrantServer(t, qdrantPoints)
+	repo, err := NewQdrantRepositoryWithDB(QdrantConfig{
+		BaseURL:    srv.URL,
+		Collection: "aura_hybrid_test",
+	}, keywordEmbedding, wikiDir, db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("NewQdrantRepositoryWithDB: %v", err)
+	}
+
+	results, err := repo.SearchHybrid(context.Background(), "davide-marchetto", 5)
+	if err != nil {
+		t.Fatalf("SearchHybrid: %v", err)
+	}
+	if len(results) == 0 || results[0].Slug != exactSlug {
+		t.Fatalf("top result = %+v, want slug %q pinned first", results, exactSlug)
 	}
 }
 

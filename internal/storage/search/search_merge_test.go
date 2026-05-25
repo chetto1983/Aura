@@ -186,3 +186,34 @@ func TestMergeHybridResultsSingleChannelPerfectHit(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeHybridResultsPinsExactSlugBeforeFusion(t *testing.T) {
+	exact := []Result{{Kind: "wiki_page", Slug: "davide-marchetto", Title: "Davide Marchetto"}}
+	fts := []Result{{Kind: "wiki_page", Slug: "davide-notes", Title: "Davide Notes"}}
+	vector := []Result{{Kind: "wiki_page", Slug: "davide-notes", Title: "Davide Notes"}}
+
+	got := mergeHybridResults("davide-marchetto", 5, exact, fts, vector)
+	if len(got) == 0 {
+		t.Fatal("merge returned no results")
+	}
+	if got[0].Slug != "davide-marchetto" {
+		t.Fatalf("top slug = %q, want exact literal slug; results=%+v", got[0].Slug, got)
+	}
+	if got[0].Score != 1 || got[0].ScoreExact != 1 {
+		t.Fatalf("pinned score = (%v,%v), want Score=1 ScoreExact=1", got[0].Score, got[0].ScoreExact)
+	}
+}
+
+func TestMergeHybridResultsDoesNotPinNaturalLanguageQuery(t *testing.T) {
+	exact := []Result{{Kind: "wiki_page", Slug: "davide-marchetto", Title: "Davide Marchetto"}}
+	fts := []Result{{Kind: "wiki_page", Slug: "davide-notes", Title: "Davide Notes"}}
+	vector := []Result{{Kind: "wiki_page", Slug: "davide-notes", Title: "Davide Notes"}}
+
+	got := mergeHybridResults("tell me davide", 5, exact, fts, vector)
+	if len(got) == 0 {
+		t.Fatal("merge returned no results")
+	}
+	if got[0].Slug == "davide-marchetto" && got[0].Score == 1 {
+		t.Fatalf("natural-language query triggered literal slug pin: %+v", got)
+	}
+}

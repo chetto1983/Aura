@@ -236,10 +236,11 @@ func buildWikiMeta(slug, title, sizeStr string, fi wikiFileInfo, page indexedWik
 //
 // Recency decay is applied downstream in memory_search.go; this layer only
 // handles the join.
-func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
+func mergeHybridResults(query string, topK int, groups ...[]Result) []Result {
 	if topK <= 0 {
 		topK = 5
 	}
+	pinned, groups := splitPinnedExactSlug(query, groups)
 	type entry struct {
 		result      Result
 		score       float32
@@ -288,10 +289,49 @@ func mergeHybridResults(_ string, topK int, groups ...[]Result) []Result {
 		out = append(out, r)
 	}
 	sortHybridResultsByScore(out)
+	if pinned != nil {
+		pin := *pinned
+		pin.Score = 1
+		pin.ScoreExact = 1
+		pin.ScoreFTS = 0
+		pin.ScoreVector = 0
+		out = append([]Result{pin}, out...)
+	}
 	if len(out) > topK {
 		out = out[:topK]
 	}
 	return out
+}
+
+func splitPinnedExactSlug(query string, groups [][]Result) (*Result, [][]Result) {
+	if len(groups) == 0 {
+		return nil, groups
+	}
+	target := normalizeExactSlugish(query)
+	if target == "" {
+		return nil, groups
+	}
+	var pinned *Result
+	for _, result := range groups[0] {
+		if normalizeExactSlugish(result.Slug) == target {
+			copied := result
+			pinned = &copied
+			break
+		}
+	}
+	if pinned == nil {
+		return nil, groups
+	}
+	pinKey := resultKey(*pinned)
+	filtered := make([][]Result, len(groups))
+	for i, group := range groups {
+		for _, result := range group {
+			if resultKey(result) != pinKey {
+				filtered[i] = append(filtered[i], result)
+			}
+		}
+	}
+	return pinned, filtered
 }
 
 // rrfGroupWeight returns the RRF channel weight for a group at the given
