@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -405,6 +406,16 @@ func (t *ExecuteShellTool) Execute(ctx context.Context, args map[string]any) (st
 		return "", fmt.Errorf("command is required and must be a string")
 	}
 
+	// Heredoc bodies emitted by the LLM regularly contain markdown backticks
+	// for inline code formatting. With an unquoted `<<EOF` delimiter the shell
+	// performs command substitution on those backticks before writing the body
+	// to the target file — see chat=1148481707 turn=342 on 2026-05-25 where
+	// "Never use the `file` tool ... via `execute_shell`" got expanded to
+	// "Never use the  tool ... via ." and silently corrupted AGENT.md.
+	// Force-quoting the delimiter disables expansion without changing the
+	// literal payload the LLM intended to write.
+	command = safeQuoteHeredocs(command)
+
 	timeoutSec := intArg(args, "timeout", 0, 0, 600)
 	if timeoutSec > 0 {
 		var cancel context.CancelFunc
@@ -424,6 +435,15 @@ func (t *ExecuteShellTool) Execute(ctx context.Context, args map[string]any) (st
 			detail = strings.TrimSpace(result.Stdout)
 		}
 		return "", fmt.Errorf("shell command failed (exit=%d): %s", result.ExitCode, detail)
+	}
+
+	// Some shell-level errors do NOT propagate to exit_code: a `cat <<EOF` that
+	// completes successfully reports exit=0 even if command-substitution inside
+	// the body fired "command not found" lines into stderr. Treat those markers
+	// as failure so the LLM sees the same signal the operator would.
+	if stderrIndicatesShellFailure(result.Stderr) {
+		return "", fmt.Errorf("shell command reported exit=%d but stderr indicates failure: %s",
+			result.ExitCode, strings.TrimSpace(result.Stderr))
 	}
 
 	out := fmt.Sprintf("exit_code: %d\nelapsed_ms: %d\n\n%s", result.ExitCode, result.ElapsedMs, result.Stdout)
@@ -481,6 +501,58 @@ func (t *ExecuteCodeTool) persistArtifacts(ctx context.Context, artifacts []sand
 		persisted[i] = persistedArtifact{ok: true, sourceID: src.ID, duplicate: dup}
 	}
 	return persisted, nil
+}
+
+// heredocDelimiterPattern matches an unquoted heredoc introducer like
+// `<<EOF`, `<<-END`, or `<<__DONE__`. Already-quoted forms (`<<'EOF'`,
+// `<<"EOF"`, `<<\EOF`) are intentionally not matched because they already
+// disable shell expansion in the body.
+//
+// Known limitation: the pattern is a regex, not a shell tokenizer, so a
+// literal `<<EOF` inside a single-quoted string argument (e.g.
+// `echo '<<EOF'`) would also be rewritten. The blast radius of that edge
+// case is low (string value changes from `<<EOF` to `<<'EOF'`) versus the
+// silent file-corruption bug the rewrite prevents.
+var heredocDelimiterPattern = regexp.MustCompile(`<<(-?)([A-Za-z_][A-Za-z0-9_]*)`)
+
+// safeQuoteHeredocs rewrites every unquoted heredoc delimiter in command to
+// its single-quoted form so the shell does not perform parameter, command,
+// or arithmetic expansion inside the body. POSIX requires that when the
+// quoted form is used (e.g. `<<'EOF'`), the body is treated literally —
+// exactly the semantics the LLM almost always intends when piping markdown
+// or code through `cat <<EOF >> file`.
+func safeQuoteHeredocs(command string) string {
+	return heredocDelimiterPattern.ReplaceAllStringFunc(command, func(match string) string {
+		body := match[2:] // strip "<<"
+		dash := ""
+		if strings.HasPrefix(body, "-") {
+			dash = "-"
+			body = body[1:]
+		}
+		return "<<" + dash + "'" + body + "'"
+	})
+}
+
+// shellErrorPrefix matches the shell-level error prefixes that production
+// shells emit to stderr when they could not execute a command — even though
+// the surrounding script may still exit with code 0 (e.g. backtick command
+// substitution failing inside a `cat <<EOF` body). Matched shapes:
+//
+//	/bin/sh: 1: foo: not found
+//	/bin/sh: 12: Syntax error: ...
+//	bash: line 3: foo: command not found
+//	sh: 1: bar: not found
+var shellErrorPrefix = regexp.MustCompile(`(?m)^(?:[^:\s]*?(?:sh|bash)): (?:line )?\d+:`)
+
+// stderrIndicatesShellFailure returns true when stderr contains a shell-level
+// error prefix that the wrapped shell may have hidden behind exit_code=0.
+// This catches the unquoted-heredoc-with-backticks failure mode where the
+// outer command (`cat`) succeeds but the embedded substitution did not.
+func stderrIndicatesShellFailure(stderr string) bool {
+	if strings.TrimSpace(stderr) == "" {
+		return false
+	}
+	return shellErrorPrefix.MatchString(stderr)
 }
 
 func (t *ExecuteCodeTool) deliverArtifacts(ctx context.Context, artifacts []sandbox.Artifact) ([]bool, error) {
