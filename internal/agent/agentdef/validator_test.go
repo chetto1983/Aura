@@ -63,13 +63,59 @@ func TestValidator_ValidChainQuiet(t *testing.T) {
 	}
 }
 
-func TestValidator_EnforceTierRejectsWarnings(t *testing.T) {
-	err := (&Validator{EnforceTier: true}).Validate([]AgentDefinition{
-		delegatingDefinition("planner", TierChat, "critic"),
-		validDefinition("critic", TierChat),
-	})
-	if err == nil || !strings.Contains(err.Error(), "same_tier_delegation") {
-		t.Fatalf("err = %v, want enforced same-tier error", err)
+func TestValidator_EnforceTierRejectsPolicyViolations(t *testing.T) {
+	tests := []struct {
+		name string
+		defs []AgentDefinition
+		want string
+	}{
+		{
+			name: "worker subagents",
+			defs: []AgentDefinition{
+				delegatingDefinition("worker", TierWorker, "helper"),
+				validDefinition("helper", TierWorker),
+			},
+			want: "worker_has_subagents",
+		},
+		{
+			name: "same tier",
+			defs: []AgentDefinition{
+				delegatingDefinition("planner", TierChat, "critic"),
+				validDefinition("critic", TierChat),
+			},
+			want: "same_tier_delegation",
+		},
+		{
+			name: "missing tier",
+			defs: []AgentDefinition{validDefinition("worker", "")},
+			want: "missing_tier_default_worker",
+		},
+		{
+			name: "cycle",
+			defs: []AgentDefinition{
+				delegatingDefinition("planner", TierChat, "worker"),
+				delegatingDefinition("worker", TierWorker, "planner"),
+			},
+			want: "cycle",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := (&Validator{EnforceTier: true}).Validate(tt.defs)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err = %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestValidator_EnforceTierAllowsSummarizer(t *testing.T) {
+	def, err := BuiltinDefinition("summarizer")
+	if err != nil {
+		t.Fatalf("BuiltinDefinition: %v", err)
+	}
+	if err := (&Validator{EnforceTier: true}).Validate([]AgentDefinition{def}); err != nil {
+		t.Fatalf("Validate summarizer: %v", err)
 	}
 }
 

@@ -375,7 +375,7 @@ func newApp(
 		BuiltinFS: agentdef.BuiltinFS,
 		UserDir:   filepath.Join(cfg.RuntimeWorkspacePath, "agents"),
 		Logger:    logger,
-	}, &agentdef.Validator{Logger: logger})
+	}, &agentdef.Validator{Logger: logger, EnforceTier: true})
 	if err != nil {
 		return nil, fmt.Errorf("loading agent definitions: %w", err)
 	}
