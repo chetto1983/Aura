@@ -182,7 +182,7 @@ func ExecuteToolCalls(
 			if err == nil && cfg.tokenJuiceEnabled {
 				result = CompactToolOutput(logger, tc.Name, args, result)
 			}
-			if err == nil && cfg.payloadSummarizer != nil {
+			if err == nil && cfg.payloadSummarizer != nil && !governance.IsEvidenceClassTool(tc.Name, args) {
 				if sp := cfg.payloadSummarizer.MaybeSummarize(ctx, tc.Name, parentTaskHintFromMessages(convCtx.Messages()), result); sp != nil {
 					result = sp.Summary
 				}

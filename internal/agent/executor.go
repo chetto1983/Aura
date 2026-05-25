@@ -121,7 +121,7 @@ func (e *agentExecutor) ExecuteToolCalls(ctx context.Context, calls []llm.ToolCa
 			}
 			// US-CTX-03: layer-2 payload summarizer — fires when TokenJuice was a
 			// fallback (no rule matched) OR the compacted output is still oversized.
-			if e.payloadSummarizer != nil {
+			if e.payloadSummarizer != nil && !governance.IsEvidenceClassTool(call.Name, call.Arguments) {
 				if sp := e.payloadSummarizer.MaybeSummarize(ctx, call.Name, parentTaskHintFromMessages(e.state.Messages()), raw); sp != nil {
 					raw = sp.Summary
 				}
