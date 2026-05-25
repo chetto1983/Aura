@@ -158,70 +158,11 @@ func (e *Env) deleteCompactMemoryDocuments(ctx context.Context, ids []string) er
 }
 
 func (e *Env) toolAttemptsSince(since time.Time, toolNames ...string) (map[string]int, error) {
-	toolNames = nonEmptyStrings(toolNames)
-	if len(toolNames) == 0 {
-		return map[string]int{}, nil
-	}
-	if e.dockerDBReady() {
-		var rows []struct {
-			ToolName string `json:"tool_name"`
-			Count    int    `json:"count"`
-		}
-		query := `
-SELECT tool_name, COUNT(*) AS count
-FROM tool_attempts
-WHERE started_at >= ` + sqliteQuote(since.UTC().Format(time.RFC3339Nano)) + `
-  AND outcome = 'ok'
-  AND tool_name IN (` + sqliteStringList(toolNames) + `)
-GROUP BY tool_name;`
-		raw, err := e.dockerSQLite(true, true, query)
-		if err != nil {
-			return nil, err
-		}
-		if len(raw) == 0 {
-			raw = []byte("[]")
-		}
-		if err := json.Unmarshal(raw, &rows); err != nil {
-			return nil, fmt.Errorf("decode docker tool_attempts: %w", err)
-		}
-		out := make(map[string]int, len(rows))
-		for _, row := range rows {
-			out[row.ToolName] = row.Count
-		}
-		return out, nil
-	}
-	return toolAttemptsSinceSQL(e.DB, since, toolNames)
+	return e.toolAttemptOKCountsSince(since, toolNames...)
 }
 
-func toolAttemptsSinceSQL(db *sql.DB, since time.Time, toolNames []string) (map[string]int, error) {
-	args := []any{since.UTC().Format(time.RFC3339Nano)}
-	placeholders := make([]string, 0, len(toolNames))
-	for _, name := range toolNames {
-		placeholders = append(placeholders, "?")
-		args = append(args, name)
-	}
-	rows, err := db.Query(`
-SELECT tool_name, COUNT(*)
-FROM tool_attempts
-WHERE started_at >= ?
-  AND outcome = 'ok'
-  AND tool_name IN (`+strings.Join(placeholders, ",")+`)
-GROUP BY tool_name
-`, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var toolName string
-		var count int
-		if err := rows.Scan(&toolName, &count); err != nil {
-			return nil, err
-		}
-		out[toolName] = count
-	}
-	return out, rows.Err()
+func (e *Env) toolAttemptOutcomeCountsSince(since time.Time, toolName string) (map[string]int, error) {
+	return e.toolAttemptOutcomeCounts(since, toolName)
 }
 
 func (e *Env) agentNoteContent(conversationID string) (content string, exists bool, err error) {

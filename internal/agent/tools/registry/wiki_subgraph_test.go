@@ -101,6 +101,9 @@ func TestWikiSubgraph_HappyPath(t *testing.T) {
 	if !strings.Contains(result, "customer-delta") {
 		t.Errorf("result missing seeded page 'customer-delta':\n%s", result)
 	}
+	if !strings.Contains(result, "SNIPPET Customer Delta has code 615827.") {
+		t.Errorf("result missing page-body snippet needed for one-call QA:\n%s", result)
+	}
 }
 
 func TestWikiSubgraph_QueryCapsuleHeaderShowsSeedsAndSignals(t *testing.T) {
@@ -139,6 +142,8 @@ func TestWikiSubgraph_QueryCapsuleHeaderShowsSeedsAndSignals(t *testing.T) {
 		"QUERY delta automazioni codice cliente",
 		"TRAVERSAL bfs depth=1 budget_tokens=500",
 		"SEARCH_SEED customer-delta score=0.950 exact=0.800 fts=0.700 vector=0.200 title=\"Customer Delta\"",
+		"SEED_CONTENT",
+		"SEED_SNIPPET customer-delta Customer Delta has code 615827.",
 		"PPR_SEED customer-delta",
 		"CONTENT",
 		"NODE customer-delta",

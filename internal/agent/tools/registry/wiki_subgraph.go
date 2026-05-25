@@ -228,6 +228,15 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 	for _, r := range selectedSearchResults {
 		sb.WriteString(wikiSubgraphSearchSeedLine(r))
 	}
+	sb.WriteString("SEED_CONTENT\n")
+	for _, r := range selectedSearchResults {
+		if p := readPage(r.Slug); p != nil {
+			snippet, _ := snippetAround(p.Body, query, wikiSubgraphSnippetMaxChars)
+			if snippet != "" {
+				fmt.Fprintf(&sb, "SEED_SNIPPET %s %s\n", r.Slug, snippet)
+			}
+		}
+	}
 	sb.WriteString("PPR_SEEDS\n")
 	for _, seed := range pprSeeds {
 		sb.WriteString(wikiSubgraphPPRSeedLine(seed, pprScores[seed]))
@@ -262,6 +271,18 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 		header := fmt.Sprintf("NODE %s [%s | depth=%d]\n", n.slug, title, n.depth)
 		if !appendWithinBudget(header) {
 			break
+		}
+
+		// For page nodes, include a query-focused body snippet so the
+		// subgraph capsule can answer simple factual questions without a
+		// second search(action=read) round-trip.
+		if !wiki.IsSubnodeID(n.slug) {
+			if p := readPage(n.slug); p != nil {
+				snippet, _ := snippetAround(p.Body, query, wikiSubgraphSnippetMaxChars)
+				if snippet != "" {
+					appendWithinBudget("SNIPPET " + snippet + "\n")
+				}
+			}
 		}
 
 		// For subnodes, add the byte-range snippet from B04.

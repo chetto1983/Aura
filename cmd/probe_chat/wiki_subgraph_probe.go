@@ -9,7 +9,7 @@ import (
 )
 
 func wikiSubgraphDeltaCase(stamp string) Case {
-	safeStamp := strings.NewReplacer("-", "_", ":", "_").Replace(stamp)
+	safeStamp := wiki.Slug(stamp)
 	fixture := &wikiSubgraphDeltaFixture{
 		customerSlug: "probe-customer-delta-" + safeStamp,
 		supplierSlug: "probe-supplier-acme-" + safeStamp,
@@ -71,7 +71,7 @@ func (f *wikiSubgraphDeltaFixture) setup(env *Env) error {
 	return nil
 }
 
-func (f *wikiSubgraphDeltaFixture) verify(r ChatReply, _ *Env) []string {
+func (f *wikiSubgraphDeltaFixture) verify(r ChatReply, env *Env) []string {
 	var miss []string
 	if r.ToolCalls == 0 {
 		miss = append(miss, "expected search action=subgraph tool call, got 0")
@@ -81,6 +81,23 @@ func (f *wikiSubgraphDeltaFixture) verify(r ChatReply, _ *Env) []string {
 	}
 	if !strings.Contains(strings.ToLower(r.Reply), "delta") {
 		miss = append(miss, "reply missing 'delta'")
+	}
+	if env == nil || env.DB == nil {
+		miss = append(miss, "DB unavailable for tool_attempts ground truth")
+		return miss
+	}
+	outcomes, err := env.toolAttemptOutcomeCountsSince(f.startedAt, "search")
+	if err != nil {
+		miss = append(miss, fmt.Sprintf("tool_attempts outcome query: %v", err))
+		return miss
+	}
+	if outcomes["ok"] == 0 {
+		miss = append(miss, fmt.Sprintf("tool_attempts missing ok search row since %s", f.startedAt.Format(time.RFC3339Nano)))
+	}
+	for _, outcome := range []string{"recoverable", "error"} {
+		if outcomes[outcome] > 0 {
+			miss = append(miss, fmt.Sprintf("search tool_attempts had %d %s row(s) since %s", outcomes[outcome], outcome, f.startedAt.Format(time.RFC3339Nano)))
+		}
 	}
 	return miss
 }
