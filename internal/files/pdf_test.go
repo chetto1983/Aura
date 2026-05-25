@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"github.com/aura/aura/internal/probe/docinspect"
 )
 
 func TestSanitizePDFFilename(t *testing.T) {
@@ -60,6 +62,34 @@ func TestBuildPDF_TitleOnly(t *testing.T) {
 	}
 	if !bytes.HasPrefix(body, []byte("%PDF-")) {
 		t.Error("title-only spec did not produce a valid PDF")
+	}
+}
+
+func TestBuildPDF_BulletsRenderAsASCII(t *testing.T) {
+	body, _, err := BuildPDF(PDFSpec{
+		Filename: "summary",
+		Title:    "Riepilogo",
+		Blocks: []PDFBlock{
+			{Kind: "bullet", Text: "Nome: Davide Marchetto"},
+			{Kind: "paragraph", Text: "• Residenza: Caraglio"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildPDF: %v", err)
+	}
+	text, err := docinspect.PDFText(body)
+	if err != nil {
+		t.Fatalf("PDFText: %v", err)
+	}
+	for _, bad := range []string{"â€¢", "•", "\uFFFD"} {
+		if strings.Contains(text, bad) {
+			t.Fatalf("pdf text contains mojibake/special bullet %q:\n%s", bad, text)
+		}
+	}
+	for _, want := range []string{"- Nome: Davide Marchetto", "- Residenza: Caraglio"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("pdf text missing %q:\n%s", want, text)
+		}
 	}
 }
 
@@ -126,6 +156,7 @@ func TestLatin1Sanitize(t *testing.T) {
 		{"en–dash", "en-dash"},           // en-dash → hyphen
 		{"and…", "and..."},               // ellipsis → three dots
 		{"non breaking", "non breaking"}, // NBSP → space
+		{"• item", "- item"},             // PDF base fonts render raw bullets as mojibake
 		{"emoji \U0001F600", "emoji ?"},  // out-of-range → ?
 		{"Latin-1 café", "Latin-1 café"}, // accented chars in cp1252 stay
 	}

@@ -35,7 +35,7 @@ type PDFSpec struct {
 // PDFBlock is one structural element. Discriminated by Kind:
 //   - "heading":   H1–H6 via Level (clamped 1..6); Text is the heading text.
 //   - "paragraph": plain paragraph; Text is the body.
-//   - "bullet":    rendered with a "• " prefix on a normal paragraph.
+//   - "bullet":    rendered with an ASCII "- " prefix on a normal paragraph.
 //   - "table":     Rows is a 2-D slice; row[i][j] is the cell at row i, col j.
 type PDFBlock struct {
 	Kind  string
@@ -93,7 +93,7 @@ func BuildPDF(spec PDFSpec) ([]byte, string, error) {
 		case "paragraph", "":
 			writePDFParagraph(pdf, clean(b.Text))
 		case "bullet":
-			writePDFParagraph(pdf, "• "+clean(b.Text))
+			writePDFParagraph(pdf, "- "+clean(b.Text))
 		case "table":
 			if len(b.Rows) > MaxPDFTableRows {
 				return nil, "", fmt.Errorf("pdf: block %d table has %d rows (max %d)", i, len(b.Rows), MaxPDFTableRows)
@@ -200,8 +200,7 @@ func writePDFTable(pdf *fpdf.Fpdf, rows [][]string) {
 // fpdf's standard fonts only support Latin-1, so a curly quote or em
 // dash from typical LLM output would either render as garbage or crash
 // at output time. We map the most common offenders explicitly and drop
-// anything else still outside cp1252 to "?". Bullet (•) is preserved
-// because it's in cp1252.
+// anything else still outside cp1252 to "?".
 func latin1Sanitize(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
@@ -215,6 +214,8 @@ func latin1Sanitize(s string) string {
 			b.WriteByte('-')
 		case '…': // horizontal ellipsis
 			b.WriteString("...")
+		case '•', '‣', '◦': // bullets render poorly with the base PDF fonts
+			b.WriteByte('-')
 		case ' ', ' ', ' ': // various non-breaking/thin spaces
 			b.WriteByte(' ')
 		case '\t':
