@@ -145,13 +145,12 @@ func TestRunLoopDoesNotInjectPhantomCorrectionForToolNameProse(t *testing.T) {
 
 func TestRunLoopDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T) {
 	state := newFakeLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("ok",
+		[]llm.ToolCall{
 			{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
 			{ID: "call-2", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
-		}}},
-		{Response: llm.Response{Content: "ok"}},
-	}}
+		},
+	)}
 	executions := 0
 
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
@@ -213,15 +212,14 @@ func TestRunLoopDuplicateToolCallsAcrossIterationsExecuteOnce(t *testing.T) {
 
 func TestRunLoopMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 	state := newFakeLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("ok",
+		[]llm.ToolCall{
 			{ID: "call-1", Name: "search_memory", Arguments: map[string]any{"query": "documents"}},
-		}}},
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+		},
+		[]llm.ToolCall{
 			{ID: "call-2", Name: "search_memory", Arguments: map[string]any{"query": "sources"}},
-		}}},
-		{Response: llm.Response{Content: "ok"}},
-	}}
+		},
+	)}
 	executions := 0
 
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
@@ -245,15 +243,14 @@ func TestRunLoopMaxCallsPerToolSkipsRepeatedRetrieval(t *testing.T) {
 
 func TestRunLoopMaxToolCallsTriggersFinalizingAndBudgetStub(t *testing.T) {
 	state := newBudgetLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("final answer from evidence",
+		[]llm.ToolCall{
 			{ID: "call-1", Name: "search_memory", Arguments: map[string]any{"query": "documents"}},
-		}}},
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+		},
+		[]llm.ToolCall{
 			{ID: "call-2", Name: "web_search", Arguments: map[string]any{"q": "anything"}},
-		}}},
-		{Response: llm.Response{Content: "final answer from evidence"}},
-	}}
+		},
+	)}
 	executions := 0
 	executor := ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		executions += len(calls)
@@ -284,15 +281,14 @@ func TestRunLoopMaxToolCallsTriggersFinalizingAndBudgetStub(t *testing.T) {
 
 func TestRunLoopBeforeToolPolicySkipsRepeatedRetrieval(t *testing.T) {
 	state := newFakeLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("ok",
+		[]llm.ToolCall{
 			{ID: "call-1", Name: "search_memory", Arguments: map[string]any{"query": "documents"}},
-		}}},
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+		},
+		[]llm.ToolCall{
 			{ID: "call-2", Name: "search_memory", Arguments: map[string]any{"query": "sources"}},
-		}}},
-		{Response: llm.Response{Content: "ok"}},
-	}}
+		},
+	)}
 	executions := 0
 
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
@@ -553,13 +549,12 @@ func TestRunLoopOnLLMDeltaSkippedWhenContentEmpty(t *testing.T) {
 
 func TestRunLoopOnToolStartFiresOncePerFreshCall(t *testing.T) {
 	state := newFakeLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("done",
+		[]llm.ToolCall{
 			{ID: "call-a", Name: "search_files", Arguments: map[string]any{"query": "a"}},
 			{ID: "call-b", Name: "wiki_page", Arguments: map[string]any{"slug": "b"}},
-		}}},
-		{Response: llm.Response{Content: "done"}},
-	}}
+		},
+	)}
 	var startNames []string
 	var startKeys [][]string
 	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
@@ -764,13 +759,12 @@ func TestRunLoopEmptyLLMResponseTriggersGracefulFinalize(t *testing.T) {
 
 func TestRunLoopOnToolStartSkippedForDedupedCalls(t *testing.T) {
 	state := newFakeLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("done",
+		[]llm.ToolCall{
 			{ID: "call-1", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
 			{ID: "call-2", Name: "search_files", Arguments: map[string]any{"query": "aura"}},
-		}}},
-		{Response: llm.Response{Content: "done"}},
-	}}
+		},
+	)}
 	var starts []string
 	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		results := map[string]string{}
@@ -804,6 +798,30 @@ func (f *fakeLoopClient) Chat(context.Context, []llm.Message, []llm.ToolDefiniti
 		return f.responses[f.requests-1], nil
 	}
 	return ChatResponse{}, nil
+}
+
+func loopResponsesWithFinal(final string, toolRounds ...[]llm.ToolCall) []ChatResponse {
+	responses := make([]ChatResponse, 0, len(toolRounds)+1)
+	for _, calls := range toolRounds {
+		responses = append(responses, ChatResponse{Response: llm.Response{
+			HasToolCalls: true,
+			ToolCalls:    calls,
+		}})
+	}
+	return append(responses, ChatResponse{Response: llm.Response{Content: final}})
+}
+
+type loopToolResultSink interface {
+	AddToolResultMessage(id, content string)
+}
+
+func loopToolResultExecutor(s loopToolResultSink, result string) ToolExecutorFunc {
+	return ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		for _, call := range calls {
+			s.AddToolResultMessage(call.ID, result)
+		}
+		return ExecutionSummary{LastResult: result}
+	})
 }
 
 type recordingContextEngine struct {
@@ -1316,15 +1334,14 @@ func TestRunLoopFinishReasonLengthRecoveryCap(t *testing.T) {
 // grows with each fresh tool call and is accessible after the run.
 func TestRunLoopTurnActionsAccumulateAcrossIterations(t *testing.T) {
 	state := newFakeLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("done",
+		[]llm.ToolCall{
 			{ID: "c1", Name: "web_search", Arguments: map[string]any{"query": "go generics"}},
-		}}},
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{
+		},
+		[]llm.ToolCall{
 			{ID: "c2", Name: "web_fetch", Arguments: map[string]any{"url": "https://go.dev"}},
-		}}},
-		{Response: llm.Response{Content: "done"}},
-	}}
+		},
+	)}
 	callN := 0
 	_, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
 		callN++
@@ -1463,16 +1480,10 @@ func TestOrOfFourIterCapPreservesMaxIterationsHit(t *testing.T) {
 // when EstimateCost is nil, the cost cap never fires even with a tiny MaxCostUSD.
 func TestOrOfFourCostBudgetFallbackWhenNoEstimateCost(t *testing.T) {
 	state := newFakeLoopState()
-	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "c1", Name: "search_memory"}}}},
-		{Response: llm.Response{Content: "success despite tiny MaxCostUSD"}},
-	}}
-	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
-		for _, c := range calls {
-			state.AddToolResultMessage(c.ID, "result")
-		}
-		return ExecutionSummary{LastResult: "result"}
-	}), state, Options{
+	client := &fakeLoopClient{responses: loopResponsesWithFinal("success despite tiny MaxCostUSD",
+		[]llm.ToolCall{{ID: "c1", Name: "search_memory"}},
+	)}
+	result, err := runLoop(context.Background(), client, loopToolResultExecutor(state, "result"), state, Options{
 		MaxIterations: 5,
 		MaxCostUSD:    0.001, // tiny cap — must NOT fire when EstimateCost is nil
 		EstimateCost:  nil,
@@ -1520,12 +1531,7 @@ func TestForceFinalizeSynthesisOnTokenBudget(t *testing.T) {
 			{Response: llm.Response{Content: "token_budget_exceeded — partial answer from synthesis"}},
 		},
 	}
-	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
-		for _, c := range calls {
-			state.AddToolResultMessage(c.ID, "partial evidence")
-		}
-		return ExecutionSummary{LastResult: "partial evidence"}
-	}), state, Options{
+	result, err := runLoop(context.Background(), client, loopToolResultExecutor(state, "partial evidence"), state, Options{
 		MaxIterations:           10,
 		MaxTokens:               500_000,
 		AllowNoToolFinalization: true,
@@ -1613,12 +1619,7 @@ func TestForceFinalizeSynthesisErrorFallsBackToPartialWork(t *testing.T) {
 		}},
 		synthErr: errors.New("upstream LLM unavailable"),
 	}
-	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
-		for _, c := range calls {
-			state.AddToolResultMessage(c.ID, "partial data")
-		}
-		return ExecutionSummary{LastResult: "partial data"}
-	}), state, Options{
+	result, err := runLoop(context.Background(), client, loopToolResultExecutor(state, "partial data"), state, Options{
 		MaxIterations:           10,
 		MaxTokens:               500_000,
 		AllowNoToolFinalization: true,
