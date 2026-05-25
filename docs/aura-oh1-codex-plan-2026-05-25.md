@@ -53,14 +53,16 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 | OH1-D | ✅ shipped | `a82f5284` | `feat(agent): enforce agentdef tier validation` — boot uses `EnforceTier: true`; summarizer still validates. |
 | OH1-E | ✅ shipped | `aec6f61d` | `feat(agent): synthesize agentdef delegate tools` — delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. |
 | OH1-F | ✅ shipped | `13a59625` | `feat(agent): announce agentdef delegation` — channel scrubber + announce template for Telegram + web. |
-| OH1-G | 🟡 in flight | _(uncommitted)_ | Migrate reflection fork → `reflector` archetype. |
+| OH1-G | ✅ shipped | `52bd2c99` | `feat(agent): migrate reflection to reflector archetype` — builtin `reflector` + reflection hook uses AGENTDEF delegate runner with direct fallback parity. |
 | OH1-H | ⬜ pending (interactive) | — | Deprecate `spawn_aurabot` / `run_aurabot_swarm` in overlays. |
 | OH1-I | ⬜ pending (post-telemetry) | — | Remove deprecated swarm tools after 7+ days of zero invocations. |
 
 **Freshness rule:** update this snapshot immediately after every atomic commit,
 and mark the currently edited slice as in-flight before continuing.
 
-**Next action:** implement and verify OH1-G reflection fork → `reflector` archetype.
+**Next action:** prepare OH1-H overlay deprecation by inspecting current
+`runtime-workspace/AGENT.md` / `runtime-workspace/TOOLS.md` references and
+running a narrow prompt-surface check before any docs-only edit.
 
 ---
 
@@ -546,7 +548,7 @@ a long source → thread shows announce + summary, no child tool trace.
 
 ---
 
-## 9. OH1-G — Migrate REFLECTION-FORK → `reflector` archetype (~30 LOC delta) [Codex] — 🟡 in flight (uncommitted)
+## 9. OH1-G — Migrate REFLECTION-FORK → `reflector` archetype (~30 LOC delta) [Codex] — ✅ shipped `52bd2c99`
 
 **Goal**: replace the fork-and-restrict from RFL-S1 with a proper
 archetype-driven path.
@@ -561,6 +563,21 @@ archetype-driven path.
 
 **Acceptance**: existing reflection tests stay green; new test asserts
 the archetype path produces identical JSON for the same fixture turn.
+
+**Shipped evidence (2026-05-25)**:
+- Code commit: `52bd2c99 feat(agent): migrate reflection to reflector archetype`.
+- Ground truth: `internal/agent/agentdef/builtin/reflector/prompt.md` is the
+  embedded prompt used by the direct fallback; `TestReflectorArchetype_*`
+  asserts builtin metadata and prompt-byte identity.
+- Slice QA: `TestReflectionHook_ReflectorArchetypeProducesIdenticalJSON`
+  asserts delegate-runner output persists the same normalized JSON as the
+  direct LLM fallback for the same fixture turn; malformed JSON remains a
+  no-write negative case.
+- Verification: targeted learning/agentdef/agent/cmd/aura/Telegram tests,
+  touched-file `dupl`, touched-package `golangci-lint`, `git diff --check`,
+  `go vet ./...`, `go build ./...`, and lefthook pre-commit passed. Full
+  `go test ./...` only hit the known Python availability timeout under load;
+  the failing `cmd/aura` and `internal/sandbox` tests passed isolated.
 
 ---
 
