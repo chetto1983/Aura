@@ -288,6 +288,15 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				iterCancel()
 				return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
 			}
+			if text, ok := extractTextResponsePseudoCall(response); ok {
+				state.AddAssistantMessage(text)
+				emitStats()
+				iterCancel()
+				if resp.Delivered {
+					return loopResult{Text: text, Delivered: true, Stats: stats}, nil
+				}
+				return loopResult{Text: text, Stats: stats}, nil
+			}
 			if opts.PhantomToolGuard != nil &&
 				stats.PhantomToolDetections < opts.PhantomToolGuard.RetriesAllowed() &&
 				opts.PhantomToolGuard.LooksPhantom(response, false, calledThisTurn) {

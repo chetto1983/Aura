@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	governance "github.com/aura/aura/internal/agent/governance"
@@ -121,6 +122,58 @@ func LooksLikeToolCallMarkup(text string) bool {
 		}
 	}
 	return false
+}
+
+// extractTextResponsePseudoCall handles the common model slip where the
+// terminal tool is emitted as plain text instead of a provider tool call:
+//
+//	text_response(text="final reply")
+//
+// It is intentionally narrow and only accepts a standalone pseudo-call line.
+// Other tool names still flow through the phantom guard.
+func extractTextResponsePseudoCall(content string) (string, bool) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" {
+		return "", false
+	}
+	if text, ok := parseTextResponsePseudoCallLine(trimmed); ok {
+		return text, true
+	}
+	lines := strings.Split(strings.ReplaceAll(trimmed, "\r\n", "\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		return parseTextResponsePseudoCallLine(line)
+	}
+	return "", false
+}
+
+func parseTextResponsePseudoCallLine(line string) (string, bool) {
+	const prefix = "text_response("
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, prefix) || !strings.HasSuffix(line, ")") {
+		return "", false
+	}
+	inner := strings.TrimSpace(line[len(prefix) : len(line)-1])
+	if !strings.HasPrefix(inner, "text=") {
+		return "", false
+	}
+	raw := strings.TrimSpace(strings.TrimPrefix(inner, "text="))
+	if raw == "" {
+		return "", false
+	}
+	text, err := strconv.Unquote(raw)
+	if err != nil {
+		if len(raw) >= 2 && raw[0] == '\'' && raw[len(raw)-1] == '\'' {
+			text = strings.ReplaceAll(raw[1:len(raw)-1], `\'`, `'`)
+		} else {
+			return "", false
+		}
+	}
+	text = strings.TrimSpace(text)
+	return text, text != ""
 }
 
 // IsFileGenerationTool reports whether a tool name produces a user-facing

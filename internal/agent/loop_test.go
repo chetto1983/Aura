@@ -91,6 +91,41 @@ func TestRunLoopToolCallContinuesToFinalResponse(t *testing.T) {
 	}
 }
 
+func TestRunLoopNormalizesTextResponsePseudoCallWithoutPhantomRetry(t *testing.T) {
+	state := newFakeLoopState()
+	client := &fakeLoopClient{responses: []ChatResponse{
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "create_document", Arguments: map[string]any{"format": "xlsx"}}}}},
+		{Response: llm.Response{Content: "Ho creato il file.\n\ntext_response(text=\"Ho creato il file.\")"}},
+	}}
+	executions := 0
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
+		executions += len(calls)
+		state.AddToolResultMessage(calls[0].ID, `{"source_id":"src_test"}`)
+		return ExecutionSummary{LastResult: `{"source_id":"src_test"}`}
+	}), state, Options{
+		MaxIterations: 3,
+		PhantomToolGuard: &PhantomToolGuard{
+			ToolNamesFn: toolsFn("create_document", "text_response"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != "Ho creato il file." {
+		t.Fatalf("Text = %q, want normalized final text", result.Text)
+	}
+	if strings.Contains(state.last().Content, "text_response(") {
+		t.Fatalf("last message leaked pseudo-call: %q", state.last().Content)
+	}
+	if executions != 1 {
+		t.Fatalf("executions = %d, want exactly one create_document call", executions)
+	}
+	if result.Stats.PhantomToolDetections != 0 {
+		t.Fatalf("PhantomToolDetections = %d, want 0", result.Stats.PhantomToolDetections)
+	}
+}
+
 func TestRunLoopDuplicateToolCallsExecuteOnceAndAppendRecoverableResult(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
