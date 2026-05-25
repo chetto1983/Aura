@@ -227,40 +227,24 @@ func escapeFTS5Query(query string) string {
 	return strings.Join(fields, " OR ")
 }
 
-var lowSignalSearchTerms = map[string]bool{
-	"a": true, "ad": true, "al": true, "allo": true, "alla": true, "alle": true, "ai": true, "agli": true,
-	"che": true, "chi": true, "come": true, "con": true, "cosa": true,
-	"da": true, "dal": true, "dalla": true, "dalle": true, "dei": true, "del": true, "della": true, "delle": true, "di": true, "dove": true,
-	"e": true, "ed": true, "era": true, "erano": true,
-	"gli": true, "ha": true, "il": true, "in": true, "la": true, "le": true, "lo": true,
-	"nel": true, "nella": true, "nelle": true, "nello": true, "per": true, "qual": true, "quale": true, "quali": true, "quando": true, "quanti": true, "quanto": true,
-	"secondo": true, "sono": true, "su": true, "tra": true, "un": true, "una": true,
-	"and": true, "are": true, "for": true, "from": true, "how": true, "of": true, "the": true, "to": true, "what": true, "when": true, "where": true, "which": true, "who": true, "with": true,
-}
-
+// significantSearchTerms tokenises the user's query, lowercases each token,
+// strips diacritics, drops single-character noise (FTS5 needs ≥ 2 chars),
+// and dedupes. No stopword list — per feedback_no_regex_for_nlp memory,
+// hardcoded NL dictionaries are the same fragile anti-pattern as regex on
+// prose: language-coupled, drops legitimate slugs the user typed, and
+// breaks silently when the model changes phrasing.
 func significantSearchTerms(query string) []string {
 	raw := tokenizeSearchQuery(query)
-	filtered := make([]string, 0, len(raw))
+	out := make([]string, 0, len(raw))
 	seen := make(map[string]bool, len(raw))
-	for _, term := range raw {
-		if len(term) < 2 || lowSignalSearchTerms[term] || seen[term] {
-			continue
-		}
-		seen[term] = true
-		filtered = append(filtered, term)
-	}
-	if len(filtered) > 0 {
-		return filtered
-	}
-	seen = make(map[string]bool, len(raw))
 	for _, term := range raw {
 		if len(term) < 2 || seen[term] {
 			continue
 		}
 		seen[term] = true
-		filtered = append(filtered, term)
+		out = append(out, term)
 	}
-	return filtered
+	return out
 }
 
 func tokenizeSearchQuery(query string) []string {

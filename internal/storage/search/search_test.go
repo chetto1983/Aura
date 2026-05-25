@@ -324,16 +324,27 @@ func TestSQLiteSearchTokenizesPunctuationQueries(t *testing.T) {
 	}
 }
 
-func TestEscapeFTS5QueryDropsLowSignalQuestionTerms(t *testing.T) {
+// TestEscapeFTS5QueryKeepsAllUserTokens asserts the 2026-05-25 contract
+// (per feedback_no_regex_for_nlp memory): no hardcoded NL stopword list.
+// Every user token of length ≥ 2 reaches FTS5; the user typed it, FTS5
+// BM25 will handle frequency weighting natively. The previous stopword
+// filter silently dropped tokens that could be legitimate slugs (e.g.
+// "chi" is a valid wiki page name) and broke on every non-IT/EN query.
+func TestEscapeFTS5QueryKeepsAllUserTokens(t *testing.T) {
 	got := escapeFTS5Query("Qual è il numero totale di casi COVID registrati per la regione Lombardia?")
-	for _, noisy := range []string{"qual", "e", "il", "di", "per", "la"} {
-		if strings.Contains(" OR "+got+" OR ", " OR "+noisy+" OR ") {
-			t.Fatalf("query %q still contains low-signal term %q", got, noisy)
+	for _, want := range []string{
+		"qual", "il", "numero", "totale", "di", "casi", "covid",
+		"registrati", "per", "la", "regione", "lombardia",
+	} {
+		if !strings.Contains(" OR "+got+" OR ", " OR "+want+" OR ") {
+			t.Fatalf("query %q missing user-typed term %q (no stopword filter expected)", got, want)
 		}
 	}
-	for _, want := range []string{"numero", "totale", "casi", "covid", "registrati", "regione", "lombardia"} {
-		if !strings.Contains(" OR "+got+" OR ", " OR "+want+" OR ") {
-			t.Fatalf("query %q missing term %q", got, want)
+	// Single-character noise ("e", "è") is still dropped — FTS5 needs ≥ 2
+	// chars to index/match and 1-char terms are below information value.
+	for _, drop := range []string{"e", "è"} {
+		if strings.Contains(" OR "+got+" OR ", " OR "+drop+" OR ") {
+			t.Fatalf("query %q kept 1-char token %q", got, drop)
 		}
 	}
 }
