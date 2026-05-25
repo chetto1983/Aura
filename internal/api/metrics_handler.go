@@ -41,6 +41,10 @@ func handleMetrics(_ Deps) http.HandlerFunc {
 			"# HELP aura_payload_breaker_trips_total Total circuit-breaker trips in SubagentPayloadSummarizer.",
 			"# TYPE aura_payload_breaker_trips_total counter",
 			fmt.Sprintf("aura_payload_breaker_trips_total %d", c.PayloadBreakerTripsTotal.Load()),
+
+			"# HELP aura_microcompact_runs_total Total old tool-result microcompaction passes that cleared content.",
+			"# TYPE aura_microcompact_runs_total counter",
+			fmt.Sprintf("aura_microcompact_runs_total %d", c.MicrocompactRunsTotal.Load()),
 		}
 		var sb strings.Builder
 		for _, line := range lines {

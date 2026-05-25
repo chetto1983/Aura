@@ -25,6 +25,7 @@ func TestMetricsHandler_PrometheusTextSnapshot(t *testing.T) {
 	ctxmetrics.Global.CTXCompactionsTotal.Add(2)
 	ctxmetrics.Global.PayloadSummarizationsTotal.Add(3)
 	ctxmetrics.Global.PayloadBreakerTripsTotal.Add(1)
+	ctxmetrics.Global.MicrocompactRunsTotal.Add(4)
 
 	router := NewRouter(Deps{})
 	rr := httptest.NewRecorder()
@@ -50,6 +51,8 @@ func TestMetricsHandler_PrometheusTextSnapshot(t *testing.T) {
 		"aura_payload_summarizations_total 3\n",
 		"# TYPE aura_payload_breaker_trips_total counter\n",
 		"aura_payload_breaker_trips_total 1\n",
+		"# TYPE aura_microcompact_runs_total counter\n",
+		"aura_microcompact_runs_total 4\n",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics body missing %q\nbody:\n%s", want, body)

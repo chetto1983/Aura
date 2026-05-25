@@ -1,6 +1,7 @@
 // Package governance contains the message-list transforms applied to
 // conversation history just before each LLM call in the agent loop.
-// They prevent three concrete failure modes seen in conversation logs:
+// They repair malformed tool history and clear old tool-result bodies before
+// context rot dominates the prompt.
 //
 //  1. Orphan tool results — a tool message whose tool_call_id no longer
 //     matches any assistant tool_calls. The OpenAI/compatible APIs reject
@@ -12,16 +13,17 @@
 //
 //  3. Context rot — once enough turns accumulate, old read_file / exec /
 //     web_search / web_fetch results dominate the prompt. Microcompact
-//     replaces older copies with a one-line "[<name> result omitted]" stub.
+//     replaces older copies with ClearedPlaceholder.
 //
-// All functions are pure: they read messages, return a new slice if they
-// change anything, and never mutate the input.
+// The transforms never mutate their input slices. Apply also records aggregate
+// counters when a transform clears content.
 package governance
 
 import (
 	"slices"
 	"unicode/utf8"
 
+	"github.com/aura/aura/internal/ctxmetrics"
 	"github.com/aura/aura/internal/llm"
 )
 
@@ -44,20 +46,21 @@ const (
 	// docs/aura-main-loop-limits-audit.md §3.5.
 	DefaultMaxToolResultChars = 24000
 
+	// ClearedPlaceholder replaces old tool result content while preserving the
+	// role/tool_call_id envelope required by provider APIs.
+	ClearedPlaceholder = "[Old tool result content cleared]"
+
 	// truncationMarker is appended in place of trimmed bytes so the model
 	// knows content was elided rather than absent.
 	truncationMarker = "\n…[truncated by runtime]"
 )
 
-// compactableTools is the closed set of tool names whose results are
-// considered "context-cheap" and can be summarized to a stub once newer
-// equivalents exist. Other tool results carry decisions and stay verbatim.
-var compactableTools = map[string]bool{
-	"file":         true,
-	"execute_code": true,
-	"execute_shell": true,
-	"web":          true,
-	"search":       true,
+// MicrocompactStats describes one old-tool-result compaction pass.
+type MicrocompactStats struct {
+	Candidates   int
+	KeptRecent   int
+	Cleared      int
+	BytesCleared int
 }
 
 // Apply runs the full governance transform chain in the order required for
@@ -73,7 +76,11 @@ func Apply(messages []llm.Message, maxToolResultChars, microcompactKeepRecent, m
 	}
 	messages = dropOrphanToolResults(messages)
 	messages = backfillMissingToolResults(messages)
-	messages = microcompactToolResults(messages, microcompactKeepRecent, microcompactMinChars)
+	var microstats MicrocompactStats
+	messages, microstats = Microcompact(messages, microcompactKeepRecent, microcompactMinChars)
+	if microstats.Cleared > 0 {
+		ctxmetrics.Global.MicrocompactRunsTotal.Add(1)
+	}
 	messages = truncateOversizedToolResults(messages, maxToolResultChars)
 	return messages
 }
@@ -164,51 +171,87 @@ func backfillMissingToolResults(messages []llm.Message) []llm.Message {
 	return out
 }
 
-// microcompactToolResults replaces older compactable tool results with a
-// short stub, keeping the most recent `keepRecent` ones verbatim.
-func microcompactToolResults(messages []llm.Message, keepRecent, minChars int) []llm.Message {
+// Microcompact replaces old tool results with ClearedPlaceholder while keeping
+// the most recent keepRecent historical tool results and the current fresh
+// tool-result batch verbatim.
+func Microcompact(messages []llm.Message, keepRecent, minChars int) ([]llm.Message, MicrocompactStats) {
 	if keepRecent <= 0 {
 		keepRecent = MicrocompactKeepRecent
 	}
 	if minChars <= 0 {
 		minChars = MicrocompactMinChars
 	}
-	var compactableIndices []int
+	freshIDs := freshTailToolResultIDs(messages)
+	var candidates []int
 	for i, msg := range messages {
 		if msg.Role != "tool" {
 			continue
 		}
-		if !compactableTools[toolNameForMessage(msg, messages, i)] {
+		if _, fresh := freshIDs[msg.ToolCallID]; fresh {
 			continue
 		}
-		compactableIndices = append(compactableIndices, i)
+		candidates = append(candidates, i)
 	}
-	if len(compactableIndices) <= keepRecent {
-		return messages
+	stats := MicrocompactStats{
+		Candidates: len(candidates),
+		KeptRecent: minInt(keepRecent, len(candidates)),
 	}
-	stale := compactableIndices[:len(compactableIndices)-keepRecent]
+	if len(candidates) <= keepRecent {
+		return messages, stats
+	}
+	stale := candidates[:len(candidates)-keepRecent]
 	var out []llm.Message
 	clean := true
 	for _, idx := range stale {
 		msg := messages[idx]
-		if len(msg.Content) < minChars {
+		if len(msg.Content) < minChars || msg.Content == ClearedPlaceholder {
 			continue
 		}
 		if clean {
 			out = append([]llm.Message(nil), messages...)
 			clean = false
 		}
-		name := toolNameForMessage(msg, messages, idx)
 		out[idx] = llm.Message{
 			Role:       "tool",
 			ToolCallID: msg.ToolCallID,
-			Content:    "[" + name + " result omitted from context]",
+			Content:    ClearedPlaceholder,
 		}
+		stats.Cleared++
+		stats.BytesCleared += len(msg.Content) - len(ClearedPlaceholder)
 	}
 	if clean {
-		return messages
+		return messages, stats
 	}
+	return out, stats
+}
+
+func microcompactToolResults(messages []llm.Message, keepRecent, minChars int) []llm.Message {
+	out, _ := Microcompact(messages, keepRecent, minChars)
 	return out
+}
+
+func freshTailToolResultIDs(messages []llm.Message) map[string]struct{} {
+	lastAssistant := -1
+	for i, msg := range messages {
+		if msg.Role == "assistant" && len(msg.ToolCalls) > 0 {
+			lastAssistant = i
+		}
+	}
+	if lastAssistant < 0 || lastAssistant == len(messages)-1 {
+		return nil
+	}
+	for i := lastAssistant + 1; i < len(messages); i++ {
+		if messages[i].Role != "tool" {
+			return nil
+		}
+	}
+	ids := make(map[string]struct{}, len(messages[lastAssistant].ToolCalls))
+	for _, call := range messages[lastAssistant].ToolCalls {
+		if call.ID != "" {
+			ids[call.ID] = struct{}{}
+		}
+	}
+	return ids
 }
 
 // truncateOversizedToolResults caps each tool message at maxChars bytes.
@@ -245,25 +288,9 @@ func truncateOversizedToolResults(messages []llm.Message, maxChars int) []llm.Me
 	return out
 }
 
-// toolNameForMessage finds the tool name for a tool-role message by looking
-// back at the most recent assistant tool_calls.
-func toolNameForMessage(msg llm.Message, messages []llm.Message, idx int) string {
-	if msg.ToolCallID == "" {
-		return "tool"
+func minInt(a, b int) int {
+	if a < b {
+		return a
 	}
-	for i := idx - 1; i >= 0; i-- {
-		prev := messages[i]
-		if prev.Role != "assistant" {
-			continue
-		}
-		for _, tc := range prev.ToolCalls {
-			if tc.ID == msg.ToolCallID {
-				if tc.Name != "" {
-					return tc.Name
-				}
-				return "tool"
-			}
-		}
-	}
-	return "tool"
+	return b
 }

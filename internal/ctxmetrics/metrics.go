@@ -10,6 +10,7 @@ type Counters struct {
 	CTXCompactionsTotal        atomic.Int64 // AutoCompactEngine Compress calls that changed the message slice
 	PayloadSummarizationsTotal atomic.Int64 // successful SubagentPayloadSummarizer reductions
 	PayloadBreakerTripsTotal   atomic.Int64 // circuit-breaker trips (3 consecutive LLM failures)
+	MicrocompactRunsTotal      atomic.Int64 // old tool-result microcompaction passes that cleared content
 }
 
 // Global is the process-wide counter set. Always non-nil; zero-initialized.
