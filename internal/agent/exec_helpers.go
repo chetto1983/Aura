@@ -183,7 +183,7 @@ func ExecuteToolCalls(
 				result = CompactToolOutput(logger, tc.Name, args, result)
 			}
 			if err == nil && cfg.payloadSummarizer != nil {
-				if sp := cfg.payloadSummarizer.MaybeSummarize(ctx, tc.Name, "", result); sp != nil {
+				if sp := cfg.payloadSummarizer.MaybeSummarize(ctx, tc.Name, parentTaskHintFromMessages(convCtx.Messages()), result); sp != nil {
 					result = sp.Summary
 				}
 			}
