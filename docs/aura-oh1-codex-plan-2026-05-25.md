@@ -42,9 +42,30 @@ RFL-S1 → OH1-A → OH1-B → OH1-C → OH1-D → OH1-E → OH1-F → OH1-G →
 Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 (0 dupl, 0 lint, file-size ≤600 LOC, errcheck where applicable).
 
+### Status snapshot (2026-05-25)
+
+| Commit | Status | Hash | Notes |
+|---|---|---|---|
+| RFL-S1 | ✅ shipped | `d7bb7aa0` | `feat(learning): add post-turn reflection fork` — code +309/-1, test +156. Hook persistent in web + Telegram. |
+| OH1-A | ✅ shipped | `02d390a7` | `feat(agent): add agentdef registry skeleton` — registry boots empty, no manifest delta. |
+| OH1-B | ✅ shipped | `45c5fe02` | `feat(agent): migrate summarizer to agentdef` — first archetype; legacy `agents/summarizer/prompt.go` now a shim. |
+| OH1-C | ✅ shipped | `d0b24989` | `feat(agent): warn on agentdef tier violations` — warn-only validator + `DetectCycle(rootID)`. |
+| OH1-D | 🟡 in flight | _(uncommitted)_ | Flip `EnforceTier: true` at boot; enforcement tests added and targeted/static gates passed. |
+| OH1-E | ⬜ pending | — | Delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. Biggest commit (~600 LOC). |
+| OH1-F | ⬜ pending | — | Channel-scrubber + announce template for Telegram + web. |
+| OH1-G | ⬜ pending | — | Migrate reflection fork → `reflector` archetype. |
+| OH1-H | ⬜ pending (interactive) | — | Deprecate `spawn_aurabot` / `run_aurabot_swarm` in overlays. |
+| OH1-I | ⬜ pending (post-telemetry) | — | Remove deprecated swarm tools after 7+ days of zero invocations. |
+
+**Freshness rule:** update this snapshot immediately after every atomic commit,
+and mark the currently edited slice as in-flight before continuing.
+
+**Next action:** finish and commit OH1-D enforcement flip; then OH1-E delegate
+synth (the heavy one).
+
 ---
 
-## 2. RFL-S1 — REFLECTION-FORK (pre-OH1, ~200 LOC) [Codex]
+## 2. RFL-S1 — REFLECTION-FORK (pre-OH1, ~200 LOC) [Codex] — ✅ shipped `d7bb7aa0`
 
 **Goal**: ship hermes-style post-turn reflection NOW without coupling
 to AGENTDEF. Migrates to `reflector` archetype in commit G.
@@ -111,7 +132,7 @@ LLM client persists 1 row in `memoryindex` per qualifying turn.
 
 ---
 
-## 3. OH1-A — AGENTDEF registry empty + loader (~400 LOC) [Codex]
+## 3. OH1-A — AGENTDEF registry empty + loader (~400 LOC) [Codex] — ✅ shipped `02d390a7`
 
 **Goal**: ship the registry skeleton with ZERO archetypes. Boot doesn't
 break. Loader + validator + dedup logic in place ready for commit B.
@@ -240,7 +261,7 @@ Aura starts, Telegram works, no new tool appears in manifest.
 
 ---
 
-## 4. OH1-B — Migrate summarizer to AGENTDEF (~150 LOC) [Codex]
+## 4. OH1-B — Migrate summarizer to AGENTDEF (~150 LOC) [Codex] — ✅ shipped `45c5fe02`
 
 **Goal**: move the existing in-binary summarizer into the registry as
 the first archetype. Byte-identical runtime.
@@ -284,7 +305,7 @@ to ~10 LOC shim.
 
 ---
 
-## 5. OH1-C — TIER + cycle detector validator WARN-only (~80 LOC) [Codex]
+## 5. OH1-C — TIER + cycle detector validator WARN-only (~80 LOC) [Codex] — ✅ shipped `d0b24989`
 
 **Goal**: validator runs the full rule set but only logs warnings.
 Lets us see what would break before enforcement.
@@ -315,7 +336,7 @@ subagents → no warn). Aura still functional.
 
 ---
 
-## 6. OH1-D — TIER enforcement turned on (~80 LOC) [Codex]
+## 6. OH1-D — TIER enforcement turned on (~80 LOC) [Codex] — 🟡 in flight (uncommitted)
 
 **Goal**: flip warnings to errors. Boot fails fast on malformed user
 TOMLs.
@@ -333,7 +354,7 @@ violated.
 
 ---
 
-## 7. OH1-E — DELEGATE-TOOL synth + DEDUP + over-delegation prefix (~600 LOC) [Codex]
+## 7. OH1-E — DELEGATE-TOOL synth + DEDUP + over-delegation prefix (~600 LOC) [Codex] — ⬜ pending
 
 **Goal**: the biggest commit. Per-turn synthesis of `delegate_<id>`
 tools, DEDUP against action tools, hardcoded over-delegation prefix,
@@ -488,7 +509,7 @@ clean; new `agentdef/delegate.go` ≤600 LOC; errcheck on runner.Run.
 
 ---
 
-## 8. OH1-F — Channel-scrubber + announce template (~80 LOC) [Codex]
+## 8. OH1-F — Channel-scrubber + announce template (~80 LOC) [Codex] — ⬜ pending
 
 **Goal**: user-facing visibility when chat tier delegates. Telegram
 thread and web chat both show the announce + final result, but NOT
@@ -526,7 +547,7 @@ a long source → thread shows announce + summary, no child tool trace.
 
 ---
 
-## 9. OH1-G — Migrate REFLECTION-FORK → `reflector` archetype (~30 LOC delta) [Codex]
+## 9. OH1-G — Migrate REFLECTION-FORK → `reflector` archetype (~30 LOC delta) [Codex] — ⬜ pending
 
 **Goal**: replace the fork-and-restrict from RFL-S1 with a proper
 archetype-driven path.
@@ -544,7 +565,7 @@ the archetype path produces identical JSON for the same fixture turn.
 
 ---
 
-## 10. OH1-H — Deprecate spawn_aurabot in prompts (docs only) [INTERACTIVE]
+## 10. OH1-H — Deprecate spawn_aurabot in prompts (docs only) [INTERACTIVE] — ⬜ pending
 
 **Files**:
 - edit `runtime-workspace/AGENT.md` — remove references to
@@ -558,7 +579,7 @@ over N days.
 
 ---
 
-## 11. OH1-I — Remove deprecated tools (~50 LOC cleanup) [Codex, after telemetry]
+## 11. OH1-I — Remove deprecated tools (~50 LOC cleanup) [Codex, after telemetry] — ⬜ pending
 
 **Trigger**: telemetry confirms zero invocations of
 `spawn_aurabot` / `run_aurabot_swarm` across 7+ days.
