@@ -359,90 +359,185 @@ Source: graphify patterns 1, 2, 8. Requires G1-S1 confidence tags shipped.
 
 ---
 
-## 5. Wave OH1 — Multi-agent foundation (~1500 LOC, 3-4 sessions)
+## 5. Wave OH1 — Multi-agent foundation (~1480 LOC, 3-4 sessions)
 
-Source: openhuman AGENTDEF + TIER + DELEGATE-TOOL + DEDUP-VISIBLE-TOOL-SPECS.
-**Must discuss-phase first** — this is architectural. Per
-`gsd-discuss-phase` ritual: spawn discuss agent on the wave goal before
-committing PRD.
+Source: openhuman AGENTDEF + TIER + DELEGATE-TOOL + DEDUP. **Must
+discuss-phase first** — this is architectural.
+
+> **Refined 2026-05-25 after 4-agent research.** See
+> `docs/aura-oh1-research-synthesis-2026-05-25.md` for the full
+> synthesis. Headline changes: tool synth schema is
+> `{prompt, model?}` not `{task}`; defaults flipped to `Inherit*=false`
+> + `Tier=Worker` (fail-closed whitelist); DEDUP folds into S3; cycle
+> detector added; channel-scrubber announce template lifted from
+> nanobot; REFLECTION-FORK ships PRE-OH1 (Wave-RFL) to unblock OH3.
+> 7 open questions for discuss-phase consolidated in synthesis §8.
+
+Research anchors:
+- `docs/aura-oh1-research-synthesis-2026-05-25.md` (this wave's master)
+- `docs/research-openhuman-oh1-deep-2026-05-25.md` (field-level audit)
+- `docs/research-tmp-other-multi-agent-2026-05-25.md` (codex/nanobot/hermes)
+- `docs/research-online-multi-agent-2026-05-25.md` (Anthropic/LangGraph/CrewAI)
+- `docs/research-aura-swarm-integration-map-2026-05-25.md` (existing 1900 LOC map)
+
+### Wave-RFL — REFLECTION-FORK (PRE-OH1, ~200 LOC, 1 session, Codex)
+
+Ships hermes-agent-style fork-and-restrict post-turn hook BEFORE
+AGENTDEF lands. Unblocks OH3 reflection value without coupling to the
+archetype machinery. Migrates to a proper `reflector` archetype in
+OH1-G (commit after AGENTDEF is live).
+
+- **Touches**: new `internal/learning/reflection_fork.go` invoked from
+  the existing `posthook.go` scaffold.
+- **Behavior**: after qualifying turns, restricted LLM call extracts
+  `{observations[], patterns[], user_preferences[], user_reflections[]}`
+  as structured JSON. Per-session counter throttles cost.
+- **Acceptance**: 5 tests + 1 integration. Cost throttle pinned.
 
 ### OH1-S0 — discuss-phase (no code) [INTERACTIVE]
 
-- Run `/gsd-discuss-phase` on "OH1 multi-agent substrate" before
-  staging the PRD.
-- Output: `phases/wave-oh1/DISCUSS.md` with answered ambiguities.
-- Key ambiguities to resolve up front:
-  - Where do built-in archetypes live in the binary tree?
-  - File format (TOML vs YAML — openhuman uses TOML, Aura's existing
-    `mcp.json` is JSON; pick TOML for consistency with openhuman lift)?
-  - User-override path under `runtime-workspace/agents/`?
-  - Does `delegate_<id>` show in the Telegram tool-name menu? (No.)
-  - Bootstrap: first ship the registry empty + 1 built-in (the
-    `summarizer` already exists) → then add `orchestrator` + `researcher`.
+Run `/gsd-discuss-phase` on the 7 questions from synthesis §8:
+1. File format JSON (Aura ops convention) vs TOML (openhuman 1:1)?
+2. Tool synth schema `{prompt, model?}` or `{prompt}` only?
+3. Inherit semantics: blacklist `omit_*` or whitelist `inherit_*`?
+4. Default tier on missing annotation: `Worker` or `Chat`?
+5. DEDUP folded into S3 or kept as S4?
+6. REFLECTION pre-OH1 fork or wait for `reflector` archetype?
+7. Merge `delegate_<id>` into existing `swarm.Manager.Run` or parallel
+   dispatch path?
 
-### OH1-S1 — AGENTDEF registry + loader + 1 built-in (~900 LOC) [Codex]
+Plus considered-rejected alternatives to record in DISCUSS.md so they
+don't get re-litigated: codex config-overlay model, AOrchestra dynamic
+`<Instruction, Context, Tools, Model>` tuple.
 
-- **Touches**: new `internal/agent/agentdef/{definition.go, loader.go,
-  registry.go}`, built-in TOML at
-  `internal/agent/agentdef/builtin/summarizer/{agent.toml, prompt.md}`,
-  wiring in `internal/agent/runtime.go`.
-- **Behavior**: TOML→struct loader, validator (rejects malformed
-  overrides at boot), in-memory registry. Pure data, no behavioural
-  changes to the loop until OH1-S3 lands.
-- **Acceptance**:
-  - 8 tests: parse round-trip, malformed TOML rejected with line+col,
-    user override beats built-in, slug collision rejected, omit_* flags
-    deserialise, subagents[] deserialises, default-model resolution,
-    boot-time validation.
-  - Existing summarizer at `internal/agent/agents/summarizer/prompt.go`
-    keeps working unchanged (back-compat: loader produces equivalent
-    runtime config).
+### OH1-A — AGENTDEF registry empty + loader (~400 LOC) [Codex]
 
-### OH1-S2 — TIER enum + static hop cap (~150 LOC) [Codex]
+- **Touches**: new `internal/agent/agentdef/{definition.go,loader.go,
+  registry.go,validator.go}`. Loader supports the discuss-phase-chosen
+  format (JSON default, TOML if S0 reopens).
+- **Behavior**: ZERO archetypes registered, zero behavioural change.
+  Boot picks up empty registry without breaking the loop. Pure-data
+  +loader; unit-tested in isolation.
+- **Acceptance**: 8 tests covering parse round-trip, malformed-input
+  rejection with line+col, user override beats built-in, slug
+  collision rejected, all `Inherit*` defaults `false`, `Tier` default
+  `Worker`, `subagents[]` deserialises, MaxInputTokens/MaxOutputTokens
+  honoured.
+- **Schema refinements absorbed**: R2 (fail-closed whitelist defaults),
+  R3 (`max_input_tokens`/`max_output_tokens`), R4 (file format from
+  discuss).
 
-- **Touches**: extend OH1-S1 — add `agent_tier` field on
-  `AgentDefinition`, validator in
-  `internal/agent/agentdef/validator.go`, runtime depth gate in
-  `loop.go`.
-- **Behavior**: enum `Chat|Reasoning|Worker`. Loader rejects same-tier
-  delegation. Runtime task-local depth counter capped at 3.
-- **Acceptance**:
-  - 5 tests: each forbidden delegation rejected, depth cap fires at 3,
-    valid chain `chat→reasoning→worker` accepted, worker MUST NOT spawn,
-    missing tier on user override → default `Worker` (least powerful).
+### OH1-B — Migrate summarizer to AGENTDEF (~150 LOC) [Codex]
 
-### OH1-S3 — DELEGATE-TOOL synthesis (~500 LOC) [Codex]
+- **Touches**: new `internal/agent/agentdef/builtin/summarizer/
+  {agent.json,prompt.md}` (or `.toml` per discuss). Existing
+  `internal/agent/agents/summarizer/prompt.go` becomes a stub
+  re-exporting from registry.
+- **Behavior**: BYTE-IDENTICAL runtime to today. The summarizer's
+  existing `Inherit*` settings must be explicitly `true` for sections
+  it actually needs (because the new default is `false`).
+- **Acceptance**: existing summarizer tests stay green; new test
+  asserts byte-identical prompt rendering between old hardcoded path
+  and new TOML/JSON path.
 
-- **Touches**: new `internal/agent/tools/registry/delegate.go`, hooked
-  into the per-turn manifest builder.
+### OH1-C — TIER enum + validator WARN-only (~80 LOC) [Codex]
+
+- **Touches**: `internal/agent/agentdef/validator.go` runs the tier-
+  hierarchy check + the cycle detector (parent-id stack from R6) but
+  only LOGS warnings; no rejection yet.
+- **Behavior**: same-tier delegation, missing tier, cycles all log a
+  warning during boot + at delegate-invocation time.
+- **Acceptance**: 5 tests cover each violation class; assert log
+  emission, assert delegation still proceeds.
+
+### OH1-D — TIER enforcement turned on (~80 LOC) [Codex]
+
+- **Touches**: same validator file as C, flip warnings to errors.
+- **Behavior**: same-tier delegation, cycles, missing-tier-on-user-
+  TOML all REJECT at boot or runtime.
+- **Acceptance**: 5 tests assert each rejection path. Existing
+  summarizer + any registered archetype must pass without changes
+  (proves the migration in B left the registry valid).
+
+### OH1-E — DELEGATE-TOOL synth + DEDUP + over-delegation prefix (~600 LOC) [Codex]
+
+The largest single commit. Absorbs former OH1-S4 (DEDUP) per R5,
+plus over-delegation prefix per R7, plus the `agentdef.WithArchetypeDelegates(...)`
+helper per Agent #4 friction-point F4+F6.
+
+- **Touches**:
+  - new `internal/agent/agentdef/delegate.go` (synth function + helper)
+  - `internal/agent/tools/manifest.go` (dedup guard at emit time)
+  - `internal/channels/telegram/invocation_builder.go:36-80` (call
+    `WithArchetypeDelegates` once)
+  - `cmd/aura/web_chat.go:200-275` (same)
+  - hook into `swarm.Manager.Run` per Q7 if discuss confirms merge
 - **Behavior**: per turn, for each entry in active archetype's
-  `subagents[]`, synthesise one tool `delegate_<target_id>` with schema
-  `{task: string}` and description from target's `when_to_use`. On
-  invoke: sub-loop with target's prompt + filtered tools + max-iter cap.
-- **Acceptance**:
-  - 4 tests: synthesised name, sub-loop execution, parent doesn't see
-    child's tool calls, tier+depth validation honoured.
-  - Live probe: chat tier delegates to summarizer worker, response
-    returns within sub-loop's max-iter.
+  `subagents[]`, synthesise one tool. Schema is
+  `{"prompt": string, "model"?: string}` per R1. Description
+  prepended with hardcoded prefix from R7
+  ("Use only when direct response/direct tools are insufficient. ").
+  On invoke: sub-loop with target's prompt + filtered tools + per-
+  archetype `max_iterations` + `max_input_tokens`/`max_output_tokens`
+  + `max_result_chars`. Parent never sees child's tool calls.
+- **Acceptance**: 8 tests: synth name, sub-loop execution, parent
+  doesn't see child trace, dedup against action tool name collision,
+  cycle detection at invoke time, prefix on description, prompt+model
+  schema, max_input_tokens honoured.
+- **Live probe**: chat tier delegates to summarizer worker, response
+  returns within sub-loop's max-iter, telemetry shows correct
+  `parent_session_id` (R from Agent #2).
 
-### OH1-S4 — DEDUP-VISIBLE-TOOL-SPECS guard (~30 LOC) [TRIVIAL]
+### OH1-F — Channel-scrubber + announce template (~80 LOC) [Codex]
 
-- **Touches**: `internal/agent/tools/manifest.go`.
-- **Behavior**: before emitting per-turn spec list to provider, dedup
-  by `name` keeping first occurrence. Cheap defence against MCP/
-  delegation name collisions.
-- **Acceptance**:
-  - 1 test: duplicate names produces single spec, first metadata wins.
-  - Hook now silently absorbs any MCP server that ships colliding tool
-    names.
+- **Touches**: new `internal/agent/delegate/announce.md` template +
+  render hooks in `internal/channels/telegram/invocation_builder.go`
+  and `cmd/aura/web_chat.go`.
+- **Behavior**: when chat tier invokes `delegate_<id>`, render the
+  announce template into the user-facing thread, run the child sub-
+  loop, then surface ONLY the child's final result. Internal tool
+  calls scrubbed.
+- **Acceptance**: 3 tests — Telegram render, web render, scrubbing
+  invariant (no child tool_use leaks).
 
-**Wave OH1 ship gate**:
-- 12 built-in archetypes from openhuman not required; ship with 2-3
-  (summarizer + a research-style worker + the existing default chat).
-- Live probe: spawn delegate_summarizer from chat tier → response
-  shape sane → no `400 duplicate tool name` ever.
+### OH1-G — Migrate REFLECTION-FORK → `reflector` archetype (~30 LOC delta) [Codex]
+
+- **Touches**: replaces `internal/learning/reflection_fork.go` body
+  with `agentdef.WithArchetypeDelegates(...).Invoke("reflector", ...)`.
+  Adds `internal/agent/agentdef/builtin/reflector/{agent.json,prompt.md}`.
+- **Behavior**: same observable behaviour as Wave-RFL, now driven by
+  archetype machinery.
+- **Acceptance**: byte-identical extraction output for the same input
+  turn; existing tests stay green.
+
+### OH1-H — Deprecate `spawn_aurabot` / `run_aurabot_swarm` in prompts (~0 LOC code) [INTERACTIVE]
+
+- Edit `runtime-workspace/AGENT.md` + `TOOLS.md` to remove references
+  to the old swarm tools; recommend the new `delegate_<id>` surface.
+  Old tools remain callable for back-compat until OH1-I.
+
+### OH1-I — Remove deprecated tools (~50 LOC cleanup) [Codex, after telemetry]
+
+- Drop `SpawnAuraBotTool` + `RunAuraBotSwarmTool` from registry.
+- Trigger: telemetry confirms zero invocations across N days.
+
+**Wave OH1 ship gate** (post OH1-G):
+- Live probe in Telegram: chat tier asks Aura to summarise a long
+  source → Aura invokes `delegate_summarizer(prompt=..., model?=...)`
+  → response back with announce + final-only render → child trace
+  not visible in thread.
+- No `400 duplicate tool name` ever (DEDUP regression test holds).
+- `parent_session_id` populated on every child run in
+  `conversations` table.
 - Update `MEMORY.md` index + `project_aura_dgx_spark_bundle_vision`
   context (multi-agent is now real).
+
+### Real LOC after reuse (per Agent #4 map)
+
+Total: **~1480 net code + ~470 test LOC** (was ~1500 estimate).
+Savings: ~500 LOC vs naïve build because `swarm.Assignment` extends
+with one field instead of getting replaced, SKILL.md body reused
+verbatim, no SQLite migration, DEDUP folds into S3 for free.
 
 ---
 
@@ -529,26 +624,41 @@ SKILL-CREATE + ORCHESTRATOR-PROMPT-DECISION-TREE.
 
 ---
 
-## 7. Wave G3 — Clustering (~1000 LOC, 2 sessions, DISCUSS FIRST)
+## 7. Wave G3 — Clustering (~300 LOC, 1 session, Codex)
 
 Source: graphify pattern 3 (+ 6, 9, 12 dependent).
 
-### G3-S0 — discuss-phase: Louvain port vs Python sidecar [INTERACTIVE]
+> **2026-05-25 update**: the Aura container already has Python (used by
+> markitdown / whisper / piper sidecars). The Go-port-vs-Python-sidecar
+> discuss-phase is therefore moot — we exec Python in-container with
+> `networkx` + `python-louvain` (or `leidenalg` if BLAS is available).
+> Scope drops from ~1000 LOC + new container to ~300 LOC adapter, 1
+> session, no discuss-phase needed. The original three options are
+> documented in `docs/aura-graph-tools-plan-2026-05-25.md` git history
+> for posterity.
 
-- Output: `phases/wave-g3/DISCUSS.md` deciding between:
-  - (a) port Louvain in pure Go (~400 LOC, manageable, slightly worse
-    quality vs Leiden, no new container)
-  - (b) Python sidecar `aura-graphify-sidecar` (real Leiden via
-    `graspologic`, fits existing whisper/piper/markitdown pattern,
-    +1 container)
-- Per memory `feedback_check_tmp_sources_then_brainstorm_best`: read
-  graphify's `cluster.py:86-183` + at least 2 Go community-detection
-  libs (`gonum/graph`? Louvain reference impl?) before deciding.
+### G3-S1 — Python-backed clustering adapter (~200 LOC) [Codex]
 
-### G3-S1 — Clustering implementation (~400-700 LOC) [Codex IF (a), DEFER IF (b)]
-
-- Wire into `search(action=clusters)` returning `[{id, label, cohesion,
-  size, top_slugs[]}]`. LLM-generated label cached in SQLite.
+- **Touches**: new `internal/wiki/cluster.go` (Go side) +
+  `internal/wiki/cluster_python.py` (trusted in-container Python
+  script invoked via `os/exec`). The script reads the graph as JSON
+  on stdin (slugs + edges from `GraphIndex.Snapshot()`) and writes
+  `{cluster_id: [slugs]}` on stdout.
+- **Python deps**: `networkx` (already pulled in by markitdown
+  transitively — verify in `Dockerfile`) + `python-louvain` (one
+  `pip install` line). No Leiden unless we discover networkx's
+  modularity layer is too weak — bench first.
+- **Behavior**: serialise `GraphIndex` to JSON (~5KB at 45 pages,
+  scales linearly), exec `python3 cluster.py`, parse stdout. Cache
+  result keyed on `GraphIndex` content hash so re-clustering is
+  free until the wiki changes. LLM-generated cluster labels stored
+  separately in SQLite, also content-hash keyed.
+- **Aura target surface**: `search(action="clusters")` returning
+  `[{id, label, cohesion, size, top_slugs[]}]`. Filter out
+  `IsAuxiliaryHubNode` slugs before clustering (consistent with
+  god_nodes filter from commit `f877fd85`).
+- **Acceptance**: 5 tests + 1 integration. Bench: clustering 45
+  pages < 200ms, 500 pages < 2s.
 
 ### G3-S2 — Cross-community bonus in surprise score (~30 LOC)
 
