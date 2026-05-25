@@ -50,8 +50,8 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 | OH1-A | ✅ shipped | `02d390a7` | `feat(agent): add agentdef registry skeleton` — registry boots empty, no manifest delta. |
 | OH1-B | ✅ shipped | `45c5fe02` | `feat(agent): migrate summarizer to agentdef` — first archetype; legacy `agents/summarizer/prompt.go` now a shim. |
 | OH1-C | ✅ shipped | `d0b24989` | `feat(agent): warn on agentdef tier violations` — warn-only validator + `DetectCycle(rootID)`. |
-| OH1-D | 🟡 in flight | _(uncommitted)_ | Flip `EnforceTier: true` at boot; enforcement tests added and targeted/static gates passed. |
-| OH1-E | ⬜ pending | — | Delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. Biggest commit (~600 LOC). |
+| OH1-D | ✅ shipped | `a82f5284` | `feat(agent): enforce agentdef tier validation` — boot uses `EnforceTier: true`; summarizer still validates. |
+| OH1-E | 🟡 in flight | _(uncommitted)_ | Delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. Biggest commit (~600 LOC). |
 | OH1-F | ⬜ pending | — | Channel-scrubber + announce template for Telegram + web. |
 | OH1-G | ⬜ pending | — | Migrate reflection fork → `reflector` archetype. |
 | OH1-H | ⬜ pending (interactive) | — | Deprecate `spawn_aurabot` / `run_aurabot_swarm` in overlays. |
@@ -60,8 +60,7 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 **Freshness rule:** update this snapshot immediately after every atomic commit,
 and mark the currently edited slice as in-flight before continuing.
 
-**Next action:** finish and commit OH1-D enforcement flip; then OH1-E delegate
-synth (the heavy one).
+**Next action:** implement and verify OH1-E delegate synth (the heavy one).
 
 ---
 
@@ -336,7 +335,7 @@ subagents → no warn). Aura still functional.
 
 ---
 
-## 6. OH1-D — TIER enforcement turned on (~80 LOC) [Codex] — 🟡 in flight (uncommitted)
+## 6. OH1-D — TIER enforcement turned on (~80 LOC) [Codex] — ✅ shipped `a82f5284`
 
 **Goal**: flip warnings to errors. Boot fails fast on malformed user
 TOMLs.
@@ -354,7 +353,7 @@ violated.
 
 ---
 
-## 7. OH1-E — DELEGATE-TOOL synth + DEDUP + over-delegation prefix (~600 LOC) [Codex] — ⬜ pending
+## 7. OH1-E — DELEGATE-TOOL synth + DEDUP + over-delegation prefix (~600 LOC) [Codex] — 🟡 in flight (uncommitted)
 
 **Goal**: the biggest commit. Per-turn synthesis of `delegate_<id>`
 tools, DEDUP against action tools, hardcoded over-delegation prefix,
