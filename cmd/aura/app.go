@@ -372,8 +372,9 @@ func newApp(
 	deps.Tools = toolRegistry
 
 	agentDefs, err := agentdef.NewRegistry(context.Background(), &agentdef.Loader{
-		UserDir: filepath.Join(cfg.RuntimeWorkspacePath, "agents"),
-		Logger:  logger,
+		BuiltinFS: agentdef.BuiltinFS,
+		UserDir:   filepath.Join(cfg.RuntimeWorkspacePath, "agents"),
+		Logger:    logger,
 	}, &agentdef.Validator{Logger: logger})
 	if err != nil {
 		return nil, fmt.Errorf("loading agent definitions: %w", err)

@@ -173,7 +173,7 @@ func resolvePrompt(root fs.FS, sourcePath string, def *AgentDefinition) error {
 	if err != nil {
 		return fmt.Errorf("agentdef: read prompt_path %s for %s: %w", promptPath, sourcePath, err)
 	}
-	def.Prompt = strings.TrimSpace(string(data))
+	def.Prompt = string(data)
 	return nil
 }
 

@@ -1,0 +1,15 @@
+{
+  "id": "summarizer",
+  "display_name": "Tool Result Summarizer",
+  "when_to_use": "Compress a single oversized tool result while preserving identifiers, dates, numbers, paths, error codes verbatim.",
+  "prompt_path": "prompt.md",
+  "model_hint": "fast",
+  "temperature": 0,
+  "tools": { "named": [] },
+  "tier": "worker",
+  "max_iterations": 1,
+  "max_input_tokens": 16384,
+  "max_output_tokens": 4096,
+  "max_result_chars": 8000,
+  "inherit_safety": true
+}

@@ -97,7 +97,7 @@ func TestLoader_PromptPathRelativeToDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if defs[0].Prompt != "prompt from file" {
+	if defs[0].Prompt != "prompt from file\n" {
 		t.Fatalf("Prompt = %q", defs[0].Prompt)
 	}
 }

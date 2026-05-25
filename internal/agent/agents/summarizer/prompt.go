@@ -1,7 +1,8 @@
-// Package summarizer embeds the payload-summarizer extraction prompt.
+// Package summarizer preserves the legacy payload-summarizer prompt symbol.
 package summarizer
 
-import _ "embed"
+import "github.com/aura/aura/internal/agent/agentdef"
 
-//go:embed SKILL.md
-var Prompt string
+const ID = "summarizer"
+
+var Prompt = agentdef.MustBuiltinPrompt(ID)

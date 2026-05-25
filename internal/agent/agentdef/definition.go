@@ -43,6 +43,11 @@ type AgentDefinition struct {
 	InheritOperationalMemory   bool `json:"inherit_operational_memory,omitempty"`
 	InheritWikiContext         bool `json:"inherit_wiki_context,omitempty"`
 	InheritConversationContext bool `json:"inherit_conversation_context,omitempty"`
+	InheritIdentity            bool `json:"inherit_identity,omitempty"`
+	InheritMemory              bool `json:"inherit_memory,omitempty"`
+	InheritSafety              bool `json:"inherit_safety,omitempty"`
+	InheritSkills              bool `json:"inherit_skills,omitempty"`
+	InheritProfile             bool `json:"inherit_profile,omitempty"`
 
 	Prompt string `json:"-"`
 	Source string `json:"-"`
