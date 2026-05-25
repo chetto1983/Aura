@@ -551,6 +551,7 @@ func (a *App) registerMemoryRecallTools(cfg *config.Config) {
 			tools.NewRecallGodNodesTool(a.deps.WikiStore),
 			tools.NewWikiPathTool(a.deps.WikiStore),
 			tools.NewWikiSubgraphTool(a.deps.WikiStore, a.deps.SearchRepo),
+			tools.NewWikiDiffTool(a.deps.WikiStore),
 		)
 		a.deps.Tools.Register(st)
 	}

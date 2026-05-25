@@ -177,6 +177,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 			NewWikiSubgraphTool(store, &fakeSubgraphSearcher{results: []search.Result{
 				{Slug: "robot", Title: "Robot", Score: 0.95},
 			}}),
+			NewWikiDiffTool(store),
 		)
 
 	cases := []struct {
@@ -189,6 +190,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 		{name: "god nodes", args: map[string]any{"action": "god_nodes", "top_k": 2}, want: "robot"},
 		{name: "path", args: map[string]any{"action": "path", "from_slug": "robot", "to_slug": "frame"}, want: `"path":["robot","frame"]`},
 		{name: "subgraph", args: map[string]any{"action": "subgraph", "query": "robot", "depth": 1, "budget_tokens": 500}, want: "CAPSULE wiki_subgraph"},
+		{name: "diff", args: map[string]any{"action": "diff", "since": "HEAD"}, want: `"summary":"no changes"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -214,7 +216,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 func TestSearch_GraphActionsErrorWhenDelegateMissing(t *testing.T) {
 	ctx := context.Background()
 	tool := &SearchTool{}
-	for _, action := range []string{"god_nodes", "subgraph", "path"} {
+	for _, action := range []string{"god_nodes", "subgraph", "path", "diff"} {
 		_, err := tool.Execute(ctx, map[string]any{"action": action})
 		if err == nil {
 			t.Fatalf("action=%q returned nil error, want unavailable error", action)
