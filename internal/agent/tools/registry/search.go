@@ -15,7 +15,7 @@ import (
 //
 //   - action=search     - hybrid wiki+compact search
 //   - action=list       - enumerate wiki page slugs with optional prefix filter
-//   - action=read       - fetch a wiki page body or source extract.md by slug
+//   - action=read       - fetch a wiki page markdown capsule or source extract.md by slug
 //   - action=lessons    - approved operational lessons
 //   - action=user_facts - approved user facts/preferences
 //   - action=god_nodes  - top wiki hubs by degree centrality
@@ -145,7 +145,7 @@ func (t *SearchTool) Parameters() map[string]any {
 			"action": map[string]any{
 				"type":        "string",
 				"enum":        []string{"search", "list", "read", "lessons", "user_facts", "god_nodes", "subgraph", "path", "diff", "gaps", "surprises"},
-				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (fetch body), lessons (operational lessons), user_facts (user memory), god_nodes (top real-entity wiki hubs; operational/uncategorized hubs filtered out), subgraph (query-seeded graph capsule), path (shortest wiki path), diff (wiki graph changes), gaps (isolated or under-linked wiki pages), surprises (non-obvious graph edges).",
+				"description": "Which operation: search (hybrid lookup), list (enumerate slugs), read (markdown page/source), lessons (operational lessons), user_facts (user memory), god_nodes (top real-entity wiki hubs; operational/uncategorized hubs filtered out), subgraph (query-seeded graph capsule), path (shortest wiki path), diff (wiki graph changes), gaps (isolated or under-linked wiki pages), surprises (non-obvious graph edges).",
 			},
 			"query": map[string]any{
 				"type":        "string",
@@ -376,7 +376,7 @@ func (t *SearchTool) doList(_ context.Context, args map[string]any) (string, err
 	return string(b), nil
 }
 
-// doRead fetches the body of a wiki page or source extract by slug.
+// doRead fetches a wiki page capsule or source extract by slug.
 func (t *SearchTool) doRead(ctx context.Context, args map[string]any) (string, error) {
 	slug, err := requiredString(args, "slug")
 	if err != nil {
@@ -449,7 +449,7 @@ func (t *SearchTool) doSurprises(ctx context.Context, args map[string]any) (stri
 	return t.wikiSurprises.Execute(ctx, searchDelegateArgs(args, "top_k"))
 }
 
-// readWikiPage returns JSON {slug, title, body, frontmatter} for a wiki page.
+// readWikiPage returns a compact markdown capsule for LLM-facing wiki reads.
 func (t *SearchTool) readWikiPage(slug string) (string, error) {
 	if t.wikiReader == nil {
 		return "", fmt.Errorf("search read: wiki reader unavailable")
@@ -458,33 +458,43 @@ func (t *SearchTool) readWikiPage(slug string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("search read wiki: %w", err)
 	}
-	type fmResult struct {
-		Category      string   `json:"category,omitempty"`
-		Tags          []string `json:"tags,omitempty"`
-		UpdatedAt     string   `json:"updated_at,omitempty"`
-		SchemaVersion int      `json:"schema_version,omitempty"`
+	return renderWikiReadCapsule(slug, page), nil
+}
+
+func renderWikiReadCapsule(slug string, page *wiki.Page) string {
+	title := strings.TrimSpace(page.Title)
+	if title == "" {
+		title = slug
 	}
-	result := struct {
-		Slug        string   `json:"slug"`
-		Title       string   `json:"title"`
-		Body        string   `json:"body"`
-		Frontmatter fmResult `json:"frontmatter"`
-	}{
-		Slug:  slug,
-		Title: page.Title,
-		Body:  page.Body,
-		Frontmatter: fmResult{
-			Category:      page.Category,
-			Tags:          page.Tags,
-			UpdatedAt:     page.UpdatedAt,
-			SchemaVersion: page.SchemaVersion,
-		},
+	var b strings.Builder
+	fmt.Fprintf(&b, "PAGE [[%s]] - %s\n", slug, title)
+	if metadata := wikiReadMetadataLine(page); metadata != "" {
+		b.WriteString(metadata)
+		b.WriteByte('\n')
 	}
-	b, err := json.Marshal(result)
-	if err != nil {
-		return "", fmt.Errorf("search read wiki: marshal: %w", err)
+	b.WriteByte('\n')
+	b.WriteString(strings.TrimRight(page.Body, "\n"))
+	return b.String()
+}
+
+func wikiReadMetadataLine(page *wiki.Page) string {
+	fields := make([]string, 0, 5)
+	if page.Category != "" {
+		fields = append(fields, "category="+page.Category)
 	}
-	return string(b), nil
+	if len(page.Tags) > 0 {
+		fields = append(fields, "tags="+strings.Join(page.Tags, ","))
+	}
+	if page.UpdatedAt != "" {
+		fields = append(fields, "updated_at="+page.UpdatedAt)
+	}
+	if related := wiki.RelatedSlugs(page.Related); len(related) > 0 {
+		fields = append(fields, "related="+strings.Join(related, ","))
+	}
+	if len(page.Sources) > 0 {
+		fields = append(fields, "sources="+strings.Join(page.Sources, ","))
+	}
+	return strings.Join(fields, "  ")
 }
 
 // readSource delegates to ReadSourceTool for source extract markdown.

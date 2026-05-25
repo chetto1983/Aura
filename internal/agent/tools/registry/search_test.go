@@ -75,9 +75,9 @@ func TestSearch_ActionList_PrefixMatch(t *testing.T) {
 	}
 }
 
-// TestSearch_ActionRead_BodyReturned verifies that action=read returns the wiki
-// page body and slug as JSON.
-func TestSearch_ActionRead_BodyReturned(t *testing.T) {
+// TestSearch_ActionRead_MarkdownCapsuleReturned verifies that action=read
+// returns the wiki page as a compact markdown capsule for LLM-facing RAG.
+func TestSearch_ActionRead_MarkdownCapsuleReturned(t *testing.T) {
 	ctx := context.Background()
 	s := newTestWikiStore(t)
 	seedPage(t, s, "My Topic", "Body content here.", nil, nil)
@@ -91,23 +91,116 @@ func TestSearch_ActionRead_BodyReturned(t *testing.T) {
 		t.Fatalf("Execute: %v", err)
 	}
 
-	var result struct {
-		Slug  string `json:"slug"`
-		Title string `json:"title"`
-		Body  string `json:"body"`
+	for _, want := range []string{
+		"PAGE [[my-topic]] - My Topic",
+		"updated_at=",
+		"\n\nBody content here.",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
 	}
-	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatalf("not JSON: %v\n%s", err, out)
+	if json.Valid([]byte(out)) {
+		t.Fatalf("search(action=read) should return markdown, got JSON: %s", out)
 	}
-	if result.Slug != "my-topic" {
-		t.Errorf("slug = %q, want my-topic", result.Slug)
+}
+
+func TestSearch_ActionRead_FrontmatterLine(t *testing.T) {
+	ctx := context.Background()
+	s := newTestWikiStore(t)
+	now := "2026-05-25T10:00:00Z"
+	page := &wiki.Page{
+		Title:         "Rich Topic",
+		Body:          "Rich body.",
+		Category:      "concept",
+		Tags:          []string{"safety", "robot"},
+		Related:       wiki.RelatedFromSlugs([]string{"alpha", "beta"}),
+		Sources:       []string{"src_demo"},
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     now,
+		UpdatedAt:     now,
 	}
-	if result.Title != "My Topic" {
-		t.Errorf("title = %q, want My Topic", result.Title)
+	if err := s.WritePage(ctx, page); err != nil {
+		t.Fatalf("WritePage: %v", err)
 	}
-	if result.Body != "Body content here." {
-		t.Errorf("body = %q, want 'Body content here.'", result.Body)
+	tool := NewSearchTool(nil, s, nil)
+	out, err := tool.Execute(ctx, map[string]any{
+		"action": "read",
+		"slug":   "rich-topic",
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
+
+	for _, want := range []string{
+		"category=concept",
+		"tags=safety,robot",
+		"updated_at=2026-05-25T10:00:00Z",
+		"related=alpha,beta",
+		"sources=src_demo",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("metadata missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestRenderWikiReadCapsuleOmitsEmptyFrontmatterLine(t *testing.T) {
+	out := renderWikiReadCapsule("bare", &wiki.Page{Title: "Bare", Body: "Body."})
+	if out != "PAGE [[bare]] - Bare\n\nBody." {
+		t.Fatalf("out = %q, want no metadata line", out)
+	}
+}
+
+func TestRenderWikiReadCapsuleIsSmallerThanOldJSON(t *testing.T) {
+	page := &wiki.Page{
+		Title:         "Quoted Topic",
+		Body:          strings.Repeat("\"quoted\"\n", 80),
+		Category:      "concept",
+		Tags:          []string{"rag", "wiki"},
+		Related:       wiki.RelatedFromSlugs([]string{"alpha", "beta"}),
+		SchemaVersion: wiki.CurrentSchemaVersion,
+		PromptVersion: "v1",
+		CreatedAt:     "2026-05-25T10:00:00Z",
+		UpdatedAt:     "2026-05-25T10:00:00Z",
+	}
+	capsule := renderWikiReadCapsule("quoted-topic", page)
+	oldJSON := oldWikiReadJSONForTest(t, "quoted-topic", page)
+	if len(capsule) > len(oldJSON)*80/100 {
+		t.Fatalf("capsule len=%d old JSON len=%d, want at least 20%% smaller", len(capsule), len(oldJSON))
+	}
+}
+
+func oldWikiReadJSONForTest(t *testing.T, slug string, page *wiki.Page) string {
+	t.Helper()
+	type fmResult struct {
+		Category      string   `json:"category,omitempty"`
+		Tags          []string `json:"tags,omitempty"`
+		UpdatedAt     string   `json:"updated_at,omitempty"`
+		SchemaVersion int      `json:"schema_version,omitempty"`
+	}
+	result := struct {
+		Slug        string   `json:"slug"`
+		Title       string   `json:"title"`
+		Body        string   `json:"body"`
+		Frontmatter fmResult `json:"frontmatter"`
+	}{
+		Slug:  slug,
+		Title: page.Title,
+		Body:  page.Body,
+		Frontmatter: fmResult{
+			Category:      page.Category,
+			Tags:          page.Tags,
+			UpdatedAt:     page.UpdatedAt,
+			SchemaVersion: page.SchemaVersion,
+		},
+	}
+	b, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal old JSON: %v", err)
+	}
+	return string(b)
 }
 
 // TestSearch_ZoneFilter verifies that zone=wiki only searches the wiki backend
