@@ -165,8 +165,9 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 		userFact("user_memory:pref", "preference", "Prefers dark mode", now),
 	}}
 	store := newSubgraphTestStore(t, map[string]*wiki.Page{
-		"robot": {Title: "Robot", Body: "Robot connects to [[frame]]."},
-		"frame": {Title: "Frame", Body: "Frame supports [[robot]]."},
+		"robot":  {Title: "Robot", Body: "Robot connects to [[frame]]."},
+		"frame":  {Title: "Frame", Body: "Frame supports [[robot]]."},
+		"island": {Title: "Island", Body: "Island has no graph links."},
 	})
 	tool := NewSearchTool(NewSearchMemoryTool(nil, compact), store, nil).
 		WithRecallAndGraphActions(
@@ -178,6 +179,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 				{Slug: "robot", Title: "Robot", Score: 0.95},
 			}}),
 			NewWikiDiffTool(store),
+			NewWikiGapsTool(store),
 			NewWikiSurprisesTool(store),
 		)
 
@@ -192,6 +194,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 		{name: "path", args: map[string]any{"action": "path", "from_slug": "robot", "to_slug": "frame"}, want: `"path":["robot","frame"]`},
 		{name: "subgraph", args: map[string]any{"action": "subgraph", "query": "robot", "depth": 1, "budget_tokens": 500}, want: "CAPSULE wiki_subgraph"},
 		{name: "diff", args: map[string]any{"action": "diff", "since": "HEAD"}, want: `"summary":"no changes"`},
+		{name: "gaps", args: map[string]any{"action": "gaps", "top_k": 2}, want: `"slugs":["island"]`},
 		{name: "surprises", args: map[string]any{"action": "surprises", "top_k": 2}, want: `"confidence":"EXTRACTED"`},
 	}
 	for _, tc := range cases {
@@ -218,7 +221,7 @@ func TestSearch_FoldedRecallAndGraphActions(t *testing.T) {
 func TestSearch_GraphActionsErrorWhenDelegateMissing(t *testing.T) {
 	ctx := context.Background()
 	tool := &SearchTool{}
-	for _, action := range []string{"god_nodes", "subgraph", "path", "diff", "surprises"} {
+	for _, action := range []string{"god_nodes", "subgraph", "path", "diff", "gaps", "surprises"} {
 		_, err := tool.Execute(ctx, map[string]any{"action": action})
 		if err == nil {
 			t.Fatalf("action=%q returned nil error, want unavailable error", action)
