@@ -240,7 +240,7 @@ func MarshalMD(page *Page) ([]byte, error) {
 		Aliases       []string `yaml:"aliases,omitempty"`
 		Tags          []string `yaml:"tags,omitempty"`
 		Category      string   `yaml:"category,omitempty"`
-		Related       []string `yaml:"related,omitempty"`
+		Related       []any    `yaml:"related,omitempty"`
 		Sources       []string `yaml:"sources,omitempty"`
 		SchemaVersion int      `yaml:"schema_version"`
 		PromptVersion string   `yaml:"prompt_version"`
@@ -252,7 +252,7 @@ func MarshalMD(page *Page) ([]byte, error) {
 		Aliases:       page.Aliases,
 		Tags:          page.Tags,
 		Category:      page.Category,
-		Related:       RelatedSlugs(page.Related),
+		Related:       relatedFrontmatterValues(page.Related),
 		Sources:       page.Sources,
 		SchemaVersion: page.SchemaVersion,
 		PromptVersion: page.PromptVersion,

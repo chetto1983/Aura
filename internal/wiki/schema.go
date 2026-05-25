@@ -41,12 +41,29 @@ type WikiLinkEdge struct {
 	Type string // one of validEdgeTypes; defaults to "mentions"
 }
 
+const (
+	ConfidenceExtracted = "EXTRACTED"
+	ConfidenceInferred  = "INFERRED"
+	ConfidenceAmbiguous = "AMBIGUOUS"
+)
+
 // validConfidences is the set of accepted Confidence values for RelatedRef.
 var validConfidences = map[string]bool{
-	"EXTRACTED": true,
-	"INFERRED":  true,
-	"AMBIGUOUS": true,
-	"":          true, // empty defaults to EXTRACTED on read
+	ConfidenceExtracted: true,
+	ConfidenceInferred:  true,
+	ConfidenceAmbiguous: true,
+	"":                  true, // empty defaults to EXTRACTED on read
+}
+
+func ConfidenceFromScore(score float64) string {
+	switch {
+	case score >= 0.75:
+		return ConfidenceExtracted
+	case score >= 0.55:
+		return ConfidenceInferred
+	default:
+		return ConfidenceAmbiguous
+	}
 }
 
 // RelatedRef is a typed entry in a page's `related:` frontmatter list.
@@ -65,7 +82,7 @@ func (r *RelatedRef) UnmarshalYAML(node *yaml.Node) error {
 	switch node.Kind {
 	case yaml.ScalarNode:
 		r.Slug = node.Value
-		r.Confidence = "EXTRACTED"
+		r.Confidence = ConfidenceExtracted
 	case yaml.MappingNode:
 		// Use an alias to avoid infinite recursion with the custom unmarshaler.
 		type relatedRefAlias RelatedRef
@@ -75,7 +92,7 @@ func (r *RelatedRef) UnmarshalYAML(node *yaml.Node) error {
 		}
 		*r = RelatedRef(alias)
 		if r.Confidence == "" {
-			r.Confidence = "EXTRACTED"
+			r.Confidence = ConfidenceExtracted
 		}
 	default:
 		return fmt.Errorf("wiki: RelatedRef must be a string or mapping, got %v", node.Tag)
@@ -119,6 +136,24 @@ func RelatedSlugs(refs []RelatedRef) []string {
 	return out
 }
 
+func relatedFrontmatterValues(refs []RelatedRef) []any {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]any, len(refs))
+	for i, ref := range refs {
+		if ref.Confidence == "" || ref.Confidence == ConfidenceExtracted {
+			out[i] = ref.Slug
+			continue
+		}
+		out[i] = map[string]string{
+			"slug":       ref.Slug,
+			"confidence": ref.Confidence,
+		}
+	}
+	return out
+}
+
 // RelatedFromSlugs converts bare slug strings into EXTRACTED RelatedRefs.
 func RelatedFromSlugs(slugs []string) []RelatedRef {
 	if len(slugs) == 0 {
@@ -126,7 +161,7 @@ func RelatedFromSlugs(slugs []string) []RelatedRef {
 	}
 	out := make([]RelatedRef, len(slugs))
 	for i, s := range slugs {
-		out[i] = RelatedRef{Slug: s, Confidence: "EXTRACTED"}
+		out[i] = RelatedRef{Slug: s, Confidence: ConfidenceExtracted}
 	}
 	return out
 }
@@ -148,7 +183,7 @@ func RelatedAppendSlug(refs []RelatedRef, slug string) []RelatedRef {
 	if RelatedContainsSlug(refs, slug) {
 		return refs
 	}
-	refs = append(refs, RelatedRef{Slug: slug, Confidence: "EXTRACTED"})
+	refs = append(refs, RelatedRef{Slug: slug, Confidence: ConfidenceExtracted})
 	RelatedSortBySlugs(refs)
 	return refs
 }

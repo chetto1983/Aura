@@ -64,7 +64,7 @@ func (a *AutoApplier) applyNew(ctx context.Context, d Decision) error {
 		PromptVersion: "proposal_v1",
 		Title:         title,
 		Category:      d.Candidate.Category,
-		Related:       wiki.RelatedFromSlugs(uniqueNonEmpty(d.Candidate.RelatedSlugs)),
+		Related:       relatedRefsFromCandidate(d.Candidate),
 		Tags:          []string{"auto-added"},
 		Sources:       sources,
 		CreatedAt:     now,
@@ -93,9 +93,10 @@ func (a *AutoApplier) applyPatch(ctx context.Context, d Decision) error {
 			page.Sources = append(page.Sources, ref)
 		}
 	}
+	confidence := wiki.ConfidenceFromScore(d.Candidate.Score)
 	for _, slug := range d.Candidate.RelatedSlugs {
 		if slug != "" && !wiki.RelatedContainsSlug(page.Related, slug) {
-			page.Related = append(page.Related, wiki.RelatedRef{Slug: slug, Confidence: "EXTRACTED"})
+			page.Related = append(page.Related, wiki.RelatedRef{Slug: slug, Confidence: confidence})
 		}
 	}
 	page.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -104,6 +105,19 @@ func (a *AutoApplier) applyPatch(ctx context.Context, d Decision) error {
 	}
 	a.wiki.AppendLog(ctx, "proposal patch", d.TargetSlug)
 	return nil
+}
+
+func relatedRefsFromCandidate(c Candidate) []wiki.RelatedRef {
+	slugs := uniqueNonEmpty(c.RelatedSlugs)
+	if len(slugs) == 0 {
+		return nil
+	}
+	confidence := wiki.ConfidenceFromScore(c.Score)
+	refs := make([]wiki.RelatedRef, len(slugs))
+	for i, slug := range slugs {
+		refs[i] = wiki.RelatedRef{Slug: slug, Confidence: confidence}
+	}
+	return refs
 }
 
 func containsStr(ss []string, s string) bool {
@@ -153,10 +167,10 @@ type UserMemoryProposalWriter interface {
 
 // UserMemoryProposalInput holds the parameters for a user_memory proposal row.
 type UserMemoryProposalInput struct {
-	Handle        string  // idempotency key = UserFactHandle(Candidate)
+	Handle        string // idempotency key = UserFactHandle(Candidate)
 	Fact          string
-	Action        string  // "new" or "patch"
-	TargetHandle  string  // non-empty for patch: existing user_memory document handle
+	Action        string // "new" or "patch"
+	TargetHandle  string // non-empty for patch: existing user_memory document handle
 	SourceTurnIDs []int64
 	Category      string
 }
@@ -198,4 +212,3 @@ func (r *RoutingApplier) createUserMemoryProposal(ctx context.Context, c Candida
 	}
 	return submitUserMemoryProposal(ctx, c, r.proposals, r.memory)
 }
-

@@ -155,6 +155,33 @@ func TestWikiSubgraph_QueryCapsuleHeaderShowsSeedsAndSignals(t *testing.T) {
 	}
 }
 
+func TestWikiSubgraph_RendersRelatedConfidence(t *testing.T) {
+	pages := map[string]*wiki.Page{
+		"alpha": {
+			Title:   "Alpha",
+			Body:    "Alpha page.",
+			Related: []wiki.RelatedRef{{Slug: "beta", Confidence: wiki.ConfidenceAmbiguous}},
+		},
+		"beta": {Title: "Beta", Body: "Beta page."},
+	}
+	store := newSubgraphTestStore(t, pages)
+
+	tool := NewWikiSubgraphTool(store, &fakeSubgraphSearcher{
+		results: []search.Result{{Slug: "alpha", Title: "Alpha", Score: 0.95}},
+	})
+	result, err := tool.Execute(context.Background(), map[string]any{
+		"query":         "alpha",
+		"depth":         1,
+		"budget_tokens": 500,
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(result, "EDGE alpha --AMBIGUOUS--> beta") {
+		t.Fatalf("result missing related confidence edge:\n%s", result)
+	}
+}
+
 func TestWikiSubgraph_NoHits(t *testing.T) {
 	store := newSubgraphTestStore(t, map[string]*wiki.Page{
 		"a": {Title: "A", Body: "No relevant content."},

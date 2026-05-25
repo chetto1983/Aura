@@ -330,7 +330,7 @@ func (t *WikiSubgraphTool) Execute(ctx context.Context, args map[string]any) (st
 			edgesSeen[edgeKey] = true
 			conf, hasConf := confMap[target]
 			if !hasConf {
-				conf = "EXTRACTED" // body [[wiki-link]]
+				conf = wiki.ConfidenceExtracted // body [[wiki-link]]
 			}
 			edge := fmt.Sprintf("EDGE %s --%s--> %s\n", slug, conf, target)
 			appendWithinBudget(edge)

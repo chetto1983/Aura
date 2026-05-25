@@ -36,6 +36,31 @@ func TestAutoApplierActionNewWritesPage(t *testing.T) {
 	}
 }
 
+func TestAutoApplierActionNewTagsLowScoreRelatedAsAmbiguous(t *testing.T) {
+	ws := &fakeWikiStore{}
+	a := summarizer.NewAutoApplier(ws)
+
+	err := a.Apply(context.Background(), summarizer.Decision{
+		Candidate: summarizer.Candidate{
+			Fact:         "Marco likes concise agents",
+			Score:        0.42,
+			Category:     "preference",
+			RelatedSlugs: []string{"aura-agent"},
+		},
+		Action: summarizer.ActionNew,
+	})
+	if err != nil {
+		t.Fatalf("Apply(new): %v", err)
+	}
+	page := ws.writes[0]
+	if len(page.Related) != 1 {
+		t.Fatalf("related = %#v, want one ref", page.Related)
+	}
+	if page.Related[0].Confidence != wiki.ConfidenceAmbiguous {
+		t.Fatalf("related confidence = %q, want %q", page.Related[0].Confidence, wiki.ConfidenceAmbiguous)
+	}
+}
+
 func TestAutoApplierActionPatchAppendsToBody(t *testing.T) {
 	ws := &fakeWikiStore{
 		pages: map[string]*wiki.Page{
@@ -62,6 +87,35 @@ func TestAutoApplierActionPatchAppendsToBody(t *testing.T) {
 	}
 	if len(page.Sources) != 2 || page.Sources[1] != "turn:3" {
 		t.Fatalf("sources = %#v, want turn:3 appended once", page.Sources)
+	}
+}
+
+func TestAutoApplierActionPatchTagsMidScoreRelatedAsInferred(t *testing.T) {
+	ws := &fakeWikiStore{
+		pages: map[string]*wiki.Page{
+			"marco-info": {Title: "Marco Info", Body: "Original"},
+		},
+	}
+	a := summarizer.NewAutoApplier(ws)
+
+	err := a.Apply(context.Background(), summarizer.Decision{
+		Candidate: summarizer.Candidate{
+			Fact:         "Marco prefers fast loops",
+			Score:        0.60,
+			RelatedSlugs: []string{"runtime-diet"},
+		},
+		Action:     summarizer.ActionPatch,
+		TargetSlug: "marco-info",
+	})
+	if err != nil {
+		t.Fatalf("Apply(patch): %v", err)
+	}
+	page := ws.pages["marco-info"]
+	if len(page.Related) != 1 {
+		t.Fatalf("related = %#v, want one ref", page.Related)
+	}
+	if page.Related[0].Confidence != wiki.ConfidenceInferred {
+		t.Fatalf("related confidence = %q, want %q", page.Related[0].Confidence, wiki.ConfidenceInferred)
 	}
 }
 

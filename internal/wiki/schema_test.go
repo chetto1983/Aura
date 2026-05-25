@@ -321,6 +321,25 @@ func TestRelatedRef_InvalidConfidenceFails(t *testing.T) {
 	}
 }
 
+func TestConfidenceFromScore(t *testing.T) {
+	tests := []struct {
+		name  string
+		score float64
+		want  string
+	}{
+		{name: "extracted", score: 0.75, want: ConfidenceExtracted},
+		{name: "inferred", score: 0.55, want: ConfidenceInferred},
+		{name: "ambiguous", score: 0.42, want: ConfidenceAmbiguous},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ConfidenceFromScore(tt.score); got != tt.want {
+				t.Fatalf("ConfidenceFromScore(%v) = %q, want %q", tt.score, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPage_SchemaV2_LegacyRelatedStillParses(t *testing.T) {
 	input := "---\ntitle: Legacy\nbody: body\nrelated:\n  - alpha\n  - beta\nschema_version: 2\nprompt_version: v1\ncreated_at: \"2026-01-01T00:00:00Z\"\nupdated_at: \"2026-01-01T00:00:00Z\"\n---\nbody\n"
 	page, err := ParseMD([]byte(input))
@@ -418,8 +437,13 @@ func TestPage_SchemaV3_RoundTrip(t *testing.T) {
 	if len(back.Related) != 2 {
 		t.Fatalf("round-trip len(Related) = %d, want 2", len(back.Related))
 	}
-	// MarshalMD writes bare slugs → re-parsed as EXTRACTED.
 	if back.Related[0].Slug != "a" || back.Related[1].Slug != "b" {
 		t.Errorf("slugs = %v/%v", back.Related[0].Slug, back.Related[1].Slug)
+	}
+	if back.Related[0].Confidence != ConfidenceExtracted {
+		t.Errorf("a confidence = %q, want %q", back.Related[0].Confidence, ConfidenceExtracted)
+	}
+	if back.Related[1].Confidence != ConfidenceInferred {
+		t.Errorf("b confidence = %q, want %q", back.Related[1].Confidence, ConfidenceInferred)
 	}
 }
