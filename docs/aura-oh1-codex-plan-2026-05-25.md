@@ -54,7 +54,7 @@ Test LOC budget: ~470 across the whole wave. Each commit lefthook-green
 | OH1-E | ✅ shipped | `aec6f61d` | `feat(agent): synthesize agentdef delegate tools` — delegate-tool synth + DEDUP + over-delegation prefix + `swarm.Manager` maxDepth 1→3 + Assignment extensions. |
 | OH1-F | ✅ shipped | `13a59625` | `feat(agent): announce agentdef delegation` — channel scrubber + announce template for Telegram + web. |
 | OH1-G | ✅ shipped | `52bd2c99` | `feat(agent): migrate reflection to reflector archetype` — builtin `reflector` + reflection hook uses AGENTDEF delegate runner with direct fallback parity. |
-| OH1-H | ✅ closed (no-op) | _(plan-only closure; fill hash after commit)_ | Prompt surface already clean: `TOOLS.md` is retired/ignored and active/default prompt files do not mention `spawn_aurabot` / `run_aurabot_swarm`. |
+| OH1-H | ✅ closed (no-op) | `f9f643a7` | Prompt surface already clean: `TOOLS.md` is retired/ignored and active/default prompt files do not mention `spawn_aurabot` / `run_aurabot_swarm`. |
 | OH1-I | ⬜ pending (post-telemetry) | — | Remove deprecated swarm tools after 7+ days of zero invocations. |
 
 **Freshness rule:** update this snapshot immediately after every atomic commit,
@@ -594,6 +594,7 @@ tools. Telemetry counter on those tool invocations should trend to 0
 over N days.
 
 **Closure evidence (2026-05-25)**:
+- Plan-only closure commit: `f9f643a7 docs(plan): close OH1-H prompt deprecation`.
 - No prompt edit was needed. `runtime-workspace/TOOLS.md` is absent, and
   `internal/conversation/overlay.go` documents that `TOOLS.md` was retired
   on 2026-05-24 and is not injected into the system prompt.
