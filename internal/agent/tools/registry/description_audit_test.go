@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode"
 )
 
 // auditTools returns the canonical set of catalogued tool instances that the
@@ -79,15 +80,26 @@ func TestDescriptionAuditLenCap(t *testing.T) {
 	}
 }
 
-// TestDescriptionAuditNoItalianWords enforces that tool descriptions contain no
-// Italian words. Per feedback_all_prompts_in_english_only, all instructional
-// text must be in English; mixing languages degrades LLM rule-following.
-func TestDescriptionAuditNoItalianWords(t *testing.T) {
-	itWords := regexp.MustCompile(`\b(gli|agli|nella|dei|delle)\b`)
+// TestDescriptionAuditAsciiOnly enforces that tool descriptions stay in
+// English (per feedback_all_prompts_in_english_only) via the structural
+// proxy "no non-ASCII letters". This catches accented characters used in
+// Italian / French / Spanish / German prose (à, è, ñ, ü) without
+// hardcoding a per-language word list — the previous test used a regex
+// `\b(gli|agli|nella|dei|delle)\b` which was the exact NL-token-list
+// anti-pattern called out in feedback_no_regex_for_nlp (removed 2026-05-25).
+//
+// Non-ASCII punctuation like the em dash (—) or ellipsis (…) is allowed
+// because those are stylistic choices that don't signal a language switch.
+// Only letters with combining marks (Unicode category Mn or Mc) trigger.
+func TestDescriptionAuditAsciiOnly(t *testing.T) {
 	for _, tool := range auditTools() {
-		if itWords.MatchString(tool.Description()) {
-			t.Errorf("%s: description contains Italian words: %q",
-				tool.Name(), tool.Description())
+		desc := tool.Description()
+		for _, r := range desc {
+			if r > 127 && unicode.IsLetter(r) {
+				t.Errorf("%s: description contains non-ASCII letter %q (likely non-English): %q",
+					tool.Name(), r, desc)
+				break
+			}
 		}
 	}
 }

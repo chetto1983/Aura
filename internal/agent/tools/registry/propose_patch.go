@@ -93,8 +93,8 @@ func (t *ProposePatchTool) Description() string {
 
 EXAMPLES — copy the shape exactly:
 
-  propose_patch({"action":"wiki","target_slug":"davide-marchetto","body":"# Davide\n\nUpdated profile body...","change_summary":"add caffé preference"})
-  propose_patch({"action":"user_memory","fact":"prefers espresso macchiato","category":"preference","change_summary":"observed during morning chat"})
+  propose_patch({"action":"wiki","target_slug":"davide-marchetto","body":"# Davide\n\nUpdated profile body...","change_summary":"add coffee preference"})
+  propose_patch({"action":"user_memory","fact":"prefers strong espresso","category":"preference","change_summary":"observed during morning chat"})
   propose_patch({"action":"operational","tool_name":"agent_note","error_class":"missing_action_field","lesson":"agent_note always needs action field — set/append/get/clear","change_summary":"observed 2026-05-24"})
 
 action AND change_summary REQUIRED on every call. Valid actions: "wiki", "user_memory", "operational".

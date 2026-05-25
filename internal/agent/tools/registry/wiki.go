@@ -73,10 +73,10 @@ func (t *WikiPageTool) Description() string {
 
 EXAMPLES — copy the shape exactly:
 
-  wiki_page({"action":"create","title":"Davide Marchetto","body":"# Davide\nUtente principale di Aura."})
-  wiki_page({"action":"replace","slug":"todo-list","body":"# Todo\n- nuova lista"})
-  wiki_page({"action":"edit","slug":"davide-marchetto","old_text":"Utente principale","new_text":"Operatore principale"})
-  wiki_page({"action":"append","slug":"davide-marchetto","heading":"Preferenze","body":"- caffè\n- macchina silenziosa"})
+  wiki_page({"action":"create","title":"Davide Marchetto","body":"# Davide\nPrimary user of Aura."})
+  wiki_page({"action":"replace","slug":"todo-list","body":"# Todo\n- new list"})
+  wiki_page({"action":"edit","slug":"davide-marchetto","old_text":"Primary user","new_text":"Primary operator"})
+  wiki_page({"action":"append","slug":"davide-marchetto","heading":"Preferences","body":"- coffee\n- quiet machine"})
 
 The "action" field is REQUIRED. Valid values: "create", "replace", "edit", "append".
 
