@@ -167,11 +167,31 @@ commit.
 
 ---
 
-## 3. Wave OH2 — History hygiene (~700 LOC, 2 sessions, Codex)
+## 3. Wave RAG-PROT — RAG-protected compaction slice (~600 LOC, 1 session, Codex)
 
-Source: openhuman MICROCOMPACT + TOOLRESULT-BUDGET + CONTEXT-GUARD +
-PAYLOAD-CONTRACT + TOKEN-BUDGET-PRE-DISPATCH. Finishes the "agent over-
-searches because it can't read its own state" cleanup.
+**Replaces the old "Wave OH2 — History hygiene"** after pushback
+2026-05-25 (per `feedback_check_tmp_sources_then_brainstorm_best`):
+generic openhuman compaction risks corrupting evidence-class output
+(SEED_CONTENT, SEED_SNIPPET, ground-truth bytes). The targeted slice
+ships 5 stories — see `docs/aura-rag-compaction-slice-2026-05-25.md`
+for the full design (openhuman source citations, Aura leak analysis,
+acceptance criteria per story).
+
+Headline: 4 user-stated requirements:
+1. Skip LLM-summariser on `search(*)`/`wiki_page(read)`/`source(read)`
+   — preserve SEED_CONTENT / SEED_SNIPPET / evidence verbatim
+   (RAG-PROT-1).
+2. Head-preserving budget on fresh tool results (openhuman trailer
+   format) as backstop (RAG-PROT-3).
+3. Markdown capsule as primary RAG/graph format — kill JSON wrappers
+   that waste 30% of tokens on quoting (RAG-PROT-4).
+4. Microcompact only on OLD tool results; the fresh one is by design
+   in the keep_recent window (RAG-PROT-5).
+
+Plus one wiring fix: `parent_task_hint` exists in
+`payload_summarizer.go:99` but every caller passes `""` (RAG-PROT-2).
+
+Per-story LOC + driver — see the slice doc.
 
 ### OH2-S1 — TOOLRESULT-BUDGET trailer (~40 LOC) [TRIVIAL]
 
