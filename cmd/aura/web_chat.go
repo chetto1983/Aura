@@ -287,7 +287,6 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 			MaxToolResultChars:      b.maxToolResultChars(),
 			MicrocompactKeepRecent:  b.microcompactKeepRecent(),
 			MicrocompactMinChars:    b.microcompactMinChars(),
-			PhantomToolGuard:        deps.PhantomGuard,
 			DisableInBatchDedup:     true,
 			AllowNoToolFinalization: true,
 			BeforeLLM: func() (string, bool) {

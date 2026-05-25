@@ -403,9 +403,6 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 			MicrocompactMinChars:    cfg.MicrocompactMinChars,
 			BeforeTool:              duplicatePolicy,
 			ToolResolver:            toolReg.DefinitionFor,
-			PhantomToolGuard: &agent.PhantomToolGuard{
-				ToolNamesFn: toolReg.Names,
-			},
 			BeforeLLM: func() (string, bool) {
 				if bgt := b.BudgetRuntime(); bgt != nil && bgt.IsHardBudgetExceeded() {
 					b.Logger().Warn("hard budget exceeded during tool loop", "user_id", userID)

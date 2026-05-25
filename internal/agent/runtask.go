@@ -62,7 +62,6 @@ func RunTask(ctx context.Context, deps RunTaskDeps, task Task) (Result, error) {
 			CompleteOnDeadline:  task.CompleteOnDeadline,
 			FinalizationTimeout: task.FinalizationTimeout,
 			MaxToolResultChars:  task.MaxToolResultChars,
-			PhantomToolGuard:    deps.PhantomGuard,
 			Logger:              logger,
 			// Preserve background-task semantics: enforce budget via MaxToolCalls, not
 			// sticky dedup. Background agents may intentionally call the same

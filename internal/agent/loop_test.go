@@ -91,7 +91,7 @@ func TestRunLoopToolCallContinuesToFinalResponse(t *testing.T) {
 	}
 }
 
-func TestRunLoopNormalizesTextResponsePseudoCallWithoutPhantomRetry(t *testing.T) {
+func TestRunLoopNormalizesTextResponsePseudoCall(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
 		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "create_document", Arguments: map[string]any{"format": "xlsx"}}}}},
@@ -105,9 +105,6 @@ func TestRunLoopNormalizesTextResponsePseudoCallWithoutPhantomRetry(t *testing.T
 		return ExecutionSummary{LastResult: `{"source_id":"src_test"}`}
 	}), state, Options{
 		MaxIterations: 3,
-		PhantomToolGuard: &PhantomToolGuard{
-			ToolNamesFn: toolsFn("create_document", "text_response"),
-		},
 	})
 	if err != nil {
 		t.Fatalf("runLoop returned error: %v", err)
@@ -121,8 +118,28 @@ func TestRunLoopNormalizesTextResponsePseudoCallWithoutPhantomRetry(t *testing.T
 	if executions != 1 {
 		t.Fatalf("executions = %d, want exactly one create_document call", executions)
 	}
-	if result.Stats.PhantomToolDetections != 0 {
-		t.Fatalf("PhantomToolDetections = %d, want 0", result.Stats.PhantomToolDetections)
+}
+
+func TestRunLoopDoesNotInjectPhantomCorrectionForToolNameProse(t *testing.T) {
+	state := newBudgetLoopState()
+	content := "Ho usato source come citazione nello slug [[source-corso-base-robot]], ma questa e' solo una risposta finale."
+	client := &fakeLoopClient{responses: []ChatResponse{{Response: llm.Response{Content: content}}}}
+
+	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(context.Context, []llm.ToolCall) ExecutionSummary {
+		t.Fatal("executor should not run")
+		return ExecutionSummary{}
+	}), state, Options{MaxIterations: 3})
+	if err != nil {
+		t.Fatalf("runLoop returned error: %v", err)
+	}
+	if result.Text != content {
+		t.Fatalf("Text = %q, want original content", result.Text)
+	}
+	if result.Stats.LLMCalls != 1 {
+		t.Fatalf("LLMCalls = %d, want 1 (no corrective retry)", result.Stats.LLMCalls)
+	}
+	if state.sawUserMessage("[system]") {
+		t.Fatalf("unexpected corrective user message injected: %+v", state.messages)
 	}
 }
 
@@ -913,9 +930,8 @@ func TestRunLoopContextEngineReceivesLastUserFocusTopic(t *testing.T) {
 	}
 }
 
-// budgetLoopState extends fakeLoopState with AddUserMessage so the
-// MaxToolCalls finalizing transition can inject its prod via the
-// PhantomCorrector type assertion path.
+// budgetLoopState extends fakeLoopState with AddUserMessage so bounded
+// finalizing transitions can inject their prompt via UserMessageInjector.
 type budgetLoopState struct {
 	*fakeLoopState
 }
@@ -979,7 +995,7 @@ func TestRunLoopStructuredAskUserPausesLoop(t *testing.T) {
 }
 
 // TestMaxIter_ForcesFinalizeOnCap verifies that when MaxIterations is reached,
-// the loop injects a corrector message via PhantomCorrector and the final LLM
+// the loop injects a corrector message via UserMessageInjector and the final LLM
 // call returns a text answer (US-LAT-01 cap-hit behavior).
 func TestMaxIter_ForcesFinalizeOnCap(t *testing.T) {
 	state := newBudgetLoopState()

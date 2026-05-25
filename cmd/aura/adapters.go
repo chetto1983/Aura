@@ -176,13 +176,10 @@ func newRunTaskDeps(cfg *config.Config, deps *telegram.Deps) agent.RunTaskDeps {
 		maxIterations = 100
 	}
 	return agent.RunTaskDeps{
-		LLM:             deps.LLM,
-		Tools:           deps.Tools,
-		Model:           cfg.LLMModel,
-		ReasoningEffort: cfg.ReasoningEffort,
-		PhantomGuard: &agent.PhantomToolGuard{
-			ToolNamesFn: deps.Tools.Names,
-		},
+		LLM:               deps.LLM,
+		Tools:             deps.Tools,
+		Model:             cfg.LLMModel,
+		ReasoningEffort:   cfg.ReasoningEffort,
 		Logger:            deps.Logger,
 		AttemptsRepo:      attempts.NewSQLiteRepo(deps.Pool),
 		TokenJuiceEnabled: cfg.TokenJuiceEnabled,

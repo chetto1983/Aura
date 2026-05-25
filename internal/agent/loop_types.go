@@ -133,9 +133,6 @@ type Options struct {
 	// governance package defaults (10 / 500).
 	MicrocompactKeepRecent int
 	MicrocompactMinChars   int
-	// PhantomToolGuard, when non-nil, runs a post-LLM heuristic on
-	// no-tool-call responses.
-	PhantomToolGuard *PhantomToolGuard
 	// ToolResolver is the on-demand schema lookup used by the per-turn pool.
 	ToolResolver func(name string) (llm.ToolDefinition, bool)
 	// OnQuestionRequested fires when ask_user pauses the loop, carrying the
@@ -202,10 +199,6 @@ type Stats struct {
 	MaxIterationsHit  bool
 	MaxElapsedHit     bool
 	StopReason        string
-	// PhantomToolDetections counts how many times the phantom-tool guard fired.
-	PhantomToolDetections int
-	// PhantomToolCorrected counts how many detections successfully recovered.
-	PhantomToolCorrected int
 	// ToolCallsExecuted counts fresh (post-dedupe, post-budget-cap) tool calls
 	// actually dispatched. Distinct from ToolCalls which counts all announced.
 	ToolCallsExecuted int
@@ -228,6 +221,13 @@ const maxLengthRecoveries = 3
 // lengthRecoveryPrompt is the literal user-side message injected when the LLM
 // hits the context window mid-response (finish_reason='length', text only).
 const lengthRecoveryPrompt = "Output limit reached. Continue exactly where you left off — no recap, no apology."
+
+// UserMessageInjector is the optional state extension used by loop guardrails
+// that need to add one corrective user-side instruction before the next LLM
+// round, such as max-iteration finalization or output-length recovery.
+type UserMessageInjector interface {
+	AddUserMessage(content string)
+}
 
 // MaxIterationsCeiling is a hard upper bound on opts.MaxIterations.
 // Raised from 50 in Phase-F: per docs/aura-main-loop-limits-audit.md §3.5,

@@ -139,13 +139,9 @@ func (s *Store) ambiguousEdgeQuestions(meta map[string]NodeMeta, degree map[stri
 
 func bridgeNodeQuestions(meta map[string]NodeMeta, degree map[string]int, outbound map[string][]string, p99Degree int) []questionCandidate {
 	var out []questionCandidate
-	minDegree := p99Degree - 1
-	if minDegree < 2 {
-		minDegree = 2
-	}
 	for _, slug := range sortedMetaSlugs(meta) {
 		nodeMeta := meta[slug]
-		if IsAuxiliaryHubNode(slug, nodeMeta) || degree[slug] < minDegree {
+		if IsAuxiliaryHubNode(slug, nodeMeta) || degree[slug] < 2 {
 			continue
 		}
 		cats := distinctNeighborCategories(outbound[slug], meta)

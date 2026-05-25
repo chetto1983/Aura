@@ -131,7 +131,6 @@ func LooksLikeToolCallMarkup(text string) bool {
 //	text_response(text="final reply")
 //
 // It is intentionally narrow and only accepts a standalone pseudo-call line.
-// Other tool names still flow through the phantom guard.
 func extractTextResponsePseudoCall(content string) (string, bool) {
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" {

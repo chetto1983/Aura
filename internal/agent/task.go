@@ -60,7 +60,6 @@ type RunTaskDeps struct {
 	Model           string
 	ReasoningEffort string
 	RunID           string
-	PhantomGuard    *PhantomToolGuard
 	Logger          *slog.Logger
 	// AttemptsRepo persists tool-call observations to tool_attempts (Phase-6
 	// US-J03). Nil disables persistence without affecting tool execution.

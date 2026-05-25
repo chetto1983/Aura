@@ -337,6 +337,9 @@ func TestSearchTool_SuggestQuestionsAction(t *testing.T) {
 	if !strings.Contains(out, "suggested question(s) for the current wiki:") {
 		t.Fatalf("unexpected capsule header:\n%s", out)
 	}
+	if !strings.Contains(out, "Use these question texts as the final answer") {
+		t.Fatalf("output missing final-answer guidance:\n%s", out)
+	}
 	for _, want := range []string{
 		"- [ambiguous_edge] What is the exact relationship between [[alpha]] and [[beta]]?",
 		"- [bridge_node] Why does [[bridge]] connect concept to entity?",

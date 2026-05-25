@@ -54,7 +54,6 @@ type RunTaskDeps struct {
     Tools           *tools.Registry
     Model           string
     ReasoningEffort string
-    PhantomGuard    *PhantomToolGuard
     Logger          *slog.Logger
     // Per-call limits — read once at RunTask entry.
     MaxIterations int
@@ -148,7 +147,7 @@ logged (tool argument privacy rule).
 | `runtime.go` | `Run` — streaming-capable loop entry used by `chat.Hub`. |
 | `loop.go` | `runLoop` — the inner iteration engine (shared by both paths). |
 | `executor.go` | `agentExecutor` — parallel tool fan-out with per-tool timeout. |
-| `state.go` | `agentState` — message accumulator + `PhantomCorrector`. |
+| `state.go` | `agentState` — message accumulator + `UserMessageInjector`. |
 | `no_stream_client.go` | `NoStreamClient` — adapts `llm.Client.Send` to the `ChatClient` interface. |
 
 ## Testing

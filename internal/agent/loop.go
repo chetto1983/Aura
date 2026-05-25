@@ -58,7 +58,6 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 	// tight retry loop (live 2026-05-21: xlsx voice-memo test saw 22 LLM
 	// rounds in 105s, all reading the same wiki page over and over).
 	consecutiveAllDupIter := 0
-	calledThisTurn := map[string]bool{}
 	emitStats := func() {
 		if opts.OnStats != nil {
 			opts.OnStats(stats)
@@ -124,12 +123,12 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 
 		// Cap-hit finalize (US-LAT-01): on the final iteration, set finalizing
 		// mode so toolDefs becomes nil — the model cannot call tools. Reuses
-		// PhantomCorrector to inject the cap-hit nudge the same way AllDuplicate
+		// UserMessageInjector to add the cap-hit nudge the same way AllDuplicate
 		// and MaxToolCalls finalize do.
 		if !finalizing && opts.MaxIterations > 1 && iteration == opts.MaxIterations-1 {
 			finalizing = true
-			if corrector, ok := state.(PhantomCorrector); ok {
-				corrector.AddUserMessage(fmt.Sprintf(
+			if injector, ok := state.(UserMessageInjector); ok {
+				injector.AddUserMessage(fmt.Sprintf(
 					"Passo %d/%d: hai raggiunto il limite di iterazioni (AURA_AGENT_LOOP_MAX_STEPS=%d). "+
 						"NON chiamare altri tool. Rispondi ora con quello che hai. "+
 						"Per workflow genuinamente multi-step, imposta AURA_AGENT_LOOP_MAX_STEPS=N via env.",
@@ -255,8 +254,8 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				emitStats()
 				if lengthRecoveries < maxLengthRecoveries {
 					lengthRecoveries++
-					if corrector, ok := state.(PhantomCorrector); ok {
-						corrector.AddUserMessage(lengthRecoveryPrompt)
+					if injector, ok := state.(UserMessageInjector); ok {
+						injector.AddUserMessage(lengthRecoveryPrompt)
 					} else {
 						logger.Warn("agent: finish_reason_length_no_corrector",
 							"iteration", iteration,
@@ -297,26 +296,6 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 				}
 				return loopResult{Text: text, Stats: stats}, nil
 			}
-			if opts.PhantomToolGuard != nil &&
-				stats.PhantomToolDetections < opts.PhantomToolGuard.RetriesAllowed() &&
-				opts.PhantomToolGuard.LooksPhantom(response, false, calledThisTurn) {
-				if corrector, ok := state.(PhantomCorrector); ok {
-					stats.PhantomToolDetections++
-					logger.Warn("agent: phantom_tool_detected",
-						"iteration", iteration,
-						"detections_so_far", stats.PhantomToolDetections,
-						"retries_allowed", opts.PhantomToolGuard.RetriesAllowed(),
-					)
-					state.AddAssistantMessage(response)
-					corrector.AddUserMessage(opts.PhantomToolGuard.CorrectionText())
-					emitStats()
-					continue
-				}
-				logger.Warn("agent: phantom_tool_detected_uncorrectable",
-					"iteration", iteration,
-					"reason", "state_lacks_AddUserMessage",
-				)
-			}
 			state.AddAssistantMessage(response)
 			emitStats()
 			// Server-driven end_turn: explicit false means the provider
@@ -333,15 +312,6 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 			return loopResult{Text: response, Stats: stats}, nil
 		}
 
-		if opts.PhantomToolGuard != nil &&
-			stats.PhantomToolDetections > 0 &&
-			stats.PhantomToolCorrected < stats.PhantomToolDetections {
-			stats.PhantomToolCorrected++
-			logger.Info("agent: phantom_tool_corrected",
-				"iteration", iteration,
-				"corrected_total", stats.PhantomToolCorrected,
-			)
-		}
 		// ask_user exclusive semantics: when ask_user is in the batch, keep
 		// only that call in the state so the resume sees a clean single
 		// pending tool_call without orphaned unresolved stubs for other calls.
@@ -353,7 +323,6 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		stats.ToolCalls += len(resp.Response.ToolCalls)
 		for _, call := range resp.Response.ToolCalls {
 			stats.ToolsCalled = append(stats.ToolsCalled, call.Name)
-			calledThisTurn[call.Name] = true
 			switch call.Name {
 			case "file":
 				if action, _ := call.Arguments["action"].(string); action == "read" {
@@ -551,8 +520,8 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		}
 		if !finalizing && consecutiveAllDupIter >= 2 {
 			finalizing = true
-			if corrector, ok := state.(PhantomCorrector); ok {
-				corrector.AddUserMessage("Stop. The last two LLM rounds produced only duplicate tool calls — you are in a retry loop. Do NOT call any tool again. Finalize NOW with a concise answer based on the evidence already in this turn. If the data the user asked for is genuinely not present in what you have, say so explicitly instead of trying again.")
+			if injector, ok := state.(UserMessageInjector); ok {
+				injector.AddUserMessage("Stop. The last two LLM rounds produced only duplicate tool calls — you are in a retry loop. Do NOT call any tool again. Finalize NOW with a concise answer based on the evidence already in this turn. If the data the user asked for is genuinely not present in what you have, say so explicitly instead of trying again.")
 			} else {
 				logger.Warn("agent: all_dup_finalize_no_corrector",
 					"iteration", iteration,
@@ -563,8 +532,8 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		}
 		if !finalizing && opts.MaxToolCalls > 0 && globalToolCallsExecuted >= opts.MaxToolCalls {
 			finalizing = true
-			if corrector, ok := state.(PhantomCorrector); ok {
-				corrector.AddUserMessage(toolBudgetFinalInstruction(opts.MaxToolCalls))
+			if injector, ok := state.(UserMessageInjector); ok {
+				injector.AddUserMessage(toolBudgetFinalInstruction(opts.MaxToolCalls))
 			} else {
 				logger.Warn("agent: tool_budget_finalize_no_corrector",
 					"iteration", iteration,

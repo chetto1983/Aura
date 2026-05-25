@@ -38,6 +38,7 @@ func renderSuggestedQuestions(questions []wiki.Question) string {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "%d suggested question(s) for the current wiki:\n", len(questions))
+	fmt.Fprintln(&b, "Use these question texts as the final answer; keep the wiki slugs and do not describe the tool call.")
 	for _, q := range questions {
 		fmt.Fprintf(&b, "\n- [%s] %s", q.Type, q.Text)
 		if q.Why != "" {
