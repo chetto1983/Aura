@@ -328,3 +328,71 @@ Residual:
 - Token use is much lower than the failed run but still high for a two-call
   recall turn. The next context-builder slice should reduce stable prompt and
   schema overhead rather than adding more routing prose.
+
+## 2026-05-26 - PROMPT-01E natural long workflow scratchpad probe
+
+Status: implemented locally, verified.
+
+Why:
+
+- Aura needs a realistic long-conversation probe where the user never names
+  tools, but the model must combine profile recall, current/local web evidence,
+  a private scratchpad, a generated workspace file, and a final checklist close.
+- The first exploratory run exposed two real prompt/harness gaps: a recoverable
+  `agent_note` schema error and an unnecessary `tool_search` of the `file`
+  schema, which inflated the following turn context.
+
+Changes:
+
+- Added `natural-long-workflow-scratchpad` to `cmd/probe_chat`.
+- The probe now runs three natural turns:
+  - prepare a micro-briefing by recalling user facts, checking recent Caraglio
+    news, and keeping an internal checklist;
+  - continue from the prior turn and write a Markdown artifact in the workspace;
+  - reread the checklist and artifact, then clear the scratchpad.
+- The verifier fails on recoverable/blocked/error tool attempts, forbidden
+  `tool_search`, `execute_code`, or `execute_shell`, missing file/scratchpad
+  artifacts, excessive archived tool rows, and `tokens_in` above 80,000.
+- Updated the stable prompt with concrete `agent_note` actions and direct
+  known-path `file(action=write, path, content)` guidance.
+
+Verification:
+
+- `go test ./internal/conversation -run Prompt -count=1`
+- `go test ./cmd/probe_chat -run TestDoesNotExist -count=0`
+- `git diff --check`
+- `docker compose build aura`
+- `docker compose up -d aura`
+- `docker inspect ... aura-aura-1` reports `healthy`.
+
+Live probe:
+
+- Command:
+  `go run ./cmd/probe_chat -case natural-long-workflow-scratchpad -db D:\Aura\data\aura.db -json -timeout 360`
+- Prompt 1:
+  "Sto preparando un micro-briefing operativo per domani. Recupera quello che
+  sai di me, controlla le notizie locali recenti di Caraglio (CN), e tieniti
+  una checklist interna..."
+- Result:
+  - `pass=true`;
+  - first reply confirmed profile recall, local news research, and checklist
+    creation without naming tool internals;
+  - tool attempts were exactly `search`, `web`, `agent_note`, `file`,
+    `agent_note`, `file`, `agent_note`;
+  - all attempts had `outcome=ok`;
+  - no `tool_search`, `execute_code`, or `execute_shell` attempts;
+  - the Markdown artifact was written directly with arg keys
+    `["action","content","path"]`;
+  - scratchpad was read and cleared by the close turn;
+  - archived conversation rows for the case: `18`;
+  - archived tool rows: `7`;
+  - archived tool-call count: `7`;
+  - max archived `tokens_in`: `75,191`;
+  - no conversation compaction was triggered for the case.
+
+Residual:
+
+- The improved prompt avoided the schema-discovery bloat path and stayed below
+  the probe threshold, but `max_tokens_in=75,191` is still high for three turns.
+  The next slice should reduce carried tool-output/schema mass rather than
+  adding more routing prose to the stable prompt.

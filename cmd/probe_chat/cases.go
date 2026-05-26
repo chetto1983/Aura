@@ -35,6 +35,7 @@ func allCases(now time.Time, enableTTS bool) []Case {
 		wikiSubgraphDeltaCase(stamp),
 		contextBuilderWeatherCaraglioCase(stamp),
 		naturalSkillAuthoringCase(stamp),
+		naturalLongWorkflowScratchpadCase(stamp),
 
 		// 1. Pure conversational — no tools needed, no phantom risk.
 		{
