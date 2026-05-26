@@ -33,6 +33,7 @@ func allCases(now time.Time, enableTTS bool) []Case {
 		phase07ESourceSpanReadCase(stamp),
 		phase07FWikiFrontmatterMetadataCase(stamp),
 		wikiSubgraphDeltaCase(stamp),
+		contextBuilderWeatherCaraglioCase(stamp),
 
 		// 1. Pure conversational — no tools needed, no phantom risk.
 		{

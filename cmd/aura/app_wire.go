@@ -227,6 +227,9 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	}
 	a.deps.Tools.Register(&tools.AskUserTool{})
 	a.deps.Tools.Register(&tools.TextResponseTool{})
+	if tool := tools.NewToolSearchTool(a.deps.Tools); tool != nil {
+		a.deps.Tools.Register(tool)
+	}
 	if t := tools.NewWikiPageTool(a.deps.WikiStore, a.deps.ReindexWorker); t != nil {
 		a.deps.Tools.Register(t)
 	}

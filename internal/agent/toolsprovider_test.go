@@ -22,10 +22,10 @@ func coreStubDefs(names []string) []llm.ToolDefinition {
 	return out
 }
 
-func TestAlwaysOnCore_ContainsWikiFastPath(t *testing.T) {
-	// The seed must include the wiki/source retrieval path so ordinary wiki Q&A
-	// can resolve in <=2 tool calls without extra discovery overhead.
-	want := []string{"search", "source", "wiki_page"}
+func TestAlwaysOnCore_ContainsHotPathTools(t *testing.T) {
+	// The seed includes only cheap read/answer tools. Write tools stay out of
+	// the default schema pool and are loaded with tool_search when needed.
+	want := []string{"text_response", "search", "web", "source", "ask_user", "tool_search"}
 	seen := make(map[string]bool, len(AlwaysOnCore))
 	for _, name := range AlwaysOnCore {
 		seen[name] = true
@@ -34,6 +34,9 @@ func TestAlwaysOnCore_ContainsWikiFastPath(t *testing.T) {
 		if !seen[name] {
 			t.Fatalf("AlwaysOnCore missing %q; got %v", name, AlwaysOnCore)
 		}
+	}
+	if seen["wiki_page"] {
+		t.Fatalf("AlwaysOnCore must not include direct-write wiki_page: %v", AlwaysOnCore)
 	}
 }
 

@@ -64,7 +64,7 @@ func (ib *InvocationBuilder) modelToolNames() []string {
 	if toolReg == nil {
 		return nil
 	}
-	return toolReg.Names()
+	return agent.CleanToolList(agent.AlwaysOnCore)
 }
 
 func (ib *InvocationBuilder) maxToolLoopIterations() int {

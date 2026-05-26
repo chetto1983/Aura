@@ -92,7 +92,7 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	overlay := conversation.LoadPromptOverlay(cfg.PromptOverlayPath)
 	if ib.memoryStore != nil {
 		if docs, fetchErr := ib.memoryStore.FetchRecentOperational(ctx, 10); fetchErr == nil {
-			if block := memoryindex.OperationalLessonsBlock(docs, 5120); block != "" {
+			if block := memoryindex.OperationalLessonsBlock(docs, 1600); block != "" {
 				overlay += "\n\n" + block
 			}
 		} else {
@@ -139,6 +139,9 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 		if noteContent, exists, err := ib.agentNoteStore.Get(ctx, convID); err == nil && exists && noteContent != "" {
 			convCtx.SetAgentNote(noteContent)
 		}
+	}
+	if grounding := agent.BuildTurnGroundingCapsule(ctx, ib.memoryStore, userText); grounding != "" {
+		convCtx.SetSearchContext(grounding)
 	}
 
 	b.Logger().Info("conversation started",

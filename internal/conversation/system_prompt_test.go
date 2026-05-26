@@ -70,7 +70,7 @@ func TestDefaultSystemPromptPartnerTone(t *testing.T) {
 		// Single-tool-mode rewrite 2026-05-24: schema-fidelity rule
 		// replaces the old enumerated-tools list. Tool docs live inside
 		// each tool's Description.
-		"Tool schemas below are ground truth",
+		"Tool schemas supplied with the request are ground truth",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("system prompt missing %q\n---\n%s", want, got)

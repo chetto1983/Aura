@@ -8,14 +8,16 @@ import (
 
 // AlwaysOnCore is the seed of the per-turn tool pool.
 //
-// All tools are always-on: the manifest lists every registered tool by name
-// in the system prompt, and the agent loop's permissive-load path resolves
-// any name the model calls against the registry. This slice seeds the initial
-// pool with the highest-frequency retrieval tools so they're hot from turn 1.
+// Keep this deliberately small. The full registry is still reachable through
+// tool_search plus the loop's permissive resolver, but every item here is sent
+// as a JSON schema on every LLM call. Treat it as the hot path, not the catalog.
 var AlwaysOnCore = []string{
+	"text_response",
 	"search",
+	"web",
 	"source",
-	"wiki_page",
+	"ask_user",
+	"tool_search",
 }
 
 // MakeToolsProvider returns the per-turn ToolsProvider closure consumed

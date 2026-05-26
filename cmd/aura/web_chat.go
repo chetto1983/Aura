@@ -172,7 +172,7 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	overlay := conversation.LoadPromptOverlay(b.cfg.PromptOverlayPath)
 	if b.postTurnStore != nil {
 		if docs, fetchErr := b.postTurnStore.FetchRecentOperational(ctx, 10); fetchErr == nil {
-			if block := memoryindex.OperationalLessonsBlock(docs, 5120); block != "" {
+			if block := memoryindex.OperationalLessonsBlock(docs, 1600); block != "" {
 				overlay += "\n\n" + block
 			}
 		}
@@ -189,11 +189,10 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	if b.wikiTOCFn != nil {
 		wikiTOC = b.wikiTOCFn()
 	}
-	allowlist := agent.CleanToolList(nil)
+	allowlist := agent.CleanToolList(agent.AlwaysOnCore)
 	var delegateTools []toolregistry.Tool
 	var toolManifest string
 	if deps.Tools != nil {
-		allowlist = agent.CleanToolList(deps.Tools.Names())
 		delegateTools = agentdef.WithArchetypeDelegates(
 			agentdef.DefaultChatArchetype,
 			deps.AgentDefs,
@@ -215,6 +214,9 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	promptPlan := agent.ComposeAgentPrompt(b.cfg, loc, overlay, pinned, skillsBlock, toolManifest, wikiTOC, time.Now())
 	system := promptPlan.Content
 	convCtx.SetSystemMessage(system)
+	if grounding := agent.BuildTurnGroundingCapsule(ctx, b.postTurnStore, webUserInputText(msg)); grounding != "" {
+		convCtx.SetSearchContext(grounding)
+	}
 	addedUserInput, resumeErr := b.addWebUserInput(ctx, run, msg, convCtx, session, logger)
 	if resumeErr != nil {
 		return agent.Invocation{}, resumeErr

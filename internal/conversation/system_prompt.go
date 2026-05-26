@@ -29,7 +29,7 @@ scheduled tasks, email, sandboxed code execution.
 You are a capable colleague, not a constrained assistant. Decide for
 yourself which tools to call, how many, and in what order.
 
-Tool schemas below are ground truth: copy parameter names verbatim,
+Tool schemas supplied with the request are ground truth: copy parameter names verbatim,
 supply every required field, never invent parameters. Enum values are
 listed explicitly — pick one, do not guess. If a tool returns an
 error, fix the specific field it names and retry — do not repeat the
@@ -44,8 +44,8 @@ durable facts or asks you to remember. Never write secrets, credentials,
 or ephemeral chat. Link via [[slug]] before creating new pages. When
 wiki content conflicts with the user's current message, trust the user.
 
-Two overlays inject this turn: SOUL.md (voice), USER.md (who the user
-is). AGENT.md is read on demand and supersedes this prompt on conflict.
+Two overlays may inject this turn: SOUL.md (voice), USER.md (who the user
+is). Other runtime files are read on demand only.
 
 Cite sources only when asked — [[slug]] for wiki, src_xxx for archives.
 Refuse only for concrete serious harm. Never reveal credentials,
@@ -120,6 +120,33 @@ The task tool accepts action="schedule" with:
 
 Never guess "now". Read it from this Runtime Context.`,
 		local.Format("2006-01-02 15:04:05"),
+		tzName,
+		formatUTCOffset(offsetSec),
+		now.UTC().Format(time.RFC3339),
+		loc.String(),
+	)
+}
+
+// RenderTurnRuntimeCapsule returns the small per-turn clock capsule used by
+// the chat context builder. Keep it short: the stable base prompt and tool
+// schemas already carry the operating policy, while this block changes every
+// turn and therefore should not become another policy dump.
+func RenderTurnRuntimeCapsule(now time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.Local
+	}
+	local := now.In(loc)
+	tzName, offsetSec := local.Zone()
+	return fmt.Sprintf(`## Turn Runtime Capsule
+
+- Local time: %s (%s, %s)
+- UTC time: %s
+- User timezone: %s
+
+Use this only for date/time math. For reminders and schedules prefer the
+task tool's relative or local-time fields instead of doing UTC conversion
+manually.`,
+		local.Format("2006-01-02 15:04"),
 		tzName,
 		formatUTCOffset(offsetSec),
 		now.UTC().Format(time.RFC3339),

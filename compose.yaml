@@ -94,7 +94,7 @@ services:
       # request_dashboard_token, ask_user_clarification. Folded into search:
       # recall_operational, recall_user_memory, recall_god_nodes,
       # wiki_subgraph, wiki_path.
-      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,create_document,skill,task,propose_patch,search,ask_user,mcp_calculator_*}"
+      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,create_document,skill,task,propose_patch,search,ask_user,tool_search,mcp_calculator_*}"
       AURA_TERMINAL_TOOL_POLICY: "on"
       AURA_DELEGATION_MODE: "fast"
       AURA_TRACE_RETENTION_DAYS: "30"
