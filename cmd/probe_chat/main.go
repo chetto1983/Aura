@@ -104,6 +104,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *caseName == promptHealthCaseName {
+		db, err := openReadOnly(*dbPath)
+		if err != nil {
+			fail(fmt.Sprintf("open DB %s: %v", *dbPath, err))
+		}
+		defer closeProbeDB(db)
+		env := &Env{
+			DB:       db,
+			DBPath:   *dbPath,
+			APIBase:  *apiBase,
+			APIToken: *token,
+		}
+		if err := runPromptHealthCase(env, *jsonOut); err != nil {
+			fail(err.Error())
+		}
+		return
+	}
+
 	if *token == "" {
 		fail("AURA_CHAT_TOKEN is required (env or -token)")
 	}
@@ -125,7 +143,7 @@ func main() {
 	if err != nil {
 		fail(fmt.Sprintf("open DB %s: %v", *dbPath, err))
 	}
-	defer db.Close()
+	defer closeProbeDB(db)
 	env := &Env{
 		DB:        db,
 		DBPath:    *dbPath,
@@ -184,4 +202,10 @@ func isSmokeCategory(s string) bool {
 		}
 	}
 	return false
+}
+
+func closeProbeDB(db interface{ Close() error }) {
+	if err := db.Close(); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: close DB: %v\n", err)
+	}
 }

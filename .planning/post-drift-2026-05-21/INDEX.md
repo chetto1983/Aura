@@ -31,8 +31,9 @@
 | 10 | [Phase-CONS](Phase-CONS/plan.md) | Web<->Telegram 1+1 consolidation (CONS-02..13) plus assistant-ui webchat parity | ~5 | net +710 (dedup -810 + parity +720 + Wave B +800) | closed 2026-05-24 - CONS-02..13 shipped |
 | 11 | [Phase-DOCSKL](Phase-DOCSKL/plan.md) | Restore deterministic document generation and add LLM-callable skill lifecycle tool access | ~1 | ~+520 | active 2026-05-24 - US-DOCSKL-01 first |
 | 12 | [Phase-WIKI-SUBNODES](Phase-WIKI-SUBNODES/plan.md) | Heading-level subnodes (H2/H3 → parent_slug + byte ranges); re-scoped from Phase-WIKI-B Wave A US-WIKI-B04 | ~1 | ~+250 | ⚪ superseded by Phase-GRAPH-FULL unless a fresh benchmark reopens it |
+| 13 | [Phase-PROMPT-CTX](Phase-PROMPT-CTX/plan.md) | Rebuild Aura system-prompt/context contract around stable rules, typed capsules, memory-layer policy, tool routing, and real conversation QA | ~2 | TBD | planned 2026-05-26 - start with PROMPT-00 baseline metrics and prompt snapshot |
 
-**Current next step:** Phase-DOCSKL is active. Execute US-DOCSKL-01 first, then US-DOCSKL-02, with one atomic commit and dedicated QA per story. Before reopening later CONS parity work, require a fresh benchmark gap rather than extending CONS by inertia.
+**Current next step:** Phase-PROMPT-CTX is the active planning slice for the system prompt/context rebuild. Execute PROMPT-00 first to capture baseline prompt metrics and real conversation fixtures before editing prompt behavior. Keep one atomic commit and dedicated QA per slice.
 
 ---
 

@@ -44,6 +44,7 @@ var registered = []Migration{
 	{Version: 26, Name: "embed_cache_output_dim", Up: addEmbedCacheOutputDim},
 	{Version: 27, Name: "add_conversation_compactions", Up: addConversationCompactions},
 	{Version: 28, Name: "add_conversations_channel", Up: addConversationsChannel},
+	{Version: 29, Name: "add_prompt_health_views", Up: addPromptHealthViews},
 }
 
 type columnDef struct {
