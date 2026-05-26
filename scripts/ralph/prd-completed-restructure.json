@@ -45,7 +45,7 @@
         "internal/auth/ directory does not exist",
         "internal/api/auth/ directory exists with 5 .go files, package decl `package auth`",
         "tools/auth.go imports internal/api/auth (no cycle — tools is leaf below auth)",
-        "All callers updated: cmd/seed_e2e_env/main.go, internal/api/auth.go, internal/api/chat.go, internal/api/pending.go, internal/api/router.go, internal/telegram/{bot,bot_test,setup}.go",
+        "All callers updated: internal/api/auth.go, internal/api/chat.go, internal/api/pending.go, internal/api/router.go, internal/telegram/{bot,bot_test,setup}.go",
         "go build + vet + test green",
         "Single atomic commit: `chore(api): nest auth → api/auth/ sub-package to break tools→api cycle`"
       ],

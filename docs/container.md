@@ -236,17 +236,14 @@ docker compose up -d aura
 Manual file copies of a live SQLite DB are not a reliable backup mechanism.
 `cmd/debug_backup` and the dashboard backup action create a temporary SQLite
 snapshot first, then archive that snapshot. Host-side debug commands that write
-`data/aura.db`, such as `debug_memory_closure -apply` and `seed_e2e_env`, refuse
-to run while the Compose `aura` service is up.
+`data/aura.db`, such as `debug_memory_closure -apply`, refuse to run while the
+Compose `aura` service is up.
 
-To mint frontend E2E environment variables from the Compose database in
-PowerShell, stop Aura first so the host-side seed can write safely:
-
-```powershell
-docker compose stop aura
-Invoke-Expression (& go run ./cmd/seed_e2e_env -db ./data/aura.db -shell powershell)
-docker compose up -d aura
-```
+Frontend and probe E2E runs should use an existing dashboard bearer token. Local
+QA environments may keep that plaintext token in `.planning/qa/token.txt`; the
+database stores only token hashes in `api_tokens`, so plaintext tokens cannot be
+recovered from SQLite after issuance. To mint a new token, use the normal
+Telegram `/login` flow while Aura is running.
 
 ## Notes
 

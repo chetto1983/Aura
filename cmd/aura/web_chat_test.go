@@ -417,6 +417,36 @@ func TestHubBackedWebChatUsesSessionStoreContext(t *testing.T) {
 	}
 }
 
+func TestHubBackedWebChatClearsStaleGroundingCapsule(t *testing.T) {
+	llmClient := &recordingWebChatLLM{responses: []llm.Response{
+		{Content: "answer from first turn"},
+		{Content: "answer from second turn"},
+	}}
+	adapter, _ := newTestWebChatAdapter(t, llmClient, nil)
+	ctx := identity.WithActorID(context.Background(), identity.TelegramSessionActorID("alice"))
+
+	if _, err := adapter.Chat(ctx, "alice", "default", "first web turn"); err != nil {
+		t.Fatalf("first Chat: %v", err)
+	}
+	convCtx, ok := adapter.sessionStore.Load("web:alice:default")
+	if !ok {
+		t.Fatal("session store missing web:alice:default")
+	}
+	convCtx.SetSearchContext("## Turn Grounding Capsule\nSTALE_GROUNDING_SHOULD_NOT_SURVIVE")
+
+	if _, err := adapter.Chat(ctx, "alice", "default", "plain follow-up with no grounding cue"); err != nil {
+		t.Fatalf("second Chat: %v", err)
+	}
+
+	reqs := llmClient.Requests()
+	if len(reqs) != 2 {
+		t.Fatalf("requests = %d, want 2", len(reqs))
+	}
+	if containsMessageFragment(reqs[1].Messages, "STALE_GROUNDING_SHOULD_NOT_SURVIVE") {
+		t.Fatalf("second prompt retained stale grounding capsule: %+v", reqs[1].Messages)
+	}
+}
+
 func TestHubBackedWebChatSessionStoreScopesThreads(t *testing.T) {
 	llmClient := &recordingWebChatLLM{responses: []llm.Response{
 		{Content: "answer from thread a"},

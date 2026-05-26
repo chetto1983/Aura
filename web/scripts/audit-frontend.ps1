@@ -20,7 +20,13 @@ try {
   npm run build
 
   if ([string]::IsNullOrWhiteSpace($env:AURA_E2E_TOKEN)) {
-    throw "AURA_E2E_TOKEN is not set. From the repo root run: Invoke-Expression (& go run ./cmd/seed_e2e_env -shell powershell). Add -db ./data/aura.db for the Compose DB after stopping the aura container."
+    $tokenFile = Join-Path $RepoRoot ".planning/qa/token.txt"
+    if (Test-Path -LiteralPath $tokenFile) {
+      $env:AURA_E2E_TOKEN = (Get-Content -Raw -LiteralPath $tokenFile).Trim()
+    }
+  }
+  if ([string]::IsNullOrWhiteSpace($env:AURA_E2E_TOKEN)) {
+    throw "AURA_E2E_TOKEN is not set. Use an existing dashboard bearer token, for example the local QA token in .planning/qa/token.txt, or mint one via Telegram /login."
   }
 
   $dashboardUrl = Dashboard-Url

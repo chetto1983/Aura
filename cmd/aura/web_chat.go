@@ -214,9 +214,8 @@ func (b *webInvocationBuilder) Build(ctx context.Context, run *chat.Run, msg cha
 	promptPlan := agent.ComposeAgentPrompt(b.cfg, loc, overlay, pinned, skillsBlock, toolManifest, wikiTOC, time.Now())
 	system := promptPlan.Content
 	convCtx.SetSystemMessage(system)
-	if grounding := agent.BuildTurnGroundingCapsule(ctx, b.postTurnStore, webUserInputText(msg)); grounding != "" {
-		convCtx.SetSearchContext(grounding)
-	}
+	grounding := agent.BuildTurnGroundingCapsule(ctx, b.postTurnStore, webUserInputText(msg))
+	convCtx.SetSearchContext(grounding)
 	addedUserInput, resumeErr := b.addWebUserInput(ctx, run, msg, convCtx, session, logger)
 	if resumeErr != nil {
 		return agent.Invocation{}, resumeErr

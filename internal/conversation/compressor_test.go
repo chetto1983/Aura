@@ -27,34 +27,31 @@ func (s *stubCompressorLLM) Stream(_ context.Context, _ llm.Request) (<-chan llm
 	return ch, s.err
 }
 
-// --- Test 1: SUMMARY_PREFIX byte stability ----------------------------------
-//
-// Any change to SUMMARY_PREFIX must update this test and add a rationale
-// comment in compressor.go explaining why the preamble changed.
+// --- Test 1: SUMMARY_PREFIX contract ----------------------------------------
 
-func TestSummaryPrefixByteStability(t *testing.T) {
-	// The constant is lifted byte-by-byte from hermes-agent
-	// agent/context_compressor.py lines 37-51.
-	// Python len() = 772 Unicode code points; 5 em-dashes (U+2014, 3 bytes each)
-	// give UTF-8 byte length = 772 + 5*2 = 782.
-	// The PRD noted "451-char" which was incorrect; 782 is the verified byte count.
-	const wantByteLen = 782
-	got := len(SUMMARY_PREFIX)
-	if got != wantByteLen {
-		t.Errorf("SUMMARY_PREFIX byte length changed: got %d, want %d\n"+
-			"Update this test AND add a rationale comment in compressor.go "+
-			"if the change is intentional.", got, wantByteLen)
-	}
-	// Spot-check canonical substrings to catch accidental partial edits.
+func TestSummaryPrefixContract(t *testing.T) {
 	for _, want := range []string{
 		"[CONTEXT COMPACTION",
 		"REFERENCE ONLY]",
 		"## Active Task",
-		"MEMORY.md, USER.md",
+		"latest user message",
+		"system prompt",
+		"retrieved capsules",
+		"artifact IDs",
+		"tool_attempt metadata",
 		"avoid repeating it:",
 	} {
 		if !strings.Contains(SUMMARY_PREFIX, want) {
 			t.Errorf("SUMMARY_PREFIX missing expected substring: %q", want)
+		}
+	}
+	for _, forbidden := range []string{
+		"MEMORY.md, USER.md",
+		"ALWAYS authoritative",
+		"persistent memory",
+	} {
+		if strings.Contains(SUMMARY_PREFIX, forbidden) {
+			t.Errorf("SUMMARY_PREFIX still contains retired authority phrase %q", forbidden)
 		}
 	}
 }

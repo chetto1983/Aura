@@ -215,14 +215,14 @@ func TestExecuteToolCallsAppliesFreshToolResultBudgetToHistory(t *testing.T) {
 
 	summary := ExecuteToolCalls(context.Background(), runner, convCtx, "user1", 0, calls, true, nil)
 
-	if summary.Results["call-1"] != raw {
-		t.Fatalf("summary result should remain raw for caller-side handling")
-	}
 	msgs := convCtx.Messages()
 	if len(msgs) != 1 || msgs[0].Role != "tool" {
 		t.Fatalf("messages = %+v, want one tool result", msgs)
 	}
 	history := msgs[0].Content
+	if summary.Results["call-1"] != history {
+		t.Fatalf("summary result should match budgeted history content")
+	}
 	if !strings.Contains(history, "HEAD-") {
 		t.Fatalf("history missing preserved head: %q", history[:min(len(history), 80)])
 	}

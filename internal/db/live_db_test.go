@@ -27,7 +27,7 @@ func TestRefuseLiveDockerDBWriteBlocksComposeDataDBWhenAuraRuns(t *testing.T) {
 func TestRefuseLiveDockerDBWriteAllowsComposeDataDBWhenAuraStopped(t *testing.T) {
 	dbPath := filepath.Join("data", "aura.db")
 
-	if err := RefuseLiveDockerDBWrite(context.Background(), dbPath, "seed_e2e_env", func(context.Context) (bool, error) {
+	if err := RefuseLiveDockerDBWrite(context.Background(), dbPath, "debug_memory_closure -apply", func(context.Context) (bool, error) {
 		return false, nil
 	}); err != nil {
 		t.Fatalf("RefuseLiveDockerDBWrite returned %v, want nil", err)

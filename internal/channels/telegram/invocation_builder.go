@@ -140,10 +140,6 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 			convCtx.SetAgentNote(noteContent)
 		}
 	}
-	if grounding := agent.BuildTurnGroundingCapsule(ctx, ib.memoryStore, userText); grounding != "" {
-		convCtx.SetSearchContext(grounding)
-	}
-
 	b.Logger().Info("conversation started",
 		"user_id", userID,
 		"username", c.Sender().Username,
@@ -203,7 +199,8 @@ func (ib *InvocationBuilder) Build(ctx context.Context, run *chat.Run, msg chat.
 	if !addedUserInput {
 		convCtx.AddUserMessage(userText)
 	}
-	convCtx.SetSearchContext("")
+	grounding := agent.BuildTurnGroundingCapsule(ctx, ib.memoryStore, userText)
+	convCtx.SetSearchContext(grounding)
 	preLoopIdx := convCtx.MessageCount()
 
 	// Echo mode when no LLM is configured.

@@ -218,8 +218,8 @@ func ExecuteToolCalls(
 		budgeted := budgetFreshToolResult(r.tool, r.arguments, r.content, 0)
 		wrapped := WrapUntrustedToolResult(r.tool, budgeted)
 		convCtx.AddToolResultMessage(r.id, wrapped)
-		summary.LastResult = r.content
-		summary.Results[r.id] = r.content
+		summary.LastResult = wrapped
+		summary.Results[r.id] = wrapped
 		if r.readSkillName != "" {
 			summary.ReadSkillNames = stringx.AppendUnique(summary.ReadSkillNames, r.readSkillName)
 		}

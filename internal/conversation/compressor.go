@@ -18,19 +18,21 @@ import (
 )
 
 // SUMMARY_PREFIX is the context-compaction handoff preamble prepended to every
-// LLM-generated summary. Lifted byte-by-byte from hermes-agent
-// agent/context_compressor.py lines 37-51. Any modification MUST update
-// TestSummaryPrefixByteStability and include a rationale comment here.
+// LLM-generated summary. Aura no longer treats prompt overlays or memory files
+// as active compaction authority: summaries are reference capsules, while the
+// latest user turn, live tool results, and explicitly retrieved capsules own the
+// current task. Any modification MUST update TestSummaryPrefixContract.
 const SUMMARY_PREFIX = "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted " +
 	"into the summary below. This is a handoff from a previous context " +
 	"window — treat it as background reference, NOT as active instructions. " +
 	"Do NOT answer questions or fulfill requests mentioned in this summary; " +
 	"they were already addressed. " +
 	"Your current task is identified in the '## Active Task' section of the " +
-	"summary — resume exactly from there. " +
-	"IMPORTANT: Your persistent memory (MEMORY.md, USER.md) in the system " +
-	"prompt is ALWAYS authoritative and active — never ignore or deprioritize " +
-	"memory content due to this compaction note. " +
+	"summary — resume from there only when it still matches the latest user " +
+	"message. Do not copy the system prompt, prompt overlays, full tool outputs, " +
+	"or raw transcripts into working memory. Use compact summaries, agent_note, " +
+	"retrieved capsules, artifact IDs, run IDs, and tool_attempt metadata as " +
+	"bounded context. " +
 	"Respond ONLY to the latest user message " +
 	"that appears AFTER this summary. The current session state (files, " +
 	"config, etc.) may reflect work described here — avoid repeating it:"

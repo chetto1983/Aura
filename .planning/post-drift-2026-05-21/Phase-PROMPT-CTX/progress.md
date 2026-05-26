@@ -94,3 +94,69 @@ Next:
 
 - PROMPT-01 should remove the stale `USER.md`/`SOUL.md` prompt contract and
   replace the base prompt with explicit memory/tool/context rules.
+
+## 2026-05-26 - PROMPT-01 stable prompt and handoff contract
+
+Status: implemented locally, verified.
+
+Changes:
+
+- Rewrote `internal/conversation/system_prompt.go` as a stable, professional
+  operating contract with explicit sections for identity, authority precedence,
+  tool policy, minimal routing, memory layers, context capsules, ask-user
+  policy, output, and privacy.
+- Removed stale `SOUL.md`, `USER.md`, `AGENT.md`, `TOOLS.md`, and retired tool
+  references from the stable prompt.
+- Replaced the compaction preamble's old `MEMORY.md, USER.md` authority rule
+  with a capsule handoff rule: summaries are reference only; live user turns,
+  live tool results, retrieved capsules, artifact IDs, run IDs, and
+  `tool_attempt` metadata carry the task.
+- Fixed turn grounding handling:
+  - web always clears or replaces stale grounding each turn;
+  - Telegram now sets grounding after ask_user resume/user-message routing and
+    no longer clears it before the model sees it.
+- Fixed tool execution summaries so loop fallback/duplicate handling use the
+  same budgeted/wrapped tool result content that was added to model history.
+- Removed `cmd/seed_e2e_env`; live probes now use the existing local QA token
+  in `.planning/qa/token.txt`, verified against the active `api_tokens` row.
+
+Probe results:
+
+- `bench-weather-caraglio-location-gate`: pass, 0 tool calls, 1 LLM call,
+  7,808 tokens, 10.4s.
+- `doc-xlsx-roundtrip`: pass, 2 tool calls, 3 LLM calls, 23,784 tokens, 129.9s
+  (behavior correct but still slow).
+- `prompt-health`: redaction passed; new prompt snapshot:
+  - `stable_chars=9052`
+  - `total_chars=11613`
+  - `stable_hash=38c079f35b287966`
+  - `runtime_capsule_chars=287`
+  Historical 24h outliers remain in the DB window, with max prompt tokens still
+  775,137 until the old turns age out.
+
+Verification:
+
+- `go test ./internal/conversation ./internal/agent -run "Prompt|Capsule|Grounding|SummaryPrefix|Clarification" -count=1`
+- `go test ./internal/conversation ./internal/agent -count=1`
+- `go test ./cmd/aura -run "HubBackedWebChatClearsStaleGroundingCapsule|HubBackedWebChatUsesSessionStoreContext|HubBackedWebChatCompactsToolResultsBeforeNextTurn" -count=1`
+- `go test ./internal/agent -run "ExecuteToolCalls|Prompt|Capsule|Grounding" -count=1`
+- `go test ./internal/conversation -run "Prompt|SummaryPrefix|CompactCompletedToolResults" -count=1`
+- `go test ./internal/conversation ./internal/agent ./internal/channels/telegram ./cmd/aura -count=1`
+- `go test ./internal/db ./cmd/aura ./internal/conversation ./internal/agent ./internal/channels/telegram -count=1`
+- `go test ./cmd/... -run TestDoesNotExist -count=0`
+- `docker compose build aura`
+- `docker compose up -d aura`
+- `docker inspect ... aura-aura-1` reports `healthy`.
+- `go run ./cmd/probe_chat -case bench-weather-caraglio-location-gate -db D:\Aura\data\aura.db -json -timeout 180`
+- `go run ./cmd/probe_chat -case doc-xlsx-roundtrip -db D:\Aura\data\aura.db -json -timeout 180`
+- `go run ./cmd/probe_chat -case prompt-health -db D:\Aura\data\aura.db -json -timeout 180`
+
+Next:
+
+- Add the typed `ContextCapsule` builder from PROMPT-02 so time, grounding,
+  retrieval, operational lessons, skills, summaries, and tool capsules are
+  rendered with one deterministic budget/order contract instead of ad hoc
+  string appends.
+- Add a benchmark for archive bloat: archive currently records loop messages
+  before post-turn completed-tool compaction, so archive/search may retain more
+  payload than the next live session context.
