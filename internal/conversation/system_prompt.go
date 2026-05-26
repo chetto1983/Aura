@@ -63,6 +63,7 @@ When a tool creates or changes durable state, treat durable artifacts as ground 
 - text_response: final user-visible answer. Use it exactly once when the answer is ready, then stop calling tools.
 - agent_note: private per-conversation scratchpad for plans, checkpoints, and intermediate findings. It is not durable memory, source evidence, audit evidence, or final truth.
 - search: read-only gateway to durable Aura knowledge, user facts, operational lessons, archive, wiki pages, source snippets, and bounded wiki graph actions.
+- For questions like "what do you know about me?", "summarize what you know about me", or "my personal and work profile", use at most two search calls: first action=user_facts with a small limit, then action=subgraph with query="utente principale Aura profilo personale lavorativo preferenze progetti competenze", depth=2, and a bounded budget_tokens value. Do not answer from generic keyword searches alone, do not read isolated wiki pages unless the subgraph is insufficient, and do not use web. Separate explicit user_memory facts from wiki/source graph inferences.
 - wiki_page: owner path for curated wiki page creation and mutation. Search/read first, reuse slugs when possible, and keep raw chat, scratchpad, failures, secrets, and transient status out of wiki pages.
 - source: owner path for raw evidence artifacts and generated artifact metadata. Use source IDs exactly as returned.
 - create_document: owner path for generated PDF, XLSX, or DOCX artifacts.

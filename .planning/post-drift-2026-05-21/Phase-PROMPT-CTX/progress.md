@@ -276,3 +276,55 @@ Residual:
   still spent one `web` call before scheduling. Behavior is correct; there is
   still avoidable pre-task retrieval overhead for schedule-plus-immediate-run
   prompts.
+
+## 2026-05-26 - PROMPT-01D user-profile graph recall
+
+Status: implemented locally, verified.
+
+Why:
+
+- The natural prompt "Fammi un riassunto delle cose che sai di me, sia
+  lavorative che personali" should use Aura's user memory plus wiki graph,
+  not generic keyword search loops. The first live run made 7 `search` calls,
+  8 LLM calls, 72,361 tokens, and answered from generic wiki hits while missing
+  direct graph facts such as the user profile node.
+
+Changes:
+
+- Updated the stable prompt routing for "what do you know about me?"-style
+  questions:
+  - call `search(action=user_facts)` first;
+  - then call `search(action=subgraph)` with a bounded user-profile query;
+  - do not answer from generic keyword searches alone;
+  - do not use web;
+  - separate explicit `user_memory` facts from wiki/source graph inferences.
+- Added prompt contract assertions for the new user-profile graph routing.
+
+Verification:
+
+- `go test ./internal/conversation -run Prompt -count=1`
+- `docker compose build aura`
+- `docker compose up -d aura`
+- `docker inspect ... aura-aura-1` reports `healthy`.
+
+Live probe:
+
+- Natural `/api/chat` prompt:
+  "Fammi un riassunto delle cose che sai di me, sia lavorative che personali."
+  passed:
+  - `tools_used=["search"]`;
+  - `tool_calls=2`, `llm_calls=3`, `tokens=25,006`, `elapsed_ms=26,922`;
+  - first tool attempt arg keys: `["action","limit"]`;
+  - second tool attempt arg keys: `["action","budget_tokens","depth","query"]`;
+  - conversation tool output contained `CAPSULE wiki_subgraph`;
+  - no `web` attempts;
+  - reply included personal graph facts: `Davide Marchetto`, birth date
+    `25 dicembre 1983`, residence `Caraglio`;
+  - reply included work/source graph inferences from `Albatech.xlsx`,
+    calibration, TCP/coordinate systems, axes, and calandras.
+
+Residual:
+
+- Token use is much lower than the failed run but still high for a two-call
+  recall turn. The next context-builder slice should reduce stable prompt and
+  schema overhead rather than adding more routing prose.
