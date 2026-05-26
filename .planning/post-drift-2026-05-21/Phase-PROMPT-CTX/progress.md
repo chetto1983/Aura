@@ -36,9 +36,9 @@ Verification:
 
 - Not run. Planning-only slice.
 
-## 2026-05-26 - PROMPT-00 baseline metrics shipped locally
+## 2026-05-26 - PROMPT-00 baseline metrics shipped
 
-Status: implemented, container updated, not committed.
+Status: implemented, container updated, committed, pushed, CI green.
 
 Changes:
 
@@ -85,6 +85,10 @@ Verification:
 - `go run ./cmd/probe_chat -case prompt-health -db ./data/aura.db -json`
 - `go run ./cmd/probe_chat -case prompt-health -db ./data/aura.db`
 - `docker compose ps aura` reports `healthy`.
+- Commit: `69f87e40` (`feat(obs): add prompt health baseline metrics`)
+- Push: `origin/master`
+- CI: GitHub Actions `CI` run `26452913076` passed for
+  `69f87e40732ef9e6dfe70ea6349b625252efd723`.
 
 Next:
 
