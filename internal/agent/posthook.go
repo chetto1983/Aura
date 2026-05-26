@@ -97,10 +97,6 @@ type reflectionPostTurnHook struct {
 	hook *learning.ReflectionHook
 }
 
-func NewReflectionPostTurnHook(client llm.Client, model string) PostTurnHook {
-	return NewReflectionPostTurnHookWithRunner(client, model, nil)
-}
-
 func NewReflectionPostTurnHookWithRunner(client llm.Client, model string, runner agentdef.DelegateRunner) PostTurnHook {
 	if client == nil && runner == nil {
 		return nil

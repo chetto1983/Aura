@@ -299,57 +299,6 @@ func (e *Env) runStatusSince(since time.Time) (status string, found bool, err er
 	return s, err == nil, err
 }
 
-// swarmTasksSince queries swarm_tasks for completed rows created after `since`.
-// Returns the count and a preview string of the first matched row.
-func (e *Env) swarmTasksSince(since time.Time) (count int, preview string, err error) {
-	sinceStr := since.UTC().Format(time.RFC3339Nano)
-	if e.dockerDBReady() {
-		var rows []struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-			Role   string `json:"role"`
-		}
-		query := `SELECT id, status, role FROM swarm_tasks WHERE created_at >= ` +
-			sqliteQuote(sinceStr) + ` AND status = 'completed' ORDER BY created_at DESC LIMIT 5;`
-		raw, err := e.dockerSQLite(true, true, query)
-		if err != nil {
-			return 0, "", err
-		}
-		if len(raw) == 0 {
-			raw = []byte("[]")
-		}
-		if err := json.Unmarshal(raw, &rows); err != nil {
-			return 0, "", fmt.Errorf("decode docker swarm_tasks: %w", err)
-		}
-		if len(rows) == 0 {
-			return 0, "", nil
-		}
-		r := rows[0]
-		return len(rows), fmt.Sprintf("id=%s status=%s role=%s", r.ID, r.Status, r.Role), nil
-	}
-	sqlRows, queryErr := e.DB.Query(
-		`SELECT id, status, role FROM swarm_tasks WHERE created_at >= ? AND status = 'completed' ORDER BY created_at DESC LIMIT 5`,
-		sinceStr,
-	)
-	if queryErr != nil {
-		return 0, "", queryErr
-	}
-	defer sqlRows.Close()
-	var n int
-	var firstRow string
-	for sqlRows.Next() {
-		var id, status, role string
-		if scanErr := sqlRows.Scan(&id, &status, &role); scanErr != nil {
-			return 0, "", scanErr
-		}
-		if n == 0 {
-			firstRow = fmt.Sprintf("id=%s status=%s role=%s", id, status, role)
-		}
-		n++
-	}
-	return n, firstRow, sqlRows.Err()
-}
-
 // hashBearerToken returns the lowercase hex SHA-256 of token, matching auth.hashToken.
 func hashBearerToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
