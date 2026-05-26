@@ -160,3 +160,52 @@ Next:
 - Add a benchmark for archive bloat: archive currently records loop messages
   before post-turn completed-tool compaction, so archive/search may retain more
   payload than the next live session context.
+
+## 2026-05-26 - PROMPT-01B natural skill authoring probe
+
+Status: implemented locally, verified.
+
+Why:
+
+- The first skill probe was too leading: it proved Aura can create a skill when
+  the user nearly names the implementation path, not that Aura can infer the
+  right owner path from natural language.
+- A natural prompt, "teach yourself a reusable procedure...", initially routed
+  to `wiki_page` and claimed success while no skill existed. That is the real
+  failure mode this slice preserves.
+
+Changes:
+
+- Added a natural `probe_chat` case, `natural-skill-authoring`, that does not
+  mention tools, APIs, filesystem paths, or schema names in the user prompt.
+- The verifier checks `/api/skills/{name}` for ground truth, rejects `wiki_page`
+  as the owner path, enforces <=5 tool calls and <=40,000 tokens, and cleans up
+  the temporary skill directory after verification.
+- Updated the stable system prompt so natural user phrases such as "teach
+  yourself a reusable procedure" route to local skill authoring rather than
+  wiki pages.
+- Added a compact local skill template to the system prompt and told Aura not
+  to list/read unrelated skills or call mkdir separately when name and behavior
+  are already supplied.
+- Removed dead `IsComposeAuraRunning`, which was the CI deadcode failure after
+  `cmd/seed_e2e_env` was deleted.
+
+Live probe progression:
+
+- Before routing fix: `wiki_page` created `aura-procedure-smoke-20260526b`;
+  `/api/skills/...` returned 404. The test artifact was deleted.
+- After routing fix but before template: artifact was a skill, but 6-8 tool
+  calls and 61k-72k tokens kept the benchmark red.
+- Final run:
+  `go run ./cmd/probe_chat -case natural-skill-authoring -db D:\Aura\data\aura.db -json -timeout 240`
+  passed with 2 tool calls, 3 LLM calls, 24,192 tokens, 17.5s, and no
+  mismatches. The temporary skill was verified through the API and cleaned up.
+
+Prompt snapshot:
+
+- `prompt-health` redaction passed.
+- `stable_chars=9833`
+- `total_chars=12394`
+- `stable_hash=8801cb91fce9e7c0`
+- Historical 24h token outliers remain in the DB window until old turns age
+  out.

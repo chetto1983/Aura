@@ -1,14 +1,14 @@
 {
-  "generated_at": "2026-05-26T18:55:03Z",
+  "generated_at": "2026-05-26T19:21:28Z",
   "window_hours": 24,
   "artifact_path": ".planning/post-drift-2026-05-21/Phase-PROMPT-CTX/prompt-health-baseline.json",
   "prompt": {
     "version": "aura-agent-v1",
-    "hash": "35e88ed2a91bc642",
-    "stable_hash": "38c079f35b287966",
-    "runtime_capsule_hash": "efa1c0ec011ebe35",
-    "total_chars": 11613,
-    "stable_chars": 9052,
+    "hash": "8382866e583d0f21",
+    "stable_hash": "8801cb91fce9e7c0",
+    "runtime_capsule_hash": "27bc377cfac807ca",
+    "total_chars": 12394,
+    "stable_chars": 9833,
     "runtime_capsule_chars": 287,
     "modules": [
       "base",
@@ -40,13 +40,13 @@
   "db": {
     "views_present": true,
     "rollup": {
-      "turn_rows": 392,
-      "assistant_turns": 193,
-      "distinct_chats": 13,
-      "llm_calls": 180,
-      "tool_calls": 105,
+      "turn_rows": 462,
+      "assistant_turns": 228,
+      "distinct_chats": 18,
+      "llm_calls": 212,
+      "tool_calls": 134,
       "compactions": 1,
-      "prompt_tokens": 16601659,
+      "prompt_tokens": 16906711,
       "completion_tokens": 0,
       "max_prompt_tokens": 775137,
       "max_llm_calls": 22,
@@ -56,7 +56,7 @@
       "max_compaction_tokens_after": 2748
     },
     "percentiles": {
-      "prompt_tokens_p50": 92008,
+      "prompt_tokens_p50": 86291,
       "prompt_tokens_p95": 686805
     },
     "outliers": [
@@ -193,20 +193,28 @@
     ],
     "tool_outcomes": [
       {
-        "tool_name": "search",
-        "outcome": "ok",
-        "class": "",
-        "count": 37,
-        "max_elapsed_ms": 215,
-        "last_seen": "2026-05-26T16:07:36.880224491Z"
-      },
-      {
         "tool_name": "file",
         "outcome": "ok",
         "class": "",
-        "count": 21,
+        "count": 38,
         "max_elapsed_ms": 5069,
-        "last_seen": "2026-05-26T11:37:04.807162127Z"
+        "last_seen": "2026-05-26T19:21:05.18804516Z"
+      },
+      {
+        "tool_name": "search",
+        "outcome": "ok",
+        "class": "",
+        "count": 38,
+        "max_elapsed_ms": 4552,
+        "last_seen": "2026-05-26T19:08:12.020897621Z"
+      },
+      {
+        "tool_name": "tool_search",
+        "outcome": "ok",
+        "class": "",
+        "count": 17,
+        "max_elapsed_ms": 25,
+        "last_seen": "2026-05-26T19:20:57.043449746Z"
       },
       {
         "tool_name": "web",
@@ -215,14 +223,6 @@
         "count": 13,
         "max_elapsed_ms": 4606,
         "last_seen": "2026-05-26T15:27:36.821988414Z"
-      },
-      {
-        "tool_name": "tool_search",
-        "outcome": "ok",
-        "class": "",
-        "count": 12,
-        "max_elapsed_ms": 25,
-        "last_seen": "2026-05-26T18:44:57.170676466Z"
       },
       {
         "tool_name": "agent_note",
@@ -236,9 +236,9 @@
         "tool_name": "file",
         "outcome": "recoverable",
         "class": "validation",
-        "count": 7,
+        "count": 8,
         "max_elapsed_ms": 14,
-        "last_seen": "2026-05-26T11:37:01.648609896Z"
+        "last_seen": "2026-05-26T19:17:16.111196554Z"
       },
       {
         "tool_name": "ask_user",
@@ -249,12 +249,28 @@
         "last_seen": "2026-05-26T11:15:25.044224273Z"
       },
       {
+        "tool_name": "text_response",
+        "outcome": "ok",
+        "class": "",
+        "count": 4,
+        "max_elapsed_ms": 17,
+        "last_seen": "2026-05-26T19:20:00.851875019Z"
+      },
+      {
         "tool_name": "mcp_calculator_calculate",
         "outcome": "ok",
         "class": "",
         "count": 3,
         "max_elapsed_ms": 17,
         "last_seen": "2026-05-26T18:15:29.833351701Z"
+      },
+      {
+        "tool_name": "wiki_page",
+        "outcome": "ok",
+        "class": "",
+        "count": 2,
+        "max_elapsed_ms": 168,
+        "last_seen": "2026-05-26T19:08:58.404514429Z"
       },
       {
         "tool_name": "create_document",
@@ -297,28 +313,12 @@
         "last_seen": "2026-05-26T11:36:58.589039837Z"
       },
       {
-        "tool_name": "text_response",
-        "outcome": "ok",
-        "class": "",
-        "count": 1,
-        "max_elapsed_ms": 16,
-        "last_seen": "2026-05-26T07:54:47.392627094Z"
-      },
-      {
         "tool_name": "web",
         "outcome": "recoverable",
         "class": "validation",
         "count": 1,
         "max_elapsed_ms": 10,
         "last_seen": "2026-05-26T09:41:51.056161665Z"
-      },
-      {
-        "tool_name": "wiki_page",
-        "outcome": "ok",
-        "class": "",
-        "count": 1,
-        "max_elapsed_ms": 168,
-        "last_seen": "2026-05-26T09:46:51.798985943Z"
       },
       {
         "tool_name": "wiki_page",
@@ -333,14 +333,14 @@
       {
         "kind": "archive",
         "status": "",
-        "count": 419,
-        "last_updated": "2026-05-26T18:46:52Z"
+        "count": 431,
+        "last_updated": "2026-05-26T19:21:09Z"
       },
       {
         "kind": "source",
         "status": "ingested",
-        "count": 19,
-        "last_updated": "2026-05-25T10:40:32.637627507Z"
+        "count": 20,
+        "last_updated": "2026-05-26T18:46:44.096331992Z"
       },
       {
         "kind": "operational",
@@ -389,38 +389,38 @@
       {
         "type": "tool_end",
         "run_origin": "user",
-        "count": 112,
-        "last_seen": "2026-05-26T18:46:44.287754346Z"
+        "count": 140,
+        "last_seen": "2026-05-26T19:21:05.195515349Z"
       },
       {
         "type": "tool_start",
         "run_origin": "user",
-        "count": 112,
-        "last_seen": "2026-05-26T18:46:44.0657885Z"
+        "count": 140,
+        "last_seen": "2026-05-26T19:21:05.153506862Z"
       },
       {
         "type": "done",
         "run_origin": "user",
-        "count": 85,
-        "last_seen": "2026-05-26T18:46:52.498095823Z"
+        "count": 91,
+        "last_seen": "2026-05-26T19:21:09.056614723Z"
       },
       {
         "type": "message_done",
         "run_origin": "user",
-        "count": 85,
-        "last_seen": "2026-05-26T18:46:52.462509709Z"
+        "count": 91,
+        "last_seen": "2026-05-26T19:21:08.980858773Z"
       },
       {
         "type": "run_started",
         "run_origin": "user",
-        "count": 85,
-        "last_seen": "2026-05-26T18:44:42.590939678Z"
+        "count": 91,
+        "last_seen": "2026-05-26T19:20:51.53733681Z"
       },
       {
         "type": "usage",
         "run_origin": "user",
-        "count": 85,
-        "last_seen": "2026-05-26T18:46:52.485866895Z"
+        "count": 91,
+        "last_seen": "2026-05-26T19:21:09.040970733Z"
       },
       {
         "type": "question_answered",

@@ -235,6 +235,52 @@ func (e *Env) fetchWikiPage(slug string) (body string, missing bool, err error) 
 	return "title: " + page.Title + "\n" + page.BodyMD, false, nil
 }
 
+func (e *Env) fetchSkill(name string) (description, content string, missing bool, err error) {
+	url := strings.TrimRight(e.APIBase, "/") + "/skills/" + url.PathEscape(name)
+	req, _ := http.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return "", "", false, fmt.Errorf("GET %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", "", true, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		raw, _ := io.ReadAll(resp.Body)
+		return "", "", false, fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	var detail struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Content     string `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		return "", "", false, fmt.Errorf("decode skill: %w", err)
+	}
+	if detail.Name != name {
+		return detail.Description, detail.Content, false, fmt.Errorf("skill name = %q, want %q", detail.Name, name)
+	}
+	return detail.Description, detail.Content, false, nil
+}
+
+func (e *Env) deleteSkillDir(name string) error {
+	url := strings.TrimRight(e.APIBase, "/") + "/files/skills/file?path=" + url.QueryEscape(name)
+	req, _ := http.NewRequest(http.MethodDelete, url, nil)
+	req.Header.Set("Authorization", "Bearer "+e.APIToken)
+	resp, err := e.APIClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("DELETE %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
+		raw, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, truncate(string(raw), 300))
+	}
+	return nil
+}
+
 func (e *Env) fetchTask(name string) (kind, status string, missing bool, err error) {
 	url := strings.TrimRight(e.APIBase, "/") + "/tasks/" + url.PathEscape(name)
 	req, _ := http.NewRequest(http.MethodGet, url, nil)

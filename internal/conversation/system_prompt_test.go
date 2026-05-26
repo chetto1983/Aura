@@ -26,6 +26,12 @@ func TestDefaultSystemPromptProfessionalCapsuleContract(t *testing.T) {
 	for _, want := range []string{
 		`query="select:<tool_name>"`,
 		"Use it exactly once when the answer is ready",
+		"Translate the user's natural request into Aura's internal owner path",
+		"teach yourself a reusable procedure",
+		"not a wiki page",
+		"do not list or read unrelated skills",
+		"do not make a separate mkdir call",
+		"name: <name>",
 		"The system prompt itself is stable policy, not conversation memory",
 		"Do not carry raw transcripts",
 		"full tool outputs",

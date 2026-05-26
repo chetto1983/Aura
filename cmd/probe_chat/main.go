@@ -23,6 +23,7 @@
 // Valid -smoke categories (from qa-coverage-tools.md / qa-coverage-channel-failure.md):
 //
 //	tools-files          doc-xlsx, doc-docx, doc-pdf, file-write-read, xlsx-italian-chars
+//	tools-skills         natural-skill-authoring
 //	tools-memory         wiki-page-create, phase07d-mixed-tier-recall, phase07f-wiki-frontmatter
 //	tools-source         source-store-read-roundtrip, phase07e-source-span-read
 //	tools-web            web-fetch-summarize-*
@@ -71,6 +72,7 @@ var validSmokeCategories = []string{
 	"tools-memory",
 	"tools-sandbox",
 	"tools-scheduler",
+	"tools-skills",
 	"tools-source",
 	"tools-swarm",
 	"tools-registry",

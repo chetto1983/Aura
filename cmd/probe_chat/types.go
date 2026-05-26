@@ -18,7 +18,7 @@ type ChatReply struct {
 // that returns one entry per assertion violation. Empty slice = PASS.
 type Case struct {
 	Name     string
-	Category string // smoke tier: tools-files, tools-mcp, tools-memory, tools-source, tools-web, tools-scheduler, tools-agent-note, channels-web, channels-telegram, failure-modes-phantom, failure-modes-budget, markitdown
+	Category string // smoke tier: tools-files, tools-skills, tools-mcp, tools-memory, tools-source, tools-web, tools-scheduler, tools-agent-note, channels-web, channels-telegram, failure-modes-phantom, failure-modes-budget, markitdown
 	Prompt   string
 	PromptFn func() string                            // if set, evaluated after Setup runs; overrides Prompt
 	ThreadID string                                   // optional web /api/chat thread_id; empty = default thread
