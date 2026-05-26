@@ -298,6 +298,7 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /wiki/index/rebuild", handleWikiRebuild(deps))
 	mux.HandleFunc("POST /wiki/reindex", handleWikiReindex(deps))
 	mux.HandleFunc("POST /compact/reindex", handleCompactReindex(deps))
+	mux.HandleFunc("POST /tools/compact", handleToolCompact(deps))
 	mux.HandleFunc("POST /wiki/log", handleWikiAppendLog(deps))
 	mux.HandleFunc("POST /tasks", handleTaskUpsert(deps))
 	mux.HandleFunc("POST /tasks/{name}/cancel", handleTaskCancel(deps))

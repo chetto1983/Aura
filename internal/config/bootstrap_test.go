@@ -32,7 +32,7 @@ func TestEnsureLayoutCreatesRuntimeWorkspace(t *testing.T) {
 	} {
 		assertExists(t, filepath.Join(root, filepath.FromSlash(path)))
 	}
-	assertFileContent(t, filepath.Join(cfg.RuntimeWorkspacePath, "mcp.json"), "{}\n")
+	assertFileContent(t, filepath.Join(cfg.RuntimeWorkspacePath, "mcp.json"), defaultMCPServersConfig)
 }
 
 func TestEnsureLayoutDoesNotOverwriteExistingFiles(t *testing.T) {
@@ -94,7 +94,7 @@ func TestEnsureLayoutCreatesParentDirsForDBLogsSkillsAndMCP(t *testing.T) {
 		assertDir(t, path)
 	}
 	assertNotExists(t, cfg.DBPath)
-	assertFileContent(t, cfg.MCPServersPath, "{}\n")
+	assertFileContent(t, cfg.MCPServersPath, defaultMCPServersConfig)
 }
 
 func TestEnsureLayoutUsesEmbeddedPublicAgentWhenRootAgentExists(t *testing.T) {

@@ -95,7 +95,7 @@ func specificHint(msg string) string {
 		(strings.Contains(lower, "syntax error") ||
 			strings.Contains(lower, "redirection") ||
 			strings.Contains(lower, "sh:")):
-		return "Hint: /bin/sh is dash, not bash. For non-trivial shell logic use execute_code with Python."
+		return "Hint: command execution is not available. Use file actions for bounded workspace reads, writes, grep, copy, move, mkdir, or walk."
 	}
 	return ""
 }

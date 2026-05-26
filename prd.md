@@ -1311,7 +1311,6 @@ Davide's own use across multiple domains before opening externally.
 | **MCP Roundup Wave 1** | 🟡 deferred — survey evidence remains in `docs/mcp-survey/`, but no active rollout queue is selected. | ~1-2 sessions | after MCP-UI re-open |
 | **MCP Roundup Wave 2..N** | 🟡 deferred — continuous additive MCP expansion; no active milestone. | continuous | after MCP-UI re-open |
 | **Phase-U** | 🟣 SKETCHED — Plugin layout: manifest format + loader + extract Davide's personality as a plugin + 1 sample plugin for a different domain | ~4-6 sessions | After MCP roundup stabilizes |
-| **Phase 8** | ⚪ DE-SCOPED — Multi-agent substrate (payload summarizer, ownership/per-task context, tier/depth lift, planner JSON-DAG, critic/retry; skip formal Hybrid DAG) | ~2-3 sessions | Gated on concrete workload re-opening (memory `reference_phase8_substrate_revised_2026-05-18`) |
 
 **Why Phase-FIX before Phase-MM:** Two generic fallback strings surface on
 budget/error paths today — `"I reached the per-turn budget without a usable
@@ -1375,7 +1374,6 @@ Plan files (one `plan.md` per phase, plus `INDEX.md`): `.planning/post-drift-202
 **Implications for existing phases (§7.4):**
 
 - **Phase-KV** — partially closed by Phase-CACHE (`prompt_cache_key`, `end_turn`, description audit). Remaining byte-faithfulness / 20-block lookback work needs a fresh benchmark before implementation.
-- **Phase 8** (DE-SCOPED, gated on concrete workload) — openhuman scout produced concrete code references (TOML `AgentDefinition`, `AgentTier`, `validate_tier_hierarchy`, three spawn primitives). Phase 8 no longer needs design — only a workload trigger. When the trigger arrives, Phase 8 implementation cost drops from ~6-12 sessions to ~2-3 (memory `reference_phase8_substrate_revised_2026-05-18` confirms).
 - **Phase-WIKI-B Wave B/C** — archived as evidence in `docs/_archive/wiki-retrieval-research-2026-05-21/`. Reranker and markitdown plugin ideas must be rewritten into a fresh phase plan before implementation.
 
 **Anti-patterns reaffirmed across 4+ scouts — explicit DO-NOT-LIFT list for future maintainers:**

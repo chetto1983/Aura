@@ -43,8 +43,11 @@ func TestFormatToolErrorDirectoryHint(t *testing.T) {
 
 func TestFormatToolErrorShellRedirectionHint(t *testing.T) {
 	got := FormatToolError(errors.New("shell command failed (exit=2): /bin/sh: 26: Syntax error: redirection unexpected"))
-	if !strings.Contains(got, "execute_code") {
-		t.Fatalf("expected execute_code hint, got %q", got)
+	if strings.Contains(got, "execute_code") || strings.Contains(got, "execute_shell") {
+		t.Fatalf("expected no exec-tool hint, got %q", got)
+	}
+	if !strings.Contains(got, "file actions") {
+		t.Fatalf("expected file-action hint, got %q", got)
 	}
 }
 

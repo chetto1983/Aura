@@ -7,11 +7,15 @@ import "strings"
 // paraphrased by the LLM payload summarizer.
 func IsEvidenceClassTool(toolName string, args map[string]any) bool {
 	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "file":
+		return true
 	case "search":
+		return true
+	case "search_memory":
 		return true
 	case "wiki_page":
 		return true
-	case "source":
+	case "source", "read_source":
 		return evidenceAction(args) == "read"
 	case "task":
 		return evidenceAction(args) == "list"

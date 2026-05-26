@@ -171,18 +171,18 @@ func TestExecutorRecordFailureDoesNotPropagateToResult(t *testing.T) {
 	}
 }
 
-// TestExecutorTokenJuiceCompacts verifies that tokenJuice=true compacts a large
-// file-read output to <500 chars and tokenJuice=false leaves it unchanged.
-func TestExecutorTokenJuiceCompacts(t *testing.T) {
-	// Build >5 KB file-read JSON that triggers the aura/file-read rule.
-	bigContent := strings.Repeat("x", 4800)
+// TestExecutorTokenJuicePreservesStructuredToolPayload verifies TokenJuice does
+// not compact fresh structured evidence such as file reads. The runtime budget
+// may later cap oversized results, but the terminal-log reducer must not drop
+// the content before the next LLM round can inspect it.
+func TestExecutorTokenJuicePreservesStructuredToolPayload(t *testing.T) {
+	bigContent := "LOAD_BEARING_SENTINEL-" + strings.Repeat("x", 4800)
 	bigOutput := `{"path":"workspace/TOOLS.md","type":"file","bytes":5000,"total_bytes":5000,"truncated":false,"encoding":"utf-8","content":"` + bigContent + `"}`
 
 	reg := tools.NewRegistry(nil)
 	reg.Register(&fakeTool{name: "file", result: bigOutput})
 	call := llm.ToolCall{ID: "c1", Name: "file", Arguments: map[string]any{"action": "read", "path": "workspace/TOOLS.md"}}
 
-	// flag=true: aura/file-read rule fires → output <500 chars, no "content": field
 	state := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
 	exec := newAgentExecutor(reg, state, nil, []string{"file"}, "", "run-tj-on", 0, 0, nil, true, "", nil, nil)
 	exec.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
@@ -197,25 +197,28 @@ func TestExecutorTokenJuiceCompacts(t *testing.T) {
 	if toolMsg == nil {
 		t.Fatal("tokenjuice=true: no tool result message in state")
 	}
-	if len(toolMsg.Content) >= 500 {
-		t.Errorf("tokenjuice=true: expected compacted <500 chars, got %d", len(toolMsg.Content))
+	if !strings.Contains(toolMsg.Content, `"content":"LOAD_BEARING_SENTINEL-`) {
+		t.Fatalf("tokenjuice=true: file content was not preserved: %q", toolMsg.Content[:min(len(toolMsg.Content), 240)])
 	}
-	if strings.Contains(toolMsg.Content, `"content":`) {
-		t.Error("tokenjuice=true: content field should have been dropped")
+	if !strings.Contains(toolMsg.Content, `"path":"workspace/TOOLS.md"`) {
+		t.Fatalf("tokenjuice=true: file metadata was not preserved: %q", toolMsg.Content[:min(len(toolMsg.Content), 240)])
 	}
+}
 
-	// flag=false: raw output passes through unchanged (~5 KB)
-	state2 := newAgentState([]llm.Message{{Role: "user", Content: "test"}})
-	exec2 := newAgentExecutor(reg, state2, nil, []string{"file"}, "", "run-tj-off", 0, 0, nil, false, "", nil, nil)
-	exec2.ExecuteToolCalls(authorizedExecCtx(), []llm.ToolCall{call})
+func TestCompactToolOutputCompactsExecuteShellOutput(t *testing.T) {
+	var sb strings.Builder
+	for i := 0; i < 200; i++ {
+		fmt.Fprintf(&sb, "line %03d\n", i)
+	}
+	sb.WriteString("MARKER-END\n")
+	raw := "exit_code: 0\nelapsed_ms: 7\n\n" + sb.String()
 
-	for i := range state2.messages {
-		if state2.messages[i].Role == "tool" {
-			if len(state2.messages[i].Content) < 4000 {
-				t.Errorf("tokenjuice=false: expected ~5 KB output, got %d chars", len(state2.messages[i].Content))
-			}
-			break
-		}
+	got := CompactToolOutput(nil, "execute_shell", map[string]any{"command": "printf lines"}, raw)
+	if len(got) >= len(raw) {
+		t.Fatalf("shell output was not compacted: got %d bytes, raw %d", len(got), len(raw))
+	}
+	if !strings.Contains(got, "MARKER-END") {
+		t.Fatalf("shell compaction lost tail marker: %q", got)
 	}
 }
 

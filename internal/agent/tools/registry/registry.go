@@ -131,7 +131,8 @@ func (r *Registry) Register(t Tool) bool {
 // toolAllowedByEnvAllowlist returns true unless AURA_TOOL_ALLOWLIST is set and
 // name is absent from its comma-separated list. Trimmed entries are compared
 // case-insensitively. An env value of "*" or "all" admits every tool — useful
-// for explicit overrides in test/dev contexts.
+// for explicit overrides in test/dev contexts. Entries ending with "*" admit a
+// bounded prefix such as "mcp_calculator_*" for dynamic MCP tool names.
 func toolAllowedByEnvAllowlist(name string) bool {
 	raw := strings.TrimSpace(os.Getenv("AURA_TOOL_ALLOWLIST"))
 	if raw == "" {
@@ -148,6 +149,12 @@ func toolAllowedByEnvAllowlist(name string) bool {
 		}
 		if entry == lowerName {
 			return true
+		}
+		if strings.HasSuffix(entry, "*") && len(entry) > 1 {
+			prefix := strings.TrimSuffix(entry, "*")
+			if strings.HasPrefix(lowerName, prefix) {
+				return true
+			}
 		}
 	}
 	return false

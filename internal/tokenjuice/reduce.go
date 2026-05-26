@@ -28,6 +28,11 @@ func ReduceExecutionWithRules(in Input, rules []*CompiledRule, opts Options) Res
 	rawText := buildRawText(in)
 	origBytes := len(rawText)
 
+	if isStructuredToolOutput(in.ToolName) {
+		return passthroughResult(in.ToolName, rawText, "none/structured-tool",
+			ClassificationResult{Family: "structured", Confidence: 0})
+	}
+
 	// Outer guard: tiny inputs are returned verbatim (spec §5.1).
 	minBytes := opts.MinInputBytes
 	if minBytes == 0 {
@@ -142,6 +147,29 @@ func isFileContentInspectionCommand(in Input) bool {
 		}
 	}
 	return fileInspectCommands[argv0]
+}
+
+func isStructuredToolOutput(toolName string) bool {
+	switch strings.ToLower(strings.TrimSpace(toolName)) {
+	case "agent_note",
+		"ask_user",
+		"create_document",
+		"file",
+		"propose_patch",
+		"read_source",
+		"search",
+		"search_memory",
+		"skill",
+		"source",
+		"task",
+		"web",
+		"web_fetch",
+		"web_search",
+		"wiki_page":
+		return true
+	default:
+		return false
+	}
 }
 
 // findRuleByID returns the first rule in rules whose ID matches id, or nil.

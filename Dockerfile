@@ -69,9 +69,10 @@ RUN apt-get update \
     && setcap cap_net_raw,cap_net_admin+eip /usr/bin/nmap \
     && setcap cap_net_raw,cap_net_admin+eip /usr/bin/tcpdump
 
-# Python packages baked into the image so execute_code has the same library
-# surface the old Pyodide bundle provided. Without these, the LLM naturally
-# writes `import requests` / `import openpyxl` and crashes on stdlib-only.
+# Python packages baked into the image for compatibility utilities and MCP
+# math sidecars. The LLM-facing execute_code/execute_shell tools are not in the
+# default tool surface; calculator MCP is downloaded by an Aura-managed uv
+# launcher at runtime.
 #
 # Post-install strip removes __pycache__, *.pyi typing stubs, and test trees
 # shipped inside numpy/pandas/pillow/matplotlib wheels (~120 MB savings).
@@ -82,7 +83,8 @@ RUN apt-get update \
 RUN pip3 install --no-cache-dir --break-system-packages \
       requests beautifulsoup4 lxml pillow \
       numpy pandas pyarrow python-calamine openpyxl xlrd \
-      pyyaml python-dateutil pytz regex python-docx matplotlib \
+      pyyaml python-dateutil pytz regex python-docx matplotlib uv \
+    && test -x /usr/local/bin/uvx \
     && find /usr/local/lib/python3*/dist-packages /usr/lib/python3/dist-packages \
             -depth -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \
     && find /usr/local/lib/python3*/dist-packages /usr/lib/python3/dist-packages \
@@ -90,6 +92,10 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     && find /usr/local/lib/python3*/dist-packages /usr/lib/python3/dist-packages \
             -depth -type d \( -name 'tests' -o -name 'test' -o -name 'docs' -o -name 'doc' \) \
             ! -path '*.libs*' -exec rm -rf {} + 2>/dev/null || true
+
+COPY runtime/mcp/aura-calculator-mcp /usr/local/bin/aura-calculator-mcp
+RUN chmod 0755 /usr/local/bin/aura-calculator-mcp \
+    && test -x /usr/local/bin/aura-calculator-mcp
 
 RUN wget -qO /tmp/mail-mcp.tar.xz "https://github.com/tecnologicachile/mail-mcp/releases/download/v${MAIL_MCP_VERSION}/mail-mcp-x86_64-unknown-linux-gnu.tar.xz" \
     && echo "${MAIL_MCP_SHA256}  /tmp/mail-mcp.tar.xz" | sha256sum -c - \
@@ -130,6 +136,7 @@ ENV AURA_HEADLESS=true \
     PIP_USER=1 \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     NPM_CONFIG_CACHE=/data/.npm \
+    UV_CACHE_DIR=/app/runtime/uv-cache \
     # Redirect npm's global prefix into /data so `npm install -g <pkg>` works
     # for the non-root aura user without touching /usr/local (root-owned).
     NPM_CONFIG_PREFIX=/data/.npm-global \

@@ -107,6 +107,78 @@ func TestListHidesSensitivePaths(t *testing.T) {
 	}
 }
 
+func TestFileOperationHelpers(t *testing.T) {
+	root := newTestRoot(t)
+	if _, err := root.Mkdir("notes/archive"); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+	if err := root.WriteAtomic("notes/a.md", []byte("alpha\nBeta\n")); err != nil {
+		t.Fatalf("WriteAtomic: %v", err)
+	}
+	matches, err := root.Grep("notes/a.md", "beta", true, 10)
+	if err != nil {
+		t.Fatalf("Grep: %v", err)
+	}
+	if len(matches) != 1 || matches[0].Line != 2 {
+		t.Fatalf("Grep matches = %+v, want line 2", matches)
+	}
+	info, err := root.Info("notes/a.md")
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if !info.Exists || info.Type != "file" || info.Name != "a.md" {
+		t.Fatalf("Info = %+v, want existing file a.md", info)
+	}
+	if copied, err := root.Copy("notes/a.md", "notes/archive/a-copy.md", nil); err != nil {
+		t.Fatalf("Copy: %v", err)
+	} else if copied.Path != "notes/archive/a-copy.md" || copied.Type != "file" {
+		t.Fatalf("Copy info = %+v", copied)
+	}
+	if moved, err := root.Move("notes/archive/a-copy.md", "notes/archive/a-moved.md", nil); err != nil {
+		t.Fatalf("Move: %v", err)
+	} else if moved.Path != "notes/archive/a-moved.md" {
+		t.Fatalf("Move info = %+v", moved)
+	}
+	tree, err := root.Walk("notes", 20)
+	if err != nil {
+		t.Fatalf("Walk: %v", err)
+	}
+	if tree.Type != "dir" || len(tree.Children) == 0 {
+		t.Fatalf("Walk = %+v, want populated notes tree", tree)
+	}
+	if err := root.RemoveDir("notes/archive"); err == nil {
+		t.Fatal("RemoveDir should reject non-empty directory")
+	}
+	if err := root.RemoveFile("notes/archive/a-moved.md"); err != nil {
+		t.Fatalf("RemoveFile: %v", err)
+	}
+	if err := root.RemoveFile("notes/a.md"); err != nil {
+		t.Fatalf("RemoveFile notes/a.md: %v", err)
+	}
+	if err := root.RemoveDir("notes/archive"); err != nil {
+		t.Fatalf("RemoveDir empty archive: %v", err)
+	}
+}
+
+func TestTransferRejectsDeniedAndExistingDestinations(t *testing.T) {
+	root := newTestRoot(t)
+	writeRaw(t, root.Path(), "docs/a.md", []byte("alpha"))
+	writeRaw(t, root.Path(), "docs/existing.md", []byte("exists"))
+	if _, err := root.Copy(".env", "docs/env-copy", nil); !errors.Is(err, ErrDeniedPath) {
+		t.Fatalf("Copy denied path err = %v, want ErrDeniedPath", err)
+	}
+	if _, err := root.Move("docs/a.md", "docs/existing.md", nil); err == nil {
+		t.Fatal("Move should reject existing destination")
+	}
+	got, err := root.Read("docs/a.md", 1024)
+	if err != nil {
+		t.Fatalf("Read after failed move: %v", err)
+	}
+	if string(got) != "alpha" {
+		t.Fatalf("source changed after failed move: %q", got)
+	}
+}
+
 func newTestRoot(t *testing.T) *Root {
 	t.Helper()
 	root, err := New(t.TempDir())

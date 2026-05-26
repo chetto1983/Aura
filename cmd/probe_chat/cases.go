@@ -26,6 +26,7 @@ func allCases(now time.Time, enableTTS bool) []Case {
 	wikiSlug := "probe-chat-page-" + stamp
 	wikiTitle := "Probe Chat Page " + stamp
 	agentNoteThreadID := "probe-agent-note-" + stamp
+	var mcpCalculatorBefore time.Time
 
 	cases := []Case{
 		phase07DMixedTierRecallCase(stamp),
@@ -115,6 +116,44 @@ func allCases(now time.Time, enableTTS bool) []Case {
 			// cleanup endpoint would be nicer; leave it for now.
 		},
 
+		// MCP calculator product default. The server is auto-downloaded by
+		// Aura's managed launcher; this verifies math uses MCP rather than
+		// reintroducing Python/shell execution.
+		{
+			Name:     "tool-mcp-calculator-math",
+			Category: "tools-mcp",
+			Prompt:   "Usa il tool mcp_calculator_calculate, non calcolo mentale e non Python/shell. Calcola l'espressione (sqrt(144)+sin(pi/2))*7. Rispondi con CALC_MCP_OK=<risultato>.",
+			Setup: func(_ *Env) error {
+				mcpCalculatorBefore = time.Now()
+				return nil
+			},
+			Verify: func(r ChatReply, env *Env) []string {
+				var miss []string
+				if r.ToolCalls == 0 {
+					miss = append(miss, "expected >= 1 MCP calculator tool call, got 0")
+				}
+				if !strings.Contains(r.Reply, "CALC_MCP_OK") || !strings.Contains(r.Reply, "91") {
+					miss = append(miss, fmt.Sprintf("reply missing calculator marker/result 91 (got: %q)", truncate(r.Reply, 200)))
+				}
+				counts, err := env.toolAttemptsSince(mcpCalculatorBefore, "mcp_calculator_calculate", "execute_code", "execute_shell")
+				if err != nil {
+					miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
+					return miss
+				}
+				fmt.Fprintf(os.Stderr, "[case=tool-mcp-calculator-math] attempts since %s: mcp_calculator_calculate=%d execute_code=%d execute_shell=%d\n",
+					mcpCalculatorBefore.Format(time.RFC3339), counts["mcp_calculator_calculate"], counts["execute_code"], counts["execute_shell"])
+				if counts["mcp_calculator_calculate"] == 0 {
+					miss = append(miss, "DB ground truth: no successful mcp_calculator_calculate tool_attempts row since probe start")
+				}
+				for _, forbidden := range []string{"execute_code", "execute_shell"} {
+					if counts[forbidden] > 0 {
+						miss = append(miss, fmt.Sprintf("forbidden tool %s ran %d time(s)", forbidden, counts[forbidden]))
+					}
+				}
+				return miss
+			},
+		},
+
 		// 4. web-fetch-summarize — fetch a specific page and produce a
 		//    real summary. Hardest case in the suite: must call web with
 		//    action=fetch, parse the HTML, and synthesize a faithful
@@ -124,7 +163,8 @@ func allCases(now time.Time, enableTTS bool) []Case {
 		{
 			Name:     "web-fetch-summarize-context-engineering",
 			Category: "tools-web",
-			Prompt:   "Vai a https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents e fai un riassunto in 5 bullet point dei concetti principali. Cita almeno: context window, tool use, agent loop.",
+			ThreadID: "probe-web-context-engineering-" + stamp,
+			Prompt:   "Usa obbligatoriamente il tool web con action=fetch su https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents e fai un riassunto in 5 bullet point dei concetti principali. Non usare memoria o conoscenza pregressa. Cita almeno: context window, tool use, agent loop.",
 			Verify: func(r ChatReply, _ *Env) []string {
 				var miss []string
 				if r.ToolCalls == 0 {
@@ -145,7 +185,7 @@ func allCases(now time.Time, enableTTS bool) []Case {
 				if len(strings.TrimSpace(r.Reply)) < 300 {
 					miss = append(miss, fmt.Sprintf("summary too short: %d chars (real summary of a multi-section article should be >= 300)", len(r.Reply)))
 				}
-				if !strings.Contains(r.Reply, "-") && !strings.Contains(r.Reply, "•") && !strings.Contains(r.Reply, "1.") && !strings.Contains(r.Reply, "1)") {
+				if !strings.Contains(r.Reply, "-") && !strings.Contains(r.Reply, "*") && !strings.Contains(r.Reply, "•") && !strings.Contains(r.Reply, "1.") && !strings.Contains(r.Reply, "1)") {
 					miss = append(miss, "reply has no bullet/numbered enumeration despite the prompt asking for 5 bullet points")
 				}
 				return miss
@@ -829,93 +869,65 @@ func allCases(now time.Time, enableTTS bool) []Case {
 			},
 		},
 
-		// Phase-QA2 / US-QA-COV01 — execute_code sandbox E2E.
-		// Asks Aura to compute the sum of the first 10 Fibonacci numbers
-		// (answer: 143 with F1=1,F2=1 or 88 with F0=0,F1=1 — both valid).
-		// Prompt specifies F1=1,F2=1 as preferred convention. Skips gracefully when
-		// sandbox.enabled=false (infra-skip US-QA-COV01-INFRA).
-		// Ground truth: tool_attempts DB row, not the reply text.
+		// Phase-QA2 / US-QA-COV01 — safe file operations E2E.
+		// Asks Aura to perform bounded filesystem work via file actions only.
+		// Ground truth: tool_attempts DB rows plus filesystem artifacts.
 		{
-			Name:     "tool-execute-code",
-			Category: "tools-sandbox",
-			Prompt:   "Usa lo strumento execute_code per calcolare la somma dei primi 10 numeri di Fibonacci usando la convenzione F1=1, F2=1 (sequenza: 1,1,2,3,5,8,13,21,34,55). Rispondi con il risultato numerico.",
-			Setup: func(env *Env) error {
-				enabled, err := env.fetchSandboxEnabled()
-				if err != nil {
-					return fmt.Errorf("health check failed: %w", err)
-				}
-				if !enabled {
-					return fmt.Errorf("sandbox disabled (sandbox.enabled=false in /api/health) — infra-skip US-QA-COV01-INFRA")
-				}
-				execCodeBefore = time.Now()
+			Name:     "tool-file-safe-ops",
+			Category: "tools-files",
+			Prompt: fmt.Sprintf(
+				"Usa solo il tool file. Esegui queste azioni nel workspace: mkdir notes/safe-ops-%s; write notes/safe-ops-%s/a.md con contenuto esatto 'SAFE_FILE_MARKER_%s'; grep quel marker nel file; path_info del file; copy a.md in b.md; move b.md in c.md; walk della cartella. Poi rispondi citando solo SAFE_FILE_MARKER_%s.",
+				stamp, stamp, stamp, stamp,
+			),
+			Setup: func(_ *Env) error {
+				fileSafeOpsBefore = time.Now()
 				return nil
 			},
 			Verify: func(r ChatReply, env *Env) []string {
 				var miss []string
+				marker := "SAFE_FILE_MARKER_" + stamp
 				if r.ToolCalls == 0 {
-					miss = append(miss, "expected >= 1 tool call (execute_code), got 0")
+					miss = append(miss, "expected >= 1 file tool call, got 0")
 				}
-				if !strings.Contains(r.Reply, "143") && !strings.Contains(r.Reply, "88") {
-					miss = append(miss, fmt.Sprintf("reply missing expected Fibonacci sum ('143' with F1=1,F2=1 or '88' with F0=0) (got: %q)", truncate(r.Reply, 200)))
-				}
-				// Ground truth: DB must have a successful tool_attempts row for execute_code.
-				counts, err := env.toolAttemptsSince(execCodeBefore, "execute_code")
-				if err != nil {
-					miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
-					return miss
-				}
-				count := counts["execute_code"]
-				fmt.Fprintf(os.Stderr, "[case=tool-execute-code] tool_attempts execute_code since %s: count=%d\n",
-					execCodeBefore.Format(time.RFC3339), count)
-				if count == 0 {
-					miss = append(miss, "DB ground truth: no successful tool_attempts row for execute_code since probe start")
-				}
-				return miss
-			},
-		},
-
-		// Phase-QA2 / US-QA-COV02 — execute_shell sandbox E2E.
-		// Asks Aura to run a deterministic echo command via execute_shell and
-		// verifies the stamped marker appears in the reply. Skips gracefully
-		// when sandbox.enabled=false (infra-skip US-QA-COV02-INFRA).
-		// Ground truth: tool_attempts DB row for execute_shell, not reply text alone.
-		{
-			Name:     "tool-execute-shell",
-			Category: "tools-sandbox",
-			Prompt:   fmt.Sprintf("Usa execute_shell per eseguire il comando: echo PROBE_SHELL_OK_%s. Mostrami l'output letterale.", stamp),
-			Setup: func(env *Env) error {
-				enabled, err := env.fetchSandboxEnabled()
-				if err != nil {
-					return fmt.Errorf("health check failed: %w", err)
-				}
-				if !enabled {
-					return fmt.Errorf("sandbox disabled (sandbox.enabled=false in /api/health) — infra-skip US-QA-COV02-INFRA")
-				}
-				execShellBefore = time.Now()
-				return nil
-			},
-			Verify: func(r ChatReply, env *Env) []string {
-				var miss []string
-				if r.ToolCalls == 0 {
-					miss = append(miss, "expected >= 1 tool call (execute_shell), got 0")
-				}
-				marker := "PROBE_SHELL_OK_" + stamp
 				if !strings.Contains(r.Reply, marker) {
-					miss = append(miss, fmt.Sprintf("reply missing expected shell marker %q (got: %q)", marker, truncate(r.Reply, 200)))
+					miss = append(miss, fmt.Sprintf("reply missing marker %q (got: %q)", marker, truncate(r.Reply, 200)))
 				}
-				// Ground truth: DB must have a successful tool_attempts row for execute_shell.
-				counts, err := env.toolAttemptsSince(execShellBefore, "execute_shell")
+				counts, err := env.toolAttemptsSince(fileSafeOpsBefore, "file", "execute_code", "execute_shell")
 				if err != nil {
 					miss = append(miss, fmt.Sprintf("tool_attempts query: %v", err))
 					return miss
 				}
-				count := counts["execute_shell"]
-				fmt.Fprintf(os.Stderr, "[case=tool-execute-shell] tool_attempts execute_shell since %s: count=%d\n",
-					execShellBefore.Format(time.RFC3339), count)
-				if count == 0 {
-					miss = append(miss, "DB ground truth: no successful tool_attempts row for execute_shell since probe start")
+				fmt.Fprintf(os.Stderr, "[case=tool-file-safe-ops] attempts since %s: file=%d execute_code=%d execute_shell=%d\n",
+					fileSafeOpsBefore.Format(time.RFC3339), counts["file"], counts["execute_code"], counts["execute_shell"])
+				if counts["file"] == 0 {
+					miss = append(miss, "DB ground truth: no successful file tool_attempts row since probe start")
+				}
+				for _, forbidden := range []string{"execute_code", "execute_shell"} {
+					if counts[forbidden] > 0 {
+						miss = append(miss, fmt.Sprintf("forbidden tool %s ran %d time(s)", forbidden, counts[forbidden]))
+					}
+				}
+				base := filepath.Join("runtime-workspace", "notes", "safe-ops-"+stamp)
+				for _, rel := range []string{"a.md", "c.md"} {
+					body, readErr := os.ReadFile(filepath.Join(base, rel))
+					if readErr != nil {
+						miss = append(miss, fmt.Sprintf("ground truth: %s missing on disk (%v)", rel, readErr))
+						continue
+					}
+					if strings.TrimSpace(string(body)) != marker {
+						miss = append(miss, fmt.Sprintf("ground truth: %s content mismatch: %q", rel, truncate(string(body), 120)))
+					}
+				}
+				if _, statErr := os.Stat(filepath.Join(base, "b.md")); !os.IsNotExist(statErr) {
+					miss = append(miss, "ground truth: b.md should have been moved to c.md")
 				}
 				return miss
+			},
+			Cleanup: func(_ *Env) {
+				_ = os.Remove(filepath.Join("runtime-workspace", "notes", "safe-ops-"+stamp, "a.md"))
+				_ = os.Remove(filepath.Join("runtime-workspace", "notes", "safe-ops-"+stamp, "b.md"))
+				_ = os.Remove(filepath.Join("runtime-workspace", "notes", "safe-ops-"+stamp, "c.md"))
+				_ = os.Remove(filepath.Join("runtime-workspace", "notes", "safe-ops-"+stamp))
 			},
 		},
 
@@ -1261,8 +1273,7 @@ func allCases(now time.Time, enableTTS bool) []Case {
 var (
 	htmlProbeID        string
 	zipProbeID         string
-	execCodeBefore     time.Time
-	execShellBefore    time.Time
+	fileSafeOpsBefore  time.Time
 	ocrProbeID         string
 	ingestProbeID      string
 	ingestExpectedSlug string

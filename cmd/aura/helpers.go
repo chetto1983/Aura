@@ -192,7 +192,7 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	})
 	if err != nil {
 		health.Detail = err.Error()
-		logger.Warn("sandbox process runner configuration invalid, execute_code disabled",
+		logger.Warn("sandbox process runner configuration invalid",
 			"runtime_kind", sandbox.RuntimeKindProcess,
 			"workdir", cfg.WorkspaceRoot,
 			"detail", health.Detail)
@@ -204,7 +204,7 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	health.RuntimeKind = string(availability.Kind)
 	health.Detail = availability.Detail
 	if !availability.Available {
-		logger.Warn("sandbox process runtime unavailable, execute_code disabled",
+		logger.Warn("sandbox process runtime unavailable",
 			"runtime_kind", health.RuntimeKind,
 			"workdir", cfg.WorkspaceRoot,
 			"detail", availability.Detail)
@@ -217,13 +217,13 @@ func setupSandboxRuntime(cfg *config.Config, logger *slog.Logger) (*sandbox.Mana
 	if err != nil {
 		health.Available = false
 		health.Detail = err.Error()
-		logger.Warn("sandbox process manager unavailable, execute_code disabled",
+		logger.Warn("sandbox process manager unavailable",
 			"runtime_kind", health.RuntimeKind,
 			"workdir", cfg.WorkspaceRoot,
 			"detail", health.Detail)
 		return nil, health
 	}
-	logger.Info("sandbox process runtime available, execute_code enabled",
+	logger.Info("sandbox process runtime available",
 		"runtime_kind", health.RuntimeKind,
 		"workdir", cfg.WorkspaceRoot,
 		"detail", health.Detail)

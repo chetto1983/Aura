@@ -12,4 +12,7 @@
 !cmd/aura/**
 !internal/
 !internal/**
+!runtime/
+!runtime/mcp/
+!runtime/mcp/aura-calculator-mcp
 

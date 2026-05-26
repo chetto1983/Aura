@@ -7,7 +7,7 @@ package owns:
 - The `Tool` interface, the `Registry` that dispatches calls by name, and the
   optional vector index that ranks tools by relevance to the live turn.
 - The built-in tools (memory, web, sources, scheduler, files, wiki,
-  workspace, sandbox, auth).
+  workspace, auth).
 - Adapters that surface MCP-server tools as ordinary `Tool` instances
   (`MCPTool`, name-mangled as `mcp_<server>_<tool>`).
 - LLM-contract helpers: structured `ToolDefinition` with curated examples,
@@ -20,7 +20,7 @@ package owns:
 | `agentloop.Loop` → `Registry.Execute(ctx, name, args)` | Tool result string + error |
 | `internal/mcp.Client` (advertised tools) | `MCPTool` wrappers |
 | `internal/source.*`, `internal/wiki.*`, `internal/scheduler.*`, … | Operate on persistent state |
-| `internal/sandbox.Manager` | `execute_code` / `execute_shell` |
+| `internal/sandbox.Manager` | Compatibility-only sandbox helpers; not registered in the default LLM surface |
 
 The package depends on most of the rest of Aura's domain packages but is
 **not** imported by them — the registry is constructed at startup in
@@ -77,10 +77,10 @@ and `CategorizedTool` / `MultiCategorizedTool` to opt into category gating.
 | `files_pdf.go` | `create_pdf`. |
 | `files_blocks.go` | Shared `blockShape` + `parseBlockShapes` used by docx/pdf. |
 | `wiki.go` | `wiki_page` writer with server-managed schema/prompt versions. |
-| `file.go` | `file` dispatcher (`action=list|read|search|write|patch`). |
+| `file.go` | `file` dispatcher (`action=list|read|search|write|patch|grep|path_info|mkdir|rmdir|remove_file|move|copy|walk|pwd`). |
 | `workspace_files.go` | Workspace file helpers used by `file`. |
 | `workspace_validation.go` | Server-managed file denylist + wiki/skill validation. |
-| `exec.go` | `execute_code` / `execute_shell` + internal manifest orchestration (parallel, per-call timeout, escalation blocklist). |
+| `exec.go` | Retired code/shell tool implementation kept for compatibility tests; not wired into the default app registry. |
 | `auth.go` | `request_dashboard_token` — privileged; blocked from internal manifests. |
 | `ingest.go` | `ingest_source` LLM-facing wrapper. |
 | `mcp.go` | `MCPTool` adapter exposing one MCP-server tool as a `Tool`. |
@@ -124,9 +124,8 @@ and `CategorizedTool` / `MultiCategorizedTool` to opt into category gating.
   server-managed files (`wiki/index.md`, `wiki/log.md`, `wiki/SCHEMA.md`).
 - **The "sandbox" runtime is not network-isolated.** The process runtime
   shares Aura's container namespace. Tool descriptions are honest about it.
-- **`execute_code` internal manifest** has an explicit blocklist
-  (execute_code, execute_shell, request_dashboard_token, delete_source,
-  forget_memory) plus the active-turn allowlist; both must permit a call.
+- **Command execution is not in the default LLM surface.** Workspace
+  inspection and bounded file mutations belong in `file` actions.
 
 ### Concurrency
 
@@ -135,8 +134,8 @@ and `CategorizedTool` / `MultiCategorizedTool` to opt into category gating.
   shared state with a mutex (and never hold one across HTTP — see
   `ToolVectorIndex.Search` for the snapshot pattern).
 - `Registry.Execute` imposes a default 5-minute deadline when the caller
-  did not attach one. Tools that have stricter needs (web fetch 30s,
-  execute_code 1-300s) set their own first; this is defense-in-depth for
+  did not attach one. Tools that have stricter needs (web fetch 30s)
+  set their own first; this is defense-in-depth for
   the worst case where a tool ignores ctx entirely.
 
 ### File-size cap

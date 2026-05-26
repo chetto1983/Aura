@@ -64,14 +64,9 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 	}
 }
 
-func TestSandboxCodeToolsetIsExplicit(t *testing.T) {
-	got, err := ResolveToolsets(ToolsetSandboxCode)
-	if err != nil {
-		t.Fatalf("ResolveToolsets: %v", err)
-	}
-	want := []string{"execute_code", "execute_shell"}
-	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("sandbox_code tools = %+v, want %+v", got, want)
+func TestSandboxCodeToolsetIsRetired(t *testing.T) {
+	if got, err := ResolveToolsets("sandbox_code"); err == nil {
+		t.Fatalf("sandbox_code should be retired, got tools %+v", got)
 	}
 }
 

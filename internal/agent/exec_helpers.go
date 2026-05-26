@@ -45,8 +45,9 @@ func WithToolAttemptRecording(runID string, repo attempts.Repo) ExecuteToolCalls
 }
 
 // WithTokenJuice enables or disables rule-driven output compaction for this
-// call batch. When enabled, each tool result is passed through tokenjuice.Compact
-// before WrapUntrustedToolResult, reducing context pressure on heavy turns.
+// call batch. When enabled, terminal-style execution results are passed through
+// tokenjuice.Compact before WrapUntrustedToolResult, reducing context pressure
+// on heavy shell/code turns without rewriting structured evidence payloads.
 func WithTokenJuice(enabled bool) ExecuteToolCallsOption {
 	return func(cfg *executeToolCallsConfig) {
 		cfg.tokenJuiceEnabled = enabled

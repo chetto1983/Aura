@@ -49,8 +49,10 @@ func exitCodeFromToolOutput(toolName, raw string) *int {
 }
 
 // CompactToolOutput runs TokenJuice on a tool result and returns the (possibly
-// compacted) string. A debug log is emitted each call regardless of whether a
-// rule fired so the operator can observe the pass-through rate too.
+// compacted) string. Structured Aura tool payloads are pass-through at the
+// tokenjuice layer; the fresh-result budget and later microcompaction own those
+// payloads. A debug log is emitted each call regardless of whether a rule fired
+// so the operator can observe the pass-through rate too.
 func CompactToolOutput(logger *slog.Logger, toolName string, args map[string]any, raw string) string {
 	r := tokenjuice.Compact(tokenjuice.Input{
 		ToolName: toolName,

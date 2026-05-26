@@ -67,10 +67,10 @@ func EnsureLayout(cfg LayoutConfig) error {
 	}
 	files := map[string]string{
 		filepath.Join(runtimeWorkspacePath, "HEARTBEAT.md"):     heartbeatTemplate,
-		filepath.Join(runtimeWorkspacePath, "mcp.json"):         "{}\n",
+		filepath.Join(runtimeWorkspacePath, "mcp.json"):         defaultMCPServersConfig,
 		filepath.Join(runtimeWorkspacePath, "wiki", "index.md"): "# Wiki Index\n\n",
 		filepath.Join(runtimeWorkspacePath, "wiki", "log.md"):   "# Wiki Log\n\n",
-		cfg.MCPServersPath: "{}\n",
+		cfg.MCPServersPath: defaultMCPServersConfig,
 	}
 	if strings.TrimSpace(cfg.WikiPath) != "" {
 		files[filepath.Join(cfg.WikiPath, "index.md")] = "# Wiki Index\n\n"
@@ -180,6 +180,18 @@ func createFileIfMissing(path string, content []byte, perm os.FileMode) error {
 const heartbeatTemplate = `# Heartbeat
 
 Automated heartbeat is disabled until Aura enables a runtime scheduler for this workspace.
+`
+
+const defaultMCPServersConfig = `{
+  "mcpServers": {
+    "calculator": {
+      "command": "/usr/local/bin/aura-calculator-mcp",
+      "args": [
+        "--stdio"
+      ]
+    }
+  }
+}
 `
 
 const minimalAgentTemplate = `# Aura Runtime Schema

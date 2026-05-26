@@ -66,6 +66,7 @@ var validSmokeCategories = []string{
 	"markitdown",
 	"tools-agent-note",
 	"tools-files",
+	"tools-mcp",
 	"tools-dev",
 	"tools-memory",
 	"tools-sandbox",
@@ -78,15 +79,15 @@ var validSmokeCategories = []string{
 
 func main() {
 	var (
-		caseName = flag.String("case", "", "run only the named case (empty = run all)")
-		smoke    = flag.String("smoke", "", "SMOKE TIER: run only cases in this category (see usage for valid values; mutually exclusive with -case)")
-		prompt   = flag.String("prompt", "", "send a single ad-hoc prompt and print the structured reply (skips Verify)")
-		jsonOut  = flag.Bool("json", false, "emit results as JSON instead of human-readable table")
-		baseURL  = flag.String("url", envDefault("AURA_CHAT_URL", "http://localhost:18080/api/chat"), "chat endpoint")
-		apiBase  = flag.String("api", envDefault("AURA_API_BASE", "http://localhost:18080/api"), "dashboard API base (used for wiki ground truth)")
-		token    = flag.String("token", os.Getenv("AURA_CHAT_TOKEN"), "bearer token (defaults to $AURA_CHAT_TOKEN)")
-		dbPath   = flag.String("db", envDefault("AURA_DB_PATH", "./data/aura.db"), "SQLite DB path (read-only)")
-		timeoutS = flag.Int("timeout", 240, "per-prompt timeout (seconds)")
+		caseName  = flag.String("case", "", "run only the named case (empty = run all)")
+		smoke     = flag.String("smoke", "", "SMOKE TIER: run only cases in this category (see usage for valid values; mutually exclusive with -case)")
+		prompt    = flag.String("prompt", "", "send a single ad-hoc prompt and print the structured reply (skips Verify)")
+		jsonOut   = flag.Bool("json", false, "emit results as JSON instead of human-readable table")
+		baseURL   = flag.String("url", envDefault("AURA_CHAT_URL", "http://localhost:18080/api/chat"), "chat endpoint")
+		apiBase   = flag.String("api", envDefault("AURA_API_BASE", "http://localhost:18080/api"), "dashboard API base (used for wiki ground truth)")
+		token     = flag.String("token", os.Getenv("AURA_CHAT_TOKEN"), "bearer token (defaults to $AURA_CHAT_TOKEN)")
+		dbPath    = flag.String("db", envDefault("AURA_DB_PATH", "./data/aura.db"), "SQLite DB path (read-only)")
+		timeoutS  = flag.Int("timeout", 240, "per-prompt timeout (seconds)")
 		enableTTS = flag.Bool("tts", false, "include TTS probe cases (requires AURA_POCKETTTS_URL and pocket-tts sidecar up)")
 	)
 	flag.Parse()

@@ -87,12 +87,77 @@ func TestWorkspaceFileToolsDenySensitivePaths(t *testing.T) {
 			_, err := NewApplyPatchTool(root).Execute(context.Background(), map[string]any{"path": ".git/config", "old": "a", "new": "b"})
 			return err
 		}},
+		{name: "remove env", run: func() error {
+			_, err := NewFileTool(root).Execute(context.Background(), map[string]any{"action": "remove_file", "path": ".env"})
+			return err
+		}},
+		{name: "move secrets", run: func() error {
+			_, err := NewFileTool(root).Execute(context.Background(), map[string]any{"action": "move", "src": "data/secrets/token", "dst": "notes/token"})
+			return err
+		}},
+		{name: "copy raw wiki", run: func() error {
+			_, err := NewFileTool(root).Execute(context.Background(), map[string]any{"action": "copy", "src": "wiki/raw/source.md", "dst": "notes/source.md"})
+			return err
+		}},
 	} {
 		t.Run(tool.name, func(t *testing.T) {
 			if err := tool.run(); err == nil {
 				t.Fatal("expected denial error")
 			}
 		})
+	}
+}
+
+func TestWorkspaceFileToolsExtendedOperations(t *testing.T) {
+	root := newWorkspaceToolRoot(t)
+	tool := NewFileTool(root)
+	ctx := context.Background()
+
+	if _, err := tool.Execute(ctx, map[string]any{"action": "mkdir", "path": "docs/archive"}); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := tool.Execute(ctx, map[string]any{"action": "write", "path": "docs/a.md", "content": "Alpha\nBeta\n"}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	out, err := tool.Execute(ctx, map[string]any{"action": "grep", "path": "docs/a.md", "search_text": "beta", "case_insensitive": true})
+	if err != nil {
+		t.Fatalf("grep: %v", err)
+	}
+	if !strings.Contains(out, `"line": 2`) {
+		t.Fatalf("grep output = %s", out)
+	}
+	out, err = tool.Execute(ctx, map[string]any{"action": "path_info", "path": "docs/a.md"})
+	if err != nil {
+		t.Fatalf("path_info: %v", err)
+	}
+	if !strings.Contains(out, `"type": "file"`) {
+		t.Fatalf("path_info output = %s", out)
+	}
+	if _, err := tool.Execute(ctx, map[string]any{"action": "copy", "src": "docs/a.md", "dst": "docs/archive/a-copy.md"}); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+	if _, err := tool.Execute(ctx, map[string]any{"action": "move", "src": "docs/archive/a-copy.md", "dst": "docs/archive/a-moved.md"}); err != nil {
+		t.Fatalf("move: %v", err)
+	}
+	out, err = tool.Execute(ctx, map[string]any{"action": "walk", "path": "docs"})
+	if err != nil {
+		t.Fatalf("walk: %v", err)
+	}
+	if !strings.Contains(out, `"path": "docs/archive/a-moved.md"`) {
+		t.Fatalf("walk output = %s", out)
+	}
+	if _, err := tool.Execute(ctx, map[string]any{"action": "remove_file", "path": "docs/archive/a-moved.md"}); err != nil {
+		t.Fatalf("remove_file: %v", err)
+	}
+	if _, err := tool.Execute(ctx, map[string]any{"action": "rmdir", "path": "docs/archive"}); err != nil {
+		t.Fatalf("rmdir: %v", err)
+	}
+	out, err = tool.Execute(ctx, map[string]any{"action": "pwd"})
+	if err != nil {
+		t.Fatalf("pwd: %v", err)
+	}
+	if !strings.Contains(out, `"root": "workspace"`) {
+		t.Fatalf("pwd output = %s", out)
 	}
 }
 

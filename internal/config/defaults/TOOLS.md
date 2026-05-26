@@ -23,11 +23,13 @@
 
 ### Produce a file (artifact)
 
-- **Spreadsheet** → `doc action=xlsx filename=… sheets=[{name, rows}] deliver=…`. Prefer this over `execute_code` for ordinary tabular outputs.
-- **Word document** → `doc action=docx filename=… title=… blocks=[…]`.
-- **PDF** → `doc action=pdf filename=… title=… blocks=[…]`.
+- **Spreadsheet** → `create_document format=xlsx filename=… sheets=[{name, rows}] deliver=…`.
+- **Word document** → `create_document format=docx filename=… title=… blocks=[…]`.
+- **PDF** → `create_document format=pdf filename=… title=… blocks=[…]`.
 - **Workspace text/markdown file** → `file action=write path=… content=…`.
 - **Patch existing file** → `file action=patch path=… old=… new=…`. Single-match enforced unless `replace_all=true`.
+- **Filesystem inspection / safe shell replacement** → `file action=list|read|search|grep|path_info|walk|pwd`.
+- **Filesystem move/copy/delete** → `file action=move|copy|mkdir|rmdir|remove_file`. These stay workspace-rooted and deny secrets/database/git/raw-wiki paths.
 
 ### Schedule / fire later
 
@@ -35,19 +37,11 @@
 - **See scheduled tasks** → `task action=list status=active`.
 - **Cancel** → `task action=cancel name=…`. Manual fire: `task action=run_now name=…`.
 
-### Run code
-
-- **Python / data processing / one-off computation** → `execute_code`. Sandboxed, has access to `/workspace`.
-- **Shell command** → `execute_shell`. Use only when the task is intrinsically shell-shaped (git, file ops the file tool can't do). Prefer dedicated tools (`file`, `doc`, `wiki_page`) when one fits.
-
-### Delegate (subagent)
-
-- **Parallel research / fanout / multi-source synthesis** → `subagent_dispatch action=spawn nodes=[…]` (max 3 children). Each child is read-only by default (`risk_tier=read_only`). Set `risk_tier=write_proposal` to allow `propose_patch` from the child.
-- **Collect results** → `subagent_dispatch action=collect child_run_ids=[…]`.
-- Use sparingly. A single-thread task does NOT need a subagent. Subagents are for genuinely parallelizable work.
-
 ### Discover tools
 
+- **Non-trivial math** → use dynamic `mcp_calculator_*` tools when available
+  for arithmetic, symbolic math, statistics, regression, or matrix work.
+  Do not use Python/shell execution for math.
 - **You don't remember a tool's argument schema** → invoke the tool directly by name; the agent loop will permissive-load its schema for this turn. All tools are listed by name in the system prompt manifest.
 - **You suspect a skill exists for the task** → look at the skills manifest in the system prompt. If a skill matches, use `file action=read` on its `SKILL.md` path to load its body. Do not load skills "just to check".
 
@@ -69,7 +63,6 @@
   - Source: `source`
   - Web: `web`
   - Schedule: `task`
-  - Exec: `execute_code`, `execute_shell`
   - Proposal: `propose_patch`
   - Auth/UX: `ask_user`
   - MCP: dynamic `mcp_<server>_<tool>` (registered at boot)

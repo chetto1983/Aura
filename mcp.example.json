@@ -1,5 +1,11 @@
 {
   "mcpServers": {
+    "calculator": {
+      "command": "/usr/local/bin/aura-calculator-mcp",
+      "args": [
+        "--stdio"
+      ]
+    },
     "mail": {
       "command": "/usr/local/bin/mail-mcp",
       "env": {

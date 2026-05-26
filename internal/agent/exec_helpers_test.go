@@ -233,3 +233,31 @@ func TestExecuteToolCallsAppliesFreshToolResultBudgetToHistory(t *testing.T) {
 		t.Fatalf("history missing budget trailer: %q", history)
 	}
 }
+
+func TestExecuteToolCallsTokenJuicePreservesStructuredToolPayload(t *testing.T) {
+	raw := `{"path":"AGENT.md","content":"LOAD_BEARING_SENTINEL-` + strings.Repeat("x", 2048) + `","bytes":2048}`
+	runner := &stubToolRunner{names: []string{"file"}, result: raw}
+	convCtx := conversation.NewContext(conversation.Config{})
+	calls := []llm.ToolCall{{
+		ID:        "call-1",
+		Name:      "file",
+		Arguments: map[string]any{"action": "read", "path": "AGENT.md"},
+	}}
+
+	summary := ExecuteToolCalls(context.Background(), runner, convCtx, "user1", 0, calls, true, nil,
+		WithTokenJuice(true))
+
+	if summary.Results["call-1"] != raw {
+		t.Fatalf("summary result changed by TokenJuice")
+	}
+	msgs := convCtx.Messages()
+	if len(msgs) != 1 || msgs[0].Role != "tool" {
+		t.Fatalf("messages = %+v, want one tool result", msgs)
+	}
+	if !strings.Contains(msgs[0].Content, "LOAD_BEARING_SENTINEL-") {
+		t.Fatalf("history lost structured payload content: %q", msgs[0].Content[:min(len(msgs[0].Content), 160)])
+	}
+	if !strings.Contains(msgs[0].Content, `"path":"AGENT.md"`) {
+		t.Fatalf("history lost structured payload metadata: %q", msgs[0].Content[:min(len(msgs[0].Content), 160)])
+	}
+}

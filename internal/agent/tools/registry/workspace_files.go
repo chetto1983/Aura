@@ -175,6 +175,164 @@ func (t *ApplyPatchTool) Execute(ctx context.Context, args map[string]any) (stri
 	return jsonString(out)
 }
 
+func (t *FileTool) executeGrep(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("grep")
+	if err != nil {
+		return "", err
+	}
+	rel, err := requiredString(args, "path")
+	if err != nil {
+		return "", err
+	}
+	searchText, err := requiredString(args, "search_text")
+	if err != nil {
+		return "", err
+	}
+	matches, err := root.Grep(rel, searchText, boolArg(args, "case_insensitive"), intArg(args, "limit", 50, 1, 200))
+	if err != nil {
+		return "", fmt.Errorf("grep_file: %w", err)
+	}
+	return jsonString(matches)
+}
+
+func (t *FileTool) executePathInfo(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("path_info")
+	if err != nil {
+		return "", err
+	}
+	rel, err := requiredString(args, "path")
+	if err != nil {
+		return "", err
+	}
+	info, err := root.Info(rel)
+	if err != nil {
+		return "", fmt.Errorf("path_info: %w", err)
+	}
+	return jsonString(info)
+}
+
+func (t *FileTool) executeMkdir(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("mkdir")
+	if err != nil {
+		return "", err
+	}
+	rel, err := requiredString(args, "path")
+	if err != nil {
+		return "", err
+	}
+	info, err := root.Mkdir(rel)
+	if err != nil {
+		return "", fmt.Errorf("mkdir: %w", err)
+	}
+	return jsonString(map[string]any{"status": "created", "path": info.Path, "type": info.Type})
+}
+
+func (t *FileTool) executeRmdir(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("rmdir")
+	if err != nil {
+		return "", err
+	}
+	rel, err := requiredString(args, "path")
+	if err != nil {
+		return "", err
+	}
+	if err := root.RemoveDir(rel); err != nil {
+		return "", fmt.Errorf("rmdir: %w", err)
+	}
+	return jsonString(map[string]any{"status": "removed", "path": rel, "type": "dir"})
+}
+
+func (t *FileTool) executeRemoveFile(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("remove_file")
+	if err != nil {
+		return "", err
+	}
+	rel, err := requiredString(args, "path")
+	if err != nil {
+		return "", err
+	}
+	if err := root.RemoveFile(rel); err != nil {
+		return "", fmt.Errorf("remove_file: %w", err)
+	}
+	return jsonString(map[string]any{"status": "removed", "path": rel, "type": "file"})
+}
+
+func (t *FileTool) executeMove(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("move")
+	if err != nil {
+		return "", err
+	}
+	src, err := requiredString(args, "src")
+	if err != nil {
+		return "", err
+	}
+	dst, err := requiredString(args, "dst")
+	if err != nil {
+		return "", err
+	}
+	info, err := root.Move(src, dst, validateWorkspaceFileOperationWrite)
+	if err != nil {
+		return "", fmt.Errorf("move: %w", err)
+	}
+	return jsonString(map[string]any{"status": "moved", "from": src, "path": info.Path, "type": info.Type})
+}
+
+func (t *FileTool) executeCopy(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("copy")
+	if err != nil {
+		return "", err
+	}
+	src, err := requiredString(args, "src")
+	if err != nil {
+		return "", err
+	}
+	dst, err := requiredString(args, "dst")
+	if err != nil {
+		return "", err
+	}
+	info, err := root.Copy(src, dst, validateWorkspaceFileOperationWrite)
+	if err != nil {
+		return "", fmt.Errorf("copy: %w", err)
+	}
+	return jsonString(map[string]any{"status": "copied", "from": src, "path": info.Path, "type": info.Type})
+}
+
+func (t *FileTool) executeWalk(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("walk")
+	if err != nil {
+		return "", err
+	}
+	rel, err := requiredString(args, "path")
+	if err != nil {
+		return "", err
+	}
+	tree, err := root.Walk(rel, intArg(args, "limit", 500, 1, 5000))
+	if err != nil {
+		return "", fmt.Errorf("walk: %w", err)
+	}
+	return jsonString(tree)
+}
+
+func (t *FileTool) executePWD(ctx context.Context, args map[string]any) (string, error) {
+	root, err := t.workspaceRoot("pwd")
+	if err != nil {
+		return "", err
+	}
+	return jsonString(map[string]any{"path": ".", "root": "workspace", "physical_root": root.Path()})
+}
+
+func (t *FileTool) workspaceRoot(action string) (*workspace.Root, error) {
+	if t == nil || t.root == nil {
+		return nil, fmt.Errorf("%s: workspace unavailable", action)
+	}
+	return t.root, nil
+}
+
+func validateWorkspaceFileOperationWrite(rel string, content []byte) error {
+	_, err := validateWorkspaceWrite(rel, content)
+	return err
+}
+
 func jsonString(v any) (string, error) {
 	data, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {

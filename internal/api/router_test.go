@@ -190,7 +190,7 @@ func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
 			Enabled:     true,
 			Available:   false,
 			RuntimeKind: "unavailable",
-			Detail:      "sandbox runtime not configured; execute_code disabled",
+			Detail:      "sandbox runtime not configured",
 		},
 	})
 
@@ -214,7 +214,7 @@ func TestHealthRollup_IncludesSandboxStatus(t *testing.T) {
 	if got.Sandbox.Runtime != "" {
 		t.Fatalf("sandbox.runtime = %q, want empty", got.Sandbox.Runtime)
 	}
-	if got.Sandbox.Detail != "sandbox runtime not configured; execute_code disabled" {
+	if got.Sandbox.Detail != "sandbox runtime not configured" {
 		t.Fatalf("sandbox.detail = %q", got.Sandbox.Detail)
 	}
 }

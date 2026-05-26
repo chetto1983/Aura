@@ -357,6 +357,30 @@ func TestRegistryRegisterAllowlistWildcardAndAllAllowEveryTool(t *testing.T) {
 	}
 }
 
+func TestRegistryRegisterAllowlistPrefixWildcardForDynamicMCPTools(t *testing.T) {
+	t.Setenv("AURA_TOOL_ALLOWLIST", "text_response, mcp_calculator_*")
+	reg := NewRegistry(nil)
+
+	reg.Register(namedFakeTool{name: "text_response"})
+	reg.Register(namedFakeTool{name: "mcp_calculator_calculate"})
+	reg.Register(namedFakeTool{name: "mcp_calculator_symbolic_solve"})
+	reg.Register(namedFakeTool{name: "mcp_other_calculate"})
+
+	got := reg.Names()
+	want := []string{"mcp_calculator_calculate", "mcp_calculator_symbolic_solve", "text_response"}
+	if len(got) != len(want) {
+		t.Fatalf("Names() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("Names() = %#v, want %#v", got, want)
+		}
+	}
+	if reg.Get("mcp_other_calculate") != nil {
+		t.Fatal("mcp_other_calculate registered despite prefix allowlist")
+	}
+}
+
 func TestRegistryExecuteMissingTool(t *testing.T) {
 	reg := NewRegistry(nil)
 	if _, err := reg.Execute(context.Background(), "missing", nil); err == nil {

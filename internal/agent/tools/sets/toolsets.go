@@ -10,7 +10,6 @@ const (
 	ToolsetWikiReview    = "wiki_review"
 	ToolsetSkillsRead    = "skills_read"
 	ToolsetWebResearch   = "web_research"
-	ToolsetSandboxCode   = "sandbox_code"
 	ToolsetSchedulerSafe = "scheduler_safe"
 )
 
@@ -30,10 +29,6 @@ var toolsets = map[string][]string{
 	},
 	ToolsetWebResearch: {
 		"web",
-	},
-	ToolsetSandboxCode: {
-		"execute_code",
-		"execute_shell",
 	},
 	ToolsetSchedulerSafe: {
 		"search",

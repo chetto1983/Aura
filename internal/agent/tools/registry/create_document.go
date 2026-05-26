@@ -93,7 +93,7 @@ func (t *CreateDocumentTool) Definition() ToolDefinition {
 }
 
 func (t *CreateDocumentTool) Description() string {
-	return `Create PDF, XLSX, or DOCX source artifacts from a structured spec. Use instead of execute_code.
+	return `Create PDF, XLSX, or DOCX source artifacts from a structured spec.
 
 CALL SHAPE: create_document({"format": "pdf"|"xlsx"|"docx", "spec": {...}})
 

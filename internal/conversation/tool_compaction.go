@@ -48,7 +48,7 @@ func (c *Context) CompactCompletedToolResults(policy ToolResultCompactionPolicy)
 		if toolName == "" {
 			toolName = "unknown"
 		}
-		c.messages[idx].Content = compactToolResultContent(toolName, msg.Content, maxChars)
+		c.messages[idx].Content = CompactToolResultContent(toolName, msg.Content, maxChars)
 		changed++
 	}
 	return changed
@@ -91,7 +91,10 @@ func hasLaterAssistantMessage(messages []llm.Message, from int) bool {
 	return false
 }
 
-func compactToolResultContent(toolName, content string, maxChars int) string {
+// CompactToolResultContent returns the same compact preview used for historical
+// tool-result messages. It is intentionally small and redacts secret-shaped
+// lines before truncating so API probes can exercise the production compactor.
+func CompactToolResultContent(toolName, content string, maxChars int) string {
 	previewBudget := maxChars - 96 - len(toolName)
 	if previewBudget < 80 {
 		previewBudget = 80

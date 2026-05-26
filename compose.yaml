@@ -94,16 +94,14 @@ services:
       # request_dashboard_token, ask_user_clarification. Folded into search:
       # recall_operational, recall_user_memory, recall_god_nodes,
       # wiki_subgraph, wiki_path.
-      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,create_document,skill,execute_code,execute_shell,task,propose_patch,search,ask_user}"
+      AURA_TOOL_ALLOWLIST: "${AURA_TOOL_ALLOWLIST:-text_response,agent_note,web,file,wiki_page,source,create_document,skill,task,propose_patch,search,ask_user,mcp_calculator_*}"
       AURA_TERMINAL_TOOL_POLICY: "on"
       AURA_DELEGATION_MODE: "fast"
       AURA_TRACE_RETENTION_DAYS: "30"
       AURA_WORKSPACE_TOOLS: "${AURA_WORKSPACE_TOOLS:-enabled}"
       AURA_WORKSPACE_ROOT: "/workspace"
-      # 5-minute sandbox timeout (was 120s). Lets execute_shell finish deep
-      # nmap scans (`-sV --script default` on /24 is ~3-5min) without dying
-      # mid-way. The per-call LLM-requested timeout still caps at 600s in
-      # internal/agent/tools/registry/exec.go.
+      # 5-minute sandbox timeout (was 120s). Sandbox health remains wired for
+      # internal compatibility, but code/shell tools are not exposed by default.
       SANDBOX_TIMEOUT_SEC: "${SANDBOX_TIMEOUT_SEC:-300}"
     ports:
       # Bind to all interfaces so the dashboard is reachable from the LAN

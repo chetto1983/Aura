@@ -96,7 +96,6 @@
 
 ## Cross-references
 
-- **Phase 8 substrate** (DE-SCOPED in prd.md §7.4) — openhuman scout produced concrete code references; cost drops 6-12 → 2-3 sessions when workload trigger arrives.
 - **MCP Roundup** (deferred from §7.4) — survey/score/swap best community MCPs; gated on Phase-MCP-UI which is gated on Phase-TOOL closure.
 - **Phase-U plugin layout** (deferred from §7.4) — domain plugins; gated on Phase-MM Wave 2/3 audio + Phase-CTX substrate.
 

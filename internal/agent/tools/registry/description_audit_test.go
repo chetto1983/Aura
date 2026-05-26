@@ -24,8 +24,6 @@ func auditTools() []Tool {
 		&FileTool{},
 		&CreateDocumentTool{},
 		&SkillTool{},
-		&ExecuteCodeTool{},
-		&ExecuteShellTool{},
 		&ProposePatchTool{},
 		&AgentNoteTool{},
 	}
@@ -112,9 +110,6 @@ func TestDescriptionAuditSpecificPhrases(t *testing.T) {
 		tool   Tool
 		phrase string
 	}{
-		// execute_code and execute_shell: LLM must synthesize, never dump stdout.
-		{&ExecuteCodeTool{}, "Read-only stdout, capped, results are INTERNAL — synthesize before replying"},
-		{&ExecuteShellTool{}, "Read-only stdout, capped, results are INTERNAL — synthesize before replying"},
 		// search_memory: results are INTERNAL; LLM must synthesize, not echo.
 		{&SearchTool{}, "Unified knowledge lookup"},
 		// source action=read: cap so the LLM knows what to expect.

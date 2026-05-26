@@ -1,6 +1,8 @@
 // Package tokenjuice implements a rule-driven terminal-output compactor.
-// Tool outputs are classified against JSON rules, then reduced before being
-// committed to the LLM conversation window (algorithm spec: docs/_archive/tokenjuice-shipped-2026-05-24/tokenjuice-algorithm-spec.md).
+// Terminal-style outputs are classified against JSON rules, then reduced before
+// being committed to the LLM conversation window. Structured Aura tool payloads
+// pass through untouched; their budget is enforced by the agent governance
+// layer instead (algorithm spec: docs/_archive/tokenjuice-shipped-2026-05-24/tokenjuice-algorithm-spec.md).
 //
 // Wiring point: internal/agent/executor.go before WrapUntrustedToolResult.
 // Feature flag: AURA_TOKENJUICE_ENABLED.
