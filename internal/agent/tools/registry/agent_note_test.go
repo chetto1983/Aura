@@ -2,8 +2,11 @@ package tools
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+
+	"github.com/aura/aura/internal/llm"
 )
 
 // fakeAgentNoteStore is an in-memory implementation of agentNoteStore for tests.
@@ -78,6 +81,23 @@ func TestAgentNoteTool_SetCreatesNote(t *testing.T) {
 	}
 }
 
+func TestAgentNoteTool_SetMissingContentFailsSchema(t *testing.T) {
+	tool, store := newTestAgentNoteTool("conv-set-missing")
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"action": "set",
+		"note":   "wrong key",
+	})
+	if err == nil {
+		t.Fatalf("Execute set with missing content returned nil error and %q", out)
+	}
+	if !errors.Is(err, llm.ErrSchemaValidation) {
+		t.Fatalf("error = %v, want ErrSchemaValidation", err)
+	}
+	if _, exists, _ := store.Get(context.Background(), "conv-set-missing"); exists {
+		t.Fatal("missing content must not create an empty note")
+	}
+}
+
 // TestAgentNoteTool_AppendOnEmptyCreates verifies that append on an empty note
 // stores the line without a leading newline.
 func TestAgentNoteTool_AppendOnEmptyCreates(t *testing.T) {
@@ -98,6 +118,23 @@ func TestAgentNoteTool_AppendOnEmptyCreates(t *testing.T) {
 	}
 	if content != "first line" {
 		t.Errorf("append on empty: content = %q, want %q", content, "first line")
+	}
+}
+
+func TestAgentNoteTool_AppendMissingLineFailsSchema(t *testing.T) {
+	tool, store := newTestAgentNoteTool("conv-append-missing")
+	out, err := tool.Execute(context.Background(), map[string]any{
+		"action": "append",
+		"note":   "wrong key",
+	})
+	if err == nil {
+		t.Fatalf("Execute append with missing line returned nil error and %q", out)
+	}
+	if !errors.Is(err, llm.ErrSchemaValidation) {
+		t.Fatalf("error = %v, want ErrSchemaValidation", err)
+	}
+	if _, exists, _ := store.Get(context.Background(), "conv-append-missing"); exists {
+		t.Fatal("missing line must not create an empty note")
 	}
 }
 

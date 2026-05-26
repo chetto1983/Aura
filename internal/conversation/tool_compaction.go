@@ -3,6 +3,7 @@ package conversation
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/aura/aura/internal/llm"
 )
@@ -101,10 +102,71 @@ func CompactToolResultContent(toolName, content string, maxChars int) string {
 	}
 	preview := redactToolResultPreview(content)
 	if len(preview) > previewBudget {
-		preview = preview[:previewBudget]
+		preview = truncateToolResultPreview(preview, previewBudget)
 	}
 	preview = strings.TrimSpace(preview)
 	return fmt.Sprintf("%s\ntool: %s\noriginal_chars: %d\npreview:\n%s", compactedToolResultPrefix, toolName, len(content), preview)
+}
+
+func truncateToolResultPreview(content string, maxBytes int) string {
+	if maxBytes <= 0 || len(content) <= maxBytes {
+		return content
+	}
+	marker := toolResultPreviewMarker(len(content))
+	if maxBytes <= len(marker)+2 {
+		return safePreviewHead(content, maxBytes)
+	}
+	for {
+		remaining := maxBytes - len(marker)
+		headBudget := remaining / 2
+		tailBudget := remaining - headBudget
+		head := safePreviewHead(content, headBudget)
+		tail := safePreviewTail(content, tailBudget)
+		nextMarker := toolResultPreviewMarker(len(content) - len(head) - len(tail))
+		if len(nextMarker) == len(marker) {
+			return head + nextMarker + tail
+		}
+		marker = nextMarker
+	}
+}
+
+func toolResultPreviewMarker(omittedBytes int) string {
+	if omittedBytes < 1 {
+		omittedBytes = 1
+	}
+	return fmt.Sprintf("\n\n[... %d bytes omitted from tool preview ...]\n\n", omittedBytes)
+}
+
+func safePreviewHead(content string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(content) <= maxBytes {
+		return content
+	}
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(content[cut]) {
+		cut--
+	}
+	if cut == 0 {
+		_, size := utf8.DecodeRuneInString(content)
+		cut = size
+	}
+	return content[:cut]
+}
+
+func safePreviewTail(content string, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	if len(content) <= maxBytes {
+		return content
+	}
+	start := len(content) - maxBytes
+	for start < len(content) && !utf8.RuneStart(content[start]) {
+		start++
+	}
+	return content[start:]
 }
 
 func redactToolResultPreview(content string) string {

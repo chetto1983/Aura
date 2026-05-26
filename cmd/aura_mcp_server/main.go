@@ -248,7 +248,7 @@ type tool struct {
 }
 
 func builtinTools() []tool {
-	return []tool{
+	tools := []tool{
 		{
 			name:        "aura_wiki_search",
 			description: "Search Aura's wiki via hybrid FTS + vector. Returns top-K pages with slug, title, score, snippet.",
@@ -319,6 +319,8 @@ func builtinTools() []tool {
 			handler:     handleHealth,
 		},
 	}
+	tools = append(tools, apiBackedTools()...)
+	return tools
 }
 
 // ── Tool handlers ────────────────────────────────────────────────────────────

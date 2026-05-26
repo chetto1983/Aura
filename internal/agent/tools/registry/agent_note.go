@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/aura/aura/internal/agentnote"
+	"github.com/aura/aura/internal/llm"
 )
 
 // agentNoteStore is the subset of agentnote.Store used by AgentNoteTool.
@@ -129,14 +130,20 @@ func (t *AgentNoteTool) Execute(ctx context.Context, args map[string]any) (strin
 
 	switch action {
 	case "set":
-		content := stringArg(args, "content")
+		content, err := requiredAgentNoteString(args, "content")
+		if err != nil {
+			return "", err
+		}
 		if err := t.store.Set(ctx, convID, content); err != nil {
 			return "", fmt.Errorf("agent_note: %w", err)
 		}
 		return fmt.Sprintf("ok (%d chars)", len(content)), nil
 
 	case "append":
-		line := stringArg(args, "line")
+		line, err := requiredAgentNoteString(args, "line")
+		if err != nil {
+			return "", err
+		}
 		if err := t.store.Append(ctx, convID, line); err != nil {
 			return "", fmt.Errorf("agent_note: %w", err)
 		}
@@ -169,4 +176,20 @@ func (t *AgentNoteTool) Execute(ctx context.Context, args map[string]any) (strin
 	default:
 		return "", UnknownActionError("agent_note", action, agentNoteActions, args)
 	}
+}
+
+func requiredAgentNoteString(args map[string]any, key string) (string, error) {
+	raw, ok := args[key]
+	if !ok {
+		return "", fmt.Errorf("agent_note: %s is required: %w", key, llm.ErrSchemaValidation)
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("agent_note: %s must be a string: %w", key, llm.ErrSchemaValidation)
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", fmt.Errorf("agent_note: %s must be non-empty: %w", key, llm.ErrSchemaValidation)
+	}
+	return value, nil
 }

@@ -19,6 +19,7 @@ import (
 
 const (
 	mcpSupervisorPollInterval  = 2 * time.Second
+	mcpToolRefreshInterval     = 30 * time.Second
 	mcpReconnectInitialBackoff = 500 * time.Millisecond
 	mcpReconnectMaxBackoff     = 30 * time.Second
 	mcpCircuitFailureThreshold = 3
@@ -40,6 +41,7 @@ type mcpServerRuntime struct {
 	circuitOpen        bool
 	nextReconnect      time.Time
 	reconnectBackoff   time.Duration
+	lastToolRefresh    time.Time
 }
 
 func registerMCPServers(cfg *config.Config, deps *telegram.Deps, toolRegistry *tools.Registry, logger *slog.Logger) (string, []*mcpServerRuntime) {
@@ -194,6 +196,7 @@ func (rt *mcpServerRuntime) refreshAndSync(ctx context.Context) error {
 		return err
 	}
 	rt.recordSuccess()
+	rt.markToolRefresh(time.Now())
 	rt.syncRegisteredTools()
 	return nil
 }
@@ -222,6 +225,7 @@ func (rt *mcpServerRuntime) reconnect(ctx context.Context) error {
 	rt.consecutiveFailure = 0
 	rt.reconnectBackoff = mcpReconnectInitialBackoff
 	rt.nextReconnect = time.Time{}
+	rt.lastToolRefresh = time.Now()
 	rt.mu.Unlock()
 
 	if old != nil {
@@ -242,6 +246,9 @@ func (rt *mcpServerRuntime) run(ctx context.Context) {
 		case <-ticker.C:
 			if rt.needsReconnect() {
 				rt.tryReconnect(ctx)
+				continue
+			}
+			if !rt.refreshDue(time.Now()) {
 				continue
 			}
 			if err := rt.refreshAndSync(ctx); err != nil {
@@ -267,6 +274,19 @@ func (rt *mcpServerRuntime) tryReconnect(ctx context.Context) {
 	if err := rt.reconnect(ctx); err != nil {
 		rt.logger.Warn("MCP reconnect failed", "server", rt.name, "error", err)
 	}
+}
+
+func (rt *mcpServerRuntime) refreshDue(now time.Time) bool {
+	rt.mu.RLock()
+	last := rt.lastToolRefresh
+	rt.mu.RUnlock()
+	return last.IsZero() || !now.Before(last.Add(mcpToolRefreshInterval))
+}
+
+func (rt *mcpServerRuntime) markToolRefresh(at time.Time) {
+	rt.mu.Lock()
+	rt.lastToolRefresh = at
+	rt.mu.Unlock()
 }
 
 func (rt *mcpServerRuntime) recordSuccess() {

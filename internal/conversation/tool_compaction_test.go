@@ -107,6 +107,30 @@ func TestCompactCompletedToolResultsRedactsSecrets(t *testing.T) {
 	}
 }
 
+func TestCompactToolResultContentKeepsHeadAndTailFacts(t *testing.T) {
+	content := strings.Join([]string{
+		"HEAD_IMPORTANT: first failure is package alpha",
+		strings.Repeat("middle noise line with stack frame\n", 80),
+		"TAIL_IMPORTANT: final exit code 42 and remediation hint",
+	}, "\n")
+
+	got := CompactToolResultContent("execute_shell", content, 420)
+	for _, want := range []string{
+		"[tool result compacted]",
+		"tool: execute_shell",
+		"HEAD_IMPORTANT",
+		"TAIL_IMPORTANT",
+		"bytes omitted from tool preview",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("compacted content missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, strings.Repeat("middle noise line with stack frame\n", 20)) {
+		t.Fatalf("compacted content kept too much middle noise:\n%s", got)
+	}
+}
+
 func TestCompactCompletedToolResultsIsIdempotent(t *testing.T) {
 	ctx := NewContext(Config{})
 	ctx.AddAssistantToolCallMessage("", []llm.ToolCall{{ID: "call_1", Name: "execute_shell"}})

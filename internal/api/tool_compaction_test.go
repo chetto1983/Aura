@@ -171,6 +171,99 @@ func TestHandleToolCompactToolResultPreviewRedactsSecretLines(t *testing.T) {
 	}
 }
 
+func TestHandleToolCompactContextPipelineShowsModelVisiblePayload(t *testing.T) {
+	fix := readTokenJuiceFixture(t, "go_test_failure.json")
+	req := toolCompactionRequest{
+		Mode:     "context",
+		ToolName: fix.Input.ToolName,
+		Argv:     fix.Input.Argv,
+		Command:  fix.Input.Command,
+		Stdout: fix.Input.Stdout + "\n" + strings.Repeat(
+			"--- FAIL: TestLongContextPayload (0.01s)\n    long_context_test.go:44: repeated failure kept for context sizing\n",
+			80,
+		),
+		Stderr:             fix.Input.Stderr,
+		ExitCode:           fix.Input.ExitCode,
+		ToolResultMaxChars: 900,
+		MinRatio:           0.95,
+	}
+
+	resp, code, body := postToolCompaction(t, req)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", code, body)
+	}
+	if resp.Mode != "context" {
+		t.Fatalf("mode = %q, want context", resp.Mode)
+	}
+	if !resp.Applied {
+		t.Fatalf("expected context pipeline to apply: %+v", resp)
+	}
+	for _, want := range []string{"tests/go-test", "conversation/tool-result-preview"} {
+		if !strings.Contains(resp.RuleID, want) {
+			t.Fatalf("rule_id missing %q: %q", want, resp.RuleID)
+		}
+	}
+
+	tokenStage := requireToolCompactionStage(t, resp.Stages, "tokenjuice")
+	if !tokenStage.Applied {
+		t.Fatalf("tokenjuice stage was not applied: %+v", tokenStage)
+	}
+	if !strings.Contains(tokenStage.Text, "--- FAIL: TestFoo") {
+		t.Fatalf("tokenjuice stage missing failure detail:\n%s", tokenStage.Text)
+	}
+	if strings.Contains(tokenStage.Text, "ok  github.com/example/bar") {
+		t.Fatalf("tokenjuice stage kept skipped ok package:\n%s", tokenStage.Text)
+	}
+
+	finalStage := requireToolCompactionStage(t, resp.Stages, "completed_tool_compaction")
+	if !finalStage.Applied {
+		t.Fatalf("completed tool-result compaction did not apply: %+v", finalStage)
+	}
+	if finalStage.Text != resp.InlineText {
+		t.Fatalf("inline_text is not the final context stage")
+	}
+	for _, want := range []string{"[tool result compacted]", "tool: execute_shell", "preview:"} {
+		if !strings.Contains(resp.InlineText, want) {
+			t.Fatalf("final inline_text missing %q:\n%s", want, resp.InlineText)
+		}
+	}
+	if strings.Contains(resp.InlineText, "ok  github.com/example/bar") {
+		t.Fatalf("final inline_text leaked removed ok package:\n%s", resp.InlineText)
+	}
+	if resp.Stats.OriginalBytes <= resp.Stats.CompactedBytes {
+		t.Fatalf("expected full pipeline to shrink context payload: %+v", resp.Stats)
+	}
+}
+
+func TestHandleToolCompactContextPipelinePreservesTailFacts(t *testing.T) {
+	content := strings.Join([]string{
+		"HEAD_IMPORTANT: failure started in package alpha",
+		strings.Repeat("filler line abcdefghijklmnopqrstuvwxyz\n", 120),
+		"TAIL_IMPORTANT: final exit code 42 and remediation hint keep-me",
+	}, "\n")
+	req := toolCompactionRequest{
+		Mode:               "context",
+		ToolName:           "execute_shell",
+		Stdout:             content,
+		ToolResultMaxChars: 420,
+		MinInputBytes:      1_000_000,
+	}
+
+	resp, code, body := postToolCompaction(t, req)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", code, body)
+	}
+	finalStage := requireToolCompactionStage(t, resp.Stages, "completed_tool_compaction")
+	if !finalStage.Applied {
+		t.Fatalf("completed tool-result compaction did not apply: %+v", finalStage)
+	}
+	for _, want := range []string{"HEAD_IMPORTANT", "TAIL_IMPORTANT", "bytes omitted from tool preview"} {
+		if !strings.Contains(resp.InlineText, want) {
+			t.Fatalf("final inline_text missing %q:\n%s", want, resp.InlineText)
+		}
+	}
+}
+
 func TestHandleToolCompactRejectsInvalidContract(t *testing.T) {
 	resp, code, body := postToolCompaction(t, toolCompactionRequest{
 		Mode:     "unknown",
@@ -183,4 +276,15 @@ func TestHandleToolCompactRejectsInvalidContract(t *testing.T) {
 	if !strings.Contains(body, "unsupported mode") {
 		t.Fatalf("error body missing unsupported mode: %s", body)
 	}
+}
+
+func requireToolCompactionStage(t *testing.T, stages []toolCompactionStage, name string) toolCompactionStage {
+	t.Helper()
+	for _, stage := range stages {
+		if stage.Name == name {
+			return stage
+		}
+	}
+	t.Fatalf("missing compaction stage %q in %+v", name, stages)
+	return toolCompactionStage{}
 }

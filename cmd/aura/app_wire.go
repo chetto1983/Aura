@@ -450,6 +450,7 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		// Skills + MCP dashboard panels.
 		Skills: a.deps.Skills,
 		MCP:    a.deps.MCPClients,
+		Tools:  a.deps.Tools,
 		// skills.sh catalog + admin-gated install/delete.
 		SkillsCatalog:   a.deps.SkillsCatalog,
 		SkillsInstaller: skillsInstaller,
@@ -506,6 +507,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 		ChatAudio:  webChatAudio,
 		// Phase-6 US-J06: operator tool-warning channel.
 		ToolWarnings: attempts.NewSQLiteRepo(a.deps.Pool),
+		// Direct /api/tools/call probe persistence for API/MCP harnesses.
+		ToolProbeRecorder: api.NewSQLiteToolProbeRecorder(a.deps.Pool),
 		// US-T04: authz decisions observability.
 		AuthzDecisions: api.NewSQLiteAuthzReader(a.deps.Pool),
 		// US-T05: tool attempt observability.

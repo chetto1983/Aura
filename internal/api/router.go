@@ -218,6 +218,14 @@ type Deps struct {
 	// nil the endpoint returns zero-value stats instead of 503.
 	ToolAttemptsStats ToolAttemptsReader
 
+	// Tools exposes Aura's live LLM-visible tool registry for direct
+	// operator/API/MCP testing without routing through a synthetic chat turn.
+	Tools ToolExecutor
+	// ToolProbeRecorder persists direct /tools/call probes into runs +
+	// tool_attempts so API/MCP harnesses can validate the tool plane without
+	// involving the LLM loop. Optional: when nil, calls still execute.
+	ToolProbeRecorder ToolProbeRecorder
+
 	// OperationalMemory backs WriteApprovedLesson for operational_memory
 	// proposals (Phase-N / US-N03). Optional — when nil, approval still
 	// flips the status but skips the compact_memory_documents write.
@@ -298,6 +306,8 @@ func NewRouter(deps Deps) http.Handler {
 	mux.HandleFunc("POST /wiki/index/rebuild", handleWikiRebuild(deps))
 	mux.HandleFunc("POST /wiki/reindex", handleWikiReindex(deps))
 	mux.HandleFunc("POST /compact/reindex", handleCompactReindex(deps))
+	mux.HandleFunc("GET /tools", handleToolRegistryList(deps))
+	mux.HandleFunc("POST /tools/call", handleToolRegistryCall(deps))
 	mux.HandleFunc("POST /tools/compact", handleToolCompact(deps))
 	mux.HandleFunc("POST /wiki/log", handleWikiAppendLog(deps))
 	mux.HandleFunc("POST /tasks", handleTaskUpsert(deps))

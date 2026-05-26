@@ -230,6 +230,426 @@ Retired or folded names must not be advertised as active tools:
 - Actions: none; required field is `prompt`, optional field is `model`.
 - Source: `internal/agent/agentdef/delegate.go`.
 
+## Operational Prompt Capsules
+
+These are mini system-prompt capsules for the active tool surface. They are
+based on direct `/api/tools/call` probes run by Codex on 2026-05-26, without
+asking Aura's chat model to decide anything. Tool schemas remain the ground
+truth; these capsules teach routing, timing, and the gotchas that schemas alone
+do not make obvious.
+
+Direct API audit snapshot, 2026-05-26:
+
+- `/api/tools` exposed 36 live registry tools: 13 core tools plus 23
+  `mcp_calculator_*` tools.
+- `tool_search(select:<tool>)` returned 57,059 bytes of full schema text across
+  the live surface. Keep the largest tools deferred unless needed:
+  `search` 5,589 bytes, `file` 4,685, `wiki_page` 4,679, `source` 4,127,
+  `task` 3,960, `propose_patch` 3,559.
+- Direct probes showed the first MCP-backed call can pay a warm/catalogue cost
+  of about 2.2s. The runtime supervisor now keeps the 2s reconnect tick but
+  throttles healthy MCP `tools/list` refreshes to 30s so schema discovery does
+  not spam the sidecar.
+- `wiki_page(create)` derives the slug from `title`; use the returned slug for
+  follow-up `append`/`edit`/`search(read)`.
+- `create_document` persists generated files as source artifacts. Use the
+  returned `source_id` and `source(read, mode="metadata")` for metadata
+  verification; the source-store file path is `original.<ext>`, not the display
+  filename.
+- `/api/tools/call` is a component test surface, not a full agent run. Direct
+  calls now create a synthetic `runs` row with `channel="api"` and persist a
+  metadata-only `tool_attempts` row. Benchmarks can assert the returned `run_id`
+  plus `/api/maintenance/tool-attempts` or direct SQLite rows.
+- Normal tool-layer misses, such as `skill(info)` for an unknown skill, now map
+  to HTTP 404 with `tool_attempts.outcome="recoverable"`,
+  `class="not_found"`, and `reason="not_found"`. Schema/argument errors map to
+  HTTP 400 with `class="validation"` rather than the generic 500 path.
+
+#### `text_response`
+
+System prompt capsule:
+
+> Use `text_response` exactly once when the user-visible answer is ready. Put
+> only the final answer in `text`. Do not use it for scratch notes, hidden
+> reasoning, or partial progress. After this call, stop calling tools.
+
+Direct probe: passed with `text="codex-toolmap-direct-ok"` and returned that
+text verbatim.
+
+#### `ask_user`
+
+System prompt capsule:
+
+> Use `ask_user` only when progress genuinely requires user input: a missing
+> slot, a risky approval, or a choice that materially changes the next action.
+> Ask one specific question, include 2-4 options only when they are real
+> choices, then wait. Do not use it for routine status updates or questions
+> answerable through `search`, `source`, `file`, or `tool_search`.
+
+Direct probe: the raw API returns an awaiting-user-input error; in a normal
+agent run that is the expected pause boundary, not a reason to keep looping.
+
+#### `search`
+
+System prompt capsule:
+
+> Use `search` as the read-only gateway to Aura's durable knowledge. Use
+> `user_facts` for "what do you know about me?", `lessons` for operational
+> tool experience, `god_nodes`/`subgraph`/`path` for wiki graph questions, and
+> `read` for exact page/source lookup by slug. Do not mutate memory, wiki, or
+> source state through this tool.
+
+Direct probes passed for `search`, `list`, `read`, `lessons`, `user_facts`,
+`god_nodes`, `subgraph`, `path`, `diff`, `gaps`, `surprises`, and
+`suggest_questions`.
+
+#### `web`
+
+System prompt capsule:
+
+> Use `web` only for current or external public information that Aura should
+> not be expected to already know. Use `search` for discovery and `fetch` for
+> one URL you need to quote or inspect. Prefer Aura memory first for personal,
+> project, wiki, or source facts.
+
+Direct probes passed for `fetch(url="https://example.com")` and
+`search(query="example domain")`.
+
+#### `tool_search`
+
+System prompt capsule:
+
+> Use `tool_search` before calling any deferred tool whose full schema is not
+> already present in the request. Use `query="select:<tool_name>"` for an exact
+> schema fetch. After reading the schema, call the target tool with its exact
+> required field names; do not guess argument names from prose.
+
+Direct probes passed for every active core tool and calculator MCP schema.
+
+#### `agent_note`
+
+System prompt capsule:
+
+> Use `agent_note` as a private per-conversation scratchpad for multi-step
+> work. Use `set` with `content`, `append` with `line`, `get` to reload, and
+> `clear` when the scratchpad is no longer useful. Never use it as durable user
+> memory, wiki knowledge, or audit evidence.
+
+Direct probe gotcha: sending `note` instead of `content`/`line` returned success
+but stored an empty note. The prompt must name the exact keys.
+
+#### `wiki_page`
+
+System prompt capsule:
+
+> Use `wiki_page` only to create or mutate curated wiki pages. Search or read
+> first and reuse an existing slug when possible. For creation, provide
+> `title` and `body`; the slug is derived. For updates, use `replace`, `edit`,
+> or `append` with the exact existing slug. Do not use `file` for ordinary wiki
+> knowledge writes because wiki writes must refresh metadata, backlinks, and
+> indexes.
+
+Direct probes passed for `create`, `append`, `edit`; readback was verified
+through `search(action="read")` using the slug returned by `create`.
+
+#### `source`
+
+System prompt capsule:
+
+> Use `source` for raw evidence artifacts: list, read, store text/URL sources,
+> reprocess ingest/OCR, delete sources, or lint the corpus. Use `source_id`
+> exactly as returned. Remember that deleting a source removes source files and
+> memory-index entries, but wiki pages that referenced it remain unchanged.
+
+Direct probes passed for `list`, `store(kind="text")`, `read` in default,
+`metadata`, `excerpt`, and `ocr` modes, `lint`, and `delete`.
+
+#### `create_document`
+
+System prompt capsule:
+
+> Use `create_document` when the user asks Aura to generate a PDF, XLSX, or
+> DOCX artifact. Always call it as `{"format":"pdf|xlsx|docx","spec":{...}}`;
+> never put title/body/content at the top level. On success, report the
+> returned `source_id` and filename. Do not call `source(read)` merely to
+> verify generation unless the user asked for artifact inspection.
+
+Direct probes passed for PDF, XLSX, and DOCX specs. Metadata readback and
+source directory inspection worked; OCR/extract readback is not the
+verification path for newly generated binary docs.
+
+#### `skill`
+
+System prompt capsule:
+
+> Use `skill` to list installed skills, search the catalog, inspect a skill, or
+> install/remove catalog skills when the user asks for that lifecycle action.
+> `install` and `remove` are admin/capability-gated; if denied, explain the
+> gate instead of retrying. Use `file`, not `skill`, to author a brand-new local
+> `SKILL.md`.
+
+Direct probes passed for `list`, `catalog(query="prompt")`, and
+`info(name="aura-runtime-safety")`. A missing skill returns HTTP 404 and a
+recoverable `tool_attempts` row; do not retry unless the name was wrong.
+
+#### `task`
+
+System prompt capsule:
+
+> Use `task` only for saved future work: reminders, recurring jobs, wiki
+> maintenance, or manual firing of a saved task. For `schedule`, provide
+> `name`, `kind`, optional `payload`, and exactly one schedule field (`in`,
+> `at_local`, `at`, `daily`, or `every_minutes`). Reusing a name updates the
+> existing task. Use `cancel` by name to stop future fires.
+
+Direct probes passed for `list`, `schedule(in="10m")`, and `cancel`.
+
+#### `propose_patch`
+
+System prompt capsule:
+
+> Use `propose_patch` when a durable memory/wiki/operational change should be
+> reviewed or provenance-gated instead of written directly. Use `wiki` for page
+> proposals, `user_memory` for user facts/preferences that need review, and
+> `operational` for validated tool lessons from a real run. Do not use it for
+> scratchpad notes or direct user-requested wiki writes.
+
+Direct probe gotcha: `operational` proposals from the raw direct API were
+denied with `provenance: missing run_id`. Use this path inside real agent runs
+where provenance exists.
+
+#### `file`
+
+System prompt capsule:
+
+> Use `file` for safe workspace filesystem work under the tool workspace root:
+> read, list, grep/search, write, patch, move/copy, and bounded cleanup. Keep
+> paths relative, inspect before destructive edits, and use the owner tools for
+> semantic stores (`wiki_page` for wiki knowledge, `source` for sources,
+> `skill` for installed skill lifecycle).
+
+Direct probes passed for `pwd`, `mkdir`, `write`, `read`, `grep`, `search`,
+`path_info`, `walk`, `copy`, `move`, `remove_file`, and `rmdir`. The live root
+was `/workspace`.
+
+#### `mcp_calculator_calculate`
+
+System prompt capsule:
+
+> Use `mcp_calculator_calculate` for direct arithmetic and mathematical
+> expressions. Use normal math exponentiation (`^`) or Python-style
+> exponentiation (`**`); the calculator MCP normalizes `^` before evaluation.
+
+Direct probes passed for arithmetic; `(2+3)^2` returned `25`.
+
+#### `mcp_calculator_confidence_interval`
+
+System prompt capsule:
+
+> Use this for a confidence interval over numeric samples. Provide `data` as a
+> numeric list and optional `confidence` such as `0.95`. Report the interval and
+> the confidence level.
+
+Direct probe passed with five samples and `confidence=0.95`.
+
+#### `mcp_calculator_correlation_coefficient`
+
+System prompt capsule:
+
+> Use this for Pearson correlation between two numeric series. Provide
+> `data_x` and `data_y` with matching lengths. Do not use it for regression
+> parameters; use `mcp_calculator_linear_regression` for slope/intercept.
+
+Direct probe passed with perfectly correlated samples.
+
+#### `mcp_calculator_differentiate`
+
+System prompt capsule:
+
+> Use this for symbolic derivatives. Provide `expression` and, when useful,
+> `variable` (usually `x`). Return the symbolic derivative exactly as the tool
+> gives it.
+
+Direct probe passed for `x^3`, returning `3*x**2`.
+
+#### `mcp_calculator_expand`
+
+System prompt capsule:
+
+> Use this to algebraically expand symbolic expressions. Provide one
+> `expression`; do not use it for numeric evaluation.
+
+Direct probe passed for `(x+1)^2`.
+
+#### `mcp_calculator_factorize`
+
+System prompt capsule:
+
+> Use this to factor symbolic expressions. Provide one `expression`; report the
+> factorized form.
+
+Direct probe passed for `x^2-1`.
+
+#### `mcp_calculator_integrate`
+
+System prompt capsule:
+
+> Use this for symbolic indefinite integrals. Provide `expression` and the
+> integration `variable`. If the user asks for bounds, use another tool or
+> compute carefully from the returned antiderivative.
+
+Direct probe passed for `2*x`.
+
+#### `mcp_calculator_linear_regression`
+
+System prompt capsule:
+
+> Use this for slope/intercept over numeric `(x,y)` points. Provide `data` as a
+> list of two-number points. Report both slope and intercept.
+
+Direct probe passed for points on `y=2x`.
+
+#### `mcp_calculator_matrix_addition`
+
+System prompt capsule:
+
+> Use this to add same-shaped numeric matrices. Provide `matrix_a` and
+> `matrix_b` as lists of numeric rows.
+
+Direct probe passed for two 2x2 matrices.
+
+#### `mcp_calculator_matrix_determinant`
+
+System prompt capsule:
+
+> Use this for the determinant of a square numeric matrix. Provide `matrix` as
+> rows.
+
+Direct probe passed for a 2x2 matrix.
+
+#### `mcp_calculator_matrix_multiplication`
+
+System prompt capsule:
+
+> Use this for matrix multiplication when inner dimensions match. Provide
+> `matrix_a` and `matrix_b` as numeric row arrays, then report the resulting
+> matrix.
+
+Direct probe passed for 2x2 multiplication.
+
+#### `mcp_calculator_matrix_transpose`
+
+System prompt capsule:
+
+> Use this to transpose a numeric matrix. Provide `matrix` as rows and return
+> the transposed row arrays.
+
+Direct probe passed for a 2x3 matrix.
+
+#### `mcp_calculator_mean`
+
+System prompt capsule:
+
+> Use this for the arithmetic mean of a numeric list. Provide `data`; report
+> the numeric result.
+
+Direct probe passed for `[2,4,6,8]`.
+
+#### `mcp_calculator_median`
+
+System prompt capsule:
+
+> Use this for the median of a numeric list. Provide `data`; report the numeric
+> result.
+
+Direct probe passed for `[1,9,3]`.
+
+#### `mcp_calculator_mode`
+
+System prompt capsule:
+
+> Use this for the mode of a numeric list. Provide `data`; if multiple modes
+> are possible, report exactly what the tool returns rather than inventing tie
+> handling.
+
+Direct probe passed for `[1,2,2,3]`.
+
+#### `mcp_calculator_plot_function`
+
+System prompt capsule:
+
+> Use this when the user explicitly wants a quick function plot from the
+> calculator MCP. Provide `expression` and optional numeric `start`, `end`, and
+> `step`. Report the returned status plus `format`, `points`, and `bytes` when
+> present; do not invent an image attachment if only metadata is returned.
+
+Direct probe returned `Plot generated successfully.` with `format="png"`,
+`points=5`, and a nonzero byte count.
+
+#### `mcp_calculator_solve_equation`
+
+System prompt capsule:
+
+> Use this for one-variable algebraic equations in `x`. Provide `equation`
+> with exactly one equals sign. Report all returned solutions.
+
+Direct probe passed for `x^2 - 5*x + 6 = 0`.
+
+#### `mcp_calculator_standard_deviation`
+
+System prompt capsule:
+
+> Use this for standard deviation over a numeric list. Provide `data` and
+> report the numeric result; if the user needs population vs sample semantics,
+> clarify or state the tool result as-is.
+
+Direct probe passed for `[2,4,6,8]`.
+
+#### `mcp_calculator_summation`
+
+System prompt capsule:
+
+> Use this for finite summations over `x`. Provide `expression`, `start`, and
+> `end`; report the resulting sum.
+
+Direct probe passed for summing `x` from 1 to 5.
+
+#### `mcp_calculator_variance`
+
+System prompt capsule:
+
+> Use this for variance over a numeric list. Provide `data` and report the
+> numeric result; clarify sample/population semantics when it matters.
+
+Direct probe passed for `[2,4,6,8]`.
+
+#### `mcp_calculator_vector_cross_product`
+
+System prompt capsule:
+
+> Use this for vector cross products. Provide `vector_a` and `vector_b` as
+> numeric lists; the fork exposes normal variable-length numeric arrays.
+
+Direct probe passed for `[1,0,0] x [0,1,0]`, returning `[0,0,1]`.
+
+#### `mcp_calculator_vector_dot_product`
+
+System prompt capsule:
+
+> Use this for dot products over equal-length numeric vectors. Provide
+> `vector_a` and `vector_b` as numeric lists and report the scalar result.
+
+Direct probe passed for `[1,2,3] dot [4,5,6]`, returning `32`.
+
+#### `mcp_calculator_vector_magnitude`
+
+System prompt capsule:
+
+> Use this for vector magnitude over a numeric list. Provide `vector` as a
+> numeric list and report the scalar norm.
+
+Direct probe passed for `[3,4]`, returning `5`.
+
 ## Toolsets And Roles
 
 Toolsets are not LLM tools. They are runtime presets for limited contexts such

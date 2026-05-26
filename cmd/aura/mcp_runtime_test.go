@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/mcp"
@@ -73,6 +74,22 @@ func TestMCPRuntimeCircuitBreakerHidesToolsAndReconnectRestoresThem(t *testing.T
 	}
 	if _, ok := reg.DefinitionFor("mcp_srv_one"); !ok {
 		t.Fatal("reconnected tool was not restored")
+	}
+}
+
+func TestMCPRuntimeRefreshDueThrottlesToolList(t *testing.T) {
+	rt := newMCPServerRuntime("srv", mcp.ServerConfig{URL: "http://example.test"}, nil, slog.Default())
+	now := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
+
+	if !rt.refreshDue(now) {
+		t.Fatal("fresh runtime should refresh when no successful list is recorded")
+	}
+	rt.markToolRefresh(now)
+	if rt.refreshDue(now.Add(mcpToolRefreshInterval - time.Second)) {
+		t.Fatal("refresh became due before the throttling interval elapsed")
+	}
+	if !rt.refreshDue(now.Add(mcpToolRefreshInterval)) {
+		t.Fatal("refresh should become due at the throttling interval")
 	}
 }
 

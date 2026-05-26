@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-repo="${AURA_CALCULATOR_MCP_REPO:-https://github.com/huhabla/calculator-mcp-server.git}"
-rev="${AURA_CALCULATOR_MCP_REV:-c9a4338739efef7863bfb1d3ae4e9cea053d8350}"
+repo="${AURA_CALCULATOR_MCP_REPO:-https://github.com/chetto1983/calculator-mcp-server.git}"
+rev="${AURA_CALCULATOR_MCP_REV:-46a1e66709bc387e8c223f15ec25fb5ae3a1af08}"
 base="${AURA_CALCULATOR_MCP_DIR:-/app/runtime/mcp}"
 target="${base}/calculator-mcp-server-${rev}"
 
@@ -18,39 +18,5 @@ if [ ! -d "$target/.git" ]; then
 	rm -rf "$target"
 	mv "$tmp" "$target"
 fi
-
-python3 - "$target/calculator_server.py" <<'PY'
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-body = path.read_text(encoding="utf-8")
-old = '''app = FastMCP(
-    title="Mathematical Calculator",
-    description="A server for complex mathematical calculations",
-    version="1.0.0",
-    dependencies=["numpy", "scipy", "sympy", "matplotlib"],
-)
-'''
-new = '''app = FastMCP(
-    name="Mathematical Calculator",
-    instructions="A server for complex mathematical calculations",
-    dependencies=["numpy", "scipy", "sympy", "matplotlib"],
-)
-'''
-if old in body:
-    path.write_text(body.replace(old, new), encoding="utf-8")
-elif new not in body:
-    raise SystemExit("calculator-mcp-server compatibility patch no longer matches upstream")
-
-pyproject = path.with_name("pyproject.toml")
-project_body = pyproject.read_text(encoding="utf-8")
-project_old = 'requires-python = ">=3.9"'
-project_new = 'requires-python = ">=3.11"'
-if project_old in project_body:
-    pyproject.write_text(project_body.replace(project_old, project_new), encoding="utf-8")
-elif project_new not in project_body:
-    raise SystemExit("calculator-mcp-server Python version patch no longer matches upstream")
-PY
 
 exec uv run --quiet --no-dev --project "$target" python "$target/calculator_server.py" "$@"
