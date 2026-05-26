@@ -209,3 +209,70 @@ Prompt snapshot:
 - `stable_hash=8801cb91fce9e7c0`
 - Historical 24h token outliers remain in the DB window until old turns age
   out.
+
+## 2026-05-26 - PROMPT-01C schedule-and-run routine probe
+
+Status: implemented locally, verified.
+
+Why:
+
+- The natural Caraglio news request must behave like a real user request:
+  create the 08:30 daily routine, execute that saved routine immediately, and
+  answer with the news only. A previous run scheduled the job but answered from
+  an ad hoc web search, leaving `last_run_at` and `last_output` empty.
+
+Changes:
+
+- Wired the agent-job runner into `cron.NewHandler` so `task run_now` from the
+  normal API/tool surface no longer fails with `agent runner unavailable`.
+- Added `run_now` to the unified `task` schedule schema so a recurring
+  `agent_job` can be saved and fired immediately in one call.
+- Updated the stable prompt and task capsule to make schedule requests action
+  requests, and to forbid substituting ad hoc search/web output when the user
+  asks to schedule a routine and see it now.
+- Added coverage for `schedule` with `run_now=true`, proving persistence happens
+  before the manual saved-task run.
+
+Verification:
+
+- `go test ./internal/conversation ./internal/agent/tools/registry ./internal/cron -run "Prompt|Task|Scheduler|RunNow|AgentJob" -count=1`
+- `go test ./cmd/aura -run "TestAgentJobRunnerAdapterPassesRequestRunID|TestSwarmRunnerAdapterPassesContextRunID" -count=1`
+- `git diff --check`
+- `docker compose build aura`
+- `docker compose up -d aura`
+- `docker inspect ... aura-aura-1` reports `healthy`.
+
+Live probes:
+
+- Direct `/api/tools/call` with `task schedule`, `daily=08:30`, and
+  `run_now=true` created `probe-direct-caraglio-news`, executed it immediately,
+  returned `status=completed`, and persisted a Caraglio news summary. The
+  temporary task was deleted after verification.
+- Negative direct `/api/tools/call` without `run_now` created
+  `probe-direct-no-now-caraglio` with `next_run_at=2026-05-27T06:30:00Z` and
+  empty `last_run_at`, `last_error`, and `last_output`. The temporary task was
+  deleted after verification.
+- Natural `/api/chat` prompt:
+  "Da adesso in poi ogni mattina alle 8:30 prepararmi un breve riassunto delle
+  notizie locali di Caraglio (CN). Fammi vedere subito il risultato di oggi..."
+  passed functionally:
+  - reply contained only the local news summary with sources, no tool or
+    infrastructure explanation;
+  - `tools_used=["web","task"]`;
+  - `tool_calls=2`, `llm_calls=3`, `tokens=26,938`, `elapsed_ms=51,231`;
+  - `tool_attempts.arg_keys_json=["action","daily","kind","name","payload","run_now"]`
+    for the task call;
+  - `scheduled_tasks.name=notizie_caraglio_daily`;
+  - `schedule_daily=08:30`;
+  - `next_run_at=2026-05-27T06:30:00Z`;
+  - `last_run_at=2026-05-26T20:29:37Z`;
+  - `last_error=''`;
+  - `last_output` matched the user-visible Caraglio news summary;
+  - `last_metrics_json={"skipped":false,"llm_calls":2,"tool_calls":1,"tokens_prompt":9132,"tokens_completion":864,"tokens_total":9996,"elapsed_ms":13573}`.
+
+Residual:
+
+- The final natural run used the optimal saved-task `run_now=true` shape, but it
+  still spent one `web` call before scheduling. Behavior is correct; there is
+  still avoidable pre-task retrieval overhead for schedule-plus-immediate-run
+  prompts.

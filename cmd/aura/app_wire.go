@@ -242,8 +242,14 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	}
 	proposalSweeper := &proposalTTLSweeperAdapter{db: a.deps.Pool}
 	memoryDecay := &memoryDecayAdapter{store: a.deps.MemoryStore, logger: logger}
+	depsGetter := newAgentJobDepsGetter(cfg, &a.deps)
+	var agentJobRunner cron.JobRunner
+	if depsGetter != nil {
+		agentJobRunner = &agentJobRunnerAdapter{getDeps: depsGetter}
+	}
 	cronHandler := cron.NewHandler(cron.HandlerConfig{
 		Notifier:        b,
+		AgentRunner:     agentJobRunner,
 		Wiki:            a.deps.Wiki,
 		Issues:          issues,
 		Sources:         a.deps.Sources,
@@ -264,9 +270,8 @@ func (a *App) wireBot(b *telegram.Bot) error {
 	// Route KindAgentJob through the cron Hub (InboundAdapter → CronAgentLoop →
 	// silent Outbound); all other kinds fall back to cronHandler.Dispatch.
 	cronDispatcher := cron.Dispatcher(cronHandler.Dispatch)
-	depsGetter := newAgentJobDepsGetter(cfg, &a.deps)
-	if depsGetter != nil {
-		cronLoop := cronadapter.NewCronAgentLoop(&agentJobRunnerAdapter{getDeps: depsGetter}, loc, cronadapter.WithIdentity(a.deps.AuthDB))
+	if agentJobRunner != nil {
+		cronLoop := cronadapter.NewCronAgentLoop(agentJobRunner, loc, cronadapter.WithIdentity(a.deps.AuthDB))
 		cronHub, hubErr := chat.New(chat.Config{Loop: cronLoop, LifecycleStore: a.deps.RunStore, Logger: logger})
 		if hubErr != nil {
 			return fmt.Errorf("creating cron hub: %w", hubErr)

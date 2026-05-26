@@ -169,6 +169,36 @@ func TestTaskTool_RunNow(t *testing.T) {
 	}
 }
 
+func TestTaskTool_ScheduleAgentJobRunNow(t *testing.T) {
+	runner := &fakeRunTaskNowRunner{}
+	store := &fakeSchedulerRepository{}
+	tool := NewTaskTool(store, runner, time.UTC)
+
+	out, err := tool.Execute(WithUserID(t.Context(), "12345"), map[string]any{
+		"action":  "schedule",
+		"name":    "morning-news",
+		"kind":    "agent_job",
+		"payload": "summarise local news",
+		"daily":   "08:30",
+		"run_now": true,
+	})
+	if err != nil {
+		t.Fatalf("schedule run_now: %v", err)
+	}
+	if runner.name != "morning-news" {
+		t.Fatalf("runner.name = %q", runner.name)
+	}
+	if _, ok := store.tasks["morning-news"]; !ok {
+		t.Fatal("scheduled task was not persisted before run_now")
+	}
+	if !strings.Contains(out, `Scheduled agent_job task "morning-news"`) {
+		t.Fatalf("schedule output missing saved task: %s", out)
+	}
+	if !strings.Contains(out, "Immediate saved-task run result") || !strings.Contains(out, `"status": "completed"`) {
+		t.Fatalf("schedule output missing run result: %s", out)
+	}
+}
+
 func TestTaskTool_RunNowMissingRunner(t *testing.T) {
 	tool := NewTaskTool(&fakeSchedulerRepository{}, nil, time.UTC)
 	_, err := tool.Execute(t.Context(), map[string]any{"action": "run_now", "name": "x"})

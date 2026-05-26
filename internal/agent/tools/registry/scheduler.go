@@ -114,6 +114,7 @@ EXAMPLES — copy the shape exactly:
   task({"action":"schedule","name":"morning-ping","kind":"reminder","payload":"Daily check-in","daily":"09:00"})
   task({"action":"schedule","name":"in-five","kind":"reminder","payload":"five minute reminder","in":"5m"})
   task({"action":"schedule","name":"weekly-recap","kind":"agent_job","payload":"summarise this week's notes","daily":"18:00","weekdays":["fri"]})
+  task({"action":"schedule","name":"morning-news","kind":"agent_job","payload":"summarise local news","daily":"08:30","run_now":true})
   task({"action":"cancel","name":"morning-ping"})
   task({"action":"run_now","name":"weekly-recap"})
 
@@ -125,7 +126,9 @@ Per-action required:
   • cancel   → name
   • run_now  → name
 
-Schedule fields are mutually exclusive: in (relative "5m"/"2h"/"1d"), at_local ("YYYY-MM-DDTHH:MM"), at (UTC ISO8601), daily ("HH:MM" + optional weekdays), every_minutes (>=5).`
+Schedule fields are mutually exclusive: in (relative "5m"/"2h"/"1d"), at_local ("YYYY-MM-DDTHH:MM"), at (UTC ISO8601), daily ("HH:MM" + optional weekdays), every_minutes (>=5).
+If the user asks to create a recurring routine and also wants to see it now, prefer action="schedule" with run_now=true; otherwise schedule first, then action="run_now" with the same name.
+Never treat a separate ad hoc web/search answer as the saved task execution. For create/update requests, call schedule directly; list only when the user asked to list tasks or you must inspect an unknown task before cancelling it.`
 }
 
 func (t *TaskTool) Parameters() map[string]any {
@@ -181,6 +184,10 @@ func (t *TaskTool) Parameters() map[string]any {
 				"description": "schedule only: recurring interval in minutes (>=5). 60 hourly, 1440 daily, 10080 weekly.",
 				"minimum":     minScheduleEveryMinutes,
 			},
+			"run_now": map[string]any{
+				"type":        "boolean",
+				"description": "schedule only, optional for agent_job: after saving, immediately fire the saved task once and return that run result. Use when the user asks to schedule a routine and see/do/run it now.",
+			},
 			"status": map[string]any{
 				"type":        "string",
 				"enum":        []string{"", "active", "done", "cancelled", "failed"},
@@ -198,6 +205,7 @@ func (t *TaskTool) Parameters() map[string]any {
 			map[string]any{"action": "schedule", "name": "morning-ping", "kind": "reminder", "payload": "Daily check-in", "daily": "09:00"},
 			map[string]any{"action": "schedule", "name": "in-five", "kind": "reminder", "payload": "five minute reminder", "in": "5m"},
 			map[string]any{"action": "schedule", "name": "weekly-recap", "kind": "agent_job", "payload": "summarise this week's notes", "daily": "18:00", "weekdays": []string{"fri"}},
+			map[string]any{"action": "schedule", "name": "morning-news", "kind": "agent_job", "payload": "summarise local news", "daily": "08:30", "run_now": true},
 			map[string]any{"action": "cancel", "name": "morning-ping"},
 			map[string]any{"action": "run_now", "name": "weekly-recap"},
 		},
@@ -373,7 +381,15 @@ func (t *TaskTool) doSchedule(ctx context.Context, args map[string]any) (string,
 
 	when := saved.NextRunAt.Format(time.RFC3339)
 	if saved.IsRecurring() {
-		return fmt.Sprintf("Scheduled %s task %q %s.", saved.Kind, saved.Name, formatScheduleForUser(saved, when)), nil
+		scheduled := fmt.Sprintf("Scheduled %s task %q %s.", saved.Kind, saved.Name, formatScheduleForUser(saved, when))
+		if boolArg(args, "run_now") {
+			runOut, runErr := t.doRunNow(ctx, map[string]any{"name": saved.Name})
+			if runErr != nil {
+				return scheduled + "\nImmediate saved-task run failed: " + runErr.Error(), nil
+			}
+			return scheduled + "\nImmediate saved-task run result:\n" + runOut, nil
+		}
+		return scheduled + fmt.Sprintf("\nSaved only; if the user asked to see this routine now, call task with action=\"run_now\" and name=%q before answering.", saved.Name), nil
 	}
 	return fmt.Sprintf("Scheduled %s task %q for %s.", saved.Kind, saved.Name, when), nil
 }
