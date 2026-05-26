@@ -74,10 +74,8 @@ func examplesForToolName(name string, params map[string]any) []ToolCallExample {
 		return []ToolCallExample{{Arguments: map[string]any{"name": "docx"}}}
 	case "settings_update":
 		return []ToolCallExample{{Arguments: map[string]any{"key": "AURA_AGENT_LOOP_MAX_STEPS", "value": "8"}}}
-	case "run_aurabot_swarm":
-		return []ToolCallExample{{Arguments: map[string]any{"task": "Analyze Aura memory and summarize the main issues.", "mode": "bounded"}}}
 	case "read_swarm_result":
-		return []ToolCallExample{{Arguments: map[string]any{"run_id": "swarm_123"}}}
+		return []ToolCallExample{{Arguments: map[string]any{"task_id": "task_123"}}}
 	case "list_swarm_tasks":
 		return []ToolCallExample{{Arguments: map[string]any{"run_id": "swarm_123"}}}
 	default:

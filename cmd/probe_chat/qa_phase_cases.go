@@ -11,10 +11,7 @@ func phaseQACoverageCases(stamp string) []Case {
 	return []Case{
 		qaDailyBriefingLiveSectionsCase(stamp),
 		qaDevToolPathContainmentCase(stamp),
-		qaListSwarmTasksGroundTruthCase(),
 		qaProposePatchGovernanceCase(stamp),
-		qaReadSwarmResultGroundTruthCase(),
-		qaRunAuraBotSwarmOneShotCase(stamp),
 		qaWebFetchExampleDomainEvidenceCase(),
 		qaWebFetchSSRFLoopbackDenyCase(),
 	}
@@ -217,55 +214,6 @@ func qaDevToolPathContainmentCase(stamp string) Case {
 		},
 		Cleanup: func(env *Env) {
 			env.cleanupDevTool(toolName)
-		},
-	}
-}
-
-func qaListSwarmTasksGroundTruthCase() Case {
-	var startedAt time.Time
-	return Case{
-		Name:     "tool-list-swarm-tasks-ground-truth",
-		Category: "tools-swarm",
-		Prompt:   "Usa spawn_aurabot con role librarian per contare le vocali nella parola \"Aurabot\". Poi usa list_swarm_tasks sul run creato e rispondi solo con run_id, task_id, status e numero finale.",
-		Setup: func(_ *Env) error {
-			startedAt = qaStartedAt()
-			return nil
-		},
-		Verify: func(r ChatReply, env *Env) []string {
-			var miss []string
-			counts, err := env.toolAttemptsSince(startedAt, "spawn_aurabot", "list_swarm_tasks", "run_aurabot_swarm", "read_swarm_result")
-			if err != nil {
-				return []string{fmt.Sprintf("tool_attempts query: %v", err)}
-			}
-			if counts["list_swarm_tasks"] == 0 {
-				miss = append(miss, "DB ground truth: no successful list_swarm_tasks attempt")
-			}
-			if counts["spawn_aurabot"] == 0 {
-				miss = append(miss, "DB ground truth: no successful spawn_aurabot attempt")
-			}
-			for _, forbidden := range []string{"run_aurabot_swarm", "read_swarm_result"} {
-				if counts[forbidden] > 0 {
-					miss = append(miss, fmt.Sprintf("forbidden tool %s ran %d time(s)", forbidden, counts[forbidden]))
-				}
-			}
-			task, found, err := env.latestCompletedSwarmTask(startedAt)
-			if err != nil {
-				miss = append(miss, fmt.Sprintf("swarm_tasks query: %v", err))
-			} else if !found {
-				miss = append(miss, "DB ground truth: no completed swarm task since case start")
-			} else {
-				fmt.Fprintf(os.Stderr, "[case=tool-list-swarm-tasks-ground-truth] task preview: run_id=%s task_id=%s status=%s result=%s\n", task.RunID, task.ID, task.Status, truncate(task.Result, 200))
-				if !strings.Contains(task.Result, "4") {
-					miss = append(miss, "swarm task result missing vowel count 4")
-				}
-			}
-			if !strings.Contains(r.Reply, "4") || !strings.Contains(strings.ToLower(r.Reply), "completed") {
-				miss = append(miss, fmt.Sprintf("reply missing expected count/status (got: %q)", truncate(r.Reply, 200)))
-			}
-			if strings.Contains(r.Reply, "list_swarm_tasks:") || strings.Contains(r.Reply, "Sorry, I couldn't process") {
-				miss = append(miss, "reply contains forbidden tool error/fallback")
-			}
-			return miss
 		},
 	}
 }

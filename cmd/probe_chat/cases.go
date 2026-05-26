@@ -1246,50 +1246,6 @@ func allCases(now time.Time, enableTTS bool) []Case {
 		// Both assert callCount==3 (two 429s then success) and that the fallback
 		// diagnostic string is never returned when retry succeeds.
 
-		// Phase-QA2 / US-QA-COV09 — swarm full lifecycle E2E.
-		// Exercises spawn_aurabot → list_swarm_tasks → read_swarm_result in one
-		// composite probe. The worker task counts vowels in "Aurabot" (answer: 4).
-		// Fails loud when AURABOT_ENABLED=false (spawn_aurabot not registered → ToolCalls=0).
-		// NOTE: this probe tests BAR (graceful swarm completion), not FLOOR (failure modes).
-		// The cap-hit / authz-fail cases are deferred to Phase-QA3 (US-QA20).
-		// Ground truth: swarm_tasks DB row status='completed'; never r.Reply alone.
-		{
-			Name:     "tool-swarm-lifecycle",
-			Category: "tools-swarm",
-			Prompt: "Usa spawn_aurabot per delegare a un subagent (role='librarian') il task: " +
-				"'Conta le vocali nella parola Aurabot e rispondi con il numero totale.' " +
-				"Poi controlla i task del run con list_swarm_tasks, " +
-				"poi leggi il risultato completo con read_swarm_result, " +
-				"e infine rispondimi con il numero totale di vocali trovate.",
-			Setup: func(_ *Env) error {
-				swarmLifecycleBefore = time.Now()
-				return nil
-			},
-			Verify: func(r ChatReply, env *Env) []string {
-				var miss []string
-				if r.ToolCalls == 0 {
-					miss = append(miss, "expected >= 1 tool call (spawn_aurabot), got 0 — check AURABOT_ENABLED=true in container env")
-				}
-				if r.ToolCalls < 3 {
-					miss = append(miss, fmt.Sprintf("expected >= 3 tool calls (spawn_aurabot + list_swarm_tasks + read_swarm_result), got %d", r.ToolCalls))
-				}
-				if !strings.Contains(r.Reply, "4") {
-					miss = append(miss, fmt.Sprintf("reply missing expected vowel count '4' for 'Aurabot' (a,u,a,o = 4; got: %q)", truncate(r.Reply, 200)))
-				}
-				// Ground truth: DB must have a completed swarm_tasks row since probe start.
-				count, preview, err := env.swarmTasksSince(swarmLifecycleBefore)
-				if err != nil {
-					miss = append(miss, fmt.Sprintf("swarm_tasks query: %v", err))
-					return miss
-				}
-				fmt.Fprintf(os.Stderr, "[case=tool-swarm-lifecycle] swarm_tasks completed since %s: count=%d preview=%q\n",
-					swarmLifecycleBefore.Format(time.RFC3339), count, preview)
-				if count == 0 {
-					miss = append(miss, fmt.Sprintf("DB ground truth: no completed swarm_tasks row since %s — spawn_aurabot may be disabled or the worker failed", swarmLifecycleBefore.Format(time.RFC3339)))
-				}
-				return miss
-			},
-		},
 	}
 	out := append(cases, phaseQACoverageCases(stamp)...)
 	if enableTTS {
@@ -1321,8 +1277,6 @@ var (
 
 	maxIterBefore    time.Time
 	maxElapsedBefore time.Time
-
-	swarmLifecycleBefore time.Time
 )
 
 // ttsProbeCases returns the TTS-gated probe cases. Only included when -tts flag is set.

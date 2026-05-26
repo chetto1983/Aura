@@ -15,11 +15,11 @@ func TestRuntimeSnapshotPreservesToolSignals(t *testing.T) {
 		PromptHash:          "abc123",
 		Toolset:             "registered",
 		ToolsetSelectReason: "all registered tools exposed",
-		ToolsExposed:        []string{"run_aurabot_swarm"},
+		ToolsExposed:        []string{"delegate_summarizer"},
 		ToolsCalled:         []string{"execute_code"},
 		ReadSkills:          []string{"subagent-driven-development"},
 		LoopSteps:           2,
-		TerminalTool:        "run_aurabot_swarm",
+		TerminalTool:        "delegate_summarizer",
 		DuplicateToolCall:   true,
 		TokensPrompt:        10,
 		TokensCompletion:    5,
@@ -33,7 +33,7 @@ func TestRuntimeSnapshotPreservesToolSignals(t *testing.T) {
 	if snap.ToolsetSelectReason == "" {
 		t.Fatal("ToolsetSelectReason is empty")
 	}
-	if snap.LoopSteps != 2 || snap.TerminalTool != "run_aurabot_swarm" {
+	if snap.LoopSteps != 2 || snap.TerminalTool != "delegate_summarizer" {
 		t.Fatalf("loop/terminal snapshot = steps %d terminal %q", snap.LoopSteps, snap.TerminalTool)
 	}
 	if len(snap.ReadSkills) != 1 || snap.ReadSkills[0] != "subagent-driven-development" {

@@ -19,9 +19,9 @@ import (
 //   - enum membership: for properties that declare an "enum", the arg value must
 //     be one of the listed members.
 //
-// Swarm tools (run_aurabot_swarm, read_swarm_result, list_swarm_tasks) cannot be
-// instantiated here due to the swarmtools→registry import cycle; they are covered
-// in internal/agent/tools/swarm/tools_test.go.
+// Swarm readback tools cannot be instantiated here due to the
+// swarmtools→registry import cycle; they are covered in
+// internal/agent/tools/swarm/tools_test.go.
 func TestExamplesParameterEval(t *testing.T) {
 	toolsToCheck := []Tool{
 		&AskUserTool{},

@@ -513,12 +513,6 @@ func newApp(
 				return nil, fmt.Errorf("creating swarm manager: %w", err)
 			}
 			deps.SwarmMgr = swarmManager
-			if tool := swarmtools.NewSpawnAuraBotTool(swarmManager); tool != nil {
-				toolRegistry.Register(tool)
-			}
-			if tool := swarmtools.NewRunAuraBotSwarmTool(swarmManager); tool != nil {
-				toolRegistry.Register(tool)
-			}
 			if tool := swarmtools.NewListSwarmTasksTool(swarmStore); tool != nil {
 				toolRegistry.Register(tool)
 			}

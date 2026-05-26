@@ -3,305 +3,13 @@ package swarmtools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/aura/aura/internal/agent/tools/registry"
-	"github.com/aura/aura/internal/agent/tools/sets"
-	"github.com/aura/aura/internal/identity"
+	tools "github.com/aura/aura/internal/agent/tools/registry"
 	"github.com/aura/aura/internal/swarm"
 )
-
-type SpawnAuraBotTool struct {
-	manager swarm.RunRunner
-}
-
-type RunAuraBotSwarmTool struct {
-	manager swarm.RunRunner
-}
-
-func NewRunAuraBotSwarmTool(manager swarm.RunRunner) *RunAuraBotSwarmTool {
-	if manager == nil {
-		return nil
-	}
-	return &RunAuraBotSwarmTool{manager: manager}
-}
-
-func (t *RunAuraBotSwarmTool) Name() string { return "run_aurabot_swarm" }
-
-func (t *RunAuraBotSwarmTool) Definition() tools.ToolDefinition {
-	return tools.ToolDefinition{
-		Name:           t.Name(),
-		Description:    t.Description(),
-		Parameters:     t.Parameters(),
-		ReadOnlyHint:   true, // MVP supports read-only worker roles only
-		VisibilityTier: tools.VisibilityDeferred,
-	}
-}
-
-func (t *RunAuraBotSwarmTool) RequiredCapability() identity.Capability {
-	return identity.CapabilitySwarmSpawn
-}
-
-func (t *RunAuraBotSwarmTool) Description() string {
-	return "Run a bounded read-only AuraBot team for broad second-brain reading, audit, cross-checking, planning, or synthesis. It plans multiple roles, executes them in parallel, and returns deterministic synthesis with metrics. Prefer this over manual spawn_aurabot calls for multi-page wiki/source/skill investigation. MVP supports mode=wait only and cannot write wiki pages, sources, skills, settings, tasks, or files."
-}
-
-func (t *RunAuraBotSwarmTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"goal": map[string]any{
-				"type":        "string",
-				"description": "Higher-level read-only investigation goal for the AuraBot team. Keep it compact and in the user's language.",
-			},
-			"mode": map[string]any{
-				"type":        "string",
-				"enum":        []string{"wait"},
-				"description": "Execution mode. MVP supports wait only.",
-			},
-		},
-		"required": []string{"goal"},
-	}
-}
-
-func (t *RunAuraBotSwarmTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	if t.manager == nil {
-		return "", errors.New("run_aurabot_swarm: swarm manager unavailable")
-	}
-	goal, err := requiredString(args, "goal")
-	if err != nil {
-		return "", err
-	}
-	mode := strings.TrimSpace(stringArg(args, "mode"))
-	if mode == "" {
-		mode = "wait"
-	}
-	if mode != "wait" {
-		return "", fmt.Errorf("run_aurabot_swarm: unsupported mode %q (MVP supports wait)", mode)
-	}
-
-	policy := LoadDelegationPolicyFromEnv()
-	requestedRoles := stringSliceArg(args, "roles")
-	rolesToValidate := requestedRoles
-	if len(rolesToValidate) == 0 {
-		rolesToValidate = defaultDelegationRoles()
-	}
-	if err := ValidateWorkerRoles(rolesToValidate, toolsetWorkerCatalog{}); err != nil {
-		return "", fmt.Errorf("run_aurabot_swarm: %w", err)
-	}
-	// Hermes-style delegation keeps role fan-out runtime-owned. Validate model
-	// requested roles so stale aliases fail loudly, but do not let the model
-	// choose a slower worker mix for this fast research route.
-	roles := workerRolesForPolicy(nil, policy)
-	plan, err := swarm.BuildPlan(goal, swarm.PlanOptions{
-		Roles:          roles,
-		UserID:         tools.UserIDFromContext(ctx),
-		MaxAssignments: policy.MaxWorkers,
-	})
-	if err != nil {
-		return "", err
-	}
-	applyDelegationPolicyToAssignments(plan.Assignments, policy)
-	applyIdentityDelegationToAssignments(plan.Assignments)
-
-	runCtx := ctx
-	cancel := func() {}
-	if policy.Timeout > 0 {
-		runCtx, cancel = context.WithTimeout(ctx, policy.Timeout)
-	}
-	defer cancel()
-	run, runErr := t.manager.Run(runCtx, swarm.RunRequest{
-		Goal:        plan.Goal,
-		CreatedBy:   tools.UserIDFromContext(ctx),
-		Assignments: plan.Assignments,
-	})
-	synthesis := swarm.SynthesizeRunResult(run)
-	resp := runSwarmResponse{
-		OK:        runErr == nil,
-		Goal:      plan.Goal,
-		Roles:     plan.Roles,
-		RunID:     synthesis.RunID,
-		Status:    string(synthesis.Status),
-		Summary:   synthesis.Summary,
-		Metrics:   synthesis.Metrics,
-		Tasks:     synthesis.Tasks,
-		LastError: "",
-	}
-	if run.Run != nil {
-		resp.LastError = run.Run.LastError
-	}
-	if runErr != nil && resp.LastError == "" {
-		resp.LastError = runErr.Error()
-	}
-	return marshal(resp)
-}
-
-func NewSpawnAuraBotTool(manager swarm.RunRunner) *SpawnAuraBotTool {
-	if manager == nil {
-		return nil
-	}
-	return &SpawnAuraBotTool{manager: manager}
-}
-
-func (t *SpawnAuraBotTool) Name() string { return "spawn_aurabot" }
-
-func (t *SpawnAuraBotTool) Definition() tools.ToolDefinition {
-	return tools.ToolDefinition{
-		Name:           t.Name(),
-		Description:    t.Description(),
-		Parameters:     t.Parameters(),
-		ReadOnlyHint:   true, // worker roles are read-only; spawning itself doesn't mutate shared state
-		VisibilityTier: tools.VisibilityDeferred,
-	}
-}
-
-func (t *SpawnAuraBotTool) RequiredCapability() identity.Capability {
-	return identity.CapabilitySwarmSpawn
-}
-
-func (t *SpawnAuraBotTool) Description() string {
-	return "Run one bounded AuraBot worker for a focused read-only task. Roles have hardcoded read-only tool presets. For broad multi-role second-brain goals, prefer run_aurabot_swarm. Returns run/task metrics and result. MVP supports mode=wait only."
-}
-
-func (t *SpawnAuraBotTool) Parameters() map[string]any {
-	return map[string]any{
-		"type": "object",
-		"properties": map[string]any{
-			"name": map[string]any{
-				"type":        "string",
-				"description": "Short task name used as the task subject.",
-			},
-			"role": map[string]any{
-				"type":        "string",
-				"enum":        []string{"librarian", "critic", "researcher", "synthesizer", "skillsmith"},
-				"description": "Worker role. Controls the maximum allowed tool preset.",
-			},
-			"task": map[string]any{
-				"type":        "string",
-				"description": "Focused worker prompt. Keep it small; do not paste full chat history.",
-			},
-			"tools": map[string]any{
-				"type":        "array",
-				"description": "Optional subset of the role's allowed tools. Empty uses the role preset.",
-				"items":       map[string]any{"type": "string"},
-			},
-			"mode": map[string]any{
-				"type":        "string",
-				"enum":        []string{"wait"},
-				"description": "Execution mode. MVP supports wait only.",
-			},
-		},
-		"required": []string{"role", "task"},
-	}
-}
-
-func (t *SpawnAuraBotTool) Execute(ctx context.Context, args map[string]any) (string, error) {
-	if t.manager == nil {
-		return "", errors.New("spawn_aurabot: swarm manager unavailable")
-	}
-	role, err := requiredString(args, "role")
-	if err != nil {
-		return "", err
-	}
-	prompt, err := requiredString(args, "task")
-	if err != nil {
-		return "", err
-	}
-	mode := strings.TrimSpace(stringArg(args, "mode"))
-	if mode == "" {
-		mode = "wait"
-	}
-	if mode != "wait" {
-		return "", fmt.Errorf("spawn_aurabot: unsupported mode %q (MVP supports wait)", mode)
-	}
-
-	allowlist, err := resolveRoleTools(role, stringSliceArg(args, "tools"))
-	if err != nil {
-		return "", err
-	}
-	subject := strings.TrimSpace(stringArg(args, "name"))
-	if subject == "" {
-		subject = role + " task"
-	}
-	run, runErr := t.manager.Run(ctx, swarm.RunRequest{
-		Goal:      subject,
-		CreatedBy: tools.UserIDFromContext(ctx),
-		Assignments: []swarm.Assignment{{
-			Role:                      role,
-			Subject:                   subject,
-			Prompt:                    prompt,
-			SystemPrompt:              roleSystemPrompt(role),
-			ToolAllowlist:             allowlist,
-			Depth:                     0,
-			UserID:                    tools.UserIDFromContext(ctx),
-			MaxToolCalls:              swarm.RoleMaxToolCalls(role),
-			MaxToolResultChars:        swarm.RoleMaxToolResultChars(role),
-			CompleteOnDeadline:        true,
-			DelegatedCapabilities:     delegatedWorkerCapabilities(allowlist),
-			DelegationConstraintsJSON: swarmDelegationConstraints(role, allowlist, nil),
-		}},
-	})
-	resp := spawnResponse{OK: runErr == nil}
-	if run.Run != nil {
-		resp.RunID = run.Run.ID
-		resp.Status = string(run.Run.Status)
-		resp.Error = run.Run.LastError
-	}
-	if len(run.Tasks) > 0 {
-		task := run.Tasks[0]
-		resp.TaskID = task.ID
-		resp.Role = task.Role
-		resp.Result = task.Result
-		resp.LLMCalls = task.LLMCalls
-		resp.ToolCalls = task.ToolCalls
-		resp.ElapsedMS = task.ElapsedMS
-		resp.TokensPrompt = task.TokensPrompt
-		resp.TokensCompletion = task.TokensCompletion
-		resp.TokensTotal = task.TokensTotal
-		if task.LastError != "" {
-			resp.Error = task.LastError
-		}
-	}
-	if runErr != nil && resp.Error == "" {
-		resp.Error = runErr.Error()
-	}
-	return marshal(resp)
-}
-
-func applyIdentityDelegationToAssignments(assignments []swarm.Assignment) {
-	for i := range assignments {
-		assignments[i].DelegatedCapabilities = delegatedWorkerCapabilities(assignments[i].ToolAllowlist)
-		assignments[i].DelegationConstraintsJSON = swarmDelegationConstraints(assignments[i].Role, assignments[i].ToolAllowlist, map[string]any{
-			"depth": assignments[i].Depth,
-		})
-	}
-}
-
-func delegatedWorkerCapabilities(allowlist []string) []identity.Capability {
-	if len(allowlist) == 0 {
-		return nil
-	}
-	return []identity.Capability{identity.CapabilityToolExecute}
-}
-
-func swarmDelegationConstraints(role string, allowlist []string, extra map[string]any) string {
-	payload := map[string]any{
-		"role":           role,
-		"tool_allowlist": allowlist,
-	}
-	for k, v := range extra {
-		payload[k] = v
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return "{}"
-	}
-	return string(data)
-}
 
 type ListSwarmTasksTool struct {
 	store swarm.TaskLister
@@ -328,7 +36,7 @@ func (t *ListSwarmTasksTool) Definition() tools.ToolDefinition {
 }
 
 func (t *ListSwarmTasksTool) Description() string {
-	return "List AuraBot swarm tasks for a run ID, including status and metrics."
+	return "List tasks for an Aura delegated swarm run, including status and metrics."
 }
 
 func (t *ListSwarmTasksTool) Parameters() map[string]any {
@@ -337,7 +45,7 @@ func (t *ListSwarmTasksTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"run_id": map[string]any{
 				"type":        "string",
-				"description": "Swarm run ID returned by spawn_aurabot or run_aurabot_swarm.",
+				"description": "Swarm run ID returned by an AGENTDEF delegate tool.",
 			},
 		},
 		"required": []string{"run_id"},
@@ -385,7 +93,7 @@ func (t *ReadSwarmResultTool) Definition() tools.ToolDefinition {
 }
 
 func (t *ReadSwarmResultTool) Description() string {
-	return "Read one AuraBot task result, including final content, errors, and metrics."
+	return "Read one Aura delegated swarm task result, including final content, errors, and metrics."
 }
 
 func (t *ReadSwarmResultTool) Parameters() map[string]any {
@@ -394,7 +102,7 @@ func (t *ReadSwarmResultTool) Parameters() map[string]any {
 		"properties": map[string]any{
 			"task_id": map[string]any{
 				"type":        "string",
-				"description": "Task ID returned by spawn_aurabot or list_swarm_tasks.",
+				"description": "Task ID returned by list_swarm_tasks.",
 			},
 		},
 		"required": []string{"task_id"},
@@ -411,34 +119,6 @@ func (t *ReadSwarmResultTool) Execute(ctx context.Context, args map[string]any) 
 		return "", fmt.Errorf("read_swarm_result: %w", err)
 	}
 	return marshal(summarizeTask(*task, true))
-}
-
-type spawnResponse struct {
-	OK               bool   `json:"ok"`
-	RunID            string `json:"run_id,omitempty"`
-	TaskID           string `json:"task_id,omitempty"`
-	Status           string `json:"status,omitempty"`
-	Role             string `json:"role,omitempty"`
-	Result           string `json:"result,omitempty"`
-	Error            string `json:"error,omitempty"`
-	LLMCalls         int    `json:"llm_calls"`
-	ToolCalls        int    `json:"tool_calls"`
-	ElapsedMS        int64  `json:"elapsed_ms"`
-	TokensPrompt     int    `json:"tokens_prompt"`
-	TokensCompletion int    `json:"tokens_completion"`
-	TokensTotal      int    `json:"tokens_total"`
-}
-
-type runSwarmResponse struct {
-	OK        bool                      `json:"ok"`
-	Goal      string                    `json:"goal"`
-	Roles     []string                  `json:"roles"`
-	RunID     string                    `json:"run_id,omitempty"`
-	Status    string                    `json:"status,omitempty"`
-	Summary   string                    `json:"summary,omitempty"`
-	Metrics   swarm.RunSynthesisMetrics `json:"metrics"`
-	Tasks     []swarm.TaskSynthesis     `json:"tasks"`
-	LastError string                    `json:"last_error,omitempty"`
 }
 
 type taskSummary struct {
@@ -488,58 +168,6 @@ func summarizeTask(task swarm.Task, includeResult bool) taskSummary {
 	return out
 }
 
-func resolveRoleTools(role string, requested []string) ([]string, error) {
-	allowed, ok := toolsets.RoleTools(role)
-	if !ok {
-		return nil, fmt.Errorf("spawn_aurabot: unknown role %q", role)
-	}
-	if len(requested) == 0 {
-		return allowed, nil
-	}
-	cleaned := toolsets.CleanList(requested)
-	for _, name := range cleaned {
-		if !slices.Contains(allowed, name) {
-			return nil, fmt.Errorf("spawn_aurabot: tool %q is not allowed for role %q", name, role)
-		}
-	}
-	return cleaned, nil
-}
-
-func roleSystemPrompt(role string) string {
-	return "You are an AuraBot " + role + ". Complete only the assigned focused task. Use only available allowed tools. Keep tool use selective, avoid repeated equivalent searches, and always finish with a concise result containing evidence, gaps, and the next useful action."
-}
-
-func workerRolesForPolicy(requested []string, policy DelegationPolicy) []string {
-	policy = policy.Clamp()
-	roles := toolsets.CleanList(requested)
-	if len(roles) == 0 {
-		roles = defaultDelegationRoles()
-	}
-	if len(roles) > policy.MaxWorkers {
-		roles = roles[:policy.MaxWorkers]
-	}
-	return roles
-}
-
-func defaultDelegationRoles() []string {
-	return []string{"librarian", "synthesizer", "researcher", "critic", "skillsmith"}
-}
-
-func applyDelegationPolicyToAssignments(assignments []swarm.Assignment, policy DelegationPolicy) {
-	policy = policy.Clamp()
-	for i := range assignments {
-		if assignments[i].MaxToolCalls <= 0 || assignments[i].MaxToolCalls > policy.ChildMaxIterations {
-			assignments[i].MaxToolCalls = policy.ChildMaxIterations
-		}
-		if assignments[i].MaxToolResultChars <= 0 || assignments[i].MaxToolResultChars > policy.MaxResultChars {
-			assignments[i].MaxToolResultChars = policy.MaxResultChars
-		}
-		if assignments[i].FinalizationTimeout <= 0 || assignments[i].FinalizationTimeout > policy.FinalizationTimeout {
-			assignments[i].FinalizationTimeout = policy.FinalizationTimeout
-		}
-	}
-}
-
 func requiredString(args map[string]any, key string) (string, error) {
 	value := strings.TrimSpace(stringArg(args, key))
 	if value == "" {
@@ -555,27 +183,6 @@ func stringArg(args map[string]any, key string) string {
 	}
 	s, _ := v.(string)
 	return s
-}
-
-func stringSliceArg(args map[string]any, key string) []string {
-	v, ok := args[key]
-	if !ok || v == nil {
-		return nil
-	}
-	switch x := v.(type) {
-	case []string:
-		return toolsets.CleanList(x)
-	case []any:
-		values := make([]string, 0, len(x))
-		for _, item := range x {
-			if s, ok := item.(string); ok {
-				values = append(values, s)
-			}
-		}
-		return toolsets.CleanList(values)
-	default:
-		return nil
-	}
 }
 
 func marshal(v any) (string, error) {

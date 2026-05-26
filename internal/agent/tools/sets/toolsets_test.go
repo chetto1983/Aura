@@ -50,8 +50,6 @@ func TestSchedulerSafeExcludesRecursiveAndDangerousTools(t *testing.T) {
 	safe := SchedulerSafeTools()
 	for _, forbidden := range []string{
 		"task",
-		"spawn_aurabot",
-		"run_aurabot_swarm",
 		"execute_code",
 		"execute_shell",
 	} {

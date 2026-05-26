@@ -331,10 +331,11 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 						stats.SkillsRead = true
 					}
 				}
-			case "run_aurabot_swarm":
-				stats.SwarmUsed = true
 			case "execute_code", "execute_shell":
 				stats.SandboxUsed = true
+			}
+			if isSwarmObservationTool(call.Name) {
+				stats.SwarmUsed = true
 			}
 		}
 		emitStats()
@@ -584,4 +585,10 @@ func runLoop(ctx context.Context, client ChatClient, executor ToolExecutor, stat
 		iterCancel = nil
 	}
 	return gracefulFinalize(ctx, client, state, opts, &stats, lastToolResult, emitStats)
+}
+
+func isSwarmObservationTool(name string) bool {
+	return strings.HasPrefix(name, "delegate_") ||
+		name == "list_swarm_tasks" ||
+		name == "read_swarm_result"
 }

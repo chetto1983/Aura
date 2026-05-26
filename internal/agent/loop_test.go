@@ -423,35 +423,38 @@ func TestRunLoopBudgetWithoutToolResultReturnsBriefLimitAnswer(t *testing.T) {
 	}
 }
 
-func TestRunLoopTerminalSwarmCanStopWithHandler(t *testing.T) {
+func TestRunLoopTerminalDelegateCanStopWithHandler(t *testing.T) {
 	state := newFakeLoopState()
 	client := &fakeLoopClient{responses: []ChatResponse{
-		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "run_aurabot_swarm"}}}},
+		{Response: llm.Response{HasToolCalls: true, ToolCalls: []llm.ToolCall{{ID: "call-1", Name: "delegate_summarizer"}}}},
 		{Response: llm.Response{Content: "too late"}},
 	}}
 
 	result, err := runLoop(context.Background(), client, ToolExecutorFunc(func(_ context.Context, calls []llm.ToolCall) ExecutionSummary {
-		state.AddToolResultMessage(calls[0].ID, "swarm synthesis")
-		return ExecutionSummary{LastResult: "swarm synthesis", TerminalTool: "run_aurabot_swarm"}
+		state.AddToolResultMessage(calls[0].ID, "delegate synthesis")
+		return ExecutionSummary{LastResult: "delegate synthesis", TerminalTool: "delegate_summarizer"}
 	}), state, Options{
 		MaxIterations:           3,
 		TerminalToolPolicy:      true,
 		AllowNoToolFinalization: true,
 		TerminalHandler: func(context.Context, string, string, *Stats) (string, bool, bool) {
-			return "final from swarm", false, true
+			return "final from delegate", false, true
 		},
 	})
 	if err != nil {
 		t.Fatalf("runLoop returned error: %v", err)
 	}
-	if result.Text != "final from swarm" {
+	if result.Text != "final from delegate" {
 		t.Fatalf("Text = %q, want terminal response", result.Text)
 	}
 	if client.requests != 1 {
 		t.Fatalf("LLM requests = %d, want 1", client.requests)
 	}
-	if result.Stats.TerminalTool != "run_aurabot_swarm" {
+	if result.Stats.TerminalTool != "delegate_summarizer" {
 		t.Fatalf("TerminalTool = %q", result.Stats.TerminalTool)
+	}
+	if !result.Stats.SwarmUsed {
+		t.Fatal("SwarmUsed = false, want true for delegate tool")
 	}
 }
 
