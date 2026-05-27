@@ -1,0 +1,459 @@
+{
+  "generated_at": "2026-05-26T19:21:28Z",
+  "window_hours": 24,
+  "artifact_path": ".planning/post-drift-2026-05-21/Phase-PROMPT-CTX/prompt-health-baseline.json",
+  "prompt": {
+    "version": "aura-agent-v1",
+    "hash": "8382866e583d0f21",
+    "stable_hash": "8801cb91fce9e7c0",
+    "runtime_capsule_hash": "27bc377cfac807ca",
+    "total_chars": 12394,
+    "stable_chars": 9833,
+    "runtime_capsule_chars": 287,
+    "modules": [
+      "base",
+      "turn-runtime",
+      "clarification-protocol",
+      "tool-routing"
+    ],
+    "section_anchors": [
+      "## Aura Identity",
+      "## Authority And Context Precedence",
+      "## Operating Loop",
+      "## Tool Policy",
+      "## Minimal Tool Routing",
+      "## Memory Layers",
+      "## Context Capsules",
+      "## Ask User Policy",
+      "## Output Contract",
+      "## Privacy And Safety",
+      "## Turn Runtime Capsule",
+      "## Aura Runtime",
+      "## Clarification and Approval Protocol",
+      "### When to use ask_user",
+      "### When NOT to use ask_user",
+      "### The two kinds",
+      "### Examples",
+      "### Counter-examples"
+    ]
+  },
+  "db": {
+    "views_present": true,
+    "rollup": {
+      "turn_rows": 462,
+      "assistant_turns": 228,
+      "distinct_chats": 18,
+      "llm_calls": 212,
+      "tool_calls": 134,
+      "compactions": 1,
+      "prompt_tokens": 16906711,
+      "completion_tokens": 0,
+      "max_prompt_tokens": 775137,
+      "max_llm_calls": 22,
+      "max_tool_calls": 21,
+      "max_elapsed_ms": 135340,
+      "max_compaction_tokens_before": 7869,
+      "max_compaction_tokens_after": 2748
+    },
+    "percentiles": {
+      "prompt_tokens_p50": 86291,
+      "prompt_tokens_p95": 686805
+    },
+    "outliers": [
+      {
+        "id": 886,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 629,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:53:48",
+        "llm_calls": 1,
+        "tool_calls_count": 0,
+        "elapsed_ms": 20599,
+        "tokens_in": 775137,
+        "tokens_out": 0
+      },
+      {
+        "id": 884,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 627,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:52:24",
+        "llm_calls": 2,
+        "tool_calls_count": 1,
+        "elapsed_ms": 21659,
+        "tokens_in": 755819,
+        "tokens_out": 0
+      },
+      {
+        "id": 880,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 623,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:49:44",
+        "llm_calls": 1,
+        "tool_calls_count": 0,
+        "elapsed_ms": 17743,
+        "tokens_in": 720769,
+        "tokens_out": 0
+      },
+      {
+        "id": 878,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 621,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:47:30",
+        "llm_calls": 1,
+        "tool_calls_count": 0,
+        "elapsed_ms": 14567,
+        "tokens_in": 703572,
+        "tokens_out": 0
+      },
+      {
+        "id": 876,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 619,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:46:08",
+        "llm_calls": 1,
+        "tool_calls_count": 0,
+        "elapsed_ms": 8411,
+        "tokens_in": 686805,
+        "tokens_out": 0
+      },
+      {
+        "id": 874,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 617,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:44:59",
+        "llm_calls": 2,
+        "tool_calls_count": 1,
+        "elapsed_ms": 25627,
+        "tokens_in": 670944,
+        "tokens_out": 0
+      },
+      {
+        "id": 870,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 613,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:44:11",
+        "llm_calls": 1,
+        "tool_calls_count": 0,
+        "elapsed_ms": 7351,
+        "tokens_in": 641866,
+        "tokens_out": 0
+      },
+      {
+        "id": 868,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 611,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:43:26",
+        "llm_calls": 1,
+        "tool_calls_count": 0,
+        "elapsed_ms": 13016,
+        "tokens_in": 628187,
+        "tokens_out": 0
+      },
+      {
+        "id": 866,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 609,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:41:02",
+        "llm_calls": 1,
+        "tool_calls_count": 0,
+        "elapsed_ms": 19442,
+        "tokens_in": 614695,
+        "tokens_out": 0
+      },
+      {
+        "id": 864,
+        "channel": "telegram",
+        "chat_hash": "b7e6c29b6445c12f",
+        "turn_index": 607,
+        "role": "assistant",
+        "created_at": "2026-05-26 11:40:26",
+        "llm_calls": 2,
+        "tool_calls_count": 1,
+        "elapsed_ms": 26048,
+        "tokens_in": 601252,
+        "tokens_out": 0
+      }
+    ],
+    "tool_outcomes": [
+      {
+        "tool_name": "file",
+        "outcome": "ok",
+        "class": "",
+        "count": 38,
+        "max_elapsed_ms": 5069,
+        "last_seen": "2026-05-26T19:21:05.18804516Z"
+      },
+      {
+        "tool_name": "search",
+        "outcome": "ok",
+        "class": "",
+        "count": 38,
+        "max_elapsed_ms": 4552,
+        "last_seen": "2026-05-26T19:08:12.020897621Z"
+      },
+      {
+        "tool_name": "tool_search",
+        "outcome": "ok",
+        "class": "",
+        "count": 17,
+        "max_elapsed_ms": 25,
+        "last_seen": "2026-05-26T19:20:57.043449746Z"
+      },
+      {
+        "tool_name": "web",
+        "outcome": "ok",
+        "class": "",
+        "count": 13,
+        "max_elapsed_ms": 4606,
+        "last_seen": "2026-05-26T15:27:36.821988414Z"
+      },
+      {
+        "tool_name": "agent_note",
+        "outcome": "ok",
+        "class": "",
+        "count": 8,
+        "max_elapsed_ms": 31,
+        "last_seen": "2026-05-26T11:28:00.740853867Z"
+      },
+      {
+        "tool_name": "file",
+        "outcome": "recoverable",
+        "class": "validation",
+        "count": 8,
+        "max_elapsed_ms": 14,
+        "last_seen": "2026-05-26T19:17:16.111196554Z"
+      },
+      {
+        "tool_name": "ask_user",
+        "outcome": "cancelled",
+        "class": "cancelled",
+        "count": 4,
+        "max_elapsed_ms": 14,
+        "last_seen": "2026-05-26T11:15:25.044224273Z"
+      },
+      {
+        "tool_name": "text_response",
+        "outcome": "ok",
+        "class": "",
+        "count": 4,
+        "max_elapsed_ms": 17,
+        "last_seen": "2026-05-26T19:20:00.851875019Z"
+      },
+      {
+        "tool_name": "mcp_calculator_calculate",
+        "outcome": "ok",
+        "class": "",
+        "count": 3,
+        "max_elapsed_ms": 17,
+        "last_seen": "2026-05-26T18:15:29.833351701Z"
+      },
+      {
+        "tool_name": "wiki_page",
+        "outcome": "ok",
+        "class": "",
+        "count": 2,
+        "max_elapsed_ms": 168,
+        "last_seen": "2026-05-26T19:08:58.404514429Z"
+      },
+      {
+        "tool_name": "create_document",
+        "outcome": "ok",
+        "class": "",
+        "count": 1,
+        "max_elapsed_ms": 191,
+        "last_seen": "2026-05-26T18:46:44.273485135Z"
+      },
+      {
+        "tool_name": "search",
+        "outcome": "recoverable",
+        "class": "not_found",
+        "count": 1,
+        "max_elapsed_ms": 11,
+        "last_seen": "2026-05-26T13:05:40.610960314Z"
+      },
+      {
+        "tool_name": "search",
+        "outcome": "recoverable",
+        "class": "validation",
+        "count": 1,
+        "max_elapsed_ms": 13,
+        "last_seen": "2026-05-26T10:22:27.254427847Z"
+      },
+      {
+        "tool_name": "skill",
+        "outcome": "recoverable",
+        "class": "not_found",
+        "count": 1,
+        "max_elapsed_ms": 15,
+        "last_seen": "2026-05-26T18:15:29.915426496Z"
+      },
+      {
+        "tool_name": "source",
+        "outcome": "ok",
+        "class": "",
+        "count": 1,
+        "max_elapsed_ms": 18,
+        "last_seen": "2026-05-26T11:36:58.589039837Z"
+      },
+      {
+        "tool_name": "web",
+        "outcome": "recoverable",
+        "class": "validation",
+        "count": 1,
+        "max_elapsed_ms": 10,
+        "last_seen": "2026-05-26T09:41:51.056161665Z"
+      },
+      {
+        "tool_name": "wiki_page",
+        "outcome": "recoverable",
+        "class": "validation",
+        "count": 1,
+        "max_elapsed_ms": 11,
+        "last_seen": "2026-05-26T09:46:43.650818014Z"
+      }
+    ],
+    "memory_kinds": [
+      {
+        "kind": "archive",
+        "status": "",
+        "count": 431,
+        "last_updated": "2026-05-26T19:21:09Z"
+      },
+      {
+        "kind": "source",
+        "status": "ingested",
+        "count": 20,
+        "last_updated": "2026-05-26T18:46:44.096331992Z"
+      },
+      {
+        "kind": "operational",
+        "status": "active",
+        "count": 10,
+        "last_updated": "2026-05-26T11:39:25.101475097Z"
+      },
+      {
+        "kind": "proposal",
+        "status": "accepted",
+        "count": 4,
+        "last_updated": "2026-05-26T06:08:40Z"
+      },
+      {
+        "kind": "source",
+        "status": "stored",
+        "count": 2,
+        "last_updated": "2026-05-26T11:36:58.588144922Z"
+      },
+      {
+        "kind": "operational",
+        "status": "pending",
+        "count": 1,
+        "last_updated": "2026-05-25T10:50:51.5292473Z"
+      },
+      {
+        "kind": "proposal",
+        "status": "pending",
+        "count": 1,
+        "last_updated": "2026-05-26T17:15:31Z"
+      },
+      {
+        "kind": "user_memory",
+        "status": "active",
+        "count": 1,
+        "last_updated": "2026-05-25T10:50:50.5292473Z"
+      },
+      {
+        "kind": "user_memory",
+        "status": "pending",
+        "count": 1,
+        "last_updated": "2026-05-25T10:50:51.5292473Z"
+      }
+    ],
+    "run_events": [
+      {
+        "type": "tool_end",
+        "run_origin": "user",
+        "count": 140,
+        "last_seen": "2026-05-26T19:21:05.195515349Z"
+      },
+      {
+        "type": "tool_start",
+        "run_origin": "user",
+        "count": 140,
+        "last_seen": "2026-05-26T19:21:05.153506862Z"
+      },
+      {
+        "type": "done",
+        "run_origin": "user",
+        "count": 91,
+        "last_seen": "2026-05-26T19:21:09.056614723Z"
+      },
+      {
+        "type": "message_done",
+        "run_origin": "user",
+        "count": 91,
+        "last_seen": "2026-05-26T19:21:08.980858773Z"
+      },
+      {
+        "type": "run_started",
+        "run_origin": "user",
+        "count": 91,
+        "last_seen": "2026-05-26T19:20:51.53733681Z"
+      },
+      {
+        "type": "usage",
+        "run_origin": "user",
+        "count": 91,
+        "last_seen": "2026-05-26T19:21:09.040970733Z"
+      },
+      {
+        "type": "question_answered",
+        "run_origin": "user",
+        "count": 4,
+        "last_seen": "2026-05-26T11:15:26.915033261Z"
+      },
+      {
+        "type": "question_requested",
+        "run_origin": "user",
+        "count": 4,
+        "last_seen": "2026-05-26T11:15:25.198378397Z"
+      },
+      {
+        "type": "cancelled",
+        "run_origin": "user",
+        "count": 1,
+        "last_seen": "2026-05-26T15:27:53.464829117Z"
+      },
+      {
+        "type": "error",
+        "run_origin": "user",
+        "count": 1,
+        "last_seen": "2026-05-26T13:10:08.97890697Z"
+      }
+    ]
+  },
+  "redaction": {
+    "passed": true,
+    "raw_prompt": false,
+    "raw_conversation": false,
+    "raw_tool_arguments": false,
+    "raw_tool_outputs": false,
+    "raw_memory_documents": false
+  }
+}
