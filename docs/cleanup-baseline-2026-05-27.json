@@ -1,0 +1,14 @@
+{
+  "deadcode": [],
+  "golangci_lint": {
+    "errcheck": 50,
+    "staticcheck": 2,
+    "total": 52
+  },
+  "dupl": {
+    "production_cross_file": 15,
+    "production_intra_file": 13,
+    "test": 75,
+    "total_clusters": 103
+  }
+}

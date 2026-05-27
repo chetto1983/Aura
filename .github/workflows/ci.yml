@@ -33,6 +33,41 @@ jobs:
       - name: Go vet
         run: go vet ./...
 
+      - name: Lint regression delta vs baseline
+        continue-on-error: true
+        run: |
+          # v2.12.2 syntax: --output.text.* keys (v1's --out-format was removed in v2).
+          # With print-issued-lines=false, each finding is exactly one line
+          # (path:line:col: rule: message); the run appends 2 summary lines
+          # ("N issues:" + "* errcheck: N"). On the seed commit:
+          #   50 errcheck findings + 2 summary lines = 52 - matches BASELINE.
+          # Counter is wc -l, same shape as the deadcode job's wc -l < /tmp/dc-findings.txt.
+          # Cross-phase coupling: when Phase 4 / CLEAN-51 enables staticcheck
+          # explicitly in .golangci.yml, this runtime count rises and BASELINE
+          # below MUST be bumped in the same CLEAN-51 commit.
+          go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+          golangci-lint run \
+            --output.text.path=stdout \
+            --output.text.print-issued-lines=false \
+            --output.text.print-linter-name=false \
+            --output.text.colors=false \
+            ./... 2>/dev/null | tee /tmp/lint-current.txt || true
+          BASELINE=52
+          CURRENT=$(wc -l < /tmp/lint-current.txt | tr -d ' ')
+          echo "golangci-lint: $CURRENT findings (baseline: $BASELINE, delta: $((CURRENT - BASELINE)))"
+
+      - name: Install dupl
+        run: go install github.com/mibk/dupl@latest
+
+      - name: Dupl regression warning (dupl -t 60)
+        continue-on-error: true
+        run: |
+          dupl -t 60 ./cmd ./internal 2>&1 | tee /tmp/dupl-current.txt || true
+          BASELINE=103
+          CURRENT=$(grep -oE 'Found total [0-9]+' /tmp/dupl-current.txt | grep -oE '[0-9]+' | head -1)
+          CURRENT=${CURRENT:-0}
+          echo "dupl: $CURRENT clone groups (baseline: $BASELINE, delta: $((CURRENT - BASELINE)))"
+
       - name: Go build
         run: go build ./...
 
