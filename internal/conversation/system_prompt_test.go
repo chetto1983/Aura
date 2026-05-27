@@ -54,6 +54,11 @@ func TestDefaultSystemPromptProfessionalCapsuleContract(t *testing.T) {
 		"full schema catalogs",
 		"artifact IDs",
 		"tool_attempt metadata",
+		"Use Aura as the parent orchestrator",
+		"delegate bulky payload compression",
+		"organize or split multi-step work",
+		"facts to preserve",
+		"never dump full child transcripts",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("DefaultSystemPrompt missing contract phrase %q", want)

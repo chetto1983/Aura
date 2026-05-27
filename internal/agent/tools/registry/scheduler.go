@@ -108,27 +108,19 @@ func (t *TaskTool) Definition() ToolDefinition {
 func (t *TaskTool) Description() string {
 	return `Manage scheduled tasks (reminders, agent jobs, wiki maintenance).
 
-EXAMPLES — copy the shape exactly:
+EXAMPLES - copy the shape exactly:
 
   task({"action":"list"})
   task({"action":"schedule","name":"morning-ping","kind":"reminder","payload":"Daily check-in","daily":"09:00"})
   task({"action":"schedule","name":"in-five","kind":"reminder","payload":"five minute reminder","in":"5m"})
-  task({"action":"schedule","name":"weekly-recap","kind":"agent_job","payload":"summarise this week's notes","daily":"18:00","weekdays":["fri"]})
   task({"action":"schedule","name":"morning-news","kind":"agent_job","payload":"summarise local news","daily":"08:30","run_now":true})
   task({"action":"cancel","name":"morning-ping"})
   task({"action":"run_now","name":"weekly-recap"})
 
 action REQUIRED; valid: "schedule", "list", "cancel", "run_now".
-
-Per-action required:
-  • list     → nothing (optional status filter)
-  • schedule → name AND kind AND exactly ONE of in / at_local / at / daily / every_minutes
-  • cancel   → name
-  • run_now  → name
-
-Schedule fields are mutually exclusive: in (relative "5m"/"2h"/"1d"), at_local ("YYYY-MM-DDTHH:MM"), at (UTC ISO8601), daily ("HH:MM" + optional weekdays), every_minutes (>=5).
-If the user asks to create a recurring routine and also wants to see it now, prefer action="schedule" with run_now=true; otherwise schedule first, then action="run_now" with the same name.
-Never treat a separate ad hoc web/search answer as the saved task execution. For create/update requests, call schedule directly; list only when the user asked to list tasks or you must inspect an unknown task before cancelling it.`
+Required: schedule needs name, kind, and exactly one timing field: in, at_local, at, daily, or every_minutes. cancel/run_now need name. list needs no fields.
+Timing fields are mutually exclusive. Use in for relative "5m"/"2h"/"1d", at_local for "YYYY-MM-DDTHH:MM", at for UTC ISO8601, daily for "HH:MM" plus optional weekdays, every_minutes >=5.
+For recurring work that the user also wants to see now, prefer schedule with run_now=true; otherwise schedule first, then run_now with the same name. Never replace a saved task execution with a separate ad hoc web/search answer.`
 }
 
 func (t *TaskTool) Parameters() map[string]any {

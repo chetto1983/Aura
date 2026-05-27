@@ -89,17 +89,16 @@ func (c *Context) AddToolResultMessage(toolCallID string, content string) {
 	c.messages = append(c.messages, llm.Message{Role: "tool", Content: content, ToolCallID: toolCallID})
 }
 
-// EnforceLimit keeps the context bounded.
+// EnforceLimit keeps the mutable conversation history bounded.
 //
 // Strategy (cheapest action first):
 //  1. If maxMessages>0 and we exceed it, drop oldest non-system messages
 //     down to the cap with a tool-safe boundary. No LLM call. This handles
 //     normal growth — tool blobs and chat turns from earlier sessions get
 //     evicted long before they cause trouble.
-//  2. If we're still over the token soft threshold (80%) AND a summarizer
-//     is configured, summarize. This is the slow path and is only reached
-//     when individual messages are pathologically large (e.g. a 30K-char
-//     wiki page pasted into context).
+//  2. If the non-system history is still over the token soft threshold (80%)
+//     AND a summarizer is configured, summarize. Stable system prompt content
+//     is rebuilt each turn and must not trigger a hidden post-turn LLM call.
 //  3. If we're over the hard token limit, trim oldest until we fit.
 //  4. Last resort: truncate individual messages.
 func (c *Context) EnforceLimit(ctx context.Context) error {
@@ -118,12 +117,12 @@ func (c *Context) EnforceLimit(ctx context.Context) error {
 
 	// If still over the hard limit after summarization, trim aggressively
 	trimPasses := 0
-	prevTokenCount := c.EstimatedTokens()
+	prevTokenCount := c.EstimatedHistoryTokens()
 	for c.IsOverLimit() && trimPasses < 10 {
 		c.trimOldest()
 		trimPasses++
 		// If trimming made no progress, break to avoid infinite loop
-		currentTokens := c.EstimatedTokens()
+		currentTokens := c.EstimatedHistoryTokens()
 		if currentTokens == prevTokenCount {
 			break
 		}
@@ -138,6 +137,7 @@ func (c *Context) EnforceLimit(ctx context.Context) error {
 	if trimPasses > 0 || c.IsOverLimit() {
 		c.logger.Info("enforced context limit",
 			"trim_passes", trimPasses,
+			"estimated_history_tokens", c.EstimatedHistoryTokens(),
 			"estimated_tokens", c.EstimatedTokens(),
 			"max_tokens", c.maxTokens,
 		)
@@ -315,6 +315,29 @@ func (c *Context) EstimatedTokens() int {
 	return total
 }
 
+// EstimatedHistoryTokens estimates only mutable conversation history. The
+// stable system prompt is excluded because it is rebuilt from durable prompt
+// modules each turn and should not drive between-turn summarization.
+func (c *Context) EstimatedHistoryTokens() int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.estimatedHistoryTokensLocked()
+}
+
+func (c *Context) estimatedHistoryTokensLocked() int {
+	total := 0
+	if c.summary != "" {
+		total += len("Summary of earlier conversation:\n"+c.summary) / 4
+	}
+	for i, m := range c.messages {
+		if i == 0 && m.Role == "system" {
+			continue
+		}
+		total += len(m.Content) / 4
+	}
+	return total
+}
+
 // TrackTokens adds to the running total of tokens used.
 func (c *Context) TrackTokens(usage llm.TokenUsage) {
 	c.totalTokensUsed += usage.TotalTokens
@@ -328,12 +351,12 @@ func (c *Context) TotalTokensUsed() int {
 // ShouldSummarize returns true when context exceeds 80% of the token limit.
 func (c *Context) ShouldSummarize() bool {
 	threshold := float64(c.maxTokens) * 0.8
-	return float64(c.EstimatedTokens()) > threshold
+	return float64(c.EstimatedHistoryTokens()) > threshold
 }
 
 // IsOverLimit returns true when context exceeds the hard token limit.
 func (c *Context) IsOverLimit() bool {
-	return c.EstimatedTokens() > c.maxTokens
+	return c.EstimatedHistoryTokens() > c.maxTokens
 }
 
 // MaxTokens returns the configured max context token limit.

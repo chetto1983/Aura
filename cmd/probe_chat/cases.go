@@ -36,6 +36,8 @@ func allCases(now time.Time, enableTTS bool) []Case {
 		contextBuilderWeatherCaraglioCase(stamp),
 		naturalSkillAuthoringCase(stamp),
 		naturalLongWorkflowScratchpadCase(stamp),
+		naturalMultiagentOrchestratorCase(stamp),
+		naturalMultiagentNoOverdelegationCase(stamp),
 
 		// 1. Pure conversational — no tools needed, no phantom risk.
 		{

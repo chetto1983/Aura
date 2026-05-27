@@ -396,3 +396,102 @@ Residual:
   the probe threshold, but `max_tokens_in=75,191` is still high for three turns.
   The next slice should reduce carried tool-output/schema mass rather than
   adding more routing prose to the stable prompt.
+
+## 2026-05-26 - PROMPT-01F natural multiagent orchestration probe
+
+Status: implemented locally, verified.
+
+Why:
+
+- OH3 research documents point to safe parent-orchestrated fan-out, frozen
+  isolated workers, compact child returns, no peer mesh, and metrics based on
+  useful critical path rather than agent count.
+- Aura already had the safe substrate (`orchestrator -> summarizer`) but the
+  Docker runtime kept `AURABOT_ENABLED=false`, so natural web/API turns could
+  not validate the parent/child path.
+- The first natural probe proved two real gaps:
+  - with the old worker description, Aura summarized a user-provided noisy
+    payload in the parent and falsely mentioned child work;
+  - after widening the worker description, Aura delegated but too late when the
+    payload was oversized for the wall-clock budget.
+
+Changes:
+
+- Enabled the dev Docker swarm runtime with conservative defaults:
+  `AURABOT_ENABLED=true`, `AURABOT_MAX_ACTIVE=2`,
+  `AURABOT_MAX_DEPTH=3`, `AURABOT_TIMEOUT_SEC=300`,
+  `AURABOT_MAX_ITERATIONS=100`.
+- Updated the orchestrator prompt and stable system prompt so Aura treats
+  bulky payload compression/noisy extraction as specialist work when the user
+  naturally asks Aura to organize or split multi-step work.
+- Expanded the summarizer worker contract from tool outputs only to noisy
+  user-provided payloads, logs, traces, or tool results.
+- Added `cmd/probe_chat` metrics support and two natural swarm cases:
+  - `natural-multiagent-orchestrator-scratchpad`: private checklist plus
+    delegated payload compression and final synthesis with preserved facts;
+  - `natural-multiagent-no-overdelegation`: a simple one-shot summary that must
+    not spawn child work.
+- Trimmed the `task` tool description back under the 1500-byte catalog cap
+  found by the broader agent package gate.
+
+Verification:
+
+- `go test ./internal/conversation -count=1`
+- `go test ./internal/agent/agentdef ./internal/swarm ./internal/agent/tools/swarm -count=1`
+- `go test ./cmd/probe_chat -run TestDoesNotExist -count=0`
+- `go test ./internal/agent/... ./internal/conversation ./cmd/probe_chat -count=1`
+- `go test ./internal/agent/tools/registry -count=1`
+- `docker compose build aura`
+- `docker compose up -d aura`
+- Logs confirm `AuraBot swarm enabled` and `tool registry built`.
+
+Live probes:
+
+- Command:
+  `go run ./cmd/probe_chat -smoke tools-swarm -json -timeout 420`
+- Result:
+  - `natural-multiagent-no-overdelegation`: pass, `tool_calls=0`,
+    `llm_calls=1`, `tokens=8,087`, `elapsed_ms=13,269`,
+    `swarm_rows=0`, `critical_steps_estimate=1`.
+  - `natural-multiagent-orchestrator-scratchpad`: pass, `tool_calls=2`,
+    `llm_calls=3`, `tokens=37,511`, `elapsed_ms=108,566`,
+    `tool_attempts.agent_note=1`,
+    `tool_attempts.delegate_summarizer=1`,
+    `swarm_summarizer_rows=1`, `swarm_reflector_rows=1`,
+    `child_completed_tasks=1`, `child_failed_tasks=0`,
+    `child_llm_calls=1`, `child_tool_calls=0`,
+    `child_tokens_total=3,377`, `child_max_elapsed_ms=28,209`,
+    `critical_steps_estimate=4`, `context_rows=6`,
+    `context_tool_rows=2`, `context_max_tokens_in=37,511`,
+    `context_compactions=0`.
+  - The positive reply preserved `RUN_ID`, `PATH_A`, `URL_REPORT`,
+    `ERROR_CODE`, and `NEXT_ACTION` exactly in the final answer.
+
+Follow-up fix during closure:
+
+- Root cause for the two `cmd/aura` failures was `conversation.Context.EnforceLimit`
+  counting the stable generated system prompt as mutable history, which triggered
+  hidden post-turn summarization through the primary LLM client. The fix adds a
+  separate non-system history token estimate for between-turn retention.
+- Verification after the fix:
+  `go test ./cmd/aura -run "Test(WebChatStreamUsesLLMStreamAndUIMessageFrames|HubBackedWebChatTerminatesOnTextResponseTool)$" -count=1`,
+  `go test ./internal/conversation -count=1`, and
+  `go test ./cmd/aura ./internal/agent/... ./internal/conversation ./cmd/probe_chat -count=1`.
+- Full local gate:
+  `go test ./... -count=1`.
+- Post-rebuild live API probe:
+  `go run ./cmd/probe_chat -smoke tools-swarm -json -timeout 420` with the
+  local QA bearer token from `.planning/qa/token.txt`. Result: both cases pass.
+  The no-overdelegation case stayed at `tool_calls=0`, `llm_calls=1`,
+  `swarm_rows=0`, `context_compactions=0`, `context_max_tokens_in=8,033`.
+  The orchestrator case used `tool_attempts.agent_note=1` and
+  `tool_attempts.delegate_summarizer=1`, with `swarm_summarizer_rows=1`,
+  `child_completed_tasks=1`, `child_failed_tasks=0`,
+  `context_compactions=0`, and `context_max_tokens_in=37,274`.
+
+Residual:
+
+- `list_swarm_tasks` and `read_swarm_result` are registered only when included
+  in `AURA_TOOL_ALLOWLIST`; Docker logs show they are still skipped by the
+  current default allowlist. Dynamic `delegate_summarizer` works regardless for
+  the active-turn orchestrator path.

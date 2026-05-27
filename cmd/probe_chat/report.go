@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 )
 
 // =========================================================================
@@ -43,6 +44,16 @@ func printReport(results []Result) {
 		fmt.Printf("  reply : %s\n", truncate(r.Reply, 280))
 		if r.TransportErr != "" {
 			fmt.Printf("  TRANSPORT ERROR: %s\n", r.TransportErr)
+		}
+		if len(r.Metrics) > 0 {
+			keys := make([]string, 0, len(r.Metrics))
+			for k := range r.Metrics {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				fmt.Printf("  METRIC %s=%v\n", k, r.Metrics[k])
+			}
 		}
 		for _, m := range r.Mismatches {
 			fmt.Printf("  MISMATCH: %s\n", m)

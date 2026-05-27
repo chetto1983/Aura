@@ -26,6 +26,7 @@
 //	tools-skills         natural-skill-authoring
 //	tools-memory         wiki-page-create, phase07d-mixed-tier-recall, phase07f-wiki-frontmatter
 //	tools-source         source-store-read-roundtrip, phase07e-source-span-read
+//	tools-swarm          natural-multiagent-orchestrator-scratchpad, natural-multiagent-no-overdelegation
 //	tools-web            web-fetch-summarize-*
 //	tools-scheduler      schedule-reminder
 //	tools-agent-note     agent-note-roundtrip

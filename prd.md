@@ -1190,7 +1190,7 @@ canonical evidence; this table is the at-a-glance overview. Three states:
 | **Phase-Q** — User Memory Write Guards (Phase 9 partial close) | ✅ | 2026-05-16 | US-Q01..Q04 — `c0189ac4..`(US-Q04) | user_memory write guards wired (Phase 9 partial close — capability check + question gate): memory.user.write Authorize gate at WriteApprovedUserFact + ambiguity question gate Score<0.7 + integration tests |
 | **Phase-R** — Subagent Dispatch Primitive (Phase 8 read-only fanout first slice) | ✅ | 2026-05-16 | US-R01..R04 — `b4124b54..`(US-R04) | historical primitive: NodeSpec + HubBridge.Dispatch + WaitForRun + E2E integration test. The standalone `subagent_dispatch` LLM manifest tool was later retired from the active tool surface. |
 | **Phase-S** — Write-capable Workers via propose_patch (Phase 8 second slice) | ✅ | 2026-05-16 | US-S01..S04 — `64b6623d..`(US-S04) | write-capable workers wired (Phase 8 second slice): propose_patch tool (3 actions, idempotency, provenance) + RiskTier=write_proposal enforcement + historical subagent risk-tier support + SweepStaleProposals TTL cron |
-| **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 second-slice closed | 2026-05-16 (Phase-S) | Phase08 first slice (Phase-R) + second slice (Phase-S) closed 2026-05-16; full Phase 8 (team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) remains deferred | **Capability #5 extended by Phase-S.** write_proposal workers via propose_patch wired. Full Phase 8 substrate (8B–8G) gated on open decisions. |
+| **8** — Autonomous Durable Work Runtime (Cron + Swarm RunGraph) | 🟡 prompt/dev delegate probe closed | 2026-05-26 (PROMPT-01F) | Phase08 first slice (Phase-R) + second slice (Phase-S) closed 2026-05-16; PROMPT-01F validated the existing `orchestrator -> summarizer` delegate path through natural `/api/chat` probes; full Phase 8 (team_collaboration, plan-execute, critic-review, hierarchical/hybrid DAG) remains deferred | **Capability #5 extended by Phase-S and probed in dev by PROMPT-01F.** write_proposal workers via propose_patch wired; dynamic `delegate_summarizer` now has runtime evidence. Full Phase 8 substrate (8B–8G) gated on open decisions. |
 | **9** — Memory and Source Discipline | 🟡 partial-close | 2026-05-16 (partial) | Phase-O + Phase-Q closed (write-policy + guards); remaining: clarify memory vs storage docs, conversion fixtures, SQLite concurrency hardening | **Phase 9 partial-close 2026-05-16** — capability #1 (autonomous write-policy) core wired; doc/invariant hardening deferred |
 | **10** — Single Source of Truth Config | ✅ | 2026-05-15 | US-H01..H06 | SQLite-backed secrets, setup wizard rewrite, `.env` legacy reference only |
 | **Phase-CLEANUP** — Audit-driven cleanup sweep (US-CL01..CL06) | ✅ | 2026-05-17 | US-CL01..CL06 — 25 commits incl. `9e010638..dab004c3` | `stringx.AppendUnique`+`NormalizeBaseURL`+`llm.CloneMessages`+`httputil.NewHTTPClient`; cmd/aura adapters extracted; identity/store split (875→233); chat testhelpers; staticcheck modernizations. 80→2 lint issues (last 2 in `web/node_modules`). |
@@ -1370,6 +1370,12 @@ The catalog below formalizes the post-DRIFT phases derived from convergent evide
 **Cancelled / absorbed phases:** Phase-STREAM (already shipped as US-LAT-06), Phase-CLEAN3 (god-splits absorbed into Phase-MODERNIZE Wave B; remaining dupl folds + comment fictions ship as deep-refactor-on-touch in feature phases per CLAUDE.md rule), Phase-WIKI-B Wave A US-WIKI-B02 (done de facto by Phase-WIKI-FIX), Phase-WIKI-B Wave A US-WIKI-B01 (conflicts with Phase-TOOL "no new tools").
 
 Plan files (one `plan.md` per phase, plus `INDEX.md`): `.planning/post-drift-2026-05-21/`.
+
+**PROMPT-CTX correction 2026-05-27:** between-turn conversation retention now
+measures mutable non-system history separately from the stable system prompt.
+`conversation.Context.EnforceLimit` must not summarize or trim solely because
+the generated system prompt is large; that prompt is rebuilt from durable
+modules each turn and is not the memory payload carried between turns.
 
 **Implications for existing phases (§7.4):**
 
@@ -1758,6 +1764,12 @@ Implementation order after the 2026-05-19 reconciliation:
   results with a summarizer sub-agent or equivalent LLM compression contract,
   preserving identifiers, source handles, errors, and key facts. This is the
   first implementation slice because it is useful even without deeper Phase 8.
+- **PROMPT-01F natural delegate probe (closed 2026-05-26)**: dev Docker now
+  enables the existing safe `orchestrator -> summarizer` path, and
+  `cmd/probe_chat` includes the `tools-swarm` natural-language benchmark. This
+  is operating evidence for prompt/runtime orchestration and over-delegation
+  control; it does not replace US-P8-G's dedicated oversized tool-output
+  compaction contract.
 - **US-P8-A Ownership/per-task context**: add explicit ownership boundaries and
   per-task context fields to `spawn_parallel_agents` style dispatch.
 - **US-P8-D Tier and depth lift**: introduce agent tier metadata, loader or
@@ -1834,6 +1846,19 @@ integration test, and `SweepStaleProposals` TTL cron (daily 03:00, 30-day pendin
 Plan-execute, critic-review, and bounded hierarchy are re-opened as the
 reconciled Phase 8 substrate. Formal Hybrid DAG conditionals, full team
 collaboration, and cron RunGraph migration remain deferred follow-ons.
+
+**Phase 8 prompt/dev delegate probe closed 2026-05-26 (PROMPT-01F natural multiagent orchestration).**
+The current dev runtime enables the safe `orchestrator -> summarizer` delegate
+path by default and validates it through natural `/api/chat` probes, not
+infrastructure-instruction prompts. The passing `cmd/probe_chat -smoke
+tools-swarm` benchmark proves: simple prompts do not delegate (`swarm_rows=0`);
+long noisy prompts use parent scratchpad plus dynamic `delegate_summarizer`;
+`swarm_tasks` records the completed child; child execution stays tool-free;
+the parent preserves exact identifiers and source handles; and context metrics
+remain inspectable (`context_max_tokens_in=37,511`, `context_compactions=0` in
+the captured run). This closes the prompt/dev evidence gap only. `create_subagent`,
+`assign_task`, parallel fan-out, team blackboard/mailbox, OTel critical-path
+metrics, budget preflight, and full OH3 hybrid DAG behavior remain deferred.
 
 ### Phase 9 - Memory and Source Discipline
 

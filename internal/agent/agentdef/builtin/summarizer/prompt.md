@@ -6,7 +6,7 @@ version: 1.0.0
 
 # Payload Summarization Agent
 
-You receive raw tool output and produce a compact, extractive summary.
+You receive raw tool output, a noisy user-provided payload, a log, or a trace and produce a compact, extractive summary.
 
 ## Extraction contract
 

@@ -135,6 +135,25 @@ func TestShouldSummarize(t *testing.T) {
 	}
 }
 
+func TestShouldSummarizeIgnoresStableSystemPrompt(t *testing.T) {
+	ctx := NewContext(Config{MaxTokens: 20, Logger: slog.Default()})
+	ctx.SetSystemMessage(strings.Repeat("system prompt ", 100))
+	ctx.AddUserMessage("Short")
+
+	if ctx.EstimatedTokens() <= ctx.MaxTokens() {
+		t.Fatalf("EstimatedTokens() = %d, want total context over max", ctx.EstimatedTokens())
+	}
+	if ctx.EstimatedHistoryTokens() >= ctx.MaxTokens() {
+		t.Fatalf("EstimatedHistoryTokens() = %d, want mutable history under max", ctx.EstimatedHistoryTokens())
+	}
+	if ctx.ShouldSummarize() {
+		t.Error("ShouldSummarize() = true from system prompt only, want false")
+	}
+	if ctx.IsOverLimit() {
+		t.Error("IsOverLimit() = true from system prompt only, want false")
+	}
+}
+
 func TestTrackTokens(t *testing.T) {
 	ctx := NewContext(Config{MaxTokens: 4000, Logger: slog.Default()})
 	ctx.TrackTokens(llm.TokenUsage{TotalTokens: 100})
@@ -303,9 +322,11 @@ func TestMessagesWithSummaryFoldsIntoExistingSystem(t *testing.T) {
 type mockLLMClient struct {
 	response llm.Response
 	err      error
+	calls    int
 }
 
 func (m *mockLLMClient) Send(ctx context.Context, req llm.Request) (llm.Response, error) {
+	m.calls++
 	if m.err != nil {
 		return llm.Response{}, m.err
 	}
@@ -356,6 +377,29 @@ func TestEnforceLimitNoActionNeeded(t *testing.T) {
 	}
 	if len(ctx.messages) != beforeCount {
 		t.Error("EnforceLimit should not modify context when under limits")
+	}
+}
+
+func TestEnforceLimitDoesNotSummarizeStableSystemPrompt(t *testing.T) {
+	mock := &mockLLMClient{
+		response: llm.Response{Content: "should not be used"},
+	}
+	ctx := NewContext(Config{
+		MaxTokens:  20,
+		Summarizer: mock,
+		Logger:     slog.Default(),
+	})
+	ctx.SetSystemMessage(strings.Repeat("system prompt ", 100))
+	ctx.AddUserMessage("Short message")
+
+	if err := ctx.EnforceLimit(context.Background()); err != nil {
+		t.Fatalf("EnforceLimit() error = %v", err)
+	}
+	if mock.calls != 0 {
+		t.Fatalf("summarizer calls = %d, want 0 for system-prompt-only pressure", mock.calls)
+	}
+	if len(ctx.messages) != 2 {
+		t.Fatalf("messages = %d, want system + user preserved", len(ctx.messages))
 	}
 }
 

@@ -24,7 +24,8 @@ type Case struct {
 	ThreadID string                                   // optional web /api/chat thread_id; empty = default thread
 	Setup    func(env *Env) error                     // optional: prep state before sending
 	Verify   func(reply ChatReply, env *Env) []string // required
-	Cleanup  func(env *Env)                           // optional: tear down leftover state
+	Metrics  func(reply ChatReply, env *Env) map[string]any
+	Cleanup  func(env *Env) // optional: tear down leftover state
 }
 
 // Env bundles everything a Verify function needs to consult ground truth.
@@ -37,14 +38,15 @@ type Env struct {
 }
 
 type Result struct {
-	Name         string   `json:"name"`
-	Prompt       string   `json:"prompt"`
-	Reply        string   `json:"reply"`
-	ToolCalls    int      `json:"tool_calls"`
-	LLMCalls     int      `json:"llm_calls"`
-	Tokens       int      `json:"tokens"`
-	ElapsedMs    int64    `json:"elapsed_ms"`
-	Mismatches   []string `json:"mismatches"`
-	TransportErr string   `json:"transport_err,omitempty"`
-	Pass         bool     `json:"pass"`
+	Name         string         `json:"name"`
+	Prompt       string         `json:"prompt"`
+	Reply        string         `json:"reply"`
+	ToolCalls    int            `json:"tool_calls"`
+	LLMCalls     int            `json:"llm_calls"`
+	Tokens       int            `json:"tokens"`
+	ElapsedMs    int64          `json:"elapsed_ms"`
+	Metrics      map[string]any `json:"metrics,omitempty"`
+	Mismatches   []string       `json:"mismatches"`
+	TransportErr string         `json:"transport_err,omitempty"`
+	Pass         bool           `json:"pass"`
 }

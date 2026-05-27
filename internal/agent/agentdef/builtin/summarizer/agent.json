@@ -1,7 +1,7 @@
 {
   "id": "summarizer",
   "display_name": "Tool Result Summarizer",
-  "when_to_use": "Compress a single oversized tool result while preserving identifiers, dates, numbers, paths, error codes verbatim.",
+  "when_to_use": "Compress a single oversized or noisy payload, user-provided log, trace, or tool result while preserving identifiers, dates, numbers, paths, URLs, and error codes verbatim.",
   "prompt_path": "prompt.md",
   "model_hint": "fast",
   "temperature": 0,

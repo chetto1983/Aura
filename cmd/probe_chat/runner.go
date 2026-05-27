@@ -39,6 +39,10 @@ func runAll(client *http.Client, baseURL, token string, env *Env, cases []Case) 
 			continue
 		}
 		mismatches := c.Verify(reply, env)
+		var metrics map[string]any
+		if c.Metrics != nil {
+			metrics = c.Metrics(reply, env)
+		}
 		out = append(out, Result{
 			Name:       c.Name,
 			Prompt:     prompt,
@@ -47,6 +51,7 @@ func runAll(client *http.Client, baseURL, token string, env *Env, cases []Case) 
 			LLMCalls:   reply.LLMCalls,
 			Tokens:     reply.Tokens,
 			ElapsedMs:  reply.ElapsedMs,
+			Metrics:    metrics,
 			Mismatches: mismatches,
 			Pass:       len(mismatches) == 0,
 		})
