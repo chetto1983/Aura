@@ -7,7 +7,11 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 	"gopkg.in/yaml.v3"
 )
 
@@ -334,18 +338,40 @@ func ExtractWikiLinksTyped(body string) []WikiLinkEdge {
 }
 
 // Slug generates a filesystem-safe slug from a title.
+// Slug normalizes a free-form page title into a wiki slug:
+//   - lowercase
+//   - diacritics transliterated to ASCII (è→e, ñ→n, ü→u, ç→c, …) so italian
+//     titles like "Caffè Però München" map to "caffe-pero-munchen" instead of
+//     the unreadable "caff-per-m-nchen" that pre-2026-05-27 strip-mode produced
+//   - whitespace and structural separators (`_`, `/`, `.`) collapsed to `-`
+//   - non-[a-z0-9-] characters dropped
+//   - runs of `-` collapsed; leading/trailing `-` trimmed
+//   - empty result falls back to `"untitled"`
+//
+// Concurrency note: x/text Transformer chains carry per-call state, so we
+// build a fresh chain inside the function instead of sharing one as a package
+// var (race observed 2026-05-27 under TOC rebuild goroutine + WritePage).
 func Slug(title string) string {
-	s := strings.ToLower(title)
+	t := transform.Chain(
+		norm.NFD,
+		runes.Remove(runes.In(unicode.Mn)),
+		norm.NFC,
+	)
+	transliterated, _, err := transform.String(t, title)
+	if err != nil {
+		// Transliteration is best-effort; on the rare error fall back to
+		// the input so we still produce some slug instead of empty.
+		transliterated = title
+	}
+	s := strings.ToLower(transliterated)
 	s = strings.ReplaceAll(s, " ", "-")
 	var b strings.Builder
+	b.Grow(len(s))
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+		switch {
+		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-':
 			b.WriteRune(r)
-		} else if r >= 0x00C0 && r <= 0x024F {
-			b.WriteRune('-')
-		} else if r > 127 {
-			b.WriteRune('-')
-		} else if r == '_' || r == '/' || r == '.' {
+		case r == '_' || r == '/' || r == '.':
 			b.WriteRune('-')
 		}
 	}

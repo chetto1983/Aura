@@ -238,6 +238,26 @@ func TestSlug(t *testing.T) {
 		{"A & B", "a-b"},
 		{"", "untitled"},
 		{"---", "untitled"},
+		// Diacritic transliteration (fixed 2026-05-27 — previously stripped
+		// to hyphens, producing unreadable slugs like "caff-per-m-nchen"
+		// for italian/european titles). Italian, French, German, Spanish,
+		// Portuguese and Czech samples cover most european alphabets the
+		// user would write.
+		{"Caffè Però München", "caffe-pero-munchen"},
+		{"Niño español", "nino-espanol"},
+		{"Ça va, garçon?", "ca-va-garcon"},
+		{"Naïve façade", "naive-facade"},
+		{"São Paulo", "sao-paulo"},
+		{"Žluťoučký kůň", "zlutoucky-kun"},
+		// Mixed ASCII + Latin Extended preserve both
+		{"Davide Marchetto è l'utente", "davide-marchetto-e-lutente"},
+		// All-diacritic title — should still produce a usable slug
+		{"Èèà Òòù", "eea-oou"},
+		// Non-Latin scripts (Greek, Cyrillic, CJK, emoji) still drop — we
+		// don't ship transliteration tables for those. Document the
+		// limitation; result should be "untitled" not garbage.
+		{"日本語", "untitled"},
+		{"Привет", "untitled"},
 	}
 	for _, tt := range tests {
 		got := Slug(tt.input)
