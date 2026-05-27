@@ -1,0 +1,45 @@
+# Go build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/aura
+/bin/
+/dist/
+
+# IDE + editor
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Aura runtime (host-visible, must not be tracked)
+/data/
+/runtime-workspace/
+/garage/
+/aura.db
+/aura.db-shm
+/aura.db-wal
+/.env
+/.env.local
+
+# Worktrees + planning workspace (kept locally only)
+/.worktrees/
+/.planning/tmp/
+
+# Python venv created for tooling experiments
+**/.venv/
+**/__pycache__/
+*.pyc
+
+# Test coverage
+coverage.txt
+coverage.html
+.codex/*
+.claude/
