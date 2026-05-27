@@ -42,6 +42,9 @@ Rationale:
 
 **Requirements:** CLEAN-00
 
+**Plans:** 1 plan
+- [ ] 01-01-PLAN.md — Baseline JSON + CI golangci-lint/dupl warning steps (one atomic commit, files: docs/cleanup-baseline-2026-05-27.json + .github/workflows/ci.yml)
+
 **Success criteria:**
 1. `docs/cleanup-baseline-2026-05-27.json` exists with `deadcode`, `golangci_lint`, and `dupl` sections matching the current snapshot.
 2. CI runs show two new green steps (golangci-lint + dupl) with `delta: 0` printout on the seed commit.

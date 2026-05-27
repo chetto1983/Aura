@@ -74,10 +74,12 @@ Thumbs.db
 # Local isolated worktrees
 /.worktrees/
 CLAUDE.md
-.planning/*
+planning/*
 tmp_*
 
 # Ralph autonomous loop runtime artifacts (driver + prompt are tracked)
 /scripts/ralph/logs/
 /scripts/ralph/progress.txt
 
+.planning/qa/token-e2e.txt
+tmp/*
