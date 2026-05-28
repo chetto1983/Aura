@@ -1050,9 +1050,13 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## Slice 2 — Sandbox runner (Docker sidecar + seccomp + ulimit)
 
+> **Atomicity note:** Sub-slice 2a (base stateless ~600 LOC, no deps esterne) + 2b (session-bound + workspace mount + network allowlist ~350 LOC, dipende da Slice 1.8 per `conversation_id`). 2a atterra prima di Slice 3 (Swarm); 2b atterra dopo Slice 1.8.
+
+> **Pattern reference**: 2a è "sandbox per tool call" (snippet untrusted isolato, pattern OpenAI Code Interpreter MVP). 2b lo estende a "session-bound workstation" (state cross-call entro conversation, pattern Claude Code on the Web + E2B + Anthropic Code Execution beta). Aura supporta entrambi i mode via flag/arg, default rimane stateless per backwards-compat.
+
 **Goal.** Implementare `sandbox.Runner` reale (in [internal/sandbox/sandbox.go](internal/sandbox/sandbox.go)
 oggi è `Stub`) come HTTP client verso un sidecar Docker isolato. Esporre il
-runtime al modello come tool `execute` (Deferred=true) che accetta `lang ∈ {python, shell}` + `code` e restituisce stdout/stderr/exit_code/elapsed_ms.
+runtime al modello come tool `execute` (Deferred=true) che accetta `lang ∈ {python, shell}` + `code` (+ opzionale `session_id`) e restituisce stdout/stderr/exit_code/elapsed_ms.
 
 **Smoke.**
 
@@ -1075,48 +1079,144 @@ docker compose -f sandbox/compose.yaml up -d
 Nessuno dei due prompt nomina `execute`. Se il modello non lo invoca, è bug del system prompt o del manifest, NON del test.
 
 **Acceptance.**
+
+*Slice 2a (base stateless):*
 - [ ] Sidecar gira come container non-root (`uid:gid 65532:65532`), `read_only: true`, `tmpfs:/tmp`, `network_mode: none`, ulimit nofile=64, cpus=1.0, mem=512m.
 - [ ] Seccomp profile rifiuta: `socket`, `connect`, `bind`, `mount`, `unshare`, `ptrace`, `clone(CLONE_NEWNET)`. Profile sotto VCS in `sandbox/seccomp.json`.
 - [ ] Default timeout esecuzione 30s, override via `AURA_SANDBOX_TIMEOUT_SEC` (cap 600s — ricorda [aura_lan_exposure_2026-05-17](memory)).
 - [ ] `aura exec` chiamato senza sidecar su → errore chiaro, no panic, no hang.
 - [ ] Container exit con stdout/stderr troncati a 1 MiB ciascuno (oltre → `... [truncated]`).
 - [ ] Test integrazione marcato `//go:build sandbox_integration` salta se sidecar non raggiungibile (no flaky CI).
+- [ ] Default execution mode: **stateless** (subprocess fresh per call). Pattern OpenAI Code Interpreter MVP.
 
-**File targets** (≤ 600 LOC Go + Dockerfile/compose/seccomp materials):
+*Slice 2b (session-bound + workspace + network — atterra dopo Slice 1.8):*
+- [ ] **Session-bound containers**: tool `execute` accetta arg opzionale `session_id` (default = `conversation_id` dal `InvocationContext` Slice 0.9). Container manager (`internal/sandbox/sessions.go`) mantiene mappa `session_id → containerID`. Prima call con session_id crea container persistente; call successive riusano. TTL idle `AURA_SANDBOX_SESSION_TTL_SEC=1800` (30 min), reaper goroutine ogni 60s. Hard cap `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS=5` per istanza Aura — sopra → errore esplicito (no LRU evict silenzioso).
+- [ ] **Workspace mount RW**: directory `$AURA_RUN_DIR/conversations/<conv_id>/workspace/` mountata come `/workspace` dentro container session-bound (mount RW, owner uid:gid 65532). Permette persist di file generati dal code (CSV, immagini, intermediate output). Cleanup cascade con `aura chat delete <conv_id>` (Slice 1.8). Quota `AURA_SANDBOX_WORKSPACE_MAX_BYTES=104857600` (100 MiB per conversation), check pre-write via `du` periodico. Sopra quota → errore tool result + log.
+- [ ] **Network policy granulare**: env `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` (CSV, es. `pypi.org,files.pythonhosted.org,data.gov`) configura allowlist. Default empty = deny totale (compat Slice 2a). Se non empty: container ha `network_mode: bridge` + iptables OUTPUT rules che permettono solo verso IP risolti degli hosts (DNS resolution all'avvio container, cache 5min). Richiede **`scoring.ComputeSandboxTier(args)` (Risk-Based, sezione cross-cutting)**: se network_allow non vuoto al call → tier RISKY → gate consigliato. Hardcoded sample: `pypi.org` SAFE-bump (use case legittimo install), domains arbitrari → tier IRREVERSIBLE. **Default mai vuoto in produzione** = strict allowlist.
+- [ ] **Persistence sandbox_sessions**: tabella `aura.sandbox_sessions` (id uuid pk, conversation_id text fk conversations, container_id text, image_digest text, started_at, last_used_at, status enum {active, idle, terminated, evicted}). Aura tracks all'avvio (recovery: status='terminated' per session active al boot, container ricreato lazy alla prima call). Pattern parity con `agent_job_runs` Slice 6.
+- [ ] **`aura exec --session <conv_id>` flag** per CLI smoke session mode. Senza flag = stateless 2a comportamento, backwards-compat.
+- [ ] Test integration session: 2 exec sequenziali su stesso session_id → stato preservato (var Python `x=42` nella prima call → leggibile nella seconda). Stesso session_id da 2 process Aura concurrent → strutturalmente serializzati via container lock (no race).
+- [ ] Test integration workspace: `execute python "open('/workspace/a.txt','w').write('hello')"` → file persiste su host `$AURA_RUN_DIR/conversations/<id>/workspace/a.txt`.
+- [ ] Test integration network: con `AURA_SANDBOX_NETWORK_ALLOW_HOSTS=pypi.org` → `pip install requests` SUCCEEDS, `urllib.request.urlopen('https://example.com')` FAILS con DNS/conn refused.
+
+**File targets — Slice 2a** (≤ 600 LOC Go + Dockerfile/compose/seccomp materials):
 | Path | LOC | Note |
 |---|---|---|
 | `internal/sandbox/docker.go` | ~220 | `DockerRunner` impl `Runner`. HTTP POST a sidecar `/exec/python` e `/exec/shell`. Timeout, truncate, ctx-cancel. |
 | `internal/sandbox/config.go` | ~50 | Env: `AURA_SANDBOX_URL` (default `http://127.0.0.1:18901`), `AURA_SANDBOX_TIMEOUT_SEC`. |
 | `internal/sandbox/docker_test.go` | ~120 | Integration test sotto build-tag `sandbox_integration`. |
-| `internal/agent/tools/execute.go` | ~140 | Tool `execute` con `Deferred: true`. Schema: `{lang: enum, code: string, timeout_sec?: int}`. Delega a `sandbox.Runner`. |
+| `internal/agent/tools/execute.go` | ~140 | Tool `execute` con `Deferred: true`. Schema: `{lang: enum, code: string, timeout_sec?: int, session_id?: string (Slice 2b)}`. Delega a `sandbox.Runner`. |
 | `sandbox/Dockerfile` | ~30 | `FROM python:3.12-slim` + apt: bash, coreutils. USER non-root. ENTRYPOINT sidecar. |
-| `sandbox/sidecar.py` | ~150 | Server HTTP minimo (stdlib `http.server`) con 2 endpoint. `subprocess.run` con timeout. Trunc stdout/stderr. Niente deps. |
+| `sandbox/sidecar.py` | ~150 | Server HTTP minimo (stdlib `http.server`) con endpoint `/exec/python`, `/exec/shell`, `/session/{id}/exec/{lang}` (2b). `subprocess.run` con timeout. Trunc stdout/stderr. Niente deps Python extra. |
 | `sandbox/seccomp.json` | ~80 | Default-deny + allow-list syscall syscall, blocca network/mount/ptrace. |
-| `sandbox/compose.yaml` | ~25 | Service `aura-sandbox`: build sandbox/, security_opt seccomp, network none, read_only, ulimits. |
-| `cmd/aura/main.go` (diff) | ~+60 | Subcommand `aura exec <lang> <code>` + registrazione del tool `execute` nel registry. |
+| `sandbox/compose.yaml` | ~25 | Service `aura-sandbox`: build sandbox/, security_opt seccomp, network none (override-able per session 2b), read_only, ulimits. |
+| `cmd/aura/main.go` (diff) | ~+60 | Subcommand `aura exec [--session <id>] <lang> <code>` + registrazione del tool `execute` nel registry. |
+
+**File targets — Slice 2b** (~350 LOC src + ~150 test + ~60 migration):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/sandbox/sessions.go` | ~150 | `SessionManager`: spawn/reuse/idle TTL reap. `Acquire(sessionID) (*ContainerHandle, error)`, `Release(handle)`. Container lock per session_id (sync.Map + mutex) per serializzare exec concurrent. Reaper goroutine controlla `last_used_at < now() - TTL` ogni 60s. Hard cap concurrent enforced. |
+| `internal/sandbox/workspace.go` | ~80 | `WorkspaceManager`: `EnsureDir(conv_id) string` crea/restituisce `$AURA_RUN_DIR/conversations/<conv_id>/workspace/` con owner 65532:65532. Quota check pre-write via `walkSize`. Cleanup cascade integrato con `Conversations.Delete` (Slice 1.8). |
+| `internal/sandbox/network.go` | ~80 | Network policy: parse `AURA_SANDBOX_NETWORK_ALLOW_HOSTS`, DNS resolve hosts (cache 5min), genera `iptables` rules iniettate via container exec hook. Risk-Based tier calc `ComputeSandboxTier(args)` per sezione governance cross-cutting. |
+| `internal/sandbox/sessions_test.go` | ~100 | Integration test sotto build-tag `sandbox_integration`: round-trip session preserve state, TTL reap, hard cap enforce, workspace persist + quota, network allowlist enforcement. |
+| `internal/db/queries/sandbox_sessions.sql` | ~30 | **4 query sqlc**: `InsertSession`, `TouchLastUsed`, `MarkTerminated`, `ListActive` (per boot recovery). |
+| `internal/db/migrations/0010_sandbox_sessions.up.sql` | ~50 | `CREATE TABLE aura.sandbox_sessions (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), conversation_id text NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE, container_id text NOT NULL, image_digest text NOT NULL, started_at timestamptz NOT NULL DEFAULT now(), last_used_at timestamptz NOT NULL DEFAULT now(), status text NOT NULL CHECK (status IN ('active','idle','terminated','evicted')) DEFAULT 'active'`). Indici su `(status, last_used_at)` per reaper + boot recovery. |
+| `internal/db/migrations/0010_sandbox_sessions.down.sql` | ~3 | `DROP TABLE aura.sandbox_sessions;`. |
+| `cmd/aura/main.go` (diff) | ~+20 | `aura exec --session <conv_id>` flag, `aura sandbox sessions {list|terminate <id>|prune}`. |
 
 **Deferred-tool partition.** `execute` → **Deferred=true** (description lunga + schema enum + esempi safety). `tool_search` lo carica on-demand.
 
+**Pattern di riferimento** (verifica audit 2026-05-28):
+
+| Tool | Stateful | Network | Filesystem persist | Use case primario |
+|---|---|---|---|---|
+| OpenAI Code Interpreter | ✅ session | ❌ deny | ✅ `/mnt/data` | Chat data analysis |
+| Anthropic Code Execution (beta) | ✅ container | ❌ | ✅ tmpfs+volume | Tool inside chat |
+| E2B Sandbox | ✅ long-lived | ✅ configurable | ✅ full | Sandbox-as-a-service |
+| Claude Code on the Web | ✅ session | ✅ policy-based | ✅ full | Agent workstation |
+| **Aura Slice 2a** | ❌ stateless | ❌ deny | ❌ tmpfs effimero | Snippet untrusted isolated |
+| **Aura Slice 2b** | ✅ session-bound | ⚠️ allowlist | ✅ workspace mount | Multi-turn agent + data persist |
+
 **Open questions.**
 1. **Sidecar implementation language.** Python (zero-build, leggi+rispondi) o Go (single binary, no Python runtime in container)? → *Proposto: Python stdlib. Il sidecar è 1 file, niente deps, niente compile step, container minimo.*
-2. **State tra exec.** Il sidecar è stateless (ogni call = subprocess fresco) o mantiene una REPL persistente? → *Proposto: stateless. REPL persistente è un'ottimizzazione futura (Slice X), oggi è complessità non richiesta.*
-3. **Filesystem out.** Il modello deve poter scrivere file persistenti? → *Proposto: NO in questo slice. Solo tmpfs effimero. Filesystem condiviso = slice separato (workspace mount).*
-4. **Windows host.** Docker Desktop su Windows è OK ma seccomp è solo Linux-container. Sviluppo locale Windows + container Linux → OK. Sviluppo locale Windows nativo (no Docker)? → *Proposto: no-fallback. Aura runs in container or against a Docker sidecar. Punto.*
+2. **State tra exec.** → *Decisione (audit 2026-05-28)*: 2a stateless default, 2b session-bound opt-in. Entrambi i mode supportati dal runner stesso (dispatch via presenza `session_id`).
+3. **Filesystem out.** → *Decisione (audit 2026-05-28)*: 2a tmpfs only (effimero per call). 2b workspace mount RW persiste cross-call entro conversation, cleanup cascade su `Conversations.Delete`.
+4. **Network policy.** Deny totale o allowlist? → *Decisione (audit 2026-05-28)*: 2a deny totale (network_mode: none). 2b allowlist granulare via `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` CSV. Risk-Based governance: `pypi.org`-only = SAFE-bump, arbitrary domains = RISKY/IRREVERSIBLE tier.
+5. **Windows host.** Docker Desktop su Windows è OK ma seccomp è solo Linux-container. Sviluppo locale Windows + container Linux → OK. Sviluppo locale Windows nativo (no Docker)? → *Proposto: no-fallback. Aura runs in container or against a Docker sidecar. Punto.*
+6. **Network allowlist DNS cache TTL.** *Default proposto*: 5 min. Pre-merge: validare con corpus di test (es. `pypi.org` ha multiple A records che ruotano? Cache invalida call legittimi?).
+7. **Sandbox session vs `swarm.Coordinator` child.** Quando un agent_job o swarm worker spawn-a una sub-loop che usa `execute`, riusa il container session della parent conversation o ne crea uno nuovo? → *Default proposto*: stesso session della parent (forwarda `InvocationContext.SessionID`). Forza isolation per child solo se RISKY tier explicito.
 
-**Commit message template.**
+**Commit message templates (sub-slice 2a + 2b):**
+
 ```
-slice 2: sandbox runner — Docker sidecar with seccomp + ulimit + no-net
+slice 2a: sandbox runner — Docker sidecar with seccomp + ulimit + no-net (stateless)
 
 Implements sandbox.Runner against an isolated Python sidecar
 (read-only rootfs, tmpfs /tmp, network_mode none, seccomp default-deny,
-ulimit nofile=64, cpus=1.0, mem=512m). Exposes `execute` tool
-(deferred) and `aura exec` CLI for smoke.
+ulimit nofile=64, cpus=1.0, mem=512m). Stateless: every call =
+subprocess fresh. Pattern OpenAI Code Interpreter MVP.
+
+Exposes `execute` tool (deferred) and `aura exec <lang> <code>` CLI
+for smoke.
 
 Smoke:
-  aura exec python "print(2+2)" → 4
-  aura exec python "import socket; socket.socket().connect(...)" → EPERM
+  aura exec python "print(2+2)" -> 4
+  aura exec python "import socket; socket.socket().connect(...)" -> EPERM
 
 LOC: +XXX src / +YY test / +ZZ sidecar+infra.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 2b: sandbox session-bound + workspace mount + network allowlist
+
+Extends Slice 2a stateless runner with session-bound containers
+(state preserved cross-call entro conversation), workspace mount RW
+($AURA_RUN_DIR/conversations/<id>/workspace/ -> /workspace), and
+granular network allowlist (default deny, opt-in
+AURA_SANDBOX_NETWORK_ALLOW_HOSTS CSV).
+
+Pattern di riferimento: Claude Code on the Web + E2B +
+Anthropic Code Execution beta.
+
+Migration 0010_sandbox_sessions (aura.sandbox_sessions: id, conv_id
+fk CASCADE, container_id, image_digest, started_at, last_used_at,
+status enum active|idle|terminated|evicted). Boot recovery: status
+'active' al boot -> 'terminated' (container ricreato lazy alla prima
+call).
+
+SessionManager: spawn/reuse/idle TTL reap (default 1800s,
+AURA_SANDBOX_SESSION_TTL_SEC). Hard cap concurrent 5
+(AURA_SANDBOX_MAX_CONCURRENT_SESSIONS). Container lock per session_id
+(serializza exec concurrent intra-session).
+
+Workspace quota 100 MiB per conversation
+(AURA_SANDBOX_WORKSPACE_MAX_BYTES). Cleanup cascade su
+Conversations.Delete (Slice 1.8).
+
+Network policy: iptables OUTPUT rules generate da DNS resolve
+allow_hosts (cache 5min). Risk-Based tier RISKY auto se allowlist
+non vuota; SAFE-bump per pypi.org-only use case legittimo install
+deps.
+
+CLI: aura exec --session <conv_id> per smoke. aura sandbox sessions
+{list|terminate|prune} per admin.
+
+Smoke:
+  conv_id=$(aura chat new)
+  aura exec --session $conv_id python "x = 42"
+  aura exec --session $conv_id python "print(x)" -> 42 (state preserved)
+  aura exec --session $conv_id python "open('/workspace/a.txt','w').write('hi')"
+  cat $AURA_RUN_DIR/conversations/$conv_id/workspace/a.txt -> hi
+  AURA_SANDBOX_NETWORK_ALLOW_HOSTS=pypi.org aura exec --session $conv_id \
+    python "import urllib.request; urllib.request.urlopen('https://pypi.org')"
+    -> success
+  AURA_SANDBOX_NETWORK_ALLOW_HOSTS=pypi.org aura exec --session $conv_id \
+    python "import urllib.request; urllib.request.urlopen('https://example.com')"
+    -> connection refused
+
+LOC: +XXX src / +YY test / +ZZ migration.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
@@ -2978,8 +3078,12 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MODEL_CONTEXT_WINDOW` | (auto, per provider) | operative | 1.8b | Override context window calc. |
 | `AURA_MODEL_MAX_OUTPUT_TOKENS` | (auto, per provider) | operative | 1.8b | Override max output calc. |
 | `AURA_CONVERSATION_TURN_CAP_BYTES` | `262144` (256 KiB) | cap | 1.8 | DB cell spillover boundary. |
-| `AURA_SANDBOX_URL` | `http://127.0.0.1:18901` | operative | 2 | Sandbox sidecar endpoint. |
-| `AURA_SANDBOX_TIMEOUT_SEC` | `30` (cap `600`) | cap | 2 | Per-execute timeout. |
+| `AURA_SANDBOX_URL` | `http://127.0.0.1:18901` | operative | 2a | Sandbox sidecar endpoint. |
+| `AURA_SANDBOX_TIMEOUT_SEC` | `30` (cap `600`) | cap | 2a | Per-execute timeout. |
+| `AURA_SANDBOX_SESSION_TTL_SEC` | `1800` (30 min) | cap | 2b | Session-bound container idle TTL prima del reap. |
+| `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS` | `5` | cap | 2b | Hard cap session concurrent per istanza Aura. |
+| `AURA_SANDBOX_WORKSPACE_MAX_BYTES` | `104857600` (100 MiB) | cap | 2b | Quota per workspace mount per conversation. |
+| `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` | `` (empty = deny totale) | operative | 2b | CSV hosts allowlist (es. `pypi.org,files.pythonhosted.org`). Empty mantiene `network_mode: none` Slice 2a. Non-empty attiva tier Risk-Based RISKY. |
 | `AURA_SWARM_MAX_DEPTH` | `3` | cap | 3 | Spawn depth cap (era `MAX_SPAWN_DEPTH` pre-fix). |
 | `AURA_SWARM_MODEL_CHAT` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
 | `AURA_SWARM_MODEL_REASONING` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
@@ -3049,7 +3153,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
 2.bis. **Slice 1.7 (Identity minimal)** chiude la wave persistence applicativa. Atterra dopo 1.5 (paused_states) e prima di Slice 2 perché: (a) sblocca Slice 7c per usare `actor_id` FK su `aura.skill_audit` invece di campo `text` opaco; (b) i suoi consumer (Slice 7c) sono lontani, ma il pattern "seed identity + capability_grants" deve essere stabile prima che skill_audit lo referenzi. Indipendente da Slice 2/3/4: può essere committata in parallelo a Slice 2 se preferito.
 2.ter. **Slice 1.8 (Conversation persistence)** chiude la wave persistence applicativa con multi-conversation Claude.ai-style. Atterra dopo 1.7 (identity FK su conversations) e prima di Slice 2. Sblocca: (a) `aura chat list/resume/new` cross-session; (b) paused_states ora FK a conversations con cascade; (c) auto-resolve di pending stale quando Loop.Stop() (Area #7 closed); (d) audit forensics per token cost + cache hit ratio per conversazione. Out of scope riga "Persistenza disk dello stato conversazionale" rimossa. Migrations rinumerate: 0005_conversations (NEW), 0006_scheduler (era 0005), 0007_skill_audit (era 0006).
-3. **Slice 2 (Sandbox)** prima dello Swarm: lo swarm spawn-a agenti che — nella realtà — useranno `execute`. Avere `execute` funzionante prima rende lo smoke dello swarm meno artificiale.
+3. **Slice 2 (Sandbox)** prima dello Swarm: lo swarm spawn-a agenti che — nella realtà — useranno `execute`. Avere `execute` funzionante prima rende lo smoke dello swarm meno artificiale. **Atomicity split**: 2a (base stateless + seccomp + ulimit + net deny, ~600 LOC) atterra qui prima di Slice 3; **2b** (session-bound + workspace mount + network allowlist, ~350 LOC + migration 0010) richiede `conversation_id` quindi atterra DOPO Slice 1.8 ma prima di Slice 5 (web tools, che potrebbero beneficiare di workspace shared con sandbox). Pattern di riferimento: 2a = OpenAI Code Interpreter MVP; 2b = Claude Code on the Web + E2B + Anthropic Code Execution beta.
 4. **Slice 3 (Swarm)** prima della KV: la KV cache discipline deve coprire ANCHE i prompt dei figli swarm-spawn. Costruire il PromptBuilder dopo aver visto come il parent passa goal/tools al child evita un secondo refactor.
 5. **Slice 4 (KV)** chiude le 4 fondamentali: ora la superficie del prompt (system + manifest + tool descriptions + parent/child contracts + ask_user) è stabile. Il builder ottimizza un bersaglio fermo.
 6. **Slice 5 (Web tools)** apre il backlog post-tabula-rasa: indipendente dalle 4 fondamentali, riusa `ToolResult` per fetch di pagine grandi. NON introduce `ActionRouter` (web_search/web_fetch sono 2 tool indipendenti senza azioni multiple — YAGNI). Vedi §Pattern condiviso.
