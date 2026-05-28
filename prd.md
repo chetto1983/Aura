@@ -972,6 +972,9 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 - [ ] Dispatcher: ogni `TaskKind` ha un `Handler` separato in `internal/cron/handlers/<kind>.go` implementando `Handle(ctx, *Task) error`, `MaxDuration() time.Duration`, `ReschedulesOnRecovery() bool`. `MaxDuration` definisce la soglia oltre la quale un run senza `finished_at` è considerato in limbo al restart. `ReschedulesOnRecovery=true` (reminder, idempotenti) → il task viene riportato in `DueTasks` al boot; `=false` (agent_job, side-effecting) → limbo audit-only, no auto re-run. Aggiungere un nuovo kind = aggiungere 1 file, non editare un god switch.
 - [ ] **`agent_job` handler auto-rejecta child Loop pause (audit round 1 P0)**: il sub-loop spawn-ato via `swarm.Coordinator.Spawn` riceve un `RejectingResponder` come default — un agent_job non può bloccare aspettando un umano (è cron, gira anche di notte). Se l'agent_job invoca `ask_user`, riceve risposta automatica `"<auto-rejected: scheduled job has no human responder>"` e decide come procedere. Test asserisce: cron job che invoca ask_user non blocca, completa in <30s con stato `auto-rejected`.
 - [ ] `LastError` persistito su failure, leggibile via `task.list()`.
+- [ ] **Risk-Based Governance (Area #5 closed 2026-05-28)**: ogni chiamata a `task.schedule` calcola `tier = scoring.ComputeTaskTier(args)` via modulo condiviso `internal/scoring/` (vedi §Risk-Based Governance). Se `tier in {RISKY, DESTRUCTIVE}` il task viene creato con `status='pending_approval'` (non gira), il tool result include `{task_id, risk_tier, gate_recommended:true, status:'pending_approval'}`. L'agente decide autonomamente se ri-emettere `ask_user(kind=approval, ResumeContext={action:'approve', task_id})` o procedere silente. Se silente: Notifier IMMEDIATE alert all'utente (tier ≥ RISKY trigger threshold). Tutti i campi audit (`computed_risk_tier`, `gate_recommended`, `gate_taken`) registrati in `agent_job_runs`.
+- [ ] Nuovo tool `task.approve(task_id)` (deferred): chiama `Queries.ApproveTask(id)` → `UPDATE scheduler_tasks SET status='active' WHERE status='pending_approval'`. Idempotente, no-op su task già attivi. Usato dal resume handler dell'ask_user approval.
+- [ ] `scheduler_tasks.status` enum: `'active' | 'paused' | 'cancelled' | 'pending_approval'`. Tick loop `DueTasks` filtra `WHERE status='active'` (task in pending_approval mai dispatchati).
 - [ ] **Crash recovery boot query (Area #3 closed 2026-05-28)**: il tick loop, **prima** del primo tick, esegue:
   ```sql
   UPDATE aura.agent_job_runs
@@ -996,7 +999,7 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 | `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
 | `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
 | `internal/db/queries/agent_job_runs.sql` | ~80 | **4 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`, `MarkRunsRecovered`. `MarkRunsRecovered` è la boot recovery query (UPDATE finished_at IS NULL AND started_at < threshold → exit_status='unknown_recovery'). RETURNING task_id per il reschedule loop. |
-| `internal/db/migrations/0005_scheduler.up.sql` | ~70 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, status, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). |
+| `internal/db/migrations/0005_scheduler.up.sql` | ~85 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). |
 | `internal/db/migrations/0005_scheduler.down.sql` | ~5 | DROP TABLEs. |
 | `internal/cron/handlers/handler.go` | ~40 | Interface `Handler{ Kind() TaskKind; Handle(ctx, t *Task) error }` + registry. |
 | `internal/cron/handlers/reminder.go` | ~85 | Notifier-driven (CLI/Telegram). `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
@@ -1047,11 +1050,14 @@ LOC: +XXX src / +YY test.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
-| `internal/agent/tools/task_schedule.go` | ~90 | Deferred. Args validation + delega a Queries.UpsertTask. |
-| `internal/agent/tools/task_list.go` | ~50 | Non-deferred. |
+| `internal/agent/tools/task_schedule.go` | ~110 | Deferred. Args validation + delega a `Queries.UpsertTask`. Chiama `scoring.ComputeTaskTier(args)` post-validation; se RISKY/DESTRUCTIVE setta `status='pending_approval'` e Notifier IMMEDIATE alert. Include `risk_tier` + `gate_recommended` nel tool result. |
+| `internal/agent/tools/task_list.go` | ~50 | Non-deferred. Mostra anche task `pending_approval` con annotazione `[awaiting approval]`. |
 | `internal/agent/tools/task_cancel.go` | ~40 | Deferred. |
-| `internal/agent/tools/task_run_now.go` | ~80 | Deferred. Chiama Handler.Handle direttamente, bypass tick. |
-| `internal/cron/scheduler_test.go` | ~150 | Build tag `db_integration`. Round-trip + tick loop + missed-run recovery. |
+| `internal/agent/tools/task_run_now.go` | ~80 | Deferred. Chiama Handler.Handle direttamente, bypass tick. **Refuse task in pending_approval** (errore strutturato chiede `task.approve` prima). |
+| `internal/agent/tools/task_approve.go` | ~50 | Deferred. Args `{task_id}`. `UPDATE scheduler_tasks SET status='active' WHERE id=:id AND status='pending_approval' RETURNING id`. Idempotente, no-op se già active. Audit `gate_taken=true`. |
+| `internal/scoring/scoring.go` | ~100 | Modulo condiviso. `RiskTier` enum (safe/normal/risky/destructive), `ComputeTaskTier(args)`, `ComputeSkillTier(action, body)`, `GateRecommended(tier)`, `RequiresImmediateAlert(tier)`. Mapping kind→tier hard-coded + modificatori (frequency, silent, payload regex destructive keywords). |
+| `internal/scoring/scoring_test.go` | ~80 | Test esaustivo del mapping per ogni kind + tutti i modificatori. Niente DB. |
+| `internal/cron/scheduler_test.go` | ~150 | Build tag `db_integration`. Round-trip + tick loop + missed-run recovery + crash recovery + risk_tier=RISKY → pending_approval. |
 | `internal/cron/handlers/agent_job_test.go` | ~100 | Goal serialization + child loop spawn (mocked Coordinator). |
 
 **Open questions.**
@@ -1076,24 +1082,34 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > - **7d**: installer (`npx skills add` con `--ignore-scripts` + sanitizedEnv stretto + post-install ParseSkill re-validation) + tool `skill.install`. ~450 LOC.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
-> **Governance scelta: C (human-in-the-loop) tramite il tool `ask_user`** di
-> Slice 1.5. L'agente può proporre create/update/install/delete delle skill ma
-> ogni mutation richiede approval esplicito dell'utente nel turn corrente.
+> **Governance: Risk-Based (Area #5 closed 2026-05-28).** Tutte le mutation
+> skill (`create`/`update`/`install`/`delete`) chiamano
+> `scoring.ComputeSkillTier(action, body)` dal modulo condiviso
+> `internal/scoring/`. Default mapping: `create`/`update`/`install` →
+> `RISKY`, `delete` → `DESTRUCTIVE`. **Tutte le skill mutation oggi sono
+> RISKY o DESTRUCTIVE** — il sistema crea/aggiorna la skill in
+> `pending/<name>/` (mai `active/`) e ritorna `gate_recommended=true` al
+> tool result. L'agente decide se ri-emettere `ask_user(kind=approval,
+> ResumeContext={action:'activate', skill_name})` o procedere silente.
+> Se silente: la skill RESTA in `pending/` (non viene caricata dal Loader),
+> Notifier IMMEDIATE alert all'utente (`aura skills approve <name>` per
+> attivare manualmente). Pattern uniformato con Slice 6 (cron `task.schedule`).
 > Razionale: una skill scritta dall'agente entra nel system prompt del turn
-> successivo (cache TTL 1s + `Invalidate()`) — è auto-modifica persistente
-> della personalità/capacità dell'agente. È esattamente il tipo di azione che
-> la `kind: approval` di `ask_user` è stata progettata per gateare.
+> successivo (cache TTL 1s + `Invalidate()`) — è auto-modifica persistente.
+> Future skill read-only (es. `SAFE`) potranno essere auto-promosse senza
+> gate via la stessa pipeline; oggi non esistono.
 
 **Goal.** Sette tool LLM-facing per la self-extension completa:
 - Read-only: `skill.list`, `skill.catalog`, `skill.info`
-- Mutations (tutte gate-ate da `ask_user`): `skill.create`, `skill.update`, `skill.delete`, `skill.install`
+- Mutations (tier RISKY/DESTRUCTIVE da `internal/scoring/`, atterrano in `pending/`, agente decide se gate via `ask_user`, Notifier alert se gate skipped): `skill.create`, `skill.update`, `skill.delete`, `skill.install`
+- Approval helper (deferred): `skill.approve(name)` per attivare manualmente una skill in `pending/`
 
 Alimentati da:
 - Loader filesystem multi-root (TTL cache 1s, pattern pre-rewrite ben tarato).
 - Catalog search via skills.sh — fetch HTTP del catalog HTML + regex parser ([catalog.go](git:pre-rewrite-2026-05-27/internal/skills/catalog.go) 1:1).
 - Install via **`npx skills add <source> --agent claude-code -y`** ([admin.go](git:pre-rewrite-2026-05-27/internal/skills/admin.go) 1:1) — funzionava bene pre-rewrite, riusabile. **Migliorie di sicurezza**: `sanitizedEnv()` whitelist più stretta (drop `NPM_CONFIG_USERCONFIG` che può puntare a file arbitrari), post-install `ParseSkill()` re-validation prima di `Invalidate()` (catch corrupted downloads), 90s timeout esplicito.
 - Writer in `~/.aura/skills/pending/<name>/` per le mutation in attesa di approval; al `Approva` move atomico in `~/.aura/skills/active/`.
-- Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor_id (fk aura.identities), action, name, content_hash, source, approval_id, paused_state_token fk}`. Migrate `0006_skill_audit.up.sql` aggiunta in Slice 7. Query via sqlc `internal/db/queries/skill_audit.sql` (~40 LOC, 3 query: `RecordSkillMutation`, `ListAuditSince`, `GetByName`).
+- Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor_id (fk aura.identities), action, name, content_hash, source, approval_id, paused_state_token fk, computed_risk_tier, gate_recommended, gate_taken}`. Migrate `0006_skill_audit.up.sql` aggiunta in Slice 7. Query via sqlc `internal/db/queries/skill_audit.sql` (~45 LOC, 4 query: `RecordSkillMutation`, `ListAuditSince`, `GetByName`, `ListPendingApproval`).
 
 **SKILL.md format** (preservato dal pre-rewrite, lievemente irrigidito):
 ```
@@ -1138,7 +1154,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 - [ ] Multi-root precedence: `~/.aura/skills/active/` override `internal/config/defaults/skills/`. Test asserisce override visibile in `list()`.
 - [ ] TTL cache 1s preservato dal pre-rewrite.
 - [ ] **Manifest packing — pattern Claude Code, non pre-rewrite**: TUTTE le skill listate nel manifest (anche 100+) ma con SOLO `name + description` (1 riga). Il body si carica on-demand via `skill.info`. Niente più `maxSkillsBlockChars` cap. Coerente col pattern deferred-tool di tutto il PRD.
-- [ ] **Mutation flow (create/update/install/delete)**: il tool scrive in `pending/<name>/`, ritorna `ErrAwaitingUserInput` con `kind=approval`. Loop pausa. Su user approve: move atomico pending→active + `Loader.Invalidate()`. Su reject: delete pending. Su edit (kind=choice "approva con modifiche"): non gestito in Slice 7 — out of scope, sarà slice futura.
+- [ ] **Mutation flow (create/update/install/delete) Risk-Based (Area #5 closed 2026-05-28)**: il tool scrive in `pending/<name>/`, calcola `tier = scoring.ComputeSkillTier(action, body)` (oggi: create/update/install → RISKY, delete → DESTRUCTIVE). Ritorna tool result `{name, content_hash, risk_tier, gate_recommended:true, status:'pending'}`. **NON** ritorna automaticamente `ErrAwaitingUserInput`: l'agente decide se ri-emettere `ask_user(kind=approval, ResumeContext={action:'activate'|'install_active'|'delete_active', name})`. Resume handler: approve → `Writer.Activate()` (move atomico pending→active) + `Loader.Invalidate()` + audit `gate_taken=true`. Reject → delete pending + audit `gate_taken=true`. Se agente skippa gate: skill RESTA in `pending/` (non caricata), Notifier IMMEDIATE alert, audit `gate_taken=false`, l'utente attiva con `aura skills approve <name>` o ignora. Edit ("approva con modifiche"): out of scope Slice 7.
 - [ ] **Audit log**: ogni mutation (anche le reject) scritte nella tabella `aura.skill_audit` di Postgres (sqlc-managed). `aura skills audit --since=1h` query SQL. Postgres trigger `BEFORE UPDATE/DELETE` su `skill_audit` → `RAISE EXCEPTION` (audit append-only enforced a livello DB, audit round 1 P1).
 - [ ] **`Validator.SanitizeName` chokepoint (audit round 1 P0)**: `internal/skills/paths.go` espone `SanitizeName(name) (clean string, err error)` — UNICA via per derivare path filesystem da user input. Regex `^[a-z0-9-]+$`, length 1-64, no reserved (`init`, `delete`, `.`, `..`). Writer + Deleter + Installer DEVONO chiamarlo prima di `filepath.Join(skillsDir, name)`. Test asserisce ogni file-touch site via static analysis (`grep -L 'SanitizeName' internal/skills/{writer,deleter,installer}.go` → empty).
 - [ ] **skills.sh integration via `npx skills add` (pre-rewrite 1:1 + safety hardening)**:
@@ -1174,14 +1190,15 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 | `internal/skills/installer.go` | ~140 | `npx skills add <source> --agent claude-code -y` con sanitizedEnv stretto, 90s timeout. Post-install ParseSkill re-validation prima di Invalidate. Path-traversal guard. |
 | `internal/skills/audit.go` | ~70 | Thin adapter su sqlc `Queries.RecordSkillMutation` + `Queries.ListAuditSince`. Niente più file IO. |
 | `internal/db/queries/skill_audit.sql` | ~40 | 3 query sqlc. |
-| `internal/db/migrations/0006_skill_audit.up.sql` | ~50 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action, name, content_hash, source, approval_id, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL). Indice su `ts DESC`. **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). |
+| `internal/db/migrations/0006_skill_audit.up.sql` | ~55 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action, name, content_hash, source, approval_id, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL, `computed_risk_tier text NOT NULL DEFAULT 'risky' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT true`, `gate_taken boolean NOT NULL DEFAULT true`). Indice su `ts DESC`, indice su `(gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false` (forensics per gate-skipped). **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). |
 | `internal/agent/tools/skill_list.go` | ~50 | Non-deferred (output piccolo). |
 | `internal/agent/tools/skill_catalog.go` | ~60 | Deferred. Query skills.sh, ritorna candidati. |
 | `internal/agent/tools/skill_info.go` | ~60 | Deferred. Ritorna body via `ToolResult` (preview+persist se grande). |
-| `internal/agent/tools/skill_create.go` | ~100 | Deferred. Writer.WritePending → ErrAwaitingUserInput(kind=approval). Resume handler: Writer.Activate + Audit.Record. |
-| `internal/agent/tools/skill_update.go` | ~90 | Stesso pattern di create + diff before/after nel question. |
-| `internal/agent/tools/skill_delete.go` | ~70 | ErrAwaitingUserInput(kind=approval, mostra cosa stai cancellando) + Deleter.Delete + Audit.Record. |
-| `internal/agent/tools/skill_install.go` | ~80 | ErrAwaitingUserInput(kind=approval, mostra catalog entry) + Installer.Install + Audit.Record. |
+| `internal/agent/tools/skill_create.go` | ~110 | Deferred. `Writer.WritePending` → `scoring.ComputeSkillTier(Create, body)` → tool result include risk_tier+gate_recommended. **Niente** auto-ask_user: agente decide. Resume handler (se ask_user triggered): `Writer.Activate` + `Audit.Record(gate_taken=true)`. Skip: audit `gate_taken=false` + Notifier alert. |
+| `internal/agent/tools/skill_update.go` | ~100 | Stesso pattern di create + diff before/after disponibile per il prompt che l'agente costruisce. |
+| `internal/agent/tools/skill_delete.go` | ~80 | Deferred. `scoring.ComputeSkillTier(Delete, "")` → DESTRUCTIVE. Mark pending delete (move active/→pending_delete/). Tool result include risk_tier=destructive + gate_recommended:true. Skip → Notifier alert critico + skill resta marked. |
+| `internal/agent/tools/skill_install.go` | ~90 | Deferred. `scoring.ComputeSkillTier(Install, fetched_body)` → RISKY. Installer scarica via npx in `pending/`, NON in `active/`. Tool result + alert pattern. |
+| `internal/agent/tools/skill_approve.go` | ~50 | Deferred. Args `{name}`. Atomic move pending→active (o pending_delete→deleted) + `Loader.Invalidate()` + audit `gate_taken=true`. Idempotente. |
 | `internal/skills/loader/loader_test.go` | ~120 | Multi-root precedence + cache TTL + invalid SKILL.md skip. |
 | `internal/skills/installer_test.go` | ~100 | Catalog fetch (fixture HTTP) + path traversal rejection + ask_user flow. |
 | `internal/skills/writer_test.go` | ~80 | Atomic write + pending→active move + concurrent write race. |
@@ -1304,6 +1321,161 @@ func (r *ActionRouter) Dispatch(ctx context.Context, raw json.RawMessage) (ToolR
 
 **Sentinel passthrough contract (audit round 1 P0):**
 Se un `ActionHandler` ritorna `ErrAwaitingUserInput` (sentinel di Slice 1.5), `Dispatch` lo propaga UNCHANGED al chiamante. NON lo wrap, NON lo trasforma in `ToolResult`. Questo è critico per Slice 7 (mutation tools che gateano via `ask_user`). Test in `action_test.go`: handler che ritorna `ErrAwaitingUserInput` → `Dispatch` ritorna `(ToolResult{}, *ErrAwaitingUserInput)` byte-identico, Loop lo riceve e pausa correttamente.
+
+---
+
+## Risk-Based Governance (Area #5 closed 2026-05-28, vale per Slice 6 + 7)
+
+Pattern **Hybrid C — System computes tier, agent decides**. Non c'è formula numerica e non c'è hard force gate dell'agente: l'autonomia LLM è preservata ma il sistema ha veto strutturale (pending_approval state) sulle azioni che ritiene RISKY/DESTRUCTIVE.
+
+### Risk tier (4 valori discreti)
+
+```text
+SAFE         reversible, local, ephemeral, no side effect
+NORMAL       reversible o easily recoverable
+RISKY        irreversibile O blast esteso O auto-modifica persistente
+DESTRUCTIVE  rm-rf, drop table, force push, send-to-third-party, etc.
+```
+
+Modello qualitativo (non numerico): più chiaro per il modello LLM che lo legge nel tool result, più chiaro per audit (`aura task audit --tier=destructive`), più estendibile (nuovo kind = aggiungere riga al mapping).
+
+### Mapping kind → tier (hard-coded in `internal/scoring/`)
+
+```text
+Slice 6 (cron):
+  reminder           → SAFE       (notifica, reversibile via task_cancel)
+  backup_postgres    → SAFE       (additive only, mai destructive)
+  backup_neo4j       → SAFE
+  agent_job          → NORMAL     (parent layer = solo spawn)
+  agent_job + payload matches /\b(rm|delete|drop|purge|truncate)\b/ → DESTRUCTIVE
+
+Slice 7 (skills):
+  skill.create       → RISKY      (system prompt auto-modify)
+  skill.update       → RISKY
+  skill.install      → RISKY      (supply chain, mitigato da --ignore-scripts)
+  skill.delete       → DESTRUCTIVE (irreversibile)
+```
+
+### Modificatori (bumpano UP, mai DOWN)
+
+```text
+schedule_kind every_minute|every_hour    → +1 tier (SAFE→NORMAL, NORMAL→RISKY, ...)
+silent: true (agent_job senza notifier)  → +1 tier
+agent_job senza Handler.Notifier wired   → +1 tier
+update aumenta frequenza > 10x           → +1 tier
+```
+
+Saturano a DESTRUCTIVE. Nessun modifier scende il tier base.
+
+### Pipeline di applicazione
+
+```
+1. agent chiama mutation tool (task.schedule | skill.create | ...)
+2. system: tier = ComputeTier(args)
+3. system writes audit row (computed_risk_tier=tier, gate_recommended=...)
+4. SE tier in {SAFE, NORMAL}:
+     mutation eseguita immediatamente, status='active'
+     tool result: { ..., risk_tier, gate_recommended:false }
+   SE tier in {RISKY, DESTRUCTIVE}:
+     mutation parcheggiata in pending state (scheduler_tasks.status='pending_approval'
+       o skills/pending/<name>/)
+     tool result: { ..., risk_tier, gate_recommended:true, status:'pending_approval' }
+5. agent vede il result:
+     opzione A: ri-emette ask_user(kind=approval, ResumeContext={action, target_id})
+       → utente risponde
+       → resume handler chiama task.approve / skill.approve / cancellation
+       → audit: gate_taken=true
+     opzione B: agent skippa gate
+       → mutation resta in pending (NON gira, NON viene caricata)
+       → Notifier.Notify IMMEDIATE (`aura {task|skills} approve <id>` per attivare)
+       → audit: gate_taken=false
+       → l'utente può approvare via CLI in qualsiasi momento
+```
+
+### Threshold di alert
+
+`AURA_RISK_ALERT_THRESHOLD` (env, default `risky`): tier minimo per scatenare Notifier alert quando `gate_taken=false`. Possibili valori: `safe` (alert sempre), `normal`, `risky`, `destructive` (alert solo destructive). `RequiresImmediateAlert(tier)` in `internal/scoring/` ritorna `tier >= AURA_RISK_ALERT_THRESHOLD`.
+
+### Modulo condiviso `internal/scoring/`
+
+```go
+// ~100 LOC
+package scoring
+
+type RiskTier string
+const (
+    Safe        RiskTier = "safe"
+    Normal      RiskTier = "normal"
+    Risky       RiskTier = "risky"
+    Destructive RiskTier = "destructive"
+)
+
+type TaskArgs struct {
+    Kind          string  // reminder | agent_job | backup_postgres | backup_neo4j
+    ScheduleKind  string  // oneoff | daily | every_hour | every_minute | ...
+    Silent        bool
+    AgentTier     string  // worker | chat | reasoning (only for agent_job)
+    Payload       []byte  // raw, regex'd for destructive keywords
+}
+func ComputeTaskTier(a TaskArgs) RiskTier { ... }
+
+type SkillAction string
+const (
+    SkillCreate  SkillAction = "create"
+    SkillUpdate  SkillAction = "update"
+    SkillInstall SkillAction = "install"
+    SkillDelete  SkillAction = "delete"
+)
+func ComputeSkillTier(action SkillAction, body string) RiskTier { ... }
+
+func GateRecommended(t RiskTier) bool { return t == Risky || t == Destructive }
+func RequiresImmediateAlert(t RiskTier) bool { /* env-driven */ }
+```
+
+### Audit log schema (entrambe le tabelle)
+
+```sql
+-- aura.agent_job_runs (Slice 6)
+ALTER TABLE aura.agent_job_runs ADD COLUMN
+  computed_risk_tier text NOT NULL DEFAULT 'normal'
+    CHECK (computed_risk_tier IN ('safe','normal','risky','destructive')),
+  gate_recommended boolean NOT NULL DEFAULT false,
+  gate_taken boolean NOT NULL DEFAULT false;
+
+-- aura.skill_audit (Slice 7)
+ALTER TABLE aura.skill_audit ADD COLUMN
+  computed_risk_tier text NOT NULL DEFAULT 'risky'
+    CHECK (computed_risk_tier IN ('safe','normal','risky','destructive')),
+  gate_recommended boolean NOT NULL DEFAULT true,
+  gate_taken boolean NOT NULL DEFAULT true;
+```
+
+Indici per forensics:
+- `aura.agent_job_runs (gate_recommended, gate_taken, computed_risk_tier) WHERE gate_recommended=true AND gate_taken=false`
+- `aura.skill_audit (gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false`
+
+### Notifier template
+
+```text
+[risk:RISKY] Aura ha [schedulato cron 'news-summary' (daily 02:00)
+              | proposto skill 'haiku-mode' (create)
+              | proposto skill 'aggressive-cleanup' (delete)]
+senza chiederti conferma. Per attivare: `aura task approve 7f3a...`
+(o `aura skills approve haiku-mode`). Per ignorare: `aura task cancel 7f3a...`.
+Audit: `aura task audit --recent` o `aura skills audit --recent`.
+```
+
+### Razionale anti-auto-elevation
+
+Il pattern B puro (LLM-computed score) ha un vettore di attacco noto:
+**l'agente sotto-stima lo score per evitare gate**. 5 esempi reali coperti:
+(1) cron costoso "non rischioso", (2) skill auto-modificante con prompt injection,
+(3) cron irreversibile (rm/delete), (4) frequency escalation via task.update,
+(5) silent cumulative damage. Pattern Hybrid C li mitiga tutti senza togliere
+autonomia all'agente: il sistema computa il tier deterministicamente, l'agente
+può ancora decidere di non gate-are, MA la mutation è parcheggiata in pending
+finché non c'è approval (agente via ask_user OPPURE utente via CLI). Audit log
++ Notifier IMMEDIATE rendono il gate skip visibile.
 
 ---
 
