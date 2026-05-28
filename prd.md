@@ -954,24 +954,38 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 - [ ] Validation: `daily HH:MM` accetta solo `00:00`–`23:59`; nomi task `^[a-zA-Z0-9_-]+$` (no path traversal).
 - [ ] Persistence: i task sopravvivono al restart del processo. Tick loop riprende `DueTasks` allo startup e cattura up i missed run (con flag `MissedSince`).
 - [ ] **`DueTasks` query usa `SELECT ... FOR UPDATE SKIP LOCKED` (audit round 1 P0)**: pattern atomico per multi-instance safety. Anche con 1 sola Aura attiva oggi, blocca double-dispatch se un manual `task.run_now` parte contemporaneo al tick. Costo zero, sblocca future multi-instance.
-- [ ] Dispatcher: ogni `TaskKind` ha un `Handler` separato in `internal/cron/handlers/<kind>.go` implementando `Handle(ctx, *Task) error`. Aggiungere un nuovo kind = aggiungere 1 file, non editare un god switch.
+- [ ] Dispatcher: ogni `TaskKind` ha un `Handler` separato in `internal/cron/handlers/<kind>.go` implementando `Handle(ctx, *Task) error`, `MaxDuration() time.Duration`, `ReschedulesOnRecovery() bool`. `MaxDuration` definisce la soglia oltre la quale un run senza `finished_at` è considerato in limbo al restart. `ReschedulesOnRecovery=true` (reminder, idempotenti) → il task viene riportato in `DueTasks` al boot; `=false` (agent_job, side-effecting) → limbo audit-only, no auto re-run. Aggiungere un nuovo kind = aggiungere 1 file, non editare un god switch.
 - [ ] **`agent_job` handler auto-rejecta child Loop pause (audit round 1 P0)**: il sub-loop spawn-ato via `swarm.Coordinator.Spawn` riceve un `RejectingResponder` come default — un agent_job non può bloccare aspettando un umano (è cron, gira anche di notte). Se l'agent_job invoca `ask_user`, riceve risposta automatica `"<auto-rejected: scheduled job has no human responder>"` e decide come procedere. Test asserisce: cron job che invoca ask_user non blocca, completa in <30s con stato `auto-rejected`.
 - [ ] `LastError` persistito su failure, leggibile via `task.list()`.
+- [ ] **Crash recovery boot query (Area #3 closed 2026-05-28)**: il tick loop, **prima** del primo tick, esegue:
+  ```sql
+  UPDATE aura.agent_job_runs
+     SET exit_status   = 'unknown_recovery',
+         finished_at   = now(),
+         recovered_at  = now(),
+         summary       = 'aura process restart, outcome unknown'
+   WHERE finished_at IS NULL
+     AND started_at  < now() - <handler.MaxDuration()>
+  RETURNING id, task_id;
+  ```
+  Per ogni riga RETURNING, se `Handler.ReschedulesOnRecovery() == true` il task viene riportato in `DueTasks` via `UPDATE aura.scheduler_tasks SET next_run_at=now() WHERE id=<task_id>`; altrimenti resta in limbo audit-only (no auto re-run, side-effect safe). Decisione: **mai ri-eseguire automaticamente un job con side effect committati** (pattern HKUDS/nanobot `cron/service.py` verificato).
+- [ ] **Recovery notifier**: se la query touch ≥1 riga, `Notifier.Notify(local, "N agent_job interrotti dal restart, audit via aura task audit")` al boot. Stdout in CLI ora, Telegram quando atterra.
 - [ ] Test: schedule → restart processo → tick loop ripicka il task → handler invocato.
+- [ ] Test crash recovery: insert manual `agent_job_runs(started_at=now()-1h, finished_at=NULL)` → boot Aura → query marca `exit_status='unknown_recovery'`, Notifier emette msg, task NON ri-eseguito automaticamente.
 
 **File targets** (≤ 950 LOC src — risparmio ~550 LOC vs pre-rewrite grazie a sqlc):
 | Path | LOC | Note |
 |---|---|---|
 | `internal/cron/types.go` | ~100 | `Task`, `TaskKind`, `ScheduleKind`, `Status` enums (Go domain types, distinti dai sqlc-generated). |
-| `internal/cron/scheduler.go` | ~200 | Tick loop, lifecycle (Start/Stop), missed-run recovery. Usa `*cron.Queries` (sqlc client). |
+| `internal/cron/scheduler.go` | ~240 | Tick loop, lifecycle (Start/Stop), missed-run recovery, crash-recovery boot query (chiama `MarkRunsRecovered` prima del primo tick, itera RETURNING per reschedule selettivo, notifica utente). Usa `*cron.Queries` (sqlc client). |
 | `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
 | `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
-| `internal/db/queries/agent_job_runs.sql` | ~60 | **3 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`. Tabella separata per audit dettagliato dei job. |
-| `internal/db/migrations/0005_scheduler.up.sql` | ~60 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, status, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, exit_status, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'`. |
+| `internal/db/queries/agent_job_runs.sql` | ~80 | **4 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`, `MarkRunsRecovered`. `MarkRunsRecovered` è la boot recovery query (UPDATE finished_at IS NULL AND started_at < threshold → exit_status='unknown_recovery'). RETURNING task_id per il reschedule loop. |
+| `internal/db/migrations/0005_scheduler.up.sql` | ~70 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, status, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). |
 | `internal/db/migrations/0005_scheduler.down.sql` | ~5 | DROP TABLEs. |
 | `internal/cron/handlers/handler.go` | ~40 | Interface `Handler{ Kind() TaskKind; Handle(ctx, t *Task) error }` + registry. |
-| `internal/cron/handlers/reminder.go` | ~80 | Notifier-driven (CLI/Telegram). |
-| `internal/cron/handlers/agent_job.go` | ~150 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. |
+| `internal/cron/handlers/reminder.go` | ~85 | Notifier-driven (CLI/Telegram). `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
+| `internal/cron/handlers/agent_job.go` | ~160 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
 | ~~`internal/cron/handlers/graph_maintenance.go`~~ | — | **RIMOSSO (audit round 1 P0)**: scope-creep esplicito (placeholder per future), va in slice dedicata post-MCP-Neo4j. Slice 6 supporta solo `reminder` e `agent_job` per ora. |
 
 **Commit message templates (sub-slice 6a + 6b):**
@@ -980,11 +994,19 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 slice 6a: scheduler infrastructure — types + sqlc + tick loop + reminder handler
 
 PostgreSQL-backed scheduler base. Types (Task/TaskKind/ScheduleKind/Status),
-migration 0005_scheduler (tables scheduler_tasks + agent_job_runs, indices,
-FOR UPDATE SKIP LOCKED on DueTasks), 11 sqlc queries split across
-scheduler_tasks.sql + agent_job_runs.sql. Tick loop DIY 30s with missed-run
-recovery. Notifier interface + stdout impl. Handlers registry + reminder
-handler. Tools task_list/task_cancel (non-deferred and deferred).
+migration 0005_scheduler (tables scheduler_tasks + agent_job_runs with
+exit_status check constraint (running|completed|failed|cancelled|timeout|
+unknown_recovery), recovered_at nullable column, indices on next_run_at
+WHERE status='active' and on (exit_status, started_at) WHERE finished_at
+IS NULL, FOR UPDATE SKIP LOCKED on DueTasks). 12 sqlc queries split across
+scheduler_tasks.sql + agent_job_runs.sql (incl. MarkRunsRecovered boot
+query). Tick loop DIY 30s with missed-run recovery and crash recovery
+(boot query marks finished_at IS NULL && started_at < MaxDuration as
+unknown_recovery; reschedules only handlers with ReschedulesOnRecovery=true,
+i.e. reminders; agent_job stays audit-only). Handler interface gains
+MaxDuration() + ReschedulesOnRecovery(). Notifier interface + stdout impl
+emits boot summary if >=1 row recovered. Handlers registry + reminder
+handler (MaxDuration=30s, reschedules=true). Tools task_list/task_cancel.
 
 Smoke: aura schedule reminder in=10m → tick loop fires → Notifier stdout.
 Persistent across restart verified.
