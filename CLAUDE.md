@@ -78,6 +78,34 @@ Bootstrap inziale (one-shot):
 - `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
 - `/gsd-map-codebase` — analizza skeleton 633 LOC esistente in `.planning/codebase/`
 
+## Skills installate (`.claude/skills/`, 17 totali)
+
+Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md con frontmatter description). Installate via `npx skills add`. Mappa skill → utilizzo nel workflow GSD + Slice Q&A:
+
+| Skill | Owner | Slice/Gate mappato | Use case |
+|---|---|---|---|
+| `find-skills` | vercel-labs | meta | Discover/install new skills on demand |
+| `ask-questions-if-underspecified` | trailofbits | **Gate 1 DoR** | Clarify requirements before impl ("serious doubts" check) |
+| `audit-prep-assistant` | trailofbits | **Gate 3 DoD setup** | Prepare codebase pre-security-review (Trail of Bits checklist) |
+| `audit-context-building` | trailofbits | **Gate 3 DoD audit** | Ultra-granular line-by-line code analysis pre-vulnerability hunt |
+| `code-maturity-assessor` | trailofbits | **Gate 3 DoD scoring** | 9-category framework (arithmetic safety, auditing, access controls, complexity, decentralization, documentation, MEV/risks, low-level, testing) |
+| `differential-review` | trailofbits | **Gate 3 DoD pre-merge** | Security-focused diff review per PR/commit + git history + blast radius |
+| `fp-check` | trailofbits | **Gate 3 DoD triage** | Verify TRUE/FALSE POSITIVE security bugs con evidence |
+| `sharp-edges` | trailofbits | Slice 7 + tool design | Detect footgun APIs/dangerous config (relevant per skill_create + sandbox network allowlist) |
+| `codeql` | trailofbits | Slice 2 sandbox + 7 skills + 11 ingest | Data flow + taint tracking + SARIF |
+| `semgrep-rule-creator` | trailofbits | Slice 7c skill_audit | Custom rules per `AURA_SKILL_INJECTION_BLOCKLIST` |
+| `mutation-testing` | trailofbits | **Gate 3 DoD** per slice critical | Configure mewt/muton (PRD richiede ≥70% killed) |
+| `property-based-testing` | trailofbits | Slice 3/4/8 (PRD esplicito) | gopter/rapid patterns Go property-based |
+| `agentic-actions-auditor` | trailofbits | Future CI/CD setup | GitHub Actions security per AI agents in pipeline |
+| `gh-cli` | trailofbits | **Gate 3 DoD PR** | Authenticated gh CLI workflow over unauthenticated curl |
+| `devcontainer-setup` | trailofbits | Slice 0.5 infra | Devcontainer con Go tooling + persistent volumes |
+| `mcp-builder` | anthropics | **Slice 0.7 Neo4j** | mcp-neo4j-cypher server integration pattern |
+| `skill-creator` | anthropics | **Slice 7 Skills** | Meta-pattern per creating + evaluating Aura skills (instruction-based + 7e snippet-based) |
+
+**Quando si triggerano**: il modello detecta automaticamente skill rilevante dal frontmatter description (es. "Use when reviewing PR for security regressions" → triggera differential-review). Skill caricate solo quando richieste, non in default manifest.
+
+**Espandere il set**: `/find-skills` (skill meta) per cercare nuove + `npx skills add <owner>/<repo> --skill <name> --agent claude-code -y` per install.
+
 ## Behavioral rules (apply to every change)
 
 - **NEVER SUPPOSE.** Read code before editing. If uncertain about API contract, stop and ask.
