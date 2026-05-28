@@ -42,5 +42,11 @@ Thumbs.db
 coverage.txt
 coverage.html
 .codex/*
-.claude/*
+
+# Claude Code: GSD installation is committed (vedi CLAUDE.md §GSD tooling).
+# Local cache/sessions transient are excluded.
+.claude/cache/
+.claude/sessions/
+.claude/.local-state/
+
 skills-lock.json
