@@ -78,33 +78,85 @@ Bootstrap inziale (one-shot):
 - `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
 - `/gsd-map-codebase` — analizza skeleton 633 LOC esistente in `.planning/codebase/`
 
-## Skills installate (`.claude/skills/`, 17 totali)
+## Skills installate (`.claude/skills/`, 46 totali — 3.5 MB)
 
 Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md con frontmatter description). Installate via `npx skills add`. Mappa skill → utilizzo nel workflow GSD + Slice Q&A:
 
-| Skill | Owner | Slice/Gate mappato | Use case |
-|---|---|---|---|
-| `find-skills` | vercel-labs | meta | Discover/install new skills on demand |
-| `ask-questions-if-underspecified` | trailofbits | **Gate 1 DoR** | Clarify requirements before impl ("serious doubts" check) |
-| `audit-prep-assistant` | trailofbits | **Gate 3 DoD setup** | Prepare codebase pre-security-review (Trail of Bits checklist) |
-| `audit-context-building` | trailofbits | **Gate 3 DoD audit** | Ultra-granular line-by-line code analysis pre-vulnerability hunt |
-| `code-maturity-assessor` | trailofbits | **Gate 3 DoD scoring** | 9-category framework (arithmetic safety, auditing, access controls, complexity, decentralization, documentation, MEV/risks, low-level, testing) |
-| `differential-review` | trailofbits | **Gate 3 DoD pre-merge** | Security-focused diff review per PR/commit + git history + blast radius |
-| `fp-check` | trailofbits | **Gate 3 DoD triage** | Verify TRUE/FALSE POSITIVE security bugs con evidence |
-| `sharp-edges` | trailofbits | Slice 7 + tool design | Detect footgun APIs/dangerous config (relevant per skill_create + sandbox network allowlist) |
-| `codeql` | trailofbits | Slice 2 sandbox + 7 skills + 11 ingest | Data flow + taint tracking + SARIF |
-| `semgrep-rule-creator` | trailofbits | Slice 7c skill_audit | Custom rules per `AURA_SKILL_INJECTION_BLOCKLIST` |
-| `mutation-testing` | trailofbits | **Gate 3 DoD** per slice critical | Configure mewt/muton (PRD richiede ≥70% killed) |
-| `property-based-testing` | trailofbits | Slice 3/4/8 (PRD esplicito) | gopter/rapid patterns Go property-based |
-| `agentic-actions-auditor` | trailofbits | Future CI/CD setup | GitHub Actions security per AI agents in pipeline |
-| `gh-cli` | trailofbits | **Gate 3 DoD PR** | Authenticated gh CLI workflow over unauthenticated curl |
-| `devcontainer-setup` | trailofbits | Slice 0.5 infra | Devcontainer con Go tooling + persistent volumes |
-| `mcp-builder` | anthropics | **Slice 0.7 Neo4j** | mcp-neo4j-cypher server integration pattern |
-| `skill-creator` | anthropics | **Slice 7 Skills** | Meta-pattern per creating + evaluating Aura skills (instruction-based + 7e snippet-based) |
+### Security + Audit + Q&A (Trail of Bits, 14 skills)
 
-**Quando si triggerano**: il modello detecta automaticamente skill rilevante dal frontmatter description (es. "Use when reviewing PR for security regressions" → triggera differential-review). Skill caricate solo quando richieste, non in default manifest.
+| Skill | Slice/Gate mappato | Use case |
+|---|---|---|
+| `ask-questions-if-underspecified` | **Gate 1 DoR** | Clarify requirements before impl ("serious doubts" check) |
+| `audit-prep-assistant` | **Gate 3 DoD setup** | Pre-audit checklist (set goals, run static analysis, increase coverage, remove dead code, ensure accessibility) |
+| `audit-context-building` | **Gate 3 DoD audit** | Ultra-granular line-by-line code analysis |
+| `code-maturity-assessor` | **Gate 3 DoD scoring** | 9-category framework (arithmetic safety, auditing, access controls, complexity, decentralization, documentation, MEV/risks, low-level, testing) |
+| `differential-review` | **Gate 3 DoD pre-merge** | Security-focused diff review per PR + git history + blast radius |
+| `fp-check` | **Gate 3 DoD triage** | TRUE/FALSE POSITIVE verification con evidence |
+| `sharp-edges` | Slice 7 + tool design | Footgun API detection (skill_create + sandbox config) |
+| `codeql` | Slice 2 sandbox + 7 skills + 11 ingest | Data flow + taint tracking + SARIF |
+| `semgrep-rule-creator` | Slice 7c | Custom rules per `AURA_SKILL_INJECTION_BLOCKLIST` |
+| `mutation-testing` | **Gate 3 DoD** | mewt/muton config (PRD richiede ≥70% killed) |
+| `property-based-testing` | Slice 3/4/8 (PRD esplicito) | gopter/rapid patterns |
+| `agentic-actions-auditor` | Future CI/CD | GitHub Actions security per AI agents |
+| `gh-cli` | **Gate 3 DoD PR** | Authenticated gh CLI workflow |
+| `devcontainer-setup` | Slice 0.5 infra | Devcontainer Go + Postgres + Neo4j |
 
-**Espandere il set**: `/find-skills` (skill meta) per cercare nuove + `npx skills add <owner>/<repo> --skill <name> --agent claude-code -y` per install.
+### Go programming (samber/cc-skills-golang, 16 skills)
+
+| Skill | Slice/Gate mappato | Use case |
+|---|---|---|
+| `golang-testing` | **Tutte slice — Gate 2/3** | Table-driven, fuzzing, goleak, snapshot, race, coverage, parallel tests |
+| `golang-stretchr-testify` | Tutte slice | testify assert/require/mock/suite (se Aura adopta) |
+| `golang-benchmark` | **Slice 9c/11b/13b pre-merge benchmarks** | Methodology + measurement (PRD richiede benchmark pre-merge) |
+| `golang-error-handling` | **Tutte slice** | Error wrapping `%w`, sentinel patterns (`ErrAwaitingUserInput`, `HTTPError`) |
+| `golang-concurrency` | **Slice 0.9/1/3/11e** | Goroutines, channels, iter.Seq2 streaming, background workers |
+| `golang-context` | **Slice 1/3 cancellation** | Ctx-cancel propagation end-to-end |
+| `golang-safety` | Tutte slice | Memory safety patterns |
+| `golang-security` | **Slice 2 sandbox + 7 skills** | Security best practices Go |
+| `golang-observability` | Tutte slice | Structured logging (slog), OpenTelemetry |
+| `golang-database` | **Slice 0.5/1.5/1.7/1.8/6/7c/10/11/13** | Patterns Postgres+pgx, transactions, migrations |
+| `golang-troubleshooting` | Debug | pprof, Delve, race detector, GODEBUG |
+| `golang-project-layout` | **Slice 0.5 bootstrap** | cmd/ + internal/ standard layout |
+| `golang-structs-interfaces` | **Slice 0.9 Agent interface** | Composition, embedding, interface segregation |
+| `golang-modernize` | Tutte slice (Go 1.23+) | t.Context, b.Loop, synctest, iter.Seq2 modernizations |
+| `golang-spf13-cobra` | CLI subcommands | `aura chat`/`serve`/`exec`/`ingest`/`telegram` etc. |
+| `golang-lint` | **Gate 2 Impl** | golangci-lint setup + rules |
+
+### Neo4j + graph + memory (neo4j-contrib/neo4j-skills, 13 skills)
+
+| Skill | Slice mappato | Use case |
+|---|---|---|
+| `neo4j-cypher-skill` | **Slice 0.7 + 11** | Cypher writing/optimization (4.x/5.x/2025.x/2026.x), deprecations |
+| `neo4j-driver-go-skill` | **Slice 0.7** | Go driver native (fallback se mcp-neo4j-cypher non sufficiente) |
+| `neo4j-mcp-skill` | **Slice 0.7** | mcp-neo4j-cypher server (get-schema, read-cypher, write-cypher, list-gds-procedures) |
+| `neo4j-vector-index-skill` | **Slice 0.7 + 11a** | HNSW vector index (CREATE VECTOR INDEX, cosine, dimensions 768d) |
+| `neo4j-graphrag-skill` | **Slice 11d** | GraphRAG retrieval pattern (Microsoft, hybrid BM25+vector+graph) |
+| `neo4j-gds-skill` | **Slice 11c** | Graph algorithms (Leiden community detection, PageRank, ecc.) |
+| `neo4j-modeling-skill` | **Slice 11a** | Schema design (labels vs relationships vs properties) |
+| `neo4j-agent-memory-skill` | **Slice 11e** | Agent memory subgraph pattern (parity con :AgentEpisode/Insight) |
+| `neo4j-query-tuning-skill` | Slice 11 optimization | EXPLAIN/PROFILE slow queries, dbHits, runtime selection |
+| `neo4j-getting-started-skill` | **Slice 0.7 bootstrap** | Zero-to-success agentic Neo4j |
+| `neo4j-import-skill` | Slice 11b ingest | Bulk CSV/file import |
+| `neo4j-document-import-skill` | **Slice 11b ingest** | Document → chunks → embeddings → graph pipeline |
+| `neo4j-genai-plugin-skill` | Slice 0.7 embedding | GenAI plugin (embedding sidecar integration) |
+
+### Meta + MCP + Anthropics (3 skills)
+
+| Skill | Slice mappato | Use case |
+|---|---|---|
+| `find-skills` (vercel-labs) | meta | Discover/install new skills on demand |
+| `mcp-builder` (anthropics) | **Slice 0.7** | MCP server design pattern (per mcp-neo4j-cypher integration) |
+| `skill-creator` (anthropics) | **Slice 7 Skills** | Meta-pattern per creating + evaluating Aura skills |
+
+### Trigger automatic
+
+Il modello detecta skill rilevante dal frontmatter `description` (es. "Use when writing or reviewing Go tests" → triggera `golang-testing`). Skill caricate solo quando richieste — no token bloat in default manifest.
+
+### Espandere il set
+
+- `/find-skills` (skill meta) per cercare nuove
+- `npx skills add <owner>/<repo> --skill <name> --agent claude-code -y` per install
+- Repo noti: `samber/cc-skills-golang` (40 Go skills), `neo4j-contrib/neo4j-skills` (25 graph skills), `trailofbits/skills` (security), `anthropics/skills` (utility), `vercel-labs/skills` (find-skills + agent-skills)
 
 ## Behavioral rules (apply to every change)
 
