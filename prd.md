@@ -234,7 +234,299 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 0.9 — Agent runtime abstraction (`Agent` interface + workflow agents)
+
+> **Pattern rubato (non importato) da Google adk-go** ([github.com/google/adk-go](https://github.com/google/adk-go), v1.3.0 May 2026, 8k stars). Adottiamo il *design* — `Agent` interface unificata + `iter.Seq2[*Event, error]` streaming + workflow agents Sequential/Loop/Parallel — senza importare il package (35 deps GCP/OTel/Gemini-heavy → footprint inaccettabile per Aura minimal stack). ~380 LOC totali, riusati cross-slice con saving netto ~−460 LOC.
+
+**Goal.** Definire un'interfaccia `Agent` unica che tutto Aura riusa: LLM agent (Slice 1 Loop), workflow agents (Sequential/Loop/Parallel built-in), scheduler handlers (Slice 6), skills come Agent virtuali (Slice 7), swarm workers (Slice 3). Streaming events idiomatico Go 1.23+ via `iter.Seq2[*Event, error]`. Termination propagata across agent tree tramite `event.Actions.Escalate`.
+
+Risolve un design smell latente del PRD pre-Slice 0.9: ogni slice aveva il suo "runtime" (Loop, Scheduler.Handler, Swarm.Coordinator, Skill.execute, onboarding state machine) — quattro runtime diversi da mantenere, testare, debuggare. Con Slice 0.9 c'è **un solo runtime**, l'interfaccia `Agent`, e ogni slice ne fornisce una o più implementations.
+
+### Pre-requisiti
+
+- Go 1.23+ (per `iter.Seq2` range-over-func)
+- Slice 0 Postgres infra (per `InvocationContext.SessionStore`)
+- Slice 0.7 Neo4j infra (per `InvocationContext.GraphStore`)
+
+### Architettura
+
+```
+internal/agent/
+  agent.go              # ~80   Agent interface + InvocationContext + Config base
+  event.go              # ~70   Event struct {LLMResponse, Author, Branch, Actions}
+                        #       Actions{Escalate bool, StateDelta map[string]any,
+                        #               ArtifactDelta map[string]any}
+  workflow/
+    sequential.go       # ~30   SequentialAgent — itera sub-agents una volta in ordine
+    loop.go             # ~40   LoopAgent — ripete sub-agents N volte o fino a Escalate
+    parallel.go         # ~70   ParallelAgent — errgroup + chan, sub-agents concurrent
+  workflow/
+    workflow_test.go    # ~100  Test 3 workflow + escalation propagation
+```
+
+### Interface base (rubato da adk-go agent.go)
+
+```go
+package agent
+
+import (
+    "context"
+    "iter"
+)
+
+// Agent is the base interface which all agents must implement.
+type Agent interface {
+    Name() string
+    Description() string
+    Run(InvocationContext) iter.Seq2[*Event, error]
+    SubAgents() []Agent
+    FindAgent(name string) Agent
+}
+
+// InvocationContext carries cross-cutting state per Run invocation.
+// Composed once at Loop top-level, propagated to all sub-agents.
+type InvocationContext struct {
+    Ctx           context.Context
+    Agent         Agent              // self-reference, used by workflow agents to access SubAgents()
+    SessionID     string             // conversation_id (Slice 1.8)
+    IdentityID    string             // identity_id (Slice 1.7)
+    Branch        string             // hierarchical path for nested agents (e.g. "swarm.worker-3")
+    SessionStore  SessionStore       // Postgres-backed (Slice 0)
+    GraphStore    GraphStore         // Neo4j MCP (Slice 0.7)
+    LLMClient     llm.Client         // shared client (Slice 1)
+    // ... extension points: Tools, Memory, Artifacts (added incrementally by later slices)
+}
+```
+
+### Event type (rubato + Aura extension)
+
+```go
+package agent
+
+type Event struct {
+    Author       string             // agent name OR "user"
+    Branch       string              // invocation branch (mirror of InvocationContext.Branch)
+    LLMResponse  *LLMResponse        // nil if non-LLM event (e.g. tool result, lifecycle)
+    Actions      Actions
+    Timestamp    time.Time
+}
+
+type Actions struct {
+    Escalate      bool                 // signal upward: stop loop / abort branch
+    StateDelta    map[string]any       // mutations to session state (merge into SessionStore)
+    ArtifactDelta map[string]any       // file/blob produced (for sidecar persistence)
+}
+
+type LLMResponse struct {
+    Content      string                // streamed text chunk OR full final
+    ToolCalls    []ToolCall
+    FinishReason string                // "stop", "tool_use", "max_tokens", "escalate"
+}
+```
+
+### Workflow agents (built-in)
+
+**`SequentialAgent.Run`** — esegue sub-agents una volta, in ordine:
+```go
+func (a *sequentialAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
+    return func(yield func(*Event, error) bool) {
+        for _, subAgent := range ctx.Agent.SubAgents() {
+            for event, err := range subAgent.Run(ctx) {
+                if !yield(event, err) { return }
+                if event != nil && event.Actions.Escalate { return }  // upward propagation
+            }
+        }
+    }
+}
+```
+
+**`LoopAgent.Run`** — ripete sub-agents N volte o fino a `Escalate`:
+```go
+type loopAgent struct {
+    name          string
+    maxIterations uint                // 0 = infinite (Caps & Limits applies hard cap)
+    subAgents     []Agent
+}
+
+func (a *loopAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
+    return func(yield func(*Event, error) bool) {
+        iter := uint(0)
+        for {
+            if a.maxIterations > 0 && iter >= a.maxIterations { return }
+            iter++
+            for _, sub := range a.subAgents {
+                for event, err := range sub.Run(ctx) {
+                    if !yield(event, err) { return }
+                    if event != nil && event.Actions.Escalate { return }
+                }
+            }
+        }
+    }
+}
+```
+
+**`ParallelAgent.Run`** — sub-agents concorrenti, errgroup + chan:
+```go
+func (a *parallelAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
+    return func(yield func(*Event, error) bool) {
+        type result struct { event *Event; err error; ackChan chan struct{} }
+        resultsChan := make(chan result)
+        eg, egCtx := errgroup.WithContext(ctx.Ctx)
+        for _, sub := range ctx.Agent.SubAgents() {
+            sub := sub
+            eg.Go(func() error {
+                subCtx := ctx.WithSubInvocation(sub)
+                for event, err := range sub.Run(subCtx) {
+                    ack := make(chan struct{})
+                    select {
+                    case resultsChan <- result{event, err, ack}:
+                    case <-egCtx.Done(): return egCtx.Err()
+                    }
+                    <-ack  // backpressure: yield must consume before next event
+                }
+                return nil
+            })
+        }
+        doneChan := make(chan error, 1)
+        go func() { doneChan <- eg.Wait(); close(resultsChan) }()
+        for res := range resultsChan {
+            if !yield(res.event, res.err) { return }
+            close(res.ackChan)
+            if res.event != nil && res.event.Actions.Escalate {
+                // Escalate from ANY child cancels siblings via egCtx
+                return
+            }
+        }
+        if err := <-doneChan; err != nil { yield(nil, err) }
+    }
+}
+```
+
+### Termination model (escalation propagation)
+
+```
+Tree composition:
+  Root (LoopAgent maxIter=5)
+    └─ SequentialAgent
+         ├─ LlmAgent (writer)
+         └─ LlmAgent (critic)
+
+Critic emits Event{Actions:{Escalate:true}} when satisfied
+  → SequentialAgent yields it, then returns (skip remaining siblings)
+  → LoopAgent yields it, then returns (skip remaining iterations)
+  → Root returns to caller
+
+No magic, just bubble-up via the `return` after every `yield` check.
+```
+
+Coerenza con primitives Aura esistenti:
+- `ask_user.Pause` (Slice 1.5) → emette `Event{FinishReason:"escalate", Actions:{Escalate:true, StateDelta:{paused_state_token: ...}}}` → propaga upward
+- `Loop.Cancel` (Slice 1) → `InvocationContext.Ctx` cancel → tutti i sub-agents si fermano via context
+
+### Reuse cross-slice (saving cumulativo)
+
+| Slice | Implementation di Agent | Pre-0.9 LOC | Post-0.9 LOC | Δ |
+|---|---|---:|---:|---:|
+| 1 | `LlmAgent` (LLM streaming + tool dispatch + MaxSteps) | 520 | 480 | −40 |
+| 3 | Swarm Coordinator riusa `ParallelAgent`, worker = `LlmAgent` | 800 | 600 | **−200** |
+| 6 | `Handler` interface = `Agent`, dispatch uniforme | 1300 | 1100 | **−200** |
+| 7 | Skill come template che produce un `Agent` runtime | 1400 | 1380 | −20 |
+| 8 | AG-UI emitter consume `iter.Seq2[*Event, error]` direttamente | 700 | 600 | −100 |
+| 10 | Onboarding = `LoopAgent[InterviewStepAgent]` + escalation on "Conferma" | 700 | 580 | −120 |
+| **Sum** | | | | **−680** |
+| **0.9 cost** | | | 280 | +280 |
+| **NET** | | | | **−400** |
+
+(Stima conservativa: rifinire post-impl, ma la direzione è chiara.)
+
+### Smoke
+
+```bash
+go test ./internal/agent/workflow/ -run TestSequentialAgent
+# Sequential[A,B,C] yield ordered: eventA, eventB, eventC.
+
+go test ./internal/agent/workflow/ -run TestLoopAgentMaxIter
+# Loop[X] maxIter=3 yield 3 events. Stops after 3.
+
+go test ./internal/agent/workflow/ -run TestLoopAgentEscalate
+# Loop[X] maxIter=10, X emits Escalate at iter 2. Yield 2 events, returns.
+
+go test ./internal/agent/workflow/ -run TestParallelAgent
+# Parallel[A,B,C] yield events concurrently. Order non-deterministic.
+# Escalate from B cancels A,C via errgroup ctx.
+```
+
+### Acceptance
+
+- [ ] `internal/agent/agent.go` definisce `Agent` interface + `InvocationContext` + builder helpers (`NewSequential(name, subAgents...)`, `NewLoop(name, maxIter, subAgents...)`, `NewParallel(name, subAgents...)`).
+- [ ] `internal/agent/event.go` definisce `Event` + `Actions` + `LLMResponse`. Helper `NewEscalateEvent(author, reason string)`.
+- [ ] `internal/agent/workflow/{sequential,loop,parallel}.go` implementano i 3 workflow agents. ParallelAgent usa errgroup + ackChan backpressure (rubato da adk-go pattern).
+- [ ] Escalation propagation testata: child Escalate → parent ferma yield ai siblings.
+- [ ] Go 1.23+ enforced in `go.mod` (`go 1.23`).
+- [ ] **Niente import di `google.golang.org/adk`**. Rubiamo il pattern, non la dependency.
+- [ ] Test coverage workflow/ ≥ 85%.
+
+### File targets cumulativi
+
+`internal/agent/agent.go` ~80 + `event.go` ~70 + `workflow/{sequential,loop,parallel}.go` ~140 + test ~100 = **~390 LOC totali**.
+
+### Open questions
+
+1. **`InvocationContext.Branch`**: stringa free-form (es. `"swarm.worker-3.loop.iter-2"`) o nested struct con parent pointer? *Default proposto*: stringa free-form, parsing on-demand (più leggera).
+2. **`Actions.StateDelta` merge semantics**: shallow merge in `SessionStore` o `jsonb_set` deep? *Default proposto*: deep merge via `jsonpatch` (RFC 6902) per evitare overwrite involontari di sub-tree.
+3. **Backpressure ParallelAgent**: ackChan synchronous (slow consumer = slow producer) o buffered chan size N? *Default proposto*: synchronous (rubato da adk-go), evita memory bloat con N grosso.
+
+### Mini-PC RAM budget — delta
+
+Negligibile. Agent runtime è puro Go code, nessun sidecar/dep nuovo.
+
+### Commit message template
+
+```
+slice 0.9: Agent runtime abstraction (interface + workflow agents)
+
+Define `Agent` interface unificata + `iter.Seq2[*Event, error]` streaming
+(Go 1.23+) + workflow agents built-in (Sequential, Loop, Parallel).
+
+Pattern rubato (non importato) da google/adk-go v1.3.0 (8k stars).
+Importare adk-go come dependency e' inaccettabile per Aura: 35 deps
+GCP/OTel/Gemini-heavy footprint. Rubiamo il design (3 interfaces +
+3 workflow agents = ~280 LOC totali), zero coupling esterno.
+
+Risolve design smell pre-0.9: ogni slice aveva il proprio runtime
+(Loop, Scheduler.Handler, Swarm.Coordinator, Skill.execute, onboarding
+state machine). Con Agent interface unificata = 1 runtime, 4+ impl
+(LlmAgent in Slice 1, ParallelAgent riuso in Slice 3 Swarm,
+Scheduler.Handler in Slice 6 = Agent, LoopAgent[InterviewStepAgent]
+in Slice 10 onboarding).
+
+Termination propagata via event.Actions.Escalate (bubble-up):
+child Escalate -> SequentialAgent yields then returns (skip siblings)
+                -> LoopAgent yields then returns (skip remaining iterations).
+Coerente con ask_user.Pause (Slice 1.5) e Loop.Cancel (Slice 1).
+
+InvocationContext composto a top-level Loop, propagato via SubAgents().
+Carries: Ctx, Agent (self-ref), SessionID, IdentityID, Branch,
+SessionStore (Slice 0 Postgres), GraphStore (Slice 0.7 Neo4j),
+LLMClient (Slice 1). Extension points per Tools/Memory/Artifacts.
+
+Saving cumulativo (stima): -680 LOC sulle slice 1/3/6/7/8/10 grazie
+a riuso pattern unificato. Net dopo +280 LOC Slice 0.9 = -400 LOC
+sul progetto totale + qualita' architettonica (1 mock, 1 test
+infrastructure, 1 streaming pattern).
+
+Go 1.23 minimum (range-over-func iter.Seq2). Enforce in go.mod.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Slice 1 — LLM client reale + ToolResult pattern (preview + persist)
+
+> **Slice 0.9 amendment**: il `Loop` introdotto qui è ridefinito come `LlmAgent` — implementazione dell'interface `Agent` (Slice 0.9). `Loop.Turn` → `(*LlmAgent).Run(ctx) iter.Seq2[*Event, error]` (yield streaming chunks + tool_call events + lifecycle). `MaxSteps` rimane invariato. `Loop.Cancel` propaga via `InvocationContext.Ctx`. Saving stimato: −40 LOC (no plumbing custom per streaming, riusa Event/iter.Seq2).
 
 **Goal.** Due cose in un commit (sono accoppiate; spezzarle costringerebbe a
 toccare due volte gli stessi 5 file):
@@ -829,6 +1121,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## Slice 3 — Swarm coordinator (bus + DM-by-ID + tier model)
 
+> **Slice 0.9 amendment**: `Coordinator.Spawn` produce `LlmAgent` workers che il Coordinator wrappa in `ParallelAgent` built-in (Slice 0.9) quando spawn-a multipli concorrenti. Lo "shared message bus" e DM-by-ID restano custom (Aura semantic), ma l'esecuzione parallela degli workers usa `errgroup` + ackChan tramite `ParallelAgent.Run`. `MAX_SPAWN_DEPTH=3` resta enforced. Saving stimato: **−200 LOC** (no plumbing custom errgroup, no Event/chan custom per worker output).
+
 **Goal.** Implementare `swarm.Coordinator` reale (oggi `Stub` in [internal/swarm/swarm.go](internal/swarm/swarm.go))
 con: spawn di agenti figli (tier `chat|reasoning|worker`), shared message bus
 con broadcast E DM-by-ID, `Join(id)` che blocca fino a final report del figlio,
@@ -1141,6 +1435,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ---
 
 ## Slice 6 — Scheduler (cron + agent jobs persistente)
+
+> **Slice 0.9 amendment**: `Handler` interface per task type (reminder, agent_job, ecc.) = `Agent` interface (Slice 0.9). Dispatch uniforme: `task.Handler.Run(ctx) iter.Seq2[*Event, error]` invece di switch-per-kind con shape diverse. `Notifier` emette `Event` invece di struct custom. Saving stimato: **−200 LOC** (no dispatch switch ridondante, no shape custom per ogni handler kind).
 
 > **Atomicity note (audit round 1 P0):** ~1300 LOC distribuiti = troppo per 1 commit.
 > Si committa in **2 sub-slice ordinati**:
@@ -1496,6 +1792,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ---
 
 ## Slice 8 — AG-UI gateway (transport agnostico CLI / Telegram / web)
+
+> **Slice 0.9 amendment**: l'AG-UI emitter consuma `iter.Seq2[*Event, error]` direttamente da `(*LlmAgent).Run()` (Slice 0.9). Mapping `*Event` Aura → AG-UI event types diventa una sola funzione `mapToAGUI(*Event) []agui.Event` invece di subscribere a 5 channel/callback diversi del Loop. Saving stimato: **−100 LOC** (no Subscribe/emitter plumbing custom, range-over-func nativo).
 
 **Goal.** Esporre il Loop di Aura attraverso il protocollo **AG-UI** ([ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)), MIT, ~17-25 event types standard, transport SSE/WS/webhook. Aura diventa un'agent compatibile con qualsiasi UI AG-UI-aware (CopilotKit, AG-UI Dojo, future custom frontend, Telegram bot adapter, browser SPA). Niente lock-in al transport; sostituisce/preempt qualsiasi channel-adapter custom.
 
@@ -1981,6 +2279,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ---
 
 ## Slice 10 — User onboarding + `Agent.md` profile (per identity)
+
+> **Slice 0.9 amendment**: l'interview state machine in `interview.go` (~180 LOC custom Go) viene rimpiazzata da `LoopAgent[InterviewStepAgent]` (Slice 0.9 built-in). Ogni step = un `InterviewStepAgent` (~40 LOC ciascuno) che genera la prossima domanda LLM-adattiva. Termination via `event.Actions.Escalate=true` emesso da `SummaryConfirmAgent` su "Conferma". `maxIterations=8` cap hard. Saving stimato: **−120 LOC** (no state machine custom, riusa LoopAgent runtime + escalation).
 
 **Goal.** Aura conosce l'utente. Al primo Telegram message post-setup (Slice 9), il bot avvia un **LLM-driven interview free-form** (5-8 domande adattive) e genera un file `Agent.md` per quella identity. Il file viene iniettato come secondo system message nei prompt successivi, dando ad Aura context persistente su nome, lingua, tone, interessi, boundaries.
 
@@ -2645,9 +2945,11 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 
 ---
 
-## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills → AG-UI gateway → Channels/Telegram → Onboarding/Agent.md)
+## Sequencing rationale (Postgres infra → Neo4j infra → Agent runtime → LLM client → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills → AG-UI gateway → Channels/Telegram → Onboarding/Agent.md)
 
 0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
+
+0.9. **Slice 0.9 (Agent runtime abstraction)** atterra dopo le infra (Slice 0/0.5/0.7) e PRIMA di Slice 1: definisce l'interface `Agent` + `iter.Seq2[*Event, error]` streaming + workflow agents (Sequential/Loop/Parallel) che TUTTE le slice successive riusano. Pattern rubato da google/adk-go (non importato per evitare 35 deps GCP-heavy). Slice 1 ridefinisce `Loop` come `LlmAgent` (implementa `Agent`). Slice 3 Swarm riusa `ParallelAgent`. Slice 6 Scheduler.Handler implementa `Agent`. Slice 10 onboarding = `LoopAgent[InterviewStepAgent]`. Saving cumulativo stimato −400 LOC netti + 1 runtime unificato vs 4 special-case pre-0.9.
 0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
 1. **Slice 1 (LLM client + ToolResult)** è prerequisito di tutto il resto: senza un client reale e senza il pattern preview+persist sui tool result, le altre slice non hanno modo di osservare comportamento end-to-end senza avvelenare il context window.
 2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
