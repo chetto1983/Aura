@@ -693,7 +693,23 @@ al `aura chat resume <id>`.
 **Open questions.**
 1. **Cosa succede al `system` message?** → *Decisione*: il `system` message è il primo turn (seq=1, role='system'). Generato dal `PromptBuilder` (Slice 4) al primo turn. Su `resume`, ricaricato as-is. Se il system prompt cambia tra una session e l'altra (es. nuova skill installata), il vecchio system message della conv già esistente resta intatto — coerenza temporale. Future "system upgrade" è scope di una slice dedicata.
 2. **Cache KV cross-conversation?** → *Decisione*: lascio a Slice 4 (KV cache) la valutazione. Stable-prefix di Slice 4 è system + tool manifest, che è identico cross-conv (se non cambiano le skill) → cache hit automatico. Niente refactor di Slice 4 per 1.8.
-3. **Quanti turn conservare per il modello al resume?** → *Default proposto*: TUTTI fino a `AURA_MAX_HISTORY_TOKENS` (env, default 100k). Sopra, autocompact: tronca i turn più vecchi tranne system + 5 most recent + paused_states pending. Autocompact è scope di Slice 1.8b futura (la slice 1.8 base resume tutta la history senza compact).
+3. **~~Quanti turn conservare per il modello al resume?~~ → CHIUSA: layered context management Cursor-style (Area #17 closed 2026-05-28).**
+   Decisione presa dopo ricerca pattern industriali (Claude Code 3-tier auto-compact, Cline middle truncation, Cursor dynamic context discovery, LangChain ConversationSummaryBufferMemory).
+   *Scelta*: pattern **Cursor "dynamic context discovery"** puro. Aura ha già il 90% del lavoro fatto (Slice 1 ToolResult sidecar = stesso pattern). Implementazione minimale aggiunta a Slice 1.8:
+   - **L1 — Microcompact tool result eviction (`internal/conversations/microcompact.go` ~60 LOC)**: su ogni `LoadHistory(conv_id)`, per i `role='tool'` turn con `seq < (max_seq - AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS)` (default 10), sostituisci `content` (preview da Slice 1) con un puntatore `"[tool_call_id=X: evicted from context, re-fetch via read_tool_output(X) — sidecar at $AURA_RUN_DIR/conversations/<conv_id>/<tool_call_id>.result]"`. Niente LLM call, cheap, riusa sidecar che già esistono.
+   - **L2 — Budget dinamico (`internal/conversations/budget.go` ~50 LOC)**: calcolo Claude Code-style `hard_cap = Model.ContextWindow - max(MaxOutputTokens, 20_000) - 13_000`. Warn cap `= hard_cap * 0.75`. Esempi: DeepSeek-V4 (1M) → 967K hard / 725K warn; OpenAI/Anthropic (200K) → 167K hard / 125K warn. Sopra warn → log WARN. Sopra hard → errore esplicito al `Loop.Turn`: "history exceeds hard cap; use `chat_compact` tool or `aura chat new` to start fresh".
+   - **L3 — Full LLM-driven compaction: NON IMPLEMENTATA in Slice 1.8**. Skip esplicito: il modello 1M DeepSeek + pattern Ralph (stato in DB + Neo4j knowledge graph) rendono raro raggiungere il cap. Atterrerà come Slice futura opzionale (`chat_compact` tool LLM-facing + CLI `aura chat compact <id>`) se uso reale lo richiede.
+   - **Token estimation**: usa `tiktoken-go` (cl100k_base BPE) come approssimazione fast. Errore tipico 5-10% vs actual provider tokenization, accettabile per gating.
+   - **Modello info**: `LLMConfig` aggiunge `ContextWindow int` + `MaxOutputTokens int`. Default per modelli noti hardcoded in `internal/llm/openai_compat/models.go` (deepseek-v4=1M+8K, gpt-4o=128K+16K, claude-3-5=200K+8K). Override via env `AURA_MODEL_CONTEXT_WINDOW` / `AURA_MODEL_MAX_OUTPUT_TOKENS`.
+
+   File targets aggiuntivi (~150 LOC):
+   - `internal/conversations/microcompact.go` ~60
+   - `internal/conversations/budget.go` ~50
+   - `internal/conversations/store.go` (diff) ~+30 (LoadHistory chiama microcompact + budget check)
+   - `internal/agent/loop.go` (diff) ~+20 (passa ModelConfig al budget check)
+   - `internal/llm/openai_compat/models.go` ~+30 (lookup ContextWindow + MaxOutputTokens per known models)
+
+   Sources: [Claude Code auto-compact](https://claudelog.com/faqs/what-is-claude-code-auto-compact/), [Cursor dynamic context discovery](https://cursor.com/blog/dynamic-context-discovery), [Cline ContextManager](https://medium.com/@balajibal/dissecting-cline-cline-context-management-260aec3d84cb), [Context compaction research gist](https://gist.github.com/badlogic/cd2ef65b0697c4dbe2d13fbecb0a0a5f).
 4. **Concurrent write a stessa conversation?** → *Default proposto*: PRIMARY KEY `(conversation_id, seq)` + `last_active_at` lock via `SELECT ... FOR UPDATE` in `AppendTurn` previene race. Multi-session sulla stessa conv (raro per single-user) ottengono conflitto chiaro `unique_violation`.
 
 **Mini-PC RAM budget.** Postgres conversations + turns + indici: ~50 MB per 100k turns. Trascurabile. Nessun servizio in più.
@@ -1849,6 +1865,22 @@ AURA_RUN_DIR_WARN_THRESHOLD_BYTES = 1073741824  (1 GiB)
   → log + Notifier "consider aura chat archive/delete to free space".
   Filesystem cleanup avviene cascade su aura chat delete o boot orphan
   scan (dir senza conv_id in DB), non per età.
+
+AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS = 10  (Area #17 closed 2026-05-28)
+  Tool result più vecchi di N turn nel context window vengono sostituiti
+  con un puntatore "[evicted, re-fetch via read_tool_output(X)]" in
+  LoadHistory(). Riusa sidecar di Slice 1, niente LLM call.
+  Pattern Cursor "dynamic context discovery".
+
+AURA_CONTEXT_RESERVE_TOKENS = 13000  (Area #17 closed 2026-05-28)
+AURA_CONTEXT_MAX_OUTPUT_TOKENS = 20000
+  Formula Claude Code per calcolare il context budget effettivo:
+    hard_cap = Model.ContextWindow - max(MaxOutputTokens, AURA_CONTEXT_MAX_OUTPUT_TOKENS) - AURA_CONTEXT_RESERVE_TOKENS
+    warn_cap = hard_cap * 0.75
+  DeepSeek-V4 (1M context): ~967K hard / 725K warn.
+  OpenAI/Anthropic (200K): ~167K hard / 125K warn.
+  Sopra warn: log WARN. Sopra hard: errore esplicito Loop.Turn (use
+  chat_compact tool o aura chat new).
 ```
 
 ### Pattern condiviso "Large Output Handling"
