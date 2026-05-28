@@ -924,8 +924,13 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 - [ ] Per provider Anthropic: il system message e il tool manifest portano `cache_control: {"type":"ephemeral"}` (fixture wire test).
 - [ ] Per provider DeepSeek: nessun cache_control (DeepSeek auto-cache); il client parsa `usage.prompt_cache_hit_tokens` dalla response.
 - [ ] `cache.Tracker` aggrega per turn → `aura cache-stats` stampa hit-rate per turn + media sessione.
-- [ ] Test invariante: `agent.Loop.Turn(ctx, "anything")` chiamato 5 volte → `messages[0]` identico, lunghezza monotona crescente di history (no in-place mutation di entries precedenti).
+- [ ] Test invariante (Slice 4 specifico): `agent.Loop.Turn(ctx, "anything")` chiamato 5 volte → `messages[0]` identico, lunghezza monotona crescente di history (no in-place mutation di entries precedenti).
 - [ ] Test invariante: il tool manifest renderizzato 5 volte di seguito è byte-identico (cache poisoning guard, link a [reference_aura_cache_poisoning_sites_2026-05-27](memory) — prefix `reference_` corretto post-audit round 1).
+- [ ] **Invariants distintamente testati (Area #12 closed 2026-05-28)**. Slice 1 e Slice 4 e Slice 1.8 misurano cose diverse e tutti i test restano validi:
+  - **Slice 1** (riga 270): `client.Request(req)` non muta `req.Messages` (slice identica byte pre/post). Garantisce che il wire layer è read-only sul client input.
+  - **Slice 4** (questa slice): `PromptBuilder.Build(history, tools)[0]` byte-identico turn-su-turn. Garantisce che il system message è cache-friendly stable-prefix.
+  - **Slice 1.8** (riga 660): `LoadHistory(conv_id)` ritorna `[]Message` byte-identico tra due chiamate consecutive. Garantisce che la rehydration dalla persistence è deterministica.
+  Sono tre invariants ortogonali, ognuna ha il suo test dedicato. Slice 4 NON deprecha né rimpiazza Slice 1: si aggiunge come layer sopra. Slice 1.8 entra come producer della history input di Slice 4.
 
 **File targets** (≤ 400 LOC):
 | Path | LOC | Note |
@@ -1188,7 +1193,7 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 | `internal/db/migrations/0006_scheduler.down.sql` | ~5 | DROP TABLEs. |
 | `internal/cron/handlers/handler.go` | ~40 | Interface `Handler{ Kind() TaskKind; Handle(ctx, t *Task) error }` + registry. |
 | `internal/cron/handlers/reminder.go` | ~85 | Notifier-driven (CLI/Telegram). `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
-| `internal/cron/handlers/agent_job.go` | ~160 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
+| `internal/cron/handlers/agent_job.go` | ~170 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. Tier configurabile via task payload (`tier ∈ {worker, chat, reasoning}`, default `reasoning`); validato contro `TierConfig.Available()`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
 | ~~`internal/cron/handlers/graph_maintenance.go`~~ | — | **RIMOSSO (audit round 1 P0)**: scope-creep esplicito (placeholder per future), va in slice dedicata post-MCP-Neo4j. Slice 6 supporta solo `reminder` e `agent_job` per ora. |
 
 **Commit message templates (sub-slice 6a + 6b):**
@@ -1235,7 +1240,7 @@ LOC: +XXX src / +YY test.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
-| `internal/agent/tools/task_schedule.go` | ~110 | Deferred. Args validation + delega a `Queries.UpsertTask`. Chiama `scoring.ComputeTaskTier(args)` post-validation; se RISKY/DESTRUCTIVE setta `status='pending_approval'` e Notifier IMMEDIATE alert. Include `risk_tier` + `gate_recommended` nel tool result. |
+| `internal/agent/tools/task_schedule.go` | ~120 | Deferred. Args validation + delega a `Queries.UpsertTask`. Args extra per agent_job: `tier? ∈ {worker, chat, reasoning}` (default `reasoning`). Chiama `scoring.ComputeTaskTier(args)` post-validation (tier=reasoning aggiunge +0.2 modifier al tier base); se RISKY/DESTRUCTIVE setta `status='pending_approval'` e Notifier IMMEDIATE alert. Include `risk_tier` + `gate_recommended` nel tool result. |
 | `internal/agent/tools/task_list.go` | ~50 | Non-deferred. Mostra anche task `pending_approval` con annotazione `[awaiting approval]`. |
 | `internal/agent/tools/task_cancel.go` | ~40 | Deferred. |
 | `internal/agent/tools/task_run_now.go` | ~80 | Deferred. Chiama Handler.Handle direttamente, bypass tick. **Refuse task in pending_approval** (errore strutturato chiede `task.approve` prima). |
@@ -1253,7 +1258,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
    - **Filesystem** = solo artefatti operativi (SKILL.md tree, tool result sidecar files). NESSUN knowledge in filesystem.
    Distinzione semantica chiara: **knowledge + vectors → solo Neo4j; infrastructure → Postgres; operational artifacts → filesystem**. CLAUDE.md aggiornata in coda al PRD.
 2. **Notifier interface.** Slice 6 ha bisogno di un sink per le reminder. Tabula-rasa "non ha Telegram". → *Default proposto: interface `Notifier{ Notify(ctx, recipient, msg) error }` con default impl stdout (printf nel terminale `aura serve`). Telegram impl arriverà in una slice plugin separata.*
-3. **Agent-job sub-loop = swarm child?** Lo Slice 3 swarm `Coordinator.Spawn` può servire come spawner per i `agent_job` schedulati. → *Default proposto: SÌ, agent_job handler chiama `swarm.Coordinator.Spawn` con tier="reasoning" e join sincrono. Evita di duplicare la logica spawn-loop.*
+3. **Agent-job sub-loop = swarm child?** Lo Slice 3 swarm `Coordinator.Spawn` può servire come spawner per i `agent_job` schedulati. → *Decisione*: SÌ, agent_job handler chiama `swarm.Coordinator.Spawn` con `tier` **configurabile via task payload** (Area #14 closed 2026-05-28). `task.schedule({kind:"agent_job", tier:"worker"|"chat"|"reasoning"|...})`; default `reasoning` (conservativo: qualità alta). Override consente task economici (es. `tier:"worker"` per batch cleanup, `tier:"chat"` per summarize daily). Risk-Based scoring usa `tier` come modifier (worker=0 modifier, chat=+0.1, reasoning=+0.2 — vedi Risk-Based Governance sez). Validato a `task.schedule` time contro `swarm.TierConfig.Available()`. Evita di duplicare la logica spawn-loop.
+4. **`agent_job_runs` retention (Area #13 closed 2026-05-28)** → *Decisione*: audit log forever, niente auto-purge per età. Pattern coerente con Area #7 paused_states e Area #9 RUN_DIR (delete-on-explicit-action). Per uso tipico (cron daily=365 rows/anno, weekly=52, every_hour=8760) la tabella resta MB-size per anni. Indici efficienti (`(exit_status, started_at) WHERE finished_at IS NULL` boot recovery, `(task_id, started_at DESC)` per `task list --runs`) reggono O(log n) anche a milioni di rows. CLI escape hatch `aura task runs purge --before <ISO date> --confirm` per casi estremi (es. `every_minute` cron lasciato attivo). Future slice "cold archive" se tabella supera 10 GB.
 
 ---
 
@@ -1548,6 +1554,9 @@ schedule_kind every_minute|every_hour    → +1 tier (SAFE→NORMAL, NORMAL→RI
 silent: true (agent_job senza notifier)  → +1 tier
 agent_job senza Handler.Notifier wired   → +1 tier
 update aumenta frequenza > 10x           → +1 tier
+agent_job tier=reasoning (Area #14)      → +1 tier   # tier reasoning = costo LLM alto
+agent_job tier=worker                    → 0  (no bump)
+agent_job tier=chat                      → 0  (no bump)
 ```
 
 Saturano a DESTRUCTIVE. Nessun modifier scende il tier base.
