@@ -1390,7 +1390,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
-## §Test discipline (vale per tutti e 4 gli slice)
+## §Test discipline (vale per tutte le slice)
 
 Regola fondamentale, applicabile a ogni test E2E che esercita l'agent loop
 contro un modello reale:
@@ -1444,7 +1444,135 @@ python). Soluzione: hook nel `tools.Registry` che logga ogni `Execute`
 con `tool_name + args_hash + duration`. Il test asserisce **(reply matches
 expected) AND (tool was invoked)**. Mai solo il primo.
 
+### Test discipline rigorosa — niente asilo nido (estensione 2026-05-28)
+
+Oltre alla regola "no nomi tool nel prompt E2E", ogni slice rispetta una **soglia minima di rigore** sui test che ne convalidano la `Definition of Done`. Il rigore è proporzionale al rischio: persistence + governance + sandbox = max rigore; CLI cosmetic = rigore standard.
+
+**Hard requirements per ogni file `*_test.go` committato:**
+
+1. **Naming**: `TestXxx_Behavior_When_Condition` (descrittivo, no `TestFoo1`, `TestFoo2`).
+2. **Setup teardown**: niente shared state cross-test salvo build-tag `_integration` con DB transactionally rollback'd. Race detector verde (`go test -race ./...`).
+3. **Goroutine leak check**: `goleak.VerifyNone(t)` in TestMain o `defer goleak.VerifyNone(t)` per test che spawn goroutine. Slice 1/3/6/8/9/11/13 lo richiedono esplicitamente in acceptance.
+4. **Fixture realistic**: `testdata/*.{json,csv,md,sse,sql,html,pdf}` con contenuto realistic (estratto da casi reali pseudonimizzati), no `{"foo":"bar"}` placeholder.
+5. **Property-based dove indicato**: PromptBuilder invariants, AG-UI translator coverage event types, swarm backpressure → `gopter` o `rapid` library. Vincolato a slice 4/8/3.
+6. **Build tags integration**: `//go:build db_integration`, `//go:build sandbox_integration`, `//go:build multimodal_integration`, `//go:build onboarding_integration`. CI runner separato, no flaky-on-CI mainstream.
+7. **No `time.Sleep` non-determinismo**: usare `synctest` (Go 1.24+) o channel sync. Wait condition con timeout esplicito 5s + fail-loud (no infinito).
+8. **Coverage threshold per package**: ≥ 75% unit (`go test -cover ./internal/...`), ≥ 60% integration. Fail CI sotto threshold (no skip silenzioso).
+9. **Mutation testing spot-check**: 1 invocation per slice di `go-mutesting` o equivalent su core file (`llm_agent.go`, `coordinator.go`, `pipeline.go`, ecc.) — score minimo 70% killed. Run manuale, non CI.
+10. **Failure-driven test**: per ogni bug fixato durante implementation, un test che lo reproduce **prima** del fix (TDD reverse).
+
+**Esempi concreti per slice:**
+
+| Slice | Test "asilo" da rifiutare | Test rigoroso atteso |
+|---|---|---|
+| 1 (LLM client) | `assert reply == "4"` | Fixture SSE multi-chunk delta-merge + tool-call accumulator + ctx-cancel premature close + `goleak.VerifyNone` |
+| 2a (Sandbox) | `aura exec python "print(2)" → 2` | Subprocess time + memory + stdout truncation 1 MiB + EPERM su socket() syscall + seccomp profile load verification |
+| 2b (Session sandbox) | Single session reuse | 3 session concurrent, hard cap enforce, TTL reap deterministico via `synctest`, workspace quota enforce, network allowlist iptables verify via `nft list` |
+| 3 (Swarm) | `coordinator.Spawn(2) → 2 children` | Wall-clock parallelismo `<` 1.5x singolo (race detector enforced), 10 child interactive paused simultanei senza data race, multi-pause FIFO priority sort verify |
+| 4 (KV cache) | `messages[0] == messages[0]` | `usage.prompt_cache_hit_tokens > 0` da turn 2, byte-exact comparison via hash, property-based su manifest ordering |
+| 5 (Web tools) | `web_fetch("google.com") returns html` | SSRF protection (loopback denied, allowlist enforced), redirect chain max 5, content-type sniffing, robots.txt respect verify |
+| 6 (Scheduler) | `task.fire after 10s` | `FOR UPDATE SKIP LOCKED` concurrency 5 workers, crash recovery `unknown_recovery` row, `ReschedulesOnRecovery` selective re-fire verify |
+| 7c (Skill mutation) | `skill_create writes file` | Tx rollback su INSERT fail (FS-move reversed), audit row immutable (UPDATE/DELETE rejected via trigger), `approval_source` constraint coherence enforced |
+| 8 (AG-UI) | `event.type == "TEXT_MESSAGE_CONTENT"` | AG-UI Dojo conformance suite full run, property-based on all ~25 event types, backpressure SSE channel cap 64 + drop with `RUN_ERROR` |
+| 9b (Telegram) | `bot.send("hello")` | Throttle 1500ms/500ms/1000ms enforce con `synctest`, 429 backoff exponential up to 30s, golden fixture per ogni AG-UI event type → Telegram message |
+| 10 (Onboarding) | Interview 1 question | LoopAgent max_iter=8 cap enforce, escalation event terminate, fact extraction recall on conv corpus (precision ≥ 0.7), audit profile_audit row con paused_state_token |
+| 11b (Ingest) | `ingest.file(pdf) returns ok` | Content_hash idempotent, mem0 2-fase conflict dedup (95% recall on duplicate entities), entity type taxonomy coverage 100% |
+| 11d (Retrieval) | `memory.search returns 5 chunks` | Hybrid fusion score correctness vs baseline (BM25-only / vector-only / graph-only), re-ranker quality NDCG@5 ≥ 0.8 su corpus eval |
+| 13b (vLLM+LMCache) | `vllm responds` | KV cache hit ratio > 30% turn 2-5 su long-context (>4K token prompt), failover offline detection switch entro 90s, cost tracker rolling 24h accuracy |
+
+**Test che NON è "asilo nido" ma è LECITO** (smoke fast-feedback):
+- 1-3 smoke test per slice che gira in < 5s, no rigor su edge case
+- Compile + go vet + go build always green pre-commit
+- Niente sostituisce i rigorous test sopra: smoke complementare, non alternativo
+
 ---
+
+## §Slice Q&A discipline (gate qualità per slice, vale per tutte)
+
+> **Regola assoluta (dichiarata 2026-05-28)**: **senza PRD completo non si scrive una riga di codice**. Ogni slice attraversa 3 gate Q&A formalizzati. Niente shortcut, niente "lo aggiusto dopo", niente "il PRD si capisce dal codice".
+
+Ogni slice (e sub-slice) passa attraverso **3 gate sequenziali**: Definition of Ready (DoR), Implementation Q&A continuous, Definition of Done (DoD). Nessun commit di codice atterra senza tutti e 3 verdi.
+
+### Gate 1 — Definition of Ready (DoR) — *PRE-implementazione*
+
+La slice può essere implementata SE e SOLO SE tutti questi punti sono verdi nel PRD:
+
+- [ ] **Pre-requisiti completati**: tutte le slice predecessor (sequencing rationale) implementate, mergiate, smoke verdi. Verifica `git log` su master, no slice "in progress" upstream.
+- [ ] **Open questions chiuse**: ogni OQ della slice ha decisione esplicita (non solo "default proposto" — *deciso* dall'owner). Se OQ è "pre-merge benchmark", il benchmark è eseguito e risultato documentato nel PRD.
+- [ ] **Acceptance criteria machine-checkable**: ogni `- [ ]` in §Acceptance è verificabile con un test concreto. No "il sistema deve essere robusto" (non testabile), sì "test `TestLoopRunCancel_NoGoroutineLeak` con `goleak.VerifyNone`" (testabile).
+- [ ] **Smoke E2E definito e runnable**: la sezione §Smoke ha comandi shell eseguibili che producono output atteso. No "verifica manuale che funzioni".
+- [ ] **File targets stimati**: ogni file ha LOC range stimato, no file > 600 LOC, refactor-on-touch documentato per file pre-esistenti.
+- [ ] **Test plan documentato**: § Acceptance enumera quali test (unit, integration, smoke, property-based) coprono ogni acceptance bullet. No coverage 0% acceptance.
+- [ ] **Risk-Based tier assegnato** (se la slice introduce tool LLM-facing): SAFE/NORMAL/RISKY/DESTRUCTIVE chiarito + giustificazione + gating policy.
+- [ ] **Migration scriptato + down.sql** (se DB schema cambia): up + down + idempotente + index strategy + tx wrapping documentato.
+- [ ] **Env vars catalogate**: nuove env aggiunte in Caps & Limits indice + default + tipo (cap/operative/path/secret).
+- [ ] **Mini-PC RAM delta** stimato: se sidecar/process aggiunto, impatto su RAM table dichiarato.
+- [ ] **Commit message template** scritto: imperative subject + body con "perché" + Co-Authored-By trailer.
+
+**Gate 1 conclude con**: PRD section della slice firmata (esplicitamente "DoR ✅ <date>" in commit message PRD update). Solo allora si crea il branch implementation.
+
+### Gate 2 — Implementation Q&A continuous — *DURANTE implementazione*
+
+Ad ogni commit della slice (atomic, smoke verde):
+
+- [ ] **`go vet ./...`** verde
+- [ ] **`go build ./...`** verde
+- [ ] **`go test ./internal/<package>/`** verde
+- [ ] **`go test -race ./...`** verde su package toccati
+- [ ] **Refactor-on-touch eseguito**: per ogni file editato, dead-code rimosso, dupl-folding applicato, LOC ≤ 600 verificato (`wc -l`), comments aggiornati allo stesso commit.
+- [ ] **Niente test "asilo nido"**: rivedi i test scritti contro la tabella esempi §Test discipline rigorosa. Se un test non resiste alla rilettura (banale, scripted, no edge case), riscrivilo.
+- [ ] **Niente `// TODO` lasciati**: tutti TODO menzionati nel commit message + issue tracker (anche se single-user). No TODO orphan.
+- [ ] **No `panic`** salvo bug genuinamente unrecoverable: error wrapping sempre, contextual.
+- [ ] **Niente env var hard-coded**: ogni magic number/path passa da `internal/config/` o env. Nessun `"localhost:8080"` letterale in business logic.
+- [ ] **3-strike rule rispettata**: stesso failing approach max 3 volte. Strike 3 → fermarsi e chiedere all'owner (PRD-update o pivot).
+- [ ] **No modify test per farli passare**: se test fallisce per bug nel code, fixare code. Se test è genuinamente sbagliato, riscriverlo + giustificarlo nel commit message.
+
+**Gate 2 fail mode**: smoke red → revert commit, ripartire. Mai forzare push con smoke red.
+
+### Gate 3 — Definition of Done (DoD) — *POST-implementazione (pre-merge)*
+
+La slice è DONE SE e SOLO SE:
+
+- [ ] **Tutti i `- [ ]` di §Acceptance ticked**: ogni bullet verificabile con test concreto, output documentato (snippet log, screenshot Telegram, JSON response). No "credo funzioni".
+- [ ] **Smoke E2E end-to-end green**: tutti i comandi §Smoke girati su clean state, output matching atteso.
+- [ ] **Integration tests passing**: build tag rispettati (`db_integration`, `sandbox_integration`, ecc.). Skip-on-no-container documentato ma test esiste.
+- [ ] **Regression suite green**: slice precedenti non rotte. `go test ./...` full run (incluso build tags) verde.
+- [ ] **Coverage threshold raggiunto**: ≥ 75% unit, ≥ 60% integration sul package nuovo. `go test -coverprofile=cover.out ./internal/<package>/` + `go tool cover -func=cover.out` output ≥ threshold.
+- [ ] **Mutation testing spot-check** (slice critical): 1 file core sottoposto a `go-mutesting`, score killed ≥ 70%. Documentato in commit message o issue.
+- [ ] **No goroutine leak**: `goleak.VerifyNone(t)` verde su test che spawn goroutine.
+- [ ] **No data race**: `go test -race` verde su tutti i package toccati.
+- [ ] **Documentation update**: PRD aggiornato se ha richiesto deviazioni dal piano (no "il PRD si capisce dal codice" — il PRD È la verità).
+- [ ] **Commit message conforming**: imperative + perché + LOC final + Co-Authored-By trailer. Niente "fix" o "wip" mainstream.
+- [ ] **Branch ready for merge**: rebase su master, conflict risolti, 1 commit atomic per slice (o N per sub-slice con atomicity nota).
+
+**Gate 3 conclude con**: PR merge-ready, owner approval esplicita "DoD ✅ <date>". Niente merge unilaterale.
+
+### Q&A revision protocol (cosa fare quando una slice scopre buchi nel PRD)
+
+Durante implementation può emergere che il PRD ha:
+- Un buco architettonico
+- Un'open question non chiusa
+- Una dipendenza non vista
+- Un edge case non considerato
+
+**Protocollo standard:**
+
+1. **Stop implementation** (no patch quick & dirty)
+2. **Documenta il buco** in commit PRD-amendment: "Slice X: durante implementazione di Y scoperto Z, decisione W per ragione V"
+3. **Aggiorna il PRD** con la nuova decisione (con date + reason)
+4. **Ri-run Gate 1 DoR** per la slice affected
+5. **Resume implementation**
+
+**No silent decision**: ogni decisione architettonica che devia dal PRD passa per commit PRD-update con date e reason esplicite. Il PRD è la truth, non un suggerimento.
+
+### Q&A escalation (quando l'owner non è disponibile)
+
+3-strike rule + escalation chain:
+1. Strike 1-2: ritenta con approccio diverso
+2. Strike 3: stop, redigi report (cosa hai provato, cosa hai osservato, ipotesi per pivot), aspetta owner
+3. Se owner non risponde in 24h: report PRD-update con default proposto + procedi con "tentative" flag. Owner conferma o pivota a review.
+
+**Niente "ho deciso da solo perché mi sembrava giusto"**. Il PRD è la decisione collettiva, le deviazioni sono visibili.
 
 ---
 
