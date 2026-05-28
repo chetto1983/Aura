@@ -401,7 +401,7 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 | Path | LOC | Note |
 |---|---|---|
 | `internal/agent/tools/ask_user.go` | ~180 | Tool def + `ErrAwaitingUserInput` sentinel (con `Priority int`) + args parser (options string/object polimorfico + priority int cap 0-100). Quasi 1:1 dal pre-rewrite + priority field. |
-| `internal/agent/pending.go` | ~90 | `PausedState{Token, LoopID, Question, Options, Kind, Priority, ResumeContext, ToolCallID, ProxiedFromChildID *uuid.UUID, ProxiedToolCallID *string, CreatedAt, ResumedAt *time.Time}`. Helper per costruzione, serializzazione, sorting (priority DESC, created_at ASC). |
+| `internal/agent/pending.go` | ~95 | `PausedState{Token, ConversationID, Question, Options, Kind, Priority, ResumeContext, ToolCallID, ProxiedFromChildID *uuid.UUID, ProxiedToolCallID *string, CreatedAt, ResumedAt *time.Time, ResumedAnswer *string}`. Helper per costruzione, serializzazione, sorting (priority DESC, created_at ASC). |
 | `internal/askuser/cli.go` | ~120 | Renderer CLI: stampa lista numerata `[N] <kind>[prio]: <question> + options`, legge stdin con sintassi `1: ...` / `all: ...` / `batch: 1=a, 2=b`. Re-prompt invalido. Implementa interfaccia `Responder`. |
 | `internal/agent/loop.go` (diff) | ~+110 / -10 | `runTool` intercetta `ErrAwaitingUserInput` → costruisce `PausedState` con priority + (se proxied) `ProxiedFromChildID` → upsert in `aura.paused_states` → `Turn` accumula pending → se ≥1 pending, ritorna `(empty, pending, nil)`. Nuovi metodi `Resume(token, answer)` e `ResumeBatch(answers)`. Esclusività check su batch tool calls (multi-ask_user coalesce, altri tool drop). |
 | `internal/db/queries/paused_states.sql` | ~70 | **6 query sqlc**: `InsertPausedState`, `GetByToken`, `ListPendingForLoop` (ordered), `MarkResumed`, `MarkResumedBatch`, `CleanupResumedOlderThan` (per future retention). |
@@ -413,12 +413,12 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 
 **Open questions.**
 1. **~~Persistent vs in-memory `PausedState`~~ → CHIUSA: persistent in Postgres da subito.**
-   Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema: `(token uuid pk, loop_id uuid NOT NULL, question text NOT NULL, options jsonb, kind text NOT NULL CHECK (kind IN ('clarification','approval','choice')), priority int NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 100), resume_context jsonb, tool_call_id text, proxied_from_child_id uuid NULL, proxied_tool_call_id text NULL, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz NULL)`. Indice su `(loop_id, resumed_at) WHERE resumed_at IS NULL` per scan O(log n) della lista pending attive. `priority` + `proxied_*` aggiunti da Area #4 closed 2026-05-28 (multi-pause FIFO).
+   Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema: `(token uuid pk, conversation_id uuid NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE, question text NOT NULL, options jsonb, kind text NOT NULL CHECK (kind IN ('clarification','approval','choice')), priority int NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 100), resume_context jsonb, tool_call_id text, proxied_from_child_id uuid NULL, proxied_tool_call_id text NULL, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz NULL, resumed_answer text NULL)`. Indice su `(conversation_id, resumed_at) WHERE resumed_at IS NULL` per scan O(log n) della lista pending attive. `priority` + `proxied_*` aggiunti da Area #4 closed 2026-05-28 (multi-pause FIFO). `conversation_id` (era `loop_id`) e `resumed_answer` aggiunti da Slice 1.8 closed 2026-05-28 (#15 multi-conversation persistence).
    Migration: `0003_paused_states.up.sql` aggiunta in Slice 1.5.
    File targets aggiunti: `internal/db/queries/paused_states.sql` (~50 LOC, 4 query: insert/get-by-token/mark-resumed/cleanup-stale) + generated code via sqlc. `internal/agent/pending.go` (~70 LOC) usa il client sqlc invece di in-memory map. Test integrazione sotto build tag `db_integration`.
 2. **~~Quante pending ask simultanee per Loop?~~ → CHIUSA: lista FIFO piena (Area #4 closed 2026-05-28).**
    Pattern industriale verificato: LangGraph 1.2 (maggio 2026) supporta multi-interrupt mappato per ID; Temporal supporta signal-based concurrent. Singleton (pattern OpenAI Agents SDK handoff) serializza la concurrency e contraddice Slice 3 `SpawnInteractive`.
-   *Decisione:* multiple `PausedState` per `loop_id` sono permessi. Loop pausato finché esiste ≥1 `PausedState` con `resumed_at IS NULL`. Ordering: `priority DESC, created_at ASC` (priority è hint dall'agente, default 0, cap 100). Un child `SpawnInteractive` che emette `ask_user` accoda una nuova `PausedState` al parent con `proxied_from_child_id` + `proxied_tool_call_id`. N child possono pausare simultaneamente. Reject di una pending proxied: il parent risponde "reject" → `Coordinator.ResumeChild(child_id, "reject")` → il child decide se procedere o cancellarsi (no forced kill).
+   *Decisione:* multiple `PausedState` per `conversation_id` sono permessi. Loop pausato finché esiste ≥1 `PausedState` con `resumed_at IS NULL`. Ordering: `priority DESC, created_at ASC` (priority è hint dall'agente, default 0, cap 100). Un child `SpawnInteractive` che emette `ask_user` accoda una nuova `PausedState` al parent con `proxied_from_child_id` + `proxied_tool_call_id`. N child possono pausare simultaneamente. Reject di una pending proxied: il parent risponde "reject" → `Coordinator.ResumeChild(child_id, "reject")` → il child decide se procedere o cancellarsi (no forced kill).
    Riferimenti: [LangGraph interrupts docs](https://docs.langchain.com/oss/python/langgraph/interrupts), [Temporal signals](https://docs.temporal.io/workflow-execution).
 3. **Timeout sulla pausa?** Se l'utente non risponde mai, il loop rimane Paused indefinitamente? → *Default proposto: no timeout di default. Caller (CLI/Telegram) decide se forzare un timeout esterno. Aggiungere timeout dentro Loop = stato terzo (timed_out) che complica la state machine senza beneficio reale.*
 
@@ -543,6 +543,175 @@ Smoke: aura db migrate -> aura identity list shows 'local' with '*'.
 aura identity grant local foo + revoke local foo idempotent.
 
 Prerequisite for: Slice 7c skill_audit FK, future multi-user/auth slices.
+
+LOC: +XXX src / +YY test / +ZZ migration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 1.8 — Conversation persistence (multi-thread Claude.ai-style)
+
+**Goal.** Aura passa da single-session in-memory a multi-conversation persistente.
+L'utente può aprire N conversazioni separate (`aura chat new`), riprendere quelle
+vecchie (`aura chat resume <id>`), e la history (turns + tool calls + tool results +
+usage tokens) sopravvive ai restart. Sblocca Area #7 (auto-resolve di pending stale
+quando il Loop di una conversation si chiude) e Area #15 (multi-conversation come
+feature prodotto). Pattern derivato da LangGraph PostgresSaver verificato per
+production, schema per-message (1 row per message) come raccomandato da AWS data
+modeling per AI chatbots e best-practice schema design per scale + analytics.
+
+**Out of scope rimosso:** la riga "Persistenza disk dello stato conversazionale (Loop
+è in-memory)" della sezione Out-of-scope è rimossa da Slice 1.8. Lo stato Loop
+resta in-memory durante esecuzione, ma viene ricostruito dalla history Postgres
+al `aura chat resume <id>`.
+
+**Smoke.**
+```bash
+./aura db migrate                      # applica 0005_conversations
+./aura chat                            # nuova conversation, salva ogni turn
+> ciao
+> dimmi 2+2
+^D                                     # exit, conversation salvata
+
+./aura chat list                       # mostra 1 conversation (titled "Saluto + calcolo" o equivalente)
+./aura chat resume                     # riprende l'ultima
+> ora in inglese
+^D
+
+./aura chat new                        # forza nuova conversation parallela
+> totalmente altro tema
+^D
+
+./aura chat list                       # 2 conversations, ordered last_active_at DESC
+./aura chat archive <id>               # status='archived', non in list di default
+./aura chat list --archived            # mostra anche archived
+./aura chat delete <id> --confirm      # cascade delete turns + paused_states
+```
+
+**Acceptance.**
+- [ ] Migration `0005_conversations.up.sql`:
+  ```sql
+  CREATE TABLE aura.conversations (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    title           text,
+    identity_id     uuid NOT NULL REFERENCES aura.identities(id),
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    last_active_at  timestamptz NOT NULL DEFAULT now(),
+    status          text NOT NULL DEFAULT 'active'
+                      CHECK (status IN ('active','archived','deleted')),
+    model           text,
+    total_input_tokens  bigint NOT NULL DEFAULT 0,
+    total_output_tokens bigint NOT NULL DEFAULT 0,
+    total_cached_tokens bigint NOT NULL DEFAULT 0,
+    total_cost_usd      numeric(10,4) NOT NULL DEFAULT 0,
+    metadata        jsonb
+  );
+  CREATE INDEX conversation_active_by_identity
+    ON aura.conversations (identity_id, last_active_at DESC)
+    WHERE status = 'active';
+
+  CREATE TABLE aura.conversation_turns (
+    conversation_id uuid NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE,
+    seq             int NOT NULL,
+    role            text NOT NULL CHECK (role IN ('system','user','assistant','tool')),
+    content         text,
+    content_sidecar_path text NULL,
+    tool_call_id    text NULL,
+    tool_calls      jsonb NULL,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    input_tokens    int NULL,
+    output_tokens   int NULL,
+    cached_tokens   int NULL,
+    PRIMARY KEY (conversation_id, seq)
+  );
+  ```
+- [ ] `paused_states.loop_id` rinominato a `conversation_id`, FK `aura.conversations(id) ON DELETE CASCADE`. Migration drop+recreate column (table è ancora vuota allo step 1.8). Aggiunge colonna `resumed_answer text NULL` (era persa nel resume_context jsonb, ora esplicita per query).
+- [ ] CLI `aura chat`:
+  - `aura chat` (no args): se esiste conversation con `last_active_at` < 5min → resume, altrimenti new. Comportamento Claude.ai-like.
+  - `aura chat new` (esplicito): sempre crea nuova conversation.
+  - `aura chat list [--archived] [--limit N]`: tabella `id | title | created_at | last_active_at | turns | total_cost_usd`.
+  - `aura chat resume <id|prefix>`: ricarica history nel Loop, prosegue dal turn successivo.
+  - `aura chat resume` (no id): ultima conversation `last_active_at DESC LIMIT 1`.
+  - `aura chat archive <id>` / `unarchive <id>`: toggle status.
+  - `aura chat delete <id> --confirm`: hard delete (cascade turns + paused).
+  - `aura chat rename <id> "<title>"`: manual title set.
+- [ ] **Auto-title LLM-generated**: dopo `seq >= 3` (1 user + 1 assistant turn completo + magari tool turns), trigger 1 LLM call separata via `openai_compat.Client.Generate(prompt="Generate a 4-6 word title for this chat", messages=first_3_turns)` → `UPDATE conversations SET title=:t WHERE id=:id AND title IS NULL`. Idempotente (no-op se title già settato). Atomica (transazione separata, errore non blocca chat). Best-effort: se LLM call fallisce, title resta NULL (CLI mostra `(untitled <created_at>)`).
+- [ ] Per-turn write atomico: il Loop scrive `conversation_turns` per ogni messaggio (system al primo turn, user/assistant/tool ad ogni step). Transazione singola per turn, `BEGIN; INSERT turn; UPDATE conversations SET last_active_at=now(), total_*_tokens+=..., total_cost_usd+=...; COMMIT;`.
+- [ ] Content cap: se `content` > 64 KiB, scrivi a `$AURA_RUN_DIR/conversations/<conv_id>/<seq>.content` (sidecar) e set `content_sidecar_path`, `content=NULL`. Riusa pattern Slice 1 ToolResult preview+persist.
+- [ ] Resume contract: `aura chat resume <id>` ricostruisce `Loop.Messages` da `SELECT * FROM conversation_turns WHERE conversation_id=:id ORDER BY seq`. Per ogni row: build `Message{Role, Content, ToolCallID, ToolCalls}`. Loop in-memory ricreato byte-identico (modulo `tool_calls` jsonb deserialization).
+- [ ] **Loop.Stop() auto-resolve (chiude Area #7 Caso 2)**: quando un Loop termina cleanly (status `completed` / `errored` / `interrupted_by_user`) chiama:
+  ```sql
+  UPDATE aura.paused_states
+     SET resumed_at = now(),
+         resumed_answer = '<auto-terminated: conversation ended>'
+   WHERE conversation_id = :id AND resumed_at IS NULL;
+  ```
+  Audit chiaro: nessuna pending orphan in DB visibile.
+- [ ] **CLI `aura paused-states {list|purge}` (chiude Area #7 escape hatch)**:
+  - `aura paused-states list [--conversation-id X] [--include-resumed]`: tabella delle pending.
+  - `aura paused-states purge --before <ISO-date> --confirm`: hard delete delle resumed più vecchie di N (skill_audit FK è `ON DELETE SET NULL`, audit log resta consistente).
+- [ ] Identity scoping: ogni conversation è scoped a un identity (oggi sempre `'local'`). `aura chat list` filtra `WHERE identity_id = LocalIdentityID()`. Future multi-user: filtra su identity autenticato.
+- [ ] Test integrazione `db_integration`: nuova chat → 3 turn → restart processo → resume → assistant vede full history.
+- [ ] Test auto-title: stub LLM client → conv con 3 turn → trigger generation → title set.
+- [ ] Test cascade delete: insert conv + 5 turns + 2 paused_states → delete conv → tutto purgato.
+
+**File targets** (~520 LOC src + ~180 test):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/conversations/types.go` | ~50 | `Conversation{ID, Title, IdentityID, CreatedAt, LastActiveAt, Status, Model, TokenStats}`, `Turn{ConvID, Seq, Role, Content, ToolCallID, ToolCalls, CreatedAt, *Tokens}`. |
+| `internal/conversations/store.go` | ~120 | Thin adapter su sqlc. `Create`, `Get`, `List`, `Archive`, `Delete`, `AppendTurn`, `LoadHistory`, `UpdateStats`, `SetTitle`. Atomic transaction per AppendTurn (insert + UPDATE conversations.last_active_at + token aggregates). |
+| `internal/conversations/title.go` | ~60 | Auto-title LLM call. `GenerateTitle(ctx, client, firstTurns) (string, error)`. Best-effort, no panic. Background goroutine kick-off da `AppendTurn` quando `seq` cross 3. |
+| `internal/conversations/sidecar.go` | ~40 | Helper per content > 64 KiB: write `$AURA_RUN_DIR/conversations/<conv_id>/<seq>.content`, read back on resume. |
+| `internal/db/queries/conversations.sql` | ~80 | **8 query sqlc**: `CreateConversation`, `GetConversation`, `ListConversations`, `AppendTurn`, `LoadTurns`, `UpdateLastActive`, `UpdateStatus`, `UpdateStats`. |
+| `internal/db/queries/conversation_turns.sql` | ~30 | **2 query sqlc**: `InsertTurn`, `ListTurnsForConv` (ORDER BY seq). |
+| `internal/db/migrations/0005_conversations.up.sql` | ~70 | Tabelle + index + rename paused_states.loop_id → conversation_id + aggiunta resumed_answer col. |
+| `internal/db/migrations/0005_conversations.down.sql` | ~10 | DROP tables + rename back + drop col. |
+| `internal/agent/loop.go` (diff) | ~+80 / -20 | `Loop.AppendMessage(msg)` ora persiste via `store.AppendTurn` invece di solo in-memory append. `Loop.Stop()` chiama `store.AutoResolvePendings(convID)`. `Loop.NewFromHistory(convID)` ricostruisce dalle turns. |
+| `internal/conversations/store_test.go` | ~120 | Build tag `db_integration`. Round-trip + resume + cascade + auto-title. |
+| `cmd/aura/main.go` (diff) | ~+90 | `aura chat {list|resume|new|archive|unarchive|delete|rename}` + `aura paused-states {list|purge}`. |
+
+**Deferred-tool partition.** Niente tool LLM-facing in questo slice. È infra CLI + persistence. Future: tool `conversation_search`/`conversation_summarize` come deferred, scope dedicato.
+
+**Open questions.**
+1. **Cosa succede al `system` message?** → *Decisione*: il `system` message è il primo turn (seq=1, role='system'). Generato dal `PromptBuilder` (Slice 4) al primo turn. Su `resume`, ricaricato as-is. Se il system prompt cambia tra una session e l'altra (es. nuova skill installata), il vecchio system message della conv già esistente resta intatto — coerenza temporale. Future "system upgrade" è scope di una slice dedicata.
+2. **Cache KV cross-conversation?** → *Decisione*: lascio a Slice 4 (KV cache) la valutazione. Stable-prefix di Slice 4 è system + tool manifest, che è identico cross-conv (se non cambiano le skill) → cache hit automatico. Niente refactor di Slice 4 per 1.8.
+3. **Quanti turn conservare per il modello al resume?** → *Default proposto*: TUTTI fino a `AURA_MAX_HISTORY_TOKENS` (env, default 100k). Sopra, autocompact: tronca i turn più vecchi tranne system + 5 most recent + paused_states pending. Autocompact è scope di Slice 1.8b futura (la slice 1.8 base resume tutta la history senza compact).
+4. **Concurrent write a stessa conversation?** → *Default proposto*: PRIMARY KEY `(conversation_id, seq)` + `last_active_at` lock via `SELECT ... FOR UPDATE` in `AppendTurn` previene race. Multi-session sulla stessa conv (raro per single-user) ottengono conflitto chiaro `unique_violation`.
+
+**Mini-PC RAM budget.** Postgres conversations + turns + indici: ~50 MB per 100k turns. Trascurabile. Nessun servizio in più.
+
+**Commit message template.**
+```
+slice 1.8: conversation persistence (closes grey areas #7 + #15)
+
+PostgreSQL-backed multi-conversation support Claude.ai-style. Tables
+aura.conversations (id, title, identity_id, status, model, token stats)
++ aura.conversation_turns (conv_id, seq, role, content, tool_call_id,
+tool_calls, *_tokens) with per-message granularity (LangGraph
+PostgresSaver pattern + AWS data modeling best-practice for AI chat).
+Migration 0005_conversations renames paused_states.loop_id ->
+conversation_id with FK ON DELETE CASCADE and adds resumed_answer
+column for query-friendly audit.
+
+CLI multi-conv: aura chat {list|resume|new|archive|delete|rename}.
+Auto-title LLM-generated after seq>=3, best-effort background. Per-turn
+atomic write (BEGIN; INSERT turn; UPDATE last_active_at + token aggregates;
+COMMIT). Content >64 KiB spillover to $AURA_RUN_DIR sidecar (reuses
+Slice 1 ToolResult pattern). Resume reconstructs Loop.Messages byte-
+identical from history.
+
+Closes grey area #7: Loop.Stop() auto-resolves pending paused_states
+to 'auto-terminated' on conversation end. Adds CLI escape hatch
+aura paused-states {list|purge} for manual cleanup.
+
+Closes grey area #15: multi-conversation persistence as product feature
+(Claude.ai-style threading). Out of scope row "Persistenza disk dello
+stato conversazionale (Loop e' in-memory)" removed. Migrations
+renumbered: 0006_scheduler (was 0005), 0007_skill_audit (was 0006).
+
+Sequencing rationale bullet 2.ter added.
 
 LOC: +XXX src / +YY test / +ZZ migration.
 
@@ -938,7 +1107,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 > **Atomicity note (audit round 1 P0):** ~1300 LOC distribuiti = troppo per 1 commit.
 > Si committa in **2 sub-slice ordinati**:
-> - **6a**: types + migration `0005_scheduler` + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
+> - **6a**: types + migration `0006_scheduler` + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
 > - **6b**: handler `agent_job` (con swarm Coordinator integration) + tool `task_schedule`/`task_run_now` + `ActionRouter` helper (primo uso multi-action, vedi §Pattern condiviso). ~600 LOC.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
@@ -999,8 +1168,8 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 | `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
 | `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
 | `internal/db/queries/agent_job_runs.sql` | ~80 | **4 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`, `MarkRunsRecovered`. `MarkRunsRecovered` è la boot recovery query (UPDATE finished_at IS NULL AND started_at < threshold → exit_status='unknown_recovery'). RETURNING task_id per il reschedule loop. |
-| `internal/db/migrations/0005_scheduler.up.sql` | ~85 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). |
-| `internal/db/migrations/0005_scheduler.down.sql` | ~5 | DROP TABLEs. |
+| `internal/db/migrations/0006_scheduler.up.sql` | ~85 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). |
+| `internal/db/migrations/0006_scheduler.down.sql` | ~5 | DROP TABLEs. |
 | `internal/cron/handlers/handler.go` | ~40 | Interface `Handler{ Kind() TaskKind; Handle(ctx, t *Task) error }` + registry. |
 | `internal/cron/handlers/reminder.go` | ~85 | Notifier-driven (CLI/Telegram). `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
 | `internal/cron/handlers/agent_job.go` | ~160 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
@@ -1012,7 +1181,7 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 slice 6a: scheduler infrastructure — types + sqlc + tick loop + reminder handler
 
 PostgreSQL-backed scheduler base. Types (Task/TaskKind/ScheduleKind/Status),
-migration 0005_scheduler (tables scheduler_tasks + agent_job_runs with
+migration 0006_scheduler (tables scheduler_tasks + agent_job_runs with
 exit_status check constraint (running|completed|failed|cancelled|timeout|
 unknown_recovery), recovered_at nullable column, indices on next_run_at
 WHERE status='active' and on (exit_status, started_at) WHERE finished_at
@@ -1109,7 +1278,7 @@ Alimentati da:
 - Catalog search via skills.sh — fetch HTTP del catalog HTML + regex parser ([catalog.go](git:pre-rewrite-2026-05-27/internal/skills/catalog.go) 1:1).
 - Install via **`npx skills add <source> --agent claude-code -y`** ([admin.go](git:pre-rewrite-2026-05-27/internal/skills/admin.go) 1:1) — funzionava bene pre-rewrite, riusabile. **Migliorie di sicurezza**: `sanitizedEnv()` whitelist più stretta (drop `NPM_CONFIG_USERCONFIG` che può puntare a file arbitrari), post-install `ParseSkill()` re-validation prima di `Invalidate()` (catch corrupted downloads), 90s timeout esplicito.
 - Writer in `~/.aura/skills/pending/<name>/` per le mutation in attesa di approval; al `Approva` move atomico in `~/.aura/skills/active/`.
-- Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor_id (fk aura.identities), action, name, content_hash, source, approval_id, paused_state_token fk, computed_risk_tier, gate_recommended, gate_taken}`. Migrate `0006_skill_audit.up.sql` aggiunta in Slice 7. Query via sqlc `internal/db/queries/skill_audit.sql` (~45 LOC, 4 query: `RecordSkillMutation`, `ListAuditSince`, `GetByName`, `ListPendingApproval`).
+- Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor_id (fk aura.identities), action, name, content_hash, source, approval_id, paused_state_token fk, computed_risk_tier, gate_recommended, gate_taken}`. Migrate `0007_skill_audit.up.sql` aggiunta in Slice 7. Query via sqlc `internal/db/queries/skill_audit.sql` (~45 LOC, 4 query: `RecordSkillMutation`, `ListAuditSince`, `GetByName`, `ListPendingApproval`).
 
 **SKILL.md format** (preservato dal pre-rewrite, lievemente irrigidito):
 ```
@@ -1190,7 +1359,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 | `internal/skills/installer.go` | ~140 | `npx skills add <source> --agent claude-code -y` con sanitizedEnv stretto, 90s timeout. Post-install ParseSkill re-validation prima di Invalidate. Path-traversal guard. |
 | `internal/skills/audit.go` | ~70 | Thin adapter su sqlc `Queries.RecordSkillMutation` + `Queries.ListAuditSince`. Niente più file IO. |
 | `internal/db/queries/skill_audit.sql` | ~40 | 3 query sqlc. |
-| `internal/db/migrations/0006_skill_audit.up.sql` | ~55 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action, name, content_hash, source, approval_id, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL, `computed_risk_tier text NOT NULL DEFAULT 'risky' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT true`, `gate_taken boolean NOT NULL DEFAULT true`). Indice su `ts DESC`, indice su `(gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false` (forensics per gate-skipped). **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). |
+| `internal/db/migrations/0007_skill_audit.up.sql` | ~55 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action, name, content_hash, source, approval_id, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL, `computed_risk_tier text NOT NULL DEFAULT 'risky' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT true`, `gate_taken boolean NOT NULL DEFAULT true`). Indice su `ts DESC`, indice su `(gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false` (forensics per gate-skipped). **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). |
 | `internal/agent/tools/skill_list.go` | ~50 | Non-deferred (output piccolo). |
 | `internal/agent/tools/skill_catalog.go` | ~60 | Deferred. Query skills.sh, ritorna candidati. |
 | `internal/agent/tools/skill_info.go` | ~60 | Deferred. Ritorna body via `ToolResult` (preview+persist se grande). |
@@ -1251,7 +1420,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 slice 7c: skills mutation (create/update/delete) + audit + governance C
 
 Writer (atomic pending→active move via os.Rename), deleter (path-traversal
-guarded), audit log on Postgres via sqlc (migration 0006_skill_audit with
+guarded), audit log on Postgres via sqlc (migration 0007_skill_audit with
 CREATE TABLE aura.skill_audit + index ts DESC + trigger raise_audit_immutable
 BEFORE UPDATE/DELETE → RAISE EXCEPTION). Tools skill.create/update/delete
 all returning ErrAwaitingUserInput(kind=approval) — Loop pauses, user
@@ -1479,13 +1648,14 @@ finché non c'è approval (agente via ask_user OPPURE utente via CLI). Audit log
 
 ---
 
-## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Sandbox → Swarm → KV → Web → Scheduler → Skills)
+## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills)
 
 0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
 0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
 1. **Slice 1 (LLM client + ToolResult)** è prerequisito di tutto il resto: senza un client reale e senza il pattern preview+persist sui tool result, le altre slice non hanno modo di osservare comportamento end-to-end senza avvelenare il context window.
 2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
 2.bis. **Slice 1.7 (Identity minimal)** chiude la wave persistence applicativa. Atterra dopo 1.5 (paused_states) e prima di Slice 2 perché: (a) sblocca Slice 7c per usare `actor_id` FK su `aura.skill_audit` invece di campo `text` opaco; (b) i suoi consumer (Slice 7c) sono lontani, ma il pattern "seed identity + capability_grants" deve essere stabile prima che skill_audit lo referenzi. Indipendente da Slice 2/3/4: può essere committata in parallelo a Slice 2 se preferito.
+2.ter. **Slice 1.8 (Conversation persistence)** chiude la wave persistence applicativa con multi-conversation Claude.ai-style. Atterra dopo 1.7 (identity FK su conversations) e prima di Slice 2. Sblocca: (a) `aura chat list/resume/new` cross-session; (b) paused_states ora FK a conversations con cascade; (c) auto-resolve di pending stale quando Loop.Stop() (Area #7 closed); (d) audit forensics per token cost + cache hit ratio per conversazione. Out of scope riga "Persistenza disk dello stato conversazionale" rimossa. Migrations rinumerate: 0005_conversations (NEW), 0006_scheduler (era 0005), 0007_skill_audit (era 0006).
 3. **Slice 2 (Sandbox)** prima dello Swarm: lo swarm spawn-a agenti che — nella realtà — useranno `execute`. Avere `execute` funzionante prima rende lo smoke dello swarm meno artificiale.
 4. **Slice 3 (Swarm)** prima della KV: la KV cache discipline deve coprire ANCHE i prompt dei figli swarm-spawn. Costruire il PromptBuilder dopo aver visto come il parent passa goal/tools al child evita un secondo refactor.
 5. **Slice 4 (KV)** chiude le 4 fondamentali: ora la superficie del prompt (system + manifest + tool descriptions + parent/child contracts + ask_user) è stabile. Il builder ottimizza un bersaglio fermo.
@@ -1497,7 +1667,6 @@ finché non c'è approval (agente via ask_user OPPURE utente via CLI). Audit log
 
 - Telegram, dashboard, wiki, Qdrant, FTS5 (vedi [README.md](README.md)).
 - Setup wizard, tray, OTA update.
-- Persistenza disk dello stato conversazionale (Loop è in-memory).
 - Auth dell'endpoint `aura serve` (slice CLI-server separato).
 
 ## Non-goals di processo
