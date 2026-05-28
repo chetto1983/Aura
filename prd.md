@@ -1683,12 +1683,13 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## Slice 7 — Skills (self-extension via ask_user governance)
 
-> **Atomicity note (audit round 1 P0):** ~1400 LOC totali = troppo per 1 commit.
-> Si committa in **4 sub-slice ordinati**, ognuno atomic + smoke green:
+> **Atomicity note (audit round 1 P0):** ~2100 LOC totali = troppo per 1 commit.
+> Si committa in **5 sub-slice ordinati**, ognuno atomic + smoke green:
 > - **7a**: types + loader (filesystem + parser + cache 4-way split) + `internal/skills/validator.go` (single chokepoint, riusato da tutti) + `internal/skills/paths.go` (`SanitizeName` single source) + tool `skill.list` + tool `skill.info`. Read-only, no governance. ~500 LOC.
 > - **7b**: catalog (skills.sh HTML scrape 1:1 pre-rewrite) + tool `skill.catalog`. Read-only. ~350 LOC.
 > - **7c**: writer (atomic pending→active) + deleter + tool `skill.create` + `skill.update` + `skill.delete` (mutation tools con ask_user governance). Schema `aura.skill_audit` (migration `0007`) + sqlc queries + adapter. Tx wrapping esplicito attorno alla coppia (FS-move pending→active + INSERT skill_audit row): se INSERT fallisce, FS-move viene rollback-ato (rename inverso). ~600 LOC.
 > - **7d**: installer (`npx skills add` con `--ignore-scripts` + sanitizedEnv stretto + post-install ParseSkill re-validation) + tool `skill.install`. ~450 LOC.
+> - **7e**: **executable code snippets** (multi-lang Python/shell, eseguibili via sandbox Slice 2b) + **pattern analysis multi-conversation auto-suggest** (cross-conv analyzer suggerisce save dopo 3+ pattern simili) + **TTL 90gg archived state** (sweep periodico, archived skip da discovery default). Estende SKILL.md con `type: instruction|snippet` field. ~700 LOC. **Dipende da Slice 2b** (sandbox session-bound + workspace + network allowlist) per esecuzione + da Slice 0.7 Neo4j HNSW per similarity clustering. Pattern reference: Voyager (Wang et al., NeurIPS 2023) skill library + mem0 procedural memory.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
 > **Governance: Risk-Based (Area #5 closed 2026-05-28).** Tutte le mutation
@@ -1891,6 +1892,280 @@ Smoke: malicious skill with postinstall:"rm -rf ~" → --ignore-scripts blocks
 execution, test asserts.
 
 LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+### Slice 7e — Executable code snippets + pattern analysis + TTL archived
+
+> **Pattern reference**: rubato da Voyager (Wang et al., NeurIPS 2023) "skill library" pattern — agent costruisce libreria persistente di funzioni eseguibili discoverable via semantic embedding + lifelong learning. Plus mem0 procedural memory ADD-only pattern.
+>
+> **Idea**: gli script Python/shell utili eseguiti dall'agente via sandbox Slice 2b vengono **salvati** come `SKILL.md type: snippet` (estensione del formato Skill esistente), **scoperti** via semantic search Slice 0.7 Neo4j HNSW, **eseguiti** via Slice 2b sandbox session-bound. Token saving ~520/riuso (50 manifest + 30 chat vs 600 rigen).
+>
+> **Dipendenze**: Slice 2b (sandbox session + workspace + network allowlist) + Slice 0.7 (Neo4j HNSW embedding). Atterra DOPO entrambi.
+
+#### Estensione SKILL.md (backwards-compat con 7a)
+
+Nuovo field `type: instruction|snippet` (default `instruction` per backwards-compat con Skills esistenti). Se `type: snippet`:
+
+```yaml
+---
+name: parse_csv_groupby
+type: snippet
+language: python          # python|shell|js (multi-lang)
+description: Parse CSV from URL or path, group by column, aggregate.
+inputs_schema:
+  source: { type: string, desc: "URL or local path" }
+  by:     { type: string, desc: "Column to group by" }
+  agg:    { type: string, enum: [sum, mean, count], default: sum }
+outputs_desc: JSON array of {group_key, value}
+deps: [pandas]            # PyPI per Python, npm per JS, none per shell
+needs_network: false      # → influenza Risk-Based tier al run-time
+needs_workspace: false    # → influenza sandbox mount (Slice 2b)
+tags: [csv, data-analysis, groupby]
+---
+
+```python
+import pandas as pd
+import json, sys
+
+args = json.load(sys.stdin)
+df = pd.read_csv(args["source"])
+result = df.groupby(args["by"]).agg(args.get("agg", "sum")).reset_index()
+print(result.to_json(orient="records"))
+```
+```
+
+Body = code block in fenced markdown con `language` matching. Parser estrae code, valida sintattico (compile-only check), esegue via `sandbox.Run(language, code, args_stdin, session=conv_id)`.
+
+#### Pattern analysis multi-conversation (smart auto-suggest)
+
+Background goroutine `internal/skills/pattern_analyzer.go`:
+
+```
+Loop ogni AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN=60 minuti:
+  1. Query: tutti i tool_call con tool='execute' degli ultimi N giorni
+     (default N=AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS=7)
+     filtrato per identity_id corrente
+  2. Per ogni execute call, estrai (code, args, exit_status):
+     - Solo successful (exit_status=0)
+     - Solo code >= AURA_SKILL_AUTOSUGGEST_MIN_LOC=20 righe
+  3. Compute embedding del code (riusa aura-llama-embed Slice 0.7)
+  4. Cluster via HNSW similarity threshold 0.85
+  5. Per cluster size >= AURA_SKILL_AUTOSUGGEST_MIN_OCCURRENCES=3:
+     - Synthesize snippet candidate (LLM call: "Generalizza questi 3
+       script in una funzione parametrizzata")
+     - Generate name + description + inputs_schema
+     - Emit ask_user(kind=approval, ResumeContext:
+       {action: 'save_snippet', candidate_yaml: ...},
+       question: "Ho notato che hai eseguito 3 volte uno script per
+       [X]. Vuoi salvarlo come `parse_csv_groupby`? [✅ Salva]
+       [✏️ Modifica nome] [❌ No]")
+  6. Risk-Based: tier RISKY (mutation) → gate_recommended=true
+```
+
+Trigger event-driven (non solo periodic): on `execute` exit_status=0, append a queue + lazy analyzer.
+
+#### TTL 90gg + archived state
+
+```
+Schema delta SKILL.md metadata file (sidecar JSON):
+  last_used_at: timestamp ultimo successful run
+  status: active|archived|deprecated
+  use_count: int
+  archived_at: timestamp (NULL se active)
+
+Sweep background goroutine ogni AURA_SKILL_TTL_SWEEP_INTERVAL_HR=24:
+  Per ogni skill type=snippet:
+    Se last_used_at < now() - 90 giorni AND status='active':
+      status = 'archived'
+      archived_at = now()
+      INSERT skill_audit (action='auto_archive', source='auto',
+        approval_source='auto', gate_recommended=false)
+
+Discovery default (skill.list, semantic search):
+  WHERE status='active'  (archived skip)
+
+Recovery:
+  Tool skill.restore(name) → status='active', archived_at=NULL
+  Audit log RESTORE entry
+```
+
+#### Componenti Slice 7e
+
+```
+internal/skills/
+  snippet.go               # ~150  ParseSnippet (estende ParseSkill), validate type=snippet,
+                           #       extract code block by language, args_schema parser
+  executor.go              # ~180  Snippet.Run(args, ctx) -> sandbox Slice 2b session
+                           #       Builds InvocationContext con session_id = conv_id,
+                           #       streams stdout via iter.Seq2[*Event,error] (Slice 0.9),
+                           #       captures exit_status + elapsed_ms + workspace files
+                           #       generati, persists snippet_runs audit
+  pattern_analyzer.go      # ~250  Background goroutine: query execute logs, embedding +
+                           #       HNSW cluster (riusa Slice 0.7), synthesize candidate
+                           #       LLM call (tier=reasoning), emit ask_user gate
+  ttl_sweeper.go           # ~80   Background goroutine: archive snippets idle > 90gg,
+                           #       audit log auto_archive entries
+  metadata.go              # ~70   Sidecar JSON {last_used_at, status, use_count,
+                           #       archived_at}, atomic write parity con store.go
+
+internal/agent/tools/skill.go (diff)  # ~+100
+  + skill.run(name, args)      - esegue snippet, ritorna ToolResult
+  + skill.restore(name)         - unarchives snippet
+  + skill.archive(name)         - manual archive (tier SAFE, no gate)
+
+internal/db/queries/skill_audit.sql (diff)  # ~+15  + 1 query GetActivityByName per
+                                            #       pattern_analyzer cluster lookup
+
+internal/db/migrations/0007_skill_audit.up.sql (diff)  # ~+10  ALTER TABLE add column
+  - last_used_at timestamptz NULL
+  - use_count int NOT NULL DEFAULT 0
+  Indice: (last_used_at) WHERE status='active' (per sweep)
+
+Migration 0012 NUOVA (ALTER skills metadata sidecar non DB, ma audit estensione):
+  internal/db/migrations/0012_skill_snippet_audit.up.sql  # ~25
+    ALTER TABLE aura.skill_audit ADD COLUMN snippet_run_id uuid NULL;
+    CREATE TABLE aura.snippet_runs (id uuid PK, ts, skill_name text,
+      identity_id fk, conv_id fk conversations NULL,
+      exit_status int, elapsed_ms int, stdout_bytes int,
+      stderr_bytes int, workspace_files_generated int);
+    Index (skill_name, ts DESC) per use_count rollup.
+```
+
+Totale Slice 7e: **~830 LOC src + ~250 test + ~35 migration = ~1115 LOC**.
+
+#### Smoke 7e
+
+```bash
+# Setup: Slice 7d completato, Slice 2b sandbox session attivo
+
+# 1. Save manuale snippet via tool LLM-facing
+aura chat "Crea uno script Python che parsa un CSV e raggruppa per categoria,
+salvalo come parse_csv_groupby"
+# → LLM scrive code, chiama skill.create(type=snippet, language=python, ...)
+# → ask_user("Confermi save snippet parse_csv_groupby (RISKY)?")
+# → user approve → snippet salvato in $AURA_SKILLS_DIR/parse_csv_groupby/SKILL.md
+
+# 2. Discovery semantic search
+aura chat "ho un CSV vendite per regione, raggruppami per regione"
+# → LLM chiama skill.list("CSV groupby")
+# → top match: parse_csv_groupby (similarity 0.91)
+# → LLM chiama skill.run("parse_csv_groupby", {source: "...", by: "regione"})
+# → sandbox Slice 2b session esegue (riusa container conversation)
+# → ToolResult JSON array
+# → LLM presenta risultato
+
+# 3. Pattern auto-suggest (background)
+aura chat "esegui pandas read_csv su X, groupby Y"  # 1ª volta
+aura chat "esegui pandas read_csv su A, groupby B"  # 2ª volta
+aura chat "esegui pandas read_csv su C, groupby D"  # 3ª volta
+# (60min dopo) pattern_analyzer detecta cluster size=3 similarity=0.92
+# → ask_user inviato a Telegram:
+#   "Ho notato 3 script simili recenti. Vuoi salvarli come
+#    `pandas_csv_groupby_template`? [✅ Salva] [✏️ Modifica] [❌ No]"
+
+# 4. TTL archived
+# (90 giorni dopo, sweep)
+# → skill 'old_script_unused' status='archived', audit auto_archive
+aura skill list                  # 'old_script_unused' nascosto (archived)
+aura skill list --include-archived   # mostra
+aura skill restore old_script_unused  # status='active' reseted
+```
+
+#### Acceptance 7e
+
+- [ ] `internal/skills/snippet.go` parse `SKILL.md type: snippet` con language enum (python/shell/js), extract code block by language matching, validate inputs_schema JSON Schema.
+- [ ] `internal/skills/executor.go` `Run(args, ctx)` delega a `sandbox.Runner.Execute(language, code, args_stdin, SessionID=ctx.SessionID)`, stream output via `iter.Seq2[*agent.Event, error]` (Slice 0.9).
+- [ ] `pattern_analyzer.go` background goroutine: query execute logs ultimi 7gg, cluster via Neo4j HNSW similarity 0.85, synthesize candidate via LLM tier=reasoning, emit `ask_user` se cluster size >= 3 e candidate body > 20 LOC.
+- [ ] `ttl_sweeper.go` background goroutine ogni 24h: marca snippet idle > 90gg come archived + audit log.
+- [ ] Tool `skill.run(name, args)` (deferred): valida args contro inputs_schema, esegue via executor, ritorna ToolResult. Aggiorna metadata `last_used_at` + `use_count++` + INSERT `snippet_runs` row.
+- [ ] Tool `skill.restore(name)`: unarchives, audit RESTORE entry.
+- [ ] Tool `skill.archive(name)`: manual archive (tier SAFE, no gate), audit MANUAL_ARCHIVE entry.
+- [ ] Discovery filtro: `skill.list` default `WHERE status='active'`. `--include-archived` flag/arg per mostrare tutti.
+- [ ] Migration 0007 ALTER ADD COLUMNS last_used_at, use_count + indice (last_used_at) WHERE status='active'. Migration 0012 nuova per `aura.snippet_runs` table + `aura.skill_audit.snippet_run_id` FK NULL.
+- [ ] Test pattern_analyzer: 3 execute calls embedding similarity > 0.85 → cluster detected → ask_user emitted.
+- [ ] Test ttl_sweeper: snippet con last_used_at = now()-91d → archived next sweep.
+- [ ] Test executor: smoke con snippet `parse_csv_groupby`, args validation FAIL su args missing required, args validation OK su args complete.
+- [ ] Risk-Based: snippet `needs_network=true OR needs_workspace=true` → tier RISKY al run-time (gate_recommended=true). Default `needs_*=false` → tier SAFE (no gate).
+
+#### Open questions Slice 7e
+
+1. **Synth LLM call cost**: pattern_analyzer chiama LLM tier=reasoning per ogni cluster candidate (~2K token in + 500 out ≈ $0.01). 5 cluster/giorno × 30 = $1.5/mese. Acceptable. *Default proposto*: yes.
+2. **Cross-identity sharing**: snippet privato per `identity_id` (Slice 1.7) o library globale Aura condivisa? *Default proposto*: privato per identity, future slice multi-user aggiunge `aura skill share <name> --to <identity>` con governance.
+3. **Snippet versioning**: cosa succede su `skill.update` di un snippet già usato N volte? *Default proposto*: versioning implicito via `content_hash` in `skill_audit`. Snippet attivo = latest version. Past runs riferiscono content_hash storico per forensics.
+4. **Workspace files cleanup**: snippet che produce files in `/workspace` → quanto persistono? *Default proposto*: workspace è scope conversation (Slice 1.8 cleanup cascade). Snippet generati files sopravvivono finché conversation viva, eliminati a `aura chat delete`.
+
+#### Commit message template Slice 7e
+
+```
+slice 7e: executable code snippets + pattern analysis + TTL archived
+
+Estende SKILL.md formato con type=snippet (multi-lang python/shell/js),
+eseguibili via sandbox Slice 2b session-bound. Pattern reference:
+Voyager (Wang et al., NeurIPS 2023) skill library + mem0 procedural
+memory.
+
+SKILL.md extended fields:
+- type: instruction|snippet (default instruction, backwards-compat 7a)
+- language: python|shell|js (multi-lang)
+- inputs_schema: JSON Schema args validation
+- outputs_desc: text
+- deps: array (PyPI/npm for snippets)
+- needs_network: bool (influenza Risk tier al run)
+- needs_workspace: bool (influenza sandbox mount Slice 2b)
+- tags: array (semantic clustering)
+
+Snippet executor: parse code block by language, valida args contro
+inputs_schema, esegue via sandbox.Runner con session=conv_id
+(Slice 2b), stream output via iter.Seq2[*Event] (Slice 0.9).
+Aggiorna last_used_at + use_count + INSERT snippet_runs row.
+
+Pattern analyzer background goroutine (60min):
+- Query execute logs ultimi 7gg per identity
+- Embedding via aura-llama-embed (Slice 0.7)
+- HNSW cluster similarity 0.85
+- Cluster size >= 3 + body > 20 LOC -> synthesize candidate via LLM
+  tier=reasoning -> ask_user gate (RISKY) per save
+- ~5 cluster suggest/giorno expected su use case medio
+
+TTL sweeper background goroutine (24h):
+- snippet idle > 90gg -> status='archived' + audit auto_archive
+- Discovery default WHERE status='active' (archived skip)
+- skill.restore(name) unarchives + audit RESTORE
+
+Token saving stimato: ~520/riuso (manifest 50 + chat 30 vs rigen 600).
+Su 10 riusi/giorno x 30gg x 50 snippet attivi -> ~$75-100/mese saved.
+
+Migration 0007 ALTER:
+  ADD COLUMN last_used_at timestamptz NULL
+  ADD COLUMN use_count int NOT NULL DEFAULT 0
+  CREATE INDEX (last_used_at) WHERE status='active'
+
+Migration 0012 NUOVA:
+  ALTER TABLE aura.skill_audit ADD snippet_run_id uuid NULL
+  CREATE TABLE aura.snippet_runs (id, ts, skill_name, identity_id,
+    conv_id, exit_status, elapsed_ms, stdout_bytes, stderr_bytes,
+    workspace_files_generated)
+
+Tools nuovi (deferred):
+  skill.run(name, args)    - esegue snippet con args validation
+  skill.restore(name)      - unarchives
+  skill.archive(name)      - manual archive (tier SAFE)
+
+Env nuove (Caps & Limits indice):
+- AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN=60
+- AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS=7
+- AURA_SKILL_AUTOSUGGEST_MIN_LOC=20
+- AURA_SKILL_AUTOSUGGEST_MIN_OCCURRENCES=3
+- AURA_SKILL_AUTOSUGGEST_SIMILARITY_THRESHOLD=0.85
+- AURA_SKILL_TTL_DAYS=90
+- AURA_SKILL_TTL_SWEEP_INTERVAL_HR=24
+
+Dipendenze: Slice 2b (sandbox session) + Slice 0.7 (Neo4j HNSW
+embedding). Atterra dopo entrambi.
+
+LOC: +XXX src / +YY test / +ZZ migration.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
@@ -3092,6 +3367,13 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
 | `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
 | `AURA_SKILL_INJECTION_BLOCKLIST` | (built-in list) | operative | 7 | Prompt-injection blocklist patterns. |
+| `AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN` | `60` | cap | 7e | Background pattern_analyzer goroutine interval. |
+| `AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS` | `7` | cap | 7e | Query execute logs window per cluster detection. |
+| `AURA_SKILL_AUTOSUGGEST_MIN_LOC` | `20` | cap | 7e | Min code LOC per auto-suggest candidate. |
+| `AURA_SKILL_AUTOSUGGEST_MIN_OCCURRENCES` | `3` | cap | 7e | Min cluster size per ask_user emit. |
+| `AURA_SKILL_AUTOSUGGEST_SIMILARITY_THRESHOLD` | `0.85` | cap | 7e | HNSW similarity threshold per cluster grouping. |
+| `AURA_SKILL_TTL_DAYS` | `90` | cap | 7e | Idle threshold per auto-archive snippet. |
+| `AURA_SKILL_TTL_SWEEP_INTERVAL_HR` | `24` | cap | 7e | TTL sweeper goroutine interval. |
 | `AURA_AGUI_CORS_PERMISSIVE` | `0` | operative | 8 | Dev mode CORS `*`. |
 | `AURA_AGUI_PATH_RUN` | `/agent/run` | operative | 8 | AG-UI endpoint path. |
 | `AURA_CHANNEL_<NAME>_ENABLED` | `1` (true) | operative | 9a | Per-channel enable (es. `AURA_CHANNEL_TELEGRAM_ENABLED`). |
@@ -3158,7 +3440,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 5. **Slice 4 (KV)** chiude le 4 fondamentali: ora la superficie del prompt (system + manifest + tool descriptions + parent/child contracts + ask_user) è stabile. Il builder ottimizza un bersaglio fermo.
 6. **Slice 5 (Web tools)** apre il backlog post-tabula-rasa: indipendente dalle 4 fondamentali, riusa `ToolResult` per fetch di pagine grandi. NON introduce `ActionRouter` (web_search/web_fetch sono 2 tool indipendenti senza azioni multiple — YAGNI). Vedi §Pattern condiviso.
 7. **Slice 6 (Scheduler)** prima di Skills: si committa in 2 sub-slice (6a infrastructure + reminder handler, 6b agent_job + ActionRouter helper). 6b introduce `ActionRouter` come primo consumer reale (tool `task` con 4 azioni). Slice 7 lo riusa.
-8. **Slice 7 (Skills)** ultima del backlog interno: si committa in 4 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima del dominio interno evita di riscrivere il flow governance ogni volta che una primitive cambia forma.
+8. **Slice 7 (Skills)** ultima del backlog interno: si committa in 5 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer, **7e snippet executor + pattern analysis + TTL archived**). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima del dominio interno evita di riscrivere il flow governance ogni volta che una primitive cambia forma. **Sub-slice 7e** estende le Skills con **executable code snippets** (multi-lang via SKILL.md `type: snippet`) eseguibili tramite sandbox Slice 2b (deve essere atterrata) + **pattern analysis multi-conversation auto-suggest** (background analyzer cluster via Slice 0.7 HNSW, propone save dopo 3+ pattern simili) + **TTL 90gg + archived state** (background sweep). Pattern rubato da Voyager (Wang et al., NeurIPS 2023) skill library. Token saving stimato ~520/riuso → ~$75-100/mese su 50 snippet attivi. 7e atterra dopo 7d + 2b + 0.7 tutte completate.
 9. **Slice 8 (AG-UI gateway)** atterra dopo Slice 7: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla in questa posizione evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico CLI/Telegram/web): introducendo il protocollo standard AG-UI, Slice 9 può connettere Telegram come client AG-UI senza codice channel-adapter custom.
 10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo transport: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal.
 11. **Slice 10 (User onboarding + Agent.md)** atterra dopo Slice 9 perché ha Telegram come transport principale dell'interview e usa tutto lo stack pre-esistente (ask_user 1.5, identities 1.7, conversations 1.8, PromptBuilder 4, Risk-Based 5, AG-UI 8). Agent.md per identity in filesystem `~/.aura/agents/<id>/` viene iniettato come secondo system message (cache-friendly, Slice 4 invariants preservati). Pattern hybrid ChatGPT Custom Instructions + Memory + mem0 ADD-only. Out of scope "Setup wizard" + "Telegram" rimossi dal PRD; restano out: dashboard SPA full, tray icon, OTA update, multi-user auth.
