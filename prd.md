@@ -1980,6 +1980,353 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 10 — User onboarding + `Agent.md` profile (per identity)
+
+**Goal.** Aura conosce l'utente. Al primo Telegram message post-setup (Slice 9), il bot avvia un **LLM-driven interview free-form** (5-8 domande adattive) e genera un file `Agent.md` per quella identity. Il file viene iniettato come secondo system message nei prompt successivi, dando ad Aura context persistente su nome, lingua, tone, interessi, boundaries.
+
+Pattern derivato da:
+- **ChatGPT Custom Instructions** ("what to know about you" + "how to respond")
+- **ChatGPT Memory** (estrazione fatti continua, ADD-only, mem0-style)
+- **CLAUDE.md** (file markdown leggibile, iniettato come context)
+- **AGENTS.md** standard (Linux Foundation, ma adattato a user preferences invece di coding project)
+
+Per-identity (Slice 1.7): multi-user supportato strutturalmente. Filesystem-based per ispezionabilità + git-friendly + edit manuale possibile.
+
+### Pre-requisiti
+
+- Slice 1.5 ask_user (per approval gate degli updates)
+- Slice 1.7 identities (per per-identity scoping)
+- Slice 1.8 conversation persistence (per memory extraction da turn passati)
+- Slice 4 PromptBuilder (per injection cache-friendly come secondo system message)
+- Slice 5 Risk-Based Governance (per gating delle update uncertain)
+- Slice 8 AG-UI emitter (per emit STATE_DELTA quando profile cambia)
+- Slice 9 Telegram bot (transport principale dell'interview e degli updates)
+
+### Decisioni cumulate (chiusura discussione 2026-05-28)
+
+| Aspetto | Decisione |
+|---|---|
+| Filename | **`Agent.md`** (custom Aura, non AGENTS.md/CLAUDE.md). User-facing, non coding-oriented. |
+| Trigger | **Auto al primo Telegram message** post-setup (no esistente `Agent.md` per quella identity). Skip option `[Salta, dopo]` disponibile, `/onboard` command per recovery. |
+| Storage | **Filesystem** `~/.aura/agents/<identity_id>/Agent.md`. Git-friendly, editable manualmente, ispezionabile. Plus `preferences.json` (structured) + `metadata.json` (version, timestamps) + `changelog.md` (audit). |
+| Interview style | **LLM Q&A free-form**. Bot chiede domande adattive (l'agente decide quale chiedere dopo in base alle risposte precedenti), utente risponde libero, LLM interpreta. |
+| Auto-update | **Hybrid**: fatti **certi** (osservati `N≥AURA_PROFILE_CERTAINTY_N` volte consistenti, default 3) → auto-add silenzioso + changelog entry. Fatti **incerti** (1-2 osservazioni, conflicting, nuova categoria) → ask_user approval gate via Risk-Based pipeline (tier RISKY per modifiche preferences). |
+| Auto-revert | `/forget <fact>` command rimuove specific fact + changelog REVERT entry. Idempotente. |
+| Injection nel prompt | Agent.md content come **secondo system message** (dopo main Aura system prompt). Prefix cache-friendly (Slice 4): cambia raramente, sotto il main system. |
+
+### File layout
+
+```
+~/.aura/agents/<identity_id>/
+  Agent.md              # personalizzazione utente, markdown leggibile
+  preferences.json      # structured: lang, timezone, voice_mode, can_proactive_message,
+                        # tone_preference (formale/informale/tecnico), response_length
+  metadata.json         # version (schema rev), generated_at, last_updated_at,
+                        # onboarding_completed (bool), observation_counts (per-category)
+  changelog.md          # append-only log delle modifiche (timestamp, fatto added/removed,
+                        # source: onboarding|auto-extract|manual|forget)
+```
+
+### Esempio output `Agent.md` (post-onboarding)
+
+```markdown
+# Agent profile for Davide (local)
+
+Generated 2026-05-28T14:32Z via onboarding interview.
+Last updated 2026-05-28T16:08Z (auto-extract: "lingua=italiano" confirmed).
+
+## About me
+
+- Nome: Davide
+- Occupazione: Software engineer, AI/agents
+- Fuso orario: Europe/Rome (UTC+1)
+- Lingua: italiano (auto-detect inglese se scrivo in EN)
+
+## How I prefer responses
+
+- Tono: informale, diretto
+- Niente: "Spero questo aiuti!", "Certo!", preamboli
+- Lunghezza: sintetica
+- Code blocks: con linguaggio specificato
+- Italiano: tu, non lei
+
+## Areas of interest
+
+- Coding agentic (Aura, Claude Code, agent frameworks)
+- AI/ML systems design
+- Backend Go + databases
+
+## Boundaries
+
+- NON proporre cron irreversibili senza approvazione esplicita
+- NON salvare info personali in memoria senza chiedere
+- OK proactive notification: news tech daily 09:00, reminder calendar
+
+---
+<!-- This file is auto-generated and updated by Aura. Edit freely;
+     Aura preserves manual edits and only adds new facts via
+     /onboard interview, /edit-profile, or auto-extract Risk-Based gate. -->
+```
+
+### Onboarding flow (LLM-driven, Telegram)
+
+```
+Trigger: primo Telegram message da nuovo telegram_account post-setup
+         AND ~/.aura/agents/<identity_id>/Agent.md non esiste
+
+Bot: 👋 Ciao! Sono Aura. Posso conoscerti meglio prima di iniziare?
+     [✅ Sì, 5 minuti] [⏭️ Salta, dopo]
+
+Se "Salta":
+  → metadata.json onboarding_completed=false
+  → Agent.md vuoto creato con placeholder
+  → /onboard command disponibile per rifare interview
+  → procedi a normal chat (no profile injection)
+
+Se "Sì":
+  → state machine onboarding interview (in-process, no Loop spawn dedicato)
+  → 5-8 domande adattive scelte dall'LLM in base alle risposte
+  
+  Domanda 1 (sempre): "Come ti chiami?"
+  Domanda 2 (sempre): "Che lingua preferisci che parli? IT / EN / auto?"
+  Domanda 3-6 (LLM-adaptive based on previous answers):
+    es. "Qual è la tua occupazione?" → se "developer", chiede "che stack?"
+    es. "Hai preferenze sul tono? (formale, informale, tecnico)"
+    es. "Aree di interesse principali? (es. coding, news tech, finanza, salute...)"
+    es. "C'è qualcosa di importante che dovrei sapere su di te?"
+  Domanda 7 (sempre): "Posso scriverti spontaneamente con reminder/news?
+                       [✅ Sì] [⏰ Solo reminder] [❌ No]"
+  Domanda 8 (sempre, riassunto): bot mostra Agent.md generato:
+    "Ecco cosa ho capito:
+     [...content...]
+     È corretto? Vuoi correzioni o aggiungere qualcosa?
+     [✅ Conferma] [✏️ Modifica] [🔄 Rifai]"
+
+  Se "Modifica" → bot chiede free-text "Cosa correggo?" → applica diff
+  Se "Conferma" → Agent.md salvato + metadata.onboarding_completed=true
+  Se "Rifai" → torna a domanda 1
+
+  → bot risponde: "✅ Perfetto, Davide. Sono pronto. Cosa posso fare per te?"
+  → procede a normal chat con Agent.md injected
+```
+
+### Auto-update flow (mem0-style hybrid)
+
+Durante ogni turn user, Aura osserva il messaggio e tenta extraction di fatti rilevanti per il profile:
+
+```
+LoopTurn observer (post-LLM response):
+  facts = extractor.Extract(user_message, agent_response)
+    # LLM-driven extraction: returns []FactCandidate
+    # FactCandidate{ category, key, value, confidence_0_1, evidence_quote }
+  
+  for each fact:
+    counter = metadata.observation_counts[fact.category][fact.key]
+    counter++
+
+    if counter >= AURA_PROFILE_CERTAINTY_N (default 3):
+      if fact already in Agent.md:
+        # Already known, no action
+      else:
+        # CERTAIN new fact → auto-add
+        Agent.md → append/update relevant section
+        changelog.md → append "AUTO_ADD: <fact> (source: <evidence>, count: <N>)"
+        metadata.last_updated_at = now()
+        # No user prompt, silent
+    
+    elif counter < AURA_PROFILE_CERTAINTY_N AND fact.confidence > 0.7:
+      # UNCERTAIN but high-confidence → approval gate
+      compute risk_tier (Slice 5): typically RISKY for new preferences
+      if tier == RISKY:
+        emit ask_user(
+          kind=approval,
+          question="Ho notato che: {fact}. Devo salvarlo nel tuo profilo?",
+          options=["✅ Sì", "❌ No, ignora", "✏️ Modifica"]
+        )
+        # User decides; ResumeContext applies update if approved
+    
+    else:
+      # Low confidence or low count: keep tracking, no action
+```
+
+`/forget <fact>` command:
+- User: `/forget` o `/forget italiano`
+- `/forget` senza args: bot mostra lista facts recenti, user seleziona via inline keyboard
+- `/forget <text>` con args: fuzzy match nei facts, mostra candidate + conferma
+- On confirm: rimuove dal Agent.md + append "FORGET: <fact>" in changelog
+
+### Injection nel prompt (cache-friendly)
+
+```
+Prompt structure (Slice 4 PromptBuilder + Slice 10):
+
+System message 1 (stable across turns, all conversations):
+  "You are Aura, a personal AI assistant..."
+  [main Aura system prompt + tool manifest]
+
+System message 2 (stable across turns, per-identity):
+  [Agent.md content for current identity]
+
+User/assistant/tool message history (variable)
+```
+
+`messages[0]` byte-identico turn-su-turn (Slice 4 invariant rispettato): main system non cambia.
+`messages[1]` (Agent.md) byte-identico finché profile non viene updated. Cache hit drop solo on update (raro).
+
+### Architettura componenti
+
+```
+internal/onboarding/
+  interview.go      # ~180   LLM Q&A state machine (in-process Loop integration)
+                    #        - state: idle | asking | summarizing | confirmed
+                    #        - domande adattive scelte dall'LLM via tool call
+                    #        - 5-8 domande max, cap su 30 turn ricorrenti
+  store.go          # ~100   Filesystem read/write ~/.aura/agents/<id>/
+                    #        - Agent.md, preferences.json, metadata.json, changelog.md
+                    #        - atomic write (temp file + os.Rename)
+  injector.go       # ~80    PromptBuilder hook: inject Agent.md come second
+                    #        system message. Cache key invalidation su update.
+  extractor.go      # ~150   LLM-driven fact extraction da conversation turn
+                    #        - FactCandidate{category, key, value, confidence, evidence}
+                    #        - prompt template per estrazione strutturata
+  updater.go        # ~200   Auto-update logic:
+                    #        - observation counter per category/key
+                    #        - certainty threshold check (default N=3)
+                    #        - certain → auto-add silenzioso + changelog
+                    #        - uncertain hi-conf → ask_user gate (Risk-Based)
+                    #        - low-conf → no action
+  forget.go         # ~80    /forget command + fuzzy match + revert changelog
+
+internal/channels/telegram/commands.go (diff)  # ~+80
+  + /onboard  - re-run interview, idempotent
+  + /edit-profile - opens edit mode (textarea via ForceReply per section)
+  + /forget [fact] - delete fact + changelog
+  + /profile - mostra Agent.md current
+
+internal/agent/loop.go (diff)  # ~+50
+  - hook onboarding.Updater.Observe(turn) post-LLM response
+  - hook onboarding.Injector.Inject() in PromptBuilder
+
+cmd/aura/main.go (diff)  # ~+40
+  + aura profile show <identity_name>
+  + aura profile edit <identity_name>  (opens $EDITOR su Agent.md)
+  + aura profile reset <identity_name>  (--confirm required)
+```
+
+### Smoke
+
+```bash
+# Setup completato (Slice 9), telegram_accounts.user_id=12345 → identity=local
+
+# Primo message da utente nuovo
+# (Telegram client) "Ciao"
+# (bot) "👋 Ciao! Sono Aura. Posso conoscerti meglio prima di iniziare?
+#        [✅ Sì, 5 minuti] [⏭️ Salta, dopo]"
+
+# user tap "Sì"
+# (bot) "Come ti chiami?"
+# (user) "Davide"
+# (bot) "Piacere Davide. Che lingua preferisci? IT / EN / auto?"
+# ... 5-8 domande ...
+# (bot) "Ecco cosa ho capito: [...content Agent.md...]. È corretto?
+#        [✅ Conferma] [✏️ Modifica] [🔄 Rifai]"
+
+# user tap "Conferma"
+# (bot) "✅ Perfetto, Davide. Sono pronto. Cosa posso fare per te?"
+
+ls ~/.aura/agents/<identity_id>/
+# Agent.md preferences.json metadata.json changelog.md
+
+cat ~/.aura/agents/<identity_id>/Agent.md
+# # Agent profile for Davide (local)
+# ...
+```
+
+### Acceptance
+
+- [ ] `internal/onboarding/interview.go` state machine 5-8 domande adattive, gestione skip option, summary + confirm step.
+- [ ] `store.go` filesystem atomic write (temp + Rename), per-identity directory `~/.aura/agents/<identity_id>/` (UUID).
+- [ ] `injector.go` aggiunge Agent.md come second system message in PromptBuilder. Cache invalidation hash basato su `metadata.last_updated_at`.
+- [ ] `extractor.go` LLM-driven fact extraction post-turn. Prompt template strutturato che restituisce JSON `[{category, key, value, confidence, evidence}]`.
+- [ ] `updater.go` hybrid auto-update: counter ≥ `AURA_PROFILE_CERTAINTY_N` (default 3) → silent add, altrimenti ask_user via Risk-Based pipeline.
+- [ ] `/onboard` command rifa interview (skip already-completed con conferma "vuoi sovrascrivere?").
+- [ ] `/edit-profile` apre edit mode (ForceReply per section: about-me, preferences, areas, boundaries).
+- [ ] `/forget [fact]` rimuove fact + changelog REVERT entry. Senza args → lista facts paginata.
+- [ ] `/profile` mostra Agent.md current con markdown rendering.
+- [ ] Trigger auto: primo Telegram message senza Agent.md esistente per identity → start interview.
+- [ ] CLI `aura profile show/edit/reset <identity_name>` per debug/admin.
+- [ ] Test integration `onboarding_integration` build tag: interview round-trip end-to-end.
+- [ ] Test fact extraction: 5 conversation turn esempio → fatti attesi extracted.
+- [ ] Test hybrid update: 3 osservazioni consistenti → auto-add. 2 osservazioni + 1 conflicting → ask_user gate.
+
+### File targets cumulativi
+
+(Vedere "Architettura componenti" sopra. Totale ~700 LOC src + ~250 test.)
+
+### Open questions
+
+1. **AURA_PROFILE_CERTAINTY_N**: 3 è sweet spot? Pre-merge calibrare su corpus di test conversations. Default 3, env override.
+2. **Conflicting facts handling**: se osservato 2 volte "lingua=IT" + 1 volta "lingua=EN" → cosa fare? *Default proposto*: keep current (no override automatic), log osservazione conflicting in changelog per analisi. Se 3+ conflict → ask_user explicit.
+3. **Schema versioning Agent.md**: come gestire breaking change al template (es. nuova section)? *Default proposto*: `metadata.json.schema_version` int, migration script tra versions in `internal/onboarding/migrations/`.
+4. **Privacy / forget compliance**: `/forget --all` per GDPR right-to-delete su single user → cancella `~/.aura/agents/<identity_id>/` + persists deletion log per audit. Out of scope qui, future slice multi-user/auth.
+
+### Mini-PC RAM budget — delta vs pre-Slice 10
+
+Negligibile. Slice 10 è puro filesystem + LLM call extraction (riusa LLM Slice 1). Nessun nuovo sidecar.
+
+### Commit message template
+
+```
+slice 10: User onboarding + Agent.md profile (per identity)
+
+Aura conosce l'utente. Primo Telegram message post-setup -> LLM-driven
+free-form interview (5-8 domande adattive) -> Agent.md persisted per
+identity in ~/.aura/agents/<identity_id>/Agent.md (filesystem,
+git-friendly, manualmente editable).
+
+Pattern derivato da ChatGPT Custom Instructions + Memory, CLAUDE.md
+file injection, mem0-style ADD-only extraction.
+
+Decisioni cumulate:
+- Filename Agent.md (custom Aura, user-facing non coding-oriented)
+- Trigger auto al primo Telegram message post-setup
+- Storage filesystem per-identity (Slice 1.7 multi-user ready)
+- Interview LLM Q&A free-form adattivo (no rigid form)
+- Auto-update hybrid: fatti certi (N>=3 consistent) auto-add silenzioso
+  + changelog; fatti incerti -> ask_user approval gate via Risk-Based
+  (Slice 5 pipeline)
+- Injection cache-friendly: secondo system message dopo main Aura
+  (Slice 4 invariants preservati: messages[0] byte-identico)
+
+File layout per identity:
+  Agent.md          - markdown profile leggibile
+  preferences.json  - structured (lang, tz, voice_mode, can_proactive)
+  metadata.json     - version, timestamps, observation_counts
+  changelog.md      - append-only audit log
+
+Commands Telegram nuovi:
+  /onboard       - re-run interview
+  /edit-profile  - edit mode via ForceReply per section
+  /forget [fact] - revoca fact + changelog REVERT
+  /profile       - show current Agent.md
+
+CLI debug:
+  aura profile show/edit/reset <identity_name>
+
+Hook al Loop:
+- post-LLM response: Updater.Observe(turn) per fact extraction continuo
+- pre-prompt: Injector.Inject() aggiunge Agent.md a system messages
+
+Threshold env:
+  AURA_PROFILE_CERTAINTY_N=3  (consecutive observations per auto-add)
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Pattern condiviso da estrarre (vale per Slice 5/6/7)
 
 Tutti e tre i tool seguono lo stesso shape:
@@ -2255,6 +2602,17 @@ AURA_SETUP_BIND = 127.0.0.1:9081  (Slice 9a, sempre on)
   Setup wizard HTTP server (paste bot token + onboard QR). Default
   loopback. Override AURA_SETUP_BIND=0.0.0.0:9081 per setup remoto con
   QR scan da phone su LAN (no auth, headless container scenario).
+
+AURA_PROFILE_CERTAINTY_N = 3  (Slice 10, onboarding auto-update)
+  Numero di osservazioni consistent richieste per auto-add silenzioso
+  di un fatto a Agent.md. Sotto soglia (1-2 osservazioni) -> ask_user
+  approval gate via Risk-Based pipeline (Slice 5). Hybrid pattern:
+  fatti certi auto, incerti gate.
+
+AURA_PROFILE_DIR = ~/.aura/agents  (Slice 10, default)
+  Directory base per i profili per identity. Subdir <identity_id>/
+  contiene Agent.md + preferences.json + metadata.json + changelog.md.
+  Atomic write (temp + Rename) per evitare corruption su crash mid-update.
 ```
 
 ### Pattern condiviso "Large Output Handling"
@@ -2287,7 +2645,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 
 ---
 
-## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills → AG-UI gateway → Channels/Telegram)
+## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills → AG-UI gateway → Channels/Telegram → Onboarding/Agent.md)
 
 0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
 0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
@@ -2302,7 +2660,8 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 7. **Slice 6 (Scheduler)** prima di Skills: si committa in 2 sub-slice (6a infrastructure + reminder handler, 6b agent_job + ActionRouter helper). 6b introduce `ActionRouter` come primo consumer reale (tool `task` con 4 azioni). Slice 7 lo riusa.
 8. **Slice 7 (Skills)** ultima del backlog interno: si committa in 4 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima del dominio interno evita di riscrivere il flow governance ogni volta che una primitive cambia forma.
 9. **Slice 8 (AG-UI gateway)** atterra dopo Slice 7: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla in questa posizione evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico CLI/Telegram/web): introducendo il protocollo standard AG-UI, Slice 9 può connettere Telegram come client AG-UI senza codice channel-adapter custom.
-10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal. Out of scope "Telegram + setup wizard" rimossi dal PRD (ora in scope). Dashboard SPA full + tray icon + OTA restano out.
+10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo transport: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal.
+11. **Slice 10 (User onboarding + Agent.md)** atterra dopo Slice 9 perché ha Telegram come transport principale dell'interview e usa tutto lo stack pre-esistente (ask_user 1.5, identities 1.7, conversations 1.8, PromptBuilder 4, Risk-Based 5, AG-UI 8). Agent.md per identity in filesystem `~/.aura/agents/<id>/` viene iniettato come secondo system message (cache-friendly, Slice 4 invariants preservati). Pattern hybrid ChatGPT Custom Instructions + Memory + mem0 ADD-only. Out of scope "Setup wizard" + "Telegram" rimossi dal PRD; restano out: dashboard SPA full, tray icon, OTA update, multi-user auth.
 
 ## Out of scope per tutte e 4 le slice (esplicito)
 
