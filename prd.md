@@ -84,7 +84,7 @@ Cumulativa stimata a fine Slice 7 (mini-PC 16-core, target 32 GB RAM):
 | Servizio | RAM idle stimata | Slice che lo aggiunge |
 |---|---:|---|
 | Postgres 17 | ~250 MB | 0.5 |
-| Neo4j 5.x + APOC + GDS + vector index | ~1.5-2 GB | (esterno, già presente) |
+| Neo4j 5.x Community + APOC + GDS + vector index | ~1.5-2 GB | 0.7 |
 | aura-llama-embed (embeddinggemma CPU, 4 thread) | ~600 MB | (esterno, già presente) |
 | SearXNG | ~150 MB | 5 |
 | Sandbox Python sidecar | ~80 MB | 2 |
@@ -102,7 +102,7 @@ Se la stima passa 8 GB peak in futuro, va dedicato un budget review.
 **Backup strategy (audit round 2 P0).** I due store stateful (Postgres + Neo4j) hanno backup automatico:
 
 - **Postgres** — `pg_dump` cronato via Slice 6 scheduler (`TaskKind=backup_postgres`, default `daily 03:00`, destination `~/.aura/backups/postgres/aura-<date>.sql.gz`). Retention 14 giorni rolling. Restore manuale via `aura db restore <file.sql.gz>`. Subcommand documentato in `aura db --help`.
-- **Neo4j** — `neo4j-admin database backup --to-path=/backups` via `docker exec neo4j-spike` cronato (stessa scheduler TaskKind `backup_neo4j`, default `daily 03:30`). Retention 7 giorni rolling. Restore manuale via runbook in `docs/runbooks/neo4j-restore.md`.
+- **Neo4j** — `neo4j-admin database backup --to-path=/backups` via `docker exec aura-neo4j` cronato (stessa scheduler TaskKind `backup_neo4j`, default `daily 03:30`). Retention 7 giorni rolling. Restore manuale via runbook in `docs/runbooks/neo4j-restore.md`.
 - **Acceptance**: backup TaskKind handler atterra in slice 6b (insieme a `agent_job`). Test: schedule backup_postgres in=1m → file dump esistente in `~/.aura/backups/postgres/` con dimensione >1 KB.
 
 **Commit message template.**
@@ -116,6 +116,115 @@ Schema 'aura' dedicated. Empty initial schema — tables land in
 their slices (1.5/6/7).
 
 Smoke: aura db {migrate|ping|status} all green against fresh
+container.
+
+LOC: +XXX src / +YY test / +ZZ infra.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 0.7 — Infra Neo4j (Community + mcp-neo4j-cypher + Cypher migrations)
+
+**Goal.** Knowledge graph backbone industrial-grade. Container Neo4j produzione
++ MCP server `mcp-neo4j-cypher` subprocess stdio + Cypher schema/index
+migrations versionate. Senza questa slice, le slice future che leggono o
+scrivono knowledge (post-Slice 7) non hanno dove vivere, e il backup
+`backup_neo4j` cronato di Slice 6b punta a un container inesistente.
+
+Le 8 slice 1→7 NON consumano Neo4j: è infrastruttura pre-deployata,
+parallela alla Slice 0.5 Postgres. Atterrare 0.7 subito dopo 0.5 elimina
+il rischio "container produzione promesso ma mai materializzato".
+
+**Stack scelto** (validato dallo spike `D:/tmp/aura-neo4j-spike-2026-05-27/`
+Phase 6b: 22-30 ms p95 + IT recall@5 5/5 su corpus reale Aura):
+- DB: **Neo4j 5.x Community** (container `neo4j:5-community`, ~1.5-2 GB RAM idle)
+- Plugins: **APOC** (procedure standard) + **GDS** (Graph Data Science, community detection, PPR) + Vector index (built-in 5.x, Apache Lucene HNSW)
+- MCP server: **`mcp-neo4j-cypher`** (Apache 2.0) — subprocess stdio spawn-ato da Aura, lifecycle accoppiato al processo principale. **No native Go adapter** (per disciplina CLAUDE.md): tutto accesso Neo4j passa da MCP.
+- Embedding dim: **768 nativo** da `aura-llama-embed` (nessuna MRL truncation, l'index Neo4j HNSW è configurato a 768 dim)
+- DB name: **`neo4j` default** (Community non supporta multi-database; `CREATE DATABASE aura` richiede Enterprise)
+- Migrations: file `.cypher` numerati in `internal/knowledge/migrations/`, eseguiti via MCP `cypher_execute`. Audit applicate registrato in **Postgres** tabella `aura.knowledge_migrations` (centralizza audit con golang-migrate).
+
+**Smoke.**
+```bash
+docker compose -f sandbox/compose.yaml up -d neo4j
+./aura neo4j migrate           # applica tutte le migration .cypher pendenti
+./aura neo4j ping              # MATCH (n) RETURN count(n), stampa "ok + ms"
+./aura neo4j status            # lista migration applicate (da Postgres)
+```
+
+**Acceptance.**
+- [ ] Container `aura-neo4j` su volume named `aura_aura-neo4j` (NO bind-mount Windows — coerente con feedback `feedback_sqlite_wal_windows_corruption.md` esteso a Neo4j). Healthcheck `cypher-shell -u neo4j -p $NEO4J_PASSWORD --database neo4j 'RETURN 1'`.
+- [ ] Auth via `NEO4J_PASSWORD` da `.env` (default `changeme`, must change al primo boot). `NEO4J_AUTH=neo4j/$NEO4J_PASSWORD` propagato al container.
+- [ ] Plugins APOC + GDS abilitati via `NEO4J_PLUGINS='["apoc","graph-data-science"]'` (auto-download Neo4j Community feature 5.x).
+- [ ] `mcp-neo4j-cypher` spawn-ato da Aura come subprocess stdio. Endpoint configurato via `Config.Neo4j.MCPBinary` (default `mcp-neo4j-cypher`, PATH-resolvable). Auth bolt URI `bolt://127.0.0.1:7687` + `NEO4J_USER`/`NEO4J_PASSWORD` da env.
+- [ ] Migration `0001_init.cypher`:
+  ```cypher
+  CREATE CONSTRAINT chunk_id IF NOT EXISTS
+    FOR (c:Chunk) REQUIRE c.id IS UNIQUE;
+
+  CREATE VECTOR INDEX chunk_embedding IF NOT EXISTS
+    FOR (c:Chunk) ON c.embedding
+    OPTIONS {indexConfig: {
+      `vector.dimensions`: 768,
+      `vector.similarity_function`: 'cosine'
+    }};
+
+  CREATE FULLTEXT INDEX chunk_text IF NOT EXISTS
+    FOR (c:Chunk) ON EACH [c.text];
+  ```
+  Schema iniziale **minimale**: solo `:Chunk` perché è l'unica label che gli slice 1→7 useranno indirettamente (via tool result sidecar future). Le altre label (UserProfileMemory, Entity, Source, ecc.) atterrano nelle rispettive slice knowledge.
+- [ ] `aura neo4j migrate` idempotente. Applica solo le migration nuove. Errore esplicito su schema drift (migration applicata + file `.cypher` changed → abort).
+- [ ] `internal/knowledge/client.go` espone `Open(ctx, cfg) (*Client, error)` con ping MCP al boot. Fail-fast se MCP server non risponde entro 10 s.
+- [ ] Container Aura con `depends_on: condition: service_healthy` per `neo4j` (oltre a `postgres` e `aura-llama-embed`).
+- [ ] Test integrazione sotto `//go:build neo4j_integration` — salta in CI senza container Neo4j (no flaky), parallelo al pattern `db_integration` di Slice 0.5.
+- [ ] Backup TaskKind `backup_neo4j` (definito in Slice 0.5 RAM/Backup table, implementato in Slice 6b) ora punta al container produzione `aura-neo4j`, non più allo spike `neo4j-spike`.
+
+**File targets** (~330 LOC src + ~80 test + infra):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/knowledge/client.go` | ~80 | `Open(ctx, *Config) (*Client, error)`. MCP subprocess spawn, stdio framing, graceful close. `Cypher(ctx, query, params) ([]Record, error)` thin wrapper. |
+| `internal/knowledge/config.go` | ~40 | `Neo4jConfig{BoltURL, User, Password, MCPBinary, Database, ConnectTimeoutSec}`. Letto da `internal/config`. |
+| `internal/knowledge/migrate.go` | ~90 | Legge `migrations/*.cypher` numerati (embed.FS), parse front-matter `-- migrate:up`, esegue via MCP, registra successo/fallimento in Postgres `aura.knowledge_migrations`. `Up`, `Status` (read da Postgres). |
+| `internal/knowledge/ping.go` | ~30 | `Ping(ctx) error` → `RETURN 1`, latency tracking. |
+| `internal/knowledge/migrations/0001_init.cypher` | ~25 | Constraint + vector index + fulltext index come sopra. |
+| `internal/db/queries/knowledge_migrations.sql` | ~30 | **2 query sqlc**: `RecordKnowledgeMigration`, `ListAppliedKnowledgeMigrations`. |
+| `internal/db/migrations/0002_knowledge_migrations.up.sql` | ~20 | `CREATE TABLE aura.knowledge_migrations (version int pk, name text, applied_at timestamptz default now(), checksum text)`. |
+| `internal/db/migrations/0002_knowledge_migrations.down.sql` | ~3 | `DROP TABLE aura.knowledge_migrations;` |
+| `internal/knowledge/client_test.go` | ~80 | Build tag `neo4j_integration`. Open + ping + migrate + simple Cypher + close. |
+| `sandbox/compose.yaml` (diff) | ~+30 | Service `neo4j` (`neo4j:5-community`, plugins APOC+GDS, volume named, healthcheck, env auth). |
+| `cmd/aura/main.go` (diff) | ~+40 | Sub-command `aura neo4j {migrate|ping|status|reset}`. |
+| `Makefile` (diff) | ~+15 | Target `make neo4j-up`, `make neo4j-migrate`, `make neo4j-reset`. |
+| `.env.example` (diff) | ~+5 | `NEO4J_PASSWORD=changeme`, `NEO4J_USER=neo4j`. |
+
+**Deferred-tool partition.** Niente tool nuovo in questo slice. È pura infra. Le slice future che esporranno tool knowledge-facing decidono il loro tier.
+
+**Open questions.**
+1. **MCP binary distribution: bundled in `aura init-models` o richiesto su PATH?** → *Default proposto: richiesto su PATH (`mcp-neo4j-cypher` installato via `pip install mcp-neo4j-cypher` o equivalente). Fail-fast all'avvio con messaggio chiaro se non trovato. Bundling = scope creep, rinviato.*
+2. **Retention `aura.knowledge_migrations`?** → *Default proposto: nessuna. È audit append-only, una riga per migration. A 1000 migration siamo a ~80 KB. Non vale la pena.*
+3. **`neo4j_integration` test fixture data: in `testdata/*.cypher` o programmatici?** → *Default proposto: programmatici (Cypher inline nei test). Fixture file `.cypher` è premature optimization a questo punto.*
+
+**Mini-PC RAM budget — delta vs Slice 0.5.**
+
+Neo4j 5.x Community + APOC + GDS + vector index a 768 dim su corpus realistico (≤ 100k chunk) consuma stabilmente 1.5-2 GB RAM idle. A 1M chunk (limite alto del power user) ~3-4 GB. Già contato nella tabella cumulativa di Slice 0.5 riga 87 (ora aggiornata: Slice 0.7).
+
+**Commit message template.**
+```
+slice 0.7: neo4j community + mcp-neo4j-cypher + cypher migrations
+
+Neo4j 5.x Community container (named volume, APOC+GDS plugins),
+mcp-neo4j-cypher subprocess stdio spawned by Aura, Cypher migrations
+file-based via MCP with audit in Postgres aura.knowledge_migrations
+(sqlc-managed). 0001_init.cypher: :Chunk(id) UNIQUE constraint +
+vector index HNSW 768d cosine + fulltext index. Embedding dim 768
+native (no MRL truncation, vector index configured at 768).
+Subcommand aura neo4j {migrate|ping|status}.
+
+Renames backup_neo4j docker exec target from neo4j-spike to
+aura-neo4j (Slice 0.5 row 105 amended).
+
+Smoke: aura neo4j {migrate|ping|status} all green against fresh
 container.
 
 LOC: +XXX src / +YY test / +ZZ infra.
@@ -1063,9 +1172,10 @@ Se un `ActionHandler` ritorna `ErrAwaitingUserInput` (sentinel di Slice 1.5), `D
 
 ---
 
-## Sequencing rationale (DB infra → Agent → AskUser → Sandbox → Swarm → KV → Web → Scheduler → Skills)
+## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Sandbox → Swarm → KV → Web → Scheduler → Skills)
 
-0. **Slice 0.5 (DB infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
+0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
+0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
 1. **Slice 1 (LLM client + ToolResult)** è prerequisito di tutto il resto: senza un client reale e senza il pattern preview+persist sui tool result, le altre slice non hanno modo di osservare comportamento end-to-end senza avvelenare il context window.
 2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
 3. **Slice 2 (Sandbox)** prima dello Swarm: lo swarm spawn-a agenti che — nella realtà — useranno `execute`. Avere `execute` funzionante prima rende lo smoke dello swarm meno artificiale.
@@ -1078,7 +1188,6 @@ Se un `ActionHandler` ritorna `ErrAwaitingUserInput` (sentinel di Slice 1.5), `D
 ## Out of scope per tutte e 4 le slice (esplicito)
 
 - Telegram, dashboard, wiki, Qdrant, FTS5 (vedi [README.md](README.md)).
-- `mcp-neo4j-cypher` integration (lo aggiungerà uno slice MCP separato).
 - Setup wizard, tray, OTA update.
 - Persistenza disk dello stato conversazionale (Loop è in-memory).
 - Auth dell'endpoint `aura serve` (slice CLI-server separato).
@@ -1102,7 +1211,7 @@ La sezione `## Persistence` di [CLAUDE.md](CLAUDE.md) va aggiornata per riflette
 Tre store, ciascuno con la sua semantic responsibility:
 
 - **Neo4j via `mcp-neo4j-cypher` MCP server (stdio)** — **unica fonte di knowledge E di vector embeddings**. Semantic memory, entity graph, conversational memory, derivati relazionali, vector index nativo HNSW Lucene. Accessed solo via MCP, no native Go adapter. La precedente architettura wiki-markdown filesystem + `[[wiki-links]]` è stata deprecata 2026-05-27 dopo test (spike in `D:/tmp/aura-neo4j-spike-2026-05-27/`).
-- **Embedder dedicato**: `embeddinggemma` via sidecar `aura-llama-embed` (porto 8081, OpenAI-compat). 768d nativo → MRL truncation client-side a 256d (subclass `OpenAIEmbeddings`). Embeddings scritti su nodi `:Chunk` in Neo4j, NON in store separato.
+- **Embedder dedicato**: `embeddinggemma` via sidecar `aura-llama-embed` (porto 8081, OpenAI-compat). **768d nativo**, scritti direttamente su nodi `:Chunk.embedding` in Neo4j. Vector index HNSW configurato a 768 dim (no MRL truncation, no client-side resize). NON in store separato.
 - **PostgreSQL 17 via `sqlc` + `jackc/pgx/v5`** — application state. Scheduler tasks, paused states, audit log, api tokens, identity. Schema `aura`. Migrations versionate in `internal/db/migrations/`. Industrial-grade, type-safe queries generate da SQL files.
 - **Filesystem** — solo artefatti operativi: SKILL.md tree (`~/.aura/skills/active/`), tool result sidecar files (`$AURA_RUN_DIR/<session>/<tool-call-id>.result`). **Mai knowledge.**
 
