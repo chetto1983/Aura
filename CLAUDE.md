@@ -6,6 +6,8 @@ Project guidance for Claude Code (claude.ai/code) on this codebase.
 
 Tabula-rasa rewrite, 2026-05-27. Prior implementation at git tag `pre-rewrite-2026-05-27`.
 
+> **Resume work**: vedi [NEXT.md](NEXT.md) per stato sessione precedente + 3-step ripresa workflow + decisione open per ripartire. PRD + codebase map + GSD tooling + 46 skills sono tutti committati su `tabula-rasa`. Zero codice scritto: PRD-first principle. Next action raccomandata: `/gsd-discuss-phase 0.5` (Postgres infra).
+
 ## PRD-first principle (absolute)
 
 **Senza PRD completo non si scrive una riga di codice.** Il PRD ([prd.md](prd.md)) è la **truth-source**, non un suggerimento. Ogni decisione architettonica, ogni file target, ogni env var, ogni open question è documentata lì. Deviazioni dal PRD richiedono PRD-amendment commit prima dell'implementazione (vedi §Slice Q&A discipline → Q&A revision protocol nel PRD).
