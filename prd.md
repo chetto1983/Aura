@@ -410,7 +410,7 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 **Open questions.**
 1. **~~Persistent vs in-memory `PausedState`~~ → CHIUSA: persistent in Postgres da subito.**
    Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema minimo: `(token uuid pk, loop_id uuid, question text, options jsonb, kind text, resume_context jsonb, tool_call_id text, created_at timestamptz, resumed_at timestamptz null)`.
-   Migration: `0002_paused_states.up.sql` aggiunta in Slice 1.5.
+   Migration: `0003_paused_states.up.sql` aggiunta in Slice 1.5.
    File targets aggiunti: `internal/db/queries/paused_states.sql` (~50 LOC, 4 query: insert/get-by-token/mark-resumed/cleanup-stale) + generated code via sqlc. `internal/agent/pending.go` (~70 LOC) usa il client sqlc invece di in-memory map. Test integrazione sotto build tag `db_integration`.
 2. **Quante pending ask simultanee per Loop?** Una sola (semantic "loop è bloccato finché non riprende") o multiple (parent + N child swarm chiedono cose diverse)? → *Default proposto: una sola per Loop. Loop pausato non chiama LLM, non dispatcha tool. Swarm Slice 3 avrà PER-CHILD un Loop indipendente, quindi child possono pausare individualmente — il parent vede `child paused` come stato e decide se aspettare o cancellare.*
 3. **Timeout sulla pausa?** Se l'utente non risponde mai, il loop rimane Paused indefinitamente? → *Default proposto: no timeout di default. Caller (CLI/Telegram) decide se forzare un timeout esterno. Aggiungere timeout dentro Loop = stato terzo (timed_out) che complica la state machine senza beneficio reale.*
@@ -433,6 +433,104 @@ Prerequisite for: skill governance C (Slice 7), scheduler high-cost
 confirmation (Slice 6), swarm spawn-depth approval (Slice 3).
 
 LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 1.7 — Identity minimal (single-user `local` + capability grants)
+
+**Goal.** Single source of truth per identity e capability del single-user
+`'local'`, e base estendibile per multi-user futuro. Tabelle `aura.identities`
++ `aura.capability_grants` con seed via migration + CLI `aura identity
+{list|get|grant|revoke}`. Sblocca Slice 7c per usare `actor_id` FK su
+`aura.skill_audit` invece di un campo `text` opaco, eliminando l'ambiguità
+"chi ha approvato la skill X" nei log.
+
+Separata da Slice 1.5 per disciplina: 1.5 introduce `paused_states` (state
+machine del Loop), 1.7 introduce identity (autorizzazione). Concern diverse,
+commit separati. Far landing 1.5 prima permette di validare il pattern
+`PausedState + sqlc` su un caso semplice prima di estenderlo a
+identity + capability.
+
+**Smoke.**
+```bash
+./aura db migrate                              # applica 0004_identity
+./aura identity list                           # mostra 1 riga: local (system)
+./aura identity get local                      # capabilities=['*']
+./aura identity grant local memory.user.write  # idempotente (gia' coperto da '*')
+./aura identity revoke local memory.user.write # esplicitamente toglie (no-op se non era grant esplicito)
+./aura identity grant local memory.user.write
+./aura identity revoke local '*'               # ERRORE: wildcard system-managed
+```
+
+**Acceptance.**
+- [ ] Migration `0004_identity.up.sql`:
+  ```sql
+  CREATE TABLE aura.identities (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    name text NOT NULL UNIQUE,
+    kind text NOT NULL CHECK (kind IN ('system','user','channel','service')),
+    created_at timestamptz NOT NULL DEFAULT now()
+  );
+  CREATE TABLE aura.capability_grants (
+    identity_id uuid REFERENCES aura.identities(id) ON DELETE CASCADE,
+    capability text NOT NULL,
+    granted_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (identity_id, capability)
+  );
+  INSERT INTO aura.identities (id, name, kind)
+    VALUES ('00000000-0000-0000-0000-000000000001', 'local', 'system')
+    ON CONFLICT (name) DO NOTHING;
+  INSERT INTO aura.capability_grants (identity_id, capability)
+    VALUES ('00000000-0000-0000-0000-000000000001', '*')
+    ON CONFLICT DO NOTHING;
+  ```
+  Seed UUID fisso `0...001` permette FK stabili da `skill_audit.actor_id` senza lookup runtime.
+- [ ] `HasCapability(ctx, identityID uuid, cap string) (bool, error)` legge da `aura.capability_grants`. Wildcard `'*'` = grant universale (match qualsiasi capability). Capability name regex `^[a-z][a-z0-9._-]{0,63}$` (no `'*'` per grant non-wildcard).
+- [ ] CLI `aura identity {list | get <name> | grant <name> <cap> | revoke <name> <cap>}`:
+  - `list`: tabella `name | kind | created_at | capabilities_count`.
+  - `get <name>`: dettaglio + lista capability.
+  - `grant <name> <cap>`: insert idempotente; fallisce con messaggio chiaro se `cap='*'` (wildcard è system-managed, modifica solo via migration).
+  - `revoke <name> <cap>`: delete idempotente (no-op se grant non esiste); fallisce con messaggio chiaro se `cap='*'`.
+- [ ] Test integrazione build tag `db_integration`: round-trip su identities, grant/revoke idempotenti, wildcard rejection, FK cascade su delete identity.
+
+**File targets** (~280 LOC src + ~100 test):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/identity/types.go` | ~40 | `Identity{ID uuid, Name, Kind, CreatedAt}`, `Kind` enum. |
+| `internal/identity/store.go` | ~80 | Thin adapter su sqlc `Queries`. Helper `LocalIdentityID() uuid` (constante UUID seed). |
+| `internal/identity/capability.go` | ~60 | `HasCapability(ctx, id, cap) (bool, error)` con wildcard logic + regex validation per `cap`. |
+| `internal/db/queries/identities.sql` | ~60 | **6 query sqlc**: `GetIdentityByName`, `ListIdentities`, `InsertIdentity`, `GrantCapability`, `RevokeCapability`, `ListCapabilities`. |
+| `internal/db/migrations/0004_identity.up.sql` | ~50 | Tabelle + seed + check constraint. |
+| `internal/db/migrations/0004_identity.down.sql` | ~5 | `DROP TABLE aura.capability_grants; DROP TABLE aura.identities;` |
+| `internal/identity/store_test.go` | ~100 | Build tag `db_integration`. |
+| `cmd/aura/main.go` (diff) | ~+60 | Sub-command `aura identity {list|get|grant|revoke}`. |
+
+**Deferred-tool partition.** Niente tool LLM-facing in questo slice. Identity è infra interna; l'agente non grant/revoke direttamente capability (sarebbe self-elevation rischiosa). Se in futuro serve, atterra come tool `identity_grant` deferred + `ask_user` approval gate, fuori scope qui.
+
+**Open questions.**
+1. **Wildcard `'*'` interpretazione: match-all vs trigger-default?** → *Decisione*: match-all. `HasCapability(id, 'memory.user.write')` ritorna true se l'identity ha grant `'*'` OPPURE grant `'memory.user.write'`. Niente pattern-glob (`'memory.*'`) per ora — semplifica logica, atterrerà con multi-user.
+2. **Seed UUID fisso vs random?** → *Decisione*: fisso `'00000000-0000-0000-0000-000000000001'`. Permette FK stabili da `skill_audit.actor_id` senza runtime lookup. Idempotenza su `ON CONFLICT DO NOTHING`.
+3. **Audit delle modifiche a `capability_grants`?** → *Decisione*: NO in questo slice. Per single-user `'local'` con wildcard, audit è premature. Atterrerà con multi-user (tabella `aura.identity_audit` separata).
+
+**Commit message template.**
+```
+slice 1.7: identity minimal (single-user 'local' + capability grants)
+
+Two tables aura.identities + aura.capability_grants with seeded 'local'
+identity (fixed UUID 0...001) and '*' wildcard grant. HasCapability(id,
+cap) lookup via sqlc with wildcard match-all semantics. CLI aura identity
+{list|get|grant|revoke}, wildcard '*' rejected on grant/revoke (system-
+managed). Unblocks Slice 7c skill_audit.actor_id FK.
+
+Smoke: aura db migrate -> aura identity list shows 'local' with '*'.
+aura identity grant local foo + revoke local foo idempotent.
+
+Prerequisite for: Slice 7c skill_audit FK, future multi-user/auth slices.
+
+LOC: +XXX src / +YY test / +ZZ migration.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
@@ -825,7 +923,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 > **Atomicity note (audit round 1 P0):** ~1300 LOC distribuiti = troppo per 1 commit.
 > Si committa in **2 sub-slice ordinati**:
-> - **6a**: types + migration `0003_scheduler` + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
+> - **6a**: types + migration `0005_scheduler` + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
 > - **6b**: handler `agent_job` (con swarm Coordinator integration) + tool `task_schedule`/`task_run_now` + `ActionRouter` helper (primo uso multi-action, vedi §Pattern condiviso). ~600 LOC.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
@@ -869,8 +967,8 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 | `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
 | `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
 | `internal/db/queries/agent_job_runs.sql` | ~60 | **3 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`. Tabella separata per audit dettagliato dei job. |
-| `internal/db/migrations/0003_scheduler.up.sql` | ~60 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, status, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, exit_status, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'`. |
-| `internal/db/migrations/0003_scheduler.down.sql` | ~5 | DROP TABLEs. |
+| `internal/db/migrations/0005_scheduler.up.sql` | ~60 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, status, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, exit_status, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'`. |
+| `internal/db/migrations/0005_scheduler.down.sql` | ~5 | DROP TABLEs. |
 | `internal/cron/handlers/handler.go` | ~40 | Interface `Handler{ Kind() TaskKind; Handle(ctx, t *Task) error }` + registry. |
 | `internal/cron/handlers/reminder.go` | ~80 | Notifier-driven (CLI/Telegram). |
 | `internal/cron/handlers/agent_job.go` | ~150 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. |
@@ -882,7 +980,7 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 slice 6a: scheduler infrastructure — types + sqlc + tick loop + reminder handler
 
 PostgreSQL-backed scheduler base. Types (Task/TaskKind/ScheduleKind/Status),
-migration 0003_scheduler (tables scheduler_tasks + agent_job_runs, indices,
+migration 0005_scheduler (tables scheduler_tasks + agent_job_runs, indices,
 FOR UPDATE SKIP LOCKED on DueTasks), 11 sqlc queries split across
 scheduler_tasks.sql + agent_job_runs.sql. Tick loop DIY 30s with missed-run
 recovery. Notifier interface + stdout impl. Handlers registry + reminder
@@ -923,7 +1021,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 1. **~~CONFLITTO con CLAUDE.md "Persistence: Neo4j via MCP"~~ → CHIUSA: Postgres come terzo pilastro.**
    Slice 0.5 ha introdotto Postgres come application-state store. Architettura persistence finale:
    - **Neo4j (via MCP)** = knowledge graph + vector index. **Unica fonte di knowledge E di vector embeddings.** Semantic memory, entity graph, conversational memory, derivati, embedding HNSW nativo (Apache Lucene). Embedder: **`embeddinggemma` via sidecar `aura-llama-embed`** (porto 8081, OpenAI-compat), 768d nativo, **MRL truncation client-side a 256d** (subclass `OpenAIEmbeddings` ~30 LOC, memory `feedback_embedding_backend_stays_mistral.md` LOCKED). NIENTE wiki markdown filesystem (deprecato 2026-05-27). NIENTE Qdrant: lo spike `D:/tmp/aura-neo4j-spike-2026-05-27/` Phase 6b ha misurato 22-30ms p95 + IT recall@5 5/5 su Neo4j vector index nativo con corpus reale Aura → Qdrant decommissionabile senza regressione.
-   - **Postgres (via sqlc)** = application state. Scheduler tasks, paused states, audit log, api tokens, identity.
+   - **Postgres (via sqlc)** = application state. Scheduler tasks, paused states, audit log, identity, capability grants.
    - **Filesystem** = solo artefatti operativi (SKILL.md tree, tool result sidecar files). NESSUN knowledge in filesystem.
    Distinzione semantica chiara: **knowledge + vectors → solo Neo4j; infrastructure → Postgres; operational artifacts → filesystem**. CLAUDE.md aggiornata in coda al PRD.
 2. **Notifier interface.** Slice 6 ha bisogno di un sink per le reminder. Tabula-rasa "non ha Telegram". → *Default proposto: interface `Notifier{ Notify(ctx, recipient, msg) error }` con default impl stdout (printf nel terminale `aura serve`). Telegram impl arriverà in una slice plugin separata.*
@@ -958,7 +1056,7 @@ Alimentati da:
 - Catalog search via skills.sh — fetch HTTP del catalog HTML + regex parser ([catalog.go](git:pre-rewrite-2026-05-27/internal/skills/catalog.go) 1:1).
 - Install via **`npx skills add <source> --agent claude-code -y`** ([admin.go](git:pre-rewrite-2026-05-27/internal/skills/admin.go) 1:1) — funzionava bene pre-rewrite, riusabile. **Migliorie di sicurezza**: `sanitizedEnv()` whitelist più stretta (drop `NPM_CONFIG_USERCONFIG` che può puntare a file arbitrari), post-install `ParseSkill()` re-validation prima di `Invalidate()` (catch corrupted downloads), 90s timeout esplicito.
 - Writer in `~/.aura/skills/pending/<name>/` per le mutation in attesa di approval; al `Approva` move atomico in `~/.aura/skills/active/`.
-- Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor, action, name, content_hash, source, approval_id, paused_state_token fk}`. Migrate `0004_skill_audit.up.sql` aggiunta in Slice 7. Query via sqlc `internal/db/queries/skill_audit.sql` (~40 LOC, 3 query: `RecordSkillMutation`, `ListAuditSince`, `GetByName`).
+- Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor_id (fk aura.identities), action, name, content_hash, source, approval_id, paused_state_token fk}`. Migrate `0006_skill_audit.up.sql` aggiunta in Slice 7. Query via sqlc `internal/db/queries/skill_audit.sql` (~40 LOC, 3 query: `RecordSkillMutation`, `ListAuditSince`, `GetByName`).
 
 **SKILL.md format** (preservato dal pre-rewrite, lievemente irrigidito):
 ```
@@ -1013,7 +1111,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
   - **90s timeout preservato dal pre-rewrite** (`skillInstallToolTimeout` già esistente, non nuovo).
   - sanitizedEnv whitelist stretta: drop `NPM_CONFIG_USERCONFIG` (può puntare a file arbitrari), drop `NPM_CONFIG_GLOBALCONFIG`, drop `NPM_CONFIG_PREFIX`.
   - **Acceptance**: install di una skill malevola con `postinstall: "rm -rf ~"` → `--ignore-scripts` la blocca, test asserisce.
-- [ ] **Capability boundary open-by-default per single-user**: nel tabula-rasa Aura locale, `identity = "local"` ha tutte le capability — l'agente può self-extend liberamente (gate-ato comunque da `ask_user`). La STRUTTURA capability resta in codice per future multi-user.
+- [ ] **Capability boundary open-by-default per single-user**: nel tabula-rasa Aura locale, l'identity seed `'local'` (Slice 1.7) ha capability grant `'*'` (wildcard) — l'agente può self-extend liberamente (gate-ato comunque da `ask_user`). Capability lookup via `aura.capability_grants` (sqlc), non hard-coded: struttura estendibile per future multi-user senza toccare il codice.
 - [ ] `skill.info(name)` ritorna corpo intero come `ToolResult` — usa il pattern Slice 1 (preview + sidecar file se >2 KiB).
 - [ ] **Prompt injection guard espanso (audit round 1 P0)**: body size cap 32 KiB a write time. Refuse write se body contiene una di queste sequence (literal blocklist):
   - OpenAI ChatML: `<|im_start|>`, `<|im_end|>`, `<|endoftext|>`
@@ -1039,7 +1137,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 | `internal/skills/installer.go` | ~140 | `npx skills add <source> --agent claude-code -y` con sanitizedEnv stretto, 90s timeout. Post-install ParseSkill re-validation prima di Invalidate. Path-traversal guard. |
 | `internal/skills/audit.go` | ~70 | Thin adapter su sqlc `Queries.RecordSkillMutation` + `Queries.ListAuditSince`. Niente più file IO. |
 | `internal/db/queries/skill_audit.sql` | ~40 | 3 query sqlc. |
-| `internal/db/migrations/0004_skill_audit.up.sql` | ~50 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor, action, name, content_hash, source, approval_id, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL). Indice su `ts DESC`. **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). |
+| `internal/db/migrations/0006_skill_audit.up.sql` | ~50 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action, name, content_hash, source, approval_id, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL). Indice su `ts DESC`. **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). |
 | `internal/agent/tools/skill_list.go` | ~50 | Non-deferred (output piccolo). |
 | `internal/agent/tools/skill_catalog.go` | ~60 | Deferred. Query skills.sh, ritorna candidati. |
 | `internal/agent/tools/skill_info.go` | ~60 | Deferred. Ritorna body via `ToolResult` (preview+persist se grande). |
@@ -1099,7 +1197,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 slice 7c: skills mutation (create/update/delete) + audit + governance C
 
 Writer (atomic pending→active move via os.Rename), deleter (path-traversal
-guarded), audit log on Postgres via sqlc (migration 0004_skill_audit with
+guarded), audit log on Postgres via sqlc (migration 0006_skill_audit with
 CREATE TABLE aura.skill_audit + index ts DESC + trigger raise_audit_immutable
 BEFORE UPDATE/DELETE → RAISE EXCEPTION). Tools skill.create/update/delete
 all returning ErrAwaitingUserInput(kind=approval) — Loop pauses, user
@@ -1172,12 +1270,13 @@ Se un `ActionHandler` ritorna `ErrAwaitingUserInput` (sentinel di Slice 1.5), `D
 
 ---
 
-## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Sandbox → Swarm → KV → Web → Scheduler → Skills)
+## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Sandbox → Swarm → KV → Web → Scheduler → Skills)
 
 0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
 0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
 1. **Slice 1 (LLM client + ToolResult)** è prerequisito di tutto il resto: senza un client reale e senza il pattern preview+persist sui tool result, le altre slice non hanno modo di osservare comportamento end-to-end senza avvelenare il context window.
 2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
+2.bis. **Slice 1.7 (Identity minimal)** chiude la wave persistence applicativa. Atterra dopo 1.5 (paused_states) e prima di Slice 2 perché: (a) sblocca Slice 7c per usare `actor_id` FK su `aura.skill_audit` invece di campo `text` opaco; (b) i suoi consumer (Slice 7c) sono lontani, ma il pattern "seed identity + capability_grants" deve essere stabile prima che skill_audit lo referenzi. Indipendente da Slice 2/3/4: può essere committata in parallelo a Slice 2 se preferito.
 3. **Slice 2 (Sandbox)** prima dello Swarm: lo swarm spawn-a agenti che — nella realtà — useranno `execute`. Avere `execute` funzionante prima rende lo smoke dello swarm meno artificiale.
 4. **Slice 3 (Swarm)** prima della KV: la KV cache discipline deve coprire ANCHE i prompt dei figli swarm-spawn. Costruire il PromptBuilder dopo aver visto come il parent passa goal/tools al child evita un secondo refactor.
 5. **Slice 4 (KV)** chiude le 4 fondamentali: ora la superficie del prompt (system + manifest + tool descriptions + parent/child contracts + ask_user) è stabile. Il builder ottimizza un bersaglio fermo.
@@ -1212,7 +1311,7 @@ Tre store, ciascuno con la sua semantic responsibility:
 
 - **Neo4j via `mcp-neo4j-cypher` MCP server (stdio)** — **unica fonte di knowledge E di vector embeddings**. Semantic memory, entity graph, conversational memory, derivati relazionali, vector index nativo HNSW Lucene. Accessed solo via MCP, no native Go adapter. La precedente architettura wiki-markdown filesystem + `[[wiki-links]]` è stata deprecata 2026-05-27 dopo test (spike in `D:/tmp/aura-neo4j-spike-2026-05-27/`).
 - **Embedder dedicato**: `embeddinggemma` via sidecar `aura-llama-embed` (porto 8081, OpenAI-compat). **768d nativo**, scritti direttamente su nodi `:Chunk.embedding` in Neo4j. Vector index HNSW configurato a 768 dim (no MRL truncation, no client-side resize). NON in store separato.
-- **PostgreSQL 17 via `sqlc` + `jackc/pgx/v5`** — application state. Scheduler tasks, paused states, audit log, api tokens, identity. Schema `aura`. Migrations versionate in `internal/db/migrations/`. Industrial-grade, type-safe queries generate da SQL files.
+- **PostgreSQL 17 via `sqlc` + `jackc/pgx/v5`** — application state. Scheduler tasks, paused states, audit log, identity, capability grants. Schema `aura`. Migrations versionate in `internal/db/migrations/`. Industrial-grade, type-safe queries generate da SQL files.
 - **Filesystem** — solo artefatti operativi: SKILL.md tree (`~/.aura/skills/active/`), tool result sidecar files (`$AURA_RUN_DIR/<session>/<tool-call-id>.result`). **Mai knowledge.**
 
 Distinzioni semantiche **non negoziabili**: knowledge + vectors → solo Neo4j (via MCP); application state → solo Postgres (via sqlc); operational artifacts → filesystem. Le slice future che hanno bisogno di persistenza scelgono lo store giusto in base a cosa stanno salvando, non a "che dep era già lì". Nessuna knowledge in Postgres; nessun task scheduler in Neo4j; nessun markdown wiki da nessuna parte; nessun vector index dedicato fuori da Neo4j (Qdrant deprecato 2026-05-27 dopo validazione spike Phase 6b).
