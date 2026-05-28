@@ -281,7 +281,7 @@ in <8 step.
 
 *Parte 2 — ToolResult pattern:*
 - [ ] `Tool.Execute(ctx, args)` ritorna `(ToolResult, error)`. `ToolResult{Preview string, FullPath string, Bytes int, Truncated bool}`.
-- [ ] `Loop.runTool` persiste `ToolResult` su disco se `Bytes > AURA_TOOL_PREVIEW_CAP` (default 2048). Path = `$AURA_RUN_DIR/<session-id>/<tool-call-id>.result`. La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
+- [ ] `Loop.runTool` persiste `ToolResult` su disco se `Bytes > AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048). Path = `$AURA_RUN_DIR/<session-id>/<tool-call-id>.result`. La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
 - [ ] Se `Bytes <= cap`, nessuna scrittura su disco; `RoleTool.Content = Preview` puro (no overhead).
 - [ ] Builtin tool `read_tool_output` (non-deferred) accetta `{tool_call_id, offset?, limit?}` e ritorna la fetta richiesta dal sidecar file. Default `limit=200 righe`. Hard-fail su tool_call_id ignoto.
 - [ ] `text_response` continua a essere il terminale del loop: il suo `ToolResult.Preview` è la risposta finale all'utente (anche se `Bytes > cap`, la versione full sta sul disco; il preview va all'utente per default — il chiamante CLI/Telegram decide se servire la versione full).
@@ -294,7 +294,7 @@ in <8 step.
 | Path | LOC stimato | Note |
 |---|---|---|
 | `internal/llm/openai_compat.go` | ~280 | `Client` impl, SSE parser, tool-call accumulator (delta-merge per `index`). Connect 10s, global timeout configurabile, no idle, no retry (vedi Open Questions). **Inietta `Config.LLM.Headers` su ogni request** (OpenRouter HTTP-Referer + X-Title). |
-| `internal/config/config.go` | ~110 | `Config{LLM: LLMConfig{Provider, Model, BaseURL, APIKey, TotalTimeoutSec, Headers map[string]string}, RunDir, ToolPreviewCap}`. **Load order**: built-in default → `.env` (via `github.com/joho/godotenv`, key `OPENROUTER_API_KEY` → `LLM.APIKey`) → file JSON (`$AURA_CONFIG_DIR/llm.json`, default `~/.aura/llm.json`) → env vars (`AURA_LLM_*`, `AURA_RUN_DIR`, `AURA_TOOL_PREVIEW_CAP`). **Default built-in**: Provider=`openrouter`, Model=`deepseek/deepseek-v4-flash:exacto`, BaseURL=`https://openrouter.ai/api/v1`, Headers=`{"HTTP-Referer": "https://github.com/chetto1983/aura", "X-Title": "Aura"}`. `Save()` per write-back dal dashboard futuro. |
+| `internal/config/config.go` | ~110 | `Config{LLM: LLMConfig{Provider, Model, BaseURL, APIKey, TotalTimeoutSec, Headers map[string]string}, RunDir, ToolPreviewCap}`. **Load order**: built-in default → `.env` (via `github.com/joho/godotenv`, key `OPENROUTER_API_KEY` → `LLM.APIKey`) → file JSON (`$AURA_CONFIG_DIR/llm.json`, default `~/.aura/llm.json`) → env vars (`AURA_LLM_*`, `AURA_RUN_DIR`, `AURA_CONTEXT_PREVIEW_CAP_BYTES`). **Default built-in**: Provider=`openrouter`, Model=`deepseek/deepseek-v4-flash:exacto`, BaseURL=`https://openrouter.ai/api/v1`, Headers=`{"HTTP-Referer": "https://github.com/chetto1983/aura", "X-Title": "Aura"}`. `Save()` per write-back dal dashboard futuro. |
 | `internal/config/config_test.go` | ~50 | Load-order test: default < file < env. Round-trip JSON. |
 | `internal/llm/openai_compat_test.go` | ~120 | Fixture SSE in `testdata/` per: text-only stream, tool-call multi-chunk (delta-merge), error 429 (no retry → bubble up), premature close (ctx-cancel), Anthropic ephemeral cache_control passthrough. Niente prompt da asilo nido (vedi §Test discipline). |
 
@@ -639,7 +639,7 @@ al `aura chat resume <id>`.
   - `aura chat rename <id> "<title>"`: manual title set.
 - [ ] **Auto-title LLM-generated**: dopo `seq >= 3` (1 user + 1 assistant turn completo + magari tool turns), trigger 1 LLM call separata via `openai_compat.Client.Generate(prompt="Generate a 4-6 word title for this chat", messages=first_3_turns)` → `UPDATE conversations SET title=:t WHERE id=:id AND title IS NULL`. Idempotente (no-op se title già settato). Atomica (transazione separata, errore non blocca chat). Best-effort: se LLM call fallisce, title resta NULL (CLI mostra `(untitled <created_at>)`).
 - [ ] Per-turn write atomico: il Loop scrive `conversation_turns` per ogni messaggio (system al primo turn, user/assistant/tool ad ogni step). Transazione singola per turn, `BEGIN; INSERT turn; UPDATE conversations SET last_active_at=now(), total_*_tokens+=..., total_cost_usd+=...; COMMIT;`.
-- [ ] Content cap: se `content` > 64 KiB, scrivi a `$AURA_RUN_DIR/conversations/<conv_id>/<seq>.content` (sidecar) e set `content_sidecar_path`, `content=NULL`. Riusa pattern Slice 1 ToolResult preview+persist.
+- [ ] Content cap: se `len(content) > AURA_CONVERSATION_TURN_CAP_BYTES` (default `65536` = 64 KiB), scrivi a `$AURA_RUN_DIR/conversations/<conv_id>/<seq>.content` (sidecar) e set `content_sidecar_path`, `content=NULL`. Riusa pattern Slice 1 ToolResult preview+persist (Caps & Limits sez.).
 - [ ] Resume contract: `aura chat resume <id>` ricostruisce `Loop.Messages` da `SELECT * FROM conversation_turns WHERE conversation_id=:id ORDER BY seq`. Per ogni row: build `Message{Role, Content, ToolCallID, ToolCalls}`. Loop in-memory ricreato byte-identico (modulo `tool_calls` jsonb deserialization).
 - [ ] **Loop.Stop() auto-resolve (chiude Area #7 Caso 2)**: quando un Loop termina cleanly (status `completed` / `errored` / `interrupted_by_user`) chiama:
   ```sql
@@ -826,7 +826,7 @@ MAX_SPAWN_DEPTH=3 enforced, payload summarizer al return-to-parent.
 - [ ] `coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` → errore `spawn depth exceeded` (test).
 - [ ] `coordinator.Talk(from, "broadcast", msg)` recapita a tutti tranne `from`. `Talk(from, "<id>", msg)` recapita solo a `<id>`. Test asserisce delivery.
 - [ ] `coordinator.Join(id)` blocca finché il figlio non chiama `text_response` (terminale dell'agent loop) e ne restituisce il payload (summarizzato se >2 KiB).
-- [ ] Payload summarizer triggera sopra `AURA_SWARM_REPORT_CAP_BYTES` (default 2048): tronca + appende `... [N bytes truncated, M total]`.
+- [ ] Payload summarizer triggera sopra `AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048): tronca + appende `... [N bytes truncated, M total]`.
 - [ ] Tier → model mapping in `tier.go`: `chat→<AURA_SWARM_MODEL_CHAT>`, `reasoning→<...REASONING>`, `worker→<...WORKER>`. Default tutti = env `AURA_LLM_MODEL`.
 - [ ] Goroutine leak test (`go test -race`): dopo `Join` di tutti i figli, `runtime.NumGoroutine()` torna al baseline ±2.
 - [ ] Bus capacity bounded (channel buf 64); over-flow blocca producer con timeout **60s** + errore `bus backpressure` (audit round 2 P0: 5s era sotto la latency LLM first-token tipica 10-30s → producer in mezzo a `runTool` riceveva errore spurio durante LLM warmup).
@@ -1053,7 +1053,7 @@ Entrambi alimentati da un container SearXNG self-hosted (estensione del
   - Override solo via env: `AURA_WEB_FETCH_ALLOW_LOOPBACK=1` (dev), `AURA_WEB_FETCH_ALLOW_HOSTS=host1,host2` (ops bypass mirato).
 - [ ] **SSRF defense: DNS-rebinding protection** — `safeDialContext` risolve host → valida IP contro blocklist → dial esplicito su IP risolto, NON re-lookup tra resolve e dial.
 - [ ] **SSRF defense: HTTP redirect interception (audit round 1 P0)** — `http.Client.CheckRedirect` custom che ri-valida ogni Location header contro la blocklist. Test: `web_fetch("https://safe.example.com/r")` che ridirige a `http://169.254.169.254/` → rifiutato al redirect step, NON al primo dial.
-- [ ] Response cap: `maxWebToolChars = 24000` (preservato dal pre-rewrite, era già un valore tarato bene).
+- [ ] Response cap: `AURA_WEB_RESPONSE_CAP_BYTES = 24000` (era hardcoded `maxWebToolChars`, promosso a env in Area #8 closed 2026-05-28). Hard limit anti-DOS della response HTTP prima di qualunque preview/sidecar logic. Distinto da `AURA_CONTEXT_PREVIEW_CAP_BYTES` (preview/sidecar threshold) per semantica.
 - [ ] Timeout HTTP: SearXNG 20s, direct_fetch 30s, entrambi config-overrideable.
 - [ ] Readability filter: pagine con <250 char di main content → ritornano `{warning: "low-content page"}` invece di noise.
 - [ ] **Riusa il `ToolResult` pattern di Slice 1**: web_fetch su page grande (>2 KiB) → preview + sidecar file; modello può fare `read_tool_output(id, offset, limit)` per estrarre fette.
@@ -1335,7 +1335,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
   - **Acceptance**: install di una skill malevola con `postinstall: "rm -rf ~"` → `--ignore-scripts` la blocca, test asserisce.
 - [ ] **Capability boundary open-by-default per single-user**: nel tabula-rasa Aura locale, l'identity seed `'local'` (Slice 1.7) ha capability grant `'*'` (wildcard) — l'agente può self-extend liberamente (gate-ato comunque da `ask_user`). Capability lookup via `aura.capability_grants` (sqlc), non hard-coded: struttura estendibile per future multi-user senza toccare il codice.
 - [ ] `skill.info(name)` ritorna corpo intero come `ToolResult` — usa il pattern Slice 1 (preview + sidecar file se >2 KiB).
-- [ ] **Prompt injection guard espanso (audit round 1 P0)**: body size cap 32 KiB a write time. Refuse write se body contiene una di queste sequence (literal blocklist):
+- [ ] **Prompt injection guard espanso (audit round 1 P0)**: body size cap `AURA_SKILL_BODY_CAP_BYTES` (default `32768` = 32 KiB, era hardcoded, promosso a env in Area #8 closed 2026-05-28) a write time. Refuse write se body contiene una di queste sequence (literal blocklist):
   - OpenAI ChatML: `<|im_start|>`, `<|im_end|>`, `<|endoftext|>`
   - Anthropic: `</system>`, `</human>`, `</assistant>`, `\n\nHuman:`, `\n\nAssistant:`
   - Llama / Mistral: `[INST]`, `[/INST]`, `<<SYS>>`, `<</SYS>>`
@@ -1351,7 +1351,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 | `internal/skills/loader/parser.go` | ~80 | YAML frontmatter + body split + validation. |
 | `internal/skills/loader/cache.go` | ~80 | sync.RWMutex + TTL 1s, `Invalidate()`. |
 | `internal/skills/loader/loader.go` | ~60 | Coordina i tre: List/Get → cache → parser → filesystem. |
-| `internal/skills/validator.go` | ~120 | Single source of truth: regex name, size cap 32 KiB, parse roundtrip, dup-name, prompt injection literal-check (blocklist espansa, vedi Acceptance). Usato sia da writer che da install. |
+| `internal/skills/validator.go` | ~120 | Single source of truth: regex name, size cap `AURA_SKILL_BODY_CAP_BYTES` (default 32 KiB), parse roundtrip, dup-name, prompt injection literal-check (blocklist espansa, vedi Acceptance). Usato sia da writer che da install. |
 | `internal/skills/paths.go` | ~40 | `SanitizeName(name) (string, error)` — **single chokepoint path-traversal guard** (audit round 1 P0). Riusato da writer/deleter/installer. Test static-analysis: ogni file-touch site DEVE chiamarlo prima di `filepath.Join`. |
 | `internal/skills/writer.go` | ~120 | Atomic write a `pending/<name>/` + move pending→active. Path-traversal guard. Usato da create/update. |
 | `internal/skills/deleter.go` | ~70 | FS remove da active + `Invalidate()`. Path-traversal guard. |
@@ -1645,6 +1645,71 @@ autonomia all'agente: il sistema computa il tier deterministicamente, l'agente
 può ancora decidere di non gate-are, MA la mutation è parcheggiata in pending
 finché non c'è approval (agente via ask_user OPPURE utente via CLI). Audit log
 + Notifier IMMEDIATE rendono il gate skip visibile.
+
+---
+
+## Caps & Limits (Area #8 closed 2026-05-28)
+
+Aura ha 4 cap distinti con **semantica diversa** — non un valore unico polimorfico. Tutti env-overrideable, default tarati per chat tipica.
+
+```text
+AURA_CONTEXT_PREVIEW_CAP_BYTES = 2048
+  Quanto di un output può entrare nel prompt context senza spillover.
+  Usato da:
+    - Slice 1 ToolResult: se Bytes > cap → sidecar in $AURA_RUN_DIR/<session>/<tool_call>.result,
+      RoleTool.Content = preview + footer "Use read_tool_output(...) to fetch ranges."
+    - Slice 3 swarm payload summarizer: se child report > cap → tronca + footer.
+  Pattern: preview-in-context + sidecar-on-disk + offset/limit read.
+  Stile Claude Code (error-with-pointer): l'agente vede il footer e sa COME
+  recuperare il resto via read_tool_output, non perde dati.
+
+AURA_WEB_RESPONSE_CAP_BYTES = 24000
+  Hard cap della response di web_fetch/web_search (Slice 5).
+  Anti-DOS: protegge dal caricare HTML di N MiB in memoria.
+  Diversa semantica: è il limite della response HTTP, NON il preview-to-context.
+  Pagine grandi vengono troncate alla sorgente (con "...[truncated]"), poi il
+  ToolResult applica AURA_CONTEXT_PREVIEW_CAP_BYTES per spillover sidecar.
+
+AURA_SKILL_BODY_CAP_BYTES = 32768  (32 KiB)
+  Write-time refuse cap per il body di una SKILL.md (Slice 7).
+  Semantica diversa: validation/rejection a write, non preview.
+  Limite di prudenza: una skill > 32 KiB è quasi certamente garbage o
+  prompt-injection payload nascosto in un blob lungo.
+
+AURA_CONVERSATION_TURN_CAP_BYTES = 65536  (64 KiB)
+  Soglia oltre cui content di una conversation_turns row va in sidecar
+  invece di occupare la cella Postgres (Slice 1.8).
+  Semantica: storage layout decision, non preview.
+  Riusa pattern Slice 1 (sidecar file in $AURA_RUN_DIR/conversations/<id>/<seq>.content).
+```
+
+### Pattern condiviso "Large Output Handling"
+
+Tutti i cap che implicano "preview + sidecar" (`AURA_CONTEXT_PREVIEW_CAP_BYTES`, `AURA_CONVERSATION_TURN_CAP_BYTES`) seguono lo stesso shape:
+
+```
+1. content_size := len(payload)
+2. SE content_size <= cap:
+     persisti payload as-is (in context, o in DB cell)
+3. SE content_size > cap:
+     write_full := persisti su disk a path predicibile
+     write_preview := first <cap> bytes + footer "[truncated: N bytes total. <how to retrieve>]"
+     persisti preview, NON il payload completo
+4. read_back: chiamante usa offset/limit (read_tool_output, sidecar_read,
+   Postgres fetch + sidecar load) per recuperare ranges arbitrari.
+```
+
+Pattern derivato da Claude Code per `Bash` (output truncation > 30k char) e per `WebFetch` (full content salvato in `tool-results/<tool>-<timestamp>.txt`). Vedi anche
+[Anthropic Claude Code docs](https://docs.claude.com/en/docs/claude-code/overview) per il tool result truncation pattern.
+
+### Naming convention
+
+Tutti i cap usano lo schema `AURA_<DOMAIN>_<UNIT>` dove `<UNIT>` è esplicito:
+- `_BYTES` per cap di dimensione (i 4 sopra)
+- `_SEC` per timeout (es. `AURA_LLM_TOTAL_TIMEOUT_SEC`, `AURA_SANDBOX_TIMEOUT_SEC`)
+- `_MS` per latenze fine-grained (raramente usato)
+
+Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREVIEW_CAP_BYTES`). Niente cap hardcoded nei file `.go` per valori >100 — devono essere env-overrideable.
 
 ---
 
