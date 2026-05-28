@@ -367,10 +367,10 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 
 **Pattern preservato dal pre-rewrite** ([internal/agent/tools/registry/ask_user.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/ask_user.go), 164 LOC verified):
 - Tool standard (non-deferred), sempre visibile nel manifest.
-- Args: `{question: string, options?: [2-4 string | {label, value}], kind: clarification|approval|choice}`.
-- `Execute` non ritorna `ToolResult`: ritorna un **sentinel error** `ErrAwaitingUserInput{Question, Options, Kind, ToolCallID}` (campi 1:1 dal pre-rewrite). Il loop lo intercetta e NON appende un fake tool result.
+- Args: `{question: string, options?: [2-4 string | {label, value}], kind: clarification|approval|choice, priority?: int 0-100 default 0}`. `priority` è un order_hint: l'agente può marcare le sue ask più urgenti per renderle prime nella coda UI.
+- `Execute` non ritorna `ToolResult`: ritorna un **sentinel error** `ErrAwaitingUserInput{Question, Options, Kind, Priority, ToolCallID}` (campi 1:1 dal pre-rewrite + `Priority`). Il loop lo intercetta e NON appende un fake tool result.
 - **Campo NUOVO aggiunto in Slice 1.5**: `ResumeContext map[string]any` — payload serializzato che il loop persiste in Postgres insieme alla PausedState. Permette ai resume handler (es. skill.create approve → activate; skill.delete approve → cascade) di rieseguire l'azione differita senza ricostruire lo stato. Pre-rewrite non aveva questo perché le proposal skill passavano per la dashboard API, non per ask_user.
-- **Esclusivo**: se l'LLM batcha `ask_user` con altri tool call nello stesso turn, `ask_user` vince — gli altri call vengono droppati e re-emessi al resume.
+- **Esclusivo intra-turn**: se l'LLM batcha `ask_user` con altri tool call nello stesso turn, `ask_user` vince — gli altri call vengono droppati e re-emessi al resume. Più `ask_user` nello stesso turn dello STESSO loop sono coalesce-ati: tutti diventano `PausedState` separate ma il Loop rimane pausato finché tutte sono resumed.
 - 3 `kind` semanticamente distinti:
   - `clarification` — info mancante per procedere
   - `approval` — azione rischiosa, conferma esplicita richiesta
@@ -386,45 +386,59 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 ```
 
 **Acceptance.**
-- [ ] `Loop.Turn` ritorna `(reply string, paused *PausedState, err error)` invece di `(string, error)`. Se `paused != nil`, il caller (CLI/Telegram/dashboard) sa di dover renderizzare la question e raccogliere la risposta.
-- [ ] `Loop.Resume(ctx, token, answer string) (reply string, paused *PausedState, err error)` riprende un Loop in stato Paused. Token è un opaco ID (UUID v4) ritornato in `PausedState`.
-- [ ] Loop NON appende `RoleTool` message per `ask_user` finché non c'è risposta. Quando arriva: appende `RoleTool{ToolCallID: <original>, Content: answer}` e continua.
-- [ ] Esclusività: test con LLM stub che ritorna 3 tool call nello stesso turn (ask_user + read_tool_output + text_response) → solo ask_user dispatch-ato, gli altri due loggati come dropped, Loop pausato.
-- [ ] Args validation: `question` non vuota (trimmed), `options` 0 o 2-4 (mai 1 — sarebbe una pseudo-scelta), labels distinct.
-- [ ] CLI rendering: `aura chat` e `aura shell` mostrano la question + options numerate, leggono `stdin` per la risposta, gestiscono input invalido (re-prompt 3 volte poi abort con errore).
-- [ ] Test resume cycle: Loop.Turn paused → Loop.Resume con answer string → modello vede `RoleTool` con answer → procede.
+- [ ] `Loop.Turn` ritorna `(reply string, pending []*PausedState, err error)` invece di `(string, error)`. Se `len(pending) > 0`, il caller (CLI/Telegram/dashboard) sa di dover renderizzare TUTTE le pending (ordinate per `priority DESC, created_at ASC`) e raccogliere le risposte.
+- [ ] `Loop.Resume(ctx, token, answer string) (reply string, pending []*PausedState, err error)` resume singolo per token. Se restano altre pending dopo il resume, ritorna `pending != empty` e il Loop resta pausato. Token è un opaco ID (UUID v4).
+- [ ] `Loop.ResumeBatch(ctx, answers map[uuid.UUID]string) (reply string, pending []*PausedState, err error)` resume di N pending in un colpo. Le pending non incluse nel batch restano attive. Comodo per CLI batch input e per dashboard multi-resolve.
+- [ ] Loop NON appende `RoleTool` message per un `ask_user` finché la sua PausedState non è resumed. Quando arriva: appende `RoleTool{ToolCallID: <original>, Content: answer}`. Quando TUTTE le pending sono resumed, il Loop riprende un giro LLM con tutti i RoleTool messages accumulati.
+- [ ] Esclusività intra-turn: test con LLM stub che ritorna 3 tool call nello stesso turn (ask_user + read_tool_output + text_response) → solo ask_user dispatch-ato, gli altri due loggati come dropped, Loop pausato con 1 PausedState.
+- [ ] Multi-pause coalesce: test con LLM stub che ritorna 2 ask_user + 1 read_tool_output nello stesso turn → 2 PausedState create (priorità default 0, ordering FIFO da created_at), read_tool_output droppato, Loop pausato con `len(pending)==2`.
+- [ ] Args validation: `question` non vuota (trimmed), `options` 0 o 2-4 (mai 1), labels distinct, `priority` intero `0-100` (default 0, cap 100).
+- [ ] CLI rendering: `aura chat` e `aura shell` mostrano **tutte** le pending numerate `[1]..[N]` con prefisso `<kind>[priority]`, leggono `stdin` per la risposta. Sintassi: `1: <answer>` singolo, `all: <answer>` stessa risposta a tutte, `batch: 1=<a>, 2=<b>, 3=<c>` batch multi. Re-prompt 3 volte poi abort.
+- [ ] Test resume cycle singolo: Loop.Turn → 1 pending → Loop.Resume(token, answer) → modello vede `RoleTool` con answer → procede.
+- [ ] Test resume cycle multi: Loop.Turn → 3 pending → Loop.ResumeBatch(3 answers) → modello vede 3 `RoleTool` messages → procede.
 
 **File targets** (~330 LOC src + ~120 test):
 | Path | LOC | Note |
 |---|---|---|
-| `internal/agent/tools/ask_user.go` | ~170 | Tool def + `ErrAwaitingUserInput` sentinel + args parser (options string/object polimorfico). Quasi 1:1 dal pre-rewrite. |
-| `internal/agent/pending.go` | ~70 | `PausedState{Token, Question, Options, Kind, ResumeContext, ToolCallID}`. Helper per costruzione/serializzazione. |
-| `internal/askuser/cli.go` | ~80 | Renderer CLI: stampa question + options numerate, legge stdin con re-prompt. Implementa interfaccia `Responder` minima. |
-| `internal/agent/loop.go` (diff) | ~+80 / -10 | `runTool` intercetta `ErrAwaitingUserInput` → costruisce `PausedState` → `Turn` ritorna `(empty, paused, nil)`. Nuovo metodo `Resume`. Esclusività check su batch tool calls. |
-| `internal/agent/tools/ask_user_test.go` | ~70 | Args validation, options polimorfismo, sentinel error format. |
-| `internal/agent/loop_pause_test.go` | ~120 | Pause + Resume cycle, esclusività, invalid token rejection, stub Responder. |
-| `cmd/aura/main.go` (diff) | ~+50 | `aura chat` gestisce loop pause: stampa via `askuser.CLI`, raccoglie risposta, chiama `Resume`. |
+| `internal/agent/tools/ask_user.go` | ~180 | Tool def + `ErrAwaitingUserInput` sentinel (con `Priority int`) + args parser (options string/object polimorfico + priority int cap 0-100). Quasi 1:1 dal pre-rewrite + priority field. |
+| `internal/agent/pending.go` | ~90 | `PausedState{Token, LoopID, Question, Options, Kind, Priority, ResumeContext, ToolCallID, ProxiedFromChildID *uuid.UUID, ProxiedToolCallID *string, CreatedAt, ResumedAt *time.Time}`. Helper per costruzione, serializzazione, sorting (priority DESC, created_at ASC). |
+| `internal/askuser/cli.go` | ~120 | Renderer CLI: stampa lista numerata `[N] <kind>[prio]: <question> + options`, legge stdin con sintassi `1: ...` / `all: ...` / `batch: 1=a, 2=b`. Re-prompt invalido. Implementa interfaccia `Responder`. |
+| `internal/agent/loop.go` (diff) | ~+110 / -10 | `runTool` intercetta `ErrAwaitingUserInput` → costruisce `PausedState` con priority + (se proxied) `ProxiedFromChildID` → upsert in `aura.paused_states` → `Turn` accumula pending → se ≥1 pending, ritorna `(empty, pending, nil)`. Nuovi metodi `Resume(token, answer)` e `ResumeBatch(answers)`. Esclusività check su batch tool calls (multi-ask_user coalesce, altri tool drop). |
+| `internal/db/queries/paused_states.sql` | ~70 | **6 query sqlc**: `InsertPausedState`, `GetByToken`, `ListPendingForLoop` (ordered), `MarkResumed`, `MarkResumedBatch`, `CleanupResumedOlderThan` (per future retention). |
+| `internal/agent/tools/ask_user_test.go` | ~80 | Args validation, options polimorfismo, priority cap, sentinel error format. |
+| `internal/agent/loop_pause_test.go` | ~160 | Pause+Resume singolo, ResumeBatch, multi-pause coalesce, priority sort, esclusività intra-turn, invalid token rejection, stub Responder. |
+| `cmd/aura/main.go` (diff) | ~+60 | `aura chat` gestisce loop pause: stampa via `askuser.CLI`, raccoglie risposta (singolo/all/batch), chiama `Resume` o `ResumeBatch`. |
 
-**Deferred-tool partition.** `ask_user` → **non-deferred** (sempre visibile, è infrastruttura del loop). Description corta (1 riga). Schema piccolo ma con `oneOf` per options polimorfico — comunque sotto i 2 KiB.
+**Deferred-tool partition.** `ask_user` → **non-deferred** (sempre visibile, è infrastruttura del loop). Description corta (1 riga). Schema piccolo ma con `oneOf` per options polimorfico + `priority` int 0-100 — comunque sotto i 2 KiB.
 
 **Open questions.**
 1. **~~Persistent vs in-memory `PausedState`~~ → CHIUSA: persistent in Postgres da subito.**
-   Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema minimo: `(token uuid pk, loop_id uuid, question text, options jsonb, kind text, resume_context jsonb, tool_call_id text, created_at timestamptz, resumed_at timestamptz null)`.
+   Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema: `(token uuid pk, loop_id uuid NOT NULL, question text NOT NULL, options jsonb, kind text NOT NULL CHECK (kind IN ('clarification','approval','choice')), priority int NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 100), resume_context jsonb, tool_call_id text, proxied_from_child_id uuid NULL, proxied_tool_call_id text NULL, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz NULL)`. Indice su `(loop_id, resumed_at) WHERE resumed_at IS NULL` per scan O(log n) della lista pending attive. `priority` + `proxied_*` aggiunti da Area #4 closed 2026-05-28 (multi-pause FIFO).
    Migration: `0003_paused_states.up.sql` aggiunta in Slice 1.5.
    File targets aggiunti: `internal/db/queries/paused_states.sql` (~50 LOC, 4 query: insert/get-by-token/mark-resumed/cleanup-stale) + generated code via sqlc. `internal/agent/pending.go` (~70 LOC) usa il client sqlc invece di in-memory map. Test integrazione sotto build tag `db_integration`.
-2. **Quante pending ask simultanee per Loop?** Una sola (semantic "loop è bloccato finché non riprende") o multiple (parent + N child swarm chiedono cose diverse)? → *Default proposto: una sola per Loop. Loop pausato non chiama LLM, non dispatcha tool. Swarm Slice 3 avrà PER-CHILD un Loop indipendente, quindi child possono pausare individualmente — il parent vede `child paused` come stato e decide se aspettare o cancellare.*
+2. **~~Quante pending ask simultanee per Loop?~~ → CHIUSA: lista FIFO piena (Area #4 closed 2026-05-28).**
+   Pattern industriale verificato: LangGraph 1.2 (maggio 2026) supporta multi-interrupt mappato per ID; Temporal supporta signal-based concurrent. Singleton (pattern OpenAI Agents SDK handoff) serializza la concurrency e contraddice Slice 3 `SpawnInteractive`.
+   *Decisione:* multiple `PausedState` per `loop_id` sono permessi. Loop pausato finché esiste ≥1 `PausedState` con `resumed_at IS NULL`. Ordering: `priority DESC, created_at ASC` (priority è hint dall'agente, default 0, cap 100). Un child `SpawnInteractive` che emette `ask_user` accoda una nuova `PausedState` al parent con `proxied_from_child_id` + `proxied_tool_call_id`. N child possono pausare simultaneamente. Reject di una pending proxied: il parent risponde "reject" → `Coordinator.ResumeChild(child_id, "reject")` → il child decide se procedere o cancellarsi (no forced kill).
+   Riferimenti: [LangGraph interrupts docs](https://docs.langchain.com/oss/python/langgraph/interrupts), [Temporal signals](https://docs.temporal.io/workflow-execution).
 3. **Timeout sulla pausa?** Se l'utente non risponde mai, il loop rimane Paused indefinitamente? → *Default proposto: no timeout di default. Caller (CLI/Telegram) decide se forzare un timeout esterno. Aggiungere timeout dentro Loop = stato terzo (timed_out) che complica la state machine senza beneficio reale.*
 
 **Commit message template.**
 ```
-slice 1.5: ask_user primitive — loop pause + resume
+slice 1.5: ask_user primitive — loop pause + resume + multi-pause FIFO
 
 Implements the ask_user tool (non-deferred) and the corresponding
 Loop pause/resume state machine. Tool returns ErrAwaitingUserInput
-sentinel; Loop.Turn returns (reply, *PausedState, error) and gains
-Resume(token, answer). Exclusive batching: if the LLM emits ask_user
-alongside other tool calls in one turn, ask_user wins and the others
-drop. CLI responder renders numbered options + reads stdin.
+sentinel (+ Priority field, order_hint from agent). Loop.Turn returns
+(reply, pending []*PausedState, error) — lista FIFO ordered by
+(priority DESC, created_at ASC). Loop gains Resume(token, answer) for
+singles and ResumeBatch(answers map) for multi-resolve. Exclusive batching
+intra-turn: if the LLM emits ask_user alongside other tool calls in one
+turn, ask_user wins and the others drop. Multiple ask_user in same turn
+coalesce as separate PausedState rows (multi-pause pattern LangGraph
+verified). PausedState persisted in aura.paused_states with new columns:
+priority int, proxied_from_child_id uuid nullable, proxied_tool_call_id
+text nullable. CLI responder renders ALL pending numbered + supports
+'1: ans' single / 'all: ans' apply-all / 'batch: 1=a, 2=b' multi syntax.
 
 Smoke: aura chat triggers ask_user with kind=approval, user answers,
 loop resumes and produces final reply.
@@ -671,9 +685,10 @@ MAX_SPAWN_DEPTH=3 enforced, payload summarizer al return-to-parent.
 5. **Child pause propagation (audit round 1 P0).** Cosa succede se un child Loop ritorna `*PausedState` (perché ha invocato `ask_user`)?
    → *Decisione*: ogni child Loop spawn-ato dal Coordinator ha un proprio `Responder` configurabile.
    - **Default per swarm spawn**: `RejectingResponder` — il child non può pausare. Se chiama `ask_user`, il Loop riceve immediatamente `answer="<auto-rejected: child loop has no human responder>"`. Il child decide se procedere comunque o terminare.
-   - **Override esplicito**: il parent può chiamare `Coordinator.SpawnInteractive(req, parentResponder)` per propagare la pausa al parent. Il parent vede la `ask_user` del child come se l'avesse emessa lui (dentro il PausedState aggiunge `proxied_from: <child_id>`).
-   - **`Coordinator.ResumeChild(childID, answer)`**: nuovo metodo. Necessario quando `SpawnInteractive` è usato e il parent ha raccolto la risposta dell'utente. **Children map mutex-protected (audit round 2 P0):** ResumeChild + Spawn + Join condividono `sync.RWMutex` su `children map[string]*childState` — race su due child paused simultaneously rifiutata strutturalmente. Test `go test -race` + assertion N=10 child interactive paralleli paused+resumed senza data race.
+   - **Override esplicito**: il parent può chiamare `Coordinator.SpawnInteractive(req, parentResponder)` per propagare la pausa al parent. Il parent ottiene una nuova `PausedState` con `proxied_from_child_id=<child_id>` + `proxied_tool_call_id=<child_original_tool_call>`. La pending si **accoda** alle eventuali altre pending del parent (lista FIFO con priority, Area #4 closed 2026-05-28): N child con `SpawnInteractive` in pausa simultanea sono permessi e contribuiscono ciascuno una PausedState alla lista del parent.
+   - **`Coordinator.ResumeChild(childID, answer)`**: nuovo metodo. Necessario quando `SpawnInteractive` è usato e il parent ha raccolto la risposta dell'utente. Quando il parent risolve una pending proxied (anche con `answer="reject"`), il sistema chiama `Coordinator.ResumeChild(child_id, answer)` — il child Loop riceve la risposta via il proprio `Responder`, decide se procedere o cancellarsi (**no forced cancellation**: rispetta autonomy del child, audit logged). **Children map mutex-protected (audit round 2 P0):** ResumeChild + Spawn + Join condividono `sync.RWMutex` su `children map[string]*childState` — race su N child paused simultaneously rifiutata strutturalmente. Test `go test -race` + assertion N=10 child interactive paralleli paused+resumed senza data race.
    - **Acceptance addizionale**: test che assert deadlock guard — child spawned senza `Interactive` flag + child chiama ask_user → child termina con `answer=auto-reject` entro 100ms, parent `Join` non blocca.
+   - **Acceptance multi-pause**: test con 3 child `SpawnInteractive` che pausano simultaneamente → parent ottiene `len(pending)==3` in `Loop.Turn`, sortate per priority+FIFO; `Loop.ResumeBatch` con 3 risposte (incluso 1 `reject`) → 3 `Coordinator.ResumeChild` invocazioni, ciascun child decide procedere/cancellare, parent riprende solo dopo che tutti i RoleTool sono accodati.
 
 **Commit message template.**
 ```
