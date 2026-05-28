@@ -281,12 +281,22 @@ in <8 step.
 
 *Parte 2 — ToolResult pattern:*
 - [ ] `Tool.Execute(ctx, args)` ritorna `(ToolResult, error)`. `ToolResult{Preview string, FullPath string, Bytes int, Truncated bool}`.
-- [ ] `Loop.runTool` persiste `ToolResult` su disco se `Bytes > AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048). Path = `$AURA_RUN_DIR/<session-id>/<tool-call-id>.result`. La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
+- [ ] `Loop.runTool` persiste `ToolResult` su disco se `Bytes > AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048). Path = `$AURA_RUN_DIR/conversations/<conv_id>/<tool-call-id>.result` (post-Slice 1.8 layout; vedi sezione "AURA_RUN_DIR layout" sotto). La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
 - [ ] Se `Bytes <= cap`, nessuna scrittura su disco; `RoleTool.Content = Preview` puro (no overhead).
 - [ ] Builtin tool `read_tool_output` (non-deferred) accetta `{tool_call_id, offset?, limit?}` e ritorna la fetta richiesta dal sidecar file. Default `limit=200 righe`. Hard-fail su tool_call_id ignoto.
 - [ ] `text_response` continua a essere il terminale del loop: il suo `ToolResult.Preview` è la risposta finale all'utente (anche se `Bytes > cap`, la versione full sta sul disco; il preview va all'utente per default — il chiamante CLI/Telegram decide se servire la versione full).
 - [ ] Test: un tool fake che ritorna 100 KB di output → il `Messages` history dopo `Loop.Turn` ha SOLO il preview (≤2 KiB + footer), file su disco ha 100 KB completi, `read_tool_output` recupera fetta arbitraria.
-- [ ] Sidecar dir auto-creata. Default `$AURA_RUN_DIR = ~/.aura/run/`. Session dir = `<unix-timestamp>-<random4>`. Lifetime = conversazione (cleanup è concern di una slice futura, NON gestito qui — solo `WARN: $AURA_RUN_DIR/ growing` se >100 MB).
+- [ ] **`$AURA_RUN_DIR` layout (Area #9 closed 2026-05-28)**. Default `$AURA_RUN_DIR = ~/.aura/run/`. Layout:
+  ```
+  $AURA_RUN_DIR/
+    conversations/
+      <conv_id>/                  # = aura.conversations.id (FK durable via Slice 1.8)
+        <tool_call_id>.result     # ToolResult sidecar (Slice 1)
+        <seq>.content             # conversation_turns content spillover (Slice 1.8)
+    tmp/
+      <unix-ts>-<rand4>.<ext>     # oneoff scratch (aura exec senza conversation, etc.)
+  ```
+  Lifetime: `conversations/<conv_id>/` vive quanto la conversation row in DB; `tmp/` ha TTL 24h, sweep al boot. Cleanup cascade `os.RemoveAll(conversations/<id>/)` al `aura chat delete <id>`. Boot orphan scan: dir senza conversation row corrispondente → log + rm. WARN se `$AURA_RUN_DIR` > `AURA_RUN_DIR_WARN_THRESHOLD_BYTES` (default `1073741824` = 1 GiB) al boot, no auto-delete.
 
 **File targets** (totale ≤ 520 LOC src + ~200 test).
 
@@ -306,7 +316,7 @@ in <8 step.
 | `internal/agent/tools/text_response.go` (diff) | ~+15 / -10 | Ritorna `ToolResult{Preview: text}` invece di stringa. |
 | `internal/agent/tools/search.go` (diff) | ~+15 / -10 | Stesso adattamento. |
 | `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default 200 lines}`. Risolve path da `Loop`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. |
-| `internal/agent/loop.go` (diff) | ~+45 / -10 | `runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path), mantiene `resultPaths map[string]string` per `read_tool_output` lookup. Crea session dir alla `NewLoop`. |
+| `internal/agent/loop.go` (diff) | ~+45 / -10 | `runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path), mantiene `resultPaths map[string]string` per `read_tool_output` lookup. Crea `$AURA_RUN_DIR/conversations/<conv_id>/` lazy alla prima persist (post Slice 1.8: `conv_id` viene da Loop). |
 | `internal/agent/tools/result_test.go` | ~80 | Test: 100 KB fake tool → `Messages` ha SOLO preview+footer, file ha 100 KB; `read_tool_output(id, offset=50000, limit=100)` recupera fetta. |
 | `cmd/aura/main.go` (diff) | ~+50 / -15 | Sostituisce `stubClient` con `llm.NewOpenAICompat(cfg.LLM)`. Registra `read_tool_output` nel registry. Sub-comando `aura config` legge/scrive il file. |
 
@@ -649,6 +659,11 @@ al `aura chat resume <id>`.
    WHERE conversation_id = :id AND resumed_at IS NULL;
   ```
   Audit chiaro: nessuna pending orphan in DB visibile.
+- [ ] **`$AURA_RUN_DIR` cleanup cascade (Area #9 closed 2026-05-28)**:
+  - `aura chat delete <id>`: dopo COMMIT del DELETE in Postgres, esegui `os.RemoveAll($AURA_RUN_DIR/conversations/<id>/)`. Se rm fallisce → log warning + emit Notifier "FS orphan: <path> requires manual cleanup". Boot orphan scan recupera al prossimo restart.
+  - **Boot orphan scan**: al boot Aura legge tutti i `conv_id` da `aura.conversations`, lista `$AURA_RUN_DIR/conversations/*`, ogni dir senza riga corrispondente → `os.RemoveAll` + log. Idempotente, sweep singolo al boot, non cron.
+  - **`tmp/` TTL 24h**: al boot, `$AURA_RUN_DIR/tmp/*` con `mtime < now() - 24h` → rm. Coerente con pattern Slice 7c skill pending TTL.
+  - **WARN size**: al boot, se `du -sb $AURA_RUN_DIR > AURA_RUN_DIR_WARN_THRESHOLD_BYTES` (default 1 GiB) → log warning + Notifier "$AURA_RUN_DIR is N MiB, consider `aura chat archive` or `aura chat delete` to free space". No auto-purge (audit-only).
 - [ ] **CLI `aura paused-states {list|purge}` (chiude Area #7 escape hatch)**:
   - `aura paused-states list [--conversation-id X] [--include-resumed]`: tabella delle pending.
   - `aura paused-states purge --before <ISO-date> --confirm`: hard delete delle resumed più vecchie di N (skill_audit FK è `ON DELETE SET NULL`, audit log resta consistente).
@@ -664,6 +679,7 @@ al `aura chat resume <id>`.
 | `internal/conversations/store.go` | ~120 | Thin adapter su sqlc. `Create`, `Get`, `List`, `Archive`, `Delete`, `AppendTurn`, `LoadHistory`, `UpdateStats`, `SetTitle`. Atomic transaction per AppendTurn (insert + UPDATE conversations.last_active_at + token aggregates). |
 | `internal/conversations/title.go` | ~60 | Auto-title LLM call. `GenerateTitle(ctx, client, firstTurns) (string, error)`. Best-effort, no panic. Background goroutine kick-off da `AppendTurn` quando `seq` cross 3. |
 | `internal/conversations/sidecar.go` | ~40 | Helper per content > 64 KiB: write `$AURA_RUN_DIR/conversations/<conv_id>/<seq>.content`, read back on resume. |
+| `internal/conversations/cleanup.go` | ~70 | Boot orphan scan (`$AURA_RUN_DIR/conversations/*` vs DB `conv_id` set), `tmp/` TTL 24h sweep, `du -sb` size check + WARN. Cascade rm su `DeleteConversation(id)`. |
 | `internal/db/queries/conversations.sql` | ~80 | **8 query sqlc**: `CreateConversation`, `GetConversation`, `ListConversations`, `AppendTurn`, `LoadTurns`, `UpdateLastActive`, `UpdateStatus`, `UpdateStats`. |
 | `internal/db/queries/conversation_turns.sql` | ~30 | **2 query sqlc**: `InsertTurn`, `ListTurnsForConv` (ORDER BY seq). |
 | `internal/db/migrations/0005_conversations.up.sql` | ~70 | Tabelle + index + rename paused_states.loop_id → conversation_id + aggiunta resumed_answer col. |
@@ -1681,6 +1697,14 @@ AURA_CONVERSATION_TURN_CAP_BYTES = 65536  (64 KiB)
   invece di occupare la cella Postgres (Slice 1.8).
   Semantica: storage layout decision, non preview.
   Riusa pattern Slice 1 (sidecar file in $AURA_RUN_DIR/conversations/<id>/<seq>.content).
+
+AURA_RUN_DIR_WARN_THRESHOLD_BYTES = 1073741824  (1 GiB)
+  Soglia di WARN-only sulla dimensione totale di $AURA_RUN_DIR (Slice 1.8
+  cleanup, Area #9).
+  Semantica: alert, NON auto-purge. Al boot, du -sb $AURA_RUN_DIR > soglia
+  → log + Notifier "consider aura chat archive/delete to free space".
+  Filesystem cleanup avviene cascade su aura chat delete o boot orphan
+  scan (dir senza conv_id in DB), non per età.
 ```
 
 ### Pattern condiviso "Large Output Handling"
