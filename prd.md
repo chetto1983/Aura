@@ -3044,6 +3044,455 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 11 — Memory ingestion + taxonomy (Documents + Entities + Graph + Agent journal)
+
+> **Pattern rubato** dai 4 sistemi memory production-grade 2026 (mix-and-match): **mem0** (48k stars, 91% latency / 90% token saving): 2-fase pipeline extract+conflict, hybrid retrieval. **Letta MemGPT**: 3-tier storage Core/Recall/Archival. **Microsoft GraphRAG**: entity+relationship extraction LLM + Leiden community clustering hierarchical. **Cognee**: Cognify pipeline 6-stage + Memify post-processing (prune/strengthen/derive). Sources: [mem0 state 2026](https://mem0.ai/blog/state-of-ai-agent-memory-2026), [Letta docs](https://docs.letta.com/concepts/letta/), [GraphRAG guide 2026](https://blog.premai.io/graphrag-implementation-guide-entity-extraction-query-routing-when-it-beats-vector-rag-2026/), [Cognee architecture](https://www.cognee.ai/blog/fundamentals/how-cognee-builds-ai-memory).
+
+> **Atomicity 5 sub-slice ~2100 LOC totali**, ognuno atomic + smoke green.
+
+**Goal.** Aura **conosce** (ingest + index) e **ricorda** (retrieve) — sia il world dell'utente (documenti, entità, conversazioni passate) sia il proprio (agent journal, insight cross-conv). Pipeline: file/URL/conversation → markitdown (Slice 9c) → chunker → embedder (Slice 0.7 sidecar) → Neo4j HNSW + entity LLM extraction → Leiden community detection + summarization → retrieval hybrid + LLM re-ranker.
+
+### Pre-requisiti
+
+- Slice 0.7 Neo4j infra + HNSW + `aura-llama-embed` sidecar
+- Slice 0.9 Agent runtime abstraction (per background goroutine come `BackgroundAgent`)
+- Slice 1.7 identity (scope, oggi single-user `local`)
+- Slice 1.8 conversation persistence (rollup `:UserConversation`)
+- Slice 5 web tools (per `ingest.url` riusa `web_fetch`)
+- Slice 7e snippet (mirror in Neo4j `:UserSnippet` per semantic search)
+- Slice 9c markitdown sidecar (document → markdown universal parser)
+- Slice 10 Agent.md (Core tier già implementato)
+
+### Decisioni cumulate (chiusura 2026-05-28)
+
+| Aspetto | Decisione |
+|---|---|
+| Memory taxonomy cognitiva | **3 tipi**: Episodic (past events temporal) + Semantic (entities/relations) + Procedural (behaviors/scripts). Industry consensus 2026. |
+| Storage tier (Letta-style) | **3 tier**: Core (in-context, Agent.md + top-K AgentInsight, ~2K token) + Recall (Postgres `conversation_turns` searchable) + Archival (Neo4j full graph, retrieved via tool). |
+| Entity extraction | **Auto-extract sempre on** durante ingestion. LLM tier=reasoning batch ogni 10 chunk. Type taxonomy fissa Person/Org/Location/Concept/Event/Topic (mem0-style). Cost ~$0.05/documento medio. |
+| Retrieval | **Hybrid BM25 + HNSW + graph 1-hop expansion + LLM re-ranker tier=worker**. Re-rank top-20 → top-5. Max quality, +LLM cost ~$0.001/query. |
+| Privacy isolation | **No isolation single-user mode**: tutti node sotto identity `'local'` default. Future multi-user richiede refactor (accettato pre-merge). |
+| Community detection | **Leiden hierarchical** (GraphRAG pattern) via Neo4j GDS plugin. Periodic background ogni 24h. Community summary embedded per global query retrieval. |
+| Memify post-processing | **Cognee pattern**: prune stale entity (no mention 90gg) + strengthen RELATED_TO weight su co-occurrence + derive facts da multi-hop traversal. Background 24h. |
+| Agent memory | **Episodic + Insight + injection**: `:AgentEpisode` post-conv summary + `:AgentInsight` cross-conv pattern. Pre-conv inject top-K Insight relevant nel system prompt (cache-friendly, dopo Agent.md). |
+
+### Architettura (5 sub-slice)
+
+**11a — Schema Neo4j + taxonomy doc (~200 LOC, niente impl)**:
+```cypher
+// === USER MEMORY (single-user 'local' scope) ===
+CREATE CONSTRAINT document_id FOR (d:Document) REQUIRE d.id IS UNIQUE;
+CREATE CONSTRAINT chunk_id    FOR (c:Chunk)    REQUIRE c.id IS UNIQUE;
+CREATE CONSTRAINT entity_id   FOR (e:Entity)   REQUIRE e.id IS UNIQUE;
+CREATE CONSTRAINT community_id FOR (cm:Community) REQUIRE cm.id IS UNIQUE;
+
+CREATE VECTOR INDEX chunk_embedding FOR (c:Chunk) ON (c.embedding)
+  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+CREATE VECTOR INDEX entity_embedding FOR (e:Entity) ON (e.embedding)
+  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+CREATE VECTOR INDEX community_embedding FOR (cm:Community) ON (cm.embedding)
+  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+CREATE VECTOR INDEX agent_insight_embedding FOR (i:AgentInsight) ON (i.embedding)
+  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+
+CREATE FULLTEXT INDEX chunk_text FOR (c:Chunk) ON EACH [c.text];
+CREATE FULLTEXT INDEX entity_name FOR (e:Entity) ON EACH [e.name];
+
+CREATE INDEX entity_type   FOR (e:Entity)        ON (e.type);
+CREATE INDEX entity_mentions FOR (e:Entity)      ON (e.mention_count);
+CREATE INDEX episode_agent FOR (ep:AgentEpisode) ON (ep.agent_kind);
+CREATE INDEX insight_agent FOR (i:AgentInsight)  ON (i.agent_kind);
+
+// Labels + properties:
+// :Document   {id, source_uri, title, ingested_at, chunk_count, status, content_hash}
+// :Chunk      {id, document_id, sequence, text, embedding[768], tokens_count}
+// :Entity     {id, name, type, embedding[768], mention_count, first_seen_at, last_mentioned_at}
+//             type ∈ {Person, Organization, Location, Concept, Event, Topic}
+// :Community  {id, level (0=leaf, N=root), summary, embedding[768], member_count}
+// :UserConversation {id, started_at, topic_summary, embedding[768], turn_count}
+// :AgentEpisode  {id, agent_kind, started_at, ended_at, goal, outcome, summary}
+//                agent_kind ∈ {chat, reasoning, worker}
+// :AgentInsight  {id, agent_kind, pattern, confidence, observation_count, embedding[768], created_at}
+
+// Relations:
+// (:Document)-[:HAS_CHUNK {seq}]->(:Chunk)
+// (:Chunk)-[:MENTIONS {confidence}]->(:Entity)
+// (:Entity)-[:RELATED_TO {weight, type}]->(:Entity)
+// (:Entity)-[:IN_COMMUNITY]->(:Community)
+// (:Community)-[:CONTAINS]->(:Community)   // hierarchical
+// (:UserConversation)-[:DISCUSSED]->(:Entity)
+// (:UserConversation)-[:CITES]->(:Chunk)
+// (:UserConversation)-[:USED_SNIPPET]->(:UserSnippet)   // Slice 7e mirror
+// (:AgentEpisode)-[:LEARNED {strength}]->(:AgentInsight)
+// (:AgentEpisode)-[:HANDLED]->(:UserConversation)
+```
+
+**11b — Cognify ingestion pipeline (~500 LOC)**:
+```
+internal/memory/ingest/
+  pipeline.go       # ~150  Cognify 6-stage orchestration:
+                    #         1. Classify document (markdown vs code vs structured)
+                    #         2. Check permissions (identity_id ownership)
+                    #         3. Chunk (recursive semantic)
+                    #         4. Extract entities (LLM batch)
+                    #         5. Generate summary (LLM tier=worker)
+                    #         6. Embed + commit to Neo4j
+                    #       Idempotent: content_hash check pre-ingest
+  chunker.go        # ~120  Recursive semantic chunker:
+                    #         AURA_MEMORY_CHUNK_SIZE_TOKENS=512 (default)
+                    #         AURA_MEMORY_CHUNK_OVERLAP_TOKENS=64
+                    #         Respect markdown headers (split su ##/###)
+                    #         Fallback sliding window se no struttura
+  embedder.go       # ~100  Batch embedding via aura-llama-embed (Slice 0.7):
+                    #         batch_size 32 per network roundtrip
+                    #         retry exp backoff
+                    #         token estimation pre-call per budget
+  entity_extractor.go  # ~180  Mem0 2-fase pattern:
+                       #         Fase 1: LLM extract candidates per batch 10 chunks
+                       #                 (tier=reasoning, JSON output schema)
+                       #         Fase 2: conflict detect via fuzzy match name+type
+                       #                + embedding similarity > 0.92
+                       #                MERGE existing OR CREATE new
+                       #       Type taxonomy hardcoded: Person/Org/Location/Concept/Event/Topic
+  audit.go          # ~50   sqlc adapter aura.ingest_audit (parity skill_audit)
+internal/agent/tools/ingest.go   # ~90   Tool LLM-facing Deferred=true:
+                                   # ingest.file(path), ingest.url(url),
+                                   # ingest.text(content, source_name)
+                                   # ActionRouter dispatch
+internal/channels/telegram/handlers.go (diff)  # ~+50
+                                   # Document attach → auto ingest.file trigger
+                                   # (riusa Slice 9c markitdown pipeline)
+internal/db/queries/ingest_audit.sql           # ~40   4 query sqlc
+internal/db/migrations/0011_ingest_audit.up.sql  # ~50
+```
+
+**11c — Community detection + summarization (~250 LOC)**:
+```
+internal/memory/graph/
+  community.go      # ~200  Leiden detection via Neo4j GDS:
+                    #         CALL gds.leiden.stream('entity-graph',
+                    #              {relationshipWeightProperty: 'weight'})
+                    #       Hierarchical: level 0=leaf entities, level N=root
+                    #       Background goroutine AURA_MEMORY_COMMUNITY_INTERVAL_HR=24
+                    #       Per community: LLM tier=worker summarize members
+                    #       Persist :Community node + relations
+  community_test.go # ~80   Smoke test: 50 entity → cluster atteso N>=3 communities
+```
+
+**11d — Retrieval hybrid + LLM re-ranker (~400 LOC)**:
+```
+internal/memory/retrieval/
+  search.go         # ~150  Hybrid retrieval:
+                    #         BM25: CALL db.index.fulltext.queryNodes('chunk_text', $q)
+                    #              YIELD node, score AS bm25_score
+                    #         HNSW: CALL db.index.vector.queryNodes('chunk_embedding', 20, $q_embedding)
+                    #              YIELD node, score AS vector_score
+                    #         Graph 1-hop: MATCH (c)-[:MENTIONS]->(:Entity)<-[:MENTIONS]-(c2)
+                    #         Mem0-style normalize fusion: score = 0.4*bm25 + 0.4*vector + 0.2*graph
+                    #         Return top-20 candidates
+  rerank.go         # ~100  LLM tier=worker re-ranker:
+                    #         Prompt: "Score 0-10 relevance: query={q} chunk={text}"
+                    #         Batch 4 chunks per call (cost optimization)
+                    #         Return top-5 by re-ranked score
+                    #       Cost stima: 5 calls × $0.0002 = $0.001/query
+  recall.go         # ~80   Entity-based recall:
+                    #         memory.recall(entity_id) → all chunks MENTIONING + community summary
+                    #         + RELATED_TO entities up to 2-hop
+  global_search.go  # ~70   GraphRAG global pattern:
+                    #         Query → embed → top-K :Community by community.embedding
+                    #         Return community summaries (not chunks)
+                    #         Per query "general knowledge across dataset"
+internal/agent/tools/memory.go   # ~150  Tool LLM-facing Deferred=true:
+                                  # memory.search(query, scope=local|global, k=5),
+                                  # memory.recall(entity_name|entity_id),
+                                  # memory.forget(doc_id|entity_id|chunk_id) (GDPR)
+                                  # memory.summarize_conversation(conv_id) (manual rollup)
+```
+
+**11e — Agent journal + Memify post-processing (~300 LOC)**:
+```
+internal/memory/agent/
+  journal.go        # ~150  Post-conversation goroutine:
+                    #         Trigger on conversation.UpdateStatus('archived')
+                    #         Summarize episode (LLM tier=worker):
+                    #           goal, outcome, key entities discussed,
+                    #           tools used, success/failure
+                    #         Persist :AgentEpisode + :HANDLED relation
+                    #       Parity con Slice 7e snippet pattern analyzer.
+  insight.go        # ~200  Cross-conv pattern analyzer:
+                    #         Background ogni AURA_MEMORY_INSIGHT_INTERVAL_MIN=60
+                    #         Query :AgentEpisode ultimi 7gg
+                    #         Cluster outcome+goal via embedding HNSW
+                    #         Cluster size >= 3 → synthesize candidate (LLM tier=reasoning)
+                    #         Persist :AgentInsight + :LEARNED {strength} relation
+                    #       Inject hook (Slice 0.9 PromptBuilder):
+                    #         Pre-conv: query top-3 :AgentInsight relevant via embedding
+                    #         Inject come third system message (post Agent.md Slice 10)
+                    #         Cache-friendly: messages[0,1,2] stable cross-turn
+internal/memory/graph/memify.go  # ~250  Cognee Memify post-processing:
+                                  #   Background ogni AURA_MEMORY_MEMIFY_INTERVAL_HR=24
+                                  #   1. Prune stale: :Entity con last_mentioned_at < 90gg
+                                  #      AND mention_count < 3 → DETACH DELETE
+                                  #   2. Strengthen frequent: :RELATED_TO.weight +=
+                                  #      co-occurrence count ultimi 7gg
+                                  #   3. Derive facts: multi-hop traversal
+                                  #      (A)-[:RELATED_TO]->(B)-[:RELATED_TO]->(C)
+                                  #      con weight > 0.7 → derive (A)-[:DERIVED_FROM]->(C)
+                                  #   Audit log INSERT memify_audit row per ogni op
+```
+
+### Smoke
+
+```bash
+# Setup: Slice 0.7 Neo4j + GDS attivo, Slice 9c markitdown attivo
+
+# 1. Ingest documento
+aura ingest /home/user/papers/voyager.pdf
+# → markitdown convert pdf → markdown
+# → chunker semantic 512 token → 47 chunks
+# → embedder batch 2 round → 47 embeddings 768d
+# → LLM entity extraction batch 5 round → 23 entities (Person/Org/Concept)
+# → Neo4j upsert :Document + 47 :Chunk + 23 :Entity + 47 :HAS_CHUNK + 89 :MENTIONS
+# → ingest_audit INSERT
+
+aura memory search "Minecraft skill library lifelong learning"
+# → BM25 top-20 + HNSW top-20 + graph 1-hop expansion
+# → fusion score
+# → LLM re-rank tier=worker → top-5
+# → return chunks con source citation
+
+# 2. Telegram ingest auto
+# user invia PDF via Telegram document attach
+# → bot reaction 📄 + handler chiama ingest.file auto
+# → bot risponde "✅ Ingerito voyager.pdf: 47 chunks, 23 entities, 5 communities"
+
+# 3. Community detection (background 24h dopo)
+# Neo4j: 156 entities → Leiden detect 12 communities level 0, 3 level 1
+# Per community: LLM summary tier=worker
+# aura memory search "AI agents general topic" → global search top-3 community summaries
+
+# 4. Agent journal (post-conv)
+# user "trova autore di voyager paper" → tool memory.search → response
+# conversation archived → :AgentEpisode summary
+# 7 giorni dopo (4 episode simili "find author paper"):
+# pattern_analyzer cluster → :AgentInsight "When user asks paper author,
+# memory.search 'authors' + memory.recall first author entity is best"
+# Pre-conv next time: top-3 insight injected nel system prompt
+
+# 5. GDPR forget
+aura memory forget --document voyager.pdf
+# → DETACH DELETE :Document + 47 :Chunk + dangling :Entity orphans cleanup
+# → audit log FORGET entry
+```
+
+### Acceptance
+
+#### 11a — Schema
+- [ ] 4 vector index Neo4j (chunk/entity/community/agent_insight) creati con 768 dim cosine
+- [ ] 2 fulltext index (chunk_text, entity_name) creati
+- [ ] 4 constraint UNIQUE per id
+- [ ] 4 index proprietà (entity_type, mention_count, agent_kind episode/insight)
+- [ ] Migration Cypher in `internal/db/migrations/neo4j/0002_memory_schema.cql` reversibile
+
+#### 11b — Ingestion
+- [ ] Tool `ingest.file(path)` chiama markitdown → chunker → embedder → entity extractor → Neo4j upsert
+- [ ] `chunker.go` recursive semantic split (respect markdown headers), default 512 token, overlap 64
+- [ ] `embedder.go` batch 32 chunks/call, retry exp backoff, ctx-cancel
+- [ ] `entity_extractor.go` mem0 2-fase: LLM batch 10 chunks, JSON output schema, fuzzy dedup + embedding similarity > 0.92
+- [ ] `ingest_audit` row INSERT per ogni ingest (parity skill_audit)
+- [ ] Idempotent: content_hash check, ri-ingest stesso file = no-op + log
+- [ ] Telegram document handler chiama `ingest.file` auto + risposta confirm
+
+#### 11c — Community detection
+- [ ] Background goroutine ogni 24h chiama `CALL gds.leiden.stream(...)` su entity graph
+- [ ] Per community: LLM tier=worker summarize membri (max 10 entity per call)
+- [ ] Persist `:Community` + `:IN_COMMUNITY` + hierarchical `:CONTAINS`
+
+#### 11d — Retrieval
+- [ ] Tool `memory.search(query, scope, k=5)` hybrid retrieval (BM25 + HNSW + graph 1-hop)
+- [ ] Score fusion mem0-style: 0.4*bm25 + 0.4*vector + 0.2*graph
+- [ ] LLM re-ranker top-20 → top-5 tier=worker, batch 4
+- [ ] Tool `memory.recall(entity)` ritorna all chunks MENTIONING + 2-hop entities
+- [ ] Tool `memory.forget(id)` GDPR-compliant cascade + audit FORGET row
+- [ ] Tool `memory.summarize_conversation(conv_id)` manual rollup `:UserConversation`
+- [ ] Global search: scope=global → top-K `:Community` summaries
+
+#### 11e — Agent journal + Memify
+- [ ] Post-conv trigger crea `:AgentEpisode` con summary LLM-generated
+- [ ] Cross-conv analyzer ogni 60min: cluster episode similarity → `:AgentInsight`
+- [ ] PromptBuilder injection: top-3 `:AgentInsight` relevant come third system message
+- [ ] Memify background 24h: prune stale + strengthen frequent + derive facts
+- [ ] Audit log per ogni operazione Memify
+
+### File targets cumulativi
+
+(Vedere "Architettura" sopra. Totale: **~1650 LOC src + ~450 test + ~90 migration = ~2190 LOC**.)
+
+### Open questions
+
+1. **Chunk size 512 vs 1024 tokens**: pre-merge benchmark su corpus tipo (papers + libri + note). 512 più precise per Q&A, 1024 più context per summarization.
+2. **Entity type taxonomy fissa vs dynamic**: Person/Org/Location/Concept/Event/Topic è ristretto. LLM-extracted free-form più espressivo ma harder a query. *Default proposto*: fissa per consistency, future slice aggiunge subtype gerarchici (es. Person→Author, Person→Family).
+3. **Re-ranker cost optimization**: $0.001/query × 100 query/giorno = $3/mese. Acceptable single-user. Future bulk query (batch eval) richiede budget.
+4. **Memify prune threshold**: 90gg + < 3 mention default. Aggressive vs conservative trade-off, configurabile.
+5. **Agent insight injection**: top-3 nel system prompt aumenta token cost ~500/turn. Threshold relevance > 0.7 per evitare junk. Future: adaptive K basato su query similarity.
+6. **Multi-user refactor cost**: privacy isolation hard refactor (cypher query helper, identity FK su tutti node) stimato +800 LOC se atterra dopo Slice 11. Decisione accettata pre-merge.
+
+### Mini-PC RAM budget — delta
+
+- Background goroutines (community + insight + memify): ~50 MB heap
+- Neo4j heap: già allocato Slice 0.7 (~1.5-2 GB)
+- aura-llama-embed: già allocato Slice 0.7 (~600 MB)
+- LLM call (re-ranker, entity extract, summarize): no RAM extra (remote)
+
+Net delta: **negligible**.
+
+### Commit message templates (5 sub-slice)
+
+```
+slice 11a: memory schema Neo4j (taxonomy 3-tier 3-type Letta+mem0+industry)
+
+Definisce schema Neo4j per memory architecture: labels + relations +
+vector indexes + fulltext indexes + constraints. Niente impl, solo
+schema + Cypher migration.
+
+Pattern reference mix-and-match:
+- Industry consensus 2026: 3 tipi cognitivi (episodic/semantic/procedural)
+- Letta MemGPT: 3-tier storage (Core/Recall/Archival)
+- mem0: hybrid retrieval (BM25 + vector + entity)
+- Microsoft GraphRAG: community detection Leiden hierarchical
+- Cognee: Memify post-processing (prune/strengthen/derive)
+
+Labels user-side: :Document, :Chunk, :Entity (taxonomy fissa),
+:Community (Leiden hierarchical), :UserConversation
+Labels agent-side: :AgentEpisode, :AgentInsight
+
+Vector index (768d cosine): chunk, entity, community, agent_insight
+Fulltext index: chunk_text, entity_name
+
+Cypher migration in internal/db/migrations/neo4j/0002_memory_schema.cql
+reversibile (drop in down.cql).
+
+Privacy: single-user mode (no isolation), identity 'local' default
+su tutti node. Refactor multi-user accettato (+800 LOC stima).
+
+LOC: +XXX migration / +YY doc.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 11b: cognify ingestion pipeline (markitdown -> chunker -> entity)
+
+internal/memory/ingest/ pipeline 6-stage (Cognee pattern):
+classify -> permissions -> chunk -> entity LLM -> summary -> embed+commit.
+
+Chunker recursive semantic (512 token, overlap 64, respect markdown
+headers). Embedder batch 32 chunks via aura-llama-embed Slice 0.7.
+
+Entity extractor mem0 2-fase: LLM tier=reasoning extract candidates
+batch 10 chunks, conflict detection via fuzzy match + embedding
+similarity > 0.92, MERGE existing OR CREATE new.
+
+Type taxonomy fissa: Person/Org/Location/Concept/Event/Topic.
+
+Tool LLM-facing Deferred:
+- ingest.file(path)
+- ingest.url(url)  (riusa Slice 5 web_fetch)
+- ingest.text(content, source_name)
+
+Telegram document handler auto-trigger ingest.file post-receive.
+
+Migration 0011_ingest_audit (Postgres, parity skill_audit Slice 7c).
+
+Idempotent: content_hash pre-check, re-ingest stesso file = no-op.
+
+Cost stima: $0.05/documento medio per LLM entity extraction.
+
+LOC: +XXX src / +YY test / +ZZ migration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 11c: community detection Leiden + summarization (GraphRAG pattern)
+
+Background goroutine ogni 24h chiama gds.leiden.stream() su entity
+graph weighted by RELATED_TO.weight. Hierarchical clustering produce
+N community level 0 (leaf), N/5 level 1, etc.
+
+Per community: LLM tier=worker summarize membri (max 10 entity).
+Persist :Community node + :IN_COMMUNITY + :CONTAINS relations.
+
+Community embedding via aura-llama-embed (Slice 0.7) per global
+search retrieval (memory.search scope=global).
+
+Cost stima: $0.10/run per 100 entities, run quotidiana.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 11d: retrieval hybrid (BM25 + HNSW + graph) + LLM re-ranker
+
+internal/memory/retrieval/ hybrid search:
+1. BM25 fulltext via Neo4j queryNodes('chunk_text', q)
+2. HNSW vector queryNodes('chunk_embedding', 20, q_embedding)
+3. Graph 1-hop expansion via :MENTIONS Entity
+Mem0-style fusion: 0.4*bm25 + 0.4*vector + 0.2*graph
+
+LLM re-ranker tier=worker top-20 -> top-5, batch 4 chunks per call.
+Cost ~$0.001/query.
+
+Tool LLM-facing Deferred:
+- memory.search(query, scope=local|global, k=5)
+- memory.recall(entity_name|entity_id)
+- memory.forget(doc_id|entity_id|chunk_id)  GDPR cascade + audit
+- memory.summarize_conversation(conv_id)
+
+Global search (GraphRAG): scope=global -> top-K :Community summaries
+(invece di chunks). Per query "general knowledge across dataset".
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 11e: agent journal + Memify post-processing (Cognee pattern)
+
+internal/memory/agent/:
+- journal.go: post-conv trigger -> :AgentEpisode summary LLM-generated
+- insight.go: cross-conv analyzer ogni 60min, cluster episode embedding
+  -> :AgentInsight + :LEARNED relation. Inject top-3 nel system prompt
+  pre-conv (cache-friendly come Agent.md Slice 10).
+
+internal/memory/graph/memify.go: Cognee Memify pipeline background 24h:
+- Prune stale entities (last_mentioned_at < 90gg AND mention_count < 3)
+- Strengthen RELATED_TO weight via co-occurrence count
+- Derive facts: multi-hop traversal weight > 0.7 -> :DERIVED_FROM
+
+Audit log per ogni operazione Memify in memify_audit table.
+
+Env nuove (Caps & Limits indice):
+- AURA_MEMORY_CHUNK_SIZE_TOKENS=512
+- AURA_MEMORY_CHUNK_OVERLAP_TOKENS=64
+- AURA_MEMORY_COMMUNITY_INTERVAL_HR=24
+- AURA_MEMORY_INSIGHT_INTERVAL_MIN=60
+- AURA_MEMORY_MEMIFY_INTERVAL_HR=24
+- AURA_MEMORY_INSIGHT_TOP_K=3
+- AURA_MEMORY_INSIGHT_RELEVANCE_THRESHOLD=0.7
+- AURA_MEMORY_PRUNE_IDLE_DAYS=90
+- AURA_MEMORY_PRUNE_MIN_MENTIONS=3
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Slice 13 — Local LLM fallback (vLLM + LMCache disk-tier, doppio sidecar)
 
 > **Pattern doppio sidecar** (decisione 2026-05-28):
@@ -3706,6 +4155,19 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_TELEGRAM_DOC_ASYNC_MAX_BYTES` | `52428800` (50 MiB) | cap | 9c | Async convert hard cap. |
 | `AURA_PROFILE_CERTAINTY_N` | `3` | cap | 10 | Auto-add certainty threshold. |
 | `AURA_PROFILE_DIR` | `~/.aura/agents` | path | 10 | Per-identity profile dir. |
+| `AURA_MEMORY_CHUNK_SIZE_TOKENS` | `512` | cap | 11b | Recursive semantic chunker target size. |
+| `AURA_MEMORY_CHUNK_OVERLAP_TOKENS` | `64` | cap | 11b | Sliding overlap fra chunks adiacenti. |
+| `AURA_MEMORY_EMBED_BATCH_SIZE` | `32` | cap | 11b | Batch embedder requests per call sidecar. |
+| `AURA_MEMORY_ENTITY_BATCH_SIZE` | `10` | cap | 11b | Batch chunks per LLM entity extraction call. |
+| `AURA_MEMORY_COMMUNITY_INTERVAL_HR` | `24` | cap | 11c | Background Leiden community detection interval. |
+| `AURA_MEMORY_INSIGHT_INTERVAL_MIN` | `60` | cap | 11e | Cross-conv pattern analyzer interval. |
+| `AURA_MEMORY_INSIGHT_TOP_K` | `3` | cap | 11e | Top-K AgentInsight inject in system prompt. |
+| `AURA_MEMORY_INSIGHT_RELEVANCE_THRESHOLD` | `0.7` | cap | 11e | Min similarity per inject (skip junk). |
+| `AURA_MEMORY_MEMIFY_INTERVAL_HR` | `24` | cap | 11e | Memify post-processing background interval. |
+| `AURA_MEMORY_PRUNE_IDLE_DAYS` | `90` | cap | 11e | Entity prune threshold (last_mentioned_at). |
+| `AURA_MEMORY_PRUNE_MIN_MENTIONS` | `3` | cap | 11e | Entity prune threshold (mention_count). |
+| `AURA_MEMORY_RERANK_TOP_K_IN` | `20` | cap | 11d | Hybrid retrieval candidates pre-rerank. |
+| `AURA_MEMORY_RERANK_TOP_K_OUT` | `5` | cap | 11d | LLM re-ranker output size. |
 | `AURA_LLM_LOCAL_BASE_URL` | `http://aura-vllm-chat:8083/v1` | operative | 13 | Local LLM endpoint (vLLM o llama.cpp fallback). |
 | `AURA_LLM_LOCAL_MODEL` | `gemma-3-12b-it` | operative | 13 | Local LLM model id. |
 | `AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC` | `30` | cap | 13 | TCP probe interval verso remote per offline detection. |
@@ -3772,7 +4234,9 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo transport: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal.
 11. **Slice 10 (User onboarding + Agent.md)** atterra dopo Slice 9 perché ha Telegram come transport principale dell'interview e usa tutto lo stack pre-esistente (ask_user 1.5, identities 1.7, conversations 1.8, PromptBuilder 4, Risk-Based 5, AG-UI 8). Agent.md per identity in filesystem `~/.aura/agents/<id>/` viene iniettato come secondo system message (cache-friendly, Slice 4 invariants preservati). Pattern hybrid ChatGPT Custom Instructions + Memory + mem0 ADD-only. Out of scope "Setup wizard" + "Telegram" rimossi dal PRD; restano out: dashboard SPA full, tray icon, OTA update, multi-user auth.
 
-12. **Slice 13 (Local LLM fallback)** atterra dopo Slice 10 perché completa lo stack provider-agnostico: `LLMRouter` con 4 trigger (explicit `prefer_local`, offline detection, cost threshold, identity capability) sceglie tra remote OpenRouter e local vLLM+LMCache. **Pattern doppio sidecar**: `aura-llama-multimodal` Slice 9c invariato per vision/STT one-shot + `aura-vllm-chat` nuovo Slice 13 per chat fallback con LMCache disk-tier 50 GB. **Open question CRITICA pre-merge**: vLLM CPU mode è 5-10x più lento di llama.cpp CPU per stesso modello — se mini-PC senza GPU, attivare path **13-bis** (riusa Gemma 4 E4B Slice 9c per chat fallback, no LMCache, save 1 sidecar). Pattern reference LMCache (8.4k stars, Apache 2.0, prod GCP/GMI/CoreWeave). 2 sub-slice: 13a router+offline+cost, 13b vLLM+LMCache sidecar.
+11.bis. **Slice 11 (Memory ingestion + taxonomy)** atterra dopo Slice 10 e prima di Slice 13. Dipende da: Slice 0.7 Neo4j+HNSW+embed sidecar, Slice 7e snippet (per `:UserSnippet` mirror semantic), Slice 9c markitdown sidecar (per document → markdown universal parser), Slice 10 Agent.md (Core tier già attivo). Pattern: **mix-and-match dei migliori sistemi memory 2026** — mem0 (2-fase pipeline + hybrid retrieval, 48k stars), Letta MemGPT (3-tier storage Core/Recall/Archival), Microsoft GraphRAG (Leiden community detection + global summarization), Cognee (Cognify pipeline 6-stage + Memify post-processing). 5 sub-slice atomic: 11a schema, 11b ingestion pipeline, 11c community detection, 11d retrieval+rerank, 11e agent journal+Memify. Privacy isolation: single-user mode (no isolation), refactor multi-user accettato. Cost stima: $0.05/doc ingest + $0.001/query rerank + $0.10/community-detection-run quotidiana. Decision pre-merge utente.
+
+12. **Slice 13 (Local LLM fallback)** atterra dopo Slice 11 perché completa lo stack provider-agnostico: `LLMRouter` con 4 trigger (explicit `prefer_local`, offline detection, cost threshold, identity capability) sceglie tra remote OpenRouter e local vLLM+LMCache. **Pattern doppio sidecar**: `aura-llama-multimodal` Slice 9c invariato per vision/STT one-shot + `aura-vllm-chat` nuovo Slice 13 per chat fallback con LMCache disk-tier 50 GB. **Open question CRITICA pre-merge**: vLLM CPU mode è 5-10x più lento di llama.cpp CPU per stesso modello — se mini-PC senza GPU, attivare path **13-bis** (riusa Gemma 4 E4B Slice 9c per chat fallback, no LMCache, save 1 sidecar). Pattern reference LMCache (8.4k stars, Apache 2.0, prod GCP/GMI/CoreWeave). 2 sub-slice: 13a router+offline+cost, 13b vLLM+LMCache sidecar.
 
 ## Out of scope per tutte e 4 le slice (esplicito)
 
