@@ -85,19 +85,19 @@ Cumulativa stimata a fine Slice 7 (mini-PC 16-core, target 32 GB RAM):
 |---|---:|---|
 | Postgres 17 | ~250 MB | 0.5 |
 | Neo4j 5.x Community + APOC + GDS + vector index | ~1.5-2 GB | 0.7 |
-| aura-llama-embed (embeddinggemma CPU, 4 thread) | ~600 MB | (esterno, già presente) |
+| aura-llama-embed (embeddinggemma CPU, 4 thread) | ~600 MB | 0.7 (sidecar embedding per Neo4j HNSW vector index) |
 | SearXNG | ~150 MB | 5 |
 | Sandbox Python sidecar | ~80 MB | 2 |
-| Pocket-TTS | ~400 MB | (esterno) |
+| ~~Pocket-TTS~~ | — | **Rimosso dalla tabella**: nessuna slice del PRD attuale lo cita o lo usa. Era residuo di scope precedente. TTS resta out-of-scope. |
 | aura-llama-multimodal (Gemma 4 E4B Q4 baseline, vision+STT unified) | ~3 GB | 9c |
-| Markitdown sidecar | ~150 MB | (esterno) |
+| Markitdown sidecar | ~150 MB | 9c (sostituisce attribuzione "(esterno)" precedente — è sidecar attivo aggiunto da Slice 9c per document conversion) |
 | Aura Go binary | ~150 MB | 1 |
-| **Totale idle** | **~3.5-4 GB** | |
+| **Totale idle** | **~5.7-6.2 GB** | (dopo correzione Pocket-TTS rimosso, Gemma 4 incluso) |
 | Sotto carico (LLM batch + swarm 3 worker) | **+1 GB** | |
-| **Peak realistic** | **~5 GB** | |
+| **Peak realistic** | **~7 GB** | |
 
-Headroom su 32 GB: ampio. Su 16 GB: ~11 GB liberi per OS + utente. Accettabile.
-Se la stima passa 8 GB peak in futuro, va dedicato un budget review.
+Headroom su 32 GB: ampio (~25 GB liberi). Su 16 GB: ~9 GB liberi per OS + utente. Ancora accettabile.
+Se la stima passa 10 GB peak in futuro, va dedicato un budget review.
 
 **Backup strategy (audit round 2 P0).** I due store stateful (Postgres + Neo4j) hanno backup automatico:
 
@@ -174,7 +174,7 @@ docker compose -f sandbox/compose.yaml up -d neo4j
   CREATE FULLTEXT INDEX chunk_text IF NOT EXISTS
     FOR (c:Chunk) ON EACH [c.text];
   ```
-  Schema iniziale **minimale**: solo `:Chunk` perché è l'unica label che gli slice 1→7 useranno indirettamente (via tool result sidecar future). Le altre label (UserProfileMemory, Entity, Source, ecc.) atterrano nelle rispettive slice knowledge.
+  Schema iniziale **minimale**: solo `:Chunk` perché è l'unica label che gli slice 1→7 useranno indirettamente (via tool result sidecar future). Altre label (`:Entity`, `:Source`, ecc.) atterrano nelle rispettive slice knowledge future. **Nota Slice 10**: il profile utente (Agent.md) NON va su Neo4j — vive su filesystem `~/.aura/agents/<id>/` (Slice 10) per ispezionabilità + git-friendliness; quindi nessuna label `:UserProfileMemory` è prevista (potrebbe atterrare in futura slice di memory consolidation se serve query semantica sul profile, ma non oggi).
 - [ ] `aura neo4j migrate` idempotente. Applica solo le migration nuove. Errore esplicito su schema drift (migration applicata + file `.cypher` changed → abort).
 - [ ] `internal/knowledge/client.go` espone `Open(ctx, cfg) (*Client, error)` con ping MCP al boot. Fail-fast se MCP server non risponde entro 10 s.
 - [ ] Container Aura con `depends_on: condition: service_healthy` per `neo4j` (oltre a `postgres` e `aura-llama-embed`).
@@ -546,7 +546,7 @@ toccare due volte gli stessi 5 file):
    troverebbe la history avvelenata da result-payload grandi.
 
 **Perché un commit solo.** Cambio firma `Execute` tocca `text_response.go`,
-`search.go`, `loop.go.runTool`, `spec.go`. Lo stesso commit che porta il client
+`search.go`, `llm_agent.go` (`runTool`), `spec.go`. Lo stesso commit che porta il client
 reale può/deve far landing del pattern: se atterriamo prima il client reale,
 poi cambio firma → due commit ricontaminano gli stessi file, riopendendo
 file ≤600 LOC e refactor-on-touch per ognuno. Slice 1 cresce di ~120 LOC
@@ -573,11 +573,11 @@ in <8 step.
 
 *Parte 2 — ToolResult pattern:*
 - [ ] `Tool.Execute(ctx, args)` ritorna `(ToolResult, error)`. `ToolResult{Preview string, FullPath string, Bytes int, Truncated bool}`.
-- [ ] `Loop.runTool` persiste `ToolResult` su disco se `Bytes > AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048). Path = `$AURA_RUN_DIR/conversations/<conv_id>/<tool-call-id>.result` (post-Slice 1.8 layout; vedi sezione "AURA_RUN_DIR layout" sotto). La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
+- [ ] `(*LlmAgent).runTool` persiste `ToolResult` su disco se `Bytes > AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048). Path = `$AURA_RUN_DIR/conversations/<conv_id>/<tool-call-id>.result` (post-Slice 1.8 layout; vedi sezione "AURA_RUN_DIR layout" sotto). La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
 - [ ] Se `Bytes <= cap`, nessuna scrittura su disco; `RoleTool.Content = Preview` puro (no overhead).
 - [ ] Builtin tool `read_tool_output` (non-deferred) accetta `{tool_call_id, offset?, limit?}` e ritorna la fetta richiesta dal sidecar file. Default `limit=200 righe`. Hard-fail su tool_call_id ignoto.
 - [ ] `text_response` continua a essere il terminale del loop: il suo `ToolResult.Preview` è la risposta finale all'utente (anche se `Bytes > cap`, la versione full sta sul disco; il preview va all'utente per default — il chiamante CLI/Telegram decide se servire la versione full).
-- [ ] Test: un tool fake che ritorna 100 KB di output → il `Messages` history dopo `Loop.Turn` ha SOLO il preview (≤2 KiB + footer), file su disco ha 100 KB completi, `read_tool_output` recupera fetta arbitraria.
+- [ ] Test: un tool fake che ritorna 100 KB di output → il `Messages` history dopo `(*LlmAgent).Run` ha SOLO il preview (≤2 KiB + footer), file su disco ha 100 KB completi, `read_tool_output` recupera fetta arbitraria.
 - [ ] **`$AURA_RUN_DIR` layout (Area #9 closed 2026-05-28)**. Default `$AURA_RUN_DIR = ~/.aura/run/`. Layout:
   ```
   $AURA_RUN_DIR/
@@ -590,15 +590,15 @@ in <8 step.
   ```
   Lifetime: `conversations/<conv_id>/` vive quanto la conversation row in DB; `tmp/` ha TTL 24h, sweep al boot. Cleanup cascade `os.RemoveAll(conversations/<id>/)` al `aura chat delete <id>`. Boot orphan scan: dir senza conversation row corrispondente → log + rm. WARN se `$AURA_RUN_DIR` > `AURA_RUN_DIR_WARN_THRESHOLD_BYTES` (default `1073741824` = 1 GiB) al boot, no auto-delete.
 
-**File targets** (totale ≤ 520 LOC src + ~200 test).
+**File targets** (totale ≤ 480 LOC src + ~200 test — saving −40 LOC riapplicato da Slice 0.9 amendment).
 
 *Wire layer (~340 src + ~120 test):*
 | Path | LOC stimato | Note |
 |---|---|---|
-| `internal/llm/openai_compat.go` | ~280 | `Client` impl, SSE parser, tool-call accumulator (delta-merge per `index`). Connect 10s, global timeout configurabile, no idle, no retry (vedi Open Questions). **Inietta `Config.LLM.Headers` su ogni request** (OpenRouter HTTP-Referer + X-Title). |
+| `internal/llm/openai_compat/client.go` | ~280 | `Client` impl, SSE parser, tool-call accumulator (delta-merge per `index`). Connect 10s, global timeout configurabile, no idle, no retry (vedi Open Questions). **Inietta `Config.LLM.Headers` su ogni request** (OpenRouter HTTP-Referer + X-Title). |
 | `internal/config/config.go` | ~110 | `Config{LLM: LLMConfig{Provider, Model, BaseURL, APIKey, TotalTimeoutSec, Headers map[string]string}, RunDir, ToolPreviewCap}`. **Load order**: built-in default → `.env` (via `github.com/joho/godotenv`, key `OPENROUTER_API_KEY` → `LLM.APIKey`) → file JSON (`$AURA_CONFIG_DIR/llm.json`, default `~/.aura/llm.json`) → env vars (`AURA_LLM_*`, `AURA_RUN_DIR`, `AURA_CONTEXT_PREVIEW_CAP_BYTES`). **Default built-in**: Provider=`openrouter`, Model=`deepseek/deepseek-v4-flash:exacto`, BaseURL=`https://openrouter.ai/api/v1`, Headers=`{"HTTP-Referer": "https://github.com/chetto1983/aura", "X-Title": "Aura"}`. `Save()` per write-back dal dashboard futuro. |
 | `internal/config/config_test.go` | ~50 | Load-order test: default < file < env. Round-trip JSON. |
-| `internal/llm/openai_compat_test.go` | ~120 | Fixture SSE in `testdata/` per: text-only stream, tool-call multi-chunk (delta-merge), error 429 (no retry → bubble up), premature close (ctx-cancel), Anthropic ephemeral cache_control passthrough. Niente prompt da asilo nido (vedi §Test discipline). |
+| `internal/llm/openai_compat/client_test.go` | ~120 | Fixture SSE in `testdata/` per: text-only stream, tool-call multi-chunk (delta-merge), error 429 (no retry → bubble up), premature close (ctx-cancel), Anthropic ephemeral cache_control passthrough. Niente prompt da asilo nido (vedi §Test discipline). |
 
 *ToolResult pattern (~180 src + ~80 test):*
 | Path | LOC stimato | Note |
@@ -607,8 +607,8 @@ in <8 step.
 | `internal/agent/tools/spec.go` (diff) | ~+5 / -3 | Firma `Execute(ctx, args) (ToolResult, error)`. |
 | `internal/agent/tools/text_response.go` (diff) | ~+15 / -10 | Ritorna `ToolResult{Preview: text}` invece di stringa. |
 | `internal/agent/tools/search.go` (diff) | ~+15 / -10 | Stesso adattamento. |
-| `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default 200 lines}`. Risolve path da `Loop`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. |
-| `internal/agent/loop.go` (diff) | ~+45 / -10 | `runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path), mantiene `resultPaths map[string]string` per `read_tool_output` lookup. Crea `$AURA_RUN_DIR/conversations/<conv_id>/` lazy alla prima persist (post Slice 1.8: `conv_id` viene da Loop). |
+| `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default 200 lines}`. Risolve path da `runtime`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. |
+| `internal/agent/llm_agent.go` (diff) | ~+45 / -10 | `(*LlmAgent).runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path), mantiene `resultPaths map[string]string` per `read_tool_output` lookup. Crea `$AURA_RUN_DIR/conversations/<conv_id>/` lazy alla prima persist (post Slice 1.8: `conv_id` viene da `InvocationContext.SessionID`). File `loop.go` rinominato in `llm_agent.go` (Slice 0.9 amendment), `Loop` struct rinominato in `LlmAgent` (implementa `Agent` interface Slice 0.9). `Run() iter.Seq2[*Event, error]` sostituisce `Turn() (Result, error)`. |
 | `internal/agent/tools/result_test.go` | ~80 | Test: 100 KB fake tool → `Messages` ha SOLO preview+footer, file ha 100 KB; `read_tool_output(id, offset=50000, limit=100)` recupera fetta. |
 | `cmd/aura/main.go` (diff) | ~+50 / -15 | Sostituisce `stubClient` con `llm.NewOpenAICompat(cfg.LLM)`. Registra `read_tool_output` nel registry. Sub-comando `aura config` legge/scrive il file. |
 
@@ -705,8 +705,10 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 | `internal/agent/tools/ask_user.go` | ~180 | Tool def + `ErrAwaitingUserInput` sentinel (con `Priority int`) + args parser (options string/object polimorfico + priority int cap 0-100). Quasi 1:1 dal pre-rewrite + priority field. |
 | `internal/agent/pending.go` | ~95 | `PausedState{Token, ConversationID, Question, Options, Kind, Priority, ResumeContext, ToolCallID, ProxiedFromChildID *uuid.UUID, ProxiedToolCallID *string, CreatedAt, ResumedAt *time.Time, ResumedAnswer *string}`. Helper per costruzione, serializzazione, sorting (priority DESC, created_at ASC). |
 | `internal/askuser/cli.go` | ~120 | Renderer CLI: stampa lista numerata `[N] <kind>[prio]: <question> + options`, legge stdin con sintassi `1: ...` / `all: ...` / `batch: 1=a, 2=b`. Re-prompt invalido. Implementa interfaccia `Responder`. |
-| `internal/agent/loop.go` (diff) | ~+110 / -10 | `runTool` intercetta `ErrAwaitingUserInput` → costruisce `PausedState` con priority + (se proxied) `ProxiedFromChildID` → upsert in `aura.paused_states` → `Turn` accumula pending → se ≥1 pending, ritorna `(empty, pending, nil)`. Nuovi metodi `Resume(token, answer)` e `ResumeBatch(answers)`. Esclusività check su batch tool calls (multi-ask_user coalesce, altri tool drop). |
+| `internal/agent/llm_agent.go` (diff) | ~+110 / -10 | `(*LlmAgent).runTool` intercetta `ErrAwaitingUserInput` → costruisce `PausedState` con priority + (se proxied) `ProxiedFromChildID` → upsert in `aura.paused_states` → `Run` accumula pending → se ≥1 pending, yield `Event{Actions.Escalate=true, StateDelta:{pending: [...]}}` (Slice 0.9 escalation). Nuovi metodi `Resume(token, answer)` e `ResumeBatch(answers)`. Esclusività check su batch tool calls (multi-ask_user coalesce, altri tool drop). |
 | `internal/db/queries/paused_states.sql` | ~70 | **6 query sqlc**: `InsertPausedState`, `GetByToken`, `ListPendingForLoop` (ordered), `MarkResumed`, `MarkResumedBatch`, `CleanupResumedOlderThan` (per future retention). |
+| `internal/db/migrations/0003_paused_states.up.sql` | ~30 | `CREATE TABLE aura.paused_states (token uuid PRIMARY KEY, conversation_id text NOT NULL, kind text NOT NULL, question text NOT NULL, options jsonb, priority int NOT NULL DEFAULT 0, resume_context jsonb, tool_call_id text NOT NULL, proxied_from_child_id uuid, proxied_tool_call_id text, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz, resumed_answer text)`. Indici su `(conversation_id, resumed_at) WHERE resumed_at IS NULL`. Foreign key a `conversations(id)` aggiunta solo in Slice 1.8 (qui è plain text per indipendenza Slice 1.5 ↔ 1.8). |
+| `internal/db/migrations/0003_paused_states.down.sql` | ~3 | `DROP TABLE aura.paused_states;`. |
 | `internal/agent/tools/ask_user_test.go` | ~80 | Args validation, options polimorfismo, priority cap, sentinel error format. |
 | `internal/agent/loop_pause_test.go` | ~160 | Pause+Resume singolo, ResumeBatch, multi-pause coalesce, priority sort, esclusività intra-turn, invalid token rejection, stub Responder. |
 | `cmd/aura/main.go` (diff) | ~+60 | `aura chat` gestisce loop pause: stampa via `askuser.CLI`, raccoglie risposta (singolo/all/batch), chiama `Resume` o `ResumeBatch`. |
@@ -717,7 +719,7 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 1. **~~Persistent vs in-memory `PausedState`~~ → CHIUSA: persistent in Postgres da subito.**
    Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema: `(token uuid pk, conversation_id uuid NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE, question text NOT NULL, options jsonb, kind text NOT NULL CHECK (kind IN ('clarification','approval','choice')), priority int NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 100), resume_context jsonb, tool_call_id text, proxied_from_child_id uuid NULL, proxied_tool_call_id text NULL, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz NULL, resumed_answer text NULL)`. Indice su `(conversation_id, resumed_at) WHERE resumed_at IS NULL` per scan O(log n) della lista pending attive. `priority` + `proxied_*` aggiunti da Area #4 closed 2026-05-28 (multi-pause FIFO). `conversation_id` (era `loop_id`) e `resumed_answer` aggiunti da Slice 1.8 closed 2026-05-28 (#15 multi-conversation persistence).
    Migration: `0003_paused_states.up.sql` aggiunta in Slice 1.5.
-   File targets aggiunti: `internal/db/queries/paused_states.sql` (~50 LOC, 4 query: insert/get-by-token/mark-resumed/cleanup-stale) + generated code via sqlc. `internal/agent/pending.go` (~70 LOC) usa il client sqlc invece di in-memory map. Test integrazione sotto build tag `db_integration`.
+   File targets aggiunti: `internal/db/queries/paused_states.sql` (~70 LOC, 6 query sqlc: `InsertPausedState`, `GetByToken`, `ListPendingForLoop` ordered, `MarkResumed`, `MarkResumedBatch`, `CleanupResumedOlderThan` per future retention) + generated code via sqlc. `internal/agent/pending.go` (~70 LOC) usa il client sqlc invece di in-memory map. Test integrazione sotto build tag `db_integration`.
 2. **~~Quante pending ask simultanee per Loop?~~ → CHIUSA: lista FIFO piena (Area #4 closed 2026-05-28).**
    Pattern industriale verificato: LangGraph 1.2 (maggio 2026) supporta multi-interrupt mappato per ID; Temporal supporta signal-based concurrent. Singleton (pattern OpenAI Agents SDK handoff) serializza la concurrency e contraddice Slice 3 `SpawnInteractive`.
    *Decisione:* multiple `PausedState` per `conversation_id` sono permessi. Loop pausato finché esiste ≥1 `PausedState` con `resumed_at IS NULL`. Ordering: `priority DESC, created_at ASC` (priority è hint dall'agente, default 0, cap 100). Un child `SpawnInteractive` che emette `ask_user` accoda una nuova `PausedState` al parent con `proxied_from_child_id` + `proxied_tool_call_id`. N child possono pausare simultaneamente. Reject di una pending proxied: il parent risponde "reject" → `Coordinator.ResumeChild(child_id, "reject")` → il child decide se procedere o cancellarsi (no forced kill).
@@ -976,9 +978,11 @@ al `aura chat resume <id>`.
 | `internal/db/queries/conversation_turns.sql` | ~30 | **2 query sqlc**: `InsertTurn`, `ListTurnsForConv` (ORDER BY seq). |
 | `internal/db/migrations/0005_conversations.up.sql` | ~70 | Tabelle + index + rename paused_states.loop_id → conversation_id + aggiunta resumed_answer col. |
 | `internal/db/migrations/0005_conversations.down.sql` | ~10 | DROP tables + rename back + drop col. |
-| `internal/agent/loop.go` (diff) | ~+80 / -20 | `Loop.AppendMessage(msg)` ora persiste via `store.AppendTurn` invece di solo in-memory append. `Loop.Stop()` chiama `store.AutoResolvePendings(convID)`. `Loop.NewFromHistory(convID)` ricostruisce dalle turns. |
+| `internal/agent/llm_agent.go` (diff) | ~+80 / -20 | `(*LlmAgent).AppendMessage(msg)` ora persiste via `store.AppendTurn` invece di solo in-memory append. `(*LlmAgent).Stop()` chiama `store.AutoResolvePendings(convID)`. `(*LlmAgent).NewFromHistory(convID)` ricostruisce dalle turns. Cumulative budget cap warning: file `llm_agent.go` post-Slice 1+1.5+1.8+4+8+10 stimato ~520-580 LOC; se oltrepassa 600 LOC split in `llm_agent.go` (core Agent.Run) + `llm_agent_pause.go` (pause/resume) + `llm_agent_history.go` (AppendMessage/NewFromHistory/Stop). Refactor-on-touch enforcement. |
 | `internal/conversations/store_test.go` | ~120 | Build tag `db_integration`. Round-trip + resume + cascade + auto-title. |
-| `cmd/aura/main.go` (diff) | ~+90 | `aura chat {list|resume|new|archive|unarchive|delete|rename}` + `aura paused-states {list|purge}`. |
+| `cmd/aura/main.go` (diff) | ~+30 | Wiring sub-commands + Cobra setup. |
+| `cmd/aura/chat.go` (NEW) | ~60 | Sub-command `aura chat {list|resume|new|archive|unarchive|delete|rename}` estratto in file dedicato per pulizia (main.go cap 600 LOC). Stesso file viene poi rinominato/migrato in `internal/channels/cli/cli.go` da Slice 9a. |
+| `cmd/aura/paused_states.go` (NEW) | ~30 | Sub-command `aura paused-states {list|purge}`. |
 
 **Deferred-tool partition.** Niente tool LLM-facing in questo slice. È infra CLI + persistence. Future: tool `conversation_search`/`conversation_summarize` come deferred, scope dedicato.
 
@@ -998,7 +1002,7 @@ al `aura chat resume <id>`.
    - `internal/conversations/microcompact.go` ~60
    - `internal/conversations/budget.go` ~50
    - `internal/conversations/store.go` (diff) ~+30 (LoadHistory chiama microcompact + budget check)
-   - `internal/agent/loop.go` (diff) ~+20 (passa ModelConfig al budget check)
+   - `internal/agent/llm_agent.go` (diff) ~+20 (passa ModelConfig al budget check)
    - `internal/llm/openai_compat/models.go` ~+30 (lookup ContextWindow + MaxOutputTokens per known models)
 
    Sources: [Claude Code auto-compact](https://claudelog.com/faqs/what-is-claude-code-auto-compact/), [Cursor dynamic context discovery](https://cursor.com/blog/dynamic-context-discovery), [Cline ContextManager](https://medium.com/@balajibal/dissecting-cline-cline-context-management-260aec3d84cb), [Context compaction research gist](https://gist.github.com/badlogic/cd2ef65b0697c4dbe2d13fbecb0a0a5f).
@@ -1121,12 +1125,12 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## Slice 3 — Swarm coordinator (bus + DM-by-ID + tier model)
 
-> **Slice 0.9 amendment**: `Coordinator.Spawn` produce `LlmAgent` workers che il Coordinator wrappa in `ParallelAgent` built-in (Slice 0.9) quando spawn-a multipli concorrenti. Lo "shared message bus" e DM-by-ID restano custom (Aura semantic), ma l'esecuzione parallela degli workers usa `errgroup` + ackChan tramite `ParallelAgent.Run`. `MAX_SPAWN_DEPTH=3` resta enforced. Saving stimato: **−200 LOC** (no plumbing custom errgroup, no Event/chan custom per worker output).
+> **Slice 0.9 amendment**: `Coordinator.Spawn` produce `LlmAgent` workers che il Coordinator wrappa in `ParallelAgent` built-in (Slice 0.9) quando spawn-a multipli concorrenti. Lo "shared message bus" e DM-by-ID restano custom (Aura semantic), ma l'esecuzione parallela degli workers usa `errgroup` + ackChan tramite `ParallelAgent.Run`. `AURA_SWARM_MAX_DEPTH=3` resta enforced. Saving stimato: **−200 LOC** (no plumbing custom errgroup, no Event/chan custom per worker output).
 
 **Goal.** Implementare `swarm.Coordinator` reale (oggi `Stub` in [internal/swarm/swarm.go](internal/swarm/swarm.go))
 con: spawn di agenti figli (tier `chat|reasoning|worker`), shared message bus
 con broadcast E DM-by-ID, `Join(id)` che blocca fino a final report del figlio,
-MAX_SPAWN_DEPTH=3 enforced, payload summarizer al return-to-parent.
+AURA_SWARM_MAX_DEPTH=3 enforced, payload summarizer al return-to-parent.
 
 **Smoke.**
 
@@ -1149,19 +1153,19 @@ MAX_SPAWN_DEPTH=3 enforced, payload summarizer al return-to-parent.
 ```
 
 **Acceptance.**
-- [ ] `coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` → errore `spawn depth exceeded` (test).
-- [ ] `coordinator.Talk(from, "broadcast", msg)` recapita a tutti tranne `from`. `Talk(from, "<id>", msg)` recapita solo a `<id>`. Test asserisce delivery.
-- [ ] `coordinator.Join(id)` blocca finché il figlio non chiama `text_response` (terminale dell'agent loop) e ne restituisce il payload (summarizzato se >2 KiB).
+- [ ] `coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` → errore `spawn depth exceeded` (test). Spawn ritorna `*LlmAgent` (Slice 0.9 impl).
+- [ ] `coordinator.Talk(from, "broadcast", msg)` recapita a tutti tranne `from`. `Talk(from, "<id>", msg)` recapita solo a `<id>`. Test asserisce delivery. Payload del bus è `*agent.Event` (riusa shape Slice 0.9, no `Envelope` custom).
+- [ ] `coordinator.Join(id)` blocca finché il figlio non emette `Event{Actions.Escalate=true}` (terminale dell'`Agent.Run`, equivalente a `text_response` finale) e ne restituisce il payload (summarizzato se >2 KiB).
 - [ ] Payload summarizer triggera sopra `AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048): tronca + appende `... [N bytes truncated, M total]`.
 - [ ] Tier → model mapping in `tier.go`: `chat→<AURA_SWARM_MODEL_CHAT>`, `reasoning→<...REASONING>`, `worker→<...WORKER>`. Default tutti = env `AURA_LLM_MODEL`.
 - [ ] Goroutine leak test (`go test -race`): dopo `Join` di tutti i figli, `runtime.NumGoroutine()` torna al baseline ±2.
 - [ ] Bus capacity bounded (channel buf 64); over-flow blocca producer con timeout **60s** + errore `bus backpressure` (audit round 2 P0: 5s era sotto la latency LLM first-token tipica 10-30s → producer in mezzo a `runTool` riceveva errore spurio durante LLM warmup).
 
-**File targets** (≤ 800 LOC):
+**File targets** (≤ 600 LOC — saving −200 LOC riapplicato da Slice 0.9: workers usano `LlmAgent`, esecuzione concorrente via `ParallelAgent` built-in, no errgroup custom):
 | Path | LOC | Note |
 |---|---|---|
-| `internal/swarm/coordinator.go` | ~240 | `LiveCoordinator` impl `Coordinator`. Gestisce children map (id→agent), depth check, lifecycle. |
-| `internal/swarm/bus.go` | ~140 | Shared bus: `subscribe(id) <-chan Envelope`, `publish(from, to, body)`. `to=="broadcast"` fan-out. |
+| `internal/swarm/coordinator.go` | ~180 | `LiveCoordinator` impl `Coordinator`. Gestisce children map (id→`*LlmAgent`), depth check, lifecycle. Quando spawn-a multipli concorrenti, wrappa workers in `ParallelAgent` Slice 0.9 (`agent.NewParallel(...)`); single-spawn restituisce `*LlmAgent` direttamente. |
+| `internal/swarm/bus.go` | ~100 | Shared bus: `Subscribe(id) <-chan *agent.Event`, `Publish(from, to string, body *agent.Event)`. `to=="broadcast"` fan-out. Bus è **ortogonale** allo streaming `iter.Seq2[*Event,error]` di `Agent.Run`: il bus è il canale di **DM/broadcast** parent↔child (semantic Aura), non il transport degli yield events del runtime. |
 | `internal/swarm/tier.go` | ~70 | `TierConfig{Chat, Reasoning, Worker string}`. `ModelFor(tier) string`. |
 | `internal/swarm/payload.go` | ~60 | `Summarize(b []byte, cap int) string`. Strategia: tronca a `cap`, appendi nota. |
 | `internal/swarm/coordinator_test.go` | ~150 | Spawn-depth, broadcast, DM, Join, goroutine-leak, bus backpressure. |
@@ -1177,13 +1181,13 @@ MAX_SPAWN_DEPTH=3 enforced, payload summarizer al return-to-parent.
 2. **Children share tools registry?** Child eredita tutti i tool del parent, MA il parent può passare un filtro (whitelist) → primo slice: ereditarietà piena, no filter. → *Proposto: full inherit. Filtro è slice futura.*
 3. **Persistent state.** I figli scrivono in un store comune (Neo4j MCP)? → *Proposto: NO in questo slice. Coordinator è in-memory. Persistenza è una concern ortogonale.*
 4. **Cancellazione.** Se il parent termina (Loop.Turn returns), i figli devono ricevere ctx-cancel? → *Proposto: SÌ. `Coordinator` ha un `parentCtx`; quando si chiude tutti i child loops droppano.*
-5. **Child pause propagation (audit round 1 P0).** Cosa succede se un child Loop ritorna `*PausedState` (perché ha invocato `ask_user`)?
-   → *Decisione*: ogni child Loop spawn-ato dal Coordinator ha un proprio `Responder` configurabile.
-   - **Default per swarm spawn**: `RejectingResponder` — il child non può pausare. Se chiama `ask_user`, il Loop riceve immediatamente `answer="<auto-rejected: child loop has no human responder>"`. Il child decide se procedere comunque o terminare.
+5. **Child pause propagation (audit round 1 P0).** Cosa succede se un child `LlmAgent` ritorna `*PausedState` (perché ha invocato `ask_user`)? Equivalente Slice 0.9: il child emette `Event{Actions.Escalate=true, StateDelta:{paused_state_token: ...}}` invece di ritornare il payload, e il `ParallelAgent`/Coordinator deve gestirlo.
+   → *Decisione*: ogni child `LlmAgent` spawn-ato dal Coordinator ha un proprio `Responder` configurabile.
+   - **Default per swarm spawn**: `RejectingResponder` — il child non può pausare. Se chiama `ask_user`, il runtime riceve immediatamente `answer="<auto-rejected: child loop has no human responder>"`. Il child decide se procedere comunque o terminare.
    - **Override esplicito**: il parent può chiamare `Coordinator.SpawnInteractive(req, parentResponder)` per propagare la pausa al parent. Il parent ottiene una nuova `PausedState` con `proxied_from_child_id=<child_id>` + `proxied_tool_call_id=<child_original_tool_call>`. La pending si **accoda** alle eventuali altre pending del parent (lista FIFO con priority, Area #4 closed 2026-05-28): N child con `SpawnInteractive` in pausa simultanea sono permessi e contribuiscono ciascuno una PausedState alla lista del parent.
    - **`Coordinator.ResumeChild(childID, answer)`**: nuovo metodo. Necessario quando `SpawnInteractive` è usato e il parent ha raccolto la risposta dell'utente. Quando il parent risolve una pending proxied (anche con `answer="reject"`), il sistema chiama `Coordinator.ResumeChild(child_id, answer)` — il child Loop riceve la risposta via il proprio `Responder`, decide se procedere o cancellarsi (**no forced cancellation**: rispetta autonomy del child, audit logged). **Children map mutex-protected (audit round 2 P0):** ResumeChild + Spawn + Join condividono `sync.RWMutex` su `children map[string]*childState` — race su N child paused simultaneously rifiutata strutturalmente. Test `go test -race` + assertion N=10 child interactive paralleli paused+resumed senza data race.
    - **Acceptance addizionale**: test che assert deadlock guard — child spawned senza `Interactive` flag + child chiama ask_user → child termina con `answer=auto-reject` entro 100ms, parent `Join` non blocca.
-   - **Acceptance multi-pause**: test con 3 child `SpawnInteractive` che pausano simultaneamente → parent ottiene `len(pending)==3` in `Loop.Turn`, sortate per priority+FIFO; `Loop.ResumeBatch` con 3 risposte (incluso 1 `reject`) → 3 `Coordinator.ResumeChild` invocazioni, ciascun child decide procedere/cancellare, parent riprende solo dopo che tutti i RoleTool sono accodati.
+   - **Acceptance multi-pause**: test con 3 child `SpawnInteractive` che pausano simultaneamente → parent ottiene `len(pending)==3` durante `(*LlmAgent).Run`, sortate per priority+FIFO; `LlmAgent.ResumeBatch` con 3 risposte (incluso 1 `reject`) → 3 `Coordinator.ResumeChild` invocazioni, ciascun child decide procedere/cancellare, parent riprende solo dopo che tutti i RoleTool sono accodati.
 
 **Commit message template.**
 ```
@@ -1191,7 +1195,7 @@ slice 3: swarm coordinator — spawn, bus broadcast+DM, tier model
 
 Implements swarm.Coordinator with in-memory child registry, shared
 bus (channel-buffered, backpressure-bounded), tier→model mapping,
-payload summarizer at return-to-parent, MAX_SPAWN_DEPTH=3 enforced.
+payload summarizer at return-to-parent, AURA_SWARM_MAX_DEPTH=3 enforced.
 Exposes swarm.spawn / swarm.talk / swarm.join tools (deferred).
 
 Smoke: aura swarm-demo spawns 3 workers, broadcasts, DMs, joins all.
@@ -1250,7 +1254,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 | `internal/llm/cache_deepseek.go` | ~50 | No-op + parse `usage.prompt_cache_hit_tokens` dalla response. |
 | `internal/llm/cache_metrics.go` | ~80 | `Tracker.Record(turn, promptTokens, cachedTokens)` + `Report() string`. |
 | `internal/llm/prompt_test.go` | ~100 | Invariant test su 5-turn (hash stability, monotonic growth, no-mutation, cache_control presence). |
-| `internal/agent/loop.go` (diff) | ~-15 / +10 | Sostituisce inline `llm.Request{Messages: l.Messages, ...}` con `l.Prompt.Build(...)`. Loop ora prende un `*PromptBuilder` invece di costruire il request inline. |
+| `internal/agent/llm_agent.go` (diff) | ~-15 / +10 | Sostituisce inline `llm.Request{Messages: l.Messages, ...}` con `l.Prompt.Build(...)`. `LlmAgent` ora prende un `*PromptBuilder` invece di costruire il request inline. |
 | `internal/llm/openai_compat.go` (diff) | ~+25 | Parsa `usage.prompt_cache_hit_tokens` dal final chunk SSE e lo espone su un campo `Chunk.Usage`. |
 | `cmd/aura/main.go` (diff) | ~+40 | `aura chat-loop` (REPL multi-turn) + `aura cache-stats`. |
 
@@ -1471,7 +1475,7 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 - [ ] Validation: `daily HH:MM` accetta solo `00:00`–`23:59`; nomi task `^[a-zA-Z0-9_-]+$` (no path traversal).
 - [ ] Persistence: i task sopravvivono al restart del processo. Tick loop riprende `DueTasks` allo startup e cattura up i missed run (con flag `MissedSince`).
 - [ ] **`DueTasks` query usa `SELECT ... FOR UPDATE SKIP LOCKED` (audit round 1 P0)**: pattern atomico per multi-instance safety. Anche con 1 sola Aura attiva oggi, blocca double-dispatch se un manual `task.run_now` parte contemporaneo al tick. Costo zero, sblocca future multi-instance.
-- [ ] Dispatcher: ogni `TaskKind` ha un `Handler` separato in `internal/cron/handlers/<kind>.go` implementando `Handle(ctx, *Task) error`, `MaxDuration() time.Duration`, `ReschedulesOnRecovery() bool`. `MaxDuration` definisce la soglia oltre la quale un run senza `finished_at` è considerato in limbo al restart. `ReschedulesOnRecovery=true` (reminder, idempotenti) → il task viene riportato in `DueTasks` al boot; `=false` (agent_job, side-effecting) → limbo audit-only, no auto re-run. Aggiungere un nuovo kind = aggiungere 1 file, non editare un god switch.
+- [ ] Dispatcher: ogni `TaskKind` ha un `Handler` separato in `internal/cron/handlers/<kind>.go`. **Handler = `agent.Agent` (Slice 0.9)**: implementa `Run(ctx InvocationContext) iter.Seq2[*Event, error]` + metadata `MaxDuration() time.Duration` + `ReschedulesOnRecovery() bool` via embedding `BaseAgent` o struct fields. `MaxDuration` definisce la soglia oltre la quale un run senza `finished_at` è considerato in limbo al restart. `ReschedulesOnRecovery=true` (reminder, idempotenti) → il task viene riportato in `DueTasks` al boot; `=false` (agent_job, side-effecting) → limbo audit-only, no auto re-run. Aggiungere un nuovo kind = aggiungere 1 file con `Agent` impl, no dispatch switch nel tick loop (`tickLoop` itera `handler.Run(ctx)` yield events e li forwarda a `Notifier`/audit).
 - [ ] **`agent_job` handler auto-rejecta child Loop pause (audit round 1 P0)**: il sub-loop spawn-ato via `swarm.Coordinator.Spawn` riceve un `RejectingResponder` come default — un agent_job non può bloccare aspettando un umano (è cron, gira anche di notte). Se l'agent_job invoca `ask_user`, riceve risposta automatica `"<auto-rejected: scheduled job has no human responder>"` e decide come procedere. Test asserisce: cron job che invoca ask_user non blocca, completa in <30s con stato `auto-rejected`.
 - [ ] `LastError` persistito su failure, leggibile via `task.list()`.
 - [ ] **Risk-Based Governance (Area #5 closed 2026-05-28)**: ogni chiamata a `task.schedule` calcola `tier = scoring.ComputeTaskTier(args)` via modulo condiviso `internal/scoring/` (vedi §Risk-Based Governance). Se `tier in {RISKY, DESTRUCTIVE}` il task viene creato con `status='pending_approval'` (non gira), il tool result include `{task_id, risk_tier, gate_recommended:true, status:'pending_approval'}`. L'agente decide autonomamente se ri-emettere `ask_user(kind=approval, ResumeContext={action:'approve', task_id})` o procedere silente. Se silente: Notifier IMMEDIATE alert all'utente (tier ≥ RISKY trigger threshold). Tutti i campi audit (`computed_risk_tier`, `gate_recommended`, `gate_taken`) registrati in `agent_job_runs`.
@@ -1493,19 +1497,19 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 - [ ] Test: schedule → restart processo → tick loop ripicka il task → handler invocato.
 - [ ] Test crash recovery: insert manual `agent_job_runs(started_at=now()-1h, finished_at=NULL)` → boot Aura → query marca `exit_status='unknown_recovery'`, Notifier emette msg, task NON ri-eseguito automaticamente.
 
-**File targets** (≤ 950 LOC src — risparmio ~550 LOC vs pre-rewrite grazie a sqlc):
+**File targets** (≤ 750 LOC src — risparmio ~550 LOC vs pre-rewrite grazie a sqlc + ulteriori −200 LOC riapplicati da Slice 0.9: `Handler = Agent`, no dispatch switch ridondante, Notifier emette `*agent.Event` invece di struct custom):
 | Path | LOC | Note |
 |---|---|---|
 | `internal/cron/types.go` | ~100 | `Task`, `TaskKind`, `ScheduleKind`, `Status` enums (Go domain types, distinti dai sqlc-generated). |
-| `internal/cron/scheduler.go` | ~240 | Tick loop, lifecycle (Start/Stop), missed-run recovery, crash-recovery boot query (chiama `MarkRunsRecovered` prima del primo tick, itera RETURNING per reschedule selettivo, notifica utente). Usa `*cron.Queries` (sqlc client). |
+| `internal/cron/scheduler.go` | ~180 | Tick loop, lifecycle (Start/Stop), missed-run recovery, crash-recovery boot query (chiama `MarkRunsRecovered` prima del primo tick, itera RETURNING per reschedule selettivo, notifica utente). Usa `*cron.Queries` (sqlc client). Per ogni due task, recupera `Handler` (= `agent.Agent`) dal registry e itera `handler.Run(invocationCtx)` yield events → forward a Notifier + audit log. |
 | `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
 | `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
 | `internal/db/queries/agent_job_runs.sql` | ~80 | **4 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`, `MarkRunsRecovered`. `MarkRunsRecovered` è la boot recovery query (UPDATE finished_at IS NULL AND started_at < threshold → exit_status='unknown_recovery'). RETURNING task_id per il reschedule loop. |
-| `internal/db/migrations/0006_scheduler.up.sql` | ~85 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). |
+| `internal/db/migrations/0006_scheduler.up.sql` | ~90 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, `approval_source text NULL CHECK (approval_source IS NULL OR approval_source IN ('ask_user','cli','auto'))`, `paused_state_token uuid NULL REFERENCES aura.paused_states(token) ON DELETE SET NULL`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). **`approval_source` enum + `paused_state_token` FK** (parity con `skill_audit`, fix audit Round 1 P1): se la run è triggered da `task.approve` post-ask_user → `approval_source='ask_user'` + `paused_state_token=<token>`. Se da `task.run_now` CLI → `'cli'` + NULL. Se da tick scheduler senza gate → `'auto'` + NULL. Forensics simmetrico cross-slice. |
 | `internal/db/migrations/0006_scheduler.down.sql` | ~5 | DROP TABLEs. |
-| `internal/cron/handlers/handler.go` | ~40 | Interface `Handler{ Kind() TaskKind; Handle(ctx, t *Task) error }` + registry. |
-| `internal/cron/handlers/reminder.go` | ~85 | Notifier-driven (CLI/Telegram). `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
-| `internal/cron/handlers/agent_job.go` | ~170 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. Tier configurabile via task payload (`tier ∈ {worker, chat, reasoning}`, default `reasoning`); validato contro `TierConfig.Available()`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
+| `internal/cron/handlers/handler.go` | ~50 | `Handler` = type alias di `agent.Agent` (Slice 0.9) + metadata interface `HandlerMeta{ Kind() TaskKind; MaxDuration() time.Duration; ReschedulesOnRecovery() bool }`. Registry `map[TaskKind]Handler`. Helper `BaseHandler` struct embeddable per riusare metadata. |
+| `internal/cron/handlers/reminder.go` | ~70 | `ReminderAgent` impl `agent.Agent`: `Run(ctx) iter.Seq2[*Event, error]` emette un `Event{Author:"reminder", LLMResponse:{Content: payload.Text}}` poi `Event{Actions.Escalate=true}`. Notifier consuma yield events. `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
+| `internal/cron/handlers/agent_job.go` | ~120 | `AgentJobAgent` impl `agent.Agent`: spawn child `LlmAgent` via Slice 3 swarm `Coordinator.Spawn` (Slice 0.9 amendment), forwarda i child events come yield del proprio `Run`. Tier configurabile via task payload (`tier ∈ {worker, chat, reasoning}`, default `reasoning`); validato contro `TierConfig.Available()`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
 | ~~`internal/cron/handlers/graph_maintenance.go`~~ | — | **RIMOSSO (audit round 1 P0)**: scope-creep esplicito (placeholder per future), va in slice dedicata post-MCP-Neo4j. Slice 6 supporta solo `reminder` e `agent_job` per ora. |
 
 **Commit message templates (sub-slice 6a + 6b):**
@@ -1523,10 +1527,12 @@ scheduler_tasks.sql + agent_job_runs.sql (incl. MarkRunsRecovered boot
 query). Tick loop DIY 30s with missed-run recovery and crash recovery
 (boot query marks finished_at IS NULL && started_at < MaxDuration as
 unknown_recovery; reschedules only handlers with ReschedulesOnRecovery=true,
-i.e. reminders; agent_job stays audit-only). Handler interface gains
-MaxDuration() + ReschedulesOnRecovery(). Notifier interface + stdout impl
-emits boot summary if >=1 row recovered. Handlers registry + reminder
-handler (MaxDuration=30s, reschedules=true). Tools task_list/task_cancel.
+i.e. reminders; agent_job stays audit-only). Handler = agent.Agent (Slice
+0.9): Run(ctx) iter.Seq2[*Event, error] + metadata MaxDuration() +
+ReschedulesOnRecovery(). Notifier interface + stdout impl consume yield
+events and emit boot summary if >=1 row recovered. Handlers registry +
+reminder handler (MaxDuration=30s, reschedules=true). Tools
+task_list/task_cancel.
 
 Smoke: aura schedule reminder in=10m → tick loop fires → Notifier stdout.
 Persistent across restart verified.
@@ -1581,7 +1587,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > Si committa in **4 sub-slice ordinati**, ognuno atomic + smoke green:
 > - **7a**: types + loader (filesystem + parser + cache 4-way split) + `internal/skills/validator.go` (single chokepoint, riusato da tutti) + `internal/skills/paths.go` (`SanitizeName` single source) + tool `skill.list` + tool `skill.info`. Read-only, no governance. ~500 LOC.
 > - **7b**: catalog (skills.sh HTML scrape 1:1 pre-rewrite) + tool `skill.catalog`. Read-only. ~350 LOC.
-> - **7c**: writer (atomic pending→active) + deleter + tool `skill.create` + `skill.update` + `skill.delete` (mutation tools con ask_user governance). Schema `aura.skill_audit` (migration `0004`) + sqlc queries + adapter. ~600 LOC.
+> - **7c**: writer (atomic pending→active) + deleter + tool `skill.create` + `skill.update` + `skill.delete` (mutation tools con ask_user governance). Schema `aura.skill_audit` (migration `0007`) + sqlc queries + adapter. Tx wrapping esplicito attorno alla coppia (FS-move pending→active + INSERT skill_audit row): se INSERT fallisce, FS-move viene rollback-ato (rename inverso). ~600 LOC.
 > - **7d**: installer (`npx skills add` con `--ignore-scripts` + sanitizedEnv stretto + post-install ParseSkill re-validation) + tool `skill.install`. ~450 LOC.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
@@ -1667,7 +1673,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
   - **90s timeout preservato dal pre-rewrite** (`skillInstallToolTimeout` già esistente, non nuovo).
   - sanitizedEnv whitelist stretta: drop `NPM_CONFIG_USERCONFIG` (può puntare a file arbitrari), drop `NPM_CONFIG_GLOBALCONFIG`, drop `NPM_CONFIG_PREFIX`.
   - **Acceptance**: install di una skill malevola con `postinstall: "rm -rf ~"` → `--ignore-scripts` la blocca, test asserisce.
-- [ ] **Capability boundary open-by-default per single-user**: nel tabula-rasa Aura locale, l'identity seed `'local'` (Slice 1.7) ha capability grant `'*'` (wildcard) — l'agente può self-extend liberamente (gate-ato comunque da `ask_user`). Capability lookup via `aura.capability_grants` (sqlc), non hard-coded: struttura estendibile per future multi-user senza toccare il codice.
+- [ ] **Capability boundary open-by-default per single-user**: nel tabula-rasa Aura locale, l'identity seed `'local'` (Slice 1.7) ha capability grant `'*'` (wildcard) — l'agente può self-extend liberamente (gate-ato comunque da `ask_user`). Capability lookup via `aura.capability_grants` (sqlc), non hard-coded: struttura estendibile per future multi-user senza toccare il codice. **Scaffolding intenzionale**: nessuna slice 1→10 ha consumer che chiama `HasCapability` (l'enforcement effettivo arriva con la slice multi-user/auth futura). Per oggi `HasCapability` è esportato e testabile, ma sempre `true` di fatto via grant `'*'` — non rimuoverlo, è il foundation pre-built per multi-user.
 - [ ] `skill.info(name)` ritorna corpo intero come `ToolResult` — usa il pattern Slice 1 (preview + sidecar file se >2 KiB).
 - [ ] **Prompt injection guard espanso (audit round 1 P0)**: body size cap `AURA_SKILL_BODY_CAP_BYTES` (default `32768` = 32 KiB, era hardcoded, promosso a env in Area #8 closed 2026-05-28) a write time. Refuse write se body contiene una di queste sequence (literal blocklist):
   - OpenAI ChatML: `<|im_start|>`, `<|im_end|>`, `<|endoftext|>`
@@ -1692,7 +1698,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 | `internal/skills/catalog.go` | ~140 | skills.sh fetch HTML + regex parse + search by query (pre-rewrite 1:1, HTTP timeout config-overrideable). |
 | `internal/skills/installer.go` | ~140 | `npx skills add <source> --agent claude-code -y` con sanitizedEnv stretto, 90s timeout. Post-install ParseSkill re-validation prima di Invalidate. Path-traversal guard. |
 | `internal/skills/audit.go` | ~70 | Thin adapter su sqlc `Queries.RecordSkillMutation` + `Queries.ListAuditSince`. Niente più file IO. |
-| `internal/db/queries/skill_audit.sql` | ~40 | 3 query sqlc. |
+| `internal/db/queries/skill_audit.sql` | ~45 | **4 query sqlc**: `RecordSkillMutation`, `ListAuditSince`, `GetByName`, `ListPendingApproval`. |
 | `internal/db/migrations/0007_skill_audit.up.sql` | ~60 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action text, name text, content_hash text, source text, `approval_source text NOT NULL CHECK (approval_source IN ('ask_user','cli','auto'))`, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL, `computed_risk_tier text NOT NULL DEFAULT 'risky' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT true`, `gate_taken boolean NOT NULL DEFAULT true`). Indice su `ts DESC`, indice su `(gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false` (forensics per gate-skipped), indice su `(approval_source, ts DESC)` (forensics "quali via CLI?"). **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). Coerenza inviolabile (DB constraint or app-level check): `approval_source='ask_user'` ⇔ `paused_state_token IS NOT NULL AND gate_taken=true`; `approval_source='cli'` ⇔ `paused_state_token IS NULL AND gate_taken=true`; `approval_source='auto'` ⇔ `paused_state_token IS NULL AND gate_recommended=false`. |
 | `internal/agent/tools/skill_list.go` | ~50 | Non-deferred (output piccolo). |
 | `internal/agent/tools/skill_catalog.go` | ~60 | Deferred. Query skills.sh, ritorna candidati. |
@@ -1861,21 +1867,20 @@ curl -N -X POST http://127.0.0.1:9080/agent/run \
 - [ ] **CORS**: header permissivi per dev (`Access-Control-Allow-Origin: *` se `AURA_AGUI_CORS_PERMISSIVE=1`, default `*` per `127.0.0.1` origin). Future restrittivo via env.
 - [ ] **Backpressure**: SSE writer buffered channel (capacity 64); su client lento, channel full → drop con WARN log + `RUN_ERROR` se persistente. Niente blocco del Loop.
 - [ ] **AG-UI Dojo compliance**: test integrazione che esegue il Dojo conformance suite (50-200 LOC per building block come da spec) contro `aura serve --agui-port`. Validation: text streaming, tool calls, state sync, HITL interrupts.
-- [ ] Test unitario emitter: input `(LoopState, Event)` → output `[]Event` AG-UI sequenza corretta. Property-based su tutti gli ~25 event types.
+- [ ] Test unitario translator: input sequenza `*agent.Event` (Slice 0.9) → output `[]events.Event` AG-UI sequenza corretta. Property-based su tutti gli ~25 event types.
 
-**File targets** (~700 LOC src + ~300 test):
+**File targets** (~600 LOC src + ~300 test — saving −100 LOC riapplicato da Slice 0.9: il translator consume `iter.Seq2[*Event, error]` direttamente, no `Emitter` interface custom né plumbing channel-based):
 | Path | LOC | Note |
 |---|---|---|
 | `internal/agui/client.go` | ~80 | Wrapper sul Go SDK community `core/events`. Type aliases per evitare leak del package esterno nei call sites. |
-| `internal/agui/emitter.go` | ~180 | `Emitter` interface implementato dal Loop. `EmitRunStarted/StepStarted/TextDelta/ToolCallStart/.../RunFinished`. Channel-based, non-blocking. |
-| `internal/agui/translator.go` | ~120 | `LoopEvent` (Aura interno) → `events.Event` (AG-UI). Mapping deterministico. ID generation via `IDGenerator` interface. |
-| `internal/agui/server.go` | ~200 | HTTP server: `POST /agent/run` (SSE response), `GET /threads/<id>/messages` (JSON `MESSAGES_SNAPSHOT`). Backpressure-bounded, CORS, graceful shutdown. |
+| `internal/agui/translator.go` | ~180 | `Translate(seq iter.Seq2[*agent.Event, error]) iter.Seq2[events.Event, error]` — mapping deterministico 1:N da `*agent.Event` Slice 0.9 a AG-UI event types (text/tool/state/lifecycle/reasoning, ~25 types). ID generation via `IDGenerator` interface. Funzione pura, no mutable state cross-event eccetto IDs. Sostituisce `Emitter` interface pre-0.9 (drop ~180 LOC plumbing). |
+| `internal/agui/fanout.go` | ~80 | Fanout helper per in-process subscribers (Slice 9b Telegram consumer): `Fanout` struct wrappa `iter.Seq2[*agent.Event, error]` e distribuisce a N subscriber channel concurrent. Aggiunto qui per centralizzare la dependency Slice 9b → Slice 8 (era retro-aggiunto in Slice 9, fix audit Round 1). |
+| `internal/agui/server.go` | ~200 | HTTP server: `POST /agent/run` (SSE response), `GET /threads/<id>/messages` (JSON `MESSAGES_SNAPSHOT`). Consume `(*LlmAgent).Run(ctx) iter.Seq2[*Event, error]` direttamente, passa a `Translate`, scrive SSE. Backpressure-bounded (buffered channel cap 64), CORS, graceful shutdown. |
 | `internal/agui/types.go` | ~80 | `RunAgentInput` parser, validation (`threadId` UUID, `messages[]` non vuoto, etc.), helpers. |
-| `internal/agent/loop.go` (diff) | ~+100 / -20 | `Loop.SetEmitter(e)`. Ogni step emette eventi via `e.Emit(...)`. Default no-op emitter per backwards compat (CLI in-process). |
 | `cmd/aura/main.go` (diff) | ~+80 | Subcommand `aura serve [--agui-port <N>] [--bind <addr>]`. |
-| `cmd/aura/chat.go` (diff) | ~+50 | `aura chat --via-agui` flag opzionale (passa per il server invece che in-process). Default in-process. |
+| `cmd/aura/chat.go` (diff) | ~+50 | `aura chat --via-agui` flag opzionale (passa per il server invece che in-process). Default in-process. **Note refactor-on-touch**: questo file viene rinominato/migrato a `internal/channels/cli/cli.go` in Slice 9a — la diff `+50` qui resta come delta intermedio, Slice 9a refactor la assorbe. |
 | `internal/agui/server_test.go` | ~180 | Integration test: spawn server, run AG-UI Dojo conformance suite, assert eventi. |
-| `internal/agui/emitter_test.go` | ~120 | Property-based emitter coverage. |
+| `internal/agui/translator_test.go` | ~120 | Property-based translator coverage. Fixture sequenza `*agent.Event` → expected AG-UI events. |
 
 **Deferred-tool partition.** Niente tool LLM-facing nuovo. AG-UI è transport infrastructure, non capability LLM-facing.
 
@@ -1907,6 +1912,12 @@ Mapping Aura -> AG-UI:
 Reasoning events (10 types) emessi se provider returns
 reasoning_content (DeepSeek-V4 reasoning). Future-proof.
 
+Translator pattern (Slice 0.9): translate(iter.Seq2[*agent.Event]) ->
+iter.Seq2[events.Event] funzione pura, no Emitter interface custom.
+Server.go consuma (*LlmAgent).Run(ctx) direttamente via range-over-func.
+Fanout helper (~80 LOC) centralizza dependency Slice 9b in-process
+subscriber, evita retro-aggiunta.
+
 Out of scope mantenuto: auth dell'endpoint (slice dedicata).
 Bind default 127.0.0.1, CORS env-driven.
 
@@ -1918,8 +1929,9 @@ Dipendenza go.mod: github.com/ag-ui-protocol/ag-ui/sdks/community/go.
 Smoke: aura serve + curl /agent/run mostra SSE event stream
 conforme. AG-UI Dojo conformance suite verde.
 
-Telegram bot + web frontend = slice future dedicate (adapter
-client AG-UI, riusano il protocollo, niente nuovo wire format).
+Telegram bot + web frontend = Slice 9 / future dedicate (Telegram
+in-process subscriber via internal/agui/fanout, web SPA HTTP SSE
+client esterno).
 
 LOC: +XXX src / +YY test.
 
@@ -1946,7 +1958,7 @@ Slice 9 risolve Area #16 (transport agnostico) all'altezza prodotto: Slice 8 ha 
 - Slice 1.5 ask_user + multi-pause FIFO (HITL via inline keyboard)
 - Slice 1.7 identities + capability_grants (telegram_accounts FK)
 - Slice 1.8 conversation persistence (threadId mapping)
-- Slice 5 Risk-Based Governance (rendering risk_tier in messaggi approval)
+- Risk-Based Governance (sezione cross-cutting, rendering risk_tier in messaggi approval)
 - Slice 8 AG-UI gateway (emitter fanout channel per in-process subscribers)
 
 ### Dipendenze Go nuove
@@ -2154,14 +2166,14 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 ### Acceptance
 
 #### 9a (Channel framework + Setup wizard)
-- [ ] `Channel` interface in `internal/channels/channel.go`. CLI implementata come `internal/channels/cli/cli.go` (refactor di Slice 1.8 `cmd/aura/chat.go`).
+- [ ] `Channel` interface in `internal/channels/channel.go`. CLI implementata come `internal/channels/cli/cli.go` (refactor di Slice 1.8 `cmd/aura/chat.go` — file creato in 1.8 dedicato per i sub-command chat, ora migrato a channel abstraction).
 - [ ] `Registry` orchestration: `StartAll` boot tutti i channel enabled (env `AURA_CHANNEL_<NAME>_ENABLED`, default true); `StopAll` graceful drain.
 - [ ] Flag override per debug: `aura serve --no-telegram`, `aura serve --only=cli`.
 - [ ] Setup wizard HTTP server bind `127.0.0.1:9081` (override `AURA_SETUP_BIND=0.0.0.0:9081` per setup remote con QR scan).
 - [ ] `GET /setup` serve `page.html` embedded.
 - [ ] `POST /setup/token` body `{token}`: valida via Telegram `getMe`, persiste in secrets store, restart bot goroutine (se già attivo).
 - [ ] `POST /setup/onboard-link`: genera UUID onboarding_token, INSERT `telegram_setup_pending` (TTL 1h), ritorna `{deep_link: "https://t.me/<bot_username>?start=<token>", qr_svg: "..."}`.
-- [ ] `GET /setup/events` (SSE): emette `{type:"onboarding_completed", telegram_user_id, username}` quando `telegram_setup_pending.consumed_at` viene scritto (poll DB ogni 2s o LISTEN/NOTIFY).
+- [ ] `GET /setup/events` (SSE): emette `{type:"onboarding_completed", telegram_user_id, username}` quando `telegram_setup_pending.consumed_at` viene scritto. **Implementazione: poll DB ogni 2s** (default proposto chiuso per Slice 9a, vedi Open Questions sotto). LISTEN/NOTIFY è ottimizzazione futura, non bloccante.
 - [ ] `GET /setup/status`: ritorna `{bot_configured, account_count, last_activity}`.
 - [ ] Smoke: setup flow end-to-end senza CLI (paste token → QR → Telegram → completo).
 - [ ] Test integrazione `db_integration`: round-trip onboarding token + cleanup expired.
@@ -2169,11 +2181,13 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 #### 9b (Telegram impl)
 - [ ] `internal/channels/telegram/bot.go` implementa `Channel` interface, polling `tele.Bot` via telebot.v4.
 - [ ] `agui_subscriber.go` riceve eventi da `agui.Emitter.Subscribe()` (fanout channel, in-process).
-- [ ] `renderer.go`: 2 msg per turn (status + content), throttle differenziato + chat queue serializzata + 429 backoff. Markdown via `eekstunt/telegramify-markdown-go`, fallback plain text se entity invalid.
+- [ ] `renderer.go`: 2 msg per turn (status + content), throttle differenziato + chat queue serializzata + 429 backoff. Markdown via `eekstunt/telegramify-markdown-go` (licenza + active maintenance VERIFICARE pre-merge: cercare commit history ultimi 90gg + LICENSE file MIT/Apache-2.0/BSD — se inactive >180gg O licenza incompat, fallback a port custom ~80 LOC del subset MarkdownV2 escapes), fallback plain text se entity invalid.
 - [ ] `hitl.go`: `ask_user.options` → InlineKeyboardMarkup; assenti → ForceReply. Callback handler chiama `Resume(token, answer)`. Reply quote = new turn parallelo (multi-pause FIFO).
 - [ ] `commands.go`: 8 commands MVP, bot-intercept, no LLM call per dispatching.
 - [ ] `onboarding.go`: `/start <token>` matcher → consume `telegram_setup_pending` → INSERT `telegram_accounts` + send SSE event a /setup web.
-- [ ] Test renderer: golden fixture per ogni event type AG-UI → Telegram message expected.
+- [ ] `renderer.go` mappa esplicitamente i seguenti AG-UI event types (definiti in Slice 8): `RUN_STARTED` (open status pane), `STEP_STARTED`/`STEP_FINISHED` (status pane update), `TEXT_MESSAGE_START`/`CONTENT`/`END` (content streaming), `TOOL_CALL_START`/`ARGS`/`END`/`RESULT` (status pane tool list con glyph 🟡→✅/❌), `REASONING_START`/`CONTENT`/`END` (status pane "💭 Reasoning..." line, collapsed se troppo lungo), `STATE_DELTA` (running cost USD su status pane footer), `STATE_SNAPSHOT` (no-op nel rendering, solo audit), `MESSAGES_SNAPSHOT` (no-op, solo HTTP responses), `RUN_FINISHED` (status pane finalize + content reply send), `RUN_ERROR` (status pane shows ❌ + error message).
+- [ ] **Microcompact pointer handling**: il renderer riconosce `tool_call_result` content che inizia con `[tool_call_id=X: evicted from context...]` (formato L1 microcompact eviction Slice 1.8b) e lo rende come line "🗄️ Tool result evicted (X bytes archived)" invece di dump del puntatore raw nel Telegram message.
+- [ ] Test renderer: golden fixture per ogni event type AG-UI → Telegram message expected. Almeno 1 fixture per type, incluso microcompact pointer case.
 - [ ] Test commands: ogni command produce output atteso senza LLM call.
 
 #### 9c (Multimodal)
@@ -2298,7 +2312,7 @@ Per-identity (Slice 1.7): multi-user supportato strutturalmente. Filesystem-base
 - Slice 1.7 identities (per per-identity scoping)
 - Slice 1.8 conversation persistence (per memory extraction da turn passati)
 - Slice 4 PromptBuilder (per injection cache-friendly come secondo system message)
-- Slice 5 Risk-Based Governance (per gating delle update uncertain)
+- Risk-Based Governance (sezione cross-cutting, per gating delle update uncertain)
 - Slice 8 AG-UI emitter (per emit STATE_DELTA quando profile cambia)
 - Slice 9 Telegram bot (transport principale dell'interview e degli updates)
 
@@ -2384,7 +2398,8 @@ Se "Salta":
   → procedi a normal chat (no profile injection)
 
 Se "Sì":
-  → state machine onboarding interview (in-process, no Loop spawn dedicato)
+  → InterviewLoop = LoopAgent[InterviewStepAgent] (Slice 0.9 built-in)
+  → maxIterations=8 cap hard, ogni iter = 1 step domanda+risposta
   → 5-8 domande adattive scelte dall'LLM in base alle risposte
   
   Domanda 1 (sempre): "Come ti chiami?"
@@ -2477,10 +2492,19 @@ User/assistant/tool message history (variable)
 
 ```
 internal/onboarding/
-  interview.go      # ~180   LLM Q&A state machine (in-process Loop integration)
-                    #        - state: idle | asking | summarizing | confirmed
-                    #        - domande adattive scelte dall'LLM via tool call
-                    #        - 5-8 domande max, cap su 30 turn ricorrenti
+  interview.go      # ~80    InterviewLoop = LoopAgent[InterviewStepAgent]
+                    #        (Slice 0.9 built-in, NO state machine custom)
+                    #        - maxIterations=8 (cap hard, allineato a Slice 0.9)
+                    #        - InterviewStepAgent.Run yield Event con domanda LLM
+                    #          adattiva, attende risposta via ask_user, yield Event
+                    #          con risposta accumulata in InvocationContext state
+                    #        - SummaryConfirmAgent (sub-agent) emette
+                    #          Event{Actions.Escalate=true} su "Conferma" → LoopAgent
+                    #          termina naturalmente (saving -100 LOC vs state machine)
+  steps.go          # ~120   InterviewStepAgent + SummaryConfirmAgent
+                    #        impl di agent.Agent (Slice 0.9)
+                    #        Domande adattive: l'LLM sceglie la prossima in base
+                    #        al state accumulato (InvocationContext.SessionStore)
   store.go          # ~100   Filesystem read/write ~/.aura/agents/<id>/
                     #        - Agent.md, preferences.json, metadata.json, changelog.md
                     #        - atomic write (temp file + os.Rename)
@@ -2492,20 +2516,38 @@ internal/onboarding/
   updater.go        # ~200   Auto-update logic:
                     #        - observation counter per category/key
                     #        - certainty threshold check (default N=3)
-                    #        - certain → auto-add silenzioso + changelog
-                    #        - uncertain hi-conf → ask_user gate (Risk-Based)
+                    #        - certain → auto-add silenzioso + changelog + profile_audit row
+                    #        - uncertain hi-conf → ask_user gate (Risk-Based) +
+                    #          paused_state_token persisted, audit row scritto su resume
                     #        - low-conf → no action
-  forget.go         # ~80    /forget command + fuzzy match + revert changelog
 
 internal/channels/telegram/commands.go (diff)  # ~+80
-  + /onboard  - re-run interview, idempotent
+  + /onboard  - re-run interview (spawn nuovo LoopAgent[InterviewStepAgent])
   + /edit-profile - opens edit mode (textarea via ForceReply per section)
-  + /forget [fact] - delete fact + changelog
+  + /forget [fact] - delete fact + changelog + profile_audit FORGET row
+                    routing: bot-intercept con inline keyboard confirmation,
+                    NON paused_states (è command, non Loop-emitted ask_user).
+                    Idempotente: rimuovere fatto già rimosso = no-op + log.
   + /profile - mostra Agent.md current
 
-internal/agent/loop.go (diff)  # ~+50
-  - hook onboarding.Updater.Observe(turn) post-LLM response
+internal/agent/llm_agent.go (diff)  # ~+50
+  - hook onboarding.Updater.Observe(turn) post-LLM response (consume yield events)
   - hook onboarding.Injector.Inject() in PromptBuilder
+
+internal/db/queries/profile_audit.sql            # ~40
+  - 4 query: RecordProfileMutation, ListAuditSince, GetByIdentity, ListPendingApproval
+  - per-identity, parity con skill_audit (Slice 7c) per simmetria governance
+
+internal/db/migrations/0009_profile_audit.up.sql # ~50
+  - CREATE TABLE aura.profile_audit (id, ts, identity_id fk, action,
+    category, key, value_before, value_after, content_hash, source
+    enum {onboarding,auto-extract,manual,forget},
+    approval_source enum {ask_user,cli,auto},
+    paused_state_token fk paused_states(token) NULL,
+    computed_risk_tier, gate_recommended, gate_taken)
+  - Forensics asimmetrico risolto (audit Round 1 P1)
+
+internal/db/migrations/0009_profile_audit.down.sql # ~3
 
 cmd/aura/main.go (diff)  # ~+40
   + aura profile show <identity_name>
@@ -2544,7 +2586,7 @@ cat ~/.aura/agents/<identity_id>/Agent.md
 
 ### Acceptance
 
-- [ ] `internal/onboarding/interview.go` state machine 5-8 domande adattive, gestione skip option, summary + confirm step.
+- [ ] `internal/onboarding/interview.go` definisce `InterviewLoop = LoopAgent[InterviewStepAgent]` (Slice 0.9 built-in). `maxIterations=8` cap hard. Skip option gestita pre-spawn. `SummaryConfirmAgent` emette `Event{Actions.Escalate=true}` su "Conferma" → LoopAgent termina naturalmente. No state machine Go custom.
 - [ ] `store.go` filesystem atomic write (temp + Rename), per-identity directory `~/.aura/agents/<identity_id>/` (UUID).
 - [ ] `injector.go` aggiunge Agent.md come second system message in PromptBuilder. Cache invalidation hash basato su `metadata.last_updated_at`.
 - [ ] `extractor.go` LLM-driven fact extraction post-turn. Prompt template strutturato che restituisce JSON `[{category, key, value, confidence, evidence}]`.
@@ -2561,7 +2603,7 @@ cat ~/.aura/agents/<identity_id>/Agent.md
 
 ### File targets cumulativi
 
-(Vedere "Architettura componenti" sopra. Totale ~700 LOC src + ~250 test.)
+(Vedere "Architettura componenti" sopra. Totale ~580 LOC src + ~250 test + 50 LOC migration — saving −120 LOC riapplicato da Slice 0.9 amendment via `LoopAgent[InterviewStepAgent]` vs state machine Go custom.)
 
 ### Open questions
 
@@ -2906,7 +2948,7 @@ AURA_SETUP_BIND = 127.0.0.1:9081  (Slice 9a, sempre on)
 AURA_PROFILE_CERTAINTY_N = 3  (Slice 10, onboarding auto-update)
   Numero di osservazioni consistent richieste per auto-add silenzioso
   di un fatto a Agent.md. Sotto soglia (1-2 osservazioni) -> ask_user
-  approval gate via Risk-Based pipeline (Slice 5). Hybrid pattern:
+  approval gate via Risk-Based pipeline (sezione cross-cutting). Hybrid pattern:
   fatti certi auto, incerti gate.
 
 AURA_PROFILE_DIR = ~/.aura/agents  (Slice 10, default)
@@ -2914,6 +2956,58 @@ AURA_PROFILE_DIR = ~/.aura/agents  (Slice 10, default)
   contiene Agent.md + preferences.json + metadata.json + changelog.md.
   Atomic write (temp + Rename) per evitare corruption su crash mid-update.
 ```
+
+### Indice completo env vars (`AURA_*` + sidecar)
+
+Tabella di tutte le environment variables citate nel PRD, slice di provenance, default, e se sono "caps & limits" (sopra) o "operative" (config/secret/path).
+
+| Env var | Default | Tipo | Slice | Note |
+|---|---|---|---|---|
+| `AURA_DB_URL` | (richiesto) | operative | 0.5 | Postgres DSN. |
+| `AURA_LLM_BASE_URL` | `https://openrouter.ai/api/v1` | operative | 1 | OpenAI-compat endpoint. |
+| `AURA_LLM_API_KEY` | (richiesto via `.env` `OPENROUTER_API_KEY`) | secret | 1 | API key. |
+| `AURA_LLM_MODEL` | `deepseek/deepseek-v4-flash:exacto` | operative | 1 | Model id. |
+| `AURA_LLM_TOTAL_TIMEOUT_SEC` | `120` | cap | 1 | Global HTTP timeout. |
+| `AURA_CONFIG_DIR` | `~/.aura/` | path | 1 | Config root (contiene `llm.json`). |
+| `AURA_RUN_DIR` | `~/.aura/run/` | path | 1 | Runtime sidecar dir. |
+| `AURA_RUN_DIR_WARN_THRESHOLD_BYTES` | `1073741824` (1 GiB) | cap | 1 | Boot warn threshold. |
+| `AURA_CONTEXT_PREVIEW_CAP_BYTES` | `2048` | cap | 1 | ToolResult preview boundary. |
+| `AURA_CONTEXT_RESERVE_TOKENS` | `13000` | cap | 1.8b | Context window reserve. |
+| `AURA_CONTEXT_MAX_OUTPUT_TOKENS` | `20000` | cap | 1.8b | Max output tokens enforced. |
+| `AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS` | `10` | cap | 1.8b | Microcompact L1 threshold. |
+| `AURA_MODEL_CONTEXT_WINDOW` | (auto, per provider) | operative | 1.8b | Override context window calc. |
+| `AURA_MODEL_MAX_OUTPUT_TOKENS` | (auto, per provider) | operative | 1.8b | Override max output calc. |
+| `AURA_CONVERSATION_TURN_CAP_BYTES` | `262144` (256 KiB) | cap | 1.8 | DB cell spillover boundary. |
+| `AURA_SANDBOX_URL` | `http://127.0.0.1:18901` | operative | 2 | Sandbox sidecar endpoint. |
+| `AURA_SANDBOX_TIMEOUT_SEC` | `30` (cap `600`) | cap | 2 | Per-execute timeout. |
+| `AURA_SWARM_MAX_DEPTH` | `3` | cap | 3 | Spawn depth cap (era `MAX_SPAWN_DEPTH` pre-fix). |
+| `AURA_SWARM_MODEL_CHAT` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
+| `AURA_SWARM_MODEL_REASONING` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
+| `AURA_SWARM_MODEL_WORKER` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
+| `AURA_WEB_FETCH_ALLOW_LOOPBACK` | `0` (false) | operative | 5 | Permit loopback URLs in web_fetch. |
+| `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
+| `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
+| `AURA_SKILL_INJECTION_BLOCKLIST` | (built-in list) | operative | 7 | Prompt-injection blocklist patterns. |
+| `AURA_AGUI_CORS_PERMISSIVE` | `0` | operative | 8 | Dev mode CORS `*`. |
+| `AURA_AGUI_PATH_RUN` | `/agent/run` | operative | 8 | AG-UI endpoint path. |
+| `AURA_CHANNEL_<NAME>_ENABLED` | `1` (true) | operative | 9a | Per-channel enable (es. `AURA_CHANNEL_TELEGRAM_ENABLED`). |
+| `AURA_SETUP_BIND` | `127.0.0.1:9081` | operative | 9a | Setup wizard bind. |
+| `AURA_TELEGRAM_STATUS_THROTTLE_MS` | `1500` | cap | 9b | Status pane throttle. |
+| `AURA_TELEGRAM_CONTENT_THROTTLE_MS` | `500` | cap | 9b | Content streaming throttle. |
+| `AURA_TELEGRAM_CHAT_RATE_LIMIT_MS` | `1000` | cap | 9b | Chat queue hard rate (1/sec Telegram). |
+| `AURA_TELEGRAM_DOC_SYNC_MAX_BYTES` | `5242880` (5 MiB) | cap | 9c | Sync convert boundary. |
+| `AURA_TELEGRAM_DOC_ASYNC_MAX_BYTES` | `52428800` (50 MiB) | cap | 9c | Async convert hard cap. |
+| `AURA_PROFILE_CERTAINTY_N` | `3` | cap | 10 | Auto-add certainty threshold. |
+| `AURA_PROFILE_DIR` | `~/.aura/agents` | path | 10 | Per-identity profile dir. |
+| `TELEGRAM_BOT_TOKEN` | (richiesto via setup) | secret | 9a | Bot token (no prefix `AURA_` per convenzione lib). |
+| `OPENROUTER_API_KEY` | (richiesto via `.env`) | secret | 1 | Forwarded a `AURA_LLM_API_KEY`. |
+| `MULTIMODAL_BASE_URL` | `http://aura-llama-multimodal:8082/v1` | operative | 9c | Sidecar URL (compose-only). |
+| `MULTIMODAL_MODEL` | `gemma-4-e4b` | operative | 9c | Sidecar model name. |
+| `MULTIMODAL_API_KEY` | `no-key` | operative | 9c | Sidecar dummy key. |
+| `LLAMA_MULTIMODAL_IMAGE_TAG` | `server` | operative | 9c | Docker image tag. |
+| `LLAMA_MULTIMODAL_HOST_PORT` | `8082` | operative | 9c | Host port mapping. |
+
+**Convenzione naming**: env Aura-controlled usano prefix `AURA_<DOMAIN>_<UNIT>` (es. `AURA_SWARM_MAX_DEPTH`). Env per librerie/sidecar di terze parti (`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `MULTIMODAL_*`, `LLAMA_*`) mantengono il loro naming canonico per compatibilità con tooling esterno (compose, libreria bot, ecc.).
 
 ### Pattern condiviso "Large Output Handling"
 
@@ -2950,7 +3044,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
 
 0.9. **Slice 0.9 (Agent runtime abstraction)** atterra dopo le infra (Slice 0/0.5/0.7) e PRIMA di Slice 1: definisce l'interface `Agent` + `iter.Seq2[*Event, error]` streaming + workflow agents (Sequential/Loop/Parallel) che TUTTE le slice successive riusano. Pattern rubato da google/adk-go (non importato per evitare 35 deps GCP-heavy). Slice 1 ridefinisce `Loop` come `LlmAgent` (implementa `Agent`). Slice 3 Swarm riusa `ParallelAgent`. Slice 6 Scheduler.Handler implementa `Agent`. Slice 10 onboarding = `LoopAgent[InterviewStepAgent]`. Saving cumulativo stimato −400 LOC netti + 1 runtime unificato vs 4 special-case pre-0.9.
-0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
+0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:Entity` / `:Source`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa. Profile utente (Slice 10 Agent.md) resta su filesystem, NON su Neo4j.
 1. **Slice 1 (LLM client + ToolResult)** è prerequisito di tutto il resto: senza un client reale e senza il pattern preview+persist sui tool result, le altre slice non hanno modo di osservare comportamento end-to-end senza avvelenare il context window.
 2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
 2.bis. **Slice 1.7 (Identity minimal)** chiude la wave persistence applicativa. Atterra dopo 1.5 (paused_states) e prima di Slice 2 perché: (a) sblocca Slice 7c per usare `actor_id` FK su `aura.skill_audit` invece di campo `text` opaco; (b) i suoi consumer (Slice 7c) sono lontani, ma il pattern "seed identity + capability_grants" deve essere stabile prima che skill_audit lo referenzi. Indipendente da Slice 2/3/4: può essere committata in parallelo a Slice 2 se preferito.
