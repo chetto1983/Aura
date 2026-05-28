@@ -89,7 +89,7 @@ Cumulativa stimata a fine Slice 7 (mini-PC 16-core, target 32 GB RAM):
 | SearXNG | ~150 MB | 5 |
 | Sandbox Python sidecar | ~80 MB | 2 |
 | Pocket-TTS | ~400 MB | (esterno) |
-| Whisper.cpp server | ~300 MB | (esterno) |
+| aura-llama-multimodal (Gemma 4 E4B Q4 baseline, vision+STT unified) | ~3 GB | 9c |
 | Markitdown sidecar | ~150 MB | (esterno) |
 | Aura Go binary | ~150 MB | 1 |
 | **Totale idle** | **~3.5-4 GB** | |
@@ -1630,6 +1630,356 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 9 — Channels framework + Telegram (main user-facing) + Setup wizard + multimodal
+
+> **Atomicity note:** ~2330 LOC totali = troppo per 1 commit. Diviso in 3 sub-slice atomici:
+> - **9a**: Channel framework + Setup wizard (QR/deep-link onboarding via web). ~1010 LOC + 300 test.
+> - **9b**: Telegram impl (bot, renderer, status pane, markdown, HITL, commands). ~920 LOC + 300 test.
+> - **9c**: Multimodal (voice + photo via Gemma 4 sidecar, documents via markitdown). ~400 LOC + 150 test.
+> Ogni sub-slice atomic-commit, smoke green prima del successivo.
+
+**Goal.** Aura passa da CLI-only a multi-channel agnostico, con **Telegram come main user-facing channel** (gli utenti finali non usano CLI). Architettura `internal/channels/<name>/` permette di aggiungere WhatsApp/Discord/Signal futuri come slice incrementali. CLI rimane debug-only per dev. Setup completo via web wizard (paste bot token + scan QR del deep link Telegram), niente codici testuali.
+
+Slice 9 risolve Area #16 (transport agnostico) all'altezza prodotto: Slice 8 ha esposto AG-UI come standard, Slice 9 ne cabla il primo client production-grade (Telegram in-process subscriber).
+
+### Pre-requisiti
+
+- Slice 1 LLM client + ToolResult sidecar (riusato per content > cap)
+- Slice 1.5 ask_user + multi-pause FIFO (HITL via inline keyboard)
+- Slice 1.7 identities + capability_grants (telegram_accounts FK)
+- Slice 1.8 conversation persistence (threadId mapping)
+- Slice 5 Risk-Based Governance (rendering risk_tier in messaggi approval)
+- Slice 8 AG-UI gateway (emitter fanout channel per in-process subscribers)
+
+### Dipendenze Go nuove
+
+```go
+// go.mod (Slice 9b)
+require gopkg.in/telebot.v4 latest                              // bot library (master usato anche)
+require github.com/eekstunt/telegramify-markdown-go latest      // Markdown -> MarkdownV2 safe
+require github.com/skip2/go-qrcode latest                       // QR code generation
+require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per console
+```
+
+### Decisioni cumulate (chiusura Punti 1-8 discussione 2026-05-28)
+
+| Punto | Aspetto | Decisione |
+|---|---|---|
+| 1 | Activation trigger | `aura serve` boot di tutti i channel configurati (Telegram main user-facing, env-driven, flag `--no-telegram` per debug). |
+| 1 | Setup wizard | Sempre on `http://<bind>:9081/setup`, paste bot token + valida via getMe + mostra QR del deep link `t.me/<bot>?start=<onboarding_token>`. |
+| 1 | Onboarding flow | User scan QR → Telegram apre → `/start <token>` → bot match in `aura.telegram_setup_pending` → INSERT `aura.telegram_accounts`. No codici testuali, full QR/deep-link. |
+| 2 | Rate limit | Adaptive con 429 `retry_after` parse + exponential backoff fino a 30s. |
+| 3 | Status pane | Pattern master B (2 msg per turn: status pane edited + content reply). LOC ridotti a ~180 (vs master 563). |
+| 3 | Throttle status | `AURA_TELEGRAM_STATUS_THROTTLE_MS=1500` (info di servizio, lento) |
+| 3 | Throttle content | `AURA_TELEGRAM_CONTENT_THROTTLE_MS=500` (token streaming, veloce) |
+| 3 | Chat rate hard | `AURA_TELEGRAM_CHAT_RATE_LIMIT_MS=1000` (queue drain serializzato per chat_id, sopra il debounce per-pane, rispetta 1/sec Telegram) |
+| 3 | Markdown library | `eekstunt/telegramify-markdown-go` (no custom port) |
+| 4 | Approval UX | Renderer agnostico: legge `ask_user.options`. Assenti → 2 button hardcoded `✅ Approva / ❌ Rifiuta`. Presenti → render exact. Agente decide 2/3/N-way via options. |
+| 4 | Reply testuale | Reply quote a un pending = nuovo turn user **parallelo** (multi-pause FIFO Slice 1.5 #4 coda i due). Tappare button = resume del pending originale. |
+| 5 | Voice failure | 2 retry exponential (1s/2s), poi bot risponde `❌ Trascrizione non disponibile. Invia testo o riprova.` + reaction 😵 sul voice message. |
+| 6 | Document size | Tiered: sync ≤5 MB inline / async background 5-50 MB con `📄 Convertendo nome.pdf...` follow-up / refuse >50 MB. |
+| 6 | Convert lifecycle | Bot intermediario: niente INSERT in `conversation_turns` finché conversione ready. A done: 1 sendMessage real + AG-UI user message con contenuto convertito. |
+| 7 | Vision model | Gemma 4 multimodal sidecar (`aura-llama-multimodal`, llama.cpp server). Variant TBD post-benchmark (E2B/E4B/26B), default baseline **E4B Q4_0** (~3 GB RAM, audio + image nativi). |
+| 7 | Whisper | **Rimosso** da compose.yaml (Gemma 4 E4B audio nativo unifica STT). -300 MB RAM, 1 sidecar in meno. |
+| 7 | Vision fallback | TBD post-benchmark: se Gemma quality basta → solo vision sidecar; altrimenti → markitdown OCR fallback se Gemma sidecar down. |
+| 8 | Bot commands MVP | 8 commands: `/start /help /whoami /cancel /new /conversations /resume /reset`. |
+| 8 | Command dispatch | Bot-intercept (no LLM call per commands). `/cancel` chiama direttamente `Loop.Cancel`, `/new` crea conv via Slice 1.8 `Create`, ecc. Solo `/start <token>` ha logica onboarding speciale. |
+
+### Architettura componenti
+
+```
+internal/channels/
+  channel.go              # ~70   Interface { Name(), Start(ctx, sub), Stop(), IsHealthy() }
+  registry.go             # ~100  Lifecycle orchestration (StartAll/StopAll, error aggregation)
+  cli/cli.go              # ~150  CLI as channel (refactor cmd/aura/chat.go Slice 1.8 → qui)
+
+internal/setup/                # Slice 9a
+  server.go               # ~150  HTTP server isolato porto 9081 (sempre on)
+  handlers.go             # ~200  POST /setup/token (validate getMe), POST /setup/onboard-link, SSE /setup/events
+  page.html               # ~250  Embedded HTML+CSS+JS, dark theme stile master
+  qr.go                   # ~50   QR SVG generation (skip2/go-qrcode)
+  types.go                # ~40
+
+internal/channels/telegram/    # Slice 9b
+  bot.go                  # ~100  tele.Bot wrapper, polling, lifecycle (Start/Stop come goroutine)
+  agui_subscriber.go      # ~140  subscribe al fanout channel di internal/agui/emitter (in-process, no HTTP)
+  renderer.go             # ~250  AG-UI events → Telegram messages
+                          #       - Pattern master B: 2 msg per turn
+                          #       - Throttle status 1500ms + content 500ms + chat queue 1000ms
+                          #       - 429 backoff adaptive
+                          #       - tool_call_result preview + sidecar pointer (Cursor pattern)
+  status_pane.go          # ~180  Status pane manager (master pattern ridotto)
+                          #       - sendMessage iniziale "⏳ thinking..."
+                          #       - editMessageText cumulativo: tool calls list con glyph 🟡/✅/❌
+                          #       - contentMode collapse a content start (footer compact)
+                          #       - finalize a RUN_FINISHED
+  hitl.go                 # ~150  ask_user pending → Telegram UX:
+                          #       - kind=approval/choice + options → InlineKeyboardMarkup
+                          #         (callback_data="resume:<token>:<idx>")
+                          #       - kind=clarification senza options → ForceReply
+                          #       - reply quote a pending msg → nuovo turn parallelo (FIFO)
+                          #       - Callback handler chiama agui.ResumeViaSubscriber(token, answer)
+  commands.go             # ~170  8 commands MVP bot-intercept:
+                          #       /start [token] - welcome + onboarding consume
+                          #       /help - lista commands + breve guida
+                          #       /whoami - tg_user_id + identity Aura + conv corrente
+                          #       /cancel - Loop.Cancel(conv_id) per active turn
+                          #       /new - Conversations.Create()
+                          #       /conversations - list paginato 5/page con InlineKeyboard nav
+                          #       /resume <id_prefix> - switch to conv by prefix match
+                          #       /reset - conv.Delete + new
+  onboarding.go           # ~80   /start <onboarding_token> matcher → INSERT telegram_accounts
+                          #       + delete pending row + emit SSE /setup/events "completed"
+  config.go               # ~60   BotToken (env) + AllowedFallback (deprecated env) + bind addr
+  store.go                # ~80   sqlc adapter aura.telegram_accounts + telegram_setup_pending
+
+internal/channels/telegram/    # Slice 9c (multimodal)
+  voice.go                # ~150  POST a aura-llama-multimodal /v1/audio/transcriptions
+                          #       - 2 retry exp 1s/2s, hard fail con UX message + reaction 😵
+                          #       - download voice via Telegram API getFile + downloadURL
+                          #       - transcript text → user message AG-UI
+  documents.go            # ~160  Tiered sync/async via markitdown sidecar /convert
+                          #       - ≤5 MB sync (HTTP timeout 30s)
+                          #       - 5-50 MB async: sendMessage placeholder + background goroutine + edit on done
+                          #       - >50 MB refuse con messaggio
+                          #       - output > AURA_CONVERSATION_TURN_CAP_BYTES → sidecar (Slice 1.8 pattern)
+  photo.go                # ~90   POST a aura-llama-multimodal /v1/chat/completions con image_url
+                          #       - base64 encode photo
+                          #       - prompt "Describe this image briefly"
+                          #       - description text → user message AG-UI
+                          #       - Fallback strategy TBD post-benchmark (markitdown OCR if Gemma down)
+
+internal/agui/emitter.go (diff)  # ~+50  fanout channel API per in-process subscribers
+                                 #       (oltre allo HTTP SSE di Slice 8)
+
+internal/llm/openai_compat/models.go (diff)  # ~+30  SupportsVision/SupportsAudio capability flags
+                                              #       per model
+
+cmd/aura/main.go (diff)         # ~+120  subcommand routing:
+                                 #         aura serve [--no-telegram] [--only=cli|telegram]
+                                 #         aura telegram allow/list/revoke (admin CLI dev-only)
+
+internal/db/queries/telegram_accounts.sql       # ~50   6 query sqlc
+internal/db/queries/telegram_setup_pending.sql  # ~30   3 query sqlc
+
+internal/db/migrations/0008_telegram.up.sql     # ~60
+internal/db/migrations/0008_telegram.down.sql   # ~5
+```
+
+### Migration 0008 (Slice 9a)
+
+```sql
+CREATE TABLE aura.telegram_accounts (
+  telegram_user_id bigint PRIMARY KEY,
+  identity_id      uuid NOT NULL REFERENCES aura.identities(id),
+  username         text,
+  first_name       text,
+  added_at         timestamptz NOT NULL DEFAULT now(),
+  last_seen_at     timestamptz
+);
+
+CREATE TABLE aura.telegram_setup_pending (
+  onboarding_token text PRIMARY KEY,
+  identity_id      uuid NOT NULL REFERENCES aura.identities(id),
+  generated_by     text,                     -- bot username when generated via /setup
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  expires_at       timestamptz NOT NULL,     -- created_at + 1 hour
+  consumed_at      timestamptz NULL
+);
+CREATE INDEX telegram_setup_pending_active
+  ON aura.telegram_setup_pending (expires_at)
+  WHERE consumed_at IS NULL;
+```
+
+### Sidecar compose.yaml changes (Slice 9c)
+
+```yaml
+# RIMOSSO: aura-whisper (sostituito da Gemma 4 E4B audio nativo)
+
+# AGGIUNTO: aura-llama-multimodal
+aura-llama-multimodal:
+  image: ghcr.io/ggml-org/llama.cpp:${LLAMA_MULTIMODAL_IMAGE_TAG:-server}
+  command:
+    - -m /models/gemma-4-e4b-it-Q4_0.gguf       # variant default baseline
+    - --mmproj /models/gemma-4-e4b-mmproj-Q4_0.gguf
+    - --port 8082
+    - --ctx-size 4096
+    - --threads 4
+  volumes:
+    - aura-models:/models
+  ports:
+    - "127.0.0.1:${LLAMA_MULTIMODAL_HOST_PORT:-8082}:8082"
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+```
+
+Env propagati al container Aura:
+```
+MULTIMODAL_BASE_URL=http://aura-llama-multimodal:8082/v1
+MULTIMODAL_MODEL=gemma-4-e4b
+MULTIMODAL_API_KEY=no-key
+```
+
+### Smoke
+
+**9a smoke:**
+```bash
+./aura serve --no-telegram                # niente bot, solo /setup endpoint attivo
+curl http://127.0.0.1:9081/setup | grep "Aura Setup"
+# admin apre browser, paste bot token → bot validato via getMe
+# admin click "Add user" → genera onboarding token + QR
+# QR scan → t.me/MyAuraBot?start=ONBOARD-XYZ
+```
+
+**9b smoke:**
+```bash
+TELEGRAM_BOT_TOKEN=xxx ./aura serve &
+# admin/setup completato (vedi 9a)
+# user invia "/start" al bot
+# bot risponde "👋 Benvenuto in Aura. Usa /help per comandi."
+# user invia "ciao dimmi 2+2"
+# bot mostra status pane "⏳ thinking..." → "✅ done" e content "4"
+```
+
+**9c smoke:**
+```bash
+# user invia voice "ciao dimmi 2+2"
+# bot reaction 🎤 → transcription via Gemma 4 → "ciao dimmi 2+2" → process come testo
+
+# user invia photo (snapshot di un'equazione)
+# bot reaction 🖼 → description via Gemma 4 → user message text → process
+
+# user invia PDF di 3 MB
+# bot reaction 📄 → markitdown convert sync → markdown text → process
+```
+
+### Acceptance
+
+#### 9a (Channel framework + Setup wizard)
+- [ ] `Channel` interface in `internal/channels/channel.go`. CLI implementata come `internal/channels/cli/cli.go` (refactor di Slice 1.8 `cmd/aura/chat.go`).
+- [ ] `Registry` orchestration: `StartAll` boot tutti i channel enabled (env `AURA_CHANNEL_<NAME>_ENABLED`, default true); `StopAll` graceful drain.
+- [ ] Flag override per debug: `aura serve --no-telegram`, `aura serve --only=cli`.
+- [ ] Setup wizard HTTP server bind `127.0.0.1:9081` (override `AURA_SETUP_BIND=0.0.0.0:9081` per setup remote con QR scan).
+- [ ] `GET /setup` serve `page.html` embedded.
+- [ ] `POST /setup/token` body `{token}`: valida via Telegram `getMe`, persiste in secrets store, restart bot goroutine (se già attivo).
+- [ ] `POST /setup/onboard-link`: genera UUID onboarding_token, INSERT `telegram_setup_pending` (TTL 1h), ritorna `{deep_link: "https://t.me/<bot_username>?start=<token>", qr_svg: "..."}`.
+- [ ] `GET /setup/events` (SSE): emette `{type:"onboarding_completed", telegram_user_id, username}` quando `telegram_setup_pending.consumed_at` viene scritto (poll DB ogni 2s o LISTEN/NOTIFY).
+- [ ] `GET /setup/status`: ritorna `{bot_configured, account_count, last_activity}`.
+- [ ] Smoke: setup flow end-to-end senza CLI (paste token → QR → Telegram → completo).
+- [ ] Test integrazione `db_integration`: round-trip onboarding token + cleanup expired.
+
+#### 9b (Telegram impl)
+- [ ] `internal/channels/telegram/bot.go` implementa `Channel` interface, polling `tele.Bot` via telebot.v4.
+- [ ] `agui_subscriber.go` riceve eventi da `agui.Emitter.Subscribe()` (fanout channel, in-process).
+- [ ] `renderer.go`: 2 msg per turn (status + content), throttle differenziato + chat queue serializzata + 429 backoff. Markdown via `eekstunt/telegramify-markdown-go`, fallback plain text se entity invalid.
+- [ ] `hitl.go`: `ask_user.options` → InlineKeyboardMarkup; assenti → ForceReply. Callback handler chiama `Resume(token, answer)`. Reply quote = new turn parallelo (multi-pause FIFO).
+- [ ] `commands.go`: 8 commands MVP, bot-intercept, no LLM call per dispatching.
+- [ ] `onboarding.go`: `/start <token>` matcher → consume `telegram_setup_pending` → INSERT `telegram_accounts` + send SSE event a /setup web.
+- [ ] Test renderer: golden fixture per ogni event type AG-UI → Telegram message expected.
+- [ ] Test commands: ogni command produce output atteso senza LLM call.
+
+#### 9c (Multimodal)
+- [ ] `voice.go`: POST a Gemma 4 multimodal sidecar `/v1/audio/transcriptions`. 2 retry + hard fail messaggio UX.
+- [ ] `documents.go`: tiered sync/async via markitdown sidecar. ≤5 MB sync, 5-50 MB async background. Output > `AURA_CONVERSATION_TURN_CAP_BYTES` → sidecar.
+- [ ] `photo.go`: POST a Gemma 4 multimodal sidecar `/v1/chat/completions` con base64 image_url. Description text → user message AG-UI.
+- [ ] Test integration `multimodal_integration` build tag: requires sidecar up. Skipped in CI senza container.
+- [ ] **Open question pre-merge**: benchmark Gemma 4 E2B vs E4B vs 26B MoE su corpus reale Aura per:
+  - STT accuracy (WER su 20 audio sample IT/EN)
+  - Image description quality (manual rating su 10 sample)
+  - Latenza p50/p95
+  - RAM steady state
+  Default baseline E4B Q4 fino al benchmark.
+- [ ] **Open question pre-merge**: vision fallback strategy. Se Gemma quality < threshold → markitdown OCR fallback path attivato. Altrimenti rimosso.
+
+### File targets cumulativi
+
+(Vedere sezione "Architettura componenti" sopra. Totale ~2330 LOC src + 750 test.)
+
+### Mini-PC RAM budget — delta vs pre-Slice 9
+
+- **Rimosso** `aura-whisper` (Whisper.cpp server): -300 MB
+- **Aggiunto** `aura-llama-multimodal` (Gemma 4 E4B Q4 default): +3 GB
+- Net: +2.7 GB. Su mini-PC 32 GB rimane abbondante headroom.
+
+Slice 0.5 RAM table emendata per riflettere (-Whisper +Gemma 4 multimodal).
+
+### Open questions
+
+1. **Variant Gemma 4 finale**: E2B / E4B / 26B MoE / 31B. Decisione pre-merge Slice 9c dopo benchmark accuracy + latenza + RAM su corpus reale Aura. Default baseline E4B.
+2. **Vision fallback markitdown OCR**: necessario o no. Pre-merge benchmark decide.
+3. **Setup wizard PostgreSQL LISTEN/NOTIFY vs poll**: SSE `/setup/events` può usare LISTEN/NOTIFY (efficient, ~1 connection ws) o poll DB ogni 2s (semplice, no extra deps). → *Default proposto*: poll 2s per Slice 9a, LISTEN/NOTIFY come ottimizzazione futura.
+4. **Channel framework: WhatsApp Business API / Discord / Signal future slice**: ogni new channel = nuova sub-slice in `internal/channels/<name>/`. Schema `<name>_accounts` table parallela. Non in scope Slice 9.
+
+### Commit message templates (sub-slice 9a + 9b + 9c)
+
+```
+slice 9a: channels framework + setup wizard (QR/deep-link onboarding)
+
+internal/channels/channel.go interface + registry orchestration.
+CLI refactored from Slice 1.8 cmd/aura/chat.go to internal/channels/cli/.
+Setup wizard HTTP server on 127.0.0.1:9081 (always on): paste Telegram
+bot token (validated via getMe), POST /setup/onboard-link generates
+UUID + QR SVG of t.me/<bot>?start=<token>. SSE /setup/events emits
+'onboarding_completed' when telegram_setup_pending.consumed_at set.
+
+Migration 0008_telegram: aura.telegram_accounts (FK identities) +
+aura.telegram_setup_pending (1h TTL, partial index on active).
+
+CLI `aura serve [--no-telegram] [--only=cli]` flag overrides.
+
+LOC: +XXX src / +YY test / +ZZ migration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 9b: telegram bot (in-process AG-UI subscriber + commands)
+
+internal/channels/telegram/* implements Channel interface as in-process
+goroutine of aura serve. Subscribes to internal/agui/emitter fanout
+channel (no HTTP overhead vs external SSE). Pattern master B: 2 msg
+per turn (status pane + content reply), throttle differenziato (status
+1500ms / content 500ms) + chat queue 1000ms serializzata + 429 backoff.
+Markdown via eekstunt/telegramify-markdown-go (no custom port).
+
+HITL: ask_user.options -> InlineKeyboardMarkup; assenti -> ForceReply.
+Reply quote a pending = nuovo turn parallelo (multi-pause FIFO).
+
+8 commands MVP bot-intercept (/start /help /whoami /cancel /new
+/conversations /resume /reset). Onboarding /start <token> consume
+telegram_setup_pending.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 9c: telegram multimodal (voice/photo via Gemma 4, docs via markitdown)
+
+aura-whisper sidecar RIMOSSO da compose.yaml. aura-llama-multimodal
+sidecar AGGIUNTO (Gemma 4 E4B Q4 baseline, variant TBD post-benchmark).
+Unifica STT + vision (audio + image nativi in Gemma 4 E2B/E4B).
+Net RAM: -300 MB + 3 GB = +2.7 GB su mini-PC 32 GB.
+
+voice.go: POST sidecar /v1/audio/transcriptions, 2 retry + hard fail.
+photo.go: POST sidecar /v1/chat/completions con image_url base64.
+documents.go: tiered sync/async via markitdown sidecar
+(<=5MB sync, 5-50MB async, >50MB refuse). Output > conversation_turn
+cap -> sidecar (Slice 1.8 pattern).
+
+Open questions pre-merge:
+- Benchmark variant E2B/E4B/26B per STT accuracy + image description
+  + latenza + RAM su corpus reale Aura.
+- Vision fallback markitdown OCR: necessario o no post-benchmark.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Pattern condiviso da estrarre (vale per Slice 5/6/7)
 
 Tutti e tre i tool seguono lo stesso shape:
@@ -1881,6 +2231,30 @@ AURA_CONTEXT_MAX_OUTPUT_TOKENS = 20000
   OpenAI/Anthropic (200K): ~167K hard / 125K warn.
   Sopra warn: log WARN. Sopra hard: errore esplicito Loop.Turn (use
   chat_compact tool o aura chat new).
+
+AURA_TELEGRAM_STATUS_THROTTLE_MS = 1500  (Slice 9b, Punto 3 closed 2026-05-28)
+AURA_TELEGRAM_CONTENT_THROTTLE_MS = 500
+AURA_TELEGRAM_CHAT_RATE_LIMIT_MS = 1000
+  Telegram bot rate limit handling. Throttle differenziato per pane:
+  - Status pane (info di servizio, lento): edit ogni 1500ms accumulato.
+  - Content streaming (token assistant): edit ogni 500ms accumulato.
+  - Sopra entrambi: chat queue serializzata 1000ms (rispetta Telegram
+    1 msg/sec per chat hard limit). Se 2 pane flush simultaneo, queue
+    serializza al rate hard.
+  429 backoff adaptive: parse retry_after header, exponential up to 30s.
+
+AURA_TELEGRAM_DOC_SYNC_MAX_BYTES = 5242880   (5 MiB, Slice 9c, Punto 6)
+AURA_TELEGRAM_DOC_ASYNC_MAX_BYTES = 52428800 (50 MiB = Telegram hard cap)
+  Tiered document handling via markitdown sidecar:
+  - <=SYNC: convert sync HTTP timeout 30s, no placeholder message.
+  - SYNC..ASYNC: async background goroutine + "📄 Convertendo..."
+    placeholder + edit a done.
+  - >ASYNC: refuse con UX message (anche Telegram impone 50 MB).
+
+AURA_SETUP_BIND = 127.0.0.1:9081  (Slice 9a, sempre on)
+  Setup wizard HTTP server (paste bot token + onboard QR). Default
+  loopback. Override AURA_SETUP_BIND=0.0.0.0:9081 per setup remoto con
+  QR scan da phone su LAN (no auth, headless container scenario).
 ```
 
 ### Pattern condiviso "Large Output Handling"
@@ -1913,7 +2287,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 
 ---
 
-## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills → AG-UI gateway)
+## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills → AG-UI gateway → Channels/Telegram)
 
 0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
 0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
@@ -1927,12 +2301,13 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 6. **Slice 5 (Web tools)** apre il backlog post-tabula-rasa: indipendente dalle 4 fondamentali, riusa `ToolResult` per fetch di pagine grandi. NON introduce `ActionRouter` (web_search/web_fetch sono 2 tool indipendenti senza azioni multiple — YAGNI). Vedi §Pattern condiviso.
 7. **Slice 6 (Scheduler)** prima di Skills: si committa in 2 sub-slice (6a infrastructure + reminder handler, 6b agent_job + ActionRouter helper). 6b introduce `ActionRouter` come primo consumer reale (tool `task` con 4 azioni). Slice 7 lo riusa.
 8. **Slice 7 (Skills)** ultima del backlog interno: si committa in 4 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima del dominio interno evita di riscrivere il flow governance ogni volta che una primitive cambia forma.
-9. **Slice 8 (AG-UI gateway)** atterra dopo Slice 7 come ultimo step: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla ultimo evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico CLI/Telegram/web): introducendo il protocollo standard AG-UI, le slice future (Telegram bot, web frontend) diventano AG-UI client separati, non codice channel-adapter custom. Out of scope "Telegram, dashboard, web" resta valido per Slice 1-7; con Slice 8 sblocca le slice 9+ (Telegram bot, web SPA) come implementation di client AG-UI.
+9. **Slice 8 (AG-UI gateway)** atterra dopo Slice 7: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla in questa posizione evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico CLI/Telegram/web): introducendo il protocollo standard AG-UI, Slice 9 può connettere Telegram come client AG-UI senza codice channel-adapter custom.
+10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal. Out of scope "Telegram + setup wizard" rimossi dal PRD (ora in scope). Dashboard SPA full + tray icon + OTA restano out.
 
 ## Out of scope per tutte e 4 le slice (esplicito)
 
-- Telegram, dashboard, wiki, Qdrant, FTS5 (vedi [README.md](README.md)).
-- Setup wizard, tray, OTA update.
+- Dashboard SPA full, wiki, Qdrant, FTS5 (vedi [README.md](README.md)). Telegram bot e setup wizard minimal ATTERRANO in Slice 9 (closes Area #16 production).
+- Tray icon, OTA update.
 - Auth dell'endpoint `aura serve` (slice CLI-server separato).
 
 ## Non-goals di processo
