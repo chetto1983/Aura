@@ -42,4 +42,5 @@ Thumbs.db
 coverage.txt
 coverage.html
 .codex/*
-.claude/
+.claude/*
+skills-lock.json

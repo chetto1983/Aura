@@ -1,0 +1,1112 @@
+# PRD — Tabula-rasa, Slice 1 → 4
+
+> Stato di partenza: commit `af4ca65c` (skeleton, 633 LOC src).
+> Ordine fissato (utente): **Agent → Sandbox → Swarm → KV**.
+> KV è ultimo per design: il prompt-builder ottimizza una superficie che a quel
+> punto è già stabile (system + tool manifest + sandbox-tool + swarm-tool), non
+> si insegue un bersaglio che si muove.
+>
+> Discipline non negoziabili per ogni slice (da CLAUDE.md):
+> - READ-BEFORE-EDIT, NEVER-SUPPOSE, 3-STRIKE-RULE.
+> - Nessun file >600 LOC; refactor on touch.
+> - `go vet ./... && go build ./...` verdi PRIMA del commit.
+> - Un slice = un commit (atomico, imperativo, Co-Authored-By).
+> - `git push` **mai** senza richiesta esplicita nello stesso turno.
+> - Niente commenti se il WHY è ovvio dal nome dell'identifier.
+> - Tool grandi → `Deferred: true` (manifest pulito, schema on-demand via `tool_search`).
+> - **Test discipline** (vedi §Test discipline in fondo): prompts E2E reali, mai citare tool/skill per nome dentro il prompt.
+
+---
+
+## Slice 0.5 — Infra DB (PostgreSQL + sqlc + pgx + golang-migrate)
+
+**Goal.** Fondamenta dati industrial-grade. Container Postgres + connection pool
++ ORM type-safe + migrations versionate. Senza questa slice, Slice 1.5 (PausedState
+persistent), Slice 6 (scheduler) e Slice 7 (skill audit) non hanno dove vivere.
+
+**Stack scelto** (validato da search 2026, vedi PRD turn dedicato):
+- DB: **PostgreSQL 17** (container `postgres:17-alpine`, ~80 MB image, ~250 MB RAM idle)
+- Driver: **`jackc/pgx/v5`** — pure Go, no CGO, performance leader per Postgres in Go
+- ORM: **`sqlc`** — SQL-first codegen type-safe (Uber, Pinterest, PlanetScale pattern). Zero runtime overhead. Anti-god-class by design: 1 file `.sql` = 1 funzione Go generata.
+- Migrations: **`golang-migrate/migrate/v4`** — file `up/down` versionati in `internal/db/migrations/`
+- Pool: `pgxpool.Pool` con config sensible default (`MaxConns=10`, `MinConns=1`, idle 30s)
+
+**Smoke.**
+```bash
+docker compose -f sandbox/compose.yaml up -d postgres
+./aura db migrate           # applica tutte le migration pendenti
+./aura db ping              # SELECT 1, stampa "ok + ms"
+./aura db status            # lista migration applicate
+```
+
+**Acceptance.**
+- [ ] Container `aura-postgres` su volume named `aura_aura-postgres` (NO bind-mount Windows — memory `feedback_sqlite_wal_windows_corruption.md` insegna). Healthcheck `pg_isready`.
+- [ ] DSN da `internal/config` (`Config.DB.URL`, env override `AURA_DB_URL`, default `postgres://aura:aura@127.0.0.1:5432/aura?sslmode=disable`). Password reale da `.env` (`POSTGRES_PASSWORD`).
+- [ ] `sqlc generate` produce codice in `internal/db/sqlc/` da `internal/db/queries/*.sql` + `internal/db/schema.sql`. Make target `make sqlc` lo lancia, CI fa fail se output non sincronizzato col commit (golden test).
+- [ ] `aura db migrate` idempotente. Applica solo le migration nuove. Errore esplicito su schema drift (migration applicata + file changed → abort).
+- [ ] `internal/db/db.go` espone `Open(ctx, cfg) (*pgxpool.Pool, error)` con ping al boot. Fail-fast se Postgres non raggiungibile.
+- [ ] Test integrazione sotto `//go:build db_integration` — salta in CI senza container Postgres (no flaky).
+- [ ] Schema iniziale **vuoto**. Le tabelle (`paused_states`, `scheduler_tasks`, `skill_audit`, ecc.) atterrano nelle rispettive slice. Solo migration `0001_init.sql` = `CREATE SCHEMA IF NOT EXISTS aura;` + commento explanatory.
+
+**File targets** (~280 LOC src + ~120 test + infra):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/db/db.go` | ~90 | `Open(ctx, *Config) (*pgxpool.Pool, error)`. Pool config, ping, graceful close. |
+| `internal/db/config.go` | ~40 | `DBConfig{URL, MaxConns, MinConns, ConnMaxIdleSec}`. Letto da `internal/config`. |
+| `internal/db/migrate.go` | ~80 | Wrapper su `golang-migrate` embedded (`embed.FS` di `migrations/`). `Up`, `Down`, `Status`. |
+| `internal/db/schema.sql` | ~20 | Sorgente di verità per `sqlc generate`. Estende con CREATE TABLE quando le slice atterrano. |
+| `internal/db/queries/.gitkeep` | — | Directory vuota inizialmente. |
+| `internal/db/migrations/0001_init.up.sql` | ~10 | `CREATE SCHEMA IF NOT EXISTS aura; SET search_path TO aura, public;` |
+| `internal/db/migrations/0001_init.down.sql` | ~5 | `DROP SCHEMA aura CASCADE;` |
+| `sqlc.yaml` | ~30 | Config sqlc v2: engine postgresql, queries dir, out dir, json_tags, emit_interface, emit_exact_table_names. |
+| `internal/db/db_test.go` | ~120 | Build tag `db_integration`. Open + ping + migrate + simple SELECT + close. |
+| `internal/config/config.go` (diff) | ~+25 | Aggiunge `DB DBConfig` al Config. Carica `POSTGRES_PASSWORD` da `.env`. |
+| `cmd/aura/main.go` (diff) | ~+50 | Sub-command `aura db {migrate|ping|status|reset}`. |
+| `sandbox/compose.yaml` (diff) | ~+20 | Service `postgres` con healthcheck + volume named + env from `.env`. |
+| `Makefile` | ~30 | Target `make sqlc` (regen), `make db-up`, `make db-migrate`, `make db-reset`. |
+| `.env.example` | ~10 | Template con `POSTGRES_PASSWORD=changeme`, `OPENROUTER_API_KEY=`. |
+
+**Open questions.**
+1. **Schema namespace: `aura` o `public`?** → *Default proposto: `aura` schema dedicato. Permette in futuro multi-tenant (1 db, N schema). Search path settato nella prima migration.*
+2. **Migration: file-based (golang-migrate) o sqlc-generated?** → *Default proposto: file-based. sqlc ha modulo migration sperimentale ma non production-grade. golang-migrate è battle-tested.*
+3. **Soft-delete by default?** → *Default proposto: NO. Le tabelle che vogliono soft-delete aggiungono `deleted_at` esplicitamente. Mai default invisibile.*
+
+**Acceptance addizionali (post-audit round 1):**
+- [ ] `.env` esplicitamente in `.gitignore` (verifica CI: `grep -q '^\.env$' .gitignore`). `.env.example` (committato) ha placeholder vuoti.
+- [ ] `aura db migrate` con `.env` mancante o `OPENROUTER_API_KEY` vuota → errore chiaro al boot, no panic, no fallthrough silent.
+- [ ] `internal/config` resta SOLO root composite `Config{LLM, DB, RunDir, ToolPreviewCap}`. Ogni subsystem (sandbox/web/...) tiene il proprio `*Config` nel proprio package (es. `internal/web/config.go`). Niente god class config.
+- [ ] Servizi compose con `depends_on: condition: service_healthy` per: postgres, neo4j-cypher (quando atterra), aura-llama-embed. Aura container fail-fast se uno non risponde.
+
+**Mini-PC RAM budget — sezione obbligatoria per ogni slice che aggiunge container.**
+
+Cumulativa stimata a fine Slice 7 (mini-PC 16-core, target 32 GB RAM):
+
+| Servizio | RAM idle stimata | Slice che lo aggiunge |
+|---|---:|---|
+| Postgres 17 | ~250 MB | 0.5 |
+| Neo4j 5.x + APOC + GDS + vector index | ~1.5-2 GB | (esterno, già presente) |
+| aura-llama-embed (embeddinggemma CPU, 4 thread) | ~600 MB | (esterno, già presente) |
+| SearXNG | ~150 MB | 5 |
+| Sandbox Python sidecar | ~80 MB | 2 |
+| Pocket-TTS | ~400 MB | (esterno) |
+| Whisper.cpp server | ~300 MB | (esterno) |
+| Markitdown sidecar | ~150 MB | (esterno) |
+| Aura Go binary | ~150 MB | 1 |
+| **Totale idle** | **~3.5-4 GB** | |
+| Sotto carico (LLM batch + swarm 3 worker) | **+1 GB** | |
+| **Peak realistic** | **~5 GB** | |
+
+Headroom su 32 GB: ampio. Su 16 GB: ~11 GB liberi per OS + utente. Accettabile.
+Se la stima passa 8 GB peak in futuro, va dedicato un budget review.
+
+**Backup strategy (audit round 2 P0).** I due store stateful (Postgres + Neo4j) hanno backup automatico:
+
+- **Postgres** — `pg_dump` cronato via Slice 6 scheduler (`TaskKind=backup_postgres`, default `daily 03:00`, destination `~/.aura/backups/postgres/aura-<date>.sql.gz`). Retention 14 giorni rolling. Restore manuale via `aura db restore <file.sql.gz>`. Subcommand documentato in `aura db --help`.
+- **Neo4j** — `neo4j-admin database backup --to-path=/backups` via `docker exec neo4j-spike` cronato (stessa scheduler TaskKind `backup_neo4j`, default `daily 03:30`). Retention 7 giorni rolling. Restore manuale via runbook in `docs/runbooks/neo4j-restore.md`.
+- **Acceptance**: backup TaskKind handler atterra in slice 6b (insieme a `agent_job`). Test: schedule backup_postgres in=1m → file dump esistente in `~/.aura/backups/postgres/` con dimensione >1 KB.
+
+**Commit message template.**
+```
+slice 0.5: postgres + sqlc + pgx + golang-migrate infrastructure
+
+PostgreSQL 17 container (named volume, no bind-mount), pgxpool.Pool
+opened from internal/db. sqlc.yaml + queries/ dir + generated/
+scaffolding. golang-migrate wired with embedded migrations FS.
+Schema 'aura' dedicated. Empty initial schema — tables land in
+their slices (1.5/6/7).
+
+Smoke: aura db {migrate|ping|status} all green against fresh
+container.
+
+LOC: +XXX src / +YY test / +ZZ infra.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 1 — LLM client reale + ToolResult pattern (preview + persist)
+
+**Goal.** Due cose in un commit (sono accoppiate; spezzarle costringerebbe a
+toccare due volte gli stessi 5 file):
+
+1. **LLM wire reale.** Sostituire `stubClient` in [cmd/aura/main.go](cmd/aura/main.go)
+   con un client OpenAI-compatibile che stream-pa SSE da un endpoint reale
+   (DeepSeek/Anthropic/OpenAI), accumula tool-call delta a tool-call completi,
+   e li emette sul canale `<-chan llm.Chunk` rispettando il contratto in
+   [internal/llm/client.go](internal/llm/client.go).
+2. **ToolResult pattern.** Cambiare la firma `tools.Tool.Execute` in
+   [internal/agent/tools/spec.go:32](internal/agent/tools/spec.go) da
+   `(string, error)` a `(ToolResult, error)` perché tutti i tool che seguono
+   (`execute` sandbox slice 2, `swarm.*` slice 3) hanno bisogno del pattern
+   preview+persist verificato empiricamente nel turn precedente: 21 MB stdout
+   reale → 12 KB nel context tramite preview+sidecar-file. Senza questo cambio
+   adesso, slice 2 e 3 lo reintrodurrebbero ad-hoc e slice 4 (KV cache)
+   troverebbe la history avvelenata da result-payload grandi.
+
+**Perché un commit solo.** Cambio firma `Execute` tocca `text_response.go`,
+`search.go`, `loop.go.runTool`, `spec.go`. Lo stesso commit che porta il client
+reale può/deve far landing del pattern: se atterriamo prima il client reale,
+poi cambio firma → due commit ricontaminano gli stessi file, riopendendo
+file ≤600 LOC e refactor-on-touch per ognuno. Slice 1 cresce di ~120 LOC
+ma slice 2 e 3 risparmiano ~150 LOC ciascuno di plumbing duplicato.
+
+**Smoke.**
+```bash
+AURA_LLM_BASE_URL=https://api.deepseek.com/v1 \
+AURA_LLM_API_KEY=sk-... \
+AURA_LLM_MODEL=deepseek-chat \
+./aura chat "ciao, dimmi 2+2 in tre parole"
+```
+→ deve stampare una reply reale dal modello (non lo stub), via `text_response`,
+in <8 step.
+
+**Acceptance (machine-checkable).**
+
+*Parte 1 — wire:*
+- [ ] `go test ./internal/llm/...` passa con almeno 1 fixture SSE golden (tool-call multi-chunk + finish_reason="tool_calls", e plain text + finish_reason="stop").
+- [ ] `aura chat "..."` con config settata produce reply dal modello vero.
+- [ ] `aura chat "..."` senza config fallisce con messaggio chiaro (no panic, no fallback silenzioso).
+- [ ] Cancel context (Ctrl+C) chiude la HTTP connection e drena il channel — verificato con `go test -race` + `go.uber.org/goleak` `goleak.VerifyNone(t)` in TestMain (audit round 2 P1: assert nessun goroutine residuo post-test, copre il caso SSE reader bloccato su `bufio.Scanner.Scan()` post-cancel).
+- [ ] Zero allocazioni per `Message`-history mutation: il client legge `req.Messages` ma non lo modifica (test asserisce slice identica pre/post).
+
+*Parte 2 — ToolResult pattern:*
+- [ ] `Tool.Execute(ctx, args)` ritorna `(ToolResult, error)`. `ToolResult{Preview string, FullPath string, Bytes int, Truncated bool}`.
+- [ ] `Loop.runTool` persiste `ToolResult` su disco se `Bytes > AURA_TOOL_PREVIEW_CAP` (default 2048). Path = `$AURA_RUN_DIR/<session-id>/<tool-call-id>.result`. La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
+- [ ] Se `Bytes <= cap`, nessuna scrittura su disco; `RoleTool.Content = Preview` puro (no overhead).
+- [ ] Builtin tool `read_tool_output` (non-deferred) accetta `{tool_call_id, offset?, limit?}` e ritorna la fetta richiesta dal sidecar file. Default `limit=200 righe`. Hard-fail su tool_call_id ignoto.
+- [ ] `text_response` continua a essere il terminale del loop: il suo `ToolResult.Preview` è la risposta finale all'utente (anche se `Bytes > cap`, la versione full sta sul disco; il preview va all'utente per default — il chiamante CLI/Telegram decide se servire la versione full).
+- [ ] Test: un tool fake che ritorna 100 KB di output → il `Messages` history dopo `Loop.Turn` ha SOLO il preview (≤2 KiB + footer), file su disco ha 100 KB completi, `read_tool_output` recupera fetta arbitraria.
+- [ ] Sidecar dir auto-creata. Default `$AURA_RUN_DIR = ~/.aura/run/`. Session dir = `<unix-timestamp>-<random4>`. Lifetime = conversazione (cleanup è concern di una slice futura, NON gestito qui — solo `WARN: $AURA_RUN_DIR/ growing` se >100 MB).
+
+**File targets** (totale ≤ 520 LOC src + ~200 test).
+
+*Wire layer (~340 src + ~120 test):*
+| Path | LOC stimato | Note |
+|---|---|---|
+| `internal/llm/openai_compat.go` | ~280 | `Client` impl, SSE parser, tool-call accumulator (delta-merge per `index`). Connect 10s, global timeout configurabile, no idle, no retry (vedi Open Questions). **Inietta `Config.LLM.Headers` su ogni request** (OpenRouter HTTP-Referer + X-Title). |
+| `internal/config/config.go` | ~110 | `Config{LLM: LLMConfig{Provider, Model, BaseURL, APIKey, TotalTimeoutSec, Headers map[string]string}, RunDir, ToolPreviewCap}`. **Load order**: built-in default → `.env` (via `github.com/joho/godotenv`, key `OPENROUTER_API_KEY` → `LLM.APIKey`) → file JSON (`$AURA_CONFIG_DIR/llm.json`, default `~/.aura/llm.json`) → env vars (`AURA_LLM_*`, `AURA_RUN_DIR`, `AURA_TOOL_PREVIEW_CAP`). **Default built-in**: Provider=`openrouter`, Model=`deepseek/deepseek-v4-flash:exacto`, BaseURL=`https://openrouter.ai/api/v1`, Headers=`{"HTTP-Referer": "https://github.com/chetto1983/aura", "X-Title": "Aura"}`. `Save()` per write-back dal dashboard futuro. |
+| `internal/config/config_test.go` | ~50 | Load-order test: default < file < env. Round-trip JSON. |
+| `internal/llm/openai_compat_test.go` | ~120 | Fixture SSE in `testdata/` per: text-only stream, tool-call multi-chunk (delta-merge), error 429 (no retry → bubble up), premature close (ctx-cancel), Anthropic ephemeral cache_control passthrough. Niente prompt da asilo nido (vedi §Test discipline). |
+
+*ToolResult pattern (~180 src + ~80 test):*
+| Path | LOC stimato | Note |
+|---|---|---|
+| `internal/agent/tools/result.go` | ~60 | `ToolResult{Preview, FullPath, Bytes, Truncated}`. Helper `NewToolResult(b []byte, cap int) ToolResult` che decide preview vs persist. Helper `Persist(dir, toolCallID string)` che scrive il file. |
+| `internal/agent/tools/spec.go` (diff) | ~+5 / -3 | Firma `Execute(ctx, args) (ToolResult, error)`. |
+| `internal/agent/tools/text_response.go` (diff) | ~+15 / -10 | Ritorna `ToolResult{Preview: text}` invece di stringa. |
+| `internal/agent/tools/search.go` (diff) | ~+15 / -10 | Stesso adattamento. |
+| `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default 200 lines}`. Risolve path da `Loop`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. |
+| `internal/agent/loop.go` (diff) | ~+45 / -10 | `runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path), mantiene `resultPaths map[string]string` per `read_tool_output` lookup. Crea session dir alla `NewLoop`. |
+| `internal/agent/tools/result_test.go` | ~80 | Test: 100 KB fake tool → `Messages` ha SOLO preview+footer, file ha 100 KB; `read_tool_output(id, offset=50000, limit=100)` recupera fetta. |
+| `cmd/aura/main.go` (diff) | ~+50 / -15 | Sostituisce `stubClient` con `llm.NewOpenAICompat(cfg.LLM)`. Registra `read_tool_output` nel registry. Sub-comando `aura config` legge/scrive il file. |
+
+**Deferred-tool partition.** Niente tool nuovo in questo slice. `text_response` + `tool_search` restano gli unici registrati. La distinzione attiva/deferred si vede solo via `aura tools` (già esistente).
+
+**Open questions — CHIUSE.**
+1. **~~Provider primario~~ → OpenRouter + `deepseek/deepseek-v4-flash:exacto`, API key da `.env`.**
+   Provider: **OpenRouter** (base URL `https://openrouter.ai/api/v1`, OpenAI-compat nativo).
+   Model default: `deepseek/deepseek-v4-flash:exacto` (variant `:exacto` instradata da OpenRouter).
+   API key: caricata da `.env` file via `github.com/joho/godotenv` (chiave `OPENROUTER_API_KEY`).
+   Config rimane comunque dashboard-editable: `internal/config` legge `~/.aura/llm.json` + override env + `.env` (ordine: built-in default < `.env` < `llm.json` < env vars).
+   Default built-in: `Provider="openrouter"`, `Model="deepseek/deepseek-v4-flash:exacto"`, `BaseURL="https://openrouter.ai/api/v1"`, `APIKey=""` (richiesto, vuoto = error chiaro).
+   **Headers OpenRouter raccomandati** (`HTTP-Referer: https://github.com/chetto1983/aura`, `X-Title: Aura`): inclusi by-default nel client, override-abili via config. Servono per attribution OpenRouter (visibility nei dashboard, possibili discount tier).
+2. **~~Timeout HTTP~~ → Global timeout + ctx-cancel, NO idle/first-byte.**
+   Evidenza unanime in 5/5 client production analizzati (vedi sotto). La proposta originale (first-byte 30s) viene scartata: nessuno la implementa, e con reasoning models che possono pensare 2 minuti prima del primo token, un first-byte 30s sarebbe un footgun.
+   *Defaults:* `Dial: 10s` (OpenHuman pattern), `TotalTimeout: 120s` configurabile via `Config.LLM.TotalTimeoutSec` (default safe per chat, gli utenti reasoning lo alzano a 600s nel JSON), nessun idle-gap timeout, ctx-cancel propaga end-to-end e chiude la connessione HTTP.
+   - Evidenza: [D:/tmp/openhuman/src/openhuman/inference/provider/compatible.rs:283-284](D:/tmp/openhuman/src/openhuman/inference/provider/compatible.rs) (120s + connect 10s), [D:/tmp/nanobot/nanobot/agent/runner.py:632](D:/tmp/nanobot/nanobot/agent/runner.py) (300s default `NANOBOT_LLM_TIMEOUT_S`, env-overridable), [D:/tmp/picobot/internal/providers/openai.go:28](D:/tmp/picobot/internal/providers/openai.go) (60s default `timeoutSecs`), [D:/tmp/codex/codex-rs/exec-server/src/client/reqwest_http_client.rs:56](D:/tmp/codex/codex-rs/exec-server/src/client/reqwest_http_client.rs) (global only, no rolling). Line numbers verified pre-rewrite audit round 1.
+3. **~~Retry policy~~ → NO retry nel wire. Errore al chiamante.**
+   Spaccatura 3/2 nel sample (codex/picobot/openhuman = no retry; nanobot/agent-infra-sandbox = sì). Aura sceglie il pattern 3/5 perché:
+   - Aura ha un caller naturale (Loop → CLI/Telegram/Dashboard) ben posizionato per decidere se ritentare. Il wire non sa se l'utente è in chat sincrona (retry stupido perde l'utente) o batch (retry essenziale).
+   - Aggiungere retry adesso = aggiungere superficie (Retry-After parser, jitter, max-attempts config) che dovremmo testare e che reagisce a fault non riproducibili in CI.
+   - Mid-stream reset è unanimemente non-resumable. Un retry-from-scratch su uno stream parzialmente consumato significherebbe ri-invio dell'intera history → costo + duplicate-side-effect dei tool eseguiti finora.
+   *Implementazione:* `openai_compat.go` propaga errori HTTP wrapped (`HTTPError{StatusCode, RetryAfterSec, Body}`) così il chiamante futuro (se vuole retry) ha tutto il segnale serializzato — senza implementare il retry adesso.
+   - Evidenza: [D:/tmp/codex/codex-rs/codex-client/src/sse.rs:14](D:/tmp/codex/codex-rs/codex-client/src/sse.rs) (no retry), [D:/tmp/picobot/internal/providers/openai.go](D:/tmp/picobot/internal/providers/openai.go) (no retry), [D:/tmp/openhuman/src/openhuman/inference/provider/ops.rs:364-376](D:/tmp/openhuman/src/openhuman/inference/provider/ops.rs) (retry at provider chain, not wire). Pattern opposto: [D:/tmp/nanobot/nanobot/providers/base.py:97,307-310,645-679](D:/tmp/nanobot/nanobot/providers/base.py), [D:/tmp/agent-infra-sandbox/sdk/js/src/core/fetcher/requestWithRetries.ts:18-62](D:/tmp/agent-infra-sandbox/sdk/js/src/core/fetcher/requestWithRetries.ts).
+
+**Commit message template.**
+```
+slice 1: real OpenAI-compat streaming client
+
+Replace stubClient with internal/llm/openai_compat: SSE parser,
+tool-call delta accumulator (index-merged), env-driven config.
+Cancel-propagation through ctx; first-chunk timeout 30s; no retry.
+
+Smoke: aura chat "..." against deepseek-chat returns a real reply.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 1.5 — ask_user (loop pause + resume primitive)
+
+**Goal.** Riportare il tool `ask_user` pre-rewrite — una primitive
+del loop che permette all'agente di pausare il run e attendere input
+strutturato dall'utente. È prerequisito per Slice 7 (governance C delle
+skill via human-in-the-loop) e per qualsiasi altro tool futuro che voglia
+"fermarsi e chiedere" (scheduler conferma cron costoso, swarm conferma
+spawn ad alta depth, web_fetch su URL ambigui).
+
+Separata da Slice 1 per disciplina: tocca `loop.go` una seconda volta
+ma su una concern semanticamente diversa (state machine del loop:
+running → waiting_for_user → running). Far landing Slice 1 prima
+permette di validare il client streaming senza la complessità della
+pausa/resume. Tre commit separati che toccano `loop.go` (Slice 1 →
+Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
+
+**Pattern preservato dal pre-rewrite** ([internal/agent/tools/registry/ask_user.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/ask_user.go), 164 LOC verified):
+- Tool standard (non-deferred), sempre visibile nel manifest.
+- Args: `{question: string, options?: [2-4 string | {label, value}], kind: clarification|approval|choice}`.
+- `Execute` non ritorna `ToolResult`: ritorna un **sentinel error** `ErrAwaitingUserInput{Question, Options, Kind, ToolCallID}` (campi 1:1 dal pre-rewrite). Il loop lo intercetta e NON appende un fake tool result.
+- **Campo NUOVO aggiunto in Slice 1.5**: `ResumeContext map[string]any` — payload serializzato che il loop persiste in Postgres insieme alla PausedState. Permette ai resume handler (es. skill.create approve → activate; skill.delete approve → cascade) di rieseguire l'azione differita senza ricostruire lo stato. Pre-rewrite non aveva questo perché le proposal skill passavano per la dashboard API, non per ask_user.
+- **Esclusivo**: se l'LLM batcha `ask_user` con altri tool call nello stesso turn, `ask_user` vince — gli altri call vengono droppati e re-emessi al resume.
+- 3 `kind` semanticamente distinti:
+  - `clarification` — info mancante per procedere
+  - `approval` — azione rischiosa, conferma esplicita richiesta
+  - `choice` — scelta strutturata fra opzioni note (ideale per skills.sh registry browse, swarm tier selection, ecc).
+
+**Smoke E2E (prompt reale — vedi §Test discipline):**
+```bash
+./aura chat "ho 47 file in d:/tmp che non tocco da più di 6 mesi, sono al sicuro a cancellarli?"
+# → modello deve chiamare ask_user(kind=approval, options=["Sì cancella", "Mostra prima la lista", "Lascia stare"])
+# → Loop entra in stato Paused, stampa la question + options nel terminale
+# → utente digita "2" (o "Mostra prima la lista")
+# → Loop riprende, modello procede col list invece di delete
+```
+
+**Acceptance.**
+- [ ] `Loop.Turn` ritorna `(reply string, paused *PausedState, err error)` invece di `(string, error)`. Se `paused != nil`, il caller (CLI/Telegram/dashboard) sa di dover renderizzare la question e raccogliere la risposta.
+- [ ] `Loop.Resume(ctx, token, answer string) (reply string, paused *PausedState, err error)` riprende un Loop in stato Paused. Token è un opaco ID (UUID v4) ritornato in `PausedState`.
+- [ ] Loop NON appende `RoleTool` message per `ask_user` finché non c'è risposta. Quando arriva: appende `RoleTool{ToolCallID: <original>, Content: answer}` e continua.
+- [ ] Esclusività: test con LLM stub che ritorna 3 tool call nello stesso turn (ask_user + read_tool_output + text_response) → solo ask_user dispatch-ato, gli altri due loggati come dropped, Loop pausato.
+- [ ] Args validation: `question` non vuota (trimmed), `options` 0 o 2-4 (mai 1 — sarebbe una pseudo-scelta), labels distinct.
+- [ ] CLI rendering: `aura chat` e `aura shell` mostrano la question + options numerate, leggono `stdin` per la risposta, gestiscono input invalido (re-prompt 3 volte poi abort con errore).
+- [ ] Test resume cycle: Loop.Turn paused → Loop.Resume con answer string → modello vede `RoleTool` con answer → procede.
+
+**File targets** (~330 LOC src + ~120 test):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/agent/tools/ask_user.go` | ~170 | Tool def + `ErrAwaitingUserInput` sentinel + args parser (options string/object polimorfico). Quasi 1:1 dal pre-rewrite. |
+| `internal/agent/pending.go` | ~70 | `PausedState{Token, Question, Options, Kind, ResumeContext, ToolCallID}`. Helper per costruzione/serializzazione. |
+| `internal/askuser/cli.go` | ~80 | Renderer CLI: stampa question + options numerate, legge stdin con re-prompt. Implementa interfaccia `Responder` minima. |
+| `internal/agent/loop.go` (diff) | ~+80 / -10 | `runTool` intercetta `ErrAwaitingUserInput` → costruisce `PausedState` → `Turn` ritorna `(empty, paused, nil)`. Nuovo metodo `Resume`. Esclusività check su batch tool calls. |
+| `internal/agent/tools/ask_user_test.go` | ~70 | Args validation, options polimorfismo, sentinel error format. |
+| `internal/agent/loop_pause_test.go` | ~120 | Pause + Resume cycle, esclusività, invalid token rejection, stub Responder. |
+| `cmd/aura/main.go` (diff) | ~+50 | `aura chat` gestisce loop pause: stampa via `askuser.CLI`, raccoglie risposta, chiama `Resume`. |
+
+**Deferred-tool partition.** `ask_user` → **non-deferred** (sempre visibile, è infrastruttura del loop). Description corta (1 riga). Schema piccolo ma con `oneOf` per options polimorfico — comunque sotto i 2 KiB.
+
+**Open questions.**
+1. **~~Persistent vs in-memory `PausedState`~~ → CHIUSA: persistent in Postgres da subito.**
+   Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema minimo: `(token uuid pk, loop_id uuid, question text, options jsonb, kind text, resume_context jsonb, tool_call_id text, created_at timestamptz, resumed_at timestamptz null)`.
+   Migration: `0002_paused_states.up.sql` aggiunta in Slice 1.5.
+   File targets aggiunti: `internal/db/queries/paused_states.sql` (~50 LOC, 4 query: insert/get-by-token/mark-resumed/cleanup-stale) + generated code via sqlc. `internal/agent/pending.go` (~70 LOC) usa il client sqlc invece di in-memory map. Test integrazione sotto build tag `db_integration`.
+2. **Quante pending ask simultanee per Loop?** Una sola (semantic "loop è bloccato finché non riprende") o multiple (parent + N child swarm chiedono cose diverse)? → *Default proposto: una sola per Loop. Loop pausato non chiama LLM, non dispatcha tool. Swarm Slice 3 avrà PER-CHILD un Loop indipendente, quindi child possono pausare individualmente — il parent vede `child paused` come stato e decide se aspettare o cancellare.*
+3. **Timeout sulla pausa?** Se l'utente non risponde mai, il loop rimane Paused indefinitamente? → *Default proposto: no timeout di default. Caller (CLI/Telegram) decide se forzare un timeout esterno. Aggiungere timeout dentro Loop = stato terzo (timed_out) che complica la state machine senza beneficio reale.*
+
+**Commit message template.**
+```
+slice 1.5: ask_user primitive — loop pause + resume
+
+Implements the ask_user tool (non-deferred) and the corresponding
+Loop pause/resume state machine. Tool returns ErrAwaitingUserInput
+sentinel; Loop.Turn returns (reply, *PausedState, error) and gains
+Resume(token, answer). Exclusive batching: if the LLM emits ask_user
+alongside other tool calls in one turn, ask_user wins and the others
+drop. CLI responder renders numbered options + reads stdin.
+
+Smoke: aura chat triggers ask_user with kind=approval, user answers,
+loop resumes and produces final reply.
+
+Prerequisite for: skill governance C (Slice 7), scheduler high-cost
+confirmation (Slice 6), swarm spawn-depth approval (Slice 3).
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 2 — Sandbox runner (Docker sidecar + seccomp + ulimit)
+
+**Goal.** Implementare `sandbox.Runner` reale (in [internal/sandbox/sandbox.go](internal/sandbox/sandbox.go)
+oggi è `Stub`) come HTTP client verso un sidecar Docker isolato. Esporre il
+runtime al modello come tool `execute` (Deferred=true) che accetta `lang ∈ {python, shell}` + `code` e restituisce stdout/stderr/exit_code/elapsed_ms.
+
+**Smoke.**
+
+*Isolato (bypass agent loop, test del runner direttamente):*
+```bash
+docker compose -f sandbox/compose.yaml up -d
+./aura exec python "print(2+2)"     # → 4
+./aura exec shell  "echo hello"     # → hello
+./aura exec python "import socket; socket.socket().connect(('1.1.1.1', 80))"
+                                    # → exit_code != 0, stderr contains EPERM/network-denied
+```
+
+*E2E (modello sceglie il tool da solo — vedi §Test discipline):*
+```bash
+./aura chat "quanto fa 2 alla 64 meno 1? rispondi solo col numero"
+# → modello deve invocare `execute` (python), ricevere 18446744073709551615, risponderlo
+./aura chat "che giorno della settimana era il 14 luglio 1789?"
+# → modello deve invocare `execute` (python con datetime), rispondere "martedì"
+```
+Nessuno dei due prompt nomina `execute`. Se il modello non lo invoca, è bug del system prompt o del manifest, NON del test.
+
+**Acceptance.**
+- [ ] Sidecar gira come container non-root (`uid:gid 65532:65532`), `read_only: true`, `tmpfs:/tmp`, `network_mode: none`, ulimit nofile=64, cpus=1.0, mem=512m.
+- [ ] Seccomp profile rifiuta: `socket`, `connect`, `bind`, `mount`, `unshare`, `ptrace`, `clone(CLONE_NEWNET)`. Profile sotto VCS in `sandbox/seccomp.json`.
+- [ ] Default timeout esecuzione 30s, override via `AURA_SANDBOX_TIMEOUT_SEC` (cap 600s — ricorda [aura_lan_exposure_2026-05-17](memory)).
+- [ ] `aura exec` chiamato senza sidecar su → errore chiaro, no panic, no hang.
+- [ ] Container exit con stdout/stderr troncati a 1 MiB ciascuno (oltre → `... [truncated]`).
+- [ ] Test integrazione marcato `//go:build sandbox_integration` salta se sidecar non raggiungibile (no flaky CI).
+
+**File targets** (≤ 600 LOC Go + Dockerfile/compose/seccomp materials):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/sandbox/docker.go` | ~220 | `DockerRunner` impl `Runner`. HTTP POST a sidecar `/exec/python` e `/exec/shell`. Timeout, truncate, ctx-cancel. |
+| `internal/sandbox/config.go` | ~50 | Env: `AURA_SANDBOX_URL` (default `http://127.0.0.1:18901`), `AURA_SANDBOX_TIMEOUT_SEC`. |
+| `internal/sandbox/docker_test.go` | ~120 | Integration test sotto build-tag `sandbox_integration`. |
+| `internal/agent/tools/execute.go` | ~140 | Tool `execute` con `Deferred: true`. Schema: `{lang: enum, code: string, timeout_sec?: int}`. Delega a `sandbox.Runner`. |
+| `sandbox/Dockerfile` | ~30 | `FROM python:3.12-slim` + apt: bash, coreutils. USER non-root. ENTRYPOINT sidecar. |
+| `sandbox/sidecar.py` | ~150 | Server HTTP minimo (stdlib `http.server`) con 2 endpoint. `subprocess.run` con timeout. Trunc stdout/stderr. Niente deps. |
+| `sandbox/seccomp.json` | ~80 | Default-deny + allow-list syscall syscall, blocca network/mount/ptrace. |
+| `sandbox/compose.yaml` | ~25 | Service `aura-sandbox`: build sandbox/, security_opt seccomp, network none, read_only, ulimits. |
+| `cmd/aura/main.go` (diff) | ~+60 | Subcommand `aura exec <lang> <code>` + registrazione del tool `execute` nel registry. |
+
+**Deferred-tool partition.** `execute` → **Deferred=true** (description lunga + schema enum + esempi safety). `tool_search` lo carica on-demand.
+
+**Open questions.**
+1. **Sidecar implementation language.** Python (zero-build, leggi+rispondi) o Go (single binary, no Python runtime in container)? → *Proposto: Python stdlib. Il sidecar è 1 file, niente deps, niente compile step, container minimo.*
+2. **State tra exec.** Il sidecar è stateless (ogni call = subprocess fresco) o mantiene una REPL persistente? → *Proposto: stateless. REPL persistente è un'ottimizzazione futura (Slice X), oggi è complessità non richiesta.*
+3. **Filesystem out.** Il modello deve poter scrivere file persistenti? → *Proposto: NO in questo slice. Solo tmpfs effimero. Filesystem condiviso = slice separato (workspace mount).*
+4. **Windows host.** Docker Desktop su Windows è OK ma seccomp è solo Linux-container. Sviluppo locale Windows + container Linux → OK. Sviluppo locale Windows nativo (no Docker)? → *Proposto: no-fallback. Aura runs in container or against a Docker sidecar. Punto.*
+
+**Commit message template.**
+```
+slice 2: sandbox runner — Docker sidecar with seccomp + ulimit + no-net
+
+Implements sandbox.Runner against an isolated Python sidecar
+(read-only rootfs, tmpfs /tmp, network_mode none, seccomp default-deny,
+ulimit nofile=64, cpus=1.0, mem=512m). Exposes `execute` tool
+(deferred) and `aura exec` CLI for smoke.
+
+Smoke:
+  aura exec python "print(2+2)" → 4
+  aura exec python "import socket; socket.socket().connect(...)" → EPERM
+
+LOC: +XXX src / +YY test / +ZZ sidecar+infra.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 3 — Swarm coordinator (bus + DM-by-ID + tier model)
+
+**Goal.** Implementare `swarm.Coordinator` reale (oggi `Stub` in [internal/swarm/swarm.go](internal/swarm/swarm.go))
+con: spawn di agenti figli (tier `chat|reasoning|worker`), shared message bus
+con broadcast E DM-by-ID, `Join(id)` che blocca fino a final report del figlio,
+MAX_SPAWN_DEPTH=3 enforced, payload summarizer al return-to-parent.
+
+**Smoke.**
+
+*Isolato (unit-style del coordinator, parent hardcoded):*
+```bash
+./aura swarm-demo
+# parent (id=root) spawns 3 workers (w1,w2,w3) con goal diversi
+# parent broadcasts "go" sul bus → ognuno reagisce
+# parent DM-a-w2 "switch to plan B"
+# parent join(w1), join(w2), join(w3) → riceve 3 final report sintetizzati
+# stdout deve mostrare timeline ordinata: spawn(3) → broadcast → dm → join(3)
+```
+
+*E2E (modello sceglie swarm da solo — vedi §Test discipline):*
+```bash
+./aura chat "trovami in parallelo: (1) il PIL italiano del 2023, (2) la capitale dell'Australia, (3) l'autore de I Promessi Sposi. Quando hai tutte e tre, rispondi in tre righe."
+# → modello deve spawn 3 worker, join, aggregare. Nessuna menzione di "swarm" nel prompt.
+./aura chat "leggi questi tre file in d:/tmp: dante.html, collodi.html, paper.md, e dimmi quale è più lungo in righe"
+# → modello deve parallelizzare 3 read+wc invece di serializzare. Test fallisce se serializza (timing assertion).
+```
+
+**Acceptance.**
+- [ ] `coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` → errore `spawn depth exceeded` (test).
+- [ ] `coordinator.Talk(from, "broadcast", msg)` recapita a tutti tranne `from`. `Talk(from, "<id>", msg)` recapita solo a `<id>`. Test asserisce delivery.
+- [ ] `coordinator.Join(id)` blocca finché il figlio non chiama `text_response` (terminale dell'agent loop) e ne restituisce il payload (summarizzato se >2 KiB).
+- [ ] Payload summarizer triggera sopra `AURA_SWARM_REPORT_CAP_BYTES` (default 2048): tronca + appende `... [N bytes truncated, M total]`.
+- [ ] Tier → model mapping in `tier.go`: `chat→<AURA_SWARM_MODEL_CHAT>`, `reasoning→<...REASONING>`, `worker→<...WORKER>`. Default tutti = env `AURA_LLM_MODEL`.
+- [ ] Goroutine leak test (`go test -race`): dopo `Join` di tutti i figli, `runtime.NumGoroutine()` torna al baseline ±2.
+- [ ] Bus capacity bounded (channel buf 64); over-flow blocca producer con timeout **60s** + errore `bus backpressure` (audit round 2 P0: 5s era sotto la latency LLM first-token tipica 10-30s → producer in mezzo a `runTool` riceveva errore spurio durante LLM warmup).
+
+**File targets** (≤ 800 LOC):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/swarm/coordinator.go` | ~240 | `LiveCoordinator` impl `Coordinator`. Gestisce children map (id→agent), depth check, lifecycle. |
+| `internal/swarm/bus.go` | ~140 | Shared bus: `subscribe(id) <-chan Envelope`, `publish(from, to, body)`. `to=="broadcast"` fan-out. |
+| `internal/swarm/tier.go` | ~70 | `TierConfig{Chat, Reasoning, Worker string}`. `ModelFor(tier) string`. |
+| `internal/swarm/payload.go` | ~60 | `Summarize(b []byte, cap int) string`. Strategia: tronca a `cap`, appendi nota. |
+| `internal/swarm/coordinator_test.go` | ~150 | Spawn-depth, broadcast, DM, Join, goroutine-leak, bus backpressure. |
+| `internal/agent/tools/swarm_spawn.go` | ~70 | Deferred=true. Args: `{tier, goal}`. Returns `{id}`. |
+| `internal/agent/tools/swarm_talk.go` | ~50 | Deferred=true. Args: `{to_id, message}` (use "broadcast" for all). |
+| `internal/agent/tools/swarm_join.go` | ~50 | Deferred=true. Args: `{id}`. Blocking. |
+| `cmd/aura/main.go` (diff) | ~+30 | `aura swarm-demo` subcommand. |
+
+**Deferred-tool partition.** Tutti e tre i tool swarm → **Deferred=true** (description con safety constraints + schema con enum tier + esempi).
+
+**Open questions.**
+1. **Spawn = nuova istanza `agent.Loop`?** Sì, child è una `Loop` indipendente con system prompt parametrizzato dal `goal`, condivide il `Coordinator` per talk-back. → *Conferma proposta: SÌ. Niente "agent-as-tool"; child è un loop reale.*
+2. **Children share tools registry?** Child eredita tutti i tool del parent, MA il parent può passare un filtro (whitelist) → primo slice: ereditarietà piena, no filter. → *Proposto: full inherit. Filtro è slice futura.*
+3. **Persistent state.** I figli scrivono in un store comune (Neo4j MCP)? → *Proposto: NO in questo slice. Coordinator è in-memory. Persistenza è una concern ortogonale.*
+4. **Cancellazione.** Se il parent termina (Loop.Turn returns), i figli devono ricevere ctx-cancel? → *Proposto: SÌ. `Coordinator` ha un `parentCtx`; quando si chiude tutti i child loops droppano.*
+5. **Child pause propagation (audit round 1 P0).** Cosa succede se un child Loop ritorna `*PausedState` (perché ha invocato `ask_user`)?
+   → *Decisione*: ogni child Loop spawn-ato dal Coordinator ha un proprio `Responder` configurabile.
+   - **Default per swarm spawn**: `RejectingResponder` — il child non può pausare. Se chiama `ask_user`, il Loop riceve immediatamente `answer="<auto-rejected: child loop has no human responder>"`. Il child decide se procedere comunque o terminare.
+   - **Override esplicito**: il parent può chiamare `Coordinator.SpawnInteractive(req, parentResponder)` per propagare la pausa al parent. Il parent vede la `ask_user` del child come se l'avesse emessa lui (dentro il PausedState aggiunge `proxied_from: <child_id>`).
+   - **`Coordinator.ResumeChild(childID, answer)`**: nuovo metodo. Necessario quando `SpawnInteractive` è usato e il parent ha raccolto la risposta dell'utente. **Children map mutex-protected (audit round 2 P0):** ResumeChild + Spawn + Join condividono `sync.RWMutex` su `children map[string]*childState` — race su due child paused simultaneously rifiutata strutturalmente. Test `go test -race` + assertion N=10 child interactive paralleli paused+resumed senza data race.
+   - **Acceptance addizionale**: test che assert deadlock guard — child spawned senza `Interactive` flag + child chiama ask_user → child termina con `answer=auto-reject` entro 100ms, parent `Join` non blocca.
+
+**Commit message template.**
+```
+slice 3: swarm coordinator — spawn, bus broadcast+DM, tier model
+
+Implements swarm.Coordinator with in-memory child registry, shared
+bus (channel-buffered, backpressure-bounded), tier→model mapping,
+payload summarizer at return-to-parent, MAX_SPAWN_DEPTH=3 enforced.
+Exposes swarm.spawn / swarm.talk / swarm.join tools (deferred).
+
+Smoke: aura swarm-demo spawns 3 workers, broadcasts, DMs, joins all.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Slice 4 — KV cache builder (stable-prefix + provider-aware)
+
+**Goal.** Estrarre la costruzione del prompt da `agent.Loop.Turn` in un
+`PromptBuilder` dedicato (`internal/llm/prompt.go`) che garantisca:
+- `messages[0]` (system) byte-identico turn-su-turn;
+- ordering deterministico del tool manifest (già: alphabetical in [manifest.go](internal/agent/tools/manifest.go));
+- inserimento dei breakpoint di cache provider-specifici (Anthropic `cache_control: ephemeral` sui blocchi system+tools, DeepSeek auto-cache che è no-op lato client ma misura il hit-rate dal `usage`);
+- misurazione `cache_hit_rate` per turn, esposta via subcommand `aura cache-stats`.
+
+**Smoke.**
+```bash
+./aura chat-loop   # REPL 5 turn back-to-back
+> ciao
+> dimmi una poesia su pollo arrosto
+> riscrivila in inglese
+> ora in giapponese
+> grazie
+
+./aura cache-stats
+# turn 1: 0.00 hit, 230 prompt_tokens
+# turn 2: 0.78 hit, 245 prompt_tokens (191 cached)
+# turn 3: 0.81 hit, 310 prompt_tokens (252 cached)
+# ...
+# avg hit-rate: 0.74
+```
+
+**Acceptance.**
+- [ ] `PromptBuilder.Build(history, tools)` ritorna `[]llm.Message` con `messages[0]` byte-identico tra turn (test: hash SHA-256 di `json.Marshal(messages[0])` costante su 5 turn consecutivi).
+- [ ] Per provider Anthropic: il system message e il tool manifest portano `cache_control: {"type":"ephemeral"}` (fixture wire test).
+- [ ] Per provider DeepSeek: nessun cache_control (DeepSeek auto-cache); il client parsa `usage.prompt_cache_hit_tokens` dalla response.
+- [ ] `cache.Tracker` aggrega per turn → `aura cache-stats` stampa hit-rate per turn + media sessione.
+- [ ] Test invariante: `agent.Loop.Turn(ctx, "anything")` chiamato 5 volte → `messages[0]` identico, lunghezza monotona crescente di history (no in-place mutation di entries precedenti).
+- [ ] Test invariante: il tool manifest renderizzato 5 volte di seguito è byte-identico (cache poisoning guard, link a [reference_aura_cache_poisoning_sites_2026-05-27](memory) — prefix `reference_` corretto post-audit round 1).
+
+**File targets** (≤ 400 LOC):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/llm/prompt.go` | ~140 | `PromptBuilder` con `Build(history, tools, provider) []Message`. Stable-prefix discipline. |
+| `internal/llm/cache_anthropic.go` | ~70 | Inietta `cache_control: ephemeral` su system + tool manifest. |
+| `internal/llm/cache_deepseek.go` | ~50 | No-op + parse `usage.prompt_cache_hit_tokens` dalla response. |
+| `internal/llm/cache_metrics.go` | ~80 | `Tracker.Record(turn, promptTokens, cachedTokens)` + `Report() string`. |
+| `internal/llm/prompt_test.go` | ~100 | Invariant test su 5-turn (hash stability, monotonic growth, no-mutation, cache_control presence). |
+| `internal/agent/loop.go` (diff) | ~-15 / +10 | Sostituisce inline `llm.Request{Messages: l.Messages, ...}` con `l.Prompt.Build(...)`. Loop ora prende un `*PromptBuilder` invece di costruire il request inline. |
+| `internal/llm/openai_compat.go` (diff) | ~+25 | Parsa `usage.prompt_cache_hit_tokens` dal final chunk SSE e lo espone su un campo `Chunk.Usage`. |
+| `cmd/aura/main.go` (diff) | ~+40 | `aura chat-loop` (REPL multi-turn) + `aura cache-stats`. |
+
+**Deferred-tool partition.** Nessun tool nuovo. Pure plumbing interno + misurazione.
+
+**Open questions.**
+1. **~~Provider detection~~ → CHIUSA: provider primario = OpenRouter (vedi Slice 1 OQ1).**
+   OpenRouter è OpenAI-compat ma fa pass-through verso il modello sottostante (DeepSeek v4 flash :exacto). Le ottimizzazioni cache:
+   - **Anthropic `cache_control: ephemeral`** non si applica (DeepSeek non lo supporta).
+   - **DeepSeek auto-cache nativo** è preservato anche via OpenRouter: la response include `usage.prompt_cache_hit_tokens` (formato OpenAI-compat esteso). Il parser deve gestirlo come optional field.
+   - **OpenRouter aggiunge `usage.cost`** (USD totale della call) — utile da loggare in `cache.Tracker` accanto al hit-rate per misurare ROI reale del KV-discipline.
+   *Decisione:* `Config.LLM.Provider="openrouter"` è una stringa documentale (per log/UI). Il client OpenAI-compat è invariante. Le routine cache_control restano in `cache_anthropic.go` (no-op in pratica) per non rompere se in futuro aggiungiamo un secondo provider Anthropic-diretto.
+2. **Cache stats persistenza.** Solo in-memory per processo, o flush su file? → *Proposto: in-memory. Stats sono debug, non telemetria.*
+3. **Tools come breakpoint cache separato.** Su Anthropic il tools array è un blocco a parte (non dentro messages). Dobbiamo modificare `llm.Request` per supportare un `tools_cache_control`? → *Proposto: SÌ. Aggiunta a `Request{ ToolsCacheControl string }`. OpenAI/DeepSeek lo ignorano.*
+4. **Threshold cache_hit_rate per CI.** Test che fallisce sotto X%? → *Proposto: NO. Test asserisce **invariant** (byte-identity), non **percentage** (provider-dipendente, flaky).*
+
+**Commit message template.**
+```
+slice 4: KV cache builder — stable-prefix prompt + provider-aware cache_control
+
+Extracts prompt construction from agent.Loop into PromptBuilder.
+Guarantees byte-identical messages[0] across turns and stable tool
+manifest ordering (cache-friendly). Injects Anthropic ephemeral
+cache_control on system + tools. Parses DeepSeek prompt_cache_hit
+from usage. Exposes `aura cache-stats` for measurement.
+
+Smoke: 5-turn REPL shows monotone hit-rate >0.7 from turn 2 onward.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## §Test discipline (vale per tutti e 4 gli slice)
+
+Regola fondamentale, applicabile a ogni test E2E che esercita l'agent loop
+contro un modello reale:
+
+**Un test E2E è valido SE e SOLO SE il prompt sembra qualcosa che un utente
+vero scriverebbe.** Niente "use the X tool", niente "call swarm.spawn",
+niente "execute python code that...". Mai citare per nome:
+- un tool del registry (`execute`, `text_response`, `swarm.spawn`, ecc.)
+- una skill o un overlay
+- una funzione interna o un modulo Go
+- la parola "tool" stessa, salvo che sia parte naturale della domanda
+  ("che tool useresti per X?" è una domanda meta valida; "use the execute
+  tool to..." è asilo nido).
+
+**Perché.** Un prompt che nomina il tool by-name testa solo che il dispatcher
+funzioni, cosa già coperta dai unit test del registry. Un prompt naturale
+testa l'intero pipeline: system prompt → manifest visibility → modello sceglie
+il tool giusto → tool funziona → risposta finale è sensata. Se quel pipeline
+si rompe (manifest poisonato, system prompt che nasconde il tool, schema con
+description ambigua), un test "naturale" lo cattura mentre un test "asilo"
+no. Cfr [feedback_agent_must_know_tools_exist](memory).
+
+**Pattern.**
+
+| Tipo test | Esempio bad (asilo) | Esempio good (reale) |
+|---|---|---|
+| LLM client (slice 1) | "say hello using text_response" | "ciao, dimmi 2+2 in tre parole" |
+| Sandbox tool (slice 2) | "use the execute tool to print 4" | "quanto fa 2 alla 64 meno 1?" |
+| Swarm (slice 3) | "spawn a worker with goal=foo" | "trovami in parallelo PIL Italia 2023, capitale Australia, autore Promessi Sposi" |
+| Cache (slice 4) | "trigger ephemeral cache_control on system" | turn-by-turn REPL su un argomento conversazionale (poesia, ricetta, traduzione) |
+
+**Eccezioni esplicite.** I unit test interni (SSE fixture parser, Coordinator
+unit test, PromptBuilder invariant test) NON sono tenuti a questa regola
+perché non passano dal modello — testano direttamente la primitiva Go.
+La regola si applica ai test che chiamano `agent.Loop.Turn(ctx, userText)`.
+
+**Cosa testare invece del prompt-by-name.**
+- L'artefatto, non la reply (memo: [feedback_probe_must_verify_artifact_not_reply](memory)).
+  Per `execute`: assert che il subprocess abbia girato (log/event), non solo
+  che la reply contenga "4". Per swarm: assert che `Coordinator.children` abbia
+  3 entry, non solo che la reply menzioni "PIL".
+- Timing (per swarm parallelismo): wall-clock(3 worker paralleli) < 1.5 ×
+  wall-clock(1 worker singolo), altrimenti il modello ha serializzato.
+- Side-effect provider (per cache): `usage.prompt_cache_hit_tokens > 0`
+  dal turn 2 in poi.
+
+**Failure mode da evitare.** Test che passa perché la reply *contiene la
+stringa attesa* mentre dietro le quinte il tool non è mai stato chiamato
+(es. il modello ha hallucinato "18446744073709551615" senza eseguire
+python). Soluzione: hook nel `tools.Registry` che logga ogni `Execute`
+con `tool_name + args_hash + duration`. Il test asserisce **(reply matches
+expected) AND (tool was invoked)**. Mai solo il primo.
+
+---
+
+---
+
+# Backlog post 4-slice — riprendere e riscrivere bene
+
+I tre sottosistemi che seguono **funzionavano già** nel pre-rewrite (git tag
+`pre-rewrite-2026-05-27`). Vanno riportati ma "scritti meglio": stesso
+contratto LLM-visible, architettura interna pulita, no god class. Pianificati
+come slice 5/6/7, ordinati per indipendenza dalle 4 fondamentali (più
+indipendente prima).
+
+## Slice 5 — Web tools (web_search + web_fetch via SearXNG)
+
+**Goal.** Riportare due tool LLM-facing:
+- `web_search({query, max_results?, category?, language?, time_range?}) → {results: [{title, url, snippet}]}`
+- `web_fetch({url}) → {title, content_md, links}`
+
+Entrambi alimentati da un container SearXNG self-hosted (estensione del
+`sandbox/compose.yaml` di Slice 2). HTML→Markdown via `go-shiori/go-readability`
++ `JohannesKaufmann/html-to-markdown/v2`. SSRF defense custom (DNS resolution
++ private-IP block) preservata dal pre-rewrite.
+
+**Pre-rewrite reference** (git tag `pre-rewrite-2026-05-27`):
+- [internal/agent/tools/registry/search.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/search.go) — 562 LOC GOD CLASS (12 action branches, va smontato)
+- [internal/agent/tools/registry/searxng.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/searxng.go) — 123 LOC client puro (OK, da riportare quasi 1:1)
+- [internal/agent/tools/registry/direct_fetch.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/direct_fetch.go) — 474 LOC, monster `fetch()` function inline (200+ LOC) da splittare
+
+**Smoke E2E (vedi §Test discipline — prompt reali, no nomi tool):**
+```bash
+./aura chat "qual è la versione più recente di Go al 2026?"
+# → modello sceglie web_search, poi eventualmente web_fetch sulla golang.org page, risponde col numero
+./aura chat "leggi https://en.wikipedia.org/wiki/Pasta_carbonara e dimmi gli ingredienti originali in 5 punti"
+# → modello chiama web_fetch direttamente (URL esplicita), parsa markdown, estrae lista
+```
+
+**Acceptance.**
+- [ ] `SEARXNG_URL` non settato → tool ritornano errore strutturato `"web_search unavailable: SEARXNG_URL not configured"` (no panic).
+- [ ] **SSRF defense espansa (audit round 1 P0)** — blocklist enumerata:
+  - **IPv4**: loopback `127.0.0.0/8`, private `10.0.0.0/8` `172.16.0.0/12` `192.168.0.0/16`, link-local `169.254.0.0/16`, CGNAT `100.64.0.0/10`, multicast `224.0.0.0/4`, broadcast `255.255.255.255/32`, "this network" `0.0.0.0/8`, cloud metadata `169.254.169.254`.
+  - **IPv6**: loopback `::1/128`, link-local `fe80::/10`, ULA `fc00::/7`, multicast `ff00::/8`, IPv4-mapped `::ffff:0:0/96` (per evitare bypass via `::ffff:127.0.0.1`), discard `100::/64`, documentation `2001:db8::/32`, cloud metadata `fd00:ec2::254`.
+  - Override solo via env: `AURA_WEB_FETCH_ALLOW_LOOPBACK=1` (dev), `AURA_WEB_FETCH_ALLOW_HOSTS=host1,host2` (ops bypass mirato).
+- [ ] **SSRF defense: DNS-rebinding protection** — `safeDialContext` risolve host → valida IP contro blocklist → dial esplicito su IP risolto, NON re-lookup tra resolve e dial.
+- [ ] **SSRF defense: HTTP redirect interception (audit round 1 P0)** — `http.Client.CheckRedirect` custom che ri-valida ogni Location header contro la blocklist. Test: `web_fetch("https://safe.example.com/r")` che ridirige a `http://169.254.169.254/` → rifiutato al redirect step, NON al primo dial.
+- [ ] Response cap: `maxWebToolChars = 24000` (preservato dal pre-rewrite, era già un valore tarato bene).
+- [ ] Timeout HTTP: SearXNG 20s, direct_fetch 30s, entrambi config-overrideable.
+- [ ] Readability filter: pagine con <250 char di main content → ritornano `{warning: "low-content page"}` invece di noise.
+- [ ] **Riusa il `ToolResult` pattern di Slice 1**: web_fetch su page grande (>2 KiB) → preview + sidecar file; modello può fare `read_tool_output(id, offset, limit)` per estrarre fette.
+
+**File targets** (≤ 550 LOC src, no file >300):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/web/searxng.go` | ~130 | Client HTTP puro: `Query(ctx, params) ([]Result, error)`. Da pre-rewrite quasi 1:1. |
+| `internal/web/fetcher.go` | ~120 | `Fetch(ctx, url) (Page, error)`. HTTP con `safeDialContext` SSRF defense. |
+| `internal/web/html.go` | ~90 | `ExtractMarkdown(html []byte) (title, contentMD string, links []Link)`. Wrapper su go-readability + html-to-markdown. |
+| `internal/web/config.go` | ~40 | `Config{SearXNGURL, FetchTimeoutSec, SearchTimeoutSec, MaxChars, AllowLoopback, AllowHosts []string}`. Lette da `internal/config` (esteso). |
+| `internal/agent/tools/web_search.go` | ~70 | Deferred. Args→`web.SearXNG.Query`→`ToolResult`. No business logic qui, è un thin adapter. |
+| `internal/agent/tools/web_fetch.go` | ~80 | Deferred. Args→`web.Fetcher.Fetch`→`ExtractMarkdown`→`ToolResult`. |
+| `internal/web/searxng_test.go` | ~80 | Fixture JSON SearXNG response → test parser. |
+| `internal/web/fetcher_test.go` | ~100 | SSRF tests (loopback/private IP rejected), readability filter. |
+| `sandbox/compose.yaml` (diff) | ~+15 | Aggiunge service `searxng` (image `searxng/searxng`), shared network col sandbox. |
+| `cmd/aura/main.go` (diff) | ~+15 | Registra i due tool. |
+
+**Cosa NON riportare dal pre-rewrite.**
+- L'aggregazione `SearchTool` con 12 azioni (search/list/read/lessons/user_facts/god_nodes/subgraph/path/diff/gaps/surprises/suggest_questions). Quelle 10 azioni "memory/wiki" appartengono a una slice futura sulla wiki/graph layer (post-MCP-Neo4j), non a web tools. Slice 5 = SOLO web_search + web_fetch.
+- Il pattern action-enum singolo-tool con `oneOf` schema. Per due tool indipendenti due tool separati sono più chiari.
+
+**Commit message template.**
+
+```
+slice 5: web tools (web_search + web_fetch via SearXNG)
+
+Two LLM-facing deferred tools backed by self-hosted SearXNG container
+(extends sandbox/compose.yaml). SSRF defense enumerated (IPv4 private/
+loopback/link-local/CGNAT/metadata + IPv6 ULA/link-local/IPv4-mapped/
+metadata) + HTTP redirect interception. Readability filter 250-char
+threshold. ToolResult preview+persist for large pages. Reuses pre-rewrite
+SearXNG client + safeDialContext SSRF pattern; drops SearchTool god class
+(12 actions) which belongs to future wiki/graph slice.
+
+Smoke: aura chat "qual è la versione più recente di Go al 2026?" → modello
+sceglie web_search → web_fetch su golang.org → estrae numero.
+
+LOC: +XXX src / +YY test / +ZZ infra.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+**Open questions.**
+1. **SearXNG self-hosted vs cloud (DuckDuckGo Lite/Brave/Tavily)?** Pre-rewrite era self-hosted. Trade-off: self-host = zero-cost + privacy ma serve container; cloud = $$ + nessun container ma instradi le query a terzi. → *Default proposto: self-hosted (continuità + privacy). Cloud come fallback se `SEARXNG_URL` non risolve dopo N tentativi → out of scope qui.*
+2. **`go-readability` mantenuto?** È stato fork-ato lentamente; alternative: `dom-distiller` port, scraping minimal manuale. → *Default proposto: SÌ go-readability + html-to-markdown/v2, sono stabili e il pre-rewrite li usava bene.*
+
+---
+
+## Slice 6 — Scheduler (cron + agent jobs persistente)
+
+> **Atomicity note (audit round 1 P0):** ~1300 LOC distribuiti = troppo per 1 commit.
+> Si committa in **2 sub-slice ordinati**:
+> - **6a**: types + migration `0003_scheduler` + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
+> - **6b**: handler `agent_job` (con swarm Coordinator integration) + tool `task_schedule`/`task_run_now` + `ActionRouter` helper (primo uso multi-action, vedi §Pattern condiviso). ~600 LOC.
+> Ogni sub-slice atomic-commit, smoke green prima del successivo.
+
+**Goal.** Riportare il tool `task` LLM-facing con azioni `schedule | list | cancel | run_now`,
+supportato da un cron-core in-process (tick loop DIY ogni 30s, nessuna libreria
+cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
+`reminder`, `agent_job` (extension futura per altri kind in slice dedicata).
+
+**Pre-rewrite reference**:
+- [internal/agent/tools/registry/scheduler.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/scheduler.go) — 587 LOC tool wrapper (LARGE, da splittare per azione)
+- [internal/cron/scheduler.go](git:pre-rewrite-2026-05-27/internal/cron/scheduler.go) — 255 LOC tick loop (OK)
+- [internal/cron/store.go](git:pre-rewrite-2026-05-27/internal/cron/store.go) — **594 LOC GOD CLASS** (Upsert+Cancel+Delete+DueTasks+MarkFired+RecordManualRun+RecordAgentJobResult tutti in un file)
+- [internal/cron/dispatch.go + dispatch_handlers.go](git:pre-rewrite-2026-05-27/internal/cron/dispatch.go) — 244+246 LOC con 5 `dispatchXxx` privati (`dispatchReminder`, `dispatchWikiMaintenance`, `dispatchLessonPromotion`, `dispatchProposalTTLSweep`, `dispatchMemoryDecay`) + 2 arm inline nel `Dispatch` switch (`BackupVerify`, `WALCheckpoint`). Tutto senza strategy pattern (verificato pre-rewrite tag, round 1 reality check)
+
+**Smoke E2E.**
+```bash
+./aura chat "ricordami fra 10 minuti di controllare il forno"
+# → modello chiama task.schedule(kind=reminder, in=10m, payload={text: ...})
+# → 10 min dopo: il dispatcher chiama Notifier → utente riceve notifica (CLI/Telegram)
+
+./aura chat "ogni giorno alle 9 del mattino fai un riassunto degli articoli che ho letto ieri"
+# → modello chiama task.schedule(kind=agent_job, daily=09:00, payload={goal: ..., toolsets: [wiki, web]})
+# → il dispatcher invoca l'agent loop come sub-job con goal serializzato
+```
+
+**Acceptance.**
+- [ ] `MinScheduleEveryMinutes` configurabile (default 5, era hardcoded pre-rewrite — fix).
+- [ ] Validation: `daily HH:MM` accetta solo `00:00`–`23:59`; nomi task `^[a-zA-Z0-9_-]+$` (no path traversal).
+- [ ] Persistence: i task sopravvivono al restart del processo. Tick loop riprende `DueTasks` allo startup e cattura up i missed run (con flag `MissedSince`).
+- [ ] **`DueTasks` query usa `SELECT ... FOR UPDATE SKIP LOCKED` (audit round 1 P0)**: pattern atomico per multi-instance safety. Anche con 1 sola Aura attiva oggi, blocca double-dispatch se un manual `task.run_now` parte contemporaneo al tick. Costo zero, sblocca future multi-instance.
+- [ ] Dispatcher: ogni `TaskKind` ha un `Handler` separato in `internal/cron/handlers/<kind>.go` implementando `Handle(ctx, *Task) error`. Aggiungere un nuovo kind = aggiungere 1 file, non editare un god switch.
+- [ ] **`agent_job` handler auto-rejecta child Loop pause (audit round 1 P0)**: il sub-loop spawn-ato via `swarm.Coordinator.Spawn` riceve un `RejectingResponder` come default — un agent_job non può bloccare aspettando un umano (è cron, gira anche di notte). Se l'agent_job invoca `ask_user`, riceve risposta automatica `"<auto-rejected: scheduled job has no human responder>"` e decide come procedere. Test asserisce: cron job che invoca ask_user non blocca, completa in <30s con stato `auto-rejected`.
+- [ ] `LastError` persistito su failure, leggibile via `task.list()`.
+- [ ] Test: schedule → restart processo → tick loop ripicka il task → handler invocato.
+
+**File targets** (≤ 950 LOC src — risparmio ~550 LOC vs pre-rewrite grazie a sqlc):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/cron/types.go` | ~100 | `Task`, `TaskKind`, `ScheduleKind`, `Status` enums (Go domain types, distinti dai sqlc-generated). |
+| `internal/cron/scheduler.go` | ~200 | Tick loop, lifecycle (Start/Stop), missed-run recovery. Usa `*cron.Queries` (sqlc client). |
+| `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
+| `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
+| `internal/db/queries/agent_job_runs.sql` | ~60 | **3 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`. Tabella separata per audit dettagliato dei job. |
+| `internal/db/migrations/0003_scheduler.up.sql` | ~60 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, status, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, exit_status, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'`. |
+| `internal/db/migrations/0003_scheduler.down.sql` | ~5 | DROP TABLEs. |
+| `internal/cron/handlers/handler.go` | ~40 | Interface `Handler{ Kind() TaskKind; Handle(ctx, t *Task) error }` + registry. |
+| `internal/cron/handlers/reminder.go` | ~80 | Notifier-driven (CLI/Telegram). |
+| `internal/cron/handlers/agent_job.go` | ~150 | Spawn `agent.Loop` via Slice 3 swarm `Coordinator.Spawn`. |
+| ~~`internal/cron/handlers/graph_maintenance.go`~~ | — | **RIMOSSO (audit round 1 P0)**: scope-creep esplicito (placeholder per future), va in slice dedicata post-MCP-Neo4j. Slice 6 supporta solo `reminder` e `agent_job` per ora. |
+
+**Commit message templates (sub-slice 6a + 6b):**
+
+```
+slice 6a: scheduler infrastructure — types + sqlc + tick loop + reminder handler
+
+PostgreSQL-backed scheduler base. Types (Task/TaskKind/ScheduleKind/Status),
+migration 0003_scheduler (tables scheduler_tasks + agent_job_runs, indices,
+FOR UPDATE SKIP LOCKED on DueTasks), 11 sqlc queries split across
+scheduler_tasks.sql + agent_job_runs.sql. Tick loop DIY 30s with missed-run
+recovery. Notifier interface + stdout impl. Handlers registry + reminder
+handler. Tools task_list/task_cancel (non-deferred and deferred).
+
+Smoke: aura schedule reminder in=10m → tick loop fires → Notifier stdout.
+Persistent across restart verified.
+
+LOC: +XXX src / +YY test / +ZZ migration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 6b: scheduler agent_job + ActionRouter helper
+
+Adds agent_job handler that delegates to swarm.Coordinator.Spawn
+(RejectingResponder default → cron jobs auto-reject child Loop pauses,
+deadlock-guarded). Tools task_schedule/task_run_now (deferred). ActionRouter
+helper introduced in internal/agent/tools/action.go (~90 LOC) with sentinel
+passthrough contract — first multi-action consumer is `task`. Slice 7 reuses.
+
+Smoke: aura chat "ogni giorno alle 9 fai un riassunto degli articoli che ho
+letto ieri" → task_schedule → handler agent_job → swarm child → join.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+| `internal/agent/tools/task_schedule.go` | ~90 | Deferred. Args validation + delega a Queries.UpsertTask. |
+| `internal/agent/tools/task_list.go` | ~50 | Non-deferred. |
+| `internal/agent/tools/task_cancel.go` | ~40 | Deferred. |
+| `internal/agent/tools/task_run_now.go` | ~80 | Deferred. Chiama Handler.Handle direttamente, bypass tick. |
+| `internal/cron/scheduler_test.go` | ~150 | Build tag `db_integration`. Round-trip + tick loop + missed-run recovery. |
+| `internal/cron/handlers/agent_job_test.go` | ~100 | Goal serialization + child loop spawn (mocked Coordinator). |
+
+**Open questions.**
+1. **~~CONFLITTO con CLAUDE.md "Persistence: Neo4j via MCP"~~ → CHIUSA: Postgres come terzo pilastro.**
+   Slice 0.5 ha introdotto Postgres come application-state store. Architettura persistence finale:
+   - **Neo4j (via MCP)** = knowledge graph + vector index. **Unica fonte di knowledge E di vector embeddings.** Semantic memory, entity graph, conversational memory, derivati, embedding HNSW nativo (Apache Lucene). Embedder: **`embeddinggemma` via sidecar `aura-llama-embed`** (porto 8081, OpenAI-compat), 768d nativo, **MRL truncation client-side a 256d** (subclass `OpenAIEmbeddings` ~30 LOC, memory `feedback_embedding_backend_stays_mistral.md` LOCKED). NIENTE wiki markdown filesystem (deprecato 2026-05-27). NIENTE Qdrant: lo spike `D:/tmp/aura-neo4j-spike-2026-05-27/` Phase 6b ha misurato 22-30ms p95 + IT recall@5 5/5 su Neo4j vector index nativo con corpus reale Aura → Qdrant decommissionabile senza regressione.
+   - **Postgres (via sqlc)** = application state. Scheduler tasks, paused states, audit log, api tokens, identity.
+   - **Filesystem** = solo artefatti operativi (SKILL.md tree, tool result sidecar files). NESSUN knowledge in filesystem.
+   Distinzione semantica chiara: **knowledge + vectors → solo Neo4j; infrastructure → Postgres; operational artifacts → filesystem**. CLAUDE.md aggiornata in coda al PRD.
+2. **Notifier interface.** Slice 6 ha bisogno di un sink per le reminder. Tabula-rasa "non ha Telegram". → *Default proposto: interface `Notifier{ Notify(ctx, recipient, msg) error }` con default impl stdout (printf nel terminale `aura serve`). Telegram impl arriverà in una slice plugin separata.*
+3. **Agent-job sub-loop = swarm child?** Lo Slice 3 swarm `Coordinator.Spawn` può servire come spawner per i `agent_job` schedulati. → *Default proposto: SÌ, agent_job handler chiama `swarm.Coordinator.Spawn` con tier="reasoning" e join sincrono. Evita di duplicare la logica spawn-loop.*
+
+---
+
+## Slice 7 — Skills (self-extension via ask_user governance)
+
+> **Atomicity note (audit round 1 P0):** ~1400 LOC totali = troppo per 1 commit.
+> Si committa in **4 sub-slice ordinati**, ognuno atomic + smoke green:
+> - **7a**: types + loader (filesystem + parser + cache 4-way split) + `internal/skills/validator.go` (single chokepoint, riusato da tutti) + `internal/skills/paths.go` (`SanitizeName` single source) + tool `skill.list` + tool `skill.info`. Read-only, no governance. ~500 LOC.
+> - **7b**: catalog (skills.sh HTML scrape 1:1 pre-rewrite) + tool `skill.catalog`. Read-only. ~350 LOC.
+> - **7c**: writer (atomic pending→active) + deleter + tool `skill.create` + `skill.update` + `skill.delete` (mutation tools con ask_user governance). Schema `aura.skill_audit` (migration `0004`) + sqlc queries + adapter. ~600 LOC.
+> - **7d**: installer (`npx skills add` con `--ignore-scripts` + sanitizedEnv stretto + post-install ParseSkill re-validation) + tool `skill.install`. ~450 LOC.
+> Ogni sub-slice atomic-commit, smoke green prima del successivo.
+
+> **Governance scelta: C (human-in-the-loop) tramite il tool `ask_user`** di
+> Slice 1.5. L'agente può proporre create/update/install/delete delle skill ma
+> ogni mutation richiede approval esplicito dell'utente nel turn corrente.
+> Razionale: una skill scritta dall'agente entra nel system prompt del turn
+> successivo (cache TTL 1s + `Invalidate()`) — è auto-modifica persistente
+> della personalità/capacità dell'agente. È esattamente il tipo di azione che
+> la `kind: approval` di `ask_user` è stata progettata per gateare.
+
+**Goal.** Sette tool LLM-facing per la self-extension completa:
+- Read-only: `skill.list`, `skill.catalog`, `skill.info`
+- Mutations (tutte gate-ate da `ask_user`): `skill.create`, `skill.update`, `skill.delete`, `skill.install`
+
+Alimentati da:
+- Loader filesystem multi-root (TTL cache 1s, pattern pre-rewrite ben tarato).
+- Catalog search via skills.sh — fetch HTTP del catalog HTML + regex parser ([catalog.go](git:pre-rewrite-2026-05-27/internal/skills/catalog.go) 1:1).
+- Install via **`npx skills add <source> --agent claude-code -y`** ([admin.go](git:pre-rewrite-2026-05-27/internal/skills/admin.go) 1:1) — funzionava bene pre-rewrite, riusabile. **Migliorie di sicurezza**: `sanitizedEnv()` whitelist più stretta (drop `NPM_CONFIG_USERCONFIG` che può puntare a file arbitrari), post-install `ParseSkill()` re-validation prima di `Invalidate()` (catch corrupted downloads), 90s timeout esplicito.
+- Writer in `~/.aura/skills/pending/<name>/` per le mutation in attesa di approval; al `Approva` move atomico in `~/.aura/skills/active/`.
+- Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor, action, name, content_hash, source, approval_id, paused_state_token fk}`. Migrate `0004_skill_audit.up.sql` aggiunta in Slice 7. Query via sqlc `internal/db/queries/skill_audit.sql` (~40 LOC, 3 query: `RecordSkillMutation`, `ListAuditSince`, `GetByName`).
+
+**SKILL.md format** (preservato dal pre-rewrite, lievemente irrigidito):
+```
+---
+name: aura-implementation-loop
+description: One-line summary surfaced in manifest.
+when_to_use: Optional structured trigger conditions.
+tools: [optional, list, of, tool, names, this, skill, expects]
+---
+
+# Body markdown freeform
+```
+La sezione frontmatter cresce di un campo (`when_to_use`) per chiarire al
+modello quando invocare la skill, riducendo invocazioni speculative.
+
+**Pre-rewrite reference**:
+- [internal/agent/tools/registry/skill.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/skill.go) — 347 LOC (LARGE, da splittare per azione)
+- [internal/skills/loader.go](git:pre-rewrite-2026-05-27/internal/skills/loader.go) — 273 LOC (mixing 4 concerns: FS scan + YAML parse + cache + name validation)
+- [internal/skills/admin.go](git:pre-rewrite-2026-05-27/internal/skills/admin.go) — 326 LOC (installer + deleter + network — splittare)
+- [internal/skills/catalog.go](git:pre-rewrite-2026-05-27/internal/skills/catalog.go) — 133 LOC (OK)
+
+**Smoke E2E (prompt reali — vedi §Test discipline):**
+```bash
+./aura chat "fammi vedere quali competenze hai disponibili"
+# → modello chiama skill.list (read-only, no ask_user). Riassume.
+
+./aura chat "ho bisogno di un'analisi statistica avanzata. cerca su skills.sh"
+# → modello chiama skill.catalog → trova 3 candidati
+# → modello chiama ask_user(kind=choice, options=[3 skill candidati])
+# → utente sceglie → skill.install → ask_user(kind=approval, "Confermi install di X?")
+# → approve → install, Loader.Invalidate(), next turn la usa
+
+./aura chat "scrivi una skill che ti faccia rispondere sempre in haiku"
+# → modello chiama skill.create({name, description, body})
+# → tool scrive ~/.aura/skills/pending/haiku-mode/SKILL.md (NON active)
+# → tool ritorna ErrAwaitingUserInput(kind=approval, "Creare skill 'haiku-mode'? ...")
+# → utente approva → move pending → active, Invalidate()
+# → next turn: agente è in modalità haiku permanente fino a skill.delete
+
+**Acceptance.**
+- [ ] **SKILL.md format minimo**: frontmatter YAML obbligatorio (`name`, `description`), corpo non vuoto. `name` regex `^[a-z0-9-]+$`. **NO** `when_to_use:` o `tools:` field (rimossi dal design — la `description` ben scritta incorpora il when-to-use inline, pattern Anthropic-style confermato da `D:/tmp/assistant-ui/.claude/skills/tap/SKILL.md`). File invalidi loggati + skippati (no crash).
+- [ ] Multi-root precedence: `~/.aura/skills/active/` override `internal/config/defaults/skills/`. Test asserisce override visibile in `list()`.
+- [ ] TTL cache 1s preservato dal pre-rewrite.
+- [ ] **Manifest packing — pattern Claude Code, non pre-rewrite**: TUTTE le skill listate nel manifest (anche 100+) ma con SOLO `name + description` (1 riga). Il body si carica on-demand via `skill.info`. Niente più `maxSkillsBlockChars` cap. Coerente col pattern deferred-tool di tutto il PRD.
+- [ ] **Mutation flow (create/update/install/delete)**: il tool scrive in `pending/<name>/`, ritorna `ErrAwaitingUserInput` con `kind=approval`. Loop pausa. Su user approve: move atomico pending→active + `Loader.Invalidate()`. Su reject: delete pending. Su edit (kind=choice "approva con modifiche"): non gestito in Slice 7 — out of scope, sarà slice futura.
+- [ ] **Audit log**: ogni mutation (anche le reject) scritte nella tabella `aura.skill_audit` di Postgres (sqlc-managed). `aura skills audit --since=1h` query SQL. Postgres trigger `BEFORE UPDATE/DELETE` su `skill_audit` → `RAISE EXCEPTION` (audit append-only enforced a livello DB, audit round 1 P1).
+- [ ] **`Validator.SanitizeName` chokepoint (audit round 1 P0)**: `internal/skills/paths.go` espone `SanitizeName(name) (clean string, err error)` — UNICA via per derivare path filesystem da user input. Regex `^[a-z0-9-]+$`, length 1-64, no reserved (`init`, `delete`, `.`, `..`). Writer + Deleter + Installer DEVONO chiamarlo prima di `filepath.Join(skillsDir, name)`. Test asserisce ogni file-touch site via static analysis (`grep -L 'SanitizeName' internal/skills/{writer,deleter,installer}.go` → empty).
+- [ ] **skills.sh integration via `npx skills add` (pre-rewrite 1:1 + safety hardening)**:
+  - `node`+`npm` runtime requisito host.
+  - Catalog browse: HTTP fetch + regex parse del catalog HTML (pre-rewrite pattern).
+  - Install: subprocess `npx --yes skills add <source> --agent claude-code -y` (preservato) + **`--ignore-scripts` aggiunto (audit round 1 P0)** per bloccare `package.json` postinstall hooks (supply chain risk).
+  - **90s timeout preservato dal pre-rewrite** (`skillInstallToolTimeout` già esistente, non nuovo).
+  - sanitizedEnv whitelist stretta: drop `NPM_CONFIG_USERCONFIG` (può puntare a file arbitrari), drop `NPM_CONFIG_GLOBALCONFIG`, drop `NPM_CONFIG_PREFIX`.
+  - **Acceptance**: install di una skill malevola con `postinstall: "rm -rf ~"` → `--ignore-scripts` la blocca, test asserisce.
+- [ ] **Capability boundary open-by-default per single-user**: nel tabula-rasa Aura locale, `identity = "local"` ha tutte le capability — l'agente può self-extend liberamente (gate-ato comunque da `ask_user`). La STRUTTURA capability resta in codice per future multi-user.
+- [ ] `skill.info(name)` ritorna corpo intero come `ToolResult` — usa il pattern Slice 1 (preview + sidecar file se >2 KiB).
+- [ ] **Prompt injection guard espanso (audit round 1 P0)**: body size cap 32 KiB a write time. Refuse write se body contiene una di queste sequence (literal blocklist):
+  - OpenAI ChatML: `<|im_start|>`, `<|im_end|>`, `<|endoftext|>`
+  - Anthropic: `</system>`, `</human>`, `</assistant>`, `\n\nHuman:`, `\n\nAssistant:`
+  - Llama / Mistral: `[INST]`, `[/INST]`, `<<SYS>>`, `<</SYS>>`
+  - Meta / Llama 3: `<|begin_of_text|>`, `<|start_header_id|>`, `<|end_header_id|>`, `<|eot_id|>`
+  - DeepSeek / Gemma / Qwen: `<|fim_begin|>`, `<|fim_hole|>`, `<start_of_turn>`, `<end_of_turn>`
+  Basic literal check, no semantic detection. Lista refresh-abile via config (`AURA_SKILL_INJECTION_BLOCKLIST`).
+
+**File targets** (≤ 1050 LOC src, no file >200):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/skills/types.go` | ~50 | `Skill{Name, Description, Body, Path}`. Frontmatter minimo. |
+| `internal/skills/loader/filesystem.go` | ~100 | FS scan multi-root (active + defaults), `ReadDir` + walk. |
+| `internal/skills/loader/parser.go` | ~80 | YAML frontmatter + body split + validation. |
+| `internal/skills/loader/cache.go` | ~80 | sync.RWMutex + TTL 1s, `Invalidate()`. |
+| `internal/skills/loader/loader.go` | ~60 | Coordina i tre: List/Get → cache → parser → filesystem. |
+| `internal/skills/validator.go` | ~120 | Single source of truth: regex name, size cap 32 KiB, parse roundtrip, dup-name, prompt injection literal-check (blocklist espansa, vedi Acceptance). Usato sia da writer che da install. |
+| `internal/skills/paths.go` | ~40 | `SanitizeName(name) (string, error)` — **single chokepoint path-traversal guard** (audit round 1 P0). Riusato da writer/deleter/installer. Test static-analysis: ogni file-touch site DEVE chiamarlo prima di `filepath.Join`. |
+| `internal/skills/writer.go` | ~120 | Atomic write a `pending/<name>/` + move pending→active. Path-traversal guard. Usato da create/update. |
+| `internal/skills/deleter.go` | ~70 | FS remove da active + `Invalidate()`. Path-traversal guard. |
+| `internal/skills/catalog.go` | ~140 | skills.sh fetch HTML + regex parse + search by query (pre-rewrite 1:1, HTTP timeout config-overrideable). |
+| `internal/skills/installer.go` | ~140 | `npx skills add <source> --agent claude-code -y` con sanitizedEnv stretto, 90s timeout. Post-install ParseSkill re-validation prima di Invalidate. Path-traversal guard. |
+| `internal/skills/audit.go` | ~70 | Thin adapter su sqlc `Queries.RecordSkillMutation` + `Queries.ListAuditSince`. Niente più file IO. |
+| `internal/db/queries/skill_audit.sql` | ~40 | 3 query sqlc. |
+| `internal/db/migrations/0004_skill_audit.up.sql` | ~50 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor, action, name, content_hash, source, approval_id, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL). Indice su `ts DESC`. **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). |
+| `internal/agent/tools/skill_list.go` | ~50 | Non-deferred (output piccolo). |
+| `internal/agent/tools/skill_catalog.go` | ~60 | Deferred. Query skills.sh, ritorna candidati. |
+| `internal/agent/tools/skill_info.go` | ~60 | Deferred. Ritorna body via `ToolResult` (preview+persist se grande). |
+| `internal/agent/tools/skill_create.go` | ~100 | Deferred. Writer.WritePending → ErrAwaitingUserInput(kind=approval). Resume handler: Writer.Activate + Audit.Record. |
+| `internal/agent/tools/skill_update.go` | ~90 | Stesso pattern di create + diff before/after nel question. |
+| `internal/agent/tools/skill_delete.go` | ~70 | ErrAwaitingUserInput(kind=approval, mostra cosa stai cancellando) + Deleter.Delete + Audit.Record. |
+| `internal/agent/tools/skill_install.go` | ~80 | ErrAwaitingUserInput(kind=approval, mostra catalog entry) + Installer.Install + Audit.Record. |
+| `internal/skills/loader/loader_test.go` | ~120 | Multi-root precedence + cache TTL + invalid SKILL.md skip. |
+| `internal/skills/installer_test.go` | ~100 | Catalog fetch (fixture HTTP) + path traversal rejection + ask_user flow. |
+| `internal/skills/writer_test.go` | ~80 | Atomic write + pending→active move + concurrent write race. |
+| `internal/skills/audit_test.go` | ~50 | JSON-lines round-trip + concurrent record. |
+| `cmd/aura/main.go` (diff) | ~+30 | Registra i 7 tool skill. Sub-command `aura skills audit`. |
+
+**Open questions.**
+1. **~~`when_to_use` field~~ — ELIMINATO.** Confermato dall'esempio reale `D:/tmp/assistant-ui/.claude/skills/tap/SKILL.md` e dal pattern Claude Code: frontmatter minimo, description ricca incorpora il when-to-use.
+2. **~~skills.sh endpoint JSON~~ → CHIUSA: HTML scrape pre-rewrite, funzionava.** Regex `catalogItemRE` da [catalog.go](git:pre-rewrite-2026-05-27/internal/skills/catalog.go) riportato 1:1. Se skills.sh refactor-a HTML, fix sul momento (rischio noto e accettato — il pre-rewrite ha vissuto così senza incidenti).
+3. **~~Remote install source pattern~~ → CHIUSA: delega a `skills` CLI.** Il source string passato a `npx skills add <source>` è qualsiasi cosa quel CLI accetti (slug skills.sh, owner/repo GitHub, npm package). Validazione lato Aura = solo regex `^[A-Za-z0-9@:._/\-]{1,200}$` (no path traversal) + length cap, come pre-rewrite.
+4. **Skill versioning?** → *Default proposto: NO, fuori scope. Una skill = uno stato corrente nel filesystem. Audit log permette rollback manuale ("riapplica il content_hash X di ieri"). Versioning automatico è feature futura.*
+5. **~~Cleanup pending stale~~ → CHIUSA (audit round 2 P0):** TTL 24h sui `pending/<name>/`, cleanup eseguito allo startup di Aura + ogni ora via tick. Implementato in Slice 7c con `internal/skills/cleanup.go` (~40 LOC). Logged via audit log (`action="cleanup_pending_stale"`, `name=<dir-name>`, `age_hours=<value>`).
+
+**Commit message templates (sub-slice 7a + 7b + 7c + 7d).**
+
+```
+slice 7a: skills loader + validator + read-only tools
+
+Filesystem loader split 4-ways (filesystem/parser/cache/loader), single-source
+Validator (size cap 32 KiB + name regex + prompt injection blocklist espansa:
+ChatML/Anthropic/Llama/Llama-3/DeepSeek-Gemma-Qwen literal blocklist), single
+chokepoint internal/skills/paths.go SanitizeName (static-analysis test asserts
+writer/deleter/installer use it). Tools skill.list + skill.info (read-only,
+no governance). TTL cache 1s preserved from pre-rewrite.
+
+Smoke: aura chat "fammi vedere quali competenze hai disponibili" → skill.list
+returns multi-root precedence resolved.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 7b: skills catalog (skills.sh HTML scrape)
+
+catalog.go ported 1:1 from pre-rewrite (HTTP fetch + catalogItemRE regex
+parse, 8 MiB cap, 20s timeout). Tool skill.catalog (deferred). No npx, no
+subprocess in this sub-slice — just discovery.
+
+Smoke: aura chat "cerca su skills.sh una skill per analisi statistica" →
+skill.catalog returns candidate list, model presents via ask_user kind=choice.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 7c: skills mutation (create/update/delete) + audit + governance C
+
+Writer (atomic pending→active move via os.Rename), deleter (path-traversal
+guarded), audit log on Postgres via sqlc (migration 0004_skill_audit with
+CREATE TABLE aura.skill_audit + index ts DESC + trigger raise_audit_immutable
+BEFORE UPDATE/DELETE → RAISE EXCEPTION). Tools skill.create/update/delete
+all returning ErrAwaitingUserInput(kind=approval) — Loop pauses, user
+approves/rejects, resume handler activates or discards. Cleanup pending TTL
+24h on startup + hourly tick. ActionRouter from Slice 6b reused.
+
+Smoke: aura chat "scrivi una skill che ti faccia rispondere sempre in haiku"
+→ skill.create writes pending → ask_user → approve → next turn Aura in
+haiku mode.
+
+LOC: +XXX src / +YY test / +ZZ migration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 7d: skills installer (skills.sh via npx)
+
+Installer wraps `npx --yes skills add <source> --agent claude-code -y
+--ignore-scripts` (--ignore-scripts NEW addition vs pre-rewrite for supply
+chain safety, blocks package.json postinstall hooks), sanitizedEnv whitelist
+stretto (drops NPM_CONFIG_USERCONFIG/GLOBALCONFIG/PREFIX), 90s timeout
+preserved from pre-rewrite, post-install ParseSkill re-validation prior to
+Loader.Invalidate(). Tool skill.install with ErrAwaitingUserInput approval
+gate showing catalog entry preview.
+
+Smoke: malicious skill with postinstall:"rm -rf ~" → --ignore-scripts blocks
+execution, test asserts.
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
+## Pattern condiviso da estrarre (vale per Slice 5/6/7)
+
+Tutti e tre i tool seguono lo stesso shape:
+1. Tool LLM-facing accetta `action` enum + args
+2. Dispatch su action → metodo Go privato
+3. Validazione args, esecuzione, errore strutturato o `ToolResult`
+
+Pre-rewrite questo pattern era duplicato in `search.go`, `scheduler.go`, `skill.go`. Per evitare di farlo di nuovo:
+
+**File proposto:** `internal/agent/tools/action.go` (~90 LOC).
+
+**Posizionamento (audit round 1 P1): introdotto in Slice 6, non Slice 5.** Slice 5 (`web_search`/`web_fetch`) sono 2 tool indipendenti senza azioni multiple — l'ActionRouter sarebbe written-and-unused (YAGNI). Slice 6 è il primo uso reale (`task_schedule`/`list`/`cancel`/`run_now` sotto un singolo tool `task` action-dispatched). Slice 7 lo riusa.
+
+```go
+type ActionRouter struct {
+    name    string
+    actions map[string]ActionHandler
+}
+type ActionHandler func(ctx context.Context, args json.RawMessage) (ToolResult, error)
+
+func (r *ActionRouter) Dispatch(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+    var env struct{ Action string `json:"action"` }
+    if err := json.Unmarshal(raw, &env); err != nil {
+        return ToolResult{}, fmt.Errorf("%s: parse action: %w", r.name, err)
+    }
+    h, ok := r.actions[env.Action]
+    if !ok { return ToolResult{}, fmt.Errorf("%s: unknown action %q", r.name, env.Action) }
+    return h(ctx, raw)
+}
+```
+
+**Sentinel passthrough contract (audit round 1 P0):**
+Se un `ActionHandler` ritorna `ErrAwaitingUserInput` (sentinel di Slice 1.5), `Dispatch` lo propaga UNCHANGED al chiamante. NON lo wrap, NON lo trasforma in `ToolResult`. Questo è critico per Slice 7 (mutation tools che gateano via `ask_user`). Test in `action_test.go`: handler che ritorna `ErrAwaitingUserInput` → `Dispatch` ritorna `(ToolResult{}, *ErrAwaitingUserInput)` byte-identico, Loop lo riceve e pausa correttamente.
+
+---
+
+## Sequencing rationale (DB infra → Agent → AskUser → Sandbox → Swarm → KV → Web → Scheduler → Skills)
+
+0. **Slice 0.5 (DB infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
+1. **Slice 1 (LLM client + ToolResult)** è prerequisito di tutto il resto: senza un client reale e senza il pattern preview+persist sui tool result, le altre slice non hanno modo di osservare comportamento end-to-end senza avvelenare il context window.
+2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
+3. **Slice 2 (Sandbox)** prima dello Swarm: lo swarm spawn-a agenti che — nella realtà — useranno `execute`. Avere `execute` funzionante prima rende lo smoke dello swarm meno artificiale.
+4. **Slice 3 (Swarm)** prima della KV: la KV cache discipline deve coprire ANCHE i prompt dei figli swarm-spawn. Costruire il PromptBuilder dopo aver visto come il parent passa goal/tools al child evita un secondo refactor.
+5. **Slice 4 (KV)** chiude le 4 fondamentali: ora la superficie del prompt (system + manifest + tool descriptions + parent/child contracts + ask_user) è stabile. Il builder ottimizza un bersaglio fermo.
+6. **Slice 5 (Web tools)** apre il backlog post-tabula-rasa: indipendente dalle 4 fondamentali, riusa `ToolResult` per fetch di pagine grandi. NON introduce `ActionRouter` (web_search/web_fetch sono 2 tool indipendenti senza azioni multiple — YAGNI). Vedi §Pattern condiviso.
+7. **Slice 6 (Scheduler)** prima di Skills: si committa in 2 sub-slice (6a infrastructure + reminder handler, 6b agent_job + ActionRouter helper). 6b introduce `ActionRouter` come primo consumer reale (tool `task` con 4 azioni). Slice 7 lo riusa.
+8. **Slice 7 (Skills)** ultima: si committa in 4 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima evita di riscrivere il flow governance ogni volta che una primitive cambia forma.
+
+## Out of scope per tutte e 4 le slice (esplicito)
+
+- Telegram, dashboard, wiki, Qdrant, FTS5 (vedi [README.md](README.md)).
+- `mcp-neo4j-cypher` integration (lo aggiungerà uno slice MCP separato).
+- Setup wizard, tray, OTA update.
+- Persistenza disk dello stato conversazionale (Loop è in-memory).
+- Auth dell'endpoint `aura serve` (slice CLI-server separato).
+
+## Non-goals di processo
+
+- **Nessuna feature flag.** Se uno slice spegne lo stub, lo stub viene rimosso. No toggle.
+- **Nessun re-export.** File spostati = rimossi all'origine, ZERO shim.
+- **Nessun TODO comment** lasciato in-tree. Se non è nello scope dello slice corrente, è in `prd.md` (qui), non nel sorgente.
+- **CI deve restare verde** dopo ogni commit. Test integrazione che richiedono sidecar/network → behind build tag (`//go:build sandbox_integration`, `//go:build db_integration`).
+
+---
+
+## Nota CLAUDE.md (da applicare prima di Slice 0.5)
+
+La sezione `## Persistence` di [CLAUDE.md](CLAUDE.md) va aggiornata per riflettere la decisione architetturale finale:
+
+```markdown
+## Persistence
+
+Tre store, ciascuno con la sua semantic responsibility:
+
+- **Neo4j via `mcp-neo4j-cypher` MCP server (stdio)** — **unica fonte di knowledge E di vector embeddings**. Semantic memory, entity graph, conversational memory, derivati relazionali, vector index nativo HNSW Lucene. Accessed solo via MCP, no native Go adapter. La precedente architettura wiki-markdown filesystem + `[[wiki-links]]` è stata deprecata 2026-05-27 dopo test (spike in `D:/tmp/aura-neo4j-spike-2026-05-27/`).
+- **Embedder dedicato**: `embeddinggemma` via sidecar `aura-llama-embed` (porto 8081, OpenAI-compat). 768d nativo → MRL truncation client-side a 256d (subclass `OpenAIEmbeddings`). Embeddings scritti su nodi `:Chunk` in Neo4j, NON in store separato.
+- **PostgreSQL 17 via `sqlc` + `jackc/pgx/v5`** — application state. Scheduler tasks, paused states, audit log, api tokens, identity. Schema `aura`. Migrations versionate in `internal/db/migrations/`. Industrial-grade, type-safe queries generate da SQL files.
+- **Filesystem** — solo artefatti operativi: SKILL.md tree (`~/.aura/skills/active/`), tool result sidecar files (`$AURA_RUN_DIR/<session>/<tool-call-id>.result`). **Mai knowledge.**
+
+Distinzioni semantiche **non negoziabili**: knowledge + vectors → solo Neo4j (via MCP); application state → solo Postgres (via sqlc); operational artifacts → filesystem. Le slice future che hanno bisogno di persistenza scelgono lo store giusto in base a cosa stanno salvando, non a "che dep era già lì". Nessuna knowledge in Postgres; nessun task scheduler in Neo4j; nessun markdown wiki da nessuna parte; nessun vector index dedicato fuori da Neo4j (Qdrant deprecato 2026-05-27 dopo validazione spike Phase 6b).
+```
+
+Questa nota va committata nello stesso commit di Slice 0.5 (sono accoppiate: codice + contract documentale insieme).
