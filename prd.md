@@ -3044,6 +3044,327 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 13 — Local LLM fallback (vLLM + LMCache disk-tier, doppio sidecar)
+
+> **Pattern doppio sidecar** (decisione 2026-05-28):
+> - `aura-llama-multimodal` (Slice 9c) **invariato**: llama.cpp + Gemma 4 E4B Q4 per vision/STT one-shot (lightweight, mature multimodal).
+> - `aura-vllm-chat` **NUOVO**: vLLM serving + LMCache disk-tier per chat fallback offline/privacy. Modello chat-only (no multimodal duplicato).
+>
+> **Pattern reference**: LMCache ([github.com/LMCache/LMCache](https://github.com/LMCache/LMCache), 8.4k stars, Apache 2.0, prod in Google Cloud / GMI / CoreWeave). KV cache layer disk-tier per vLLM v1+, 3-10x TTFT reduction su long-context.
+
+**Goal.** Aura può scegliere il backend LLM per ogni conversation:
+1. **OpenRouter remote** (default, DeepSeek-V4 via Slice 1)
+2. **vLLM local + LMCache** (chat fallback offline / privacy mode / cost cap)
+3. **Gemma 4 multimodal local** (vision/STT one-shot via Slice 9c, invariato)
+
+Trigger switching automatic e/o esplicito:
+- **Conv flag** `prefer_local=true` (esplicito user/agent decision via `aura chat new --local` o `/local` Telegram)
+- **Offline detection** (TCP probe verso `AURA_LLM_BASE_URL` ogni `AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC=30`, switch a local se fail consecutive)
+- **Cost threshold** (cost cumulativo daily > `AURA_LLM_LOCAL_FALLBACK_COST_USD_DAY=1.0` → switch silent + Notifier alert)
+- **Identity capability** `use_local_llm` (Slice 1.7 capability_grants, default off per single-user `local`, scaffolding pre-built per multi-user)
+
+### Pre-requisiti
+
+- Slice 1 LLM client OpenAI-compat (riusato drop-in per vLLM)
+- Slice 0.5 Postgres (per `local_llm_sessions` table)
+- Slice 1.7 identities (per capability `use_local_llm`)
+- Slice 1.8 conversations (per `prefer_local` flag in metadata)
+- Slice 9c multimodal sidecar (per coesistenza, no conflitto)
+
+### ⚠️ Open question CRITICA pre-merge — vLLM CPU vs GPU
+
+**vLLM è ottimizzato per CUDA GPU**. Su mini-PC senza GPU dedicata:
+- **vLLM CPU mode**: latenza ~5-10x peggiore di llama.cpp CPU per stesso modello
+- **vLLM GPU (RTX 4060 8GB+)**: latenza eccellente, RAM offload OK
+- **llama.cpp CPU**: balance ottimale per CPU-only, supporto AVX2/AVX512 maturo
+
+**Decisione pre-merge richiesta**: il mini-PC target ha GPU dedicata?
+- **SE GPU**: Slice 13 vLLM+LMCache OK, procediamo
+- **SE CPU-only**: opzione alternativa **13-bis** = riusare `aura-llama-multimodal` (llama.cpp E4B Q4) anche per chat fallback, no nuovo sidecar, no LMCache (incompatibile native). Saving RAM ~5 GB, perdita scalability KV cache cross-session. Pattern: 1 sidecar serve sia multimodal sia chat fallback.
+
+### Decisioni cumulate (chiusura 2026-05-28)
+
+| Aspetto | Decisione |
+|---|---|
+| Sidecar architecture | **Doppio sidecar**: `aura-llama-multimodal` (Slice 9c, vision/STT) + `aura-vllm-chat` (Slice 13, chat fallback). |
+| Modello chat fallback | **Default proposto**: Gemma 3 12B Instruct Q5_K_M (~7 GB RAM, multilingual IT/EN/ES eccellente). Alternative: Llama 3.1 8B (~5 GB), Qwen 2.5 7B (~4.5 GB). Decisione finale pre-merge via benchmark. |
+| KV cache layer | **LMCache disk-tier** (`/var/cache/lmcache/`, max 50 GB su NVMe). vLLM integration via `--kv-transfer-config`. |
+| Switching policy | 4 trigger: conv flag explicit, offline detection 30s, cost threshold $1/day, identity capability. |
+| Routing default | Sempre remote tranne se trigger attivo. Nessun auto-prefer-local senza signal. |
+| Cost accounting | Local LLM cost = 0 in `aura.local_llm_cost`. Remote cost via OpenRouter usage API. Threshold check via aggregate. |
+| Conversation persistence | `prefer_local` field in `aura.conversations.metadata jsonb` (Slice 1.8). Conversation continua su stesso backend (no switch mid-conversation). |
+
+### Architettura componenti
+
+```
+internal/llm/
+  router.go               # ~150  LLMRouter struct:
+                          #         remoteClient *openai_compat.Client (Slice 1)
+                          #         localClient  *openai_compat.Client (vLLM endpoint)
+                          #         offlineDetector + costTracker
+                          #       Route(ctx InvocationContext) *Client per call
+                          #       Switching logic per priorita':
+                          #         1. conv.metadata.prefer_local=true -> local
+                          #         2. offline detection consecutive_fails>=3 -> local
+                          #         3. costTracker.DailyTotal() > threshold -> local
+                          #         4. capability check use_local_llm
+                          #         (default) -> remote
+  offline_detector.go     # ~80   Background goroutine: TCP dial AURA_LLM_BASE_URL
+                          #       ogni 30s, exponential backoff, consecutive_fails counter
+                          #       Emit STATE_DELTA event "online_status" via AG-UI (Slice 8)
+  cost_tracker.go         # ~100  sqlc adapter su aura.local_llm_cost
+                          #       OnCallStart: INSERT row con start_ts
+                          #       OnCallEnd: UPDATE end_ts + total_cost_usd (da OpenRouter
+                          #         usage response, NULL se local)
+                          #       DailyTotal(): SUM WHERE ts >= now()-24h
+internal/db/queries/local_llm_cost.sql          # ~30   3 query sqlc
+internal/db/queries/local_llm_sessions.sql      # ~30   3 query sqlc (analoghe a sandbox_sessions)
+internal/db/migrations/0013_local_llm.up.sql    # ~50
+internal/db/migrations/0013_local_llm.down.sql  # ~3
+
+internal/agent/llm_agent.go (diff)              # ~+30
+  - Sostituisce field client *Client con router *LLMRouter
+  - Per call: client := router.Route(ctx); client.Stream(...)
+
+cmd/aura/main.go (diff)                          # ~+50
+  + aura chat new --local                  # forza prefer_local=true su new conv
+  + aura llm-router status                 # mostra current routing + offline state + cost
+  + aura llm-router cost --today           # daily cost breakdown remote vs local
+
+internal/channels/telegram/commands.go (diff)    # ~+40
+  + /local             # switch corrente conv a local
+  + /remote            # switch a remote (reset prefer_local)
+  + /llm-status        # mostra routing + offline + cost
+
+compose.yaml (diff)                              # ~+50
+  Service aura-vllm-chat:
+    image: vllm/vllm-openai:latest
+    command:
+      - --model gemma-3-12b-it
+      - --port 8083
+      - --host 127.0.0.1
+      - --kv-transfer-config '{"kv_connector":"LMCacheConnectorV1",
+                              "kv_role":"kv_both"}'
+      - --max-model-len 8192
+      - --gpu-memory-utilization 0.85   # se GPU
+    environment:
+      - LMCACHE_CONFIG_FILE=/etc/lmcache.yaml
+    volumes:
+      - lmcache-data:/var/cache/lmcache
+      - ./lmcache.yaml:/etc/lmcache.yaml:ro
+    ports:
+      - "127.0.0.1:8083:8083"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]        # se GPU available
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8083/v1/models"]
+
+lmcache.yaml                                     # ~25
+  local_storage:
+    type: disk
+    path: /var/cache/lmcache
+    max_size_gb: 50
+  chunk_size: 256                                # token granularity
+  enable_blending: false                          # single-instance, no P2P
+  enable_async_save: true                         # background flush to disk
+```
+
+### Migration 0013
+
+```sql
+CREATE TABLE aura.local_llm_sessions (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id text NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE,
+  model           text NOT NULL,                  -- e.g. 'gemma-3-12b-it'
+  backend         text NOT NULL CHECK (backend IN ('vllm', 'llama_cpp_fallback')),
+  started_at      timestamptz NOT NULL DEFAULT now(),
+  last_used_at    timestamptz NOT NULL DEFAULT now(),
+  ended_at        timestamptz NULL,
+  kv_cache_hits   bigint NOT NULL DEFAULT 0,
+  kv_cache_misses bigint NOT NULL DEFAULT 0
+);
+CREATE INDEX local_llm_sessions_conv ON aura.local_llm_sessions(conversation_id, started_at DESC);
+
+CREATE TABLE aura.local_llm_cost (
+  id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id text NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE,
+  identity_id     uuid NOT NULL REFERENCES aura.identities(id),
+  backend         text NOT NULL CHECK (backend IN ('remote_openrouter', 'local_vllm', 'local_llama_cpp')),
+  model           text NOT NULL,
+  started_at      timestamptz NOT NULL DEFAULT now(),
+  ended_at        timestamptz NULL,
+  total_cost_usd  numeric(10, 6) NOT NULL DEFAULT 0,
+  tokens_in       int NOT NULL DEFAULT 0,
+  tokens_out      int NOT NULL DEFAULT 0
+);
+CREATE INDEX local_llm_cost_daily ON aura.local_llm_cost(identity_id, started_at DESC)
+  WHERE ended_at IS NOT NULL;
+
+-- Slice 1.8 conversations metadata aggiunge field implicito (jsonb):
+-- ALTER TABLE aura.conversations ALTER COLUMN metadata SET DEFAULT '{"prefer_local": false}';
+-- prefer_local è una key dentro metadata jsonb esistente, no schema change.
+```
+
+### Smoke
+
+```bash
+# Setup: GPU mini-PC (NVIDIA RTX 4060 8GB+), Slice 9c attivo
+docker compose up -d aura-vllm-chat
+# attendi healthcheck verde (~30-60s warmup)
+
+# Explicit local
+conv=$(aura chat new --local)
+aura chat resume $conv "ciao, dimmi 2+2 senza usare internet"
+# → routing detecta prefer_local=true → call a vllm@8083
+# → response da Gemma 3 12B local
+# → INSERT aura.local_llm_cost (backend=local_vllm, cost_usd=0)
+
+# Offline detection
+sudo iptables -A OUTPUT -d 1.1.1.1 -j DROP   # simula offline
+aura chat "domanda"
+# → offline_detector consecutive_fails=3 → switch local
+# → bot risponde via local LLM
+# → STATE_DELTA event 'offline' broadcast su AG-UI / Telegram
+
+# Cost threshold (su giornata di uso intenso remoto)
+# costTracker.DailyTotal() > $1.0 → auto-switch silent
+# → Notifier: "Limit cost giornaliero superato, switching a local LLM"
+
+# Telegram commands
+# user: /local
+# → bot: "✅ Switch a local LLM Gemma 3 12B (no internet, no cost)"
+# user: /llm-status
+# → bot: "Current: local (vllm). Offline: NO. Cost today: $0.42 remote + $0 local."
+```
+
+### Acceptance
+
+- [ ] `internal/llm/router.go` `LLMRouter` con 4 trigger di switching documented + priority order.
+- [ ] `offline_detector.go` TCP dial ogni 30s + exponential backoff + consecutive_fails counter. Emette `STATE_DELTA` event `online_status` su AG-UI emitter (Slice 8 fanout).
+- [ ] `cost_tracker.go` ON CALL START/END per ogni call LLM. `DailyTotal(identity_id)` per threshold check. Reset rolling 24h.
+- [ ] Migration 0013: `aura.local_llm_sessions` + `aura.local_llm_cost`. Cascade su conversation delete (Slice 1.8).
+- [ ] `compose.yaml` aggiunge `aura-vllm-chat` service con LMCache integration. Healthcheck verifica `/v1/models`.
+- [ ] `lmcache.yaml` config disk-tier 50 GB, chunk_size 256, async_save.
+- [ ] Telegram commands `/local`, `/remote`, `/llm-status` (bot-intercept come gli altri commands Slice 9b).
+- [ ] CLI `aura chat new --local`, `aura llm-router status`, `aura llm-router cost --today`.
+- [ ] Test routing priority: ogni trigger combinazione produce backend atteso (matrice).
+- [ ] Test offline_detector: simula network drop con `iptables` → switch entro 90s (3x 30s).
+- [ ] Test cost_tracker: 10 call con cost simulato → `DailyTotal` rolling 24h corretto.
+- [ ] **Pre-merge benchmark CRITICO**: latency p50/p95 + tokens/sec vLLM Gemma 3 12B Q5 vs llama.cpp Gemma 4 E4B Q4 su prompt 1000-token. **SE vLLM CPU < 5 tokens/sec → switch a 13-bis (riusa llama.cpp E4B per chat fallback, no LMCache, save sidecar)**.
+
+### Open questions
+
+1. **CRITICA — GPU vs CPU**: vedi sezione sopra. Default vLLM assume GPU; CPU mode richiede benchmark + possibile alternative 13-bis.
+2. **Modello fallback**: Gemma 3 12B vs Llama 3.1 8B vs Qwen 2.5 7B. Pre-merge benchmark su corpus IT (preferenza utente italiana) + EN code. Quality / size trade-off.
+3. **LMCache config tuning**: `chunk_size` 256 default, ma per chat fallback (max_model_len 8192) potrebbe essere meglio 512. Test post-merge.
+4. **Cost threshold default**: $1/day è ragionevole per single-user MVP? Configurable. Future: per-identity threshold.
+5. **STATE_DELTA event reactive**: quando offline → switch, l'agente deve emettere messaggio proattivo all'utente Telegram? Default proposto: SÌ via Notifier alert (parity Slice 6 risk recovery).
+
+### Alternative path: Slice 13-bis (CPU-only mini-PC)
+
+Se benchmark pre-merge mostra vLLM CPU < 5 tokens/sec:
+
+```
+internal/llm/router.go  invariato (4 trigger logic uguale)
+Backend local = riusa `aura-llama-multimodal` Slice 9c per chat
+   (llama.cpp gestisce gia' /v1/chat/completions)
+NESSUN nuovo sidecar, NESSUN LMCache (non native llama.cpp).
+RAM saving: -7 GB (no Gemma 12B Q5)
+KV cache: solo nativo llama.cpp (prefix caching + slot context)
+Compose: solo flag passthrough a aura-llama-multimodal
+Migration 0013 invariato (backend enum include 'local_llama_cpp_fallback')
+```
+
+LOC 13-bis: ~250 (vs 400 di 13 vLLM). Decisione pre-merge.
+
+### Mini-PC RAM budget — delta
+
+**Scenario A — Slice 13 con vLLM GPU**: vLLM Gemma 3 12B Q5 su GPU = ~7 GB VRAM, +1 GB RAM overhead. CPU+RAM totale invariato vs Slice 9c (sidecar separato carica solo VRAM). LMCache disk-tier: 50 GB NVMe.
+
+**Scenario B — Slice 13 con vLLM CPU**: +7 GB RAM (modello in CPU). Tabella mini-PC `Peak realistic 7 GB → ~14 GB`. Su 32 GB OK, su 16 GB tight.
+
+**Scenario C — Slice 13-bis (riusa llama.cpp E4B)**: invariato vs Slice 9c. Zero overhead nuovo.
+
+### Commit message templates (13a + 13b)
+
+```
+slice 13a: LLM router + offline detection + cost tracking
+
+internal/llm/router.go con 4 trigger priority order:
+  1. conv.metadata.prefer_local=true (explicit)
+  2. offline_detector consecutive_fails >= 3 (TCP probe 30s)
+  3. cost_tracker.DailyTotal() > AURA_LLM_LOCAL_FALLBACK_COST_USD_DAY
+  4. identity capability use_local_llm
+
+Migration 0013_local_llm: aura.local_llm_sessions +
+aura.local_llm_cost (CASCADE conv).
+
+CLI: aura chat new --local, aura llm-router {status|cost --today}
+Telegram: /local /remote /llm-status (bot-intercept)
+
+offline_detector emette STATE_DELTA online_status su AG-UI Slice 8.
+cost_tracker rolling 24h aggregate per identity.
+
+No sidecar nuovo in 13a (vLLM atterra in 13b). Router puntando solo a
+remote inizialmente, local backend = nil (skip routing local-path
+finche' 13b non lo collega).
+
+LOC: +XXX src / +YY test / +ZZ migration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+```
+slice 13b: vLLM chat sidecar + LMCache disk-tier
+
+Aggiunge aura-vllm-chat sidecar con LMCache disk-tier 50 GB. Pattern
+reference LMCache (Apache 2.0, 8.4k stars, prod GCP/GMI/CoreWeave).
+
+compose.yaml service aura-vllm-chat:
+  image vllm/vllm-openai:latest
+  model: gemma-3-12b-it (default, override via env)
+  --kv-transfer-config LMCacheConnectorV1
+  port 127.0.0.1:8083
+  GPU device passthrough se available
+
+lmcache.yaml config:
+  local_storage type=disk path=/var/cache/lmcache max_size_gb=50
+  chunk_size=256 (tunable per long-context)
+  enable_async_save=true
+
+Router config: localClient ora punta a 127.0.0.1:8083, attivato
+quando trigger 13a route a local.
+
+PRE-MERGE BENCHMARK CRITICO:
+  vLLM Gemma 3 12B Q5 latency p50/p95 + tokens/sec su prompt 1000-tok
+  vs llama.cpp Gemma 4 E4B Q4 baseline.
+  SE vLLM CPU < 5 tokens/sec -> SCRAP 13b, attiva 13-bis path
+    (riusa aura-llama-multimodal Slice 9c come chat fallback,
+     no nuovo sidecar, no LMCache).
+
+Env nuove (Caps & Limits indice):
+- AURA_LLM_LOCAL_BASE_URL=http://aura-vllm-chat:8083/v1
+- AURA_LLM_LOCAL_MODEL=gemma-3-12b-it
+- AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC=30
+- AURA_LLM_LOCAL_FALLBACK_COST_USD_DAY=1.0
+- LMCACHE_LOCAL_DISK_PATH=/var/cache/lmcache
+- LMCACHE_MAX_LOCAL_DISK_GB=50
+
+Mini-PC RAM delta:
+- Scenario GPU: +1 GB RAM overhead + 7 GB VRAM (su GPU dedicata)
+- Scenario CPU: +7 GB RAM (tight su 16 GB, OK su 32 GB)
+- Scenario 13-bis: invariato (zero nuovo sidecar)
+
+LOC: +XXX src / +YY test / +ZZ config.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Pattern condiviso da estrarre (vale per Slice 5/6/7)
 
 Tutti e tre i tool seguono lo stesso shape:
@@ -3385,6 +3706,12 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_TELEGRAM_DOC_ASYNC_MAX_BYTES` | `52428800` (50 MiB) | cap | 9c | Async convert hard cap. |
 | `AURA_PROFILE_CERTAINTY_N` | `3` | cap | 10 | Auto-add certainty threshold. |
 | `AURA_PROFILE_DIR` | `~/.aura/agents` | path | 10 | Per-identity profile dir. |
+| `AURA_LLM_LOCAL_BASE_URL` | `http://aura-vllm-chat:8083/v1` | operative | 13 | Local LLM endpoint (vLLM o llama.cpp fallback). |
+| `AURA_LLM_LOCAL_MODEL` | `gemma-3-12b-it` | operative | 13 | Local LLM model id. |
+| `AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC` | `30` | cap | 13 | TCP probe interval verso remote per offline detection. |
+| `AURA_LLM_LOCAL_FALLBACK_COST_USD_DAY` | `1.0` | cap | 13 | Threshold cost daily per auto-switch a local. |
+| `LMCACHE_LOCAL_DISK_PATH` | `/var/cache/lmcache` | path | 13 | LMCache disk-tier path (no prefix AURA_, naming canonico LMCache). |
+| `LMCACHE_MAX_LOCAL_DISK_GB` | `50` | cap | 13 | LMCache disk-tier max size GB. |
 | `TELEGRAM_BOT_TOKEN` | (richiesto via setup) | secret | 9a | Bot token (no prefix `AURA_` per convenzione lib). |
 | `OPENROUTER_API_KEY` | (richiesto via `.env`) | secret | 1 | Forwarded a `AURA_LLM_API_KEY`. |
 | `MULTIMODAL_BASE_URL` | `http://aura-llama-multimodal:8082/v1` | operative | 9c | Sidecar URL (compose-only). |
@@ -3444,6 +3771,8 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 9. **Slice 8 (AG-UI gateway)** atterra dopo Slice 7: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla in questa posizione evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico CLI/Telegram/web): introducendo il protocollo standard AG-UI, Slice 9 può connettere Telegram come client AG-UI senza codice channel-adapter custom.
 10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo transport: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal.
 11. **Slice 10 (User onboarding + Agent.md)** atterra dopo Slice 9 perché ha Telegram come transport principale dell'interview e usa tutto lo stack pre-esistente (ask_user 1.5, identities 1.7, conversations 1.8, PromptBuilder 4, Risk-Based 5, AG-UI 8). Agent.md per identity in filesystem `~/.aura/agents/<id>/` viene iniettato come secondo system message (cache-friendly, Slice 4 invariants preservati). Pattern hybrid ChatGPT Custom Instructions + Memory + mem0 ADD-only. Out of scope "Setup wizard" + "Telegram" rimossi dal PRD; restano out: dashboard SPA full, tray icon, OTA update, multi-user auth.
+
+12. **Slice 13 (Local LLM fallback)** atterra dopo Slice 10 perché completa lo stack provider-agnostico: `LLMRouter` con 4 trigger (explicit `prefer_local`, offline detection, cost threshold, identity capability) sceglie tra remote OpenRouter e local vLLM+LMCache. **Pattern doppio sidecar**: `aura-llama-multimodal` Slice 9c invariato per vision/STT one-shot + `aura-vllm-chat` nuovo Slice 13 per chat fallback con LMCache disk-tier 50 GB. **Open question CRITICA pre-merge**: vLLM CPU mode è 5-10x più lento di llama.cpp CPU per stesso modello — se mini-PC senza GPU, attivare path **13-bis** (riusa Gemma 4 E4B Slice 9c per chat fallback, no LMCache, save 1 sidecar). Pattern reference LMCache (8.4k stars, Apache 2.0, prod GCP/GMI/CoreWeave). 2 sub-slice: 13a router+offline+cost, 13b vLLM+LMCache sidecar.
 
 ## Out of scope per tutte e 4 le slice (esplicito)
 
