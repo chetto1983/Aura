@@ -1479,6 +1479,141 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 8 — AG-UI gateway (transport agnostico CLI / Telegram / web)
+
+**Goal.** Esporre il Loop di Aura attraverso il protocollo **AG-UI** ([ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)), MIT, ~17-25 event types standard, transport SSE/WS/webhook. Aura diventa un'agent compatibile con qualsiasi UI AG-UI-aware (CopilotKit, AG-UI Dojo, future custom frontend, Telegram bot adapter, browser SPA). Niente lock-in al transport; sostituisce/preempt qualsiasi channel-adapter custom.
+
+**Razionale.** Out-of-scope ha sempre tenuto fuori Telegram, dashboard, web. Risolto via standard invece che codice custom: implementi una volta il protocollo, ogni transport ha il suo client (Telegram bot in-process via SSE, browser via fetch+SSE, CLI in-process). Pattern verificato production-grade: LangGraph + CrewAI (1st party), Microsoft Agent Framework + Google ADK + AWS Strands + Mastra + Pydantic AI + Agno + LlamaIndex + AG2 (1st party integrations), Claude Agent SDK + Langroid (community).
+
+**Pre-requisiti.**
+- Slice 1.8 conversation persistence (`threadId` = `conversation_id`).
+- Slice 1.5 multi-pause FIFO (`outcome.interrupted` con `interrupts[]` mappato da `PausedState[]`).
+- Slice 1 streaming SSE accumulator (event delta merging già pronto).
+- Slice 1.7 identity (per future auth dell'endpoint `aura serve`, oggi local-only).
+
+**Dipendenza Go.**
+```go
+// go.mod
+require github.com/ag-ui-protocol/ag-ui/sdks/community/go v...
+```
+
+**Smoke.**
+```bash
+./aura serve --agui-port=9080 &      # background
+
+# AG-UI Dojo client (npx) si connette
+npx @ag-ui/dojo --backend http://127.0.0.1:9080
+# → UI mostra chat, invio "ciao dimmi 2+2"
+# → backend stream-a TEXT_MESSAGE_CONTENT delta token-per-token
+# → UI rende "Risposta: 4"
+
+# Test minimo via curl
+curl -N -X POST http://127.0.0.1:9080/agent/run \
+  -H 'Content-Type: application/json' \
+  -d '{"threadId":"<conv_uuid>","runId":"<auto>","messages":[{"role":"user","content":"ciao"}]}'
+# → SSE stream:
+# event: RUN_STARTED
+# data: {"threadId":"...","runId":"..."}
+# event: TEXT_MESSAGE_START
+# data: {"messageId":"msg-1","role":"assistant"}
+# event: TEXT_MESSAGE_CONTENT
+# data: {"messageId":"msg-1","delta":"Ciao"}
+# ...
+# event: RUN_FINISHED
+# data: {"threadId":"...","runId":"...","outcome":{"type":"success"}}
+```
+
+**Acceptance.**
+- [ ] `aura serve --agui-port=<N>` (default `9080`) avvia HTTP server con endpoint `POST /agent/run` e `GET /threads/<id>/messages`. Lifecycle gestito (start/stop su SIGTERM), graceful drain delle connessioni SSE attive a shutdown.
+- [ ] **Mapping Aura ↔ AG-UI**:
+  - `threadId` = `aura.conversations.id` (Slice 1.8). Se thread non esiste in DB → 404. Se esiste ma `identity_id != local` → 403 (future auth).
+  - `runId` = generated server-side (UUID v4 prefix `run-`) per ogni `POST /agent/run`. Persisted in `aura.conversation_turns.metadata.run_id` per audit.
+  - `messageId` = UUID prefix `msg-`. Mapped 1:1 con `conversation_turns.seq` via metadata jsonb.
+  - `toolCallId` = ID dal LLM (es. DeepSeek/OpenRouter `tool_call_id`). Persisted in `conversation_turns.tool_call_id`.
+- [ ] **Eventi emessi dal Loop** (post-Slice 8 il Loop ha un `emitter` interface):
+  - `RUN_STARTED` all'inizio di `Loop.Turn`.
+  - `STEP_STARTED` / `STEP_FINISHED` per ogni iterazione (LLM call + tool dispatch).
+  - `TEXT_MESSAGE_START` / `TEXT_MESSAGE_CONTENT` (delta token-per-token) / `TEXT_MESSAGE_END` per il contenuto assistant.
+  - `TOOL_CALL_START` / `TOOL_CALL_ARGS` (delta JSON args) / `TOOL_CALL_END` per ogni tool call emesso dal LLM.
+  - `TOOL_CALL_RESULT` (con `content` = preview + footer di `ToolResult`) dopo l'esecuzione.
+  - `MESSAGES_SNAPSHOT` su `GET /threads/<id>/messages` (rehydration UI client).
+  - `STATE_SNAPSHOT` opzionale al run start (current state della conv).
+  - `STATE_DELTA` con `JSONPatchOperation[]` (RFC 6902) per update incrementali (es. cost USD running sum).
+  - `RUN_FINISHED` con `outcome.type ∈ {success, interrupted, errored}`. Se `interrupted`, `outcome.interrupts[]` mappato da `pending []*PausedState` (Slice 1.5 multi-pause).
+  - `RUN_ERROR` per failure non recuperabili (LLM 5xx finale, panic loop, etc.).
+- [ ] **REASONING_* events**: se `usage.reasoning_content` o `delta.reasoning_content` è presente nella response del provider (DeepSeek-V4 reasoning style), il client wire emette `REASONING_START` / `REASONING_MESSAGE_CONTENT` / `REASONING_END` parallelamente ai TEXT_MESSAGE_* (separate messageId). Niente parse semantico, è stream byte-per-byte. Future-proof per modelli reasoning.
+- [ ] **Resume contract**: per riprendere un Loop interrupted, il client invia un nuovo `POST /agent/run` con stesso `threadId` + nuovo `runId` + `messages` includono i RoleTool answers per gli interrupts precedenti (matching su `tool_call_id`). Server riconosce e ricostruisce lo stato Loop via `LoadHistory + ResumeBatch(answers)`.
+- [ ] **Auth dell'endpoint (Out of scope esplicito)**: niente auth in Slice 8 (continuità con Out of scope "Auth dell'endpoint `aura serve`"). Endpoint bind di default a `127.0.0.1:9080` (local-only). Future slice auth aggiunge bearer token + identity FK alle conversations.
+- [ ] **CORS**: header permissivi per dev (`Access-Control-Allow-Origin: *` se `AURA_AGUI_CORS_PERMISSIVE=1`, default `*` per `127.0.0.1` origin). Future restrittivo via env.
+- [ ] **Backpressure**: SSE writer buffered channel (capacity 64); su client lento, channel full → drop con WARN log + `RUN_ERROR` se persistente. Niente blocco del Loop.
+- [ ] **AG-UI Dojo compliance**: test integrazione che esegue il Dojo conformance suite (50-200 LOC per building block come da spec) contro `aura serve --agui-port`. Validation: text streaming, tool calls, state sync, HITL interrupts.
+- [ ] Test unitario emitter: input `(LoopState, Event)` → output `[]Event` AG-UI sequenza corretta. Property-based su tutti gli ~25 event types.
+
+**File targets** (~700 LOC src + ~300 test):
+| Path | LOC | Note |
+|---|---|---|
+| `internal/agui/client.go` | ~80 | Wrapper sul Go SDK community `core/events`. Type aliases per evitare leak del package esterno nei call sites. |
+| `internal/agui/emitter.go` | ~180 | `Emitter` interface implementato dal Loop. `EmitRunStarted/StepStarted/TextDelta/ToolCallStart/.../RunFinished`. Channel-based, non-blocking. |
+| `internal/agui/translator.go` | ~120 | `LoopEvent` (Aura interno) → `events.Event` (AG-UI). Mapping deterministico. ID generation via `IDGenerator` interface. |
+| `internal/agui/server.go` | ~200 | HTTP server: `POST /agent/run` (SSE response), `GET /threads/<id>/messages` (JSON `MESSAGES_SNAPSHOT`). Backpressure-bounded, CORS, graceful shutdown. |
+| `internal/agui/types.go` | ~80 | `RunAgentInput` parser, validation (`threadId` UUID, `messages[]` non vuoto, etc.), helpers. |
+| `internal/agent/loop.go` (diff) | ~+100 / -20 | `Loop.SetEmitter(e)`. Ogni step emette eventi via `e.Emit(...)`. Default no-op emitter per backwards compat (CLI in-process). |
+| `cmd/aura/main.go` (diff) | ~+80 | Subcommand `aura serve [--agui-port <N>] [--bind <addr>]`. |
+| `cmd/aura/chat.go` (diff) | ~+50 | `aura chat --via-agui` flag opzionale (passa per il server invece che in-process). Default in-process. |
+| `internal/agui/server_test.go` | ~180 | Integration test: spawn server, run AG-UI Dojo conformance suite, assert eventi. |
+| `internal/agui/emitter_test.go` | ~120 | Property-based emitter coverage. |
+
+**Deferred-tool partition.** Niente tool LLM-facing nuovo. AG-UI è transport infrastructure, non capability LLM-facing.
+
+**Open questions.**
+1. **Endpoint path canonico**: la spec ufficiale AG-UI suggerisce `POST /agent/run`? → *Default proposto*: `/agent/run` (allineato con SDK Go community sample). Configurabile via `AURA_AGUI_PATH_RUN` env.
+2. **WebSocket transport?** → *Decisione*: Slice 8 implementa solo SSE (default AG-UI). WebSocket è transport opzionale (1 client supportato, non frontend tipico). Atterra in slice futura se serve telecom-grade bidi.
+3. **Cost streaming via STATE_DELTA**: `running_cost_usd` aggiornato per turn via JSONPatch delta? → *Default proposto*: SÌ. Pattern: `STATE_DELTA { delta: [{op:"replace", path:"/cost_usd", value:0.0042}] }` dopo ogni LLM call.
+4. **CLI default mode**: in-process o via-agui? → *Decisione differita post-benchmark*: Slice 8 implementa entrambe (in-process default), `aura chat --via-agui` flag opzionale. Scegliamo dopo aver misurato latency aggiunto su prompt tipico (~50-150 ms attesi per il roundtrip HTTP loopback).
+5. **Telegram bot adapter slot**: dopo Slice 8 o in slice dedicata? → *Slice 9 dedicata*: `internal/channels/telegram/` come AG-UI client process (`aura telegram-bot` subcommand). Riusa eventi standard, traduzione one-way (events → Telegram messages). HITL interrupts → Telegram inline keyboard buttons. Scope separato.
+
+**Mini-PC RAM budget.** AG-UI server è una goroutine HTTP minimal. Buffer 64 event/connection × N connessioni concurrent. Per Aura single-user local: 1-3 connessioni attese (CLI + opzionale Dojo o Telegram bot). RAM negligible (~5-10 MB heap aggiuntivi).
+
+**Commit message template.**
+```
+slice 8: AG-UI gateway (SSE event protocol transport)
+
+Aura speaks AG-UI (ag-ui-protocol/ag-ui, MIT). Endpoint
+aura serve --agui-port=9080 expone POST /agent/run (SSE stream)
++ GET /threads/<id>/messages (snapshot). 25 event types emessi
+dal Loop via internal/agui/emitter.
+
+Mapping Aura -> AG-UI:
+  conversations.id (1.8)      <-> threadId
+  Loop.Turn                   <-> runId (uuid)
+  PausedState[] (1.5 #4)      <-> outcome.interrupted.interrupts[]
+  ToolResult (1)              <-> TOOL_CALL_RESULT.content
+  RoleTool.ToolCallID         <-> tool_call_id matching su resume
+
+Reasoning events (10 types) emessi se provider returns
+reasoning_content (DeepSeek-V4 reasoning). Future-proof.
+
+Out of scope mantenuto: auth dell'endpoint (slice dedicata).
+Bind default 127.0.0.1, CORS env-driven.
+
+CLI default in-process (zero overhead), --via-agui opt-in per
+testing transport. Benchmark per scegliere mode finale post-1.9.
+
+Dipendenza go.mod: github.com/ag-ui-protocol/ag-ui/sdks/community/go.
+
+Smoke: aura serve + curl /agent/run mostra SSE event stream
+conforme. AG-UI Dojo conformance suite verde.
+
+Telegram bot + web frontend = slice future dedicate (adapter
+client AG-UI, riusano il protocollo, niente nuovo wire format).
+
+LOC: +XXX src / +YY test.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Pattern condiviso da estrarre (vale per Slice 5/6/7)
 
 Tutti e tre i tool seguono lo stesso shape:
@@ -1746,7 +1881,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 
 ---
 
-## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills)
+## Sequencing rationale (Postgres infra → Neo4j infra → Agent → AskUser → Identity → Conversations → Sandbox → Swarm → KV → Web → Scheduler → Skills → AG-UI gateway)
 
 0. **Slice 0.5 (Postgres infra)** è il prerequisito di Slice 1.5/6/7. Indipendente da Slice 1 (LLM client non tocca DB), quindi può essere committato in parallelo. Atterrarla per prima dà a tutte le altre slice un substrate persistence pronto.
 0.bis. **Slice 0.7 (Neo4j infra)** atterra subito dopo Slice 0.5. Le 8 slice 1→7 NON la consumano direttamente, ma la slice 0.7 sblocca: (a) il backup TaskKind `backup_neo4j` di Slice 6b che riferisce un container produzione, non lo spike fuori repo; (b) le slice knowledge-facing post-7 (in arrivo) che scrivono `:Chunk` / `:UserProfileMemory` / `:Entity`; (c) la disciplina CLAUDE.md "knowledge + vectors → solo Neo4j" diventa eseguibile dall'inizio del progetto invece che essere una promessa.
@@ -1759,7 +1894,8 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 5. **Slice 4 (KV)** chiude le 4 fondamentali: ora la superficie del prompt (system + manifest + tool descriptions + parent/child contracts + ask_user) è stabile. Il builder ottimizza un bersaglio fermo.
 6. **Slice 5 (Web tools)** apre il backlog post-tabula-rasa: indipendente dalle 4 fondamentali, riusa `ToolResult` per fetch di pagine grandi. NON introduce `ActionRouter` (web_search/web_fetch sono 2 tool indipendenti senza azioni multiple — YAGNI). Vedi §Pattern condiviso.
 7. **Slice 6 (Scheduler)** prima di Skills: si committa in 2 sub-slice (6a infrastructure + reminder handler, 6b agent_job + ActionRouter helper). 6b introduce `ActionRouter` come primo consumer reale (tool `task` con 4 azioni). Slice 7 lo riusa.
-8. **Slice 7 (Skills)** ultima: si committa in 4 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima evita di riscrivere il flow governance ogni volta che una primitive cambia forma.
+8. **Slice 7 (Skills)** ultima del backlog interno: si committa in 4 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima del dominio interno evita di riscrivere il flow governance ogni volta che una primitive cambia forma.
+9. **Slice 8 (AG-UI gateway)** atterra dopo Slice 7 come ultimo step: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla ultimo evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico CLI/Telegram/web): introducendo il protocollo standard AG-UI, le slice future (Telegram bot, web frontend) diventano AG-UI client separati, non codice channel-adapter custom. Out of scope "Telegram, dashboard, web" resta valido per Slice 1-7; con Slice 8 sblocca le slice 9+ (Telegram bot, web SPA) come implementation di client AG-UI.
 
 ## Out of scope per tutte e 4 le slice (esplicito)
 
