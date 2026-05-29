@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"os/exec"
 	"regexp"
 	"strings"
 	"testing"
@@ -131,5 +133,106 @@ func TestParseDryRunArgs_Overrides(t *testing.T) {
 	}
 	if cfg.requestID != "abc" || cfg.maxSteps != 7 || cfg.maxWallclockSec != 11 || cfg.dedupWindow != 4 {
 		t.Fatalf("flag parse mismatch: %+v", cfg)
+	}
+}
+
+func TestParseDryRunArgs_BadFlag_Errors(t *testing.T) {
+	if _, err := parseDryRunArgs([]string{"--max-steps", "not-an-int"}); err == nil {
+		t.Fatal("expected an error for a non-integer --max-steps")
+	}
+}
+
+func TestDryRun_CLIMaxSteps_OverridesEnv_D06(t *testing.T) {
+	// CLI flag (3) must win over the env (9): 3 step + 1 terminal = 4 lines (D-06).
+	t.Setenv("AURA_LOOP_MAX_STEPS", "9")
+	var buf bytes.Buffer
+	cfg := dryRunConfig{requestID: "auto", maxSteps: 3, maxWallclockSec: -1, dedupWindow: -1}
+	if err := dryRun(cfg, &buf); err != nil {
+		t.Fatalf("dryRun: %v", err)
+	}
+	if got := len(decodeLines(t, buf.String())); got != 4 {
+		t.Fatalf("CLI --max-steps=3 must override env=9: want 4 lines, got %d", got)
+	}
+}
+
+func TestDryRun_EnvMaxSteps_WhenFlagUnset_D06(t *testing.T) {
+	// Flag unset (-1) → env (7) wins over the builtin default (D-06): 7 + 1 = 8 lines.
+	t.Setenv("AURA_LOOP_MAX_STEPS", "7")
+	var buf bytes.Buffer
+	cfg := dryRunConfig{requestID: "auto", maxSteps: -1, maxWallclockSec: -1, dedupWindow: -1}
+	if err := dryRun(cfg, &buf); err != nil {
+		t.Fatalf("dryRun: %v", err)
+	}
+	if got := len(decodeLines(t, buf.String())); got != 8 {
+		t.Fatalf("unset flag must fall through to env=7: want 8 lines, got %d", got)
+	}
+}
+
+func TestDryRun_PreservesOperatorExemptTools(t *testing.T) {
+	// An operator-set exemption must survive: the dry-run tool is appended, not replaced.
+	t.Setenv("AURA_LOOP_MAX_STEPS", "3")
+	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "search")
+	var buf bytes.Buffer
+	cfg := dryRunConfig{requestID: "auto", maxSteps: -1, maxWallclockSec: -1, dedupWindow: -1}
+	if err := dryRun(cfg, &buf); err != nil {
+		t.Fatalf("dryRun: %v", err)
+	}
+	if got := os.Getenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS"); got != "search" {
+		t.Fatalf("operator exemption must be restored after the run, got %q", got)
+	}
+}
+
+func TestDryRun_MalformedEnv_FailsFast(t *testing.T) {
+	t.Setenv("AURA_LOOP_MAX_STEPS", "garbage")
+	var buf bytes.Buffer
+	cfg := dryRunConfig{requestID: "auto", maxSteps: -1, maxWallclockSec: -1, dedupWindow: -1}
+	if err := dryRun(cfg, &buf); err == nil {
+		t.Fatal("expected NewBudgetFromEnv to fail-fast on a malformed AURA_LOOP_MAX_STEPS")
+	}
+}
+
+func TestRunAgent_DryRun_HappyPath_WritesToStdout(t *testing.T) {
+	// runAgent's success path returns normally (it only os.Exits on error). Capture
+	// os.Stdout to confirm it emits Event lines through the dispatcher.
+	t.Setenv("AURA_LOOP_MAX_STEPS", "2")
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	os.Stdout = w
+	runAgent([]string{"dry-run", "--max-steps", "2"})
+	_ = w.Close()
+	os.Stdout = orig
+	var out bytes.Buffer
+	_, _ = out.ReadFrom(r)
+	if got := len(decodeLines(t, out.String())); got != 3 {
+		t.Fatalf("runAgent dry-run --max-steps 2: want 3 lines, got %d", got)
+	}
+}
+
+// TestRunAgent_ExitPaths drives the os.Exit(1) branches via a re-exec subprocess
+// so the dispatcher's usage/error handling is covered without killing the test
+// process.
+func TestRunAgent_ExitPaths(t *testing.T) {
+	if os.Getenv("AURA_TEST_RUNAGENT_EXIT") != "" {
+		runAgent(strings.Split(os.Getenv("AURA_TEST_RUNAGENT_ARGS"), "|"))
+		return
+	}
+	cases := map[string]string{
+		"no-sub":      "",
+		"bad-sub":     "frobnicate",
+		"bad-flag":    "dry-run|--max-steps|nope",
+		"bad-request": "dry-run|--request-id|not-a-uuid",
+	}
+	for name, args := range cases {
+		t.Run(name, func(t *testing.T) {
+			cmd := exec.Command(os.Args[0], "-test.run", "TestRunAgent_ExitPaths") //nolint:gosec // re-exec self
+			cmd.Env = append(os.Environ(), "AURA_TEST_RUNAGENT_EXIT=1", "AURA_TEST_RUNAGENT_ARGS="+args)
+			err := cmd.Run()
+			if err == nil {
+				t.Fatalf("expected a non-zero exit for args %q", args)
+			}
+		})
 	}
 }

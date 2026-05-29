@@ -21,14 +21,18 @@ Aura/                                # repo root
 ├── .planning/                       # GSD planning workspace (being initialized now)
 │   └── codebase/                    # ← this document and ARCHITECTURE.md land here
 ├── CLAUDE.md                        # 130-line project guidance (rewrite 2026-05-27)
-├── README.md                        # 30 lines, links to cmd/aura/main.go + internal/agent/loop.go
+├── README.md                        # 30 lines, links to cmd/aura/main.go + internal/agent/
 ├── cmd/
 │   └── aura/
-│       └── main.go                  # 90 LOC — subcommand router + stubClient
-├── go.mod                           # `module github.com/chetto1983/aura` + `go 1.23`
+│       ├── main.go                  # subcommand router (tools|agent|db|neo4j|serve|shell)
+│       └── agent.go                 # `aura agent dry-run` (Slice 0.9 — SC#4 UUIDv7 Event lines)
+├── go.mod                           # `module github.com/chetto1983/aura` + `go 1.26`
 ├── internal/
 │   ├── agent/
-│   │   ├── loop.go                  # 131 LOC — Loop.Turn, MaxSteps=8, history append
+│   │   ├── agent.go                 # Agent interface + InvocationContext (Slice 0.9)
+│   │   ├── event.go                 # Event/Actions/LLMResponse (Slice 0.9)
+│   │   ├── budget.go + budget_dedup.go  # shared-atomic Budget tree + two-phase dedup (Slice 0.9)
+│   │   ├── workflow/                # Sequential/Loop/Parallel agents (Slice 0.9; replaced loop.go)
 │   │   └── tools/
 │   │       ├── manifest.go          # 57 LOC — Render + RenderText, alphabetical sort
 │   │       ├── search.go            # 94 LOC — ToolSearch built-in hook
@@ -289,9 +293,9 @@ Aura/
 - Key files: `cmd/aura/main.go` — subcommand router, registry builder, stubClient implementation
 
 **`internal/agent/`:**
-- Purpose: Conversation lifecycle + tool dispatch
-- Contains: Loop struct + tools subpackage
-- Key files: `internal/agent/loop.go` (Loop.Turn, MaxSteps=8), `internal/agent/tools/spec.go` (Tool interface), `internal/agent/tools/manifest.go` (alphabetical sort for cache stability)
+- Purpose: Cornerstone agent runtime (Agent interface, Event shape, Budget tree) + tool dispatch
+- Contains: Agent interface + Event/Actions + Budget tree + workflow subpackage + tools subpackage
+- Key files: `internal/agent/agent.go` (Agent interface + InvocationContext), `internal/agent/event.go` (Event/Actions/LLMResponse), `internal/agent/budget.go` (shared-atomic Budget tree), `internal/agent/workflow/{sequential,loop,parallel}.go` (Slice 0.9 — replaced the Phase-1 `loop.go` Loop struct), `internal/agent/tools/spec.go` (Tool interface), `internal/agent/tools/manifest.go` (alphabetical sort for cache stability)
 
 **`internal/llm/`:**
 - Purpose: Provider-neutral streaming contract
@@ -323,16 +327,17 @@ Aura/
 ## Key File Locations — Current State
 
 **Entry Points:**
-- `cmd/aura/main.go`: subcommand router (today only `tools` + `chat` are wired)
+- `cmd/aura/main.go`: subcommand router (`tools`, `agent`, `db`, `neo4j` wired; `serve`/`shell` are TODO)
 
 **Configuration:**
-- `go.mod`: minimal module declaration, `go 1.23`
+- `go.mod`: minimal module declaration, `go 1.26`
 - `.gitignore`: excludes runtime artifacts (`/data/`, `/runtime-workspace/`, `/garage/`, `/aura.db*`, `/.env`, `/.worktrees/`, `/.planning/tmp/`)
 - `CLAUDE.md`: project guidance (rewrite 2026-05-27)
-- `README.md`: 30-line summary linking to `cmd/aura/main.go` + `internal/agent/loop.go`
+- `README.md`: 30-line summary linking to `cmd/aura/main.go` + `internal/agent/`
 
 **Core Logic:**
-- `internal/agent/loop.go`: 131 LOC, `Loop.Turn`, MaxSteps=8, append-only Messages slice
+- `internal/agent/agent.go` + `event.go` + `budget.go`: Slice 0.9 cornerstone runtime (Agent interface, Event shape, shared-atomic Budget tree) — replaced the Phase-1 `loop.go` Loop struct
+- `internal/agent/workflow/{sequential,loop,parallel}.go`: the three built-in workflow agents
 - `internal/agent/tools/spec.go`: 61 LOC, `Tool` interface + `Registry`
 - `internal/agent/tools/manifest.go`: 57 LOC, `Render()` returns alphabetically sorted slice for cache stability
 

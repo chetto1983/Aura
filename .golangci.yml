@@ -41,7 +41,6 @@ linters:
       - "internal/agent/tools"    # pre-rewrite skeleton — owning slice rewrites
       - "internal/sandbox"        # pre-rewrite skeleton — Slice 2 owns rewrite
       - "internal/swarm"          # pre-rewrite skeleton — Slice 3 owns rewrite
-      - "internal/agent/loop.go"  # pre-rewrite skeleton — Slice 0.9 owns rewrite
       - "internal/llm/client.go"  # pre-rewrite skeleton — Slice 1 owns rewrite
       - "third_party"             # vendored / generated trees
     rules:

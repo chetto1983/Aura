@@ -41,6 +41,8 @@ Thumbs.db
 # Test coverage
 coverage.txt
 coverage.html
+cover.out
+cover_phase2.out
 .codex/*
 
 # Claude Code: GSD installation is committed (vedi CLAUDE.md §GSD tooling).

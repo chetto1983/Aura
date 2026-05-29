@@ -26,4 +26,4 @@ History of the prior implementation is preserved at git tag `pre-rewrite-2026-05
 
 ## Status
 
-Bootstrap. See `cmd/aura/main.go` and `internal/agent/loop.go`.
+Bootstrap. See `cmd/aura/main.go` and `internal/agent/` (Agent interface + workflow agents + Budget tree).
