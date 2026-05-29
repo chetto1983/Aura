@@ -84,6 +84,11 @@ jobs:
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
+      # Composed role DSNs the db_integration suite reads directly (envOrSkip).
+      # Without these the tagged tests SKIP and the job goes falsely green — the
+      # fail-loud guard in db_test.go now turns that skip into a failure under CI.
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       # Slice 0.7: compose.yaml now has a neo4j service with ${NEO4J_PASSWORD:?}
       # fail-fast. Any `docker compose` invocation (restore_drill.sh uses
       # `docker compose exec postgres`) parses the whole file, so the var must be

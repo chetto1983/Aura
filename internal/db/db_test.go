@@ -27,11 +27,18 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
-// envOrSkip returns the env var value or skips the test with a clear message.
+// envOrSkip returns the env var value, or skips the test locally / fails it under
+// CI when the var is unset. The fail-loud-under-CI branch is deliberate: a skipped
+// integration test must never pass as green in the pipeline (see ci.yml — the
+// integration job exports AURA_DB_URL/AURA_DB_MIGRATE_URL so this never fires there).
 func envOrSkip(t *testing.T, key string) string {
 	t.Helper()
 	v := os.Getenv(key)
 	if v == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("integration test requires %s, but it is unset under CI — "+
+				"a skipped integration test must not pass as green; wire it in ci.yml", key)
+		}
 		t.Skipf("integration test requires %s; set it and re-run (e.g. via .env + make db-up)", key)
 	}
 	return v
