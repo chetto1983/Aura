@@ -1,22 +1,23 @@
 // Aura entry point. Sub-commands:
 //
-//	aura serve       — run the long-lived agent runtime (default in production)
-//	aura shell       — interactive REPL against the agent loop
-//	aura chat <msg>  — one-shot turn, prints the assistant reply, exits
-//	aura tools       — print the tool manifest (active + deferred)
+//	aura serve              — run the long-lived agent runtime (default in production)
+//	aura shell              — interactive REPL against the agent loop
+//	aura agent dry-run      — drive a mock LoopAgent through the Budget tree, one Event per JSON line (SC#4)
+//	aura tools              — print the tool manifest (active + deferred)
+//	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
+//	aura neo4j <sub>        — Neo4j lifecycle
 //
-// Tabula-rasa scaffold: only `tools` and `chat` are wired; the rest print a
-// TODO marker so the entry is build-clean while the four components fill in.
+// Tabula-rasa scaffold: `tools`, `agent`, `db`, and `neo4j` are wired; `shell`
+// and `serve` print a TODO marker so the entry stays build-clean while the agent
+// runtime fills in. The Phase-1 `aura chat` stub + concrete Loop were removed in
+// Slice 0.9 (Plan 02-07); `aura chat` returns in Phase 3 wired to a real LlmAgent.
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
-	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/llm"
 )
 
 func main() {
@@ -27,12 +28,8 @@ func main() {
 	switch os.Args[1] {
 	case "tools":
 		printTools()
-	case "chat":
-		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, "usage: aura chat <message>")
-			os.Exit(1)
-		}
-		chatOnce(os.Args[2])
+	case "agent":
+		runAgent(os.Args[2:])
 	case "db":
 		runDB(os.Args[2:])
 	case "neo4j":
@@ -46,7 +43,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <msg>|tools|db <sub>|neo4j <sub>}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|agent <sub>|tools|db <sub>|neo4j <sub>}")
 }
 
 func buildRegistry() *tools.Registry {
@@ -59,36 +56,4 @@ func buildRegistry() *tools.Registry {
 func printTools() {
 	reg := buildRegistry()
 	fmt.Print(reg.RenderText())
-}
-
-func chatOnce(msg string) {
-	reg := buildRegistry()
-	loop := agent.NewLoop(stubClient{}, "tabula-rasa-stub", "You are Aura. Respond concisely using text_response.", reg)
-	reply, err := loop.Turn(context.Background(), msg)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
-	fmt.Println(reply)
-}
-
-// stubClient returns a canned text_response so `aura chat hello` is runnable
-// before the OpenAI-compat client slice lands. Replaced in the agent-loop
-// slice with a real llm.Client.
-type stubClient struct{}
-
-func (stubClient) Stream(_ context.Context, _ llm.Request) (<-chan llm.Chunk, error) {
-	ch := make(chan llm.Chunk, 2)
-	ch <- llm.Chunk{
-		ToolCall: &llm.ToolCall{
-			ID:   "stub-1",
-			Type: "function",
-			Function: struct {
-				Name      string `json:"name"`
-				Arguments string `json:"arguments"`
-			}{Name: "text_response", Arguments: `{"text":"hello from tabula-rasa stub — agent loop is wired, llm client is the next slice"}`},
-		},
-	}
-	close(ch)
-	return ch, nil
 }
