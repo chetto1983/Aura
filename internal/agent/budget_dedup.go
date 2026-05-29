@@ -31,8 +31,17 @@ import (
 // a period-2 ping-pong (A-B-A-B) (D-20).
 type dedupRing struct {
 	window  int
-	entries []fingerprint                     // ring buffer, newest appended; len capped at cap(entries)
-	results map[fingerprint][sha256.Size]byte // latest result-preview hash per fingerprint (progress veto)
+	entries []fingerprint               // ring buffer, newest appended; len capped at cap(entries)
+	results map[fingerprint]resultTrack // per-fingerprint result-preview progress tracking (veto)
+}
+
+// resultTrack records the latest result-preview hash for a fingerprint plus how
+// many CONSECUTIVE times that exact hash has repeated. A changing result resets
+// repeats to 0 (progress veto, D-18): dedup only fires when the result has been
+// stable across the repeat window, so volatile-result tools fail SAFE.
+type resultTrack struct {
+	hash    [sha256.Size]byte
+	repeats int
 }
 
 type fingerprint [sha256.Size]byte
@@ -54,7 +63,7 @@ func newDedupRing(window int) *dedupRing {
 	return &dedupRing{
 		window:  window,
 		entries: make([]fingerprint, 0, c),
-		results: make(map[fingerprint][sha256.Size]byte, c),
+		results: make(map[fingerprint]resultTrack, c),
 	}
 }
 
@@ -117,16 +126,23 @@ func (b *Budget) BeforeToolCall(name string, argsCanonicalJSON []byte) (dedup bo
 	fp := computeFingerprint(name, argsCanonicalJSON)
 	r := b.dedupRing
 
-	// Progress veto (D-18 fail-safe): if this fingerprint was seen and its last
-	// recorded result preview marked progress (cleared from results), do not dedup.
-	_, resultStillStale := r.results[fp]
-
 	period1 := r.countConsecutive(fp)+1 >= r.window
 	period2 := r.isPingPong(fp)
 
+	// Progress veto (D-18 fail-safe): dedup only when the recorded result preview
+	// for this fingerprint has stayed UNCHANGED across the repeat window. A result
+	// that keeps changing resets repeats to 0 (see AfterToolResult), so a
+	// volatile-result tool looks like progress and fails SAFE, never fail-open.
+	// By the Nth BeforeToolCall the result has been recorded N-1 times, so a fully
+	// stable result has repeats == window-2 (it incremented on each repeat after
+	// the first sighting). Require repeats+2 >= window to align with period-1's
+	// "Nth consecutive call" threshold.
+	track, seen := r.results[fp]
+	resultStable := seen && track.repeats+2 >= r.window
+
 	r.push(fp)
 
-	if (period1 || period2) && resultStillStale {
+	if (period1 || period2) && resultStable {
 		return true, "dedup"
 	}
 	return false, ""
@@ -152,14 +168,14 @@ func (b *Budget) AfterToolResult(name string, argsCanonicalJSON, resultPreview [
 	h := sha256.Sum256(preview)
 
 	prev, seen := r.results[fp]
-	if seen && prev != h {
-		// Result changed for the same args → progress. Clear the stale marker so
-		// the next BeforeToolCall does NOT dedup (fail-safe veto).
-		delete(r.results, fp)
+	if seen && prev.hash == h {
+		// Same args, same result again → one more stable repeat (a real loop).
+		r.results[fp] = resultTrack{hash: h, repeats: prev.repeats + 1}
 		return
 	}
-	// First sighting or unchanged result → mark/keep stale so repeats can dedup.
-	r.results[fp] = h
+	// First sighting OR the result changed → progress. Reset the repeat counter so
+	// the next BeforeToolCall does NOT dedup (fail-safe veto, D-18).
+	r.results[fp] = resultTrack{hash: h, repeats: 0}
 }
 
 // parseExemptTools turns the AURA_LOOP_DEDUP_EXEMPT_TOOLS CSV into a lookup set

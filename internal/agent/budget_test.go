@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -208,6 +209,49 @@ func TestBudget_SetMaxSteps_Override(t *testing.T) {
 	b.SetMaxSteps(5)
 	if rem := b.Remaining(); rem != 5 {
 		t.Fatalf("SetMaxSteps override: want 5, got %d", rem)
+	}
+}
+
+func TestBudget_Remaining_ClampsNegative(t *testing.T) {
+	var steps atomic.Int32
+	steps.Store(-5) // forced negative
+	b := &Budget{steps: &steps, deadlineWallclock: time.Now().Add(time.Hour), now: time.Now}
+	if rem := b.Remaining(); rem != 0 {
+		t.Fatalf("Remaining clamps negative to 0, got %d", rem)
+	}
+}
+
+func TestBudget_SoftCapExceeded_RootIsAlwaysFalse(t *testing.T) {
+	b := newTestBudget(10, 3) // root: branchSoftCap == 0
+	for i := 0; i < 10; i++ {
+		b.ConsumeStep()
+	}
+	if b.SoftCapExceeded() {
+		t.Fatal("root budget (branchSoftCap==0) must never report SoftCapExceeded")
+	}
+}
+
+func TestBudget_WithDeadline_PropagatesCancellation(t *testing.T) {
+	var steps atomic.Int32
+	steps.Store(10)
+	deadline := time.Now().Add(50 * time.Millisecond)
+	b := &Budget{steps: &steps, deadlineWallclock: deadline, now: time.Now}
+	ctx, cancel := b.WithDeadline(context.Background())
+	defer cancel()
+	dl, ok := ctx.Deadline()
+	if !ok || !dl.Equal(deadline) {
+		t.Fatalf("WithDeadline should set the budget deadline, got %v ok=%v", dl, ok)
+	}
+}
+
+func TestBudget_NodeTimeout(t *testing.T) {
+	t.Setenv(envNodeTimeoutSec, "7")
+	b, err := NewBudgetFromEnv()
+	if err != nil {
+		t.Fatalf("NewBudgetFromEnv: %v", err)
+	}
+	if got := b.NodeTimeout(); got != 7*time.Second {
+		t.Fatalf("NodeTimeout: want 7s, got %v", got)
 	}
 }
 
