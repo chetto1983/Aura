@@ -103,7 +103,7 @@ go mod tidy
             └──────┬───────┴───────┬────────┴────────┬─────────┘
                    │               │                 │ errgroup.WithContext
                    │               │  ConsumeStep()  │   ├─ goroutine→resultsChan→ack
-                   │               │  RecordToolCall │   ├─ goroutine→resultsChan→ack
+                   │               │  Before/After   │   ├─ goroutine→resultsChan→ack
                    ▼               ▼  (dedup veto)    │   └─ goroutine→resultsChan→ack
             yield Event ◄──────────┴──── escalate ────┤  fan-in: yield serially from
             (each carries RequestID for correlation)  │  iterator frame (D-22 footgun 3)
@@ -124,7 +124,7 @@ internal/agent/
 ├── agent.go              # Agent interface + InvocationContext + WithSubAgent/WithContext (~90 LOC)
 ├── event.go              # Event + Actions + LLMResponse + SetAuthorIfEmpty + JSON marshal (~110 LOC)
 ├── budget.go             # Budget struct + NewBudgetFromEnv + ConsumeStep + Child + Remaining + wallclock (~180 LOC) ⚠ SPLIT RISK
-├── budget_dedup.go       # dedupRing + RecordToolCall two-tier fingerprint + exempt allowlist (~110 LOC)  ← split from budget.go (D-18/19/20)
+├── budget_dedup.go       # dedupRing + BeforeToolCall/AfterToolResult two-phase fingerprint + exempt allowlist (~120 LOC)  ← split from budget.go (D-18/19/20)
 ├── errors.go             # ErrBudgetExhausted sentinel (D-04) (~15 LOC)
 ├── agenttest/
 │   └── mocks.go          # InfiniteToolCallAgent, EmitNThenEscalate, RecordingAgent (~140 LOC) (D-07)
@@ -333,7 +333,7 @@ func Marshal(v any) ([]byte, error) {
 
 ### Pattern 7: Two-tier dedup fingerprint (D-18/A2 — reversed from initial design)
 **What:** Primary fingerprint = `sha256(name + canonical_json(args))` fired *before* re-executing (blocks side-effects). Result-preview used ONLY as a progress veto.
-**Logic:** args repeat + result UNCHANGED → dedup fires (loop). args repeat + result CHANGED → suppress dedup (progress). Volatile-result tools (timestamps/page-tokens) therefore fail **safe** (look like progress) not **open** (D-18 corrects the original `(name,args,result)`-in-hash which was fail-open). Window=3 (D-20), detect period-1 (A-A-A) and period-2 (A-B-A-B), ring ≥ max(window,4). `AURA_LOOP_DEDUP_EXEMPT_TOOLS` (D-19) allowlists poll-shaped tools.
+**Logic:** `BeforeToolCall(name, canonicalArgs)` checks the primary fingerprint before the tool can re-execute, so repeated side effects can be blocked. `AfterToolResult(name, canonicalArgs, resultPreview)` records the bounded result preview only as a progress veto. args repeat + result UNCHANGED → dedup fires (loop). args repeat + result CHANGED → suppress dedup (progress). Volatile-result tools (timestamps/page-tokens) therefore fail **safe** (look like progress) not **open** (D-18 corrects the original `(name,args,result)`-in-hash which was fail-open). Window=3 (D-20), detect period-1 (A-A-A) and period-2 (A-B-A-B), ring ≥ max(window,4). `AURA_LOOP_DEDUP_EXEMPT_TOOLS` (D-19) allowlists poll-shaped tools.
 
 ### Pattern 8: Trace IDs — UUIDv7 16B vs crypto/rand 8B SpanID (D-16/A4)
 **What:** `RequestID`/`TraceID` = `uuid.UUID` (UUIDv7, 16 bytes = OTel/W3C TraceID exactly). `SpanID`/`ParentSpanID` = **8 random bytes from `crypto/rand`** (NOT UUIDv7).
@@ -485,7 +485,7 @@ if *maxSteps != -1 { b.SetMaxSteps(int32(*maxSteps)) }   // CLI > env > default(
 
 **Note:** No `[ASSUMED]`-tagged *package* claims — both new deps are registry-verified and canonical. All assumptions above are implementation-sizing judgments, not factual claims about external systems.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Soft-cap borrow semantics (D-12) exact algorithm**
    - What we know: hard total bound (`b.steps`) is authoritative and always enforced; soft cap throttles a greedy branch to its fair share.
@@ -547,7 +547,7 @@ INFRA-03 decomposes into the 4 Success Criteria + 9 supporting acceptance tests.
 | Req#3 / D-11 | TOCTOU exactly-one-winner | unit (race) | `budget_test.go` · `TestBudget_ConsumeStep_ExactlyOneWinner_When_CounterIsOne` | N goroutines vs counter 1 → exactly one `ok==true` | ❌ Wave 0 |
 | Req#3 / D-09 | child shares counter | unit | `budget_test.go` · `TestBudget_Child_SharesStepsCounter` | parent consume 5 → child `Remaining()==20` | ❌ Wave 0 |
 | Req#3 / D-09 | child distinct dedup ring | unit | `budget_test.go` · `TestBudget_Child_DistinctDedupRing` | parent dedup state invisible to child | ❌ Wave 0 |
-| Req#3 / D-08 | canonical hash order-independent | unit | `budget_test.go` · `TestBudget_RecordToolCall_CanonicalHashOrderIndependent` | `{"a":1,"b":2}` hash == `{"b":2,"a":1}` hash | ❌ Wave 0 |
+| Req#3 / D-08 | canonical hash order-independent | unit | `budget_test.go` · `TestBudget_BeforeToolCall_CanonicalHashOrderIndependent` | caller canonicalizes `{"a":1,"b":2}` and `{"b":2,"a":1}` to the same fingerprint before dedup pre-check | ❌ Wave 0 |
 | Req#3 / D-13 | wallclock terminates | unit (synctest) | `budget_test.go` · `TestBudget_Wallclock_TerminatesAtDeadline` | Go 1.26 `synctest` (or fake clock) → `ConsumeStep` returns `(false,"wallclock")` past deadline | ❌ Wave 0 |
 | Req#3 / D-18 | two-tier dedup terminates on 3 repeats | unit | `loop_test.go` · `TestLoopAgent_DedupWindow_TerminatesOn3SameToolCalls` | same `sha256(name+canon_args)` ×3, result unchanged → `limit_hit=="dedup"` | ❌ Wave 0 |
 | Req#3 / D-18 | result-changed suppresses dedup (progress veto) | unit | `loop_test.go` · `TestLoopAgent_DedupVeto_When_ResultChanges` | same args, changing result → NO dedup (loop continues) | ❌ Wave 0 |
@@ -568,7 +568,7 @@ INFRA-03 decomposes into the 4 Success Criteria + 9 supporting acceptance tests.
 
 ### Coverage Strategy to Hit 85% Floor
 The 85% floor (CLAUDE.md) is across the **full tag matrix**. Phase 2 is unit-only (no integration build tags — no DB/Neo4j/sandbox). So the floor is a pure unit number on `internal/agent`, `internal/agent/workflow`, `internal/canonicaljson`, and `cmd/aura` (agent.go portion).
-- **Highest-coverage-leverage files:** `budget.go`/`budget_dedup.go` (every branch of ConsumeStep/RecordToolCall/Child/wallclock/soft-cap is directly unit-testable — aim 95%+).
+- **Highest-coverage-leverage files:** `budget.go`/`budget_dedup.go` (every branch of ConsumeStep/BeforeToolCall/AfterToolResult/Child/wallclock/soft-cap is directly unit-testable — aim 95%+).
 - **Hardest to cover:** ParallelAgent cancel/drain branches — the `case <-done` and `case <-ctx.Done()` arms need the break-early + escalate-cancel tests to exercise them. Budget a test per arm.
 - **cmd/aura/agent.go:** flag parsing + request-id paths covered by `agent_test.go`; the iterate-and-print loop covered by capturing stdout. Keep business logic out of `main()` so it's testable.
 - **mutation spot-check (≥70%, D-21-adjacent):** run `go-mutesting ./internal/agent/budget.go` manually; the decrement-then-check-then-restore and the `<0` boundary are the mutation-sensitive lines.
