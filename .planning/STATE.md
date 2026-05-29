@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-00-PLAN.md (Gate 0 artifact convergence)
-last_updated: "2026-05-29T21:44:46.304Z"
+last_updated: "2026-05-29T21:58:13.941Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 16
   completed_phases: 2
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 12
   percent: 13
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 02 (agent-cornerstone) — EXECUTING
-Plan: 4-00 complete (Gate 0); 02-01 next (1 of 7 code plans)
+Plan: 02-03 complete (Budget tree); 02-04 next (agenttest mocks)
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [███████░░░] 69%
+Progress: [████████░░] 75%
 
 ## Performance Metrics
 
@@ -54,6 +54,7 @@ Progress: [███████░░░] 69%
 *Updated after each plan completion*
 | Phase 02 P02-01 | 25min | 2 tasks | 4 files |
 | Phase 02 P02-02 | ~5min | 2 tasks | 6 files |
+| Phase 02 P02-03 | ~9min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -67,6 +68,7 @@ Recent decisions affecting current work:
 - Roadmap: PROJECT_MODE=standard (Horizontal Layers) — 16 phases derived from PRD's 14 slices + P0 amendments; architecture-validated dependency chain enforced (P2 cornerstone, P6 KV cache deliberately near-late, P15 memory most downstream)
 - [Phase ?]: canonicaljson NOT RFC-8785 (D-08/A3); uuid v1.6.0 direct + rapid v1.3.0 test-only added
 - [Phase ?]: 02-02: Agent interface OPEN (no seal, D-01); SpanID [8]byte not uuid.UUID (D-16/A4 supersedes SPEC Req#1); Event byte-identical round-trip via custom MarshalJSON + eventWire (D-21); ErrBudgetExhausted exported sentinel (D-04)
+- [Phase 02]: 02-03: Budget = single *atomic.Int32 shared by pointer across the tree (D-10) + TOCTOU decrement-then-check-then-restore (D-11); fail-fast NewBudgetFromEnv (D-06); Child forks dedup ring + passive soft cap, shares counter (D-09/D-12); two-tier dedup with consecutive-unchanged result-veto counter fails SAFE not open (D-18/A2); wallclock via injectable clock not synctest (W8)
 
 ### Pending Todos
 
@@ -92,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T21:44:40.386Z
-Stopped at: Completed 02-00-PLAN.md (Gate 0 artifact convergence)
+Last session: 2026-05-29T21:58Z
+Stopped at: Completed 02-03-PLAN.md (Budget tree — shared atomic + TOCTOU + two-tier dedup)
 Resume file: None
