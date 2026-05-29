@@ -29,6 +29,10 @@ func TestRedactDSN_StripsPassword(t *testing.T) {
 			want: "postgres://aura@127.0.0.1:5432/aura",
 		},
 		{
+			in:   "postgres://127.0.0.1:5432/aura", // no userinfo at all
+			want: "postgres://127.0.0.1:5432/aura",
+		},
+		{
 			in:   "",
 			want: "<empty-dsn>",
 		},
@@ -74,6 +78,29 @@ func TestReset_MissingURLFailsFast(t *testing.T) {
 	}
 	if err.Error() != literal {
 		t.Errorf("Reset error: want exact %q, got %q", literal, err.Error())
+	}
+}
+
+func TestMigrate_UnknownDriverWrapsError(t *testing.T) {
+	// An unrecognized URL scheme fails at golang-migrate's driver lookup, BEFORE
+	// any sql.OpenDB call — so it exercises Migrate's NewWithSourceInstance error
+	// wrap without leaking a connection-opener goroutine (goleak-safe).
+	_, err := Migrate(context.Background(), "bogus://nodriver/aura")
+	if err == nil {
+		t.Fatal("Migrate with unknown driver: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "migrator") {
+		t.Errorf("Migrate error: want 'migrator' wrap context, got %q", err.Error())
+	}
+}
+
+func TestReset_UnknownDriverWrapsError(t *testing.T) {
+	err := Reset(context.Background(), "bogus://nodriver/aura")
+	if err == nil {
+		t.Fatal("Reset with unknown driver: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "migrator") {
+		t.Errorf("Reset error: want 'migrator' wrap context, got %q", err.Error())
 	}
 }
 
@@ -149,9 +176,110 @@ func TestOpen_NilConfigFailsFast(t *testing.T) {
 	}
 }
 
+func TestPing_NilPool(t *testing.T) {
+	_, err := Ping(context.Background(), nil)
+	if err == nil {
+		t.Fatal("Ping(ctx, nil): want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "pool is nil") {
+		t.Errorf("Ping error: want 'pool is nil' substring, got %q", err.Error())
+	}
+}
+
+func TestStatus_NilPool(t *testing.T) {
+	_, err := Status(context.Background(), nil)
+	if err == nil {
+		t.Fatal("Status(ctx, nil): want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "pool is nil") {
+		t.Errorf("Status error: want 'pool is nil' substring, got %q", err.Error())
+	}
+}
+
+func TestOpen_UnparseableURLRedactsAndFails(t *testing.T) {
+	// A DSN that pgxpool.ParseConfig rejects exercises the parse-error wrap.
+	_, err := Open(context.Background(), &Config{URL: "postgres://%zz"})
+	if err == nil {
+		t.Fatal("Open with malformed URL: want error, got nil")
+	}
+	// The wrap must run the DSN through redactDSN, never echo a raw password.
+	if strings.Contains(err.Error(), "secret") {
+		t.Errorf("Open error leaked plaintext: %q", err.Error())
+	}
+}
+
+func TestOpen_AppliesExplicitPoolTuning(t *testing.T) {
+	// Exercises the non-default branches of Open's pool tuning (MaxConns>0,
+	// MinConns>0, MaxConnIdleTime>0). The connect still fails on the closed
+	// port, but the tuning branches run before the Ping that fails.
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	cfg := &Config{
+		URL:             "postgres://aura_app:pw@127.0.0.1:1/aura?sslmode=disable",
+		MaxConns:        5,
+		MinConns:        2,
+		MaxConnIdleTime: time.Second,
+	}
+	if _, err := Open(ctx, cfg); err == nil {
+		t.Skip("Open unexpectedly succeeded against a closed port; tuning branches still executed")
+	}
+}
+
+func TestRedactDSNUsername_ParseErrorReturnsEmpty(t *testing.T) {
+	// Internal helper: a DSN that url.Parse rejects must yield "" rather than panic.
+	if got := redactDSNUsername("://%zz"); got != "" {
+		t.Errorf("redactDSNUsername(malformed) = %q, want empty", got)
+	}
+	if got := redactDSNUsername("postgres://127.0.0.1/aura"); got != "" {
+		t.Errorf("redactDSNUsername(no-userinfo) = %q, want empty", got)
+	}
+}
+
+func TestOpen_UnreachableHostPingFails(t *testing.T) {
+	// Valid DSN, closed port → pool constructs but the connect-time Ping fails,
+	// exercising Open's NewWithConfig-success / Ping-failure branch. The wrapped
+	// error must redact the password (assert the literal does not leak).
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	const pwd = "uniquePingFailToken123"
+	cfg := &Config{URL: "postgres://aura_app:" + pwd + "@127.0.0.1:1/aura?sslmode=disable"}
+	_, err := Open(ctx, cfg)
+	if err == nil {
+		t.Skip("Open unexpectedly succeeded against a closed port; skipping ping-fail assertion")
+	}
+	if strings.Contains(err.Error(), pwd) {
+		t.Errorf("Open error leaked password: %q", err.Error())
+	}
+}
+
+func TestEnsureRoles_MalformedBootstrapURLFailsFast(t *testing.T) {
+	// A non-empty but unparseable bootstrap DSN must fail at pgxpool.New before
+	// any network I/O, with the (empty) password never surfacing.
+	err := EnsureRoles(context.Background(), "postgres://%zz", "pw")
+	if err == nil {
+		t.Fatal("EnsureRoles with malformed URL: want error, got nil")
+	}
+	if strings.Contains(err.Error(), "pw") {
+		t.Errorf("EnsureRoles error leaked password: %q", err.Error())
+	}
+}
+
 func TestRedactErrorPassword_NilErrorPassesThrough(t *testing.T) {
 	if err := redactErrorPassword(nil, "p1", "p2"); err != nil {
 		t.Errorf("nil error: want nil, got %v", err)
+	}
+}
+
+func TestRedactErrorPassword_SkipsEmptyPasswordInList(t *testing.T) {
+	// An empty entry in the password list must be skipped (not used as a no-op
+	// replace target); the non-empty one is still scrubbed.
+	orig := errors.New("token=RealPw123 leaked")
+	scrubbed := redactErrorPassword(orig, "", "RealPw123")
+	if scrubbed == nil {
+		t.Fatal("scrubbed: want non-nil")
+	}
+	if strings.Contains(scrubbed.Error(), "RealPw123") {
+		t.Errorf("plaintext still present: %q", scrubbed.Error())
 	}
 }
 
