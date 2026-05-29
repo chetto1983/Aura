@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 02-00-PLAN.md (Gate 0 artifact convergence)
-last_updated: "2026-05-29T21:35:39.301Z"
+last_updated: "2026-05-29T21:44:46.304Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 16
   completed_phases: 2
   total_plans: 16
-  completed_plans: 10
+  completed_plans: 11
   percent: 13
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 02 (agent-cornerstone) — EXECUTING
-Plan: 3-00 complete (Gate 0); 02-01 next (1 of 7 code plans)
+Plan: 4-00 complete (Gate 0); 02-01 next (1 of 7 code plans)
 Status: Ready to execute
 Last activity: 2026-05-29
 
-Progress: [██████░░░░] 63%
+Progress: [███████░░░] 69%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [██████░░░░] 63%
 
 *Updated after each plan completion*
 | Phase 02 P02-01 | 25min | 2 tasks | 4 files |
+| Phase 02 P02-02 | ~5min | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -65,6 +66,7 @@ Recent decisions affecting current work:
 - Pre-init: Tabula-rasa rewrite — prior implementation preserved at tag `pre-rewrite-2026-05-27`
 - Roadmap: PROJECT_MODE=standard (Horizontal Layers) — 16 phases derived from PRD's 14 slices + P0 amendments; architecture-validated dependency chain enforced (P2 cornerstone, P6 KV cache deliberately near-late, P15 memory most downstream)
 - [Phase ?]: canonicaljson NOT RFC-8785 (D-08/A3); uuid v1.6.0 direct + rapid v1.3.0 test-only added
+- [Phase ?]: 02-02: Agent interface OPEN (no seal, D-01); SpanID [8]byte not uuid.UUID (D-16/A4 supersedes SPEC Req#1); Event byte-identical round-trip via custom MarshalJSON + eventWire (D-21); ErrBudgetExhausted exported sentinel (D-04)
 
 ### Pending Todos
 
@@ -90,6 +92,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T21:30:29.467Z
+Last session: 2026-05-29T21:44:40.386Z
 Stopped at: Completed 02-00-PLAN.md (Gate 0 artifact convergence)
 Resume file: None
