@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 0 committed (20 PRD amendments, 1 aggregated commit, zero .go files). Next — Phase 1 Infra DB + Knowledge.
-last_updated: "2026-05-29T12:00:00.000Z"
+status: ready_to_plan
+stopped_at: Phase 00 complete (6/6) — ready to discuss Phase 1
+last_updated: 2026-05-29T10:07:12.044Z
 last_activity: 2026-05-29 -- Phase 0 committed (20 PRD amendments, 1 commit, zero .go files)
 progress:
   total_phases: 16
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 1 — Infra DB + Knowledge (next)
+**Current focus:** Phase 1 — infra db + knowledge
 
 ## Current Position
 
-Phase: 1 of 15 (next — Infra DB + Knowledge); Phase 0 complete.
-Plan: — (Phase 1 not yet discussed)
-Status: Phase 0 complete; ready to discuss Phase 1
-Last activity: 2026-05-29 -- Phase 0 committed (20 PRD amendments, 1 commit, zero .go files)
+Phase: 1 of 15 (infra db + knowledge)
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-29
 
 Progress: [█░░░░░░░░░] 6%
 
@@ -36,7 +36,7 @@ Progress: [█░░░░░░░░░] 6%
 
 **Velocity:**
 
-- Total plans completed: 0
+- Total plans completed: 6
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -44,7 +44,7 @@ Progress: [█░░░░░░░░░] 6%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| - | - | - | - |
+| 00 | 6 | - | - |
 
 **Recent Trend:**
 
