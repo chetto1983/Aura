@@ -1462,6 +1462,51 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## §Cross-cutting — Context rot mitigation policy (amendment #21, Pitfall #4 P0)
+
+**Context rot è il primary failure mode degli agent loops** (Chroma research 2025-26: −30%+ accuracy in mid-window positions across 18 frontier models). Aura adotta una **policy 5-layer** anti-context-rot dichiarata top-level:
+
+| Layer | Mitigation | Slice owner | Cosa fa |
+|---|---|---|---|
+| **L0** | KV cache discipline | Slice 4 (CAP-04, Phase 6) | `messages[0]` byte-identical cross-turn (system+manifest+tools). `messages[1]` mutable Agent.md profile (Slice 10). Cache hit ratio target ≥ 80% su DeepSeek-V4 / Anthropic. CI invariant audit `scripts/cache_invariant_audit.sh` cross-slice. |
+| **L1** | Microcompact in-context eviction | Slice 1.8 (CORE-04, Phase 4) | Tool result age-based eviction: `RoleTool` messages older than `AURA_MICROCOMPACT_TTL_TURNS=10` → replaced with `[evicted, sidecar at <path>]` stub (reference Slice 1 ToolResult sidecar). Preserva structure, riduce token cost. NO LLM call. |
+| **L2** | Budget trim history | Slice 1.8b (CORE-04, Phase 4) | Hard cap su history `AURA_CONVERSATION_TOKEN_CAP=AURA_LOOP_BUDGET_PCT × model_window` (default 60%) → on exceeded: trigger LLM summarization OR drop oldest user/assistant pairs (configurable strategy). Notify user + suggest `aura chat new` per fresh KV cache. |
+| **L3** | Tool result sidecar | Slice 1 (CORE-01, Phase 3) | Large tool outputs (`output_bytes > AURA_TOOLRESULT_PREVIEW_BYTES=4096`) → write `$AURA_RUN_DIR/conversations/<id>/<tool_call_id>.result` + ToolResult.Preview (first 4 KB + suffix `[truncated, full at <path>]`). LLM sees only preview, full retrievable on demand. |
+| **L4** | Archival memory retrieval | Slice 11 (UX-06/07/08/09, Phase 15) | Long-term facts via Neo4j vector + fulltext: `:Chunk` (raw docs), `:Entity` (resolved nouns), `:AgentInsight` (extracted insights). Top-K relevant injected by `:AgentInsight` TTL cache (preserves L0 `messages[2..n]` stability per Slice 11e amendment #11). Tool `memory_search(query)` self-edit pattern (Letta-inspired). |
+
+**Targets quantitative (Anthropic 2026 best practice)**:
+- **Operative threshold**: 60% context utilization → trigger PROACTIVE compaction (L1+L2). Manual proactive produce summary migliore di reactive (model ha clear recall).
+- **Hard cap**: 80% context utilization → AUTO trigger compaction + Notifier alert utente. Proceed o fail-loud (configurable via `AURA_CONTEXT_HARDFAIL_ON_OVERCAP=1`).
+- **Time-based opportunistic**: at every "major milestone" → conversation archive boundary (CORE-04), agent.Run() completion (Slice 0.9 LoopAgent terminal Event), conversation_turn boundary post-LLM-response.
+- **Formula budget**: `effective_budget_tokens = model_context_window × AURA_LOOP_BUDGET_PCT - AURA_OUTPUT_RESERVE_TOKENS - AURA_SYSTEM_PROMPT_TOKENS_BOUND`. Default: `DeepSeek-V4 (128k window) × 0.6 - 8k output - 4k system = 64k effective` per conversation history.
+
+**Industry pattern references (verified 2026-05-29)**:
+- [Anthropic compaction docs](https://platform.claude.com/docs/en/build-with-claude/compaction): `compact_20260112` server-side, drop pre-summary blocks pattern. **Adopted in spirit (L1+L2 client-side)**, NOT direct API param (multi-provider compat: OpenRouter passa Anthropic-only params provider-specific).
+- [LangGraph state+reducers 2026](https://callsphere.ai/blog/langgraph-state-management-typeddict-reducers-state-channels): TypedDict State + Reducers + PostgresSaver checkpointing. **NOT adopted as runtime pattern** — Aura `Actions.StateDelta` è forward-compat placeholder only; reducer logic concreto in Phase 4 (conversation state) o Phase 15 (memory). Rationale: low-parallelism single-user MVP, scope creep avoidance Phase 2 cornerstone.
+- [Letta MemGPT 3-tier (Core/Recall/Archival)](https://sureprompts.com/blog/letta-memgpt-walkthrough): RAM/disk-cache/cold-storage analogy + agent self-edit tools. **Partially adopted**: Core = Agent.md (Slice 10 messages[1]), Recall = `conversation_search` FTS (Slice 1.8.5), Archival = Neo4j (Slice 11). Pattern self-edit tool dispatch via Slice 11 tool LLM-facing `memory_search`. NO Letta-style runtime adoption (Aura ha proprio Agent interface stolen-not-imported da adk-go).
+- [mem0 passive fact extraction](https://vectorize.io/articles/mem0-vs-letta): LLM-driven extraction post-turn + vector store + 90% token saving claim. **Pattern adopted in Slice 11e (UX-09 agent journal)**: cross-conv pattern analyzer extract `:AgentInsight` from `:AgentEpisode` via LLM-driven extraction. NO mem0 library import (Python + commercial license terms).
+- [Chroma context-rot paper via Morph](https://www.morphllm.com/context-rot): −30% mid-window degradation quantified, 18 frontier models. **Empirical baseline**: Aura mette L0+L1+L2+L3+L4 layer-defense per stay BELOW degradation cliff.
+
+**Cross-slice acceptance criteria (cross-cutting CI gate)**:
+- [ ] `scripts/cache_invariant_audit.sh` (Slice 4 amendment #16) asserts `messages[0]` byte-identical across 20-turn replay → L0 enforced.
+- [ ] `scripts/microcompact_smoke.sh` (Slice 1.8) asserts tool result evicted after `AURA_MICROCOMPACT_TTL_TURNS` turns + sidecar accessible → L1 enforced.
+- [ ] `scripts/budget_trim_smoke.sh` (Slice 1.8b) asserts hard cap 80% triggera summarization OR drop strategy → L2 enforced.
+- [ ] `scripts/toolresult_sidecar_smoke.sh` (Slice 1) asserts >4 KB output → sidecar written + preview only in LLM context → L3 enforced.
+- [ ] `scripts/archival_recall_smoke.sh` (Slice 11d) asserts `memory_search(query)` returns top-K from Neo4j + injected as `:AgentInsight` block in messages[2..n] → L4 enforced.
+- [ ] Cross-slice integration test `make context_rot_drill` (CI job) replays 50-turn conversation, asserts target 60% utilization mid-conversation + final assistant accuracy ≥ baseline.
+
+**Failure mode + observability**:
+- Slog event `context_utilization` per LLM call con tag `{conversation_id, layer_active, tokens_used, tokens_limit, pct}` → dashboard PromQL `histogram_quantile(0.95, aura_context_utilization_pct)` < 0.6 target.
+- Notifier alert quando `pct > 0.6` (proactive) o `pct > 0.8` (reactive auto-compact triggered).
+- Audit row `context_rot_event` con `{ts, conv_id, trigger_layer, action_taken, before_tokens, after_tokens}` per forensics.
+
+**Out of scope (context rot mitigation)**:
+- Real-time fine-tuning on conversation patterns (out of scope: Aura non fine-tune local models)
+- Cross-conversation deduplication (out of scope: privacy + complexity, deferred a future milestone)
+- Provider-specific compaction params (out of scope: Aura multi-provider via OpenRouter, params Anthropic-only non passa-through reliable)
+
+---
+
 ## §Cross-cutting — KV cache invariant CI (amendment #16, Pitfall #3 P0)
 
 Cache poisoning is the highest-risk cross-slice failure mode in Aura. Slice 4 owns the invariant (`messages[0]` byte-identical turn-su-turn) but Slices 1.8, 5, 7e-core, 10, 11e all mutate the message-construction pipeline. Without a cross-slice gate, every capability silently risks planting its own poisoning site. Reference: `reference_aura_cache_poisoning_sites_2026-05-27` (6 sites mapped pre-rewrite — historical record kept as warning).
