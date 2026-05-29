@@ -99,6 +99,28 @@ All 9 Wave 0 gaps are covered by the per-task verification map above.
 - [x] Wave 0 covers all MISSING references (the 9 items above; all marked [x])
 - [x] No watch-mode flags (Go tests are one-shot; smoke scripts are one-shot)
 - [x] Feedback latency < 30s for per-task quick command (unit tests + `go vet` + `go build` measured well below 30s on this codebase)
-- [x] `nyquist_compliant: true` set in frontmatter — per-task verification map populated from 02-PLAN.md + 03-PLAN.md; coverage closes the 5 ROADMAP Success Criteria + INFRA-01 + INFRA-02; auditor confirmation pending at Gate 3 DoD review
+- [x] `nyquist_compliant: true` set in frontmatter — per-task verification map populated from 02-PLAN.md + 03-PLAN.md; coverage closes the 5 ROADMAP Success Criteria + INFRA-01 + INFRA-02; auditor confirmation complete (see Validation Audit 2026-05-29)
 
-**Approval:** planner — 2026-05-29 (auditor sign-off pending Gate 3 DoD)
+**Approval:** planner — 2026-05-29 · auditor (validate-phase) — 2026-05-29
+
+---
+
+## Validation Audit 2026-05-29
+
+Retroactive Nyquist audit (`/gsd:validate-phase 1`). Ground-truth probe, not claim-trust: every test function named in the per-task map was located on disk; the unit gate was executed live; tagged integration + smoke files were compile-checked for API drift.
+
+| Metric | Count |
+|--------|-------|
+| Requirements audited | 2 (INFRA-01, INFRA-02) |
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+**Evidence captured:**
+- `go vet ./...` exit 0 · `go build ./...` exit 0
+- Unit gate green: `internal/config` 97.1% · `internal/db` 47.8% (unit-only; success paths covered by container-gated `db_integration` suite) · `internal/knowledge` 73.4% (unit-only; 94.1% with integration per 03-04-SUMMARY)
+- Tagged suites compile clean (no drift): `db_integration` ✓ · `neo4j_integration db_integration` ✓ · `smoke` ✓
+- All 6 task rows' `Automated Command` references resolve to existing test functions; actual suite (60+ test funcs) exceeds the map.
+- Manual-Only items (license, MSYS regression, RAM headroom, MCP envelope probe) all closed during execution per 01-02-SUMMARY + 03-04-SUMMARY.
+
+**Verdict: NYQUIST-COMPLIANT.** No test generation required.
