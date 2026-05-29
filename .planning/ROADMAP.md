@@ -73,7 +73,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Operator runs the swarm depth fixture and observes a depth-3 spawn chain consuming the parent's remaining step budget (NOT fresh per child) — total steps across the tree ≤ 25, not 25^3
   4. Operator runs `aura agent dry-run --request-id auto` and observes an OTel-compatible UUIDv7 `request_id` attached to every emitted Event for correlation, while SpanID/ParentSpanID remain 8-byte OTel/W3C-compatible IDs internally
 **Plans:** 8 plans (6 waves)
-- [ ] 02-00-PLAN.md — Gate 0 artifact convergence: A1-A7 truth-source sync, full validation map, fail-closed plan commands, adk-go attribution
+- [x] 02-00-PLAN.md — Gate 0 artifact convergence: A1-A7 truth-source sync, full validation map, fail-closed plan commands, adk-go attribution
 - [ ] 02-01-PLAN.md — Deps (uuid direct + rapid) + internal/canonicaljson deterministic serializer (D-08/A3/A6)
 - [ ] 02-02-PLAN.md — Agent interface + InvocationContext + Event/Actions/LLMResponse + trace IDs + ErrBudgetExhausted (D-01/02/16/17/24)
 - [ ] 02-03-PLAN.md — Budget tree: shared atomic + TOCTOU ConsumeStep + fail-fast env + two-tier dedup + soft cap (D-06/09/10/11/12/13/18)
@@ -254,7 +254,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 |-------|----------------|--------|-----------|
 | 0. PRD Amendments | 6/6 | Complete | 2026-05-29 |
 | 1. Infra DB + Knowledge | 0/TBD | Not started | - |
-| 2. Agent Cornerstone | 0/7 | Not started | - |
+| 2. Agent Cornerstone | 1/8 | In progress | - |
 | 3. LLM Client + ToolResult | 0/TBD | Not started | - |
 | 4. HITL + Identity + Conversations | 0/TBD | Not started | - |
 | 5. Sandbox 2a Stateless | 0/TBD | Not started | - |

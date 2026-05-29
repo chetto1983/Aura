@@ -4,8 +4,8 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 2 context gathered (≥95% validated)
-last_updated: "2026-05-29T21:10:20.355Z"
-last_activity: 2026-05-29 -- Phase 02 planning complete
+last_updated: "2026-05-29T21:16:35.561Z"
+last_activity: 2026-05-29 -- Phase 02 Plan 00 (Gate 0 artifact convergence) complete
 progress:
   total_phases: 16
   completed_phases: 2
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 2 — Agent Cornerstone (next per ROADMAP)
+**Current focus:** Phase 02 — agent-cornerstone
 
 ## Current Position
 
-Phase: 1 of 15 COMPLETE (infra db + knowledge) — Phase 2 next
-Plan: 02 (Slice 0.5 Postgres) + 03 (Slice 0.7 Neo4j + MCP + embed) both complete
-Status: Ready to execute
-Last activity: 2026-05-29 -- Phase 02 planning complete
+Phase: 02 (agent-cornerstone) — EXECUTING
+Plan: 02-00 complete (Gate 0); 02-01 next (1 of 7 code plans)
+Status: Executing Phase 02 — artifacts converged >95%, code work cleared to start
+Last activity: 2026-05-29 -- Phase 02 Plan 00 (Gate 0 artifact convergence) complete
 
 Progress: [█▌░░░░░░░░] 13% (project); Phase 1 plans 2/2 done
 
@@ -88,6 +88,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T20:26:04.274Z
-Stopped at: Phase 2 context gathered (≥95% validated)
-Resume file: .planning/phases/02-agent-cornerstone/02-CONTEXT.md
+Last session: 2026-05-29T21:16:35.561Z
+Stopped at: Completed 02-00-PLAN.md (Gate 0 artifact convergence)
+Resume file: .planning/phases/02-agent-cornerstone/02-01-PLAN.md
