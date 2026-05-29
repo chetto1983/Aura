@@ -335,7 +335,7 @@ type LLMResponse struct {
 
 **`SequentialAgent.Run`** — esegue sub-agents una volta, in ordine:
 ```go
-func (a *sequentialAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
+func (a *SequentialAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
     return func(yield func(*Event, error) bool) {
         for _, subAgent := range ctx.Agent.SubAgents() {
             for event, err := range subAgent.Run(ctx) {
@@ -349,13 +349,13 @@ func (a *sequentialAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
 
 **`LoopAgent.Run`** — ripete sub-agents N volte o fino a `Escalate`:
 ```go
-type loopAgent struct {
+type LoopAgent struct {
     name          string
     maxIterations uint                // 0 = infinite (Caps & Limits applies hard cap)
     subAgents     []Agent
 }
 
-func (a *loopAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
+func (a *LoopAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
     return func(yield func(*Event, error) bool) {
         iter := uint(0)
         for {
@@ -374,7 +374,7 @@ func (a *loopAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
 
 **`ParallelAgent.Run`** — sub-agents concorrenti, errgroup + chan:
 ```go
-func (a *parallelAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
+func (a *ParallelAgent) Run(ctx InvocationContext) iter.Seq2[*Event, error] {
     return func(yield func(*Event, error) bool) {
         type result struct { event *Event; err error; ackChan chan struct{} }
         resultsChan := make(chan result)
