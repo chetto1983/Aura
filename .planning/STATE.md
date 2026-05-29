@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 02-00-PLAN.md (Gate 0 artifact convergence)
-last_updated: "2026-05-29T21:58:13.941Z"
+stopped_at: Completed 02-03-PLAN.md (Budget tree — shared atomic + TOCTOU + two-tier dedup)
+last_updated: "2026-05-29T22:05:30.629Z"
 last_activity: 2026-05-29
 progress:
   total_phases: 16
   completed_phases: 2
   total_plans: 16
-  completed_plans: 12
+  completed_plans: 13
   percent: 13
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 02 (agent-cornerstone) — EXECUTING
-Plan: 02-03 complete (Budget tree); 02-04 next (agenttest mocks)
+Plan: 02-04 complete (agenttest mocks); 02-05 next (Sequential/Loop)
 Status: Ready to execute
-Last activity: 2026-05-29
+Last activity: 2026-05-30
 
-Progress: [████████░░] 75%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [████████░░] 75%
 | Phase 02 P02-01 | 25min | 2 tasks | 4 files |
 | Phase 02 P02-02 | ~5min | 2 tasks | 6 files |
 | Phase 02 P02-03 | ~9min | 2 tasks | 5 files |
+| Phase 02 P02-04 | ~12min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,7 @@ Recent decisions affecting current work:
 - [Phase ?]: canonicaljson NOT RFC-8785 (D-08/A3); uuid v1.6.0 direct + rapid v1.3.0 test-only added
 - [Phase ?]: 02-02: Agent interface OPEN (no seal, D-01); SpanID [8]byte not uuid.UUID (D-16/A4 supersedes SPEC Req#1); Event byte-identical round-trip via custom MarshalJSON + eventWire (D-21); ErrBudgetExhausted exported sentinel (D-04)
 - [Phase 02]: 02-03: Budget = single *atomic.Int32 shared by pointer across the tree (D-10) + TOCTOU decrement-then-check-then-restore (D-11); fail-fast NewBudgetFromEnv (D-06); Child forks dedup ring + passive soft cap, shares counter (D-09/D-12); two-tier dedup with consecutive-unchanged result-veto counter fails SAFE not open (D-18/A2); wallclock via injectable clock not synctest (W8)
+- [Phase 02]: 02-04: shared internal/agent/agenttest mock package (D-07, one-direction import) — InfiniteToolCallAgent (SC#2, same tool call forever), EmitNThenEscalate, RecordingAgent, CountingAgent (SC#3, consumes shared ic.Budget only, never NewBudgetFromEnv — Pitfall 3 guard); iter.Seq2 yield discipline exercised by a runtime drain test + break-after-one no-panic test (D-22 footgun 2, W5)
 
 ### Pending Todos
 
@@ -94,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-29T21:58Z
+Last session: 2026-05-29T22:05:30.617Z
 Stopped at: Completed 02-03-PLAN.md (Budget tree — shared atomic + TOCTOU + two-tier dedup)
 Resume file: None
