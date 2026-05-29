@@ -101,7 +101,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | PRD-01 | Phase 0 — PRD Amendments | Pending |
 | INFRA-01 | Phase 1 — Infra DB + Knowledge | Pending |
 | INFRA-02 | Phase 1 — Infra DB + Knowledge | Pending |
-| INFRA-03 | Phase 2 — Agent Cornerstone | In Progress |
+| INFRA-03 | Phase 2 — Agent Cornerstone | Complete |
 | CORE-01 | Phase 3 — LLM Client + ToolResult | Pending |
 | CORE-02 | Phase 4 — HITL + Identity + Conversations | Pending |
 | CORE-03 | Phase 4 — HITL + Identity + Conversations | Pending |
