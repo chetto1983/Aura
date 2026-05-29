@@ -35,6 +35,8 @@ func main() {
 		chatOnce(os.Args[2])
 	case "db":
 		runDB(os.Args[2:])
+	case "neo4j":
+		runNeo4j(os.Args[2:])
 	case "shell", "serve":
 		fmt.Println("TODO: implemented by the agent-loop and CLI slices")
 	default:
@@ -44,7 +46,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <msg>|tools|db <sub>}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <msg>|tools|db <sub>|neo4j <sub>}")
 }
 
 func buildRegistry() *tools.Registry {

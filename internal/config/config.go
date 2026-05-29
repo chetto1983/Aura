@@ -16,12 +16,14 @@ import (
 	"strconv"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/joho/godotenv"
 )
 
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
 	DB             db.Config
+	Neo4j          knowledge.Config // Slice 0.7 — graph + vector + embed sidecar wiring
 	RunDir         string
 	ToolPreviewCap int
 }
@@ -65,6 +67,16 @@ func Load() (*Config, error) {
 			MigrateURL:   migrateURL,
 			BootstrapURL: bootstrapURL,
 			Password:     pgPassword,
+		},
+		Neo4j: knowledge.Config{
+			BoltURL:           envDefault("AURA_NEO4J_BOLT_URL", "bolt://127.0.0.1:7687"),
+			User:              envDefault("NEO4J_USER", "neo4j"),
+			Password:          os.Getenv("NEO4J_PASSWORD"),
+			Database:          envDefault("AURA_NEO4J_DATABASE", "neo4j"),
+			MCPBinary:         envDefault("AURA_MCP_NEO4J_CYPHER_BIN", "mcp-neo4j-cypher"),
+			ConnectTimeoutSec: envIntDefault("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", 10),
+			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
+			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", 768),
 		},
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),

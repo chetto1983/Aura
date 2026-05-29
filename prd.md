@@ -33,7 +33,7 @@ persistent), Slice 6 (scheduler) e Slice 7 (skill audit) non hanno dove vivere.
 
 **Smoke.**
 ```bash
-docker compose -f sandbox/compose.yaml up -d postgres
+docker compose -f compose.yaml up -d postgres
 ./aura db migrate           # applica tutte le migration pendenti
 ./aura db ping              # SELECT 1, stampa "ok + ms"
 ./aura db status            # lista migration applicate
@@ -149,7 +149,7 @@ Phase 6b: 22-30 ms p95 + IT recall@5 5/5 su corpus reale Aura):
 
 **Smoke.**
 ```bash
-docker compose -f sandbox/compose.yaml up -d neo4j
+docker compose -f compose.yaml up -d neo4j
 ./aura neo4j migrate           # applica tutte le migration .cypher pendenti
 ./aura neo4j ping              # MATCH (n) RETURN count(n), stampa "ok + ms"
 ./aura neo4j status            # lista migration applicate (da Postgres)
@@ -179,7 +179,7 @@ docker compose -f sandbox/compose.yaml up -d neo4j
 - [ ] `aura neo4j migrate` idempotente. Applica solo le migration nuove. Errore esplicito su schema drift (migration applicata + file `.cypher` changed → abort).
 - [ ] `internal/knowledge/client.go` espone `Open(ctx, cfg) (*Client, error)` con ping MCP al boot. Fail-fast se MCP server non risponde entro 10 s.
 - [ ] Container Aura con `depends_on: condition: service_healthy` per `neo4j` (oltre a `postgres` e `aura-llama-embed`).
-- [ ] **Embedding dim env contract (amendment #18, Pitfall #7 P0)**: env `AURA_EMBED_DIMENSIONS=768` (default 768 for `embeddinggemma-300m`). On boot, embed sidecar `aura-llama-embed` performs self-test: load one dummy embedding, assert `len(vector) == AURA_EMBED_DIMENSIONS`. Mismatch → exit code 78 (`EX_CONFIG`) with explicit error `embedding model output_dim=N != AURA_EMBED_DIMENSIONS=M — refuse to start (Pitfall #7 silent corruption)`. Aura `aura knowledge ping` validates sidecar `/health` returns `{"dim": <int>}` matching env. Mismatch → boot fail. Reference industry incidents: `neo4j#13387`, `langchain#16336`.
+- [ ] **Embedding dim env contract (amendment #18, Pitfall #7 P0)**: env `AURA_EMBED_DIMENSIONS=768` (default 768 for `embeddinggemma-300m`). On boot, embed sidecar `aura-llama-embed` performs self-test: load one dummy embedding, assert `len(vector) == AURA_EMBED_DIMENSIONS`. Mismatch → exit code 78 (`EX_CONFIG`) with explicit error `embedding model output_dim=N != AURA_EMBED_DIMENSIONS=M — refuse to start (Pitfall #7 silent corruption)`. Aura `aura neo4j ping` validates sidecar `/v1/embeddings round-trip returns 768d (Pattern 5 dim probe)` matching `AURA_EMBED_DIMENSIONS`. Mismatch → boot fail. (Amended Slice 0.7: the `/health` endpoint returns `{"status":"ok"}` with no dim field — ground truth — so the probe POSTs a dummy input to `/v1/embeddings` and asserts `len(data[0].embedding)`.) Reference industry incidents: `neo4j#13387`, `langchain#16336`.
 - [ ] **Embedding model swap runbook (amendment #18)**: docstring section in Slice 0.7 PRD body documents the rule: "NO in-place embedding model upgrades. To change embed model: (1) stop ingest, (2) snapshot Neo4j via `neo4j-admin database dump`, (3) drop vector index, (4) re-create with new `vector.dimensions`, (5) re-embed all `:Chunk.embedding` from `:Chunk.text`, (6) re-create index. Half-state = silent retrieval corruption."
 - [ ] Test integrazione sotto `//go:build neo4j_integration` — salta in CI senza container Neo4j (no flaky), parallelo al pattern `db_integration` di Slice 0.5.
 - [ ] Backup TaskKind `backup_neo4j` (definito in Slice 0.5 RAM/Backup table, implementato in Slice 6b) ora punta al container produzione `aura-neo4j`, non più allo spike `neo4j-spike`.
@@ -1130,7 +1130,7 @@ runtime al modello come tool `execute` (Deferred=true) che accetta `lang ∈ {py
 
 *Isolato (bypass agent loop, test del runner direttamente):*
 ```bash
-docker compose -f sandbox/compose.yaml up -d
+docker compose -f compose.yaml up -d
 ./aura exec python "print(2+2)"     # → 4
 ./aura exec shell  "echo hello"     # → hello
 ./aura exec python "import socket; socket.socket().connect(('1.1.1.1', 80))"
@@ -1177,7 +1177,7 @@ Nessuno dei due prompt nomina `execute`. Se il modello non lo invoca, è bug del
 | `sandbox/Dockerfile` | ~30 | `FROM python:3.12-slim` + apt: bash, coreutils. USER non-root. ENTRYPOINT sidecar. |
 | `sandbox/sidecar.py` | ~150 | Server HTTP minimo (stdlib `http.server`) con endpoint `/exec/python`, `/exec/shell`, `/session/{id}/exec/{lang}` (2b). `subprocess.run` con timeout. Trunc stdout/stderr. Niente deps Python extra. |
 | `sandbox/seccomp.json` | ~80 | Default-deny + allow-list syscall syscall, blocca network/mount/ptrace. |
-| `sandbox/compose.yaml` | ~25 | Service `aura-sandbox`: build sandbox/, security_opt seccomp, network none (override-able per session 2b), read_only, ulimits. |
+| `compose.yaml` | ~25 | Service `aura-sandbox`: build sandbox/, security_opt seccomp, network none (override-able per session 2b), read_only, ulimits. |
 | `cmd/aura/main.go` (diff) | ~+60 | Subcommand `aura exec [--session <id>] <lang> <code>` + registrazione del tool `execute` nel registry. |
 
 **File targets — Slice 2b** (~350 LOC src + ~150 test + ~60 migration):
@@ -1702,7 +1702,7 @@ indipendente prima).
 - `web_fetch({url}) → {title, content_md, links}`
 
 Entrambi alimentati da un container SearXNG self-hosted (estensione del
-`sandbox/compose.yaml` di Slice 2). HTML→Markdown via `codeberg.org/readeck/go-readability/v2` (readeck fork — go-shiori upstream deprecated 2025-12-05 per amendment #3)
+`compose.yaml` di Slice 2). HTML→Markdown via `codeberg.org/readeck/go-readability/v2` (readeck fork — go-shiori upstream deprecated 2025-12-05 per amendment #3)
 + `JohannesKaufmann/html-to-markdown/v2`. SSRF defense custom (DNS resolution
 + private-IP block) preservata dal pre-rewrite.
 
@@ -1743,7 +1743,7 @@ Entrambi alimentati da un container SearXNG self-hosted (estensione del
 | `internal/agent/tools/web_fetch.go` | ~80 | Deferred. Args→`web.Fetcher.Fetch`→`ExtractMarkdown`→`ToolResult`. |
 | `internal/web/searxng_test.go` | ~80 | Fixture JSON SearXNG response → test parser. |
 | `internal/web/fetcher_test.go` | ~100 | SSRF tests (loopback/private IP rejected), readability filter. |
-| `sandbox/compose.yaml` (diff) | ~+15 | Aggiunge service `searxng` (image `searxng/searxng`), shared network col sandbox. |
+| `compose.yaml` (diff) | ~+15 | Aggiunge service `searxng` (image `searxng/searxng`), shared network col sandbox. |
 | `cmd/aura/main.go` (diff) | ~+15 | Registra i due tool. |
 
 **Cosa NON riportare dal pre-rewrite.**
@@ -1756,7 +1756,7 @@ Entrambi alimentati da un container SearXNG self-hosted (estensione del
 slice 5: web tools (web_search + web_fetch via SearXNG)
 
 Two LLM-facing deferred tools backed by self-hosted SearXNG container
-(extends sandbox/compose.yaml). SSRF defense enumerated (IPv4 private/
+(extends compose.yaml). SSRF defense enumerated (IPv4 private/
 loopback/link-local/CGNAT/metadata + IPv6 ULA/link-local/IPv4-mapped/
 metadata) + HTTP redirect interception. Readability filter 250-char
 threshold. ToolResult preview+persist for large pages. Reuses pre-rewrite

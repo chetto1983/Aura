@@ -33,6 +33,11 @@ services:
     restart: unless-stopped
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
+      # Healthcheck-only mirror: cypher-shell in the healthcheck needs the password
+      # at runtime. NEO4J_AUTH is consumed by the entrypoint and not left in the
+      # shell env, so expose the secret under a non-NEO4J_ name (Neo4j maps every
+      # NEO4J_* var to a config key — this avoids an "unrecognized setting" warning).
+      AURA_NEO4J_HC_PW: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
       NEO4J_PLUGINS: '["apoc","graph-data-science"]'
       NEO4J_dbms_security_procedures_unrestricted: 'apoc.*,gds.*'
       NEO4J_dbms_memory_heap_initial__size: 512m
@@ -45,7 +50,7 @@ services:
       - aura-neo4j:/data
       - aura-neo4j-plugins:/plugins
     healthcheck:
-      test: ["CMD-SHELL", "cypher-shell -u neo4j -p $$NEO4J_PASSWORD --database neo4j 'RETURN 1' || exit 1"]
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$AURA_NEO4J_HC_PW\" --database neo4j 'RETURN 1' || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 10

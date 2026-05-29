@@ -58,7 +58,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Operator runs `aura db migrate` and observes idempotent migration (re-run is a no-op with explicit "no pending migrations" message)
   2. Operator runs `aura db migrate` as `aura_app` role and observes permission denied (role separation working); migration only succeeds as `aura_migrate`
   3. Operator runs nightly restore drill `scripts/restore_drill.sh` and observes Postgres restore from `pg_dump` completing in under 90 seconds
-  4. Operator runs `aura knowledge ping` and observes `mcp-neo4j-cypher` subprocess returning Neo4j server version 5.26.x; embed sidecar `/health` returns `{"dim":768}` matching `AURA_EMBED_DIMENSIONS`
+  4. Operator runs `aura neo4j ping` and observes `mcp-neo4j-cypher` subprocess returning Neo4j server version 5.26.x; embed sidecar `/v1/embeddings round-trip returns 768d (Pattern 5 dim probe)` matching `AURA_EMBED_DIMENSIONS` (D-05 + Pattern 5 amendment)
   5. Operator runs the spike smoke `scripts/neo4j_smoke.sh` and observes recall@5 = 5/5 on the Italian fixture corpus, p95 vector search ≤ 30ms
 **Plans**: TBD
 
