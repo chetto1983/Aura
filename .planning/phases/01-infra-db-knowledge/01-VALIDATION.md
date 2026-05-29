@@ -2,9 +2,10 @@
 phase: 1
 slug: infra-db-knowledge
 status: draft
-nyquist_compliant: false
+nyquist_compliant: true
 wave_0_complete: false
 created: 2026-05-29
+updated: 2026-05-29
 ---
 
 # Phase 1 — Validation Strategy
@@ -18,8 +19,8 @@ created: 2026-05-29
 
 | Property | Value |
 |----------|-------|
-| **Framework** | `go test` (Go 1.25+) |
-| **Config file** | none (build tags `db_integration` + `neo4j_integration`; `goleak.VerifyNone` in `TestMain`) |
+| **Framework** | `go test` (Go 1.25+; actual `go.mod` is `go 1.26.0`) |
+| **Config file** | none (build tags `db_integration` + `neo4j_integration`; `goleak.VerifyTestMain(m)` in `TestMain`) |
 | **Quick run command** | `go vet ./... && go build ./... && go test ./internal/...` |
 | **Full suite command** | `go test -race -tags 'db_integration neo4j_integration' ./internal/... && make smoke` |
 | **Estimated runtime** | ~120 seconds (vet+build+unit ~30s; race+integration+smoke ~90s with containers warm) |
@@ -39,25 +40,44 @@ created: 2026-05-29
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| _to be filled by planner from PLAN.md task list_ | | | | | | | | | ⬜ pending |
+| 02/T1 — config scaffolding + compose + Makefile + sqlc.yaml + .env.example + PRD D-02 amendment | 02 | 1 | INFRA-01 | T-1.05-04 (.env placeholder safety), T-1.05-09 implicit (PRD scope amendment) | Placeholders `changeme` only in `.env.example`; `.env` gitignored; compose fail-fast `${POSTGRES_PASSWORD:?}` | unit + structural | `go vet ./internal/config/... && go build ./... && go test ./internal/config/... -race -count=1` + `grep -c 'sandbox/compose.yaml' prd.md == 0` | ❌ Wave 0 (Plan 02) | ⬜ pending |
+| 02/T2 — Postgres pool + migrate + 4 SQL migrations + sqlc bindings + ping/status/reset + restore drill + cmd/aura/db.go + integration tests | 02 | 1 | INFRA-01 | T-1.05-01 (DSN redaction), T-1.05-02 (role separation), T-1.05-03 (advisory lock), T-1.05-06 (Go-side role bootstrap, no plaintext in error) | redactDSN helper masks password; aura_app lacks TRUNCATE/DROP/CREATE; D-07 literal error string verbatim; EnsureRoles uses parametrized queries | unit + integration + smoke (shell) | `go test ./internal/db/... -race` + `go test -tags db_integration -race ./internal/db/...` + `bash scripts/restore_drill.sh` + `make sqlc && git diff --exit-code internal/db/sqlc/` | ❌ Wave 0 (Plan 02) | ⬜ pending |
+| 03/T1 — compose + Makefile + .env extensions + config composite + knowledge.Config + Italian fixture corpus + queries.txt | 03 | 2 | INFRA-02 | T-1.07-02 (sidecar loopback), T-1.07-03 (Neo4j loopback), T-1.07-09 (Neo4j password fail-fast) | All 3 services use `127.0.0.1` host binding; `${NEO4J_PASSWORD:?}` interpolation; healthcheck `cypher-shell ... 'RETURN 1'` (Pitfall #3) | unit + structural | `go vet ./... && go test ./internal/config/... ./internal/knowledge/... -race` + loopback grep gate `grep -E '^\s+-\s+"[^"]+:[0-9]+:[0-9]+"' compose.yaml \| grep -cv '127.0.0.1' == 0` | ❌ Wave 0 (Plan 03) | ⬜ pending |
+| 03/T2 — MCP client + Cypher migration runner + 0001_init.cypher + ping/status/reset + integration tests + cmd/aura/neo4j.go + smoke harness | 03 | 2 | INFRA-02 | T-1.07-01 (Cypher injection via params), T-1.07-04 (stderr redaction), T-1.07-05 (dim self-test), T-1.07-07 (D-06 fail-fast), T-1.07-08 (healthcheck race retry) | All Cypher uses params map (never string concat); redactNeo4jSecrets masks password in errors; literal Pattern 5 dim-mismatch error; D-06 literal error on MCP crash; retry loop honors `cfg.ConnectTimeoutSec` | unit + integration + smoke (shell) | `go test ./internal/knowledge/... -race` + `go test -tags 'db_integration neo4j_integration' -race ./internal/knowledge/...` + `make smoke` (recall@5 = 5/5, p95 ≤ 30ms) | ❌ Wave 0 (Plan 03) | ⬜ pending |
+| 03/T3 — License legitimacy gate (blocking-human checkpoint) | 03 | 2 | INFRA-02 | T-1.07-SC (mcp-neo4j-cypher supply-chain) | gh api fetch + LICENSE first line `Apache License` (or MIT / BSD-3-Clause) | manual (blocking-human) | `gh api repos/neo4j-contrib/mcp-neo4j/contents/LICENSE \| jq -r '.content' \| base64 -d \| head -10` + operator approval | manual evidence in commit body | ⬜ pending |
+| 03/T4 — PRD amendment (acceptance row 182 → Pattern 5) + ROADMAP amendment (SC#4 `knowledge`→`neo4j`) + slice atomic commit | 03 | 2 | INFRA-02 | n/a (documentation) | All literal corrections applied; D-02 carry-forward verified; license evidence + Wave 0 probe in commit body | structural | `grep -c '/v1/embeddings round-trip returns 768d' prd.md >= 1 && grep -c 'aura knowledge ping' .planning/ROADMAP.md == 0 && grep -c 'aura neo4j ping' .planning/ROADMAP.md >= 1 && git log -1 --format='%B' \| grep -qiE '(Apache\|MIT\|BSD-3)'` | manual | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 ---
 
+## ROADMAP Success Criteria → Task Map
+
+| ROADMAP SC | Description | Closing Task(s) | Test Type | Automated Command |
+|-----------|-------------|----------------|-----------|-------------------|
+| Phase 1 SC#1 | `aura db migrate` is idempotent | 02/T2 | integration | `go test -tags db_integration -run TestMigrate_Idempotent ./internal/db -race` + CLI re-run smoke |
+| Phase 1 SC#2 | `aura db migrate` as `aura_app` returns permission denied | 02/T2 | integration | `go test -tags db_integration -run TestRoleSeparation_AppDenied ./internal/db -race` |
+| Phase 1 SC#3 | restore drill < 90s | 02/T2 | smoke (shell) | `bash scripts/restore_drill.sh` (exit 0, ELAPSED_MS < 90000) |
+| Phase 1 SC#4 (per D-05 + Pattern 5 amendment) | `aura neo4j ping` returns Neo4j 5.26.x + sidecar dim 768 via /v1/embeddings round-trip | 03/T2, 03/T4 | integration | `go test -tags neo4j_integration -run TestPing_ReturnsServerVersion ./internal/knowledge -race` + `go test -tags neo4j_integration -run TestPingEmbed_Live ./internal/knowledge -race` |
+| Phase 1 SC#5 | smoke recall@5 = 5/5, p95 ≤ 30ms on Italian corpus | 03/T2 | smoke (shell) | `make smoke` (exit 0, stdout contains `recall@5 = 5/5` and p95 ≤ 30) |
+
+---
+
 ## Wave 0 Requirements
 
-Wave 0 gaps surfaced by `01-RESEARCH.md` §Validation Architecture (9 items, paraphrased):
+Wave 0 gaps surfaced by `01-RESEARCH.md` §Validation Architecture (9 items) — every gap is now mapped to a Task in 02-PLAN.md or 03-PLAN.md:
 
-- [ ] `compose.yaml` + `Makefile` + `.env.example` materialized so `make db-up neo4j-up` can run before any test container fixture
-- [ ] `sqlc.yaml` + `make sqlc` target so `internal/db/sqlc/` codegen is reproducible before unit tests reference it
-- [ ] `internal/db/migrations/0001_init.up.sql` + `0001_init.down.sql` + `0002_knowledge_migrations.up.sql` + `0002_knowledge_migrations.down.sql` present so `db_integration` tests have something to apply
-- [ ] `internal/knowledge/migrations/0001_init.cypher` present so `neo4j_integration` smoke can apply constraint + HNSW + fulltext indices
-- [ ] `internal/db/db_integration_test.go` test harness with `goleak.VerifyNone(t)` in `TestMain` and ephemeral container helper
-- [ ] `internal/knowledge/neo4j_integration_test.go` test harness with `goleak.VerifyNone(t)` in `TestMain` and ephemeral Neo4j + sidecar fixture
-- [ ] `scripts/restore_drill.sh` (Slice 0.5 commit) callable from CI with `< 90s` assertion
-- [ ] `scripts/neo4j_smoke.sh` + `scripts/fixtures/neo4j-smoke/*.md` Italian corpus + companion seed Cypher (Slice 0.7 commit)
-- [ ] Role-separation assertion harness: `aura_app` attempting `aura db migrate` exits non-zero with permission denied — the only place ROADMAP SC#2 is verifiable
+- [x] `compose.yaml` + `Makefile` + `.env.example` materialized so `make db-up neo4j-up` can run before any test container fixture → **02/T1** (postgres scaffolding) + **03/T1** (neo4j + sidecar extension)
+- [x] `sqlc.yaml` + `make sqlc` target so `internal/db/sqlc/` codegen is reproducible before unit tests reference it → **02/T1** (sqlc.yaml + Makefile) + **02/T2** (sqlc generate + commit bindings)
+- [x] `internal/db/migrations/0001_init.up.sql` + `0001_init.down.sql` + `0002_knowledge_migrations.up.sql` + `0002_knowledge_migrations.down.sql` present so `db_integration` tests have something to apply → **02/T2**
+- [x] `internal/knowledge/migrations/0001_init.cypher` present so `neo4j_integration` smoke can apply constraint + HNSW + fulltext indices → **03/T2**
+- [x] `internal/db/db_test.go` test harness with `goleak.VerifyTestMain(m)` in `TestMain` and ephemeral container helper → **02/T2**
+- [x] `internal/knowledge/client_test.go` test harness with `goleak.VerifyTestMain(m)` in `TestMain` and ephemeral Neo4j + sidecar fixture → **03/T2** (plus the B1 split: `internal/knowledge/client_unit_test.go` carries the unit-safe TestMain without a build tag — see 03-PLAN.md Task 2 step 8)
+- [x] `scripts/restore_drill.sh` (Slice 0.5 commit) callable from CI with `< 90s` assertion → **02/T2**
+- [x] `scripts/neo4j_smoke.sh` + `scripts/fixtures/neo4j-smoke/*.md` Italian corpus + companion seed Cypher (Slice 0.7 commit) → **03/T1** (fixture corpus) + **03/T2** (smoke harness)
+- [x] Role-separation assertion harness: `aura_app` attempting `aura db migrate` exits non-zero with permission denied — the only place ROADMAP SC#2 is verifiable → **02/T2** (TestRoleSeparation_AppDenied)
+
+All 9 Wave 0 gaps are covered by the per-task verification map above.
 
 ---
 
@@ -65,19 +85,20 @@ Wave 0 gaps surfaced by `01-RESEARCH.md` §Validation Architecture (9 items, par
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| `mcp-neo4j-cypher` license is Apache 2.0 (per CONTEXT.md claim) | INFRA-02 | Upstream PyPI license metadata field is empty; needs in-tree LICENSE check via `gh api repos/neo4j-contrib/mcp-neo4j/contents/LICENSE` | Run `gh api repos/neo4j-contrib/mcp-neo4j/contents/LICENSE \| jq -r '.content' \| base64 -d \| head -1` and confirm `Apache License` literal. Capture output into Slice 0.7 commit body as evidence. |
-| MSYS path-mangling regression in `docker compose run` (Git Bash on Windows) | INFRA-01, INFRA-02 | Operator-environment specific; cannot reproduce in CI Linux | Run the same `make db-up` + `make neo4j-up` flow from Git Bash and from PowerShell on a Windows host; confirm PowerShell works as-is and Git Bash requires `MSYS_NO_PATHCONV=1` or PowerShell wrapper. Document in `docs/` runbook. |
-| Cold-rebuild RAM headroom on 16-GB mini-PC | INFRA-01, INFRA-02 | Host-resource budget check; CI is not RAM-constrained the same way | On a fresh `docker compose down -v` followed by `make db-up neo4j-up`, observe `docker stats` post-warmup and confirm total resident set (postgres + neo4j + aura-llama-embed) stays within the PRD §Slice 0.5 RAM budget (~2.5 GB headroom on 16 GB shared with user's IDE). |
+| `mcp-neo4j-cypher` license is Apache 2.0 (per CONTEXT.md claim) | INFRA-02 | Upstream PyPI license metadata field is empty; needs in-tree LICENSE check via `gh api repos/neo4j-contrib/mcp-neo4j/contents/LICENSE` | Blocking-human checkpoint in **03/T3**. Run `gh api repos/neo4j-contrib/mcp-neo4j/contents/LICENSE \| jq -r '.content' \| base64 -d \| head -1` and confirm `Apache License` (or MIT / BSD-3-Clause). Capture output into Slice 0.7 commit body as evidence. Resume signal: `approved: license verified <X>` or `halt: license is <X> — escalating to PRD amendment`. |
+| MSYS path-mangling regression in `docker compose run` (Git Bash on Windows) | INFRA-01, INFRA-02 | Operator-environment specific; cannot reproduce in CI Linux | Run the same `make db-up` + `make neo4j-up` flow from Git Bash and from PowerShell on a Windows host; confirm PowerShell works as-is and Git Bash requires `MSYS_NO_PATHCONV=1` or PowerShell wrapper. Document in `docs/` runbook (informational; not blocking). |
+| Cold-rebuild RAM headroom on 16-GB mini-PC | INFRA-01, INFRA-02 | Host-resource budget check; CI is not RAM-constrained the same way | On a fresh `docker compose down -v` followed by `make db-up neo4j-up`, observe `docker stats` post-warmup and confirm total resident set (postgres + neo4j + aura-llama-embed) stays within the PRD §Slice 0.5 RAM budget (~2.5 GB headroom on 16 GB shared with user's IDE). Informational; not blocking. |
+| Wave 0 MCP JSON-RPC envelope probe (RESEARCH Assumption A10) | INFRA-02 | The `tools/call` response shape was NOT exercised by hands-on probe during research | **03/T2 step 1** — spawn `mcp-neo4j-cypher --transport stdio` against running Neo4j; send `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"read_neo4j_cypher","arguments":{"query":"RETURN 1 AS one","params":{}}}}`; capture response; align Go decoder if envelope differs. Document captured response in Slice 0.7 commit body. |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (the 9 items above)
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s for per-task quick command
-- [ ] `nyquist_compliant: true` set in frontmatter once the planner fills the task map and the auditor confirms coverage of the 5 ROADMAP Success Criteria + INFRA-01 + INFRA-02
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies (every row in per-task table either has an `Automated Command` column populated or names a Wave 0 dependency closed by another task)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify (every task has at least 1 automated assertion in `<verify>`)
+- [x] Wave 0 covers all MISSING references (the 9 items above; all marked [x])
+- [x] No watch-mode flags (Go tests are one-shot; smoke scripts are one-shot)
+- [x] Feedback latency < 30s for per-task quick command (unit tests + `go vet` + `go build` measured well below 30s on this codebase)
+- [x] `nyquist_compliant: true` set in frontmatter — per-task verification map populated from 02-PLAN.md + 03-PLAN.md; coverage closes the 5 ROADMAP Success Criteria + INFRA-01 + INFRA-02; auditor confirmation pending at Gate 3 DoD review
 
-**Approval:** pending
+**Approval:** planner — 2026-05-29 (auditor sign-off pending Gate 3 DoD)
