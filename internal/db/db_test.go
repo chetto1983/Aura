@@ -273,10 +273,9 @@ func TestStatus_SurfacesInaccessibleTrackerError(t *testing.T) {
 	// iteration (rows.Err), not at Query time — Status must propagate it as a
 	// wrapped "status rows" error rather than silently masking a real failure.
 	//
-	// NOTE: Status's lines 32-36 ("immediate Query error => empty slice") are
-	// effectively unreachable with pgx pooled queries for the same lazy-exec
-	// reason; the documented "missing table => empty" contract is not honored.
-	// Tracked as a separate latent bug, out of scope for this coverage pass.
+	// This is distinct from the missing-table case (SQLSTATE 42P01), which Status
+	// deliberately maps to an empty slice (see TestStatus_MissingTableReturnsEmpty).
+	// A privilege error (42501) is a real failure and must surface.
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	pool, err := Open(ctx, &Config{URL: envOrSkip(t, "AURA_DB_URL")}) // aura_app
@@ -291,6 +290,59 @@ func TestStatus_SurfacesInaccessibleTrackerError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "status") {
 		t.Errorf("Status error: want 'status' context wrap, got %q", err.Error())
+	}
+}
+
+func TestStatus_MissingTableReturnsEmpty(t *testing.T) {
+	// On a database where no migration has ever run, public.schema_migrations does
+	// not exist (SQLSTATE 42P01). Status must honor its first-boot contract — empty
+	// slice, nil error — not surface a "relation does not exist". Uses a throwaway
+	// database so the shared `aura` DB (migrated by sibling tests) is untouched.
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	host := os.Getenv("PGHOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := os.Getenv("PGPORT")
+	if port == "" {
+		port = "5432"
+	}
+	const freshDB = "aura_status_empty_drill"
+	dsn := func(db string) string {
+		return fmt.Sprintf("postgres://aura:%s@%s:%s/%s?sslmode=disable", pwd, host, port, db)
+	}
+
+	admin, err := Open(ctx, &Config{URL: dsn("aura")})
+	if err != nil {
+		t.Fatalf("open admin pool: %v", err)
+	}
+	defer admin.Close()
+
+	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)"); err != nil {
+		t.Fatalf("pre-drop fresh db: %v", err)
+	}
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+freshDB); err != nil {
+		t.Fatalf("create fresh db: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)")
+	})
+
+	fresh, err := Open(ctx, &Config{URL: dsn(freshDB)})
+	if err != nil {
+		t.Fatalf("open fresh pool: %v", err)
+	}
+	defer fresh.Close()
+
+	rows, err := Status(ctx, fresh)
+	if err != nil {
+		t.Fatalf("Status on fresh db: want nil error (42P01 => empty contract), got %v", err)
+	}
+	if len(rows) != 0 {
+		t.Errorf("Status on fresh db: want empty slice, got %d rows", len(rows))
 	}
 }
 
