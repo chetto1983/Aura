@@ -72,10 +72,3 @@ func (ic InvocationContext) WithSubAgent(sub Agent) InvocationContext {
 	c.Agent = sub
 	return c
 }
-
-// Budget bounds one agent run (steps + wallclock + dedup). The real type lands
-// in Plan 03 (budget.go, same package) with the shared *atomic.Int32 counter and
-// the two-phase dedup ring.
-//
-// TEMP: real Budget lands in Plan 03 (budget.go) — Plan 03 Task 1 MUST delete this stub.
-type Budget struct{}
