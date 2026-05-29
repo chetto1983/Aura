@@ -72,7 +72,14 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Operator runs the loop-cap fixture (`scripts/loop_budget_smoke.sh`) with a mock agent that returns the same tool call forever and observes termination at exactly `AURA_LOOP_MAX_STEPS=25` with an explicit budget-exhausted Event
   3. Operator runs the swarm depth fixture and observes a depth-3 spawn chain consuming the parent's remaining step budget (NOT fresh per child) — total steps across the tree ≤ 25, not 25^3
   4. Operator runs `aura agent dry-run --request-id auto` and observes an OTel-compatible UUIDv7 `request_id` attached to every emitted Event for correlation
-**Plans**: TBD
+**Plans:** 7 plans (5 waves)
+- [ ] 02-01-PLAN.md — Deps (uuid direct + rapid) + internal/canonicaljson deterministic serializer (D-08/A3/A6)
+- [ ] 02-02-PLAN.md — Agent interface + InvocationContext + Event/Actions/LLMResponse + trace IDs + ErrBudgetExhausted (D-01/02/16/17/24)
+- [ ] 02-03-PLAN.md — Budget tree: shared atomic + TOCTOU ConsumeStep + fail-fast env + two-tier dedup + soft cap (D-06/09/10/11/12/13/18)
+- [ ] 02-04-PLAN.md — agenttest reusable Agent mocks (D-07)
+- [ ] 02-05-PLAN.md — SequentialAgent + LoopAgent + goleak TestMain + SC#2 budget-exhausted Event (Req#4/5, SC#1/2)
+- [ ] 02-06-PLAN.md — ParallelAgent (errgroup + ack + escalate-cancel) + SC#3 depth shared-counter + break-early goleak (Req#6, SC#1/3)
+- [ ] 02-07-PLAN.md — aura agent dry-run CLI (SC#4) + loop_budget_smoke.sh (SC#2) + loop.go deletion + .env.example + A1–A7 PRD amendments
 
 ### Phase 3: LLM Client + ToolResult
 **Goal**: Handrolled OpenAI-compatible HTTP+SSE client (~280 LOC, no SDK) targeting DeepSeek-V4 via OpenRouter as default. Implement the ToolResult preview+sidecar pattern (preview cap 2048 bytes, spill to `$AURA_RUN_DIR/conversations/<id>/<tool_call>.result`). Ctx-cancel must propagate end-to-end through the HTTP request; OTel span emitted per LLM call.
@@ -246,7 +253,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 |-------|----------------|--------|-----------|
 | 0. PRD Amendments | 6/6 | Complete | 2026-05-29 |
 | 1. Infra DB + Knowledge | 0/TBD | Not started | - |
-| 2. Agent Cornerstone | 0/TBD | Not started | - |
+| 2. Agent Cornerstone | 0/7 | Not started | - |
 | 3. LLM Client + ToolResult | 0/TBD | Not started | - |
 | 4. HITL + Identity + Conversations | 0/TBD | Not started | - |
 | 5. Sandbox 2a Stateless | 0/TBD | Not started | - |
