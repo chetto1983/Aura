@@ -120,7 +120,7 @@ Skills modulari caricate on-demand quando il task le triggera (markdown SKILL.md
 | `golang-troubleshooting` | Debug | pprof, Delve, race detector, GODEBUG |
 | `golang-project-layout` | **Slice 0.5 bootstrap** | cmd/ + internal/ standard layout |
 | `golang-structs-interfaces` | **Slice 0.9 Agent interface** | Composition, embedding, interface segregation |
-| `golang-modernize` | Tutte slice (Go 1.23+) | t.Context, b.Loop, synctest, iter.Seq2 modernizations |
+| `golang-modernize` | Tutte slice (Go 1.25+) | t.Context, b.Loop, synctest, iter.Seq2 modernizations |
 | `golang-spf13-cobra` | CLI subcommands | `aura chat`/`serve`/`exec`/`ingest`/`telegram` etc. |
 | `golang-lint` | **Gate 2 Impl** | golangci-lint setup + rules |
 

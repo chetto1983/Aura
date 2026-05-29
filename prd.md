@@ -47,6 +47,7 @@ docker compose -f sandbox/compose.yaml up -d postgres
 - [ ] `internal/db/db.go` espone `Open(ctx, cfg) (*pgxpool.Pool, error)` con ping al boot. Fail-fast se Postgres non raggiungibile.
 - [ ] Test integrazione sotto `//go:build db_integration` — salta in CI senza container Postgres (no flaky).
 - [ ] Schema iniziale **vuoto**. Le tabelle (`paused_states`, `scheduler_tasks`, `skill_audit`, ecc.) atterrano nelle rispettive slice. Solo migration `0001_init.sql` = `CREATE SCHEMA IF NOT EXISTS aura;` + commento explanatory.
+- [ ] **Postgres role separation (amendment #17, Pitfall #6 P0)**: migration `0001_init.sql` creates TWO roles: `aura_app` (granted `INSERT, SELECT` on `aura.*` audit tables, granted `INSERT, SELECT, UPDATE, DELETE` on `aura.*` mutable tables — NO TRUNCATE, NO DROP) and `aura_migrate` (granted ALL on `aura.*` including DDL, TRUNCATE). The runtime binary `aura serve` connects with `AURA_DB_URL` (role `aura_app`). Migrations run via `aura db migrate` connecting with `AURA_DB_MIGRATE_URL` (role `aura_migrate`). If `AURA_DB_MIGRATE_URL` is unset and `aura serve` boots: continue, but `aura db migrate` subcommand fails fast with explicit error "AURA_DB_MIGRATE_URL required for DDL operations — see prd.md amendment #17". Acceptance test (`db_integration`): connect as `aura_app`, attempt `TRUNCATE aura.skill_audit;` → must return permission denied. Connect as `aura_migrate`, same TRUNCATE → succeeds (consumed by migration only).
 
 **File targets** (~280 LOC src + ~120 test + infra):
 | Path | LOC | Note |
@@ -84,7 +85,7 @@ Cumulativa stimata a fine Slice 7 (mini-PC 16-core, target 32 GB RAM):
 | Servizio | RAM idle stimata | Slice che lo aggiunge |
 |---|---:|---|
 | Postgres 17 | ~250 MB | 0.5 |
-| Neo4j 5.x Community + APOC + GDS + vector index | ~1.5-2 GB | 0.7 |
+| Neo4j 5.26-community LTS + APOC + GDS + vector index | ~1.5-2 GB | 0.7 |
 | aura-llama-embed (embeddinggemma CPU, 4 thread) | ~600 MB | 0.7 (sidecar embedding per Neo4j HNSW vector index) |
 | SearXNG | ~150 MB | 5 |
 | Sandbox Python sidecar | ~80 MB | 2 |
@@ -139,7 +140,7 @@ il rischio "container produzione promesso ma mai materializzato".
 
 **Stack scelto** (validato dallo spike `D:/tmp/aura-neo4j-spike-2026-05-27/`
 Phase 6b: 22-30 ms p95 + IT recall@5 5/5 su corpus reale Aura):
-- DB: **Neo4j 5.x Community** (container `neo4j:5-community`, ~1.5-2 GB RAM idle)
+- DB: **Neo4j 5.26-community LTS** (container `neo4j:5.26-community`, ~1.5-2 GB RAM idle; LTS pinned per amendment #2 — avoids CalVer ambiguity post-5.x)
 - Plugins: **APOC** (procedure standard) + **GDS** (Graph Data Science, community detection, PPR) + Vector index (built-in 5.x, Apache Lucene HNSW)
 - MCP server: **`mcp-neo4j-cypher`** (Apache 2.0) — subprocess stdio spawn-ato da Aura, lifecycle accoppiato al processo principale. **No native Go adapter** (per disciplina CLAUDE.md): tutto accesso Neo4j passa da MCP.
 - Embedding dim: **768 nativo** da `aura-llama-embed` (nessuna MRL truncation, l'index Neo4j HNSW è configurato a 768 dim)
@@ -157,7 +158,7 @@ docker compose -f sandbox/compose.yaml up -d neo4j
 **Acceptance.**
 - [ ] Container `aura-neo4j` su volume named `aura_aura-neo4j` (NO bind-mount Windows — coerente con feedback `feedback_sqlite_wal_windows_corruption.md` esteso a Neo4j). Healthcheck `cypher-shell -u neo4j -p $NEO4J_PASSWORD --database neo4j 'RETURN 1'`.
 - [ ] Auth via `NEO4J_PASSWORD` da `.env` (default `changeme`, must change al primo boot). `NEO4J_AUTH=neo4j/$NEO4J_PASSWORD` propagato al container.
-- [ ] Plugins APOC + GDS abilitati via `NEO4J_PLUGINS='["apoc","graph-data-science"]'` (auto-download Neo4j Community feature 5.x).
+- [ ] Plugins APOC + GDS abilitati via `NEO4J_PLUGINS='["apoc","graph-data-science"]'` (auto-download Neo4j Community feature 5.26 LTS).
 - [ ] `mcp-neo4j-cypher` spawn-ato da Aura come subprocess stdio. Endpoint configurato via `Config.Neo4j.MCPBinary` (default `mcp-neo4j-cypher`, PATH-resolvable). Auth bolt URI `bolt://127.0.0.1:7687` + `NEO4J_USER`/`NEO4J_PASSWORD` da env.
 - [ ] Migration `0001_init.cypher`:
   ```cypher
@@ -178,6 +179,8 @@ docker compose -f sandbox/compose.yaml up -d neo4j
 - [ ] `aura neo4j migrate` idempotente. Applica solo le migration nuove. Errore esplicito su schema drift (migration applicata + file `.cypher` changed → abort).
 - [ ] `internal/knowledge/client.go` espone `Open(ctx, cfg) (*Client, error)` con ping MCP al boot. Fail-fast se MCP server non risponde entro 10 s.
 - [ ] Container Aura con `depends_on: condition: service_healthy` per `neo4j` (oltre a `postgres` e `aura-llama-embed`).
+- [ ] **Embedding dim env contract (amendment #18, Pitfall #7 P0)**: env `AURA_EMBED_DIMENSIONS=768` (default 768 for `embeddinggemma-300m`). On boot, embed sidecar `aura-llama-embed` performs self-test: load one dummy embedding, assert `len(vector) == AURA_EMBED_DIMENSIONS`. Mismatch → exit code 78 (`EX_CONFIG`) with explicit error `embedding model output_dim=N != AURA_EMBED_DIMENSIONS=M — refuse to start (Pitfall #7 silent corruption)`. Aura `aura knowledge ping` validates sidecar `/health` returns `{"dim": <int>}` matching env. Mismatch → boot fail. Reference industry incidents: `neo4j#13387`, `langchain#16336`.
+- [ ] **Embedding model swap runbook (amendment #18)**: docstring section in Slice 0.7 PRD body documents the rule: "NO in-place embedding model upgrades. To change embed model: (1) stop ingest, (2) snapshot Neo4j via `neo4j-admin database dump`, (3) drop vector index, (4) re-create with new `vector.dimensions`, (5) re-embed all `:Chunk.embedding` from `:Chunk.text`, (6) re-create index. Half-state = silent retrieval corruption."
 - [ ] Test integrazione sotto `//go:build neo4j_integration` — salta in CI senza container Neo4j (no flaky), parallelo al pattern `db_integration` di Slice 0.5.
 - [ ] Backup TaskKind `backup_neo4j` (definito in Slice 0.5 RAM/Backup table, implementato in Slice 6b) ora punta al container produzione `aura-neo4j`, non più allo spike `neo4j-spike`.
 
@@ -193,7 +196,7 @@ docker compose -f sandbox/compose.yaml up -d neo4j
 | `internal/db/migrations/0002_knowledge_migrations.up.sql` | ~20 | `CREATE TABLE aura.knowledge_migrations (version int pk, name text, applied_at timestamptz default now(), checksum text)`. |
 | `internal/db/migrations/0002_knowledge_migrations.down.sql` | ~3 | `DROP TABLE aura.knowledge_migrations;` |
 | `internal/knowledge/client_test.go` | ~80 | Build tag `neo4j_integration`. Open + ping + migrate + simple Cypher + close. |
-| `sandbox/compose.yaml` (diff) | ~+30 | Service `neo4j` (`neo4j:5-community`, plugins APOC+GDS, volume named, healthcheck, env auth). |
+| `sandbox/compose.yaml` (diff) | ~+30 | Service `neo4j` (`neo4j:5.26-community`, plugins APOC+GDS, volume named, healthcheck, env auth). |
 | `cmd/aura/main.go` (diff) | ~+40 | Sub-command `aura neo4j {migrate|ping|status|reset}`. |
 | `Makefile` (diff) | ~+15 | Target `make neo4j-up`, `make neo4j-migrate`, `make neo4j-reset`. |
 | `.env.example` (diff) | ~+5 | `NEO4J_PASSWORD=changeme`, `NEO4J_USER=neo4j`. |
@@ -207,13 +210,13 @@ docker compose -f sandbox/compose.yaml up -d neo4j
 
 **Mini-PC RAM budget — delta vs Slice 0.5.**
 
-Neo4j 5.x Community + APOC + GDS + vector index a 768 dim su corpus realistico (≤ 100k chunk) consuma stabilmente 1.5-2 GB RAM idle. A 1M chunk (limite alto del power user) ~3-4 GB. Già contato nella tabella cumulativa di Slice 0.5 riga 87 (ora aggiornata: Slice 0.7).
+Neo4j 5.26-community LTS + APOC + GDS + vector index a 768 dim su corpus realistico (≤ 100k chunk) consuma stabilmente 1.5-2 GB RAM idle. A 1M chunk (limite alto del power user) ~3-4 GB. Già contato nella tabella cumulativa di Slice 0.5 riga 87 (ora aggiornata: Slice 0.7).
 
 **Commit message template.**
 ```
 slice 0.7: neo4j community + mcp-neo4j-cypher + cypher migrations
 
-Neo4j 5.x Community container (named volume, APOC+GDS plugins),
+Neo4j 5.26-community LTS container (named volume, APOC+GDS plugins),
 mcp-neo4j-cypher subprocess stdio spawned by Aura, Cypher migrations
 file-based via MCP with audit in Postgres aura.knowledge_migrations
 (sqlc-managed). 0001_init.cypher: :Chunk(id) UNIQUE constraint +
@@ -238,15 +241,16 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 > **Pattern rubato (non importato) da Google adk-go** ([github.com/google/adk-go](https://github.com/google/adk-go), v1.3.0 May 2026, 8k stars). Adottiamo il *design* — `Agent` interface unificata + `iter.Seq2[*Event, error]` streaming + workflow agents Sequential/Loop/Parallel — senza importare il package (35 deps GCP/OTel/Gemini-heavy → footprint inaccettabile per Aura minimal stack). ~380 LOC totali, riusati cross-slice con saving netto ~−460 LOC.
 
-**Goal.** Definire un'interfaccia `Agent` unica che tutto Aura riusa: LLM agent (Slice 1 Loop), workflow agents (Sequential/Loop/Parallel built-in), scheduler handlers (Slice 6), skills come Agent virtuali (Slice 7), swarm workers (Slice 3). Streaming events idiomatico Go 1.23+ via `iter.Seq2[*Event, error]`. Termination propagata across agent tree tramite `event.Actions.Escalate`.
+**Goal.** Definire un'interfaccia `Agent` unica che tutto Aura riusa: LLM agent (Slice 1 Loop), workflow agents (Sequential/Loop/Parallel built-in), scheduler handlers (Slice 6), skills come Agent virtuali (Slice 7), swarm workers (Slice 3). Streaming events idiomatico Go 1.25+ via `iter.Seq2[*Event, error]`. Termination propagata across agent tree tramite `event.Actions.Escalate`.
 
 Risolve un design smell latente del PRD pre-Slice 0.9: ogni slice aveva il suo "runtime" (Loop, Scheduler.Handler, Swarm.Coordinator, Skill.execute, onboarding state machine) — quattro runtime diversi da mantenere, testare, debuggare. Con Slice 0.9 c'è **un solo runtime**, l'interfaccia `Agent`, e ogni slice ne fornisce una o più implementations.
 
 ### Pre-requisiti
 
-- Go 1.23+ (per `iter.Seq2` range-over-func)
+- Go 1.25+ (per `iter.Seq2` range-over-func; AG-UI Go SDK requires 1.24.4+ — pin to 1.25 for headroom; amendment #1 from SUMMARY.md table)
 - Slice 0 Postgres infra (per `InvocationContext.SessionStore`)
 - Slice 0.7 Neo4j infra (per `InvocationContext.GraphStore`)
+- `github.com/google/uuid` v1.6.0+ (UUIDv7 — amendment #9 OTel correlation)
 
 ### Architettura
 
@@ -294,6 +298,9 @@ type InvocationContext struct {
     SessionStore  SessionStore       // Postgres-backed (Slice 0)
     GraphStore    GraphStore         // Neo4j MCP (Slice 0.7)
     LLMClient     llm.Client         // shared client (Slice 1)
+    RequestID     string             // UUIDv7 per Run invocation — OTel-compatible correlation id; root of trace span tree (amendment #9)
+    RemainingSteps           int           // budget contract amendment #19: steps remaining for THIS Run before parent-budget exhaustion. Workflow agents decrement + propagate.
+    RemainingWallclockDeadline time.Time   // budget contract amendment #19: absolute deadline (parent-anchored). Children inherit this instant unchanged.
     // ... extension points: Tools, Memory, Artifacts (added incrementally by later slices)
 }
 ```
@@ -459,10 +466,17 @@ go test ./internal/agent/workflow/ -run TestParallelAgent
 ### Acceptance
 
 - [ ] `internal/agent/agent.go` definisce `Agent` interface + `InvocationContext` + builder helpers (`NewSequential(name, subAgents...)`, `NewLoop(name, maxIter, subAgents...)`, `NewParallel(name, subAgents...)`).
+- [ ] **`InvocationContext.RequestID` UUIDv7 (amendment #9)**: every top-level `agent.Run(ctx)` invocation populates `RequestID` with a fresh UUIDv7 (time-ordered, 128-bit) via `github.com/google/uuid` v1.6.0+ `uuid.NewV7()`. Child sub-agents (Sequential/Loop/Parallel) inherit the parent's `RequestID` unchanged. Every emitted `*Event` carries the `RequestID` in `Event.Branch` prefix `req:<uuid7>::<branch-path>` for OTel correlation. Acceptance test: spawn nested 3-level agent tree, assert all emitted events share the same `req:<uuid7>::` prefix.
+- [ ] **Agent loop budget contract (amendment #19, Pitfall #9 P0)**: three orthogonal caps enforced per `Run(InvocationContext)`:
+  - `AURA_LOOP_MAX_STEPS=25` (default; hard cap on tool-call iterations within a single Run)
+  - `AURA_LOOP_MAX_WALLCLOCK_SEC=300` (default; hard cap on wall-clock seconds before returning `Event{FinishReason:'max_wallclock', Actions.Escalate=true}`)
+  - `AURA_LOOP_DEDUP_WINDOW=3` (default; sliding window — if the last N=3 tool calls had identical `tool_name + args_hash`, return `Event{FinishReason:'dedup_loop', Actions.Escalate=true}`)
+  All three caps are orthogonal: ANY one tripping terminates the Run. The triggering cap is reported in `Event.FinishReason`.
+- [ ] **Child budget inheritance (amendment #19, Pitfall #9 P0)**: workflow agents Sequential/Loop/Parallel propagate the parent `InvocationContext`'s **remaining** step + wallclock budgets to children (NOT fresh per child). Otherwise swarm depth=3 × 25 = 15625 total steps (compounding explosion). Implementation: `InvocationContext.RemainingSteps int` + `RemainingWallclockDeadline time.Time` fields, decremented + checked by each agent's Run before spawning sub-agents. Acceptance test: depth-3 spawn chain with parent budget=20 steps → total steps across the tree ≤ 20, NOT 20×3=60. Test: TestBudgetInheritance_3Deep_ParallelSpawn covers Parallel propagation; TestBudgetInheritance_LoopWithChildSwarm covers Loop→Parallel composition.
 - [ ] `internal/agent/event.go` definisce `Event` + `Actions` + `LLMResponse`. Helper `NewEscalateEvent(author, reason string)`.
 - [ ] `internal/agent/workflow/{sequential,loop,parallel}.go` implementano i 3 workflow agents. ParallelAgent usa errgroup + ackChan backpressure (rubato da adk-go pattern).
 - [ ] Escalation propagation testata: child Escalate → parent ferma yield ai siblings.
-- [ ] Go 1.23+ enforced in `go.mod` (`go 1.23`).
+- [ ] Go 1.25+ enforced in `go.mod` (`go 1.25`).
 - [ ] **Niente import di `google.golang.org/adk`**. Rubiamo il pattern, non la dependency.
 - [ ] Test coverage workflow/ ≥ 85%.
 
@@ -486,7 +500,7 @@ Negligibile. Agent runtime è puro Go code, nessun sidecar/dep nuovo.
 slice 0.9: Agent runtime abstraction (interface + workflow agents)
 
 Define `Agent` interface unificata + `iter.Seq2[*Event, error]` streaming
-(Go 1.23+) + workflow agents built-in (Sequential, Loop, Parallel).
+(Go 1.25+) + workflow agents built-in (Sequential, Loop, Parallel).
 
 Pattern rubato (non importato) da google/adk-go v1.3.0 (8k stars).
 Importare adk-go come dependency e' inaccettabile per Aura: 35 deps
@@ -515,7 +529,7 @@ a riuso pattern unificato. Net dopo +280 LOC Slice 0.9 = -400 LOC
 sul progetto totale + qualita' architettonica (1 mock, 1 test
 infrastructure, 1 streaming pattern).
 
-Go 1.23 minimum (range-over-func iter.Seq2). Enforce in go.mod.
+Go 1.25 minimum (range-over-func iter.Seq2, AG-UI SDK 1.24.4+ requirement). Enforce in go.mod.
 
 LOC: +XXX src / +YY test.
 
@@ -568,6 +582,8 @@ in <8 step.
 - [ ] `go test ./internal/llm/...` passa con almeno 1 fixture SSE golden (tool-call multi-chunk + finish_reason="tool_calls", e plain text + finish_reason="stop").
 - [ ] `aura chat "..."` con config settata produce reply dal modello vero.
 - [ ] `aura chat "..."` senza config fallisce con messaggio chiaro (no panic, no fallback silenzioso).
+- [ ] **OTel span per LLM call (amendment #9)**: every `client.Request(req)` emits an OTel span via `go.opentelemetry.io/otel/trace` (no SDK initialization in Slice 1 — uses the global `otel.GetTracerProvider()`; in CI the provider is a no-op recorder). Span name `llm.request`, attributes: `llm.model`, `llm.provider`, `llm.prompt_tokens`, `llm.completion_tokens`, `llm.cache_hit_tokens`, `aura.request_id` (from `InvocationContext.RequestID`). Span linked to parent trace via `RequestID`. Acceptance test: with in-memory recorder, assert 1 span emitted per call, attributes populated, span_id stable across SSE chunks of the same call.
+- [ ] **Budget contract enforcement (amendment #19 cross-ref)**: `LlmAgent.Run` checks `InvocationContext.RemainingSteps` and `RemainingWallclockDeadline` before each LLM call. Mid-Run trip → emit terminal Event with appropriate `FinishReason` ('max_steps' | 'max_wallclock' | 'dedup_loop'). Test: TestLlmAgent_StepCap_Trips, TestLlmAgent_WallclockCap_Trips, TestLlmAgent_DedupWindow_Trips.
 - [ ] Cancel context (Ctrl+C) chiude la HTTP connection e drena il channel — verificato con `go test -race` + `go.uber.org/goleak` `goleak.VerifyNone(t)` in TestMain (audit round 2 P1: assert nessun goroutine residuo post-test, copre il caso SSE reader bloccato su `bufio.Scanner.Scan()` post-cancel).
 - [ ] Zero allocazioni per `Message`-history mutation: il client legge `req.Messages` ma non lo modifica (test asserisce slice identica pre/post).
 
@@ -1048,6 +1064,58 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 1.8.5 — Conversation full-text search (pg_trgm GIN + aura chat search)
+
+**Goal.** Aggiunge conversation full-text search a Slice 1.8 — index Postgres `pg_trgm` GIN su `aura.conversation_turns.content`, CLI subcommand `aura chat search "<query>"`, e Telegram command `/search` (Slice 9b reuse). Per amendment #7 (SUMMARY.md PRD Amendments table, 2026-05-29).
+
+> **Atomicity note.** Sub-slice atomico ~80 LOC + 1 migration `0005_conversation_turns_fts.up.sql` (`CREATE EXTENSION pg_trgm IF NOT EXISTS` + `CREATE INDEX CONCURRENTLY conversation_turns_content_trgm ON aura.conversation_turns USING GIN (content gin_trgm_ops)`).
+
+### Pre-requisiti
+
+- Slice 0.5 Postgres infra (sqlc + golang-migrate)
+- Slice 1.8 conversation persistence (`aura.conversation_turns` table)
+
+**Smoke.**
+```bash
+aura chat search "specific phrase"   # → top-N excerpts ordered by similarity, p95 ≤ 50ms su 10K turns
+```
+
+**Acceptance.**
+- [ ] Migration `0005_conversation_turns_fts.up.sql` crea l'estensione `pg_trgm` + GIN index `conversation_turns_content_trgm` su `aura.conversation_turns(content gin_trgm_ops)`; reverse in `0005_conversation_turns_fts.down.sql` droppa l'index + estensione (idempotent).
+- [ ] sqlc query `SearchConversationTurns(query text, limit int) returns []ConversationTurn` usando `content % $1 ORDER BY similarity(content, $1) DESC LIMIT $2`.
+- [ ] CLI subcommand `aura chat search "<query>" [--conversation <id>] [--limit N]` stampa `<conv_id> | <turn_seq> | <similarity_score> | <excerpt>` per row.
+- [ ] Telegram `/search <query>` command aggiunto a Slice 9b commands MVP list (cross-slice reference; il binding atterra in Slice 9b).
+- [ ] Cross-slice invariant test: Slice 9b `/search` ritorna risultati identici a CLI `aura chat search` per la stessa query.
+
+**File targets** (~80 LOC src + ~30 test).
+
+| Path | LOC | Note |
+|---|---|---|
+| `internal/db/migrations/0005_conversation_turns_fts.up.sql` | ~15 | `CREATE EXTENSION pg_trgm` + `CREATE INDEX CONCURRENTLY ... USING GIN (content gin_trgm_ops)`. |
+| `internal/db/migrations/0005_conversation_turns_fts.down.sql` | ~5 | `DROP INDEX IF EXISTS conversation_turns_content_trgm;` + `DROP EXTENSION IF EXISTS pg_trgm;` (idempotent). |
+| `internal/db/queries/conversation_search.sql` | ~10 | 1 sqlc query `SearchConversationTurns`. |
+| `internal/conversations/search.go` | ~40 | `Search(ctx, query, opts) ([]TurnHit, error)` — wrappa sqlc query, handle conversation-scoped filter + limit. |
+| `cmd/aura/chat.go` (diff) | ~+20 | Nuovo sub-command `aura chat search` (wiring spf13/cobra). |
+
+**Open questions.** Nessuna (chiuse al momento dell'amendment).
+
+**Migration numbering note.** `0005` in questa sub-slice è dopo `0004` (paused_states con resume_context, Slice 1.5) e prima di `0006` (scheduler, Slice 6). Verificare prima del commit di Phase 4 che il numero sia ancora disponibile (Slice 1.7 identity migration potrebbe occupare uno slot — re-numerare on conflict).
+
+**Commit message template.**
+```
+slice 1.8.5: conversation FTS via pg_trgm GIN + aura chat search
+
+Amendment #7 — adds full-text search across conversation_turns.content
+via Postgres pg_trgm GIN index. CLI subcommand `aura chat search` +
+Telegram /search command (Slice 9b reuse). ~80 LOC src + 1 migration.
+
+LOC: +80 src / +30 test / +2 migration.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Slice 2 — Sandbox runner (Docker sidecar + seccomp + ulimit)
 
 > **Atomicity note:** Sub-slice 2a (base stateless ~600 LOC, no deps esterne) + 2b (session-bound + workspace mount + network allowlist ~350 LOC, dipende da Slice 1.8 per `conversation_id`). 2a atterra prima di Slice 3 (Swarm); 2b atterra dopo Slice 1.8.
@@ -1223,14 +1291,16 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
-## Slice 3 — Swarm coordinator (bus + DM-by-ID + tier model)
+## Slice 3 — Swarm coordinator (v1 minimal: ParallelAgent + 2-deep cap; full bus/DM-by-ID/tier-mapped → v2 SWARM-V2-01)
 
 > **Slice 0.9 amendment**: `Coordinator.Spawn` produce `LlmAgent` workers che il Coordinator wrappa in `ParallelAgent` built-in (Slice 0.9) quando spawn-a multipli concorrenti. Lo "shared message bus" e DM-by-ID restano custom (Aura semantic), ma l'esecuzione parallela degli workers usa `errgroup` + ackChan tramite `ParallelAgent.Run`. `AURA_SWARM_MAX_DEPTH=3` resta enforced. Saving stimato: **−200 LOC** (no plumbing custom errgroup, no Event/chan custom per worker output).
+
+> **Amendment #12 (v1 scope reduction, 2026-05-29):** v1 ship-scope is ParallelAgent reuse from Slice 0.9 + hard cap `AURA_SWARM_MAX_DEPTH=2` (NOT 3; coordinator-internal constant `MAX_SPAWN_DEPTH=2`). NO DM-by-ID, NO tier-mapped models in v1. Tier env vars `AURA_SWARM_MODEL_{CHAT,REASONING,WORKER}` documented as v1 no-ops (all resolve to `AURA_LLM_MODEL`); enforcement of distinct tier routing deferred to v2 SWARM-V2-01. Rationale: SUMMARY.md Features over-scope flag + STATE.md Deferred Items table. Saving stimato: −300 LOC vs full v1 design (no bus, no DM router, no tier dispatcher).
 
 **Goal.** Implementare `swarm.Coordinator` reale (oggi `Stub` in [internal/swarm/swarm.go](internal/swarm/swarm.go))
 con: spawn di agenti figli (tier `chat|reasoning|worker`), shared message bus
 con broadcast E DM-by-ID, `Join(id)` che blocca fino a final report del figlio,
-AURA_SWARM_MAX_DEPTH=3 enforced, payload summarizer al return-to-parent.
+AURA_SWARM_MAX_DEPTH=2 enforced (amendment #12 v1 cap; was 3 pre-amendment), payload summarizer al return-to-parent.
 
 **Smoke.**
 
@@ -1253,11 +1323,12 @@ AURA_SWARM_MAX_DEPTH=3 enforced, payload summarizer al return-to-parent.
 ```
 
 **Acceptance.**
-- [ ] `coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` → errore `spawn depth exceeded` (test). Spawn ritorna `*LlmAgent` (Slice 0.9 impl).
+- [ ] `coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` (default 2 per amendment #12, was 3) → errore `spawn depth exceeded — MAX_SPAWN_DEPTH=2 cap (v1 amendment #12)` (test). Spawn ritorna `*LlmAgent` (Slice 0.9 impl).
+- [ ] **Swarm budget inheritance (amendment #19 cross-ref Slice 0.9)**: `Coordinator.Spawn` propagates parent's REMAINING budget to spawned children via `InvocationContext.RemainingSteps` + `RemainingWallclockDeadline`. Acceptance test: parent has 20 steps remaining, spawns 3 children — total step count across the spawn tree ≤ 20 (NOT 20*3=60). Cross-link Pitfall #9.
 - [ ] `coordinator.Talk(from, "broadcast", msg)` recapita a tutti tranne `from`. `Talk(from, "<id>", msg)` recapita solo a `<id>`. Test asserisce delivery. Payload del bus è `*agent.Event` (riusa shape Slice 0.9, no `Envelope` custom).
 - [ ] `coordinator.Join(id)` blocca finché il figlio non emette `Event{Actions.Escalate=true}` (terminale dell'`Agent.Run`, equivalente a `text_response` finale) e ne restituisce il payload (summarizzato se >2 KiB).
 - [ ] Payload summarizer triggera sopra `AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048): tronca + appende `... [N bytes truncated, M total]`.
-- [ ] Tier → model mapping in `tier.go`: `chat→<AURA_SWARM_MODEL_CHAT>`, `reasoning→<...REASONING>`, `worker→<...WORKER>`. Default tutti = env `AURA_LLM_MODEL`.
+- [ ] **Tier → model mapping in `tier.go` — v1 NO-OP (amendment #12)**: tutti i tier (`chat`, `reasoning`, `worker`) risolvono a `AURA_LLM_MODEL`. Env vars `AURA_SWARM_MODEL_{CHAT,REASONING,WORKER}` esistono ma sono no-op in v1 (documentate per forward-compat con v2 SWARM-V2-01). Acceptance test: spawn 3 worker tier diversi, asserire tutti chiamano `AURA_LLM_MODEL` (verifica via mock LLM client capture).
 - [ ] Goroutine leak test (`go test -race`): dopo `Join` di tutti i figli, `runtime.NumGoroutine()` torna al baseline ±2.
 - [ ] Bus capacity bounded (channel buf 64); over-flow blocca producer con timeout **60s** + errore `bus backpressure` (audit round 2 P0: 5s era sotto la latency LLM first-token tipica 10-30s → producer in mezzo a `runTool` riceveva errore spurio durante LLM warmup).
 
@@ -1295,7 +1366,7 @@ slice 3: swarm coordinator — spawn, bus broadcast+DM, tier model
 
 Implements swarm.Coordinator with in-memory child registry, shared
 bus (channel-buffered, backpressure-bounded), tier→model mapping,
-payload summarizer at return-to-parent, AURA_SWARM_MAX_DEPTH=3 enforced.
+payload summarizer at return-to-parent, AURA_SWARM_MAX_DEPTH=2 enforced (v1 amendment #12).
 Exposes swarm.spawn / swarm.talk / swarm.join tools (deferred).
 
 Smoke: aura swarm-demo spawns 3 workers, broadcasts, DMs, joins all.
@@ -1340,6 +1411,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 - [ ] `cache.Tracker` aggrega per turn → `aura cache-stats` stampa hit-rate per turn + media sessione.
 - [ ] Test invariante (Slice 4 specifico): `agent.Loop.Turn(ctx, "anything")` chiamato 5 volte → `messages[0]` identico, lunghezza monotona crescente di history (no in-place mutation di entries precedenti).
 - [ ] Test invariante: il tool manifest renderizzato 5 volte di seguito è byte-identico (cache poisoning guard, link a [reference_aura_cache_poisoning_sites_2026-05-27](memory) — prefix `reference_` corretto post-audit round 1).
+- [ ] **Cross-slice forward-compat (amendment #11)**: `PromptBuilder.Build(history, tools, provider)` accepts optional `messages[2]` payload from `:AgentInsight` cache (Slice 11e injects). When Slice 11e is shipped, the PromptBuilder MUST treat `messages[2]` as a stable-prefix continuation (same byte-identity test extended to indices 0, 1, 2). Until 11e ships, `messages[2]` is absent and the test runs on `[0]` only. Acceptance test re-runs in Phase 15: assert SHA-256 of `messages[0]`, `messages[1]` (if Agent.md set), AND `messages[2]` (if Insight cache hit) ALL constant across 5 consecutive turns.
 - [ ] **Invariants distintamente testati (Area #12 closed 2026-05-28)**. Slice 1 e Slice 4 e Slice 1.8 misurano cose diverse e tutti i test restano validi:
   - **Slice 1** (riga 270): `client.Request(req)` non muta `req.Messages` (slice identica byte pre/post). Garantisce che il wire layer è read-only sul client input.
   - **Slice 4** (questa slice): `PromptBuilder.Build(history, tools)[0]` byte-identico turn-su-turn. Garantisce che il system message è cache-friendly stable-prefix.
@@ -1387,6 +1459,44 @@ LOC: +XXX src / +YY test.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
+
+---
+
+## §Cross-cutting — KV cache invariant CI (amendment #16, Pitfall #3 P0)
+
+Cache poisoning is the highest-risk cross-slice failure mode in Aura. Slice 4 owns the invariant (`messages[0]` byte-identical turn-su-turn) but Slices 1.8, 5, 7e-core, 10, 11e all mutate the message-construction pipeline. Without a cross-slice gate, every capability silently risks planting its own poisoning site. Reference: `reference_aura_cache_poisoning_sites_2026-05-27` (6 sites mapped pre-rewrite — historical record kept as warning).
+
+### Architectural rule: TWO system messages
+
+- `messages[0]`: byte-identical turn-su-turn. Contains: system prompt + tool manifest (alphabetically sorted by name, per Slice 4). NO per-turn data, NO timestamps, NO conversation_id, NO identity_id strings.
+- `messages[1]`: mutable. Contains: `Agent.md` per-identity profile (Slice 10 injection) + cached `:AgentInsight` payload (Slice 11e injection, cached per amendment #11 via `AURA_AGENT_INSIGHT_CACHE_TTL_SEC`).
+- All conversation turns: `messages[2..N]`.
+
+Any future slice that wants to inject context MUST land in `messages[1]` (cached/stable-per-identity) — NEVER mutate `messages[0]`. Violation = automatic Slice 4 invariant break.
+
+### CI gate `scripts/cache_invariant_audit.sh`
+
+- Authored in Phase 6 (Slice 4 implementation).
+- 20-turn replay against a fixture conversation. Computes `SHA-256(json.Marshal(messages[0]))` per turn. Asserts all 20 hashes identical.
+- On failure: explicit error `messages[0] mutated at turn N — diff: <previous-hash> vs <current-hash>; offending diff hint: <first 200 bytes of unified diff>`.
+- Runs in CI on every PR from Phase 6 onward. PRs that break the script fail with the explicit error above.
+- Exit codes: `0` (pass), `1` (mutation detected — gate failure), `2` (fixture corrupt — re-run).
+- File targets: `scripts/cache_invariant_audit.sh` (~80 LOC bash) + `scripts/fixtures/cache_invariant/turn-{01..20}.json` (replay turns) + CI workflow integration `.github/workflows/ci.yml` step `name: cache invariant gate`.
+
+### Cross-slice acceptance bullets (already present per-slice — this section enumerates them for audit)
+
+- Slice 0.9 InvocationContext composition: confirm SessionStore / GraphStore / LLMClient injection is by-pointer (no per-call alloc).
+- Slice 1 LLM client: `client.Request(req)` does NOT mutate `req.Messages` (read-only contract).
+- Slice 1.8 LoadHistory: deterministic byte-identical reads.
+- Slice 4 PromptBuilder: SHA-256(`messages[0]`) constant — the anchor invariant. Enforced by `scripts/cache_invariant_audit.sh` (amendment #16).
+- Slice 5 web_fetch: no system-prompt mutation when results returned.
+- Slice 7e-core skill snippet execution: skill body sourced from disk-cached SKILL.md, NOT inlined per call.
+- Slice 10 Agent.md injection: lands at `messages[1]`, NOT `messages[0]`.
+- Slice 11e :AgentInsight injection: cached per amendment #11, lands at `messages[2]` continuation (or `messages[1]` append after Agent.md depending on builder order — Phase 15 decides).
+
+### Pitfall #3 mitigation summary
+
+Pitfall #3 (Audit-table TRUNCATE bypass) is covered by amendment #17 — role separation (`aura_app` lacks TRUNCATE, migrations gated via `AURA_DB_MIGRATE_URL`) plus dual triggers (`BEFORE UPDATE/DELETE` + `BEFORE TRUNCATE`). Pitfall #2 (cross-slice KV cache poisoning) is covered by this section + the CI script. Living-doc gate amendment #20 (`docs/aura-quality-snapshot.md` + `scripts/quality_snapshot_gate.sh`) is the complementary forward-looking gate — Pitfall #3 catches structural mutation, amendment #20 catches measurement regression.
 
 ---
 
@@ -1452,7 +1562,7 @@ Oltre alla regola "no nomi tool nel prompt E2E", ogni slice rispetta una **sogli
 
 1. **Naming**: `TestXxx_Behavior_When_Condition` (descrittivo, no `TestFoo1`, `TestFoo2`).
 2. **Setup teardown**: niente shared state cross-test salvo build-tag `_integration` con DB transactionally rollback'd. Race detector verde (`go test -race ./...`).
-3. **Goroutine leak check**: `goleak.VerifyNone(t)` in TestMain o `defer goleak.VerifyNone(t)` per test che spawn goroutine. Slice 1/3/6/8/9/11/13 lo richiedono esplicitamente in acceptance.
+3. **Goroutine leak check**: `goleak.VerifyNone(t)` in TestMain o `defer goleak.VerifyNone(t)` per test che spawn goroutine. **Per amendment #15 (2026-05-29) the mandate is extended to ALL packages che spawn goroutine** — non solo le slice 1/3/6/8/9/11/13 originali. Lista completa pre-Phase 0 closure: Slice 0.9 (workflow agents Parallel + Loop), 1 (HTTP client SSE reader), 1.5 (ask_user resume goroutine), 1.8 (microcompact background), 2a/2b (sandbox reaper goroutine), 3 (swarm ParallelAgent), 4 (no goroutine — skipped), 5 (web_fetch HTTP), 6 (scheduler dispatcher + heartbeat + cron tick), 7c (TTL sweeper if implemented), 7e-core (TTL archive sweeper), 8 (AG-UI SSE emitter), 9a (setup wizard HTTP + SSE pump), 9b (telegram bot polling), 9c (multimodal sidecar HTTP), 10 (interview LoopAgent — no extra goroutine), 11b/c/d/e (ingest pipeline + community + memify background workers), 13 (offline detector + cost tracker — v2). Every `*_test.go` for these packages MUST call `goleak.VerifyNone(t)` in TestMain OR `defer goleak.VerifyNone(t)` per test.
 4. **Fixture realistic**: `testdata/*.{json,csv,md,sse,sql,html,pdf}` con contenuto realistic (estratto da casi reali pseudonimizzati), no `{"foo":"bar"}` placeholder.
 5. **Property-based dove indicato**: PromptBuilder invariants, AG-UI translator coverage event types, swarm backpressure → `gopter` o `rapid` library. Vincolato a slice 4/8/3.
 6. **Build tags integration**: `//go:build db_integration`, `//go:build sandbox_integration`, `//go:build multimodal_integration`, `//go:build onboarding_integration`. CI runner separato, no flaky-on-CI mainstream.
@@ -1544,6 +1654,7 @@ La slice è DONE SE e SOLO SE:
 - [ ] **Documentation update**: PRD aggiornato se ha richiesto deviazioni dal piano (no "il PRD si capisce dal codice" — il PRD È la verità).
 - [ ] **Commit message conforming**: imperative + perché + LOC final + Co-Authored-By trailer. Niente "fix" o "wip" mainstream.
 - [ ] **Branch ready for merge**: rebase su master, conflict risolti, 1 commit atomic per slice (o N per sub-slice con atomicity nota).
+- [ ] **Quality snapshot update (amendment #20)**: if the slice changes any code under a `docs/aura-quality-snapshot.md` CI gate path, the corresponding row's `Last measured` + `Last value` MUST be updated in the same commit. CI gate `scripts/quality_snapshot_gate.sh` runs in every PR; stale row blocks merge. Cross-reference user memory `feedback_aura_as_product` ("max 2 fasi staged avanti, ogni wave gate su numeri").
 
 **Gate 3 conclude con**: PR merge-ready, owner approval esplicita "DoD ✅ <date>". Niente merge unilaterale.
 
@@ -1591,7 +1702,7 @@ indipendente prima).
 - `web_fetch({url}) → {title, content_md, links}`
 
 Entrambi alimentati da un container SearXNG self-hosted (estensione del
-`sandbox/compose.yaml` di Slice 2). HTML→Markdown via `go-shiori/go-readability`
+`sandbox/compose.yaml` di Slice 2). HTML→Markdown via `codeberg.org/readeck/go-readability/v2` (readeck fork — go-shiori upstream deprecated 2025-12-05 per amendment #3)
 + `JohannesKaufmann/html-to-markdown/v2`. SSRF defense custom (DNS resolution
 + private-IP block) preservata dal pre-rewrite.
 
@@ -1626,7 +1737,7 @@ Entrambi alimentati da un container SearXNG self-hosted (estensione del
 |---|---|---|
 | `internal/web/searxng.go` | ~130 | Client HTTP puro: `Query(ctx, params) ([]Result, error)`. Da pre-rewrite quasi 1:1. |
 | `internal/web/fetcher.go` | ~120 | `Fetch(ctx, url) (Page, error)`. HTTP con `safeDialContext` SSRF defense. |
-| `internal/web/html.go` | ~90 | `ExtractMarkdown(html []byte) (title, contentMD string, links []Link)`. Wrapper su go-readability + html-to-markdown. |
+| `internal/web/html.go` | ~90 | `ExtractMarkdown(html []byte) (title, contentMD string, links []Link)`. Wrapper su `codeberg.org/readeck/go-readability/v2` (readeck fork, amendment #3) + `html-to-markdown/v2`. |
 | `internal/web/config.go` | ~40 | `Config{SearXNGURL, FetchTimeoutSec, SearchTimeoutSec, MaxChars, AllowLoopback, AllowHosts []string}`. Lette da `internal/config` (esteso). |
 | `internal/agent/tools/web_search.go` | ~70 | Deferred. Args→`web.SearXNG.Query`→`ToolResult`. No business logic qui, è un thin adapter. |
 | `internal/agent/tools/web_fetch.go` | ~80 | Deferred. Args→`web.Fetcher.Fetch`→`ExtractMarkdown`→`ToolResult`. |
@@ -1662,7 +1773,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 **Open questions.**
 1. **SearXNG self-hosted vs cloud (DuckDuckGo Lite/Brave/Tavily)?** Pre-rewrite era self-hosted. Trade-off: self-host = zero-cost + privacy ma serve container; cloud = $$ + nessun container ma instradi le query a terzi. → *Default proposto: self-hosted (continuità + privacy). Cloud come fallback se `SEARXNG_URL` non risolve dopo N tentativi → out of scope qui.*
-2. **`go-readability` mantenuto?** È stato fork-ato lentamente; alternative: `dom-distiller` port, scraping minimal manuale. → *Default proposto: SÌ go-readability + html-to-markdown/v2, sono stabili e il pre-rewrite li usava bene.*
+2. **~~`go-readability` mantenuto?~~ → CHIUSA (amendment #3, 2026-05-29):** go-shiori upstream deprecated 2025-12-05. Migrazione a `codeberg.org/readeck/go-readability/v2` (readeck Go fork, actively maintained, same API surface for `Article` parsing). No-op refactor a livello chiamante; import path swap solo.
 
 ---
 
@@ -1724,6 +1835,7 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 - [ ] **Recovery notifier**: se la query touch ≥1 riga, `Notifier.Notify(local, "N agent_job interrotti dal restart, audit via aura task audit")` al boot. Stdout in CLI ora, Telegram quando atterra.
 - [ ] Test: schedule → restart processo → tick loop ripicka il task → handler invocato.
 - [ ] Test crash recovery: insert manual `agent_job_runs(started_at=now()-1h, finished_at=NULL)` → boot Aura → query marca `exit_status='unknown_recovery'`, Notifier emette msg, task NON ri-eseguito automaticamente.
+- [ ] **Scheduler budget contract (amendment #19 cross-ref Slice 0.9)**: scheduler-spawned `agent_job` runs read budget from `aura.agent_job_runs.step_budget` (NEW column, ALTER TABLE in same migration) — defaults to `AURA_LOOP_MAX_STEPS` if NULL. The scheduler sets `InvocationContext.RemainingSteps = step_budget` at spawn. Per-job override via `aura task schedule --max-steps N`. Acceptance test: schedule task with `--max-steps 10`, agent loops → terminates at step 10 (not fresh 25).
 
 **File targets** (≤ 750 LOC src — risparmio ~550 LOC vs pre-rewrite grazie a sqlc + ulteriori −200 LOC riapplicati da Slice 0.9: `Handler = Agent`, no dispatch switch ridondante, Notifier emette `*agent.Event` invece di struct custom):
 | Path | LOC | Note |
@@ -1814,10 +1926,11 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > **Atomicity note (audit round 1 P0):** ~2100 LOC totali = troppo per 1 commit.
 > Si committa in **5 sub-slice ordinati**, ognuno atomic + smoke green:
 > - **7a**: types + loader (filesystem + parser + cache 4-way split) + `internal/skills/validator.go` (single chokepoint, riusato da tutti) + `internal/skills/paths.go` (`SanitizeName` single source) + tool `skill.list` + tool `skill.info`. Read-only, no governance. ~500 LOC.
-> - **7b**: catalog (skills.sh HTML scrape 1:1 pre-rewrite) + tool `skill.catalog`. Read-only. ~350 LOC.
+> - **7b**: catalog (skills.sh HTML scrape 1:1 pre-rewrite) + tool `skill.catalog`. Read-only. **Default DISABLED (amendment #14)** — opt-in via CLI subcommand `aura skills enable-catalog` (writes flag to config). Rationale: HTML scrape of external `skills.sh` is supply-chain attack surface (untrusted HTML → regex parse → install candidate). Default-deny aligns with PROJECT.md Out of Scope "Marketplace skills pubblico". ~350 LOC + ~20 LOC enable/disable plumbing.
 > - **7c**: writer (atomic pending→active) + deleter + tool `skill.create` + `skill.update` + `skill.delete` (mutation tools con ask_user governance). Schema `aura.skill_audit` (migration `0007`) + sqlc queries + adapter. Tx wrapping esplicito attorno alla coppia (FS-move pending→active + INSERT skill_audit row): se INSERT fallisce, FS-move viene rollback-ato (rename inverso). ~600 LOC.
 > - **7d**: installer (`npx skills add` con `--ignore-scripts` + sanitizedEnv stretto + post-install ParseSkill re-validation) + tool `skill.install`. ~450 LOC.
-> - **7e**: **executable code snippets** (multi-lang Python/shell, eseguibili via sandbox Slice 2b) + **pattern analysis multi-conversation auto-suggest** (cross-conv analyzer suggerisce save dopo 3+ pattern simili) + **TTL 90gg archived state** (sweep periodico, archived skip da discovery default). Estende SKILL.md con `type: instruction|snippet` field. ~700 LOC. **Dipende da Slice 2b** (sandbox session-bound + workspace + network allowlist) per esecuzione + da Slice 0.7 Neo4j HNSW per similarity clustering. Pattern reference: Voyager (Wang et al., NeurIPS 2023) skill library + mem0 procedural memory.
+> - **7e-core (v1, amendment #13)**: **executable code snippets** (multi-lang Python/shell, eseguibili via sandbox Slice 2b) + **TTL 90gg archived state** (sweep periodico, archived skip da discovery default). Estende SKILL.md con `type: instruction|snippet` field. ~450 LOC. **Dipende da Slice 2b** (sandbox session-bound + workspace + network allowlist) per esecuzione. **NO cross-conv pattern analyzer in v1.**
+> - **7f (v1.x, amendment #13 — deferred SKILL-V2-01)**: **pattern analysis multi-conversation auto-suggest** (cross-conv analyzer suggerisce save dopo 3+ pattern simili via Neo4j HNSW similarity clustering). ~250 LOC. **Dipende da Slice 0.7 Neo4j HNSW + Slice 7e-core + Slice 11 memory** (più downstream di v1 7-slice). Pattern reference: Voyager (Wang et al., NeurIPS 2023) skill library + mem0 procedural memory. Tracked in STATE.md Deferred Items `SKILL-V2-01`.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
 > **Governance: Risk-Based (Area #5 closed 2026-05-28).** Tutte le mutation
@@ -1838,7 +1951,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > gate via la stessa pipeline; oggi non esistono.
 
 **Goal.** Sette tool LLM-facing per la self-extension completa:
-- Read-only: `skill.list`, `skill.catalog`, `skill.info`
+- Read-only: `skill.list`, `skill.info`. **Gated read-only (default OFF per amendment #14)**: `skill.catalog` — requires `aura skills enable-catalog` opt-in. When disabled, tool not advertised in manifest; if model attempts call, returns explicit error `"skill.catalog disabled — run 'aura skills enable-catalog' to opt in"`.
 - Mutations (tier RISKY/DESTRUCTIVE da `internal/scoring/`, atterrano in `pending/`, agente decide se gate via `ask_user`, Notifier alert se gate skipped): `skill.create`, `skill.update`, `skill.delete`, `skill.install`
 - Approval helper (deferred): `skill.approve(name)` per attivare manualmente una skill in `pending/`
 
@@ -1875,6 +1988,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 # → modello chiama skill.list (read-only, no ask_user). Riassume.
 
 ./aura chat "ho bisogno di un'analisi statistica avanzata. cerca su skills.sh"
+# === Pre-condition: user has run 'aura skills enable-catalog' (amendment #14) ===
 # → modello chiama skill.catalog → trova 3 candidati
 # → modello chiama ask_user(kind=choice, options=[3 skill candidati])
 # → utente sceglie → skill.install → ask_user(kind=approval, "Confermi install di X?")
@@ -1894,6 +2008,8 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 - [ ] **Manifest packing — pattern Claude Code, non pre-rewrite**: TUTTE le skill listate nel manifest (anche 100+) ma con SOLO `name + description` (1 riga). Il body si carica on-demand via `skill.info`. Niente più `maxSkillsBlockChars` cap. Coerente col pattern deferred-tool di tutto il PRD.
 - [ ] **Mutation flow (create/update/install/delete) Risk-Based (Area #5 closed 2026-05-28)**: il tool scrive in `pending/<name>/`, calcola `tier = scoring.ComputeSkillTier(action, body)` (oggi: create/update/install → RISKY, delete → DESTRUCTIVE). Ritorna tool result `{name, content_hash, risk_tier, gate_recommended:true, status:'pending'}`. **NON** ritorna automaticamente `ErrAwaitingUserInput`: l'agente decide se ri-emettere `ask_user(kind=approval, ResumeContext={action:'activate'|'install_active'|'delete_active', name})`. Resume handler: approve → `Writer.Activate()` (move atomico pending→active) + `Loader.Invalidate()` + audit `gate_taken=true`. Reject → delete pending + audit `gate_taken=true`. Se agente skippa gate: skill RESTA in `pending/` (non caricata), Notifier IMMEDIATE alert, audit `gate_taken=false`, l'utente attiva con `aura skills approve <name>` o ignora. Edit ("approva con modifiche"): out of scope Slice 7.
 - [ ] **Audit log**: ogni mutation (anche le reject) scritte nella tabella `aura.skill_audit` di Postgres (sqlc-managed). `aura skills audit --since=1h` query SQL. Postgres trigger `BEFORE UPDATE/DELETE` su `skill_audit` → `RAISE EXCEPTION` (audit append-only enforced a livello DB, audit round 1 P1).
+- [ ] **BEFORE TRUNCATE trigger (amendment #17, Pitfall #6 P0)**: function `raise_audit_immutable_truncate()` + trigger `skill_audit_truncate_block BEFORE TRUNCATE ON aura.skill_audit FOR EACH STATEMENT`. Acceptance test (`db_integration`): connect as `aura_migrate`, `TRUNCATE aura.skill_audit;` → returns explicit error `audit table is append-only`. Cross-link role separation: connect as `aura_app`, same TRUNCATE → returns permission denied (role lacks TRUNCATE privilege). Both gates active = belt-and-suspenders defense per Pitfall #6 P0.
+- [ ] **`skill.catalog` opt-in (amendment #14)**: tool NOT registered in manifest by default. CLI `aura skills enable-catalog` writes `{catalog_enabled: true}` to `~/.aura/config.json`; CLI `aura skills disable-catalog` reverses. On boot, if `catalog_enabled=true`, tool registered. Fresh install acceptance: `aura skills catalog list` returns text `"catalog disabled — run 'aura skills enable-catalog' to opt in"`; after enable, returns scraped list. Audit: `aura.skill_audit` INSERT row on enable/disable with `action='catalog_enable'|'catalog_disable'`, `actor_id`, `ts`, `gate_recommended=false`, `gate_taken=true`.
 - [ ] **`Validator.SanitizeName` chokepoint (audit round 1 P0)**: `internal/skills/paths.go` espone `SanitizeName(name) (clean string, err error)` — UNICA via per derivare path filesystem da user input. Regex `^[a-z0-9-]+$`, length 1-64, no reserved (`init`, `delete`, `.`, `..`). Writer + Deleter + Installer DEVONO chiamarlo prima di `filepath.Join(skillsDir, name)`. Test asserisce ogni file-touch site via static analysis (`grep -L 'SanitizeName' internal/skills/{writer,deleter,installer}.go` → empty).
 - [ ] **skills.sh integration via `npx skills add` (pre-rewrite 1:1 + safety hardening)**:
   - `node`+`npm` runtime requisito host.
@@ -1928,7 +2044,7 @@ modello quando invocare la skill, riducendo invocazioni speculative.
 | `internal/skills/installer.go` | ~140 | `npx skills add <source> --agent claude-code -y` con sanitizedEnv stretto, 90s timeout. Post-install ParseSkill re-validation prima di Invalidate. Path-traversal guard. |
 | `internal/skills/audit.go` | ~70 | Thin adapter su sqlc `Queries.RecordSkillMutation` + `Queries.ListAuditSince`. Niente più file IO. |
 | `internal/db/queries/skill_audit.sql` | ~45 | **4 query sqlc**: `RecordSkillMutation`, `ListAuditSince`, `GetByName`, `ListPendingApproval`. |
-| `internal/db/migrations/0007_skill_audit.up.sql` | ~60 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action text, name text, content_hash text, source text, `approval_source text NOT NULL CHECK (approval_source IN ('ask_user','cli','auto'))`, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL, `computed_risk_tier text NOT NULL DEFAULT 'risky' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT true`, `gate_taken boolean NOT NULL DEFAULT true`). Indice su `ts DESC`, indice su `(gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false` (forensics per gate-skipped), indice su `(approval_source, ts DESC)` (forensics "quali via CLI?"). **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()`** — audit append-only enforced a livello DB (audit round 2 P0). Coerenza inviolabile (DB constraint or app-level check): `approval_source='ask_user'` ⇔ `paused_state_token IS NOT NULL AND gate_taken=true`; `approval_source='cli'` ⇔ `paused_state_token IS NULL AND gate_taken=true`; `approval_source='auto'` ⇔ `paused_state_token IS NULL AND gate_recommended=false`. |
+| `internal/db/migrations/0007_skill_audit.up.sql` | ~60 | `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action text, name text, content_hash text, source text, `approval_source text NOT NULL CHECK (approval_source IN ('ask_user','cli','auto'))`, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL, `computed_risk_tier text NOT NULL DEFAULT 'risky' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT true`, `gate_taken boolean NOT NULL DEFAULT true`). Indice su `ts DESC`, indice su `(gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false` (forensics per gate-skipped), indice su `(approval_source, ts DESC)` (forensics "quali via CLI?"). **Function `raise_audit_immutable()` + trigger `skill_audit_append_only BEFORE UPDATE OR DELETE ON aura.skill_audit FOR EACH ROW EXECUTE FUNCTION raise_audit_immutable()` + trigger `skill_audit_truncate_block BEFORE TRUNCATE ON aura.skill_audit FOR EACH STATEMENT EXECUTE FUNCTION raise_audit_immutable_truncate()` (amendment #17 — Pitfall #6 P0: `BEFORE UPDATE OR DELETE` does NOT fire on TRUNCATE/DROP per PG docs; a second statement-level trigger closes the bypass. Combined with role separation `aura_app` lacking TRUNCATE privilege, this provides defense-in-depth.)** — audit append-only enforced a livello DB (audit round 2 P0). Coerenza inviolabile (DB constraint or app-level check): `approval_source='ask_user'` ⇔ `paused_state_token IS NOT NULL AND gate_taken=true`; `approval_source='cli'` ⇔ `paused_state_token IS NULL AND gate_taken=true`; `approval_source='auto'` ⇔ `paused_state_token IS NULL AND gate_recommended=false`. |
 | `internal/agent/tools/skill_list.go` | ~50 | Non-deferred (output piccolo). |
 | `internal/agent/tools/skill_catalog.go` | ~60 | Deferred. Query skills.sh, ritorna candidati. |
 | `internal/agent/tools/skill_info.go` | ~60 | Deferred. Ritorna body via `ToolResult` (preview+persist se grande). |
@@ -1990,7 +2106,7 @@ slice 7c: skills mutation (create/update/delete) + audit + governance C
 
 Writer (atomic pending→active move via os.Rename), deleter (path-traversal
 guarded), audit log on Postgres via sqlc (migration 0007_skill_audit with
-CREATE TABLE aura.skill_audit + index ts DESC + trigger raise_audit_immutable
+CREATE TABLE aura.skill_audit + index ts DESC + trigger raise_audit_immutable_truncate BEFORE TRUNCATE → RAISE EXCEPTION + role-separation grants aura_app/aura_migrate from migration 0001 (amendment #17 Pitfall #6 P0) + trigger raise_audit_immutable
 BEFORE UPDATE/DELETE → RAISE EXCEPTION). Tools skill.create/update/delete
 all returning ErrAwaitingUserInput(kind=approval) — Loop pauses, user
 approves/rejects, resume handler activates or discards. Cleanup pending TTL
@@ -2024,13 +2140,15 @@ LOC: +XXX src / +YY test.
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
-### Slice 7e — Executable code snippets + pattern analysis + TTL archived
+### Slice 7e-core — Executable code snippets + TTL archived (v1; pattern analyzer → 7f v1.x per amendment #13)
 
 > **Pattern reference**: rubato da Voyager (Wang et al., NeurIPS 2023) "skill library" pattern — agent costruisce libreria persistente di funzioni eseguibili discoverable via semantic embedding + lifelong learning. Plus mem0 procedural memory ADD-only pattern.
 >
 > **Idea**: gli script Python/shell utili eseguiti dall'agente via sandbox Slice 2b vengono **salvati** come `SKILL.md type: snippet` (estensione del formato Skill esistente), **scoperti** via semantic search Slice 0.7 Neo4j HNSW, **eseguiti** via Slice 2b sandbox session-bound. Token saving ~520/riuso (50 manifest + 30 chat vs 600 rigen).
 >
 > **Dipendenze**: Slice 2b (sandbox session + workspace + network allowlist) + Slice 0.7 (Neo4j HNSW embedding). Atterra DOPO entrambi.
+>
+> **Scope v1 (amendment #13)**: questa è la Slice 7e-core. `pattern_analyzer` cross-conv auto-suggest (sezione "Pattern auto-suggest" nella smoke, env vars `AURA_SKILL_PATTERN_ANALYSIS_*` + `AURA_SKILL_AUTOSUGGEST_*`) è SPLIT in Slice 7f (v1.x deferred SKILL-V2-01). 7e-core ship ~450 LOC; 7f ~250 LOC.
 
 #### Estensione SKILL.md (backwards-compat con 7a)
 
@@ -2184,6 +2302,7 @@ aura chat "ho un CSV vendite per regione, raggruppami per regione"
 # → ToolResult JSON array
 # → LLM presenta risultato
 
+# === SECTION 3 BELOW DEFERRED TO SLICE 7f (v1.x) PER AMENDMENT #13 — kept here for forward-reference only ===
 # 3. Pattern auto-suggest (background)
 aura chat "esegui pandas read_csv su X, groupby Y"  # 1ª volta
 aura chat "esegui pandas read_csv su A, groupby B"  # 2ª volta
@@ -2192,6 +2311,7 @@ aura chat "esegui pandas read_csv su C, groupby D"  # 3ª volta
 # → ask_user inviato a Telegram:
 #   "Ho notato 3 script simili recenti. Vuoi salvarli come
 #    `pandas_csv_groupby_template`? [✅ Salva] [✏️ Modifica] [❌ No]"
+# === END DEFERRED SECTION (Slice 7f / SKILL-V2-01) ===
 
 # 4. TTL archived
 # (90 giorni dopo, sweep)
@@ -2227,7 +2347,7 @@ aura skill restore old_script_unused  # status='active' reseted
 #### Commit message template Slice 7e
 
 ```
-slice 7e: executable code snippets + pattern analysis + TTL archived
+slice 7e-core: executable code snippets + TTL archived (v1; pattern analyzer → 7f v1.x per amendment #13)
 
 Estende SKILL.md formato con type=snippet (multi-lang python/shell/js),
 eseguibili via sandbox Slice 2b session-bound. Pattern reference:
@@ -2317,7 +2437,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 **Dipendenza Go.**
 ```go
 // go.mod
-require github.com/ag-ui-protocol/ag-ui/sdks/community/go v...
+require github.com/ag-ui-protocol/ag-ui/sdks/community/go <SHA-post-2026-05-14> // SHA-pinned per amendment #6 (pseudo-version repo; pin to commit ≥ 2026-05-14). At Phase 12 Slice 8 impl time, resolve via `go list -m -json github.com/ag-ui-protocol/ag-ui/sdks/community/go@HEAD`.
 ```
 
 **Smoke.**
@@ -2371,6 +2491,7 @@ curl -N -X POST http://127.0.0.1:9080/agent/run \
 - [ ] **Backpressure**: SSE writer buffered channel (capacity 64); su client lento, channel full → drop con WARN log + `RUN_ERROR` se persistente. Niente blocco del Loop.
 - [ ] **AG-UI Dojo compliance**: test integrazione che esegue il Dojo conformance suite (50-200 LOC per building block come da spec) contro `aura serve --agui-port`. Validation: text streaming, tool calls, state sync, HITL interrupts.
 - [ ] Test unitario translator: input sequenza `*agent.Event` (Slice 0.9) → output `[]events.Event` AG-UI sequenza corretta. Property-based su tutti gli ~25 event types.
+- [ ] **go.mod pin verification (amendment #6)**: `go.mod` for `github.com/ag-ui-protocol/ag-ui/sdks/community/go` MUST be a specific commit SHA (NOT `latest`, NOT a date-based pseudo-version `v0.0.0-YYYYMMDDHHMMSS-xxxxxxxxxxxx` resolved at install time). CI gate: `grep -E '^require github\.com/ag-ui-protocol/ag-ui/sdks/community/go [a-f0-9]{40}$' go.mod` must return exactly 1 match.
 
 **File targets** (~600 LOC src + ~300 test — saving −100 LOC riapplicato da Slice 0.9: il translator consume `iter.Seq2[*Event, error]` direttamente, no `Emitter` interface custom né plumbing channel-based):
 | Path | LOC | Note |
@@ -2427,7 +2548,7 @@ Bind default 127.0.0.1, CORS env-driven.
 CLI default in-process (zero overhead), --via-agui opt-in per
 testing transport. Benchmark per scegliere mode finale post-1.9.
 
-Dipendenza go.mod: github.com/ag-ui-protocol/ag-ui/sdks/community/go.
+Dipendenza go.mod: github.com/ag-ui-protocol/ag-ui/sdks/community/go (SHA-pinned per amendment #6 — no pseudo-version `latest`).
 
 Smoke: aura serve + curl /agent/run mostra SSE event stream
 conforme. AG-UI Dojo conformance suite verde.
@@ -2468,8 +2589,7 @@ Slice 9 risolve Area #16 (transport agnostico) all'altezza prodotto: Slice 8 ha 
 
 ```go
 // go.mod (Slice 9b)
-require gopkg.in/telebot.v4 latest                              // bot library (master usato anche)
-require github.com/eekstunt/telegramify-markdown-go latest      // Markdown -> MarkdownV2 safe
+require gopkg.in/telebot.v4 <SHA-post-2026-05-08>                 // bot library — SHA-pinned per amendment #5 (untagged repo; pin to specific commit ≥ 2026-05-08 to avoid silent master drift). At Phase 1 Slice 9b implementation time, resolve to the latest commit SHA via `go list -m -json gopkg.in/telebot.v4@HEAD` and replace the placeholder.
 require github.com/skip2/go-qrcode latest                       // QR code generation
 require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per console
 ```
@@ -2479,14 +2599,14 @@ require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per 
 | Punto | Aspetto | Decisione |
 |---|---|---|
 | 1 | Activation trigger | `aura serve` boot di tutti i channel configurati (Telegram main user-facing, env-driven, flag `--no-telegram` per debug). |
-| 1 | Setup wizard | Sempre on `http://<bind>:9081/setup`, paste bot token + valida via getMe + mostra QR del deep link `t.me/<bot>?start=<onboarding_token>`. |
+| 1 | Setup wizard | Sempre on `http://<bind>:9081/setup?token=<AURA_SETUP_TOKEN>`, one-time token `AURA_SETUP_TOKEN` (random UUIDv4) generato + stampato a stdout primo boot (`aura serve`), gated middleware su tutti i `/setup/*` endpoint. Paste bot token + valida via getMe + mostra QR del deep link `t.me/<bot>?start=<onboarding_token>`. Per amendment #10 — previene unauthorized access se `AURA_SETUP_BIND=0.0.0.0:9081`. |
 | 1 | Onboarding flow | User scan QR → Telegram apre → `/start <token>` → bot match in `aura.telegram_setup_pending` → INSERT `aura.telegram_accounts`. No codici testuali, full QR/deep-link. |
 | 2 | Rate limit | Adaptive con 429 `retry_after` parse + exponential backoff fino a 30s. |
 | 3 | Status pane | Pattern master B (2 msg per turn: status pane edited + content reply). LOC ridotti a ~180 (vs master 563). |
 | 3 | Throttle status | `AURA_TELEGRAM_STATUS_THROTTLE_MS=1500` (info di servizio, lento) |
 | 3 | Throttle content | `AURA_TELEGRAM_CONTENT_THROTTLE_MS=500` (token streaming, veloce) |
 | 3 | Chat rate hard | `AURA_TELEGRAM_CHAT_RATE_LIMIT_MS=1000` (queue drain serializzato per chat_id, sopra il debounce per-pane, rispetta 1/sec Telegram) |
-| 3 | Markdown library | `eekstunt/telegramify-markdown-go` (no custom port) |
+| 3 | Markdown library | Custom ~80 LOC MarkdownV2 escaper in `internal/channels/telegram/mdv2.go` (per amendment #4 — promotes port to default. Rationale: `eekstunt/telegramify-markdown-go` is 4-star supply-chain risk per SUMMARY.md Stack P2; in-tree escaper covers MarkdownV2 reserved-char subset, zero external dep) |
 | 4 | Approval UX | Renderer agnostico: legge `ask_user.options`. Assenti → 2 button hardcoded `✅ Approva / ❌ Rifiuta`. Presenti → render exact. Agente decide 2/3/N-way via options. |
 | 4 | Reply testuale | Reply quote a un pending = nuovo turn user **parallelo** (multi-pause FIFO Slice 1.5 #4 coda i due). Tappare button = resume del pending originale. |
 | 5 | Voice failure | 2 retry exponential (1s/2s), poi bot risponde `❌ Trascrizione non disponibile. Invia testo o riprova.` + reaction 😵 sul voice message. |
@@ -2495,7 +2615,7 @@ require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per 
 | 7 | Vision model | Gemma 4 multimodal sidecar (`aura-llama-multimodal`, llama.cpp server). Variant TBD post-benchmark (E2B/E4B/26B), default baseline **E4B Q4_0** (~3 GB RAM, audio + image nativi). |
 | 7 | Whisper | **Rimosso** da compose.yaml (Gemma 4 E4B audio nativo unifica STT). -300 MB RAM, 1 sidecar in meno. |
 | 7 | Vision fallback | TBD post-benchmark: se Gemma quality basta → solo vision sidecar; altrimenti → markitdown OCR fallback se Gemma sidecar down. |
-| 8 | Bot commands MVP | 8 commands: `/start /help /whoami /cancel /new /conversations /resume /reset`. |
+| 8 | Bot commands MVP | 10 commands: `/start /help /whoami /cancel /new /conversations /resume /reset /cost /search` (amendment #8 adds `/cost`; amendment #7 adds `/search`). |
 | 8 | Command dispatch | Bot-intercept (no LLM call per commands). `/cancel` chiama direttamente `Loop.Cancel`, `/new` crea conv via Slice 1.8 `Create`, ecc. Solo `/start <token>` ha logica onboarding speciale. |
 
 ### Architettura componenti
@@ -2532,7 +2652,7 @@ internal/channels/telegram/    # Slice 9b
                           #       - kind=clarification senza options → ForceReply
                           #       - reply quote a pending msg → nuovo turn parallelo (FIFO)
                           #       - Callback handler chiama agui.ResumeViaSubscriber(token, answer)
-  commands.go             # ~170  8 commands MVP bot-intercept:
+  commands.go             # ~210  10 commands MVP (incl. /cost per amendment #8, /search per amendment #7) bot-intercept:
                           #       /start [token] - welcome + onboarding consume
                           #       /help - lista commands + breve guida
                           #       /whoami - tg_user_id + identity Aura + conv corrente
@@ -2541,6 +2661,8 @@ internal/channels/telegram/    # Slice 9b
                           #       /conversations - list paginato 5/page con InlineKeyboard nav
                           #       /resume <id_prefix> - switch to conv by prefix match
                           #       /reset - conv.Delete + new
+                          #       /cost - aura.cost_aggregator.TodayUSD() + per-conv breakdown (amendment #8)
+                          #       /search <query> - SearchConversationTurns via pg_trgm (Slice 1.8.5, amendment #7)
   onboarding.go           # ~80   /start <onboarding_token> matcher → INSERT telegram_accounts
                           #       + delete pending row + emit SSE /setup/events "completed"
   config.go               # ~60   BotToken (env) + AllowedFallback (deprecated env) + bind addr
@@ -2674,6 +2796,7 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 - [ ] Flag override per debug: `aura serve --no-telegram`, `aura serve --only=cli`.
 - [ ] Setup wizard HTTP server bind `127.0.0.1:9081` (override `AURA_SETUP_BIND=0.0.0.0:9081` per setup remote con QR scan).
 - [ ] `GET /setup` serve `page.html` embedded.
+- [ ] **One-time token gate (amendment #10)**: `AURA_SETUP_TOKEN` env var. If unset at boot, `aura serve` generates a random UUIDv4 and prints `AURA_SETUP_TOKEN=<value>` to stdout (single line, parseable). Token persists in memory only (no disk). Middleware `requireSetupToken` on `/setup/*` returns 401 if `?token=` query param or `X-Aura-Setup-Token` header does not match. After successful Telegram onboarding (POST /setup/onboard-link completion event), the token is invalidated and a second navigation returns 401. Acceptance test: 401 without token, 200 with token, 401 after onboarding-complete.
 - [ ] `POST /setup/token` body `{token}`: valida via Telegram `getMe`, persiste in secrets store, restart bot goroutine (se già attivo).
 - [ ] `POST /setup/onboard-link`: genera UUID onboarding_token, INSERT `telegram_setup_pending` (TTL 1h), ritorna `{deep_link: "https://t.me/<bot_username>?start=<token>", qr_svg: "..."}`.
 - [ ] `GET /setup/events` (SSE): emette `{type:"onboarding_completed", telegram_user_id, username}` quando `telegram_setup_pending.consumed_at` viene scritto. **Implementazione: poll DB ogni 2s** (default proposto chiuso per Slice 9a, vedi Open Questions sotto). LISTEN/NOTIFY è ottimizzazione futura, non bloccante.
@@ -2684,9 +2807,11 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 #### 9b (Telegram impl)
 - [ ] `internal/channels/telegram/bot.go` implementa `Channel` interface, polling `tele.Bot` via telebot.v4.
 - [ ] `agui_subscriber.go` riceve eventi da `agui.Emitter.Subscribe()` (fanout channel, in-process).
-- [ ] `renderer.go`: 2 msg per turn (status + content), throttle differenziato + chat queue serializzata + 429 backoff. Markdown via `eekstunt/telegramify-markdown-go` (licenza + active maintenance VERIFICARE pre-merge: cercare commit history ultimi 90gg + LICENSE file MIT/Apache-2.0/BSD — se inactive >180gg O licenza incompat, fallback a port custom ~80 LOC del subset MarkdownV2 escapes), fallback plain text se entity invalid.
+- [ ] `renderer.go`: 2 msg per turn (status + content), throttle differenziato + chat queue serializzata + 429 backoff. Markdown via in-tree custom MarkdownV2 escaper `internal/channels/telegram/mdv2.go` (~80 LOC, per amendment #4 — promotes the port to default, eliminates `eekstunt/telegramify-markdown-go` dep). Acceptance: fuzz 10K random Unicode inputs → every output round-trips through Telegram `sendMessage` without `400 Bad Request: can't parse entities` (Pitfall #18 mitigation). Fallback plain text if escaping fails.
 - [ ] `hitl.go`: `ask_user.options` → InlineKeyboardMarkup; assenti → ForceReply. Callback handler chiama `Resume(token, answer)`. Reply quote = new turn parallelo (multi-pause FIFO).
-- [ ] `commands.go`: 8 commands MVP, bot-intercept, no LLM call per dispatching.
+- [ ] `commands.go`: 10 commands MVP (incl. `/cost` + `/search`), bot-intercept, no LLM call per dispatching.
+- [ ] **`/cost` command (amendment #8)**: returns today's cumulative USD spend (`aura.cost_aggregator.TodayUSD()`) + per-conversation breakdown top 5. Uses `aura chat cost` shared logic in `cmd/aura/cost.go` (~30 LOC, single source). Telegram-side: bot-intercept, no LLM call.
+- [ ] **`/search` command (amendments #7+#8 cross-ref)**: bot-intercept calling `internal/conversations/search.Search(ctx, query)` from Slice 1.8.5. Result: top 5 turn excerpts with conversation links.
 - [ ] `onboarding.go`: `/start <token>` matcher → consume `telegram_setup_pending` → INSERT `telegram_accounts` + send SSE event a /setup web.
 - [ ] `renderer.go` mappa esplicitamente i seguenti AG-UI event types (definiti in Slice 8): `RUN_STARTED` (open status pane), `STEP_STARTED`/`STEP_FINISHED` (status pane update), `TEXT_MESSAGE_START`/`CONTENT`/`END` (content streaming), `TOOL_CALL_START`/`ARGS`/`END`/`RESULT` (status pane tool list con glyph 🟡→✅/❌), `REASONING_START`/`CONTENT`/`END` (status pane "💭 Reasoning..." line, collapsed se troppo lungo), `STATE_DELTA` (running cost USD su status pane footer), `STATE_SNAPSHOT` (no-op nel rendering, solo audit), `MESSAGES_SNAPSHOT` (no-op, solo HTTP responses), `RUN_FINISHED` (status pane finalize + content reply send), `RUN_ERROR` (status pane shows ❌ + error message).
 - [ ] **Microcompact pointer handling**: il renderer riconosce `tool_call_result` content che inizia con `[tool_call_id=X: evicted from context...]` (formato L1 microcompact eviction Slice 1.8b) e lo rende come line "🗄️ Tool result evicted (X bytes archived)" invece di dump del puntatore raw nel Telegram message.
@@ -2755,7 +2880,7 @@ goroutine of aura serve. Subscribes to internal/agui/emitter fanout
 channel (no HTTP overhead vs external SSE). Pattern master B: 2 msg
 per turn (status pane + content reply), throttle differenziato (status
 1500ms / content 500ms) + chat queue 1000ms serializzata + 429 backoff.
-Markdown via eekstunt/telegramify-markdown-go (no custom port).
+Markdown via in-tree custom MarkdownV2 escaper (per amendment #4, no external dep).
 
 HITL: ask_user.options -> InlineKeyboardMarkup; assenti -> ForceReply.
 Reply quote a pending = nuovo turn parallelo (multi-pause FIFO).
@@ -3202,7 +3327,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 | Privacy isolation | **No isolation single-user mode**: tutti node sotto identity `'local'` default. Future multi-user richiede refactor (accettato pre-merge). |
 | Community detection | **Leiden hierarchical** (GraphRAG pattern) via Neo4j GDS plugin. Periodic background ogni 24h. Community summary embedded per global query retrieval. |
 | Memify post-processing | **Cognee pattern**: prune stale entity (no mention 90gg) + strengthen RELATED_TO weight su co-occurrence + derive facts da multi-hop traversal. Background 24h. |
-| Agent memory | **Episodic + Insight + injection**: `:AgentEpisode` post-conv summary + `:AgentInsight` cross-conv pattern. Pre-conv inject top-K Insight relevant nel system prompt (cache-friendly, dopo Agent.md). |
+| Agent memory | **Episodic + Insight + cached injection (amendment #11)**: `:AgentEpisode` post-conv summary + `:AgentInsight` cross-conv pattern. Pre-conv inject top-K Insight relevant nel system prompt come `messages[2]`. **In-memory LRU cache TTL `AURA_AGENT_INSIGHT_CACHE_TTL_SEC=600` (10 min)** — preserva byte-identity di `messages[2]` turn-su-turn (Slice 4 invariant cross-slice). Senza cache: Slice 4 KV cache si rompe quando Slice 11e atterra (Pitfall #3, Risk #5). |
 
 ### Architettura (5 sub-slice)
 
@@ -3215,13 +3340,13 @@ CREATE CONSTRAINT entity_id   FOR (e:Entity)   REQUIRE e.id IS UNIQUE;
 CREATE CONSTRAINT community_id FOR (cm:Community) REQUIRE cm.id IS UNIQUE;
 
 CREATE VECTOR INDEX chunk_embedding FOR (c:Chunk) ON (c.embedding)
-  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+  OPTIONS {indexConfig: {`vector.dimensions`: ${AURA_EMBED_DIMENSIONS}, `vector.similarity_function`: 'cosine', `vector.hnsw.m`: 32, `vector.hnsw.ef_construction`: 200}}; -- amendment #20: HNSW M=32 (NOT default 16) per recall@5 ≥ 0.8 @ 100K corpus
 CREATE VECTOR INDEX entity_embedding FOR (e:Entity) ON (e.embedding)
-  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+  OPTIONS {indexConfig: {`vector.dimensions`: ${AURA_EMBED_DIMENSIONS}, `vector.similarity_function`: 'cosine', `vector.hnsw.m`: 32, `vector.hnsw.ef_construction`: 200}}; -- amendment #20: HNSW M=32 (NOT default 16) per recall@5 ≥ 0.8 @ 100K corpus
 CREATE VECTOR INDEX community_embedding FOR (cm:Community) ON (cm.embedding)
-  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+  OPTIONS {indexConfig: {`vector.dimensions`: ${AURA_EMBED_DIMENSIONS}, `vector.similarity_function`: 'cosine', `vector.hnsw.m`: 32, `vector.hnsw.ef_construction`: 200}}; -- amendment #20: HNSW M=32 (NOT default 16) per recall@5 ≥ 0.8 @ 100K corpus
 CREATE VECTOR INDEX agent_insight_embedding FOR (i:AgentInsight) ON (i.embedding)
-  OPTIONS {indexConfig: {`vector.dimensions`: 768, `vector.similarity_function`: 'cosine'}};
+  OPTIONS {indexConfig: {`vector.dimensions`: ${AURA_EMBED_DIMENSIONS}, `vector.similarity_function`: 'cosine', `vector.hnsw.m`: 32, `vector.hnsw.ef_construction`: 200}}; -- amendment #20: HNSW M=32 (NOT default 16) per recall@5 ≥ 0.8 @ 100K corpus
 
 CREATE FULLTEXT INDEX chunk_text FOR (c:Chunk) ON EACH [c.text];
 CREATE FULLTEXT INDEX entity_name FOR (e:Entity) ON EACH [e.name];
@@ -3354,9 +3479,21 @@ internal/memory/agent/
                     #         Cluster size >= 3 → synthesize candidate (LLM tier=reasoning)
                     #         Persist :AgentInsight + :LEARNED {strength} relation
                     #       Inject hook (Slice 0.9 PromptBuilder):
-                    #         Pre-conv: query top-3 :AgentInsight relevant via embedding
+                    #         Pre-conv: query top-K :AgentInsight relevant via embedding
                     #         Inject come third system message (post Agent.md Slice 10)
-                    #         Cache-friendly: messages[0,1,2] stable cross-turn
+                    #         **Cache TTL (amendment #11 — Architecture spec gap):**
+                    #         `AURA_AGENT_INSIGHT_CACHE_TTL_SEC=600` (default 10 min).
+                    #         In-memory LRU keyed by (identity_id, query_embedding_hash).
+                    #         During TTL window the SAME top-K subset is returned → messages[2]
+                    #         is byte-identical turn-su-turn → KV cache hit on the third system
+                    #         message (parity with messages[0] discipline of Slice 4).
+                    #         Cache invalidation: explicit on :AgentInsight upsert (insight.go
+                    #         analyzer goroutine triggers Invalidate(identity_id)); implicit on
+                    #         TTL expiry. Without this cache, every turn re-queries Neo4j HNSW
+                    #         and returns slightly different top-K (embedding similarity noise)
+                    #         → messages[2] varies → Slice 4 invariant breaks → cache hit rate
+                    #         collapses (see Pitfall #3 cross-slice, Risk #5 architectural spec
+                    #         gap; reference_aura_cache_poisoning_sites_2026-05-27 site #7).
 internal/memory/graph/memify.go  # ~250  Cognee Memify post-processing:
                                   #   Background ogni AURA_MEMORY_MEMIFY_INTERVAL_HR=24
                                   #   1. Prune stale: :Entity con last_mentioned_at < 90gg
@@ -3421,6 +3558,8 @@ aura memory forget --document voyager.pdf
 - [ ] 4 constraint UNIQUE per id
 - [ ] 4 index proprietà (entity_type, mention_count, agent_kind episode/insight)
 - [ ] Migration Cypher in `internal/db/migrations/neo4j/0002_memory_schema.cql` reversibile
+- [ ] **Embedding dim consistency check (amendment #18 cross-ref Slice 0.7)**: Cypher migration `0002_memory_schema.cql` CREATE VECTOR INDEX statements MUST reference dimensions via env-templated value (not hardcoded). Migration loader substitutes `${AURA_EMBED_DIMENSIONS}` (default 768) at apply time. Re-running migration with different env value DENIED unless preceded by `aura memory wipe-vectors --confirm` (idempotency safeguard). Acceptance test: change env to 1024, attempt re-apply → explicit error `vector dimension conflict: existing 768 vs requested 1024 — see Slice 0.7 runbook (amendment #18)`.
+- [ ] **HNSW M=32 verification (amendment #20)**: post-migration Cypher `SHOW INDEXES YIELD name, options WHERE name = 'chunk_embedding' RETURN options` MUST return `{vector.hnsw.m: 32, vector.hnsw.ef_construction: 200, vector.dimensions: 768, vector.similarity_function: 'cosine'}`. Same for entity_embedding, community_embedding, agent_insight_embedding.
 
 #### 11b — Ingestion
 - [ ] Tool `ingest.file(path)` chiama markitdown → chunker → embedder → entity extractor → Neo4j upsert
@@ -3430,6 +3569,7 @@ aura memory forget --document voyager.pdf
 - [ ] `ingest_audit` row INSERT per ogni ingest (parity skill_audit)
 - [ ] Idempotent: content_hash check, ri-ingest stesso file = no-op + log
 - [ ] Telegram document handler chiama `ingest.file` auto + risposta confirm
+- [ ] **Embed batch dim consistency (amendment #18, Pitfall #7 P0)**: `embedder.go` Batch() asserts every returned vector has `len(v) == AURA_EMBED_DIMENSIONS`. Mismatch on any returned vector → abort ingest, log `embedding sidecar returned wrong dim — refusing to corrupt Neo4j vector index`. Acceptance test: mock sidecar returning 384d vector → ingest aborts before Neo4j upsert.
 
 #### 11c — Community detection
 - [ ] Background goroutine ogni 24h chiama `CALL gds.leiden.stream(...)` su entity graph
@@ -3440,6 +3580,8 @@ aura memory forget --document voyager.pdf
 - [ ] Tool `memory.search(query, scope, k=5)` hybrid retrieval (BM25 + HNSW + graph 1-hop)
 - [ ] Score fusion mem0-style: 0.4*bm25 + 0.4*vector + 0.2*graph
 - [ ] LLM re-ranker top-20 → top-5 tier=worker, batch 4
+- [ ] **HNSW M=32 baseline (amendment #20, UX-08)**: vector index creation MUST set `vector.hnsw.m: 32` (NOT Neo4j default 16) + `vector.hnsw.ef_construction: 200`. Acceptance test: post-migration, `SHOW INDEXES YIELD name, options` returns `m=32` for all 4 vector indexes. Pre-merge benchmark recall@5 ≥ 0.8 @ 1K/10K/100K synthetic corpus (run `scripts/memory_recall_bench.sh` — file authored in Phase 15).
+- [ ] **`docs/aura-quality-snapshot.md` CI gate (amendment #20)**: pre-merge for any PR touching `internal/memory/**` or `internal/db/migrations/neo4j/**`, `scripts/quality_snapshot_gate.sh` validates that the Phase 15 row in `docs/aura-quality-snapshot.md` has `Last measured` date ≥ PR base commit date. Stale → CI fail with `quality snapshot row 'GraphRAG retrieval recall@5 @ 100K corpus' stale — owner Phase 15 must re-measure and update before merge (amendment #20)`. Snapshot rows for Phase 5 (sandbox escape rate), Phase 6 (cache hit rate), Phase 11 (snippet success rate), Phase 13 (MarkdownV2 escape fuzz) gated by analogous path globs (see `docs/aura-quality-snapshot.md` CI gate contract section).
 - [ ] Tool `memory.recall(entity)` ritorna all chunks MENTIONING + 2-hop entities
 - [ ] Tool `memory.forget(id)` GDPR-compliant cascade + audit FORGET row
 - [ ] Tool `memory.summarize_conversation(conv_id)` manual rollup `:UserConversation`
@@ -3449,6 +3591,7 @@ aura memory forget --document voyager.pdf
 - [ ] Post-conv trigger crea `:AgentEpisode` con summary LLM-generated
 - [ ] Cross-conv analyzer ogni 60min: cluster episode similarity → `:AgentInsight`
 - [ ] PromptBuilder injection: top-3 `:AgentInsight` relevant come third system message
+- [ ] **`:AgentInsight` retrieval cache (amendment #11)**: `internal/memory/agent/insight_cache.go` LRU (capacity 1024 entries, TTL `AURA_AGENT_INSIGHT_CACHE_TTL_SEC=600`). `Get(identity_id, query_embedding_hash) ([]Insight, bool)` + `Put(identity_id, query_embedding_hash, []Insight)` + `Invalidate(identity_id)`. Test invariant: 5 consecutive `PromptBuilder.Build(...)` calls within TTL → `messages[2]` SHA-256 identical (cross-link with `scripts/cache_invariant_audit.sh` from amendment #16). Test invalidation: insight.go analyzer Upsert → cache hit returns fresh data on next call within same TTL window.
 - [ ] Memify background 24h: prune stale + strengthen frequent + derive facts
 - [ ] Audit log per ogni operazione Memify
 
@@ -4237,6 +4380,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | Env var | Default | Tipo | Slice | Note |
 |---|---|---|---|---|
 | `AURA_DB_URL` | (richiesto) | operative | 0.5 | Postgres DSN. |
+| `AURA_DB_MIGRATE_URL` | (optional, defaults to `AURA_DB_URL`) | secret | 0.5 | Migrations-only DSN connecting as `aura_migrate` role (amendment #17, Pitfall #6 P0). If unset, `aura db migrate` fails fast. Production runtime never uses this URL — only `aura db migrate` subcommand reads it. |
 | `AURA_LLM_BASE_URL` | `https://openrouter.ai/api/v1` | operative | 1 | OpenAI-compat endpoint. |
 | `AURA_LLM_API_KEY` | (richiesto via `.env` `OPENROUTER_API_KEY`) | secret | 1 | API key. |
 | `AURA_LLM_MODEL` | `deepseek/deepseek-v4-flash:exacto` | operative | 1 | Model id. |
@@ -4257,25 +4401,29 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SANDBOX_MAX_CONCURRENT_SESSIONS` | `5` | cap | 2b | Hard cap session concurrent per istanza Aura. |
 | `AURA_SANDBOX_WORKSPACE_MAX_BYTES` | `104857600` (100 MiB) | cap | 2b | Quota per workspace mount per conversation. |
 | `AURA_SANDBOX_NETWORK_ALLOW_HOSTS` | `` (empty = deny totale) | operative | 2b | CSV hosts allowlist (es. `pypi.org,files.pythonhosted.org`). Empty mantiene `network_mode: none` Slice 2a. Non-empty attiva tier Risk-Based RISKY. |
-| `AURA_SWARM_MAX_DEPTH` | `3` | cap | 3 | Spawn depth cap (era `MAX_SPAWN_DEPTH` pre-fix). |
-| `AURA_SWARM_MODEL_CHAT` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
-| `AURA_SWARM_MODEL_REASONING` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
-| `AURA_SWARM_MODEL_WORKER` | `=AURA_LLM_MODEL` | operative | 3 | Tier override. |
+| `AURA_LOOP_MAX_STEPS` | `25` | cap | 0.9 | Tool-call iteration cap per `Run` (amendment #19, Pitfall #9 P0). Child agents inherit parent's REMAINING (not fresh). Trip → `Event.FinishReason='max_steps'`. |
+| `AURA_LOOP_MAX_WALLCLOCK_SEC` | `300` | cap | 0.9 | Wallclock budget per `Run` in seconds (amendment #19, Pitfall #9 P0). Children inherit parent's absolute deadline. Trip → `Event.FinishReason='max_wallclock'`. |
+| `AURA_LOOP_DEDUP_WINDOW` | `3` | cap | 0.9 | Sliding window size for tool-call dedup (amendment #19, Pitfall #9 P0). If last N tool calls have identical `tool_name + args_hash`, trip → `Event.FinishReason='dedup_loop'`. |
+| `AURA_SWARM_MAX_DEPTH` | `2` | cap | 3 | Spawn depth cap v1 (amendment #12 — was `3` pre-2026-05-29; full N-deep deferred to v2 SWARM-V2-01). |
+| `AURA_SWARM_MODEL_CHAT` | `=AURA_LLM_MODEL` | operative | 3 | Tier override (v1 NO-OP per amendment #12 — all tiers resolve to `AURA_LLM_MODEL`; enforcement deferred to v2 SWARM-V2-01). |
+| `AURA_SWARM_MODEL_REASONING` | `=AURA_LLM_MODEL` | operative | 3 | Tier override (v1 NO-OP per amendment #12 — all tiers resolve to `AURA_LLM_MODEL`; enforcement deferred to v2 SWARM-V2-01). |
+| `AURA_SWARM_MODEL_WORKER` | `=AURA_LLM_MODEL` | operative | 3 | Tier override (v1 NO-OP per amendment #12 — all tiers resolve to `AURA_LLM_MODEL`; enforcement deferred to v2 SWARM-V2-01). |
 | `AURA_WEB_FETCH_ALLOW_LOOPBACK` | `0` (false) | operative | 5 | Permit loopback URLs in web_fetch. |
 | `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
 | `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
 | `AURA_SKILL_INJECTION_BLOCKLIST` | (built-in list) | operative | 7 | Prompt-injection blocklist patterns. |
-| `AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN` | `60` | cap | 7e | Background pattern_analyzer goroutine interval. |
-| `AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS` | `7` | cap | 7e | Query execute logs window per cluster detection. |
-| `AURA_SKILL_AUTOSUGGEST_MIN_LOC` | `20` | cap | 7e | Min code LOC per auto-suggest candidate. |
-| `AURA_SKILL_AUTOSUGGEST_MIN_OCCURRENCES` | `3` | cap | 7e | Min cluster size per ask_user emit. |
-| `AURA_SKILL_AUTOSUGGEST_SIMILARITY_THRESHOLD` | `0.85` | cap | 7e | HNSW similarity threshold per cluster grouping. |
+| `AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN` | `60` | cap | 7e | Background pattern_analyzer goroutine interval (v1.x deferred Slice 7f per amendment #13). |
+| `AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS` | `7` | cap | 7e | Query execute logs window per cluster detection (v1.x deferred Slice 7f per amendment #13). |
+| `AURA_SKILL_AUTOSUGGEST_MIN_LOC` | `20` | cap | 7e | Min code LOC per auto-suggest candidate (v1.x deferred Slice 7f per amendment #13). |
+| `AURA_SKILL_AUTOSUGGEST_MIN_OCCURRENCES` | `3` | cap | 7e | Min cluster size per ask_user emit (v1.x deferred Slice 7f per amendment #13). |
+| `AURA_SKILL_AUTOSUGGEST_SIMILARITY_THRESHOLD` | `0.85` | cap | 7e | HNSW similarity threshold per cluster grouping (v1.x deferred Slice 7f per amendment #13). |
 | `AURA_SKILL_TTL_DAYS` | `90` | cap | 7e | Idle threshold per auto-archive snippet. |
 | `AURA_SKILL_TTL_SWEEP_INTERVAL_HR` | `24` | cap | 7e | TTL sweeper goroutine interval. |
 | `AURA_AGUI_CORS_PERMISSIVE` | `0` | operative | 8 | Dev mode CORS `*`. |
 | `AURA_AGUI_PATH_RUN` | `/agent/run` | operative | 8 | AG-UI endpoint path. |
 | `AURA_CHANNEL_<NAME>_ENABLED` | `1` (true) | operative | 9a | Per-channel enable (es. `AURA_CHANNEL_TELEGRAM_ENABLED`). |
 | `AURA_SETUP_BIND` | `127.0.0.1:9081` | operative | 9a | Setup wizard bind. |
+| `AURA_SETUP_TOKEN` | (auto-generated UUIDv4 if unset) | secret | 9a | One-time setup wizard auth token (amendment #10). Printed to stdout on first `aura serve` boot; invalidated after first successful Telegram onboarding. Required when `AURA_SETUP_BIND=0.0.0.0:9081` (remote setup). |
 | `AURA_TELEGRAM_STATUS_THROTTLE_MS` | `1500` | cap | 9b | Status pane throttle. |
 | `AURA_TELEGRAM_CONTENT_THROTTLE_MS` | `500` | cap | 9b | Content streaming throttle. |
 | `AURA_TELEGRAM_CHAT_RATE_LIMIT_MS` | `1000` | cap | 9b | Chat queue hard rate (1/sec Telegram). |
@@ -4283,11 +4431,13 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_TELEGRAM_DOC_ASYNC_MAX_BYTES` | `52428800` (50 MiB) | cap | 9c | Async convert hard cap. |
 | `AURA_PROFILE_CERTAINTY_N` | `3` | cap | 10 | Auto-add certainty threshold. |
 | `AURA_PROFILE_DIR` | `~/.aura/agents` | path | 10 | Per-identity profile dir. |
+| `AURA_EMBED_DIMENSIONS` | `768` | cap | 0.7 | Embedding vector dimensionality (amendment #18, Pitfall #7 P0). Sidecar `aura-llama-embed` boot-asserts `model.output_dim == this`. Neo4j `CREATE VECTOR INDEX` substitutes at migration time. **NEVER change in-place** on a populated DB — see Slice 0.7 runbook. |
 | `AURA_MEMORY_CHUNK_SIZE_TOKENS` | `512` | cap | 11b | Recursive semantic chunker target size. |
 | `AURA_MEMORY_CHUNK_OVERLAP_TOKENS` | `64` | cap | 11b | Sliding overlap fra chunks adiacenti. |
 | `AURA_MEMORY_EMBED_BATCH_SIZE` | `32` | cap | 11b | Batch embedder requests per call sidecar. |
 | `AURA_MEMORY_ENTITY_BATCH_SIZE` | `10` | cap | 11b | Batch chunks per LLM entity extraction call. |
 | `AURA_MEMORY_COMMUNITY_INTERVAL_HR` | `24` | cap | 11c | Background Leiden community detection interval. |
+| `AURA_AGENT_INSIGHT_CACHE_TTL_SEC` | `600` (10 min) | cap | 11e | LRU cache TTL per `:AgentInsight` retrieval (amendment #11). Preserva `messages[2]` byte-identity cross-turn → Slice 4 KV cache hit. **Cross-slice invariant** — modifica solo se Slice 4 `cache_invariant_audit.sh` resta verde. |
 | `AURA_MEMORY_INSIGHT_INTERVAL_MIN` | `60` | cap | 11e | Cross-conv pattern analyzer interval. |
 | `AURA_MEMORY_INSIGHT_TOP_K` | `3` | cap | 11e | Top-K AgentInsight inject in system prompt. |
 | `AURA_MEMORY_INSIGHT_RELEVANCE_THRESHOLD` | `0.7` | cap | 11e | Min similarity per inject (skip junk). |
