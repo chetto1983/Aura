@@ -1,12 +1,12 @@
-// Package agent owns the conversation lifecycle: build the prompt for the
-// LLM, parse streamed chunks back, dispatch tool calls, repeat up to
-// MaxSteps. One Loop instance == one conversation == one goroutine.
-//
-// The loop is intentionally thin. KV-cache discipline (stable prefix, no
-// mutation of Messages[0]) is the responsibility of the caller that builds
-// the initial system message. Tool dispatch is the responsibility of the
-// tools.Registry. Streaming wire is the responsibility of the llm.Client.
 package agent
+
+// Loop is the Phase-1 conversation skeleton (deleted in Plan 02-07): build the
+// prompt for the LLM, parse streamed chunks back, dispatch tool calls, repeat up
+// to MaxSteps. One Loop instance == one conversation == one goroutine. The
+// cornerstone Agent interface that supersedes it lives in agent.go; the package
+// doc moved there. KV-cache discipline (stable prefix, no mutation of
+// Messages[0]) is the caller's responsibility; tool dispatch is the
+// tools.Registry's; streaming wire is the llm.Client's.
 
 import (
 	"context"
