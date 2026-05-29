@@ -63,20 +63,11 @@ jobs:
   integration-test:
     name: Integration tests (db_integration tag)
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17.10-alpine3.23
-        env:
-          POSTGRES_USER: aura
-          POSTGRES_PASSWORD: ci-test-password
-          POSTGRES_DB: aura
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U aura -d aura"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # Postgres is brought up via `docker compose` (not a GitHub service container)
+    # so scripts/restore_drill.sh — which runs all pg ops through
+    # `docker compose exec postgres` — works against the same instance the Go
+    # tests use. The compose file reads POSTGRES_* + NEO4J_PASSWORD from the env
+    # block below for interpolation (the whole file is parsed even for one service).
     env:
       POSTGRES_USER: aura
       POSTGRES_PASSWORD: ci-test-password
@@ -103,6 +94,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: Start Postgres (docker compose)
+        run: make db-up
 
       - name: Run db_integration suite with race
         run: go test -tags db_integration -race -count=1 ./internal/db/...
