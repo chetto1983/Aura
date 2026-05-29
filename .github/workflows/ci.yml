@@ -133,3 +133,54 @@ jobs:
         run: |
           sqlc generate
           git diff --exit-code internal/db/sqlc/
+
+  knowledge-integration-test:
+    name: Knowledge integration + smoke (neo4j + sidecar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25  # guards against a hung model/plugin download
+    env:
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-test-password
+      AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
+      AURA_NEO4J_DATABASE: neo4j
+      AURA_MCP_NEO4J_CYPHER_BIN: mcp-neo4j-cypher
+      AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
+      AURA_EMBED_BASE_URL: http://127.0.0.1:8081
+      AURA_EMBED_DIMENSIONS: "768"
+      # recall@5 = 5/5 is the hard, hardware-independent correctness gate. p95 is
+      # latency-sensitive: a shared runner with a cold HNSW index cannot meet the
+      # operator's 30ms SC#5 budget (measured 57ms cold vs 1-8ms warm), so it is
+      # bounded generously here — it reports without flaking CI. The strict 30ms
+      # default still gates on the operator's known hardware.
+      AURA_SMOKE_P95_MS: "2000"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install mcp-neo4j-cypher (LLM graph interface, spawned by the client)
+        run: |
+          pipx install mcp-neo4j-cypher==0.6.0
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
+        run: make neo4j-migrate
+
+      - name: Knowledge integration suite with race
+        run: go test -race -count=1 -tags 'db_integration neo4j_integration' ./internal/knowledge/...
+
+      - name: Italian retrieval smoke (recall@5 hard gate, p95 reported)
+        run: make smoke
