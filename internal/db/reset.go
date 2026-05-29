@@ -25,7 +25,7 @@ func Reset(ctx context.Context, migrateURL string) error {
 	if err != nil {
 		return fmt.Errorf("reset new migrator to %s: %w", redactDSN(migrateURL), err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 	if err := m.Down(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return fmt.Errorf("reset down against %s: %w", redactDSN(migrateURL), err)
 	}

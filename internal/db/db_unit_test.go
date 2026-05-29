@@ -79,17 +79,16 @@ func TestReset_MissingURLFailsFast(t *testing.T) {
 
 func TestEnsureRoles_RejectsEmptyInputs(t *testing.T) {
 	cases := []struct {
-		name              string
-		bootstrap, app, m string
-		wantSubstr        string
+		name             string
+		bootstrap, pwd   string
+		wantSubstr       string
 	}{
-		{"empty bootstrap URL", "", "p1", "p2", "bootstrapURL is empty"},
-		{"empty app password", "postgres://x:y@localhost/aura", "", "p2", "must be non-empty"},
-		{"empty migrate password", "postgres://x:y@localhost/aura", "p1", "", "must be non-empty"},
+		{"empty bootstrap URL", "", "p1", "bootstrapURL is empty"},
+		{"empty password", "postgres://x:y@localhost/aura", "", "must be non-empty"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := EnsureRoles(context.Background(), tc.bootstrap, tc.app, tc.m)
+			err := EnsureRoles(context.Background(), tc.bootstrap, tc.pwd)
 			if err == nil {
 				t.Fatal("want error, got nil")
 			}
@@ -102,25 +101,21 @@ func TestEnsureRoles_RejectsEmptyInputs(t *testing.T) {
 
 func TestEnsureRoles_NoPlaintextInError(t *testing.T) {
 	// Induce a connection-time error against an unreachable host; assert the
-	// passwords we passed in do not appear anywhere in the resulting error.
-	const appPwd = "uniquePasswordTokenABCxyz"
-	const migPwd = "uniqueOtherTokenDEFuvw"
+	// password we passed in does not appear anywhere in the resulting error.
+	const pwd = "uniquePasswordTokenABCxyz"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	// Bootstrap URL pointing at a closed port so pool open errors out cleanly.
-	bootstrap := "postgres://aura:" + appPwd + "@127.0.0.1:1/aura?sslmode=disable"
-	err := EnsureRoles(ctx, bootstrap, appPwd, migPwd)
+	bootstrap := "postgres://aura:" + pwd + "@127.0.0.1:1/aura?sslmode=disable"
+	err := EnsureRoles(ctx, bootstrap, pwd)
 	if err == nil {
 		t.Skip("EnsureRoles unexpectedly succeeded against unreachable port; skipping plaintext check")
 	}
 	msg := err.Error()
-	if strings.Contains(msg, appPwd) {
-		t.Errorf("error message leaks appPassword: %q", msg)
-	}
-	if strings.Contains(msg, migPwd) {
-		t.Errorf("error message leaks migratePassword: %q", msg)
+	if strings.Contains(msg, pwd) {
+		t.Errorf("error message leaks password: %q", msg)
 	}
 }
 

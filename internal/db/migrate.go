@@ -43,7 +43,7 @@ func Migrate(ctx context.Context, migrateURL string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("new migrator to %s: %w", redactDSN(migrateURL), err)
 	}
-	defer m.Close()
+	defer func() { _, _ = m.Close() }()
 	pre, _, _ := m.Version()
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return 0, fmt.Errorf("migrate up against %s: %w", redactDSN(migrateURL), err)
@@ -57,16 +57,21 @@ func Migrate(ctx context.Context, migrateURL string) (int, error) {
 // 0001_init grants land on existing roles (golang-migrate iofs cannot do
 // psql variable substitution; this is the Go-side substitute).
 //
-// migrateURL must point at a role with CREATE ROLE privilege (typically the
-// superuser, e.g. the `aura` POSTGRES_USER set by compose). The passwords
-// are passed via pgx Exec parameters so they never appear in error strings
-// (T-1.05-06 mitigation — asserted by TestEnsureRoles_NoPlaintextInError).
-func EnsureRoles(ctx context.Context, bootstrapURL, appPassword, migratePassword string) error {
+// bootstrapURL must point at a role with CREATE ROLE privilege (typically the
+// POSTGRES_USER superuser set by compose). The single `password` is applied
+// to both aura_app and aura_migrate for local-dev ergonomics; production
+// environments use AURA_DB_URL / AURA_DB_MIGRATE_URL overrides with per-role
+// credentials and skip EnsureRoles entirely.
+//
+// The password is passed via pgx Exec parameter so it never appears in any
+// error string Postgres echoes (T-1.05-06 mitigation — asserted by
+// TestEnsureRoles_NoPlaintextInError).
+func EnsureRoles(ctx context.Context, bootstrapURL, password string) error {
 	if bootstrapURL == "" {
 		return errors.New("EnsureRoles: bootstrapURL is empty")
 	}
-	if appPassword == "" || migratePassword == "" {
-		return errors.New("EnsureRoles: appPassword and migratePassword must be non-empty")
+	if password == "" {
+		return errors.New("EnsureRoles: password must be non-empty")
 	}
 	pool, err := pgxpool.New(ctx, bootstrapURL)
 	if err != nil {
@@ -74,34 +79,23 @@ func EnsureRoles(ctx context.Context, bootstrapURL, appPassword, migratePassword
 	}
 	defer pool.Close()
 
-	// Parametrized DO blocks. PL/pgSQL accepts parameters via the FORMAT
-	// statement; we use $1/$2 binding via EXECUTE to keep the password out of
-	// the literal SQL text (and out of any error string Postgres echoes).
-	const ensureAppRole = `
+	// PL/pgSQL accepts parameters via the EXECUTE statement; we bind $1 so the
+	// password never lives in the literal SQL text (and never reaches an error
+	// string Postgres echoes back).
+	const ensureRole = `
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'aura_app') THEN
-        EXECUTE format('CREATE ROLE aura_app WITH LOGIN PASSWORD %L', $1);
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = $2) THEN
+        EXECUTE format('CREATE ROLE %I WITH LOGIN PASSWORD %L', $2, $1);
     ELSE
-        EXECUTE format('ALTER ROLE aura_app WITH LOGIN PASSWORD %L', $1);
+        EXECUTE format('ALTER ROLE %I WITH LOGIN PASSWORD %L', $2, $1);
     END IF;
 END $$;
 `
-	const ensureMigrateRole = `
-DO $$
-BEGIN
-    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'aura_migrate') THEN
-        EXECUTE format('CREATE ROLE aura_migrate WITH LOGIN PASSWORD %L', $1);
-    ELSE
-        EXECUTE format('ALTER ROLE aura_migrate WITH LOGIN PASSWORD %L', $1);
-    END IF;
-END $$;
-`
-	if _, err := pool.Exec(ctx, ensureAppRole, appPassword); err != nil {
-		return fmt.Errorf("ensure aura_app role: %w", redactErrorPassword(err, appPassword, migratePassword))
-	}
-	if _, err := pool.Exec(ctx, ensureMigrateRole, migratePassword); err != nil {
-		return fmt.Errorf("ensure aura_migrate role: %w", redactErrorPassword(err, appPassword, migratePassword))
+	for _, role := range []string{"aura_app", "aura_migrate"} {
+		if _, err := pool.Exec(ctx, ensureRole, password, role); err != nil {
+			return fmt.Errorf("ensure role %s: %w", role, redactErrorPassword(err, password))
+		}
 	}
 	return nil
 }

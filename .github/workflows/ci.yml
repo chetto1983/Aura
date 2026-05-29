@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master", "main", "tabula-rasa" ]
+  pull_request:
+    branches: [ "master", "main", "tabula-rasa" ]
+
+permissions:
+  contents: read
+
+# Cancel in-flight runs of the same ref when a new push lands (saves runner minutes
+# on rapid pushes; in-flight runs on other refs are untouched).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-lint:
+    name: Build + vet + lint + file-size cap
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      - name: File-size cap (600 LOC)
+        run: bash scripts/check-file-size.sh
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.12.2
+          args: --timeout=5m
+
+  unit-test:
+    name: Unit tests (race detector)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+  integration-test:
+    name: Integration tests (db_integration tag)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.10-alpine3.23
+        env:
+          POSTGRES_USER: aura
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: aura
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aura -d aura"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run db_integration suite with race
+        run: go test -tags db_integration -race -count=1 ./internal/db/...
+
+      - name: aura db migrate (smoke, idempotency)
+        run: |
+          go run ./cmd/aura db migrate
+          go run ./cmd/aura db migrate
+          go run ./cmd/aura db status
+          go run ./cmd/aura db ping
+
+      - name: Restore drill (<90s assertion)
+        run: |
+          export PGPASSWORD=${POSTGRES_PASSWORD}
+          bash scripts/restore_drill.sh
+
+  sqlc-golden:
+    name: sqlc generate is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install sqlc
+        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1
+
+      - name: Regenerate + diff
+        run: |
+          sqlc generate
+          git diff --exit-code internal/db/sqlc/

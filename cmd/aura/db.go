@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"text/tabwriter"
 
 	"github.com/chetto1983/aura/internal/config"
@@ -43,16 +44,13 @@ func runDB(args []string) {
 }
 
 func dbMigrate(ctx context.Context, cfg *config.Config) {
-	// Best-effort EnsureRoles bootstrap: only run when POSTGRES_PASSWORD is set
-	// (the standard compose-managed case). When operators run against an
-	// externally-provisioned cluster where the aura_app/aura_migrate roles
-	// already exist with their own credentials, EnsureRoles is skipped.
-	if pwd := os.Getenv("POSTGRES_PASSWORD"); pwd != "" {
-		bootstrap := os.Getenv("AURA_DB_BOOTSTRAP_URL")
-		if bootstrap == "" {
-			bootstrap = fmt.Sprintf("postgres://aura:%s@127.0.0.1:5432/aura?sslmode=disable", pwd)
-		}
-		if err := db.EnsureRoles(ctx, bootstrap, pwd, pwd); err != nil {
+	// Best-effort EnsureRoles bootstrap: only run when BootstrapURL + Password
+	// are populated (the standard compose-managed case). Externally provisioned
+	// clusters that supply pre-created aura_app/aura_migrate roles via the
+	// AURA_DB_URL / AURA_DB_MIGRATE_URL overrides will leave Password empty and
+	// skip EnsureRoles entirely.
+	if cfg.DB.BootstrapURL != "" && cfg.DB.Password != "" {
+		if err := db.EnsureRoles(ctx, cfg.DB.BootstrapURL, cfg.DB.Password); err != nil {
 			fmt.Fprintln(os.Stderr, "ensure roles:", err)
 			os.Exit(1)
 		}
@@ -102,15 +100,15 @@ func dbStatus(ctx context.Context, cfg *config.Config) {
 		return
 	}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "VERSION\tDIRTY")
+	_, _ = fmt.Fprintln(w, "VERSION\tDIRTY")
 	for _, r := range rows {
-		fmt.Fprintf(w, "%d\t%v\n", r.Version, r.Dirty)
+		_, _ = fmt.Fprintf(w, "%d\t%v\n", r.Version, r.Dirty)
 	}
 	_ = w.Flush()
 }
 
 func dbReset(ctx context.Context, cfg *config.Config, extra []string) {
-	if !hasYesFlag(extra) || os.Getenv("AURA_RESET_YES") != "1" {
+	if !slices.Contains(extra, "--yes") || os.Getenv("AURA_RESET_YES") != "1" {
 		fmt.Fprintln(os.Stderr, "refusing — pass --yes AND set AURA_RESET_YES=1 to confirm destructive reset")
 		os.Exit(1)
 	}
@@ -119,13 +117,4 @@ func dbReset(ctx context.Context, cfg *config.Config, extra []string) {
 		os.Exit(1)
 	}
 	fmt.Println("ok: schema reset")
-}
-
-func hasYesFlag(args []string) bool {
-	for _, a := range args {
-		if a == "--yes" {
-			return true
-		}
-	}
-	return false
 }

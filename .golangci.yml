@@ -1,0 +1,51 @@
+version: "2"
+
+# Tabula-rasa baseline: enable the well-tested core linters; architecture-boundary
+# rules (depguard) land in the slice that introduces multi-layer imports
+# (Slice 0.9 — Agent runtime). Adding linters here without a slice-level rationale
+# is forbidden per CLAUDE.md §No god-class refactor-on-touch discipline.
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  tests: true
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gosec
+    - revive
+
+  settings:
+    gosec:
+      # G404 = math/rand; restore if used. G115 (integer overflow) is noisy on
+      # int32 pool fields with safe sources; quiet it for now.
+      excludes:
+        - G115
+
+    revive:
+      rules:
+        - name: exported
+          arguments:
+            - "disableStutteringCheck"
+
+  exclusions:
+    paths:
+      - "internal/db/sqlc"        # sqlc-generated code is golden; we don't lint it
+      - "internal/agent/tools"    # pre-rewrite skeleton — owning slice rewrites
+      - "internal/sandbox"        # pre-rewrite skeleton — Slice 2 owns rewrite
+      - "internal/swarm"          # pre-rewrite skeleton — Slice 3 owns rewrite
+      - "internal/agent/loop.go"  # pre-rewrite skeleton — Slice 0.9 owns rewrite
+      - "internal/llm/client.go"  # pre-rewrite skeleton — Slice 1 owns rewrite
+      - "third_party"             # vendored / generated trees
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck

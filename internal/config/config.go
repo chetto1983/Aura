@@ -1,6 +1,7 @@
 // Package config is the thin root composite read by every cmd/aura subcommand.
 // Per CONTEXT.md D-row "Composition": per-subsystem configs (db, knowledge, llm)
-// live in their owning packages; this file only wires the top-level fields.
+// live in their owning packages; this file only wires the top-level fields and
+// composes credentials from POSTGRES_* primitives.
 //
 // Slice 0.5 form: DB only. Slice 0.7 will add `Knowledge knowledge.Config` +
 // `Embed embed.Config`; Phase 2 will add `LLM llm.Config`. No new fields land
@@ -8,6 +9,8 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -26,17 +29,61 @@ type Config struct {
 // Load reads .env (best-effort) then populates a Config from environment
 // variables. A missing .env file is not an error — production deployments
 // rely on real environment variables, not on the .env shim.
+//
+// Postgres DSN composition: AURA_DB_URL / AURA_DB_MIGRATE_URL overrides take
+// precedence (production managed Postgres). Otherwise URLs are composed from
+// POSTGRES_* primitives + AURA_DB_*_ROLE role names. Single POSTGRES_PASSWORD
+// fans out to both runtime + DDL roles for local-dev ergonomics.
 func Load() (*Config, error) {
 	_ = godotenv.Load() // best-effort; missing .env is not fatal
+
+	pgUser := envDefault("POSTGRES_USER", "aura")
+	pgPassword := os.Getenv("POSTGRES_PASSWORD")
+	pgHost := envDefault("POSTGRES_HOST", "127.0.0.1")
+	pgPort := envDefault("POSTGRES_PORT", "5432")
+	pgDB := envDefault("POSTGRES_DB", "aura")
+	pgSSL := envDefault("POSTGRES_SSLMODE", "disable")
+	appRole := envDefault("AURA_DB_APP_ROLE", "aura_app")
+	migrateRole := envDefault("AURA_DB_MIGRATE_ROLE", "aura_migrate")
+
+	appURL := os.Getenv("AURA_DB_URL")
+	if appURL == "" {
+		appURL = composeDSN(appRole, pgPassword, pgHost, pgPort, pgDB, pgSSL)
+	}
+	migrateURL := os.Getenv("AURA_DB_MIGRATE_URL")
+	if migrateURL == "" {
+		migrateURL = composeDSN(migrateRole, pgPassword, pgHost, pgPort, pgDB, pgSSL)
+	}
+	bootstrapURL := os.Getenv("AURA_DB_BOOTSTRAP_URL")
+	if bootstrapURL == "" {
+		bootstrapURL = composeDSN(pgUser, pgPassword, pgHost, pgPort, pgDB, pgSSL)
+	}
+
 	return &Config{
 		DB: db.Config{
-			URL:        os.Getenv("AURA_DB_URL"),
-			MigrateURL: os.Getenv("AURA_DB_MIGRATE_URL"),
-			// pool tuning left at zero; db.Open applies defaults
+			URL:          appURL,
+			MigrateURL:   migrateURL,
+			BootstrapURL: bootstrapURL,
+			Password:     pgPassword,
 		},
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 	}, nil
+}
+
+// composeDSN returns "" when password is empty so callers can detect an
+// unconfigured DSN and fail-fast instead of dialing with a blank credential.
+func composeDSN(role, password, host, port, dbname, sslmode string) string {
+	if password == "" {
+		return ""
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+		url.QueryEscape(role),
+		url.QueryEscape(password),
+		host, port,
+		url.QueryEscape(dbname),
+		sslmode,
+	)
 }
 
 // envDefault returns the value of `key` from the environment, falling back to
