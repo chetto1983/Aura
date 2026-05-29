@@ -84,7 +84,15 @@ func dbPing(ctx context.Context, cfg *config.Config) {
 }
 
 func dbStatus(ctx context.Context, cfg *config.Config) {
-	pool, err := db.Open(ctx, &cfg.DB)
+	// Status reads golang-migrate's `schema_migrations` tracker in `public`,
+	// which is owned by aura_migrate and not readable by aura_app under our
+	// role-separation policy. Open with the migrate DSN instead — observing
+	// migration state is a maintenance operation, not a runtime path.
+	statusCfg := cfg.DB
+	if cfg.DB.MigrateURL != "" {
+		statusCfg.URL = cfg.DB.MigrateURL
+	}
+	pool, err := db.Open(ctx, &statusCfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

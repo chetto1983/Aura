@@ -54,7 +54,7 @@ func bootstrapURL(t *testing.T) string {
 func TestEnsureRoles_CreatesBothRoles(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := EnsureRoles(ctx, bootstrapURL(t), "aura_app_secret", "aura_migrate_secret"); err != nil {
+	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
 }
@@ -65,7 +65,7 @@ func TestMigrate_Idempotent(t *testing.T) {
 	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
 
 	// Roles must exist before m.Up runs.
-	if err := EnsureRoles(ctx, bootstrapURL(t), "aura_app_secret", "aura_migrate_secret"); err != nil {
+	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestRoleSeparation_AppDenied(t *testing.T) {
 
 	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
 	// Ensure roles + migrations are applied first.
-	if err := EnsureRoles(ctx, bootstrapURL(t), "aura_app_secret", "aura_migrate_secret"); err != nil {
+	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
 	if _, err := Migrate(ctx, migrateURL); err != nil {
@@ -151,7 +151,7 @@ func TestRecordAndListKnowledgeMigrations(t *testing.T) {
 	defer cancel()
 
 	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
-	if err := EnsureRoles(ctx, bootstrapURL(t), "aura_app_secret", "aura_migrate_secret"); err != nil {
+	if err := EnsureRoles(ctx, bootstrapURL(t), os.Getenv("POSTGRES_PASSWORD")); err != nil {
 		t.Fatalf("EnsureRoles: %v", err)
 	}
 	if _, err := Migrate(ctx, migrateURL); err != nil {
