@@ -47,4 +47,3 @@ coverage.html
 # Local cache/sessions transient are excluded.
 .claude/*
 skills-lock.json
-.planning/ROADMAP.md
