@@ -1,0 +1,27 @@
+# Source: Docker Compose v5 + Postgres 17 docker hub (verified 2026-05-29)
+# Aura Slice 0.5 — Postgres only. Slice 0.7 appends neo4j + aura-llama-embed.
+# Repo-root location per D-02 (NOT sandbox/compose.yaml; vestigial path superseded).
+name: aura
+
+services:
+  postgres:
+    image: postgres:17.10-alpine3.23
+    container_name: aura-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}
+      POSTGRES_DB: aura
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - aura-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aura -d aura"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  aura-postgres:

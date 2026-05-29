@@ -63,7 +63,7 @@ docker compose -f sandbox/compose.yaml up -d postgres
 | `internal/db/db_test.go` | ~120 | Build tag `db_integration`. Open + ping + migrate + simple SELECT + close. |
 | `internal/config/config.go` (diff) | ~+25 | Aggiunge `DB DBConfig` al Config. Carica `POSTGRES_PASSWORD` da `.env`. |
 | `cmd/aura/main.go` (diff) | ~+50 | Sub-command `aura db {migrate|ping|status|reset}`. |
-| `sandbox/compose.yaml` (diff) | ~+20 | Service `postgres` con healthcheck + volume named + env from `.env`. |
+| `compose.yaml` (diff) | ~+20 | Service `postgres` con healthcheck + volume named + env from `.env`. (D-02: compose lives at repo root, not under `sandbox/`.) |
 | `Makefile` | ~30 | Target `make sqlc` (regen), `make db-up`, `make db-migrate`, `make db-reset`. |
 | `.env.example` | ~10 | Template con `POSTGRES_PASSWORD=changeme`, `OPENROUTER_API_KEY=`. |
 
@@ -196,7 +196,7 @@ docker compose -f sandbox/compose.yaml up -d neo4j
 | `internal/db/migrations/0002_knowledge_migrations.up.sql` | ~20 | `CREATE TABLE aura.knowledge_migrations (version int pk, name text, applied_at timestamptz default now(), checksum text)`. |
 | `internal/db/migrations/0002_knowledge_migrations.down.sql` | ~3 | `DROP TABLE aura.knowledge_migrations;` |
 | `internal/knowledge/client_test.go` | ~80 | Build tag `neo4j_integration`. Open + ping + migrate + simple Cypher + close. |
-| `sandbox/compose.yaml` (diff) | ~+30 | Service `neo4j` (`neo4j:5.26-community`, plugins APOC+GDS, volume named, healthcheck, env auth). |
+| `compose.yaml` (diff) | ~+30 | Service `neo4j` (`neo4j:5.26-community`, plugins APOC+GDS, volume named, healthcheck, env auth). (D-02: compose lives at repo root, not under `sandbox/`.) |
 | `cmd/aura/main.go` (diff) | ~+40 | Sub-command `aura neo4j {migrate|ping|status|reset}`. |
 | `Makefile` (diff) | ~+15 | Target `make neo4j-up`, `make neo4j-migrate`, `make neo4j-reset`. |
 | `.env.example` (diff) | ~+5 | `NEO4J_PASSWORD=changeme`, `NEO4J_USER=neo4j`. |

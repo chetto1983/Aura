@@ -33,6 +33,8 @@ func main() {
 			os.Exit(1)
 		}
 		chatOnce(os.Args[2])
+	case "db":
+		runDB(os.Args[2:])
 	case "shell", "serve":
 		fmt.Println("TODO: implemented by the agent-loop and CLI slices")
 	default:
@@ -42,7 +44,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <msg>|tools}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <msg>|tools|db <sub>}")
 }
 
 func buildRegistry() *tools.Registry {
