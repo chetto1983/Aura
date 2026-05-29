@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Slice 0.5 commit landed; awaiting user setup for Slice 0.7
-last_updated: "2026-05-29T12:35:00.000Z"
-last_activity: 2026-05-29 -- Slice 0.5 (Postgres infra) committed 7f17981b
+stopped_at: Phase 1 complete — Slice 0.7 (Neo4j + MCP + embed) committed e0122d0c; pushed, CI running
+last_updated: "2026-05-29T14:35:00.000Z"
+last_activity: 2026-05-29 -- Slice 0.7 (Neo4j infra) committed e0122d0c; Phase 1 SC#1-5 all green
 progress:
   total_phases: 16
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8
-  completed_plans: 7
-  percent: 6
+  completed_plans: 8
+  percent: 13
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 1 — infra db + knowledge
+**Current focus:** Phase 2 — Agent Cornerstone (next per ROADMAP)
 
 ## Current Position
 
-Phase: 1 of 15 (infra db + knowledge)
-Plan: 02 complete (Slice 0.5 — Postgres infra); 03 next (Slice 0.7 — Neo4j stack, autonomous: false, awaits user setup)
-Status: Wave 1 done; Wave 2 user-setup gate
-Last activity: 2026-05-29 -- Slice 0.5 (Postgres infra) committed 7f17981b
+Phase: 1 of 15 COMPLETE (infra db + knowledge) — Phase 2 next
+Plan: 02 (Slice 0.5 Postgres) + 03 (Slice 0.7 Neo4j + MCP + embed) both complete
+Status: Phase 1 done — all 5 SC green (idempotent migrate, role separation, restore<90s, neo4j ping 5.26.26+dim768, smoke recall@5=5/5 p95=1ms)
+Last activity: 2026-05-29 -- Slice 0.7 committed e0122d0c (deviation: schema via neo4j-go-driver fallback, MCP can't run DDL)
 
-Progress: [█░░░░░░░░░] 6% (project); Phase 1 plans 1/2 done
+Progress: [█▌░░░░░░░░] 13% (project); Phase 1 plans 2/2 done
 
 ## Performance Metrics
 

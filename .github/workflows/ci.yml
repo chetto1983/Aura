@@ -84,6 +84,11 @@ jobs:
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
+      # Slice 0.7: compose.yaml now has a neo4j service with ${NEO4J_PASSWORD:?}
+      # fail-fast. Any `docker compose` invocation (restore_drill.sh uses
+      # `docker compose exec postgres`) parses the whole file, so the var must be
+      # present even for the Postgres-only db job. Production fail-fast is intact.
+      NEO4J_PASSWORD: ci-test-password
     steps:
       - name: Checkout
         uses: actions/checkout@v4
