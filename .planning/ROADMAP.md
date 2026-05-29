@@ -12,7 +12,7 @@ Aura ships in 16 phases — one no-code documentation phase (P0 PRD amendments) 
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 0: PRD Amendments** - 20 PRD edits in one no-code commit before any Slice 0.5 code
+- [x] **Phase 0: PRD Amendments** - 20 PRD edits in one no-code commit before any Slice 0.5 code
 - [ ] **Phase 1: Infra DB + Knowledge** - Postgres 17 + Neo4j 5.26 LTS + MCP server operational
 - [ ] **Phase 2: Agent Cornerstone** - `Agent` interface + workflow agents (Sequential/Loop/Parallel) + budget contract
 - [ ] **Phase 3: LLM Client + ToolResult** - OpenAI-compat handrolled client + ToolResult preview+sidecar + SSE streaming
@@ -41,13 +41,13 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Operator greps `prd.md` for `Go 1.25` and `5.26-community` and `codeberg.org/readeck/go-readability/v2` and observes all 3 strings present (Amendments #1, #2, #3)
   3. Operator greps `prd.md` for `AURA_LOOP_MAX_STEPS`, `AURA_EMBED_DIMENSIONS`, `cache_invariant_audit.sh`, `AURA_SETUP_TOKEN` and observes all 4 strings present (Amendments #19, #18, #16, #10)
   4. Operator reads `docs/aura-quality-snapshot.md` and observes the file exists with seed schema (Amendment #20)
-**Plans:** 6 plans
-- [ ] 00-01-PLAN.md — Stack drift cluster (Amendments #1-6: Go 1.25, Neo4j 5.26-community, readability lib, MarkdownV2 escaper, telebot SHA, AG-UI SDK SHA)
-- [ ] 00-02-PLAN.md — Feature gaps cluster (Amendments #7-10: Slice 1.8.5 FTS, /cost command, OTel hooks, AURA_SETUP_TOKEN)
-- [ ] 00-03-PLAN.md — Architecture spec gaps (Amendments #11-14: AgentInsight cache TTL, swarm scope reduction, Slice 7e split, skill.catalog opt-in)
-- [ ] 00-04-PLAN.md — Cross-cutting pitfalls (Amendments #15-19: goleak extension, cache invariant CI, audit role separation, embedding dim contract, loop budget contract)
-- [ ] 00-05-PLAN.md — Quality gate (Amendment #20: docs/aura-quality-snapshot.md seed + Slice 11d HNSW M=32)
-- [ ] 00-06-PLAN.md — Phase commit aggregator (single git commit, STATE/ROADMAP bookkeeping)
+**Plans:** 6 plans (00-01 through 00-06; 5 cluster plans + 1 commit aggregator)
+- [x] 00-01-PLAN.md — Stack drift cluster (Amendments #1-6: Go 1.25, Neo4j 5.26-community, readability lib, MarkdownV2 escaper, telebot SHA, AG-UI SDK SHA)
+- [x] 00-02-PLAN.md — Feature gaps cluster (Amendments #7-10: Slice 1.8.5 FTS, /cost command, OTel hooks, AURA_SETUP_TOKEN)
+- [x] 00-03-PLAN.md — Architecture spec gaps (Amendments #11-14: AgentInsight cache TTL, swarm scope reduction, Slice 7e split, skill.catalog opt-in)
+- [x] 00-04-PLAN.md — Cross-cutting pitfalls (Amendments #15-19: goleak extension, cache invariant CI, audit role separation, embedding dim contract, loop budget contract)
+- [x] 00-05-PLAN.md — Quality gate (Amendment #20: docs/aura-quality-snapshot.md seed + Slice 11d HNSW M=32)
+- [x] 00-06-PLAN.md — Phase commit aggregator (single git commit, STATE/ROADMAP bookkeeping)
 
 ### Phase 1: Infra DB + Knowledge
 **Goal**: Stand up Postgres 17 + Neo4j 5.26-community LTS so the rest of the substrate has somewhere to persist application state and knowledge graph data. Postgres ships with `aura.*` schema, golang-migrate-managed migrations, and role separation (`aura_app` vs `aura_migrate`). Neo4j ships with APOC + GDS + HNSW 768d vector index + `mcp-neo4j-cypher` MCP server subprocess.
@@ -244,7 +244,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 0. PRD Amendments | 0/TBD | Not started | - |
+| 0. PRD Amendments | 6/6 | Complete | 2026-05-29 |
 | 1. Infra DB + Knowledge | 0/TBD | Not started | - |
 | 2. Agent Cornerstone | 0/TBD | Not started | - |
 | 3. LLM Client + ToolResult | 0/TBD | Not started | - |

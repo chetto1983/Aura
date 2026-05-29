@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Roadmap created — 16 phases, 26/26 requirements mapped, success criteria derived from research-validated pitfalls + acceptance gates
-last_updated: "2026-05-29T09:30:50.692Z"
-last_activity: 2026-05-29 -- Phase 0 planning complete
+stopped_at: Phase 0 committed (20 PRD amendments, 1 aggregated commit, zero .go files). Next — Phase 1 Infra DB + Knowledge.
+last_updated: "2026-05-29T12:00:00.000Z"
+last_activity: 2026-05-29 -- Phase 0 committed (20 PRD amendments, 1 commit, zero .go files)
 progress:
   total_phases: 16
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 6
-  completed_plans: 0
-  percent: 0
+  completed_plans: 6
+  percent: 6
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 0 — PRD Amendments (no-code, 20 PRD edits in single commit)
+**Current focus:** Phase 1 — Infra DB + Knowledge (next)
 
 ## Current Position
 
-Phase: 0 of 15 (PRD Amendments)
-Plan: 0 of TBD in current phase
-Status: Ready to execute
-Last activity: 2026-05-29 -- Phase 0 planning complete
+Phase: 1 of 15 (next — Infra DB + Knowledge); Phase 0 complete.
+Plan: — (Phase 1 not yet discussed)
+Status: Phase 0 complete; ready to discuss Phase 1
+Last activity: 2026-05-29 -- Phase 0 committed (20 PRD amendments, 1 commit, zero .go files)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█░░░░░░░░░] 6%
 
 ## Performance Metrics
 
@@ -74,7 +74,6 @@ None yet.
 
 [Issues that affect future work]
 
-- P0 must complete before any Slice 0.5 code commit (PRD-first principle, see CLAUDE.md). 20 PRD amendments identified by research convergence — see research/SUMMARY.md "PRD Amendments Required" table.
 - 8 Gate 1 DoR open questions tracked in research/SUMMARY.md "Gaps to Address" — resolve per-phase during plan-phase invocations.
 
 ## Deferred Items
@@ -90,5 +89,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-05-29
-Stopped at: Roadmap created — 16 phases, 26/26 requirements mapped, success criteria derived from research-validated pitfalls + acceptance gates
+Stopped at: Phase 0 committed. Next: `/gsd-discuss-phase 1` (Postgres + Neo4j infra)
 Resume file: None
