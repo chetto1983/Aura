@@ -1,7 +1,9 @@
-# Source: Docker Compose v5 + Postgres 17 docker hub (verified 2026-05-29)
-# Aura Slice 0.5 — Postgres only. Slice 0.7 appends neo4j + aura-llama-embed.
+# Source: Docker Compose v5 + Postgres 17 docker hub + Neo4j 5.26 community docker
+# docs + llama.cpp server docs (verified 2026-05-29).
+# Aura Slice 0.5 lands postgres; Slice 0.7 appends neo4j + aura-llama-embed.
 # Repo-root location per D-02 (NOT sandbox/compose.yaml; vestigial path superseded).
-# All knobs come from .env (POSTGRES_*); fail-fast if POSTGRES_PASSWORD missing.
+# All knobs come from .env (POSTGRES_*, NEO4J_*, AURA_EMBED_*); fail-fast if a
+# required password is missing. All ports loopback-only (T-1.07-02/03).
 name: aura
 
 services:
@@ -24,5 +26,61 @@ services:
       retries: 10
       start_period: 10s
 
+  # ↓↓ Slice 0.7 — Neo4j Community + APOC + GDS ↓↓
+  neo4j:
+    image: neo4j:5.26.26-community
+    container_name: aura-neo4j
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
+      NEO4J_PLUGINS: '["apoc","graph-data-science"]'
+      NEO4J_dbms_security_procedures_unrestricted: 'apoc.*,gds.*'
+      NEO4J_dbms_memory_heap_initial__size: 512m
+      NEO4J_dbms_memory_heap_max__size: 1G
+      NEO4J_dbms_memory_pagecache_size: 512m
+    ports:
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
+    volumes:
+      - aura-neo4j:/data
+      - aura-neo4j-plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p $$NEO4J_PASSWORD --database neo4j 'RETURN 1' || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 40s   # APOC + GDS auto-download takes time on first boot
+
+  # ↓↓ Slice 0.7 — embeddinggemma-300m OpenAI-compat sidecar ↓↓
+  aura-llama-embed:
+    image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: aura-llama-embed
+    restart: unless-stopped
+    command:
+      - --hf-repo
+      - ggml-org/embeddinggemma-300M-GGUF
+      - --hf-file
+      - embeddinggemma-300M-Q8_0.gguf
+      - --embeddings
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8081"
+      - -t
+      - "4"                                    # mini-PC CPU budget cap (feedback_minipc_cpu_budget)
+    ports:
+      - "127.0.0.1:8081:8081"
+    volumes:
+      - aura-llama-embed:/root/.cache/llama.cpp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s                        # first-boot HF model download
+
 volumes:
   aura-postgres:
+  aura-neo4j:
+  aura-neo4j-plugins:
+  aura-llama-embed:

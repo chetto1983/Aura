@@ -45,8 +45,5 @@ coverage.html
 
 # Claude Code: GSD installation is committed (vedi CLAUDE.md §GSD tooling).
 # Local cache/sessions transient are excluded.
-.claude/cache/
-.claude/sessions/
-.claude/.local-state/
-
+.claude/*
 skills-lock.json
