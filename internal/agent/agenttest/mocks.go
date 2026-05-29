@@ -42,12 +42,15 @@ type InfiniteToolCallAgent struct {
 	ToolArgs  string // llm.ToolCall.Function.Arguments repeated forever; defaults to "{}"
 }
 
+// Name is the Event Author / FindAgent key for this mock.
 func (a *InfiniteToolCallAgent) Name() string { return orDefault(a.AgentName, "infinite") }
 
+// Description is the human/LLM-facing one-liner.
 func (*InfiniteToolCallAgent) Description() string {
 	return "test mock: emits the same tool call forever (SC#2 budget-exhaustion fixture)"
 }
 
+// Run yields the same llm.ToolCall on every iteration, forever.
 func (a *InfiniteToolCallAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	call := llm.ToolCall{ID: "call-0", Type: "function"}
 	call.Function.Name = orDefault(a.ToolName, "noop")
@@ -67,8 +70,10 @@ func (a *InfiniteToolCallAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent
 	}
 }
 
+// SubAgents returns nil — this is a leaf mock.
 func (*InfiniteToolCallAgent) SubAgents() []agent.Agent { return nil }
 
+// FindAgent returns self when name matches, else nil.
 func (a *InfiniteToolCallAgent) FindAgent(name string) agent.Agent {
 	return selfIfNamed(a, name)
 }
@@ -81,12 +86,15 @@ type EmitNThenEscalate struct {
 	N         int    // number of normal Events before the escalate Event
 }
 
+// Name is the Event Author / FindAgent key for this mock.
 func (a *EmitNThenEscalate) Name() string { return orDefault(a.AgentName, "escalator") }
 
+// Description is the human/LLM-facing one-liner.
 func (*EmitNThenEscalate) Description() string {
 	return "test mock: emits N normal events then one escalate event (escalate-propagation fixture)"
 }
 
+// Run emits N normal Events then one Event with Actions.Escalate=true.
 func (a *EmitNThenEscalate) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	author := a.Name()
 	return func(yield func(*agent.Event, error) bool) {
@@ -103,8 +111,10 @@ func (a *EmitNThenEscalate) Run(ic agent.InvocationContext) iter.Seq2[*agent.Eve
 	}
 }
 
+// SubAgents returns nil — this is a leaf mock.
 func (*EmitNThenEscalate) SubAgents() []agent.Agent { return nil }
 
+// FindAgent returns self when name matches, else nil.
 func (a *EmitNThenEscalate) FindAgent(name string) agent.Agent { return selfIfNamed(a, name) }
 
 // RecordingAgent records every Event it emits and the Branch/RequestID of each
@@ -119,12 +129,15 @@ type RecordingAgent struct {
 	Emitted      []*agent.Event
 }
 
+// Name is the Event Author / FindAgent key for this mock.
 func (a *RecordingAgent) Name() string { return orDefault(a.AgentName, "recorder") }
 
+// Description is the human/LLM-facing one-liner.
 func (*RecordingAgent) Description() string {
 	return "test mock: records seen branches and emitted events for order/label assertions"
 }
 
+// Run records the seen Branch and emits the canned Events in order.
 func (a *RecordingAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	author := a.Name()
 	return func(yield func(*agent.Event, error) bool) {
@@ -143,8 +156,10 @@ func (a *RecordingAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event,
 	}
 }
 
+// SubAgents returns nil — this is a leaf mock.
 func (*RecordingAgent) SubAgents() []agent.Agent { return nil }
 
+// FindAgent returns self when name matches, else nil.
 func (a *RecordingAgent) FindAgent(name string) agent.Agent { return selfIfNamed(a, name) }
 
 // CountingAgent is the SC#3 shared-counter fixture. Each Run iteration calls
@@ -161,12 +176,15 @@ type CountingAgent struct {
 	Calls int // successful ConsumeStep calls this mock made (test reads this)
 }
 
+// Name is the Event Author / FindAgent key for this mock.
 func (a *CountingAgent) Name() string { return orDefault(a.AgentName, "counter") }
 
+// Description is the human/LLM-facing one-liner.
 func (*CountingAgent) Description() string {
 	return "test mock: consumes the shared budget counter once per step (SC#3 shared-counter fixture)"
 }
 
+// Run consumes ic.Budget (the shared counter) once per step until it is refused.
 func (a *CountingAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	author := a.Name()
 	return func(yield func(*agent.Event, error) bool) {
@@ -191,8 +209,10 @@ func (a *CountingAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, 
 	}
 }
 
+// SubAgents returns nil — this is a leaf mock.
 func (*CountingAgent) SubAgents() []agent.Agent { return nil }
 
+// FindAgent returns self when name matches, else nil.
 func (a *CountingAgent) FindAgent(name string) agent.Agent { return selfIfNamed(a, name) }
 
 // orDefault returns v, or def when v is empty — lets each mock work zero-valued.
