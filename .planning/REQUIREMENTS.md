@@ -94,42 +94,44 @@ Explicit exclusions. Documented to prevent scope creep. Anti-features locked.
 
 ## Traceability
 
-Updated during roadmap creation (Step 8). Phase column populated by gsd-roadmapper.
+Populated by gsd-roadmapper during roadmap creation. Phase column references `.planning/ROADMAP.md` Phase Details section by integer phase number.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PRD-01 | P0 | Pending |
-| INFRA-01 | P1 | Pending |
-| INFRA-02 | P1 | Pending |
-| INFRA-03 | P2 | Pending |
-| CORE-01 | P3 | Pending |
-| CORE-02 | P4 | Pending |
-| CORE-03 | P4 | Pending |
-| CORE-04 | P4 | Pending |
-| CORE-05 | P4 | Pending |
-| CAP-01 | P5 | Pending |
-| CAP-02 | P8 | Pending |
-| CAP-03 | P9 | Pending |
-| CAP-04 | P6 | Pending |
-| CAP-05 | P7 | Pending |
-| CAP-06 | P10 | Pending |
-| CAP-07 | P11 | Pending |
-| CAP-08 | P11 | Pending |
-| UX-01 | P12 | Pending |
-| UX-02 | P13 | Pending |
-| UX-03 | P13 | Pending |
-| UX-04 | P13 | Pending |
-| UX-05 | P14 | Pending |
-| UX-06 | P15 | Pending |
-| UX-07 | P15 | Pending |
-| UX-08 | P15 | Pending |
-| UX-09 | P15 | Pending |
+| PRD-01 | Phase 0 — PRD Amendments | Pending |
+| INFRA-01 | Phase 1 — Infra DB + Knowledge | Pending |
+| INFRA-02 | Phase 1 — Infra DB + Knowledge | Pending |
+| INFRA-03 | Phase 2 — Agent Cornerstone | Pending |
+| CORE-01 | Phase 3 — LLM Client + ToolResult | Pending |
+| CORE-02 | Phase 4 — HITL + Identity + Conversations | Pending |
+| CORE-03 | Phase 4 — HITL + Identity + Conversations | Pending |
+| CORE-04 | Phase 4 — HITL + Identity + Conversations | Pending |
+| CORE-05 | Phase 4 — HITL + Identity + Conversations | Pending |
+| CAP-01 | Phase 5 — Sandbox 2a Stateless | Pending |
+| CAP-02 | Phase 8 — Sandbox 2b Session-Bound | Pending |
+| CAP-03 | Phase 9 — Swarm (Minimal) | Pending |
+| CAP-04 | Phase 6 — KV Cache Builder | Pending |
+| CAP-05 | Phase 7 — Web Tools | Pending |
+| CAP-06 | Phase 10 — Scheduler | Pending |
+| CAP-07 | Phase 11 — Skills | Pending |
+| CAP-08 | Phase 11 — Skills | Pending |
+| UX-01 | Phase 12 — AG-UI Gateway | Pending |
+| UX-02 | Phase 13 — Channels + Telegram + Multimodal | Pending |
+| UX-03 | Phase 13 — Channels + Telegram + Multimodal | Pending |
+| UX-04 | Phase 13 — Channels + Telegram + Multimodal | Pending |
+| UX-05 | Phase 14 — Onboarding + Agent.md | Pending |
+| UX-06 | Phase 15 — Memory Subsystem | Pending |
+| UX-07 | Phase 15 — Memory Subsystem | Pending |
+| UX-08 | Phase 15 — Memory Subsystem | Pending |
+| UX-09 | Phase 15 — Memory Subsystem | Pending |
 
 **Coverage:**
+
 - v1 requirements: 26 total (1 PRD + 3 INFRA + 5 CORE + 8 CAP + 9 UX)
 - Mapped to phases: 26
 - Unmapped: 0 ✓
+- Phases used: 16 (P0 through P15)
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-05-29 after initial definition + research convergence*
+*Last updated: 2026-05-29 after roadmap creation (gsd-roadmapper)*
