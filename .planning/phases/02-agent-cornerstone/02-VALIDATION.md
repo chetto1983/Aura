@@ -37,7 +37,7 @@ artifact_quality_gate: 0.95
 
 | Task ID | Plan | Wave | Requirement | Secure / Quality Behavior | Test Type | Automated Command | Expected Test / Signal | Status |
 |---------|------|------|-------------|----------------------------|-----------|-------------------|------------------------|--------|
-| 2-00-01 | 00 | 0 | INFRA-03 | Truth sources converge before code; A1-A7 not deferred | artifact | `rg -n 'SpanID uuid.UUID|already in chain via|type sequentialAgent|RFC 8785-like|2-XX-XX' .planning/phases/02-agent-cornerstone/02-SPEC.md prd.md .planning/ROADMAP.md .planning/REQUIREMENTS.md` | no stale matches in active truth sources | pending |
+| 2-00-01 | 00 | 0 | INFRA-03 | Truth sources converge before code; A1-A7 not deferred | artifact | `rg -n 'SpanID uuid.UUID\|already in chain via\|type sequentialAgent\|RFC 8785-like\|placeholder-plan-id' .planning/phases/02-agent-cornerstone/02-SPEC.md prd.md .planning/ROADMAP.md .planning/REQUIREMENTS.md` | no stale matches in active truth sources | pending |
 | 2-00-02 | 00 | 0 | INFRA-03 | Third-party attribution for adapted adk-go Apache-2.0 patterns | artifact | `rg -n 'google/adk-go|Apache-2.0|Apache 2.0' THIRD_PARTY_NOTICES.md .planning/phases/02-agent-cornerstone/02-SPEC.md .planning/phases/02-agent-cornerstone/02-PATTERNS.md` | notice and source attribution present | pending |
 | 2-01-01 | 01 | 1 | INFRA-03 / A6 | `github.com/google/uuid` direct, `pgregory.net/rapid` present | build | `go build ./... && go list -m github.com/google/uuid pgregory.net/rapid` | versions v1.6.0 and v1.3.0 | pending |
 | 2-01-02 | 01 | 1 | D-08 / A3 | canonicaljson deterministic and strict-rejecting | unit/fuzz | `go test ./internal/canonicaljson/... && go test -run x -fuzz FuzzCanonical_RoundTripAndDistinctNumbers -fuzztime 10s ./internal/canonicaljson/ && go vet ./internal/canonicaljson/...` | fuzz target green; 1 != 1.0; NaN/Inf rejected | pending |
@@ -96,6 +96,6 @@ All user-facing smoke and SC#1-SC#4 behaviors have automated verification.
 - [ ] Sampling continuity: no 3 consecutive implementation tasks without automated verify.
 - [ ] Feedback latency < 40s for unit/race/smoke.
 - [ ] Coverage gate is 85%, matching CLAUDE.md override.
-- [ ] `nyquist_compliant: true` set only after code/tests exist and all mapped commands pass.
+- [ ] The frontmatter nyquist flag is flipped to compliant only after code/tests exist and all mapped commands pass.
 
 **Approval:** pending implementation
