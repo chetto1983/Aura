@@ -72,7 +72,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Operator runs the loop-cap fixture (`scripts/loop_budget_smoke.sh`) with a mock agent that returns the same tool call forever and observes termination at exactly `AURA_LOOP_MAX_STEPS=25` with an explicit budget-exhausted Event
   3. Operator runs the swarm depth fixture and observes a depth-3 spawn chain consuming the parent's remaining step budget (NOT fresh per child) — total steps across the tree ≤ 25, not 25^3
   4. Operator runs `aura agent dry-run --request-id auto` and observes an OTel-compatible UUIDv7 `request_id` attached to every emitted Event for correlation, while SpanID/ParentSpanID remain 8-byte OTel/W3C-compatible IDs internally
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans executed
 - [x] 02-00-PLAN.md — Gate 0 artifact convergence: A1-A7 truth-source sync, full validation map, fail-closed plan commands, adk-go attribution
 - [x] 02-01-PLAN.md — Deps (uuid direct + rapid) + internal/canonicaljson deterministic serializer (D-08/A3/A6)
 - [x] 02-02-PLAN.md — Agent interface + InvocationContext + Event/Actions/LLMResponse + trace IDs + ErrBudgetExhausted (D-01/02/16/17/24)
@@ -80,7 +80,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 02-04-PLAN.md — agenttest reusable Agent mocks (D-07)
 - [x] 02-05-PLAN.md — SequentialAgent + LoopAgent + goleak TestMain + SC#2 budget-exhausted Event (Req#4/5, SC#1/2)
 - [x] 02-06-PLAN.md — ParallelAgent (errgroup + ack + escalate-cancel) + SC#3 depth shared-counter + break-early goleak (Req#6, SC#1/3)
-- [ ] 02-07-PLAN.md — aura agent dry-run CLI (SC#4) + loop_budget_smoke.sh (SC#2) + loop.go deletion + .env.example + A1-A7 amendment verification
+- [x] 02-07-PLAN.md — aura agent dry-run CLI (SC#4) + loop_budget_smoke.sh (SC#2) + loop.go deletion + .env.example + A1-A7 amendment verification
 
 ### Phase 3: LLM Client + ToolResult
 **Goal**: Handrolled OpenAI-compatible HTTP+SSE client (~280 LOC, no SDK) targeting DeepSeek-V4 via OpenRouter as default. Implement the ToolResult preview+sidecar pattern (preview cap 2048 bytes, spill to `$AURA_RUN_DIR/conversations/<id>/<tool_call>.result`). Ctx-cancel must propagate end-to-end through the HTTP request; OTel span emitted per LLM call.
