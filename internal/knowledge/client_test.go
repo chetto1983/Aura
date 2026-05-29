@@ -30,10 +30,7 @@ func envOr(key, fallback string) string {
 
 func testConfig(t *testing.T) *Config {
 	t.Helper()
-	pw := os.Getenv("NEO4J_PASSWORD")
-	if pw == "" {
-		t.Skip("NEO4J_PASSWORD unset — skipping live Neo4j integration test")
-	}
+	pw := envOrSkipCI(t, "NEO4J_PASSWORD", "live Neo4j integration test")
 	return &Config{
 		BoltURL:           envOr("AURA_NEO4J_BOLT_URL", "bolt://127.0.0.1:7687"),
 		User:              envOr("NEO4J_USER", "neo4j"),
@@ -48,10 +45,7 @@ func testConfig(t *testing.T) *Config {
 
 func testPool(ctx context.Context, t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	url := os.Getenv("AURA_DB_URL")
-	if url == "" {
-		t.Skip("AURA_DB_URL unset — skipping audit-row integration test")
-	}
+	url := envOrSkipCI(t, "AURA_DB_URL", "audit-row integration test")
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
 		t.Fatalf("open pg pool: %v", err)

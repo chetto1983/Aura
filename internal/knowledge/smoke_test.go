@@ -41,10 +41,7 @@ var smokeHTTP = &http.Client{
 
 func smokeConfig(t *testing.T) *Config {
 	t.Helper()
-	pw := os.Getenv("NEO4J_PASSWORD")
-	if pw == "" {
-		t.Skip("NEO4J_PASSWORD unset — skipping smoke")
-	}
+	pw := envOrSkipCI(t, "NEO4J_PASSWORD", "smoke")
 	envOr := func(k, d string) string {
 		if v := os.Getenv(k); v != "" {
 			return v
