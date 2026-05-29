@@ -21,4 +21,7 @@ func TestMain(m *testing.M) {
 // Compile-time assertions that the exported workflow structs satisfy the
 // cornerstone agent.Agent interface (D-02, SPEC Acceptance). If any method drifts
 // the build breaks here.
-var _ agent.Agent = (*workflow.SequentialAgent)(nil)
+var (
+	_ agent.Agent = (*workflow.SequentialAgent)(nil)
+	_ agent.Agent = (*workflow.LoopAgent)(nil)
+)
