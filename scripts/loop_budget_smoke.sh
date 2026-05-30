@@ -44,16 +44,39 @@ echo "==> B4: phase-close coverage floor (>= 85%, CLAUDE.md)"
 # either in a UNIT-coverage gate measures the wrong code, so the profile is filtered
 # to the Phase-2 surface before the floor is applied.
 go test -coverprofile=cover.out ./internal/agent/ ./internal/agent/workflow/ ./internal/canonicaljson/ ./cmd/aura/ >/dev/null
+# Exclude the non-Phase-2 cmd/aura subcommands and the pre-rewrite tools skeleton.
+# Anchor each excluded file to a PATH-SEGMENT boundary ('/<file>:') so a future
+# file whose name merely CONTAINS one of these (e.g. cmd/aura/agentmain.go) is NOT
+# silently dropped from the floor (WR-06). cover.out rows are
+# '<module>/cmd/aura/main.go:line.col,...', so the leading '/' anchors the segment.
 {
   head -1 cover.out
-  grep -v '^mode:' cover.out | grep -v -E 'cmd/aura/(db|neo4j|main)\.go|internal/agent/tools/'
+  grep -v '^mode:' cover.out | grep -v -E '/cmd/aura/(db|neo4j|main)\.go:|/internal/agent/tools/'
 } > cover_phase2.out
+
+# The filtered profile MUST retain real statement rows beyond the mode: header;
+# an over-aggressive filter that strips everything would make go tool cover emit
+# no total: line and mis-grade (WR-06).
+PROFILE_ROWS="$(grep -c -v '^mode:' cover_phase2.out || true)"
+if [[ "${PROFILE_ROWS:-0}" -lt 1 ]]; then
+  echo "FAIL (B4): filtered coverage profile has no statement rows (filter too aggressive?)" >&2
+  exit 1
+fi
+
 TOTAL_LINE="$(go tool cover -func=cover_phase2.out | tail -1)"
 echo "$TOTAL_LINE"
-printf '%s\n' "$TOTAL_LINE" | awk '{
-  pct = $3 + 0
-  if (pct < 85.0) { printf "FAIL (B4): Phase-2 coverage %s < 85%% (CLAUDE.md floor)\n", $3 > "/dev/stderr"; exit 1 }
-  printf "ok (B4): Phase-2 coverage %s >= 85%%\n", $3
+# Grep the percentage token explicitly rather than trusting a positional awk field:
+# go tool cover's column layout is not a contract (WR-06). Fail loudly if no
+# percentage is captured at all.
+PCT="$(printf '%s\n' "$TOTAL_LINE" | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)"
+if [[ -z "$PCT" ]]; then
+  echo "FAIL (B4): could not parse a coverage percentage from: $TOTAL_LINE" >&2
+  exit 1
+fi
+PCT_NUM="${PCT%\%}"
+awk -v pct="$PCT_NUM" 'BEGIN {
+  if (pct + 0 < 85.0) { printf "FAIL (B4): Phase-2 coverage %s < 85%% (CLAUDE.md floor)\n", pct"%" > "/dev/stderr"; exit 1 }
+  printf "ok (B4): Phase-2 coverage %s >= 85%%\n", pct"%"
 }'
 
 echo "==> loop_budget_smoke: PASS"
