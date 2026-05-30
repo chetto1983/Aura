@@ -85,6 +85,33 @@ func TestNewResult_SmallNoSidecar(t *testing.T) {
 	}
 }
 
+// TestNewResult_ExactlyCapNoSidecar: content whose length is EXACTLY the cap is
+// the boundary of the `total <= tc.cap` short-circuit. It must NOT truncate and
+// must NOT write a sidecar — a `<=`→`<` mutant would spill at the boundary.
+func TestNewResult_ExactlyCapNoSidecar(t *testing.T) {
+	runDir := t.TempDir()
+	content := strings.Repeat("c", testCap) // len == cap exactly
+	ctx := ctxWithRunDir("sess-cap", "call-cap", runDir)
+
+	res, err := NewResult(ctx, content)
+	if err != nil {
+		t.Fatalf("NewResult: %v", err)
+	}
+	if res.Truncated {
+		t.Fatalf("content of exactly cap bytes (%d) must NOT truncate", testCap)
+	}
+	if res.FullPath != "" {
+		t.Fatalf("FullPath = %q, want empty (no sidecar at the cap boundary)", res.FullPath)
+	}
+	if res.Preview != content {
+		t.Fatal("Preview must equal the raw content at the cap boundary")
+	}
+	convDir := filepath.Join(runDir, "conversations")
+	if _, err := os.Stat(convDir); !os.IsNotExist(err) {
+		t.Fatalf("conversations dir created at the cap boundary: %v", err)
+	}
+}
+
 // Test 3 (Req#6 property, rapid): for any string + any cap, truncatePreview
 // output is valid UTF-8, ≤ cap bytes, and a prefix of the input.
 func TestTruncatePreview_Property(t *testing.T) {
@@ -178,6 +205,11 @@ func TestSidecarPathTraversal(t *testing.T) {
 		{"callid dotdot escape", "sess", "../../../etc/passwd"},
 		{"callid fwd slash", "sess", "a/b"},
 		{"callid back slash", "sess", `a\b`},
+		// Leading separator at index 0: kills a loop `i:=0`→`i:=1` mutant that
+		// would skip the first byte of the id.
+		{"session leading fwd slash", "/abc", "call-1"},
+		{"session leading back slash", `\abc`, "call-1"},
+		{"callid leading fwd slash", "sess", "/abc"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

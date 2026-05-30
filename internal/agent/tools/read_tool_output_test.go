@@ -111,6 +111,50 @@ func TestReadToolOutput_NegativeOffset(t *testing.T) {
 	if _, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"call-r6","offset":-5}`)); err == nil {
 		t.Fatal("want error for negative offset")
 	}
+	// Boundary: offset == -1 is the largest negative value and MUST still be
+	// rejected (`< 0`, not `< -1`). A `< 0`→`< -1` mutant would let -1 through
+	// and index data[-1:].
+	if _, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"call-r6","offset":-1}`)); err == nil {
+		t.Fatal("want error for offset == -1 (smallest negative)")
+	}
+}
+
+// TestReadToolOutput_LimitOneNotDefaulted: limit == 1 is positive and MUST be
+// honoured verbatim (`<= 0`, not `<= 1`); a `<= 0`→`<= 1` mutant would silently
+// widen a 1-byte request to the default window.
+func TestReadToolOutput_LimitOneNotDefaulted(t *testing.T) {
+	content := strings.Repeat("w", 10_000)
+	ctx := seedSidecar(t, "sess-r7", "call-r7", content)
+	res, err := ReadToolOutput{}.Execute(ctx, []byte(`{"tool_call_id":"call-r7","offset":0,"limit":1}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	// Exactly 1 byte returned, footer reports the 0-1 window — not the 0-2048 default.
+	if res.Bytes != 1 {
+		t.Fatalf("Bytes = %d, want 1 (limit=1 must not default)", res.Bytes)
+	}
+	if !strings.Contains(res.Preview, "showing bytes 0-1 of 10000, next offset 1") {
+		t.Fatalf("limit-1 window footer wrong: %q", res.Preview)
+	}
+}
+
+// TestReadToolOutput_DefaultLimitIs2048 pins the default window to the literal
+// 2048 bytes (D-27/A4), killing a defaultReadLimit 2048→2047/2049 mutant. The
+// assertion uses a hard-coded literal, NOT the defaultReadLimit constant, so it
+// does not move with the mutation.
+func TestReadToolOutput_DefaultLimitIs2048(t *testing.T) {
+	content := strings.Repeat("d", 10_000)
+	ctx := seedSidecar(t, "sess-r8", "call-r8", content)
+	res, err := ReadToolOutput{}.Execute(ctx, []byte(`{"tool_call_id":"call-r8"}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Bytes != 2048 {
+		t.Fatalf("default window = %d bytes, want exactly 2048", res.Bytes)
+	}
+	if !strings.Contains(res.Preview, "showing bytes 0-2048 of 10000, next offset 2048") {
+		t.Fatalf("default window footer must be the literal 2048: %q", res.Preview)
+	}
 }
 
 func TestReadToolOutput_Deferred(t *testing.T) {
