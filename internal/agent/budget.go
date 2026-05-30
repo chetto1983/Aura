@@ -85,6 +85,12 @@ type BudgetOptions struct {
 	MaxWallclockSec *int                // overrides AURA_LOOP_MAX_WALLCLOCK_SEC
 	DedupWindow     *int                // overrides AURA_LOOP_DEDUP_WINDOW
 	ExemptTools     map[string]struct{} // overrides AURA_LOOP_DEDUP_EXEMPT_TOOLS allowlist
+	// Now is the injectable clock (W8). When nil it defaults to time.Now. It is
+	// the SINGLE time source for BOTH the wallclock deadline anchor (computed as
+	// Now().Add(wallclock) at construction) AND the ConsumeStep deadline check, so
+	// a caller can drive wallclock behavior end-to-end through the constructor
+	// instead of building a Budget literally to bypass it (WR-03).
+	Now func() time.Time
 }
 
 // NewBudgetFromEnv builds a Budget from the AURA_LOOP_* environment with no
@@ -135,13 +141,23 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 		exempt = parseExemptTools(os.Getenv(envDedupExemptTools))
 	}
 
+	// Resolve the clock FIRST so the deadline anchor and the ConsumeStep gate read
+	// the SAME time source (WR-03): the deadline is now().Add(wallclock), and the
+	// gate later compares now() against it. With the default time.Now the production
+	// path is unchanged; an injected Now lets a caller drive wallclock deterministically
+	// through the constructor instead of building a Budget literal to bypass it.
+	now := opts.Now
+	if now == nil {
+		now = time.Now
+	}
+
 	var steps atomic.Int32
 	steps.Store(int32(maxSteps))
 
 	b := &Budget{
 		steps:             &steps,
-		deadlineWallclock: time.Now().Add(time.Duration(wallclockSec) * time.Second),
-		now:               time.Now,
+		deadlineWallclock: now().Add(time.Duration(wallclockSec) * time.Second),
+		now:               now,
 		dedupWindow:       dedupWindow,
 		dedupRing:         newDedupRing(dedupWindow),
 		exemptTools:       exempt,

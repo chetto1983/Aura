@@ -154,6 +154,60 @@ func TestBudget_Wallclock_CheckedBeforeSteps(t *testing.T) {
 	}
 }
 
+func TestNewBudget_InjectedClock_AnchorsDeadlineThroughConstructor(t *testing.T) {
+	// WR-03: the deadline anchor and the ConsumeStep gate must share ONE time source.
+	// With an injected clock the constructor must anchor deadlineWallclock at
+	// injectedNow + wallclock — NOT at real time.Now — so a caller can drive wallclock
+	// behavior end-to-end through the constructor instead of building a Budget literal.
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	clk := base
+	maxSteps, wallSec := 100, 30
+	b, err := NewBudget(BudgetOptions{
+		MaxSteps:        &maxSteps,
+		MaxWallclockSec: &wallSec,
+		Now:             func() time.Time { return clk },
+	})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+
+	wantDeadline := base.Add(30 * time.Second)
+	if !b.deadlineWallclock.Equal(wantDeadline) {
+		t.Fatalf("deadline anchored off injected clock: want %v, got %v", wantDeadline, b.deadlineWallclock)
+	}
+
+	// Still inside the window → a step succeeds.
+	clk = base.Add(29 * time.Second)
+	if ok, reason := b.ConsumeStep(); !ok {
+		t.Fatalf("before injected deadline should succeed, got reason %q", reason)
+	}
+	// Advance the SAME injected clock past the deadline → wallclock trips.
+	clk = base.Add(31 * time.Second)
+	ok, reason := b.ConsumeStep()
+	if ok {
+		t.Fatal("past injected deadline should fail")
+	}
+	if reason != "wallclock" {
+		t.Fatalf("reason past injected deadline: want wallclock, got %q", reason)
+	}
+}
+
+func TestNewBudget_NilClock_DefaultsToTimeNow(t *testing.T) {
+	// The default (Now nil) production path must still anchor a future deadline off
+	// real time.Now so an immediate step succeeds — WR-03 must not regress the default.
+	maxSteps, wallSec := 5, 300
+	b, err := NewBudget(BudgetOptions{MaxSteps: &maxSteps, MaxWallclockSec: &wallSec})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+	if !b.deadlineWallclock.After(time.Now()) {
+		t.Fatalf("default clock must anchor a future deadline, got %v", b.deadlineWallclock)
+	}
+	if ok, reason := b.ConsumeStep(); !ok {
+		t.Fatalf("default path step should succeed, got reason %q", reason)
+	}
+}
+
 func TestNewBudgetFromEnv_Defaults(t *testing.T) {
 	// Clear all AURA_LOOP_* so defaults apply.
 	for _, k := range []string{
