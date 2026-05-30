@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 3 context gathered
-last_updated: "2026-05-30T13:52:29.093Z"
+last_updated: "2026-05-30T14:09:26.779Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 16
   completed_phases: 3
   total_plans: 21
-  completed_plans: 18
+  completed_plans: 20
   percent: 19
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 03 (llm-client-toolresult) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-05-30
 
-Progress: [█████████░] 86%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -60,7 +60,9 @@ Progress: [█████████░] 86%
 | Phase 02 P02-06 | ~28min | 2 tasks | 2 files |
 | Phase 02 P02-07 | ~14min | 3 tasks | 12 files |
 | Phase 03 P03-01 | ~40min | 2 tasks | 13 files |
+| Phase 03 P03-02 | ~50min | 2 tasks | 15 files |
 | Phase 03 P03-03 | 25min | 2 tasks | 10 files |
+| Phase 03 P03-04 | ~45min | 2 tasks | 14 files |
 
 ## Accumulated Context
 
@@ -81,6 +83,7 @@ Recent decisions affecting current work:
 - [Phase 02]: 02-06: ParallelAgent in internal/agent/workflow (NewParallel returns agent.Agent — D-02) CLOSES INFRA-03. Adapts adk-go parallelagent channel choreography (Apache-2.0, attributed) with TWO divergences: D-03 escalate fires a captured context.CancelFunc (never a sentinel error → keeps errgroup.Wait()/error slot clean for D-04), D-05 cancelled/broken siblings drain (nil,nil) not ctx.Err(). errgroup fan-out + serial fan-in yield from the iterator frame (D-22 footgun 3) + synchronous per-Event ack backpressure. Leak-safety (D-23): defer cancel + defer close(done) + multi-arm selects + Go#61611 spawn guard. Two-step child IC (W6): WithContext(egCtx).WithSubAgent(sub) + Budget.Child(len(subs)) forks a distinct dedup ring while sharing the *atomic.Int32 (D-09/D-10). SC#3 proven: depth-3 fan-3 (9 leaf) tree consumes ≤25 total, NOT 25³. Corrected the RESEARCH skeleton's `_ = eg.Wait()` to forward real child errors through the error slot (D-04 observable). golang.org/x/sync promoted indirect→direct. Race-clean under -count=10; coverage 90.3%
 - [Phase ?]: Phase 03 03-01: llm.Config 4-tier load-order with fail-fast empty-key ErrMissingAPIKey, APIKey structural-redacted (D-28); CostUSD provider-first/table/n-a never zero (D-18/D-23); config.Load composes LLM + AURA_OTEL_* otlp/localhost:4317; OTel v1.44.0 train pinned via otel_deps.go anchor; PRD A1-A5 amended first.
 - [Phase 03]: 03-03: Tool.Execute migrated to (ToolResult, error) coupled (spec+text_response+search); tools.NewResult ctx-injected spillover (D-25) with .. /separator id validation before filepath.Join (T-03-07); read_tool_output BYTE ranges + unknown-id hard-fail (D-27/D-15); current_time RFC-3339 UTC+IANA never in messages[0] (D-08); sidecar-fail degrades clean (D-29)
+- [Phase 03]: 03-04: LlmAgent (first real Agent) budget-gated tool-dispatch run-loop driving llm.Client; ConsumeStep BEFORE each call -> terminal Event reason max_steps/wallclock/dedup (never error slot, D-04); full-tree crypto/rand SpanID minting in tracing.go REPLACES otel_deps.go anchor (resolves Phase-2 agent.go:51-52 deferral); per-call llm.request span w/ model/provider/token attrs, NEVER api_key (D-28); byte-stable EN system prompt mechanism-not-enumeration + 'Always respond in Italian', no timestamp (D-08/D-09); Registry.RenderToolDefs() alphabetical ManifestEntry->llm.ToolDef (cache-stable, BLOCKER-4); sequential multi-tool dispatch RoleTool in tool_call_id order (D-14); error tool-result self-correction, infra-fail to error slot (D-15); length->[risposta troncata: max_tokens] no auto-continue (D-21); added llm.Usage+Chunk.Usage trailing chunk so usage reaches the span (Rule-3 blocking-fix). ConsumeStep reason is REAL 'wallclock' not AI-SPEC 'max_wallclock'. agenttest.FakeClient goleak-clean. race+goleak green, lint 0, all <=600 LOC.
 
 ### Pending Todos
 
@@ -106,6 +109,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T13:39:21.627Z
+Last session: 2026-05-30T14:06:19.957Z
 Stopped at: Phase 3 context gathered
 Resume file: None
