@@ -6,7 +6,10 @@ import (
 )
 
 // clearPostgresEnv zeroes every Postgres-related env var so each test runs from
-// a known baseline regardless of what the host shell sets.
+// a known baseline regardless of what the host shell sets. It also clears the
+// AURA_LLM_*/AURA_OTEL_* knobs and sets a placeholder OPENROUTER_API_KEY: since
+// Slice 1, config.Load composes llm.Load (which fail-fasts on an empty key), so
+// every Load() needs a non-empty key to reach the DB/Neo4j assertions.
 func clearPostgresEnv(t *testing.T) {
 	t.Helper()
 	keys := []string{
@@ -18,10 +21,16 @@ func clearPostgresEnv(t *testing.T) {
 		"NEO4J_USER", "NEO4J_PASSWORD", "AURA_NEO4J_BOLT_URL", "AURA_NEO4J_DATABASE",
 		"AURA_MCP_NEO4J_CYPHER_BIN", "AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC",
 		"AURA_EMBED_BASE_URL", "AURA_EMBED_DIMENSIONS",
+		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE",
+		"AURA_LLM_MAX_TOKENS", "AURA_LLM_TOTAL_TIMEOUT_SEC", "AURA_LLM_CONNECT_TIMEOUT_SEC",
+		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
 	}
+	// Non-empty key so the composed llm.Load() succeeds; the LLM-specific
+	// load-order is unit-tested in internal/llm/config_test.go.
+	t.Setenv("OPENROUTER_API_KEY", "sk-test-config")
 }
 
 func TestLoad_DefaultsApplied(t *testing.T) {
@@ -49,6 +58,33 @@ func TestLoad_DefaultsApplied(t *testing.T) {
 	}
 	if cfg.ToolPreviewCap != 2048 {
 		t.Errorf("ToolPreviewCap: want 2048 default, got %d", cfg.ToolPreviewCap)
+	}
+}
+
+// TestLoad_LLMAndOtelComposed asserts the Slice 1 additions: the LLM sub-struct
+// is populated via llm.Load (with the placeholder key from clearPostgresEnv) and
+// the AURA_OTEL_* knobs default to otlp/localhost:4317.
+func TestLoad_LLMAndOtelComposed(t *testing.T) {
+	clearPostgresEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.LLM.Model != "deepseek/deepseek-v4-flash:exacto" {
+		t.Errorf("LLM.Model: want default, got %q", cfg.LLM.Model)
+	}
+	if cfg.LLM.BaseURL != "https://openrouter.ai/api/v1" {
+		t.Errorf("LLM.BaseURL: want default, got %q", cfg.LLM.BaseURL)
+	}
+	if cfg.LLM.APIKey != "sk-test-config" {
+		t.Errorf("LLM.APIKey: want the placeholder key, got %q", cfg.LLM.APIKey)
+	}
+	if cfg.OtelExporter != "otlp" {
+		t.Errorf("OtelExporter: want default otlp, got %q", cfg.OtelExporter)
+	}
+	if cfg.OtelEndpoint != "localhost:4317" {
+		t.Errorf("OtelEndpoint: want default localhost:4317, got %q", cfg.OtelEndpoint)
 	}
 }
 

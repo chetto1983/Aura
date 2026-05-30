@@ -3,9 +3,9 @@
 // live in their owning packages; this file only wires the top-level fields and
 // composes credentials from POSTGRES_* primitives.
 //
-// Slice 0.5 form: DB only. Slice 0.7 will add `Knowledge knowledge.Config` +
-// `Embed embed.Config`; Phase 2 will add `LLM llm.Config`. No new fields land
-// here without an owning slice plan.
+// Slice 0.5 form: DB only. Slice 0.7 added `Neo4j knowledge.Config`; Phase 3
+// (Slice 1) adds `LLM llm.Config` + the AURA_OTEL_* tracing knobs. No new fields
+// land here without an owning slice plan.
 package config
 
 import (
@@ -17,15 +17,26 @@ import (
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/knowledge"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/joho/godotenv"
+)
+
+// OTel exporter knob defaults (D-05/D-06). The default OTLP target silent-drops
+// without a collector; "none" is a true no-op provider.
+const (
+	defaultOtelExporter = "otlp"
+	defaultOtelEndpoint = "localhost:4317"
 )
 
 // Config is the root composite. Subsystem configs live in their packages.
 type Config struct {
 	DB             db.Config
 	Neo4j          knowledge.Config // Slice 0.7 — graph + vector + embed sidecar wiring
+	LLM            llm.Config       // Slice 1 — OpenAI-compat client + load-order chain (D-22)
 	RunDir         string
 	ToolPreviewCap int
+	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
+	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -61,6 +72,13 @@ func Load() (*Config, error) {
 		bootstrapURL = composeDSN(pgUser, pgPassword, pgHost, pgPort, pgDB, pgSSL)
 	}
 
+	// LLM config owns its own 4-tier load order + fail-fast empty-key (D-22);
+	// its error (e.g. ErrMissingAPIKey) propagates through this composite.
+	llmCfg, err := llm.Load()
+	if err != nil {
+		return nil, fmt.Errorf("config: load llm: %w", err)
+	}
+
 	return &Config{
 		DB: db.Config{
 			URL:          appURL,
@@ -78,8 +96,11 @@ func Load() (*Config, error) {
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", 768),
 		},
+		LLM:            *llmCfg,
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
+		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
+		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
 	}, nil
 }
 
