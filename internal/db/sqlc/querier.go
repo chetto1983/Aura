@@ -6,11 +6,44 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
+	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
+	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
+	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
+	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
+	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
+	DeleteConversation(ctx context.Context, id pgtype.UUID) error
+	DeleteIdentity(ctx context.Context, name string) error
+	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
+	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
+	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
+	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
+	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
+	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
+	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
+	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
+	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
+	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
+	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
+	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
+	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
+	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
+	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
+	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
+	RenameConversation(ctx context.Context, arg RenameConversationParams) error
+	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
+	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
+	// reuses this EXACT query; only the excerpt rendering differs per channel.
+	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
+	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
+	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
 }
 
 var _ Querier = (*Queries)(nil)

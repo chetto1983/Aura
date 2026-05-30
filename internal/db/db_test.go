@@ -93,6 +93,123 @@ func TestMigrate_Idempotent(t *testing.T) {
 	}
 }
 
+// TestMigrate_Phase4_AppliesAndSeeds proves the Phase-4 substrate: starting from a
+// fresh database, migrations 0003->0006 apply exactly four steps; a re-run applies
+// zero (idempotent, including the CONCURRENTLY index in 0006); and 0004's seed lands
+// exactly one (local/system) identity with the fixed UUID plus one (...001, '*')
+// capability grant. Uses a throwaway database so the shared `aura` DB is untouched.
+func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	pwd := envOrSkip(t, "POSTGRES_PASSWORD")
+	host := os.Getenv("PGHOST")
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := os.Getenv("PGPORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	// Roles live cluster-wide; ensure they exist before any migrate.
+	if err := EnsureRoles(ctx, bootstrapURL(t), pwd); err != nil {
+		t.Fatalf("EnsureRoles: %v", err)
+	}
+
+	const freshDB = "aura_phase4_migrate_drill"
+	dsn := func(role, db string) string {
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable", role, pwd, host, port, db)
+	}
+
+	admin, err := Open(ctx, &Config{URL: dsn("aura", "aura")})
+	if err != nil {
+		t.Fatalf("open admin pool: %v", err)
+	}
+	defer admin.Close()
+	if _, err := admin.Exec(ctx, "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)"); err != nil {
+		t.Fatalf("pre-drop fresh db: %v", err)
+	}
+	if _, err := admin.Exec(ctx, "CREATE DATABASE "+freshDB); err != nil {
+		t.Fatalf("create fresh db: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = admin.Exec(context.Background(), "DROP DATABASE IF EXISTS "+freshDB+" WITH (FORCE)")
+	})
+
+	// aura_migrate needs CREATE on the fresh DB + its public schema for the
+	// golang-migrate schema_migrations tracker (Postgres 17+ default-revokes CREATE
+	// on public from non-owners; mirrors EnsureRoles' grants on the primary DB). The
+	// public-schema grant must run on a connection INTO the fresh DB, not the admin
+	// pool (which is connected to `aura`).
+	if _, err := admin.Exec(ctx, "GRANT CREATE ON DATABASE "+freshDB+" TO aura_migrate"); err != nil {
+		t.Fatalf("grant create on fresh db: %v", err)
+	}
+	freshAdmin, err := Open(ctx, &Config{URL: dsn("aura", freshDB)})
+	if err != nil {
+		t.Fatalf("open fresh-db admin pool: %v", err)
+	}
+	defer freshAdmin.Close()
+	if _, err := freshAdmin.Exec(ctx, "GRANT CREATE ON SCHEMA public TO aura_migrate"); err != nil {
+		t.Fatalf("grant create on public schema of fresh db: %v", err)
+	}
+
+	migrateURL := dsn("aura_migrate", freshDB)
+
+	n1, err := Migrate(ctx, migrateURL)
+	if err != nil {
+		t.Fatalf("first Migrate on fresh db: %v", err)
+	}
+	const phase4Migrations = 6 // 0001..0006 on a truly fresh DB
+	if n1 != phase4Migrations {
+		t.Errorf("first Migrate on fresh db: want %d applied (0001..0006), got %d", phase4Migrations, n1)
+	}
+
+	n2, err := Migrate(ctx, migrateURL)
+	if err != nil {
+		t.Fatalf("second Migrate on fresh db: %v", err)
+	}
+	if n2 != 0 {
+		t.Errorf("second Migrate on fresh db: want 0 (idempotent incl. CONCURRENTLY 0006), got %d", n2)
+	}
+
+	app, err := Open(ctx, &Config{URL: dsn("aura_app", freshDB)})
+	if err != nil {
+		t.Fatalf("open app pool on fresh db: %v", err)
+	}
+	defer app.Close()
+
+	var idCount int
+	if err := app.QueryRow(ctx,
+		"SELECT count(*) FROM aura.identities WHERE id = '00000000-0000-0000-0000-000000000001' AND name = 'local' AND kind = 'system'",
+	).Scan(&idCount); err != nil {
+		t.Fatalf("count seeded identity: %v", err)
+	}
+	if idCount != 1 {
+		t.Errorf("seeded `local`/system identity: want exactly 1 row, got %d", idCount)
+	}
+
+	var grantCount int
+	if err := app.QueryRow(ctx,
+		"SELECT count(*) FROM aura.capability_grants WHERE identity_id = '00000000-0000-0000-0000-000000000001' AND capability = '*'",
+	).Scan(&grantCount); err != nil {
+		t.Fatalf("count seeded wildcard grant: %v", err)
+	}
+	if grantCount != 1 {
+		t.Errorf("seeded (...001, '*') grant: want exactly 1 row, got %d", grantCount)
+	}
+
+	// Role separation on a Phase-4 table: aura_app must be denied DDL.
+	if _, err := app.Exec(ctx, "DROP TABLE aura.conversations"); err == nil {
+		t.Error("aura_app: DROP TABLE aura.conversations unexpectedly succeeded — role separation broken")
+	} else {
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || pgErr.Code != "42501" {
+			t.Errorf("aura_app DROP: want SQLSTATE 42501 (insufficient_privilege), got %v", err)
+		}
+	}
+}
+
 func TestPing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

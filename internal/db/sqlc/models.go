@@ -8,10 +8,83 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// Per-identity capability grants. Wildcard `*` is system-managed (seeded, never grant/revoke via CLI).
+type AuraCapabilityGrants struct {
+	IdentityID pgtype.UUID        `json:"identity_id"`
+	Capability string             `json:"capability"`
+	GrantedAt  pgtype.Timestamptz `json:"granted_at"`
+}
+
+// L2.5 hard-rolling-buffer audit (amendment #22). One row per pair-drop; never written when L1 alone suffices (SC-1).
+type AuraContextRotEvents struct {
+	Ts             pgtype.Timestamptz `json:"ts"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	Action         string             `json:"action"`
+	PairsDropped   int32              `json:"pairs_dropped"`
+	TokensBefore   int32              `json:"tokens_before"`
+	TokensAfter    int32              `json:"tokens_after"`
+}
+
+// Per-turn rows (Slice 1.8). content NULL + content_sidecar_path set when content > AURA_CONVERSATION_TURN_CAP_BYTES.
+type AuraConversationTurns struct {
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	Seq                int32              `json:"seq"`
+	Role               string             `json:"role"`
+	Content            pgtype.Text        `json:"content"`
+	ContentSidecarPath pgtype.Text        `json:"content_sidecar_path"`
+	ToolCallID         pgtype.Text        `json:"tool_call_id"`
+	ToolCalls          []byte             `json:"tool_calls"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	InputTokens        int32              `json:"input_tokens"`
+	OutputTokens       int32              `json:"output_tokens"`
+	CachedTokens       int32              `json:"cached_tokens"`
+}
+
+// Multi-thread persisted conversations (Slice 1.8). Aggregates token + USD totals per thread.
+type AuraConversations struct {
+	ID                pgtype.UUID        `json:"id"`
+	Title             pgtype.Text        `json:"title"`
+	IdentityID        pgtype.UUID        `json:"identity_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	LastActiveAt      pgtype.Timestamptz `json:"last_active_at"`
+	Status            string             `json:"status"`
+	Model             string             `json:"model"`
+	TotalInputTokens  int64              `json:"total_input_tokens"`
+	TotalOutputTokens int64              `json:"total_output_tokens"`
+	TotalCachedTokens int64              `json:"total_cached_tokens"`
+	TotalCostUsd      pgtype.Numeric     `json:"total_cost_usd"`
+	Metadata          []byte             `json:"metadata"`
+}
+
+// Identity scaffolding (Slice 1.7). Single-user: one seeded `local`/system row with the fixed UUID ...001.
+type AuraIdentities struct {
+	ID        pgtype.UUID        `json:"id"`
+	Name      string             `json:"name"`
+	Kind      string             `json:"kind"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 // Audit of applied Cypher migrations. Written by aura neo4j migrate; read by aura neo4j status.
 type AuraKnowledgeMigrations struct {
 	Version   int32              `json:"version"`
 	Name      string             `json:"name"`
 	Checksum  string             `json:"checksum"`
 	AppliedAt pgtype.Timestamptz `json:"applied_at"`
+}
+
+// ask_user HITL pauses (Slice 1.5). Pending = resumed_at IS NULL. FIFO order: priority DESC, created_at ASC, token ASC.
+type AuraPausedStates struct {
+	Token              pgtype.UUID        `json:"token"`
+	ConversationID     pgtype.UUID        `json:"conversation_id"`
+	Kind               string             `json:"kind"`
+	Question           string             `json:"question"`
+	Options            []byte             `json:"options"`
+	Priority           int32              `json:"priority"`
+	ResumeContext      []byte             `json:"resume_context"`
+	ToolCallID         string             `json:"tool_call_id"`
+	ProxiedFromChildID pgtype.UUID        `json:"proxied_from_child_id"`
+	ProxiedToolCallID  pgtype.Text        `json:"proxied_tool_call_id"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	ResumedAt          pgtype.Timestamptz `json:"resumed_at"`
+	ResumedAnswer      []byte             `json:"resumed_answer"`
 }
