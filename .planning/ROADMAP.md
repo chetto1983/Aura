@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 0: PRD Amendments** - 20 PRD edits in one no-code commit before any Slice 0.5 code
 - [x] **Phase 1: Infra DB + Knowledge** - Postgres 17 + Neo4j 5.26 LTS + MCP server operational
 - [ ] **Phase 2: Agent Cornerstone** - `Agent` interface + workflow agents (Sequential/Loop/Parallel) + budget contract
-- [ ] **Phase 3: LLM Client + ToolResult** - OpenAI-compat handrolled client + ToolResult preview+sidecar + SSE streaming
+- [x] **Phase 3: LLM Client + ToolResult** - OpenAI-compat handrolled client + ToolResult preview+sidecar + SSE streaming (completed 2026-05-30)
 - [ ] **Phase 4: HITL + Identity + Conversations** - `ask_user` pause/resume, identity scaffolding, multi-thread conversations with FTS
 - [ ] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench
 - [ ] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI
@@ -92,12 +92,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Operator hits Ctrl+C during a long generation and observes the HTTP request cancelling within 100ms (no orphaned goroutine via `goleak`); `runtime.NumGoroutine()` baseline returns to pre-call value
   3. Operator runs a tool returning 50KB of output and observes the conversation history containing only a ≤2048-byte preview plus a footer pointer; full content readable via `read_tool_output(tool_call_id)`; sidecar file exists at `$AURA_RUN_DIR/conversations/<id>/<tool_call_id>.result`
   4. Operator inspects emitted OTel spans and observes per-LLM-call spans with `model`, `prompt_tokens`, `completion_tokens`, `cache_hit_tokens` attributes
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 - [x] 03-01-PLAN.md — PRD amendments A1-A5 + OTel v1.44.0 deps + llm.Config load-order + A3 price table (wave 1)
 - [x] 03-02-PLAN.md — handrolled openai_compat SSE client: parser + index accumulator + HTTPError + usage + 5 golden fixtures + ctx-cancel zero-leak (wave 2)
 - [x] 03-03-PLAN.md — ToolResult coupled migration + tools.NewResult spillover + read_tool_output (byte ranges) + current_time builtins (wave 1)
 - [x] 03-04-PLAN.md — LlmAgent.Run loop + budget terminal Events + per-call OTel span + SpanID minting + byte-stable prompt (wave 3)
-- [ ] 03-05-PLAN.md — aura chat REPL + cost footer + two-stage Ctrl+C + aura config + manual llm_smoke.sh + live acceptance checkpoint (wave 4)
+- [x] 03-05-PLAN.md — aura chat REPL + cost footer + two-stage Ctrl+C + aura config + manual llm_smoke.sh + live acceptance checkpoint (wave 4)
 
 ### Phase 4: HITL + Identity + Conversations
 **Goal**: Tight cluster of agent-loop primitives. `ask_user` tool with sentinel `ErrAwaitingUserInput` + FIFO multi-pause persisted in `aura.paused_states`. Identity minimal + `capability_grants` scaffolding (single-user `local` default with wildcard `*`). Conversation persistence multi-thread Claude.ai-style with microcompact L1 + budget L2 + auto-title + per-conversation token+USD aggregation. FTS via `pg_trgm` GIN index on `conversation_turns.content` + `aura chat search` CLI.
@@ -260,7 +260,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 0. PRD Amendments | 6/6 | Complete | 2026-05-29 |
 | 1. Infra DB + Knowledge | 0/TBD | Not started | - |
 | 2. Agent Cornerstone | 7/8 | In Progress|  |
-| 3. LLM Client + ToolResult | 4/5 | In Progress|  |
+| 3. LLM Client + ToolResult | 5/5 | Complete   | 2026-05-30 |
 | 4. HITL + Identity + Conversations | 0/TBD | Not started | - |
 | 5. Sandbox 2a Stateless | 0/TBD | Not started | - |
 | 6. KV Cache Builder | 0/TBD | Not started | - |
