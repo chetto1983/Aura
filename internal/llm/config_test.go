@@ -145,3 +145,182 @@ func TestConfigMalformedEnvFailsFast(t *testing.T) {
 		t.Fatal("Load: want fail-fast error on malformed AURA_LLM_MAX_TOKENS, got nil")
 	}
 }
+
+// TestConfigMalformedNumericEnv covers every fail-fast numeric env knob (the
+// float and the three int knobs), so a single operator typo in any of them is a
+// loud Load error rather than a silently-absorbed default.
+func TestConfigMalformedNumericEnv(t *testing.T) {
+	cases := []struct {
+		key, bad string
+	}{
+		{"AURA_LLM_TEMPERATURE", "hot"},
+		{"AURA_LLM_MAX_TOKENS", "lots"},
+		{"AURA_LLM_TOTAL_TIMEOUT_SEC", "soon"},
+		{"AURA_LLM_CONNECT_TIMEOUT_SEC", "fast"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.key, func(t *testing.T) {
+			isolateHome(t)
+			clearLLMEnv(t)
+			t.Setenv("OPENROUTER_API_KEY", "sk-test")
+			t.Setenv(tc.key, tc.bad)
+
+			if _, err := llm.Load(); err == nil {
+				t.Fatalf("Load: want fail-fast error on malformed %s=%q, got nil", tc.key, tc.bad)
+			}
+		})
+	}
+}
+
+// TestConfigEnvNumericOverrides asserts every valid numeric env value overrides
+// the lower tiers — the float (temperature) and all three int knobs — so the
+// happy-path branch of each fail-fast reader is exercised too.
+func TestConfigEnvNumericOverrides(t *testing.T) {
+	isolateHome(t)
+	clearLLMEnv(t)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test-numeric")
+	t.Setenv("AURA_LLM_TEMPERATURE", "0.15")
+	t.Setenv("AURA_LLM_MAX_TOKENS", "256")
+	t.Setenv("AURA_LLM_TOTAL_TIMEOUT_SEC", "45")
+	t.Setenv("AURA_LLM_CONNECT_TIMEOUT_SEC", "7")
+	t.Setenv("AURA_LLM_BASE_URL", "https://env.example/v1")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Temperature != 0.15 {
+		t.Errorf("Temperature = %v, want 0.15", cfg.Temperature)
+	}
+	if cfg.MaxTokens != 256 {
+		t.Errorf("MaxTokens = %d, want 256", cfg.MaxTokens)
+	}
+	if cfg.TotalTimeoutSec != 45 || cfg.ConnectTimeoutSec != 7 {
+		t.Errorf("timeouts = %d/%d, want 45/7", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)
+	}
+	if cfg.BaseURL != "https://env.example/v1" {
+		t.Errorf("BaseURL = %q, want the env value", cfg.BaseURL)
+	}
+}
+
+// TestConfigFileOverlayAllFields exercises every overlayFile branch (the pointer
+// fields plus the headers + prices maps) and the file-tier api_key path, so a
+// file-only configuration (no AURA_LLM_* / OPENROUTER_API_KEY env) fully resolves.
+func TestConfigFileOverlayAllFields(t *testing.T) {
+	home := isolateHome(t)
+	clearLLMEnv(t)
+	// No OPENROUTER_API_KEY in the env — the file's api_key must satisfy the chain.
+
+	auraDir := filepath.Join(home, ".aura")
+	if err := os.MkdirAll(auraDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	js := `{
+	  "provider": "file-prov",
+	  "model": "file/model",
+	  "base_url": "https://file.example/v1",
+	  "api_key": "sk-file-key",
+	  "temperature": 0.42,
+	  "max_tokens": 333,
+	  "total_timeout_sec": 99,
+	  "connect_timeout_sec": 11,
+	  "headers": {"X-Extra": "from-file"},
+	  "prices": {"file/model": {"input_per_1m": 1.5, "output_per_1m": 2.5}}
+	}`
+	if err := os.WriteFile(filepath.Join(auraDir, "llm.json"), []byte(js), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Provider != "file-prov" || cfg.Model != "file/model" {
+		t.Errorf("provider/model = %q/%q, want file-prov/file/model", cfg.Provider, cfg.Model)
+	}
+	if cfg.APIKey != "sk-file-key" {
+		t.Errorf("APIKey = %q, want the file-tier key", cfg.APIKey)
+	}
+	if cfg.BaseURL != "https://file.example/v1" {
+		t.Errorf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.Temperature != 0.42 || cfg.MaxTokens != 333 {
+		t.Errorf("temperature/max_tokens = %v/%d, want 0.42/333", cfg.Temperature, cfg.MaxTokens)
+	}
+	if cfg.TotalTimeoutSec != 99 || cfg.ConnectTimeoutSec != 11 {
+		t.Errorf("timeouts = %d/%d, want 99/11", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)
+	}
+	if cfg.Headers["X-Extra"] != "from-file" {
+		t.Errorf("merged header missing: %#v", cfg.Headers)
+	}
+	if cfg.Headers["X-Title"] != "Aura" {
+		t.Errorf("default attribution header clobbered by the file overlay: %#v", cfg.Headers)
+	}
+	if p := cfg.Prices["file/model"]; p.InputPer1M != 1.5 || p.OutputPer1M != 2.5 {
+		t.Errorf("price overlay = %+v, want 1.5/2.5", p)
+	}
+	if _, ok := cfg.Prices["deepseek/deepseek-v4-flash:exacto"]; !ok {
+		t.Error("seeded price entry dropped by the entry-by-entry overlay")
+	}
+}
+
+// TestConfigFileReadErrorNotNotExist asserts a non-ErrNotExist read failure
+// (here: llm.json is a directory, not a file) surfaces a loud error rather than
+// being swallowed like the absent-file case.
+func TestConfigFileReadErrorNotNotExist(t *testing.T) {
+	home := isolateHome(t)
+	clearLLMEnv(t)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+
+	// Make ~/.aura/llm.json a DIRECTORY so os.ReadFile returns a non-NotExist error.
+	dirAsFile := filepath.Join(home, ".aura", "llm.json")
+	if err := os.MkdirAll(dirAsFile, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := llm.Load(); err == nil {
+		t.Fatal("Load: want a loud read error when llm.json is a directory, got nil")
+	}
+}
+
+// TestConfigNoHomeIsCleanNoOp asserts that when the home dir cannot be resolved
+// (HOME + USERPROFILE both empty) configFilePath yields "" and the file tier is a
+// clean no-op — Load still resolves from env (no panic, no error from the missing
+// file). On platforms where os.UserHomeDir falls back to other sources this still
+// holds: an unresolved path must never wedge Load.
+func TestConfigNoHomeIsCleanNoOp(t *testing.T) {
+	clearLLMEnv(t)
+	t.Setenv("HOME", "")
+	t.Setenv("USERPROFILE", "")
+	t.Setenv("OPENROUTER_API_KEY", "sk-test-nohome")
+	// Keep godotenv.Load() from picking up a stray repo .env.
+	t.Chdir(t.TempDir())
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load with no resolvable home must not error: %v", err)
+	}
+	if cfg.APIKey != "sk-test-nohome" {
+		t.Errorf("APIKey = %q, want the env value (env tier still applies)", cfg.APIKey)
+	}
+}
+
+// TestConfigMalformedFileFailsLoud asserts a present-but-unparseable llm.json is a
+// loud error (a corrupt config must never be silently ignored).
+func TestConfigMalformedFileFailsLoud(t *testing.T) {
+	home := isolateHome(t)
+	clearLLMEnv(t)
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+
+	auraDir := filepath.Join(home, ".aura")
+	if err := os.MkdirAll(auraDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(auraDir, "llm.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := llm.Load(); err == nil {
+		t.Fatal("Load: want a loud parse error on a corrupt llm.json, got nil")
+	}
+}
