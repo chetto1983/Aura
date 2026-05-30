@@ -110,7 +110,7 @@ func (r *dedupRing) isPingPong(fp fingerprint) bool {
 		return false
 	}
 	a, b, a2 := r.entries[n-3], r.entries[n-2], r.entries[n-1]
-	return a == fp && a2 == fp && a == a2 && b != fp
+	return a == fp && a2 == fp && b != fp
 }
 
 // BeforeToolCall is the PRE-EXECUTION dedup gate (D-18). The caller passes the
