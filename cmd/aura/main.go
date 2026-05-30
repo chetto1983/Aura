@@ -35,6 +35,10 @@ func main() {
 		runDB(os.Args[2:])
 	case "neo4j":
 		runNeo4j(os.Args[2:])
+	case "chat":
+		runChat(os.Args[2:])
+	case "config":
+		runConfig(os.Args[2:])
 	case "version", "--version", "-v":
 		runVersion()
 	case "shell", "serve":
@@ -46,13 +50,15 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|agent <sub>|tools|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat|config <sub>|agent <sub>|tools|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
+	reg.Register(&tools.ReadToolOutput{})
+	reg.Register(tools.CurrentTime{})
 	return reg
 }
 

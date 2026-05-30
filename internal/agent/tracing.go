@@ -66,6 +66,24 @@ func newTracerProvider(ctx context.Context, mode, endpoint string) (*sdktrace.Tr
 	return tp, nil
 }
 
+// TracerProvider is the package-edge handle the REPL (cmd/aura chat) and Phase-9
+// swarm hold to flush the span batch on exit (Req#13). It hides the otel SDK type
+// so callers at the binary edge never import go.opentelemetry.io directly.
+type TracerProvider interface {
+	// Shutdown flushes any batched spans and releases the exporter. The caller
+	// defers it on REPL exit; a bounded ctx keeps a missing collector from hanging.
+	Shutdown(ctx context.Context) error
+}
+
+// NewTracerProvider is the exported wiring the binary edge uses to install the
+// real exporter from AURA_OTEL_EXPORTER (D-05/D-06) and obtain a Shutdown handle.
+// It delegates to newTracerProvider (the package-internal builder the agent loop's
+// spans resolve against via the global provider) and returns the SDK provider as
+// the narrow TracerProvider interface.
+func NewTracerProvider(ctx context.Context, mode, endpoint string) (TracerProvider, error) {
+	return newTracerProvider(ctx, mode, endpoint)
+}
+
 // mintSpanID returns a fresh 8-byte OTel/W3C SpanID from crypto/rand (D-04). It
 // panics only if the OS entropy source fails, which is unrecoverable.
 func mintSpanID() [8]byte {

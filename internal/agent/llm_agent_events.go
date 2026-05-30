@@ -49,15 +49,34 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 
 // finalEvent is the turn's terminal answer (text_response or content-stop
 // fallback, D-13). It carries the finish_reason so the REPL can render the
-// truncation path (D-21).
+// truncation path (D-21) and surfaces the per-turn token+cost usage in
+// Actions.StateDelta["usage"] so the REPL can render the cost footer (D-11/Req#12)
+// — the span (tracing.go) is the observability primitive, but the REPL has no span
+// reader, so the human-facing footer reads usage off the final Event.
 func (a *LlmAgent) finalEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
 	requestID, answer, finish string, usage llm.Usage,
 ) *Event {
 	_ = requestID
-	_ = usage
 	ev := a.newEvent(ic, spanID, parentSpanID)
 	ev.LLMResponse = &LLMResponse{Content: answer, FinishReason: finish}
+	ev.Actions.StateDelta = usageStateDelta(usage)
 	return ev
+}
+
+// usageStateDelta projects an llm.Usage onto the StateDelta map the final Event
+// carries for the REPL cost footer. Cost is included only when the provider sent
+// one (a nil Cost stays absent so the footer falls back to the price table rather
+// than reading a fabricated zero).
+func usageStateDelta(usage llm.Usage) map[string]any {
+	d := map[string]any{
+		"prompt_tokens":     usage.PromptTokens,
+		"completion_tokens": usage.CompletionTokens,
+		"cache_hit_tokens":  usage.CachedTokens,
+	}
+	if usage.Cost != nil {
+		d["cost_usd"] = *usage.Cost
+	}
+	return d
 }
 
 // terminalBudgetEvent is the budget-trip terminal Event (D-04): an explicit
