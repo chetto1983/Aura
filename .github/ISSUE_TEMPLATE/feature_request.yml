@@ -1,0 +1,36 @@
+name: Feature request
+description: Suggest a capability or improvement.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Aura is **PRD-first**. Check [`prd.md`](../blob/master/prd.md) and the
+        roadmap first — the feature may already be scoped to a later slice.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What can't you do today, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you'd like to happen. Sketch the interface/behaviour if you can.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: input
+    id: prd
+    attributes:
+      label: Related PRD slice / roadmap item
+      description: If known, the slice number or roadmap phase this touches.
+    validations:
+      required: false

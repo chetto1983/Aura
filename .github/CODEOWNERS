@@ -1,0 +1,11 @@
+# Code ownership — requested as reviewer automatically on matching PRs.
+# https://docs.github.com/en/repositories/managing-your-repos-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default owner for everything.
+*       @chetto1983
+
+# Truth sources — extra scrutiny on changes here.
+/prd.md         @chetto1983
+/CLAUDE.md      @chetto1983
+/.planning/     @chetto1983
+/.github/       @chetto1983

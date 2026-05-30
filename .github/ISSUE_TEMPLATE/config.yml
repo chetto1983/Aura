@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/chetto1983/Aura/security/advisories/new
+    about: Report security issues privately — never in a public issue (see SECURITY.md).
+  - name: Question / discussion
+    url: https://github.com/chetto1983/Aura/discussions
+    about: For usage questions and open-ended discussion rather than a bug or feature.

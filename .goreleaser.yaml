@@ -1,0 +1,70 @@
+# goreleaser v2 — https://goreleaser.com
+# Validate locally:  goreleaser check  &&  goreleaser build --snapshot --clean
+# A real release fires from the `Release` workflow on a pushed `v*` tag.
+version: 2
+
+project_name: aura
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: aura
+    main: ./cmd/aura
+    binary: aura
+    # Static, cross-compilable binaries: the runtime deps (pgx, neo4j driver)
+    # are pure Go, so CGO is off (CGO is only needed for the -race test tier).
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    # main.version/commit/date are stamped once the `aura version` command lands
+    # (Tier 3); the linker ignores -X for symbols that don't exist yet.
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: aura
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "^style:"
+      - "^ci:"
+      - "merge conflict"
+
+release:
+  github:
+    owner: chetto1983
+    name: Aura
+  draft: false
+  prerelease: auto

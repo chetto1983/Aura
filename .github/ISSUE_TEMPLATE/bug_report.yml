@@ -1,0 +1,47 @@
+name: Bug report
+description: Something isn't working as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Security vulnerabilities must not be filed here** —
+        follow [SECURITY.md](../blob/master/SECURITY.md) instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: When I run `aura …`, it …; I expected …
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Minimal, exact steps. Include the command(s) and any relevant config.
+      placeholder: |
+        1. make neo4j-migrate
+        2. aura …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Relevant output. **Redact secrets, DSNs, and API keys.**
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: OS, Go version (`go version`), commit SHA (`git rev-parse --short HEAD`), Docker version.
+      placeholder: |
+        OS: Ubuntu 24.04 (WSL) / Windows 11
+        Go: 1.26.3
+        Commit: abc1234
+    validations:
+      required: true

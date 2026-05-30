@@ -1,0 +1,49 @@
+name: CodeQL
+
+# Free on this PUBLIC repo (CodeQL code-scanning requires GitHub Advanced
+# Security only on private repos). Complements gosec + govulncheck with
+# interprocedural data-flow / taint analysis.
+
+on:
+  push:
+    branches: [ "master", "main", "tabula-rasa" ]
+  pull_request:
+    branches: [ "master", "main", "tabula-rasa" ]
+  schedule:
+    # Weekly, Monday 03:27 UTC — catches advisories in code that hasn't changed.
+    - cron: "27 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (go)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # upload SARIF to the Security tab
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
