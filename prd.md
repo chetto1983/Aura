@@ -569,30 +569,35 @@ ma slice 2 e 3 risparmiano ~150 LOC ciascuno di plumbing duplicato.
 
 **Smoke.**
 ```bash
-AURA_LLM_BASE_URL=https://api.deepseek.com/v1 \
-AURA_LLM_API_KEY=sk-... \
-AURA_LLM_MODEL=deepseek-chat \
-./aura chat "ciao, dimmi 2+2 in tre parole"
+# A1 amendment (2026-05-30): `aura chat` è un REPL interattivo multi-turn,
+# NON un comando single-shot. La history è in-memory only — nessuna
+# persistenza/auto-title/resume (quelli restano Phase 4 / Slice 1.8).
+OPENROUTER_API_KEY=sk-or-... \
+AURA_LLM_BASE_URL=https://openrouter.ai/api/v1 \
+AURA_LLM_MODEL=deepseek/deepseek-v4-flash:exacto \
+./aura chat
+# poi al prompt REPL:
+> ciao, dimmi 2+2 in tre parole
 ```
 → deve stampare una reply reale dal modello (non lo stub), via `text_response`,
-in <8 step.
+streamata token-by-token, in <8 step. `/exit` o EOF chiude il REPL.
 
 **Acceptance (machine-checkable).**
 
 *Parte 1 — wire:*
 - [ ] `go test ./internal/llm/...` passa con almeno 1 fixture SSE golden (tool-call multi-chunk + finish_reason="tool_calls", e plain text + finish_reason="stop").
-- [ ] `aura chat "..."` con config settata produce reply dal modello vero.
-- [ ] `aura chat "..."` senza config fallisce con messaggio chiaro (no panic, no fallback silenzioso).
-- [ ] **OTel span per LLM call (amendment #9)**: every `client.Request(req)` emits an OTel span via `go.opentelemetry.io/otel/trace` (no SDK initialization in Slice 1 — uses the global `otel.GetTracerProvider()`; in CI the provider is a no-op recorder). Span name `llm.request`, attributes: `llm.model`, `llm.provider`, `llm.prompt_tokens`, `llm.completion_tokens`, `llm.cache_hit_tokens`, `aura.request_id` (from `InvocationContext.RequestID`). Span linked to parent trace via `RequestID`. Acceptance test: with in-memory recorder, assert 1 span emitted per call, attributes populated, span_id stable across SSE chunks of the same call.
+- [ ] **A1 amendment**: `aura chat` è un REPL interattivo multi-turn (in-memory history only). Con config settata produce reply dal modello vero, streamata token-by-token; senza config (APIKey vuota) fallisce con messaggio chiaro (no panic, no fallback silenzioso). Persistenza/auto-title/resume restano Phase 4 (Slice 1.8).
+- [ ] **OTel span per LLM call (amendment #9 + A2 amendment 2026-05-30)**: every LLM call emits an OTel span via `go.opentelemetry.io/otel/trace` against a **real configured exporter** (NOT the emit-only no-op provider the original PRD assumed). The OTel SDK (`go.opentelemetry.io/otel/sdk`) is initialized this slice with a `TracerProvider` whose exporter is env-gated: `AURA_OTEL_EXPORTER ∈ {stdout,otlp,none}` (default `otlp` → `localhost:4317` via `AURA_OTEL_ENDPOINT`, silent-drop without a collector); `none` = true no-op. Span name `llm.request`, attributes: `llm.model`, `llm.provider`, `llm.prompt_tokens`, `llm.completion_tokens`, `llm.cache_hit_tokens` (= `usage.prompt_tokens_details.cached_tokens`), `aura.request_id` (from `InvocationContext.RequestID`). The 8-byte `crypto/rand` SpanID (Phase 2 deferred) is minted full-tree this slice. Acceptance test: with an in-memory recorder, assert 1 span emitted per call, attributes populated, span_id stable across SSE chunks of the same call.
 - [ ] **Budget contract enforcement (amendment #19 cross-ref)**: `LlmAgent.Run` checks `InvocationContext.RemainingSteps` and `RemainingWallclockDeadline` before each LLM call. Mid-Run trip → emit terminal Event with appropriate `FinishReason` ('max_steps' | 'max_wallclock' | 'dedup_loop'). Test: TestLlmAgent_StepCap_Trips, TestLlmAgent_WallclockCap_Trips, TestLlmAgent_DedupWindow_Trips.
 - [ ] Cancel context (Ctrl+C) chiude la HTTP connection e drena il channel — verificato con `go test -race` + `go.uber.org/goleak` `goleak.VerifyNone(t)` in TestMain (audit round 2 P1: assert nessun goroutine residuo post-test, copre il caso SSE reader bloccato su `bufio.Scanner.Scan()` post-cancel).
 - [ ] Zero allocazioni per `Message`-history mutation: il client legge `req.Messages` ma non lo modifica (test asserisce slice identica pre/post).
+- [ ] **A3 amendment (2026-05-30) — cost honesty**: il costo USD per turn = `usage.cost` **reale** riportato da OpenRouter (sempre preferito, già netto di cache reads/writes/inference), con fallback a una **price-table statica** (seeded con `deepseek/deepseek-v4-flash:exacto`, override-abile via `prices` in `~/.aura/llm.json`) quando `usage.cost` è assente. Un model id sconosciuto riporta `n/a` (MAI `$0` — non si mente sul costo). Acceptance test: provider-cost presente → USD esatto; assente + model noto → USD da tabella; model sconosciuto → `n/a`.
 
 *Parte 2 — ToolResult pattern:*
 - [ ] `Tool.Execute(ctx, args)` ritorna `(ToolResult, error)`. `ToolResult{Preview string, FullPath string, Bytes int, Truncated bool}`.
 - [ ] `(*LlmAgent).runTool` persiste `ToolResult` su disco se `Bytes > AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048). Path = `$AURA_RUN_DIR/conversations/<conv_id>/<tool-call-id>.result` (post-Slice 1.8 layout; vedi sezione "AURA_RUN_DIR layout" sotto). La stringa che entra in `RoleTool.Content` è `Preview + "\n\n[truncated: N bytes total, full output at <FullPath>. Use read_tool_output to fetch ranges.]"`.
 - [ ] Se `Bytes <= cap`, nessuna scrittura su disco; `RoleTool.Content = Preview` puro (no overhead).
-- [ ] Builtin tool `read_tool_output` (non-deferred) accetta `{tool_call_id, offset?, limit?}` e ritorna la fetta richiesta dal sidecar file. Default `limit=200 righe`. Hard-fail su tool_call_id ignoto.
+- [ ] **A4 amendment (2026-05-30)**: Builtin tool `read_tool_output` (non-deferred) accetta `{tool_call_id, offset?, limit?}` dove `offset`/`limit` sono **BYTE** (non line-based — la semantica a righe originale era fragile su contenuto newline-free come un blob JSON da 100 KB). Default `limit≈2048` byte (allineato al preview cap). Ritorna la fetta di byte richiesta dal sidecar file con footer deterministico `showing bytes X-Y of Z, next offset Y` per paging dal modello. Hard-fail su tool_call_id ignoto.
 - [ ] `text_response` continua a essere il terminale del loop: il suo `ToolResult.Preview` è la risposta finale all'utente (anche se `Bytes > cap`, la versione full sta sul disco; il preview va all'utente per default — il chiamante CLI/Telegram decide se servire la versione full).
 - [ ] Test: un tool fake che ritorna 100 KB di output → il `Messages` history dopo `(*LlmAgent).Run` ha SOLO il preview (≤2 KiB + footer), file su disco ha 100 KB completi, `read_tool_output` recupera fetta arbitraria.
 - [ ] **`$AURA_RUN_DIR` layout (Area #9 closed 2026-05-28)**. Default `$AURA_RUN_DIR = ~/.aura/run/`. Layout:
@@ -624,7 +629,7 @@ in <8 step.
 | `internal/agent/tools/spec.go` (diff) | ~+5 / -3 | Firma `Execute(ctx, args) (ToolResult, error)`. |
 | `internal/agent/tools/text_response.go` (diff) | ~+15 / -10 | Ritorna `ToolResult{Preview: text}` invece di stringa. |
 | `internal/agent/tools/search.go` (diff) | ~+15 / -10 | Stesso adattamento. |
-| `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default 200 lines}`. Risolve path da `runtime`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. |
+| `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default ~2048 BYTES}` (A4 amendment 2026-05-30: byte-based, NON lines). Footer `showing bytes X-Y of Z, next offset Y`. Risolve path da `runtime`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. Path-traversal-shaped ids (`..`/separators) rifiutati prima di `filepath.Join`. |
 | `internal/agent/llm_agent.go` (diff) | ~+45 / -10 | `(*LlmAgent).runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path), mantiene `resultPaths map[string]string` per `read_tool_output` lookup. Crea `$AURA_RUN_DIR/conversations/<conv_id>/` lazy alla prima persist (post Slice 1.8: `conv_id` viene da `InvocationContext.SessionID`). File `loop.go` rinominato in `llm_agent.go` (Slice 0.9 amendment), `Loop` struct rinominato in `LlmAgent` (implementa `Agent` interface Slice 0.9). `Run() iter.Seq2[*Event, error]` sostituisce `Turn() (Result, error)`. |
 | `internal/agent/tools/result_test.go` | ~80 | Test: 100 KB fake tool → `Messages` ha SOLO preview+footer, file ha 100 KB; `read_tool_output(id, offset=50000, limit=100)` recupera fetta. |
 | `cmd/aura/main.go` (diff) | ~+50 / -15 | Sostituisce `stubClient` con `llm.NewOpenAICompat(cfg.LLM)`. Registra `read_tool_output` nel registry. Sub-comando `aura config` legge/scrive il file. |
@@ -4432,7 +4437,12 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_LLM_BASE_URL` | `https://openrouter.ai/api/v1` | operative | 1 | OpenAI-compat endpoint. |
 | `AURA_LLM_API_KEY` | (richiesto via `.env` `OPENROUTER_API_KEY`) | secret | 1 | API key. |
 | `AURA_LLM_MODEL` | `deepseek/deepseek-v4-flash:exacto` | operative | 1 | Model id. |
-| `AURA_LLM_TOTAL_TIMEOUT_SEC` | `120` | cap | 1 | Global HTTP timeout. |
+| `AURA_LLM_TEMPERATURE` | `0.7` | operative | 1 | Sampling temperature (A5 amendment 2026-05-30). |
+| `AURA_LLM_MAX_TOKENS` | `4096` | cap | 1 | Max output tokens per call (A5 amendment 2026-05-30). |
+| `AURA_LLM_TOTAL_TIMEOUT_SEC` | `120` | cap | 1 | Global HTTP timeout (via `context.WithTimeout` sul request ctx, non `http.Client.Timeout`). |
+| `AURA_LLM_CONNECT_TIMEOUT_SEC` | `10` | cap | 1 | TCP connect timeout via `Transport.DialContext` (A5 amendment 2026-05-30). |
+| `AURA_OTEL_EXPORTER` | `otlp` | operative | 1 | OTel trace exporter ∈ `{stdout,otlp,none}` (A5 + A2 amendment 2026-05-30). `none` = no-op provider. |
+| `AURA_OTEL_ENDPOINT` | `localhost:4317` | operative | 1 | OTLP/gRPC collector endpoint (A5 + A2 amendment 2026-05-30). Silent-drop senza collector. |
 | `AURA_CONFIG_DIR` | `~/.aura/` | path | 1 | Config root (contiene `llm.json`). |
 | `AURA_RUN_DIR` | `~/.aura/run/` | path | 1 | Runtime sidecar dir. |
 | `AURA_RUN_DIR_WARN_THRESHOLD_BYTES` | `1073741824` (1 GiB) | cap | 1 | Boot warn threshold. |
