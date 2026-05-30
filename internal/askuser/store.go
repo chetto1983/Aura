@@ -157,6 +157,51 @@ func (s *Store) ListPending(ctx context.Context, conversationID string) ([]Pendi
 	return out, nil
 }
 
+// Record is the richer projection of a paused_states row for the operator-facing
+// `aura paused-states list` CLI: it carries the resolution state + the persisted
+// resumed_answer (the auto-terminated marker when Loop.Stop closed it), which the
+// pending-only Pending projection omits.
+type Record struct {
+	Token          string
+	ConversationID string
+	Kind           string
+	Question       string
+	Priority       int
+	Resumed        bool
+	ResumedAnswer  string // the {action,content} content, or "" when still pending
+}
+
+// ListRecent returns the most-recent paused_states rows (pending + resolved) across
+// all conversations, newest first, for the CLI. limit<=0 falls back to 50.
+func (s *Store) ListRecent(ctx context.Context, limit int) ([]Record, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := s.q.ListRecentPausedStates(ctx, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("list recent paused states: %w", err)
+	}
+	out := make([]Record, 0, len(rows))
+	for _, r := range rows {
+		rec := Record{
+			Token:          uuid.UUID(r.Token.Bytes).String(),
+			ConversationID: uuid.UUID(r.ConversationID.Bytes).String(),
+			Kind:           r.Kind,
+			Question:       r.Question,
+			Priority:       int(r.Priority),
+			Resumed:        r.ResumedAt.Valid,
+		}
+		if len(r.ResumedAnswer) > 0 {
+			var ans ResumeAnswer
+			if json.Unmarshal(r.ResumedAnswer, &ans) == nil {
+				rec.ResumedAnswer = ans.Content
+			}
+		}
+		out = append(out, rec)
+	}
+	return out, nil
+}
+
 // MarkResumed resolves one pause with the AM-02 {action, content} answer. An
 // unknown / already-resumed token (zero rows affected) returns ErrPauseNotFound so
 // the caller gets a clear error rather than a silent no-op.

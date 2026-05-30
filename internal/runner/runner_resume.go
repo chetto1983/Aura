@@ -140,6 +140,16 @@ func (r *Runner) injectAnswer(ctx context.Context, pending askuser.Pending, resp
 	return nil
 }
 
+// PendingFor returns the still-unresolved pauses for a conversation in FIFO order
+// (priority DESC, created_at ASC) — the REPL reads it to render each prompt inline.
+func (r *Runner) PendingFor(ctx context.Context, conversationID string) ([]askuser.Pending, error) {
+	pending, err := r.pause.ListPending(ctx, conversationID)
+	if err != nil {
+		return nil, fmt.Errorf("pending for %s: %w", conversationID, err)
+	}
+	return pending, nil
+}
+
 // remainingPending returns the count of still-unresolved pendings for a conversation.
 func (r *Runner) remainingPending(ctx context.Context, conversationID string) (int, error) {
 	pending, err := r.pause.ListPending(ctx, conversationID)

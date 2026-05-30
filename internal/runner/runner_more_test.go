@@ -212,6 +212,48 @@ func TestTurn_LoadHistoryError(t *testing.T) {
 	}
 }
 
+// TestPendingFor_ReturnsFIFO covers the PendingFor accessor the REPL uses.
+func TestPendingFor_ReturnsFIFO(t *testing.T) {
+	client := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(
+			askUserCall("call-1", "A?", "clarification"),
+			askUserCall("call-2", "B?", "clarification"),
+		),
+	)
+	r, _, _ := newTestRunner(t, client)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	pending, err := r.PendingFor(ctx, convID)
+	if err != nil {
+		t.Fatalf("pending for: %v", err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("want 2 pending, got %d", len(pending))
+	}
+}
+
+// TestSubmitAnswers_InjectError surfaces an AppendTurn failure during batch inject.
+func TestSubmitAnswers_InjectError(t *testing.T) {
+	client := agenttest.NewFakeClient(agenttest.ToolCallTurn(askUserCall("call-1", "Q?", "clarification")))
+	r, conv, pause := newTestRunner(t, client)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+	if _, err := drain(r.Turn(ctx, convID, userPtr("go"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	pending, _ := pause.ListPending(ctx, convID)
+	conv.appendEr = errFake
+	answers := map[string]ResponseInput{pending[0].Token: {Action: "accept", Content: "x"}}
+	if _, err := r.SubmitAnswers(ctx, answers); err == nil {
+		t.Fatal("expected an inject error from the batch path")
+	}
+}
+
 // TestTurn_ContinueAfterResumeWithoutUserMsg covers the userMsg=nil continue path
 // directly (a resume that drives a fresh round over existing history).
 func TestTurn_ContinueAfterResumeWithoutUserMsg(t *testing.T) {

@@ -149,6 +149,49 @@ func (q *Queries) ListPendingPausedStates(ctx context.Context, conversationID pg
 	return items, nil
 }
 
+const listRecentPausedStates = `-- name: ListRecentPausedStates :many
+SELECT token, conversation_id, kind, question, options, priority,
+       resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+       created_at, resumed_at, resumed_answer
+FROM aura.paused_states
+ORDER BY created_at DESC, token ASC
+LIMIT $1
+`
+
+func (q *Queries) ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error) {
+	rows, err := q.db.Query(ctx, listRecentPausedStates, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AuraPausedStates{}
+	for rows.Next() {
+		var i AuraPausedStates
+		if err := rows.Scan(
+			&i.Token,
+			&i.ConversationID,
+			&i.Kind,
+			&i.Question,
+			&i.Options,
+			&i.Priority,
+			&i.ResumeContext,
+			&i.ToolCallID,
+			&i.ProxiedFromChildID,
+			&i.ProxiedToolCallID,
+			&i.CreatedAt,
+			&i.ResumedAt,
+			&i.ResumedAnswer,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markPausedStateResumed = `-- name: MarkPausedStateResumed :exec
 UPDATE aura.paused_states
 SET resumed_at = now(),

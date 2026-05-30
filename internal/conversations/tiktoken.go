@@ -74,6 +74,15 @@ func encoder() (*tiktoken.Tiktoken, error) {
 	return cachedEnc, encoderErr
 }
 
+// InitEncoder eagerly initializes the cached cl100k_base encoder at boot (the
+// composition root calls it after db.Open, before serving) so the first turn does
+// not pay the one-time vocab-parse latency. It is a thin exported wrapper over the
+// lazy encoder() — idempotent (sync.Once), goleak-safe (no goroutine, no network).
+func InitEncoder() error {
+	_, err := encoder()
+	return err
+}
+
 // countTokens estimates the cl100k_base token count of a string. The estimate is a
 // fast ~5-10% approximation used ONLY for L2/L2.5 budget gating (SPEC Constraints
 // — not billed accuracy). EncodeOrdinary skips special-token handling (none of the

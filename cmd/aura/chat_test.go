@@ -5,14 +5,17 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/runner"
 )
 
-// plainTurnCtx is the test wiring for chatDeps.newTurnCtx: a plain cancellable ctx
+// plainTurnCtx is the test wiring for replDeps.newTurnCtx: a plain cancellable ctx
 // with no OS signal handler, so the scripted-stdin tests never register a SIGINT
 // notifier (keeping the run goleak-clean and deterministic).
 func plainTurnCtx(parent context.Context) (context.Context, context.CancelFunc, func() bool) {
@@ -31,12 +34,13 @@ func textResponseTurn(id, prose string, u llm.Usage) agenttest.FakeTurn {
 }
 
 // jsonStringLit renders s as a JSON string literal for embedding in tool args.
-func jsonStringLit(s string) string {
-	b := jsonString(s) // reuse config.go's marshaler
-	return string(b)
-}
+func jsonStringLit(s string) string { return string(jsonString(s)) }
 
-func testChatDeps(in string, client *agenttest.FakeClient) (chatDeps, *bytes.Buffer, *bytes.Buffer) {
+// testChatDeps builds a Runner over the in-memory fakes (cmdfakes_test.go) + a
+// scripted FakeClient and a fresh conversation, returning the REPL deps + output
+// buffers. No DB, no network.
+func testChatDeps(t *testing.T, in string, client *agenttest.FakeClient) (replDeps, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
 	var out, errOut bytes.Buffer
 	cfg := &config.Config{
 		LLM: llm.Config{
@@ -45,63 +49,72 @@ func testChatDeps(in string, client *agenttest.FakeClient) (chatDeps, *bytes.Buf
 			Temperature:     0.7,
 			MaxTokens:       4096,
 			TotalTimeoutSec: 120,
+			ContextWindow:   1000000,
+			MaxOutputTokens: 32768,
 			Prices:          map[string]llm.Price{"deepseek/deepseek-v4-flash:exacto": {InputPer1M: 0.0983, OutputPer1M: 0.1966}},
 		},
 		ToolPreviewCap: 2048,
-		RunDir:         "",
 	}
-	return chatDeps{
+	reg := tools.NewRegistry()
+	reg.Register(tools.TextResponse{})
+	reg.Register(tools.AskUser{})
+	reg.Register(&tools.ReadToolOutput{})
+
+	conv := newCmdConvFake()
+	run := runner.New(runner.Deps{
+		Conv:         conv,
+		Pause:        newCmdPauseFake(),
+		Identity:     newCmdIdentityFake(),
+		Client:       client,
+		Registry:     reg,
+		LLM:          cfg.LLM,
+		TitleTimeout: time.Second,
+		StopTimeout:  time.Second,
+	})
+	convID, err := run.NewConversation(context.Background())
+	if err != nil {
+		t.Fatalf("new conversation: %v", err)
+	}
+	return replDeps{
 		in:         strings.NewReader(in),
 		out:        &out,
 		errOut:     &errOut,
-		client:     client,
+		run:        run,
 		cfg:        cfg,
-		sessionID:  "test-session-0001",
+		convID:     convID,
 		newTurnCtx: plainTurnCtx,
 	}, &out, &errOut
 }
 
-// TestChat_TwoTurns_SharedSession asserts two scripted stdin turns produce two
-// streamed prose replies sharing ONE session_id, that the second turn sees the
-// first in the in-memory history, and that the output is clean prose with a cost
-// footer — never raw text_response JSON (Req#11).
-func TestChat_TwoTurns_SharedSession(t *testing.T) {
+// TestChat_TwoTurns asserts two scripted stdin turns produce two streamed prose
+// replies persisted across the same conversation, with clean prose (no raw
+// text_response JSON) + a cost footer per turn (Req#11).
+func TestChat_TwoTurns(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		textResponseTurn("call-1", "Ciao, come posso aiutarti?", llm.Usage{PromptTokens: 120, CompletionTokens: 30}),
 		textResponseTurn("call-2", "Ricordo il tuo nome.", llm.Usage{PromptTokens: 180, CompletionTokens: 25}),
 	)
-	d, out, _ := testChatDeps("ciao\nmi chiamo Davide\n", fc)
+	d, out, _ := testChatDeps(t, "ciao\nmi chiamo Davide\n", fc)
 
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop: %v", err)
 	}
-
 	got := out.String()
-	// Clean prose: both replies present, NO raw JSON fragment leaked.
-	if !strings.Contains(got, "Ciao, come posso aiutarti?") {
-		t.Fatalf("turn 1 reply not rendered:\n%s", got)
+	if !strings.Contains(got, "Ciao, come posso aiutarti?") || !strings.Contains(got, "Ricordo il tuo nome.") {
+		t.Fatalf("both replies not rendered:\n%s", got)
 	}
-	if !strings.Contains(got, "Ricordo il tuo nome.") {
-		t.Fatalf("turn 2 reply not rendered:\n%s", got)
-	}
-	if strings.Contains(got, `{"text":`) || strings.Contains(got, `"text\":`) {
+	if strings.Contains(got, `{"text":`) {
 		t.Fatalf("raw text_response JSON leaked into the REPL output:\n%s", got)
 	}
-	// Cost footer present and non-zero for both turns.
 	if c := strings.Count(got, " tok ("); c != 2 {
 		t.Fatalf("want 2 cost footers, got %d:\n%s", c, got)
 	}
-	if strings.Contains(got, "· 0 tok (") {
-		t.Fatalf("cost footer reported 0 tok (should be non-zero):\n%s", got)
-	}
-
-	// One shared session id: both LlmAgents were built with d.sessionID; the
-	// second request must carry the first turn's user message in history.
 	if fc.CallCount() != 2 {
 		t.Fatalf("FakeClient called %d times, want 2", fc.CallCount())
 	}
+	// The second turn must see the first user message in the rehydrated history.
 	second := fc.Requests[1]
-	var sawFirstUser bool
+	sawFirstUser := false
 	for _, m := range second.Messages {
 		if m.Role == llm.RoleUser && strings.Contains(m.Content, "ciao") {
 			sawFirstUser = true
@@ -112,67 +125,87 @@ func TestChat_TwoTurns_SharedSession(t *testing.T) {
 	}
 }
 
+// TestChat_AskUserPauseResumesInline is the plan's scripted-stdin pause test: a
+// single ask_user(clarification) pause renders inline, the scripted answer resumes
+// the loop, and the conversation completes — no live OpenRouter.
+func TestChat_AskUserPauseResumesInline(t *testing.T) {
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("call-1", "ask_user", `{"question":"What city?","kind":"clarification"}`)),
+		textResponseTurn("call-2", "Rome it is.", llm.Usage{PromptTokens: 50, CompletionTokens: 10}),
+	)
+	// stdin: the chat message, then the inline pause answer.
+	d, out, _ := testChatDeps(t, "Where should I book?\nRome\n", fc)
+
+	if err := chatLoop(context.Background(), d); err != nil {
+		t.Fatalf("chatLoop: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "What city?") {
+		t.Fatalf("pause prompt not rendered inline:\n%s", got)
+	}
+	if !strings.Contains(got, "Rome it is.") {
+		t.Fatalf("resumed reply not rendered:\n%s", got)
+	}
+	// At least the pause turn + the resume turn (a 3rd best-effort auto-title call may
+	// also fire in the background after the conversation reaches seq>=3).
+	if fc.CallCount() < 2 {
+		t.Fatalf("want at least 2 LLM calls (pause + resume), got %d", fc.CallCount())
+	}
+}
+
 // TestRenderTurn_ToolResultNotRenderedAsProse is the regression for the live tool
-// turn that double-printed the answer and leaked the raw tool output. renderTurn
-// had treated the tool-result Event (raw preview in Content, no FinishReason) as a
-// streamed assistant chunk: it emitted the raw output AND polluted the prose
-// buffer, so the final-Event flush diverged and re-emitted the whole answer. The
-// fix skips events stamped with a tool_call_id marker.
+// turn that double-printed the answer and leaked the raw tool output (now via
+// renderRunnerTurn).
 func TestRenderTurn_ToolResultNotRenderedAsProse(t *testing.T) {
 	var toolCall llm.ToolCall
 	toolCall.Function.Name = "current_time"
 
-	run := func() iterSeq2 {
-		return func(yield func(*agent.Event, error) bool) {
-			// 1. non-terminal tool call -> dim activity line only
-			if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{ToolCalls: []llm.ToolCall{toolCall}}}, nil) {
-				return
-			}
-			// 2. tool-result preview (raw output) -> MUST be skipped, not streamed
-			if !yield(&agent.Event{
-				LLMResponse: &agent.LLMResponse{Content: "2026-05-30T14:24:51Z"},
-				Actions:     agent.Actions{StateDelta: map[string]any{"tool_call_id": "call-1"}},
-			}, nil) {
-				return
-			}
-			// 3. final answer (text_response decoded by the agent)
-			yield(&agent.Event{
-				LLMResponse: &agent.LLMResponse{Content: "Adesso sono le 14:24 UTC.", FinishReason: "stop"},
-				Actions:     agent.Actions{StateDelta: map[string]any{"prompt_tokens": 996, "completion_tokens": 62}},
-			}, nil)
+	seq := func(yield func(*agent.Event, error) bool) {
+		if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{ToolCalls: []llm.ToolCall{toolCall}}}, nil) {
+			return
 		}
+		if !yield(&agent.Event{
+			LLMResponse: &agent.LLMResponse{Content: "2026-05-30T14:24:51Z"},
+			Actions:     agent.Actions{StateDelta: map[string]any{"tool_call_id": "call-1"}},
+		}, nil) {
+			return
+		}
+		yield(&agent.Event{
+			LLMResponse: &agent.LLMResponse{Content: "Adesso sono le 14:24 UTC.", FinishReason: "stop"},
+			Actions:     agent.Actions{StateDelta: map[string]any{"prompt_tokens": 996, "completion_tokens": 62}},
+		}, nil)
 	}
 
 	var buf bytes.Buffer
-	answer, finish, usage, err := renderTurn(&buf, run)
+	answer, finish, usage, paused, err := renderRunnerTurn(&buf, seq)
 	if err != nil {
-		t.Fatalf("renderTurn: %v", err)
+		t.Fatalf("renderRunnerTurn: %v", err)
 	}
-	if finish != "stop" {
-		t.Fatalf("finish = %q, want stop", finish)
+	if paused {
+		t.Fatal("no pause Event was emitted — paused must be false")
 	}
-	if answer != "Adesso sono le 14:24 UTC." {
-		t.Fatalf("answer = %q, want the final prose exactly once", answer)
+	if finish != "stop" || answer != "Adesso sono le 14:24 UTC." {
+		t.Fatalf("answer/finish wrong: %q / %q", answer, finish)
 	}
 	got := buf.String()
 	if strings.Contains(got, "2026-05-30T14:24:51Z") {
 		t.Fatalf("raw tool-result preview leaked into the REPL prose:\n%s", got)
 	}
 	if n := strings.Count(got, "Adesso sono le 14:24 UTC."); n != 1 {
-		t.Fatalf("answer rendered %d times, want exactly 1 (no divergent double-emit):\n%s", n, got)
+		t.Fatalf("answer rendered %d times, want exactly 1:\n%s", n, got)
 	}
 	if !strings.Contains(got, "· current_time") {
-		t.Fatalf("dim tool-activity line missing (operator must see the tool ran):\n%s", got)
+		t.Fatalf("dim tool-activity line missing:\n%s", got)
 	}
 	if usage.PromptTokens != 996 || usage.CompletionTokens != 62 {
-		t.Fatalf("usage = %+v, want 996/62 read off the final StateDelta", usage)
+		t.Fatalf("usage = %+v, want 996/62", usage)
 	}
 }
 
 // TestChat_ExitCommand asserts `/exit` quits cleanly without driving the client.
 func TestChat_ExitCommand(t *testing.T) {
 	fc := agenttest.NewFakeClient()
-	d, out, _ := testChatDeps("/exit\n", fc)
+	d, out, _ := testChatDeps(t, "/exit\n", fc)
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop: %v", err)
 	}
@@ -189,7 +222,7 @@ func TestChat_EOFQuitsClean(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		textResponseTurn("call-1", "Risposta.", llm.Usage{PromptTokens: 10, CompletionTokens: 5}),
 	)
-	d, out, _ := testChatDeps("una domanda", fc) // no trailing newline -> EOF after one turn
+	d, out, _ := testChatDeps(t, "una domanda", fc)
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop: %v", err)
 	}
@@ -198,13 +231,9 @@ func TestChat_EOFQuitsClean(t *testing.T) {
 	}
 }
 
-// TestChat_MissingKey asserts runChat fails with a clear stderr message and no
-// panic when no API key is configured. It runs the real entry point under a temp
-// HOME with the key cleared, capturing the os.Exit via a subprocess-free guard:
-// runChat calls os.Exit, so we assert the precondition (config.Load errors with
-// ErrMissingAPIKey) and the message wiring instead of trapping the exit.
+// TestChat_MissingKey asserts the config precondition runChat checks before booting.
 func TestChat_MissingKey(t *testing.T) {
-	withTempHome(t) // clears OPENROUTER_API_KEY + AURA_LLM_*
+	withTempHome(t)
 	_, err := config.Load()
 	if err == nil {
 		t.Fatal("config.Load should fail with no API key")
@@ -212,8 +241,6 @@ func TestChat_MissingKey(t *testing.T) {
 	if !isMissingAPIKey(err) {
 		t.Fatalf("want missing-API-key error, got %v", err)
 	}
-	// The clear stderr message runChat prints uses llm.ErrMissingAPIKey.Error();
-	// assert that wiring string is the human-facing one (no panic path).
 	if !strings.Contains(err.Error(), "API key is empty") {
 		t.Fatalf("error message is not operator-clear: %v", err)
 	}

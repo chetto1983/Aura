@@ -1,55 +1,99 @@
-// chat subcommand for `aura chat`: the interactive in-memory REPL (SPEC Req#11).
-// It drives a real agent.LlmAgent over the openai_compat client, streaming each
-// reply token-by-token as clean prose (the agent decodes text_response, D-13),
-// printing a dim tool-activity line (D-12) and a per-turn token+USD cost footer
-// (D-11). One session ThreadID is minted once (D-26); each turn mints a fresh
-// RequestID. Two-stage Ctrl+C (D-10): the first SIGINT aborts the in-flight turn
-// and returns to the prompt (the partial assistant message is discarded, D-29);
-// a second consecutive SIGINT, EOF, or `/exit` quits cleanly. The OTel
-// TracerProvider is wired from AURA_OTEL_EXPORTER and flushed on exit (Req#13).
+// chat subcommand for `aura chat`: the multi-thread, PERSISTED conversation REPL
+// (Phase 4 / Slice 1.8). It is a hand-rolled switch group
+// {list|new|resume|archive|unarchive|delete|rename|search} mirroring runDB (NOT
+// cobra — the OQ1 deviation recorded for identity/paused-states). Bare `aura chat`
+// starts a NEW persisted conversation REPL; `aura chat resume` (no id) resumes the
+// most-recent active conversation.
+//
+// The REPL drives runner.Runner (D-A3-06): the Phase-3 streaming + dim tool-activity
+// + per-turn cost footer + two-stage Ctrl+C UX is preserved, now sourced from the
+// Runner's Event stream. On an Actions.AwaitingInput Event it renders the ask_user
+// prompt inline per kind (D-A3-02) and resumes via SubmitAnswer + Turn(convID,nil).
+//
+// The composition root (D-A2-05) lives in bootChat: config.Load -> db.Open ->
+// identity/askuser/conversations Stores + ScanOrphans (boot reconciliation, Req#12)
+// + tiktoken InitEncoder -> runner.Runner.
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/signal"
-	"syscall"
+	"strconv"
 	"time"
 
-	"github.com/chetto1983/aura/internal/agent"
-	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
-	"github.com/google/uuid"
+	"github.com/chetto1983/aura/internal/runner"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // exitCommand quits the REPL cleanly when typed as a whole line (D-10).
 const exitCommand = "/exit"
 
-// chatDeps are the chat REPL's injectable dependencies so the loop is testable
-// with scripted stdin + a fake client (no live OpenRouter, D-31). Production wires
-// real stdin/stdout + the openai_compat client; tests wire a buffer + FakeClient.
-type chatDeps struct {
-	in        io.Reader
-	out       io.Writer
-	errOut    io.Writer
-	client    llm.Client
-	cfg       *config.Config
-	sessionID string
-	// newTurnCtx returns the per-turn context + a cancel; production wires the
-	// two-stage SIGINT ctx, tests pass a plain context so no signal handler leaks.
-	newTurnCtx func(parent context.Context) (context.Context, context.CancelFunc, func() bool)
+const chatUsage = "usage: aura chat {list|new|resume [<id>]|archive <id>|unarchive <id>|delete <id> --confirm|rename <id> <title>|search <query>}"
+
+// chatEnv is the booted composition root shared by every chat subcommand: the
+// config, the open pool, the three Stores, and the Runner that drives the REPL.
+type chatEnv struct {
+	cfg      *config.Config
+	pool     *pgxpool.Pool
+	conv     *conversations.Store
+	pause    *askuser.Store
+	identity *identity.Store
+	run      *runner.Runner
+	client   llm.Client
 }
 
-// runChat is the `aura chat` entry point. It loads config (fail-fast on an empty
-// API key with a clear stderr message + non-zero exit, NEVER a panic — Req#11),
-// wires the TracerProvider (flushed on exit), builds the client, and runs the REPL.
-func runChat(_ []string) {
+// close releases the pool (the OTel TracerProvider is owned by the REPL path).
+func (e *chatEnv) close() {
+	if e.pool != nil {
+		e.pool.Close()
+	}
+}
+
+// runChat is the `aura chat` entry point. It dispatches the subcommand group; a
+// bare `aura chat` (no args) starts a NEW persisted conversation REPL.
+func runChat(args []string) {
+	if len(args) == 0 {
+		chatNew(nil)
+		return
+	}
+	switch args[0] {
+	case "list":
+		chatList(args[1:])
+	case "new":
+		chatNew(args[1:])
+	case "resume":
+		chatResume(args[1:])
+	case "archive":
+		chatSetStatus(args[1:], conversations.StatusArchived, "archived")
+	case "unarchive":
+		chatSetStatus(args[1:], conversations.StatusActive, "unarchived")
+	case "delete":
+		chatDelete(args[1:])
+	case "rename":
+		chatRename(args[1:])
+	case "search":
+		chatSearch(args[1:])
+	default:
+		fmt.Fprintln(os.Stderr, chatUsage)
+		os.Exit(1)
+	}
+}
+
+// bootChat builds the composition root (D-A2-05). It loads config (fail-fast on a
+// missing API key with a clear message, never a panic), opens the pool, constructs
+// the three Stores, runs the boot orphan scan (Req#12) BEFORE serving, initializes
+// the tiktoken encoder once, and constructs the Runner.
+func bootChat(ctx context.Context) *chatEnv {
 	cfg, err := config.Load()
 	if err != nil {
 		if errors.Is(err, llm.ErrMissingAPIKey) || isMissingAPIKey(err) {
@@ -60,171 +104,245 @@ func runChat(_ []string) {
 		os.Exit(1)
 	}
 
+	pool, err := db.Open(ctx, &cfg.DB)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	convStore := conversations.New(pool, conversations.Config{
+		RunDir:       cfg.RunDir,
+		TurnCapBytes: cfg.ConversationTurnCapBytes,
+	})
+	pauseStore := askuser.New(pool)
+	idStore := identity.New(pool)
+
+	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
+	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.
+	if err := conversations.ScanOrphans(ctx, pool, conversations.ScanParams{
+		RunDir:             cfg.RunDir,
+		WarnThresholdBytes: int64(cfg.RunDirWarnThresholdBytes),
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "warn: boot orphan scan:", err)
+	}
+
+	// Initialize the cl100k tiktoken encoder once (D-A2-06) so the first turn does
+	// not pay the vocab-parse latency.
+	if err := conversations.InitEncoder(); err != nil {
+		fmt.Fprintln(os.Stderr, "warn: tiktoken init:", err)
+	}
+
+	client := openai_compat.New(cfg.LLM)
+	run := runner.New(runner.Deps{
+		Conv:       convStore,
+		Pause:      pauseStore,
+		Identity:   idStore,
+		Client:     client,
+		Registry:   buildRegistry(),
+		LLM:        cfg.LLM,
+		RunDir:     cfg.RunDir,
+		PreviewCap: cfg.ToolPreviewCap,
+		EvictAfter: cfg.ContextToolEvictAfterTurns,
+	})
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client}
+}
+
+// chatList prints the persisted conversations with their title + aggregates.
+func chatList(args []string) {
 	ctx := context.Background()
-	tp, err := agent.NewTracerProvider(ctx, cfg.OtelExporter, cfg.OtelEndpoint)
+	env := bootChat(ctx)
+	defer env.close()
+
+	includeArchived := false
+	for _, a := range args {
+		if a == "--all" || a == "--archived" {
+			includeArchived = true
+		}
+	}
+	convs, err := env.conv.List(ctx, includeArchived)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	printConversationList(convs)
+}
+
+// chatSearch runs the locked FTS query and prints conv_id|seq|similarity|excerpt
+// with an app-side excerpt window (D-A5-03).
+func chatSearch(args []string) {
+	if len(args) < 1 || args[0] == "" {
+		fmt.Fprintln(os.Stderr, "usage: aura chat search <query> [--limit N]")
+		os.Exit(1)
+	}
+	query := args[0]
+	limit := 20
+	if v, ok := flagValue(args[1:], "--limit"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	ctx := context.Background()
+	env := bootChat(ctx)
+	defer env.close()
+
+	hits, err := env.conv.SearchConversationTurns(ctx, query, limit)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	printSearchResults(query, hits)
+}
+
+// chatSetStatus archives / unarchives a conversation.
+func chatSetStatus(args []string, status, verb string) {
+	if len(args) < 1 {
+		fmt.Fprintf(os.Stderr, "usage: aura chat %s <id>\n", verb)
+		os.Exit(1)
+	}
+	ctx := context.Background()
+	env := bootChat(ctx)
+	defer env.close()
+	if err := env.conv.UpdateStatus(ctx, args[0], status); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("ok: %s %s\n", verb, args[0])
+}
+
+// chatRename sets a conversation title.
+func chatRename(args []string) {
+	if len(args) < 2 {
+		fmt.Fprintln(os.Stderr, "usage: aura chat rename <id> <title>")
+		os.Exit(1)
+	}
+	ctx := context.Background()
+	env := bootChat(ctx)
+	defer env.close()
+	if err := env.conv.Rename(ctx, args[0], args[1]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("ok: renamed %s\n", args[0])
+}
+
+// chatDelete removes a conversation + its turns + sidecar dir, gated by --confirm.
+func chatDelete(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: aura chat delete <id> --confirm")
+		os.Exit(1)
+	}
+	confirmed := false
+	for _, a := range args[1:] {
+		if a == "--confirm" {
+			confirmed = true
+		}
+	}
+	if !confirmed {
+		fmt.Fprintln(os.Stderr, "refusing — pass --confirm to delete the conversation and its turns")
+		os.Exit(1)
+	}
+	ctx := context.Background()
+	env := bootChat(ctx)
+	defer env.close()
+	if err := env.conv.Delete(ctx, args[0]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("ok: deleted %s\n", args[0])
+}
+
+// chatNew starts a brand-new persisted conversation REPL.
+func chatNew(_ []string) {
+	ctx := context.Background()
+	env := bootChat(ctx)
+	defer env.close()
+	convID, err := env.run.NewConversation(ctx)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "aura chat:", err)
+		os.Exit(1)
+	}
+	runReplOrExit(ctx, env, convID)
+}
+
+// chatResume resumes a specific conversation (resume <id>) or the most-recent
+// active one (resume, no id), then enters the REPL.
+func chatResume(args []string) {
+	ctx := context.Background()
+	env := bootChat(ctx)
+	defer env.close()
+
+	var convID string
+	if len(args) >= 1 && args[0] != "" {
+		convID = args[0]
+		if _, err := env.conv.Get(ctx, convID); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	} else {
+		id, err := mostRecentActive(ctx, env.conv)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		convID = id
+	}
+	fmt.Printf("\x1b[2m· resuming %s\x1b[0m\n", convID)
+	runReplOrExit(ctx, env, convID)
+}
+
+// mostRecentActive returns the id of the most-recently-active conversation, or an
+// error when there is none (List is ordered last_active_at DESC).
+func mostRecentActive(ctx context.Context, conv *conversations.Store) (string, error) {
+	convs, err := conv.List(ctx, false)
+	if err != nil {
+		return "", err
+	}
+	if len(convs) == 0 {
+		return "", fmt.Errorf("no active conversation to resume — start one with `aura chat new`")
+	}
+	return convs[0].ID, nil
+}
+
+// runReplOrExit runs the Runner-driven REPL, wiring the OTel TracerProvider
+// (flushed on exit) + the two-stage Ctrl+C, and exits non-zero on a fatal error.
+func runReplOrExit(ctx context.Context, env *chatEnv, convID string) {
+	tp, err := newTracer(ctx, env.cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "otel:", err)
 		os.Exit(1)
 	}
 	defer func() {
-		// Flush the batch on exit (Req#13). Bound the shutdown so a missing
-		// collector cannot hang the process.
 		sctx, scancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer scancel()
 		_ = tp.Shutdown(sctx)
 	}()
 
-	sessionID, err := uuid.NewV7()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "mint session id:", err)
-		os.Exit(1)
-	}
-
-	deps := chatDeps{
+	deps := replDeps{
 		in:         os.Stdin,
 		out:        os.Stdout,
 		errOut:     os.Stderr,
-		client:     openai_compat.New(cfg.LLM),
-		cfg:        cfg,
-		sessionID:  sessionID.String(),
+		run:        env.run,
+		cfg:        env.cfg,
+		convID:     convID,
 		newTurnCtx: signalTurnCtx,
 	}
+	// Best-effort: auto-resolve orphan pendings + join the auto-title workers on a
+	// clean exit so the next boot starts from a reconciled state (Req#11).
+	defer func() { _ = env.run.Stop(context.Background(), convID) }()
 	if err := chatLoop(ctx, deps); err != nil {
 		fmt.Fprintln(os.Stderr, "aura chat:", err)
 		os.Exit(1)
 	}
 }
 
-// chatLoop is the testable REPL core. It keeps in-memory history across turns
-// (D-26: persistence is Phase 4), mints a fresh RequestID per turn, drives
-// LlmAgent.Run, streams prose + the cost footer, and quits on EOF / `/exit` / a
-// second consecutive Ctrl+C. The agent owns messages[0] (the byte-stable system
-// prompt) and the running history; we re-seed it with the accumulated user+
-// assistant turns each turn so it sees prior context (in-memory only this phase).
-func chatLoop(ctx context.Context, d chatDeps) error {
-	reg := buildRegistry()
-	reader := bufio.NewReader(d.in)
-	var history []llm.Message // user+assistant+tool turns accumulated in memory (excludes messages[0])
-
-	for {
-		_, _ = fmt.Fprint(d.out, "› ")
-		line, readErr := reader.ReadString('\n')
-		line = trimLine(line)
-
-		if line == exitCommand {
-			_, _ = fmt.Fprintln(d.out, "bye")
-			return nil
-		}
-		if line != "" {
-			history = append(history, llm.Message{Role: llm.RoleUser, Content: line})
-			assistantMsg, turnErr := runOneTurn(ctx, d, reg, history)
-			if turnErr != nil {
-				if errors.Is(turnErr, context.Canceled) {
-					// First Ctrl+C: abort this turn, discard the partial assistant
-					// message (D-29), return to the prompt.
-					_, _ = fmt.Fprintln(d.out, "\n\x1b[2m· interrotto\x1b[0m")
-					history = history[:len(history)-1] // drop the un-answered user turn
-					continue
-				}
-				_, _ = fmt.Fprintln(d.errOut, "turn error:", turnErr)
-				history = history[:len(history)-1]
-				continue
-			}
-			if assistantMsg != "" {
-				history = append(history, llm.Message{Role: llm.RoleAssistant, Content: assistantMsg})
-			}
-		}
-
-		if readErr != nil {
-			if errors.Is(readErr, io.EOF) {
-				_, _ = fmt.Fprintln(d.out)
-				return nil
-			}
-			return readErr
-		}
-	}
-}
-
-// runOneTurn drives a single LlmAgent.Run, streaming prose to d.out and printing
-// the cost footer. It returns the final assistant text (to append to history) and
-// a context.Canceled error when the turn was aborted via Ctrl+C (D-10/D-29).
-func runOneTurn(ctx context.Context, d chatDeps, reg *tools.Registry, history []llm.Message) (string, error) {
-	turnCtx, cancel, aborted := d.newTurnCtx(ctx)
-	defer cancel()
-
-	requestID, err := uuid.NewV7()
-	if err != nil {
-		return "", fmt.Errorf("mint request id: %w", err)
-	}
-
-	la := agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:     d.client,
-		LLM:        d.cfg.LLM,
-		Registry:   reg,
-		PreviewCap: d.cfg.ToolPreviewCap,
-		RunDir:     d.cfg.RunDir,
-		SessionID:  d.sessionID,
-		UserTurns:  history,
-	})
-	bud, err := agent.NewBudget(agent.BudgetOptions{})
-	if err != nil {
-		// A malformed AURA_LOOP_* env must surface as a clear turn error — never a
-		// silent nil budget, which would nil-panic in the run-loop's first
-		// ConsumeStep. There is no safe in-REPL fallback (re-reading the same env
-		// fails identically), and config.Load does not validate AURA_LOOP_*, so this
-		// is the first place the bad value is caught.
-		return "", fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)
-	}
-	ic := agent.InvocationContext{
-		Ctx:       turnCtx,
-		Agent:     la,
-		RequestID: requestID,
-		Branch:    "root",
-		Budget:    bud,
-	}
-
-	start := time.Now()
-	answer, _, usage, runErr := renderTurn(d.out, func() iterSeq2 { return la.Run(ic) })
-	latency := time.Since(start).Seconds()
-
-	if runErr != nil {
-		if aborted() || errors.Is(runErr, context.Canceled) {
-			return "", context.Canceled
-		}
-		return "", runErr
-	}
-	if aborted() {
-		return "", context.Canceled
-	}
-
-	_, _ = fmt.Fprintln(d.out)
-	_, _ = fmt.Fprintln(d.out, costFooter(d.cfg.LLM.Prices, d.cfg.LLM.Model, usage, latency))
-	return answer, nil
-}
-
-// trimLine strips the trailing newline (and CR) and surrounding spaces from a read
-// line so `/exit` and prose turns match regardless of platform line endings.
-func trimLine(s string) string {
-	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
-		s = s[:len(s)-1]
-	}
-	// Trim leading/trailing spaces only for the command match; prose keeps interior spaces.
-	start, end := 0, len(s)
-	for start < end && s[start] == ' ' {
-		start++
-	}
-	for end > start && s[end-1] == ' ' {
-		end--
-	}
-	return s[start:end]
-}
-
-// signalTurnCtx wires the two-stage Ctrl+C (D-10): the returned ctx is cancelled on
-// the first SIGINT of this turn; aborted() reports whether that fired. The caller
-// cancels (and thereby unregisters the handler) when the turn ends, so a second
-// SIGINT between turns reaches the default handler and quits the process cleanly.
-func signalTurnCtx(parent context.Context) (context.Context, context.CancelFunc, func() bool) {
-	ctx, cancel := signal.NotifyContext(parent, os.Interrupt, syscall.SIGINT)
-	abortedFn := func() bool { return ctx.Err() != nil }
-	return ctx, cancel, abortedFn
+// replDeps are the REPL's injectable dependencies so the loop is testable with
+// scripted stdin + a fake-client Runner (no live OpenRouter, D-31).
+type replDeps struct {
+	in         io.Reader
+	out        io.Writer
+	errOut     io.Writer
+	run        *runner.Runner
+	cfg        *config.Config
+	convID     string
+	newTurnCtx func(parent context.Context) (context.Context, context.CancelFunc, func() bool)
 }

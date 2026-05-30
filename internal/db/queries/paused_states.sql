@@ -20,6 +20,14 @@ WHERE conversation_id = $1
   AND resumed_at IS NULL
 ORDER BY priority DESC, created_at ASC, token ASC;
 
+-- name: ListRecentPausedStates :many
+SELECT token, conversation_id, kind, question, options, priority,
+       resume_context, tool_call_id, proxied_from_child_id, proxied_tool_call_id,
+       created_at, resumed_at, resumed_answer
+FROM aura.paused_states
+ORDER BY created_at DESC, token ASC
+LIMIT $1;
+
 -- name: MarkPausedStateResumed :exec
 UPDATE aura.paused_states
 SET resumed_at = now(),

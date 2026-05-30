@@ -33,6 +33,7 @@ type Querier interface {
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
+	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error

@@ -18,25 +18,34 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// renderTurn drives one LlmAgent.Run, streaming clean prose to w as it arrives and
-// returning the final answer text + the finish_reason + the per-turn usage (read
-// off the final Event's StateDelta, D-11). It prints a dim one-liner for any
-// non-terminal tool call (D-12) and surfaces a real infra error from the iter.Seq2
-// error slot.
-func renderTurn(w io.Writer, run func() iterSeq2) (answer, finish string, usage llm.Usage, err error) {
+// renderRunnerTurn drives one runner.Turn iterator, streaming clean prose to w as it
+// arrives and returning the final answer + finish_reason + per-turn usage (read off
+// the final Event's StateDelta, D-11) plus whether the round ended in a pause (an
+// Actions.AwaitingInput Event was seen). It prints a dim one-liner for any
+// non-terminal tool call (D-12) and surfaces a real infra error from the error slot.
+func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage llm.Usage, paused bool, err error) {
 	var prose strings.Builder
 	emit := func(s string) {
 		prose.WriteString(s)
 		_, _ = io.WriteString(w, s)
 	}
-	for ev, runErr := range run() {
+	for ev, runErr := range seq {
 		if runErr != nil {
-			return prose.String(), finish, usage, runErr
+			return prose.String(), finish, usage, paused, runErr
 		}
-		if ev == nil || ev.LLMResponse == nil {
+		if ev == nil {
+			continue
+		}
+		if ev.Actions.AwaitingInput != nil {
+			// HITL pause: stop rendering prose; the caller renders the prompt inline.
+			paused = true
+			continue
+		}
+		if ev.LLMResponse == nil {
 			continue
 		}
 		resp := ev.LLMResponse
@@ -49,7 +58,7 @@ func renderTurn(w io.Writer, run func() iterSeq2) (answer, finish string, usage 
 			finish = resp.FinishReason
 			flushRemainder(&prose, resp.Content, emit)
 			usage = usageFromStateDelta(ev.Actions.StateDelta)
-			return prose.String(), finish, usage, nil
+			return prose.String(), finish, usage, paused, nil
 		case isToolResultPreview(ev):
 			// A tool-result Event carries the raw tool output (e.g. an RFC3339
 			// timestamp from current_time) in Content for AG-UI forward-compat — it
@@ -62,7 +71,15 @@ func renderTurn(w io.Writer, run func() iterSeq2) (answer, finish string, usage 
 			emit(resp.Content)
 		}
 	}
-	return prose.String(), finish, usage, nil
+	return prose.String(), finish, usage, paused, nil
+}
+
+// costFooterFromFinish renders the per-turn cost footer from the conversation
+// config + usage (the finish_reason is accepted for future surfacing; the footer
+// itself is the token+USD summary). It wraps costFooter with the config's price
+// table + model so the REPL stays a one-liner.
+func costFooterFromFinish(cfg *config.Config, usage llm.Usage, _ string) string {
+	return costFooter(cfg.LLM.Prices, cfg.LLM.Model, usage, 0)
 }
 
 // flushRemainder emits the tail of the final answer that streaming did not already

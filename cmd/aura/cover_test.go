@@ -23,7 +23,7 @@ func TestChat_ToolUsingTurn(t *testing.T) {
 		agenttest.ToolCallTurn(agenttest.MakeToolCall("c1", "current_time", `{}`)),
 		textResponseTurn("c2", "Sono le 14:24 UTC.", llm.Usage{PromptTokens: 50, CompletionTokens: 12}),
 	)
-	d, out, _ := testChatDeps("che ore sono\n", fc)
+	d, out, _ := testChatDeps(t, "che ore sono\n", fc)
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestChat_BudgetTrip(t *testing.T) {
 	fc := agenttest.NewFakeClient(turns...)
 	// Trip the step budget at 2 via the env budgetOrDefault reads.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "2")
-	d, out, _ := testChatDeps("vai\n", fc)
+	d, out, _ := testChatDeps(t, "vai\n", fc)
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestChat_BudgetTrip(t *testing.T) {
 // the un-answered user turn is dropped (chatLoop continues to EOF cleanly).
 func TestChat_TurnError(t *testing.T) {
 	fc := agenttest.NewFakeClient(agenttest.FakeTurn{Err: errWireDead})
-	d, _, errOut := testChatDeps("domanda\n", fc)
+	d, _, errOut := testChatDeps(t, "domanda\n", fc)
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop should swallow a turn error and continue: %v", err)
 	}
@@ -91,21 +91,19 @@ var errWireDead = wireDead{}
 // streamed chunks and the final answer disagree on their prefix, so the renderer
 // resets and emits the full final answer (no double-print of the partial stream).
 func TestRenderTurn_DivergentFlush(t *testing.T) {
-	run := func() iterSeq2 {
-		return func(yield func(*agent.Event, error) bool) {
-			// stream a partial chunk that the final answer does NOT extend
-			if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{Content: "AAA"}}, nil) {
-				return
-			}
-			yield(&agent.Event{
-				LLMResponse: &agent.LLMResponse{Content: "ZZZ final", FinishReason: "stop"},
-			}, nil)
+	seq := func(yield func(*agent.Event, error) bool) {
+		// stream a partial chunk that the final answer does NOT extend
+		if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{Content: "AAA"}}, nil) {
+			return
 		}
+		yield(&agent.Event{
+			LLMResponse: &agent.LLMResponse{Content: "ZZZ final", FinishReason: "stop"},
+		}, nil)
 	}
 	var buf bytes.Buffer
-	answer, finish, _, err := renderTurn(&buf, run)
+	answer, finish, _, _, err := renderRunnerTurn(&buf, seq)
 	if err != nil {
-		t.Fatalf("renderTurn: %v", err)
+		t.Fatalf("renderRunnerTurn: %v", err)
 	}
 	if finish != "stop" {
 		t.Errorf("finish = %q, want stop", finish)
@@ -119,20 +117,18 @@ func TestRenderTurn_DivergentFlush(t *testing.T) {
 // answer EXTENDS the streamed prefix (flushRemainder's prefix branch): only the
 // not-yet-streamed tail is emitted.
 func TestRenderTurn_ContentStopFallback(t *testing.T) {
-	run := func() iterSeq2 {
-		return func(yield func(*agent.Event, error) bool) {
-			if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{Content: "Ciao "}}, nil) {
-				return
-			}
-			yield(&agent.Event{
-				LLMResponse: &agent.LLMResponse{Content: "Ciao mondo", FinishReason: "stop"},
-			}, nil)
+	seq := func(yield func(*agent.Event, error) bool) {
+		if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{Content: "Ciao "}}, nil) {
+			return
 		}
+		yield(&agent.Event{
+			LLMResponse: &agent.LLMResponse{Content: "Ciao mondo", FinishReason: "stop"},
+		}, nil)
 	}
 	var buf bytes.Buffer
-	answer, _, _, err := renderTurn(&buf, run)
+	answer, _, _, _, err := renderRunnerTurn(&buf, seq)
 	if err != nil {
-		t.Fatalf("renderTurn: %v", err)
+		t.Fatalf("renderRunnerTurn: %v", err)
 	}
 	if answer != "Ciao mondo" {
 		t.Errorf("answer = %q, want Ciao mondo", answer)
@@ -146,20 +142,18 @@ func TestRenderTurn_ContentStopFallback(t *testing.T) {
 // return: the streamed chunks already produced the entire final answer, so the
 // final-Event flush emits nothing more (no double-print).
 func TestRenderTurn_FinalEqualsStreamed(t *testing.T) {
-	run := func() iterSeq2 {
-		return func(yield func(*agent.Event, error) bool) {
-			if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{Content: "completo"}}, nil) {
-				return
-			}
-			yield(&agent.Event{
-				LLMResponse: &agent.LLMResponse{Content: "completo", FinishReason: "stop"},
-			}, nil)
+	seq := func(yield func(*agent.Event, error) bool) {
+		if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{Content: "completo"}}, nil) {
+			return
 		}
+		yield(&agent.Event{
+			LLMResponse: &agent.LLMResponse{Content: "completo", FinishReason: "stop"},
+		}, nil)
 	}
 	var buf bytes.Buffer
-	answer, _, _, err := renderTurn(&buf, run)
+	answer, _, _, _, err := renderRunnerTurn(&buf, seq)
 	if err != nil {
-		t.Fatalf("renderTurn: %v", err)
+		t.Fatalf("renderRunnerTurn: %v", err)
 	}
 	if answer != "completo" {
 		t.Errorf("answer = %q, want completo", answer)
@@ -171,14 +165,12 @@ func TestRenderTurn_FinalEqualsStreamed(t *testing.T) {
 
 // TestRenderTurn_InfraError surfaces the iter.Seq2 error slot from renderTurn.
 func TestRenderTurn_InfraError(t *testing.T) {
-	run := func() iterSeq2 {
-		return func(yield func(*agent.Event, error) bool) {
-			yield(nil, errWireDead)
-		}
+	seq := func(yield func(*agent.Event, error) bool) {
+		yield(nil, errWireDead)
 	}
 	var buf bytes.Buffer
-	if _, _, _, err := renderTurn(&buf, run); err == nil {
-		t.Fatal("renderTurn must surface the error slot")
+	if _, _, _, _, err := renderRunnerTurn(&buf, seq); err == nil {
+		t.Fatal("renderRunnerTurn must surface the error slot")
 	}
 }
 
@@ -363,7 +355,7 @@ func TestChat_CtrlCAbort(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		textResponseTurn("c1", "non dovrebbe arrivare", llm.Usage{PromptTokens: 1}),
 	)
-	d, out, _ := testChatDeps("domanda\n", fc)
+	d, out, _ := testChatDeps(t, "domanda\n", fc)
 	// Replace the turn ctx with one cancelled before the run, so aborted() is true.
 	d.newTurnCtx = func(parent context.Context) (context.Context, context.CancelFunc, func() bool) {
 		ctx, cancel := context.WithCancel(parent)
@@ -382,7 +374,7 @@ func TestChat_CtrlCAbort(t *testing.T) {
 // errors with something other than io.EOF surfaces as the chatLoop error.
 func TestChat_NonEOFReadError(t *testing.T) {
 	fc := agenttest.NewFakeClient()
-	d, _, _ := testChatDeps("", fc)
+	d, _, _ := testChatDeps(t, "", fc)
 	d.in = &badReader{}
 	if err := chatLoop(context.Background(), d); err == nil {
 		t.Fatal("chatLoop must surface a non-EOF read error")
@@ -428,7 +420,7 @@ func TestChat_MalformedBudgetEnv_SurfacesError(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		textResponseTurn("call-1", "should never reach the model", llm.Usage{PromptTokens: 1, CompletionTokens: 1}),
 	)
-	d, _, errOut := testChatDeps("ciao\n", fc)
+	d, _, errOut := testChatDeps(t, "ciao\n", fc)
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop must keep running and print the turn error, got fatal: %v", err)
 	}
