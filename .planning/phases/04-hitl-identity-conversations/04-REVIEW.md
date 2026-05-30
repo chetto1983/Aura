@@ -31,11 +31,22 @@ files_reviewed_list:
   - internal/runner/runner_resume.go
   - scripts/microcompact_smoke.sh
 findings:
-  critical: 2
-  warning: 5
+  critical: 0
+  warning: 3
   info: 4
-  total: 11
-status: issues_found
+  total: 7
+status: resolved
+resolution:
+  resolved: 2026-05-31T00:00:00Z
+  fixed: [CR-01, CR-02, WR-01, WR-03]
+  remaining: [WR-02, WR-04, WR-05, IN-01, IN-02, IN-03, IN-04]
+  note: >-
+    The two SC-4 wire-correctness criticals plus WR-01 (REPL double-bufio) and
+    WR-03 (auto-title history race) are fixed, each with a regression test that
+    fails pre-fix / passes post-fix. go build/vet clean; runner + cmd -race green;
+    conversations + askuser db_integration tiers run green in WSL; golangci-lint 0
+    on touched packages; runner coverage 86.6% (>=85% floor). Remaining warnings
+    (WR-02/04/05) and infos are non-blocking robustness/quality items, untouched.
 ---
 
 # Phase 4: Code Review Report
@@ -52,6 +63,10 @@ Phase 4 wires the HITL pause/resume + identity + conversation-persistence substr
 However, the **resume wire-correctness invariant (SC-4) is broken on two reachable paths**, both of which leave the persisted history with an assistant `ask_user` tool_call that has no matching `RoleTool` answer. Because `buildAgent` rehydrates that history verbatim and sends it to an OpenAI-compatible provider, the very next `Turn` produces a malformed request (a 400 from the provider): a dangling `tool_calls` entry with no responding `tool` message. These are the two BLOCKERs below. A third correctness issue (two independent `bufio.Reader`s over the same stdin) breaks pause answering under piped/scripted input. The remainder are robustness and quality findings.
 
 ## Critical Issues
+
+> **RESOLVED 2026-05-31.** Both criticals fixed in `internal/runner` + `cmd/aura`,
+> each with a regression test (`internal/runner/runner_resume_fixes_test.go`,
+> `cmd/aura/chat_repl_fixes_test.go`) that fails pre-fix and passes post-fix.
 
 ### CR-01: `cancel` resume leaves a dangling `ask_user` tool_call → next Turn sends wire-invalid history
 
@@ -79,6 +94,8 @@ if resp.Action == askuser.ActionCancel {
 ```
 and have the REPL treat a cancel as a turn termination (do not call `driveTurn(nil)` afterward). The same fix is required in `SubmitAnswers` (`runner_resume.go:96-101`).
 
+**Resolution:** `cancelConversation` (runner_resume.go) injects a terminating `RoleTool` answer (`cancelledContent`, keyed to each open `tool_call_id`) for every still-open pending, then auto-resolves; wired into BOTH `SubmitAnswer` and `SubmitAnswers`. The REPL (`renderAndAnswerPauses`/`runUserTurn`) now returns a `cancelled` flag and ends the turn instead of driving `Turn(nil)`. Regression: `TestCancel_RehydratedHistoryWireValid_CR01`, `TestCancelBatch_RehydratedHistoryWireValid_CR01`, `TestCancel_InjectError_CR01`.
+
 ### CR-02: Multi-pause in one round persists N separate assistant tool_call turns → wire-invalid interleaving on resume
 
 **File:** `internal/runner/runner_persist.go:74-118` (`persistPause`) interacting with `internal/agent/llm_agent_pause.go:90-98` (`emitPauses`) and `internal/runner/runner_resume.go:119-141` (`injectAnswer`)
@@ -95,6 +112,8 @@ The OpenAI wire contract requires each assistant `tool_calls` message to be imme
 
 **Fix:** Persist the assistant pause turn ONCE per round with ALL the round's ask_user tool_calls in a single `conversation_turns` row (accumulate the pauses in `turnTracker` and write the combined assistant turn after the round, or persist on the first pause Event and merge subsequent ones), so the rehydrated assistant message matches the agent's single-message rewrite. Ensure `injectAnswer` writes the tool answers grouped immediately after that single assistant turn. Add a 2-pause integration test asserting the rehydrated `messages` are wire-valid (assistant-with-N-tool_calls immediately followed by N tool messages).
 
+**Resolution:** `persistPause` now writes only the `paused_states` row per Event (sole-writer intact) and accumulates the pause payload in `turnTracker.pauses`; the new `flushPause` writes the SINGLE combined assistant turn (all ask_user `tool_calls`) once at round end in `Turn`, mirroring the agent's `pauseToolCalls` rewrite. Resume injects N `RoleTool` answers after that single turn → `assistant{[A,B]}, tool{A}, tool{B}`. Regression: `TestMultiPause_SingleAssistantTurn_CR02` (asserts exactly 1 assistant pause turn carrying both ids + a wire-valid rehydration).
+
 ## Warnings
 
 ### WR-01: Two independent `bufio.Reader`s over the same stdin drop buffered input on pause
@@ -102,6 +121,8 @@ The OpenAI wire contract requires each assistant `tool_calls` message to be imme
 **File:** `cmd/aura/chat_repl.go:41` vs `cmd/aura/chat_repl.go:148`
 **Issue:** `chatLoop` creates `reader := bufio.NewReader(d.in)` and reads the user line with `ReadString('\n')`. `promptForPause` creates a **second** `bufio.NewReader(d.in)` over the same `d.in`. `bufio.Reader` reads ahead in blocks (up to 4096 bytes), so when stdin is piped/scripted (the documented test harness, `replDeps.in`), the first reader buffers the rest of the input — including the pause answers — and the second reader, reading directly from the underlying stream, sees EOF or the wrong bytes. Pause answering then silently fails or reads garbage. Interactively it is latent (line-buffered TTY) but still incorrect.
 **Fix:** Thread a single `*bufio.Reader` through `replDeps`/`runUserTurn`/`renderAndAnswerPauses`/`promptForPause` instead of constructing a new one per pause. Construct it once in `chatLoop` and pass it down.
+
+**Resolution (2026-05-31):** ONE `*bufio.Reader` is constructed in `chatLoop` and threaded through `runUserTurn`/`renderAndAnswerPauses`/`promptForPause`; the second reader is gone. Regression: `TestChat_PauseAnswerConsumedFromBufferedStdin_WR01`, `TestChat_TwoPauses_BothAnswersConsumed_WR01`, `TestPromptForPause_SharedReader_WR01` (assert the buffered scripted answer CONTENT is actually injected, not just that the turn ran).
 
 ### WR-02: Title truncation byte-slices UTF-8, can store invalid runes and split multibyte chars
 
@@ -123,6 +144,8 @@ if len(t) > titleMaxChars {
 **File:** `internal/runner/runner_resume.go:18-40` (`maybeAutoTitle`) vs `internal/runner/runner.go:158-191`
 **Issue:** `maybeAutoTitle` launches a goroutine that closes over the `history []llm.Message` slice that `Turn` also passed into `buildAgent`/`NewLlmAgent`. Today this is safe only because `NewLlmAgent` copies into its own backing array (`llm_agent.go:68-69`) and `applyL1` returns a copy — so nothing mutates `history` after the goroutine starts. This is an undocumented invariant held by accident: any future change that mutates the `history` slice in-place after `maybeAutoTitle` returns (e.g. an optimization that appends to it) becomes a data race the `-race` detector would only catch if a title worker happens to overlap. The `cmd/aura/chat.go:331` `defer Stop` and the per-turn worker can also overlap across turns sharing the slice header.
 **Fix:** Pass a defensive copy of `history` to the goroutine (`hist := append([]llm.Message(nil), history...)`) and document that the worker owns its snapshot, removing the implicit "nobody mutates history" coupling.
+
+**Resolution (2026-05-31):** `maybeAutoTitle` copies `history` into `hist` before spawning the worker, which now closes over the snapshot. Regression: `TestAutoTitle_DefensiveHistoryCopy_WR03` (mutates the caller's slice in-place while the worker runs; flags a DATA RACE under `-race` pre-fix, clean post-fix).
 
 ### WR-04: Budget-exhausted / escalate turn persists no assistant turn, leaving an unanswered user turn
 
