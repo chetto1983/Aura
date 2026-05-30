@@ -167,7 +167,15 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 
-			// 4. Record the assistant tool-call message, then dispatch sequentially (D-14).
+			// 4. Intra-turn exclusivity (D-A1-07): if any call is an ask_user pause,
+			// the assistant message is rewritten to ask_user-only tool_calls and the
+			// siblings are dropped (re-emitted next round). Otherwise record the full
+			// assistant tool-call message and dispatch sequentially (D-14).
+			if pauses := a.pauseCalls(calls); len(pauses) > 0 {
+				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: pauseToolCalls(pauses)})
+				a.emitPauses(ic, spanID, parentSpanID, pauses, yield)
+				return
+			}
 			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls})
 			done, infraErr := a.dispatch(ic, spanID, parentSpanID, requestID, calls, usage, yield)
 			if infraErr != nil {
