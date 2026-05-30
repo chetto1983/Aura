@@ -90,6 +90,69 @@ func TestEvent_FullShapeMarshalsToJSON_RoundTrips(t *testing.T) {
 	}
 }
 
+func TestEvent_AwaitingInput_RoundTripsByteIdentical(t *testing.T) {
+	ev := Event{
+		RequestID: mustV7(t),
+		Author:    "aura",
+		Actions: Actions{
+			AwaitingInput: &AwaitingInput{
+				Question:    "approve deploy?",
+				Options:     []PauseOption{{Label: "yes", Value: "y"}, {Label: "no", Value: "n"}},
+				Kind:        "choice",
+				Priority:    80,
+				ToolCallID:  "call_pause_1",
+				OriginAgent: "aura",
+			},
+		},
+		Timestamp: time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC),
+	}
+
+	first, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(first, []byte("awaiting_input")) {
+		t.Fatalf("set AwaitingInput must appear on the wire, got: %s", first)
+	}
+
+	var decoded Event
+	if err := json.Unmarshal(first, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.Actions.AwaitingInput == nil {
+		t.Fatalf("AwaitingInput lost in round-trip")
+	}
+	if decoded.Actions.AwaitingInput.ToolCallID != "call_pause_1" ||
+		decoded.Actions.AwaitingInput.Kind != "choice" ||
+		decoded.Actions.AwaitingInput.Priority != 80 ||
+		len(decoded.Actions.AwaitingInput.Options) != 2 {
+		t.Fatalf("AwaitingInput payload mangled: %+v", decoded.Actions.AwaitingInput)
+	}
+
+	second, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatalf("round-trip not byte-identical:\n first=%s\nsecond=%s", first, second)
+	}
+}
+
+func TestEvent_NilAwaitingInput_OmitsKey(t *testing.T) {
+	ev := Event{
+		RequestID: mustV7(t),
+		Author:    "aura",
+		Timestamp: time.Now().UTC(),
+	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(b, []byte("awaiting_input")) {
+		t.Fatalf("nil AwaitingInput must be omitted from the wire, got: %s", b)
+	}
+}
+
 func TestEvent_NilLLMResponse_OmitsObject(t *testing.T) {
 	ev := Event{
 		RequestID: mustV7(t),

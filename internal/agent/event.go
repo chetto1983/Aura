@@ -58,11 +58,41 @@ type LLMResponse struct {
 // Actions are the control signals an Event carries. Escalate is the canonical
 // termination/cancellation signal (D-04: budget exhaustion is Event-only, never
 // the error slot). StateDelta/ArtifactDelta accept nested map[string]any and map
-// to the AG-UI STATE_DELTA stream in Phase 12.
+// to the AG-UI STATE_DELTA stream in Phase 12. AwaitingInput is the HITL pause
+// signal (D-A1-03): a sibling to Escalate, set by the pause-detection seam
+// (llm_agent_pause.go) when ask_user fires — the pause travels as this Event,
+// NEVER the iter.Seq2 error slot. It is a pointer so an unset pause omits the
+// `awaiting_input` key on the wire (mirrors the MessageID *pointer omitempty
+// trick), keeping decode(encode())==identity.
 type Actions struct {
 	Escalate      bool           `json:"escalate,omitempty"`       // true → stop this branch / cancel siblings
 	StateDelta    map[string]any `json:"state_delta,omitempty"`    // termination_reason/limit_hit/steps_consumed, etc.
 	ArtifactDelta map[string]any `json:"artifact_delta,omitempty"` // produced-artifact deltas (forward-compat)
+	AwaitingInput *AwaitingInput `json:"awaiting_input,omitempty"` // HITL pause payload (Slice 1.5); nil unless ask_user fired
+}
+
+// AwaitingInput is the pause payload an ask_user Event carries (D-A1-03). It is
+// the Event-side projection of tools.ErrAwaitingUserInput plus the dispatch-
+// stamped ToolCallID and the originating-agent id for swarm forward-compat
+// (D-A1-08: paused_states.proxied_* stay NULL for direct calls, populated by
+// Phase 9 as the Event crosses the child→parent boundary). It carries no DB
+// type — the askuser.Store reads these plain fields off the Event, never the
+// other way round (the agent stays DB-free).
+type AwaitingInput struct {
+	Question    string        `json:"question"`
+	Options     []PauseOption `json:"options,omitempty"`
+	Kind        string        `json:"kind"`
+	Priority    int           `json:"priority,omitempty"`
+	ToolCallID  string        `json:"tool_call_id"`
+	OriginAgent string        `json:"origin_agent,omitempty"` // emitting agent name (swarm proxy forward-compat, D-A1-08)
+}
+
+// PauseOption mirrors a tools.Option on the wire. It is redeclared here (rather
+// than importing tools.Option into the Event model) so internal/agent/event.go
+// stays free of any tools dependency cycle; the pause seam copies the fields.
+type PauseOption struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
 }
 
 // SetAuthorIfEmpty stamps the author on an LLM-emitted Event that has not set one
