@@ -116,7 +116,15 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 				return false
 			}
 		}
-		_, _ = parseSSE(resp.Body, emit)
+		res, _ := parseSSE(resp.Body, emit)
+		// Surface the captured usage to the agent through the provider-neutral
+		// channel as a trailing Usage chunk (Req#12 — the llm.Client interface
+		// has no other way to carry the final token+cost summary). Omitted when
+		// the provider sent no usage object.
+		if res.hasUsage {
+			u := res.usage.toLLMUsage()
+			emit(llm.Chunk{Usage: &u})
+		}
 	}()
 	return out, nil
 }

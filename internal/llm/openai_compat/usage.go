@@ -1,5 +1,7 @@
 package openai_compat
 
+import "github.com/chetto1983/aura/internal/llm"
+
 // usageWire mirrors the OpenRouter usage object delivered in the LAST SSE message
 // (RESEARCH Pitfall 4). Only consumed fields are declared; unknown fields
 // (audio_tokens, reasoning_tokens, cost_details, total_tokens) are ignored by
@@ -38,5 +40,17 @@ func (w *usageWire) toUsage() Usage {
 		CompletionTokens: w.CompletionTokens,
 		CachedTokens:     w.PromptTokensDetails.CachedTokens,
 		Cost:             w.Cost,
+	}
+}
+
+// toLLMUsage projects the captured Usage onto the provider-neutral llm.Usage the
+// agent reads off the trailing stream chunk (Req#12). Same fields, no provider
+// coupling — the agent never imports openai_compat.
+func (u Usage) toLLMUsage() llm.Usage {
+	return llm.Usage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		CachedTokens:     u.CachedTokens,
+		Cost:             u.Cost,
 	}
 }

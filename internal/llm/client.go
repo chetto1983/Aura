@@ -52,12 +52,28 @@ type ToolDef struct {
 	} `json:"function"`
 }
 
-// Chunk is one streamed delta from the LLM. Exactly one of Text or ToolCall is
-// populated; FinishReason is set on the final chunk of the stream.
+// Usage is the provider-neutral token+cost summary surfaced on the final stream
+// chunk so the agent loop can populate the llm.request span (D-13/Req#12) without
+// importing a provider package. CachedTokens is the cache-READ count (the
+// implicit prompt-cache discount), never cache writes. Cost is the provider's
+// reported figure (nil when the provider sent none — the caller falls back to a
+// price table and never reports $0 for an unknown model, D-18).
+type Usage struct {
+	PromptTokens     int
+	CompletionTokens int
+	CachedTokens     int
+	Cost             *float64
+}
+
+// Chunk is one streamed delta from the LLM. Exactly one of Text, ToolCall, or
+// Usage is populated; FinishReason is set on the final content/tool chunk of the
+// stream. The trailing Usage chunk (when present) carries the final token+cost
+// summary so the agent can read it through the provider-neutral channel.
 type Chunk struct {
 	Text         string
 	ToolCall     *ToolCall
 	FinishReason string
+	Usage        *Usage
 }
 
 // Client is the interface the agent loop targets. Stream returns a channel of
