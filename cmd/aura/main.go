@@ -66,6 +66,7 @@ func buildRegistry() *tools.Registry {
 	reg.Register(&tools.ToolSearch{Registry: reg})
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
+	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
 	return reg
 }
 
