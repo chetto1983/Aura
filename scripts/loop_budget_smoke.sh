@@ -21,9 +21,15 @@ cd "$(git rev-parse --show-toplevel)"
 echo "==> SC#2: aura agent dry-run --max-steps 25"
 OUT="$(go run ./cmd/aura agent dry-run --max-steps 25)"
 
-LINES="$(printf '%s\n' "$OUT" | grep -c .)"
-if [[ "$LINES" -ne 26 ]]; then
-  echo "FAIL (SC#2): expected exactly 26 Event lines (25 step + 1 terminal), got $LINES" >&2
+# Guard the count the same way the coverage-rows capture at line ~60 does: under
+# `set -euo pipefail`, `grep -c .` exits non-zero on ZERO matches, so an EMPTY $OUT
+# (the exact NO-SKIP-AS-GREEN failure this gate exists to catch loudly) would abort
+# the pipeline here BEFORE the hand-written diagnostic below could run. `|| true`
+# keeps the count at 0 so the diagnostic — not a bare pipefail abort — is what the
+# operator sees (WR-05).
+LINES="$(printf '%s\n' "$OUT" | grep -c . || true)"
+if [[ "${LINES:-0}" -ne 26 ]]; then
+  echo "FAIL (SC#2): expected exactly 26 Event lines (25 step + 1 terminal), got ${LINES:-0}" >&2
   printf '%s\n' "$OUT" >&2
   exit 1
 fi
