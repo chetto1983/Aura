@@ -22,10 +22,10 @@
 ### Core Agent (Slice 1–1.8)
 
 - [x] **CORE-01**: LLM client OpenAI-compat handrolled ~280 LOC (no SDK), DeepSeek-V4 via OpenRouter default (`deepseek/deepseek-v4-flash:exacto`), ToolResult pattern con preview+sidecar, SSE streaming + ctx-cancel end-to-end, OTel span per LLM call. [Slice 1 + amendment #9]
-- [ ] **CORE-02**: `ask_user` tool con pause/resume FIFO multi-pause, persistent `paused_states` in Postgres, sentinel error pattern (`ErrAwaitingUserInput`). Propaga attraverso swarm nested children con `proxied_from_child_id` mapping. [Slice 1.5]
-- [ ] **CORE-03**: Identity minimal + `capability_grants` scaffolding multi-user. Single-user default `local` con wildcard `'*'`. `HasCapability()` stub per future tool-dispatch enforcement. 2 tabelle, ~80 LOC. [Slice 1.7]
-- [ ] **CORE-04**: Conversation persistence multi-thread Claude.ai-style (`aura.conversations` + `aura.conversation_turns` + `aura.conversation_spillover`) + microcompact L1 (in-context) + budget L2 (history trimming). Auto-title, archive, resume. Token + USD aggregati per conversation. [Slice 1.8]
-- [ ] **CORE-05**: Conversation full-text search via Postgres `pg_trgm` GIN index su `conversation_turns.content` + `aura chat search "<query>"` CLI + Telegram `/search` command. ~80 LOC + 1 migration. [Slice 1.8.5 — amendment #7]
+- [x] **CORE-02**: `ask_user` tool con pause/resume FIFO multi-pause, persistent `paused_states` in Postgres, sentinel error pattern (`ErrAwaitingUserInput`). Propaga attraverso swarm nested children con `proxied_from_child_id` mapping. [Slice 1.5]
+- [x] **CORE-03**: Identity minimal + `capability_grants` scaffolding multi-user. Single-user default `local` con wildcard `'*'`. `HasCapability()` stub per future tool-dispatch enforcement. 2 tabelle, ~80 LOC. [Slice 1.7]
+- [x] **CORE-04**: Conversation persistence multi-thread Claude.ai-style (`aura.conversations` + `aura.conversation_turns` + `aura.conversation_spillover`) + microcompact L1 (in-context) + budget L2 (history trimming). Auto-title, archive, resume. Token + USD aggregati per conversation. [Slice 1.8]
+- [x] **CORE-05**: Conversation full-text search via Postgres `pg_trgm` GIN index su `conversation_turns.content` + `aura chat search "<query>"` CLI + Telegram `/search` command. ~80 LOC + 1 migration. [Slice 1.8.5 — amendment #7]
 
 ### Capabilities (Slice 2–7)
 
@@ -103,10 +103,10 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | INFRA-02 | Phase 1 — Infra DB + Knowledge | Pending |
 | INFRA-03 | Phase 2 — Agent Cornerstone | Complete |
 | CORE-01 | Phase 3 — LLM Client + ToolResult | Complete |
-| CORE-02 | Phase 4 — HITL + Identity + Conversations | Pending |
-| CORE-03 | Phase 4 — HITL + Identity + Conversations | Pending |
-| CORE-04 | Phase 4 — HITL + Identity + Conversations | Pending |
-| CORE-05 | Phase 4 — HITL + Identity + Conversations | Pending |
+| CORE-02 | Phase 4 — HITL + Identity + Conversations | Complete |
+| CORE-03 | Phase 4 — HITL + Identity + Conversations | Complete |
+| CORE-04 | Phase 4 — HITL + Identity + Conversations | Complete |
+| CORE-05 | Phase 4 — HITL + Identity + Conversations | Complete |
 | CAP-01 | Phase 5 — Sandbox 2a Stateless | Pending |
 | CAP-02 | Phase 8 — Sandbox 2b Session-Bound | Pending |
 | CAP-03 | Phase 9 — Swarm (Minimal) | Pending |

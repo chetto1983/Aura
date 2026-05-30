@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 4 context gathered
-last_updated: "2026-05-30T20:07:35.167Z"
-last_activity: 2026-05-30 -- Phase 04 planning complete
+last_updated: "2026-05-30T20:31:02.282Z"
+last_activity: 2026-05-30
 progress:
   total_phases: 16
   completed_phases: 4
   total_plans: 26
-  completed_plans: 21
+  completed_plans: 22
   percent: 25
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 4 — hitl + identity + conversations
+**Current focus:** Phase 04 — hitl-identity-conversations
 
 ## Current Position
 
-Phase: 4
-Plan: Not started
+Phase: 04 (hitl-identity-conversations) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-05-30 -- Phase 04 planning complete
+Last activity: 2026-05-30
 
-Progress: [██████████] 98%
+Progress: [█████████░] 85%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [██████████] 98%
 | Phase 03 P03-02 | ~50min | 2 tasks | 15 files |
 | Phase 03 P03-03 | 25min | 2 tasks | 10 files |
 | Phase 03 P03-04 | ~45min | 2 tasks | 14 files |
+| Phase 04 P01 | 40min | 3 tasks | 29 files |
 
 ## Accumulated Context
 
@@ -85,6 +86,10 @@ Recent decisions affecting current work:
 - [Phase ?]: Phase 03 03-01: llm.Config 4-tier load-order with fail-fast empty-key ErrMissingAPIKey, APIKey structural-redacted (D-28); CostUSD provider-first/table/n-a never zero (D-18/D-23); config.Load composes LLM + AURA_OTEL_* otlp/localhost:4317; OTel v1.44.0 train pinned via otel_deps.go anchor; PRD A1-A5 amended first.
 - [Phase 03]: 03-03: Tool.Execute migrated to (ToolResult, error) coupled (spec+text_response+search); tools.NewResult ctx-injected spillover (D-25) with .. /separator id validation before filepath.Join (T-03-07); read_tool_output BYTE ranges + unknown-id hard-fail (D-27/D-15); current_time RFC-3339 UTC+IANA never in messages[0] (D-08); sidecar-fail degrades clean (D-29)
 - [Phase 03]: 03-04: LlmAgent (first real Agent) budget-gated tool-dispatch run-loop driving llm.Client; ConsumeStep BEFORE each call -> terminal Event reason max_steps/wallclock/dedup (never error slot, D-04); full-tree crypto/rand SpanID minting in tracing.go REPLACES otel_deps.go anchor (resolves Phase-2 agent.go:51-52 deferral); per-call llm.request span w/ model/provider/token attrs, NEVER api_key (D-28); byte-stable EN system prompt mechanism-not-enumeration + 'Always respond in Italian', no timestamp (D-08/D-09); Registry.RenderToolDefs() alphabetical ManifestEntry->llm.ToolDef (cache-stable, BLOCKER-4); sequential multi-tool dispatch RoleTool in tool_call_id order (D-14); error tool-result self-correction, infra-fail to error slot (D-15); length->[risposta troncata: max_tokens] no auto-continue (D-21); added llm.Usage+Chunk.Usage trailing chunk so usage reaches the span (Rule-3 blocking-fix). ConsumeStep reason is REAL 'wallclock' not AI-SPEC 'max_wallclock'. agenttest.FakeClient goleak-clean. race+goleak green, lint 0, all <=600 LOC.
+- [Phase 04]: Phase 4 db substrate: db.WithTx is the single atomic-write seam; migrations 0003-0006 apply idempotently under aura_migrate/aura_app role separation
+- [Phase 04]: CREATE INDEX CONCURRENTLY isolated as the sole statement in 0006; pg_trgm EXTENSION folded into 0005 (golang-migrate implicit-tx hazard)
+- [Phase 04]: Spillover is a sidecar file via content_sidecar_path, not a conversation_spillover table (OQ3); FIFO tiebreaker token ASC (Pitfall 4)
+- [Phase 04]: tiktoken-go@v0.1.8 added (operator-approved); llm.Config gains ContextWindow=1000000 + MaxOutputTokens=32768 for the L2 budget
 
 ### Pending Todos
 
@@ -110,6 +115,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T19:04:55.342Z
+Last session: 2026-05-30T20:30:05.868Z
 Stopped at: Phase 4 context gathered
-Resume file: .planning/phases/04-hitl-identity-conversations/04-CONTEXT.md
+Resume file: None
