@@ -92,8 +92,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Operator hits Ctrl+C during a long generation and observes the HTTP request cancelling within 100ms (no orphaned goroutine via `goleak`); `runtime.NumGoroutine()` baseline returns to pre-call value
   3. Operator runs a tool returning 50KB of output and observes the conversation history containing only a ≤2048-byte preview plus a footer pointer; full content readable via `read_tool_output(tool_call_id)`; sidecar file exists at `$AURA_RUN_DIR/conversations/<id>/<tool_call_id>.result`
   4. Operator inspects emitted OTel spans and observes per-LLM-call spans with `model`, `prompt_tokens`, `completion_tokens`, `cache_hit_tokens` attributes
-**Plans:** 5 plans (4 waves)
-- [ ] 03-01-PLAN.md — PRD amendments A1-A5 + OTel v1.44.0 deps + llm.Config load-order + A3 price table (wave 1)
+**Plans:** 1/5 plans executed
+- [x] 03-01-PLAN.md — PRD amendments A1-A5 + OTel v1.44.0 deps + llm.Config load-order + A3 price table (wave 1)
 - [ ] 03-02-PLAN.md — handrolled openai_compat SSE client: parser + index accumulator + HTTPError + usage + 5 golden fixtures + ctx-cancel zero-leak (wave 2)
 - [ ] 03-03-PLAN.md — ToolResult coupled migration + tools.NewResult spillover + read_tool_output (byte ranges) + current_time builtins (wave 1)
 - [ ] 03-04-PLAN.md — LlmAgent.Run loop + budget terminal Events + per-call OTel span + SpanID minting + byte-stable prompt (wave 3)
@@ -260,7 +260,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 0. PRD Amendments | 6/6 | Complete | 2026-05-29 |
 | 1. Infra DB + Knowledge | 0/TBD | Not started | - |
 | 2. Agent Cornerstone | 7/8 | In Progress|  |
-| 3. LLM Client + ToolResult | 0/5 | Planned | - |
+| 3. LLM Client + ToolResult | 1/5 | In Progress|  |
 | 4. HITL + Identity + Conversations | 0/TBD | Not started | - |
 | 5. Sandbox 2a Stateless | 0/TBD | Not started | - |
 | 6. KV Cache Builder | 0/TBD | Not started | - |
