@@ -151,6 +151,39 @@ closed:
 	t.Errorf("goroutines = %d, baseline %d — read goroutine leaked", runtime.NumGoroutine(), baseline)
 }
 
+// TestStream_RequestErrors covers Stream's two reachable pre-flight error returns
+// (robustness): a malformed BaseURL that http.NewRequestWithContext rejects, and a
+// syntactically valid but unsupported scheme that httpClient.Do rejects. Both must
+// return (nil, err) synchronously — never a panic, never a leaked goroutine, and
+// never the API key in the error string (D-28).
+func TestStream_RequestErrors(t *testing.T) {
+	cases := []struct {
+		name    string
+		baseURL string
+	}{
+		{"malformed_url_newrequest", "http://\x7f-control-char"},
+		{"unsupported_scheme_do", "ftp://127.0.0.1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := New(testConfig(tc.baseURL))
+			ch, err := c.Stream(context.Background(), llm.Request{
+				Model:    "m",
+				Messages: []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
+			})
+			if err == nil {
+				t.Fatal("expected a synchronous error, got nil")
+			}
+			if ch != nil {
+				t.Fatalf("channel must be nil on a pre-flight error, got %v", ch)
+			}
+			if strings.Contains(err.Error(), sentinelKey) {
+				t.Fatalf("API key leaked into the error: %v", err)
+			}
+		})
+	}
+}
+
 // TestStream_429NoRetry (Req#4): a 429 with Retry-After yields HTTPError and the
 // server sees exactly 1 request (the wire does zero retries).
 func TestStream_429NoRetry(t *testing.T) {
