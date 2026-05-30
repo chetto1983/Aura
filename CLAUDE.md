@@ -198,22 +198,23 @@ Fix issues before moving on.
 
 ## Quality tooling & gates (industrial)
 
-The quality toolchain lives in **WSL** at `~/go/bin` (installed via `make tools` or `go install`): `golangci-lint` (v2.12.2, CI-pinned), `staticcheck`, `govulncheck`, `dupl`, `gotestsum`, `deadcode`, `goimports`, `go-mutesting`. WSL's login shell does **not** put `~/go/bin` on PATH — invoke with the full path (`/home/davide/go/bin/<tool>`) or `$(go env GOPATH)/bin/<tool>`.
+**WSL is the full primary dev environment** — it runs everything: `gcc` 15 + GNU `make` (build-essential), `CGO_ENABLED=1` so native `go test -race` works, `mcp-neo4j-cypher` 0.6.0 (pipx, `~/.local/bin`), and the Go quality toolchain in `~/go/bin` (`make tools` or `go install`): `golangci-lint` (v2.12.2, CI-pinned), `staticcheck`, `govulncheck`, `dupl`, `gotestsum`, `deadcode`, `goimports`, `go-mutesting`. The login shell does **not** put `~/go/bin` or `~/.local/bin` on PATH — prepend both (`export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"`) or invoke by full path. The whole `make quality-full` gate (incl. db+neo4j integration coverage) passes natively in WSL.
 
-**Cross-environment matrix** (WSL has no `gcc` and no `make` — build-essential is intentionally not installed):
+**Where to run what:**
 
-| Task | Where | Why |
+| Task | Where | Notes |
 |------|-------|-----|
-| `go test -race`, CGO | **Windows (w64devkit)** or **CI Linux** | WSL `-race` fails `requires cgo`; prefix Windows race cmds with `BASH_ENV=~/.aura-toolchain.sh` (w64devkit binutils shadow fix) |
-| lint / vuln / dupl / staticcheck / deadcode | **WSL** (direct binary) or **CI** | pure-Go analyzers, no CGO |
-| mutation (`go-mutesting`) | **WSL** | only fork that supports go1.26; for container-gated code run with `GOFLAGS=-tags=db_integration` + composed DSN env (WSL reaches Windows Docker via `127.0.0.1`); `PASS`=killed, `FAIL`=survived, score=killed/total |
-| `make ...` | **Windows (w64devkit)** or **CI Linux** | no `make` in WSL |
-| integration tests + coverage | any, **stack must be up** | derive `AURA_DB_URL`/`AURA_DB_MIGRATE_URL` from `POSTGRES_PASSWORD`, add mcp-neo4j-cypher to PATH |
+| everything (`make quality-full`, race, integration, coverage, mutation, lint, vuln) | **WSL** (primary) or **CI Linux** | WSL reaches the Windows Docker stack via `127.0.0.1`; prepend `~/.local/bin:~/go/bin` to PATH and export the composed DSNs (see integration env below) |
+| `go test -race` on **Windows** (w64devkit) | alt only | prefix with `BASH_ENV=~/.aura-toolchain.sh` (binutils-shadow fix); WSL native race is simpler |
+| mutation (`go-mutesting`) | **WSL** | only fork supporting go1.26; for container-gated code add `GOFLAGS=-tags=db_integration` + the DSN env; `PASS`=killed, `FAIL`=survived, score=killed/total |
+| integration env | any, **stack up** | derive `AURA_DB_URL`/`AURA_DB_MIGRATE_URL` from `POSTGRES_PASSWORD`; `mcp-neo4j-cypher` on PATH; `.env` carries the Neo4j/embed vars |
+
+> WSL apt installs (build-essential, pipx) were done as root via `wsl -u root` (passwordless from the Windows host — interactive `sudo` is not available).
 
 **Gates (enforced in CI, runnable locally):**
 - `make quality` — pre-push, no containers: vet + build + file-size + lint(+dupl) + test-race + vuln.
 - `make quality-full` — `quality` + coverage gate (needs stack up via `make neo4j-migrate`).
-- `make coverage` → `scripts/coverage_gate.sh` — **owned-surface floor ≥85%** (`internal/*` minus generated `sqlc` + pre-rewrite skeletons; `cmd/aura` glue excluded as it's behaviourally covered). Tunable via `AURA_COVERAGE_MIN`. Current: **91.6%**.
+- `make coverage` → `scripts/coverage_gate.sh` — **owned-surface floor ≥85%** (`internal/*` minus generated `sqlc` + pre-rewrite skeletons; `cmd/aura` glue excluded as it's behaviourally covered). Tunable via `AURA_COVERAGE_MIN`. Current: **≈91.7%** (passes natively in WSL).
 - `make vuln` → `govulncheck ./...` — supply-chain CVE scan (CI `vulncheck` job).
 - `dupl` is enabled in `.golangci.yml` (threshold 100, `_test.go` excluded — table tests are intentionally repetitive).
 - Mutation spot-check ≥70% on each phase's critical file(s); documented in the phase `VALIDATION.md` Manual-Only table (db.go 82.8%, budget.go/budget_dedup.go 89.4%).
