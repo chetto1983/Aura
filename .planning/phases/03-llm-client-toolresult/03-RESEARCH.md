@@ -161,7 +161,7 @@ go mod tidy   # resolves transitive google.golang.org/grpc + otlptrace to the ma
 ```
 
 ### Recommended Project Structure
-Per AI-SPEC §3 (authoritative). New: `internal/llm/{config.go,prices.go}`, `internal/llm/openai_compat/{client.go,sse.go,accumulate.go,httperror.go,testdata/}`, `internal/agent/{llm_agent.go,prompt.go,tracing.go}`, `internal/agent/tools/{result.go,read_tool_output.go,current_time.go}` (+ edits to `spec.go`,`text_response.go`,`search.go`), `internal/config/config.go` edit (+`LLM`+`AURA_OTEL_*`), `cmd/aura/main.go` (+`chat`,`config`), `scripts/llm_smoke.sh`.
+Per AI-SPEC §3 (authoritative). New: `internal/llm/{config.go,prices.go}`, `internal/llm/openai_compat/{client.go,sse.go,accumulate.go,httperror.go,testdata/}`, `internal/agent/{llm_agent.go,prompt.go,tracing.go}`, `internal/agent/tools/{result.go,read_tool_output.go,current_time.go}` (+ edits to `spec.go`,`text_response.go`,`search.go`,`manifest.go`), `internal/config/config.go` edit (+`LLM`+`AURA_OTEL_*`), `cmd/aura/main.go` (+`chat`,`config`), `scripts/llm_smoke.sh`.
 
 ### Pattern 1: ctx-cancel through net/http (the ~100ms teardown)
 **What:** Total timeout + Ctrl+C ride the *request context*, never `http.Client.Timeout`.
@@ -202,7 +202,7 @@ func truncatePreview(content string, capBytes int) string {
     return content[:cut]
 }
 ```
-Footer pointer format (D-27, byte-based): `\n\n[output truncated: showing bytes 0-2000 of 51234; read more via read_tool_output(tool_call_id="…", offset=2000, limit=2048)]`. Sidecar holds the **full** bytes (not the preview). On sidecar write failure (D-29): return preview + `[full output unavailable: <reason>]`, turn continues.
+Footer pointer format (D-27, byte-based): `\n\n[output truncated: showing bytes 0-2000 of 51234; read more via read_tool_output(tool_call_id="…", offset=2000, limit=2048)]`. Sidecar holds the **full** bytes (not the preview). On sidecar write failure (D-29): return preview + `[full output unavailable: <reason>]`, turn continues. The `session_id`/`tool_call_id` that form the path are validated (no `..`, no path separator) before `filepath.Join` (T-03-07 path-traversal mitigation).
 
 ### Pattern 4: incremental text_response extractor (D-13, ~30 LOC)
 **What:** Stream the `"text":` value out of the accumulating tool-call `arguments` JSON, token-by-token, never showing raw JSON. Stateful scanner (`seekKey` → `inValue`), handles `\"`/`\\`/`\n` escapes, stops at the closing unescaped quote. **Structural scan, not regex over prose** (`feedback_no_regex_for_nlp`). Code in AI-SPEC §4b.
@@ -314,16 +314,16 @@ Not a rename/refactor/migration phase — greenfield implementation against an e
 
 **These three assumptions are all on the cost/cache *reporting* path, not the core wire/loop logic.** They affect the fallback price table and the cache-ratio metric, never correctness of streaming, cancellation, tool dispatch, or redaction. The smoke test (Req#11) and the usage-chunk fixtures empirically confirm them.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Does DeepSeek-V4-Flash:exacto's actual SSE delta framing match the golden fixtures byte-for-byte?**
+1. **RESOLVED: Does DeepSeek-V4-Flash:exacto's actual SSE delta framing match the golden fixtures byte-for-byte?**
    - What we know: OpenRouter speaks the OpenAI wire; usage object shape verified; `:exacto` only changes provider selection, not wire shape.
    - What's unclear: whether a specific provider behind `:exacto` emits tool-call argument deltas split differently (e.g., whole-arg in one chunk vs fragmented) or sends extra keep-alive comment formats.
-   - Recommendation: capture one real SSE transcript during the manual smoke (`scripts/llm_smoke.sh`) and diff against `toolcall_multichunk.sse`; refresh the fixture if the framing differs (AI-SPEC §6 offline flywheel "golden-fixture drift" already plans for this).
+   - RESOLVED: capture one real SSE transcript during the manual smoke (`scripts/llm_smoke.sh`) and diff against `toolcall_multichunk.sse`; refresh the fixture if the framing differs (AI-SPEC §6 offline flywheel "golden-fixture drift" already plans for this). The parser is index-keyed and partition-agnostic (property test, Req#2), so framing variance does not break correctness — only the fixture's fidelity.
 
-2. **Should the cost footer expose cache-write tokens on the first turn?** (the delta from Pitfall 4)
+2. **RESOLVED: Should the cost footer expose cache-write tokens on the first turn?** (the delta from Pitfall 4)
    - What we know: `cache_write_tokens` exists; turn 1 is all writes, turns ≥2 show reads.
-   - Recommendation: footer stays `· {tok} ({in}/{out}) · ${usd} · {lat}s` (D-11, locked) using `usage.cost`; do NOT add cache columns to the footer (keeps it compact). Capture `cached_tokens` in the span only. Defer any cache-write surfacing to Phase 6 (KV builder owns cache observability).
+   - RESOLVED: footer stays `· {tok} ({in}/{out}) · ${usd} · {lat}s` (D-11, locked) using `usage.cost`; do NOT add cache columns to the footer (keeps it compact). Capture `cached_tokens` in the span only. Defer any cache-write surfacing to Phase 6 (KV builder owns cache observability).
 
 ## Environment Availability
 
@@ -358,7 +358,7 @@ Not a rename/refactor/migration phase — greenfield implementation against an e
 | Req#4 | 429 → `HTTPError`, request count==1, no retry | unit (golden) | `go test ./internal/llm/openai_compat/ -run TestStream_429NoRetry` | ❌ Wave 0 (+`error_429.sse`) |
 | Req#5 | config load-order default<file<env; empty key clean error | unit | `go test ./internal/llm/ -run TestConfigLoadOrder` | ❌ Wave 0 |
 | Req#6 | ToolResult preview/sidecar (100KB→≤2KiB+sidecar; ≤cap→no file) | unit (property for UTF-8 boundary) | `go test ./internal/agent/tools/ -run TestNewResult` | ❌ Wave 0 |
-| Req#7 | `read_tool_output` byte slice; unknown id hard-fails | unit | `go test ./internal/agent/tools/ -run TestReadToolOutput` | ❌ Wave 0 |
+| Req#7 | `read_tool_output` byte slice; unknown id hard-fails; path-traversal rejected | unit | `go test ./internal/agent/tools/ -run 'TestReadToolOutput|TestSidecarPathTraversal'` | ❌ Wave 0 |
 | Req#8 | sidecar at `conversations/<session_id>/<tool_call_id>.result` | unit (filesystem assert) | `go test ./internal/agent/tools/ -run TestSidecarLayout` | ❌ Wave 0 |
 | Req#9 | LlmAgent ordered Events (chunk→tool_call→tool_result→final); race+goleak | unit (fake Client) | `go test -race ./internal/agent/ -run TestLlmAgent_EventOrder` | ❌ Wave 0 |
 | Req#10 | budget step/wallclock/dedup → terminal Event, steps≤cap | unit (fake Client) | `go test ./internal/agent/ -run 'TestLlmAgent_(StepCap|WallclockCap|DedupWindow)_Trips'` | ❌ Wave 0 |
@@ -396,7 +396,7 @@ Not a rename/refactor/migration phase — greenfield implementation against an e
 | V2 Authentication | yes (API key to OpenRouter) | Bearer token set only at request-build; never logged (D-28) |
 | V3 Session Management | minimal (in-memory session_id only) | UUIDv7 ephemeral; no auth session |
 | V4 Access Control | no (single-operator REPL; capability_grants are Phase 4) | — |
-| V5 Input Validation | yes | typed struct + `json.Unmarshal` + explicit field validation (no Pydantic in Go, AI-SPEC §4b); malformed tool args → error tool-result, never panic |
+| V5 Input Validation | yes | typed struct + `json.Unmarshal` + explicit field validation (no Pydantic in Go, AI-SPEC §4b); malformed tool args → error tool-result, never panic; path-traversal-shaped ids rejected before filepath.Join (T-03-07) |
 | V6 Cryptography | yes (SpanID gen) | `crypto/rand` 8-byte SpanID (D-04); never hand-roll |
 | V7 Error Handling / Logging | yes (the critical one) | structural secret redaction; `slog` request_id-correlated, no secrets; anti-leak test is a release-blocking gate (D-28/D-30) |
 
@@ -407,6 +407,7 @@ Not a rename/refactor/migration phase — greenfield implementation against an e
 | Provider prompt retention / training on user data | Information Disclosure | `provider.data_collection:"deny"` + no prompt-content logging (D-20, GDPR/SMB privacy posture) |
 | Runaway tool loop burning spend | Denial of Service (cost) | Budget tree: step/wallclock/dedup → terminal Event (Req#10, Critical Failure Mode #6) |
 | Malformed tool args crashing the loop | Denial of Service | parse error → error tool-result the model self-corrects from; never a panic (D-15) |
+| Path traversal via tool_call_id/session_id in the sidecar path | Tampering / Information Disclosure | Validate ids (no `..`/path-separators) before filepath.Join; fixed `conversations/` prefix (T-03-07, `TestSidecarPathTraversal`) |
 | Goroutine/connection leak compounding across turns | Resource exhaustion | ctx-cancel teardown + goleak gate (Req#3, Critical Failure Mode #2) |
 | KV-cache prefix poisoning silently ~5× cost | (cost integrity) | byte-stable `messages[0]`, no live clock; `current_time` tool only (D-08/D-09) |
 
