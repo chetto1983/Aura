@@ -6,6 +6,7 @@
 //	aura tools              — print the tool manifest (active + deferred)
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
 //	aura neo4j <sub>        — Neo4j lifecycle
+//	aura identity <sub>     — identity + capability_grants (list|get|grant|revoke)
 //	aura version            — print build metadata (version, commit, build date)
 //
 // Tabula-rasa scaffold: `tools`, `agent`, `db`, and `neo4j` are wired; `shell`
@@ -35,6 +36,8 @@ func main() {
 		runDB(os.Args[2:])
 	case "neo4j":
 		runNeo4j(os.Args[2:])
+	case "identity":
+		runIdentity(os.Args[2:])
 	case "chat":
 		runChat(os.Args[2:])
 	case "config":
@@ -50,7 +53,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat|config <sub>|agent <sub>|tools|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat|config <sub>|identity <sub>|agent <sub>|tools|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
