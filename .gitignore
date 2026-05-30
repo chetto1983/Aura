@@ -43,7 +43,15 @@ coverage.txt
 coverage.html
 cover.out
 cover_phase2.out
+*.out.filtered
 .codex/*
+
+# Quality-tooling byproducts (never commit)
+#   pgregory/rapid persists failing seeds here; go-mutesting mutates source in
+#   place leaving a <file>.go.tmp backup. Both flicker into the tree during a
+#   mutation campaign — keep them untrackable.
+**/testdata/rapid/
+*.go.tmp
 
 # Claude Code: GSD installation is committed (vedi CLAUDE.md §GSD tooling).
 # Local cache/sessions transient are excluded.

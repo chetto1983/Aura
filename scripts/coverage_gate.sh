@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Industrial coverage floor for the OWNED library surface (internal/*), enforcing
+# the CLAUDE.md COVERAGE FLOOR 85% across the full tag matrix (unit + integration).
+#
+# Why internal/* and not ./...:
+#   - cmd/aura is CLI glue (flag parsing, os.Exit dispatch) — covered behaviourally
+#     by integration + smoke, not by line-unit tests; folding it into a statement
+#     floor measures the wrong thing (it sits ~20% by nature).
+#   - generated (internal/db/sqlc) and pre-rewrite skeletons (agent/tools, sandbox,
+#     swarm, llm/client.go) are owned by later slices; excluded until rewritten.
+#
+# Integration tiers REQUIRE the container stack + env (AURA_DB_URL, AURA_DB_MIGRATE_URL,
+# mcp-neo4j-cypher on PATH). Run after `make neo4j-migrate`, or in the CI knowledge
+# job that already has the stack. NO-SKIP-AS-GREEN: the tagged tests t.Fatal under $CI
+# when their env is unset, so a skipped tier cannot pass this gate falsely.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+MIN="${AURA_COVERAGE_MIN:-85}"
+TAGS="${AURA_COVERAGE_TAGS:-db_integration neo4j_integration}"
+PROFILE="${AURA_COVERAGE_PROFILE:-cover_gate.out}"
+
+echo "==> coverage gate: internal/* >= ${MIN}% (tags: ${TAGS})"
+go test -tags "${TAGS}" -covermode=atomic -coverprofile="${PROFILE}" \
+  ./internal/... >/dev/null
+
+# Drop generated + skeleton rows. Anchor each at a path-segment boundary ('/<x>')
+# so a future sibling whose name merely contains one of these is not silently
+# dropped from the floor.
+{
+  head -1 "${PROFILE}"
+  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/agent/tools/|/internal/sandbox/|/internal/swarm/|/internal/llm/client\.go:'
+} > "${PROFILE}.filtered"
+
+ROWS="$(grep -c -v '^mode:' "${PROFILE}.filtered" || true)"
+if [[ "${ROWS:-0}" -lt 1 ]]; then
+  echo "FAIL: filtered coverage profile has no statement rows (filter too aggressive?)" >&2
+  exit 1
+fi
+
+TOTAL_LINE="$(go tool cover -func="${PROFILE}.filtered" | tail -1)"
+echo "${TOTAL_LINE}"
+PCT="$(printf '%s\n' "${TOTAL_LINE}" | grep -oE '[0-9]+(\.[0-9]+)?%' | tail -1)"
+if [[ -z "${PCT}" ]]; then
+  echo "FAIL: could not parse a coverage percentage from: ${TOTAL_LINE}" >&2
+  exit 1
+fi
+awk -v pct="${PCT%\%}" -v min="${MIN}" 'BEGIN {
+  if (pct + 0 < min + 0) { printf "FAIL: owned coverage %s%% < %s%% (CLAUDE.md floor)\n", pct, min > "/dev/stderr"; exit 1 }
+  printf "ok: owned coverage %s%% >= %s%%\n", pct, min
+}'

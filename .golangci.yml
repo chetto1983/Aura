@@ -21,6 +21,7 @@ linters:
     - misspell
     - gosec
     - revive
+    - dupl
 
   settings:
     gosec:
@@ -28,6 +29,12 @@ linters:
       # int32 pool fields with safe sources; quiet it for now.
       excludes:
         - G115
+
+    dupl:
+      # Token threshold. Production code is clean well below this; 100 catches a
+      # real copy-pasted block without flagging idiomatic CLI error-exit helpers
+      # or short constructors. Test table-boilerplate is excluded via rules below.
+      threshold: 100
 
     revive:
       rules:
@@ -48,3 +55,4 @@ linters:
         linters:
           - gosec
           - errcheck
+          - dupl        # table-driven test cases are intentionally repetitive

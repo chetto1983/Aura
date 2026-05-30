@@ -6,11 +6,21 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help sqlc lint test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+.PHONY: help tools sqlc lint vet vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+
+# Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
+# (common in a fresh WSL login shell). Falls back to a bare name on PATH.
+GOBIN := $(shell go env GOPATH)/bin
 
 help:
+	@echo "make tools         — go install the quality toolchain (lint/vuln/dupl/mutation/etc.)"
+	@echo "make quality       — pre-push gate: vet build file-size lint test-race vuln (no containers)"
+	@echo "make quality-full  — quality + coverage gate (requires the container stack up)"
 	@echo "make sqlc          — regenerate internal/db/sqlc/ from queries/"
-	@echo "make lint          — golangci-lint run ./..."
+	@echo "make lint          — golangci-lint run ./... (incl. dupl)"
+	@echo "make vet           — go vet ./..."
+	@echo "make vuln          — govulncheck ./... (supply-chain CVE scan)"
+	@echo "make coverage      — owned-surface coverage floor >=85% (scripts/coverage_gate.sh; needs stack)"
 	@echo "make test          — go test ./... (unit tier, no build tags)"
 	@echo "make test-race     — go test -race ./... (unit tier with race detector)"
 	@echo "make file-size     — enforce 600-LOC cap via scripts/check-file-size.sh"
@@ -25,11 +35,44 @@ help:
 	@echo "make smoke         — scripts/neo4j_smoke.sh (Italian recall@5 5/5 + p95 <= 30ms)"
 	@echo "make restore-drill — scripts/restore_drill.sh (pg_dump -> pg_restore, asserts < 90s)"
 
+# Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
+# CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
+tools:
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+	go install honnef.co/go/tools/cmd/staticcheck@latest
+	go install golang.org/x/vuln/cmd/govulncheck@latest
+	go install github.com/mibk/dupl@latest
+	go install gotest.tools/gotestsum@latest
+	go install golang.org/x/tools/cmd/deadcode@latest
+	go install golang.org/x/tools/cmd/goimports@latest
+	go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+
 sqlc:
 	sqlc generate
 
+vet:
+	go vet ./...
+
 lint:
-	golangci-lint run ./...
+	$(GOBIN)/golangci-lint run ./...
+
+vuln:
+	$(GOBIN)/govulncheck ./...
+
+# Owned-surface coverage floor (CLAUDE.md >=85%). Integration tiers need the
+# container stack + composed DSNs; bring them up with `make neo4j-migrate` first
+# (or run inside the CI knowledge job that already has the stack).
+coverage:
+	bash scripts/coverage_gate.sh
+
+# Pre-push gate that needs NO containers — fast feedback before a push.
+quality: vet file-size lint test-race vuln
+	go build ./...
+	@echo "ok: quality gate passed (vet build file-size lint test-race vuln)"
+
+# Full gate including the container-backed coverage floor.
+quality-full: quality coverage
+	@echo "ok: quality-full passed (quality + coverage >=85%)"
 
 test:
 	go test ./... -count=1
