@@ -4,6 +4,7 @@
 package conversations
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -128,5 +129,72 @@ func TestOptionalText(t *testing.T) {
 	}
 	if got := optionalText("call_1"); !got.Valid || got.String != "call_1" {
 		t.Errorf("non-empty must be set: %+v", got)
+	}
+}
+
+func TestNumericFromFloat_Negative(t *testing.T) {
+	t.Parallel()
+	n, err := numericFromFloat(-1.2345)
+	if err != nil {
+		t.Fatalf("numericFromFloat(neg): %v", err)
+	}
+	if got := floatFromNumeric(n); got > -1.2344 || got < -1.2346 {
+		t.Errorf("negative round-trip: got %v", got)
+	}
+}
+
+func TestParseTiktokenBPE_Malformed(t *testing.T) {
+	t.Parallel()
+	// A valid line then a malformed one (missing rank) → error.
+	if _, err := parseTiktokenBPE([]byte("aGVsbG8= 0\nbadline")); err == nil {
+		t.Error("malformed BPE line must error")
+	}
+	// Non-base64 token → error.
+	if _, err := parseTiktokenBPE([]byte("!!! 0")); err == nil {
+		t.Error("non-base64 token must error")
+	}
+	// Non-integer rank → error.
+	if _, err := parseTiktokenBPE([]byte("aGVsbG8= notnum")); err == nil {
+		t.Error("non-integer rank must error")
+	}
+}
+
+func TestNewStore_DefaultCap(t *testing.T) {
+	t.Parallel()
+	s := New(nil, Config{RunDir: "/x", TurnCapBytes: 0})
+	if s.turnCapBytes != 65536 {
+		t.Errorf("zero cap must fall back to 65536, got %d", s.turnCapBytes)
+	}
+}
+
+// TestLoadManagedHistory_BadUUID exercises the parseUUID error branch without a DB
+// (loadTurns rejects the id before any query).
+func TestLoadManagedHistory_BadUUID(t *testing.T) {
+	t.Parallel()
+	s := New(nil, Config{RunDir: "/x"})
+	if _, err := s.LoadManagedHistory(context.Background(), "not-a-uuid",
+		ContextConfig{ContextWindow: 1000, MaxOutputTokens: 1}); err == nil {
+		t.Error("LoadManagedHistory(bad id): want error")
+	}
+}
+
+// TestInsertContextRotEvent_BadUUID exercises the parseUUID branch of the emitter.
+func TestInsertContextRotEvent_BadUUID(t *testing.T) {
+	t.Parallel()
+	s := New(nil, Config{RunDir: "/x"})
+	if err := s.insertContextRotEvent(context.Background(), "bad", 1, 10, 5); err == nil {
+		t.Error("insertContextRotEvent(bad id): want error")
+	}
+}
+
+// TestSidecarDir_TraversalRejected proves the path-traversal guard.
+func TestSidecarDir_TraversalRejected(t *testing.T) {
+	t.Parallel()
+	s := New(nil, Config{RunDir: "/run"})
+	if _, err := s.sidecarDir("../escape"); err == nil {
+		t.Error("sidecarDir(traversal): want error")
+	}
+	if _, err := s.turnSidecarPath("../escape", 1); err == nil {
+		t.Error("turnSidecarPath(traversal): want error")
 	}
 }

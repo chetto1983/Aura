@@ -42,8 +42,8 @@ const (
 	StatusDeleted  = "deleted"
 )
 
-// Sentinel errors so callers classify failures without string matching.
-// ErrConversationNotFound is a missing conversation lookup.
+// ErrConversationNotFound is a missing conversation lookup — a sentinel so callers
+// classify the failure without string matching.
 var ErrConversationNotFound = errors.New("conversation not found")
 
 // Store wraps a pgx pool and the generated Queries — the canonical shape from

@@ -117,10 +117,10 @@ func (s *Store) turnSidecarPath(conversationID string, seq int) (string, error) 
 // writeTurnSidecar persists the full turn content, creating the per-conversation
 // dir lazily on first spill.
 func writeTurnSidecar(path, content string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	return os.WriteFile(path, []byte(content), 0o600)
 }
 
 // optionalText maps an empty string to a NULL pgtype.Text (tool_call_id is only

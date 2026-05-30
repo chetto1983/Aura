@@ -407,3 +407,110 @@ func TestGet_NotFound(t *testing.T) {
 		t.Errorf("want ErrConversationNotFound, got %v", err)
 	}
 }
+
+// TestCountTurns counts persisted turns for a conversation.
+func TestCountTurns(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	convID := newConversation(t, s)
+	ctx := context.Background()
+
+	if n, err := s.CountTurns(ctx, convID); err != nil || n != 0 {
+		t.Fatalf("CountTurns(empty): n=%d err=%v", n, err)
+	}
+	for seq := 1; seq <= 3; seq++ {
+		if err := s.AppendTurn(ctx, AppendTurnParams{
+			ConversationID: convID, Seq: seq, Role: llm.RoleUser, Content: "x",
+		}); err != nil {
+			t.Fatalf("AppendTurn: %v", err)
+		}
+	}
+	if n, err := s.CountTurns(ctx, convID); err != nil || n != 3 {
+		t.Errorf("CountTurns: n=%d err=%v (want 3)", n, err)
+	}
+}
+
+// TestStoreMethods_DBErrorWrapping drives the DB-touching methods against a
+// canceled context so each "%w" wrap branch is exercised (mirrors askuser).
+func TestStoreMethods_DBErrorWrapping(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	convID := newConversation(t, s)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	newID := uuid.Must(uuid.NewV7()).String()
+	if _, err := s.Create(canceled, CreateParams{ID: newID, IdentityID: localID, Model: "m"}); err == nil {
+		t.Error("Create(canceled): want error")
+	}
+	if _, err := s.Get(canceled, convID); err == nil {
+		t.Error("Get(canceled): want error")
+	}
+	if _, err := s.List(canceled, true); err == nil {
+		t.Error("List(canceled): want error")
+	}
+	if err := s.UpdateStatus(canceled, convID, StatusArchived); err == nil {
+		t.Error("UpdateStatus(canceled): want error")
+	}
+	if err := s.Rename(canceled, convID, "x"); err == nil {
+		t.Error("Rename(canceled): want error")
+	}
+	if err := s.SetTitleIfNull(canceled, convID, "x"); err == nil {
+		t.Error("SetTitleIfNull(canceled): want error")
+	}
+	if _, err := s.CountTurns(canceled, convID); err == nil {
+		t.Error("CountTurns(canceled): want error")
+	}
+	if err := s.AppendTurn(canceled, AppendTurnParams{ConversationID: convID, Seq: 1, Role: llm.RoleUser, Content: "x"}); err == nil {
+		t.Error("AppendTurn(canceled): want error")
+	}
+	if _, err := s.LoadHistory(canceled, convID); err == nil {
+		t.Error("LoadHistory(canceled): want error")
+	}
+	if _, err := s.SearchConversationTurns(canceled, "q", 5); err == nil {
+		t.Error("SearchConversationTurns(canceled): want error")
+	}
+	if err := s.Delete(canceled, convID); err == nil {
+		t.Error("Delete(canceled): want error")
+	}
+}
+
+// TestStoreMethods_InvalidUUIDWrapping exercises the parseUUID error branches.
+func TestStoreMethods_InvalidUUIDWrapping(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	ctx := context.Background()
+	const bad = "not-a-uuid"
+
+	if _, err := s.Create(ctx, CreateParams{ID: bad, IdentityID: localID, Model: "m"}); err == nil {
+		t.Error("Create(bad id): want error")
+	}
+	if _, err := s.Create(ctx, CreateParams{ID: uuid.Must(uuid.NewV7()).String(), IdentityID: bad, Model: "m"}); err == nil {
+		t.Error("Create(bad identity): want error")
+	}
+	if _, err := s.Get(ctx, bad); err == nil {
+		t.Error("Get(bad): want error")
+	}
+	if err := s.UpdateStatus(ctx, bad, StatusActive); err == nil {
+		t.Error("UpdateStatus(bad): want error")
+	}
+	if err := s.Rename(ctx, bad, "x"); err == nil {
+		t.Error("Rename(bad): want error")
+	}
+	if err := s.SetTitleIfNull(ctx, bad, "x"); err == nil {
+		t.Error("SetTitleIfNull(bad): want error")
+	}
+	if _, err := s.CountTurns(ctx, bad); err == nil {
+		t.Error("CountTurns(bad): want error")
+	}
+	if err := s.AppendTurn(ctx, AppendTurnParams{ConversationID: bad, Seq: 1, Role: llm.RoleUser}); err == nil {
+		t.Error("AppendTurn(bad): want error")
+	}
+	if _, err := s.LoadHistory(ctx, bad); err == nil {
+		t.Error("LoadHistory(bad): want error")
+	}
+	if err := s.Delete(ctx, bad); err == nil {
+		t.Error("Delete(bad): want error")
+	}
+}

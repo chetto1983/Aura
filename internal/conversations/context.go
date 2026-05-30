@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
@@ -111,9 +112,13 @@ func applyContextLadder(
 	hardCap := cfg.hardCap()
 	tokensAfterL1 := totalTokens(enc, l1)
 
-	// L2: budget gate. Over warn → WARN (logged by the caller via the returned
-	// signal is overkill; we keep the gate pure and let L2.5 reduce). If under the
-	// hard cap, we are done after L1 (SC-1: zero rot rows).
+	// L2: budget gate. Over the warn cap (0.75×hard) → audit WARN; over the hard cap
+	// → fall through to L2.5. If under the hard cap, we are done after L1 (SC-1:
+	// zero rot rows).
+	if hardCap > 0 && tokensAfterL1 > int(float64(hardCap)*l2WarnRatio) && tokensAfterL1 <= hardCap {
+		slog.Warn("conversation context over the L2 warn cap",
+			"conversation_id", conversationID, "tokens", tokensAfterL1, "hard_cap", hardCap)
+	}
 	if hardCap == 0 || tokensAfterL1 <= hardCap {
 		return toMessages(l1), nil
 	}
