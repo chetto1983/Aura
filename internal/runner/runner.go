@@ -168,7 +168,11 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 		}
 
 		// Drive one fresh agent round, persisting each emitted turn and observing the
-		// pause Event. tracker accumulates what to persist + whether we paused.
+		// pause Event(s). tracker accumulates what to persist + whether we paused; on a
+		// pause it also accumulates the round's ask_user calls so flushPause can write
+		// them as ONE assistant turn (CR-02). The flush is deferred to round end
+		// because the agent emits one pause Event per call but rewrites its history to
+		// a single multi-tool_call assistant message.
 		tr := &turnTracker{convID: convID}
 		for ev, runErr := range la.Run(ic) {
 			if runErr != nil {
@@ -182,6 +186,14 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 			if !yield(ev, nil) {
 				return // consumer stopped — iter.Seq2 contract forbids a further yield
 			}
+		}
+
+		// Flush the single combined assistant ask_user turn (no-op when the round did
+		// not pause). Done after la.Run drains so the persisted turn carries ALL the
+		// round's ask_user tool_calls in one wire-valid message (CR-02).
+		if err := r.flushPause(ctx, tr); err != nil {
+			yield(nil, err)
+			return
 		}
 
 		// Post-round bookkeeping: fire the auto-title worker when the conversation has
