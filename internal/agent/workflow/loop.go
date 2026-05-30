@@ -49,11 +49,16 @@ func (*LoopAgent) Description() string {
 	return "re-runs sub-agents until maxIterations, a sub escalate, or budget exhaustion"
 }
 
-// Run drives the iteration loop. The budget is consumed per tool-call Event (so a
-// single non-terminating sub like InfiniteToolCallAgent still hits the hard cap,
-// SC#2); dedup is checked per tool call via the shared ring (D-09). Every yield is
-// guarded (D-22). On a hard budget stop or a dedup loop it yields one explicit
-// terminal Event then returns; on a sub escalate it yields the escalate Event then
+// Run drives the iteration loop. The budget is consumed ONCE PER TOOL CALL (D-11),
+// and each consumed tool call is surfaced as exactly one step Event (WR-05), so
+// steps_consumed always equals the number of yielded step Events — even for a turn
+// carrying multiple tool calls (a multi-tool Event yields one step Event per call;
+// a single-tool turn yields the original Event unchanged, SC#2: 25 step Events +
+// 1 terminal = 26). A non-tool Event consumes no step and is yielded as-is. dedup
+// is checked per tool call via the shared ring (D-09). Every yield is guarded
+// (D-22). On a hard budget stop or a dedup loop it yields one explicit terminal
+// Event then returns (the terminal replaces only the REMAINING tool calls, never
+// an already-consumed one); on a sub escalate it yields the escalate Event then
 // returns (the escalate Event ALWAYS precedes the iterator returning, D-21).
 func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
@@ -69,20 +74,35 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 						return
 					}
 
-					// Budget + dedup gate every tool call BEFORE the triggering Event is
-					// yielded: ConsumeStep accounts the step that Event represents, so on
-					// exhaustion the terminal Event REPLACES the would-be-yielded Event
-					// (25 step Events + 1 terminal = 26, SC#2). Each tool call is one
-					// budgeted step (D-11) and one dedup observation (D-18).
-					preview := resultPreview(ev)
-					for _, tc := range toolCalls(ev) {
-						if stop := a.guardToolCall(ic, tc, preview, &stepsConsumed, yield); stop {
+					calls := toolCalls(ev)
+					if len(calls) == 0 {
+						// A non-tool Event consumes no budget step; yield it as-is.
+						if !yield(ev, nil) {
 							return
 						}
+						if ev != nil && ev.Actions.Escalate {
+							return // sub-driven termination (Req#5b), escalate already yielded (D-21)
+						}
+						continue
 					}
 
-					if !yield(ev, nil) {
-						return
+					// Each tool call is ONE budgeted step (D-11) and ONE dedup observation
+					// (D-18), and is surfaced as ONE step Event (WR-05): spend and emitted
+					// step Events stay 1:1, so steps_consumed always equals the number of
+					// yielded step Events. A budget/dedup trip mid-Event therefore never
+					// discards an already-consumed tool call's step — those were already
+					// yielded; the terminal Event only replaces the REMAINING calls. For a
+					// single-tool turn the per-call Event equals the original (SC#2: 25 step
+					// Events + 1 terminal = 26).
+					preview := resultPreview(ev)
+					for _, tc := range calls {
+						stop, broke := a.guardToolCall(ic, ev, tc, preview, &stepsConsumed, yield)
+						if broke {
+							return // consumer broke, or a terminal Event was yielded
+						}
+						if stop {
+							return
+						}
 					}
 					if ev != nil && ev.Actions.Escalate {
 						return // sub-driven termination (Req#5b), escalate already yielded (D-21)
@@ -93,17 +113,24 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 	}
 }
 
-// guardToolCall applies the per-tool-call budget + dedup gates for one tool call.
-// It returns stop=true when the loop must terminate (an explicit terminal Event
-// was already yielded, or the consumer broke). When it returns false the caller
-// continues the loop. *stepsConsumed is incremented on each successful step.
+// guardToolCall applies the per-tool-call budget + dedup gates for ONE tool call
+// of the triggering Event ev, and on success yields that tool call as one step
+// Event (WR-05: spend and emitted step Events are 1:1). It returns:
+//   - terminated=true when the loop must stop because a dedup/budget terminal Event
+//     was already yielded (the terminal replaces only the REMAINING calls; any
+//     already-consumed call was already surfaced as its own step Event).
+//   - broke=true when the consumer returned false on the step-Event yield.
+//
+// *stepsConsumed is incremented on each successful step, so it always equals the
+// count of step Events yielded so far.
 func (a *LoopAgent) guardToolCall(
 	ic agent.InvocationContext,
+	ev *agent.Event,
 	tc llm.ToolCall,
 	preview []byte,
 	stepsConsumed *int,
 	yield func(*agent.Event, error) bool,
-) bool {
+) (terminated, broke bool) {
 	// B2 caller-canonicalizes contract: the LoopAgent produces the canonical args
 	// itself, then hands opaque bytes to the Budget dedup ring (D-18).
 	argsCanon := canonArgs(tc.Function.Arguments)
@@ -111,7 +138,7 @@ func (a *LoopAgent) guardToolCall(
 	// Dedup pre-check BEFORE the side effect re-runs (D-18).
 	if dedup, reason := ic.Budget.BeforeToolCall(tc.Function.Name, argsCanon); dedup {
 		_ = yield(a.terminalEvent(ic, reason, *stepsConsumed), nil)
-		return true
+		return true, false
 	}
 
 	// Budget consume (D-11). Only HARD terminal reasons (max_steps/wallclock) emit
@@ -119,7 +146,7 @@ func (a *LoopAgent) guardToolCall(
 	ok, reason := ic.Budget.ConsumeStep()
 	if !ok {
 		_ = yield(a.terminalEvent(ic, reason, *stepsConsumed), nil)
-		return true
+		return true, false
 	}
 	*stepsConsumed++
 
@@ -128,7 +155,30 @@ func (a *LoopAgent) guardToolCall(
 	// period-1/period-2 repeats terminate. The preview is the emitting Event's
 	// assistant content; a real LlmAgent (Phase 3) passes the tool's bounded result.
 	ic.Budget.AfterToolResult(tc.Function.Name, argsCanon, preview)
-	return false
+
+	// Surface this consumed tool call as exactly one step Event (WR-05). For a
+	// single-tool Event the scoped copy equals the original.
+	if !yield(scopeToToolCall(ev, tc), nil) {
+		return false, true
+	}
+	return false, false
+}
+
+// scopeToToolCall returns a step Event representing a SINGLE tool call of ev. When
+// ev carries exactly one tool call the original pointer is returned unchanged (no
+// copy, byte-identical output); otherwise a shallow copy is made with its
+// LLMResponse narrowed to just tc, so a multi-tool turn yields one step Event per
+// budgeted tool call (WR-05). Actions (escalate/state) ride on the original Event
+// shape and are preserved on every per-call copy.
+func scopeToToolCall(ev *agent.Event, tc llm.ToolCall) *agent.Event {
+	if ev == nil || ev.LLMResponse == nil || len(ev.LLMResponse.ToolCalls) <= 1 {
+		return ev
+	}
+	scoped := *ev
+	resp := *ev.LLMResponse
+	resp.ToolCalls = []llm.ToolCall{tc}
+	scoped.LLMResponse = &resp
+	return &scoped
 }
 
 // terminalEvent builds the explicit budget-exhausted / dedup termination Event

@@ -19,8 +19,8 @@ type plainAgent struct {
 	runs int // number of times Run was invoked (mutated in-test, single goroutine)
 }
 
-func (a *plainAgent) Name() string        { return a.name }
-func (*plainAgent) Description() string    { return "test: one plain event per run" }
+func (a *plainAgent) Name() string           { return a.name }
+func (*plainAgent) Description() string      { return "test: one plain event per run" }
 func (*plainAgent) SubAgents() []agent.Agent { return nil }
 func (a *plainAgent) FindAgent(name string) agent.Agent {
 	if a.name == name {
@@ -43,8 +43,8 @@ type escalateOnNthRun struct {
 	runs int
 }
 
-func (a *escalateOnNthRun) Name() string        { return a.name }
-func (*escalateOnNthRun) Description() string    { return "test: escalate on the Nth run" }
+func (a *escalateOnNthRun) Name() string           { return a.name }
+func (*escalateOnNthRun) Description() string      { return "test: escalate on the Nth run" }
 func (*escalateOnNthRun) SubAgents() []agent.Agent { return nil }
 func (a *escalateOnNthRun) FindAgent(name string) agent.Agent {
 	if a.name == name {
@@ -76,8 +76,10 @@ type scriptedToolAgent struct {
 	idx      int
 }
 
-func (a *scriptedToolAgent) Name() string        { return a.name }
-func (*scriptedToolAgent) Description() string    { return "test: same tool call, scripted result content" }
+func (a *scriptedToolAgent) Name() string { return a.name }
+func (*scriptedToolAgent) Description() string {
+	return "test: same tool call, scripted result content"
+}
 func (*scriptedToolAgent) SubAgents() []agent.Agent { return nil }
 func (a *scriptedToolAgent) FindAgent(name string) agent.Agent {
 	if a.name == name {
@@ -108,6 +110,95 @@ func (a *scriptedToolAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Eve
 				return
 			}
 		}
+	}
+}
+
+// multiToolAgent emits ONE Event carrying N distinct tool calls per Run, forever
+// (the constant content makes results stable; distinct names keep dedup from
+// firing before the budget when the tools are exempt). It drives the WR-05
+// multi-tool-per-turn budget-accounting test: each tool call is one budgeted step
+// and one step Event.
+type multiToolAgent struct {
+	name      string
+	toolNames []string
+}
+
+func (a *multiToolAgent) Name() string           { return a.name }
+func (*multiToolAgent) Description() string      { return "test: N tool calls in one Event per run" }
+func (*multiToolAgent) SubAgents() []agent.Agent { return nil }
+func (a *multiToolAgent) FindAgent(name string) agent.Agent {
+	if a.name == name {
+		return a
+	}
+	return nil
+}
+func (a *multiToolAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
+	calls := make([]llm.ToolCall, len(a.toolNames))
+	for i, n := range a.toolNames {
+		calls[i] = llm.ToolCall{ID: "call-" + n, Type: "function"}
+		calls[i].Function.Name = n
+		calls[i].Function.Arguments = "{}"
+	}
+	return func(yield func(*agent.Event, error) bool) {
+		for {
+			ev := &agent.Event{
+				Author:      a.name,
+				Branch:      ic.Branch,
+				LLMResponse: &agent.LLMResponse{ToolCalls: calls},
+			}
+			if !yield(ev, nil) {
+				return
+			}
+		}
+	}
+}
+
+func TestLoopAgent_MultiToolPerTurn_StepsConsumedEqualsStepEvents(t *testing.T) {
+	// WR-05: a turn that emits 2 tool calls consumes 2 budget steps and yields 2
+	// step Events. With an ODD max_steps the budget trips on the SECOND tool call of
+	// a turn — the FIRST call's already-consumed step must NOT be discarded, so the
+	// count of yielded step Events must equal the terminal steps_consumed.
+	t.Setenv("AURA_LOOP_MAX_STEPS", "5")
+	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "noop1,noop2") // budget, not dedup, is the stop
+	b, err := agent.NewBudgetFromEnv()
+	if err != nil {
+		t.Fatalf("NewBudgetFromEnv: %v", err)
+	}
+	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
+
+	sub := &multiToolAgent{name: "multi", toolNames: []string{"noop1", "noop2"}}
+	lp := workflow.NewLoop("loop", 0, sub)
+
+	evs, err := drain(lp.Run(ic))
+	if err != nil {
+		t.Fatalf("termination must be Event-only (D-04): %v", err)
+	}
+
+	final := evs[len(evs)-1]
+	if !final.Actions.Escalate {
+		t.Fatalf("last Event must be the terminal escalate Event")
+	}
+	stepsConsumed, ok := final.Actions.StateDelta["steps_consumed"].(int)
+	if !ok {
+		t.Fatalf("steps_consumed missing/!int: %#v", final.Actions.StateDelta["steps_consumed"])
+	}
+	if stepsConsumed != 5 {
+		t.Errorf("steps_consumed: want 5 (the hard cap), got %d", stepsConsumed)
+	}
+
+	stepEvents := evs[:len(evs)-1] // everything before the terminal is a step Event
+	if len(stepEvents) != stepsConsumed {
+		t.Fatalf("WR-05: steps_consumed=%d must equal yielded step Events=%d (no discarded mid-turn step)",
+			stepsConsumed, len(stepEvents))
+	}
+	// Each step Event must carry exactly one tool call (the per-call scoping).
+	for i, ev := range stepEvents {
+		if ev.LLMResponse == nil || len(ev.LLMResponse.ToolCalls) != 1 {
+			t.Errorf("step Event %d must carry exactly one tool call, got %#v", i, ev.LLMResponse)
+		}
+	}
+	if final.Actions.StateDelta["limit_hit"] != "max_steps" {
+		t.Errorf("limit_hit: want max_steps, got %v", final.Actions.StateDelta["limit_hit"])
 	}
 }
 
