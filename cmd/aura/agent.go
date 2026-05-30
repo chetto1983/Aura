@@ -100,6 +100,10 @@ func dryRun(cfg dryRunConfig, w io.Writer) error {
 	sub := &agenttest.InfiniteToolCallAgent{AgentName: "infinite", ToolName: dryRunToolName, ToolArgs: "{}"}
 	root := workflow.NewLoop("dry-run", 0, sub) // maxIter=0 → only the budget stops it
 
+	// SpanID/ParentSpanID are intentionally left at their zero value here: per-node
+	// span minting is DEFERRED to the future OTel-integration slice (WR-04). The
+	// dry-run therefore emits the constant "span_id":"0000000000000000" on every line
+	// by design — see internal/agent/event.go for the deferral rationale.
 	ic := agent.InvocationContext{
 		Ctx:       context.Background(),
 		Agent:     root,

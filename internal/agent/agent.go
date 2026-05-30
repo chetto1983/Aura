@@ -48,8 +48,8 @@ type InvocationContext struct {
 	Ctx          context.Context // request-scoped cancellation/deadline (named, never embedded)
 	Agent        Agent           // the agent currently executing (self-reference for workflow recursion)
 	RequestID    uuid.UUID       // UUIDv7, 16 bytes — OTel/W3C TraceID + run_id shape (D-16), minted once at root
-	SpanID       [8]byte         // 8 random bytes — OTel/W3C SpanID shape (D-16), per-node
-	ParentSpanID *[8]byte        // nil at root; the parent node's SpanID otherwise
+	SpanID       [8]byte         // 8-byte OTel/W3C SpanID shape (D-16), per-node; minting DEFERRED to the OTel slice (WR-04) — stays [8]byte{} in Phase 2
+	ParentSpanID *[8]byte        // nil at root; the parent node's SpanID otherwise — chaining DEFERRED to the OTel slice (WR-04)
 	Branch       string          // hierarchical LABEL only ("root.iter-2.worker-3"); hierarchy comes from span IDs (D-15)
 	Budget       *Budget         // shared budget tree (same *atomic.Int32 across the whole tree, D-10)
 }

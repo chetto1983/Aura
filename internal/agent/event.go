@@ -21,6 +21,15 @@ import (
 // Storing a 16-byte UUID in the SpanID slot would force lossy truncation when a
 // future OTel slice maps these — 8 bytes makes that mapping drop-in.
 //
+// WR-04 — SPAN MINTING IS DEFERRED, BY DESIGN, to the future OTel-integration slice
+// (SPEC §"OTel dep transitive": Phase 2 ships the OTel-compatible SHAPE without the
+// OTel dep; populating real per-node spans is out of Phase-2 scope). Phase 2 therefore
+// leaves SpanID at its zero value [8]byte{} on every Event, which serializes as the
+// constant "span_id":"0000000000000000". This all-zero value is the documented
+// not-yet-minted sentinel, NOT a bug: the wire field exists now so the OTel slice
+// fans out an existing field rather than retrofitting one. When that slice lands it
+// mints a crypto/rand SpanID per child InvocationContext and chains ParentSpanID.
+//
 // The struct stores SpanID/ParentSpanID as fixed-size byte arrays, but the wire
 // form (see eventWire) is the OTel/W3C-idiomatic LOWER-HEX string, NOT the JSON
 // number array a [N]byte array would default to. MessageID is value-typed here
