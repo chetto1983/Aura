@@ -106,6 +106,29 @@ func TestEvent_NilLLMResponse_OmitsObject(t *testing.T) {
 	if bytes.Contains(b, []byte("parent_span_id")) {
 		t.Fatalf("nil ParentSpanID must be omitted, got: %s", b)
 	}
+	// WR-01 regression: a zero-valued MessageID must NOT leak an all-zero UUID.
+	// uuid.UUID is [16]byte, so the source-struct omitempty tag is a no-op; the
+	// eventWire *uuid.UUID projection is what actually omits it.
+	if bytes.Contains(b, []byte("message_id")) {
+		t.Fatalf("zero MessageID must be omitted from the wire, got: %s", b)
+	}
+}
+
+func TestEvent_MessageID_PresentWhenSet(t *testing.T) {
+	mid := mustV7(t)
+	ev := Event{
+		RequestID: mustV7(t),
+		MessageID: mid,
+		Author:    "agent",
+		Timestamp: time.Now().UTC(),
+	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(b, []byte("\"message_id\":\""+mid.String()+"\"")) {
+		t.Fatalf("set MessageID must appear on the wire, got: %s", b)
+	}
 }
 
 func TestEvent_TraceID16Bytes_SpanID8Bytes(t *testing.T) {
@@ -130,13 +153,24 @@ func TestEvent_TraceID16Bytes_SpanID8Bytes(t *testing.T) {
 		t.Fatalf("RequestID must be UUIDv7, got version %d", ev.RequestID.Version())
 	}
 
-	// SpanID serializes to a base64 string ([8]byte → 12 base64 chars w/ padding).
-	b, err := json.Marshal(ev.SpanID)
+	// WR-02: span_id is serialized as a lower-hex STRING (OTel/W3C-idiomatic),
+	// NOT the JSON number array a raw [8]byte field would emit. An 8-byte SpanID
+	// is exactly 16 hex chars.
+	b, err := json.Marshal(ev)
 	if err != nil {
-		t.Fatalf("marshal span: %v", err)
+		t.Fatalf("marshal event: %v", err)
 	}
-	if len(b) == 0 {
-		t.Fatal("span_id serialized empty")
+	if !bytes.Contains(b, []byte("\"span_id\":\"0102030405060708\"")) {
+		t.Fatalf("span_id must be lower-hex string %q, got: %s", "0102030405060708", b)
+	}
+
+	// Round-trip the hex wire form back into the fixed array.
+	var decoded Event
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.SpanID != ev.SpanID {
+		t.Fatalf("SpanID lost in hex round-trip: want %v, got %v", ev.SpanID, decoded.SpanID)
 	}
 }
 

@@ -2,7 +2,9 @@ package agent
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -18,14 +20,19 @@ import (
 // (TraceID/run_id), SpanID is 8 random bytes, ParentSpanID is nil at the root.
 // Storing a 16-byte UUID in the SpanID slot would force lossy truncation when a
 // future OTel slice maps these — 8 bytes makes that mapping drop-in.
+//
+// The struct stores SpanID/ParentSpanID as fixed-size byte arrays, but the wire
+// form (see eventWire) is the OTel/W3C-idiomatic LOWER-HEX string, NOT the JSON
+// number array a [N]byte array would default to. MessageID is value-typed here
+// but omitted on the wire until set (eventWire uses *uuid.UUID so omitempty fires).
 type Event struct {
 	RequestID    uuid.UUID    `json:"request_id"`               // UUIDv7 TraceID/run_id, shared tree-wide
-	SpanID       [8]byte      `json:"span_id"`                  // 8-byte OTel SpanID, per-node
-	ParentSpanID *[8]byte     `json:"parent_span_id,omitempty"` // nil at root
+	SpanID       [8]byte      `json:"span_id"`                  // 8-byte OTel SpanID, per-node; wire = lower-hex
+	ParentSpanID *[8]byte     `json:"parent_span_id,omitempty"` // nil at root; wire = lower-hex when set
 	Author       string       `json:"author"`                   // workflow agent name, "user", or LLM agent name (D-14)
 	Branch       string       `json:"branch,omitempty"`         // hierarchical label only (D-15)
 	ThreadID     string       `json:"thread_id,omitempty"`      // AG-UI conversation thread (Phase 4 / Slice 1.8), forward-compat
-	MessageID    uuid.UUID    `json:"message_id,omitempty"`     // AG-UI message correlation (UUIDv7), forward-compat
+	MessageID    uuid.UUID    `json:"message_id,omitempty"`     // AG-UI message correlation (UUIDv7); omitted on wire until set
 	LLMResponse  *LLMResponse `json:"llm_response,omitempty"`   // nil when this Event is not an LLM turn
 	Actions      Actions      `json:"actions"`                  // control signals (escalate, state/artifact deltas)
 	Timestamp    time.Time    `json:"timestamp"`                // emit time, serialized RFC3339Nano UTC
@@ -58,16 +65,24 @@ func (e *Event) SetAuthorIfEmpty(name string) {
 	}
 }
 
-// eventWire is the on-the-wire projection of Event with Timestamp forced to a
-// canonical RFC3339Nano UTC string so MarshalJSON is byte-stable.
+// eventWire is the on-the-wire projection of Event. It diverges from Event in
+// three encodings that the source struct cannot express via tags:
+//   - SpanID/ParentSpanID are hex strings (OTel/W3C-idiomatic, D-16), NOT the
+//     verbose JSON number array a [8]byte field would otherwise emit; ParentSpanID
+//     stays omitempty (nil at root) via the *string.
+//   - MessageID is *uuid.UUID so omitempty actually fires: a value-type uuid.UUID
+//     ([16]byte array) never triggers omitempty, leaking an all-zero UUID on every
+//     line (WR-01); the pointer omits it until a real id is set.
+//   - Timestamp is forced to a canonical RFC3339Nano UTC string so MarshalJSON is
+//     byte-stable.
 type eventWire struct {
 	RequestID    uuid.UUID    `json:"request_id"`
-	SpanID       [8]byte      `json:"span_id"`
-	ParentSpanID *[8]byte     `json:"parent_span_id,omitempty"`
+	SpanID       string       `json:"span_id"`
+	ParentSpanID *string      `json:"parent_span_id,omitempty"`
 	Author       string       `json:"author"`
 	Branch       string       `json:"branch,omitempty"`
 	ThreadID     string       `json:"thread_id,omitempty"`
-	MessageID    uuid.UUID    `json:"message_id,omitempty"`
+	MessageID    *uuid.UUID   `json:"message_id,omitempty"`
 	LLMResponse  *LLMResponse `json:"llm_response,omitempty"`
 	Actions      Actions      `json:"actions"`
 	Timestamp    string       `json:"timestamp"`
@@ -81,12 +96,12 @@ type eventWire struct {
 func (e Event) MarshalJSON() ([]byte, error) {
 	w := eventWire{
 		RequestID:    e.RequestID,
-		SpanID:       e.SpanID,
-		ParentSpanID: e.ParentSpanID,
+		SpanID:       hex.EncodeToString(e.SpanID[:]),
+		ParentSpanID: hexPtr(e.ParentSpanID),
 		Author:       e.Author,
 		Branch:       e.Branch,
 		ThreadID:     e.ThreadID,
-		MessageID:    e.MessageID,
+		MessageID:    uuidPtrIfSet(e.MessageID),
 		LLMResponse:  e.LLMResponse,
 		Actions:      e.Actions,
 		Timestamp:    e.Timestamp.UTC().Format(time.RFC3339Nano),
@@ -114,15 +129,72 @@ func (e *Event) UnmarshalJSON(data []byte) error {
 	if err != nil {
 		return err
 	}
+	span, err := decodeSpan(w.SpanID)
+	if err != nil {
+		return fmt.Errorf("span_id: %w", err)
+	}
+	parent, err := decodeSpanPtr(w.ParentSpanID)
+	if err != nil {
+		return fmt.Errorf("parent_span_id: %w", err)
+	}
 	e.RequestID = w.RequestID
-	e.SpanID = w.SpanID
-	e.ParentSpanID = w.ParentSpanID
+	e.SpanID = span
+	e.ParentSpanID = parent
 	e.Author = w.Author
 	e.Branch = w.Branch
 	e.ThreadID = w.ThreadID
-	e.MessageID = w.MessageID
+	if w.MessageID != nil {
+		e.MessageID = *w.MessageID
+	} else {
+		e.MessageID = uuid.Nil
+	}
 	e.LLMResponse = w.LLMResponse
 	e.Actions = w.Actions
 	e.Timestamp = ts.UTC()
 	return nil
+}
+
+// hexPtr renders an optional 8-byte SpanID as a hex string pointer, preserving
+// the nil-at-root omitempty contract (D-16).
+func hexPtr(p *[8]byte) *string {
+	if p == nil {
+		return nil
+	}
+	s := hex.EncodeToString(p[:])
+	return &s
+}
+
+// uuidPtrIfSet returns a pointer to id only when it is non-nil, so the wire
+// message_id omitempty fires for an unset UUID (WR-01).
+func uuidPtrIfSet(id uuid.UUID) *uuid.UUID {
+	if id == uuid.Nil {
+		return nil
+	}
+	return &id
+}
+
+// decodeSpan parses a hex SpanID back into the fixed 8-byte array.
+func decodeSpan(s string) ([8]byte, error) {
+	var span [8]byte
+	raw, err := hex.DecodeString(s)
+	if err != nil {
+		return span, err
+	}
+	if len(raw) != len(span) {
+		return span, fmt.Errorf("want %d bytes, got %d", len(span), len(raw))
+	}
+	copy(span[:], raw)
+	return span, nil
+}
+
+// decodeSpanPtr parses an optional hex ParentSpanID; nil stays nil (root).
+func decodeSpanPtr(s *string) (*[8]byte, error) {
+	if s == nil {
+		return nil, nil
+	}
+	span, err := decodeSpan(*s)
+	if err != nil {
+		return nil, err
+	}
+	return &span, nil
 }
