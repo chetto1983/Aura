@@ -1,0 +1,7 @@
+: OPENROUTER PROCESSING
+
+data: {"choices":[{"delta":{"content":"Inizio una risposta lunga"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":" che viene interrotta"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":" a metà streaming senza

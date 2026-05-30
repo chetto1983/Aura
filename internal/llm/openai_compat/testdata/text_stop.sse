@@ -1,0 +1,13 @@
+: OPENROUTER PROCESSING
+
+data: {"choices":[{"delta":{"content":"Ciao"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":", come"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":" stai?"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: {"choices":[],"usage":{"prompt_tokens":42,"completion_tokens":7,"total_tokens":49,"cost":0.000123,"prompt_tokens_details":{"cached_tokens":30,"cache_write_tokens":0}}}
+
+data: [DONE]

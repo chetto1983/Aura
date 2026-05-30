@@ -1,0 +1,13 @@
+: OPENROUTER PROCESSING
+
+data: {"choices":[{"delta":{"content":"Questa risposta"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":" si interrompe perche"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":" raggiunge il limite di token"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"length"}]}
+
+data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":4096,"total_tokens":4108,"cost":0.000900,"prompt_tokens_details":{"cached_tokens":0,"cache_write_tokens":12}}}
+
+data: [DONE]
