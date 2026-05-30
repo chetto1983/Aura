@@ -38,6 +38,10 @@ func newTracer(ctx context.Context, cfg *config.Config) (agent.TracerProvider, e
 // `/exit` / a second consecutive Ctrl+C. History is durable (the Runner persists
 // each turn) — the loop holds none in memory.
 func chatLoop(ctx context.Context, d replDeps) error {
+	// WR-01: ONE bufio.Reader over d.in for the whole REPL. bufio reads ahead in
+	// blocks, so a second reader over the same (piped/scripted) stdin would see EOF
+	// or garbage once this one buffers — the pause-answer path threads this same
+	// reader rather than constructing its own.
 	reader := bufio.NewReader(d.in)
 	for {
 		_, _ = fmt.Fprint(d.out, "› ")
@@ -49,7 +53,7 @@ func chatLoop(ctx context.Context, d replDeps) error {
 			return nil
 		}
 		if line != "" {
-			if err := runUserTurn(ctx, d, line); err != nil {
+			if err := runUserTurn(ctx, d, line, reader); err != nil {
 				if errors.Is(err, context.Canceled) {
 					_, _ = fmt.Fprintln(d.out, "\n\x1b[2m· interrotto\x1b[0m")
 					continue
@@ -72,18 +76,24 @@ func chatLoop(ctx context.Context, d replDeps) error {
 // runUserTurn drives one user message through the Runner, then drains any pause
 // loop until the conversation is no longer paused. A first Ctrl+C aborts the turn
 // (context.Canceled); a second between turns quits via the default handler.
-func runUserTurn(ctx context.Context, d replDeps, userMsg string) error {
+func runUserTurn(ctx context.Context, d replDeps, userMsg string, reader *bufio.Reader) error {
 	msg := userMsg
 	paused, err := driveTurn(ctx, d, &msg)
 	if err != nil {
 		return err
 	}
 	// Resume loop: while the round paused, render each pending, collect the answer,
-	// submit it, and continue with Turn(convID, nil) once nothing is unresolved.
+	// submit it, and continue with Turn(convID, nil) once nothing is unresolved. A
+	// cancel terminates the turn (CR-01): the Runner injected the terminating tool
+	// answers and auto-resolved the pendings, so the loop ends — it does NOT drive a
+	// fresh Turn(nil) over the cancelled round.
 	for paused {
-		remaining, rerr := renderAndAnswerPauses(ctx, d)
+		remaining, cancelled, rerr := renderAndAnswerPauses(ctx, d, reader)
 		if rerr != nil {
 			return rerr
+		}
+		if cancelled {
+			return nil
 		}
 		if remaining > 0 {
 			continue // more pendings to answer before the loop can continue
@@ -124,28 +134,30 @@ func driveTurn(ctx context.Context, d replDeps, userMsg *string) (paused bool, e
 
 // renderAndAnswerPauses prints every pending pause inline (priority DESC, created_at
 // ASC — the Store's ListPending order), collects the user's answer per kind, and
-// submits it. It returns the remaining unresolved count after submitting.
-func renderAndAnswerPauses(ctx context.Context, d replDeps) (int, error) {
+// submits it. It returns the remaining unresolved count after submitting and whether
+// the answer was a cancel (which terminates the turn, CR-01).
+func renderAndAnswerPauses(ctx context.Context, d replDeps, reader *bufio.Reader) (int, bool, error) {
 	pending, err := d.run.PendingFor(ctx, d.convID)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	if len(pending) == 0 {
-		return 0, nil
+		return 0, false, nil
 	}
 	p := pending[0] // answer one at a time in FIFO order
-	resp := promptForPause(d, p)
+	resp := promptForPause(d, p, reader)
 	remaining, err := d.run.SubmitAnswer(ctx, p.Token, resp)
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
-	return remaining, nil
+	return remaining, resp.Action == askuser.ActionCancel, nil
 }
 
 // promptForPause renders the pause inline per kind (D-A3-02) and reads the answer:
 // clarification = free-text; approval = [y/N] default No; choice = numbered 1..N.
-func promptForPause(d replDeps, p askuser.Pending) runner.ResponseInput {
-	reader := bufio.NewReader(d.in)
+// It reads from the SHARED REPL reader (WR-01) — never a fresh bufio.Reader over the
+// same stdin, which would drop buffered scripted input.
+func promptForPause(d replDeps, p askuser.Pending, reader *bufio.Reader) runner.ResponseInput {
 	switch p.Kind {
 	case tools.KindApproval:
 		_, _ = fmt.Fprintf(d.out, "\n\x1b[1m? %s\x1b[0m [y/N] ", p.Question)

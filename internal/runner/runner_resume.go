@@ -48,6 +48,14 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 // (D-A3-01): the model sees a benign "declined" answer and adapts/continues.
 const declinedContent = "user declined to answer"
 
+// cancelledContent is the RoleTool body injected for every open ask_user call when
+// the user cancels the turn (D-A3-01 / CR-01). persistPause already wrote the
+// assistant ask_user tool_call turn; cancel must answer each dangling tool_call so
+// the rehydrated history stays wire-valid (no assistant tool_call without a
+// matching tool response). The caller then auto-resolves the paused_states rows and
+// treats the cancel as a turn termination (no further Turn(nil) is driven).
+const cancelledContent = "user cancelled the request"
+
 // SubmitAnswer resolves ONE pending pause with the three-action model (D-A3-01) and
 // injects the answer into the conversation history so the next Turn(convID, nil)
 // drives a fresh round over a wire-valid history (SC-4). It returns the remaining
@@ -63,12 +71,7 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 		return 0, fmt.Errorf("submit answer: %w", err)
 	}
 	if resp.Action == askuser.ActionCancel {
-		// Cancel aborts the whole turn: auto-resolve every open pending for the
-		// conversation and inject nothing (the loop does not continue).
-		if err := r.pause.AutoResolveForConversation(ctx, pending.ConversationID); err != nil {
-			return 0, fmt.Errorf("submit answer (cancel): %w", err)
-		}
-		return r.remainingPending(ctx, pending.ConversationID)
+		return r.cancelConversation(ctx, pending.ConversationID)
 	}
 
 	if err := r.pause.MarkResumed(ctx, token, toResumeAnswer(resp)); err != nil {
@@ -99,10 +102,7 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 		pendings[token] = p
 		convID = p.ConversationID
 		if answers[token].Action == askuser.ActionCancel {
-			if err := r.pause.AutoResolveForConversation(ctx, p.ConversationID); err != nil {
-				return 0, fmt.Errorf("submit answers (cancel): %w", err)
-			}
-			return r.remainingPending(ctx, p.ConversationID)
+			return r.cancelConversation(ctx, p.ConversationID)
 		}
 	}
 
@@ -143,6 +143,28 @@ func (r *Runner) injectAnswer(ctx context.Context, pending askuser.Pending, resp
 		return fmt.Errorf("inject resume answer: %w", err)
 	}
 	return nil
+}
+
+// cancelConversation aborts the whole turn (D-A3-01): it injects a terminating
+// RoleTool answer keyed to EACH still-open ask_user tool_call (CR-01 — persistPause
+// already wrote the assistant ask_user call(s), so each must be answered to keep the
+// rehydrated history wire-valid) and then auto-resolves every paused_states row. The
+// caller treats a cancel as a turn termination — it does NOT drive a fresh
+// Turn(convID, nil) afterward. Returns the remaining count (0 after auto-resolve).
+func (r *Runner) cancelConversation(ctx context.Context, conversationID string) (int, error) {
+	pendings, err := r.pause.ListPending(ctx, conversationID)
+	if err != nil {
+		return 0, fmt.Errorf("submit answer (cancel): %w", err)
+	}
+	for _, p := range pendings {
+		if err := r.injectAnswer(ctx, p, ResponseInput{Action: askuser.ActionCancel, Content: cancelledContent}); err != nil {
+			return 0, fmt.Errorf("submit answer (cancel): %w", err)
+		}
+	}
+	if err := r.pause.AutoResolveForConversation(ctx, conversationID); err != nil {
+		return 0, fmt.Errorf("submit answer (cancel): %w", err)
+	}
+	return r.remainingPending(ctx, conversationID)
 }
 
 // PendingFor returns the still-unresolved pauses for a conversation in FIFO order
