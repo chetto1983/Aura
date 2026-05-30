@@ -87,18 +87,29 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 						continue
 					}
 
-					// Each tool call is ONE budgeted step (D-11) and ONE dedup observation
-					// (D-18), and is surfaced as ONE step Event (WR-05): spend and emitted
-					// step Events stay 1:1, so steps_consumed always equals the number of
-					// yielded step Events. A budget/dedup trip mid-Event therefore never
-					// discards an already-consumed tool call's step — those were already
-					// yielded; the terminal Event only replaces the REMAINING calls. For a
-					// single-tool turn the per-call Event equals the original (SC#2: 25 step
-					// Events + 1 terminal = 26).
+					// Each tool call is ONE budgeted step (D-11) and is surfaced as ONE step
+					// Event (WR-05): spend and emitted step Events stay 1:1, so steps_consumed
+					// always equals the number of yielded step Events. A budget/dedup trip
+					// mid-Event therefore never discards an already-consumed tool call's step —
+					// those were already yielded; the terminal Event only replaces the REMAINING
+					// calls. For a single-tool turn the per-call Event equals the original (SC#2:
+					// 25 step Events + 1 terminal = 26).
+					//
+					// WR-02: dedup observation is ONE PER DISTINCT FINGERPRINT PER TURN, not per
+					// call. An Event carrying the SAME (name, args) call twice (a legitimate
+					// parallel-identical LLM output) is ONE turn's worth of repeat evidence, so
+					// the second-and-later identical calls skip the dedup ring accounting (they
+					// still consume a budget step and yield a step Event). Without this, a single
+					// turn would advance the period-1 stable-repeat counter as if two turns had
+					// elapsed and dedup would fire one turn early.
 					preview := resultPreview(ev)
+					seenThisTurn := make(map[string]struct{}, len(calls))
 					for i, tc := range calls {
 						last := i == len(calls)-1
-						stop, broke := a.guardToolCall(ic, ev, tc, last, preview, &stepsConsumed, yield)
+						key := tc.Function.Name + "\x00" + string(canonArgs(tc.Function.Arguments))
+						_, dup := seenThisTurn[key]
+						seenThisTurn[key] = struct{}{}
+						stop, broke := a.guardToolCall(ic, ev, tc, last, dup, preview, &stepsConsumed, yield)
 						if broke {
 							return // consumer broke, or a terminal Event was yielded
 						}
@@ -125,11 +136,18 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 //
 // *stepsConsumed is incremented on each successful step, so it always equals the
 // count of step Events yielded so far.
+//
+// dupInTurn marks a tool call whose (name, args) fingerprint already appeared
+// earlier in the SAME Event (WR-02). Such a call still consumes a budget step and
+// yields a step Event, but SKIPS the dedup ring accounting (the Before gate and the
+// After progress-veto record) so one turn counts as one dedup observation per
+// distinct fingerprint, never advancing the cross-turn repeat counter once per call.
 func (a *LoopAgent) guardToolCall(
 	ic agent.InvocationContext,
 	ev *agent.Event,
 	tc llm.ToolCall,
 	last bool,
+	dupInTurn bool,
 	preview []byte,
 	stepsConsumed *int,
 	yield func(*agent.Event, error) bool,
@@ -138,10 +156,14 @@ func (a *LoopAgent) guardToolCall(
 	// itself, then hands opaque bytes to the Budget dedup ring (D-18).
 	argsCanon := canonArgs(tc.Function.Arguments)
 
-	// Dedup pre-check BEFORE the side effect re-runs (D-18).
-	if dedup, reason := ic.Budget.BeforeToolCall(tc.Function.Name, argsCanon); dedup {
-		_ = yield(a.terminalEvent(ic, reason, *stepsConsumed), nil)
-		return true, false
+	// Dedup pre-check BEFORE the side effect re-runs (D-18) — skipped for a
+	// within-turn duplicate, whose dedup decision was already made on the first
+	// occurrence this turn (WR-02).
+	if !dupInTurn {
+		if dedup, reason := ic.Budget.BeforeToolCall(tc.Function.Name, argsCanon); dedup {
+			_ = yield(a.terminalEvent(ic, reason, *stepsConsumed), nil)
+			return true, false
+		}
 	}
 
 	// Budget consume (D-11). Only HARD terminal reasons (max_steps/wallclock) emit
@@ -157,7 +179,11 @@ func (a *LoopAgent) guardToolCall(
 	// suppresses the next dedup (the loop is making progress), a stable preview lets
 	// period-1/period-2 repeats terminate. The preview is the emitting Event's
 	// assistant content; a real LlmAgent (Phase 3) passes the tool's bounded result.
-	ic.Budget.AfterToolResult(tc.Function.Name, argsCanon, preview)
+	// A within-turn duplicate does NOT re-record (WR-02): one dedup observation per
+	// distinct fingerprint per turn.
+	if !dupInTurn {
+		ic.Budget.AfterToolResult(tc.Function.Name, argsCanon, preview)
+	}
 
 	// Surface this consumed tool call as exactly one step Event (WR-05). For a
 	// single-tool Event the scoped copy equals the original. The escalate signal

@@ -231,6 +231,98 @@ func TestLoopAgent_MultiToolEscalate_EscalateRidesExactlyOneStepEvent(t *testing
 	}
 }
 
+// sameToolTwiceAgent emits ONE Event carrying the SAME (name, args) tool call N
+// times per Run, forever, with a constant assistant Content (stable result). It
+// drives the WR-02 test: identical within-turn calls must count as ONE dedup
+// observation per turn, not advance the period-1 stable-repeat counter once per call.
+type sameToolTwiceAgent struct {
+	name     string
+	toolName string
+	toolArgs string
+	copies   int // how many identical copies of the call ride one Event
+}
+
+func (a *sameToolTwiceAgent) Name() string           { return a.name }
+func (*sameToolTwiceAgent) Description() string      { return "test: same tool call repeated within one Event" }
+func (*sameToolTwiceAgent) SubAgents() []agent.Agent { return nil }
+func (a *sameToolTwiceAgent) FindAgent(name string) agent.Agent {
+	if a.name == name {
+		return a
+	}
+	return nil
+}
+func (a *sameToolTwiceAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
+	calls := make([]llm.ToolCall, a.copies)
+	for i := range calls {
+		calls[i] = llm.ToolCall{ID: "call-0", Type: "function"}
+		calls[i].Function.Name = a.toolName
+		calls[i].Function.Arguments = a.toolArgs
+	}
+	return func(yield func(*agent.Event, error) bool) {
+		for {
+			ev := &agent.Event{
+				Author: a.name,
+				Branch: ic.Branch,
+				LLMResponse: &agent.LLMResponse{
+					Content:   "same-result", // constant → real period-1 loop, no progress veto
+					ToolCalls: calls,
+				},
+			}
+			if !yield(ev, nil) {
+				return
+			}
+		}
+	}
+}
+
+func TestLoopAgent_SameToolTwicePerTurn_DedupCountsOnePerTurn(t *testing.T) {
+	// WR-02: an Event carrying the SAME (name, args) call twice must count as ONE
+	// dedup observation for that turn, not bump the period-1 stable-repeat counter
+	// once per call. With dedupWindow=3 and a constant result, dedup must fire on the
+	// SAME logical turn (the 3rd) as the single-call-per-turn case — never a turn
+	// early. The single-call baseline below pins the turn count; the [A,A] case must
+	// take the same number of TURNS (more step Events, since 2 calls/turn) to trip.
+	t.Setenv("AURA_LOOP_DEDUP_WINDOW", "3")
+
+	baseline := func(t *testing.T, copies int) []*agent.Event {
+		t.Helper()
+		b, err := agent.NewBudgetFromEnv()
+		if err != nil {
+			t.Fatalf("NewBudgetFromEnv: %v", err)
+		}
+		ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
+		sub := &sameToolTwiceAgent{name: "rep", toolName: "search", toolArgs: `{"q":"x"}`, copies: copies}
+		lp := workflow.NewLoop("loop", 0, sub)
+		evs, err := drain(lp.Run(ic))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		final := evs[len(evs)-1]
+		if got := final.Actions.StateDelta["limit_hit"]; got != "dedup" {
+			t.Fatalf("copies=%d: want limit_hit=dedup, got %v", copies, got)
+		}
+		return evs
+	}
+
+	single := baseline(t, 1) // single A/turn: terminates on the 3rd turn (2 step + 1 terminal)
+	doubled := baseline(t, 2) // [A,A]/turn: must terminate on the SAME 3rd turn
+
+	singleSteps := len(single) - 1  // step Events before the terminal
+	doubledSteps := len(doubled) - 1
+
+	// Single-call baseline: 2 step Events (turns 1,2) then dedup terminal on turn 3.
+	if singleSteps != 2 {
+		t.Fatalf("single-call baseline: want 2 step Events before dedup, got %d", singleSteps)
+	}
+	// WR-02: [A,A] per turn must take the SAME number of TURNS (3). Turns 1 and 2
+	// yield 2 step Events each (4), then dedup trips on turn 3's first call. A
+	// per-call double-count would trip a turn early, yielding only 2 step Events.
+	if doubledSteps != 4 {
+		t.Fatalf("WR-02: [A,A]/turn must dedup on the same 3rd turn (4 step Events), got %d "+
+			"(a per-call double-count trips one turn early)", doubledSteps)
+	}
+}
+
 func TestLoopAgent_MultiToolPerTurn_StepsConsumedEqualsStepEvents(t *testing.T) {
 	// WR-05: a turn that emits 2 tool calls consumes 2 budget steps and yields 2
 	// step Events. With an ODD max_steps the budget trips on the SECOND tool call of
