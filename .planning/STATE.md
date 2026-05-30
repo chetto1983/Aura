@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-03-PLAN.md (HITL pause primitive — agent + store halves)
-last_updated: "2026-05-30T22:25:00.000Z"
+stopped_at: Completed 04-04-PLAN.md (conversation persistence + deterministic context management)
+last_updated: "2026-05-30T23:40:00.000Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 16
   completed_phases: 4
   total_plans: 26
-  completed_plans: 24
-  percent: 27
+  completed_plans: 25
+  percent: 28
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 04 (hitl-identity-conversations) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-05-30
 
-Progress: [█████████░] 92%
+Progress: [█████████░] 96%
 
 ## Performance Metrics
 
@@ -67,6 +67,7 @@ Progress: [█████████░] 92%
 | Phase 04 P01 | 40min | 3 tasks | 29 files |
 | Phase 04 P02 | ~35min | 2 tasks | 8 files |
 | Phase 04 P03 | ~70min | 3 tasks | 13 files |
+| Phase 04 P04 | ~75min | 3 tasks | 15 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,7 @@ Recent decisions affecting current work:
 - [Phase 04]: Spillover is a sidecar file via content_sidecar_path, not a conversation_spillover table (OQ3); FIFO tiebreaker token ASC (Pitfall 4)
 - [Phase 04]: tiktoken-go@v0.1.8 added (operator-approved); llm.Config gains ContextWindow=1000000 + MaxOutputTokens=32768 for the L2 budget
 - [Phase 04]: 04-03: HITL pause primitive (agent + store halves, CORE-02). ask_user is a NON-DEFERRED tool returning the *ErrAwaitingUserInput STRUCT sentinel (pure types, no DB — D-A1-04), validated for empty question/unknown kind/exactly-1-or->4 options/non-distinct labels/priority 0-100. Actions.AwaitingInput Event field (sibling to Escalate) round-trips byte-identically via pointer omitempty; carries OriginAgent for swarm forward-compat (D-A1-08). Pause DETECTION split into llm_agent_pause.go (AM-01): errors.As the sentinel BEFORE the generic err fallback, suppress the RoleTool, REWRITE the assistant msg to ask_user-only tool_calls (intra-turn exclusivity, D-A1-07), emit Event-only (never the iter.Seq2 error slot, D-A1-03 — mirrors budget exhaustion). A validation-failed ask_user is NOT a pause (RoleTool error, self-correct). askuser.Store COPIES the 04-02 canonical pattern: FIFO total order priority DESC/created_at ASC/token ASC (token tiebreaker MANDATORY — single-tx rows share created_at, Pitfall 4); crash recovery (fresh New(pool) sees rows); MarkResumed via pool.Exec (RowsAffected->ErrPauseNotFound, not the discard-tag :exec); MarkResumedBatch in-Store via db.WithTx (all-or-nothing rollback, no new sqlc query); AutoResolveForConversation (Loop.Stop Req#11); AM-02 {action,content} resumed_answer; NO timeout/expiry state (Req#4); NEVER imports internal/agent/tools. Agent stays DB-free, askuser stays tools-free — boundary held. Resume orchestration is the Runner's (04-05), NOT here. export_test.go HistoryForTest avoids an agenttest import cycle. db_integration -race -count=10 green; combined coverage askuser 89.5%/agent 95.3%/tools 96.3%; golangci-lint 0; all files <=600 LOC.
+- [Phase 04]: 04-04: conversation persistence + deterministic context mgmt (CORE-04/CORE-05). conversations.Store COPIES the canonical pattern and extends it: AppendTurn folds turn INSERT + aggregates UPDATE into ONE db.WithTx (SC-2 crash atomicity — injected failure between them rolls back, no partial turn, live-verified); sidecar spill > AURA_CONVERSATION_TURN_CAP_BYTES happens BEFORE the tx (orphan file reconciled by boot scan, not part of DB atomicity); LoadHistory byte-identical (Req#8, pure fn of rows, sidecar rehydrated from disk); total_cost_usd aggregated in SQL via pgtype.Numeric delta at numeric(10,4) (exact, Pitfall 5); SearchConversationTurns wraps the LOCKED FTS verbatim. context.go L1/L2/L2.5 ladder: L1 rewrites a COPY (byte-identity holds) of role='tool' turns older than evict window to read_tool_output pointers, NEVER seq=1 (KV poisoning Pitfall 1); L2 hard_cap=ContextWindow-max(MaxOutputTokens,20000)-13000, 0.75x warn; L2.5 drops oldest user/assistant PAIR (system L0 preserved, remainder even) + ONE context_rot_events row via a narrow rotEmitter iface (unit-testable, no DB); SC-1 L1-alone writes ZERO rot rows (live-verified); over-hard+unreducible -> ErrContextWindowExceeded (REPL, never iter error slot). OFFLINE tiktoken: vendored cl100k_base.tiktoken blob + custom //go:embed BpeLoader + SetBpeLoader before GetEncoding + sync.Once cache — zero network, zero new dep (NOT tiktoken-go-loader). ScanOrphans symlink-guarded GC (Lstat never follows -> symlink unlinked not traversed, EoP T-04-14 live-verified) + tmp >24h sweep + audit-only size WARN (never purge). generateTitle best-effort llm.Client.Stream body (Runner owns WaitGroup/WithoutCancel, 04-05); errors never block chat. Scope held: NO Runner/composition root. Combined coverage 89.6%; golangci-lint 0; db_integration -race green; all files <=600 LOC.
 - [Phase 04]: 04-02: identity.Store PROVES THE CANONICAL STORE PATTERN (D-A4-01) that 04-03/04/05 copy verbatim — Store{pool,q} via sqlc.New(pool); reads via s.q; db.WithTx for atomic writes; SQLSTATE classification via errors.As(&pgErr)+pgErr.Code (NEVER message-match); sentinel errors (ErrWildcardManaged/ErrInvalidCapability/ErrIdentityNotFound); pgtype boundary conversion in fromRow; NO interface in the domain package (consumer declares it, D-A2-02); pre-DB validation gate for operator input. HasCapability wildcard-or-exact; grant/revoke idempotent (ON CONFLICT DO NOTHING + defensive 23505 swallow); '*'/name-grammar rejected pre-DB; FK cascade on DeleteIdentity. CLI: hand-rolled switch runIdentity mirroring runDB (cobra->switch deviation, RESEARCH OQ1/A2 — go.mod has no cobra, CLAUDE.md follows existing patterns, SPEC never requires cobra; no PRD amendment). Test discipline: unit tier (pure logic) + db_integration tier (goleak, envOrSkip t.Fatal-under-CI); 9 integration tests RAN green; combined coverage 98.0%; golangci-lint 0; all files <=600 LOC.
 
 ### Pending Todos
@@ -119,6 +121,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T22:25:00.000Z
-Stopped at: Completed 04-03-PLAN.md (HITL pause primitive — agent + store halves; agent stays DB-free, askuser stays tools-free)
+Last session: 2026-05-30T23:40:00.000Z
+Stopped at: Completed 04-04-PLAN.md (conversation persistence + deterministic context management; Store + helpers the Runner consumes — 04-05 builds the Runner + composition root)
 Resume file: None
