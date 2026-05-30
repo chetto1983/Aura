@@ -130,19 +130,31 @@ func (b *Budget) BeforeToolCall(name string, argsCanonicalJSON []byte) (dedup bo
 	period2 := r.isPingPong(fp)
 
 	// Progress veto (D-18 fail-safe): dedup only when the recorded result preview
-	// for this fingerprint has stayed UNCHANGED across the repeat window. A result
-	// that keeps changing resets repeats to 0 (see AfterToolResult), so a
-	// volatile-result tool looks like progress and fails SAFE, never fail-open.
-	// By the Nth BeforeToolCall the result has been recorded N-1 times, so a fully
-	// stable result has repeats == window-2 (it incremented on each repeat after
-	// the first sighting). Require repeats+2 >= window to align with period-1's
-	// "Nth consecutive call" threshold.
+	// for this fingerprint has stayed UNCHANGED for as many repeats as the matched
+	// tier requires. A result that keeps changing resets repeats to 0 (see
+	// AfterToolResult), so a volatile-result tool looks like progress and fails
+	// SAFE, never fail-open.
+	//
+	// AfterToolResult records the result on FIRST sighting (repeats=0) and bumps
+	// repeats on every later same-args/same-result call. So by the time a tier's
+	// shape is detected, repeats counts the prior STABLE repeats:
+	//   - period-1: the Nth consecutive call needs the result stable across all of
+	//     them. By the Nth BeforeToolCall the result was recorded N-1 times, so a
+	//     fully stable result has repeats == N-2; period-1 fires at N==window, hence
+	//     stableP1 == repeats+2 >= window. This is window-parameterized and aligns
+	//     exactly with countConsecutive+1 >= window for every window >= 1.
+	//   - period-2: isPingPong is a FIXED period-2 detector (last three == A,B,A).
+	//     Its evidence is two stable sightings of A, i.e. repeats(A) >= 1, which is
+	//     INDEPENDENT of window. Gating it on the period-1 window threshold (the old
+	//     code) wrongly suppressed ping-pong for window >= 4, where repeats+2 >= window
+	//     is false even though the period-2 shape is present (WR-03).
 	track, seen := r.results[fp]
-	resultStable := seen && track.repeats+2 >= r.window
+	stableP1 := seen && track.repeats+2 >= r.window
+	stableP2 := seen && track.repeats >= 1
 
 	r.push(fp)
 
-	if (period1 || period2) && resultStable {
+	if (period1 && stableP1) || (period2 && stableP2) {
 		return true, "dedup"
 	}
 	return false, ""

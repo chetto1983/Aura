@@ -92,6 +92,85 @@ func TestBudget_Dedup_Period2_PingPong(t *testing.T) {
 	}
 }
 
+// TestBudget_Dedup_Period1_WindowParameterized pins the EXACT call index at which
+// period-1 dedup terminates across window in {1,2,3,4,5} (WR-03). A constant
+// args+result sequence is a real period-1 loop; dedup fires on call N==window, but
+// never before the result has been recorded once (seen), so the earliest possible
+// termination is call 2. Expected index is therefore max(2, window).
+func TestBudget_Dedup_Period1_WindowParameterized(t *testing.T) {
+	cases := []struct {
+		window        int
+		wantDedupCall int // 1-based BeforeToolCall index that first returns dedup=true
+	}{
+		{window: 1, wantDedupCall: 2},
+		{window: 2, wantDedupCall: 2},
+		{window: 3, wantDedupCall: 3},
+		{window: 4, wantDedupCall: 4},
+		{window: 5, wantDedupCall: 5},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("window=%d", tc.window), func(t *testing.T) {
+			b := newTestBudget(1000, tc.window)
+			args := canon(t, map[string]any{"x": 1})
+			result := []byte("constant")
+
+			gotCall := 0
+			for call := 1; call <= tc.window+3; call++ {
+				dedup, reason := b.BeforeToolCall("tool", args)
+				if dedup {
+					gotCall = call
+					if reason != "dedup" {
+						t.Fatalf("window=%d call=%d: reason want dedup, got %q", tc.window, call, reason)
+					}
+					break
+				}
+				b.AfterToolResult("tool", args, result)
+			}
+			if gotCall != tc.wantDedupCall {
+				t.Fatalf("window=%d: period-1 terminated on call %d, want %d", tc.window, gotCall, tc.wantDedupCall)
+			}
+		})
+	}
+}
+
+// TestBudget_Dedup_Period2_WindowIndependent pins that period-2 (A-B-A-B) dedup
+// fires on the 4th BeforeToolCall for EVERY window >= 2 (WR-03). isPingPong is a
+// fixed period-2 detector (last three == A,B,A) and its progress veto needs only
+// one stable repeat of A (repeats >= 1), so it must be DECOUPLED from the period-1
+// window threshold. The old code gated it on repeats+2 >= window, which wrongly
+// suppressed ping-pong for window >= 4 — this test would fail under that formula.
+//
+// window=1 is excluded: at window=1 period-1 is so aggressive that the second
+// sighting of A in the A,B,A warmup (call 3) already terminates via period-1,
+// before the period-2 shape completes. That is correct (and covered by the
+// period-1 table) — period-2 as a DISTINCT phenomenon only exists for window >= 2.
+func TestBudget_Dedup_Period2_WindowIndependent(t *testing.T) {
+	for _, window := range []int{2, 3, 4, 5} {
+		t.Run(fmt.Sprintf("window=%d", window), func(t *testing.T) {
+			b := newTestBudget(1000, window)
+			a := canon(t, map[string]any{"k": "A"})
+			bb := canon(t, map[string]any{"k": "B"})
+			res := []byte("r")
+
+			// A, B, A warmup → the 4th call (A) forms A-B-A-B.
+			seq := [][]byte{a, bb, a}
+			for i, args := range seq {
+				if dedup, _ := b.BeforeToolCall("tool", args); dedup {
+					t.Fatalf("window=%d: unexpected dedup during warmup call %d", window, i+1)
+				}
+				b.AfterToolResult("tool", args, res)
+			}
+			dedup, reason := b.BeforeToolCall("tool", a)
+			if !dedup {
+				t.Fatalf("window=%d: A-B-A-B must trigger period-2 dedup on call 4 (window-independent)", window)
+			}
+			if reason != "dedup" {
+				t.Fatalf("window=%d: reason want dedup, got %q", window, reason)
+			}
+		})
+	}
+}
+
 func TestBudget_Dedup_ResultChanged_SuppressesDedup(t *testing.T) {
 	// Same args repeated, but the result keeps CHANGING → progress veto, no dedup
 	// even past the window (D-18 fail-safe; volatile results fail SAFE not OPEN).
