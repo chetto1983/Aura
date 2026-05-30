@@ -262,11 +262,11 @@ func softCap(remaining, fanout int, frac float64) int {
 	if fanout <= 0 {
 		fanout = 1
 	}
-	cap := int(math.Ceil(float64(remaining) * frac / float64(fanout)))
-	if cap < 1 {
-		cap = 1
+	share := int(math.Ceil(float64(remaining) * frac / float64(fanout)))
+	if share < 1 {
+		share = 1
 	}
-	return cap
+	return share
 }
 
 // WithDeadline derives a context bounded by the budget's wallclock deadline so
