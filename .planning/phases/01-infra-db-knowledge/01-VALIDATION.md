@@ -1,11 +1,13 @@
 ---
 phase: 1
 slug: infra-db-knowledge
-status: complete
+status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-05-29
-updated: 2026-05-29
+updated: 2026-05-30
+audited: 2026-05-30
+mutation_score: 0.828
 ---
 
 # Phase 1 — Validation Strategy
@@ -124,3 +126,47 @@ Retroactive Nyquist audit (`/gsd:validate-phase 1`). Ground-truth probe, not cla
 - Manual-Only items (license, MSYS regression, RAM headroom, MCP envelope probe) all closed during execution per 01-02-SUMMARY + 03-04-SUMMARY.
 
 **Verdict: NYQUIST-COMPLIANT.** No test generation required.
+
+---
+
+## Validation Audit 2026-05-30 (deep — Phase-2 parity)
+
+Re-run at the same depth applied to Phase 2: the 2026-05-29 audit only executed the **unit** gate and **compile-checked** the tagged tiers. This pass **executed** every tier live against the healthy container stack (`aura-postgres` / `aura-neo4j` / `aura-llama-embed`), measured real combined coverage, and ran a mutation spot-check on the security-critical file.
+
+**Live execution evidence (not compile-check):**
+
+| Gate | Command | Result |
+|------|---------|--------|
+| vet + build | `go vet ./... && go build ./...` | exit 0 |
+| `internal/config` | unit | **97.1%** |
+| `internal/db` | `-race -tags db_integration` | **90.0%**, 2.2–2.6 s (real run, not skip-tell) |
+| `internal/knowledge` | `-race -tags 'db_integration neo4j_integration'` | **94.1%**, 11–17 s |
+| SC#1 idempotent migrate | `-run TestMigrate_Idempotent` | PASS |
+| SC#2 role separation denied | `-run TestRoleSeparation_AppDenied` | PASS |
+| SC#3 restore drill | `bash scripts/restore_drill.sh` | 321–362 ms < 90 s |
+| SC#4 neo4j ping + embed dim | `-run TestPing_ReturnsServerVersion\|TestPingEmbed_Live` | PASS |
+| SC#5 smoke | `make smoke` / `TestKnowledgeSmoke` | **recall@5 = 5/5, p95 = 1 ms** |
+| lint (all tags) / file-size | `golangci-lint` / `check-file-size.sh` | 0 issues / clean |
+| Mutation (db.go, `GOFLAGS=-tags=db_integration`) | `go-mutesting ./internal/db/db.go` | **82.8% killed (24/29)** after hardening |
+
+> Note on p95: a first smoke run under heavy host contention (a parallel mutation campaign) measured 111 ms and failed the 30 ms gate. On a quiet host it is 1 ms. The gate is correctness-strict (recall@5) and latency-tunable via `AURA_SMOKE_P95_MS` by design — the 111 ms was contention, not regression.
+
+**3 findings surfaced and FIXED (the shallow audit missed all three):**
+
+| # | Sev | Finding | Fix |
+|---|-----|---------|-----|
+| A | Med | `pingEmbed` (`internal/knowledge/ping.go`) leaked an HTTP idle keep-alive goroutine (`&http.Client{}` + `Do`, no `CloseIdleConnections`) — made `goleak.VerifyTestMain` order-dependent (full suite passed, short subset failed). | Added `defer client.CloseIdleConnections()`. Subset now green. |
+| B | Low | `db.go` mutation score was **44.8%** (<70% PRD floor): `Open`'s pool-tuning assignments + `>0` boundaries executed (90% line cov) but their effect was never asserted (`TestOpen_AppliesExplicitPoolTuning` skipped on the expected connect failure). | Added `TestOpen_PoolTuning_AppliedAndDefaulted` (db_integration) asserting `pool.Config()` for both explicit and defaulted branches → score **82.8%**. |
+| C | Low | `restore_drill.sh` used bash `(( ))`; under non-bash shells (busybox/dash) it parses as nested subshells and `> 90000` silently created a junk file named `90000`. | Switched line 56 to POSIX `[ "$ELAPSED_MS" -gt 90000 ]`. |
+
+**Mutation residue:** the 5 remaining db.go survivors are equivalent or cosmetic — `if err != nil || false` (identity), `if idx <= 0` vs `< 0` (idx is never 0 for a parsed scheme — equivalent), and two error-message-text mutants (non-security). The security spine (password redaction, role separation) is fully killed. Chasing equivalent mutants is coverage-theater.
+
+| Metric | Count |
+|--------|-------|
+| Tiers executed live | unit + db_integration + neo4j_integration + smoke + restore drill |
+| Combined coverage | config 97.1% · db 90.0% · knowledge 94.1% (all ≥85%) |
+| Stale `-run` patterns | 0 (all referenced tests resolve) |
+| Findings fixed | 3 (A impl leak, B test-hardening, C script portability) |
+| Mutation (db.go) | 44.8% → **82.8%** killed |
+
+**Verdict: NYQUIST-COMPLIANT (deep).** All 5 ROADMAP SCs + INFRA-01/02 verified by live execution; 3 quality findings fixed; mutation spot-check ≥70%.
