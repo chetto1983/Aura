@@ -93,7 +93,17 @@ created: 2026-05-30
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
 | `aura chat` live streamed prose + non-zero token+USD cost footer against real OpenRouter | CORE-01 (Req#11) / ROADMAP SC#1 | Needs a live `OPENROUTER_API_KEY` + network; explicitly NOT a CI gate (no-skip-as-green compliant — the deterministic tier in Plans 01-04 genuinely exercises every parse/loop/redaction/cost path with no network) | `export OPENROUTER_API_KEY=sk-or-…` then `bash scripts/llm_smoke.sh`; confirm a streamed reply + a footer with a non-zero token count and a USD figure (no `0 tok`, no `$n/a` for the known default model). See the Plan-05 human-verify checkpoint for the full interactive script. |
-| Mutation spot-check ≥70% killed on the phase's critical file(s) (`sse.go` / `accumulate.go` / `result.go` / `llm_agent.go`) | CORE-01 | go-mutesting runs on WSL only; documented per CLAUDE.md Manual-Only table | `cd /mnt/d/Aura && go-mutesting ./internal/llm/openai_compat/ ./internal/agent/tools/` (PASS=killed); record the score in the phase VALIDATION Manual-Only table at close |
+| Mutation spot-check ≥70% killed on the phase's critical file(s) (`sse.go` / `accumulate.go` / `result.go` / `llm_agent.go`) | CORE-01 | go-mutesting runs on WSL/Git-Bash (avito-tech fork) only; documented per CLAUDE.md Manual-Only table | `cd /d/Aura && go-mutesting ./internal/llm/openai_compat/ ./internal/agent/tools/ ./internal/agent/llm_agent.go` (PASS=killed). **Recorded 2026-05-30 (all ≥70%):** see the per-target table below. |
+
+### Mutation scores (recorded 2026-05-30)
+
+| Target (package / critical file) | Score | Killed / Total | Gate ≥0.70 |
+|----------------------------------|-------|----------------|-----------|
+| `internal/llm/openai_compat/` (sse.go + accumulate.go) | **0.721** | 62 / 86 | ✅ |
+| `internal/agent/tools/` (result.go + read_tool_output.go + current_time.go) | **0.791** | 87 / 110 | ✅ |
+| `internal/agent/llm_agent.go` (scoped — full-package run exceeds the timeout; the critical file is the gate target) | **1.000** | 70 / 70 | ✅ |
+
+> Hardened by adding NEW test assertions only — zero production-code changes (commits `80c2c9cb`, `9e350ba4`). `accumulate.go` alone is 0.783; `llm_agent.go` kills all 70 mutants. Accepted equivalent mutants (not test-gamed): `current_time.go` timezone empty/`UTC` guard removals (`LoadLocation("")` and `LoadLocation("UTC")` both yield UTC → byte-identical output), the `validateID` `/`+`\` OR-branch removals on Windows (`os.IsPathSeparator` catches both), the `truncatePreview` `cut>0` loop bound (`cut` never reaches a continuation byte for valid UTF-8), and the `accumulate.go` `a.order++` increment (`firstSeen` is unused in `finalize`, which sorts by index — no observable effect).
 
 ---
 
