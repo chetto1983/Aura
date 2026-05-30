@@ -24,8 +24,7 @@ builds:
     goarch:
       - amd64
       - arm64
-    # main.version/commit/date are stamped once the `aura version` command lands
-    # (Tier 3); the linker ignores -X for symbols that don't exist yet.
+    # Stamped into cmd/aura/version.go and surfaced by `aura version`.
     ldflags:
       - -s -w
       - -X main.version={{ .Version }}

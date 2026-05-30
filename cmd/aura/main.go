@@ -6,6 +6,7 @@
 //	aura tools              — print the tool manifest (active + deferred)
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
 //	aura neo4j <sub>        — Neo4j lifecycle
+//	aura version            — print build metadata (version, commit, build date)
 //
 // Tabula-rasa scaffold: `tools`, `agent`, `db`, and `neo4j` are wired; `shell`
 // and `serve` print a TODO marker so the entry stays build-clean while the agent
@@ -34,6 +35,8 @@ func main() {
 		runDB(os.Args[2:])
 	case "neo4j":
 		runNeo4j(os.Args[2:])
+	case "version", "--version", "-v":
+		runVersion()
 	case "shell", "serve":
 		fmt.Println("TODO: implemented by the agent-loop and CLI slices")
 	default:
@@ -43,7 +46,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|agent <sub>|tools|db <sub>|neo4j <sub>}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|agent <sub>|tools|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {

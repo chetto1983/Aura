@@ -10,6 +10,8 @@ development on the `tabula-rasa` branch; nothing is API-stable yet.
 ## [Unreleased]
 
 ### Added
+- `aura version` command — prints build metadata (version/commit/date), stamped
+  by goreleaser ldflags with a runtime/debug build-info fallback.
 - Industrial quality gates: coverage floor (≥85% owned surface), `govulncheck`
   supply-chain scan, `dupl` and `gofmt` in golangci-lint, `make quality` /
   `quality-full` / `tools` targets.

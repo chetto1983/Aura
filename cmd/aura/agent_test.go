@@ -203,18 +203,8 @@ func TestRunAgent_DryRun_HappyPath_WritesToStdout(t *testing.T) {
 	// runAgent's success path returns normally (it only os.Exits on error). Capture
 	// os.Stdout to confirm it emits Event lines through the dispatcher.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "2")
-	orig := os.Stdout
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("pipe: %v", err)
-	}
-	os.Stdout = w
-	runAgent([]string{"dry-run", "--max-steps", "2"})
-	_ = w.Close()
-	os.Stdout = orig
-	var out bytes.Buffer
-	_, _ = out.ReadFrom(r)
-	if got := len(decodeLines(t, out.String())); got != 3 {
+	out := captureStdout(t, func() { runAgent([]string{"dry-run", "--max-steps", "2"}) })
+	if got := len(decodeLines(t, out)); got != 3 {
 		t.Fatalf("runAgent dry-run --max-steps 2: want 3 lines, got %d", got)
 	}
 }
