@@ -1,0 +1,200 @@
+package conversations
+
+import (
+	"encoding/json"
+	"fmt"
+	"math/big"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/chetto1983/aura/internal/db/sqlc"
+	"github.com/chetto1983/aura/internal/llm"
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
+)
+
+// numericScale is the fixed scale of total_cost_usd (numeric(10,4)). The cost
+// delta is encoded at this scale so the SQL `total_cost_usd + $delta` stays exact.
+const numericScale = 4
+
+// conversationFromRow projects a generated conversations row onto the domain type,
+// converting the pgtype wrappers (Pitfall 5) at the boundary: pgtype.Text title ->
+// (TitleSet, Title), pgtype.Numeric total_cost_usd -> float64.
+func conversationFromRow(r sqlc.AuraConversations) Conversation {
+	c := Conversation{
+		ID:                uuid.UUID(r.ID.Bytes).String(),
+		IdentityID:        uuid.UUID(r.IdentityID.Bytes).String(),
+		Status:            r.Status,
+		Model:             r.Model,
+		TotalInputTokens:  r.TotalInputTokens,
+		TotalOutputTokens: r.TotalOutputTokens,
+		TotalCachedTokens: r.TotalCachedTokens,
+		TotalCostUSD:      floatFromNumeric(r.TotalCostUsd),
+	}
+	if r.Title.Valid {
+		c.Title = r.Title.String
+		c.TitleSet = true
+	}
+	if r.CreatedAt.Valid {
+		c.CreatedAt = r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z")
+	}
+	return c
+}
+
+// DisplayTitle renders the title for the CLI list: the set title, or the SPEC
+// "(untitled <created_at>)" fallback when the DB title is still NULL (Req#9).
+func (c Conversation) DisplayTitle() string {
+	if c.TitleSet && c.Title != "" {
+		return c.Title
+	}
+	return fmt.Sprintf("(untitled %s)", c.CreatedAt)
+}
+
+// turnFromRow projects a generated turn row onto the domain Turn. content +
+// content_sidecar_path are pgtype.Text (nullable); the empty string stands in for
+// NULL (loadTurns rehydrates a non-empty sidecar path from disk).
+func turnFromRow(r sqlc.AuraConversationTurns) Turn {
+	return Turn{
+		Seq:                int(r.Seq),
+		Role:               r.Role,
+		Content:            r.Content.String,
+		ContentSidecarPath: r.ContentSidecarPath.String,
+		ToolCallID:         r.ToolCallID.String,
+		ToolCalls:          r.ToolCalls,
+		InputTokens:        int(r.InputTokens),
+		OutputTokens:       int(r.OutputTokens),
+		CachedTokens:       int(r.CachedTokens),
+	}
+}
+
+// turnToMessage rehydrates one Turn into the llm.Message the loop consumes. The
+// projection is pure (deterministic) so LoadHistory is byte-identical across
+// calls (Req#8). tool_calls jsonb deserializes into []llm.ToolCall for assistant
+// turns; tool_call_id populates only tool-role turns.
+func turnToMessage(t Turn) (llm.Message, error) {
+	msg := llm.Message{Role: t.Role, Content: t.Content, ToolCallID: t.ToolCallID}
+	if len(t.ToolCalls) > 0 {
+		calls, err := decodeToolCalls(t.ToolCalls)
+		if err != nil {
+			return llm.Message{}, fmt.Errorf("decode tool_calls: %w", err)
+		}
+		msg.ToolCalls = calls
+	}
+	return msg, nil
+}
+
+// maybeSpill returns the (content, content_sidecar_path) pgtype pair for a turn:
+// content <= turnCapBytes stays inline (content set, path NULL); content over the
+// cap writes the FULL bytes to a sidecar file and stores content=NULL + the path
+// (SPEC Req#7). The sidecar layout mirrors tools/result.go
+// ($AURA_RUN_DIR/conversations/<id>/<seq>.content), validated against traversal.
+func (s *Store) maybeSpill(conversationID string, seq int, content string) (pgtype.Text, pgtype.Text, error) {
+	if len(content) <= s.turnCapBytes {
+		return pgtype.Text{String: content, Valid: true}, pgtype.Text{}, nil
+	}
+	path, err := s.turnSidecarPath(conversationID, seq)
+	if err != nil {
+		return pgtype.Text{}, pgtype.Text{}, err
+	}
+	if err := writeTurnSidecar(path, content); err != nil {
+		return pgtype.Text{}, pgtype.Text{}, fmt.Errorf("write turn sidecar %q: %w", path, err)
+	}
+	return pgtype.Text{}, pgtype.Text{String: path, Valid: true}, nil
+}
+
+// turnSidecarPath builds the validated <run_dir>/conversations/<id>/<seq>.content
+// path, rejecting traversal-shaped ids BEFORE filepath.Join (T-04-13, mirrors
+// tools/result.go sidecarPath).
+func (s *Store) turnSidecarPath(conversationID string, seq int) (string, error) {
+	dir, err := s.sidecarDir(conversationID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, fmt.Sprintf("%d.content", seq)), nil
+}
+
+// writeTurnSidecar persists the full turn content, creating the per-conversation
+// dir lazily on first spill.
+func writeTurnSidecar(path, content string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// optionalText maps an empty string to a NULL pgtype.Text (tool_call_id is only
+// set on tool-role turns).
+func optionalText(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
+}
+
+// floatFromNumeric converts a pgtype.Numeric (total_cost_usd) to float64 at the
+// read boundary. An invalid/NULL numeric reads as 0.
+func floatFromNumeric(n pgtype.Numeric) float64 {
+	if !n.Valid || n.NaN {
+		return 0
+	}
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return 0
+	}
+	return f.Float64
+}
+
+// numericFromFloat encodes a USD delta as a pgtype.Numeric at numeric(10,4) scale
+// so the SQL `total_cost_usd + $delta` stays exact (Pitfall 5). The value is
+// rounded to 4 decimals via an integer-mantissa construction (Int * 10^-4).
+func numericFromFloat(f float64) (pgtype.Numeric, error) {
+	// Scale to 4 decimals as an integer mantissa, rounding half-away-from-zero.
+	scaled := f * 1e4
+	if scaled >= 0 {
+		scaled += 0.5
+	} else {
+		scaled -= 0.5
+	}
+	mantissa := big.NewInt(int64(scaled))
+	return pgtype.Numeric{Int: mantissa, Exp: -numericScale, Valid: true}, nil
+}
+
+// validateID rejects any id that could escape the fixed
+// <run_dir>/conversations/ prefix once joined into a path: `..` traversal or an
+// embedded separator (T-04-13, mirrors tools/result.go validateID). The only
+// model/agent-supplied segment is the conversation_id (D-26).
+func validateID(kind, id string) error {
+	if id == "" {
+		return fmt.Errorf("%s is empty", kind)
+	}
+	if strings.Contains(id, "..") {
+		return fmt.Errorf("%s %q contains %q", kind, id, "..")
+	}
+	for i := 0; i < len(id); i++ {
+		if id[i] == '/' || id[i] == '\\' || os.IsPathSeparator(id[i]) {
+			return fmt.Errorf("%s %q contains a path separator", kind, id)
+		}
+	}
+	return nil
+}
+
+// parseUUID converts a canonical UUID string into the pgtype.UUID the generated
+// queries expect (mirrors internal/identity.parseUUID + internal/askuser).
+func parseUUID(field, s string) (pgtype.UUID, error) {
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return pgtype.UUID{}, fmt.Errorf("invalid %s %q: %w", field, s, err)
+	}
+	return pgtype.UUID{Bytes: u, Valid: true}, nil
+}
+
+// decodeToolCalls unmarshals the tool_calls jsonb into []llm.ToolCall. A separate
+// helper so turnToMessage stays small.
+func decodeToolCalls(raw []byte) ([]llm.ToolCall, error) {
+	var calls []llm.ToolCall
+	if err := json.Unmarshal(raw, &calls); err != nil {
+		return nil, err
+	}
+	return calls, nil
+}
