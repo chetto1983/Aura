@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 04-02-PLAN.md (identity slice)
-last_updated: "2026-05-30T21:10:00.000Z"
+stopped_at: Completed 04-03-PLAN.md (HITL pause primitive — agent + store halves)
+last_updated: "2026-05-30T22:25:00.000Z"
 last_activity: 2026-05-30
 progress:
   total_phases: 16
   completed_phases: 4
   total_plans: 26
-  completed_plans: 23
-  percent: 26
+  completed_plans: 24
+  percent: 27
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 04 (hitl-identity-conversations) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-05-30
 
-Progress: [█████████░] 88%
+Progress: [█████████░] 92%
 
 ## Performance Metrics
 
@@ -66,6 +66,7 @@ Progress: [█████████░] 88%
 | Phase 03 P03-04 | ~45min | 2 tasks | 14 files |
 | Phase 04 P01 | 40min | 3 tasks | 29 files |
 | Phase 04 P02 | ~35min | 2 tasks | 8 files |
+| Phase 04 P03 | ~70min | 3 tasks | 13 files |
 
 ## Accumulated Context
 
@@ -91,6 +92,7 @@ Recent decisions affecting current work:
 - [Phase 04]: CREATE INDEX CONCURRENTLY isolated as the sole statement in 0006; pg_trgm EXTENSION folded into 0005 (golang-migrate implicit-tx hazard)
 - [Phase 04]: Spillover is a sidecar file via content_sidecar_path, not a conversation_spillover table (OQ3); FIFO tiebreaker token ASC (Pitfall 4)
 - [Phase 04]: tiktoken-go@v0.1.8 added (operator-approved); llm.Config gains ContextWindow=1000000 + MaxOutputTokens=32768 for the L2 budget
+- [Phase 04]: 04-03: HITL pause primitive (agent + store halves, CORE-02). ask_user is a NON-DEFERRED tool returning the *ErrAwaitingUserInput STRUCT sentinel (pure types, no DB — D-A1-04), validated for empty question/unknown kind/exactly-1-or->4 options/non-distinct labels/priority 0-100. Actions.AwaitingInput Event field (sibling to Escalate) round-trips byte-identically via pointer omitempty; carries OriginAgent for swarm forward-compat (D-A1-08). Pause DETECTION split into llm_agent_pause.go (AM-01): errors.As the sentinel BEFORE the generic err fallback, suppress the RoleTool, REWRITE the assistant msg to ask_user-only tool_calls (intra-turn exclusivity, D-A1-07), emit Event-only (never the iter.Seq2 error slot, D-A1-03 — mirrors budget exhaustion). A validation-failed ask_user is NOT a pause (RoleTool error, self-correct). askuser.Store COPIES the 04-02 canonical pattern: FIFO total order priority DESC/created_at ASC/token ASC (token tiebreaker MANDATORY — single-tx rows share created_at, Pitfall 4); crash recovery (fresh New(pool) sees rows); MarkResumed via pool.Exec (RowsAffected->ErrPauseNotFound, not the discard-tag :exec); MarkResumedBatch in-Store via db.WithTx (all-or-nothing rollback, no new sqlc query); AutoResolveForConversation (Loop.Stop Req#11); AM-02 {action,content} resumed_answer; NO timeout/expiry state (Req#4); NEVER imports internal/agent/tools. Agent stays DB-free, askuser stays tools-free — boundary held. Resume orchestration is the Runner's (04-05), NOT here. export_test.go HistoryForTest avoids an agenttest import cycle. db_integration -race -count=10 green; combined coverage askuser 89.5%/agent 95.3%/tools 96.3%; golangci-lint 0; all files <=600 LOC.
 - [Phase 04]: 04-02: identity.Store PROVES THE CANONICAL STORE PATTERN (D-A4-01) that 04-03/04/05 copy verbatim — Store{pool,q} via sqlc.New(pool); reads via s.q; db.WithTx for atomic writes; SQLSTATE classification via errors.As(&pgErr)+pgErr.Code (NEVER message-match); sentinel errors (ErrWildcardManaged/ErrInvalidCapability/ErrIdentityNotFound); pgtype boundary conversion in fromRow; NO interface in the domain package (consumer declares it, D-A2-02); pre-DB validation gate for operator input. HasCapability wildcard-or-exact; grant/revoke idempotent (ON CONFLICT DO NOTHING + defensive 23505 swallow); '*'/name-grammar rejected pre-DB; FK cascade on DeleteIdentity. CLI: hand-rolled switch runIdentity mirroring runDB (cobra->switch deviation, RESEARCH OQ1/A2 — go.mod has no cobra, CLAUDE.md follows existing patterns, SPEC never requires cobra; no PRD amendment). Test discipline: unit tier (pure logic) + db_integration tier (goleak, envOrSkip t.Fatal-under-CI); 9 integration tests RAN green; combined coverage 98.0%; golangci-lint 0; all files <=600 LOC.
 
 ### Pending Todos
@@ -117,6 +119,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-30T21:10:00.000Z
-Stopped at: Completed 04-02-PLAN.md (identity slice — canonical Store pattern proven)
+Last session: 2026-05-30T22:25:00.000Z
+Stopped at: Completed 04-03-PLAN.md (HITL pause primitive — agent + store halves; agent stays DB-free, askuser stays tools-free)
 Resume file: None
