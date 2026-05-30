@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 03 (llm-client-toolresult) — EXECUTING
-Plan: 4 of 5
-Status: Ready to execute
+Plan: 5 of 5 — AWAITING HUMAN-VERIFY CHECKPOINT
+Status: Plan 03-05 Tasks 1 & 2 done + committed; STOPPED at the blocking checkpoint:human-verify (live real-OpenRouter acceptance, SPEC Req#11 / ROADMAP SC#1). Plan 05 stays in-progress until the operator confirms live prose + a non-zero cost footer.
 Last activity: 2026-05-30
 
-Progress: [██████████] 95%
+Progress: [██████████] 98%
 
 ## Performance Metrics
 
@@ -110,5 +110,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-05-30T14:06:19.957Z
-Stopped at: Phase 3 context gathered
-Resume file: None
+Stopped at: Phase 3 Plan 05 — checkpoint:human-verify (live aura chat acceptance). Tasks 1 (chat REPL + config + cost footer + two-stage Ctrl+C + OTel) and 2 (scripts/llm_smoke.sh) committed (4a5f312c, 51785099). Awaiting operator "approved" after running `bash scripts/llm_smoke.sh` with a real OPENROUTER_API_KEY and eyeballing streamed prose + a non-zero token+USD footer.
+Resume file: .planning/phases/03-llm-client-toolresult/03-05-PLAN.md
