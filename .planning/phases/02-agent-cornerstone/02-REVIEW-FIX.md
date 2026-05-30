@@ -2,173 +2,177 @@
 phase: 02-agent-cornerstone
 fixed_at: 2026-05-30T00:00:00Z
 review_path: .planning/phases/02-agent-cornerstone/02-REVIEW.md
-iteration: 1
-fix_scope: critical_warning
-findings_in_scope: 6
-fixed: 6
+iteration: 2
+fix_scope: all
+findings_in_scope: 9
+fixed: 9
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 2: Code Review Fix Report
 
-**Fixed at:** 2026-05-30
+**Fixed at:** 2026-05-30T00:00:00Z
 **Source review:** .planning/phases/02-agent-cornerstone/02-REVIEW.md
-**Iteration:** 1
+**Iteration:** 2
+
+> Note: this is the SECOND fix cycle on Phase 2. Iteration 1 (the prior
+> 02-REVIEW-FIX.md content) addressed the earlier WR-01..WR-06 cycle. This report
+> addresses the NEW review (warnings WR-01..WR-05 + info IN-01..IN-04) and replaces
+> the prior file. `fix_scope` was "all", so every Warning and Info finding was in
+> scope.
 
 **Summary:**
-- Findings in scope (fix_scope=critical_warning): 6 (WR-01..WR-06)
-- Fixed: 6
+- Findings in scope: 9 (5 Warnings, 4 Info)
+- Fixed: 9
 - Skipped: 0
-- Info findings (IN-01..IN-06): intentionally NOT touched — out of scope for this
-  `critical_warning` pass; left for a later `--all` run.
 
-All work was done in an isolated git worktree on branch `gsd-reviewfix/02-*`,
-fast-forwarded back onto `tabula-rasa`. Each fix is one atomic commit. The report
-itself is NOT committed (the orchestrator owns that).
-
-## Validation (final, full Phase-2 surface)
-
+**Phase-wide gates after fixes (in the isolated worktree):**
 - `go vet ./...` — clean
 - `go build ./...` — clean
-- `go test -count=1` per package:
-  - `internal/agent` 91.6%
-  - `internal/agent/workflow` 91.5%
-  - `internal/agent/agenttest` 70.7% (test-helper pkg; not in the phase floor surface)
-  - `internal/canonicaljson` 85.2%
-  - `cmd/aura` 19.3% raw (includes the excluded Slice-0.5/0.7 db/neo4j/main subcommands)
-- `go test -race` on `internal/agent`, `internal/agent/workflow`, `internal/agent/agenttest` — all pass
-- `scripts/loop_budget_smoke.sh` end-to-end — PASS: SC#2 = 26 lines, **Phase-2 filtered coverage = 90.4% >= 85%** floor
-- `golangci-lint run ./internal/agent/... ./cmd/aura/` — **0 issues**
-
-The Phase-2 combined coverage (90.4%, via the smoke gate's filtered profile) is the
-load-bearing number and remains above the CLAUDE.md 85% floor.
+- `golangci-lint run` (Phase-2 packages) — 0 issues
+- Unit tests `internal/agent`, `internal/agent/workflow`, `internal/canonicaljson`, `cmd/aura` — all PASS
+- `go test -race` on touched packages — all PASS (w64devkit toolchain via ~/.aura-toolchain.sh)
+- `scripts/loop_budget_smoke.sh` — PASS: SC#2 26 lines + terminal `limit_hit=max_steps`; B4 coverage **90.7% >= 85%**
 
 ## Fixed Issues
 
-### WR-01 / WR-02: Event wire contract (zero message_id leak + span_id encoding)
-
-**Files modified:** `internal/agent/event.go`, `internal/agent/event_test.go`
-**Commit:** `286cebc6`
-**Status:** fixed
-**Applied fix:** Both findings live in the same `eventWire` projection struct and the
-shared Marshal/Unmarshal path, so they could not be split into two clean commits and
-were fixed together.
-
-- **WR-01:** `MessageID uuid.UUID` is `[16]byte`, so `json:"...,omitempty"` is a no-op
-  for arrays — every Event leaked `"message_id":"000...000"`. `eventWire` now projects
-  it as `*uuid.UUID` gated by `uuid.Nil` (`uuidPtrIfSet`), so omitempty actually fires;
-  `UnmarshalJSON` maps the pointer back to the value field. The same array-vs-omitempty
-  audit confirmed `RequestID` has NO omitempty (always present by design — correct) and
-  `ThreadID` is a `string` (omitempty already works). Regression assertions added:
-  `TestEvent_NilLLMResponse_OmitsObject` now asserts `message_id` absent for a zero
-  Event, plus a new `TestEvent_MessageID_PresentWhenSet`.
-- **WR-02:** `SpanID [8]byte` / `ParentSpanID *[8]byte` serialized as verbose JSON number
-  arrays, not the base64 the old test comment wrongly claimed. They are now encoded as
-  lower-hex strings in `eventWire` (`hex.EncodeToString` / `hexPtr`) and decoded back
-  into the fixed arrays in `UnmarshalJSON` (`decodeSpan` / `decodeSpanPtr`), matching the
-  OTel/W3C-idiomatic form (D-16). The stale comment at the former line 133 is corrected,
-  and the test now asserts the actual hex form (`"span_id":"0102030405060708"`) plus a
-  hex round-trip — replacing the meaningless `len != 0` check.
-
-Round-trip byte-identity (including the `rapid` property test) stays green.
-
-### WR-03: Two-phase dedup formula decoupled from window; window != 3 now covered
-
-**Files modified:** `internal/agent/budget_dedup.go`, `internal/agent/budget_dedup_test.go`
-**Commit:** `5e0b8493`
-**Status:** fixed: requires human verification (logic/semantics change — see note)
-**Applied fix:** The single `resultStable := seen && repeats+2 >= window` gate was applied
-to BOTH tiers. After reasoning through the counter semantics I confirmed the `+2` formula
-is provably CORRECT and window-parameterized for **period-1** (it aligns exactly with
-`countConsecutive+1 >= window` for every window >= 1), so I pinned it rather than changing
-it — `window=3` behaviour is byte-for-byte unchanged (SC#2 safe). The genuine bug was the
-**period-2** tier: `isPingPong` is a FIXED period-2 detector (always the last three entries
-A,B,A), but gating it on the period-1 window threshold wrongly SUPPRESSED ping-pong for
-`window >= 4` (where `repeats(A)==1` but `repeats+2 >= window` is false). Fix: split into
-`stableP1 = repeats+2 >= window` (period-1) and `stableP2 = repeats >= 1` (period-2,
-window-independent). Added table-driven tests across `window in {1,2,3,4,5}` asserting the
-exact termination call index: period-1 at `max(2,window)`, period-2 at call 4 for every
-`window >= 2`. `window=1` is documented as a case where period-1 dominates the A,B,A warmup
-(correct, not a bug). `isPingPong`'s hard-coded period-2 nature is now documented in the
-new `stableP2` comment.
-
-**Human-verification flag:** this changes dedup termination behaviour for non-default
-windows. window=3 (the only value SC#2/CLI default uses) is unchanged and fully tested;
-the new non-3 behaviour is pinned by tests but should be eyeballed against intended
-operator semantics before phase close.
-
-### WR-04: Budget precedence via BudgetOptions, no runtime env mutation
-
-**Files modified:** `internal/agent/budget.go`, `internal/agent/budget_dedup.go`,
-`internal/agent/budget_test.go`, `internal/agent/budget_dedup_test.go`,
-`cmd/aura/agent.go`, `cmd/aura/agent_test.go`
-**Commit:** `d65cc9c2`
-**Status:** fixed
-**Applied fix:** Replaced the `os.Setenv`/`os.Unsetenv` save/restore dance in
-`cmd/aura/agent.go` (`buildBudget`, `overrideEnv`) with an explicit options path.
-Added `agent.BudgetOptions` + `agent.NewBudget(opts)`: a nil pointer field falls through
-to env then builtin default, a set field overrides both — D-06 precedence resolved in ONE
-place with zero global mutation (`resolveInt` helper). `NewBudgetFromEnv` now delegates to
-`NewBudget(BudgetOptions{})` so env-only callers are unchanged. Added
-`agent.ExemptToolsFromEnv(extra...)` so the CLI composes the operator's
-`AURA_LOOP_DEDUP_EXEMPT_TOOLS` allowlist with the dry-run tool without env mutation.
-`overrideEnv` deleted. New tests: NewBudget override-wins-over-env-without-mutating-env,
-nil-falls-through-to-default, `ExemptToolsFromEnv` merge + empty-env. The pre-existing
-operator-exemption CLI test was updated (NOT silenced): it now asserts the process env is
-left UNTOUCHED (the old "restored" assertion is meaningless when nothing mutates it) and
-that the run still caps on max_steps; its misleading comment was corrected.
-
-### WR-05: One step Event per budgeted tool call; mid-turn step discard fixed
+### WR-01: Multi-tool turn with `Escalate=true` yields the escalate Event once per tool call
 
 **Files modified:** `internal/agent/workflow/loop.go`, `internal/agent/workflow/loop_test.go`
-**Commit:** `d0804604`
-**Status:** fixed: requires human verification (semantics decision — see note)
-**Applied fix:** Defined the semantics explicitly: each tool call is ONE budgeted step
-(D-11, preserved) AND ONE step Event (1:1). `guardToolCall` now yields a per-tool-call
-step Event on each successful consume; `scopeToToolCall` narrows a multi-tool Event's
-`LLMResponse` to the single call, and returns the ORIGINAL pointer unchanged for a
-single-tool turn (so SC#2's 26 lines and byte output are byte-identical). A budget/dedup
-trip now replaces only the REMAINING tool calls — the already-consumed first call was
-already yielded, fixing the discard bug. `steps_consumed` therefore always equals the
-number of yielded step Events. Non-tool Events consume no step and are yielded as-is.
-Added `multiToolAgent` fixture (2 calls/turn) and a test with an odd `max_steps=5` that
-trips on the 2nd call of a turn, asserting `steps_consumed == len(stepEvents) == 5` and
-that each step Event carries exactly one tool call.
+**Commit:** 5388b745
+**Applied fix:** `scopeToToolCall` now takes a `last bool` and clears
+`Actions.Escalate` on every per-call scoped copy except the final one, so the
+escalate signal rides exactly one step Event instead of being duplicated onto each
+scoped copy of a multi-tool turn. `StateDelta`/`ArtifactDelta` still ride every copy
+(additive deltas, not one-shot terminal signals); the single-tool fast path is
+unchanged. Added a `multiToolEscalateAgent` fixture + `TestLoopAgent_MultiToolEscalate_EscalateRidesExactlyOneStepEvent`,
+which fails against the old code (escalate seen 3/3) and passes after the fix (1/3,
+on the last call).
+**Requires human verification:** Yes — escalate-multiplicity is a wire-contract
+semantic the reviewer flagged as load-bearing for Phase-3/Phase-12 consumers. The
+choice "escalate rides the LAST per-call Event" matches the reviewer's suggested fix,
+but confirm this is the intended terminal-signal placement before Phase 3 builds on it.
 
-**Human-verification flag:** this is a deliberate Event-stream semantics choice (per-tool-call
-step Events). It keeps D-11 per-tool-call budgeting and the SC#2 single-tool invariant
-intact, but it does change the stream shape for a *future* multi-tool LlmAgent (one Event
-per call rather than one per turn). Confirm this matches the intended Phase-3 contract
-before relying on it; if the project prefers "one Event == one step" instead, that would be
-a D-11 amendment (out of scope for a review fix).
+### WR-02: Same tool call repeated within one turn corrupts the dedup veto
 
-### WR-06: Smoke coverage gate hardened against path-substring and column drift
+**Files modified:** `internal/agent/workflow/loop.go`, `internal/agent/workflow/loop_test.go`
+**Commit:** 3997ec6c
+**Applied fix:** The per-call loop now tracks per-turn fingerprints
+(`name + \x00 + canonArgs`) and passes a `dupInTurn` flag to `guardToolCall`. A
+within-turn duplicate still consumes a budget step and yields a step Event (WR-05
+preserved), but SKIPS both the dedup `BeforeToolCall` gate and the `AfterToolResult`
+progress-veto record, so one turn is exactly one dedup observation per distinct
+fingerprint. This stops a single `[]ToolCall{A, A}` turn from advancing the period-1
+stable-repeat counter as if two turns elapsed (which fired dedup one turn early).
+Added a `sameToolTwiceAgent` fixture + a baseline test that pins the window-accurate
+termination turn: it fails against the old code ([A,A]/turn trips a turn early, 2
+step Events) and passes after the fix (same 3rd turn, 4 step Events).
+**Requires human verification:** Yes — dedup-accounting semantics are
+correctness-critical for the loop guard. The "one observation per distinct
+fingerprint per turn" model matches the reviewer's suggested approach; confirm it
+before Phase 3's LlmAgent produces real parallel-identical tool calls.
+
+### WR-03: `Budget` wallclock deadline anchored to real `time.Now()`, bypassing the injectable clock
+
+**Files modified:** `internal/agent/budget.go`, `internal/agent/budget_test.go`
+**Commit:** db14b7a0
+**Applied fix:** Added `BudgetOptions.Now func() time.Time` (defaults to `time.Now`)
+and resolved it FIRST inside `NewBudget`, then anchored
+`deadlineWallclock: now().Add(wallclock)` and stored the same `now` for the
+`ConsumeStep` gate. Anchor and comparison now share one time source. The production
+path (`Now == nil`) is byte-for-byte unchanged. Added two constructor-driven tests:
+one drives wallclock end-to-end through an injected clock (deadline anchored at
+injectedNow+wallclock, step trips at the right moment), one asserts the default path
+still anchors a future deadline off `time.Now`.
+**Requires human verification:** Low — the change is a pure additive option with a
+test pinning the default path; behavior on the production path is identical.
+
+### WR-04: `terminalEvent`/dry-run emit an all-zero `SpanID`, undocumented as a deferral
+
+**Files modified:** `internal/agent/event.go`, `internal/agent/agent.go`, `cmd/aura/agent.go`
+**Commit:** 03a4fcaf
+**Applied fix:** Chose the reviewer's DOCUMENTATION option over minting real spans.
+The SPEC scopes OTel span minting to the future OTel-integration slice (Phase 2 ships
+the OTel-compatible SHAPE without the dep), so populating `crypto/rand` SpanIDs +
+`ParentSpanID` chaining would be a cross-cutting behavior change across every
+orchestrator's child-IC construction — out of scope for a review fix and a risk to
+the goleak / byte-stable / SC#2 contracts. Added explicit deferral notes at the three
+cited sites (event.go package docs, `InvocationContext.SpanID`/`ParentSpanID` fields,
+the dry-run IC build) so the constant `"span_id":"0000000000000000"` reads as
+documented intent, not a defect.
+**Rationale for documentation over minting:** the prompt and the reviewer both
+identify this as a possible accepted Phase-2 deferral; minting now is the riskier,
+out-of-scope option.
+
+### WR-05: SC#2 smoke gate aborts before its own diagnostic on empty dry-run output
 
 **Files modified:** `scripts/loop_budget_smoke.sh`
-**Commit:** `7070c65e`
-**Status:** fixed
-**Applied fix:** (1) Anchored each excluded file to a path-SEGMENT boundary
-(`/cmd/aura/(db|neo4j|main)\.go:`, `/internal/agent/tools/`) so a future file merely
-CONTAINING those substrings (e.g. `cmd/aura/agentmain.go`) is not silently dropped.
-(2) Added a guard that the filtered `cover_phase2.out` still has >= 1 statement row,
-failing loudly otherwise. (3) Replaced the positional awk `$3` with
-`grep -oE '[0-9]+(\.[0-9]+)?%'` and a fail-loud check when no percentage is captured.
-The 85.0 floor is unchanged. Verified end-to-end: the script still passes, SC#2 = 26 lines,
-gate reports 90.4%.
+**Commit:** 1671e464
+**Applied fix:** Guarded the `LINES` count capture with `|| true` (matching the
+existing `PROFILE_ROWS` capture at line ~60) and defaulted `${LINES:-0}` in the
+comparison and diagnostic. Under `set -euo pipefail`, `grep -c .` exits non-zero on
+zero matches; without the guard an empty `$OUT` (the exact NO-SKIP-AS-GREEN failure
+the gate exists to catch) aborted the pipeline before the hand-written
+"expected exactly 26 Event lines" diagnostic could print. Verified with `bash -n`
+(syntax) and an isolated `set -euo pipefail` repro showing the empty case now yields
+`LINES=0` and reaches the diagnostic. The full smoke script still passes
+(26 lines, coverage 90.7%).
+
+### IN-01: `softCap` shadows the builtin `cap`
+
+**Files modified:** `internal/agent/budget.go`
+**Commit:** 6c7e9194
+**Applied fix:** Renamed the local `cap` to `share` in `softCap()` (also names the
+value's role — a per-branch fair share — more precisely). No behavior change.
+
+### IN-02: `uintToString` reimplements `strconv.FormatUint`
+
+**Files modified:** `internal/agent/workflow/loop.go`
+**Commit:** 061ce804
+**Applied fix:** `iterLabel` now calls `strconv.FormatUint(uint64(i), 10)`; the
+hand-rolled `uintToString` formatter is removed and `strconv` is imported. The named
+`iterLabel` helper is kept because it documents the `.iter-<N>` Branch-segment
+semantics (D-15). No behavior change.
+
+### IN-03: `isPingPong` carries a redundant always-true conjunct
+
+**Files modified:** `internal/agent/budget_dedup.go`
+**Commit:** 0d56213c
+**Applied fix:** Simplified `return a == fp && a2 == fp && a == a2 && b != fp` to
+`return a == fp && a2 == fp && b != fp` (the `a == a2` term is necessarily true when
+`a == fp` and `a2 == fp`). Equivalent predicate, less noise on a correctness-critical
+detector. No behavior change.
+
+### IN-04: `Budget.Child` soft cap is a spawn-time snapshot, making sibling shares timing-dependent
+
+**Files modified:** `internal/agent/budget.go`
+**Commit:** b1657052
+**Applied fix:** Chose the reviewer's DOCUMENTATION option (over capturing
+`remaining` once before the fan-out loop, which would touch the ParallelAgent spawn
+path and alter the documented passive-advisory timing semantics — out of narrow
+scope). Documented in the `Child` doc comment that the soft cap is a spawn-time
+snapshot (timing-dependent by design, consistent with the passive non-terminal D-12
+framing) and noted the equal-share workaround for a caller that wants it. No behavior
+change.
 
 ## Skipped Issues
 
-None in scope.
+None — all 9 in-scope findings were fixed.
 
-**Out of scope (intentionally not touched):** IN-01 (`softCap` shadows builtin `cap`),
-IN-02 (`chan bool` -> `chan struct{}`), IN-03 (`uintToString` vs `strconv.FormatUint`),
-IN-04 (`termination_reason` for dedup stop), IN-05 (unset `Timestamp`),
-IN-06 (`RecordingAgent` cross-run accumulation). These are Info-tier and belong to a
-later `/gsd-code-review --fix --all` pass.
+## Notes on verification limits
+
+- WR-01 and WR-02 are logic fixes. Both are covered by new fixtures + tests that
+  fail against the pre-fix code and pass after, but the SEMANTIC choices (escalate
+  rides the last per-call Event; one dedup observation per distinct fingerprint per
+  turn) are wire-contract decisions Phase 3 builds on. They are flagged
+  "requires human verification" above.
+- All `go test -race` runs used the w64devkit toolchain (CC pre-set via
+  `go env CC`, PATH-fronted by `~/.aura-toolchain.sh`) and passed on this host — no
+  race tier was skipped.
 
 ---
 
-_Fixed: 2026-05-30_
+_Fixed: 2026-05-30T00:00:00Z_
 _Fixer: Claude (gsd-code-fixer)_
-_Iteration: 1_
+_Iteration: 2_
