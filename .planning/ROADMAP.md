@@ -15,7 +15,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 0: PRD Amendments** - 20 PRD edits in one no-code commit before any Slice 0.5 code
 - [x] **Phase 1: Infra DB + Knowledge** - Postgres 17 + Neo4j 5.26 LTS + MCP server operational
 - [ ] **Phase 2: Agent Cornerstone** - `Agent` interface + workflow agents (Sequential/Loop/Parallel) + budget contract
-- [x] **Phase 3: LLM Client + ToolResult** - OpenAI-compat handrolled client + ToolResult preview+sidecar + SSE streaming (completed 2026-05-30)
+- [x] **Phase 3: LLM Client + ToolResult** - OpenAI-compat handrolled client + ToolResult preview+sidecar + SSE streaming
+ (completed 2026-05-30)
 - [ ] **Phase 4: HITL + Identity + Conversations** - `ask_user` pause/resume, identity scaffolding, multi-thread conversations with FTS
 - [ ] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench
 - [ ] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI
@@ -110,7 +111,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Operator runs `aura chat list` and observes multiple persisted conversations with auto-generated titles, per-conversation cumulative token + USD totals
   4. Operator runs `aura chat search "specific phrase"` and observes matching turn excerpts from `pg_trgm` GIN index; same query as Telegram `/search` later returns identical results
   5. Operator inspects `aura.capability_grants` after a fresh boot and observes one row `(identity='local', capability='*')`; `HasCapability("local", "any_tool")` returns true (scaffolding stub working)
-**Plans**: TBD
+**Plans:** 5 plans (4 waves)
+- [ ] 04-01-PLAN.md — Substrate: PRD amendments (AM-01/02/03) + tiktoken-go + ContextWindow/MaxOutputTokens + AURA_* env + db.WithTx + migrations 0003-0006 + 6 query files + sqlc regen (wave 1)
+- [ ] 04-02-PLAN.md — Identity slice (1.7): identity.Store + HasCapability wildcard + grant/revoke idempotency + aura identity CLI (proves Store pattern) (wave 2)
+- [ ] 04-03-PLAN.md — HITL pause primitive (1.5): ask_user tool + ErrAwaitingUserInput sentinel + Actions.AwaitingInput + llm_agent_pause.go detection + askuser.Store FIFO (wave 2)
+- [ ] 04-04-PLAN.md — Conversations (1.8): conversations.Store (atomic AppendTurn, byte-identical LoadHistory, token/USD agg, FTS query) + context L1/L2/L2.5 + orphan_scan + auto-title body (wave 3)
+- [ ] 04-05-PLAN.md — Orchestration: runner.Runner (Turn/SubmitAnswer/Stop, resume-as-fresh-Run SC-4) + aura chat REPL drives Runner + paused-states CLI + chat search + boot composition + microcompact_smoke.sh (wave 4)
 
 ### Phase 5: Sandbox 2a Stateless
 **Goal**: Python 3.12 slim sidecar (stdlib only, no pip) for stateless per-call code execution. Seccomp **positive allowlist** ~80 syscalls (NOT deny-list — Pitfall #1 fix), ulimits, `network_mode: none` default, `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `userns-remap`, pids_limit. SandboxEscapeBench (UK AISI March 2026) run during Gate 3, escape rate documented in `docs/aura-quality-snapshot.md`. This is the highest-stakes P0 sandbox slice.
