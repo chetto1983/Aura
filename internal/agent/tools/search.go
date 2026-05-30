@@ -43,19 +43,19 @@ func (ts *ToolSearch) Spec() Spec {
 	}
 }
 
-func (ts *ToolSearch) Execute(_ context.Context, raw json.RawMessage) (string, error) {
+func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	var args toolSearchArgs
 	if err := json.Unmarshal(raw, &args); err != nil {
-		return "", fmt.Errorf("tool_search args: %w", err)
+		return ToolResult{}, fmt.Errorf("tool_search args: %w", err)
 	}
 	q := strings.TrimSpace(args.Query)
 	if q == "" {
-		return "", fmt.Errorf("tool_search: query is required")
+		return ToolResult{}, fmt.Errorf("tool_search: query is required")
 	}
 
 	matches := ts.match(q)
 	if len(matches) == 0 {
-		return "no matching tools", nil
+		return NewResult(ctx, "no matching tools")
 	}
 
 	var b strings.Builder
@@ -63,7 +63,9 @@ func (ts *ToolSearch) Execute(_ context.Context, raw json.RawMessage) (string, e
 		s := t.Spec()
 		fmt.Fprintf(&b, "## %s\n%s\n\nParameters:\n%s\n\n", s.Name, s.Description, string(s.Parameters))
 	}
-	return b.String(), nil
+	// A select of many large deferred specs can exceed the preview cap; route
+	// through the shared spillover helper so big manifests page via the sidecar.
+	return NewResult(ctx, b.String())
 }
 
 func (ts *ToolSearch) match(q string) []Tool {

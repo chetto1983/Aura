@@ -32,13 +32,15 @@ func (TextResponse) Spec() Spec {
 	}
 }
 
-func (TextResponse) Execute(_ context.Context, raw json.RawMessage) (string, error) {
+func (TextResponse) Execute(_ context.Context, raw json.RawMessage) (ToolResult, error) {
 	var a textResponseArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
-		return "", fmt.Errorf("text_response args: %w", err)
+		return ToolResult{}, fmt.Errorf("text_response args: %w", err)
 	}
 	if a.Text == "" {
-		return "", fmt.Errorf("text_response: text is required")
+		return ToolResult{}, fmt.Errorf("text_response: text is required")
 	}
-	return a.Text, nil
+	// Terminal channel: the text is the assistant message of record and is small
+	// by construction, so it never spills to a sidecar.
+	return ToolResult{Preview: a.Text, Bytes: len(a.Text)}, nil
 }
