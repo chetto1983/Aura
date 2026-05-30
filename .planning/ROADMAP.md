@@ -113,7 +113,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. Operator inspects `aura.capability_grants` after a fresh boot and observes one row `(identity='local', capability='*')`; `HasCapability("local", "any_tool")` returns true (scaffolding stub working)
 **Plans:** 1/5 plans executed
 - [x] 04-01-PLAN.md — Substrate: PRD amendments (AM-01/02/03) + tiktoken-go + ContextWindow/MaxOutputTokens + AURA_* env + db.WithTx + migrations 0003-0006 + 6 query files + sqlc regen (wave 1)
-- [ ] 04-02-PLAN.md — Identity slice (1.7): identity.Store + HasCapability wildcard + grant/revoke idempotency + aura identity CLI (proves Store pattern) (wave 2)
+- [x] 04-02-PLAN.md — Identity slice (1.7): identity.Store + HasCapability wildcard + grant/revoke idempotency + aura identity CLI (proves Store pattern) (wave 2)
 - [ ] 04-03-PLAN.md — HITL pause primitive (1.5): ask_user tool + ErrAwaitingUserInput sentinel + Actions.AwaitingInput + llm_agent_pause.go detection + askuser.Store FIFO (wave 2)
 - [ ] 04-04-PLAN.md — Conversations (1.8): conversations.Store (atomic AppendTurn, byte-identical LoadHistory, token/USD agg, FTS query) + context L1/L2/L2.5 + orphan_scan + auto-title body (wave 3)
 - [ ] 04-05-PLAN.md — Orchestration: runner.Runner (Turn/SubmitAnswer/Stop, resume-as-fresh-Run SC-4) + aura chat REPL drives Runner + paused-states CLI + chat search + boot composition + microcompact_smoke.sh (wave 4)
@@ -267,7 +267,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 1. Infra DB + Knowledge | 0/TBD | Not started | - |
 | 2. Agent Cornerstone | 7/8 | In Progress|  |
 | 3. LLM Client + ToolResult | 5/5 | Complete   | 2026-05-30 |
-| 4. HITL + Identity + Conversations | 1/5 | In Progress|  |
+| 4. HITL + Identity + Conversations | 2/5 | In Progress|  |
 | 5. Sandbox 2a Stateless | 0/TBD | Not started | - |
 | 6. KV Cache Builder | 0/TBD | Not started | - |
 | 7. Web Tools | 0/TBD | Not started | - |
