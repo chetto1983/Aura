@@ -162,8 +162,10 @@ type multiToolEscalateAgent struct {
 	toolNames []string
 }
 
-func (a *multiToolEscalateAgent) Name() string           { return a.name }
-func (*multiToolEscalateAgent) Description() string      { return "test: N tool calls + escalate in one Event" }
+func (a *multiToolEscalateAgent) Name() string { return a.name }
+func (*multiToolEscalateAgent) Description() string {
+	return "test: N tool calls + escalate in one Event"
+}
 func (*multiToolEscalateAgent) SubAgents() []agent.Agent { return nil }
 func (a *multiToolEscalateAgent) FindAgent(name string) agent.Agent {
 	if a.name == name {
@@ -242,8 +244,10 @@ type sameToolTwiceAgent struct {
 	copies   int // how many identical copies of the call ride one Event
 }
 
-func (a *sameToolTwiceAgent) Name() string           { return a.name }
-func (*sameToolTwiceAgent) Description() string      { return "test: same tool call repeated within one Event" }
+func (a *sameToolTwiceAgent) Name() string { return a.name }
+func (*sameToolTwiceAgent) Description() string {
+	return "test: same tool call repeated within one Event"
+}
 func (*sameToolTwiceAgent) SubAgents() []agent.Agent { return nil }
 func (a *sameToolTwiceAgent) FindAgent(name string) agent.Agent {
 	if a.name == name {
@@ -304,10 +308,10 @@ func TestLoopAgent_SameToolTwicePerTurn_DedupCountsOnePerTurn(t *testing.T) {
 		return evs
 	}
 
-	single := baseline(t, 1) // single A/turn: terminates on the 3rd turn (2 step + 1 terminal)
+	single := baseline(t, 1)  // single A/turn: terminates on the 3rd turn (2 step + 1 terminal)
 	doubled := baseline(t, 2) // [A,A]/turn: must terminate on the SAME 3rd turn
 
-	singleSteps := len(single) - 1  // step Events before the terminal
+	singleSteps := len(single) - 1 // step Events before the terminal
 	doubledSteps := len(doubled) - 1
 
 	// Single-call baseline: 2 step Events (turns 1,2) then dedup terminal on turn 3.

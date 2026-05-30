@@ -290,4 +290,3 @@ func canonArgs(arguments string) []byte {
 	}
 	return out
 }
-

@@ -70,8 +70,8 @@ func TestMocks_RunYieldDiscipline(t *testing.T) {
 			},
 		},
 		{
-			name: "RecordingAgent records branch and emits canned events",
-			mock: &agenttest.RecordingAgent{Events: []*agent.Event{{}, {}}},
+			name:    "RecordingAgent records branch and emits canned events",
+			mock:    &agenttest.RecordingAgent{Events: []*agent.Event{{}, {}}},
 			wantMin: 2,
 			wantMax: 2,
 			assertEnd: func(t *testing.T, got []*agent.Event) {

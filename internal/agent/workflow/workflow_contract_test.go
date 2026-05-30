@@ -70,10 +70,10 @@ func TestSequentialAgent_RootBranchHasNoParentDot(t *testing.T) {
 // stably rather than erroring out of the loop).
 type malformedArgsAgent struct{ name string }
 
-func (a *malformedArgsAgent) Name() string                  { return a.name }
-func (*malformedArgsAgent) Description() string              { return "test: malformed tool args" }
-func (*malformedArgsAgent) SubAgents() []agent.Agent         { return nil }
-func (a *malformedArgsAgent) FindAgent(string) agent.Agent   { return nil }
+func (a *malformedArgsAgent) Name() string                 { return a.name }
+func (*malformedArgsAgent) Description() string            { return "test: malformed tool args" }
+func (*malformedArgsAgent) SubAgents() []agent.Agent       { return nil }
+func (a *malformedArgsAgent) FindAgent(string) agent.Agent { return nil }
 func (a *malformedArgsAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	call := llm.ToolCall{ID: "c", Type: "function"}
 	call.Function.Name = "broken"

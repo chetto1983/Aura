@@ -106,9 +106,9 @@ func TestReset_UnknownDriverWrapsError(t *testing.T) {
 
 func TestEnsureRoles_RejectsEmptyInputs(t *testing.T) {
 	cases := []struct {
-		name             string
-		bootstrap, pwd   string
-		wantSubstr       string
+		name           string
+		bootstrap, pwd string
+		wantSubstr     string
 	}{
 		{"empty bootstrap URL", "", "p1", "bootstrapURL is empty"},
 		{"empty password", "postgres://x:y@localhost/aura", "", "must be non-empty"},
