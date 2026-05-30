@@ -46,6 +46,8 @@ tools:
 	go install golang.org/x/tools/cmd/deadcode@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 	go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+	go install github.com/evilmartians/lefthook@latest
+	@echo "now run: lefthook install   (wires the git pre-commit/pre-push hooks)"
 
 sqlc:
 	sqlc generate

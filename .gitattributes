@@ -1,0 +1,25 @@
+# Normalize line endings: store everything LF in the repo, check out LF on every
+# platform. Kills the "LF will be replaced by CRLF" churn on Windows and keeps
+# shell scripts runnable in the Linux containers / CI without CRLF breakage.
+* text=auto eol=lf
+
+# Scripts and Go must always be LF regardless of autocrlf.
+*.sh    text eol=lf
+*.go    text eol=lf
+*.cypher text eol=lf
+Makefile text eol=lf
+
+# Generated code — exclude from language stats and collapse in diffs/reviews.
+internal/db/sqlc/**     linguist-generated=true
+go.sum                  linguist-generated=true
+
+# Binary assets: never touch EOL, never diff as text.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.dump  binary
+*.gz    binary
+*.zip   binary

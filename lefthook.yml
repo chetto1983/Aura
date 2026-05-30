@@ -1,0 +1,31 @@
+# Local git hooks (https://lefthook.dev). Mirrors a fast subset of `make quality`
+# so problems are caught at commit/push time, not in CI.
+#
+# Install once per clone:  lefthook install
+#   (binary: `go install github.com/evilmartians/lefthook@latest`, or `make tools`)
+# Bypass in an emergency:  git commit --no-verify   /   git push --no-verify
+#
+# Heavy gates (race, integration, coverage, mutation) intentionally stay in CI /
+# `make quality-full` — hooks must be fast enough not to be bypassed habitually.
+
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      # Script (not inline) so the GOROOT/bin/gofmt resolution parses identically
+      # under Windows Git Bash, WSL, and CI Linux.
+      run: bash scripts/gofmt-staged.sh {staged_files}
+      stage_fixed: true
+    vet:
+      run: go vet ./...
+    file-size:
+      run: bash scripts/check-file-size.sh
+
+pre-push:
+  parallel: true
+  commands:
+    lint:
+      run: golangci-lint run ./...
+    build:
+      run: go build ./...

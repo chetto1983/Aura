@@ -56,3 +56,17 @@ linters:
           - gosec
           - errcheck
           - dupl        # table-driven test cases are intentionally repetitive
+
+# Formatting is a gate, not a suggestion: enforce gofmt in CI (the lefthook
+# pre-commit also runs `gofmt -w`). Run `golangci-lint fmt` to auto-fix.
+formatters:
+  enable:
+    - gofmt
+  exclusions:
+    paths:
+      - "internal/db/sqlc"
+      - "internal/agent/tools"
+      - "internal/sandbox"
+      - "internal/swarm"
+      - "internal/llm/client.go"
+      - "third_party"

@@ -1,0 +1,29 @@
+# https://editorconfig.org — consistent editor defaults across the team.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Go uses tabs (gofmt is non-negotiable).
+[*.go]
+indent_style = tab
+
+# Makefiles require literal tabs.
+[Makefile]
+indent_style = tab
+
+[*.{mk}]
+indent_style = tab
+
+# Markdown: keep trailing whitespace (two-space hard line breaks).
+[*.md]
+trim_trailing_whitespace = false
+
+# Go module files are tab-indented by the go tool.
+[go.{mod,sum}]
+indent_style = tab
