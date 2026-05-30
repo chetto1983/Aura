@@ -326,6 +326,60 @@ func TestLlmAgent_DispatchStopsOnParseError(t *testing.T) {
 	}
 }
 
+// TestLlmAgent_ConsumeStopMidStream is the regression for the iter.Seq2 stop-
+// propagation bug in consume(): a consumer that breaks MID-STREAM (during the
+// chunk/tool-call yields, not at a dispatch boundary) must not panic. Before the
+// fix, consume ignored the false yield and returned the same tuple as a clean
+// close, so Run proceeded to re-yield the final/tool Event after the range body
+// had already returned false -> "range function continued iteration after for
+// loop body returned false". The fix returns stopped=true so Run returns at once.
+// Reaching the end of each sub-test without a panic IS the assertion.
+func TestLlmAgent_ConsumeStopMidStream(t *testing.T) {
+	t.Run("content_chunk", func(t *testing.T) {
+		recordingProvider(t)
+		fc := agenttest.NewFakeClient(
+			agenttest.TextChunks("stop", "primo ", "secondo ", "terzo"),
+		)
+		a := newAgentCover(t, fc)
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+
+		n := 0
+		for ev, err := range a.Run(ic) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ev != nil && ev.LLMResponse != nil && ev.LLMResponse.Content != "" {
+				n++
+				break // break on the FIRST streamed chunk — the dangerous mid-stream point
+			}
+		}
+		if n != 1 {
+			t.Fatalf("expected to break after the first streamed chunk, saw %d", n)
+		}
+	})
+
+	t.Run("tool_call_chunk", func(t *testing.T) {
+		recordingProvider(t)
+		fc := agenttest.NewFakeClient(
+			agenttest.ToolCallTurn(agenttest.MakeToolCall("c1", "echo", `{"v":"x"}`)),
+		)
+		a := newAgentCover(t, fc)
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+
+		for ev, err := range a.Run(ic) {
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if ev != nil && ev.LLMResponse != nil && len(ev.LLMResponse.ToolCalls) > 0 {
+				break // break on the tool_call Event, inside consume (before dispatch)
+			}
+		}
+		if fc.CallCount() != 1 {
+			t.Errorf("client called %d times, want 1 (consumer stopped inside consume)", fc.CallCount())
+		}
+	})
+}
+
 // newAgentCover builds a default LlmAgent over the echo+text_response registry for
 // the coverage tests that don't need a custom registry.
 func newAgentCover(t *testing.T, fc *agenttest.FakeClient) *agent.LlmAgent {

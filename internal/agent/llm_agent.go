@@ -143,10 +143,18 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 
-			text, calls, finish, usage := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
+			text, calls, finish, usage, stopped := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
 			setSpanAttrs(span, a.cfg.Model, a.cfg.Provider, requestID, usage)
 			span.End()
 			cancel()
+
+			// The consumer broke mid-stream: consume already returned false from a
+			// yield, so the iter.Seq2 contract forbids any further yield — re-yielding
+			// the final/tool Event below would panic ("range function continued
+			// iteration after... returned false"). Return now.
+			if stopped {
+				return
+			}
 
 			// 3. No tool calls → terminal (content-stop fallback, D-13/D-16).
 			if len(calls) == 0 {
@@ -251,7 +259,7 @@ func (a *LlmAgent) appendToolError(callID string, err error) {
 // are emitted as they finalize so the Event order is chunk -> tool_call (Req#9).
 func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
 	requestID string, yield func(*Event, error) bool,
-) (text string, calls []llm.ToolCall, finish string, usage llm.Usage) {
+) (text string, calls []llm.ToolCall, finish string, usage llm.Usage, stopped bool) {
 	var b strings.Builder
 	for c := range ch {
 		switch {
@@ -260,23 +268,24 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 		case c.ToolCall != nil:
 			calls = append(calls, *c.ToolCall)
 			if !yield(a.toolCallEvent(ic, spanID, parentSpanID, *c.ToolCall), nil) {
-				// Consumer stopped: drain the rest to let the client close cleanly.
+				// Consumer stopped: drain the rest to let the client close cleanly,
+				// then report stopped so Run never yields again (iter.Seq2 contract).
 				for range ch { //nolint:revive // drain-to-close keeps the stream goroutine from leaking
 				}
-				return b.String(), calls, finish, usage
+				return b.String(), calls, finish, usage, true
 			}
 		case c.Text != "":
 			b.WriteString(c.Text)
 			if !yield(a.chunkEvent(ic, spanID, parentSpanID, c.Text), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
-				return b.String(), calls, finish, usage
+				return b.String(), calls, finish, usage, true
 			}
 		case c.FinishReason != "":
 			finish = c.FinishReason
 		}
 	}
-	return b.String(), calls, finish, usage
+	return b.String(), calls, finish, usage, false
 }
 
 // parseTextResponse validates the terminal-tool arguments (D-13). A malformed or
