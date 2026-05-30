@@ -21,6 +21,19 @@ func countRotEvents(t *testing.T, s *Store, convID string) int {
 	return n
 }
 
+// rotEventAction returns the action of the single context_rot_events row for a
+// conversation (the L2.5 smoke contract asserts it is 'hard_drop_pairs').
+func rotEventAction(t *testing.T, s *Store, convID string) string {
+	t.Helper()
+	var action string
+	if err := s.pool.QueryRow(context.Background(),
+		"SELECT action FROM aura.context_rot_events WHERE conversation_id = $1 LIMIT 1", convID,
+	).Scan(&action); err != nil {
+		t.Fatalf("read rot event action: %v", err)
+	}
+	return action
+}
+
 // TestLoadManagedHistory_SC1_NoRotEventOnL1Alone: a tool-output-bloated history is
 // brought under budget by L1 alone → ZERO context_rot_events rows in the DB (SC-1).
 func TestLoadManagedHistory_SC1_NoRotEventOnL1Alone(t *testing.T) {
@@ -88,6 +101,9 @@ func TestLoadManagedHistory_L2_5_WritesRotEvent(t *testing.T) {
 	}
 	if n := countRotEvents(t, s, convID); n != 1 {
 		t.Errorf("L2.5 must write exactly one rot event, got %d", n)
+	}
+	if action := rotEventAction(t, s, convID); action != rotActionHardDropPairs {
+		t.Errorf("L2.5 rot event action = %q, want %q", action, rotActionHardDropPairs)
 	}
 	if (len(msgs)-1)%2 != 0 {
 		t.Errorf("non-system remainder must be even after L2.5, got %d", len(msgs)-1)
