@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
@@ -108,6 +109,63 @@ func TestChat_TwoTurns_SharedSession(t *testing.T) {
 	}
 	if !sawFirstUser {
 		t.Fatalf("second turn did not see the first user turn in history: %+v", second.Messages)
+	}
+}
+
+// TestRenderTurn_ToolResultNotRenderedAsProse is the regression for the live tool
+// turn that double-printed the answer and leaked the raw tool output. renderTurn
+// had treated the tool-result Event (raw preview in Content, no FinishReason) as a
+// streamed assistant chunk: it emitted the raw output AND polluted the prose
+// buffer, so the final-Event flush diverged and re-emitted the whole answer. The
+// fix skips events stamped with a tool_call_id marker.
+func TestRenderTurn_ToolResultNotRenderedAsProse(t *testing.T) {
+	var toolCall llm.ToolCall
+	toolCall.Function.Name = "current_time"
+
+	run := func() iterSeq2 {
+		return func(yield func(*agent.Event, error) bool) {
+			// 1. non-terminal tool call -> dim activity line only
+			if !yield(&agent.Event{LLMResponse: &agent.LLMResponse{ToolCalls: []llm.ToolCall{toolCall}}}, nil) {
+				return
+			}
+			// 2. tool-result preview (raw output) -> MUST be skipped, not streamed
+			if !yield(&agent.Event{
+				LLMResponse: &agent.LLMResponse{Content: "2026-05-30T14:24:51Z"},
+				Actions:     agent.Actions{StateDelta: map[string]any{"tool_call_id": "call-1"}},
+			}, nil) {
+				return
+			}
+			// 3. final answer (text_response decoded by the agent)
+			yield(&agent.Event{
+				LLMResponse: &agent.LLMResponse{Content: "Adesso sono le 14:24 UTC.", FinishReason: "stop"},
+				Actions:     agent.Actions{StateDelta: map[string]any{"prompt_tokens": 996, "completion_tokens": 62}},
+			}, nil)
+		}
+	}
+
+	var buf bytes.Buffer
+	answer, finish, usage, err := renderTurn(&buf, run)
+	if err != nil {
+		t.Fatalf("renderTurn: %v", err)
+	}
+	if finish != "stop" {
+		t.Fatalf("finish = %q, want stop", finish)
+	}
+	if answer != "Adesso sono le 14:24 UTC." {
+		t.Fatalf("answer = %q, want the final prose exactly once", answer)
+	}
+	got := buf.String()
+	if strings.Contains(got, "2026-05-30T14:24:51Z") {
+		t.Fatalf("raw tool-result preview leaked into the REPL prose:\n%s", got)
+	}
+	if n := strings.Count(got, "Adesso sono le 14:24 UTC."); n != 1 {
+		t.Fatalf("answer rendered %d times, want exactly 1 (no divergent double-emit):\n%s", n, got)
+	}
+	if !strings.Contains(got, "· current_time") {
+		t.Fatalf("dim tool-activity line missing (operator must see the tool ran):\n%s", got)
+	}
+	if usage.PromptTokens != 996 || usage.CompletionTokens != 62 {
+		t.Fatalf("usage = %+v, want 996/62 read off the final StateDelta", usage)
 	}
 }
 

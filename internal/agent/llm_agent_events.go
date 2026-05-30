@@ -41,9 +41,15 @@ func (a *LlmAgent) toolCallEvent(ic InvocationContext, spanID [8]byte, parentSpa
 // has no dedicated tool_call_id field this phase — AG-UI fan-out is Phase 12); the
 // id is passed for forward-compat callers but not stamped on the Event yet.
 func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, toolCallID, preview string) *Event {
-	_ = toolCallID
 	ev := a.newEvent(ic, spanID, parentSpanID)
 	ev.LLMResponse = &LLMResponse{Content: preview}
+	// Stamp the tool_call_id so a prose consumer (the REPL renderer) can tell this
+	// raw tool-result preview apart from a streamed assistant chunk — both carry
+	// the text in LLMResponse.Content with no FinishReason, so without this marker
+	// the renderer would stream the raw preview AND let it pollute the prose
+	// buffer, double-printing the final answer. It is also the AG-UI correlation
+	// id a Phase-12 gateway fans out.
+	ev.Actions.StateDelta = map[string]any{"tool_call_id": toolCallID}
 	return ev
 }
 

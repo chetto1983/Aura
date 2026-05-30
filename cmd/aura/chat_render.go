@@ -50,6 +50,13 @@ func renderTurn(w io.Writer, run func() iterSeq2) (answer, finish string, usage 
 			flushRemainder(&prose, resp.Content, emit)
 			usage = usageFromStateDelta(ev.Actions.StateDelta)
 			return prose.String(), finish, usage, nil
+		case isToolResultPreview(ev):
+			// A tool-result Event carries the raw tool output (e.g. an RFC3339
+			// timestamp from current_time) in Content for AG-UI forward-compat — it
+			// is NOT assistant prose. Skip it so the raw preview never streams into
+			// the REPL and never pollutes the prose buffer (which would make the
+			// final-Event flush diverge and double-print the answer).
+			continue
 		case resp.Content != "":
 			// Streamed chunk (raw assistant content, content-stop fallback path).
 			emit(resp.Content)
@@ -75,6 +82,17 @@ func flushRemainder(prose *strings.Builder, finalAnswer string, emit func(string
 	// Divergent: reset and emit the full answer.
 	prose.Reset()
 	emit(finalAnswer)
+}
+
+// isToolResultPreview reports whether ev is a tool-result Event (the raw tool
+// output the LlmAgent threads back into history and surfaces for AG-UI fan-out),
+// identified by the tool_call_id the agent stamps into Actions.StateDelta. Such
+// events carry their text in LLMResponse.Content with no FinishReason — the same
+// shape as a streamed assistant chunk — so this marker is the only way the prose
+// renderer can tell them apart and skip them.
+func isToolResultPreview(ev *agent.Event) bool {
+	_, ok := ev.Actions.StateDelta["tool_call_id"]
+	return ok
 }
 
 // isTerminalToolCall reports whether the calls are the loop-terminating
