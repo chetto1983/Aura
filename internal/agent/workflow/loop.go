@@ -17,6 +17,7 @@ package workflow
 import (
 	"encoding/json"
 	"iter"
+	"strconv"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/canonicaljson"
@@ -212,22 +213,7 @@ func (a *LoopAgent) FindAgent(name string) agent.Agent {
 
 // iterLabel renders the per-iteration Branch segment .iter-<N> (D-15).
 func iterLabel(i uint) string {
-	return "iter-" + uintToString(i)
-}
-
-// uintToString avoids strconv for a single small-uint conversion path.
-func uintToString(i uint) string {
-	if i == 0 {
-		return "0"
-	}
-	var buf [20]byte
-	pos := len(buf)
-	for i > 0 {
-		pos--
-		buf[pos] = byte('0' + i%10)
-		i /= 10
-	}
-	return string(buf[pos:])
+	return "iter-" + strconv.FormatUint(uint64(i), 10)
 }
 
 // toolCalls returns the tool calls an Event carries, or nil for a non-tool Event.
