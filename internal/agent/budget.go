@@ -239,6 +239,15 @@ func (b *Budget) SoftCapExceeded() bool {
 // cross-branch false positives) and a PASSIVE per-branch soft cap (D-12).
 // Sequential/Loop sub-agents instead use InvocationContext.WithSubAgent, which
 // shares the ring for cross-iteration repeat detection.
+//
+// IN-04 — the soft cap is a SPAWN-TIME SNAPSHOT and therefore TIMING-DEPENDENT BY
+// DESIGN: it is computed off b.Remaining() at the instant Child is called. When a
+// ParallelAgent spawns siblings in a loop, a later sibling reads an already-depleted
+// pool and so gets a SMALLER advisory share than an earlier one. This is intentional
+// and consistent with the non-terminal "passive advisory" framing (D-12) — the soft
+// cap never bounds correctness, only fairness hints — so siblings are NOT guaranteed
+// equal shares. A caller that wants equal sibling shares must snapshot Remaining()
+// once before the fan-out loop and reuse it across every Child call.
 func (b *Budget) Child(fanout int) *Budget {
 	c := &Budget{
 		steps:             b.steps, // SHARED pointer (D-10) — total bound preserved
