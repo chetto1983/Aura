@@ -18,6 +18,15 @@ const titlePrompt = "You generate a concise 4-6 word title summarizing a convers
 // stream a paragraph; the column is text but the list UI wants a short label).
 const titleMaxChars = 80
 
+// GenerateTitle is the exported entry the Runner (04-05) invokes from its
+// WithoutCancel/WithTimeout/WaitGroup auto-title worker (D-A5-01). It delegates to
+// the package-internal generateTitle body; the worker lifecycle (the goroutine, the
+// bounded ctx, the WaitGroup join) is the Runner's, not this package's. Errors are
+// returned for the caller to discard (a NULL title renders "(untitled ...)").
+func GenerateTitle(ctx context.Context, client llm.Client, model string, history []llm.Message) (string, error) {
+	return generateTitle(ctx, client, model, history)
+}
+
 // generateTitle is the best-effort auto-title worker BODY (D-A5-01). The Runner
 // owns the WaitGroup + WithoutCancel/WithTimeout wiring and invokes this; here we
 // only do the single LLM call and shape the result. Errors NEVER block chat — the
