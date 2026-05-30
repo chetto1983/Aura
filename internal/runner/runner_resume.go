@@ -25,13 +25,18 @@ func (r *Runner) maybeAutoTitle(turnCtx context.Context, convID string, history 
 		return
 	}
 
+	// WR-03: the worker owns a defensive snapshot of history. The caller's slice
+	// header is shared with buildAgent/Turn; copying here removes the implicit
+	// "nobody mutates history after maybeAutoTitle returns" coupling so a future
+	// in-place mutation cannot race the title worker.
+	hist := append([]llm.Message(nil), history...)
 	r.wg.Add(1)
 	go func() {
 		defer r.wg.Done()
 		ctx := context.WithoutCancel(turnCtx) // load-bearing: turnCtx cancels on Turn return
 		ctx, cancel := context.WithTimeout(ctx, r.titleTimeout)
 		defer cancel()
-		title, gerr := conversations.GenerateTitle(ctx, r.client, r.cfg.Model, history)
+		title, gerr := conversations.GenerateTitle(ctx, r.client, r.cfg.Model, hist)
 		if gerr != nil || title == "" {
 			return // best-effort: leave the title NULL
 		}
