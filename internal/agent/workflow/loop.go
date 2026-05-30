@@ -96,8 +96,9 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 					// single-tool turn the per-call Event equals the original (SC#2: 25 step
 					// Events + 1 terminal = 26).
 					preview := resultPreview(ev)
-					for _, tc := range calls {
-						stop, broke := a.guardToolCall(ic, ev, tc, preview, &stepsConsumed, yield)
+					for i, tc := range calls {
+						last := i == len(calls)-1
+						stop, broke := a.guardToolCall(ic, ev, tc, last, preview, &stepsConsumed, yield)
 						if broke {
 							return // consumer broke, or a terminal Event was yielded
 						}
@@ -128,6 +129,7 @@ func (a *LoopAgent) guardToolCall(
 	ic agent.InvocationContext,
 	ev *agent.Event,
 	tc llm.ToolCall,
+	last bool,
 	preview []byte,
 	stepsConsumed *int,
 	yield func(*agent.Event, error) bool,
@@ -158,8 +160,9 @@ func (a *LoopAgent) guardToolCall(
 	ic.Budget.AfterToolResult(tc.Function.Name, argsCanon, preview)
 
 	// Surface this consumed tool call as exactly one step Event (WR-05). For a
-	// single-tool Event the scoped copy equals the original.
-	if !yield(scopeToToolCall(ev, tc), nil) {
+	// single-tool Event the scoped copy equals the original. The escalate signal
+	// rides ONLY the final per-call Event (WR-01): last says whether this is it.
+	if !yield(scopeToToolCall(ev, tc, last), nil) {
 		return false, true
 	}
 	return false, false
@@ -169,9 +172,16 @@ func (a *LoopAgent) guardToolCall(
 // ev carries exactly one tool call the original pointer is returned unchanged (no
 // copy, byte-identical output); otherwise a shallow copy is made with its
 // LLMResponse narrowed to just tc, so a multi-tool turn yields one step Event per
-// budgeted tool call (WR-05). Actions (escalate/state) ride on the original Event
-// shape and are preserved on every per-call copy.
-func scopeToToolCall(ev *agent.Event, tc llm.ToolCall) *agent.Event {
+// budgeted tool call (WR-05).
+//
+// WR-01: a turn carrying Actions.Escalate=true must surface that signal on EXACTLY
+// ONE step Event, not on every scoped copy — otherwise an escalate-counting consumer
+// (Phase-12 fan-out) sees N terminal signals for one logical turn. The escalate
+// therefore rides only the FINAL per-call Event (last==true); earlier scoped copies
+// get Escalate cleared. StateDelta/ArtifactDelta still ride every per-call copy (they
+// are additive deltas, not one-shot terminal signals). The single-tool fast path is
+// unchanged: there is exactly one Event so it is already the last.
+func scopeToToolCall(ev *agent.Event, tc llm.ToolCall, last bool) *agent.Event {
 	if ev == nil || ev.LLMResponse == nil || len(ev.LLMResponse.ToolCalls) <= 1 {
 		return ev
 	}
@@ -179,6 +189,9 @@ func scopeToToolCall(ev *agent.Event, tc llm.ToolCall) *agent.Event {
 	resp := *ev.LLMResponse
 	resp.ToolCalls = []llm.ToolCall{tc}
 	scoped.LLMResponse = &resp
+	if !last {
+		scoped.Actions.Escalate = false // escalate rides only the final per-call Event (WR-01)
+	}
 	return &scoped
 }
 

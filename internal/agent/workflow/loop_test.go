@@ -153,6 +153,84 @@ func (a *multiToolAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event,
 	}
 }
 
+// multiToolEscalateAgent emits ONE Event carrying N distinct tool calls with
+// Actions.Escalate=true, then stops (one Run, escalate on the first and only turn).
+// It drives the WR-01 test: the escalate signal must ride exactly ONE per-call step
+// Event, not be duplicated onto every scoped copy of a multi-tool turn.
+type multiToolEscalateAgent struct {
+	name      string
+	toolNames []string
+}
+
+func (a *multiToolEscalateAgent) Name() string           { return a.name }
+func (*multiToolEscalateAgent) Description() string      { return "test: N tool calls + escalate in one Event" }
+func (*multiToolEscalateAgent) SubAgents() []agent.Agent { return nil }
+func (a *multiToolEscalateAgent) FindAgent(name string) agent.Agent {
+	if a.name == name {
+		return a
+	}
+	return nil
+}
+func (a *multiToolEscalateAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
+	calls := make([]llm.ToolCall, len(a.toolNames))
+	for i, n := range a.toolNames {
+		calls[i] = llm.ToolCall{ID: "call-" + n, Type: "function"}
+		calls[i].Function.Name = n
+		calls[i].Function.Arguments = "{}"
+	}
+	return func(yield func(*agent.Event, error) bool) {
+		yield(&agent.Event{
+			Author:      a.name,
+			Branch:      ic.Branch,
+			LLMResponse: &agent.LLMResponse{ToolCalls: calls},
+			Actions:     agent.Actions{Escalate: true},
+		}, nil) // single escalating multi-tool turn
+	}
+}
+
+func TestLoopAgent_MultiToolEscalate_EscalateRidesExactlyOneStepEvent(t *testing.T) {
+	// WR-01: a turn carrying N>1 tool calls AND Actions.Escalate=true must surface the
+	// escalate on EXACTLY ONE per-call step Event, not duplicated onto every scoped
+	// copy. A downstream escalate-counting consumer (Phase-12 fan-out) would otherwise
+	// see N terminal signals for one logical turn.
+	t.Setenv("AURA_LOOP_MAX_STEPS", "25")
+	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "noop1,noop2,noop3") // budget/dedup never trips here
+	b, err := agent.NewBudgetFromEnv()
+	if err != nil {
+		t.Fatalf("NewBudgetFromEnv: %v", err)
+	}
+	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
+
+	sub := &multiToolEscalateAgent{name: "multi", toolNames: []string{"noop1", "noop2", "noop3"}}
+	lp := workflow.NewLoop("loop", 0, sub)
+
+	evs, err := drain(lp.Run(ic))
+	if err != nil {
+		t.Fatalf("termination must be Event-only (D-04): %v", err)
+	}
+
+	// One step Event per tool call (WR-05), each carrying exactly one tool call.
+	if len(evs) != 3 {
+		t.Fatalf("want 3 step Events (one per tool call), got %d", len(evs))
+	}
+	escalateCount := 0
+	for i, ev := range evs {
+		if ev.LLMResponse == nil || len(ev.LLMResponse.ToolCalls) != 1 {
+			t.Errorf("step Event %d must carry exactly one tool call, got %#v", i, ev.LLMResponse)
+		}
+		if ev.Actions.Escalate {
+			escalateCount++
+		}
+	}
+	if escalateCount != 1 {
+		t.Fatalf("WR-01: escalate must ride exactly ONE step Event, saw it on %d of %d", escalateCount, len(evs))
+	}
+	// The escalate must ride the LAST per-call Event (the loop returns right after it).
+	if !evs[len(evs)-1].Actions.Escalate {
+		t.Errorf("WR-01: escalate must ride the final per-call step Event")
+	}
+}
+
 func TestLoopAgent_MultiToolPerTurn_StepsConsumedEqualsStepEvents(t *testing.T) {
 	// WR-05: a turn that emits 2 tool calls consumes 2 budget steps and yields 2
 	// step Events. With an ODD max_steps the budget trips on the SECOND tool call of
