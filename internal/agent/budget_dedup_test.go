@@ -185,6 +185,69 @@ func TestBudget_Dedup_ResultChanged_SuppressesDedup(t *testing.T) {
 	}
 }
 
+func TestBudget_Dedup_ResultCapZeroMeansUnbounded(t *testing.T) {
+	b := newTestBudget(100, 3)
+	b.resultCap = 0
+	args := canon(t, map[string]any{"x": 1})
+
+	if dedup, _ := b.BeforeToolCall("tool", args); dedup {
+		t.Fatal("first call must not dedup")
+	}
+	b.AfterToolResult("tool", args, []byte("abcdef"))
+	if dedup, _ := b.BeforeToolCall("tool", args); dedup {
+		t.Fatal("second call must not dedup before the window")
+	}
+	b.AfterToolResult("tool", args, []byte("abcXYZ"))
+	if dedup, _ := b.BeforeToolCall("tool", args); dedup {
+		t.Fatal("resultCap=0 is unbounded; changed full results must veto dedup")
+	}
+}
+
+func TestBudget_Dedup_ResultCapTruncatesPastLimit(t *testing.T) {
+	b := newTestBudget(100, 3)
+	b.resultCap = 3
+	args := canon(t, map[string]any{"x": 1})
+
+	if dedup, _ := b.BeforeToolCall("tool", args); dedup {
+		t.Fatal("first call must not dedup")
+	}
+	b.AfterToolResult("tool", args, []byte("abcdef"))
+	if dedup, _ := b.BeforeToolCall("tool", args); dedup {
+		t.Fatal("second call must not dedup before the window")
+	}
+	b.AfterToolResult("tool", args, []byte("abcXYZ"))
+	dedup, reason := b.BeforeToolCall("tool", args)
+	if !dedup {
+		t.Fatal("equal capped result previews must allow dedup at the window")
+	}
+	if reason != "dedup" {
+		t.Fatalf("reason: want dedup, got %q", reason)
+	}
+}
+
+func TestBudget_Dedup_PingPongRequiresStableRepeat(t *testing.T) {
+	b := newTestBudget(100, 3)
+	a := canon(t, map[string]any{"k": "A"})
+	bb := canon(t, map[string]any{"k": "B"})
+
+	if dedup, _ := b.BeforeToolCall("tool", a); dedup {
+		t.Fatal("first A must not dedup")
+	}
+	b.AfterToolResult("tool", a, []byte("A-1"))
+	if dedup, _ := b.BeforeToolCall("tool", bb); dedup {
+		t.Fatal("B warmup must not dedup")
+	}
+	b.AfterToolResult("tool", bb, []byte("B"))
+	if dedup, _ := b.BeforeToolCall("tool", a); dedup {
+		t.Fatal("second A warmup must not dedup")
+	}
+	b.AfterToolResult("tool", a, []byte("A-2"))
+
+	if dedup, _ := b.BeforeToolCall("tool", a); dedup {
+		t.Fatal("A-B-A-A with changed A result is progress and must not ping-pong dedup")
+	}
+}
+
 func TestBudget_Child_DistinctDedupRing(t *testing.T) {
 	parent := newTestBudget(100, 3)
 	args := canon(t, map[string]any{"x": 1})
@@ -211,6 +274,62 @@ func TestBudget_Dedup_ExemptTool_NeverDedups(t *testing.T) {
 			t.Fatalf("exempt tool deduped on call %d (D-19 allowlist violated)", i+1)
 		}
 		b.AfterToolResult("poll", args, res)
+	}
+}
+
+func TestBudget_Dedup_ExemptToolBreaksRepeatSequence(t *testing.T) {
+	b := newTestBudget(100, 3)
+	b.exemptTools = map[string]struct{}{"poll": {}}
+	searchArgs := canon(t, map[string]any{"q": "same"})
+	pollArgs := canon(t, map[string]any{"cursor": "next"})
+	result := []byte("same-result")
+
+	if dedup, _ := b.BeforeToolCall("search", searchArgs); dedup {
+		t.Fatal("first search must not dedup")
+	}
+	b.AfterToolResult("search", searchArgs, result)
+	if dedup, _ := b.BeforeToolCall("search", searchArgs); dedup {
+		t.Fatal("second search must not dedup before the window")
+	}
+	b.AfterToolResult("search", searchArgs, result)
+	if dedup, _ := b.BeforeToolCall("poll", pollArgs); dedup {
+		t.Fatal("exempt poll must never dedup")
+	}
+	b.AfterToolResult("poll", pollArgs, []byte("poll-result"))
+	if dedup, _ := b.BeforeToolCall("search", searchArgs); dedup {
+		t.Fatal("exempt poll should break the consecutive search sequence")
+	}
+}
+
+func TestBudget_Dedup_ExemptToolDoesNotRecordResults(t *testing.T) {
+	b := newTestBudget(100, 3)
+	b.exemptTools = map[string]struct{}{"poll": {}}
+	args := canon(t, map[string]any{"cursor": "next"})
+
+	if dedup, _ := b.BeforeToolCall("poll", args); dedup {
+		t.Fatal("exempt poll must never dedup")
+	}
+	b.AfterToolResult("poll", args, []byte("same"))
+	if _, ok := b.dedupRing.results[computeFingerprint("poll", args)]; ok {
+		t.Fatal("exempt tool results must not be recorded for progress veto")
+	}
+}
+
+func TestBudget_Dedup_ExemptToolIgnoresExistingDedupState(t *testing.T) {
+	b := newTestBudget(100, 3)
+	args := canon(t, map[string]any{"cursor": "next"})
+	result := []byte("same-result")
+
+	for i := 0; i < 2; i++ {
+		if dedup, _ := b.BeforeToolCall("poll", args); dedup {
+			t.Fatalf("warmup poll call %d must not dedup", i+1)
+		}
+		b.AfterToolResult("poll", args, result)
+	}
+
+	b.exemptTools = map[string]struct{}{"poll": {}}
+	if dedup, reason := b.BeforeToolCall("poll", args); dedup {
+		t.Fatalf("exempt poll must ignore pre-existing dedup state, reason %q", reason)
 	}
 }
 
@@ -258,6 +377,34 @@ func TestBudget_Dedup_RingCapacity_AtLeastFour(t *testing.T) {
 	}
 	if c := ringCapacity(5); c != 5 {
 		t.Fatalf("ringCapacity(5): want 5, got %d", c)
+	}
+}
+
+func TestNewDedupRing_NormalizesNonPositiveWindow(t *testing.T) {
+	r := newDedupRing(0)
+	if r.window != 1 {
+		t.Fatalf("non-positive window should normalize to 1, got %d", r.window)
+	}
+	if c := cap(r.entries); c != 4 {
+		t.Fatalf("non-positive window should still allocate period-2 capacity 4, got %d", c)
+	}
+}
+
+func TestDedupRingPush_EvictsAtCapacity(t *testing.T) {
+	r := newDedupRing(3)
+	fps := make([]fingerprint, 5)
+	for i := range fps {
+		fps[i] = computeFingerprint("tool", canon(t, map[string]any{"i": i}))
+		r.push(fps[i])
+	}
+
+	if len(r.entries) != 4 {
+		t.Fatalf("ring len after overflow: want 4, got %d", len(r.entries))
+	}
+	for i, want := range fps[1:] {
+		if got := r.entries[i]; got != want {
+			t.Fatalf("entry %d after eviction:\n want %x\n got  %x", i, want, got)
+		}
 	}
 }
 

@@ -91,6 +91,20 @@ func TestBudget_ConsumeStep_OverspendReason(t *testing.T) {
 	}
 }
 
+func TestBudget_ConsumeStep_OverspendRestoresCounter(t *testing.T) {
+	b := newTestBudget(0, 3)
+	ok, reason := b.ConsumeStep()
+	if ok {
+		t.Fatal("consume should fail when counter starts at 0")
+	}
+	if reason != "max_steps" {
+		t.Fatalf("reason: want max_steps, got %q", reason)
+	}
+	if raw := b.steps.Load(); raw != 0 {
+		t.Fatalf("overspend must restore the raw shared counter to 0, got %d", raw)
+	}
+}
+
 func TestBudget_Child_SharesStepsCounter(t *testing.T) {
 	b := newTestBudget(25, 3)
 	for i := 0; i < 5; i++ {
@@ -285,11 +299,66 @@ func TestNewBudgetFromEnv_FailFast_MalformedWallclock(t *testing.T) {
 	}
 }
 
+func TestNewBudgetFromEnv_FailFast_MalformedDedupWindow(t *testing.T) {
+	t.Setenv(envDedupWindow, "nope")
+	_, err := NewBudgetFromEnv()
+	if err == nil {
+		t.Fatal("malformed AURA_LOOP_DEDUP_WINDOW must fail-fast")
+	}
+	want := errMalformed(envDedupWindow, "nope")
+	if err.Error() != want.Error() {
+		t.Fatalf("fail-fast error string:\n want %q\n got  %q", want.Error(), err.Error())
+	}
+}
+
 func TestNewBudgetFromEnv_FailFast_MalformedSoftFraction(t *testing.T) {
 	t.Setenv(envBranchSoftFraction, "huge")
 	_, err := NewBudgetFromEnv()
 	if err == nil {
 		t.Fatal("malformed AURA_LOOP_BRANCH_SOFT_FRACTION must fail-fast")
+	}
+	want := errMalformed(envBranchSoftFraction, "huge")
+	if err.Error() != want.Error() {
+		t.Fatalf("fail-fast error string:\n want %q\n got  %q", want.Error(), err.Error())
+	}
+}
+
+func TestNewBudgetFromEnv_FailFast_SoftFractionOutOfRange(t *testing.T) {
+	for _, v := range []string{"0", "1.01"} {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv(envBranchSoftFraction, v)
+			_, err := NewBudgetFromEnv()
+			if err == nil {
+				t.Fatalf("%s=%s must fail-fast as out of range", envBranchSoftFraction, v)
+			}
+			if !strings.Contains(err.Error(), "must be in (0,1]") {
+				t.Fatalf("range error should name the allowed interval, got %q", err.Error())
+			}
+		})
+	}
+}
+
+func TestNewBudgetFromEnv_FailFast_MalformedResultCap(t *testing.T) {
+	t.Setenv(envDedupResultCap, "wide")
+	_, err := NewBudgetFromEnv()
+	if err == nil {
+		t.Fatal("malformed AURA_LOOP_DEDUP_RESULT_CAP must fail-fast")
+	}
+	want := errMalformed(envDedupResultCap, "wide")
+	if err.Error() != want.Error() {
+		t.Fatalf("fail-fast error string:\n want %q\n got  %q", want.Error(), err.Error())
+	}
+}
+
+func TestNewBudgetFromEnv_FailFast_MalformedNodeTimeout(t *testing.T) {
+	t.Setenv(envNodeTimeoutSec, "slow")
+	_, err := NewBudgetFromEnv()
+	if err == nil {
+		t.Fatal("malformed AURA_LOOP_NODE_TIMEOUT_SEC must fail-fast")
+	}
+	want := errMalformed(envNodeTimeoutSec, "slow")
+	if err.Error() != want.Error() {
+		t.Fatalf("fail-fast error string:\n want %q\n got  %q", want.Error(), err.Error())
 	}
 }
 
@@ -364,5 +433,33 @@ func TestBudget_SoftCap_PassiveAdvisory(t *testing.T) {
 	}
 	if !child.SoftCapExceeded() {
 		t.Fatal("SoftCapExceeded should report true after exceeding the branch soft cap")
+	}
+}
+
+func TestBudget_SoftCapExceeded_AtThreshold(t *testing.T) {
+	b := newTestBudget(20, 3)
+	child := b.Child(4) // branchSoftCap = 5
+	for i := 0; i < child.branchSoftCap-1; i++ {
+		if ok, reason := child.ConsumeStep(); !ok {
+			t.Fatalf("consume before soft cap failed with %q", reason)
+		}
+	}
+	if child.SoftCapExceeded() {
+		t.Fatal("soft cap must not report true before the threshold")
+	}
+	if ok, reason := child.ConsumeStep(); !ok {
+		t.Fatalf("consume at soft cap failed with %q", reason)
+	}
+	if !child.SoftCapExceeded() {
+		t.Fatal("soft cap must report true exactly at the threshold")
+	}
+}
+
+func TestSoftCap_ZeroFanoutAndMinimumShare(t *testing.T) {
+	if got := softCap(10, 0, 1); got != 10 {
+		t.Fatalf("zero fanout should fall back to one branch: want 10, got %d", got)
+	}
+	if got := softCap(0, 4, 1); got != 1 {
+		t.Fatalf("soft cap should have a minimum share of 1, got %d", got)
 	}
 }
