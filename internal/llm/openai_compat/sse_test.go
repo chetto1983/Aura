@@ -178,3 +178,164 @@ func TestParseSSE_MalformedChunk(t *testing.T) {
 		t.Fatal("want error on malformed SSE chunk, got nil")
 	}
 }
+
+// TestParseSSE_EOFWithoutDone asserts a stream that ends at EOF (no `data: [DONE]`
+// sentinel) still finalizes cleanly — the trailing finish_reason chunk is emitted
+// on the io.EOF branch, not only on the explicit [DONE].
+func TestParseSSE_EOFWithoutDone(t *testing.T) {
+	// No [DONE]; the reader just ends. The terminal finish_reason must still emit.
+	raw := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n"
+	var chunks []llm.Chunk
+	res, err := parseSSE(bytes.NewReader([]byte(raw)), func(c llm.Chunk) bool {
+		chunks = append(chunks, c)
+		return true
+	})
+	if err != nil {
+		t.Fatalf("parseSSE: %v", err)
+	}
+	if res.finishReason != "stop" {
+		t.Errorf("finishReason = %q, want stop (captured even without [DONE])", res.finishReason)
+	}
+	last := chunks[len(chunks)-1]
+	if last.FinishReason != "stop" {
+		t.Errorf("last chunk = %+v, want a trailing FinishReason=stop emitted at EOF", last)
+	}
+}
+
+// TestParseSSE_DataNoChoices asserts a `data:` chunk with an empty choices array
+// (and a usage-only final message) parses without error and still captures usage —
+// the handleChunk choices loop is a no-op but the usage capture runs.
+func TestParseSSE_DataNoChoices(t *testing.T) {
+	raw := "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":1}}\n" +
+		"data: [DONE]\n"
+	var chunks []llm.Chunk
+	res, err := parseSSE(bytes.NewReader([]byte(raw)), func(c llm.Chunk) bool {
+		chunks = append(chunks, c)
+		return true
+	})
+	if err != nil {
+		t.Fatalf("parseSSE: %v", err)
+	}
+	if !res.hasUsage || res.usage.PromptTokens != 3 || res.usage.CompletionTokens != 1 {
+		t.Errorf("usage = %+v (hasUsage=%v), want prompt=3 completion=1", res.usage, res.hasUsage)
+	}
+	for _, c := range chunks {
+		if c.Text != "" || c.ToolCall != nil {
+			t.Errorf("no-choices chunk produced content/toolcall: %+v", c)
+		}
+	}
+}
+
+// TestParseSSE_NonDataLineIgnored asserts an SSE field line that is NOT a
+// `data: ` line (e.g. an `event:` field) is silently ignored — it neither errors
+// nor reaches json.Unmarshal.
+func TestParseSSE_NonDataLineIgnored(t *testing.T) {
+	raw := "event: message\n" +
+		"id: 42\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n" +
+		"data: [DONE]\n"
+	var text string
+	_, err := parseSSE(bytes.NewReader([]byte(raw)), func(c llm.Chunk) bool {
+		text += c.Text
+		return true
+	})
+	if err != nil {
+		t.Fatalf("parseSSE errored on non-data field lines: %v", err)
+	}
+	if text != "ok" {
+		t.Errorf("assembled text = %q, want ok (event:/id: lines ignored)", text)
+	}
+}
+
+// TestParseSSE_ConsumerStopsOnText asserts that when the consumer's emit returns
+// false on a text delta, parseSSE returns immediately (the stale-emit guard) and
+// does not error.
+func TestParseSSE_ConsumerStopsOnText(t *testing.T) {
+	raw := "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n" +
+		"data: {\"choices\":[{\"delta\":{\"content\":\"second\"}}]}\n" +
+		"data: [DONE]\n"
+	var seen []string
+	_, err := parseSSE(bytes.NewReader([]byte(raw)), func(c llm.Chunk) bool {
+		if c.Text != "" {
+			seen = append(seen, c.Text)
+			return false // stop after the first text delta
+		}
+		return true
+	})
+	if err != nil {
+		t.Fatalf("parseSSE: %v", err)
+	}
+	if len(seen) != 1 || seen[0] != "first" {
+		t.Errorf("emitted text = %v, want exactly [first] then immediate return", seen)
+	}
+}
+
+// TestParseSSE_ConsumerStopsOnFinalize asserts that when the consumer stops
+// draining exactly as the terminal finish_reason chunk is emitted (the finalize
+// path at [DONE]), parseSSE returns cleanly without error.
+func TestParseSSE_ConsumerStopsOnFinalize(t *testing.T) {
+	raw := "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n" +
+		"data: [DONE]\n"
+	_, err := parseSSE(bytes.NewReader([]byte(raw)), func(c llm.Chunk) bool {
+		// Refuse the trailing finish_reason chunk -> finalize() returns false.
+		return c.FinishReason == ""
+	})
+	if err != nil {
+		t.Fatalf("parseSSE: %v", err)
+	}
+}
+
+// TestParseSSE_ConsumerStopsOnToolCall asserts that when the consumer stops
+// draining as the finalized tool-call chunk is emitted (inside finalize, before
+// the finish_reason), parseSSE returns cleanly — the tool-call emit-false branch.
+func TestParseSSE_ConsumerStopsOnToolCall(t *testing.T) {
+	raw := "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"type\":\"function\",\"function\":{\"name\":\"echo\",\"arguments\":\"{}\"}}]}}]}\n" +
+		"data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n" +
+		"data: [DONE]\n"
+	var sawToolCall bool
+	_, err := parseSSE(bytes.NewReader([]byte(raw)), func(c llm.Chunk) bool {
+		if c.ToolCall != nil {
+			sawToolCall = true
+			return false // stop draining at the finalized tool call
+		}
+		return true
+	})
+	if err != nil {
+		t.Fatalf("parseSSE: %v", err)
+	}
+	if !sawToolCall {
+		t.Fatal("the finalized tool call was never emitted")
+	}
+}
+
+// errReader returns data once then a non-EOF error, exercising the readErr != EOF
+// branch of parseSSE (a real transport failure, not a clean stream end).
+type errReader struct {
+	data []byte
+	done bool
+}
+
+func (e *errReader) Read(p []byte) (int, error) {
+	if e.done {
+		return 0, errBoom
+	}
+	e.done = true
+	n := copy(p, e.data)
+	return n, nil
+}
+
+var errBoom = errReadBoom{}
+
+type errReadBoom struct{}
+
+func (errReadBoom) Error() string { return "boom: transport died" }
+
+// TestParseSSE_ReadErrorSurfaces asserts a non-EOF reader error is returned to the
+// caller (a real transport failure, distinct from a clean io.EOF end).
+func TestParseSSE_ReadErrorSurfaces(t *testing.T) {
+	r := &errReader{data: []byte("data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n")}
+	_, err := parseSSE(r, func(llm.Chunk) bool { return true })
+	if err == nil {
+		t.Fatal("want the non-EOF read error surfaced, got nil")
+	}
+}
