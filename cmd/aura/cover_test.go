@@ -408,15 +408,35 @@ func TestTrimLine(t *testing.T) {
 	}
 }
 
-// TestBudgetOrDefault_CleanEnv covers budgetOrDefault's happy path (the first
-// NewBudget succeeds with a non-nil budget). The malformed-env fallback branch is
-// NOT exercised here: it is a latent defect (the fallback re-reads the SAME bad
-// env and also fails, returning nil despite the "cannot fail differently"
-// comment), so driving it would assert buggy behaviour — see SUMMARY.
-func TestBudgetOrDefault_CleanEnv(t *testing.T) {
+// TestTurnBudget_CleanEnv covers the per-turn budget happy path: on a clean env
+// the builder runOneTurn uses returns a non-nil budget with no error.
+func TestTurnBudget_CleanEnv(t *testing.T) {
 	t.Setenv("AURA_LOOP_MAX_STEPS", "")
-	if b := budgetOrDefault(); b == nil {
-		t.Fatal("budgetOrDefault returned nil on a clean env")
+	b, err := agent.NewBudget(agent.BudgetOptions{})
+	if err != nil || b == nil {
+		t.Fatalf("NewBudget on clean env: b=%v err=%v", b, err)
+	}
+}
+
+// TestChat_MalformedBudgetEnv_SurfacesError is the regression for the fixed
+// silent-nil defect: a malformed AURA_LOOP_* value must surface as a clear turn
+// error (never a nil budget that nil-panics the run-loop's first ConsumeStep).
+// config.Load does not validate AURA_LOOP_*, so runOneTurn is the first place the
+// bad value is caught — and it must abort the turn BEFORE any model call.
+func TestChat_MalformedBudgetEnv_SurfacesError(t *testing.T) {
+	t.Setenv("AURA_LOOP_MAX_STEPS", "not-a-number")
+	fc := agenttest.NewFakeClient(
+		textResponseTurn("call-1", "should never reach the model", llm.Usage{PromptTokens: 1, CompletionTokens: 1}),
+	)
+	d, _, errOut := testChatDeps("ciao\n", fc)
+	if err := chatLoop(context.Background(), d); err != nil {
+		t.Fatalf("chatLoop must keep running and print the turn error, got fatal: %v", err)
+	}
+	if !strings.Contains(errOut.String(), "budget config") {
+		t.Fatalf("malformed AURA_LOOP_* env did not surface a clear budget-config turn error:\n%s", errOut.String())
+	}
+	if fc.CallCount() != 0 {
+		t.Fatalf("a bad budget must abort the turn before the model call, got %d calls", fc.CallCount())
 	}
 }
 

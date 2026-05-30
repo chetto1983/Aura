@@ -166,12 +166,21 @@ func runOneTurn(ctx context.Context, d chatDeps, reg *tools.Registry, history []
 		SessionID:  d.sessionID,
 		UserTurns:  history,
 	})
+	bud, err := agent.NewBudget(agent.BudgetOptions{})
+	if err != nil {
+		// A malformed AURA_LOOP_* env must surface as a clear turn error — never a
+		// silent nil budget, which would nil-panic in the run-loop's first
+		// ConsumeStep. There is no safe in-REPL fallback (re-reading the same env
+		// fails identically), and config.Load does not validate AURA_LOOP_*, so this
+		// is the first place the bad value is caught.
+		return "", fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)
+	}
 	ic := agent.InvocationContext{
 		Ctx:       turnCtx,
 		Agent:     la,
 		RequestID: requestID,
 		Branch:    "root",
-		Budget:    budgetOrDefault(),
+		Budget:    bud,
 	}
 
 	start := time.Now()
@@ -191,17 +200,6 @@ func runOneTurn(ctx context.Context, d chatDeps, reg *tools.Registry, history []
 	_, _ = fmt.Fprintln(d.out)
 	_, _ = fmt.Fprintln(d.out, costFooter(d.cfg.LLM.Prices, d.cfg.LLM.Model, usage, latency))
 	return answer, nil
-}
-
-// budgetOrDefault builds the per-turn budget from env/defaults. A malformed env is
-// surfaced by NewBudget; we fall back to a fresh default budget so a single bad
-// env var never wedges the REPL (the error path already printed by config.Load).
-func budgetOrDefault() *agent.Budget {
-	b, err := agent.NewBudget(agent.BudgetOptions{})
-	if err != nil {
-		b, _ = agent.NewBudget(agent.BudgetOptions{}) //nolint:errcheck // second call uses no overrides; cannot fail differently
-	}
-	return b
 }
 
 // trimLine strips the trailing newline (and CR) and surrounding spaces from a read
