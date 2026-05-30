@@ -2,7 +2,7 @@
 
 **Created:** 2026-05-30
 **Ambiguity score:** 0.08 (gate: ≤ 0.20)
-**Requirements:** 13 locked
+**Requirements:** 14 locked
 
 ## Goal
 
@@ -84,12 +84,18 @@ Today `internal/llm/client.go` is an ~80-LOC pre-rewrite skeleton: it defines th
     - Target: Each call emits an `llm.request` span (attrs `llm.model`, `llm.provider`, `llm.prompt_tokens`, `llm.completion_tokens`, `llm.cache_hit_tokens`, `aura.request_id`) via a **configured** tracer provider with a stdout/OTLP exporter; span_id is stable across the call's SSE chunks. The client never mutates `req.Messages`.
     - Acceptance: With an in-memory recorder, exactly 1 span/call with all attributes populated and stable span_id; an exporter-wired run emits a trace; a test asserts `req.Messages` is byte-identical pre/post call.
 
+14. **`current_time` builtin + UTC discipline (cache-safe time awareness)**: The agent becomes time-aware without ever poisoning the KV cache.
+    - Current: No time source for the model; `Event.Timestamp` is zero-valued (Phase-2 INFO deferral). Nothing prevents a future contributor from putting a live clock in the system prompt.
+    - Target: A non-deferred builtin `current_time{timezone?="UTC"}` returns the current instant as RFC-3339 (UTC default; optional IANA tz e.g. `Europe/Rome`). The **live clock is never placed in the system prompt or any cached prefix** — it reaches the model only as a tool result in the volatile tail (industrial consensus: tool/function over prompt injection — Claude Code's static prefix yields ~92% cache hits; the anti-pattern is a real production bug, earendil-works/pi #1873). All internal timestamps (Events, OTel spans, sidecar/cost metadata) are produced in **UTC**; local rendering happens only at the CLI/edge.
+    - Acceptance: `current_time` returns a parseable RFC-3339 UTC string; `current_time{timezone:"Europe/Rome"}` returns the correct offset; a test asserts the system prompt / `messages[0]` carries **no** timestamp and is byte-identical across turns (prefix stability); emitted Events carry a non-zero UTC `Timestamp`.
+
 ## Boundaries
 
 **In scope:**
 - Real OpenAI-compat SSE client (`internal/llm/openai_compat`): parser, tool-call accumulator, ctx-cancel, no-retry `HTTPError`, OpenRouter default + attribution headers.
 - `LLMConfig` + load-order chain + `~/.aura/llm.json` read/write; `aura config` read/write of that file.
 - ToolResult pattern: `(ToolResult, error)` signature, preview/sidecar spillover, `read_tool_output` builtin, session-scoped sidecar layout.
+- `current_time` builtin (non-deferred) — cache-safe time awareness, RFC-3339 UTC + optional IANA timezone; live clock never enters the cached prefix.
 - `LlmAgent` implementing `Agent` (Run/iter.Seq2), tool dispatch, budget-contract enforcement (step/wallclock/dedup terminal Events).
 - `aura chat` interactive in-memory REPL with live streaming + per-turn token+USD cost.
 - OTel `llm.request` span per call with a real (stdout/OTLP) exporter.
@@ -101,7 +107,7 @@ Today `internal/llm/client.go` is an ~80-LOC pre-rewrite skeleton: it defines th
 - KV-cache builder / stable-prefix construction (Phase 6 / Slice 4) — the client reads `Messages` as given.
 - Microcompact / history trimming (Phase 4 / Slice 1.8b) — no context-budget L2.
 - Wire-level retry (deferred to the caller by design) — only the `HTTPError` signal is surfaced.
-- New capability tools (web/sandbox/swarm) — only `text_response`, `tool_search`, `read_tool_output` registered.
+- New capability tools (web/sandbox/swarm) — only `text_response`, `tool_search`, `read_tool_output`, `current_time` registered.
 - Conversation full-text search (Slice 1.8.5).
 
 ## Constraints
@@ -112,6 +118,7 @@ Today `internal/llm/client.go` is an ~80-LOC pre-rewrite skeleton: it defines th
 - env naming `AURA_<DOMAIN>_<UNIT>` except canonical third-party keys (`OPENROUTER_API_KEY`); deferred-tool pattern preserved (`read_tool_output` is non-deferred).
 - ctx-cancel must propagate end-to-end through the HTTP request; no idle/first-byte timeout (global timeout `AURA_LLM_*` default 120s + connect 10s).
 - API keys / DSNs never appear in logs, errors, Events, or spans.
+- **KV-cache stable-prefix discipline:** no per-turn-mutating value (live clock, volatile notes) may enter the system prompt / cached prefix — the `current_time` tool or tail-injection is the only path. All timestamps (Events, OTel spans, sidecar/cost metadata) are stored/emitted in **UTC RFC-3339**; local timezone is applied only at the user-facing edge.
 
 ## Acceptance Criteria
 
@@ -125,6 +132,7 @@ Today `internal/llm/client.go` is an ~80-LOC pre-rewrite skeleton: it defines th
 - [ ] One `llm.request` OTel span per call with all required attributes and a stable span_id across chunks; an exporter-wired run emits a trace; in-memory recorder test passes.
 - [ ] USD is taken from OpenRouter's reported cost when present, else the config price table; both paths covered by tests.
 - [ ] The client does not mutate `req.Messages` (pre/post byte-identical assertion).
+- [ ] `current_time` builtin returns RFC-3339 UTC (and the correct offset for an IANA tz arg); the cached prefix (`messages[0]`/system prompt) carries no timestamp and is byte-stable across turns; emitted Events carry a non-zero UTC `Timestamp`.
 - [ ] PRD-amendment commit(s) for A1 (REPL), A2 (real exporter), A3 (cost actual+table) land before implementation.
 
 ## Ambiguity Report
@@ -134,7 +142,7 @@ Today `internal/llm/client.go` is an ~80-LOC pre-rewrite skeleton: it defines th
 | Goal Clarity       | 0.95  | 0.75 | ✓      | Outcome + 4 ROADMAP SCs + machine-checkable PRD acceptance   |
 | Boundary Clarity   | 0.88  | 0.70 | ✓      | Explicit defer of persistence/ask_user/identity/KV/retry     |
 | Constraint Clarity | 0.92  | 0.65 | ✓      | Timeouts/no-retry/LOC/coverage/headers/OTel attrs all pinned |
-| Acceptance Criteria| 0.92  | 0.70 | ✓      | 11 pass/fail criteria, all falsifiable                       |
+| Acceptance Criteria| 0.92  | 0.70 | ✓      | 12 pass/fail criteria, all falsifiable                       |
 | **Ambiguity**      | 0.08  | ≤0.20| ✓      | Gate passes                                                  |
 
 Status: ✓ = met minimum, ⚠ = below minimum (planner treats as assumption)
@@ -151,6 +159,7 @@ Status: ✓ = met minimum, ⚠ = below minimum (planner treats as assumption)
 | 2     | Failure Analyst     | USD cost source?                                  | OpenRouter actual cost + static table fallback — A3 amendment          |
 | 2     | Failure Analyst     | `aura chat` single-shot vs REPL?                  | Interactive multi-turn REPL, in-memory only — A1 amendment            |
 | 2     | Failure Analyst     | OTel emit-only vs real exporter?                  | Real stdout/OTLP exporter wired — A2 amendment                        |
+| 3     | Boundary Keeper     | Time-awareness without KV-cache poisoning?        | `current_time` builtin (UTC); live clock never in cached prefix; UTC-internal/local-edge — validated by industry (Claude Code ~92% cache hit; pi #1873 anti-pattern) |
 
 ---
 
