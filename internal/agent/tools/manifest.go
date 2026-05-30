@@ -3,6 +3,8 @@ package tools
 import (
 	"sort"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // ManifestEntry is one row in the LLM-visible tool manifest. Deferred tools
@@ -35,6 +37,34 @@ func (r *Registry) Render() []ManifestEntry {
 		out = append(out, entry)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+// RenderToolDefs maps the stable-ordered manifest to the []llm.ToolDef wire shape
+// LlmAgent.Run puts in req.Tools. It REUSES the alphabetical ordering of Render()
+// (cache-stability-load-bearing, manifest.go sort — feedback_aura_cache_poisoning_sites);
+// it does NOT re-sort. Deferred tools contribute only Name + Summary (their full
+// Description + Parameters schema stay hidden until tool_search loads them, per the
+// deferred-tool pattern), so a deferred entry's wire Description falls back to its
+// Summary and its Parameters are empty until promoted. Non-deferred tools carry
+// their full Description + Parameters JSON schema.
+func (r *Registry) RenderToolDefs() []llm.ToolDef {
+	entries := r.Render()
+	out := make([]llm.ToolDef, 0, len(entries))
+	for _, e := range entries {
+		var def llm.ToolDef
+		def.Type = "function"
+		def.Function.Name = e.Name
+		if e.Description != "" {
+			def.Function.Description = e.Description
+		} else {
+			def.Function.Description = e.Summary
+		}
+		if len(e.Parameters) > 0 {
+			def.Function.Parameters = append([]byte(nil), e.Parameters...)
+		}
+		out = append(out, def)
+	}
 	return out
 }
 
