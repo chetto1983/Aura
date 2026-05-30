@@ -37,6 +37,13 @@ type Config struct {
 	ToolPreviewCap int
 	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
 	OtelEndpoint   string // AURA_OTEL_ENDPOINT — OTLP/gRPC target (D-06)
+
+	// Phase 4 (Slice 1.8) conversation + context-management tuning knobs.
+	// Non-fatal envIntDefault fallbacks (an ad-hoc tweak typo falls back, not boots-fatal).
+	ConversationTurnCapBytes   int // AURA_CONVERSATION_TURN_CAP_BYTES — content > this spills to a sidecar file
+	ContextToolEvictAfterTurns int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
+	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — L2.5 picobot hard rolling buffer cap
+	RunDirWarnThresholdBytes   int // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -101,6 +108,11 @@ func Load() (*Config, error) {
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
 		OtelEndpoint:   envDefault("AURA_OTEL_ENDPOINT", defaultOtelEndpoint),
+
+		ConversationTurnCapBytes:   envIntDefault("AURA_CONVERSATION_TURN_CAP_BYTES", 65536),
+		ContextToolEvictAfterTurns: envIntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
+		HistoryHardCapTurns:        envIntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
+		RunDirWarnThresholdBytes:   envIntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
 	}, nil
 }
 

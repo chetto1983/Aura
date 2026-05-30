@@ -1122,6 +1122,70 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## §Phase 4 PRD Amendments (AM-01 / AM-02 / AM-03 — 2026-05-30)
+
+> Grouped PRD-amendment block for the HITL + Identity + Conversations cluster
+> (Slices 1.5 / 1.7 / 1.8 / 1.8.5), landed at the head of Phase 4 before any
+> implementation (mirrors Phase 3's grouped amendments). Source: phase
+> `04-CONTEXT.md` §PRD/SPEC Amendments Required, grounded in ADK-Go / LangGraph /
+> picobot / MCP-elicitation research. Where these amendments and the per-slice
+> prose above conflict, **these amendments win** for Phase 4.
+
+- **AM-01 — `_history.go` is NOT in the agent (agent stays DB-free).** The earlier
+  prose hinted at splitting `llm_agent.go` into `llm_agent.go` + `_pause.go` +
+  `_history.go`. Amendment: only the pause-**detection** half lives in the agent
+  (new `internal/agent/llm_agent_pause.go` — catch `tools.ErrAwaitingUserInput`,
+  suppress the `RoleTool`, rewrite the persisted assistant message to
+  `ask_user`-only tool_calls, emit `Actions.AwaitingInput`). `LoadHistory` is
+  `conversations.Store.LoadHistory`, NOT a method on the agent; the Runner seeds
+  the agent via the existing `LlmAgentConfig.UserTurns`. Pause persistence +
+  resume orchestration live in the new `internal/runner.Runner`, never the agent.
+  Industrial separation: ADK-Go / LangGraph / picobot all keep storage out of the
+  agent leaf.
+
+- **AM-02 — `aura.paused_states.resumed_answer` gains an action (MCP three-action).**
+  The earlier prose modelled `resumed_answer` as plain `text` (accept-only).
+  Amendment: it stores a JSON object `{action: accept|decline|cancel, content}`
+  (MCP elicitation three-action model, D-A3-01). `accept` → inject `content` as a
+  `RoleTool`; `decline` → inject a "user declined" `RoleTool` so the model adapts;
+  `cancel` → abort the turn (reuses the Ctrl+C → `Runner.Stop` auto-resolve path).
+  `decline`/`cancel` are inherent to any HITL pause. The `0005` migration that
+  ALTERs `paused_states` therefore adds `resumed_answer` as `jsonb`, not `text`.
+
+- **AM-03 — SPEC's `Loop.Turn` / `Loop.Stop` are renamed `Runner.Turn` /
+  `Runner.Stop`.** The orchestrator that drives the conversation turn-by-turn and
+  owns `conversation_id` is a new `runner.Runner` in `internal/runner/`, NOT an
+  `Agent` and NOT named `Loop` — that would collide with the existing
+  `internal/agent/workflow.LoopAgent` (a control-flow Agent). ADK-Go independently
+  names this orchestrator `Runner`. SPEC's `Loop.Turn`/`Loop.Stop`/`Loop.Resume`/
+  `Loop.ResumeBatch` verbs map to `Runner.Turn`/`Runner.Stop` +
+  `askuser.Store.MarkResumed`/`MarkResumedBatch`.
+
+**L2 budget inputs (resolves Phase-4 OPEN QUESTION 2).** The deterministic L2
+budget formula `hard_cap = ContextWindow − max(MaxOutputTokens, 20000) − 13000`
+needs two inputs that did not exist in `llm.Config`. Amendment: `internal/llm.Config`
+gains `ContextWindow int` (default `1000000`, the ~1M DeepSeek-V4 window) and
+`MaxOutputTokens int` (default `32768`), wired through the same 4-tier load order
+via the fail-fast `envInt` helper under `AURA_MODEL_CONTEXT_WINDOW` /
+`AURA_MODEL_MAX_OUTPUT_TOKENS`. The four conversation/context tuning knobs land in
+`internal/config.Config` via the non-fatal `envIntDefault`:
+`AURA_CONVERSATION_TURN_CAP_BYTES=65536`, `AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS=10`,
+`AURA_HISTORY_HARD_CAP_TURNS=50`, `AURA_RUN_DIR_WARN_THRESHOLD_BYTES=1073741824`.
+
+**Spillover is a sidecar FILE, not a table (resolves Phase-4 OPEN QUESTION 3).**
+Conversation-turn content over `AURA_CONVERSATION_TURN_CAP_BYTES` spills to
+`$AURA_RUN_DIR/conversations/<id>/<seq>.content` with `conversation_turns.content
+= NULL` + `content_sidecar_path` set (reusing the Slice 1 `tools/result.go` path
+scheme). There is NO `aura.conversation_spillover` table — the earlier CORE-04
+mention of one is superseded by the locked SPEC sidecar approach.
+
+**New dependency:** `github.com/pkoukk/tiktoken-go@v0.1.8` (cl100k_base token
+estimation for L2 gating only, ~5-10% approximation — not billed accuracy).
+Operator-verified for supply-chain legitimacy (real GitHub origin, 8 tagged
+releases) before `go get`, per the Phase-4 package-legitimacy checkpoint.
+
+---
+
 ## Slice 2 — Sandbox runner (Docker sidecar + seccomp + ulimit)
 
 > **Atomicity note:** Sub-slice 2a (base stateless ~600 LOC, no deps esterne) + 2b (session-bound + workspace mount + network allowlist ~350 LOC, dipende da Slice 1.8 per `conversation_id`). 2a atterra prima di Slice 3 (Swarm); 2b atterra dopo Slice 1.8.

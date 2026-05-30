@@ -24,6 +24,13 @@ const (
 	defaultTotalTimeoutSec   = 120
 	defaultConnectTimeoutSec = 10
 
+	// L2 budget inputs (Phase 4 AM, resolves OPEN QUESTION 2). ContextWindow is
+	// the ~1M DeepSeek-V4 window; MaxOutputTokens is a sane reservation cap. The
+	// conversations L2 formula reads these: hard_cap = ContextWindow -
+	// max(MaxOutputTokens, 20000) - 13000.
+	defaultContextWindow   = 1_000_000
+	defaultMaxOutputTokens = 32_768
+
 	// OpenRouter attribution headers (D-20): visibility in the OpenRouter
 	// dashboard and possible discount tiers. Sent on every request.
 	headerReferer = "https://github.com/chetto1983/aura"
@@ -40,6 +47,8 @@ const (
 	envMaxTokens         = "AURA_LLM_MAX_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
 	envTotalTimeoutSec   = "AURA_LLM_TOTAL_TIMEOUT_SEC"
 	envConnectTimeoutSec = "AURA_LLM_CONNECT_TIMEOUT_SEC"
+	envContextWindow     = "AURA_MODEL_CONTEXT_WINDOW"
+	envMaxOutputTokens   = "AURA_MODEL_MAX_OUTPUT_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
 )
 
 // ErrMissingAPIKey is the clear, non-panic error surfaced when the API key is
@@ -60,6 +69,8 @@ type Config struct {
 	ConnectTimeoutSec int
 	Temperature       float64
 	MaxTokens         int
+	ContextWindow     int // total model context window (tokens); L2 budget input
+	MaxOutputTokens   int // output-token reservation cap; L2 budget input
 	Headers           map[string]string
 	Prices            map[string]Price
 }
@@ -77,6 +88,8 @@ type fileConfig struct {
 	ConnectTimeoutSec *int              `json:"connect_timeout_sec,omitempty"`
 	Temperature       *float64          `json:"temperature,omitempty"`
 	MaxTokens         *int              `json:"max_tokens,omitempty"`
+	ContextWindow     *int              `json:"context_window,omitempty"`
+	MaxOutputTokens   *int              `json:"max_output_tokens,omitempty"`
 	Headers           map[string]string `json:"headers,omitempty"`
 	Prices            map[string]Price  `json:"prices,omitempty"`
 }
@@ -98,6 +111,8 @@ func Load() (*Config, error) {
 		BaseURL:           defaultBaseURL,
 		Temperature:       defaultTemperature,
 		MaxTokens:         defaultMaxTokens,
+		ContextWindow:     defaultContextWindow,
+		MaxOutputTokens:   defaultMaxOutputTokens,
 		TotalTimeoutSec:   defaultTotalTimeoutSec,
 		ConnectTimeoutSec: defaultConnectTimeoutSec,
 		Headers: map[string]string{
@@ -185,6 +200,12 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	if fc.MaxTokens != nil {
 		cfg.MaxTokens = *fc.MaxTokens
 	}
+	if fc.ContextWindow != nil {
+		cfg.ContextWindow = *fc.ContextWindow
+	}
+	if fc.MaxOutputTokens != nil {
+		cfg.MaxOutputTokens = *fc.MaxOutputTokens
+	}
 	for k, v := range fc.Headers {
 		cfg.Headers[k] = v
 	}
@@ -212,6 +233,16 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.MaxTokens = v
+	}
+	if v, ok, err := envInt(envContextWindow); err != nil {
+		return err
+	} else if ok {
+		cfg.ContextWindow = v
+	}
+	if v, ok, err := envInt(envMaxOutputTokens); err != nil {
+		return err
+	} else if ok {
+		cfg.MaxOutputTokens = v
 	}
 	if v, ok, err := envInt(envTotalTimeoutSec); err != nil {
 		return err
