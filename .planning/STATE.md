@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 3 context gathered
-last_updated: "2026-05-30T14:09:26.779Z"
+status: ready_to_plan
+stopped_at: Phase 03 complete (5/5) — ready to discuss Phase 4
+last_updated: 2026-05-30T16:07:32.958Z
 last_activity: 2026-05-30
 progress:
   total_phases: 16
   completed_phases: 3
   total_plans: 21
-  completed_plans: 20
+  completed_plans: 21
   percent: 19
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 03 — llm-client-toolresult
+**Current focus:** Phase 4 — hitl + identity + conversations
 
 ## Current Position
 
-Phase: 03 (llm-client-toolresult) — EXECUTING
-Plan: 5 of 5 — AWAITING HUMAN-VERIFY CHECKPOINT
-Status: Plan 03-05 Tasks 1 & 2 done + committed; STOPPED at the blocking checkpoint:human-verify (live real-OpenRouter acceptance, SPEC Req#11 / ROADMAP SC#1). Plan 05 stays in-progress until the operator confirms live prose + a non-zero cost footer.
+Phase: 4
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-05-30
 
 Progress: [██████████] 98%
@@ -36,7 +36,7 @@ Progress: [██████████] 98%
 
 **Velocity:**
 
-- Total plans completed: 6
+- Total plans completed: 11
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -45,6 +45,7 @@ Progress: [██████████] 98%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 00 | 6 | - | - |
+| 03 | 5 | - | - |
 
 **Recent Trend:**
 
