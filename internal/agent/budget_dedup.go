@@ -22,6 +22,7 @@ package agent
 
 import (
 	"crypto/sha256"
+	"os"
 	"strings"
 )
 
@@ -197,6 +198,20 @@ func parseExemptTools(csv string) map[string]struct{} {
 	for _, raw := range strings.Split(csv, ",") {
 		name := strings.TrimSpace(raw)
 		if name != "" {
+			out[name] = struct{}{}
+		}
+	}
+	return out
+}
+
+// ExemptToolsFromEnv returns the AURA_LOOP_DEDUP_EXEMPT_TOOLS allowlist plus any
+// extra tool names, as a fresh set (D-19). It lets a caller compose the operator's
+// env exemptions with its own (e.g. the dry-run tool) and pass the result to
+// NewBudget via BudgetOptions.ExemptTools — no process-global env mutation (WR-04).
+func ExemptToolsFromEnv(extra ...string) map[string]struct{} {
+	out := parseExemptTools(os.Getenv(envDedupExemptTools))
+	for _, name := range extra {
+		if name = strings.TrimSpace(name); name != "" {
 			out[name] = struct{}{}
 		}
 	}

@@ -169,7 +169,12 @@ func TestDryRun_EnvMaxSteps_WhenFlagUnset_D06(t *testing.T) {
 }
 
 func TestDryRun_PreservesOperatorExemptTools(t *testing.T) {
-	// An operator-set exemption must survive: the dry-run tool is appended, not replaced.
+	// An operator-set exemption must survive: the dry-run tool is added to the env
+	// allowlist, not replacing it. After WR-04 the process env is never mutated, so
+	// the var is unchanged by construction; the merge happens in
+	// agent.ExemptToolsFromEnv (asserted directly in agent's own tests). Here we
+	// confirm (a) the run still completes on the hard step cap with an operator
+	// exemption present, and (b) dryRun leaves the env untouched.
 	t.Setenv("AURA_LOOP_MAX_STEPS", "3")
 	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "search")
 	var buf bytes.Buffer
@@ -177,8 +182,11 @@ func TestDryRun_PreservesOperatorExemptTools(t *testing.T) {
 	if err := dryRun(cfg, &buf); err != nil {
 		t.Fatalf("dryRun: %v", err)
 	}
+	if got := len(decodeLines(t, buf.String())); got != 4 {
+		t.Fatalf("max_steps=3 with the noop tool exempt → 4 lines (3 step + 1 terminal), got %d", got)
+	}
 	if got := os.Getenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS"); got != "search" {
-		t.Fatalf("operator exemption must be restored after the run, got %q", got)
+		t.Fatalf("dryRun must NOT mutate the process env (WR-04), got %q", got)
 	}
 }
 

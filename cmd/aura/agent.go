@@ -6,7 +6,8 @@
 // tree and prints one Event per JSON line. Every line carries the same UUIDv7
 // request_id (OTel-compatible run correlation). Flag precedence is CLI > env >
 // builtin default (D-06): a numeric flag left at the -1 sentinel falls through to
-// NewBudgetFromEnv, a non--1 flag overrides it.
+// env/default inside agent.NewBudget, a non--1 flag overrides it. The flag values
+// are passed through agent.BudgetOptions, never injected into the process env.
 //
 // W7: Events are serialized via json.NewEncoder(w).SetEscapeHTML(false), honoring
 // Event.MarshalJSON — the SINGLE user-facing serialization path. canonicaljson is
@@ -142,60 +143,26 @@ func resolveRequestID(s string) (uuid.UUID, error) {
 	return id, nil
 }
 
-// buildBudget applies the CLI > env > default precedence (D-06): each non--1 flag
-// is injected into the environment before NewBudgetFromEnv reads it, so the CLI
-// value wins over an exported env value which wins over the builtin default. The
-// dry-run tool is always exempt from dedup so the run terminates on max_steps
-// (SC#2), preserving any operator-set exemptions.
+// buildBudget applies the CLI > env > default precedence (D-06) by passing the
+// resolved flag values DIRECTLY into agent.NewBudget — no process-global env
+// mutation (WR-04). Each non--1 flag becomes an explicit BudgetOptions override
+// that wins over env then default; a -1 flag stays nil so NewBudget falls through
+// to env/default. The dry-run tool is always added to the dedup exempt set so the
+// run terminates on max_steps (SC#2), preserving any operator-set exemptions.
 func buildBudget(cfg dryRunConfig) (*agent.Budget, error) {
-	restore := overrideEnv(map[string]int{
-		"AURA_LOOP_MAX_STEPS":         cfg.maxSteps,
-		"AURA_LOOP_MAX_WALLCLOCK_SEC": cfg.maxWallclockSec,
-		"AURA_LOOP_DEDUP_WINDOW":      cfg.dedupWindow,
+	return agent.NewBudget(agent.BudgetOptions{
+		MaxSteps:        overrideInt(cfg.maxSteps),
+		MaxWallclockSec: overrideInt(cfg.maxWallclockSec),
+		DedupWindow:     overrideInt(cfg.dedupWindow),
+		ExemptTools:     agent.ExemptToolsFromEnv(dryRunToolName),
 	})
-	defer restore()
-
-	prev, had := os.LookupEnv("AURA_LOOP_DEDUP_EXEMPT_TOOLS")
-	exempt := dryRunToolName
-	if had && prev != "" {
-		exempt = prev + "," + dryRunToolName
-	}
-	_ = os.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", exempt)
-	defer func() {
-		if had {
-			_ = os.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", prev)
-		} else {
-			_ = os.Unsetenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS")
-		}
-	}()
-
-	return agent.NewBudgetFromEnv()
 }
 
-// overrideEnv sets each AURA_LOOP_* key whose flag value is non--1 and returns a
-// restore func that reinstates the prior environment. -1 flags are left untouched
-// so env/default precedence (D-06) is preserved.
-func overrideEnv(vals map[string]int) func() {
-	type prevState struct {
-		val string
-		had bool
+// overrideInt maps the -1 "unset" sentinel to a nil override (fall through to
+// env/default, D-06) and any other value to an explicit override pointer.
+func overrideInt(v int) *int {
+	if v == -1 {
+		return nil
 	}
-	saved := make(map[string]prevState, len(vals))
-	for k, v := range vals {
-		if v == -1 {
-			continue
-		}
-		prev, had := os.LookupEnv(k)
-		saved[k] = prevState{val: prev, had: had}
-		_ = os.Setenv(k, fmt.Sprintf("%d", v))
-	}
-	return func() {
-		for k, st := range saved {
-			if st.had {
-				_ = os.Setenv(k, st.val)
-			} else {
-				_ = os.Unsetenv(k)
-			}
-		}
-	}
+	return &v
 }

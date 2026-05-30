@@ -214,6 +214,30 @@ func TestBudget_Dedup_ExemptTool_NeverDedups(t *testing.T) {
 	}
 }
 
+func TestExemptToolsFromEnv_MergesEnvAndExtra(t *testing.T) {
+	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "search, web_fetch")
+	got := ExemptToolsFromEnv("noop")
+	for _, want := range []string{"search", "web_fetch", "noop"} {
+		if _, ok := got[want]; !ok {
+			t.Fatalf("exempt set must contain %q (env merged with extra), got %v", want, got)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("want 3 exempt tools (2 env + 1 extra), got %d: %v", len(got), got)
+	}
+}
+
+func TestExemptToolsFromEnv_EmptyEnv_ExtraOnly(t *testing.T) {
+	t.Setenv("AURA_LOOP_DEDUP_EXEMPT_TOOLS", "")
+	got := ExemptToolsFromEnv("noop")
+	if len(got) != 1 {
+		t.Fatalf("empty env → only the extra tool, got %d: %v", len(got), got)
+	}
+	if _, ok := got["noop"]; !ok {
+		t.Fatal("extra tool noop must be present")
+	}
+}
+
 func TestParseExemptTools_CSV(t *testing.T) {
 	got := parseExemptTools(" web_fetch , web_search ,, ")
 	if len(got) != 2 {

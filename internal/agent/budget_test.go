@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -170,6 +171,40 @@ func TestNewBudgetFromEnv_Defaults(t *testing.T) {
 	}
 	if b.dedupWindow != defaultDedupWindow {
 		t.Fatalf("default dedup window: want %d, got %d", defaultDedupWindow, b.dedupWindow)
+	}
+}
+
+func TestNewBudget_Options_OverrideEnvWithoutMutatingEnv(t *testing.T) {
+	// CLI > env > default (D-06) resolved via BudgetOptions, no os.Setenv (WR-04):
+	// an explicit override wins over the env value; the env is never mutated.
+	t.Setenv(envMaxSteps, "9")
+	t.Setenv(envDedupWindow, "2")
+	override := 25
+	b, err := NewBudget(BudgetOptions{MaxSteps: &override})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+	if rem := b.Remaining(); rem != 25 {
+		t.Fatalf("MaxSteps override must win over env=9: want 25, got %d", rem)
+	}
+	if b.dedupWindow != 2 {
+		t.Fatalf("unset DedupWindow must fall through to env=2: got %d", b.dedupWindow)
+	}
+	if got := os.Getenv(envMaxSteps); got != "9" {
+		t.Fatalf("NewBudget must NOT mutate the env (WR-04), AURA_LOOP_MAX_STEPS=%q", got)
+	}
+}
+
+func TestNewBudget_Options_NilFallsThroughToDefault(t *testing.T) {
+	for _, k := range []string{envMaxSteps, envDedupWindow} {
+		t.Setenv(k, "")
+	}
+	b, err := NewBudget(BudgetOptions{})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+	if rem := b.Remaining(); rem != defaultBudgetMaxSteps {
+		t.Fatalf("nil MaxSteps + unset env → builtin default %d, got %d", defaultBudgetMaxSteps, rem)
 	}
 }
 

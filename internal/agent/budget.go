@@ -73,20 +73,44 @@ func errMalformed(key, val string) error {
 	return fmt.Errorf("%s=%q: not a valid value", key, val)
 }
 
-// NewBudgetFromEnv builds a Budget from the AURA_LOOP_* environment, fail-fast on
-// any malformed value (D-06) — it never silently falls back to a default on a
-// parse error (the opposite of internal/config's silent-absorb int helper). Unset vars use
-// the builtin defaults; only a SET-but-malformed value is an error.
+// BudgetOptions carries explicit overrides for the CLI > env > default precedence
+// (D-06) WITHOUT touching process-global environment. A nil pointer field means
+// "unset → fall through to env then builtin default"; a non-nil field overrides
+// both. ExemptTools, when non-nil, replaces the env allowlist entirely (the caller
+// has already merged in any operator-set exemptions). This lets `aura agent dry-run`
+// pass resolved flag values directly instead of round-tripping through os.Setenv
+// (WR-04), which was not goroutine-safe and collided with t.Setenv in parallel tests.
+type BudgetOptions struct {
+	MaxSteps        *int                // overrides AURA_LOOP_MAX_STEPS
+	MaxWallclockSec *int                // overrides AURA_LOOP_MAX_WALLCLOCK_SEC
+	DedupWindow     *int                // overrides AURA_LOOP_DEDUP_WINDOW
+	ExemptTools     map[string]struct{} // overrides AURA_LOOP_DEDUP_EXEMPT_TOOLS allowlist
+}
+
+// NewBudgetFromEnv builds a Budget from the AURA_LOOP_* environment with no
+// overrides — the env-only callers' entry point. Fail-fast on any malformed value
+// (D-06); see NewBudget for the precedence rules.
 func NewBudgetFromEnv() (*Budget, error) {
-	maxSteps, err := envIntFailFast(envMaxSteps, defaultBudgetMaxSteps)
+	return NewBudget(BudgetOptions{})
+}
+
+// NewBudget builds a Budget applying CLI > env > builtin-default precedence (D-06)
+// in ONE place: each opts override wins over the AURA_LOOP_* env value, which wins
+// over the builtin default. It is fail-fast on any SET-but-malformed env value —
+// it never silently falls back to a default on a parse error (the opposite of
+// internal/config's silent-absorb int helper). Unset env vars use the builtin
+// defaults; only a SET-but-malformed value is an error. No process-global state is
+// mutated.
+func NewBudget(opts BudgetOptions) (*Budget, error) {
+	maxSteps, err := resolveInt(opts.MaxSteps, envMaxSteps, defaultBudgetMaxSteps)
 	if err != nil {
 		return nil, err
 	}
-	wallclockSec, err := envIntFailFast(envMaxWallclockSec, defaultBudgetWallclockSec)
+	wallclockSec, err := resolveInt(opts.MaxWallclockSec, envMaxWallclockSec, defaultBudgetWallclockSec)
 	if err != nil {
 		return nil, err
 	}
-	dedupWindow, err := envIntFailFast(envDedupWindow, defaultDedupWindow)
+	dedupWindow, err := resolveInt(opts.DedupWindow, envDedupWindow, defaultDedupWindow)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +130,11 @@ func NewBudgetFromEnv() (*Budget, error) {
 		return nil, err
 	}
 
+	exempt := opts.ExemptTools
+	if exempt == nil {
+		exempt = parseExemptTools(os.Getenv(envDedupExemptTools))
+	}
+
 	var steps atomic.Int32
 	steps.Store(int32(maxSteps))
 
@@ -115,12 +144,21 @@ func NewBudgetFromEnv() (*Budget, error) {
 		now:               time.Now,
 		dedupWindow:       dedupWindow,
 		dedupRing:         newDedupRing(dedupWindow),
-		exemptTools:       parseExemptTools(os.Getenv(envDedupExemptTools)),
+		exemptTools:       exempt,
 		resultCap:         resultCap,
 		nodeTimeout:       time.Duration(nodeTimeoutSec) * time.Second,
 		softFrac:          softFrac,
 	}
 	return b, nil
+}
+
+// resolveInt applies the D-06 precedence for one int knob: an explicit override
+// pointer wins; else the env value (fail-fast on malformed); else the default.
+func resolveInt(override *int, key string, fallback int) (int, error) {
+	if override != nil {
+		return *override, nil
+	}
+	return envIntFailFast(key, fallback)
 }
 
 // envIntFailFast reads key as an int, returning fallback when unset/empty and a
