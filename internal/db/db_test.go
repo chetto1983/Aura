@@ -113,6 +113,57 @@ func TestPing(t *testing.T) {
 	t.Logf("ping latency: %s", latency)
 }
 
+func TestOpen_PoolTuning_AppliedAndDefaulted(t *testing.T) {
+	// Asserts that Open's pool-tuning block actually takes effect on the live
+	// pool — both the explicit branch (cfg.* > 0) and the default branch
+	// (cfg.* == 0 falls back to the package defaults). Without inspecting
+	// pool.Config() here, the assignments are executed but never verified, so a
+	// mutant that drops them (or flips `> 0` to `>= 0`) survives despite 90%
+	// line coverage.
+	base := envOrSkip(t, "AURA_DB_URL")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	t.Run("explicit", func(t *testing.T) {
+		pool, err := Open(ctx, &Config{URL: base, MaxConns: 7, MinConns: 3, MaxConnIdleTime: 15 * time.Second})
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer pool.Close()
+		pc := pool.Config()
+		if pc.MaxConns != 7 {
+			t.Errorf("MaxConns: want 7 (explicit), got %d", pc.MaxConns)
+		}
+		if pc.MinConns != 3 {
+			t.Errorf("MinConns: want 3 (explicit), got %d", pc.MinConns)
+		}
+		if pc.MaxConnIdleTime != 15*time.Second {
+			t.Errorf("MaxConnIdleTime: want 15s (explicit), got %s", pc.MaxConnIdleTime)
+		}
+	})
+
+	t.Run("defaulted", func(t *testing.T) {
+		// Zero fields must resolve to the package defaults, NOT pgx's own
+		// (MaxConns=NumCPU, MinConns=0, MaxConnIdleTime=30m) — which is what a
+		// dropped assignment or a `>= 0` boundary flip would leave behind.
+		pool, err := Open(ctx, &Config{URL: base})
+		if err != nil {
+			t.Fatalf("Open: %v", err)
+		}
+		defer pool.Close()
+		pc := pool.Config()
+		if pc.MaxConns != defaultMaxConns {
+			t.Errorf("MaxConns: want default %d, got %d", defaultMaxConns, pc.MaxConns)
+		}
+		if pc.MinConns != defaultMinConns {
+			t.Errorf("MinConns: want default %d, got %d", defaultMinConns, pc.MinConns)
+		}
+		if pc.MaxConnIdleTime != defaultMaxConnIdleTime {
+			t.Errorf("MaxConnIdleTime: want default %s, got %s", defaultMaxConnIdleTime, pc.MaxConnIdleTime)
+		}
+	})
+}
+
 func TestRoleSeparation_AppDenied(t *testing.T) {
 	// T-1.05-02 mitigation. Connect as aura_app, attempt TRUNCATE + DROP on
 	// aura.knowledge_migrations; both must return "permission denied".

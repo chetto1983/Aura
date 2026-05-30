@@ -53,7 +53,10 @@ ELAPSED_MS=$(( (END_NS - START_NS) / 1000000 ))
 echo "==> restore took ${ELAPSED_MS} ms"
 
 # 4. Assert < 90 000 ms (90 s) per ROADMAP Phase 1 SC#3.
-if (( ELAPSED_MS > 90000 )); then
+# POSIX `[ -gt ]` not bash `(( ))`: under non-bash shells (busybox/dash) `(( ))`
+# is parsed as nested subshells and `> 90000` becomes a redirect that silently
+# creates a junk file named 90000. Keep the gate portable per the header claim.
+if [ "$ELAPSED_MS" -gt 90000 ]; then
     echo "FAIL: restore took ${ELAPSED_MS} ms, exceeds 90 s budget (ROADMAP Phase 1 SC#3)" >&2
     exit 1
 fi

@@ -85,6 +85,11 @@ func pingEmbed(ctx context.Context, baseURL string, expectedDim int) error {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{Timeout: 10 * time.Second}
+	// Drop the pooled keep-alive connection on return; otherwise the default
+	// transport's persistConn read/write goroutines linger until IdleConnTimeout
+	// and make goleak.VerifyTestMain order-dependent (passes in the full suite,
+	// trips on short subsets).
+	defer client.CloseIdleConnections()
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("embed sidecar unreachable: %w", err)
