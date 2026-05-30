@@ -21,6 +21,20 @@ func TestHTTPError_Error(t *testing.T) {
 	if strings.Contains(e2.Error(), "retry") {
 		t.Errorf("Error() = %q, should not mention retry without Retry-After", e2.Error())
 	}
+
+	// Boundary: RetryAfterSec == 1 is the smallest positive value and MUST still
+	// take the retry-after branch (`> 0`, not `> 1`). A `> 0`→`> 1` mutant would
+	// drop the retry hint here.
+	e3 := &HTTPError{StatusCode: 429, RetryAfterSec: 1}
+	if !strings.Contains(e3.Error(), "retry after 1s") {
+		t.Errorf("Error() = %q, want a retry-after-1s hint (RetryAfterSec=1 is positive)", e3.Error())
+	}
+
+	// Zero retry-after must take the plain branch (no retry mention).
+	e4 := &HTTPError{StatusCode: 429, RetryAfterSec: 0}
+	if strings.Contains(e4.Error(), "retry") {
+		t.Errorf("Error() = %q, should not mention retry when RetryAfterSec is 0", e4.Error())
+	}
 }
 
 // TestNewHTTPError_RetryAfter asserts newHTTPError parses Retry-After on 429 and

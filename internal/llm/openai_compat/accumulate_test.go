@@ -97,6 +97,76 @@ func TestAccumulate_PartitionInvariant(t *testing.T) {
 	})
 }
 
+// TestAccumulate_LaterEmptyMetadataDoesNotClobber asserts the add() guards
+// (`if d.ID != ""`, `if d.Type != ""`, `if d.Function.Name != ""`): a later
+// fragment carrying EMPTY id/type/name must NOT erase the values set by the
+// first fragment, while its arguments still concatenate. Without the guards a
+// `!=`→`==` (or guard-removal) mutant would let the empty later fragment clobber
+// the metadata; this test makes that observable.
+func TestAccumulate_LaterEmptyMetadataDoesNotClobber(t *testing.T) {
+	acc := newAccumulator()
+	// Fragment 1: full metadata + partial args.
+	acc.add(toolCallDelta{Index: 0, ID: "call_keep", Type: "function",
+		Function: fn("do_thing", `{"a":1,`)})
+	// Fragment 2+: EMPTY id/type/name, only the rest of the args.
+	acc.add(toolCallDelta{Index: 0, Function: fn("", `"b":2,`)})
+	acc.add(toolCallDelta{Index: 0, Function: fn("", `"c":3}`)})
+
+	calls := acc.finalize()
+	if len(calls) != 1 {
+		t.Fatalf("finalize() = %d calls, want 1", len(calls))
+	}
+	tc := calls[0]
+	if tc.ID != "call_keep" {
+		t.Errorf("ID = %q, want call_keep (a later empty-ID fragment must not clobber)", tc.ID)
+	}
+	if tc.Type != "function" {
+		t.Errorf("Type = %q, want function (a later empty-Type fragment must not clobber)", tc.Type)
+	}
+	if tc.Function.Name != "do_thing" {
+		t.Errorf("Name = %q, want do_thing (a later empty-Name fragment must not clobber)", tc.Function.Name)
+	}
+	if tc.Function.Arguments != `{"a":1,"b":2,"c":3}` {
+		t.Errorf("Arguments = %q, want exact concat of all 3 fragments", tc.Function.Arguments)
+	}
+}
+
+// TestAccumulate_TypeDefaultsToFunction asserts that when NO fragment supplies a
+// type, finalize() defaults it to "function" (OpenAI compat). Removing the
+// `typ = "function"` default would surface here as an empty Type.
+func TestAccumulate_TypeDefaultsToFunction(t *testing.T) {
+	acc := newAccumulator()
+	// Note: no Type field set on any fragment.
+	acc.add(toolCallDelta{Index: 0, ID: "call_z", Function: fn("noop", `{}`)})
+
+	calls := acc.finalize()
+	if len(calls) != 1 {
+		t.Fatalf("finalize() = %d calls, want 1", len(calls))
+	}
+	if calls[0].Type != "function" {
+		t.Errorf("Type = %q, want function (default applied when wire omits type)", calls[0].Type)
+	}
+}
+
+// TestAccumulate_EmptyAndFinalize asserts the empty() predicate and the
+// finalize()-on-empty short-circuit: a fresh accumulator reports empty()==true
+// and finalize() returns no calls. Kills the `len(...) == 0`→`== -1` mutant
+// (always-false) and the `if a.empty() { return nil }` guard-removal mutant.
+func TestAccumulate_EmptyAndFinalize(t *testing.T) {
+	acc := newAccumulator()
+	if !acc.empty() {
+		t.Error("a fresh accumulator must report empty() == true")
+	}
+	if calls := acc.finalize(); calls != nil {
+		t.Errorf("finalize() on an empty accumulator = %v, want nil", calls)
+	}
+	// After adding one fragment, empty() flips to false.
+	acc.add(toolCallDelta{Index: 0, ID: "x", Function: fn("f", "{}")})
+	if acc.empty() {
+		t.Error("after add() the accumulator must report empty() == false")
+	}
+}
+
 func fn(name, args string) struct {
 	Name      string `json:"name"`
 	Arguments string `json:"arguments"`
