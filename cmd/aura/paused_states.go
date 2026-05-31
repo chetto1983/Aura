@@ -29,11 +29,9 @@ func runPausedStates(args []string) {
 		fmt.Fprintln(os.Stderr, pausedStatesUsage)
 		os.Exit(1)
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "config load:", err)
-		os.Exit(1)
-	}
+	// paused-states is a DB-only domain — use the LLM-free config load so
+	// `aura paused-states` does not require OPENROUTER_API_KEY.
+	cfg := config.LoadDB()
 	ctx := context.Background()
 
 	pool, err := db.Open(ctx, &cfg.DB)

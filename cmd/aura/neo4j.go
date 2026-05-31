@@ -24,11 +24,9 @@ func runNeo4j(args []string) {
 		neo4jUsage()
 		os.Exit(1)
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "config load:", err)
-		os.Exit(1)
-	}
+	// Neo4j-admin commands are graph operations — use the LLM-free config load so
+	// `aura neo4j migrate` does not require OPENROUTER_API_KEY (e.g. CI's migrate step).
+	cfg := config.LoadDB()
 	ctx := context.Background()
 
 	switch args[0] {

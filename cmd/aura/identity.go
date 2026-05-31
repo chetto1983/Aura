@@ -32,11 +32,9 @@ func runIdentity(args []string) {
 		fmt.Fprintln(os.Stderr, identityUsage)
 		os.Exit(1)
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "config load:", err)
-		os.Exit(1)
-	}
+	// Identity is a DB-only domain — use the LLM-free config load so `aura identity`
+	// does not require OPENROUTER_API_KEY.
+	cfg := config.LoadDB()
 	ctx := context.Background()
 
 	pool, err := db.Open(ctx, &cfg.DB)
