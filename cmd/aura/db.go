@@ -21,11 +21,9 @@ func runDB(args []string) {
 		fmt.Fprintln(os.Stderr, "usage: aura db {migrate|ping|status|reset}")
 		os.Exit(1)
 	}
-	cfg, err := config.Load()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "config load:", err)
-		os.Exit(1)
-	}
+	// DB-admin commands are pure DB operations — use the LLM-free config load so
+	// `aura db migrate` does not require OPENROUTER_API_KEY (e.g. CI's migrate step).
+	cfg := config.LoadDB()
 	ctx := context.Background()
 
 	switch args[0] {

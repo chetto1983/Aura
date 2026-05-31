@@ -55,6 +55,29 @@ type Config struct {
 // POSTGRES_* primitives + AURA_DB_*_ROLE role names. Single POSTGRES_PASSWORD
 // fans out to both runtime + DDL roles for local-dev ergonomics.
 func Load() (*Config, error) {
+	cfg := loadBase()
+	// LLM config owns its own 4-tier load order + fail-fast empty-key (D-22);
+	// its error (e.g. ErrMissingAPIKey) propagates through this composite.
+	llmCfg, err := llm.Load()
+	if err != nil {
+		return nil, fmt.Errorf("config: load llm: %w", err)
+	}
+	cfg.LLM = *llmCfg
+	return cfg, nil
+}
+
+// LoadDB loads the non-LLM configuration only. DB-admin commands
+// (aura db migrate/ping/status/reset) must NOT require an LLM API key — migration
+// is a pure DB operation, and Load's fail-fast empty-key (D-22) would otherwise
+// block `aura db migrate` wherever OPENROUTER_API_KEY is unset (notably CI's
+// migrate step). LLM is left zero-value; DB commands never read it.
+func LoadDB() *Config {
+	return loadBase()
+}
+
+// loadBase reads every non-LLM config source. Load layers the LLM config (with its
+// fail-fast) on top; LoadDB returns this as-is so DB-only commands skip the key.
+func loadBase() *Config {
 	_ = godotenv.Load() // best-effort; missing .env is not fatal
 
 	pgUser := envDefault("POSTGRES_USER", "aura")
@@ -79,13 +102,6 @@ func Load() (*Config, error) {
 		bootstrapURL = composeDSN(pgUser, pgPassword, pgHost, pgPort, pgDB, pgSSL)
 	}
 
-	// LLM config owns its own 4-tier load order + fail-fast empty-key (D-22);
-	// its error (e.g. ErrMissingAPIKey) propagates through this composite.
-	llmCfg, err := llm.Load()
-	if err != nil {
-		return nil, fmt.Errorf("config: load llm: %w", err)
-	}
-
 	return &Config{
 		DB: db.Config{
 			URL:          appURL,
@@ -103,7 +119,6 @@ func Load() (*Config, error) {
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", 768),
 		},
-		LLM:            *llmCfg,
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),
@@ -113,7 +128,7 @@ func Load() (*Config, error) {
 		ContextToolEvictAfterTurns: envIntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
 		HistoryHardCapTurns:        envIntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
 		RunDirWarnThresholdBytes:   envIntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
-	}, nil
+	}
 }
 
 // composeDSN returns "" when password is empty so callers can detect an

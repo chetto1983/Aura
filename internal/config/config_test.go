@@ -33,6 +33,34 @@ func clearPostgresEnv(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "sk-test-config")
 }
 
+// TestLoadDB_NoLLMKeyRequired is the CI regression for the db-migrate coupling:
+// `aura db migrate` (and ping/status/reset) go through config, but they are pure
+// DB operations and must NOT require OPENROUTER_API_KEY. Load() fail-fasts on an
+// empty key (correct for the chat/agent path); LoadDB() must succeed without it so
+// CI's migrate step (no LLM key) is not blocked.
+func TestLoadDB_NoLLMKeyRequired(t *testing.T) {
+	clearPostgresEnv(t)
+	t.Setenv("OPENROUTER_API_KEY", "") // the CI migrate-step condition: no LLM key
+	t.Setenv("POSTGRES_PASSWORD", "s3cret")
+
+	// Load() must still fail-fast (the LLM path needs the key).
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() must fail with an empty OPENROUTER_API_KEY, got nil error")
+	}
+
+	// LoadDB() must succeed and compose the migrate DSN — no LLM key needed.
+	cfg := LoadDB()
+	if cfg.DB.MigrateURL == "" {
+		t.Error("LoadDB(): DB.MigrateURL must compose from POSTGRES_PASSWORD, got empty")
+	}
+	if cfg.DB.Password != "s3cret" {
+		t.Errorf("LoadDB(): DB.Password = %q, want s3cret", cfg.DB.Password)
+	}
+	if cfg.LLM.APIKey != "" {
+		t.Error("LoadDB(): LLM must be left zero-value (DB commands never read it)")
+	}
+}
+
 func TestLoad_DefaultsApplied(t *testing.T) {
 	clearPostgresEnv(t)
 
