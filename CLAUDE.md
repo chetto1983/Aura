@@ -37,7 +37,7 @@ Transport + UX:
 14. **8** — AG-UI gateway (SSE event protocol transport)
 15. **9** — Channels framework + Telegram main user-facing + Setup wizard + multimodal Gemma 4 (9a/b/c)
 16. **10** — User onboarding + `Agent.md` profile per identity
-17. **11** — Memory ingestion + taxonomy (Documents + Entities + Graph + Agent journal, 11a/b/c/d/e)
+17. **11** — Memory ingestion + taxonomy (Documents + Entities + Graph + Agent journal, 11a-11e) + **11f Task Canvas** (working-memory simbolica Mermaid effimera, sequencing-indipendente ~Phase 9-10). Pattern emendati #24 (valid-time/NOOP/reasoning traces) + #25 (Mermaid Canvas + score-cascade) studiati da **Tencent TencentDB-Agent-Memory** (<https://github.com/Tencent/TencentDB-Agent-Memory>) e adattati allo stack PG+Neo4J — vedi prd.md §Slice 11.
 18. **13** — Local LLM fallback (vLLM + LMCache disk-tier, doppio sidecar)
 
 Persistence: Postgres `aura.*` schema (15 migrations 0001-0014 + Neo4j Cypher 0001-0002). `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
