@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 04-04-PLAN.md (conversation persistence + deterministic context management; Store + helpers the Runner consumes — 04-05 builds the Runner + composition root)
-last_updated: "2026-05-30T21:54:57.761Z"
+status: ready_to_plan
+stopped_at: Phase 04 complete (5/5) — ready to discuss Phase 5
+last_updated: 2026-05-31T05:44:35.469Z
 last_activity: 2026-05-30
 progress:
   total_phases: 16
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 04 — hitl-identity-conversations
+**Current focus:** Phase 5 — sandbox 2a stateless
 
 ## Current Position
 
-Phase: 04 (hitl-identity-conversations) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
-Last activity: 2026-05-30
+Phase: 5
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-05-31
 
 Progress: [██████████] 100%
 
@@ -36,7 +36,7 @@ Progress: [██████████] 100%
 
 **Velocity:**
 
-- Total plans completed: 11
+- Total plans completed: 16
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -46,6 +46,7 @@ Progress: [██████████] 100%
 |-------|-------|-------|----------|
 | 00 | 6 | - | - |
 | 03 | 5 | - | - |
+| 04 | 5 | - | - |
 
 **Recent Trend:**
 
