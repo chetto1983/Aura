@@ -22,8 +22,19 @@ TAGS="${AURA_COVERAGE_TAGS:-db_integration neo4j_integration}"
 PROFILE="${AURA_COVERAGE_PROFILE:-cover_gate.out}"
 
 echo "==> coverage gate: internal/* >= ${MIN}% (tags: ${TAGS})"
-go test -tags "${TAGS}" -covermode=atomic -coverprofile="${PROFILE}" \
-  ./internal/... >/dev/null
+# -p 1 (serial package execution) is MANDATORY: the integration tiers across
+# internal/* share ONE Postgres, so running packages concurrently collides on
+# global cluster state — CREATE ROLE (EnsureRoles) races to "tuple concurrently
+# updated (XX000)" on pg_authid, and golang-migrate's pg_advisory_lock deadlocks.
+# The default parallel run is flaky once >2 integration packages exist (broke CI
+# after Phase 4 added identity/askuser/conversations/runner). Fail loud — never
+# discard the test output, or a real failure looks like a coverage miss.
+if ! go test -tags "${TAGS}" -p 1 -covermode=atomic -coverprofile="${PROFILE}" \
+  ./internal/... > "${PROFILE}.testlog" 2>&1; then
+  echo "FAIL: integration coverage test run failed (see output below)" >&2
+  cat "${PROFILE}.testlog" >&2
+  exit 1
+fi
 
 # Drop generated + skeleton rows. Anchor each at a path-segment boundary ('/<x>')
 # so a future sibling whose name merely contains one of these is not silently
