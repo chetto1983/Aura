@@ -38,6 +38,12 @@ func newTracer(ctx context.Context, cfg *config.Config) (agent.TracerProvider, e
 // `/exit` / a second consecutive Ctrl+C. History is durable (the Runner persists
 // each turn) — the loop holds none in memory.
 func chatLoop(ctx context.Context, d replDeps) error {
+	// Session-end cleanup: auto-resolve orphan pendings + JOIN the auto-title
+	// WaitGroup so a background title worker cannot outlive the REPL (Req#11,
+	// goleak-clean). chatLoop owns this so every caller — production runReplOrExit
+	// and the white-box tests that drive chatLoop directly — drains workers on exit.
+	defer func() { _ = d.run.Stop(context.Background(), d.convID) }()
+
 	// WR-01: ONE bufio.Reader over d.in for the whole REPL. bufio reads ahead in
 	// blocks, so a second reader over the same (piped/scripted) stdin would see EOF
 	// or garbage once this one buffers — the pause-answer path threads this same

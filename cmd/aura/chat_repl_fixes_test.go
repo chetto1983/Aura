@@ -79,18 +79,22 @@ func TestChat_TwoPauses_BothAnswersConsumed_WR01(t *testing.T) {
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop: %v", err)
 	}
-	resume := fc.Requests[len(fc.Requests)-1]
+	// Search ALL recorded requests for the injected tool answers — the auto-title
+	// worker (now reached because chatLoop drains the iterator) appends a trailing
+	// title request, so the resume request is no longer guaranteed to be last.
 	sawAlpha, sawBeta := false, false
-	for _, m := range resume.Messages {
-		if m.Role == llm.RoleTool && strings.Contains(m.Content, "alpha") {
-			sawAlpha = true
-		}
-		if m.Role == llm.RoleTool && strings.Contains(m.Content, "beta") {
-			sawBeta = true
+	for _, req := range fc.Requests {
+		for _, m := range req.Messages {
+			if m.Role == llm.RoleTool && strings.Contains(m.Content, "alpha") {
+				sawAlpha = true
+			}
+			if m.Role == llm.RoleTool && strings.Contains(m.Content, "beta") {
+				sawBeta = true
+			}
 		}
 	}
 	if !sawAlpha || !sawBeta {
-		t.Fatalf("WR-01: both buffered answers must be consumed (alpha=%v beta=%v); messages=%+v", sawAlpha, sawBeta, resume.Messages)
+		t.Fatalf("WR-01: both buffered answers must be consumed (alpha=%v beta=%v); requests=%+v", sawAlpha, sawBeta, fc.Requests)
 	}
 }
 

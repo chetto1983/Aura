@@ -109,8 +109,12 @@ func TestChat_TwoTurns(t *testing.T) {
 	if c := strings.Count(got, " tok ("); c != 2 {
 		t.Fatalf("want 2 cost footers, got %d:\n%s", c, got)
 	}
-	if fc.CallCount() != 2 {
-		t.Fatalf("FakeClient called %d times, want 2", fc.CallCount())
+	// 2 user turns + 1 best-effort auto-title call: after turn 2 CountTurns crosses
+	// autoTitleMinSeq (3), so the auto-title worker fires exactly once and is joined
+	// by chatLoop's Stop before this assertion. (Previously this read 2 only because
+	// the title worker never fired — the iterator was abandoned on the final Event.)
+	if fc.CallCount() != 3 {
+		t.Fatalf("FakeClient called %d times, want 3 (2 turns + 1 auto-title)", fc.CallCount())
 	}
 	// The second turn must see the first user message in the rehydrated history.
 	second := fc.Requests[1]

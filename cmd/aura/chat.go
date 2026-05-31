@@ -326,9 +326,8 @@ func runReplOrExit(ctx context.Context, env *chatEnv, convID string) {
 		convID:     convID,
 		newTurnCtx: signalTurnCtx,
 	}
-	// Best-effort: auto-resolve orphan pendings + join the auto-title workers on a
-	// clean exit so the next boot starts from a reconciled state (Req#11).
-	defer func() { _ = env.run.Stop(context.Background(), convID) }()
+	// Session-end Runner.Stop (auto-resolve orphan pendings + join auto-title
+	// workers) is owned by chatLoop's defer so the white-box tests drain workers too.
 	if err := chatLoop(ctx, deps); err != nil {
 		fmt.Fprintln(os.Stderr, "aura chat:", err)
 		os.Exit(1)

@@ -55,10 +55,14 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 		case resp.FinishReason != "":
 			// Final Event: flush the not-yet-streamed remainder of the answer and
 			// read the per-turn usage off the StateDelta the LlmAgent stamped (D-11).
+			// Do NOT return here — under the iter.Seq2 contract an early return makes
+			// yield() report consumer-stop, so the Runner's post-round bookkeeping
+			// (flushPause + the auto-title worker) is skipped. Record the terminal
+			// answer/usage and keep draining; the producer ends the round right after
+			// this event, so the range terminates naturally and the worker fires.
 			finish = resp.FinishReason
 			flushRemainder(&prose, resp.Content, emit)
 			usage = usageFromStateDelta(ev.Actions.StateDelta)
-			return prose.String(), finish, usage, paused, nil
 		case isToolResultPreview(ev):
 			// A tool-result Event carries the raw tool output (e.g. an RFC3339
 			// timestamp from current_time) in Content for AG-UI forward-compat — it
