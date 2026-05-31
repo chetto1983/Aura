@@ -600,7 +600,7 @@ streamata token-by-token, in <8 step. `/exit` o EOF chiude il REPL.
 - [ ] **A4 amendment (2026-05-30)**: Builtin tool `read_tool_output` (non-deferred) accetta `{tool_call_id, offset?, limit?}` dove `offset`/`limit` sono **BYTE** (non line-based — la semantica a righe originale era fragile su contenuto newline-free come un blob JSON da 100 KB). Default `limit≈2048` byte (allineato al preview cap). Ritorna la fetta di byte richiesta dal sidecar file con footer deterministico `showing bytes X-Y of Z, next offset Y` per paging dal modello. Hard-fail su tool_call_id ignoto.
 - [ ] `text_response` continua a essere il terminale del loop: il suo `ToolResult.Preview` è la risposta finale all'utente (anche se `Bytes > cap`, la versione full sta sul disco; il preview va all'utente per default — il chiamante CLI/Telegram decide se servire la versione full).
 - [ ] Test: un tool fake che ritorna 100 KB di output → il `Messages` history dopo `(*LlmAgent).Run` ha SOLO il preview (≤2 KiB + footer), file su disco ha 100 KB completi, `read_tool_output` recupera fetta arbitraria.
-- [ ] **`$AURA_RUN_DIR` layout (Area #9 closed 2026-05-28)**. Default `$AURA_RUN_DIR = ~/.aura/run/`. Layout:
+- [ ] **`$AURA_RUN_DIR` layout (Area #9 closed 2026-05-28)**. Default `$AURA_RUN_DIR = <os.UserCacheDir>/aura` (es. `~/.cache/aura`; fallback `<os.TempDir>/aura`) — **non `~/.aura/run/`** (corretto vs codice shipped `internal/config/config.go`, amendment #28). Layout:
   ```
   $AURA_RUN_DIR/
     conversations/
@@ -630,7 +630,7 @@ streamata token-by-token, in <8 step. `/exit` o EOF chiude il REPL.
 | `internal/agent/tools/text_response.go` (diff) | ~+15 / -10 | Ritorna `ToolResult{Preview: text}` invece di stringa. |
 | `internal/agent/tools/search.go` (diff) | ~+15 / -10 | Stesso adattamento. |
 | `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default ~2048 BYTES}` (A4 amendment 2026-05-30: byte-based, NON lines). Footer `showing bytes X-Y of Z, next offset Y`. Risolve path da `runtime`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. Path-traversal-shaped ids (`..`/separators) rifiutati prima di `filepath.Join`. |
-| `internal/agent/llm_agent.go` (diff) | ~+45 / -10 | `(*LlmAgent).runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path), mantiene `resultPaths map[string]string` per `read_tool_output` lookup. Crea `$AURA_RUN_DIR/conversations/<conv_id>/` lazy alla prima persist (post Slice 1.8: `conv_id` viene da `InvocationContext.SessionID`). File `loop.go` rinominato in `llm_agent.go` (Slice 0.9 amendment), `Loop` struct rinominato in `LlmAgent` (implementa `Agent` interface Slice 0.9). `Run() iter.Seq2[*Event, error]` sostituisce `Turn() (Result, error)`. |
+| `internal/agent/llm_agent.go` (diff) | ~+45 / -10 | `(*LlmAgent).runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path). **`read_tool_output` ri-deriva il path in modo deterministico via `sidecarPath(runDir, sessionID, toolCallID)` — NIENTE `resultPaths map` in-memory** (corretto vs questo testo originale: il design a map non è stato implementato, amendment #28). Crea `$AURA_RUN_DIR/conversations/<conv_id>/` lazy alla prima persist (post Slice 1.8: `conv_id` viene da `InvocationContext.SessionID`). File `loop.go` rinominato in `llm_agent.go` (Slice 0.9 amendment), `Loop` struct rinominato in `LlmAgent` (implementa `Agent` interface Slice 0.9). `Run() iter.Seq2[*Event, error]` sostituisce `Turn() (Result, error)`. |
 | `internal/agent/tools/result_test.go` | ~80 | Test: 100 KB fake tool → `Messages` ha SOLO preview+footer, file ha 100 KB; `read_tool_output(id, offset=50000, limit=100)` recupera fetta. |
 | `cmd/aura/main.go` (diff) | ~+50 / -15 | Sostituisce `stubClient` con `llm.NewOpenAICompat(cfg.LLM)`. Registra `read_tool_output` nel registry. Sub-comando `aura config` legge/scrive il file. |
 
@@ -1549,7 +1549,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 - **Operative threshold**: 60% context utilization → trigger PROACTIVE compaction (L1+L2). Manual proactive produce summary migliore di reactive (model ha clear recall).
 - **Hard cap**: 80% context utilization → AUTO trigger compaction + Notifier alert utente. Proceed o fail-loud (configurable via `AURA_CONTEXT_HARDFAIL_ON_OVERCAP=1`).
 - **Time-based opportunistic**: at every "major milestone" → conversation archive boundary (CORE-04), agent.Run() completion (Slice 0.9 LoopAgent terminal Event), conversation_turn boundary post-LLM-response.
-- **Formula budget**: `effective_budget_tokens = model_context_window × AURA_LOOP_BUDGET_PCT - AURA_OUTPUT_RESERVE_TOKENS - AURA_SYSTEM_PROMPT_TOKENS_BOUND`. Default: `DeepSeek-V4 (1M window) × 0.6 - 8k output - 4k system ≈ 588k effective` per conversation history (finestra 1M canonica — vedi §1018/§1167; la precedente "128k" era un refuso, riconciliato amendment #24).
+- **Formula budget**: `effective_budget_tokens = model_context_window × AURA_LOOP_BUDGET_PCT - AURA_OUTPUT_RESERVE_TOKENS - AURA_SYSTEM_PROMPT_TOKENS_BOUND`. Default: `DeepSeek-V4 (1M window) × 0.6 - 8k output - 4k system ≈ 588k effective` per conversation history (finestra **1.048.576** token canonica — vedi §1018/§1167; verificata su OpenRouter `deepseek-v4-flash:exacto`, amendment #28. NB: **131.072 (≈128K) è il max OUTPUT** del modello, non la finestra — probabile origine del refuso "128k"; se si abilita Think-Max reasoning riservare ≥384K).
 
 **Industry pattern references (verified 2026-05-29)**:
 - [Anthropic compaction docs](https://platform.claude.com/docs/en/build-with-claude/compaction): `compact_20260112` server-side, drop pre-summary blocks pattern. **Adopted in spirit (L1+L2 client-side)**, NOT direct API param (multi-provider compat: OpenRouter passa Anthropic-only params provider-specific).
@@ -1678,7 +1678,7 @@ Oltre alla regola "no nomi tool nel prompt E2E", ogni slice rispetta una **sogli
 
 1. **Naming**: `TestXxx_Behavior_When_Condition` (descrittivo, no `TestFoo1`, `TestFoo2`).
 2. **Setup teardown**: niente shared state cross-test salvo build-tag `_integration` con DB transactionally rollback'd. Race detector verde (`go test -race ./...`).
-3. **Goroutine leak check**: `goleak.VerifyNone(t)` in TestMain o `defer goleak.VerifyNone(t)` per test che spawn goroutine. **Per amendment #15 (2026-05-29) the mandate is extended to ALL packages che spawn goroutine** — non solo le slice 1/3/6/8/9/11/13 originali. Lista completa pre-Phase 0 closure: Slice 0.9 (workflow agents Parallel + Loop), 1 (HTTP client SSE reader), 1.5 (ask_user resume goroutine), 1.8 (microcompact background), 2a/2b (sandbox reaper goroutine), 3 (swarm ParallelAgent), 4 (no goroutine — skipped), 5 (web_fetch HTTP), 6 (scheduler dispatcher + heartbeat + cron tick), 7c (TTL sweeper if implemented), 7e-core (TTL archive sweeper), 8 (AG-UI SSE emitter), 9a (setup wizard HTTP + SSE pump), 9b (telegram bot polling), 9c (multimodal sidecar HTTP), 10 (interview LoopAgent — no extra goroutine), 11b/c/d/e (ingest pipeline + community + memify background workers), 13 (offline detector + cost tracker — v2). Every `*_test.go` for these packages MUST call `goleak.VerifyNone(t)` in TestMain OR `defer goleak.VerifyNone(t)` per test.
+3. **Goroutine leak check**: `goleak.VerifyNone(t)` in TestMain o `defer goleak.VerifyNone(t)` per test che spawn goroutine. **Per amendment #15 (2026-05-29) the mandate is extended to ALL packages che spawn goroutine** — non solo le slice 1/3/6/8/9/11/13 originali. Lista completa pre-Phase 0 closure: Slice 0.9 (workflow agents Parallel + Loop), 1 (HTTP client SSE reader), 1.5 (ask_user resume goroutine), 1.8 (microcompact background), 2a/2b (sandbox reaper goroutine), 3 (swarm ParallelAgent), 4 (no goroutine — skipped), 5 (web_fetch HTTP), 6 (scheduler dispatcher + heartbeat + cron tick), 7c (TTL sweeper if implemented), 7e-core (TTL archive sweeper), 8 (AG-UI SSE emitter), 9a (setup wizard HTTP + SSE pump), 9b (telegram bot polling), 9c (multimodal sidecar HTTP), 10 (interview LoopAgent — no extra goroutine), 11b/d/e (ingest pipeline + memify background workers; 11c community DEFERITA fuori MVP, amendment #27), 11f (Task Canvas — no goroutine extra), 13 (offline detector + cost tracker — v2). Every `*_test.go` for these packages MUST call `goleak.VerifyNone(t)` in TestMain OR `defer goleak.VerifyNone(t)` per test.
 4. **Fixture realistic**: `testdata/*.{json,csv,md,sse,sql,html,pdf}` con contenuto realistic (estratto da casi reali pseudonimizzati), no `{"foo":"bar"}` placeholder.
 5. **Property-based dove indicato**: PromptBuilder invariants, AG-UI translator coverage event types, swarm backpressure → `gopter` o `rapid` library. Vincolato a slice 4/8/3.
 6. **Build tags integration**: `//go:build db_integration`, `//go:build sandbox_integration`, `//go:build multimodal_integration`, `//go:build onboarding_integration`. CI runner separato, no flaky-on-CI mainstream.
@@ -1703,7 +1703,7 @@ Oltre alla regola "no nomi tool nel prompt E2E", ogni slice rispetta una **sogli
 | 9b (Telegram) | `bot.send("hello")` | Throttle 1500ms/500ms/1000ms enforce con `synctest`, 429 backoff exponential up to 30s, golden fixture per ogni AG-UI event type → Telegram message |
 | 10 (Onboarding) | Interview 1 question | LoopAgent max_iter=8 cap enforce, escalation event terminate, fact extraction recall on conv corpus (precision ≥ 0.7), audit profile_audit row con paused_state_token |
 | 11b (Ingest) | `ingest.file(pdf) returns ok` | Content_hash idempotent, mem0 2-fase conflict dedup (95% recall on duplicate entities), entity type taxonomy coverage 100% |
-| 11d (Retrieval) | `memory.search returns 5 chunks` | Hybrid fusion score correctness vs baseline (BM25-only / vector-only / graph-only), re-ranker quality NDCG@5 ≥ 0.8 su corpus eval |
+| 11d (Retrieval) | `memory.search returns 5 chunks` | Weighted-RRF fusion correctness vs baseline (BM25-only / vector-only / graph-only) + scale-invariance (BM25 e vector con scale diverse → ranking stabile, no normalizzazione, amendment #26), re-ranker quality NDCG@5 ≥ 0.8 su corpus eval |
 | 13b (vLLM+LMCache) | `vllm responds` | KV cache hit ratio > 30% turn 2-5 su long-context (>4K token prompt), failover offline detection switch entro 90s, cost tracker rolling 24h accuracy |
 
 **Test che NON è "asilo nido" ma è LECITO** (smoke fast-feedback):
@@ -3418,9 +3418,9 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 > **Pattern rubato** dai 4 sistemi memory production-grade 2026 (mix-and-match): **mem0** (48k stars, 91% latency / 90% token saving): 2-fase pipeline extract+conflict, hybrid retrieval. **Letta MemGPT**: 3-tier storage Core/Recall/Archival. **Microsoft GraphRAG**: entity+relationship extraction LLM + Leiden community clustering hierarchical. **Cognee**: Cognify pipeline 6-stage + Memify post-processing (prune/strengthen/derive). Sources: [mem0 state 2026](https://mem0.ai/blog/state-of-ai-agent-memory-2026), [Letta docs](https://docs.letta.com/concepts/letta/), [GraphRAG guide 2026](https://blog.premai.io/graphrag-implementation-guide-entity-extraction-query-routing-when-it-beats-vector-rag-2026/), [Cognee architecture](https://www.cognee.ai/blog/fundamentals/how-cognee-builds-ai-memory).
 
-> **Atomicity: 5 sub-slice archival (11a-11e) ~2100 LOC**, ognuno atomic + smoke green. **+ 11f Task Canvas (~400 LOC, amendment #25) è sequencing-indipendente** — non parte della sequenza atomica di Phase 15: può atterrare a ~Phase 9-10 (dipende solo da context management / Phase 6, non da ingestion/retrieval).
+> **Atomicity: 4 sub-slice archival MVP (11a/11b/11d/11e) ~1850 LOC**, ognuno atomic + smoke green. **11c — Community detection è DEFERITA fuori dall'MVP Phase 15 (amendment #27)** — feature lazy/on-demand futura, non parte della sequenza atomica: GDS resta installato (Slice 0.7) per algoritmi ad-hoc (PageRank/WCC/Node-Similarity), ma il job schedulato Leiden + le community-summary LLM sono rimandati (vedi §11c sotto). **+ 11f Task Canvas (~400 LOC, amendment #25) è sequencing-indipendente** — non parte della sequenza atomica di Phase 15: può atterrare a ~Phase 9-10 (dipende solo da context management / Phase 6, non da ingestion/retrieval).
 
-**Goal.** Aura **conosce** (ingest + index) e **ricorda** (retrieve) — sia il world dell'utente (documenti, entità, conversazioni passate) sia il proprio (agent journal, insight cross-conv). Pipeline: file/URL/conversation → markitdown (Slice 9c) → chunker → embedder (Slice 0.7 sidecar) → Neo4j HNSW + entity LLM extraction → Leiden community detection + summarization → retrieval hybrid + LLM re-ranker.
+**Goal.** Aura **conosce** (ingest + index) e **ricorda** (retrieve) — sia il world dell'utente (documenti, entità, conversazioni passate) sia il proprio (agent journal, insight cross-conv). Pipeline MVP: file/URL/conversation → markitdown (Slice 9c) → chunker → embedder (Slice 0.7 sidecar) → Neo4j HNSW + entity LLM extraction → retrieval hybrid + LLM re-ranker. (Leiden community detection + summarization è la sub-slice 11c, DEFERITA fuori dall'MVP — amendment #27.)
 
 ### Pre-requisiti
 
@@ -3440,13 +3440,13 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 | Memory taxonomy cognitiva | **3 tipi**: Episodic (past events temporal) + Semantic (entities/relations) + Procedural (behaviors/scripts). Industry consensus 2026. |
 | Storage tier (Letta-style) | **3 tier**: Core (in-context, Agent.md + top-K AgentInsight, ~2K token) + Recall (Postgres `conversation_turns` searchable) + Archival (Neo4j full graph, retrieved via tool). |
 | Entity extraction | **Auto-extract sempre on** durante ingestion. LLM tier=reasoning batch ogni 10 chunk. Type taxonomy fissa Person/Org/Location/Concept/Event/Topic (mem0-style). Cost ~$0.05/documento medio. |
-| Retrieval | **Hybrid BM25 + HNSW + graph 1-hop expansion + LLM re-ranker tier=worker**. Re-rank top-20 → top-5. Max quality, +LLM cost ~$0.001/query. |
+| Retrieval | **Hybrid BM25 + HNSW + graph 1-hop expansion, fuse via Weighted-RRF Cypher-native (amendment #26, rank-based scale-free), poi LLM re-ranker tier=worker**. Re-rank top-20 → top-5. Max quality, +LLM cost ~$0.001/query. (Fusione lineare pesata = fallback deprecato.) |
 | Privacy isolation | **No isolation single-user mode**: tutti node sotto identity `'local'` default. Future multi-user richiede refactor (accettato pre-merge). |
-| Community detection | **Leiden hierarchical** (GraphRAG pattern) via Neo4j GDS plugin. Periodic background ogni 24h. Community summary embedded per global query retrieval. |
+| Community detection | **DEFERITA fuori MVP (amendment #27, 11c)** — il job schedulato Leiden + community-summary LLM è over-engineering per il target single-user/self-hosted/cost-sensitive (le summary tematiche globali rispondono a una domanda di corpus-analytics che il single-user raramente pone; ogni community richiede una summary LLM rigenerata al drift del grafo; Microsoft stessa è passata a LazyGraphRAG). Diventa una feature lazy/on-demand futura. **GDS resta installato** (Slice 0.7) per PageRank/WCC/Node-Similarity ad-hoc; solo lo `gds.leiden.stream` schedulato + summary sono rimandati. Il valore cognitivo (local retrieval) è pienamente coperto da 11d (hybrid WRRF + graph 1-2 hop) senza community. |
 | Memify post-processing | **Cognee pattern**: prune stale entity (no mention 90gg) + strengthen RELATED_TO weight su co-occurrence + derive facts da multi-hop traversal. Background 24h. |
 | Agent memory | **Episodic + Insight + cached injection (amendment #11)**: `:AgentEpisode` post-conv summary + `:AgentInsight` cross-conv pattern. Pre-conv inject top-K Insight relevant nel system prompt come `messages[2]`. **In-memory LRU cache TTL `AURA_AGENT_INSIGHT_CACHE_TTL_SEC=600` (10 min)** — preserva byte-identity di `messages[2]` turn-su-turn (Slice 4 invariant cross-slice). Senza cache: Slice 4 KV cache si rompe quando Slice 11e atterra (Pitfall #3, Risk #5). |
 
-### Architettura (5 sub-slice archival 11a-11e + 11f Task Canvas sequencing-indipendente)
+### Architettura (4 sub-slice archival MVP 11a/11b/11d/11e + 11c DEFERITA amendment #27 + 11f Task Canvas sequencing-indipendente)
 
 **11a — Schema Neo4j + taxonomy doc (~200 LOC, niente impl)**:
 ```cypher
@@ -3484,7 +3484,7 @@ CREATE INDEX insight_agent FOR (i:AgentInsight)  ON (i.agent_kind);
 // :Chunk      {id, document_id, sequence, text, embedding[768], tokens_count}
 // :Entity     {id, name, type, embedding[768], mention_count, first_seen_at, last_mentioned_at}
 //             type ∈ {Person, Organization, Location, Concept, Event, Topic}
-// :Community  {id, level (0=leaf, N=root), summary, embedding[768], member_count}
+// :Community  {id, level (0=leaf, N=root), summary, embedding[768], member_count}  // amendment #27: schema provisioned, popolato solo quando 11c atterra (DEFERITA fuori MVP)
 // :UserConversation {id, started_at, topic_summary, embedding[768], turn_count}
 // :AgentEpisode  {id, agent_kind, started_at, ended_at, goal, outcome, summary}
 //                agent_kind ∈ {chat, reasoning, worker}
@@ -3495,8 +3495,8 @@ CREATE INDEX insight_agent FOR (i:AgentInsight)  ON (i.agent_kind);
 // (:Document)-[:HAS_CHUNK {seq}]->(:Chunk)
 // (:Chunk)-[:MENTIONS {confidence}]->(:Entity)
 // (:Entity)-[:RELATED_TO {weight, type}]->(:Entity)
-// (:Entity)-[:IN_COMMUNITY]->(:Community)
-// (:Community)-[:CONTAINS]->(:Community)   // hierarchical
+// (:Entity)-[:IN_COMMUNITY]->(:Community)        // amendment #27: schema provisioned, popolato solo quando 11c atterra (DEFERITA fuori MVP)
+// (:Community)-[:CONTAINS]->(:Community)   // hierarchical — amendment #27: idem, popolato solo da 11c (DEFERITA)
 // (:UserConversation)-[:DISCUSSED]->(:Entity)
 // (:UserConversation)-[:CITES]->(:Chunk)
 // (:UserConversation)-[:USED_SNIPPET]->(:UserSnippet)   // Slice 7e mirror
@@ -3561,14 +3561,17 @@ internal/db/queries/ingest_audit.sql           # ~40   4 query sqlc
 internal/db/migrations/00NN_ingest_audit.up.sql  # ~50 (numero assegnato all'atterraggio; ≠ 0007/0008/0009/0010/0012/0013 già riservati)
 ```
 
-**11c — Community detection + summarization (~250 LOC)**:
+**11c — Community detection + summarization (~250 LOC) — DEFERITA fuori MVP (amendment #27)**:
+
+> Feature lazy/on-demand futura, NON parte dell'MVP Phase 15. GDS resta installato (Slice 0.7) per algoritmi ad-hoc (PageRank/WCC/Node-Similarity); solo il job schedulato Leiden + le community-summary LLM sono rimandati. Lo schema `:Community`/`:IN_COMMUNITY`/`:CONTAINS` + index `community_embedding` è già provisioned in 11a (evita una futura migration). Quando/se 11c atterrerà come feature on-demand, popolerà quello schema. Blocco architetturale conservato come riferimento:
 ```
 internal/memory/graph/
-  community.go      # ~200  Leiden detection via Neo4j GDS:
+  community.go      # ~200  Leiden detection via Neo4j GDS (DEFERITA):
                     #         CALL gds.leiden.stream('entity-graph',
                     #              {relationshipWeightProperty: 'weight'})
                     #       Hierarchical: level 0=leaf entities, level N=root
-                    #       Background goroutine AURA_MEMORY_COMMUNITY_INTERVAL_HR=24
+                    #       Trigger on-demand (NON background schedulato in MVP);
+                    #       AURA_MEMORY_COMMUNITY_INTERVAL_HR resta env deferita
                     #       Per community: LLM tier=worker summarize members
                     #       Persist :Community node + relations
   community_test.go # ~80   Smoke test: 50 entity → cluster atteso N>=3 communities
@@ -3583,7 +3586,16 @@ internal/memory/retrieval/
                     #         HNSW: CALL db.index.vector.queryNodes('chunk_embedding', 20, $q_embedding)
                     #              YIELD node, score AS vector_score
                     #         Graph 1-hop: MATCH (c)-[:MENTIONS]->(:Entity)<-[:MENTIONS]-(c2)
-                    #         Mem0-style normalize fusion: score = 0.4*bm25 + 0.4*vector + 0.2*graph
+                    #         Fusione = Weighted-RRF Cypher-native (amendment #26): ogni
+                    #           sorgente (vector HNSW, fulltext BM25, graph 1-hop per
+                    #           co-mention count) ritorna i propri topK rankati; UNION;
+                    #           per nodo contribution = sourceWeight / (rrfConstant + rank),
+                    #           sommato cross-source; ORDER BY total DESC. Rank-based,
+                    #           scale-free → nessuna normalizzazione dei punteggi grezzi.
+                    #           Params: rrfConstant=AURA_MEMORY_RRF_CONSTANT (60),
+                    #           sourceWeights {vector:1.0, fulltext:1.0, graph:1.0} tunable,
+                    #           sourceK=20, finalK=5. (Fusione lineare pesata 0.4/0.4/0.2 =
+                    #           fallback DEPRECATO, non default.)
                     #         Return top-20 candidates
   rerank.go         # ~100  LLM tier=worker re-ranker:
                     #         Prompt: "Score 0-10 relevance: query={q} chunk={text}"
@@ -3591,14 +3603,18 @@ internal/memory/retrieval/
                     #         Return top-5 by re-ranked score
                     #       Cost stima: 5 calls × $0.0002 = $0.001/query
   recall.go         # ~80   Entity-based recall:
-                    #         memory.recall(entity_id) → all chunks MENTIONING + community summary
-                    #         + RELATED_TO entities up to 2-hop
-  global_search.go  # ~70   GraphRAG global pattern:
+                    #         memory.recall(entity_id) → all chunks MENTIONING
+                    #         (+ community summary SOLO se 11c landed — DEFERITA amendment #27)
+                    #         + RELATED_TO entities up to 2-hop (valid_to IS NULL, amendment #24)
+  global_search.go  # ~70   GraphRAG global pattern — DEFERITO con 11c (amendment #27):
                     #         Query → embed → top-K :Community by community.embedding
                     #         Return community summaries (not chunks)
                     #         Per query "general knowledge across dataset"
+                    #       NON in MVP: dipende da :Community popolate da 11c (deferita).
+                    #       In MVP memory.search espone solo scope=local.
 internal/agent/tools/memory.go   # ~150  Tool LLM-facing Deferred=true:
-                                  # memory.search(query, scope=local|global, k=5),
+                                  # memory.search(query, scope=local, k=5),
+                                  #   (scope=global DEFERITO con 11c — amendment #27)
                                   # memory.recall(entity_name|entity_id),
                                   # memory.forget(doc_id|entity_id|chunk_id) (GDPR)
                                   # memory.summarize_conversation(conv_id) (manual rollup)
@@ -3712,9 +3728,10 @@ internal/canvas/
   store.go          # ~30   Persistenza canvas + offload index in Postgres (vedi sotto).
 internal/agent/tools/canvas.go                   # ~50   Builtin (NON deferred) canvas.read_offload(
                                                   #        node_id, offset?, limit?): node_id→offload_entry
-                                                  #        →result_ref (path assoluto)→legge sidecar by-path,
-                                                  #        semantica byte-offset come read_tool_output ma
-                                                  #        cross-process (no map in-memory). Vedi nota recupero.
+                                                  #        →tool_call_id; delega a sidecarPath(runDir,sessionID,
+                                                  #        toolCallID) (result.go) RIUSANDO il guard validateID;
+                                                  #        re-derive cross-process, NO path assoluto persistito
+                                                  #        (read_tool_output è già durevole — amendment #28).
 internal/db/queries/task_canvas.sql              # ~40   sqlc query
 internal/db/migrations/00NN_task_canvas.up.sql   # ~45   (numero assegnato all'atterraggio;
                                                   #        NON 0007 — riservato a skill_audit Slice 7c)
@@ -3738,17 +3755,17 @@ CREATE TABLE aura.offload_entry (
     node_id         text,                        -- '001-N3'; in modalità deterministica assegnato SINCRONO (mai NULL); NULL solo in LLM-refine prima del backfill
     summary         text        NOT NULL,
     score           smallint    NOT NULL DEFAULT 0 CHECK (score BETWEEN 0 AND 10),
-    result_ref      text        NOT NULL,        -- path sidecar ASSOLUTO ($AURA_RUN_DIR/conversations/<conv_id>/<tool_call_id>.result) — persistito, non risolto dalla map in-memory del live agent
+    result_ref      text,                        -- (opzionale, audit breadcrumb) path RELATIVO conversations/<conv_id>/<tool_call_id>.result; il recupero canonico RI-DERIVA da (conv_id, tool_call_id) via sidecarPath (result.go), NON da un path assoluto persistito (amendment #28)
     created_at      timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (canvas_id, tool_call_id)
 );
 ```
-> **Recupero cross-process (agent-driven).** ⚠️ Il builtin `read_tool_output` (Slice 3 A4) risolve il path da una `resultPaths map[string]string` **in-memory del live LlmAgent**, popolata durante *quella* Run — **non sopravvive** a nuovo turn/processo. Un canvas Telegram vive oltre quella map (`ON DELETE CASCADE` dalla conversazione), quindi affidarsi a `read_tool_output` per offload più vecchi della Run corrente **hard-fail** (tool_call_id ignoto). Risoluzione: `offload_entry.result_ref` è il **path assoluto persistito** (layout deterministico `$AURA_RUN_DIR/conversations/<conv_id>/<tool_call_id>.result`, Slice 1); il recupero usa un **nuovo builtin `canvas.read_offload(node_id, offset?, limit?)`** che (a) `node_id`→`offload_entry`→`result_ref`, (b) legge il sidecar by-path con la stessa semantica byte-offset di `read_tool_output`. NON dipende dalla map in-memory. GC: `ON DELETE CASCADE` dalla conversazione + reclaim dei sidecar via lo sweep di `$AURA_RUN_DIR` già previsto.
+> **Recupero cross-process (agent-driven) — amendment #28 (corretto vs codice shipped).** Il builtin `read_tool_output` (Slice 3 A4) **è GIÀ durevole cross-process**: ricostruisce il path in modo deterministico via `sidecarPath(runDir, sessionID, toolCallID)` (`internal/agent/tools/result.go:63`) e rilegge da disco — **nessuna `resultPaths` map in-memory** (quel design citato in §Slice 1 NON è stato implementato; `runDir` viene da config, `sessionID`=`conv_id`, `toolCallID` è persistito in `aura.conversation_turns`). Quindi il recupero di un offload di un turn/processo precedente **funziona già**. `canvas.read_offload(node_id, offset?, limit?)` è perciò un **thin wrapper**: (a) `node_id`→`offload_entry`→`tool_call_id`, (b) delega a `sidecarPath` + lettura byte-offset **riusando il guard path-traversal esistente `validateID`** (`result.go:45`, rifiuta `..`/separatori su entrambi gli id). Il path **NON va persistito come assoluto** (meno portabile se `AURA_RUN_DIR` cambia): si **ri-deriva** da (`conv_id`, `tool_call_id`), esattamente come `read_tool_output`. GC: `ON DELETE CASCADE` dalla conversazione + reclaim dei sidecar via lo sweep di `$AURA_RUN_DIR` già previsto.
 
 ### Smoke
 
 ```bash
-# Setup: Slice 0.7 Neo4j + GDS attivo, Slice 9c markitdown attivo
+# Setup: Slice 0.7 Neo4j + GDS attivo (ad-hoc PageRank/WCC; community detection 11c DEFERITA, amendment #27), Slice 9c markitdown attivo
 
 # 1. Ingest documento
 aura ingest /home/user/papers/voyager.pdf
@@ -3760,20 +3777,22 @@ aura ingest /home/user/papers/voyager.pdf
 # → ingest_audit INSERT
 
 aura memory search "Minecraft skill library lifelong learning"
-# → BM25 top-20 + HNSW top-20 + graph 1-hop expansion
-# → fusion score
+# → BM25 top-20 + HNSW top-20 + graph 1-hop expansion (co-mention rank)
+# → Weighted-RRF fusion (rrfConstant=60, scale-free)
 # → LLM re-rank tier=worker → top-5
 # → return chunks con source citation
 
 # 2. Telegram ingest auto
 # user invia PDF via Telegram document attach
 # → bot reaction 📄 + handler chiama ingest.file auto
-# → bot risponde "✅ Ingerito voyager.pdf: 47 chunks, 23 entities, 5 communities"
+# → bot risponde "✅ Ingerito voyager.pdf: 47 chunks, 23 entities"
 
-# 3. Community detection (background 24h dopo)
-# Neo4j: 156 entities → Leiden detect 12 communities level 0, 3 level 1
-# Per community: LLM summary tier=worker
-# aura memory search "AI agents general topic" → global search top-3 community summaries
+# 3. Community detection — DEFERITA fuori MVP (amendment #27, sub-slice 11c)
+# (Quando/se 11c atterrerà come feature on-demand:)
+#   Neo4j: 156 entities → Leiden detect 12 communities level 0, 3 level 1
+#   Per community: LLM summary tier=worker
+#   aura memory search "AI agents general topic" → global search top-3 community summaries
+# In MVP: il global/thematic search non è disponibile; il local retrieval (11d) copre il bisogno.
 
 # 4. Agent journal (post-conv)
 # user "trova autore di voyager paper" → tool memory.search → response
@@ -3792,7 +3811,7 @@ aura memory forget --document voyager.pdf
 ### Acceptance
 
 #### 11a — Schema
-- [ ] 4 vector index Neo4j (chunk/entity/community/agent_insight) creati con 768 dim cosine
+- [ ] 5 vector index Neo4j (chunk/entity/community/agent_insight/reasoning_trace) creati con 768 dim cosine (il `community_embedding` è provisioned ma popolato solo quando 11c atterra — DEFERITA, amendment #27; `reasoning_trace_embedding` popolato solo se `AURA_MEMORY_REASONING_TRACE_ENABLED=true` — amendment #24)
 - [ ] 2 fulltext index (chunk_text, entity_name) creati
 - [ ] 4 constraint UNIQUE per id
 - [ ] 4 index proprietà (entity_type, mention_count, agent_kind episode/insight)
@@ -3812,14 +3831,15 @@ aura memory forget --document voyager.pdf
 - [ ] Telegram document handler chiama `ingest.file` auto + risposta confirm
 - [ ] **Embed batch dim consistency (amendment #18, Pitfall #7 P0)**: `embedder.go` Batch() asserts every returned vector has `len(v) == AURA_EMBED_DIMENSIONS`. Mismatch on any returned vector → abort ingest, log `embedding sidecar returned wrong dim — refusing to corrupt Neo4j vector index`. Acceptance test: mock sidecar returning 384d vector → ingest aborts before Neo4j upsert.
 
-#### 11c — Community detection
-- [ ] Background goroutine ogni 24h chiama `CALL gds.leiden.stream(...)` su entity graph
-- [ ] Per community: LLM tier=worker summarize membri (max 10 entity per call)
-- [ ] Persist `:Community` + `:IN_COMMUNITY` + hierarchical `:CONTAINS`
+#### 11c — Community detection — DEFERITA fuori MVP (amendment #27)
+> Nessun acceptance richiesto in Phase 15. Feature lazy/on-demand futura. GDS resta installato (Slice 0.7) per algoritmi ad-hoc. Quando 11c atterrerà, l'acceptance sarà (conservato come riferimento):
+> - [ ] (deferito) Trigger on-demand chiama `CALL gds.leiden.stream(...)` su entity graph (NON background schedulato)
+> - [ ] (deferito) Per community: LLM tier=worker summarize membri (max 10 entity per call)
+> - [ ] (deferito) Persist `:Community` + `:IN_COMMUNITY` + hierarchical `:CONTAINS`
 
 #### 11d — Retrieval
 - [ ] Tool `memory.search(query, scope, k=5)` hybrid retrieval (BM25 + HNSW + graph 1-hop)
-- [ ] Score fusion mem0-style: 0.4*bm25 + 0.4*vector + 0.2*graph
+- [ ] **Fusione = Weighted-RRF Cypher-native (amendment #26)**: vector (HNSW) + fulltext (BM25) + graph 1-hop (rank by co-mention count) come 3 sorgenti rankate, UNION, `contribution = sourceWeight / (rrfConstant + rank)` sommato cross-source, ORDER BY total DESC. `rrfConstant=AURA_MEMORY_RRF_CONSTANT` (default 60), `sourceWeights {vector:1.0, fulltext:1.0, graph:1.0}` tunable, `sourceK=20`, `finalK=5`. Rank-based, scale-free: NESSUNA normalizzazione dei punteggi grezzi. La fusione lineare pesata `0.4*bm25 + 0.4*vector + 0.2*graph` è fallback DEPRECATO, non il default. Acceptance test: BM25 e vector con scale di punteggio molto diverse → ranking stabile senza normalizzazione; rimozione di una sorgente degrada ma non rompe l'ordinamento.
 - [ ] LLM re-ranker top-20 → top-5 tier=worker, batch 4
 - [ ] **HNSW M=32 baseline (amendment #20, UX-08)**: vector index creation MUST set `vector.hnsw.m: 32` (NOT Neo4j default 16) + `vector.hnsw.ef_construction: 200`. Acceptance test: post-migration, `SHOW INDEXES YIELD name, options` returns `m=32` for all 4 vector indexes. Pre-merge benchmark recall@5 ≥ 0.8 @ 1K/10K/100K synthetic corpus (run `scripts/memory_recall_bench.sh` — file authored in Phase 15).
 - [ ] **`docs/aura-quality-snapshot.md` CI gate (amendment #20)**: pre-merge for any PR touching `internal/memory/**` or `internal/db/migrations/neo4j/**`, `scripts/quality_snapshot_gate.sh` validates that the Phase 15 row in `docs/aura-quality-snapshot.md` has `Last measured` date ≥ PR base commit date. Stale → CI fail with `quality snapshot row 'GraphRAG retrieval recall@5 @ 100K corpus' stale — owner Phase 15 must re-measure and update before merge (amendment #20)`. Snapshot rows for Phase 5 (sandbox escape rate), Phase 6 (cache hit rate), Phase 11 (snippet success rate), Phase 13 (MarkdownV2 escape fuzz) gated by analogous path globs (see `docs/aura-quality-snapshot.md` CI gate contract section).
@@ -3827,7 +3847,7 @@ aura memory forget --document voyager.pdf
 - [ ] Tool `memory.recall(entity)` ritorna all chunks MENTIONING + 2-hop entities
 - [ ] Tool `memory.forget(id)` GDPR-compliant cascade + audit FORGET row
 - [ ] Tool `memory.summarize_conversation(conv_id)` manual rollup `:UserConversation`
-- [ ] Global search: scope=global → top-K `:Community` summaries
+- [ ] ~~Global search: scope=global → top-K `:Community` summaries~~ DEFERITO con 11c (amendment #27): dipende da `:Community` popolate da 11c; in MVP `memory.search` espone solo `scope=local`. L'acceptance MVP è: `memory.search` rifiuta/ignora `scope=global` con messaggio "global search not available (11c deferred)".
 
 #### 11e — Agent journal + Memify
 - [ ] Post-conv trigger crea `:AgentEpisode` con summary LLM-generated
@@ -3843,15 +3863,15 @@ aura memory forget --document voyager.pdf
 - [ ] `canvas.go` produce Mermaid `flowchart TD` valido con NodeID schema `\d{3}-N\d+`, header meta `%%{...}%%`, nodi 1-riga con `status`/`summary`/`ts`; canvas ≤ `AURA_CANVAS_MAX_BYTES=4000`.
 - [ ] `builder.go` genera il canvas in modalità **deterministica** dagli `agent.Event` (zero chiamate LLM) di default; `AURA_CANVAS_LLM_REFINE_ENABLED=false` di default; editing incrementale line-based (no rewrite full).
 - [ ] `trigger.go` gating: sotto `AURA_CANVAS_MILD_RATIO=0.5` della finestra **nessun** canvas; mild→score-cascade, aggressive `0.85`→head-delete+canvas, emergency `0.95`. Gate anche su `AURA_CANVAS_MIN_TASK_STEPS=4`. Acceptance: task da 2 step → nessun canvas creato.
-- [ ] `offload.go` score-cascade: tool-result sostituiti col summary in ordine di `score` decrescente; il messaggio in-context contiene `node`, `Summary`, `result_ref`; raw recuperabile via `canvas.read_offload(node_id, ...)` (cross-process; NON `read_tool_output`, vedi nota recupero).
+- [ ] `offload.go` score-cascade: tool-result sostituiti col summary in ordine di `score` decrescente; il messaggio in-context contiene `node`, `Summary`, riferimento al tool; raw recuperabile via `canvas.read_offload(node_id, ...)` che ri-deriva il path (read_tool_output è anch'esso già durevole — amendment #28).
 - [ ] **Invariante KV-cache (cross-ref Slice 4 / amendment #16)**: il canvas è iniettato nel tail dinamico, **dopo l'ultimo system message stabile** (mai nel prefisso cacheable, qualunque ne sia il confine `[0..1]`/`[0..2]`). Acceptance: `scripts/cache_invariant_audit.sh` resta verde (SHA-256 del prefisso invariato su 20 turni) con canvas attivo.
 - [ ] Persistenza: `aura.task_canvas` + `aura.offload_entry` (migration Postgres `00NN_task_canvas`, numero ≠ 0007); `ON DELETE CASCADE` da `aura.conversations`. Down migration presente (Postgres è reversibile, a differenza di Cypher).
-- [ ] Recupero agent-driven verificato: `node_id` dal canvas → `offload_entry.result_ref` (path assoluto persistito) → nuovo builtin `canvas.read_offload(node_id, offset?, limit?)` ritorna il raw del tool **anche in un processo/turn diverso** (NON dipende dalla map in-memory di `read_tool_output`). Acceptance: simulare restart processo → recupero ancora funzionante.
-- [ ] **Path-traversal guard `canvas.read_offload` (parità Slice 1 read_tool_output)**: rifiuta `node_id`/`tool_call_id` con `..` o separatori di path; verifica che il path risolto resti sotto `$AURA_RUN_DIR/conversations/<conv_id>/`. Acceptance: `tool_call_id="../../etc/passwd"` → hard-fail, nessuna lettura fuori dalla dir della conversazione.
+- [ ] Recupero agent-driven verificato: `node_id` → `offload_entry` → `tool_call_id` → `canvas.read_offload` **ri-deriva** il path via `sidecarPath` e ritorna il raw **anche in un processo/turn diverso** (`read_tool_output` è già durevole — amendment #28). Acceptance: simulare restart processo → recupero ancora funzionante.
+- [ ] **Path-traversal guard `canvas.read_offload`**: **riusa `validateID`/`sidecarPath` esistenti** (`internal/agent/tools/result.go:45-71`), NON reinventa il guard — rifiuta `node_id`/`tool_call_id` con `..` o separatori; il path risolto resta sotto `<AURA_RUN_DIR>/conversations/<conv_id>/`. Acceptance: `tool_call_id="../../etc/passwd"` → hard-fail.
 
 ### File targets cumulativi
 
-(Vedere "Architettura" sopra. Archival 11a-11e: **~1650 LOC src + ~450 test + ~90 migration = ~2190 LOC**. **11f Task Canvas (sequencing-indipendente): ~400 LOC src + ~130 test + ~50 migration**, contabilizzato nella fase in cui atterra (~Phase 9-10), non nel totale Phase 15.)
+(Vedere "Architettura" sopra. Archival MVP 11a/11b/11d/11e: **~1450 LOC src + ~370 test + ~90 migration = ~1910 LOC** — 11c (~200 src + ~80 test) DEFERITA fuori MVP, amendment #27. **11f Task Canvas (sequencing-indipendente): ~400 LOC src + ~130 test + ~50 migration**, contabilizzato nella fase in cui atterra (~Phase 9-10), non nel totale Phase 15.)
 
 ### Open questions
 
@@ -3866,14 +3886,14 @@ aura memory forget --document voyager.pdf
 
 ### Mini-PC RAM budget — delta
 
-- Background goroutines (community + insight + memify): ~50 MB heap
+- Background goroutines (insight + memify; community DEFERITA, amendment #27): ~50 MB heap
 - Neo4j heap: già allocato Slice 0.7 (~1.5-2 GB)
 - aura-llama-embed: già allocato Slice 0.7 (~600 MB)
 - LLM call (re-ranker, entity extract, summarize): no RAM extra (remote)
 
 Net delta: **negligible**.
 
-### Commit message templates (5 sub-slice archival 11a-11e; 11f Task Canvas committato nella fase in cui atterra)
+### Commit message templates (4 sub-slice archival MVP 11a/11b/11d/11e; 11c DEFERITA fuori MVP amendment #27; 11f Task Canvas committato nella fase in cui atterra)
 
 ```
 slice 11a: memory schema Neo4j (taxonomy 3-tier 3-type Letta+mem0+industry)
@@ -3945,19 +3965,22 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
 ```
+# slice 11c — DEFERITA fuori MVP (amendment #27). Template conservato come
+# riferimento per quando atterrerà come feature lazy/on-demand. NON committare in Phase 15.
 slice 11c: community detection Leiden + summarization (GraphRAG pattern)
 
-Background goroutine ogni 24h chiama gds.leiden.stream() su entity
-graph weighted by RELATED_TO.weight. Hierarchical clustering produce
-N community level 0 (leaf), N/5 level 1, etc.
+Trigger on-demand (NON background schedulato) chiama gds.leiden.stream()
+su entity graph weighted by RELATED_TO.weight. Hierarchical clustering
+produce N community level 0 (leaf), N/5 level 1, etc.
 
 Per community: LLM tier=worker summarize membri (max 10 entity).
-Persist :Community node + :IN_COMMUNITY + :CONTAINS relations.
+Persist :Community node + :IN_COMMUNITY + :CONTAINS relations
+(schema già provisioned in 11a).
 
 Community embedding via aura-llama-embed (Slice 0.7) per global
 search retrieval (memory.search scope=global).
 
-Cost stima: $0.10/run per 100 entities, run quotidiana.
+Cost stima: $0.10/run per 100 entities, on-demand (NON quotidiana).
 
 LOC: +XXX src / +YY test.
 
@@ -3970,8 +3993,12 @@ slice 11d: retrieval hybrid (BM25 + HNSW + graph) + LLM re-ranker
 internal/memory/retrieval/ hybrid search:
 1. BM25 fulltext via Neo4j queryNodes('chunk_text', q)
 2. HNSW vector queryNodes('chunk_embedding', 20, q_embedding)
-3. Graph 1-hop expansion via :MENTIONS Entity
-Mem0-style fusion: 0.4*bm25 + 0.4*vector + 0.2*graph
+3. Graph 1-hop expansion via :MENTIONS Entity (rank by co-mention count)
+Fusione = Weighted-RRF Cypher-native (amendment #26): per sorgente
+contribution = sourceWeight / (rrfConstant + rank), sommato cross-source,
+ORDER BY total DESC. rrfConstant=60, sourceWeights vector/fulltext/graph=1.0,
+sourceK=20, finalK=5. Rank-based scale-free, no normalizzazione.
+(Fusione lineare 0.4/0.4/0.2 = fallback deprecato.)
 
 LLM re-ranker tier=worker top-20 -> top-5, batch 4 chunks per call.
 Cost ~$0.001/query.
@@ -3984,6 +4011,7 @@ Tool LLM-facing Deferred:
 
 Global search (GraphRAG): scope=global -> top-K :Community summaries
 (invece di chunks). Per query "general knowledge across dataset".
+DEFERITO con 11c (amendment #27): in MVP solo scope=local.
 
 LOC: +XXX src / +YY test.
 
@@ -4009,7 +4037,6 @@ Audit log per ogni operazione Memify in memify_audit table.
 Env nuove (Caps & Limits indice):
 - AURA_MEMORY_CHUNK_SIZE_TOKENS=512
 - AURA_MEMORY_CHUNK_OVERLAP_TOKENS=64
-- AURA_MEMORY_COMMUNITY_INTERVAL_HR=24
 - AURA_MEMORY_INSIGHT_INTERVAL_MIN=60
 - AURA_MEMORY_MEMIFY_INTERVAL_HR=24
 - AURA_MEMORY_INSIGHT_TOP_K=3
@@ -4651,7 +4678,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_OTEL_EXPORTER` | `otlp` | operative | 1 | OTel trace exporter ∈ `{stdout,otlp,none}` (A5 + A2 amendment 2026-05-30). `none` = no-op provider. |
 | `AURA_OTEL_ENDPOINT` | `localhost:4317` | operative | 1 | OTLP/gRPC collector endpoint (A5 + A2 amendment 2026-05-30). Silent-drop senza collector. |
 | `AURA_CONFIG_DIR` | `~/.aura/` | path | 1 | Config root (contiene `llm.json`). |
-| `AURA_RUN_DIR` | `~/.aura/run/` | path | 1 | Runtime sidecar dir. |
+| `AURA_RUN_DIR` | `<os.UserCacheDir>/aura` | path | 1 | Runtime sidecar dir (default = cache dir, es. `~/.cache/aura`; fallback `<os.TempDir>/aura`. Corretto vs `~/.aura/run/` stale — amendment #28). |
 | `AURA_RUN_DIR_WARN_THRESHOLD_BYTES` | `1073741824` (1 GiB) | cap | 1 | Boot warn threshold. |
 | `AURA_CONTEXT_PREVIEW_CAP_BYTES` | `2048` | cap | 1 | ToolResult preview boundary. |
 | `AURA_CONTEXT_RESERVE_TOKENS` | `13000` | cap | 1.8b | Context window reserve. |
@@ -4705,7 +4732,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MEMORY_CHUNK_OVERLAP_TOKENS` | `64` | cap | 11b | Sliding overlap fra chunks adiacenti. |
 | `AURA_MEMORY_EMBED_BATCH_SIZE` | `32` | cap | 11b | Batch embedder requests per call sidecar. |
 | `AURA_MEMORY_ENTITY_BATCH_SIZE` | `10` | cap | 11b | Batch chunks per LLM entity extraction call. |
-| `AURA_MEMORY_COMMUNITY_INTERVAL_HR` | `24` | cap | 11c | Background Leiden community detection interval. |
+| `AURA_MEMORY_COMMUNITY_INTERVAL_HR` | `24` | cap | 11c (DEFERITA, amendment #27) | Leiden community detection interval — env DEFERITA con 11c (feature lazy/on-demand futura). Non letta in MVP. |
 | `AURA_AGENT_INSIGHT_CACHE_TTL_SEC` | `600` (10 min) | cap | 11e | LRU cache TTL per `:AgentInsight` retrieval (amendment #11). Preserva `messages[2]` byte-identity cross-turn → Slice 4 KV cache hit. **Cross-slice invariant** — modifica solo se Slice 4 `cache_invariant_audit.sh` resta verde. |
 | `AURA_MEMORY_INSIGHT_INTERVAL_MIN` | `60` | cap | 11e | Cross-conv pattern analyzer interval. |
 | `AURA_MEMORY_INSIGHT_TOP_K` | `3` | cap | 11e | Top-K AgentInsight inject in system prompt. |
@@ -4713,8 +4740,9 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MEMORY_MEMIFY_INTERVAL_HR` | `24` | cap | 11e | Memify post-processing background interval. |
 | `AURA_MEMORY_PRUNE_IDLE_DAYS` | `90` | cap | 11e | Entity prune threshold (last_mentioned_at). |
 | `AURA_MEMORY_PRUNE_MIN_MENTIONS` | `3` | cap | 11e | Entity prune threshold (mention_count). |
-| `AURA_MEMORY_RERANK_TOP_K_IN` | `20` | cap | 11d | Hybrid retrieval candidates pre-rerank. |
-| `AURA_MEMORY_RERANK_TOP_K_OUT` | `5` | cap | 11d | LLM re-ranker output size. |
+| `AURA_MEMORY_RRF_CONSTANT` | `60` | cap | 11d | Weighted-RRF rank constant (amendment #26). Fusione Cypher-native rank-based scale-free. |
+| `AURA_MEMORY_RERANK_TOP_K_IN` | `20` | cap | 11d | Hybrid retrieval candidates pre-rerank (RRF `sourceK`/finalK input). |
+| `AURA_MEMORY_RERANK_TOP_K_OUT` | `5` | cap | 11d | LLM re-ranker output size (RRF `finalK`). |
 | `AURA_LLM_LOCAL_BASE_URL` | `http://aura-vllm-chat:8083/v1` | operative | 13 | Local LLM endpoint (vLLM o llama.cpp fallback). |
 | `AURA_LLM_LOCAL_MODEL` | `gemma-3-12b-it` | operative | 13 | Local LLM model id. |
 | `AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC` | `30` | cap | 13 | TCP probe interval verso remote per offline detection. |
@@ -4781,7 +4809,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo transport: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal.
 11. **Slice 10 (User onboarding + Agent.md)** atterra dopo Slice 9 perché ha Telegram come transport principale dell'interview e usa tutto lo stack pre-esistente (ask_user 1.5, identities 1.7, conversations 1.8, PromptBuilder 4, Risk-Based 5, AG-UI 8). Agent.md per identity in filesystem `~/.aura/agents/<id>/` viene iniettato come secondo system message (cache-friendly, Slice 4 invariants preservati). Pattern hybrid ChatGPT Custom Instructions + Memory + mem0 ADD-only. Out of scope "Setup wizard" + "Telegram" rimossi dal PRD; restano out: dashboard SPA full, tray icon, OTA update, multi-user auth.
 
-11.bis. **Slice 11 (Memory ingestion + taxonomy)** atterra dopo Slice 10 e prima di Slice 13. Dipende da: Slice 0.7 Neo4j+HNSW+embed sidecar, Slice 7e snippet (per `:UserSnippet` mirror semantic), Slice 9c markitdown sidecar (per document → markdown universal parser), Slice 10 Agent.md (Core tier già attivo). Pattern: **mix-and-match dei migliori sistemi memory 2026** — mem0 (2-fase pipeline + hybrid retrieval, 48k stars), Letta MemGPT (3-tier storage Core/Recall/Archival), Microsoft GraphRAG (Leiden community detection + global summarization), Cognee (Cognify pipeline 6-stage + Memify post-processing). 5 sub-slice atomic: 11a schema (+ valid-time/NOOP/reasoning, amendment #24), 11b ingestion pipeline, 11c community detection (declassabile a lazy/on-demand — vedi studio), 11d retrieval+rerank (Weighted-RRF raccomandato vs fusione lineare), 11e agent journal+Memify. **11f Task Canvas (amendment #25) è separato e sequencing-indipendente** (~Phase 9-10, dipende solo dal context management). Privacy isolation: single-user mode (no isolation), refactor multi-user accettato. Cost stima: $0.05/doc ingest + $0.001/query rerank + $0.10/community-detection-run quotidiana. Decision pre-merge utente.
+11.bis. **Slice 11 (Memory ingestion + taxonomy)** atterra dopo Slice 10 e prima di Slice 13. Dipende da: Slice 0.7 Neo4j+HNSW+embed sidecar, Slice 7e snippet (per `:UserSnippet` mirror semantic), Slice 9c markitdown sidecar (per document → markdown universal parser), Slice 10 Agent.md (Core tier già attivo). Pattern: **mix-and-match dei migliori sistemi memory 2026** — mem0 (2-fase pipeline + hybrid retrieval, 48k stars), Letta MemGPT (3-tier storage Core/Recall/Archival), Microsoft GraphRAG (Leiden community detection + global summarization), Cognee (Cognify pipeline 6-stage + Memify post-processing). 4 sub-slice atomic MVP: 11a schema (+ valid-time/NOOP/reasoning, amendment #24), 11b ingestion pipeline, 11d retrieval+rerank (Weighted-RRF Cypher-native adottato, amendment #26; fusione lineare deprecata), 11e agent journal+Memify. **11c community detection è DEFERITA fuori MVP (amendment #27)** — feature lazy/on-demand futura (lo studio comparativo 2026 l'ha giudicata over-engineering per il target single-user/cost-sensitive; Microsoft stessa è passata a LazyGraphRAG); GDS resta installato per algoritmi ad-hoc, solo lo schedulato Leiden + summary è rimandato. **11f Task Canvas (amendment #25) è separato e sequencing-indipendente** (~Phase 9-10, dipende solo dal context management). Privacy isolation: single-user mode (no isolation), refactor multi-user accettato. Cost stima MVP: $0.05/doc ingest + $0.001/query rerank ($0.10/community-detection-run quotidiana rimosso — 11c deferita). Decision pre-merge utente.
 
 12. **Slice 13 (Local LLM fallback)** atterra dopo Slice 11 perché completa lo stack provider-agnostico: `LLMRouter` con 4 trigger (explicit `prefer_local`, offline detection, cost threshold, identity capability) sceglie tra remote OpenRouter e local vLLM+LMCache. **Pattern doppio sidecar**: `aura-llama-multimodal` Slice 9c invariato per vision/STT one-shot + `aura-vllm-chat` nuovo Slice 13 per chat fallback con LMCache disk-tier 50 GB. **Open question CRITICA pre-merge**: vLLM CPU mode è 5-10x più lento di llama.cpp CPU per stesso modello — se mini-PC senza GPU, attivare path **13-bis** (riusa Gemma 4 E4B Slice 9c per chat fallback, no LMCache, save 1 sidecar). Pattern reference LMCache (8.4k stars, Apache 2.0, prod GCP/GMI/CoreWeave). 2 sub-slice: 13a router+offline+cost, 13b vLLM+LMCache sidecar.
 
