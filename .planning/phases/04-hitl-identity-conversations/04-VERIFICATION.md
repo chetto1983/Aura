@@ -1,9 +1,10 @@
 ---
 phase: 04-hitl-identity-conversations
 verified: 2026-05-31T00:00:00Z
-status: human_needed
-score: 13/13 must-haves verified
+status: passed
+score: 13/13 must-haves verified; 4/4 live UAT items passed
 overrides_applied: 0
+uat_executed: 2026-05-31 (live deepseek/deepseek-v4-flash:exacto + Postgres stack); all 4 items PASS — see 04-HUMAN-UAT.md. One bug found+fixed during UAT: auto-title worker never fired (iterator not drained), commit 12506a8e.
 gaps:
   - truth: "ask_user.Execute returns the ErrAwaitingUserInput sentinel, never a ToolResult — AND the tool is registered in the production registry so the LLM can actually trigger a pause"
     status: resolved
@@ -30,8 +31,8 @@ human_verification:
 
 **Phase Goal:** Tight cluster of agent-loop primitives. `ask_user` tool with sentinel `ErrAwaitingUserInput` + FIFO multi-pause persisted in `aura.paused_states`. Identity minimal + `capability_grants` scaffolding (single-user `local` default with wildcard `*`). Conversation persistence multi-thread Claude.ai-style with microcompact L1 + budget L2 + auto-title + per-conversation token+USD aggregation. FTS via `pg_trgm` GIN index on `conversation_turns.content` + `aura chat search` CLI.
 **Verified:** 2026-05-31T00:00:00Z
-**Status:** human_needed (all 13 automated must-haves verified; 4 live-LLM UAT items remain)
-**Re-verification:** Truth #2 re-verified after fix 6a808839
+**Status:** passed (13/13 automated must-haves + 4/4 live UAT items)
+**Re-verification:** Truth #2 re-verified after fix 6a808839; 4 live-LLM UAT items executed against deepseek/deepseek-v4-flash:exacto — all PASS (see 04-HUMAN-UAT.md). Auto-title bug found+fixed (12506a8e).
 
 ---
 
