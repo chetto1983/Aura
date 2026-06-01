@@ -60,7 +60,7 @@
 | # | Decisione | Status | Revers. | Finestra (cosa la cementa) | Nota |
 |---|---|---|---|---|---|
 | **D11** | **Modello embedding + dimensione** | 🔒 *contratto* / ⏳ *pick finale* | 🟢 (se 768-native-GGUF) / 🔴 (se cambia dim) | benchmark prima di P15-ingest-a-scala | **Risolto 2026-06-01** (rigore Neo4j/Memgraph, 2 agenti). **Contratto locked**: index 768d, serving llama.cpp-GGUF `/v1/embeddings`, modello emette 768 (nativo o **MRL-truncato-a-768**) → qualsiasi 768-native-GGUF = drop-in (2 arg compose, zero migrazione); dim-diversa = wipe+re-embed forward-only. **Default locked**: EmbeddingGemma-300m@768d (wired, sub-200MB, lowest-risk). **Niente hardcoding del nome modello**. **Pick finale = benchmark P15 su corpus IT reale**, shortlist per costo-di-adozione: ① **Granite-r2 311m** (768 nativo→cheap, Apache, MMTEB ~65 batte Gemma ~61, ModernBERT/llama.cpp — *front-runner, da verificare serving GGUF/arm64*); ② Nomic-v2-moe (768, Apache, mid-quality); ③ EmbeddingGemma (incumbent); ④ Qwen3-0.6B (1024→migrazione, solo se delta qualità lo giustifica). jina-v5 escluso (CC-BY-NC). EmbeddingGemma battuto su qualità (~4 MMTEB) ma vince su RAM; Granite-r2 dissolve il trade-off (cheap+migliore+Apache). |
-| **D12** | **Primitiva isolamento sandbox** (Slice 2) — PRD oggi: container + seccomp allowlist + ulimit + network policy | 🔓 | 🔴 | **Phase 5 (LA PROSSIMA)** | Fondazionale: skills (7), swarm (9), snippet eseguibili (7e) ci costruiscono sopra. Cambiare la primitiva (container+seccomp vs gVisor vs microVM/Firecracker vs WASM/WASI) *dopo* = rework a cascata. **Vincolo D00 (trappola affilata)**: deve girare su **x86 E arm64**, e **seccomp è arch-specifico** (numeri syscall x86≠ARM) → `libseccomp` o due allowlist. gVisor/Firecracker hanno supporto arm64 variabile — da verificare. Valutare vs profilo single-user self-host: isolamento vs overhead RAM/avvio vs compat Python/multi-lang **su entrambe le arch**. |
+| **D12** | **Primitiva isolamento sandbox** (Slice 2) | 🔒 | 🟡 | Phase 5 | **Risolto 2026-06-01** (amendment #32, 2 agenti). **Primario = container+seccomp INDURITO** (no cambio di primitiva): unica production-grade *identica* su x86 **e arm64** (DGX), regge 7e multi-lang + 2b + swarm, switch-cost zero. Il vero lavoro = indurire (già in PITFALLS Pitfall 1): seccomp **allowlist positiva** (non deny-list 7-syscall) + 5 flag (`cap_drop ALL`, `no-new-privileges`, `pids_limit`, userns-remap) + profilo by-name con `SCMP_ARCH_AARCH64` + `SandboxEscapeBench` <5% Gate-3. **gVisor = escalation x86-first** (flag `--runtime=runsc` per-deployment, coerente D00): trigger escape>5%; NON default perché arm64-gVisor è non-GA (240/294 syscall) → violerebbe D00. **microVM RIGETTATO**: KVM bloccato su Hetzner-cloud + non confermato DGX → fallisce D00. **wazero = fast-path futuro** (in-process, no-Docker, honors local-only) solo pure-compute; non regge py/shell/js 7e. |
 
 ---
 
@@ -112,9 +112,10 @@
 
 0. **D00 locked (2026-06-01)**: binario portabile unico. Le 6 invarianti di portabilità sono guardrail per ogni phase → da verificare in CI (multi-arch) e nel design (routing config-driven, privacy-mode, seccomp per-arch).
 1. ~~Valutare D11 (embedding)~~ **RISOLTO 2026-06-01** (amendment #31): contratto 768/GGUF locked, EmbeddingGemma default, pick finale = benchmark P15 (front-runner Granite-r2). Vedi riga D11.
-2. **Valutare D12 (sandbox)** — **PROSSIMA**: imminente (Phase 5 = next), fondazionale, **+ vincolo ARM/seccomp da D00**.
-3. Le TIER-2 (D14-D15) si portano a 🔒 just-in-time; D13 ha il seam day-1 per D00.
+2. ~~Valutare D12 (sandbox)~~ **RISOLTO 2026-06-01** (amendment #32): container+seccomp indurito (no cambio primitiva), gVisor escalation x86-first, microVM rigettato, wazero fast-path futuro. Vedi riga D12. **→ Entrambe le forcelle TIER-1 (D11+D12) chiuse.**
+3. Le TIER-2 (D13-D15) si portano a 🔒 just-in-time prima della rispettiva phase; D13 ha il seam day-1 per D00.
 4. Non spendere pre-analisi su §5 (validate-by-building).
+5. **Build-ready**: con D00 lockato + D11/D12 risolte, le forcelle irreversibili-e-imminenti sono chiuse. Phase 5 (sandbox) può partire dal piano indurito.
 
 ### Amendment PRD richiesto (follow-up)
 
