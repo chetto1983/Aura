@@ -1582,13 +1582,14 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 Cache poisoning is the highest-risk cross-slice failure mode in Aura. Slice 4 owns the invariant (`messages[0]` byte-identical turn-su-turn) but Slices 1.8, 5, 7e-core, 10, 11e all mutate the message-construction pipeline. Without a cross-slice gate, every capability silently risks planting its own poisoning site. Reference: `reference_aura_cache_poisoning_sites_2026-05-27` (6 sites mapped pre-rewrite — historical record kept as warning).
 
-### Architectural rule: TWO system messages
+### Architectural rule: THREE-segment cacheable prefix (amendment #29)
 
 - `messages[0]`: byte-identical turn-su-turn. Contains: system prompt + tool manifest (alphabetically sorted by name, per Slice 4). NO per-turn data, NO timestamps, NO conversation_id, NO identity_id strings.
-- `messages[1]`: mutable. Contains: `Agent.md` per-identity profile (Slice 10 injection) + cached `:AgentInsight` payload (Slice 11e injection, cached per amendment #11 via `AURA_AGENT_INSIGHT_CACHE_TTL_SEC`).
-- All conversation turns: `messages[2..N]`.
+- `messages[1]`: stable per-identity. Contiene SOLO il profilo `Agent.md` per-identity (Slice 10); cambia solo quando l'utente edita il profilo. NON contiene `:AgentInsight` (vedi `messages[2]`).
+- `messages[2]`: cached-TTL prefix. Contiene il blocco top-K `:AgentInsight` (Slice 11e injection, cached per amendment #11 via `AURA_AGENT_INSIGHT_CACHE_TTL_SEC`). Byte-stable entro la finestra TTL → terzo segmento cacheable. **CHIUSA (amendment #29)**: index pinnato a `[2]`, NON appeso a `messages[1]` — Agent.md e Insight hanno domini di stabilità/invalidazione distinti e restano segmenti di prefisso separati.
+- All conversation turns: `messages[3..N]`.
 
-Any future slice that wants to inject context MUST land in `messages[1]` (cached/stable-per-identity) — NEVER mutate `messages[0]`. Violation = automatic Slice 4 invariant break.
+Any future slice that wants to inject context MUST land in the cacheable prefix at the appropriate stability tier (`messages[1]` per-identity, `messages[2]` cached-TTL) or in the dynamic tail (`messages[3..N]`) — NEVER mutate `messages[0]`, e NEVER co-locare payload con domini di stabilità diversi nello stesso indice. Violation = automatic Slice 4 invariant break.
 
 ### CI gate `scripts/cache_invariant_audit.sh`
 
@@ -1608,7 +1609,7 @@ Any future slice that wants to inject context MUST land in `messages[1]` (cached
 - Slice 5 web_fetch: no system-prompt mutation when results returned.
 - Slice 7e-core skill snippet execution: skill body sourced from disk-cached SKILL.md, NOT inlined per call.
 - Slice 10 Agent.md injection: lands at `messages[1]`, NOT `messages[0]`.
-- Slice 11e :AgentInsight injection: cached per amendment #11, lands at `messages[2]` continuation (or `messages[1]` append after Agent.md depending on builder order — Phase 15 decides).
+- Slice 11e :AgentInsight injection: cached per amendment #11, lands at `messages[2]` (third prefix segment). **CHIUSA (amendment #29)**: canonical builder order pinnato a `[0]`=system+tools, `[1]`=Agent.md, `[2]`=cached `:AgentInsight`, `[3..N]`=history+canvas tail. NON appeso a `messages[1]` (vedi §1588).
 
 ### Pitfall #3 mitigation summary
 
@@ -3480,10 +3481,13 @@ CREATE INDEX episode_agent FOR (ep:AgentEpisode) ON (ep.agent_kind);
 CREATE INDEX insight_agent FOR (i:AgentInsight)  ON (i.agent_kind);
 
 // Labels + properties:
-// :Document   {id, source_uri, title, ingested_at, chunk_count, status, content_hash}
-// :Chunk      {id, document_id, sequence, text, embedding[768], tokens_count}
-// :Entity     {id, name, type, embedding[768], mention_count, first_seen_at, last_mentioned_at}
-//             type ∈ {Person, Organization, Location, Concept, Event, Topic}
+// NB (amendment #29, OQ6): ogni nodo porta anche `identity_id` (costante 'local' in MVP single-user)
+//     e ogni Cypher di lettura è scopato `WHERE n.identity_id = $identity_id` (refactor multi-user additivo).
+// :Document   {id, source_uri, title, ingested_at, chunk_count, status, content_hash, identity_id}
+// :Chunk      {id, document_id, sequence, text, embedding[768], tokens_count, identity_id}
+// :Entity     {id, name, type, subtype, embedding[768], mention_count, first_seen_at, last_mentioned_at, archived_at, identity_id}
+//             type ∈ {Person, Organization, Location, Concept, Event, Topic, Other}  // amendment #29 POLE+O: +Other catch-all
+//             subtype = string free-form LLM-extracted (es. "Author","Family"); archived_at = soft-archive Memify (amendment #29 OQ4)
 // :Community  {id, level (0=leaf, N=root), summary, embedding[768], member_count}  // amendment #27: schema provisioned, popolato solo quando 11c atterra (DEFERITA fuori MVP)
 // :UserConversation {id, started_at, topic_summary, embedding[768], turn_count}
 // :AgentEpisode  {id, agent_kind, started_at, ended_at, goal, outcome, summary}
@@ -3654,8 +3658,14 @@ internal/memory/agent/
                     #         gap; reference_aura_cache_poisoning_sites_2026-05-27 site #7).
 internal/memory/graph/memify.go  # ~250  Cognee Memify post-processing:
                                   #   Background ogni AURA_MEMORY_MEMIFY_INTERVAL_HR=24
-                                  #   1. Prune stale: :Entity con last_mentioned_at < 90gg
-                                  #      AND mention_count < 3 → DETACH DELETE
+                                  #   1. Soft-archive stale (amendment #29 — NO hard delete,
+                                  #      riconciliato con #24 "invalidate don't delete"):
+                                  #      :Entity con last_mentioned_at < AURA_MEMORY_PRUNE_IDLE_DAYS (180gg)
+                                  #      AND mention_count < AURA_MEMORY_PRUNE_MIN_MENTIONS (3) →
+                                  #      SET archived_at=datetime() + invalida edge correnti (valid_to=datetime()
+                                  #      WHERE valid_to IS NULL). Escluse da retrieval/HNSW; subgrafo preservato
+                                  #      (ri-attivabile su nuova mention). Hard DETACH DELETE solo per orphan
+                                  #      da :Document cancellato (cleanup referenziale, §3807).
                                   #   ⚠️ valid-time aware (amendment #24): strengthen/derive
                                   #   operano SOLO su edge correnti (valid_to IS NULL); le edge
                                   #   invalidate non vengono riforzate né traversate (evita di
@@ -3674,7 +3684,7 @@ internal/memory/graph/memify.go  # ~250  Cognee Memify post-processing:
 >
 > **Disaccoppiamento dalla memoria archival.** 11f è ortogonale a 11a-11e: non tocca Neo4j, non dipende da ingestion/retrieval/journal. Dipende solo dal context management (Phase 6) e dal loop. Consumatori naturali: **Swarm (Phase 9)** (stato coordinatore parent↔child) e **Agent journal 11e** (`:AgentEpisode.state_canvas` opzionale invece/oltre la prosa). Sequencing: **può atterrare a ~Phase 9-10**, molto prima di Phase 15. Vive in `internal/canvas/` (package standalone, importato da conversations e swarm — non sotto `internal/memory/` per non implicare che sia store archival).
 >
-> **Rispetto dell'invariante KV-cache (vincolo duro, cross-ref Slice 4 / Phase 6 / amendment #16).** Il canvas è iniettato nel **tail dinamico** del prompt, *dopo l'ultimo messaggio user* — quindi **dopo l'intero prefisso cacheable** (system + Agent.md + eventuale `:AgentInsight` cached), **qualunque sia il confine d'indice di quel prefisso** (`[0..1]` o `[0..2]` secondo la decisione PromptBuilder ancora aperta, vedi §1588/§1611: il canvas è robusto a entrambe perché sta sempre nel tail, mai nel prefisso). Non altera la byte-identity del prefisso, quindi non pianta un cache-poisoning site. Punto d'inserzione mai dentro una coppia tool_use/tool_result (parità con la logica TDAI `adjustForToolCallPair`).
+> **Rispetto dell'invariante KV-cache (vincolo duro, cross-ref Slice 4 / Phase 6 / amendment #16).** Il canvas è iniettato nel **tail dinamico** del prompt, *dopo l'ultimo messaggio user* — quindi **dopo il prefisso cacheable pinnato `[0..2]`** (system+tools / Agent.md / cached `:AgentInsight` — confine CHIUSO da amendment #29, vedi §1588/§1613: il canvas sta sempre nel tail `[3..N]`, mai nel prefisso). Non altera la byte-identity del prefisso, quindi non pianta un cache-poisoning site. Punto d'inserzione mai dentro una coppia tool_use/tool_result (parità con la logica TDAI `adjustForToolCallPair`).
 
 ```
 internal/canvas/
@@ -3704,9 +3714,13 @@ internal/canvas/
                     #       "rimpiazzabilità" è LLM-mandatory e i tool-result sono sostituiti
                     #       col summary in ordine di score DESC (most-replaceable-first → TIENE
                     #       in contesto gli high-info). MODALITÀ DETERMINISTICA usa un'euristica
-                    #       size/recency che NON ha garanzia di preservazione informativa (può
-                    #       evictare il risultato più denso): è solo riduzione token, non la
-                    #       semantica TDAI. Per la semantica vera serve AURA_CANVAS_LLM_REFINE_ENABLED=true.
+                    #       size/recency/re-access (formula amendment #29, vedi OQ8): score =
+                    #       w_size·norm(bytes) + w_recency·age_rank − w_reaccess·was_read_again
+                    #       (W_SIZE=5, W_RECENCY=3, W_REACCESS=4; SIZE_REF_BYTES=8192). NON ha
+                    #       garanzia di preservazione informativa MA è SICURA (cascade non-lossy:
+                    #       il raw resta su sidecar, recuperabile via canvas.read_offload — lo score
+                    #       riordina solo l'ordine di eviction). Per la semantica TDAI vera serve
+                    #       AURA_CANVAS_LLM_REFINE_ENABLED=true (on solo se offload-recovery-rate>0.15).
                     #       Risultato grezzo già su sidecar file (riusa ToolResult sidecar
                     #       Slice 3, $AURA_RUN_DIR); il messaggio in-context diventa:
                     #         [Offloaded Tool Result | node: 001-N3]
@@ -3854,7 +3868,7 @@ aura memory forget --document voyager.pdf
 - [ ] Cross-conv analyzer ogni 60min: cluster episode similarity → `:AgentInsight`
 - [ ] PromptBuilder injection: top-3 `:AgentInsight` relevant come third system message
 - [ ] **`:AgentInsight` retrieval cache (amendment #11)**: `internal/memory/agent/insight_cache.go` LRU (capacity 1024 entries, TTL `AURA_AGENT_INSIGHT_CACHE_TTL_SEC=600`). `Get(identity_id, query_embedding_hash) ([]Insight, bool)` + `Put(identity_id, query_embedding_hash, []Insight)` + `Invalidate(identity_id)`. Test invariant: 5 consecutive `PromptBuilder.Build(...)` calls within TTL → `messages[2]` SHA-256 identical (cross-link with `scripts/cache_invariant_audit.sh` from amendment #16). Test invalidation: insight.go analyzer Upsert → cache hit returns fresh data on next call within same TTL window.
-- [ ] Memify background 24h: prune stale + strengthen frequent + derive facts
+- [ ] Memify background 24h: soft-archive stale (amendment #29: `archived_at` + invalida edge correnti, NO hard delete) + strengthen frequent + derive facts. Acceptance: un'`:Entity` oltre soglia (180gg/<3 mention) ottiene `archived_at` non-null, le sue edge `valid_to IS NULL` diventano invalidate, ed è esclusa dai candidate-set di retrieval — ma il nodo e il subgrafo restano interrogabili; una nuova mention la ri-attiva (`archived_at=NULL`).
 - [ ] **Memify valid-time aware (amendment #24)**: strengthen/derive operano solo su `:RELATED_TO` con `valid_to IS NULL`. Acceptance: un'edge invalidata (`valid_to` non null) non viene riforzata né usata nel multi-hop derive.
 - [ ] Audit log per ogni operazione Memify
 - [ ] **Reasoning trace writer gated (amendment #24)**: `journal.go`/`insight.go` scrivono `:ReasoningTrace` + `:REASONED {seq}` SOLO se `AURA_MEMORY_REASONING_TRACE_ENABLED=true`. Acceptance: con flag off (default), nessun nodo `:ReasoningTrace` creato; con flag on, ogni step di reasoning dell'episodio persiste un nodo collegato all'`:AgentEpisode`.
@@ -3864,7 +3878,8 @@ aura memory forget --document voyager.pdf
 - [ ] `builder.go` genera il canvas in modalità **deterministica** dagli `agent.Event` (zero chiamate LLM) di default; `AURA_CANVAS_LLM_REFINE_ENABLED=false` di default; editing incrementale line-based (no rewrite full).
 - [ ] `trigger.go` gating: sotto `AURA_CANVAS_MILD_RATIO=0.5` della finestra **nessun** canvas; mild→score-cascade, aggressive `0.85`→head-delete+canvas, emergency `0.95`. Gate anche su `AURA_CANVAS_MIN_TASK_STEPS=4`. Acceptance: task da 2 step → nessun canvas creato.
 - [ ] `offload.go` score-cascade: tool-result sostituiti col summary in ordine di `score` decrescente; il messaggio in-context contiene `node`, `Summary`, riferimento al tool; raw recuperabile via `canvas.read_offload(node_id, ...)` che ri-deriva il path (read_tool_output è anch'esso già durevole — amendment #28).
-- [ ] **Invariante KV-cache (cross-ref Slice 4 / amendment #16)**: il canvas è iniettato nel tail dinamico, **dopo l'ultimo system message stabile** (mai nel prefisso cacheable, qualunque ne sia il confine `[0..1]`/`[0..2]`). Acceptance: `scripts/cache_invariant_audit.sh` resta verde (SHA-256 del prefisso invariato su 20 turni) con canvas attivo.
+- [ ] **Score deterministico + gate token misurabile (amendment #29, OQ8)**: `score = W_SIZE·norm(bytes/SIZE_REF) + W_RECENCY·age_rank − W_REACCESS·was_read_again` (default 5/3/4, SIZE_REF=8192B). Gate: (a) task ≤2 step → nessun canvas, zero overhead token; (b) task ≥8 step → riduzione token tool-output in-contesto **≥30%** con **100%** recuperabilità degli offload; (c) canvas attivo non aumenta mai i token totali su task breve. `AURA_CANVAS_LLM_REFINE_ENABLED` resta `false` salvo offload-recovery-rate >0.15 su carico reale.
+- [ ] **Invariante KV-cache (cross-ref Slice 4 / amendment #16)**: il canvas è iniettato nel tail dinamico `[3..N]`, **dopo il prefisso cacheable pinnato `[0..2]`** (amendment #29; mai nel prefisso). Acceptance: `scripts/cache_invariant_audit.sh` resta verde (SHA-256 del prefisso `[0..2]` invariato su 20 turni) con canvas attivo.
 - [ ] Persistenza: `aura.task_canvas` + `aura.offload_entry` (migration Postgres `00NN_task_canvas`, numero ≠ 0007); `ON DELETE CASCADE` da `aura.conversations`. Down migration presente (Postgres è reversibile, a differenza di Cypher).
 - [ ] Recupero agent-driven verificato: `node_id` → `offload_entry` → `tool_call_id` → `canvas.read_offload` **ri-deriva** il path via `sidecarPath` e ritorna il raw **anche in un processo/turn diverso** (`read_tool_output` è già durevole — amendment #28). Acceptance: simulare restart processo → recupero ancora funzionante.
 - [ ] **Path-traversal guard `canvas.read_offload`**: **riusa `validateID`/`sidecarPath` esistenti** (`internal/agent/tools/result.go:45-71`), NON reinventa il guard — rifiuta `node_id`/`tool_call_id` con `..` o separatori; il path risolto resta sotto `<AURA_RUN_DIR>/conversations/<conv_id>/`. Acceptance: `tool_call_id="../../etc/passwd"` → hard-fail.
@@ -3875,14 +3890,14 @@ aura memory forget --document voyager.pdf
 
 ### Open questions
 
-1. **Chunk size 512 vs 1024 tokens**: pre-merge benchmark su corpus tipo (papers + libri + note). 512 più precise per Q&A, 1024 più context per summarization.
-2. **Entity type taxonomy fissa vs dynamic**: Person/Org/Location/Concept/Event/Topic è ristretto. LLM-extracted free-form più espressivo ma harder a query. *Default proposto*: fissa per consistency, future slice aggiunge subtype gerarchici (es. Person→Author, Person→Family).
-3. **Re-ranker cost optimization**: $0.001/query × 100 query/giorno = $3/mese. Acceptable single-user. Future bulk query (batch eval) richiede budget.
-4. **Memify prune threshold**: 90gg + < 3 mention default. Aggressive vs conservative trade-off, configurabile.
-5. **Agent insight injection**: top-3 nel system prompt aumenta token cost ~500/turn. Threshold relevance > 0.7 per evitare junk. Future: adaptive K basato su query similarity.
-6. **Multi-user refactor cost**: privacy isolation hard refactor (cypher query helper, identity FK su tutti node) stimato +800 LOC se atterra dopo Slice 11. Decisione accettata pre-merge.
-7. **Bi-temporale pieno vs mono valid-time (amendment #24)**: il secondo asse di ingestion (`t_created`/`t_expired`, stile Graphiti) abilita "cosa credevo alla data D" e la correzione retroattiva, ma raddoppia le proprietà temporali su ogni edge. *Default proposto*: **rimandato** — solo valid-time (`valid_from`/`valid_to`) in Slice 11, che copre il failure mode dominante a scala single-user. Atterra come slice futura solo se emerge un caso d'uso audit/retroattivo concreto.
-8. **Task Canvas: builder deterministico vs LLM-refine (amendment #25)**: in TDAI summary, score (必填, pilota il cascade) e node_mapping sono TUTTI LLM-generati. Il builder deterministico produce solo topologia + summary troncato + score euristico (size/recency) — uno **skeleton degradato** senza garanzia di preservazione informativa, non parità TDAI. Conseguenza di sequencing: a **~Phase 9-10 atterra solo lo skeleton deterministico** (dipende da loop + Phase 6 tail-injection + sidecar Slice 3); il **cascade LLM-scored value-bearing** (che porta il risparmio token reale) è un **follow-on** che richiede il tiering LLM (Phase 3, `tier=worker`) + un prompt di rimpiazzabilità. *Default proposto*: deterministico on, `AURA_CANVAS_LLM_REFINE_ENABLED=false`; **misurare la qualità di eviction e il risparmio token su carico Telegram reale prima di fidarsi del cascade euristico** e prima di attivare l'LLM-refine.
+1. **Chunk size 512 vs 1024 tokens** — **CHIUSA (amendment #29)**: ratificato il default `AURA_MEMORY_CHUNK_SIZE_TOKENS=512` (overlap 64, header-aware). Razionale: il target single-user (papers/note/doc/conversazioni via WRRF + LLM re-ranker) è dominato da retrieval factoid/Q&A, dove il consenso 2026 colloca lo sweet-spot precision/recall a 256–512 token (512–1024 serve solo a summarization multi-hop); 512 massimizza context precision riducendo il noise per chunk. Vincolo embedder: `embeddinggemma-300m` ha context window 2048 token → 512 tiene ~4 chunk in una finestra e non rischia troncamento su split che rispettano gli header markdown. Follow-on documentati (NON MVP): (a) chunk-size adattivo per doc-type (1024 per doc lunghi da summarizzare) solo se un benchmark RAGAS su corpus reale lo giustifica; (b) spike late-chunking (encode-then-split, +nDCG a parità di storage), fattibile dato il context 2k di EmbeddingGemma.
+2. **Entity type taxonomy fissa vs dynamic** — **CHIUSA (amendment #29)**: ratificata **ibrida POLE+O** — set chiuso e queryable di label `type` ∈ {Person, Organization, Location, Concept, Event, Topic, **Other**} + proprietà `subtype` free-form (string, LLM-extracted, es. "Author", "Family", "Conference"). Il `type` fisso tiene index-backed le query e stabile il candidate-set HNSW; `subtype` + il bucket `Other` catturano la coda lunga senza esplosione di label. Modello da neo4j-agent-memory (POLE+O: `+O` = Object/Other catch-all), allineato alla prassi GraphRAG 2026 (estrazione LLM con schema vincolato-ma-flessibile batte le tassonomie rigide). Nessuna gerarchia di subtype in MVP: `subtype` è il seam forward-compatible.
+3. **Re-ranker cost optimization** — **CHIUSA (amendment #29)**: LLM re-ranker (tier=worker, top-20→top-5, batch 4) **always-on di default per query interattive** via `AURA_MEMORY_RERANK_ENABLED=true`. Razionale: il re-rank su candidate set RRF rumoroso dà ~+35% accuracy vs hybrid grezzo e riduce le allucinazioni (pattern standard "RRF top-N → re-rank top-k"); arXiv:2506.00049 dimostra che small embedder + LLM re-rank su hybrid tri-modale (dense+sparse+graph = stack Aura) batte embedder più grandi. A ~$0.001/query × ~100 q/giorno = ~$3/mese il costo è trascurabile in interattivo. Mitigazioni costo bulk: (a) gate `AURA_MEMORY_RERANK_ENABLED=false` per batch-eval/ingest massivi; (b) confidence-skip quando i top-5 WRRF sono già ben separati; (c) escape hatch documentato: cross-encoder locale (es. `ms-marco-MiniLM-L-6-v2`, ~50ms/100 pair CPU, zero costo API, ospitabile sul sidecar llama.cpp) come follow-on se il volume cresce oltre single-user — NON default MVP.
+4. **Memify prune threshold + hard-delete vs invalidate** — **CHIUSA (amendment #29)**: riconciliata con #24 ("invalidate, don't delete", principio Graphiti/Zep). Memify **NON fa hard `DETACH DELETE`** su `:Entity`: fa **soft-archive** — set `archived_at = datetime()` + invalida le edge correnti pendenti (`valid_to = datetime()` WHERE `valid_to IS NULL`). Le entity archiviate sono escluse da retrieval e candidate-set HNSW ma il subgrafo è preservato (query "cosa sapevo" + ri-attivazione su nuova mention). Default conservativo **180gg** (`AURA_MEMORY_PRUNE_IDLE_DAYS=180`, alzato da 90 — per un assistant single-user un'entità non menzionata da 3 mesi è normale, non garbage) + `< 3 mention` (`AURA_MEMORY_PRUNE_MIN_MENTIONS=3`), entrambi configurabili. L'unico hard `DETACH DELETE` resta la cleanup degli orphan da `:Document` cancellato (cascade §3807) — integrità referenziale, distinta dal decay di memoria.
+5. **Agent insight injection** → **CHIUSA (amendment #29)**: ratificati `AURA_MEMORY_INSIGHT_TOP_K=3` (~500 token/turn) + `AURA_MEMORY_INSIGHT_RELEVANCE_THRESHOLD=0.7` (skip junk). Il top-K set (similarity > threshold, cap K, ordering deterministico) è cachato dall'LRU `:AgentInsight` (`AURA_AGENT_INSIGHT_CACHE_TTL_SEC=600`) keyed by `(identity_id, query_embedding_hash)` → `messages[2]` byte-stable entro la TTL → KV-cache hit sul terzo segmento di prefisso. Adaptive-K basato su query similarity resta enhancement futuro fuori MVP (romperebbe la byte-identity rendendo il blocco query-dipendente).
+6. **Multi-user refactor cost** — **CHIUSA (amendment #29)**: ratificato **single-user-only per il milestone**, multi-user deferito (~+800 LOC accettati post-Slice-11). **Hedge cheap obbligatorio ora**: ogni nodo (`:Entity`/`:Document`/`:Chunk`/`:AgentEpisode`/`:AgentInsight`/`:UserConversation`) scrive `identity_id` (costante `'local'` in MVP) e ogni Cypher di lettura è scopato con `WHERE n.identity_id = $identity_id` da subito. Così il landing multi-user è **additivo** (aggiungi index su `identity_id` + popola ID reali + FK) e non una riscrittura di ogni query né una migrazione full-graph. Parità con lo scaffolding capability_grants di Slice 1.7.
+7. **Bi-temporale pieno vs mono valid-time (amendment #24)** — **CHIUSA (amendment #29)**: ratificato **mono valid-time** (`valid_from`/`valid_to`) per MVP. Il failure mode dominante single-user è "fatto stale contraddetto da fatto nuovo" (preferenze/status che cambiano), coperto interamente dalla valid-time. Il secondo asse (transaction-time `t_created`/`t_expired`, stile Graphiti) serve solo audit/correzione-retroattiva ("cosa credevo alla data D"), non un bisogno MVP, e raddoppierebbe le proprietà temporali su ogni edge. Forward-compatible: aggiungere i 2 property transaction-time + un index è puramente additivo — nessun rewrite di nodi/edge. Atterra come slice futura solo su caso d'uso audit concreto.
+8. **Task Canvas: builder deterministico vs LLM-refine (amendment #25)** — **CHIUSA (amendment #29)**: lo **skeleton deterministico SHIPPA** a ~Phase 9-10. Argomento chiave: il cascade NON è lossy — il raw è sempre su sidecar e recuperabile via `canvas.read_offload` (lo score riordina solo *cosa* evictare per primo, non cosa si perde), quindi anche un'euristica imperfetta è sicura. **Formula score deterministica** (no LLM): `score = w_size·norm(bytes/AURA_CANVAS_SCORE_SIZE_REF_BYTES) + w_recency·age_rank − w_reaccess·was_read_again`, con default `AURA_CANVAS_SCORE_W_SIZE=5`, `_W_RECENCY=3`, `_W_REACCESS=4` (un risultato ri-letto via read_tool_output è "ancora utile" → score più basso → evictato più tardi); `AURA_CANVAS_SCORE_SIZE_REF_BYTES=8192`. **Gate di accettazione misurabile**: (a) su task ≤2 step il canvas NON deve essere creato (zero overhead — già `AURA_CANVAS_MIN_TASK_STEPS=4`); (b) su task ≥8 step deve ridurre i token di tool-output in-contesto di **≥30%** mantenendo **100% recuperabilità** degli offload; (c) canvas attivo non deve MAI aumentare i token totali su un task breve. `AURA_CANVAS_LLM_REFINE_ENABLED` resta **`false`** finché, su carico Telegram reale, l'offload-recovery-rate (frazione di offload poi ri-letti dall'agente) non supera **0.15** — soglia oltre la quale l'eviction euristica sta sbagliando troppo spesso e il cascade LLM-scored ripaga il suo costo. Swarm (Phase 9): beneficia già dello skeleton (lo stato coordinatore parent↔child è topologia pura, non richiede summary LLM).
 
 ### Mini-PC RAM budget — delta
 
@@ -4028,7 +4043,7 @@ internal/memory/agent/:
   pre-conv (cache-friendly come Agent.md Slice 10).
 
 internal/memory/graph/memify.go: Cognee Memify pipeline background 24h:
-- Prune stale entities (last_mentioned_at < 90gg AND mention_count < 3)
+- Soft-archive stale entities (amendment #29: last_mentioned_at < 180gg AND mention_count < 3 → archived_at + invalida edge correnti, NO hard DETACH DELETE; riconciliato con #24)
 - Strengthen RELATED_TO weight via co-occurrence count
 - Derive facts: multi-hop traversal weight > 0.7 -> :DERIVED_FROM
 
@@ -4041,7 +4056,7 @@ Env nuove (Caps & Limits indice):
 - AURA_MEMORY_MEMIFY_INTERVAL_HR=24
 - AURA_MEMORY_INSIGHT_TOP_K=3
 - AURA_MEMORY_INSIGHT_RELEVANCE_THRESHOLD=0.7
-- AURA_MEMORY_PRUNE_IDLE_DAYS=90
+- AURA_MEMORY_PRUNE_IDLE_DAYS=180
 - AURA_MEMORY_PRUNE_MIN_MENTIONS=3
 
 LOC: +XXX src / +YY test.
@@ -4738,11 +4753,12 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_MEMORY_INSIGHT_TOP_K` | `3` | cap | 11e | Top-K AgentInsight inject in system prompt. |
 | `AURA_MEMORY_INSIGHT_RELEVANCE_THRESHOLD` | `0.7` | cap | 11e | Min similarity per inject (skip junk). |
 | `AURA_MEMORY_MEMIFY_INTERVAL_HR` | `24` | cap | 11e | Memify post-processing background interval. |
-| `AURA_MEMORY_PRUNE_IDLE_DAYS` | `90` | cap | 11e | Entity prune threshold (last_mentioned_at). |
+| `AURA_MEMORY_PRUNE_IDLE_DAYS` | `180` | cap | 11e | Entity soft-archive threshold giorni (last_mentioned_at); amendment #29 alzato 90→180, soft-archive non hard-delete. |
 | `AURA_MEMORY_PRUNE_MIN_MENTIONS` | `3` | cap | 11e | Entity prune threshold (mention_count). |
 | `AURA_MEMORY_RRF_CONSTANT` | `60` | cap | 11d | Weighted-RRF rank constant (amendment #26). Fusione Cypher-native rank-based scale-free. |
 | `AURA_MEMORY_RERANK_TOP_K_IN` | `20` | cap | 11d | Hybrid retrieval candidates pre-rerank (RRF `sourceK`/finalK input). |
 | `AURA_MEMORY_RERANK_TOP_K_OUT` | `5` | cap | 11d | LLM re-ranker output size (RRF `finalK`). |
+| `AURA_MEMORY_RERANK_ENABLED` | `true` | cap | 11d | LLM re-ranker always-on per query interattive (amendment #29). `false` per batch-eval/bulk; confidence-skip + cross-encoder locale = follow-on. |
 | `AURA_LLM_LOCAL_BASE_URL` | `http://aura-vllm-chat:8083/v1` | operative | 13 | Local LLM endpoint (vLLM o llama.cpp fallback). |
 | `AURA_LLM_LOCAL_MODEL` | `gemma-3-12b-it` | operative | 13 | Local LLM model id. |
 | `AURA_LLM_OFFLINE_DETECTION_INTERVAL_SEC` | `30` | cap | 13 | TCP probe interval verso remote per offline detection. |
@@ -4785,7 +4801,7 @@ Tutti i cap usano lo schema `AURA_<DOMAIN>_<UNIT>` dove `<UNIT>` è esplicito:
 - `_SEC` per timeout (es. `AURA_LLM_TOTAL_TIMEOUT_SEC`, `AURA_SANDBOX_TIMEOUT_SEC`)
 - `_MS` per latenze fine-grained (raramente usato)
 
-Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREVIEW_CAP_BYTES`). Niente cap hardcoded nei file `.go` per valori >100 — devono essere env-overrideable. Suffissi unità sanciti: `_BYTES`, `_SEC`, `_MS`, `_HR`, `_DAYS`, `_TOKENS`, `_USD_DAY`; per i conteggi/limiti dimensionali `_MAX_STEPS`/`_MAX_DEPTH`; per i rapporti adimensionali in `(0,1]` **`_RATIO`** (es. `AURA_CANVAS_MILD_RATIO`); per i booleani **`_ENABLED`** (es. `AURA_MEMORY_REASONING_TRACE_ENABLED`, `AURA_CANVAS_LLM_REFINE_ENABLED`).
+Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREVIEW_CAP_BYTES`). Niente cap hardcoded nei file `.go` per valori >100 — devono essere env-overrideable. Suffissi unità sanciti: `_BYTES`, `_SEC`, `_MS`, `_HR`, `_DAYS`, `_TOKENS`, `_USD_DAY`; per i conteggi/limiti dimensionali `_MAX_STEPS`/`_MAX_DEPTH`; per i rapporti adimensionali in `(0,1]` **`_RATIO`** (es. `AURA_CANVAS_MILD_RATIO`); per i booleani **`_ENABLED`** (es. `AURA_MEMORY_REASONING_TRACE_ENABLED`, `AURA_CANVAS_LLM_REFINE_ENABLED`); pesi interi adimensionali di una formula **`_W_<TERM>`** (es. `AURA_CANVAS_SCORE_W_SIZE`, amendment #29 OQ8).
 
 ---
 
