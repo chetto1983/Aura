@@ -27,12 +27,18 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 Phase: 05 (sandbox-2a-stateless) — HELD OPEN (Gate-3 human-verify pending)
 Plan: 4 of 4 (05-04 artifacts committed; Task 3 sign-off pending)
-Status: Awaiting live Gate-3 numbers — run in WSL (no Docker daemon in the web container). CAP-01 intentionally NOT marked complete.
+Status: Awaiting live Gate-3 numbers — run in WSL (no Docker daemon in the web container). CI still RED as of c6a6503. CAP-01 intentionally NOT marked complete.
 Last activity: 2026-06-01
 
-Progress: [██████████] artifacts 100% · live-verify 0%
+Progress: [██████████] artifacts 100% · live-verify 0% · CI red
 
-### Resume — WSL Gate-3 sign-off checklist (then `/gsd-verify-work 05`)
+### Resume — finish on PC/WSL (then `/gsd-verify-work 05`)
+
+**A. Get CI green first (local linter here is unrunnable: golangci-lint go1.25 vs module go1.26.3)**
+
+0. `make quality` (or `golangci-lint run`) in WSL — confirm the `gosec` G602 in `cmd/aura/exec.go` is cleared by c6a6503 (`args[i]` guarded form). If anything else is red, that's the live red to chase — re-run and fix until `ci.yml` is green. NOTE: `cmd/aura/exec.go` is NOT in `sandbox.yml`'s path filter, so the gosec fix push did not re-run the Sandbox DinD workflow — the red there (if any) is the Gate-3 work in B.
+
+**B. WSL Gate-3 sign-off checklist**
 
 1. `make sandbox-up` → `bash scripts/sandbox_escape_bench.sh` — escape-rate < 5%, config-regressions = 0, 4 K8s N/A lines; snapshot Sandbox row dated + measured.
 2. `docker info | grep -i userns` shows `name=userns` (Pitfall 3 — userns-remap LIVE).
