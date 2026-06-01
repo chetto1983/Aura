@@ -58,6 +58,7 @@ created: 2026-06-01
 | D-18 | `ErrSandboxUnreachable` after auto-start fails; `ErrSandboxProtocol` on malformed resp; `aura exec` exit 70 | — | env-fault → typed error (not result) | unit + cli | `TestDockerRunner_UnreachableSentinel`, `TestRunShell_MalformedProtocol`, `TestRunExec_Exit70` | ✅ 05-03 W3 | ⬜ pending |
 | D-11 / D-12 | seccomp profile valid + loaded on both arches; arm64 under QEMU | EoP | multi-arch by-name profile loads | integration | QEMU leg: `docker buildx ... --platform linux/arm64` run of the negative tests | ✅ 05-04 W4 | ⬜ pending |
 | Gate-3 mutation | `internal/sandbox/docker.go` go-mutesting ≥70% killed | — | the negative-test suite actually kills mutants | mutation (spot-check) | `go-mutesting internal/sandbox/docker.go` (GOFLAGS=-tags=sandbox_integration) ≥70%; recorded in quality-snapshot | ✅ 05-04 W4 | ⬜ pending |
+| D-20 | curated baked package set imports + runs C-extensions under the hardened runtime (`import numpy,pandas`); build-time hash-pinned bake, no runtime pip | DoS (seccomp-fit) / Tampering (supply-chain) | batteries-included Python without weakening net-none/read-only floor | integration (positive) + build-smoke | `go test -tags sandbox_integration ./internal/sandbox/ -run TestRunner_BakedPackagesImport`; Dockerfile build-stage `import ...; print('baked-ok')` | ✅ 05-02/05-03 W2/W3 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
