@@ -1260,7 +1260,7 @@ Nessuno dei due prompt nomina `execute`. Se il modello non lo invoca, è bug del
 | `internal/agent/tools/execute.go` | ~140 | Tool `execute` con `Deferred: true`. Schema: `{lang: enum, code: string, timeout_sec?: int, session_id?: string (Slice 2b)}`. Delega a `sandbox.Runner`. |
 | `sandbox/Dockerfile` | ~30 | `FROM python:3.12-slim` + apt: bash, coreutils. USER non-root. ENTRYPOINT sidecar. |
 | `sandbox/sidecar.py` | ~150 | Server HTTP minimo (stdlib `http.server`) con endpoint `/exec/python`, `/exec/shell`, `/session/{id}/exec/{lang}` (2b). `subprocess.run` con timeout. Trunc stdout/stderr. Niente deps Python extra. |
-| `sandbox/seccomp.json` | ~80 | Default-deny + allow-list syscall syscall, blocca network/mount/ptrace. |
+| `sandbox/seccomp.json` | ~80 | Allowlist positiva (`SCMP_ACT_ERRNO(EPERM)` default + ~80 syscall enumerati), multi-arch `SCMP_ARCH_X86_64`+`SCMP_ARCH_AARCH64`; blocca network/mount/ptrace/unshare (amendment #32). |
 | `compose.yaml` | ~25 | Service `aura-sandbox`: build sandbox/, security_opt seccomp, network none (override-able per session 2b), read_only, ulimits. |
 | `cmd/aura/main.go` (diff) | ~+60 | Subcommand `aura exec [--session <id>] <lang> <code>` + registrazione del tool `execute` nel registry. |
 
@@ -1707,7 +1707,7 @@ Oltre alla regola "no nomi tool nel prompt E2E", ogni slice rispetta una **sogli
 | Slice | Test "asilo" da rifiutare | Test rigoroso atteso |
 |---|---|---|
 | 1 (LLM client) | `assert reply == "4"` | Fixture SSE multi-chunk delta-merge + tool-call accumulator + ctx-cancel premature close + `goleak.VerifyNone` |
-| 2a (Sandbox) | `aura exec python "print(2)" → 2` | Subprocess time + memory + stdout truncation 1 MiB + EPERM su socket() syscall + seccomp profile load verification |
+| 2a (Sandbox) | `aura exec python "print(2)" → 2` | Subprocess time + memory + stdout truncation 1 MiB + **seccomp allowlist-positiva load verify** + escape tests `ptrace(...)`/`open('/proc/self/root/etc/shadow')` → EPERM/ENOENT (non il contenuto) + `SandboxEscapeBench` escape-rate <5% (Gate-3, amendment #32) |
 | 2b (Session sandbox) | Single session reuse | 3 session concurrent, hard cap enforce, TTL reap deterministico via `synctest`, workspace quota enforce, network allowlist iptables verify via `nft list` |
 | 3 (Swarm) | `coordinator.Spawn(2) → 2 children` | Wall-clock parallelismo `<` 1.5x singolo (race detector enforced), 10 child interactive paused simultanei senza data race, multi-pause FIFO priority sort verify |
 | 4 (KV cache) | `messages[0] == messages[0]` | `usage.prompt_cache_hit_tokens > 0` da turn 2, byte-exact comparison via hash, property-based su manifest ordering |
@@ -2043,7 +2043,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 **Open questions.**
 1. **~~CONFLITTO con CLAUDE.md "Persistence: Neo4j via MCP"~~ → CHIUSA: Postgres come terzo pilastro.**
    Slice 0.5 ha introdotto Postgres come application-state store. Architettura persistence finale:
-   - **Neo4j (via MCP)** = knowledge graph + vector index. **Unica fonte di knowledge E di vector embeddings.** Semantic memory, entity graph, conversational memory, derivati, embedding HNSW nativo (Apache Lucene). Embedder: **`embeddinggemma` via sidecar `aura-llama-embed`** (porto 8081, OpenAI-compat), **768d nativo** scritti direttamente su `:Chunk.embedding` (vector index Neo4j configurato a 768d, no MRL truncation — Slice 0.7 closed 2026-05-28). NIENTE wiki markdown filesystem (deprecato 2026-05-27). NIENTE Qdrant: lo spike `D:/tmp/aura-neo4j-spike-2026-05-27/` Phase 6b ha misurato 22-30ms p95 + IT recall@5 5/5 su Neo4j vector index nativo con corpus reale Aura → Qdrant decommissionabile senza regressione. Container produzione `aura-neo4j` atterra in Slice 0.7 (rinominato da `neo4j-spike` dello spike).
+   - **Neo4j (via MCP)** = knowledge graph + vector index. **Unica fonte di knowledge E di vector embeddings.** Semantic memory, entity graph, conversational memory, derivati, embedding HNSW nativo (Apache Lucene). Embedder: **default `embeddinggemma-300m` via sidecar `aura-llama-embed`** (porto 8081, OpenAI-compat; nome modello NON hardcoded — qualsiasi 768-native-GGUF è drop-in, D11/#31), **768d** scritti direttamente su `:Chunk.embedding` (vector index Neo4j a 768d = il contratto; l'embedder emette 768 nativo o MRL-truncato-a-768 — D11/#31). NIENTE wiki markdown filesystem (deprecato 2026-05-27). NIENTE Qdrant: lo spike `D:/tmp/aura-neo4j-spike-2026-05-27/` Phase 6b ha misurato 22-30ms p95 + IT recall@5 5/5 su Neo4j vector index nativo con corpus reale Aura → Qdrant decommissionabile senza regressione. Container produzione `aura-neo4j` atterra in Slice 0.7 (rinominato da `neo4j-spike` dello spike).
    - **Postgres (via sqlc)** = application state. Scheduler tasks, paused states, audit log, identity, capability grants.
    - **Filesystem** = solo artefatti operativi (SKILL.md tree, tool result sidecar files). NESSUN knowledge in filesystem.
    Distinzione semantica chiara: **knowledge + vectors → solo Neo4j; infrastructure → Postgres; operational artifacts → filesystem**. CLAUDE.md aggiornata in coda al PRD.
