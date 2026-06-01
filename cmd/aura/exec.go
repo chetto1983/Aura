@@ -41,11 +41,11 @@ func parseExecArgs(args []string) (execArgs, error) {
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--session":
-			if i+1 >= len(args) {
+			i++
+			if i >= len(args) {
 				return ea, fmt.Errorf("--session requires an id")
 			}
-			ea.session = args[i+1]
-			i++
+			ea.session = args[i]
 		default:
 			positionals = append(positionals, args[i])
 		}
