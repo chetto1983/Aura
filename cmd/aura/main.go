@@ -3,6 +3,7 @@
 //	aura serve              — run the long-lived agent runtime (default in production)
 //	aura shell              — interactive REPL against the agent loop
 //	aura agent dry-run      — drive a mock LoopAgent through the Budget tree, one Event per JSON line (SC#4)
+//	aura exec <lang> <code> — run a python|shell snippet in the isolated sandbox (code or - for stdin)
 //	aura tools              — print the tool manifest (active + deferred)
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
 //	aura neo4j <sub>        — Neo4j lifecycle
@@ -22,6 +23,8 @@ import (
 	"os"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/sandbox"
 )
 
 func main() {
@@ -34,6 +37,8 @@ func main() {
 		printTools()
 	case "agent":
 		runAgent(os.Args[2:])
+	case "exec":
+		runExec(os.Args[2:])
 	case "db":
 		runDB(os.Args[2:])
 	case "neo4j":
@@ -57,7 +62,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|tools|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|exec <lang> <code>|tools|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
@@ -67,6 +72,7 @@ func buildRegistry() *tools.Registry {
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
+	reg.Register(&tools.Execute{Runner: sandbox.NewDockerRunner(config.LoadDB())})
 	return reg
 }
 
