@@ -1058,8 +1058,11 @@ aura paused-states {list|purge} for manual cleanup.
 
 Closes grey area #15: multi-conversation persistence as product feature
 (Claude.ai-style threading). Out of scope row "Persistenza disk dello
-stato conversazionale (Loop e' in-memory)" removed. Migrations
-renumbered: 0006_scheduler (was 0005), 0007_skill_audit (was 0006).
+stato conversazionale (Loop e' in-memory)" removed. Nota numbering:
+la FTS di 1.8.5 ha preso 0006 (`0006_conversation_turns_fts`), quindi i
+numeri assoluti delle migration a valle (scheduler/skill_audit/…) sono
+indicativi e assegnati all'atterraggio per ordine-fase — vedi §Persistence
+"Migration numbering — fonte di verità".
 
 Sequencing rationale bullet 2.ter added.
 
@@ -1074,7 +1077,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 **Goal.** Aggiunge conversation full-text search a Slice 1.8 — index Postgres `pg_trgm` GIN su `aura.conversation_turns.content`, CLI subcommand `aura chat search "<query>"`, e Telegram command `/search` (Slice 9b reuse). Per amendment #7 (SUMMARY.md PRD Amendments table, 2026-05-29).
 
-> **Atomicity note.** Sub-slice atomico ~80 LOC + 1 migration `0005_conversation_turns_fts.up.sql` (`CREATE EXTENSION pg_trgm IF NOT EXISTS` + `CREATE INDEX CONCURRENTLY conversation_turns_content_trgm ON aura.conversation_turns USING GIN (content gin_trgm_ops)`).
+> **Atomicity note.** Sub-slice atomico ~80 LOC + 1 migration `0006_conversation_turns_fts.up.sql` (`CREATE EXTENSION pg_trgm IF NOT EXISTS` + `CREATE INDEX CONCURRENTLY conversation_turns_content_trgm ON aura.conversation_turns USING GIN (content gin_trgm_ops)`).
 
 ### Pre-requisiti
 
@@ -1087,7 +1090,7 @@ aura chat search "specific phrase"   # → top-N excerpts ordered by similarity,
 ```
 
 **Acceptance.**
-- [ ] Migration `0005_conversation_turns_fts.up.sql` crea l'estensione `pg_trgm` + GIN index `conversation_turns_content_trgm` su `aura.conversation_turns(content gin_trgm_ops)`; reverse in `0005_conversation_turns_fts.down.sql` droppa l'index + estensione (idempotent).
+- [ ] Migration `0006_conversation_turns_fts.up.sql` crea l'estensione `pg_trgm` + GIN index `conversation_turns_content_trgm` su `aura.conversation_turns(content gin_trgm_ops)`; reverse in `0006_conversation_turns_fts.down.sql` droppa l'index + estensione (idempotent).
 - [ ] sqlc query `SearchConversationTurns(query text, limit int) returns []ConversationTurn` usando `content % $1 ORDER BY similarity(content, $1) DESC LIMIT $2`.
 - [ ] CLI subcommand `aura chat search "<query>" [--conversation <id>] [--limit N]` stampa `<conv_id> | <turn_seq> | <similarity_score> | <excerpt>` per row.
 - [ ] Telegram `/search <query>` command aggiunto a Slice 9b commands MVP list (cross-slice reference; il binding atterra in Slice 9b).
@@ -1097,8 +1100,8 @@ aura chat search "specific phrase"   # → top-N excerpts ordered by similarity,
 
 | Path | LOC | Note |
 |---|---|---|
-| `internal/db/migrations/0005_conversation_turns_fts.up.sql` | ~15 | `CREATE EXTENSION pg_trgm` + `CREATE INDEX CONCURRENTLY ... USING GIN (content gin_trgm_ops)`. |
-| `internal/db/migrations/0005_conversation_turns_fts.down.sql` | ~5 | `DROP INDEX IF EXISTS conversation_turns_content_trgm;` + `DROP EXTENSION IF EXISTS pg_trgm;` (idempotent). |
+| `internal/db/migrations/0006_conversation_turns_fts.up.sql` | ~15 | `CREATE EXTENSION pg_trgm` + `CREATE INDEX CONCURRENTLY ... USING GIN (content gin_trgm_ops)`. |
+| `internal/db/migrations/0006_conversation_turns_fts.down.sql` | ~5 | `DROP INDEX IF EXISTS conversation_turns_content_trgm;` + `DROP EXTENSION IF EXISTS pg_trgm;` (idempotent). |
 | `internal/db/queries/conversation_search.sql` | ~10 | 1 sqlc query `SearchConversationTurns`. |
 | `internal/conversations/search.go` | ~40 | `Search(ctx, query, opts) ([]TurnHit, error)` — wrappa sqlc query, handle conversation-scoped filter + limit. |
 | `cmd/aura/chat.go` (diff) | ~+20 | Nuovo sub-command `aura chat search` (wiring spf13/cobra). |
@@ -1900,7 +1903,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 > **Atomicity note (audit round 1 P0):** ~1300 LOC distribuiti = troppo per 1 commit.
 > Si committa in **2 sub-slice ordinati**:
-> - **6a**: types + migration `0006_scheduler` + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
+> - **6a**: types + migration `00NN_scheduler` (numero al landing — vedi §Persistence numbering) + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
 > - **6b**: handler `agent_job` (con swarm Coordinator integration) + tool `task_schedule`/`task_run_now` + `ActionRouter` helper (primo uso multi-action, vedi §Pattern condiviso). ~600 LOC.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
@@ -1963,8 +1966,8 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 | `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
 | `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
 | `internal/db/queries/agent_job_runs.sql` | ~80 | **4 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`, `MarkRunsRecovered`. `MarkRunsRecovered` è la boot recovery query (UPDATE finished_at IS NULL AND started_at < threshold → exit_status='unknown_recovery'). RETURNING task_id per il reschedule loop. |
-| `internal/db/migrations/0006_scheduler.up.sql` | ~90 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, `approval_source text NULL CHECK (approval_source IS NULL OR approval_source IN ('ask_user','cli','auto'))`, `paused_state_token uuid NULL REFERENCES aura.paused_states(token) ON DELETE SET NULL`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). **`approval_source` enum + `paused_state_token` FK** (parity con `skill_audit`, fix audit Round 1 P1): se la run è triggered da `task.approve` post-ask_user → `approval_source='ask_user'` + `paused_state_token=<token>`. Se da `task.run_now` CLI → `'cli'` + NULL. Se da tick scheduler senza gate → `'auto'` + NULL. Forensics simmetrico cross-slice. |
-| `internal/db/migrations/0006_scheduler.down.sql` | ~5 | DROP TABLEs. |
+| `internal/db/migrations/00NN_scheduler.up.sql` (numero al landing — floor 0006=conversation_turns_fts; vedi §Persistence numbering) | ~90 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, `approval_source text NULL CHECK (approval_source IS NULL OR approval_source IN ('ask_user','cli','auto'))`, `paused_state_token uuid NULL REFERENCES aura.paused_states(token) ON DELETE SET NULL`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). **`approval_source` enum + `paused_state_token` FK** (parity con `skill_audit`, fix audit Round 1 P1): se la run è triggered da `task.approve` post-ask_user → `approval_source='ask_user'` + `paused_state_token=<token>`. Se da `task.run_now` CLI → `'cli'` + NULL. Se da tick scheduler senza gate → `'auto'` + NULL. Forensics simmetrico cross-slice. |
+| `internal/db/migrations/00NN_scheduler.down.sql` | ~5 | DROP TABLEs. |
 | `internal/cron/handlers/handler.go` | ~50 | `Handler` = type alias di `agent.Agent` (Slice 0.9) + metadata interface `HandlerMeta{ Kind() TaskKind; MaxDuration() time.Duration; ReschedulesOnRecovery() bool }`. Registry `map[TaskKind]Handler`. Helper `BaseHandler` struct embeddable per riusare metadata. |
 | `internal/cron/handlers/reminder.go` | ~70 | `ReminderAgent` impl `agent.Agent`: `Run(ctx) iter.Seq2[*Event, error]` emette un `Event{Author:"reminder", LLMResponse:{Content: payload.Text}}` poi `Event{Actions.Escalate=true}`. Notifier consuma yield events. `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
 | `internal/cron/handlers/agent_job.go` | ~120 | `AgentJobAgent` impl `agent.Agent`: spawn child `LlmAgent` via Slice 3 swarm `Coordinator.Spawn` (Slice 0.9 amendment), forwarda i child events come yield del proprio `Run`. Tier configurabile via task payload (`tier ∈ {worker, chat, reasoning}`, default `reasoning`); validato contro `TierConfig.Available()`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
@@ -1976,7 +1979,7 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 slice 6a: scheduler infrastructure — types + sqlc + tick loop + reminder handler
 
 PostgreSQL-backed scheduler base. Types (Task/TaskKind/ScheduleKind/Status),
-migration 0006_scheduler (tables scheduler_tasks + agent_job_runs with
+migration 00NN_scheduler (numero al landing, vedi §Persistence numbering) (tables scheduler_tasks + agent_job_runs with
 exit_status check constraint (running|completed|failed|cancelled|timeout|
 unknown_recovery), recovered_at nullable column, indices on next_run_at
 WHERE status='active' and on (exit_status, started_at) WHERE finished_at
@@ -4819,7 +4822,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 1. **Slice 1 (LLM client + ToolResult)** è prerequisito di tutto il resto: senza un client reale e senza il pattern preview+persist sui tool result, le altre slice non hanno modo di osservare comportamento end-to-end senza avvelenare il context window.
 2. **Slice 1.5 (ask_user)** subito dopo: tocca `loop.go` una seconda volta su una concern semanticamente diversa (state machine pause/resume + PausedState persistent in Postgres). Atterrarlo prima di Slice 2-4 evita di rifattorare `loop.go` un'altra volta in mezzo. È anche prerequisito di Slice 7 governance C.
 2.bis. **Slice 1.7 (Identity minimal)** chiude la wave persistence applicativa. Atterra dopo 1.5 (paused_states) e prima di Slice 2 perché: (a) sblocca Slice 7c per usare `actor_id` FK su `aura.skill_audit` invece di campo `text` opaco; (b) i suoi consumer (Slice 7c) sono lontani, ma il pattern "seed identity + capability_grants" deve essere stabile prima che skill_audit lo referenzi. Indipendente da Slice 2/3/4: può essere committata in parallelo a Slice 2 se preferito.
-2.ter. **Slice 1.8 (Conversation persistence)** chiude la wave persistence applicativa con multi-conversation Claude.ai-style. Atterra dopo 1.7 (identity FK su conversations) e prima di Slice 2. Sblocca: (a) `aura chat list/resume/new` cross-session; (b) paused_states ora FK a conversations con cascade; (c) auto-resolve di pending stale quando Loop.Stop() (Area #7 closed); (d) audit forensics per token cost + cache hit ratio per conversazione. Out of scope riga "Persistenza disk dello stato conversazionale" rimossa. Migrations rinumerate: 0005_conversations (NEW), 0006_scheduler (era 0005), 0007_skill_audit (era 0006).
+2.ter. **Slice 1.8 (Conversation persistence)** chiude la wave persistence applicativa con multi-conversation Claude.ai-style. Atterra dopo 1.7 (identity FK su conversations) e prima di Slice 2. Sblocca: (a) `aura chat list/resume/new` cross-session; (b) paused_states ora FK a conversations con cascade; (c) auto-resolve di pending stale quando Loop.Stop() (Area #7 closed); (d) audit forensics per token cost + cache hit ratio per conversazione. Out of scope riga "Persistenza disk dello stato conversazionale" rimossa. Migrations: `0005_conversations` (NEW) + `0006_conversation_turns_fts` (Slice 1.8.5 FTS) sono il floor shippato; i numeri a valle (scheduler, skill_audit, …) sono indicativi e assegnati all'atterraggio per ordine-fase (vedi §Persistence "Migration numbering — fonte di verità").
 3. **Slice 2 (Sandbox)** prima dello Swarm: lo swarm spawn-a agenti che — nella realtà — useranno `execute`. Avere `execute` funzionante prima rende lo smoke dello swarm meno artificiale. **Atomicity split**: 2a (base stateless + seccomp + ulimit + net deny, ~600 LOC) atterra qui prima di Slice 3; **2b** (session-bound + workspace mount + network allowlist, ~350 LOC + migration 0010) richiede `conversation_id` quindi atterra DOPO Slice 1.8 ma prima di Slice 5 (web tools, che potrebbero beneficiare di workspace shared con sandbox). Pattern di riferimento: 2a = OpenAI Code Interpreter MVP; 2b = Claude Code on the Web + E2B + Anthropic Code Execution beta.
 4. **Slice 3 (Swarm)** prima della KV: la KV cache discipline deve coprire ANCHE i prompt dei figli swarm-spawn. Costruire il PromptBuilder dopo aver visto come il parent passa goal/tools al child evita un secondo refactor.
 5. **Slice 4 (KV)** chiude le 4 fondamentali: ora la superficie del prompt (system + manifest + tool descriptions + parent/child contracts + ask_user) è stabile. Il builder ottimizza un bersaglio fermo.
@@ -4861,7 +4864,9 @@ Tre store, ciascuno con la sua semantic responsibility:
 - **Neo4j via `mcp-neo4j-cypher` MCP server (stdio)** — **unica fonte di knowledge E di vector embeddings**. Semantic memory, entity graph, conversational memory, derivati relazionali, vector index nativo HNSW Lucene. Accessed solo via MCP, no native Go adapter. La precedente architettura wiki-markdown filesystem + `[[wiki-links]]` è stata deprecata 2026-05-27 dopo test (spike in `D:/tmp/aura-neo4j-spike-2026-05-27/`).
 - **Embedder dedicato**: `embeddinggemma` via sidecar `aura-llama-embed` (porto 8081, OpenAI-compat). **768d nativo**, scritti direttamente su nodi `:Chunk.embedding` in Neo4j. Vector index HNSW configurato a 768 dim (no MRL truncation, no client-side resize). NON in store separato.
 - **PostgreSQL 17 via `sqlc` + `jackc/pgx/v5`** — application state. Scheduler tasks, paused states, audit log, identity, capability grants. Schema `aura`. Migrations versionate in `internal/db/migrations/`. Industrial-grade, type-safe queries generate da SQL files.
-- **Filesystem** — solo artefatti operativi: SKILL.md tree (`~/.aura/skills/active/`), tool result sidecar files (`$AURA_RUN_DIR/<session>/<tool-call-id>.result`). **Mai knowledge.**
+
+> **Migration numbering — fonte di verità (riconciliata 2026-06-01).** Floor **shippato** (Phase 1-4, presente nel codice): `0001_init`, `0002_knowledge_migrations`, `0003_paused_states`, `0004_identity`, `0005_conversations`, `0006_conversation_turns_fts`. **Regola**: ogni migration a valle prende il numero **all'atterraggio = prossimo intero libero quando la sua PHASE esegue** (ordine-fase, NON ordine-slice — es. `sandbox_sessions` di Slice 2b/Phase 8 atterra *prima* di `scheduler` di Slice 6/Phase 10). I numeri assoluti hardcodati nelle sezioni slice a valle (`scheduler`, `skill_audit`, `telegram`, `profile_audit`, `sandbox_sessions`, `skill_snippet_audit`, `ingest_audit`, `task_canvas`, `local_llm`) sono **indicativi**, superseduti da questa regola: l'implementatore usa il prossimo numero libero al landing, non il valore scritto nella sezione. (Cypher/Neo4j ha la sua sequenza separata in `internal/knowledge/migrations/*.cypher`, oggi `0001_init`.)
+- **Filesystem** — solo artefatti operativi: SKILL.md tree (`~/.aura/skills/active/`), tool result sidecar files (`$AURA_RUN_DIR/conversations/<session>/<tool-call-id>.result`). **Mai knowledge.**
 
 Distinzioni semantiche **non negoziabili**: knowledge + vectors → solo Neo4j (via MCP); application state → solo Postgres (via sqlc); operational artifacts → filesystem. Le slice future che hanno bisogno di persistenza scelgono lo store giusto in base a cosa stanno salvando, non a "che dep era già lì". Nessuna knowledge in Postgres; nessun task scheduler in Neo4j; nessun markdown wiki da nessuna parte; nessun vector index dedicato fuori da Neo4j (Qdrant deprecato 2026-05-27 dopo validazione spike Phase 6b).
 ```
