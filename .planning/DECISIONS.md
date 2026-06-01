@@ -18,11 +18,28 @@
 
 ---
 
+## §0 — Decisione fondazionale: deployment & portabilità (D00)
+
+| # | Decisione | Status | Revers. | Cosa la cementa | Validazione |
+|---|---|---|---|---|---|
+| **D00** | **Binario portabile unico** su 3 target (Hetzner cloud / mini-PC 32GB / DGX Spark) — locale-vs-remoto e provider selezionati da **config per-deployment**, NON build separate | 🔒 | ⚫ | ogni phase con sidecar, LLM, embedder, sandbox | Scelta utente 2026-06-01. Governa i vincoli di D11/D12/D13/D18-19. |
+
+**Invarianti di portabilità (guardrail — violarle rompe silenziosamente un target):**
+
+1. **Multi-arch arm64 + amd64.** DGX Spark è ARM (Grace); cloud/mini-PC x86. Binario Go cross-compila; **ogni sidecar deve avere immagine arm64** → guardrail di CI (build multi-arch), non scoperta sul DGX.
+2. **seccomp è arch-specifico** (numeri syscall differiscono x86↔ARM) → la sandbox (D12) usa `libseccomp` (risolve per-nome) o due allowlist. **Trappola affilata.**
+3. **Routing LLM/embedder config-driven** (LLMRouter Slice 13 promosso da v2 a seam day-1): nessun path hardcoda un provider. Client OpenAI-compat già abilita remoto + locale (vLLM/llama.cpp).
+4. **Un solo embedder/dim su tutti i deployment** (D11): no index 768d sul mini-PC e 1024d sul DGX — lo stesso Aura li legge entrambi. Embedder scelto sul target più piccolo.
+5. **`AURA_PRIVACY_MODE=local-only`** fail-fast se una capability (LLM/embedder/web) è remota → rende "massima privacy DGX" una garanzia verificabile, non una speranza. **Nuovo requisito da D00.**
+6. **Budget risorse deployment-aware**: il chat LLM è **remoto** su 32GB (non regge un modello forte + Neo4j + Postgres + embedder + OS) e **locale** su DGX 128GB. Il footprint locale deve stare nel target più piccolo.
+
+---
+
 ## §1 — Substrato fondazionale (LOCKED, validato)
 
 | # | Decisione | Status | Revers. | Cosa la cementa | Validazione |
 |---|---|---|---|---|---|
-| D01 | **Graph DB = Neo4j 5.26** (vs Memgraph) | 🔒 | 🔴 | tutto il Cypher di Slice 11 | Valutato 2026-06-01: cheap-now/expensive-after-P15; Memgraph scartato per modello in-memory vs corpus che cresce all'infinito. MCP swap sarebbe stato pulito; RAM è il blocker. |
+| D01 | **Graph DB = Neo4j 5.26** (vs Memgraph) | 🔒 | 🔴 | tutto il Cypher di Slice 11 | Valutato 2026-06-01: cheap-now/expensive-after-P15; Memgraph scartato per modello in-memory vs corpus che cresce all'infinito. **Vindicato da D00**: è l'unico graph DB che gira identico su tutti e 3 i target (disk-native scala giù a 32GB E su a DGX); Memgraph in-memory sarebbe stato ok solo su DGX. Ha immagine arm64. |
 | D02 | **Relational = Postgres 17** + pgx + sqlc + golang-migrate | 🔒 | 🔴 | 6 migration shippate | Phase 1 done |
 | D03 | **3-store split** (PG=app-state, Neo4j=knowledge+vector, FS=artifact) | 🔒 | 🔴 | ogni slice con persistenza | non-negoziabile (PRD §Persistence) |
 | D04 | **Neo4j data via MCP** (mcp-neo4j-cypher) + native driver SOLO per DDL | 🔒 | 🟡 | client.go chokepoint | Phase 1 done; è ciò che rende D01 reversibile |
@@ -42,8 +59,8 @@
 
 | # | Decisione | Status | Revers. | Finestra (cosa la cementa) | Nota |
 |---|---|---|---|---|---|
-| **D11** | **Modello embedding + dimensione** — oggi `embeddinggemma-300m @ 768d` | 🔓 | 🔴 | **prima che Phase 15 ingerisca a scala** | **Gemella esatta di D01.** Cambiare embedder dopo ingestione = re-embed dell'intero corpus + reindex HNSW. La dim 768 è contratto hard (HNSW, sidecar, recall bench, `pingEmbed`). Latente: EmbeddingGemma supporta Matryoshka/MRL (potresti troncare). Da valutare: dim (768 vs 256/512/1024), multilingue (utente IT), context window dell'embedder, qualità retrieval vs costo RAM/storage. **Sotto-analizzato quanto D01.** |
-| **D12** | **Primitiva isolamento sandbox** (Slice 2) — PRD oggi: container + seccomp allowlist + ulimit + network policy | 🔓 | 🔴 | **Phase 5 (LA PROSSIMA)** | Fondazionale: skills (7), swarm (9), snippet eseguibili (7e) ci costruiscono sopra. Cambiare la primitiva (container+seccomp vs gVisor vs microVM/Firecracker vs WASM/WASI) *dopo* = rework a cascata. Da valutare vs il profilo single-user self-host mini-PC: forza dell'isolamento vs overhead RAM/avvio vs compatibilità Python/multi-lang snippet. |
+| **D11** | **Modello embedding + dimensione** — oggi `embeddinggemma-300m @ 768d` | 🔓 | 🔴 | **prima che Phase 15 ingerisca a scala** | **Gemella esatta di D01.** Cambiare embedder dopo ingestione = re-embed dell'intero corpus + reindex HNSW. La dim 768 è contratto hard (HNSW, sidecar, recall bench, `pingEmbed`). **Vincolo D00**: deve girare sul target più piccolo (32GB) + avere build **arm64** (DGX); UN solo embedder/dim su tutti i deployment. Latente: EmbeddingGemma supporta Matryoshka/MRL. Da valutare: dim (768 vs 256/512/1024), multilingue (utente IT), context window, qualità vs costo RAM/storage — **con "fit su 32GB + ARM" come vincolo duro**. |
+| **D12** | **Primitiva isolamento sandbox** (Slice 2) — PRD oggi: container + seccomp allowlist + ulimit + network policy | 🔓 | 🔴 | **Phase 5 (LA PROSSIMA)** | Fondazionale: skills (7), swarm (9), snippet eseguibili (7e) ci costruiscono sopra. Cambiare la primitiva (container+seccomp vs gVisor vs microVM/Firecracker vs WASM/WASI) *dopo* = rework a cascata. **Vincolo D00 (trappola affilata)**: deve girare su **x86 E arm64**, e **seccomp è arch-specifico** (numeri syscall x86≠ARM) → `libseccomp` o due allowlist. gVisor/Firecracker hanno supporto arm64 variabile — da verificare. Valutare vs profilo single-user self-host: isolamento vs overhead RAM/avvio vs compat Python/multi-lang **su entrambe le arch**. |
 
 ---
 
@@ -51,7 +68,7 @@
 
 | # | Decisione | Status | Revers. | Finestra | Nota |
 |---|---|---|---|---|---|
-| D13 | **Strategia provider LLM** — single-provider OpenRouter/DeepSeek-V4 via OpenAI-compat | 🔓 | 🟢 | continuo | L'abstraction è swappable (hedge buono). Il *modello* è la scommessa; reasoning-event handling plasma il prompt design. Local fallback = D19 (v2). |
+| D13 | **Strategia provider LLM** — **multi-provider OpenAI-compat + routing per-deployment** (D00) | 🔓 | 🟢 | continuo | Non più single-provider: il seam LLMRouter (Slice 13) è **promosso da v2 a day-1** da D00. Endpoint LLM/embedder config-driven (remoto su cloud/32GB, locale vLLM/llama.cpp su DGX). Client OpenAI-compat già abilita entrambi. |
 | D14 | **Coordinamento Swarm** (Slice 3/9) — ParallelAgent reuse + bus custom, cap 2-deep | 🔓 | 🟡 | Phase 9 | Full N-deep + DM-by-ID = SWARM-V2-01 (deferred). Modello bus/DM ancora plasmabile dentro il runtime. |
 | D15 | **Transport = AG-UI SSE gateway** (Slice 8) | 🔓 | 🟡 | Phase 12 | WebSocket scartato (SSE-only). CLI in-process vs via-agui = D20. Gateway → reversibile-ish. |
 | D16 | **Channels framework + Telegram primary** (Slice 9) | 🔒 | 🟡 | Phase 13 | Telegram È la porta d'ingresso del prodotto (README). Locked di fatto. |
@@ -63,8 +80,8 @@
 | # | Decisione | Status | Finestra | Nota |
 |---|---|---|---|---|
 | D17 | Variante multimodale **Gemma 4** (E2B/E4B/26B/31B) | ⏳ | Slice 9c | benchmark accuracy+latenza+RAM su corpus reale; baseline E4B |
-| D18 | **GPU vs CPU** per vLLM | ⏳ | Slice 13 (v2) | CRITICA: vLLM CPU 5-10x più lento → path 13-bis (riusa llama.cpp). Hardware-gated. |
-| D19 | Modello **LLM fallback locale** (Gemma 3 12B / Llama 3.1 8B / Qwen 2.5 7B) | 📦 | Slice 13 (v2) | LLM-V2-01 deferred; benchmark IT+EN-code pre-merge |
+| D18 | **GPU vs CPU** per vLLM | ⏳ | Slice 13 | **Risolto per-target da D00**: DGX=GPU locale, mini-PC/cloud=remoto (nessun vLLM locale). Non più una scelta globale. |
+| D19 | Modello **LLM locale** (per il path full-local DGX) | 🔓 | Slice 13 | **Non più "pura v2"**: su DGX "massima privacy = tutto locale" rende il path locale **centrale** (D00). Su DGX 128GB regge 70B-class quantizzato. Modello da benchmark IT+EN. Il *seam* (D13) è day-1; l'*implementazione* locale segue il target DGX. |
 | D20 | CLI default **in-process vs via-agui** | ⏳ | Slice 8 | misurare latency roundtrip HTTP loopback (~50-150ms attesi) |
 
 ---
@@ -93,7 +110,12 @@
 
 ## Prossime azioni raccomandate
 
-1. **Valutare D11 (embedding)** — la gemella di D01, stessa logica costoso-dopo, sotto-esaminata. Massima priorità: cementa con Phase 15.
-2. **Valutare D12 (sandbox)** — imminente (Phase 5 = next) e fondazionale.
-3. Le TIER-2 (D13-D15) si possono portare a 🔒 just-in-time prima della rispettiva phase.
+0. **D00 locked (2026-06-01)**: binario portabile unico. Le 6 invarianti di portabilità sono guardrail per ogni phase → da verificare in CI (multi-arch) e nel design (routing config-driven, privacy-mode, seccomp per-arch).
+1. **Valutare D11 (embedding)** — la gemella di D01, ora con vincolo duro "fit su 32GB + ARM". Massima priorità: cementa con Phase 15.
+2. **Valutare D12 (sandbox)** — imminente (Phase 5 = next), fondazionale, **+ vincolo ARM/seccomp da D00**.
+3. Le TIER-2 (D14-D15) si portano a 🔒 just-in-time; D13 ha il seam day-1 per D00.
 4. Non spendere pre-analisi su §5 (validate-by-building).
+
+### Amendment PRD richiesto (follow-up)
+
+D00 implica edit al PRD prima di Phase 5: (a) `AURA_PRIVACY_MODE=local-only` nel catalogo env + guard fail-fast; (b) requisito multi-arch (arm64) su Stack + ogni sidecar; (c) promozione del seam LLMRouter da Slice 13-v2 a contratto day-1; (d) nota seccomp-per-arch in Slice 2. Tracciato qui, da formalizzare in un amendment.
