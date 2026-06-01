@@ -16,6 +16,14 @@
 > - Tool grandi → `Deferred: true` (manifest pulito, schema on-demand via `tool_search`).
 > - **Test discipline** (vedi §Test discipline in fondo): prompts E2E reali, mai citare tool/skill per nome dentro il prompt.
 
+> **D00 — Binario portabile unico (amendment #30, 2026-06-01).** Aura è UN binario che gira su 3 target — **Hetzner cloud / mini-PC 32GB / NVIDIA DGX Spark** — con locale-vs-remoto e provider selezionati da **config per-deployment**, NON build separate (registro `.planning/DECISIONS.md` §0). **6 invarianti di portabilità non-negoziabili:**
+> 1. **Multi-arch arm64 + amd64.** DGX Spark è ARM (Grace); cloud/mini-PC x86. Binario Go cross-compila; **ogni sidecar deve avere immagine arm64** → guardrail CI (build multi-arch).
+> 2. **seccomp è arch-specifico** (numeri syscall x86≠ARM) → la sandbox (Slice 2) usa `libseccomp` (risolve per-nome) o due profili. Vedi acceptance Slice 2.
+> 3. **Routing LLM/embedder config-driven** (endpoint `AURA_LLM_BASE_URL`/`AURA_EMBED_BASE_URL` + provider): nessun path hardcoda un provider. Il client OpenAI-compat già abilita remoto + locale (vLLM/llama.cpp). L'`LLMRouter` (Slice 13) estende, ma il **contratto endpoint-config-driven è day-1**.
+> 4. **Un solo embedder/dim su tutti i deployment**: no index 768d sul mini-PC e 1024d sul DGX — lo stesso Aura li legge entrambi. Embedder scelto sul target più piccolo (32GB).
+> 5. **`AURA_PRIVACY_MODE=local-only`** fail-fast se una capability (LLM/embedder/web) è remota → "massima privacy DGX" come garanzia verificabile, non speranza.
+> 6. **Footprint locale ≤ target più piccolo**: chat LLM **remoto** su 32GB (non regge modello forte + Neo4j + Postgres + embedder + OS), **locale** su DGX 128GB.
+
 ---
 
 ## Slice 0.5 — Infra DB (PostgreSQL + sqlc + pgx + golang-migrate)
@@ -1223,7 +1231,7 @@ Nessuno dei due prompt nomina `execute`. Se il modello non lo invoca, è bug del
 
 *Slice 2a (base stateless):*
 - [ ] Sidecar gira come container non-root (`uid:gid 65532:65532`), `read_only: true`, `tmpfs:/tmp`, `network_mode: none`, ulimit nofile=64, cpus=1.0, mem=512m.
-- [ ] Seccomp profile rifiuta: `socket`, `connect`, `bind`, `mount`, `unshare`, `ptrace`, `clone(CLONE_NEWNET)`. Profile sotto VCS in `sandbox/seccomp.json`.
+- [ ] Seccomp profile rifiuta: `socket`, `connect`, `bind`, `mount`, `unshare`, `ptrace`, `clone(CLONE_NEWNET)`. Profile sotto VCS in `sandbox/seccomp.json`. **Vincolo D00 (amendment #30): arch-aware** — i numeri syscall differiscono x86↔arm64, quindi il profilo va espresso per-NOME (libseccomp/OCI seccomp che mappa per-arch) o duplicato per arch; un `seccomp.json` con numeri x86 hardcoded NON regge su DGX Spark (ARM). La scelta della primitiva di isolamento (vedi `.planning/DECISIONS.md` D12) deve essere validata su x86 **e** arm64.
 - [ ] Default timeout esecuzione 30s, override via `AURA_SANDBOX_TIMEOUT_SEC` (cap 600s — ricorda [aura_lan_exposure_2026-05-17](memory)).
 - [ ] `aura exec` chiamato senza sidecar su → errore chiaro, no panic, no hang.
 - [ ] Container exit con stdout/stderr troncati a 1 MiB ciascuno (oltre → `... [truncated]`).
@@ -1511,7 +1519,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
    - **Anthropic `cache_control: ephemeral`** non si applica (DeepSeek non lo supporta).
    - **DeepSeek auto-cache nativo** è preservato anche via OpenRouter: la response include `usage.prompt_cache_hit_tokens` (formato OpenAI-compat esteso). Il parser deve gestirlo come optional field.
    - **OpenRouter aggiunge `usage.cost`** (USD totale della call) — utile da loggare in `cache.Tracker` accanto al hit-rate per misurare ROI reale del KV-discipline.
-   *Decisione:* `Config.LLM.Provider="openrouter"` è una stringa documentale (per log/UI). Il client OpenAI-compat è invariante. Le routine cache_control restano in `cache_anthropic.go` (no-op in pratica) per non rompere se in futuro aggiungiamo un secondo provider Anthropic-diretto.
+   *Decisione:* `Config.LLM.Provider="openrouter"` è una stringa documentale (per log/UI). Il client OpenAI-compat è invariante. Le routine cache_control restano in `cache_anthropic.go` (no-op in pratica) per non rompere se in futuro aggiungiamo un secondo provider Anthropic-diretto. **Seam portabilità D00 (amendment #30)**: l'endpoint (`AURA_LLM_BASE_URL`) + model sono già config-driven — è il contratto day-1 che tiene aperti i 3 target (remoto cloud/32GB, locale vLLM/llama.cpp su DGX). L'`LLMRouter` di Slice 13 estende questo seam (selezione runtime), ma nessun path deve mai hardcodare il provider/endpoint.
 2. **Cache stats persistenza.** Solo in-memory per processo, o flush su file? → *Proposto: in-memory. Stats sono debug, non telemetria.*
 3. **Tools come breakpoint cache separato.** Su Anthropic il tools array è un blocco a parte (non dentro messages). Dobbiamo modificare `llm.Request` per supportare un `tools_cache_control`? → *Proposto: SÌ. Aggiunta a `Request{ ToolsCacheControl string }`. OpenAI/DeepSeek lo ignorano.*
 4. **Threshold cache_hit_rate per CI.** Test che fallisce sotto X%? → *Proposto: NO. Test asserisce **invariant** (byte-identity), non **percentage** (provider-dipendente, flaky).*
@@ -4693,7 +4701,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_DB_MIGRATE_URL` | (optional, defaults to `AURA_DB_URL`) | secret | 0.5 | Migrations-only DSN connecting as `aura_migrate` role (amendment #17, Pitfall #6 P0). If unset, `aura db migrate` fails fast. Production runtime never uses this URL — only `aura db migrate` subcommand reads it. |
 | `AURA_LLM_BASE_URL` | `https://openrouter.ai/api/v1` | operative | 1 | OpenAI-compat endpoint. |
 | `AURA_LLM_API_KEY` | (richiesto via `.env` `OPENROUTER_API_KEY`) | secret | 1 | API key. |
-| `AURA_LLM_MODEL` | `deepseek/deepseek-v4-flash:exacto` | operative | 1 | Model id. |
+| `AURA_LLM_MODEL` | `deepseek/deepseek-v4-flash:exacto` | operative | 1 | Model id. Endpoint+model config-driven = seam portabilità D00 (amendment #30); mai hardcodare un provider. |
+| `AURA_PRIVACY_MODE` | `open` | operative | 0.5 (D00) | `open` (remoto permesso) \| `local-only` (amendment #30): in `local-only` Aura **fail-fast al boot** se LLM/embedder/web-fetch puntano a un endpoint non-loopback. Rende "massima privacy DGX" verificabile. |
 | `AURA_LLM_TEMPERATURE` | `0.7` | operative | 1 | Sampling temperature (A5 amendment 2026-05-30). |
 | `AURA_LLM_MAX_TOKENS` | `4096` | cap | 1 | Max output tokens per call (A5 amendment 2026-05-30). |
 | `AURA_LLM_TOTAL_TIMEOUT_SEC` | `120` | cap | 1 | Global HTTP timeout (via `context.WithTimeout` sul request ctx, non `http.Client.Timeout`). |
