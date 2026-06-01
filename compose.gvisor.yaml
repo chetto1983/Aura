@@ -1,0 +1,20 @@
+# Aura sandbox 2a — gVisor runsc OVERLAY (D-04, x86-only).
+#
+# Merge with the base compose via:
+#   docker compose -f compose.yaml -f compose.gvisor.yaml up -d aura-sandbox
+# `make sandbox-up` applies this overlay automatically on x86_64 (gVisor
+# default-on x86 — D-04 / CAP-01 SC#5).
+#
+# This is x86-ONLY: gVisor arm64 is preliminary/non-GA (4KB-page only, partial
+# syscall coverage — Pitfall 5), so arm64 deployments OMIT this overlay and run
+# the base service on runc + the seccomp floor. Do NOT add `runtime: runsc` to
+# the base compose.yaml.
+#
+# `runsc` must be installed and registered as a Docker runtime on the daemon
+# (`runsc install` + daemon restart) — see RESEARCH § Standard Stack install
+# block (production x86 host + CI DinD inner daemon).
+name: aura
+
+services:
+  aura-sandbox:
+    runtime: runsc

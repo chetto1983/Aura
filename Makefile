@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+.PHONY: help tools sqlc lint vet vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill sandbox-up
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -34,6 +34,7 @@ help:
 	@echo "make neo4j-reset   — DESTRUCTIVE: drop all indexes + MATCH (n) DETACH DELETE (dev only, AURA_RESET_YES=1)"
 	@echo "make smoke         — scripts/neo4j_smoke.sh (Italian recall@5 5/5 + p95 <= 30ms)"
 	@echo "make restore-drill — scripts/restore_drill.sh (pg_dump -> pg_restore, asserts < 90s)"
+	@echo "make sandbox-up    — start aura-sandbox; gVisor runsc overlay default-on x86, runc+seccomp on arm64"
 
 # Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
 # CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
@@ -125,3 +126,25 @@ smoke: neo4j-migrate
 
 restore-drill: db-up
 	bash scripts/restore_drill.sh
+
+# ↓↓ Slice 2a — hardened sandbox sidecar (gVisor default-on x86, D-04/SC#5) ↓↓
+# Arch-gated at make-parse time via `uname -m` so `make -n sandbox-up` prints a
+# command line that INCLUDES `-f compose.gvisor.yaml` on x86_64 (gVisor runsc
+# default-on) and OMITS it on arm64 (runc + seccomp floor — Pitfall 5, gVisor
+# arm64 is non-GA). The overlay is the OPERATOR DEFAULT, not opt-in, so the
+# strongest x86 boundary is on unless deliberately stripped.
+SANDBOX_ARCH := $(shell uname -m)
+ifeq ($(SANDBOX_ARCH),x86_64)
+SANDBOX_COMPOSE := docker compose -f compose.yaml -f compose.gvisor.yaml
+SANDBOX_RUNTIME_LABEL := gVisor runsc (x86 default-on)
+else
+SANDBOX_COMPOSE := docker compose -f compose.yaml
+SANDBOX_RUNTIME_LABEL := runc + seccomp floor ($(SANDBOX_ARCH) — gVisor arm64 non-GA)
+endif
+
+sandbox-up:
+	@echo "sandbox runtime profile: $(SANDBOX_RUNTIME_LABEL)"
+	$(SANDBOX_COMPOSE) up -d aura-sandbox
+	@echo "Waiting for aura-sandbox healthy..."
+	@until docker compose ps --format json aura-sandbox | grep -q '"Health":"healthy"'; do sleep 1; done
+	@echo "ok"

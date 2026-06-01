@@ -84,6 +84,51 @@ services:
       retries: 12
       start_period: 60s                        # first-boot HF model download
 
+  # ↓↓ Slice 2a — hardened untrusted-code execution sidecar (CAP-01 SC#5) ↓↓
+  # The full hardening floor (D-06/D-14). x86 production/dev adds the gVisor
+  # runsc runtime via the compose.gvisor.yaml OVERLAY (D-04, default-on x86
+  # through `make sandbox-up`); arm64 omits the overlay and falls back to runc +
+  # this seccomp floor (Pitfall 5 — gVisor arm64 is non-GA). The base compose
+  # deliberately sets NO runtime override here.
+  #
+  # NOTE: `userns-remap: default` is a daemon.json setting (D-15), NOT a
+  # compose-service field — it maps container uid 0 -> an unprivileged host uid
+  # and is asserted against the daemon by the 05-04 bench, not here.
+  #
+  # NOTE: `network_mode: none` means the container has no network namespace, so
+  # the `ports` publish below is the documented wire surface the runner targets
+  # (matching the PRD T-1.07 loopback convention); under net-none it is not
+  # reachable on its own — it is the contract on the non-gVisor floor. The field
+  # is kept deliberately.
+  aura-sandbox:
+    build: ./sandbox
+    container_name: aura-sandbox
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    tmpfs:
+      - /tmp
+    network_mode: none
+    cap_drop:
+      - ALL
+    security_opt:
+      - "no-new-privileges:true"
+      - "seccomp=./sandbox/seccomp.json"
+    pids_limit: 64
+    mem_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile: 64
+    ports:
+      - "127.0.0.1:18901:18901"
+    healthcheck:
+      # Image ships no curl; probe /healthz with a stdlib urllib one-liner.
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:18901/healthz', timeout=3).status==200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
 volumes:
   aura-postgres:
   aura-neo4j:
