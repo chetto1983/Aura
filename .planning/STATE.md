@@ -4,8 +4,8 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 5 context gathered
-last_updated: "2026-06-01T15:06:08.252Z"
-last_activity: 2026-06-01 -- Phase 05 planning complete
+last_updated: "2026-06-01T18:05:41.723Z"
+last_activity: 2026-06-01 -- Phase 05 execution started
 progress:
   total_phases: 16
   completed_phases: 5
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 5 — sandbox 2a stateless
+**Current focus:** Phase 05 — sandbox-2a-stateless
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-01 -- Phase 05 planning complete
+Phase: 05 (sandbox-2a-stateless) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 05 (05-01 PRD-amendment gate complete)
+Last activity: 2026-06-01 -- Phase 05 plan 05-01 complete (PRD amendments landed)
 
 Progress: [██████████] 100%
 
@@ -70,6 +70,7 @@ Progress: [██████████] 100%
 | Phase 04 P03 | ~70min | 3 tasks | 13 files |
 | Phase 04 P04 | ~75min | 3 tasks | 15 files |
 | Phase 04 P05 | 30 | 3 tasks | 25 files |
+| Phase 05 P05-01 | ~12min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-04: conversation persistence + deterministic context mgmt (CORE-04/CORE-05). conversations.Store COPIES the canonical pattern and extends it: AppendTurn folds turn INSERT + aggregates UPDATE into ONE db.WithTx (SC-2 crash atomicity — injected failure between them rolls back, no partial turn, live-verified); sidecar spill > AURA_CONVERSATION_TURN_CAP_BYTES happens BEFORE the tx (orphan file reconciled by boot scan, not part of DB atomicity); LoadHistory byte-identical (Req#8, pure fn of rows, sidecar rehydrated from disk); total_cost_usd aggregated in SQL via pgtype.Numeric delta at numeric(10,4) (exact, Pitfall 5); SearchConversationTurns wraps the LOCKED FTS verbatim. context.go L1/L2/L2.5 ladder: L1 rewrites a COPY (byte-identity holds) of role='tool' turns older than evict window to read_tool_output pointers, NEVER seq=1 (KV poisoning Pitfall 1); L2 hard_cap=ContextWindow-max(MaxOutputTokens,20000)-13000, 0.75x warn; L2.5 drops oldest user/assistant PAIR (system L0 preserved, remainder even) + ONE context_rot_events row via a narrow rotEmitter iface (unit-testable, no DB); SC-1 L1-alone writes ZERO rot rows (live-verified); over-hard+unreducible -> ErrContextWindowExceeded (REPL, never iter error slot). OFFLINE tiktoken: vendored cl100k_base.tiktoken blob + custom //go:embed BpeLoader + SetBpeLoader before GetEncoding + sync.Once cache — zero network, zero new dep (NOT tiktoken-go-loader). ScanOrphans symlink-guarded GC (Lstat never follows -> symlink unlinked not traversed, EoP T-04-14 live-verified) + tmp >24h sweep + audit-only size WARN (never purge). generateTitle best-effort llm.Client.Stream body (Runner owns WaitGroup/WithoutCancel, 04-05); errors never block chat. Scope held: NO Runner/composition root. Combined coverage 89.6%; golangci-lint 0; db_integration -race green; all files <=600 LOC.
 - [Phase 04]: 04-02: identity.Store PROVES THE CANONICAL STORE PATTERN (D-A4-01) that 04-03/04/05 copy verbatim — Store{pool,q} via sqlc.New(pool); reads via s.q; db.WithTx for atomic writes; SQLSTATE classification via errors.As(&pgErr)+pgErr.Code (NEVER message-match); sentinel errors (ErrWildcardManaged/ErrInvalidCapability/ErrIdentityNotFound); pgtype boundary conversion in fromRow; NO interface in the domain package (consumer declares it, D-A2-02); pre-DB validation gate for operator input. HasCapability wildcard-or-exact; grant/revoke idempotent (ON CONFLICT DO NOTHING + defensive 23505 swallow); '*'/name-grammar rejected pre-DB; FK cascade on DeleteIdentity. CLI: hand-rolled switch runIdentity mirroring runDB (cobra->switch deviation, RESEARCH OQ1/A2 — go.mod has no cobra, CLAUDE.md follows existing patterns, SPEC never requires cobra; no PRD amendment). Test discipline: unit tier (pure logic) + db_integration tier (goleak, envOrSkip t.Fatal-under-CI); 9 integration tests RAN green; combined coverage 98.0%; golangci-lint 0; all files <=600 LOC.
 - [Phase ?]: Runner is the SOLE writer of paused_states; resume = fresh agent.Run over rehydrated history (SC-4 no silent re-run)
+- [Phase 05]: 05-01 (PRD-amendment gate, doc-only): D12 RE-DECIDED to gVisor-primary x86 (amendment #36, supersedes #32; D-05/06/07) — gVisor `runsc` is the PRIMARY x86 boundary (not a >5%-only escalation seam), hardened-container+seccomp+userns-remap is the portable floor / arm64 fallback, runner runtime-agnostic via AURA_SANDBOX_RUNTIME, microVM stays REJECTED (KVM-less infra); applied consistently across prd.md + DECISIONS.md + ROADMAP.md SC#5. D-09: DockerRunner does ONE best-effort docker-CLI-gated auto-start on connect-failure then ErrSandboxUnreachable, NEVER mounts the docker socket, execution path stays HTTP-only (Slice 2a acceptance #4 = "sidecar down AND auto-start fails -> clear error"). D-20 (amendment #37): curated hash-pinned requirements.txt (numpy/pandas/scipy/sympy/matplotlib/pillow/bs4/lxml/pyyaml/dateutil/openpyxl) baked at IMAGE-BUILD time so user code is batteries-included, runtime stays net-none + read_only + stateless with NO runtime pip; sidecar.py server stays stdlib-only; on-demand pip remains a 2b/Phase-8 pypi.org-allowlist capability. Tracked obligation: QEMU-arm64 CI seccomp emulation can diverge from real arm64 kernel -> real-DGX confirmation pre-production arm64. Task 1 was already committed (93e8c5a) by a prior run and verified in place; Tasks 2 (d924466) + 3 (5d8c46e) landed this run.
 
 ### Pending Todos
 
@@ -124,6 +126,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T13:43:40.234Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-sandbox-2a-stateless/05-CONTEXT.md
+Last session: 2026-06-01T18:05:41.723Z
+Stopped at: Completed 05-01-PLAN.md (PRD-amendment gate)
+Resume file: None

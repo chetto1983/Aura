@@ -159,7 +159,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 1**
 
-- [ ] 05-01-PLAN.md — PRD-amendment gate: re-decide D12 to gVisor-primary (D-05/06/07) + Slice 2a acceptance #4 auto-start (D-09) across prd.md + DECISIONS.md + ROADMAP.md (doc-only, gates all code waves)
+- [x] 05-01-PLAN.md — PRD-amendment gate: re-decide D12 to gVisor-primary (D-05/06/07) + Slice 2a acceptance #4 auto-start (D-09) + D-20 build-time package bake across prd.md + DECISIONS.md + ROADMAP.md (doc-only, gates all code waves) — COMPLETE
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
