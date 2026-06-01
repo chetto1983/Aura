@@ -68,9 +68,9 @@
 
 | # | Decisione | Status | Revers. | Finestra | Nota |
 |---|---|---|---|---|---|
-| D13 | **Strategia provider LLM** — **multi-provider OpenAI-compat + routing per-deployment** (D00) | 🔓 | 🟢 | continuo | Non più single-provider: il seam LLMRouter (Slice 13) è **promosso da v2 a day-1** da D00. Endpoint LLM/embedder config-driven (remoto su cloud/32GB, locale vLLM/llama.cpp su DGX). Client OpenAI-compat già abilita entrambi. |
-| D14 | **Coordinamento Swarm** (Slice 3/9) — ParallelAgent reuse + bus custom, cap 2-deep | 🔓 | 🟡 | Phase 9 | Full N-deep + DM-by-ID = SWARM-V2-01 (deferred). Modello bus/DM ancora plasmabile dentro il runtime. |
-| D15 | **Transport = AG-UI SSE gateway** (Slice 8) | 🔓 | 🟡 | Phase 12 | WebSocket scartato (SSE-only). CLI in-process vs via-agui = D20. Gateway → reversibile-ish. |
+| D13 | **Strategia provider LLM** — multi-provider OpenAI-compat + routing per-deployment | 🔒 | 🟢 | continuo | **Risolto 2026-06-01 (amendment #33), ADJUST**: seam OpenAI-compat ratificato. 2 gap cablati: (a) **`AURA_PRIVACY_MODE=local-only` era solo prosa** → boot fail-fast (SSRF classifier) + `LLMRouter.Route()` trigger priorità-0; (b) **reasoning dual-field** (`reasoning`‖`reasoning_content`) — vLLM ha rimosso `reasoning_content`, il path DGX-local perdeva gli eventi reasoning. `:exacto` resta (Auto-Exacto default OpenRouter da mar-2026, no-op aggiuntivo). |
+| D14 | **Coordinamento Swarm** (Slice 3/9) — ParallelAgent reuse + bus custom, cap 2-deep | 🔒 | 🟡 | Phase 9 | **Risolto 2026-06-01 (amendment #34), RATIFY+**: modello corretto (fan-out+supervisor 2026; budget condiviso D-10/D-11 già shippato bounda il costo dell'albero). 3 fix D00/D12: (A) `AURA_SWARM_MAX_CONCURRENT` per-target (manca cap *larghezza* → 32GB OOM, D00.6); (B) nota session-reuse serializza sul lock container (D12); (C) stub `MaxSpawnDepth=3`→2. Privacy-mode ereditato by-construction. Full N-deep = SWARM-V2-01 (deferred). |
+| D15 | **Transport = AG-UI SSE gateway** (Slice 8) | 🔒 | 🟡 | Phase 12 | **Risolto 2026-06-01 (amendment #35), ADJUST**: AG-UI ratificato (standard 2026, blast-radius confinato). 3 fix: (1) **split 8a** (translator+fanout = critical-path Telegram) **/ 8b** (HTTP server+Dojo, deferito finché client HTTP reale + auth); (2) footgun `--bind 0.0.0.0` senza auth su Hetzner-cloud → richiede auth + fail-fast sotto `local-only`; (3) reasoning dual-field (= D13). |
 | D16 | **Channels framework + Telegram primary** (Slice 9) | 🔒 | 🟡 | Phase 13 | Telegram È la porta d'ingresso del prodotto (README). Locked di fatto. |
 
 ---
@@ -113,9 +113,9 @@
 0. **D00 locked (2026-06-01)**: binario portabile unico. Le 6 invarianti di portabilità sono guardrail per ogni phase → da verificare in CI (multi-arch) e nel design (routing config-driven, privacy-mode, seccomp per-arch).
 1. ~~Valutare D11 (embedding)~~ **RISOLTO 2026-06-01** (amendment #31): contratto 768/GGUF locked, EmbeddingGemma default, pick finale = benchmark P15 (front-runner Granite-r2). Vedi riga D11.
 2. ~~Valutare D12 (sandbox)~~ **RISOLTO 2026-06-01** (amendment #32): container+seccomp indurito (no cambio primitiva), gVisor escalation x86-first, microVM rigettato, wazero fast-path futuro. Vedi riga D12. **→ Entrambe le forcelle TIER-1 (D11+D12) chiuse.**
-3. Le TIER-2 (D13-D15) si portano a 🔒 just-in-time prima della rispettiva phase; D13 ha il seam day-1 per D00.
+3. ~~Le TIER-2 (D13-D15)~~ **RISOLTE 2026-06-01** (amendment #33/#34/#35): D13 routing (privacy-mode cablato + reasoning dual-field), D14 swarm (cap larghezza per-target), D15 transport (split 8a/8b + cloud-auth). Tutte ratificate; gli adjustment hanno cablato gli invarianti D00 #5/#6 che erano promesse non-implementate.
 4. Non spendere pre-analisi su §5 (validate-by-building).
-5. **Build-ready**: con D00 lockato + D11/D12 risolte, le forcelle irreversibili-e-imminenti sono chiuse. Phase 5 (sandbox) può partire dal piano indurito.
+5. **Build-ready**: D00 lockato + D11/D12 + D13/D14/D15 risolte → **l'intera mappa decisionale (TIER-1 + TIER-2) è chiusa**. Phase 5 (sandbox) può partire dal piano indurito. Filo conduttore degli adjustment TIER-2: gli invarianti D00 (#5 privacy-mode, #6 footprint per-target) erano dichiarati ma non cablati nelle slice — ora specificati come acceptance.
 
 ### Amendment PRD richiesto (follow-up)
 
