@@ -151,7 +151,7 @@ Phase 6b: 22-30 ms p95 + IT recall@5 5/5 su corpus reale Aura):
 - DB: **Neo4j 5.26-community LTS** (container `neo4j:5.26-community`, ~1.5-2 GB RAM idle; LTS pinned per amendment #2 — avoids CalVer ambiguity post-5.x)
 - Plugins: **APOC** (procedure standard) + **GDS** (Graph Data Science, community detection, PPR) + Vector index (built-in 5.x, Apache Lucene HNSW)
 - MCP server: **`mcp-neo4j-cypher`** (Apache 2.0) — subprocess stdio spawn-ato da Aura, lifecycle accoppiato al processo principale. **No native Go adapter** (per disciplina CLAUDE.md): tutto accesso Neo4j passa da MCP.
-- Embedding dim: **768 nativo** da `aura-llama-embed` (nessuna MRL truncation, l'index Neo4j HNSW è configurato a 768 dim)
+- Embedding dim: **768** — l'index Neo4j HNSW è il contratto. **D11 risolto (amendment #31, vedi `.planning/DECISIONS.md`)**: l'embedder DEVE emettere 768 (nativo, o **MRL-truncato-a-768** per modelli con dim nativa ≠ 768). Default = `embeddinggemma-300m@768d` (nativo, sub-200MB). Il nome modello NON è hardcoded: qualsiasi 768-native-GGUF servito da llama.cpp `/v1/embeddings` è drop-in (2 arg compose). Pick finale = benchmark P15 su corpus IT (front-runner Granite-r2 311m: 768 nativo + Apache + MMTEB ~65).
 - DB name: **`neo4j` default** (Community non supporta multi-database; `CREATE DATABASE aura` richiede Enterprise)
 - Migrations: file `.cypher` numerati in `internal/knowledge/migrations/`, eseguiti via MCP `cypher_execute`. Audit applicate registrato in **Postgres** tabella `aura.knowledge_migrations` (centralizza audit con golang-migrate).
 
@@ -229,8 +229,8 @@ mcp-neo4j-cypher subprocess stdio spawned by Aura, Cypher migrations
 file-based via MCP with audit in Postgres aura.knowledge_migrations
 (sqlc-managed). 0001_init.cypher: :Chunk(id) UNIQUE constraint +
 vector index HNSW 768d cosine + fulltext index. Embedding dim 768
-native (no MRL truncation, vector index configured at 768).
-Subcommand aura neo4j {migrate|ping|status}.
+(default EmbeddingGemma nativo; un modello dim≠768 MRL-trunca a 768 —
+contratto D11/amendment #31). Subcommand aura neo4j {migrate|ping|status}.
 
 Renames backup_neo4j docker exec target from neo4j-spike to
 aura-neo4j (Slice 0.5 row 105 amended).
@@ -4871,7 +4871,7 @@ La sezione `## Persistence` di [CLAUDE.md](CLAUDE.md) va aggiornata per riflette
 Tre store, ciascuno con la sua semantic responsibility:
 
 - **Neo4j via `mcp-neo4j-cypher` MCP server (stdio)** — **unica fonte di knowledge E di vector embeddings**. Semantic memory, entity graph, conversational memory, derivati relazionali, vector index nativo HNSW Lucene. Accessed solo via MCP, no native Go adapter. La precedente architettura wiki-markdown filesystem + `[[wiki-links]]` è stata deprecata 2026-05-27 dopo test (spike in `D:/tmp/aura-neo4j-spike-2026-05-27/`).
-- **Embedder dedicato**: `embeddinggemma` via sidecar `aura-llama-embed` (porto 8081, OpenAI-compat). **768d nativo**, scritti direttamente su nodi `:Chunk.embedding` in Neo4j. Vector index HNSW configurato a 768 dim (no MRL truncation, no client-side resize). NON in store separato.
+- **Embedder dedicato**: `embeddinggemma` via sidecar `aura-llama-embed` (porto 8081, OpenAI-compat). **768d nativo**, scritti direttamente su nodi `:Chunk.embedding` in Neo4j. Vector index HNSW configurato a 768 dim (l'index è il contratto; l'embedder emette 768 nativo o MRL-truncato-a-768 — D11/amendment #31; nessun resize client-side sotto 768). NON in store separato.
 - **PostgreSQL 17 via `sqlc` + `jackc/pgx/v5`** — application state. Scheduler tasks, paused states, audit log, identity, capability grants. Schema `aura`. Migrations versionate in `internal/db/migrations/`. Industrial-grade, type-safe queries generate da SQL files.
 
 > **Migration numbering — fonte di verità (riconciliata 2026-06-01).** Floor **shippato** (Phase 1-4, presente nel codice): `0001_init`, `0002_knowledge_migrations`, `0003_paused_states`, `0004_identity`, `0005_conversations`, `0006_conversation_turns_fts`. **Regola**: ogni migration a valle prende il numero **all'atterraggio = prossimo intero libero quando la sua PHASE esegue** (ordine-fase, NON ordine-slice — es. `sandbox_sessions` di Slice 2b/Phase 8 atterra *prima* di `scheduler` di Slice 6/Phase 10). I numeri assoluti hardcodati nelle sezioni slice a valle (`scheduler`, `skill_audit`, `telegram`, `profile_audit`, `sandbox_sessions`, `skill_snippet_audit`, `ingest_audit`, `task_canvas`, `local_llm`) sono **indicativi**, superseduti da questa regola: l'implementatore usa il prossimo numero libero al landing, non il valore scritto nella sezione. (Cypher/Neo4j ha la sua sequenza separata in `internal/knowledge/migrations/*.cypher`, oggi `0001_init`.)
