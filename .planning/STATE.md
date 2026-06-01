@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 5 context gathered
-last_updated: "2026-06-01T18:05:41.723Z"
-last_activity: 2026-06-01 -- Phase 05 execution started
+stopped_at: Completed 05-01-PLAN.md (PRD-amendment gate)
+last_updated: "2026-06-01T18:26:09.489Z"
+last_activity: 2026-06-01
 progress:
   total_phases: 16
   completed_phases: 5
   total_plans: 30
-  completed_plans: 26
+  completed_plans: 28
   percent: 31
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 05 (sandbox-2a-stateless) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 05 (05-01 PRD-amendment gate complete)
-Last activity: 2026-06-01 -- Phase 05 plan 05-01 complete (PRD amendments landed)
+Plan: 3 of 4
+Status: Ready to execute
+Last activity: 2026-06-01
 
 Progress: [██████████] 100%
 
@@ -71,6 +71,7 @@ Progress: [██████████] 100%
 | Phase 04 P04 | ~75min | 3 tasks | 15 files |
 | Phase 04 P05 | 30 | 3 tasks | 25 files |
 | Phase 05 P05-01 | ~12min | 3 tasks | 3 files |
+| Phase 05 P02 | ~18min | 3 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -101,6 +102,7 @@ Recent decisions affecting current work:
 - [Phase 04]: 04-02: identity.Store PROVES THE CANONICAL STORE PATTERN (D-A4-01) that 04-03/04/05 copy verbatim — Store{pool,q} via sqlc.New(pool); reads via s.q; db.WithTx for atomic writes; SQLSTATE classification via errors.As(&pgErr)+pgErr.Code (NEVER message-match); sentinel errors (ErrWildcardManaged/ErrInvalidCapability/ErrIdentityNotFound); pgtype boundary conversion in fromRow; NO interface in the domain package (consumer declares it, D-A2-02); pre-DB validation gate for operator input. HasCapability wildcard-or-exact; grant/revoke idempotent (ON CONFLICT DO NOTHING + defensive 23505 swallow); '*'/name-grammar rejected pre-DB; FK cascade on DeleteIdentity. CLI: hand-rolled switch runIdentity mirroring runDB (cobra->switch deviation, RESEARCH OQ1/A2 — go.mod has no cobra, CLAUDE.md follows existing patterns, SPEC never requires cobra; no PRD amendment). Test discipline: unit tier (pure logic) + db_integration tier (goleak, envOrSkip t.Fatal-under-CI); 9 integration tests RAN green; combined coverage 98.0%; golangci-lint 0; all files <=600 LOC.
 - [Phase ?]: Runner is the SOLE writer of paused_states; resume = fresh agent.Run over rehydrated history (SC-4 no silent re-run)
 - [Phase 05]: 05-01 (PRD-amendment gate, doc-only): D12 RE-DECIDED to gVisor-primary x86 (amendment #36, supersedes #32; D-05/06/07) — gVisor `runsc` is the PRIMARY x86 boundary (not a >5%-only escalation seam), hardened-container+seccomp+userns-remap is the portable floor / arm64 fallback, runner runtime-agnostic via AURA_SANDBOX_RUNTIME, microVM stays REJECTED (KVM-less infra); applied consistently across prd.md + DECISIONS.md + ROADMAP.md SC#5. D-09: DockerRunner does ONE best-effort docker-CLI-gated auto-start on connect-failure then ErrSandboxUnreachable, NEVER mounts the docker socket, execution path stays HTTP-only (Slice 2a acceptance #4 = "sidecar down AND auto-start fails -> clear error"). D-20 (amendment #37): curated hash-pinned requirements.txt (numpy/pandas/scipy/sympy/matplotlib/pillow/bs4/lxml/pyyaml/dateutil/openpyxl) baked at IMAGE-BUILD time so user code is batteries-included, runtime stays net-none + read_only + stateless with NO runtime pip; sidecar.py server stays stdlib-only; on-demand pip remains a 2b/Phase-8 pypi.org-allowlist capability. Tracked obligation: QEMU-arm64 CI seccomp emulation can diverge from real arm64 kernel -> real-DGX confirmation pre-production arm64. Task 1 was already committed (93e8c5a) by a prior run and verified in place; Tasks 2 (d924466) + 3 (5d8c46e) landed this run.
+- [Phase ?]: 05-02 (sidecar artifacts wave): sidecar.py stdlib http.server (/exec/python+/exec/shell+/healthz, D-16 JSON contract, 1 MiB truncation, timeout/oom/pids limit_hit); Dockerfile python:3.12-slim manifest-list-digest-pinned non-root uid 65532 BUILD-time --require-hashes curated bake (numpy/pandas/scipy/sympy/matplotlib/pillow/bs4/lxml/pyyaml/dateutil/openpyxl + 12 transitive, amd64+arm64) + import smoke + ZERO runtime pip (D-20/D-20b); seccomp.json positive allowlist hardened from moby v27.5.1 by subtracting dangerous(ptrace/unshare/process_vm_readv/bpf/kexec_load/userfaultfd/mount)+network socket syscalls, 394 allowed, both arches by-name no numbers (D-10/D-11); compose aura-sandbox full CAP-01 SC#5 floor + urllib /healthz; compose.gvisor.yaml x86-only runsc overlay; make sandbox-up arch-gated operator default (gVisor default-on x86, runc+seccomp arm64, D-04/SC#5); userns-remap deferred to daemon.json (D-15). Docker unavailable -> live build/run/escape-bench DEFERRED to 05-04 CI DinD + Gate-3 (artifacts static-validated, all <=600 LOC). Commits acb23dd/cea5eba/baef9e1.
 
 ### Pending Todos
 
@@ -126,6 +128,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-01T18:05:41.723Z
+Last session: 2026-06-01T18:25:35.210Z
 Stopped at: Completed 05-01-PLAN.md (PRD-amendment gate)
 Resume file: None

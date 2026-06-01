@@ -155,7 +155,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Operator runs `scripts/sandbox_escape_bench.sh` (SandboxEscapeBench port) and observes escape rate < 5% recorded in `docs/aura-quality-snapshot.md`
   5. Operator inspects compose service `aura-sandbox` and observes `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `pids_limit: 64`, `userns-remap` (daemon.json) all set; **gVisor `runsc` is default-on x86 (D-05/D-06/D-07 re-decision, amendment #36 — gVisor is the PRIMARY x86 boundary, not a >5%-only escalation seam; container+seccomp+userns-remap is the defense-in-depth floor inside gVisor on x86 and the standalone fallback boundary on arm64). The SandboxEscapeBench escape-rate is measured against the gVisor-primary x86 production profile, with the container+seccomp floor bench-validated as the arm64 fallback.**
 
-**Plans:** 4 plans (4 waves — PRD-amendment gate then sidecar → Go runner → bench/CI)
+**Plans:** 2/4 plans executed
 
 **Wave 1**
 
@@ -163,7 +163,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 05-02-PLAN.md — Sidecar artifacts: stdlib sidecar.py (/exec/python+/exec/shell, D-16) + python:3.12-slim Dockerfile (non-root, no pip) + multi-arch positive seccomp allowlist (D-10/D-11) + hardened aura-sandbox compose service + runsc overlay (D-04/D-14/D-15)
+- [x] 05-02-PLAN.md — Sidecar artifacts: stdlib sidecar.py (/exec/python+/exec/shell, D-16) + python:3.12-slim Dockerfile (non-root, no pip) + multi-arch positive seccomp allowlist (D-10/D-11) + hardened aura-sandbox compose service + runsc overlay (D-04/D-14/D-15)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -340,7 +340,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 2. Agent Cornerstone | 7/8 | In Progress|  |
 | 3. LLM Client + ToolResult | 5/5 | Complete   | 2026-05-30 |
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
-| 5. Sandbox 2a Stateless | 0/TBD | Not started | - |
+| 5. Sandbox 2a Stateless | 2/4 | In Progress|  |
 | 6. KV Cache Builder | 0/TBD | Not started | - |
 | 7. Web Tools | 0/TBD | Not started | - |
 | 8. Sandbox 2b Session-Bound | 0/TBD | Not started | - |
