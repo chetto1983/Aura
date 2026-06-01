@@ -2601,7 +2601,7 @@ curl -N -X POST http://127.0.0.1:9080/agent/run \
 ```
 
 **Acceptance.**
-- [ ] `aura serve --agui-port=<N>` (default `9080`) avvia HTTP server con endpoint `POST /agent/run` e `GET /threads/<id>/messages`. Lifecycle gestito (start/stop su SIGTERM), graceful drain delle connessioni SSE attive a shutdown.
+- [ ] **[8b — DEFERITO, amendment #35]** `aura serve --agui-port=<N>` (default `9080`) avvia HTTP server con endpoint `POST /agent/run` e `GET /threads/<id>/messages`. Lifecycle gestito (start/stop su SIGTERM), graceful drain delle connessioni SSE attive a shutdown. (8b atterra solo con un client HTTP reale + auth; non pre-req di Slice 9.)
 - [ ] **Mapping Aura ↔ AG-UI**:
   - `threadId` = `aura.conversations.id` (Slice 1.8). Se thread non esiste in DB → 404. Se esiste ma `identity_id != local` → 403 (future auth).
   - `runId` = generated server-side (UUID v4 prefix `run-`) per ogni `POST /agent/run`. Persisted in `aura.conversation_turns.metadata.run_id` per audit.
@@ -2625,7 +2625,7 @@ curl -N -X POST http://127.0.0.1:9080/agent/run \
 > **Amendment #35 (D15 split + reconciliation D00/D13, 2026-06-01) — RATIFY AG-UI + 3 fix.** AG-UI ratificato come transport standard 2026 (CopilotKit Series A 27M$ mag-2026; integrazioni 1st-party Google/Microsoft/AWS/Oracle; SSE copre il 99% dei casi; blast-radius confinato a `internal/agui/` ~440 LOC via translator puro → orphan-risk basso; WebSocket-rejected corretto). Tre aggiustamenti: **(1) Split 8a/8b.** Telegram (Slice 9b) consuma via **fanout in-process, NON via HTTP/SSE** (`agui_subscriber.go`/`fanout.go`) → solo `translator.go`+`fanout.go`+`client.go`+`types.go`+property-test sono sul critical-path = **Slice 8a** (pre-req di Slice 9). L'endpoint HTTP (`server.go`), `aura serve`, la Dojo conformance suite e `aura chat --via-agui` non hanno client in v1 (dashboard SPA out-of-scope) = **Slice 8b**, deferita finché non esiste un client HTTP reale **e** l'auth è progettata. **(2) Cloud-auth/D00 footgun (8b).** Il bind `127.0.0.1` + auth-out-of-scope è corretto su mini-PC/DGX (loopback) ma non copre il target **Hetzner cloud** (D00). `--bind` su indirizzo non-loopback DEVE richiedere auth (futura) e **fail-fast sotto `AURA_PRIVACY_MODE=local-only`** (coerente boot-fail #30/#33). Il check `identity_id != local → 403` è authorization SENZA authentication: non è un controllo di sicurezza finché l'auth non atterra. **(3) Reasoning dual-field** già risolto in Slice 1 (amendment #33): il renderer mappa REASONING_* da entrambi `reasoning`/`reasoning_content`.
 - [ ] **CORS**: header permissivi per dev (`Access-Control-Allow-Origin: *` se `AURA_AGUI_CORS_PERMISSIVE=1`, default `*` per `127.0.0.1` origin). Future restrittivo via env.
 - [ ] **Backpressure**: SSE writer buffered channel (capacity 64); su client lento, channel full → drop con WARN log + `RUN_ERROR` se persistente. Niente blocco del Loop.
-- [ ] **AG-UI Dojo compliance**: test integrazione che esegue il Dojo conformance suite (50-200 LOC per building block come da spec) contro `aura serve --agui-port`. Validation: text streaming, tool calls, state sync, HITL interrupts.
+- [ ] **[8b — DEFERITO, amendment #35] AG-UI Dojo compliance**: test integrazione che esegue il Dojo conformance suite (50-200 LOC per building block come da spec) contro `aura serve --agui-port`. Validation: text streaming, tool calls, state sync, HITL interrupts.
 - [ ] Test unitario translator: input sequenza `*agent.Event` (Slice 0.9) → output `[]events.Event` AG-UI sequenza corretta. Property-based su tutti gli ~25 event types.
 - [ ] **go.mod pin verification (amendment #6)**: `go.mod` for `github.com/ag-ui-protocol/ag-ui/sdks/community/go` MUST be a specific commit SHA (NOT `latest`, NOT a date-based pseudo-version `v0.0.0-YYYYMMDDHHMMSS-xxxxxxxxxxxx` resolved at install time). CI gate: `grep -E '^require github\.com/ag-ui-protocol/ag-ui/sdks/community/go [a-f0-9]{40}$' go.mod` must return exactly 1 match.
 
@@ -2635,11 +2635,11 @@ curl -N -X POST http://127.0.0.1:9080/agent/run \
 | `internal/agui/client.go` | ~80 | Wrapper sul Go SDK community `core/events`. Type aliases per evitare leak del package esterno nei call sites. |
 | `internal/agui/translator.go` | ~180 | `Translate(seq iter.Seq2[*agent.Event, error]) iter.Seq2[events.Event, error]` — mapping deterministico 1:N da `*agent.Event` Slice 0.9 a AG-UI event types (text/tool/state/lifecycle/reasoning, ~25 types). ID generation via `IDGenerator` interface. Funzione pura, no mutable state cross-event eccetto IDs. Sostituisce `Emitter` interface pre-0.9 (drop ~180 LOC plumbing). |
 | `internal/agui/fanout.go` | ~80 | Fanout helper per in-process subscribers (Slice 9b Telegram consumer): `Fanout` struct wrappa `iter.Seq2[*agent.Event, error]` e distribuisce a N subscriber channel concurrent. Aggiunto qui per centralizzare la dependency Slice 9b → Slice 8 (era retro-aggiunto in Slice 9, fix audit Round 1). |
-| `internal/agui/server.go` | ~200 | HTTP server: `POST /agent/run` (SSE response), `GET /threads/<id>/messages` (JSON `MESSAGES_SNAPSHOT`). Consume `(*LlmAgent).Run(ctx) iter.Seq2[*Event, error]` direttamente, passa a `Translate`, scrive SSE. Backpressure-bounded (buffered channel cap 64), CORS, graceful shutdown. |
+| `internal/agui/server.go` **[8b deferito #35]** | ~200 | HTTP server: `POST /agent/run` (SSE response), `GET /threads/<id>/messages` (JSON `MESSAGES_SNAPSHOT`). Consume `(*LlmAgent).Run(ctx) iter.Seq2[*Event, error]` direttamente, passa a `Translate`, scrive SSE. Backpressure-bounded (buffered channel cap 64), CORS, graceful shutdown. `--bind` non-loopback richiede auth + fail-fast sotto `local-only` (#35). |
 | `internal/agui/types.go` | ~80 | `RunAgentInput` parser, validation (`threadId` UUID, `messages[]` non vuoto, etc.), helpers. |
 | `cmd/aura/main.go` (diff) | ~+80 | Subcommand `aura serve [--agui-port <N>] [--bind <addr>]`. |
-| `cmd/aura/chat.go` (diff) | ~+50 | `aura chat --via-agui` flag opzionale (passa per il server invece che in-process). Default in-process. **Note refactor-on-touch**: questo file viene rinominato/migrato a `internal/channels/cli/cli.go` in Slice 9a — la diff `+50` qui resta come delta intermedio, Slice 9a refactor la assorbe. |
-| `internal/agui/server_test.go` | ~180 | Integration test: spawn server, run AG-UI Dojo conformance suite, assert eventi. |
+| `cmd/aura/chat.go` (diff) **[8b deferito #35]** | ~+50 | `aura chat --via-agui` flag opzionale (passa per il server invece che in-process). Default in-process. **Note refactor-on-touch**: questo file viene rinominato/migrato a `internal/channels/cli/cli.go` in Slice 9a — la diff `+50` qui resta come delta intermedio, Slice 9a refactor la assorbe. |
+| `internal/agui/server_test.go` **[8b deferito #35]** | ~180 | Integration test: spawn server, run AG-UI Dojo conformance suite, assert eventi. |
 | `internal/agui/translator_test.go` | ~120 | Property-based translator coverage. Fixture sequenza `*agent.Event` → expected AG-UI events. |
 
 **Deferred-tool partition.** Niente tool LLM-facing nuovo. AG-UI è transport infrastructure, non capability LLM-facing.
@@ -2670,7 +2670,8 @@ Mapping Aura -> AG-UI:
   RoleTool.ToolCallID         <-> tool_call_id matching su resume
 
 Reasoning events (10 types) emessi se provider returns
-reasoning_content (DeepSeek-V4 reasoning). Future-proof.
+reasoning_content (DeepSeek-V4) OPPURE reasoning (vLLM/local,
+amendment #33 dual-field). Future-proof.
 
 Translator pattern (Slice 0.9): translate(iter.Seq2[*agent.Event]) ->
 iter.Seq2[events.Event] funzione pura, no Emitter interface custom.
@@ -2719,7 +2720,7 @@ Slice 9 risolve Area #16 (transport agnostico) all'altezza prodotto: Slice 8 ha 
 - Slice 1.7 identities + capability_grants (telegram_accounts FK)
 - Slice 1.8 conversation persistence (threadId mapping)
 - Risk-Based Governance (sezione cross-cutting, rendering risk_tier in messaggi approval)
-- Slice 8 AG-UI gateway (emitter fanout channel per in-process subscribers)
+- Slice 8a AG-UI translator + fanout channel per in-process subscribers (NON l'HTTP server 8b, deferito — amendment #35)
 
 ### Dipendenze Go nuove
 
@@ -2821,7 +2822,7 @@ internal/channels/telegram/    # Slice 9c (multimodal)
                           #       - Fallback strategy TBD post-benchmark (markitdown OCR if Gemma down)
 
 internal/agui/emitter.go (diff)  # ~+50  fanout channel API per in-process subscribers
-                                 #       (oltre allo HTTP SSE di Slice 8)
+                                 #       (oltre all'HTTP SSE di Slice 8b, deferito #35)
 
 internal/llm/openai_compat/models.go (diff)  # ~+30  SupportsVision/SupportsAudio capability flags
                                               #       per model
@@ -4711,7 +4712,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_LLM_BASE_URL` | `https://openrouter.ai/api/v1` | operative | 1 | OpenAI-compat endpoint. |
 | `AURA_LLM_API_KEY` | (richiesto via `.env` `OPENROUTER_API_KEY`) | secret | 1 | API key. |
 | `AURA_LLM_MODEL` | `deepseek/deepseek-v4-flash:exacto` | operative | 1 | Model id. Endpoint+model config-driven = seam portabilità D00 (amendment #30); mai hardcodare un provider. |
-| `AURA_PRIVACY_MODE` | `open` | operative | 0.5 (D00) | `open` (remoto permesso) \| `local-only`. **Cablato (amendment #33, era solo prosa)**: (a) **boot fail-fast in `internal/config`** — se `local-only` e `AURA_LLM_BASE_URL`/`AURA_EMBED_BASE_URL`/web-fetch o `aura serve --bind` puntano a host **non-loopback** (riusa il classifier SSRF di Slice 5), Aura aborta con errore esplicito; (b) **`LLMRouter.Route()` trigger priorità 0** (sopra `prefer_local`) → forza locale, branch remoto irraggiungibile. Rende "massima privacy DGX" verificabile, non promessa. |
+| `AURA_PRIVACY_MODE` | `open` | operative | 0.5 (D00) | `open` (remoto permesso) \| `local-only`. **Cablato (amendment #33, era solo prosa)**: (a) **boot fail-fast in `internal/config`** — se `local-only` e `AURA_LLM_BASE_URL`/`AURA_EMBED_BASE_URL`/`aura serve --bind` puntano a host **non-loopback**, Aura aborta con errore esplicito. È un **check loopback standalone** (parse host → `IsLoopback`), **NON dipende** dal classifier SSRF di Slice 5 (Phase 7): è una garanzia D00 day-1; Slice 5 più tardi *riusa/estende* questo check per `web_fetch`, non il contrario. (b) **`LLMRouter.Route()` trigger priorità 0** (sopra `prefer_local`) → forza locale, branch remoto irraggiungibile. Rende "massima privacy DGX" verificabile, non promessa. |
 | `AURA_LLM_TEMPERATURE` | `0.7` | operative | 1 | Sampling temperature (A5 amendment 2026-05-30). |
 | `AURA_LLM_MAX_TOKENS` | `4096` | cap | 1 | Max output tokens per call (A5 amendment 2026-05-30). |
 | `AURA_LLM_TOTAL_TIMEOUT_SEC` | `120` | cap | 1 | Global HTTP timeout (via `context.WithTimeout` sul request ctx, non `http.Client.Timeout`). |
@@ -4828,7 +4829,7 @@ Tutti i cap usano lo schema `AURA_<DOMAIN>_<UNIT>` dove `<UNIT>` è esplicito:
 - `_SEC` per timeout (es. `AURA_LLM_TOTAL_TIMEOUT_SEC`, `AURA_SANDBOX_TIMEOUT_SEC`)
 - `_MS` per latenze fine-grained (raramente usato)
 
-Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREVIEW_CAP_BYTES`). Niente cap hardcoded nei file `.go` per valori >100 — devono essere env-overrideable. Suffissi unità sanciti: `_BYTES`, `_SEC`, `_MS`, `_HR`, `_DAYS`, `_TOKENS`, `_USD_DAY`; per i conteggi/limiti dimensionali `_MAX_STEPS`/`_MAX_DEPTH`; per i rapporti adimensionali in `(0,1]` **`_RATIO`** (es. `AURA_CANVAS_MILD_RATIO`); per i booleani **`_ENABLED`** (es. `AURA_MEMORY_REASONING_TRACE_ENABLED`, `AURA_CANVAS_LLM_REFINE_ENABLED`); pesi interi adimensionali di una formula **`_W_<TERM>`** (es. `AURA_CANVAS_SCORE_W_SIZE`, amendment #29 OQ8).
+Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREVIEW_CAP_BYTES`). Niente cap hardcoded nei file `.go` per valori >100 — devono essere env-overrideable. Suffissi unità sanciti: `_BYTES`, `_SEC`, `_MS`, `_HR`, `_DAYS`, `_TOKENS`, `_USD_DAY`; per i conteggi/limiti dimensionali `_MAX_STEPS`/`_MAX_DEPTH`/`_MAX_CONCURRENT` (es. `AURA_SWARM_MAX_CONCURRENT`, amendment #34); per i rapporti adimensionali in `(0,1]` **`_RATIO`** (es. `AURA_CANVAS_MILD_RATIO`); per i booleani **`_ENABLED`** (es. `AURA_MEMORY_REASONING_TRACE_ENABLED`, `AURA_CANVAS_LLM_REFINE_ENABLED`); pesi interi adimensionali di una formula **`_W_<TERM>`** (es. `AURA_CANVAS_SCORE_W_SIZE`, amendment #29 OQ8).
 
 ---
 
@@ -4848,7 +4849,7 @@ Niente cap senza unità nel nome (`AURA_TOOL_PREVIEW_CAP` → `AURA_CONTEXT_PREV
 6. **Slice 5 (Web tools)** apre il backlog post-tabula-rasa: indipendente dalle 4 fondamentali, riusa `ToolResult` per fetch di pagine grandi. NON introduce `ActionRouter` (web_search/web_fetch sono 2 tool indipendenti senza azioni multiple — YAGNI). Vedi §Pattern condiviso.
 7. **Slice 6 (Scheduler)** prima di Skills: si committa in 2 sub-slice (6a infrastructure + reminder handler, 6b agent_job + ActionRouter helper). 6b introduce `ActionRouter` come primo consumer reale (tool `task` con 4 azioni). Slice 7 lo riusa.
 8. **Slice 7 (Skills)** ultima del backlog interno: si committa in 5 sub-slice (7a loader+validator+read-only tools, 7b catalog, 7c mutation governance, 7d installer, **7e snippet executor + pattern analysis + TTL archived**). Richiede il maggior numero di primitive pre-esistenti (ask_user da 1.5, ToolResult da 1, ActionRouter da 6b, persistent state da 0.5 + 1.5). Atterrarla per ultima del dominio interno evita di riscrivere il flow governance ogni volta che una primitive cambia forma. **Sub-slice 7e** estende le Skills con **executable code snippets** (multi-lang via SKILL.md `type: snippet`) eseguibili tramite sandbox Slice 2b (deve essere atterrata) + **pattern analysis multi-conversation auto-suggest** (background analyzer cluster via Slice 0.7 HNSW, propone save dopo 3+ pattern simili) + **TTL 90gg + archived state** (background sweep). Pattern rubato da Voyager (Wang et al., NeurIPS 2023) skill library. Token saving stimato ~520/riuso → ~$75-100/mese su 50 snippet attivi. 7e atterra dopo 7d + 2b + 0.7 tutte completate.
-9. **Slice 8 (AG-UI gateway)** atterra dopo Slice 7: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla in questa posizione evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico CLI/Telegram/web): introducendo il protocollo standard AG-UI, Slice 9 può connettere Telegram come client AG-UI senza codice channel-adapter custom.
+9. **Slice 8a (AG-UI translator + fanout)** atterra dopo Slice 7: tutto il dominio interno (loop + ask_user + sandbox + swarm + kv + web + scheduler + skills) è stabile, gli eventi che il Loop deve emettere via AG-UI sono prevedibili (text/tool/state/lifecycle/reasoning). Atterrarla qui evita di rifare il mapping eventi ogni volta che una primitive interna cambia. Risolve Area #16 (transport agnostico): Slice 9 connette Telegram come consumer **in-process via fanout (8a)**, senza codice channel-adapter custom. **Slice 8b (HTTP server `aura serve` + Dojo conformance) è deferita** (amendment #35) finché non esiste un client HTTP reale (SPA browser / accesso remoto) + l'auth dell'endpoint — **NON è pre-req di Slice 9**.
 10. **Slice 9 (Channels framework + Telegram + Setup wizard + Multimodal)** chiude il ciclo transport: Telegram diventa il **main user-facing channel** (gli utenti finali non usano CLI), il channel framework `internal/channels/<name>/` apre la porta a WhatsApp/Discord/Signal futuri come slice incrementali, Setup wizard QR/deep-link rende l'onboarding self-service zero-CLI, e il sidecar Gemma 4 multimodal unifica vision + STT (rimuovendo Whisper). Atomicity: 9a framework + setup, 9b Telegram impl, 9c multimodal.
 11. **Slice 10 (User onboarding + Agent.md)** atterra dopo Slice 9 perché ha Telegram come transport principale dell'interview e usa tutto lo stack pre-esistente (ask_user 1.5, identities 1.7, conversations 1.8, PromptBuilder 4, Risk-Based 5, AG-UI 8). Agent.md per identity in filesystem `~/.aura/agents/<id>/` viene iniettato come secondo system message (cache-friendly, Slice 4 invariants preservati). Pattern hybrid ChatGPT Custom Instructions + Memory + mem0 ADD-only. Out of scope "Setup wizard" + "Telegram" rimossi dal PRD; restano out: dashboard SPA full, tray icon, OTA update, multi-user auth.
 
