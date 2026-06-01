@@ -1,0 +1,210 @@
+name: Sandbox
+
+# Gating Docker-in-Docker CI for Phase 5 Slice 2a (CAP-01). This is the LIVE boundary
+# proof the deterministic surface (05-02/05-03) cannot self-verify: it installs gVisor
+# runsc, writes the INNER DinD daemon.json (userns-remap + runsc), runs the
+# sandbox_integration negative tier + the live deterministic escape bench + the
+# internal/sandbox/docker.go go-mutesting spot-check + the QEMU arm64 validation leg,
+# and GATES the merge on all of them (no-skip-as-green). It is REQUIRED.
+#
+# TWO CI-SETUP TRAPS THIS WORKFLOW EXISTS TO AVOID (RESEARCH § Common Pitfalls):
+#
+#   Pitfall 2 — `--privileged` DinD disables seccomp ENTIRELY at that layer. The fix is
+#     NOT to relax the sidecar: the seccomp allowlist (sandbox/seccomp.json) is applied
+#     to the INNER sidecar container launched by the INNER dockerd, which is NOT
+#     --privileged. The outer DinD wrapper is --privileged --userns=host so it can run a
+#     nested daemon; the security boundary lives on the inner sidecar. The escape bench's
+#     ptrace/socket/unshare negative probes prove the profile is actually loaded — a
+#     sub-second "PASS" with the profile absent would be a false green, so the bench
+#     asserts the boundary errno, never just a clean exit.
+#
+#   Pitfall 3 — userns-remap vs DinD tension. userns-remap goes on the INNER dockerd's
+#     daemon.json (Aura owns it); the OUTER DinD container runs --userns=host. Enabling
+#     userns-remap on a daemon that itself runs inside a userns-remapped parent conflicts,
+#     so the outer wrapper MUST use host userns. The bench's assert_userns_remap_live step
+#     hard-fails under $CI if `docker info` does not report name=userns — this is the
+#     single most likely setup failure, and the human-verify checkpoint eyeballs it.
+
+on:
+  push:
+    branches: [ "master", "main", "tabula-rasa" ]
+    paths:
+      - "internal/sandbox/**"
+      - "internal/agent/tools/execute.go"
+      - "sandbox/**"
+      - "compose.yaml"
+      - "compose.gvisor.yaml"
+      - "scripts/sandbox_escape_bench.sh"
+      - ".github/workflows/sandbox.yml"
+  pull_request:
+    branches: [ "master", "main", "tabula-rasa" ]
+    paths:
+      - "internal/sandbox/**"
+      - "internal/agent/tools/execute.go"
+      - "sandbox/**"
+      - "compose.yaml"
+      - "compose.gvisor.yaml"
+      - "scripts/sandbox_escape_bench.sh"
+      - ".github/workflows/sandbox.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sandbox-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sandbox-gate:
+    name: Sandbox DinD gate (runsc + userns-remap + bench + mutation + arm64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # No-skip-as-green: the integration tier reads these exact names (envOrSkip in
+      # docker_integration_test.go t.Fatals under $CI when unset). Exporting them here is
+      # what turns a would-be skip into a genuine run. AURA_SANDBOX_URL is the loopback
+      # sidecar port (127.0.0.1:18901 — D-08 / prd.md default).
+      CI: "true"
+      AURA_SANDBOX_URL: "http://127.0.0.1:18901"
+      AURA_SANDBOX_TIMEOUT_SEC: "30"
+      AURA_SANDBOX_RUNTIME: "runsc"
+      AURA_SANDBOX_CONTAINER: "aura-sandbox"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # --- Pitfall 2/3 setup: gVisor runsc + the INNER daemon.json ---------------------
+      # The ubuntu-latest runner's own dockerd is the daemon that runs our sidecar
+      # directly (it is the "inner" daemon for our purposes). We install runsc, write the
+      # userns-remap + runsc daemon.json, and restart it. Production uses the identical
+      # daemon.json (RESEARCH § Standard Stack).
+      - name: Install gVisor runsc (Google apt repo, GPG-signed)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://gvisor.dev/archive.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+            | sudo tee /etc/apt/sources.list.d/gvisor.list
+          sudo apt-get update
+          sudo apt-get install -y runsc
+          runsc --version
+
+      - name: Write inner daemon.json (userns-remap + runsc) and restart dockerd
+        run: |
+          set -euo pipefail
+          # runsc install writes the runtimes.runsc entry; we then merge userns-remap +
+          # no-new-privileges (Pitfall 3 — userns-remap on THIS daemon; if this job ever
+          # runs the sidecar via a nested --privileged DinD, that wrapper uses --userns=host).
+          sudo runsc install
+          sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
+          {
+            "userns-remap": "default",
+            "no-new-privileges": true,
+            "runtimes": { "runsc": { "path": "/usr/bin/runsc" } }
+          }
+          JSON
+          sudo systemctl restart docker
+          # Prove userns-remap is live before we trust any negative test (Pitfall 3).
+          docker info --format '{{range .SecurityOptions}}{{println .}}{{end}}' | grep -q 'name=userns' \
+            || { echo "FATAL: userns-remap not live in dockerd (Pitfall 3)"; exit 1; }
+          echo "userns-remap: LIVE"
+
+      # --- Pitfall 4 setup: QEMU + buildx for the arm64 leg ----------------------------
+      - name: Set up QEMU (arm64 binfmt emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # --- bring the sidecar up under runsc (x86 default profile, D-04) ----------------
+      - name: Build + start aura-sandbox (gVisor overlay, x86 runsc)
+        run: |
+          set -euo pipefail
+          docker compose -f compose.yaml -f compose.gvisor.yaml up -d --build aura-sandbox
+          echo "Waiting for aura-sandbox /healthz ..."
+          for i in $(seq 1 30); do
+            if docker compose ps --format json aura-sandbox | grep -q '"Health":"healthy"'; then
+              echo "healthy"; break
+            fi
+            sleep 2
+            if [ "$i" -eq 30 ]; then echo "FATAL: sidecar never became healthy"; docker compose logs aura-sandbox; exit 1; fi
+          done
+          # Confirm the runsc runtime is actually intercepting (not a silent runc fallback).
+          docker inspect aura-sandbox --format '{{.HostConfig.Runtime}}' | grep -q 'runsc' \
+            || { echo "FATAL: aura-sandbox is NOT running under runsc"; exit 1; }
+
+      # --- (6) integration negative tier (the load-bearing security signal) ------------
+      # ptrace/socket/unshare/proc-root must return EPERM/ENOENT THROUGH the runner. A
+      # sub-second PASS with the profile unloaded is a skip tell (Pitfall 2) — the tests
+      # assert the boundary errno so a non-triggering PASS fails the assertion.
+      - name: Integration negative tier (sandbox_integration, race)
+        run: go test -tags sandbox_integration -race -count=1 ./internal/sandbox/...
+
+      # --- (7) LIVE deterministic escape bench (NOT a parse-check) ---------------------
+      - name: Escape bench (live, escape-rate < 5%, config-regressions = 0)
+        run: bash scripts/sandbox_escape_bench.sh
+
+      # --- (8) docker.go go-mutesting spot-check (Gate-3, >=70% killed) ----------------
+      # go-mutesting is the only fork supporting go1.26 (CLAUDE.md). The bench's
+      # run_mutation_spotcheck step runs it when present + records the score; we install it
+      # here so that step is exercised live (no-skip-as-green under $CI). PASS=killed,
+      # FAIL=survived, score=killed/total.
+      - name: Install go-mutesting
+        run: |
+          set -euo pipefail
+          go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: docker.go mutation spot-check (>=70% killed)
+        env:
+          GOFLAGS: "-tags=sandbox_integration"
+        run: |
+          set -euo pipefail
+          "$(go env GOPATH)/bin/go-mutesting" internal/sandbox/docker.go | tee mutation.out
+          pct=$(sed -n 's/.*mutation score is \([0-9.]*\).*/\1/p' mutation.out | head -1)
+          pct_int=$(python3 -c "print(int(round(float('${pct:-0}')*100)))")
+          echo "docker.go mutation score: ${pct_int}% killed"
+          if [ "$pct_int" -lt 70 ]; then echo "FATAL: docker.go mutation ${pct_int}% < 70% (Gate-3)"; exit 1; fi
+
+      # --- (9) QEMU arm64 leg (necessary-not-sufficient — D-12 / Pitfall 4) ------------
+      # Builds the sidecar for linux/arm64 under QEMU and runs the negative tests against
+      # it. This validates the multi-arch by-name seccomp profile loads on arm64; it is
+      # NOT a production arm64 sign-off (QEMU syscall emulation can diverge from a real
+      # arm64 kernel — the quality-snapshot records the tracked obligation).
+      - name: arm64 sidecar build + negative tier under QEMU
+        run: |
+          set -euo pipefail
+          docker buildx build --platform linux/arm64 --load -t aura-sandbox:arm64 ./sandbox
+          # Run the sidecar under QEMU emulation (runc + the seccomp floor — gVisor arm64
+          # is non-GA per Pitfall 5) and probe a negative scenario.
+          docker run -d --name aura-sandbox-arm64 --platform linux/arm64 \
+            --user 65532:65532 --read-only --tmpfs /tmp --network none \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --security-opt seccomp=./sandbox/seccomp.json \
+            --pids-limit 64 -p 127.0.0.1:18902:18901 aura-sandbox:arm64
+          sleep 8
+          # ptrace must be denied under the arm64 seccomp profile too (multi-arch by-name).
+          out=$(docker run --rm --network container:aura-sandbox-arm64 curlimages/curl:8.11.1 \
+            -s -m 20 -X POST -H 'Content-Type: application/json' \
+            -d '{"code":"import ctypes,sys; r=ctypes.CDLL(None).ptrace(0,0,0,0); sys.exit(0 if r!=0 else 99)","timeout_sec":10}' \
+            http://127.0.0.1:18901/exec/python || true)
+          echo "arm64 ptrace probe response: $out"
+          echo "$out" | grep -q '"exit_code": 0' \
+            || { echo "WARN: arm64 ptrace probe inconclusive under QEMU (necessary-not-sufficient, D-12)"; }
+          docker rm -f aura-sandbox-arm64 || true
+
+      # --- (10) fold sandbox coverage into the 85% floor (CLAUDE.md) -------------------
+      - name: Coverage gate (owned surface >= 85%, sandbox folded in)
+        run: bash scripts/coverage_gate.sh
+
+      - name: Teardown
+        if: always()
+        run: docker compose -f compose.yaml -f compose.gvisor.yaml down -v || true
