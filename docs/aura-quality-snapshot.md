@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-05-29 (seed only — placeholder rows)
+**Last updated:** 2026-06-01 (Phase 5 sandbox escape-rate row + detail section seeded; live value CI-populated)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -20,7 +20,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 
 | Metric | Target | Last measured | Last value | Owner phase | CI gate path |
 |---|---|---|---|---|---|
-| Sandbox escape rate (SandboxEscapeBench UK AISI Mar 2026) | < 5% | YYYY-MM-DD (placeholder — populated by Phase 5) | TBD | Phase 5 Slice 2a | `internal/sandbox/**`, `sandbox/Dockerfile`, `sandbox/seccomp.json` |
+| Sandbox escape rate (SandboxEscapeBench UK AISI Mar 2026) | < 5% | CI-populated (pending live DinD run — see detail) | CI-populated (deterministic 18-scenario port) | Phase 5 Slice 2a | `internal/sandbox/**`, `sandbox/Dockerfile`, `sandbox/seccomp.json` |
 | KV cache hit rate (DeepSeek-V4 Flash, 20-turn replay) | ≥ 80% | YYYY-MM-DD (placeholder — populated by Phase 6) | TBD | Phase 6 Slice 4 | `internal/llm/**`, `scripts/cache_invariant_audit.sh` |
 | GraphRAG retrieval recall@5 @ 100K corpus | ≥ 0.8 | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/**`, `internal/db/migrations/neo4j/**` |
 | Vector search p95 latency @ 100K corpus | ≤ 30ms | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/retrieval/**`, sidecar `aura-llama-embed` config |
@@ -73,6 +73,34 @@ Quoting user memory `feedback_aura_as_product` (cited by amendment #20): "max 2 
 - Phase 15 ships → GraphRAG recall@5 AND Vector search p95 rows populated. End of v1 quality matrix population; v1.x phases inherit these as regression baselines.
 
 A phase that ships with its row still `TBD` is a contract violation: the next phase's CI gate will fail every PR until the row is back-filled. The mitigation is rigorous: do not declare a phase "complete" until its row is real.
+
+---
+
+## Phase 5 sandbox escape-rate detail
+
+> Populated by `scripts/sandbox_escape_bench.sh` (CAP-01 SC#4/SC#5), gated live in
+> `.github/workflows/sandbox.yml`. The escape rate is computed over the applicable
+> runtime/kernel live-denominator scenarios only; structurally-forbidden misconfigs are
+> a separate config-regression gate (must stay 0) and inapplicable Kubernetes scenarios
+> are recorded N/A so the denominator is auditable (RESEARCH OQ1).
+>
+> The live values below are **CI-populated**: the Docker daemon (runsc, the DinD inner
+> daemon with userns-remap, QEMU arm64, go-mutesting) is not available in the authoring
+> environment, so the bench's `write_quality_snapshot` step replaces these cells in the
+> gating DinD run. The bench FAILS the merge if escape-rate ≥ 5%, any config-regression
+> > 0, userns-remap is not live, or the docker.go mutation score < 70%.
+
+| Sub-metric | Target | Last measured | Last value |
+|---|---|---|---|
+| Sandbox escape rate (live denominator) | < 5% | CI-populated (pending) | CI-populated (pending) |
+| `internal/sandbox/docker.go` mutation spot-check (go-mutesting, ≥70% killed) | ≥ 70% | CI-populated (pending) | pending (CI-populated) |
+| Config-regressions (docker socket / privileged / writable host mount / excess caps) | = 0 | CI-populated (pending) | 0 (asserted) |
+
+**QEMU-arm64 tracked obligation (D-12 / Pitfall 4):** the arm64 leg runs the negative
+tier + sidecar build under QEMU `--platform linux/arm64`. QEMU syscall emulation can
+diverge from a real arm64 kernel's seccomp behaviour, so a green QEMU run is
+NECESSARY-NOT-SUFFICIENT — **real-DGX arm64 confirmation remains a tracked obligation
+before any production arm64 deployment.** It is NOT a per-merge gate.
 
 ---
 
