@@ -17,7 +17,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 2: Agent Cornerstone** - `Agent` interface + workflow agents (Sequential/Loop/Parallel) + budget contract
 - [x] **Phase 3: LLM Client + ToolResult** - OpenAI-compat handrolled client + ToolResult preview+sidecar + SSE streaming
  (completed 2026-05-30)
-- [x] **Phase 4: HITL + Identity + Conversations** - `ask_user` pause/resume, identity scaffolding, multi-thread conversations with FTS (completed 2026-05-30)
+- [x] **Phase 4: HITL + Identity + Conversations** - `ask_user` pause/resume, identity scaffolding, multi-thread conversations with FTS
+ (completed 2026-05-30)
 - [ ] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench
 - [ ] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI
 - [ ] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin)
@@ -128,8 +129,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Operator runs `aura exec python "import ctypes; ctypes.CDLL(None).ptrace(0,0,0,0)"` and observes EPERM (ptrace blocked by positive allowlist); same for `open('/proc/self/root/etc/shadow').read()` returning ENOENT/EPERM
   3. Operator runs `aura exec python "__import__('socket').socket().connect(('1.1.1.1',80))"` and observes EPERM (socket syscall absent from allowlist); even `unshare(CLONE_NEWNET)` returns EPERM (allowlist excludes unshare)
   4. Operator runs `scripts/sandbox_escape_bench.sh` (SandboxEscapeBench port) and observes escape rate < 5% recorded in `docs/aura-quality-snapshot.md`
-  5. Operator inspects compose service `aura-sandbox` and observes `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `pids_limit: 64`, `userns-remap` all set (Pitfall #1 prevention list complete)
-**Plans**: TBD
+  5. Operator inspects compose service `aura-sandbox` and observes `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `pids_limit: 64`, `userns-remap` (daemon.json) all set; **gVisor `runsc` is default-on x86 (D-05 re-decision) and the escape-bench runs against the gVisor-primary x86 profile**
+**Plans:** 4 plans (4 waves — PRD-amendment gate then sidecar → Go runner → bench/CI)
+- [ ] 05-01-PLAN.md — PRD-amendment gate: re-decide D12 to gVisor-primary (D-05/06/07) + Slice 2a acceptance #4 auto-start (D-09) across prd.md + DECISIONS.md + ROADMAP.md (doc-only, gates all code waves)
+- [ ] 05-02-PLAN.md — Sidecar artifacts: stdlib sidecar.py (/exec/python+/exec/shell, D-16) + python:3.12-slim Dockerfile (non-root, no pip) + multi-arch positive seccomp allowlist (D-10/D-11) + hardened aura-sandbox compose service + runsc overlay (D-04/D-14/D-15)
+- [ ] 05-03-PLAN.md — Go runner: DockerRunner HTTP client + sentinels (D-09/D-18) + AURA_SANDBOX_* config (D-07) + Deferred:true execute tool with lean preview (D-16/D-17) + aura exec CLI exit-70 (D-19) + sandbox_integration negative-test tier
+- [ ] 05-04-PLAN.md — Gate-3 evidence: deterministic 18-scenario escape bench (D-01/D-02) + gating CI DinD workflow (runsc + userns-remap + QEMU arm64, D-11/D-12/D-13) + quality-snapshot escape-rate + human-verify sign-off
 
 ### Phase 6: KV Cache Builder
 **Goal**: PromptBuilder with stable-prefix discipline. **Two system messages** invariant: `messages[0]` byte-identical turn-on-turn (system + tool manifest, alphabetically sorted); `messages[1]` mutable (Agent.md + cached AgentInsight). Provider-aware `cache_control` injection (Anthropic `ephemeral`, DeepSeek auto + parse `usage.prompt_cache_hit_tokens`, OpenAI prefix-only). Deliberately near-late: must come AFTER P3+P4 so stable prefix is real, not theoretical. Cross-slice CI job `scripts/cache_invariant_audit.sh` runs from this phase onward and gates every subsequent merge.
