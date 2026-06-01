@@ -3440,11 +3440,11 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 |---|---|
 | Memory taxonomy cognitiva | **3 tipi**: Episodic (past events temporal) + Semantic (entities/relations) + Procedural (behaviors/scripts). Industry consensus 2026. |
 | Storage tier (Letta-style) | **3 tier**: Core (in-context, Agent.md + top-K AgentInsight, ~2K token) + Recall (Postgres `conversation_turns` searchable) + Archival (Neo4j full graph, retrieved via tool). |
-| Entity extraction | **Auto-extract sempre on** durante ingestion. LLM tier=reasoning batch ogni 10 chunk. Type taxonomy fissa Person/Org/Location/Concept/Event/Topic (mem0-style). Cost ~$0.05/documento medio. |
+| Entity extraction | **Auto-extract sempre on** durante ingestion. LLM tier=reasoning batch ogni 10 chunk. Type taxonomy **POLE+O (amendment #29)**: `type` chiuso Person/Org/Location/Concept/Event/Topic/**Other** + proprietà `subtype` free-form. Cost ~$0.05/documento medio. |
 | Retrieval | **Hybrid BM25 + HNSW + graph 1-hop expansion, fuse via Weighted-RRF Cypher-native (amendment #26, rank-based scale-free), poi LLM re-ranker tier=worker**. Re-rank top-20 → top-5. Max quality, +LLM cost ~$0.001/query. (Fusione lineare pesata = fallback deprecato.) |
 | Privacy isolation | **No isolation single-user mode**: tutti node sotto identity `'local'` default. Future multi-user richiede refactor (accettato pre-merge). |
 | Community detection | **DEFERITA fuori MVP (amendment #27, 11c)** — il job schedulato Leiden + community-summary LLM è over-engineering per il target single-user/self-hosted/cost-sensitive (le summary tematiche globali rispondono a una domanda di corpus-analytics che il single-user raramente pone; ogni community richiede una summary LLM rigenerata al drift del grafo; Microsoft stessa è passata a LazyGraphRAG). Diventa una feature lazy/on-demand futura. **GDS resta installato** (Slice 0.7) per PageRank/WCC/Node-Similarity ad-hoc; solo lo `gds.leiden.stream` schedulato + summary sono rimandati. Il valore cognitivo (local retrieval) è pienamente coperto da 11d (hybrid WRRF + graph 1-2 hop) senza community. |
-| Memify post-processing | **Cognee pattern**: prune stale entity (no mention 90gg) + strengthen RELATED_TO weight su co-occurrence + derive facts da multi-hop traversal. Background 24h. |
+| Memify post-processing | **Cognee pattern**: soft-archive stale entity (no mention 180gg → `archived_at`, NO hard delete — amendment #29) + strengthen RELATED_TO weight su co-occurrence + derive facts da multi-hop traversal. Background 24h. |
 | Agent memory | **Episodic + Insight + cached injection (amendment #11)**: `:AgentEpisode` post-conv summary + `:AgentInsight` cross-conv pattern. Pre-conv inject top-K Insight relevant nel system prompt come `messages[2]`. **In-memory LRU cache TTL `AURA_AGENT_INSIGHT_CACHE_TTL_SEC=600` (10 min)** — preserva byte-identity di `messages[2]` turn-su-turn (Slice 4 invariant cross-slice). Senza cache: Slice 4 KV cache si rompe quando Slice 11e atterra (Pitfall #3, Risk #5). |
 
 ### Architettura (4 sub-slice archival MVP 11a/11b/11d/11e + 11c DEFERITA amendment #27 + 11f Task Canvas sequencing-indipendente)
@@ -3479,6 +3479,10 @@ CREATE INDEX entity_type   FOR (e:Entity)        ON (e.type);
 CREATE INDEX entity_mentions FOR (e:Entity)      ON (e.mention_count);
 CREATE INDEX episode_agent FOR (ep:AgentEpisode) ON (ep.agent_kind);
 CREATE INDEX insight_agent FOR (i:AgentInsight)  ON (i.agent_kind);
+// amendment #29: `identity_id` (OQ6) e `archived_at` (OQ4) sono scritti su :Entity ma
+// NON indicizzati in MVP — in single-user lo scope è costante e l'archived-filter è
+// query-time. L'index su `identity_id` è lo step additivo che atterra col landing
+// multi-user (vedi OQ6); l'index su `archived_at` solo se il filtro diventa hot.
 
 // Labels + properties:
 // NB (amendment #29, OQ6): ogni nodo porta anche `identity_id` (costante 'local' in MVP single-user)
@@ -3552,7 +3556,8 @@ internal/memory/ingest/
                        #         Fase 2: conflict detect via fuzzy match name+type
                        #                + embedding similarity > 0.92
                        #                MERGE existing OR CREATE new
-                       #       Type taxonomy hardcoded: Person/Org/Location/Concept/Event/Topic
+                       #       Type taxonomy POLE+O (amendment #29): Person/Org/Location/
+                       #       Concept/Event/Topic/Other (chiuso, queryable) + subtype free-form
   audit.go          # ~50   sqlc adapter aura.ingest_audit (parity skill_audit)
 internal/agent/tools/ingest.go   # ~90   Tool LLM-facing Deferred=true:
                                    # ingest.file(path), ingest.url(url),
@@ -3958,7 +3963,7 @@ Entity extractor mem0 2-fase: LLM tier=reasoning extract candidates
 batch 10 chunks, conflict detection via fuzzy match + embedding
 similarity > 0.92, MERGE existing OR CREATE new.
 
-Type taxonomy fissa: Person/Org/Location/Concept/Event/Topic.
+Type taxonomy POLE+O (amendment #29): Person/Org/Location/Concept/Event/Topic/Other + subtype free-form.
 
 Tool LLM-facing Deferred:
 - ingest.file(path)
