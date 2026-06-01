@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 05-03-PLAN.md (Go runner + execute tool + aura exec CLI)
-last_updated: "2026-06-01T18:39:46.833Z"
+stopped_at: 05-04-PLAN.md tasks 1-2 committed; Task 3 Gate-3 human-verify checkpoint PENDING (live escape-rate + userns-remap-live + docker.go mutation sign-off)
+last_updated: "2026-06-01T19:10:00.000Z"
 last_activity: 2026-06-01
 progress:
   total_phases: 16
@@ -73,6 +73,7 @@ Progress: [██████████] 100%
 | Phase 05 P05-01 | ~12min | 3 tasks | 3 files |
 | Phase 05 P02 | ~18min | 3 tasks | 9 files |
 | Phase 05 P03 | ~20min | 3 tasks | 11 files |
+| Phase 05 P04 | ~18min | 2 tasks (+1 checkpoint) | 3 files |
 
 ## Accumulated Context
 
@@ -105,6 +106,7 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-01 (PRD-amendment gate, doc-only): D12 RE-DECIDED to gVisor-primary x86 (amendment #36, supersedes #32; D-05/06/07) — gVisor `runsc` is the PRIMARY x86 boundary (not a >5%-only escalation seam), hardened-container+seccomp+userns-remap is the portable floor / arm64 fallback, runner runtime-agnostic via AURA_SANDBOX_RUNTIME, microVM stays REJECTED (KVM-less infra); applied consistently across prd.md + DECISIONS.md + ROADMAP.md SC#5. D-09: DockerRunner does ONE best-effort docker-CLI-gated auto-start on connect-failure then ErrSandboxUnreachable, NEVER mounts the docker socket, execution path stays HTTP-only (Slice 2a acceptance #4 = "sidecar down AND auto-start fails -> clear error"). D-20 (amendment #37): curated hash-pinned requirements.txt (numpy/pandas/scipy/sympy/matplotlib/pillow/bs4/lxml/pyyaml/dateutil/openpyxl) baked at IMAGE-BUILD time so user code is batteries-included, runtime stays net-none + read_only + stateless with NO runtime pip; sidecar.py server stays stdlib-only; on-demand pip remains a 2b/Phase-8 pypi.org-allowlist capability. Tracked obligation: QEMU-arm64 CI seccomp emulation can diverge from real arm64 kernel -> real-DGX confirmation pre-production arm64. Task 1 was already committed (93e8c5a) by a prior run and verified in place; Tasks 2 (d924466) + 3 (5d8c46e) landed this run.
 - [Phase ?]: 05-02 (sidecar artifacts wave): sidecar.py stdlib http.server (/exec/python+/exec/shell+/healthz, D-16 JSON contract, 1 MiB truncation, timeout/oom/pids limit_hit); Dockerfile python:3.12-slim manifest-list-digest-pinned non-root uid 65532 BUILD-time --require-hashes curated bake (numpy/pandas/scipy/sympy/matplotlib/pillow/bs4/lxml/pyyaml/dateutil/openpyxl + 12 transitive, amd64+arm64) + import smoke + ZERO runtime pip (D-20/D-20b); seccomp.json positive allowlist hardened from moby v27.5.1 by subtracting dangerous(ptrace/unshare/process_vm_readv/bpf/kexec_load/userfaultfd/mount)+network socket syscalls, 394 allowed, both arches by-name no numbers (D-10/D-11); compose aura-sandbox full CAP-01 SC#5 floor + urllib /healthz; compose.gvisor.yaml x86-only runsc overlay; make sandbox-up arch-gated operator default (gVisor default-on x86, runc+seccomp arm64, D-04/SC#5); userns-remap deferred to daemon.json (D-15). Docker unavailable -> live build/run/escape-bench DEFERRED to 05-04 CI DinD + Gate-3 (artifacts static-validated, all <=600 LOC). Commits acb23dd/cea5eba/baef9e1.
 - [Phase ?]: 05-03: Runner interface extended to 3-arg timeoutSec (D-16/D-19); integration tier split into a tagged file with its own goleak TestMain; aura exec uses LoadDB + exit 70/71/64; FormatLean exported for tool+CLI reuse
+- [Phase 05]: 05-04 (Gate-3 evidence, tasks 1-2 committed c3d90b0/c807553; Task 3 human-verify PENDING): scripts/sandbox_escape_bench.sh is a DETERMINISTIC SandboxEscapeBench port (no LLM driver) — 14 runtime/kernel live-denominator probes posted to the live /exec/python wire (escape only if the technique succeeds) + 4 config-regression assertions (docker socket/privileged/writable host mount/excess caps must stay 0, SEPARATE gate not in the denominator) + 4 explicit N/A kubernetes lines (auditable denominator, OQ1); escape-rate=escapes/applicable, FAIL on >=5% or any config-regression>0; asserts userns-remap LIVE (Pitfall 3, hard-fail under $CI); runs internal/sandbox/docker.go go-mutesting spot-check (>=70%, avito-tech path same as Makefile); writes escape-rate+mutation+QEMU-arm64 caveat into docs/aura-quality-snapshot.md. .github/workflows/sandbox.yml is the REQUIRED gating DinD job: runsc install + daemon.json(userns-remap+runsc) + QEMU arm64 buildx + live sidecar under runsc + sandbox_integration negative tier + live bench + docker.go mutation + arm64 leg + 85% coverage fold; exports AURA_SANDBOX_URL/_TIMEOUT_SEC/_RUNTIME+CI=true (no-skip-as-green); documents Pitfall 2 (inner sidecar keeps seccomp despite --privileged outer DinD) + Pitfall 3. Docker daemon unavailable here -> live escape-rate/userns-remap-live/mutation-score are CI-populated (NOT fabricated) and are exactly the human-verify checkpoint sign-off items. CAP-01 NOT marked complete (verifier's call post-checkpoint).
 
 ### Pending Todos
 

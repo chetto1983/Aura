@@ -155,7 +155,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Operator runs `scripts/sandbox_escape_bench.sh` (SandboxEscapeBench port) and observes escape rate < 5% recorded in `docs/aura-quality-snapshot.md`
   5. Operator inspects compose service `aura-sandbox` and observes `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `pids_limit: 64`, `userns-remap` (daemon.json) all set; **gVisor `runsc` is default-on x86 (D-05/D-06/D-07 re-decision, amendment #36 — gVisor is the PRIMARY x86 boundary, not a >5%-only escalation seam; container+seccomp+userns-remap is the defense-in-depth floor inside gVisor on x86 and the standalone fallback boundary on arm64). The SandboxEscapeBench escape-rate is measured against the gVisor-primary x86 production profile, with the container+seccomp floor bench-validated as the arm64 fallback.**
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans authored (05-04 tasks 1-2 committed; Gate-3 human-verify checkpoint pending live DinD sign-off — CAP-01 not yet closed)
 
 **Wave 1**
 
