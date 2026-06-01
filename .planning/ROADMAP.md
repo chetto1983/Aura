@@ -143,7 +143,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 ### Phase 5: Sandbox 2a Stateless
 
-**Goal**: Python 3.12 slim sidecar (stdlib only, no pip) for stateless per-call code execution. Seccomp **positive allowlist** ~80 syscalls (NOT deny-list — Pitfall #1 fix), ulimits, `network_mode: none` default, `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `userns-remap`, pids_limit. SandboxEscapeBench (UK AISI March 2026) run during Gate 3, escape rate documented in `docs/aura-quality-snapshot.md`. This is the highest-stakes P0 sandbox slice.
+**Goal**: Python 3.12 slim sidecar for stateless per-call code execution, with a **curated, hash-pinned `sandbox/requirements.txt` baked at IMAGE-BUILD time** (numpy/pandas/scipy/sympy/matplotlib/pillow/beautifulsoup4/lxml/pyyaml/python-dateutil/openpyxl — D-20, "not a toy" user directive) so user code is batteries-included while the **runtime** container stays `network_mode: none` + `read_only: true` + stateless with **no runtime pip** (arbitrary on-demand `pip install` remains a 2b/Phase-8 capability gated by the `AURA_SANDBOX_NETWORK_ALLOW_HOSTS=pypi.org` allowlist; the `sidecar.py` server itself stays stdlib-only). Seccomp **positive allowlist** ~80 syscalls (NOT deny-list — Pitfall #1 fix), ulimits, `network_mode: none` default, `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `userns-remap`, pids_limit. SandboxEscapeBench (UK AISI March 2026) run during Gate 3, escape rate documented in `docs/aura-quality-snapshot.md`. This is the highest-stakes P0 sandbox slice.
 **Depends on**: Phase 4
 **Requirements**: CAP-01
 **Slices**: 2a
