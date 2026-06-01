@@ -40,7 +40,7 @@ Transport + UX:
 17. **11** — Memory ingestion + taxonomy (Documents + Entities + Graph + Agent journal, 11a-11e) + **11f Task Canvas** (working-memory simbolica Mermaid effimera, sequencing-indipendente ~Phase 9-10). Pattern emendati #24 (valid-time/NOOP/reasoning traces) + #25 (Mermaid Canvas + score-cascade) studiati da **Tencent TencentDB-Agent-Memory** (<https://github.com/Tencent/TencentDB-Agent-Memory>) e adattati allo stack PG+Neo4J — vedi prd.md §Slice 11.
 18. **13** — Local LLM fallback (vLLM + LMCache disk-tier, doppio sidecar)
 
-Persistence: Postgres `aura.*` schema (15 migrations 0001-0014 + Neo4j Cypher 0001-0002). `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
+Persistence: Postgres `aura.*` schema (**6 migrations shippate 0001-0006** — init/knowledge_migrations/paused_states/identity/conversations/conversation_turns_fts; le ulteriori migration delle slice a valle non sono ancora scritte — + Neo4j Cypher **0001**). `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
 
 ## Slice Q&A discipline (3 gate sequenziali, mandatory)
 
@@ -78,7 +78,7 @@ Specializzati per Aura:
 
 Bootstrap inziale (one-shot):
 - `/gsd-ingest-docs` — importa prd.md esistente in `.planning/` setup (PRD → ADR/SPEC structured)
-- `/gsd-map-codebase` — analizza skeleton 633 LOC esistente in `.planning/codebase/`
+- `/gsd-map-codebase` — analizza il codebase esistente in `.planning/codebase/` (Phase 1-4 shippate, ~10k LOC non-test su 14 package — non più lo skeleton 633 LOC del bootstrap)
 
 ## Skills installate (`.claude/skills/`, 46 totali — 3.5 MB)
 
@@ -230,7 +230,7 @@ Fix issues before moving on.
 
 ## Persistence
 
-- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. 15 migrations 0001-0014.
+- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. **6 migrations shippate 0001-0006** (le successive atterrano con le rispettive slice — vedi prd.md §Persistence "Migration numbering — fonte di verità").
 - **Neo4j** Community + APOC + GDS (`compose.yaml`): port `7687` bolt, `7474` browser. HNSW vector index 768d cosine. `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph (no native Go adapter).
 - **Filesystem** per artifact: `$AURA_RUN_DIR/` (sidecar tool results + spillover content) + `~/.aura/agents/<id>/` (Agent.md profile) + `~/.aura/pyscripts/<id>/` (Slice 7e snippets) + `$AURA_SKILLS_DIR/` (skills instruction).
 - **Backup**: Postgres `pg_dump` + Neo4j `neo4j-admin database dump` (vedi PRD §Backup strategy).

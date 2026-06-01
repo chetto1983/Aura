@@ -477,7 +477,7 @@ go test ./internal/agent/workflow/ -run TestParallelAgent
 - [ ] `internal/agent/event.go` definisce `Event` + `Actions` + `LLMResponse`. Helper `NewEscalateEvent(author, reason string)`.
 - [ ] `internal/agent/workflow/{sequential,loop,parallel}.go` implementano i 3 workflow agents. ParallelAgent usa errgroup + ackChan backpressure (rubato da adk-go pattern).
 - [ ] Escalation propagation testata: child Escalate → parent ferma yield ai siblings.
-- [ ] Go 1.25+ enforced in `go.mod` (`go 1.25`).
+- [ ] Go 1.25+ floor enforced in `go.mod` (oggi `go 1.26.3` — floor superato, fix doc-verify 2026-06-01).
 - [ ] **Niente import di `google.golang.org/adk`**. Rubiamo il pattern, non la dependency.
 - [ ] Test coverage workflow/ ≥ 85%.
 
@@ -530,7 +530,7 @@ a riuso pattern unificato. Net dopo +280 LOC Slice 0.9 = -400 LOC
 sul progetto totale + qualita' architettonica (1 mock, 1 test
 infrastructure, 1 streaming pattern).
 
-Go 1.25 minimum (range-over-func iter.Seq2, AG-UI SDK 1.24.4+ requirement). Enforce in go.mod.
+Go 1.25 minimum (range-over-func iter.Seq2, AG-UI SDK 1.24.4+ requirement); go.mod oggi `1.26.3` (floor superato — fix doc-verify 2026-06-01).
 
 LOC: +XXX src / +YY test.
 
@@ -632,7 +632,7 @@ streamata token-by-token, in <8 step. `/exit` o EOF chiude il REPL.
 | `internal/agent/tools/read_tool_output.go` (NEW) | ~80 | Builtin non-deferred. Args `{tool_call_id, offset?:int default 0, limit?:int default ~2048 BYTES}` (A4 amendment 2026-05-30: byte-based, NON lines). Footer `showing bytes X-Y of Z, next offset Y`. Risolve path da `runtime`-mantenuto map `toolCallID → FullPath`. Hard-fail su id ignoto. Path-traversal-shaped ids (`..`/separators) rifiutati prima di `filepath.Join`. |
 | `internal/agent/llm_agent.go` (diff) | ~+45 / -10 | `(*LlmAgent).runTool` riceve `ToolResult`, decide se persistere su disco se `Bytes > cap`, costruisce stringa per `RoleTool.Content` (preview + footer con path). **`read_tool_output` ri-deriva il path in modo deterministico via `sidecarPath(runDir, sessionID, toolCallID)` — NIENTE `resultPaths map` in-memory** (corretto vs questo testo originale: il design a map non è stato implementato, amendment #28). Crea `$AURA_RUN_DIR/conversations/<conv_id>/` lazy alla prima persist (post Slice 1.8: `conv_id` viene da `InvocationContext.SessionID`). File `loop.go` rinominato in `llm_agent.go` (Slice 0.9 amendment), `Loop` struct rinominato in `LlmAgent` (implementa `Agent` interface Slice 0.9). `Run() iter.Seq2[*Event, error]` sostituisce `Turn() (Result, error)`. |
 | `internal/agent/tools/result_test.go` | ~80 | Test: 100 KB fake tool → `Messages` ha SOLO preview+footer, file ha 100 KB; `read_tool_output(id, offset=50000, limit=100)` recupera fetta. |
-| `cmd/aura/main.go` (diff) | ~+50 / -15 | Sostituisce `stubClient` con `llm.NewOpenAICompat(cfg.LLM)`. Registra `read_tool_output` nel registry. Sub-comando `aura config` legge/scrive il file. |
+| `cmd/aura/main.go` (diff) | ~+50 / -15 | Sostituisce `stubClient` con `openai_compat.New(cfg.LLM)` (costruttore reale; non `NewOpenAICompat` — fix doc-verify 2026-06-01). Registra `read_tool_output` nel registry. Sub-comando `aura config` legge/scrive il file. |
 
 **Deferred-tool partition.** Niente tool nuovo in questo slice. `text_response` + `tool_search` restano gli unici registrati. La distinzione attiva/deferred si vede solo via `aura tools` (già esistente).
 
@@ -729,7 +729,7 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 | `internal/askuser/cli.go` | ~120 | Renderer CLI: stampa lista numerata `[N] <kind>[prio]: <question> + options`, legge stdin con sintassi `1: ...` / `all: ...` / `batch: 1=a, 2=b`. Re-prompt invalido. Implementa interfaccia `Responder`. |
 | `internal/agent/llm_agent.go` (diff) | ~+110 / -10 | `(*LlmAgent).runTool` intercetta `ErrAwaitingUserInput` → costruisce `PausedState` con priority + (se proxied) `ProxiedFromChildID` → upsert in `aura.paused_states` → `Run` accumula pending → se ≥1 pending, yield `Event{Actions.Escalate=true, StateDelta:{pending: [...]}}` (Slice 0.9 escalation). Nuovi metodi `Resume(token, answer)` e `ResumeBatch(answers)`. Esclusività check su batch tool calls (multi-ask_user coalesce, altri tool drop). |
 | `internal/db/queries/paused_states.sql` | ~70 | **6 query sqlc**: `InsertPausedState`, `GetByToken`, `ListPendingForLoop` (ordered), `MarkResumed`, `MarkResumedBatch`, `CleanupResumedOlderThan` (per future retention). |
-| `internal/db/migrations/0003_paused_states.up.sql` | ~30 | `CREATE TABLE aura.paused_states (token uuid PRIMARY KEY, conversation_id text NOT NULL, kind text NOT NULL, question text NOT NULL, options jsonb, priority int NOT NULL DEFAULT 0, resume_context jsonb, tool_call_id text NOT NULL, proxied_from_child_id uuid, proxied_tool_call_id text, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz, resumed_answer text)`. Indici su `(conversation_id, resumed_at) WHERE resumed_at IS NULL`. Foreign key a `conversations(id)` aggiunta solo in Slice 1.8 (qui è plain text per indipendenza Slice 1.5 ↔ 1.8). |
+| `internal/db/migrations/0003_paused_states.up.sql` | ~30 | `CREATE TABLE aura.paused_states (token uuid PRIMARY KEY, conversation_id text NOT NULL, kind text NOT NULL, question text NOT NULL, options jsonb, priority int NOT NULL DEFAULT 0, resume_context jsonb, tool_call_id text NOT NULL, proxied_from_child_id uuid, proxied_tool_call_id text, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz)`. Indici su `(conversation_id, resumed_at) WHERE resumed_at IS NULL`. Foreign key a `conversations(id)` + promozione `conversation_id` a uuid + colonna `resumed_answer jsonb` aggiunti solo in Slice 1.8/migration 0005 (qui in 0003 `conversation_id` è plain text e `resumed_answer` non esiste ancora — indipendenza Slice 1.5 ↔ 1.8). |
 | `internal/db/migrations/0003_paused_states.down.sql` | ~3 | `DROP TABLE aura.paused_states;`. |
 | `internal/agent/tools/ask_user_test.go` | ~80 | Args validation, options polimorfismo, priority cap, sentinel error format. |
 | `internal/agent/loop_pause_test.go` | ~160 | Pause+Resume singolo, ResumeBatch, multi-pause coalesce, priority sort, esclusività intra-turn, invalid token rejection, stub Responder. |
@@ -739,7 +739,7 @@ Slice 1.5 → eventuale altro) violerebbero refactor-on-touch.
 
 **Open questions.**
 1. **~~Persistent vs in-memory `PausedState`~~ → CHIUSA: persistent in Postgres da subito.**
-   Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema: `(token uuid pk, conversation_id uuid NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE, question text NOT NULL, options jsonb, kind text NOT NULL CHECK (kind IN ('clarification','approval','choice')), priority int NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 100), resume_context jsonb, tool_call_id text, proxied_from_child_id uuid NULL, proxied_tool_call_id text NULL, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz NULL, resumed_answer text NULL)`. Indice su `(conversation_id, resumed_at) WHERE resumed_at IS NULL` per scan O(log n) della lista pending attive. `priority` + `proxied_*` aggiunti da Area #4 closed 2026-05-28 (multi-pause FIFO). `conversation_id` (era `loop_id`) e `resumed_answer` aggiunti da Slice 1.8 closed 2026-05-28 (#15 multi-conversation persistence).
+   Slice 0.5 ha già lanciato il Postgres → `PausedState` vive in `aura.paused_states` table. Risolve crash-recovery, multi-istanza future-proof, audit trail di tutte le pause. Schema: `(token uuid pk, conversation_id uuid NOT NULL REFERENCES aura.conversations(id) ON DELETE CASCADE, question text NOT NULL, options jsonb, kind text NOT NULL CHECK (kind IN ('clarification','approval','choice')), priority int NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 100), resume_context jsonb, tool_call_id text, proxied_from_child_id uuid NULL, proxied_tool_call_id text NULL, created_at timestamptz NOT NULL DEFAULT now(), resumed_at timestamptz NULL, resumed_answer jsonb NULL)`. Indice su `(conversation_id, resumed_at) WHERE resumed_at IS NULL` per scan O(log n) della lista pending attive. `priority` + `proxied_*` aggiunti da Area #4 closed 2026-05-28 (multi-pause FIFO). `conversation_id` promosso da `text` a `uuid`+FK e `resumed_answer jsonb` aggiunti da Slice 1.8/migration 0005 (#15 multi-conversation persistence). (NB: `conversation_id` non è mai stato `loop_id` — fix doc-verify 2026-06-01.)
    Migration: `0003_paused_states.up.sql` aggiunta in Slice 1.5.
    File targets aggiunti: `internal/db/queries/paused_states.sql` (~70 LOC, 6 query sqlc: `InsertPausedState`, `GetByToken`, `ListPendingForLoop` ordered, `MarkResumed`, `MarkResumedBatch`, `CleanupResumedOlderThan` per future retention) + generated code via sqlc. `internal/agent/pending.go` (~70 LOC) usa il client sqlc invece di in-memory map. Test integrazione sotto build tag `db_integration`.
 2. **~~Quante pending ask simultanee per Loop?~~ → CHIUSA: lista FIFO piena (Area #4 closed 2026-05-28).**
@@ -840,9 +840,9 @@ identity + capability.
 | Path | LOC | Note |
 |---|---|---|
 | `internal/identity/types.go` | ~40 | `Identity{ID uuid, Name, Kind, CreatedAt}`, `Kind` enum. |
-| `internal/identity/store.go` | ~80 | Thin adapter su sqlc `Queries`. Helper `LocalIdentityID() uuid` (constante UUID seed). |
+| `internal/identity/store.go` | ~80 | Thin adapter su sqlc `Queries`. La identity locale è il seed UUID `00000000-0000-0000-0000-000000000001` (migration 0004). (Il piano citava un helper `LocalIdentityID()` mai implementato — fix doc-verify 2026-06-01.) |
 | `internal/identity/capability.go` | ~60 | `HasCapability(ctx, id, cap) (bool, error)` con wildcard logic + regex validation per `cap`. |
-| `internal/db/queries/identities.sql` | ~60 | **6 query sqlc**: `GetIdentityByName`, `ListIdentities`, `InsertIdentity`, `GrantCapability`, `RevokeCapability`, `ListCapabilities`. |
+| `internal/db/queries/identity.sql` (+ `capability_grants.sql`) | ~60 | query sqlc: `GetIdentityByName`, `ListIdentities`, `CreateIdentity` (non `InsertIdentity`), `GrantCapability`, `RevokeCapability`, `ListCapabilities` — fix doc-verify 2026-06-01. |
 | `internal/db/migrations/0004_identity.up.sql` | ~50 | Tabelle + seed + check constraint. |
 | `internal/db/migrations/0004_identity.down.sql` | ~5 | `DROP TABLE aura.capability_grants; DROP TABLE aura.identities;` |
 | `internal/identity/store_test.go` | ~100 | Build tag `db_integration`. |
@@ -953,7 +953,7 @@ al `aura chat resume <id>`.
     PRIMARY KEY (conversation_id, seq)
   );
   ```
-- [ ] `paused_states.loop_id` rinominato a `conversation_id`, FK `aura.conversations(id) ON DELETE CASCADE`. Migration drop+recreate column (table è ancora vuota allo step 1.8). Aggiunge colonna `resumed_answer text NULL` (era persa nel resume_context jsonb, ora esplicita per query).
+- [ ] `paused_states.conversation_id` promosso da `text` a `uuid` + FK `aura.conversations(id) ON DELETE CASCADE` via `ALTER COLUMN ... TYPE uuid USING` (table vuota allo step 1.8, non drop+recreate). Aggiunge colonna `resumed_answer jsonb NULL` (era persa nel resume_context jsonb, ora esplicita per query). (NB: nessun `loop_id` preesistente — fix doc-verify 2026-06-01.)
 - [ ] CLI `aura chat`:
   - `aura chat` (no args): se esiste conversation con `last_active_at` < 5min → resume, altrimenti new. Comportamento Claude.ai-like.
   - `aura chat new` (esplicito): sempre crea nuova conversation.
@@ -983,7 +983,7 @@ al `aura chat resume <id>`.
 - [ ] **CLI `aura paused-states {list|purge}` (chiude Area #7 escape hatch)**:
   - `aura paused-states list [--conversation-id X] [--include-resumed]`: tabella delle pending.
   - `aura paused-states purge --before <ISO-date> --confirm`: hard delete delle resumed più vecchie di N (skill_audit FK è `ON DELETE SET NULL`, audit log resta consistente).
-- [ ] Identity scoping: ogni conversation è scoped a un identity (oggi sempre `'local'`). `aura chat list` filtra `WHERE identity_id = LocalIdentityID()`. Future multi-user: filtra su identity autenticato.
+- [ ] Identity scoping: ogni conversation è scoped a un identity (oggi sempre il seed `'local'` = `00000000-0000-0000-0000-000000000001`). `aura chat list` filtra `WHERE identity_id = <seed local>`. Future multi-user: filtra su identity autenticato.
 - [ ] Test integrazione `db_integration`: nuova chat → 3 turn → restart processo → resume → assistant vede full history.
 - [ ] Test auto-title: stub LLM client → conv con 3 turn → trigger generation → title set.
 - [ ] Test cascade delete: insert conv + 5 turns + 2 paused_states → delete conv → tutto purgato.
@@ -998,7 +998,7 @@ al `aura chat resume <id>`.
 | `internal/conversations/cleanup.go` | ~70 | Boot orphan scan (`$AURA_RUN_DIR/conversations/*` vs DB `conv_id` set), `tmp/` TTL 24h sweep, `du -sb` size check + WARN. Cascade rm su `DeleteConversation(id)`. |
 | `internal/db/queries/conversations.sql` | ~80 | **8 query sqlc**: `CreateConversation`, `GetConversation`, `ListConversations`, `AppendTurn`, `LoadTurns`, `UpdateLastActive`, `UpdateStatus`, `UpdateStats`. |
 | `internal/db/queries/conversation_turns.sql` | ~30 | **2 query sqlc**: `InsertTurn`, `ListTurnsForConv` (ORDER BY seq). |
-| `internal/db/migrations/0005_conversations.up.sql` | ~70 | Tabelle + index + rename paused_states.loop_id → conversation_id + aggiunta resumed_answer col. |
+| `internal/db/migrations/0005_conversations.up.sql` | ~70 | Tabelle + index + promozione `paused_states.conversation_id` text→uuid+FK (ALTER, non rename da loop_id) + aggiunta `resumed_answer jsonb` col. |
 | `internal/db/migrations/0005_conversations.down.sql` | ~10 | DROP tables + rename back + drop col. |
 | `internal/agent/llm_agent.go` (diff) | ~+80 / -20 | `(*LlmAgent).AppendMessage(msg)` ora persiste via `store.AppendTurn` invece di solo in-memory append. `(*LlmAgent).Stop()` chiama `store.AutoResolvePendings(convID)`. `(*LlmAgent).NewFromHistory(convID)` ricostruisce dalle turns. Cumulative budget cap warning: file `llm_agent.go` post-Slice 1+1.5+1.8+4+8+10 stimato ~520-580 LOC; se oltrepassa 600 LOC split in `llm_agent.go` (core Agent.Run) + `llm_agent_pause.go` (pause/resume) + `llm_agent_history.go` (AppendMessage/NewFromHistory/Stop). Refactor-on-touch enforcement. |
 | `internal/conversations/store_test.go` | ~120 | Build tag `db_integration`. Round-trip + resume + cascade + auto-title. |
@@ -1015,17 +1015,17 @@ al `aura chat resume <id>`.
    Decisione presa dopo ricerca pattern industriali (Claude Code 3-tier auto-compact, Cline middle truncation, Cursor dynamic context discovery, LangChain ConversationSummaryBufferMemory).
    *Scelta*: pattern **Cursor "dynamic context discovery"** puro. Aura ha già il 90% del lavoro fatto (Slice 1 ToolResult sidecar = stesso pattern). Implementazione minimale aggiunta a Slice 1.8:
    - **L1 — Microcompact tool result eviction (`internal/conversations/microcompact.go` ~60 LOC)**: su ogni `LoadHistory(conv_id)`, per i `role='tool'` turn con `seq < (max_seq - AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS)` (default 10), sostituisci `content` (preview da Slice 1) con un puntatore `"[tool_call_id=X: evicted from context, re-fetch via read_tool_output(X) — sidecar at $AURA_RUN_DIR/conversations/<conv_id>/<tool_call_id>.result]"`. Niente LLM call, cheap, riusa sidecar che già esistono.
-   - **L2 — Budget dinamico (`internal/conversations/budget.go` ~50 LOC)**: calcolo Claude Code-style `hard_cap = Model.ContextWindow - max(MaxOutputTokens, 20_000) - 13_000`. Warn cap `= hard_cap * 0.75`. Esempi: DeepSeek-V4 (1M) → 967K hard / 725K warn; OpenAI/Anthropic (200K) → 167K hard / 125K warn. Sopra warn → log WARN. Sopra hard → errore esplicito al `Loop.Turn`: "history exceeds hard cap; use `chat_compact` tool or `aura chat new` to start fresh".
+   - **L2 — Budget dinamico (`internal/agent/budget.go`; path reale, non `internal/conversations/` — fix doc-verify 2026-06-01)**: calcolo Claude Code-style `hard_cap = Model.ContextWindow - max(MaxOutputTokens, AURA_CONTEXT_MAX_OUTPUT_TOKENS=20_000) - AURA_CONTEXT_RESERVE_TOKENS=13_000`. Warn cap `= hard_cap * 0.75`. Esempi (~): DeepSeek-V4 (1M) → ~1.003M hard / ~752K warn; OpenAI/Anthropic (200K) → 167K hard / 125K warn. Sopra warn → log WARN. Sopra hard → errore esplicito al `LlmAgent.Run` (ex `Loop.Turn`, amendment #28): "history exceeds hard cap; use `chat_compact` tool or `aura chat new` to start fresh".
    - **L3 — Full LLM-driven compaction: NON IMPLEMENTATA in Slice 1.8**. Skip esplicito: il modello 1M DeepSeek + pattern Ralph (stato in DB + Neo4j knowledge graph) rendono raro raggiungere il cap. Atterrerà come Slice futura opzionale (`chat_compact` tool LLM-facing + CLI `aura chat compact <id>`) se uso reale lo richiede.
    - **Token estimation**: usa `tiktoken-go` (cl100k_base BPE) come approssimazione fast. Errore tipico 5-10% vs actual provider tokenization, accettabile per gating.
-   - **Modello info**: `LLMConfig` aggiunge `ContextWindow int` + `MaxOutputTokens int`. Default per modelli noti hardcoded in `internal/llm/openai_compat/models.go` (deepseek-v4=1M+8K, gpt-4o=128K+16K, claude-3-5=200K+8K). Override via env `AURA_MODEL_CONTEXT_WINDOW` / `AURA_MODEL_MAX_OUTPUT_TOKENS`.
+   - **Modello info**: `ContextWindow` + `MaxOutputTokens` sono const del modello attivo in `internal/llm/config.go` (deepseek-v4: ContextWindow **1.048.576** + MaxOutputTokens **32.768**; NON `internal/llm/openai_compat/models.go`, che non esiste — fix doc-verify 2026-06-01). Il lookup multi-modello (gpt-4o/claude) è una feature futura non shippata.
 
    File targets aggiuntivi (~150 LOC):
    - `internal/conversations/microcompact.go` ~60
    - `internal/conversations/budget.go` ~50
    - `internal/conversations/store.go` (diff) ~+30 (LoadHistory chiama microcompact + budget check)
    - `internal/agent/llm_agent.go` (diff) ~+20 (passa ModelConfig al budget check)
-   - `internal/llm/openai_compat/models.go` ~+30 (lookup ContextWindow + MaxOutputTokens per known models)
+   - `internal/llm/config.go` (ContextWindow + MaxOutputTokens come const del modello attivo; il file `openai_compat/models.go` del piano originale non è stato creato — logica consolidata in config.go, fix doc-verify 2026-06-01)
 
    Sources: [Claude Code auto-compact](https://claudelog.com/faqs/what-is-claude-code-auto-compact/), [Cursor dynamic context discovery](https://cursor.com/blog/dynamic-context-discovery), [Cline ContextManager](https://medium.com/@balajibal/dissecting-cline-cline-context-management-260aec3d84cb), [Context compaction research gist](https://gist.github.com/badlogic/cd2ef65b0697c4dbe2d13fbecb0a0a5f).
 4. **Concurrent write a stessa conversation?** → *Default proposto*: PRIMARY KEY `(conversation_id, seq)` + `last_active_at` lock via `SELECT ... FOR UPDATE` in `AppendTurn` previene race. Multi-session sulla stessa conv (raro per single-user) ottengono conflitto chiaro `unique_violation`.
@@ -1041,9 +1041,9 @@ aura.conversations (id, title, identity_id, status, model, token stats)
 + aura.conversation_turns (conv_id, seq, role, content, tool_call_id,
 tool_calls, *_tokens) with per-message granularity (LangGraph
 PostgresSaver pattern + AWS data modeling best-practice for AI chat).
-Migration 0005_conversations renames paused_states.loop_id ->
-conversation_id with FK ON DELETE CASCADE and adds resumed_answer
-column for query-friendly audit.
+Migration 0005_conversations promotes paused_states.conversation_id
+text->uuid with FK ON DELETE CASCADE (ALTER, not a loop_id rename) and
+adds resumed_answer jsonb column for query-friendly audit.
 
 CLI multi-conv: aura chat {list|resume|new|archive|delete|rename}.
 Auto-title LLM-generated after seq>=3, best-effort background. Per-turn
@@ -1543,7 +1543,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 |---|---|---|---|
 | **L0** | KV cache discipline | Slice 4 (CAP-04, Phase 6) | `messages[0]` byte-identical cross-turn (system+manifest+tools). `messages[1]` mutable Agent.md profile (Slice 10). Cache hit ratio target ≥ 80% su DeepSeek-V4 / Anthropic. CI invariant audit `scripts/cache_invariant_audit.sh` cross-slice. |
 | **L1** | Microcompact in-context eviction | Slice 1.8 (CORE-04, Phase 4) | Tool result age-based eviction: `RoleTool` messages older than `AURA_MICROCOMPACT_TTL_TURNS=10` → replaced with `[evicted, sidecar at <path>]` stub (reference Slice 1 ToolResult sidecar). Preserva structure, riduce token cost. NO LLM call. |
-| **L2** | Budget trim history | Slice 1.8b (CORE-04, Phase 4) | Hard cap su history `AURA_CONVERSATION_TOKEN_CAP=AURA_LOOP_BUDGET_PCT × model_window` (default 60%) → on exceeded: trigger LLM summarization OR drop oldest user/assistant pairs (configurable strategy). Notify user + suggest `aura chat new` per fresh KV cache. |
+| **L2** | Budget trim history | Slice 1.8b (CORE-04, Phase 4) | Hard cap su history = `model_window - max(MaxOutputTokens, AURA_CONTEXT_MAX_OUTPUT_TOKENS) - AURA_CONTEXT_RESERVE_TOKENS` (subtract-reserves, §L4643; NON `pct × window` — fix doc-verify 2026-06-01) → on exceeded: drop oldest user/assistant pairs. Notify user + suggest `aura chat new` per fresh KV cache. |
 | **L2.5** | **Hard rolling buffer safety net (amendment #22, picobot-inspired)** | Slice 1.8b (CORE-04, Phase 4) | **Fallback deterministico se L1+L2 falliscono** (summarization timeout/rate-limit, token estimation off-by-margin, eviction insufficient). Cap `AURA_HISTORY_HARD_CAP_TURNS=50` (picobot default). Post-L1+L2 attempt, se `estimated_tokens > 100% × model_window` ANCORA: drop oldest user/assistant **pair** (keep system L0 stable + preserve invariant `len(history) % 2 == 0` per pair-coherence) fino a fit. **Zero LLM call**, deterministic, fail-safe. Pattern reference: [picobot internal/session/manager.go `MaxHistorySize=50`](https://github.com/louisho5/picobot/blob/main/internal/session/manager.go). Aura aggiunge pair-aware drop (vs picobot string-flat) + invariant check (oldest pair = first non-system role=user message + immediately-following role=assistant message). Audit row `aura.context_rot_events {ts, conv_id, action='hard_drop_pairs', pairs_dropped, tokens_before, tokens_after}` per forensics. |
 | **L3** | Tool result sidecar | Slice 1 (CORE-01, Phase 3) | Large tool outputs (`output_bytes > AURA_TOOLRESULT_PREVIEW_BYTES=4096`) → write `$AURA_RUN_DIR/conversations/<id>/<tool_call_id>.result` + ToolResult.Preview (first 4 KB + suffix `[truncated, full at <path>]`). LLM sees only preview, full retrievable on demand. |
 | **L4** | Archival memory retrieval | Slice 11 (UX-06/07/08/09, Phase 15) | Long-term facts via Neo4j vector + fulltext: `:Chunk` (raw docs), `:Entity` (resolved nouns), `:AgentInsight` (extracted insights). Top-K relevant injected by `:AgentInsight` TTL cache (preserves L0 `messages[2..n]` stability per Slice 11e amendment #11). Tool `memory_search(query)` self-edit pattern (Letta-inspired). |
@@ -1552,7 +1552,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 - **Operative threshold**: 60% context utilization → trigger PROACTIVE compaction (L1+L2). Manual proactive produce summary migliore di reactive (model ha clear recall).
 - **Hard cap**: 80% context utilization → AUTO trigger compaction + Notifier alert utente. Proceed o fail-loud (configurable via `AURA_CONTEXT_HARDFAIL_ON_OVERCAP=1`).
 - **Time-based opportunistic**: at every "major milestone" → conversation archive boundary (CORE-04), agent.Run() completion (Slice 0.9 LoopAgent terminal Event), conversation_turn boundary post-LLM-response.
-- **Formula budget**: `effective_budget_tokens = model_context_window × AURA_LOOP_BUDGET_PCT - AURA_OUTPUT_RESERVE_TOKENS - AURA_SYSTEM_PROMPT_TOKENS_BOUND`. Default: `DeepSeek-V4 (1M window) × 0.6 - 8k output - 4k system ≈ 588k effective` per conversation history (finestra **1.048.576** token canonica — vedi §1018/§1167; verificata su OpenRouter `deepseek-v4-flash:exacto`, amendment #28. NB: **131.072 (≈128K) è il max OUTPUT** del modello, non la finestra — probabile origine del refuso "128k"; se si abilita Think-Max reasoning riservare ≥384K).
+- **Formula budget (shipped — fonte autorevole §L4643)**: `hard_cap = model_context_window - max(MaxOutputTokens, AURA_CONTEXT_MAX_OUTPUT_TOKENS) - AURA_CONTEXT_RESERVE_TOKENS`. Default DeepSeek-V4: `1.048.576 - max(32.768, 20.000) - 13.000 ≈ 1.002.808` hard cap (finestra **1.048.576** token canonica — verificata su OpenRouter `deepseek-v4-flash:exacto`, amendment #28; NB **131.072 ≈ 128K è il max OUTPUT** del modello, non la finestra — probabile origine del refuso "128k"). Gli env `AURA_LOOP_BUDGET_PCT`/`AURA_OUTPUT_RESERVE_TOKENS`/`AURA_SYSTEM_PROMPT_TOKENS_BOUND` di questa formula **NON sono shippati** — superseded dai knob `AURA_CONTEXT_RESERVE_TOKENS`/`AURA_CONTEXT_MAX_OUTPUT_TOKENS` (fix doc-verify 2026-06-01).
 
 **Industry pattern references (verified 2026-05-29)**:
 - [Anthropic compaction docs](https://platform.claude.com/docs/en/build-with-claude/compaction): `compact_20260112` server-side, drop pre-summary blocks pattern. **Adopted in spirit (L1+L2 client-side)**, NOT direct API param (multi-provider compat: OpenRouter passa Anthropic-only params provider-specific).
@@ -4709,7 +4709,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS` | `10` | cap | 1.8b | Microcompact L1 threshold. |
 | `AURA_MODEL_CONTEXT_WINDOW` | (auto, per provider) | operative | 1.8b | Override context window calc. |
 | `AURA_MODEL_MAX_OUTPUT_TOKENS` | (auto, per provider) | operative | 1.8b | Override max output calc. |
-| `AURA_CONVERSATION_TURN_CAP_BYTES` | `262144` (256 KiB) | cap | 1.8 | DB cell spillover boundary. |
+| `AURA_CONVERSATION_TURN_CAP_BYTES` | `65536` (64 KiB) | cap | 1.8 | DB cell spillover boundary. (Era erroneamente 262144 in tabella; codice + §L968/L4620 = 65536 — fix doc-verify 2026-06-01.) |
 | `AURA_SANDBOX_URL` | `http://127.0.0.1:18901` | operative | 2a | Sandbox sidecar endpoint. |
 | `AURA_SANDBOX_TIMEOUT_SEC` | `30` (cap `600`) | cap | 2a | Per-execute timeout. |
 | `AURA_SANDBOX_SESSION_TTL_SEC` | `1800` (30 min) | cap | 2b | Session-bound container idle TTL prima del reap. |
