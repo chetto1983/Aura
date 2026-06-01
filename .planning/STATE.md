@@ -25,12 +25,21 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 05 (sandbox-2a-stateless) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute
+Phase: 05 (sandbox-2a-stateless) — HELD OPEN (Gate-3 human-verify pending)
+Plan: 4 of 4 (05-04 artifacts committed; Task 3 sign-off pending)
+Status: Awaiting live Gate-3 numbers — run in WSL (no Docker daemon in the web container). CAP-01 intentionally NOT marked complete.
 Last activity: 2026-06-01
 
-Progress: [██████████] 100%
+Progress: [██████████] artifacts 100% · live-verify 0%
+
+### Resume — WSL Gate-3 sign-off checklist (then `/gsd-verify-work 05`)
+
+1. `make sandbox-up` → `bash scripts/sandbox_escape_bench.sh` — escape-rate < 5%, config-regressions = 0, 4 K8s N/A lines; snapshot Sandbox row dated + measured.
+2. `docker info | grep -i userns` shows `name=userns` (Pitfall 3 — userns-remap LIVE).
+3. `internal/sandbox/docker.go` go-mutesting spot-check ≥ 70% killed (`GOFLAGS=-tags=sandbox_integration`); record in quality-snapshot.
+4. CLI SC#1/2/3: `aura exec python "print(2+2)"`→4; ptrace→EPERM; socket→EPERM.
+5. `make quality-full` — combined coverage ≥ 85% with sandbox folded in.
+6. QEMU-arm64 / real-DGX caveat tracked (D-12).
 
 ## Performance Metrics
 
