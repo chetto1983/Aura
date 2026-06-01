@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 
 	"github.com/chetto1983/aura/internal/db"
@@ -44,6 +45,14 @@ type Config struct {
 	ContextToolEvictAfterTurns int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
 	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — L2.5 picobot hard rolling buffer cap
 	RunDirWarnThresholdBytes   int // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
+
+	// Phase 5 (Slice 2a) sandbox runner knobs. SandboxRuntime selects the
+	// container runtime at the daemon/compose layer (the Go runner is runtime-
+	// agnostic, D-07); the 600s cap on SandboxTimeoutSec is clamped runner-side,
+	// NOT here (envIntDefault absorbs typos to the fallback, not a fatal boot).
+	SandboxURL        string // AURA_SANDBOX_URL — loopback sidecar base URL (D-08)
+	SandboxTimeoutSec int    // AURA_SANDBOX_TIMEOUT_SEC — per-call default; runner clamps <=600
+	SandboxRuntime    string // AURA_SANDBOX_RUNTIME — runsc (x86) / runc (arm64), per-arch default (D-07)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -128,6 +137,10 @@ func loadBase() *Config {
 		ContextToolEvictAfterTurns: envIntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
 		HistoryHardCapTurns:        envIntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
 		RunDirWarnThresholdBytes:   envIntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
+
+		SandboxURL:        envDefault("AURA_SANDBOX_URL", "http://127.0.0.1:18901"),
+		SandboxTimeoutSec: envIntDefault("AURA_SANDBOX_TIMEOUT_SEC", 30), // 600s cap clamped runner-side
+		SandboxRuntime:    envDefault("AURA_SANDBOX_RUNTIME", defaultRuntimeForArch()),
 	}
 }
 
@@ -178,4 +191,15 @@ func defaultRunDir() string {
 		return filepath.Join(cache, "aura")
 	}
 	return filepath.Join(os.TempDir(), "aura")
+}
+
+// defaultRuntimeForArch resolves the per-arch container runtime default (D-07):
+// gVisor runsc is the primary x86 boundary; arm64 falls back to runc + the
+// seccomp floor until gVisor-arm64 is GA. The Go runner never drives the runtime
+// (it is a pure HTTP client) — this only seeds the compose/daemon selection.
+func defaultRuntimeForArch() string {
+	if runtime.GOARCH == "arm64" {
+		return "runc"
+	}
+	return "runsc"
 }

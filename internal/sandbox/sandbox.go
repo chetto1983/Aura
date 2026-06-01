@@ -1,36 +1,30 @@
-// Package sandbox owns isolated execution of Python and shell snippets.
-// First version is a stub: the real implementation lands in a follow-up
-// slice and wraps a container-isolated sidecar (seccomp + ulimit + net-deny).
+// Package sandbox owns isolated execution of Python and shell snippets. The real
+// runner (DockerRunner) is a thin HTTP client against a container-isolated sidecar
+// (seccomp + ulimit + net-deny, gVisor-primary on x86) reached over AURA_SANDBOX_URL.
 package sandbox
 
 import (
 	"context"
-	"fmt"
 )
 
-// Runner is what the `execute` tool delegates against. Real implementation
-// lives in the sandbox slice; this stub keeps the agent loop compilable.
+// Runner is what the `execute` tool delegates against. The per-call timeoutSec
+// rides every call (D-16/D-19): the wire body carries {"code","timeout_sec"} and
+// the CLI/tool expose an optional timeout — so the value must reach the runner.
+// A timeoutSec <= 0 means "use the config default"; the runner then clamps to
+// <=600 (the cap is runner-side, not in config).
 type Runner interface {
-	RunPython(ctx context.Context, code string) (Result, error)
-	RunShell(ctx context.Context, cmd string) (Result, error)
+	RunPython(ctx context.Context, code string, timeoutSec int) (Result, error)
+	RunShell(ctx context.Context, cmd string, timeoutSec int) (Result, error)
 }
 
+// Result is the D-16 wire response decoded 1:1. The four original fields
+// (Stdout/Stderr/ExitCode/ElapsedMs) keep the agent-loop binding intact; Truncated
+// + LimitHit are the sidecar's server-side signals the lean preview (D-17) reads.
 type Result struct {
 	Stdout    string
 	Stderr    string
 	ExitCode  int
 	ElapsedMs int64
-}
-
-// Stub returns "not yet implemented" for any call. Wire it into the registry
-// only for the agent-loop smoke test; replace with the real runner in the
-// sandbox slice.
-type Stub struct{}
-
-func (Stub) RunPython(_ context.Context, _ string) (Result, error) {
-	return Result{}, fmt.Errorf("sandbox.Runner not yet implemented — see sandbox slice")
-}
-
-func (Stub) RunShell(_ context.Context, _ string) (Result, error) {
-	return Result{}, fmt.Errorf("sandbox.Runner not yet implemented — see sandbox slice")
+	Truncated bool   // a stream was truncated to 1 MiB server-side
+	LimitHit  string // "timeout" | "oom" | "pids" | "" when no limit fired
 }
