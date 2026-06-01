@@ -76,17 +76,19 @@ if resp.StatusCode/100 != 2 { /* ErrSandboxProtocol */ }
 where `timeout = min(timeout_sec, 600s)` (cap enforced runner-side per
 `config.go` comment line 349). NOT a `Client.Timeout`.
 
-**Interface to satisfy** (`sandbox.go` lines 13-23) — `DockerRunner` implements:
+**Interface to satisfy** (`sandbox.go` lines 13-23) — `DockerRunner` implements the
+**extended 3-arg signatures** (D-16 wire contract + D-19 CLI require the per-call
+`timeoutSec` on the wire — see 05-03 Task 1 for the locked decision):
 ```go
-RunPython(ctx context.Context, code string) (Result, error)
-RunShell(ctx context.Context, cmd string) (Result, error)
+RunPython(ctx context.Context, code string, timeoutSec int) (Result, error)
+RunShell(ctx context.Context, cmd string, timeoutSec int) (Result, error)
 ```
 Add `var _ Runner = (*DockerRunner)(nil)` (mirrors client.go line 28 `var _ llm.Client = (*Client)(nil)`).
 
 **Wire→Result mapping (D-16):** decode `{stdout,stderr,exit_code,elapsed_ms,truncated,limit_hit}`
-into `Result{Stdout,Stderr,ExitCode,ElapsedMs}` 1:1 (existing struct, sandbox.go lines 18-23);
-carry `truncated`/`limit_hit` through to the preview formatter (these have no `Result` field —
-return them alongside, or extend `Result`; planner's call). A non-zero `exit_code` is a normal
+into the **extended** `Result{Stdout,Stderr,ExitCode,ElapsedMs,Truncated,LimitHit}` 1:1 (Result
+gains `Truncated bool` + `LimitHit string` per 05-03 Task 1; the four original fields stay intact);
+the preview formatter reads `Truncated`/`LimitHit` off the struct. A non-zero `exit_code` is a normal
 `Result`, NEVER a Go error (D-18).
 
 **Auto-start (D-09), runner-private helper:** on transport failure, shell `exec.Command("docker","compose","up","-d","aura-sandbox")` ONCE, health-check, retry the POST once; still failing → `ErrSandboxUnreachable`. Gate on `docker` being on PATH (RESEARCH OQ3 — never mount the socket).
@@ -121,9 +123,12 @@ form is sufficient; wrap with `fmt.Errorf("...: %w", ErrSandboxUnreachable)` to 
 ### `internal/sandbox/sandbox.go` (model/interface, MODIFY)
 
 **Analog:** self. The `Runner` interface (lines 13-16) and `Result` struct (lines 18-23) are
-ALREADY defined and forward-stable — DO NOT change their signatures (the `execute` tool and
-the agent loop bind to them). The ONLY change is **removing `Stub`** (lines 25-36) once the real
-runner is wired. Before deleting, grep `sandbox.Stub` usages (RESEARCH Runtime State Inventory:
+defined here. **EXTEND the two signatures to the 3-arg form** `RunPython(ctx, code string,
+timeoutSec int)` / `RunShell(ctx, cmd string, timeoutSec int)` and add `Truncated bool` +
+`LimitHit string` to `Result` (keep the four original fields) — D-16/D-19 require the per-call
+timeout end-to-end; the interface is internal and already being changed (Stub→DockerRunner), so
+there is no external consumer to break (locked decision, 05-03 Task 1). The other change is
+**removing `Stub`** (lines 25-36) once the real runner is wired. Before deleting, grep `sandbox.Stub` usages (RESEARCH Runtime State Inventory:
 the agent-loop smoke test referenced it) — currently `grep` shows zero live `.go` usages outside
 sandbox.go itself, so removal is clean, but re-verify at plan time. Update the package doc-comment
 (lines 1-3) which still says "First version is a stub".
@@ -165,7 +170,7 @@ from ask_user.go lines 122-126), clamp `timeout_sec` ≤600, reject inert `sessi
 "Phase 8 / Slice 2b" message (D-19), delegate to `e.Runner.RunPython`/`RunShell`, then build the
 **lean preview (D-17)** and route the WHOLE string through `NewResult`:
 ```go
-res, err := e.Runner.RunPython(ctx, a.Code)   // or RunShell
+res, err := e.Runner.RunPython(ctx, a.Code, timeoutSec)   // or RunShell(ctx, a.Code, timeoutSec); timeoutSec = clamped a.TimeoutSec
 if err != nil { return ToolResult{}, err }     // typed sandbox err → loop (D-18)
 preview := formatLean(res)                      // D-17: stdout verbatim; stderr: only if non-empty;
                                                 //       exit_code: N only if non-zero; [limit: …] only if hit;
