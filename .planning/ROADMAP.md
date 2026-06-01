@@ -153,7 +153,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Operator runs `aura exec python "import ctypes; ctypes.CDLL(None).ptrace(0,0,0,0)"` and observes EPERM (ptrace blocked by positive allowlist); same for `open('/proc/self/root/etc/shadow').read()` returning ENOENT/EPERM
   3. Operator runs `aura exec python "__import__('socket').socket().connect(('1.1.1.1',80))"` and observes EPERM (socket syscall absent from allowlist); even `unshare(CLONE_NEWNET)` returns EPERM (allowlist excludes unshare)
   4. Operator runs `scripts/sandbox_escape_bench.sh` (SandboxEscapeBench port) and observes escape rate < 5% recorded in `docs/aura-quality-snapshot.md`
-  5. Operator inspects compose service `aura-sandbox` and observes `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `pids_limit: 64`, `userns-remap` (daemon.json) all set; **gVisor `runsc` is default-on x86 (D-05 re-decision) and the escape-bench runs against the gVisor-primary x86 profile****Plans:** 4 plans (4 waves — PRD-amendment gate then sidecar → Go runner → bench/CI)
+  5. Operator inspects compose service `aura-sandbox` and observes `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `pids_limit: 64`, `userns-remap` (daemon.json) all set; **gVisor `runsc` is default-on x86 (D-05/D-06/D-07 re-decision, amendment #36 — gVisor is the PRIMARY x86 boundary, not a >5%-only escalation seam; container+seccomp+userns-remap is the defense-in-depth floor inside gVisor on x86 and the standalone fallback boundary on arm64). The SandboxEscapeBench escape-rate is measured against the gVisor-primary x86 production profile, with the container+seccomp floor bench-validated as the arm64 fallback.**
+
+**Plans:** 4 plans (4 waves — PRD-amendment gate then sidecar → Go runner → bench/CI)
 
 **Wave 1**
 
