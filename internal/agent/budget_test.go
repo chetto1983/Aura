@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -285,6 +286,51 @@ func TestNewBudgetFromEnv_FailFast_MalformedMaxSteps(t *testing.T) {
 	want := errMalformed(envMaxSteps, "abc")
 	if err.Error() != want.Error() {
 		t.Fatalf("fail-fast error string:\n want %q\n got  %q", want.Error(), err.Error())
+	}
+}
+
+func TestNewBudgetFromEnv_FailFast_MaxStepsOutOfInt32Range(t *testing.T) {
+	if strconv.IntSize <= 32 {
+		t.Skip("int cannot exceed int32 on this platform")
+	}
+	for _, v := range []string{"2147483648", "-2147483649"} {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv(envMaxSteps, v)
+			t.Setenv(envMaxWallclockSec, "")
+			t.Setenv(envDedupWindow, "")
+			t.Setenv(envBranchSoftFraction, "")
+			t.Setenv(envNodeTimeoutSec, "")
+			t.Setenv(envDedupResultCap, "")
+
+			_, err := NewBudgetFromEnv()
+			if err == nil {
+				t.Fatalf("%s=%s must fail-fast as out of int32 range", envMaxSteps, v)
+			}
+			if !strings.Contains(err.Error(), "must fit int32") {
+				t.Fatalf("range error should require int32, got %q", err.Error())
+			}
+		})
+	}
+}
+
+func TestNewBudget_Options_MaxStepsRejectsInt32Overflow(t *testing.T) {
+	if strconv.IntSize <= 32 {
+		t.Skip("int cannot exceed int32 on this platform")
+	}
+	tooLarge64 := int64(2147483647) + 1
+	tooLarge := int(tooLarge64)
+	t.Setenv(envMaxWallclockSec, "")
+	t.Setenv(envDedupWindow, "")
+	t.Setenv(envBranchSoftFraction, "")
+	t.Setenv(envNodeTimeoutSec, "")
+	t.Setenv(envDedupResultCap, "")
+
+	_, err := NewBudget(BudgetOptions{MaxSteps: &tooLarge})
+	if err == nil {
+		t.Fatal("MaxSteps override above int32 range must fail-fast")
+	}
+	if !strings.Contains(err.Error(), "must fit int32") {
+		t.Fatalf("range error should require int32, got %q", err.Error())
 	}
 }
 

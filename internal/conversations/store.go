@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
 
@@ -361,15 +360,9 @@ type SearchResult struct {
 // SQL is the contract Telegram /search (Phase 13) reuses byte-for-byte; this
 // wrapper only projects pgtype at the boundary. The SQL is never rewritten here.
 func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit int) ([]SearchResult, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	if limit > math.MaxInt32 {
-		limit = math.MaxInt32
-	}
 	rows, err := s.q.SearchConversationTurns(ctx, sqlc.SearchConversationTurnsParams{
 		Similarity: query,
-		Limit:      int32(limit),
+		Limit:      normalizeSearchLimit(limit),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("search conversation turns: %w", err)
@@ -384,6 +377,16 @@ func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit
 		})
 	}
 	return out, nil
+}
+
+func normalizeSearchLimit(limit int) int32 {
+	if limit <= 0 {
+		return 20
+	}
+	if limit > 2147483647 {
+		return 2147483647
+	}
+	return int32(limit)
 }
 
 // Delete removes the conversation row (conversation_turns + paused_states cascade

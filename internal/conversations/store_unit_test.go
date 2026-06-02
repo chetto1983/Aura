@@ -5,6 +5,7 @@ package conversations
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -164,6 +165,33 @@ func TestNewStore_DefaultCap(t *testing.T) {
 	s := New(nil, Config{RunDir: "/x", TurnCapBytes: 0})
 	if s.turnCapBytes != 65536 {
 		t.Errorf("zero cap must fall back to 65536, got %d", s.turnCapBytes)
+	}
+}
+
+func TestNormalizeSearchLimitBoundsInt32(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		in   int
+		want int32
+	}{
+		{name: "default zero", in: 0, want: 20},
+		{name: "default negative", in: -1, want: 20},
+		{name: "preserve positive", in: 7, want: 7},
+	}
+	if strconv.IntSize > 32 {
+		tooLarge64 := int64(2147483647) + 1
+		cases = append(cases, struct {
+			name string
+			in   int
+			want int32
+		}{name: "clamp int32 overflow", in: int(tooLarge64), want: 2147483647})
+	}
+	for _, tc := range cases {
+		got := normalizeSearchLimit(tc.in)
+		if got != tc.want {
+			t.Errorf("%s: normalizeSearchLimit(%d) = %d, want %d", tc.name, tc.in, got, tc.want)
+		}
 	}
 }
 

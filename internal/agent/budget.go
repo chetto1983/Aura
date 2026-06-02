@@ -112,6 +112,10 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 	if err != nil {
 		return nil, err
 	}
+	maxSteps32, err := int32Knob(envMaxSteps, maxSteps)
+	if err != nil {
+		return nil, err
+	}
 	wallclockSec, err := resolveInt(opts.MaxWallclockSec, envMaxWallclockSec, defaultBudgetWallclockSec)
 	if err != nil {
 		return nil, err
@@ -152,7 +156,7 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 	}
 
 	var steps atomic.Int32
-	steps.Store(int32(maxSteps))
+	steps.Store(maxSteps32)
 
 	b := &Budget{
 		steps:             &steps,
@@ -175,6 +179,14 @@ func resolveInt(override *int, key string, fallback int) (int, error) {
 		return *override, nil
 	}
 	return envIntFailFast(key, fallback)
+}
+
+// int32Knob validates an int knob before it is stored in an int32-backed field.
+func int32Knob(key string, n int) (int32, error) {
+	if n < -2147483648 || n > 2147483647 {
+		return 0, fmt.Errorf("%s=%q: must fit int32", key, strconv.Itoa(n))
+	}
+	return int32(n), nil
 }
 
 // envIntFailFast reads key as an int, returning fallback when unset/empty and a
