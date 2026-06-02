@@ -97,16 +97,16 @@ func TestCacheMetrics_WindowAndAggregate(t *testing.T) {
 	convID := newConversationForMetrics(t, pool)
 	ctx := context.Background()
 
-	now := time.Now().UTC().Truncate(time.Microsecond)
-	cutoff := now.Add(-1 * time.Hour)
+	base := time.Now().UTC().Add(24 * time.Hour).Truncate(time.Microsecond)
+	cutoff := base.Add(-1 * time.Hour)
 
 	// Two rows OUTSIDE the window (older than cutoff), three INSIDE — inserted out of
 	// ts order so the ASC ordering assertion is meaningful.
-	insertMetricAt(t, pool, convID, 1, now.Add(-3*time.Hour), 1000, 0, 0.0100)   // out
-	insertMetricAt(t, pool, convID, 2, now.Add(-2*time.Hour), 2000, 500, 0.0200) // out
-	insertMetricAt(t, pool, convID, 5, now.Add(-5*time.Minute), 5000, 4000, 0.0500)
-	insertMetricAt(t, pool, convID, 3, now.Add(-45*time.Minute), 3000, 1500, 0.0300)
-	insertMetricAt(t, pool, convID, 4, now.Add(-30*time.Minute), 4000, 2000, 0.0400)
+	insertMetricAt(t, pool, convID, 1, cutoff.Add(-2*time.Hour), 1000, 0, 0.0100)   // out
+	insertMetricAt(t, pool, convID, 2, cutoff.Add(-1*time.Hour), 2000, 500, 0.0200) // out
+	insertMetricAt(t, pool, convID, 5, base.Add(-5*time.Minute), 5000, 4000, 0.0500)
+	insertMetricAt(t, pool, convID, 3, cutoff.Add(15*time.Minute), 3000, 1500, 0.0300)
+	insertMetricAt(t, pool, convID, 4, cutoff.Add(30*time.Minute), 4000, 2000, 0.0400)
 
 	got, err := store.ListSince(ctx, cutoff)
 	if err != nil {
@@ -122,7 +122,7 @@ func TestCacheMetrics_WindowAndAggregate(t *testing.T) {
 	if len(window) != 3 {
 		t.Fatalf("ListSince: want 3 in-window rows for conv, got %d", len(window))
 	}
-	// ASC by ts: seq 3 (-45m), 4 (-30m), 5 (-5m).
+	// ASC by ts: seq 3 (cutoff+15m), 4 (cutoff+30m), 5 (base-5m).
 	wantSeq := []int{3, 4, 5}
 	for i, m := range window {
 		if m.Seq != wantSeq[i] {
@@ -140,27 +140,26 @@ func TestCacheMetrics_WindowAndAggregate(t *testing.T) {
 		t.Errorf("ListSince row 0 cost: want 0.0300, got %v", window[0].CostUSD)
 	}
 
-	// Aggregate over the SAME window. Because the DB may be shared, assert the
-	// per-conversation sums by re-deriving from the windowed rows we just read AND by
-	// confirming AggregateSince >= those sums (it includes any concurrent rows).
+	// Aggregate over the SAME future window. Ordinary now()-timestamped rows are out
+	// of range, so the SQL time filter can be asserted exactly.
 	agg, err := store.AggregateSince(ctx, cutoff)
 	if err != nil {
 		t.Fatalf("AggregateSince: %v", err)
 	}
 	const wantPrompt = 3000 + 4000 + 5000
 	const wantCached = 1500 + 2000 + 4000
-	if agg.TotalPromptTokens < wantPrompt {
-		t.Errorf("AggregateSince prompt: want >= %d (this conv's window), got %d", wantPrompt, agg.TotalPromptTokens)
+	if agg.TotalPromptTokens != wantPrompt {
+		t.Errorf("AggregateSince prompt: want exactly %d, got %d", wantPrompt, agg.TotalPromptTokens)
 	}
-	if agg.TotalCachedTokens < wantCached {
-		t.Errorf("AggregateSince cached: want >= %d, got %d", wantCached, agg.TotalCachedTokens)
+	if agg.TotalCachedTokens != wantCached {
+		t.Errorf("AggregateSince cached: want exactly %d, got %d", wantCached, agg.TotalCachedTokens)
 	}
-	if agg.Turns < 3 {
-		t.Errorf("AggregateSince turns: want >= 3, got %d", agg.Turns)
+	if agg.Turns != 3 {
+		t.Errorf("AggregateSince turns: want exactly 3, got %d", agg.Turns)
 	}
 	wantCost := 0.0300 + 0.0400 + 0.0500
-	if agg.TotalCostUSD < wantCost-1e-9 {
-		t.Errorf("AggregateSince cost: want >= %.4f, got %v", wantCost, agg.TotalCostUSD)
+	if agg.TotalCostUSD < wantCost-1e-9 || agg.TotalCostUSD > wantCost+1e-9 {
+		t.Errorf("AggregateSince cost: want exactly %.4f, got %v", wantCost, agg.TotalCostUSD)
 	}
 }
 
