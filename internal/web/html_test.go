@@ -53,6 +53,57 @@ func TestExtractMarkdown_BodyAndLinks(t *testing.T) {
 	}
 }
 
+// citeHTML mimics a Wikipedia-style article: a "From Wikipedia" banner, body prose
+// with inline <sup> citation anchors (which convert to [\[n\]](#cite_note-n)), a
+// fragment-only intra-page anchor, and a References <ol> tail — the exact noise the
+// Gate-3 cleanup strips.
+const citeHTML = `<!DOCTYPE html><html><head><title>Knowledge Graph</title></head>
+<body>
+<article>
+<p>From Wikipedia, the free encyclopedia</p>
+<h1>Knowledge Graph</h1>
+<p>A knowledge graph is a structured representation of facts about real-world
+entities, relationships, and semantic descriptions used widely in search and AI.
+This paragraph is intentionally long enough that the readability heuristic keeps it
+as the main article content rather than discarding it as boilerplate text.<sup><a href="#cite_note-1">[1]</a></sup>
+It links to an <a href="https://other.example/abs">external source</a> and to a
+<a href="#section-history">jump anchor</a> within the page.<sup><a href="#cite_note-2">[2]</a></sup></p>
+<h2>References</h2>
+<ol>
+<li id="cite_note-1">REFERENCE_LIST_MARKER first citation, journal of graphs.</li>
+<li id="cite_note-2">REFERENCE_LIST_MARKER second citation, proceedings of nowhere.</li>
+</ol>
+</article>
+</body></html>`
+
+func TestExtractMarkdown_StripsCitationNoise(t *testing.T) {
+	pageURL, _ := url.Parse("https://en.wikipedia.org/wiki/Knowledge_graph")
+	_, md, links, _, err := ExtractMarkdown([]byte(citeHTML), pageURL)
+	if err != nil {
+		t.Fatalf("ExtractMarkdown: %v", err)
+	}
+	if !strings.Contains(md, "structured representation of facts") {
+		t.Errorf("article prose missing from cleaned markdown: %q", md)
+	}
+	if strings.Contains(md, "#cite_note") || strings.Contains(md, "#cite_ref") {
+		t.Errorf("citation anchors not stripped: %q", md)
+	}
+	if strings.Contains(md, "REFERENCE_LIST_MARKER") {
+		t.Errorf("references tail not truncated: %q", md)
+	}
+	if strings.Contains(md, "From Wikipedia") {
+		t.Errorf("Wikipedia boilerplate line not stripped: %q", md)
+	}
+	for _, l := range links {
+		if strings.Contains(l, "#") {
+			t.Errorf("fragment-only link not filtered: %q (all: %v)", l, links)
+		}
+	}
+	if !containsStr(links, "https://other.example/abs") {
+		t.Errorf("absolute link missing after cleanup: %v", links)
+	}
+}
+
 func TestExtractMarkdown_LowContent(t *testing.T) {
 	pageURL, _ := url.Parse("https://src.example/thin")
 	_, md, _, warning, err := ExtractMarkdown([]byte(`<html><body><p>tiny</p></body></html>`), pageURL)
