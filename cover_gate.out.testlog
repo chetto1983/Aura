@@ -1,18 +1,20 @@
 ok  	github.com/chetto1983/aura/internal/agent	(cached)	coverage: 95.3% of statements
 ok  	github.com/chetto1983/aura/internal/agent/agenttest	(cached)	coverage: 40.6% of statements
-ok  	github.com/chetto1983/aura/internal/agent/tools	(cached)	coverage: 96.3% of statements
+ok  	github.com/chetto1983/aura/internal/agent/prompt	(cached)	coverage: 93.8% of statements
+ok  	github.com/chetto1983/aura/internal/agent/tools	(cached)	coverage: 96.0% of statements
 ok  	github.com/chetto1983/aura/internal/agent/workflow	(cached)	coverage: 92.2% of statements
-ok  	github.com/chetto1983/aura/internal/askuser	0.451s	coverage: 77.0% of statements
+ok  	github.com/chetto1983/aura/internal/askuser	(cached)	coverage: 77.0% of statements
+ok  	github.com/chetto1983/aura/internal/cachemetrics	(cached)	coverage: 66.2% of statements
 ok  	github.com/chetto1983/aura/internal/canonicaljson	(cached)	coverage: 85.2% of statements
-ok  	github.com/chetto1983/aura/internal/config	0.008s	coverage: 97.6% of statements
-ok  	github.com/chetto1983/aura/internal/conversations	0.962s	coverage: 89.0% of statements
-ok  	github.com/chetto1983/aura/internal/db	0.760s	coverage: 82.9% of statements
+ok  	github.com/chetto1983/aura/internal/config	(cached)	coverage: 95.6% of statements
+ok  	github.com/chetto1983/aura/internal/conversations	(cached)	coverage: 87.2% of statements
+ok  	github.com/chetto1983/aura/internal/db	(cached)	coverage: 82.9% of statements
 	github.com/chetto1983/aura/internal/db/sqlc		coverage: 0.0% of statements
 ?   	github.com/chetto1983/aura/internal/eval	[no test files]
-ok  	github.com/chetto1983/aura/internal/identity	0.409s	coverage: 98.0% of statements
-ok  	github.com/chetto1983/aura/internal/knowledge	4.082s	coverage: 94.1% of statements
-ok  	github.com/chetto1983/aura/internal/llm	(cached)	coverage: 94.1% of statements
+ok  	github.com/chetto1983/aura/internal/identity	(cached)	coverage: 98.0% of statements
+ok  	github.com/chetto1983/aura/internal/knowledge	(cached)	coverage: 94.1% of statements
+ok  	github.com/chetto1983/aura/internal/llm	0.010s	coverage: 94.3% of statements
 ok  	github.com/chetto1983/aura/internal/llm/openai_compat	(cached)	coverage: 97.6% of statements
-ok  	github.com/chetto1983/aura/internal/runner	(cached)	coverage: 86.6% of statements
-	github.com/chetto1983/aura/internal/sandbox		coverage: 0.0% of statements
+ok  	github.com/chetto1983/aura/internal/runner	0.019s	coverage: 87.3% of statements
+ok  	github.com/chetto1983/aura/internal/sandbox	(cached)	coverage: 64.2% of statements
 	github.com/chetto1983/aura/internal/swarm		coverage: 0.0% of statements

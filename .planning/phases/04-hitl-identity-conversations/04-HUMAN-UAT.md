@@ -65,13 +65,17 @@ None blocking. The one-time live UAT found a real bug (auto-title worker never f
 drained), fixed in commit 12506a8e with a regression test (cmd/aura/chat_render_drain_test.go).
 
 Findings from converting the UAT to autonomous live tests:
-- Cumulative `total_cost_usd` is a faithful pass-through of OpenRouter's wire-reported per-turn cost
-  (`usage.Cost`), which the provider includes on most turns but not always. When the provider omits
-  cost for every turn, the aggregate is legitimately $0 — NOT an Aura defect (the price-table fallback
-  in `internal/llm/prices.go` is a display path the Runner's persisted aggregate does not use). SC#3
-  therefore hard-gates the aggregation-correctness invariant (conversation aggregate == SUM of the
-  per-turn `cache_metrics` rows) and cumulative TOKEN usage > 0 (always reliable), and asserts cost > 0
-  only when the provider actually reported it.
+- Cumulative `total_cost_usd` precedence (RESOLVED, commit 98ab1e7b): originally the Runner persisted
+  ONLY OpenRouter's wire-reported per-turn cost (`usage.Cost`) and stored $0 when the provider omitted
+  it — while the displayed footer used the `internal/llm/prices.go` price-table fallback, so the
+  persisted aggregate and the footer could disagree (contradicting D-23 "never lie / NEVER $0"). Fixed:
+  extracted `llm.CostUSDValue` (the numeric core shared by the footer's `CostUSD`) and wired it into
+  `runner_persist.go`, so persistence now prefers wire cost → falls back to the seeded price table →
+  stays 0 only for a genuinely unknown model (the honest numeric "n/a"). Regressions:
+  `llm.TestCostUSDValue` + `runner.TestTurn_TerminalAnswerCostFromPriceTable` (priced model, nil wire
+  cost → persists the table estimate, not $0). SC#3 still hard-gates the aggregation-correctness
+  invariant (conversation aggregate == SUM of the per-turn `cache_metrics` rows) + cumulative TOKEN
+  usage > 0; cost is now table-backed for any seeded model even when the provider omits it.
 - The live model occasionally re-asks (emits another `ask_user`) on resume instead of replying — a
   genuine fresh LLM round, the model's prerogative. SC#1 bounds a resolve-and-redrive loop so this is
   handled deterministically without weakening the "genuine post-resume reply" assertion.
