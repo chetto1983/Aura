@@ -616,21 +616,25 @@ func (p *DNSPin) Pinned(conv, host string) (netip.Addr, bool) {
 | A5 | A pure-Go injectable resolver satisfies the SC#4 DNS-rebinding test (vs the PRD/D-43 python `dnslib` fixture) | Validation Architecture | If the planner/reviewer insists on the literal `dnslib` fixture for the integration tier, add it as a `web_integration` belt-and-suspenders; the unit-tier fake still proves pin reuse. Confirm tier ownership. |
 | A6 | Per-host concurrency cap can be a `map[host]chan struct{}` (no new dep) | Standard Stack supporting | `golang.org/x/sync/semaphore` is available if preferred; either is fine (Claude's Discretion per D-36). |
 
-## Open Questions
+## Open Questions (RESOLVED)
 1. **`AURA_WEB_FETCH_ALLOW_LOOPBACK` / `AURA_WEB_FETCH_ALLOW_HOSTS` — keep or drop?**
    - What we know: PRD §Slice 5 (lines 1867, 4757-4758) defines both env overrides; CONTEXT D-30 says "No allowlist is added in Phase 7."
    - What's unclear: Whether the loopback/host override envs count as the "allowlist" D-30 defers, or are a separate dev-ergonomics escape hatch.
    - Recommendation: Treat D-30 as authoritative for Phase 7 → do NOT implement the allowlist override envs (fail-closed, no escape hatch per D-28). Flag for the planner to confirm; the PRD is older than CONTEXT, and CONTEXT decisions win.
+   - **(RESOLVED — planner):** Do NOT implement `AURA_WEB_FETCH_ALLOW_LOOPBACK`/`AURA_WEB_FETCH_ALLOW_HOSTS` in Phase 7 — CONTEXT D-30 wins over the older PRD. Enforced by 07-01 Task 1 + Task 3 acceptance criteria ("no `AURA_WEB_FETCH_ALLOW_*` string appears anywhere in the repo / config.go / .env.example"). Fail-closed, no escape hatch (D-28/D-30).
 
 2. **SC#4 test tier — pure-Go fake resolver (unit) vs python `dnslib` (integration)?**
    - What we know: D-43 names a "Python `dnslib` fixture"; an injectable Go resolver gives a deterministic in-process unit test.
    - Recommendation: Implement the injectable resolver as the primary deterministic test; add the `dnslib` fixture only if the reviewer requires the literal roadmap wording. Planner decides per "test layout is Claude's Discretion."
+   - **(RESOLVED — planner):** The pure-Go injectable resolver is the PRIMARY / deterministic SC#4 proof at the unit tier (07-02 Task 2, `TestDNSPin_TTL` + the injectable-resolver pin-reuse assertion). `internal/web/dnspin_integration_test.go` (07-04 Task 2, `//go:build web_integration`) is the belt-and-suspenders live tier against the running fixture. No literal python `dnslib` fixture is required.
 
 3. **`images` category in Phase 7 (D-11)?**
    - What we know: D-11 defers `images` unless planning confirms shape + tests; image results carry `img_src`/`thumbnail`.
    - Recommendation: Ship `general` + `news` only in Phase 7; defer `images` (extra result shape + thumbnail handling without clear consumer). Low cost to add later.
+   - **(RESOLVED — planner):** `images` is OUT for Phase 7 (D-11) — ship `general` + `news` only. The category enum in 07-03 Task 1 (`auraCategoryToSearXNG`, `TestSearch_CategoryEnum`) accepts only `general`/`news`; unknown categories are an inline error. Recorded in the 07-03 SUMMARY.
 
 4. **SearXNG container internal port (8080 vs 8888)?** — confirm against the pinned image when authoring compose (A3). The dev server default is 8888; the container image entrypoint serves 8080 (D-02 assumes 8080).
+   - **(RESOLVED — planner):** Assume 8080 per D-02 (`SEARXNG_URL=http://searxng:8080/search`). 07-01 Task 2 verifies the entrypoint listens on 8080 inside the pinned image at the human-verify checkpoint before pinning the tag; if the pinned image diverges, the checkpoint corrects the port and the SEARXNG_URL default before approval.
 
 ## Environment Availability
 | Dependency | Required By | Available | Version | Fallback |

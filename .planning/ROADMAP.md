@@ -209,10 +209,20 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Operator runs the DNS-rebinding test (Python `dnslib` fixture returns 1.2.3.4 then 127.0.0.1) and observes the second `web_fetch` call to the same hostname reusing the pinned IP from the first call within `AURA_WEB_DNS_PIN_TTL_SEC=60`
 
 **Plans:** 4 plans (4 waves)
+**Wave 1**
 
 - [ ] 07-01-PLAN.md — Infra + config: SearXNG Compose service (no host port) + read-only settings.yml (JSON) + go-readability/v2 + html-to-markdown/v2 deps + AURA_WEB_*/SEARXNG_URL root config + goleak skeleton (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 07-02-PLAN.md — SSRF engine: netip IP classifier (ssrf.go critical) + per-conv DNS pin + pinned-IP transport + CheckRedirect + non-leaky error taxonomy (SC#3/SC#4, wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 07-03-PLAN.md — Clients: SearXNG search (query build/parse/domain filter/unavailable) + fetch state machine (scheme/redirect-revalidate/MIME/size gate) + readability→markdown + cache (SC#1-parse/SC#2, wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 07-04-PLAN.md — Adapters + surface: Deferred web_search/web_fetch tools + NewResult spillover + aura web CLI (doctor/tool verbs) + ssrf_smoke + live web_integration tier + Gate-3 acceptance (SC#1/2/3/4 live, wave 4)
 
 ### Phase 8: Sandbox 2b Session-Bound
