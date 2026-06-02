@@ -27,6 +27,17 @@ var citationAnchorRe = regexp.MustCompile(`\[(?:[^\[\]\\]|\\.)*\]\(#cite_(?:note
 // EOF is the citations bulk and is dropped (the user's "references tail" intent).
 var referencesHeadingRe = regexp.MustCompile(`(?im)^#{1,6}\s+(?:References|Notes|Citations|Bibliography)\s*$`)
 
+// zeroPaddedReflistRe matches the first ZERO-PADDED ordered-list item marker
+// (`01. `, `02. `, …) at line start. This is the structural signature of a
+// Wikipedia reference list whose "References" heading readability dropped — the
+// CSS list-counter renders zero-padded numbers, which body prose lists never use
+// (those are `1. `, `2. `). Truncating here removes the headingless citations tail.
+var zeroPaddedReflistRe = regexp.MustCompile(`(?m)^0\d+\.\s`)
+
+// converterCommentRe matches the `<!--THE END-->` HTML-comment artifact the
+// markdown converter emits around list boundaries; it is noise, never content.
+var converterCommentRe = regexp.MustCompile(`(?m)^\s*<!--THE END-->\s*$`)
+
 // wikiBoilerplateRe matches the leading "From Wikipedia, the free encyclopedia"
 // banner line readability leaves at the top of a wiki article.
 var wikiBoilerplateRe = regexp.MustCompile(`(?im)^\s*From Wikipedia, the free encyclopedia\s*$`)
@@ -71,10 +82,24 @@ func ExtractMarkdown(body []byte, pageURL *url.URL) (title, markdown string, lin
 func cleanMarkdown(md string) string {
 	md = wikiBoilerplateRe.ReplaceAllString(md, "")
 	md = citationAnchorRe.ReplaceAllString(md, "")
-	if loc := referencesHeadingRe.FindStringIndex(md); loc != nil {
-		md = md[:loc[0]]
-	}
+	md = md[:referencesTailStart(md)]
+	md = converterCommentRe.ReplaceAllString(md, "")
 	return strings.TrimSpace(md)
+}
+
+// referencesTailStart returns the offset at which the references/citations tail
+// begins — the EARLIEST of the first References/Notes/Citations/Bibliography
+// heading and the first zero-padded reflist marker — or len(md) when neither is
+// present (nothing to truncate).
+func referencesTailStart(md string) int {
+	cut := len(md)
+	if loc := referencesHeadingRe.FindStringIndex(md); loc != nil && loc[0] < cut {
+		cut = loc[0]
+	}
+	if loc := zeroPaddedReflistRe.FindStringIndex(md); loc != nil && loc[0] < cut {
+		cut = loc[0]
+	}
+	return cut
 }
 
 // convertNode renders the readability node tree to markdown. ConvertNode consumes

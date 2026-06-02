@@ -104,6 +104,32 @@ func TestExtractMarkdown_StripsCitationNoise(t *testing.T) {
 	}
 }
 
+// TestCleanMarkdown_HeadinglessReflist covers the real-world Wikipedia case the
+// live SC#2 fetch exposed: readability drops the "References" heading but keeps the
+// headingless reflist, which html-to-markdown renders as a zero-padded ordered list
+// (`01. `, `02. `) preceded by a `<!--THE END-->` converter artifact. cleanMarkdown
+// truncates at the first zero-padded marker (body prose lists use `1. `, not `01. `).
+func TestCleanMarkdown_HeadinglessReflist(t *testing.T) {
+	md := "Real article prose about knowledge graphs that is the actual content.\n\n" +
+		"1. A genuine numbered step in the body that must be KEPT.\n\n" +
+		"<!--THE END-->\n\n" +
+		"01.  [\"First citation\"](https://ref.example/1). REFLIST_MARKER.\n" +
+		"02.  [\"Second citation\"](https://ref.example/2). REFLIST_MARKER.\n"
+	got := cleanMarkdown(md)
+	if !strings.Contains(got, "actual content") {
+		t.Errorf("body prose dropped: %q", got)
+	}
+	if !strings.Contains(got, "genuine numbered step") {
+		t.Errorf("body single-digit list item wrongly dropped: %q", got)
+	}
+	if strings.Contains(got, "REFLIST_MARKER") {
+		t.Errorf("zero-padded reflist tail not truncated: %q", got)
+	}
+	if strings.Contains(got, "THE END") {
+		t.Errorf("converter comment artifact not stripped: %q", got)
+	}
+}
+
 func TestExtractMarkdown_LowContent(t *testing.T) {
 	pageURL, _ := url.Parse("https://src.example/thin")
 	_, md, _, warning, err := ExtractMarkdown([]byte(`<html><body><p>tiny</p></body></html>`), pageURL)
