@@ -14,26 +14,8 @@
 // allowlist escape hatch lands in Phase 7 (D-30), and model-visible errors carry
 // no IP / host / header / body / redirect-chain detail (D-27).
 //
-// The two extraction dependencies (D-20 / roadmap Amendment #3) are anchored
-// here so they survive `go mod tidy` ahead of the html.go implementation in a
-// later wave: codeberg.org/readeck/go-readability/v2 (FromReader → Article) feeds
-// its node tree straight into github.com/JohannesKaufmann/html-to-markdown/v2
+// The two extraction dependencies (D-20 / roadmap Amendment #3) are consumed by
+// html.go: codeberg.org/readeck/go-readability/v2 (FromReader → Article) feeds its
+// node tree straight into github.com/JohannesKaufmann/html-to-markdown/v2
 // (ConvertNode), with golang.org/x/net/html as the shared *html.Node bridge type.
 package web
-
-import (
-	readability "codeberg.org/readeck/go-readability/v2"
-	htmltomarkdown "github.com/JohannesKaufmann/html-to-markdown/v2"
-	"golang.org/x/net/html"
-)
-
-// extractionDeps is a compile-time anchor that keeps the D-20 extraction modules
-// in go.mod before html.go consumes them. It exercises the exact entry points the
-// real extractor will use — readability.FromReader, html.Node, and
-// htmltomarkdown.ConvertNode — so the dependency graph the later wave needs is
-// already pinned and buildable. Remove once html.go imports these directly.
-var (
-	_ = readability.FromReader
-	_ = htmltomarkdown.ConvertNode
-	_ html.Node
-)

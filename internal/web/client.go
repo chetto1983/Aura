@@ -16,6 +16,7 @@ type Client struct {
 	transport *hardenedTransport
 	pin       *dnsPin
 	cache     *cache
+	hosts     *hostThrottle
 }
 
 // NewClient wires the hardened transport (real net.Dialer with the Control
@@ -31,6 +32,7 @@ func NewClient(cfg *config.Config) *Client {
 		transport: tr,
 		pin:       pin,
 		cache:     newCache(cfg.WebCachePersistent, defaultCacheTTL),
+		hosts:     newHostThrottle(),
 	}
 }
 
