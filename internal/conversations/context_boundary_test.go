@@ -172,7 +172,7 @@ func TestLadder_L25Termination_ExactFit(t *testing.T) {
 	full := totalTokens(enc, turns)
 	// hardCap sits between afterDrop and full: one drop is required AND sufficient.
 	hardCap := afterDrop // exact-fit: tokensAfter == hardCap, so `> hardCap` is false.
-	if !(hardCap < full) {
+	if hardCap >= full {
 		t.Fatalf("test setup: need afterDrop(%d) < full(%d)", afterDrop, full)
 	}
 
@@ -391,7 +391,7 @@ func TestLadder_UnreducibleAfterDrop_StillErrors(t *testing.T) {
 	systemOnly := totalTokens(enc, turns[:1])
 	full := totalTokens(enc, turns)
 	hardCap := systemOnly - 100 // even system-only is over -> unreducible
-	if !(hardCap < full) {
+	if hardCap >= full {
 		t.Fatalf("setup: need hardCap(%d) < full(%d)", hardCap, full)
 	}
 
