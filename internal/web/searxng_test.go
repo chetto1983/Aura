@@ -29,12 +29,12 @@ func searxJSON(t *testing.T, results []map[string]any) string {
 func testClient(t *testing.T, searxURL string) *Client {
 	t.Helper()
 	cfg := &config.Config{
-		SearxngURL:          searxURL,
-		WebDNSPinTTLSec:     60,
-		WebResponseCapBytes: 24000,
-		WebSearchTimeoutSec: 20,
-		WebFetchTimeoutSec:  30,
-		WebUserAgent:        "Aura/test web",
+		SearxngURL:           searxURL,
+		WebDNSPinTTLSec:      60,
+		WebFetchMaxBodyBytes: 5_000_000,
+		WebSearchTimeoutSec:  20,
+		WebFetchTimeoutSec:   30,
+		WebUserAgent:         "Aura/test web",
 	}
 	return NewClient(cfg)
 }

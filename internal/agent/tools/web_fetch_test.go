@@ -42,7 +42,7 @@ func (f *fakeSearchEngine) Search(_ context.Context, p web.SearchParams) ([]web.
 // the tail bytes (D-21 spillover routed through NewResult — zero new code).
 func TestWebFetch_Spillover(t *testing.T) {
 	runDir := t.TempDir()
-	big := strings.Repeat("x", 100_000) // well over AURA_WEB_RESPONSE_CAP_BYTES / preview cap
+	big := strings.Repeat("x", 100_000) // well over the agent tool-result preview cap (tc.cap)
 	eng := &fakeFetchEngine{page: web.Page{Title: "T", URL: "https://example.org/a", ContentMD: big}}
 	wf := &WebFetch{Engine: eng}
 

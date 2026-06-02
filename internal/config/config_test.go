@@ -24,7 +24,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE",
 		"AURA_LLM_MAX_TOKENS", "AURA_LLM_TOTAL_TIMEOUT_SEC", "AURA_LLM_CONNECT_TIMEOUT_SEC",
 		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT",
-		"SEARXNG_URL", "AURA_WEB_DNS_PIN_TTL_SEC", "AURA_WEB_RESPONSE_CAP_BYTES",
+		"SEARXNG_URL", "AURA_WEB_DNS_PIN_TTL_SEC", "AURA_WEB_FETCH_MAX_BODY_BYTES",
 		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
 		"AURA_WEB_FETCH_TIMEOUT_SEC", "AURA_WEB_USER_AGENT",
 	}
@@ -303,8 +303,8 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 	if cfg.WebDNSPinTTLSec != 60 {
 		t.Errorf("WebDNSPinTTLSec: want default 60, got %d", cfg.WebDNSPinTTLSec)
 	}
-	if cfg.WebResponseCapBytes != 24000 {
-		t.Errorf("WebResponseCapBytes: want default 24000, got %d", cfg.WebResponseCapBytes)
+	if cfg.WebFetchMaxBodyBytes != 5_000_000 {
+		t.Errorf("WebFetchMaxBodyBytes: want default 5_000_000, got %d", cfg.WebFetchMaxBodyBytes)
 	}
 	if cfg.WebCachePersistent {
 		t.Error("WebCachePersistent: want default false (in-memory), got true")
@@ -334,7 +334,7 @@ func TestWebEnvOverrides(t *testing.T) {
 	clearPostgresEnv(t)
 	t.Setenv("SEARXNG_URL", "http://searxng:8080/search")
 	t.Setenv("AURA_WEB_DNS_PIN_TTL_SEC", "120")
-	t.Setenv("AURA_WEB_RESPONSE_CAP_BYTES", "48000")
+	t.Setenv("AURA_WEB_FETCH_MAX_BODY_BYTES", "48000")
 	t.Setenv("AURA_WEB_CACHE_PERSISTENT", "true")
 	t.Setenv("AURA_WEB_SEARCH_TIMEOUT_SEC", "15")
 	t.Setenv("AURA_WEB_FETCH_TIMEOUT_SEC", "45")
@@ -347,8 +347,8 @@ func TestWebEnvOverrides(t *testing.T) {
 	if cfg.WebDNSPinTTLSec != 120 {
 		t.Errorf("WebDNSPinTTLSec override not applied: %d", cfg.WebDNSPinTTLSec)
 	}
-	if cfg.WebResponseCapBytes != 48000 {
-		t.Errorf("WebResponseCapBytes override not applied: %d", cfg.WebResponseCapBytes)
+	if cfg.WebFetchMaxBodyBytes != 48000 {
+		t.Errorf("WebFetchMaxBodyBytes override not applied: %d", cfg.WebFetchMaxBodyBytes)
 	}
 	if !cfg.WebCachePersistent {
 		t.Error("WebCachePersistent override not applied: want true")

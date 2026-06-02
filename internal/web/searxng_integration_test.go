@@ -44,12 +44,12 @@ func envOrSkip(t *testing.T, key string) string {
 func liveClient(t *testing.T) *Client {
 	t.Helper()
 	cfg := &config.Config{
-		SearxngURL:          envOrSkip(t, "SEARXNG_URL"),
-		WebDNSPinTTLSec:     60,
-		WebResponseCapBytes: 24000,
-		WebSearchTimeoutSec: 20,
-		WebFetchTimeoutSec:  30,
-		WebUserAgent:        "Aura/web_integration",
+		SearxngURL:           envOrSkip(t, "SEARXNG_URL"),
+		WebDNSPinTTLSec:      60,
+		WebFetchMaxBodyBytes: 5_000_000,
+		WebSearchTimeoutSec:  20,
+		WebFetchTimeoutSec:   30,
+		WebUserAgent:         "Aura/web_integration",
 	}
 	return NewClient(cfg)
 }

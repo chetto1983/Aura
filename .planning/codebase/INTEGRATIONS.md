@@ -70,7 +70,7 @@
   - DNS-rebinding protection: `safeDialContext` resolves host → validates IP → dials explicit IP (no re-lookup between resolve and dial).
   - HTTP redirect interception: `http.Client.CheckRedirect` re-validates every `Location` against blocklist.
   - Override: `AURA_WEB_FETCH_ALLOW_LOOPBACK=1`, `AURA_WEB_FETCH_ALLOW_HOSTS=host1,host2`.
-  - Response cap: `AURA_WEB_RESPONSE_CAP_BYTES=24000`. Timeout 30 s. Readability filter: pages <250 chars main content return `{warning: "low-content page"}`.
+  - Raw-body download ceiling: `AURA_WEB_FETCH_MAX_BODY_BYTES=5000000` (5 MB, DoS guard applied pre-extraction; NOT the LLM-facing markdown preview cap). Timeout 30 s. Readability filter: pages <250 chars main content return `{warning: "low-content page"}`.
 
 **Document conversion:**
 - **markitdown sidecar** — HTTP service for document → markdown (Slice 9c).

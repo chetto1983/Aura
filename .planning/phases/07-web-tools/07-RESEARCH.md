@@ -60,7 +60,7 @@ The dominant risk is SSRF. The verified-correct pattern is **resolve-once-then-p
 - D-18: No byline/published time/excerpt/site name/fetched time metadata in Phase 7.
 - D-19: `links` is a deduped list of normalized absolute URLs in the readable content. NOT `{text, url}` objects.
 - D-20: Use `codeberg.org/readeck/go-readability/v2` + `JohannesKaufmann/html-to-markdown/v2`.
-- D-21: If `content_md` > `AURA_WEB_RESPONSE_CAP_BYTES=24000`, return short preview + `tool_result_id`; full content paged via `read_tool_output`.
+- D-21: If `content_md` exceeds the agent tool-result preview cap (`AURA_CONTEXT_PREVIEW_CAP_BYTES`, via `tools.NewResult`), return short preview + `tool_result_id`; full content paged via `read_tool_output`. (The raw HTTP body download ceiling `AURA_WEB_FETCH_MAX_BODY_BYTES=5000000`, formerly `AURA_WEB_RESPONSE_CAP_BYTES=24000`, is a separate DoS guard, NOT the markdown cap.)
 - D-22: Low-quality extraction returns markdown with `warning` (`low_content` / `extraction_maybe_incomplete`); not automatically an error.
 - D-23: Fetch has strict 30s wall-clock deadline + at most one retry for transient network/`408`/`429`/`5xx` within that same deadline.
 
@@ -389,7 +389,7 @@ client := &http.Client{
 ### Pitfall 6: Content-type / size not gated before reading body
 **What goes wrong:** `web_fetch` of a 2 GB binary or a PDF either OOMs or feeds garbage to readability.
 **Why it happens:** Reading the whole body before checking `Content-Type` or `Content-Length`.
-**How to avoid:** Check `Content-Type` against an HTML/XHTML allowlist (`text/html`, `application/xhtml+xml`); reject others with `unsupported_content_type` (D-16). Wrap body in `io.LimitReader(body, AURA_WEB_RESPONSE_CAP_BYTES)` and detect overflow → `response_too_large` (D-38). `[CITED: MDN Content-Type]`
+**How to avoid:** Check `Content-Type` against an HTML/XHTML allowlist (`text/html`, `application/xhtml+xml`); reject others with `unsupported_content_type` (D-16). Wrap body in `io.LimitReader(body, AURA_WEB_FETCH_MAX_BODY_BYTES)` and detect overflow → `response_too_large` (D-38). `[CITED: MDN Content-Type]`
 **Warning signs:** `io.ReadAll(resp.Body)` with no limit; no Content-Type switch.
 
 ## Code Examples
@@ -506,7 +506,7 @@ func (p *DNSPin) Pinned(conv, host string) (netip.Addr, bool) {
 | Stored data | None — web tools are stateless apart from an ephemeral in-process cache. | none |
 | Live service config | NEW `searxng` compose service + checked-in `settings.yml` (read-only mount). Not pre-existing; created this phase. | add to compose.yaml + commit settings file |
 | OS-registered state | None. | none |
-| Secrets/env vars | NEW: `SEARXNG_URL`, `AURA_WEB_DNS_PIN_TTL_SEC`, `AURA_WEB_RESPONSE_CAP_BYTES`, `AURA_WEB_CACHE_PERSISTENT`, search/fetch timeouts, User-Agent. None are secrets (no API keys — self-hosted). `AURA_WEB_FETCH_ALLOW_LOOPBACK`/`ALLOW_HOSTS` exist in PRD but D-30 says NO allowlist in Phase 7 — see Open Questions. | add to `internal/config` + `.env.example` |
+| Secrets/env vars | NEW: `SEARXNG_URL`, `AURA_WEB_DNS_PIN_TTL_SEC`, `AURA_WEB_FETCH_MAX_BODY_BYTES`, `AURA_WEB_CACHE_PERSISTENT`, search/fetch timeouts, User-Agent. None are secrets (no API keys — self-hosted). `AURA_WEB_FETCH_ALLOW_LOOPBACK`/`ALLOW_HOSTS` exist in PRD but D-30 says NO allowlist in Phase 7 — see Open Questions. | add to `internal/config` + `.env.example` |
 | Build artifacts | None — pure Go addition + one new image pull (`searxng/searxng`). | `go get` the two new deps |
 
 ## Validation Architecture
@@ -588,7 +588,7 @@ func (p *DNSPin) Pinned(conv, host string) (netip.Addr, bool) {
 | Cloud-metadata exfiltration | Info Disclosure | explicit `169.254.169.254` + metadata hostname blocks; link-local block catches the IP |
 | Mixed A/AAAA poisoning | Tampering | fail-closed if ANY resolved IP is private |
 | Error-channel topology leak | Info Disclosure | two-layer errors; sanitized model-visible struct (D-26/27/28) |
-| Decompression / large-body DoS | DoS | `io.LimitReader` at `AURA_WEB_RESPONSE_CAP_BYTES`; Content-Type gate before read |
+| Decompression / large-body DoS | DoS | `io.LimitReader` at `AURA_WEB_FETCH_MAX_BODY_BYTES`; Content-Type gate before read |
 | SearXNG param injection | Tampering | enum→raw category map; no pass-through params; no model-controlled `engines`/`safesearch` (D-10) |
 
 **Relevant project skills to load during planning/impl:** `golang-security` (Go SSRF/egress patterns), `golang-context` (deadline propagation D-14/D-23), `golang-error-handling` (sentinel + `%w`, sanitized errors), `golang-testing` (table-driven + goleak + httptest), `property-based-testing` (rapid — fuzz the IP classifier against the blocklist), `codeql`/`semgrep-rule-creator` (taint a rule that flags `Dialer.DialContext(host)` after validation; flag `readability.FromURL` usage), `golang-database` (only if cache goes persistent).

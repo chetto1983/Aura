@@ -133,7 +133,7 @@ func (c *Client) doHops(ctx context.Context, convID string, current *url.URL) ([
 			continue
 		}
 
-		body, gErr := gateAndRead(resp, c.cfg.WebResponseCapBytes)
+		body, gErr := gateAndRead(resp, c.cfg.WebFetchMaxBodyBytes)
 		_ = resp.Body.Close()
 		if gErr != nil {
 			return nil, nil, gErr

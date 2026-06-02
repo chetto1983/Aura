@@ -86,7 +86,7 @@ completed: 2026-06-02
 - Live-verified through `docker compose up searxng`: the mounted 1.8KB file is authoritative, `/healthz`=OK, and an in-network `POST format=json` returns real `{"query","results":[...]}` JSON.
 
 ### Task 3 — root config + goleak harness (commit f0a0b06e)
-- Added `SearxngURL` (env `SEARXNG_URL`, empty default), `WebDNSPinTTLSec=60`, `WebResponseCapBytes=24000`, `WebCachePersistent=false`, `WebSearchTimeoutSec=20`, `WebFetchTimeoutSec=30`, `WebUserAgent="Aura/0.x web_fetch"` to the root `config.Config` (Sandbox precedent).
+- Added `SearxngURL` (env `SEARXNG_URL`, empty default), `WebDNSPinTTLSec=60`, `WebFetchMaxBodyBytes=5000000` (env `AURA_WEB_FETCH_MAX_BODY_BYTES`; renamed from `WebResponseCapBytes`/`AURA_WEB_RESPONSE_CAP_BYTES`/24000 at Gate-3 2026-06-02 — raw-body ceiling, not markdown cap), `WebCachePersistent=false`, `WebSearchTimeoutSec=20`, `WebFetchTimeoutSec=30`, `WebUserAgent="Aura/0.x web_fetch"` to the root `config.Config` (Sandbox precedent).
 - New `envBoolDefault` helper (parse-fail → fallback, never fatal).
 - Empty `SEARXNG_URL` is **not** boot-fatal — `LoadDB()`/`Load()` succeed, regression-locked by `TestWebDefaults_AppliedAndNotFatal` (D-05/D-06).
 - `internal/web/main_test.go` adds `goleak.VerifyTestMain` behind `//go:build !web_integration`.

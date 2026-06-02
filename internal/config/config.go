@@ -59,13 +59,13 @@ type Config struct {
 	// surfaced as web_search_unavailable{searxng_not_configured} at call time
 	// (D-05/D-06) so `aura db migrate` and every non-web subcommand keep working.
 	// No allowlist/loopback escape hatch lands here (D-30).
-	SearxngURL          string // SEARXNG_URL — in-network base, e.g. http://searxng:8080/search (D-02); empty default, fail-closed at call time
-	WebDNSPinTTLSec     int    // AURA_WEB_DNS_PIN_TTL_SEC — per-conversation DNS pin TTL (D-25)
-	WebResponseCapBytes int    // AURA_WEB_RESPONSE_CAP_BYTES — body/markdown ceiling; over it spills via read_tool_output (D-21)
-	WebCachePersistent  bool   // AURA_WEB_CACHE_PERSISTENT — opt-in disk cache; default false = in-memory (D-32)
-	WebSearchTimeoutSec int    // AURA_WEB_SEARCH_TIMEOUT_SEC — search wall-clock deadline (D-14)
-	WebFetchTimeoutSec  int    // AURA_WEB_FETCH_TIMEOUT_SEC — fetch wall-clock deadline (D-23)
-	WebUserAgent        string // AURA_WEB_USER_AGENT — Aura-specific UA, no browser spoof (D-34/D-35)
+	SearxngURL           string // SEARXNG_URL — in-network base, e.g. http://searxng:8080/search (D-02); empty default, fail-closed at call time
+	WebDNSPinTTLSec      int    // AURA_WEB_DNS_PIN_TTL_SEC — per-conversation DNS pin TTL (D-25)
+	WebFetchMaxBodyBytes int    // AURA_WEB_FETCH_MAX_BODY_BYTES — raw HTTP response body download ceiling (DoS guard); the LLM-facing markdown preview/spillover is governed by the agent tool-result preview cap (tools.NewResult), NOT this field
+	WebCachePersistent   bool   // AURA_WEB_CACHE_PERSISTENT — opt-in disk cache; default false = in-memory (D-32)
+	WebSearchTimeoutSec  int    // AURA_WEB_SEARCH_TIMEOUT_SEC — search wall-clock deadline (D-14)
+	WebFetchTimeoutSec   int    // AURA_WEB_FETCH_TIMEOUT_SEC — fetch wall-clock deadline (D-23)
+	WebUserAgent         string // AURA_WEB_USER_AGENT — Aura-specific UA, no browser spoof (D-34/D-35)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -157,13 +157,13 @@ func loadBase() *Config {
 
 		// Phase 7 web knobs. SEARXNG_URL has an empty default on purpose (D-05):
 		// missing is fail-closed at call time, never a boot error.
-		SearxngURL:          os.Getenv("SEARXNG_URL"),
-		WebDNSPinTTLSec:     envIntDefault("AURA_WEB_DNS_PIN_TTL_SEC", 60),
-		WebResponseCapBytes: envIntDefault("AURA_WEB_RESPONSE_CAP_BYTES", 24000),
-		WebCachePersistent:  envBoolDefault("AURA_WEB_CACHE_PERSISTENT", false),
-		WebSearchTimeoutSec: envIntDefault("AURA_WEB_SEARCH_TIMEOUT_SEC", 20),
-		WebFetchTimeoutSec:  envIntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 30),
-		WebUserAgent:        envDefault("AURA_WEB_USER_AGENT", "Aura/0.x web_fetch"),
+		SearxngURL:           os.Getenv("SEARXNG_URL"),
+		WebDNSPinTTLSec:      envIntDefault("AURA_WEB_DNS_PIN_TTL_SEC", 60),
+		WebFetchMaxBodyBytes: envIntDefault("AURA_WEB_FETCH_MAX_BODY_BYTES", 5_000_000),
+		WebCachePersistent:   envBoolDefault("AURA_WEB_CACHE_PERSISTENT", false),
+		WebSearchTimeoutSec:  envIntDefault("AURA_WEB_SEARCH_TIMEOUT_SEC", 20),
+		WebFetchTimeoutSec:   envIntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 30),
+		WebUserAgent:         envDefault("AURA_WEB_USER_AGENT", "Aura/0.x web_fetch"),
 	}
 }
 

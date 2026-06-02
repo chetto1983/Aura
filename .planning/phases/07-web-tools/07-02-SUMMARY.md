@@ -7,7 +7,7 @@ tags: [ssrf, dns-pin, netip, transport, redirect, error-taxonomy, fail-closed, g
 # Dependency graph
 requires:
   - phase: 07-web-tools (plan 01)
-    provides: internal/web package skeleton + goleak main_test.go + AURA_WEB_* root config (WebDNSPinTTLSec/WebResponseCapBytes/WebUserAgent) + readability/html-to-markdown deps
+    provides: internal/web package skeleton + goleak main_test.go + AURA_WEB_* root config (WebDNSPinTTLSec/WebFetchMaxBodyBytes/WebUserAgent) + readability/html-to-markdown deps
   - phase: 05-sandbox-2a-stateless
     provides: docker.go DisableKeepAlives + dialer-only-timeout idiom (copied into transport.go) + fail-closed posture
   - phase: 03-llm-client

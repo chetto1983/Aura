@@ -87,7 +87,7 @@ func (e *Execute) Execute(ctx context.Context, raw json.RawMessage) (ToolResult,
 return NewResult(ctx, FormatLean(res))   // execute
 return NewResult(ctx, contentMD)         // web_fetch: large markdown spills to sidecar automatically
 ```
-`tools.NewResult` already does cap → preview → sidecar (`<run_dir>/conversations/<session>/<tool_call>.result`) → `read_tool_output` footer. The cap is `AURA_CONTEXT_PREVIEW_CAP_BYTES` injected via `WithToolCallContext`. **NOTE:** D-21 names `AURA_WEB_RESPONSE_CAP_BYTES=24000` for the markdown cap; the planner must decide whether `web_fetch` caps content at 24000 *before* calling `NewResult` (engine-side size gate, recommended — it is also the body LimitReader bound) and lets `NewResult` apply the separate preview cap, or routes the full markdown through `NewResult` and lets the preview cap alone govern. RESEARCH treats `AURA_WEB_RESPONSE_CAP_BYTES` as the body/markdown ceiling and `NewResult`'s cap as the history-preview window — keep them distinct.
+`tools.NewResult` already does cap → preview → sidecar (`<run_dir>/conversations/<session>/<tool_call>.result`) → `read_tool_output` footer. The cap is `AURA_CONTEXT_PREVIEW_CAP_BYTES` injected via `WithToolCallContext`. **RESOLVED (Gate-3 2026-06-02):** `web_fetch` routes the FULL markdown through `NewResult` and lets the preview cap (`AURA_CONTEXT_PREVIEW_CAP_BYTES`) alone govern the LLM-facing preview/spillover (D-21). `AURA_WEB_FETCH_MAX_BODY_BYTES` (formerly `AURA_WEB_RESPONSE_CAP_BYTES`, default raised 24000 → 5 MB) is ONLY the raw HTTP body download ceiling applied in `gateAndRead` BEFORE readability extraction — it does NOT cap the markdown. Keep the two knobs distinct.
 
 ---
 
@@ -138,7 +138,7 @@ if resp.StatusCode/100 != 2 {
 }
 ```
 → `searxng.go`: unreachable/non-2xx → wrap the sentinel that maps to `web_search_unavailable` reason `searxng_unreachable`; missing `SEARXNG_URL` → `searxng_not_configured` (D-06). Query construction + JSON parse + domain post-filter per RESEARCH §Code Examples (search query construction, `searxResult`/`searxResponse` shapes, link/domain filter D-12/D-13).
-→ `fetcher.go`: scheme check (D-15) → SSRF validate+pin (ssrf.go) → dial pinned IP → manual redirect revalidate loop (Pattern 3, cap hops) → `Content-Type` allowlist + `io.LimitReader(body, AURA_WEB_RESPONSE_CAP_BYTES)` gate (D-16, RESEARCH Pitfall 6) → hand bytes to html.go.
+→ `fetcher.go`: scheme check (D-15) → SSRF validate+pin (ssrf.go) → dial pinned IP → manual redirect revalidate loop (Pattern 3, cap hops) → `Content-Type` allowlist + `io.LimitReader(body, AURA_WEB_FETCH_MAX_BODY_BYTES)` gate (D-16, RESEARCH Pitfall 6) → hand bytes to html.go.
 
 ---
 
@@ -176,7 +176,7 @@ func envIntDefault(key string, fallback int) int { /* parse-fail → fallback, n
 
 **Fail-fast on a required value** — model on the LLM subsystem's pattern (config.go:69-73 wires `llm.Load()` whose error propagates). For D-05 (`SEARXNG_URL` missing is an ERROR, no localhost autodetect, no public fallback): `internal/web` exposes a `web.Config` with a `Load() (*Config, error)` that returns a sentinel when `SEARXNG_URL` is empty — but that sentinel must surface as the D-06 `web_search_unavailable{searxng_not_configured}` *at search time*, not as a boot-fatal (web tools are optional; `aura db migrate` must not require SEARXNG). **Decision for planner:** add web fields to `internal/web/config.go` read lazily by the engine, OR add them to the root `config.Config` like the Sandbox fields (config.go:53-55). The Sandbox precedent (root config, `envDefault`/`envIntDefault`, no fatal) is the closer in-repo match — prefer it for `AURA_WEB_*`; keep the `SEARXNG_URL` fail-CLOSED as a structured-unavailable at call time, not a boot error.
 
-**Env catalog (RESEARCH Runtime State Inventory):** `SEARXNG_URL` (upstream-canonical name, no `AURA_` prefix), `AURA_WEB_DNS_PIN_TTL_SEC=60`, `AURA_WEB_RESPONSE_CAP_BYTES=24000`, `AURA_WEB_CACHE_PERSISTENT=false`, search/fetch timeout seconds, User-Agent default (`Aura/0.x web_fetch`, D-34/35). Add to `.env.example`. **Do NOT** add `AURA_WEB_FETCH_ALLOW_LOOPBACK`/`ALLOW_HOSTS` (D-30 + RESEARCH Open Question 1: CONTEXT wins over older PRD — no allowlist, no escape hatch).
+**Env catalog (RESEARCH Runtime State Inventory):** `SEARXNG_URL` (upstream-canonical name, no `AURA_` prefix), `AURA_WEB_DNS_PIN_TTL_SEC=60`, `AURA_WEB_FETCH_MAX_BODY_BYTES=5000000` (raw-body ceiling, NOT the markdown preview cap), `AURA_WEB_CACHE_PERSISTENT=false`, search/fetch timeout seconds, User-Agent default (`Aura/0.x web_fetch`, D-34/35). Add to `.env.example`. **Do NOT** add `AURA_WEB_FETCH_ALLOW_LOOPBACK`/`ALLOW_HOSTS` (D-30 + RESEARCH Open Question 1: CONTEXT wins over older PRD — no allowlist, no escape hatch).
 
 ---
 

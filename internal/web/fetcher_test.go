@@ -25,10 +25,10 @@ import (
 func fetchClient(t *testing.T, hostIPs map[string][]netip.Addr) *Client {
 	t.Helper()
 	cfg := &config.Config{
-		WebDNSPinTTLSec:     60,
-		WebResponseCapBytes: 24000,
-		WebFetchTimeoutSec:  30,
-		WebUserAgent:        "Aura/test web",
+		WebDNSPinTTLSec:      60,
+		WebFetchMaxBodyBytes: 5_000_000,
+		WebFetchTimeoutSec:   30,
+		WebUserAgent:         "Aura/test web",
 	}
 	c := NewClient(cfg)
 	c.transport = newHardenedTransport(
@@ -139,14 +139,18 @@ func TestFetch_ContentGate(t *testing.T) {
 	})
 
 	t.Run("response_too_large", func(t *testing.T) {
-		big := strings.Repeat("<p>padding padding padding</p>", 5000)
+		// Inject a TINY raw-body ceiling so a small fixture still trips the gate
+		// cheaply — the cap governs the raw HTTP body, not the markdown, so a
+		// realistic 5MB fixture is unnecessary (and would be slow).
+		body := strings.Repeat("<p>padding padding padding</p>", 50)
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.Header().Set("Content-Type", "text/html")
-			_, _ = w.Write([]byte("<html><body>" + big + "</body></html>"))
+			_, _ = w.Write([]byte("<html><body>" + body + "</body></html>"))
 		}))
 		defer srv.Close()
 		_, port := hostPort(t, srv.URL)
 		c := fetchClient(t, map[string][]netip.Addr{"page.test": {publicIP}})
+		c.cfg.WebFetchMaxBodyBytes = 128 // far below the fixture body size
 		_, err := c.Fetch(context.Background(), "c", "http://page.test:"+port+"/big")
 		assertWebErr(t, err, CodeResponseTooLarge, "")
 	})

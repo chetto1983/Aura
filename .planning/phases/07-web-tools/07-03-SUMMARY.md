@@ -7,7 +7,7 @@ tags: [searxng, fetch, ssrf, redirect-revalidate, readability, markdown, link-de
 # Dependency graph
 requires:
   - phase: 07-web-tools (plan 01)
-    provides: internal/web skeleton + goleak main_test.go + AURA_WEB_* root config (SearxngURL, WebDNSPinTTLSec, WebResponseCapBytes, WebCachePersistent, WebSearchTimeoutSec, WebFetchTimeoutSec, WebUserAgent) + readability/html-to-markdown deps
+    provides: internal/web skeleton + goleak main_test.go + AURA_WEB_* root config (SearxngURL, WebDNSPinTTLSec, WebFetchMaxBodyBytes, WebCachePersistent, WebSearchTimeoutSec, WebFetchTimeoutSec, WebUserAgent) + readability/html-to-markdown deps
   - phase: 07-web-tools (plan 02)
     provides: hardenedTransport (pinned-IP DialContext + CheckRedirect ErrUseLastResponse + Dialer.Control recheck) + guard.validateAndPin + dnsPin + withConvID/convIDFrom + WebError/internalError/sanitize + D-38 enum
   - phase: 05-sandbox-2a-stateless
@@ -146,7 +146,7 @@ The two client engines on top of the Wave 2 security boundary: a SearXNG search 
 
 - Adapters hold one `*web.Client`; `WebSearch{Engine}.Execute` → `Search`, `WebFetch{Engine}.Execute` → `Fetch`.
 - An engine `*WebError` is a MODEL-VISIBLE structured object: marshal via `WebError.JSON()` and feed to `tools.NewResult` so the model self-corrects (D-41) — NOT a Go error. Use `AsWebError(err)` to unwrap.
-- `web_fetch` large markdown: `AURA_WEB_RESPONSE_CAP_BYTES` is the body/markdown ceiling enforced engine-side (the LimitReader bound); `tools.NewResult`'s preview cap remains the separate history-window cap. Route the full `Page.ContentMD` through `NewResult` for spillover.
+- `web_fetch` large markdown: `AURA_WEB_FETCH_MAX_BODY_BYTES` (formerly `AURA_WEB_RESPONSE_CAP_BYTES`, renamed + re-defaulted 24000 → 5 MB at Gate-3 2026-06-02) is the RAW HTTP body download ceiling enforced engine-side (the LimitReader bound) — NOT the markdown cap; `tools.NewResult`'s preview cap (`AURA_CONTEXT_PREVIEW_CAP_BYTES`) alone governs the LLM-facing markdown preview/spillover. Route the full `Page.ContentMD` through `NewResult` for spillover.
 
 ## Self-Check: PASSED
 

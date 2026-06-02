@@ -44,7 +44,7 @@
 | Two-tier fetch shape | Add an optional richer fetch metadata tier. | |
 
 **User's choice:** Markdown article package.
-**Notes:** Links are normalized absolute URLs only. Large markdown over `AURA_WEB_RESPONSE_CAP_BYTES=24000` spills through `ToolResult`; low-quality extraction returns content with a warning rather than failing by default.
+**Notes:** Links are normalized absolute URLs only. Large markdown spills through `ToolResult` (governed by the agent preview cap `AURA_CONTEXT_PREVIEW_CAP_BYTES`; the raw-body ceiling `AURA_WEB_FETCH_MAX_BODY_BYTES`, formerly `AURA_WEB_RESPONSE_CAP_BYTES=24000` → 5 MB, is a separate DoS guard renamed at Gate-3 2026-06-02); low-quality extraction returns content with a warning rather than failing by default.
 
 ---
 
