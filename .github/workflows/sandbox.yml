@@ -79,6 +79,18 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      # --- Pitfall 4 setup: QEMU arm64 binfmt — MUST precede userns-remap --------------
+      # binfmt_misc is a HOST-KERNEL facility. setup-qemu-action registers it by running a
+      # --privileged tonistiigi/binfmt container; under userns-remap that container lands in
+      # a CHILD user namespace and cannot write the init-userns /proc/sys/fs/binfmt_misc, so
+      # the install errors out (the reproduced red). Register it HERE against the pristine
+      # init-userns daemon — the registration is kernel-level and survives the dockerd
+      # restart performed by the daemon.json step below.
+      - name: Set up QEMU (arm64 binfmt emulation)
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
       # --- Pitfall 2/3 setup: gVisor runsc + the INNER daemon.json ---------------------
       # The ubuntu-latest runner's own dockerd is the daemon that runs our sidecar
       # directly (it is the "inner" daemon for our purposes). We install runsc, write the
@@ -115,12 +127,9 @@ jobs:
             || { echo "FATAL: userns-remap not live in dockerd (Pitfall 3)"; exit 1; }
           echo "userns-remap: LIVE"
 
-      # --- Pitfall 4 setup: QEMU + buildx for the arm64 leg ----------------------------
-      - name: Set up QEMU (arm64 binfmt emulation)
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
+      # --- buildx for the arm64 build leg (attaches to the reconfigured daemon) ---------
+      # Created AFTER the restart so the builder talks to the userns-remapped daemon; the
+      # QEMU binfmt it relies on was already registered against the pristine daemon above.
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
