@@ -60,10 +60,10 @@ decisions:
   - "Gate-3 surfaced two fixes committed as a fix(07-04) deviation: the searxng goleak (Rule 1 bug) and ssrf.go mutation hardening (61.1% -> 94.4%)"
 
 metrics:
-  duration_minutes: ~110
+  duration_minutes: ~110 (+ gap-closure session)
   completed: 2026-06-02
-  tasks_completed: 3 of 4 (Task 4 is the blocking-human checkpoint)
-  commits: 5
+  tasks_completed: 3 of 4 (Task 4 is the blocking-human checkpoint; the gap-closure bug+quality fixes are in, Gate-3 re-run green, CAP-05 still pending the human sign-off)
+  commits: 5 + 5 gap-closure (f5764ecc PRD-amend, 1e424487 Layer-1 rename, 997b8693 + 00d76c59 Layer-2 cleanup, 8f25cc13 coverage tests)
 ---
 
 # Phase 07 Plan 04: Web Tools LLM-Facing Layer + Operator/CI Surface Summary
@@ -104,18 +104,25 @@ The thin LLM-facing layer for Phase 7: two `Deferred:true` tool adapters (`web_s
 - **Files:** internal/web/ssrf_test.go
 - **Commit:** f86cbf13
 
-## Known Stubs / Open Gaps (carried into the Task 4 checkpoint)
+## Gap closure (2026-06-02 — the Task 4 checkpoint bug + quality gap, fixed)
 
-- **SC#2 raw-HTML-cap bug (BLOCKING the live acceptance + the 85% coverage floor).** `web.Fetch` applies `AURA_WEB_RESPONSE_CAP_BYTES=24000` to the RAW HTML body in `gateAndRead` (Wave 3), so any real content page (Wikipedia Knowledge_graph raw HTML = 164KB) returns `response_too_large` BEFORE readability extraction. `example.com` (528B) returns clean markdown correctly, but the plan's SC#2 target page fails. This also keeps combined `internal/web` coverage at 77.3% (the fetch-live success paths — extraction, link dedup — never execute live). The cap should apply to the EXTRACTED MARKDOWN (D-21 wording) with a much larger raw-body LimitReader (cf. `maxSearxBodyBytes = 4MB`). This is a Wave-3 engine change (cap-layer semantics), deliberately NOT auto-applied mid-checkpoint — it is the central item for the human-verify decision.
+The live Gate-3 found a real BLOCKING bug + a quality gap; both are now fixed (4 commits, see below). CAP-05 is still NOT self-marked complete — that is the human's call.
 
-## Gate-3 evidence recorded (docs/aura-quality-snapshot.md web row)
+**Bug (fixed): SC#2 raw-HTML-cap.** `web.Fetch` applied a 24000-byte ceiling (the mis-named `WebResponseCapBytes`/`AURA_WEB_RESPONSE_CAP_BYTES`) to the RAW HTML body in `gateAndRead`, so any real content page (164KB Wikipedia) returned `response_too_large` BEFORE readability extraction. Confirmed the field is read in EXACTLY ONE place (the raw-body LimitReader) — it never governed the LLM-facing payload (that is `tools.NewResult`'s preview cap, `AURA_CONTEXT_PREVIEW_CAP_BYTES`). **Layer 1:** renamed the field → `WebFetchMaxBodyBytes` / `AURA_WEB_FETCH_MAX_BODY_BYTES`, default 24000 → 5_000_000 (raw-body DoS ceiling), PRD env-catalog amended first.
 
-- ssrf.go mutation: **94.4%** (≥70% ✅)
-- golangci-lint: **0 issues** ✅
-- SC#3 ssrf_smoke: **4/4 blocked_url, grep-clean** ✅
-- SC#1 TestSearch_Live: **PASS** (~0.86–1.59s; raw SearXNG round-trip 0.47–3.0s on the shared mini-PC — borderline vs 2s under load)
-- SC#2: **PARTIAL** — clean markdown for small pages; FAILS `response_too_large` on the 164KB Wikipedia page (cap bug above)
-- Combined `internal/web` coverage (unit + web_integration): **77.3%** — BELOW the 85% floor, blocked by the SC#2 cap bug
+**Quality gap (fixed): noisy Wikipedia markdown.** The extracted markdown carried inline `[\[n\]](#cite_note)` citation anchors, the full references/notes tail, and a "From Wikipedia" boilerplate line. **Layer 2:** `html.go` post-processes the markdown — strips citation anchors, truncates at the References/Notes/Citations/Bibliography heading OR the first zero-padded reflist marker (`01.`/`02.`, the headingless Wikipedia case the live run exposed), strips the boilerplate + the `<!--THE END-->` converter artifact, filters fragment-only links, and re-evaluates `low_content` post-cleanup. All patterns are STRUCTURAL markdown forms (not natural-language prose).
+
+## Gate-3 evidence (final, re-run live against the up stack)
+
+- **SC#2 live web_fetch (en.wikipedia.org/wiki/Knowledge_graph): PASS** — content_md **36070 B → 16429 B**; no `#cite_note`/`#cite_ref`, no "From Wikipedia", no references tail, no fragment-only links.
+- **SC#1 TestSearch_Live: PASS ~1.01s** (advisory, under the 2s budget; p95 is env-tunable per project policy, not a hard gate).
+- **SC#3 ssrf_smoke: 4/4 blocked_url, grep-clean** ✅
+- **SC#4 TestDNSRebind: PASS** (DNS pin reuse proven; the live fetch path now executes — TestFetch_Live also PASS).
+- **ssrf.go mutation: 94.4%** (17/18; ssrf.go untouched; lone survivor = unreachable metadataV6Pfx dead branch) — ≥70% ✅
+- **Owned-surface coverage gate (`internal/*`, db+neo4j tags): 87.4% — PASS** (the official Gate-3 floor, ≥85%).
+- internal/web standalone combined (unit + web_integration): **82.0%** (was 77.3% — cap fix unblocked the fetch-live success paths + new error-mapping/redirect/post-cleanup unit tests). Remaining sub-85% is the convertNode A2 fallback + defensive dial-control branches, not contrived-tested.
+- **golangci-lint: 0 issues** ✅
+- **aura web doctor (live stack): reachable: yes, JSON round-trip OK, status OK** ✅
 
 ## Threat Flags
 
@@ -123,4 +130,4 @@ None — no new trust boundary beyond the plan's `<threat_model>`. The adapters 
 
 ## Self-Check: PASSED
 
-All created files exist on disk; all 4 task/deviation commits (2c4062bd, 7aa4d020, e1e7bc9d, f86cbf13) are in the git history. Task 4 is the blocking-human checkpoint and is intentionally not self-approved.
+All created files exist on disk; the original 4 task/deviation commits (2c4062bd, 7aa4d020, e1e7bc9d, f86cbf13) plus the 5 gap-closure commits (f5764ecc, 1e424487, 997b8693, 00d76c59, 8f25cc13) are in the git history. The bug + quality gap are fixed, the full Gate-3 was re-run live (SC#1-4 green, official coverage gate 87.4%, lint 0, ssrf mutation 94.4%, doctor OK). Task 4 remains the blocking-human checkpoint and is intentionally NOT self-approved — CAP-05 is not marked complete.

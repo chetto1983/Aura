@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 7 context gathered
-last_updated: "2026-06-02T15:02:38.695Z"
+stopped_at: Phase 07 Plan 04 Task 4 human-verify (gap closure done, Gate-3 green, CAP-05 pending sign-off)
+last_updated: "2026-06-02T19:00:00.000Z"
 last_activity: 2026-06-02
 progress:
   total_phases: 16
@@ -128,6 +128,7 @@ Recent decisions affecting current work:
 - [Phase 05]: 05-04 (Gate-3 evidence, tasks 1-2 committed c3d90b0/c807553; Task 3 human-verify PENDING): scripts/sandbox_escape_bench.sh is a DETERMINISTIC SandboxEscapeBench port (no LLM driver) — 14 runtime/kernel live-denominator probes posted to the live /exec/python wire (escape only if the technique succeeds) + 4 config-regression assertions (docker socket/privileged/writable host mount/excess caps must stay 0, SEPARATE gate not in the denominator) + 4 explicit N/A kubernetes lines (auditable denominator, OQ1); escape-rate=escapes/applicable, FAIL on >=5% or any config-regression>0; asserts userns-remap LIVE (Pitfall 3, hard-fail under $CI); runs internal/sandbox/docker.go go-mutesting spot-check (>=70%, avito-tech path same as Makefile); writes escape-rate+mutation+QEMU-arm64 caveat into docs/aura-quality-snapshot.md. .github/workflows/sandbox.yml is the REQUIRED gating DinD job: runsc install + daemon.json(userns-remap+runsc) + QEMU arm64 buildx + live sidecar under runsc + sandbox_integration negative tier + live bench + docker.go mutation + arm64 leg + 85% coverage fold; exports AURA_SANDBOX_URL/_TIMEOUT_SEC/_RUNTIME+CI=true (no-skip-as-green); documents Pitfall 2 (inner sidecar keeps seccomp despite --privileged outer DinD) + Pitfall 3. Docker daemon unavailable here -> live escape-rate/userns-remap-live/mutation-score are CI-populated (NOT fabricated) and are exactly the human-verify checkpoint sign-off items. CAP-01 NOT marked complete (verifier's call post-checkpoint).
 - [Phase 07]: 07-03: SearXNG client uses a plain http.Client (not the SSRF transport) — the in-network backend is trusted; only model-supplied web_fetch URLs cross the SSRF gate
 - [Phase 07]: 07-03: images category OUT for Phase 7 (general/news only); an unknown category is a structured error, not a panic; thumbnail/img_src kept in searxResult for a future images slice
+- [Phase 07]: 07-04 gap-closure (2026-06-02, Task 4 checkpoint bug+quality fix): the live Gate-3 found a BLOCKING bug — `AURA_WEB_RESPONSE_CAP_BYTES=24000` was applied to the RAW HTML body in gateAndRead, rejecting every real page (164KB Wikipedia → response_too_large) BEFORE extraction. Confirmed read in EXACTLY ONE place (raw-body LimitReader), never the LLM-facing payload (that is tools.NewResult preview cap). FIX Layer 1: renamed → WebFetchMaxBodyBytes / AURA_WEB_FETCH_MAX_BODY_BYTES, default 24000 → 5MB (raw-body DoS ceiling); PRD env-catalog amended first. FIX Layer 2: html.go post-processes the markdown — strips #cite_note/#cite_ref citation anchors, truncates at the References/Notes/Citations/Bibliography heading OR the first zero-padded reflist marker (the headingless Wikipedia case the live run exposed), strips the "From Wikipedia" boilerplate + <!--THE END--> converter artifact, filters fragment-only links, re-evaluates low_content post-cleanup. Gate-3 re-run LIVE: SC#2 content_md 36070→16429 B clean; SC#1 TestSearch_Live 1.01s; SC#3 4/4 blocked grep-clean; SC#4 TestDNSRebind PASS; ssrf.go mutation 94.4% (untouched); official internal/* coverage gate 87.4% (≥85%); golangci-lint 0; aura web doctor OK. Commits f5764ecc/1e424487/997b8693/00d76c59/8f25cc13. CAP-05 NOT marked complete — Task 4 human-verify still pending (the human's call).
 
 ### Pending Todos
 
@@ -153,6 +154,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-02T15:02:38.685Z
-Stopped at: Phase 7 context gathered
-Resume file: None
+Last session: 2026-06-02 (07-04 gap closure)
+Stopped at: Phase 07 Plan 04 Task 4 human-verify checkpoint — bug + quality gap FIXED, full Gate-3 re-run green; awaiting human sign-off to mark CAP-05 complete
+Resume file: .planning/phases/07-web-tools/07-04-SUMMARY.md (## Gap closure + ## Gate-3 evidence)
