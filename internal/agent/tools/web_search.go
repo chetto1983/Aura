@@ -1,0 +1,100 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+
+	"github.com/chetto1983/aura/internal/web"
+)
+
+// searchEngine is the search seam the adapter delegates to (mirrors
+// Execute.Runner sandbox.Runner — an injectable interface, not a concrete type,
+// so the adapter is unit-testable with a double). *web.Client satisfies it.
+type searchEngine interface {
+	Search(ctx context.Context, params web.SearchParams) ([]web.Result, error)
+}
+
+// WebSearch is the thin Deferred:true adapter over the shared web.Client search
+// engine (D-01). It marshals the model-supplied args into web.SearchParams,
+// delegates to the SSRF-hardened engine, maps a sanitized *web.WebError to an
+// inline {error,reason,message} object via NewResult so the model self-corrects
+// (D-41), and on success returns the ranked result list. It re-implements no
+// security boundary — every dial/classify/pin lives in internal/web.
+type WebSearch struct {
+	Engine searchEngine
+}
+
+// webSearchArgs exposes ONLY the D-09 public controls. There is deliberately no
+// engines/safesearch/pageno pass-through (D-10/T-07-31): the schema is the only
+// surface the model can drive, and the engine maps category through its own
+// enum→raw table.
+type webSearchArgs struct {
+	Query           string   `json:"query"`
+	MaxResults      int      `json:"max_results"`
+	Category        string   `json:"category"`
+	Language        string   `json:"language"`
+	TimeRange       string   `json:"time_range"`
+	Domains         []string `json:"domains"`
+	IncludeMetadata bool     `json:"include_metadata"`
+}
+
+func (e *WebSearch) Spec() Spec {
+	params := json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "query": {"type": "string", "description": "The search query. Plain words; no engine-specific operators are needed."},
+    "max_results": {"type": "integer", "minimum": 1, "maximum": 25, "description": "Optional cap on the number of results returned (default: the server cap). Omit to use the default."},
+    "category": {"type": "string", "enum": ["general", "news"], "description": "Optional result category. general (default) for broad web results; news for recent reporting."},
+    "language": {"type": "string", "description": "Optional BCP-47-ish language hint (e.g. en, it, de). Omit for the engine default."},
+    "time_range": {"type": "string", "enum": ["day", "month", "year"], "description": "Optional recency window. Omit for no time filter."},
+    "domains": {"type": "array", "items": {"type": "string"}, "description": "Optional list of bare hostnames (e.g. wikipedia.org) to restrict results to. Hostnames only — no scheme or path."},
+    "include_metadata": {"type": "boolean", "description": "When true, attach a metadata tier (engine, score, category, published_at, thumbnail) to each result. Default false keeps the lean {title,url,snippet} shape."}
+  },
+  "required": ["query"]
+}`)
+	return Spec{
+		Name:    "web_search",
+		Summary: "Search the public web via the configured SearXNG instance.",
+		Description: "Search the public web through the configured private SearXNG meta-search instance and get back a ranked list of {title, url, snippet} results. " +
+			"Use it to find pages, recent news, or candidate URLs you can then read with web_fetch. " +
+			"You can narrow results with an optional category (general|news), a language hint, a recency time_range (day|month|year), and a domains allowlist of bare hostnames. " +
+			"Set include_metadata:true only when you need the engine/score/published_at tier — the default lean shape is cheaper. " +
+			"Example: {\"query\":\"Neo4j HNSW vector index\",\"max_results\":5}. " +
+			"Example (news, last day): {\"query\":\"EU AI Act\",\"category\":\"news\",\"time_range\":\"day\"}. " +
+			"Example (domain-scoped): {\"query\":\"site reliability\",\"domains\":[\"wikipedia.org\"]}.",
+		Parameters: params,
+		Deferred:   true,
+	}
+}
+
+// Execute unmarshals the args, delegates to the hardened engine, and routes the
+// outcome through NewResult. A *web.WebError (e.g. searxng unavailable / not
+// configured) is sanitized to inline {error,reason,message} JSON so the model
+// self-corrects (D-41) — it is NOT a Go error. Only a genuine non-web infra
+// fault propagates as a Go error to the loop.
+func (e *WebSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+	var a webSearchArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return ToolResult{}, fmt.Errorf("web_search args: %w", err)
+	}
+
+	results, err := e.Engine.Search(ctx, web.SearchParams{
+		Query:           a.Query,
+		MaxResults:      a.MaxResults,
+		Category:        a.Category,
+		Language:        a.Language,
+		TimeRange:       a.TimeRange,
+		Domains:         a.Domains,
+		IncludeMetadata: a.IncludeMetadata,
+	})
+	if err != nil {
+		return webErrorResult(ctx, err)
+	}
+
+	out, mErr := json.Marshal(map[string]any{"results": results})
+	if mErr != nil {
+		return ToolResult{}, fmt.Errorf("web_search: marshal results: %w", mErr)
+	}
+	return NewResult(ctx, string(out))
+}
