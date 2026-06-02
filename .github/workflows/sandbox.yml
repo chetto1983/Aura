@@ -69,6 +69,12 @@ jobs:
       AURA_SANDBOX_TIMEOUT_SEC: "30"
       AURA_SANDBOX_RUNTIME: "runsc"
       AURA_SANDBOX_CONTAINER: "aura-sandbox"
+      # compose.yaml is the FULL stack. `docker compose up aura-sandbox` still interpolates
+      # the sibling neo4j/postgres services (their ${VAR:?} guards), even though the targeted
+      # service has no depends_on and never starts them. The sandbox uses neither secret —
+      # these dummy values only satisfy interpolation so the targeted `up --build` runs.
+      NEO4J_PASSWORD: "ci-unused"
+      POSTGRES_PASSWORD: "ci-unused"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
