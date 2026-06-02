@@ -95,11 +95,9 @@ services:
   # compose-service field — it maps container uid 0 -> an unprivileged host uid
   # and is asserted against the daemon by the 05-04 bench, not here.
   #
-  # NOTE: `network_mode: none` means the container has no network namespace, so
-  # the `ports` publish below is the documented wire surface the runner targets
-  # (matching the PRD T-1.07 loopback convention); under net-none it is not
-  # reachable on its own — it is the contract on the non-gVisor floor. The field
-  # is kept deliberately.
+  # NOTE: the sandbox uses a non-masquerading bridge rather than
+  # `network_mode: none`: the Go runner needs the loopback-published HTTP API
+  # below, while the bridge has no NAT route for user-code egress.
   aura-sandbox:
     build: ./sandbox
     container_name: aura-sandbox
@@ -108,7 +106,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    network_mode: none
+    networks:
+      - aura-sandbox-egressless
     cap_drop:
       - ALL
     security_opt:
@@ -122,8 +121,10 @@ services:
     ports:
       - "127.0.0.1:18901:18901"
     healthcheck:
-      # Image ships no curl; probe /healthz with a stdlib urllib one-liner.
-      test: ["CMD-SHELL", "python3 -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:18901/healthz', timeout=3).status==200 else 1)\""]
+      # connect(2) is denied by seccomp for user-code egress containment, so the
+      # container healthcheck validates the sidecar process instead of calling
+      # its loopback HTTP endpoint from inside the sandbox.
+      test: ["CMD-SHELL", "python3 -c \"import pathlib,sys; sys.exit(0 if b'/app/sidecar.py' in pathlib.Path('/proc/1/cmdline').read_bytes() else 1)\""]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -134,3 +135,9 @@ volumes:
   aura-neo4j:
   aura-neo4j-plugins:
   aura-llama-embed:
+
+networks:
+  aura-sandbox-egressless:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"

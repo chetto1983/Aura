@@ -9,7 +9,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/goleak"
 
@@ -35,6 +38,92 @@ func TestMain(m *testing.M) {
 
 func testConfig(url string, defaultTimeout int) *config.Config {
 	return &config.Config{SandboxURL: url, SandboxTimeoutSec: defaultTimeout}
+}
+
+func TestSeccompProfileUsesSingleArchitectureDialect(t *testing.T) {
+	profile := loadSeccompProfile(t)
+	hasArchMap := len(profile["archMap"]) != 0
+	hasArchitectures := len(profile["architectures"]) != 0
+	if hasArchMap == hasArchitectures {
+		t.Fatal("Docker-compatible seccomp profile must specify exactly one architecture dialect: archMap or architectures")
+	}
+}
+
+func TestSeccompProfileAllowsHTTPListenerAndDeniesEscapePrimitives(t *testing.T) {
+	raw := loadSeccompProfile(t)
+	var profile struct {
+		Syscalls []struct {
+			Names  []string `json:"names"`
+			Action string   `json:"action"`
+		} `json:"syscalls"`
+	}
+	if err := json.Unmarshal(raw["_raw"], &profile); err != nil {
+		t.Fatalf("decode seccomp profile: %v", err)
+	}
+
+	allowed := map[string]bool{}
+	for _, group := range profile.Syscalls {
+		if group.Action != "SCMP_ACT_ALLOW" {
+			continue
+		}
+		for _, name := range group.Names {
+			allowed[name] = true
+		}
+	}
+
+	for _, name := range []string{
+		"accept", "accept4", "bind", "getpeername", "getsockname",
+		"getsockopt", "listen", "recvfrom", "recvmsg", "sendmsg", "sendto",
+		"setsockopt", "socket", "socketpair",
+	} {
+		if !allowed[name] {
+			t.Fatalf("seccomp profile must allow %s so the sidecar listener and healthcheck can run", name)
+		}
+	}
+	for _, name := range []string{"bpf", "connect", "kexec_load", "mount", "process_vm_readv", "ptrace", "unshare", "userfaultfd"} {
+		if allowed[name] {
+			t.Fatalf("seccomp profile must deny escape primitive %s by omission", name)
+		}
+	}
+}
+
+func TestComposeSandboxUsesEgresslessBridgeWithLoopbackPort(t *testing.T) {
+	raw, err := os.ReadFile("../../compose.yaml")
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	compose := string(raw)
+	if strings.Contains(compose, "\n    network_mode: none") {
+		t.Fatal("network_mode:none prevents the host runner from reaching the published sandbox API")
+	}
+	for _, want := range []string{
+		`"127.0.0.1:18901:18901"`,
+		"aura-sandbox-egressless:",
+		`com.docker.network.bridge.enable_ip_masquerade: "false"`,
+		"- aura-sandbox-egressless",
+		"/proc/1/cmdline",
+	} {
+		if !strings.Contains(compose, want) {
+			t.Fatalf("compose.yaml must include %q for host-reachable, egress-contained sandbox networking", want)
+		}
+	}
+	if strings.Contains(compose, "urllib.request.urlopen") {
+		t.Fatal("sandbox healthcheck must not require connect(2), which seccomp denies for egress containment")
+	}
+}
+
+func loadSeccompProfile(t *testing.T) map[string]json.RawMessage {
+	t.Helper()
+	raw, err := os.ReadFile("../../sandbox/seccomp.json")
+	if err != nil {
+		t.Fatalf("read seccomp profile: %v", err)
+	}
+	var profile map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &profile); err != nil {
+		t.Fatalf("seccomp profile must be valid JSON: %v", err)
+	}
+	profile["_raw"] = raw
+	return profile
 }
 
 // TestDockerRunner_UnreachableSentinel: a dead URL with docker absent on PATH
@@ -136,6 +225,30 @@ func TestRunner_TimeoutClampedAndBodied(t *testing.T) {
 	}
 	if got.TimeoutSec != 5 {
 		t.Fatalf("an in-range timeout must pass through verbatim, got %d", got.TimeoutSec)
+	}
+}
+
+func TestRunner_RequestContextAllowsTimeoutReportGrace(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		var got wireRequest
+		if err := json.NewDecoder(req.Body).Decode(&got); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if got.TimeoutSec != 1 {
+			t.Errorf("wire timeout = %d, want 1", got.TimeoutSec)
+		}
+		time.Sleep(1100 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(wireResponse{ExitCode: 124, LimitHit: "timeout"})
+	}))
+	defer srv.Close()
+
+	r := NewDockerRunner(testConfig(srv.URL, 30))
+	res, err := r.RunPython(context.Background(), "while True:\n    pass", 1)
+	if err != nil {
+		t.Fatalf("runner should leave response grace after sidecar timeout: %v", err)
+	}
+	if res.LimitHit != "timeout" || res.ExitCode != 124 {
+		t.Fatalf("want structured timeout result, got %+v", res)
 	}
 }
 

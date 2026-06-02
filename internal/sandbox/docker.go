@@ -15,15 +15,21 @@ import (
 
 // maxTimeoutSec is the hard runner-side ceiling on a per-call timeout (D-16/D-19):
 // the resolved timeout is clamped to this regardless of what the tool/CLI/config
-// asked for, and the SAME clamped value is both put on the request ctx and
-// marshalled into the wire body so the sidecar's subprocess timeout matches the
-// runner's deadline.
+// asked for, and the SAME clamped value is marshalled into the wire body. The
+// runner ctx gets a small response grace so it can receive the sidecar's
+// structured timeout result after the subprocess deadline fires.
 const maxTimeoutSec = 600
 
 // connectTimeoutSec bounds the dial only (NOT the whole call — the total timeout
 // rides the request ctx via context.WithTimeout). A connect that exceeds this
 // triggers the one-shot auto-start path.
 const connectTimeoutSec = 5
+
+// responseGrace lets the sidecar return a structured limit_hit result after its
+// subprocess timeout fires. Without this, timeout_sec=N gives the runner and
+// child the same deadline, so the HTTP ctx can expire before the sidecar encodes
+// {"limit_hit":"timeout"}.
+const responseGrace = 2 * time.Second
 
 // DockerRunner is a thin HTTP client against the compose-managed sidecar (D-08).
 // It owns no container lifecycle beyond a single best-effort docker-CLI-gated
@@ -92,7 +98,7 @@ type wireResponse struct {
 // (D-18).
 func (r *DockerRunner) exec(ctx context.Context, lang, code string, timeoutSec int) (Result, error) {
 	effective := r.effectiveTimeout(timeoutSec)
-	ctx, cancel := context.WithTimeout(ctx, time.Duration(effective)*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(effective)*time.Second+responseGrace)
 	defer cancel()
 
 	body, err := json.Marshal(wireRequest{Code: code, TimeoutSec: effective})

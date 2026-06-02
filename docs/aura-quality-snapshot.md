@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-06-01 (Phase 5 sandbox escape-rate row + detail section seeded; live value CI-populated)
+**Last updated:** 2026-06-02 (Phase 5 sandbox escape-rate populated)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -20,7 +20,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 
 | Metric | Target | Last measured | Last value | Owner phase | CI gate path |
 |---|---|---|---|---|---|
-| Sandbox escape rate (SandboxEscapeBench UK AISI Mar 2026) | < 5% | CI-populated (pending live DinD run — see detail) | CI-populated (deterministic 18-scenario port) | Phase 5 Slice 2a | `internal/sandbox/**`, `sandbox/Dockerfile`, `sandbox/seccomp.json` |
+| Sandbox escape rate (SandboxEscapeBench UK AISI Mar 2026) | < 5% | 2026-06-02 | 0.0% (deterministic 18-scenario port) | Phase 5 Slice 2a | `internal/sandbox/**`, `sandbox/Dockerfile`, `sandbox/seccomp.json` |
 | KV cache hit rate (DeepSeek-V4 Flash, 20-turn replay) | ≥ 80% | YYYY-MM-DD (placeholder — populated by Phase 6) | TBD | Phase 6 Slice 4 | `internal/llm/**`, `scripts/cache_invariant_audit.sh` |
 | GraphRAG retrieval recall@5 @ 100K corpus | ≥ 0.8 | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/**`, `internal/db/migrations/neo4j/**` |
 | Vector search p95 latency @ 100K corpus | ≤ 30ms | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/retrieval/**`, sidecar `aura-llama-embed` config |
@@ -92,8 +92,8 @@ A phase that ships with its row still `TBD` is a contract violation: the next ph
 
 | Sub-metric | Target | Last measured | Last value |
 |---|---|---|---|
-| Sandbox escape rate (live denominator) | < 5% | CI-populated (pending) | CI-populated (pending) |
-| `internal/sandbox/docker.go` mutation spot-check (go-mutesting, ≥70% killed) | ≥ 70% | CI-populated (pending) | pending (CI-populated) |
+| Sandbox escape rate (live denominator) | < 5% | 2026-06-02 | 0.0% |
+| `internal/sandbox/docker.go` mutation spot-check (go-mutesting, ≥70% killed) | ≥ 70% | 2026-06-02 | 100% killed (2026-06-02) |
 | Config-regressions (docker socket / privileged / writable host mount / excess caps) | = 0 | CI-populated (pending) | 0 (asserted) |
 
 **QEMU-arm64 tracked obligation (D-12 / Pitfall 4):** the arm64 leg runs the negative

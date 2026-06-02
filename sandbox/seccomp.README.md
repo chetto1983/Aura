@@ -29,24 +29,28 @@ Aura sandbox 2a positive seccomp allowlist for the `aura-sandbox` container.
 > to begin with, so they were already denied by `defaultAction: SCMP_ACT_ERRNO`
 > — the profile denies them by omission, which is the intended posture.
 
-**Network socket syscalls (net-none defence-in-depth — so SC#3's socket
-boundary holds even if `network_mode: none` were ever relaxed):**
-`socket`, `socketpair`, `connect`, `bind`, `listen`, `accept`, `accept4`,
-`sendto`, `recvfrom`, `sendmsg`, `recvmsg`, `getsockopt`, `setsockopt`,
-`getpeername`, `getsockname`.
+**Listener socket syscalls stay allowed; outbound `connect` is denied.** The
+sidecar is an HTTP server, so `socket`/`bind`/`listen`/`accept` and related
+receive/send syscalls must be available for the container to boot. The compose
+healthcheck validates the sidecar process via `/proc/1/cmdline` instead of
+calling loopback HTTP from inside the sandbox, so `connect` can remain denied by
+seccomp. The non-masquerading `aura-sandbox-egressless` bridge is retained as an
+extra network backstop; SC#3 asserts an external connect does not succeed.
 
-The actively-removed-from-ALLOW set (the 20 names present in moby's ALLOW that
-we strip) is enumerated verbatim in the `_comment` key of `seccomp.json`.
+The actively-removed-from-ALLOW set is enumerated verbatim in the `_comment` key
+of `seccomp.json`.
 
 ## Multi-arch (D-11)
 
-`architectures` lists **`SCMP_ARCH_X86_64`** and **`SCMP_ARCH_AARCH64`** by
-name; `archMap` carries the conventional sub-architectures. libseccomp resolves
-the syscall *numbers* per-arch at load time — **no syscall is referenced by
-number** (x86 numbers != arm64 numbers). x86_64 is validated live; arm64 is
-validated under QEMU in CI with the tracked caveat that QEMU syscall emulation
-can diverge from a real arm64 kernel (real-DGX confirmation remains a
-pre-production arm64 obligation).
+`architectures` lists **`SCMP_ARCH_X86_64`**, **`SCMP_ARCH_X86`**,
+**`SCMP_ARCH_X32`**, **`SCMP_ARCH_AARCH64`**, and **`SCMP_ARCH_ARM`** by name.
+Docker rejects profiles that specify both `archMap` and `architectures`, so Aura
+uses one Docker-compatible dialect at a time. libseccomp resolves the syscall
+*numbers* per-arch at load time — **no syscall is referenced by number** (x86
+numbers != arm64 numbers). x86_64 is validated live; arm64 is validated under
+QEMU in CI with the tracked caveat that QEMU syscall emulation can diverge from
+a real arm64 kernel (real-DGX confirmation remains a pre-production arm64
+obligation).
 
 ## Backstops
 
@@ -60,6 +64,6 @@ pre-production arm64 obligation).
 ## Regenerating
 
 Re-fetch the moby baseline at a fixed tag, flatten the ALLOW names, subtract the
-two sets above, set `defaultAction: SCMP_ACT_ERRNO` + `defaultErrnoRet: 1` +
-both architectures by name. Update the tag + date in this file and the
-`_comment` key when you do.
+two sets above, set `defaultAction: SCMP_ACT_ERRNO` + `defaultErrnoRet: 1`, and
+keep exactly one Docker-compatible architecture dialect (`architectures` or
+`archMap`). Update the tag + date in this file and the `_comment` key when you do.

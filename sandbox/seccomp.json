@@ -1,25 +1,13 @@
 {
-  "_comment": "Aura sandbox 2a positive seccomp allowlist (D-10/D-11). Baseline: moby profiles/seccomp/default.json @ v27.5.1. Flattened to a single by-name ALLOW group (moby's CAP-gated conditional groups are inert under cap_drop:ALL) then SUBTRACTED the hard-exclude dangerous set + the network socket syscalls. Removed: accept,accept4,bind,bpf,connect,getpeername,getsockname,getsockopt,listen,mount,process_vm_readv,ptrace,recvfrom,recvmsg,sendmsg,sendto,setsockopt,socket,socketpair,unshare. defaultAction SCMP_ACT_ERRNO(EPERM) \u2014 anything not listed is denied. Multi-arch by-name (libseccomp resolves numbers per-arch); NEVER hardcode syscall numbers. See sandbox/seccomp.README.md for the audit trail.",
+  "_comment": "Aura sandbox 2a positive seccomp allowlist (D-10/D-11). Baseline: moby profiles/seccomp/default.json @ v27.5.1. Flattened to a single by-name ALLOW group (moby's CAP-gated conditional groups are inert under cap_drop:ALL) then SUBTRACTED the hard-exclude dangerous set and connect. Removed: bpf,connect,kexec_load,mount,process_vm_readv,ptrace,unshare,userfaultfd. Listener socket syscalls stay allowed so the sidecar HTTP server can run; egress connect is denied by seccomp and the bridge has no masquerade. defaultAction SCMP_ACT_ERRNO(EPERM) \u2014 anything not listed is denied. Multi-arch by-name (libseccomp resolves numbers per-arch); NEVER hardcode syscall numbers. See sandbox/seccomp.README.md for the audit trail.",
   "defaultAction": "SCMP_ACT_ERRNO",
   "defaultErrnoRet": 1,
-  "archMap": [
-    {
-      "architecture": "SCMP_ARCH_X86_64",
-      "subArchitectures": [
-        "SCMP_ARCH_X86",
-        "SCMP_ARCH_X32"
-      ]
-    },
-    {
-      "architecture": "SCMP_ARCH_AARCH64",
-      "subArchitectures": [
-        "SCMP_ARCH_ARM"
-      ]
-    }
-  ],
   "architectures": [
     "SCMP_ARCH_X86_64",
-    "SCMP_ARCH_AARCH64"
+    "SCMP_ARCH_X86",
+    "SCMP_ARCH_X32",
+    "SCMP_ARCH_AARCH64",
+    "SCMP_ARCH_ARM"
   ],
   "syscalls": [
     {
@@ -358,6 +346,20 @@
         "shmdt",
         "shmget",
         "shutdown",
+        "accept",
+        "accept4",
+        "bind",
+        "getpeername",
+        "getsockname",
+        "getsockopt",
+        "listen",
+        "recvfrom",
+        "recvmsg",
+        "sendmsg",
+        "sendto",
+        "setsockopt",
+        "socket",
+        "socketpair",
         "sigaltstack",
         "signalfd",
         "signalfd4",
