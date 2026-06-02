@@ -9,6 +9,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
@@ -57,15 +58,10 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 // persistAssistantAnswer persists the terminal assistant answer turn with its
 // per-turn usage (read off the final Event's StateDelta, mirroring chat_render.go).
 //
-// Consistency contract (WR-03): the assistant turn and its cache_metrics row are two
-// separate writes (the conversations and cachemetrics Stores share no tx seam). The turn
-// is the load-bearing record; the metric is an append-only observation. If the metric
-// write fails the turn fails too (no silent drop — no-skip discipline), but the metric
-// INSERT is idempotent on (conversation_id, seq) via ON CONFLICT DO NOTHING, so a retry
-// re-records the same seq's metric as a no-op, never a duplicate. (Assistant-turn
-// duplication on a fresh-seq retry is a property of the CountTurns/AppendTurn seq model
-// shared by every turn write here, not specific to the metric; closing it fully needs a
-// shared transaction across the two Stores — deferred as out of phase scope.)
+// Consistency contract: the assistant turn, conversation aggregate update, and
+// cache_metrics row are persisted through the conversation store's atomic
+// assistant-write seam. A metric failure rolls the turn back, so callers never see a
+// failed turn while the conversation history already contains the answer.
 func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *agent.Event) error {
 	seq, err := r.nextSeq(ctx, convID)
 	if err != nil {
@@ -76,7 +72,7 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 	if u.Cost != nil {
 		cost = *u.Cost
 	}
-	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+	turn := conversations.AppendTurnParams{
 		ConversationID: convID,
 		Seq:            seq,
 		Role:           llm.RoleAssistant,
@@ -85,20 +81,24 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 		OutputTokens:   u.CompletionTokens,
 		CachedTokens:   u.CachedTokens,
 		CostUSD:        cost,
-	}); err != nil {
+	}
+	metric, err := r.cacheMetricParams(convID, seq, u, cost)
+	if err != nil {
 		return err
 	}
-	return r.persistCacheMetric(ctx, convID, seq, u, cost)
+	if err := r.Conv.AppendAssistantTurnWithCacheMetric(ctx, turn, metric); err != nil {
+		return fmt.Errorf("persist assistant answer: %w", err)
+	}
+	return nil
 }
 
-// persistCacheMetric writes the per-turn append-only cache_metrics row from the
-// already-computed llm.Usage + cost (D-02a: no wire-path touch — the same numbers that
-// fed the conversation turn). A nil cacheMetrics is a wiring bug, not a silent skip:
-// the prod composition root MUST inject a Store (no-skip discipline), so the metric is
-// never dropped without notice.
-func (r *Runner) persistCacheMetric(ctx context.Context, convID string, seq int, u llm.Usage, cost float64) error {
+// cacheMetricParams builds the per-turn cache_metrics row from the already-computed
+// llm.Usage + cost. A nil cacheMetrics is a wiring bug, not a silent skip: the prod
+// composition root MUST inject a Store, so the metric path is never unwired without
+// notice.
+func (r *Runner) cacheMetricParams(convID string, seq int, u llm.Usage, cost float64) (sqlc.InsertCacheMetricParams, error) {
 	if r.cacheMetrics == nil {
-		return fmt.Errorf("persist cache metric: cacheMetrics store is nil (composition root must inject one)")
+		return sqlc.InsertCacheMetricParams{}, fmt.Errorf("persist cache metric: cacheMetrics store is nil (composition root must inject one)")
 	}
 	p, err := cachemetrics.NewInsertParams(cachemetrics.MetricParams{
 		ConversationID: convID,
@@ -108,12 +108,9 @@ func (r *Runner) persistCacheMetric(ctx context.Context, convID string, seq int,
 		CostUSD:        cost,
 	})
 	if err != nil {
-		return fmt.Errorf("persist cache metric: %w", err)
+		return sqlc.InsertCacheMetricParams{}, fmt.Errorf("persist cache metric: %w", err)
 	}
-	if err := r.cacheMetrics.Insert(ctx, p); err != nil {
-		return fmt.Errorf("persist cache metric: %w", err)
-	}
-	return nil
+	return p, nil
 }
 
 // persistPause writes the paused_states row for one ask_user pause (SOLE writer,

@@ -128,6 +128,13 @@ func (m *memConvStore) AppendTurn(_ context.Context, p conversations.AppendTurnP
 	return nil
 }
 
+func (m *memConvStore) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, _ sqlc.InsertCacheMetricParams) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.turns[p.ConversationID] = append(m.turns[p.ConversationID], p)
+	return nil
+}
+
 func (m *memConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

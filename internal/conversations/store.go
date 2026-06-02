@@ -252,17 +252,56 @@ type AppendTurnParams struct {
 // write is not part of the DB atomicity; a later boot scan reconciles an orphaned
 // file if the tx rolls back). The row then stores content=NULL + content_sidecar_path.
 func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
+	turn, agg, err := s.appendTurnWrites(p)
+	if err != nil {
+		return err
+	}
+
+	if err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		return insertTurnAndAggregates(ctx, q, turn, agg)
+	}); err != nil {
+		return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+	}
+	return nil
+}
+
+// AppendAssistantTurnWithCacheMetric writes a terminal assistant turn, folds its
+// usage into the conversation aggregate, and appends the matching cache_metrics row
+// in one database transaction. The Runner uses this for final assistant Events so a
+// metric failure cannot leave the conversation with an answer the caller never
+// receives.
+func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p AppendTurnParams, metric sqlc.InsertCacheMetricParams) error {
+	turn, agg, err := s.appendTurnWrites(p)
+	if err != nil {
+		return err
+	}
+
+	if err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		if err := insertTurnAndAggregates(ctx, q, turn, agg); err != nil {
+			return err
+		}
+		if err := q.InsertCacheMetric(ctx, metric); err != nil {
+			return fmt.Errorf("insert cache metric: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("append assistant turn with cache metric %s seq %d: %w", p.ConversationID, p.Seq, err)
+	}
+	return nil
+}
+
+func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTurnParams, sqlc.UpdateConversationAggregatesParams, error) {
 	convID, err := parseUUID("conversation_id", p.ConversationID)
 	if err != nil {
-		return fmt.Errorf("append turn: %w", err)
+		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn: %w", err)
 	}
 	content, sidecarPath, err := s.maybeSpill(p.ConversationID, p.Seq, p.Content)
 	if err != nil {
-		return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
 	cost, err := numericFromFloat(p.CostUSD)
 	if err != nil {
-		return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
 
 	turn := sqlc.InsertConversationTurnParams{
@@ -285,16 +324,15 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 		ID:           convID,
 	}
 
-	if err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
-		if err := q.InsertConversationTurn(ctx, turn); err != nil {
-			return fmt.Errorf("insert turn: %w", err)
-		}
-		if err := q.UpdateConversationAggregates(ctx, agg); err != nil {
-			return fmt.Errorf("update aggregates: %w", err)
-		}
-		return nil
-	}); err != nil {
-		return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+	return turn, agg, nil
+}
+
+func insertTurnAndAggregates(ctx context.Context, q *sqlc.Queries, turn sqlc.InsertConversationTurnParams, agg sqlc.UpdateConversationAggregatesParams) error {
+	if err := q.InsertConversationTurn(ctx, turn); err != nil {
+		return fmt.Errorf("insert turn: %w", err)
+	}
+	if err := q.UpdateConversationAggregates(ctx, agg); err != nil {
+		return fmt.Errorf("update aggregates: %w", err)
 	}
 	return nil
 }

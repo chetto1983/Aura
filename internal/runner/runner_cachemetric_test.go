@@ -15,6 +15,7 @@ import (
 func newRunnerWithCacheFake(t *testing.T, client llm.Client, cache *fakeCacheMetricStore) (*Runner, *fakeConvStore) {
 	t.Helper()
 	conv := newFakeConvStore()
+	conv.cache = cache
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(tools.AskUser{})
@@ -67,7 +68,7 @@ func TestPersistAssistantAnswer_CacheMetricErrorSurfaces(t *testing.T) {
 	)
 	cache := newFakeCacheMetricStore()
 	cache.insertEr = errFake
-	r, _ := newRunnerWithCacheFake(t, client, cache)
+	r, conv := newRunnerWithCacheFake(t, client, cache)
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
@@ -79,13 +80,16 @@ func TestPersistAssistantAnswer_CacheMetricErrorSurfaces(t *testing.T) {
 	if err := r.Stop(ctx, convID); err != nil {
 		t.Fatalf("stop: %v", err)
 	}
+	if got := len(conv.turns[convID]); got != 1 {
+		t.Fatalf("want only the user turn after rolled-back assistant metric failure, got %d turns", got)
+	}
 }
 
 // TestPersistCacheMetric_NilStoreFailsLoud proves a nil CacheMetricStore is a wiring bug
 // surfaced loudly (the prod composition root MUST inject a Store).
 func TestPersistCacheMetric_NilStoreFailsLoud(t *testing.T) {
 	r := &Runner{}
-	err := r.persistCacheMetric(context.Background(), newConvID(t), 3, llm.Usage{PromptTokens: 10, CachedTokens: 5}, 0.01)
+	_, err := r.cacheMetricParams(newConvID(t), 3, llm.Usage{PromptTokens: 10, CachedTokens: 5}, 0.01)
 	if err == nil {
 		t.Fatal("want a loud error when cacheMetrics store is nil, got nil")
 	}

@@ -49,6 +49,7 @@ type fakeConvStore struct {
 	mu       sync.Mutex
 	convs    map[string]*conversations.Conversation
 	turns    map[string][]conversations.AppendTurnParams
+	cache    *fakeCacheMetricStore
 	titleErr error // injectable SetTitleIfNull error (auto-title resilience test)
 	manErr   error // injectable LoadManagedHistory error
 	countErr error // injectable CountTurns error
@@ -149,6 +150,12 @@ func (f *fakeConvStore) CountTurns(_ context.Context, id string) (int, error) {
 func (f *fakeConvStore) AppendTurn(_ context.Context, p conversations.AppendTurnParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	return f.appendTurnLocked(p)
+}
+
+func (f *fakeConvStore) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, metric sqlc.InsertCacheMetricParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.appendN++
 	if f.appendEr != nil {
 		return f.appendEr
@@ -156,6 +163,36 @@ func (f *fakeConvStore) AppendTurn(_ context.Context, p conversations.AppendTurn
 	if f.failAppN > 0 && f.appendN == f.failAppN {
 		return errFake
 	}
+	if f.cache != nil {
+		f.cache.mu.Lock()
+		if f.cache.insertEr != nil {
+			f.cache.mu.Unlock()
+			return f.cache.insertEr
+		}
+		f.cache.mu.Unlock()
+	}
+	f.appendTurnFieldsLocked(p)
+	if f.cache != nil {
+		f.cache.mu.Lock()
+		f.cache.inserts = append(f.cache.inserts, metric)
+		f.cache.mu.Unlock()
+	}
+	return nil
+}
+
+func (f *fakeConvStore) appendTurnLocked(p conversations.AppendTurnParams) error {
+	f.appendN++
+	if f.appendEr != nil {
+		return f.appendEr
+	}
+	if f.failAppN > 0 && f.appendN == f.failAppN {
+		return errFake
+	}
+	f.appendTurnFieldsLocked(p)
+	return nil
+}
+
+func (f *fakeConvStore) appendTurnFieldsLocked(p conversations.AppendTurnParams) {
 	f.turns[p.ConversationID] = append(f.turns[p.ConversationID], p)
 	c, ok := f.convs[p.ConversationID]
 	if ok {
@@ -164,7 +201,6 @@ func (f *fakeConvStore) AppendTurn(_ context.Context, p conversations.AppendTurn
 		c.TotalCachedTokens += int64(p.CachedTokens)
 		c.TotalCostUSD += p.CostUSD
 	}
-	return nil
 }
 
 func (f *fakeConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message, error) {

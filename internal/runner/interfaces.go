@@ -39,6 +39,7 @@ type ConversationStore interface {
 	SetTitleIfNull(ctx context.Context, conversationID, title string) error
 	CountTurns(ctx context.Context, conversationID string) (int, error)
 	AppendTurn(ctx context.Context, p conversations.AppendTurnParams) error
+	AppendAssistantTurnWithCacheMetric(ctx context.Context, p conversations.AppendTurnParams, metric sqlc.InsertCacheMetricParams) error
 	LoadHistory(ctx context.Context, conversationID string) ([]llm.Message, error)
 	LoadManagedHistory(ctx context.Context, conversationID string, cfg conversations.ContextConfig) ([]llm.Message, error)
 	SearchConversationTurns(ctx context.Context, query string, limit int) ([]conversations.SearchResult, error)
