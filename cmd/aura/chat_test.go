@@ -65,6 +65,7 @@ func testChatDeps(t *testing.T, in string, client *agenttest.FakeClient) (replDe
 		Conv:         conv,
 		Pause:        newCmdPauseFake(),
 		Identity:     newCmdIdentityFake(),
+		CacheMetrics: newCmdCacheMetricFake(),
 		Client:       client,
 		Registry:     reg,
 		LLM:          cfg.LLM,

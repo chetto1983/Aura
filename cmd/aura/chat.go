@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
@@ -116,6 +117,7 @@ func bootChat(ctx context.Context) *chatEnv {
 	})
 	pauseStore := askuser.New(pool)
 	idStore := identity.New(pool)
+	cacheStore := cachemetrics.New(pool)
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.
@@ -134,15 +136,16 @@ func bootChat(ctx context.Context) *chatEnv {
 
 	client := openai_compat.New(cfg.LLM)
 	run := runner.New(runner.Deps{
-		Conv:       convStore,
-		Pause:      pauseStore,
-		Identity:   idStore,
-		Client:     client,
-		Registry:   buildRegistry(),
-		LLM:        cfg.LLM,
-		RunDir:     cfg.RunDir,
-		PreviewCap: cfg.ToolPreviewCap,
-		EvictAfter: cfg.ContextToolEvictAfterTurns,
+		Conv:         convStore,
+		Pause:        pauseStore,
+		Identity:     idStore,
+		CacheMetrics: cacheStore,
+		Client:       client,
+		Registry:     buildRegistry(),
+		LLM:          cfg.LLM,
+		RunDir:       cfg.RunDir,
+		PreviewCap:   cfg.ToolPreviewCap,
+		EvictAfter:   cfg.ContextToolEvictAfterTurns,
 	})
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client}
 }

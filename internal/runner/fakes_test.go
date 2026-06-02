@@ -8,9 +8,39 @@ import (
 
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 )
+
+// fakeCacheMetricStore is a hand-written in-memory CacheMetricStore (D-A2-02 fakes). It
+// records each persisted metric so the persist-seam tests can assert one row per turn,
+// and supports an injectable error for the failure path.
+type fakeCacheMetricStore struct {
+	mu       sync.Mutex
+	inserts  []sqlc.InsertCacheMetricParams
+	insertEr error
+}
+
+func newFakeCacheMetricStore() *fakeCacheMetricStore {
+	return &fakeCacheMetricStore{}
+}
+
+func (f *fakeCacheMetricStore) Insert(_ context.Context, p sqlc.InsertCacheMetricParams) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.insertEr != nil {
+		return f.insertEr
+	}
+	f.inserts = append(f.inserts, p)
+	return nil
+}
+
+func (f *fakeCacheMetricStore) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.inserts)
+}
 
 // fakeConvStore is a hand-written in-memory ConversationStore (D-A2-02 fakes). It
 // keeps ordered turns per conversation so LoadHistory reconstructs them, and tracks
