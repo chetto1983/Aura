@@ -8,13 +8,34 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// mustNumeric encodes f, failing the test on the out-of-range error path so the
+// in-range fixtures stay one-liners at the call sites.
+func mustNumeric(t *testing.T, f float64) pgtype.Numeric {
+	t.Helper()
+	n, err := numericFromFloat(f)
+	if err != nil {
+		t.Fatalf("numericFromFloat(%v): %v", f, err)
+	}
+	return n
+}
+
 func TestNumericFromFloat_RoundTrip(t *testing.T) {
 	t.Parallel()
-	cases := []float64{0, 0.0001, 0.1234, 1.5, 12.3456, -0.0050}
+	cases := []float64{0, 0.0001, 0.1234, 1.5, 12.3456, -0.0050, 123.4567, 999999.9999, -999999.9999}
 	for _, want := range cases {
-		got := floatFromNumeric(numericFromFloat(want))
+		got := floatFromNumeric(mustNumeric(t, want))
 		if diff := got - want; diff > 1e-9 || diff < -1e-9 {
 			t.Errorf("numericFromFloat(%v) round-trip: got %v", want, got)
+		}
+	}
+}
+
+func TestNumericFromFloat_OutOfRange(t *testing.T) {
+	t.Parallel()
+	cases := []float64{numericMaxCost + 1, -numericMaxCost - 1, 1e9, -1e9}
+	for _, in := range cases {
+		if _, err := numericFromFloat(in); err == nil {
+			t.Errorf("numericFromFloat(%v): want out-of-range error, got nil", in)
 		}
 	}
 }
@@ -49,14 +70,14 @@ func TestAnyInt64_DecodeShapes(t *testing.T) {
 			t.Errorf("anyInt64(%#v): want %d, got %d", c.in, c.want, got)
 		}
 	}
-	if got := anyInt64(numericFromFloat(5)); got != 5 {
+	if got := anyInt64(mustNumeric(t, 5)); got != 5 {
 		t.Errorf("anyInt64(numeric 5): want 5, got %d", got)
 	}
 }
 
 func TestAnyNumericFloat_DecodeShapes(t *testing.T) {
 	t.Parallel()
-	if got := anyNumericFloat(numericFromFloat(1.25)); got < 1.25-1e-9 || got > 1.25+1e-9 {
+	if got := anyNumericFloat(mustNumeric(t, 1.25)); got < 1.25-1e-9 || got > 1.25+1e-9 {
 		t.Errorf("anyNumericFloat(numeric 1.25): got %v", got)
 	}
 	if got := anyNumericFloat(float64(2.5)); got != 2.5 {
