@@ -33,11 +33,20 @@ func TestBlocked_Classification(t *testing.T) {
 		{"ula v6", "fc00::1", true, "private"},
 		{"cgnat", "100.64.0.1", true, "cgnat"},
 		{"unspecified v4", "0.0.0.0", true, "unspecified"},
+		{"this-network 0/8 nonzero", "0.1.2.3", true, "this_network"},
 		{"link-local multicast v4", "224.0.0.1", true, "link_local"},
 		{"global multicast v4", "225.1.2.3", true, "multicast"},
-		// IPv4-mapped IPv6 — proves Unmap() before the switch.
+		// fd00:ec2::/32 sits inside ULA fd00::/8, so IsPrivate() classifies it
+		// "private" BEFORE the dedicated metadataV6Pfx case — that case is therefore
+		// unreachable (a known dead branch flagged at the Gate-3 mutation review).
+		{"v6 ula incl. metadata range", "fd00:ec2::1", true, "private"},
+		// IPv4-mapped IPv6 — proves Unmap() before the switch (each row hits a
+		// DISTINCT v4-only predicate so dropping Unmap leaves the address unblocked).
 		{"mapped metadata", "::ffff:169.254.169.254", true, "link_local"},
 		{"mapped loopback", "::ffff:127.0.0.1", true, "loopback"},
+		{"mapped private 10/8", "::ffff:10.0.0.1", true, "private"},
+		{"mapped cgnat", "::ffff:100.64.0.1", true, "cgnat"},
+		{"mapped this-network", "::ffff:0.1.2.3", true, "this_network"},
 		// Public — must NOT be blocked.
 		{"public v4 cloudflare", "1.1.1.1", false, ""},
 		{"public v4 google", "8.8.8.8", false, ""},
@@ -115,6 +124,76 @@ func TestValidateAndPin_MixedRecords(t *testing.T) {
 		}
 		if ip.String() != "1.2.3.4" {
 			t.Fatalf("pinned %v, want first public 1.2.3.4", ip)
+		}
+	})
+}
+
+// countingResolver wraps a record set and counts LookupNetIP calls so a test can
+// prove the pin short-circuit avoided a second resolve (anti-rebinding reuse).
+type countingResolver struct {
+	answers map[string][]netip.Addr
+	calls   int
+}
+
+func (c *countingResolver) LookupNetIP(_ context.Context, _, host string) ([]netip.Addr, error) {
+	c.calls++
+	return c.answers[host], nil
+}
+
+// TestValidateAndPin_PinReuse proves validateAndPin WRITES a pin on the first
+// resolve and REUSES it on the second call within TTL — the second call must NOT
+// hit the resolver and must return the SAME pinned IP. This is the D-25 anti-
+// rebinding contract exercised through the gate (not just the bare dnsPin), and it
+// kills the "drop the pin write" / "drop the pin-reuse return" mutants on ssrf.go.
+func TestValidateAndPin_PinReuse(t *testing.T) {
+	t.Parallel()
+	res := &countingResolver{answers: map[string][]netip.Addr{
+		"good.test": {netip.MustParseAddr("1.2.3.4")},
+	}}
+	g := newGuard(res, newDNSPin(60), nil)
+
+	first, reason := g.validateAndPin(context.Background(), "conv-1", "good.test")
+	if reason != "" || first.String() != "1.2.3.4" {
+		t.Fatalf("first call: got (%v,%q), want (1.2.3.4,\"\")", first, reason)
+	}
+	if res.calls != 1 {
+		t.Fatalf("first call must resolve exactly once, got %d", res.calls)
+	}
+
+	second, reason := g.validateAndPin(context.Background(), "conv-1", "good.test")
+	if reason != "" {
+		t.Fatalf("second call blocked with reason %q", reason)
+	}
+	if second != first {
+		t.Fatalf("pin not reused: first=%v second=%v", first, second)
+	}
+	if res.calls != 1 {
+		t.Fatalf("second call must REUSE the pin (no resolve), but resolver was called %d times total", res.calls)
+	}
+}
+
+// TestValidateAndPin_ResolveFailsClosed proves a resolver error AND an empty
+// record set both fail closed with invalid_target and a zero Addr (a rebind/NXDOMAIN
+// must never produce a dialable target). Kills the "len(ips)==0 → false" and the
+// "drop the invalid_target return" mutants.
+func TestValidateAndPin_ResolveFailsClosed(t *testing.T) {
+	t.Parallel()
+
+	t.Run("resolver error", func(t *testing.T) {
+		t.Parallel()
+		g := newGuard(stubResolver{err: context.DeadlineExceeded}, newDNSPin(60), nil)
+		ip, reason := g.validateAndPin(context.Background(), "c", "x.test")
+		if reason != ReasonInvalidTarget || ip.IsValid() {
+			t.Fatalf("resolver error: got (%v,%q), want (invalid,invalid_target)", ip, reason)
+		}
+	})
+
+	t.Run("empty record set", func(t *testing.T) {
+		t.Parallel()
+		g := newGuard(stubResolver{answers: map[string][]netip.Addr{"x.test": {}}}, newDNSPin(60), nil)
+		ip, reason := g.validateAndPin(context.Background(), "c", "x.test")
+		if reason != ReasonInvalidTarget || ip.IsValid() {
+			t.Fatalf("empty records: got (%v,%q), want (invalid,invalid_target)", ip, reason)
 		}
 	})
 }

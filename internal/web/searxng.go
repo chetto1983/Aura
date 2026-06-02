@@ -179,7 +179,11 @@ func validHostname(d string) string {
 // failure (D-42). It returns the decoded response or errSearxUnreachable.
 func (c *Client) searxGet(ctx context.Context, values url.Values) (*searxResponse, error) {
 	endpoint := c.cfg.SearxngURL + "?" + values.Encode()
-	httpClient := &http.Client{} // deadline rides ctx, not the client (docker.go idiom)
+	// DisableKeepAlives keeps the search client goleak order-independent: a pooled
+	// persistConn's readLoop/writeLoop outlives the request and trips goleak in the
+	// web_integration tier otherwise (docker.go / transport.go idiom). The deadline
+	// rides ctx, not the client.
+	httpClient := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 
 	for attempt := 0; attempt < 2; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
