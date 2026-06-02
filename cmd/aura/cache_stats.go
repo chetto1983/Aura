@@ -36,7 +36,7 @@ func cacheStatsMain(ctx context.Context, args []string, out, errOut io.Writer) i
 	cfg := config.LoadDB()
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		_, _ = fmt.Fprintln(errOut, err)
 		return 1
 	}
 	defer pool.Close()
@@ -44,12 +44,12 @@ func cacheStatsMain(ctx context.Context, args []string, out, errOut io.Writer) i
 	store := cachemetrics.New(pool)
 	agg, err := store.AggregateSince(ctx, since)
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		_, _ = fmt.Fprintln(errOut, err)
 		return 1
 	}
 	rows, err := store.ListSince(ctx, since)
 	if err != nil {
-		fmt.Fprintln(errOut, err)
+		_, _ = fmt.Fprintln(errOut, err)
 		return 1
 	}
 
@@ -62,16 +62,16 @@ func cacheStatsMain(ctx context.Context, args []string, out, errOut io.Writer) i
 func parseSince(args []string, errOut io.Writer) (time.Time, int) {
 	raw, ok := sinceValue(args)
 	if !ok || raw == "" {
-		fmt.Fprintln(errOut, cacheStatsUsage)
+		_, _ = fmt.Fprintln(errOut, cacheStatsUsage)
 		return time.Time{}, exitUsage
 	}
 	d, err := time.ParseDuration(raw)
 	if err != nil {
-		fmt.Fprintf(errOut, "invalid --since %q: %v\n", raw, err)
+		_, _ = fmt.Fprintf(errOut, "invalid --since %q: %v\n", raw, err)
 		return time.Time{}, exitUsage
 	}
 	if d <= 0 {
-		fmt.Fprintf(errOut, "invalid --since %q: window must be positive\n", raw)
+		_, _ = fmt.Fprintf(errOut, "invalid --since %q: window must be positive\n", raw)
 		return time.Time{}, exitUsage
 	}
 	return time.Now().Add(-d), 0
@@ -80,7 +80,7 @@ func parseSince(args []string, errOut io.Writer) (time.Time, int) {
 // writeCacheStats renders the window: a per-turn detail table then a summary line
 // carrying the totals + the client-computed hit-rate (mirrors db.go's tabwriter).
 func writeCacheStats(out io.Writer, since time.Time, rows []cachemetrics.Metric, agg cachemetrics.Aggregate) {
-	fmt.Fprintf(out, "cache metrics since %s (window: %d turn(s))\n", since.UTC().Format(time.RFC3339), agg.Turns)
+	_, _ = fmt.Fprintf(out, "cache metrics since %s (window: %d turn(s))\n", since.UTC().Format(time.RFC3339), agg.Turns)
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(w, "CONVERSATION\tSEQ\tTS\tPROMPT\tCACHED\tHIT-RATE\tCOST_USD")
 	for _, r := range rows {

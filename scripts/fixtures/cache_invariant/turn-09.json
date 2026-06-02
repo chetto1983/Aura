@@ -1,0 +1,6 @@
+{
+  "user": "And the capital of Italy?",
+  "responses": [
+    { "text": "The capital of Italy is Rome.", "finish": "stop" }
+  ]
+}

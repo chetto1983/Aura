@@ -1,0 +1,6 @@
+{
+  "user": "What is 7 times 8?",
+  "responses": [
+    { "text": "7 times 8 is 56.", "finish": "stop" }
+  ]
+}

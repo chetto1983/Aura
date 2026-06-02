@@ -1,0 +1,6 @@
+{
+  "user": "What is a goroutine?",
+  "responses": [
+    { "text": "A goroutine is a lightweight thread managed by the Go runtime.", "finish": "stop" }
+  ]
+}

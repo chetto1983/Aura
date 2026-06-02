@@ -1,0 +1,6 @@
+{
+  "user": "What is wrapping an error with %w?",
+  "responses": [
+    { "text": "Wrapping with %w preserves the original error so callers can match it with errors.Is and errors.As.", "finish": "stop" }
+  ]
+}

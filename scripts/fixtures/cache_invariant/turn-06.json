@@ -1,0 +1,6 @@
+{
+  "user": "Summarize our conversation so far.",
+  "responses": [
+    { "text": "We discussed who I am, what I can do, and how KV caching benefits from a stable prefix.", "finish": "stop" }
+  ]
+}

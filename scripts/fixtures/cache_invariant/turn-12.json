@@ -1,0 +1,7 @@
+{
+  "user": "Find a tool that can run code for me.",
+  "responses": [
+    { "tool_calls": [ { "id": "c12a", "name": "tool_search", "arguments": "{\"query\":\"select:execute\"}" } ] },
+    { "text": "I searched the tool manifest and found the code execution tool.", "finish": "stop" }
+  ]
+}

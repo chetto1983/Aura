@@ -1,0 +1,6 @@
+{
+  "user": "Thanks, that was helpful. Goodbye!",
+  "responses": [
+    { "text": "You are welcome. Goodbye, and reach out anytime!", "finish": "stop" }
+  ]
+}

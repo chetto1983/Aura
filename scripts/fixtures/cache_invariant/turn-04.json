@@ -1,0 +1,6 @@
+{
+  "user": "Why does a stable prefix matter for caching?",
+  "responses": [
+    { "text": "A stable prefix lets the provider reuse cached tokens, cutting cost and latency on every turn.", "finish": "stop" }
+  ]
+}

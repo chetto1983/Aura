@@ -1,0 +1,6 @@
+{
+  "user": "What does the race detector do?",
+  "responses": [
+    { "text": "The race detector instruments memory accesses to flag concurrent unsynchronized reads and writes.", "finish": "stop" }
+  ]
+}

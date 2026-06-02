@@ -1,0 +1,6 @@
+{
+  "user": "Name a benefit of structured logging.",
+  "responses": [
+    { "text": "Structured logging makes logs machine-queryable, so you can filter and aggregate by field.", "finish": "stop" }
+  ]
+}

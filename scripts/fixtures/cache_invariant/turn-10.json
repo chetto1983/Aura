@@ -1,0 +1,6 @@
+{
+  "user": "List three primary colors.",
+  "responses": [
+    { "text": "Red, green, and blue are the additive primary colors.", "finish": "stop" }
+  ]
+}

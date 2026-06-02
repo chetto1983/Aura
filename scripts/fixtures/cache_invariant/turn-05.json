@@ -1,0 +1,7 @@
+{
+  "user": "What time is it right now?",
+  "responses": [
+    { "tool_calls": [ { "id": "c5a", "name": "current_time", "arguments": "{}" } ] },
+    { "text": "I checked the clock and relayed the current time.", "finish": "stop" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "user": "Give me a short tip about writing tests.",
+  "responses": [
+    { "text": "Prefer table-driven tests with realistic fixtures and run them under the race detector.", "finish": "stop" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "user": "What kinds of tasks can you help with?",
+  "responses": [
+    { "text": "I can answer questions, run code, search, and more.", "finish": "stop" }
+  ]
+}

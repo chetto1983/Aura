@@ -51,6 +51,8 @@ func main() {
 		runChat(os.Args[2:])
 	case "cache-stats":
 		runCacheStats(os.Args[2:])
+	case "cache-audit": // hidden — runtime KV-prefix invariant gate (D-06); not in usage()
+		runCacheAudit(os.Args[2:])
 	case "config":
 		runConfig(os.Args[2:])
 	case "version", "--version", "-v":

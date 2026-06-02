@@ -1,0 +1,6 @@
+{
+  "user": "What is a channel in Go?",
+  "responses": [
+    { "text": "A channel is a typed conduit that lets goroutines communicate and synchronize.", "finish": "stop" }
+  ]
+}

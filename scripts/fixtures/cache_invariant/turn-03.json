@@ -1,0 +1,6 @@
+{
+  "user": "Explain what a KV cache is in one sentence.",
+  "responses": [
+    { "text": "A KV cache stores attention keys and values so a model can reuse a stable prefix without recomputing it.", "finish": "stop" }
+  ]
+}

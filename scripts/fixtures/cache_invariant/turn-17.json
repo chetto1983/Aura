@@ -1,0 +1,6 @@
+{
+  "user": "Why use context in Go?",
+  "responses": [
+    { "text": "context carries cancellation, deadlines, and request-scoped values across API boundaries.", "finish": "stop" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "user": "Hello, can you introduce yourself?",
+  "responses": [
+    { "text": "I am Aura, your assistant. How can I help today?", "finish": "stop" }
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "user": "What does idempotent mean?",
+  "responses": [
+    { "text": "An idempotent operation produces the same result no matter how many times it is applied.", "finish": "stop" }
+  ]
+}
