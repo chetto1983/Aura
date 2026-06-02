@@ -91,6 +91,13 @@ None - no external service configuration required.
 - Reserved targets for downstream plans: `internal/agent/prompt/` subpackage, `aura.cache_metrics` migration 0007, `aura cache-stats --since=<window>` SQL query, `scripts/cache_invariant_audit.sh` + `aura cache-audit` hidden subcommand (per 06-CONTEXT D-04/D-06).
 - No blockers.
 
+## Self-Check: PASSED
+
+- `06-01-SUMMARY.md` — FOUND
+- amendment commit `7cf8acf2` (prd.md + PROJECT.md, 0 .go files) — FOUND
+- summary commit `c1467bed` — FOUND
+- working tree clean
+
 ---
 *Phase: 06-kv-cache-builder*
 *Completed: 2026-06-02*
