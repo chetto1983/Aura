@@ -21,6 +21,25 @@ func defaultPrices() map[string]Price {
 	}
 }
 
+// CostUSDValue reports the numeric turn cost in USD and an ok flag, with the D-18/D-23
+// precedence below. It is the shared core for both the displayed footer (CostUSD) and
+// the persisted cost (runner persistence), so the two never disagree.
+//
+//   - providerCost non-nil  -> that exact USD (OpenRouter actual cost, preferred)
+//   - else model in prices  -> computed from tokens at the table rate
+//   - else                  -> 0, ok=false  (unknown model: caller stores/renders an
+//     honest absence, never a fabricated "$0")
+func CostUSDValue(prices map[string]Price, model string, promptTokens, completionTokens int, providerCost *float64) (usd float64, ok bool) {
+	if providerCost != nil {
+		return *providerCost, true
+	}
+	p, found := prices[model]
+	if !found {
+		return 0, false
+	}
+	return (float64(promptTokens)*p.InputPer1M + float64(completionTokens)*p.OutputPer1M) / 1_000_000, true
+}
+
 // CostUSD reports the turn cost as a display string and an ok flag (D-18/D-23):
 //
 //   - providerCost non-nil  -> that exact USD (OpenRouter actual cost, preferred)
@@ -30,13 +49,9 @@ func defaultPrices() map[string]Price {
 // ok is true only when a real number was produced (provider or table); it is
 // false for the unknown-model case so the caller can render the honest "n/a".
 func CostUSD(prices map[string]Price, model string, promptTokens, completionTokens int, providerCost *float64) (display string, ok bool) {
-	if providerCost != nil {
-		return fmt.Sprintf("$%.6f", *providerCost), true
-	}
-	p, found := prices[model]
-	if !found {
+	usd, ok := CostUSDValue(prices, model, promptTokens, completionTokens, providerCost)
+	if !ok {
 		return "n/a", false
 	}
-	usd := (float64(promptTokens)*p.InputPer1M + float64(completionTokens)*p.OutputPer1M) / 1_000_000
 	return fmt.Sprintf("$%.6f", usd), true
 }

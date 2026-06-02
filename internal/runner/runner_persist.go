@@ -68,9 +68,13 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 		return err
 	}
 	u := usageFromStateDelta(ev.Actions.StateDelta)
+	// Prefer the provider's wire-reported cost (D-18); fall back to the seeded price
+	// table (D-23) when the provider omits it, so a priced turn never persists $0 while
+	// the displayed footer (same llm.CostUSD precedence) shows the table price. A
+	// genuinely unknown model (no table entry) stays 0.0 — the honest numeric "n/a".
 	cost := 0.0
-	if u.Cost != nil {
-		cost = *u.Cost
+	if v, ok := llm.CostUSDValue(r.cfg.Prices, r.cfg.Model, u.PromptTokens, u.CompletionTokens, u.Cost); ok {
+		cost = v
 	}
 	turn := conversations.AppendTurnParams{
 		ConversationID: convID,

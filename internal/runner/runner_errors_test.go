@@ -156,6 +156,41 @@ func TestTurn_TerminalAnswerWithCost(t *testing.T) {
 	}
 }
 
+// TestTurn_TerminalAnswerCostFromPriceTable proves the persistence path falls back to
+// the seeded price table (D-23) when the provider omits usage.cost: a priced model +
+// real tokens but a nil wire cost must persist a NON-zero aggregate, matching what the
+// displayed footer (llm.CostUSD) shows — not a misleading $0.
+func TestTurn_TerminalAnswerCostFromPriceTable(t *testing.T) {
+	// Real tokens but NO provider cost (Cost: nil) — the wire-omitted case.
+	client := agenttest.NewFakeClient(
+		agenttest.WithUsage(
+			agenttest.ToolCallTurn(textResponseCall("call-1", "Done.")),
+			llm.Usage{PromptTokens: 1_000_000, CompletionTokens: 1_000_000},
+		),
+	)
+	cfg := llm.Config{
+		Model:           "priced/model",
+		ContextWindow:   1000000,
+		MaxOutputTokens: 32768,
+		Prices:          map[string]llm.Price{"priced/model": {InputPer1M: 1.0, OutputPer1M: 2.0}},
+	}
+	r, conv, _ := newTestRunnerCfg(t, client, cfg)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	c, err := conv.Get(ctx, convID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 1M @ $1/1M + 1M @ $2/1M = $3.00 from the table (provider reported nothing).
+	if c.TotalCostUSD < 2.999 || c.TotalCostUSD > 3.001 {
+		t.Fatalf("persisted cost = %v, want ~3.00 from the price-table fallback (not $0)", c.TotalCostUSD)
+	}
+}
+
 // TestPersistPause_AppendError surfaces an AppendTurn failure during the pause
 // assistant-turn persist (before the paused_states row is written).
 func TestPersistPause_AppendError(t *testing.T) {

@@ -19,6 +19,12 @@ import (
 // with a registry carrying ask_user + text_response so the agent can pause and
 // terminate. titleTimeout is short so the auto-title worker is bounded.
 func newTestRunner(t *testing.T, client llm.Client) (*Runner, *fakeConvStore, *fakePauseStore) {
+	return newTestRunnerCfg(t, client, llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768})
+}
+
+// newTestRunnerCfg is newTestRunner with a caller-supplied llm.Config so a test can
+// exercise model/price-table-dependent persistence (e.g. the CostUSD table fallback).
+func newTestRunnerCfg(t *testing.T, client llm.Client, cfg llm.Config) (*Runner, *fakeConvStore, *fakePauseStore) {
 	t.Helper()
 	conv := newFakeConvStore()
 	pause := newFakePauseStore()
@@ -34,7 +40,7 @@ func newTestRunner(t *testing.T, client llm.Client) (*Runner, *fakeConvStore, *f
 		CacheMetrics: newFakeCacheMetricStore(),
 		Client:       client,
 		Registry:     reg,
-		LLM:          llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
+		LLM:          cfg,
 		TitleTimeout: 2 * time.Second,
 		StopTimeout:  2 * time.Second,
 	})

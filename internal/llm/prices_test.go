@@ -49,3 +49,40 @@ func TestCost(t *testing.T) {
 		}
 	})
 }
+
+// TestCostUSDValue covers the numeric core shared by the displayed footer and the
+// persisted cost: provider cost wins, the table fills the wire-omitted gap, and an
+// unknown model returns ok=false so the caller stores an honest absence (not a fake $0).
+func TestCostUSDValue(t *testing.T) {
+	prices := map[string]llm.Price{
+		"deepseek/deepseek-v4-flash:exacto": {InputPer1M: 0.0983, OutputPer1M: 0.1966},
+	}
+
+	t.Run("provider_cost_present_wins", func(t *testing.T) {
+		c := 0.001234
+		got, ok := llm.CostUSDValue(prices, "any/model", 1000, 500, &c)
+		if !ok || got != 0.001234 {
+			t.Fatalf("got (%v,%v), want (0.001234,true)", got, ok)
+		}
+	})
+
+	t.Run("provider_cost_absent_known_model_uses_table", func(t *testing.T) {
+		got, ok := llm.CostUSDValue(prices, "deepseek/deepseek-v4-flash:exacto", 1_000_000, 1_000_000, nil)
+		if !ok {
+			t.Fatal("ok = false, want true for a known model")
+		}
+		if got < 0.29489 || got > 0.29491 { // 0.0983 + 0.1966 = 0.2949
+			t.Errorf("usd = %v, want ~0.2949", got)
+		}
+	})
+
+	t.Run("unknown_model_zero_not_ok", func(t *testing.T) {
+		got, ok := llm.CostUSDValue(prices, "mystery/model", 1000, 1000, nil)
+		if ok {
+			t.Error("ok = true, want false for an unknown model (caller must not store a fabricated $0)")
+		}
+		if got != 0 {
+			t.Errorf("usd = %v, want 0 sentinel for the not-ok case", got)
+		}
+	})
+}
