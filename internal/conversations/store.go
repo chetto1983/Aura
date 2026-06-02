@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 
@@ -362,6 +363,9 @@ type SearchResult struct {
 func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit int) ([]SearchResult, error) {
 	if limit <= 0 {
 		limit = 20
+	}
+	if limit > math.MaxInt32 {
+		limit = math.MaxInt32
 	}
 	rows, err := s.q.SearchConversationTurns(ctx, sqlc.SearchConversationTurnsParams{
 		Similarity: query,
