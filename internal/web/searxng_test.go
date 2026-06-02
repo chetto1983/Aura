@@ -183,6 +183,131 @@ func TestSearch_Metadata(t *testing.T) {
 	}
 }
 
+func TestValidHostname(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"wikipedia.org", "wikipedia.org"},
+		{"WIKIPEDIA.ORG", "wikipedia.org"},
+		{"  example.com  ", "example.com"},
+		{"", ""},                    // empty
+		{"https://example.com", ""}, // scheme (contains :/ )
+		{"example.com/path", ""},    // path
+		{"example.com:8080", ""},    // port
+		{"example.com?q=1", ""},     // query
+		{"two words.com", ""},       // space
+	}
+	for _, tt := range tests {
+		if got := validHostname(tt.in); got != tt.want {
+			t.Errorf("validHostname(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestDomainAllowed(t *testing.T) {
+	tests := []struct {
+		name    string
+		rawURL  string
+		domains []string
+		want    bool
+	}{
+		{"empty set allows all", "https://anything.test/x", nil, true},
+		{"exact match", "https://wikipedia.org/Go", []string{"wikipedia.org"}, true},
+		{"subdomain suffix match", "https://en.wikipedia.org/Go", []string{"wikipedia.org"}, true},
+		{"non-match", "https://example.com/x", []string{"wikipedia.org"}, false},
+		{"suffix-but-not-dot-boundary", "https://notwikipedia.org/x", []string{"wikipedia.org"}, false},
+		{"case-insensitive host", "https://EN.WIKIPEDIA.ORG/x", []string{"wikipedia.org"}, true},
+		{"empty domain entry skipped, no match", "https://example.com/x", []string{"", "wikipedia.org"}, false},
+		{"unparseable URL dropped", "://bad url", []string{"wikipedia.org"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := domainAllowed(tt.rawURL, tt.domains); got != tt.want {
+				t.Errorf("domainAllowed(%q, %v) = %v, want %v", tt.rawURL, tt.domains, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestBuildQuery(t *testing.T) {
+	c := testClient(t, "http://unused.test")
+
+	t.Run("multiple domains OR-joined + language + time_range", func(t *testing.T) {
+		v := c.buildQuery(SearchParams{
+			Query:     "golang",
+			Language:  "en",
+			TimeRange: "month",
+			Domains:   []string{"go.dev", "wikipedia.org"},
+		}, "news")
+		q := v.Get("q")
+		if !strings.Contains(q, "site:go.dev") || !strings.Contains(q, "site:wikipedia.org") {
+			t.Errorf("q missing site clauses: %q", q)
+		}
+		if !strings.Contains(q, " OR ") {
+			t.Errorf("multiple domains must be OR-joined: %q", q)
+		}
+		if v.Get("categories") != "news" {
+			t.Errorf("categories = %q, want news", v.Get("categories"))
+		}
+		if v.Get("language") != "en" {
+			t.Errorf("language = %q, want en", v.Get("language"))
+		}
+		if v.Get("time_range") != "month" {
+			t.Errorf("time_range = %q, want month", v.Get("time_range"))
+		}
+		if v.Get("format") != "json" || v.Get("pageno") != "1" {
+			t.Errorf("missing fixed params: format=%q pageno=%q", v.Get("format"), v.Get("pageno"))
+		}
+	})
+
+	t.Run("invalid time_range dropped, no site clause when no valid domain", func(t *testing.T) {
+		v := c.buildQuery(SearchParams{
+			Query:     "x",
+			TimeRange: "decade",                       // not in validTimeRanges → dropped
+			Domains:   []string{"https://bad.test/p"}, // scheme/path → rejected by validHostname
+		}, "general")
+		if v.Has("time_range") {
+			t.Errorf("invalid time_range must be dropped, got %q", v.Get("time_range"))
+		}
+		if strings.Contains(v.Get("q"), "site:") {
+			t.Errorf("no valid domain should yield no site clause: %q", v.Get("q"))
+		}
+		if v.Has("language") {
+			t.Errorf("empty language must be omitted, got %q", v.Get("language"))
+		}
+	})
+}
+
+// TestHostThrottle_AcquireCancelled covers the ctx-done arm of acquire: a cancelled
+// ctx returns ok=false with a no-op release (no token was taken).
+func TestHostThrottle_AcquireCancelled(t *testing.T) {
+	h := newHostThrottle()
+	// Saturate the host's semaphore so the next acquire must block on ctx.
+	for i := 0; i < perHostLimit; i++ {
+		if _, ok := h.acquire(context.Background(), "full.test"); !ok {
+			t.Fatalf("acquire %d should succeed up to the cap", i)
+		}
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	release, ok := h.acquire(ctx, "full.test")
+	if ok {
+		t.Fatal("acquire under a cancelled ctx must return ok=false")
+	}
+	release() // no-op release must be safe to call
+}
+
+// TestConvIDFrom covers the no-convID branch: a ctx without a stamped convID yields
+// the empty string (the pin cache then keys by "").
+func TestConvIDFrom(t *testing.T) {
+	if got := convIDFrom(context.Background()); got != "" {
+		t.Errorf("convIDFrom(empty ctx) = %q, want \"\"", got)
+	}
+	if got := convIDFrom(withConvID(context.Background(), "conv-7")); got != "conv-7" {
+		t.Errorf("convIDFrom(stamped ctx) = %q, want conv-7", got)
+	}
+}
+
 func assertWebErr(t *testing.T, err error, code, reason string) {
 	t.Helper()
 	if err == nil {

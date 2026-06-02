@@ -241,6 +241,38 @@ func TestFetch_PerHostConcurrencyCap(t *testing.T) {
 	}
 }
 
+// TestFetch_CacheHit proves the D-31 fetch cache: two Fetch calls for the SAME
+// URL hit the origin exactly once — the second call reconstructs the Page from the
+// cache via fetchFromCache without a second HTTP round-trip.
+func TestFetch_CacheHit(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(richHTML))
+	}))
+	defer srv.Close()
+
+	_, port := hostPort(t, srv.URL)
+	c := fetchClient(t, map[string][]netip.Addr{"page.test": {publicIP}})
+	url := "http://page.test:" + port + "/article"
+
+	first, err := c.Fetch(context.Background(), "conv1", url)
+	if err != nil {
+		t.Fatalf("first Fetch: %v", err)
+	}
+	second, err := c.Fetch(context.Background(), "conv1", url)
+	if err != nil {
+		t.Fatalf("second Fetch (cache hit expected): %v", err)
+	}
+	if hits.Load() != 1 {
+		t.Errorf("want exactly 1 origin hit for 2 fetches (cache hit), got %d", hits.Load())
+	}
+	if second.Title != first.Title || second.ContentMD != first.ContentMD || second.URL != first.URL {
+		t.Errorf("cached Page must reconstruct the original: first=%+v second=%+v", first, second)
+	}
+}
+
 func TestRetry_Policy(t *testing.T) {
 
 	t.Run("retry_on_503", func(t *testing.T) {
