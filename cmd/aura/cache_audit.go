@@ -3,7 +3,7 @@
 // REAL runner.Turn -> LlmAgent.Run -> PromptBuilder.Build path against an
 // agenttest.FakeClient (no synthetic Build() shortcut), reads each captured
 // Requests[n].Messages[0], hashes it with prompt.PrefixHash({0}), prints
-// `turn NN: <hex>` to stdout, and asserts every hash is identical. The whole audit
+// `request NN: <hex>` to stdout, and asserts every hash is identical. The whole audit
 // runs against in-memory fake Stores, so it needs NO Postgres.
 //
 // Exit codes (PRD amendment #16): 0 pass / 1 messages[0] mutation / 2 fixture corrupt.
@@ -88,7 +88,7 @@ func cacheAuditMain(ctx context.Context, _ []string, out, errOut io.Writer) int 
 	return reportHashes(reqs, out, errOut)
 }
 
-// reportHashes prints `turn NN: <hex>` for each request's messages[0] and asserts
+// reportHashes prints `request NN: <hex>` for each request's messages[0] and asserts
 // every hash is identical. The first drift returns exitMutation with the SC#5
 // wording; this is the seam the Go-level negative test drives directly.
 func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
@@ -96,12 +96,12 @@ func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 	for i, req := range reqs {
 		h, err := hashMessages0(req)
 		if err != nil {
-			_, _ = fmt.Fprintf(errOut, "cache-audit: turn %02d hash: %v\n", i+1, err)
+			_, _ = fmt.Fprintf(errOut, "cache-audit: request %02d hash: %v\n", i+1, err)
 			return exitFixture
 		}
-		_, _ = fmt.Fprintf(out, "turn %02d: %s\n", i+1, h)
+		_, _ = fmt.Fprintf(out, "request %02d: %s\n", i+1, h)
 		if prevSet && h != prev {
-			_, _ = fmt.Fprintf(errOut, "messages[0] mutated at turn %d — diff: %s vs %s\n", i+1, prev, h)
+			_, _ = fmt.Fprintf(errOut, "messages[0] mutated at request %d -- diff: %s vs %s\n", i+1, prev, h)
 			return exitMutation
 		}
 		prev, prevSet = h, true
@@ -109,9 +109,9 @@ func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 	return 0
 }
 
-// replayAudit drives the real Runner.Turn loop turn-by-turn and returns one captured
-// request per turn (the round's final Stream request — messages[0] is invariant
-// across every request, so any one of a turn's requests proves the prefix).
+// replayAudit drives the real Runner.Turn loop turn-by-turn and returns every
+// captured request each fixture turn emits. Tool rounds can consume multiple LLM
+// requests inside one Runner.Turn, and each one must preserve messages[0].
 func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]llm.Request, int) {
 	// A throwaway run dir keeps any tool-result spillover (e.g. the tool_search
 	// round) out of the cwd; it is removed when the replay returns.
@@ -140,18 +140,31 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 		return nil, exitFixture
 	}
 
-	reqs := make([]llm.Request, 0, len(turns))
+	reqs := make([]llm.Request, 0, expectedAuditRequests(turns))
 	for i := range turns {
+		before := len(client.Requests)
 		user := turns[i].User
 		if err := drainTurn(r.Turn(ctx, convID, &user)); err != nil {
 			_, _ = fmt.Fprintf(errOut, "cache-audit: turn %02d replay: %v\n", i+1, err)
 			return nil, exitFixture
 		}
-		reqs = append(reqs, client.LastRequest())
+		if len(client.Requests) == before {
+			_, _ = fmt.Fprintf(errOut, "cache-audit: turn %02d replay emitted no LLM requests\n", i+1)
+			return nil, exitFixture
+		}
+		reqs = append(reqs, client.Requests[before:]...)
 	}
 
 	_ = r.Stop(ctx, convID)
 	return reqs, 0
+}
+
+func expectedAuditRequests(turns []fixtureTurn) int {
+	n := 0
+	for _, t := range turns {
+		n += len(t.Responses)
+	}
+	return n
 }
 
 // hashMessages0 fingerprints req.Messages[0] with the forward-compatible {0} index

@@ -6,11 +6,11 @@
 # `aura cache-audit` subcommand (06-04), which replays 20 deterministic fixtures
 # through the REAL runner.Turn -> LlmAgent.Run -> PromptBuilder.Build path against
 # an in-memory FakeClient (NO Postgres), hashes each captured messages[0] with
-# prompt.PrefixHash({0}), and prints `turn NN: <hex>` to stdout.
+# prompt.PrefixHash({0}), and prints `request NN: <hex>` to stdout.
 #
 # Belt-and-suspenders (06-RESEARCH Pattern 4): the Go subcommand asserts the
-# invariant AND exits non-zero with `messages[0] mutated at turn N` on drift; THIS
-# wrapper independently counts the 20 hash lines and diffs them. Both must agree.
+# invariant AND exits non-zero with `messages[0] mutated at request N` on drift; THIS
+# wrapper independently counts the 22 request hash lines and diffs them. Both must agree.
 #
 # NO-SKIP-AS-GREEN (CLAUDE.md): an EMPTY / 0-line / fewer-than-20-line run is a
 # HARD failure, never a silent pass. The `| grep -c . || true` guard makes an empty
@@ -26,7 +26,7 @@ set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
 
-readonly EXPECTED_TURNS=20
+readonly EXPECTED_REQUESTS=22
 
 # AURA_CACHE_AUDIT_CMD lets the SC#5 negative test substitute a poisoned hash
 # stream so it can exercise THIS wrapper's drift detection without a real prefix
@@ -46,7 +46,7 @@ ERR="$(cat "$ERR_FILE")"
 # Independent line count: the `|| true` keeps the count at 0 (instead of a bare
 # pipefail) when $OUT is EMPTY, so the diagnostic below — not a silent abort — is
 # what the operator sees (the exact NO-SKIP-AS-GREEN failure this gate exists for).
-HASH_LINES="$(printf '%s\n' "$OUT" | grep -cE '^turn [0-9]{2}: [0-9a-f]+$' || true)"
+HASH_LINES="$(printf '%s\n' "$OUT" | grep -cE '^request [0-9]{2}: [0-9a-f]+$' || true)"
 
 fail() {
   echo "FAIL (cache invariant gate): $1" >&2
@@ -58,7 +58,7 @@ fail() {
 }
 
 # The subcommand exited non-zero: forward its exit code + the explicit
-# `messages[0] mutated at turn N` (exit 1) or fixture-corrupt (exit 2) wording.
+# `messages[0] mutated at request N` (exit 1) or fixture-corrupt (exit 2) wording.
 if [[ "$code" -ne 0 ]]; then
   echo "FAIL (cache invariant gate): aura cache-audit exited ${code}" >&2
   printf '%s\n' "$ERR" >&2
@@ -66,21 +66,22 @@ if [[ "$code" -ne 0 ]]; then
   exit "$code"
 fi
 
-# NO-SKIP-AS-GREEN: a passing subcommand MUST have emitted exactly 20 hash lines.
-if [[ "${HASH_LINES:-0}" -ne "$EXPECTED_TURNS" ]]; then
-  fail "expected exactly ${EXPECTED_TURNS} 'turn NN: <hex>' lines, got ${HASH_LINES:-0} (empty/short output is never a silent pass)"
+# NO-SKIP-AS-GREEN: a passing subcommand MUST have emitted exactly the expected
+# request hash lines.
+if [[ "${HASH_LINES:-0}" -ne "$EXPECTED_REQUESTS" ]]; then
+  fail "expected exactly ${EXPECTED_REQUESTS} 'request NN: <hex>' lines, got ${HASH_LINES:-0} (empty/short output is never a silent pass)"
 fi
 
-# Independent hash diff (belt-and-suspenders over the Go assertion): every turn's
+# Independent hash diff (belt-and-suspenders over the Go assertion): every request's
 # messages[0] hash must be byte-identical. The first drift is the SC#5 failure.
 FIRST_HASH=""
 LINE_NO=0
 while IFS= read -r line; do
-  # Match `turn NN: <hex>` without a =~ regex (portable across shells): strip the
-  # `turn NN: ` prefix; a line that does not start that way leaves $hash == $line
+  # Match `request NN: <hex>` without a =~ regex (portable across shells): strip the
+  # `request NN: ` prefix; a line that does not start that way leaves $hash == $line
   # and is skipped by the case guard below.
   case "$line" in
-    "turn "[0-9][0-9]": "*) ;;
+    "request "[0-9][0-9]": "*) ;;
     *) continue ;;
   esac
   LINE_NO=$((LINE_NO + 1))
@@ -88,8 +89,8 @@ while IFS= read -r line; do
   if [[ -z "$FIRST_HASH" ]]; then
     FIRST_HASH="$hash"
   elif [[ "$hash" != "$FIRST_HASH" ]]; then
-    fail "messages[0] mutated at turn ${LINE_NO} — diff: ${FIRST_HASH} vs ${hash}"
+    fail "messages[0] mutated at request ${LINE_NO} -- diff: ${FIRST_HASH} vs ${hash}"
   fi
 done <<< "$OUT"
 
-echo "ok (cache invariant gate): ${EXPECTED_TURNS} identical messages[0] hashes (${FIRST_HASH})"
+echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[0] request hashes (${FIRST_HASH})"

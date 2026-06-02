@@ -61,7 +61,7 @@ func TestCacheStats_HitRate(t *testing.T) {
 }
 
 // TestCacheAudit_AllEqual_Exit0 is the SC#1 positive proof: the real 20-turn
-// replay prints exactly 20 `turn NN: <hex>` lines, all identical, and exits 0 —
+// replay prints one `request NN: <hex>` line per LLM request, all identical, and exits 0.
 // runtime-faithful (the real Runner.Turn loop), Postgres-free.
 func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 	var out, errOut bytes.Buffer
@@ -70,13 +70,14 @@ func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 		t.Fatalf("cacheAuditMain exit %d, want 0 (stderr=%q)", code, errOut.String())
 	}
 	lines := nonEmptyLines(out.String())
-	if len(lines) != auditTurns {
-		t.Fatalf("want exactly %d hash lines, got %d:\n%s", auditTurns, len(lines), out.String())
+	wantRequests := cacheFixtureRequestCount(t)
+	if len(lines) != wantRequests {
+		t.Fatalf("want exactly %d hash lines, got %d:\n%s", wantRequests, len(lines), out.String())
 	}
 	first := hashOfLine(t, lines[0])
 	for i, ln := range lines {
-		if !strings.HasPrefix(ln, "turn ") {
-			t.Fatalf("line %d not a turn line: %q", i+1, ln)
+		if !strings.HasPrefix(ln, "request ") {
+			t.Fatalf("line %d not a request line: %q", i+1, ln)
 		}
 		if h := hashOfLine(t, ln); h != first {
 			t.Fatalf("line %d hash %q != first %q (a drift the gate must catch)", i+1, h, first)
@@ -85,8 +86,8 @@ func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 }
 
 // TestCacheAudit_Mutation_Exit1 is the SC#5 NEGATIVE proof: when messages[0]
-// drifts between turns the audit exits 1 with the explicit `messages[0] mutated
-// at turn N` wording. It drives the reportHashes seam directly with a poisoned
+// drifts between requests the audit exits 1 with the explicit `messages[0] mutated
+// at request N` wording. It drives the reportHashes seam directly with a poisoned
 // request list so the contract is proven without a real prefix bug.
 func TestCacheAudit_Mutation_Exit1(t *testing.T) {
 	reqs := []llm.Request{
@@ -99,8 +100,8 @@ func TestCacheAudit_Mutation_Exit1(t *testing.T) {
 	if code != exitMutation {
 		t.Fatalf("reportHashes exit %d, want %d (mutation)", code, exitMutation)
 	}
-	if !strings.Contains(errOut.String(), "messages[0] mutated at turn 3") {
-		t.Fatalf("want SC#5 wording 'messages[0] mutated at turn 3', got stderr=%q", errOut.String())
+	if !strings.Contains(errOut.String(), "messages[0] mutated at request 3") {
+		t.Fatalf("want SC#5 wording 'messages[0] mutated at request 3', got stderr=%q", errOut.String())
 	}
 }
 
@@ -157,6 +158,19 @@ func TestCacheAudit_FixturesIncludeToolCalls(t *testing.T) {
 	}
 }
 
+func cacheFixtureRequestCount(t *testing.T) int {
+	t.Helper()
+	root, err := repoRoot()
+	if err != nil {
+		t.Fatalf("repoRoot: %v", err)
+	}
+	turns, code := loadFixtures(filepath.Join(root, auditFixtureDir), new(bytes.Buffer))
+	if code != 0 {
+		t.Fatalf("loadFixtures exit %d", code)
+	}
+	return expectedAuditRequests(turns)
+}
+
 func writeFixture(t *testing.T, dir string, n int, content string) {
 	t.Helper()
 	path := filepath.Join(dir, "turn-01.json")
@@ -189,7 +203,7 @@ func hashOfLine(t *testing.T, line string) string {
 	t.Helper()
 	_, hash, ok := strings.Cut(line, ": ")
 	if !ok {
-		t.Fatalf("malformed turn line: %q", line)
+		t.Fatalf("malformed request line: %q", line)
 	}
 	return hash
 }
