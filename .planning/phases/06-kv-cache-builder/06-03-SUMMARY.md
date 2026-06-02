@@ -97,3 +97,7 @@ No new surface beyond the plan's `<threat_model>`. T-06-02 (parameterized `since
 
 - b3590df5: feat(06-03): add cache_metrics migration 0007 + parameterized sqlc queries
 - 4a555457: feat(06-03): persist per-turn cache metrics via narrow CacheMetricStore seam
+
+## Self-Check: PASSED
+
+All created files present on disk; all three commits (b3590df5, 4a555457, 2ecc9a14) in git log.
