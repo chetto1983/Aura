@@ -170,6 +170,9 @@ func expectedAuditRequests(turns []fixtureTurn) int {
 // hashMessages0 fingerprints req.Messages[0] with the forward-compatible {0} index
 // set (D-06a) — the same hash the production CI gate reads.
 func hashMessages0(req llm.Request) (string, error) {
+	if len(req.Messages) == 0 {
+		return "", fmt.Errorf("request is missing messages[0]")
+	}
 	return prompt.PrefixHash(req.Messages, []int{0})
 }
 

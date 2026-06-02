@@ -105,6 +105,17 @@ func TestCacheAudit_Mutation_Exit1(t *testing.T) {
 	}
 }
 
+func TestCacheAudit_MissingMessages0_Exit2(t *testing.T) {
+	var out, errOut bytes.Buffer
+	code := reportHashes([]llm.Request{{}}, &out, &errOut)
+	if code != exitFixture {
+		t.Fatalf("reportHashes exit %d, want %d (missing messages[0])", code, exitFixture)
+	}
+	if !strings.Contains(errOut.String(), "missing messages[0]") {
+		t.Fatalf("want missing messages[0] diagnostic, got stderr=%q", errOut.String())
+	}
+}
+
 // TestCacheAudit_CorruptFixture_Exit2 asserts a missing or unparseable fixture is
 // exit 2 (fixture corrupt) — never a silent pass.
 func TestCacheAudit_CorruptFixture_Exit2(t *testing.T) {
