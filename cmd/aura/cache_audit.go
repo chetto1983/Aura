@@ -203,6 +203,30 @@ func decodeFixture(raw []byte) (fixtureTurn, error) {
 	if len(ft.Responses) == 0 {
 		return fixtureTurn{}, fmt.Errorf("fixture has no scripted responses")
 	}
+	for i, resp := range ft.Responses {
+		hasText := resp.Text != ""
+		hasToolCalls := len(resp.ToolCalls) > 0
+		if hasText == hasToolCalls {
+			return fixtureTurn{}, fmt.Errorf("response %d must have exactly one of text or tool_calls", i+1)
+		}
+		if hasText {
+			continue
+		}
+		for j, tc := range resp.ToolCalls {
+			if tc.ID == "" {
+				return fixtureTurn{}, fmt.Errorf("response %d tool_call %d has empty id", i+1, j+1)
+			}
+			if tc.Name == "" {
+				return fixtureTurn{}, fmt.Errorf("response %d tool_call %d has empty name", i+1, j+1)
+			}
+			if tc.Arguments == "" {
+				return fixtureTurn{}, fmt.Errorf("response %d tool_call %d has empty arguments", i+1, j+1)
+			}
+			if !json.Valid([]byte(tc.Arguments)) {
+				return fixtureTurn{}, fmt.Errorf("response %d tool_call %d has invalid JSON arguments", i+1, j+1)
+			}
+		}
+	}
 	return ft, nil
 }
 

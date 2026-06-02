@@ -142,6 +142,30 @@ func TestCacheAudit_CorruptFixture_Exit2(t *testing.T) {
 			t.Fatalf("empty-user fixture: want exit %d, got %d", exitFixture, code)
 		}
 	})
+	t.Run("empty-response", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, 1, `{"user":"u","responses":[{}]}`)
+		var errOut bytes.Buffer
+		if _, code := loadFixtures(dir, &errOut); code != exitFixture {
+			t.Fatalf("empty-response fixture: want exit %d, got %d", exitFixture, code)
+		}
+	})
+	t.Run("text-and-tool-calls", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, 1, `{"user":"u","responses":[{"text":"x","tool_calls":[{"id":"c1","name":"current_time","arguments":"{}"}]}]}`)
+		var errOut bytes.Buffer
+		if _, code := loadFixtures(dir, &errOut); code != exitFixture {
+			t.Fatalf("text-and-tool-calls fixture: want exit %d, got %d", exitFixture, code)
+		}
+	})
+	t.Run("invalid-tool-call", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, 1, `{"user":"u","responses":[{"tool_calls":[{"id":"c1","name":"current_time","arguments":"not-json"}]}]}`)
+		var errOut bytes.Buffer
+		if _, code := loadFixtures(dir, &errOut); code != exitFixture {
+			t.Fatalf("invalid-tool-call fixture: want exit %d, got %d", exitFixture, code)
+		}
+	})
 }
 
 // TestCacheAudit_FixturesIncludeToolCalls verifies the shipped fixtures exercise
