@@ -1,10 +1,11 @@
 ---
 phase: 5
 slug: sandbox-2a-stateless
-status: draft
+status: validated
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-06-01
+validated: 2026-06-02
 ---
 
 # Phase 5 — Validation Strategy
@@ -49,16 +50,16 @@ created: 2026-06-01
 
 | Req / SC | Behavior (ROADMAP SC) | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |----------|------------------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| CAP-01 / SC#1 | `aura exec python "print(2+2)"` → `4`, sidecar idle within timeout | — | positive control — allowlist not too tight | integration | `go test -tags sandbox_integration ./internal/sandbox/ -run TestRunner_PythonHappy` | ✅ 05-03 W3 | ⬜ pending |
-| CAP-01 / SC#2 | `ctypes…ptrace(...)` → EPERM; `open('/proc/self/root/etc/shadow')` → ENOENT/EPERM | EoP / Info Disclosure | syscall + host-file boundary holds | integration (negative) | `... -run TestRunner_PtraceBlocked` / `TestRunner_ProcRootDenied` | ✅ 05-03 W3 | ⬜ pending |
-| CAP-01 / SC#3 | `socket().connect(('1.1.1.1',80))` → EPERM; `unshare(CLONE_NEWNET)` → EPERM | Info Disclosure / EoP | net-none + unshare excluded | integration (negative) | `... -run TestRunner_SocketBlocked` / `TestRunner_UnshareBlocked` | ✅ 05-03 W3 | ⬜ pending |
-| CAP-01 / SC#4 | `scripts/sandbox_escape_bench.sh` → escape-rate < 5% in quality-snapshot | all | 18-scenario denominator + config-regressions=0 | bench (deterministic) | `scripts/sandbox_escape_bench.sh && grep 'escape-rate' docs/aura-quality-snapshot.md` | ✅ 05-04 W4 | ⬜ pending |
-| CAP-01 / SC#5 | compose `aura-sandbox`: `cap_drop:ALL`, `no-new-privileges`, `read_only`, `pids_limit:64`, userns-remap (daemon) all set; gVisor default-on x86 via `make sandbox-up` | EoP | hardening flag set complete + gVisor default-on | config-assertion | `scripts/sandbox_escape_bench.sh` config-regression checks (must stay 0) + `make -n sandbox-up` includes the gVisor overlay on x86 | ✅ 05-02/05-04 W2/W4 | ⬜ pending |
-| D-16 / D-17 | limit_hit paths: timeout / oom / pids reported; lean preview shape; per-call timeout_sec delivered on the wire | DoS | resource caps enforced + reported | integration + unit | `TestRunner_TimeoutLimitHit`, `TestRunner_TimeoutClampedAndBodied`, `TestExecute_LeanPreview`, `TestExecute_TimeoutPassThrough` | ✅ 05-03 W3 | ⬜ pending |
-| D-18 | `ErrSandboxUnreachable` after auto-start fails; `ErrSandboxProtocol` on malformed resp; `aura exec` exit 70 | — | env-fault → typed error (not result) | unit + cli | `TestDockerRunner_UnreachableSentinel`, `TestRunShell_MalformedProtocol`, `TestRunExec_Exit70` | ✅ 05-03 W3 | ⬜ pending |
-| D-11 / D-12 | seccomp profile valid + loaded on both arches; arm64 under QEMU | EoP | multi-arch by-name profile loads | integration | QEMU leg: `docker buildx ... --platform linux/arm64` run of the negative tests | ✅ 05-04 W4 | ⬜ pending |
-| Gate-3 mutation | `internal/sandbox/docker.go` go-mutesting ≥70% killed | — | the negative-test suite actually kills mutants | mutation (spot-check) | `go-mutesting internal/sandbox/docker.go` (GOFLAGS=-tags=sandbox_integration) ≥70%; recorded in quality-snapshot | ✅ 05-04 W4 | ⬜ pending |
-| D-20 | curated baked package set imports + runs C-extensions under the hardened runtime (`import numpy,pandas`); build-time hash-pinned bake, no runtime pip | DoS (seccomp-fit) / Tampering (supply-chain) | batteries-included Python without weakening net-none/read-only floor | integration (positive) + build-smoke | `go test -tags sandbox_integration ./internal/sandbox/ -run TestRunner_BakedPackagesImport`; Dockerfile build-stage `import ...; print('baked-ok')` | ✅ 05-02/05-03 W2/W3 | ⬜ pending |
+| CAP-01 / SC#1 | `aura exec python "print(2+2)"` → `4`, sidecar idle within timeout | — | positive control — allowlist not too tight | integration | `go test -tags sandbox_integration ./internal/sandbox/ -run TestRunner_PythonHappy` | ✅ 05-03 W3 | ✅ green |
+| CAP-01 / SC#2 | `ctypes…ptrace(...)` → EPERM; `open('/proc/self/root/etc/shadow')` → ENOENT/EPERM | EoP / Info Disclosure | syscall + host-file boundary holds | integration (negative) | `... -run TestRunner_PtraceBlocked` / `TestRunner_ProcRootDenied` | ✅ 05-03 W3 | ✅ green |
+| CAP-01 / SC#3 | `socket().connect(('1.1.1.1',80))` → EPERM; `unshare(CLONE_NEWNET)` → EPERM | Info Disclosure / EoP | net-none + unshare excluded | integration (negative) | `... -run TestRunner_SocketBlocked` / `TestRunner_UnshareBlocked` | ✅ 05-03 W3 | ✅ green |
+| CAP-01 / SC#4 | `scripts/sandbox_escape_bench.sh` → escape-rate < 5% in quality-snapshot | all | 18-scenario denominator + config-regressions=0 | bench (deterministic) | `scripts/sandbox_escape_bench.sh && grep 'escape-rate' docs/aura-quality-snapshot.md` | ✅ 05-04 W4 | ✅ green |
+| CAP-01 / SC#5 | compose `aura-sandbox`: `cap_drop:ALL`, `no-new-privileges`, `read_only`, `pids_limit:64`, userns-remap (daemon) all set; gVisor default-on x86 via `make sandbox-up` | EoP | hardening flag set complete + gVisor default-on | config-assertion | `scripts/sandbox_escape_bench.sh` config-regression checks (must stay 0) + `make -n sandbox-up` includes the gVisor overlay on x86 | ✅ 05-02/05-04 W2/W4 | ✅ green |
+| D-16 / D-17 | limit_hit paths: timeout / oom / pids reported; lean preview shape; per-call timeout_sec delivered on the wire | DoS | resource caps enforced + reported | integration + unit | `TestRunner_TimeoutLimitHit`, `TestRunner_TimeoutClampedAndBodied`, `TestExecute_LeanPreview`, `TestExecute_TimeoutPassThrough` | ✅ 05-03 W3 | ✅ green |
+| D-18 | `ErrSandboxUnreachable` after auto-start fails; `ErrSandboxProtocol` on malformed resp; `aura exec` exit 70 | — | env-fault → typed error (not result) | unit + cli | `TestDockerRunner_UnreachableSentinel`, `TestRunShell_MalformedProtocol`, `TestRunExec_Exit70` | ✅ 05-03 W3 | ✅ green |
+| D-11 / D-12 | seccomp profile valid + loaded on both arches; arm64 under QEMU | EoP | multi-arch by-name profile loads | integration | QEMU leg: `docker buildx ... --platform linux/arm64` run of the negative tests | ✅ 05-04 W4 | ✅ green |
+| Gate-3 mutation | `internal/sandbox/docker.go` go-mutesting ≥70% killed | — | the negative-test suite actually kills mutants | mutation (spot-check) | `go-mutesting internal/sandbox/docker.go` (GOFLAGS=-tags=sandbox_integration) ≥70%; recorded in quality-snapshot | ✅ 05-04 W4 | ✅ green |
+| D-20 | curated baked package set imports + runs C-extensions under the hardened runtime (`import numpy,pandas`); build-time hash-pinned bake, no runtime pip | DoS (seccomp-fit) / Tampering (supply-chain) | batteries-included Python without weakening net-none/read-only floor | integration (positive) + build-smoke | `go test -tags sandbox_integration ./internal/sandbox/ -run TestRunner_BakedPackagesImport`; Dockerfile build-stage `import ...; print('baked-ok')` | ✅ 05-02/05-03 W2/W3 | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -89,7 +90,7 @@ Each MUST fail with the expected errno (a PASS that does NOT trigger the boundar
 > `internal/sandbox/docker.go`, which is implemented in Wave 3 (05-03 Task 1) — it cannot exist at
 > Wave 0. The *test infrastructure* it scores (the negative-test tier) is the Wave-0 artifact above;
 > the score itself is a post-Wave-3 Gate-3 obligation, recorded at Wave 4:
-- [ ] Mutation spot-check (≥70% killed) target file: `internal/sandbox/docker.go` (CLAUDE.md Gate-3) — **Wave-4 gate** (05-04 Task 1 records the score in `docs/aura-quality-snapshot.md`; 05-04 Task 2 gates it in CI)
+- [x] Mutation spot-check (≥70% killed) target file: `internal/sandbox/docker.go` (CLAUDE.md Gate-3) — **Wave-4 gate** (05-04 Task 1 records the score in `docs/aura-quality-snapshot.md`; 05-04 Task 2 gates it in CI). **Recorded 2026-06-02: 100% killed (25/25).**
 
 ---
 
@@ -113,4 +114,25 @@ Each MUST fail with the expected errno (a PASS that does NOT trigger the boundar
 - [x] Negative-test inventory: every boundary asserts the expected errno (no false-greens)
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-06-02 (`/gsd-validate-phase 05`)
+
+---
+
+## Validation Audit 2026-06-02
+
+Audited the draft against the live codebase: cross-referenced all 13 named tests in the
+Per-Task Map against source (`func` defs + `-list` under the `sandbox_integration` tag),
+ran the unit tier live with `-race`, and ground-truthed the bench script + quality-snapshot
+rows. Every `-run` name resolves to a real, executing test — no stale `[no tests to run]`
+false-greens. Unit tier RUN+PASS (sandbox 2.1s / tools 1.0s / cmd 1.1s with race);
+integration + bench + mutation proven live in 05-UAT (10/10) and `docs/aura-quality-snapshot.md`
+(escape-rate 0.0%, docker.go mutation 100% killed). Statuses flipped from draft `⬜ pending`
+to audited `✅ green`.
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+| Stale `-run` names (false-green risk) | 0 |
+| Manual-only (tracked obligations, pre-existing) | 3 |
