@@ -53,6 +53,19 @@ type Config struct {
 	SandboxURL        string // AURA_SANDBOX_URL — loopback sidecar base URL (D-08)
 	SandboxTimeoutSec int    // AURA_SANDBOX_TIMEOUT_SEC — per-call default; runner clamps <=600
 	SandboxRuntime    string // AURA_SANDBOX_RUNTIME — runsc (x86) / runc (arm64), per-arch default (D-07)
+
+	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
+	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
+	// surfaced as web_search_unavailable{searxng_not_configured} at call time
+	// (D-05/D-06) so `aura db migrate` and every non-web subcommand keep working.
+	// No allowlist/loopback escape hatch lands here (D-30).
+	SearxngURL          string // SEARXNG_URL — in-network base, e.g. http://searxng:8080/search (D-02); empty default, fail-closed at call time
+	WebDNSPinTTLSec     int    // AURA_WEB_DNS_PIN_TTL_SEC — per-conversation DNS pin TTL (D-25)
+	WebResponseCapBytes int    // AURA_WEB_RESPONSE_CAP_BYTES — body/markdown ceiling; over it spills via read_tool_output (D-21)
+	WebCachePersistent  bool   // AURA_WEB_CACHE_PERSISTENT — opt-in disk cache; default false = in-memory (D-32)
+	WebSearchTimeoutSec int    // AURA_WEB_SEARCH_TIMEOUT_SEC — search wall-clock deadline (D-14)
+	WebFetchTimeoutSec  int    // AURA_WEB_FETCH_TIMEOUT_SEC — fetch wall-clock deadline (D-23)
+	WebUserAgent        string // AURA_WEB_USER_AGENT — Aura-specific UA, no browser spoof (D-34/D-35)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -141,6 +154,16 @@ func loadBase() *Config {
 		SandboxURL:        envDefault("AURA_SANDBOX_URL", "http://127.0.0.1:18901"),
 		SandboxTimeoutSec: envIntDefault("AURA_SANDBOX_TIMEOUT_SEC", 30), // 600s cap clamped runner-side
 		SandboxRuntime:    envDefault("AURA_SANDBOX_RUNTIME", defaultRuntimeForArch()),
+
+		// Phase 7 web knobs. SEARXNG_URL has an empty default on purpose (D-05):
+		// missing is fail-closed at call time, never a boot error.
+		SearxngURL:          os.Getenv("SEARXNG_URL"),
+		WebDNSPinTTLSec:     envIntDefault("AURA_WEB_DNS_PIN_TTL_SEC", 60),
+		WebResponseCapBytes: envIntDefault("AURA_WEB_RESPONSE_CAP_BYTES", 24000),
+		WebCachePersistent:  envBoolDefault("AURA_WEB_CACHE_PERSISTENT", false),
+		WebSearchTimeoutSec: envIntDefault("AURA_WEB_SEARCH_TIMEOUT_SEC", 20),
+		WebFetchTimeoutSec:  envIntDefault("AURA_WEB_FETCH_TIMEOUT_SEC", 30),
+		WebUserAgent:        envDefault("AURA_WEB_USER_AGENT", "Aura/0.x web_fetch"),
 	}
 }
 
@@ -182,6 +205,22 @@ func envIntDefault(key string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+// envBoolDefault returns the boolean value of `key`, falling back to `fallback`
+// when the variable is unset, empty, or fails to parse. Like envIntDefault, a
+// malformed value is silently absorbed to the fallback rather than booting fatal
+// — a typo in an opt-in toggle should not block startup.
+func envBoolDefault(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }
 
 // defaultRunDir returns a sensible per-user run directory for sidecar tool

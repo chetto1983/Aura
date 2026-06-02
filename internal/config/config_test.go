@@ -24,6 +24,9 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE",
 		"AURA_LLM_MAX_TOKENS", "AURA_LLM_TOTAL_TIMEOUT_SEC", "AURA_LLM_CONNECT_TIMEOUT_SEC",
 		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT",
+		"SEARXNG_URL", "AURA_WEB_DNS_PIN_TTL_SEC", "AURA_WEB_RESPONSE_CAP_BYTES",
+		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
+		"AURA_WEB_FETCH_TIMEOUT_SEC", "AURA_WEB_USER_AGENT",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -277,6 +280,103 @@ func TestEmbedDimensions_RequiredNonZero(t *testing.T) {
 	}
 	if cfg.Neo4j.EmbedDimensions != 768 {
 		t.Errorf("EmbedDimensions: want non-zero contract default 768, got %d", cfg.Neo4j.EmbedDimensions)
+	}
+}
+
+// TestWebDefaults_AppliedAndNotFatal asserts the Phase 7 (Slice 5) web knobs:
+// the AURA_WEB_* defaults land, and — critically (D-05/D-06) — an unset
+// SEARXNG_URL is NOT a boot error. Web tools are optional; `aura db migrate` and
+// every non-web subcommand must load config without SEARXNG configured. Missing
+// SEARXNG_URL is surfaced as web_search_unavailable{searxng_not_configured} at
+// call time, not here.
+func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
+	clearPostgresEnv(t) // also clears every SEARXNG_URL / AURA_WEB_* knob
+
+	// LoadDB() must succeed with SEARXNG_URL unset — no panic, no error path.
+	cfg := LoadDB()
+	if cfg == nil {
+		t.Fatal("LoadDB() returned nil with SEARXNG_URL unset")
+	}
+	if cfg.SearxngURL != "" {
+		t.Errorf("SearxngURL: want empty default (fail-closed at call time), got %q", cfg.SearxngURL)
+	}
+	if cfg.WebDNSPinTTLSec != 60 {
+		t.Errorf("WebDNSPinTTLSec: want default 60, got %d", cfg.WebDNSPinTTLSec)
+	}
+	if cfg.WebResponseCapBytes != 24000 {
+		t.Errorf("WebResponseCapBytes: want default 24000, got %d", cfg.WebResponseCapBytes)
+	}
+	if cfg.WebCachePersistent {
+		t.Error("WebCachePersistent: want default false (in-memory), got true")
+	}
+	if cfg.WebSearchTimeoutSec != 20 {
+		t.Errorf("WebSearchTimeoutSec: want default 20, got %d", cfg.WebSearchTimeoutSec)
+	}
+	if cfg.WebFetchTimeoutSec != 30 {
+		t.Errorf("WebFetchTimeoutSec: want default 30, got %d", cfg.WebFetchTimeoutSec)
+	}
+	if cfg.WebUserAgent != "Aura/0.x web_fetch" {
+		t.Errorf("WebUserAgent: want default %q, got %q", "Aura/0.x web_fetch", cfg.WebUserAgent)
+	}
+
+	// Load() with a placeholder LLM key must also load the web fields without error.
+	full, err := Load()
+	if err != nil {
+		t.Fatalf("Load() errored with SEARXNG_URL unset: %v", err)
+	}
+	if full.SearxngURL != "" {
+		t.Errorf("Load(): SearxngURL must stay empty when unset, got %q", full.SearxngURL)
+	}
+}
+
+// TestWebEnvOverrides asserts each AURA_WEB_* / SEARXNG_URL field honors its env.
+func TestWebEnvOverrides(t *testing.T) {
+	clearPostgresEnv(t)
+	t.Setenv("SEARXNG_URL", "http://searxng:8080/search")
+	t.Setenv("AURA_WEB_DNS_PIN_TTL_SEC", "120")
+	t.Setenv("AURA_WEB_RESPONSE_CAP_BYTES", "48000")
+	t.Setenv("AURA_WEB_CACHE_PERSISTENT", "true")
+	t.Setenv("AURA_WEB_SEARCH_TIMEOUT_SEC", "15")
+	t.Setenv("AURA_WEB_FETCH_TIMEOUT_SEC", "45")
+	t.Setenv("AURA_WEB_USER_AGENT", "Aura/1.0 custom")
+
+	cfg := LoadDB()
+	if cfg.SearxngURL != "http://searxng:8080/search" {
+		t.Errorf("SearxngURL override not applied: %q", cfg.SearxngURL)
+	}
+	if cfg.WebDNSPinTTLSec != 120 {
+		t.Errorf("WebDNSPinTTLSec override not applied: %d", cfg.WebDNSPinTTLSec)
+	}
+	if cfg.WebResponseCapBytes != 48000 {
+		t.Errorf("WebResponseCapBytes override not applied: %d", cfg.WebResponseCapBytes)
+	}
+	if !cfg.WebCachePersistent {
+		t.Error("WebCachePersistent override not applied: want true")
+	}
+	if cfg.WebSearchTimeoutSec != 15 {
+		t.Errorf("WebSearchTimeoutSec override not applied: %d", cfg.WebSearchTimeoutSec)
+	}
+	if cfg.WebFetchTimeoutSec != 45 {
+		t.Errorf("WebFetchTimeoutSec override not applied: %d", cfg.WebFetchTimeoutSec)
+	}
+	if cfg.WebUserAgent != "Aura/1.0 custom" {
+		t.Errorf("WebUserAgent override not applied: %q", cfg.WebUserAgent)
+	}
+}
+
+// TestEnvBoolDefault_ParsesValid_FallsBackOnGarbage covers the new bool helper.
+func TestEnvBoolDefault_ParsesValid_FallsBackOnGarbage(t *testing.T) {
+	t.Setenv("AURA_TEST_BOOL_TRUE", "true")
+	if got := envBoolDefault("AURA_TEST_BOOL_TRUE", false); !got {
+		t.Error("valid true: want true, got false")
+	}
+	t.Setenv("AURA_TEST_BOOL_GARBAGE", "not-a-bool")
+	if got := envBoolDefault("AURA_TEST_BOOL_GARBAGE", true); !got {
+		t.Error("garbage: want fallback true, got false")
+	}
+	t.Setenv("AURA_TEST_BOOL_EMPTY", "")
+	if got := envBoolDefault("AURA_TEST_BOOL_EMPTY", true); !got {
+		t.Error("empty: want fallback true, got false")
 	}
 }
 
