@@ -26,7 +26,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 | Vector search p95 latency @ 100K corpus | ≤ 30ms | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/retrieval/**`, sidecar `aura-llama-embed` config |
 | Telegram MarkdownV2 escape fuzz (10K Unicode inputs, 400 Bad Request rate) | = 0% | YYYY-MM-DD (placeholder — populated by Phase 13) | TBD | Phase 13 Slice 9b | `internal/channels/telegram/mdv2.go` |
 | Skill snippet exec success rate (sandbox 2b session, Phase 11 corpus 50 snippets) | ≥ 95% | YYYY-MM-DD (placeholder — populated by Phase 11) | TBD | Phase 11 Slice 7e-core | `internal/skills/snippet/**`, `internal/sandbox/sessions/**` |
-| Web tools — `ssrf.go` mutation (go-mutesting, ≥70% killed) + `internal/web` coverage (≥85% combined) + live `web_search` p95 (≤2s) | mut ≥70% / cov ≥85% / p95 ≤2s | 2026-06-02 (unit cov; live cells pending @ Gate-3) | unit cov 75.5%; ssrf.go mutation pending @ Gate-3; combined cov pending @ Gate-3; SC#1 p95 pending @ Gate-3 | Phase 7 Slice 5 | `internal/web/**`, `internal/agent/tools/web_*.go`, `searxng/settings.yml` |
+| Web tools — `ssrf.go` mutation (go-mutesting, ≥70% killed) + `internal/web` coverage (≥85% combined) + live `web_search` p95 (≤2s) | mut ≥70% / cov ≥85% / p95 ≤2s | 2026-06-02 (unit cov; live cells pending @ Gate-3) | unit cov 91.0% / combined 91.5% (PASS, was 75.5%); ssrf.go mutation 94.4% (PASS); SC#1 p95 ~1.01s (PASS) | Phase 7 Slice 5 | `internal/web/**`, `internal/agent/tools/web_*.go`, `searxng/settings.yml` |
 
 ---
 
@@ -118,7 +118,7 @@ before any production arm64 deployment.** It is NOT a per-merge gate.
 | Sub-metric | Target | Last measured | Last value |
 |---|---|---|---|
 | Owned-surface coverage gate (`internal/*`, db+neo4j tags) | ≥ 85% | 2026-06-02 | **87.4%** — PASS (the official Gate-3 floor) |
-| `internal/web` combined coverage (unit + `web_integration`) | (contributes to the aggregate) | 2026-06-02 | 82.0% (was 77.3% — the cap fix unblocked the fetch-live success paths; +error-mapping/redirect/post-cleanup unit tests). Remaining sub-85% is the convertNode A2 fallback + defensive dial-control branches, not contrived-tested (no asilo nido). |
+| `internal/web` combined coverage (unit + `web_integration`) | ≥ 85% | 2026-06-02 | **91.5% combined / 91.0% unit** — PASS (was 82.0% / 80.5%). Focused test pass added disk-cache round-trip (getDiskLocked/setDiskLocked), both `Error()` methods, fetch cache-HIT (1 origin hit / 2 fetches), and search validHostname/domainAllowed/buildQuery tables. Remaining sub-100% is the convertNode A2 fallback + defensive dial-control arms + read-only-home newCache fallback, all left uncovered by design (no asilo nido). |
 | `internal/web/ssrf.go` mutation (go-mutesting, killed) | ≥ 70% | 2026-06-02 | 94.4% (17/18; lone survivor is the unreachable metadataV6Pfx dead branch; ssrf.go untouched by the gap-closure) |
 | Live `aura web tool web_search` p95 (SC#1) | ≤ 2s (advisory, env-tunable) | 2026-06-02 | TestSearch_Live PASS ~1.01s (under the 2s budget) |
 | SC#3 SSRF block smoke (`scripts/ssrf_smoke.sh`) | 4/4 blocked, grep-clean | 2026-06-02 | 4/4 blocked_url, grep-clean |

@@ -120,7 +120,7 @@ The live Gate-3 found a real BLOCKING bug + a quality gap; both are now fixed (4
 - **SC#4 TestDNSRebind: PASS** (DNS pin reuse proven; the live fetch path now executes — TestFetch_Live also PASS).
 - **ssrf.go mutation: 94.4%** (17/18; ssrf.go untouched; lone survivor = unreachable metadataV6Pfx dead branch) — ≥70% ✅
 - **Owned-surface coverage gate (`internal/*`, db+neo4j tags): 87.4% — PASS** (the official Gate-3 floor, ≥85%).
-- internal/web standalone combined (unit + web_integration): **82.0%** (was 77.3% — cap fix unblocked the fetch-live success paths + new error-mapping/redirect/post-cleanup unit tests). Remaining sub-85% is the convertNode A2 fallback + defensive dial-control branches, not contrived-tested.
+- internal/web standalone: **91.0% unit / 91.5% combined (unit + web_integration) — PASS ≥85%** (was 80.5% / 82.0%). Focused test pass (commit 82557f69) added disk-cache round-trip (getDiskLocked/setDiskLocked/newCache persistent path), both `Error()` methods, fetch cache-HIT (1 origin hit per 2 fetches, D-31), and search validHostname/domainAllowed/buildQuery validation tables. Deliberately left uncovered (no asilo nido): convertNode A2 fallback (needs a node ConvertNode fails on — contrived), control deep dial-guard defensive arms (covered by TestTransport_ControlRecheck; only unreachable arms remain), newCache read-only-home MkdirAll-fail fallback, fetchFromCache cache-corruption unmarshal branch.
 - **golangci-lint: 0 issues** ✅
 - **aura web doctor (live stack): reachable: yes, JSON round-trip OK, status OK** ✅
 
