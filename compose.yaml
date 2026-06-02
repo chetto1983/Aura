@@ -130,6 +130,32 @@ services:
       retries: 10
       start_period: 5s
 
+  # ↓↓ Slice 5 (Phase 7) — SearXNG meta-search, NO host port (D-02/D-03/D-04) ↓↓
+  # The web_search backend. Reached ONLY in-network as http://searxng:8080/search
+  # (D-02): the deliberate absence of a `ports:` key (every other service publishes
+  # a 127.0.0.1 host port) is the access control — SearXNG is unreachable from the
+  # host while still egressing to the public internet via the aura-web bridge (D-03,
+  # T-07-01). The image's Granian entrypoint binds :8080 (verified against the
+  # pinned tag; the file's default 8888 is overridden by GRANIAN_PORT).
+  searxng:
+    image: searxng/searxng:2026.5.31-7159b8aed
+    container_name: aura-searxng
+    restart: unless-stopped
+    # NO ports: — internal-only (D-03). Do NOT add a host port mapping.
+    volumes:
+      # Read-only so a compromised container cannot rewrite its own config (D-04,
+      # T-07-02). The entrypoint leaves an existing target untouched (it only
+      # generates one when absent), so the checked-in file stays authoritative.
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - aura-web
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
 volumes:
   aura-postgres:
   aura-neo4j:
@@ -141,3 +167,7 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
+  # Shared app network so SearXNG egresses to the public internet without a host
+  # port (D-03). The Aura process joins this network to reach http://searxng:8080.
+  aura-web:
+    driver: bridge
