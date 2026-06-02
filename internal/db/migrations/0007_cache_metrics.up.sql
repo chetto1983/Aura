@@ -20,8 +20,11 @@ CREATE TABLE aura.cache_metrics (
 
 -- Plain index build on a fresh empty table inside the multi-statement implicit
 -- migration tx (Pitfall 4 / golang-migrate v4.19.1 forbids the concurrent variant in
--- a tx block). The window queries scan ts; a DESC index serves the `--since` reads.
-CREATE INDEX cache_metrics_ts_idx ON aura.cache_metrics (ts DESC);
+-- a tx block). The window queries are `WHERE ts >= $1 ORDER BY ts ASC` (ListSince +
+-- AggregateSince); a plain ascending (ts) index serves BOTH the range predicate and
+-- the ASC ordering without a reverse-scan / sort step (WR-04 — a DESC index served
+-- only the predicate, not the sort).
+CREATE INDEX cache_metrics_ts_idx ON aura.cache_metrics (ts);
 
 GRANT SELECT, INSERT ON aura.cache_metrics TO aura_app;
 GRANT ALL            ON aura.cache_metrics TO aura_migrate;
