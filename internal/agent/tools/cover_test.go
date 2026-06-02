@@ -10,32 +10,55 @@ import (
 )
 
 // TestReadToolOutput_BadArgs covers read_tool_output's malformed-JSON args branch.
+// It asserts the SPECIFIC "args" error, not merely "an error": removing this guard
+// lets execution fall through to a later guard (tool_call_id required), which still
+// returns *an* error — so a bare err!=nil check would not kill that mutant. The
+// exact-message assertion does (mutation discipline, zero production change).
 func TestReadToolOutput_BadArgs(t *testing.T) {
 	ctx := ctxWithRunDir("sess-ba", "call-ba", t.TempDir())
-	if _, err := (ReadToolOutput{}).Execute(ctx, []byte(`{not json}`)); err == nil {
+	_, err := (ReadToolOutput{}).Execute(ctx, []byte(`{not json}`))
+	if err == nil {
 		t.Fatal("want error on malformed read_tool_output args")
+	}
+	if !strings.Contains(err.Error(), "read_tool_output args:") {
+		t.Fatalf("want the malformed-args error, got %q", err.Error())
 	}
 }
 
-// TestReadToolOutput_EmptyID covers the required-tool_call_id branch.
+// TestReadToolOutput_EmptyID covers the required-tool_call_id branch. Asserts the
+// SPECIFIC "tool_call_id is required" message: without the exact check, removing
+// this guard falls through to sidecarPath, which also errors on the empty id — a
+// bare err!=nil would pass on the mutant. The message assertion kills it.
 func TestReadToolOutput_EmptyID(t *testing.T) {
 	ctx := ctxWithRunDir("sess-eid", "call-eid", t.TempDir())
-	if _, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":""}`)); err == nil {
+	_, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":""}`))
+	if err == nil {
 		t.Fatal("want error when tool_call_id is empty")
+	}
+	if !strings.Contains(err.Error(), "tool_call_id is required") {
+		t.Fatalf("want the required-id error, got %q", err.Error())
 	}
 }
 
 // TestReadToolOutput_MissingContext covers the missing-tool-call-context branch:
-// Execute is called with a bare context (no WithToolCallContext).
+// Execute is called with a bare context (no WithToolCallContext). Asserts the
+// SPECIFIC "missing tool-call context" message so the guard's removal (which falls
+// through to a zero-value ctx and a downstream validateID error) is killed.
 func TestReadToolOutput_MissingContext(t *testing.T) {
-	if _, err := (ReadToolOutput{}).Execute(context.Background(), []byte(`{"tool_call_id":"x"}`)); err == nil {
+	_, err := (ReadToolOutput{}).Execute(context.Background(), []byte(`{"tool_call_id":"x"}`))
+	if err == nil {
 		t.Fatal("want error when the tool-call context is absent")
+	}
+	if !strings.Contains(err.Error(), "missing tool-call context") {
+		t.Fatalf("want the missing-context error, got %q", err.Error())
 	}
 }
 
 // TestReadToolOutput_SidecarReadError covers read_tool_output's non-NotExist read
 // error branch: the sidecar PATH exists but is a directory, so os.ReadFile fails
-// with something other than ErrNotExist.
+// with something other than ErrNotExist. Asserts the SPECIFIC "read sidecar" wrap
+// so the IsNotExist-branch removal (which would mis-route this to the no-output
+// message) is killed.
 func TestReadToolOutput_SidecarReadError(t *testing.T) {
 	runDir := t.TempDir()
 	const sess, call = "sess-rde", "call-rde"
@@ -45,8 +68,12 @@ func TestReadToolOutput_SidecarReadError(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := ctxWithRunDir(sess, call, runDir)
-	if _, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"`+call+`"}`)); err == nil {
+	_, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"`+call+`"}`))
+	if err == nil {
 		t.Fatal("want a read error when the sidecar path is a directory")
+	}
+	if !strings.Contains(err.Error(), "read sidecar") {
+		t.Fatalf("want the non-NotExist read-sidecar error, got %q", err.Error())
 	}
 }
 

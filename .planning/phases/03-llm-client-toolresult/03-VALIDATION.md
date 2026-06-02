@@ -105,6 +105,21 @@ created: 2026-05-30
 
 > Hardened by adding NEW test assertions only — zero production-code changes (commits `80c2c9cb`, `9e350ba4`). `accumulate.go` alone is 0.783; `llm_agent.go` kills all 70 mutants. Accepted equivalent mutants (not test-gamed): `current_time.go` timezone empty/`UTC` guard removals (`LoadLocation("")` and `LoadLocation("UTC")` both yield UTC → byte-identical output), the `validateID` `/`+`\` OR-branch removals on Windows (`os.IsPathSeparator` catches both), the `truncatePreview` `cut>0` loop bound (`cut` never reaches a continuation byte for valid UTF-8), and the `accumulate.go` `a.order++` increment (`firstSeen` is unused in `finalize`, which sorts by index — no observable effect).
 
+### Mutation re-run (live, 2026-06-02 — autonomous UAT close, WSL go-mutesting, `GOFLAGS=-count=1`)
+
+Re-measured PER CRITICAL FILE (the gate's actual unit — "≥70% killed on each critical file"). The earlier whole-package `internal/agent/tools/` number (0.791) is no longer apples-to-apples: the package now also carries `ask_user.go` (Phase 04) and `execute.go` (Phase 05). Per-file isolation is the faithful gate measurement.
+
+| Critical file | Score | Killed / Total | Gate ≥0.70 |
+|---------------|-------|----------------|-----------|
+| `internal/llm/openai_compat/` (sse.go + accumulate.go) | **0.754** | 43 / 57 | ✅ |
+| `result.go` | **0.727** | 16 / 22 | ✅ |
+| `current_time.go` | **0.714** | 5 / 7 | ✅ |
+| `read_tool_output.go` | **0.857** | 12 / 14 | ✅ |
+
+> `read_tool_output.go` initially measured 0.429: its early-return error guards were each covered by a test, but the tests asserted only `err != nil` — removing a guard fell through to a *different* downstream error, so the mutant survived a bare error-presence check. Hardened by adding NEW exact-error-message assertions only (zero production change) so each guard's specific message (`read_tool_output args:`, `tool_call_id is required`, `missing tool-call context`, `read sidecar`, `no output for tool_call_id`, `is negative`, validateID `..`/`path separator`) is pinned; `TestReadToolOutput_NegativeOffset` now seeds a sidecar so the negative-offset guard is the branch actually reached. → 0.857.
+>
+> Remaining accepted-equivalent survivors (not test-gamed, no test can distinguish them): `read_tool_output.go` `start > total`→`>=` and `end > total`→`>=` (at the `==total` boundary both branches assign `total` → byte-identical output); `current_time.go` timezone `""`/`"UTC"` guard (both yield UTC).
+
 ---
 
 ## Validation Sign-Off

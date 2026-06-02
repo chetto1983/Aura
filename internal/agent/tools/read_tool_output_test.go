@@ -51,7 +51,10 @@ func TestReadToolOutput_ByteSlice(t *testing.T) {
 }
 
 // Test 2 (Req#7): an unknown tool_call_id hard-fails with an error (not empty,
-// not panic) — D-15.
+// not panic) — D-15. Asserts the SPECIFIC "no output for tool_call_id" message (not
+// just that the id appears): removing the IsNotExist-branch return falls through to
+// the generic "read sidecar" wrap, which can still surface the id via %w — so a bare
+// id-substring check would pass on that mutant. Pinning the no-output phrasing kills it.
 func TestReadToolOutput_UnknownID(t *testing.T) {
 	runDir := t.TempDir()
 	ctx := ctxWithRunDir("sess-r2", "agent-call", runDir)
@@ -61,6 +64,9 @@ func TestReadToolOutput_UnknownID(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "never-spilled") {
 		t.Fatalf("error should name the id: %v", err)
+	}
+	if !strings.Contains(err.Error(), "no output for tool_call_id") {
+		t.Fatalf("want the IsNotExist 'no output' message, got %q", err.Error())
 	}
 }
 
@@ -93,29 +99,47 @@ func TestReadToolOutput_OffsetPastEOF(t *testing.T) {
 }
 
 // T-03-07: a traversal-shaped tool_call_id is rejected before filepath.Join.
+// Asserts the SPECIFIC validateID phrasing ('..' or 'path separator') so removing
+// the sidecarPath-error return — which would fall through to os.ReadFile and a
+// generic "read sidecar" error — is killed by the message check, not just err!=nil.
 func TestReadToolOutput_PathTraversal(t *testing.T) {
 	runDir := t.TempDir()
 	ctx := ctxWithRunDir("sess-r5", "agent-call", runDir)
 	for _, id := range []string{"..", "../../etc/passwd", "a/b", `a\b`} {
 		args := fmt.Sprintf(`{"tool_call_id":%q}`, id)
-		if _, err := (ReadToolOutput{}).Execute(ctx, []byte(args)); err == nil {
+		_, err := (ReadToolOutput{}).Execute(ctx, []byte(args))
+		if err == nil {
 			t.Fatalf("want error for traversal id %q", id)
+		}
+		if !strings.Contains(err.Error(), "..") && !strings.Contains(err.Error(), "path separator") {
+			t.Fatalf("traversal id %q: want a validateID rejection (.. / path separator), got %q", id, err.Error())
 		}
 	}
 }
 
-// Negative offset is rejected, not a panic.
+// Negative offset is rejected, not a panic. The sidecar IS seeded so the
+// negative-offset guard is the branch actually reached (with no sidecar, the read
+// fails first and the guard's removal would survive). Asserts the SPECIFIC "is
+// negative" message so removing the guard — which then falls through to data[-5:],
+// a slice-bounds panic OR a different error — is killed by the message check.
 func TestReadToolOutput_NegativeOffset(t *testing.T) {
-	runDir := t.TempDir()
-	ctx := ctxWithRunDir("sess-r6", "call-r6", runDir)
-	if _, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"call-r6","offset":-5}`)); err == nil {
+	ctx := seedSidecar(t, "sess-r6", "call-r6", strings.Repeat("n", 10_000))
+	_, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"call-r6","offset":-5}`))
+	if err == nil {
 		t.Fatal("want error for negative offset")
+	}
+	if !strings.Contains(err.Error(), "is negative") {
+		t.Fatalf("want the negative-offset error, got %q", err.Error())
 	}
 	// Boundary: offset == -1 is the largest negative value and MUST still be
 	// rejected (`< 0`, not `< -1`). A `< 0`→`< -1` mutant would let -1 through
 	// and index data[-1:].
-	if _, err := (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"call-r6","offset":-1}`)); err == nil {
+	_, err = (ReadToolOutput{}).Execute(ctx, []byte(`{"tool_call_id":"call-r6","offset":-1}`))
+	if err == nil {
 		t.Fatal("want error for offset == -1 (smallest negative)")
+	}
+	if !strings.Contains(err.Error(), "is negative") {
+		t.Fatalf("want the negative-offset error for -1, got %q", err.Error())
 	}
 }
 
