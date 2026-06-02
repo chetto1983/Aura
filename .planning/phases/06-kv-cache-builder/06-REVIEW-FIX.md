@@ -1,116 +1,83 @@
 ---
 phase: 06-kv-cache-builder
-fixed_at: 2026-06-02T00:00:00Z
+fixed_at: 2026-06-02T10:39:08.4906891Z
 review_path: .planning/phases/06-kv-cache-builder/06-REVIEW.md
 iteration: 1
-findings_in_scope: 5
-fixed: 5
+findings_in_scope: 6
+fixed: 6
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 06: Code Review Fix Report
 
-**Fixed at:** 2026-06-02
+**Fixed at:** 2026-06-02T10:39:08.4906891Z
 **Source review:** .planning/phases/06-kv-cache-builder/06-REVIEW.md
 **Iteration:** 1
 
 **Summary:**
-- Findings in scope: 5 (WR-01..WR-05; Critical: 0)
-- Fixed: 5
+- Findings in scope: 6
+- Fixed: 6
 - Skipped: 0
-
-Co-located Info items addressed opportunistically inside the warning commits:
-IN-06 (soften "exact" comment → folded into WR-01), IN-04 (document token-sum
-truncation safety → folded into WR-02). The other Info items (IN-01 helper
-extraction to a shared `pgconv` package, IN-02 `usageFromStateDelta` triplication,
-IN-03 `usage()` missing `cache-stats`, IN-05 fixture `finish` default) were left
-out of scope per the fix brief (critical_warning only).
-
-Verification after every Go edit: `go vet ./...` (clean), `go build ./...` (clean),
-touched-package `go test` (green), `go test -race` on `internal/runner`
-(`BASH_ENV=~/.aura-toolchain.sh`, green). Cache invariant gate
-(`scripts/cache_invariant_audit.sh`) exits 0 with 20 identical `messages[0]`
-hashes (`d69144fd…`); the negative gate (`cache_invariant_negative_test.sh`)
-still fails loud on both a poisoned hash stream and empty output. No regression
-to the prefix invariant.
 
 ## Fixed Issues
 
-### WR-01: `numericFromFloat` silent overflow / mis-round beyond `numeric(10,4)` range
+### CR-01: Assistant turns can be committed even when the new metric write fails
 
-**Files modified:** `internal/cachemetrics/store_helpers.go`, `internal/cachemetrics/store_helpers_test.go`
-**Commit:** e44e4919
-**Applied fix:** Changed `numericFromFloat` to return `(pgtype.Numeric, error)`. Added a
-`numericMaxCost = 999999.9999` domain guard: a magnitude outside ±numericMaxCost now
-returns a loud error (propagated through `NewInsertParams`, which already returns an
-error) instead of silently constructing an overflowing mantissa. Softened the comment
-from "stays exact" to a precise statement of the representable domain (IN-06). Extended
-`TestNumericFromFloat_RoundTrip` with the boundary fixtures the reviewer asked for
-(`123.4567`, `999999.9999`, `-999999.9999`) and added `TestNumericFromFloat_OutOfRange`.
-A `mustNumeric(t, f)` test helper keeps the in-range call sites one-liners.
+**Files modified:** `internal/runner/interfaces.go`, `internal/conversations/store.go`, `internal/runner/runner_persist.go`, `internal/runner/fakes_test.go`, `internal/runner/runner_cachemetric_test.go`, `cmd/aura/cachefakes.go`, `cmd/aura/cmdfakes_test.go`
+**Commit:** df5abe20
+**Applied fix:** Added `AppendAssistantTurnWithCacheMetric` on the conversation store so assistant turn insert, aggregate update, and cache metric insert run inside one transaction; routed runner assistant persistence through that seam and updated fakes/tests to prove rollback on metric failure.
+**Verification:** `go test ./internal/runner -run 'TestPersistAssistantAnswer|TestPersistCacheMetric' -count=1`; `go test ./internal/conversations -run TestAppendTurn -count=1`; final `go test ./internal/runner -count=1`.
 
-### WR-02: `anyInt64` / `anyNumericFloat` swallow parse errors → silent `0`
+### CR-02: The cache audit checks only the last LLM request of each turn
 
-**Files modified:** `internal/cachemetrics/store_helpers.go`, `internal/cachemetrics/store.go`, `internal/cachemetrics/store_helpers_test.go`
-**Commit:** 7e6dc0c6
-**Applied fix:** Both coercion helpers now return `(value, error)`. The string/`[]byte`
-parse-failure branches and the `default` (unmodeled driver shape) arm return an error
-naming the offending `%T`/value instead of fabricating `0`. `AggregateSince` propagates
-each error with a field-tagged message (`prompt_tokens` / `cached_tokens` / `cost_usd`),
-so an unexpected decode shape fails loud rather than reporting "0 tokens / $0.00 cost"
-(the false-green the codebase refuses). Added a one-line note that the float64 branch's
-truncation is safe for integral token sums (IN-04). Tests split into decode-shape
-(success) and `*_UnparseableErrors` (error-on-bad-shape) cases.
+**Files modified:** `cmd/aura/cache_audit.go`, `cmd/aura/cache_test.go`, `scripts/cache_invariant_audit.sh`, `scripts/cache_invariant_negative_test.sh`
+**Commit:** f12be0d1
+**Applied fix:** Captured every LLM request emitted during each replay turn, changed audit output to `request NN`, and updated the wrapper/negative proof to expect the current 22 request hashes.
+**Verification:** `go test ./cmd/aura -run TestCacheAudit -count=1`; `bash scripts/cache_invariant_audit.sh`; `bash scripts/cache_invariant_negative_test.sh`.
 
-### WR-03: `cache_metrics` row write non-atomic with the assistant turn
+### CR-03: The audit wrapper executes an environment-controlled command through eval
 
-**Files modified:** `internal/db/queries/cache_metrics.sql`, `internal/db/sqlc/cache_metrics.sql.go`, `internal/db/sqlc/querier.go`, `internal/runner/runner_persist.go`
-**Commit:** 9bea6c5a
-**Applied fix:** Option (c) from the review — made the metric `INSERT` idempotent via
-`ON CONFLICT (conversation_id, seq) DO NOTHING` (regenerated `sqlc`; the Go signature is
-unchanged, only the embedded SQL + generated doc comment). A retry for an
-already-recorded turn is now a no-op rather than a PK violation or duplicate metric.
-Documented the chosen consistency contract on `persistAssistantAnswer`: the turn is the
-load-bearing record, the metric is an append-only idempotent observation, and the metric
-write still fails the turn loudly (no-skip discipline, preserved by the existing
-`TestPersistAssistantAnswer_CacheMetricErrorSurfaces` / nil-store tests, both still green).
-**Note — requires human verification:** the residual assistant-turn duplication on a
-*fresh-seq* retry is a property of the shared `CountTurns`/`AppendTurn` seq model (it
-affects the user turn and pause turn identically), not specific to the metric. Closing it
-fully requires a shared transaction across the conversations + cachemetrics Stores
-(option (a)), which is an architectural refactor deliberately deferred as out of phase
-scope. A developer should confirm the documented "idempotent observation, deferred shared
-tx" contract is acceptable for this surface before sign-off.
+**Files modified:** `scripts/cache_invariant_audit.sh`, `scripts/cache_invariant_negative_test.sh`
+**Commit:** bdefa53d
+**Applied fix:** Replaced `AURA_CACHE_AUDIT_CMD` plus `eval` with `AURA_CACHE_AUDIT_BIN`, an executable path invoked directly; updated the negative proof to create temporary executable scripts for poisoned and empty output.
+**Verification:** `bash scripts/cache_invariant_audit.sh`; `bash scripts/cache_invariant_negative_test.sh`; `rg -n "AURA_CACHE_AUDIT_CMD|AUDIT_CMD|eval" scripts/cache_invariant_audit.sh scripts/cache_invariant_negative_test.sh`.
 
-### WR-04: `cache_metrics_ts_idx` DESC vs `ORDER BY ts ASC` mismatch
+### WR-01: Missing messages[0] can hash as a successful empty prefix
 
-**Files modified:** `internal/db/migrations/0007_cache_metrics.up.sql`
-**Commit:** bdd329c4
-**Applied fix:** Changed the index from `(ts DESC)` to a plain ascending `(ts)` so it
-serves BOTH the `WHERE ts >= $1` range predicate and the `ORDER BY ts ASC` ordering of
-`ListSince`/`AggregateSince` without a reverse-scan/sort step, and corrected the now-wrong
-"a DESC index serves the --since reads" comment. Migration 0007 is new in this phase
-(pre-merge, not yet shipped); the down migration drops the table (index drops with it), so
-the direction change is safe and no test asserts the index DDL string.
+**Files modified:** `cmd/aura/cache_audit.go`, `cmd/aura/cache_test.go`
+**Commit:** 34fe80ea
+**Applied fix:** Added an explicit `len(req.Messages) == 0` check before hashing and a regression test asserting exit 2 with a missing-prefix diagnostic.
+**Verification:** `go test ./cmd/aura -run 'TestCacheAudit_(MissingMessages0|Mutation|AllEqual)' -count=1`; final `go test ./cmd/aura -run TestCacheAudit -count=1`.
 
-### WR-05: `repoRoot()` failure silently falls back to a relative fixture dir
+### WR-02: Fixture decoding does not enforce the documented response shape
 
-**Files modified:** `cmd/aura/cache_audit.go`
-**Commit:** 3b96c54d
-**Applied fix:** `cacheAuditMain` now captures the `repoRoot()` error and writes an
-explicit diagnostic to `errOut` ("could not locate repo root (go.mod) from cwd … —
-falling back to relative fixture dir") before the relative-path fallback. The operator
-now sees the true environment cause instead of a misleading downstream "fixture corrupt".
-The fallback behavior itself is unchanged, so the existing exit-code contract holds; the
-negative-gate test confirms the audit still fails loud.
+**Files modified:** `cmd/aura/cache_audit.go`, `cmd/aura/cache_test.go`
+**Commit:** 9ed3cbe4
+**Applied fix:** Validated fixture responses during decode: exactly one of `text` or `tool_calls`, non-empty tool-call id/name/arguments, and valid JSON arguments; added corrupt fixture subtests.
+**Verification:** `go test ./cmd/aura -run 'TestCacheAudit_(CorruptFixture|FixturesIncludeToolCalls|AllEqual)' -count=1`; final `go test ./cmd/aura -run TestCacheAudit -count=1`.
+
+### WR-03: AggregateSince integration coverage can pass with a broken time filter
+
+**Files modified:** `internal/db/cache_metrics_integration_test.go`
+**Commit:** 6b2f253f
+**Applied fix:** Moved integration rows into an isolated future window and changed aggregate assertions from `>=` to exact prompt/cache/turn/cost totals.
+**Verification:** `go test -tags db_integration ./internal/db -run TestCacheMetrics_WindowAndAggregate -count=1`.
 
 ## Skipped Issues
 
-None — all in-scope findings were fixed.
+None.
+
+## Final Verification
+
+- `go test ./internal/runner -count=1`
+- `go test ./cmd/aura -run TestCacheAudit -count=1`
+- `bash scripts/cache_invariant_audit.sh`
+- `bash scripts/cache_invariant_negative_test.sh`
+- `go test -tags db_integration ./internal/db -run TestCacheMetrics_WindowAndAggregate -count=1`
 
 ---
 
-_Fixed: 2026-06-02_
-_Fixer: Claude (gsd-code-fixer)_
+_Fixed: 2026-06-02T10:39:08.4906891Z_
+_Fixer: the agent (gsd-code-fixer)_
 _Iteration: 1_
