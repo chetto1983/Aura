@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -94,5 +95,74 @@ func TestMarkResumedBatch_EmptyIsNoOp(t *testing.T) {
 	s := New(nil)
 	if err := s.MarkResumedBatch(context.Background(), nil); err != nil {
 		t.Errorf("empty batch must be a no-op, got %v", err)
+	}
+}
+
+// TestStore_ParseFailWrapMessages pins the DISTINCT error-context prefix each
+// method stamps onto a parse/encode failure (nil-pool: the parse/encode guard
+// returns before any DB call). Asserting the exact prefix kills the survivors
+// that remove each `return fmt.Errorf("<context>: %w", ...)` wrap — without a
+// per-guard message the wrap-removal mutants survive on a bare err!=nil check.
+func TestStore_ParseFailWrapMessages(t *testing.T) {
+	s := New(nil)
+	ctx := context.Background()
+	const bad = "nope"
+	const goodTok = "11111111-1111-1111-1111-111111111111"
+
+	cases := []struct {
+		name   string
+		run    func() error
+		prefix string
+	}{
+		{"insert-token-parse", func() error {
+			return s.Insert(ctx, InsertParams{Token: bad, ConversationID: goodTok, Kind: "approval"})
+		}, "insert paused state: invalid token"},
+		{"insert-conv-parse", func() error {
+			return s.Insert(ctx, InsertParams{Token: goodTok, ConversationID: bad, Kind: "approval"})
+		}, "insert paused state: invalid conversation_id"},
+		{"get-parse", func() error {
+			_, err := s.GetByToken(ctx, bad)
+			return err
+		}, "get paused state: invalid token"},
+		{"listpending-parse", func() error {
+			_, err := s.ListPending(ctx, bad)
+			return err
+		}, "list pending: invalid conversation_id"},
+		{"markresumed-parse", func() error {
+			return s.MarkResumed(ctx, bad, ResumeAnswer{Action: ActionAccept})
+		}, "mark resumed: invalid token"},
+		{"autoresolve-parse", func() error {
+			return s.AutoResolveForConversation(ctx, bad)
+		}, "auto-resolve: invalid conversation_id"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.run()
+			if err == nil {
+				t.Fatalf("%s: want error, got nil", tc.name)
+			}
+			if !strings.HasPrefix(err.Error(), tc.prefix) {
+				t.Fatalf("%s: want message prefix %q, got %q", tc.name, tc.prefix, err.Error())
+			}
+		})
+	}
+}
+
+// TestStore_EncodeFailWrapMessages pins the per-method context around an
+// encodeAnswer (invalid-action) failure, which fires AFTER the UUID parse with a
+// valid token (nil-pool: still no DB call). It kills the encodeAnswer wrap
+// survivors in MarkResumed and MarkResumedBatch, distinguishing them by the
+// token-bearing prefix; it also pins ErrInvalidAnswer propagation.
+func TestStore_EncodeFailWrapMessages(t *testing.T) {
+	s := New(nil)
+	ctx := context.Background()
+	const goodTok = "11111111-1111-1111-1111-111111111111"
+
+	mrErr := s.MarkResumed(ctx, goodTok, ResumeAnswer{Action: "bogus"})
+	if !errors.Is(mrErr, ErrInvalidAnswer) {
+		t.Fatalf("MarkResumed bad action: want ErrInvalidAnswer, got %v", mrErr)
+	}
+	if got := mrErr.Error(); !strings.HasPrefix(got, "mark resumed "+goodTok+":") {
+		t.Fatalf("MarkResumed encode-fail wrap: want prefix %q, got %q", "mark resumed "+goodTok+":", got)
 	}
 }
