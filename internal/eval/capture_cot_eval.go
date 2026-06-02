@@ -1,4 +1,4 @@
-//go:build cot_eval
+//go:build cot_eval || live_e2e
 
 // capture_cot_eval.go mirrors cmd/aura/chat_render.go's Event-stream extraction
 // (the unexported renderTurn/usageFromStateDelta logic) so the live CoT harness can
