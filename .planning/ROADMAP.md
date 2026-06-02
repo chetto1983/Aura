@@ -208,7 +208,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Operator runs the SSRF integration test (`scripts/ssrf_smoke.sh`) attempting `web_fetch http://169.254.169.254/latest/meta-data/` and observes block with explicit "blocked: cloud metadata" error; same for `http://[::ffff:169.254.169.254]/`, `http://[fe80::1]/`, `http://metadata.google.internal/`
   4. Operator runs the DNS-rebinding test (Python `dnslib` fixture returns 1.2.3.4 then 127.0.0.1) and observes the second `web_fetch` call to the same hostname reusing the pinned IP from the first call within `AURA_WEB_DNS_PIN_TTL_SEC=60`
 
-**Plans**: TBD
+**Plans:** 4 plans (4 waves)
+
+- [ ] 07-01-PLAN.md — Infra + config: SearXNG Compose service (no host port) + read-only settings.yml (JSON) + go-readability/v2 + html-to-markdown/v2 deps + AURA_WEB_*/SEARXNG_URL root config + goleak skeleton (wave 1)
+- [ ] 07-02-PLAN.md — SSRF engine: netip IP classifier (ssrf.go critical) + per-conv DNS pin + pinned-IP transport + CheckRedirect + non-leaky error taxonomy (SC#3/SC#4, wave 2)
+- [ ] 07-03-PLAN.md — Clients: SearXNG search (query build/parse/domain filter/unavailable) + fetch state machine (scheme/redirect-revalidate/MIME/size gate) + readability→markdown + cache (SC#1-parse/SC#2, wave 3)
+- [ ] 07-04-PLAN.md — Adapters + surface: Deferred web_search/web_fetch tools + NewResult spillover + aura web CLI (doctor/tool verbs) + ssrf_smoke + live web_integration tier + Gate-3 acceptance (SC#1/2/3/4 live, wave 4)
 
 ### Phase 8: Sandbox 2b Session-Bound
 
@@ -348,7 +353,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
 | 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
-| 7. Web Tools | 0/TBD | Not started | - |
+| 7. Web Tools | 0/4 | Not started | - |
 | 8. Sandbox 2b Session-Bound | 0/TBD | Not started | - |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
