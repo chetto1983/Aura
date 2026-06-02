@@ -62,38 +62,74 @@ func TestAnyInt64_DecodeShapes(t *testing.T) {
 		{float64(13), 13},
 		{"100", 100},
 		{[]byte("250"), 250},
-		{nil, 0},
-		{struct{}{}, 0},
 	}
 	for _, c := range cases {
-		if got := anyInt64(c.in); got != c.want {
+		got, err := anyInt64(c.in)
+		if err != nil {
+			t.Errorf("anyInt64(%#v): unexpected error %v", c.in, err)
+			continue
+		}
+		if got != c.want {
 			t.Errorf("anyInt64(%#v): want %d, got %d", c.in, c.want, got)
 		}
 	}
-	if got := anyInt64(mustNumeric(t, 5)); got != 5 {
+	got, err := anyInt64(mustNumeric(t, 5))
+	if err != nil {
+		t.Fatalf("anyInt64(numeric 5): %v", err)
+	}
+	if got != 5 {
 		t.Errorf("anyInt64(numeric 5): want 5, got %d", got)
+	}
+}
+
+// TestAnyInt64_UnparseableErrors proves WR-02: an unmodeled driver shape or an
+// unparseable text aggregate fails loud rather than reporting a fabricated 0.
+func TestAnyInt64_UnparseableErrors(t *testing.T) {
+	t.Parallel()
+	bad := []any{nil, struct{}{}, "not-a-number", []byte("xx")}
+	for _, in := range bad {
+		if _, err := anyInt64(in); err == nil {
+			t.Errorf("anyInt64(%#v): want error, got nil", in)
+		}
 	}
 }
 
 func TestAnyNumericFloat_DecodeShapes(t *testing.T) {
 	t.Parallel()
-	if got := anyNumericFloat(mustNumeric(t, 1.25)); got < 1.25-1e-9 || got > 1.25+1e-9 {
+	mustFloat := func(v any) float64 {
+		t.Helper()
+		f, err := anyNumericFloat(v)
+		if err != nil {
+			t.Fatalf("anyNumericFloat(%#v): %v", v, err)
+		}
+		return f
+	}
+	if got := mustFloat(mustNumeric(t, 1.25)); got < 1.25-1e-9 || got > 1.25+1e-9 {
 		t.Errorf("anyNumericFloat(numeric 1.25): got %v", got)
 	}
-	if got := anyNumericFloat(float64(2.5)); got != 2.5 {
+	if got := mustFloat(float64(2.5)); got != 2.5 {
 		t.Errorf("anyNumericFloat(float 2.5): got %v", got)
 	}
-	if got := anyNumericFloat(int64(3)); got != 3 {
+	if got := mustFloat(int64(3)); got != 3 {
 		t.Errorf("anyNumericFloat(int64 3): got %v", got)
 	}
-	if got := anyNumericFloat("4.5"); got != 4.5 {
+	if got := mustFloat("4.5"); got != 4.5 {
 		t.Errorf("anyNumericFloat(string 4.5): got %v", got)
 	}
-	if got := anyNumericFloat([]byte("6.75")); got != 6.75 {
+	if got := mustFloat([]byte("6.75")); got != 6.75 {
 		t.Errorf("anyNumericFloat([]byte 6.75): got %v", got)
 	}
-	if got := anyNumericFloat(struct{}{}); got != 0 {
-		t.Errorf("anyNumericFloat(unknown): want 0, got %v", got)
+}
+
+// TestAnyNumericFloat_UnparseableErrors proves WR-02: an unmodeled shape or an
+// unparseable text cost aggregate errors rather than reporting a fabricated $0.00.
+func TestAnyNumericFloat_UnparseableErrors(t *testing.T) {
+	t.Parallel()
+	bad := []any{nil, struct{}{}, "not-a-number", []byte("xx")}
+	for _, in := range bad {
+		if _, err := anyNumericFloat(in); err == nil {
+			t.Errorf("anyNumericFloat(%#v): want error, got nil", in)
+		}
 	}
 }
 

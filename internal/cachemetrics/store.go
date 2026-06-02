@@ -93,10 +93,22 @@ func (s *Store) AggregateSince(ctx context.Context, since time.Time) (Aggregate,
 	if err != nil {
 		return Aggregate{}, fmt.Errorf("aggregate cache metrics since %s: %w", since.Format(time.RFC3339), err)
 	}
+	prompt, err := anyInt64(row.TotalPromptTokens)
+	if err != nil {
+		return Aggregate{}, fmt.Errorf("aggregate cache metrics since %s: prompt_tokens: %w", since.Format(time.RFC3339), err)
+	}
+	cached, err := anyInt64(row.TotalCachedTokens)
+	if err != nil {
+		return Aggregate{}, fmt.Errorf("aggregate cache metrics since %s: cached_tokens: %w", since.Format(time.RFC3339), err)
+	}
+	cost, err := anyNumericFloat(row.TotalCostUsd)
+	if err != nil {
+		return Aggregate{}, fmt.Errorf("aggregate cache metrics since %s: cost_usd: %w", since.Format(time.RFC3339), err)
+	}
 	return Aggregate{
 		Turns:             row.Turns,
-		TotalPromptTokens: anyInt64(row.TotalPromptTokens),
-		TotalCachedTokens: anyInt64(row.TotalCachedTokens),
-		TotalCostUSD:      anyNumericFloat(row.TotalCostUsd),
+		TotalPromptTokens: prompt,
+		TotalCachedTokens: cached,
+		TotalCostUSD:      cost,
 	}, nil
 }
