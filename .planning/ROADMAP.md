@@ -15,14 +15,14 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 0: PRD Amendments** - 20 PRD edits in one no-code commit before any Slice 0.5 code
 - [x] **Phase 1: Infra DB + Knowledge** - Postgres 17 + Neo4j 5.26 LTS + MCP server operational
-- [ ] **Phase 2: Agent Cornerstone** - `Agent` interface + workflow agents (Sequential/Loop/Parallel) + budget contract
+- [x] **Phase 2: Agent Cornerstone** - `Agent` interface + workflow agents (Sequential/Loop/Parallel) + budget contract (completed 2026-05-30)
 - [x] **Phase 3: LLM Client + ToolResult** - OpenAI-compat handrolled client + ToolResult preview+sidecar + SSE streaming
  (completed 2026-05-30)
 
 - [x] **Phase 4: HITL + Identity + Conversations** - `ask_user` pause/resume, identity scaffolding, multi-thread conversations with FTS
  (completed 2026-05-30)
 
-- [ ] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench
+- [x] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench (completed 2026-06-02)
 - [x] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI (completed 2026-06-02)
 - [ ] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin)
 - [ ] **Phase 8: Sandbox 2b Session-Bound** - per-conversation workspace + network allowlist + symlink escape guard
@@ -343,10 +343,10 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 |-------|----------------|--------|-----------|
 | 0. PRD Amendments | 6/6 | Complete | 2026-05-29 |
 | 1. Infra DB + Knowledge | 0/TBD | Not started | - |
-| 2. Agent Cornerstone | 7/8 | In Progress|  |
+| 2. Agent Cornerstone | 8/8 | Complete | 2026-05-30 |
 | 3. LLM Client + ToolResult | 5/5 | Complete   | 2026-05-30 |
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
-| 5. Sandbox 2a Stateless | 3/4 | In Progress|  |
+| 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 0/TBD | Not started | - |
 | 8. Sandbox 2b Session-Bound | 0/TBD | Not started | - |
