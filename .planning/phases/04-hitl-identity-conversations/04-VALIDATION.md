@@ -1,10 +1,11 @@
 ---
 phase: 04
 slug: hitl-identity-conversations
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-05-30
+validated: 2026-06-02
 ---
 
 # Phase 04 — Validation Strategy
@@ -22,7 +23,7 @@ created: 2026-05-30
 | **Framework** | Go stdlib `testing` + `go.uber.org/goleak` v1.3.0 + `pgregory.net/rapid` v1.3.0 (property tests) |
 | **Config file** | none (Go convention); `sqlc.yaml` for query generation |
 | **Quick run command** | `go test ./internal/{runner,identity,conversations,askuser,agent}/...` (unit, in-memory fakes) |
-| **Full suite command** | `go test -tags db_integration -race ./internal/... -count=1` (WSL, stack up; derive `AURA_DB_URL`/`AURA_DB_MIGRATE_URL` from `POSTGRES_PASSWORD`) |
+| **Full suite command** | `go test -tags db_integration -race -p 1 ./internal/... -count=1` (WSL, stack up; derive `AURA_DB_URL`/`AURA_DB_MIGRATE_URL` from `POSTGRES_PASSWORD`). **`-p 1` is mandatory** — without it the integration tiers across `internal/*` collide on the shared-Postgres `EnsureRoles`/`Migrate` (`tuple concurrently updated` + advisory-lock deadlock). |
 | **Estimated runtime** | ~10s unit / ~60–90s full db_integration |
 
 ---
@@ -43,22 +44,22 @@ created: 2026-05-30
 
 | Req / SPEC AC | Behavior | Test Type | Ground-truth assertion | Tier | Status |
 |---------------|----------|-----------|------------------------|------|--------|
-| CORE-02 Req#1 / AC1 | `ask_user` pauses, writes 1 `paused_states` row, no fake RoleTool | unit + db_integration | `SELECT count(*) FROM aura.paused_states WHERE resumed_at IS NULL` == 1; assistant msg has no `role='tool'` for the call | ❌ W0 | ⬜ pending |
-| CORE-02 Req#2 / AC2 | 3 simultaneous `ask_user` → 3 rows, FIFO `priority DESC, created_at ASC[, token]` | db_integration + rapid | `ListPending` returns 3 in deterministic order; `ResumeBatch` injects 3 `RoleTool` | ❌ W0 | ⬜ pending |
-| CORE-02 Req#2 / AC3 | intra-turn exclusivity: only `ask_user` dispatched, siblings dropped | unit | persisted assistant msg contains ONLY ask_user tool_calls; `len(pending)==2` for 2×ask_user+1×other | ❌ W0 | ⬜ pending |
-| CORE-02 Req#3 | crash recovery: restart store, `ListPending` returns rows in order; invalid token rejected | db_integration | rows survive new `Store` instance; `Resume(badToken)` returns clear error | ❌ W0 | ⬜ pending |
-| CORE-02 Req#4 | no internal timeout / no `timed_out` status | grep/smoke | `grep -r timed_out internal/` empty; no `timed_out` in schema or loop | ❌ W0 | ⬜ pending |
-| CORE-03 Req#5 / AC7 | fresh boot seeds `local`/`*`; `HasCapability("local","any_tool")`==true | db_integration | 1 row `(0…001,'*')` in `aura.capability_grants`; `HasCapability` true via wildcard | ❌ W0 | ⬜ pending |
-| CORE-03 Req#6 / AC8 | grant/revoke idempotent; `'*'` grant/revoke rejected; FK cascade | db_integration | repeat grant = no error/1 row; `grant local '*'` → non-zero exit; delete identity cascades grants | ❌ W0 | ⬜ pending |
-| CORE-04 Req#7 / AC5 | persist 3 turns, restart, resume reconstructs history; >cap spills to sidecar | db_integration | `LoadHistory` returns 3 turns post-restart; `content=NULL` + `content_sidecar_path` set + file on disk for >65536B | ❌ W0 | ⬜ pending |
-| CORE-04 Req#8 / SC-2 | `LoadHistory` byte-identical ×2; atomic per-turn tx; failure → no partial turn | db_integration + rapid | two `LoadHistory` byte-equal; injected mid-tx failure → rollback, no orphan turn | ❌ W0 | ⬜ pending |
-| CORE-04 Req#9 / AC4 | auto-title after seq≥3; LLM fail leaves NULL no crash; `chat list` shows non-zero USD | unit (fake client) + db_integration | `title` set after 3 turns; fake-error → title NULL, chat continues; `total_cost_usd` > 0 aggregated | ❌ W0 | ⬜ pending |
-| CORE-04 Req#10 / AC9,AC10 / SC-1 | L1 evicts tool result after N turns (sidecar fetchable); L2.5 drops oldest pair + `context_rot_events`, `len` even; L1-first | smoke + unit | tool turn content→pointer after N; `read_tool_output` still works; `context_rot_events` row on hard-drop; `len%2==0`; zero rot rows when L1 alone fits | ❌ W0 + script | ⬜ pending |
-| CORE-04 Req#11 / AC11 | `Runner.Stop` auto-resolves orphan pendings | db_integration | zero `resumed_at IS NULL` rows for conv after Stop; `paused-states list` shows auto-terminated answer | ❌ W0 | ⬜ pending |
-| CORE-04 Req#12 / AC12 / SC-3 | delete cascade removes turns+paused_states+run dir; boot orphan scan; resume on broken state recovers | db_integration | dir gone after delete; stray dir removed at boot; pending auto-resolved + byte-identical LoadHistory | ❌ W0 | ⬜ pending |
-| CORE-05 Req#13 / AC6 | `aura chat search "phrase"` returns excerpts by similarity; same query → identical set | db_integration + CLI smoke | rows ordered by `similarity` DESC from GIN index; query layer identical to future Telegram path | ❌ W0 | ⬜ pending |
-| CORE-04 Req#14 / AC13,AC14 | `0003`→`0006` apply clean; re-run no-op; denied as `aura_app`, ok as `aura_migrate` | db_integration | migrate count 4 on fresh DB, 0 on re-run; DDL as `aura_app` → permission denied | ❌ W0 | ⬜ pending |
-| CORE-02 SC-4 | resume injects RoleTool, no duplicate ask_user tool_call / no silent LLM re-run | unit (fake client) | next request messages carry original question→answer pair, no second ask_user call | ❌ W0 | ⬜ pending |
+| CORE-02 Req#1 / AC1 | `ask_user` pauses, writes 1 `paused_states` row, no fake RoleTool | unit + db_integration | `SELECT count(*) FROM aura.paused_states WHERE resumed_at IS NULL` == 1; assistant msg has no `role='tool'` for the call | ✅ live | ✅ green |
+| CORE-02 Req#2 / AC2 | 3 simultaneous `ask_user` → 3 rows, FIFO `priority DESC, created_at ASC[, token]` | db_integration + rapid | `ListPending` returns 3 in deterministic order; `ResumeBatch` injects 3 `RoleTool` | ✅ live | ✅ green |
+| CORE-02 Req#2 / AC3 | intra-turn exclusivity: only `ask_user` dispatched, siblings dropped | unit | persisted assistant msg contains ONLY ask_user tool_calls; `len(pending)==2` for 2×ask_user+1×other | ✅ live | ✅ green |
+| CORE-02 Req#3 | crash recovery: restart store, `ListPending` returns rows in order; invalid token rejected | db_integration | rows survive new `Store` instance; `Resume(badToken)` returns clear error | ✅ live | ✅ green |
+| CORE-02 Req#4 | no internal timeout / no `timed_out` status | grep/smoke | `grep -r timed_out internal/` empty; no `timed_out` in schema or loop | ✅ live | ✅ green |
+| CORE-03 Req#5 / AC7 | fresh boot seeds `local`/`*`; `HasCapability("local","any_tool")`==true | db_integration | 1 row `(0…001,'*')` in `aura.capability_grants`; `HasCapability` true via wildcard | ✅ live | ✅ green |
+| CORE-03 Req#6 / AC8 | grant/revoke idempotent; `'*'` grant/revoke rejected; FK cascade | db_integration | repeat grant = no error/1 row; `grant local '*'` → non-zero exit; delete identity cascades grants | ✅ live | ✅ green |
+| CORE-04 Req#7 / AC5 | persist 3 turns, restart, resume reconstructs history; >cap spills to sidecar | db_integration | `LoadHistory` returns 3 turns post-restart; `content=NULL` + `content_sidecar_path` set + file on disk for >65536B | ✅ live | ✅ green |
+| CORE-04 Req#8 / SC-2 | `LoadHistory` byte-identical ×2; atomic per-turn tx; failure → no partial turn | db_integration + rapid | two `LoadHistory` byte-equal; injected mid-tx failure → rollback, no orphan turn | ✅ live | ✅ green |
+| CORE-04 Req#9 / AC4 | auto-title after seq≥3; LLM fail leaves NULL no crash; `chat list` shows non-zero USD | unit (fake client) + db_integration | `title` set after 3 turns; fake-error → title NULL, chat continues; `total_cost_usd` > 0 aggregated | ✅ live | ✅ green |
+| CORE-04 Req#10 / AC9,AC10 / SC-1 | L1 evicts tool result after N turns (sidecar fetchable); L2.5 drops oldest pair + `context_rot_events`, `len` even; L1-first | smoke + unit | tool turn content→pointer after N; `read_tool_output` still works; `context_rot_events` row on hard-drop; `len%2==0`; zero rot rows when L1 alone fits | ✅ live + script | ✅ green |
+| CORE-04 Req#11 / AC11 | `Runner.Stop` auto-resolves orphan pendings | db_integration | zero `resumed_at IS NULL` rows for conv after Stop; `paused-states list` shows auto-terminated answer | ✅ live | ✅ green |
+| CORE-04 Req#12 / AC12 / SC-3 | delete cascade removes turns+paused_states+run dir; boot orphan scan; resume on broken state recovers | db_integration | dir gone after delete; stray dir removed at boot; pending auto-resolved + byte-identical LoadHistory | ✅ live | ✅ green |
+| CORE-05 Req#13 / AC6 | `aura chat search "phrase"` returns excerpts by similarity; same query → identical set | db_integration + CLI smoke | rows ordered by `similarity` DESC from GIN index; query layer identical to future Telegram path | ✅ live | ✅ green |
+| CORE-04 Req#14 / AC13,AC14 | `0003`→`0006` apply clean; re-run no-op; denied as `aura_app`, ok as `aura_migrate` | db_integration | migrate count 4 on fresh DB, 0 on re-run; DDL as `aura_app` → permission denied | ✅ live | ✅ green |
+| CORE-02 SC-4 | resume injects RoleTool, no duplicate ask_user tool_call / no silent LLM re-run | unit (fake client) | next request messages carry original question→answer pair, no second ask_user call | ✅ live | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -87,13 +88,73 @@ created: 2026-05-30
 
 ---
 
+## Validation Audit 2026-06-02
+
+Retroactive `/gsd-validate-phase`. **Nyquist test coverage: clean** — every requirement
+row binds to an automated test that exists and runs green (re-run live, git-bash + WSL,
+stack up):
+
+- Unit tier (`store_unit_test.go`, `context_unit_test.go`, `title_unit_test.go`, runner fakes) — green.
+- `db_integration` tier (`identity` 0.6s, `conversations` 1.6s, `askuser` 0.8s, `runner` 0.2s, `db` 1.4s) — green under `-p 1` against live Postgres; `-race` tier also clean (identity 2.2s / conversations 4.8s / askuser 2.4s — genuine integration runtimes, no skip-tells).
+- Req#4 (`grep -r timed_out internal/`) — empty (pass).
+- SC-1 L1/L2.5 ladder + `context_rot_events` — covered by `conversations/context_test.go` (`db_integration`), which runs in CI. `scripts/microcompact_smoke.sh` is a WSL/Linux convenience wrapper of the same assertions (errors under git-bash on `set +H`); it is **not** CI-wired but is redundant with the tagged go test that is — so SC-1 ground truth is enforced.
+
+**CI enforcement (no-skip-as-green):** the dedicated `db_integration` job runs only
+`./internal/db/...`, but `scripts/coverage_gate.sh` (CI coverage job) runs
+`go test -tags "db_integration neo4j_integration" -p 1 ./internal/...` against the full
+stack — so `identity`/`conversations`/`askuser`/`runner` integration tiers **do** execute
+in the pipeline (the `-p 1` there is mandatory: parallel package execution collides on the
+shared-Postgres `EnsureRoles`/`Migrate` — `tuple concurrently updated` + advisory-lock
+deadlock — which is why the per-phase "full suite" command must also carry `-p 1`).
+
+### Mutation scores (recorded 2026-06-02 — WSL go-mutesting, avito fork, go1.26)
+
+| Critical file | Before | After | Killed / Total | Gate ≥0.70 |
+|---------------|--------|-------|----------------|-----------|
+| `internal/agent/llm_agent_pause.go` (pause-detection) | 0.636 | **1.000** | 11 / 11 | ✅ |
+| `internal/askuser/store.go` | 0.486 | **0.743** | 26 / 35 | ✅ |
+| `internal/conversations/context.go` | 0.333 | **0.852** | 46 / 54 | ✅ |
+| `internal/agent/prompt/builder.go` *(shared w/ P06)* | — | 1.000 | 1 / 1 | ✅ |
+
+> **Mutation gate MET** (hardened 2026-06-02, scores independently re-measured by the
+> orchestrator). All gains are NEW test assertions / fault-injection / boundary sub-tests
+> only — **zero production-code changes** (`git status` confirms only `*_test.go` touched),
+> no test-gaming (each new assertion pins the correct behavior with a positive+negative
+> control, annotated to the mutant it kills). New test files:
+> `internal/agent/llm_agent_pause_internal_test.go` (white-box: name-gate, registry-miss
+> no-panic, yield-false both arms, `pauseOptions` nil-contract),
+> `internal/askuser/store_mutation_test.go` + extended `store_unit_test.go` (limit≤0→50
+> clamp, `ErrNoRows→ErrPauseNotFound`, exact per-guard wrap-message prefixes),
+> `internal/conversations/context_boundary_test.go` (L2 warn-band both sides via slog
+> capture, hardCap gate at/0, L2.5 exact-fit vs unreducible, L1 seq/role/threshold
+> boundaries + sidecar clearing, system-at-head detection).
+>
+> Accepted-equivalent survivors (documented, not gamed): `store.go` — encodeAnswer wrap
+> message-identical to the following Exec wrap; `ErrNoRows`/`!ResumedAt.Valid` branches
+> observationally identical for all reachable tokens; `json.Marshal` of a 2-string struct
+> cannot fail. `context.go` — `<`vs`<=` flips at the exact `l2MinOutputReservation`/`0`
+> constants coincide; `hardCap>0` AND-arm flips inert when the third arm is already false;
+> the tiktoken-encoder wrap is unreachable offline.
+
+| Metric | Count |
+|--------|-------|
+| Requirements audited | 15 |
+| COVERED (automated, live-green) | 15 |
+| Nyquist coverage gaps (MISSING/PARTIAL) | 0 |
+| Mutation gate files below 0.70 | 0 (all 3 hardened ≥0.70) |
+| Gaps found | 3 (mutation) |
+| Resolved | 3 |
+| Escalated | 0 |
+
+---
+
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 90s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 90s
+- [x] `nyquist_compliant: true` set in frontmatter (mutation gate met: pause 1.000 / store 0.743 / context 0.852)
 
-**Approval:** pending
+**Approval:** validated 2026-06-02 (Nyquist-compliant — 0 test gaps; mutation gate met after hardening).
