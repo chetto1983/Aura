@@ -26,6 +26,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 | Vector search p95 latency @ 100K corpus | ≤ 30ms | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/retrieval/**`, sidecar `aura-llama-embed` config |
 | Telegram MarkdownV2 escape fuzz (10K Unicode inputs, 400 Bad Request rate) | = 0% | YYYY-MM-DD (placeholder — populated by Phase 13) | TBD | Phase 13 Slice 9b | `internal/channels/telegram/mdv2.go` |
 | Skill snippet exec success rate (sandbox 2b session, Phase 11 corpus 50 snippets) | ≥ 95% | YYYY-MM-DD (placeholder — populated by Phase 11) | TBD | Phase 11 Slice 7e-core | `internal/skills/snippet/**`, `internal/sandbox/sessions/**` |
+| Web tools — `ssrf.go` mutation (go-mutesting, ≥70% killed) + `internal/web` coverage (≥85% combined) + live `web_search` p95 (≤2s) | mut ≥70% / cov ≥85% / p95 ≤2s | 2026-06-02 (unit cov; live cells pending @ Gate-3) | unit cov 75.5%; ssrf.go mutation pending @ Gate-3; combined cov pending @ Gate-3; SC#1 p95 pending @ Gate-3 | Phase 7 Slice 5 | `internal/web/**`, `internal/agent/tools/web_*.go`, `searxng/settings.yml` |
 
 ---
 
@@ -101,6 +102,26 @@ tier + sidecar build under QEMU `--platform linux/arm64`. QEMU syscall emulation
 diverge from a real arm64 kernel's seccomp behaviour, so a green QEMU run is
 NECESSARY-NOT-SUFFICIENT — **real-DGX arm64 confirmation remains a tracked obligation
 before any production arm64 deployment.** It is NOT a per-merge gate.
+
+---
+
+## Phase 7 web-tools detail
+
+> Populated by the Phase 7 Gate-3 checkpoint (07-04 Task 4). The unit-tier
+> `internal/web` coverage is measurable in the authoring environment; the
+> SSRF-classifier mutation score, the combined cross-tag coverage (unit +
+> `web_integration`), and the live `web_search` p95 require the running SearXNG
+> container + public internet and are recorded at the human-verify checkpoint.
+> SSRF defense is the dominant risk surface — `ssrf.go` carries an independent
+> mutation gate so a silently-weakened blocklist cannot regress unnoticed.
+
+| Sub-metric | Target | Last measured | Last value |
+|---|---|---|---|
+| `internal/web` unit-tier coverage | (combined ≥85%) | 2026-06-02 | 75.5% (unit only; integration tier adds the live search/fetch paths) |
+| `internal/web` combined coverage (unit + `web_integration`) | ≥ 85% | pending @ Gate-3 | pending @ Gate-3 |
+| `internal/web/ssrf.go` mutation (go-mutesting, killed) | ≥ 70% | pending @ Gate-3 | pending @ Gate-3 |
+| Live `aura web tool web_search` p95 (SC#1) | ≤ 2s | pending @ Gate-3 | pending @ Gate-3 |
+| SC#3 SSRF block smoke (`scripts/ssrf_smoke.sh`) | 4/4 blocked, grep-clean | 2026-06-02 | 4/4 blocked_url, grep-clean |
 
 ---
 
