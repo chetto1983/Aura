@@ -1,10 +1,11 @@
 ---
 phase: 03
 slug: llm-client-toolresult
-status: draft
+status: validated
 nyquist_compliant: true
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-05-30
+validated: 2026-06-02
 ---
 
 # Phase 03 — Validation Strategy
@@ -38,22 +39,22 @@ created: 2026-05-30
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| 03-02-01 | 02 | 2 | CORE-01 (Req#1) | T-03-06 | `[DONE]`/`:`-comment never reach json.Unmarshal | unit (golden) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestStream_TextStop` | ❌ W0 (+`text_stop.sse`) | ⬜ pending |
-| 03-02-01 | 02 | 2 | CORE-01 (Req#2) | T-03-06 | oversized tool-arg line parsed, not truncated | unit (golden, property) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestAccumulate` | ❌ W0 (+`toolcall_multichunk.sse` >64KB) | ⬜ pending |
-| 03-02-02 | 02 | 2 | CORE-01 (Req#3) | T-03-05 | ctx-cancel ≤100ms, zero goroutine leak | unit + `-race` + goleak | `cd /mnt/d/Aura && go test -race ./internal/llm/openai_compat/ -run TestStream_CancelMidStream` | ❌ W0 (+`premature_close.sse`) | ⬜ pending |
-| 03-02-01 | 02 | 2 | CORE-01 (Req#4) | — | 429 → HTTPError, request count==1, no retry | unit (golden) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestStream_429NoRetry` | ❌ W0 (+`error_429.sse`) | ⬜ pending |
-| 03-01-02 | 01 | 1 | CORE-01 (Req#5) | T-03-02 | empty key → clean non-panic error | unit | `cd /mnt/d/Aura && go test ./internal/llm/ -run TestConfigLoadOrder` | ❌ W0 | ⬜ pending |
-| 03-03-01 | 03 | 1 | CORE-01 (Req#6) | T-03-08 | 100KB→≤2KiB preview+sidecar; ≤cap→no file; UTF-8 boundary | unit (property for UTF-8 boundary) | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run TestNewResult` | ❌ W0 | ⬜ pending |
-| 03-03-02 | 03 | 1 | CORE-01 (Req#7) | T-03-07 / T-03-09 | unknown id hard-fail; path-traversal rejected; offset/limit clamped | unit | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run 'TestReadToolOutput\|TestSidecarPathTraversal'` | ❌ W0 | ⬜ pending |
-| 03-03-01 | 03 | 1 | CORE-01 (Req#8) | T-03-07 | sidecar at `conversations/<session_id>/<tool_call_id>.result` | unit (filesystem assert) | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run TestSidecarLayout` | ❌ W0 | ⬜ pending |
-| 03-04-02 | 04 | 3 | CORE-01 (Req#9) | T-03-11 | ordered Events; malformed args never panic | unit (fake Client) + `-race` + goleak | `cd /mnt/d/Aura && go test -race ./internal/agent/ -run TestLlmAgent_EventOrder` | ❌ W0 | ⬜ pending |
-| 03-04-02 | 04 | 3 | CORE-01 (Req#10) | T-03-10 | budget step/wallclock/dedup → terminal Event, steps≤cap | unit (fake Client) | `cd /mnt/d/Aura && go test ./internal/agent/ -run 'TestLlmAgent_(StepCap\|WallclockCap\|DedupWindow)_Trips'` | ❌ W0 | ⬜ pending |
-| 03-05-01 | 05 | 4 | CORE-01 (Req#11) | T-03-01 | 2-turn shared session_id; missing key clean error | unit (scripted stdin) + **manual smoke** | `cd /mnt/d/Aura && go test ./cmd/aura/ -run TestChat` | ❌ W0 | ⬜ pending |
-| 03-01-02 | 01 | 1 | CORE-01 (Req#12 table) | — | `usage.cost`→exact; absent→table; unknown→`n/a` (never `$0`) | unit (3 golden usage fixtures) | `cd /mnt/d/Aura && go test ./internal/llm/ -run TestCost` | ❌ W0 | ⬜ pending |
-| 03-02-01 | 02 | 2 | CORE-01 (Req#12 wire) | — | usage chunk: cached_tokens distinct from cache_write_tokens | unit (golden) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestUsage` | ❌ W0 | ⬜ pending |
-| 03-04-01 | 04 | 3 | CORE-01 (Req#13) | T-03-01 | exactly 1 `llm.request` span/call, all attrs, no api_key; `req.Messages` byte-identical | unit (in-memory recorder) | `cd /mnt/d/Aura && go test ./internal/agent/ -run 'TestSpan\|TestMessagesImmutable'` | ❌ W0 | ⬜ pending |
-| 03-03-02 | 03 | 1 | CORE-01 (Req#14 tool) | — | `current_time` RFC-3339 UTC + IANA tz; invalid tz → error | unit | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run TestCurrentTime` | ❌ W0 | ⬜ pending |
-| 03-04-01 | 04 | 3 | CORE-01 (Req#14 prefix) | T-03-12 | `messages[0]` no timestamp & byte-stable across turns | unit | `cd /mnt/d/Aura && go test ./internal/agent/ -run 'TestPrompt\|TestPrefixStable'` | ❌ W0 | ⬜ pending |
+| 03-02-01 | 02 | 2 | CORE-01 (Req#1) | T-03-06 | `[DONE]`/`:`-comment never reach json.Unmarshal | unit (golden) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestStream_TextStop` | ✅ (+`text_stop.sse`) | ✅ green |
+| 03-02-01 | 02 | 2 | CORE-01 (Req#2) | T-03-06 | oversized tool-arg line parsed, not truncated | unit (golden, property) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestAccumulate` | ✅ (+`toolcall_multichunk.sse` >64KB) | ✅ green |
+| 03-02-02 | 02 | 2 | CORE-01 (Req#3) | T-03-05 | ctx-cancel ≤100ms, zero goroutine leak | unit + `-race` + goleak | `cd /mnt/d/Aura && go test -race ./internal/llm/openai_compat/ -run TestStream_CancelMidStream` | ✅ (+`premature_close.sse`) | ✅ green |
+| 03-02-01 | 02 | 2 | CORE-01 (Req#4) | — | 429 → HTTPError, request count==1, no retry | unit (golden) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestStream_429NoRetry` | ✅ (+`error_429.sse`) | ✅ green |
+| 03-01-02 | 01 | 1 | CORE-01 (Req#5) | T-03-02 | empty key → clean non-panic error | unit | `cd /mnt/d/Aura && go test ./internal/llm/ -run TestConfigLoadOrder` | ✅ | ✅ green |
+| 03-03-01 | 03 | 1 | CORE-01 (Req#6) | T-03-08 | 100KB→≤2KiB preview+sidecar; ≤cap→no file; UTF-8 boundary | unit (property for UTF-8 boundary) | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run TestNewResult` | ✅ | ✅ green |
+| 03-03-02 | 03 | 1 | CORE-01 (Req#7) | T-03-07 / T-03-09 | unknown id hard-fail; path-traversal rejected; offset/limit clamped | unit | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run 'TestReadToolOutput\|TestSidecarPathTraversal'` | ✅ | ✅ green |
+| 03-03-01 | 03 | 1 | CORE-01 (Req#8) | T-03-07 | sidecar at `conversations/<session_id>/<tool_call_id>.result` | unit (filesystem assert) | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run TestSidecarLayout` | ✅ | ✅ green |
+| 03-04-02 | 04 | 3 | CORE-01 (Req#9) | T-03-11 | ordered Events; malformed args never panic | unit (fake Client) + `-race` + goleak | `cd /mnt/d/Aura && go test -race ./internal/agent/ -run TestLlmAgent_EventOrder` | ✅ | ✅ green |
+| 03-04-02 | 04 | 3 | CORE-01 (Req#10) | T-03-10 | budget step/wallclock/dedup → terminal Event, steps≤cap | unit (fake Client) | `cd /mnt/d/Aura && go test ./internal/agent/ -run 'TestLlmAgent_(StepCap\|WallclockCap\|DedupWindow)_Trips'` | ✅ | ✅ green |
+| 03-05-01 | 05 | 4 | CORE-01 (Req#11) | T-03-01 | 2-turn shared session_id; missing key clean error | unit (scripted stdin) + **manual smoke** | `cd /mnt/d/Aura && go test ./cmd/aura/ -run TestChat` | ✅ | ✅ green |
+| 03-01-02 | 01 | 1 | CORE-01 (Req#12 table) | — | `usage.cost`→exact; absent→table; unknown→`n/a` (never `$0`) | unit (3 golden usage fixtures) | `cd /mnt/d/Aura && go test ./internal/llm/ -run TestCost` | ✅ | ✅ green |
+| 03-02-01 | 02 | 2 | CORE-01 (Req#12 wire) | — | usage chunk: cached_tokens distinct from cache_write_tokens | unit (golden) | `cd /mnt/d/Aura && go test ./internal/llm/openai_compat/ -run TestUsage` | ✅ | ✅ green |
+| 03-04-01 | 04 | 3 | CORE-01 (Req#13) | T-03-01 | exactly 1 `llm.request` span/call, all attrs, no api_key; `req.Messages` byte-identical | unit (in-memory recorder) | `cd /mnt/d/Aura && go test ./internal/agent/ -run 'TestSpan\|TestMessagesImmutable'` | ✅ | ✅ green |
+| 03-03-02 | 03 | 1 | CORE-01 (Req#14 tool) | — | `current_time` RFC-3339 UTC + IANA tz; invalid tz → error | unit | `cd /mnt/d/Aura && go test ./internal/agent/tools/ -run TestCurrentTime` | ✅ | ✅ green |
+| 03-04-01 | 04 | 3 | CORE-01 (Req#14 prefix) | T-03-12 | `messages[0]` no timestamp & byte-stable across turns | unit | `cd /mnt/d/Aura && go test ./internal/agent/ -run 'TestPrompt\|TestPrefixStable'` | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -122,13 +123,38 @@ Re-measured PER CRITICAL FILE (the gate's actual unit — "≥70% killed on each
 
 ---
 
+## Validation Audit 2026-06-02
+
+Retroactive `/gsd-validate-phase` — every `-run` command in the Per-Task map was re-run
+live (git-bash, Go 1.26.3, stack up). No stale `-run` names (all 16 resolve to real,
+executed tests — zero `[no tests to run]` false-greens). Unit + `-race` (w64devkit
+toolchain shim) tiers green; manual-only items (live OpenRouter smoke, mutation) properly
+deferred and not CI-gated. Mutation re-confirmed ≥0.70 per critical file (table above).
+
+| Metric | Count |
+|--------|-------|
+| Requirements audited | 16 |
+| COVERED (automated, live-green) | 16 |
+| PARTIAL | 0 |
+| MISSING | 0 |
+| Gaps found | 0 |
+| Resolved | 0 |
+| Escalated | 0 |
+
+Live-run evidence (run-count per command): Req#1 1 · Req#2 7 · Req#3 1 · Req#4 1 · Req#5 3 ·
+Req#6 5 · Req#7 25 · Req#8 1 · Req#9 1 · Req#10 3 · Req#11 13 · Req#12tab 8 · Req#12wire 1 ·
+Req#13 4 · Req#14tool 6 · Req#14prefix 5. Race tier: openai_compat 1.6s / agent 1.7s /
+tools 1.2s / cmd/aura 1.8s — all `ok` (genuine runtimes, no skip-tells).
+
+---
+
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 30s
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references
+- [x] No watch-mode flags
+- [x] Feedback latency < 30s
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-06-02 (Nyquist-compliant — 0 gaps)
