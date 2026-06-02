@@ -347,7 +347,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 3. LLM Client + ToolResult | 5/5 | Complete   | 2026-05-30 |
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
 | 5. Sandbox 2a Stateless | 3/4 | In Progress|  |
-| 6. KV Cache Builder | 5/5 | Complete   | 2026-06-02 |
+| 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 0/TBD | Not started | - |
 | 8. Sandbox 2b Session-Bound | 0/TBD | Not started | - |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |

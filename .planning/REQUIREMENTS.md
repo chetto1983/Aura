@@ -32,7 +32,7 @@
 - [ ] **CAP-01**: Sandbox 2a stateless Python 3.12 slim sidecar (stdlib only, no pip), seccomp **positive allowlist** ~80 syscalls (NON deny-list), ulimit, `network_mode: none` default. SandboxEscapeBench escape rate < 5% documented in `docs/aura-quality-snapshot.md`. [Slice 2a]
 - [ ] **CAP-02**: Sandbox 2b session-bound con workspace per-conversation + network allowlist via iptables, TTL configurable, symlink escape guard su host walkers. [Slice 2b]
 - [ ] **CAP-03**: Swarm coordinator minimale: riusa `ParallelAgent` da Slice 0.9 + cap `MAX_SPAWN_DEPTH=2` per v1. NO DM-by-ID, NO tier-mapped models in v1 (deferred a post-MVP). Child budget inheritance dal parent's remaining. [Slice 3 — amendment #12]
-- [ ] **CAP-04**: KV cache builder stable-prefix + provider-aware (DeepSeek/Anthropic/OpenAI/Gemini). Architectural rule: **two system messages** — `messages[0]` cache-stable byte-identical, `messages[1]` mutable. CI job `scripts/cache_invariant_audit.sh` asserts SHA-256(`messages[0]`) constant across 20-turn replay (cross-slice). 80% cache hit target su DeepSeek-V4. [Slice 4 + amendment #16]
+- [x] **CAP-04**: KV cache builder stable-prefix + provider-aware (DeepSeek/Anthropic/OpenAI/Gemini). Architectural rule: **two system messages** — `messages[0]` cache-stable byte-identical, `messages[1]` mutable. CI job `scripts/cache_invariant_audit.sh` asserts SHA-256(`messages[0]`) constant across 20-turn replay (cross-slice). 80% cache hit target su DeepSeek-V4. [Slice 4 + amendment #16]
 - [ ] **CAP-05**: Web tools — `web_search` via SearXNG container; `web_fetch` via `codeberg.org/readeck/go-readability/v2` + `JohannesKaufmann/html-to-markdown/v2`. SSRF defense: IPv6 blocklist + DNS rebinding pin. [Slice 5 + amendment #3]
 - [ ] **CAP-06**: Scheduler cron + `agent_job` persistente su Postgres con `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat. Backup TaskKind handlers (`backup_postgres`, `backup_neo4j`) cronnati. [Slice 6]
 - [ ] **CAP-07**: Skills system instruction-based (7a read + 7b validator + 7c write/edit + 7d install) con SKILL.md format compat Anthropic. `skill.catalog` HTML scrape hidden behind `aura skills enable-catalog` opt-in. Audit-immutable Postgres trigger BEFORE UPDATE/DELETE/TRUNCATE + role separation enforced. Unicode NFKC validator (10K fuzz on skill content). [Slice 7a/b/c/d + amendments #14, #17]
@@ -110,7 +110,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CAP-01 | Phase 5 — Sandbox 2a Stateless | Pending |
 | CAP-02 | Phase 8 — Sandbox 2b Session-Bound | Pending |
 | CAP-03 | Phase 9 — Swarm (Minimal) | Pending |
-| CAP-04 | Phase 6 — KV Cache Builder | Pending |
+| CAP-04 | Phase 6 — KV Cache Builder | Complete |
 | CAP-05 | Phase 7 — Web Tools | Pending |
 | CAP-06 | Phase 10 — Scheduler | Pending |
 | CAP-07 | Phase 11 — Skills | Pending |
