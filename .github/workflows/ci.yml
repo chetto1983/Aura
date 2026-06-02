@@ -60,6 +60,34 @@ jobs:
       - name: go test -race
         run: go test -race -count=1 ./...
 
+  cache-invariant:
+    name: KV-cache prefix invariant gate (Postgres-free)
+    runs-on: ubuntu-latest
+    # Phase 6 amendment #16: from this phase onward every merge crosses this gate.
+    # It drives the hidden `aura cache-audit` 20-turn replay (in-memory fakes, NO
+    # DB) and fails on any messages[0] drift. Deliberately Postgres-free so it runs
+    # without the docker stack. It gates ONLY the byte-identity invariant — NOT a
+    # cache-hit percentage (PRD OQ4: hit-rate is provider-dependent + flaky).
+    env:
+      CI: "true"  # arms the in-script no-skip-as-green guards
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: cache invariant gate
+        run: bash scripts/cache_invariant_audit.sh
+
+      - name: cache invariant gate (negative)
+        # Continuously proves the gate is NOT silently green: a mutated messages[0]
+        # MUST make the gate exit 1 with `mutated` (SC#5, Pitfall #3).
+        run: bash scripts/cache_invariant_negative_test.sh
+
   vulncheck:
     name: Supply-chain vulnerability scan (govulncheck)
     runs-on: ubuntu-latest
