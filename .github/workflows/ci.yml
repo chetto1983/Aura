@@ -180,6 +180,69 @@ jobs:
           sqlc generate
           git diff --exit-code internal/db/sqlc/
 
+  web-integration-test:
+    name: Web tools (SSRF smoke + web_integration tier, live SearXNG)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Slice 5 (Phase 7). SearXNG has NO host port by design (D-03): the host-run
+    # `go test` cannot reach http://searxng:8080 directly, so the live web_search /
+    # web_fetch tier runs INSIDE the aura-web compose network via a one-shot Go
+    # container that resolves `searxng` by service name. SEARXNG_URL is exported so
+    # the web_integration envOrSkip helper t.Fatal's under $CI when it is unset —
+    # a skipped tier fails the job, never passes it green (CLAUDE.md no-skip-as-green).
+    # The SSRF block smoke (SC#3) needs no backend (the gate fires before any dial),
+    # so it runs on the host with CI armed.
+    env:
+      CI: "true"  # arms the no-skip-as-green guards in ssrf_smoke.sh + envOrSkip
+      NEO4J_PASSWORD: ci-test-password       # compose.yaml parses the whole file
+      POSTGRES_PASSWORD: ci-test-password    # (fail-fast vars present for `compose`)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: SSRF block smoke (SC#3, no backend needed)
+        run: bash scripts/ssrf_smoke.sh
+
+      - name: Bring up SearXNG (no host port; shared aura-web network)
+        run: docker compose up -d searxng
+
+      - name: Wait for SearXNG healthy
+        run: |
+          for i in $(seq 1 30); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' aura-searxng 2>/dev/null || echo starting)"
+            echo "searxng health: $status"
+            [ "$status" = "healthy" ] && exit 0
+            sleep 5
+          done
+          echo "SearXNG did not become healthy" >&2
+          docker logs aura-searxng --tail 50 || true
+          exit 1
+
+      - name: Live web_integration tier (inside the aura-web network)
+        # Run the tagged tests from a Go container joined to aura-web so it resolves
+        # `searxng` by service name (the no-host-port invariant holds — nothing is
+        # published to the runner host). SEARXNG_URL is the only backend (no public
+        # fallback, D-05/D-44).
+        run: |
+          docker run --rm \
+            --network aura_aura-web \
+            -e CI=true \
+            -e SEARXNG_URL=http://searxng:8080/search \
+            -v "$PWD":/src -w /src \
+            -v "$(go env GOMODCACHE)":/go/pkg/mod \
+            golang:1.26 \
+            go test -race -count=1 -tags web_integration ./internal/web/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
   knowledge-integration-test:
     name: Knowledge integration + smoke (neo4j + sidecar)
     runs-on: ubuntu-latest

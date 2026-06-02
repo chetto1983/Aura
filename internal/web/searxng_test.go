@@ -1,3 +1,5 @@
+//go:build !web_integration
+
 package web
 
 import (
