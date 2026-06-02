@@ -42,6 +42,7 @@ func (q *Queries) AggregateCacheMetricsSince(ctx context.Context, since pgtype.T
 const insertCacheMetric = `-- name: InsertCacheMetric :exec
 INSERT INTO aura.cache_metrics (conversation_id, seq, prompt_tokens, cached_tokens, cost_usd)
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (conversation_id, seq) DO NOTHING
 `
 
 type InsertCacheMetricParams struct {
@@ -52,6 +53,10 @@ type InsertCacheMetricParams struct {
 	CostUsd        pgtype.Numeric `json:"cost_usd"`
 }
 
+// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
+// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
+// makes a re-run for an already-recorded turn a no-op rather than a PK violation or a
+// duplicate, so a retry after a transient failure can never double-count the metric (WR-03).
 func (q *Queries) InsertCacheMetric(ctx context.Context, arg InsertCacheMetricParams) error {
 	_, err := q.db.Exec(ctx, insertCacheMetric,
 		arg.ConversationID,

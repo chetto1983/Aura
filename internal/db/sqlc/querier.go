@@ -25,6 +25,10 @@ type Querier interface {
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
+	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
+	// observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
+	// makes a re-run for an already-recorded turn a no-op rather than a PK violation or a
+	// duplicate, so a retry after a transient failure can never double-count the metric (WR-03).
 	InsertCacheMetric(ctx context.Context, arg InsertCacheMetricParams) error
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error

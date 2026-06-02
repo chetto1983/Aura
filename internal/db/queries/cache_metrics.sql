@@ -1,6 +1,11 @@
 -- name: InsertCacheMetric :exec
+-- Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
+-- observation following the assistant turn (runner_persist.go). ON CONFLICT DO NOTHING
+-- makes a re-run for an already-recorded turn a no-op rather than a PK violation or a
+-- duplicate, so a retry after a transient failure can never double-count the metric (WR-03).
 INSERT INTO aura.cache_metrics (conversation_id, seq, prompt_tokens, cached_tokens, cost_usd)
-VALUES ($1, $2, $3, $4, $5);
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (conversation_id, seq) DO NOTHING;
 
 -- name: ListCacheMetricsSince :many
 SELECT conversation_id, seq, ts, prompt_tokens, cached_tokens, cost_usd

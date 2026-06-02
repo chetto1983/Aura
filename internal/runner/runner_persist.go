@@ -56,6 +56,16 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 
 // persistAssistantAnswer persists the terminal assistant answer turn with its
 // per-turn usage (read off the final Event's StateDelta, mirroring chat_render.go).
+//
+// Consistency contract (WR-03): the assistant turn and its cache_metrics row are two
+// separate writes (the conversations and cachemetrics Stores share no tx seam). The turn
+// is the load-bearing record; the metric is an append-only observation. If the metric
+// write fails the turn fails too (no silent drop — no-skip discipline), but the metric
+// INSERT is idempotent on (conversation_id, seq) via ON CONFLICT DO NOTHING, so a retry
+// re-records the same seq's metric as a no-op, never a duplicate. (Assistant-turn
+// duplication on a fresh-seq retry is a property of the CountTurns/AppendTurn seq model
+// shared by every turn write here, not specific to the metric; closing it fully needs a
+// shared transaction across the two Stores — deferred as out of phase scope.)
 func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *agent.Event) error {
 	seq, err := r.nextSeq(ctx, convID)
 	if err != nil {
