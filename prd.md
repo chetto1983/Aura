@@ -1469,7 +1469,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ## Slice 4 — KV cache builder (stable-prefix + provider-aware)
 
 **Goal.** Estrarre la costruzione del prompt da `agent.Loop.Turn` in un
-`PromptBuilder` dedicato (`internal/llm/prompt.go`) che garantisca:
+`PromptBuilder` dedicato (`internal/agent/prompt/`, RELOCATED da `internal/llm/prompt.go` per D-01a — import-cycle) che garantisca:
 - `messages[0]` (system) byte-identico turn-su-turn;
 - ordering deterministico del tool manifest (già: alphabetical in [manifest.go](internal/agent/tools/manifest.go));
 - inserimento dei breakpoint di cache provider-specifici (Anthropic `cache_control: ephemeral` sui blocchi system+tools, DeepSeek auto-cache che è no-op lato client ma misura il hit-rate dal `usage`);
@@ -1507,13 +1507,17 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
   Sono tre invariants ortogonali, ognuna ha il suo test dedicato. Slice 4 NON deprecha né rimpiazza Slice 1: si aggiunge come layer sopra. Slice 1.8 entra come producer della history input di Slice 4.
 
 **File targets** (≤ 400 LOC):
+
+> **PRD-amendment (D-01a) — relocation del PromptBuilder.** Il target originale `internal/llm/prompt.go` NON è realizzabile: `internal/agent/tools/manifest.go` importa `internal/llm`, quindi `internal/llm` NON può importare `internal/agent/tools` (per `RenderToolDefs()`) senza creare un import-cycle confermato. Il PromptBuilder vive perciò nel nuovo subpackage **`internal/agent/prompt/`** (builder.go + hash.go + cache_anthropic.go), che può importare sia `internal/llm` sia `internal/agent/tools`. Il file-target `internal/llm/cache_deepseek.go` è **DROPPATO** (D-02a / OQ1): il parsing del `usage` DeepSeek/OpenRouter che descriveva è già shippato in `internal/llm/openai_compat/sse.go` + `usage.go` — non resta nulla da costruire lì.
+
 | Path | LOC | Note |
 |---|---|---|
-| `internal/llm/prompt.go` | ~140 | `PromptBuilder` con `Build(history, tools, provider) []Message`. Stable-prefix discipline. |
-| `internal/llm/cache_anthropic.go` | ~70 | Inietta `cache_control: ephemeral` su system + tool manifest. |
-| `internal/llm/cache_deepseek.go` | ~50 | No-op + parse `usage.prompt_cache_hit_tokens` dalla response. |
-| `internal/llm/cache_metrics.go` | ~80 | `Tracker.Record(turn, promptTokens, cachedTokens)` + `Report() string`. |
-| `internal/llm/prompt_test.go` | ~100 | Invariant test su 5-turn (hash stability, monotonic growth, no-mutation, cache_control presence). |
+| `internal/agent/prompt/builder.go` | ~140 | `PromptBuilder` con `Build(history, tools, provider) []Message`. Stable-prefix discipline. RELOCATED da `internal/llm/prompt.go` (D-01a: import-cycle — `internal/agent/tools/manifest.go` importa `internal/llm`). |
+| `internal/agent/prompt/hash.go` | ~40 | SHA-256 dei segmenti cacheable (index-set `{0}` oggi, `{0,1,2}` forward-compat amendment #11). Alimenta il CI invariant gate. |
+| `internal/agent/prompt/cache_anthropic.go` | ~70 | Inietta `cache_control: ephemeral` su system + tool manifest (no-op seam sotto OpenRouter, D-03). |
+| `~~internal/llm/cache_deepseek.go~~` | — | **DROPPATO (D-02a).** Il parse `usage.prompt_cache_hit_tokens`/`cached_tokens` + `usage.cost` è GIÀ shippato in `internal/llm/openai_compat/sse.go` + `usage.go`; nessun file-target residuo. |
+| `internal/agent/prompt/cache_metrics.go` | ~80 | `Tracker.Record(turn, promptTokens, cachedTokens)` + persistenza per-turn su `aura.cache_metrics` (D-02) + `Report()` consumato da `aura cache-stats`. |
+| `internal/agent/prompt/builder_test.go` | ~100 | Invariant test su 5-turn (hash stability, monotonic growth, no-mutation, cache_control presence). RELOCATED (D-01a). |
 | `internal/agent/llm_agent.go` (diff) | ~-15 / +10 | Sostituisce inline `llm.Request{Messages: l.Messages, ...}` con `l.Prompt.Build(...)`. `LlmAgent` ora prende un `*PromptBuilder` invece di costruire il request inline. |
 | `internal/llm/openai_compat.go` (diff) | ~+25 | Parsa `usage.prompt_cache_hit_tokens` dal final chunk SSE e lo espone su un campo `Chunk.Usage`. |
 | `cmd/aura/main.go` (diff) | ~+40 | `aura chat-loop` (REPL multi-turn) + `aura cache-stats`. |
@@ -1527,7 +1531,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
    - **DeepSeek auto-cache nativo** è preservato anche via OpenRouter: la response include `usage.prompt_cache_hit_tokens` (formato OpenAI-compat esteso). Il parser deve gestirlo come optional field.
    - **OpenRouter aggiunge `usage.cost`** (USD totale della call) — utile da loggare in `cache.Tracker` accanto al hit-rate per misurare ROI reale del KV-discipline.
    *Decisione:* `Config.LLM.Provider="openrouter"` è una stringa documentale (per log/UI). Il client OpenAI-compat è invariante. Le routine cache_control restano in `cache_anthropic.go` (no-op in pratica) per non rompere se in futuro aggiungiamo un secondo provider Anthropic-diretto. **Seam portabilità D00 (amendment #30)**: l'endpoint (`AURA_LLM_BASE_URL`) + model sono già config-driven — è il contratto day-1 che tiene aperti i 3 target (remoto cloud/32GB, locale vLLM/llama.cpp su DGX). L'`LLMRouter` di Slice 13 estende questo seam (selezione runtime), ma nessun path deve mai hardcodare il provider/endpoint.
-2. **Cache stats persistenza.** Solo in-memory per processo, o flush su file? → *Proposto: in-memory. Stats sono debug, non telemetria.*
+2. **Cache stats persistenza. → CHIUSA (D-02, override del precedente "in-memory only"): persist per-turn su Postgres.**
+   Le metriche cache atterrano per-turn in una nuova tabella `aura.cache_metrics` (`conversation_id`, `seq`, `ts`, `prompt_tokens`, `cached_tokens`, `cost_usd`), così `aura cache-stats --since=<window>` è una vera query SQL time-windowed (es. `--since=1h`), non un dump in-memory volatile. Nuova migration **0007** nella sequenza esistente (0006 `conversation_turns_fts` è l'ultima shippata → 0007 è il prossimo slot libero). **Override esplicito del vecchio "Proposto: in-memory, stats sono debug"** — richiede questo PRD-amendment-commit PRIMA di qualsiasi codice (PRD-first). Nessun lavoro wire-layer: il dato sorgente è GIÀ shippato in `llm.Usage{PromptTokens, CompletionTokens, CachedTokens, Cost}` (D-02a — `prompt_tokens_details.cached_tokens` + OpenRouter `usage.cost`); il Tracker consuma il trailing `Usage` chunk già emesso da `internal/llm/openai_compat/sse.go` + `usage.go`.
 3. **Tools come breakpoint cache separato.** Su Anthropic il tools array è un blocco a parte (non dentro messages). Dobbiamo modificare `llm.Request` per supportare un `tools_cache_control`? → *Proposto: SÌ. Aggiunta a `Request{ ToolsCacheControl string }`. OpenAI/DeepSeek lo ignorano.*
 4. **Threshold cache_hit_rate per CI.** Test che fallisce sotto X%? → *Proposto: NO. Test asserisce **invariant** (byte-identity), non **percentage** (provider-dipendente, flaky).*
 

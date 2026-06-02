@@ -32,11 +32,11 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 **Capabilities (Slice 2–7)**
 
 - [ ] **CAP-01**: Sandbox runner Python 3.12 stateless (2a) + session-bound con workspace + network allowlist (2b) (Slice 2)
-- [ ] **CAP-02**: Swarm coordinator riusa ParallelAgent (Slice 3)
-- [ ] **CAP-03**: KV cache builder stable-prefix + provider-aware (Slice 4)
-- [ ] **CAP-04**: Web tools `web_search` (SearXNG) + `web_fetch` (readability + html-to-markdown) (Slice 5)
-- [ ] **CAP-05**: Scheduler cron + agent jobs persistente su Postgres (Slice 6)
-- [ ] **CAP-06**: Skills system instruction-based (7a/b/c/d) + executable code snippets multi-lang con pattern analysis e TTL archived (7e) (Slice 7)
+- [ ] **CAP-03**: Swarm coordinator riusa ParallelAgent (Slice 3)
+- [ ] **CAP-04**: KV cache builder stable-prefix + provider-aware (Slice 4)
+- [ ] **CAP-05**: Web tools `web_search` (SearXNG) + `web_fetch` (readability + html-to-markdown) (Slice 5)
+- [ ] **CAP-06**: Scheduler cron + agent jobs persistente su Postgres (Slice 6)
+- [ ] **CAP-07**: Skills system instruction-based (7a/b/c/d) + executable code snippets multi-lang con pattern analysis e TTL archived (7e) (Slice 7)
 
 **Transport + UX (Slice 8–11)**
 
