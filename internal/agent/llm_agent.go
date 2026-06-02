@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/chetto1983/aura/internal/llm"
@@ -42,6 +43,7 @@ type LlmAgent struct {
 	previewCap  int
 	runDir      string
 	sessionID   string
+	builder     *prompt.PromptBuilder
 
 	history []llm.Message
 }
@@ -86,6 +88,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		previewCap:  cfg.PreviewCap,
 		runDir:      cfg.RunDir,
 		sessionID:   cfg.SessionID,
+		builder:     prompt.NewPromptBuilder(),
 		history:     hist,
 	}
 }
@@ -128,13 +131,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 			spanCtx, span := startLLMSpan(callCtx)
 
-			req := llm.Request{
-				Model:       a.cfg.Model,
-				Messages:    a.history, // read-only — the client never mutates it (Req#13)
-				Tools:       a.registry.RenderToolDefs(),
-				Temperature: a.cfg.Temperature,
-				MaxTokens:   a.cfg.MaxTokens,
-			}
+			// The builder is the single assembly chokepoint (D-01): it reproduces the
+			// byte-stable messages[0] and routes the provider-aware cache_control seam.
+			// a.history stays read-only — the client never mutates it (Req#13).
+			req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg)
 			ch, err := a.client.Stream(spanCtx, req)
 			if err != nil {
 				span.End()

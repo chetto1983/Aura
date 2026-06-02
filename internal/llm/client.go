@@ -83,12 +83,23 @@ type Client interface {
 	Stream(ctx context.Context, req Request) (<-chan Chunk, error)
 }
 
-// Request is one chat-completion call. Caching is a property of how the caller
-// constructs Messages (stable prefix) — the wire layer is unaware.
+// Request is one chat-completion call. Caching is primarily a property of how
+// the caller constructs Messages (a byte-stable prefix earns the implicit
+// prompt-cache discount); that assembly decision lives in the prompt builder,
+// not here. ToolsCacheControl is the one explicit knob: it is wire-shape only
+// (an Anthropic-direct cache_control marker), set by the builder's provider
+// branch and dormant — empty under OpenRouter, the day-1 default. The wire
+// layer serializes it but never decides whether to inject it (D-03/D-03a).
 type Request struct {
 	Model       string
 	Messages    []Message
 	Tools       []ToolDef
 	Temperature float64
 	MaxTokens   int
+
+	// ToolsCacheControl, when non-empty, is the Anthropic-direct cache_control
+	// marker for the tools+system prefix breakpoint (e.g. "ephemeral"). It is set
+	// only by the provider branch in internal/agent/prompt; the OpenAI-compat wire
+	// client ignores it (Slice 13 LLMRouter does the Anthropic-native translation).
+	ToolsCacheControl string
 }
