@@ -4,7 +4,7 @@
 # green and let a poisoned messages[0] through.
 #
 # It deliberately feeds scripts/cache_invariant_audit.sh a POISONED hash stream
-# (request 03 messages[0] hash differs) via the AURA_CACHE_AUDIT_CMD seam and
+# (request 03 messages[0] hash differs) via the AURA_CACHE_AUDIT_BIN seam and
 # asserts the wrapper exits NON-zero with `mutated` on stderr. If the wrapper
 # instead exits 0 on a mutated prefix, THIS script fails loudly — that is the
 # "gate is silently green" alarm.
@@ -20,12 +20,15 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 
 readonly WRAPPER="scripts/cache_invariant_audit.sh"
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 # --- Case 1: a mutated messages[0] MUST make the gate exit non-zero with `mutated`.
 # Emit 22 `request NN: <hex>` lines where request 03 carries a different hash.
 # the prefix poisoning a future slice (1.8b/7e/10/11e) could introduce.
-poisoned_stream() {
-  cat <<'POISON'
+POISON_BIN="$TMP_DIR/poisoned-cache-audit"
+cat >"$POISON_BIN" <<'POISON'
+#!/usr/bin/env bash
 echo "request 01: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 echo "request 02: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 echo "request 03: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
@@ -49,10 +52,10 @@ echo "request 20: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 echo "request 21: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 echo "request 22: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 POISON
-}
+chmod +x "$POISON_BIN"
 
 set +e
-MUT_OUT="$(AURA_CACHE_AUDIT_CMD="$(poisoned_stream)" bash "$WRAPPER" 2>&1)"
+MUT_OUT="$(AURA_CACHE_AUDIT_BIN="$POISON_BIN" bash "$WRAPPER" 2>&1)"
 MUT_CODE=$?
 set -e
 
@@ -70,8 +73,15 @@ echo "ok (SC#5 case 1): mutated messages[0] -> gate exit ${MUT_CODE} with 'mutat
 
 # --- Case 2: NO-SKIP-AS-GREEN — an EMPTY run (subcommand emits nothing) MUST also
 # fail, never pass silently.
+EMPTY_BIN="$TMP_DIR/empty-cache-audit"
+cat >"$EMPTY_BIN" <<'EMPTY'
+#!/usr/bin/env bash
+exit 0
+EMPTY
+chmod +x "$EMPTY_BIN"
+
 set +e
-EMPTY_OUT="$(AURA_CACHE_AUDIT_CMD="true" bash "$WRAPPER" 2>&1)"
+EMPTY_OUT="$(AURA_CACHE_AUDIT_BIN="$EMPTY_BIN" bash "$WRAPPER" 2>&1)"
 EMPTY_CODE=$?
 set -e
 

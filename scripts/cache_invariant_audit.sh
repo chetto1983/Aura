@@ -28,19 +28,26 @@ cd "$(git rev-parse --show-toplevel)"
 
 readonly EXPECTED_REQUESTS=22
 
-# AURA_CACHE_AUDIT_CMD lets the SC#5 negative test substitute a poisoned hash
-# stream so it can exercise THIS wrapper's drift detection without a real prefix
-# bug (cache_invariant_negative_test.sh). In CI and locally it defaults to the
-# real subcommand — the negative test is the only caller that overrides it.
-AUDIT_CMD="${AURA_CACHE_AUDIT_CMD:-go run ./cmd/aura cache-audit}"
-
+# AURA_CACHE_AUDIT_BIN lets the SC#5 negative test substitute an executable that
+# emits a poisoned hash stream, without evaluating an environment-controlled shell
+# command. In CI and locally it defaults to the real subcommand.
 # Capture stdout, stderr, and the exit code separately. We must NOT let a non-zero
 # subcommand exit abort the script before we can forward its diagnostic, so the
 # invocation is guarded with `|| code=$?` (set -e would otherwise kill us here).
 ERR_FILE="$(mktemp)"
 trap 'rm -f "$ERR_FILE"' EXIT
 code=0
-OUT="$(eval "$AUDIT_CMD" 2>"$ERR_FILE")" || code=$?
+if [[ -n "${AURA_CACHE_AUDIT_BIN:-}" ]]; then
+  if [[ ! -x "$AURA_CACHE_AUDIT_BIN" ]]; then
+    echo "cache-audit: AURA_CACHE_AUDIT_BIN is not executable: $AURA_CACHE_AUDIT_BIN" >"$ERR_FILE"
+    OUT=""
+    code=2
+  else
+    OUT="$("$AURA_CACHE_AUDIT_BIN" 2>"$ERR_FILE")" || code=$?
+  fi
+else
+  OUT="$(go run ./cmd/aura cache-audit 2>"$ERR_FILE")" || code=$?
+fi
 ERR="$(cat "$ERR_FILE")"
 
 # Independent line count: the `|| true` keeps the count at 0 (instead of a bare
