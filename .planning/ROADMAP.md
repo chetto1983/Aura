@@ -24,7 +24,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench (completed 2026-06-02)
 - [x] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI (completed 2026-06-02)
-- [ ] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin)
+- [x] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin) (completed 2026-06-02)
 - [ ] **Phase 8: Sandbox 2b Session-Bound** - per-conversation workspace + network allowlist + symlink escape guard
 - [ ] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance
 - [ ] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat
@@ -208,7 +208,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Operator runs the SSRF integration test (`scripts/ssrf_smoke.sh`) attempting `web_fetch http://169.254.169.254/latest/meta-data/` and observes block with explicit "blocked: cloud metadata" error; same for `http://[::ffff:169.254.169.254]/`, `http://[fe80::1]/`, `http://metadata.google.internal/`
   4. Operator runs the DNS-rebinding test (Python `dnslib` fixture returns 1.2.3.4 then 127.0.0.1) and observes the second `web_fetch` call to the same hostname reusing the pinned IP from the first call within `AURA_WEB_DNS_PIN_TTL_SEC=60`
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 **Wave 1**
 
 - [x] 07-01-PLAN.md — Infra + config: SearXNG Compose service (no host port) + read-only settings.yml (JSON) + go-readability/v2 + html-to-markdown/v2 deps + AURA_WEB_*/SEARXNG_URL root config + goleak skeleton (wave 1) ✅ 2026-06-02
@@ -223,7 +223,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 07-04-PLAN.md — Adapters + surface: Deferred web_search/web_fetch tools + NewResult spillover + aura web CLI (doctor/tool verbs) + ssrf_smoke + live web_integration tier + Gate-3 acceptance (SC#1/2/3/4 live, wave 4)
+- [x] 07-04-PLAN.md — Adapters + surface: Deferred web_search/web_fetch tools + NewResult spillover + aura web CLI (doctor/tool verbs) + ssrf_smoke + live web_integration tier + Gate-3 acceptance (SC#1/2/3/4 live, wave 4)
 
 ### Phase 8: Sandbox 2b Session-Bound
 
@@ -363,7 +363,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
 | 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
-| 7. Web Tools | 3/4 | In Progress|  |
+| 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
 | 8. Sandbox 2b Session-Bound | 0/TBD | Not started | - |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
