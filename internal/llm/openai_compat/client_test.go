@@ -233,7 +233,8 @@ func TestRequestBody(t *testing.T) {
 	c := New(testConfig(srv.URL))
 	ch, err := c.Stream(context.Background(), llm.Request{
 		Model: "deepseek/deepseek-v4-flash:exacto", Temperature: 0.7, MaxTokens: 4096,
-		Messages: []llm.Message{{Role: "user", Content: "ciao"}},
+		SessionID: "conv-123",
+		Messages:  []llm.Message{{Role: "user", Content: "ciao"}},
 	})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
@@ -249,6 +250,9 @@ func TestRequestBody(t *testing.T) {
 	}
 	if body["stream"] != true {
 		t.Errorf("stream = %v, want true", body["stream"])
+	}
+	if body["session_id"] != "conv-123" {
+		t.Errorf("session_id = %v, want conv-123", body["session_id"])
 	}
 	prov, _ := body["provider"].(map[string]any)
 	if prov == nil || prov["data_collection"] != "deny" {

@@ -118,6 +118,26 @@ func collect(seq func(yield func(*agent.Event, error) bool)) ([]*agent.Event, er
 	return evs, firstErr
 }
 
+func TestLlmAgent_ForwardsSessionID(t *testing.T) {
+	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", "ciao"))
+	const sessionID = "conv-session-123"
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:    fc,
+		LLM:       llm.Config{Model: "m", Provider: "openrouter", TotalTimeoutSec: 30},
+		Registry:  testRegistry(),
+		RunDir:    t.TempDir(),
+		SessionID: sessionID,
+		UserTurns: []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
+	})
+
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(1)}))); err != nil {
+		t.Fatalf("Run errored: %v", err)
+	}
+	if got := fc.LastRequest().SessionID; got != sessionID {
+		t.Fatalf("request SessionID = %q, want %q", got, sessionID)
+	}
+}
+
 // TestLlmAgent_EventOrder (Req#9): a tool call then a text_response yields ordered
 // Events (tool_call -> tool_result -> final) and terminates.
 func TestLlmAgent_EventOrder(t *testing.T) {

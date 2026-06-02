@@ -96,6 +96,10 @@ type Request struct {
 	Tools       []ToolDef
 	Temperature float64
 	MaxTokens   int
+	// SessionID is OpenRouter's sticky-routing key. The agent sets it from its
+	// stable conversation/session id so multi-turn prompt-cache reads stay on the
+	// same provider endpoint without changing the byte-stable message prefix.
+	SessionID string
 
 	// ToolsCacheControl, when non-empty, is the Anthropic-direct cache_control
 	// marker for the tools+system prefix breakpoint (e.g. "ephemeral"). It is set

@@ -58,6 +58,7 @@ type wireRequest struct {
 	ToolChoice  string        `json:"tool_choice,omitempty"`
 	Temperature float64       `json:"temperature"`
 	MaxTokens   int           `json:"max_tokens"`
+	SessionID   string        `json:"session_id,omitempty"`
 	Stream      bool          `json:"stream"`
 	Provider    providerObj   `json:"provider"`
 }
@@ -140,6 +141,7 @@ func (c *Client) buildWireRequest(req llm.Request) wireRequest {
 		ToolChoice:  "auto",
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		SessionID:   req.SessionID,
 		Stream:      true,
 		Provider:    providerObj{DataCollection: "deny"},
 	}

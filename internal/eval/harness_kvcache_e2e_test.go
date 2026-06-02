@@ -143,34 +143,42 @@ func TestKVCacheWarmingE2E(t *testing.T) {
 		t.Fatalf("need >=3 turns to evaluate warming, captured %d", len(turns))
 	}
 
-	// ---- SC#2: cache warming — cached tokens rise once the prefix is warm ----
-	// Turn 1 is cold (provider has not seen the prefix). From turn 2 onward the
-	// cached count must be non-decreasing AND end strictly above the cold turn.
-	var peakRatio float64
+	// ---- SC#2: cache warming — post-first turns read cached prompt tokens ----
+	// OpenRouter prompt caching is provider-routed and account/model scoped: the
+	// first turn can already report cached tokens when the byte-stable Aura prefix
+	// was warmed by an earlier verifier run. The provider contract is cached_tokens
+	// > 0 when a request benefits from cached content; it does not promise
+	// monotonically increasing cached_tokens as the dynamic conversation tail grows.
+	var peakRatio, postFirstPeakRatio float64
+	var postFirstCachedMax, postFirstCacheReadTurns int
 	for _, tn := range turns {
 		if tn.ratio > peakRatio {
 			peakRatio = tn.ratio
 		}
-	}
-	for i := 1; i < len(turns); i++ { // compare turn i+1 vs turn i, starting at the 2nd→3rd boundary
-		if i >= 2 && turns[i].cached < turns[i-1].cached {
-			t.Errorf("SC#2 cache warming: cached tokens dropped turn %d (%d) -> turn %d (%d); expected non-decreasing once warm",
-				turns[i-1].idx, turns[i-1].cached, turns[i].idx, turns[i].cached)
+		if tn.idx > 1 {
+			if tn.ratio > postFirstPeakRatio {
+				postFirstPeakRatio = tn.ratio
+			}
+			if tn.cached > 0 {
+				postFirstCacheReadTurns++
+			}
+			if tn.cached > postFirstCachedMax {
+				postFirstCachedMax = tn.cached
+			}
 		}
 	}
-	lastCached := turns[len(turns)-1].cached
 	coldCached := turns[0].cached
-	if lastCached <= coldCached {
-		t.Errorf("SC#2 cache warming: final-turn cached=%d not above cold turn-1 cached=%d — prefix never warmed",
-			lastCached, coldCached)
+	if postFirstCacheReadTurns == 0 {
+		t.Errorf("SC#2 cache warming: no post-first turn reported cached_tokens > 0; turn-1 cached=%d, post-first max=%d",
+			coldCached, postFirstCachedMax)
 	}
 
-	// ---- SC#4: hit rate >= 80% on the warmed session (peak over the session) ----
-	if peakRatio < hitRateTarget {
-		t.Errorf("SC#4 cache hit rate: peak ratio %.1f%% < target %.1f%% — DeepSeek-V4 Flash prefix cache not meeting PRD performance target",
-			peakRatio*100, hitRateTarget*100)
+	// ---- SC#4: hit rate >= 80% on the warmed session (post-first peak) ----
+	if postFirstPeakRatio < hitRateTarget {
+		t.Errorf("SC#4 cache hit rate: post-first peak ratio %.1f%% < target %.1f%% — DeepSeek-V4 Flash prefix cache not meeting PRD performance target",
+			postFirstPeakRatio*100, hitRateTarget*100)
 	}
 
-	t.Logf("KV-cache E2E: peak hit rate=%.1f%% (target %.1f%%), cold cached=%d, final cached=%d over %d turns",
-		peakRatio*100, hitRateTarget*100, coldCached, lastCached, len(turns))
+	t.Logf("KV-cache E2E: peak hit rate=%.1f%%, post-first peak=%.1f%% (target %.1f%%), turn-1 cached=%d, post-first max cached=%d over %d turns",
+		peakRatio*100, postFirstPeakRatio*100, hitRateTarget*100, coldCached, postFirstCachedMax, len(turns))
 }

@@ -135,6 +135,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// byte-stable messages[0] and routes the provider-aware cache_control seam.
 			// a.history stays read-only — the client never mutates it (Req#13).
 			req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg)
+			req.SessionID = a.sessionID
 			ch, err := a.client.Stream(spanCtx, req)
 			if err != nil {
 				span.End()
