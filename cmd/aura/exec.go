@@ -35,20 +35,28 @@ type execArgs struct {
 // accepts an optional --session <id> anywhere before the positionals, a required
 // lang in {python,shell}, and a code positional (a single string, or "-" to read
 // the whole snippet from stdin for big/multi-line input).
+//
+// The flag is consumed via a range loop with a one-shot expectSession latch rather
+// than manual index advancement: indexing the slice after an i++ is a textbook
+// gosec G602 false positive (the bounds guard is provably correct but gosec can't
+// follow increment-then-guard), so we sidestep it by never indexing at all.
 func parseExecArgs(args []string) (execArgs, error) {
 	var ea execArgs
 	var positionals []string
-	for i := 0; i < len(args); i++ {
-		switch args[i] {
-		case "--session":
-			i++
-			if i >= len(args) {
-				return ea, fmt.Errorf("--session requires an id")
-			}
-			ea.session = args[i]
+	expectSession := false
+	for _, arg := range args {
+		switch {
+		case expectSession:
+			ea.session = arg
+			expectSession = false
+		case arg == "--session":
+			expectSession = true
 		default:
-			positionals = append(positionals, args[i])
+			positionals = append(positionals, arg)
 		}
+	}
+	if expectSession {
+		return ea, fmt.Errorf("--session requires an id")
 	}
 	if len(positionals) < 2 {
 		return ea, fmt.Errorf("usage: aura exec [--session <id>] <python|shell> <code|->")
