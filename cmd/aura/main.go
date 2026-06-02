@@ -49,6 +49,8 @@ func main() {
 		runPausedStates(os.Args[2:])
 	case "chat":
 		runChat(os.Args[2:])
+	case "cache-stats":
+		runCacheStats(os.Args[2:])
 	case "config":
 		runConfig(os.Args[2:])
 	case "version", "--version", "-v":
