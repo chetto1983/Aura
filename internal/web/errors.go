@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"strconv"
 )
 
@@ -109,6 +110,22 @@ func (e *internalError) Error() string {
 		s += " redirect=" + e.redirectFrom
 	}
 	return s
+}
+
+// AsWebError unwraps err to a *WebError when one is present in the chain. An
+// *internalError is sanitized on the fly so callers and tests can assert the
+// model-visible code/reason without ever touching the sensitive fields. The bool
+// is false when no web error is in the chain.
+func AsWebError(err error) (*WebError, bool) {
+	var we *WebError
+	if errors.As(err, &we) {
+		return we, true
+	}
+	var ie *internalError
+	if errors.As(err, &ie) {
+		return sanitize(ie), true
+	}
+	return nil, false
 }
 
 // sanitize is the internal→model-visible mapper the adapters call. It copies ONLY
