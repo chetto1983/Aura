@@ -43,7 +43,7 @@ The phase must preserve Aura's existing agent/tool contracts: structured tool de
 - **D-18:** Default fetch output does not include byline, published time, excerpt, site name, or fetched time metadata in Phase 7.
 - **D-19:** `links` is a deduped list of normalized absolute URLs found in the readable article content. Do not return `{text, url}` link objects in Phase 7.
 - **D-20:** Use `codeberg.org/readeck/go-readability/v2` for readability extraction and `JohannesKaufmann/html-to-markdown/v2` for markdown conversion, per the roadmap amendment.
-- **D-21:** If `content_md` exceeds `AURA_WEB_RESPONSE_CAP_BYTES=24000`, return a short preview plus `tool_result_id`; full content is paged through `read_tool_output`.
+- **D-21:** The LLM-facing `content_md` preview/spillover is governed by the agent tool-result preview cap (`tools.NewResult`, `AURA_CONTEXT_PREVIEW_CAP_BYTES`): when the extracted markdown exceeds it, return a short preview plus `tool_result_id` and page the full content through `read_tool_output`. This is a SEPARATE knob from `AURA_WEB_FETCH_MAX_BODY_BYTES` (formerly `AURA_WEB_RESPONSE_CAP_BYTES`), which is only the raw HTTP response body download ceiling (DoS guard, default 5 MB) applied in `gateAndRead` BEFORE readability extraction — it does NOT govern the model-facing payload.
 - **D-22:** Low-quality extraction returns extracted markdown with `warning` such as `low_content` or `extraction_maybe_incomplete`; it is not automatically an error.
 - **D-23:** Fetch has a strict 30 second wall-clock deadline and at most one retry for transient network, `408`, `429`, or `5xx` failures within that same deadline.
 
@@ -184,7 +184,7 @@ The phase must preserve Aura's existing agent/tool contracts: structured tool de
 
 ### Integration Points
 - Register `web_search` and `web_fetch` in the existing tool registry/manifest path.
-- Add web config for `SEARXNG_URL`, `AURA_WEB_DNS_PIN_TTL_SEC`, `AURA_WEB_RESPONSE_CAP_BYTES`, cache persistence, timeouts, and User-Agent defaults.
+- Add web config for `SEARXNG_URL`, `AURA_WEB_DNS_PIN_TTL_SEC`, `AURA_WEB_FETCH_MAX_BODY_BYTES` (raw-body download ceiling, default 5 MB — NOT the model-facing markdown preview cap), cache persistence, timeouts, and User-Agent defaults.
 - Add SearXNG Compose service and checked-in read-only settings file.
 - Add SSRF validation, DNS pinning, manual redirect validation, MIME/size limits, cache, and fetch/search clients in a scoped web package or tool package chosen during planning.
 - Add CLI smoke/doctor command following existing `aura` subcommand style.

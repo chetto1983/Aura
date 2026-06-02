@@ -1867,7 +1867,7 @@ Entrambi alimentati da un container SearXNG self-hosted (estensione del
   - Override solo via env: `AURA_WEB_FETCH_ALLOW_LOOPBACK=1` (dev), `AURA_WEB_FETCH_ALLOW_HOSTS=host1,host2` (ops bypass mirato).
 - [ ] **SSRF defense: DNS-rebinding protection** — `safeDialContext` risolve host → valida IP contro blocklist → dial esplicito su IP risolto, NON re-lookup tra resolve e dial.
 - [ ] **SSRF defense: HTTP redirect interception (audit round 1 P0)** — `http.Client.CheckRedirect` custom che ri-valida ogni Location header contro la blocklist. Test: `web_fetch("https://safe.example.com/r")` che ridirige a `http://169.254.169.254/` → rifiutato al redirect step, NON al primo dial.
-- [ ] Response cap: `AURA_WEB_RESPONSE_CAP_BYTES = 24000` (era hardcoded `maxWebToolChars`, promosso a env in Area #8 closed 2026-05-28). Hard limit anti-DOS della response HTTP prima di qualunque preview/sidecar logic. Distinto da `AURA_CONTEXT_PREVIEW_CAP_BYTES` (preview/sidecar threshold) per semantica.
+- [ ] Raw-body download ceiling: `AURA_WEB_FETCH_MAX_BODY_BYTES = 5_000_000` (5 MB; era `AURA_WEB_RESPONSE_CAP_BYTES = 24000`, rinominato + ri-defaultato 2026-06-02 dopo il Gate-3 di Slice 5 — il vecchio default 24KB, dimensionato come un numero markdown, rigettava ogni pagina reale con `response_too_large` PRIMA dell'estrazione readability). Hard limit anti-DOS del body HTTP grezzo applicato in `gateAndRead` prima di qualunque preview/sidecar logic. Distinto da `AURA_CONTEXT_PREVIEW_CAP_BYTES` (preview/sidecar threshold del markdown LLM-facing via `tools.NewResult`) per semantica.
 - [ ] Timeout HTTP: SearXNG 20s, direct_fetch 30s, entrambi config-overrideable.
 - [ ] Readability filter: pagine con <250 char di main content → ritornano `{warning: "low-content page"}` invece di noise.
 - [ ] **Riusa il `ToolResult` pattern di Slice 1**: web_fetch su page grande (>2 KiB) → preview + sidecar file; modello può fare `read_tool_output(id, offset, limit)` per estrarre fette.
@@ -4629,12 +4629,15 @@ AURA_CONTEXT_PREVIEW_CAP_BYTES = 2048
   Stile Claude Code (error-with-pointer): l'agente vede il footer e sa COME
   recuperare il resto via read_tool_output, non perde dati.
 
-AURA_WEB_RESPONSE_CAP_BYTES = 24000
-  Hard cap della response di web_fetch/web_search (Slice 5).
-  Anti-DOS: protegge dal caricare HTML di N MiB in memoria.
-  Diversa semantica: è il limite della response HTTP, NON il preview-to-context.
-  Pagine grandi vengono troncate alla sorgente (con "...[truncated]"), poi il
-  ToolResult applica AURA_CONTEXT_PREVIEW_CAP_BYTES per spillover sidecar.
+AURA_WEB_FETCH_MAX_BODY_BYTES = 5000000  (5 MB; era AURA_WEB_RESPONSE_CAP_BYTES = 24000)
+  Raw HTTP response body download ceiling di web_fetch (Slice 5), DoS guard.
+  Anti-DOS: protegge dal caricare HTML di N MiB in memoria; applicato in
+  gateAndRead via io.LimitReader(cap+1) PRIMA dell'estrazione readability.
+  Diversa semantica: è il ceiling del body HTTP grezzo, NON il preview-to-context.
+  Il markdown LLM-facing (preview + spillover sidecar) è governato da
+  AURA_CONTEXT_PREVIEW_CAP_BYTES via tools.NewResult, NON da questo campo.
+  Rinominato + ri-defaultato a 5 MB 2026-06-02: il vecchio default 24KB
+  (dimensionato come un numero markdown) rigettava ogni pagina reale.
 
 AURA_SKILL_BODY_CAP_BYTES = 32768  (32 KiB)
   Write-time refuse cap per il body di una SKILL.md (Slice 7).
