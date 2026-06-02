@@ -130,6 +130,30 @@ func TestCleanMarkdown_HeadinglessReflist(t *testing.T) {
 	}
 }
 
+// TestExtractMarkdown_LowContentAfterCleanup exercises the post-cleanup low_content
+// re-evaluation: a page whose readable body is short once the references tail is
+// truncated must be flagged low_content even though the raw page had a Node.
+func TestExtractMarkdown_LowContentAfterCleanup(t *testing.T) {
+	pageURL, _ := url.Parse("https://en.example/thin-after-strip")
+	html := `<!DOCTYPE html><html><head><title>Thin</title></head><body><article>
+<p>A short lead sentence about the topic.</p>
+<h2>References</h2>
+<ol>
+<li>` + strings.Repeat("REFERENCE_BULK citation text that dominates the raw page length. ", 40) + `</li>
+</ol>
+</article></body></html>`
+	_, md, _, warning, err := ExtractMarkdown([]byte(html), pageURL)
+	if err != nil {
+		t.Fatalf("ExtractMarkdown: %v", err)
+	}
+	if strings.Contains(md, "REFERENCE_BULK") {
+		t.Errorf("references tail not truncated: %q", md)
+	}
+	if warning != "low_content" {
+		t.Errorf("warning = %q, want low_content after cleanup shrank the body", warning)
+	}
+}
+
 func TestExtractMarkdown_LowContent(t *testing.T) {
 	pageURL, _ := url.Parse("https://src.example/thin")
 	_, md, _, warning, err := ExtractMarkdown([]byte(`<html><body><p>tiny</p></body></html>`), pageURL)

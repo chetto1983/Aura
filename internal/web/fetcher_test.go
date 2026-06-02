@@ -124,6 +124,34 @@ func TestFetch_RedirectRevalidate(t *testing.T) {
 	}
 }
 
+// TestFetch_RedirectEdgeCases covers the resolveRedirect failure branches: a 3xx
+// with no Location header, and a redirect to an unsupported scheme. Both must
+// surface a sanitized WebError without dialing a second hop.
+func TestFetch_RedirectEdgeCases(t *testing.T) {
+	t.Run("redirect_without_location", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusFound) // 302 with no Location
+		}))
+		defer srv.Close()
+		_, port := hostPort(t, srv.URL)
+		c := fetchClient(t, map[string][]netip.Addr{"page.test": {publicIP}})
+		_, err := c.Fetch(context.Background(), "c", "http://page.test:"+port+"/noloc")
+		assertWebErr(t, err, CodeHTTPError, "")
+	})
+
+	t.Run("redirect_to_unsupported_scheme", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Location", "ftp://files.test/x")
+			w.WriteHeader(http.StatusMovedPermanently)
+		}))
+		defer srv.Close()
+		_, port := hostPort(t, srv.URL)
+		c := fetchClient(t, map[string][]netip.Addr{"page.test": {publicIP}})
+		_, err := c.Fetch(context.Background(), "c", "http://page.test:"+port+"/scheme")
+		assertWebErr(t, err, CodeUnsupportedScheme, "")
+	})
+}
+
 func TestFetch_ContentGate(t *testing.T) {
 
 	t.Run("unsupported_content_type", func(t *testing.T) {
