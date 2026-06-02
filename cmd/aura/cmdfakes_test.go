@@ -8,6 +8,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -237,4 +238,13 @@ func (cmdIdentityFake) GetIdentityByName(_ context.Context, name string) (identi
 		return identity.Identity{}, identity.ErrIdentityNotFound
 	}
 	return identity.Identity{ID: "00000000-0000-0000-0000-000000000001", Name: "local", Kind: "system"}, nil
+}
+
+// cmdCacheMetricFake is an in-memory runner.CacheMetricStore for the REPL tests (no DB).
+type cmdCacheMetricFake struct{}
+
+func newCmdCacheMetricFake() *cmdCacheMetricFake { return &cmdCacheMetricFake{} }
+
+func (cmdCacheMetricFake) Insert(_ context.Context, _ sqlc.InsertCacheMetricParams) error {
+	return nil
 }

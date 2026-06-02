@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
@@ -24,10 +25,12 @@ type Querier interface {
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
+	InsertCacheMetric(ctx context.Context, arg InsertCacheMetricParams) error
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
+	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
 	ListContextRotEvents(ctx context.Context, conversationID pgtype.UUID) ([]AuraContextRotEvents, error)
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)

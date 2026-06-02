@@ -38,6 +38,7 @@ type Deps struct {
 	Conv         ConversationStore
 	Pause        PauseStore
 	Identity     IdentityStore
+	CacheMetrics CacheMetricStore
 	Client       llm.Client
 	Registry     *tools.Registry
 	LLM          llm.Config
@@ -56,9 +57,10 @@ type Deps struct {
 // CLI read conversations directly (list/search/lifecycle) without re-plumbing the
 // narrow interface; pause/title orchestration stays in the Runner.
 type Runner struct {
-	Conv     ConversationStore
-	pause    PauseStore
-	identity IdentityStore
+	Conv         ConversationStore
+	pause        PauseStore
+	identity     IdentityStore
+	cacheMetrics CacheMetricStore
 
 	client     llm.Client
 	registry   *tools.Registry
@@ -88,6 +90,7 @@ func New(d Deps) *Runner {
 		Conv:         d.Conv,
 		pause:        d.Pause,
 		identity:     d.Identity,
+		cacheMetrics: d.CacheMetrics,
 		client:       d.Client,
 		registry:     d.Registry,
 		cfg:          d.LLM,

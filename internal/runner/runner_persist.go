@@ -7,6 +7,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
+	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
@@ -65,7 +66,7 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 	if u.Cost != nil {
 		cost = *u.Cost
 	}
-	return r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: convID,
 		Seq:            seq,
 		Role:           llm.RoleAssistant,
@@ -74,7 +75,35 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 		OutputTokens:   u.CompletionTokens,
 		CachedTokens:   u.CachedTokens,
 		CostUSD:        cost,
+	}); err != nil {
+		return err
+	}
+	return r.persistCacheMetric(ctx, convID, seq, u, cost)
+}
+
+// persistCacheMetric writes the per-turn append-only cache_metrics row from the
+// already-computed llm.Usage + cost (D-02a: no wire-path touch — the same numbers that
+// fed the conversation turn). A nil cacheMetrics is a wiring bug, not a silent skip:
+// the prod composition root MUST inject a Store (no-skip discipline), so the metric is
+// never dropped without notice.
+func (r *Runner) persistCacheMetric(ctx context.Context, convID string, seq int, u llm.Usage, cost float64) error {
+	if r.cacheMetrics == nil {
+		return fmt.Errorf("persist cache metric: cacheMetrics store is nil (composition root must inject one)")
+	}
+	p, err := cachemetrics.NewInsertParams(cachemetrics.MetricParams{
+		ConversationID: convID,
+		Seq:            seq,
+		PromptTokens:   u.PromptTokens,
+		CachedTokens:   u.CachedTokens,
+		CostUSD:        cost,
 	})
+	if err != nil {
+		return fmt.Errorf("persist cache metric: %w", err)
+	}
+	if err := r.cacheMetrics.Insert(ctx, p); err != nil {
+		return fmt.Errorf("persist cache metric: %w", err)
+	}
+	return nil
 }
 
 // persistPause writes the paused_states row for one ask_user pause (SOLE writer,

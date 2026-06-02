@@ -31,6 +31,7 @@ func newTestRunner(t *testing.T, client llm.Client) (*Runner, *fakeConvStore, *f
 		Conv:         conv,
 		Pause:        pause,
 		Identity:     id,
+		CacheMetrics: newFakeCacheMetricStore(),
 		Client:       client,
 		Registry:     reg,
 		LLM:          llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},

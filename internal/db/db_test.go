@@ -160,9 +160,9 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Migrate on fresh db: %v", err)
 	}
-	const phase4Migrations = 6 // 0001..0006 on a truly fresh DB
-	if n1 != phase4Migrations {
-		t.Errorf("first Migrate on fresh db: want %d applied (0001..0006), got %d", phase4Migrations, n1)
+	const shippedMigrations = 7 // 0001..0007 on a truly fresh DB (0007 = Phase-6 cache_metrics)
+	if n1 != shippedMigrations {
+		t.Errorf("first Migrate on fresh db: want %d applied (0001..0007), got %d", shippedMigrations, n1)
 	}
 
 	n2, err := Migrate(ctx, migrateURL)

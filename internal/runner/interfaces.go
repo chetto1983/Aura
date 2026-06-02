@@ -20,6 +20,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -54,6 +55,16 @@ type PauseStore interface {
 	MarkResumed(ctx context.Context, token string, ans askuser.ResumeAnswer) error
 	MarkResumedBatch(ctx context.Context, answers map[string]askuser.ResumeAnswer) error
 	AutoResolveForConversation(ctx context.Context, conversationID string) error
+}
+
+// CacheMetricStore is the narrow aura.cache_metrics surface the Runner consumes
+// (D-A2-02). *cachemetrics.Store satisfies it implicitly. The Runner writes ONE
+// append-only metric row per completed assistant turn from the already-computed
+// llm.Usage (D-02/D-02a). It is intentionally Insert-only — the window reads
+// (ListSince/AggregateSince) are consumed by `aura cache-stats` in 06-04, not by the
+// turn loop, so they are not part of the surface the Runner depends on.
+type CacheMetricStore interface {
+	Insert(ctx context.Context, p sqlc.InsertCacheMetricParams) error
 }
 
 // IdentityStore is the narrow identity surface the Runner consumes (D-A2-02).
