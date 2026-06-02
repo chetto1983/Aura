@@ -67,7 +67,14 @@ func runCacheAudit(args []string) {
 // a process exit code. fakeAuditClient lets the negative test inject a mutation.
 func cacheAuditMain(ctx context.Context, _ []string, out, errOut io.Writer) int {
 	dir := auditFixtureDir
-	if root, err := repoRoot(); err == nil {
+	root, err := repoRoot()
+	if err != nil {
+		// A repo-root failure is a genuine environment problem (invoked from a
+		// cwd with no go.mod above it). Surface it before falling back to the
+		// relative fixture path so the operator sees the real cause instead of a
+		// misleading "fixture corrupt" downstream (WR-05).
+		_, _ = fmt.Fprintf(errOut, "cache-audit: could not locate repo root (go.mod) from cwd: %v — falling back to relative fixture dir %q\n", err, auditFixtureDir)
+	} else {
 		dir = filepath.Join(root, auditFixtureDir)
 	}
 	turns, code := loadFixtures(dir, errOut)
