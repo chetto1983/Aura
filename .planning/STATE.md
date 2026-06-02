@@ -4,8 +4,8 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 6 context gathered
-last_updated: "2026-06-02T08:38:28.492Z"
-last_activity: 2026-06-02 -- Phase 06 planning complete
+last_updated: "2026-06-02T08:46:34.710Z"
+last_activity: 2026-06-02 -- Phase 06 execution started
 progress:
   total_phases: 16
   completed_phases: 6
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 05 — sandbox-2a-stateless
+**Current focus:** Phase 06 — kv-cache-builder
 
 ## Current Position
 
-Phase: 05 (sandbox-2a-stateless) — HELD OPEN (Gate-3 human-verify pending)
-Plan: 4 of 4 (05-04 artifacts committed; Task 3 sign-off pending)
-Status: Ready to execute
-Last activity: 2026-06-02 -- Phase 06 planning complete
+Phase: 06 (kv-cache-builder) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 06
+Last activity: 2026-06-02 -- Phase 06 execution started
 
 Progress: [██████████] artifacts 100% · live-verify 0% · CI red
 

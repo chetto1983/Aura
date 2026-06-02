@@ -187,9 +187,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Operator runs `aura cache-stats --since=1h` after a typical session and observes cache hit rate ≥ 80% on DeepSeek-V4 Flash (PRD performance target)
   5. CI gate: any PR after Phase 6 that breaks `scripts/cache_invariant_audit.sh` fails the build with an explicit "messages[0] mutated at <site>" error message
 
-**Plans:** 5 plans
+**Plans:** 1/5 plans executed
 
-- [ ] 06-01-PLAN.md — PRD-amendment gate (doc-only, FIRST): OQ2 in-memory→Postgres cache_metrics (D-02), file-target internal/llm/prompt.go→internal/agent/prompt/ (D-01a), drop cache_deepseek.go, CAP-03→CAP-04 label fix (wave 1)
+- [x] 06-01-PLAN.md — PRD-amendment gate (doc-only, FIRST): OQ2 in-memory→Postgres cache_metrics (D-02), file-target internal/llm/prompt.go→internal/agent/prompt/ (D-01a), drop cache_deepseek.go, CAP-03→CAP-04 label fix (wave 1)
 - [ ] 06-02-PLAN.md — PromptBuilder extraction into internal/agent/prompt/ (builder.go + index-set hash.go + dormant anthropic cache_control seam) + llm.Request.ToolsCacheControl + corrected client.go comment, byte-identity preserved (D-01/D-03/D-03a/D-06a, wave 2)
 - [ ] 06-03-PLAN.md — aura.cache_metrics migration 0007 + sqlc queries + cachemetrics.Store + narrow CacheMetricStore + sibling persist seam + db_integration test (D-02/D-02a, wave 3)
 - [ ] 06-04-PLAN.md — cmd/aura cache-stats (--since window) + hidden cache-audit (20-turn runner.Turn replay against FakeClient) + in-memory fakes + fixtures + Go-level SC#5 negative test (D-04/D-05/D-06/D-06a, wave 4)
@@ -347,7 +347,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 3. LLM Client + ToolResult | 5/5 | Complete   | 2026-05-30 |
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
 | 5. Sandbox 2a Stateless | 3/4 | In Progress|  |
-| 6. KV Cache Builder | 0/5 | Not started | - |
+| 6. KV Cache Builder | 1/5 | In Progress|  |
 | 7. Web Tools | 0/TBD | Not started | - |
 | 8. Sandbox 2b Session-Bound | 0/TBD | Not started | - |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
