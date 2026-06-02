@@ -117,11 +117,12 @@ before any production arm64 deployment.** It is NOT a per-merge gate.
 
 | Sub-metric | Target | Last measured | Last value |
 |---|---|---|---|
-| `internal/web` unit-tier coverage | (combined ≥85%) | 2026-06-02 | 75.5% (unit only; integration tier adds the live search/fetch paths) |
-| `internal/web` combined coverage (unit + `web_integration`) | ≥ 85% | pending @ Gate-3 | pending @ Gate-3 |
-| `internal/web/ssrf.go` mutation (go-mutesting, killed) | ≥ 70% | pending @ Gate-3 | pending @ Gate-3 |
-| Live `aura web tool web_search` p95 (SC#1) | ≤ 2s | pending @ Gate-3 | pending @ Gate-3 |
+| `internal/web` unit-tier coverage | (combined ≥85%) | 2026-06-02 | 76.0% (unit only) |
+| `internal/web` combined coverage (unit + `web_integration`) | ≥ 85% | 2026-06-02 | 77.3% — BELOW FLOOR; blocked by the SC#2 raw-HTML-cap bug (fetch-live success paths uncovered until the cap moves to extracted markdown) |
+| `internal/web/ssrf.go` mutation (go-mutesting, killed) | ≥ 70% | 2026-06-02 | 94.4% (17/18; lone survivor is the unreachable metadataV6Pfx dead branch) |
+| Live `aura web tool web_search` p95 (SC#1) | ≤ 2s | 2026-06-02 | TestSearch_Live PASS ~0.86–1.59s; raw SearXNG round-trip 0.47–3.0s on the shared mini-PC (borderline vs the 2s target under load) |
 | SC#3 SSRF block smoke (`scripts/ssrf_smoke.sh`) | 4/4 blocked, grep-clean | 2026-06-02 | 4/4 blocked_url, grep-clean |
+| SC#2 live `web_fetch` clean markdown | clean MD, no chrome | 2026-06-02 | PARTIAL — example.com (528B) returns clean markdown; en.wikipedia.org/wiki/Knowledge_graph (164KB raw HTML) FAILS as response_too_large (raw-HTML cap = AURA_WEB_RESPONSE_CAP_BYTES 24000, applied pre-extraction) |
 
 ---
 
