@@ -72,6 +72,14 @@ func (r *DockerRunner) RunShell(ctx context.Context, cmd string, timeoutSec int)
 	return r.exec(ctx, "shell", cmd, timeoutSec)
 }
 
+func (r *DockerRunner) RunPythonSession(ctx context.Context, sessionID, code string, timeoutSec int) (Result, error) {
+	return r.sessionExec(ctx, sessionID, "python", code, timeoutSec)
+}
+
+func (r *DockerRunner) RunShellSession(ctx context.Context, sessionID, cmd string, timeoutSec int) (Result, error) {
+	return r.sessionExec(ctx, sessionID, "shell", cmd, timeoutSec)
+}
+
 // wireRequest is the D-16 request body. The same effective timeout marshalled here
 // is the one the call ctx deadline uses, so the sidecar's subprocess timeout and
 // the runner's deadline agree.
@@ -90,13 +98,27 @@ type wireResponse struct {
 	LimitHit  string `json:"limit_hit"`
 }
 
-// exec is the shared per-call path. It resolves+clamps the timeout, derives the
-// call ctx deadline from it, POSTs {code,timeout_sec}, and on a transport failure
-// attempts ONE docker-CLI-gated auto-start then a single retry. A non-2xx or
-// undecodable body is ErrSandboxProtocol; an unrecoverable transport failure is
+// exec is the stateless 2a per-call path: POST /exec/{lang}.
+func (r *DockerRunner) exec(ctx context.Context, lang, code string, timeoutSec int) (Result, error) {
+	return r.execPath(ctx, "/exec/"+lang, code, timeoutSec)
+}
+
+// sessionExec is the 2b session-bound per-call path: POST /session/{id}/exec/{lang}.
+// Execution stays HTTP (D-05); the session's container lifecycle is the
+// SessionManager's (08-05), NEVER driven here. It reuses execPath so the
+// timeout/decode/error-taxonomy is identical to the stateless path.
+func (r *DockerRunner) sessionExec(ctx context.Context, sessionID, lang, code string, timeoutSec int) (Result, error) {
+	return r.execPath(ctx, "/session/"+sessionID+"/exec/"+lang, code, timeoutSec)
+}
+
+// execPath is the shared per-call path for both the stateless and session-bound
+// routes. It resolves+clamps the timeout, derives the call ctx deadline from it,
+// POSTs {code,timeout_sec} to path, and on a transport failure attempts ONE
+// docker-CLI-gated auto-start then a single retry. A non-2xx or undecodable body
+// is ErrSandboxProtocol; an unrecoverable transport failure is
 // ErrSandboxUnreachable. A non-zero exit_code is a normal Result, never an error
 // (D-18).
-func (r *DockerRunner) exec(ctx context.Context, lang, code string, timeoutSec int) (Result, error) {
+func (r *DockerRunner) execPath(ctx context.Context, path, code string, timeoutSec int) (Result, error) {
 	effective := r.effectiveTimeout(timeoutSec)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(effective)*time.Second+responseGrace)
 	defer cancel()
@@ -106,24 +128,24 @@ func (r *DockerRunner) exec(ctx context.Context, lang, code string, timeoutSec i
 		return Result{}, err
 	}
 
-	resp, err := r.post(ctx, lang, body)
+	resp, err := r.post(ctx, path, body)
 	if err != nil {
 		// Transport failure: one best-effort auto-start, then a single retry.
 		r.autoStart(ctx)
-		resp, err = r.post(ctx, lang, body)
+		resp, err = r.post(ctx, path, body)
 		if err != nil {
-			return Result{}, fmt.Errorf("sandbox POST /exec/%s: %v: %w", lang, err, ErrSandboxUnreachable)
+			return Result{}, fmt.Errorf("sandbox POST %s: %v: %w", path, err, ErrSandboxUnreachable)
 		}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode/100 != 2 {
-		return Result{}, fmt.Errorf("sandbox /exec/%s returned status %d: %w", lang, resp.StatusCode, ErrSandboxProtocol)
+		return Result{}, fmt.Errorf("sandbox %s returned status %d: %w", path, resp.StatusCode, ErrSandboxProtocol)
 	}
 
 	var wr wireResponse
 	if derr := json.NewDecoder(resp.Body).Decode(&wr); derr != nil {
-		return Result{}, fmt.Errorf("sandbox /exec/%s decode: %v: %w", lang, derr, ErrSandboxProtocol)
+		return Result{}, fmt.Errorf("sandbox %s decode: %v: %w", path, derr, ErrSandboxProtocol)
 	}
 	return Result{
 		Stdout:    wr.Stdout,
@@ -150,8 +172,8 @@ func (r *DockerRunner) effectiveTimeout(timeoutSec int) int {
 	return timeoutSec
 }
 
-func (r *DockerRunner) post(ctx context.Context, lang string, body []byte) (*http.Response, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url+"/exec/"+lang, bytes.NewReader(body))
+func (r *DockerRunner) post(ctx context.Context, path string, body []byte) (*http.Response, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url+path, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

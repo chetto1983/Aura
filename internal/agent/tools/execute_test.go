@@ -16,6 +16,7 @@ type fakeRunner struct {
 	res        sandbox.Result
 	err        error
 	gotLang    string
+	gotSession string
 	gotCode    string
 	gotTimeout int
 }
@@ -27,6 +28,20 @@ func (f *fakeRunner) RunPython(_ context.Context, code string, timeoutSec int) (
 
 func (f *fakeRunner) RunShell(_ context.Context, cmd string, timeoutSec int) (sandbox.Result, error) {
 	f.gotLang, f.gotCode, f.gotTimeout = "shell", cmd, timeoutSec
+	return f.res, f.err
+}
+
+// RunPythonSession/RunShellSession satisfy the 2b session-bound Runner surface.
+// The 2a execute tool does not call them yet (session_id is still inert until
+// 08-08), so they record the session for any future test and replay the canned
+// Result — keeping this double a complete sandbox.Runner.
+func (f *fakeRunner) RunPythonSession(_ context.Context, sessionID, code string, timeoutSec int) (sandbox.Result, error) {
+	f.gotLang, f.gotSession, f.gotCode, f.gotTimeout = "python", sessionID, code, timeoutSec
+	return f.res, f.err
+}
+
+func (f *fakeRunner) RunShellSession(_ context.Context, sessionID, cmd string, timeoutSec int) (sandbox.Result, error) {
+	f.gotLang, f.gotSession, f.gotCode, f.gotTimeout = "shell", sessionID, cmd, timeoutSec
 	return f.res, f.err
 }
 

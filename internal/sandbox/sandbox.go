@@ -12,9 +12,18 @@ import (
 // the CLI/tool expose an optional timeout — so the value must reach the runner.
 // A timeoutSec <= 0 means "use the config default"; the runner then clamps to
 // <=600 (the cap is runner-side, not in config).
+//
+// The Run{Python,Shell}Session methods are the 2b session-bound additions: they
+// carry a sessionID so the sidecar routes to its long-lived per-session namespace
+// (python) / per-session cwd (shell) — see sandbox/sidecar.py /session/{id}/exec.
+// They are ADDITIVE: the stateless 2a methods + callers (execute.go, exec.go) are
+// unchanged. The session lifecycle (container create/reap) is the SessionManager's
+// (08-05); these methods only drive HTTP exec against an already-live session.
 type Runner interface {
 	RunPython(ctx context.Context, code string, timeoutSec int) (Result, error)
 	RunShell(ctx context.Context, cmd string, timeoutSec int) (Result, error)
+	RunPythonSession(ctx context.Context, sessionID, code string, timeoutSec int) (Result, error)
+	RunShellSession(ctx context.Context, sessionID, cmd string, timeoutSec int) (Result, error)
 }
 
 // Result is the D-16 wire response decoded 1:1. The four original fields
