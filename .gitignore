@@ -52,6 +52,11 @@ cover_phase2.out
 #   mutation campaign — keep them untrackable.
 **/testdata/rapid/
 *.go.tmp
+#   go test -coverprofile outputs, gremlins/go-mutesting run reports, and live
+#   soak logs are local evidence, not source — keep them out of the tree.
+/report.json
+/phase071_agent_llm
+docs/*-live-soak-*.log
 
 # Claude Code: GSD installation is committed (vedi CLAUDE.md §GSD tooling).
 # Local cache/sessions transient are excluded.
