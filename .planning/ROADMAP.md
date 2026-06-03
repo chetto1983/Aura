@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin) (completed 2026-06-02)
 - [x] **Phase 07.1: Agent-Loop Forced Finalization** (INSERTED) - loop must always return a final answer; forced-finalization on budget/dedup trip + dedup recovery + fan-out budget block (completed 2026-06-03)
 - [x] **Phase 8: Sandbox via sandbox-agent (local container)** - REPLACES bespoke Slice 2a/2b (D-15 pivot). Single non-deferred `sandbox_exec` tool → `internal/sandboxagent.Client` POSTs to rivetdev/sandbox-agent on loopback (`127.0.0.1:2468`); operator starts it with `make sandbox-up` (no boot provision). Code-sandbox-mcp cut superseded. CAP-01+CAP-02. (completed 2026-06-03)
-- [ ] **Phase 08.1: Tool Search hardening — Anthropic defer_loading parity** (INSERTED) - upgrade `tool_search` to defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) over name+description+arg fields, MCP tool namespacing, ≥1-non-deferred guard — matters as tool count grows (Phase 11 skills/7e snippets + future stdio MCP mounts via the retained `mcptools` seam) toward the 30-50 selection-accuracy threshold
+- [x] **Phase 08.1: Tool Search hardening — Anthropic defer_loading parity** (INSERTED) - upgrade `tool_search` to defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) over name+description+arg fields, MCP tool namespacing, ≥1-non-deferred guard — matters as tool count grows (Phase 11 skills/7e snippets + future stdio MCP mounts via the retained `mcptools` seam) toward the 30-50 selection-accuracy threshold (completed 2026-06-03)
 - [ ] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance
 - [ ] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat
 - [ ] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger
@@ -248,7 +248,7 @@ Plans:
 **Goal:** Harden the in-process `tool_search` hook to Anthropic `defer_loading` parity so tool-selection accuracy stays high as the catalog grows past the 30-50-tool degradation threshold: BM25 ranking over an expanded index (name + description + recursive arg names/descriptions), a `max_results` top-K cap (default 5), `<server>__<tool>` MCP namespacing with sanitize + 64B cap + collision hash, a registry-derived dynamic source-orientation in the `tool_search` Description, and a >=1-non-deferred fail-closed guard - all in-process, stdlib-only, cache-safe (no `SystemPrompt`/`Render()` order changes).
 **Requirements**: D-01..D-10 (CONTEXT.md decisions; no REQUIREMENTS.md IDs map to this inserted phase)
 **Depends on:** Phase 8
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 Plans:
 **Wave 1**
 
@@ -257,7 +257,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 08.1-02-PLAN.md - registry-derived dynamic tool_search Description (D-09) + >=1-non-deferred Validate() boot guard (D-10) + cache-invariant re-verification
+- [x] 08.1-02-PLAN.md - registry-derived dynamic tool_search Description (D-09) + >=1-non-deferred Validate() boot guard (D-10) + cache-invariant re-verification
 
 ### Phase 9: Swarm (Minimal)
 
