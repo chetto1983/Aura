@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill
+.PHONY: help tools sqlc lint vet vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill sandbox-up
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -34,6 +34,7 @@ help:
 	@echo "make neo4j-reset   — DESTRUCTIVE: drop all indexes + MATCH (n) DETACH DELETE (dev only, AURA_RESET_YES=1)"
 	@echo "make smoke         — scripts/neo4j_smoke.sh (Italian recall@5 5/5 + p95 <= 30ms)"
 	@echo "make restore-drill — scripts/restore_drill.sh (pg_dump -> pg_restore, asserts < 90s)"
+	@echo "make sandbox-up    — start local aura-sandbox-agent container on 127.0.0.1:2468"
 
 # Bootstrap the quality toolchain into $GOPATH/bin. golangci-lint is pinned to the
 # CI version (.github/workflows/ci.yml) for local/CI parity; the rest track latest.
@@ -125,3 +126,10 @@ smoke: neo4j-migrate
 
 restore-drill: db-up
 	bash scripts/restore_drill.sh
+
+sandbox-up:
+	@docker image inspect aura-sandbox-agent:py3 >/dev/null 2>&1 || { echo "missing local image aura-sandbox-agent:py3; preload/install the bundled sandbox image first (no online pull)"; exit 1; }
+	docker compose up -d aura-sandbox-agent
+	@echo "Waiting for aura-sandbox-agent healthy..."
+	@until docker inspect -f "{{.State.Health.Status}}" aura-sandbox-agent 2>/dev/null | grep -q healthy; do sleep 1; done
+	@echo "ok"

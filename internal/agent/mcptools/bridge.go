@@ -1,8 +1,8 @@
 // Package mcptools bridges a generic MCP server's tools into Aura's agent tool
 // registry: it lists the server's tools (tools/list) and adapts each to a
 // tools.Tool whose Execute routes through the MCP client's tools/call. This is the
-// platform seam — mount any stdio MCP server (code-sandbox-mcp first) and its
-// tools become first-class agent tools, cache-friendly (Deferred) and spill-aware
+// platform seam: mount any stdio MCP server and its tools become first-class
+// agent tools, cache-friendly (Deferred) and spill-aware
 // (results flow through tools.NewResult).
 //
 // It depends on both internal/mcp (transport) and internal/agent/tools (the agent
@@ -61,10 +61,8 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 
 // Bridge lists srv's tools and adapts each to a tools.Tool. Bridged tools are
 // NOT Deferred: an MCP tool typically has a short description + a small argument
-// schema, and the model MUST see that schema to call the tool correctly (e.g.
-// code-sandbox-mcp's sandbox_exec needs container_id + commands — a live run with
-// these deferred had the model guess wrong args and report "the schema defines no
-// params"). Putting the full JSON-Schema in the manifest is the small, correct cost
+// schema, and the model MUST see that schema to call the tool correctly. Putting
+// the full JSON-Schema in the manifest is the small, correct cost
 // for a tool the agent actually invokes. The server's inputSchema passes through as
 // Parameters unchanged.
 func Bridge(ctx context.Context, srv Server) ([]tools.Tool, error) {

@@ -84,18 +84,48 @@ services:
       retries: 12
       start_period: 60s                        # first-boot HF model download
 
-  # ↓↓ Slice 5 (Phase 7) — SearXNG meta-search, NO host port (D-02/D-03/D-04) ↓↓
-  # The web_search backend. Reached ONLY in-network as http://searxng:8080/search
-  # (D-02): the deliberate absence of a `ports:` key (every other service publishes
-  # a 127.0.0.1 host port) is the access control — SearXNG is unreachable from the
-  # host while still egressing to the public internet via the aura-web bridge (D-03,
-  # T-07-01). The image's Granian entrypoint binds :8080 (verified against the
-  # pinned tag; the file's default 8888 is overridden by GRANIAN_PORT).
+  # Local sandbox-agent container. Aura talks to this over 127.0.0.1 only via
+  # AURA_SANDBOX_AGENT_URL; the sandbox itself sits on a non-masquerading Docker
+  # bridge so process code has no public internet egress. No Docker socket is mounted.
+  # Built from rivetdev/sandbox-agent + python3 (docker/sandbox-agent/Dockerfile):
+  # the base "-full" tag ships node but not python3, so sandbox_exec can use the
+  # preloaded local aura-sandbox-agent:py3 image without an online pull.
+  aura-sandbox-agent:
+    build:
+      context: ./docker/sandbox-agent
+    image: aura-sandbox-agent:py3
+    pull_policy: never
+    container_name: aura-sandbox-agent
+    restart: unless-stopped
+    command: ["server", "--no-token", "--no-telemetry", "--host", "0.0.0.0", "--port", "2468"]
+    working_dir: /workspace
+    ports:
+      - "127.0.0.1:${AURA_SANDBOX_AGENT_PORT:-2468}:2468"
+    volumes:
+      - aura-sandbox-agent:/workspace
+    networks:
+      - aura-sandbox-local
+    mem_limit: 2g
+    cpus: 2.0
+    pids_limit: 256
+    security_opt:
+      - "no-new-privileges:true"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:2468/v1/health >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Local SearXNG backend. Aura talks to this over 127.0.0.1 only via
+  # SEARXNG_URL; the container sits on a non-masquerading Docker bridge, matching
+  # aura-sandbox-agent's no-public-egress local-container posture.
   searxng:
     image: searxng/searxng:2026.5.31-7159b8aed
     container_name: aura-searxng
     restart: unless-stopped
-    # NO ports: — internal-only (D-03). Do NOT add a host port mapping.
+    ports:
+      - "127.0.0.1:${AURA_SEARXNG_PORT:-18080}:8080"
     volumes:
       # Read-only so a compromised container cannot rewrite its own config (D-04,
       # T-07-02). The entrypoint leaves an existing target untouched (it only
@@ -115,9 +145,15 @@ volumes:
   aura-neo4j:
   aura-neo4j-plugins:
   aura-llama-embed:
+  aura-sandbox-agent:
 
 networks:
-  # Shared app network so SearXNG egresses to the public internet without a host
-  # port (D-03). The Aura process joins this network to reach http://searxng:8080.
+  aura-sandbox-local:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"
+  # Local SearXNG bridge: host-loopback published, no Docker NAT masquerade.
   aura-web:
     driver: bridge
+    driver_opts:
+      com.docker.network.bridge.enable_ip_masquerade: "false"

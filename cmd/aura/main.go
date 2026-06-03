@@ -24,6 +24,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/chetto1983/aura/internal/web"
 )
 
@@ -70,15 +71,17 @@ func usage() {
 }
 
 func buildRegistry() *tools.Registry {
+	cfg := config.LoadDB()
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
-	webEngine := web.NewClient(config.LoadDB())
+	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
+	reg.Register(&tools.SandboxExec{Runner: sandboxagent.New(cfg.SandboxAgent)})
 	return reg
 }
 

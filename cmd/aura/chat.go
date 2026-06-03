@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
@@ -35,6 +34,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -54,15 +54,10 @@ type chatEnv struct {
 	identity *identity.Store
 	run      *runner.Runner
 	client   llm.Client
-	mcpClose func() error
 }
 
-// close shuts the mounted MCP server(s) down (goleak-clean: stops the code-sandbox-mcp
-// subprocess) then releases the pool (the OTel TracerProvider is owned by the REPL path).
+// close releases the pool (the OTel TracerProvider is owned by the REPL path).
 func (e *chatEnv) close() {
-	if e.mcpClose != nil {
-		_ = e.mcpClose()
-	}
 	if e.pool != nil {
 		e.pool.Close()
 	}
@@ -142,18 +137,7 @@ func bootChat(ctx context.Context) *chatEnv {
 		fmt.Fprintln(os.Stderr, "warn: tiktoken init:", err)
 	}
 
-	// Sandbox via code-sandbox-mcp (D-15): auto-provision the binary (no operator
-	// install), spawn it over stdio, and mount sandbox_* into the agent registry.
-	// Degrade clean — if the MCP server cannot start (no docker / offline), chat still
-	// serves non-code turns; code execution is simply unavailable this session.
 	reg := buildChatRegistry(cfg)
-	mcpClose, sbx, mErr := mcptools.MountCodeSandbox(ctx, reg, "")
-	if mErr != nil {
-		fmt.Fprintln(os.Stderr, "warn: sandbox unavailable (code execution disabled this session):", mErr)
-		mcpClose = func() error { return nil }
-	} else {
-		fmt.Fprintf(os.Stderr, "sandbox ready: %d tools via code-sandbox-mcp\n", len(sbx))
-	}
 
 	client := openai_compat.New(cfg.LLM)
 	run := runner.New(runner.Deps{
@@ -168,13 +152,11 @@ func bootChat(ctx context.Context) *chatEnv {
 		PreviewCap:   cfg.ToolPreviewCap,
 		EvictAfter:   cfg.ContextToolEvictAfterTurns,
 	})
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, mcpClose: mcpClose}
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client}
 }
 
 // buildChatRegistry builds the agent tool registry for the chat REPL: the built-in
-// tools + web tools. Sandbox code-execution tools are NOT registered here — they are
-// mounted at boot from code-sandbox-mcp via mcptools.MountCodeSandbox (D-15), so they
-// exist only when the MCP server is available (degrade-clean otherwise).
+// tools + web tools + the local sandbox-agent execution tool.
 func buildChatRegistry(cfg *config.Config) *tools.Registry {
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
@@ -185,6 +167,7 @@ func buildChatRegistry(cfg *config.Config) *tools.Registry {
 	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine})
+	reg.Register(&tools.SandboxExec{Runner: sandboxagent.New(cfg.SandboxAgent)})
 	return reg
 }
 

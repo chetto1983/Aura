@@ -18,6 +18,7 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/joho/godotenv"
 )
 
@@ -33,6 +34,7 @@ type Config struct {
 	DB             db.Config
 	Neo4j          knowledge.Config // Slice 0.7 — graph + vector + embed sidecar wiring
 	LLM            llm.Config       // Slice 1 — OpenAI-compat client + load-order chain (D-22)
+	SandboxAgent   sandboxagent.Config
 	RunDir         string
 	ToolPreviewCap int
 	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
@@ -45,16 +47,16 @@ type Config struct {
 	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — L2.5 picobot hard rolling buffer cap
 	RunDirWarnThresholdBytes   int // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
 
-	// Sandbox knobs were removed with the D-15 pivot: the bespoke sidecar/session
-	// runner is gone, replaced by code-sandbox-mcp mounted via the generic MCP
-	// bridge (it owns its own container lifecycle; Aura passes no sandbox config).
+	// Sandbox execution is provided by a local sandbox-agent container on loopback.
+	// Aura does not download sandbox binaries at boot and does not call an online
+	// sandbox service.
 
 	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
 	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
 	// surfaced as web_search_unavailable{searxng_not_configured} at call time
 	// (D-05/D-06) so `aura db migrate` and every non-web subcommand keep working.
 	// No allowlist/loopback escape hatch lands here (D-30).
-	SearxngURL           string // SEARXNG_URL — in-network base, e.g. http://searxng:8080/search (D-02); empty default, fail-closed at call time
+	SearxngURL           string // SEARXNG_URL — local SearXNG /search endpoint; empty default, fail-closed at call time
 	WebDNSPinTTLSec      int    // AURA_WEB_DNS_PIN_TTL_SEC — per-conversation DNS pin TTL (D-25)
 	WebFetchMaxBodyBytes int    // AURA_WEB_FETCH_MAX_BODY_BYTES — raw HTTP response body download ceiling (DoS guard); the LLM-facing markdown preview/spillover is governed by the agent tool-result preview cap (tools.NewResult), NOT this field
 	WebCachePersistent   bool   // AURA_WEB_CACHE_PERSISTENT — opt-in disk cache; default false = in-memory (D-32)
@@ -135,6 +137,10 @@ func loadBase() *Config {
 			ConnectTimeoutSec: envIntDefault("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", 10),
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", 768),
+		},
+		SandboxAgent: sandboxagent.Config{
+			BaseURL:    envDefault("AURA_SANDBOX_AGENT_URL", sandboxagent.DefaultBaseURL),
+			TimeoutSec: envIntDefault("AURA_SANDBOX_AGENT_TIMEOUT_SEC", sandboxagent.DefaultTimeoutSec),
 		},
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),

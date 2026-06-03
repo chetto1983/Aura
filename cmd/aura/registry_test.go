@@ -34,3 +34,10 @@ func TestBuildRegistry_CoreToolsPresent(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildRegistry_RegistersSandboxExec(t *testing.T) {
+	reg := buildRegistry()
+	if _, ok := reg.Get("sandbox_exec"); !ok {
+		t.Fatal("production registry is missing sandbox_exec backed by the local sandbox-agent container")
+	}
+}

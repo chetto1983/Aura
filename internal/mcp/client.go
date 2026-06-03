@@ -1,8 +1,8 @@
 // Package mcp is a generic stdio MCP (Model Context Protocol) client: it spawns
 // any MCP server that speaks JSON-RPC 2.0 over newline-delimited stdio, performs
 // the initialize handshake, and exposes tools/list + tools/call. It is the reusable
-// substrate behind Aura's MCP→agent-tool bridge — point it at code-sandbox-mcp,
-// or any other stdio MCP server declared in the mcpServers config.
+// substrate behind Aura's MCP-to-agent-tool bridge for stdio MCP servers declared
+// in the mcpServers config.
 //
 // It generalizes the single-purpose mcp-neo4j-cypher client (internal/knowledge):
 // the framing (one JSON object per line, serialized via mu since a stdio pipe pair
@@ -27,8 +27,7 @@ import (
 	"sync/atomic"
 )
 
-// protocolVersion is the MCP revision Aura negotiates. code-sandbox-mcp and
-// mcp-neo4j-cypher both accept it (probed 2026-06-03).
+// protocolVersion is the MCP revision Aura negotiates.
 const protocolVersion = "2024-11-05"
 
 // ServerConfig declares how to launch one stdio MCP server (Claude-Desktop shape).

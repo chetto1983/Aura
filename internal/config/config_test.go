@@ -24,6 +24,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE",
 		"AURA_LLM_MAX_TOKENS", "AURA_LLM_TOTAL_TIMEOUT_SEC", "AURA_LLM_CONNECT_TIMEOUT_SEC",
 		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT",
+		"AURA_SANDBOX_AGENT_URL", "AURA_SANDBOX_AGENT_TIMEOUT_SEC",
 		"SEARXNG_URL", "AURA_WEB_DNS_PIN_TTL_SEC", "AURA_WEB_FETCH_MAX_BODY_BYTES",
 		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
 		"AURA_WEB_FETCH_TIMEOUT_SEC", "AURA_WEB_USER_AGENT",
@@ -34,6 +35,28 @@ func clearPostgresEnv(t *testing.T) {
 	// Non-empty key so the composed llm.Load() succeeds; the LLM-specific
 	// load-order is unit-tested in internal/llm/config_test.go.
 	t.Setenv("OPENROUTER_API_KEY", "sk-test-config")
+}
+
+func TestLoad_SandboxAgentDefaultsAndOverrides(t *testing.T) {
+	clearPostgresEnv(t)
+
+	cfg := LoadDB()
+	if cfg.SandboxAgent.BaseURL != "http://127.0.0.1:2468" {
+		t.Errorf("SandboxAgent.BaseURL default = %q, want loopback sandbox-agent", cfg.SandboxAgent.BaseURL)
+	}
+	if cfg.SandboxAgent.TimeoutSec != 30 {
+		t.Errorf("SandboxAgent.TimeoutSec default = %d, want 30", cfg.SandboxAgent.TimeoutSec)
+	}
+
+	t.Setenv("AURA_SANDBOX_AGENT_URL", "http://127.0.0.1:3333")
+	t.Setenv("AURA_SANDBOX_AGENT_TIMEOUT_SEC", "45")
+	cfg = LoadDB()
+	if cfg.SandboxAgent.BaseURL != "http://127.0.0.1:3333" {
+		t.Errorf("SandboxAgent.BaseURL override = %q", cfg.SandboxAgent.BaseURL)
+	}
+	if cfg.SandboxAgent.TimeoutSec != 45 {
+		t.Errorf("SandboxAgent.TimeoutSec override = %d", cfg.SandboxAgent.TimeoutSec)
+	}
 }
 
 // TestLoadDB_NoLLMKeyRequired is the CI regression for the db-migrate coupling:
