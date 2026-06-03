@@ -128,6 +128,35 @@ before any production arm64 deployment.** It is NOT a per-merge gate.
 
 ---
 
+## Phase 8 sandbox-2b session-bound detail
+
+> Populated by the Phase 8 Gate-3 checkpoint (08-09 Task 3). The live cells require
+> the gating DinD job `.github/workflows/sandbox.yml` job `sandbox-2b-session-gate`
+> (Postgres migrated through 0008 + the sidecar + the egress bridge/proxy at the
+> bridge gateway) — none available in the authoring environment, so they are
+> **CI/live-populated** at the human-verify Gate-3. The job FAILS the merge if any
+> 2b criterion test red, the live egress reachability spike fails (landmine #3), a
+> critical-file mutation score < 70%, or the folded coverage < 85%.
+
+| Sub-metric | Target | Last measured | Last value |
+|---|---|---|---|
+| 2b session live tier green (4 ROADMAP criteria, `sandbox_integration && db_integration`, race) | all PASS, no skip tell | CI/live-populated (pending @ Gate-3) | authored + compile-green under tags (vet+build+test-compile exit 0, 2026-06-03); live PASS pending Task-3 |
+| Landmine-3 egress-bridge reachability spike (`TestNetwork_PyPIAllowed`: pip→pypi via host proxy at bridge gateway) | pip install succeeds | CI/live-populated (pending @ Gate-3) | pending Task-3 (a red here proves the bridge/seccomp posture wrong — fix posture, not test) |
+| `internal/sandbox/network.go` mutation (go-mutesting, killed) | ≥ 70% | CI-populated (pending @ Gate-3) | pending Task-3 |
+| `internal/scoring/scoring.go` mutation (go-mutesting, killed) | ≥ 70% | CI-populated (pending @ Gate-3) | pending Task-3 |
+| `internal/sandbox/sessions.go` mutation (go-mutesting, killed) | ≥ 70% | CI-populated (pending @ Gate-3) | pending Task-3 |
+| Owned-surface coverage gate (`internal/*`, sandbox+scoring folded, all tags) | ≥ 85% | CI-populated (pending @ Gate-3) | pending Task-3 |
+
+**AR-05-01 EXTENSION (2b egress posture) — recorded in `08-SECURITY.md`:** the session
+container runs a connect-ALLOWING seccomp variant (`sandbox/seccomp-session.json`)
+because egress is contained host-side by the forward proxy (D-08); the proxy is reached
+at the BRIDGE GATEWAY IP, not container `127.0.0.1`; an empty allowlist keeps the 2a
+egressless posture. The live reachability spike (`TestNetwork_PyPIAllowed`) is the gate.
+The Claude-Code allowlist-bypass / data-exfil caveat is accepted-with-mitigation as
+**AR-08-01** (egressless default + Risky risk-score + privacy-mode fail-fast).
+
+---
+
 ## References
 
 - `prd.md` Slice 11a acceptance + Slice 11d acceptance (HNSW M=32 + CI gate inclusion) — amendment #20 anchor sites.

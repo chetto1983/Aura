@@ -30,7 +30,9 @@ on:
     branches: [ "master", "main", "tabula-rasa" ]
     paths:
       - "internal/sandbox/**"
+      - "internal/scoring/**"
       - "internal/agent/tools/execute.go"
+      - "internal/db/migrations/0008_sandbox_sessions.*.sql"
       - "sandbox/**"
       - "compose.yaml"
       - "compose.gvisor.yaml"
@@ -40,7 +42,9 @@ on:
     branches: [ "master", "main", "tabula-rasa" ]
     paths:
       - "internal/sandbox/**"
+      - "internal/scoring/**"
       - "internal/agent/tools/execute.go"
+      - "internal/db/migrations/0008_sandbox_sessions.*.sql"
       - "sandbox/**"
       - "compose.yaml"
       - "compose.gvisor.yaml"
@@ -55,6 +59,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ---------------------------------------------------------------------------------
+  # Slice 2a gating job (CAP-01): the stateless boundary proof — runsc/userns/bench/
+  # arm64 + docker.go mutation. Unchanged by 2b.
+  # ---------------------------------------------------------------------------------
   sandbox-gate:
     name: Sandbox DinD gate (runsc + userns-remap + bench + mutation + arm64)
     runs-on: ubuntu-latest
@@ -223,3 +231,184 @@ jobs:
       - name: Teardown
         if: always()
         run: docker compose -f compose.yaml -f compose.gvisor.yaml down -v || true
+
+  # ---------------------------------------------------------------------------------
+  # Slice 2b gating job (CAP-02): the SESSION-BOUND live tier. It brings up Postgres
+  # (migrated through 0008) AND the sidecar, then runs the 2b session/workspace/network
+  # sandbox_integration + db_integration tiers (the 4 ROADMAP criteria + the 0008
+  # round-trip), the LIVE egress leg (pypi allowed, non-allowlist refused — the
+  # landmine-3 bridge-gateway reachability spike), go-mutesting on the three
+  # security/decision-critical files (network.go/scoring.go/sessions.go, >=70% killed),
+  # and folds the sandbox+scoring surface into the 85% coverage gate. CI=true arms the
+  # no-skip-as-green guards: an unset DSN / AURA_SANDBOX_* / egress var t.Fatals, so a
+  # skipped tier FAILS the gate rather than passing green.
+  sandbox-2b-session-gate:
+    name: Sandbox 2b session DinD gate (sessions + workspace + egress + mutation + coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      # No-skip-as-green: these are the EXACT names the 2b tiers read.
+      CI: "true"
+      AURA_SANDBOX_URL: "http://127.0.0.1:18901"
+      AURA_SANDBOX_TIMEOUT_SEC: "30"
+      AURA_SANDBOX_RUNTIME: "runsc"
+      AURA_SANDBOX_CONTAINER: "aura-sandbox"
+      AURA_SANDBOX_SESSION_IMAGE: "aura-sandbox:ci"
+      AURA_RUN_DIR: "/tmp/aura-run"
+      # Egress wiring (criterion 4 + landmine-3 reachability spike). The session
+      # container reaches the host proxy at the BRIDGE GATEWAY IP, never 127.0.0.1.
+      AURA_SANDBOX_NETWORK_ALLOW_HOSTS: "pypi.org,files.pythonhosted.org"
+      AURA_SANDBOX_EGRESS_NETWORK: "aura-sandbox-egress"
+      AURA_SANDBOX_SESSION_SECCOMP: "sandbox/seccomp-session.json"
+      # The proxy listen + bridge-gateway address are resolved at runtime in the
+      # "Start egress proxy" step (the gateway IP is bridge-create-dependent); the
+      # step exports AURA_SANDBOX_PROXY_ENV into $GITHUB_ENV before the egress tests.
+      # Composed role DSNs the db_integration tier reads directly (envOrSkip).
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      # compose.yaml parses the whole file (neo4j ${VAR:?} fail-fast guards).
+      NEO4J_PASSWORD: ci-test-password
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # gVisor runsc + userns-remap daemon.json (same as the 2a job — the session
+      # containers docker-run under --runtime=runsc with the full 2a hardening flags).
+      - name: Install gVisor runsc (Google apt repo, GPG-signed)
+        run: |
+          set -euo pipefail
+          curl -fsSL https://gvisor.dev/archive.key \
+            | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+            | sudo tee /etc/apt/sources.list.d/gvisor.list
+          sudo apt-get update
+          sudo apt-get install -y runsc
+          runsc --version
+
+      - name: Write inner daemon.json (userns-remap + runsc) and restart dockerd
+        run: |
+          set -euo pipefail
+          sudo runsc install
+          sudo tee /etc/docker/daemon.json >/dev/null <<'JSON'
+          {
+            "userns-remap": "default",
+            "no-new-privileges": true,
+            "runtimes": { "runsc": { "path": "/usr/bin/runsc" } }
+          }
+          JSON
+          sudo systemctl restart docker
+          docker info --format '{{range .SecurityOptions}}{{println .}}{{end}}' | grep -q 'name=userns' \
+            || { echo "FATAL: userns-remap not live in dockerd"; exit 1; }
+          echo "userns-remap: LIVE"
+
+      # Postgres up + migrated through 0008 (the db_integration tier + the 0008
+      # round-trip + boot recovery need the live registry).
+      - name: Bring up Postgres + migrate (through 0008_sandbox_sessions)
+        run: |
+          set -euo pipefail
+          make db-up
+          go run ./cmd/aura db migrate
+
+      # The baked sidecar image is BOTH the compose sidecar AND the per-session image
+      # the SessionManager docker-runs (AURA_SANDBOX_SESSION_IMAGE=aura-sandbox:ci).
+      - name: Build aura-sandbox image (tag :ci for the session containers)
+        run: |
+          set -euo pipefail
+          docker build -t aura-sandbox:ci ./sandbox
+          mkdir -p "$AURA_RUN_DIR"
+
+      - name: Start aura-sandbox sidecar (gVisor overlay, x86 runsc)
+        run: |
+          set -euo pipefail
+          docker compose -f compose.yaml -f compose.gvisor.yaml up -d --build aura-sandbox
+          for i in $(seq 1 30); do
+            if docker compose ps --format json aura-sandbox | grep -q '"Health":"healthy"'; then echo "healthy"; break; fi
+            sleep 2
+            if [ "$i" -eq 30 ]; then echo "FATAL: sidecar never healthy"; docker compose logs aura-sandbox; exit 1; fi
+          done
+
+      # --- the egress bridge + host forward proxy (landmine #3 reachability) ---------
+      # Create the egress bridge the session containers attach to, discover its gateway
+      # IP, start the host CONNECT proxy bound on that gateway, and export the proxy env
+      # the SessionManager injects into the container (HTTP(S)_PROXY at the gateway IP,
+      # NOT 127.0.0.1 which is container-local).
+      - name: Create egress bridge + start host forward proxy at the bridge gateway
+        run: |
+          set -euo pipefail
+          docker network create aura-sandbox-egress || true
+          GW=$(docker network inspect aura-sandbox-egress --format '{{(index .IPAM.Config 0).Gateway}}')
+          echo "egress bridge gateway: $GW"
+          # The aura egress proxy CLI binds the host CONNECT proxy on the gateway IP for
+          # the allowlist; the session containers reach it across the bridge.
+          PROXY_PORT=18999
+          nohup go run ./cmd/aura sandbox proxy \
+            --listen "${GW}:${PROXY_PORT}" \
+            --allow "${AURA_SANDBOX_NETWORK_ALLOW_HOSTS}" >/tmp/aura-proxy.log 2>&1 &
+          for i in $(seq 1 20); do
+            if nc -z "$GW" "$PROXY_PORT" 2>/dev/null; then echo "proxy up at ${GW}:${PROXY_PORT}"; break; fi
+            sleep 1
+            if [ "$i" -eq 20 ]; then echo "FATAL: egress proxy never bound at ${GW}:${PROXY_PORT}"; cat /tmp/aura-proxy.log; exit 1; fi
+          done
+          {
+            echo "AURA_SANDBOX_PROXY_ENV=HTTP_PROXY=http://${GW}:${PROXY_PORT};HTTPS_PROXY=http://${GW}:${PROXY_PORT}"
+          } >> "$GITHUB_ENV"
+
+      # --- (1) the 2b session + workspace + 0008 round-trip tier (race) ----------------
+      # sandbox_integration && db_integration: persistence (1a/1b), concurrent-serialize
+      # (1c), live reap (3), boot recovery + lazy recreate, the 0008 schema round-trip.
+      # Sub-second runtime is a skip tell — these spin real containers + exec into them.
+      - name: 2b session + workspace + migration tier (sandbox_integration && db_integration, race)
+        run: go test -race -count=1 -tags 'sandbox_integration db_integration' ./internal/sandbox/
+
+      # --- (2) the live egress leg (criterion 4 + landmine-3 reachability spike) --------
+      # Explicitly named so a failing pip-to-pypi (proxy unreachable / connect denied) is
+      # an unmistakable gate failure proving the bridge/seccomp posture wrong.
+      - name: Live egress tier (pypi allowed + non-allowlist refused)
+        run: |
+          go test -count=1 -tags 'sandbox_integration db_integration' \
+            -run 'TestNetwork_PyPIAllowed|TestNetwork_NonAllowlistRefused' ./internal/sandbox/
+
+      # --- (3) go-mutesting on the security/decision-critical files (>=70% killed) ------
+      - name: Install go-mutesting
+        run: |
+          set -euo pipefail
+          go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Mutation spot-check (network.go + scoring.go + sessions.go, >=70% killed)
+        env:
+          GOFLAGS: "-tags=sandbox_integration"
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in internal/sandbox/network.go internal/scoring/scoring.go internal/sandbox/sessions.go; do
+            "$(go env GOPATH)/bin/go-mutesting" "$f" | tee "mutation_$(basename "$f").out"
+            pct=$(sed -n 's/.*mutation score is \([0-9.]*\).*/\1/p' "mutation_$(basename "$f").out" | head -1)
+            pct_int=$(python3 -c "print(int(round(float('${pct:-0}')*100)))")
+            echo "$f mutation score: ${pct_int}% killed"
+            if [ "$pct_int" -lt 70 ]; then echo "FATAL: $f mutation ${pct_int}% < 70% (Gate-3)"; fail=1; fi
+          done
+          [ "$fail" -eq 0 ] || { echo "one or more critical files below the 70% mutation floor"; exit 1; }
+
+      # --- (4) fold sandbox + scoring into the 85% owned-surface coverage floor ---------
+      - name: Coverage gate (owned surface >= 85%, sandbox + scoring folded in)
+        run: bash scripts/coverage_gate.sh
+
+      - name: Teardown
+        if: always()
+        run: |
+          docker compose -f compose.yaml -f compose.gvisor.yaml down -v || true
+          docker network rm aura-sandbox-egress || true
+          make db-down || true
