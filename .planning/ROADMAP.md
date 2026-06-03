@@ -254,7 +254,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 07.1-04-PLAN.md — Wave 3: counter-gated recovery turn + finalize-outside-budget (<=max_steps+2) + retry-once + Italian stub fallback + live <budget> counts [Req#3/#4/#5]
+- [x] 07.1-04-PLAN.md — Wave 3: counter-gated recovery turn + finalize-outside-budget (<=max_steps+2) + retry-once + Italian stub fallback + live <budget> counts [Req#3/#4/#5]
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
