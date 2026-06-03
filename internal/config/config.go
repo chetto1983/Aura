@@ -54,6 +54,17 @@ type Config struct {
 	SandboxTimeoutSec int    // AURA_SANDBOX_TIMEOUT_SEC — per-call default; runner clamps <=600
 	SandboxRuntime    string // AURA_SANDBOX_RUNTIME — runsc (x86) / runc (arm64), per-arch default (D-07)
 
+	// Phase 8 (Slice 2b) session-bound sandbox knobs. All non-fatal
+	// envIntDefault/envDefault (a typo falls back, not boot-fatal). The CSV
+	// allowlist and PrivacyMode are PARSED/ENFORCED at the SessionManager/proxy
+	// boundary (08-05/08-06), NOT here — this file only reads the raw values.
+	SandboxSessionTTLSec         int    // AURA_SANDBOX_SESSION_TTL_SEC — idle-TTL eviction age (D-03)
+	SandboxMaxConcurrentSessions int    // AURA_SANDBOX_MAX_CONCURRENT_SESSIONS — hard session cap (D-12)
+	SandboxWorkspaceMaxBytes     int    // AURA_SANDBOX_WORKSPACE_MAX_BYTES — per-conversation workspace quota
+	SandboxNetworkAllowHosts     string // AURA_SANDBOX_NETWORK_ALLOW_HOSTS — CSV egress allowlist (D-08); empty = 2a egressless posture; parsed to []string at the proxy boundary
+	RiskAlertThreshold           string // AURA_RISK_ALERT_THRESHOLD — scoring advisory alert floor (D-11/D-12)
+	PrivacyMode                  string // AURA_PRIVACY_MODE — local-only ⇒ session-create fail-fast on a non-empty allowlist (D-10; cross-check wired in 08-05)
+
 	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
 	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
 	// surfaced as web_search_unavailable{searxng_not_configured} at call time
@@ -154,6 +165,13 @@ func loadBase() *Config {
 		SandboxURL:        envDefault("AURA_SANDBOX_URL", "http://127.0.0.1:18901"),
 		SandboxTimeoutSec: envIntDefault("AURA_SANDBOX_TIMEOUT_SEC", 30), // 600s cap clamped runner-side
 		SandboxRuntime:    envDefault("AURA_SANDBOX_RUNTIME", defaultRuntimeForArch()),
+
+		SandboxSessionTTLSec:         envIntDefault("AURA_SANDBOX_SESSION_TTL_SEC", 1800),
+		SandboxMaxConcurrentSessions: envIntDefault("AURA_SANDBOX_MAX_CONCURRENT_SESSIONS", 5),
+		SandboxWorkspaceMaxBytes:     envIntDefault("AURA_SANDBOX_WORKSPACE_MAX_BYTES", 104857600),
+		SandboxNetworkAllowHosts:     envDefault("AURA_SANDBOX_NETWORK_ALLOW_HOSTS", ""),
+		RiskAlertThreshold:           envDefault("AURA_RISK_ALERT_THRESHOLD", "risky"),
+		PrivacyMode:                  envDefault("AURA_PRIVACY_MODE", ""),
 
 		// Phase 7 web knobs. SEARXNG_URL has an empty default on purpose (D-05):
 		// missing is fail-closed at call time, never a boot error.
