@@ -110,13 +110,16 @@ func scenarios() []scenario {
 		},
 		{
 			id: "budget-trip",
-			// Strongly provoke a current_time tool call FIRST so the loop takes a
-			// second iteration; with maxSteps=1 the budget gate before that second
-			// LLM call trips with reason "max_steps" (terminal Event, never an error).
-			prompts:      []string{"Usa lo strumento current_time per ottenere l'ora corrente UTC, poi continua il ragionamento. Non concludere con text_response in questo primo passo: prima chiama solo current_time."},
+			// Demand THREE sequential current_time calls so the model's plan needs 3
+			// budgeted steps; with maxSteps=1 the gate trips after step 1 and grants
+			// the 07.1 recovery turn. Enforcement is then observable on both model
+			// paths: graceful (nudge obeyed → clean finish, exactly 1 tool call — the
+			// cap visibly stopped the 3-call plan) or stubborn (tool called again →
+			// second trip → terminal Event "max_steps"). See harness dimBudget scoring.
+			prompts:      []string{"Chiama lo strumento current_time TRE volte, in tre step separati (una sola chiamata per step, mai in parallelo), confrontando i tre timestamp. Solo dopo la terza chiamata concludi con text_response."},
 			dimensions:   []dimension{dimBudget},
 			expectedTool: "current_time",
-			maxSteps:     intPtr(1), // step1 consumes; the tool-call loop's step2 gate trips
+			maxSteps:     intPtr(1), // step1 consumes; step2 is the free recovery turn; a step3 attempt trips terminally
 		},
 		{
 			id:            "cancel-mid",

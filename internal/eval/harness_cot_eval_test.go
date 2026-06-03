@@ -276,12 +276,23 @@ func scoreScenario(t *testing.T, ctx context.Context, client llm.Client, cfg llm
 		}
 	}
 
-	// budget_enforcement (asserted): terminal Event with reason, steps <= cap, no infra error.
+	// budget_enforcement (asserted): the 07.1 recovery-turn contract. A trip grants
+	// ONE gate-bypassing recovery turn nudging the model to finalize; the terminal
+	// escalate Event only fires on a SECOND trip. With maxSteps=1 and a prompt that
+	// wants 3 sequential tool calls, enforcement is observable either way:
+	//   graceful  — model obeys the nudge: clean finish with exactly 1 tool call
+	//               (the cap stopped the 3-call plan after step 1)
+	//   stubborn  — model ignores the nudge and calls a tool again: second trip,
+	//               terminal Event with a hard reason
+	// Pre-07.1 this asserted terminal-on-first-trip; that contract was superseded
+	// by feat(07.1-04) a4de5ddd (counter-gated recovery turn + budget-bypass).
 	if contains(sc.dimensions, dimBudget) {
-		ok := c.runErr == nil && c.terminated && (c.terminalReason == "max_steps" || c.terminalReason == "dedup" || c.terminalReason == "wallclock")
+		graceful := c.finish != "" && !c.terminated && len(c.toolNames) == 1
+		stubborn := c.terminated && (c.terminalReason == "max_steps" || c.terminalReason == "dedup" || c.terminalReason == "wallclock")
+		ok := c.runErr == nil && (graceful || stubborn)
 		record(dimBudget, ok)
 		m.dimVerdicts[dimBudget] = ok
-		m.notes = append(m.notes, fmt.Sprintf("budget terminal=%v reason=%q runErr=%v", c.terminated, c.terminalReason, c.runErr))
+		m.notes = append(m.notes, fmt.Sprintf("budget terminal=%v reason=%q toolCalls=%d finish=%q runErr=%v", c.terminated, c.terminalReason, len(c.toolNames), c.finish, c.runErr))
 	}
 
 	// cancellation_hygiene (asserted): aborts ~promptly + goroutine baseline restored.
