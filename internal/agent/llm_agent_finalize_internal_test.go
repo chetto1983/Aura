@@ -14,6 +14,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
@@ -23,12 +24,15 @@ import (
 // and replays a fixed chunk script on a pre-closed channel (goleak-clean, no
 // goroutine). Local to avoid the agenttest→agent import cycle.
 type recordingClient struct {
-	last   llm.Request
-	chunks []llm.Chunk
+	last        llm.Request
+	hasDeadline bool
+	deadline    time.Time
+	chunks      []llm.Chunk
 }
 
-func (r *recordingClient) Stream(_ context.Context, req llm.Request) (<-chan llm.Chunk, error) {
+func (r *recordingClient) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk, error) {
 	r.last = req
+	r.deadline, r.hasDeadline = ctx.Deadline()
 	ch := make(chan llm.Chunk, len(r.chunks)+1)
 	for _, c := range r.chunks {
 		ch <- c
@@ -57,9 +61,12 @@ func synthAgent(sessionID string, chunks ...llm.Chunk) (*LlmAgent, *recordingCli
 // `req.ToolChoice = "none"` or `req.SessionID = a.sessionID`.
 func TestSynthesize_StampsToolChoiceAndSession(t *testing.T) {
 	const sess = "sess-finalize-xyz"
-	a, rc := synthAgent(sess, llm.Chunk{Text: "sintesi"})
+	a, rc := synthAgent(sess,
+		llm.Chunk{Text: "sintesi"},
+		llm.Chunk{Usage: &llm.Usage{PromptTokens: 11, CompletionTokens: 7, CachedTokens: 3}},
+	)
 
-	answer, _, err := a.synthesize(InvocationContext{Ctx: context.Background()})
+	answer, usage, err := a.synthesize(InvocationContext{Ctx: context.Background()})
 	if err != nil {
 		t.Fatalf("synthesize: %v", err)
 	}
@@ -71,6 +78,15 @@ func TestSynthesize_StampsToolChoiceAndSession(t *testing.T) {
 	}
 	if rc.last.SessionID != sess {
 		t.Errorf("finalize request SessionID = %q, want %q", rc.last.SessionID, sess)
+	}
+	if !rc.hasDeadline {
+		t.Fatal("finalize synthesis context has no deadline; want TotalTimeoutSec-derived deadline")
+	}
+	if remaining := time.Until(rc.deadline); remaining < 4*time.Second {
+		t.Fatalf("finalize synthesis deadline remaining = %s, want about 5s (TotalTimeoutSec, not sub-ns)", remaining)
+	}
+	if usage.PromptTokens != 11 || usage.CompletionTokens != 7 || usage.CachedTokens != 3 {
+		t.Errorf("usage = %+v, want streamed usage to propagate", usage)
 	}
 	last := rc.last.Messages[len(rc.last.Messages)-1]
 	if last.Role != llm.RoleUser || last.Content != finalizeNudge {
@@ -113,6 +129,8 @@ func TestMaybeRecover_ToolNudgeNamesTool(t *testing.T) {
 func TestStubDigest_UnknownCallIDLabelsTool(t *testing.T) {
 	a, _ := synthAgent("s")
 	a.history = append(a.history,
+		llm.Message{Role: llm.RoleUser, Content: "user sentinel must not become a stub bullet"},
+		llm.Message{Role: llm.RoleAssistant, Content: "assistant sentinel must not become a stub bullet"},
 		llm.Message{Role: llm.RoleTool, ToolCallID: "orphan", Content: "dato raccolto"},
 	)
 	got := a.stubDigest()
@@ -121,6 +139,9 @@ func TestStubDigest_UnknownCallIDLabelsTool(t *testing.T) {
 	}
 	if !strings.Contains(got, "- tool: dato raccolto") {
 		t.Errorf("unknown-callID bullet = %q, want the generic \"- tool: \" label", got)
+	}
+	if strings.Contains(got, "sentinel must not become") {
+		t.Errorf("stub digest included non-tool conversation content: %q", got)
 	}
 }
 
