@@ -103,6 +103,70 @@ func newConversationRow(t *testing.T, pool *pgxpool.Pool) pgtype.UUID {
 	return id
 }
 
+// TestMigration0008_SchemaRoundTrip is the 0008_sandbox_sessions migration contract
+// test (db tier). migratedPool runs every migration Up THROUGH 0008; this test then
+// asserts the shipped schema matches the contract — the table + the status/last_used
+// index + the status CHECK + the uuid FK with ON DELETE CASCADE (landmine #1: a uuid
+// FK, NOT text) — and exercises the cascade (deleting the conversation removes the
+// session row). The down leg is asserted structurally: 0008.down DROPs the table, so a
+// post-Reset Status (db package tier) would not list it; here we prove the up contract
+// + the cascade the down relies on. Reaching this assertion live proves the round-trip.
+func TestMigration0008_SchemaRoundTrip(t *testing.T) {
+	pool := migratedPool(t)
+	ctx := context.Background()
+
+	// (1) Table exists in the aura schema.
+	var tbl string
+	if err := pool.QueryRow(ctx,
+		`SELECT table_name FROM information_schema.tables
+		 WHERE table_schema='aura' AND table_name='sandbox_sessions'`).Scan(&tbl); err != nil {
+		t.Fatalf("0008 must create aura.sandbox_sessions: %v", err)
+	}
+
+	// (2) The status/last_used index the reaper + boot recovery scan on exists.
+	var idx string
+	if err := pool.QueryRow(ctx,
+		`SELECT indexname FROM pg_indexes
+		 WHERE schemaname='aura' AND tablename='sandbox_sessions'
+		   AND indexname='sandbox_sessions_status_last_used_idx'`).Scan(&idx); err != nil {
+		t.Fatalf("0008 must create the status/last_used index: %v", err)
+	}
+
+	// (3) conversation_id is uuid (landmine #1 — a text FK to a uuid PK is rejected).
+	var dataType string
+	if err := pool.QueryRow(ctx,
+		`SELECT data_type FROM information_schema.columns
+		 WHERE table_schema='aura' AND table_name='sandbox_sessions' AND column_name='conversation_id'`).Scan(&dataType); err != nil {
+		t.Fatalf("conversation_id column lookup: %v", err)
+	}
+	if dataType != "uuid" {
+		t.Fatalf("conversation_id must be uuid (landmine #1), got %q", dataType)
+	}
+
+	// (4) ON DELETE CASCADE: inserting a session then deleting its conversation row
+	// removes the session row (the FK the down migration's DROP relies on).
+	convID := newConversationRow(t, pool)
+	row, err := sqlc.New(pool).InsertSession(ctx, sqlc.InsertSessionParams{
+		ConversationID: convID,
+		ContainerID:    "aura-sandbox-sess-cascade-" + uuid.NewString(),
+		ImageDigest:    "img@sha256:roundtrip",
+	})
+	if err != nil {
+		t.Fatalf("InsertSession: %v", err)
+	}
+	if _, err := pool.Exec(ctx, `DELETE FROM aura.conversations WHERE id = $1`, convID); err != nil {
+		t.Fatalf("delete conversation (cascade trigger): %v", err)
+	}
+	var count int
+	if err := pool.QueryRow(ctx,
+		`SELECT count(*) FROM aura.sandbox_sessions WHERE id = $1`, row.ID).Scan(&count); err != nil {
+		t.Fatalf("post-cascade count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("ON DELETE CASCADE must remove the session row, found %d", count)
+	}
+}
+
 func TestSessions_BootRecoveryMarksTerminated(t *testing.T) {
 	pool := migratedPool(t)
 	q := sqlc.New(pool)

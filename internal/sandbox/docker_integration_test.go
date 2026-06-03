@@ -47,6 +47,44 @@ func integrationRunner(t *testing.T) *DockerRunner {
 	return NewDockerRunner(&config.Config{SandboxURL: sidecarURL(t), SandboxTimeoutSec: 30})
 }
 
+// sessionRuntime resolves the per-arch container runtime for the live SessionManager
+// tier (runsc on x86 via the DinD daemon.json, runc on arm64 — D-07). Defaults to
+// runc so a plain Docker Desktop dev host runs without runsc installed; CI sets
+// AURA_SANDBOX_RUNTIME=runsc to gate the gVisor boundary (no-skip-as-green: an unset
+// value is a deliberate dev default, not a skip).
+func sessionRuntime(t *testing.T) string {
+	t.Helper()
+	if v := os.Getenv("AURA_SANDBOX_RUNTIME"); v != "" {
+		return v
+	}
+	return "runc"
+}
+
+// sessionImage resolves the per-session container image the SessionManager docker-runs
+// (the SAME baked sidecar image the compose stack builds). It MUST be set for the live
+// session tier; absent under CI it t.Fatals (no-skip-as-green), locally it skips.
+func sessionImage(t *testing.T) string {
+	t.Helper()
+	v := os.Getenv("AURA_SANDBOX_SESSION_IMAGE")
+	if v == "" {
+		if os.Getenv("CI") != "" {
+			t.Fatalf("live session tier requires AURA_SANDBOX_SESSION_IMAGE, unset under CI — " +
+				"a skipped integration test must not pass as green; wire it in sandbox.yml")
+		}
+		t.Skip("live session tier requires AURA_SANDBOX_SESSION_IMAGE (the baked sidecar image) + a live Docker daemon")
+	}
+	return v
+}
+
+// sessionSeccomp resolves the session-mode seccomp profile path (the connect-allowing
+// variant for the egress posture — landmine #3 / 08-08). Empty falls back to the
+// manager's "unconfined" default for the egressless persistence tests; the network
+// test sets it to sandbox/seccomp-session.json so connect(2) reaches the host proxy.
+func sessionSeccomp(t *testing.T) string {
+	t.Helper()
+	return os.Getenv("AURA_SANDBOX_SESSION_SECCOMP")
+}
+
 func ctxT(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
