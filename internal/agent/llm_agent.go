@@ -120,9 +120,15 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 
 	return func(yield func(*Event, error) bool) {
 		for {
-			// 1. Budget gate BEFORE each LLM call — a trip is Event-only (D-04).
+			// 1. Budget gate BEFORE each LLM call — a trip forces finalization
+			// (Req#2): instead of dying on a prose-less terminalBudgetEvent, route
+			// to a tool-free synthesis turn that emits a non-empty finalEvent
+			// (covers both max_steps and wallclock — same ConsumeStep, different
+			// reason). Event-only, never the error slot (D-04). The recovery turn +
+			// budget-bypass invariant are plan 04; here the trip goes straight to
+			// finalize (which itself never calls ConsumeStep — Req#4).
 			if ok, reason := ic.Budget.ConsumeStep(); !ok {
-				yield(a.terminalBudgetEvent(ic, spanID, parentSpanID, reason), nil)
+				a.finalize(ic, spanID, parentSpanID, requestID, reason, yield)
 				return
 			}
 
@@ -221,10 +227,14 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			return true, nil
 		}
 
-		// Dedup gate (D-14): a repeated identical tool call trips with reason "dedup".
+		// Dedup gate (D-14): a repeated identical tool call trips with reason
+		// "dedup". Like the budget trip, it forces finalization (Req#2) instead of
+		// returning a prose-less terminalBudgetEvent — a tool-free synthesis turn
+		// emits a non-empty finalEvent. The recovery nudge (which needs
+		// call.Function.Name) is plan 04; here the trip routes straight to finalize.
 		canon := canonicalArgs(call.Function.Arguments)
 		if dedup, reason := ic.Budget.BeforeToolCall(call.Function.Name, canon); dedup {
-			yield(a.terminalBudgetEvent(ic, spanID, parentSpanID, reason), nil)
+			a.finalize(ic, spanID, parentSpanID, requestID, reason, yield)
 			return true, nil
 		}
 
