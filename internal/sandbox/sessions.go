@@ -37,6 +37,15 @@ type dockerClient interface {
 	port(ctx context.Context, id, containerPort string) (string, error)
 }
 
+// WorkspaceEnsurer is the narrow seam create uses to materialize the per-conv host
+// workspace dir BEFORE the docker run, so the container's bind-mount source exists
+// (os.Root-safe creation, owner-writable). *WorkspaceManager satisfies it; unit
+// tests inject a temp-dir fake so the mount-argv assertion runs without a real run
+// dir. The returned path is the absolute host workspace dir bound to /workspace.
+type WorkspaceEnsurer interface {
+	EnsureDir(convID string) (string, error)
+}
+
 // sessionStore is the narrow control-plane registry surface the SessionManager
 // needs (the 4 sqlc queries from 08-02). *sqlc.Queries satisfies it; unit tests
 // inject an in-memory fake so the cap/reaper/lock invariants run without Postgres.
@@ -72,6 +81,7 @@ type Session struct {
 type SessionDeps struct {
 	Docker         dockerClient
 	Store          sessionStore
+	Workspace      WorkspaceEnsurer
 	MaxN           int
 	TTL            time.Duration
 	Runtime        string
@@ -106,8 +116,9 @@ type SessionManager struct {
 	capMu    sync.Mutex
 	count    int
 
-	docker dockerClient
-	store  sessionStore
+	docker    dockerClient
+	store     sessionStore
+	workspace WorkspaceEnsurer
 
 	maxN           int
 	ttl            time.Duration
@@ -144,6 +155,7 @@ func NewSessionManager(ctx context.Context, deps SessionDeps) *SessionManager {
 	m := &SessionManager{
 		docker:         deps.Docker,
 		store:          deps.Store,
+		workspace:      deps.Workspace,
 		maxN:           deps.MaxN,
 		ttl:            deps.TTL,
 		runtime:        deps.Runtime,
@@ -223,8 +235,20 @@ func (m *SessionManager) create(ctx context.Context, sessionID string, convUUID 
 		return nil, fmt.Errorf("session %s: %w", sessionID, ErrSessionCapReached)
 	}
 
+	// Materialize the host workspace dir BEFORE docker run so the bind-mount source
+	// exists (os.Root-safe creation, owner-writable). The host dir is Aura-created
+	// (the os.Root anchor) so the criterion-2 host cascade walks an Aura-owned root.
+	var workspacePath string
+	if m.workspace != nil {
+		ws, wErr := m.workspace.EnsureDir(sessionID)
+		if wErr != nil {
+			return nil, fmt.Errorf("session %s: ensure workspace: %w", sessionID, wErr)
+		}
+		workspacePath = ws
+	}
+
 	name := containerNamePrefix + sessionID
-	containerID, err := m.docker.run(ctx, name, m.runArgv(name))
+	containerID, err := m.docker.run(ctx, name, m.runArgv(name, workspacePath))
 	if err != nil {
 		return nil, fmt.Errorf("session %s: docker run: %w", sessionID, err)
 	}
@@ -264,7 +288,7 @@ func (m *SessionManager) create(ctx context.Context, sessionID string, convUUID 
 // HTTP(S)_PROXY env, so user code reaches the host forward proxy at the bridge
 // gateway IP (landmine #3, extends AR-05-01); an empty allowlist keeps the 2a
 // egressless posture (the egressless profile + default network, connect dead-ends).
-func (m *SessionManager) runArgv(name string) []string {
+func (m *SessionManager) runArgv(name, workspacePath string) []string {
 	seccomp := m.seccompProfile
 	if seccomp == "" {
 		seccomp = "unconfined" // overridden by 08-07/08-08 compose-shipped session profile
@@ -289,6 +313,9 @@ func (m *SessionManager) runArgv(name string) []string {
 		// resolves the assigned port via `docker port` and registers the per-conv URL.
 		"--publish", "127.0.0.1:0:" + sessionSidecarPort,
 	}
+	if workspacePath != "" {
+		argv = append(argv, "--mount", workspaceMountSpec(workspacePath))
+	}
 	if m.allowHosts != "" {
 		if m.egressNetwork != "" {
 			argv = append(argv, "--network", m.egressNetwork)
@@ -299,6 +326,27 @@ func (m *SessionManager) runArgv(name string) []string {
 	}
 	argv = append(argv, m.image)
 	return argv
+}
+
+// workspaceMountSpec builds the runc-compatible `--mount` value that bind-mounts the
+// host workspace at /workspace RW WITH nosuid,nodev,noexec (ROADMAP:265, FLAG 4).
+//
+// Docker's plain `-v` and `--mount type=bind` do NOT accept the nosuid/nodev/noexec
+// KERNEL mount flags (they are rejected: "invalid mode" / "must be a key=value
+// pair"). The supported path is the local-volume driver with `o=bind,<flags>`, which
+// reaches the runc/daemon mount syscall with MS_NOSUID|MS_NODEV|MS_NOEXEC|MS_BIND
+// (0x100e, verified live: `docker run --mount type=volume,...,o=bind,nosuid,nodev,
+// noexec,...` issues a 0x100e mount). The inner `o=` value carries commas, which
+// the `--mount` CSV tokenizer would split, so that one volume-opt is CSV-quoted with
+// embedded double-quotes; exec.Command passes the literal value (no shell) and the
+// Docker CLI parses the quoted field as a single option (verified via a Go
+// exec.Command probe — the daemon issued the 0x100e mount; only the
+// Docker-Desktop-on-Windows host-path-sharing layer fails, which does not apply to
+// the Linux/CI Gate-3 host).
+func workspaceMountSpec(hostWorkspacePath string) string {
+	return "type=volume,dst=/workspace,volume-driver=local,volume-opt=type=none," +
+		"\"volume-opt=o=bind,nosuid,nodev,noexec\"," +
+		"volume-opt=device=" + hostWorkspacePath
 }
 
 // Release unlocks the per-session lock (D-07). Calling Release on a zero Session is

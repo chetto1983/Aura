@@ -322,6 +322,54 @@ func TestSessions_RunArgvEgressGated(t *testing.T) {
 	})
 }
 
+// fakeEnsurer is a unit WorkspaceEnsurer returning a fixed host path so the
+// mount-argv assertion runs without a real run dir.
+type fakeEnsurer struct{ path string }
+
+func (e fakeEnsurer) EnsureDir(string) (string, error) { return e.path, nil }
+
+// TestSessions_RunArgvWorkspaceMount asserts the per-conv workspace bind-mount is
+// added with the EnsureDir host path AND the nosuid,nodev,noexec hardening flags
+// (ROADMAP:265, Task 2). The runc-compatible local-volume `o=bind,<flags>` form is
+// the only one Docker accepts for these kernel mount flags.
+func TestSessions_RunArgvWorkspaceMount(t *testing.T) {
+	dk := &fakeDocker{}
+	wantPath := "/srv/aura/run/conversations/abc/workspace"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := NewSessionManager(ctx, SessionDeps{
+		Docker:    dk,
+		Store:     &fakeStore{},
+		Workspace: fakeEnsurer{path: wantPath},
+		MaxN:      5,
+		TTL:       1800 * time.Second,
+		Runtime:   "runsc",
+		Image:     "img",
+	})
+	t.Cleanup(m.Close)
+
+	if _, err := m.Acquire(context.Background(), newConvID(11)); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	dk.mu.Lock()
+	argv := strings.Join(dk.runArgv, " ")
+	dk.mu.Unlock()
+
+	for _, want := range []string{
+		"--mount",
+		"dst=/workspace",
+		"o=bind,nosuid,nodev,noexec",
+		"device=" + wantPath,
+	} {
+		if !strings.Contains(argv, want) {
+			t.Errorf("workspace mount argv missing %q\n  full: %s", want, argv)
+		}
+	}
+	if !strings.Contains(argv, "nosuid") || !strings.Contains(argv, "nodev") || !strings.Contains(argv, "noexec") {
+		t.Errorf("workspace mount must carry nosuid,nodev,noexec (ROADMAP:265): %s", argv)
+	}
+}
+
 func TestSessions_PrivacyModeFailFast(t *testing.T) {
 	m, _ := testManager(t, &fakeDocker{}, &fakeStore{}, func(m *SessionManager) {
 		m.privacyMode = "local-only"
