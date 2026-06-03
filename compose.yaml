@@ -84,95 +84,6 @@ services:
       retries: 12
       start_period: 60s                        # first-boot HF model download
 
-  # ↓↓ Slice 2a — hardened untrusted-code execution sidecar (CAP-01 SC#5) ↓↓
-  # The full hardening floor (D-06/D-14). x86 production/dev adds the gVisor
-  # runsc runtime via the compose.gvisor.yaml OVERLAY (D-04, default-on x86
-  # through `make sandbox-up`); arm64 omits the overlay and falls back to runc +
-  # this seccomp floor (Pitfall 5 — gVisor arm64 is non-GA). The base compose
-  # deliberately sets NO runtime override here.
-  #
-  # NOTE: `userns-remap: default` is a daemon.json setting (D-15), NOT a
-  # compose-service field — it maps container uid 0 -> an unprivileged host uid
-  # and is asserted against the daemon by the 05-04 bench, not here.
-  #
-  # NOTE: the sandbox uses a non-masquerading bridge rather than
-  # `network_mode: none`: the Go runner needs the loopback-published HTTP API
-  # below, while the bridge has no NAT route for user-code egress.
-  aura-sandbox:
-    build: ./sandbox
-    container_name: aura-sandbox
-    restart: unless-stopped
-    user: "65532:65532"
-    read_only: true
-    tmpfs:
-      - /tmp
-    networks:
-      - aura-sandbox-egressless
-    cap_drop:
-      - ALL
-    security_opt:
-      - "no-new-privileges:true"
-      - "seccomp=./sandbox/seccomp.json"
-    pids_limit: 64
-    mem_limit: 512m
-    cpus: 1.0
-    ulimits:
-      nofile: 64
-    ports:
-      - "127.0.0.1:18901:18901"
-    healthcheck:
-      # connect(2) is denied by seccomp for user-code egress containment, so the
-      # container healthcheck validates the sidecar process instead of calling
-      # its loopback HTTP endpoint from inside the sandbox.
-      test: ["CMD-SHELL", "python3 -c \"import pathlib,sys; sys.exit(0 if b'/app/sidecar.py' in pathlib.Path('/proc/1/cmdline').read_bytes() else 1)\""]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 5s
-
-  # ↓↓ Slice 2b (Phase 8) — SESSION-CONTAINER NETWORK POSTURE (08-08, landmine #3) ↓↓
-  # 2b session containers are NOT a compose service — the SessionManager (internal/
-  # sandbox/sessions.go, D-04/D-05) starts them per-conversation via `docker run`
-  # with the full 2a hardening floor replicated in the argv (Pitfall 6: those flags
-  # are NOT inherited). The network posture is allowlist-gated:
-  #   * EMPTY AURA_SANDBOX_NETWORK_ALLOW_HOSTS → the 2a egressless posture: the 2a
-  #     seccomp profile (sandbox/seccomp.json, connect DENIED) + the default network,
-  #     so user-code egress connect(2) dead-ends (identical to aura-sandbox above).
-  #   * NON-EMPTY allowlist → the connect-allowing session seccomp variant
-  #     (sandbox/seccomp-session.json — ADDS connect ONLY) + the non-masquerading
-  #     `aura_aura-sandbox-egressless` bridge below + an HTTP(S)_PROXY env pointing at
-  #     the host CONNECT forward proxy (internal/sandbox/network.go, 08-06) reachable
-  #     at the BRIDGE GATEWAY IP (NOT container 127.0.0.1). Egress is contained
-  #     HOST-SIDE by the proxy's deny-wins glob allowlist + resolve-then-pin, NOT by
-  #     connect-denial.
-  # This RE-ENABLES connect(2) for the egress case and therefore EXTENDS the
-  # AR-05-01 deviation (.planning/phases/05-sandbox-2a-stateless/05-SECURITY.md):
-  # the 2a register declared `connect` permanently removed. The live bridge-gateway
-  # reachability spike (pip → pypi over the proxy) + the 08-SECURITY re-audit of this
-  # extension land in 08-09 — do NOT consider the egress posture closed until then.
-  #
-  # 08-10 egress env contract (the host proxy is started at boot by cmd/aura/
-  # sandbox_proxy.go startSandboxProxy; the live egress tests do NOT boot the
-  # composition root, so the operator starts `aura serve`/the proxy harness before
-  # them). The operator/CI exports:
-  #   AURA_SANDBOX_NETWORK_ALLOW_HOSTS — CSV allowlist (empty ⇒ egressless, no proxy)
-  #   AURA_SANDBOX_EGRESS_NETWORK      — the bridge runArgv attaches to
-  #                                      (aura_aura-sandbox-egressless)
-  #   AURA_SANDBOX_PROXY_ENV           — HTTP_PROXY/HTTPS_PROXY at <gw-ip>:<port>
-  #                                      (semicolon-sep); ALSO the proxy LISTEN addr
-  #   AURA_SANDBOX_SESSION_SECCOMP     — connect-allowing session seccomp profile
-  # FLAG 3 / AR-08-02: the single boot proxy shares ONE convID-scoped DNS-pin cache
-  # for ALL conversations (a v1 deviation from D-25 per-conversation rebind
-  # isolation, accepted because the pin TTL is short + the allowlist is opt-in).
-  #
-  # BLOCKER 2 (08-10): the `aura_aura-sandbox-egressless` bridge below is a PLAIN
-  # `driver: bridge` with masquerade OFF — it is deliberately NOT `internal: true`.
-  # That matters for 2b: the SessionManager publishes each per-conv sidecar port on a
-  # host LOOPBACK port (`-p 127.0.0.1:0:18901`) and bind-mounts the per-conv
-  # workspace; an `internal: true` bridge would drop the `-p` host publish (breaking
-  # the per-conv HTTP exec routing, D-05) while still containing egress via the
-  # masquerade-off + host-proxy posture. DO NOT set this bridge `internal: true`.
-  #
   # ↓↓ Slice 5 (Phase 7) — SearXNG meta-search, NO host port (D-02/D-03/D-04) ↓↓
   # The web_search backend. Reached ONLY in-network as http://searxng:8080/search
   # (D-02): the deliberate absence of a `ports:` key (every other service publishes
@@ -206,10 +117,6 @@ volumes:
   aura-llama-embed:
 
 networks:
-  aura-sandbox-egressless:
-    driver: bridge
-    driver_opts:
-      com.docker.network.bridge.enable_ip_masquerade: "false"
   # Shared app network so SearXNG egresses to the public internet without a host
   # port (D-03). The Aura process joins this network to reach http://searxng:8080.
   aura-web:
