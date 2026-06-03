@@ -22,6 +22,13 @@ func TestAskUser_Spec_NonDeferred(t *testing.T) {
 	}
 }
 
+func TestErrAwaitingUserInputError(t *testing.T) {
+	err := (&ErrAwaitingUserInput{Question: "continue?"}).Error()
+	if err != "awaiting user input" {
+		t.Fatalf("Error() = %q, want stable sentinel message", err)
+	}
+}
+
 func TestAskUser_Execute_ValidApproval_ReturnsSentinel(t *testing.T) {
 	res, err := AskUser{}.Execute(context.Background(),
 		json.RawMessage(`{"question":"delete the file?","kind":"approval","priority":50}`))

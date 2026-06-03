@@ -27,6 +27,22 @@ type sandboxExecArgs struct {
 	MaxOutputBytes int               `json:"max_output_bytes"`
 }
 
+type sandboxExecOutput struct {
+	Stdout          string `json:"stdout"`
+	Stderr          string `json:"stderr"`
+	ExitCode        *int   `json:"exit_code"`
+	TimedOut        bool   `json:"timed_out"`
+	StdoutTruncated bool   `json:"stdout_truncated"`
+	StderrTruncated bool   `json:"stderr_truncated"`
+	DurationMs      int64  `json:"duration_ms"`
+}
+
+type sandboxUnavailableOutput struct {
+	Error   string `json:"error"`
+	Message string `json:"message"`
+	Hint    string `json:"hint"`
+}
+
 func (s *SandboxExec) Spec() Spec {
 	params := json.RawMessage(`{
   "type": "object",
@@ -81,29 +97,23 @@ func (s *SandboxExec) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	if err != nil {
 		return sandboxUnavailable(ctx, err.Error())
 	}
-	out, err := json.Marshal(map[string]any{
-		"stdout":           res.Stdout,
-		"stderr":           res.Stderr,
-		"exit_code":        res.ExitCode,
-		"timed_out":        res.TimedOut,
-		"stdout_truncated": res.StdoutTruncated,
-		"stderr_truncated": res.StderrTruncated,
-		"duration_ms":      res.DurationMs,
+	out, _ := json.Marshal(sandboxExecOutput{
+		Stdout:          res.Stdout,
+		Stderr:          res.Stderr,
+		ExitCode:        res.ExitCode,
+		TimedOut:        res.TimedOut,
+		StdoutTruncated: res.StdoutTruncated,
+		StderrTruncated: res.StderrTruncated,
+		DurationMs:      res.DurationMs,
 	})
-	if err != nil {
-		return ToolResult{}, fmt.Errorf("sandbox_exec result marshal: %w", err)
-	}
 	return NewResult(ctx, string(out))
 }
 
 func sandboxUnavailable(ctx context.Context, message string) (ToolResult, error) {
-	out, err := json.Marshal(map[string]string{
-		"error":   "sandbox_unavailable",
-		"message": message,
-		"hint":    "start the local sandbox container with `make sandbox-up`",
+	out, _ := json.Marshal(sandboxUnavailableOutput{
+		Error:   "sandbox_unavailable",
+		Message: message,
+		Hint:    "start the local sandbox container with `make sandbox-up`",
 	})
-	if err != nil {
-		return ToolResult{}, err
-	}
 	return NewResult(ctx, string(out))
 }

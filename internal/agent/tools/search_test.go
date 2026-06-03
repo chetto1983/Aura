@@ -35,6 +35,20 @@ func newSearch(t *testing.T, tools ...Tool) (*ToolSearch, context.Context) {
 	return &ToolSearch{Registry: reg}, ctxWith(t, "sess-s", "call-s")
 }
 
+func TestToolSearchSpecIsVisibleAndSchemaIsValid(t *testing.T) {
+	s := (&ToolSearch{}).Spec()
+	if s.Name != "tool_search" {
+		t.Fatalf("name = %q, want tool_search", s.Name)
+	}
+	if s.Deferred {
+		t.Fatal("tool_search must stay non-deferred so deferred tools are discoverable")
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(s.Parameters, &schema); err != nil {
+		t.Fatalf("parameters are not valid JSON schema: %v", err)
+	}
+}
+
 // TestToolSearch_KeywordMatchesNameOnly: a keyword present in the Name but NOT
 // the Summary still selects the tool. Kills the `name-match ||`→`false ||`
 // mutant (which would drop name-only matches).
