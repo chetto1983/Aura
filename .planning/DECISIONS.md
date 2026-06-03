@@ -131,6 +131,7 @@
 | **D-12** | SCOPE GUARD: costruire il MODULO, non le pipeline applicative per-slice. Phase 8 wira SOLO il path advisory sandbox (`ComputeSandboxTier`); il `pending_approval` scheduler / audit columns / skills pending dir restano P10/P11. | (parte #41) | — |
 | **D-13** | Walker host-side workspace usano `os.Root`/`os.OpenInRoot` (openat2), **supersede** `O_NOFOLLOW` letterale (CVE-2026-39861 è la shape esatta). | **#42** | ✅ (minore) |
 | **D-14** | Cascade delete = walk openat no-follow manuale, **NON `os.RemoveAll`** (`os.Root` non ha ancora `RemoveAll`, golang/go#67002). Test acceptance: `ln -s /etc /workspace/escape` poi host cascade → no host `/etc` deletion. | (parte #42) | — |
+| **D-15** | **PIVOT (supersede l'intera Slice 2 bespoke).** Sandbox = **code-sandbox-mcp** (MCP server Go stdio) montato via un **bridge MCP→agent-tool generico** (Shape B). Cancella sidecar/seccomp/SessionManager/host-proxy/`sandbox_sessions`/DinD/`cmd/aura` exec+sandbox+proxy. Delta: persistenza filesystem-only (no Python in-memory cross-call), networking docker default (no egress allowlist). Provato E2E su Docker Desktop 2026-06-03. Supersede D-01/D-08/D-09/D-10 + amendment #38/#40. `internal/scoring/` (D-11) resta. | **#43** | 🔄 (in build) |
 
 **Schema landmine fix (correzioni, non amendment nuovi):** migration **0010 → 0008** (floor shippato è 0007, regola ordine-fase §Persistence) + `conversation_id` **text → uuid** (PK di `conversations` è uuid, verificato 0005). Applicati in prd.md §Slice 2b insieme agli amendment.
 
