@@ -1,7 +1,7 @@
 package mcptools
 
 import (
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"strings"
 )
@@ -33,18 +33,19 @@ func sanitizeName(s string) string {
 }
 
 // hashSuffix returns a deterministic "_<12hex>" disambiguation suffix for rawIdentity.
-// SHA-1 here is a non-cryptographic collision disambiguator (Codex parity), NOT a
+// SHA-256 here is a non-cryptographic collision disambiguator (Codex parity), NOT a
 // security control: a forced collision still hits Mount's all-or-nothing refusal.
 func hashSuffix(rawIdentity string) string {
-	h := sha1.Sum([]byte(rawIdentity))
+	h := sha256.Sum256([]byte(rawIdentity))
 	return "_" + hex.EncodeToString(h[:])[:hashLen]
 }
 
 // namespacedName builds the model-facing <namespace>__<tool> name: both sides are
 // sanitized, joined with the double-underscore delimiter, and the whole capped at
-// maxToolNameLen by truncating the tool part and appending a deterministic hash
-// suffix when it would otherwise overflow. Cross-name collision disambiguation
-// across a Mount batch is layered on top of this by the caller.
+// maxToolNameLen. On overflow a deterministic hash suffix is appended; the tool part
+// is truncated to fit, and the prefix itself is truncated when it alone exceeds the
+// budget (WR-01) — so the OUTPUT length is bounded, not just the slice index. Cross-name
+// collision disambiguation across a Mount batch is layered on top of this by the caller.
 func namespacedName(namespace, tool string) string {
 	prefix := sanitizeName(namespace) + nsDelimiter
 	base := prefix + sanitizeName(tool)
@@ -52,9 +53,9 @@ func namespacedName(namespace, tool string) string {
 		return base
 	}
 	suffix := hashSuffix(namespace + "\x00" + tool)
-	keep := maxToolNameLen - len(prefix) - len(suffix)
-	if keep < 0 {
-		keep = 0
+	budget := maxToolNameLen - len(suffix)
+	if len(prefix) > budget {
+		return prefix[:budget] + suffix
 	}
-	return prefix + sanitizeName(tool)[:keep] + suffix
+	return prefix + sanitizeName(tool)[:budget-len(prefix)] + suffix
 }

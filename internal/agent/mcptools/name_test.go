@@ -91,13 +91,15 @@ func TestNameLengthCap(t *testing.T) {
 	}
 }
 
-// TestNamespacedName_LongNamespaceCap covers WR-01: a sanitized namespace large
-// enough that the prefix alone overflows the budget (55-byte ns + a non-empty tool)
-// must still yield len <= maxToolNameLen, with the hash suffix surviving so distinct
-// long inputs stay distinguishable.
+// TestNamespacedName_LongNamespaceCap covers WR-01: a sanitized namespace whose
+// prefix (ns + "__") alone exceeds budget (maxToolNameLen - 13) AND whose joined base
+// overflows the 64-byte cap (55-byte ns + 30-byte tool yields 70 today) must still
+// yield len <= maxToolNameLen, with the hash suffix surviving so distinct long inputs
+// stay distinguishable.
 func TestNamespacedName_LongNamespaceCap(t *testing.T) {
 	ns := strings.Repeat("n", 55)
-	got := namespacedName(ns, "x")
+	tool := strings.Repeat("t", 30)
+	got := namespacedName(ns, tool)
 	if len(got) > maxToolNameLen {
 		t.Fatalf("namespacedName length = %d, want <= %d (WR-01)", len(got), maxToolNameLen)
 	}
