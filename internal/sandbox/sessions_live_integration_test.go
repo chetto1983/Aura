@@ -41,8 +41,18 @@ func liveManager(t *testing.T, pool *pgxpool.Pool, ttl, reapEvery time.Duration,
 	mctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	m := NewSessionManager(mctx, SessionDeps{
-		Docker:         NewDockerCLI(),
-		Store:          q,
+		Docker: NewDockerCLI(),
+		Store:  q,
+		// Workspace restores parity with the production composition root
+		// (cmd/aura/chat.go:129 NewWorkspaceManager(cfg.RunDir,...) -> sandboxSessionDeps):
+		// without it create skips EnsureDir and runArgv adds no --mount, so the live
+		// container's /workspace is the read-only baked image dir under --read-only,
+		// failing criteria 1b/2/4a with "Read-only file system". The mount root is the
+		// SAME AURA_RUN_DIR (runDirOrSkip) the cascade test purges, so criterion 2 walks
+		// the container's actual writes. Quota 0 = unbounded, matching the cascade test.
+		// 08-11 gap-closure: orthogonal to the 08-10 do-not-modify-for-shared-resolver
+		// constraint (touches neither the endpoint resolver nor any assertion).
+		Workspace:      NewWorkspaceManager(runDirOrSkip(t), 0),
 		MaxN:           5,
 		TTL:            ttl,
 		Runtime:        sessionRuntime(t),
