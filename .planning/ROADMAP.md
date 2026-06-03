@@ -273,7 +273,7 @@ Plans:
   3. Operator inspects `aura sandbox sessions list` after `AURA_SANDBOX_SESSION_TTL_SEC` elapses with no activity and observes the session reaped, container removed, workspace dir cleaned up
   4. Operator triggers `execute` with `network_allow: ["pypi.org"]` and observes `pip install` to pypi.org succeeding; same call attempting `curl 1.1.1.1` observes connection refused (allowlist enforced via the host-side forward proxy)
 
-**Plans:** 9/9 plans complete
+**Plans:** 10/11 plans executed
 
 **Wave 1**
 
@@ -298,6 +298,14 @@ Plans:
 **Wave 5**
 
 - [x] 08-09-PLAN.md — live sandbox_integration tier (4 criteria) + egress-bridge spike + 08-SECURITY + gating CI DinD + coverage/mutation + human-verify (CAP-02 close)
+
+**Wave 6**
+
+- [x] 08-10-PLAN.md — CAP-02 gap-closure code: per-conv-container exec routing (shared SessionEndpoint) + nosuid/nodev/noexec workspace bind-mount + /workspace cwd + boot lazy-recreate/teardown + boot egress proxy (Tasks 1-5 code; Task 6 live Gate-3 human-verify PENDING)
+
+**Wave 7**
+
+- [ ] 08-11-PLAN.md — CAP-02 gap-closure: inject Workspace ensurer into liveManager (close read-only /workspace on the live path) + graceful Close container teardown + CI DinD Gate-3 confirm (Tasks 1-3 committed; Task 4 live Gate-3 human-verify PENDING — CAP-02 closes on sign-off)
 
 ### Phase 9: Swarm (Minimal)
 
@@ -423,7 +431,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
-| 8. Sandbox 2b Session-Bound | 9/9 | Complete   | 2026-06-03 |
+| 8. Sandbox 2b Session-Bound | 10/11 | In Progress|  |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |
