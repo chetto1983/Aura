@@ -16,6 +16,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"time"
 )
 
 const (
@@ -82,7 +83,19 @@ func EnsureCodeSandboxBinary(ctx context.Context, cacheDir string) (string, erro
 	}
 	destName := fmt.Sprintf("code-sandbox-mcp-%s%s", codeSandboxVersion, ext)
 	url := codeSandboxDownloadURL(codeSandboxVersion, asset)
-	return ensureBinary(ctx, http.DefaultClient, cacheDir, destName, url)
+	return ensureBinary(ctx, provisionClient(), cacheDir, destName, url)
+}
+
+// provisionClient is the HTTP client for binary provisioning. It uses NO proxy
+// (Proxy: nil): the ambient HTTP_PROXY/HTTPS_PROXY in Aura's environment is the
+// sandbox container-egress proxy, not an internet proxy — routing this GitHub
+// download through it would hang. A bounded timeout keeps a stalled download from
+// blocking agent boot (the caller degrades clean on error).
+func provisionClient() *http.Client {
+	return &http.Client{
+		Timeout:   90 * time.Second,
+		Transport: &http.Transport{Proxy: nil},
+	}
 }
 
 // ensureBinary returns cacheDir/destName, downloading it from url if it is not
