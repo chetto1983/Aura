@@ -46,22 +46,40 @@ const (
 // classify the failure without string matching.
 var ErrConversationNotFound = errors.New("conversation not found")
 
+// ConversationCleaner is the narrow purge surface Delete calls to tear down a
+// conversation's on-disk tree (workspace/ AND the .result spillover) with an
+// os.Root no-follow cascade (D-14). It is DECLARED HERE — the consumer — so the
+// concrete impl (sandbox.WorkspaceManager) can be injected by the composition
+// root (main.go / chat boot) WITHOUT conversations importing sandbox: that would
+// be an import cycle (sandbox already declares a matching shape sandbox-side only
+// for a compile-time assertion, never importing us — landmine #4).
+type ConversationCleaner interface {
+	PurgeConversationDir(convID string) error
+}
+
 // Store wraps a pgx pool and the generated Queries — the canonical shape from
 // internal/identity. Non-tx reads/writes use s.q; the atomic per-turn write
 // (AppendTurn) and delete-then-rm wrap db.WithTx / pool ops. runDir is the
 // $AURA_RUN_DIR root the sidecar spill writes under; turnCapBytes is
 // AURA_CONVERSATION_TURN_CAP_BYTES (content over this spills to a sidecar file).
+// cleaner is the optional os.Root cascade injected at boot; when nil, Delete
+// falls back to os.RemoveAll (the pre-2b behavior).
 type Store struct {
 	pool         *pgxpool.Pool
 	q            *sqlc.Queries
 	runDir       string
 	turnCapBytes int
+	cleaner      ConversationCleaner
 }
 
 // Config carries the Store's filesystem + spill knobs (from config.Config).
+// Cleaner is the optional os.Root cascade (sandbox.WorkspaceManager) the
+// composition root injects so Delete tears down the per-conversation tree
+// symlink-safely; a nil Cleaner keeps the os.RemoveAll fallback.
 type Config struct {
 	RunDir       string // $AURA_RUN_DIR — sidecar root
 	TurnCapBytes int    // AURA_CONVERSATION_TURN_CAP_BYTES (65536)
+	Cleaner      ConversationCleaner
 }
 
 // New builds a Store over an open pool. A zero TurnCapBytes falls back to the
@@ -71,7 +89,7 @@ func New(pool *pgxpool.Pool, cfg Config) *Store {
 	if cap <= 0 {
 		cap = 65536
 	}
-	return &Store{pool: pool, q: sqlc.New(pool), runDir: cfg.RunDir, turnCapBytes: cap}
+	return &Store{pool: pool, q: sqlc.New(pool), runDir: cfg.RunDir, turnCapBytes: cap, cleaner: cfg.Cleaner}
 }
 
 // Conversation is the domain projection of aura.conversations — plain Go types at
@@ -428,9 +446,14 @@ func normalizeSearchLimit(limit int) int32 {
 }
 
 // Delete removes the conversation row (conversation_turns + paused_states cascade
-// via FK ON DELETE CASCADE), then os.RemoveAll the sidecar dir AFTER the DB delete
-// commits. A filesystem rm failure is a WARN-level degradation (returned as an
-// error the caller may log), NOT a rolled-back delete — the boot orphan scan
+// via FK ON DELETE CASCADE), then tears down the per-conversation sidecar dir
+// AFTER the DB delete commits. When a Cleaner is wired (2b) the teardown is the
+// os.Root no-follow cascade (sandbox.WorkspaceManager.PurgeConversationDir) over
+// the WHOLE <id>/ tree — workspace/ AND the .result spillover — so an attacker-
+// planted symlink in the sidecar-writable workspace is unlinked as a LINK, never
+// followed to its target (ROADMAP crit 2, landmine #4). With no Cleaner it falls
+// back to os.RemoveAll. A filesystem failure is a WARN-level degradation (returned
+// as an error the caller may log), NOT a rolled-back delete — the boot orphan scan
 // reconciles a leftover dir at next start (SPEC Req#12).
 func (s *Store) Delete(ctx context.Context, conversationID string) error {
 	id, err := parseUUID("id", conversationID)
@@ -439,6 +462,19 @@ func (s *Store) Delete(ctx context.Context, conversationID string) error {
 	}
 	if err := s.q.DeleteConversation(ctx, id); err != nil {
 		return fmt.Errorf("delete conversation %s: %w", conversationID, err)
+	}
+	if s.cleaner != nil {
+		// validateID here too: the cleaner's own guard duplicates it, but rejecting
+		// a traversal-shaped id before handing it across the seam keeps the contract
+		// explicit at the call site (D-26: session_id == conversation_id).
+		if vErr := validateID("conversation_id", conversationID); vErr != nil {
+			return fmt.Errorf("delete conversation %s: %w", conversationID, vErr)
+		}
+		if pErr := s.cleaner.PurgeConversationDir(conversationID); pErr != nil {
+			return fmt.Errorf("delete conversation %s: purge dir (orphan-scan will reconcile): %w",
+				conversationID, pErr)
+		}
+		return nil
 	}
 	dir, err := s.sidecarDir(conversationID)
 	if err != nil {

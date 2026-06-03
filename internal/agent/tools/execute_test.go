@@ -102,16 +102,114 @@ func TestExecute_LangEnumRejected(t *testing.T) {
 	}
 }
 
-func TestExecute_SessionIdReserved(t *testing.T) {
-	e := &Execute{Runner: &fakeRunner{}}
-	out, err := runExecute(t, e, `{"lang":"python","code":"x","session_id":"abc"}`)
-	if err != nil {
-		t.Fatalf("reserved session_id → error ToolResult, not a Go error: %v", err)
+// TestExecute_SessionIdDefaultsToConversation supersedes the 2a "reserved session"
+// test: the inert-reject branch was REMOVED in 08-08 (D-02). An OMITTED session_id
+// now defaults to the conversation id the agent stamps on the ctx (ctxWith uses
+// "sess-x"), and the call routes through the session-bound Runner method.
+func TestExecute_SessionIdDefaultsToConversation(t *testing.T) {
+	fr := &fakeRunner{res: sandbox.Result{Stdout: "ok"}}
+	e := &Execute{Runner: fr}
+	if _, err := runExecute(t, e, `{"lang":"python","code":"x"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
 	}
-	if !strings.Contains(out.Preview, "reserved for Phase 8") {
-		t.Fatalf("want a reserved-session preview, got %q", out.Preview)
+	if fr.gotSession != "sess-x" {
+		t.Fatalf("an omitted session_id must default to the conversation id (sess-x), got %q", fr.gotSession)
 	}
 }
+
+// TestExecute_ExplicitSessionId honours a model-supplied session_id over the ctx
+// default and routes it through the session-bound Runner method.
+func TestExecute_ExplicitSessionId(t *testing.T) {
+	fr := &fakeRunner{res: sandbox.Result{Stdout: "ok"}}
+	e := &Execute{Runner: fr}
+	if _, err := runExecute(t, e, `{"lang":"shell","code":"y","session_id":"conv-42"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if fr.gotSession != "conv-42" || fr.gotLang != "shell" {
+		t.Fatalf("explicit session_id must reach the session Runner: session=%q lang=%q", fr.gotSession, fr.gotLang)
+	}
+}
+
+// TestExecute_SessionIdTraversalRejected rejects a traversal-shaped session_id as an
+// error ToolResult (validateID guard) before any Runner call.
+func TestExecute_SessionIdTraversalRejected(t *testing.T) {
+	fr := &fakeRunner{}
+	e := &Execute{Runner: fr}
+	out, err := runExecute(t, e, `{"lang":"python","code":"x","session_id":"../etc"}`)
+	if err != nil {
+		t.Fatalf("a malformed session_id → error ToolResult, not a Go error: %v", err)
+	}
+	if !strings.Contains(out.Preview, "session_id") || fr.gotSession != "" {
+		t.Fatalf("traversal session_id must be rejected before the Runner, got preview=%q session=%q", out.Preview, fr.gotSession)
+	}
+}
+
+// TestExecute_NetworkAdvisory appends the {risk_tier, gate_recommended} advisory
+// line ONLY when a non-empty egress allowlist is configured (D-12). An arbitrary
+// host is Risky → gate recommended; PyPI-only stays Safe → no gate.
+func TestExecute_NetworkAdvisory(t *testing.T) {
+	cases := []struct {
+		name      string
+		allow     []string
+		wantTier  string
+		wantGate  string
+		wantPanel bool
+	}{
+		{"no allowlist → no advisory", nil, "", "", false},
+		{"arbitrary host → risky+gate", []string{"example.com"}, "risky", "gate_recommended: true", true},
+		{"pypi-only → safe+no gate", []string{"pypi.org", "files.pythonhosted.org"}, "safe", "gate_recommended: false", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			e := &Execute{Runner: &fakeRunner{res: sandbox.Result{Stdout: "out\n"}}, NetworkAllow: tc.allow}
+			out, err := runExecute(t, e, `{"lang":"python","code":"x"}`)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			hasAdvisory := strings.Contains(out.Preview, "[advisory]")
+			if hasAdvisory != tc.wantPanel {
+				t.Fatalf("advisory presence: want %v, got preview %q", tc.wantPanel, out.Preview)
+			}
+			if tc.wantPanel {
+				if !strings.Contains(out.Preview, "risk_tier: "+tc.wantTier) || !strings.Contains(out.Preview, tc.wantGate) {
+					t.Fatalf("advisory mismatch: want tier=%s %s, got %q", tc.wantTier, tc.wantGate, out.Preview)
+				}
+			}
+		})
+	}
+}
+
+// TestExecute_SessionAcquireReleased verifies that when a SessionAcquirer is wired,
+// Execute Acquires before and Releases after the call (D-07 serialization seam).
+func TestExecute_SessionAcquireReleased(t *testing.T) {
+	fr := &fakeRunner{res: sandbox.Result{Stdout: "ok"}}
+	fs := &fakeSessions{}
+	e := &Execute{Runner: fr, Sessions: fs}
+	if _, err := runExecute(t, e, `{"lang":"python","code":"x"}`); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if fs.acquired != "sess-x" || fs.releases != 1 {
+		t.Fatalf("Acquire/Release must bracket the exec: acquired=%q releases=%d", fs.acquired, fs.releases)
+	}
+}
+
+// fakeSessions is a SessionAcquirer double recording the acquired session id +
+// release count. It returns a zero *sandbox.Session so Release is a benign no-op.
+type fakeSessions struct {
+	acquired string
+	releases int
+	err      error
+}
+
+func (f *fakeSessions) Acquire(_ context.Context, sessionID string) (*sandbox.Session, error) {
+	f.acquired = sessionID
+	if f.err != nil {
+		return nil, f.err
+	}
+	return &sandbox.Session{}, nil
+}
+
+func (f *fakeSessions) Release(*sandbox.Session) { f.releases++ }
 
 func TestExecute_TimeoutPassThrough(t *testing.T) {
 	// An explicit in-range timeout reaches the Runner verbatim.
