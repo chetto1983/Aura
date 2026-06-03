@@ -118,8 +118,9 @@ services:
       start_period: 10s
 
   # Local SearXNG backend. Aura talks to this over 127.0.0.1 only via
-  # SEARXNG_URL; the container sits on a non-masquerading Docker bridge, matching
-  # aura-sandbox-agent's no-public-egress local-container posture.
+  # SEARXNG_URL. Unlike the code sandbox, SearXNG needs outbound egress to query
+  # upstream engines; loopback publishing keeps the service local without cutting
+  # off metasearch.
   searxng:
     image: searxng/searxng:2026.5.31-7159b8aed
     container_name: aura-searxng
@@ -152,8 +153,7 @@ networks:
     driver: bridge
     driver_opts:
       com.docker.network.bridge.enable_ip_masquerade: "false"
-  # Local SearXNG bridge: host-loopback published, no Docker NAT masquerade.
+  # Local SearXNG bridge: host-loopback published; default Docker NAT egress
+  # remains enabled so metasearch can reach upstream engines.
   aura-web:
     driver: bridge
-    driver_opts:
-      com.docker.network.bridge.enable_ip_masquerade: "false"
