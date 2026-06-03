@@ -108,6 +108,34 @@
 
 ---
 
+## §7 — Phase 8 / Slice 2b: decisioni implementative (D-01..D-14, ratificate 2026-06-03)
+
+> Decisioni HOW della Phase 8 (sandbox session-bound), distinte dalla mappa architetturale
+> D00-D28 di §0-§6. Cinque deviano dalla wording locked del PRD/ROADMAP e sono gated dietro
+> **amendment-commit #38..#42** (landed in 08-01, doc-only gate, prima di ogni code wave).
+> Fonte: `08-CONTEXT.md` §Implementation Decisions + `08-RESEARCH.md`.
+
+| # | Decisione | Amendment | Deviazione PRD? |
+|---|---|---|---|
+| **D-01** | Sidecar session-bound tiene un **interprete Python long-lived per `session_id`** (in-memory `x=42` survives, prd.md:1252) come tier-1 + workspace mount RW come tier-2. I due claim di persistenza del PRD sono i due tier, non una contraddizione. Estende il sidecar 2a `subprocess.run`-per-call. | **#38** | ✅ (risolve la tensione interna PRD) |
+| **D-02** | Persistenza asimmetrica documentata al modello: Python in-memory vars persistono; shell `cd`/`export` NON persistono cross-call (solo working dir API-managed re-applicato); file workspace persistono per entrambi. | (parte #38) | — |
+| **D-03** | Idle interpreter = RAM cost driver (mini-PC 32GB); boundato da hard cap 5 sessioni concorrenti + 1800s idle-TTL eviction. Meccanismo interprete (REPL-over-stdin vs IPython kernel) = discrezione implementatore, invariante "x=42 survives + sidecar stdlib-only". | — | — |
+| **D-04** | Un container gVisor `runsc` per `conversation_id`, lifecycle posseduto dal `SessionManager` control-plane. Threat model = uno/pochi utenti **trusted**, non tenant mutuamente-distrusting → gVisor (non Firecracker) sufficiente. | — | — |
+| **D-05** | Carve-out docker-lifecycle contenuto: il `SessionManager` shella `docker run`/`stop`/`rm` per il *lifecycle*, ma l'*esecuzione* resta HTTP. L'invariante 2a "Go non guida il runtime Docker" ristretta a "non guida l'*esecuzione* via docker". **MUST NEVER mount the docker socket** (escape vector #1). | **#39** | ✅ |
+| **D-06** | `aura.sandbox_sessions` = control-plane registry (migration **0008**). Boot recovery: row `status='active'` al boot → `'terminated'`, container ricreato lazy. File workspace sopravvivono al restart; stato in-memory interprete NO (container reaped). | — | — |
+| **D-07** | Container lock per `session_id` (sync.Map + mutex) serializza `execute` concorrenti intra-session. Swarm worker che riusano il `SessionID` parent condividono il container e serializzano su questo lock. | — | — |
+| **D-08** | Egress enforcato **fuori dalla sandbox** da un **forward proxy Go host-side** (hostname-CONNECT allowlist, default-deny, resolve-then-pin). **Supersede** "iptables OUTPUT rules" / "`network_mode: bridge` + iptables" — iptables richiede `CAP_NET_ADMIN`, incompatibile col floor `cap_drop: ALL`/D12. CAP-02 "via iptables" superseduta. | **#40** | ✅ (pivot di rete) |
+| **D-09** | Riusa la SSRF machinery di Slice 5 `internal/web` (IP-classification + DNS-rebinding pin + redirect re-validation). Il sidecar ottiene `HTTP_PROXY`/`HTTPS_PROXY`/`PIP_PROXY` env verso il proxy. Deny-wins, glob domains. | (parte #40) | — |
+| **D-10** | Solo granularità hostname/SNI, **NO MITM**. CONNECT-validation contro l'allowlist sufficiente per `pip install`. Honor `AURA_PRIVACY_MODE=local-only` (D00.5): allowlist non-vuota sotto local-only → fail-fast. Caveat data-exfil documentato in 08-SECURITY. | (parte #40) | — |
+| **D-11** | Phase 8 shippa il **modulo condiviso `internal/scoring/` per intero** (pulled forward da Slice 6). Scheduler (P10) + Skills (P11) lo consumano. | **#41** | ✅ (home-slice migrata) |
+| **D-12** | SCOPE GUARD: costruire il MODULO, non le pipeline applicative per-slice. Phase 8 wira SOLO il path advisory sandbox (`ComputeSandboxTier`); il `pending_approval` scheduler / audit columns / skills pending dir restano P10/P11. | (parte #41) | — |
+| **D-13** | Walker host-side workspace usano `os.Root`/`os.OpenInRoot` (openat2), **supersede** `O_NOFOLLOW` letterale (CVE-2026-39861 è la shape esatta). | **#42** | ✅ (minore) |
+| **D-14** | Cascade delete = walk openat no-follow manuale, **NON `os.RemoveAll`** (`os.Root` non ha ancora `RemoveAll`, golang/go#67002). Test acceptance: `ln -s /etc /workspace/escape` poi host cascade → no host `/etc` deletion. | (parte #42) | — |
+
+**Schema landmine fix (correzioni, non amendment nuovi):** migration **0010 → 0008** (floor shippato è 0007, regola ordine-fase §Persistence) + `conversation_id` **text → uuid** (PK di `conversations` è uuid, verificato 0005). Applicati in prd.md §Slice 2b insieme agli amendment.
+
+---
+
 ## Prossime azioni raccomandate
 
 0. **D00 locked (2026-06-01)**: binario portabile unico. Le 6 invarianti di portabilità sono guardrail per ogni phase → da verificare in CI (multi-arch) e nel design (routing config-driven, privacy-mode, seccomp per-arch).
