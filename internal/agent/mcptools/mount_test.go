@@ -1,0 +1,30 @@
+package mcptools
+
+import (
+	"context"
+	"testing"
+
+	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/mcp"
+)
+
+// TestMountServer_SpawnFailureLeavesRegistryClean asserts that when the MCP server
+// command cannot be spawned, MountServer returns an error and registers nothing —
+// a misconfigured server never half-wires the agent registry.
+func TestMountServer_SpawnFailureLeavesRegistryClean(t *testing.T) {
+	reg := tools.NewRegistry()
+	closer, names, err := MountServer(context.Background(), reg, "bad",
+		mcp.ServerConfig{Command: "aura-nonexistent-mcp-binary-xyz"})
+	if err == nil {
+		t.Fatal("want spawn error for a missing binary")
+	}
+	if closer != nil {
+		t.Fatal("on failure closer must be nil")
+	}
+	if names != nil {
+		t.Fatalf("on failure names must be nil, got %v", names)
+	}
+	if len(reg.All()) != 0 {
+		t.Fatalf("registry must stay empty on spawn failure, got %d tools", len(reg.All()))
+	}
+}
