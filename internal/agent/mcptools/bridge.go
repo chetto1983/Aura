@@ -115,9 +115,14 @@ func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Serve
 
 		name := bt.spec.Name
 		// Distinct raw names whose namespaced form collides get a deterministic hash
-		// suffix (keyed on the RAW name, so each survivor is unique).
+		// suffix (keyed on the RAW name, so each survivor is unique). Re-truncate first
+		// so the 13-byte suffix never pushes an already-capped name past maxToolNameLen.
 		if _, dup := chosen[name]; dup {
-			name += hashSuffix(namespace + "\x00" + bt.name)
+			suf := hashSuffix(namespace + "\x00" + bt.name)
+			if len(name)+len(suf) > maxToolNameLen {
+				name = name[:maxToolNameLen-len(suf)]
+			}
+			name += suf
 			bt.spec.Name = name
 		}
 		if _, exists := reg.Get(name); exists {
