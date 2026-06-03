@@ -119,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-02 — Phase 6 (KV Cache Builder) complete*
+*Last updated: 2026-06-03 — Phase 8.1 (tool_search hardening, Anthropic defer_loading parity) complete: BM25 ranking + max_results, MCP `<server>__<tool>` namespacing with 64-byte cap, registry-derived tool_search Description, fail-closed boot guard*
