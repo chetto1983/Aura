@@ -39,6 +39,13 @@ RUN python3 -c "import numpy,pandas,scipy,sympy,matplotlib,PIL,bs4,lxml,yaml,dat
 RUN groupadd --gid 65532 nonroot \
     && useradd --uid 65532 --gid 65532 --no-create-home --shell /usr/sbin/nologin nonroot
 
+# /workspace is the 2b session cwd (SESSION_DEFAULT_CWD in sidecar.py). The
+# per-conv host workspace is bind-mounted here at runtime (08-10); this empty
+# owned-by-65532 dir is the fallback mount-point so a session WITHOUT a bind-mount
+# still has a valid writable cwd (defense-in-depth — the bind-mount overlays it when
+# present). Created BEFORE the USER switch so chown succeeds as root.
+RUN mkdir -p /workspace && chown 65532:65532 /workspace
+
 COPY sidecar.py /app/sidecar.py
 
 USER 65532:65532

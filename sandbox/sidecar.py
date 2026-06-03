@@ -197,9 +197,19 @@ def run_code(argv_prefix: list[str], code: str, timeout_sec: int, cwd: str | Non
 
     cwd re-applies a per-session working dir for the 2b shell session path (D-02);
     it is None for the stateless 2a path, leaving the inherited cwd untouched.
+
+    A set-but-missing cwd (a misconfigured/absent bind-mount) degrades to the tmpfs
+    default /tmp with a stderr note rather than an opaque exit 127 — subprocess.run
+    raises FileNotFoundError for BOTH a missing interpreter AND a missing cwd, so we
+    disambiguate here: a non-existent cwd is recovered, a genuinely missing
+    interpreter still maps to 127 below.
     """
     t0 = time.monotonic()
     limit_hit: str | None = None
+    cwd_note = ""
+    if cwd is not None and not os.path.isdir(cwd):
+        cwd_note = f"[sandbox] cwd {cwd!r} does not exist; falling back to /tmp\n"
+        cwd = "/tmp"
     try:
         proc = subprocess.run(  # noqa: S603 — untrusted code execution is the whole point; isolation is the container's job
             [*argv_prefix, code],
@@ -230,6 +240,9 @@ def run_code(argv_prefix: list[str], code: str, timeout_sec: int, cwd: str | Non
             limit_hit = "oom"
         elif rc != 0 and _detect_pids_limit(err):
             limit_hit = "pids"
+
+    if cwd_note:
+        err = cwd_note + err
 
     out_trunc = len(out) > MAX_STREAM
     err_trunc = len(err) > MAX_STREAM
