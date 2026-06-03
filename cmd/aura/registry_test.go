@@ -66,9 +66,9 @@ func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 	}
 	defer func() { _ = closeMCPServers(closers) }()
 
-	calc, ok := reg.Get("calculate")
+	calc, ok := reg.Get("calculator__calculate")
 	if !ok {
-		t.Fatal("configured MCP tool calculate was not mounted")
+		t.Fatal("configured MCP tool calculator__calculate was not mounted")
 	}
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
 	res, err := calc.Execute(ctx, json.RawMessage(`{"expression":"2+2"}`))

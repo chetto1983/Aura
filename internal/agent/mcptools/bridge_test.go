@@ -39,7 +39,7 @@ func sandboxDefs() []mcp.ToolDef {
 }
 
 func TestBridge_TranslatesTools(t *testing.T) {
-	got, err := Bridge(context.Background(), &fakeServer{defs: sandboxDefs()})
+	got, err := Bridge(context.Background(), "sb", &fakeServer{defs: sandboxDefs()})
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
@@ -47,8 +47,8 @@ func TestBridge_TranslatesTools(t *testing.T) {
 		t.Fatalf("want 2 bridged tools, got %d", len(got))
 	}
 	exec := got[0].Spec()
-	if exec.Name != "sandbox_exec" {
-		t.Fatalf("name = %q", exec.Name)
+	if exec.Name != "sb__sandbox_exec" {
+		t.Fatalf("name = %q, want namespaced sb__sandbox_exec", exec.Name)
 	}
 	if exec.Summary != "Execute commands in the sandboxed environment." {
 		t.Fatalf("summary should be the first line, got %q", exec.Summary)
@@ -67,9 +67,21 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	}
 }
 
+func TestBridge_Namespaced(t *testing.T) {
+	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "create_issue", Description: "Open an issue."}}}
+	got, err := Bridge(context.Background(), "github", srv)
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	// Model-facing name is namespaced <ns>__<tool>.
+	if got[0].Spec().Name != "github__create_issue" {
+		t.Fatalf("model-facing name = %q, want github__create_issue", got[0].Spec().Name)
+	}
+}
+
 func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callText: "42"}
-	got, _ := Bridge(context.Background(), srv)
+	got, _ := Bridge(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc","commands":["python -c \"print(40+2)\""]}`))
@@ -87,9 +99,27 @@ func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	}
 }
 
+// TestBridgedTool_RoutesRawName guards the wire-name/model-name separation: even
+// though the model-facing spec.Name is namespaced, Execute must route CallTool by
+// the RAW server-side tool name. Kills the "route by spec.Name" mutant.
+func TestBridgedTool_RoutesRawName(t *testing.T) {
+	srv := &fakeServer{defs: sandboxDefs(), callText: "ok"}
+	got, _ := Bridge(context.Background(), "sb", srv)
+	if got[0].Spec().Name != "sb__sandbox_exec" {
+		t.Fatalf("precondition: model name not namespaced, got %q", got[0].Spec().Name)
+	}
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
+	if _, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`)); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if srv.lastName != "sandbox_exec" {
+		t.Fatalf("Execute routed by %q, want the RAW wire name sandbox_exec", srv.lastName)
+	}
+}
+
 func TestBridgedTool_Execute_ErrorAsContent(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callErr: context.DeadlineExceeded}
-	got, _ := Bridge(context.Background(), srv)
+	got, _ := Bridge(context.Background(), "sb", srv)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
@@ -101,23 +131,28 @@ func TestBridgedTool_Execute_ErrorAsContent(t *testing.T) {
 	}
 }
 
-func TestMount_RegistersAndRefusesCollision(t *testing.T) {
+func TestMount_Namespaced(t *testing.T) {
 	reg := tools.NewRegistry()
 	srv := &fakeServer{defs: sandboxDefs()}
 
-	names, err := Mount(context.Background(), reg, srv)
+	names, err := Mount(context.Background(), reg, "sb", srv)
 	if err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
 	if len(names) != 2 {
 		t.Fatalf("want 2 registered, got %v", names)
 	}
-	if _, ok := reg.Get("sandbox_exec"); !ok {
-		t.Fatal("sandbox_exec not registered")
+	// Tools register under their namespaced names.
+	if _, ok := reg.Get("sb__sandbox_exec"); !ok {
+		t.Fatal("sb__sandbox_exec not registered")
+	}
+	// The raw (un-namespaced) name must NOT be registered. Kills the "register raw name" mutant.
+	if _, ok := reg.Get("sandbox_exec"); ok {
+		t.Fatal("raw sandbox_exec must not be registered — only the namespaced name")
 	}
 
-	// Mounting the same server again collides on existing names — all-or-nothing.
-	if _, err := Mount(context.Background(), reg, srv); err == nil {
+	// Re-mounting the same namespace collides on existing names — all-or-nothing.
+	if _, err := Mount(context.Background(), reg, "sb", srv); err == nil {
 		t.Fatal("want collision error on re-mount, got nil")
 	}
 }
@@ -128,10 +163,52 @@ func TestMount_RefusesDuplicateWithinServer(t *testing.T) {
 		{Name: "dup", Description: "a"},
 		{Name: "dup", Description: "b"},
 	}}
-	if _, err := Mount(context.Background(), reg, srv); err == nil {
+	if _, err := Mount(context.Background(), reg, "srv", srv); err == nil {
 		t.Fatal("want duplicate-name error, got nil")
 	}
-	if _, ok := reg.Get("dup"); ok {
+	if _, ok := reg.Get("srv__dup"); ok {
 		t.Fatal("nothing should be registered when the batch has a duplicate")
+	}
+}
+
+// TestMount_CollisionHash exercises residual collision disambiguation: two distinct
+// raw tool names that sanitize to the SAME namespaced name must not be dropped —
+// the second gets a deterministic hash suffix so both register, then the
+// all-or-nothing outer guard sees no remaining duplicate.
+func TestMount_CollisionHash(t *testing.T) {
+	reg := tools.NewRegistry()
+	// "a.b" and "a/b" both sanitize to "a_b" → namespaced "srv__a_b" collides.
+	srv := &fakeServer{defs: []mcp.ToolDef{
+		{Name: "a.b", Description: "first"},
+		{Name: "a/b", Description: "second"},
+	}}
+	names, err := Mount(context.Background(), reg, "srv", srv)
+	if err != nil {
+		t.Fatalf("Mount with sanitize-collision must disambiguate, got %v", err)
+	}
+	if len(names) != 2 {
+		t.Fatalf("both tools must register after disambiguation, got %v", names)
+	}
+	// Exactly one keeps the plain namespaced name; the other carries a hash suffix.
+	plain := 0
+	for _, n := range names {
+		if n == "srv__a_b" {
+			plain++
+		}
+		if !strings.HasPrefix(n, "srv__a_b") {
+			t.Errorf("disambiguated name should keep the colliding base prefix, got %q", n)
+		}
+	}
+	if plain != 1 {
+		t.Fatalf("exactly one tool keeps the plain name srv__a_b, got %d of %v", plain, names)
+	}
+	// Both names are actually registered and distinct.
+	if names[0] == names[1] {
+		t.Fatalf("disambiguation failed: both names equal %q", names[0])
+	}
+	for _, n := range names {
+		if _, ok := reg.Get(n); !ok {
+			t.Errorf("registered name %q not retrievable", n)
+		}
 	}
 }
