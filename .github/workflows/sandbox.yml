@@ -37,6 +37,7 @@ on:
       - "compose.yaml"
       - "compose.gvisor.yaml"
       - "scripts/sandbox_escape_bench.sh"
+      - "cmd/aura/**"
       - ".github/workflows/sandbox.yml"
   pull_request:
     branches: [ "master", "main", "tabula-rasa" ]
@@ -49,6 +50,7 @@ on:
       - "compose.yaml"
       - "compose.gvisor.yaml"
       - "scripts/sandbox_escape_bench.sh"
+      - "cmd/aura/**"
       - ".github/workflows/sandbox.yml"
 
 permissions:
