@@ -25,6 +25,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench (completed 2026-06-02)
 - [x] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI (completed 2026-06-02)
 - [x] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin) (completed 2026-06-02)
+- [ ] **Phase 07.1: Agent-Loop Forced Finalization** (INSERTED) - loop must always return a final answer; forced-finalization on budget/dedup trip + dedup recovery + fan-out budget block
 - [ ] **Phase 8: Sandbox 2b Session-Bound** - per-conversation workspace + network allowlist + symlink escape guard
 - [ ] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance
 - [ ] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat
@@ -224,6 +225,31 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Wave 4** *(blocked on Wave 3 completion)*
 
 - [x] 07-04-PLAN.md — Adapters + surface: Deferred web_search/web_fetch tools + NewResult spillover + aura web CLI (doctor/tool verbs) + ssrf_smoke + live web_integration tier + Gate-3 acceptance (SC#1/2/3/4 live, wave 4)
+
+### Phase 07.1: Agent-Loop Forced Finalization (INSERTED)
+
+**Goal**: The `LlmAgent` run loop (`internal/agent/llm_agent.go`) must ALWAYS return a final natural-language answer to the user, even on early termination. Today the budget trip (`:124-127`) and the dedup-ring veto (`:224-227`) emit only `terminalBudgetEvent` (a signal, no prose) and `return`, so the user can get an empty/0-token response (reproduced live in Phase 7: "previsioni meteo a Caraglio" → web_fetch ×5 then nothing, ~1 in 6 runs; the web tools are fine, the loop is the bug). Fix (cited deep-research — `docs/research/agent-loop-forced-finalization.md`): **(P0) forced finalization** — a `finalize()` tool-free synthesis LLM call (`tool_choice="none"`, parse `content`) emitting a real final answer at BOTH termination paths; thread `ToolChoice` through `llm.Request` + `internal/llm/openai_compat` (hardcoded `"auto"` today). **(P1) dedup recovery** — the veto injects a user-role nudge ("you already called this; don't repeat; answer now") + one more turn instead of aborting, counter-gated (no one-shot latch — CrewAI #1656 anti-pattern). **(P2) fan-out control** — a `<budget>` used/remaining prompt block to curb `web_fetch` over-fetching (arXiv 2511.17006).
+**Depends on**: Phase 7
+**Requirements**: INFRA-03 (extends the Slice 0.9 budget/loop contract)
+**Slices**: 0.9/1 (agent-runtime hardening)
+**Success Criteria** (what must be TRUE):
+
+  1. A run that trips the dedup-ring veto returns a non-empty final natural-language answer (the exact q2c failure → fixed), not a 0-token/empty terminal event
+  2. A run that exhausts `AURA_LOOP_MAX_STEPS` (or wallclock) returns a synthesized answer from the tool results gathered so far, not an empty terminal event
+  3. The finalize call sends `tool_choice="none"` and DeepSeek-V4/OpenRouter returns prose parsed from `content` (no phantom tool-call-in-text) — smoke-tested live against the real endpoint
+  4. The dedup veto injects a recovery nudge and continues one more turn before finalize (recover-not-abort), gated on the step counter — NOT a one-shot latch
+  5. E2E: "dammi le previsioni meteo a Caraglio" yields a weather answer across N consecutive runs (observed Phase-7 failure rate → 0)
+  6. `goleak` + `-race` clean; mutation spot-check ≥70% on the finalize/dedup-recovery branch; owned-surface coverage ≥85%
+
+**Plans**: 5 plans
+
+Plans:
+
+- [ ] 07.1-01-PLAN.md — Wave 1: ToolChoice plumbing (llm.Request field + buildWireRequest default-auto/omit-tools-on-none + TestRequestBody) [Req#1]
+- [ ] 07.1-02-PLAN.md — Wave 1: <budget> used/remaining prompt block via PromptBuilder.Build tail-injection to a history COPY (cache-safe) [Req#6]
+- [ ] 07.1-03-PLAN.md — Wave 2: finalize() tool-free synthesis (ToolChoice=none, parse content) + re-route both trip sites; non-empty finalEvent at all 3 paths [Req#2]
+- [ ] 07.1-04-PLAN.md — Wave 3: counter-gated recovery turn + finalize-outside-budget (<=max_steps+2) + retry-once + Italian stub fallback + live <budget> counts [Req#3/#4/#5]
+- [ ] 07.1-05-PLAN.md — Wave 4: live env-gated tests — tool_choice=none smoke (AC4) + meteo-Caraglio E2E failure-rate->0 (AC9)
 
 ### Phase 8: Sandbox 2b Session-Bound
 
