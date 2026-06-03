@@ -188,16 +188,21 @@ func TestLlmAgent_StepCap_Trips(t *testing.T) {
 	if last.Actions.StateDelta["limit_hit"] != "max_steps" {
 		t.Errorf("terminal limit_hit = %v, want max_steps", last.Actions.StateDelta["limit_hit"])
 	}
-	if fc.CallCount() > 3 {
-		t.Errorf("client called %d times, want <= 3 (step cap)", fc.CallCount())
+	// The loop makes at most MaxSteps (3) budgeted calls; the trip then forces ONE
+	// tool-free finalization call (07.1-03, Req#2) — so 4 total, never a runaway.
+	if fc.CallCount() > 4 {
+		t.Errorf("client called %d times, want <= 4 (3 step cap + 1 forced finalize)", fc.CallCount())
 	}
 }
 
-// TestLlmAgent_WallclockCap_Trips (Req#10): an injected clock past the deadline
-// trips wallclock as a terminal Event.
+// TestLlmAgent_WallclockCap_Trips (Req#10 + Req#2): an injected clock past the
+// deadline trips wallclock before any loop LLM call; the trip now forces
+// finalization (07.1-03), so it makes EXACTLY ONE tool-free synthesis call and ends
+// on a terminal Event still carrying limit_hit=wallclock — no longer 0 calls / a
+// prose-less terminalBudgetEvent.
 func TestLlmAgent_WallclockCap_Trips(t *testing.T) {
 	recordingProvider(t)
-	fc := agenttest.NewFakeClient(agenttest.ToolCallTurn(textResponseCall("c1", "x")))
+	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", "finale"))
 	a := newAgent(t, fc, llm.Config{})
 
 	base := time.Now()
@@ -223,8 +228,8 @@ func TestLlmAgent_WallclockCap_Trips(t *testing.T) {
 	if last.Actions.StateDelta["limit_hit"] != "wallclock" {
 		t.Errorf("limit_hit = %v, want wallclock", last.Actions.StateDelta["limit_hit"])
 	}
-	if fc.CallCount() != 0 {
-		t.Errorf("client called %d times, want 0 (tripped before the first call)", fc.CallCount())
+	if fc.CallCount() != 1 {
+		t.Errorf("client called %d times, want 1 (the single forced-finalization call)", fc.CallCount())
 	}
 }
 
