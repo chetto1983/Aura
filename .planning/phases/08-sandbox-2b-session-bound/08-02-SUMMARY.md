@@ -121,6 +121,10 @@ No new surface beyond the plan's `<threat_model>`: the migration keeps DDL gated
 - The privacy-mode fail-fast cross-check (`PrivacyMode == "local-only"` AND non-empty allowlist) is owed by 08-05 per 08-DECISIONS-WAVE0 OQ4 — the field is in place.
 - Orchestrator owns STATE.md / ROADMAP.md updates after the Wave-2 worktree agents complete (NOT touched here).
 
+## Self-Check: PASSED
+
+All created files exist on disk (4 created + SUMMARY) and all 3 commits (`93ba8ef0`, `327cfd9f`, `d935915f`) are present in the git log. STATE.md / ROADMAP.md untouched (orchestrator owns those).
+
 ---
 *Phase: 08-sandbox-2b-session-bound*
 *Completed: 2026-06-03*
