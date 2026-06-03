@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: "Phase 08 closed. Next: Phase 08.1 (Tool Search hardening → Anthropic defer_loading parity, INSERTED)."
+status: executing
 stopped_at: Phase 08.1 context gathered
-last_updated: "2026-06-03T16:22:55.199Z"
-last_activity: 2026-06-03 -- sandbox-agent pivot landed (b98ddaff "Use local sandbox-agent container" + 341e595e CI fallout fix)
+last_updated: "2026-06-03T18:22:30.648Z"
+last_activity: 2026-06-03 -- Phase 08.1 planning complete
 progress:
   total_phases: 17
   completed_phases: 8
-  total_plans: 51
+  total_plans: 54
   completed_plans: 50
   percent: 47
 ---
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 Phase: 08 (Sandbox via sandbox-agent / local container) — COMPLETE 2026-06-03 (D-15 pivot)
 Plan: shipped — single non-deferred `sandbox_exec` tool → `internal/sandboxagent.Client` POSTs to rivetdev/sandbox-agent on `127.0.0.1:2468` (`/v1/processes/run`); operator starts it via `make sandbox-up` (preloaded image, no boot provision). code-sandbox-mcp MCP-bridge cut superseded (`internal/agent/mcptools` seam retained, unmounted). All bespoke sandbox surface deleted; `go build`/`test`/lint green.
-Status: Phase 08 closed. Next: Phase 08.1 (Tool Search hardening → Anthropic defer_loading parity, INSERTED).
-Last activity: 2026-06-03 -- sandbox-agent pivot landed (b98ddaff "Use local sandbox-agent container" + 341e595e CI fallout fix)
+Status: Ready to execute
+Last activity: 2026-06-03 -- Phase 08.1 planning complete
 
 Progress: [██████████] 100% (Phase 08)
 

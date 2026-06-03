@@ -249,11 +249,14 @@ Plans:
 **Requirements**: D-01..D-10 (CONTEXT.md decisions; no REQUIREMENTS.md IDs map to this inserted phase)
 **Depends on:** Phase 8
 **Plans:** 3 plans
-
-Plans:
+Plans:
+**Wave 1**
 
 - [ ] 08.1-01-PLAN.md - BM25 ranking core (bm25.go) + expanded search document + max_results top-K in search.go (D-01, D-02, D-03, D-05)
 - [ ] 08.1-03-PLAN.md - MCP tool namespacing `<server>__<tool>` + sanitize/64B-cap/collision-hash in mcptools (D-06, D-07, D-08)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 08.1-02-PLAN.md - registry-derived dynamic tool_search Description (D-09) + >=1-non-deferred Validate() boot guard (D-10) + cache-invariant re-verification
 
 ### Phase 9: Swarm (Minimal)
