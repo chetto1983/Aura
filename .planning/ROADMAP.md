@@ -26,7 +26,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI (completed 2026-06-02)
 - [x] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin) (completed 2026-06-02)
 - [x] **Phase 07.1: Agent-Loop Forced Finalization** (INSERTED) - loop must always return a final answer; forced-finalization on budget/dedup trip + dedup recovery + fan-out budget block (completed 2026-06-03)
-- [ ] **Phase 8: Sandbox 2b Session-Bound** - per-conversation workspace + network allowlist + symlink escape guard
+- [ ] **Phase 8: Sandbox 2b Session-Bound** - per-conversation workspace + network allowlist + symlink escape guard (all 9 plans authored; CAP-02 closes on the 08-09 Task-3 live Gate-3 human-verify sign-off — PENDING)
 - [ ] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance
 - [ ] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat
 - [ ] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger
@@ -273,7 +273,7 @@ Plans:
   3. Operator inspects `aura sandbox sessions list` after `AURA_SANDBOX_SESSION_TTL_SEC` elapses with no activity and observes the session reaped, container removed, workspace dir cleaned up
   4. Operator triggers `execute` with `network_allow: ["pypi.org"]` and observes `pip install` to pypi.org succeeding; same call attempting `curl 1.1.1.1` observes connection refused (allowlist enforced via the host-side forward proxy)
 
-**Plans:** 7/9 plans executed
+**Plans:** 9/9 plans complete
 
 **Wave 1**
 
@@ -297,7 +297,7 @@ Plans:
 
 **Wave 5**
 
-- [ ] 08-09-PLAN.md — live sandbox_integration tier (4 criteria) + egress-bridge spike + 08-SECURITY + gating CI DinD + coverage/mutation + human-verify (CAP-02 close)
+- [x] 08-09-PLAN.md — live sandbox_integration tier (4 criteria) + egress-bridge spike + 08-SECURITY + gating CI DinD + coverage/mutation + human-verify (CAP-02 close)
 
 ### Phase 9: Swarm (Minimal)
 
@@ -423,7 +423,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
-| 8. Sandbox 2b Session-Bound | 7/9 | In Progress|  |
+| 8. Sandbox 2b Session-Bound | 9/9 | Complete   | 2026-06-03 |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |
