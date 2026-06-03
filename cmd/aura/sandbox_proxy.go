@@ -32,9 +32,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/sandbox"
@@ -49,6 +53,77 @@ const (
 	// boot proxy; per-Acquire proxies would key by the real conversation id.
 	proxyConvScope = "sandbox-boot-proxy"
 )
+
+const sandboxProxyUsage = "usage: aura sandbox proxy --listen <host:port> --allow <csv> [--deny <csv>]"
+
+// proxyArgs is the parsed `aura sandbox proxy` flag set.
+type proxyArgs struct {
+	listen string
+	allow  string
+	deny   string
+}
+
+// parseSandboxProxyArgs parses --listen/--allow/--deny for `aura sandbox proxy`.
+// --listen is the one REQUIRED flag (the gateway host:port the session containers
+// reach across the egress bridge); a missing/blank --listen — or any unknown flag —
+// is a usage error (exit 64) with a diagnostic on errOut, so the proxy never binds a
+// wildcard/empty address. An empty --allow is valid (the egressless baseline-deny
+// posture). Pure + io.Writer-injected so the flag contract is unit-testable without
+// binding a socket (mirrors parseSince).
+func parseSandboxProxyArgs(args []string, errOut io.Writer) (proxyArgs, int) {
+	fs := flag.NewFlagSet("sandbox proxy", flag.ContinueOnError)
+	fs.SetOutput(errOut)
+	listen := fs.String("listen", "", "host CONNECT proxy listen address (e.g. 172.20.0.1:18999)")
+	allow := fs.String("allow", "", "comma-separated egress allowlist (e.g. pypi.org,files.pythonhosted.org)")
+	deny := fs.String("deny", "", "optional comma-separated egress denylist")
+	if err := fs.Parse(args); err != nil {
+		return proxyArgs{}, exitUsage
+	}
+	if strings.TrimSpace(*listen) == "" {
+		_, _ = fmt.Fprintln(errOut, sandboxProxyUsage)
+		return proxyArgs{}, exitUsage
+	}
+	return proxyArgs{listen: *listen, allow: *allow, deny: *deny}, 0
+}
+
+// runSandboxProxy implements `aura sandbox proxy --listen <host:port> --allow <csv>
+// [--deny <csv>]`: a standalone foreground CONNECT forward proxy for the session
+// egress allowlist. It is the operator/CI entrypoint the boot wiring
+// (startSandboxProxy) could not provide — the session containers reach it across the
+// egress bridge at the gateway IP. It wraps the SAME sandbox.NewSessionProxy + Serve
+// the boot path uses (no duplicate policy/guard logic), reading the DNS-pin TTL +
+// privacy mode from LoadDB (no LLM key needed, mirroring runDB). Serve binds at
+// --listen, then runs until SIGINT/SIGTERM (CI tears it down with a signal). It adds
+// NO new trust boundary: the allowlist + resolve-then-pin + no-MITM posture is
+// identical to the boot proxy (AR-08-02).
+func runSandboxProxy(args []string) {
+	pa, code := parseSandboxProxyArgs(args, os.Stderr)
+	if code != 0 {
+		os.Exit(code)
+	}
+
+	cfg := config.LoadDB()
+	// Mirror startSandboxProxy / D-10: an allowlist under local-only privacy is an
+	// operator misconfiguration, surfaced loud rather than silently bound.
+	if cfg.PrivacyMode == "local-only" && pa.allow != "" {
+		fmt.Fprintln(os.Stderr, "aura sandbox proxy: egress allowlist set under AURA_PRIVACY_MODE=local-only (D-10 fail-fast)")
+		os.Exit(exitUsage)
+	}
+
+	proxy, err := sandbox.NewSessionProxy(pa.listen, pa.allow, pa.deny, proxyConvScope, cfg.WebDNSPinTTLSec)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "aura sandbox proxy:", err)
+		os.Exit(exitInfra)
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	fmt.Fprintf(os.Stderr, "aura sandbox proxy: listening at %s (allow=%q)\n", pa.listen, pa.allow)
+	if err := proxy.Serve(ctx); err != nil && ctx.Err() == nil {
+		fmt.Fprintln(os.Stderr, "aura sandbox proxy:", err)
+		os.Exit(exitInfra)
+	}
+}
 
 // parseSandboxProxyEnv splits the semicolon-separated HTTP_PROXY/HTTPS_PROXY env
 // (e.g. "HTTP_PROXY=http://172.20.0.1:8881;HTTPS_PROXY=http://172.20.0.1:8881")

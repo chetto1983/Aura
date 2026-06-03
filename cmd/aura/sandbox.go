@@ -19,14 +19,25 @@ import (
 	"github.com/chetto1983/aura/internal/sandbox"
 )
 
-const sandboxUsage = "usage: aura sandbox sessions {list|terminate <conv_id>|prune}"
+const sandboxUsage = "usage: aura sandbox {sessions <list|terminate <conv_id>|prune>|proxy --listen <host:port> --allow <csv>}"
 
 func runSandbox(args []string) {
-	if len(args) < 1 || args[0] != "sessions" {
+	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, sandboxUsage)
 		os.Exit(exitUsage)
 	}
-	sub := args[1:]
+	switch args[0] {
+	case "sessions":
+		runSandboxSessions(args[1:])
+	case "proxy":
+		runSandboxProxy(args[1:])
+	default:
+		fmt.Fprintln(os.Stderr, sandboxUsage)
+		os.Exit(exitUsage)
+	}
+}
+
+func runSandboxSessions(sub []string) {
 	if len(sub) < 1 {
 		fmt.Fprintln(os.Stderr, sandboxUsage)
 		os.Exit(exitUsage)
