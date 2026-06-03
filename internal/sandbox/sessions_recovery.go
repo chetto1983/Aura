@@ -25,6 +25,23 @@ func (m *SessionManager) RecoverOnBoot(ctx context.Context) error {
 		}
 	}
 
+	// Clear THIS process's stale in-memory session state so the NEXT Acquire misses
+	// the Load and takes the create path (boot lazy-recreate). RecoverOnBoot runs at
+	// boot BEFORE the reaper does meaningful work and before any Acquire, so a plain
+	// capMu-guarded map clear is safe (boot-only invariant: no in-flight Acquire). No
+	// docker.stop/rm (the stray sweep below rm's every aura-sandbox-sess-* container)
+	// and no re-MarkTerminated (the row loop already did). count clamps at 0.
+	m.capMu.Lock()
+	m.sessions.Range(func(k, _ any) bool {
+		m.sessions.Delete(k)
+		if m.count > 0 {
+			m.count--
+		}
+		m.endpoint().Unregister(k.(string))
+		return true
+	})
+	m.capMu.Unlock()
+
 	stray, err := m.docker.listStray(ctx)
 	if err != nil {
 		slog.Warn("session boot recovery: stray container list failed", "err", err)

@@ -63,6 +63,10 @@ func (m *SessionManager) evict(ctx context.Context, s *session) {
 	m.capMu.Lock()
 	if _, ok := m.sessions.LoadAndDelete(s.convID); ok {
 		m.count--
+		// docker rm above already released the published port; drop the stale per-conv
+		// URL so a re-acquired conversation re-registers a fresh endpoint instead of
+		// resolving the dead one (FLAG 6 / T-08-10-DOS-PORTLEAK).
+		m.endpoint().Unregister(s.convID)
 	}
 	m.capMu.Unlock()
 }
