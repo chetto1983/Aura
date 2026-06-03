@@ -248,7 +248,7 @@ Plans:
 **Goal:** Harden the in-process `tool_search` hook to Anthropic `defer_loading` parity so tool-selection accuracy stays high as the catalog grows past the 30-50-tool degradation threshold: BM25 ranking over an expanded index (name + description + recursive arg names/descriptions), a `max_results` top-K cap (default 5), `<server>__<tool>` MCP namespacing with sanitize + 64B cap + collision hash, a registry-derived dynamic source-orientation in the `tool_search` Description, and a >=1-non-deferred fail-closed guard - all in-process, stdlib-only, cache-safe (no `SystemPrompt`/`Render()` order changes).
 **Requirements**: D-01..D-10 (CONTEXT.md decisions; no REQUIREMENTS.md IDs map to this inserted phase)
 **Depends on:** Phase 8
-**Plans:** 4 plans (3 complete + 1 gap-closure)
+**Plans:** 4/4 plans complete
 
 Plans:
 **Wave 1**
@@ -262,7 +262,7 @@ Plans:
 
 **Gap-closure (Wave 1, depends on 08.1-03)**
 
-- [ ] 08.1-04-PLAN.md - close D-07 64-byte cap violations (WR-01 namespacedName prefix overflow + WR-02 Mount collision-hash append) + gosec G505/G401 lint gate (crypto/sha1 -> crypto/sha256) in mcptools
+- [x] 08.1-04-PLAN.md - close D-07 64-byte cap violations (WR-01 namespacedName prefix overflow + WR-02 Mount collision-hash append) + gosec G505/G401 lint gate (crypto/sha1 -> crypto/sha256) in mcptools
 
 ### Phase 9: Swarm (Minimal)
 
