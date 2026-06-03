@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -269,4 +270,85 @@ func contentOf(ev *agent.Event) string {
 		return ""
 	}
 	return ev.LLMResponse.Content
+}
+
+// hangingClient delegates its first `passthrough` Stream calls to an embedded
+// FakeClient (driving the dedup two-trip path into finalize) and then HANGS every
+// subsequent call — the finalize synthesis turns — yielding nothing until the
+// ctx passed to Stream is cancelled, at which point it closes the channel. It
+// models a provider stream that accepts the request but never sends a body.
+type hangingClient struct {
+	fake        *agenttest.FakeClient
+	passthrough int
+
+	mu    sync.Mutex
+	calls int
+}
+
+func (h *hangingClient) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk, error) {
+	h.mu.Lock()
+	n := h.calls
+	h.calls++
+	h.mu.Unlock()
+	if n < h.passthrough {
+		return h.fake.Stream(ctx, req)
+	}
+	out := make(chan llm.Chunk)
+	go func() {
+		defer close(out)
+		<-ctx.Done() // a hung stream: nothing until the caller's deadline fires
+	}()
+	return out, nil
+}
+
+// TestFinalizeHangingStreamReachesStub is the WR-01 regression: in production
+// ic.Ctx = context.Background() (no deadline — cmd/aura/agent.go), so a hung
+// provider stream during finalize must NOT block forever. synthesize() bounds
+// each attempt with cfg.TotalTimeoutSec; both attempts time out, and the
+// deterministic Italian stub is still emitted — the always-return-an-answer
+// guarantee holds even when the provider never sends a finalize body. Without the
+// per-attempt timeout this test deadlocks (goleak/-timeout would catch it).
+func TestFinalizeHangingStreamReachesStub(t *testing.T) {
+	recordingProvider(t)
+	// 4 echoes drive the dedup two-trip path into finalize; calls 5+ (the finalize
+	// synthesis attempt + its retry) hang until their bounded ctx fires.
+	hc := &hangingClient{
+		fake:        agenttest.NewFakeClient(echoTurn(), echoTurn(), echoTurn(), echoTurn()),
+		passthrough: 4,
+	}
+	// Constructed directly (not via newAgent, which is *FakeClient-typed) so the
+	// custom hanging llm.Client can drive finalize. TotalTimeoutSec=1 bounds each
+	// stalled synthesis attempt to ~1s.
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:     hc,
+		LLM:        llm.Config{Model: "test-model", Provider: "test-provider", TotalTimeoutSec: 1},
+		Registry:   testRegistry(),
+		PreviewCap: 2048,
+		RunDir:     t.TempDir(),
+		SessionID:  uuid.Must(uuid.NewV7()).String(),
+		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "ciao"}},
+	})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+
+	done := make(chan struct{})
+	var evs []*agent.Event
+	var runErr error
+	go func() {
+		defer close(done)
+		evs, runErr = collect(a.Run(ic))
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(20 * time.Second):
+		t.Fatal("finalize hung on a stalled provider stream — WR-01 regression (per-attempt timeout missing)")
+	}
+
+	if runErr != nil {
+		t.Fatalf("hung-stream finalize must not surface an error slot: %v", runErr)
+	}
+	last := evs[len(evs)-1]
+	if last.LLMResponse == nil || !strings.HasPrefix(last.LLMResponse.Content, stubLeadIn) {
+		t.Fatalf("terminal content = %q, want the D-09 stub lead-in (stub must be reachable when finalize stalls)", contentOf(last))
+	}
 }

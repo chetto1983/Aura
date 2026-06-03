@@ -11,8 +11,10 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
@@ -183,7 +185,16 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	req.ToolChoice = "none"
 	req.SessionID = a.sessionID
 
-	ch, serr := a.client.Stream(ic.Ctx, req)
+	// D-19 total-timeout on the ctx, mirroring the main loop (llm_agent.go:160).
+	// Production drives ic.Ctx = context.Background() (cmd/aura/agent.go), so without
+	// a deadline here a hung provider stream blocks BOTH synthesis attempts forever
+	// and the deterministic stub fallback is never reached — defeating the
+	// always-return-an-answer guarantee (WR-01). The derived ctx is cancelled only
+	// after the channel is fully drained below, so partial chunks are never dropped.
+	callCtx, cancel := context.WithTimeout(ic.Ctx, time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
+	defer cancel()
+
+	ch, serr := a.client.Stream(callCtx, req)
 	if serr != nil {
 		return "", llm.Usage{}, fmt.Errorf("finalize synthesis stream: %w", serr)
 	}
