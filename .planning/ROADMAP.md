@@ -273,10 +273,10 @@ Plans:
   3. Operator inspects `aura sandbox sessions list` after `AURA_SANDBOX_SESSION_TTL_SEC` elapses with no activity and observes the session reaped, container removed, workspace dir cleaned up
   4. Operator triggers `execute` with `network_allow: ["pypi.org"]` and observes `pip install` to pypi.org succeeding; same call attempting `curl 1.1.1.1` observes connection refused (allowlist enforced via the host-side forward proxy)
 
-**Plans:** 9 plans (5 waves)
+**Plans:** 1/9 plans executed
 
 **Wave 1**
-- [ ] 08-01-PLAN.md — PRD-amendment gate (doc-only): 5 amendments (persistent-interp/docker-lifecycle/host-proxy/scoring-home-slice/os.Root) + migration 0008 + uuid FK + Wave-0 decisions
+- [x] 08-01-PLAN.md — PRD-amendment gate (doc-only): 5 amendments (persistent-interp/docker-lifecycle/host-proxy/scoring-home-slice/os.Root) + migration 0008 + uuid FK + Wave-0 decisions
 
 **Wave 2**
 - [ ] 08-02-PLAN.md — DB substrate: migration 0008_sandbox_sessions (uuid FK) + 4 sqlc queries + 6 config knobs + 2 sentinels
@@ -418,7 +418,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
-| 8. Sandbox 2b Session-Bound | 0/9 | Planned | - |
+| 8. Sandbox 2b Session-Bound | 1/9 | In Progress|  |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |
