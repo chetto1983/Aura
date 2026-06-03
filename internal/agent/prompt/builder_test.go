@@ -39,7 +39,7 @@ func TestBuildPrefixStable(t *testing.T) {
 	t.Run("reproduces the inline construction exactly", func(t *testing.T) {
 		t.Parallel()
 		hist := seedHistory()
-		got := b.Build(hist, reg, "openrouter", cfg)
+		got := b.Build(hist, reg, "openrouter", cfg, Budget{})
 		want := llm.Request{
 			Model:       cfg.Model,
 			Messages:    hist,
@@ -64,7 +64,7 @@ func TestBuildPrefixStable(t *testing.T) {
 	t.Run("messages[0] byte-identical over a growing history", func(t *testing.T) {
 		t.Parallel()
 		hist := seedHistory()
-		first := b.Build(hist, reg, "openrouter", cfg)
+		first := b.Build(hist, reg, "openrouter", cfg, Budget{})
 		h0, err := PrefixHash(first.Messages, []int{0})
 		if err != nil {
 			t.Fatalf("PrefixHash: %v", err)
@@ -74,7 +74,7 @@ func TestBuildPrefixStable(t *testing.T) {
 				llm.Message{Role: llm.RoleAssistant, Content: "answer"},
 				llm.Message{Role: llm.RoleUser, Content: "next"},
 			)
-			req := b.Build(hist, reg, "openrouter", cfg)
+			req := b.Build(hist, reg, "openrouter", cfg, Budget{})
 			hN, err := PrefixHash(req.Messages, []int{0})
 			if err != nil {
 				t.Fatalf("PrefixHash turn %d: %v", turn, err)
@@ -89,7 +89,7 @@ func TestBuildPrefixStable(t *testing.T) {
 		t.Parallel()
 		hist := seedHistory()
 		before := hist[0]
-		req := b.Build(hist, reg, "openrouter", cfg)
+		req := b.Build(hist, reg, "openrouter", cfg, Budget{})
 		if len(req.Messages) != len(hist) {
 			t.Fatalf("Build changed history length: got %d want %d", len(req.Messages), len(hist))
 		}
@@ -111,7 +111,7 @@ func TestCacheControlSeam(t *testing.T) {
 
 	t.Run("anthropic sets the ephemeral marker", func(t *testing.T) {
 		t.Parallel()
-		req := b.Build(hist, reg, "anthropic", cfg)
+		req := b.Build(hist, reg, "anthropic", cfg, Budget{})
 		if req.ToolsCacheControl == "" {
 			t.Fatalf("anthropic build did not set ToolsCacheControl")
 		}
@@ -119,7 +119,7 @@ func TestCacheControlSeam(t *testing.T) {
 
 	t.Run("openrouter carries no cache_control", func(t *testing.T) {
 		t.Parallel()
-		req := b.Build(hist, reg, "openrouter", cfg)
+		req := b.Build(hist, reg, "openrouter", cfg, Budget{})
 		if req.ToolsCacheControl != "" {
 			t.Fatalf("openrouter build carried cache_control: %q", req.ToolsCacheControl)
 		}
@@ -127,7 +127,7 @@ func TestCacheControlSeam(t *testing.T) {
 
 	t.Run("never marks any history message", func(t *testing.T) {
 		t.Parallel()
-		req := b.Build(hist, reg, "anthropic", cfg)
+		req := b.Build(hist, reg, "anthropic", cfg, Budget{})
 		// The seam only touches the tools side (ToolsCacheControl). History messages
 		// must remain byte-identical to the input — no per-message cache_control.
 		if !reflect.DeepEqual(req.Messages, hist) {

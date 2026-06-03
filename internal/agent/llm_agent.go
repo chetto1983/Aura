@@ -134,7 +134,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// The builder is the single assembly chokepoint (D-01): it reproduces the
 			// byte-stable messages[0] and routes the provider-aware cache_control seam.
 			// a.history stays read-only — the client never mutates it (Req#13).
-			req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg)
+			// prompt.Budget{} is the wave-1 placeholder (block omitted, byte-identical
+			// default); plan 04 rewires it with branchConsumed/Remaining() (D-09).
+			req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, prompt.Budget{})
 			req.SessionID = a.sessionID
 			ch, err := a.client.Stream(spanCtx, req)
 			if err != nil {
