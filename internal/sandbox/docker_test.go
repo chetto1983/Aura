@@ -271,3 +271,62 @@ func TestRunner_WireMappedOneToOne(t *testing.T) {
 		t.Fatalf("wire→Result mismatch: got %+v want %+v", res, want)
 	}
 }
+
+// TestRunner_SessionExecPathAndWire: the 2b session-bound calls POST to
+// /session/{id}/exec/{lang} (NOT the stateless /exec/{lang}) with the same
+// {code,timeout_sec} body, and decode the Result 1:1. No live container — the
+// session lifecycle is the SessionManager's (08-05); this asserts the HTTP wire
+// contract only. The stateless 2a path is untouched (covered above).
+func TestRunner_SessionExecPathAndWire(t *testing.T) {
+	var gotPath string
+	var gotReq wireRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		gotPath = req.URL.Path
+		_ = json.NewDecoder(req.Body).Decode(&gotReq)
+		_ = json.NewEncoder(w).Encode(wireResponse{
+			Stdout: "42", Stderr: "", ExitCode: 0, ElapsedMs: 7, Truncated: false, LimitHit: "",
+		})
+	}))
+	defer srv.Close()
+
+	r := NewDockerRunner(testConfig(srv.URL, 5))
+
+	res, err := r.RunPythonSession(context.Background(), "conv-1", "print(x)", 12)
+	if err != nil {
+		t.Fatalf("RunPythonSession: %v", err)
+	}
+	if gotPath != "/session/conv-1/exec/python" {
+		t.Fatalf("python session path: got %q want /session/conv-1/exec/python", gotPath)
+	}
+	if gotReq.Code != "print(x)" || gotReq.TimeoutSec != 12 {
+		t.Fatalf("session wire body: got %+v want code=print(x) timeout=12", gotReq)
+	}
+	want := Result{Stdout: "42", ElapsedMs: 7}
+	if res != want {
+		t.Fatalf("session wire→Result mismatch: got %+v want %+v", res, want)
+	}
+
+	if _, err := r.RunShellSession(context.Background(), "conv-2", "pwd", 0); err != nil {
+		t.Fatalf("RunShellSession: %v", err)
+	}
+	if gotPath != "/session/conv-2/exec/shell" {
+		t.Fatalf("shell session path: got %q want /session/conv-2/exec/shell", gotPath)
+	}
+	if gotReq.TimeoutSec != 5 { // 0 → config default (5) substituted, same as stateless
+		t.Fatalf("omitted session timeout must substitute the config default (5), got %d", gotReq.TimeoutSec)
+	}
+}
+
+// TestRunner_SessionExecProtocolError: the session path reuses the stateless
+// ErrSandboxProtocol taxonomy on a non-2xx / undecodable body.
+func TestRunner_SessionExecProtocolError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	r := NewDockerRunner(testConfig(srv.URL, 5))
+	if _, err := r.RunPythonSession(context.Background(), "conv-x", "x", 0); !errors.Is(err, ErrSandboxProtocol) {
+		t.Fatalf("want ErrSandboxProtocol on a 502 from the session path, got %v", err)
+	}
+}
