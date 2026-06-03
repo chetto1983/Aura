@@ -69,8 +69,16 @@ type SessionDeps struct {
 	SeccompProfile string
 	PrivacyMode    string
 	AllowHosts     string
-	ReapEvery      time.Duration
-	Now            func() time.Time
+	// EgressNetwork is the docker bridge the session container attaches to when an
+	// allowlist is configured — the bridge whose gateway IP hosts the forward proxy
+	// (landmine #3). Empty keeps the default (egressless) network posture.
+	EgressNetwork string
+	// ProxyEnv is the HTTP(S)_PROXY env (e.g. "HTTP_PROXY=http://<gw-ip>:<port>")
+	// injected into the session container ONLY when an allowlist is configured, so
+	// user code routes egress through the host proxy. Empty for the egressless case.
+	ProxyEnv  []string
+	ReapEvery time.Duration
+	Now       func() time.Time
 }
 
 // SessionManager is the per-conversation container control plane (D-04). It owns
@@ -92,6 +100,8 @@ type SessionManager struct {
 	seccompProfile string
 	privacyMode    string
 	allowHosts     string
+	egressNetwork  string
+	proxyEnv       []string
 	now            func() time.Time
 
 	cancel  context.CancelFunc
@@ -124,6 +134,8 @@ func NewSessionManager(ctx context.Context, deps SessionDeps) *SessionManager {
 		seccompProfile: deps.SeccompProfile,
 		privacyMode:    deps.PrivacyMode,
 		allowHosts:     deps.AllowHosts,
+		egressNetwork:  deps.EgressNetwork,
+		proxyEnv:       deps.ProxyEnv,
 		now:            now,
 		cancel:         cancel,
 		done:           make(chan struct{}),
@@ -217,6 +229,12 @@ func (m *SessionManager) create(ctx context.Context, sessionID string, convUUID 
 // runArgv builds the docker run argv replicating ALL 2a hardening flags (Pitfall 6:
 // gVisor + the security flags are NOT inherited by an ad-hoc docker run, they must
 // be passed explicitly). It NEVER references /var/run/docker.sock (D-05).
+//
+// When an egress allowlist is configured (m.allowHosts != ""), the composition root
+// supplies the connect-allowing session seccomp profile plus the egress bridge +
+// HTTP(S)_PROXY env, so user code reaches the host forward proxy at the bridge
+// gateway IP (landmine #3, extends AR-05-01); an empty allowlist keeps the 2a
+// egressless posture (the egressless profile + default network, connect dead-ends).
 func (m *SessionManager) runArgv(name string) []string {
 	seccomp := m.seccompProfile
 	if seccomp == "" {
@@ -236,8 +254,16 @@ func (m *SessionManager) runArgv(name string) []string {
 		"--memory", "512m",
 		"--cpus", "1.0",
 		"--ulimit", "nofile=64",
-		m.image,
 	}
+	if m.allowHosts != "" {
+		if m.egressNetwork != "" {
+			argv = append(argv, "--network", m.egressNetwork)
+		}
+		for _, env := range m.proxyEnv {
+			argv = append(argv, "--env", env)
+		}
+	}
+	argv = append(argv, m.image)
 	return argv
 }
 

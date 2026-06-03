@@ -19,11 +19,13 @@ const (
 	exitUnreachable = 70
 	exitInfra       = 71
 	exitUsage       = 64
+	exitSessionCap  = 75 // sysexits EX_TEMPFAIL — the session cap is reached; retry later
 )
 
 // execArgs is the parsed `aura exec [--session <id>] <lang> <code|->` invocation.
-// session is parsed-but-inert in 2a (reserved for Phase 8 / Slice 2b); codeStdin
-// marks the `-` form so runExec reads the snippet from stdin.
+// A non-empty session routes through the 2b session-bound runner (persistent
+// per-conversation container); an empty session keeps the 2a stateless path.
+// codeStdin marks the `-` form so runExec reads the snippet from stdin.
 type execArgs struct {
 	lang      string
 	code      string
@@ -79,16 +81,13 @@ func parseExecArgs(args []string) (execArgs, error) {
 }
 
 // runExec is the `aura exec` entry point. It exits the process: with the sandbox
-// exit_code on a normal run, 70 on ErrSandboxUnreachable, 71 on any other infra
-// error, 64 on a usage/arg error. --session is reserved-but-inert (D-19).
+// exit_code on a normal run, 70 on ErrSandboxUnreachable, 75 on ErrSessionCapReached,
+// 71 on any other infra error, 64 on a usage/arg error. A non-empty --session routes
+// through the 2b session-bound runner; otherwise the 2a stateless path (D-19).
 func runExec(args []string) {
 	ea, err := parseExecArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura exec:", err)
-		os.Exit(exitUsage)
-	}
-	if ea.session != "" {
-		fmt.Fprintln(os.Stderr, "aura exec: --session is reserved for Phase 8 / Slice 2b (session-bound sandbox); not available in 2a")
 		os.Exit(exitUsage)
 	}
 
@@ -107,22 +106,36 @@ func runExec(args []string) {
 	runner := sandbox.NewDockerRunner(cfg)
 	ctx := context.Background()
 
-	var res sandbox.Result
-	switch ea.lang {
-	case "python":
-		res, err = runner.RunPython(ctx, code, 0) // 0 → Runner substitutes cfg.SandboxTimeoutSec
-	case "shell":
-		res, err = runner.RunShell(ctx, code, 0)
-	}
+	res, err := execRun(ctx, runner, ea, code)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura exec:", err)
-		if errors.Is(err, sandbox.ErrSandboxUnreachable) {
+		switch {
+		case errors.Is(err, sandbox.ErrSandboxUnreachable):
 			os.Exit(exitUnreachable)
+		case errors.Is(err, sandbox.ErrSessionCapReached):
+			os.Exit(exitSessionCap)
+		default:
+			os.Exit(exitInfra) // ErrSandboxProtocol or any other infra fault
 		}
-		os.Exit(exitInfra) // ErrSandboxProtocol or any other infra fault
 	}
 
 	// Same lean format as the execute tool (reuse, no drift).
 	fmt.Println(tools.FormatLean(res))
 	os.Exit(res.ExitCode)
+}
+
+// execRun dispatches the lang to the stateless (no --session) or session-bound
+// (--session <id>) runner path. timeout 0 → the Runner substitutes
+// cfg.SandboxTimeoutSec. lang is pre-validated to python|shell by parseExecArgs.
+func execRun(ctx context.Context, runner sandbox.Runner, ea execArgs, code string) (sandbox.Result, error) {
+	if ea.session != "" {
+		if ea.lang == "python" {
+			return runner.RunPythonSession(ctx, ea.session, code, 0)
+		}
+		return runner.RunShellSession(ctx, ea.session, code, 0)
+	}
+	if ea.lang == "python" {
+		return runner.RunPython(ctx, code, 0)
+	}
+	return runner.RunShell(ctx, code, 0)
 }

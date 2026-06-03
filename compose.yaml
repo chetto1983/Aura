@@ -130,6 +130,27 @@ services:
       retries: 10
       start_period: 5s
 
+  # ↓↓ Slice 2b (Phase 8) — SESSION-CONTAINER NETWORK POSTURE (08-08, landmine #3) ↓↓
+  # 2b session containers are NOT a compose service — the SessionManager (internal/
+  # sandbox/sessions.go, D-04/D-05) starts them per-conversation via `docker run`
+  # with the full 2a hardening floor replicated in the argv (Pitfall 6: those flags
+  # are NOT inherited). The network posture is allowlist-gated:
+  #   * EMPTY AURA_SANDBOX_NETWORK_ALLOW_HOSTS → the 2a egressless posture: the 2a
+  #     seccomp profile (sandbox/seccomp.json, connect DENIED) + the default network,
+  #     so user-code egress connect(2) dead-ends (identical to aura-sandbox above).
+  #   * NON-EMPTY allowlist → the connect-allowing session seccomp variant
+  #     (sandbox/seccomp-session.json — ADDS connect ONLY) + the non-masquerading
+  #     `aura_aura-sandbox-egressless` bridge below + an HTTP(S)_PROXY env pointing at
+  #     the host CONNECT forward proxy (internal/sandbox/network.go, 08-06) reachable
+  #     at the BRIDGE GATEWAY IP (NOT container 127.0.0.1). Egress is contained
+  #     HOST-SIDE by the proxy's deny-wins glob allowlist + resolve-then-pin, NOT by
+  #     connect-denial.
+  # This RE-ENABLES connect(2) for the egress case and therefore EXTENDS the
+  # AR-05-01 deviation (.planning/phases/05-sandbox-2a-stateless/05-SECURITY.md):
+  # the 2a register declared `connect` permanently removed. The live bridge-gateway
+  # reachability spike (pip → pypi over the proxy) + the 08-SECURITY re-audit of this
+  # extension land in 08-09 — do NOT consider the egress posture closed until then.
+  #
   # ↓↓ Slice 5 (Phase 7) — SearXNG meta-search, NO host port (D-02/D-03/D-04) ↓↓
   # The web_search backend. Reached ONLY in-network as http://searxng:8080/search
   # (D-02): the deliberate absence of a `ports:` key (every other service publishes

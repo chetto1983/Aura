@@ -274,6 +274,48 @@ func TestSessions_RunArgvHardeningFlags(t *testing.T) {
 	}
 }
 
+// TestSessions_RunArgvEgressGated asserts the 08-08 landmine #3 posture: the egress
+// bridge attach + HTTP_PROXY env are appended ONLY when an allowlist is configured;
+// an empty allowlist keeps the egressless argv (no --network, no proxy --env).
+func TestSessions_RunArgvEgressGated(t *testing.T) {
+	t.Run("allowlist set → bridge + proxy env appended", func(t *testing.T) {
+		dk := &fakeDocker{}
+		m, _ := testManager(t, dk, &fakeStore{}, func(m *SessionManager) {
+			m.allowHosts = "pypi.org"
+			m.egressNetwork = "aura_aura-sandbox-egressless"
+			m.proxyEnv = []string{"HTTP_PROXY=http://172.20.0.1:8881"}
+		})
+		if _, err := m.Acquire(context.Background(), newConvID(8)); err != nil {
+			t.Fatalf("Acquire: %v", err)
+		}
+		dk.mu.Lock()
+		argv := strings.Join(dk.runArgv, " ")
+		dk.mu.Unlock()
+		for _, want := range []string{"--network aura_aura-sandbox-egressless", "--env HTTP_PROXY=http://172.20.0.1:8881"} {
+			if !strings.Contains(argv, want) {
+				t.Errorf("egress argv missing %q\n  full: %s", want, argv)
+			}
+		}
+	})
+
+	t.Run("empty allowlist → egressless argv", func(t *testing.T) {
+		dk := &fakeDocker{}
+		m, _ := testManager(t, dk, &fakeStore{}, func(m *SessionManager) {
+			m.egressNetwork = "aura_aura-sandbox-egressless"
+			m.proxyEnv = []string{"HTTP_PROXY=http://172.20.0.1:8881"}
+		})
+		if _, err := m.Acquire(context.Background(), newConvID(9)); err != nil {
+			t.Fatalf("Acquire: %v", err)
+		}
+		dk.mu.Lock()
+		argv := strings.Join(dk.runArgv, " ")
+		dk.mu.Unlock()
+		if strings.Contains(argv, "--network") || strings.Contains(argv, "HTTP_PROXY") {
+			t.Fatalf("an empty allowlist must keep the egressless argv (no bridge, no proxy env): %s", argv)
+		}
+	})
+}
+
 func TestSessions_PrivacyModeFailFast(t *testing.T) {
 	m, _ := testManager(t, &fakeDocker{}, &fakeStore{}, func(m *SessionManager) {
 		m.privacyMode = "local-only"
