@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -178,14 +179,53 @@ func NewSessionManager(ctx context.Context, deps SessionDeps) *SessionManager {
 	return m
 }
 
-// Close stops the reaper and blocks until it has exited (goleak-clean). It is
-// idempotent.
+// Close stops the reaper and blocks until it has exited (goleak-clean), then
+// gracefully terminates every live session container this manager owns so a
+// finished/failed run leaves no orphan aura-sandbox-sess-* container to
+// contaminate the next run (the dirty-suite spurious-FAIL source). It is
+// idempotent — the started guard runs the teardown exactly once.
 func (m *SessionManager) Close() {
 	m.cancel()
 	if m.started {
 		<-m.done
+		m.terminateLiveSessions()
 		m.started = false
 	}
+}
+
+// terminateLiveSessions stop+rm+MarkTerminated+Unregister's every live session
+// the manager still owns. It runs AFTER the reaper goroutine has exited (Close
+// waits on m.done first), so there is no concurrent evict; the per-session s.mu
+// is intentionally NOT taken — teardown operates by container id and an in-flight
+// exec at shutdown is best-effort. The manager ctx is already cancelled, so a
+// FRESH short-deadline context is used for the docker/store calls. Per-container
+// failures are WARN-logged (RecoverOnBoot discipline); it never panics. On a
+// no-op fake docker (unit/db-recovery tiers) the loop is harmless, and on an
+// empty session map it is a pure no-op.
+func (m *SessionManager) terminateLiveSessions() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	m.capMu.Lock()
+	defer m.capMu.Unlock()
+	m.sessions.Range(func(k, v any) bool {
+		s := v.(*session)
+		if err := m.docker.stop(ctx, s.containerID); err != nil {
+			slog.Warn("session close: stop container failed", "container", s.containerID, "err", err)
+		}
+		if err := m.docker.remove(ctx, s.containerID); err != nil {
+			slog.Warn("session close: remove container failed", "container", s.containerID, "err", err)
+		}
+		if err := m.store.MarkTerminated(ctx, s.id); err != nil {
+			slog.Warn("session close: mark terminated failed", "container", s.containerID, "err", err)
+		}
+		m.endpoint().Unregister(s.convID)
+		m.sessions.Delete(k)
+		if m.count > 0 {
+			m.count--
+		}
+		return true
+	})
 }
 
 // Acquire returns the session for sessionID (the conversation id string), creating
