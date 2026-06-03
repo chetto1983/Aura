@@ -134,11 +134,19 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 // pass through by value (the wire layer never mutates the caller's slice — the
 // fuller immutability assertion lives in Plan 04, Req#13).
 func (c *Client) buildWireRequest(req llm.Request) wireRequest {
+	choice := req.ToolChoice
+	if choice == "" {
+		choice = "auto" // byte-identical default for every existing caller (landmine #8)
+	}
+	tools := req.Tools
+	if choice == "none" {
+		tools = nil // omitempty drops the tools key → forces prose, no phantom tool-call-in-text
+	}
 	return wireRequest{
 		Model:       req.Model,
 		Messages:    req.Messages,
-		Tools:       req.Tools,
-		ToolChoice:  "auto",
+		Tools:       tools,
+		ToolChoice:  choice,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
 		SessionID:   req.SessionID,

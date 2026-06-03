@@ -272,6 +272,78 @@ func TestRequestBody(t *testing.T) {
 	}
 }
 
+// captureBody runs one Stream against a body-capturing server and returns the
+// raw request body bytes. The fixed [DONE] response keeps the call cheap.
+func captureBody(t *testing.T, req llm.Request) []byte {
+	t.Helper()
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer srv.Close()
+
+	ch, err := New(testConfig(srv.URL)).Stream(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	drain(ch)
+	return gotBody
+}
+
+// TestRequestBody_ToolChoice (Req#1) asserts the wire-layer interpretation of
+// llm.Request.ToolChoice: "none" sends tool_choice:"none" with NO tools key
+// (forcing prose), and the empty default marshals byte-identically to an
+// explicit "auto" — so existing callers are not perturbed (landmine #8).
+func TestRequestBody_ToolChoice(t *testing.T) {
+	tool := llm.ToolDef{Type: "function"}
+	tool.Function.Name = "text_response"
+	tool.Function.Description = "reply"
+	base := llm.Request{
+		Model:     "deepseek/deepseek-v4-flash:exacto",
+		Messages:  []llm.Message{{Role: "user", Content: "ciao"}},
+		Tools:     []llm.ToolDef{tool},
+		SessionID: "conv-123",
+	}
+
+	t.Run("none_omits_tools", func(t *testing.T) {
+		none := base
+		none.ToolChoice = "none"
+		var body map[string]any
+		if err := json.Unmarshal(captureBody(t, none), &body); err != nil {
+			t.Fatalf("request body not JSON: %v", err)
+		}
+		if body["tool_choice"] != "none" {
+			t.Errorf("tool_choice = %v, want none", body["tool_choice"])
+		}
+		if _, ok := body["tools"]; ok {
+			t.Error("tools key present on a ToolChoice:none request (must be omitted to force prose)")
+		}
+	})
+
+	t.Run("empty_byte_identical_to_auto", func(t *testing.T) {
+		empty := base // ToolChoice == ""
+		explicit := base
+		explicit.ToolChoice = "auto"
+		emptyBody := captureBody(t, empty)
+		autoBody := captureBody(t, explicit)
+		if string(emptyBody) != string(autoBody) {
+			t.Errorf("empty ToolChoice not byte-identical to explicit auto:\n empty: %s\n auto:  %s", emptyBody, autoBody)
+		}
+		var body map[string]any
+		if err := json.Unmarshal(emptyBody, &body); err != nil {
+			t.Fatalf("request body not JSON: %v", err)
+		}
+		if body["tool_choice"] != "auto" {
+			t.Errorf("tool_choice = %v, want auto (empty default)", body["tool_choice"])
+		}
+		if _, ok := body["tools"]; !ok {
+			t.Error("tools key absent on a default (auto) request — tools must be present")
+		}
+	})
+}
+
 // TestMessagesImmutable (Req#13 seed): Stream never mutates req.Messages.
 func TestMessagesImmutable(t *testing.T) {
 	srv := httptest.NewServer(fixtureHandler(t, "text_stop.sse"))
