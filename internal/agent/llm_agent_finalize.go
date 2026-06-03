@@ -13,6 +13,7 @@ package agent
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/llm"
@@ -61,30 +62,120 @@ func (a *LlmAgent) maybeRecover(toolName string) (recovered bool) {
 	return true
 }
 
+// stubLeadIn is the D-09 deterministic-stub lead-in: emitted (in Italian, no LLM
+// call) when synthesis returns empty/errors TWICE so the user always receives the
+// gathered data. Load-bearing literal — a test asserts the terminal content starts
+// with it.
+const stubLeadIn = "Non sono riuscito a completare la sintesi finale, ma ecco i dati che ho raccolto:"
+
+// stub byte caps (D-09, Claude's discretion): each tool-result preview is truncated
+// to stubBulletCap bytes and the whole digest is capped at stubDigestCap bytes so a
+// runaway tool result cannot inflate the terminal Event unboundedly (T-07.1-07).
+const (
+	stubBulletCap = 500
+	stubDigestCap = 8000
+)
+
 // finalize issues the forced-finalization synthesis turn for an early-termination
 // trip (reason in max_steps / wallclock / dedup) and emits the terminal Event. It
 // builds a tool-free request (ToolChoice="none") from a COPY of history plus the
 // D-03 nudge, calls a.client.Stream DIRECTLY — it never spends another budget step
-// (Req#4 invariant; the bounded ceiling is enforced and tested in plan 04) — drains
-// it to a content string, appends the answer to history (mirroring the content-stop
-// path), and yields ONE finalEvent whose StateDelta carries the usage delta AND the
-// trip reason keys. The terminal user-facing Event is ALWAYS a finalEvent — on a
-// real transport error this still emits a finalEvent (empty content this plan; plan
-// 04 inserts the retry-once + Italian stub), never the iter.Seq2 error slot (L2/D-04).
+// (Req#4 invariant; the bounded ceiling is enforced and tested by
+// TestFinalizeOutsideBudget) — and RETRIES the synthesis ONCE when the first attempt
+// is empty/errors (D-09). When BOTH attempts fail it falls back to a deterministic
+// Italian stub digesting the gathered RoleTool results (no LLM call) so NO path ever
+// emits empty final prose. The answer is appended to history (mirroring the
+// content-stop path) and yielded as ONE finalEvent whose StateDelta carries the
+// usage delta AND the trip reason keys. The terminal user-facing Event is ALWAYS a
+// non-empty finalEvent, never the iter.Seq2 error slot (L2/D-04).
 func (a *LlmAgent) finalize(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
 	requestID, reason string, yield func(*Event, error) bool,
 ) {
-	answer, usage, _ := a.synthesize(ic)
+	answer, usage := a.synthesizeWithFallback(ic)
 	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 	yield(a.finalizeEvent(ic, spanID, parentSpanID, requestID, answer, reason, usage), nil)
 }
 
+// synthesizeWithFallback runs the tool-free synthesis call, retrying it EXACTLY ONCE
+// when the first attempt returns empty content or a transport error (D-09). If the
+// retry yields non-empty prose that prose is returned; if BOTH attempts are
+// empty/error it returns the deterministic Italian stub digest (NO LLM call). The
+// transport error is consumed here (logged via %w inside synthesize, never bulleted
+// into user prose — T-07.1-07); the caller always receives non-empty content.
+func (a *LlmAgent) synthesizeWithFallback(ic InvocationContext) (answer string, usage llm.Usage) {
+	answer, usage, err := a.synthesize(ic)
+	if err == nil && answer != "" {
+		return answer, usage
+	}
+	retryAnswer, retryUsage, retryErr := a.synthesize(ic)
+	if retryErr == nil && retryAnswer != "" {
+		return retryAnswer, retryUsage
+	}
+	return a.stubDigest(), usage
+}
+
+// stubDigest builds the D-09 deterministic Italian fallback: the lead-in followed by
+// one `- {tool}: {preview}` bullet per RoleTool result in a.history. The tool name is
+// correlated from the preceding assistant tool-call messages (RoleTool carries only
+// the ToolCallID + preview). Each preview is truncated to stubBulletCap and the whole
+// digest to stubDigestCap. No LLM call (D-05); always non-empty (the lead-in alone
+// guarantees it even with zero tool results).
+func (a *LlmAgent) stubDigest() string {
+	names := toolNamesByCallID(a.history)
+	var b strings.Builder
+	b.WriteString(stubLeadIn)
+	for i := range a.history {
+		m := a.history[i]
+		if m.Role != llm.RoleTool {
+			continue
+		}
+		if b.Len() >= stubDigestCap {
+			break
+		}
+		name := names[m.ToolCallID]
+		if name == "" {
+			name = "tool"
+		}
+		b.WriteString("\n- ")
+		b.WriteString(name)
+		b.WriteString(": ")
+		b.WriteString(truncateBytes(m.Content, stubBulletCap))
+	}
+	return truncateBytes(b.String(), stubDigestCap)
+}
+
+// toolNamesByCallID maps each tool_call_id to its tool name by scanning the
+// assistant tool-call messages, so the stub can label each RoleTool preview (which
+// carries only the id).
+func toolNamesByCallID(history []llm.Message) map[string]string {
+	names := make(map[string]string)
+	for i := range history {
+		for _, tc := range history[i].ToolCalls {
+			names[tc.ID] = tc.Function.Name
+		}
+	}
+	return names
+}
+
+// truncateBytes clamps s to at most n bytes on a valid UTF-8 boundary (the previews
+// are UTF-8 prose), avoiding a split rune in the user-facing digest.
+func truncateBytes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut]
+}
+
 // synthesize runs the tool-free synthesis call and returns the content-parsed
 // answer plus the trailing usage. It NEVER spends a budget step — the finalize turn
-// rides outside the step gate (Req#4; the bounded ceiling is enforced and tested in
-// plan 04). On a transport error it wraps with %w so plan 04 can branch on it; this
-// plan's finalize ignores the error and still emits a (possibly empty) finalEvent
-// for the happy path.
+// rides outside the step gate (Req#4; the bounded ceiling is enforced and tested by
+// TestFinalizeOutsideBudget). On a transport error it wraps with %w so the caller
+// (synthesizeWithFallback) can branch to the retry/stub path; the error is consumed
+// there and never surfaces as user-facing prose.
 func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Usage, err error) {
 	finalizeHistory := append(append([]llm.Message(nil), a.history...),
 		llm.Message{Role: llm.RoleUser, Content: finalizeNudge})
