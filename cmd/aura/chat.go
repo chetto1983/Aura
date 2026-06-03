@@ -22,21 +22,19 @@ import (
 	"io"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
-	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/chetto1983/aura/internal/runner"
-	"github.com/chetto1983/aura/internal/sandbox"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -56,14 +54,14 @@ type chatEnv struct {
 	identity *identity.Store
 	run      *runner.Runner
 	client   llm.Client
-	sessions *sandbox.SessionManager
+	mcpClose func() error
 }
 
-// close stops the sandbox session reaper (goleak-clean) then releases the pool (the
-// OTel TracerProvider is owned by the REPL path).
+// close shuts the mounted MCP server(s) down (goleak-clean: stops the code-sandbox-mcp
+// subprocess) then releases the pool (the OTel TracerProvider is owned by the REPL path).
 func (e *chatEnv) close() {
-	if e.sessions != nil {
-		e.sessions.Close()
+	if e.mcpClose != nil {
+		_ = e.mcpClose()
 	}
 	if e.pool != nil {
 		e.pool.Close()
@@ -121,29 +119,9 @@ func bootChat(ctx context.Context) *chatEnv {
 		os.Exit(1)
 	}
 
-	// Sandbox 2b control plane (08-08). The WorkspaceManager is the os.Root no-follow
-	// ConversationCleaner the Store.Delete cascade routes through (closes the import-
-	// cycle-free seam); the SessionManager owns the per-conversation container
-	// lifecycle + idle reaper (started in NewSessionManager). RecoverOnBoot reconciles
-	// a prior process's orphaned session rows + stray containers before serving (D-06).
-	workspace := sandbox.NewWorkspaceManager(cfg.RunDir, cfg.SandboxWorkspaceMaxBytes)
-	sessions := sandbox.NewSessionManager(ctx, sandboxSessionDeps(cfg, sqlc.New(pool), workspace))
-	if rErr := sessions.RecoverOnBoot(ctx); rErr != nil {
-		fmt.Fprintln(os.Stderr, "warn: sandbox session boot recovery:", rErr)
-	}
-
-	// Start the host egress forward proxy at the bridge gateway when an allowlist is
-	// configured (the 2a egressless posture starts no proxy). The proxy Serve loop is
-	// bound to the boot ctx so it is goleak-clean on teardown (08-10 Task 5 / FLAG 3).
-	if pErr := startSandboxProxy(ctx, cfg); pErr != nil {
-		fmt.Fprintln(os.Stderr, "aura chat:", pErr)
-		os.Exit(1)
-	}
-
 	convStore := conversations.New(pool, conversations.Config{
 		RunDir:       cfg.RunDir,
 		TurnCapBytes: cfg.ConversationTurnCapBytes,
-		Cleaner:      workspace,
 	})
 	pauseStore := askuser.New(pool)
 	idStore := identity.New(pool)
@@ -164,6 +142,19 @@ func bootChat(ctx context.Context) *chatEnv {
 		fmt.Fprintln(os.Stderr, "warn: tiktoken init:", err)
 	}
 
+	// Sandbox via code-sandbox-mcp (D-15): auto-provision the binary (no operator
+	// install), spawn it over stdio, and mount sandbox_* into the agent registry.
+	// Degrade clean — if the MCP server cannot start (no docker / offline), chat still
+	// serves non-code turns; code execution is simply unavailable this session.
+	reg := buildChatRegistry(cfg)
+	mcpClose, sbx, mErr := mcptools.MountCodeSandbox(ctx, reg, "")
+	if mErr != nil {
+		fmt.Fprintln(os.Stderr, "warn: sandbox unavailable (code execution disabled this session):", mErr)
+		mcpClose = func() error { return nil }
+	} else {
+		fmt.Fprintf(os.Stderr, "sandbox ready: %d tools via code-sandbox-mcp\n", len(sbx))
+	}
+
 	client := openai_compat.New(cfg.LLM)
 	run := runner.New(runner.Deps{
 		Conv:         convStore,
@@ -171,86 +162,30 @@ func bootChat(ctx context.Context) *chatEnv {
 		Identity:     idStore,
 		CacheMetrics: cacheStore,
 		Client:       client,
-		Registry:     buildSessionRegistry(cfg, sessions),
+		Registry:     reg,
 		LLM:          cfg.LLM,
 		RunDir:       cfg.RunDir,
 		PreviewCap:   cfg.ToolPreviewCap,
 		EvictAfter:   cfg.ContextToolEvictAfterTurns,
 	})
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, sessions: sessions}
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, mcpClose: mcpClose}
 }
 
-// sandboxSessionDeps builds the SessionManager wiring from config. When an egress
-// allowlist is configured it selects the connect-allowing session seccomp variant
-// (sandbox/seccomp-session.json) + the egress bridge + HTTP(S)_PROXY env so user
-// code reaches the host forward proxy at the bridge gateway IP (landmine #3, extends
-// AR-05-01); an empty allowlist keeps the 2a egressless posture (the 2a profile +
-// default network, connect dead-ends). The per-session forward proxy start + live
-// bridge-gateway reachability spike land in 08-09.
-func sandboxSessionDeps(cfg *config.Config, store *sqlc.Queries, workspace sandbox.WorkspaceEnsurer) sandbox.SessionDeps {
-	deps := sandbox.SessionDeps{
-		Docker:         sandbox.NewDockerCLI(),
-		Store:          store,
-		Workspace:      workspace,
-		MaxN:           cfg.SandboxMaxConcurrentSessions,
-		TTL:            time.Duration(cfg.SandboxSessionTTLSec) * time.Second,
-		Runtime:        cfg.SandboxRuntime,
-		Image:          sandboxSessionImage,
-		SeccompProfile: sandboxEgresslessSeccomp,
-		PrivacyMode:    cfg.PrivacyMode,
-		AllowHosts:     cfg.SandboxNetworkAllowHosts,
-	}
-	if cfg.SandboxNetworkAllowHosts != "" {
-		deps.SeccompProfile = sandboxSessionSeccomp
-		deps.EgressNetwork = sandboxEgressNetwork
-		deps.ProxyEnv = parseSandboxProxyEnv(os.Getenv(envSandboxProxyEnv))
-	}
-	return deps
-}
-
-// Sandbox session container posture constants (08-08). The image + network names
-// mirror compose.yaml; the two seccomp profiles are the egressless 2a floor and the
-// connect-allowing 2b variant. Kept as named constants (not inline) so the boot
-// composition reads as policy, not magic strings.
-const (
-	sandboxSessionImage      = "aura-sandbox:latest"
-	sandboxEgresslessSeccomp = "sandbox/seccomp.json"
-	sandboxSessionSeccomp    = "sandbox/seccomp-session.json"
-	sandboxEgressNetwork     = "aura_aura-sandbox-egressless"
-)
-
-// buildSessionRegistry mirrors buildRegistry but injects the 2b session-bound
-// Execute: the per-conversation SessionManager (Acquire/Release serialization seam,
-// D-07) + the operator egress allowlist (the advisory scoring input, D-12). The
-// no-session buildRegistry stays for the offline `aura tools` manifest print.
-func buildSessionRegistry(cfg *config.Config, sessions *sandbox.SessionManager) *tools.Registry {
+// buildChatRegistry builds the agent tool registry for the chat REPL: the built-in
+// tools + web tools. Sandbox code-execution tools are NOT registered here — they are
+// mounted at boot from code-sandbox-mcp via mcptools.MountCodeSandbox (D-15), so they
+// exist only when the MCP server is available (degrade-clean otherwise).
+func buildChatRegistry(cfg *config.Config) *tools.Registry {
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{})
-	reg.Register(&tools.Execute{
-		Runner:       sandbox.NewDockerRunner(cfg),
-		Sessions:     sessions,
-		NetworkAllow: parseCSVHosts(cfg.SandboxNetworkAllowHosts),
-	})
 	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine})
 	return reg
-}
-
-// parseCSVHosts splits the egress allowlist CSV into trimmed, non-empty hosts for
-// the Execute advisory scoring input. Empty CSV ⇒ nil ⇒ no advisory line.
-func parseCSVHosts(csv string) []string {
-	var out []string
-	for _, part := range strings.Split(csv, ",") {
-		if h := strings.TrimSpace(part); h != "" {
-			out = append(out, h)
-		}
-	}
-	return out
 }
 
 // chatList prints the persisted conversations with their title + aggregates.

@@ -3,7 +3,6 @@
 //	aura serve              — run the long-lived agent runtime (default in production)
 //	aura shell              — interactive REPL against the agent loop
 //	aura agent dry-run      — drive a mock LoopAgent through the Budget tree, one Event per JSON line (SC#4)
-//	aura exec <lang> <code> — run a python|shell snippet in the isolated sandbox (code or - for stdin)
 //	aura web <sub>          — web tooling: doctor (SearXNG reachability) | tool web_search/web_fetch '<json>'
 //	aura tools              — print the tool manifest (active + deferred)
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
@@ -25,7 +24,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
-	"github.com/chetto1983/aura/internal/sandbox"
 	"github.com/chetto1983/aura/internal/web"
 )
 
@@ -39,10 +37,6 @@ func main() {
 		printTools()
 	case "agent":
 		runAgent(os.Args[2:])
-	case "exec":
-		runExec(os.Args[2:])
-	case "sandbox":
-		runSandbox(os.Args[2:])
 	case "web":
 		runWeb(os.Args[2:])
 	case "db":
@@ -72,7 +66,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|exec [--session <id>] <lang> <code>|sandbox <sessions <sub>|proxy>|web <doctor|tool ...>|tools|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|web <doctor|tool ...>|tools|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
@@ -82,7 +76,6 @@ func buildRegistry() *tools.Registry {
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
-	reg.Register(&tools.Execute{Runner: sandbox.NewDockerRunner(config.LoadDB())})
 	webEngine := web.NewClient(config.LoadDB())
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
