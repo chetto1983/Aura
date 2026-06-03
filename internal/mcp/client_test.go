@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"io"
@@ -62,6 +63,12 @@ func (f *fakeServer) run() {
 func (f *fakeServer) write(v map[string]any) {
 	enc, _ := json.Marshal(v)
 	_, _ = f.out.Write(append(enc, '\n'))
+}
+
+// newClientForTest wires the protocol onto raw pipes without spawning a process,
+// so the request/response logic is unit-testable against an in-memory fake server.
+func newClientForTest(name string, stdin io.WriteCloser, stdout io.Reader) *Client {
+	return &Client{name: name, stdin: stdin, stdout: bufio.NewReader(stdout), stderr: &safeBuffer{}}
 }
 
 // newTestPair wires a Client to a fakeServer over two io.Pipes and starts the

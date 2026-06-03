@@ -41,7 +41,7 @@ fi
 # dropped from the floor.
 {
   head -1 "${PROFILE}"
-  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/agent/tools/|/internal/sandbox/|/internal/swarm/|/internal/llm/client\.go:'
+  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/agent/tools/|/internal/sandbox/|/internal/llm/client\.go:'
 } > "${PROFILE}.filtered"
 
 ROWS="$(grep -c -v '^mode:' "${PROFILE}.filtered" || true)"

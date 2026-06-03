@@ -92,8 +92,8 @@ func buildBaseRegistry(cfg *config.Config) *tools.Registry {
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	reg.Register(&tools.SandboxExec{Runner: sandboxagent.New(cfg.SandboxAgent)})
 	// D-10: fail closed at boot if no actionable tool exists (excluding tool_search).
-	// This is the shared composition root — buildRegistry, buildChatRegistry, and
-	// buildRegistryWithMCP all delegate here, so the guard covers every boot path.
+	// This is the shared composition root — buildRegistry and buildRegistryWithMCP
+	// both delegate here, so the guard covers every boot path.
 	if err := reg.Validate(); err != nil {
 		fmt.Fprintln(os.Stderr, "registry:", err)
 		os.Exit(1)

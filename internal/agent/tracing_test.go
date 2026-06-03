@@ -106,8 +106,7 @@ func TestSpan_AttrValues(t *testing.T) {
 	}
 }
 
-// TestMintSpanID asserts mintSpanID returns a non-zero 8-byte id and that a child
-// chains its ParentSpanID to the parent's SpanID (D-04 full-tree minting).
+// TestMintSpanID asserts rootSpanIDs returns a non-zero 8-byte id with no parent.
 func TestMintSpanID(t *testing.T) {
 	root, parent := rootSpanIDs()
 	if root == ([8]byte{}) {
@@ -115,17 +114,6 @@ func TestMintSpanID(t *testing.T) {
 	}
 	if parent != nil {
 		t.Error("root ParentSpanID must be nil")
-	}
-
-	child, childParent := childSpanIDs(root)
-	if child == ([8]byte{}) {
-		t.Error("child SpanID is all-zero")
-	}
-	if child == root {
-		t.Error("child SpanID collided with parent — minting is not fresh")
-	}
-	if childParent == nil || *childParent != root {
-		t.Errorf("child ParentSpanID = %v, want chained to parent %v", childParent, root)
 	}
 }
 

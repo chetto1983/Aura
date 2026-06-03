@@ -108,13 +108,6 @@ func rootSpanIDs() (span [8]byte, parent *[8]byte) {
 	return mintSpanID(), nil
 }
 
-// childSpanIDs mints a fresh SpanID for a child node and chains its ParentSpanID
-// to the parent's SpanID (D-04 full-tree minting).
-func childSpanIDs(parent [8]byte) (span [8]byte, parentPtr *[8]byte) {
-	p := parent
-	return mintSpanID(), &p
-}
-
 // startLLMSpan starts the per-call "llm.request" span from ic.Ctx (Req#13). The
 // returned context carries the span; the caller MUST call span.End() (deferred or
 // explicit) exactly once per LLM call.

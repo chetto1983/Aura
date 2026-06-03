@@ -95,12 +95,6 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 	return c, nil
 }
 
-// newClientForTest wires the protocol onto raw pipes without spawning a process,
-// so the request/response logic is unit-testable against an in-memory fake server.
-func newClientForTest(name string, stdin io.WriteCloser, stdout io.Reader) *Client {
-	return &Client{name: name, stdin: stdin, stdout: bufio.NewReader(stdout), stderr: &safeBuffer{}}
-}
-
 type rpcReq struct {
 	JSONRPC string `json:"jsonrpc"`
 	ID      int64  `json:"id"`

@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/config"
@@ -158,12 +157,6 @@ func bootChat(ctx context.Context) *chatEnv {
 		EvictAfter:   cfg.ContextToolEvictAfterTurns,
 	})
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, mcpClosers: mcpClosers}
-}
-
-// buildChatRegistry builds the agent tool registry for the chat REPL: the built-in
-// tools + web tools + the local sandbox-agent execution tool.
-func buildChatRegistry(cfg *config.Config) *tools.Registry {
-	return buildBaseRegistry(cfg)
 }
 
 // chatList prints the persisted conversations with their title + aggregates.
