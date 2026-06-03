@@ -48,6 +48,29 @@ func TestBuildRegistry_RegistersSandboxExec(t *testing.T) {
 	}
 }
 
+// TestBuildRegistry_PassesValidate guards D-10 at the production composition root:
+// buildBaseRegistry runs reg.Validate() before returning, so a regression that
+// deferred every capability tool would surface as a boot os.Exit(1). buildRegistry()
+// returning a registry at all proves Validate() passed; assert it directly so the
+// guard is exercised, not just inherited.
+func TestBuildRegistry_PassesValidate(t *testing.T) {
+	if err := buildRegistry().Validate(); err != nil {
+		t.Fatalf("production registry failed Validate(): %v — boot would os.Exit(1)", err)
+	}
+}
+
+// TestValidate_AllDeferredFixtureFails is the negative guard: a registry whose only
+// non-deferred tool is tool_search fails Validate() at the package boundary. It
+// proves the production pass above is meaningful (Validate can fail), keyed on the
+// same ≥1-non-deferred contract buildBaseRegistry enforces.
+func TestValidate_AllDeferredFixtureFails(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.Register(&tools.ToolSearch{Registry: reg})
+	if err := reg.Validate(); err == nil {
+		t.Fatal("all-deferred fixture (only tool_search non-deferred) passed Validate(); the guard is a no-op")
+	}
+}
+
 func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 	cfg := &config.Config{
 		MCPServers: map[string]mcp.ServerConfig{

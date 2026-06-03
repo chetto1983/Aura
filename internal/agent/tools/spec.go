@@ -13,7 +13,19 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
+
+// ErrNoNonDeferredTool is returned by Registry.Validate when no actionable
+// (non-deferred) capability tool is registered, excluding the always-on
+// tool_search hook. It mirrors Anthropic's hard 400 ("At least one tool must be
+// non-deferred"): a registry where every capability is deferred would let the
+// model only search, never act.
+var ErrNoNonDeferredTool = errors.New("registry: at least one non-deferred tool is required (excluding tool_search)")
+
+// toolSearchName is the reserved name of the non-deferrable discovery hook; it is
+// excluded from the Validate non-deferred count (it is never an actionable tool).
+const toolSearchName = "tool_search"
 
 // Spec is the LLM-visible metadata for a tool.
 type Spec struct {
@@ -71,4 +83,20 @@ func (r *Registry) All() []Tool {
 		out = append(out, t)
 	}
 	return out
+}
+
+// Validate fails closed when no actionable (non-deferred) capability tool is
+// registered, mirroring Anthropic's hard 400. tool_search is excluded from the
+// count because it is a non-deferrable discovery hook, never an actionable tool —
+// dropping that exclusion would let a search-only registry pass (RESEARCH Pitfall
+// 5). Call it once at boot after all Register calls (the registry is empty at
+// construction, so a constructor-time check is impossible).
+func (r *Registry) Validate() error {
+	for _, t := range r.tools {
+		s := t.Spec()
+		if !s.Deferred && s.Name != toolSearchName {
+			return nil
+		}
+	}
+	return ErrNoNonDeferredTool
 }
