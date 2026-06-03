@@ -53,8 +53,8 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	if exec.Summary != "Execute commands in the sandboxed environment." {
 		t.Fatalf("summary should be the first line, got %q", exec.Summary)
 	}
-	if !exec.Deferred {
-		t.Fatal("bridged tools must be Deferred (manifest cache discipline)")
+	if exec.Deferred {
+		t.Fatal("bridged tools must NOT be Deferred — the model needs the arg schema in the manifest to call them")
 	}
 	// inputSchema passes through unchanged.
 	if !json.Valid(exec.Parameters) || !strings.Contains(string(exec.Parameters), "container_id") {

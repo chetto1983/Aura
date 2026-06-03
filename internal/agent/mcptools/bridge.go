@@ -60,10 +60,13 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 }
 
 // Bridge lists srv's tools and adapts each to a tools.Tool. Bridged tools are
-// Deferred (Name+Summary in the manifest; full schema via tool_search) per the
-// CLAUDE.md deferred-tool rule, so mounting N servers never bloats the per-turn
-// manifest. The server's JSON-Schema inputSchema passes through as Parameters
-// unchanged.
+// NOT Deferred: an MCP tool typically has a short description + a small argument
+// schema, and the model MUST see that schema to call the tool correctly (e.g.
+// code-sandbox-mcp's sandbox_exec needs container_id + commands — a live run with
+// these deferred had the model guess wrong args and report "the schema defines no
+// params"). Putting the full JSON-Schema in the manifest is the small, correct cost
+// for a tool the agent actually invokes. The server's inputSchema passes through as
+// Parameters unchanged.
 func Bridge(ctx context.Context, srv Server) ([]tools.Tool, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
@@ -83,7 +86,7 @@ func Bridge(ctx context.Context, srv Server) ([]tools.Tool, error) {
 				Summary:     firstLine(d.Description),
 				Description: strings.TrimSpace(d.Description),
 				Parameters:  params,
-				Deferred:    true,
+				Deferred:    false,
 			},
 		})
 	}
