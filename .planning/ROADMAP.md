@@ -25,7 +25,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI (completed 2026-06-02)
 - [x] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin) (completed 2026-06-02)
 - [x] **Phase 07.1: Agent-Loop Forced Finalization** (INSERTED) - loop must always return a final answer; forced-finalization on budget/dedup trip + dedup recovery + fan-out budget block (completed 2026-06-03)
-- [ ] **Phase 8: Sandbox via code-sandbox-mcp (MCP bridge)** - REPLACES bespoke Slice 2a/2b (D-15 pivot). Generic MCP→agent-tool bridge mounts code-sandbox-mcp (auto-provisioned on boot); agent runs code in a Docker container via sandbox_initialize/sandbox_exec; CAP-01+CAP-02. (in build)
+- [x] **Phase 8: Sandbox via sandbox-agent (local container)** - REPLACES bespoke Slice 2a/2b (D-15 pivot). Single non-deferred `sandbox_exec` tool → `internal/sandboxagent.Client` POSTs to rivetdev/sandbox-agent on loopback (`127.0.0.1:2468`); operator starts it with `make sandbox-up` (no boot provision). Code-sandbox-mcp cut superseded. CAP-01+CAP-02. (completed 2026-06-03)
+- [ ] **Phase 08.1: Tool Search hardening — Anthropic defer_loading parity** (INSERTED) - upgrade `tool_search` to defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) over name+description+arg fields, MCP tool namespacing, ≥1-non-deferred guard — matters as tool count grows (Phase 11 skills/7e snippets + future stdio MCP mounts via the retained `mcptools` seam) toward the 30-50 selection-accuracy threshold
 - [ ] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance
 - [ ] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat
 - [ ] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger
@@ -227,20 +228,31 @@ Plans:
 
 - [x] 07.1-05-PLAN.md — Wave 4: live env-gated tests — tool_choice=none smoke (AC4) + meteo-Caraglio E2E failure-rate->0 (AC9)
 
-### Phase 8: Sandbox via code-sandbox-mcp (MCP bridge)
+### Phase 8: Sandbox via sandbox-agent (local container)
 
-**Goal**: Replace the bespoke Slice 2a/2b sandbox (Python sidecar + seccomp + SessionManager + host egress proxy + DinD) with **code-sandbox-mcp** (Automata-Labs-team, Go stdio MCP server) mounted through a **generic MCP→agent-tool bridge** (D-15 pivot, amendment #43). The bridge lists any stdio MCP server's tools (`tools/list`) and registers them as first-class Aura agent tools (Deferred, spill-aware via `tools.NewResult`); code-sandbox-mcp is its first consumer. The agent runs code in a real Docker container via `sandbox_initialize` → `sandbox_exec` (filesystem persists across calls; one container per conversation). Aura **auto-provisions** the code-sandbox-mcp binary on boot (downloads + caches the OS/arch release asset if absent — NO operator install). Works on plain Docker Desktop (no DinD / gVisor / `device=` bind). Deltas vs bespoke: filesystem-only persistence (no in-memory Python vars), default docker networking (no egress allowlist). `internal/scoring` (D-11) is retained as cross-cutting.
+**Goal**: Replace the bespoke Slice 2a/2b sandbox (Python sidecar + seccomp + SessionManager + host egress proxy + DinD) with **sandbox-agent** (rivetdev/sandbox-agent, a local container). Aura's `internal/sandboxagent.Client` POSTs to the sandbox-agent server on loopback (`AURA_SANDBOX_AGENT_URL`, default `http://127.0.0.1:2468`, endpoint `/v1/processes/run`); the agent sees a single **non-deferred** `sandbox_exec` tool (`command`/`args`/`cwd`/`env`/`timeout_ms`/`max_output_bytes` → `stdout`/`stderr`/`exit_code`/`timed_out`/`*_truncated`/`duration_ms`). The image `aura-sandbox-agent:py3` (built from `docker/sandbox-agent/Dockerfile` = sandbox-agent `-full` + python3) is started by the operator via `make sandbox-up` from a preloaded local image (`pull_policy: never` — NO online pull); Aura provisions/downloads NOTHING at chat boot. Security posture: loopback-only port bind, non-masquerading Docker bridge (no public egress), no Docker socket mounted, `mem_limit 2g` / `cpus 2.0` / `pids_limit 256` / `no-new-privileges`, `/workspace` named volume persists across calls. The earlier code-sandbox-mcp MCP-bridge cut (amendment #43 first form) is **superseded**; the generic `internal/agent/mcptools` bridge it introduced remains in-tree as a reusable (currently unmounted) MCP-mount seam. `internal/scoring` (D-11) is retained as cross-cutting.
 **Depends on**: Phase 7
 **Requirements**: CAP-01, CAP-02
-**Slices**: 2 (code-sandbox-mcp)
+**Slices**: 2 (sandbox-agent)
 **Success Criteria** (what must be TRUE):
 
-  1. On boot Aura ensures the code-sandbox-mcp binary (auto-downloaded + cached if absent), spawns it over stdio, and the generic bridge registers its tools (`sandbox_initialize`/`sandbox_exec`/`write_file_sandbox`/`copy_file`/`copy_project`/`sandbox_stop`) into the agent registry — operator does ZERO manual install.
-  2. The `aura chat` agent, given a compute task, calls `sandbox_initialize` then `sandbox_exec` and returns real container output (e.g. `print(40+2)` → `42`); a file written under the workdir in one exec is readable in a later exec on the same `container_id`.
-  3. The bridge mounts ANY stdio MCP server declared in the `mcpServers` config (command/args/env), not just code-sandbox-mcp — proven by a second server's tools appearing in the registry; name collisions are refused (no silent shadowing of a built-in tool).
-  4. All bespoke sandbox surface is deleted: `internal/sandbox/*`, `sandbox/` sidecar, migration `0008_sandbox_sessions`, `cmd/aura/{exec,sandbox,sandbox_proxy}.go`, `.github/workflows/sandbox.yml`; `go build`/`test`/lint green after removal.
+  1. With `make sandbox-up` healthy, the `aura chat` agent given a compute task calls `sandbox_exec` (`command:"python"`, `args:["-c","print(40+2)"]`) and returns real container output (`stdout` `42`, `exit_code` 0); a file written under `/workspace` in one call is readable in a later call (named volume persists).
+  2. `sandbox_exec` is registered **non-deferred** so the model sees the `command`/`args` schema and never crams a full command line into `command` (the live E2E failure — `command:"python3 -c …"` → sandbox-agent 502 — that motivated keeping it non-deferred); the result carries `stdout`/`stderr`/`exit_code`/`timed_out`/`*_truncated`/`duration_ms`.
+  3. With the sandbox container down or `AURA_SANDBOX_AGENT_URL` unreachable, `sandbox_exec` returns a structured `{"error":"sandbox_unavailable","hint":"… make sandbox-up"}` result the agent self-corrects on (NOT a loop-fatal error); Aura performs ZERO download/provision at boot.
+  4. All bespoke sandbox surface is deleted (`internal/sandbox/*`, `sandbox/` sidecar, migration `0008_sandbox_sessions`, `cmd/aura/{exec,sandbox,sandbox_proxy}.go`, `.github/workflows/sandbox.yml`) and no `code-sandbox-mcp` reference remains in code; `go build`/`test`/lint green.
 
-**Plans:** in build (code-sandbox-mcp pivot — generic MCP client → bridge → mcpServers config + boot auto-provision → live proof + bespoke deletion). Supersedes the prior 08-01..08-11 bespoke plans (historical artifacts retained in the phase dir).
+**Plans:** Completed 2026-06-03 via the sandbox-agent pivot — the generic MCP client + bridge were built first (commits `7d7dbbd6`..`0ebb3d81`), then superseded by the local sandbox-agent container (`b98ddaff` "Use local sandbox-agent container", `341e595e` CI fallout fix). Prior 08-01..08-11 bespoke plans + the code-sandbox-mcp cut are historical (artifacts retained in the phase dir).
+
+### Phase 08.1: Tool Search hardening — Anthropic defer_loading parity (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 8
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 08.1 to break down)
 
 ### Phase 9: Swarm (Minimal)
 
@@ -365,7 +377,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
-| 8. Sandbox via code-sandbox-mcp (MCP bridge) | in build | In Progress |  |
+| 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |

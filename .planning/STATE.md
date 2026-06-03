@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 8 context gathered
-last_updated: "2026-06-03T13:52:06.855Z"
-last_activity: 2026-06-03 -- Phase 08 execution started
+stopped_at: Phase 08 complete (sandbox-agent, D-15) — next Phase 08.1
+last_updated: "2026-06-03T15:54:05.889Z"
+last_activity: 2026-06-03 -- Phase 08 closed via sandbox-agent pivot (b98ddaff "Use local sandbox-agent container" + 341e595e CI fallout fix)
 progress:
   total_phases: 17
-  completed_phases: 9
-  total_plans: 55
-  completed_plans: 54
-  percent: 53
+  completed_phases: 8
+  total_plans: 51
+  completed_plans: 50
+  percent: 47
 ---
 
 # Project State
@@ -21,31 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 08 — Sandbox via code-sandbox-mcp (MCP bridge); D-15 pivot — building the generic MCP→agent-tool bridge
+**Current focus:** Phase 08 complete (sandbox-agent, D-15) — next: Phase 08.1 (Tool Search hardening → Anthropic defer_loading parity)
 
 ## Current Position
 
-Phase: 08 (Sandbox via code-sandbox-mcp / MCP bridge) — EXECUTING (D-15 pivot)
-Plan: generic MCP client done (internal/mcp); bridge in build; then mcpServers config + boot auto-provision; then live proof + bespoke-sandbox deletion
-Status: Executing Phase 08 — code-sandbox-mcp pivot. Prior bespoke 08-01..08-11 plans superseded. The 08-11 Gate-3 checkpoint is moot (whole bespoke path being deleted).
-Last activity: 2026-06-03 -- 08-11 Tasks 1-3 done (liveManager Workspace inject + Close teardown + CI confirm); awaiting native-daemon Gate-3 sign-off
+Phase: 08 (Sandbox via sandbox-agent / local container) — COMPLETE 2026-06-03 (D-15 pivot)
+Plan: shipped — single non-deferred `sandbox_exec` tool → `internal/sandboxagent.Client` POSTs to rivetdev/sandbox-agent on `127.0.0.1:2468` (`/v1/processes/run`); operator starts it via `make sandbox-up` (preloaded image, no boot provision). code-sandbox-mcp MCP-bridge cut superseded (`internal/agent/mcptools` seam retained, unmounted). All bespoke sandbox surface deleted; `go build`/`test`/lint green.
+Status: Phase 08 closed. Next: Phase 08.1 (Tool Search hardening → Anthropic defer_loading parity, INSERTED).
+Last activity: 2026-06-03 -- sandbox-agent pivot landed (b98ddaff "Use local sandbox-agent container" + 341e595e CI fallout fix)
 
-Progress: [█████████░] 85%
+Progress: [██████████] 100% (Phase 08)
 
-### Resume — finish on PC/WSL (then `/gsd-verify-work 05`)
+### Next — Phase 08.1
 
-**A. Get CI green first (local linter here is unrunnable: golangci-lint go1.25 vs module go1.26.3)**
-
-0. `make quality` (or `golangci-lint run`) in WSL — confirm the `gosec` G602 in `cmd/aura/exec.go` is cleared by c6a6503 (`args[i]` guarded form). If anything else is red, that's the live red to chase — re-run and fix until `ci.yml` is green. NOTE: `cmd/aura/exec.go` is NOT in `sandbox.yml`'s path filter, so the gosec fix push did not re-run the Sandbox DinD workflow — the red there (if any) is the Gate-3 work in B.
-
-**B. WSL Gate-3 sign-off checklist**
-
-1. `make sandbox-up` → `bash scripts/sandbox_escape_bench.sh` — escape-rate < 5%, config-regressions = 0, 4 K8s N/A lines; snapshot Sandbox row dated + measured.
-2. `docker info | grep -i userns` shows `name=userns` (Pitfall 3 — userns-remap LIVE).
-3. `internal/sandbox/docker.go` go-mutesting spot-check ≥ 70% killed (`GOFLAGS=-tags=sandbox_integration`); record in quality-snapshot.
-4. CLI SC#1/2/3: `aura exec python "print(2+2)"`→4; ptrace→EPERM; socket→EPERM.
-5. `make quality-full` — combined coverage ≥ 85% with sandbox folded in.
-6. QEMU-arm64 / real-DGX caveat tracked (D-12).
+`/gsd-plan-phase 08.1` — Tool Search hardening to Anthropic `defer_loading` parity (BM25/semantic search over name+description+arg fields, MCP tool namespacing, ≥1-non-deferred guard). Reference study in auto-memory + ROADMAP Phase 08.1 detail. Recommended pre-step: stack-up smoke of `sandbox_exec` (`make sandbox-up` → `python -c "print(40+2)"` → `42`).
 
 ## Performance Metrics
 
@@ -102,6 +91,7 @@ Progress: [█████████░] 85%
 ### Roadmap Evolution
 
 - Phase 07.1 inserted after Phase 7: Forced-finalization loop fix: LlmAgent must always return a final answer (budget/dedup trip currently emits empty); surfaced by Phase 7 meteo E2E. See docs/research/agent-loop-forced-finalization.md (URGENT)
+- Phase 08.1 inserted after Phase 8: Tool Search hardening to Anthropic defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) replacing substring match, search argument-name/description fields, MCP tool namespacing, >=1-non-deferred guard. Matters as tool count grows toward the 30-50 selection-accuracy threshold (P11 skills/7e snippets + future stdio MCP mounts via the retained mcptools seam; P8 landed as single-tool sandbox-agent, MCP bridge dormant). (URGENT)
 
 ### Decisions
 
@@ -166,5 +156,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-03T13:53:28Z
-Stopped at: 08-11 Task-4 checkpoint (blocking-human live Gate-3 sign-off)
-Resume file: .planning/phases/08-sandbox-2b-session-bound/08-11-PLAN.md
+Stopped at: Phase 08 complete (sandbox-agent) — next: /gsd-plan-phase 08.1
+Resume file: .planning/phases/08.1-tool-search-hardening-anthropic-defer-loading-parity/
