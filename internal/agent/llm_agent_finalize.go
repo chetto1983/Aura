@@ -25,6 +25,42 @@ import (
 const finalizeNudge = "Stop calling tools. Using only the tool results already gathered above, " +
 	"write the final answer to the user's original question now."
 
+// recoveryNudgeTool / recoveryNudgeGeneric are the D-02 recovery nudges injected
+// EXACTLY ONCE on the first early-termination trip (user role, appended to the REAL
+// a.history TAIL — never messages[0]). The dedup path interpolates the offending
+// tool name; the pure-budget path (max_steps/wallclock at the :124 gate has no
+// offending tool — landmine #9) uses the generic variant. English, no Italian
+// directive (D-01). Both keep the "do not repeat / answer now from gathered
+// results" intent.
+const (
+	recoveryNudgeToolPrefix = "You have already called `"
+	recoveryNudgeToolSuffix = "` with these arguments and the result will not change. " +
+		"Do not repeat any tool call — answer the user's question now using the results you have already gathered."
+	recoveryNudgeGeneric = "You have run out of tool-call budget and may not call any more tools. " +
+		"Do not repeat any tool call — answer the user's question now using the results you have already gathered."
+)
+
+// maybeRecover is the single counter-gated recovery decision used by BOTH trip
+// sites (D-08). On the FIRST trip (recoveryAttempts==0) it increments the counter,
+// appends ONE user-role nudge to the real a.history tail (the tool variant when
+// toolName != "", the generic variant for the pure-budget path — landmine #9), and
+// returns true so the loop runs one more turn. On any SUBSEQUENT trip it returns
+// false, signalling the caller to finalize(). It is a COUNTER, never a one-shot
+// boolean latch (CrewAI #1656 anti-pattern). The nudge is REAL conversation state
+// (unlike the <budget> block, which tail-injects to a COPY — landmine #1).
+func (a *LlmAgent) maybeRecover(toolName string) (recovered bool) {
+	if a.recoveryAttempts >= 1 {
+		return false
+	}
+	a.recoveryAttempts++
+	nudge := recoveryNudgeGeneric
+	if toolName != "" {
+		nudge = recoveryNudgeToolPrefix + toolName + recoveryNudgeToolSuffix
+	}
+	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: nudge})
+	return true
+}
+
 // finalize issues the forced-finalization synthesis turn for an early-termination
 // trip (reason in max_steps / wallclock / dedup) and emits the terminal Event. It
 // builds a tool-free request (ToolChoice="none") from a COPY of history plus the

@@ -243,6 +243,12 @@ func (b *Budget) Remaining() int {
 	return int(n)
 }
 
+// BranchConsumed is the number of steps THIS branch has consumed (the per-branch
+// counter ConsumeStep bumps) — the <budget> "used" count (Req#6, D-06). There is no
+// MaxSteps() getter (landmine #11): the agent reads this counter directly rather
+// than deriving used from a cap.
+func (b *Budget) BranchConsumed() int { return int(b.branchConsumed.Load()) }
+
 // SetMaxSteps overrides the shared step counter (CLI flag precedence, D-06).
 // It resets the WHOLE tree's remaining budget; intended only at boot before any
 // child is spawned.
