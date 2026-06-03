@@ -293,7 +293,7 @@ Plans:
 
 **Wave 4**
 
-- [ ] 08-08-PLAN.md — wiring: activate execute session_id + scoring advisory + Conversations.Delete cascade + aura sandbox sessions CLI + exec --session + session network/seccomp posture (landmine #3, extends AR-05-01)
+- [x] 08-08-PLAN.md — wiring: activate execute session_id + scoring advisory + Conversations.Delete cascade + aura sandbox sessions CLI + exec --session + session network/seccomp posture (landmine #3, extends AR-05-01)
 
 **Wave 5**
 

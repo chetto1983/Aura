@@ -4,14 +4,14 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 8 context gathered
-last_updated: "2026-06-03T09:38:38.817Z"
-last_activity: 2026-06-03
+last_updated: "2026-06-03T11:39:41.511Z"
+last_activity: 2026-06-03 -- Phase 08 execution started
 progress:
   total_phases: 17
   completed_phases: 9
   total_plans: 53
-  completed_plans: 45
-  percent: 53
+  completed_plans: 52
+  percent: 54
 ---
 
 # Project State
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 08 (sandbox-2b-session-bound) — EXECUTING
-Plan: 2 of 9
-Status: Ready to execute
-Last activity: 2026-06-03
+Plan: 08-08 complete (Wave 4) — 08-09 next (Wave 5)
+Status: Executing Phase 08
+Last activity: 2026-06-03 -- 08-08 wiring plan complete (execute session_id live + sandbox CLI + delete cascade + session network/seccomp posture)
 
 Progress: [█████████░] 85%
 
@@ -136,6 +136,7 @@ Recent decisions affecting current work:
 - [Phase 07]: 07-03: SearXNG client uses a plain http.Client (not the SSRF transport) — the in-network backend is trusted; only model-supplied web_fetch URLs cross the SSRF gate
 - [Phase 07]: 07-03: images category OUT for Phase 7 (general/news only); an unknown category is a structured error, not a panic; thumbnail/img_src kept in searxResult for a future images slice
 - [Phase 07]: 07-04 gap-closure (2026-06-02, Task 4 checkpoint bug+quality fix): the live Gate-3 found a BLOCKING bug — `AURA_WEB_RESPONSE_CAP_BYTES=24000` was applied to the RAW HTML body in gateAndRead, rejecting every real page (164KB Wikipedia → response_too_large) BEFORE extraction. Confirmed read in EXACTLY ONE place (raw-body LimitReader), never the LLM-facing payload (that is tools.NewResult preview cap). FIX Layer 1: renamed → WebFetchMaxBodyBytes / AURA_WEB_FETCH_MAX_BODY_BYTES, default 24000 → 5MB (raw-body DoS ceiling); PRD env-catalog amended first. FIX Layer 2: html.go post-processes the markdown — strips #cite_note/#cite_ref citation anchors, truncates at the References/Notes/Citations/Bibliography heading OR the first zero-padded reflist marker (the headingless Wikipedia case the live run exposed), strips the "From Wikipedia" boilerplate + <!--THE END--> converter artifact, filters fragment-only links, re-evaluates low_content post-cleanup. Gate-3 re-run LIVE: SC#2 content_md 36070→16429 B clean; SC#1 TestSearch_Live 1.01s; SC#3 4/4 blocked grep-clean; SC#4 TestDNSRebind PASS; ssrf.go mutation 94.4% (untouched); official internal/* coverage gate 87.4% (≥85%); golangci-lint 0; aura web doctor OK. Commits f5764ecc/1e424487/997b8693/00d76c59/8f25cc13. CAP-05 NOT marked complete — Task 4 human-verify still pending (the human's call).
+- [Phase 08]: 08-08 (Wave-4 live-surface wiring): the execute tool is now session-bound ALWAYS — empty session_id defaults to the ctx conversation id (D-26, WithToolCallContext, no InvocationContext change), validated by the traversal guard, routed through RunPythonSession/RunShellSession with an optional tools.SessionAcquirer Acquire/Release seam (nil in unit tier, *sandbox.SessionManager in prod); the 2a inert-reject branch is DELETED and Spec() documents the D-02 asymmetric persistence contract (python state + /workspace persist; shell cd/export do not). A non-empty network_allow appends an advisory [advisory] risk_tier/gate_recommended line (scoring.ComputeSandboxTier) — advisory ONLY, no pending-state (D-12). Conversations.Delete cascades via the consumer-declared ConversationCleaner interface -> WorkspaceManager.PurgeConversationDir (os.Root no-follow); go list -deps ./internal/conversations has NO internal/sandbox (cycle-free, landmine #4). NEW reaper-free sandbox.SessionControl backs aura sandbox sessions {list|terminate|prune} (registry reads + docker stop/rm via the LookPath-gated fixed-argv dockerCLI, D-05); aura exec --session is live with ErrSessionCapReached -> exit 75. SessionDeps gained EgressNetwork+ProxyEnv: runArgv appends the egress bridge + HTTP(S)_PROXY env ONLY for a non-empty allowlist (empty keeps the 2a egressless argv). sandbox/seccomp-session.json derives from seccomp.json by ADDING connect ONLY; compose.yaml documents the bridge-gateway-reachable proxy + empty-allowlist-egressless posture EXTENDING AR-05-01 (live spike + 08-SECURITY re-audit are 08-09). bootChat wires WorkspaceManager(cleaner)+SessionManager(reaper)+RecoverOnBoot+session-bound Execute, Closes the manager (goleak-clean). 2 obsolete 2a contract tests rewritten (justified). vet/build/test green, -race clean, gofmt clean, all <=600 LOC. CAP-02 NOT marked complete (live integration + re-audit = 08-09). Commits 78100acd/96723ad3.
 - [Phase ?]: [Phase 08]: 08-01 (PRD-amendment gate, doc-only): 5 amendments #38-#42 — D-01 two-tier persistence (per-session interpreter + workspace, not a contradiction), D-05 docker-lifecycle carve-out (CLI lifecycle, execution HTTP-only, NEVER mounts socket), D-08 host-side Go forward proxy egress + hostname-CONNECT allowlist + resolve-then-pin (SUPERSEDES iptables; CAP_NET_ADMIN incompatible with cap_drop:ALL; CAP-02 'via iptables' superseded), D-11 internal/scoring home-slice Slice 6 -> Phase 8 (+D-12 scope guard sandbox-advisory-only), D-13 os.Root/openat2 supersedes O_NOFOLLOW (cascade = manual no-follow openat walk not os.RemoveAll). Schema: 0010 -> 0008 (floor 0007), conversation_id text -> uuid. Wave-0 OQs in 08-DECISIONS-WAVE0.md: SSRF export-minimal over netguard-extract, AURA_PRIVACY_MODE add field + fail-fast under local-only+non-empty-allowlist, session connect(2)-allowed seccomp + proxy at bridge-gateway-IP + empty-allowlist-keeps-egressless + extends-AR-05-01 + live-reachability Wave-5 gate. Commits 21060757/1b18b915.
 
 ### Pending Todos
