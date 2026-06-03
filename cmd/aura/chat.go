@@ -127,9 +127,17 @@ func bootChat(ctx context.Context) *chatEnv {
 	// lifecycle + idle reaper (started in NewSessionManager). RecoverOnBoot reconciles
 	// a prior process's orphaned session rows + stray containers before serving (D-06).
 	workspace := sandbox.NewWorkspaceManager(cfg.RunDir, cfg.SandboxWorkspaceMaxBytes)
-	sessions := sandbox.NewSessionManager(ctx, sandboxSessionDeps(cfg, sqlc.New(pool)))
+	sessions := sandbox.NewSessionManager(ctx, sandboxSessionDeps(cfg, sqlc.New(pool), workspace))
 	if rErr := sessions.RecoverOnBoot(ctx); rErr != nil {
 		fmt.Fprintln(os.Stderr, "warn: sandbox session boot recovery:", rErr)
+	}
+
+	// Start the host egress forward proxy at the bridge gateway when an allowlist is
+	// configured (the 2a egressless posture starts no proxy). The proxy Serve loop is
+	// bound to the boot ctx so it is goleak-clean on teardown (08-10 Task 5 / FLAG 3).
+	if pErr := startSandboxProxy(ctx, cfg); pErr != nil {
+		fmt.Fprintln(os.Stderr, "aura chat:", pErr)
+		os.Exit(1)
 	}
 
 	convStore := conversations.New(pool, conversations.Config{
@@ -179,10 +187,11 @@ func bootChat(ctx context.Context) *chatEnv {
 // AR-05-01); an empty allowlist keeps the 2a egressless posture (the 2a profile +
 // default network, connect dead-ends). The per-session forward proxy start + live
 // bridge-gateway reachability spike land in 08-09.
-func sandboxSessionDeps(cfg *config.Config, store *sqlc.Queries) sandbox.SessionDeps {
+func sandboxSessionDeps(cfg *config.Config, store *sqlc.Queries, workspace sandbox.WorkspaceEnsurer) sandbox.SessionDeps {
 	deps := sandbox.SessionDeps{
 		Docker:         sandbox.NewDockerCLI(),
 		Store:          store,
+		Workspace:      workspace,
 		MaxN:           cfg.SandboxMaxConcurrentSessions,
 		TTL:            time.Duration(cfg.SandboxSessionTTLSec) * time.Second,
 		Runtime:        cfg.SandboxRuntime,
@@ -194,6 +203,7 @@ func sandboxSessionDeps(cfg *config.Config, store *sqlc.Queries) sandbox.Session
 	if cfg.SandboxNetworkAllowHosts != "" {
 		deps.SeccompProfile = sandboxSessionSeccomp
 		deps.EgressNetwork = sandboxEgressNetwork
+		deps.ProxyEnv = parseSandboxProxyEnv(os.Getenv(envSandboxProxyEnv))
 	}
 	return deps
 }

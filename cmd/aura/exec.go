@@ -110,7 +110,12 @@ func runExec(args []string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura exec:", err)
 		switch {
-		case errors.Is(err, sandbox.ErrSandboxUnreachable):
+		case errors.Is(err, sandbox.ErrSandboxUnreachable),
+			errors.Is(err, sandbox.ErrSessionEndpointUnknown):
+			// ErrSessionEndpointUnknown: the per-conv container is not registered in
+			// THIS process's routing table — from the standalone `aura exec` CLI (no
+			// SessionManager Acquire) a --session id can never be live, so it is an
+			// unreachable-session environment fault, not a protocol fault (exit 70).
 			os.Exit(exitUnreachable)
 		case errors.Is(err, sandbox.ErrSessionCapReached):
 			os.Exit(exitSessionCap)

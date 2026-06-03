@@ -151,6 +151,28 @@ services:
   # reachability spike (pip → pypi over the proxy) + the 08-SECURITY re-audit of this
   # extension land in 08-09 — do NOT consider the egress posture closed until then.
   #
+  # 08-10 egress env contract (the host proxy is started at boot by cmd/aura/
+  # sandbox_proxy.go startSandboxProxy; the live egress tests do NOT boot the
+  # composition root, so the operator starts `aura serve`/the proxy harness before
+  # them). The operator/CI exports:
+  #   AURA_SANDBOX_NETWORK_ALLOW_HOSTS — CSV allowlist (empty ⇒ egressless, no proxy)
+  #   AURA_SANDBOX_EGRESS_NETWORK      — the bridge runArgv attaches to
+  #                                      (aura_aura-sandbox-egressless)
+  #   AURA_SANDBOX_PROXY_ENV           — HTTP_PROXY/HTTPS_PROXY at <gw-ip>:<port>
+  #                                      (semicolon-sep); ALSO the proxy LISTEN addr
+  #   AURA_SANDBOX_SESSION_SECCOMP     — connect-allowing session seccomp profile
+  # FLAG 3 / AR-08-02: the single boot proxy shares ONE convID-scoped DNS-pin cache
+  # for ALL conversations (a v1 deviation from D-25 per-conversation rebind
+  # isolation, accepted because the pin TTL is short + the allowlist is opt-in).
+  #
+  # BLOCKER 2 (08-10): the `aura_aura-sandbox-egressless` bridge below is a PLAIN
+  # `driver: bridge` with masquerade OFF — it is deliberately NOT `internal: true`.
+  # That matters for 2b: the SessionManager publishes each per-conv sidecar port on a
+  # host LOOPBACK port (`-p 127.0.0.1:0:18901`) and bind-mounts the per-conv
+  # workspace; an `internal: true` bridge would drop the `-p` host publish (breaking
+  # the per-conv HTTP exec routing, D-05) while still containing egress via the
+  # masquerade-off + host-proxy posture. DO NOT set this bridge `internal: true`.
+  #
   # ↓↓ Slice 5 (Phase 7) — SearXNG meta-search, NO host port (D-02/D-03/D-04) ↓↓
   # The web_search backend. Reached ONLY in-network as http://searxng:8080/search
   # (D-02): the deliberate absence of a `ports:` key (every other service publishes
