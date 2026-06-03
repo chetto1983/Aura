@@ -242,13 +242,22 @@ Decimal phases appear between their surrounding integers in numeric order.
   6. `goleak` + `-race` clean; mutation spot-check ≥70% on the finalize/dedup-recovery branch; owned-surface coverage ≥85%
 
 **Plans**: 5 plans
-
 Plans:
+**Wave 1**
 
 - [ ] 07.1-01-PLAN.md — Wave 1: ToolChoice plumbing (llm.Request field + buildWireRequest default-auto/omit-tools-on-none + TestRequestBody) [Req#1]
 - [ ] 07.1-02-PLAN.md — Wave 1: <budget> used/remaining prompt block via PromptBuilder.Build tail-injection to a history COPY (cache-safe) [Req#6]
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 07.1-03-PLAN.md — Wave 2: finalize() tool-free synthesis (ToolChoice=none, parse content) + re-route both trip sites; non-empty finalEvent at all 3 paths [Req#2]
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 07.1-04-PLAN.md — Wave 3: counter-gated recovery turn + finalize-outside-budget (<=max_steps+2) + retry-once + Italian stub fallback + live <budget> counts [Req#3/#4/#5]
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 07.1-05-PLAN.md — Wave 4: live env-gated tests — tool_choice=none smoke (AC4) + meteo-Caraglio E2E failure-rate->0 (AC9)
 
 ### Phase 8: Sandbox 2b Session-Bound
