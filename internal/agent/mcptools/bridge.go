@@ -59,13 +59,14 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 	return tools.NewResult(ctx, text)
 }
 
-// Bridge lists srv's tools and adapts each to a tools.Tool. Bridged tools are
-// NOT Deferred: an MCP tool typically has a short description + a small argument
-// schema, and the model MUST see that schema to call the tool correctly. Putting
-// the full JSON-Schema in the manifest is the small, correct cost
-// for a tool the agent actually invokes. The server's inputSchema passes through as
-// Parameters unchanged.
-func Bridge(ctx context.Context, srv Server) ([]tools.Tool, error) {
+// Bridge lists srv's tools and adapts each to a tools.Tool, namespacing the
+// model-facing name as <namespace>__<tool> (sanitized, 64-byte capped) so a mounted
+// server can never silently shadow a built-in. The wire name (bridgedTool.name, used
+// by CallTool) stays RAW — only spec.Name is namespaced. Bridged tools are NOT
+// Deferred: an MCP tool typically has a short description + a small argument schema,
+// and the model MUST see that schema to call the tool correctly. The server's
+// inputSchema passes through as Parameters unchanged.
+func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
 		return nil, err
@@ -80,7 +81,7 @@ func Bridge(ctx context.Context, srv Server) ([]tools.Tool, error) {
 			srv:  srv,
 			name: d.Name,
 			spec: tools.Spec{
-				Name:        d.Name,
+				Name:        namespacedName(namespace, d.Name),
 				Summary:     firstLine(d.Description),
 				Description: strings.TrimSpace(d.Description),
 				Parameters:  params,
@@ -91,26 +92,41 @@ func Bridge(ctx context.Context, srv Server) ([]tools.Tool, error) {
 	return out, nil
 }
 
-// Mount bridges srv's tools and registers them into reg, all-or-nothing. It
-// refuses to clobber an existing tool name (a collision with a built-in or another
-// mounted server is a config error), so a mounted server can never silently shadow
-// a built-in tool. On collision NOTHING is registered and the colliding name is
-// reported.
-func Mount(ctx context.Context, reg *tools.Registry, srv Server) ([]string, error) {
-	bridged, err := Bridge(ctx, srv)
+// Mount bridges srv's tools under namespace and registers them into reg,
+// all-or-nothing. Two distinct raw tool names that sanitize to the same namespaced
+// name are disambiguated with a deterministic hash suffix before registration. It
+// still refuses to clobber an existing tool name (a collision with a built-in or
+// another mounted server is a config error), so a mounted server can never silently
+// shadow a built-in. On any residual collision NOTHING is registered and the
+// colliding name is reported.
+func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server) ([]string, error) {
+	bridged, err := Bridge(ctx, namespace, srv)
 	if err != nil {
 		return nil, err
 	}
-	seen := make(map[string]struct{}, len(bridged))
+	seenRaw := make(map[string]struct{}, len(bridged))
+	chosen := make(map[string]struct{}, len(bridged))
 	for _, t := range bridged {
-		name := t.Spec().Name
+		bt := t.(*bridgedTool)
+		if _, dup := seenRaw[bt.name]; dup {
+			return nil, fmt.Errorf("mcp bridge: server advertised duplicate tool %q", bt.name)
+		}
+		seenRaw[bt.name] = struct{}{}
+
+		name := bt.spec.Name
+		// Distinct raw names whose namespaced form collides get a deterministic hash
+		// suffix (keyed on the RAW name, so each survivor is unique).
+		if _, dup := chosen[name]; dup {
+			name += hashSuffix(namespace + "\x00" + bt.name)
+			bt.spec.Name = name
+		}
 		if _, exists := reg.Get(name); exists {
 			return nil, fmt.Errorf("mcp bridge: tool %q already registered (collision)", name)
 		}
-		if _, dup := seen[name]; dup {
-			return nil, fmt.Errorf("mcp bridge: server advertised duplicate tool %q", name)
+		if _, dup := chosen[name]; dup {
+			return nil, fmt.Errorf("mcp bridge: tool name %q still collides after disambiguation", name)
 		}
-		seen[name] = struct{}{}
+		chosen[name] = struct{}{}
 	}
 	names := make([]string, 0, len(bridged))
 	for _, t := range bridged {

@@ -18,7 +18,7 @@ func MountServer(ctx context.Context, reg *tools.Registry, name string, cfg mcp.
 	if err != nil {
 		return nil, nil, err
 	}
-	names, err = Mount(ctx, reg, cli)
+	names, err = Mount(ctx, reg, name, cli)
 	if err != nil {
 		_ = cli.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
