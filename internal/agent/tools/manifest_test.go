@@ -59,6 +59,49 @@ func TestRenderToolDefs(t *testing.T) {
 	}
 }
 
+// TestRenderToolDefs_Namespaced proves the alphabetical Render ordering survives
+// the "__" namespaced names introduced by MCP namespacing (08.1-03): a
+// "github__create_issue" sorts before a built-in "web_fetch" purely by byte order,
+// with no special handling of the "__" delimiter. Render order is the cache-stability
+// invariant (manifest.go:39) — a reshuffle after the rename would bust the prompt
+// cache. This is a SEPARATE assertion from the dynamic-Description change so a Render
+// regression is isolated. Kills any mutant that re-sorts or special-cases namespaced
+// names.
+func TestRenderToolDefs_Namespaced(t *testing.T) {
+	r := NewRegistry()
+	r.Register(namedTool{name: "web_fetch"})
+	r.Register(namedTool{name: "github__create_issue"})
+	r.Register(namedTool{name: "github__list_prs"})
+
+	got := make([]string, 0, 3)
+	for _, d := range r.RenderToolDefs() {
+		got = append(got, d.Function.Name)
+	}
+	want := []string{"github__create_issue", "github__list_prs", "web_fetch"}
+	if len(got) != len(want) {
+		t.Fatalf("RenderToolDefs len = %d, want %d", len(got), len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("order[%d] = %q, want %q (namespaced names must sort alphabetically)", i, got[i], want[i])
+		}
+	}
+}
+
+// namedTool is a minimal non-deferred fixture parameterized only by Name, for the
+// namespaced ordering assertion.
+type namedTool struct{ name string }
+
+func (n namedTool) Spec() Spec {
+	return Spec{
+		Name: n.name, Summary: "s " + n.name, Description: "d " + n.name,
+		Parameters: json.RawMessage(`{"type":"object"}`), Deferred: false,
+	}
+}
+func (namedTool) Execute(context.Context, json.RawMessage) (ToolResult, error) {
+	return ToolResult{}, nil
+}
+
 type alphaTool struct{}
 
 func (alphaTool) Spec() Spec {

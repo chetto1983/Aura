@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -228,6 +229,93 @@ func TestDeferredOnlyFilter(t *testing.T) {
 		t.Errorf("select: failed to resolve non-deferred tool: %q", res.Preview)
 	}
 }
+
+// TestToolSearchDescriptionDeterministic asserts the registry-derived
+// tool_search Description (D-09) is byte-stable across calls (cache-load-bearing:
+// tool_search is non-deferred, so its full Description ships in the manifest every
+// turn — any per-call variance busts the OpenRouter implicit cache, T-08.1-07),
+// lists the deferred tools' sources SORTED and grouped by the "__" namespace prefix
+// (else "built-in"), and falls back to a deterministic "None currently enabled."
+// blurb when no deferred tools exist. Kills the "static Description" and the
+// "unsorted source list" mutants.
+func TestToolSearchDescriptionDeterministic(t *testing.T) {
+	ts, _ := newSearch(t,
+		bm25Tool{name: "web_fetch", desc: "retrieve a url"},
+		bm25Tool{name: "github__create_issue", desc: "open an issue"},
+		bm25Tool{name: "github__list_prs", desc: "list pull requests"},
+		bm25Tool{name: "calculator", desc: "evaluate arithmetic"},
+		nonDeferredTool{name: "active_cap"}, // non-deferred → must NOT appear as a source
+	)
+
+	first := ts.Spec().Description
+	second := ts.Spec().Description
+	if first != second {
+		t.Fatalf("Description not byte-stable across calls:\n1: %q\n2: %q", first, second)
+	}
+
+	// Sources are grouped by the "__" prefix when present, else "built-in".
+	for _, want := range []string{"built-in", "github"} {
+		if !strings.Contains(first, want) {
+			t.Errorf("Description missing source %q:\n%s", want, first)
+		}
+	}
+	// The non-deferred tool's source name must NOT leak in (search covers deferred
+	// tools only — D-03).
+	if strings.Contains(first, "active_cap") {
+		t.Errorf("Description leaked a non-deferred tool:\n%s", first)
+	}
+
+	// "built-in" sorts before "github": assert the source list ordering is
+	// alphabetical, not registry/map order.
+	if bi, gh := strings.Index(first, "built-in"), strings.Index(first, "github"); bi < 0 || gh < 0 || bi > gh {
+		t.Errorf("sources not sorted (built-in must precede github):\n%s", first)
+	}
+
+	// No deferred tools → deterministic "None currently enabled." blurb.
+	empty, _ := newSearch(t, nonDeferredTool{name: "only_active"})
+	desc := empty.Spec().Description
+	if !strings.Contains(desc, "None currently enabled.") {
+		t.Errorf("empty-deferred Description missing 'None currently enabled.':\n%s", desc)
+	}
+	if desc != empty.Spec().Description {
+		t.Error("empty-deferred Description not byte-stable")
+	}
+
+	// No clock/date shape may appear in the Description (cache-poisoning guard,
+	// same rule as prompt.go).
+	if loc := descClockShape.FindString(first); loc != "" {
+		t.Errorf("Description contains a timestamp-shaped substring %q (cache-poisoning)", loc)
+	}
+}
+
+// TestToolSearchDescription_SelfReferentialNoRecursion guards the production
+// registry shape: tool_search registers ITSELF, and its Description is built by
+// enumerating the registry — so sourceOrientation must skip tool_search before
+// calling its Spec(), or Spec()→Description→sourceOrientation→Spec() recurses to a
+// stack overflow. Registering the tool_search hook into the same registry it
+// describes reproduces the boot path. Kills the "drop the *ToolSearch skip" mutant.
+func TestToolSearchDescription_SelfReferentialNoRecursion(t *testing.T) {
+	reg := NewRegistry()
+	ts := &ToolSearch{Registry: reg}
+	reg.Register(ts)
+	reg.Register(bm25Tool{name: "github__create_issue", desc: "open an issue"})
+
+	desc := ts.Spec().Description // must not recurse
+	// tool_search must not appear in the SOURCE list (the "- " lines); the lead-in
+	// legitimately mentions the `tool_search` hook by name, so scope the check.
+	for _, line := range strings.Split(desc, "\n") {
+		if strings.HasPrefix(line, "- ") && strings.Contains(line, "tool_search") {
+			t.Errorf("Description listed tool_search as a source (it must be excluded): %q", line)
+		}
+	}
+	if !strings.Contains(desc, "- github:") {
+		t.Errorf("Description dropped the deferred source while excluding tool_search:\n%s", desc)
+	}
+}
+
+// descClockShape matches a date/clock substring that would poison the cached
+// manifest prefix if it crept into the tool_search Description.
+var descClockShape = regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}`)
 
 // TestToolSearchConcurrentExecute exercises the sync.Once index memoization from
 // many goroutines (run under -race). A data race in the lazy build trips here.

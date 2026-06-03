@@ -54,10 +54,74 @@ func (ts *ToolSearch) Spec() Spec {
 	return Spec{
 		Name:        "tool_search",
 		Summary:     "Load full specifications for deferred tools by name or keyword.",
-		Description: "Fetches deferred-tool schemas so they become callable. Use 'select:Name1,Name2' for direct selection, or a keyword phrase to discover relevant tools ranked by BM25 over their names, descriptions, and parameters.",
+		Description: toolSearchDescription(ts.Registry),
 		Parameters:  params,
 		Deferred:    false,
 	}
+}
+
+const toolSearchLeadIn = "# Tool discovery\n\n" +
+	"Searches deferred-tool metadata with BM25 and loads matching tool schemas for the next model call. " +
+	"Use 'select:Name1,Name2' for direct selection, or a keyword phrase ranked over deferred tool names, descriptions, and parameters. " +
+	"Some tools are not provided upfront; use this tool (`tool_search`) to discover and load them.\n\n" +
+	"You have access to deferred tools from the following sources:\n"
+
+// nsDelimiterStr is the "<namespace>__<tool>" delimiter from the mcptools
+// namespacing (08.1-03). It is duplicated as a literal here, NOT imported, because
+// package tools must not depend on internal/agent/mcptools (import cycle); a 2-char
+// delimiter is a stable cross-package contract, not shared state.
+const nsDelimiterStr = "__"
+
+// toolSearchDescription builds the registry-derived tool_search Description (D-09):
+// a fixed lead-in plus a SORTED, deduped list of the deferred tools' sources
+// (grouped by the "__" namespace prefix when present, else "built-in"). Because the
+// Registry is immutable for an agent run, the output is byte-stable across calls and
+// across turns — tool_search is non-deferred, so this Description ships in every
+// manifest and any variance would bust the OpenRouter implicit cache (T-08.1-07).
+// Only source names and (sorted) tool names flow in — no raw multi-line tool
+// description is concatenated (T-08.1-08). A nil registry yields the "None"-blurb.
+func toolSearchDescription(reg *Registry) string {
+	return toolSearchLeadIn + sourceOrientation(reg)
+}
+
+func sourceOrientation(reg *Registry) string {
+	const builtin = "built-in"
+	sources := map[string][]string{}
+	if reg != nil {
+		for _, t := range reg.All() {
+			// Skip tool_search itself BEFORE calling Spec(): tool_search's Spec()
+			// re-enters sourceOrientation (this function builds its Description), so
+			// materializing its Spec here recurses unboundedly. It is non-deferred
+			// anyway, so it would be filtered out regardless.
+			if _, ok := t.(*ToolSearch); ok {
+				continue
+			}
+			s := t.Spec()
+			if !s.Deferred {
+				continue
+			}
+			src := builtin
+			if pre, _, ok := strings.Cut(s.Name, nsDelimiterStr); ok && pre != "" {
+				src = pre
+			}
+			sources[src] = append(sources[src], s.Name)
+		}
+	}
+	if len(sources) == 0 {
+		return "None currently enabled.\n"
+	}
+	names := make([]string, 0, len(sources))
+	for src := range sources {
+		names = append(names, src)
+	}
+	sort.Strings(names)
+	var b strings.Builder
+	for _, src := range names {
+		tools := sources[src]
+		sort.Strings(tools)
+		fmt.Fprintf(&b, "- %s: %s\n", src, strings.Join(tools, ", "))
+	}
+	return b.String()
 }
 
 func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
