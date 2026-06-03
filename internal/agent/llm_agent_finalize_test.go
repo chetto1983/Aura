@@ -2,6 +2,8 @@ package agent_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +16,16 @@ import (
 // finalizeAnswer is the synthesized prose the scripted finalize turn returns.
 // Load-bearing: the assertions below check the terminal Event carries exactly it.
 const finalizeAnswer = "Ecco la risposta finale sintetizzata dai risultati raccolti."
+
+// stubLeadIn mirrors the D-09 deterministic-stub lead-in constant in
+// llm_agent_finalize.go — the production literal is unexported, so the test pins it
+// here too (a drift makes TestFinalizeFallback fail loudly).
+const stubLeadIn = "Non sono riuscito a completare la sintesi finale, ma ecco i dati che ho raccolto:"
+
+// echoTurn is one scripted echo(same-args) tool call — the dedup-tripping turn.
+func echoTurn() agenttest.FakeTurn {
+	return agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"same"}`))
+}
 
 // assertFinalizedNonEmpty checks the terminal Event of a forced-finalization run:
 // non-empty content (Req#2 — not the prose-less terminalBudgetEvent), NOT
@@ -41,26 +53,32 @@ func assertFinalizedNonEmpty(t *testing.T, evs []*agent.Event, wantReason string
 	}
 }
 
-// TestFinalize_DedupTrip: a run that trips the window-3 dedup ring ends with a
-// non-empty finalEvent synthesized from a tool-free turn, NOT a prose-less
-// terminalBudgetEvent. echo returns a stable result so the dedup veto fires (the
-// progress signal does not suppress it). The finalize turn rides outside the
-// budget, so the scripted finalize TextChunks turn is the one the agent consumes.
+// countUserNudges returns how many user-role recovery nudges are in the history. The
+// original user turn ("ciao") is excluded by matching the recovery-nudge phrasing.
+func countUserNudges(hist []llm.Message) int {
+	n := 0
+	for _, m := range hist {
+		if m.Role == llm.RoleUser && strings.Contains(m.Content, "Do not repeat any tool call") {
+			n++
+		}
+	}
+	return n
+}
+
+// TestFinalize_DedupTrip: a dedup trip now first RECOVERS (one nudge + one more turn,
+// Req#3) and only finalizes on the SECOND trip. The recovery turn re-issues the same
+// echo call so dedup re-trips; the second trip routes to finalize, which consumes the
+// scripted synthesis turn and emits a non-empty finalEvent carrying limit_hit=dedup.
 func TestFinalize_DedupTrip(t *testing.T) {
 	recordingProvider(t)
-	// The window-3 ring vetoes on the third identical (name,args) call with a stable
-	// result (probed deterministically): the third dispatch trips dedup, and finalize
-	// then consumes the NEXT scripted turn — so the finalize synthesis turn must
-	// immediately follow the three echo turns (finalize is Stream call #4). A trailing
-	// guard turn would only be reached on a bug (no trip), where the script-exhausted
-	// empty turn already makes the assertion fail loudly.
-	const echoTurnsBeforeTrip = 3
-	turns := make([]agenttest.FakeTurn, 0, echoTurnsBeforeTrip+1)
-	for i := 0; i < echoTurnsBeforeTrip; i++ {
-		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"same"}`)))
-	}
-	turns = append(turns, agenttest.TextChunks("stop", finalizeAnswer))
-	fc := agenttest.NewFakeClient(turns...)
+	// Three identical echoes trip the window-3 ring (1st trip -> recover). The
+	// recovery turn (turn 4) repeats the echo, re-tripping dedup (2nd trip ->
+	// finalize). Turn 5 is the tool-free synthesis turn finalize consumes.
+	fc := agenttest.NewFakeClient(
+		echoTurn(), echoTurn(), echoTurn(), // 3 echoes -> 1st dedup trip
+		echoTurn(), // recovery turn re-trips dedup -> 2nd trip
+		agenttest.TextChunks("stop", finalizeAnswer), // finalize synthesis
+	)
 	a := newAgent(t, fc, llm.Config{})
 	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
 
@@ -71,14 +89,15 @@ func TestFinalize_DedupTrip(t *testing.T) {
 	assertFinalizedNonEmpty(t, evs, "dedup")
 }
 
-// TestFinalize_MaxStepsTrip: a run with MaxSteps=1 that exhausts the step budget
-// after one tool call ends with a non-empty finalEvent. The first ConsumeStep
-// passes (one echo turn), the second trips max_steps, and finalize emits prose.
+// TestFinalize_MaxStepsTrip: MaxSteps=1 trips max_steps on the second budget gate
+// (1st trip -> recover, bypassing the gate). The recovery turn answers via a
+// content-stop, so this run ends on the recovery answer; the dedicated finalize-on-
+// second-trip proof lives in TestRecovery_TwoTripsOneNudge.
 func TestFinalize_MaxStepsTrip(t *testing.T) {
 	recordingProvider(t)
 	fc := agenttest.NewFakeClient(
-		agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"hi"}`)),
-		agenttest.TextChunks("stop", finalizeAnswer),
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"hi"}`)), // budgeted step
+		agenttest.TextChunks("stop", finalizeAnswer),                              // recovery turn answers
 	)
 	a := newAgent(t, fc, llm.Config{})
 	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(1)})
@@ -87,12 +106,19 @@ func TestFinalize_MaxStepsTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("max_steps trip surfaced an error slot: %v", err)
 	}
-	assertFinalizedNonEmpty(t, evs, "max_steps")
+	last := evs[len(evs)-1]
+	if last.LLMResponse == nil || last.LLMResponse.Content != finalizeAnswer {
+		t.Errorf("terminal content = %+v, want the recovery answer %q", last.LLMResponse, finalizeAnswer)
+	}
+	if countUserNudges(a.HistoryForTest()) != 1 {
+		t.Errorf("want exactly one recovery nudge, got %d", countUserNudges(a.HistoryForTest()))
+	}
 }
 
 // TestFinalizeWallclock: an injected clock past the deadline trips wallclock on the
-// very first ConsumeStep at :124, so finalize is the first (and only) consumed turn.
-// The name MUST match VALIDATION.md's `go test -run 'TestFinalizeWallclock'`.
+// FIRST ConsumeStep (1st trip -> recover via skipBudgetGate). The recovery turn rides
+// outside the gate and answers via content-stop. The name MUST match VALIDATION.md's
+// `go test -run 'TestFinalizeWallclock'`.
 func TestFinalizeWallclock(t *testing.T) {
 	recordingProvider(t)
 	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", finalizeAnswer))
@@ -117,5 +143,130 @@ func TestFinalizeWallclock(t *testing.T) {
 	if rerr != nil {
 		t.Fatalf("wallclock trip surfaced an error slot: %v", rerr)
 	}
-	assertFinalizedNonEmpty(t, evs, "wallclock")
+	last := evs[len(evs)-1]
+	if last.LLMResponse == nil || last.LLMResponse.Content != finalizeAnswer {
+		t.Errorf("terminal content = %+v, want the recovery answer", last.LLMResponse)
+	}
+}
+
+// TestRecovery_TwoTripsOneNudge (Req#3): two dedup trips inject EXACTLY ONE user-role
+// nudge (counter-gated, no second nudge), and the second trip routes to finalize —
+// the intended two-trips-one-nudge path (RESEARCH Open Question #2).
+func TestRecovery_TwoTripsOneNudge(t *testing.T) {
+	recordingProvider(t)
+	fc := agenttest.NewFakeClient(
+		echoTurn(), echoTurn(), echoTurn(), // 3 echoes -> 1st dedup trip (recover)
+		echoTurn(), // recovery turn re-trips dedup -> 2nd trip (finalize)
+		agenttest.TextChunks("stop", finalizeAnswer), // finalize synthesis
+	)
+	a := newAgent(t, fc, llm.Config{})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+
+	evs, err := collect(a.Run(ic))
+	if err != nil {
+		t.Fatalf("Run errored: %v", err)
+	}
+	if got := countUserNudges(a.HistoryForTest()); got != 1 {
+		t.Fatalf("recovery nudges = %d, want exactly 1 (counter-gated, no second nudge)", got)
+	}
+	// The second trip finalized: terminal Event carries the dedup limit_hit.
+	assertFinalizedNonEmpty(t, evs, "dedup")
+}
+
+// TestFinalizeOutsideBudget (Req#4): recovery + finalize never decrement the step
+// counter. With MaxSteps=N, after N budgeted tool turns the budget trips; recovery +
+// finalize ride outside it, so Remaining() drops by EXACTLY N and the client is
+// called at most N+2 times (RESEARCH §3 AC6 no-production-change assertion).
+func TestFinalizeOutsideBudget(t *testing.T) {
+	recordingProvider(t)
+	const maxSteps = 3
+	// N distinct-arg tool turns (no dedup), then a recovery turn that answers, kept
+	// long enough that an off-by-one in the ceiling would over-call the client.
+	turns := make([]agenttest.FakeTurn, 0, maxSteps+3)
+	for i := 0; i < maxSteps; i++ {
+		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"`+string(rune('a'+i))+`"}`)))
+	}
+	turns = append(turns, agenttest.TextChunks("stop", finalizeAnswer)) // recovery answer
+	turns = append(turns, agenttest.TextChunks("stop", "extra"))        // guard: must NOT be consumed
+	fc := agenttest.NewFakeClient(turns...)
+	a := newAgent(t, fc, llm.Config{})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(maxSteps)})
+
+	if _, err := collect(a.Run(ic)); err != nil {
+		t.Fatalf("Run errored: %v", err)
+	}
+	if got := ic.Budget.Remaining(); got != 0 {
+		t.Errorf("Remaining() = %d, want 0 (exactly maxSteps=%d consumed; recovery/finalize did NOT decrement)", got, maxSteps)
+	}
+	if got := fc.CallCount(); got > maxSteps+2 {
+		t.Errorf("client called %d times, want <= maxSteps+2 = %d", got, maxSteps+2)
+	}
+}
+
+// TestFinalizeFallback (Req#5): when finalize's synthesis is empty/errors TWICE it
+// emits the deterministic Italian stub digest; when the retry succeeds it emits the
+// retried prose (not the stub). Driven via the dedup two-trip path so finalize runs.
+func TestFinalizeFallback(t *testing.T) {
+	const toolPreview = "echo:{\"v\":\"same\"}"
+
+	// scriptToFinalize returns the 4 turns that drive a dedup recovery + re-trip so
+	// finalize runs; the caller appends the finalize synthesis turn(s).
+	scriptToFinalize := func() []agenttest.FakeTurn {
+		return []agenttest.FakeTurn{echoTurn(), echoTurn(), echoTurn(), echoTurn()}
+	}
+
+	t.Run("empty_then_error_emits_stub", func(t *testing.T) {
+		recordingProvider(t)
+		turns := append(scriptToFinalize(),
+			agenttest.TextChunks("stop"),                // finalize attempt 1: empty content
+			agenttest.FakeTurn{Err: errors.New("boom")}, // finalize attempt 2: transport error
+		)
+		fc := agenttest.NewFakeClient(turns...)
+		a := newAgent(t, fc, llm.Config{})
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+
+		evs, err := collect(a.Run(ic))
+		if err != nil {
+			t.Fatalf("fallback path must not surface an error slot: %v", err)
+		}
+		last := evs[len(evs)-1]
+		if last.LLMResponse == nil || !strings.HasPrefix(last.LLMResponse.Content, stubLeadIn) {
+			t.Fatalf("terminal content = %q, want the D-09 stub lead-in prefix", contentOf(last))
+		}
+		if !strings.Contains(last.LLMResponse.Content, "- echo: "+toolPreview) {
+			t.Errorf("stub missing the per-RoleTool bullet; got:\n%s", last.LLMResponse.Content)
+		}
+	})
+
+	t.Run("empty_then_success_emits_retried_prose", func(t *testing.T) {
+		recordingProvider(t)
+		const retried = "Risposta al secondo tentativo."
+		turns := append(scriptToFinalize(),
+			agenttest.TextChunks("stop"),          // finalize attempt 1: empty content
+			agenttest.TextChunks("stop", retried), // finalize attempt 2: succeeds
+		)
+		fc := agenttest.NewFakeClient(turns...)
+		a := newAgent(t, fc, llm.Config{})
+		ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(50), DedupWindow: ptr(3)})
+
+		evs, err := collect(a.Run(ic))
+		if err != nil {
+			t.Fatalf("Run errored: %v", err)
+		}
+		last := evs[len(evs)-1]
+		if last.LLMResponse == nil || last.LLMResponse.Content != retried {
+			t.Errorf("terminal content = %q, want the retried prose %q (not the stub)", contentOf(last), retried)
+		}
+		if strings.HasPrefix(last.LLMResponse.Content, stubLeadIn) {
+			t.Error("emitted the stub on retry-success; want the retried prose")
+		}
+	})
+}
+
+// contentOf is a nil-safe accessor for an Event's response content.
+func contentOf(ev *agent.Event) string {
+	if ev == nil || ev.LLMResponse == nil {
+		return ""
+	}
+	return ev.LLMResponse.Content
 }

@@ -167,18 +167,24 @@ func TestLlmAgent_EventOrder(t *testing.T) {
 	}
 }
 
-// TestLlmAgent_StepCap_Trips (Req#10): a client that always returns the same tool
-// call trips max_steps; the trip is a terminal Event, not an error.
+// TestLlmAgent_StepCap_Trips (Req#10 + Req#3/#4): distinct-arg tool calls exhaust
+// max_steps. The FIRST trip recovers (one bypass turn), whose distinct-arg echo
+// loops to the SECOND trip, which finalizes — the terminal Event carries
+// limit_hit=max_steps. The finalize synthesis answers on its first call, so the
+// ceiling is MaxSteps+2 = 5, never a runaway.
 func TestLlmAgent_StepCap_Trips(t *testing.T) {
 	recordingProvider(t)
-	turns := make([]agenttest.FakeTurn, 0, 8)
-	for i := 0; i < 8; i++ {
-		// Distinct args each turn so dedup never fires before the step cap.
+	const maxSteps = 3
+	turns := make([]agenttest.FakeTurn, 0, maxSteps+2)
+	// maxSteps+1 distinct-arg echoes: maxSteps budgeted + 1 recovery turn (the
+	// recovery turn re-enters the loop and re-trips the exhausted budget).
+	for i := 0; i < maxSteps+1; i++ {
 		turns = append(turns, agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"`+string(rune('a'+i))+`"}`)))
 	}
+	turns = append(turns, agenttest.TextChunks("stop", "finale")) // finalize synthesis (first-try)
 	fc := agenttest.NewFakeClient(turns...)
 	a := newAgent(t, fc, llm.Config{})
-	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(3)})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(maxSteps)})
 
 	evs, err := collect(a.Run(ic))
 	if err != nil {
@@ -188,21 +194,23 @@ func TestLlmAgent_StepCap_Trips(t *testing.T) {
 	if last.Actions.StateDelta["limit_hit"] != "max_steps" {
 		t.Errorf("terminal limit_hit = %v, want max_steps", last.Actions.StateDelta["limit_hit"])
 	}
-	// The loop makes at most MaxSteps (3) budgeted calls; the trip then forces ONE
-	// tool-free finalization call (07.1-03, Req#2) — so 4 total, never a runaway.
-	if fc.CallCount() > 4 {
-		t.Errorf("client called %d times, want <= 4 (3 step cap + 1 forced finalize)", fc.CallCount())
+	if fc.CallCount() > maxSteps+2 {
+		t.Errorf("client called %d times, want <= %d (3 step cap + 1 recovery + 1 forced finalize)", fc.CallCount(), maxSteps+2)
 	}
 }
 
-// TestLlmAgent_WallclockCap_Trips (Req#10 + Req#2): an injected clock past the
-// deadline trips wallclock before any loop LLM call; the trip now forces
-// finalization (07.1-03), so it makes EXACTLY ONE tool-free synthesis call and ends
-// on a terminal Event still carrying limit_hit=wallclock — no longer 0 calls / a
-// prose-less terminalBudgetEvent.
+// TestLlmAgent_WallclockCap_Trips (Req#10 + Req#3 + Req#4): an injected clock past
+// the deadline trips wallclock on every ConsumeStep. The FIRST trip recovers (one
+// nudge + one bypass turn outside the budget); the recovery turn issues a tool call
+// so the loop re-enters and the SECOND wallclock trip routes to finalize — the
+// terminal Event carries limit_hit=wallclock. Calls: recovery turn (1) + finalize
+// (1) = 2, never the old prose-less terminalBudgetEvent.
 func TestLlmAgent_WallclockCap_Trips(t *testing.T) {
 	recordingProvider(t)
-	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", "finale"))
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("c", "echo", `{"v":"x"}`)), // recovery turn (bypass)
+		agenttest.TextChunks("stop", "finale"),                                   // finalize synthesis
+	)
 	a := newAgent(t, fc, llm.Config{})
 
 	base := time.Now()
@@ -228,8 +236,8 @@ func TestLlmAgent_WallclockCap_Trips(t *testing.T) {
 	if last.Actions.StateDelta["limit_hit"] != "wallclock" {
 		t.Errorf("limit_hit = %v, want wallclock", last.Actions.StateDelta["limit_hit"])
 	}
-	if fc.CallCount() != 1 {
-		t.Errorf("client called %d times, want 1 (the single forced-finalization call)", fc.CallCount())
+	if fc.CallCount() != 2 {
+		t.Errorf("client called %d times, want 2 (recovery turn + forced finalize)", fc.CallCount())
 	}
 }
 
@@ -300,8 +308,19 @@ func TestMessagesImmutable(t *testing.T) {
 	if first.Messages[0].Content != agent.SystemPrompt {
 		t.Error("messages[0] is not the byte-stable system prompt")
 	}
-	if len(first.Messages) != 2 {
-		t.Errorf("first call had %d messages, want 2 (system+user) — the snapshot was mutated", len(first.Messages))
+	// The conversation prefix is system+user; the live <budget> block (07.1-04,
+	// Req#6) tail-injects a trailing user message to a COPY, so the first request is
+	// system+user+budget = 3 messages. The block must be the LAST message (never the
+	// prefix) so messages[0] stays cache-stable.
+	if len(first.Messages) != 3 {
+		t.Errorf("first call had %d messages, want 3 (system+user+budget) — prefix mutated?", len(first.Messages))
+	}
+	tail := first.Messages[len(first.Messages)-1]
+	if tail.Role != llm.RoleUser || !strings.HasPrefix(tail.Content, "<budget>") {
+		t.Errorf("last message = {%q,%q}, want the trailing <budget> user block", tail.Role, tail.Content)
+	}
+	if first.Messages[1].Content != "ciao" {
+		t.Errorf("messages[1] = %q, want the original user turn (budget must not displace it)", first.Messages[1].Content)
 	}
 }
 
