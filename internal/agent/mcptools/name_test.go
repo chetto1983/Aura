@@ -91,6 +91,83 @@ func TestNameLengthCap(t *testing.T) {
 	}
 }
 
+// TestNamespacedName_LongNamespaceCap covers WR-01: a sanitized namespace large
+// enough that the prefix alone overflows the budget (55-byte ns + a non-empty tool)
+// must still yield len <= maxToolNameLen, with the hash suffix surviving so distinct
+// long inputs stay distinguishable.
+func TestNamespacedName_LongNamespaceCap(t *testing.T) {
+	ns := strings.Repeat("n", 55)
+	got := namespacedName(ns, "x")
+	if len(got) > maxToolNameLen {
+		t.Fatalf("namespacedName length = %d, want <= %d (WR-01)", len(got), maxToolNameLen)
+	}
+	suffix := got[len(got)-(hashLen+1):]
+	if suffix[0] != '_' {
+		t.Errorf("long-namespace result should end in a '_'-prefixed hash, got suffix %q", suffix)
+	}
+	if !isHex(suffix[1:]) {
+		t.Errorf("long-namespace suffix should be hex, got %q", suffix[1:])
+	}
+}
+
+// TestNamespacedName_DistinctLongNamespacesNoRecollision proves the hash suffix is
+// never truncated away: two different overflowing (namespace,tool) pairs must produce
+// different capped names. Kills the "drop-the-suffix" mutant.
+func TestNamespacedName_DistinctLongNamespacesNoRecollision(t *testing.T) {
+	a := namespacedName(strings.Repeat("n", 55), "alpha")
+	b := namespacedName(strings.Repeat("n", 55), "beta")
+	if len(a) > maxToolNameLen || len(b) > maxToolNameLen {
+		t.Fatalf("both results must be capped: len(a)=%d len(b)=%d", len(a), len(b))
+	}
+	if a == b {
+		t.Fatalf("distinct overflowing inputs must stay distinct, both = %q", a)
+	}
+}
+
+// TestNamespacedName_ShortNamesByteStable proves the no-overflow fast path is
+// byte-identical — the sha1->sha256 hashSuffix swap must NOT touch short names, which
+// never reach hashSuffix (manifest/cache invariant).
+func TestNamespacedName_ShortNamesByteStable(t *testing.T) {
+	cases := []struct {
+		ns, tool, want string
+	}{
+		{"github", "create_issue", "github__create_issue"},
+		{"calculator", "calculate", "calculator__calculate"},
+		{"sb", "sandbox_exec", "sb__sandbox_exec"},
+	}
+	for _, c := range cases {
+		if got := namespacedName(c.ns, c.tool); got != c.want {
+			t.Errorf("namespacedName(%q,%q) = %q, want byte-identical %q", c.ns, c.tool, got, c.want)
+		}
+	}
+}
+
+// TestNamespacedName_AdversarialLenSweep asserts the len <= maxToolNameLen invariant
+// holds for ALL inputs: long namespaces, long tools, multibyte runes (each becomes a
+// single '_' so byte and rune budgets agree), and near-collision pairs.
+func TestNamespacedName_AdversarialLenSweep(t *testing.T) {
+	cases := []struct {
+		name, ns, tool string
+	}{
+		{"long ns short tool", strings.Repeat("a", 80), "x"},
+		{"short ns long tool", "srv", strings.Repeat("z", 200)},
+		{"long ns long tool", strings.Repeat("a", 80), strings.Repeat("z", 80)},
+		{"multibyte ns", strings.Repeat("é", 60), "tool"},
+		{"multibyte tool", "srv", strings.Repeat("漢", 60)},
+		{"ns exactly at budget edge", strings.Repeat("a", 51), "tool"},
+		{"ns one under cap", strings.Repeat("a", 60), "tool"},
+		{"empty ns and tool", "", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := namespacedName(c.ns, c.tool)
+			if len(got) > maxToolNameLen {
+				t.Fatalf("namespacedName(%q,%q) len = %d, want <= %d", c.ns, c.tool, len(got), maxToolNameLen)
+			}
+		})
+	}
+}
+
 func TestHashSuffixDeterministic(t *testing.T) {
 	a := hashSuffix("github\x00create_issue")
 	b := hashSuffix("github\x00create_issue")
