@@ -248,12 +248,12 @@ Plans:
 **Goal:** Harden the in-process `tool_search` hook to Anthropic `defer_loading` parity so tool-selection accuracy stays high as the catalog grows past the 30-50-tool degradation threshold: BM25 ranking over an expanded index (name + description + recursive arg names/descriptions), a `max_results` top-K cap (default 5), `<server>__<tool>` MCP namespacing with sanitize + 64B cap + collision hash, a registry-derived dynamic source-orientation in the `tool_search` Description, and a >=1-non-deferred fail-closed guard - all in-process, stdlib-only, cache-safe (no `SystemPrompt`/`Render()` order changes).
 **Requirements**: D-01..D-10 (CONTEXT.md decisions; no REQUIREMENTS.md IDs map to this inserted phase)
 **Depends on:** Phase 8
-**Plans:** 3 plans
+**Plans:** 2/3 plans executed
 Plans:
 **Wave 1**
 
-- [ ] 08.1-01-PLAN.md - BM25 ranking core (bm25.go) + expanded search document + max_results top-K in search.go (D-01, D-02, D-03, D-05)
-- [ ] 08.1-03-PLAN.md - MCP tool namespacing `<server>__<tool>` + sanitize/64B-cap/collision-hash in mcptools (D-06, D-07, D-08)
+- [x] 08.1-01-PLAN.md - BM25 ranking core (bm25.go) + expanded search document + max_results top-K in search.go (D-01, D-02, D-03, D-05)
+- [x] 08.1-03-PLAN.md - MCP tool namespacing `<server>__<tool>` + sanitize/64B-cap/collision-hash in mcptools (D-06, D-07, D-08)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -390,3 +390,14 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
+
+### Phase 16: add richer recipes/doctor checks for WhatsApp and Calendar, especially runtime detection, config prompts, and risky-tool labeling.
+
+**Goal:** [To be planned]
+**Requirements**: TBD
+**Depends on:** Phase 15
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 16 to break down)

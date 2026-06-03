@@ -4,8 +4,8 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 08.1 context gathered
-last_updated: "2026-06-03T18:22:30.648Z"
-last_activity: 2026-06-03 -- Phase 08.1 planning complete
+last_updated: "2026-06-03T19:02:47.673Z"
+last_activity: 2026-06-03 -- Phase 08.1 execution started
 progress:
   total_phases: 17
   completed_phases: 8
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 08 complete (sandbox-agent, D-15) — next: Phase 08.1 (Tool Search hardening → Anthropic defer_loading parity)
+**Current focus:** Phase 08.1 — tool-search-hardening-anthropic-defer-loading-parity
 
 ## Current Position
 
-Phase: 08 (Sandbox via sandbox-agent / local container) — COMPLETE 2026-06-03 (D-15 pivot)
-Plan: shipped — single non-deferred `sandbox_exec` tool → `internal/sandboxagent.Client` POSTs to rivetdev/sandbox-agent on `127.0.0.1:2468` (`/v1/processes/run`); operator starts it via `make sandbox-up` (preloaded image, no boot provision). code-sandbox-mcp MCP-bridge cut superseded (`internal/agent/mcptools` seam retained, unmounted). All bespoke sandbox surface deleted; `go build`/`test`/lint green.
-Status: Ready to execute
-Last activity: 2026-06-03 -- Phase 08.1 planning complete
+Phase: 08.1 (tool-search-hardening-anthropic-defer-loading-parity) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 08.1
+Last activity: 2026-06-03 -- Phase 08.1 execution started
 
 Progress: [██████████] 100% (Phase 08)
 
@@ -92,6 +92,7 @@ Progress: [██████████] 100% (Phase 08)
 
 - Phase 07.1 inserted after Phase 7: Forced-finalization loop fix: LlmAgent must always return a final answer (budget/dedup trip currently emits empty); surfaced by Phase 7 meteo E2E. See docs/research/agent-loop-forced-finalization.md (URGENT)
 - Phase 08.1 inserted after Phase 8: Tool Search hardening to Anthropic defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) replacing substring match, search argument-name/description fields, MCP tool namespacing, >=1-non-deferred guard. Matters as tool count grows toward the 30-50 selection-accuracy threshold (P11 skills/7e snippets + future stdio MCP mounts via the retained mcptools seam; P8 landed as single-tool sandbox-agent, MCP bridge dormant). (URGENT)
+- Phase 16 added: add richer recipes/doctor checks for WhatsApp and Calendar, especially runtime detection, config prompts, and risky-tool labeling.
 
 ### Decisions
 
