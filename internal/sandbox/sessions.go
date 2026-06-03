@@ -16,6 +16,11 @@ import (
 // containers. Boot recovery's stray sweep (sessions_recovery.go) filters on it.
 const containerNamePrefix = "aura-sandbox-sess-"
 
+// sessionSidecarPort is the in-container port the session sidecar binds (0.0.0.0:18901).
+// runArgv publishes it on an ephemeral host loopback port (127.0.0.1:0:18901); create
+// resolves the assigned host port via dockerClient.port and registers the per-conv URL.
+const sessionSidecarPort = "18901"
+
 // dockerClient is the lifecycle carve-out (D-05): the SessionManager shells
 // docker run/stop/rm for CONTAINER LIFECYCLE only; execution stays HTTP (08-07).
 // It is an interface so unit tests inject a fake — the real impl (dockerCLI) is
@@ -25,6 +30,11 @@ type dockerClient interface {
 	stop(ctx context.Context, id string) error
 	remove(ctx context.Context, id string) error
 	listStray(ctx context.Context) ([]string, error)
+	// port resolves the host loopback address a container's published containerPort
+	// maps to (the 5th lifecycle verb). It shells `docker port <id> <containerPort>`
+	// — LookPath-gated fixed argv, parses stdout ONLY, NEVER the docker socket
+	// (T-08-10-SOCKET, extends T-05-03-EOP-SOCKET/D-05).
+	port(ctx context.Context, id, containerPort string) (string, error)
 }
 
 // sessionStore is the narrow control-plane registry surface the SessionManager
@@ -79,6 +89,12 @@ type SessionDeps struct {
 	ProxyEnv  []string
 	ReapEvery time.Duration
 	Now       func() time.Time
+	// Endpoint is the 2b session-routing registry create Registers each per-conv
+	// container URL into and the reaper/recovery Unregister from. Nil-tolerant: a nil
+	// Endpoint falls back to the process-scoped shared defaultSessionEndpoint, so a
+	// SessionManager built without an explicit resolver still routes exec through the
+	// SAME table a bare NewDockerRunner reads (the BLOCKER-1 by-construction sharing).
+	Endpoint *SessionEndpoint
 }
 
 // SessionManager is the per-conversation container control plane (D-04). It owns
@@ -103,6 +119,7 @@ type SessionManager struct {
 	egressNetwork  string
 	proxyEnv       []string
 	now            func() time.Time
+	endpointReg    *SessionEndpoint
 
 	cancel  context.CancelFunc
 	done    chan struct{}
@@ -137,6 +154,7 @@ func NewSessionManager(ctx context.Context, deps SessionDeps) *SessionManager {
 		egressNetwork:  deps.EgressNetwork,
 		proxyEnv:       deps.ProxyEnv,
 		now:            now,
+		endpointReg:    deps.Endpoint,
 		cancel:         cancel,
 		done:           make(chan struct{}),
 	}
@@ -220,6 +238,17 @@ func (m *SessionManager) create(ctx context.Context, sessionID string, convUUID 
 		_ = m.docker.remove(ctx, containerID)
 		return nil, fmt.Errorf("session %s: register: %w", sessionID, err)
 	}
+	// Resolve the published loopback host port and register the per-conv exec URL so
+	// DockerRunner.sessionExec routes to THIS container (D-05 HTTP-to-per-conv-port).
+	// A port-resolve or register failure must NOT leave a half-registered session:
+	// tear the container down and surface the error.
+	hostAddr, err := m.docker.port(ctx, containerID, sessionSidecarPort)
+	if err != nil {
+		_ = m.docker.stop(ctx, containerID)
+		_ = m.docker.remove(ctx, containerID)
+		return nil, fmt.Errorf("session %s: resolve published port: %w", sessionID, err)
+	}
+	m.endpoint().Register(sessionID, "http://"+hostAddr)
 	s := &session{id: row.ID, convID: sessionID, containerID: containerID}
 	m.sessions.Store(sessionID, s)
 	m.count++
@@ -254,6 +283,11 @@ func (m *SessionManager) runArgv(name string) []string {
 		"--memory", "512m",
 		"--cpus", "1.0",
 		"--ulimit", "nofile=64",
+		// Publish the session sidecar port on an ephemeral HOST LOOPBACK port. The
+		// 127.0.0.1 bind keeps it host-only (reachable from the runner over loopback,
+		// NEVER from inside another container netns — T-08-10-EOP-PORT); create
+		// resolves the assigned port via `docker port` and registers the per-conv URL.
+		"--publish", "127.0.0.1:0:" + sessionSidecarPort,
 	}
 	if m.allowHosts != "" {
 		if m.egressNetwork != "" {
@@ -274,6 +308,16 @@ func (m *SessionManager) Release(sess *Session) {
 		return
 	}
 	sess.s.mu.Unlock()
+}
+
+// endpoint returns the injected session-routing registry, or the process-scoped
+// shared defaultSessionEndpoint when none was injected — so create/evict/recovery
+// touch the SAME table a bare DockerRunner reads (BLOCKER-1 by-construction sharing).
+func (m *SessionManager) endpoint() *SessionEndpoint {
+	if m.endpointReg != nil {
+		return m.endpointReg
+	}
+	return defaultSessionEndpoint
 }
 
 // liveCount returns the current live session count (capMu-guarded). Test-only

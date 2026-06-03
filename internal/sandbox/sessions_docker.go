@@ -21,10 +21,11 @@ var ErrDockerCLIAbsent = errors.New("docker CLI not found on PATH")
 // keep parallel-wave files conflict-free; it is errors.Is-friendly all the same.
 var ErrPrivacyModeEgressDenied = errors.New("sandbox egress allowlist set under privacy-mode local-only")
 
-// dockerCLI is the production dockerClient: it shells docker run/stop/rm/ps via
+// dockerCLI is the production dockerClient: it shells docker run/stop/rm/ps/port via
 // exec.CommandContext, GATED on exec.LookPath("docker"), with a FIXED argv and
 // NEVER any reference to /var/run/docker.sock (D-05, extends T-05-03-EOP-SOCKET).
-// The lifecycle carve-out is contained to these four verbs; execution stays HTTP.
+// The lifecycle carve-out is contained to these FIVE verbs (run/stop/rm/ps + the
+// new socket-free port); execution stays HTTP.
 type dockerCLI struct{}
 
 var _ dockerClient = dockerCLI{}
@@ -78,6 +79,23 @@ func (dockerCLI) listStray(ctx context.Context) ([]string, error) {
 		}
 	}
 	return ids, nil
+}
+
+// port resolves the host loopback address the container's published containerPort
+// maps to. It shells `docker port <id> <containerPort>` (fixed argv, LookPath-gated,
+// NEVER the socket) and filters stdout for the 127.0.0.1 line via
+// parsePublishedHostPort (a dual-stack host also emits an IPv6 [::] line — FLAG 1).
+func (dockerCLI) port(ctx context.Context, id, containerPort string) (string, error) {
+	if _, err := exec.LookPath("docker"); err != nil {
+		return "", ErrDockerCLIAbsent
+	}
+	cmd := exec.CommandContext(ctx, "docker", "port", id, containerPort) //nolint:gosec // fixed argv, no socket
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", err
+	}
+	return parsePublishedHostPort(out.String())
 }
 
 // NewDockerCLI returns the production dockerClient for the composition root

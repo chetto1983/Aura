@@ -58,6 +58,12 @@ func (f *fakeDocker) remove(_ context.Context, id string) error {
 
 func (f *fakeDocker) listStray(_ context.Context) ([]string, error) { return nil, nil }
 
+// port returns a canned loopback address so the create-path unit tests resolve a
+// published port + register the endpoint without a daemon.
+func (f *fakeDocker) port(_ context.Context, _, _ string) (string, error) {
+	return "127.0.0.1:18999", nil
+}
+
 // fakeStore satisfies sessionStore with in-memory rows; it never touches Postgres.
 type fakeStore struct {
 	mu         sync.Mutex

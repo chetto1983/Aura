@@ -43,24 +43,53 @@ type DockerRunner struct {
 	httpClient        *http.Client
 	url               string
 	defaultTimeoutSec int
+	// SessionEndpoint resolves a sessionID (=conversation id) to its PER-CONVERSATION
+	// container's loopback base URL for the 2b session path. NewDockerRunner DEFAULTS
+	// it to the package-level defaultSessionEndpoint so a bare runner (as the live
+	// integrationRunner builds it) routes session exec by construction; the
+	// composition root MAY repoint it, but the package default already serves both
+	// prod and test. The stateless 2a path never consults it (it uses r.url).
+	SessionEndpoint *SessionEndpoint
 }
 
 var _ Runner = (*DockerRunner)(nil)
 
+// newHTTPClient builds the shared HTTP client shape: a connect timeout on the
+// dialer, NO http.Client.Timeout (the ctx carries the total), DisableKeepAlives so
+// goleak is order-independent.
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{
+				Timeout: connectTimeoutSec * time.Second,
+			}).DialContext,
+			DisableKeepAlives: true,
+		},
+	}
+}
+
 // NewDockerRunner builds a DockerRunner from the resolved config. The per-runner
-// default timeout seeds calls that omit one (timeoutSec <= 0).
+// default timeout seeds calls that omit one (timeoutSec <= 0). It DEFAULTS
+// SessionEndpoint to the process-scoped shared defaultSessionEndpoint (NOT nil) so a
+// bare runner routes 2b session exec to the per-conv container by construction.
 func NewDockerRunner(cfg *config.Config) *DockerRunner {
 	return &DockerRunner{
-		httpClient: &http.Client{
-			Transport: &http.Transport{
-				DialContext: (&net.Dialer{
-					Timeout: connectTimeoutSec * time.Second,
-				}).DialContext,
-				DisableKeepAlives: true,
-			},
-		},
+		httpClient:        newHTTPClient(),
 		url:               cfg.SandboxURL,
 		defaultTimeoutSec: cfg.SandboxTimeoutSec,
+		SessionEndpoint:   defaultSessionEndpoint,
+	}
+}
+
+// NewDockerRunnerWithEndpoint builds a runner with an explicit resolver (unit tests
+// inject a private SessionEndpoint to avoid shared-default pollution, or nil to
+// assert the defensive ErrSessionEndpointUnknown path).
+func NewDockerRunnerWithEndpoint(url string, defaultTimeoutSec int, ep *SessionEndpoint) *DockerRunner {
+	return &DockerRunner{
+		httpClient:        newHTTPClient(),
+		url:               url,
+		defaultTimeoutSec: defaultTimeoutSec,
+		SessionEndpoint:   ep,
 	}
 }
 
@@ -98,27 +127,41 @@ type wireResponse struct {
 	LimitHit  string `json:"limit_hit"`
 }
 
-// exec is the stateless 2a per-call path: POST /exec/{lang}.
+// exec is the stateless 2a per-call path: POST {shared-url}/exec/{lang}. It passes
+// the fixed shared sidecar URL (r.url) and enables the one-shot auto-start (the
+// shared sidecar is the only container DockerRunner may best-effort start).
 func (r *DockerRunner) exec(ctx context.Context, lang, code string, timeoutSec int) (Result, error) {
-	return r.execPath(ctx, "/exec/"+lang, code, timeoutSec)
+	return r.execPath(ctx, r.url, "/exec/"+lang, code, timeoutSec, true)
 }
 
-// sessionExec is the 2b session-bound per-call path: POST /session/{id}/exec/{lang}.
-// Execution stays HTTP (D-05); the session's container lifecycle is the
-// SessionManager's (08-05), NEVER driven here. It reuses execPath so the
+// sessionExec is the 2b session-bound per-call path: POST {perconv-url}/session/{id}/exec/{lang}.
+// It resolves the PER-CONVERSATION container's base URL from the SessionEndpoint
+// resolver (an unregistered sessionID -> ErrSessionEndpointUnknown, NO fallthrough to
+// the shared r.url — T-08-10-INFO-XCONV). Execution stays HTTP (D-05); the session's
+// container lifecycle is the SessionManager's (08-05), NEVER driven here — so the
+// session path does NOT auto-start (a missing per-conv container is a manager bug,
+// not something DockerRunner recreates). It reuses execPath so the
 // timeout/decode/error-taxonomy is identical to the stateless path.
 func (r *DockerRunner) sessionExec(ctx context.Context, sessionID, lang, code string, timeoutSec int) (Result, error) {
-	return r.execPath(ctx, "/session/"+sessionID+"/exec/"+lang, code, timeoutSec)
+	if r.SessionEndpoint == nil {
+		return Result{}, fmt.Errorf("session %s: %w", sessionID, ErrSessionEndpointUnknown)
+	}
+	base, ok := r.SessionEndpoint.URLFor(sessionID)
+	if !ok {
+		return Result{}, fmt.Errorf("session %s: %w", sessionID, ErrSessionEndpointUnknown)
+	}
+	return r.execPath(ctx, base, "/session/"+sessionID+"/exec/"+lang, code, timeoutSec, false)
 }
 
 // execPath is the shared per-call path for both the stateless and session-bound
 // routes. It resolves+clamps the timeout, derives the call ctx deadline from it,
-// POSTs {code,timeout_sec} to path, and on a transport failure attempts ONE
+// POSTs {code,timeout_sec} to baseURL+path, and (only when autoStart is allowed —
+// the stateless shared-sidecar path) on a transport failure attempts ONE
 // docker-CLI-gated auto-start then a single retry. A non-2xx or undecodable body
 // is ErrSandboxProtocol; an unrecoverable transport failure is
 // ErrSandboxUnreachable. A non-zero exit_code is a normal Result, never an error
 // (D-18).
-func (r *DockerRunner) execPath(ctx context.Context, path, code string, timeoutSec int) (Result, error) {
+func (r *DockerRunner) execPath(ctx context.Context, baseURL, path, code string, timeoutSec int, allowAutoStart bool) (Result, error) {
 	effective := r.effectiveTimeout(timeoutSec)
 	ctx, cancel := context.WithTimeout(ctx, time.Duration(effective)*time.Second+responseGrace)
 	defer cancel()
@@ -128,11 +171,14 @@ func (r *DockerRunner) execPath(ctx context.Context, path, code string, timeoutS
 		return Result{}, err
 	}
 
-	resp, err := r.post(ctx, path, body)
+	resp, err := r.post(ctx, baseURL+path, body)
 	if err != nil {
-		// Transport failure: one best-effort auto-start, then a single retry.
-		r.autoStart(ctx)
-		resp, err = r.post(ctx, path, body)
+		if allowAutoStart {
+			// Transport failure on the shared sidecar: one best-effort auto-start,
+			// then a single retry.
+			r.autoStart(ctx)
+			resp, err = r.post(ctx, baseURL+path, body)
+		}
 		if err != nil {
 			return Result{}, fmt.Errorf("sandbox POST %s: %v: %w", path, err, ErrSandboxUnreachable)
 		}
@@ -172,8 +218,8 @@ func (r *DockerRunner) effectiveTimeout(timeoutSec int) int {
 	return timeoutSec
 }
 
-func (r *DockerRunner) post(ctx context.Context, path string, body []byte) (*http.Response, error) {
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url+path, bytes.NewReader(body))
+func (r *DockerRunner) post(ctx context.Context, url string, body []byte) (*http.Response, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}

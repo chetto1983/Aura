@@ -289,7 +289,13 @@ func TestRunner_SessionExecPathAndWire(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := NewDockerRunner(testConfig(srv.URL, 5))
+	// The 2b session path now resolves the per-conv container URL from a private
+	// SessionEndpoint (D-05) instead of r.url; register both convIDs at the test
+	// server so the wire-contract assertions still exercise /session/{id}/exec/{lang}.
+	ep := NewSessionEndpoint()
+	ep.Register("conv-1", srv.URL)
+	ep.Register("conv-2", srv.URL)
+	r := NewDockerRunnerWithEndpoint(srv.URL, 5, ep)
 
 	res, err := r.RunPythonSession(context.Background(), "conv-1", "print(x)", 12)
 	if err != nil {
@@ -325,7 +331,9 @@ func TestRunner_SessionExecProtocolError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	r := NewDockerRunner(testConfig(srv.URL, 5))
+	ep := NewSessionEndpoint()
+	ep.Register("conv-x", srv.URL)
+	r := NewDockerRunnerWithEndpoint(srv.URL, 5, ep)
 	if _, err := r.RunPythonSession(context.Background(), "conv-x", "x", 0); !errors.Is(err, ErrSandboxProtocol) {
 		t.Fatalf("want ErrSandboxProtocol on a 502 from the session path, got %v", err)
 	}

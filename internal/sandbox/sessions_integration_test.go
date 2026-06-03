@@ -38,6 +38,9 @@ func (recoveryDocker) run(context.Context, string, []string) (string, error) { r
 func (recoveryDocker) stop(context.Context, string) error                    { return nil }
 func (recoveryDocker) remove(context.Context, string) error                  { return nil }
 func (recoveryDocker) listStray(context.Context) ([]string, error)           { return nil, nil }
+func (recoveryDocker) port(context.Context, string, string) (string, error) {
+	return "127.0.0.1:18999", nil
+}
 
 func envOrSkip(t *testing.T, key string) string {
 	t.Helper()
