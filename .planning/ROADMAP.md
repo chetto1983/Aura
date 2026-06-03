@@ -22,11 +22,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 4: HITL + Identity + Conversations** - `ask_user` pause/resume, identity scaffolding, multi-thread conversations with FTS
  (completed 2026-05-30)
 
-- [x] **Phase 5: Sandbox 2a Stateless** - Python 3.12 sidecar with positive seccomp allowlist + SandboxEscapeBench (completed 2026-06-02)
 - [x] **Phase 6: KV Cache Builder** - stable-prefix discipline + provider-aware cache_control + cross-slice invariant CI (completed 2026-06-02)
 - [x] **Phase 7: Web Tools** - SearXNG `web_search` + readeck-readability `web_fetch` with SSRF defense (IPv6 + DNS pin) (completed 2026-06-02)
 - [x] **Phase 07.1: Agent-Loop Forced Finalization** (INSERTED) - loop must always return a final answer; forced-finalization on budget/dedup trip + dedup recovery + fan-out budget block (completed 2026-06-03)
-- [ ] **Phase 8: Sandbox 2b Session-Bound** - per-conversation workspace + network allowlist + symlink escape guard (all 9 plans authored; CAP-02 closes on the 08-09 Task-3 live Gate-3 human-verify sign-off — PENDING)
+- [ ] **Phase 8: Sandbox via code-sandbox-mcp (MCP bridge)** - REPLACES bespoke Slice 2a/2b (D-15 pivot). Generic MCP→agent-tool bridge mounts code-sandbox-mcp (auto-provisioned on boot); agent runs code in a Docker container via sandbox_initialize/sandbox_exec; CAP-01+CAP-02. (in build)
 - [ ] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance
 - [ ] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat
 - [ ] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger
@@ -142,42 +141,10 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] 04-04-PLAN.md — Conversations (1.8): conversations.Store (atomic AppendTurn SC-2, byte-identical LoadHistory, token/USD agg, locked FTS) + context L1/L2/L2.5 (offline tiktoken) + symlink-guarded orphan_scan + auto-title body (wave 3)
 - [x] 04-05-PLAN.md — Orchestration: runner.Runner (Turn/SubmitAnswer/Stop, resume-as-fresh-Run SC-4) + aura chat REPL drives Runner + paused-states CLI + chat search + boot composition + microcompact_smoke.sh (wave 4)
 
-### Phase 5: Sandbox 2a Stateless
-
-**Goal**: Python 3.12 slim sidecar for stateless per-call code execution, with a **curated, hash-pinned `sandbox/requirements.txt` baked at IMAGE-BUILD time** (numpy/pandas/scipy/sympy/matplotlib/pillow/beautifulsoup4/lxml/pyyaml/python-dateutil/openpyxl — D-20, "not a toy" user directive) so user code is batteries-included while the **runtime** container stays `network_mode: none` + `read_only: true` + stateless with **no runtime pip** (arbitrary on-demand `pip install` remains a 2b/Phase-8 capability gated by the `AURA_SANDBOX_NETWORK_ALLOW_HOSTS=pypi.org` allowlist; the `sidecar.py` server itself stays stdlib-only). Seccomp **positive allowlist** ~80 syscalls (NOT deny-list — Pitfall #1 fix), ulimits, `network_mode: none` default, `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `userns-remap`, pids_limit. SandboxEscapeBench (UK AISI March 2026) run during Gate 3, escape rate documented in `docs/aura-quality-snapshot.md`. This is the highest-stakes P0 sandbox slice.
-**Depends on**: Phase 4
-**Requirements**: CAP-01
-**Slices**: 2a
-**Success Criteria** (what must be TRUE):
-
-  1. Operator runs `aura exec python "print(2+2)"` and observes `4` with the sidecar returning to idle within `AURA_SANDBOX_CALL_TIMEOUT_SEC`
-  2. Operator runs `aura exec python "import ctypes; ctypes.CDLL(None).ptrace(0,0,0,0)"` and observes EPERM (ptrace blocked by positive allowlist); same for `open('/proc/self/root/etc/shadow').read()` returning ENOENT/EPERM
-  3. Operator runs `aura exec python "__import__('socket').socket().connect(('1.1.1.1',80))"` and observes EPERM (socket syscall absent from allowlist); even `unshare(CLONE_NEWNET)` returns EPERM (allowlist excludes unshare)
-  4. Operator runs `scripts/sandbox_escape_bench.sh` (SandboxEscapeBench port) and observes escape rate < 5% recorded in `docs/aura-quality-snapshot.md`
-  5. Operator inspects compose service `aura-sandbox` and observes `cap_drop: ALL`, `no-new-privileges: true`, `read_only: true`, `pids_limit: 64`, `userns-remap` (daemon.json) all set; **gVisor `runsc` is default-on x86 (D-05/D-06/D-07 re-decision, amendment #36 — gVisor is the PRIMARY x86 boundary, not a >5%-only escalation seam; container+seccomp+userns-remap is the defense-in-depth floor inside gVisor on x86 and the standalone fallback boundary on arm64). The SandboxEscapeBench escape-rate is measured against the gVisor-primary x86 production profile, with the container+seccomp floor bench-validated as the arm64 fallback.**
-
-**Plans:** 4/4 plans authored (05-04 tasks 1-2 committed; Gate-3 human-verify checkpoint pending live DinD sign-off — CAP-01 not yet closed)
-
-**Wave 1**
-
-- [x] 05-01-PLAN.md — PRD-amendment gate: re-decide D12 to gVisor-primary (D-05/06/07) + Slice 2a acceptance #4 auto-start (D-09) + D-20 build-time package bake across prd.md + DECISIONS.md + ROADMAP.md (doc-only, gates all code waves) — COMPLETE
-
-**Wave 2** *(blocked on Wave 1 completion)*
-
-- [x] 05-02-PLAN.md — Sidecar artifacts: stdlib sidecar.py (/exec/python+/exec/shell, D-16) + python:3.12-slim Dockerfile (non-root, no pip) + multi-arch positive seccomp allowlist (D-10/D-11) + hardened aura-sandbox compose service + runsc overlay (D-04/D-14/D-15)
-
-**Wave 3** *(blocked on Wave 2 completion)*
-
-- [x] 05-03-PLAN.md — Go runner: DockerRunner HTTP client + sentinels (D-09/D-18) + AURA_SANDBOX_* config (D-07) + Deferred:true execute tool with lean preview (D-16/D-17) + aura exec CLI exit-70 (D-19) + sandbox_integration negative-test tier
-
-**Wave 4** *(blocked on Wave 3 completion)*
-
-- [ ] 05-04-PLAN.md — Gate-3 evidence: deterministic 18-scenario escape bench (D-01/D-02) + gating CI DinD workflow (runsc + userns-remap + QEMU arm64, D-11/D-12/D-13) + quality-snapshot escape-rate + human-verify sign-off
-
 ### Phase 6: KV Cache Builder
 
 **Goal**: PromptBuilder with stable-prefix discipline. **Two system messages** invariant: `messages[0]` byte-identical turn-on-turn (system + tool manifest, alphabetically sorted); `messages[1]` mutable (Agent.md + cached AgentInsight). Provider-aware `cache_control` injection (Anthropic `ephemeral`, DeepSeek auto + parse `usage.prompt_cache_hit_tokens`, OpenAI prefix-only). Deliberately near-late: must come AFTER P3+P4 so stable prefix is real, not theoretical. Cross-slice CI job `scripts/cache_invariant_audit.sh` runs from this phase onward and gates every subsequent merge.
-**Depends on**: Phase 5
+**Depends on**: Phase 4
 **Requirements**: CAP-04
 **Slices**: 4
 **Success Criteria** (what must be TRUE):
@@ -260,52 +227,20 @@ Plans:
 
 - [x] 07.1-05-PLAN.md — Wave 4: live env-gated tests — tool_choice=none smoke (AC4) + meteo-Caraglio E2E failure-rate->0 (AC9)
 
-### Phase 8: Sandbox 2b Session-Bound
+### Phase 8: Sandbox via code-sandbox-mcp (MCP bridge)
 
-**Goal**: Extend Sandbox 2a with session-bound containers per `conversation_id`. Per-conversation workspace mount with `nosuid,nodev,noexec` flags. Network allowlist via a host-side forward-proxy hostname allowlist (default deny, resolve-then-pin; D-08 supersedes in-container iptables, which needs CAP_NET_ADMIN and conflicts with the locked `cap_drop: ALL`). TTL (`AURA_SANDBOX_SESSION_TTL_SEC=1800`). Host-side walkers (`WorkspaceManager.walkSize`, `Conversations.Delete` cascade) use `os.Root`/openat2 symlink escape guard (D-13, supersedes `O_NOFOLLOW`). Needed by P11 Skills 7e snippet execution.
+**Goal**: Replace the bespoke Slice 2a/2b sandbox (Python sidecar + seccomp + SessionManager + host egress proxy + DinD) with **code-sandbox-mcp** (Automata-Labs-team, Go stdio MCP server) mounted through a **generic MCP→agent-tool bridge** (D-15 pivot, amendment #43). The bridge lists any stdio MCP server's tools (`tools/list`) and registers them as first-class Aura agent tools (Deferred, spill-aware via `tools.NewResult`); code-sandbox-mcp is its first consumer. The agent runs code in a real Docker container via `sandbox_initialize` → `sandbox_exec` (filesystem persists across calls; one container per conversation). Aura **auto-provisions** the code-sandbox-mcp binary on boot (downloads + caches the OS/arch release asset if absent — NO operator install). Works on plain Docker Desktop (no DinD / gVisor / `device=` bind). Deltas vs bespoke: filesystem-only persistence (no in-memory Python vars), default docker networking (no egress allowlist). `internal/scoring` (D-11) is retained as cross-cutting.
 **Depends on**: Phase 7
-**Requirements**: CAP-02
-**Slices**: 2b
+**Requirements**: CAP-01, CAP-02
+**Slices**: 2 (code-sandbox-mcp)
 **Success Criteria** (what must be TRUE):
 
-  1. Operator triggers two `execute` calls in the same conversation and observes both routing to the same long-lived sidecar container; workspace files written in call 1 are visible in call 2 (session-bound persistence)
-  2. Operator triggers an `execute` call from the sidecar attempting `ln -s /etc /workspace/escape` followed by host-side `aura chat delete <conv_id>`; observes the host cascade cleanup detecting the symlink and refusing to follow (no host `/etc` deletion); workspace cleared only after `docker exec` rm
-  3. Operator inspects `aura sandbox sessions list` after `AURA_SANDBOX_SESSION_TTL_SEC` elapses with no activity and observes the session reaped, container removed, workspace dir cleaned up
-  4. Operator triggers `execute` with `network_allow: ["pypi.org"]` and observes `pip install` to pypi.org succeeding; same call attempting `curl 1.1.1.1` observes connection refused (allowlist enforced via the host-side forward proxy)
+  1. On boot Aura ensures the code-sandbox-mcp binary (auto-downloaded + cached if absent), spawns it over stdio, and the generic bridge registers its tools (`sandbox_initialize`/`sandbox_exec`/`write_file_sandbox`/`copy_file`/`copy_project`/`sandbox_stop`) into the agent registry — operator does ZERO manual install.
+  2. The `aura chat` agent, given a compute task, calls `sandbox_initialize` then `sandbox_exec` and returns real container output (e.g. `print(40+2)` → `42`); a file written under the workdir in one exec is readable in a later exec on the same `container_id`.
+  3. The bridge mounts ANY stdio MCP server declared in the `mcpServers` config (command/args/env), not just code-sandbox-mcp — proven by a second server's tools appearing in the registry; name collisions are refused (no silent shadowing of a built-in tool).
+  4. All bespoke sandbox surface is deleted: `internal/sandbox/*`, `sandbox/` sidecar, migration `0008_sandbox_sessions`, `cmd/aura/{exec,sandbox,sandbox_proxy}.go`, `.github/workflows/sandbox.yml`; `go build`/`test`/lint green after removal.
 
-**Plans:** 10/11 plans executed
-
-**Wave 1**
-
-- [x] 08-01-PLAN.md — PRD-amendment gate (doc-only): 5 amendments (persistent-interp/docker-lifecycle/host-proxy/scoring-home-slice/os.Root) + migration 0008 + uuid FK + Wave-0 decisions
-
-**Wave 2**
-
-- [x] 08-02-PLAN.md — DB substrate: migration 0008_sandbox_sessions (uuid FK) + 4 sqlc queries + 6 config knobs + 2 sentinels
-- [x] 08-03-PLAN.md — internal/scoring full module (RiskTier + Compute*Tier + GateRecommended + RequiresImmediateAlert) TDD; sandbox advisory path only (D-12)
-- [x] 08-04-PLAN.md — export minimal SSRF surface from internal/web (ClassifyIP + resolve-then-pin) for proxy reuse; no copy; re-test web tier (landmine #5)
-
-**Wave 3**
-
-- [x] 08-05-PLAN.md — SessionManager control plane (lifecycle/lock/reaper/cap/boot-recovery) + WorkspaceManager os.Root walks + cascade interface
-- [x] 08-06-PLAN.md — host-side CONNECT forward proxy: deny-wins glob allowlist + resolve-then-pin (reuse 08-04 export); no MITM
-- [x] 08-07-PLAN.md — sidecar.py persistent per-session interpreter (stdlib) + asymmetric shell cwd + DockerRunner session exec path (additive)
-
-**Wave 4**
-
-- [x] 08-08-PLAN.md — wiring: activate execute session_id + scoring advisory + Conversations.Delete cascade + aura sandbox sessions CLI + exec --session + session network/seccomp posture (landmine #3, extends AR-05-01)
-
-**Wave 5**
-
-- [x] 08-09-PLAN.md — live sandbox_integration tier (4 criteria) + egress-bridge spike + 08-SECURITY + gating CI DinD + coverage/mutation + human-verify (CAP-02 close)
-
-**Wave 6**
-
-- [x] 08-10-PLAN.md — CAP-02 gap-closure code: per-conv-container exec routing (shared SessionEndpoint) + nosuid/nodev/noexec workspace bind-mount + /workspace cwd + boot lazy-recreate/teardown + boot egress proxy (Tasks 1-5 code; Task 6 live Gate-3 human-verify PENDING)
-
-**Wave 7**
-
-- [ ] 08-11-PLAN.md — CAP-02 gap-closure: inject Workspace ensurer into liveManager (close read-only /workspace on the live path) + graceful Close container teardown + CI DinD Gate-3 confirm (Tasks 1-3 committed; Task 4 live Gate-3 human-verify PENDING — CAP-02 closes on sign-off)
+**Plans:** in build (code-sandbox-mcp pivot — generic MCP client → bridge → mcpServers config + boot auto-provision → live proof + bespoke deletion). Supersedes the prior 08-01..08-11 bespoke plans (historical artifacts retained in the phase dir).
 
 ### Phase 9: Swarm (Minimal)
 
@@ -419,7 +354,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15
+Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -428,10 +363,9 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 2. Agent Cornerstone | 8/8 | Complete | 2026-05-30 |
 | 3. LLM Client + ToolResult | 5/5 | Complete   | 2026-05-30 |
 | 4. HITL + Identity + Conversations | 5/5 | Complete   | 2026-05-30 |
-| 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
-| 8. Sandbox 2b Session-Bound | 10/11 | In Progress|  |
+| 8. Sandbox via code-sandbox-mcp (MCP bridge) | in build | In Progress |  |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |

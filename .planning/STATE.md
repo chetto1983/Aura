@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 08 — sandbox-2b-session-bound
+**Current focus:** Phase 08 — Sandbox via code-sandbox-mcp (MCP bridge); D-15 pivot — building the generic MCP→agent-tool bridge
 
 ## Current Position
 
-Phase: 08 (sandbox-2b-session-bound) — EXECUTING
-Plan: 11 of 11 (08-11 gap-closure — Tasks 1-3 committed; Task 4 live Gate-3 human-verify PENDING)
-Status: Executing Phase 08 — paused at 08-11 Task-4 checkpoint (blocking-human)
+Phase: 08 (Sandbox via code-sandbox-mcp / MCP bridge) — EXECUTING (D-15 pivot)
+Plan: generic MCP client done (internal/mcp); bridge in build; then mcpServers config + boot auto-provision; then live proof + bespoke-sandbox deletion
+Status: Executing Phase 08 — code-sandbox-mcp pivot. Prior bespoke 08-01..08-11 plans superseded. The 08-11 Gate-3 checkpoint is moot (whole bespoke path being deleted).
 Last activity: 2026-06-03 -- 08-11 Tasks 1-3 done (liveManager Workspace inject + Close teardown + CI confirm); awaiting native-daemon Gate-3 sign-off
 
 Progress: [█████████░] 85%
