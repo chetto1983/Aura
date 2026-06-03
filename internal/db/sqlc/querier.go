@@ -33,8 +33,6 @@ type Querier interface {
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
-	InsertSession(ctx context.Context, arg InsertSessionParams) (AuraSandboxSessions, error)
-	ListActive(ctx context.Context) ([]AuraSandboxSessions, error)
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
@@ -45,7 +43,6 @@ type Querier interface {
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
-	MarkTerminated(ctx context.Context, id pgtype.UUID) error
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
@@ -53,7 +50,6 @@ type Querier interface {
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
-	TouchLastUsed(ctx context.Context, id pgtype.UUID) error
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
 }
