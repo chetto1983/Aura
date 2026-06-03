@@ -19,9 +19,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"sort"
 
+	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/sandboxagent"
@@ -36,6 +39,8 @@ func main() {
 	switch os.Args[1] {
 	case "tools":
 		printTools()
+	case "mcp":
+		runMCP(os.Args[2:])
 	case "agent":
 		runAgent(os.Args[2:])
 	case "web":
@@ -67,11 +72,15 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|web <doctor|tool ...>|tools|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
 	cfg := config.LoadDB()
+	return buildBaseRegistry(cfg)
+}
+
+func buildBaseRegistry(cfg *config.Config) *tools.Registry {
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
@@ -85,7 +94,49 @@ func buildRegistry() *tools.Registry {
 	return reg
 }
 
+func buildRegistryWithMCP(ctx context.Context, cfg *config.Config) (*tools.Registry, []func() error, error) {
+	if cfg.MCPServersErr != nil {
+		return nil, nil, cfg.MCPServersErr
+	}
+	reg := buildBaseRegistry(cfg)
+	if len(cfg.MCPServers) == 0 {
+		return reg, nil, nil
+	}
+
+	serverNames := make([]string, 0, len(cfg.MCPServers))
+	for name := range cfg.MCPServers {
+		serverNames = append(serverNames, name)
+	}
+	sort.Strings(serverNames)
+
+	closers := make([]func() error, 0, len(serverNames))
+	for _, name := range serverNames {
+		closer, _, err := mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name])
+		if err != nil {
+			_ = closeMCPServers(closers)
+			return nil, nil, err
+		}
+		closers = append(closers, closer)
+	}
+	return reg, closers, nil
+}
+
+func closeMCPServers(closers []func() error) error {
+	var first error
+	for i := len(closers) - 1; i >= 0; i-- {
+		if err := closers[i](); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
 func printTools() {
-	reg := buildRegistry()
+	reg, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB())
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "mcp:", err)
+		os.Exit(1)
+	}
+	defer func() { _ = closeMCPServers(closers) }()
 	fmt.Print(reg.RenderText())
 }

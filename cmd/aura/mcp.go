@@ -1,0 +1,374 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/mcp"
+)
+
+const mcpUsage = "usage: aura mcp {install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>}"
+
+type mcpRecipe struct {
+	Summary string
+	Server  mcp.ManagedServer
+}
+
+var mcpRecipes = map[string]mcpRecipe{
+	"calculator": {
+		Summary: "calculator-mcp-server over stdio via uvx",
+		Server: mcp.ManagedServer{
+			Command: "uvx",
+			Args: []string{
+				"--from",
+				"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git",
+				"--",
+				"calculator-mcp-server",
+				"--stdio",
+			},
+			Env:    []string{"PYTHONUNBUFFERED=1"},
+			Source: "recipe:calculator",
+		},
+	},
+}
+
+func runMCP(args []string) {
+	if err := runMCPCommand(context.Background(), args, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, mcpUsage)
+		os.Exit(1)
+	}
+}
+
+func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return errors.New(mcpUsage)
+	}
+	switch args[0] {
+	case "install":
+		return mcpInstall(args[1:], out)
+	case "add":
+		return mcpAdd(args[1:], out)
+	case "list":
+		return mcpList(out)
+	case "doctor":
+		return mcpDoctor(ctx, args[1:], out)
+	case "tools":
+		return mcpTools(ctx, args[1:], out)
+	case "enable":
+		return mcpSetEnabled(args[1:], true, out)
+	case "disable":
+		return mcpSetEnabled(args[1:], false, out)
+	case "remove":
+		return mcpRemove(args[1:], out)
+	default:
+		return fmt.Errorf("unknown mcp subcommand %q", args[0])
+	}
+}
+
+func mcpInstall(args []string, out io.Writer) error {
+	if len(args) < 1 || len(args) > 2 {
+		return fmt.Errorf("usage: aura mcp install <recipe> [name]")
+	}
+	recipeName := args[0]
+	recipe, ok := mcpRecipes[recipeName]
+	if !ok {
+		return fmt.Errorf("unknown MCP recipe %q", recipeName)
+	}
+	name := recipeName
+	if len(args) == 2 {
+		name = strings.TrimSpace(args[1])
+	}
+	doc, path, err := loadManagedMCPConfig()
+	if err != nil {
+		return err
+	}
+	if _, exists := doc.MCPServers[name]; exists {
+		return fmt.Errorf("MCP server %q already exists", name)
+	}
+	if doc.MCPServers == nil {
+		doc.MCPServers = map[string]mcp.ManagedServer{}
+	}
+	doc.MCPServers[name] = recipe.Server
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		return err
+	}
+	return writef(out, "ok: installed %s in %s\n", name, path)
+}
+
+func mcpAdd(args []string, out io.Writer) error {
+	if len(args) < 3 {
+		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
+	}
+	name := strings.TrimSpace(args[0])
+	if name == "" {
+		return fmt.Errorf("MCP server name cannot be empty")
+	}
+	env := []string{}
+	enabled := true
+	pendingEnv := false
+	inCommand := false
+	commandParts := []string{}
+	for _, arg := range args[1:] {
+		if inCommand {
+			commandParts = append(commandParts, arg)
+			continue
+		}
+		if pendingEnv {
+			if !strings.Contains(arg, "=") {
+				return fmt.Errorf("--env value %q must be KEY=VALUE", arg)
+			}
+			env = append(env, arg)
+			pendingEnv = false
+			continue
+		}
+		switch arg {
+		case "--":
+			inCommand = true
+		case "--env":
+			pendingEnv = true
+		case "--disabled":
+			enabled = false
+		default:
+			return fmt.Errorf("unknown mcp add option %q", arg)
+		}
+	}
+	if pendingEnv {
+		return fmt.Errorf("--env requires KEY=VALUE")
+	}
+	if len(commandParts) == 0 {
+		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
+	}
+	command, commandArgs := splitCommandParts(commandParts)
+	doc, path, err := loadManagedMCPConfig()
+	if err != nil {
+		return err
+	}
+	if doc.MCPServers == nil {
+		doc.MCPServers = map[string]mcp.ManagedServer{}
+	}
+	if _, exists := doc.MCPServers[name]; exists {
+		return fmt.Errorf("MCP server %q already exists", name)
+	}
+	doc.MCPServers[name] = mcp.ManagedServer{
+		Command: command,
+		Args:    commandArgs,
+		Env:     env,
+		Enabled: mcpBoolPtr(enabled),
+		Source:  "manual",
+	}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		return err
+	}
+	return writef(out, "ok: added %s in %s\n", name, path)
+}
+
+func mcpList(out io.Writer) error {
+	doc, _, err := loadManagedMCPConfig()
+	if err != nil {
+		return err
+	}
+	if len(doc.MCPServers) == 0 {
+		return writeln(out, "no MCP servers configured")
+	}
+	names := sortedManagedNames(doc)
+	for _, name := range names {
+		s := doc.MCPServers[name]
+		status := "enabled"
+		if s.Enabled != nil && !*s.Enabled {
+			status = "disabled"
+		}
+		if err := writef(out, "%s\t%s\t%s\n", name, status, renderMCPCommand(mcp.ServerConfig{Command: s.Command, Args: s.Args})); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: aura mcp doctor <name>")
+	}
+	name := args[0]
+	cfg, err := effectiveMCPServer(name)
+	if err != nil {
+		return err
+	}
+	cli, defs, err := openAndListMCPTools(ctx, name, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cli.Close() }()
+	return writef(out, "ok: %s started; %s\n", name, toolCount(len(defs)))
+}
+
+func mcpTools(ctx context.Context, args []string, out io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: aura mcp tools <name>")
+	}
+	name := args[0]
+	cfg, err := effectiveMCPServer(name)
+	if err != nil {
+		return err
+	}
+	cli, defs, err := openAndListMCPTools(ctx, name, cfg)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = cli.Close() }()
+	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
+	for _, d := range defs {
+		if err := writef(out, "%s\t%s\n", d.Name, firstMCPDescriptionLine(d.Description)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mcpSetEnabled(args []string, enabled bool, out io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: aura mcp enable|disable <name>")
+	}
+	name := args[0]
+	doc, path, err := loadManagedMCPConfig()
+	if err != nil {
+		return err
+	}
+	s, ok := doc.MCPServers[name]
+	if !ok {
+		return fmt.Errorf("MCP server %q not found in managed config", name)
+	}
+	s.Enabled = mcpBoolPtr(enabled)
+	doc.MCPServers[name] = s
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		return err
+	}
+	state := "disabled"
+	if enabled {
+		state = "enabled"
+	}
+	return writef(out, "ok: %s %s\n", state, name)
+}
+
+func mcpRemove(args []string, out io.Writer) error {
+	if len(args) != 1 {
+		return fmt.Errorf("usage: aura mcp remove <name>")
+	}
+	name := args[0]
+	doc, path, err := loadManagedMCPConfig()
+	if err != nil {
+		return err
+	}
+	if _, ok := doc.MCPServers[name]; !ok {
+		return fmt.Errorf("MCP server %q not found in managed config", name)
+	}
+	delete(doc.MCPServers, name)
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		return err
+	}
+	return writef(out, "ok: removed %s\n", name)
+}
+
+func loadManagedMCPConfig() (mcp.ManagedConfig, string, error) {
+	path, err := mcp.ManagedConfigPath()
+	if err != nil {
+		return mcp.ManagedConfig{}, "", err
+	}
+	doc, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		return mcp.ManagedConfig{}, "", err
+	}
+	if doc.MCPServers == nil {
+		doc.MCPServers = map[string]mcp.ManagedServer{}
+	}
+	return doc, path, nil
+}
+
+func effectiveMCPServer(name string) (mcp.ServerConfig, error) {
+	cfg := config.LoadDB()
+	if cfg.MCPServersErr != nil {
+		return mcp.ServerConfig{}, cfg.MCPServersErr
+	}
+	server, ok := cfg.MCPServers[name]
+	if !ok {
+		return mcp.ServerConfig{}, fmt.Errorf("MCP server %q is not configured or is disabled", name)
+	}
+	return server, nil
+}
+
+func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*mcp.Client, []mcp.ToolDef, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cli, err := mcp.Open(ctx, name, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	defs, err := cli.ListTools(ctx)
+	if err != nil {
+		_ = cli.Close()
+		return nil, nil, err
+	}
+	return cli, defs, nil
+}
+
+func sortedManagedNames(doc mcp.ManagedConfig) []string {
+	names := make([]string, 0, len(doc.MCPServers))
+	for name := range doc.MCPServers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func renderMCPCommand(cfg mcp.ServerConfig) string {
+	parts := append([]string{cfg.Command}, cfg.Args...)
+	return strings.Join(parts, " ")
+}
+
+func firstMCPDescriptionLine(s string) string {
+	for _, line := range strings.Split(s, "\n") {
+		if t := strings.TrimSpace(line); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+func toolCount(n int) string {
+	if n == 1 {
+		return "1 tool"
+	}
+	return fmt.Sprintf("%d tools", n)
+}
+
+func mcpBoolPtr(v bool) *bool { return &v }
+
+func splitCommandParts(parts []string) (string, []string) {
+	command := ""
+	args := []string{}
+	for i, part := range parts {
+		if i == 0 {
+			command = part
+			continue
+		}
+		args = append(args, part)
+	}
+	return command, args
+}
+
+func writef(w io.Writer, format string, args ...any) error {
+	_, err := fmt.Fprintf(w, format, args...)
+	return err
+}
+
+func writeln(w io.Writer, args ...any) error {
+	_, err := fmt.Fprintln(w, args...)
+	return err
+}

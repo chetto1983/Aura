@@ -1,0 +1,102 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/chetto1983/aura/internal/mcp"
+)
+
+func withTempMCPConfig(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "servers.json")
+	t.Setenv("AURA_MCP_CONFIG", path)
+	return path
+}
+
+func TestMCPInstallCalculatorWritesRecipe(t *testing.T) {
+	path := withTempMCPConfig(t)
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"install", "calculator"}, &out); err != nil {
+		t.Fatalf("mcp install calculator: %v", err)
+	}
+
+	doc, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("load managed config: %v", err)
+	}
+	calc := doc.MCPServers["calculator"]
+	if calc.Command != "uvx" {
+		t.Fatalf("calculator command = %q, want uvx", calc.Command)
+	}
+	if strings.Join(calc.Args, " ") != "--from calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git -- calculator-mcp-server --stdio" {
+		t.Fatalf("calculator args not recipe-shaped: %#v", calc.Args)
+	}
+	if !strings.Contains(out.String(), "ok: installed calculator") {
+		t.Fatalf("install output missing success line:\n%s", out.String())
+	}
+}
+
+func TestMCPAddListAndDisable(t *testing.T) {
+	withTempMCPConfig(t)
+
+	var out bytes.Buffer
+	err := runMCPCommand(context.Background(), []string{"add", "local", "--env", "TOKEN=secret", "--", "python", "server.py", "--stdio"}, &out)
+	if err != nil {
+		t.Fatalf("mcp add: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"list"}, &out); err != nil {
+		t.Fatalf("mcp list: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "local") || !strings.Contains(got, "python server.py --stdio") {
+		t.Fatalf("list output missing local command:\n%s", got)
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"disable", "local"}, &out); err != nil {
+		t.Fatalf("mcp disable: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"list"}, &out); err != nil {
+		t.Fatalf("mcp list after disable: %v", err)
+	}
+	if !strings.Contains(out.String(), "disabled") {
+		t.Fatalf("disabled server status not rendered:\n%s", out.String())
+	}
+}
+
+func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
+	path := withTempMCPConfig(t)
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"calculator": {
+			Command: os.Args[0],
+			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
+			Env:     []string{"AURA_MCP_HELPER=1"},
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"doctor", "calculator"}, &out); err != nil {
+		t.Fatalf("mcp doctor: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "ok: calculator") || !strings.Contains(got, "1 tool") {
+		t.Fatalf("doctor output missing ok/tools:\n%s", got)
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"tools", "calculator"}, &out); err != nil {
+		t.Fatalf("mcp tools: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "calculate") || !strings.Contains(got, "Evaluate a mathematical expression.") {
+		t.Fatalf("tools output missing calculator tool:\n%s", got)
+	}
+}

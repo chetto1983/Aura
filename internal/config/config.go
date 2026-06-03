@@ -9,15 +9,18 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/mcp"
 	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/joho/godotenv"
 )
@@ -34,6 +37,8 @@ type Config struct {
 	DB             db.Config
 	Neo4j          knowledge.Config // Slice 0.7 — graph + vector + embed sidecar wiring
 	LLM            llm.Config       // Slice 1 — OpenAI-compat client + load-order chain (D-22)
+	MCPServers     map[string]mcp.ServerConfig
+	MCPServersErr  error
 	SandboxAgent   sandboxagent.Config
 	RunDir         string
 	ToolPreviewCap int
@@ -120,6 +125,7 @@ func loadBase() *Config {
 	if bootstrapURL == "" {
 		bootstrapURL = composeDSN(pgUser, pgPassword, pgHost, pgPort, pgDB, pgSSL)
 	}
+	mcpServers, mcpServersErr := loadMCPServers()
 
 	return &Config{
 		DB: db.Config{
@@ -138,6 +144,8 @@ func loadBase() *Config {
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", 768),
 		},
+		MCPServers:    mcpServers,
+		MCPServersErr: mcpServersErr,
 		SandboxAgent: sandboxagent.Config{
 			BaseURL:    envDefault("AURA_SANDBOX_AGENT_URL", sandboxagent.DefaultBaseURL),
 			TimeoutSec: envIntDefault("AURA_SANDBOX_AGENT_TIMEOUT_SEC", sandboxagent.DefaultTimeoutSec),
@@ -177,6 +185,76 @@ func composeDSN(role, password, host, port, dbname, sslmode string) string {
 		url.QueryEscape(dbname),
 		sslmode,
 	)
+}
+
+func loadMCPServers() (map[string]mcp.ServerConfig, error) {
+	path, err := mcp.ManagedConfigPath()
+	if err != nil {
+		return nil, err
+	}
+	managed, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		return nil, err
+	}
+	managedServers, err := managed.EnabledServers()
+	if err != nil {
+		return nil, err
+	}
+	envServers, err := parseMCPServersJSON(os.Getenv("AURA_MCP_SERVERS_JSON"))
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]mcp.ServerConfig, len(managedServers)+len(envServers))
+	for name, cfg := range managedServers {
+		out[name] = cfg
+	}
+	for name, cfg := range envServers {
+		out[name] = cfg
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func parseMCPServersJSON(raw string) (map[string]mcp.ServerConfig, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var wrapped struct {
+		MCPServers map[string]mcp.ServerConfig `json:"mcpServers"`
+	}
+	if err := json.Unmarshal([]byte(raw), &wrapped); err != nil {
+		return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: %w", err)
+	}
+	if wrapped.MCPServers != nil {
+		return validateMCPServers(wrapped.MCPServers)
+	}
+	var direct map[string]mcp.ServerConfig
+	if err := json.Unmarshal([]byte(raw), &direct); err != nil {
+		return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: %w", err)
+	}
+	return validateMCPServers(direct)
+}
+
+func validateMCPServers(in map[string]mcp.ServerConfig) (map[string]mcp.ServerConfig, error) {
+	if len(in) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]mcp.ServerConfig, len(in))
+	for name, cfg := range in {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: server name cannot be empty")
+		}
+		if strings.TrimSpace(cfg.Command) == "" {
+			return nil, fmt.Errorf("AURA_MCP_SERVERS_JSON: server %q command cannot be empty", name)
+		}
+		cfg.Command = strings.TrimSpace(cfg.Command)
+		out[name] = cfg
+	}
+	return out, nil
 }
 
 // envDefault returns the value of `key` from the environment, falling back to

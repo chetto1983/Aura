@@ -34,8 +34,6 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/chetto1983/aura/internal/runner"
-	"github.com/chetto1983/aura/internal/sandboxagent"
-	"github.com/chetto1983/aura/internal/web"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -47,17 +45,19 @@ const chatUsage = "usage: aura chat {list|new|resume [<id>]|archive <id>|unarchi
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg      *config.Config
-	pool     *pgxpool.Pool
-	conv     *conversations.Store
-	pause    *askuser.Store
-	identity *identity.Store
-	run      *runner.Runner
-	client   llm.Client
+	cfg        *config.Config
+	pool       *pgxpool.Pool
+	conv       *conversations.Store
+	pause      *askuser.Store
+	identity   *identity.Store
+	run        *runner.Runner
+	client     llm.Client
+	mcpClosers []func() error
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
 func (e *chatEnv) close() {
+	_ = closeMCPServers(e.mcpClosers)
 	if e.pool != nil {
 		e.pool.Close()
 	}
@@ -137,7 +137,12 @@ func bootChat(ctx context.Context) *chatEnv {
 		fmt.Fprintln(os.Stderr, "warn: tiktoken init:", err)
 	}
 
-	reg := buildChatRegistry(cfg)
+	reg, mcpClosers, err := buildRegistryWithMCP(ctx, cfg)
+	if err != nil {
+		pool.Close()
+		fmt.Fprintln(os.Stderr, "mcp:", err)
+		os.Exit(1)
+	}
 
 	client := openai_compat.New(cfg.LLM)
 	run := runner.New(runner.Deps{
@@ -152,23 +157,13 @@ func bootChat(ctx context.Context) *chatEnv {
 		PreviewCap:   cfg.ToolPreviewCap,
 		EvictAfter:   cfg.ContextToolEvictAfterTurns,
 	})
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client}
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, mcpClosers: mcpClosers}
 }
 
 // buildChatRegistry builds the agent tool registry for the chat REPL: the built-in
 // tools + web tools + the local sandbox-agent execution tool.
 func buildChatRegistry(cfg *config.Config) *tools.Registry {
-	reg := tools.NewRegistry()
-	reg.Register(tools.TextResponse{})
-	reg.Register(&tools.ToolSearch{Registry: reg})
-	reg.Register(&tools.ReadToolOutput{})
-	reg.Register(tools.CurrentTime{})
-	reg.Register(tools.AskUser{})
-	webEngine := web.NewClient(cfg)
-	reg.Register(&tools.WebSearch{Engine: webEngine})
-	reg.Register(&tools.WebFetch{Engine: webEngine})
-	reg.Register(&tools.SandboxExec{Runner: sandboxagent.New(cfg.SandboxAgent)})
-	return reg
+	return buildBaseRegistry(cfg)
 }
 
 // chatList prints the persisted conversations with their title + aggregates.

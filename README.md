@@ -39,12 +39,40 @@ aura serve              run the long-lived agent runtime (production default)
 aura shell              interactive REPL against the agent loop
 aura agent dry-run      drive a mock LoopAgent through the Budget tree (one Event per JSON line)
 aura tools              print the tool manifest (active + deferred)
+aura mcp <sub>          managed MCP servers: install | add | list | doctor | tools | enable | disable | remove
 aura db <sub>           Postgres lifecycle:  migrate | ping | status | reset
 aura neo4j <sub>        Neo4j lifecycle:     migrate | ping | status | reset | cypher
 aura version            build metadata (version, commit, date)
 ```
 
 (`serve` / `shell` are stubbed until their slices land — see [status](#status).)
+
+### Generic MCP Tool Mounts
+
+Aura can manage stdio MCP servers with `aura mcp`. Managed servers are stored in
+`~/.aura/mcp/servers.json`, mounted as agent tools at `aura chat` boot, and shown
+by `aura tools`.
+
+```bash
+aura mcp install calculator
+aura mcp doctor calculator
+aura mcp tools calculator
+```
+
+For custom servers, add the stdio command directly:
+
+```bash
+aura mcp add local --env TOKEN=... -- python server.py --stdio
+```
+
+`AURA_MCP_SERVERS_JSON` remains available as an env-only override for ad-hoc or
+CI usage. It accepts a Claude-Desktop-style `mcpServers` JSON value and overrides
+same-named managed entries:
+
+```bash
+export AURA_MCP_SERVERS_JSON='{"mcpServers":{"calculator":{"command":"uvx","args":["--from","calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git","--","calculator-mcp-server","--stdio"]}}}'
+go run ./cmd/aura tools
+```
 
 ## Development
 
