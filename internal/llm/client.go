@@ -106,4 +106,12 @@ type Request struct {
 	// only by the provider branch in internal/agent/prompt; the OpenAI-compat wire
 	// client ignores it (Slice 13 LLMRouter does the Anthropic-native translation).
 	ToolsCacheControl string
+
+	// ToolChoice is a provider-neutral tool-selection directive interpreted at the
+	// wire layer, not here. Empty (the default) means "auto" — byte-identical to
+	// the historical hardcoded behavior. "none" forces a tool-free synthesis turn:
+	// the wire layer omits the tools array entirely and the answer is read from the
+	// assistant content. No json tag — this struct is projected by buildWireRequest,
+	// never marshalled directly.
+	ToolChoice string
 }
