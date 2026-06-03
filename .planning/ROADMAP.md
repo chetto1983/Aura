@@ -245,8 +245,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 Plans:
 **Wave 1**
 
-- [ ] 07.1-01-PLAN.md — Wave 1: ToolChoice plumbing (llm.Request field + buildWireRequest default-auto/omit-tools-on-none + TestRequestBody) [Req#1]
-- [ ] 07.1-02-PLAN.md — Wave 1: <budget> used/remaining prompt block via PromptBuilder.Build tail-injection to a history COPY (cache-safe) [Req#6]
+- [x] 07.1-01-PLAN.md — Wave 1: ToolChoice plumbing (llm.Request field + buildWireRequest default-auto/omit-tools-on-none + TestRequestBody) [Req#1]
+- [x] 07.1-02-PLAN.md — Wave 1: <budget> used/remaining prompt block via PromptBuilder.Build tail-injection to a history COPY (cache-safe) [Req#6]
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
