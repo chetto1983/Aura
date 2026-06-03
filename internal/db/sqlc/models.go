@@ -98,3 +98,14 @@ type AuraPausedStates struct {
 	ResumedAt          pgtype.Timestamptz `json:"resumed_at"`
 	ResumedAnswer      []byte             `json:"resumed_answer"`
 }
+
+// Session-bound sandbox control-plane registry (Slice 2b, D-06). One row per live per-conversation container; boot recovery marks orphaned active rows terminated and lazily recreates.
+type AuraSandboxSessions struct {
+	ID             pgtype.UUID        `json:"id"`
+	ConversationID pgtype.UUID        `json:"conversation_id"`
+	ContainerID    string             `json:"container_id"`
+	ImageDigest    string             `json:"image_digest"`
+	StartedAt      pgtype.Timestamptz `json:"started_at"`
+	LastUsedAt     pgtype.Timestamptz `json:"last_used_at"`
+	Status         string             `json:"status"`
+}
