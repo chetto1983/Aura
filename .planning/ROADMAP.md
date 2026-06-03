@@ -250,7 +250,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07.1-03-PLAN.md — Wave 2: finalize() tool-free synthesis (ToolChoice=none, parse content) + re-route both trip sites; non-empty finalEvent at all 3 paths [Req#2]
+- [x] 07.1-03-PLAN.md — Wave 2: finalize() tool-free synthesis (ToolChoice=none, parse content) + re-route both trip sites; non-empty finalEvent at all 3 paths [Req#2]
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
