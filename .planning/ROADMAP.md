@@ -273,25 +273,30 @@ Plans:
   3. Operator inspects `aura sandbox sessions list` after `AURA_SANDBOX_SESSION_TTL_SEC` elapses with no activity and observes the session reaped, container removed, workspace dir cleaned up
   4. Operator triggers `execute` with `network_allow: ["pypi.org"]` and observes `pip install` to pypi.org succeeding; same call attempting `curl 1.1.1.1` observes connection refused (allowlist enforced via the host-side forward proxy)
 
-**Plans:** 1/9 plans executed
+**Plans:** 4/9 plans executed
 
 **Wave 1**
+
 - [x] 08-01-PLAN.md — PRD-amendment gate (doc-only): 5 amendments (persistent-interp/docker-lifecycle/host-proxy/scoring-home-slice/os.Root) + migration 0008 + uuid FK + Wave-0 decisions
 
 **Wave 2**
-- [ ] 08-02-PLAN.md — DB substrate: migration 0008_sandbox_sessions (uuid FK) + 4 sqlc queries + 6 config knobs + 2 sentinels
-- [ ] 08-03-PLAN.md — internal/scoring full module (RiskTier + Compute*Tier + GateRecommended + RequiresImmediateAlert) TDD; sandbox advisory path only (D-12)
-- [ ] 08-04-PLAN.md — export minimal SSRF surface from internal/web (ClassifyIP + resolve-then-pin) for proxy reuse; no copy; re-test web tier (landmine #5)
+
+- [x] 08-02-PLAN.md — DB substrate: migration 0008_sandbox_sessions (uuid FK) + 4 sqlc queries + 6 config knobs + 2 sentinels
+- [x] 08-03-PLAN.md — internal/scoring full module (RiskTier + Compute*Tier + GateRecommended + RequiresImmediateAlert) TDD; sandbox advisory path only (D-12)
+- [x] 08-04-PLAN.md — export minimal SSRF surface from internal/web (ClassifyIP + resolve-then-pin) for proxy reuse; no copy; re-test web tier (landmine #5)
 
 **Wave 3**
+
 - [ ] 08-05-PLAN.md — SessionManager control plane (lifecycle/lock/reaper/cap/boot-recovery) + WorkspaceManager os.Root walks + cascade interface
 - [ ] 08-06-PLAN.md — host-side CONNECT forward proxy: deny-wins glob allowlist + resolve-then-pin (reuse 08-04 export); no MITM
 - [ ] 08-07-PLAN.md — sidecar.py persistent per-session interpreter (stdlib) + asymmetric shell cwd + DockerRunner session exec path (additive)
 
 **Wave 4**
+
 - [ ] 08-08-PLAN.md — wiring: activate execute session_id + scoring advisory + Conversations.Delete cascade + aura sandbox sessions CLI + exec --session + session network/seccomp posture (landmine #3, extends AR-05-01)
 
 **Wave 5**
+
 - [ ] 08-09-PLAN.md — live sandbox_integration tier (4 criteria) + egress-bridge spike + 08-SECURITY + gating CI DinD + coverage/mutation + human-verify (CAP-02 close)
 
 ### Phase 9: Swarm (Minimal)
@@ -418,7 +423,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
-| 8. Sandbox 2b Session-Bound | 1/9 | In Progress|  |
+| 8. Sandbox 2b Session-Bound | 4/9 | In Progress|  |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |
