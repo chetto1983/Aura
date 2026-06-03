@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: executing
-stopped_at: Phase 08 complete (sandbox-agent, D-15) — next Phase 08.1
-last_updated: "2026-06-03T15:54:05.889Z"
-last_activity: 2026-06-03 -- Phase 08 closed via sandbox-agent pivot (b98ddaff "Use local sandbox-agent container" + 341e595e CI fallout fix)
+status: "Phase 08 closed. Next: Phase 08.1 (Tool Search hardening → Anthropic defer_loading parity, INSERTED)."
+stopped_at: Phase 08.1 context gathered
+last_updated: "2026-06-03T16:22:55.199Z"
+last_activity: 2026-06-03 -- sandbox-agent pivot landed (b98ddaff "Use local sandbox-agent container" + 341e595e CI fallout fix)
 progress:
   total_phases: 17
   completed_phases: 8
@@ -155,6 +155,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-03T13:53:28Z
-Stopped at: Phase 08 complete (sandbox-agent) — next: /gsd-plan-phase 08.1
-Resume file: .planning/phases/08.1-tool-search-hardening-anthropic-defer-loading-parity/
+Last session: 2026-06-03T16:22:55.190Z
+Stopped at: Phase 08.1 context gathered
+Resume file: .planning/phases/08.1-tool-search-hardening-anthropic-defer-loading-parity/08.1-CONTEXT.md
