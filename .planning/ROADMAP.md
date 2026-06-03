@@ -273,7 +273,7 @@ Plans:
   3. Operator inspects `aura sandbox sessions list` after `AURA_SANDBOX_SESSION_TTL_SEC` elapses with no activity and observes the session reaped, container removed, workspace dir cleaned up
   4. Operator triggers `execute` with `network_allow: ["pypi.org"]` and observes `pip install` to pypi.org succeeding; same call attempting `curl 1.1.1.1` observes connection refused (allowlist enforced via the host-side forward proxy)
 
-**Plans:** 4/9 plans executed
+**Plans:** 7/9 plans executed
 
 **Wave 1**
 
@@ -287,9 +287,9 @@ Plans:
 
 **Wave 3**
 
-- [ ] 08-05-PLAN.md — SessionManager control plane (lifecycle/lock/reaper/cap/boot-recovery) + WorkspaceManager os.Root walks + cascade interface
-- [ ] 08-06-PLAN.md — host-side CONNECT forward proxy: deny-wins glob allowlist + resolve-then-pin (reuse 08-04 export); no MITM
-- [ ] 08-07-PLAN.md — sidecar.py persistent per-session interpreter (stdlib) + asymmetric shell cwd + DockerRunner session exec path (additive)
+- [x] 08-05-PLAN.md — SessionManager control plane (lifecycle/lock/reaper/cap/boot-recovery) + WorkspaceManager os.Root walks + cascade interface
+- [x] 08-06-PLAN.md — host-side CONNECT forward proxy: deny-wins glob allowlist + resolve-then-pin (reuse 08-04 export); no MITM
+- [x] 08-07-PLAN.md — sidecar.py persistent per-session interpreter (stdlib) + asymmetric shell cwd + DockerRunner session exec path (additive)
 
 **Wave 4**
 
@@ -423,7 +423,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 5. Sandbox 2a Stateless | 4/4 | Complete | 2026-06-02 |
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
-| 8. Sandbox 2b Session-Bound | 4/9 | In Progress|  |
+| 8. Sandbox 2b Session-Bound | 7/9 | In Progress|  |
 | 9. Swarm (Minimal) | 0/TBD | Not started | - |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |
