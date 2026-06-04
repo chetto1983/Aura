@@ -3,11 +3,13 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // fakeServer is an in-memory Server: it records the last CallTool and returns
@@ -135,6 +137,27 @@ func TestBridgedTool_Execute_ErrorAsContent(t *testing.T) {
 	}
 }
 
+// TestBridgedTool_Execute_BadArgsIsGoError covers Execute's args-unmarshal branch:
+// malformed JSON for the tool arguments is a contract violation the model can't
+// self-correct from, so it propagates as a Go error (NOT inline error content), and
+// the underlying server is never called.
+func TestBridgedTool_Execute_BadArgsIsGoError(t *testing.T) {
+	srv := &fakeServer{defs: sandboxDefs(), callText: "unused"}
+	got, _ := Bridge(context.Background(), "sb", srv, nil)
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
+
+	_, err := got[0].Execute(ctx, json.RawMessage(`{not valid json`))
+	if err == nil {
+		t.Fatal("malformed args JSON must propagate as a Go error")
+	}
+	if !strings.Contains(err.Error(), "sandbox_exec args") {
+		t.Fatalf("error should name the tool whose args failed, got %v", err)
+	}
+	if srv.lastName != "" {
+		t.Fatalf("the server must not be called when args fail to parse, got call to %q", srv.lastName)
+	}
+}
+
 func TestMount_Namespaced(t *testing.T) {
 	reg := tools.NewRegistry()
 	srv := &fakeServer{defs: sandboxDefs()}
@@ -172,6 +195,138 @@ func TestMount_RefusesDuplicateWithinServer(t *testing.T) {
 	}
 	if _, ok := reg.Get("srv__dup"); ok {
 		t.Fatal("nothing should be registered when the batch has a duplicate")
+	}
+}
+
+// errListTools is the scripted tools/list failure used to drive the Mount /
+// MountWithPolicy error paths (a server that boots but cannot enumerate tools).
+var errListTools = errors.New("tools/list unavailable")
+
+// TestMount_ListToolsErrorPropagates covers Mount's early-return: when Bridge's
+// tools/list fails, Mount returns that error verbatim, registers nothing, and hands
+// back nil names — the registry is never half-wired.
+func TestMount_ListToolsErrorPropagates(t *testing.T) {
+	reg := tools.NewRegistry()
+	srv := &fakeServer{listErr: errListTools}
+
+	names, err := Mount(context.Background(), reg, "sb", srv, nil)
+	if !errors.Is(err, errListTools) {
+		t.Fatalf("Mount should propagate the tools/list error, got %v", err)
+	}
+	if names != nil {
+		t.Fatalf("names must be nil on list failure, got %v", names)
+	}
+	if len(reg.All()) != 0 {
+		t.Fatalf("registry must stay empty on list failure, got %d tools", len(reg.All()))
+	}
+}
+
+// TestMountWithPolicy_ListToolsErrorPropagates covers the same early-return through
+// the policy variant: a tools/list failure short-circuits before any policy eval,
+// returning the error with nil names and nil blocked decisions.
+func TestMountWithPolicy_ListToolsErrorPropagates(t *testing.T) {
+	reg := tools.NewRegistry()
+	srv := &fakeServer{listErr: errListTools}
+
+	names, blocked, err := MountWithPolicy(context.Background(), reg, "sb", srv, mcp.ManagedServer{})
+	if !errors.Is(err, errListTools) {
+		t.Fatalf("MountWithPolicy should propagate the tools/list error, got %v", err)
+	}
+	if names != nil || blocked != nil {
+		t.Fatalf("names/blocked must be nil on list failure, got names=%v blocked=%v", names, blocked)
+	}
+	if len(reg.All()) != 0 {
+		t.Fatalf("registry must stay empty on list failure, got %d tools", len(reg.All()))
+	}
+}
+
+// TestMountWithPolicy_RegistrationCollisionPropagates covers MountWithPolicy's
+// second error path: the tools pass the policy, but registerBridged refuses because
+// a policy-allowed tool collides with an already-registered name. The error must
+// surface with nil names and nil blocked (all-or-nothing).
+func TestMountWithPolicy_RegistrationCollisionPropagates(t *testing.T) {
+	reg := tools.NewRegistry()
+	// Pre-register the namespaced name so the policy-allowed tool collides.
+	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "send_email", Description: "Send an email."}}}
+	if _, err := Mount(context.Background(), reg, "mail", srv, nil); err != nil {
+		t.Fatalf("seed Mount: %v", err)
+	}
+
+	server := mcp.ManagedServer{
+		ToolPolicy: mcp.ManagedToolPolicy{Allow: []string{"send_email"}},
+	}
+	names, blocked, err := MountWithPolicy(context.Background(), reg, "mail", srv, server)
+	if err == nil || !strings.Contains(err.Error(), "collision") {
+		t.Fatalf("want registration collision error, got %v", err)
+	}
+	if names != nil || blocked != nil {
+		t.Fatalf("names/blocked must be nil when registration fails, got names=%v blocked=%v", names, blocked)
+	}
+}
+
+// TestFirstLine covers firstLine's branches: a normal multi-line description yields
+// the first non-empty trimmed line, leading blank lines are skipped, and an
+// all-whitespace/empty input yields "" (the no-summary fallback). The empty-return
+// branch is otherwise unexercised because real MCP descriptions are non-empty.
+func TestFirstLine(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"first line", "Send an email. \nDetailed help.", "Send an email."},
+		{"skips leading blanks", "\n  \nReal summary\nmore", "Real summary"},
+		{"empty string", "", ""},
+		{"only whitespace", "  \n\t\n  ", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := firstLine(tc.in); got != tc.want {
+				t.Fatalf("firstLine(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestBridgeWithPolicy_ListToolsErrorPropagates covers BridgeWithPolicy's early
+// error return directly (the tools/list failure before any policy evaluation).
+func TestBridgeWithPolicy_ListToolsErrorPropagates(t *testing.T) {
+	srv := &fakeServer{listErr: errListTools}
+	tools, blocked, err := BridgeWithPolicy(context.Background(), "sb", srv, mcp.ManagedServer{})
+	if !errors.Is(err, errListTools) {
+		t.Fatalf("BridgeWithPolicy should propagate the tools/list error, got %v", err)
+	}
+	if tools != nil || blocked != nil {
+		t.Fatalf("tools/blocked must be nil on list failure, got tools=%v blocked=%v", tools, blocked)
+	}
+}
+
+// TestBridgeWithPolicy_BlockedDecisionsReturned verifies the blocked slice carries
+// exactly the policy-denied tools with their reasons, independent of registration —
+// the bridge-level contract MountWithPolicy relies on.
+func TestBridgeWithPolicy_BlockedDecisionsReturned(t *testing.T) {
+	srv := &fakeServer{defs: []mcp.ToolDef{
+		{Name: "read_doc", Description: "Read a document."},
+		{Name: "delete_doc", Description: "Delete a document."},
+	}}
+	server := mcp.ManagedServer{
+		ToolPolicy: mcp.ManagedToolPolicy{
+			Allow:    []string{"read_doc", "delete_doc"},
+			DenyRisk: []string{mcpmanager.RiskDestructive},
+		},
+	}
+	bridged, blocked, err := BridgeWithPolicy(context.Background(), "docs", srv, server)
+	if err != nil {
+		t.Fatalf("BridgeWithPolicy: %v", err)
+	}
+	if len(bridged) != 1 || bridged[0].Spec().Name != "docs__read_doc" {
+		t.Fatalf("only the read tool should bridge, got %#v", bridged)
+	}
+	if len(blocked) != 1 || blocked[0].ToolName != "delete_doc" {
+		t.Fatalf("delete_doc must be the single blocked decision, got %#v", blocked)
+	}
+	if blocked[0].Allowed {
+		t.Fatal("a blocked decision must have Allowed=false")
 	}
 }
 

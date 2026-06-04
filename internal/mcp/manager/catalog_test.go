@@ -36,6 +36,16 @@ func TestCatalogIncludesTrustedRecipesAndCalendarFixture(t *testing.T) {
 	}
 }
 
+func TestLookupCatalogNotFound(t *testing.T) {
+	entry, ok := LookupCatalog("does-not-exist")
+	if ok {
+		t.Fatalf("LookupCatalog(missing) ok = true, want false")
+	}
+	if !reflect.DeepEqual(entry, CatalogEntry{}) {
+		t.Fatalf("LookupCatalog(missing) entry = %#v, want zero value", entry)
+	}
+}
+
 func containsString(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {
