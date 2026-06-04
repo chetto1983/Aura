@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 9 context gathered
-last_updated: "2026-06-04T13:32:02.408Z"
+stopped_at: Phase 16 planned
+last_updated: "2026-06-04T14:20:00.000Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 18
   completed_phases: 10
-  total_plans: 61
+  total_plans: 69
   completed_plans: 60
   percent: 56
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 9 — swarm-minimal
+**Current focus:** Phase 16 - MCP Sidecar Manager + Third-Party Trust
 
 ## Current Position
 
 Phase: 16
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-04 - Completed quick task 260604-l9u: add an MCP doctor health line for WhatsApp REST :8080 + connected-state
+Last activity: 2026-06-04 - Planned Phase 16 as MCP Sidecar Manager + Third-Party Trust (8/8 plans)
 
 Progress: [██████████] 100% (Phase 08)
 
@@ -97,7 +97,7 @@ Progress: [██████████] 100% (Phase 08)
 
 - Phase 07.1 inserted after Phase 7: Forced-finalization loop fix: LlmAgent must always return a final answer (budget/dedup trip currently emits empty); surfaced by Phase 7 meteo E2E. See docs/research/agent-loop-forced-finalization.md (URGENT)
 - Phase 08.1 inserted after Phase 8: Tool Search hardening to Anthropic defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) replacing substring match, search argument-name/description fields, MCP tool namespacing, >=1-non-deferred guard. Matters as tool count grows toward the 30-50 selection-accuracy threshold (P11 skills/7e snippets + future stdio MCP mounts via the retained mcptools seam; P8 landed as single-tool sandbox-agent, MCP bridge dormant). (URGENT)
-- Phase 16 added: add richer recipes/doctor checks for WhatsApp and Calendar, especially runtime detection, config prompts, and risky-tool labeling.
+- Phase 16 planned: MCP Sidecar Manager + Third-Party Trust. Scope includes trusted Aura recipes, Calendar fixture recipe, profiles/catalogs, status/doctor/logs, Streamable HTTP, explicit trust approvals, Dockerized/sandboxed third-party local runtime, and mount-time risk-policy enforcement. OpenClaw plugin host remains separate.
 
 ### Decisions
 

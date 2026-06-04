@@ -2,13 +2,13 @@
 
 ## Overview
 
-Aura ships in 16 phases — one no-code documentation phase (P0 PRD amendments) plus 15 implementation phases mapped 1:1 onto the PRD's locked 14-slice scope (Slice 0.5 → 11; Slice 13 is v2, gated on GPU). The journey is **architecture-validated horizontal layers**: Persistence (P1) → Agent Cornerstone (P2) → LLM client (P3) → Conversation/Identity/HITL cluster (P4) → Sandbox 2a (P5) → KV Cache (P6, deliberately near-late) → Web (P7) → Sandbox 2b (P8) → Swarm (P9) → Scheduler (P10) → Skills (P11) → AG-UI transport (P12) → Channels + Telegram (P13) → Onboarding (P14) → Memory subsystem (P15). The dependency chain is non-negotiable: Slice 0.9 (P2) is the cornerstone every later phase implements; KV cache (P6) must come after the stable system prompt is real or every later capability plants its own cache-poisoning site; Memory (P15) is the most downstream and gates on every prior phase. Each phase finishes Gate 3 DoD (coverage ≥75% unit / ≥60% integration, mutation ≥70% killed, goleak clean, race-detector clean) before the next begins.
+Aura ships in 17 phases - one no-code documentation phase (P0 PRD amendments) plus 16 implementation phases mapped to the PRD scope and approved follow-up capabilities. The journey is **architecture-validated horizontal layers**: Persistence (P1) -> Agent Cornerstone (P2) -> LLM client (P3) -> Conversation/Identity/HITL cluster (P4) -> Sandbox 2a (P5) -> KV Cache (P6, deliberately near-late) -> Web (P7) -> Sandbox 2b (P8) -> Swarm (P9) -> Scheduler (P10) -> Skills (P11) -> AG-UI transport (P12) -> Channels + Telegram (P13) -> Onboarding (P14) -> Memory subsystem (P15) -> MCP Sidecar Manager + Third-Party Trust (P16). The dependency chain is non-negotiable: Slice 0.9 (P2) is the cornerstone every later phase implements; KV cache (P6) must come after the stable system prompt is real or every later capability plants its own cache-poisoning site; Memory (P15) gates the MCP manager because profiles/status/trust can then draw on the completed substrate. Each phase finishes Gate 3 DoD (coverage >=75% unit / >=60% integration, mutation >=70% killed, goleak clean, race-detector clean) before the next begins.
 
 ## Phases
 
 **Phase Numbering:**
 
-- Integer phases (0, 1, 2, …, 15): Planned milestone work
+- Integer phases (0, 1, 2, ..., 16): Planned milestone work
 - Decimal phases (e.g., 5.1): Urgent insertions (marked with INSERTED)
 
 Decimal phases appear between their surrounding integers in numeric order.
@@ -34,6 +34,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image
 - [ ] **Phase 14: Onboarding + Agent.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
 - [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
+- [ ] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
 
 ## Phase Details
 
@@ -394,7 +395,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15
+Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -413,14 +414,22 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
+| 16. MCP Sidecar Manager + Third-Party Trust | 8/8 planned | Planned | - |
 
-### Phase 16: add richer recipes/doctor checks for WhatsApp and Calendar, especially runtime detection, config prompts, and risky-tool labeling.
+### Phase 16: MCP Sidecar Manager + Third-Party Trust
 
-**Goal:** [To be planned]
-**Requirements**: TBD
+**Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
+**Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 6/6 plans complete
+**Plans:** 8/8 planned
 
 Plans:
 
-- [ ] TBD (run /gsd-plan-phase 16 to break down)
+- [ ] 16-01-PLAN.md - doc amendment and design spec for expanded MCP manager scope
+- [ ] 16-02-PLAN.md - managed config v2, profiles, trust metadata, redacted export/import
+- [ ] 16-03-PLAN.md - recipe catalog, profile CLI, trust CLI, Calendar fixture recipe
+- [ ] 16-04-PLAN.md - status, doctor --all, recipe-specific checks, redacted logs
+- [ ] 16-05-PLAN.md - Streamable HTTP transport and stdio transport interface
+- [ ] 16-06-PLAN.md - Dockerized runtime and trust gates for third-party local MCP servers
+- [ ] 16-07-PLAN.md - risk labels and mount-time tool policy enforcement
+- [ ] 16-08-PLAN.md - mock E2E, docs, live-check recording, quality snapshot
