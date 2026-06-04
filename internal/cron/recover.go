@@ -18,9 +18,11 @@ import (
 // unknown_recovery — the repudiation audit trail for a worker that died mid-flight
 // (D-02). It complements, and does not replace, any future PRD MaxDuration boot
 // query: the heartbeat-staleness scan is the liveness-based half. A scan or mark
-// failure is logged WARN and does NOT abort boot (a degraded recovery still lets
-// the daemon serve), so the returned error is always nil — the bool reports whether
-// every mark succeeded, for callers/tests that want the signal.
+// failure is logged WARN and does NOT abort boot (a degraded recovery still lets the
+// daemon serve), so the returned error is ALWAYS nil — Start treats a degraded
+// recovery as non-fatal (it calls this for its side effect, discarding the nil). The
+// error return is kept only to leave room for a future hard-fail policy without a
+// signature change; today there is no failure the caller acts on.
 func (s *Scheduler) recoverOrphans(ctx context.Context) error {
 	stale, err := s.store.ScanStaleRuns(ctx, staleRecoverySeconds)
 	if err != nil {
