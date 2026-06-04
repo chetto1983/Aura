@@ -64,4 +64,70 @@ func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
 	}
 }
 
+func TestManagedConfigLegacyLoadsWithDefaultVersionAndProfile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	if err := os.WriteFile(path, []byte(`{
+  "mcpServers": {
+    "legacy": {
+      "command": "node",
+      "args": ["server.js"],
+      "env": ["API_TOKEN=secret"]
+    }
+  }
+}`), 0o600); err != nil {
+		t.Fatalf("write legacy config: %v", err)
+	}
+
+	got, err := LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("LoadManagedConfig: %v", err)
+	}
+	if got.Version != 2 {
+		t.Fatalf("Version = %d, want 2", got.Version)
+	}
+	if got.ActiveProfileName() != DefaultMCPProfile {
+		t.Fatalf("ActiveProfileName = %q, want %q", got.ActiveProfileName(), DefaultMCPProfile)
+	}
+	if got.MCPServers["legacy"].Command != "node" {
+		t.Fatalf("legacy command = %q, want node", got.MCPServers["legacy"].Command)
+	}
+}
+
+func TestManagedConfigTrustDefaults(t *testing.T) {
+	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
+		"recipe":  {Command: "uvx", Source: "recipe:mail"},
+		"manual":  {Command: "npx", Source: "manual"},
+		"trusted": {Command: "npx", Trust: ManagedTrust{Class: TrustTrustedLocal}},
+	}}
+
+	if got := doc.NormalizedTrust("recipe"); got != TrustTrustedRecipe {
+		t.Fatalf("recipe trust = %q, want %q", got, TrustTrustedRecipe)
+	}
+	if got := doc.NormalizedTrust("manual"); got != TrustBlocked {
+		t.Fatalf("manual trust = %q, want %q", got, TrustBlocked)
+	}
+	if got := doc.NormalizedTrust("trusted"); got != TrustTrustedLocal {
+		t.Fatalf("trusted trust = %q, want %q", got, TrustTrustedLocal)
+	}
+}
+
+func TestManagedConfigProfileMembership(t *testing.T) {
+	doc := ManagedConfig{
+		Profiles: map[string]ManagedProfile{
+			"work": {Servers: []string{"calendar", "mail"}},
+		},
+		MCPServers: map[string]ManagedServer{
+			"calendar": {Command: "calendar-mcp", Source: "recipe:calendar"},
+			"mail":     {Command: "mail-mcp", Source: "recipe:mail"},
+			"other":    {Command: "other-mcp", Source: "recipe:other"},
+		},
+	}
+
+	got := doc.ProfileServerNames("work")
+	want := []string{"calendar", "mail"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ProfileServerNames(work) = %#v, want %#v", got, want)
+	}
+}
+
 func boolPtr(v bool) *bool { return &v }

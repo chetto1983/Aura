@@ -9,22 +9,71 @@ import (
 	"strings"
 )
 
+const (
+	ManagedConfigVersion = 2
+	DefaultMCPProfile    = "default"
+
+	ServerTypeStdio          = "stdio"
+	ServerTypeStreamableHTTP = "streamable_http"
+
+	TrustTrustedRecipe  = "trusted_recipe"
+	TrustTrustedLocal   = "trusted_local"
+	TrustSandboxedLocal = "sandboxed_local"
+	TrustRemoteHTTP     = "remote_http"
+	TrustBlocked        = "blocked"
+)
+
 // ManagedConfig is Aura's durable MCP server registry. It intentionally keeps the
 // Claude-Desktop mcpServers shape so users can recognize and migrate config, while
 // adding small Aura-owned metadata such as enabled/source.
 type ManagedConfig struct {
-	MCPServers map[string]ManagedServer `json:"mcpServers"`
+	Version       int                       `json:"version,omitempty"`
+	ActiveProfile string                    `json:"activeProfile,omitempty"`
+	Profiles      map[string]ManagedProfile `json:"profiles,omitempty"`
+	MCPServers    map[string]ManagedServer  `json:"mcpServers"`
+}
+
+type ManagedProfile struct {
+	Servers    []string          `json:"servers,omitempty"`
+	ToolPolicy ManagedToolPolicy `json:"toolPolicy,omitempty"`
 }
 
 // ManagedServer is one configured MCP server in Aura's local registry. When
 // Enabled is nil the server is enabled, matching the least-surprising behavior for
 // imported Claude-style config.
 type ManagedServer struct {
-	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
-	Env     []string `json:"env,omitempty"`
-	Enabled *bool    `json:"enabled,omitempty"`
-	Source  string   `json:"source,omitempty"`
+	Command    string            `json:"command"`
+	Args       []string          `json:"args,omitempty"`
+	Env        []string          `json:"env,omitempty"`
+	Enabled    *bool             `json:"enabled,omitempty"`
+	Source     string            `json:"source,omitempty"`
+	Type       string            `json:"type,omitempty"`
+	URL        string            `json:"url,omitempty"`
+	Trust      ManagedTrust      `json:"trust,omitempty"`
+	Runtime    ManagedRuntime    `json:"runtime,omitempty"`
+	ToolPolicy ManagedToolPolicy `json:"toolPolicy,omitempty"`
+	RiskLabels []string          `json:"riskLabels,omitempty"`
+}
+
+type ManagedTrust struct {
+	Class      string `json:"class,omitempty"`
+	ApprovedBy string `json:"approvedBy,omitempty"`
+	ApprovedAt string `json:"approvedAt,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+type ManagedRuntime struct {
+	Kind    string   `json:"kind,omitempty"`
+	Image   string   `json:"image,omitempty"`
+	Command []string `json:"command,omitempty"`
+	Mounts  []string `json:"mounts,omitempty"`
+	Network []string `json:"network,omitempty"`
+}
+
+type ManagedToolPolicy struct {
+	Allow    []string `json:"allow,omitempty"`
+	Deny     []string `json:"deny,omitempty"`
+	DenyRisk []string `json:"denyRisk,omitempty"`
 }
 
 // ManagedConfigPath returns Aura's managed MCP config path. AURA_MCP_CONFIG is a
@@ -58,18 +107,14 @@ func LoadManagedConfig(path string) (ManagedConfig, error) {
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return ManagedConfig{}, fmt.Errorf("parse %s: %w", path, err)
 	}
-	if doc.MCPServers == nil {
-		doc.MCPServers = map[string]ManagedServer{}
-	}
+	normalizeManagedConfig(&doc)
 	return doc, nil
 }
 
 // SaveManagedConfig writes path as indented JSON with user-only permissions. MCP
 // env entries commonly hold tokens, so the file should not be group/world-readable.
 func SaveManagedConfig(path string, doc ManagedConfig) error {
-	if doc.MCPServers == nil {
-		doc.MCPServers = map[string]ManagedServer{}
-	}
+	normalizeManagedConfig(&doc)
 	if err := validateManagedServers(doc.MCPServers); err != nil {
 		return err
 	}
@@ -104,6 +149,9 @@ func (c ManagedConfig) EnabledServers() (map[string]ServerConfig, error) {
 		if s.Enabled != nil && !*s.Enabled {
 			continue
 		}
+		if normalizedServerType(s) == ServerTypeStreamableHTTP {
+			continue
+		}
 		out[name] = ServerConfig{Command: s.Command, Args: s.Args, Env: s.Env}
 	}
 	if len(out) == 0 {
@@ -112,14 +160,123 @@ func (c ManagedConfig) EnabledServers() (map[string]ServerConfig, error) {
 	return out, nil
 }
 
+func (c ManagedConfig) ActiveProfileName() string {
+	if strings.TrimSpace(c.ActiveProfile) != "" {
+		return strings.TrimSpace(c.ActiveProfile)
+	}
+	return DefaultMCPProfile
+}
+
+func (c ManagedConfig) ProfileServerNames(profile string) []string {
+	if strings.TrimSpace(profile) == "" {
+		profile = c.ActiveProfileName()
+	}
+	if p, ok := c.Profiles[profile]; ok && len(p.Servers) > 0 {
+		names := make([]string, 0, len(p.Servers))
+		seen := map[string]struct{}{}
+		for _, name := range p.Servers {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				continue
+			}
+			if _, ok := c.MCPServers[name]; !ok {
+				continue
+			}
+			if _, ok := seen[name]; ok {
+				continue
+			}
+			seen[name] = struct{}{}
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		return names
+	}
+
+	names := make([]string, 0, len(c.MCPServers))
+	for name, server := range c.MCPServers {
+		if server.Enabled != nil && !*server.Enabled {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func (c ManagedConfig) NormalizedTrust(name string) string {
+	server, ok := c.MCPServers[name]
+	if !ok {
+		return TrustBlocked
+	}
+	if isKnownTrust(server.Trust.Class) {
+		return server.Trust.Class
+	}
+	if strings.HasPrefix(strings.TrimSpace(server.Source), "recipe:") {
+		return TrustTrustedRecipe
+	}
+	if normalizedServerType(server) == ServerTypeStreamableHTTP {
+		return TrustRemoteHTTP
+	}
+	return TrustBlocked
+}
+
+func normalizeManagedConfig(doc *ManagedConfig) {
+	if doc.Version == 0 {
+		doc.Version = ManagedConfigVersion
+	}
+	if doc.MCPServers == nil {
+		doc.MCPServers = map[string]ManagedServer{}
+	}
+	if doc.Profiles == nil {
+		doc.Profiles = map[string]ManagedProfile{}
+	}
+}
+
 func validateManagedServers(in map[string]ManagedServer) error {
 	for name, cfg := range in {
 		if strings.TrimSpace(name) == "" {
 			return fmt.Errorf("MCP managed config: server name cannot be empty")
 		}
-		if strings.TrimSpace(cfg.Command) == "" {
-			return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
+		switch normalizedServerType(cfg) {
+		case ServerTypeStdio:
+			if strings.TrimSpace(cfg.Command) == "" {
+				return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
+			}
+		case ServerTypeStreamableHTTP:
+			if strings.TrimSpace(cfg.URL) == "" {
+				return fmt.Errorf("MCP managed config: server %q url cannot be empty", name)
+			}
+		default:
+			return fmt.Errorf("MCP managed config: server %q has unknown type %q", name, cfg.Type)
+		}
+		if cfg.Trust.Class != "" && !isKnownTrust(cfg.Trust.Class) {
+			return fmt.Errorf("MCP managed config: server %q has unknown trust class %q", name, cfg.Trust.Class)
 		}
 	}
 	return nil
+}
+
+func normalizedServerType(cfg ManagedServer) string {
+	switch strings.TrimSpace(cfg.Type) {
+	case "":
+		if strings.TrimSpace(cfg.URL) != "" && strings.TrimSpace(cfg.Command) == "" {
+			return ServerTypeStreamableHTTP
+		}
+		return ServerTypeStdio
+	case ServerTypeStdio:
+		return ServerTypeStdio
+	case ServerTypeStreamableHTTP:
+		return ServerTypeStreamableHTTP
+	default:
+		return strings.TrimSpace(cfg.Type)
+	}
+}
+
+func isKnownTrust(class string) bool {
+	switch strings.TrimSpace(class) {
+	case TrustTrustedRecipe, TrustTrustedLocal, TrustSandboxedLocal, TrustRemoteHTTP, TrustBlocked:
+		return true
+	default:
+		return false
+	}
 }
