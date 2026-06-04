@@ -48,3 +48,27 @@ func TestBuildRegistryFailSoft(t *testing.T) {
 		t.Fatal("base built-in text_response must remain registered after fail-soft drop")
 	}
 }
+
+// TestBuildBaseRegistryValidatesWithSwarmSpawn proves the Pitfall 6 ordering: the
+// Deferred:true swarm_spawn is registered by buildBaseRegistry AND reg.Validate()
+// still returns nil — because the non-deferred built-ins (not swarm_spawn) satisfy
+// the >=1-non-deferred guard. The check exercises Validate AFTER swarm_spawn is
+// present (buildBaseRegistry calls Validate internally and would os.Exit on a
+// failure), then re-asserts the tool is registered with Deferred==true so a future
+// refactor that flips the flag or drops the registration trips this test.
+func TestBuildBaseRegistryValidatesWithSwarmSpawn(t *testing.T) {
+	cfg := &config.Config{MaxSwarmGoals: 8}
+	reg := buildBaseRegistry(cfg) // os.Exits if Validate fails — reaching here proves it passed
+
+	if err := reg.Validate(); err != nil {
+		t.Fatalf("registry must stay valid with the Deferred swarm_spawn registered: %v", err)
+	}
+
+	tool, ok := reg.Get("swarm_spawn")
+	if !ok {
+		t.Fatal("buildBaseRegistry must register swarm_spawn into the parent registry (D-08/D-10)")
+	}
+	if !tool.Spec().Deferred {
+		t.Fatal("swarm_spawn must be Deferred:true so it does not satisfy the non-deferred guard (Pitfall 6)")
+	}
+}

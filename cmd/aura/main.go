@@ -29,6 +29,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/sandboxagent"
+	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
 )
 
@@ -44,6 +45,8 @@ func main() {
 		runMCP(os.Args[2:])
 	case "agent":
 		runAgent(os.Args[2:])
+	case "swarm-demo":
+		runSwarmDemo(os.Args[2:])
 	case "web":
 		runWeb(os.Args[2:])
 	case "db":
@@ -73,7 +76,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
@@ -92,6 +95,13 @@ func buildBaseRegistry(cfg *config.Config) *tools.Registry {
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	reg.Register(&tools.SandboxExec{Runner: sandboxagent.New(cfg.SandboxAgent)})
+	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
+	// the Without(parent, "swarm_spawn") clone the adapter derives per child, never the
+	// tool itself, so a worker cannot recursively fan out. It is Deferred:true, so it
+	// does NOT satisfy the >=1-non-deferred guard (Pitfall 6) — the non-deferred
+	// built-ins above keep reg.Validate() green. The adapter resolves the live parent
+	// budget/registry/client/llmCfg/convID off the tool-call ctx (agent.WithSwarmContext).
+	reg.Register(&tools.SwarmSpawn{Runner: swarm.NewRunnerAdapter(*cfg), MaxGoals: cfg.MaxSwarmGoals})
 	// D-10: fail closed at boot if no actionable tool exists (excluding tool_search).
 	// This is the shared composition root — buildRegistry and buildRegistryWithMCP
 	// both delegate here, so the guard covers every boot path.
