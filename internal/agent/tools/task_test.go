@@ -145,6 +145,8 @@ func TestTaskList(t *testing.T) {
 	store := &fakeTaskStore{listRows: []ScheduledTask{
 		{ID: "t1", Kind: "reminder", ScheduleKind: "cron", Status: "active", NextRunAt: time.Date(2030, 1, 1, 9, 30, 0, 0, time.UTC)},
 		{ID: "t2", Kind: "agent_job", ScheduleKind: "every", Status: "pending_approval"},
+		// active with a zero (NULL) next_run_at → unschedulable (WR-01).
+		{ID: "t3", Kind: "reminder", ScheduleKind: "at", Status: "active"},
 	}}
 	tool := &TaskTool{Store: store}
 
@@ -157,6 +159,9 @@ func TestTaskList(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "[awaiting approval]") {
 		t.Errorf("list must flag the pending_approval row, got %q", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "[unschedulable]") {
+		t.Errorf("list must flag the active NULL-next_run_at row as unschedulable, got %q", res.Preview)
 	}
 	if !strings.Contains(res.Preview, "2030-01-01T09:30:00Z") {
 		t.Errorf("list must show next_run_at, got %q", res.Preview)

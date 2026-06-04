@@ -300,6 +300,11 @@ func renderTaskList(rows []ScheduledTask) string {
 		flag := ""
 		if r.Status == "pending_approval" {
 			flag = " [awaiting approval]"
+		} else if r.Status == "active" && r.NextRunAt.IsZero() {
+			// An active task with no next fire can never be selected by the tick
+			// (DueTasks filters next_run_at <= now) — surface it so the model/operator
+			// can run_now or cancel it instead of silently never firing (WR-01).
+			flag = " [unschedulable]"
 		}
 		next := "—"
 		if !r.NextRunAt.IsZero() {

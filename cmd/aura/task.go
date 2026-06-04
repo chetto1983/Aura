@@ -188,6 +188,11 @@ func taskList(ctx context.Context, cfg *config.Config) {
 		flag := status
 		if status == "pending_approval" {
 			flag = "pending_approval [awaiting approval]"
+		} else if status == "active" && next == nil {
+			// An active task with no next fire can never be selected by the tick
+			// (DueTasks filters next_run_at <= now). Surface it so an operator can
+			// run_now or cancel it rather than wonder why it never fires (WR-01).
+			flag = "active [unschedulable]"
 		}
 		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", id, kind, schedKind, flag, fmtTimePtr(next))
 		n++
@@ -320,13 +325,14 @@ func taskDoctor(ctx context.Context, cfg *config.Config) {
 	pool := openTaskPool(ctx, cfg)
 	defer pool.Close()
 
-	var activeCount, pendingCount, dueCount int
+	var activeCount, pendingCount, dueCount, unschedulableCount int
 	if err := pool.QueryRow(ctx, `
 		SELECT
 			count(*) FILTER (WHERE status = 'active'),
 			count(*) FILTER (WHERE status = 'pending_approval'),
-			count(*) FILTER (WHERE status = 'active' AND next_run_at <= now())
-		FROM aura.scheduler_tasks`).Scan(&activeCount, &pendingCount, &dueCount); err != nil {
+			count(*) FILTER (WHERE status = 'active' AND next_run_at <= now()),
+			count(*) FILTER (WHERE status = 'active' AND next_run_at IS NULL)
+		FROM aura.scheduler_tasks`).Scan(&activeCount, &pendingCount, &dueCount, &unschedulableCount); err != nil {
 		fmt.Fprintln(os.Stderr, "aura task doctor:", err)
 		os.Exit(exitInfra)
 	}
@@ -350,6 +356,11 @@ func taskDoctor(ctx context.Context, cfg *config.Config) {
 	fmt.Printf("active tasks:        %d\n", activeCount)
 	fmt.Printf("pending approval:    %d\n", pendingCount)
 	fmt.Printf("due now:             %d\n", dueCount)
+	if unschedulableCount > 0 {
+		// Active rows with a NULL next_run_at the tick can never select (WR-01): a
+		// real fault worth flagging — run_now or cancel them.
+		fmt.Printf("unschedulable:       %d (active, next_run_at IS NULL)\n", unschedulableCount)
+	}
 	fmt.Printf("next run at:         %s\n", fmtTimePtr(nextRun))
 	fmt.Printf("in-flight runs:      %d\n", inFlight)
 	if oldestHeartbeat != nil {
