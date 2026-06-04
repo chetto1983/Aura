@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 Phase: 16
 Plan: Not started
 Status: Executing Phase 08.1
-Last activity: 2026-06-04 - Completed quick task 260604-bq8: D-15 doc-superseding sweep on REQUIREMENTS.md (CAP-01/02 wording + 5 stale checkboxes)
+Last activity: 2026-06-04 - Completed quick task 260604-c4l: hygiene sweep (W-1 + W-NEW-1 + coverage re-run)
 
 Progress: [██████████] 100% (Phase 08)
 
@@ -149,6 +149,7 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260604-c4l | hygiene sweep (W-1 + W-NEW-1 + coverage re-run) | 2026-06-04 | 649b0520 | [260604-c4l-hygiene-sweep-w-1-w-new-1-coverage-re-ru](./quick/260604-c4l-hygiene-sweep-w-1-w-new-1-coverage-re-ru/) |
 | 260604-bq8 | D-15 doc-superseding sweep on REQUIREMENTS.md (CAP-01/02 wording + 5 stale checkboxes) | 2026-06-04 | 0d197ede | [260604-bq8-d-15-doc-superseding-sweep-on-requiremen](./quick/260604-bq8-d-15-doc-superseding-sweep-on-requiremen/) |
 
 ## Deferred Items
