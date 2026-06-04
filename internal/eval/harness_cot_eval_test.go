@@ -33,33 +33,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// reportPath is the scored-report destination (docs/, never /tmp — CLAUDE.md).
-const reportPath = "../../docs/aura-cot-eval-2026-05-30.md"
-
-// dimResult accumulates per-dimension pass/total across all scenarios.
-type dimResult struct {
-	pass  int
-	total int
-}
-
-// scenarioMetrics is the captured §7 metrics + per-dimension verdicts for one
-// scenario, used to build the report.
-type scenarioMetrics struct {
-	id             string
-	costUSD        string
-	promptTok      int
-	completionTok  int
-	cachedTok      int
-	cacheRatio     float64
-	firstByteMS    float64
-	totalMS        float64
-	teardownMS     float64
-	goroutineDelta int
-	judgeScore     int
-	judgeJustify   string
-	dimVerdicts    map[dimension]bool // only dims this scenario exercised
-	notes          []string
-}
+// reportPath, dimResult, and scenarioMetrics moved to scoring_cot_eval.go (a
+// non-test file) so the package compiles under `go build -tags cot_eval` — the
+// report-infra symbols are referenced by the non-test scoring/report code and by the
+// swarm E2E harness (harness_swarm_e2e_test.go).
 
 // TestCoTEval is the single live harness entry point.
 func TestCoTEval(t *testing.T) {

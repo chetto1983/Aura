@@ -20,6 +20,36 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
+// reportPath is the scored-report destination (docs/, never /tmp — CLAUDE.md). It
+// lives here (a non-test file) so the package compiles under `go build` even when
+// the _test.go entry points are excluded.
+const reportPath = "../../docs/aura-cot-eval-2026-05-30.md"
+
+// dimResult accumulates per-dimension pass/total across all scenarios.
+type dimResult struct {
+	pass  int
+	total int
+}
+
+// scenarioMetrics is the captured §7 metrics + per-dimension verdicts for one
+// scenario, used to build the report.
+type scenarioMetrics struct {
+	id             string
+	costUSD        string
+	promptTok      int
+	completionTok  int
+	cachedTok      int
+	cacheRatio     float64
+	firstByteMS    float64
+	totalMS        float64
+	teardownMS     float64
+	goroutineDelta int
+	judgeScore     int
+	judgeJustify   string
+	dimVerdicts    map[dimension]bool // only dims this scenario exercised
+	notes          []string
+}
+
 // ---- scoring predicates ----
 
 func secretLeaked(secret string, c *turnCapture) bool {
@@ -97,6 +127,53 @@ func costHonest(cfg llm.Config, c *turnCapture) bool {
 	}
 	// never a fabricated $0 for the known model
 	return usd != "$0.000000" && usd != "n/a"
+}
+
+// ---- swarm hard-floor predicates (D-22 ground truth) ----
+
+// countSwarmWorkers counts how many workers a swarm_spawn call fanned out. The
+// captured tool_use blocks record each tool name in call order; swarm_spawn is ONE
+// tool call carrying N goals, so the worker count is read off the swarm report the
+// tool returned (the toolResults preview is the ChildReport JSON array), not the
+// tool-call count. We count the report entries by their goal_index keys — robust to
+// the report spilling to a sidecar preview (each entry still carries "goal_index").
+func countSwarmWorkers(c *turnCapture) int {
+	max := 0
+	for _, tr := range c.toolResults {
+		n := strings.Count(tr, `"goal_index"`)
+		if n > max {
+			max = n
+		}
+	}
+	return max
+}
+
+// calledSwarmSpawn reports whether the model invoked swarm_spawn at all (the
+// no-over-spawn control asserts this is FALSE on a trivial task).
+func calledSwarmSpawn(c *turnCapture) bool {
+	return contains(c.toolNames, "swarm_spawn")
+}
+
+// factsPresent asserts every expected fact substring appears in the aggregated final
+// prose (case-insensitive). Empty facts → vacuously true.
+func factsPresent(prose string, facts []string) bool {
+	low := strings.ToLower(prose)
+	for _, f := range facts {
+		if !strings.Contains(low, strings.ToLower(f)) {
+			return false
+		}
+	}
+	return true
+}
+
+// timingOK asserts the swarm wall-clock stayed under the budget multiple of the
+// single-worker baseline (D-22 < 1.5×). A non-positive baseline (baseline run
+// skipped) makes this advisory-pass so a missing baseline never hard-fails.
+func timingOK(swarmMS, baselineMS, budget float64) bool {
+	if baselineMS <= 0 || budget <= 0 {
+		return true
+	}
+	return swarmMS <= baselineMS*budget
 }
 
 func looksRefusal(prose string) bool {

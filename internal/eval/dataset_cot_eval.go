@@ -16,6 +16,13 @@
 //	budget trip ...................... budget-trip (tiny MaxSteps)
 //	cancel mid-stream ................ cancel-mid (ctx cancelled during stream)
 //	streaming fidelity / cost / cache  asserted across ALL scenarios
+//
+// Phase 9 (CAP-03 / SC#5 / D-22) appends the live dual-gate swarm tier — a NATURAL
+// prompt (no "swarm"/"parallel" word) that the model must choose to parallelize on
+// its own (TestSwarmE2E, harness_swarm_e2e_test.go) plus a no-over-spawn control:
+//
+//	autonomous swarm .... swarm-research (natural multi-part task, self-mail + self-WhatsApp)
+//	no-over-spawn ....... swarm-control (a simple single task that must NOT swarm_spawn)
 package eval
 
 // dimension is a scored eval dimension. The first seven (deterministic) are hard
@@ -33,7 +40,23 @@ const (
 	dimReasoning         dimension = "reasoning_quality"      // CoT extension, advisory
 	dimGuardrail         dimension = "guardrail_refusal"      // asserted
 	dimCacheRatio        dimension = "cache_hit_ratio"        // reported, advisory
+
+	// Phase 9 swarm dual-gate dimensions (D-22). The four judge dimensions average
+	// to the ≥90% gate (judgeSwarmGate); the hard-floor ground-truth assertions
+	// (worker count, expected facts, mail/WhatsApp read-back, timing) are scored
+	// deterministically under dimSwarmHardFloor.
+	dimSwarmHardFloor       dimension = "swarm_hard_floor"           // asserted (ground-truth, release-blocking)
+	dimAutonomousParallel   dimension = "autonomous_parallelization" // judge, ≥90% gate
+	dimSubAnswerCorrectness dimension = "sub_answer_correctness"     // judge, ≥90% gate
+	dimAggregationQuality   dimension = "aggregation_quality"        // judge, ≥90% gate
+	dimNoOverSpawn          dimension = "no_over_spawn"              // judge, ≥90% gate
 )
+
+// judgeSwarmGate is the fixed D-22 swarm judge gate: the four swarm judge
+// dimensions must average ≥90% (0.90). The exact per-dimension weights are equal
+// (Claude's Discretion — D-22 fixes the dimensions + the ≥90% average, not the
+// weighting); an equal mean is the least-surprising default.
+const judgeSwarmGate = 0.90
 
 // scenario is one live dataset entry. The expects* fields declare the observable
 // signals the scoring asserts; an empty field means "not exercised by this scenario".
@@ -51,6 +74,24 @@ type scenario struct {
 	cancelMidTurn  bool   // cancel ctx during the stream to drive cancellation hygiene
 	tinyMaxTokens  *int   // per-scenario AURA_LLM_MAX_TOKENS override (length scenario)
 	judge          bool   // run the LLM judge for reasoning_quality on the final prose
+
+	// Phase 9 swarm fields (D-22). Set only on the swarm + control scenarios; the
+	// TestSwarmE2E harness reads them, the CoT harness ignores them.
+	swarm       *swarmExpect // non-nil marks the autonomous swarm scenario (hard floor + judge)
+	noOverSpawn bool         // control: a simple single task that MUST NOT call swarm_spawn
+}
+
+// swarmExpect declares the deterministic ground-truth signals the swarm hard floor
+// asserts (D-22). It is intentionally data — the harness reads it, builds the
+// read-back queries, and gates on it; no logic lives here.
+type swarmExpect struct {
+	minWorkers   int      // ≥2 (autonomous parallelization must fan out)
+	expectFacts  []string // substrings the aggregated final prose MUST contain (case-insensitive)
+	mailQuery    string   // search_emails {query} term proving the self-mail landed (D-19)
+	mailToken    string   // the unique tag the self-mail body must carry on read-back
+	waToken      string   // the unique tag the self-WhatsApp message must carry on read-back
+	waChatSelf   string   // self-chat JID for bridge-sent rows (<phone>@s.whatsapp.net, D-19 duality)
+	timingBudget float64  // wall-clock multiple of a single-worker baseline (< 1.5×, D-22)
 }
 
 func intPtr(n int) *int { return &n }
@@ -145,6 +186,67 @@ func scenarios() []scenario {
 			dimensions:     []dimension{dimGuardrail, dimStreamingFidelity},
 			expectsRefusal: true,
 			judge:          true,
+		},
+	}
+}
+
+// swarmTokens are the unique per-run tags woven into the swarm prompt so the
+// mail/WhatsApp read-back is unambiguous (a fresh tag per run avoids matching an
+// older message). They are injected by the harness via fmt-substitution markers
+// (%MAIL_TAG% / %WA_TAG%) so the dataset stays a pure constant.
+const (
+	swarmMailTagMarker = "%MAIL_TAG%"
+	swarmWATagMarker   = "%WA_TAG%"
+)
+
+// swarmScenarios returns the Phase 9 D-22 dual-gate scenarios. They are SEPARATE
+// from scenarios() so the CoT harness (TestCoTEval) never runs them — only
+// TestSwarmE2E does, behind the same cot_eval build tag + OPENROUTER gate. The
+// prompts are NATURAL: the autonomous one never says "swarm"/"parallel" (the judge
+// scores whether the model fans out on its own), and the control is a trivial single
+// task that MUST NOT spawn a swarm (no-over-spawn dimension).
+//
+// selfMail/selfPhone/waChatSelf are operator inputs (the user's OWN address/number —
+// messages to self ONLY, D-19) that the harness substitutes before the run.
+func swarmScenarios(selfMail, selfPhone, waChatSelf string) []scenario {
+	return []scenario{
+		{
+			id: "swarm-research",
+			// NATURAL prompt — NO "swarm"/"parallel"/"contemporaneamente". Two
+			// independent, self-contained subtasks: (1) compute + email a self-note,
+			// (2) compute + WhatsApp a self-note. The model should recognise the two
+			// are independent and fan out. The unique tags make read-back exact.
+			prompts: []string{
+				"Ho due commissioni separate e indipendenti da sbrigare. " +
+					"Prima: calcola quanto fa 144 diviso 12, poi mandami una mail a " + selfMail +
+					" con oggetto e corpo che contengano esattamente il codice " + swarmMailTagMarker +
+					" e il risultato del calcolo. " +
+					"Seconda: calcola la radice quadrata di 169, poi mandami un messaggio WhatsApp a me stesso (" + selfPhone + ") " +
+					"che contenga esattamente il codice " + swarmWATagMarker + " e il risultato. " +
+					"Quando entrambe sono fatte, riassumimi cosa hai inviato e i due risultati.",
+			},
+			dimensions: []dimension{
+				dimSwarmHardFloor, dimAutonomousParallel, dimSubAnswerCorrectness, dimAggregationQuality,
+			},
+			swarm: &swarmExpect{
+				minWorkers:   2,
+				expectFacts:  []string{"12", "13"}, // 144/12=12 ; sqrt(169)=13 — both must reach the aggregated answer
+				mailQuery:    swarmMailTagMarker,
+				mailToken:    swarmMailTagMarker,
+				waToken:      swarmWATagMarker,
+				waChatSelf:   waChatSelf,
+				timingBudget: 1.5,
+			},
+		},
+		{
+			id: "swarm-control",
+			// A SIMPLE single task. The model must answer directly — calling
+			// swarm_spawn here is over-spawn (D-24 failure mode #1). No tags, no MCP.
+			prompts: []string{
+				"Quanto fa 7 per 8? Rispondi con il numero esatto.",
+			},
+			dimensions:  []dimension{dimNoOverSpawn},
+			noOverSpawn: true,
 		},
 	}
 }
