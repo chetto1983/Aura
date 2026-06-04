@@ -61,7 +61,7 @@ Handshake (via wsl.exe) <1s → 12 tools → `whatsapp__*` mount → `send_messa
 
 **Findings for Phase 9 (E2E design impact):**
 
-1. **The bridge needs Aura's patch** to provide automated ground truth for agent-sent messages (no whatsmeow self-echo). `bridge-patch.diff` = whatsmeow bump + 5 context fixes + REST-send persistence. Phase 9 pre-req: maintain a patched fork/vendored copy (upstream is stale — pinned deps already broke once).
+1. **The bridge needs Aura's patch** to provide automated ground truth for agent-sent messages (no whatsmeow self-echo). `bridge-patch.diff` = whatsmeow bump + 5 context fixes + REST-send persistence. **Patch maintained in the user's fork: <https://github.com/chetto1983/whatsapp-mcp> (commit `6de1dcd`)** — the canonical source for Phase 9, mirroring the `recipe:calculator` → chetto1983 fork pattern; Phase 9 adds `mail`/`whatsapp` recipes to `cmd/aura/mcp.go` pointing at it.
 2. **LID vs phone JID duality**: self-chat is `<phone>@s.whatsapp.net` for bridge-sent rows, `<lid>@lid` for phone-sent rows. E2E assertions must target the right JID per direction (or query both).
 3. **WSL topology validated**: `ServerConfig{Command:"wsl", Args:[…uv run main.py]}` in the managed config works unchanged through `mcp.Open` — no Aura code changes needed for WSL-resident servers.
 4. **Operational pre-req for E2E**: the bridge is a long-lived third process (REST :8080) — the E2E tier needs a bring-up step + health check (REST 405 on GET /api/send = alive) before scenarios run.
