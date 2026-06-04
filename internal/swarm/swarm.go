@@ -74,7 +74,12 @@ func preflight(rc RunConfig, goals []string) (string, bool) {
 		return "error: " + msg, false
 	}
 	if len(goals) == 0 {
-		return "error: no goals provided — answer the user directly instead of spawning a swarm", false
+		// Teach the arg shape instead of steering away: a deferred stub carries no
+		// schema, so the model's first call often guesses the wrong key and lands
+		// here with usable subtasks in hand (live E2E 2026-06-04: two empty calls,
+		// then sequential fallback). Name the exact argument so it self-corrects,
+		// and keep the answer-directly escape only for the genuinely-single task.
+		return `error: no goals provided — pass the subtasks as {"goals":["<complete brief for subtask 1>","<complete brief for subtask 2>"]}; if there is only one simple task, answer the user directly instead of spawning a swarm`, false
 	}
 	if goalsCap := rc.Cfg.MaxSwarmGoals; goalsCap > 0 && len(goals) > goalsCap {
 		return fmt.Sprintf(

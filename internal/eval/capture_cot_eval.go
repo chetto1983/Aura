@@ -42,7 +42,9 @@ type turnCapture struct {
 	usage          llm.Usage   // per-turn token+cost usage off the final Event StateDelta
 	eventKinds     []eventKind // ordered Event kinds
 	toolNames      []string    // non-terminal tool calls in call order
+	toolCallMS     []float64   // ms-since-start of each tool call, aligned with toolNames
 	toolResults    []string    // raw tool-result previews threaded back to the model
+	toolResultMS   []float64   // ms-since-start of each tool result, aligned with toolResults
 	terminalReason string      // budget-trip "limit_hit" reason, "" when not tripped
 	terminated     bool        // a terminal budget Event was emitted
 	firstByteMS    float64     // ms to first streamed delta (latency metric)
@@ -85,6 +87,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 			c.eventKinds = append(c.eventKinds, kindToolCall)
 			for i := range resp.ToolCalls {
 				c.toolNames = append(c.toolNames, resp.ToolCalls[i].Function.Name)
+				c.toolCallMS = append(c.toolCallMS, float64(time.Since(start).Microseconds())/1000.0)
 			}
 		case resp.FinishReason != "":
 			c.eventKinds = append(c.eventKinds, kindFinal)
@@ -101,6 +104,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 		case isToolResultPreview(ev):
 			c.eventKinds = append(c.eventKinds, kindToolResult)
 			c.toolResults = append(c.toolResults, resp.Content)
+			c.toolResultMS = append(c.toolResultMS, float64(time.Since(start).Microseconds())/1000.0)
 			raw.WriteString(resp.Content) // tool-result previews are part of the raw leak surface
 		case resp.Content != "":
 			if !firstByteSeen {

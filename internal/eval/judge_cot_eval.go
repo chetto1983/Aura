@@ -135,7 +135,10 @@ func runJudgeUser(ctx context.Context, client llm.Client, model, rubric, user st
 			{Role: llm.RoleUser, Content: user},
 		},
 		Temperature: 0.0,
-		MaxTokens:   256,
+		// 2048, not 256: DeepSeek-V4 burns budget in the reasoning channel before
+		// emitting content — at 256 the long-rubric verdict JSON never arrives and
+		// the reply drains empty (observed live, swarm E2E run 2026-06-04).
+		MaxTokens: 2048,
 	}
 	ch, err := client.Stream(ctx, req)
 	if err != nil {

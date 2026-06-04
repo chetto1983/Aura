@@ -63,8 +63,16 @@ func (e *SwarmSpawn) Spec() Spec {
   "required": ["goals"]
 }`)
 	return Spec{
-		Name:        "swarm_spawn",
-		Summary:     "Run independent subtasks in parallel as worker agents and collect their reports.",
+		Name: "swarm_spawn",
+		// The Summary is ALL the model sees in the default manifest (deferred stub)
+		// — it must carry the WHEN, not just the what, or the model never reaches
+		// for the tool (live E2E 2026-06-04: sequential execution on a clearly
+		// 2-task prompt, workers=0). The anti-over-spawn counterweight (D-24)
+		// stays in the Description and in the trailing "2 or more independent"
+		// qualifier here.
+		Summary: "Run 2 or more independent subtasks in parallel as worker agents and collect their reports. " +
+			"Whenever the user asks for multiple unrelated things in one request, call this instead of doing them one by one. " +
+			`Call shape: {"goals":["<complete brief for subtask 1>","<complete brief for subtask 2>"]}.`,
 		Description: swarmSpawnDescription,
 		Parameters:  params,
 		Deferred:    true,

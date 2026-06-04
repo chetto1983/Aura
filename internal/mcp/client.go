@@ -25,6 +25,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // protocolVersion is the MCP revision Aura negotiates.
@@ -254,8 +255,17 @@ func decodeToolResult(result json.RawMessage) (text string, isError bool, err er
 	return strings.TrimRight(b.String(), "\n"), env.IsError, nil
 }
 
-// Close shuts the subprocess down by closing stdin and waiting for exit. Safe to
-// call on a test client (no cmd) and idempotent enough for defer.
+// closeWaitTimeout bounds how long Close waits for a server to exit after its
+// stdin closes before escalating to Kill. Servers that ignore stdin-close exist
+// in the wild (the WSL-spawned whatsapp-mcp `wsl.exe` chain blocked a live run
+// for 13 minutes until the test framework panicked, 2026-06-04) — an unbounded
+// cmd.Wait turns one misbehaving sidecar into a process-wide hang.
+const closeWaitTimeout = 5 * time.Second
+
+// Close shuts the subprocess down by closing stdin and waiting for exit; if the
+// server has not exited within closeWaitTimeout it is killed and the wait result
+// is drained. Safe to call on a test client (no cmd) and idempotent enough for
+// defer.
 func (c *Client) Close() error {
 	if c.stdin != nil {
 		_ = c.stdin.Close()
@@ -263,7 +273,17 @@ func (c *Client) Close() error {
 	if c.cmd == nil {
 		return nil
 	}
-	return c.cmd.Wait()
+	done := make(chan error, 1)
+	go func() { done <- c.cmd.Wait() }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(closeWaitTimeout):
+		if c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		return <-done // Wait must still be drained after Kill to release resources
+	}
 }
 
 // stderrTail returns a length-capped suffix of captured stderr for error context.

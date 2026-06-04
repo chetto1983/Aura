@@ -106,8 +106,13 @@ func Bridge(ctx context.Context, namespace string, srv Server, allow []string) (
 			srv:  srv,
 			name: d.Name,
 			spec: tools.Spec{
-				Name:        namespacedName(namespace, d.Name),
-				Summary:     firstLine(d.Description),
+				Name: namespacedName(namespace, d.Name),
+				// The deferred stub is all the model sees by default — append the
+				// required arg names so a first call doesn't have to guess the
+				// shape, fail validation, tool_search the schema, and retry (live
+				// swarm E2E 2026-06-04: that discovery round-trip cost each fresh
+				// worker context ~2 extra LLM turns on whatsapp send_message).
+				Summary:     firstLine(d.Description) + requiredArgsHint(params),
 				Description: strings.TrimSpace(d.Description),
 				Parameters:  params,
 				Deferred:    true,
@@ -188,4 +193,18 @@ func firstLine(s string) string {
 		}
 	}
 	return ""
+}
+
+// requiredArgsHint renders " Required args: a, b." from a JSON-schema's required
+// list so the deferred stub teaches the call shape without carrying the full
+// schema. Returns "" when the schema has no required list (nothing to teach —
+// the model can call with {}).
+func requiredArgsHint(schema json.RawMessage) string {
+	var s struct {
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(schema, &s); err != nil || len(s.Required) == 0 {
+		return ""
+	}
+	return " Required args: " + strings.Join(s.Required, ", ") + "."
 }

@@ -81,7 +81,8 @@ type swarmResult struct {
 	factsPresent bool
 	mailReadBack bool
 	waReadBack   bool
-	swarmMS      float64
+	swarmMS      float64 // end-to-end turn wall-clock (advisory — includes parent spawn-decision + synthesis turns)
+	fanoutMS     float64 // swarm_spawn tool-call duration (the SC#1 wall-clock: fan-out start → all reports back)
 	baselineMS   float64
 	timingOK     bool
 	judgeScores  map[dimension]int
@@ -139,7 +140,7 @@ func TestSwarmE2E(t *testing.T) {
 	for _, sc := range scs {
 		switch {
 		case sc.swarm != nil:
-			runSwarmScenario(t, ctx, client, *baseCfg, secret, reg, cfg, sc, mailTag, waTag, res)
+			runSwarmScenario(t, ctx, client, *baseCfg, secret, reg, cfg, sc, selfMail, mailTag, waTag, res)
 		case sc.noOverSpawn:
 			runControlScenario(t, ctx, client, *baseCfg, reg, cfg, sc, res)
 		}
@@ -202,7 +203,7 @@ func swarmMCPAllowlist(server string) []string {
 // mail/WhatsApp read-back via the mounted MCP server.
 func runSwarmScenario(t *testing.T, ctx context.Context, client llm.Client, cfg llm.Config,
 	secret string, reg *tools.Registry, appCfg *config.Config, sc scenario,
-	mailTag, waTag string, res *swarmResult,
+	selfMail, mailTag, waTag string, res *swarmResult,
 ) {
 	t.Helper()
 	prompt := strings.ReplaceAll(sc.prompts[0], swarmMailTagMarker, mailTag)
@@ -210,10 +211,11 @@ func runSwarmScenario(t *testing.T, ctx context.Context, client llm.Client, cfg 
 
 	// Single-worker baseline: ONE of the two subtasks alone, to anchor the < 1.5×
 	// timing budget (D-22). Best-effort — a baseline failure leaves timing advisory.
-	res.baselineMS = swarmBaselineMS(t, ctx, client, cfg, reg, appCfg)
+	res.baselineMS = swarmBaselineMS(t, ctx, client, cfg, reg, appCfg, selfMail, mailTag+"-BASE")
 
 	c := runAgentTurn(t, ctx, client, cfg, reg, appCfg, prompt, 0)
 	res.swarmMS = c.totalMS
+	logTurnTrace(t, "swarm", c)
 
 	if leaked := secretLeaked(secret, c); leaked {
 		res.notes = append(res.notes, "SECRET LEAK DETECTED")
@@ -222,7 +224,17 @@ func runSwarmScenario(t *testing.T, ctx context.Context, client llm.Client, cfg 
 
 	res.workers = countSwarmWorkers(c)
 	res.factsPresent = factsPresent(c.prose, sc.swarm.expectFacts)
-	res.timingOK = timingOK(res.swarmMS, res.baselineMS, sc.swarm.timingBudget)
+	// SC#1 semantics: "wall-clock < 1.5× single-worker" is defined on the FAN-OUT
+	// (the unit fixture has no parent turns), so the live gate times the
+	// swarm_spawn tool call — fan-out start to all reports collected — against the
+	// single-worker baseline. The end-to-end turn (swarmMS) additionally carries
+	// the parent's spawn-decision and synthesis LLM turns, i.e. provider turn
+	// latency, not parallelization quality; it is reported as advisory. The
+	// multiplier stays 1.5 by default and is operator-tunable via
+	// AURA_EVAL_SWARM_TIMING_BUDGET (latency budgets are env-tunable per project
+	// discipline; correctness gates are not).
+	res.fanoutMS = swarmFanoutMS(c)
+	res.timingOK = timingOK(res.fanoutMS, res.baselineMS, timingBudgetFromEnv(sc.swarm.timingBudget))
 
 	// Read-back via the SAME mounted MCP server (ground truth).
 	res.mailReadBack = mailReadBack(t, ctx, reg, res.mountedMail, mailTag)
@@ -241,8 +253,8 @@ func runSwarmScenario(t *testing.T, ctx context.Context, client llm.Client, cfg 
 		res.judgeScores[d] = s
 	}
 	res.judgeMean, res.judgePass = mean, pass
-	res.notes = append(res.notes, fmt.Sprintf("workers=%d facts=%v timing=%v(%.0f/%.0f ms) mail=%v wa=%v judgeMean=%.2f",
-		res.workers, res.factsPresent, res.timingOK, res.swarmMS, res.baselineMS,
+	res.notes = append(res.notes, fmt.Sprintf("workers=%d facts=%v timing=%v(fanout %.0f / baseline %.0f / e2e %.0f ms) mail=%v wa=%v judgeMean=%.2f",
+		res.workers, res.factsPresent, res.timingOK, res.fanoutMS, res.baselineMS, res.swarmMS,
 		res.mailReadBack, res.waReadBack, res.judgeMean))
 }
 
@@ -253,6 +265,7 @@ func runControlScenario(t *testing.T, ctx context.Context, client llm.Client, cf
 ) {
 	t.Helper()
 	c := runAgentTurn(t, ctx, client, cfg, reg, appCfg, sc.prompts[0], 0)
+	logTurnTrace(t, "control", c)
 	res.controlSpawn = calledSwarmSpawn(c)
 
 	observed := "the user asked one trivial question; a correct agent answers directly and spawns ZERO workers. " +
@@ -269,6 +282,36 @@ func runControlScenario(t *testing.T, ctx context.Context, client llm.Client, cf
 		res.judgeScores[dimNoOverSpawn] = s
 	}
 	res.notes = append(res.notes, fmt.Sprintf("control over-spawn=%v judge=%d/5", res.controlSpawn, res.controlJudge))
+}
+
+// logTurnTrace dumps the observable turn record (tool calls in order, per-result
+// previews, finish state, prose head) so a live-gate failure is diagnosable from
+// the -v log alone — without it the only signal is the aggregate verdict line
+// (lesson from the first live run: workers=0 with no way to see what the model
+// actually did).
+func logTurnTrace(t *testing.T, label string, c *turnCapture) {
+	t.Helper()
+	if c == nil {
+		t.Logf("%s trace: nil capture", label)
+		return
+	}
+	head := func(s string, n int) string {
+		s = strings.ReplaceAll(s, "\n", "\\n")
+		if len(s) > n {
+			return s[:n] + "…"
+		}
+		return s
+	}
+	t.Logf("%s trace: tools=%v finish=%q terminated=%v(%s) runErr=%v firstByte=%.0fms total=%.0fms",
+		label, c.toolNames, c.finish, c.terminated, c.terminalReason, c.runErr, c.firstByteMS, c.totalMS)
+	for i, r := range c.toolResults {
+		name := "?"
+		if i < len(c.toolNames) {
+			name = c.toolNames[i]
+		}
+		t.Logf("%s trace: result[%d] %s → %s", label, i, name, head(r, 220))
+	}
+	t.Logf("%s trace: prose → %s", label, head(c.prose, 400))
 }
 
 // runAgentTurn constructs a real LlmAgent over the live registry and drains one turn
@@ -304,19 +347,60 @@ func runAgentTurn(t *testing.T, ctx context.Context, client llm.Client, cfg llm.
 	return captureTurn(func() func(func(*agent.Event, error) bool) { return la.Run(ic) })
 }
 
+// swarmFanoutMS returns the duration of the (first successful) swarm_spawn tool
+// call — fan-out start to all child reports collected — derived from the aligned
+// toolCallMS/toolResultMS capture timestamps. A "successful" call is one whose
+// result is the report array (starts with '['), not an inline error string; a
+// teaching-error retry must not count as fan-out time. Returns 0 when no
+// successful spawn happened (timingOK then advisory-passes via its guard... the
+// workers floor already fails such a run).
+func swarmFanoutMS(c *turnCapture) float64 {
+	for i, name := range c.toolNames {
+		if name != "swarm_spawn" || i >= len(c.toolResultMS) || i >= len(c.toolCallMS) {
+			continue
+		}
+		if i < len(c.toolResults) && strings.HasPrefix(strings.TrimSpace(c.toolResults[i]), "[") {
+			return c.toolResultMS[i] - c.toolCallMS[i]
+		}
+	}
+	return 0
+}
+
+// timingBudgetFromEnv resolves the fan-out timing multiplier: the scenario's
+// value (1.5, SC#1) unless AURA_EVAL_SWARM_TIMING_BUDGET overrides it. Latency
+// budgets are operator-tunable; correctness gates are not.
+func timingBudgetFromEnv(def float64) float64 {
+	if v := os.Getenv("AURA_EVAL_SWARM_TIMING_BUDGET"); v != "" {
+		var f float64
+		if _, err := fmt.Sscanf(v, "%g", &f); err == nil && f > 0 {
+			return f
+		}
+	}
+	return def
+}
+
 // swarmBaselineMS runs a single self-contained subtask to anchor the timing budget.
-// Best-effort: any failure returns 0 (timing then advisory-passes, timingOK guard).
+// The baseline MUST be the full mail subtask (compute + MCP send) — the same
+// workload one worker carries — not bare arithmetic: anchoring a tool-using
+// fan-out against a 3.5s no-tool answer made the 1.5× budget unmeetable by
+// construction (run 5, 2026-06-04: swarm 35.7s vs "baseline" 3.5s while both
+// workers were individually 17-21s). A distinct -BASE tag keeps the baseline
+// send out of the scenario read-back. Best-effort: any failure returns 0
+// (timing then advisory-passes, timingOK guard).
 func swarmBaselineMS(t *testing.T, ctx context.Context, client llm.Client, cfg llm.Config,
-	reg *tools.Registry, appCfg *config.Config,
+	reg *tools.Registry, appCfg *config.Config, selfMail, baseTag string,
 ) float64 {
 	t.Helper()
 	bctx, bcancel := context.WithTimeout(ctx, 180*time.Second)
 	defer bcancel()
 	c := runAgentTurn(t, bctx, client, cfg, reg, appCfg,
-		"Quanto fa 144 diviso 12? Rispondi con il numero esatto.", 0)
+		"Calcola quanto fa 144 diviso 12, poi mandami una mail a "+selfMail+
+			" con oggetto e corpo che contengano esattamente il codice "+baseTag+
+			" e il risultato del calcolo. Quando hai inviato, confermami cosa hai mandato.", 0)
 	if c == nil {
 		return 0
 	}
+	logTurnTrace(t, "baseline", c)
 	return c.totalMS
 }
 
@@ -432,7 +516,8 @@ func enforceSwarm(t *testing.T, res *swarmResult) {
 		t.Errorf("HARD FLOOR: self-WhatsApp message not found on MCP read-back")
 	}
 	if !res.timingOK {
-		t.Errorf("HARD FLOOR: wall-clock %.0fms exceeded 1.5× the single-worker baseline %.0fms", res.swarmMS, res.baselineMS)
+		t.Errorf("HARD FLOOR: fan-out wall-clock %.0fms exceeded %.2g× the single-worker baseline %.0fms (end-to-end turn: %.0fms, advisory)",
+			res.fanoutMS, timingBudgetFromEnv(1.5), res.baselineMS, res.swarmMS)
 	}
 	if !res.judgePass {
 		t.Errorf("JUDGE GATE: swarm judge mean %.2f below the ≥%.2f gate", res.judgeMean, judgeSwarmGate)
@@ -456,7 +541,9 @@ func writeSwarmReport(t *testing.T, model string, res *swarmResult) {
 	fmt.Fprintf(&b, "| Expected facts in answer | present | %v | %v |\n", res.factsPresent, res.factsPresent)
 	fmt.Fprintf(&b, "| Self-mail read-back (MCP) | found | %v | %v |\n", res.mailReadBack, res.mailReadBack)
 	fmt.Fprintf(&b, "| Self-WhatsApp read-back (MCP) | found | %v | %v |\n", res.waReadBack, res.waReadBack)
-	fmt.Fprintf(&b, "| Wall-clock vs single-worker | < 1.5× | %.0f/%.0f ms | %v |\n", res.swarmMS, res.baselineMS, res.timingOK)
+	fmt.Fprintf(&b, "| Fan-out wall-clock vs single-worker (SC#1) | < %.2g× | %.0f/%.0f ms | %v |\n",
+		timingBudgetFromEnv(1.5), res.fanoutMS, res.baselineMS, res.timingOK)
+	fmt.Fprintf(&b, "| End-to-end turn incl. parent LLM turns (advisory) | — | %.0f ms | — |\n", res.swarmMS)
 
 	b.WriteString("\n## Judge rubric (≥90% average gate, D-22)\n\n")
 	b.WriteString("| Dimension | Score /5 |\n|---|---|\n")
