@@ -134,7 +134,9 @@ func TestCatchUpMissed_SkipsFutureTasks(t *testing.T) {
 // carries missed_since (the D-18 forensics + SC#3 alert thread). Before the fix
 // catchUpMissed's slice was discarded and the missed window was silently dropped.
 func TestStartDispatchesMissedAtBoot(t *testing.T) {
-	now := time.Now().UTC()
+	// Truncate to µs: Postgres timestamptz has µs precision; sub-µs digits make the
+	// round-trip equality assertion physically unsatisfiable (D-18 forensics contract).
+	now := time.Now().UTC().Truncate(time.Microsecond)
 	pool := migratedPool(t)
 	store := New(pool)
 	disp := newRecordingDispatcher(0)
