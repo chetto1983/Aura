@@ -12,7 +12,7 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 
 ### Validated
 
-(None yet — tabula-rasa rewrite. Lo skeleton 633 LOC `af4ca65c` è scaffolding non-funzionante per design; PRD-first principle: senza PRD completo non si scrive una riga, e il PRD è stato lockato il 2026-05-27 con commit `b3faacbf`.)
+- [x] **CAP-09 / MCP-V2-01**: Aura MCP Manager control plane — *Validated in Phase 16 (2026-06-04); managed MCP config profiles, recipes/catalog metadata, trust classes, Streamable HTTP, status/doctor/logs, sandboxed third-party runtime metadata, redacted profile export, and mount-time risk-policy enforcement shipped. OpenClaw plugin hosting and public marketplace discovery remain out-of-scope.*
 
 ### Active
 
@@ -119,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-04 — Phase 9 (Swarm minimal, CAP-03) complete: `swarm_spawn` + ephemeral runner, mail/WhatsApp MCP production mounts (Deferred flip + allowlist + fail-soft boot), proxied_* pause plumb, live dual-gate E2E PASS (judge 1.00, fan-out 1.30×) + CoT eval re-run green*
+*Last updated: 2026-06-04 — Phase 16 (MCP Sidecar Manager + Third-Party Trust, CAP-09/MCP-V2-01) complete: profiles, recipes, trust approvals, Streamable HTTP, status/doctor/logs, sandboxed runtime metadata, and MCP tool risk-policy enforcement validated.*
