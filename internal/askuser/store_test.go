@@ -336,15 +336,18 @@ func TestGetByToken_RoundTrip(t *testing.T) {
 }
 
 // TestInsertProxied round-trips the D-05 proxied_* columns: a proxied pause
-// persists proxied_from_child_id (a uuid) + proxied_tool_call_id (text), and a
-// direct (non-proxied) pause leaves both columns SQL NULL (back-compat).
+// persists proxied_from_child_id (the FLAT worker id "w2" the swarm report
+// actually carries — CR-01) + proxied_tool_call_id (text), and a direct
+// (non-proxied) pause leaves both columns SQL NULL (back-compat). The fixture uses
+// the real "w<i>" shape the model is told to relay, not a synthetic uuid that
+// would mask the CR-01 failure.
 func TestInsertProxied(t *testing.T) {
 	pool := migratedPool(t)
 	s := New(pool)
 	convID := newConversation(t, pool)
 	ctx := context.Background()
 
-	childID := uuid.Must(uuid.NewV7()).String()
+	childID := "w2"
 	proxiedTok := uuid.Must(uuid.NewV7()).String()
 	if err := s.Insert(ctx, InsertParams{
 		Token:              proxiedTok,
@@ -359,7 +362,7 @@ func TestInsertProxied(t *testing.T) {
 	}
 
 	var (
-		gotChild pgtype.UUID
+		gotChild pgtype.Text
 		gotTC    pgtype.Text
 	)
 	if err := pool.QueryRow(ctx,
@@ -367,8 +370,8 @@ func TestInsertProxied(t *testing.T) {
 	).Scan(&gotChild, &gotTC); err != nil {
 		t.Fatalf("read proxied row: %v", err)
 	}
-	if !gotChild.Valid || uuid.UUID(gotChild.Bytes).String() != childID {
-		t.Errorf("proxied_from_child_id round-trip: want %s, got valid=%v %s", childID, gotChild.Valid, uuid.UUID(gotChild.Bytes))
+	if !gotChild.Valid || gotChild.String != childID {
+		t.Errorf("proxied_from_child_id round-trip: want %s, got valid=%v %q", childID, gotChild.Valid, gotChild.String)
 	}
 	if !gotTC.Valid || gotTC.String != "child-tc" {
 		t.Errorf("proxied_tool_call_id round-trip: want child-tc, got valid=%v %q", gotTC.Valid, gotTC.String)
@@ -377,7 +380,7 @@ func TestInsertProxied(t *testing.T) {
 	// A direct (non-proxied) pause leaves both columns NULL.
 	directTok := insertPause(t, s, convID, "approval", "direct", 0)
 	var (
-		nullChild pgtype.UUID
+		nullChild pgtype.Text
 		nullTC    pgtype.Text
 	)
 	if err := pool.QueryRow(ctx,
@@ -386,7 +389,7 @@ func TestInsertProxied(t *testing.T) {
 		t.Fatalf("read direct row: %v", err)
 	}
 	if nullChild.Valid {
-		t.Errorf("a direct pause must leave proxied_from_child_id NULL, got %s", uuid.UUID(nullChild.Bytes))
+		t.Errorf("a direct pause must leave proxied_from_child_id NULL, got %q", nullChild.String)
 	}
 	if nullTC.Valid {
 		t.Errorf("a direct pause must leave proxied_tool_call_id NULL, got %q", nullTC.String)

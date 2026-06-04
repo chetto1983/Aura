@@ -101,8 +101,11 @@ type InsertParams struct {
 // Insert persists one pending pause. Options/ResumeContext are jsonb (nil → SQL
 // NULL). The proxied_* columns carry the D-05 relay ids when the pause proxies a
 // child's needs_user_input report; they stay NULL for direct calls (a nil child
-// id leaves the zero pgtype.UUID Valid:false, an empty tool_call id leaves the
-// pgtype.Text Valid:false).
+// id leaves the pgtype.Text Valid:false, an empty tool_call id leaves the
+// pgtype.Text Valid:false). proxied_from_child_id is the flat worker id
+// ("w1".."wN", D-15/D-16) stored verbatim as text — NOT a uuid (CR-01): the swarm
+// report carries no uuid for a model to relay, so parsing one here would fail the
+// documented happy path.
 func (s *Store) Insert(ctx context.Context, p InsertParams) error {
 	token, err := parseUUID("token", p.Token)
 	if err != nil {
@@ -112,12 +115,9 @@ func (s *Store) Insert(ctx context.Context, p InsertParams) error {
 	if err != nil {
 		return fmt.Errorf("insert paused state: %w", err)
 	}
-	var proxiedChild pgtype.UUID
+	var proxiedChild pgtype.Text
 	if p.ProxiedFromChildID != nil {
-		proxiedChild, err = parseUUID("proxied_from_child_id", *p.ProxiedFromChildID)
-		if err != nil {
-			return fmt.Errorf("insert paused state: %w", err)
-		}
+		proxiedChild = pgtype.Text{String: *p.ProxiedFromChildID, Valid: true}
 	}
 	arg := sqlc.InsertPausedStateParams{
 		Token:              token,

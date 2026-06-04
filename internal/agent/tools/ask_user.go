@@ -102,7 +102,7 @@ func (AskUser) Spec() Spec {
     "options": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": ["string", "object"]}, "description": "For kind=choice: 2-4 distinct options, each a string or {label, value} object."},
     "kind": {"type": "string", "enum": ["clarification", "approval", "choice"], "description": "clarification = free-text answer; approval = yes/no for an action; choice = pick one of the supplied options."},
     "priority": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Optional 0-100 ordering hint when several pauses are pending (higher = answered first). Defaults to 0."},
-    "proxied_from_child_id": {"type": "string", "description": "Optional, model-discretionary. Fill ONLY when relaying a child agent's needs_user_input report: the originating child's id (a ground-truth uuid from the swarm report). Omit on a direct question to the user."},
+    "proxied_from_child_id": {"type": "string", "description": "Optional, model-discretionary. Fill ONLY when relaying a child agent's needs_user_input report: the originating child's id (the flat worker id from the swarm report, e.g. \"w2\"). Omit on a direct question to the user."},
     "proxied_tool_call_id": {"type": "string", "description": "Optional, model-discretionary. Fill ONLY when relaying a child agent's needs_user_input report: the child's originating tool_call id (ground-truth from the swarm report). Omit on a direct question to the user."}
   },
   "required": ["question", "kind"]

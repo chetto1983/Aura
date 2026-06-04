@@ -85,7 +85,7 @@ type InsertPausedStateParams struct {
 	Priority           int32       `json:"priority"`
 	ResumeContext      []byte      `json:"resume_context"`
 	ToolCallID         string      `json:"tool_call_id"`
-	ProxiedFromChildID pgtype.UUID `json:"proxied_from_child_id"`
+	ProxiedFromChildID pgtype.Text `json:"proxied_from_child_id"`
 	ProxiedToolCallID  pgtype.Text `json:"proxied_tool_call_id"`
 }
 
