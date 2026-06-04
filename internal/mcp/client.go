@@ -180,6 +180,19 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	return text, nil
 }
 
+func (c *Client) Ping(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_, err := c.roundtrip("ping", map[string]any{})
+	if err != nil {
+		return fmt.Errorf("mcp %q: ping: %w", c.name, err)
+	}
+	return nil
+}
+
 // roundtrip writes one request and reads the matching response, skipping any
 // interleaved notifications. Caller holds mu (except initialize, pre-share).
 func (c *Client) roundtrip(method string, params any) (json.RawMessage, error) {

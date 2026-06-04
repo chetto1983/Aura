@@ -52,6 +52,8 @@ func (f *fakeServer) run() {
 			}
 			f.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
 				"content": []map[string]any{{"type": "text", "text": "hello "}, {"type": "text", "text": "world"}}}})
+		case "ping":
+			f.write(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{}})
 		default:
 			if hasID {
 				f.write(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": -32601, "message": "method not found"}})
