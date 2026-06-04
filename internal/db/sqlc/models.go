@@ -8,6 +8,22 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+// Per-run audit ledger (Slice 6 / Phase 10). Audit-forever (no aura_app DELETE, PRD OQ4). completed_with_hash is the SC#2 idempotency key (UNIQUE; a duplicate completion swallows 23505).
+type AuraAgentJobRuns struct {
+	ID                pgtype.UUID        `json:"id"`
+	TaskID            pgtype.UUID        `json:"task_id"`
+	Status            string             `json:"status"`
+	StepBudget        pgtype.Int4        `json:"step_budget"`
+	StartedAt         pgtype.Timestamptz `json:"started_at"`
+	LastHeartbeatAt   pgtype.Timestamptz `json:"last_heartbeat_at"`
+	CompletedWithHash pgtype.Text        `json:"completed_with_hash"`
+	Summary           pgtype.Text        `json:"summary"`
+	LastError         pgtype.Text        `json:"last_error"`
+	MissedSince       pgtype.Timestamptz `json:"missed_since"`
+	PausedStateToken  pgtype.UUID        `json:"paused_state_token"`
+	CompletedAt       pgtype.Timestamptz `json:"completed_at"`
+}
+
 // Per-turn KV-cache metrics (Slice 4 / Phase 6, D-02). Append-only: one row per completed assistant turn from llm.Usage (token counts + cost only, no message content).
 type AuraCacheMetrics struct {
 	ConversationID pgtype.UUID        `json:"conversation_id"`
@@ -97,4 +113,24 @@ type AuraPausedStates struct {
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
 	ResumedAt          pgtype.Timestamptz `json:"resumed_at"`
 	ResumedAnswer      []byte             `json:"resumed_answer"`
+}
+
+// Scheduler task definitions (Slice 6 / Phase 10, amendment #46). Grammar triad at|every|cron with per-task IANA tz; next_run_at is UTC, recomputed in-zone (D-06/D-07).
+type AuraSchedulerTasks struct {
+	ID                   pgtype.UUID        `json:"id"`
+	Kind                 string             `json:"kind"`
+	ScheduleKind         string             `json:"schedule_kind"`
+	CronExpr             pgtype.Text        `json:"cron_expr"`
+	EveryMinutes         pgtype.Int4        `json:"every_minutes"`
+	RunAt                pgtype.Timestamptz `json:"run_at"`
+	Tz                   string             `json:"tz"`
+	Payload              []byte             `json:"payload"`
+	StepBudget           pgtype.Int4        `json:"step_budget"`
+	Status               string             `json:"status"`
+	NextRunAt            pgtype.Timestamptz `json:"next_run_at"`
+	NotifyRoute          pgtype.Text        `json:"notify_route"`
+	IdentityID           string             `json:"identity_id"`
+	OriginConversationID pgtype.UUID        `json:"origin_conversation_id"`
+	CreatedAt            pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }

@@ -13,16 +13,22 @@ import (
 type Querier interface {
 	AggregateCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) (AggregateCacheMetricsSinceRow, error)
 	AutoResolvePendingForConversation(ctx context.Context, arg AutoResolvePendingForConversationParams) error
+	CancelTask(ctx context.Context, id pgtype.UUID) error
 	CleanupResumedOlderThan(ctx context.Context, resumedAt pgtype.Timestamptz) error
+	CompleteRun(ctx context.Context, arg CompleteRunParams) error
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
+	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
 	DeleteIdentity(ctx context.Context, name string) error
+	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
+	GetRun(ctx context.Context, id pgtype.UUID) (AuraAgentJobRuns, error)
+	GetTask(ctx context.Context, id pgtype.UUID) (AuraSchedulerTasks, error)
 	GrantCapability(ctx context.Context, arg GrantCapabilityParams) error
 	HasCapability(ctx context.Context, arg HasCapabilityParams) (bool, error)
 	// Idempotent on (conversation_id, seq): the metric write is a separate, non-transactional
@@ -33,6 +39,8 @@ type Querier interface {
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
+	InsertRun(ctx context.Context, arg InsertRunParams) (AuraAgentJobRuns, error)
+	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
 	ListCapabilities(ctx context.Context, identityID pgtype.UUID) ([]AuraCapabilityGrants, error)
@@ -43,15 +51,19 @@ type Querier interface {
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
+	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error
+	ScanStaleRuns(ctx context.Context, secs float64) ([]ScanStaleRunsRow, error)
 	// LOCKED cross-slice contract (D-A5-03 / SPEC Req#13). Telegram /search (Phase 13)
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
+	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
+	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 }
 
 var _ Querier = (*Queries)(nil)
