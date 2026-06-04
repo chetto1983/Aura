@@ -44,13 +44,46 @@ func TestMCPInstallCalculatorWritesRecipe(t *testing.T) {
 	}
 }
 
-func TestMCPAddListAndDisable(t *testing.T) {
+func TestMCPRecipesListsBuiltins(t *testing.T) {
 	withTempMCPConfig(t)
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"recipes"}, &out); err != nil {
+		t.Fatalf("mcp recipes: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"calculator", "mail", "whatsapp", "calendar", "trusted_recipe"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("recipes output missing %q:\n%s", want, got)
+		}
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"recipes", "--json"}, &out); err != nil {
+		t.Fatalf("mcp recipes --json: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, `"name":"calendar"`) || !strings.Contains(got, `"AURA_CALENDAR_MODE=fixture"`) {
+		t.Fatalf("recipes json missing calendar fixture metadata:\n%s", got)
+	}
+}
+
+func TestMCPAddListAndDisable(t *testing.T) {
+	path := withTempMCPConfig(t)
 
 	var out bytes.Buffer
 	err := runMCPCommand(context.Background(), []string{"add", "local", "--env", "TOKEN=secret", "--", "python", "server.py", "--stdio"}, &out)
 	if err != nil {
 		t.Fatalf("mcp add: %v", err)
+	}
+	doc, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("load managed config: %v", err)
+	}
+	if got := doc.MCPServers["local"].Trust.Class; got != mcp.TrustBlocked {
+		t.Fatalf("manual add trust = %q, want %q", got, mcp.TrustBlocked)
+	}
+	if got := doc.ProfileServerNames(mcp.DefaultMCPProfile); !containsString(got, "local") {
+		t.Fatalf("default profile missing local server: %#v", got)
 	}
 	out.Reset()
 	if err := runMCPCommand(context.Background(), []string{"list"}, &out); err != nil {
@@ -70,6 +103,68 @@ func TestMCPAddListAndDisable(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "disabled") {
 		t.Fatalf("disabled server status not rendered:\n%s", out.String())
+	}
+}
+
+func TestMCPProfileCommands(t *testing.T) {
+	path := withTempMCPConfig(t)
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"profile", "create", "work"}, &out); err != nil {
+		t.Fatalf("profile create: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"profile", "use", "work"}, &out); err != nil {
+		t.Fatalf("profile use: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"install", "calendar"}, &out); err != nil {
+		t.Fatalf("install calendar: %v", err)
+	}
+	doc, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if doc.ActiveProfileName() != "work" {
+		t.Fatalf("active profile = %q, want work", doc.ActiveProfileName())
+	}
+	if got := doc.ProfileServerNames("work"); !containsString(got, "calendar") {
+		t.Fatalf("work profile missing calendar: %#v", got)
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"profile", "remove", "work", "calendar"}, &out); err != nil {
+		t.Fatalf("profile remove: %v", err)
+	}
+	doc, err = mcp.LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if got := doc.ProfileServerNames("work"); containsString(got, "calendar") {
+		t.Fatalf("work profile still has calendar: %#v", got)
+	}
+}
+
+func TestMCPTrustRecordsApproval(t *testing.T) {
+	path := withTempMCPConfig(t)
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
+		t.Fatalf("mcp add: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"trust", "local"}, &out); err != nil {
+		t.Fatalf("mcp trust: %v", err)
+	}
+	doc, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if got := doc.MCPServers["local"].Trust.Class; got != mcp.TrustTrustedLocal {
+		t.Fatalf("trust class = %q, want %q", got, mcp.TrustTrustedLocal)
+	}
+	if got := out.String(); !strings.Contains(got, "ok: trusted local as trusted_local") {
+		t.Fatalf("trust output missing confirmation:\n%s", got)
 	}
 }
 
@@ -163,4 +258,13 @@ func TestProbeWhatsAppBridgeUsesWSLForWSLRecipe(t *testing.T) {
 	if gotCfg.Command != "wsl.exe" || strings.Join(gotCfg.Args[:2], " ") != "-d Ubuntu" {
 		t.Fatalf("WSL probe did not receive original distro context: %#v", gotCfg)
 	}
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }

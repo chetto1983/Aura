@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,74 +17,12 @@ import (
 
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-const mcpUsage = "usage: aura mcp {install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>}"
+const mcpUsage = "usage: aura mcp {recipes [--json]|install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] [--trust local] -- <command> [args...]|profile ...|trust <name>|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>}"
 
 const defaultWhatsAppBridgeURL = "http://127.0.0.1:8080"
-
-type mcpRecipe struct {
-	Summary string
-	Server  mcp.ManagedServer
-}
-
-var mcpRecipes = map[string]mcpRecipe{
-	"calculator": {
-		Summary: "calculator-mcp-server over stdio via uvx",
-		Server: mcp.ManagedServer{
-			Command: "uvx",
-			Args: []string{
-				"--from",
-				"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git",
-				"--",
-				"calculator-mcp-server",
-				"--stdio",
-			},
-			Env:    []string{"PYTHONUNBUFFERED=1"},
-			Source: "recipe:calculator",
-		},
-	},
-	// mail = martinzarfl/mail-mcp (Node/TS, stdio) — spike 001 VALIDATED (16 tools,
-	// IMAP read-back). SMTP/IMAP creds ride the managed-config Env (Gmail app password,
-	// NOT git); the D-20 allowlist (mcpAllowlist in main.go) scopes destructive mailbox
-	// ops out of every worker. Edit the Env placeholders after `aura mcp install mail`,
-	// or override per `aura mcp add ... --env`.
-	"mail": {
-		Summary: "martinzarfl/mail-mcp over stdio (SMTP/IMAP env config)",
-		Server: mcp.ManagedServer{
-			Command: "npx",
-			Args: []string{
-				"-y",
-				"github:martinzarfl/mail-mcp",
-			},
-			Env: []string{
-				"SMTP_HOST=smtp.gmail.com",
-				"SMTP_PORT=465",
-				"SMTP_USER=you@example.com",
-				"SMTP_PASS=CHANGE_ME_app_password",
-				"SMTP_FROM=you@example.com",
-			},
-			Source: "recipe:mail",
-		},
-	},
-	// whatsapp = chetto1983/whatsapp-mcp@6de1dcd (the user's own fork carrying the
-	// whatsmeow bump + REST-send persistence patch) — spike 002 VALIDATED. The Python/uv
-	// MCP server runs in WSL (CGO whatsmeow bridge has no Windows toolchain); Aura spawns
-	// it as `wsl.exe ... uv run main.py`, stdio piping through wsl.exe transparently. Same
-	// fork-trust pattern as recipe:calculator. The companion whatsmeow bridge (REST :8080)
-	// is operator-managed (compose/manual); the D-20 allowlist scopes it to self-chat ops.
-	"whatsapp": {
-		Summary: "chetto1983/whatsapp-mcp (whatsmeow bridge in WSL, stdio via wsl.exe)",
-		Server: mcp.ManagedServer{
-			Command: "wsl.exe",
-			Args: []string{
-				"-e", "bash", "-lc",
-				"cd ~/whatsapp-mcp/whatsapp-mcp-server && uv run main.py",
-			},
-			Source: "recipe:whatsapp",
-		},
-	},
-}
 
 func runMCP(args []string) {
 	if err := runMCPCommand(context.Background(), args, os.Stdout); err != nil {
@@ -98,10 +37,16 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 		return errors.New(mcpUsage)
 	}
 	switch args[0] {
+	case "recipes":
+		return mcpRecipes(args[1:], out)
 	case "install":
 		return mcpInstall(args[1:], out)
 	case "add":
 		return mcpAdd(args[1:], out)
+	case "profile":
+		return mcpProfile(args[1:], out)
+	case "trust":
+		return mcpTrust(args[1:], out)
 	case "list":
 		return mcpList(out)
 	case "doctor":
@@ -119,12 +64,36 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 	}
 }
 
+func mcpRecipes(args []string, out io.Writer) error {
+	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") {
+		return fmt.Errorf("usage: aura mcp recipes [--json]")
+	}
+	catalog := mcpmanager.BuiltInCatalog()
+	if len(args) == 1 {
+		data, err := json.Marshal(catalog)
+		if err != nil {
+			return fmt.Errorf("encode recipes: %w", err)
+		}
+		_, err = out.Write(append(data, '\n'))
+		return err
+	}
+	if err := writef(out, "name\ttrust\truntime\tsource\tsummary\n"); err != nil {
+		return err
+	}
+	for _, entry := range catalog {
+		if err := writef(out, "%s\t%s\t%s\t%s\t%s\n", entry.Name, entry.TrustClass, entry.Runtime, entry.Source, entry.Summary); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func mcpInstall(args []string, out io.Writer) error {
 	if len(args) < 1 || len(args) > 2 {
 		return fmt.Errorf("usage: aura mcp install <recipe> [name]")
 	}
 	recipeName := args[0]
-	recipe, ok := mcpRecipes[recipeName]
+	recipe, ok := mcpmanager.LookupCatalog(recipeName)
 	if !ok {
 		return fmt.Errorf("unknown MCP recipe %q", recipeName)
 	}
@@ -143,6 +112,7 @@ func mcpInstall(args []string, out io.Writer) error {
 		doc.MCPServers = map[string]mcp.ManagedServer{}
 	}
 	doc.MCPServers[name] = recipe.Server
+	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
 		return err
 	}
@@ -163,7 +133,9 @@ func mcpAdd(args []string, out io.Writer) error {
 	}
 	env := []string{}
 	enabled := true
+	trustClass := mcp.TrustBlocked
 	pendingEnv := false
+	pendingTrust := false
 	inCommand := false
 	commandParts := []string{}
 	for _, arg := range args[1:] {
@@ -179,11 +151,21 @@ func mcpAdd(args []string, out io.Writer) error {
 			pendingEnv = false
 			continue
 		}
+		if pendingTrust {
+			if arg != "local" {
+				return fmt.Errorf("--trust value %q must be local", arg)
+			}
+			trustClass = mcp.TrustTrustedLocal
+			pendingTrust = false
+			continue
+		}
 		switch arg {
 		case "--":
 			inCommand = true
 		case "--env":
 			pendingEnv = true
+		case "--trust":
+			pendingTrust = true
 		case "--disabled":
 			enabled = false
 		default:
@@ -192,6 +174,9 @@ func mcpAdd(args []string, out io.Writer) error {
 	}
 	if pendingEnv {
 		return fmt.Errorf("--env requires KEY=VALUE")
+	}
+	if pendingTrust {
+		return fmt.Errorf("--trust requires local")
 	}
 	if len(commandParts) == 0 {
 		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
@@ -213,7 +198,9 @@ func mcpAdd(args []string, out io.Writer) error {
 		Env:     env,
 		Enabled: mcpBoolPtr(enabled),
 		Source:  "manual",
+		Trust:   mcp.ManagedTrust{Class: trustClass},
 	}
+	ensureProfileMembership(&doc, doc.ActiveProfileName(), name)
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
 		return err
 	}

@@ -171,7 +171,7 @@ func (c ManagedConfig) ProfileServerNames(profile string) []string {
 	if strings.TrimSpace(profile) == "" {
 		profile = c.ActiveProfileName()
 	}
-	if p, ok := c.Profiles[profile]; ok && len(p.Servers) > 0 {
+	if p, ok := c.Profiles[profile]; ok {
 		names := make([]string, 0, len(p.Servers))
 		seen := map[string]struct{}{}
 		for _, name := range p.Servers {
