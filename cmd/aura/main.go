@@ -58,6 +58,8 @@ func main() {
 		runIdentity(os.Args[2:])
 	case "paused-states":
 		runPausedStates(os.Args[2:])
+	case "task":
+		runTask(os.Args[2:])
 	case "chat":
 		runChat(os.Args[2:])
 	case "cache-stats":
@@ -77,7 +79,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
