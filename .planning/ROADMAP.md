@@ -285,13 +285,13 @@ Plans:
 **Wave 1**
 
 - [x] 09-01-PLAN.md — Wave 0 doc-only PRD amendment (D-23): cut machinery, 2 new env vars, SC re-spec
-- [ ] 09-02-PLAN.md — ephemeral swarm runner (fan-out + waves + per-child isolation + budget) + SC#1/#3/#4 + D-25 properties
-- [ ] 09-03-PLAN.md — MCP plumbing: Deferred flip + allowlist (D-20) + fail-soft boot (D-21) + mail/whatsapp recipes (D-19)
-- [ ] 09-04-PLAN.md — proxied_* 3-layer plumb (D-05): ask_user Spec → AwaitingInput → InsertParams/Insert → persistPause
+- [x] 09-02-PLAN.md — ephemeral swarm runner (fan-out + waves + per-child isolation + budget) + SC#1/#3/#4 + D-25 properties
+- [x] 09-03-PLAN.md — MCP plumbing: Deferred flip + allowlist (D-20) + fail-soft boot (D-21) + mail/whatsapp recipes (D-19)
+- [x] 09-04-PLAN.md — proxied_* 3-layer plumb (D-05): ask_user Spec → AwaitingInput → InsertParams/Insert → persistPause
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 09-05-PLAN.md — swarm_spawn Deferred tool (D-01/D-24/D-13) + cycle-free ctx seam + adapter + aura swarm-demo
+- [x] 09-05-PLAN.md — swarm_spawn Deferred tool (D-01/D-24/D-13) + cycle-free ctx seam + adapter + aura swarm-demo
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -406,7 +406,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 6. KV Cache Builder | 5/5 | Complete    | 2026-06-02 |
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
-| 9. Swarm (Minimal) | 1/6 | In Progress|  |
+| 9. Swarm (Minimal) | 5/6 | In Progress|  |
 | 10. Scheduler | 0/TBD | Not started | - |
 | 11. Skills | 0/TBD | Not started | - |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
@@ -419,7 +419,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** [To be planned]
 **Requirements**: TBD
 **Depends on:** Phase 15
-**Plans:** 1/6 plans executed
+**Plans:** 5/6 plans executed
 
 Plans:
 

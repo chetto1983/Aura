@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 9 context gathered
-last_updated: "2026-06-04T09:54:42.799Z"
+stopped_at: Completed 09-05-PLAN.md (swarm_spawn tool + seam + boot registration)
+last_updated: "2026-06-04T10:28:21.220Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 18
   completed_phases: 9
   total_plans: 61
-  completed_plans: 55
+  completed_plans: 59
   percent: 50
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 9 (swarm-minimal) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 Last activity: 2026-06-04
 
@@ -87,6 +87,7 @@ Progress: [██████████] 100% (Phase 08)
 | Phase 07 P03 | 1 | 2 tasks | 12 files |
 | Phase 08 P01 | 7min | 2 tasks | 3 files |
 | Phase 09 P09-01 | ~12min | 2 tasks | 3 files |
+| Phase 09 P05 | ~8min | 2 tasks | 10 files |
 
 ## Accumulated Context
 
@@ -134,6 +135,7 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-11 (gap-closure, Tasks 1-3 committed — Task 4 live Gate-3 human-verify PENDING): a live Gate-3 run on 08-10 exposed the LAST CAP-02 gap — the do-not-modify liveManager built the SessionManager with NO Workspace ensurer, so create() skipped EnsureDir, runArgv added no --mount, and the live container's /workspace was the read-only baked image dir under --read-only (1b/2/4a failed with read-only-filesystem on EVERY daemon). Task 1 (afa3a995): injected Workspace: NewWorkspaceManager(runDirOrSkip(t), 0) into liveManager — same AURA_RUN_DIR the cascade test purges, quota 0; no signature/assertion change, endpoint-resolver wiring untouched; Q&A revision documented (the 08-10 do-not-modify constraint was scoped to forcing the shared defaultSessionEndpoint resolver, orthogonal to the workspace injection which restores prod parity at chat.go:129; NOT a PRD amendment, D-04 unchanged). Task 2 (3cd62113): SessionManager.Close now terminateLiveSessions() after the reaper exits — stop+rm+MarkTerminated+Unregister every live session under capMu with a fresh short-deadline ctx, s.mu intentionally not taken, per-container WARN-log, count clamps 0, idempotent via the started guard — killing the orphan aura-sandbox-sess-* contamination that spuriously FAILed 1a/1c in a dirty suite (NO 3-strike escape needed: goleak/reaper/cap/boot-recovery all stayed green). Task 3 (no-op confirm): the CI sandbox.yml sandbox-2b-session-gate job already exports AURA_RUN_DIR=/tmp/aura-run + mkdir -p (line 257/330), builds aura-sandbox:ci baking the 08-10 /workspace (329), wires the egress bridge+host proxy+AURA_SANDBOX_PROXY_ENV before the tier (347-366) + session seccomp (262), runs the full sandbox_integration && db_integration race tier under CI=true (373) — it is the Gate-3 host of record, no edit needed. Unit tier go test -race ./internal/sandbox/ green (5.6s real run); tagged builds (db_integration, sandbox_integration && db_integration) compile. CAP-02 NOT closed + 08-SECURITY threats_open NOT zeroed — both close on the human native-daemon Gate-3 sign-off (Task 4). Docker Desktop CANNOT pass 1b/2/4a (daemon-side device= path unresolvable, 0x100e) — the native-Linux CI DinD job or a stood-up native dockerd is the verification host.
 - [Phase 08]: 08-09 (Gate-3 evidence + live tier, Tasks 1-2 — Task 3 live human-verify PENDING): authored the live sandbox_integration && db_integration tier proving the 4 ROADMAP CAP-02 criteria (PythonStatePersists 1a / WorkspacePersists 1b / ConcurrentSerialized_Live 1c / SymlinkEscapeCascade_Live 2 / ReaperLiveContainerRemoved 3 / NetworkPyPIAllowed 4a+landmine-3 reachability spike / NetworkNonAllowlistRefused 4b / BootRecovery_LazyRecreate) + TestMigration0008_SchemaRoundTrip (uuid FK + CHECK + ON DELETE CASCADE). All compile-green under the tags (vet+build+test-compile exit 0); the two RESEARCH-named tests that collided with the untagged unit tier got _Live suffixes. 08-SECURITY.md consolidates the 40-threat T-08-* register with implementing-file citations, EXTENDS AR-05-01 for the 2b connect-allowing session egress posture (host-proxy-contained, bridge-gateway-reachable, empty-allowlist-egressless — documented before live confirmation), records the Claude-Code allowlist-bypass caveat as AR-08-01 (accepted-with-mitigation); threats_open held at 5 (NOT zeroed). sandbox.yml gained the sandbox-2b-session-gate DinD job (Postgres-through-0008 + sidecar + egress bridge/proxy at the bridge gateway; 2b tier race + live egress leg + go-mutesting >=70% on network.go/scoring.go/sessions.go + 85% coverage fold; CI=true no-skip-as-green). quality-snapshot gained the Phase-8 2b rows. CAP-02 NOT closed + threats_open NOT zeroed — both close on the operator's live Gate-3 sign-off (Task 3). Commits f99d9cb4/d4851c59/b1dc7ea7.
 - [Phase ?]: [Phase 09]: 09-01 (PRD-amendment gate, doc-only #44): D-01..D-25 logged in DECISIONS.md §8. Amendment #44 supersedes the STALE prd.md Slice-3 acceptance (swarm_talk/swarm_join/bus/tier.go/Responder/children-map all CUT v1, replaced by ephemeral swarm_spawn runner + pause-as-report D-04 + flat-v1 D-10). Env catalog ADDS AURA_SWARM_MAX_GOALS=8 + AURA_SWARM_CHILD_TIMEOUT_SEC=120; OQ1 resolved D-21-supersedes-D-23 (NO AURA_MCP_*_SERVER vars, managed config is the path). ROADMAP SC#2->tool-not-available+depth-code-guard, SC#3->5 needs_user_input report entries, SC#5 added live cot_eval E2E. CAP-03 NOT marked complete (code waves pending). Commits 2c05fbdf/d285f17e.
+- [Phase ?]: [Phase 09]: 09-05: swarm_spawn Deferred {goals}-only tool (D-01/D-03) wired to the 09-02 engine via a CYCLE-FREE seam — swarmRunner interface in the tools package (imports neither internal/swarm nor internal/agent) + agent.WithSwarmContext private-ctx-key injector (mirrors WithToolCallContext, set in runTool; config rides on the adapter not the ctx) + internal/swarm.RunnerAdapter. D-24 anti-over-spawn literal (test-asserted) + D-13 goals cap. Registered PARENT-ONLY in buildBaseRegistry (chat.go/runner.go unchanged); TestBuildBaseRegistryValidatesWithSwarmSpawn proves reg.Validate() holds with the Deferred tool (Pitfall 6). Workers excluded via Without (D-08/D-10). aura swarm-demo = no-LLM FakeClient engine proof (D-16). runTool gained budget param (Rule 3). Commits 827169a7/547bed0d.
 
 ### Pending Todos
 
@@ -166,6 +168,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-04T09:54:26.232Z
+Last session: 2026-06-04T10:27:50.454Z
 Stopped at: Phase 9 context gathered
 Resume file: None
