@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 16 planned
-last_updated: "2026-06-04T14:20:00.000Z"
-last_activity: 2026-06-04
+stopped_at: Phase 10 context gathered
+last_updated: "2026-06-04T14:02:16.693Z"
+last_activity: 2026-06-04 -- Phase 16 execution started
 progress:
   total_phases: 18
   completed_phases: 10
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 16 - MCP Sidecar Manager + Third-Party Trust
+**Current focus:** Phase 16 — add-richer-recipes-doctor-checks-for-whatsapp-and-calendar-e
 
 ## Current Position
 
-Phase: 16
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-04 - Planned Phase 16 as MCP Sidecar Manager + Third-Party Trust (8/8 plans)
+Phase: 16 (add-richer-recipes-doctor-checks-for-whatsapp-and-calendar-e) — EXECUTING
+Plan: 1 of 8
+Status: Executing Phase 16
+Last activity: 2026-06-04 -- Phase 16 execution started
 
 Progress: [██████████] 100% (Phase 08)
 
@@ -172,6 +172,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-04T10:44:03.503Z
-Stopped at: Phase 9 context gathered
-Resume file: None
+Last session: 2026-06-04T14:02:16.683Z
+Stopped at: Phase 10 context gathered
+Resume file: .planning/phases/10-scheduler/10-CONTEXT.md
