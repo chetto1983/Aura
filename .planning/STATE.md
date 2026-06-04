@@ -4,7 +4,7 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 9 context gathered
-last_updated: "2026-06-04T13:15:40.594Z"
+last_updated: "2026-06-04T13:24:47.588Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 18
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 Phase: 16
 Plan: Not started
 Status: Ready to execute
-Last activity: 2026-06-04
+Last activity: 2026-06-04 - Completed quick task 260604-l9u: add an MCP doctor health line for WhatsApp REST :8080 + connected-state
 
 Progress: [██████████] 100% (Phase 08)
 
@@ -154,10 +154,11 @@ None yet.
 
 ### Quick Tasks Completed
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260604-c4l | hygiene sweep (W-1 + W-NEW-1 + coverage re-run) | 2026-06-04 | 649b0520 | [260604-c4l-hygiene-sweep-w-1-w-new-1-coverage-re-ru](./quick/260604-c4l-hygiene-sweep-w-1-w-new-1-coverage-re-ru/) |
-| 260604-bq8 | D-15 doc-superseding sweep on REQUIREMENTS.md (CAP-01/02 wording + 5 stale checkboxes) | 2026-06-04 | 0d197ede | [260604-bq8-d-15-doc-superseding-sweep-on-requiremen](./quick/260604-bq8-d-15-doc-superseding-sweep-on-requiremen/) |
+| # | Description | Date | Commit | Status | Directory |
+|---|-------------|------|--------|--------|-----------|
+| 260604-c4l | hygiene sweep (W-1 + W-NEW-1 + coverage re-run) | 2026-06-04 | 649b0520 |  | [260604-c4l-hygiene-sweep-w-1-w-new-1-coverage-re-ru](./quick/260604-c4l-hygiene-sweep-w-1-w-new-1-coverage-re-ru/) |
+| 260604-bq8 | D-15 doc-superseding sweep on REQUIREMENTS.md (CAP-01/02 wording + 5 stale checkboxes) | 2026-06-04 | 0d197ede |  | [260604-bq8-d-15-doc-superseding-sweep-on-requiremen](./quick/260604-bq8-d-15-doc-superseding-sweep-on-requiremen/) |
+| 260604-l9u | add an MCP doctor health line for WhatsApp REST :8080 + connected-state | 2026-06-04 | 286bb47e | Verified | [260604-l9u-add-an-mcp-doctor-health-line-for-whatsa](./quick/260604-l9u-add-an-mcp-doctor-health-line-for-whatsa/) |
 
 ## Deferred Items
 
