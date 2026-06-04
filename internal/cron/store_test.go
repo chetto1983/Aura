@@ -206,3 +206,123 @@ func TestCreateRunAndAdvance_Atomic(t *testing.T) {
 		t.Errorf("next_run_at after advance = %s, want %s", got.NextRunAt, advanced.UTC())
 	}
 }
+
+func TestListUpdateCancelAndHeartbeat(t *testing.T) {
+	pool := migratedPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s := New(pool)
+
+	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	first := time.Now().Add(5 * time.Minute).Truncate(time.Second)
+	second := first.Add(5 * time.Minute)
+	soon, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, NextRunAt: first})
+	if err != nil {
+		t.Fatalf("CreateTask soon: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, soon.ID) })
+	later, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupPostgres, Spec: spec, NextRunAt: second})
+	if err != nil {
+		t.Fatalf("CreateTask later: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, later.ID) })
+	cancelled, err := s.CreateTask(ctx, CreateTaskParams{Kind: KindBackupNeo4j, Spec: spec, NextRunAt: first.Add(time.Minute)})
+	if err != nil {
+		t.Fatalf("CreateTask cancelled: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, cancelled.ID) })
+
+	if err := s.CancelTask(ctx, cancelled.ID); err != nil {
+		t.Fatalf("CancelTask: %v", err)
+	}
+	cancelledGot, err := s.GetTask(ctx, cancelled.ID)
+	if err != nil {
+		t.Fatalf("GetTask cancelled: %v", err)
+	}
+	if cancelledGot.Status != "cancelled" {
+		t.Fatalf("cancelled task status = %q, want cancelled", cancelledGot.Status)
+	}
+
+	active, err := s.ListActiveTasks(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveTasks: %v", err)
+	}
+	soonIdx, laterIdx := taskIndex(active, soon.ID), taskIndex(active, later.ID)
+	if soonIdx < 0 || laterIdx < 0 {
+		t.Fatalf("created active tasks not listed: soon=%d later=%d list=%+v", soonIdx, laterIdx, active)
+	}
+	if taskIndex(active, cancelled.ID) >= 0 {
+		t.Fatalf("cancelled task appeared in active list: %+v", active)
+	}
+	if soonIdx > laterIdx {
+		t.Fatalf("active tasks not ordered by next_run_at: soon index %d, later index %d", soonIdx, laterIdx)
+	}
+
+	advanced := first.Add(30 * time.Minute)
+	if err := s.UpdateNextRunAt(ctx, soon.ID, advanced); err != nil {
+		t.Fatalf("UpdateNextRunAt: %v", err)
+	}
+	soonGot, err := s.GetTask(ctx, soon.ID)
+	if err != nil {
+		t.Fatalf("GetTask soon after update: %v", err)
+	}
+	if !soonGot.NextRunAt.Equal(advanced.UTC()) {
+		t.Fatalf("updated next_run_at = %s, want %s", soonGot.NextRunAt, advanced.UTC())
+	}
+
+	run, err := s.InsertRun(ctx, soon.ID, 7)
+	if err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+	var before time.Time
+	if err := pool.QueryRow(ctx, "SELECT last_heartbeat_at FROM aura.agent_job_runs WHERE id = $1", run.ID).Scan(&before); err != nil {
+		t.Fatalf("read heartbeat before: %v", err)
+	}
+	time.Sleep(5 * time.Millisecond)
+	if err := s.Heartbeat(ctx, run.ID); err != nil {
+		t.Fatalf("Heartbeat: %v", err)
+	}
+	var after time.Time
+	if err := pool.QueryRow(ctx, "SELECT last_heartbeat_at FROM aura.agent_job_runs WHERE id = $1", run.ID).Scan(&after); err != nil {
+		t.Fatalf("read heartbeat after: %v", err)
+	}
+	if !after.After(before) {
+		t.Fatalf("heartbeat did not advance timestamp: before=%s after=%s", before, after)
+	}
+}
+
+func TestStoreRejectsInvalidUUIDs(t *testing.T) {
+	pool := migratedPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s := New(pool)
+
+	badID := "not-a-uuid"
+	if err := s.CancelTask(ctx, badID); err == nil {
+		t.Fatal("CancelTask accepted invalid UUID")
+	}
+	if err := s.UpdateNextRunAt(ctx, badID, time.Now()); err == nil {
+		t.Fatal("UpdateNextRunAt accepted invalid UUID")
+	}
+	if _, err := s.InsertRun(ctx, badID, 1); err == nil {
+		t.Fatal("InsertRun accepted invalid UUID")
+	}
+	if _, err := s.CreateRunAndAdvance(ctx, badID, 1, time.Now()); err == nil {
+		t.Fatal("CreateRunAndAdvance accepted invalid UUID")
+	}
+	if err := s.Heartbeat(ctx, badID); err == nil {
+		t.Fatal("Heartbeat accepted invalid UUID")
+	}
+	if err := s.CompleteRun(ctx, CompleteRunParams{RunID: badID, Status: "completed"}); err == nil {
+		t.Fatal("CompleteRun accepted invalid UUID")
+	}
+}
+
+func taskIndex(tasks []Task, id string) int {
+	for i, task := range tasks {
+		if task.ID == id {
+			return i
+		}
+	}
+	return -1
+}
