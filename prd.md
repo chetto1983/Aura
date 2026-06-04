@@ -4811,6 +4811,14 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_WEB_FETCH_ALLOW_LOOPBACK` | `0` (false) | operative | 5 | Permit loopback URLs in web_fetch. |
 | `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
 | `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
+| `AURA_SCHEDULER_TZ` | `Europe/Rome` | operative | 6 | Default IANA timezone per i task `cron` privi di un `tz` esplicito (amendment #46, D-06/D-07). DST-safe: il DB resta UTC, solo il calcolo di `next_run_at` è tz-aware. |
+| `AURA_SCHEDULER_NOTIFY_DEFAULT` | `stdout` | operative | 6 | Route di notifica fallback globale ∈ `{whatsapp, email, stdout}` (amendment #46, D-19/D-20). La route per-task `notify` nel payload la sovrascrive. |
+| `AURA_SCHEDULER_NOTIFY_RECIPIENT` | `` (empty) | operative | 6 | Recipient JID/email di default per la route fallback globale (amendment #46, D-20). |
+| `AURA_SCHEDULER_QUIET_HOURS` | `` (empty = off) | operative | 6 | Finestra quiet-hours `HH:MM-HH:MM` (es. `23:00-07:30`): le notifiche non-DESTRUCTIVE differiscono alla fine della finestra (amendment #46, D-23). I reminder schedulati esplicitamente dentro la finestra firano comunque al loro orario. |
+| `AURA_SCHEDULER_TICK_SECONDS` | `30` | cap | 6 | Intervallo del tick loop DIY in secondi (amendment #46). |
+| `AURA_SCHEDULER_MAX_CONCURRENT_RUNS` | `4` | cap | 6 | Cap concorrenza held-conn (advisory lock per-run su conn dedicata, D-03 Pitfall 2). Dimensionato **strettamente sotto** `pool MaxConns` (amendment #46). |
+| `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS` | `3` | cap | 6 | Retry bounded della delivery prima del fallback definitivo a stdout + flag notification-undelivered (amendment #46, D-22). |
+| `AURA_BACKUP_DIR` | `~/.aura/backups/` | path | 6 | Destinazione dei dump di backup (`pg_dump`, `neo4j-admin database dump`) via `docker exec` (amendment #46, D-26; riconcilia `$AURA_BACKUP_DIR` del ROADMAP con il path PRD). Retention 14d/7d rolling. |
 | `AURA_SKILL_INJECTION_BLOCKLIST` | (built-in list) | operative | 7 | Prompt-injection blocklist patterns. |
 | `AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN` | `60` | cap | 7e | Background pattern_analyzer goroutine interval (v1.x deferred Slice 7f per amendment #13). |
 | `AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS` | `7` | cap | 7e | Query execute logs window per cluster detection (v1.x deferred Slice 7f per amendment #13). |
