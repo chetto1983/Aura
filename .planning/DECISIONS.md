@@ -137,6 +137,50 @@
 
 ---
 
+## §8 — Phase 9 / Slice 3: decisioni implementative (D-01..D-25, ratificate 2026-06-04)
+
+> Decisioni HOW della Phase 9 (swarm minimale), distinte dalla mappa architetturale D00-D28
+> di §0-§6 e dal D14 (swarm coordinamento, §3). La forma industriale MINIMA ("no atomic bombs"
+> — lezione Phase 8) è congelata da 3 researcher pass + 2 spike live (001 mail / 002 whatsapp)
+> + ruflo study. Gate dietro **amendment-commit #44** (landed in 09-01, doc-only gate, prima di
+> ogni code wave — precedente 05-01/08-01). Fonte: `09-CONTEXT.md` §Implementation Decisions +
+> `09-RESEARCH.md`.
+
+| # | Decisione | Amendment | Deviazione PRD? |
+|---|---|---|---|
+| **D-01** | UN solo tool deferred `swarm_spawn {goals:[...]}` — blocking; fan-out interno wrappa il `ParallelAgent` shippato (Slice 0.9); ritorna array ordinato di per-child report. Core sequential dispatcher (`llm_agent.go`) untouched. NO `swarm_talk`/`swarm_join`/bus. | **#44** | ✅ (supersede acceptance Talk/broadcast Slice 3) |
+| **D-02** | Per-child failure isolation: un errore child = entry `{id, status:"failed", error}` accanto ai sibling, NESSUNA cancellazione sibling (Anthropic partial-results; ruflo#1872). Il wrap bypassa il first-error-cancels-siblings di `ParallelAgent` riusandone i leak-safety idiom. | (parte #44) | — |
+| **D-03** | Nessun param `tier` in v1: schema `{goals}` only. `AURA_SWARM_MODEL_*` restano no-op documentate; re-add in v2 SWARM-V2-01. | (parte #44) | ✅ (tier.go cut) |
+| **D-04** | Pause-as-report: un child il cui `ask_user` scatta **termina** → entry `{child_id, tool_call_id, status:"needs_user_input", question, options}` (da `Event{Actions.AwaitingInput}` shippato). Il parent LLM rilancia via il proprio `ask_user` + re-spawn. NESSUN child parcheggiato / ResumeChild / Responder / pending volatile. | **#44** | ✅ (supersede OQ5 Responder design) |
+| **D-05** | `ask_user` Spec guadagna optional `proxied_from_child_id` + `proxied_tool_call_id` (model-discretionary). Runner li stampa in `aura.paused_states` (colonne shippate 0003). Plumb 3-layer (Spec → InsertParams/Insert → persistPause). | (parte #44) | — |
+| **D-06** | Worker `messages[0]` = parent `systemMessage()` byte-stable; il framing worker viaggia in `messages[1]`/UserTurns (NON muta `messages[0]` → cache CAP-04). | (parte #44) | — |
+| **D-07** | Goal come primo USER message: brief Anthropic 4-part (objective, output format, tool guidance, boundaries). MAI in `messages[0]`. **Supersede OQ1** ("system prompt parametrizzato dal goal"). | **#44** | ✅ (OQ1) |
+| **D-08** | Tool inheritance: full inherit MINUS `swarm_spawn` (D-10). `ask_user` resta (D-04 lo converte). `text_response` = terminale worker. | (parte #44) | — |
+| **D-09** | Pre-spawn budget guard: reject quando `Budget.Remaining() < len(goals) + ~3` (reserve parent synthesis, Codex `reserve_spawn_slot`). Child ereditano via `Budget.Child()` shared `*atomic.Int32`. Snapshot `Remaining()` once prima del fan-out. | (parte #44) | — |
+| **D-10** | Flat v1: i worker NON ricevono `swarm_spawn` (tool-exclusion). `AURA_SWARM_MAX_DEPTH=2` env + code-guard retained forward-compat. **ROADMAP SC#2 re-specced** (tool-not-available + code-guard unit-test). | **#44** | ✅ (supersede acceptance depth-runtime) |
+| **D-11** | Per-child timeout `AURA_SWARM_CHILD_TIMEOUT_SEC` (default 120) = per-worker ctx deadline; timeout → `{status:"failed", error:"timeout"}`, siblings unaffected. Budget wallclock = ceiling globale. | **#44** | ✅ (nuova env) |
+| **D-12** | Internal waves: goals oltre `AURA_SWARM_MAX_CONCURRENT` (default 4, 2 sul mini-PC) eseguiti in wave sequenziali nella stessa call (bounds RAM/FD, D00.6). | (parte #44) | — |
+| **D-13** | Goals cap: `len(goals) > AURA_SWARM_MAX_GOALS` (default 8, nuova env) → tool error model-readable (Anthropic over-spawn failure #1). | **#44** | ✅ (nuova env) |
+| **D-14** | Burst accepted: NO per-tool semaphores in v1, `MAX_CONCURRENT` = unico cap. sandbox-agent process-based (no per-session lock — **#34(B) wording superseduta**). | (parte #44) | ✅ (supersede #34(B)) |
+| **D-15** | `ChildReport` array ordinato per goal_index: `{goal_index, child_id, status, summary (per-child cap ~2-4KB), error?, question?/options?/tool_call_id?}`. Overflow via lo shippato `tools.NewResult` (preview+sidecar+`read_tool_output`), NO secondo meccanismo. | (parte #44) | ✅ (supersede payload summarizer custom) |
+| **D-16** | Ephemeral per-call runner dentro `swarm_spawn.Execute`: build N LlmAgent + wrap + drain + collect + return → GC. ZERO cross-call state (no children map/RWMutex/registry). Child IDs deterministici `w1..wN`. File: `internal/swarm/{swarm,report,brief}.go`. | **#44** | ✅ (cancella bus.go/tier.go/swarm_talk.go/swarm_join.go) |
+| **D-17** | Silent-until-done + 3 slog line per child (`child.spawned`/`child.completed`/`child.failed`). No polling tool / event bus / forwarding seam in v1. | (parte #44) | — |
+| **D-18** | Transcript dump always-on per child → `$AURA_RUN_DIR/<conv>/swarm/<w_i>.jsonl` via `Event.MarshalJSON`. GC via run-dir TTL sweep esistente. Best-effort (fail mai blocca lo swarm). | (parte #44) | — |
+| **D-19** | Server (spike-validated): `mail` = martinzarfl/mail-mcp (spike 001), `whatsapp` = lharries/whatsapp-mcp fork `chetto1983/whatsapp-mcp@6de1dcd` (spike 002, bridge patch). Self only. Calendar DROPPED → Phase 16. Recipes in `mcpRecipes` puntano al fork. | (parte #44) | — |
+| **D-20** | `mcptools.Mount` guadagna allowlist per-server. Mail v1: `send_email,fetch_emails,search_emails,get_thread`. WhatsApp v1: `send_message,list_messages,list_chats,search_contacts`. PLUS flip bridged tools `Deferred:false→true` (`bridge.go:88`) — protegge la soglia 30-50-tool di 8.1. | (parte #44) | — |
+| **D-21** | Boot mount ALREADY EXISTS (`buildRegistryWithMCP`). **NESSUNA env `AURA_MCP_{MAIL,WHATSAPP}_SERVER`** — managed config `~/.aura/mcp/servers.json` via `aura mcp` è il path; `AURA_MCP_*_SERVER_JSON` restano override test-tier. Phase 9 rende il boot **fail-soft** (per-server WARN-and-drop, oggi abortisce). Non-goal: ping ticker / restart supervisor / lazy mount / OpenClaw plugin-host. | **#44** | ✅ (supersede env list del D-23) |
+| **D-22** | Dual scoring gate: live E2E (`cot_eval`, OPENROUTER-gated, operator-run, NOT CI) = ground-truth hard floor (N worker via tool_use; fatti attesi; mail/whatsapp read-back; timing < 1.5× single) + judge rubric ≥90% (no "swarm" nel prompt; no over-spawn su control prompt). Numeri in `docs/aura-quality-snapshot.md`. | (parte #44) | — |
+| **D-23** | Amendment Wave-0 (questo): doc-only PRD-amendment-gate (precedente 05-01/08-01) committato PRIMA di ogni code. **[NOTA: la env-add list del D-23 conteneva `AURA_MCP_*_SERVER` — superseduta da D-21, vedi Resolved OQ sotto.]** | **#44** | — |
+| **D-24** | Anti-over-spawn load-bearing literal nella Description di `swarm_spawn`: usa SOLO per ≥2 subtask indipendenti self-contained; task semplice = rispondi diretto; ogni goal = brief completo (objective+output+boundaries; il worker non vede la conversazione). Test asserisce le frasi (pattern `finalizeNudge`). | (parte #44) | — |
+| **D-25** | Property-based (Slice-3 requisito esplicito PRD): rapid properties — per ogni goals array (1..8) e mix di outcome: report.len/order == goals; total tree steps ≤ parent remaining at spawn; goleak-clean al return; per-child isolation (un fail/timeout non tocca i sibling). | (parte #44) | — |
+
+**Resolved Open Questions (RESEARCH §Open Questions):**
+- **OQ1 — env-add contradiction (D-23 vs D-21):** D-23 (pre-spike) elencava `AURA_MCP_{MAIL,WHATSAPP}_SERVER` come env da aggiungere; D-21 (spike-corrected, later truth) dice che NON esistono — il path di registrazione è la managed config `~/.aura/mcp/servers.json` via `aura mcp`. **Risoluzione: D-21 supersede; le 2 env `AURA_MCP_*_SERVER` sono DROPPED, solo `AURA_SWARM_MAX_GOALS` + `AURA_SWARM_CHILD_TIMEOUT_SEC` vengono aggiunte.** Applicato in prd.md §Caps & Limits.
+- **OQ2 — worker registry clone helper:** `tools.Registry` non ha `Clone`/`Without`. In scope: un piccolo `Registry.Without(names ...string)` (o build in `internal/swarm`) per "parent registry minus swarm_spawn" (D-08/D-10).
+- **OQ3 — D-06 system-overlay mechanism:** `NewLlmAgent` non ha hook per appendere un overlay a `messages[0]`. **Pick: (b)** il worker framing viaggia in `messages[1]`/UserTurns (NESSUN `SystemPrompt` mutation), `messages[0]` resta byte-stable cross-worker (cache CAP-04) — più semplice e soddisfa il goal di byte-stability del D-06.
+
+---
+
 ## Prossime azioni raccomandate
 
 0. **D00 locked (2026-06-01)**: binario portabile unico. Le 6 invarianti di portabilità sono guardrail per ogni phase → da verificare in CI (multi-arch) e nel design (routing config-driven, privacy-mode, seccomp per-arch).

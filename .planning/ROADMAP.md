@@ -273,11 +273,12 @@ Plans:
 **Success Criteria** (what must be TRUE):
 
   1. Operator runs a swarm fixture spawning 3 parallel ParallelAgent children and observes wall-clock < 1.5× single-worker time (race detector clean, `goleak` clean)
-  2. Operator attempts spawn at depth 3 and observes explicit error "MAX_SPAWN_DEPTH=2 exceeded" (Amendment #12 cap enforced)
-  3. Operator runs `TestSpawnInteractive_MultiPause_AllResolved` (5 children all pause simultaneously, user answers 3 + ctx-cancels 2) and observes all 5 children either resumed or cancelled within 1s — no stuck-paused goroutines
+  2. Operator confirms a worker's registry does NOT contain `swarm_spawn` (tool-not-available — flat v1, D-10) AND a unit test drives the code guard at synthetic depth ≥ `AURA_SWARM_MAX_DEPTH` and observes the PRD error string (Amendment #44 re-spec; replaces the old runtime "MAX_SPAWN_DEPTH=2 exceeded at depth 3" attempt)
+  3. Operator runs a 5-children-all-pause swarm and observes 5 `needs_user_input` report entries; resume = re-spawn with the answers, cancel = no re-spawn; no stuck/leaked goroutines (`goleak` clean) (Amendment #44 re-spec, D-04 pause-as-report)
   4. Operator runs a depth-2 swarm with parent budget = 20 steps remaining and observes total steps across the tree ≤ 20 (child budget inheritance correct — NOT 20×2)
+  5. Operator runs the live `cot_eval` swarm E2E (natural prompt, NO "swarm" word) with mail + WhatsApp MCP mounts and observes: N workers spawned via tool_use blocks, expected facts present, mail/WhatsApp message exists on read-back via MCP, wall-clock < 1.5× single-worker, judge rubric ≥90% average, no over-spawn on a simple control prompt (Amendment #44 add, D-22)
 
-> SC#2/SC#3 are re-specced and SC#5 added by the D-23 Wave-0 amendment (plan 09-01).
+> SC#2/SC#3 re-specced and SC#5 added by the D-23 Wave-0 amendment (plan 09-01, PRD amendment #44).
 
 **Plans**: 6 plans
 Plans:
