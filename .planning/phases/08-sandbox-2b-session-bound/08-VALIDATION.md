@@ -1,15 +1,16 @@
 ---
 phase: 8
 slug: sandbox-2b-session-bound
-status: draft
+status: audited
 nyquist_compliant: true
 wave_0_complete: true
 created: 2026-06-03
+audited: 2026-06-04
 ---
 
 # Phase 8 — Validation Strategy
 
-> Per-phase validation contract for feedback sampling during execution.
+> Per-phase validation contract. **Re-targeted 2026-06-04**: the original map below validated the bespoke session-bound sandbox, which commit `0ebb3d81` (D-15 pivot) deleted (~7,300 LOC). Phase 8 was re-scoped in ROADMAP.md to "Sandbox via sandbox-agent (local container)" — this file now maps the 4 current success criteria. The historical bespoke map is preserved in git history of this file (`git log -p -- .planning/phases/08-sandbox-2b-session-bound/08-VALIDATION.md`).
 
 ---
 
@@ -17,51 +18,33 @@ created: 2026-06-03
 
 | Property | Value |
 |----------|-------|
-| **Framework** | go test (Go 1.26) + Python stdlib unittest (sidecar) |
-| **Config file** | none — build-tag `sandbox_integration` tier; `synctest` for TTL reaper |
-| **Quick run command** | `go test ./internal/sandbox/ ./internal/scoring/` |
-| **Full suite command** | `go test -race -tags 'sandbox_integration' ./internal/sandbox/ ./internal/scoring/ ./internal/conversations/` |
-| **Estimated runtime** | ~60 seconds (unit); integration adds container spin-up |
+| **Framework** | go test (Go 1.26), stdlib assertions |
+| **Config file** | none — build-tag `sandbox_integration` gates the live tier |
+| **Quick run command** | `go test ./internal/sandboxagent/ ./internal/agent/tools/ ./internal/scoring/` |
+| **Full suite command** | `AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468 go test -race -tags sandbox_integration ./internal/sandboxagent/ ./internal/agent/tools/ ./internal/scoring/` (stack: `make sandbox-up`) |
+| **Estimated runtime** | <1s unit; ~2s live tier against a healthy container |
 
 ---
 
-## Sampling Rate
+## Per-Criterion Verification Map (ROADMAP Phase 8 success criteria)
 
-- **After every task commit:** Run `go test ./internal/<package>/`
-- **After every plan wave:** Run the full suite command
-- **Before `/gsd-verify-work`:** Full suite (incl. `sandbox_integration` tier) must be green
-- **Max feedback latency:** 60 seconds (unit); integration on wave boundary
+| Criterion | Requirement | Secure Behavior | Test Type | Automated Command | File | Status |
+|-----------|-------------|-----------------|-----------|-------------------|------|--------|
+| SC1 (mocked path) | CAP-01/CAP-02 | `sandbox_exec` → `sandboxagent.Client` → POST `/v1/processes/run` threads command/args/cwd/env/timeout/max-output; response decoded | unit | `go test -run 'TestSandboxExecRunsThroughSandboxAgent\|TestClientRun' ./internal/agent/tools/ ./internal/sandboxagent/` | sandbox_exec_test.go + client_test.go | ✅ green |
+| SC1 (live eval) | CAP-01/CAP-02 | live container runs `python -c "print(40+2)"` → stdout `42`, exit_code 0, not timed out | integration (live) | `AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468 go test -tags sandbox_integration -run TestSandboxAgentLive_PythonEval ./internal/sandboxagent/` | client_live_integration_test.go | ✅ green (live 2026-06-04, also `-race`) |
+| SC1 (live persistence) | CAP-01/CAP-02 | file written under `/workspace` in one `Run` is readable in a separate later `Run` (named volume persists) | integration (live) | `AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468 go test -tags sandbox_integration -run TestSandboxAgentLive_WorkspacePersistence ./internal/sandboxagent/` | client_live_integration_test.go | ✅ green (live 2026-06-04, also `-race`; required the `/workspace` ownership fix below) |
+| SC2 | CAP-01 | `sandbox_exec` registered **non-deferred** (model sees command/args schema — live 502 regression guard); result carries stdout/stderr/exit_code/timed_out/truncated/duration_ms | unit | `go test -run 'TestSandboxExecSpecIsNotDeferredAndLocal\|TestBuildChatRegistry_RegistersSandboxExec\|TestBuildRegistry_RegistersSandboxExec' ./internal/agent/tools/ ./cmd/aura/` | sandbox_exec_test.go + chat_test.go + registry_test.go | ✅ green |
+| SC3 | CAP-01 | sandbox down / runner error → structured `{"error":"sandbox_unavailable","hint":"… make sandbox-up"}` inline result (model-visible, not loop-fatal); zero boot provision | unit | `go test -run 'TestSandboxExecUnavailableIsInlineResult\|TestSandboxExecRunnerErrorIsInlineResult' ./internal/agent/tools/` | sandbox_exec_test.go | ✅ green |
+| SC4 | CAP-02 | bespoke surface deleted (`internal/sandbox/*`, migration 0008, `cmd/aura/{exec,sandbox,sandbox_proxy}.go`, `sandbox.yml`); zero `code-sandbox-mcp` refs in code; build/test/lint green | structural | `grep -ri 'code-sandbox-mcp' --include='*.go' .` (0 matches) + CI | — | ✅ verified 2026-06-04 |
+| scoring (D-11, retained) | CAP-02 | empty=Safe, pypi-only=Safe, arbitrary=Risky; monotone modifiers | unit (rapid) | `go test ./internal/scoring/` | scoring_test.go | ✅ green |
 
----
-
-## Per-Task Verification Map
-
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| crit 1a | 08-09 | 5 | CAP-02 | T-08-07-INFO-XSESSION | session python namespace persists `x=42` across calls; fresh conv isolated | integration (sandbox+db) | `go test -tags 'sandbox_integration db_integration' -run TestSessions_PythonStatePersists ./internal/sandbox/` | ✅ sessions_live_integration_test.go | 🔵 live-pending (Task 3) |
-| crit 1b | 08-09 | 5 | CAP-02 | T-08-05-INFO-XCONV | workspace file written call 1 visible call 2 | integration (sandbox+db) | `go test -tags 'sandbox_integration db_integration' -run TestSessions_WorkspacePersists ./internal/sandbox/` | ✅ sessions_live_integration_test.go | 🔵 live-pending (Task 3) |
-| crit 1c | 08-09 | 5 | CAP-02 | T-08-05-DOS-CAP / D-07 | two goroutines same conv serialize via per-session lock; one container | integration (sandbox+db, -race) | `go test -race -tags 'sandbox_integration db_integration' -run TestSessions_ConcurrentSerialized_Live ./internal/sandbox/` | ✅ sessions_live_integration_test.go | 🔵 live-pending (Task 3) |
-| crit 2 | 08-09 | 5 | CAP-02 | T-08-05-EOP-SYMLINK / T-08-08-EOP-SYMLINK | container-planted `ln -s /etc /workspace/escape` + host cascade → host /etc intact, symlink removed | integration (sandbox+db) | `go test -tags 'sandbox_integration db_integration' -run TestWorkspace_SymlinkEscapeCascade_Live ./internal/sandbox/` | ✅ workspace_integration_test.go | 🔵 live-pending (Task 3) |
-| crit 3 (live) | 08-09 | 5 | CAP-02 | T-08-05-DOS-CAP | idle TTL → live container docker-rm + registry terminated + liveCount 0 | integration (sandbox+db) | `go test -tags 'sandbox_integration db_integration' -run TestReaper_LiveContainerRemoved ./internal/sandbox/` | ✅ sessions_live_integration_test.go | 🔵 live-pending (Task 3) |
-| crit 3 (synctest) | 08-05 | 3 | CAP-02 | T-08-05-DOS-CAP | deterministic virtual-clock TTL eviction | unit (synctest) | `go test -run TestReaper_EvictsAfterTTL ./internal/sandbox/` | ✅ sessions_test.go | ✅ green (unit) |
-| crit 4a + landmine-3 spike | 08-09 | 5 | CAP-02 | T-08-08-INFO-NET / T-08-06-INFO-EXFIL | `pip install` to pypi succeeds through host proxy at the bridge gateway (reachability spike) | integration (live egress) | `go test -tags 'sandbox_integration db_integration' -run TestNetwork_PyPIAllowed ./internal/sandbox/` | ✅ network_integration_test.go | 🔵 live-pending (Task 3) |
-| crit 4b | 08-09 | 5 | CAP-02 | T-08-06-INFO-EXFIL / T-08-06-INFO-REBIND | same posture: non-allowlisted host (example.com / 1.1.1.1) refused (deny-wins) | integration (live egress) | `go test -tags 'sandbox_integration db_integration' -run TestNetwork_NonAllowlistRefused ./internal/sandbox/` | ✅ network_integration_test.go | 🔵 live-pending (Task 3) |
-| boot recovery | 08-09 | 5 | CAP-02 | D-06 | prior active rows → terminated; lazy recreate on next Acquire | integration (sandbox+db) | `go test -tags 'sandbox_integration db_integration' -run TestSessions_BootRecovery ./internal/sandbox/` | ✅ sessions_integration_test.go + sessions_live_integration_test.go | 🔵 live-pending (Task 3) |
-| 0008 round-trip | 08-09 | 5 | CAP-02 | T-08-02-V5-FK / T-08-02-V14-ROLE | 0008 up: table+index+uuid-FK+CHECK; ON DELETE CASCADE removes session row | integration (db) | `go test -tags db_integration -run TestMigration0008_SchemaRoundTrip ./internal/sandbox/` | ✅ sessions_integration_test.go | 🔵 live-pending (Task 3) |
-| proxy unit | 08-06 | 2 | CAP-02 | T-08-06-INFO-EXFIL | deny-wins glob, *.x not parent, global-* reject, resolve-then-pin SSRF, malformed CONNECT | unit | `go test -run TestProxy_AllowlistGlobAndSSRF ./internal/sandbox/` | ✅ network_test.go | ✅ green (unit) |
-| sandbox tier | 08-03 | 1 | CAP-02 | T-08-03-INFO-TIER | empty=Safe, pypi-only=Safe, arbitrary=Risky; monotone modifiers | unit (rapid) | `go test ./internal/scoring/` | ✅ scoring_test.go | ✅ green (unit) |
-
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky · 🔵 live-pending (authored + compiles under tags; live green is the Task-3 human Gate-3 sign-off)*
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 ---
 
-## Wave 0 Requirements
+## Live Tier — CI posture
 
-- [x] Confirm `migrations/0008_sandbox_sessions.{up,down}.sql` (NOT 0010 — repo is at 0007) with `conversation_id uuid REFERENCES conversations(id)` (NOT text — landmine #1/#2 from RESEARCH.md) — shipped 0008 (08-02); `TestMigration0008_SchemaRoundTrip` asserts table+index+uuid-FK+CHECK+CASCADE
-- [x] `internal/web` SSRF export-or-extract decision (landmine #5) before egress-proxy plan can reuse `classify`/`guard`/`dnsPin` — RESOLVED 08-DECISIONS-WAVE0 (OQ2/A4: export minimal surface, `web.ClassifyIP`+`web.NewDialGuard`); wired in `network.go` (08-04/08-06)
-- [x] Live egress-bridge reachability spike (landmine #3, MEDIUM confidence) — session-container seccomp/network posture vs host proxy — RESOLVED 08-DECISIONS-WAVE0 (OQ1/A2: connect-allowing session seccomp + host proxy at bridge gateway + empty-allowlist-egressless); the live spike is `TestNetwork_PyPIAllowed` (authored 08-09, run live at Task-3 Gate-3)
-
-*Full Wave 0 gap list lives in 08-RESEARCH.md `## Validation Architecture`.*
+The `sandbox_integration` tier is **not wired into CI**: `compose.yaml` uses `pull_policy: never` for `aura-sandbox-agent:py3` (operator-preloaded local image, no online pull by design), so runners have no image. No-skip-as-green still holds — `sandboxOrSkip` in `client_live_integration_test.go` calls `t.Fatal` under `$CI` when `AURA_SANDBOX_AGENT_URL` is unset, so a misconfigured CI job that *claims* to run the tier fails instead of false-greening. Operator runbook: `make sandbox-up`, then the Full suite command above.
 
 ---
 
@@ -69,19 +52,28 @@ created: 2026-06-03
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| The 4 ROADMAP criteria live | CAP-02 | The live tier needs a running Docker daemon (gVisor/runc), a migrated Postgres, and (criterion 4) a host forward proxy reachable at the egress-bridge gateway + public pypi.org egress — none available in the authoring env. | WSL with the stack up (`make db-up && make sandbox-up && aura db migrate`), export the composed DSNs + `AURA_SANDBOX_URL` + `AURA_SANDBOX_SESSION_IMAGE` + `AURA_RUN_DIR` + the egress wiring (`AURA_SANDBOX_NETWORK_ALLOW_HOSTS`, `AURA_SANDBOX_EGRESS_NETWORK`, `AURA_SANDBOX_PROXY_ENV`, `AURA_SANDBOX_SESSION_SECCOMP`) + `CI=true`, then `go test -race -tags 'sandbox_integration db_integration' ./internal/sandbox/`. See 08-09-PLAN Task 3 `<how-to-verify>` for the 7-step operator runbook. |
+| SC1 agent-loop E2E (the *agent* chooses `sandbox_exec` for a compute task in `aura chat`) | CAP-01 | Tool-selection by the live LLM is non-deterministic; the wiring (registry registration + client + container) is covered by the automated rows above. | `make sandbox-up`, `aura chat`, ask "compute 40+2 in python" → verify a `sandbox_exec` tool call with `command:"python"`, `args:["-c", …]` and reply `42`. |
 
-*The 4 ROADMAP success criteria (session persistence, symlink-escape refusal, TTL reap, network allowlist) map to named test commands in 08-RESEARCH.md `## Validation Architecture`.*
+---
+
+## Validation Audit 2026-06-04
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 2 (SC1 live eval, SC1 live persistence — no live tier existed post-pivot) |
+| Resolved | 2 (both authored + run green live, plain + `-race`) |
+| Escalated | 0 |
+
+**Implementation bug found and fixed during the audit:** the base image has no `/workspace`, so the named-volume mount created it `root:root 0755` — the sandbox process (uid 1001) got `PermissionError` on every write, making SC1's persistence clause false live. Fix: `docker/sandbox-agent/Dockerfile` now bakes `install -d -o sandbox -g sandbox /workspace` (Docker copies ownership into the volume at first initialization) + one-off `chown` of the existing `aura_aura-sandbox-agent` volume. Verified live: `drwxr-xr-x sandbox sandbox /workspace`, persistence test green.
 
 ---
 
 ## Validation Sign-Off
 
-- [x] All tasks have `<automated>` verify or Wave 0 dependencies
-- [x] Sampling continuity: no 3 consecutive tasks without automated verify
-- [x] Wave 0 covers all MISSING references
+- [x] All 4 ROADMAP success criteria have automated verification (SC1 unit+live, SC2 unit, SC3 unit, SC4 structural+CI)
+- [x] Live tier executed against the real container (not compile-checked): plain + `-race` green 2026-06-04
+- [x] No-skip-as-green: gate helper `t.Fatal`s under `$CI`
 - [x] No watch-mode flags
-- [x] Feedback latency < 60s (unit); integration on the live Gate-3 boundary (Task 3)
 - [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** Wave-0 complete; per-task map populated (08-09). Live-tier cells are 🔵 live-pending — they flip to ✅ at the Task-3 human Gate-3 sign-off (live stack required). The authored tier compiles green under `-tags 'sandbox_integration db_integration'` (vet + build + test-compile exit 0, 2026-06-03).
+**Approval:** Nyquist audit complete 2026-06-04. All criteria automated and green; one impl bug (root-owned `/workspace`) surfaced by the new persistence test and fixed in the same audit.
