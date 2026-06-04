@@ -72,7 +72,7 @@ gate3_signed_off: 2026-06-04
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
 | Chaos partition recovery | CAP-06 / SC#2 | Needs 3 live workers + `docker network disconnect`; CI run is advisory, operator run is gating (D-05) | `scripts/scheduler_chaos.sh` with stack up; record result here |
-| Backup dump artifacts | CAP-06 / SC#3 | `docker exec` into aura-postgres/aura-neo4j; artifact inspection in `$AURA_BACKUP_DIR` | schedule nightly tasks, verify dump files exist + restore runbook smoke |
+| Backup dump artifacts | CAP-06 / SC#3 | `docker exec` into aura-postgres/aura-neo4j; artifact inspection in `$AURA_BACKUP_DIR` | `go test -tags backup_live -run TestBackupDockerExecLive ./internal/cron/handlers/` with stack up (dedicated operator tag — not a CI tier) + restore runbook smoke |
 | North-Star live smoke (Q3 + Q1/Q2) | CAP-06 | Live LLM (OPENROUTER_API_KEY) + mounted MCP — not CI | natural Italian prompt, no "cron" word; verify task row + delivery |
 | Mutation spot-check ≥70% | CLAUDE.md gate | go-mutesting on WSL only | critical files (claim/heartbeat/schedule); record score here |
 

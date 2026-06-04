@@ -159,7 +159,10 @@ jobs:
         # no-skip-as-green guard so a missing DSN fails rather than skips). The cron
         # store/claim/recover/dispatch integration tests apply migration 0009 themselves
         # (migratedPool → EnsureRoles + Migrate), so no extra migrate step is needed.
-        run: go test -tags db_integration -race -count=1 ./internal/db/... ./internal/cron/...
+        # -p 1 is MANDATORY (same rule as scripts/coverage_gate.sh): the packages share
+        # ONE Postgres and each runs EnsureRoles+Migrate; parallel package binaries
+        # deadlock on pg_advisory_lock once >2 integration packages exist.
+        run: go test -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/...
 
       - name: aura db migrate (smoke, idempotency)
         run: |
