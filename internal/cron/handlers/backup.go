@@ -43,6 +43,14 @@ const (
 // surface (T-10-16); docker is LookPath-gated and the socket is NEVER mounted
 // (T-10-15). The dump lands in AURA_BACKUP_DIR (default ~/.aura/backups/) and a
 // rolling retention sweep prunes old dumps.
+//
+// OPERATOR PRECONDITION (WR-04): `docker exec ... pg_dump -f <dest>` writes <dest>
+// INSIDE the database container's filesystem, not on the host. For the dump to
+// survive on the host at AURA_BACKUP_DIR, the operator MUST bind-mount the host
+// AURA_BACKUP_DIR into the postgres/neo4j containers at the SAME path. Run verifies
+// the artifact exists on the host after the dump and returns a terminal error if it
+// does not — so a missing bind-mount fails loudly instead of reporting a misleading
+// "ok" for a file that landed only in the container's ephemeral FS.
 type BackupHandler struct {
 	Variant BackupVariant
 	// dockerCLI is the resolved `docker` path; empty means resolve via LookPath at
@@ -97,8 +105,26 @@ func (h BackupHandler) Run(ctx context.Context, job Job) (string, error) {
 		return "", fmt.Errorf("backup %s: docker exec failed: %w: %s", h.Variant, runErr, strings.TrimSpace(string(out)))
 	}
 
+	// docker exec wrote dest inside the container; verify it actually materialized on
+	// the host (the bind-mount precondition). A missing artifact is a terminal error,
+	// never a misleading "ok" for a dump the host does not have (WR-04).
+	if _, statErr := os.Stat(dest); statErr != nil {
+		return "", fmt.Errorf("backup %s: dump not found on host at %s after docker exec "+
+			"(bind-mount AURA_BACKUP_DIR into the %s container at the same path): %w",
+			h.Variant, dest, h.containerName(), statErr)
+	}
+
 	swept := sweepRetention(dir, h.filePrefix(), h.retention())
 	return fmt.Sprintf("backup %s ok → %s (pruned %d old dump(s))", h.Variant, dest, swept), nil
+}
+
+// containerName is the compose service the variant dumps from (for the WR-04
+// missing-artifact error message).
+func (h BackupHandler) containerName() string {
+	if h.Variant == BackupNeo4j {
+		return neo4jContainer
+	}
+	return pgContainer
 }
 
 // resolveDocker returns the injected CLI or LookPath-resolves `docker`. A missing
