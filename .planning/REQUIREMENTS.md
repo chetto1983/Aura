@@ -31,7 +31,7 @@
 
 - [x] **CAP-01**: Sandbox code execution — run untrusted python/shell through the non-deferred `sandbox_exec` tool backed by the local `sandbox-agent` container (`aura-sandbox-agent:py3`) on loopback. The operator starts it with `make sandbox-up`; Aura provisions/downloads nothing at chat boot. (D-15 pivot — supersedes both the bespoke seccomp Python sidecar and the interim MCP-server cut; the generic MCP bridge remains reusable but unmounted.) [Slice 2 / sandbox-agent]
 - [x] **CAP-02**: Sandbox workspace persistence — `/workspace` is a sandbox-agent named volume that persists filesystem state across `sandbox_exec` calls, while execution itself is stateless HTTP into the persistent local container. (D-15 pivot — supersedes the bespoke per-conversation SessionManager, `sandbox_sessions`, and host egress proxy path.) [Slice 2 / sandbox-agent]
-- [ ] **CAP-03**: Swarm coordinator minimale: riusa `ParallelAgent` da Slice 0.9 + cap `MAX_SPAWN_DEPTH=2` per v1. NO DM-by-ID, NO tier-mapped models in v1 (deferred a post-MVP). Child budget inheritance dal parent's remaining. [Slice 3 — amendment #12]
+- [ ] **CAP-03**: Swarm coordinator minimale: riusa `ParallelAgent` da Slice 0.9 + cap `MAX_SPAWN_DEPTH=2` per v1. NO DM-by-ID, NO tier-mapped models in v1 (deferred a post-MVP). Child budget inheritance dal parent's remaining. [Slice 3 — amendment #12 / #44]
 - [x] **CAP-04**: KV cache builder stable-prefix + provider-aware (DeepSeek/Anthropic/OpenAI/Gemini). Architectural rule: **two system messages** — `messages[0]` cache-stable byte-identical, `messages[1]` mutable. CI job `scripts/cache_invariant_audit.sh` asserts SHA-256(`messages[0]`) constant across 20-turn replay (cross-slice). 80% cache hit target su DeepSeek-V4. [Slice 4 + amendment #16]
 - [x] **CAP-05**: Web tools — `web_search` via SearXNG container; `web_fetch` via `codeberg.org/readeck/go-readability/v2` + `JohannesKaufmann/html-to-markdown/v2`. SSRF defense: IPv6 blocklist + DNS rebinding pin. [Slice 5 + amendment #3]
 - [ ] **CAP-06**: Scheduler cron + `agent_job` persistente su Postgres con `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat. Backup TaskKind handlers (`backup_postgres`, `backup_neo4j`) cronnati. [Slice 6]
@@ -109,7 +109,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CORE-05 | Phase 4 — HITL + Identity + Conversations | Complete |
 | CAP-01 | Phase 8 — Sandbox via sandbox-agent (local container) | Complete |
 | CAP-02 | Phase 8 — Sandbox via sandbox-agent (local container) | Complete |
-| CAP-03 | Phase 9 — Swarm (Minimal) | Pending |
+| CAP-03 | Phase 9 — Swarm (Minimal) | In Progress (09-01 doc-gate done; code waves 09-02..09-06 pending) |
 | CAP-04 | Phase 6 — KV Cache Builder | Complete |
 | CAP-05 | Phase 7 — Web Tools | Complete |
 | CAP-06 | Phase 10 — Scheduler | Pending |

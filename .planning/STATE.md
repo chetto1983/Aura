@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 9 context gathered
-last_updated: "2026-06-04T09:43:32.550Z"
-last_activity: 2026-06-04 -- Phase 9 planning complete
+last_updated: "2026-06-04T09:54:42.799Z"
+last_activity: 2026-06-04
 progress:
   total_phases: 18
   completed_phases: 9
   total_plans: 61
-  completed_plans: 54
+  completed_plans: 55
   percent: 50
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 08.1 — tool-search-hardening-anthropic-defer-loading-parity
+**Current focus:** Phase 9 — swarm-minimal
 
 ## Current Position
 
-Phase: 16
-Plan: Not started
+Phase: 9 (swarm-minimal) — EXECUTING
+Plan: 2 of 6
 Status: Ready to execute
-Last activity: 2026-06-04 -- Phase 9 planning complete
+Last activity: 2026-06-04
 
 Progress: [██████████] 100% (Phase 08)
 
@@ -86,6 +86,7 @@ Progress: [██████████] 100% (Phase 08)
 | Phase 07 P02 | ~25min | 2 tasks | 7 files |
 | Phase 07 P03 | 1 | 2 tasks | 12 files |
 | Phase 08 P01 | 7min | 2 tasks | 3 files |
+| Phase 09 P09-01 | ~12min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -132,6 +133,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 08]: 08-01 (PRD-amendment gate, doc-only): 5 amendments #38-#42 — D-01 two-tier persistence (per-session interpreter + workspace, not a contradiction), D-05 docker-lifecycle carve-out (CLI lifecycle, execution HTTP-only, NEVER mounts socket), D-08 host-side Go forward proxy egress + hostname-CONNECT allowlist + resolve-then-pin (SUPERSEDES iptables; CAP_NET_ADMIN incompatible with cap_drop:ALL; CAP-02 'via iptables' superseded), D-11 internal/scoring home-slice Slice 6 -> Phase 8 (+D-12 scope guard sandbox-advisory-only), D-13 os.Root/openat2 supersedes O_NOFOLLOW (cascade = manual no-follow openat walk not os.RemoveAll). Schema: 0010 -> 0008 (floor 0007), conversation_id text -> uuid. Wave-0 OQs in 08-DECISIONS-WAVE0.md: SSRF export-minimal over netguard-extract, AURA_PRIVACY_MODE add field + fail-fast under local-only+non-empty-allowlist, session connect(2)-allowed seccomp + proxy at bridge-gateway-IP + empty-allowlist-keeps-egressless + extends-AR-05-01 + live-reachability Wave-5 gate. Commits 21060757/1b18b915.
 - [Phase 08]: 08-11 (gap-closure, Tasks 1-3 committed — Task 4 live Gate-3 human-verify PENDING): a live Gate-3 run on 08-10 exposed the LAST CAP-02 gap — the do-not-modify liveManager built the SessionManager with NO Workspace ensurer, so create() skipped EnsureDir, runArgv added no --mount, and the live container's /workspace was the read-only baked image dir under --read-only (1b/2/4a failed with read-only-filesystem on EVERY daemon). Task 1 (afa3a995): injected Workspace: NewWorkspaceManager(runDirOrSkip(t), 0) into liveManager — same AURA_RUN_DIR the cascade test purges, quota 0; no signature/assertion change, endpoint-resolver wiring untouched; Q&A revision documented (the 08-10 do-not-modify constraint was scoped to forcing the shared defaultSessionEndpoint resolver, orthogonal to the workspace injection which restores prod parity at chat.go:129; NOT a PRD amendment, D-04 unchanged). Task 2 (3cd62113): SessionManager.Close now terminateLiveSessions() after the reaper exits — stop+rm+MarkTerminated+Unregister every live session under capMu with a fresh short-deadline ctx, s.mu intentionally not taken, per-container WARN-log, count clamps 0, idempotent via the started guard — killing the orphan aura-sandbox-sess-* contamination that spuriously FAILed 1a/1c in a dirty suite (NO 3-strike escape needed: goleak/reaper/cap/boot-recovery all stayed green). Task 3 (no-op confirm): the CI sandbox.yml sandbox-2b-session-gate job already exports AURA_RUN_DIR=/tmp/aura-run + mkdir -p (line 257/330), builds aura-sandbox:ci baking the 08-10 /workspace (329), wires the egress bridge+host proxy+AURA_SANDBOX_PROXY_ENV before the tier (347-366) + session seccomp (262), runs the full sandbox_integration && db_integration race tier under CI=true (373) — it is the Gate-3 host of record, no edit needed. Unit tier go test -race ./internal/sandbox/ green (5.6s real run); tagged builds (db_integration, sandbox_integration && db_integration) compile. CAP-02 NOT closed + 08-SECURITY threats_open NOT zeroed — both close on the human native-daemon Gate-3 sign-off (Task 4). Docker Desktop CANNOT pass 1b/2/4a (daemon-side device= path unresolvable, 0x100e) — the native-Linux CI DinD job or a stood-up native dockerd is the verification host.
 - [Phase 08]: 08-09 (Gate-3 evidence + live tier, Tasks 1-2 — Task 3 live human-verify PENDING): authored the live sandbox_integration && db_integration tier proving the 4 ROADMAP CAP-02 criteria (PythonStatePersists 1a / WorkspacePersists 1b / ConcurrentSerialized_Live 1c / SymlinkEscapeCascade_Live 2 / ReaperLiveContainerRemoved 3 / NetworkPyPIAllowed 4a+landmine-3 reachability spike / NetworkNonAllowlistRefused 4b / BootRecovery_LazyRecreate) + TestMigration0008_SchemaRoundTrip (uuid FK + CHECK + ON DELETE CASCADE). All compile-green under the tags (vet+build+test-compile exit 0); the two RESEARCH-named tests that collided with the untagged unit tier got _Live suffixes. 08-SECURITY.md consolidates the 40-threat T-08-* register with implementing-file citations, EXTENDS AR-05-01 for the 2b connect-allowing session egress posture (host-proxy-contained, bridge-gateway-reachable, empty-allowlist-egressless — documented before live confirmation), records the Claude-Code allowlist-bypass caveat as AR-08-01 (accepted-with-mitigation); threats_open held at 5 (NOT zeroed). sandbox.yml gained the sandbox-2b-session-gate DinD job (Postgres-through-0008 + sidecar + egress bridge/proxy at the bridge gateway; 2b tier race + live egress leg + go-mutesting >=70% on network.go/scoring.go/sessions.go + 85% coverage fold; CI=true no-skip-as-green). quality-snapshot gained the Phase-8 2b rows. CAP-02 NOT closed + threats_open NOT zeroed — both close on the operator's live Gate-3 sign-off (Task 3). Commits f99d9cb4/d4851c59/b1dc7ea7.
+- [Phase ?]: [Phase 09]: 09-01 (PRD-amendment gate, doc-only #44): D-01..D-25 logged in DECISIONS.md §8. Amendment #44 supersedes the STALE prd.md Slice-3 acceptance (swarm_talk/swarm_join/bus/tier.go/Responder/children-map all CUT v1, replaced by ephemeral swarm_spawn runner + pause-as-report D-04 + flat-v1 D-10). Env catalog ADDS AURA_SWARM_MAX_GOALS=8 + AURA_SWARM_CHILD_TIMEOUT_SEC=120; OQ1 resolved D-21-supersedes-D-23 (NO AURA_MCP_*_SERVER vars, managed config is the path). ROADMAP SC#2->tool-not-available+depth-code-guard, SC#3->5 needs_user_input report entries, SC#5 added live cot_eval E2E. CAP-03 NOT marked complete (code waves pending). Commits 2c05fbdf/d285f17e.
 
 ### Pending Todos
 
@@ -164,6 +166,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-04T07:48:45.666Z
+Last session: 2026-06-04T09:54:26.232Z
 Stopped at: Phase 9 context gathered
-Resume file: .planning/phases/09-swarm-minimal/09-CONTEXT.md
+Resume file: None
