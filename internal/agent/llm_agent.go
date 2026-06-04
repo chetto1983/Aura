@@ -270,7 +270,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			return true, nil
 		}
 
-		preview := a.runTool(ic.Ctx, call)
+		preview := a.runTool(ic.Ctx, ic.Budget, call)
 		a.history = append(a.history, llm.Message{
 			Role: llm.RoleTool, ToolCallID: call.ID, Content: preview,
 		})
@@ -285,13 +285,16 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 // runTool dispatches one tool call and returns the RoleTool history content. A
 // missing tool or an Execute error becomes an error preview the model sees (D-15),
 // never a panic. The shared spillover ctx is injected so large outputs page to a
-// sidecar (D-25).
-func (a *LlmAgent) runTool(ctx context.Context, call llm.ToolCall) string {
+// sidecar (D-25); the swarm ctx is also injected so a swarm_spawn dispatch can read
+// the parent budget/registry/client/config off the ctx (the cycle-free seam — only
+// swarm_spawn reads the key, every other tool ignores it).
+func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCall) string {
 	tool, ok := a.registry.Get(call.Function.Name)
 	if !ok {
 		return fmt.Sprintf("error: unknown tool %q", call.Function.Name)
 	}
 	toolCtx := tools.WithToolCallContext(ctx, a.sessionID, call.ID, a.runDir, a.previewCap)
+	toolCtx = WithSwarmContext(toolCtx, budget, a.registry, a.client, a.cfg, a.sessionID)
 	res, err := tool.Execute(toolCtx, json.RawMessage(call.Function.Arguments))
 	if err != nil {
 		return fmt.Sprintf("error: %s", err.Error())
