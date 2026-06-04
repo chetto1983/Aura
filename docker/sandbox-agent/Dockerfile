@@ -10,5 +10,10 @@ RUN apt-get update \
         python3 \
         python3-pip \
         python-is-python3 \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    # The base image has no /workspace: the volume mount used to create it
+    # root:root, so the sandbox user (uid 1001) could not write and named-volume
+    # persistence broke. Bake it sandbox-owned — Docker copies this ownership
+    # into the volume at first initialization.
+    && install -d -o sandbox -g sandbox /workspace
 USER sandbox
