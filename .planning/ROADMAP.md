@@ -307,7 +307,7 @@ Plans:
 **Slices**: 6
 **Success Criteria** (what must be TRUE):
 
-  1. Operator schedules a cron task `aura task schedule --cron "*/5 * * * *" --kind reminder --args '{"text":"test"}'` and observes the task firing exactly once per 5-minute window (no double-execution under concurrent worker setup)
+  1. Operator schedules a cron task `aura task schedule --cron "*/5 * * * *" --kind reminder --args '{"text":"test"}'` and observes the task firing exactly once per 5-minute window (no double-execution under concurrent worker setup). The operator CLI also accepts `--at` (one-shot) and `--every` (interval), not just `--cron`, so the one-shot North-Star reminder query (Q3) is verifiable without an LLM (per D-14/D-29, amendment #46).
   2. Operator runs the chaos test `scripts/scheduler_chaos.sh` (3 workers, network-partition one for 60s) and observes the partitioned worker's task picked up by a survivor; no duplicate side-effects (idempotency via `agent_job_runs.completed_with_hash`)
   3. Operator observes nightly `backup_postgres` and `backup_neo4j` tasks producing dump artifacts in `$AURA_BACKUP_DIR`; missing the nightly run for 24h triggers an alert log line
   4. Operator triggers a scheduler-spawned agent job with a 10-step budget and observes the job terminating at step 10 (budget inherited from `agent_job_runs`, not a fresh 25)
@@ -315,15 +315,24 @@ Plans:
 **Plans**: 6 plans (4 waves)
 
 Wave 0:
-- [ ] 10-01-PLAN.md — doc-only PRD amendment (D-29): grammar triad + gronx + spawn seam + one task tool + composite delivery + env catalog
+
+- [x] 10-01-PLAN.md — doc-only PRD amendment (D-29): grammar triad + gronx + spawn seam + one task tool + composite delivery + env catalog
+
 Wave 1:
+
 - [ ] 10-02-PLAN.md — infra foundation: migration 0009 + sqlc + store + gronx DST-safe schedule + tools.Without promotion
+
 Wave 2:
+
 - [ ] 10-03-PLAN.md — HA core: FOR UPDATE SKIP LOCKED + held-conn advisory lock + heartbeat + orphan scan + tick loop (SC#1)
 - [ ] 10-04-PLAN.md — ActionRouter + non-deferred task tool (OpenAI-wire-safe schema) + aura task CLI triad + doctor
+
 Wave 3:
+
 - [ ] 10-05-PLAN.md — 6b handlers: reminder + agent_job (LlmAgent spawn, ask_user auto-reject) + backup + composite Notifier + dispatch (SC#3/SC#4)
+
 Wave 4:
+
 - [ ] 10-06-PLAN.md — aura serve daemon + chaos script + CI wiring + live North-Star smoke + Gate-3 checkpoint (SC#2)
 
 ### Phase 11: Skills
@@ -421,7 +430,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
-| 10. Scheduler | 0/TBD | Not started | - |
+| 10. Scheduler | 1/6 | In Progress|  |
 | 11. Skills | 0/TBD | Not started | - |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
@@ -434,7 +443,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 8/8 plans complete
+**Plans:** 1/6 plans executed
 
 **Success Criteria** (what must be TRUE):
 
