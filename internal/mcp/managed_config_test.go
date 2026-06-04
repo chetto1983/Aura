@@ -64,6 +64,32 @@ func TestManagedConfigRoundTripFiltersDisabled(t *testing.T) {
 	}
 }
 
+func TestManagedConfigDockerRuntimeDoesNotRequireLocalCommand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	doc := ManagedConfig{MCPServers: map[string]ManagedServer{
+		"third-party": {
+			Source: "manual",
+			Trust:  ManagedTrust{Class: TrustSandboxedLocal},
+			Runtime: ManagedRuntime{
+				Kind:    RuntimeKindDocker,
+				Image:   "example/mcp:1",
+				Command: []string{"server", "--stdio"},
+			},
+		},
+	}}
+
+	if err := SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("SaveManagedConfig: %v", err)
+	}
+	got, err := LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("LoadManagedConfig: %v", err)
+	}
+	if got.MCPServers["third-party"].Command != "" {
+		t.Fatalf("local command = %q, want empty for docker runtime", got.MCPServers["third-party"].Command)
+	}
+}
+
 func TestManagedConfigLegacyLoadsWithDefaultVersionAndProfile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
 	if err := os.WriteFile(path, []byte(`{

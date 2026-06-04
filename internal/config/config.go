@@ -21,6 +21,7 @@ import (
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/joho/godotenv"
 )
@@ -206,7 +207,7 @@ func loadMCPServers() (map[string]mcp.ServerConfig, error) {
 	if err != nil {
 		return nil, err
 	}
-	managedServers, err := managed.EnabledServers()
+	managedServers, err := mcpmanager.RuntimeServers(managed)
 	if err != nil {
 		return nil, err
 	}

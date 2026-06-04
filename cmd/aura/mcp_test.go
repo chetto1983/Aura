@@ -224,6 +224,23 @@ func TestMCPDoctorAllRedactsAndChecksRecipes(t *testing.T) {
 	}
 }
 
+func TestMCPDoctorBlockedDoesNotLaunch(t *testing.T) {
+	path := withTempMCPConfig(t)
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"blocked": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"doctor", "blocked"}, &out); err != nil {
+		t.Fatalf("doctor blocked: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "blocked: trust approval required") {
+		t.Fatalf("doctor blocked output = %s", got)
+	}
+}
+
 func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 	path := withTempMCPConfig(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
@@ -231,6 +248,8 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 			Command: os.Args[0],
 			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
 			Env:     []string{"AURA_MCP_HELPER=1"},
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			Source:  "recipe:calculator",
 		},
 	}}
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
@@ -261,6 +280,8 @@ func TestMCPDoctorWhatsAppReportsBridgeHealth(t *testing.T) {
 			Command: os.Args[0],
 			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
 			Env:     []string{"AURA_MCP_HELPER=1"},
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			Source:  "recipe:whatsapp",
 		},
 	}}
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {

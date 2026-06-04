@@ -241,6 +241,13 @@ func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
 		return fmt.Errorf("usage: aura mcp doctor <name>|--all")
 	}
 	name := args[0]
+	doc, _, err := loadManagedMCPConfig()
+	if err != nil {
+		return err
+	}
+	if _, ok := doc.MCPServers[name]; ok && doc.NormalizedTrust(name) == mcp.TrustBlocked {
+		return writef(out, "%s blocked: trust approval required before launch\n", name)
+	}
 	cfg, err := effectiveMCPServer(name)
 	if err != nil {
 		return err

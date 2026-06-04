@@ -21,6 +21,10 @@ const (
 	TrustSandboxedLocal = "sandboxed_local"
 	TrustRemoteHTTP     = "remote_http"
 	TrustBlocked        = "blocked"
+
+	RuntimeKindLocal         = "local"
+	RuntimeKindDocker        = "docker"
+	RuntimeKindDockerGateway = "docker_gateway"
 )
 
 // ManagedConfig is Aura's durable MCP server registry. It intentionally keeps the
@@ -68,6 +72,9 @@ type ManagedRuntime struct {
 	Command []string `json:"command,omitempty"`
 	Mounts  []string `json:"mounts,omitempty"`
 	Network []string `json:"network,omitempty"`
+	CPUs    string   `json:"cpus,omitempty"`
+	Memory  string   `json:"memory,omitempty"`
+	Profile string   `json:"profile,omitempty"`
 }
 
 type ManagedToolPolicy struct {
@@ -239,8 +246,21 @@ func validateManagedServers(in map[string]ManagedServer) error {
 		}
 		switch normalizedServerType(cfg) {
 		case ServerTypeStdio:
-			if strings.TrimSpace(cfg.Command) == "" {
-				return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
+			switch normalizedRuntimeKind(cfg) {
+			case RuntimeKindLocal:
+				if strings.TrimSpace(cfg.Command) == "" {
+					return fmt.Errorf("MCP managed config: server %q command cannot be empty", name)
+				}
+			case RuntimeKindDocker:
+				if strings.TrimSpace(cfg.Runtime.Image) == "" {
+					return fmt.Errorf("MCP managed config: server %q docker image cannot be empty", name)
+				}
+			case RuntimeKindDockerGateway:
+				if strings.TrimSpace(cfg.Runtime.Profile) == "" {
+					return fmt.Errorf("MCP managed config: server %q docker gateway profile cannot be empty", name)
+				}
+			default:
+				return fmt.Errorf("MCP managed config: server %q has unknown runtime kind %q", name, cfg.Runtime.Kind)
 			}
 		case ServerTypeStreamableHTTP:
 			if strings.TrimSpace(cfg.URL) == "" {
@@ -254,6 +274,21 @@ func validateManagedServers(in map[string]ManagedServer) error {
 		}
 	}
 	return nil
+}
+
+func normalizedRuntimeKind(cfg ManagedServer) string {
+	switch strings.TrimSpace(cfg.Runtime.Kind) {
+	case "":
+		return RuntimeKindLocal
+	case RuntimeKindLocal:
+		return RuntimeKindLocal
+	case RuntimeKindDocker:
+		return RuntimeKindDocker
+	case RuntimeKindDockerGateway:
+		return RuntimeKindDockerGateway
+	default:
+		return strings.TrimSpace(cfg.Runtime.Kind)
+	}
 }
 
 func normalizedServerType(cfg ManagedServer) string {

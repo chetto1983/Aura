@@ -17,6 +17,28 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
+	path := withTempMCPConfig(t)
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"blocked": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	cfg := config.LoadDB()
+	if _, ok := cfg.MCPServers["blocked"]; ok {
+		t.Fatal("blocked managed server must be filtered before chat boot")
+	}
+	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg)
+	defer func() { _ = closeMCPServers(closers) }()
+	if err != nil {
+		t.Fatalf("buildRegistryWithMCP: %v", err)
+	}
+	if reg == nil || len(closers) != 0 {
+		t.Fatalf("blocked server should not mount: reg nil=%v closers=%d", reg == nil, len(closers))
+	}
+}
+
 // TestBuildRegistryFailSoft proves the D-21 fail-soft boot: a single
 // dead/misconfigured MCP server entry no longer aborts boot. buildRegistryWithMCP
 // must WARN-and-drop the broken server and return a usable registry (err==nil) with
