@@ -37,6 +37,46 @@ var mcpRecipes = map[string]mcpRecipe{
 			Source: "recipe:calculator",
 		},
 	},
+	// mail = martinzarfl/mail-mcp (Node/TS, stdio) — spike 001 VALIDATED (16 tools,
+	// IMAP read-back). SMTP/IMAP creds ride the managed-config Env (Gmail app password,
+	// NOT git); the D-20 allowlist (mcpAllowlist in main.go) scopes destructive mailbox
+	// ops out of every worker. Edit the Env placeholders after `aura mcp install mail`,
+	// or override per `aura mcp add ... --env`.
+	"mail": {
+		Summary: "martinzarfl/mail-mcp over stdio (SMTP/IMAP env config)",
+		Server: mcp.ManagedServer{
+			Command: "npx",
+			Args: []string{
+				"-y",
+				"github:martinzarfl/mail-mcp",
+			},
+			Env: []string{
+				"SMTP_HOST=smtp.gmail.com",
+				"SMTP_PORT=465",
+				"SMTP_USER=you@example.com",
+				"SMTP_PASS=CHANGE_ME_app_password",
+				"SMTP_FROM=you@example.com",
+			},
+			Source: "recipe:mail",
+		},
+	},
+	// whatsapp = chetto1983/whatsapp-mcp@6de1dcd (the user's own fork carrying the
+	// whatsmeow bump + REST-send persistence patch) — spike 002 VALIDATED. The Python/uv
+	// MCP server runs in WSL (CGO whatsmeow bridge has no Windows toolchain); Aura spawns
+	// it as `wsl.exe ... uv run main.py`, stdio piping through wsl.exe transparently. Same
+	// fork-trust pattern as recipe:calculator. The companion whatsmeow bridge (REST :8080)
+	// is operator-managed (compose/manual); the D-20 allowlist scopes it to self-chat ops.
+	"whatsapp": {
+		Summary: "chetto1983/whatsapp-mcp (whatsmeow bridge in WSL, stdio via wsl.exe)",
+		Server: mcp.ManagedServer{
+			Command: "wsl.exe",
+			Args: []string{
+				"-e", "bash", "-lc",
+				"cd ~/whatsapp-mcp/whatsapp-mcp-server && uv run main.py",
+			},
+			Source: "recipe:whatsapp",
+		},
+	},
 }
 
 func runMCP(args []string) {

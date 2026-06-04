@@ -39,7 +39,7 @@ func sandboxDefs() []mcp.ToolDef {
 }
 
 func TestBridge_TranslatesTools(t *testing.T) {
-	got, err := Bridge(context.Background(), "sb", &fakeServer{defs: sandboxDefs()})
+	got, err := Bridge(context.Background(), "sb", &fakeServer{defs: sandboxDefs()}, nil)
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
@@ -53,8 +53,8 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	if exec.Summary != "Execute commands in the sandboxed environment." {
 		t.Fatalf("summary should be the first line, got %q", exec.Summary)
 	}
-	if exec.Deferred {
-		t.Fatal("bridged tools must NOT be Deferred — the model needs the arg schema in the manifest to call them")
+	if !exec.Deferred {
+		t.Fatal("bridged tools must be Deferred:true (D-20) — a multi-tool MCP server floods the manifest into the 30-50-tool degradation zone; tool_search loads the full spec on demand")
 	}
 	// inputSchema passes through unchanged.
 	if !json.Valid(exec.Parameters) || !strings.Contains(string(exec.Parameters), "container_id") {
@@ -69,7 +69,7 @@ func TestBridge_TranslatesTools(t *testing.T) {
 
 func TestBridge_Namespaced(t *testing.T) {
 	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "create_issue", Description: "Open an issue."}}}
-	got, err := Bridge(context.Background(), "github", srv)
+	got, err := Bridge(context.Background(), "github", srv, nil)
 	if err != nil {
 		t.Fatalf("Bridge: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestBridge_Namespaced(t *testing.T) {
 
 func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callText: "42"}
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := Bridge(context.Background(), "sb", srv, nil)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc","commands":["python -c \"print(40+2)\""]}`))
@@ -104,7 +104,7 @@ func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 // the RAW server-side tool name. Kills the "route by spec.Name" mutant.
 func TestBridgedTool_RoutesRawName(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callText: "ok"}
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := Bridge(context.Background(), "sb", srv, nil)
 	if got[0].Spec().Name != "sb__sandbox_exec" {
 		t.Fatalf("precondition: model name not namespaced, got %q", got[0].Spec().Name)
 	}
@@ -119,7 +119,7 @@ func TestBridgedTool_RoutesRawName(t *testing.T) {
 
 func TestBridgedTool_Execute_ErrorAsContent(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callErr: context.DeadlineExceeded}
-	got, _ := Bridge(context.Background(), "sb", srv)
+	got, _ := Bridge(context.Background(), "sb", srv, nil)
 	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
 	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
@@ -135,7 +135,7 @@ func TestMount_Namespaced(t *testing.T) {
 	reg := tools.NewRegistry()
 	srv := &fakeServer{defs: sandboxDefs()}
 
-	names, err := Mount(context.Background(), reg, "sb", srv)
+	names, err := Mount(context.Background(), reg, "sb", srv, nil)
 	if err != nil {
 		t.Fatalf("Mount: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestMount_Namespaced(t *testing.T) {
 	}
 
 	// Re-mounting the same namespace collides on existing names — all-or-nothing.
-	if _, err := Mount(context.Background(), reg, "sb", srv); err == nil {
+	if _, err := Mount(context.Background(), reg, "sb", srv, nil); err == nil {
 		t.Fatal("want collision error on re-mount, got nil")
 	}
 }
@@ -163,7 +163,7 @@ func TestMount_RefusesDuplicateWithinServer(t *testing.T) {
 		{Name: "dup", Description: "a"},
 		{Name: "dup", Description: "b"},
 	}}
-	if _, err := Mount(context.Background(), reg, "srv", srv); err == nil {
+	if _, err := Mount(context.Background(), reg, "srv", srv, nil); err == nil {
 		t.Fatal("want duplicate-name error, got nil")
 	}
 	if _, ok := reg.Get("srv__dup"); ok {
@@ -182,7 +182,7 @@ func TestMount_CollisionHash(t *testing.T) {
 		{Name: "a.b", Description: "first"},
 		{Name: "a/b", Description: "second"},
 	}}
-	names, err := Mount(context.Background(), reg, "srv", srv)
+	names, err := Mount(context.Background(), reg, "srv", srv, nil)
 	if err != nil {
 		t.Fatalf("Mount with sanitize-collision must disambiguate, got %v", err)
 	}
@@ -227,7 +227,7 @@ func TestMount_CollisionHash_RespectsCap(t *testing.T) {
 		{Name: body + "/", Description: "first"},
 		{Name: body + ".", Description: "second"},
 	}}
-	names, err := Mount(context.Background(), reg, "srv", srv)
+	names, err := Mount(context.Background(), reg, "srv", srv, nil)
 	if err != nil {
 		t.Fatalf("Mount with near-cap sanitize-collision must disambiguate, got %v", err)
 	}
