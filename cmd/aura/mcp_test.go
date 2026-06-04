@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -382,6 +383,35 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	}
 }
 
+func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
+	path := withTempMCPConfig(t)
+	server := newMCPHTTPTestServer(t)
+	defer server.Close()
+
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"remote": {
+			Type:   mcp.ServerTypeStreamableHTTP,
+			URL:    server.URL,
+			Source: "manual:http",
+			Trust:  mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
+			ToolPolicy: mcp.ManagedToolPolicy{
+				Allow: []string{"echo"},
+			},
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"tools", "remote"}, &out); err != nil {
+		t.Fatalf("mcp tools remote: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "echo\tread\tmounted\tGet echo text.") {
+		t.Fatalf("tools output missing remote HTTP tool:\n%s", got)
+	}
+}
+
 func TestMCPToolsShowsRiskLabelsAndBlockedTools(t *testing.T) {
 	path := withTempMCPConfig(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
@@ -492,4 +522,56 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func newMCPHTTPTestServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		var req struct {
+			ID     int64  `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		switch req.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "session-remote")
+			writeMCPHTTPResult(t, w, req.ID, map[string]any{"protocolVersion": "2025-06-18"})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			writeMCPHTTPResult(t, w, req.ID, map[string]any{"tools": []map[string]any{{
+				"name":        "echo",
+				"description": "Get echo text.",
+				"inputSchema": map[string]any{"type": "object"},
+			}}})
+		case "tools/call":
+			writeMCPHTTPResult(t, w, req.ID, map[string]any{
+				"content": []map[string]any{{"type": "text", "text": "pong"}},
+			})
+		default:
+			t.Fatalf("unexpected method %q", req.Method)
+		}
+	}))
+}
+
+func writeMCPHTTPResult(t *testing.T, w http.ResponseWriter, id int64, result any) {
+	t.Helper()
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"result":  result,
+	}); err != nil {
+		t.Fatalf("encode response: %v", err)
+	}
 }

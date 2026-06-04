@@ -17,20 +17,51 @@ const (
 var errMCPServerBlocked = errors.New("mcp server blocked")
 
 func RuntimeServers(doc mcp.ManagedConfig) (map[string]mcp.ServerConfig, error) {
+	servers, err := RunnableManagedServers(doc)
+	if err != nil {
+		return nil, err
+	}
 	out := map[string]mcp.ServerConfig{}
+	for name, server := range servers {
+		if isStreamableHTTPServer(server) {
+			continue
+		}
+		cfg, err := RuntimeLaunchConfig(name, server)
+		if err != nil {
+			return nil, err
+		}
+		out[name] = cfg
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	return out, nil
+}
+
+func RunnableManagedServers(doc mcp.ManagedConfig) (map[string]mcp.ManagedServer, error) {
+	out := map[string]mcp.ManagedServer{}
 	for _, name := range doc.ProfileServerNames(doc.ActiveProfileName()) {
 		server := doc.MCPServers[name]
 		if server.Enabled != nil && !*server.Enabled {
 			continue
 		}
-		cfg, err := RuntimeLaunchConfig(name, server)
-		if err != nil {
+		if normalizedTrustForServer(server) == mcp.TrustBlocked {
+			continue
+		}
+		if isStreamableHTTPServer(server) {
+			if strings.TrimSpace(server.URL) == "" {
+				return nil, fmt.Errorf("MCP server %q url cannot be empty", name)
+			}
+			out[name] = server
+			continue
+		}
+		if _, err := RuntimeLaunchConfig(name, server); err != nil {
 			if errors.Is(err, errMCPServerBlocked) {
 				continue
 			}
 			return nil, err
 		}
-		out[name] = cfg
+		out[name] = server
 	}
 	if len(out) == 0 {
 		return nil, nil
@@ -119,4 +150,8 @@ func normalizedTrustForServer(server mcp.ManagedServer) string {
 		return mcp.TrustRemoteHTTP
 	}
 	return mcp.TrustBlocked
+}
+
+func isStreamableHTTPServer(server mcp.ManagedServer) bool {
+	return strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != ""
 }

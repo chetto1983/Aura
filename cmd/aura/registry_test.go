@@ -103,6 +103,43 @@ func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 	}
 }
 
+func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
+	server := newMCPHTTPTestServer(t)
+	defer server.Close()
+	cfg := &config.Config{
+		MCPPolicies: map[string]mcp.ManagedServer{
+			"remote": {
+				Type:  mcp.ServerTypeStreamableHTTP,
+				URL:   server.URL,
+				Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
+				ToolPolicy: mcp.ManagedToolPolicy{
+					Allow: []string{"echo"},
+				},
+			},
+		},
+		SandboxAgent: config.LoadDB().SandboxAgent,
+	}
+
+	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("buildRegistryWithMCP: %v", err)
+	}
+	defer func() { _ = closeMCPServers(closers) }()
+
+	echo, ok := reg.Get("remote__echo")
+	if !ok {
+		t.Fatal("managed Streamable HTTP MCP tool remote__echo was not mounted")
+	}
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
+	res, err := echo.Execute(ctx, json.RawMessage(`{"text":"ping"}`))
+	if err != nil {
+		t.Fatalf("echo Execute: %v", err)
+	}
+	if res.Preview != "pong" {
+		t.Fatalf("echo result = %q, want pong", res.Preview)
+	}
+}
+
 func TestMCPServerHelperProcess(t *testing.T) {
 	if os.Getenv("AURA_MCP_HELPER") != "1" {
 		return

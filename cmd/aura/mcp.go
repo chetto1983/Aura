@@ -15,7 +15,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
@@ -248,6 +247,26 @@ func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
 	if _, ok := doc.MCPServers[name]; ok && doc.NormalizedTrust(name) == mcp.TrustBlocked {
 		return writef(out, "%s blocked: trust approval required before launch\n", name)
 	}
+	if server, ok, err := effectiveManagedMCPServer(name); err != nil {
+		return err
+	} else if ok {
+		cli, defs, err := openAndListManagedMCPTools(ctx, name, server)
+		if err != nil {
+			return err
+		}
+		defer func() { _ = cli.Close() }()
+		if err := writef(out, "ok: %s started; %s\n", name, toolCount(len(defs))); err != nil {
+			return err
+		}
+		if name == "whatsapp" {
+			cfg, err := mcpmanager.RuntimeLaunchConfig(name, server)
+			if err != nil {
+				return err
+			}
+			return writeWhatsAppBridgeHealth(ctx, out, cfg)
+		}
+		return nil
+	}
 	cfg, err := effectiveMCPServer(name)
 	if err != nil {
 		return err
@@ -264,59 +283,6 @@ func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
 		return writeWhatsAppBridgeHealth(ctx, out, cfg)
 	}
 	return nil
-}
-
-func mcpTools(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) != 1 {
-		return fmt.Errorf("usage: aura mcp tools <name>")
-	}
-	name := args[0]
-	server, err := mcpToolPolicyServer(name)
-	if err != nil {
-		return err
-	}
-	cfg, err := effectiveMCPServer(name)
-	if err != nil {
-		return err
-	}
-	cli, defs, err := openAndListMCPTools(ctx, name, cfg)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = cli.Close() }()
-	descriptions := make(map[string]string, len(defs))
-	for _, d := range defs {
-		descriptions[d.Name] = d.Description
-	}
-	decisions := mcpmanager.PolicyDecisionsForTools(defs, server)
-	sort.Slice(decisions, func(i, j int) bool { return decisions[i].ToolName < decisions[j].ToolName })
-	for _, decision := range decisions {
-		status := "mounted"
-		if !decision.Allowed {
-			status = "blocked: " + decision.BlockReason
-		}
-		if err := writef(out, "%s\t%s\t%s\t%s\n",
-			decision.ToolName,
-			strings.Join(decision.RiskLabels, ","),
-			status,
-			firstMCPDescriptionLine(descriptions[decision.ToolName]),
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func mcpToolPolicyServer(name string) (mcp.ManagedServer, error) {
-	doc, _, err := loadManagedMCPConfig()
-	if err != nil {
-		return mcp.ManagedServer{}, err
-	}
-	server := doc.MCPServers[name]
-	if len(server.ToolPolicy.Allow) == 0 && len(server.ToolPolicy.Deny) == 0 && len(server.ToolPolicy.DenyRisk) == 0 {
-		server.ToolPolicy.Allow = mcpAllowlist(name)
-	}
-	return server, nil
 }
 
 func mcpSetEnabled(args []string, enabled bool, out io.Writer) error {
@@ -376,33 +342,6 @@ func loadManagedMCPConfig() (mcp.ManagedConfig, string, error) {
 		doc.MCPServers = map[string]mcp.ManagedServer{}
 	}
 	return doc, path, nil
-}
-
-func effectiveMCPServer(name string) (mcp.ServerConfig, error) {
-	cfg := config.LoadDB()
-	if cfg.MCPServersErr != nil {
-		return mcp.ServerConfig{}, cfg.MCPServersErr
-	}
-	server, ok := cfg.MCPServers[name]
-	if !ok {
-		return mcp.ServerConfig{}, fmt.Errorf("MCP server %q is not configured or is disabled", name)
-	}
-	return server, nil
-}
-
-func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig) (*mcp.Client, []mcp.ToolDef, error) {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	cli, err := mcp.Open(ctx, name, cfg)
-	if err != nil {
-		return nil, nil, err
-	}
-	defs, err := cli.ListTools(ctx)
-	if err != nil {
-		_ = cli.Close()
-		return nil, nil, err
-	}
-	return cli, defs, nil
 }
 
 func writeWhatsAppBridgeHealth(ctx context.Context, out io.Writer, cfg mcp.ServerConfig) error {
@@ -510,22 +449,6 @@ func sortedManagedNames(doc mcp.ManagedConfig) []string {
 func renderMCPCommand(cfg mcp.ServerConfig) string {
 	parts := append([]string{cfg.Command}, cfg.Args...)
 	return strings.Join(parts, " ")
-}
-
-func firstMCPDescriptionLine(s string) string {
-	for _, line := range strings.Split(s, "\n") {
-		if t := strings.TrimSpace(line); t != "" {
-			return t
-		}
-	}
-	return ""
-}
-
-func toolCount(n int) string {
-	if n == 1 {
-		return "1 tool"
-	}
-	return fmt.Sprintf("%d tools", n)
 }
 
 func mcpBoolPtr(v bool) *bool { return &v }

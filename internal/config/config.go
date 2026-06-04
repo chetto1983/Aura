@@ -213,9 +213,13 @@ func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer
 	if err != nil {
 		return nil, nil, err
 	}
-	policies := make(map[string]mcp.ManagedServer, len(managedServers))
-	for name := range managedServers {
-		policies[name] = managed.MCPServers[name]
+	runnableManaged, err := mcpmanager.RunnableManagedServers(managed)
+	if err != nil {
+		return nil, nil, err
+	}
+	policies := make(map[string]mcp.ManagedServer, len(runnableManaged))
+	for name, server := range runnableManaged {
+		policies[name] = server
 	}
 	envServers, err := parseMCPServersJSON(os.Getenv("AURA_MCP_SERVERS_JSON"))
 	if err != nil {
@@ -229,7 +233,7 @@ func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer
 		out[name] = cfg
 		delete(policies, name)
 	}
-	if len(out) == 0 {
+	if len(out) == 0 && len(policies) == 0 {
 		return nil, nil, nil
 	}
 	return out, policies, nil

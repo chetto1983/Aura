@@ -28,6 +28,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
@@ -117,12 +118,20 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config) (*tools.Regis
 		return nil, nil, cfg.MCPServersErr
 	}
 	reg := buildBaseRegistry(cfg)
-	if len(cfg.MCPServers) == 0 {
+	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
 		return reg, nil, nil
 	}
 
-	serverNames := make([]string, 0, len(cfg.MCPServers))
+	seen := map[string]struct{}{}
+	serverNames := make([]string, 0, len(cfg.MCPServers)+len(cfg.MCPPolicies))
 	for name := range cfg.MCPServers {
+		seen[name] = struct{}{}
+		serverNames = append(serverNames, name)
+	}
+	for name := range cfg.MCPPolicies {
+		if _, ok := seen[name]; ok {
+			continue
+		}
 		serverNames = append(serverNames, name)
 	}
 	sort.Strings(serverNames)
@@ -138,7 +147,14 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config) (*tools.Regis
 		if len(policy.ToolPolicy.Allow) == 0 && len(policy.ToolPolicy.Deny) == 0 && len(policy.ToolPolicy.DenyRisk) == 0 {
 			policy.ToolPolicy.Allow = mcpAllowlist(name)
 		}
-		closer, _, blocked, err := mcptools.MountServerWithPolicy(ctx, reg, name, cfg.MCPServers[name], policy)
+		var closer func() error
+		var blocked []mcpmanager.PolicyDecision
+		var err error
+		if _, managed := cfg.MCPPolicies[name]; managed {
+			closer, _, blocked, err = mcptools.MountManagedServerWithPolicy(ctx, reg, name, policy)
+		} else {
+			closer, _, blocked, err = mcptools.MountServerWithPolicy(ctx, reg, name, cfg.MCPServers[name], policy)
+		}
 		if err != nil {
 			slog.Warn("mcp mount failed", "server", name, "err", err)
 			continue
