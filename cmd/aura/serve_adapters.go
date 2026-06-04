@@ -110,10 +110,16 @@ func newCronTaskStore(pool *pgxpool.Pool) *cronTaskStore {
 }
 
 // CreateScheduledTask persists a resolved task via cron.Store, honoring the tool's
-// computed status (active | pending_approval). cron.Store.CreateTask always inserts
-// active, so a pending_approval task is gated with a follow-up status UPDATE in the
-// same logical create (the gate is set before the first tick can claim it).
+// computed status (active | pending_approval) in a SINGLE INSERT. cron.Store.CreateTask
+// now binds the initial status, so a pending_approval task is gated atomically — there
+// is no INSERT-active-then-UPDATE window in which a crash could leave a destructive
+// task active and claimable by the next tick (WR-03 / T-10-12 / D-27). This matches
+// the CLI's one-statement insert.
 func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.CreateTaskInput) (tools.ScheduledTask, error) {
+	status := in.Status
+	if status == "" {
+		status = "active"
+	}
 	created, err := s.store.CreateTask(ctx, cron.CreateTaskParams{
 		Kind: cron.TaskKind(in.Kind),
 		Spec: cron.ScheduleSpec{
@@ -127,26 +133,16 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 		StepBudget:  in.StepBudget,
 		NextRunAt:   in.NextRunAt,
 		NotifyRoute: in.NotifyRoute,
+		Status:      status,
 	})
 	if err != nil {
 		return tools.ScheduledTask{}, err
-	}
-	status := in.Status
-	if status == "" {
-		status = "active"
-	}
-	if status != "active" {
-		if _, err := s.pool.Exec(ctx,
-			`UPDATE aura.scheduler_tasks SET status = $2, updated_at = now() WHERE id = $1`,
-			created.ID, status); err != nil {
-			return tools.ScheduledTask{}, fmt.Errorf("gate task %s to %s: %w", created.ID, status, err)
-		}
 	}
 	return tools.ScheduledTask{
 		ID:           created.ID,
 		Kind:         string(created.Kind),
 		ScheduleKind: string(created.ScheduleKind),
-		Status:       status,
+		Status:       created.Status,
 		NextRunAt:    created.NextRunAt,
 	}, nil
 }

@@ -86,7 +86,10 @@ type Run struct {
 }
 
 // CreateTaskParams carries the resolved fields for a new task. NextRunAt is the
-// first fire computed by the caller via NextRunAt(spec, now).
+// first fire computed by the caller via NextRunAt(spec, now). Status is the INITIAL
+// status the row is created with; an empty Status defaults to "active". A caller
+// that scoring routed to pending_approval sets Status here so the gate is written in
+// the SAME INSERT — a destructive task is NEVER momentarily active (T-10-12/D-27).
 type CreateTaskParams struct {
 	Kind                 TaskKind
 	Spec                 ScheduleSpec
@@ -94,15 +97,24 @@ type CreateTaskParams struct {
 	StepBudget           int
 	NextRunAt            time.Time
 	NotifyRoute          string
+	Status               string
 	IdentityID           string
 	OriginConversationID string
 }
 
-// CreateTask inserts a new active task and returns its domain projection.
+// CreateTask inserts a new task at its initial Status (default "active") and returns
+// its domain projection. The status is part of the single INSERT, so a gated
+// (pending_approval) task is never persisted as active first and then flipped — a
+// crash between two statements can no longer leave a destructive task claimable
+// (WR-03 atomic gate; the sqlc query already binds status as a parameter).
 func (s *Store) CreateTask(ctx context.Context, p CreateTaskParams) (Task, error) {
 	identityID := p.IdentityID
 	if identityID == "" {
 		identityID = "local"
+	}
+	status := p.Status
+	if status == "" {
+		status = "active"
 	}
 	row, err := s.q.CreateTask(ctx, sqlc.CreateTaskParams{
 		ID:                   newUUID(),
@@ -114,7 +126,7 @@ func (s *Store) CreateTask(ctx context.Context, p CreateTaskParams) (Task, error
 		Tz:                   p.Spec.TZ,
 		Payload:              payloadOrEmpty(p.Payload),
 		StepBudget:           int4OrNull(p.StepBudget),
-		Status:               "active",
+		Status:               status,
 		NextRunAt:            tsOrNull(p.NextRunAt),
 		NotifyRoute:          text(p.NotifyRoute),
 		IdentityID:           identityID,

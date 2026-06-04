@@ -128,6 +128,53 @@ func TestCreateGetTask_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestCreateTask_GatedStatusIsAtomic is the WR-03 regression: a task scoring routed
+// to pending_approval is persisted with that status in the SINGLE CreateTask INSERT,
+// never as active-then-UPDATE. A pending_approval row is also NOT due — DueTasks
+// (status='active') can never select it, so the destructive gate holds even before
+// any tick (T-10-12 / D-27).
+func TestCreateTask_GatedStatusIsAtomic(t *testing.T) {
+	pool := migratedPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s := New(pool)
+
+	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	created, err := s.CreateTask(ctx, CreateTaskParams{
+		Kind:      KindAgentJob,
+		Spec:      spec,
+		Payload:   []byte(`{"goal":"drop the staging database"}`),
+		NextRunAt: time.Now().Add(-time.Minute), // would be due IF it were active
+		Status:    "pending_approval",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, created.ID) })
+
+	if created.Status != "pending_approval" {
+		t.Fatalf("created status = %q, want pending_approval (atomic gate)", created.Status)
+	}
+	got, err := s.GetTask(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if got.Status != "pending_approval" {
+		t.Errorf("persisted status = %q, want pending_approval", got.Status)
+	}
+
+	// The gated row is not selectable by the tick even though next_run_at is past.
+	due, err := s.DueTasks(ctx, 10)
+	if err != nil {
+		t.Fatalf("DueTasks: %v", err)
+	}
+	for _, d := range due {
+		if d.ID == created.ID {
+			t.Errorf("pending_approval task wrongly selected as due: %s", d.ID)
+		}
+	}
+}
+
 func TestGetTask_Missing(t *testing.T) {
 	pool := migratedPool(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
