@@ -31,14 +31,14 @@ var askUserToolName = tools.AskUser{}.Spec().Name
 // dispatch as a RoleTool error. The returned []llm.ToolCall is the ask_user-only
 // rewrite of the assistant message (D-A1-07 OpenAI wire-correctness): siblings are
 // dropped and re-emitted by the model on the next round.
-func (a *LlmAgent) pauseCalls(calls []llm.ToolCall) []pauseCall {
+func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) []pauseCall {
 	var out []pauseCall
 	for i := range calls {
 		call := calls[i]
 		if call.Function.Name != askUserToolName {
 			continue
 		}
-		pause, ok := a.detectPause(call)
+		pause, ok := a.detectPause(ctx, call)
 		if !ok {
 			continue
 		}
@@ -67,13 +67,16 @@ func pauseToolCalls(pauses []pauseCall) []llm.ToolCall {
 // detectPause runs the ask_user tool for one call and reports whether it produced
 // the pause sentinel. A nil-tool / non-sentinel error means "not a pause" — the
 // caller lets normal dispatch surface it (validation errors become RoleTool
-// errors the model self-corrects against, D-15).
-func (a *LlmAgent) detectPause(call llm.ToolCall) (*tools.ErrAwaitingUserInput, bool) {
+// errors the model self-corrects against, D-15). ctx is the live invocation
+// context (ic.Ctx) so the pre-execution honors the agent's cancellation, the
+// per-child swarm timeout (D-11), and the budget wallclock deadline (D-13) instead
+// of running detached on context.Background() (CR-02).
+func (a *LlmAgent) detectPause(ctx context.Context, call llm.ToolCall) (*tools.ErrAwaitingUserInput, bool) {
 	tool, ok := a.registry.Get(call.Function.Name)
 	if !ok {
 		return nil, false
 	}
-	_, err := tool.Execute(context.Background(), json.RawMessage(call.Function.Arguments))
+	_, err := tool.Execute(ctx, json.RawMessage(call.Function.Arguments))
 	var pause *tools.ErrAwaitingUserInput
 	if errors.As(err, &pause) {
 		return pause, true
