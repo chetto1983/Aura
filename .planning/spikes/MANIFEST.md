@@ -17,4 +17,4 @@ Ground-truth probe of the MCP infrastructure Phase 9 (Swarm Minimal) depends on 
 | # | Name | Type | Validates | Verdict | Tags |
 |---|------|------|-----------|---------|------|
 | 001 | mail-mcp-live-mount | standard | Given mail-mcp built (npm) + IMAP/SMTP creds, when mounted via the managed config and a send_email→search/fetch round-trip to self runs, then namespaced mail__* tools register and the sent message is read back | VALIDATED ✓ | mcp, mail, mount, phase-9 |
-| 002 | whatsapp-mcp-pairing | standard | Given lharries/whatsapp-mcp paired via QR to the user's number, when send_message to self + list_messages, then the message is read back and the existing whatsapp_integration test passes live | PENDING | mcp, whatsapp, whatsmeow, phase-9 |
+| 002 | whatsapp-mcp-pairing | standard | Given lharries/whatsapp-mcp paired via QR to the user's number, when send_message to self + list_messages, then the message is read back and the existing whatsapp_integration test passes live | VALIDATED ✓ (bridge patch required — see README) | mcp, whatsapp, whatsmeow, phase-9 |
