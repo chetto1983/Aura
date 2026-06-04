@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-06-02 (Phase 5 sandbox escape-rate populated)
+**Last updated:** 2026-06-04 (sandbox-agent hygiene sweep)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -20,12 +20,12 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 
 | Metric | Target | Last measured | Last value | Owner phase | CI gate path |
 |---|---|---|---|---|---|
-| Sandbox escape rate (SandboxEscapeBench UK AISI Mar 2026) | < 5% | 2026-06-02 | 0.0% (deterministic 18-scenario port) | Phase 5 Slice 2a | `internal/sandbox/**`, `sandbox/Dockerfile`, `sandbox/seccomp.json` |
+| Sandbox execution baseline (sandbox-agent pivot) | live command + workspace persistence pass | 2026-06-04 | Phase 8/08.1 validation evidence; bespoke Phase 5 escape bench superseded and removed | Phase 8 sandbox-agent pivot | `internal/sandboxagent/**`, `internal/agent/tools/sandbox_exec.go`, `docker/sandbox-agent/**`, `compose.yaml` |
 | KV cache hit rate (DeepSeek-V4 Flash, 20-turn replay) | ≥ 80% | YYYY-MM-DD (placeholder — populated by Phase 6) | TBD | Phase 6 Slice 4 | `internal/llm/**`, `scripts/cache_invariant_audit.sh` |
 | GraphRAG retrieval recall@5 @ 100K corpus | ≥ 0.8 | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/**`, `internal/db/migrations/neo4j/**` |
 | Vector search p95 latency @ 100K corpus | ≤ 30ms | YYYY-MM-DD (placeholder — populated by Phase 15) | TBD | Phase 15 Slice 11d | `internal/memory/retrieval/**`, sidecar `aura-llama-embed` config |
 | Telegram MarkdownV2 escape fuzz (10K Unicode inputs, 400 Bad Request rate) | = 0% | YYYY-MM-DD (placeholder — populated by Phase 13) | TBD | Phase 13 Slice 9b | `internal/channels/telegram/mdv2.go` |
-| Skill snippet exec success rate (sandbox 2b session, Phase 11 corpus 50 snippets) | ≥ 95% | YYYY-MM-DD (placeholder — populated by Phase 11) | TBD | Phase 11 Slice 7e-core | `internal/skills/snippet/**`, `internal/sandbox/sessions/**` |
+| Skill snippet exec success rate (sandbox-agent workspace, Phase 11 corpus 50 snippets) | ≥ 95% | YYYY-MM-DD (placeholder — populated by Phase 11) | TBD | Phase 11 Slice 7e-core | `internal/skills/snippet/**`, `internal/agent/tools/sandbox_exec.go`, `internal/sandboxagent/**` |
 | Web tools — `ssrf.go` mutation (go-mutesting, ≥70% killed) + `internal/web` coverage (≥85% combined) + live `web_search` p95 (≤2s) | mut ≥70% / cov ≥85% / p95 ≤2s | 2026-06-02 (unit cov; live cells pending @ Gate-3) | unit cov 91.0% / combined 91.5% (PASS, was 75.5%); ssrf.go mutation 94.4% (PASS); SC#1 p95 ~1.01s (PASS) | Phase 7 Slice 5 | `internal/web/**`, `internal/agent/tools/web_*.go`, `searxng/settings.yml` |
 
 ---
@@ -56,7 +56,7 @@ The gate runs as a CI step `name: aura-quality-snapshot-gate` on every PR from P
 
 ## How to update (operator runbook)
 
-1. **Run the relevant pre-merge benchmark** for the row whose owner phase your slice belongs to. The benchmark script path is documented in the phase's PLAN.md (e.g. `scripts/memory_recall_bench.sh` for Phase 15 retrieval rows, `scripts/sandbox_escape_bench.sh` for Phase 5).
+1. **Run the relevant pre-merge benchmark** for the row whose owner phase your slice belongs to. The benchmark command is documented in the phase's current PLAN.md or VALIDATION.md (for example, `scripts/memory_recall_bench.sh` for Phase 15 retrieval rows).
 2. **Record the value** in the `Last value` column, replacing `TBD`.
 3. **Update the `Last measured` column** to the ISO date of the benchmark run (`date -u +%Y-%m-%d`).
 4. **Commit alongside the implementation change** — same PR, same commit if practical. CI will block if you separate them and the implementation lands before the snapshot bump.
@@ -77,25 +77,24 @@ A phase that ships with its row still `TBD` is a contract violation: the next ph
 
 ---
 
-## Phase 5 sandbox escape-rate detail
+## Sandbox-Agent Pivot Detail
 
-> Populated by `scripts/sandbox_escape_bench.sh` (CAP-01 SC#4/SC#5), gated live in
-> `.github/workflows/sandbox.yml`. The escape rate is computed over the applicable
-> runtime/kernel live-denominator scenarios only; structurally-forbidden misconfigs are
-> a separate config-regression gate (must stay 0) and inapplicable Kubernetes scenarios
-> are recorded N/A so the denominator is auditable (RESEARCH OQ1).
+> The original Phase 5 bespoke SandboxEscapeBench row is historical. D-15/D-15b
+> replaced the bespoke `internal/sandbox` sidecar and dedicated sandbox workflow with
+> the local `sandbox-agent` container (`docker/sandbox-agent/Dockerfile`,
+> `internal/sandboxagent`, and the `sandbox_exec` tool). The old bench targeted deleted
+> paths and was removed during quick task 260604-c4l so it cannot be mistaken for
+> current Gate-3 evidence.
 >
-> The live values below are **CI-populated**: the Docker daemon (runsc, the DinD inner
-> daemon with userns-remap, QEMU arm64, go-mutesting) is not available in the authoring
-> environment, so the bench's `write_quality_snapshot` step replaces these cells in the
-> gating DinD run. The bench FAILS the merge if escape-rate ≥ 5%, any config-regression
-> > 0, userns-remap is not live, or the docker.go mutation score < 70%.
+> Current sandbox evidence lives in the Phase 8/08.1 validation artifacts and the
+> sandbox-agent integration surface. The project-wide owned coverage floor is recorded
+> separately below and is re-run via `make coverage`.
 
 | Sub-metric | Target | Last measured | Last value |
 |---|---|---|---|
-| Sandbox escape rate (live denominator) | < 5% | 2026-06-02 | 0.0% |
-| `internal/sandbox/docker.go` mutation spot-check (go-mutesting, ≥70% killed) | ≥ 70% | 2026-06-02 | 100% killed (2026-06-02) |
-| Config-regressions (docker socket / privileged / writable host mount / excess caps) | = 0 | CI-populated (pending) | 0 (asserted) |
+| Sandbox-agent command execution | live pass | 2026-06-04 | Phase 8/08.1 validation evidence |
+| Sandbox-agent workspace persistence | live pass | 2026-06-04 | Phase 8 validation evidence |
+| Bespoke escape bench | removed | 2026-06-04 | superseded by sandbox-agent pivot |
 
 **QEMU-arm64 tracked obligation (D-12 / Pitfall 4):** the arm64 leg runs the negative
 tier + sidecar build under QEMU `--platform linux/arm64`. QEMU syscall emulation can
@@ -117,7 +116,7 @@ before any production arm64 deployment.** It is NOT a per-merge gate.
 
 | Sub-metric | Target | Last measured | Last value |
 |---|---|---|---|
-| Owned-surface coverage gate (`internal/*`, db+neo4j tags) | ≥ 85% | 2026-06-02 | **87.4%** — PASS (the official Gate-3 floor) |
+| Owned-surface coverage gate (`internal/*`, db+neo4j tags) | ≥ 85% | 2026-06-04 | **87.4%** — PASS (`make coverage`, quick task 260604-c4l) |
 | `internal/web` combined coverage (unit + `web_integration`) | ≥ 85% | 2026-06-02 | **91.5% combined / 91.0% unit** — PASS (was 82.0% / 80.5%). Focused test pass added disk-cache round-trip (getDiskLocked/setDiskLocked), both `Error()` methods, fetch cache-HIT (1 origin hit / 2 fetches), and search validHostname/domainAllowed/buildQuery tables. Remaining sub-100% is the convertNode A2 fallback + defensive dial-control arms + read-only-home newCache fallback, all left uncovered by design (no asilo nido). |
 | `internal/web/ssrf.go` mutation (go-mutesting, killed) | ≥ 70% | 2026-06-02 | 94.4% (17/18; lone survivor is the unreachable metadataV6Pfx dead branch; ssrf.go untouched by the gap-closure) |
 | Live `aura web tool web_search` p95 (SC#1) | ≤ 2s (advisory, env-tunable) | 2026-06-02 | TestSearch_Live PASS ~1.01s (under the 2s budget) |
@@ -128,32 +127,24 @@ before any production arm64 deployment.** It is NOT a per-merge gate.
 
 ---
 
-## Phase 8 sandbox-2b session-bound detail
+## Phase 8 Sandbox-Agent Detail
 
-> Populated by the Phase 8 Gate-3 checkpoint (08-09 Task 3). The live cells require
-> the gating DinD job `.github/workflows/sandbox.yml` job `sandbox-2b-session-gate`
-> (Postgres migrated through 0008 + the sidecar + the egress bridge/proxy at the
-> bridge gateway) — none available in the authoring environment, so they are
-> **CI/live-populated** at the human-verify Gate-3. The job FAILS the merge if any
-> 2b criterion test red, the live egress reachability spike fails (landmine #3), a
-> critical-file mutation score < 70%, or the folded coverage < 85%.
+> Populated by the Phase 8/08.1 sandbox-agent pivot and validation artifacts. There is
+> no dedicated sandbox workflow after D-15; the active CI workflow is
+> `.github/workflows/ci.yml`, while sandbox-agent live checks remain operator/native
+> daemon validation until the product adds a new dedicated sandbox-agent CI gate.
 
 | Sub-metric | Target | Last measured | Last value |
 |---|---|---|---|
-| 2b session live tier green (4 ROADMAP criteria, `sandbox_integration && db_integration`, race) | all PASS, no skip tell | CI/live-populated (pending @ Gate-3) | authored + compile-green under tags (vet+build+test-compile exit 0, 2026-06-03); live PASS pending Task-3 |
-| Landmine-3 egress-bridge reachability spike (`TestNetwork_PyPIAllowed`: pip→pypi via host proxy at bridge gateway) | pip install succeeds | CI/live-populated (pending @ Gate-3) | pending Task-3 (a red here proves the bridge/seccomp posture wrong — fix posture, not test) |
-| `internal/sandbox/network.go` mutation (go-mutesting, killed) | ≥ 70% | CI-populated (pending @ Gate-3) | pending Task-3 |
-| `internal/scoring/scoring.go` mutation (go-mutesting, killed) | ≥ 70% | CI-populated (pending @ Gate-3) | pending Task-3 |
-| `internal/sandbox/sessions.go` mutation (go-mutesting, killed) | ≥ 70% | CI-populated (pending @ Gate-3) | pending Task-3 |
-| Owned-surface coverage gate (`internal/*`, sandbox+scoring folded, all tags) | ≥ 85% | CI-populated (pending @ Gate-3) | pending Task-3 |
+| sandbox-agent live command execution | command succeeds | 2026-06-04 | Phase 8/08.1 validation evidence |
+| sandbox-agent workspace persistence | file visible across calls | 2026-06-04 | Phase 8 validation evidence |
+| `sandbox_exec` tool contract | non-deferred, command/args schema | 2026-06-04 | `internal/agent/tools/sandbox_exec.go` + registry tests |
+| Owned-surface coverage gate (`internal/*`, db+neo4j tags) | ≥ 85% | 2026-06-04 | **87.4%** — PASS (`make coverage`, quick task 260604-c4l) |
 
-**AR-05-01 EXTENSION (2b egress posture) — recorded in `08-SECURITY.md`:** the session
-container runs a connect-ALLOWING seccomp variant (`sandbox/seccomp-session.json`)
-because egress is contained host-side by the forward proxy (D-08); the proxy is reached
-at the BRIDGE GATEWAY IP, not container `127.0.0.1`; an empty allowlist keeps the 2a
-egressless posture. The live reachability spike (`TestNetwork_PyPIAllowed`) is the gate.
-The Claude-Code allowlist-bypass / data-exfil caveat is accepted-with-mitigation as
-**AR-08-01** (egressless default + Risky risk-score + privacy-mode fail-fast).
+The bespoke 2b session-manager/security-posture notes remain preserved in the planning
+history. Current product behavior is the simpler sandbox-agent pivot: one local
+container, loopback-only API, persistent `/workspace`, and no in-process Docker
+lifecycle in Aura.
 
 ---
 

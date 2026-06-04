@@ -1,20 +1,23 @@
-ok  	github.com/chetto1983/aura/internal/agent	0.027s	coverage: 95.3% of statements
-ok  	github.com/chetto1983/aura/internal/agent/agenttest	0.008s	coverage: 40.6% of statements
-ok  	github.com/chetto1983/aura/internal/agent/prompt	(cached)	coverage: 93.8% of statements
-ok  	github.com/chetto1983/aura/internal/agent/tools	(cached)	coverage: 96.0% of statements
-ok  	github.com/chetto1983/aura/internal/agent/workflow	0.048s	coverage: 91.5% of statements
-ok  	github.com/chetto1983/aura/internal/askuser	(cached)	coverage: 77.0% of statements
+ok  	github.com/chetto1983/aura/internal/agent	(cached)	coverage: 97.1% of statements
+ok  	github.com/chetto1983/aura/internal/agent/agenttest	(cached)	coverage: 40.6% of statements
+ok  	github.com/chetto1983/aura/internal/agent/mcptools	(cached)	coverage: 87.2% of statements
+ok  	github.com/chetto1983/aura/internal/agent/prompt	(cached)	coverage: 95.2% of statements
+ok  	github.com/chetto1983/aura/internal/agent/tools	(cached)	coverage: 96.1% of statements
+ok  	github.com/chetto1983/aura/internal/agent/workflow	(cached)	coverage: 92.2% of statements
+ok  	github.com/chetto1983/aura/internal/askuser	1.140s	coverage: 94.0% of statements
 ok  	github.com/chetto1983/aura/internal/cachemetrics	(cached)	coverage: 66.2% of statements
 ok  	github.com/chetto1983/aura/internal/canonicaljson	(cached)	coverage: 85.2% of statements
-ok  	github.com/chetto1983/aura/internal/config	0.009s	coverage: 95.6% of statements
-ok  	github.com/chetto1983/aura/internal/conversations	(cached)	coverage: 87.2% of statements
-ok  	github.com/chetto1983/aura/internal/db	(cached)	coverage: 82.9% of statements
+ok  	github.com/chetto1983/aura/internal/config	0.095s	coverage: 89.4% of statements
+ok  	github.com/chetto1983/aura/internal/conversations	1.911s	coverage: 86.2% of statements
+ok  	github.com/chetto1983/aura/internal/db	2.495s	coverage: 82.9% of statements
 	github.com/chetto1983/aura/internal/db/sqlc		coverage: 0.0% of statements
 ?   	github.com/chetto1983/aura/internal/eval	[no test files]
-ok  	github.com/chetto1983/aura/internal/identity	(cached)	coverage: 98.0% of statements
-ok  	github.com/chetto1983/aura/internal/knowledge	4.582s	coverage: 94.1% of statements
-ok  	github.com/chetto1983/aura/internal/llm	0.010s	coverage: 94.3% of statements
-ok  	github.com/chetto1983/aura/internal/llm/openai_compat	(cached)	coverage: 97.6% of statements
-ok  	github.com/chetto1983/aura/internal/runner	0.020s	coverage: 87.3% of statements
-ok  	github.com/chetto1983/aura/internal/sandbox	1.117s	coverage: 64.2% of statements
-	github.com/chetto1983/aura/internal/swarm		coverage: 0.0% of statements
+ok  	github.com/chetto1983/aura/internal/identity	0.735s	coverage: 98.0% of statements
+ok  	github.com/chetto1983/aura/internal/knowledge	12.807s	coverage: 94.1% of statements
+ok  	github.com/chetto1983/aura/internal/llm	(cached)	coverage: 94.3% of statements
+ok  	github.com/chetto1983/aura/internal/llm/openai_compat	(cached)	coverage: 97.7% of statements
+ok  	github.com/chetto1983/aura/internal/mcp	(cached)	coverage: 56.6% of statements
+ok  	github.com/chetto1983/aura/internal/runner	(cached)	coverage: 87.3% of statements
+ok  	github.com/chetto1983/aura/internal/sandboxagent	(cached)	coverage: 96.3% of statements
+ok  	github.com/chetto1983/aura/internal/scoring	(cached)	coverage: 100.0% of statements
+ok  	github.com/chetto1983/aura/internal/web	(cached)	coverage: 91.0% of statements

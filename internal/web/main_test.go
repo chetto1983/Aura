@@ -11,8 +11,7 @@ import (
 // TestMain runs the web package unit tests under goleak. The Phase 7 engine owns
 // a pinned-IP http.Transport (DisableKeepAlives) plus a DNS-pin TTL cache and an
 // in-memory response cache; a leaked persistConn, dial goroutine, or cache janitor
-// would trip here. Mirrors internal/sandbox/docker_test.go and
-// internal/agent/tools/main_test.go.
+// would trip here. Mirrors the split harness in internal/agent/tools/main_test.go.
 //
 // The live-SearXNG tier lives behind the //go:build web_integration tag (it needs
 // a reachable SEARXNG_URL and the public internet); that build carries its own
