@@ -13,8 +13,13 @@ package cron
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -101,3 +106,155 @@ func envInt(key string, def int) int {
 	}
 	return n
 }
+
+// Start runs the boot reconciliation (orphan scan + missed catch-up) then the tick
+// loop until ctx is cancelled. It is graceful: on cancel it stops scheduling new
+// ticks, lets the in-flight tick finish (its claims drain their semaphore), and
+// returns nil. The loop owns no leaked goroutines — every claim's heartbeat is
+// joined before the tick returns (goleak gate).
+func (s *Scheduler) Start(ctx context.Context) error {
+	_ = s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
+	if _, err := s.catchUpMissed(ctx); err != nil {
+		slog.Warn("scheduler boot catch-up failed", "err", err)
+	}
+
+	ticker := time.NewTicker(s.tickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if err := s.tick(ctx); err != nil {
+				slog.Warn("scheduler tick failed", "err", err)
+			}
+		}
+	}
+}
+
+// tick selects the due tasks (next_run_at<=Now, FOR UPDATE SKIP LOCKED) up to the
+// concurrency cap, then claims+dispatches each under a semaphore bounded by
+// maxConcurrent so held conns never exceed the cap (Pitfall 2). A task already
+// in-flight (another worker holds its advisory lock) is skipped, logged
+// `skipped: previous run in progress`, and rescheduled via NextRunAt (D-04). The
+// tick blocks until all dispatched runs finish so Start's graceful shutdown joins
+// them (no leaked goroutine).
+func (s *Scheduler) tick(ctx context.Context) error {
+	due, err := s.store.DueTasks(ctx, s.maxConcurrent)
+	if err != nil {
+		return fmt.Errorf("tick due tasks: %w", err)
+	}
+
+	sem := make(chan struct{}, s.maxConcurrent)
+	var wg sync.WaitGroup
+	for _, task := range due {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(task Task) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.runOne(ctx, task)
+		}(task)
+	}
+	wg.Wait()
+	return nil
+}
+
+// runOne claims and dispatches a single due task. On a lost advisory lock it logs
+// the D-04 skip and reschedules; on a win it heartbeats the run on the held conn,
+// dispatches (10-05 handlers via the Dispatcher seam; nil = claim-and-release
+// probe), then releases the lock + conn regardless of outcome.
+func (s *Scheduler) runOne(ctx context.Context, task Task) {
+	claim, err := s.claim(ctx, task)
+	if err != nil {
+		if errors.Is(err, ErrAlreadyRunning) {
+			slog.Info("skipped: previous run in progress", "task", task.ID)
+			s.reschedule(ctx, task)
+			return
+		}
+		slog.Warn("scheduler claim failed", "task", task.ID, "err", err)
+		return
+	}
+	defer claim.release(ctx)
+
+	stop := startHeartbeat(ctx, claim.Conn(), claim.RunID, s.hbInterval)
+	defer stop()
+
+	if s.dispatch != nil {
+		if err := s.dispatch.Dispatch(ctx, task, claim); err != nil {
+			slog.Warn("scheduler dispatch failed", "task", task.ID, "run", claim.RunID, "err", err)
+		}
+	}
+}
+
+// reschedule advances a skipped/overdue task's next_run_at to its next fire so the
+// loop does not re-pick it every tick (D-04). A one-shot `at` task with no further
+// fire goes to next_run_at zero (UpdateNextRunAt nulls it), retiring it.
+func (s *Scheduler) reschedule(ctx context.Context, task Task) {
+	next, err := NextRunAt(specFromTask(task), s.Now().UTC())
+	if err != nil {
+		slog.Warn("scheduler reschedule compute failed", "task", task.ID, "err", err)
+		return
+	}
+	if err := s.store.UpdateNextRunAt(ctx, task.ID, next); err != nil {
+		slog.Warn("scheduler reschedule failed", "task", task.ID, "err", err)
+	}
+}
+
+// DuringQuietHours reports whether the injectable clock's wall time falls inside the
+// AURA_SCHEDULER_QUIET_HOURS window (e.g. "23:00-07:30"), evaluated in the scheduler
+// TZ. It is a Now-based predicate the Notifier (10-05) consults to DEFER
+// non-destructive notifications (D-23) — it never gates firing here. An unset or
+// malformed window is "never quiet" (fail-open: notifications are not silently lost).
+func (s *Scheduler) DuringQuietHours(tz string) bool {
+	window := os.Getenv("AURA_SCHEDULER_QUIET_HOURS")
+	if window == "" {
+		return false
+	}
+	start, end, ok := parseQuietWindow(window)
+	if !ok {
+		return false
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		loc = time.UTC
+	}
+	nowM := minuteOfDay(s.Now().In(loc))
+	if start <= end {
+		return nowM >= start && nowM < end
+	}
+	// Wrap-around window (e.g. 23:00-07:30): quiet if before end OR at/after start.
+	return nowM >= start || nowM < end
+}
+
+// parseQuietWindow parses "HH:MM-HH:MM" to start/end minute-of-day. ok=false on any
+// malformed input (the caller treats that as never-quiet).
+func parseQuietWindow(w string) (start, end int, ok bool) {
+	lo, hi, found := strings.Cut(w, "-")
+	if !found {
+		return 0, 0, false
+	}
+	s, ok1 := parseHHMM(lo)
+	e, ok2 := parseHHMM(hi)
+	if !ok1 || !ok2 {
+		return 0, 0, false
+	}
+	return s, e, true
+}
+
+// parseHHMM parses "HH:MM" to minute-of-day in [0,1440).
+func parseHHMM(s string) (int, bool) {
+	hh, mm, found := strings.Cut(strings.TrimSpace(s), ":")
+	if !found {
+		return 0, false
+	}
+	h, err1 := strconv.Atoi(hh)
+	m, err2 := strconv.Atoi(mm)
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+		return 0, false
+	}
+	return h*60 + m, true
+}
+
+// minuteOfDay returns t's wall-clock minute-of-day in its location.
+func minuteOfDay(t time.Time) int { return t.Hour()*60 + t.Minute() }
