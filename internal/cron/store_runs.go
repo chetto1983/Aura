@@ -52,6 +52,21 @@ func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 	return runFromRow(row), nil
 }
 
+// DueTasks returns up to limit active tasks whose next_run_at has passed, locked
+// FOR UPDATE SKIP LOCKED so concurrent workers never collide on the same row (the
+// tick loop's batch pickup). limit is the max-concurrent headroom.
+func (s *Store) DueTasks(ctx context.Context, limit int) ([]Task, error) {
+	rows, err := s.q.DueTasks(ctx, int32(limit))
+	if err != nil {
+		return nil, fmt.Errorf("due tasks: %w", err)
+	}
+	out := make([]Task, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, taskFromRow(r))
+	}
+	return out, nil
+}
+
 // StaleRun identifies a run whose heartbeat lapsed past the recovery window.
 type StaleRun struct {
 	RunID  string
