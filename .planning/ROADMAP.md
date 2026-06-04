@@ -324,8 +324,8 @@ Wave 1:
 
 Wave 2:
 
-- [ ] 10-03-PLAN.md — HA core: FOR UPDATE SKIP LOCKED + held-conn advisory lock + heartbeat + orphan scan + tick loop (SC#1)
-- [ ] 10-04-PLAN.md — ActionRouter + non-deferred task tool (OpenAI-wire-safe schema) + aura task CLI triad + doctor
+- [x] 10-03-PLAN.md — HA core: FOR UPDATE SKIP LOCKED + held-conn advisory lock + heartbeat + orphan scan + tick loop (SC#1)
+- [x] 10-04-PLAN.md — ActionRouter + non-deferred task tool (OpenAI-wire-safe schema) + aura task CLI triad + doctor
 
 Wave 3:
 
@@ -430,7 +430,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
-| 10. Scheduler | 2/6 | In Progress|  |
+| 10. Scheduler | 4/6 | In Progress|  |
 | 11. Skills | 0/TBD | Not started | - |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
@@ -443,7 +443,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 2/6 plans executed
+**Plans:** 4/6 plans executed
 
 **Success Criteria** (what must be TRUE):
 
