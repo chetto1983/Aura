@@ -177,6 +177,16 @@ func (s *Scheduler) runOne(ctx context.Context, task Task) {
 	}
 	defer claim.release(ctx)
 
+	// Advance next_run_at to the next fire as soon as the claim is won, BEFORE the
+	// dispatch runs. The held advisory lock makes the task a singleton for the run's
+	// lifetime, but it does NOT take the task out of the due-set: until next_run_at is
+	// pushed forward, every subsequent tick re-selects (and, once the lock releases,
+	// re-fires) the same due task — a recurring reminder otherwise fires once per tick
+	// instead of once per window (SC#1). A one-shot `at` task advances to a zero
+	// next_run_at (retired). Reschedule on claim, not after dispatch, so a long/failed
+	// run never re-fires mid-flight.
+	s.reschedule(ctx, task)
+
 	stop := startHeartbeat(ctx, claim.Conn(), claim.RunID, s.hbInterval)
 	defer stop()
 

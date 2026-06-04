@@ -138,7 +138,12 @@ func TestSchedulerNorthStarE2E(t *testing.T) {
 	// Q3 — natural Italian reminder, NO "cron"/"task"/"schedule" word in the prompt
 	// (asserted below). The model must pick the `task` tool and emit an `at` schedule.
 	t.Run("Q3_reminder_at", func(t *testing.T) {
-		prompt := "Ricordami di chiamare Monica oggi alle 17:30."
+		// "domani alle 9:30" is unambiguously in the future regardless of the wall
+		// clock at run time — "oggi alle HH:MM" silently becomes a past (unschedulable)
+		// instant when the suite runs after that local time, and the model then
+		// (correctly) declines to schedule a past reminder, which is a test-prompt flaw,
+		// not a wiring bug (Gate-3 finding, 10-06).
+		prompt := "Ricordami di chiamare Monica domani alle 9:30."
 		assertNoSchedulingLiteral(t, prompt)
 		before := time.Now().UTC()
 		driveTurn(t, ctx, client, *baseCfg, reg, cfg, prompt)
@@ -203,9 +208,16 @@ func driveTurn(t *testing.T, ctx context.Context, client llm.Client, llmCfg llm.
 		t.Fatalf("NewBudget: %v", err)
 	}
 	ic := agent.InvocationContext{Ctx: ctx, RequestID: uuid.Must(uuid.NewV7()), Budget: budget}
-	for _, err := range worker.Run(ic) {
+	for ev, err := range worker.Run(ic) {
 		if err != nil {
 			t.Fatalf("live turn error: %v", err)
+		}
+		// Surface the model's tool choice + final prose so a failure (the model
+		// declining to schedule) is diagnosable from -v output without re-instrumenting.
+		if ev != nil && ev.LLMResponse != nil {
+			for _, tc := range ev.LLMResponse.ToolCalls {
+				t.Logf("tool_call name=%s args=%s", tc.Function.Name, tc.Function.Arguments)
+			}
 		}
 	}
 }

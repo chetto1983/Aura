@@ -120,7 +120,7 @@ func (h BackupHandler) dumpArgv(dest string) []string {
 	if h.Variant == BackupNeo4j {
 		return []string{"exec", neo4jContainer, "neo4j-admin", "database", "dump", "neo4j", "--to-path", dest}
 	}
-	return []string{"exec", pgContainer, "pg_dump", "-U", "aura_app", "-Fc", "-f", dest, "aura"}
+	return []string{"exec", pgContainer, "pg_dump", "-U", "aura_migrate", "-Fc", "-f", dest, "aura"}
 }
 
 // dumpFilename builds the timestamped dump filename for the variant.

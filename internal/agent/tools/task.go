@@ -123,6 +123,7 @@ func (t *TaskTool) Spec() Spec {
 		Name:    "task",
 		Summary: "Schedule, list, cancel, run, or approve background tasks and reminders.",
 		Description: "Manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres|backup_neo4j); action=list shows active and awaiting-approval tasks; action=cancel/run_now/approve operate on a task_id. " +
+			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder), schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
 			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require an explicit approve before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),
 		Deferred:   false,

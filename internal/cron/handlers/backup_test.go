@@ -13,7 +13,10 @@ import (
 func TestBackupDumpArgvPostgresFixed(t *testing.T) {
 	t.Parallel()
 	argv := BackupHandler{Variant: BackupPostgres}.dumpArgv("/dest/pg.dump")
-	want := []string{"exec", "aura-postgres", "pg_dump", "-U", "aura_app", "-Fc", "-f", "/dest/pg.dump", "aura"}
+	// Dump role is aura_migrate (owns every aura.* + public.schema_migrations table):
+	// aura_app lacks LOCK on the migration trackers, so `pg_dump -U aura_app` fails live
+	// with "permission denied for table schema_migrations" (Gate-3 SC#3 finding, 10-06).
+	want := []string{"exec", "aura-postgres", "pg_dump", "-U", "aura_migrate", "-Fc", "-f", "/dest/pg.dump", "aura"}
 	if !slices.Equal(argv, want) {
 		t.Fatalf("postgres argv = %v, want %v", argv, want)
 	}
@@ -158,8 +161,16 @@ func TestBackupDockerExecLive(t *testing.T) {
 		}
 		t.Skip("manual-only: set AURA_BACKUP_LIVE=1 with the docker stack up to run the real dump")
 	}
-	dir := t.TempDir()
-	t.Setenv("AURA_BACKUP_DIR", dir)
+	// The dump runs `docker exec ... pg_dump -f <dest>` INSIDE the container, so the
+	// dest must be writable in the container AND readable from the host. A plain
+	// t.TempDir() (host-only path) is invisible to the container; honour an explicit
+	// AURA_BACKUP_DIR (a bind-mounted/volume path) when the operator sets one and only
+	// fall back to TempDir for the degenerate same-namespace case (Gate-3 SC#3, 10-06).
+	dir := strings.TrimSpace(os.Getenv("AURA_BACKUP_DIR"))
+	if dir == "" {
+		dir = t.TempDir()
+		t.Setenv("AURA_BACKUP_DIR", dir)
+	}
 
 	summary, err := BackupHandler{Variant: BackupPostgres}.Run(context.Background(), Job{})
 	if err != nil {
