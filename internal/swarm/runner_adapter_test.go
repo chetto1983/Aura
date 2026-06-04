@@ -69,7 +69,7 @@ func TestRunnerAdapterWorkerRegistryExcludesSwarmSpawn(t *testing.T) {
 	if _, ok := parent.Get(swarmSpawnTool); !ok {
 		t.Fatal("precondition: the parent registry must carry swarm_spawn")
 	}
-	worker := Without(parent, swarmSpawnTool)
+	worker := tools.Without(parent, swarmSpawnTool)
 	if _, ok := worker.Get(swarmSpawnTool); ok {
 		t.Fatal("the worker registry must NOT contain swarm_spawn (flat v1, D-08/D-10)")
 	}

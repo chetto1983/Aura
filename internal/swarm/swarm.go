@@ -136,7 +136,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	worker := agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     rc.Client,
 		LLM:        rc.LLM,
-		Registry:   Without(rc.ParentRegistry, swarmSpawnTool),
+		Registry:   tools.Without(rc.ParentRegistry, swarmSpawnTool),
 		PreviewCap: rc.Cfg.ToolPreviewCap,
 		RunDir:     rc.Cfg.RunDir,
 		SessionID:  fmt.Sprintf("%s-swarm-%s", rc.ConvID, childID), // FLAT — no slash (Pitfall 4)
