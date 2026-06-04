@@ -30,6 +30,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
 		"AURA_WEB_FETCH_TIMEOUT_SEC", "AURA_WEB_USER_AGENT",
 		"AURA_MCP_SERVERS_JSON", "AURA_MCP_CONFIG",
+		"AURA_SWARM_MAX_GOALS", "AURA_SWARM_CHILD_TIMEOUT_SEC", "AURA_SWARM_MAX_CONCURRENT",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
@@ -122,6 +123,37 @@ func TestLoad_SandboxAgentDefaultsAndOverrides(t *testing.T) {
 	}
 	if cfg.SandboxAgent.TimeoutSec != 45 {
 		t.Errorf("SandboxAgent.TimeoutSec override = %d", cfg.SandboxAgent.TimeoutSec)
+	}
+}
+
+// TestSwarmConfigDefaultsAndOverrides locks the Phase 9 swarm knobs (D-11/D-12/D-13):
+// unset → builtin defaults; set → overrides.
+func TestSwarmConfigDefaultsAndOverrides(t *testing.T) {
+	clearPostgresEnv(t)
+
+	cfg := LoadDB()
+	if cfg.MaxSwarmGoals != 8 {
+		t.Errorf("MaxSwarmGoals default = %d, want 8", cfg.MaxSwarmGoals)
+	}
+	if cfg.SwarmChildTimeoutSec != 120 {
+		t.Errorf("SwarmChildTimeoutSec default = %d, want 120", cfg.SwarmChildTimeoutSec)
+	}
+	if cfg.MaxSwarmConcurrent != 4 {
+		t.Errorf("MaxSwarmConcurrent default = %d, want 4", cfg.MaxSwarmConcurrent)
+	}
+
+	t.Setenv("AURA_SWARM_MAX_GOALS", "5")
+	t.Setenv("AURA_SWARM_CHILD_TIMEOUT_SEC", "60")
+	t.Setenv("AURA_SWARM_MAX_CONCURRENT", "2")
+	cfg = LoadDB()
+	if cfg.MaxSwarmGoals != 5 {
+		t.Errorf("MaxSwarmGoals override = %d, want 5", cfg.MaxSwarmGoals)
+	}
+	if cfg.SwarmChildTimeoutSec != 60 {
+		t.Errorf("SwarmChildTimeoutSec override = %d, want 60", cfg.SwarmChildTimeoutSec)
+	}
+	if cfg.MaxSwarmConcurrent != 2 {
+		t.Errorf("MaxSwarmConcurrent override = %d, want 2", cfg.MaxSwarmConcurrent)
 	}
 }
 
