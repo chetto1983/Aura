@@ -8,10 +8,14 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
+// ImportOptions controls how ImportProfile merges an incoming managed config,
+// notably whether existing secret credentials are overwritten or preserved.
 type ImportOptions struct {
 	OverwriteCredentials bool
 }
 
+// ExportProfile extracts a single profile and its servers from doc into a
+// shareable ManagedConfig, redacting secret env values into ${KEY} placeholders.
 func ExportProfile(doc mcp.ManagedConfig, profile string) (mcp.ManagedConfig, error) {
 	names := doc.ProfileServerNames(profile)
 	if len(names) == 0 {
@@ -36,6 +40,9 @@ func ExportProfile(doc mcp.ManagedConfig, profile string) (mcp.ManagedConfig, er
 	return out, nil
 }
 
+// ImportProfile merges incoming profiles and servers into base in place,
+// preserving existing credentials for known secret env keys unless
+// opts.OverwriteCredentials is set.
 func ImportProfile(base *mcp.ManagedConfig, incoming mcp.ManagedConfig, opts ImportOptions) error {
 	if base.MCPServers == nil {
 		base.MCPServers = map[string]mcp.ManagedServer{}
@@ -65,6 +72,8 @@ func ImportProfile(base *mcp.ManagedConfig, incoming mcp.ManagedConfig, opts Imp
 	return nil
 }
 
+// RedactEnv replaces values of secret env entries with ${KEY} placeholders,
+// leaving non-secret and already-placeholder entries unchanged.
 func RedactEnv(env []string) []string {
 	out := make([]string, 0, len(env))
 	for _, entry := range env {

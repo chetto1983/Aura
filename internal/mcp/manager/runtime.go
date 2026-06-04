@@ -8,6 +8,8 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
+// Runtime kinds select how a managed MCP server is launched: directly on the
+// host, in a per-server Docker container, or via the Docker MCP gateway.
 const (
 	RuntimeLocal         = mcp.RuntimeKindLocal
 	RuntimeDocker        = mcp.RuntimeKindDocker
@@ -16,6 +18,9 @@ const (
 
 var errMCPServerBlocked = errors.New("mcp server blocked")
 
+// RuntimeServers builds launchable ServerConfigs for the active profile's
+// runnable stdio servers, excluding streamable-HTTP servers; it returns nil
+// when none are launchable.
 func RuntimeServers(doc mcp.ManagedConfig) (map[string]mcp.ServerConfig, error) {
 	servers, err := RunnableManagedServers(doc)
 	if err != nil {
@@ -38,6 +43,9 @@ func RuntimeServers(doc mcp.ManagedConfig) (map[string]mcp.ServerConfig, error) 
 	return out, nil
 }
 
+// RunnableManagedServers returns the active profile's servers that are eligible
+// to run, skipping disabled, trust-blocked, and unapprovable servers; it
+// returns nil when none qualify.
 func RunnableManagedServers(doc mcp.ManagedConfig) (map[string]mcp.ManagedServer, error) {
 	out := map[string]mcp.ManagedServer{}
 	for _, name := range doc.ProfileServerNames(doc.ActiveProfileName()) {
@@ -69,6 +77,9 @@ func RunnableManagedServers(doc mcp.ManagedConfig) (map[string]mcp.ManagedServer
 	return out, nil
 }
 
+// RuntimeLaunchConfig resolves the concrete command/args/env for launching a
+// server based on its runtime kind, returning errMCPServerBlocked when trust
+// approval is required.
 func RuntimeLaunchConfig(name string, server mcp.ManagedServer) (mcp.ServerConfig, error) {
 	trust := normalizedTrustForServer(server)
 	if trust == mcp.TrustBlocked {

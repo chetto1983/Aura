@@ -5,6 +5,8 @@ import (
 	"strings"
 )
 
+// Transport is the common interface over an MCP server connection, implemented by
+// both the stdio Client and the Streamable-HTTP HTTPClient.
 type Transport interface {
 	ListTools(context.Context) ([]ToolDef, error)
 	CallTool(context.Context, string, map[string]any) (string, error)
@@ -12,6 +14,9 @@ type Transport interface {
 	Close() error
 }
 
+// OpenServer opens the appropriate transport for a managed server, dispatching to
+// OpenHTTP for streamable-HTTP servers (deriving auth from env) and to Open for
+// stdio servers.
 func OpenServer(ctx context.Context, name string, server ManagedServer) (Transport, error) {
 	if normalizedServerType(server) == ServerTypeStreamableHTTP {
 		headers, bearer := httpAuthFromEnv(server.Env)

@@ -29,6 +29,10 @@ func MountServer(ctx context.Context, reg *tools.Registry, name string, cfg mcp.
 	return cli.Close, names, nil
 }
 
+// MountServerWithPolicy spawns one stdio MCP server, mounts its policy-allowed
+// tools into reg, and returns a closer that shuts the subprocess down along with
+// the PolicyDecisions for the tools blocked by server's risk policy. On any
+// failure it returns an error and leaves reg untouched / the subprocess reaped.
 func MountServerWithPolicy(ctx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, server mcp.ManagedServer) (closer func() error, names []string, blocked []mcpmanager.PolicyDecision, err error) {
 	cli, err := mcp.Open(ctx, name, cfg)
 	if err != nil {
@@ -42,6 +46,11 @@ func MountServerWithPolicy(ctx context.Context, reg *tools.Registry, name string
 	return cli.Close, names, blocked, nil
 }
 
+// MountManagedServerWithPolicy opens a managed MCP server (stdio or streamable
+// HTTP, resolved from its config), mounts its policy-allowed tools into reg, and
+// returns a closer plus the PolicyDecisions for the tools blocked by the risk
+// policy. On any failure it returns an error and leaves reg untouched / the
+// transport closed.
 func MountManagedServerWithPolicy(ctx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, blocked []mcpmanager.PolicyDecision, err error) {
 	srv, err := openManagedServer(ctx, name, server)
 	if err != nil {

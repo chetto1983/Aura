@@ -68,7 +68,7 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 }
 
 func mcpRecipes(args []string, out io.Writer) error {
-	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") {
+	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") { //nolint:gosec // G602 false positive: args[0] guarded by len(args)==1
 		return fmt.Errorf("usage: aura mcp recipes [--json]")
 	}
 	catalog := mcpmanager.BuiltInCatalog()
@@ -233,7 +233,7 @@ func mcpList(out io.Writer) error {
 }
 
 func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
-	if len(args) == 1 && args[0] == "--all" {
+	if len(args) == 1 && args[0] == "--all" { //nolint:gosec // G602 false positive: args[0] guarded by len(args)==1
 		return mcpDoctorAll(ctx, out)
 	}
 	if len(args) != 1 {

@@ -15,6 +15,8 @@ import (
 
 const httpProtocolVersion = "2025-06-18"
 
+// HTTPConfig declares how to reach a Streamable-HTTP MCP server: its endpoint URL
+// plus optional static headers, bearer token, and an override http.Client.
 type HTTPConfig struct {
 	URL         string
 	Headers     map[string]string
@@ -22,6 +24,9 @@ type HTTPConfig struct {
 	Client      *http.Client
 }
 
+// HTTPClient speaks the Streamable-HTTP MCP transport to one remote server,
+// tracking the negotiated protocol version and Mcp-Session-Id across requests.
+// The zero value is unusable; use OpenHTTP.
 type HTTPClient struct {
 	name            string
 	endpoint        string
@@ -34,6 +39,9 @@ type HTTPClient struct {
 	nextID          atomic.Int64
 }
 
+// OpenHTTP connects to the Streamable-HTTP MCP server at cfg.URL and completes the
+// initialize handshake, capturing the session id and negotiated protocol version.
+// name is a short label used in error messages (the mcpServers key).
 func OpenHTTP(ctx context.Context, name string, cfg HTTPConfig) (*HTTPClient, error) {
 	if strings.TrimSpace(cfg.URL) == "" {
 		return nil, fmt.Errorf("mcp %q: empty HTTP URL", name)
@@ -77,6 +85,7 @@ func (c *HTTPClient) initialize(ctx context.Context) error {
 	return nil
 }
 
+// ListTools returns the server's advertised tools (tools/list).
 func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolDef, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -96,6 +105,8 @@ func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolDef, error) {
 	return env.Tools, nil
 }
 
+// CallTool invokes one tool (tools/call) and returns its concatenated text
+// content; a result with isError=true is returned as an error carrying that text.
 func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]any) (string, error) {
 	if err := ctx.Err(); err != nil {
 		return "", err
@@ -119,6 +130,8 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 	return text, nil
 }
 
+// Ping issues an MCP ping round-trip to confirm the remote server is reachable and
+// the session is still valid.
 func (c *HTTPClient) Ping(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -131,6 +144,8 @@ func (c *HTTPClient) Ping(ctx context.Context) error {
 	return nil
 }
 
+// Close terminates the MCP session with an HTTP DELETE when one is open; a server
+// that does not support session deletion (405/404) is treated as already closed.
 func (c *HTTPClient) Close() error {
 	if c.sessionID == "" {
 		return nil

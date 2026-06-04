@@ -180,6 +180,8 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	return text, nil
 }
 
+// Ping issues an MCP ping round-trip to confirm the subprocess is alive and
+// responsive; used by the bridge as a liveness probe.
 func (c *Client) Ping(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err

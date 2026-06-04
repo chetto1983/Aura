@@ -15,7 +15,7 @@ import (
 var mcpLookPath = exec.LookPath
 
 func mcpStatus(args []string, out io.Writer) error {
-	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") {
+	if len(args) > 1 || (len(args) == 1 && args[0] != "--json") { //nolint:gosec // G602 false positive: args[0] guarded by len(args)==1
 		return fmt.Errorf("usage: aura mcp status [--json]")
 	}
 	doc, _, err := loadManagedMCPConfig()

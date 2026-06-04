@@ -115,6 +115,9 @@ func Bridge(ctx context.Context, namespace string, srv Server, allow []string) (
 	return out, nil
 }
 
+// BridgeWithPolicy lists srv's tools, evaluates each against server's risk
+// policy, and bridges only the allowed ones under namespace. It returns the
+// bridged tools alongside the PolicyDecisions for the tools that were blocked.
 func BridgeWithPolicy(ctx context.Context, namespace string, srv Server, server mcp.ManagedServer) ([]tools.Tool, []mcpmanager.PolicyDecision, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
@@ -183,6 +186,9 @@ func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Serve
 	return registerBridged(reg, bridged)
 }
 
+// MountWithPolicy bridges srv's policy-allowed tools under namespace and
+// registers them into reg, all-or-nothing. It returns the registered tool names
+// and the PolicyDecisions for the tools that were blocked by the risk policy.
 func MountWithPolicy(ctx context.Context, reg *tools.Registry, namespace string, srv Server, server mcp.ManagedServer) ([]string, []mcpmanager.PolicyDecision, error) {
 	bridged, blocked, err := BridgeWithPolicy(ctx, namespace, srv, server)
 	if err != nil {

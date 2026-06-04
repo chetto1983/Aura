@@ -7,6 +7,8 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
+// Startup states and auth-status values report a managed server's lifecycle and
+// credential posture in status snapshots.
 const (
 	StartupStarting = "starting"
 	StartupReady    = "ready"
@@ -21,6 +23,9 @@ const (
 	AuthOAuth       = "oAuth"
 )
 
+// StatusSnapshot is the per-server status view surfaced to the CLI/UI: trust,
+// runtime, startup and auth state, tool/policy counts, risk labels, and block
+// reasons.
 type StatusSnapshot struct {
 	Name             string        `json:"name"`
 	Profiles         []string      `json:"profiles,omitempty"`
@@ -37,6 +42,8 @@ type StatusSnapshot struct {
 	PolicySummary    string        `json:"policySummary,omitempty"`
 }
 
+// SnapshotStatus computes a StatusSnapshot for every server in doc, sorted by
+// name, deriving startup state from enabled/trust and folding in policy counts.
 func SnapshotStatus(doc mcp.ManagedConfig) []StatusSnapshot {
 	names := make([]string, 0, len(doc.MCPServers))
 	for name := range doc.MCPServers {
@@ -74,6 +81,8 @@ func SnapshotStatus(doc mcp.ManagedConfig) []StatusSnapshot {
 	return out
 }
 
+// RedactSecrets masks secret-looking values in s for safe display, delegating
+// to mcp.RedactSecrets.
 func RedactSecrets(s string) string {
 	return mcp.RedactSecrets(s)
 }

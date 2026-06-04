@@ -9,6 +9,8 @@ import (
 	"strings"
 )
 
+// Managed config schema constants: the registry version, default profile name, and
+// the recognized server type, trust class, and runtime kind enum values.
 const (
 	ManagedConfigVersion = 2
 	DefaultMCPProfile    = "default"
@@ -37,6 +39,8 @@ type ManagedConfig struct {
 	MCPServers    map[string]ManagedServer  `json:"mcpServers"`
 }
 
+// ManagedProfile is a named selection of servers plus a profile-wide tool policy,
+// letting an operator scope which MCP servers and tools are active at once.
 type ManagedProfile struct {
 	Servers    []string          `json:"servers,omitempty"`
 	ToolPolicy ManagedToolPolicy `json:"toolPolicy,omitempty"`
@@ -59,6 +63,8 @@ type ManagedServer struct {
 	RiskLabels []string          `json:"riskLabels,omitempty"`
 }
 
+// ManagedTrust records the trust class assigned to a server and the audit trail for
+// that decision (who approved it, when, and why).
 type ManagedTrust struct {
 	Class      string `json:"class,omitempty"`
 	ApprovedBy string `json:"approvedBy,omitempty"`
@@ -66,6 +72,8 @@ type ManagedTrust struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+// ManagedRuntime describes how a stdio server is launched (local process, Docker
+// container, or Docker gateway) and the container isolation knobs that apply.
 type ManagedRuntime struct {
 	Kind    string   `json:"kind,omitempty"`
 	Image   string   `json:"image,omitempty"`
@@ -77,6 +85,8 @@ type ManagedRuntime struct {
 	Profile string   `json:"profile,omitempty"`
 }
 
+// ManagedToolPolicy filters which of a server's tools are exposed: an allow/deny
+// list by tool name plus DenyRisk to block tools carrying given risk labels.
 type ManagedToolPolicy struct {
 	Allow    []string `json:"allow,omitempty"`
 	Deny     []string `json:"deny,omitempty"`
@@ -167,6 +177,8 @@ func (c ManagedConfig) EnabledServers() (map[string]ServerConfig, error) {
 	return out, nil
 }
 
+// ActiveProfileName returns the configured active profile, falling back to
+// DefaultMCPProfile when none is set.
 func (c ManagedConfig) ActiveProfileName() string {
 	if strings.TrimSpace(c.ActiveProfile) != "" {
 		return strings.TrimSpace(c.ActiveProfile)
@@ -174,6 +186,9 @@ func (c ManagedConfig) ActiveProfileName() string {
 	return DefaultMCPProfile
 }
 
+// ProfileServerNames returns the sorted, de-duplicated server names selected by the
+// given profile (defaulting to the active profile); when the profile is undefined
+// it falls back to all enabled servers.
 func (c ManagedConfig) ProfileServerNames(profile string) []string {
 	if strings.TrimSpace(profile) == "" {
 		profile = c.ActiveProfileName()
@@ -210,6 +225,9 @@ func (c ManagedConfig) ProfileServerNames(profile string) []string {
 	return names
 }
 
+// NormalizedTrust resolves a server's effective trust class, inferring it from the
+// recipe source or HTTP type when unset and defaulting to TrustBlocked for unknown
+// or missing servers.
 func (c ManagedConfig) NormalizedTrust(name string) string {
 	server, ok := c.MCPServers[name]
 	if !ok {

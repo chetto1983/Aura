@@ -6,6 +6,9 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
+// CatalogEntry describes a built-in managed MCP server recipe, pairing
+// LLM-facing metadata (summary, trust class, risk labels, tool policy) with the
+// concrete mcp.ManagedServer launch spec used to install it.
 type CatalogEntry struct {
 	Name        string                `json:"name"`
 	Summary     string                `json:"summary"`
@@ -18,6 +21,8 @@ type CatalogEntry struct {
 	Server      mcp.ManagedServer     `json:"server"`
 }
 
+// BuiltInCatalog returns the curated set of shipped MCP server recipes
+// (calculator, calendar, mail, whatsapp), sorted by name.
 func BuiltInCatalog() []CatalogEntry {
 	entries := []CatalogEntry{
 		{
@@ -133,6 +138,8 @@ func BuiltInCatalog() []CatalogEntry {
 	return entries
 }
 
+// LookupCatalog returns the built-in catalog entry with the given name,
+// reporting whether a match was found.
 func LookupCatalog(name string) (CatalogEntry, bool) {
 	for _, entry := range BuiltInCatalog() {
 		if entry.Name == name {

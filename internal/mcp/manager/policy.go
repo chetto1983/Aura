@@ -7,6 +7,8 @@ import (
 	"github.com/chetto1983/aura/internal/mcp"
 )
 
+// Risk labels classify the danger of an MCP tool call; they drive risk-based
+// allow/deny decisions in the manager's tool policy.
 const (
 	RiskDestructive  = "destructive"
 	RiskExternalSend = "external_send"
@@ -18,6 +20,8 @@ const (
 	RiskWrite        = "write"
 )
 
+// PolicyDecision records whether a single MCP tool is allowed to mount, along
+// with its inferred risk labels and, when blocked, the reason.
 type PolicyDecision struct {
 	ToolName    string   `json:"toolName"`
 	RiskLabels  []string `json:"riskLabels"`
@@ -25,12 +29,17 @@ type PolicyDecision struct {
 	BlockReason string   `json:"blockReason,omitempty"`
 }
 
+// PolicyBlock describes a configured block in a server's tool policy, by tool
+// name or by risk label, with a human-readable reason for status reporting.
 type PolicyBlock struct {
 	ToolName string `json:"toolName,omitempty"`
 	Risk     string `json:"risk,omitempty"`
 	Reason   string `json:"reason"`
 }
 
+// RiskLabelsForTool infers a sorted set of risk labels for a tool from keyword
+// heuristics over its name and description, merged with the server's declared
+// risk labels.
 func RiskLabelsForTool(def mcp.ToolDef, server mcp.ManagedServer) []string {
 	text := strings.ToLower(def.Name + " " + def.Description)
 	labels := map[string]struct{}{}
@@ -80,6 +89,9 @@ func RiskLabelsForTool(def mcp.ToolDef, server mcp.ManagedServer) []string {
 	return sortedKeys(labels)
 }
 
+// PolicyDecisionForTool evaluates a tool against the server's tool policy
+// (allowlist, denylist, and denied risk labels) and returns the resulting
+// allow/block decision.
 func PolicyDecisionForTool(def mcp.ToolDef, server mcp.ManagedServer) PolicyDecision {
 	decision := PolicyDecision{
 		ToolName:   def.Name,
@@ -106,6 +118,8 @@ func PolicyDecisionForTool(def mcp.ToolDef, server mcp.ManagedServer) PolicyDeci
 	return decision
 }
 
+// PolicyDecisionsForTools returns the PolicyDecision for each tool def under the
+// given server's policy.
 func PolicyDecisionsForTools(defs []mcp.ToolDef, server mcp.ManagedServer) []PolicyDecision {
 	out := make([]PolicyDecision, 0, len(defs))
 	for _, def := range defs {
@@ -114,10 +128,14 @@ func PolicyDecisionsForTools(defs []mcp.ToolDef, server mcp.ManagedServer) []Pol
 	return out
 }
 
+// PolicyCounts returns the number of explicitly allowed tools and the number of
+// configured blocks (denied tools plus effective denied risk labels) for a server.
 func PolicyCounts(server mcp.ManagedServer) (mounted int, blocked int) {
 	return len(server.ToolPolicy.Allow), len(server.ToolPolicy.Deny) + len(effectiveDenyRisk(server))
 }
 
+// ConfiguredPolicyBlocks lists the server's tool-policy blocks (denied tool
+// names and effective denied risk labels) as PolicyBlock entries.
 func ConfiguredPolicyBlocks(server mcp.ManagedServer) []PolicyBlock {
 	blocks := make([]PolicyBlock, 0, len(server.ToolPolicy.Deny)+len(effectiveDenyRisk(server)))
 	for _, tool := range server.ToolPolicy.Deny {
