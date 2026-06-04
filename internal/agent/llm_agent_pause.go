@@ -106,12 +106,14 @@ func (a *LlmAgent) pauseEvent(ic InvocationContext, spanID [8]byte, parentSpanID
 ) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
 	ev.Actions.AwaitingInput = &AwaitingInput{
-		Question:    pause.Question,
-		Options:     pauseOptions(pause.Options),
-		Kind:        pause.Kind,
-		Priority:    pause.Priority,
-		ToolCallID:  pause.ToolCallID,
-		OriginAgent: a.name,
+		Question:           pause.Question,
+		Options:            pauseOptions(pause.Options),
+		Kind:               pause.Kind,
+		Priority:           pause.Priority,
+		ToolCallID:         pause.ToolCallID,
+		OriginAgent:        a.name,
+		ProxiedFromChildID: pause.ProxiedFromChildID,
+		ProxiedToolCallID:  pause.ProxiedToolCallID,
 	}
 	return ev
 }

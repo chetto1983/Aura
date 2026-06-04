@@ -263,11 +263,12 @@ func (f *fakeConvStore) Delete(_ context.Context, id string) error {
 // fakePauseStore is a hand-written in-memory PauseStore (D-A2-02 fakes). It keeps
 // pending rows per conversation and resolves them in FIFO order.
 type fakePauseStore struct {
-	mu       sync.Mutex
-	byToken  map[string]*askuser.Pending
-	answers  map[string]askuser.ResumeAnswer
-	inserts  int // number of Insert calls (sole-writer assertion)
-	insertEr error
+	mu         sync.Mutex
+	byToken    map[string]*askuser.Pending
+	answers    map[string]askuser.ResumeAnswer
+	inserts    int // number of Insert calls (sole-writer assertion)
+	insertEr   error
+	lastInsert askuser.InsertParams // the most recent Insert arg (proxied-id forwarding assertion)
 }
 
 func newFakePauseStore() *fakePauseStore {
@@ -281,6 +282,7 @@ func (f *fakePauseStore) Insert(_ context.Context, p askuser.InsertParams) error
 		return f.insertEr
 	}
 	f.inserts++
+	f.lastInsert = p
 	f.byToken[p.Token] = &askuser.Pending{
 		Token: p.Token, ConversationID: p.ConversationID, Kind: p.Kind,
 		Question: p.Question, Options: p.Options, Priority: p.Priority, ToolCallID: p.ToolCallID,

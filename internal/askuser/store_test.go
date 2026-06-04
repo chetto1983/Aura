@@ -335,6 +335,64 @@ func TestGetByToken_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestInsertProxied round-trips the D-05 proxied_* columns: a proxied pause
+// persists proxied_from_child_id (a uuid) + proxied_tool_call_id (text), and a
+// direct (non-proxied) pause leaves both columns SQL NULL (back-compat).
+func TestInsertProxied(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	convID := newConversation(t, pool)
+	ctx := context.Background()
+
+	childID := uuid.Must(uuid.NewV7()).String()
+	proxiedTok := uuid.Must(uuid.NewV7()).String()
+	if err := s.Insert(ctx, InsertParams{
+		Token:              proxiedTok,
+		ConversationID:     convID,
+		Kind:               "clarification",
+		Question:           "relay?",
+		ToolCallID:         "tc-parent",
+		ProxiedFromChildID: &childID,
+		ProxiedToolCallID:  "child-tc",
+	}); err != nil {
+		t.Fatalf("Insert(proxied): %v", err)
+	}
+
+	var (
+		gotChild pgtype.UUID
+		gotTC    pgtype.Text
+	)
+	if err := pool.QueryRow(ctx,
+		"SELECT proxied_from_child_id, proxied_tool_call_id FROM aura.paused_states WHERE token = $1", proxiedTok,
+	).Scan(&gotChild, &gotTC); err != nil {
+		t.Fatalf("read proxied row: %v", err)
+	}
+	if !gotChild.Valid || uuid.UUID(gotChild.Bytes).String() != childID {
+		t.Errorf("proxied_from_child_id round-trip: want %s, got valid=%v %s", childID, gotChild.Valid, uuid.UUID(gotChild.Bytes))
+	}
+	if !gotTC.Valid || gotTC.String != "child-tc" {
+		t.Errorf("proxied_tool_call_id round-trip: want child-tc, got valid=%v %q", gotTC.Valid, gotTC.String)
+	}
+
+	// A direct (non-proxied) pause leaves both columns NULL.
+	directTok := insertPause(t, s, convID, "approval", "direct", 0)
+	var (
+		nullChild pgtype.UUID
+		nullTC    pgtype.Text
+	)
+	if err := pool.QueryRow(ctx,
+		"SELECT proxied_from_child_id, proxied_tool_call_id FROM aura.paused_states WHERE token = $1", directTok,
+	).Scan(&nullChild, &nullTC); err != nil {
+		t.Fatalf("read direct row: %v", err)
+	}
+	if nullChild.Valid {
+		t.Errorf("a direct pause must leave proxied_from_child_id NULL, got %s", uuid.UUID(nullChild.Bytes))
+	}
+	if nullTC.Valid {
+		t.Errorf("a direct pause must leave proxied_tool_call_id NULL, got %q", nullTC.String)
+	}
+}
+
 // TestStoreMethods_DBErrorWrapping drives the DB-touching methods against a
 // canceled context so each "%w" wrap branch is exercised (mirrors identity).
 func TestStoreMethods_DBErrorWrapping(t *testing.T) {

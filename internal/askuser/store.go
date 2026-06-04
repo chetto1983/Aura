@@ -83,19 +83,26 @@ type ResumeAnswer struct {
 
 // InsertParams carries the plain fields for one new pause. NEVER a tools type
 // (D-A1-04): the caller (the Runner, observing the pause Event) supplies these.
+// ProxiedFromChildID/ProxiedToolCallID are the optional D-05 swarm-relay ids: a
+// nil child id (and an empty tool_call id) persist as SQL NULL for direct calls.
 type InsertParams struct {
-	Token          string
-	ConversationID string
-	Kind           string
-	Question       string
-	Options        json.RawMessage
-	Priority       int
-	ToolCallID     string
-	ResumeContext  json.RawMessage
+	Token              string
+	ConversationID     string
+	Kind               string
+	Question           string
+	Options            json.RawMessage
+	Priority           int
+	ToolCallID         string
+	ResumeContext      json.RawMessage
+	ProxiedFromChildID *string
+	ProxiedToolCallID  string
 }
 
 // Insert persists one pending pause. Options/ResumeContext are jsonb (nil → SQL
-// NULL). proxied_* stay NULL for direct calls (D-A1-08; Phase 9 populates).
+// NULL). The proxied_* columns carry the D-05 relay ids when the pause proxies a
+// child's needs_user_input report; they stay NULL for direct calls (a nil child
+// id leaves the zero pgtype.UUID Valid:false, an empty tool_call id leaves the
+// pgtype.Text Valid:false).
 func (s *Store) Insert(ctx context.Context, p InsertParams) error {
 	token, err := parseUUID("token", p.Token)
 	if err != nil {
@@ -105,15 +112,24 @@ func (s *Store) Insert(ctx context.Context, p InsertParams) error {
 	if err != nil {
 		return fmt.Errorf("insert paused state: %w", err)
 	}
+	var proxiedChild pgtype.UUID
+	if p.ProxiedFromChildID != nil {
+		proxiedChild, err = parseUUID("proxied_from_child_id", *p.ProxiedFromChildID)
+		if err != nil {
+			return fmt.Errorf("insert paused state: %w", err)
+		}
+	}
 	arg := sqlc.InsertPausedStateParams{
-		Token:          token,
-		ConversationID: convID,
-		Kind:           p.Kind,
-		Question:       p.Question,
-		Options:        p.Options,
-		Priority:       int32(p.Priority),
-		ResumeContext:  p.ResumeContext,
-		ToolCallID:     p.ToolCallID,
+		Token:              token,
+		ConversationID:     convID,
+		Kind:               p.Kind,
+		Question:           p.Question,
+		Options:            p.Options,
+		Priority:           int32(p.Priority),
+		ResumeContext:      p.ResumeContext,
+		ToolCallID:         p.ToolCallID,
+		ProxiedFromChildID: proxiedChild,
+		ProxiedToolCallID:  pgtype.Text{String: p.ProxiedToolCallID, Valid: p.ProxiedToolCallID != ""},
 	}
 	if err := s.q.InsertPausedState(ctx, arg); err != nil {
 		return fmt.Errorf("insert paused state %s: %w", p.Token, err)

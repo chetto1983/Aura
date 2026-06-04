@@ -70,18 +70,28 @@ type ErrAwaitingUserInput struct {
 	Kind       string
 	Priority   int
 	ToolCallID string
+	// ProxiedFromChildID / ProxiedToolCallID are the optional swarm-relay ids the
+	// model MAY fill when this ask_user relays a child's needs_user_input report
+	// (D-05). Empty on a direct (non-proxied) pause; they stamp into
+	// aura.paused_states so a future resume can map the answer back to the child.
+	ProxiedFromChildID string
+	ProxiedToolCallID  string
 }
 
 // Error makes *ErrAwaitingUserInput satisfy the error interface. The message is
 // generic; the payload travels in the struct fields, not the string.
 func (e *ErrAwaitingUserInput) Error() string { return "awaiting user input" }
 
-// askUserArgs is the wire shape of the ask_user arguments.
+// askUserArgs is the wire shape of the ask_user arguments. The proxied_* fields
+// are optional (D-05): the model fills them only when relaying a child's
+// needs_user_input report, never on a direct pause.
 type askUserArgs struct {
-	Question string   `json:"question"`
-	Options  []Option `json:"options"`
-	Kind     string   `json:"kind"`
-	Priority *int     `json:"priority"`
+	Question           string   `json:"question"`
+	Options            []Option `json:"options"`
+	Kind               string   `json:"kind"`
+	Priority           *int     `json:"priority"`
+	ProxiedFromChildID string   `json:"proxied_from_child_id"`
+	ProxiedToolCallID  string   `json:"proxied_tool_call_id"`
 }
 
 func (AskUser) Spec() Spec {
@@ -91,7 +101,9 @@ func (AskUser) Spec() Spec {
     "question": {"type": "string", "description": "The question or request to put to the user. Be specific and self-contained."},
     "options": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": ["string", "object"]}, "description": "For kind=choice: 2-4 distinct options, each a string or {label, value} object."},
     "kind": {"type": "string", "enum": ["clarification", "approval", "choice"], "description": "clarification = free-text answer; approval = yes/no for an action; choice = pick one of the supplied options."},
-    "priority": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Optional 0-100 ordering hint when several pauses are pending (higher = answered first). Defaults to 0."}
+    "priority": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Optional 0-100 ordering hint when several pauses are pending (higher = answered first). Defaults to 0."},
+    "proxied_from_child_id": {"type": "string", "description": "Optional, model-discretionary. Fill ONLY when relaying a child agent's needs_user_input report: the originating child's id (a ground-truth uuid from the swarm report). Omit on a direct question to the user."},
+    "proxied_tool_call_id": {"type": "string", "description": "Optional, model-discretionary. Fill ONLY when relaying a child agent's needs_user_input report: the child's originating tool_call id (ground-truth from the swarm report). Omit on a direct question to the user."}
   },
   "required": ["question", "kind"]
 }`)
@@ -135,10 +147,12 @@ func (AskUser) Execute(_ context.Context, raw json.RawMessage) (ToolResult, erro
 		}
 	}
 	return ToolResult{}, &ErrAwaitingUserInput{
-		Question: a.Question,
-		Options:  a.Options,
-		Kind:     a.Kind,
-		Priority: priority,
+		Question:           a.Question,
+		Options:            a.Options,
+		Kind:               a.Kind,
+		Priority:           priority,
+		ProxiedFromChildID: a.ProxiedFromChildID,
+		ProxiedToolCallID:  a.ProxiedToolCallID,
 	}
 }
 
