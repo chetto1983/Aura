@@ -62,17 +62,39 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 // Bridge lists srv's tools and adapts each to a tools.Tool, namespacing the
 // model-facing name as <namespace>__<tool> (sanitized, 64-byte capped) so a mounted
 // server can never silently shadow a built-in. The wire name (bridgedTool.name, used
-// by CallTool) stays RAW — only spec.Name is namespaced. Bridged tools are NOT
-// Deferred: an MCP tool typically has a short description + a small argument schema,
-// and the model MUST see that schema to call the tool correctly. The server's
-// inputSchema passes through as Parameters unchanged.
-func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
+// by CallTool) stays RAW — only spec.Name is namespaced. The server's inputSchema
+// passes through as Parameters unchanged.
+//
+// Bridged tools are Deferred: a real multi-tool MCP server (spike 001: 16 mail
+// tools; spike 002: 12 whatsapp tools) would otherwise flood every per-turn manifest
+// straight into the 30-50-tool degradation zone the 8.1 BM25 tool_search was built to
+// defend. The model sees only name+summary by default and loads the full spec on
+// demand via tool_search, which indexes the deferred tool's name, description, and
+// argument-field names — so deferred MCP tools stay fully discoverable.
+//
+// allow is an optional per-server tool allowlist: when len(allow) > 0, only tools
+// whose RAW name appears in allow are bridged (destructive footguns like
+// delete_mailbox/move_message/create_mailbox never reach a worker — spike 001 census,
+// D-20). A nil or empty allow bridges every advertised tool (calculator back-compat).
+func Bridge(ctx context.Context, namespace string, srv Server, allow []string) ([]tools.Tool, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
 		return nil, err
 	}
+	var allowed map[string]struct{}
+	if len(allow) > 0 {
+		allowed = make(map[string]struct{}, len(allow))
+		for _, name := range allow {
+			allowed[name] = struct{}{}
+		}
+	}
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
+		if allowed != nil {
+			if _, ok := allowed[d.Name]; !ok {
+				continue
+			}
+		}
 		params := emptyObjectSchema
 		if len(strings.TrimSpace(string(d.InputSchema))) > 0 {
 			params = d.InputSchema
@@ -85,7 +107,7 @@ func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, er
 				Summary:     firstLine(d.Description),
 				Description: strings.TrimSpace(d.Description),
 				Parameters:  params,
-				Deferred:    false,
+				Deferred:    true,
 			},
 		})
 	}
@@ -93,14 +115,15 @@ func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, er
 }
 
 // Mount bridges srv's tools under namespace and registers them into reg,
-// all-or-nothing. Two distinct raw tool names that sanitize to the same namespaced
-// name are disambiguated with a deterministic hash suffix before registration. It
-// still refuses to clobber an existing tool name (a collision with a built-in or
-// another mounted server is a config error), so a mounted server can never silently
-// shadow a built-in. On any residual collision NOTHING is registered and the
-// colliding name is reported.
-func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server) ([]string, error) {
-	bridged, err := Bridge(ctx, namespace, srv)
+// all-or-nothing. allow is the optional per-server tool allowlist threaded into
+// Bridge (nil/empty = mount all; D-20). Two distinct raw tool names that sanitize to
+// the same namespaced name are disambiguated with a deterministic hash suffix before
+// registration. It still refuses to clobber an existing tool name (a collision with a
+// built-in or another mounted server is a config error), so a mounted server can
+// never silently shadow a built-in. On any residual collision NOTHING is registered
+// and the colliding name is reported.
+func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server, allow []string) ([]string, error) {
+	bridged, err := Bridge(ctx, namespace, srv, allow)
 	if err != nil {
 		return nil, err
 	}
