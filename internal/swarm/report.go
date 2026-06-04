@@ -48,7 +48,7 @@ type ChildReport struct {
 // fails the swarm.
 func dumpTranscript(runDir, convID, childID string, ev agent.Event) error {
 	dir := filepath.Join(runDir, convID, "swarm")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		slog.Warn("swarm transcript mkdir failed", "child", childID, "err", err)
 		return nil
 	}
@@ -57,8 +57,11 @@ func dumpTranscript(runDir, convID, childID string, ev agent.Event) error {
 		slog.Warn("swarm transcript marshal failed", "child", childID, "err", err)
 		return nil
 	}
+	// G304 is a false positive here: childID is the internally-generated flat
+	// worker id ("w1".."wN", no path separator — Pitfall 4), and runDir/convID are
+	// operator config, never model-controlled, so the path cannot be traversed.
 	path := filepath.Join(dir, childID+".jsonl")
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) //nolint:gosec // G304: childID is a controlled flat id, path is not model-traversable
 	if err != nil {
 		slog.Warn("swarm transcript open failed", "child", childID, "err", err)
 		return nil
