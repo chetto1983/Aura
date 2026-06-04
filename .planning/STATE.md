@@ -4,8 +4,8 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 08.1 context gathered
-last_updated: "2026-06-03T20:10:26.535Z"
-last_activity: 2026-06-03
+last_updated: "2026-06-04T06:29:52.043Z"
+last_activity: 2026-06-04
 progress:
   total_phases: 18
   completed_phases: 9
@@ -28,7 +28,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 Phase: 16
 Plan: Not started
 Status: Executing Phase 08.1
-Last activity: 2026-06-03
+Last activity: 2026-06-04 - Completed quick task 260604-bq8: D-15 doc-superseding sweep on REQUIREMENTS.md (CAP-01/02 wording + 5 stale checkboxes)
 
 Progress: [██████████] 100% (Phase 08)
 
@@ -144,6 +144,12 @@ None yet.
 [Issues that affect future work]
 
 - 8 Gate 1 DoR open questions tracked in research/SUMMARY.md "Gaps to Address" — resolve per-phase during plan-phase invocations.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260604-bq8 | D-15 doc-superseding sweep on REQUIREMENTS.md (CAP-01/02 wording + 5 stale checkboxes) | 2026-06-04 | 0d197ede | [260604-bq8-d-15-doc-superseding-sweep-on-requiremen](./quick/260604-bq8-d-15-doc-superseding-sweep-on-requiremen/) |
 
 ## Deferred Items
 
