@@ -427,14 +427,14 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
-| 16. MCP Sidecar Manager + Third-Party Trust | 4/8 | In Progress|  |
+| 16. MCP Sidecar Manager + Third-Party Trust | 5/8 | In Progress|  |
 
 ### Phase 16: MCP Sidecar Manager + Third-Party Trust
 
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 4/8 plans executed
+**Plans:** 5/8 plans executed
 
 **Success Criteria** (what must be TRUE):
 
@@ -450,7 +450,7 @@ Plans:
 - [x] 16-01-PLAN.md - doc amendment and design spec for expanded MCP manager scope
 - [x] 16-02-PLAN.md - managed config v2, profiles, trust metadata, redacted export/import
 - [x] 16-03-PLAN.md - recipe catalog, profile CLI, trust CLI, Calendar fixture recipe
-- [ ] 16-04-PLAN.md - status, doctor --all, recipe-specific checks, redacted logs
+- [x] 16-04-PLAN.md - status, doctor --all, recipe-specific checks, redacted logs
 - [x] 16-05-PLAN.md - Streamable HTTP transport and stdio transport interface
 - [ ] 16-06-PLAN.md - Dockerized runtime and trust gates for third-party local MCP servers
 - [ ] 16-07-PLAN.md - risk labels and mount-time tool policy enforcement
