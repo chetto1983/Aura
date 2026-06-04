@@ -169,9 +169,15 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 		}
 	}
 
-	// D-11: normalize a deadline trip to a uniform {failed, "timeout"} regardless of
-	// whether the worker surfaced the cancellation as a stream error or returned cleanly.
-	if ctx.Err() == context.DeadlineExceeded {
+	// D-11: normalize a deadline trip to a uniform {failed, "timeout"} — but NOT when
+	// the worker already produced a terminal success (StatusOK + a populated Summary).
+	// A worker that streamed its final ok answer and was then descheduled past the
+	// deadline keeps its success rather than being clobbered into a spurious timeout
+	// failure (WR-01). A worker that surfaced the cancellation as a stream error
+	// (StatusFailed with the raw ctx error) is re-labeled to the uniform "timeout"; a
+	// worker that produced nothing terminal (still default StatusOK, empty Summary) is
+	// failed as a timeout.
+	if ctx.Err() == context.DeadlineExceeded && !(report.Status == StatusOK && report.Summary != "") {
 		report.Status, report.Error = StatusFailed, "timeout"
 		report.Summary = ""
 	}

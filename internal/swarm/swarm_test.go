@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
@@ -278,6 +279,31 @@ func TestSwarmChildTimeout(t *testing.T) {
 	}
 	if reports[1].Status != StatusFailed || reports[1].Error != "timeout" {
 		t.Errorf("report[1] = {%q,%q}, want {failed,timeout}", reports[1].Status, reports[1].Error)
+	}
+}
+
+// TestRunChildTimeoutDoesNotClobberCompletedSuccess (WR-01): a worker that
+// streamed its final ok answer is NOT rewritten to {failed, "timeout"} just
+// because the per-child deadline elapsed in the race window before the post-drain
+// check. The worker here completes ok, but runChild is handed an already
+// deadline-exceeded ctx; the populated Summary must survive as authoritative over
+// the post-hoc deadline observation.
+func TestRunChildTimeoutDoesNotClobberCompletedSuccess(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	r := newRouter().route("alpha", outcome{kind: "ok", text: "A done"})
+	rc := testRunConfig(t, r, 25)
+
+	// A context whose deadline has already elapsed: ctx.Err() == DeadlineExceeded
+	// after the (immediate) drain, exercising the WR-01 guard.
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+
+	rep := runChild(ctx, rc, rc.ParentBudget, 0, "alpha task")
+	if rep.Status != StatusOK {
+		t.Fatalf("a completed worker must keep StatusOK past a tripped deadline, got {%q,%q}", rep.Status, rep.Error)
+	}
+	if rep.Summary != "A done" {
+		t.Errorf("the streamed summary must survive, got %q", rep.Summary)
 	}
 }
 
