@@ -73,13 +73,22 @@ func swarmDemo(w io.Writer, goals []string, maxSteps int) error {
 		return fmt.Errorf("budget config: %w", err)
 	}
 
+	// Per-invocation run dir, not a fixed os.TempDir()/swarm-demo path: two concurrent
+	// demos (or a hostile co-tenant pre-creating the predictable path) would otherwise
+	// collide, and the transcripts persist with no TTL sweep in the demo (WR-03).
+	runDir, err := os.MkdirTemp("", "aura-swarm-demo-")
+	if err != nil {
+		return fmt.Errorf("swarm-demo run dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(runDir) }()
+
 	rc := swarm.RunConfig{
 		ParentBudget:   budget,
 		ParentRegistry: buildBaseRegistry(&config.Config{MaxSwarmGoals: len(goals) + 1}),
 		Client:         client,
 		LLM:            llm.Config{Model: "mock", Provider: "fake", TotalTimeoutSec: 30},
 		Cfg: config.Config{
-			RunDir:               os.TempDir(),
+			RunDir:               runDir,
 			ToolPreviewCap:       2048,
 			MaxSwarmGoals:        len(goals) + 1,
 			SwarmChildTimeoutSec: 30,
