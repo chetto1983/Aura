@@ -27,6 +27,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 | Telegram MarkdownV2 escape fuzz (10K Unicode inputs, 400 Bad Request rate) | = 0% | YYYY-MM-DD (placeholder — populated by Phase 13) | TBD | Phase 13 Slice 9b | `internal/channels/telegram/mdv2.go` |
 | Skill snippet exec success rate (sandbox-agent workspace, Phase 11 corpus 50 snippets) | ≥ 95% | YYYY-MM-DD (placeholder — populated by Phase 11) | TBD | Phase 11 Slice 7e-core | `internal/skills/snippet/**`, `internal/agent/tools/sandbox_exec.go`, `internal/sandboxagent/**` |
 | Web tools — `ssrf.go` mutation (go-mutesting, ≥70% killed) + `internal/web` coverage (≥85% combined) + live `web_search` p95 (≤2s) | mut ≥70% / cov ≥85% / p95 ≤2s | 2026-06-02 (unit cov; live cells pending @ Gate-3) | unit cov 91.0% / combined 91.5% (PASS, was 75.5%); ssrf.go mutation 94.4% (PASS); SC#1 p95 ~1.01s (PASS) | Phase 7 Slice 5 | `internal/web/**`, `internal/agent/tools/web_*.go`, `searxng/settings.yml` |
+| Swarm E2E (CAP-03 / SC#5 / D-22) — autonomous parallelization (≥2 workers, natural prompt) + mail+WhatsApp MCP read-back + timing <1.5× + judge ≥90% | ≥2 workers / facts present / mail+WA read-back / <1.5× / judge ≥0.90 / no-over-spawn | **TBD — operator live run pending** | TBD (worker-count=TBD, timing-ratio=TBD, mail-read-back=TBD, WA-read-back=TBD, judge-average=TBD, control-no-over-spawn=TBD) | Phase 9 Slice 3 | `internal/swarm/**`, `internal/agent/tools/swarm_spawn.go`, `internal/eval/harness_swarm_e2e_test.go` |
 
 ---
 
@@ -145,6 +146,60 @@ The bespoke 2b session-manager/security-posture notes remain preserved in the pl
 history. Current product behavior is the simpler sandbox-agent pivot: one local
 container, loopback-only API, persistent `/workspace`, and no in-process Docker
 lifecycle in Aura.
+
+---
+
+## Phase 9 Swarm E2E Detail (CAP-03 / SC#5 / D-22)
+
+> The dual-gate live swarm E2E (`internal/eval/harness_swarm_e2e_test.go`,
+> `TestSwarmE2E`, build tag `cot_eval`, OPENROUTER-gated) is the ONE legitimate skip:
+> it is operator-run and PAID, NOT CI (no-skip-as-green — CI gates stay on
+> unit/property/race/goleak). The harness + scenarios + judge rubric compile and are
+> committed; the **TBD cells below are filled by the operator live run** (it needs a
+> live model, live mail/WhatsApp self-accounts, and the whatsmeow bridge up).
+>
+> A NATURAL prompt (NO "swarm"/"parallel" word) must drive the model to fan out on its
+> own. Hard floor = deterministic ground truth; judge = ≥90% average over four
+> dimensions.
+
+| Sub-metric | Target | Last measured | Last value |
+|---|---|---|---|
+| Workers spawned via tool_use (autonomous parallelization) | ≥ 2 | TBD (operator run) | TBD |
+| Expected facts present in aggregated answer | present | TBD (operator run) | TBD |
+| Self-mail read-back via mounted MCP (`mail__search_emails {query}`) | found | TBD (operator run) | TBD |
+| Self-WhatsApp read-back via mounted MCP (`whatsapp__list_messages`, `<phone>@s.whatsapp.net`) | found | TBD (operator run) | TBD |
+| Wall-clock vs single-worker baseline | < 1.5× | TBD (operator run) | TBD |
+| Judge rubric average (autonomous / sub-answer / aggregation) | ≥ 0.90 | TBD (operator run) | TBD |
+| Control prompt no-over-spawn (trivial task → 0 workers) | 0 workers | TBD (operator run) | TBD |
+
+**Bridge bring-up note (operator pre-req):** the whatsmeow companion daemon is the
+user's fork `chetto1983/whatsapp-mcp` @ `6de1dcd` (whatsmeow bump + 5 context fixes +
+REST-send persistence so agent-sent messages are read-back-able). Bring it up in WSL
+and health-check it — a live bridge answers `GET /api/send` with **HTTP 405** (Method
+Not Allowed); connection-refused means it is down. The mail server is
+`martinzarfl/mail-mcp` (stdio, SMTP/IMAP env config); `search_emails` takes `{query}`
+(spike-001). Both register via `aura mcp install {mail,whatsapp}`; creds ride
+managed-config Env, never git.
+
+**Operator command (fills the TBDs above + the matrix row):**
+
+```bash
+# 1. bring up the bridge in WSL (own shell) and health-check it
+wsl -e bash -lc 'cd ~/whatsapp-mcp/whatsapp-bridge && ./whatsapp-bridge'
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/api/send   # expect 405
+
+# 2. run the dual-gate tier (self-target = your OWN address/number, messages to self ONLY)
+set -a; . ./.env; set +a
+export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
+export AURA_EVAL_SELF_MAIL="you@example.com"
+export AURA_EVAL_SELF_PHONE="39XXXXXXXXXX"
+export AURA_EVAL_WA_CHAT_SELF="39XXXXXXXXXX@s.whatsapp.net"
+go test -tags cot_eval -run TestSwarmE2E -timeout 600s -v ./internal/eval/
+```
+
+The run writes a scored report to `docs/aura-swarm-eval-2026-06-04.md` and logs the
+numbers; copy worker-count / timing-ratio / read-back / judge-average into the TBD
+cells above and bump `Last measured` to the run date.
 
 ---
 
