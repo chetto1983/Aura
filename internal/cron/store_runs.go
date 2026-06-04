@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -72,8 +73,15 @@ func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 
 // DueTasks returns up to limit active tasks whose next_run_at has passed, locked
 // FOR UPDATE SKIP LOCKED so concurrent workers never collide on the same row (the
-// tick loop's batch pickup). limit is the max-concurrent headroom.
+// tick loop's batch pickup). limit is the max-concurrent headroom. The limit is
+// clamped at the store boundary (defensive parity with envInt/int4OrNull): a
+// non-positive limit would yield LIMIT 0 (no task ever dispatched) and a value past
+// 2^31 would wrap to a negative LIMIT (a Postgres error), so any out-of-range input
+// is floored to 1 rather than silently misbehaving (WR-02).
 func (s *Store) DueTasks(ctx context.Context, limit int) ([]Task, error) {
+	if limit <= 0 || limit > math.MaxInt32 {
+		limit = 1
+	}
 	rows, err := s.q.DueTasks(ctx, int32(limit))
 	if err != nil {
 		return nil, fmt.Errorf("due tasks: %w", err)

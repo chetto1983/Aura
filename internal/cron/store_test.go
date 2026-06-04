@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"testing"
 	"time"
@@ -251,6 +252,42 @@ func TestCreateRunAndAdvance_Atomic(t *testing.T) {
 	}
 	if !got.NextRunAt.Equal(advanced.UTC()) {
 		t.Errorf("next_run_at after advance = %s, want %s", got.NextRunAt, advanced.UTC())
+	}
+}
+
+// TestDueTasks_ClampsBadLimit is the WR-02 regression: a non-positive limit must not
+// silently dispatch nothing (LIMIT 0) and a huge limit must not wrap to a negative
+// LIMIT (a Postgres error). Both are floored to 1 at the store boundary, so a single
+// overdue task is still selectable.
+func TestDueTasks_ClampsBadLimit(t *testing.T) {
+	pool := migratedPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	s := New(pool)
+
+	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	due, err := s.CreateTask(ctx, CreateTaskParams{
+		Kind: KindReminder, Spec: spec, NextRunAt: time.Now().Add(-time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, due.ID) })
+
+	for _, limit := range []int{0, -5, math.MaxInt32 + 1} {
+		rows, err := s.DueTasks(ctx, limit)
+		if err != nil {
+			t.Fatalf("DueTasks(%d) errored, want clamp-to-1 success: %v", limit, err)
+		}
+		var found bool
+		for _, r := range rows {
+			if r.ID == due.ID {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("DueTasks(%d) did not return the overdue task (clamp failed)", limit)
+		}
 	}
 }
 
