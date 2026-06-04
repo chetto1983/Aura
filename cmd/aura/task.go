@@ -98,7 +98,7 @@ func taskSchedule(ctx context.Context, cfg *config.Config, args []string) {
 		fmt.Fprintln(os.Stderr, "aura task schedule:", err)
 		os.Exit(exitUsage)
 	}
-	next, err := cron.NextRunAt(spec, time.Now())
+	next, err := cron.FirstFire(spec, time.Now())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura task schedule:", err)
 		os.Exit(exitUsage)

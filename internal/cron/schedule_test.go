@@ -152,3 +152,49 @@ func TestParseScheduleValidation(t *testing.T) {
 		}
 	})
 }
+
+// TestFirstFire asserts the schedule-time gate that prevents an unschedulable
+// one-shot from being persisted (CR-02): a past `at` is rejected with ErrPastRunAt
+// rather than yielding a zero (→ next_run_at=NULL) that DueTasks never selects. A
+// future `at` and the recurring kinds return their first fire unchanged.
+func TestFirstFire(t *testing.T) {
+	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+
+	t.Run("past at rejected with ErrPastRunAt", func(t *testing.T) {
+		past := now.Add(-1 * time.Hour)
+		spec, err := ParseSchedule("at", "", 0, past, "Europe/Rome")
+		if err != nil {
+			t.Fatalf("ParseSchedule at: %v", err)
+		}
+		next, err := FirstFire(spec, now)
+		if !errors.Is(err, ErrPastRunAt) {
+			t.Fatalf("FirstFire past at: err = %v, want ErrPastRunAt", err)
+		}
+		if !next.IsZero() {
+			t.Errorf("FirstFire past at: next = %s, want zero (rejected)", next)
+		}
+	})
+
+	t.Run("future at returns the stored instant", func(t *testing.T) {
+		fire := now.Add(2 * time.Hour)
+		spec, _ := ParseSchedule("at", "", 0, fire, "Europe/Rome")
+		next, err := FirstFire(spec, now)
+		if err != nil {
+			t.Fatalf("FirstFire future at: %v", err)
+		}
+		if !next.Equal(fire) {
+			t.Errorf("FirstFire future at: next = %s, want %s", next, fire)
+		}
+	})
+
+	t.Run("every returns a future fire", func(t *testing.T) {
+		spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+		next, err := FirstFire(spec, now)
+		if err != nil {
+			t.Fatalf("FirstFire every: %v", err)
+		}
+		if !next.After(now) {
+			t.Errorf("FirstFire every: next = %s, want a future instant", next)
+		}
+	})
+}

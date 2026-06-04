@@ -266,7 +266,7 @@ func (t *TaskTool) resolveSchedule(a taskArgs) (resolvedSpec, time.Time, error) 
 	if err != nil {
 		return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: %w", err)
 	}
-	next, err := cron.NextRunAt(spec, time.Now())
+	next, err := cron.FirstFire(spec, time.Now())
 	if err != nil {
 		return resolvedSpec{}, time.Time{}, fmt.Errorf("task schedule: %w", err)
 	}

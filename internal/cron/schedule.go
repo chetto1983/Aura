@@ -39,6 +39,7 @@ var (
 	ErrInvalidCronExpr     = errors.New("invalid cron expression")
 	ErrEveryTooSmall       = fmt.Errorf("every interval below the %d-minute floor", MinScheduleEveryMinutes)
 	ErrMissingRunAt        = errors.New("at schedule requires a run_at instant")
+	ErrPastRunAt           = errors.New("at schedule run_at is in the past")
 	ErrInvalidTimezone     = errors.New("invalid IANA timezone")
 )
 
@@ -121,4 +122,22 @@ func NextRunAt(spec ScheduleSpec, after time.Time) (time.Time, error) {
 	default:
 		return time.Time{}, fmt.Errorf("%w: %q", ErrInvalidScheduleKind, spec.Kind)
 	}
+}
+
+// FirstFire computes the first fire for a freshly-scheduled spec and rejects an
+// unschedulable one-shot. For an `at` task whose RunAt is already in the past,
+// NextRunAt returns a zero time — persisting that as next_run_at=NULL creates a
+// task that DueTasks (next_run_at <= now) can never select, so the one-shot would
+// be accepted yet never fire (silent drop). FirstFire is the single shared gate
+// both the LLM tool and the CLI call, returning ErrPastRunAt instead of storing an
+// unschedulable row. Recurring kinds (every/cron) always yield a future fire.
+func FirstFire(spec ScheduleSpec, now time.Time) (time.Time, error) {
+	next, err := NextRunAt(spec, now)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if spec.Kind == KindAt && next.IsZero() {
+		return time.Time{}, fmt.Errorf("%w: %s", ErrPastRunAt, spec.RunAt.UTC().Format(time.RFC3339))
+	}
+	return next, nil
 }
