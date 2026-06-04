@@ -94,8 +94,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 }
 
 // TestMigrate_Phase4_AppliesAndSeeds proves the Phase-4 substrate: starting from a
-// fresh database, migrations 0003->0006 apply exactly four steps; a re-run applies
-// zero (idempotent, including the CONCURRENTLY index in 0006); and 0004's seed lands
+// fresh database, every embedded up migration applies; a re-run applies zero
+// (idempotent, including the CONCURRENTLY index in 0006); and 0004's seed lands
 // exactly one (local/system) identity with the fixed UUID plus one (...001, '*')
 // capability grant. Uses a throwaway database so the shared `aura` DB is untouched.
 func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
@@ -160,9 +160,9 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Migrate on fresh db: %v", err)
 	}
-	const shippedMigrations = 7 // 0001..0007 on a truly fresh DB (0007 = Phase-6 cache_metrics)
+	shippedMigrations := shippedMigrationCount(t)
 	if n1 != shippedMigrations {
-		t.Errorf("first Migrate on fresh db: want %d applied (0001..0007), got %d", shippedMigrations, n1)
+		t.Errorf("first Migrate on fresh db: want %d applied (all embedded *.up.sql migrations), got %d", shippedMigrations, n1)
 	}
 
 	n2, err := Migrate(ctx, migrateURL)
@@ -208,6 +208,24 @@ func TestMigrate_Phase4_AppliesAndSeeds(t *testing.T) {
 			t.Errorf("aura_app DROP: want SQLSTATE 42501 (insufficient_privilege), got %v", err)
 		}
 	}
+}
+
+func shippedMigrationCount(t *testing.T) int {
+	t.Helper()
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("read embedded migrations: %v", err)
+	}
+	n := 0
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".up.sql") {
+			n++
+		}
+	}
+	if n == 0 {
+		t.Fatal("read embedded migrations: found no *.up.sql files")
+	}
+	return n
 }
 
 func TestPing(t *testing.T) {
