@@ -114,3 +114,13 @@ None — this plan writes no executable surface (doc-only). The env vars become 
 ## Known Stubs
 
 None — documentation amendment only.
+
+## Self-Check: PASSED
+
+- FOUND: prd.md
+- FOUND: .env.example
+- FOUND: .planning/phases/10-scheduler/10-01-SUMMARY.md
+- FOUND commit 1e38becb (Task 1)
+- FOUND commit 20b433c2 (Task 2)
+- FOUND commit 7cb3effa (SUMMARY)
+- Working tree clean; ROADMAP.md / STATE.md unmodified (orchestrator-owned)
