@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 09-05-PLAN.md (swarm_spawn tool + seam + boot registration)
-last_updated: "2026-06-04T10:28:21.220Z"
+stopped_at: Phase 9 context gathered
+last_updated: "2026-06-04T10:44:36.061Z"
 last_activity: 2026-06-04
 progress:
   total_phases: 18
-  completed_phases: 9
+  completed_phases: 10
   total_plans: 61
-  completed_plans: 59
-  percent: 50
+  completed_plans: 60
+  percent: 56
 ---
 
 # Project State
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 9 (swarm-minimal) — EXECUTING
-Plan: 3 of 6
+Plan: 6 of 6
 Status: Ready to execute
 Last activity: 2026-06-04
 
@@ -88,6 +88,7 @@ Progress: [██████████] 100% (Phase 08)
 | Phase 08 P01 | 7min | 2 tasks | 3 files |
 | Phase 09 P09-01 | ~12min | 2 tasks | 3 files |
 | Phase 09 P05 | ~8min | 2 tasks | 10 files |
+| Phase 9 P09-06 | ~18min | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -136,6 +137,7 @@ Recent decisions affecting current work:
 - [Phase 08]: 08-09 (Gate-3 evidence + live tier, Tasks 1-2 — Task 3 live human-verify PENDING): authored the live sandbox_integration && db_integration tier proving the 4 ROADMAP CAP-02 criteria (PythonStatePersists 1a / WorkspacePersists 1b / ConcurrentSerialized_Live 1c / SymlinkEscapeCascade_Live 2 / ReaperLiveContainerRemoved 3 / NetworkPyPIAllowed 4a+landmine-3 reachability spike / NetworkNonAllowlistRefused 4b / BootRecovery_LazyRecreate) + TestMigration0008_SchemaRoundTrip (uuid FK + CHECK + ON DELETE CASCADE). All compile-green under the tags (vet+build+test-compile exit 0); the two RESEARCH-named tests that collided with the untagged unit tier got _Live suffixes. 08-SECURITY.md consolidates the 40-threat T-08-* register with implementing-file citations, EXTENDS AR-05-01 for the 2b connect-allowing session egress posture (host-proxy-contained, bridge-gateway-reachable, empty-allowlist-egressless — documented before live confirmation), records the Claude-Code allowlist-bypass caveat as AR-08-01 (accepted-with-mitigation); threats_open held at 5 (NOT zeroed). sandbox.yml gained the sandbox-2b-session-gate DinD job (Postgres-through-0008 + sidecar + egress bridge/proxy at the bridge gateway; 2b tier race + live egress leg + go-mutesting >=70% on network.go/scoring.go/sessions.go + 85% coverage fold; CI=true no-skip-as-green). quality-snapshot gained the Phase-8 2b rows. CAP-02 NOT closed + threats_open NOT zeroed — both close on the operator's live Gate-3 sign-off (Task 3). Commits f99d9cb4/d4851c59/b1dc7ea7.
 - [Phase ?]: [Phase 09]: 09-01 (PRD-amendment gate, doc-only #44): D-01..D-25 logged in DECISIONS.md §8. Amendment #44 supersedes the STALE prd.md Slice-3 acceptance (swarm_talk/swarm_join/bus/tier.go/Responder/children-map all CUT v1, replaced by ephemeral swarm_spawn runner + pause-as-report D-04 + flat-v1 D-10). Env catalog ADDS AURA_SWARM_MAX_GOALS=8 + AURA_SWARM_CHILD_TIMEOUT_SEC=120; OQ1 resolved D-21-supersedes-D-23 (NO AURA_MCP_*_SERVER vars, managed config is the path). ROADMAP SC#2->tool-not-available+depth-code-guard, SC#3->5 needs_user_input report entries, SC#5 added live cot_eval E2E. CAP-03 NOT marked complete (code waves pending). Commits 2c05fbdf/d285f17e.
 - [Phase ?]: [Phase 09]: 09-05: swarm_spawn Deferred {goals}-only tool (D-01/D-03) wired to the 09-02 engine via a CYCLE-FREE seam — swarmRunner interface in the tools package (imports neither internal/swarm nor internal/agent) + agent.WithSwarmContext private-ctx-key injector (mirrors WithToolCallContext, set in runTool; config rides on the adapter not the ctx) + internal/swarm.RunnerAdapter. D-24 anti-over-spawn literal (test-asserted) + D-13 goals cap. Registered PARENT-ONLY in buildBaseRegistry (chat.go/runner.go unchanged); TestBuildBaseRegistryValidatesWithSwarmSpawn proves reg.Validate() holds with the Deferred tool (Pitfall 6). Workers excluded via Without (D-08/D-10). aura swarm-demo = no-LLM FakeClient engine proof (D-16). runTool gained budget param (Rule 3). Commits 827169a7/547bed0d.
+- [Phase ?]: [Phase 09]: 09-06: live dual-gate swarm E2E (TestSwarmE2E, cot_eval, OPENROUTER+AURA_EVAL_SELF_*-gated, operator-run NOT CI). swarmScenarios() SEPARATE from scenarios(); NATURAL prompt (no swarm/parallel word, asserted) = compute-and-self-mail + compute-and-self-WhatsApp two independent subtasks + a no-over-spawn control. Hard floor: workers off the ChildReport goal_index count, facts present, mail+WhatsApp read-back via the SAME mounted MCP at the right JID (D-19 duality), wall-clock <1.5x single-worker baseline. Judge >=90% equal-weight mean over autonomous-parallelization/sub-answer/aggregation (D-22 fixes dims+gate). Registry = buildBaseRegistry + swarm_spawn (live RunnerAdapter) + mail/whatsapp MCP mounts (D-20 allowlists). Relocated reportPath/dimResult/scenarioMetrics into non-test scoring_cot_eval.go (Rule 3) so go build -tags cot_eval exits 0. Placeholder snapshot row at commit; operator run fills TBDs. CAP-03 NOT closed (Gate-3 verifier/operator). Commits 31599320/ab0b8a10.
 
 ### Pending Todos
 
@@ -168,6 +170,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-04T10:27:50.454Z
+Last session: 2026-06-04T10:44:03.503Z
 Stopped at: Phase 9 context gathered
 Resume file: None
