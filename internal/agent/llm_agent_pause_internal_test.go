@@ -153,6 +153,39 @@ func TestEmitPauses_YieldsAllWhenConsumerContinues(t *testing.T) {
 	}
 }
 
+// TestPauseEvent_CarriesProxiedIDs pins the D-05 projection: the optional
+// proxied_from_child_id + proxied_tool_call_id on the ErrAwaitingUserInput
+// sentinel must flow onto the Actions.AwaitingInput Event via pauseEvent. A
+// direct (non-proxied) pause leaves both Event fields empty.
+func TestPauseEvent_CarriesProxiedIDs(t *testing.T) {
+	a := newBareAgent(t, tools.NewRegistry())
+	var span [8]byte
+
+	proxied := &tools.ErrAwaitingUserInput{
+		Question:           "relay?",
+		Kind:               tools.KindClarification,
+		ToolCallID:         "p1",
+		ProxiedFromChildID: "11111111-1111-1111-1111-111111111111",
+		ProxiedToolCallID:  "child-tc",
+	}
+	ev := a.pauseEvent(internalPauseIC(t), span, nil, proxied)
+	ai := ev.Actions.AwaitingInput
+	if ai == nil {
+		t.Fatal("pauseEvent must set Actions.AwaitingInput")
+	}
+	if ai.ProxiedFromChildID != "11111111-1111-1111-1111-111111111111" || ai.ProxiedToolCallID != "child-tc" {
+		t.Errorf("proxied ids not projected onto the Event: from=%q tc=%q",
+			ai.ProxiedFromChildID, ai.ProxiedToolCallID)
+	}
+
+	direct := &tools.ErrAwaitingUserInput{Question: "q", Kind: tools.KindApproval, ToolCallID: "d1"}
+	devent := a.pauseEvent(internalPauseIC(t), span, nil, direct)
+	if dai := devent.Actions.AwaitingInput; dai.ProxiedFromChildID != "" || dai.ProxiedToolCallID != "" {
+		t.Errorf("a direct pause must leave proxied Event fields empty, got from=%q tc=%q",
+			dai.ProxiedFromChildID, dai.ProxiedToolCallID)
+	}
+}
+
 // TestPauseOptions_EmptyVsPopulated pins llm_agent_pause.go:120 — the
 // `if len(opts) == 0 { return nil }` early return. The nil-return arm is observed
 // here as len==0; the populated arm must map labels/values 1:1.

@@ -109,6 +109,54 @@ func TestAskUser_Execute_Rejects(t *testing.T) {
 	}
 }
 
+func TestAskUser_Execute_ProxiedIDsParsed(t *testing.T) {
+	_, err := AskUser{}.Execute(context.Background(),
+		json.RawMessage(`{"question":"relay: which file?","kind":"clarification","proxied_from_child_id":"11111111-1111-1111-1111-111111111111","proxied_tool_call_id":"tc1"}`))
+	var pause *ErrAwaitingUserInput
+	if !errors.As(err, &pause) {
+		t.Fatalf("want sentinel, got %v", err)
+	}
+	if pause.ProxiedFromChildID != "11111111-1111-1111-1111-111111111111" {
+		t.Errorf("proxied_from_child_id not carried: got %q", pause.ProxiedFromChildID)
+	}
+	if pause.ProxiedToolCallID != "tc1" {
+		t.Errorf("proxied_tool_call_id not carried: got %q", pause.ProxiedToolCallID)
+	}
+}
+
+func TestAskUser_Execute_ProxiedIDsOptional(t *testing.T) {
+	// A direct (non-proxied) call leaves both proxied fields empty and still pauses.
+	_, err := AskUser{}.Execute(context.Background(),
+		json.RawMessage(`{"question":"direct?","kind":"approval"}`))
+	var pause *ErrAwaitingUserInput
+	if !errors.As(err, &pause) {
+		t.Fatalf("want sentinel, got %v", err)
+	}
+	if pause.ProxiedFromChildID != "" || pause.ProxiedToolCallID != "" {
+		t.Errorf("absent proxied fields must stay empty, got from=%q tc=%q",
+			pause.ProxiedFromChildID, pause.ProxiedToolCallID)
+	}
+}
+
+func TestAskUser_Spec_ProxiedFieldsNotRequired(t *testing.T) {
+	s := AskUser{}.Spec()
+	var schema struct {
+		Properties map[string]any `json:"properties"`
+		Required   []string       `json:"required"`
+	}
+	if err := json.Unmarshal(s.Parameters, &schema); err != nil {
+		t.Fatalf("Parameters not valid JSON: %v", err)
+	}
+	for _, p := range []string{"proxied_from_child_id", "proxied_tool_call_id"} {
+		if _, ok := schema.Properties[p]; !ok {
+			t.Errorf("Spec params missing optional property %q", p)
+		}
+	}
+	if len(schema.Required) != 2 || schema.Required[0] != "question" || schema.Required[1] != "kind" {
+		t.Errorf("required must stay exactly [question, kind], got %v", schema.Required)
+	}
+}
+
 func TestAskUser_Execute_BoundaryPriorities(t *testing.T) {
 	for _, p := range []int{0, 100} {
 		args := json.RawMessage(`{"question":"q","kind":"approval","priority":` + itoa(p) + `}`)

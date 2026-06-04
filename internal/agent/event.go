@@ -79,12 +79,14 @@ type Actions struct {
 // type — the askuser.Store reads these plain fields off the Event, never the
 // other way round (the agent stays DB-free).
 type AwaitingInput struct {
-	Question    string        `json:"question"`
-	Options     []PauseOption `json:"options,omitempty"`
-	Kind        string        `json:"kind"`
-	Priority    int           `json:"priority,omitempty"`
-	ToolCallID  string        `json:"tool_call_id"`
-	OriginAgent string        `json:"origin_agent,omitempty"` // emitting agent name (swarm proxy forward-compat, D-A1-08)
+	Question           string        `json:"question"`
+	Options            []PauseOption `json:"options,omitempty"`
+	Kind               string        `json:"kind"`
+	Priority           int           `json:"priority,omitempty"`
+	ToolCallID         string        `json:"tool_call_id"`
+	OriginAgent        string        `json:"origin_agent,omitempty"`          // emitting agent name (swarm proxy forward-compat, D-A1-08)
+	ProxiedFromChildID string        `json:"proxied_from_child_id,omitempty"` // child id when this pause relays a child's needs_user_input report (D-05); empty on a direct call
+	ProxiedToolCallID  string        `json:"proxied_tool_call_id,omitempty"`  // child's originating tool_call id for the relay (D-05); empty on a direct call
 }
 
 // PauseOption mirrors a tools.Option on the wire. It is redeclared here (rather
