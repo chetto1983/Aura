@@ -1,7 +1,10 @@
 package mcptools
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -72,6 +75,29 @@ func TestMountAllowlistDeferred(t *testing.T) {
 		}
 		if len(names) != 3 {
 			t.Fatalf("empty allowlist must mount all 3 tools (back-compat), got %v", names)
+		}
+	})
+
+	t.Run("allowlist entry matching no advertised tool warns but does not fail (WR-04)", func(t *testing.T) {
+		var buf bytes.Buffer
+		prev := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelWarn})))
+		defer slog.SetDefault(prev)
+
+		reg := tools.NewRegistry()
+		srv := &fakeServer{defs: mailDefs()}
+		// "searchEmails" is a plausible server-side rename of "search_emails": it is in
+		// the allowlist but advertised by no tool, so it must surface a WARN, not fail.
+		names, err := Mount(context.Background(), reg, "mail", srv, []string{"send_email", "searchEmails"})
+		if err != nil {
+			t.Fatalf("an unmatched allowlist entry must be fail-soft, got error: %v", err)
+		}
+		if len(names) != 1 || names[0] != "mail__send_email" {
+			t.Fatalf("only the matched tool should mount, got %v", names)
+		}
+		logged := buf.String()
+		if !strings.Contains(logged, "matched no advertised tool") || !strings.Contains(logged, "searchEmails") {
+			t.Errorf("expected a WARN naming the unmatched entry, got: %q", logged)
 		}
 	})
 }

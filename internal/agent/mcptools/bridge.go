@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -88,12 +89,14 @@ func Bridge(ctx context.Context, namespace string, srv Server, allow []string) (
 			allowed[name] = struct{}{}
 		}
 	}
+	matched := make(map[string]struct{}, len(allow))
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
 		if allowed != nil {
 			if _, ok := allowed[d.Name]; !ok {
 				continue
 			}
+			matched[d.Name] = struct{}{}
 		}
 		params := emptyObjectSchema
 		if len(strings.TrimSpace(string(d.InputSchema))) > 0 {
@@ -110,6 +113,17 @@ func Bridge(ctx context.Context, namespace string, srv Server, allow []string) (
 				Deferred:    true,
 			},
 		})
+	}
+	// WARN-not-fatal on an allowlist entry that matched no advertised tool: the
+	// intersection drops advertised tools not in allow (the security direction, D-20),
+	// but a typo or a server-side rename silently turns an intended *capability* into a
+	// gap with no signal. Surface it so an operator can notice, while keeping fail-soft
+	// boot (WR-04).
+	for _, name := range allow {
+		if _, ok := matched[name]; !ok {
+			slog.Warn("mcp allowlist entry matched no advertised tool",
+				"namespace", namespace, "tool", name)
+		}
 	}
 	return out, nil
 }
