@@ -1,13 +1,14 @@
 ---
 phase: 09-swarm-minimal
-verified: 2026-06-04T13:15:00Z
-status: human_needed
-score: 9/10 must-haves verified
+verified: 2026-06-04T13:30:00Z
+status: passed
+score: 10/10 must-haves verified
 overrides_applied: 0
 human_verification:
   - test: "Run the live cot_eval swarm E2E"
     expected: ">=2 workers spawned via tool_use on a natural prompt, expected facts present, self-mail + self-WhatsApp read-back via MCP, wall-clock < 1.5x single-worker, judge rubric >=90% average, control prompt no-over-spawn; docs/aura-quality-snapshot.md TBD placeholder row updated with real numbers"
     why_human: "SC#5 requires OPENROUTER_API_KEY + live mail/WhatsApp accounts + WSL whatsmeow bridge (REST :8080); this is the deliberately operator-run tier per 09-VALIDATION.md Manual-Only table and 09-06 plan's non-blocking gate"
+    result: "PASS 2026-06-04 (live run 8/8, user-approved): workers=2 overlapped (11.6s/15.9s), facts present, mail+WA read-back found, fan-out 15877ms vs baseline 12200ms = 1.30x (<1.5), judge mean 1.00, control 0 workers + 5/5. Six fixes landed during the loop (commit 93f261d5); numbers in docs/aura-quality-snapshot.md + docs/aura-swarm-eval-2026-06-04.md; 09-HUMAN-UAT.md status: passed."
 ---
 
 # Phase 9: Swarm (Minimal) Verification Report
