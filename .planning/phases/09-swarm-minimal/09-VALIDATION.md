@@ -2,8 +2,8 @@
 phase: 9
 slug: swarm-minimal
 status: draft
-nyquist_compliant: false
-wave_0_complete: false
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-04
 ---
 
@@ -36,30 +36,42 @@ created: 2026-06-04
 
 ## Per-Task Verification Map
 
-*To be filled by the planner from RESEARCH.md §Validation Architecture — every PLAN task maps a re-specced ROADMAP success criterion or D-25 property to a tier below.*
+*Every PLAN task maps a re-specced ROADMAP success criterion or D-25 property to a tier below (RESEARCH.md §Validation Architecture). 09-01 is the doc-only PRD-amendment Wave-0 gate (grep-verified, no Go tier). 09-06 Task 2 is the operator-run live tier (the one legitimate skip).*
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| (planner fills) | | | CAP-03 | | | | | | ⬜ pending |
+| 01-T1 | 09-01 | 0 | CAP-03 | T-09-01 | PRD truth-source matches code (no cut machinery / 2 new env vars / no AURA_MCP_*_SERVER) | doc-gate (grep) | `grep -c "AURA_SWARM_MAX_GOALS" prd.md && grep -c "AURA_SWARM_CHILD_TIMEOUT_SEC" prd.md && test "$(grep -c 'AURA_MCP_MAIL_SERVER' prd.md)" = "0"` | ✅ prd.md | ⬜ pending |
+| 01-T2 | 09-01 | 0 | CAP-03 | T-09-01 | D-01..D-25 logged; ROADMAP SC#2/SC#3 re-specced + SC#5 added | doc-gate (grep) | `grep -c "D-25" .planning/DECISIONS.md && grep -c "needs_user_input" .planning/ROADMAP.md && grep -c "cot_eval" .planning/ROADMAP.md` | ✅ DECISIONS.md, ROADMAP.md | ⬜ pending |
+| 02-T1 | 09-02 | 1 | CAP-03 | T-09-04 | ChildReport contract + flat-id transcript dump (no `/`, swallowed error) + Without helper + 2 config defaults | unit | `go test ./internal/swarm/ ./internal/config/ -run 'TestChildReport\|TestWithout\|TestStructuredBrief\|TestSwarmConfig\|TestDumpTranscriptPath'` | ✅ report/brief/registry.go, config.go | ⬜ pending |
+| 02-T2 | 09-02 | 1 | CAP-03 (SC#1/#3/#4) | T-09-02, T-09-03, T-09-04, T-09-05 | Leak-safe budget-bounded waves; per-child failure isolation (no sibling cancel); pre-flight guard; flat-id transcript; depth guard | unit + property + race + goleak | `go test -race ./internal/swarm/` | ✅ swarm.go, swarm_depth.go, swarm_test.go, swarm_property_test.go | ⬜ pending |
+| 03-T1 | 09-03 | 1 | CAP-03 | T-09-06, T-09-08, T-09-09 | Bridged tools Deferred:true (manifest stays under degradation zone); per-server allowlist drops footgun tools | unit | `go test ./internal/agent/mcptools/ -run 'TestMount'` | ✅ bridge.go, mount.go, mount_test.go | ⬜ pending |
+| 03-T2 | 09-03 | 1 | CAP-03 | T-09-07 | Fail-soft boot (WARN-and-drop per server, ≥1-non-deferred guard holds); mail/whatsapp recipes; no AURA_MCP_*_SERVER env | unit | `go test ./cmd/aura/ -run 'TestBuildRegistryFailSoft'` (+ recipe/env greps) | ✅ main.go, main_test.go, mcp.go | ⬜ pending |
+| 04-T1 | 09-04 | 1 | CAP-03 | T-09-10, T-09-11 | ask_user Spec/args + AwaitingInput Event carry optional proxied_* ids (back-compat, not required) | unit | `go test ./internal/agent/tools/ ./internal/agent/ -run 'TestAskUser\|TestPauseEvent\|TestAwaitingInput'` | ✅ ask_user.go, event.go, llm_agent_pause.go | ⬜ pending |
+| 04-T2 | 09-04 | 1 | CAP-03 | T-09-10 | persistPause (sole writer) stamps proxied_* into paused_states via parseUUID boundary; direct pause = NULL | unit + db_integration | `go test ./internal/runner/ -run 'TestPersistPause'` (unit) + `go test -tags db_integration ./internal/askuser/ -run TestInsertProxied` (WSL, stack up) | ✅ store.go, runner_persist.go (+ tests) | ⬜ pending |
+| 05-T1 | 09-05 | 2 | CAP-03 (SC#2) | T-09-12, T-09-13, T-09-14 | swarm_spawn Deferred {goals}-only tool (D-24 literal + D-13 cap); cycle-free seam (private ctxKey mirroring WithToolCallContext) | unit | `go test ./internal/agent/tools/ -run 'TestSwarmSpawn' ./internal/swarm/` | ✅ swarm_spawn.go, swarm_context.go, runner_adapter.go (+ test) | ⬜ pending |
+| 05-T2 | 09-05 | 2 | CAP-03 | T-09-12 | swarm_spawn registered parent-only; reg.Validate() holds with Deferred tool present (Pitfall 6 ordering); optional swarm-demo | unit | `go test ./cmd/aura/ ./internal/runner/ -run 'TestBuildBaseRegistryValidatesWithSwarmSpawn\|TestSwarm\|TestBuildRegistry\|TestBuildAgent'` | ✅ main.go, main_test.go, chat.go, runner.go (+ optional swarm_demo.go) | ⬜ pending |
+| 06-T1 | 09-06 | 3 | CAP-03 (SC#5) | T-09-15, T-09-16 | swarm + control scenarios (natural prompt, no "swarm"); 4-dim judge rubric ≥90%; read-back hard floor | build/vet (cot_eval tag) | `go vet -tags cot_eval ./internal/eval/ && go build -tags cot_eval ./internal/eval/` | ✅ dataset/scoring/judge_cot_eval.go | ⬜ pending |
+| 06-T2 | 09-06 | 3 | CAP-03 (SC#5) | T-09-15, T-09-16, T-09-17 | Live dual-gate E2E (mail+WhatsApp MCP read-back + judge ≥90%); placeholder snapshot row at commit, real numbers after run | compile: build (cot_eval); operator-run: live (Manual-Only below) | compile: `go build -tags cot_eval ./internal/eval/`; live: see Manual-Only table | ✅ harness_swarm_e2e_test.go, docs/aura-quality-snapshot.md | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 Tier mapping locked by RESEARCH.md §Validation Architecture:
-- **SC#1 (3-child wall-clock < 1.5×, race+goleak clean):** unit/fixture tier with `agenttest.FakeClient`, `go test -race` + goleak — CI.
-- **SC#2 (re-specced D-10: worker lacks `swarm_spawn`; depth code-guard error):** unit — registry-exclusion assertion + synthetic depth ≥ cap → PRD error literal — CI.
-- **SC#3 (re-specced D-04: 5 children pause → 5 `needs_user_input` report entries; goroutine-leak clean):** unit + goleak — CI.
-- **SC#4 (depth-2 tree total steps ≤ parent remaining):** unit reusing `Budget.Child()` proven harness — CI.
-- **SC#5 (D-22 live E2E mail+WhatsApp, dual gate ground-truth + judge ≥90%):** `cot_eval` build tag, OPENROUTER-gated, operator-run — Manual-Only table below.
-- **D-25 properties (report length/order, tree budget, goleak, per-child isolation):** rapid property tier — CI.
+- **SC#1 (3-child wall-clock < 1.5×, race+goleak clean):** unit/fixture tier with `agenttest.FakeClient`, `go test -race` + goleak — CI (02-T2).
+- **SC#2 (re-specced D-10: worker lacks `swarm_spawn`; depth code-guard error):** unit — registry-exclusion assertion + synthetic depth ≥ cap → PRD error literal — CI (02-T2 depth guard + 05-T1/05-T2 registry exclusion).
+- **SC#3 (re-specced D-04: 5 children pause → 5 `needs_user_input` report entries; goroutine-leak clean):** unit + goleak — CI (02-T2).
+- **SC#4 (depth-2 tree total steps ≤ parent remaining):** unit reusing `Budget.Child()` proven harness — CI (02-T2).
+- **SC#5 (D-22 live E2E mail+WhatsApp, dual gate ground-truth + judge ≥90%):** `cot_eval` build tag, OPENROUTER-gated, operator-run — Manual-Only table below (06-T1 compile + 06-T2 live).
+- **D-18 transcript dump (flat SessionID, separate direct write, swallowed error):** unit — `TestDumpTranscriptPath` (02-T1) + `TestSwarmTranscript` (02-T2) — CI.
+- **D-25 properties (report length/order, tree budget, goleak, per-child isolation):** rapid property tier — CI (02-T2).
 
 ---
 
 ## Wave 0 Requirements
 
-- [ ] `internal/swarm/` package scaffold — currently EMPTY (greenfield, verified)
-- [ ] PRD amendment commit (D-23 doc-only plan 09-01) BEFORE any code
+- [x] `internal/swarm/` package scaffold — currently EMPTY (greenfield, verified); created by 09-02 (no framework install needed)
+- [x] PRD amendment commit (D-23 doc-only plan 09-01) BEFORE any code — the Wave-0 doc gate (grep-verified, no Go test tier)
 
-*Existing infrastructure (rapid, goleak, race, agenttest.FakeClient, cot_eval harness) covers all phase tiers — no framework install needed.*
+*Existing infrastructure (rapid, goleak, race, agenttest.FakeClient, cot_eval harness) covers all phase tiers — no framework install needed. All non-doc tasks carry an `<automated>` command above; the two doc-only 09-01 tasks are grep-gated (the legitimate doc-tier verify); 09-06 Task 2's live portion is the one operator-run skip (compile-checked at commit, see Manual-Only).*
 
 ---
 
@@ -67,18 +79,19 @@ Tier mapping locked by RESEARCH.md §Validation Architecture:
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| D-22 live swarm E2E (natural prompt, no "swarm" mention) with mail+WhatsApp MCP mounts, dual gate (ground-truth read-back + judge ≥90%) | CAP-03 / SC#5 | Needs OPENROUTER_API_KEY + live mail/WhatsApp accounts + WSL whatsmeow bridge (REST :8080) — operator-run by design, NOT CI (no-skip-as-green: tier is operator-tier, CI gates stay on unit/property/race/goleak) | Bring up bridge (fork chetto1983/whatsapp-mcp @ 6de1dcd), health-check REST :8080, source .env, run `go test -tags cot_eval -run TestSwarm ./internal/eval/`; record numbers in docs/aura-quality-snapshot.md |
-| Fail-soft boot check: dead MCP server must not kill `aura chat` | D-21 | Requires deliberately broken server entry in managed config | Add bogus server via `aura mcp add`, run `aura chat`, observe WARN-and-drop not exit(1) |
+| D-22 live swarm E2E (natural prompt, no "swarm" mention) with mail+WhatsApp MCP mounts, dual gate (ground-truth read-back + judge ≥90%) | CAP-03 / SC#5 (06-T2) | Needs OPENROUTER_API_KEY + live mail/WhatsApp accounts + WSL whatsmeow bridge (REST :8080) — operator-run by design, NOT CI (no-skip-as-green: tier is operator-tier, CI gates stay on unit/property/race/goleak) | Bring up bridge (fork chetto1983/whatsapp-mcp @ 6de1dcd), health-check REST :8080 (405 on GET /api/send), source .env, run `go test -tags cot_eval -run TestSwarmE2E -timeout 600s -v ./internal/eval/`; replace the TBD placeholder row in docs/aura-quality-snapshot.md with the real numbers |
+| Fail-soft boot check: dead MCP server must not kill `aura chat` | D-21 (03-T2) | Requires deliberately broken server entry in managed config | Add bogus server via `aura mcp add`, run `aura chat`, observe WARN-and-drop not exit(1) (the automated TestBuildRegistryFailSoft covers the unit-level assertion) |
+| D-05 proxied-id pause round-trip (paused_states columns) | CAP-03 (04-T2) | Requires Postgres stack up (db_integration tag) | WSL with stack up: `export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"`; derive AURA_DB_URL/AURA_DB_MIGRATE_URL from POSTGRES_PASSWORD; `go test -tags db_integration ./internal/askuser/ -run TestInsertProxied` (CI db job also runs it — no-skip-as-green) |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 120s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies (12/12 mapped; 09-01 doc-gated by grep, 09-06 T2 compile-checked + operator-run live)
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (the `internal/swarm/` greenfield scaffold + the 09-01 doc gate)
+- [x] No watch-mode flags
+- [x] Feedback latency < 120s
+- [x] `nyquist_compliant: true` set in frontmatter
 
 **Approval:** pending
