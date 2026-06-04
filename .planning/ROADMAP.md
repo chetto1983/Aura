@@ -282,7 +282,8 @@ Plans:
 > SC#2/SC#3 re-specced and SC#5 added by the D-23 Wave-0 amendment (plan 09-01, PRD amendment #44).
 
 **Plans**: 6 plans
-Plans:
+
+Plans:
 **Wave 1**
 
 - [x] 09-01-PLAN.md — Wave 0 doc-only PRD amendment (D-23): cut machinery, 2 new env vars, SC re-spec
@@ -311,7 +312,19 @@ Plans:
   3. Operator observes nightly `backup_postgres` and `backup_neo4j` tasks producing dump artifacts in `$AURA_BACKUP_DIR`; missing the nightly run for 24h triggers an alert log line
   4. Operator triggers a scheduler-spawned agent job with a 10-step budget and observes the job terminating at step 10 (budget inherited from `agent_job_runs`, not a fresh 25)
 
-**Plans**: TBD
+**Plans**: 6 plans (4 waves)
+
+Wave 0:
+- [ ] 10-01-PLAN.md — doc-only PRD amendment (D-29): grammar triad + gronx + spawn seam + one task tool + composite delivery + env catalog
+Wave 1:
+- [ ] 10-02-PLAN.md — infra foundation: migration 0009 + sqlc + store + gronx DST-safe schedule + tools.Without promotion
+Wave 2:
+- [ ] 10-03-PLAN.md — HA core: FOR UPDATE SKIP LOCKED + held-conn advisory lock + heartbeat + orphan scan + tick loop (SC#1)
+- [ ] 10-04-PLAN.md — ActionRouter + non-deferred task tool (OpenAI-wire-safe schema) + aura task CLI triad + doctor
+Wave 3:
+- [ ] 10-05-PLAN.md — 6b handlers: reminder + agent_job (LlmAgent spawn, ask_user auto-reject) + backup + composite Notifier + dispatch (SC#3/SC#4)
+Wave 4:
+- [ ] 10-06-PLAN.md — aura serve daemon + chaos script + CI wiring + live North-Star smoke + Gate-3 checkpoint (SC#2)
 
 ### Phase 11: Skills
 
