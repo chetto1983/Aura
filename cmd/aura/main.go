@@ -21,6 +21,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"sort"
 
@@ -118,14 +119,33 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config) (*tools.Regis
 
 	closers := make([]func() error, 0, len(serverNames))
 	for _, name := range serverNames {
-		closer, _, err := mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name])
+		// D-21 fail-soft: a single dead/misconfigured server WARN-and-drops; boot
+		// continues with the servers that did mount. Matches every surveyed MCP host
+		// (Claude Code/Desktop, VS Code). Already-mounted servers stay registered —
+		// do NOT closeMCPServers, do NOT abort. The non-deferred built-ins keep the
+		// registry valid even when every MCP server is dropped (Pitfall 6).
+		closer, _, err := mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name], mcpAllowlist(name))
 		if err != nil {
-			_ = closeMCPServers(closers)
-			return nil, nil, err
+			slog.Warn("mcp mount failed", "server", name, "err", err)
+			continue
 		}
 		closers = append(closers, closer)
 	}
 	return reg, closers, nil
+}
+
+// mcpAllowlist resolves the per-server v1 tool allowlist (D-20). mail/whatsapp scope
+// destructive MCP footguns out of every worker's reach; all other servers (e.g. the
+// calculator recipe) get nil = mount all advertised tools.
+func mcpAllowlist(server string) []string {
+	switch server {
+	case "mail":
+		return []string{"send_email", "fetch_emails", "search_emails", "get_thread"}
+	case "whatsapp":
+		return []string{"send_message", "list_messages", "list_chats", "search_contacts"}
+	default:
+		return nil
+	}
 }
 
 func closeMCPServers(closers []func() error) error {
