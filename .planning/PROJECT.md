@@ -32,7 +32,7 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 **Capabilities (Slice 2–7)**
 
 - [ ] **CAP-01**: Sandbox runner Python 3.12 stateless (2a) + session-bound con workspace + network allowlist (2b) (Slice 2)
-- [ ] **CAP-03**: Swarm coordinator riusa ParallelAgent (Slice 3)
+- [x] **CAP-03**: Swarm coordinator riusa ParallelAgent (Slice 3) — *Validated in Phase 9 (2026-06-04); `swarm_spawn` deferred tool + ephemeral runner (waves, per-child isolation, budget tree, depth guard) + first production mail/WhatsApp MCP mounts; live dual-gate E2E PASS (judge 1.00, fan-out 1.30×, mail+WA read-back) — docs/aura-swarm-eval-2026-06-04.md.*
 - [x] **CAP-04**: KV cache builder stable-prefix + provider-aware (Slice 4) — *Validated in Phase 6 (2026-06-02); `messages[0]` invariant + provider-aware `cache_control` seam + cross-slice CI gate shipped. Live cache-warming/≥80%-hit-rate criteria deferred to operator UAT (06-HUMAN-UAT.md).*
 - [ ] **CAP-05**: Web tools `web_search` (SearXNG) + `web_fetch` (readability + html-to-markdown) (Slice 5)
 - [ ] **CAP-06**: Scheduler cron + agent jobs persistente su Postgres (Slice 6)
@@ -119,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-03 — Phase 8.1 (tool_search hardening, Anthropic defer_loading parity) complete: BM25 ranking + max_results, MCP `<server>__<tool>` namespacing with 64-byte cap, registry-derived tool_search Description, fail-closed boot guard*
+*Last updated: 2026-06-04 — Phase 9 (Swarm minimal, CAP-03) complete: `swarm_spawn` + ephemeral runner, mail/WhatsApp MCP production mounts (Deferred flip + allowlist + fail-soft boot), proxied_* pause plumb, live dual-gate E2E PASS (judge 1.00, fan-out 1.30×) + CoT eval re-run green*
