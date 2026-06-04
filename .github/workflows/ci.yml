@@ -126,6 +126,10 @@ jobs:
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
+      # Arms the no-skip-as-green guards in db_test.go + the cron store_test.go envOrSkip:
+      # a missing DSN under CI t.Fatals (a skipped integration tier fails, never passes
+      # green). The DSNs below are always present, so the tiers actually RUN.
+      CI: "true"
       # Composed role DSNs the db_integration suite reads directly (envOrSkip).
       # Without these the tagged tests SKIP and the job goes falsely green — the
       # fail-loud guard in db_test.go now turns that skip into a failure under CI.
@@ -150,7 +154,12 @@ jobs:
         run: make db-up
 
       - name: Run db_integration suite with race
-        run: go test -tags db_integration -race -count=1 ./internal/db/...
+        # Phase 10: the scheduler (internal/cron) db_integration tier rides this same
+        # job env (AURA_DB_URL/AURA_DB_MIGRATE_URL already exported; CI=true arms the
+        # no-skip-as-green guard so a missing DSN fails rather than skips). The cron
+        # store/claim/recover/dispatch integration tests apply migration 0009 themselves
+        # (migratedPool → EnsureRoles + Migrate), so no extra migrate step is needed.
+        run: go test -tags db_integration -race -count=1 ./internal/db/... ./internal/cron/...
 
       - name: aura db migrate (smoke, idempotency)
         run: |
@@ -163,6 +172,21 @@ jobs:
         run: |
           export PGPASSWORD=${POSTGRES_PASSWORD}
           bash scripts/restore_drill.sh
+
+      - name: Scheduler chaos (SC#2, CI-ADVISORY — non-blocking, D-05)
+        # The chaos script is the OPERATOR-GATING record (D-05): here it runs as a
+        # non-blocking advisory signal (continue-on-error) so a flaky 3-worker/60s
+        # partition on a shared runner never reds the build, while still exercising the
+        # survivor-pickup + no-duplicate invariant in CI. The migrations are already
+        # applied (db_integration migratedPool + `aura db migrate` above). A faster
+        # partition window keeps the advisory step inside the job budget; the operator
+        # run uses the full 60s.
+        continue-on-error: true
+        env:
+          CHAOS_PARTITION_SEC: "20"
+          CHAOS_SETTLE_SEC: "30"
+          AURA_SCHEDULER_TICK_SECONDS: "3"
+        run: bash scripts/scheduler_chaos.sh
 
   sqlc-golden:
     name: sqlc generate is in sync

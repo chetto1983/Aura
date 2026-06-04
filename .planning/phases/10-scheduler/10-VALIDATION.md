@@ -38,18 +38,18 @@ created: 2026-06-04
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| TBD | — | — | CAP-06 / SC#1 | — | cron fires once per window, no double-exec | db_integration | `go test -tags db_integration -race -run TestClaimSkipLocked ./internal/cron/` | ❌ W0 | ⬜ pending |
-| TBD | — | — | CAP-06 / SC#1 | — | `at\|every\|cron` parse + tz NextRunAt + DST | unit | `go test -race -run TestNextRunAt ./internal/cron/` | ❌ W0 | ⬜ pending |
-| TBD | — | — | CAP-06 / SC#2 | — | survivor picks up partitioned worker's task, no dup side-effects | chaos (Manual-Only + CI-advisory) | `scripts/scheduler_chaos.sh` | ❌ W0 | ⬜ pending |
-| TBD | — | — | CAP-06 / SC#2 | — | idempotency via `completed_with_hash` | db_integration | `go test -tags db_integration -run TestIdempotentCompletion ./internal/cron/` | ❌ W0 | ⬜ pending |
-| TBD | — | — | CAP-06 / SC#3 | — | nightly backups produce dumps; 24h-miss alert | Manual-Only + unit | operator-run + `go test -race -run TestMissedBackupAlert ./internal/cron/` | ❌ W0 | ⬜ pending |
-| TBD | — | — | CAP-06 / SC#4 | — | agent_job terminates at inherited step budget | unit + db_integration | `go test -race -run TestAgentJobBudgetInherit ./internal/cron/` | ❌ W0 | ⬜ pending |
-| TBD | — | — | CAP-06 / SC#4 | — | ask_user auto-reject never blocks, <30s, audit marker | unit + live smoke | `go test -race -run TestAskUserAutoReject ./internal/cron/` | ❌ W0 | ⬜ pending |
-| TBD | — | — | North-Star Q3 | — | natural-prompt reminder → `at` task via `task` tool | live smoke E2E (env-gated) | `OPENROUTER_API_KEY`-gated, NOT CI | ❌ W0 | ⬜ pending |
-| TBD | — | — | North-Star Q1/Q2 | — | natural-prompt cron agent_job + MCP delivery | live smoke E2E (env-gated) | MCP-mounted, NOT CI | ❌ W0 | ⬜ pending |
+| 10-03-T* | 10-03 | 1 | CAP-06 / SC#1 | — | cron fires once per window, no double-exec | db_integration | `go test -tags db_integration -race -run TestClaim ./internal/cron/` | ✅ | ✅ green |
+| 10-02-T* | 10-02 | 1 | CAP-06 / SC#1 | — | `at\|every\|cron` parse + tz NextRunAt + DST | unit | `go test -race -run TestNextRunAt ./internal/cron/` | ✅ | ✅ green |
+| 10-06-T2 | 10-06 | 4 | CAP-06 / SC#2 | T-10-22 | survivor picks up partitioned worker's task, no dup side-effects | chaos (Manual-Only + CI-advisory) | `scripts/scheduler_chaos.sh` | ✅ | ⬜ operator-gated |
+| 10-05-T* | 10-05 | 3 | CAP-06 / SC#2 | T-10-22 | idempotency via `completed_with_hash` | db_integration | `go test -tags db_integration -run TestDispatchCompletionIsIdempotent ./internal/cron/` | ✅ | ✅ green |
+| 10-05-T* | 10-05 | 3 | CAP-06 / SC#3 | — | nightly backups produce dumps; 24h-miss alert | Manual-Only + unit | operator-run + `go test -race -run TestMissedBackupAlert ./internal/cron/handlers/` | ✅ | ⬜ operator-gated |
+| 10-05-T* | 10-05 | 3 | CAP-06 / SC#4 | T-10-19 | agent_job terminates at inherited step budget | unit + db_integration | `go test -race -run TestAgentJobBudgetInherit ./internal/cron/handlers/` | ✅ | ✅ green |
+| 10-05-T* | 10-05 | 3 | CAP-06 / SC#4 | T-10-19 | ask_user auto-reject never blocks, <30s, audit marker | unit + live smoke | `go test -race -run TestAskUserAutoReject ./internal/cron/handlers/` | ✅ | ✅ green |
+| 10-06-T2 | 10-06 | 4 | North-Star Q3 | T-10-23 | natural-prompt reminder → `at` task via `task` tool | live smoke E2E (env-gated) | `go test -tags cot_eval -run TestSchedulerNorthStarE2E/Q3 ./internal/cron/` (OPENROUTER_API_KEY, NOT CI) | ✅ | ⬜ operator-gated |
+| 10-06-T2 | 10-06 | 4 | North-Star Q1/Q2 | T-10-23 | natural-prompt cron agent_job + MCP delivery | live smoke E2E (env-gated) | `go test -tags cot_eval -run TestSchedulerNorthStarE2E/Q1 ./internal/cron/` (MCP-mounted, NOT CI) | ✅ | ⬜ operator-gated |
 
-*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
-*Task IDs filled by planner — map rows to plan tasks when PLAN.md files land.*
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky · operator-gated = the live/chaos run is the Task-3 checkpoint record*
+*Task IDs mapped to plan tasks (10-02..10-06); `*` = the SC behavior shipped across that plan's tasks.*
 
 ---
 
