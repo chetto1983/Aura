@@ -1,0 +1,221 @@
+// serve_adapters.go holds the composition-root adapters that bridge the cron-local
+// consumer-declared interfaces (10-05 deviation #1/#3) onto the live runtime types,
+// keeping package cron free of an internal/agent/tools import and the tools package
+// free of an internal/cron import. Two adapters live here:
+//
+//   - selfSendResolver: a *tools.Registry → cron.SelfSendResolver over the mounted
+//     MCP self-send tools (send_message / send_email), namespaced <server>__<tool>;
+//   - cronTaskStore: a cron.Store → tools.taskStore so the live LLM-facing `task` tool
+//     persists against the real Postgres (the status-aware INSERT + approve/run_now
+//     UPDATEs the cron.Store does not expose are run as raw parameterized SQL over the
+//     pool, mirroring cmd/aura/task.go — never string-concatenated, T-10-01).
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// newTaskTool builds the non-deferred `task` tool, injecting the live store only when
+// one is present. A nil ts leaves TaskTool.Store as a genuine nil interface (not an
+// interface wrapping a nil pointer), so the pool-free manifest path lists the tool's
+// Spec without a half-wired store that would panic on a nil-pointer method call.
+func newTaskTool(ts *cronTaskStore) *tools.TaskTool {
+	t := &tools.TaskTool{AlertThreshold: scoring.Risky}
+	if ts != nil {
+		t.Store = ts
+	}
+	return t
+}
+
+// --- SelfSendResolver adapter (Notifier MCP self-send, D-19) ---
+
+// selfSendResolver resolves an MCP self-send tool by its bare name (send_message /
+// send_email) off the mounted registry. MCP tools are namespaced <server>__<tool>
+// (mcptools/name.go), so the resolver matches the bare suffix after the "__"
+// delimiter (or an exact bare name, for a non-namespaced tool).
+type selfSendResolver struct {
+	reg *tools.Registry
+}
+
+var _ cron.SelfSendResolver = (*selfSendResolver)(nil)
+
+// newSelfSendResolver builds the resolver over the mounted registry. A nil registry
+// yields a resolver that never resolves (the Notifier then degrades every route to
+// stdout, the always-available fallback sink).
+func newSelfSendResolver(reg *tools.Registry) *selfSendResolver {
+	return &selfSendResolver{reg: reg}
+}
+
+// Resolve finds the registered tool whose name is bareName or ends with
+// "__"+bareName (the MCP namespacing), returning a SelfSendTool handle. It returns
+// false when no matching tool is mounted (the Notifier falls back to stdout, D-22).
+func (r *selfSendResolver) Resolve(bareName string) (cron.SelfSendTool, bool) {
+	if r.reg == nil {
+		return nil, false
+	}
+	suffix := "__" + bareName
+	for _, t := range r.reg.All() {
+		name := t.Spec().Name
+		if name == bareName || strings.HasSuffix(name, suffix) {
+			return selfSendTool{tool: t}, true
+		}
+	}
+	return nil, false
+}
+
+// selfSendTool wraps a resolved MCP tool so Send executes it with the self-send args
+// the Notifier built. A non-nil error (or a tool result the MCP server flagged as an
+// error) surfaces so the composite Notifier falls back to stdout (D-22).
+type selfSendTool struct {
+	tool tools.Tool
+}
+
+var _ cron.SelfSendTool = selfSendTool{}
+
+// Send executes the MCP self-send tool. The tools.ToolResult carries the delivery
+// preview; an Execute error is the MCP-side failure the Notifier treats as undelivered.
+func (s selfSendTool) Send(ctx context.Context, args json.RawMessage) error {
+	if _, err := s.tool.Execute(ctx, args); err != nil {
+		return fmt.Errorf("mcp self-send %q: %w", s.tool.Spec().Name, err)
+	}
+	return nil
+}
+
+// --- taskStore adapter (live `task` tool persistence, 10-05 deviation #3) ---
+
+// cronTaskStore adapts the live Postgres pool + cron.Store onto the tools.taskStore
+// seam the `task` tool dispatches against. CreateScheduledTask/CancelScheduledTask
+// reuse cron.Store; ListScheduledTasks/RunScheduledTaskNow/ApproveScheduledTask run
+// the status-aware reads/UPDATEs cron.Store does not expose as raw parameterized SQL
+// (the cmd/aura/task.go CLI precedent), never string-concatenated.
+type cronTaskStore struct {
+	pool  *pgxpool.Pool
+	store *cron.Store
+}
+
+// newCronTaskStore builds the adapter over the live pool. A nil pool yields an
+// adapter whose methods error — but the registry only wires it when a pool exists
+// (serve/chat boot); the pool-free manifest path registers the tool with no store.
+func newCronTaskStore(pool *pgxpool.Pool) *cronTaskStore {
+	return &cronTaskStore{pool: pool, store: cron.New(pool)}
+}
+
+// CreateScheduledTask persists a resolved task via cron.Store, honoring the tool's
+// computed status (active | pending_approval). cron.Store.CreateTask always inserts
+// active, so a pending_approval task is gated with a follow-up status UPDATE in the
+// same logical create (the gate is set before the first tick can claim it).
+func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.CreateTaskInput) (tools.ScheduledTask, error) {
+	created, err := s.store.CreateTask(ctx, cron.CreateTaskParams{
+		Kind: cron.TaskKind(in.Kind),
+		Spec: cron.ScheduleSpec{
+			Kind:         cron.ScheduleKind(in.ScheduleKind),
+			CronExpr:     in.CronExpr,
+			EveryMinutes: in.EveryMinutes,
+			RunAt:        in.RunAt,
+			TZ:           in.TZ,
+		},
+		Payload:     in.Payload,
+		StepBudget:  in.StepBudget,
+		NextRunAt:   in.NextRunAt,
+		NotifyRoute: in.NotifyRoute,
+	})
+	if err != nil {
+		return tools.ScheduledTask{}, err
+	}
+	status := in.Status
+	if status == "" {
+		status = "active"
+	}
+	if status != "active" {
+		if _, err := s.pool.Exec(ctx,
+			`UPDATE aura.scheduler_tasks SET status = $2, updated_at = now() WHERE id = $1`,
+			created.ID, status); err != nil {
+			return tools.ScheduledTask{}, fmt.Errorf("gate task %s to %s: %w", created.ID, status, err)
+		}
+	}
+	return tools.ScheduledTask{
+		ID:           created.ID,
+		Kind:         string(created.Kind),
+		ScheduleKind: string(created.ScheduleKind),
+		Status:       status,
+		NextRunAt:    created.NextRunAt,
+	}, nil
+}
+
+// ListScheduledTasks returns active + pending_approval tasks (the LLM-facing list,
+// mirroring the CLI taskList query).
+func (s *cronTaskStore) ListScheduledTasks(ctx context.Context) ([]tools.ScheduledTask, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, kind, schedule_kind, status, next_run_at
+		FROM aura.scheduler_tasks
+		WHERE status IN ('active', 'pending_approval')
+		ORDER BY next_run_at ASC NULLS LAST, id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list scheduled tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var out []tools.ScheduledTask
+	for rows.Next() {
+		var t tools.ScheduledTask
+		var next *time.Time
+		if err := rows.Scan(&t.ID, &t.Kind, &t.ScheduleKind, &t.Status, &next); err != nil {
+			return nil, fmt.Errorf("scan scheduled task: %w", err)
+		}
+		if next != nil {
+			t.NextRunAt = *next
+		}
+		out = append(out, t)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list scheduled tasks: %w", err)
+	}
+	return out, nil
+}
+
+// CancelScheduledTask soft-cancels via cron.Store (status='cancelled').
+func (s *cronTaskStore) CancelScheduledTask(ctx context.Context, id string) error {
+	return s.store.CancelTask(ctx, id)
+}
+
+// RunScheduledTaskNow flips an active task's next_run_at to now so the next tick
+// claims it. A pending_approval task is refused — approval is the only path out of
+// pending_approval (D-13: run_now must not bypass the gate).
+func (s *cronTaskStore) RunScheduledTaskNow(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE aura.scheduler_tasks
+		SET next_run_at = now(), updated_at = now()
+		WHERE id = $1 AND status = 'active'`, id)
+	if err != nil {
+		return fmt.Errorf("run_now task %s: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("task %s is not active (pending_approval or cancelled tasks cannot be run now)", id)
+	}
+	return nil
+}
+
+// ApproveScheduledTask is the only transition out of pending_approval (T-10-13): it
+// flips status to active so the gated task can fire.
+func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) error {
+	tag, err := s.pool.Exec(ctx, `
+		UPDATE aura.scheduler_tasks
+		SET status = 'active', updated_at = now()
+		WHERE id = $1 AND status = 'pending_approval'`, id)
+	if err != nil {
+		return fmt.Errorf("approve task %s: %w", id, err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("task %s is not awaiting approval", id)
+	}
+	return nil
+}

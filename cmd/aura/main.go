@@ -70,7 +70,9 @@ func main() {
 		runConfig(os.Args[2:])
 	case "version", "--version", "-v":
 		runVersion()
-	case "shell", "serve":
+	case "serve":
+		runServe(os.Args[2:])
+	case "shell":
 		fmt.Println("TODO: implemented by the agent-loop and CLI slices")
 	default:
 		usage()
@@ -84,16 +86,22 @@ func usage() {
 
 func buildRegistry() *tools.Registry {
 	cfg := config.LoadDB()
-	return buildBaseRegistry(cfg)
+	return buildBaseRegistry(cfg, nil)
 }
 
-func buildBaseRegistry(cfg *config.Config) *tools.Registry {
+// buildBaseRegistry is the shared composition root for every boot path. ts is the
+// live scheduler store the non-deferred `task` tool persists against (D-11): serve/
+// chat inject the cronTaskStore over the open pool; the pool-free manifest paths
+// (`aura tools`, buildRegistry) pass nil — the tool still registers (its Spec needs no
+// store) so the manifest lists it, and an Execute without a store would error loudly.
+func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
 	reg.Register(&tools.ReadToolOutput{})
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
+	reg.Register(newTaskTool(ts))
 	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
@@ -115,11 +123,11 @@ func buildBaseRegistry(cfg *config.Config) *tools.Registry {
 	return reg
 }
 
-func buildRegistryWithMCP(ctx context.Context, cfg *config.Config) (*tools.Registry, []func() error, error) {
+func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskStore) (*tools.Registry, []func() error, error) {
 	if cfg.MCPServersErr != nil {
 		return nil, nil, cfg.MCPServersErr
 	}
-	reg := buildBaseRegistry(cfg)
+	reg := buildBaseRegistry(cfg, ts)
 	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
 		return reg, nil, nil
 	}
@@ -194,7 +202,7 @@ func closeMCPServers(closers []func() error) error {
 }
 
 func printTools() {
-	reg, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB())
+	reg, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mcp:", err)
 		os.Exit(1)

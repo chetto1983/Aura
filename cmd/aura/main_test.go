@@ -29,7 +29,7 @@ func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
 	if _, ok := cfg.MCPServers["blocked"]; ok {
 		t.Fatal("blocked managed server must be filtered before chat boot")
 	}
-	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg)
+	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
 	defer func() { _ = closeMCPServers(closers) }()
 	if err != nil {
 		t.Fatalf("buildRegistryWithMCP: %v", err)
@@ -50,7 +50,7 @@ func TestBuildRegistryFailSoft(t *testing.T) {
 			"broken": {Command: "aura-nonexistent-mcp-binary-xyz"},
 		},
 	}
-	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg)
+	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
 	defer func() { _ = closeMCPServers(closers) }()
 	if err != nil {
 		t.Fatalf("a broken MCP server must NOT abort boot (D-21); got err=%v", err)
@@ -80,7 +80,7 @@ func TestBuildRegistryFailSoft(t *testing.T) {
 // refactor that flips the flag or drops the registration trips this test.
 func TestBuildBaseRegistryValidatesWithSwarmSpawn(t *testing.T) {
 	cfg := &config.Config{MaxSwarmGoals: 8}
-	reg := buildBaseRegistry(cfg) // os.Exits if Validate fails — reaching here proves it passed
+	reg := buildBaseRegistry(cfg, nil) // os.Exits if Validate fails — reaching here proves it passed
 
 	if err := reg.Validate(); err != nil {
 		t.Fatalf("registry must stay valid with the Deferred swarm_spawn registered: %v", err)

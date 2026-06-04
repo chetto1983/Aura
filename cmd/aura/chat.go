@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/config"
@@ -51,6 +52,7 @@ type chatEnv struct {
 	identity   *identity.Store
 	run        *runner.Runner
 	client     llm.Client
+	reg        *tools.Registry
 	mcpClosers []func() error
 }
 
@@ -92,25 +94,39 @@ func runChat(args []string) {
 	}
 }
 
-// bootChat builds the composition root (D-A2-05). It loads config (fail-fast on a
-// missing API key with a clear message, never a panic), opens the pool, constructs
-// the three Stores, runs the boot orphan scan (Req#12) BEFORE serving, initializes
-// the tiktoken encoder once, and constructs the Runner.
+// bootChat builds the composition root (D-A2-05) for the `aura chat` callsites. It
+// wraps the error-returning bootChatEnv (D-15) and translates a boot failure into the
+// CLI's os.Exit convention (a missing API key is the one fail-fast with a friendly
+// line, never a panic). The shared boot itself NEVER calls os.Exit, so `aura serve`
+// can reuse it and handle a transient boot error gracefully (Pitfall 6).
 func bootChat(ctx context.Context) *chatEnv {
-	cfg, err := config.Load()
+	env, err := bootChatEnv(ctx)
 	if err != nil {
 		if errors.Is(err, llm.ErrMissingAPIKey) || isMissingAPIKey(err) {
 			fmt.Fprintln(os.Stderr, "aura chat: "+llm.ErrMissingAPIKey.Error())
 			os.Exit(1)
 		}
-		fmt.Fprintln(os.Stderr, "config load:", err)
+		fmt.Fprintln(os.Stderr, "aura chat:", err)
 		os.Exit(1)
+	}
+	return env
+}
+
+// bootChatEnv is the error-returning composition root shared by `aura chat` and
+// `aura serve` (D-15). It loads config, opens the pool, constructs the Stores, runs
+// the boot orphan scan (Req#12) BEFORE serving, initializes the tiktoken encoder
+// once, mounts MCP, and constructs the Runner. It NEVER calls os.Exit — every failure
+// is returned so serve can shut down its already-booted resources cleanly (Pitfall 6:
+// an os.Exit in the shared boot would skip a daemon's graceful shutdown).
+func bootChatEnv(ctx context.Context) (*chatEnv, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return nil, err
 	}
 
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("db open: %w", err)
 	}
 
 	convStore := conversations.New(pool, conversations.Config{
@@ -136,11 +152,12 @@ func bootChat(ctx context.Context) *chatEnv {
 		fmt.Fprintln(os.Stderr, "warn: tiktoken init:", err)
 	}
 
-	reg, mcpClosers, err := buildRegistryWithMCP(ctx, cfg)
+	// The live `task` tool persists against the open pool (10-05 deviation #3): both
+	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB.
+	reg, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool))
 	if err != nil {
 		pool.Close()
-		fmt.Fprintln(os.Stderr, "mcp:", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("mcp: %w", err)
 	}
 
 	client := openai_compat.New(cfg.LLM)
@@ -156,7 +173,7 @@ func bootChat(ctx context.Context) *chatEnv {
 		PreviewCap:   cfg.ToolPreviewCap,
 		EvictAfter:   cfg.ContextToolEvictAfterTurns,
 	})
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, mcpClosers: mcpClosers}
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, mcpClosers: mcpClosers}, nil
 }
 
 // chatList prints the persisted conversations with their title + aggregates.

@@ -1,0 +1,51 @@
+# Aura scheduler daemon — systemd unit (D-16).
+#
+# `aura serve` is the first long-lived Aura process: it hosts the scheduler tick loop
+# (D-15) that fires reminders, agent_jobs, and nightly backups. It is a NATIVE binary
+# on the host (NOT compose-ized): it shells out to Docker sidecars (pg_dump/neo4j-admin
+# via `docker exec`), spawns MCP subprocesses (mail/WhatsApp self-send, mcp-neo4j-cypher),
+# and reads ~/.aura — all of which want host-process locality.
+#
+# Install (per-user systemd; the operator owns ~/.aura + the Docker stack):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/aura-scheduler.service ~/.config/systemd/user/
+#   # put the runtime env (OPENROUTER_API_KEY, POSTGRES_*, AURA_SCHEDULER_*, AURA_BACKUP_DIR,
+#   # TELEGRAM_BOT_TOKEN, MCP creds, ...) in ~/.aura/env (KEY=VALUE per line, no `export`):
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now aura-scheduler.service
+#   journalctl --user -u aura-scheduler -f      # the daemon's slog stream (the audit trail)
+#
+# A system-wide unit is the same file under /etc/systemd/system/ with User=/Group= set
+# and EnvironmentFile=/etc/aura/env; the per-user form above is the documented default
+# (the daemon needs the operator's ~/.aura + Docker socket access).
+
+[Unit]
+Description=Aura scheduler daemon (cron + agent_job queue)
+Documentation=https://github.com/chetto1983/aura
+# The scheduler shells out to the Docker stack for backups + reaches Postgres/Neo4j.
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/aura serve
+# Graceful shutdown (D-15): SIGTERM cancels the root ctx; the in-flight tick finishes
+# and joins its workers, then the MCP closers reverse-close — goleak-clean. Give the
+# longest handler (a backup dump, MaxDuration 30m) room to drain before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=120
+# Restart on a crash (D-16 ops posture); a clean SIGTERM exit (code 0) is NOT a restart.
+Restart=on-failure
+RestartSec=5
+# Runtime env: composed DSNs + OPENROUTER_API_KEY + AURA_SCHEDULER_* + MCP creds.
+EnvironmentFile=%h/.aura/env
+
+# Hardening (the daemon needs the Docker socket for backups, so it is NOT fully
+# sandboxed; these are the safe-by-default knobs that do not break docker exec).
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=%h/.aura
+
+[Install]
+WantedBy=default.target

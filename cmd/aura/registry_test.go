@@ -83,7 +83,7 @@ func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 		SandboxAgent: config.LoadDB().SandboxAgent,
 	}
 
-	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg)
+	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("buildRegistryWithMCP: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
 		SandboxAgent: config.LoadDB().SandboxAgent,
 	}
 
-	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg)
+	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
 	if err != nil {
 		t.Fatalf("buildRegistryWithMCP: %v", err)
 	}

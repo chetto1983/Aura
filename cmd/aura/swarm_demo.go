@@ -84,7 +84,7 @@ func swarmDemo(w io.Writer, goals []string, maxSteps int) error {
 
 	rc := swarm.RunConfig{
 		ParentBudget:   budget,
-		ParentRegistry: buildBaseRegistry(&config.Config{MaxSwarmGoals: len(goals) + 1}),
+		ParentRegistry: buildBaseRegistry(&config.Config{MaxSwarmGoals: len(goals) + 1}, nil),
 		Client:         client,
 		LLM:            llm.Config{Model: "mock", Provider: "fake", TotalTimeoutSec: 30},
 		Cfg: config.Config{
