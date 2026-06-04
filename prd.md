@@ -1936,16 +1936,37 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 > **Slice 0.9 amendment**: `Handler` interface per task type (reminder, agent_job, ecc.) = `Agent` interface (Slice 0.9). Dispatch uniforme: `task.Handler.Run(ctx) iter.Seq2[*Event, error]` invece di switch-per-kind con shape diverse. `Notifier` emette `Event` invece di struct custom. Saving stimato: **−200 LOC** (no dispatch switch ridondante, no shape custom per ogni handler kind).
 
+> **Amendment #46 (Phase 10 reconciliation, 2026-06-04 — D-06..D-29 in `.planning/phases/10-scheduler/10-CONTEXT.md`).** La Slice 6 originale è STALE su sei assi e non può esprimere/consegnare le 4 query North-Star italiane (riassunto mail mattutino, notizie di Cuneo serali, "ricordami di chiamare Monica alle 17:30", riassunto borsa lunedì). Questo amendment riconcilia il PRD con le 29 decisioni CONTEXT ratificate prima di qualsiasi codice (precedente Wave-0 doc-only 05-01/08-01/09-01, per D-29):
+> 1. **Grammar** `daily HH:MM`/`in=10m` → triade industriale `at | every | cron` con colonna `tz` IANA per-task (D-06/D-07).
+> 2. **Parser** "nessuna libreria cron esterna" → cron lib parser-only `adhocore/gronx`, tick DIY 30s ritenuto (D-08).
+> 3. **agent_job spawn** — il vecchio seam (coordinator-spawn + rejecting-responder + tier-config, machinery tagliata in Phase 9) → costruzione `LlmAgent` diretta che mirrora `swarm.runChild` (D-24/D-25).
+> 4. **Tool surface** tabella 5-file `task_*` → UN solo tool `task` non-deferred con enum `action` via ActionRouter (D-09/D-10/D-11).
+> 5. **Delivery** (OQ2) → composite via WhatsApp/mail MCP self-send già montato, stdout fallback (D-19..D-23).
+> 6. **Migration** numero al landing = `0009` (floor 0008); env catalog esteso; `tier`/`toolsets` payload tagliati v1 (D-12/D-13/D-29).
+> I riferimenti superati sono marcati inline `[superato amendment #46]`; i blocchi che seguono sono la verità corrente.
+
 > **Atomicity note (audit round 1 P0):** ~1300 LOC distribuiti = troppo per 1 commit.
-> Si committa in **2 sub-slice ordinati**:
-> - **6a**: types + migration `00NN_scheduler` (numero al landing — vedi §Persistence numbering) + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + tool `task_list`/`task_cancel`. ~700 LOC. Funzionante end-to-end per reminder, base infra.
-> - **6b**: handler `agent_job` (con swarm Coordinator integration) + tool `task_schedule`/`task_run_now` + `ActionRouter` helper (primo uso multi-action, vedi §Pattern condiviso). ~600 LOC.
+> Si committa in **2 sub-slice ordinati** (file-target per-tool superati da amendment #46 → un solo tool `task`):
+> - **6a**: types + migration `0009_scheduler` (floor 0008 — vedi §Persistence numbering) + sqlc queries + store thin adapter + scheduler tick loop + Notifier interface + handler `reminder` + il tool `task` (azioni `list`/`cancel` operative). ~700 LOC. Funzionante end-to-end per reminder, base infra.
+> - **6b**: handler `agent_job` (costruzione `LlmAgent` diretta mirroring `swarm.runChild`, NO import `internal/swarm` — D-24) + le azioni `schedule`/`run_now`/`approve` del tool `task` + `ActionRouter` helper (primo uso multi-action, vedi §Pattern condiviso). ~600 LOC.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
-**Goal.** Riportare il tool `task` LLM-facing con azioni `schedule | list | cancel | run_now`,
-supportato da un cron-core in-process (tick loop DIY ogni 30s, nessuna libreria
-cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
-`reminder`, `agent_job` (extension futura per altri kind in slice dedicata).
+**Goal (amendment #46).** Portare UN solo tool `task` LLM-facing non-deferred con enum
+`action ∈ {schedule, list, cancel, run_now, approve}` (D-09/D-11, supersede la tabella
+5-file `task_*`), supportato da un cron-core in-process (tick loop DIY ogni 30s) il cui
+**next-fire-time è calcolato dalla lib parser-only `github.com/adhocore/gronx`**
+(`NextTickAfter`/`IsDue`/`IsValid`, zero dipendenze transitive — D-08; la vecchia dicitura
+"nessuna libreria cron esterna" è superata: la lib calcola solo il prossimo tick, il loop
+resta DIY) e un Repository persistente Postgres. La **schedule grammar è la triade
+industriale `at | every | cron`** (D-06):
+- `at` — one-shot, risolto e memorizzato come `timestamptz` UTC (copre "chiamare Monica alle 17:30");
+- `every` — intervallo, floor `MinScheduleEveryMinutes` (default 5, configurabile);
+- `cron` — espressione 5-field standard + **colonna `tz` IANA per-task** (default da config, `Europe/Rome` via `AURA_SCHEDULER_TZ`).
+**Regola DST-safe (D-07):** un task ricorrente memorizza `(expr, tz)` e ricalcola
+`next_run_at` IN-ZONA dopo ogni fire — MAI un offset UTC fisso (drift silenzioso ±1h
+attraverso il cambio DST). Il DB resta UTC; solo il calcolo è tz-aware.
+Supporta `TaskKind` estensibile: `reminder`, `agent_job` (+ `backup_postgres`/`backup_neo4j`,
+vedi §Backup strategy).
 
 **Pre-rewrite reference**:
 - [internal/agent/tools/registry/scheduler.go](git:pre-rewrite-2026-05-27/internal/agent/tools/registry/scheduler.go) — 587 LOC tool wrapper (LARGE, da splittare per azione)
@@ -1953,15 +1974,23 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 - [internal/cron/store.go](git:pre-rewrite-2026-05-27/internal/cron/store.go) — **594 LOC GOD CLASS** (Upsert+Cancel+Delete+DueTasks+MarkFired+RecordManualRun+RecordAgentJobResult tutti in un file)
 - [internal/cron/dispatch.go + dispatch_handlers.go](git:pre-rewrite-2026-05-27/internal/cron/dispatch.go) — 244+246 LOC con 5 `dispatchXxx` privati (`dispatchReminder`, `dispatchWikiMaintenance`, `dispatchLessonPromotion`, `dispatchProposalTTLSweep`, `dispatchMemoryDecay`) + 2 arm inline nel `Dispatch` switch (`BackupVerify`, `WALCheckpoint`). Tutto senza strategy pattern (verificato pre-rewrite tag, round 1 reality check)
 
-**Smoke E2E.**
+**Smoke E2E (grammar triade, amendment #46).**
 ```bash
 ./aura chat "ricordami fra 10 minuti di controllare il forno"
-# → modello chiama task.schedule(kind=reminder, in=10m, payload={text: ...})
-# → 10 min dopo: il dispatcher chiama Notifier → utente riceve notifica (CLI/Telegram)
+# → modello chiama task(action=schedule, kind=reminder, every="10m", payload={text: ...})
+# → 10 min dopo: il dispatcher chiama Notifier → composite delivery (WhatsApp/mail self-send, stdout fallback)
 
-./aura chat "ogni giorno alle 9 del mattino fai un riassunto degli articoli che ho letto ieri"
-# → modello chiama task.schedule(kind=agent_job, daily=09:00, payload={goal: ..., toolsets: [wiki, web]})
-# → il dispatcher invoca l'agent loop come sub-job con goal serializzato
+./aura chat "ricordami di chiamare Monica alle 17:30"
+# → task(action=schedule, kind=reminder, at="2026-06-04T17:30:00+02:00"|risolto UTC) — one-shot North-Star Q3
+
+./aura chat "ogni mattina alle 9:30 fammi il riassunto delle mail da evadere"
+# → task(action=schedule, kind=agent_job, cron="30 9 * * *", tz="Europe/Rome", payload={goal: ...})
+# → il dispatcher costruisce un LlmAgent diretto (registry full minus swarm_spawn) con goal serializzato
+
+# CLI operator parity (D-14, nessun LLM): ogni path della triade è testabile a mano
+./aura task schedule --kind reminder --at "2026-06-04T17:30" --args '{"text":"chiama Monica"}'
+./aura task schedule --kind agent_job --cron "30 9 * * *" --tz Europe/Rome --args '{"goal":"..."}'
+./aura task schedule --kind reminder --every 5m --args '{"text":"..."}'
 ```
 
 **Acceptance.**
@@ -1970,10 +1999,10 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 - [ ] Persistence: i task sopravvivono al restart del processo. Tick loop riprende `DueTasks` allo startup e cattura up i missed run (con flag `MissedSince`).
 - [ ] **`DueTasks` query usa `SELECT ... FOR UPDATE SKIP LOCKED` (audit round 1 P0)**: pattern atomico per multi-instance safety. Anche con 1 sola Aura attiva oggi, blocca double-dispatch se un manual `task.run_now` parte contemporaneo al tick. Costo zero, sblocca future multi-instance.
 - [ ] Dispatcher: ogni `TaskKind` ha un `Handler` separato in `internal/cron/handlers/<kind>.go`. **Handler = `agent.Agent` (Slice 0.9)**: implementa `Run(ctx InvocationContext) iter.Seq2[*Event, error]` + metadata `MaxDuration() time.Duration` + `ReschedulesOnRecovery() bool` via embedding `BaseAgent` o struct fields. `MaxDuration` definisce la soglia oltre la quale un run senza `finished_at` è considerato in limbo al restart. `ReschedulesOnRecovery=true` (reminder, idempotenti) → il task viene riportato in `DueTasks` al boot; `=false` (agent_job, side-effecting) → limbo audit-only, no auto re-run. Aggiungere un nuovo kind = aggiungere 1 file con `Agent` impl, no dispatch switch nel tick loop (`tickLoop` itera `handler.Run(ctx)` yield events e li forwarda a `Notifier`/audit).
-- [ ] **`agent_job` handler auto-rejecta child Loop pause (audit round 1 P0)**: il sub-loop spawn-ato via `swarm.Coordinator.Spawn` riceve un `RejectingResponder` come default — un agent_job non può bloccare aspettando un umano (è cron, gira anche di notte). Se l'agent_job invoca `ask_user`, riceve risposta automatica `"<auto-rejected: scheduled job has no human responder>"` e decide come procedere. Test asserisce: cron job che invoca ask_user non blocca, completa in <30s con stato `auto-rejected`.
+- [ ] **`agent_job` handler auto-rejecta child Loop pause (audit round 1 P0; spawn seam amendment #46 D-24/D-25)**: il sub-loop è un `LlmAgent` costruito **direttamente** dall'handler mirroring `swarm.runChild` (`internal/swarm/swarm.go:132-192` è il template provato) — registry `Without(reg, "swarm_spawn")`, goal come primo user message, budget da `agent_job_runs.step_budget`, sessione ephemeral `agent_job:<run_id>` (NO `internal/swarm` import; il vecchio seam coordinator-spawn + rejecting-responder è machinery tagliata in Phase 9, `[superato amendment #46]`). L'auto-reject (D-25) è **inject-and-continue**: su `Actions.AwaitingInput`, re-Run un fresh LlmAgent con i turn precedenti + una risposta sintetizzata `RoleTool` `"<auto-rejected: scheduled job has no human responder>"` (il resume seam del Runner senza DB, pattern `chat_repl.go` SubmitAnswer). `ask_user` RESTA nel registry del child (il modello deve VEDERE la rejection in-band e decidere come procedere, bounded dal budget residuo). Test asserisce: cron job che invoca ask_user non blocca, completa in <30s con il marker auto-rejected nell'audit.
 - [ ] `LastError` persistito su failure, leggibile via `task.list()`.
-- [ ] **Risk-Based Governance (Area #5 closed 2026-05-28)**: ogni chiamata a `task.schedule` calcola `tier = scoring.ComputeTaskTier(args)` via modulo condiviso `internal/scoring/` (vedi §Risk-Based Governance). Se `tier in {RISKY, DESTRUCTIVE}` il task viene creato con `status='pending_approval'` (non gira), il tool result include `{task_id, risk_tier, gate_recommended:true, status:'pending_approval'}`. L'agente decide autonomamente se ri-emettere `ask_user(kind=approval, ResumeContext={action:'approve', task_id})` o procedere silente. Se silente: Notifier IMMEDIATE alert all'utente (tier ≥ RISKY trigger threshold). Tutti i campi audit (`computed_risk_tier`, `gate_recommended`, `gate_taken`) registrati in `agent_job_runs`.
-- [ ] Nuovo tool `task.approve(task_id)` (deferred): chiama `Queries.ApproveTask(id)` → `UPDATE scheduler_tasks SET status='active' WHERE status='pending_approval'`. Idempotente, no-op su task già attivi. Usato dal resume handler dell'ask_user approval.
+- [ ] **Risk-Based Governance (Area #5 closed 2026-05-28)**: ogni `task(action=schedule)` calcola `tier = scoring.ComputeTaskTier(args)` via modulo condiviso `internal/scoring/` (vedi §Risk-Based Governance). Se `tier in {RISKY, DESTRUCTIVE}` il task viene creato con `status='pending_approval'` (non gira), il tool result include `{task_id, risk_tier, gate_recommended:true, status:'pending_approval'}`. L'agente decide autonomamente se ri-emettere `ask_user(kind=approval, ResumeContext={action:'approve', task_id})` o procedere silente. Se silente: Notifier IMMEDIATE alert all'utente (tier ≥ RISKY trigger threshold). Tutti i campi audit (`computed_risk_tier`, `gate_recommended`, `gate_taken`) registrati in `agent_job_runs`.
+- [ ] **Azione `task(action=approve, task_id)`** (amendment #46: era tool `task.approve` deferred, ora azione dello stesso tool `task`): chiama `Queries.ApproveTask(id)` → `UPDATE scheduler_tasks SET status='active' WHERE status='pending_approval'`. Idempotente, no-op su task già attivi. Usato dal resume handler dell'ask_user approval e dalla CLI `aura task approve <id>` (D-27).
 - [ ] `scheduler_tasks.status` enum: `'active' | 'paused' | 'cancelled' | 'pending_approval'`. Tick loop `DueTasks` filtra `WHERE status='active'` (task in pending_approval mai dispatchati).
 - [ ] **Crash recovery boot query (Area #3 closed 2026-05-28)**: il tick loop, **prima** del primo tick, esegue:
   ```sql
@@ -2001,11 +2030,11 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 | `internal/cron/store.go` | ~80 | Thin adapter: domain `Task` ↔ sqlc rows. Trasforma enum string ↔ tipo Go. |
 | `internal/db/queries/scheduler_tasks.sql` | ~120 | **8 query sqlc**: `UpsertTask`, `GetByName`, `ListTasks`, `DueTasks`, `MarkFired`, `CancelTask`, `DeleteTask`, `RecordRunResult`. Una query per concept, anti-god-class. |
 | `internal/db/queries/agent_job_runs.sql` | ~80 | **4 query sqlc**: `RecordManualRun`, `RecordAgentJobResult`, `ListRuns`, `MarkRunsRecovered`. `MarkRunsRecovered` è la boot recovery query (UPDATE finished_at IS NULL AND started_at < threshold → exit_status='unknown_recovery'). RETURNING task_id per il reschedule loop. |
-| `internal/db/migrations/00NN_scheduler.up.sql` (numero al landing — floor 0006=conversation_turns_fts; vedi §Persistence numbering) | ~90 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, `approval_source text NULL CHECK (approval_source IS NULL OR approval_source IN ('ask_user','cli','auto'))`, `paused_state_token uuid NULL REFERENCES aura.paused_states(token) ON DELETE SET NULL`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). **`approval_source` enum + `paused_state_token` FK** (parity con `skill_audit`, fix audit Round 1 P1): se la run è triggered da `task.approve` post-ask_user → `approval_source='ask_user'` + `paused_state_token=<token>`. Se da `task.run_now` CLI → `'cli'` + NULL. Se da tick scheduler senza gate → `'auto'` + NULL. Forensics simmetrico cross-slice. |
-| `internal/db/migrations/00NN_scheduler.down.sql` | ~5 | DROP TABLEs. |
+| `internal/db/migrations/0009_scheduler.up.sql` (numero al landing = **0009**, floor 0008=proxied_child_id_text; vedi §Persistence numbering — D-29) | ~90 | `CREATE TABLE aura.scheduler_tasks` (id, name unique, kind, schedule_kind, schedule_payload jsonb, next_run_at, `status text NOT NULL CHECK (status IN ('active','paused','cancelled','pending_approval'))`, last_error, created_at, updated_at). `CREATE TABLE aura.agent_job_runs` (id, task_id fk, started_at, finished_at, `exit_status text NOT NULL DEFAULT 'running' CHECK (exit_status IN ('running','completed','failed','cancelled','timeout','unknown_recovery'))`, `recovered_at timestamptz NULL`, `computed_risk_tier text NOT NULL DEFAULT 'normal' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT false`, `gate_taken boolean NOT NULL DEFAULT false`, `approval_source text NULL CHECK (approval_source IS NULL OR approval_source IN ('ask_user','cli','auto'))`, `paused_state_token uuid NULL REFERENCES aura.paused_states(token) ON DELETE SET NULL`, summary text, tokens jsonb). Indici su `next_run_at WHERE status='active'` (scheduler_tasks) e su `(exit_status, started_at) WHERE finished_at IS NULL` (boot recovery scan). **`approval_source` enum + `paused_state_token` FK** (parity con `skill_audit`, fix audit Round 1 P1): se la run è triggered da `task.approve` post-ask_user → `approval_source='ask_user'` + `paused_state_token=<token>`. Se da `task.run_now` CLI → `'cli'` + NULL. Se da tick scheduler senza gate → `'auto'` + NULL. Forensics simmetrico cross-slice. |
+| `internal/db/migrations/0009_scheduler.down.sql` | ~5 | DROP TABLEs. |
 | `internal/cron/handlers/handler.go` | ~50 | `Handler` = type alias di `agent.Agent` (Slice 0.9) + metadata interface `HandlerMeta{ Kind() TaskKind; MaxDuration() time.Duration; ReschedulesOnRecovery() bool }`. Registry `map[TaskKind]Handler`. Helper `BaseHandler` struct embeddable per riusare metadata. |
 | `internal/cron/handlers/reminder.go` | ~70 | `ReminderAgent` impl `agent.Agent`: `Run(ctx) iter.Seq2[*Event, error]` emette un `Event{Author:"reminder", LLMResponse:{Content: payload.Text}}` poi `Event{Actions.Escalate=true}`. Notifier consuma yield events. `MaxDuration=30s`, `ReschedulesOnRecovery=true` (idempotente: ri-notificare "controlla il forno" è safe). |
-| `internal/cron/handlers/agent_job.go` | ~120 | `AgentJobAgent` impl `agent.Agent`: spawn child `LlmAgent` via Slice 3 swarm `Coordinator.Spawn` (Slice 0.9 amendment), forwarda i child events come yield del proprio `Run`. Tier configurabile via task payload (`tier ∈ {worker, chat, reasoning}`, default `reasoning`); validato contro `TierConfig.Available()`. `MaxDuration=600s` (default, override via task payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). |
+| `internal/cron/handlers/agent_job.go` | ~120 | **`AgentJobAgent` impl `agent.Agent` (amendment #46 D-24/D-25):** costruisce un child `LlmAgent` **direttamente** mirroring `swarm.runChild` (`internal/swarm/swarm.go:132-192`) — `agent.NewLlmAgent` con registry `Without(reg, "swarm_spawn")`, goal come primo user message, `agent.NewBudget(BudgetOptions{MaxSteps: &step_budget})` dalla riga `agent_job_runs.step_budget` (amendment #19), sessione ephemeral `agent_job:<run_id>` (amendment #23, mai via `runner.Turn` persistente). Forwarda i child events come yield del proprio `Run`. **NO import `internal/swarm` in `internal/cron`.** Auto-reject ask_user = inject-and-continue (D-25). `MaxDuration=600s` (default, override via payload), `ReschedulesOnRecovery=false` (side-effect committati non ricostruibili). `[superato amendment #46: il vecchio coordinator-spawn + il `tier ∈ {worker,chat,reasoning}` payload validato vs il tier-config catalog = machinery tagliata Phase 9, D-12; il child usa il modello unico configurato, il modifier reasoning di scoring diventa default piatto]`. |
 | ~~`internal/cron/handlers/graph_maintenance.go`~~ | — | **RIMOSSO (audit round 1 P0)**: scope-creep esplicito (placeholder per future), va in slice dedicata post-MCP-Neo4j. Slice 6 supporta solo `reminder` e `agent_job` per ora. |
 
 **Commit message templates (sub-slice 6a + 6b):**
@@ -2014,23 +2043,24 @@ cron esterna) e un Repository persistente. Supporta `TaskKind` estensibile:
 slice 6a: scheduler infrastructure — types + sqlc + tick loop + reminder handler
 
 PostgreSQL-backed scheduler base. Types (Task/TaskKind/ScheduleKind/Status),
-migration 00NN_scheduler (numero al landing, vedi §Persistence numbering) (tables scheduler_tasks + agent_job_runs with
+migration 0009_scheduler (floor 0008, vedi §Persistence numbering) (tables scheduler_tasks + agent_job_runs with
 exit_status check constraint (running|completed|failed|cancelled|timeout|
-unknown_recovery), recovered_at nullable column, indices on next_run_at
-WHERE status='active' and on (exit_status, started_at) WHERE finished_at
-IS NULL, FOR UPDATE SKIP LOCKED on DueTasks). 12 sqlc queries split across
-scheduler_tasks.sql + agent_job_runs.sql (incl. MarkRunsRecovered boot
-query). Tick loop DIY 30s with missed-run recovery and crash recovery
+unknown_recovery), recovered_at nullable column, per-task tz column +
+adhocore/gronx-computed next_run_at (DST-safe in-zone recompute), indices on
+next_run_at WHERE status='active' and on (exit_status, started_at) WHERE
+finished_at IS NULL, FOR UPDATE SKIP LOCKED on DueTasks). 12 sqlc queries
+split across scheduler_tasks.sql + agent_job_runs.sql (incl. MarkRunsRecovered
+boot query). Tick loop DIY 30s with missed-run recovery and crash recovery
 (boot query marks finished_at IS NULL && started_at < MaxDuration as
 unknown_recovery; reschedules only handlers with ReschedulesOnRecovery=true,
 i.e. reminders; agent_job stays audit-only). Handler = agent.Agent (Slice
 0.9): Run(ctx) iter.Seq2[*Event, error] + metadata MaxDuration() +
 ReschedulesOnRecovery(). Notifier interface + stdout impl consume yield
 events and emit boot summary if >=1 row recovered. Handlers registry +
-reminder handler (MaxDuration=30s, reschedules=true). Tools
-task_list/task_cancel.
+reminder handler (MaxDuration=30s, reschedules=true). One `task` tool
+(action enum), list/cancel actions operative.
 
-Smoke: aura schedule reminder in=10m → tick loop fires → Notifier stdout.
+Smoke: aura schedule reminder every=10m → tick loop fires → Notifier stdout.
 Persistent across restart verified.
 
 LOC: +XXX src / +YY test / +ZZ migration.
@@ -2041,28 +2071,30 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 slice 6b: scheduler agent_job + ActionRouter helper
 
-Adds agent_job handler that delegates to swarm.Coordinator.Spawn
-(RejectingResponder default → cron jobs auto-reject child Loop pauses,
-deadlock-guarded). Tools task_schedule/task_run_now (deferred). ActionRouter
-helper introduced in internal/agent/tools/action.go (~90 LOC) with sentinel
-passthrough contract — first multi-action consumer is `task`. Slice 7 reuses.
+Adds agent_job handler that constructs an LlmAgent directly, mirroring
+swarm.runChild (registry Without swarm_spawn, budget from agent_job_runs row,
+ephemeral session agent_job:<run_id>, NO internal/swarm import — D-24).
+ask_user auto-reject = inject-and-continue (D-25): cron jobs never block on a
+human responder. The `task` tool gains its schedule/run_now/approve actions.
+ActionRouter helper introduced in internal/agent/tools/action.go (~90 LOC)
+with sentinel passthrough contract, top-level required=["action"] only (no
+root oneOf/anyOf/enum — OpenAI-wire-safe, D-10) — first multi-action consumer
+is `task`. Slice 7 reuses.
 
-Smoke: aura chat "ogni giorno alle 9 fai un riassunto degli articoli che ho
-letto ieri" → task_schedule → handler agent_job → swarm child → join.
+Smoke: aura chat "ogni mattina alle 9:30 fammi il riassunto delle mail" →
+task(action=schedule, cron="30 9 * * *", tz=Europe/Rome) → agent_job handler →
+direct LlmAgent child → join.
 
 LOC: +XXX src / +YY test.
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
-| `internal/agent/tools/task_schedule.go` | ~120 | Deferred. Args validation + delega a `Queries.UpsertTask`. Args extra per agent_job: `tier? ∈ {worker, chat, reasoning}` (default `reasoning`). Chiama `scoring.ComputeTaskTier(args)` post-validation (tier=reasoning aggiunge +0.2 modifier al tier base); se RISKY/DESTRUCTIVE setta `status='pending_approval'` e Notifier IMMEDIATE alert. Include `risk_tier` + `gate_recommended` nel tool result. |
-| `internal/agent/tools/task_list.go` | ~50 | Non-deferred. Mostra anche task `pending_approval` con annotazione `[awaiting approval]`. |
-| `internal/agent/tools/task_cancel.go` | ~40 | Deferred. |
-| `internal/agent/tools/task_run_now.go` | ~80 | Deferred. Chiama Handler.Handle direttamente, bypass tick. **Refuse task in pending_approval** (errore strutturato chiede `task.approve` prima). |
-| `internal/agent/tools/task_approve.go` | ~50 | Deferred. Args `{task_id}`. `UPDATE scheduler_tasks SET status='active' WHERE id=:id AND status='pending_approval' RETURNING id`. Idempotente, no-op se già active. Audit `gate_taken=true`. |
+| `internal/agent/tools/task.go` | ~220 | **UN solo tool `task` non-deferred (amendment #46 D-09/D-10/D-11, supersede la tabella 5-file `task_*`):** enum `action ∈ {schedule, list, cancel, run_now, approve}` dispatchato via l'`ActionRouter` helper. **Schema discipline load-bearing (D-10, nanobot regression #3113):** top-level `required = ["action"]` SOLO; i requisiti per-azione vivono nelle field descriptions; NESSUN `oneOf`/`anyOf`/`enum` root-level (rompe i provider OpenAI-wire — DeepSeek è OpenAI-compat). Un test asserisce la shape dello schema. Comportamento per azione: `schedule` valida + `Queries.UpsertTask`, chiama `scoring.ComputeTaskTier(args)` (RISKY/DESTRUCTIVE → `status='pending_approval'` + Notifier IMMEDIATE alert, result porta `risk_tier`+`gate_recommended`); `list` mostra anche `pending_approval` con `[awaiting approval]`; `cancel`; `run_now` chiama `Handler.Run` diretto bypass tick (**rifiuta** task in pending_approval con errore strutturato che chiede `approve` prima); `approve` `UPDATE scheduler_tasks SET status='active' WHERE id=:id AND status='pending_approval' RETURNING id`, idempotente, audit `gate_taken=true`. `[superato amendment #46: il payload `tier ∈ {worker,chat,reasoning}` è tagliato v1 — D-12; il `toolsets:[wiki,web]` payload è tagliato — i child ricevono il registry full minus swarm_spawn, D-13]`. |
+| `internal/agent/tools/action.go` | ~90 | **`ActionRouter` helper (amendment #46 D-09, primo consumer multi-action; Slice 7 lo riusa):** dispatcha sull'azione top-level con sentinel-passthrough contract; mantiene `required=["action"]` come unico requisito root-level. |
 | `internal/scoring/scoring.go` | ~100 | Modulo condiviso. `RiskTier` enum (safe/normal/risky/destructive), `ComputeTaskTier(args)`, `ComputeSkillTier(action, body)`, `GateRecommended(tier)`, `RequiresImmediateAlert(tier)`. Mapping kind→tier hard-coded + modificatori (frequency, silent, payload regex destructive keywords). |
 | `internal/scoring/scoring_test.go` | ~80 | Test esaustivo del mapping per ogni kind + tutti i modificatori. Niente DB. |
 | `internal/cron/scheduler_test.go` | ~150 | Build tag `db_integration`. Round-trip + tick loop + missed-run recovery + crash recovery + risk_tier=RISKY → pending_approval. |
-| `internal/cron/handlers/agent_job_test.go` | ~100 | Goal serialization + child loop spawn (mocked Coordinator). |
+| `internal/cron/handlers/agent_job_test.go` | ~100 | Goal serialization + direct-LlmAgent child spawn (mirroring swarm.runChild; ask_user auto-reject inject-and-continue, D-25). |
 
 **Open questions.**
 1. **~~CONFLITTO con CLAUDE.md "Persistence: Neo4j via MCP"~~ → CHIUSA: Postgres come terzo pilastro.**
@@ -2071,8 +2103,8 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
    - **Postgres (via sqlc)** = application state. Scheduler tasks, paused states, audit log, identity, capability grants.
    - **Filesystem** = solo artefatti operativi (SKILL.md tree, tool result sidecar files). NESSUN knowledge in filesystem.
    Distinzione semantica chiara: **knowledge + vectors → solo Neo4j; infrastructure → Postgres; operational artifacts → filesystem**. CLAUDE.md aggiornata in coda al PRD.
-2. **Notifier interface.** Slice 6 ha bisogno di un sink per le reminder. Tabula-rasa "non ha Telegram". → *Default proposto: interface `Notifier{ Notify(ctx, recipient, msg) error }` con default impl stdout (printf nel terminale `aura serve`). Telegram impl arriverà in una slice plugin separata.*
-3. **Agent-job sub-loop = swarm child?** Lo Slice 3 swarm `Coordinator.Spawn` può servire come spawner per i `agent_job` schedulati. → *Decisione*: SÌ, agent_job handler chiama `swarm.Coordinator.Spawn` con `tier` **configurabile via task payload** (Area #14 closed 2026-05-28). `task.schedule({kind:"agent_job", tier:"worker"|"chat"|"reasoning"|...})`; default `reasoning` (conservativo: qualità alta). Override consente task economici (es. `tier:"worker"` per batch cleanup, `tier:"chat"` per summarize daily). Risk-Based scoring usa `tier` come modifier (worker=0 modifier, chat=+0.1, reasoning=+0.2 — vedi Risk-Based Governance sez). Validato a `task.schedule` time contro `swarm.TierConfig.Available()`. Evita di duplicare la logica spawn-loop.
+2. **Notifier interface / delivery (RISOLTA composite — amendment #46 D-19..D-23).** Slice 6 ha bisogno di un sink per output reminder + agent_job. → *Decisione*: **composite delivery**. Interface `Notifier{ Notify(ctx, recipient, msg) error }` con impl multiple: l'output del job raggiunge l'utente via **WhatsApp/mail MCP self-send già montato** (`cmd/aura/main.go:150-158` allowlist include già `send_message`/`send_email`); `agent_job_runs.summary` tiene la forensics; **stdout Notifier è il fallback** + alert SC#3 24h missed-backup. Route per-task opzionale `notify: whatsapp|email|stdout` (D-20, il modello la setta dal phrasing utente), con `AURA_SCHEDULER_NOTIFY_DEFAULT` + `AURA_SCHEDULER_NOTIFY_RECIPIENT` come fallback globale. Notify anche su failure (D-21). Delivery failure → fallback chain + bounded retry `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS` (D-22, il risultato non si perde, audit summary sempre scritto). Quiet hours `AURA_SCHEDULER_QUIET_HOURS` differisce le notifiche non-DESTRUCTIVE (D-23). **NON in conflitto con amendment #23** (ephemeral session): #23 vieta la *history persistence*, qui è *output egress*. Telegram Notifier impl slotta in Phase 13. stdout-only respinto (nessuno fa il tail di un daemon).
+3. **Agent-job sub-loop spawn seam (RISOLTA direct-LlmAgent — amendment #46 D-24/D-25).** → *Decisione*: l'`agent_job` handler costruisce un `LlmAgent` **direttamente**, mirroring `swarm.runChild` (`internal/swarm/swarm.go:132-192`): `agent.NewLlmAgent` con registry `Without(reg, "swarm_spawn")`, goal come primo user message, budget da `agent_job_runs.step_budget` (amendment #19), sessione ephemeral `agent_job:<run_id>` (amendment #23). **NO import `internal/swarm` in `internal/cron`.** `[superato: il vecchio coordinator-spawn + il `tier ∈ {worker,chat,reasoning}` payload validato vs il tier-config catalog di swarm = machinery tagliata in Phase 9 (D-12, grep-confermato dead); v1 usa il modello unico configurato, il modifier reasoning di scoring diventa default piatto. Re-add del `tier` payload → v2 SWARM-V2-01 quando il tier-config esisterà]`. Auto-reject ask_user = inject-and-continue (D-25). Evita di duplicare la logica spawn-loop.
 4. **`agent_job_runs` retention (Area #13 closed 2026-05-28)** → *Decisione*: audit log forever, niente auto-purge per età. Pattern coerente con Area #7 paused_states e Area #9 RUN_DIR (delete-on-explicit-action). Per uso tipico (cron daily=365 rows/anno, weekly=52, every_hour=8760) la tabella resta MB-size per anni. Indici efficienti (`(exit_status, started_at) WHERE finished_at IS NULL` boot recovery, `(task_id, started_at DESC)` per `task list --runs`) reggono O(log n) anche a milioni di rows. CLI escape hatch `aura task runs purge --before <ISO date> --confirm` per casi estremi (es. `every_minute` cron lasciato attivo). Future slice "cold archive" se tabella supera 10 GB.
 
 ---
@@ -4779,6 +4811,14 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_WEB_FETCH_ALLOW_LOOPBACK` | `0` (false) | operative | 5 | Permit loopback URLs in web_fetch. |
 | `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
 | `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
+| `AURA_SCHEDULER_TZ` | `Europe/Rome` | operative | 6 | Default IANA timezone per i task `cron` privi di un `tz` esplicito (amendment #46, D-06/D-07). DST-safe: il DB resta UTC, solo il calcolo di `next_run_at` è tz-aware. |
+| `AURA_SCHEDULER_NOTIFY_DEFAULT` | `stdout` | operative | 6 | Route di notifica fallback globale ∈ `{whatsapp, email, stdout}` (amendment #46, D-19/D-20). La route per-task `notify` nel payload la sovrascrive. |
+| `AURA_SCHEDULER_NOTIFY_RECIPIENT` | `` (empty) | operative | 6 | Recipient JID/email di default per la route fallback globale (amendment #46, D-20). |
+| `AURA_SCHEDULER_QUIET_HOURS` | `` (empty = off) | operative | 6 | Finestra quiet-hours `HH:MM-HH:MM` (es. `23:00-07:30`): le notifiche non-DESTRUCTIVE differiscono alla fine della finestra (amendment #46, D-23). I reminder schedulati esplicitamente dentro la finestra firano comunque al loro orario. |
+| `AURA_SCHEDULER_TICK_SECONDS` | `30` | cap | 6 | Intervallo del tick loop DIY in secondi (amendment #46). |
+| `AURA_SCHEDULER_MAX_CONCURRENT_RUNS` | `4` | cap | 6 | Cap concorrenza held-conn (advisory lock per-run su conn dedicata, D-03 Pitfall 2). Dimensionato **strettamente sotto** `pool MaxConns` (amendment #46). |
+| `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS` | `3` | cap | 6 | Retry bounded della delivery prima del fallback definitivo a stdout + flag notification-undelivered (amendment #46, D-22). |
+| `AURA_BACKUP_DIR` | `~/.aura/backups/` | path | 6 | Destinazione dei dump di backup (`pg_dump`, `neo4j-admin database dump`) via `docker exec` (amendment #46, D-26; riconcilia `$AURA_BACKUP_DIR` del ROADMAP con il path PRD). Retention 14d/7d rolling. |
 | `AURA_SKILL_INJECTION_BLOCKLIST` | (built-in list) | operative | 7 | Prompt-injection blocklist patterns. |
 | `AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN` | `60` | cap | 7e | Background pattern_analyzer goroutine interval (v1.x deferred Slice 7f per amendment #13). |
 | `AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS` | `7` | cap | 7e | Query execute logs window per cluster detection (v1.x deferred Slice 7f per amendment #13). |
