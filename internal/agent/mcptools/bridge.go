@@ -19,6 +19,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // Server is the narrow MCP surface the bridge needs; *mcp.Client satisfies it.
@@ -90,13 +91,57 @@ func Bridge(ctx context.Context, namespace string, srv Server, allow []string) (
 		}
 	}
 	matched := make(map[string]struct{}, len(allow))
+	out := bridgeAllowedTools(namespace, srv, defs, func(d mcp.ToolDef) bool {
+		if allowed == nil {
+			return true
+		}
+		if _, ok := allowed[d.Name]; !ok {
+			return false
+		}
+		matched[d.Name] = struct{}{}
+		return true
+	})
+	// WARN-not-fatal on an allowlist entry that matched no advertised tool: the
+	// intersection drops advertised tools not in allow (the security direction, D-20),
+	// but a typo or a server-side rename silently turns an intended *capability* into a
+	// gap with no signal. Surface it so an operator can notice, while keeping fail-soft
+	// boot (WR-04).
+	for _, name := range allow {
+		if _, ok := matched[name]; !ok {
+			slog.Warn("mcp allowlist entry matched no advertised tool",
+				"namespace", namespace, "tool", name)
+		}
+	}
+	return out, nil
+}
+
+func BridgeWithPolicy(ctx context.Context, namespace string, srv Server, server mcp.ManagedServer) ([]tools.Tool, []mcpmanager.PolicyDecision, error) {
+	defs, err := srv.ListTools(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	decisions := mcpmanager.PolicyDecisionsForTools(defs, server)
+	allowed := make(map[string]bool, len(decisions))
+	for _, decision := range decisions {
+		allowed[decision.ToolName] = decision.Allowed
+	}
+	out := bridgeAllowedTools(namespace, srv, defs, func(d mcp.ToolDef) bool {
+		return allowed[d.Name]
+	})
+	blocked := make([]mcpmanager.PolicyDecision, 0)
+	for _, decision := range decisions {
+		if !decision.Allowed {
+			blocked = append(blocked, decision)
+		}
+	}
+	return out, blocked, nil
+}
+
+func bridgeAllowedTools(namespace string, srv Server, defs []mcp.ToolDef, allow func(mcp.ToolDef) bool) []tools.Tool {
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
-		if allowed != nil {
-			if _, ok := allowed[d.Name]; !ok {
-				continue
-			}
-			matched[d.Name] = struct{}{}
+		if !allow(d) {
+			continue
 		}
 		params := emptyObjectSchema
 		if len(strings.TrimSpace(string(d.InputSchema))) > 0 {
@@ -119,18 +164,7 @@ func Bridge(ctx context.Context, namespace string, srv Server, allow []string) (
 			},
 		})
 	}
-	// WARN-not-fatal on an allowlist entry that matched no advertised tool: the
-	// intersection drops advertised tools not in allow (the security direction, D-20),
-	// but a typo or a server-side rename silently turns an intended *capability* into a
-	// gap with no signal. Surface it so an operator can notice, while keeping fail-soft
-	// boot (WR-04).
-	for _, name := range allow {
-		if _, ok := matched[name]; !ok {
-			slog.Warn("mcp allowlist entry matched no advertised tool",
-				"namespace", namespace, "tool", name)
-		}
-	}
-	return out, nil
+	return out
 }
 
 // Mount bridges srv's tools under namespace and registers them into reg,
@@ -146,6 +180,22 @@ func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Serve
 	if err != nil {
 		return nil, err
 	}
+	return registerBridged(reg, bridged)
+}
+
+func MountWithPolicy(ctx context.Context, reg *tools.Registry, namespace string, srv Server, server mcp.ManagedServer) ([]string, []mcpmanager.PolicyDecision, error) {
+	bridged, blocked, err := BridgeWithPolicy(ctx, namespace, srv, server)
+	if err != nil {
+		return nil, nil, err
+	}
+	names, err := registerBridged(reg, bridged)
+	if err != nil {
+		return nil, nil, err
+	}
+	return names, blocked, nil
+}
+
+func registerBridged(reg *tools.Registry, bridged []tools.Tool) ([]string, error) {
 	seenRaw := make(map[string]struct{}, len(bridged))
 	chosen := make(map[string]struct{}, len(bridged))
 	for _, t := range bridged {
@@ -160,7 +210,7 @@ func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Serve
 		// suffix (keyed on the RAW name, so each survivor is unique). Re-truncate first
 		// so the 13-byte suffix never pushes an already-capped name past maxToolNameLen.
 		if _, dup := chosen[name]; dup {
-			suf := hashSuffix(namespace + "\x00" + bt.name)
+			suf := hashSuffix(bt.spec.Name + "\x00" + bt.name)
 			if len(name)+len(suf) > maxToolNameLen {
 				name = name[:maxToolNameLen-len(suf)]
 			}

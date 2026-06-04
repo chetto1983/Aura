@@ -271,6 +271,10 @@ func mcpTools(ctx context.Context, args []string, out io.Writer) error {
 		return fmt.Errorf("usage: aura mcp tools <name>")
 	}
 	name := args[0]
+	server, err := mcpToolPolicyServer(name)
+	if err != nil {
+		return err
+	}
 	cfg, err := effectiveMCPServer(name)
 	if err != nil {
 		return err
@@ -280,13 +284,39 @@ func mcpTools(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	defer func() { _ = cli.Close() }()
-	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
+	descriptions := make(map[string]string, len(defs))
 	for _, d := range defs {
-		if err := writef(out, "%s\t%s\n", d.Name, firstMCPDescriptionLine(d.Description)); err != nil {
+		descriptions[d.Name] = d.Description
+	}
+	decisions := mcpmanager.PolicyDecisionsForTools(defs, server)
+	sort.Slice(decisions, func(i, j int) bool { return decisions[i].ToolName < decisions[j].ToolName })
+	for _, decision := range decisions {
+		status := "mounted"
+		if !decision.Allowed {
+			status = "blocked: " + decision.BlockReason
+		}
+		if err := writef(out, "%s\t%s\t%s\t%s\n",
+			decision.ToolName,
+			strings.Join(decision.RiskLabels, ","),
+			status,
+			firstMCPDescriptionLine(descriptions[decision.ToolName]),
+		); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func mcpToolPolicyServer(name string) (mcp.ManagedServer, error) {
+	doc, _, err := loadManagedMCPConfig()
+	if err != nil {
+		return mcp.ManagedServer{}, err
+	}
+	server := doc.MCPServers[name]
+	if len(server.ToolPolicy.Allow) == 0 && len(server.ToolPolicy.Deny) == 0 && len(server.ToolPolicy.DenyRisk) == 0 {
+		server.ToolPolicy.Allow = mcpAllowlist(name)
+	}
+	return server, nil
 }
 
 func mcpSetEnabled(args []string, enabled bool, out io.Writer) error {

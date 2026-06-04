@@ -39,6 +39,7 @@ type Config struct {
 	Neo4j          knowledge.Config // Slice 0.7 — graph + vector + embed sidecar wiring
 	LLM            llm.Config       // Slice 1 — OpenAI-compat client + load-order chain (D-22)
 	MCPServers     map[string]mcp.ServerConfig
+	MCPPolicies    map[string]mcp.ManagedServer
 	MCPServersErr  error
 	SandboxAgent   sandboxagent.Config
 	RunDir         string
@@ -132,7 +133,7 @@ func loadBase() *Config {
 	if bootstrapURL == "" {
 		bootstrapURL = composeDSN(pgUser, pgPassword, pgHost, pgPort, pgDB, pgSSL)
 	}
-	mcpServers, mcpServersErr := loadMCPServers()
+	mcpServers, mcpPolicies, mcpServersErr := loadMCPServers()
 
 	return &Config{
 		DB: db.Config{
@@ -152,6 +153,7 @@ func loadBase() *Config {
 			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", 768),
 		},
 		MCPServers:    mcpServers,
+		MCPPolicies:   mcpPolicies,
 		MCPServersErr: mcpServersErr,
 		SandboxAgent: sandboxagent.Config{
 			BaseURL:    envDefault("AURA_SANDBOX_AGENT_URL", sandboxagent.DefaultBaseURL),
@@ -198,22 +200,26 @@ func composeDSN(role, password, host, port, dbname, sslmode string) string {
 	)
 }
 
-func loadMCPServers() (map[string]mcp.ServerConfig, error) {
+func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer, error) {
 	path, err := mcp.ManagedConfigPath()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	managed, err := mcp.LoadManagedConfig(path)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	managedServers, err := mcpmanager.RuntimeServers(managed)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	policies := make(map[string]mcp.ManagedServer, len(managedServers))
+	for name := range managedServers {
+		policies[name] = managed.MCPServers[name]
 	}
 	envServers, err := parseMCPServersJSON(os.Getenv("AURA_MCP_SERVERS_JSON"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	out := make(map[string]mcp.ServerConfig, len(managedServers)+len(envServers))
 	for name, cfg := range managedServers {
@@ -221,11 +227,12 @@ func loadMCPServers() (map[string]mcp.ServerConfig, error) {
 	}
 	for name, cfg := range envServers {
 		out[name] = cfg
+		delete(policies, name)
 	}
 	if len(out) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
-	return out, nil
+	return out, policies, nil
 }
 
 func parseMCPServersJSON(raw string) (map[string]mcp.ServerConfig, error) {

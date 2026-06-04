@@ -134,10 +134,17 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config) (*tools.Regis
 		// (Claude Code/Desktop, VS Code). Already-mounted servers stay registered —
 		// do NOT closeMCPServers, do NOT abort. The non-deferred built-ins keep the
 		// registry valid even when every MCP server is dropped (Pitfall 6).
-		closer, _, err := mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name], mcpAllowlist(name))
+		policy := cfg.MCPPolicies[name]
+		if len(policy.ToolPolicy.Allow) == 0 && len(policy.ToolPolicy.Deny) == 0 && len(policy.ToolPolicy.DenyRisk) == 0 {
+			policy.ToolPolicy.Allow = mcpAllowlist(name)
+		}
+		closer, _, blocked, err := mcptools.MountServerWithPolicy(ctx, reg, name, cfg.MCPServers[name], policy)
 		if err != nil {
 			slog.Warn("mcp mount failed", "server", name, "err", err)
 			continue
+		}
+		for _, decision := range blocked {
+			slog.Warn("mcp tool blocked by policy", "server", name, "tool", decision.ToolName, "reason", decision.BlockReason)
 		}
 		closers = append(closers, closer)
 	}

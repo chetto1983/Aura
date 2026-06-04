@@ -9,6 +9,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // mailDefs models the mail-mcp footgun census (spike 001): two v1-allowed tools
@@ -100,6 +101,45 @@ func TestMountAllowlistDeferred(t *testing.T) {
 			t.Errorf("expected a WARN naming the unmatched entry, got: %q", logged)
 		}
 	})
+}
+
+func TestMountWithPolicyBlocksRiskyToolsAndRetainsReasons(t *testing.T) {
+	reg := tools.NewRegistry()
+	srv := &fakeServer{defs: []mcp.ToolDef{
+		{Name: "send_email", Description: "Send an email."},
+		{Name: "fetch_emails", Description: "Fetch recent emails."},
+		{Name: "delete_mailbox", Description: "Permanently delete a mailbox."},
+		{Name: "mystery", Description: "Undocumented operation."},
+	}}
+	server := mcp.ManagedServer{
+		RiskLabels: []string{mcpmanager.RiskPrivateData},
+		ToolPolicy: mcp.ManagedToolPolicy{
+			Allow:    []string{"send_email", "fetch_emails", "delete_mailbox", "mystery"},
+			DenyRisk: []string{mcpmanager.RiskDestructive, mcpmanager.RiskUnknown},
+		},
+	}
+
+	names, blocked, err := MountWithPolicy(context.Background(), reg, "mail", srv, server)
+	if err != nil {
+		t.Fatalf("MountWithPolicy: %v", err)
+	}
+	if strings.Join(names, ",") != "mail__send_email,mail__fetch_emails" {
+		t.Fatalf("mounted names = %#v", names)
+	}
+	for _, dropped := range []string{"mail__delete_mailbox", "mail__mystery"} {
+		if _, ok := reg.Get(dropped); ok {
+			t.Fatalf("%s must not enter the registry", dropped)
+		}
+	}
+	if len(blocked) != 2 {
+		t.Fatalf("blocked decisions = %#v, want 2", blocked)
+	}
+	reasons := blocked[0].ToolName + ":" + blocked[0].BlockReason + "\n" + blocked[1].ToolName + ":" + blocked[1].BlockReason
+	for _, want := range []string{"delete_mailbox", "risk destructive denied", "mystery", "risk unknown denied"} {
+		if !strings.Contains(reasons, want) {
+			t.Fatalf("blocked reasons missing %q:\n%s", want, reasons)
+		}
+	}
 }
 
 // TestMountServer_SpawnFailureLeavesRegistryClean asserts that when the MCP server

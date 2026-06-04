@@ -129,16 +129,25 @@ func runRegistryTestMCPServer(in io.Reader, out io.Writer) {
 			}})
 		case "notifications/initialized":
 		case "tools/list":
+			toolDefs := []map[string]any{{
+				"name":        "calculate",
+				"description": "Evaluate a mathematical expression.",
+				"inputSchema": map[string]any{
+					"type":       "object",
+					"properties": map[string]any{"expression": map[string]any{"type": "string"}},
+					"required":   []string{"expression"},
+				},
+			}}
+			if os.Getenv("AURA_MCP_HELPER_TOOLS") == "policy" {
+				toolDefs = []map[string]any{
+					{"name": "send_email", "description": "Send an email to a recipient.", "inputSchema": map[string]any{"type": "object"}},
+					{"name": "fetch_emails", "description": "Fetch recent emails.", "inputSchema": map[string]any{"type": "object"}},
+					{"name": "delete_mailbox", "description": "Permanently delete a mailbox.", "inputSchema": map[string]any{"type": "object"}},
+					{"name": "mystery", "description": "Undocumented operation.", "inputSchema": map[string]any{"type": "object"}},
+				}
+			}
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{
-				"tools": []map[string]any{{
-					"name":        "calculate",
-					"description": "Evaluate a mathematical expression.",
-					"inputSchema": map[string]any{
-						"type":       "object",
-						"properties": map[string]any{"expression": map[string]any{"type": "string"}},
-						"required":   []string{"expression"},
-					},
-				}},
+				"tools": toolDefs,
 			}})
 		case "tools/call":
 			_ = enc.Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": map[string]any{

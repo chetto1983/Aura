@@ -6,6 +6,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
+	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // MountServer spawns one stdio MCP server, mounts its tools into reg, and returns
@@ -25,4 +26,17 @@ func MountServer(ctx context.Context, reg *tools.Registry, name string, cfg mcp.
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
 	return cli.Close, names, nil
+}
+
+func MountServerWithPolicy(ctx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, server mcp.ManagedServer) (closer func() error, names []string, blocked []mcpmanager.PolicyDecision, err error) {
+	cli, err := mcp.Open(ctx, name, cfg)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	names, blocked, err = MountWithPolicy(ctx, reg, name, cli, server)
+	if err != nil {
+		_ = cli.Close()
+		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
+	}
+	return cli.Close, names, blocked, nil
 }

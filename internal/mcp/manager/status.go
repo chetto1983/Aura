@@ -22,15 +22,19 @@ const (
 )
 
 type StatusSnapshot struct {
-	Name          string   `json:"name"`
-	Profiles      []string `json:"profiles,omitempty"`
-	Trust         string   `json:"trust"`
-	Runtime       string   `json:"runtime"`
-	StartupState  string   `json:"startupState"`
-	AuthStatus    string   `json:"authStatus"`
-	ToolCount     int      `json:"toolCount"`
-	LastError     string   `json:"lastError,omitempty"`
-	PolicySummary string   `json:"policySummary,omitempty"`
+	Name             string        `json:"name"`
+	Profiles         []string      `json:"profiles,omitempty"`
+	Trust            string        `json:"trust"`
+	Runtime          string        `json:"runtime"`
+	StartupState     string        `json:"startupState"`
+	AuthStatus       string        `json:"authStatus"`
+	ToolCount        int           `json:"toolCount"`
+	MountedToolCount int           `json:"mountedToolCount"`
+	BlockedToolCount int           `json:"blockedToolCount"`
+	RiskLabels       []string      `json:"riskLabels,omitempty"`
+	BlockReasons     []PolicyBlock `json:"blockReasons,omitempty"`
+	LastError        string        `json:"lastError,omitempty"`
+	PolicySummary    string        `json:"policySummary,omitempty"`
 }
 
 func SnapshotStatus(doc mcp.ManagedConfig) []StatusSnapshot {
@@ -51,14 +55,20 @@ func SnapshotStatus(doc mcp.ManagedConfig) []StatusSnapshot {
 		case trust == mcp.TrustBlocked:
 			state = StartupBlocked
 		}
+		mounted, blocked := PolicyCounts(server)
 		out = append(out, StatusSnapshot{
-			Name:          name,
-			Profiles:      profilesForServer(doc, name),
-			Trust:         trust,
-			Runtime:       runtimeName(server),
-			StartupState:  state,
-			AuthStatus:    authStatus(server),
-			PolicySummary: policySummary(server),
+			Name:             name,
+			Profiles:         profilesForServer(doc, name),
+			Trust:            trust,
+			Runtime:          runtimeName(server),
+			StartupState:     state,
+			AuthStatus:       authStatus(server),
+			ToolCount:        mounted,
+			MountedToolCount: mounted,
+			BlockedToolCount: blocked,
+			RiskLabels:       append([]string(nil), server.RiskLabels...),
+			BlockReasons:     ConfiguredPolicyBlocks(server),
+			PolicySummary:    policySummary(server),
 		})
 	}
 	return out
