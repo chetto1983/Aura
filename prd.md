@@ -1393,10 +1393,19 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 > **Amendment #34 (D14 ripple D00/D12, 2026-06-01) — RATIFY + 3 fix.** Il modello di coordinamento è ratificato (fan-out + supervisor = pattern corretto 2026; budget condiviso `*atomic.Int32` D-10/D-11 già shippato bounda il costo totale dell'albero). Tre aggiustamenti da D00/D12: **(A) cap larghezza fan-out** — `MAX_DEPTH` bounda la profondità, il budget gli step, ma NIENTE i child simultaneamente vivi → `AURA_SWARM_MAX_CONCURRENT` (per-target, vedi catalogo env): senza, N child paralleli saturano RAM/FD del 32GB (viola D00.6). **(B) sandbox session reuse sotto D12** — i worker che riusano il `SessionID` parent (OQ7 #7) condividono lo stesso container session-bound: N `execute` paralleli **serializzano** sul lock per-session (isolamento OK, ma il parallelismo del fan-out NON si estende alla sandbox; per sandbox parallela serve spawn RISKY-tier = container dedicato). Da documentare nello smoke file-read come timing-aware. **(C)** lo stub `internal/swarm/swarm.go` dichiara ancora `MaxSpawnDepth = 3`: l'impl Slice 3 usa **2** (amendment #12). Privacy-mode è ereditato by-construction (un solo `llm.Client` condiviso dal Coordinator → nessun child può acquisire un endpoint remoto).
 
-**Goal.** Implementare `swarm.Coordinator` reale (oggi `Stub` in [internal/swarm/swarm.go](internal/swarm/swarm.go))
-con: spawn di agenti figli (tier `chat|reasoning|worker`), shared message bus
-con broadcast E DM-by-ID, `Join(id)` che blocca fino a final report del figlio,
-AURA_SWARM_MAX_DEPTH=2 enforced (amendment #12 v1 cap; was 3 pre-amendment), payload summarizer al return-to-parent.
+> **Amendment #44 (v1 final shape — Phase 9 D-01..D-25, 2026-06-04) — SUPERSEDE la wording sotto.** La discuss-phase (3 researcher pass + 2 spike live + ruflo study) ha congelato la forma industriale MINIMA ("no atomic bombs" — lezione Phase 8). **L'intera acceptance list + file targets + open questions QUI SOTTO sono STALE** (predatano amendment #12 + la discuss-phase) e vanno lette come superseduti dai D-row che seguono. Decisioni in `.planning/phases/09-swarm-minimal/09-CONTEXT.md` (D-01..D-25) + `.planning/DECISIONS.md` §8.
+>
+> **Tool surface (cut machinery RIMOSSA):** UN solo tool deferred `swarm_spawn {goals:[...]}` — blocking; fan-out interno wrappa il `ParallelAgent` shippato (Slice 0.9); ritorna un array ordinato di per-child report. **TAGLIATI da v1** (research-unanimi, → v2 SWARM-V2-01): `swarm_talk`, `swarm_join` come tool separato, il message bus broadcast+DM-by-ID, il dispatcher tier→model `tier.go` (le env `AURA_SWARM_MODEL_*` restano no-op documentate), la macchina `SpawnInteractive`/`ResumeChild`/`Responder` con children-map+RWMutex, lo spawn annidato (**flat v1** — i worker NON ricevono `swarm_spawn` nel loro registry; `AURA_SWARM_MAX_DEPTH=2` resta come code-guard forward-compat unit-testato). I file target `bus.go`/`tier.go`/`swarm_talk.go`/`swarm_join.go` sono CANCELLATI; la forma è l'ephemeral-runner D-16: `internal/swarm/{swarm,report,brief}.go` + `internal/agent/tools/swarm_spawn.go` (runner costruito dentro `swarm_spawn.Execute`, GC al return, ZERO cross-call state).
+>
+> **Pause-as-report (D-04, supersede la OQ5 Responder design):** un child il cui `ask_user` scatta **termina**; la sua entry di report = `{child_id, tool_call_id, status:"needs_user_input", question, options}` (rilevata dallo shippato `Event{Actions.AwaitingInput}`). Il parent LLM decide se rilanciare via il proprio `ask_user` (pausa durevole shippata) + re-spawn del goal arricchito con la risposta. NESSUN child parcheggiato, nessun `ResumeChild`/`Responder`, nessun pending volatile. `ask_user` guadagna gli optional `proxied_from_child_id`/`proxied_tool_call_id` (D-05, model-discretionary).
+>
+> **Goal come primo USER message (D-07, supersede OQ1 "system prompt parametrizzato dal goal"):** il brief Anthropic 4-part (objective, output format, tool guidance, task boundaries) viaggia in `messages[1]`/UserTurns, MAI in `messages[0]` (byte-stable → DeepSeek implicit cache ~90% dal worker #2). Full tool inheritance MINUS `swarm_spawn` (D-08/D-10).
+>
+> **Sandbox session-reuse wording superseduta (#34(B), D-14):** sandbox-agent è process-based, NESSUN lock per-session; `MAX_CONCURRENT` è l'unico cap (no per-tool semaphores in v1). Lo stub `MaxSpawnDepth=3` (#34(C)) è già CANCELLATO (dir `internal/swarm/` verificata vuota nel rewrite tabula-rasa).
+>
+> **Env catalog (D-13/D-11):** ADD `AURA_SWARM_MAX_GOALS=8` (cap goals-array → tool error) + `AURA_SWARM_CHILD_TIMEOUT_SEC=120` (per-worker ctx deadline → `{status:"failed", error:"timeout"}`). NESSUNA env `AURA_MCP_{MAIL,WHATSAPP}_SERVER` (D-21 supersede la lista del D-23: managed config `~/.aura/mcp/servers.json` via `aura mcp` è il path di registrazione — vedi §Caps & Limits nota MCP). Risolve RESEARCH OQ1.
+
+**Goal (v1 — supersede da #44).** Implementare il runner swarm minimale: un tool deferred `swarm_spawn {goals:[...]}` blocking che fa fan-out dei goal come worker `LlmAgent` reali via il `ParallelAgent` shippato (Slice 0.9), con **pause-as-report** (D-04) al posto della macchina Responder, **flat v1** (D-10) con `AURA_SWARM_MAX_DEPTH=2` retained come code-guard forward-compat, e ritorno di un array ordinato di per-child report (D-15). ~~spawn di agenti figli (tier `chat|reasoning|worker`), shared message bus con broadcast E DM-by-ID, `Join(id)` che blocca fino a final report del figlio, payload summarizer al return-to-parent~~ → **CUT v1, vedi #44**.
 
 **Smoke.**
 
@@ -1418,34 +1427,32 @@ AURA_SWARM_MAX_DEPTH=2 enforced (amendment #12 v1 cap; was 3 pre-amendment), pay
 # → modello deve parallelizzare 3 read+wc invece di serializzare. Test fallisce se serializza (timing assertion).
 ```
 
-**Acceptance.**
-- [ ] `coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` (default 2 per amendment #12, was 3) → errore `spawn depth exceeded — MAX_SPAWN_DEPTH=2 cap (v1 amendment #12)` (test). Spawn ritorna `*LlmAgent` (Slice 0.9 impl).
+**Acceptance.** *(STALE — superseduta da #44; la v1 acceptance vive nei ROADMAP SC#1..SC#5 re-specced + i D-25 property test. Le voci `Talk`/broadcast/`Join`/bus/tier/Responder qui sotto NON sono criteri v1.)*
+- [ ] ~~`coordinator.Spawn(req)` con `Depth >= MaxSpawnDepth` → errore `spawn depth exceeded`~~ → **#44 D-10**: flat v1, i worker NON ricevono `swarm_spawn` (tool-not-available); il code-guard `AURA_SWARM_MAX_DEPTH` è unit-testato a depth sintetica ≥ cap.
 - [ ] **Swarm budget inheritance (amendment #19 cross-ref Slice 0.9)**: `Coordinator.Spawn` propagates parent's REMAINING budget to spawned children via `InvocationContext.RemainingSteps` + `RemainingWallclockDeadline`. Acceptance test: parent has 20 steps remaining, spawns 3 children — total step count across the spawn tree ≤ 20 (NOT 20*3=60). Cross-link Pitfall #9.
-- [ ] `coordinator.Talk(from, "broadcast", msg)` recapita a tutti tranne `from`. `Talk(from, "<id>", msg)` recapita solo a `<id>`. Test asserisce delivery. Payload del bus è `*agent.Event` (riusa shape Slice 0.9, no `Envelope` custom).
-- [ ] `coordinator.Join(id)` blocca finché il figlio non emette `Event{Actions.Escalate=true}` (terminale dell'`Agent.Run`, equivalente a `text_response` finale) e ne restituisce il payload (summarizzato se >2 KiB).
-- [ ] Payload summarizer triggera sopra `AURA_CONTEXT_PREVIEW_CAP_BYTES` (default 2048): tronca + appende `... [N bytes truncated, M total]`.
-- [ ] **Tier → model mapping in `tier.go` — v1 NO-OP (amendment #12)**: tutti i tier (`chat`, `reasoning`, `worker`) risolvono a `AURA_LLM_MODEL`. Env vars `AURA_SWARM_MODEL_{CHAT,REASONING,WORKER}` esistono ma sono no-op in v1 (documentate per forward-compat con v2 SWARM-V2-01). Acceptance test: spawn 3 worker tier diversi, asserire tutti chiamano `AURA_LLM_MODEL` (verifica via mock LLM client capture).
-- [ ] Goroutine leak test (`go test -race`): dopo `Join` di tutti i figli, `runtime.NumGoroutine()` torna al baseline ±2.
-- [ ] Bus capacity bounded (channel buf 64); over-flow blocca producer con timeout **60s** + errore `bus backpressure` (audit round 2 P0: 5s era sotto la latency LLM first-token tipica 10-30s → producer in mezzo a `runTool` riceveva errore spurio durante LLM warmup).
+- [ ] ~~`coordinator.Talk(...)` broadcast/DM-by-ID~~ → **CUT v1 (#44)**, → v2 SWARM-V2-01. Nessun bus.
+- [ ] ~~`coordinator.Join(id)` blocca fino al final report~~ → **#44 D-01/D-15**: il blocking è il tool stesso (`swarm_spawn` ritorna quando tutti i child finiscono); no tool `Join` separato. Report = array ordinato per goal_index con per-child summary cap (overflow via lo shippato `tools.NewResult` sidecar).
+- [ ] ~~Payload summarizer custom~~ → **#44 D-15**: nessun secondo meccanismo di spillover; riusa `tools.NewResult` (preview + sidecar + `read_tool_output`).
+- [ ] ~~Tier → model mapping in `tier.go`~~ → **CUT v1 (#44 D-03)**: schema `{goals}` only, nessun `tier` param. Le env `AURA_SWARM_MODEL_*` restano no-op documentate (v2 SWARM-V2-01).
+- [ ] Goroutine leak test (`go test -race` + `goleak`): dopo il return di `swarm_spawn`, nessuna goroutine child residua (D-25, **resta criterio v1**).
+- [ ] ~~Bus capacity bounded / backpressure~~ → **CUT v1 (#44)**: nessun bus. La concorrenza è bounded da `AURA_SWARM_MAX_CONCURRENT` (waves interne, D-12).
 
-**File targets** (≤ 600 LOC — saving −200 LOC riapplicato da Slice 0.9: workers usano `LlmAgent`, esecuzione concorrente via `ParallelAgent` built-in, no errgroup custom):
+**File targets** *(STALE — superseduta da #44 D-16. `bus.go`/`tier.go`/`swarm_talk.go`/`swarm_join.go`/`coordinator.go`+children-map sono CANCELLATI.)* La forma v1 (ephemeral runner, ≤ 600 LOC ciascuno):
 | Path | LOC | Note |
 |---|---|---|
-| `internal/swarm/coordinator.go` | ~180 | `LiveCoordinator` impl `Coordinator`. Gestisce children map (id→`*LlmAgent`), depth check, lifecycle. Quando spawn-a multipli concorrenti, wrappa workers in `ParallelAgent` Slice 0.9 (`agent.NewParallel(...)`); single-spawn restituisce `*LlmAgent` direttamente. |
-| `internal/swarm/bus.go` | ~100 | Shared bus: `Subscribe(id) <-chan *agent.Event`, `Publish(from, to string, body *agent.Event)`. `to=="broadcast"` fan-out. Bus è **ortogonale** allo streaming `iter.Seq2[*Event,error]` di `Agent.Run`: il bus è il canale di **DM/broadcast** parent↔child (semantic Aura), non il transport degli yield events del runtime. |
-| `internal/swarm/tier.go` | ~70 | `TierConfig{Chat, Reasoning, Worker string}`. `ModelFor(tier) string`. |
-| `internal/swarm/payload.go` | ~60 | `Summarize(b []byte, cap int) string`. Strategia: tronca a `cap`, appendi nota. |
-| `internal/swarm/coordinator_test.go` | ~150 | Spawn-depth, broadcast, DM, Join, goroutine-leak, bus backpressure. |
-| `internal/agent/tools/swarm_spawn.go` | ~70 | Deferred=true. Args: `{tier, goal}`. Returns `{id}`. |
-| `internal/agent/tools/swarm_talk.go` | ~50 | Deferred=true. Args: `{to_id, message}` (use "broadcast" for all). |
-| `internal/agent/tools/swarm_join.go` | ~50 | Deferred=true. Args: `{id}`. Blocking. |
-| `cmd/aura/main.go` (diff) | ~+30 | `aura swarm-demo` subcommand. |
+| `internal/swarm/swarm.go` | ~250 | Ephemeral per-call runner: fan-out + waves (`AURA_SWARM_MAX_CONCURRENT`) + per-child isolation (D-02, bypassa il cancel-siblings di `ParallelAgent` riusando i suoi leak-safety idiom) + budget `Child()` shared `*atomic.Int32` + collect. Costruito dentro `swarm_spawn.Execute`, GC al return, ZERO cross-call state. |
+| `internal/swarm/report.go` | ~120 | `ChildReport{goal_index, child_id, status: ok\|failed\|needs_user_input, summary, error?, question?/options?/tool_call_id?}` + collezione ordinata + JSON marshal + per-child cap (D-15). |
+| `internal/swarm/brief.go` | ~100 | Builder del brief 4-part D-07 + worker-overlay literal D-06 (load-bearing literals). |
+| `internal/swarm/swarm_test.go` + `swarm_property_test.go` | ~300 | unit + race + goleak (SC#1/#3/#4) + rapid properties (D-25). |
+| `internal/agent/tools/swarm_spawn.go` | ~80 | Deferred=true. Args: `{goals:[...]}` only. Description = il literal anti-over-spawn D-24. |
+| `cmd/aura/main.go` (diff) | ~+30 | `aura swarm-demo` subcommand (mock-LLM fixture, pattern `aura agent dry-run` 02-07). |
+| `cmd/aura/main.go` + `mcp.go` + `mcptools/{bridge,mount}.go` + `ask_user.go` + `askuser/store.go` + `runner_persist.go` (diff) | — | Edit chirurgici D-19/D-20/D-21/D-05 (MCP recipes + allowlist + Deferred flip + fail-soft boot + proxied_* plumb). |
 
-**Deferred-tool partition.** Tutti e tre i tool swarm → **Deferred=true** (description con safety constraints + schema con enum tier + esempi).
+**Deferred-tool partition.** L'unico tool swarm v1 `swarm_spawn` → **Deferred=true** (description = il literal D-24: usa SOLO per ≥2 subtask indipendenti self-contained; ogni goal è un brief completo; il worker non vede la conversazione). `swarm_talk`/`swarm_join` CUT.
 
-**Open questions.**
-1. **Spawn = nuova istanza `agent.Loop`?** Sì, child è una `Loop` indipendente con system prompt parametrizzato dal `goal`, condivide il `Coordinator` per talk-back. → *Conferma proposta: SÌ. Niente "agent-as-tool"; child è un loop reale.*
-2. **Children share tools registry?** Child eredita tutti i tool del parent, MA il parent può passare un filtro (whitelist) → primo slice: ereditarietà piena, no filter. → *Proposto: full inherit. Filtro è slice futura.*
+**Open questions.** *(OQ1 + OQ5 RISOLTE da #44; OQ2/3/4 confermate sotto.)*
+1. **Spawn = nuova istanza `agent.Loop`?** → **RISOLTA (#44 D-07)**: sì, child è un `LlmAgent` reale, ma il goal viaggia come **primo USER message** (brief 4-part), NON come system prompt parametrizzato — `messages[0]` resta byte-stable (KV cache). Supersede "system prompt parametrizzato dal goal".
+2. **Children share tools registry?** → **RISOLTA (#44 D-08/D-10)**: full inherit MINUS `swarm_spawn` (flat v1). `ask_user` resta (D-04 lo converte in report). Filtro custom = slice futura.
 3. **Persistent state.** I figli scrivono in un store comune (Neo4j MCP)? → *Proposto: NO in questo slice. Coordinator è in-memory. Persistenza è una concern ortogonale.*
 4. **Cancellazione.** Se il parent termina (Loop.Turn returns), i figli devono ricevere ctx-cancel? → *Proposto: SÌ. `Coordinator` ha un `parentCtx`; quando si chiude tutti i child loops droppano.*
 5. **Child pause propagation (audit round 1 P0).** Cosa succede se un child `LlmAgent` ritorna `*PausedState` (perché ha invocato `ask_user`)? Equivalente Slice 0.9: il child emette `Event{Actions.Escalate=true, StateDelta:{paused_state_token: ...}}` invece di ritornare il payload, e il `ParallelAgent`/Coordinator deve gestirlo.
@@ -4767,6 +4774,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SWARM_MODEL_CHAT` | `=AURA_LLM_MODEL` | operative | 3 | Tier override (v1 NO-OP per amendment #12 — all tiers resolve to `AURA_LLM_MODEL`; enforcement deferred to v2 SWARM-V2-01). |
 | `AURA_SWARM_MODEL_REASONING` | `=AURA_LLM_MODEL` | operative | 3 | Tier override (v1 NO-OP per amendment #12 — all tiers resolve to `AURA_LLM_MODEL`; enforcement deferred to v2 SWARM-V2-01). |
 | `AURA_SWARM_MODEL_WORKER` | `=AURA_LLM_MODEL` | operative | 3 | Tier override (v1 NO-OP per amendment #12 — all tiers resolve to `AURA_LLM_MODEL`; enforcement deferred to v2 SWARM-V2-01). |
+| `AURA_SWARM_MAX_GOALS` | `8` | cap | 9 | **Goals-array cap (amendment #44, D-13)**: `len(goals) > AURA_SWARM_MAX_GOALS` in a single `swarm_spawn` call → model-readable tool error (Anthropic over-spawn failure mode #1). Bounds the total fan-out per call; the per-child summary cap (reuses `AURA_CONTEXT_PREVIEW_CAP_BYTES`) bounds each report. |
+| `AURA_SWARM_CHILD_TIMEOUT_SEC` | `120` | cap | 9 | **Per-worker ctx deadline (amendment #44, D-11)**: each swarm child runs under a `context.WithTimeout` of this many seconds; a timeout produces a `{status:"failed", error:"timeout"}` report entry, siblings unaffected. The shared `Budget` wallclock (`AURA_LOOP_MAX_WALLCLOCK_SEC`) remains the global ceiling. `_SEC` suffix per the naming convention below. |
 | `AURA_WEB_FETCH_ALLOW_LOOPBACK` | `0` (false) | operative | 5 | Permit loopback URLs in web_fetch. |
 | `AURA_WEB_FETCH_ALLOW_HOSTS` | `` (empty) | operative | 5 | CSV allowed hosts override. |
 | `AURA_RISK_ALERT_THRESHOLD` | `risky` | cap | RBG | Notifier IMMEDIATE alert threshold (≥ tier). |
@@ -4822,6 +4831,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `LLAMA_MULTIMODAL_HOST_PORT` | `8082` | operative | 9c | Host port mapping. |
 
 **Convenzione naming**: env Aura-controlled usano prefix `AURA_<DOMAIN>_<UNIT>` (es. `AURA_SWARM_MAX_DEPTH`). Env per librerie/sidecar di terze parti (`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `MULTIMODAL_*`, `LLAMA_*`) mantengono il loro naming canonico per compatibilità con tooling esterno (compose, libreria bot, ecc.).
+
+**Nota MCP server registration (amendment #44, D-21)**: NON esistono env vars `AURA_MCP_{MAIL,WHATSAPP}_SERVER`. La registrazione dei server MCP (mail, whatsapp, e ogni altro) avviene via la **managed config** `~/.aura/mcp/servers.json`, gestita dal CLI shippato `aura mcp {install,add,list,doctor,enable,disable,remove}`. Il boot li monta da lì (`buildRegistryWithMCP`). Gli unici env MCP sono gli override test-tier `AURA_MCP_*_SERVER_JSON` usati da `internal/mcp/*_integration_test.go`. Questo supersede la lista env del D-23 (artefatto pre-spike): lo spike 001/002 ha scoperto che il path managed-config esisteva già (Codex commit `ae11737a`).
 
 ### Pattern condiviso "Large Output Handling"
 
