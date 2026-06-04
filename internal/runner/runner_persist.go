@@ -137,14 +137,22 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 	if err != nil {
 		return err
 	}
+	// D-05 relay ids: a non-empty child id is forwarded as a non-nil *string (→
+	// proxied_from_child_id); an empty one stays nil (→ SQL NULL for direct calls).
+	var proxiedChild *string
+	if ai.ProxiedFromChildID != "" {
+		proxiedChild = &ai.ProxiedFromChildID
+	}
 	if err := r.pause.Insert(ctx, askuser.InsertParams{
-		Token:          token.String(),
-		ConversationID: tr.convID,
-		Kind:           ai.Kind,
-		Question:       ai.Question,
-		Options:        options,
-		Priority:       ai.Priority,
-		ToolCallID:     ai.ToolCallID,
+		Token:              token.String(),
+		ConversationID:     tr.convID,
+		Kind:               ai.Kind,
+		Question:           ai.Question,
+		Options:            options,
+		Priority:           ai.Priority,
+		ToolCallID:         ai.ToolCallID,
+		ProxiedFromChildID: proxiedChild,
+		ProxiedToolCallID:  ai.ProxiedToolCallID,
 	}); err != nil {
 		return fmt.Errorf("insert paused state: %w", err)
 	}
