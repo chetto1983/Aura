@@ -8,6 +8,7 @@
 package eval
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -132,17 +133,21 @@ func costHonest(cfg llm.Config, c *turnCapture) bool {
 // ---- swarm hard-floor predicates (D-22 ground truth) ----
 
 // countSwarmWorkers counts how many workers a swarm_spawn call fanned out. The
-// captured tool_use blocks record each tool name in call order; swarm_spawn is ONE
-// tool call carrying N goals, so the worker count is read off the swarm report the
-// tool returned (the toolResults preview is the ChildReport JSON array), not the
-// tool-call count. We count the report entries by their goal_index keys — robust to
-// the report spilling to a sidecar preview (each entry still carries "goal_index").
+// swarm_spawn tool returns ONE tool result carrying the ChildReport JSON array, so
+// the worker count is the length of that array — the deterministic ground truth.
+// We parse each tool result as the report array and take the longest successfully
+// decoded one, rather than substring-scanning for "goal_index": a worker's free-text
+// summary (or another MCP tool result threaded through the same slice) can quote the
+// key and inflate a substring count, letting the D-22 ">=2 workers" floor pass on a
+// single real worker (WR-02; MEMORY: no substring scans over model-controlled text).
 func countSwarmWorkers(c *turnCapture) int {
 	max := 0
 	for _, tr := range c.toolResults {
-		n := strings.Count(tr, `"goal_index"`)
-		if n > max {
-			max = n
+		var reports []struct {
+			GoalIndex int `json:"goal_index"`
+		}
+		if json.Unmarshal([]byte(tr), &reports) == nil && len(reports) > max {
+			max = len(reports)
 		}
 	}
 	return max
