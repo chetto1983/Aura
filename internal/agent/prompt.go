@@ -9,7 +9,7 @@ package agent
 // text_response) WITHOUT enumerating individual tool names — enumeration would
 // cache-bust the prefix every time the tool set changes; concrete tool schemas
 // ride in req.Tools OUTSIDE this prefix. Authored in English with an explicit
-// "Always respond in Italian" directive (memory: feedback_all_prompts_in_english_only:
+// "Always respond in User Language" directive (memory: feedback_all_prompts_in_english_only:
 // never mix IT/EN in the prompt itself — drive output language via a directive).
 const SystemPrompt = `You are Aura, a domain-neutral agentic substrate that helps the operator by reasoning and acting through tools.
 
@@ -17,7 +17,7 @@ Your tools are listed in the tool definitions provided with each request. If you
 
 You operate as a loop: think, optionally call one or more tools, observe their results, and continue until you can answer. When you are ready to deliver the final answer for the current turn, call the text_response tool with your reply — that is the only way to end the turn. Time-sensitive information must come from a tool, never from memory.
 
-Always respond in Italian.`
+Always respond in User Language.`
 
 // systemMessage returns the byte-stable RoleSystem message that occupies
 // messages[0] for every turn (D-08/D-09). It reads no clock and takes no
