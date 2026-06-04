@@ -35,7 +35,7 @@ Aura è un substrate agentico Go-native, domain-neutral, single-binary, multi-ch
 - [x] **CAP-03**: Swarm coordinator riusa ParallelAgent (Slice 3) — *Validated in Phase 9 (2026-06-04); `swarm_spawn` deferred tool + ephemeral runner (waves, per-child isolation, budget tree, depth guard) + first production mail/WhatsApp MCP mounts; live dual-gate E2E PASS (judge 1.00, fan-out 1.30×, mail+WA read-back) — docs/aura-swarm-eval-2026-06-04.md.*
 - [x] **CAP-04**: KV cache builder stable-prefix + provider-aware (Slice 4) — *Validated in Phase 6 (2026-06-02); `messages[0]` invariant + provider-aware `cache_control` seam + cross-slice CI gate shipped. Live cache-warming/≥80%-hit-rate criteria deferred to operator UAT (06-HUMAN-UAT.md).*
 - [ ] **CAP-05**: Web tools `web_search` (SearXNG) + `web_fetch` (readability + html-to-markdown) (Slice 5)
-- [ ] **CAP-06**: Scheduler cron + agent jobs persistente su Postgres (Slice 6)
+- [x] **CAP-06**: Scheduler cron + agent jobs persistente su Postgres (Slice 6) — *Validated in Phase 10 (2026-06-04); grammar triad `at|every|cron` DST-safe (gronx), FOR UPDATE SKIP LOCKED + held-conn advisory lock + 30s heartbeat + boot orphan scan/missed-catch-up-once, handlers reminder/agent_job (budget ereditato + ask_user auto-reject)/backup, `task` tool + `aura task` CLI + `aura serve` daemon; chaos SC#2 PASS, E2E agente reale 2/2=100%, coverage 88.5%, mutation 77.3%; code review 7/7 finding fixati + UAT live post-fix 3/3.*
 - [ ] **CAP-07**: Skills system instruction-based (7a/b/c/d) + executable code snippets multi-lang con pattern analysis e TTL archived (7e) (Slice 7)
 
 **Transport + UX (Slice 8–11)**
@@ -119,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-04 — Phase 16 (MCP Sidecar Manager + Third-Party Trust, CAP-09/MCP-V2-01) complete: profiles, recipes, trust approvals, Streamable HTTP, status/doctor/logs, sandboxed runtime metadata, and MCP tool risk-policy enforcement validated.*
+*Last updated: 2026-06-04 — Phase 10 (Scheduler, CAP-06) complete: cron+agent_job HA su Postgres (SKIP LOCKED + advisory lock + heartbeat + catch-up), task tool + CLI + serve daemon; chaos PASS, E2E reale 100%, review 7/7 fixed, UAT 3/3. Phase 16 (MCP Manager) anch'essa completata oggi.*
