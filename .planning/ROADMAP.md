@@ -277,7 +277,17 @@ Plans:
   3. Operator runs `TestSpawnInteractive_MultiPause_AllResolved` (5 children all pause simultaneously, user answers 3 + ctx-cancels 2) and observes all 5 children either resumed or cancelled within 1s — no stuck-paused goroutines
   4. Operator runs a depth-2 swarm with parent budget = 20 steps remaining and observes total steps across the tree ≤ 20 (child budget inheritance correct — NOT 20×2)
 
-**Plans**: TBD
+> SC#2/SC#3 are re-specced and SC#5 added by the D-23 Wave-0 amendment (plan 09-01).
+
+**Plans**: 6 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Wave 0 doc-only PRD amendment (D-23): cut machinery, 2 new env vars, SC re-spec
+- [ ] 09-02-PLAN.md — ephemeral swarm runner (fan-out + waves + per-child isolation + budget) + SC#1/#3/#4 + D-25 properties
+- [ ] 09-03-PLAN.md — MCP plumbing: Deferred flip + allowlist (D-20) + fail-soft boot (D-21) + mail/whatsapp recipes (D-19)
+- [ ] 09-04-PLAN.md — proxied_* 3-layer plumb (D-05): ask_user Spec → AwaitingInput → InsertParams/Insert → persistPause
+- [ ] 09-05-PLAN.md — swarm_spawn Deferred tool (D-01/D-24/D-13) + cycle-free ctx seam + adapter + aura swarm-demo
+- [ ] 09-06-PLAN.md — live dual-gate cot_eval swarm E2E (D-22, SC#5): mail+WhatsApp read-back + judge ≥90%
 
 ### Phase 10: Scheduler
 
