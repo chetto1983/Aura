@@ -38,6 +38,10 @@ type Job struct {
 	Payload    []byte
 	StepBudget int
 	RunID      string
+	// MissedSince is non-zero only for a boot catch-up run (D-18): the original
+	// slipped fire. A handler (backup) uses it to decide whether to emit the SC#3
+	// missed-past-the-window alert; it is the zero value for a normal tick run.
+	MissedSince time.Time
 }
 
 // Handler is the per-kind unit of work the dispatcher routes to. Run returns the
@@ -98,7 +102,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
 		return err
 	}
 
-	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID}
+	job := Job{Payload: task.Payload, StepBudget: task.StepBudget, RunID: c.RunID, MissedSince: c.MissedSince}
 	summary, runErr := h.Run(ctx, job)
 
 	status := "completed"

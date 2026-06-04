@@ -127,6 +127,95 @@ func TestCatchUpMissed_SkipsFutureTasks(t *testing.T) {
 	}
 }
 
+// TestStartDispatchesMissedAtBoot is the CR-01 regression: an overdue task at boot
+// must actually FIRE once (not just advance next_run_at). It seeds an overdue task,
+// wires a recording dispatcher, runs Start until the boot catch-up drains, then
+// asserts (a) the task was dispatched exactly once and (b) the catch-up run row
+// carries missed_since (the D-18 forensics + SC#3 alert thread). Before the fix
+// catchUpMissed's slice was discarded and the missed window was silently dropped.
+func TestStartDispatchesMissedAtBoot(t *testing.T) {
+	now := time.Now().UTC()
+	pool := migratedPool(t)
+	store := New(pool)
+	disp := newRecordingDispatcher(0)
+	s := NewScheduler(pool, store, SchedulerConfig{
+		Now:           func() time.Time { return now },
+		MaxConcurrent: 2,
+		TickInterval:  time.Hour, // long: only the boot catch-up should fire in this window
+		Dispatch:      disp,
+	})
+
+	spec, err := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	if err != nil {
+		t.Fatalf("ParseSchedule: %v", err)
+	}
+	overdue := now.Add(-time.Hour) // 12 missed every-5m windows → ONE catch-up fire
+	task, err := store.CreateTask(ctx(t), CreateTaskParams{
+		Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: overdue,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, task.ID) })
+
+	runCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Start(runCtx) }()
+
+	// The boot catch-up dispatch runs before the (1h) tick fires; poll until the
+	// recording dispatcher has seen the task, then cancel to stop the loop.
+	deadline := time.After(10 * time.Second)
+	for {
+		disp.mu.Lock()
+		ran := disp.ran[task.ID]
+		disp.mu.Unlock()
+		if ran > 0 {
+			break
+		}
+		select {
+		case <-deadline:
+			cancel()
+			t.Fatalf("missed task never dispatched at boot (CR-01: catch-up fire dropped)")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Errorf("Start returned %v, want nil on graceful cancel", err)
+	}
+
+	disp.mu.Lock()
+	ran := disp.ran[task.ID]
+	disp.mu.Unlock()
+	if ran != 1 {
+		t.Errorf("missed task dispatched %d times at boot, want exactly 1 (collapse, D-18)", ran)
+	}
+
+	// The catch-up run row records the ORIGINAL slipped instant (missed_since), the
+	// forensics trail the SC#3 alert + late-notification thread read.
+	var missedSince *time.Time
+	if err := pool.QueryRow(context.Background(),
+		`SELECT missed_since FROM aura.agent_job_runs WHERE task_id = $1 ORDER BY started_at DESC LIMIT 1`,
+		task.ID).Scan(&missedSince); err != nil {
+		t.Fatalf("read missed_since: %v", err)
+	}
+	if missedSince == nil {
+		t.Fatalf("catch-up run missed_since is NULL, want the original overdue instant (D-18)")
+	}
+	if !missedSince.UTC().Equal(overdue) {
+		t.Errorf("missed_since = %s, want original overdue %s", missedSince.UTC(), overdue)
+	}
+}
+
+// ctx builds a short-lived context for a fixture call (no leak: bounded + cancelled
+// via t.Cleanup).
+func ctx(t *testing.T) context.Context {
+	t.Helper()
+	c, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(cancel)
+	return c
+}
+
 // backdateHeartbeat pushes a run's last_heartbeat_at into the past so the orphan
 // scan's >90s window catches it. Direct UPDATE (test fixture only).
 func backdateHeartbeat(t *testing.T, ctx context.Context, s *Scheduler, runID string, age time.Duration) {

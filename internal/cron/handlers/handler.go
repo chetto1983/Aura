@@ -49,6 +49,10 @@ type Job struct {
 	Payload    []byte
 	StepBudget int
 	RunID      string
+	// MissedSince is non-zero only for a boot catch-up run (D-18): the original
+	// slipped fire. The backup handler emits the SC#3 missed-past-the-window alert
+	// from it; a zero value means this is a normal on-time run.
+	MissedSince time.Time
 }
 
 // Handler is the per-kind unit of work (Slice 0.9: Handler ~ a small Run seam, not

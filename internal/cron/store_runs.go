@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5"
@@ -33,6 +34,23 @@ func (s *Store) insertRunOnConn(ctx context.Context, conn *pgxpool.Conn, taskID 
 		return Run{}, fmt.Errorf("insert run on conn for task %q: %w", taskID, err)
 	}
 	return runFromRow(row), nil
+}
+
+// setMissedSinceOnConn stamps a catch-up run's missed_since on the held conn (the
+// same advisory-lock session the run opened on), so the boot catch-up fire (D-18)
+// records the ORIGINAL slipped instant in agent_job_runs — the forensics trail the
+// MarkUnknownRecovery path already writes for the orphan case. A zero missedSince is
+// a no-op (a normal tick run carries none). Parameterized SQL, never concatenated.
+func (s *Store) setMissedSinceOnConn(ctx context.Context, conn *pgxpool.Conn, runID string, missedSince time.Time) error {
+	if missedSince.IsZero() {
+		return nil
+	}
+	if _, err := conn.Exec(ctx,
+		`UPDATE aura.agent_job_runs SET missed_since = $2 WHERE id = $1`,
+		runID, missedSince.UTC()); err != nil {
+		return fmt.Errorf("set missed_since on run %q: %w", runID, err)
+	}
+	return nil
 }
 
 // GetRun fetches one run by id. A missing row is ErrTaskNotFound (wrapped) —

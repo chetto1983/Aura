@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"hash/fnv"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -33,6 +34,11 @@ type Claim struct {
 	conn  *pgxpool.Conn
 	RunID string
 	hash  int64
+	// MissedSince is non-zero only for a boot catch-up claim (runMissed, D-18): it
+	// carries the ORIGINAL slipped fire so the dispatcher can thread it to the
+	// handler (a backup handler emits MissedBackupAlert past the SC#3 window) and a
+	// notification can say "late summary, scheduled 9:30". Zero for a normal tick.
+	MissedSince time.Time
 }
 
 // Conn exposes the held connection so the dispatcher (10-05) runs the job's writes

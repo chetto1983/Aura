@@ -114,8 +114,17 @@ func envInt(key string, def int) int {
 // joined before the tick returns (goleak gate).
 func (s *Scheduler) Start(ctx context.Context) error {
 	_ = s.recoverOrphans(ctx) // WARN-only, never blocks boot (D-02)
-	if _, err := s.catchUpMissed(ctx); err != nil {
+	missed, err := s.catchUpMissed(ctx)
+	if err != nil {
 		slog.Warn("scheduler boot catch-up failed", "err", err)
+	}
+	// Dispatch the collapsed missed fires (D-18): catchUpMissed advanced each task's
+	// next_run_at to a FUTURE instant, so without firing them here the missed window
+	// is silently dropped — the very next tick would not re-select them. runMissed
+	// claims + heartbeats + dispatches each ONCE, carrying MissedSince, and does NOT
+	// reschedule (catchUpMissed already did).
+	for _, m := range missed {
+		s.runMissed(ctx, m)
 	}
 
 	ticker := time.NewTicker(s.tickInterval)
@@ -193,6 +202,41 @@ func (s *Scheduler) runOne(ctx context.Context, task Task) {
 	if s.dispatch != nil {
 		if err := s.dispatch.Dispatch(ctx, task, claim); err != nil {
 			slog.Warn("scheduler dispatch failed", "task", task.ID, "run", claim.RunID, "err", err)
+		}
+	}
+}
+
+// runMissed dispatches a collapsed boot catch-up fire ONCE (D-18). It mirrors runOne
+// — same held-conn advisory-lock claim + heartbeat + dispatch lifecycle — but with
+// two deliberate differences: (a) it does NOT reschedule, because catchUpMissed
+// already advanced next_run_at to the next future fire; and (b) it threads the
+// task's MissedSince onto the claim (and stamps it on the run row) so the dispatcher
+// and the backup handler can deliver a late-run notification and the SC#3 alert. A
+// lost lock (another booting worker already caught it up) is a benign skip — the
+// catch-up is at-most-once across the cluster by the same advisory-lock singleton.
+func (s *Scheduler) runMissed(ctx context.Context, m MissedTask) {
+	claim, err := s.claim(ctx, m.Task)
+	if err != nil {
+		if errors.Is(err, ErrAlreadyRunning) {
+			slog.Info("skipped catch-up: previous run in progress", "task", m.Task.ID)
+			return
+		}
+		slog.Warn("scheduler catch-up claim failed", "task", m.Task.ID, "err", err)
+		return
+	}
+	defer claim.release(ctx)
+
+	claim.MissedSince = m.MissedSince
+	if err := s.store.setMissedSinceOnConn(ctx, claim.Conn(), claim.RunID, m.MissedSince); err != nil {
+		slog.Warn("scheduler catch-up stamp missed_since failed", "task", m.Task.ID, "run", claim.RunID, "err", err)
+	}
+
+	stop := startHeartbeat(ctx, claim.Conn(), claim.RunID, s.hbInterval)
+	defer stop()
+
+	if s.dispatch != nil {
+		if err := s.dispatch.Dispatch(ctx, m.Task, claim); err != nil {
+			slog.Warn("scheduler catch-up dispatch failed", "task", m.Task.ID, "run", claim.RunID, "err", err)
 		}
 	}
 }

@@ -149,8 +149,9 @@ func (a handlerAdapter) Meta() cron.HandlerMeta {
 // Run projects the cron.Job onto handlers.Job and delegates to the real handler.
 func (a handlerAdapter) Run(ctx context.Context, job cron.Job) (string, error) {
 	return a.inner.Run(ctx, handlers.Job{
-		Payload:    job.Payload,
-		StepBudget: job.StepBudget,
-		RunID:      job.RunID,
+		Payload:     job.Payload,
+		StepBudget:  job.StepBudget,
+		RunID:       job.RunID,
+		MissedSince: job.MissedSince,
 	})
 }

@@ -64,7 +64,12 @@ func (h BackupHandler) Meta() HandlerMeta {
 // sweeps the retention window, and returns a summary capturing the dump path + exit
 // status. A docker-absent host is a terminal error the dispatcher records + notifies
 // (D-21) — never a silent no-op.
-func (h BackupHandler) Run(ctx context.Context, _ Job) (string, error) {
+func (h BackupHandler) Run(ctx context.Context, job Job) (string, error) {
+	// SC#3: a boot catch-up run for a backup still missed past the 24h window emits
+	// an alert (D-18). job.MissedSince is non-zero only on a catch-up run; a normal
+	// on-time run never alerts.
+	MissedBackupAlert(h.Variant, job.MissedSince, time.Now().UTC())
+
 	docker, err := h.resolveDocker()
 	if err != nil {
 		return "", err
