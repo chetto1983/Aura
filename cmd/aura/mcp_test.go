@@ -168,6 +168,62 @@ func TestMCPTrustRecordsApproval(t *testing.T) {
 	}
 }
 
+func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
+	withTempMCPConfig(t)
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"add", "local", "--", "node", "server.js"}, &out); err != nil {
+		t.Fatalf("mcp add: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"status", "--json"}, &out); err != nil {
+		t.Fatalf("mcp status --json: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{`"name":"local"`, `"startupState":"blocked"`, `"trust":"blocked"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("status json missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestMCPDoctorAllRedactsAndChecksRecipes(t *testing.T) {
+	path := withTempMCPConfig(t)
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"mail": {
+			Command: "npx",
+			Env:     []string{"SMTP_USER=me@example.com", "SMTP_PASS=super-secret"},
+			Source:  "recipe:mail",
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+		"calendar": {
+			Command: "calendar-fixture",
+			Env:     []string{"AURA_CALENDAR_MODE=fixture"},
+			Source:  "recipe:calendar",
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+	origLookPath := mcpLookPath
+	t.Cleanup(func() { mcpLookPath = origLookPath })
+	mcpLookPath = func(command string) (string, error) { return "/fake/" + command, nil }
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"doctor", "--all"}, &out); err != nil {
+		t.Fatalf("mcp doctor --all: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"mail: runtime ok", "mail env SMTP_PASS=<redacted>", "calendar fixture: ready"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("doctor --all missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "super-secret") {
+		t.Fatalf("doctor leaked secret:\n%s", got)
+	}
+}
+
 func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 	path := withTempMCPConfig(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{

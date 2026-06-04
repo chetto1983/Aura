@@ -47,6 +47,10 @@ func runMCPCommand(ctx context.Context, args []string, out io.Writer) error {
 		return mcpProfile(args[1:], out)
 	case "trust":
 		return mcpTrust(args[1:], out)
+	case "status":
+		return mcpStatus(args[1:], out)
+	case "logs":
+		return mcpLogs(args[1:], out)
 	case "list":
 		return mcpList(out)
 	case "doctor":
@@ -230,8 +234,11 @@ func mcpList(out io.Writer) error {
 }
 
 func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
+	if len(args) == 1 && args[0] == "--all" {
+		return mcpDoctorAll(ctx, out)
+	}
 	if len(args) != 1 {
-		return fmt.Errorf("usage: aura mcp doctor <name>")
+		return fmt.Errorf("usage: aura mcp doctor <name>|--all")
 	}
 	name := args[0]
 	cfg, err := effectiveMCPServer(name)

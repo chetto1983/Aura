@@ -178,3 +178,18 @@ func TestDecodeToolResult(t *testing.T) {
 		})
 	}
 }
+
+func TestStderrTailRedactsSecrets(t *testing.T) {
+	buf := &safeBuffer{}
+	_, _ = buf.Write([]byte("TOKEN=abc123 SMTP_PASS=hunter2 Authorization: Bearer hidden"))
+	c := &Client{stderr: buf}
+	got := c.stderrTail()
+	for _, bad := range []string{"abc123", "hunter2", "Bearer hidden"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("stderr tail leaked %q: %s", bad, got)
+		}
+	}
+	if !strings.Contains(got, "TOKEN=<redacted>") {
+		t.Fatalf("stderr tail missing redaction placeholder: %s", got)
+	}
+}

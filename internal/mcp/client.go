@@ -308,6 +308,7 @@ func (c *Client) stderrTail() string {
 	if len(s) > 200 {
 		s = s[len(s)-200:]
 	}
+	s = RedactSecrets(s)
 	return ": " + s
 }
 
