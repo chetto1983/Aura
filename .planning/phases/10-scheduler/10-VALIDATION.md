@@ -98,6 +98,26 @@ gate3_signed_off: 2026-06-04
 
 ---
 
+## Validation Audit 2026-06-04 (post-Gate-3 /gsd-validate-phase re-run)
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 1 |
+| Resolved | 1 |
+| Escalated | 0 |
+
+Live re-run of the automated tiers from WSL (stack up). Unit `-race` (cron + handlers + tools)
+green; all 8 Per-Task-Map `-run` patterns resolve to real test functions (no `[no tests to run]`
+false-greens); Wave-0 artifacts all materialized (goleak ×2, D-10 schema-shape test, chaos script).
+**One PARTIAL caught:** `TestStartDispatchesMissedAtBoot` (added in CR-01 fix `4b016166`, after the
+Gate-3 evidence run) asserted a nanosecond-precision `time.Now()` round-trip against Postgres
+`timestamptz` (µs precision) — physically unsatisfiable on Linux. Test-only fix: fixture truncated
+to `time.Microsecond` (assertion strength unchanged, D-18 missed_since exact-equality kept).
+Post-fix: `db_integration` full package green + race-clean (`cron` 3.176s, `handlers` 1.021s).
+Chaos / North-Star E2E / mutation not re-run — env/operator-gated, recorded same-day above.
+
+---
+
 ## Validation Sign-Off
 
 - [x] All tasks have `<automated>` verify or Wave 0 dependencies
