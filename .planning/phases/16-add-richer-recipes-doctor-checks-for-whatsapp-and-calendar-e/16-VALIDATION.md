@@ -1,7 +1,7 @@
 ---
 phase: 16
 slug: mcp-sidecar-manager-third-party-trust
-status: planned
+status: passed
 nyquist_compliant: true
 created: 2026-06-04
 ---
@@ -28,14 +28,14 @@ created: 2026-06-04
 
 | Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | Status |
 |---|---|---:|---|---|---|---|---|---|
-| 01-T1 | 16-01 | 0 | MCP-V2-01/CAP-09 amendment | T-16-01 | Requirements, roadmap, and decisions explicitly include third-party trust boundaries | doc-gate | grep for CAP-09/MCP-V2-01/trust classes | planned |
-| 02-T1 | 16-02 | 1 | Config v2 | T-16-01, T-16-02 | Existing config migrates; blocked third-party cannot boot | unit | `go test ./internal/mcp/ -run 'TestManagedConfig|TestProfile|TestTrust'` | planned |
-| 03-T1 | 16-03 | 1 | Profiles/catalog/recipes | T-16-03 | Recipes and profiles exclude credentials; Calendar fixture mode exists | unit | `go test ./cmd/aura/ -run 'TestMCP.*Recipe|TestMCP.*Profile|TestMCP.*Install'` | planned |
-| 04-T1 | 16-04 | 1 | Status/doctor/logs | T-16-04 | Doctor gives actionable checks without leaking secrets | unit | `go test ./cmd/aura/ -run 'TestMCP.*Doctor|TestMCP.*Status|TestMCP.*Logs'` | planned |
-| 05-T1 | 16-05 | 2 | Streamable HTTP | T-16-05 | HTTP MCP client handles initialize/session/tools/errors/timeouts | unit + httptest | `go test ./internal/mcp/ -run 'TestHTTP|TestStreamable'` | planned |
-| 06-T1 | 16-06 | 2 | Sandboxed runtime | T-16-06 | Docker runtime has no host mounts by default and blocks unsafe local boot | unit | `go test ./internal/mcp/ ./cmd/aura/ -run 'TestDockerRuntime|TestTrustGate'` | planned |
-| 07-T1 | 16-07 | 2 | Risk policy | T-16-07 | Destructive/unknown-risk tools are blocked before registry mount | unit | `go test ./internal/agent/mcptools/ ./internal/mcp/ -run 'TestRisk|TestPolicy|TestMount'` | planned |
-| 08-T1 | 16-08 | 3 | E2E/docs/onboarding | T-16-08 | Mock stdio+HTTP E2E green; live tiers explicit, not skipped as green | build/e2e | `go test ./cmd/aura/ ./internal/mcp/ ./internal/agent/mcptools/` | planned |
+| 01-T1 | 16-01 | 0 | MCP-V2-01/CAP-09 amendment | T-16-01 | Requirements, roadmap, and decisions explicitly include third-party trust boundaries | doc-gate | grep for CAP-09/MCP-V2-01/trust classes | passed |
+| 02-T1 | 16-02 | 1 | Config v2 | T-16-01, T-16-02 | Existing config migrates; blocked third-party cannot boot | unit | `go test ./internal/mcp/ -run 'TestManagedConfig|TestProfile|TestTrust'` | passed |
+| 03-T1 | 16-03 | 1 | Profiles/catalog/recipes | T-16-03 | Recipes and profiles exclude credentials; Calendar fixture mode exists | unit | `go test ./cmd/aura/ -run 'TestMCP.*Recipe|TestMCP.*Profile|TestMCP.*Install'` | passed |
+| 04-T1 | 16-04 | 1 | Status/doctor/logs | T-16-04 | Doctor gives actionable checks without leaking secrets | unit | `go test ./cmd/aura/ -run 'TestMCP.*Doctor|TestMCP.*Status|TestMCP.*Logs'` | passed |
+| 05-T1 | 16-05 | 2 | Streamable HTTP | T-16-05 | HTTP MCP client handles initialize/session/tools/errors/timeouts | unit + httptest | `go test ./internal/mcp/ -run 'TestHTTP|TestStreamable|TestSession|TestProtocol'` | passed |
+| 06-T1 | 16-06 | 2 | Sandboxed runtime | T-16-06 | Docker runtime has no host mounts by default and blocks unsafe local boot | unit | `go test ./internal/mcp/manager/ -run 'TestDockerRuntime|TestGatewayRuntime|TestRuntimePolicy' -count=1`; `go test ./cmd/aura/ ./internal/mcp/manager/ -run 'TestTrustGate|TestBlocked|TestBuildRegistry' -count=1` | passed |
+| 07-T1 | 16-07 | 2 | Risk policy | T-16-07 | Destructive/unknown-risk tools are blocked before registry mount | unit | `go test ./internal/agent/mcptools/ ./internal/mcp/manager/ -run 'TestMount|TestPolicy|TestRisk' -count=1` | passed |
+| 08-T1 | 16-08 | 3 | E2E/docs/onboarding | T-16-08 | Mock stdio+HTTP E2E green; live tiers explicit, not skipped as green | build/e2e | `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1` | passed |
 
 ## Threat Register
 
@@ -59,10 +59,26 @@ created: 2026-06-04
 | Calendar live account | External provider auth | Run only after fixture mode passes. |
 | Docker MCP Gateway integration | Depends on Docker Desktop MCP Toolkit version | If installed, connect an Aura profile to Docker gateway and run mock tool census. |
 
+## Actual Automated Results
+
+Recorded on 2026-06-04:
+
+| Command | Result |
+|---|---|
+| `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1` | PASS |
+| `go test ./internal/mcp/manager/ -run 'TestRisk|TestPolicy' -count=1` | PASS |
+| `go test ./internal/agent/mcptools/ ./internal/mcp/manager/ -run 'TestMount|TestPolicy|TestRisk' -count=1` | PASS |
+| `go test ./cmd/aura/ -run 'TestMCP.*Tools|TestMCP.*Status' -count=1` | PASS |
+| `go test ./cmd/aura/ ./internal/config/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1` | PASS |
+
+## Live Tier Record
+
+Live WhatsApp, mail, Calendar provider, Docker runtime, and Docker MCP Gateway checks were not run in this automated environment. They remain operator-only because they require private accounts, local credentials, WSL bridge state, Docker daemon state, or specific Docker MCP Toolkit versions. They are documented in `docs/mcp-manager.md` and must be recorded here with date, command, and redacted evidence if an operator runs them.
+
 ## Sign-Off
 
-- [ ] Every plan has an automated verification path.
-- [ ] Live checks are marked operator-only.
-- [ ] No third-party local command runs at chat boot without trust.
-- [ ] Blocked/destructive tools are absent from the runtime registry.
-- [ ] Secrets are redacted in status, doctor, logs, and exports.
+- [x] Every plan has an automated verification path.
+- [x] Live checks are marked operator-only.
+- [x] No third-party local command runs at chat boot without trust.
+- [x] Blocked/destructive tools are absent from the runtime registry.
+- [x] Secrets are redacted in status, doctor, logs, and exports.

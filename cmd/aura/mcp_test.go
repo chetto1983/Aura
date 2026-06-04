@@ -318,6 +318,70 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 	}
 }
 
+func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
+	path := withTempMCPConfig(t)
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"install", "calculator"}, &out); err != nil {
+		t.Fatalf("install calculator: %v", err)
+	}
+	doc, err := mcp.LoadManagedConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	calc := doc.MCPServers["calculator"]
+	calc.Command = os.Args[0]
+	calc.Args = []string{"-test.run=TestMCPServerHelperProcess", "--"}
+	calc.Env = []string{"AURA_MCP_HELPER=1"}
+	doc.MCPServers["calculator"] = calc
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save fake calculator: %v", err)
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"profile", "create", "e2e"}, &out); err != nil {
+		t.Fatalf("profile create: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"profile", "add", "e2e", "calculator"}, &out); err != nil {
+		t.Fatalf("profile add: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"profile", "use", "e2e"}, &out); err != nil {
+		t.Fatalf("profile use: %v", err)
+	}
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"add", "blocked", "--", "aura-nonexistent-mcp-binary-xyz"}, &out); err != nil {
+		t.Fatalf("add blocked: %v", err)
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"tools", "calculator"}, &out); err != nil {
+		t.Fatalf("tools calculator: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "calculate\tread\tmounted\tEvaluate a mathematical expression.") {
+		t.Fatalf("tools calculator output missing risk/mounted row:\n%s", got)
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"status", "--json"}, &out); err != nil {
+		t.Fatalf("status --json: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{`"name":"blocked"`, `"startupState":"blocked"`, `"name":"calculator"`, `"profiles":["default","e2e"]`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("status json missing %q:\n%s", want, got)
+		}
+	}
+
+	out.Reset()
+	if err := runMCPCommand(context.Background(), []string{"doctor", "blocked"}, &out); err != nil {
+		t.Fatalf("doctor blocked: %v", err)
+	}
+	if got := out.String(); !strings.Contains(got, "blocked: trust approval required") {
+		t.Fatalf("doctor blocked should report trust gate without launching:\n%s", got)
+	}
+}
+
 func TestMCPToolsShowsRiskLabelsAndBlockedTools(t *testing.T) {
 	path := withTempMCPConfig(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{

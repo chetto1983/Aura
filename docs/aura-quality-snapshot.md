@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-06-04 (sandbox-agent hygiene sweep)
+**Last updated:** 2026-06-04 (Phase 16 MCP manager)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -28,6 +28,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 | Skill snippet exec success rate (sandbox-agent workspace, Phase 11 corpus 50 snippets) | ≥ 95% | YYYY-MM-DD (placeholder — populated by Phase 11) | TBD | Phase 11 Slice 7e-core | `internal/skills/snippet/**`, `internal/agent/tools/sandbox_exec.go`, `internal/sandboxagent/**` |
 | Web tools — `ssrf.go` mutation (go-mutesting, ≥70% killed) + `internal/web` coverage (≥85% combined) + live `web_search` p95 (≤2s) | mut ≥70% / cov ≥85% / p95 ≤2s | 2026-06-02 (unit cov; live cells pending @ Gate-3) | unit cov 91.0% / combined 91.5% (PASS, was 75.5%); ssrf.go mutation 94.4% (PASS); SC#1 p95 ~1.01s (PASS) | Phase 7 Slice 5 | `internal/web/**`, `internal/agent/tools/web_*.go`, `searxng/settings.yml` |
 | Swarm E2E (CAP-03 / SC#5 / D-22) — autonomous parallelization (≥2 workers, natural prompt) + mail+WhatsApp MCP read-back + timing <1.5× + judge ≥90% | ≥2 workers / facts present / mail+WA read-back / <1.5× / judge ≥0.90 / no-over-spawn | 2026-06-04 (live, run 8 of 8 — see iteration log in detail section) | **PASS** (workers=2, fan-out 15.9s / baseline 12.2s = 1.30×, e2e 27.8s advisory, mail+WA read-back=found, judge=1.00, control 0 workers + 5/5) | Phase 9 Slice 3 | `internal/swarm/**`, `internal/agent/tools/swarm_spawn.go`, `internal/eval/harness_swarm_e2e_test.go` |
+| MCP manager mock E2E + policy gate (CAP-09 / MCP-V2-01) | mock stdio + Streamable HTTP + trust gate + policy gate pass; live tiers explicit | 2026-06-04 (automated mock tier) | **PASS** mock tier: `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1`; live WhatsApp/mail/Calendar/Docker checks operator-only, not run in CI | Phase 16 MCP manager | `cmd/aura/mcp*.go`, `internal/mcp/**`, `internal/agent/mcptools/**`, `docs/mcp-manager.md` |
 | Live CoT/tool-use eval (TestCoTEval, 12 scenarios × 10 dimensions, real agent vs DeepSeek-V4) | all asserted dimensions full; reasoning advisory | 2026-06-04 (live re-run alongside the swarm gate) | **PASS** 12/12 scenarios; secret_redaction 12/12, streaming 11/11, tool-loop 2/2, cost 8/8, cache-prefix 1/1, budget 1/1, cancellation 1/1, guardrails 2/2; reasoning 6/7 advisory; cache-hit 8/8 | Phase 3 Slice 1 | `internal/eval/**`, `internal/agent/llm_agent*.go`, `internal/llm/**` |
 
 ---
@@ -215,6 +216,24 @@ go test -tags cot_eval -run TestSwarmE2E -timeout 600s -v ./internal/eval/
 The run writes a scored report to `docs/aura-swarm-eval-2026-06-04.md` and logs the
 numbers; copy worker-count / timing-ratio / read-back / judge-average into the TBD
 cells above and bump `Last measured` to the run date.
+
+---
+
+## Phase 16 MCP Manager Detail (CAP-09 / MCP-V2-01)
+
+> Phase 16's shippable quality gate is the mock manager tier. It proves the user
+> flow without depending on live npx/uv/WSL/Docker/network services: managed config
+> v2, profiles, recipes, trust gates, status/doctor, Streamable HTTP, Docker command
+> generation, and policy-aware MCP tool mounting.
+
+| Sub-metric | Target | Last measured | Last value |
+|---|---|---|---|
+| Mock stdio manager E2E | profile + trusted recipe mock lists tools; blocked local server visible but not launched | 2026-06-04 | PASS via `go test ./cmd/aura/ -run TestMCPManagerMockE2EProfileRecipeBlockedAndTools -count=1` |
+| Streamable HTTP client | initialize + session/protocol headers + list/call/error handling | 2026-06-04 | PASS via `go test ./internal/mcp/ -run 'TestHTTP|TestStreamable|TestSession|TestProtocol' -count=1` |
+| Runtime trust gate | blocked third-party local command skipped before chat boot and doctor launch | 2026-06-04 | PASS via `go test ./cmd/aura/ ./internal/mcp/manager/ -run 'TestTrustGate|TestBlocked|TestBuildRegistry' -count=1` |
+| Tool risk policy | destructive/unknown tools blocked before registry mount; block reasons visible | 2026-06-04 | PASS via `go test ./internal/agent/mcptools/ ./internal/mcp/manager/ -run 'TestMount|TestPolicy|TestRisk' -count=1` |
+| Full mock tier | all Phase 16 automated MCP surfaces | 2026-06-04 | PASS via `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1` |
+| Live WhatsApp/mail/Calendar/Docker checks | operator-only, never CI skip-as-green | 2026-06-04 | Not run here; see `docs/mcp-manager.md` and Phase 16 validation for runbook commands and recording rules |
 
 ---
 
