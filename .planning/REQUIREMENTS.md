@@ -38,6 +38,8 @@
 - [ ] **CAP-07**: Skills system instruction-based (7a read + 7b validator + 7c write/edit + 7d install) con SKILL.md format compat Anthropic. `skill.catalog` HTML scrape hidden behind `aura skills enable-catalog` opt-in. Audit-immutable Postgres trigger BEFORE UPDATE/DELETE/TRUNCATE + role separation enforced. Unicode NFKC validator (10K fuzz on skill content). [Slice 7a/b/c/d + amendments #14, #17]
 - [ ] **CAP-08**: Skill executable code snippets v1 — save/execute multi-lang con pattern analysis + TTL archived. Reusa sandbox 2b session-bound + skill validator. NO cross-conv cluster auto-suggest in v1 (deferred a Slice 7f / v1.x). [Slice 7e-core — amendment #13]
 
+- [ ] **CAP-09 / MCP-V2-01**: Aura MCP Manager control plane for v1. Managed MCP config grows profiles, recipe/catalog metadata, trust classes (`trusted_recipe`, `trusted_local`, `sandboxed_local`, `remote_http`, `blocked`), Streamable HTTP transport, doctor/status/logs, Calendar fixture recipe, sandboxed third-party local runtime, explicit trust approvals, redacted profile export, and mount-time tool risk-policy enforcement. New third-party local commands default to `blocked`; OpenClaw plugin-host runtime remains out-of-scope. [Phase 16 amendment]
+
 ### Transport + UX (Slice 8–11)
 
 - [ ] **UX-01**: AG-UI gateway con SSE event protocol transport, thin wrapper over in-process emitter. `internal/agent` MUST NOT import `internal/agui` (boundary enforced via static analysis). [Slice 8]
@@ -65,7 +67,7 @@ Deferred to future release. Acknowledged but NOT in current roadmap.
 ### Advanced Features (post-Telegram-launch evaluation)
 
 - **SWARM-V2-01**: Swarm full N-deep con DM-by-ID + tier-mapped models (Opus per planner, Sonnet per worker, Haiku per fact-check). Re-evaluate dopo che real swarm demand emerge.
-- **MCP-V2-01**: Generic MCP client subprocess manager — pluggable MCP servers (filesystem, github, slack) beyond mcp-neo4j-cypher.
+- **MCP-V2-01**: Promoted to v1 as **CAP-09** for Phase 16. Remaining v2 work, if any, is public marketplace discovery or OpenClaw-compatible plugin hosting, not the MCP manager itself.
 - **PROJ-V2-01**: First-class "Projects" concept (group conversations + shared `Agent.md`).
 - **EXPORT-V2-01**: Conversation export/share-link (`aura chat export <id> --format markdown`).
 - **RETENTION-V2-01**: `AURA_CONVERSATION_RETENTION_DAYS` policy + auto-delete (GDPR-friendly per Italian SMB).
@@ -115,6 +117,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CAP-06 | Phase 10 — Scheduler | Pending |
 | CAP-07 | Phase 11 — Skills | Pending |
 | CAP-08 | Phase 11 — Skills | Pending |
+| CAP-09 / MCP-V2-01 | Phase 16 — MCP Sidecar Manager + Third-Party Trust | Pending |
 | UX-01 | Phase 12 — AG-UI Gateway | Pending |
 | UX-02 | Phase 13 — Channels + Telegram + Multimodal | Pending |
 | UX-03 | Phase 13 — Channels + Telegram + Multimodal | Pending |
@@ -127,11 +130,11 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 
 **Coverage:**
 
-- v1 requirements: 26 total (1 PRD + 3 INFRA + 5 CORE + 8 CAP + 9 UX)
-- Mapped to phases: 26
+- v1 requirements: 27 total (1 PRD + 3 INFRA + 5 CORE + 9 CAP + 9 UX)
+- Mapped to phases: 27
 - Unmapped: 0 ✓
-- Phases used: 16 (P0 through P15)
+- Phases used: 17 (P0 through P16)
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-06-04 after D-15 doc-superseding sweep (gsd-quick)*
+*Last updated: 2026-06-04 after Phase 16 CAP-09/MCP-V2-01 promotion*

@@ -181,6 +181,18 @@
 
 ---
 
+## Phase 16 MCP Manager + Third-Party Trust Decisions
+
+| ID | Decision | Requirement | Status |
+|----|----------|-------------|--------|
+| **D-26** | **CAP-09 / MCP-V2-01 promoted to v1.** Phase 16 is the Aura MCP Manager control plane, not only richer mail/WhatsApp recipes. It includes profiles, catalog metadata, trust approvals, sandboxed third-party local runtime, Streamable HTTP, status/doctor/logs, and risk-policy enforcement. | **CAP-09 / MCP-V2-01** | Planned |
+| **D-27** | **Trust classes are canonical:** `trusted_recipe`, `trusted_local`, `sandboxed_local`, `remote_http`, and `blocked`. New third-party local commands default to `blocked`; chat boot filters blocked/untrusted servers before launch. | **CAP-09 / MCP-V2-01** | Planned |
+| **D-28** | **OpenClaw remains separate.** Do not import the OpenClaw plugin-host runtime, typed plugin RPC, module loader, mTLS/audit surface, or public marketplace semantics into Phase 16. MCP servers are process/HTTP endpoints; OpenClaw plugins are arbitrary module code. | **CAP-09 / MCP-V2-01** | Planned |
+| **D-29** | **No restart supervisor.** Preserve the Phase 9 lifecycle decision: fail-soft boot and on-demand doctor/status checks, not a background ping ticker or auto-restart loop for stdio MCP servers. Docker/container health is external runtime evidence. | **CAP-09 / MCP-V2-01** | Planned |
+| **D-30** | **No marketplace auto-install.** Phase 16 supports explicit user commands, built-in trusted recipes, local catalog files, and manual third-party entries. Natural-language public registry browsing and auto-install are deferred. | **CAP-09 / MCP-V2-01** | Planned |
+
+---
+
 ## Prossime azioni raccomandate
 
 0. **D00 locked (2026-06-01)**: binario portabile unico. Le 6 invarianti di portabilità sono guardrail per ogni phase → da verificare in CI (multi-arch) e nel design (routing config-driven, privacy-mode, seccomp per-arch).

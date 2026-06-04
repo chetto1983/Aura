@@ -423,6 +423,15 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Depends on:** Phase 15
 **Plans:** 8/8 planned
 
+**Success Criteria** (what must be TRUE):
+
+1. Existing `~/.aura/mcp/servers.json` files still load, while new config can express profiles, trust metadata, runtime metadata, redacted exports, and per-profile tool policy.
+2. `aura mcp` exposes a usable manager surface: catalog/recipes, profile assignment, explicit trust approval, Calendar fixture install, status, doctor `--all`, and redacted log output.
+3. Stdio MCP remains supported and Streamable HTTP MCP servers can initialize, maintain session state, list tools, and fail with actionable diagnostics.
+4. Third-party local commands do not run at chat boot unless explicitly `trusted_local` or routed through a `sandboxed_local`/Docker-style runtime; new arbitrary local servers default to `blocked`.
+5. Tool risk labels are visible and enforced before bridged MCP tools enter Aura's runtime registry; destructive or unknown-risk tools can be denied rather than merely warned about.
+6. OpenClaw plugin hosting, public marketplace auto-install, and background restart supervision remain out-of-scope for Phase 16.
+
 Plans:
 
 - [ ] 16-01-PLAN.md - doc amendment and design spec for expanded MCP manager scope
