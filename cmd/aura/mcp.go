@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strings"
@@ -15,6 +16,8 @@ import (
 )
 
 const mcpUsage = "usage: aura mcp {install <recipe> [name]|add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]|list|doctor <name>|tools <name>|enable <name>|disable <name>|remove <name>}"
+
+const defaultWhatsAppBridgeURL = "http://127.0.0.1:8080"
 
 type mcpRecipe struct {
 	Summary string
@@ -250,7 +253,13 @@ func mcpDoctor(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	defer func() { _ = cli.Close() }()
-	return writef(out, "ok: %s started; %s\n", name, toolCount(len(defs)))
+	if err := writef(out, "ok: %s started; %s\n", name, toolCount(len(defs))); err != nil {
+		return err
+	}
+	if name == "whatsapp" {
+		return writeWhatsAppBridgeHealth(ctx, out)
+	}
+	return nil
 }
 
 func mcpTools(ctx context.Context, args []string, out io.Writer) error {
@@ -360,6 +369,37 @@ func openAndListMCPTools(ctx context.Context, name string, cfg mcp.ServerConfig)
 		return nil, nil, err
 	}
 	return cli, defs, nil
+}
+
+func writeWhatsAppBridgeHealth(ctx context.Context, out io.Writer) error {
+	status := probeWhatsAppBridge(ctx, whatsAppBridgeBaseURL())
+	return writef(out, "whatsapp bridge: %s; connected-state unavailable (bridge exposes no status endpoint)\n", status)
+}
+
+func whatsAppBridgeBaseURL() string {
+	if v := strings.TrimSpace(os.Getenv("AURA_MCP_WHATSAPP_BRIDGE_URL")); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return defaultWhatsAppBridgeURL
+}
+
+func probeWhatsAppBridge(ctx context.Context, baseURL string) string {
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	url := strings.TrimRight(baseURL, "/") + "/api/send"
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, url, nil) //nolint:gosec // operator-owned doctor URL; default is local loopback
+	if err != nil {
+		return fmt.Sprintf("REST %s invalid (%v)", baseURL, err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Sprintf("REST %s unreachable (%v)", baseURL, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode == http.StatusMethodNotAllowed {
+		return fmt.Sprintf("REST %s reachable (GET /api/send -> 405)", baseURL)
+	}
+	return fmt.Sprintf("REST %s unexpected status (GET /api/send -> %d)", baseURL, resp.StatusCode)
 }
 
 func sortedManagedNames(doc mcp.ManagedConfig) []string {

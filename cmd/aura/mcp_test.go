@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,5 +100,45 @@ func TestMCPDoctorAndToolsStartConfiguredServer(t *testing.T) {
 	}
 	if got := out.String(); !strings.Contains(got, "calculate") || !strings.Contains(got, "Evaluate a mathematical expression.") {
 		t.Fatalf("tools output missing calculator tool:\n%s", got)
+	}
+}
+
+func TestMCPDoctorWhatsAppReportsBridgeHealth(t *testing.T) {
+	path := withTempMCPConfig(t)
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		"whatsapp": {
+			Command: os.Args[0],
+			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
+			Env:     []string{"AURA_MCP_HELPER=1"},
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
+
+	bridge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/api/send" {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer bridge.Close()
+	t.Setenv("AURA_MCP_WHATSAPP_BRIDGE_URL", bridge.URL)
+
+	var out bytes.Buffer
+	if err := runMCPCommand(context.Background(), []string{"doctor", "whatsapp"}, &out); err != nil {
+		t.Fatalf("mcp doctor whatsapp: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{
+		"ok: whatsapp started; 1 tool",
+		"whatsapp bridge: REST",
+		"reachable (GET /api/send -> 405)",
+		"connected-state unavailable (bridge exposes no status endpoint)",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, got)
+		}
 	}
 }
