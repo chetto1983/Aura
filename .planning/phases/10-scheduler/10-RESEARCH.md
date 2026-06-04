@@ -368,14 +368,14 @@ type Scheduler struct {
 
 **All other claims are VERIFIED (codebase reads / go-proxy / pgx+gronx source) or CITED.**
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **gronx behavior at a non-existent local wall-clock time (DST spring-forward gap).**
+1. **gronx behavior at a non-existent local wall-clock time (DST spring-forward gap).** → RESOLVED in plan 10-02 T2: frozen-clock unit test at the Europe/Rome DST spring-forward boundary.
    - What we know: gronx preserves `ref.Location()` and uses `time.Date()` (which normalizes non-existent local times forward by the gap).
    - What's unclear: whether a cron `30 2 * * *` on the spring-forward night fires once-shifted or is skipped.
    - Recommendation: add a dedicated unit test with a frozen `Now` at the Europe/Rome 2026 DST boundary asserting the chosen behavior; document it. Not a blocker — `time.Date` normalization is deterministic.
 
-2. **Backup `docker exec` reachability in CI vs operator host.**
+2. **Backup `docker exec` reachability in CI vs operator host.** → RESOLVED in plan 10-05 T2: Manual-Only / `t.Fatal`-under-`$CI` discipline.
    - What we know: D-26 reuses the Phase-8 LookPath-gated fixed-argv dockerCLI; CI has the compose stack.
    - What's unclear: whether `aura-postgres`/`aura-neo4j` container names are stable across the operator's Docker Desktop + WSL and CI.
    - Recommendation: backup handler tests are Manual-Only / operator-gated (assert artifact in `$AURA_BACKUP_DIR`); CI verifies the exec wiring with a fake docker shim or skips under no-container with `t.Fatal`-under-`$CI` discipline.
