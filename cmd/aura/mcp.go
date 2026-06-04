@@ -144,7 +144,11 @@ func mcpInstall(args []string, out io.Writer) error {
 }
 
 func mcpAdd(args []string, out io.Writer) error {
-	if len(args) < 3 {
+	// Only guard against an empty arg vector (so args[0] below is safe). The real
+	// invariant — a non-empty name AND a non-empty command after "--" — is enforced
+	// precisely by the empty-name and len(commandParts)==0 checks below; a brittle
+	// `len(args) < 3` pre-check implied a different, contradictory contract (WR-06).
+	if len(args) == 0 {
 		return fmt.Errorf("usage: aura mcp add <name> [--env KEY=VALUE] [--disabled] -- <command> [args...]")
 	}
 	name := strings.TrimSpace(args[0])
