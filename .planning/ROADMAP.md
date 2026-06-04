@@ -430,7 +430,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
-| 10. Scheduler | 6/6 | Complete   | 2026-06-04 |
+| 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 0/TBD | Not started | - |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |

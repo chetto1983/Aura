@@ -1,7 +1,8 @@
 ---
 phase: 10-scheduler
 verified: 2026-06-04T20:00:00Z
-status: human_needed
+status: passed
+# human items closed 2026-06-04: 10-HUMAN-UAT.md 3/3 passed (post-fix live re-check, commit 037127cd)
 score: 4/4
 overrides_applied: 0
 human_verification:
