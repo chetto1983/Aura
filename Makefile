@@ -6,7 +6,7 @@
 # sqlc CLI: install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1`
 # (v1.27.0 panics on Windows hosts via wazero out-of-bounds; v1.31.1 verified clean).
 
-.PHONY: help tools sqlc lint vet vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill sandbox-up
+.PHONY: help tools sqlc lint vet deadcode vuln coverage quality quality-full test test-race file-size db-up db-migrate db-status db-reset neo4j-up neo4j-migrate neo4j-status neo4j-reset smoke restore-drill sandbox-up
 
 # Resolve go-installed tool binaries even when $GOPATH/bin is not on PATH
 # (common in a fresh WSL login shell). Falls back to a bare name on PATH.
@@ -14,10 +14,11 @@ GOBIN := $(shell go env GOPATH)/bin
 
 help:
 	@echo "make tools         — go install the quality toolchain (lint/vuln/dupl/mutation/etc.)"
-	@echo "make quality       — pre-push gate: vet build file-size lint test-race vuln (no containers)"
+	@echo "make quality       — pre-push gate: vet build file-size lint deadcode test-race vuln (no containers)"
 	@echo "make quality-full  — quality + coverage gate (requires the container stack up)"
 	@echo "make sqlc          — regenerate internal/db/sqlc/ from queries/"
 	@echo "make lint          — golangci-lint run ./... (incl. dupl)"
+	@echo "make deadcode      — deadcode -test ./... (unreachable Go code scan)"
 	@echo "make vet           — go vet ./..."
 	@echo "make vuln          — govulncheck ./... (supply-chain CVE scan)"
 	@echo "make coverage      — owned-surface coverage floor >=85% (scripts/coverage_gate.sh; needs stack)"
@@ -59,6 +60,9 @@ vet:
 lint:
 	$(GOBIN)/golangci-lint run ./...
 
+deadcode:
+	$(GOBIN)/deadcode -test ./...
+
 vuln:
 	$(GOBIN)/govulncheck ./...
 
@@ -69,9 +73,9 @@ coverage:
 	bash scripts/coverage_gate.sh
 
 # Pre-push gate that needs NO containers — fast feedback before a push.
-quality: vet file-size lint test-race vuln
+quality: vet file-size lint deadcode test-race vuln
 	go build ./...
-	@echo "ok: quality gate passed (vet build file-size lint test-race vuln)"
+	@echo "ok: quality gate passed (vet build file-size lint deadcode test-race vuln)"
 
 # Full gate including the container-backed coverage floor.
 quality-full: quality coverage
