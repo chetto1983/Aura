@@ -11,12 +11,12 @@
 
 ### PRD Pre-Implementation (P0 — no code, doc only)
 
-- [ ] **PRD-01**: 20 PRD amendments applied in single commit `prd: pre-implementation drift fixes from independent research convergence` before any Slice 0.5 code commit. Covers: Go 1.25+ bump (AG-UI SDK requirement), Neo4j 5.26 LTS pin, go-readability migration to readeck fork, MarkdownV2 custom escaper as default, AG-UI/telebot SHA pins, conversation FTS sub-slice 1.8.5, /cost commands, OTel hooks, setup wizard token, :AgentInsight retrieval caching spec, Slice 3 swarm scope-reduction (ParallelAgent + 2-deep cap), Slice 7e split into 7e-core (v1) + 7f (v1.x), skill.catalog opt-in, goleak mandate extension, cross-slice cache_invariant_audit.sh CI job, audit role separation (aura_app vs aura_migrate) + TRUNCATE trigger, embedding-dim env contract + boot assertion, agent loop budget contract (3 env vars + child inheritance), docs/aura-quality-snapshot.md living doc + CI gate. [SUMMARY.md PRD Amendments table]
+- [x] **PRD-01**: 20 PRD amendments applied in single commit `prd: pre-implementation drift fixes from independent research convergence` before any Slice 0.5 code commit. Covers: Go 1.25+ bump (AG-UI SDK requirement), Neo4j 5.26 LTS pin, go-readability migration to readeck fork, MarkdownV2 custom escaper as default, AG-UI/telebot SHA pins, conversation FTS sub-slice 1.8.5, /cost commands, OTel hooks, setup wizard token, :AgentInsight retrieval caching spec, Slice 3 swarm scope-reduction (ParallelAgent + 2-deep cap), Slice 7e split into 7e-core (v1) + 7f (v1.x), skill.catalog opt-in, goleak mandate extension, cross-slice cache_invariant_audit.sh CI job, audit role separation (aura_app vs aura_migrate) + TRUNCATE trigger, embedding-dim env contract + boot assertion, agent loop budget contract (3 env vars + child inheritance), docs/aura-quality-snapshot.md living doc + CI gate. [SUMMARY.md PRD Amendments table]
 
 ### Infrastructure (Slice 0.5–0.9)
 
-- [ ] **INFRA-01**: Postgres 17 + sqlc + pgx + golang-migrate operativo con schema `aura.*` e migrazioni versionate. Include role separation `aura_app` (INSERT/SELECT only on audit tables) vs `aura_migrate` (DDL gated). Boot fail-fast su DB unreachable. Nightly restore drill < 90s. [Slice 0.5 + amendment #17]
-- [ ] **INFRA-02**: Neo4j 5.26-community + APOC + GDS + HNSW vector index 768d cosine + `mcp-neo4j-cypher` MCP server (subprocess stdio, fail-fast su missing PATH). Embedding dim env contract `AURA_EMBED_DIMENSIONS=768` con boot assertion sidecar. Spike recall@5 5/5 mantained as smoke. [Slice 0.7 + amendments #2, #18]
+- [x] **INFRA-01**: Postgres 17 + sqlc + pgx + golang-migrate operativo con schema `aura.*` e migrazioni versionate. Include role separation `aura_app` (INSERT/SELECT only on audit tables) vs `aura_migrate` (DDL gated). Boot fail-fast su DB unreachable. Nightly restore drill < 90s. [Slice 0.5 + amendment #17]
+- [x] **INFRA-02**: Neo4j 5.26-community + APOC + GDS + HNSW vector index 768d cosine + `mcp-neo4j-cypher` MCP server (subprocess stdio, fail-fast su missing PATH). Embedding dim env contract `AURA_EMBED_DIMENSIONS=768` con boot assertion sidecar. Spike recall@5 5/5 mantained as smoke. [Slice 0.7 + amendments #2, #18]
 - [x] **INFRA-03**: Open `Agent` interface + exported workflow agents (Sequential/Loop/Parallel) adapted from `google/adk-go` with Apache-2.0 attribution (~420 LOC). InvocationContext includes `request_id` UUIDv7 for OTel TraceID/run correlation and 8-byte crypto/rand SpanID/ParentSpanID for OTel-compatible span shape. Budget contract includes `AURA_LOOP_MAX_STEPS=25`, `AURA_LOOP_MAX_WALLCLOCK_SEC=300`, `AURA_LOOP_DEDUP_WINDOW=3`, dedup exempt/result-cap vars, passive branch soft-cap, and child budget inheritance from parent's remaining (NON fresh). Zero goroutine leak via `goleak.VerifyNone` mandatory. [Slice 0.9 + amendments #1, #9, #15, #19]
 
 ### Core Agent (Slice 1–1.8)
@@ -29,8 +29,8 @@
 
 ### Capabilities (Slice 2–7)
 
-- [ ] **CAP-01**: Sandbox code execution — run untrusted python/shell in an isolated Docker container. Delivered via **code-sandbox-mcp** (Go stdio MCP server) mounted through Aura's generic MCP→agent-tool bridge; the binary is auto-provisioned on boot (no operator install). (D-15 pivot — supersedes the bespoke seccomp Python sidecar.) [Slice 2 / code-sandbox-mcp]
-- [ ] **CAP-02**: Session-bound sandbox — per-conversation container whose filesystem state persists across exec calls (`sandbox_initialize` → `container_id` → `sandbox_exec`). Delivered via code-sandbox-mcp + the MCP bridge. (D-15 pivot — supersedes the bespoke SessionManager + host egress proxy.) [Slice 2 / code-sandbox-mcp]
+- [x] **CAP-01**: Sandbox code execution — run untrusted python/shell through the non-deferred `sandbox_exec` tool backed by the local `sandbox-agent` container (`aura-sandbox-agent:py3`) on loopback. The operator starts it with `make sandbox-up`; Aura provisions/downloads nothing at chat boot. (D-15 pivot — supersedes both the bespoke seccomp Python sidecar and the interim MCP-server cut; the generic MCP bridge remains reusable but unmounted.) [Slice 2 / sandbox-agent]
+- [x] **CAP-02**: Sandbox workspace persistence — `/workspace` is a sandbox-agent named volume that persists filesystem state across `sandbox_exec` calls, while execution itself is stateless HTTP into the persistent local container. (D-15 pivot — supersedes the bespoke per-conversation SessionManager, `sandbox_sessions`, and host egress proxy path.) [Slice 2 / sandbox-agent]
 - [ ] **CAP-03**: Swarm coordinator minimale: riusa `ParallelAgent` da Slice 0.9 + cap `MAX_SPAWN_DEPTH=2` per v1. NO DM-by-ID, NO tier-mapped models in v1 (deferred a post-MVP). Child budget inheritance dal parent's remaining. [Slice 3 — amendment #12]
 - [x] **CAP-04**: KV cache builder stable-prefix + provider-aware (DeepSeek/Anthropic/OpenAI/Gemini). Architectural rule: **two system messages** — `messages[0]` cache-stable byte-identical, `messages[1]` mutable. CI job `scripts/cache_invariant_audit.sh` asserts SHA-256(`messages[0]`) constant across 20-turn replay (cross-slice). 80% cache hit target su DeepSeek-V4. [Slice 4 + amendment #16]
 - [x] **CAP-05**: Web tools — `web_search` via SearXNG container; `web_fetch` via `codeberg.org/readeck/go-readability/v2` + `JohannesKaufmann/html-to-markdown/v2`. SSRF defense: IPv6 blocklist + DNS rebinding pin. [Slice 5 + amendment #3]
@@ -98,17 +98,17 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PRD-01 | Phase 0 — PRD Amendments | Pending |
-| INFRA-01 | Phase 1 — Infra DB + Knowledge | Pending |
-| INFRA-02 | Phase 1 — Infra DB + Knowledge | Pending |
+| PRD-01 | Phase 0 — PRD Amendments | Complete |
+| INFRA-01 | Phase 1 — Infra DB + Knowledge | Complete |
+| INFRA-02 | Phase 1 — Infra DB + Knowledge | Complete |
 | INFRA-03 | Phase 2 — Agent Cornerstone | Complete |
 | CORE-01 | Phase 3 — LLM Client + ToolResult | Complete |
 | CORE-02 | Phase 4 — HITL + Identity + Conversations | Complete |
 | CORE-03 | Phase 4 — HITL + Identity + Conversations | Complete |
 | CORE-04 | Phase 4 — HITL + Identity + Conversations | Complete |
 | CORE-05 | Phase 4 — HITL + Identity + Conversations | Complete |
-| CAP-01 | Phase 8 — Sandbox via code-sandbox-mcp (MCP bridge) | In build |
-| CAP-02 | Phase 8 — Sandbox via code-sandbox-mcp (MCP bridge) | In build |
+| CAP-01 | Phase 8 — Sandbox via sandbox-agent (local container) | Complete |
+| CAP-02 | Phase 8 — Sandbox via sandbox-agent (local container) | Complete |
 | CAP-03 | Phase 9 — Swarm (Minimal) | Pending |
 | CAP-04 | Phase 6 — KV Cache Builder | Complete |
 | CAP-05 | Phase 7 — Web Tools | Complete |
@@ -134,4 +134,4 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-05-29 after roadmap creation (gsd-roadmapper)*
+*Last updated: 2026-06-04 after D-15 doc-superseding sweep (gsd-quick)*
