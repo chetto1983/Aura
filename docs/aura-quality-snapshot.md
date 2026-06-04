@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-06-04 (Phase 16 MCP manager)
+**Last updated:** 2026-06-04 (Phase 10 scheduler Gate-3 live sign-off)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -30,6 +30,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 | Swarm E2E (CAP-03 / SC#5 / D-22) — autonomous parallelization (≥2 workers, natural prompt) + mail+WhatsApp MCP read-back + timing <1.5× + judge ≥90% | ≥2 workers / facts present / mail+WA read-back / <1.5× / judge ≥0.90 / no-over-spawn | 2026-06-04 (live, run 8 of 8 — see iteration log in detail section) | **PASS** (workers=2, fan-out 15.9s / baseline 12.2s = 1.30×, e2e 27.8s advisory, mail+WA read-back=found, judge=1.00, control 0 workers + 5/5) | Phase 9 Slice 3 | `internal/swarm/**`, `internal/agent/tools/swarm_spawn.go`, `internal/eval/harness_swarm_e2e_test.go` |
 | MCP manager mock E2E + policy gate (CAP-09 / MCP-V2-01) | mock stdio + Streamable HTTP + trust gate + policy gate pass; live tiers explicit | 2026-06-04 (automated mock tier) | **PASS** mock tier: `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1`; live WhatsApp/mail/Calendar/Docker checks operator-only, not run in CI | Phase 16 MCP manager | `cmd/aura/mcp*.go`, `internal/mcp/**`, `internal/agent/mcptools/**`, `docs/mcp-manager.md` |
 | Live CoT/tool-use eval (TestCoTEval, 12 scenarios × 10 dimensions, real agent vs DeepSeek-V4) | all asserted dimensions full; reasoning advisory | 2026-06-04 (live re-run alongside the swarm gate) | **PASS** 12/12 scenarios; secret_redaction 12/12, streaming 11/11, tool-loop 2/2, cost 8/8, cache-prefix 1/1, budget 1/1, cancellation 1/1, guardrails 2/2; reasoning 6/7 advisory; cache-hit 8/8 | Phase 3 Slice 1 | `internal/eval/**`, `internal/agent/llm_agent*.go`, `internal/llm/**` |
+| Scheduler North-Star live E2E (CAP-06 / SC#1-SC#4) — chaos failover + once-per-window + natural-prompt → `task` tool → persisted row, real DeepSeek-V4 | SC#2 no-dup survivor / SC#1 once/window / E2E ≥90% / coverage ≥85% / mutation ≥70% | 2026-06-04 (live, WSL, operator-delegated Gate-3) | **PASS** — E2E 2/2=100% (Q3 reminder/at + Q1 agent_job/cron, natural IT prompts); SC#2 chaos completed=1/distinct=1; SC#1 2 fires/2 windows (was 94, bug fixed); SC#3 valid pg dump (role fix) + 24h alert; SC#4 budget-10 + ask_user auto-reject; coverage 88.5%; schedule.go mutation 77.3% | Phase 10 Slice 6 | `internal/cron/**`, `internal/agent/tools/task.go`, `cmd/aura/serve.go`, `scripts/scheduler_chaos.sh` |
 
 ---
 
@@ -234,6 +235,40 @@ cells above and bump `Last measured` to the run date.
 | Tool risk policy | destructive/unknown tools blocked before registry mount; block reasons visible | 2026-06-04 | PASS via `go test ./internal/agent/mcptools/ ./internal/mcp/manager/ -run 'TestMount|TestPolicy|TestRisk' -count=1` |
 | Full mock tier | all Phase 16 automated MCP surfaces | 2026-06-04 | PASS via `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1` |
 | Live WhatsApp/mail/Calendar/Docker checks | operator-only, never CI skip-as-green | 2026-06-04 | Not run here; see `docs/mcp-manager.md` and Phase 16 validation for runbook commands and recording rules |
+
+---
+
+## Phase 10 Scheduler Detail (CAP-06)
+
+> The scheduler Gate-3 was operator-delegated on 2026-06-04 ("vai con tutti i test su
+> WSL. poi E2E con Agente reale a score >90%"). Every tier ran from WSL against the live
+> Windows Docker stack (127.0.0.1); the North-Star E2E drove the real DeepSeek-V4 agent
+> via OPENROUTER_API_KEY. The live E2E is the ONE legitimate skip (paid, env-gated behind
+> the `cot_eval` tag, NOT CI). Two production bugs were caught and fixed during the run.
+
+| Sub-metric | Target | Last measured | Last value |
+|---|---|---|---|
+| SC#1 cron once-per-window | ≤1 fire/window | 2026-06-04 | **PASS** — 2 fires across 2 windows (17:45+17:50); `next_run_at` advanced to 17:55. Pre-fix: 94 fires/7.5min (re-fired every 5s tick) — bug: `runOne` never advanced `next_run_at` on a won claim. Fix: `reschedule` on claim. |
+| SC#2 chaos survivor-pickup, no dup (GATING) | completed==distinct, ≥1 | 2026-06-04 | **PASS** — `scripts/scheduler_chaos.sh` 3 workers, worker-1 partitioned 60s: completed=1, distinct=1. Green again after the SC#1 fix (no regression). |
+| SC#3 backup dump + 24h-miss alert | valid dump + alert | 2026-06-04 | **PASS** — fixed `pg_dump -U aura_app`→`aura_migrate` (aura_app lacks LOCK on the migration trackers); corrected argv yields a valid 29069-byte custom-format archive (`pg_restore --list` shows scheduler_tasks+agent_job_runs, 11 TABLE DATA). 24h alert fires live (`overdue=25h`). Live host-readback needs `AURA_BACKUP_DIR` bind-mounted host==container (CAP-02 ops obligation); neo4j Community dump is offline-only. |
+| SC#4 agent_job budget-10 + ask_user auto-reject | budget=10, reject<30s | 2026-06-04 | **PASS** — `TestAgentJobBudgetInherit` + `TestAskUserAutoReject` (+2) green; audit marker `agent_job.ask_user.auto_rejected`. |
+| Live North-Star E2E (real agent, GATING) | ≥90% | 2026-06-04 | **PASS — 2/2 = 100%** — Q3 natural IT → `task{at,reminder}` row; Q1 natural IT → `task{cron,agent_job}` row; no scheduling literal in either prompt. 3 attempts to green (timing-flawed prompt fixed + agent_job-defers-its-tools guidance), never weakening the test. |
+| Owned-surface coverage (`internal/*`, db+neo4j tags) | ≥85% | 2026-06-04 | **88.5%** — `scripts/coverage_gate.sh`. |
+| `internal/cron/schedule.go` mutation (go-mutesting, killed) | ≥70% | 2026-06-04 | **77.3%** (17/22). claim.go/heartbeat.go: go-mutesting's subprocess bleeds advisory-lock/timer state → unreliable; correctness witnessed by live SC#2 chaos + passing db_integration claim tests. |
+| golangci-lint (touched packages) | 0 issues | 2026-06-04 | 0 issues (default + db_integration + cot_eval tags). |
+
+**Operator command (reproduces the live E2E + the matrix row):**
+
+```bash
+set +H; cd /mnt/d/Aura
+export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
+# derive POSTGRES_PASSWORD + AURA_DB_URL + LLM/MCP env from .env (single-quote the pass)
+. /tmp/aura_e2e_env.sh            # POSTGRES_PASSWORD, AURA_DB_URL, OPENROUTER_API_KEY, AURA_LLM_*, NEO4J/MCP
+go test -tags cot_eval -run TestSchedulerNorthStarE2E -timeout 300s -v ./internal/cron/
+# chaos (SC#2): export POSTGRES_DB=aura PG_CONTAINER=aura-postgres; bash scripts/scheduler_chaos.sh
+# coverage: bash scripts/coverage_gate.sh   # 88.5%
+# mutation: go-mutesting internal/cron/schedule.go   # 0.773
+```
 
 ---
 
