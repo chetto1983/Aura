@@ -142,3 +142,25 @@ func TestMCPDoctorWhatsAppReportsBridgeHealth(t *testing.T) {
 		}
 	}
 }
+
+func TestProbeWhatsAppBridgeUsesWSLForWSLRecipe(t *testing.T) {
+	orig := runWhatsAppBridgeWSLProbe
+	t.Cleanup(func() { runWhatsAppBridgeWSLProbe = orig })
+
+	var gotCfg mcp.ServerConfig
+	runWhatsAppBridgeWSLProbe = func(_ context.Context, cfg mcp.ServerConfig) (int, error) {
+		gotCfg = cfg
+		return http.StatusMethodNotAllowed, nil
+	}
+
+	status := probeWhatsAppBridge(context.Background(), mcp.ServerConfig{
+		Command: "wsl.exe",
+		Args:    []string{"-d", "Ubuntu", "-e", "bash", "-lc", "cd ~/whatsapp-mcp/whatsapp-mcp-server && uv run main.py"},
+	})
+	if !strings.Contains(status, "REST :8080 in WSL reachable (GET /api/send -> 405)") {
+		t.Fatalf("status = %q", status)
+	}
+	if gotCfg.Command != "wsl.exe" || strings.Join(gotCfg.Args[:2], " ") != "-d Ubuntu" {
+		t.Fatalf("WSL probe did not receive original distro context: %#v", gotCfg)
+	}
+}
