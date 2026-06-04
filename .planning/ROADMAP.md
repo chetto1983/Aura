@@ -28,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 8: Sandbox via sandbox-agent (local container)** - REPLACES bespoke Slice 2a/2b (D-15 pivot). Single non-deferred `sandbox_exec` tool → `internal/sandboxagent.Client` POSTs to rivetdev/sandbox-agent on loopback (`127.0.0.1:2468`); operator starts it with `make sandbox-up` (no boot provision). Code-sandbox-mcp cut superseded. CAP-01+CAP-02. (completed 2026-06-03)
 - [x] **Phase 08.1: Tool Search hardening — Anthropic defer_loading parity** (INSERTED) - upgrade `tool_search` to defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) over name+description+arg fields, MCP tool namespacing, ≥1-non-deferred guard — matters as tool count grows (Phase 11 skills/7e snippets + future stdio MCP mounts via the retained `mcptools` seam) toward the 30-50 selection-accuracy threshold (completed 2026-06-03)
 - [x] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance (completed 2026-06-04)
-- [ ] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat
+- [x] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat (completed 2026-06-04)
 - [ ] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger
 - [ ] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced
 - [ ] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image
@@ -333,7 +333,7 @@ Wave 3:
 
 Wave 4:
 
-- [ ] 10-06-PLAN.md — aura serve daemon + chaos script + CI wiring + live North-Star smoke + Gate-3 checkpoint (SC#2)
+- [x] 10-06-PLAN.md — aura serve daemon + chaos script + CI wiring + live North-Star smoke + Gate-3 checkpoint (SC#2)
 
 ### Phase 11: Skills
 
@@ -430,7 +430,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 7. Web Tools | 4/4 | Complete    | 2026-06-02 |
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
-| 10. Scheduler | 5/6 | In Progress|  |
+| 10. Scheduler | 6/6 | Complete   | 2026-06-04 |
 | 11. Skills | 0/TBD | Not started | - |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
@@ -443,7 +443,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 **Success Criteria** (what must be TRUE):
 
