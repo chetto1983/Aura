@@ -177,7 +177,7 @@ func runChild(ctx context.Context, rc RunConfig, budget *agent.Budget, idx int, 
 	// (StatusFailed with the raw ctx error) is re-labeled to the uniform "timeout"; a
 	// worker that produced nothing terminal (still default StatusOK, empty Summary) is
 	// failed as a timeout.
-	if ctx.Err() == context.DeadlineExceeded && !(report.Status == StatusOK && report.Summary != "") {
+	if ctx.Err() == context.DeadlineExceeded && (report.Status != StatusOK || report.Summary == "") {
 		report.Status, report.Error = StatusFailed, "timeout"
 		report.Summary = ""
 	}
