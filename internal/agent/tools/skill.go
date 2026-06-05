@@ -36,6 +36,14 @@ type SkillTool struct {
 	// with no interactive resume (a swarm worker / cron job) so a gated mutation
 	// proposed there fires an immediate operator alert. Nil in the interactive REPL.
 	Alerter skillAlerter
+	// Catalog is the consumer-declared catalog seam the action=catalog handler
+	// dispatches against (11-06, default-ON D-12). Nil on the pool-free manifest path;
+	// action=catalog without a catalog returns a clear error, never a panic.
+	Catalog skillCatalog
+	// Installer is the consumer-declared install seam the action=install handler
+	// dispatches against (11-06). Nil on the pool-free manifest path; action=install
+	// without an installer returns a clear error, never a panic.
+	Installer skillInstaller
 
 	router *ActionRouter
 }
@@ -84,12 +92,13 @@ type skillArgs struct {
 const skillParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "install", "catalog", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions to the current task by name); create (author a new skill); update (revise an existing skill); delete (remove a skill). create/update/delete are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. The remaining actions (install, catalog, restore, archive) manage the skill library and are not yet available."},
+    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "install", "catalog", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions to the current task by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); catalog (browse skills.sh for installable skills by query); install (clone + stage a third-party skill from a repo URL). create/update/delete/install are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. (restore and archive manage the skill library and are not yet available.)"},
     "name": {"type": "string", "description": "Required when action=info, use, create, update, or delete. The exact skill name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, or remove."},
     "description": {"type": "string", "description": "Required when action=create or update. A one-line summary of what the skill does (shown in the skill manifest)."},
     "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
     "always": {"type": "boolean", "description": "Optional when action=create or update. When true the skill's instructions are always applied (an always-on skill); always-on skills are gated like any other change and reviewed loudly."},
-    "query": {"type": "string", "description": "Optional when action=list. A keyword phrase to rank the skill list by relevance when the full manifest is too large to show at once."}
+    "repo": {"type": "string", "description": "Required when action=install. The git repo URL of the skill to install (https/ssh/git). The skill is cloned, staged as pending, and requires human approval; bundled scripts never run automatically."},
+    "query": {"type": "string", "description": "Required when action=catalog (the keyword phrase to search skills.sh). Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
   },
   "required": ["action"]
 }`
@@ -157,9 +166,12 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"create": t.actionCreate,
 			"update": t.actionUpdate,
 			"delete": t.actionDelete,
+			// Discovery→install loop (11-06): catalog browses skills.sh (default-ON,
+			// D-12); install clones + stages into pending + ask_user gate (D-13). Install
+			// NEVER self-activates (D-03).
+			"install": t.actionInstall,
+			"catalog": t.actionCatalog,
 			// Reserved (D-01) — downstream plans fill these handlers.
-			"install": notYetWired("install"),
-			"catalog": notYetWired("catalog"),
 			"restore": notYetWired("restore"),
 			"archive": notYetWired("archive"),
 		})

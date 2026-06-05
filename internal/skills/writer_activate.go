@@ -151,6 +151,41 @@ func (w *Writer) auditActivationLike(ctx context.Context, name string, action Au
 	})
 }
 
+// SetAlways re-enables (or disables) the always:true flag on an ACTIVE skill (D-10):
+// the operator-only `aura skills always <name>` path that re-enables an always-on flag
+// the installer stripped unconditionally. It rewrites the active SKILL.md frontmatter,
+// re-materializes the skill into the export dir, and records an update audit row with
+// the cli source (gate_taken). It NEVER touches a pending/archived skill — only an
+// active one (the loader's always-block reads the active root).
+func (w *Writer) SetAlways(ctx context.Context, name string, always bool, actor AuditActor) error {
+	// Validate the name grammar BEFORE joining it into a path (chokepoint, D-30): a
+	// name that passes ^[a-z0-9-]{1,64}$ cannot contain a path separator or "..".
+	if err := SanitizeName(name, name); err != nil {
+		return fmt.Errorf("set always %q: %w", name, err)
+	}
+	activeDir := filepath.Join(w.activeDir, name)
+	raw, err := os.ReadFile(filepath.Join(activeDir, "SKILL.md")) // #nosec G304 -- activeDir = activeRoot/<SanitizeName-validated name>, operator-controlled
+	if err != nil {
+		return fmt.Errorf("set always %q: read active SKILL.md: %w", name, err)
+	}
+	fm, body, perr := parseFrontmatter(raw)
+	if perr != nil {
+		return fmt.Errorf("set always %q: parse: %w", name, perr)
+	}
+	fm.Always = always
+	if err := os.WriteFile(filepath.Join(activeDir, "SKILL.md"), skillFileBytes(fm, body), 0o600); err != nil { // #nosec G703 -- activeDir = activeRoot/<SanitizeName-validated name>, operator-controlled root
+		return fmt.Errorf("set always %q: rewrite SKILL.md: %w", name, err)
+	}
+	if err := Materialize(name, activeDir, w.exportDir); err != nil {
+		return fmt.Errorf("set always %q: materialize: %w", name, err)
+	}
+	hash := HashSkillFiles(map[string][]byte{"SKILL.md": skillFileBytes(fm, body)})
+	if err := w.auditActivationLike(ctx, name, AuditUpdate, hash, ApprovalCLI, actor); err != nil {
+		return fmt.Errorf("set always %q: audit: %w", name, err)
+	}
+	return nil
+}
+
 // promoteDir moves src → dst, creating dst's parent and replacing any stale dst. A
 // cross-device rename (EXDEV) falls back to a copy+remove. A missing src is an error.
 func promoteDir(src, dst string) error {

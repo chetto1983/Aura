@@ -109,8 +109,9 @@ func TestSkillDispatchErrors(t *testing.T) {
 		!strings.Contains(err.Error(), "valid actions are") {
 		t.Fatalf("unknown action err = %v, want 'valid actions are ...'", err)
 	}
-	// A reserved-but-unwired action returns the "not yet available" error.
-	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"install"}`)); err == nil ||
+	// A reserved-but-unwired action returns the "not yet available" error. (install +
+	// catalog are now wired in 11-06; restore/archive remain reserved.)
+	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"restore"}`)); err == nil ||
 		!strings.Contains(err.Error(), "not yet available") {
 		t.Fatalf("reserved action err = %v, want 'not yet available'", err)
 	}

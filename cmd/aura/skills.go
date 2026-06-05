@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -28,7 +29,9 @@ import (
 )
 
 const skillsUsage = "usage: aura skills {list|info <name>|create <name> --desc <d> --body <b> [--always]|" +
-	"update <name> --desc <d> --body <b> [--always]|delete <name>|approve <name>|audit [--skill <name>] [--since <RFC3339>]}"
+	"update <name> --desc <d> --body <b> [--always]|delete <name>|approve <name>|" +
+	"install <repo> [--allow-blocklisted]|catalog {search <query>|disable-catalog|enable-catalog}|" +
+	"always <name> {on|off}|audit [--skill <name>] [--since <RFC3339>]}"
 
 // skillsEnv bundles the booted skills-CLI dependencies: the config (for the skill
 // dirs + blocklist), the open pool, the Writer, and the AuditStore.
@@ -91,6 +94,12 @@ func runSkills(args []string) {
 		skillsDelete(ctx, args[1:])
 	case "approve":
 		skillsApprove(ctx, args[1:])
+	case "install":
+		skillsInstall(ctx, args[1:])
+	case "catalog":
+		skillsCatalog(ctx, args[1:])
+	case "always":
+		skillsAlways(ctx, args[1:])
 	case "audit":
 		skillsAudit(ctx, args[1:])
 	default:
@@ -199,6 +208,117 @@ func skillsApprove(ctx context.Context, args []string) {
 	fmt.Printf("ok: approved %q (now active)\n", args[0])
 }
 
+// skillsInstall clones a third-party skill repo natively and stages it as pending
+// (the operator can then `approve` it). --allow-blocklisted is the D-27 override the
+// operator passes ONLY after seeing the blocklist match; it surfaces the red flags +
+// the always-strip note so the operator weighs the supply-chain surface before
+// approving. The install NEVER self-activates (D-03).
+func skillsInstall(ctx context.Context, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: aura skills install <repo> [--allow-blocklisted]")
+		os.Exit(1)
+	}
+	repo := args[0]
+	allowBlocklisted := hasFlag(args[1:], "--allow-blocklisted")
+
+	env := bootSkills(ctx)
+	defer env.close()
+
+	inst := skills.NewInstaller(skills.InstallerConfig{
+		Writer:       env.w,
+		TimeoutSec:   env.cfg.SkillInstallTimeoutSec,
+		Blocklist:    env.cfg.SkillInjectionBlocklist,
+		BodyCapBytes: env.cfg.SkillBodyCapBytes,
+	})
+	res, err := inst.Install(ctx, repo, skills.InstallOpts{
+		AllowBlocklisted: allowBlocklisted,
+		Actor:            skills.AuditActor{ActorID: "cli"},
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("ok: installed %q as pending (status=%s, hash=%s)\n", res.Name, res.Status, shortHash(res.ContentHash))
+	if res.AlwaysStripped {
+		fmt.Printf("  note: always:true was stripped (re-enable with `aura skills always %s on`)\n", res.Name)
+	}
+	if len(res.RedFlags) == 0 {
+		fmt.Println("  red flags: none")
+	} else {
+		fmt.Println("  red flags (review before approving):")
+		for _, f := range res.RedFlags {
+			fmt.Printf("    * %s\n", f.Detail)
+		}
+	}
+	fmt.Printf("  approve with `aura skills approve %s`\n", res.Name)
+}
+
+// skillsCatalog browses skills.sh (/api/search, default-ON D-12). `search <query>`
+// lists installs-ranked results; `disable-catalog` / `enable-catalog` print the env
+// knob the operator sets (the toggle is config-driven, AURA_SKILL_CATALOG_DISABLE).
+func skillsCatalog(ctx context.Context, args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "usage: aura skills catalog {search <query>|disable-catalog|enable-catalog}")
+		os.Exit(1)
+	}
+	switch args[0] {
+	case "disable-catalog":
+		fmt.Println("set AURA_SKILL_CATALOG_DISABLE=1 to disable the catalog (D-12)")
+		return
+	case "enable-catalog":
+		fmt.Println("unset AURA_SKILL_CATALOG_DISABLE (or set it to 0) to enable the catalog (D-12, default-ON)")
+		return
+	case "search":
+		if len(args) < 2 {
+			fmt.Fprintln(os.Stderr, "usage: aura skills catalog search <query>")
+			os.Exit(1)
+		}
+		cfg := config.LoadDB()
+		client := skills.NewCatalogClient(skills.CatalogConfig{
+			BaseURL:    cfg.SkillCatalogURL,
+			TimeoutSec: cfg.SkillInstallTimeoutSec,
+			Disabled:   cfg.SkillCatalogDisabled,
+		}, nil)
+		results, err := client.Search(ctx, strings.Join(args[1:], " "))
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		if len(results) == 0 {
+			fmt.Println("ok: no catalog results")
+			return
+		}
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		_, _ = fmt.Fprintln(w, "NAME\tINSTALLS\tSOURCE")
+		for _, r := range results {
+			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\n", r.Name, r.Installs, r.Source)
+		}
+		_ = w.Flush()
+	default:
+		fmt.Fprintln(os.Stderr, "usage: aura skills catalog {search <query>|disable-catalog|enable-catalog}")
+		os.Exit(1)
+	}
+}
+
+// skillsAlways re-enables (on) or disables (off) the always:true flag on an ACTIVE
+// skill (D-10): the operator-only path that re-enables the always-on flag the
+// installer stripped unconditionally.
+func skillsAlways(ctx context.Context, args []string) {
+	if len(args) < 2 || (args[1] != "on" && args[1] != "off") {
+		fmt.Fprintln(os.Stderr, "usage: aura skills always <name> {on|off}")
+		os.Exit(1)
+	}
+	name := args[0]
+	always := args[1] == "on"
+	env := bootSkills(ctx)
+	defer env.close()
+	if err := env.w.SetAlways(ctx, name, always, skills.AuditActor{ActorID: "cli"}); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("ok: %q always=%v\n", name, always)
+}
+
 // skillsAudit lists the append-only audit rows, optionally filtered by --skill and
 // --since. A `purge` argument surfaces the role error (aura_app cannot DELETE/
 // TRUNCATE the append-only ledger — SC#2): it attempts a DELETE and prints the
@@ -274,5 +394,3 @@ func hasFlag(args []string, flag string) bool {
 	}
 	return false
 }
-
-// strings is referenced indirectly to keep imports tidy across the file's helpers.

@@ -66,6 +66,18 @@ func TestWriterRejectsBlocklistedBody(t *testing.T) {
 	}
 }
 
+// TestSetAlwaysRejectsBadName proves SetAlways validates the name grammar BEFORE any
+// FS/audit work (D-30 chokepoint): a traversal-shaped name is rejected up front, so
+// the nil-pool test never reaches the audit tx.
+func TestSetAlwaysRejectsBadName(t *testing.T) {
+	w, _ := newTestWriter(t)
+	for _, bad := range []string{"../escape", "Bad_Name", "a/b", ""} {
+		if err := w.SetAlways(t.Context(), bad, true, AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("SetAlways(%q): want ErrInvalidName, got %v", bad, err)
+		}
+	}
+}
+
 // TestWriterPendingWrite proves writePending lands a SKILL.md in pending/<name>/
 // atomically and the rendered file round-trips through the loader's parser with the
 // same name/description/type.

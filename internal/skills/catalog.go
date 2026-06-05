@@ -82,6 +82,11 @@ func NewCatalogClient(cfg CatalogConfig, httpClient *http.Client) *CatalogClient
 	return &CatalogClient{baseURL: base, http: httpClient, disabled: cfg.Disabled}
 }
 
+// Disabled reports whether the catalog is turned off via the D-12 escape hatch
+// (AURA_SKILL_CATALOG_DISABLE / disable-catalog). The action=catalog handler reads it
+// to return enable-guidance without dialing.
+func (c *CatalogClient) Disabled() bool { return c.disabled }
+
 // Search queries skills.sh /api/search and returns results ranked by Installs
 // descending. It guards an empty query BEFORE the call (the server 400s on
 // empty, Pitfall 5), surfaces a non-2xx as an error with a LimitReader'd body
