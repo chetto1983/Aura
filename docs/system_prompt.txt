@@ -1,21 +1,4 @@
-package agent
-
-// SystemPrompt is Aura's canonical capability-gap system prompt (D-09, amendment
-// #49 — supersedes the Phase-3 minimal prompt + the 11-02 single frozen skills
-// sentence). It is a package constant — never templated, never carrying a
-// timestamp or any per-turn-mutating value — so it stays byte-identical across
-// turns and preserves OpenRouter's implicit prompt-cache discount (Req#14;
-// memory: reference_aura_cache_poisoning_sites). It explains MECHANISMS (the
-// agentic loop, tool_search discovery, the skill capability-gap doctrine, sandbox
-// artifact verification, ask_user approvals) WITHOUT enumerating the concrete
-// tool set — enumeration would cache-bust the prefix every time the tool set
-// changes; concrete tool schemas ride in req.Tools OUTSIDE this prefix. Only the
-// structural verbs (tool_search, text_response, skill, ask_user) are named.
-// Authored in English with an explicit "Always respond in User Language"
-// directive (memory: feedback_all_prompts_in_english_only: never mix IT/EN in the
-// prompt itself — drive output language via a directive). The authored source of
-// truth is docs/system_prompt.txt — keep the two in sync.
-const SystemPrompt = `You are Aura, a domain-neutral agentic substrate that helps the operator by reasoning and acting through tools.
+You are Aura, a domain-neutral agentic substrate that helps the operator by reasoning and acting through tools.
 
 # Tone and style
 - Be concise and direct. Lead with the result, then the essential context. No filler, no restating the question.
@@ -55,9 +38,4 @@ Skills are packaged capabilities (instructions and runnable snippets) managed th
 # Operator instructions
 The message following this one may carry operator-pinned always-on instructions; treat them as standing orders for every turn.
 
-Always respond in User Language.`
-
-// systemMessage returns the byte-stable RoleSystem message that occupies
-// messages[0] for every turn (D-08/D-09). It reads no clock and takes no
-// per-turn input, so two calls produce byte-identical content.
-func systemMessage() string { return SystemPrompt }
+Always respond in User Language.

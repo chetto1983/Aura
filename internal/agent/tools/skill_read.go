@@ -13,6 +13,13 @@ import (
 // model treats an applied skill — it is part of the contract.
 const useAuthorityFrame = "Follow these skill instructions for the current task:\n\n"
 
+// listCatalogTail rides on every list result (amendment #49, iteration 2): the
+// moment the model reads the installed-skill list and finds no match IS the
+// capability-gap decision point — without an explicit pointer there, live models
+// fall back to ad-hoc code instead of the catalog (proven by the 2026-06-05 E2E
+// runs). A fixed per-turn result literal — no cache invariant rides on it.
+const listCatalogTail = "\n\nIf none of these cover the task family at hand, search the public catalog of installable skills: action=catalog with a keyword query. Installing requires operator approval via ask_user."
+
 // actionList renders the manifest, or — when a query is supplied and the skill set
 // is large — ranks the skills by BM25 over their name+description and returns the
 // top matches (D-09 overflow path). With no query it returns the full manifest the
@@ -27,19 +34,19 @@ func (t *SkillTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 	}
 	query := strings.TrimSpace(a.Query)
 	if query == "" {
-		return NewResult(ctx, t.Loader.ManifestDescription())
+		return NewResult(ctx, t.Loader.ManifestDescription()+listCatalogTail)
 	}
 
 	skills := t.Loader.List()
 	ranked := rankSkills(skills, query)
 	if len(ranked) == 0 {
-		return NewResult(ctx, fmt.Sprintf("no skills match %q", query))
+		return NewResult(ctx, fmt.Sprintf("no skills match %q.%s", query, listCatalogTail))
 	}
 	var b strings.Builder
 	for _, s := range ranked {
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
 	}
-	return NewResult(ctx, b.String())
+	return NewResult(ctx, b.String()+listCatalogTail)
 }
 
 // rankSkills ranks the skills by BM25 over a "name description" search document

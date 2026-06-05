@@ -341,70 +341,8 @@ func runSkillsTurn(t *testing.T, ctx context.Context, client llm.Client, cfg llm
 	return captureTurn(func() func(func(*agent.Event, error) bool) { return la.Run(ic) })
 }
 
-// verifyXlsxArtifact is the artifact-not-reply ground truth (D-35): it locates the
-// produced .xlsx in the sandbox workspace and re-opens it via a sandbox_exec openpyxl
-// read-back, asserting the workbook parses AND carries today's date. It NEVER inspects
-// the model's prose — the file on disk is the truth.
-func verifyXlsxArtifact(t *testing.T, ctx context.Context, sandboxClient *sandboxagent.Client, exp *skillsExpect, res *skillsResult) {
-	t.Helper()
-	today := time.Now().Format("2006-01-02")
-	const marker = "AURA-XLSX-VERIFIED"
-	// One python read-back: find the newest *.xlsx under /workspace, open it with
-	// openpyxl, scan every cell's string form for today's date, and print a marker +
-	// the path. Exit 0 + marker = the file exists, opens, and contains today's data.
-	py := fmt.Sprintf(`
-import glob, os, sys
-files = sorted(glob.glob('/workspace/**/*%s', recursive=True), key=os.path.getmtime)
-if not files:
-    print('NO_XLSX'); sys.exit(0)
-path = files[-1]
-print('XLSX_PATH=' + path)
-try:
-    import %s
-    wb = %s.load_workbook(path, read_only=True, data_only=True)
-except Exception as e:
-    print('OPEN_FAIL=' + str(e)); sys.exit(0)
-print('XLSX_OPENS')
-found = False
-for ws in wb.worksheets:
-    for row in ws.iter_rows(values_only=True):
-        for cell in row:
-            if cell is not None and '%s' in str(cell):
-                found = True
-                break
-        if found: break
-    if found: break
-print('TODAY_FOUND' if found else 'TODAY_MISSING')
-print('%s')
-`, exp.xlsxExt, exp.readBackImport, exp.readBackImport, today, marker)
-
-	run, err := sandboxClient.Run(ctx, sandboxagent.RunRequest{Command: "python3", Args: []string{"-c", py}})
-	if err != nil {
-		res.notes = append(res.notes, "xlsx read-back exec error: "+err.Error())
-		t.Errorf("xlsx read-back exec: %v", err)
-		return
-	}
-	out := run.Stdout
-	if strings.Contains(out, "NO_XLSX") {
-		res.notes = append(res.notes, "no .xlsx found in /workspace")
-		return
-	}
-	res.xlsxExists = true
-	if i := strings.Index(out, "XLSX_PATH="); i >= 0 {
-		rest := out[i+len("XLSX_PATH="):]
-		if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
-			res.xlsxPath = strings.TrimSpace(rest[:nl])
-		}
-	}
-	res.xlsxOpens = strings.Contains(out, "XLSX_OPENS")
-	res.xlsxToday = strings.Contains(out, "TODAY_FOUND")
-	if !res.xlsxOpens {
-		res.notes = append(res.notes, "xlsx did not open: "+oneLine(out))
-	}
-	if !res.xlsxToday {
-		res.notes = append(res.notes, "xlsx missing today's date ("+today+")")
-	}
-}
+// verifyXlsxArtifact (the D-35 artifact ground truth) lives in
+// skills_xlsx_verify_cot_eval_test.go (600-LOC split).
 
 // ---- helpers ----
 
