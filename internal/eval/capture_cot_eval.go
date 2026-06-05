@@ -32,6 +32,12 @@ const (
 	kindTerminal   eventKind = "terminal" // budget-trip terminal Event (escalate)
 )
 
+// askUserToolNameCapture is the canonical ask_user tool name the capture stamps into
+// toolNames when a pause Event fires (the rewritten assistant message is ask_user-only,
+// llm_agent_pause.go). It is a literal — the cot_eval harness does not import the tools
+// package's unexported pause-detection constant.
+const askUserToolNameCapture = "ask_user"
+
 // turnCapture is the full observable record of one LlmAgent.Run, assembled by
 // mirroring the production renderTurn logic. Every field is something a scoring
 // dimension reads.
@@ -50,6 +56,13 @@ type turnCapture struct {
 	firstByteMS    float64     // ms to first streamed delta (latency metric)
 	totalMS        float64     // ms total turn duration
 	runErr         error       // a real infra error off the iter.Seq2 error slot
+
+	// HITL pause (Slice 1.5 / Phase 11 install gate). When ask_user fires the agent
+	// suspends and emits an AwaitingInput Event with LLMResponse==nil; the capture
+	// records it so a resume-driving harness (TestSkillsE2E) can synthesize the
+	// assistant ask_user tool_call + the resume answer and start the next turn.
+	paused        bool                 // an AwaitingInput Event was emitted (the turn suspended)
+	awaitingInput *agent.AwaitingInput // the pause payload (question + tool_call_id + kind/options)
 }
 
 // captureTurn drives one LlmAgent.Run to completion (or to a consumer-stop) and
@@ -76,6 +89,16 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 			if r, ok := ev.Actions.StateDelta["limit_hit"].(string); ok {
 				c.terminalReason = r
 			}
+			break
+		}
+		// HITL pause Event: ask_user fired, the agent suspended (LLMResponse==nil). Record
+		// the pause and stop draining — the harness resumes with the synthesized answer.
+		if ev.Actions.AwaitingInput != nil {
+			c.paused = true
+			c.awaitingInput = ev.Actions.AwaitingInput
+			c.eventKinds = append(c.eventKinds, kindToolCall) // the ask_user call
+			c.toolNames = append(c.toolNames, askUserToolNameCapture)
+			c.toolCallMS = append(c.toolCallMS, float64(time.Since(start).Microseconds())/1000.0)
 			break
 		}
 		if ev.LLMResponse == nil {

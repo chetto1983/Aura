@@ -60,29 +60,44 @@ func TestCacheStats_HitRate(t *testing.T) {
 	}
 }
 
-// TestCacheAudit_AllEqual_Exit0 is the SC#1 positive proof: the real 20-turn
-// replay prints one `request NN: <hex>` line per LLM request, all identical, and exits 0.
-// runtime-faithful (the real Runner.Turn loop), Postgres-free.
+// TestCacheAudit_AllEqual_Exit0 is the SC#1 positive proof: the real 20-turn replay
+// prints one `request NN: <hex>` (messages[0]) line per LLM request, all identical, and
+// exits 0. Phase 11 (D-06/D-07) adds the `messages1 NN:` (the always-block) and
+// `skillman NN:` (the manifest-in-Description) streams over the same replay — each must
+// also be internally byte-stable. runtime-faithful (the real Runner.Turn loop),
+// Postgres-free.
 func TestCacheAudit_AllEqual_Exit0(t *testing.T) {
 	var out, errOut bytes.Buffer
 	code := cacheAuditMain(context.Background(), nil, &out, &errOut)
 	if code != 0 {
 		t.Fatalf("cacheAuditMain exit %d, want 0 (stderr=%q)", code, errOut.String())
 	}
-	lines := nonEmptyLines(out.String())
 	wantRequests := cacheFixtureRequestCount(t)
-	if len(lines) != wantRequests {
-		t.Fatalf("want exactly %d hash lines, got %d:\n%s", wantRequests, len(lines), out.String())
-	}
-	first := hashOfLine(t, lines[0])
-	for i, ln := range lines {
-		if !strings.HasPrefix(ln, "request ") {
-			t.Fatalf("line %d not a request line: %q", i+1, ln)
+	// Each stream (messages[0] "request", messages[1] "messages1", skill manifest
+	// "skillman") must have exactly wantRequests internally-identical hashes.
+	for _, prefix := range []string{"request", "messages1", "skillman"} {
+		lines := linesWithPrefix(out.String(), prefix+" ")
+		if len(lines) != wantRequests {
+			t.Fatalf("stream %q: want exactly %d hash lines, got %d:\n%s", prefix, wantRequests, len(lines), out.String())
 		}
-		if h := hashOfLine(t, ln); h != first {
-			t.Fatalf("line %d hash %q != first %q (a drift the gate must catch)", i+1, h, first)
+		first := hashOfLine(t, lines[0])
+		for i, ln := range lines {
+			if h := hashOfLine(t, ln); h != first {
+				t.Fatalf("stream %q line %d hash %q != first %q (a drift the gate must catch)", prefix, i+1, h, first)
+			}
 		}
 	}
+}
+
+// linesWithPrefix returns the non-empty stdout lines whose text starts with prefix.
+func linesWithPrefix(s, prefix string) []string {
+	var out []string
+	for _, ln := range nonEmptyLines(s) {
+		if strings.HasPrefix(ln, prefix) {
+			out = append(out, ln)
+		}
+	}
+	return out
 }
 
 // TestCacheAudit_Mutation_Exit1 is the SC#5 NEGATIVE proof: when messages[0]

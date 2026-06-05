@@ -12,6 +12,14 @@
 # invariant AND exits non-zero with `messages[0] mutated at request N` on drift; THIS
 # wrapper independently counts the 22 request hash lines and diffs them. Both must agree.
 #
+# Phase 11 (D-06/D-07) extends the audit to THREE byte-stable streams over the same
+# 20-turn replay with a FIXED skill set loaded:
+#   - `request NN:`   — messages[0] (the system prompt; the CAP-04 invariant)
+#   - `messages1 NN:` — messages[1] (the always-on skill block; D-07)
+#   - `skillman NN:`  — the non-deferred skill tool's manifest-in-Description (D-06)
+# A turn-stable runner keeps all three byte-identical across every turn. The wrapper
+# independently counts + diffs each stream; the Go subcommand asserts the same.
+#
 # NO-SKIP-AS-GREEN (CLAUDE.md): an EMPTY / 0-line / fewer-than-20-line run is a
 # HARD failure, never a silent pass. The `| grep -c . || true` guard makes an empty
 # capture abort with the hand-written diagnostic below instead of a bare pipefail.
@@ -53,8 +61,6 @@ ERR="$(cat "$ERR_FILE")"
 # Independent line count: the `|| true` keeps the count at 0 (instead of a bare
 # pipefail) when $OUT is EMPTY, so the diagnostic below — not a silent abort — is
 # what the operator sees (the exact NO-SKIP-AS-GREEN failure this gate exists for).
-HASH_LINES="$(printf '%s\n' "$OUT" | grep -cE '^request [0-9]{2}: [0-9a-f]+$' || true)"
-
 fail() {
   echo "FAIL (cache invariant gate): $1" >&2
   echo "---- cache-audit stdout ----" >&2
@@ -65,7 +71,8 @@ fail() {
 }
 
 # The subcommand exited non-zero: forward its exit code + the explicit
-# `messages[0] mutated at request N` (exit 1) or fixture-corrupt (exit 2) wording.
+# `messages[0] mutated at request N` / `messages[1] ... mutated` / `skill manifest ...
+# mutated` (exit 1) or fixture-corrupt (exit 2) wording.
 if [[ "$code" -ne 0 ]]; then
   echo "FAIL (cache invariant gate): aura cache-audit exited ${code}" >&2
   printf '%s\n' "$ERR" >&2
@@ -73,31 +80,44 @@ if [[ "$code" -ne 0 ]]; then
   exit "$code"
 fi
 
-# NO-SKIP-AS-GREEN: a passing subcommand MUST have emitted exactly the expected
-# request hash lines.
-if [[ "${HASH_LINES:-0}" -ne "$EXPECTED_REQUESTS" ]]; then
-  fail "expected exactly ${EXPECTED_REQUESTS} 'request NN: <hex>' lines, got ${HASH_LINES:-0} (empty/short output is never a silent pass)"
-fi
-
-# Independent hash diff (belt-and-suspenders over the Go assertion): every request's
-# messages[0] hash must be byte-identical. The first drift is the SC#5 failure.
-FIRST_HASH=""
-LINE_NO=0
+# assert_stream <line-prefix> <human-label>: independently counts the EXPECTED_REQUESTS
+# `<prefix> NN: <hex>` lines and asserts every hash in the stream is byte-identical
+# (belt-and-suspenders over the Go assertion). NO-SKIP-AS-GREEN: an empty/short stream
+# is a HARD failure. Prints the stable hash on success.
+#
+# Implemented WITHOUT a shell function + WITHOUT `$(printf | grep)` command
+# substitution: a `local var="$(cmd)"` inside a function forks a subshell that aborts
+# with exit 127 under the w64devkit MSYS bash this gate must also run on locally. A
+# single pass over the captured lines (case-guarded, no per-stream subshell) is portable
+# across the CI Linux bash AND the local w64devkit bash.
+count0=0; count1=0; countMan=0
+first0=""; first1=""; firstMan=""
+no0=0; no1=0; noMan=0
 while IFS= read -r line; do
-  # Match `request NN: <hex>` without a =~ regex (portable across shells): strip the
-  # `request NN: ` prefix; a line that does not start that way leaves $hash == $line
-  # and is skipped by the case guard below.
   case "$line" in
-    "request "[0-9][0-9]": "*) ;;
-    *) continue ;;
+    "request "[0-9][0-9]": "[0-9a-f]*)
+      no0=$((no0 + 1)); count0=$((count0 + 1)); hash="${line#*: }"
+      if [[ -z "$first0" ]]; then first0="$hash"
+      elif [[ "$hash" != "$first0" ]]; then fail "messages[0] mutated at request ${no0} -- diff: ${first0} vs ${hash}"; fi
+      ;;
+    "messages1 "[0-9][0-9]": "[0-9a-f]*)
+      no1=$((no1 + 1)); count1=$((count1 + 1)); hash="${line#*: }"
+      if [[ -z "$first1" ]]; then first1="$hash"
+      elif [[ "$hash" != "$first1" ]]; then fail "messages[1] always-block mutated at request ${no1} -- diff: ${first1} vs ${hash}"; fi
+      ;;
+    "skillman "[0-9][0-9]": "[0-9a-f]*)
+      noMan=$((noMan + 1)); countMan=$((countMan + 1)); hash="${line#*: }"
+      if [[ -z "$firstMan" ]]; then firstMan="$hash"
+      elif [[ "$hash" != "$firstMan" ]]; then fail "skill manifest-in-Description mutated at request ${noMan} -- diff: ${firstMan} vs ${hash}"; fi
+      ;;
   esac
-  LINE_NO=$((LINE_NO + 1))
-  hash="${line#*: }"
-  if [[ -z "$FIRST_HASH" ]]; then
-    FIRST_HASH="$hash"
-  elif [[ "$hash" != "$FIRST_HASH" ]]; then
-    fail "messages[0] mutated at request ${LINE_NO} -- diff: ${FIRST_HASH} vs ${hash}"
-  fi
 done <<< "$OUT"
 
-echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[0] request hashes (${FIRST_HASH})"
+# NO-SKIP-AS-GREEN: each stream MUST have emitted exactly EXPECTED_REQUESTS lines.
+[[ "$count0"   -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'request NN: <hex>' lines (messages[0]), got ${count0} (empty/short output is never a silent pass)"
+[[ "$count1"   -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'messages1 NN: <hex>' lines (messages[1] always-block), got ${count1} (empty/short output is never a silent pass)"
+[[ "$countMan" -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'skillman NN: <hex>' lines (skill manifest-in-Description), got ${countMan} (empty/short output is never a silent pass)"
+
+echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[0] hashes (${first0})"
+echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[1] always-block hashes (${first1})"
+echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical skill manifest-in-Description hashes (${firstMan})"

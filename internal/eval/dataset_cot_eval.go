@@ -50,7 +50,24 @@ const (
 	dimSubAnswerCorrectness dimension = "sub_answer_correctness"     // judge, ≥90% gate
 	dimAggregationQuality   dimension = "aggregation_quality"        // judge, ≥90% gate
 	dimNoOverSpawn          dimension = "no_over_spawn"              // judge, ≥90% gate
+
+	// Phase 11 skills xlsx North-Star dual-gate dimensions (D-35). The three judge
+	// dimensions average to the ≥90% gate (judgeSkillsGate); the hard-floor
+	// ground-truth assertions (catalog→ask_user→install→sandbox_exec sequence,
+	// the .xlsx exists/opens/contains-today's-data) are scored deterministically
+	// under dimSkillsHardFloor.
+	dimSkillsHardFloor          dimension = "skills_hard_floor"          // asserted (ground-truth, release-blocking)
+	dimCapabilityGapRecognition dimension = "capability_gap_recognition" // judge, ≥90% gate
+	dimInstallPrudence          dimension = "install_prudence"           // judge, ≥90% gate
+	dimSkillOutputQuality       dimension = "skill_output_quality"       // judge, ≥90% gate
 )
+
+// judgeSkillsGate is the fixed D-35 xlsx North-Star judge gate: the three skills
+// judge dimensions (capability-gap recognition, install prudence, output quality)
+// must average ≥90% (0.90), equal-weight (Claude's Discretion — D-35 fixes the
+// dimensions + the ≥90% mean, not the weighting). A 5/5 = 1.0, so the mean ≥0.90
+// means an average judge score ≥4.5/5.
+const judgeSkillsGate = 0.90
 
 // judgeSwarmGate is the fixed D-22 swarm judge gate: the four swarm judge
 // dimensions must average ≥90% (0.90). The exact per-dimension weights are equal
@@ -79,6 +96,10 @@ type scenario struct {
 	// TestSwarmE2E harness reads them, the CoT harness ignores them.
 	swarm       *swarmExpect // non-nil marks the autonomous swarm scenario (hard floor + judge)
 	noOverSpawn bool         // control: a simple single task that MUST NOT call swarm_spawn
+
+	// Phase 11 skills field (D-35). Set only on the xlsx North-Star scenario; the
+	// TestSkillsE2E harness reads it, the other harnesses ignore it.
+	skills *skillsExpect // non-nil marks the autonomous xlsx North-Star scenario (hard floor + judge)
 }
 
 // swarmExpect declares the deterministic ground-truth signals the swarm hard floor
