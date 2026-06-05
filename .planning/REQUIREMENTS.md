@@ -119,7 +119,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CAP-04 | Phase 6 — KV Cache Builder | Complete |
 | CAP-05 | Phase 7 — Web Tools | Complete |
 | CAP-06 | Phase 10 — Scheduler | Complete |
-| CAP-07 | Phase 11 — Skills | Pending |
+| CAP-07 | Phase 11 — Skills | In Progress (7a read path shipped; 7b/7c/7d pending) |
 | CAP-08 | Phase 11 — Skills | Pending |
 | CAP-09 / MCP-V2-01 | Phase 16 — MCP Sidecar Manager + Third-Party Trust | Complete |
 | UX-01 | Phase 12 — AG-UI Gateway | Pending |
