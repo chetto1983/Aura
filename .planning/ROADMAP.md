@@ -105,7 +105,7 @@ Wave 6:
 
 Wave 7:
 
-- [ ] 11-07-PLAN.md — 7e snippets + sandbox bearer token + ro /skills mount (D-38 portable floor) + by-path exec (SC#4) + skill_ttl_sweep cron TaskKind (D-16)
+- [x] 11-07-PLAN.md — 7e snippets + sandbox bearer token + ro /skills mount (D-38 portable floor) + by-path exec (SC#4) + skill_ttl_sweep cron TaskKind (D-16)
 
 Wave 8:
 
@@ -466,7 +466,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
-| 11. Skills | 6/8 | In Progress|  |
+| 11. Skills | 7/8 | In Progress|  |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
@@ -479,7 +479,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 6/8 plans executed
+**Plans:** 7/8 plans executed
 
 **Success Criteria** (what must be TRUE):
 
