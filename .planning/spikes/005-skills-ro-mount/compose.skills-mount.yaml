@@ -1,0 +1,13 @@
+# Spike 005 override — adds the FIRST bind mount of the stack: a host export
+# dir read-only at /skills inside aura-sandbox-agent (Phase 11 D-17 dry-run).
+# Source path is absolute on purpose: compose resolves relative bind sources
+# against the declaring file's dir in v2, but Docker Desktop drive-sharing
+# failures are path-shape-sensitive — the spike pins the exact shape tested.
+# Usage:
+#   docker compose -f compose.yaml -f .planning/spikes/005-skills-ro-mount/compose.skills-mount.yaml up -d aura-sandbox-agent
+# Restore (drop the mount):
+#   docker compose -f compose.yaml up -d aura-sandbox-agent
+services:
+  aura-sandbox-agent:
+    volumes:
+      - "D:/Aura/.planning/spikes/005-skills-ro-mount/export:/skills:ro"
