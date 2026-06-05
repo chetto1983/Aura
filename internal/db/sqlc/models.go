@@ -134,3 +134,19 @@ type AuraSchedulerTasks struct {
 	CreatedAt            pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt            pgtype.Timestamptz `json:"updated_at"`
 }
+
+// Append-only skill-mutation audit ledger (Slice 7c / Phase 11, D-29). aura_app has SELECT+INSERT only; UPDATE/DELETE raise via a row trigger and TRUNCATE via a statement trigger (Pitfall 1/6). The D-29 coherence CHECK constrains the approval tuple to five allowed events; content_hash is the D-23 recovery path on every row.
+type AuraSkillAudit struct {
+	ID                pgtype.UUID        `json:"id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	ActorID           string             `json:"actor_id"`
+	IdentityID        string             `json:"identity_id"`
+	SkillName         string             `json:"skill_name"`
+	Action            string             `json:"action"`
+	ContentHash       string             `json:"content_hash"`
+	ApprovalSource    pgtype.Text        `json:"approval_source"`
+	PausedStateToken  pgtype.UUID        `json:"paused_state_token"`
+	GateRecommended   bool               `json:"gate_recommended"`
+	GateTaken         bool               `json:"gate_taken"`
+	BlocklistOverride bool               `json:"blocklist_override"`
+}
