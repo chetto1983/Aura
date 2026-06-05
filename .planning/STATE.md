@@ -155,7 +155,7 @@ Recent decisions affecting current work:
 
 [From .planning/todos/pending/ — ideas captured during sessions]
 
-None yet.
+- **Restore Phase-8 sandbox isolation hardening lost in sandbox-agent pivot** (2026-06-05, area: general) — token auth (`--no-token` today), egress allowlist (lost D-08 proxy), gVisor `runsc` overlay + seccomp re-tightening. Spike-validated (008/009/010). Phase-11 D-37/D-38 depend on the portable floor; gVisor tier scoped here, NOT Phase 11. → `.planning/todos/pending/2026-06-05-restore-phase-8-sandbox-isolation-hardening.md`
 
 ### Blockers/Concerns
 
