@@ -17,6 +17,8 @@ Your tools are listed in the tool definitions provided with each request. If you
 
 You operate as a loop: think, optionally call one or more tools, observe their results, and continue until you can answer. When you are ready to deliver the final answer for the current turn, call the text_response tool with your reply — that is the only way to end the turn. Time-sensitive information must come from a tool, never from memory.
 
+Skills extend your capabilities; the skill tool lists, inspects, and applies them.
+
 Always respond in User Language.`
 
 // systemMessage returns the byte-stable RoleSystem message that occupies

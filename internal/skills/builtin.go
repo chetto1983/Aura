@@ -42,7 +42,7 @@ func MaterializeBuiltins(dir string) error {
 		}
 		target := filepath.Join(dir, filepath.FromSlash(rel))
 		if d.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return os.MkdirAll(target, 0o750)
 		}
 		data, rerr := builtinFS.ReadFile(p)
 		if rerr != nil {
@@ -53,17 +53,19 @@ func MaterializeBuiltins(dir string) error {
 }
 
 // writeIfChanged writes data to target only when target is absent or its content
-// differs (compared by SHA-256). The parent dir is created lazily.
+// differs (compared by SHA-256). The parent dir is created lazily. target is built
+// by MaterializeBuiltins from the operator-controlled skills dir joined with the
+// embedded (compile-time-fixed) relative path — never a network/model input.
 func writeIfChanged(target string, data []byte) error {
-	if existing, err := os.ReadFile(target); err == nil {
+	if existing, err := os.ReadFile(target); err == nil { // #nosec G304 -- target derived from operator skills dir + embedded path
 		if sha256.Sum256(existing) == sha256.Sum256(data) {
 			return nil // unchanged — leave the operator's copy in place
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 		return err
 	}
-	if err := os.WriteFile(target, data, 0o644); err != nil {
+	if err := os.WriteFile(target, data, 0o600); err != nil {
 		return fmt.Errorf("materialize builtin %q: %w", target, err)
 	}
 	return nil

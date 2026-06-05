@@ -102,6 +102,7 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
 	reg.Register(newTaskTool(ts))
+	reg.Register(newSkillTool(cfg)) // ONE non-deferred skill tool; manifest rides in its Description (D-05/D-06)
 	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order

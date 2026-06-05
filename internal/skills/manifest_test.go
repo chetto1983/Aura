@@ -23,7 +23,7 @@ func TestRenderManifestByteStableAndSorted(t *testing.T) {
 	ai := strings.Index(first, "alpha")
 	mi := strings.Index(first, "mango")
 	zi := strings.Index(first, "zebra")
-	if !(ai < mi && mi < zi) {
+	if ai >= mi || mi >= zi {
 		t.Fatalf("manifest not alphabetical: alpha@%d mango@%d zebra@%d\n%s", ai, mi, zi, first)
 	}
 

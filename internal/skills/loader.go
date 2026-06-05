@@ -179,7 +179,7 @@ func (l *Loader) loadSkillDir(dir, dirName string) (Skill, bool) {
 		slog.Warn("skills loader: skipping symlinked SKILL.md", "path", path)
 		return Skill{}, false
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- path is <operator-trusted root>/<dir>/SKILL.md, symlink-stripped above
 	if err != nil {
 		slog.Warn("skills loader: read SKILL.md failed", "path", path, "err", err)
 		return Skill{}, false

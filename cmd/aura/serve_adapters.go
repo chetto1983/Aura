@@ -15,12 +15,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/chetto1983/aura/internal/skills"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -214,4 +217,59 @@ func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) err
 		return fmt.Errorf("task %s is not awaiting approval", id)
 	}
 	return nil
+}
+
+// --- skillLoader adapter (live `skill` tool, 11-02) ---
+
+// skillLoaderAdapter bridges the live *skills.Loader onto the tools.skillLoader seam
+// the `skill` tool dispatches against, keeping internal/agent/tools free of an
+// internal/skills import. It projects skills.Skill into the tool-local SkillMeta and
+// renders the manifest the tool's Description shows.
+type skillLoaderAdapter struct {
+	loader *skills.Loader
+	manCap int
+}
+
+// newSkillTool builds the non-deferred `skill` tool. A nil cfg or empty skills dir
+// yields a tool with a nil loader (its Spec still lists, the manifest shows
+// "(none loaded)") so the pool-free manifest path registers it without a half-wired
+// loader. When a skills dir is configured the builtins are materialized first so
+// skill-creator appears in the very first scan.
+func newSkillTool(cfg *config.Config) *tools.SkillTool {
+	if cfg == nil || cfg.SkillsDir == "" {
+		return &tools.SkillTool{}
+	}
+	if err := skills.MaterializeBuiltins(cfg.SkillsDir); err != nil {
+		slog.Warn("skill tool: materialize builtins failed", "dir", cfg.SkillsDir, "err", err)
+	}
+	loader := skills.NewLoader(skills.Config{
+		Roots:        []string{cfg.SkillsDir},
+		BodyCapBytes: cfg.SkillBodyCapBytes,
+	})
+	return &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes}}
+}
+
+// List projects the loaded skills into the tool-local SkillMeta shape.
+func (a *skillLoaderAdapter) List() []tools.SkillMeta {
+	loaded := a.loader.List()
+	out := make([]tools.SkillMeta, 0, len(loaded))
+	for _, s := range loaded {
+		out = append(out, tools.SkillMeta{Name: s.Name, Description: s.Description})
+	}
+	return out
+}
+
+// Body returns the named skill's markdown body.
+func (a *skillLoaderAdapter) Body(name string) (string, bool) {
+	s, ok := a.loader.Get(name)
+	if !ok {
+		return "", false
+	}
+	return s.Body, true
+}
+
+// ManifestDescription renders the turn-stable, alphabetical, cap-bounded manifest
+// the skill tool's Description shows (D-06/D-09).
+func (a *skillLoaderAdapter) ManifestDescription() string {
+	return skills.RenderManifest(a.loader.List(), a.manCap)
 }
