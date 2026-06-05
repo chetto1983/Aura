@@ -60,6 +60,8 @@ func main() {
 		runPausedStates(os.Args[2:])
 	case "task":
 		runTask(os.Args[2:])
+	case "skills":
+		runSkills(os.Args[2:])
 	case "chat":
 		runChat(os.Args[2:])
 	case "cache-stats":
@@ -81,7 +83,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
@@ -102,7 +104,11 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(tools.CurrentTime{})
 	reg.Register(tools.AskUser{}) // HITL pause primitive — the LLM must see ask_user in the live manifest
 	reg.Register(newTaskTool(ts))
-	reg.Register(newSkillTool(cfg)) // ONE non-deferred skill tool; manifest rides in its Description (D-05/D-06)
+	// ONE non-deferred skill tool; manifest rides in its Description (D-05/D-06). When
+	// a live pool is available (serve/chat boot, ts!=nil) the write actions are wired to
+	// the durable, gated Writer (11-05); the pool-free manifest path (`aura tools`) gets
+	// a read-only tool whose write actions error loudly.
+	reg.Register(newSkillTool(cfg, taskStorePool(ts)))
 	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order

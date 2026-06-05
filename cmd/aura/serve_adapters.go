@@ -230,12 +230,25 @@ type skillLoaderAdapter struct {
 	manCap int
 }
 
+// taskStorePool extracts the live pool from the task-store adapter (nil-safe): the
+// pool-free manifest path passes a nil store, so the skill tool's write actions are
+// not wired there.
+func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
+	if ts == nil {
+		return nil
+	}
+	return ts.pool
+}
+
 // newSkillTool builds the non-deferred `skill` tool. A nil cfg or empty skills dir
 // yields a tool with a nil loader (its Spec still lists, the manifest shows
 // "(none loaded)") so the pool-free manifest path registers it without a half-wired
 // loader. When a skills dir is configured the builtins are materialized first so
-// skill-creator appears in the very first scan.
-func newSkillTool(cfg *config.Config) *tools.SkillTool {
+// skill-creator appears in the very first scan. When a live pool is supplied
+// (serve/chat boot) the write actions are wired to the durable, gated Writer (11-05)
+// via the skillWriterAdapter; the pool-free path leaves Writer nil (write actions
+// error loudly).
+func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 	if cfg == nil || cfg.SkillsDir == "" {
 		return &tools.SkillTool{}
 	}
@@ -246,7 +259,26 @@ func newSkillTool(cfg *config.Config) *tools.SkillTool {
 		Roots:        []string{cfg.SkillsDir},
 		BodyCapBytes: cfg.SkillBodyCapBytes,
 	})
-	return &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes}}
+	tool := &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes}}
+	if pool != nil {
+		tool.Writer = &skillWriterAdapter{w: newSkillWriter(cfg, pool)}
+	}
+	return tool
+}
+
+// skillWriterAdapter bridges the live *skills.Writer onto the tools.skillWriter seam
+// the skill tool's create/update/delete actions dispatch against, keeping
+// internal/agent/tools free of an internal/skills import. The model is the actor on
+// this path (allowBlocklisted=false is enforced inside WriteMutation).
+type skillWriterAdapter struct {
+	w *skills.Writer
+}
+
+// WriteMutation maps the tool's string-keyed call onto the live Writer, labeling the
+// actor "model". A blocklist/validation reject comes back as an error (the tool
+// surfaces it as a self-correct, NOT a pause).
+func (a *skillWriterAdapter) WriteMutation(ctx context.Context, action, name, description, body string, always bool) (string, error) {
+	return a.w.WriteMutationByName(ctx, action, name, description, body, always, skills.AuditActor{ActorID: "model"})
 }
 
 // List projects the loaded skills into the tool-local SkillMeta shape.

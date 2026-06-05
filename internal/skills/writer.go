@@ -131,6 +131,22 @@ func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, 
 	return StatusPendingApproval, nil
 }
 
+// WriteMutationByName is the string-keyed entry point the CLI and the model-tool
+// adapter share: it maps the action name + plain frontmatter fields onto the typed
+// WriteMutation. The actor labels the caller (the CLI passes "cli", the tool adapter
+// passes "model"). It is a thin convenience over WriteMutation so callers outside
+// internal/skills do not have to construct a Frontmatter / scoring.SkillAction.
+func (w *Writer) WriteMutationByName(ctx context.Context, action, name, description, body string, always bool, actor AuditActor) (string, error) {
+	fm := Frontmatter{Name: name, Description: description, Type: TypeInstruction, Always: always}
+	return w.WriteMutation(ctx, scoring.SkillAction(action), fm, body, actor)
+}
+
+// WriteMutationCLI is the operator-authored convenience used by `aura skills
+// create|update`: it labels the actor "cli" and stages the mutation as pending.
+func (w *Writer) WriteMutationCLI(ctx context.Context, action, name, description, body string, always bool) (string, error) {
+	return w.WriteMutationByName(ctx, action, name, description, body, always, AuditActor{ActorID: "cli"})
+}
+
 // writePending materializes the skill into pending/<name>/SKILL.md atomically: it
 // writes into a sibling temp dir then renames it into place, so a crash mid-write
 // never leaves a half-written pending skill the loader could read.

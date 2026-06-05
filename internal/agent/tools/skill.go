@@ -27,6 +27,15 @@ import (
 // add/remove — accepted, D-06).
 type SkillTool struct {
 	Loader skillLoader
+	// Writer is the consumer-declared write seam the create/update/delete actions
+	// dispatch against (11-05). Nil on the pool-free manifest paths (`aura tools`)
+	// and in unit tests that exercise only the read actions — a write action without
+	// a writer returns a clear error, never a panic.
+	Writer skillWriter
+	// Alerter is the optional headless-alert seam (D-26): non-nil only in a context
+	// with no interactive resume (a swarm worker / cron job) so a gated mutation
+	// proposed there fires an immediate operator alert. Nil in the interactive REPL.
+	Alerter skillAlerter
 
 	router *ActionRouter
 }
@@ -75,8 +84,11 @@ type skillArgs struct {
 const skillParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "install", "catalog", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions to the current task by name). The remaining actions (create, update, delete, install, catalog, restore, archive) manage the skill library and are not yet available."},
-    "name": {"type": "string", "description": "Required when action=info or action=use. The exact skill name to inspect or apply."},
+    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "install", "catalog", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions to the current task by name); create (author a new skill); update (revise an existing skill); delete (remove a skill). create/update/delete are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. The remaining actions (install, catalog, restore, archive) manage the skill library and are not yet available."},
+    "name": {"type": "string", "description": "Required when action=info, use, create, update, or delete. The exact skill name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, or remove."},
+    "description": {"type": "string", "description": "Required when action=create or update. A one-line summary of what the skill does (shown in the skill manifest)."},
+    "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
+    "always": {"type": "boolean", "description": "Optional when action=create or update. When true the skill's instructions are always applied (an always-on skill); always-on skills are gated like any other change and reviewed loudly."},
     "query": {"type": "string", "description": "Optional when action=list. A keyword phrase to rank the skill list by relevance when the full manifest is too large to show at once."}
   },
   "required": ["action"]
@@ -139,10 +151,13 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"list": t.actionList,
 			"info": t.actionInfo,
 			"use":  t.actionUse,
+			// Write actions (11-05): validate->gate->pending->ask_user pause (D-02). There
+			// is deliberately NO model-facing approve action — activation is human-only
+			// (D-03): only an ask_user resume or the `aura skills approve` CLI activate.
+			"create": t.actionCreate,
+			"update": t.actionUpdate,
+			"delete": t.actionDelete,
 			// Reserved (D-01) — downstream plans fill these handlers.
-			"create":  notYetWired("create"),
-			"update":  notYetWired("update"),
-			"delete":  notYetWired("delete"),
 			"install": notYetWired("install"),
 			"catalog": notYetWired("catalog"),
 			"restore": notYetWired("restore"),

@@ -110,6 +110,29 @@ func (w *Writer) Delete(ctx context.Context, name string, actor AuditActor) (str
 	return StatusActive, nil
 }
 
+// auditRejection records the audit row for a HUMAN-DECLINED (or operator-rejected)
+// pending mutation. A discard exercises the gate (the human reviewed and said no), so
+// the D-29 tuple is the gate_taken=true shape implied by src — the ask_user shape
+// (NOT-NULL token) for a resume decline, the cli shape (NULL token) for a CLI reject.
+// The action is recorded as cleanup_pending_stale: the pending skill was removed
+// without activating. The approve-vs-reject distinction lives in the resume answer,
+// not the tuple (the D-29 matrix shares the ask_user shape for both — 11-04 decision).
+func (w *Writer) auditRejection(ctx context.Context, name, hash string, src ApprovalSource, pausedToken string, actor AuditActor) error {
+	return db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
+		return InsertAuditTx(ctx, q, AuditInsert{
+			ActorID:          actor.ActorID,
+			IdentityID:       actor.IdentityID,
+			SkillName:        name,
+			Action:           AuditCleanupPending,
+			ContentHash:      hash,
+			ApprovalSource:   src,
+			PausedStateToken: pausedToken,
+			GateRecommended:  true,
+			GateTaken:        true,
+		})
+	})
+}
+
 // auditActivationLike records a gate_taken=true audit row for activate/archive/
 // delete, applying the D-29 tuple shape implied by src.
 func (w *Writer) auditActivationLike(ctx context.Context, name string, action AuditAction, hash string, src ApprovalSource, actor AuditActor) error {
