@@ -9,8 +9,15 @@ import (
 
 // fakeSkillLoader is a deterministic in-memory skillLoader for the tool tests.
 type fakeSkillLoader struct {
-	skills []SkillMeta
-	bodies map[string]string
+	skills   []SkillMeta
+	bodies   map[string]string
+	snippets map[string]fakeSnippet // name -> snippet by-path resolution (D-04)
+}
+
+type fakeSnippet struct {
+	instructions string
+	sandboxPath  string
+	interpreter  string
 }
 
 func (f *fakeSkillLoader) List() []SkillMeta { return f.skills }
@@ -26,6 +33,14 @@ func (f *fakeSkillLoader) ManifestDescription() string {
 		b.WriteString("- " + s.Name + ": " + s.Description + "\n")
 	}
 	return b.String()
+}
+
+func (f *fakeSkillLoader) Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool) {
+	s, ok := f.snippets[name]
+	if !ok {
+		return "", "", "", false
+	}
+	return s.instructions, s.sandboxPath, s.interpreter, true
 }
 
 func newFakeLoader() *fakeSkillLoader {

@@ -252,6 +252,11 @@ func skillFileBytes(fm Frontmatter, body string) []byte {
 		t = TypeInstruction
 	}
 	b = append(b, "type: "+t+"\n"...)
+	// A snippet's language is load-bearing (UseSnippet resolves the by-path interpreter
+	// + extension from it, D-20), so it must round-trip into the materialized SKILL.md.
+	if t == TypeSnippet && fm.Language != "" {
+		b = append(b, "language: "+fm.Language+"\n"...)
+	}
 	if fm.Always {
 		b = append(b, "always: true\n"...)
 	}

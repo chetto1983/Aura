@@ -70,6 +70,11 @@ type skillLoader interface {
 	// ManifestDescription renders the byte-stable, alphabetical manifest block that
 	// becomes this tool's Description (with the BM25-overflow tail past the cap).
 	ManifestDescription() string
+	// Snippet resolves an ACTIVE snippet skill into its by-path invocation (D-04):
+	// the docs instructions, the in-sandbox /skills path, and the interpreter the
+	// model passes to sandbox_exec. ok=false when the named skill is absent or not a
+	// snippet (action=use falls back to the instruction-skill authority-frame path).
+	Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool)
 }
 
 // skillArgs is the wire shape of the skill tool arguments. Only `action` is

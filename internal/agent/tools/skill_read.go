@@ -73,15 +73,47 @@ func (t *SkillTool) actionInfo(ctx context.Context, raw json.RawMessage) (ToolRe
 	return NewResult(ctx, body)
 }
 
-// actionUse returns a skill's body wrapped in the authority frame (D-08), so the
-// model applies the instructions to the current task. The body is delivered via
-// NewResult so a large skill pages through the sidecar (>preview cap).
+// actionUse applies a skill (D-08). For a SNIPPET (type:snippet) it returns the docs
+// instructions + the stable in-sandbox /skills path + the interpreter so the model
+// runs it BY PATH via sandbox_exec (D-04 — NO bespoke run, NEVER the exec bit). For
+// an instruction skill it returns the body wrapped in the authority frame. The body
+// is delivered via NewResult so a large skill pages through the sidecar (>preview cap).
 func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	body, err := t.requireBody(raw, "use")
-	if err != nil {
-		return ToolResult{}, err
+	if t.Loader == nil {
+		return ToolResult{}, fmt.Errorf("skill use: no skill loader configured")
+	}
+	var a skillArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return ToolResult{}, fmt.Errorf("skill use args: %w", err)
+	}
+	name := strings.TrimSpace(a.Name)
+	if name == "" {
+		return ToolResult{}, fmt.Errorf("skill use: name is required")
+	}
+	if instructions, sandboxPath, interpreter, ok := t.Loader.Snippet(name); ok {
+		return NewResult(ctx, renderSnippetUse(instructions, sandboxPath, interpreter))
+	}
+	body, ok := t.Loader.Body(name)
+	if !ok {
+		return ToolResult{}, fmt.Errorf("skill use: unknown skill %q", name)
 	}
 	return NewResult(ctx, useAuthorityFrame+body)
+}
+
+// renderSnippetUse frames a snippet's by-path invocation for the model (D-04): the
+// instructions, then the exact sandbox_exec call to run the snippet by path (never
+// the exec bit). The literal command shape mirrors the sandbox_exec arg schema so the
+// model assembles a correct call.
+func renderSnippetUse(instructions, sandboxPath, interpreter string) string {
+	var b strings.Builder
+	b.WriteString(useAuthorityFrame)
+	if instructions != "" {
+		b.WriteString(instructions)
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "Run this snippet by path: call sandbox_exec with command=%q and args=[%q] (add further args as needed). Do NOT execute it as %s directly — always invoke the interpreter with the path.\n",
+		interpreter, sandboxPath, sandboxPath)
+	return b.String()
 }
 
 // requireBody resolves the `name` arg and fetches the skill body, returning a

@@ -411,3 +411,19 @@ func (a *skillLoaderAdapter) Body(name string) (string, bool) {
 func (a *skillLoaderAdapter) ManifestDescription() string {
 	return skills.RenderManifest(a.loader.List(), a.manCap)
 }
+
+// Snippet resolves an active snippet skill into its by-path invocation (D-04): the
+// docs instructions (the SKILL.md body) + the stable in-sandbox /skills path + the
+// interpreter. ok=false for an absent or non-snippet skill (action=use then falls
+// back to the instruction-skill authority-frame path).
+func (a *skillLoaderAdapter) Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool) {
+	s, found := a.loader.Get(name)
+	if !found || s.Type != skills.TypeSnippet {
+		return "", "", "", false
+	}
+	path, interp, perr := skills.SnippetInvocation(s.Name, s.Language)
+	if perr != nil {
+		return "", "", "", false
+	}
+	return s.Body, path, interp, true
+}

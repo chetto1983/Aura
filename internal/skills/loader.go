@@ -27,6 +27,7 @@ type Skill struct {
 	Description string
 	Always      bool
 	Type        string
+	Language    string // snippet code language (D-20); empty for instruction skills
 	Body        string
 	Dir         string
 }
@@ -193,6 +194,7 @@ func (l *Loader) loadSkillDir(dir, dirName string) (Skill, bool) {
 		Description: fm.Description,
 		Always:      fm.Always,
 		Type:        fm.Type,
+		Language:    fm.Language,
 		Body:        body,
 		Dir:         dir,
 	}, true

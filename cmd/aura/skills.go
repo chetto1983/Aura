@@ -31,7 +31,8 @@ import (
 const skillsUsage = "usage: aura skills {list|info <name>|create <name> --desc <d> --body <b> [--always]|" +
 	"update <name> --desc <d> --body <b> [--always]|delete <name>|approve <name>|" +
 	"install <repo> [--allow-blocklisted]|catalog {search <query>|disable-catalog|enable-catalog}|" +
-	"always <name> {on|off}|audit [--skill <name>] [--since <RFC3339>]}"
+	"always <name> {on|off}|snippet {save <name> --lang <l> --code <c> [--desc <d>] [--needs-network]|exec <name> [args...]}|" +
+	"audit [--skill <name>] [--since <RFC3339>]}"
 
 // skillsEnv bundles the booted skills-CLI dependencies: the config (for the skill
 // dirs + blocklist), the open pool, the Writer, and the AuditStore.
@@ -100,6 +101,8 @@ func runSkills(args []string) {
 		skillsCatalog(ctx, args[1:])
 	case "always":
 		skillsAlways(ctx, args[1:])
+	case "snippet":
+		skillsSnippet(ctx, args[1:])
 	case "audit":
 		skillsAudit(ctx, args[1:])
 	default:
