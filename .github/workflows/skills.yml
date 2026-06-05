@@ -1,0 +1,141 @@
+name: Skills (CAP-07 / CAP-08)
+
+# Phase 11 gating job. It proves CAP-07 (self-extension: loader/validator/writer/audit/
+# installer/catalog) + CAP-08 (executable snippets v1) against the live substrate and
+# gates regressions: the unit tier, the db_integration audit tier (SC#1/SC#2), the
+# FuzzSkillValidator smoke (SC#3), the sandbox_integration by-path exec tier (SC#4), the
+# TTL sweep tier, go-mutesting on the two critical files (validator.go + writer.go, ≥70%),
+# and the owned-surface ≥85% coverage floor across the FULL tag matrix (db_integration +
+# sandbox_integration). The LIVE xlsx North-Star cot_eval E2E (D-35) is OPERATOR-run
+# (OPENROUTER_API_KEY, paid) and explicitly NOT in CI — see internal/eval/
+# skills_cot_eval_test.go for the operator invocation.
+#
+# NO-SKIP-AS-GREEN (CLAUDE.md): every tagged tier exports the exact env it reads and
+# `CI=true` arms the envOrSkip → t.Fatal-on-unset guard, so a skipped tier FAILS the job
+# rather than passing it green. A sub-second integration runtime is a skip tell — the
+# steps below stand up Postgres + the sandbox-agent so the tiers actually RUN.
+
+on:
+  push:
+    branches: [ "master", "main", "tabula-rasa" ]
+  pull_request:
+    branches: [ "master", "main", "tabula-rasa" ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: skills-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  skills-gate:
+    name: Skills gate (unit + db_integration + sandbox_integration + fuzz + mutation + coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Postgres primitives compose.yaml interpolates + the bootstrap the migratedPool
+      # helper composes (EnsureRoles needs the superuser DSN from POSTGRES_PASSWORD).
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      # Composed role DSNs the db_integration + sandbox_integration tiers read directly
+      # (envOrSkip). NOT just the POSTGRES_* primitives — the audit store + migratedPool
+      # read AURA_DB_URL/AURA_DB_MIGRATE_URL. Without these the tagged tests SKIP and the
+      # job would go falsely green; CI=true turns that skip into a t.Fatal failure.
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      # compose.yaml has a neo4j service with ${NEO4J_PASSWORD:?} fail-fast; any
+      # `docker compose` invocation parses the whole file, so the var must be present
+      # even though this job uses only postgres + the sandbox-agent.
+      NEO4J_PASSWORD: ci-test-password
+      # The sandbox-agent bearer (D-38) the container runs with --token AND the client
+      # sends. compose.yaml interpolates it into the command + the healthcheck; the
+      # sandbox_integration tier reads AURA_SANDBOX_AGENT_TOKEN to authenticate.
+      AURA_SANDBOX_AGENT_TOKEN: ci-sandbox-bearer-token
+      AURA_SANDBOX_AGENT_URL: http://127.0.0.1:2468
+      # The host export dir the writer materializes ACTIVE snippets into AND the
+      # sandbox-agent mounts read-only at /skills (D-17). The same dir on both sides.
+      AURA_SKILL_EXPORT_DIR: /tmp/aura-skills-export
+      AURA_RUN_DIR: /tmp/aura-run
+      # Arms the no-skip-as-green guards: a missing DSN/token under CI t.Fatals.
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prepare host dirs (the /skills mount source + the run dir)
+        run: |
+          mkdir -p "${AURA_SKILL_EXPORT_DIR}" "${AURA_RUN_DIR}"
+
+      - name: Start Postgres + migrate (through 0010)
+        run: |
+          make db-up
+          go run ./cmd/aura db migrate
+
+      - name: Unit tier (race detector, LLM-free + DB-free)
+        # The two CI-runnable smokes (TestHaikuFlow + TestSnippetReuse) ride this tier
+        # alongside the package's unit tests + the skill tool + the cron handler units.
+        run: go test -race -count=1 ./internal/skills/ ./internal/agent/tools/ ./internal/cron/...
+
+      - name: FuzzSkillValidator smoke (SC#3, 60s NFKC/Unicode mutations)
+        run: go test -run '^$' -fuzz=FuzzSkillValidator -fuzztime=60s ./internal/skills/
+
+      - name: db_integration tier (SC#1 audit INSERT + SC#2 immutability + migration round-trip + TTL)
+        # -p 1 is MANDATORY (same rule as scripts/coverage_gate.sh): internal/skills +
+        # internal/cron share ONE Postgres and each runs EnsureRoles+Migrate; parallel
+        # package binaries deadlock on pg_advisory_lock once >2 integration packages exist.
+        run: go test -tags db_integration -race -count=1 -p 1 ./internal/skills/ ./internal/cron/...
+
+      - name: Build the sandbox-agent image (bake the xlsx deps, spike 006/007)
+        # The snippet by-path exec tier (SC#4) needs the live container with the baked
+        # openpyxl/defusedxml/lxml/validators deps. Build it from ./docker/sandbox-agent
+        # (the compose `build:` context) — `make sandbox-up` requires the image preloaded.
+        run: docker compose build aura-sandbox-agent
+
+      - name: Start the sandbox-agent (--token + ro /skills mount)
+        run: make sandbox-up
+
+      - name: sandbox_integration tier (SC#4 by-path snippet exec, live container)
+        # The full 7e runtime: save -> activate -> materialize into the live /skills mount
+        # -> exec BY PATH via the real sandbox-agent client -> output captured -> usage
+        # stamped. CI=true + the exported token/url/export-dir arm no-skip-as-green.
+        run: go test -tags 'sandbox_integration db_integration' -race -count=1 -p 1 -run TestSnippetExec ./internal/skills/
+
+      - name: go-mutesting spot-check (validator.go + writer.go ≥70% killed)
+        # The two CRITICAL files (RESEARCH §Validation Architecture / Phase gate): the
+        # write-boundary validator + the durable gated writer. PASS=killed, FAIL=survived,
+        # score=killed/total. Mirrors the Makefile/Phase-8 go-mutesting path.
+        run: |
+          go install github.com/avito-tech/go-mutesting/cmd/go-mutesting@latest
+          MUT="$(go env GOPATH)/bin/go-mutesting"
+          for f in internal/skills/validator.go internal/skills/writer.go; do
+            echo "==> mutation: $f"
+            # go-mutesting's final line is: `mutation score is 0.894118 (76 passed, ...)`.
+            "$MUT" "$f" | tee "mutation-$(basename "$f").log"
+            score="$(grep -oE 'mutation score is [0-9.]+' "mutation-$(basename "$f").log" | grep -oE '[0-9.]+' | tail -1)"
+            awk -v s="${score:-0}" -v f="$f" 'BEGIN { if (s + 0 < 0.70) { printf "FAIL: mutation score %.3f < 0.70 for %s\n", s, f; exit 1 } printf "ok: mutation score %.3f >= 0.70 for %s\n", s, f }'
+          done
+
+      - name: Coverage gate (owned surface ≥85% across the FULL tag matrix, CLAUDE.md floor)
+        # The combined figure (CLAUDE.md): the coverage run carries BOTH tags so the
+        # db_integration + sandbox_integration tiers fold into internal/skills coverage.
+        # A unit-only number below 85% must NOT satisfy this gate — AURA_COVERAGE_TAGS
+        # overrides the script default to include sandbox_integration. NO-SKIP-AS-GREEN:
+        # the tagged tiers t.Fatal under $CI when env is unset, so a skipped tier fails.
+        env:
+          AURA_COVERAGE_TAGS: "db_integration sandbox_integration"
+        run: bash scripts/coverage_gate.sh
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v || true
