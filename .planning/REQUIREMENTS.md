@@ -52,6 +52,10 @@
 - [ ] **UX-08**: GraphRAG hybrid retrieval (HNSW vector + fulltext BM25 + graph traversal + LLM re-rank). Pre-merge bench recall@5 ≥ 0.8 @ 1K/10K/100K corpus sizes, p95 ≤ 30ms vector search, snapshot in `docs/aura-quality-snapshot.md`. HNSW `M=32` (NON default 16). [Slice 11d + amendment #20]
 - [ ] **UX-09**: Agent journal cross-conversation insights (`:AgentEpisode` + `:AgentInsight` subgraphs). `:AgentInsight` retrieval cached N minutes con TTL configurable per preservare KV cache `messages[2]` stability. [Slice 11e + amendment #11]
 
+### Operations (Slice 14)
+
+- [ ] **OPS-01**: End-user packaging & distribution. Single fat Aura container image (`docker/aura/Dockerfile`: Go binary + python/`uvx` + node/`npx` + pinned `mcp-neo4j-cypher==0.6.0`) so the host needs only Docker — MCP subprocesses spawn inside the image, `internal/knowledge/client.go` unchanged. `compose.yaml` gains an `aura` service + one-shot `aura-migrate` + persistent `aura-home` volume. `scripts/install.sh` self-host door (Docker check + secret-gen `openssl rand` chmod-600 idempotent + `OPENROUTER_API_KEY` opt-in + compose up + wizard URL); appliance door = same compose+image pre-seeded. Relaxes the D-22 empty-key fail-fast (`aura serve` boots keyless, agent call fail-closes `llm_not_configured`) so the Phase 13 setup wizard can collect the key later. Image published to `ghcr.io` pinned per release tag; goreleaser host binary retained for dev. [Slice 14 — amendment #47]
+
 ## v2 Requirements
 
 Deferred to future release. Acknowledged but NOT in current roadmap.
@@ -127,14 +131,15 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | UX-07 | Phase 15 — Memory Subsystem | Pending |
 | UX-08 | Phase 15 — Memory Subsystem | Pending |
 | UX-09 | Phase 15 — Memory Subsystem | Pending |
+| OPS-01 | Phase 17 — Packaging & Distribution | Pending |
 
 **Coverage:**
 
-- v1 requirements: 27 total (1 PRD + 3 INFRA + 5 CORE + 9 CAP + 9 UX)
-- Mapped to phases: 27
+- v1 requirements: 28 total (1 PRD + 3 INFRA + 5 CORE + 9 CAP + 9 UX + 1 OPS)
+- Mapped to phases: 28
 - Unmapped: 0 ✓
-- Phases used: 17 (P0 through P16)
+- Phases used: 18 (P0 through P17)
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-06-04 after Phase 16 CAP-09/MCP-V2-01 promotion*
+*Last updated: 2026-06-05 after Phase 17 OPS-01 packaging & distribution registration (amendment #47)*

@@ -4467,6 +4467,65 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## Slice 14 — Packaging & Distribution (fat image + curl|sh installer + appliance)
+
+> **Amendment #47 / OPS-01 (Phase 17, 2026-06-05): Aura packaging end-user.** Design discussion 2026-06-05 (4 decisioni utente convergute). Aura oggi si distribuisce come binario statico goreleaser + `compose.yaml` per i sidecar, ma il "single static binary" è una promessa rotta nel momento in cui serve MCP: `mcp-neo4j-cypher` è un subprocess Python che `internal/knowledge/client.go` spawna via PATH host (`pip install mcp-neo4j-cypher==0.6.0` — non documentato nel README), e le recipe MCP generiche (calculator/mail) vogliono `uvx`/`npx` host. Per l'end-user (appliance DGX Spark + self-host) il requisito host deve collassare a **solo Docker**.
+
+**Decisione architettonica (utente, 2026-06-05):**
+- **D-OPS-01 — Fat image unica.** Aura diventa un'immagine container (`docker/aura/Dockerfile`, multi-stage: builder `golang` → runtime `python:3.x-slim` + node + `uv`/`uvx` + `npx` + `pip install mcp-neo4j-cypher==0.6.0` pinned → COPY del binario `aura`). I subprocess MCP girano DENTRO il container dove i runtime esistono: `internal/knowledge/client.go` resta INVARIATO (stdio transport, nessun cambio al layer MCP — il lavoro è tutto packaging). L'host non richiede più Python/Node/pip/PATH surgery.
+- **D-OPS-02 — Due porte, una source of truth.** (a) **Self-host**: `curl -fsSL <url>/install.sh | sh` — verifica/installa Docker, fetch `compose.yaml` + `.env`, genera i secret, `docker compose up`, stampa l'URL+token del wizard. (b) **Appliance**: immagine pre-pullata + `.env` pre-seeded + systemd `compose up` al boot (salta lo step curl). Stesso `compose.yaml`, stessa immagine.
+- **D-OPS-03 — Secret generation first-run.** `install.sh` genera `POSTGRES_PASSWORD`/`NEO4J_PASSWORD` (`openssl rand`, `.env` chmod 600), idempotente (non rigenera se `.env` esiste). L'utente non edita mai `.env` a mano per i secret DB.
+- **D-OPS-04 — API key both/either + rilassamento D-22.** `OPENROUTER_API_KEY` è l'unico secret non auto-generabile: l'installer lo accetta non-interattivo (env/flag) se fornito, altrimenti il **setup wizard (Slice 9a / Phase 13)** lo raccoglie più tardi scrivendo `~/.aura/llm.json`. Richiede il **rilassamento del fail-fast D-22**: `aura serve` deve bootare keyless (oggi `config.Load()` aborta su `AURA_LLM_API_KEY` vuoto, `internal/config`); senza key una chiamata agente ritorna un result strutturato `{"error":"llm_not_configured", "hint":...}` (fail-closed, stesso pattern di `SEARXNG_URL` vuoto in Slice 5), NON un boot abort. `aura db migrate` (`LoadDB()`) già salta LLM, invariato.
+- **D-OPS-05 — Aura come servizio compose.** `compose.yaml` guadagna `aura` (`depends_on` healthcheck pg/neo4j/embed) + un one-shot `aura-migrate` (`db migrate && neo4j migrate`, exit 0, `aura` `depends_on: service_completed_successfully`). Volume persistente `aura-home → ~/.aura` (`llm.json`, `mcp/servers.json`, `agents/`, `pyscripts/`) sopravvive agli upgrade immagine.
+- **D-OPS-06 — Distribuzione.** Immagine pubblicata su `ghcr.io` via goreleaser, pinnata per release tag; `install.sh` hostato in-repo (raw URL). Il binario host goreleaser RESTA per lo sviluppo (WSL `go run`); il container è SOLO l'artefatto di distribuzione end-user.
+
+**Acceptance (high-level — `17-SPEC.md` li rende falsificabili via Socratic loop).**
+- [ ] `curl -fsSL <url>/install.sh | sh` su host Docker pulito → stack su (postgres+neo4j+embed+searxng+sandbox-agent+aura), `.env` chmod-600 con secret auto-generati, migrazioni applicate, URL+token wizard stampato; ZERO Python/Node/pip sull'host.
+- [ ] `mcp-neo4j-cypher` spawna DENTRO il container `aura` (python3 + package pinned presenti in-image); l'host NON ha `mcp-neo4j-cypher` su PATH.
+- [ ] `docker compose up` senza `OPENROUTER_API_KEY` → `aura serve` bootta (no fail-fast); chiamata agente keyless → result `llm_not_configured` (fail-closed); dopo key (flag installer O wizard) → chat funziona.
+- [ ] Re-run installer idempotente (secret `.env` preservati, non rigenerati); volume `aura-home` sopravvive a un upgrade immagine.
+- [ ] Immagine su `ghcr.io` pinnata per tag; goreleaser produce ancora il binario host per dev; appliance = stesso compose + immagine con `.env` pre-seeded (no step curl).
+
+**File targets** (≤ 600 LOC src, no file >300):
+| Path | LOC | Note |
+|---|---|---|
+| `docker/aura/Dockerfile` | ~50 | Multi-stage: golang builder → python:3.x-slim + node + uv/uvx + npx + `pip install mcp-neo4j-cypher==0.6.0` + COPY aura. Layer-order cache-stable (rebuild cold 45-60min, preserva cache). |
+| `compose.yaml` (diff) | ~+30 | service `aura` + one-shot `aura-migrate` + volume `aura-home`; depends_on healthcheck pg/neo4j/embed. |
+| `scripts/install.sh` | ~120 | Docker check/install + fetch compose+.env + secret-gen (openssl, chmod 600, idempotente) + `OPENROUTER_API_KEY` opt-in (env/flag) + compose up + stampa wizard URL+token. |
+| `internal/config/config.go` (diff) | ~+10 | D-OPS-04: rilassa il fail-fast empty-key in `Load()` (serve boots keyless); il path agente fail-closa al call con `llm_not_configured`. |
+| `.goreleaser.yaml` (diff) | ~+15 | ghcr.io image build/push pinnato per tag (oltre ai binari host esistenti, che restano). |
+| `README.md` (diff) | ~+20 | Quick start end-user: curl\|sh + appliance; rimuove lo step `pip install mcp-neo4j-cypher` host non documentato. |
+
+**Boundaries.**
+- **In scope**: fat image, compose service + one-shot migrate, installer self-host, secret-gen, D-22 relaxation, ghcr publish, README end-user.
+- **Out of scope**: il **setup wizard web** (è Slice 9a / Phase 13 — questa slice ne *dipende* per la porta API-key-via-wizard, non lo costruisce); onboarding Telegram (Phase 14); marketplace / auto-update immagine in-band; orchestrazione k8s/helm; il binario host goreleaser (resta, NON sostituito — dev path).
+
+**Dipende da**: Phase 13 (setup wizard per la porta deferred-key) per la storia completa; l'installer + fat image da soli richiedono solo il daemon `aura serve` (Phase 10 ✓).
+
+**Env.** Nessuna nuova `AURA_*` runtime var: il volume `aura-home` riusa `AURA_CONFIG_DIR=~/.aura`. L'unico cambio comportamentale è il rilassamento del fail-fast empty-key (D-OPS-04, rilassa D-22) sul path `aura serve`.
+
+**Commit message template.**
+
+```
+slice 14: packaging & distribution (fat image + curl|sh installer)
+
+Single fat Aura container image (Go binary + python/uvx + node/npx +
+pinned mcp-neo4j-cypher) so the host needs only Docker — MCP subprocesses
+spawn inside the image, internal/knowledge/client.go unchanged. compose
+gains aura + one-shot aura-migrate + aura-home volume. install.sh self-host
+door (Docker check + secret-gen + compose up + wizard URL); appliance door
+= same compose+image pre-seeded. Relaxes D-22 empty-key fail-fast (serve
+boots keyless, agent call fail-closes llm_not_configured) so the wizard can
+collect the key later. Image to ghcr.io pinned per tag; goreleaser host
+binary retained for dev.
+
+LOC: +XXX infra / +YY script / +ZZ doc.
+
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+```
+
+---
+
 ## Pattern condiviso da estrarre (vale per Slice 5/6/7)
 
 Tutti e tre i tool seguono lo stesso shape:

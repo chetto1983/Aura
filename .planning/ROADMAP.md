@@ -2,7 +2,7 @@
 
 ## Overview
 
-Aura ships in 17 phases - one no-code documentation phase (P0 PRD amendments) plus 16 implementation phases mapped to the PRD scope and approved follow-up capabilities. The journey is **architecture-validated horizontal layers**: Persistence (P1) -> Agent Cornerstone (P2) -> LLM client (P3) -> Conversation/Identity/HITL cluster (P4) -> Sandbox 2a (P5) -> KV Cache (P6, deliberately near-late) -> Web (P7) -> Sandbox 2b (P8) -> Swarm (P9) -> Scheduler (P10) -> Skills (P11) -> AG-UI transport (P12) -> Channels + Telegram (P13) -> Onboarding (P14) -> Memory subsystem (P15) -> MCP Sidecar Manager + Third-Party Trust (P16). The dependency chain is non-negotiable: Slice 0.9 (P2) is the cornerstone every later phase implements; KV cache (P6) must come after the stable system prompt is real or every later capability plants its own cache-poisoning site; Memory (P15) gates the MCP manager because profiles/status/trust can then draw on the completed substrate. Each phase finishes Gate 3 DoD (coverage >=75% unit / >=60% integration, mutation >=70% killed, goleak clean, race-detector clean) before the next begins.
+Aura ships in 18 phases - one no-code documentation phase (P0 PRD amendments) plus 17 implementation phases mapped to the PRD scope and approved follow-up capabilities. The journey is **architecture-validated horizontal layers**: Persistence (P1) -> Agent Cornerstone (P2) -> LLM client (P3) -> Conversation/Identity/HITL cluster (P4) -> Sandbox 2a (P5) -> KV Cache (P6, deliberately near-late) -> Web (P7) -> Sandbox 2b (P8) -> Swarm (P9) -> Scheduler (P10) -> Skills (P11) -> AG-UI transport (P12) -> Channels + Telegram (P13) -> Onboarding (P14) -> Memory subsystem (P15) -> MCP Sidecar Manager + Third-Party Trust (P16) -> Packaging & Distribution (P17, end-user fat image + installer). The dependency chain is non-negotiable: Slice 0.9 (P2) is the cornerstone every later phase implements; KV cache (P6) must come after the stable system prompt is real or every later capability plants its own cache-poisoning site; Memory (P15) gates the MCP manager because profiles/status/trust can then draw on the completed substrate. Each phase finishes Gate 3 DoD (coverage >=75% unit / >=60% integration, mutation >=70% killed, goleak clean, race-detector clean) before the next begins.
 
 ## Phases
 
@@ -35,6 +35,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 14: Onboarding + Agent.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
 - [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement (completed 2026-06-04)
+
+- [ ] **Phase 17: Packaging & Distribution** - end-user install: single fat Aura container image (Go binary + python/uvx + node/npx + pinned mcp-neo4j-cypher so the host needs only Docker) + curl|sh self-host installer with secret-gen + appliance pre-seed door + D-22 keyless-boot relaxation (Slice 14, amendment #47)
 
 ## Phase Details
 
@@ -417,7 +419,7 @@ Wave 4:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16
+Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 → 9 → 10 → 11 → 12 → 13 → 14 → 15 → 16 → 17
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -437,6 +439,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
+| 17. Packaging & Distribution | 0/TBD | Not started | - |
 
 ### Phase 16: MCP Sidecar Manager + Third-Party Trust
 
@@ -464,3 +467,20 @@ Plans:
 - [x] 16-06-PLAN.md - Dockerized runtime and trust gates for third-party local MCP servers
 - [x] 16-07-PLAN.md - risk labels and mount-time tool policy enforcement
 - [x] 16-08-PLAN.md - mock E2E, docs, live-check recording, quality snapshot
+
+### Phase 17: Packaging & Distribution
+
+**Goal**: Make Aura installable by an end user with **only Docker on the host**. Today Aura distributes as a goreleaser static binary + `compose.yaml` sidecars, but the "single static binary" promise breaks the moment MCP is needed: `mcp-neo4j-cypher` is a Python subprocess `internal/knowledge/client.go` spawns from the host PATH (undocumented `pip install mcp-neo4j-cypher==0.6.0`), and generic MCP recipes want host `uvx`/`npx`. This phase ships a **single fat Aura container image** (`docker/aura/Dockerfile`: Go binary + python/`uvx` + node/`npx` + pinned `mcp-neo4j-cypher`) so MCP subprocesses spawn **inside** the image (`internal/knowledge/client.go` unchanged — all work is packaging), an `aura` + one-shot `aura-migrate` compose service with an `aura-home` persistent volume, a `curl|sh` self-host installer (Docker check + secret-gen + compose up + wizard URL) and an appliance pre-seed door (same compose+image, no curl), plus the **D-22 keyless-boot relaxation** (`aura serve` boots without `OPENROUTER_API_KEY`; agent call fail-closes `llm_not_configured`) so the setup wizard can collect the key later. Image published to `ghcr.io` pinned per release tag; the goreleaser host binary is retained for dev.
+**Depends on**: Phase 13 (setup wizard provides the deferred API-key-collection door); the `curl|sh` installer + fat image themselves only need the Phase 10 `aura serve` daemon.
+**Requirements**: OPS-01
+**Slices**: 14
+**Success Criteria** (what must be TRUE):
+
+  1. Operator runs `curl -fsSL <url>/install.sh | sh` on a clean Docker host and observes the full stack up (postgres + neo4j + embed + searxng + sandbox-agent + aura), a chmod-600 `.env` with auto-generated `POSTGRES_PASSWORD`/`NEO4J_PASSWORD`, migrations applied, and the setup wizard URL + token printed — with ZERO Python/Node/pip installed on the host.
+  2. Operator inspects the running `aura` container and observes `mcp-neo4j-cypher` spawning from inside the image (python3 + the pinned package present in-image, Neo4j reachable); the HOST has no `mcp-neo4j-cypher` on PATH.
+  3. Operator runs `docker compose up` with no `OPENROUTER_API_KEY` set and observes `aura serve` booting successfully (no fail-fast); an agent call without a key returns a structured `{"error":"llm_not_configured", "hint":...}` (fail-closed), and after the key is provided (installer flag OR wizard) chat works.
+  4. Operator re-runs the installer and observes it is idempotent (existing `.env` secrets preserved, not regenerated); the `aura-home` volume survives an image upgrade (`llm.json` / `mcp/servers.json` / `Agent.md` retained).
+  5. Operator observes the image published to `ghcr.io` pinned by release tag; goreleaser still produces the host binary for dev; the appliance path = same compose + image with `.env` pre-seeded (no curl step).
+
+**Plans**: TBD
+
