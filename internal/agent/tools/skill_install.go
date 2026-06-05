@@ -101,10 +101,17 @@ func (t *SkillTool) actionCatalog(ctx context.Context, raw json.RawMessage) (Too
 	return NewResult(ctx, renderCatalog(query, results))
 }
 
+// catalogRetryHint rides on every catalog result (amendment #49, iteration 4):
+// run-7 showed a topic-flavored query ("excel yahoo finance stock market")
+// surfaces domain skills and buries the format skill the task actually needs —
+// the retry-by-format teaching belongs at the exact moment the model reads a
+// weak result set. Fixed per-turn literal — no cache invariant rides on it.
+const catalogRetryHint = "\nIf none of these package the artifact FORMAT you must produce, retry with the bare format keyword alone (e.g. \"xlsx\", \"pdf\", \"docx\") — skills package capabilities; the data comes from your other tools."
+
 // renderCatalog formats the ranked results into a compact, model-readable listing.
 func renderCatalog(query string, results []CatalogResult) string {
 	if len(results) == 0 {
-		return fmt.Sprintf("No skills found for %q.", query)
+		return fmt.Sprintf("No skills found for %q.%s", query, catalogRetryHint)
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "Skills matching %q (ranked by installs). To install one, call action=install with its source as `repo`:\n\n", query)
@@ -115,6 +122,7 @@ func renderCatalog(query string, results []CatalogResult) string {
 		}
 		fmt.Fprintf(&b, "- %s  (installs=%d)  source=%s\n", r.Name, r.Installs, src)
 	}
+	b.WriteString(catalogRetryHint)
 	return b.String()
 }
 
