@@ -34,7 +34,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image
 - [ ] **Phase 14: Onboarding + Agent.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
 - [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
-- [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement (completed 2026-06-04)
+- [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
+ (completed 2026-06-04)
 
 - [ ] **Phase 17: Packaging & Distribution** - end-user install: single fat Aura container image (Go binary + python/uvx + node/npx + pinned mcp-neo4j-cypher so the host needs only Docker) + curl|sh self-host installer with secret-gen + appliance pre-seed door + D-22 keyless-boot relaxation (Slice 14, amendment #47)
 
@@ -76,7 +77,24 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Operator runs `aura neo4j ping` and observes `mcp-neo4j-cypher` subprocess returning Neo4j server version 5.26.x; embed sidecar `/v1/embeddings round-trip returns 768d (Pattern 5 dim probe)` matching `AURA_EMBED_DIMENSIONS` (D-05 + Pattern 5 amendment)
   5. Operator runs the spike smoke `scripts/neo4j_smoke.sh` and observes recall@5 = 5/5 on the Italian fixture corpus, p95 vector search ≤ 30ms
 
-**Plans**: TBD
+**Plans**: 8 plans
+
+Wave 1:
+- [ ] 11-01-PLAN.md — Wave-0 doc-only PRD-amendment package (D-33): 12 staleness supersessions + env catalog + ROADMAP/REQUIREMENTS re-spec
+Wave 2:
+- [ ] 11-02-PLAN.md — 7a loader/frontmatter/manifest + ONE non-deferred skill tool (read actions) + messages[0] mechanism sentence + deps (goccy/go-yaml, x/text)
+Wave 3:
+- [ ] 11-03-PLAN.md — 7b validator (NFKC + blocklist + SanitizeName) + FuzzSkillValidator (SC#3) + skills.sh /api/search catalog client (lax decode)
+Wave 4:
+- [ ] 11-04-PLAN.md — 7c core: migration 0010 (append-only audit, two triggers, D-29 CHECK, kind-CHECK ALTER) + audit store + writer (scoring-gated pending->active) + materialize
+Wave 5:
+- [ ] 11-05-PLAN.md — 7c governance: create/update/delete actions + ask_user resume (no model approve, D-03) + messages[1] always-block + L2.5 evictor protection (Pitfall 3) + aura skills CLI
+Wave 6:
+- [ ] 11-06-PLAN.md — 7d installer: native git clone + canonical hash (TOFU) + red-flag gate + always-strip + install/catalog actions (SC#1, default-ON catalog SC#5)
+Wave 7:
+- [ ] 11-07-PLAN.md — 7e snippets + sandbox bearer token + ro /skills mount (D-38 portable floor) + by-path exec (SC#4) + skill_ttl_sweep cron TaskKind (D-16)
+Wave 8:
+- [ ] 11-08-PLAN.md — dual gate: xlsx North-Star cot_eval E2E (D-35) + 2 smokes + CI all-tiers + quality snapshot + Gate-3 human-verify
 
 ### Phase 2: Agent Cornerstone
 
