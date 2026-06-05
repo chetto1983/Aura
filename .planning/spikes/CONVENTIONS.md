@@ -16,6 +16,11 @@ Patterns and stack choices established across spike sessions. New spikes follow 
 
 ## Patterns
 
+- **Compose-override-per-spike** for service mutations: a `compose.<spike>.yaml` in the spike dir with apply/restore commands in its header comment (`docker compose -f compose.yaml -f <override> up -d <service>`; restore = same without the override). Pins the exact shape tested; production stays untouched (spikes 005/006).
+- **Windows UAC Installer Detection**: never `go run` a spike whose dir/exe name contains "install"/"setup"/"update" — Windows demands elevation. `go build -o /d/tmp/<neutral-name>.exe` then run (spike 004b).
+- **Strict-decode tripwire**: first probe of an external JSON API uses `json.Decoder.DisallowUnknownFields()` deliberately — unknown-field errors are findings (schema drift surface), then retry lax. Prod clients always decode lax (spike 003).
+- **Scratch dirs**: `D:\tmp\spike-NNN*` per spike; never inside the repo; volatile by design.
+
 - **MCP server registration**: through the managed config (`~/.aura/mcp/servers.json`, `aura mcp add` shape) — the same path production boot uses. Secrets pulled from `.env` by a one-off node script, never committed, never echoed.
 - **WSL-resident MCP servers**: `ServerConfig{Command:"wsl", Args:["-e","bash","-lc","cd … && uv run main.py"]}` — stdio pipes through wsl.exe with no Aura changes.
 - **Read-back ground truth**: send with unique tag → poll the read tool (5s interval, 60-90s deadline) → assert tag. Mirrors memory `probe-must-verify-artifact-not-reply`.

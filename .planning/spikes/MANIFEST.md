@@ -14,6 +14,15 @@ Ground-truth probe of the MCP infrastructure Phase 9 (Swarm Minimal) depends on 
 - MCP server registration goes through the existing managed config (`aura mcp add`/`install` → `~/.aura/mcp/servers.json`), NOT new `AURA_MCP_*_SERVER` env vars (CONTEXT D-21 corrected by discovery; `AURA_MCP_*_SERVER_JSON` remain test-tier overrides).
 - Secrets (SMTP/IMAP credentials) live in the managed config env entries or operator env — never committed.
 
+**Phase-11 requirements (emerged from spikes 003-006, binding for `/gsd-plan-phase 11`):**
+
+- Aura's skill installer = **native Go**: `git clone --depth 1 --single-branch -c core.autocrlf=false` (LookPath fixed-argv) + symlink-stripping copy + **Aura's own canonical hash** (byte-sorted (relPath, bytes) sha256). NO node/npx dependency; NO skills-lock.json `computedHash` interop (proven locale/platform-sensitive upstream).
+- Catalog transport = `GET https://www.skills.sh/api/search?q=` with **lax JSON decode** (fields drift: `isDuplicate`, `count`); guard empty queries (400); rank by `installs`; encourage natural-language multi-word queries (server-side semantic search).
+- `docker/sandbox-agent/Dockerfile` **must bake a hash-pinned curated Python dep set** (floor: openpyxl, defusedxml, lxml, validators + the Phase-5 list) — runtime is egressless, pip-at-use impossible (spike 006 plan-changing finding).
+- 7a frontmatter parser = **real YAML lib** (double-quoted scalars with escaped quotes are in the wild) + CRLF normalization; tolerate optional fields (`license`, `compatibility`, `metadata`, `allowed-tools`).
+- Snippet/skill execution: **always by interpreter + path** (`python3 /skills/...`), never the exec bit (Docker Desktop masks 777; native Linux won't).
+- Writer/installer **reject/strip symlinks at materialization** (they resolve in-container — spike 005).
+
 ## Spikes
 
 | # | Name | Type | Validates | Verdict | Tags |
