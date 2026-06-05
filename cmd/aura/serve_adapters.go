@@ -312,7 +312,7 @@ func (a *skillCatalogAdapter) Search(ctx context.Context, query string) ([]tools
 		if name == "" {
 			name = it.SkillID
 		}
-		out = append(out, tools.CatalogResult{Name: name, Source: it.Source, Installs: it.Installs})
+		out = append(out, tools.CatalogResult{Name: name, Source: it.Source, Installs: it.Installs, SkillID: it.SkillID})
 	}
 	return out, nil
 }
@@ -331,8 +331,8 @@ type skillInstallerAdapter struct {
 
 // Install runs the live installer (model actor) and projects the result + red flags
 // into the tool-local InstallSummary the install gate frames.
-func (a *skillInstallerAdapter) Install(ctx context.Context, repoURL string) (tools.InstallSummary, error) {
-	res, err := a.inst.Install(ctx, repoURL, skills.InstallOpts{Actor: skills.AuditActor{ActorID: "model"}})
+func (a *skillInstallerAdapter) Install(ctx context.Context, repoURL, skillName string) (tools.InstallSummary, error) {
+	res, err := a.inst.Install(ctx, repoURL, skills.InstallOpts{Actor: skills.AuditActor{ActorID: "model"}, SkillName: skillName})
 	if err != nil {
 		return tools.InstallSummary{}, err
 	}

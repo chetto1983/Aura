@@ -32,11 +32,13 @@ type fakeInstaller struct {
 	err     error
 	calls   int
 	gotRepo string
+	gotName string
 }
 
-func (f *fakeInstaller) Install(_ context.Context, repoURL string) (InstallSummary, error) {
+func (f *fakeInstaller) Install(_ context.Context, repoURL, skillName string) (InstallSummary, error) {
 	f.calls++
 	f.gotRepo = repoURL
+	f.gotName = skillName
 	if f.err != nil {
 		return InstallSummary{}, f.err
 	}

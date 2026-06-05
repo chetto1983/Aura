@@ -86,7 +86,7 @@ func stageFromRepo(t *testing.T, repoURL string) (stagedDir string, fm Frontmatt
 	if err := runClone(ctx, gitBin, repoURL, cloneDir); err != nil {
 		t.Fatalf("runClone: %v", err)
 	}
-	src, err := locateSkillDir(cloneDir)
+	src, err := locateSkillDir(cloneDir, "")
 	if err != nil {
 		t.Fatalf("locateSkillDir: %v", err)
 	}
@@ -245,7 +245,7 @@ func TestInstallNoSkillFound(t *testing.T) {
 	if err := runClone(ctx, gitBin, repoURL, cloneDir); err != nil {
 		t.Fatalf("runClone: %v", err)
 	}
-	if _, err := locateSkillDir(cloneDir); err == nil || !strings.Contains(err.Error(), "no SKILL.md") {
+	if _, err := locateSkillDir(cloneDir, ""); err == nil || !strings.Contains(err.Error(), "no SKILL.md") {
 		t.Errorf("want ErrNoSkillFound, got %v", err)
 	}
 }

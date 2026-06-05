@@ -71,6 +71,12 @@ type InstallOpts struct {
 	AllowBlocklisted bool
 	// Actor labels the install in the audit ledger ("model" / "cli").
 	Actor AuditActor
+	// SkillName selects the skill inside a multi-skill repo (the skills.sh catalog
+	// `skillId`, e.g. "xlsx" inside anthropics/skills). Empty keeps the legacy
+	// first-SKILL.md-found behavior — fine for single-skill repos, ambiguous for
+	// catalogs (amendment #49: without the selector the D-35 catalog→install loop
+	// staged an arbitrary skill from multi-skill repos).
+	SkillName string
 }
 
 // RedFlag is one supply-chain red flag surfaced to the install gate (D-13). It is
@@ -113,6 +119,7 @@ func (in *Installer) Install(ctx context.Context, repoURL string, opts InstallOp
 	if in.writer == nil {
 		return InstallResult{}, fmt.Errorf("installer: no writer configured")
 	}
+	repoURL = normalizeRepoShorthand(repoURL)
 	if err := validateRepoURL(repoURL); err != nil {
 		return InstallResult{}, err
 	}
@@ -136,7 +143,7 @@ func (in *Installer) Install(ctx context.Context, repoURL string, opts InstallOp
 		return InstallResult{}, err
 	}
 
-	skillSrc, err := locateSkillDir(cloneDir)
+	skillSrc, err := locateSkillDir(cloneDir, opts.SkillName)
 	if err != nil {
 		return InstallResult{}, err
 	}
@@ -263,7 +270,59 @@ func validateRepoURL(repoURL string) error {
 // locateSkillDir finds the skill directory inside a cloned repo: the repo root if it
 // holds a SKILL.md, else the first immediate or second-level subdir that does. A repo
 // with no SKILL.md is ErrNoSkillFound.
-func locateSkillDir(cloneDir string) (string, error) {
+// normalizeRepoShorthand expands the skills.sh catalog `source` shorthand
+// ("owner/repo", exactly two path segments, no scheme/host) into the canonical
+// https://github.com/owner/repo URL (amendment #49: the catalog hands the model
+// shorthands; rejecting them broke the install leg). Anything that is not a
+// plain two-segment shorthand passes through untouched for validateRepoURL.
+func normalizeRepoShorthand(repoURL string) string {
+	s := strings.TrimSpace(repoURL)
+	if s == "" || strings.ContainsAny(s, "@: \t") || strings.Contains(s, "://") {
+		return repoURL
+	}
+	parts := strings.Split(s, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return repoURL
+	}
+	for _, p := range parts {
+		// A leading '-' or '.' is never a valid GitHub owner/repo — and expanding
+		// it would launder validateRepoURL's option-injection guard ('-' prefix).
+		if p[0] == '-' || p[0] == '.' {
+			return repoURL
+		}
+		for _, r := range p {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+				return repoURL
+			}
+		}
+	}
+	return "https://github.com/" + s
+}
+
+// locateSkillDir finds the skill directory inside a cloned repo. With a non-empty
+// name it returns ONLY the depth-1/depth-2 subdir whose base name matches and holds
+// a SKILL.md (the multi-skill catalog case — anthropics/skills/<name>/SKILL.md);
+// a named miss is a loud ErrNoSkillFound, never a silent fallback to the wrong
+// skill. With an empty name it keeps the legacy first-found walk.
+func locateSkillDir(cloneDir, name string) (string, error) {
+	if name != "" {
+		if fileExists(filepath.Join(cloneDir, "SKILL.md")) && filepath.Base(cloneDir) == name {
+			return cloneDir, nil
+		}
+		for _, depth1 := range readSubdirs(cloneDir) {
+			d1 := filepath.Join(cloneDir, depth1)
+			if depth1 == name && fileExists(filepath.Join(d1, "SKILL.md")) {
+				return d1, nil
+			}
+			for _, depth2 := range readSubdirs(d1) {
+				d2 := filepath.Join(d1, depth2)
+				if depth2 == name && fileExists(filepath.Join(d2, "SKILL.md")) {
+					return d2, nil
+				}
+			}
+		}
+		return "", fmt.Errorf("%w: no skill named %q in repo", ErrNoSkillFound, name)
+	}
 	if fileExists(filepath.Join(cloneDir, "SKILL.md")) {
 		return cloneDir, nil
 	}

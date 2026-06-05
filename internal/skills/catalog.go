@@ -101,6 +101,68 @@ func (c *CatalogClient) Search(ctx context.Context, query string) ([]CatalogItem
 		return nil, ErrEmptyQuery
 	}
 
+	primary, err := c.searchOnce(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+
+	// Format-boost merge (amendment #49): a multi-word query containing a known
+	// artifact-format token triggers skills.sh's SEMANTIC search, which ranks
+	// domain skills above the format skill the task needs (live evidence: "excel
+	// yahoo finance stock market" buried anthropics/skills/xlsx — 102k installs —
+	// which the bare "xlsx" FUZZY query ranks first). Re-query the bare format
+	// token and merge by installs descending, deduped by ID. A boost failure is
+	// swallowed: the primary results stand alone.
+	if tok := formatToken(query); tok != "" && tok != strings.ToLower(strings.TrimSpace(query)) {
+		if boosted, berr := c.searchOnce(ctx, tok); berr == nil && len(boosted) > 0 {
+			primary = mergeCatalogResults(primary, boosted)
+		}
+	}
+	return primary, nil
+}
+
+// formatToken returns the bare artifact-format keyword a query maps to ("" when
+// none): direct tokens (xlsx, pdf, …) plus aliases (excel→xlsx, word→docx, …).
+func formatToken(query string) string {
+	aliases := map[string]string{
+		"xlsx": "xlsx", "xls": "xlsx", "excel": "xlsx", "spreadsheet": "xlsx",
+		"docx": "docx", "doc": "docx", "word": "docx",
+		"pptx": "pptx", "ppt": "pptx", "powerpoint": "pptx",
+		"pdf": "pdf", "csv": "csv", "markdown": "markdown", "epub": "epub",
+	}
+	for _, f := range strings.Fields(strings.ToLower(query)) {
+		if tok, ok := aliases[strings.Trim(f, ".,;:\"'")]; ok {
+			return tok
+		}
+	}
+	return ""
+}
+
+// mergeCatalogResults merges two ranked result sets, deduped by ID (falling back
+// to Source+Name when ID is empty), re-ranked by installs descending.
+func mergeCatalogResults(a, b []CatalogItem) []CatalogItem {
+	seen := make(map[string]bool, len(a)+len(b))
+	key := func(it CatalogItem) string {
+		if it.ID != "" {
+			return it.ID
+		}
+		return it.Source + "/" + it.Name
+	}
+	out := make([]CatalogItem, 0, len(a)+len(b))
+	for _, it := range append(append([]CatalogItem{}, a...), b...) {
+		k := key(it)
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		out = append(out, it)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Installs > out[j].Installs })
+	return out
+}
+
+// searchOnce performs one /api/search round-trip (the pre-#49 Search body).
+func (c *CatalogClient) searchOnce(ctx context.Context, query string) ([]CatalogItem, error) {
 	endpoint := c.baseURL + "/api/search?q=" + url.QueryEscape(query)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {

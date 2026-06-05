@@ -218,10 +218,16 @@ func skillsApprove(ctx context.Context, args []string) {
 // approving. The install NEVER self-activates (D-03).
 func skillsInstall(ctx context.Context, args []string) {
 	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: aura skills install <repo> [--allow-blocklisted]")
+		fmt.Fprintln(os.Stderr, "usage: aura skills install <repo> [skill-name] [--allow-blocklisted]")
 		os.Exit(1)
 	}
 	repo := args[0]
+	// Optional positional selector for multi-skill repos (catalog skillId,
+	// amendment #49): the first non-flag arg after the repo.
+	skillName := ""
+	if len(args) > 1 && !strings.HasPrefix(args[1], "--") {
+		skillName = args[1]
+	}
 	allowBlocklisted := hasFlag(args[1:], "--allow-blocklisted")
 
 	env := bootSkills(ctx)
@@ -236,6 +242,7 @@ func skillsInstall(ctx context.Context, args []string) {
 	res, err := inst.Install(ctx, repo, skills.InstallOpts{
 		AllowBlocklisted: allowBlocklisted,
 		Actor:            skills.AuditActor{ActorID: "cli"},
+		SkillName:        skillName,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

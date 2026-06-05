@@ -42,6 +42,10 @@ type CatalogResult struct {
 	Name     string
 	Source   string
 	Installs int
+	// SkillID is the catalog's per-skill selector inside a multi-skill source repo
+	// (skills.sh `skillId`) — the `name` the install action passes so the installer
+	// stages the RIGHT skill (amendment #49).
+	SkillID string
 }
 
 // skillInstaller is the consumer-declared install seam the action=install handler
@@ -51,7 +55,9 @@ type CatalogResult struct {
 type skillInstaller interface {
 	// Install lands the repo's skill in pending/ + audit, returning the install
 	// summary (name, content hash, red flags, whether always:true was stripped, tier).
-	Install(ctx context.Context, repoURL string) (InstallSummary, error)
+	// skillName selects the skill inside a multi-skill repo (catalog skillId);
+	// empty keeps the single-skill first-found behavior (amendment #49).
+	Install(ctx context.Context, repoURL, skillName string) (InstallSummary, error)
 }
 
 // InstallSummary is the tool-local projection of an install outcome the gate frames.
@@ -72,6 +78,7 @@ type skillCatalogArgs struct {
 type skillInstallArgs struct {
 	Action string `json:"action"`
 	Repo   string `json:"repo"`
+	Name   string `json:"name"`  // multi-skill repo selector (catalog skillId, amendment #49)
 	Query  string `json:"query"` // tolerated alias when the model passes the repo as `query`
 }
 
@@ -114,13 +121,17 @@ func renderCatalog(query string, results []CatalogResult) string {
 		return fmt.Sprintf("No skills found for %q.%s", query, catalogRetryHint)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "Skills matching %q (ranked by installs). To install one, call action=install with its source as `repo`:\n\n", query)
+	fmt.Fprintf(&b, "Skills matching %q, ranked by installs. Each line ends with the exact install call to use:\n\n", query)
 	for _, r := range results {
 		src := r.Source
 		if src == "" {
 			src = "(source unavailable)"
 		}
-		fmt.Fprintf(&b, "- %s  (installs=%d)  source=%s\n", r.Name, r.Installs, src)
+		sel := r.SkillID
+		if sel == "" {
+			sel = r.Name
+		}
+		fmt.Fprintf(&b, "- %s  (installs=%d)  → {\"action\":\"install\",\"repo\":%q,\"name\":%q}\n", r.Name, r.Installs, src, sel)
 	}
 	b.WriteString(catalogRetryHint)
 	return b.String()
@@ -151,7 +162,7 @@ func (t *SkillTool) actionInstall(ctx context.Context, raw json.RawMessage) (Too
 	// clone/validation failure (a blocklist hit, a missing SKILL.md, an unreachable
 	// repo) returns here as an error — surfaced as a tool error so the model self-
 	// corrects, NOT a pause.
-	summary, err := t.Installer.Install(ctx, repo)
+	summary, err := t.Installer.Install(ctx, repo, strings.TrimSpace(a.Name))
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("skill install %q: %w", repo, err)
 	}

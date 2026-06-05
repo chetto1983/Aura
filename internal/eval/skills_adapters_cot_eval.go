@@ -80,7 +80,7 @@ func (a *evalSkillCatalog) Search(ctx context.Context, query string) ([]tools.Ca
 		if name == "" {
 			name = it.SkillID
 		}
-		out = append(out, tools.CatalogResult{Name: name, Source: it.Source, Installs: it.Installs})
+		out = append(out, tools.CatalogResult{Name: name, Source: it.Source, Installs: it.Installs, SkillID: it.SkillID})
 	}
 	return out, nil
 }
@@ -92,8 +92,8 @@ type evalSkillInstaller struct {
 	inst *skills.Installer
 }
 
-func (a *evalSkillInstaller) Install(ctx context.Context, repoURL string) (tools.InstallSummary, error) {
-	res, err := a.inst.Install(ctx, repoURL, skills.InstallOpts{Actor: skills.AuditActor{ActorID: "model"}})
+func (a *evalSkillInstaller) Install(ctx context.Context, repoURL, skillName string) (tools.InstallSummary, error) {
+	res, err := a.inst.Install(ctx, repoURL, skills.InstallOpts{Actor: skills.AuditActor{ActorID: "model"}, SkillName: skillName})
 	if err != nil {
 		return tools.InstallSummary{}, err
 	}
