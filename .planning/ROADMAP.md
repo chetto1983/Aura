@@ -357,17 +357,17 @@ Wave 4:
 
 ### Phase 11: Skills
 
-**Goal**: Skills system instruction-based — 7a loader (FS scan multi-root, TTL cache 1s, YAML frontmatter parser) + 7b validator (NFKC normalization + Unicode TR15 + literal blocklist + 10K fuzz on body) + 7c writer (atomic pending→active + audit trigger with role separation + TRUNCATE trigger fix per Pitfall #6) + 7d installer (`npx skills add --ignore-scripts`, `skill.catalog` hidden behind `aura skills enable-catalog` opt-in per Amendment #14). Plus 7e-core: executable code snippets v1 — save/execute multi-lang via sandbox 2b session-bound + pattern analysis + TTL archived. Cross-conv cluster auto-suggest deferred to 7f (v1.x).
+**Goal** (amended #48, D-01/D-06/D-12/D-15/D-16): Skills system — ONE non-deferred `skill` tool (ActionRouter, `action` enum — NOT dotted `skill.*`) + manifest-in-Description (turn-stable, D-06) + `always:true` bodies at `messages[1]` (shared seam with Phase-14 Agent.md, D-07). 7a loader (FS scan multi-root, TTL cache 1s, `goccy/go-yaml` frontmatter, parse-only) + validator (NFKC normalization + Unicode TR15 + literal blocklist at write-boundary + 10K fuzz) + 7b catalog client (skills.sh `/api/search` JSON, browse default-ON, D-12) + 7c writer (atomic pending→active + 0010 audit trigger with role separation + TRUNCATE fix per Pitfall #6 + D-29 coherence matrix) + 7d installer (native Go `git clone --depth 1 --single-branch`, node dep dropped, D-15). Plus 7e-core: executable code snippets v1 — save + by-path exec via the shipped `sandbox_exec`/`sandboxagent.Client` :2468 seam (ro `/skills` mount) + TTL archived via the `skill_ttl_sweep` cron TaskKind (D-16). Cross-conv cluster auto-suggest deferred to 7f (v1.x).
 **Depends on**: Phase 10
 **Requirements**: CAP-07, CAP-08
 **Slices**: 7a, 7b, 7c, 7d, 7e-core
 **Success Criteria** (what must be TRUE):
 
-  1. Operator runs `aura skills list` and observes installed skills with name + summary + tier; running `aura skills install <repo>` invokes `npx skills add --ignore-scripts` and persists an `aura.skill_audit` INSERT row
+  1. Operator runs `aura skills list` and observes installed skills with name + summary + tier; running `aura skills install <repo>` invokes a native Go `git clone --depth 1 --single-branch` (D-14/D-15, node dep dropped) and persists an `aura.skill_audit` INSERT row
   2. Operator runs `aura skills audit --tier=risky --since=24h` and observes audit rows; attempting `aura skills audit purge` as `aura_app` role observes permission denied (role separation + TRUNCATE trigger enforced — Pitfall #6 fix)
   3. Operator runs the validator fuzz suite (`go test -fuzz=FuzzSkillValidator -fuzztime=60s`) with 10K Unicode mutations of the blocklist patterns and observes every NFKC-collapse-to-blocklist input rejected
   4. Operator saves a Python snippet via `aura skills snippet save --lang python --name fetch-issue` and runs it via `aura skills snippet exec fetch-issue` — observes execution in sandbox 2b session, output captured, TTL archive after `AURA_SKILL_SNIPPET_TTL_DAYS`
-  5. Operator runs `aura skills catalog list` on a fresh install and observes "catalog disabled — run `aura skills enable-catalog` to opt in" (Amendment #14 verified)
+  5. Operator runs `aura skills catalog list` on a fresh install and observes skills.sh `/api/search` JSON results out of the box (catalog browse is default-ON); `aura skills disable-catalog` is the default-deny escape hatch (D-12, amendment #14 FLIPPED)
 
 **Plans**: TBD
 
