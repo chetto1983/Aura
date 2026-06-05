@@ -72,7 +72,7 @@ const toolSearchLeadIn = "# Tool discovery\n\n" +
 // instead of being left to improvise ad-hoc code.
 const noMatchOrientation = "no matching tools. " +
 	"If the capability you need is a packaged task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
-	"check the skill catalog instead: call the skill tool with action=catalog and a keyword query — " +
+	"search the skill catalog instead — call the skill tool with {\"action\":\"catalog\",\"query\":\"<keywords>\"} — " +
 	"installable skills ship tested instructions and bundled scripts, and installing requires operator approval."
 
 // nsDelimiterStr is the "<namespace>__<tool>" delimiter from the mcptools
