@@ -80,20 +80,35 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 8 plans
 
 Wave 1:
-- [ ] 11-01-PLAN.md — Wave-0 doc-only PRD-amendment package (D-33): 12 staleness supersessions + env catalog + ROADMAP/REQUIREMENTS re-spec
+
+- [x] 11-01-PLAN.md — Wave-0 doc-only PRD-amendment package (D-33): 12 staleness supersessions + env catalog + ROADMAP/REQUIREMENTS re-spec
+
 Wave 2:
+
 - [ ] 11-02-PLAN.md — 7a loader/frontmatter/manifest + ONE non-deferred skill tool (read actions) + messages[0] mechanism sentence + deps (goccy/go-yaml, x/text)
+
 Wave 3:
+
 - [ ] 11-03-PLAN.md — 7b validator (NFKC + blocklist + SanitizeName) + FuzzSkillValidator (SC#3) + skills.sh /api/search catalog client (lax decode)
+
 Wave 4:
+
 - [ ] 11-04-PLAN.md — 7c core: migration 0010 (append-only audit, two triggers, D-29 CHECK, kind-CHECK ALTER) + audit store + writer (scoring-gated pending->active) + materialize
+
 Wave 5:
+
 - [ ] 11-05-PLAN.md — 7c governance: create/update/delete actions + ask_user resume (no model approve, D-03) + messages[1] always-block + L2.5 evictor protection (Pitfall 3) + aura skills CLI
+
 Wave 6:
+
 - [ ] 11-06-PLAN.md — 7d installer: native git clone + canonical hash (TOFU) + red-flag gate + always-strip + install/catalog actions (SC#1, default-ON catalog SC#5)
+
 Wave 7:
+
 - [ ] 11-07-PLAN.md — 7e snippets + sandbox bearer token + ro /skills mount (D-38 portable floor) + by-path exec (SC#4) + skill_ttl_sweep cron TaskKind (D-16)
+
 Wave 8:
+
 - [ ] 11-08-PLAN.md — dual gate: xlsx North-Star cot_eval E2E (D-35) + 2 smokes + CI all-tiers + quality snapshot + Gate-3 human-verify
 
 ### Phase 2: Agent Cornerstone
@@ -451,7 +466,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
-| 11. Skills | 0/TBD | Not started | - |
+| 11. Skills | 1/8 | In Progress|  |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
@@ -464,7 +479,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 6/6 plans complete
+**Plans:** 1/8 plans executed
 
 **Success Criteria** (what must be TRUE):
 
@@ -501,4 +516,3 @@ Plans:
   5. Operator observes the image published to `ghcr.io` pinned by release tag; goreleaser still produces the host binary for dev; the appliance path = same compose + image with `.env` pre-seeded (no curl step).
 
 **Plans**: TBD
-

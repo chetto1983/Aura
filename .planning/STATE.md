@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 11 context gathered
-last_updated: "2026-06-05T14:26:24.675Z"
-last_activity: 2026-06-05 -- Phase 11 planning complete
+last_updated: "2026-06-05T14:43:46.913Z"
+last_activity: 2026-06-05
 progress:
   total_phases: 19
   completed_phases: 12
   total_plans: 83
-  completed_plans: 74
+  completed_plans: 75
   percent: 63
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 10 — scheduler
+**Current focus:** Phase 11 — skills
 
 ## Current Position
 
-Phase: 16
-Plan: Not started
+Phase: 11 (skills) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-06-05 -- Phase 11 planning complete
+Last activity: 2026-06-05
 
 Progress: [█████████░] 91%
 
@@ -100,6 +100,7 @@ Progress: [█████████░] 91%
 | Phase 16 P06 | 10 min | 2 tasks | 8 files |
 | Phase 16 P07 | 13 min | 3 tasks | 12 files |
 | Phase 16 P08 | 6 min | 3 tasks | 4 files |
+| Phase 11 P01 | ~30min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -150,6 +151,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 09]: 09-01 (PRD-amendment gate, doc-only #44): D-01..D-25 logged in DECISIONS.md §8. Amendment #44 supersedes the STALE prd.md Slice-3 acceptance (swarm_talk/swarm_join/bus/tier.go/Responder/children-map all CUT v1, replaced by ephemeral swarm_spawn runner + pause-as-report D-04 + flat-v1 D-10). Env catalog ADDS AURA_SWARM_MAX_GOALS=8 + AURA_SWARM_CHILD_TIMEOUT_SEC=120; OQ1 resolved D-21-supersedes-D-23 (NO AURA_MCP_*_SERVER vars, managed config is the path). ROADMAP SC#2->tool-not-available+depth-code-guard, SC#3->5 needs_user_input report entries, SC#5 added live cot_eval E2E. CAP-03 NOT marked complete (code waves pending). Commits 2c05fbdf/d285f17e.
 - [Phase ?]: [Phase 09]: 09-05: swarm_spawn Deferred {goals}-only tool (D-01/D-03) wired to the 09-02 engine via a CYCLE-FREE seam — swarmRunner interface in the tools package (imports neither internal/swarm nor internal/agent) + agent.WithSwarmContext private-ctx-key injector (mirrors WithToolCallContext, set in runTool; config rides on the adapter not the ctx) + internal/swarm.RunnerAdapter. D-24 anti-over-spawn literal (test-asserted) + D-13 goals cap. Registered PARENT-ONLY in buildBaseRegistry (chat.go/runner.go unchanged); TestBuildBaseRegistryValidatesWithSwarmSpawn proves reg.Validate() holds with the Deferred tool (Pitfall 6). Workers excluded via Without (D-08/D-10). aura swarm-demo = no-LLM FakeClient engine proof (D-16). runTool gained budget param (Rule 3). Commits 827169a7/547bed0d.
 - [Phase ?]: [Phase 09]: 09-06: live dual-gate swarm E2E (TestSwarmE2E, cot_eval, OPENROUTER+AURA_EVAL_SELF_*-gated, operator-run NOT CI). swarmScenarios() SEPARATE from scenarios(); NATURAL prompt (no swarm/parallel word, asserted) = compute-and-self-mail + compute-and-self-WhatsApp two independent subtasks + a no-over-spawn control. Hard floor: workers off the ChildReport goal_index count, facts present, mail+WhatsApp read-back via the SAME mounted MCP at the right JID (D-19 duality), wall-clock <1.5x single-worker baseline. Judge >=90% equal-weight mean over autonomous-parallelization/sub-answer/aggregation (D-22 fixes dims+gate). Registry = buildBaseRegistry + swarm_spawn (live RunnerAdapter) + mail/whatsapp MCP mounts (D-20 allowlists). Relocated reportPath/dimResult/scenarioMetrics into non-test scoring_cot_eval.go (Rule 3) so go build -tags cot_eval exits 0. Placeholder snapshot row at commit; operator run fills TBDs. CAP-03 NOT closed (Gate-3 verifier/operator). Commits 31599320/ab0b8a10.
+- [Phase ?]: [Phase 11]: 11-01 (PRD-amendment gate, doc-only #48): D-32/D-33 — 12 supersessions on prd.md Slice 7 (sandbox.Runner.Execute DEAD->tools.SandboxExec :2468; 0007/0012->0010+ floor 0009; dotted skill.*->ONE skill action-enum tool, skill.approve cut D-03; system-prompt->manifest-in-Description+messages[1] D-06/D-07; ttl_sweeper->skill_ttl_sweep cron TaskKind D-16; HTML scrape->/api/search JSON + catalog default-ON #14-FLIPPED + native git clone node-dropped D-11/12/14/15; skill_audit ALTER->sidecar JSON+snippet_runs D-19; 5-row D-29 matrix; manifest cap+BM25 D-09; D-36/37/38 dep/egress/sandbox-token, gVisor xref Phase 8; env 8 AURA_SKILL_*+AURA_SANDBOX_AGENT_TOKEN D-34). ROADMAP SC#1 native clone+SC#5 default-ON; REQUIREMENTS CAP-07/08 aligned. CAP-07/08 NOT complete (code waves pending). Commit 3a9a65e1.
 
 ### Pending Todos
 
@@ -183,6 +185,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-05T06:55:09.597Z
+Last session: 2026-06-05T14:43:06.000Z
 Stopped at: Phase 11 context gathered
-Resume file: .planning/phases/11-skills/11-CONTEXT.md
+Resume file: None
