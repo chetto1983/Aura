@@ -360,7 +360,7 @@ type catalogItem struct {
 
 **Note:** All four are flagged as planner-discretion in CONTEXT — none are hidden assumptions. The CONTEXT itself is overwhelmingly `[VERIFIED via spike]` or `[locked decision]`; this research adds the codebase ground-truth and library verification on top.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **goccy/go-yaml has "no source repository linked" in slopcheck.**
    - What we know: It exists on the Go proxy (v1.19.2 resolved via `go get`), is widely used, repo is github.com/goccy/go-yaml.
