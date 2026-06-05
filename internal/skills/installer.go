@@ -291,7 +291,8 @@ func normalizeRepoShorthand(repoURL string) string {
 			return repoURL
 		}
 		for _, r := range p {
-			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.') {
+			ok := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.'
+			if !ok {
 				return repoURL
 			}
 		}
