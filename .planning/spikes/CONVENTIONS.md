@@ -25,6 +25,10 @@ Patterns and stack choices established across spike sessions. New spikes follow 
 - **WSL-resident MCP servers**: `ServerConfig{Command:"wsl", Args:["-e","bash","-lc","cd … && uv run main.py"]}` — stdio pipes through wsl.exe with no Aura changes.
 - **Read-back ground truth**: send with unique tag → poll the read tool (5s interval, 60-90s deadline) → assert tag. Mirrors memory `probe-must-verify-artifact-not-reply`.
 - **Process hygiene in WSL**: never `pkill -f <pattern>` when the invoking shell's command line contains the pattern (it kills itself, exit 15); identify processes by `/proc/<pid>/fd/1` stdout target instead.
+- **Leashed live runs never pipe through `tail`/`grep` alone** — a timeout kill loses the entire buffered output. `tee /d/tmp/spike-NNN*.log` or redirect; the log survives the kill (spike 012).
+- **Live LLM comparison harness**: build per-variant registries over the REAL agent loop (`agent.NewLlmAgent` + exported tools), capture ACTION-AWARE from structured tool args (never tool names alone — the shipped eval capture is blind to skill actions), score on artifact ground truth (`docker exec find /workspace -name '*.x' -newermt '<run-start>'`), N≥3 runs, paid+OPENROUTER-gated (spike 012).
+- **OpenRouter first-byte flake**: a run dying at `Post …: context deadline exceeded` (AURA_LLM_TOTAL_TIMEOUT_SEC=120) or hanging silently at SETUP is infra noise — exclude the run and retry; don't score it against the model.
+- **Read the D:\tmp reference repos BEFORE designing a spike harness** — nanobot already shipped the skill-driven self-extension architecture (242-LOC loader + clawhub SKILL.md) that spike 012 spent paid runs proving; the reference would have framed the spike in minutes (memory: check-tmp-sources-then-brainstorm-best).
 
 ## Tools & Libraries
 
