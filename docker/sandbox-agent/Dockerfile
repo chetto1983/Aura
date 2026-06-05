@@ -16,4 +16,16 @@ RUN apt-get update \
     # persistence broke. Bake it sandbox-owned — Docker copies this ownership
     # into the volume at first initialization.
     && install -d -o sandbox -g sandbox /workspace
+
+# Bake the xlsx North-Star common dep set (D-36 hybrid leg, spike 006). These are the
+# bundled-script import set of anthropics/skills/xlsx; baking them at IMAGE-BUILD time
+# makes the 11-08 E2E offline-deterministic instead of relying on Docker Desktop's
+# accidental NAT egress (spike 007: on a native-Linux non-masquerading bridge there is
+# NO egress, so an unbaked dep would silently fail the E2E). Pinned exact versions. The
+# long-tail deps stay on-demand uv (the `deps:` frontmatter leg), NOT baked here.
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+        openpyxl==3.1.5 \
+        defusedxml==0.7.1 \
+        lxml==5.3.0 \
+        validators==0.34.0
 USER sandbox
