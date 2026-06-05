@@ -50,7 +50,7 @@ func (t *SkillTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 			"No INSTALLED skills match %q. This searched only the installed list — NOT the public catalog of installable skills.\n"+
 				"NEXT STEP (required for reusable artifact-family tasks before any hand-built fallback): search the catalog now:\n"+
 				"  {\"action\":\"catalog\",\"query\":%q}\n"+
-				"Installing a catalog skill requires operator approval via ask_user.", query, query))
+				"If you ALREADY have catalog results, the next step is the install call shown next to your chosen skill — installing stages the skill and automatically pauses for operator approval; calling install IS the approval request.", query, query))
 	}
 	var b strings.Builder
 	for _, s := range ranked {
