@@ -20,10 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -221,6 +223,105 @@ func TestMigration0010_SchemaRoundTrip(t *testing.T) {
 	}
 	if !tableExists(t, pool, "skill_audit") {
 		t.Error("after re-up: aura.skill_audit missing")
+	}
+}
+
+// TestWriterPendingAuditRow proves the writer's WriteMutation lands a pending skill
+// on disk AND records the D-29 pending tuple (NULL approval_source, NULL token,
+// gate_recommended=true, gate_taken=false) inside db.WithTx — the (NULL,NULL,
+// true,false) matrix row — with the content_hash recorded (D-23).
+func TestWriterPendingAuditRow(t *testing.T) {
+	pool := migratedPool(t)
+	store := NewAuditStore(pool)
+	root := t.TempDir()
+	w := NewWriter(WriterConfig{
+		Pool:         pool,
+		PendingDir:   filepath.Join(root, "pending"),
+		ActiveDir:    filepath.Join(root, "active"),
+		ExportDir:    filepath.Join(root, "export"),
+		ArchiveDir:   filepath.Join(root, "archived"),
+		Blocklist:    []string{"<|im_start|>"},
+		BodyCapBytes: 32768,
+	})
+
+	name := "wr-" + uuid.Must(uuid.NewV7()).String()[:8]
+	fm := Frontmatter{Name: name, Description: "a write-boundary skill", Type: TypeInstruction}
+	status, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "Do the thing.", AuditActor{ActorID: "model"})
+	if err != nil {
+		t.Fatalf("WriteMutation: %v", err)
+	}
+	if status != StatusPendingApproval {
+		t.Errorf("status: want %s, got %s", StatusPendingApproval, status)
+	}
+	if _, serr := os.Stat(filepath.Join(root, "pending", name, "SKILL.md")); serr != nil {
+		t.Errorf("pending SKILL.md not written: %v", serr)
+	}
+
+	rows, err := store.List(t.Context(), AuditFilter{SkillName: name})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("want 1 audit row, got %d", len(rows))
+	}
+	r := rows[0]
+	if r.ApprovalSource != ApprovalNone || r.PausedStateToken != "" || !r.GateRecommended || r.GateTaken {
+		t.Errorf("D-29 pending tuple mismatch: src=%q token=%q gateRec=%v gateTaken=%v",
+			r.ApprovalSource, r.PausedStateToken, r.GateRecommended, r.GateTaken)
+	}
+	if r.Action != AuditCreate || r.ContentHash == "" {
+		t.Errorf("audit row: want action=create + non-empty content_hash, got action=%q hash=%q", r.Action, r.ContentHash)
+	}
+}
+
+// TestWriterActivateAuditRow proves Activate moves pending→active, materializes into
+// the export dir, and records the D-29 ask_user approved tuple (token NOT NULL).
+func TestWriterActivateAuditRow(t *testing.T) {
+	pool := migratedPool(t)
+	store := NewAuditStore(pool)
+	root := t.TempDir()
+	exportDir := filepath.Join(root, "export")
+	w := NewWriter(WriterConfig{
+		Pool:       pool,
+		PendingDir: filepath.Join(root, "pending"),
+		ActiveDir:  filepath.Join(root, "active"),
+		ExportDir:  exportDir,
+		ArchiveDir: filepath.Join(root, "archived"),
+		Blocklist:  []string{"<|im_start|>"},
+	})
+
+	name := "act-" + uuid.Must(uuid.NewV7()).String()[:8]
+	fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
+	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "model"}); err != nil {
+		t.Fatalf("WriteMutation: %v", err)
+	}
+
+	token := uuid.Must(uuid.NewV7()).String()
+	seedPausedState(t, pool, token)
+	if err := w.Activate(t.Context(), name, ApprovalAskUser, token, AuditActor{ActorID: "user"}); err != nil {
+		t.Fatalf("Activate: %v", err)
+	}
+
+	// Materialized into the export dir (the /skills mount source).
+	if _, serr := os.Stat(filepath.Join(exportDir, name, "SKILL.md")); serr != nil {
+		t.Errorf("active skill not materialized into export dir: %v", serr)
+	}
+	// The activate audit row carries the approved tuple.
+	rows, err := store.List(t.Context(), AuditFilter{SkillName: name})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var sawActivate bool
+	for _, r := range rows {
+		if r.Action == AuditActivate {
+			sawActivate = true
+			if r.ApprovalSource != ApprovalAskUser || r.PausedStateToken != token || !r.GateTaken {
+				t.Errorf("activate tuple: src=%q token=%q gateTaken=%v", r.ApprovalSource, r.PausedStateToken, r.GateTaken)
+			}
+		}
+	}
+	if !sawActivate {
+		t.Error("no activate audit row recorded")
 	}
 }
 
