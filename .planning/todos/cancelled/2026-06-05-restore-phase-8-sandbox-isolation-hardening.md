@@ -11,6 +11,12 @@ files:
   - .planning/spikes/010-sandbox-gvisor-runsc/README.md
 ---
 
+> **❌ CANCELLED — superseded by amendment #50 / D-15c (full-terminal home, 2026-06-05).**
+> This todo wanted to RESTORE the sandbox token auth + egress allowlist + gVisor/seccomp
+> hardening. The owner decision went the opposite way: Aura gets a full terminal with no
+> security toys (prd.md §Slice 2 amendment #50; docs/aura-toolset-design-claude-code-parity-2026-06-05.md).
+> The one real future gate is capability_grants (Slice 1.7), dormant for single-user. Kept for history.
+
 ## Problem
 
 The 2026-06-03 sandbox-agent pivot (amendment #44 / D-15b — replaced the bespoke
