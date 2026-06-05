@@ -22,16 +22,10 @@ const (
 type Config struct {
 	BaseURL    string
 	TimeoutSec int
-	// Token is the shared bearer the sandbox-agent enforces with --token (D-38, spike
-	// 008). When non-empty the client sends `Authorization: Bearer <token>` on EVERY
-	// request (exec + health); an empty token preserves the unauthenticated path for
-	// a sandbox-agent still running --no-token (dev) or in tests.
-	Token string
 }
 
 type Client struct {
 	baseURL string
-	token   string
 	http    *http.Client
 }
 
@@ -65,32 +59,14 @@ func New(cfg Config) *Client {
 	}
 	return &Client{
 		baseURL: base,
-		token:   cfg.Token,
 		http:    &http.Client{Timeout: time.Duration(timeout) * time.Second},
 	}
 }
 
-// authHeaders sets the JSON content-negotiation headers and, when a token is
-// configured, the bearer the sandbox-agent's --token enforces on every route
-// (D-38, spike 008 — including /v1/health). Centralizing it keeps the bearer
-// from being forgotten on any future request path.
-func (c *Client) authHeaders(req *http.Request) {
+// jsonHeaders sets the JSON content-negotiation headers on a request.
+func (c *Client) jsonHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
-	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
-	}
-}
-
-// authError classifies a 401 from the sandbox-agent as a clear auth failure so a
-// misconfigured/absent AURA_SANDBOX_AGENT_TOKEN surfaces as "auth failed" rather
-// than a generic HTTP error (spike 008). Any other non-2xx falls through to the
-// caller's generic HTTP-status error.
-func authError(op string, status int, body string) error {
-	if status == http.StatusUnauthorized {
-		return fmt.Errorf("sandbox-agent %s auth failed (HTTP 401) — check AURA_SANDBOX_AGENT_TOKEN matches the --token the container runs: %s", op, body)
-	}
-	return nil
 }
 
 func (c *Client) Run(ctx context.Context, req RunRequest) (RunResponse, error) {
@@ -103,7 +79,7 @@ func (c *Client) Run(ctx context.Context, req RunRequest) (RunResponse, error) {
 	if err != nil {
 		return out, fmt.Errorf("sandbox-agent run request: %w", err)
 	}
-	c.authHeaders(httpReq)
+	c.jsonHeaders(httpReq)
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
@@ -112,9 +88,6 @@ func (c *Client) Run(ctx context.Context, req RunRequest) (RunResponse, error) {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		msg := strings.TrimSpace(string(mustRead(resp.Body)))
-		if aerr := authError("run", resp.StatusCode, msg); aerr != nil {
-			return out, aerr
-		}
 		return out, fmt.Errorf("sandbox-agent run HTTP %d: %s", resp.StatusCode, msg)
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
@@ -123,16 +96,13 @@ func (c *Client) Run(ctx context.Context, req RunRequest) (RunResponse, error) {
 	return out, nil
 }
 
-// Health probes /v1/health, carrying the bearer (D-38, spike 008 — /v1/health
-// itself enforces --token). A 200 means the sandbox-agent is reachable AND the
-// configured token is accepted; a 401 surfaces a clear auth error so a token
-// mismatch is diagnosed at the boot probe, not at the first exec.
+// Health probes /v1/health; a 200 means the sandbox-agent is reachable.
 func (c *Client) Health(ctx context.Context) error {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/health", nil)
 	if err != nil {
 		return fmt.Errorf("sandbox-agent health request: %w", err)
 	}
-	c.authHeaders(httpReq)
+	c.jsonHeaders(httpReq)
 
 	resp, err := c.http.Do(httpReq)
 	if err != nil {
@@ -141,9 +111,6 @@ func (c *Client) Health(ctx context.Context) error {
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		msg := strings.TrimSpace(string(mustRead(resp.Body)))
-		if aerr := authError("health", resp.StatusCode, msg); aerr != nil {
-			return aerr
-		}
 		return fmt.Errorf("sandbox-agent health HTTP %d: %s", resp.StatusCode, msg)
 	}
 	return nil

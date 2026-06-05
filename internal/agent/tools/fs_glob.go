@@ -1,0 +1,92 @@
+package tools
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io/fs"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// FSGlob finds files by name pattern (supporting **) across a directory tree.
+type FSGlob struct{ WorkspaceRoot string }
+
+type fsGlobArgs struct {
+	Pattern    string `json:"pattern"`
+	Path       string `json:"path"`
+	MaxResults int    `json:"max_results"`
+}
+
+const defaultGlobMax = 500
+
+func (t *FSGlob) Spec() Spec {
+	params := json.RawMessage(`{
+  "type": "object",
+  "properties": {
+    "pattern": {"type": "string", "description": "Glob pattern over forward-slash paths, e.g. '**/*.go' or 'cmd/*/main.go'. ** crosses directories."},
+    "path": {"type": "string", "description": "Optional root directory to search. Defaults to the workspace root."},
+    "max_results": {"type": "integer", "minimum": 1, "description": "Optional cap on paths returned (default 500)."}
+  },
+  "required": ["pattern"]
+}`)
+	return Spec{
+		Name:        "fs_glob",
+		Summary:     "Find files by name pattern.",
+		Description: "Find files whose path matches a glob pattern (*, ?, and ** for crossing directories) and return the matching paths, sorted. .git/node_modules/vendor are skipped.",
+		Parameters:  params,
+		Deferred:    false,
+	}
+}
+
+func (t *FSGlob) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+	var a fsGlobArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return ToolResult{}, fmt.Errorf("fs_glob args: %w", err)
+	}
+	if strings.TrimSpace(a.Pattern) == "" {
+		return ToolResult{}, fmt.Errorf("fs_glob: pattern is required")
+	}
+	re, err := globToRegexp(a.Pattern)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("fs_glob: invalid pattern: %w", err)
+	}
+	maxResults := a.MaxResults
+	if maxResults <= 0 {
+		maxResults = defaultGlobMax
+	}
+	root := rootOrDefault(t.WorkspaceRoot, a.Path)
+
+	var out []string
+	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if skipWalkDir(d.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, p)
+		if relErr != nil {
+			rel = p
+		}
+		if re.MatchString(filepath.ToSlash(rel)) {
+			out = append(out, filepath.ToSlash(rel))
+		}
+		if len(out) >= maxResults {
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return ToolResult{}, fmt.Errorf("fs_glob: %w", walkErr)
+	}
+	if len(out) == 0 {
+		return NewResult(ctx, "[no matches]")
+	}
+	sort.Strings(out)
+	return NewResult(ctx, strings.Join(out, "\n"))
+}

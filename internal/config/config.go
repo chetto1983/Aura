@@ -9,8 +9,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/url"
@@ -184,11 +182,6 @@ func loadBase() *Config {
 		SandboxAgent: sandboxagent.Config{
 			BaseURL:    envDefault("AURA_SANDBOX_AGENT_URL", sandboxagent.DefaultBaseURL),
 			TimeoutSec: envIntDefault("AURA_SANDBOX_AGENT_TIMEOUT_SEC", sandboxagent.DefaultTimeoutSec),
-			// Bearer the sandbox-agent enforces with --token (D-38, spike 008). Generated
-			// at first boot if absent and persisted to .env (mirrors the AURA_SETUP_TOKEN
-			// first-boot-gen intent) so compose interpolation + this client read the SAME
-			// value; an empty .env (real-env deployments) leaves it env-driven.
-			Token: ensureSandboxAgentToken(),
 		},
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
@@ -399,60 +392,6 @@ func defaultSkillInjectionBlocklist() []string {
 		// DeepSeek / Gemma / Qwen
 		"<|fim_begin|>", "<|fim_hole|>", "<start_of_turn>", "<end_of_turn>",
 	}
-}
-
-// ensureSandboxAgentToken returns the sandbox-agent bearer (D-38, spike 008). It
-// reads AURA_SANDBOX_AGENT_TOKEN; when set it is returned verbatim. When unset it
-// generates a 32-byte crypto-random hex token at first boot and best-effort persists
-// it to ./.env (only if a .env exists and the key is absent), then exports it into
-// the process env so the live client AND a subsequent `docker compose` interpolation
-// read the SAME value. A real-env deployment (no .env, var pre-set in the orchestrator)
-// short-circuits on the first branch. Persistence failures are non-fatal: the boot
-// still gets a live token via the process env (the container just needs the same one).
-func ensureSandboxAgentToken() string {
-	if v := os.Getenv("AURA_SANDBOX_AGENT_TOKEN"); v != "" {
-		return v
-	}
-	tok := generateToken()
-	_ = os.Setenv("AURA_SANDBOX_AGENT_TOKEN", tok) // live client reads it this run
-	persistEnvKey(".env", "AURA_SANDBOX_AGENT_TOKEN", tok)
-	return tok
-}
-
-// generateToken returns a 32-byte crypto-random hex token, falling back to a
-// timestamped marker only if the OS RNG fails (it effectively never does).
-func generateToken() string {
-	var b [32]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return "aura-sandbox-token-fallback"
-	}
-	return hex.EncodeToString(b[:])
-}
-
-// persistEnvKey appends `key=value` to the .env file at path IFF the file exists and
-// does not already contain the key. It never creates a new .env (real-env deployments
-// have none) and swallows IO errors (the token already lives in the process env for
-// this run; persistence is a convenience so the next compose run matches).
-func persistEnvKey(path, key, value string) {
-	data, err := os.ReadFile(path) // #nosec G304 -- path is the fixed repo-root .env, not caller-controlled
-	if err != nil {
-		return // no .env (real-env deployment) — nothing to persist
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), key+"=") {
-			return // already present — never duplicate
-		}
-	}
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600) // #nosec G304 -- fixed repo-root .env
-	if err != nil {
-		return
-	}
-	defer func() { _ = f.Close() }()
-	suffix := ""
-	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
-		suffix = "\n"
-	}
-	_, _ = f.WriteString(suffix + key + "=" + value + "\n")
 }
 
 // defaultRunDir returns a sensible per-user run directory for sidecar tool

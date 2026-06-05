@@ -7,10 +7,9 @@
 //
 // Requires the stack up AND the export dir wired to the container's /skills mount:
 //
-//	make sandbox-up                                   # token + /skills mount
+//	make sandbox-up                                   # /skills mount
 //	export AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468
-//	export AURA_SANDBOX_AGENT_TOKEN=<the .env token>  # the --token the container runs
-//	export AURA_SKILL_EXPORT_DIR=<host dir mounted ro at /skills in the container>
+//	export AURA_SKILL_EXPORT_DIR=<host dir mounted at /skills in the container>
 //	export POSTGRES_PASSWORD/AURA_DB_URL/AURA_DB_MIGRATE_URL  # migrated through 0010
 //	go test -tags 'sandbox_integration db_integration' -race -run TestSnippetExec ./internal/skills/ -v
 //
@@ -38,7 +37,6 @@ import (
 func TestSnippetExec(t *testing.T) {
 	exportDir := envOrSkip(t, "AURA_SKILL_EXPORT_DIR")
 	sandboxURL := envOrSkip(t, "AURA_SANDBOX_AGENT_URL")
-	token := envOrSkip(t, "AURA_SANDBOX_AGENT_TOKEN")
 
 	pool := migratedPool(t)
 	ctx := context.Background()
@@ -94,7 +92,7 @@ func TestSnippetExec(t *testing.T) {
 	}
 
 	// Run BY PATH through the real client (interpreter + path, never the exec bit).
-	client := sandboxagent.New(sandboxagent.Config{BaseURL: sandboxURL, TimeoutSec: 30, Token: token})
+	client := sandboxagent.New(sandboxagent.Config{BaseURL: sandboxURL, TimeoutSec: 30})
 	run, err := client.Run(ctx, sandboxagent.RunRequest{
 		Command: use.Interpreter,
 		Args:    []string{use.SandboxPath},

@@ -97,24 +97,19 @@ services:
     pull_policy: never
     container_name: aura-sandbox-agent
     restart: unless-stopped
-    # Bearer-auth the loopback exec endpoint (D-38, spike 008): --token makes :2468
-    # enforce Authorization: Bearer on EVERY route, including /v1/health, so an
-    # unauthenticated same-host / other-container caller can no longer exec. The
-    # token is interpolated from the env (.env AURA_SANDBOX_AGENT_TOKEN); Aura's
-    # client sends the same value (internal/sandboxagent.Client).
-    command: ["server", "--token", "${AURA_SANDBOX_AGENT_TOKEN}", "--no-telemetry", "--host", "0.0.0.0", "--port", "2468"]
+    # Full-terminal home (amendment #50 / D-15c): the loopback exec endpoint runs
+    # unauthenticated (--no-token). For a single trusted operator on their own box the
+    # bearer was security theater; the real per-identity gate is capability_grants (1.7).
+    command: ["server", "--no-token", "--no-telemetry", "--host", "0.0.0.0", "--port", "2468"]
     working_dir: /workspace
     ports:
       - "127.0.0.1:${AURA_SANDBOX_AGENT_PORT:-2468}:2468"
     volumes:
       - aura-sandbox-agent:/workspace
-      # Read-only /skills bind mount (D-17, spike 005 — the first bind mount in the
-      # stack; the Phase-8 device= failure class does NOT apply to bind mounts). The
-      # writer materializes ACTIVE snippet skills into AURA_SKILL_EXPORT_DIR; the
-      # sandbox sees them at /skills as immutable files and execs them BY PATH
-      # (python3 /skills/<name>.py, never the exec bit). Pending/archived skills are
-      # never materialized, so the mount tracks loader state in lockstep.
-      - ${AURA_SKILL_EXPORT_DIR:-~/.aura/skills/export}:/skills:ro
+      # /skills bind mount, read-write (amendment #50 / D-15c inverts spike 005's ro):
+      # the writer materializes ACTIVE snippet skills into AURA_SKILL_EXPORT_DIR and the
+      # full-terminal home sees them at /skills, execed BY PATH (python3 /skills/<name>.py).
+      - ${AURA_SKILL_EXPORT_DIR:-~/.aura/skills/export}:/skills
     networks:
       - aura-sandbox-local
     mem_limit: 2g
@@ -123,10 +118,7 @@ services:
     security_opt:
       - "no-new-privileges:true"
     healthcheck:
-      # The /v1/health probe MUST carry the bearer now (spike 008 Pitfall 7): with
-      # --token, /v1/health 401s without auth and the container would flip unhealthy,
-      # blocking Aura's boot gating.
-      test: ["CMD-SHELL", "curl -fsS -H \"Authorization: Bearer ${AURA_SANDBOX_AGENT_TOKEN}\" http://127.0.0.1:2468/v1/health >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:2468/v1/health >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 12

@@ -113,6 +113,16 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	reg.Register(&tools.SandboxExec{Runner: sandboxagent.New(cfg.SandboxAgent)})
+	// shell_exec — the keystone full-terminal tool: a host shell, in-process, full
+	// access (amendment #50 / D-15c). sandbox_exec stays as the untrusted-code glove.
+	reg.Register(&tools.ShellExec{})
+	// Native in-process filesystem hands — Claude-Code-style file ergonomics, full
+	// host access, no path fence (amendment #50 / D-15c).
+	reg.Register(&tools.FSRead{})
+	reg.Register(&tools.FSWrite{})
+	reg.Register(&tools.FSEdit{})
+	reg.Register(&tools.FSGrep{})
+	reg.Register(&tools.FSGlob{})
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
 	// the Without(parent, "swarm_spawn") clone the adapter derives per child, never the
 	// tool itself, so a worker cannot recursively fan out. It is Deferred:true, so it

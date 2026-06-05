@@ -52,10 +52,6 @@ jobs:
       # `docker compose` invocation parses the whole file, so the var must be present
       # even though this job uses only postgres + the sandbox-agent.
       NEO4J_PASSWORD: ci-test-password
-      # The sandbox-agent bearer (D-38) the container runs with --token AND the client
-      # sends. compose.yaml interpolates it into the command + the healthcheck; the
-      # sandbox_integration tier reads AURA_SANDBOX_AGENT_TOKEN to authenticate.
-      AURA_SANDBOX_AGENT_TOKEN: ci-sandbox-bearer-token
       AURA_SANDBOX_AGENT_URL: http://127.0.0.1:2468
       # The host export dir the writer materializes ACTIVE snippets into AND the
       # sandbox-agent mounts read-only at /skills (D-17). The same dir on both sides.
@@ -102,7 +98,7 @@ jobs:
         # (the compose `build:` context) — `make sandbox-up` requires the image preloaded.
         run: docker compose build aura-sandbox-agent
 
-      - name: Start the sandbox-agent (--token + ro /skills mount)
+      - name: Start the sandbox-agent (--no-token + /skills mount)
         run: make sandbox-up
 
       - name: sandbox_integration tier (SC#4 by-path snippet exec, live container)
