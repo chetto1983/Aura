@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"sync"
 	"time"
@@ -19,10 +18,6 @@ const defaultCacheTTL = time.Second
 // defaultBodyCapBytes is the per-skill body size cap when the loader is built
 // with 0 (D-34 default). An oversized body bloats the manifest/context (T-11-02-D1).
 const defaultBodyCapBytes = 32768
-
-// skillNameRe is the D-30 name grammar: lowercase alphanumerics and hyphens,
-// 1..64 chars. A skill's frontmatter name MUST match this AND its directory name.
-var skillNameRe = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
 
 // Skill is one loaded, structurally-valid skill: its frontmatter plus the markdown
 // body and the absolute directory it was scanned from. The body is what the `use`
@@ -210,11 +205,10 @@ func validateStructure(fm Frontmatter, dirName, body string, bodyCap int) error 
 	if fm.Name == "" {
 		return fmt.Errorf("missing name")
 	}
-	if !skillNameRe.MatchString(fm.Name) {
-		return fmt.Errorf("name %q does not match %s", fm.Name, skillNameRe.String())
-	}
-	if fm.Name != dirName {
-		return fmt.Errorf("name %q does not match directory %q", fm.Name, dirName)
+	// SanitizeName is the SINGLE name chokepoint (grammar + name==dir, D-30);
+	// the loader reuses it so there is exactly one name validator in the package.
+	if err := SanitizeName(fm.Name, dirName); err != nil {
+		return err
 	}
 	if fm.Description == "" {
 		return fmt.Errorf("missing description")

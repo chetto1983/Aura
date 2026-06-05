@@ -84,6 +84,21 @@ type Config struct {
 	SkillBodyCapBytes     int    // AURA_SKILL_BODY_CAP_BYTES — per-skill body size cap at load (DoS guard, D-34)
 	SkillManifestCapBytes int    // AURA_SKILL_MANIFEST_CAP_BYTES — manifest-in-Description byte budget; overflow → BM25 list (D-09/D-34)
 	SkillExportDir        string // AURA_SKILL_EXPORT_DIR — activation→host export dir (the ro /skills mount source, D-17)
+
+	// Write-boundary injection blocklist (D-27/D-34). The NFKC-normalize-then-
+	// match literal sequence list the skills validator enforces at write time
+	// (model-authored create/update/install), NEVER on load (D-28). Defaults to
+	// the prd.md §Slice 7 builtin list; a comma-separated AURA_SKILL_INJECTION_BLOCKLIST
+	// replaces it wholesale.
+	SkillInjectionBlocklist []string // AURA_SKILL_INJECTION_BLOCKLIST — prompt-injection literal blocklist (D-27/D-34)
+
+	// Catalog client knobs (D-11/D-12/D-34). CatalogURL is the skills.sh base for
+	// the /api/search JSON client; CatalogDisabled is the default-ON browse escape
+	// hatch (D-12); SkillInstallTimeoutSec bounds both the catalog call and the
+	// native git-clone install (D-15).
+	SkillCatalogURL        string // AURA_SKILL_CATALOG_URL — skills.sh base for /api/search (D-11/D-34)
+	SkillCatalogDisabled   bool   // AURA_SKILL_CATALOG_DISABLE — disable-catalog escape hatch (D-12)
+	SkillInstallTimeoutSec int    // AURA_SKILL_INSTALL_TIMEOUT_SEC — catalog + git-clone ctx timeout (D-15/D-34)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -196,6 +211,11 @@ func loadBase() *Config {
 		SkillBodyCapBytes:     envIntDefault("AURA_SKILL_BODY_CAP_BYTES", 32768),
 		SkillManifestCapBytes: envIntDefault("AURA_SKILL_MANIFEST_CAP_BYTES", 8192),
 		SkillExportDir:        envDefault("AURA_SKILL_EXPORT_DIR", defaultSkillExportDir()),
+
+		SkillInjectionBlocklist: envSliceDefault("AURA_SKILL_INJECTION_BLOCKLIST", defaultSkillInjectionBlocklist()),
+		SkillCatalogURL:         envDefault("AURA_SKILL_CATALOG_URL", "https://www.skills.sh"),
+		SkillCatalogDisabled:    envBoolDefault("AURA_SKILL_CATALOG_DISABLE", false),
+		SkillInstallTimeoutSec:  envIntDefault("AURA_SKILL_INSTALL_TIMEOUT_SEC", 90),
 	}
 }
 
@@ -332,6 +352,44 @@ func envBoolDefault(key string, fallback bool) bool {
 		return fallback
 	}
 	return b
+}
+
+// envSliceDefault returns the comma-separated value of `key` split into a
+// trimmed, empty-dropped slice, falling back to `fallback` when the variable is
+// unset or empty. A set-but-all-empty value (e.g. ",,") yields an empty slice —
+// an operator can deliberately clear the blocklist that way.
+func envSliceDefault(key string, fallback []string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	parts := strings.Split(v, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// defaultSkillInjectionBlocklist is the prd.md §Slice 7 builtin prompt-injection
+// blocklist (D-27/D-34): chat-template control tokens across the model families
+// Aura speaks. The validator NFKC-normalizes a skill body THEN literal-matches
+// each entry (write-boundary only, D-28).
+func defaultSkillInjectionBlocklist() []string {
+	return []string{
+		// OpenAI ChatML
+		"<|im_start|>", "<|im_end|>", "<|endoftext|>",
+		// Anthropic
+		"</system>", "</human>", "</assistant>", "\n\nHuman:", "\n\nAssistant:",
+		// Llama / Mistral
+		"[INST]", "[/INST]", "<<SYS>>", "<</SYS>>",
+		// Meta / Llama 3
+		"<|begin_of_text|>", "<|start_header_id|>", "<|end_header_id|>", "<|eot_id|>",
+		// DeepSeek / Gemma / Qwen
+		"<|fim_begin|>", "<|fim_hole|>", "<start_of_turn>", "<end_of_turn>",
+	}
 }
 
 // defaultRunDir returns a sensible per-user run directory for sidecar tool
