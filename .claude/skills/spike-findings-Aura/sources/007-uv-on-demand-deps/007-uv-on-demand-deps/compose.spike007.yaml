@@ -1,0 +1,12 @@
+# Spike 007 override — uv-tooling image (no curated deps), /skills mount kept.
+# Usage:
+#   docker build -t aura-sandbox-agent:spike007 .planning/spikes/007-uv-on-demand-deps
+#   docker compose -f compose.yaml -f .planning/spikes/007-uv-on-demand-deps/compose.spike007.yaml up -d aura-sandbox-agent
+# Restore:
+#   docker compose -f compose.yaml up -d aura-sandbox-agent
+services:
+  aura-sandbox-agent:
+    image: aura-sandbox-agent:spike007
+    build: !reset null
+    volumes:
+      - "D:/Aura/.planning/spikes/005-skills-ro-mount/export:/skills:ro"
