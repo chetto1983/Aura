@@ -86,6 +86,7 @@ type Config struct {
 	SkillBodyCapBytes     int    // AURA_SKILL_BODY_CAP_BYTES — per-skill body size cap at load (DoS guard, D-34)
 	SkillManifestCapBytes int    // AURA_SKILL_MANIFEST_CAP_BYTES — manifest-in-Description byte budget; overflow → BM25 list (D-09/D-34)
 	SkillExportDir        string // AURA_SKILL_EXPORT_DIR — activation→host export dir (the ro /skills mount source, D-17)
+	SkillSnippetTTLDays   int    // AURA_SKILL_SNIPPET_TTL_DAYS — TTL sweep archives snippets unused this long (D-16/D-34)
 
 	// Write-boundary injection blocklist (D-27/D-34). The NFKC-normalize-then-
 	// match literal sequence list the skills validator enforces at write time
@@ -218,6 +219,7 @@ func loadBase() *Config {
 		SkillBodyCapBytes:     envIntDefault("AURA_SKILL_BODY_CAP_BYTES", 32768),
 		SkillManifestCapBytes: envIntDefault("AURA_SKILL_MANIFEST_CAP_BYTES", 8192),
 		SkillExportDir:        envDefault("AURA_SKILL_EXPORT_DIR", defaultSkillExportDir()),
+		SkillSnippetTTLDays:   envIntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
 
 		SkillInjectionBlocklist: envSliceDefault("AURA_SKILL_INJECTION_BLOCKLIST", defaultSkillInjectionBlocklist()),
 		SkillCatalogURL:         envDefault("AURA_SKILL_CATALOG_URL", "https://www.skills.sh"),

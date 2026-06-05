@@ -27,12 +27,16 @@ var (
 // TaskKind is the task category (D-28). One handler per kind in downstream waves.
 type TaskKind string
 
-// The four task kinds; each gets a dedicated handler in downstream waves.
+// The task kinds; each gets a dedicated handler in downstream waves. skill_ttl_sweep
+// (D-16) is the Phase-11 system-seeded TTL sweep — the 0010 migration widened the
+// scheduler_tasks.kind CHECK to admit it. It is NOT model-schedulable (the task tool's
+// kind enum is unchanged); only serve.go seeds it daily.
 const (
 	KindReminder       TaskKind = "reminder"
 	KindAgentJob       TaskKind = "agent_job"
 	KindBackupPostgres TaskKind = "backup_postgres"
 	KindBackupNeo4j    TaskKind = "backup_neo4j"
+	KindSkillTTLSweep  TaskKind = "skill_ttl_sweep"
 )
 
 // Store wraps a pgx pool and the generated Queries — the identity-04-02 canonical

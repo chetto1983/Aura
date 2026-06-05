@@ -24,6 +24,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
@@ -87,7 +88,47 @@ func bootServe(ctx context.Context) (*serveEnv, error) {
 	scheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{
 		Dispatch: buildDispatch(chat, store),
 	})
+	// Seed the daily snippet TTL sweep (D-16) idempotently — only when no
+	// skill_ttl_sweep task already exists. The 0010-widened kind CHECK admits the row.
+	if err := seedSkillTTLSweep(ctx, store); err != nil {
+		slog.Warn("aura serve: seed skill TTL sweep", "err", err)
+	}
 	return &serveEnv{chatEnv: chat, store: store, scheduler: scheduler}, nil
+}
+
+// seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16): it
+// scans the active tasks for an existing skill_ttl_sweep and only inserts one if
+// absent. The schedule is a daily 03:00 cron (a quiet hour), TZ Europe/Rome (the
+// scheduler default). A seed failure is non-fatal (logged by the caller) — the daemon
+// still runs; the operator can re-seed by restarting. The INSERT succeeds against the
+// 0010-widened scheduler_tasks.kind CHECK (A2 landmine closed).
+func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
+	tasks, err := store.ListActiveTasks(ctx)
+	if err != nil {
+		return fmt.Errorf("list active tasks: %w", err)
+	}
+	for _, t := range tasks {
+		if t.Kind == cron.KindSkillTTLSweep {
+			return nil // already seeded — idempotent
+		}
+	}
+	spec, err := cron.ParseSchedule(string(cron.KindCron), "0 3 * * *", 0, time.Time{}, "Europe/Rome")
+	if err != nil {
+		return fmt.Errorf("parse daily schedule: %w", err)
+	}
+	next, err := cron.NextRunAt(spec, time.Now().UTC())
+	if err != nil {
+		return fmt.Errorf("compute next run: %w", err)
+	}
+	if _, err := store.CreateTask(ctx, cron.CreateTaskParams{
+		Kind:      cron.KindSkillTTLSweep,
+		Spec:      spec,
+		NextRunAt: next,
+	}); err != nil {
+		return fmt.Errorf("create skill_ttl_sweep task: %w", err)
+	}
+	slog.Info("aura serve: seeded daily skill TTL sweep", "schedule", "0 3 * * * Europe/Rome")
+	return nil
 }
 
 // buildDispatch assembles the cron Dispatcher from the live runtime (D-15/10-05): the
@@ -108,6 +149,10 @@ func buildDispatch(chat *chatEnv, store *cron.Store) *cron.Dispatch {
 		cron.KindAgentJob:       handlers.AgentJobHandler{Deps: agentDeps},
 		cron.KindBackupPostgres: handlers.BackupHandler{Variant: handlers.BackupPostgres},
 		cron.KindBackupNeo4j:    handlers.BackupHandler{Variant: handlers.BackupNeo4j},
+		cron.KindSkillTTLSweep: handlers.SkillTTLSweepHandler{
+			Sweeper: &snippetSweeperAdapter{w: newSkillWriter(chat.cfg, chat.pool)},
+			TTL:     time.Duration(chat.cfg.SkillSnippetTTLDays) * 24 * time.Hour,
+		},
 	}
 	hmap := make(map[cron.TaskKind]cron.Handler, len(real))
 	for kind, h := range real {

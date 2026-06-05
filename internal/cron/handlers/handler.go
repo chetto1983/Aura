@@ -23,12 +23,14 @@ import (
 // cron.TaskKind onto these constants when routing.
 type TaskKind string
 
-// The four task kinds; one Handler per kind (D-28).
+// The task kinds; one Handler per kind (D-28). skill_ttl_sweep (D-16) is the
+// Phase-11 system-seeded snippet TTL sweep.
 const (
 	KindReminder       TaskKind = "reminder"
 	KindAgentJob       TaskKind = "agent_job"
 	KindBackupPostgres TaskKind = "backup_postgres"
 	KindBackupNeo4j    TaskKind = "backup_neo4j"
+	KindSkillTTLSweep  TaskKind = "skill_ttl_sweep"
 )
 
 // HandlerMeta is the per-kind static contract (Slice 0.9): the kind it serves, its

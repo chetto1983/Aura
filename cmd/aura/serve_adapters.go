@@ -427,3 +427,21 @@ func (a *skillLoaderAdapter) Snippet(name string) (instructions, sandboxPath, in
 	}
 	return s.Body, path, interp, true
 }
+
+// snippetSweeperAdapter bridges the live *skills.Writer onto the handlers.SnippetSweeper
+// seam the skill_ttl_sweep handler drives (D-16): it projects the Writer's SweepResult
+// onto the handler's (archived, kept) shape, keeping internal/cron/handlers free of an
+// internal/skills SweepResult dependency.
+type snippetSweeperAdapter struct {
+	w *skills.Writer
+}
+
+// SweepExpiredSnippets archives every snippet older than ttl via the Writer (each gets
+// the D-29 `auto` audit row) and returns the archived + kept names.
+func (a *snippetSweeperAdapter) SweepExpiredSnippets(ctx context.Context, ttl time.Duration, now time.Time, actorID string) (archived, kept []string, err error) {
+	res, serr := a.w.SweepExpiredSnippets(ctx, ttl, now, skills.AuditActor{ActorID: actorID})
+	if serr != nil {
+		return nil, nil, serr
+	}
+	return res.Archived, res.Kept, nil
+}
