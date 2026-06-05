@@ -66,6 +66,15 @@ const toolSearchLeadIn = "# Tool discovery\n\n" +
 	"Some tools are not provided upfront; use this tool (`tool_search`) to discover and load them.\n\n" +
 	"You have access to deferred tools from the following sources:\n"
 
+// noMatchOrientation is the fixed no-result reply (amendment #49). A failed
+// tool_search is usually a capability gap; the skills catalog is the designed
+// path for packaged capabilities, so the model is pointed there explicitly
+// instead of being left to improvise ad-hoc code.
+const noMatchOrientation = "no matching tools. " +
+	"If the capability you need is a packaged task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
+	"check the skill catalog instead: call the skill tool with action=catalog and a keyword query — " +
+	"installable skills ship tested instructions and bundled scripts, and installing requires operator approval."
+
 // nsDelimiterStr is the "<namespace>__<tool>" delimiter from the mcptools
 // namespacing (08.1-03). It is duplicated as a literal here, NOT imported, because
 // package tools must not depend on internal/agent/mcptools (import cycle); a 2-char
@@ -144,7 +153,11 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 
 	matches := ts.match(q, limit)
 	if len(matches) == 0 {
-		return NewResult(ctx, "no matching tools")
+		// Orientation tail (amendment #49): the no-result moment IS the capability
+		// gap — route the model into the skills system instead of ad-hoc code. The
+		// string is a fixed literal (per-turn result, not a manifest surface; no
+		// cache invariant rides on it).
+		return NewResult(ctx, noMatchOrientation)
 	}
 
 	var b strings.Builder

@@ -125,8 +125,14 @@ func (t *SkillTool) Spec() Spec {
 // notice when no loader is wired (the pool/loader-free manifest path, e.g.
 // `aura tools`, still lists the tool's Spec without a half-wired loader).
 func (t *SkillTool) manifestDescription() string {
-	const lead = "Skills are reusable instruction sets that extend your capabilities for specific tasks. " +
-		"Call action=use with a skill name to apply its instructions to the current task; action=info reads a skill without applying it; action=list shows what is available.\n\n" +
+	// The lead names the FULL grammar (amendment #49): the read verbs AND the
+	// catalog/install discovery loop — leaving catalog/install only in the schema
+	// enum description left live models unaware the catalog existed (the 2026-06-05
+	// E2E brute-forced ad-hoc code instead). Still a fixed const: turn-stable, D-06.
+	const lead = "Skills are packaged capabilities (instructions and runnable snippets) that extend you for specific tasks. " +
+		"Call action=use with a skill name to apply its instructions to the current task; action=info reads a skill without applying it; action=list shows what is available. " +
+		"If NO installed skill covers a reusable task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
+		"action=catalog searches a public catalog of installable skills and action=install stages one — installation always requires operator approval via ask_user; you can request, never grant.\n\n" +
 		"Available skills:\n"
 	if t.Loader == nil {
 		return lead + "(none loaded)\n"

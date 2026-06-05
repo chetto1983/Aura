@@ -261,8 +261,10 @@ func TestToolSearch_Migrated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	if res.Preview != "no matching tools" {
-		t.Fatalf("Preview = %q, want 'no matching tools'", res.Preview)
+	// Contract updated with amendment #49: the no-result reply carries the fixed
+	// skill-catalog orientation tail (capability gaps route into the skills system).
+	if res.Preview != noMatchOrientation {
+		t.Fatalf("Preview = %q, want the noMatchOrientation constant", res.Preview)
 	}
 	if _, err := ts.Execute(ctx, []byte(`{"query":""}`)); err == nil {
 		t.Fatal("want error for empty query")
