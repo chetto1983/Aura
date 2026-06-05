@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 11-02-PLAN.md (skills read path / Slice 7a)
-last_updated: "2026-06-05T14:59:24.597Z"
+last_updated: "2026-06-05T15:13:46.642Z"
 last_activity: 2026-06-05
 progress:
   total_phases: 19
   completed_phases: 12
   total_plans: 83
-  completed_plans: 76
+  completed_plans: 77
   percent: 63
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 11 (skills) — EXECUTING
-Plan: 3 of 8
+Plan: 4 of 8
 Status: Ready to execute
 Last activity: 2026-06-05
 
@@ -102,6 +102,7 @@ Progress: [█████████░] 91%
 | Phase 16 P08 | 6 min | 3 tasks | 4 files |
 | Phase 11 P01 | ~30min | 2 tasks | 3 files |
 | Phase 11 PP11-02 | ~40min | 2 tasks | 19 files |
+| Phase 11 P03 | 35min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -154,6 +155,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 09]: 09-06: live dual-gate swarm E2E (TestSwarmE2E, cot_eval, OPENROUTER+AURA_EVAL_SELF_*-gated, operator-run NOT CI). swarmScenarios() SEPARATE from scenarios(); NATURAL prompt (no swarm/parallel word, asserted) = compute-and-self-mail + compute-and-self-WhatsApp two independent subtasks + a no-over-spawn control. Hard floor: workers off the ChildReport goal_index count, facts present, mail+WhatsApp read-back via the SAME mounted MCP at the right JID (D-19 duality), wall-clock <1.5x single-worker baseline. Judge >=90% equal-weight mean over autonomous-parallelization/sub-answer/aggregation (D-22 fixes dims+gate). Registry = buildBaseRegistry + swarm_spawn (live RunnerAdapter) + mail/whatsapp MCP mounts (D-20 allowlists). Relocated reportPath/dimResult/scenarioMetrics into non-test scoring_cot_eval.go (Rule 3) so go build -tags cot_eval exits 0. Placeholder snapshot row at commit; operator run fills TBDs. CAP-03 NOT closed (Gate-3 verifier/operator). Commits 31599320/ab0b8a10.
 - [Phase ?]: [Phase 11]: 11-01 (PRD-amendment gate, doc-only #48): D-32/D-33 — 12 supersessions on prd.md Slice 7 (sandbox.Runner.Execute DEAD->tools.SandboxExec :2468; 0007/0012->0010+ floor 0009; dotted skill.*->ONE skill action-enum tool, skill.approve cut D-03; system-prompt->manifest-in-Description+messages[1] D-06/D-07; ttl_sweeper->skill_ttl_sweep cron TaskKind D-16; HTML scrape->/api/search JSON + catalog default-ON #14-FLIPPED + native git clone node-dropped D-11/12/14/15; skill_audit ALTER->sidecar JSON+snippet_runs D-19; 5-row D-29 matrix; manifest cap+BM25 D-09; D-36/37/38 dep/egress/sandbox-token, gVisor xref Phase 8; env 8 AURA_SKILL_*+AURA_SANDBOX_AGENT_TOKEN D-34). ROADMAP SC#1 native clone+SC#5 default-ON; REQUIREMENTS CAP-07/08 aligned. CAP-07/08 NOT complete (code waves pending). Commit 3a9a65e1.
 - [Phase 11]: 11-02 (Slice 7a read path): greenfield internal/skills — multi-root TTL-cached Loader (lazy re-scan, goleak-clean, NO background goroutine), goccy/go-yaml frontmatter parse (handles spike-006 double-quoted-escaped-quotes + CRLF) + NFKC identity fold on the READ path (gives golang.org/x/text a meaningful direct-dep use AND pre-canonicalizes to the form the 11-04 write-boundary blocklist will match), parse-only validation (name regex + name==dir + body cap, NO blocklist D-28), Lstat-no-follow symlink strip (T-11-02-T1), skip-log invalid via slog.Warn. RenderManifest byte-stable+alphabetical+BM25-overflow tail (D-06/D-09). Embedded skill-creator builtin, fingerprint-idempotent materialization (D-31). ONE non-deferred skill tool (D-05): ActionRouter read actions list|info|use + 7 reserved write/install router keys (schema enum downstream-stable, D-01); OpenAI-wire-safe schema (root required=[action], no root oneOf/enum, D-10); manifest-in-Description turn-stable (D-06); use wraps body in authority frame, info plain body (D-08); list overflow reuses tools/bm25.go via synthetic Specs. consumer-declared skillLoader seam — go list -deps ./internal/agent/tools has 0 internal/skills (cycle-free); skillLoaderAdapter+newSkillTool wired in buildBaseRegistry. ONE frozen messages[0] sentence. D-34 AURA_SKILL_* config knobs. gosec floor for new internal/skills (0o750/0o600 + justified #nosec G304). goccy/go-yaml v1.19.2 + golang.org/x/text v0.37.0 promoted direct. CAP-07 NOT complete (7a only; 7b/7c/7d pending). lint 0, race+goleak green, all <=600 LOC. Commits bad2e1e4/3cc93205.
+- [Phase ?]: [Phase 11]: 11-03 (Slice 7b validator+catalog): validator.go is the PURE write-boundary primitive — SanitizeName single name chokepoint (loader routes through it, 11-02 duplicate skillNameRe removed); violatesBlocklist NFKC-normalizes FIRST then literal-matches (Pitfall 2, returns matched+pos for the D-27 operator gate); ValidateForWrite structure+blocklist with allowBlocklisted override (model=false hard-reject, operator CLI=true only after the gate, enforced 11-05/11-06). FuzzSkillValidator (SC#3) PASS 60s/3.8M execs + deterministic 10680-entry NFKCCorpus. catalog.go mirrors sandboxagent.Client: empty-query guard, status-class+LimitReader, LAX decode (no DisallowUnknownFields), installs-ranked, D-12 disable-catalog sentinel, transport-isolated (#426). config AURA_SKILL_INJECTION_BLOCKLIST seed+override (envSliceDefault) + CATALOG_URL/_DISABLE/_INSTALL_TIMEOUT_SEC. validator import-pure, loader does NOT call it (D-28). race+lint0, <=600 LOC. Commits c16cf18c/e8a1db9a.
 
 ### Pending Todos
 
@@ -187,6 +189,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-05T14:59:01.774Z
+Last session: 2026-06-05T15:13:19.048Z
 Stopped at: Completed 11-02-PLAN.md (skills read path / Slice 7a)
 Resume file: None

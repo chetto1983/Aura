@@ -89,7 +89,7 @@ Wave 2:
 
 Wave 3:
 
-- [ ] 11-03-PLAN.md — 7b validator (NFKC + blocklist + SanitizeName) + FuzzSkillValidator (SC#3) + skills.sh /api/search catalog client (lax decode)
+- [x] 11-03-PLAN.md — 7b validator (NFKC + blocklist + SanitizeName) + FuzzSkillValidator (SC#3) + skills.sh /api/search catalog client (lax decode)
 
 Wave 4:
 
@@ -466,7 +466,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
-| 11. Skills | 2/8 | In Progress|  |
+| 11. Skills | 3/8 | In Progress|  |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
@@ -479,7 +479,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 2/8 plans executed
+**Plans:** 3/8 plans executed
 
 **Success Criteria** (what must be TRUE):
 
