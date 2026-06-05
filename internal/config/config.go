@@ -76,6 +76,14 @@ type Config struct {
 	MaxSwarmGoals        int // AURA_SWARM_MAX_GOALS — hard cap on goals per swarm_spawn call (D-13)
 	SwarmChildTimeoutSec int // AURA_SWARM_CHILD_TIMEOUT_SEC — per-child wall-clock deadline (D-11)
 	MaxSwarmConcurrent   int // AURA_SWARM_MAX_CONCURRENT — wave width; goals beyond this run in sequential waves (D-12)
+
+	// Phase 11 (Slice 7) skills knobs (D-34). SkillsDir is the active skill root the
+	// loader scans + builtins materialize into; ExportDir is the ro `/skills` mount
+	// source. Cap knobs bound the per-skill body and the model-visible manifest.
+	SkillsDir             string // AURA_SKILLS_DIR — active skill root (loader scan + builtin materialization)
+	SkillBodyCapBytes     int    // AURA_SKILL_BODY_CAP_BYTES — per-skill body size cap at load (DoS guard, D-34)
+	SkillManifestCapBytes int    // AURA_SKILL_MANIFEST_CAP_BYTES — manifest-in-Description byte budget; overflow → BM25 list (D-09/D-34)
+	SkillExportDir        string // AURA_SKILL_EXPORT_DIR — activation→host export dir (the ro /skills mount source, D-17)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -182,6 +190,12 @@ func loadBase() *Config {
 		MaxSwarmGoals:        envIntDefault("AURA_SWARM_MAX_GOALS", 8),
 		SwarmChildTimeoutSec: envIntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
 		MaxSwarmConcurrent:   envIntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
+
+		// Phase 11 skills knobs (D-34). Defaults derive from the per-user ~/.aura tree.
+		SkillsDir:             envDefault("AURA_SKILLS_DIR", defaultSkillsDir()),
+		SkillBodyCapBytes:     envIntDefault("AURA_SKILL_BODY_CAP_BYTES", 32768),
+		SkillManifestCapBytes: envIntDefault("AURA_SKILL_MANIFEST_CAP_BYTES", 8192),
+		SkillExportDir:        envDefault("AURA_SKILL_EXPORT_DIR", defaultSkillExportDir()),
 	}
 }
 
@@ -328,3 +342,19 @@ func defaultRunDir() string {
 	}
 	return filepath.Join(os.TempDir(), "aura")
 }
+
+// auraHomeDir returns the per-user ~/.aura base the skills tree lives under,
+// falling back to a tmp-based path when the home dir is unavailable.
+func auraHomeDir() string {
+	if home, err := os.UserHomeDir(); err == nil {
+		return filepath.Join(home, ".aura")
+	}
+	return filepath.Join(os.TempDir(), "aura")
+}
+
+// defaultSkillsDir is the active skill root (AURA_SKILLS_DIR default): ~/.aura/skills.
+func defaultSkillsDir() string { return filepath.Join(auraHomeDir(), "skills") }
+
+// defaultSkillExportDir is the activation export dir (AURA_SKILL_EXPORT_DIR
+// default): ~/.aura/skills/export — the ro /skills mount source (D-17).
+func defaultSkillExportDir() string { return filepath.Join(defaultSkillsDir(), "export") }
