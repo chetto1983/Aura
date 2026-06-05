@@ -111,6 +111,14 @@ Wave 8:
 
 - [ ] 11-08-PLAN.md — dual gate: xlsx North-Star cot_eval E2E (D-35) + 2 smokes + CI all-tiers + quality snapshot + Gate-3 human-verify
 
+**Wave 9** *(slice 7g — amendment #51 / D-40, skill-driven self-extension; ADDED post-execution)*
+
+- [ ] 11-09-PLAN.md — 7g deletion: delete the model-facing discovery/install Go complex (~2,050 LOC: catalog client, native installer, skill_install actions, CLI legs, serve/eval adapters, 3 env knobs) + ship find-skills-aura builtin (always:true, messages[1]) + Loader-level injection blocklist scan (D-27/D-28 amended) + persistent-install Loader root (#50) + byte-stable SystemPrompt §Skills shrink (D-40)
+
+**Wave 10** *(blocked on Wave 9)*
+
+- [ ] 11-10-PLAN.md — 7g eval rewrite: action-aware capture from structured tool args + new D-35 dual gate (self-install evidence + .xlsx artifact ground truth; install_prudence dropped) + seam-free eval registry (D-40)
+
 ### Phase 2: Agent Cornerstone
 
 **Goal**: Implement the unified `Agent` interface (Name/Description/Run/SubAgents/FindAgent yielding `iter.Seq2[*Event, error]`) and the three exported workflow agents (Sequential/Loop/Parallel) — ~420 LOC adapted from `google/adk-go` with Apache-2.0 attribution. Wire the budget contract (`AURA_LOOP_MAX_STEPS=25`, `AURA_LOOP_MAX_WALLCLOCK_SEC=300`, `AURA_LOOP_DEDUP_WINDOW=3` plus dedup/soft-cap hardening vars) with child-inherits-parent's-remaining semantics. This is the substrate cornerstone; every later phase implements this interface.
