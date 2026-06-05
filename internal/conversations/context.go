@@ -28,6 +28,20 @@ const l2WarnRatio = 0.75
 // drops oldest user/assistant pairs (amendment #22).
 const rotActionHardDropPairs = "hard_drop_pairs"
 
+// alwaysBlockSeq is the synthetic seq the messages[1] always-block turn carries when
+// the ladder injects it (D-07). seq=1 is the system L0 turn; the always-block sits at
+// seq=2 (messages[1]) and is protected by L1/L2.5 exactly like the system L0 turn
+// (Pitfall 3). It is NEVER a persisted seq — the always-block is rebuilt per turn from
+// current loader state, so a skill add/remove changes messages[1] while messages[0]
+// stays byte-identical (CAP-04).
+const alwaysBlockSeq = 2
+
+// alwaysBlockMarker tags the synthetic always-block turn in its ToolCallID field — a
+// field a real persisted user turn NEVER populates. isAlwaysBlock keys off this
+// marker (not seq+role alone, which a real persisted user turn at seq=2 would
+// collide with), so the ladder protects ONLY the injected block.
+const alwaysBlockMarker = "__aura_always_block__"
+
 // ErrContextWindowExceeded is returned by ApplyContextLadder when the history is
 // still over the L2 hard cap after L1 (and L2.5 cannot reduce it — e.g. only the
 // system turn remains). It is a normal-flow error the REPL surfaces (suggesting
@@ -41,6 +55,12 @@ type ContextConfig struct {
 	ContextWindow       int
 	MaxOutputTokens     int
 	ToolEvictAfterTurns int
+	// AlwaysBlock is the rendered messages[1] always-on skill block (D-07). When
+	// non-empty the ladder injects it as a PROTECTED user-role turn immediately after
+	// the system L0 turn — counted toward the budget but never evicted by L1/L2.5
+	// (Pitfall 3). The Runner renders it per turn from current loader state; an empty
+	// string means no always:true skill is active (the turn is omitted).
+	AlwaysBlock string
 }
 
 // hardCap computes the L2 hard cap from the config (SPEC Req#10).
@@ -106,6 +126,11 @@ func applyContextLadder(
 	enc *tiktoken.Tiktoken,
 	emit rotEmitter,
 ) ([]llm.Message, error) {
+	// Inject the messages[1] always-block (D-07) as a PROTECTED turn right after the
+	// system L0 turn, BEFORE the ladder runs, so it is counted toward the budget and
+	// protected by L1/L2.5 exactly like the system turn (Pitfall 3).
+	turns = injectAlwaysBlock(turns, cfg.AlwaysBlock)
+
 	// L1: microcompact — rewrite old role='tool' turns to a read_tool_output pointer.
 	l1 := applyL1(turns, cfg.ToolEvictAfterTurns)
 
@@ -136,6 +161,37 @@ func applyContextLadder(
 		return nil, err
 	}
 	return toMessages(reduced), nil
+}
+
+// injectAlwaysBlock inserts the messages[1] always-block as a protected user-role
+// turn (seq=alwaysBlockSeq) immediately after a leading system L0 turn (or at the
+// head when no system turn is present — the agent prepends its own system message,
+// so the ladder's history may or may not carry a persisted seq=1). An empty block is
+// a no-op. The injected turn is a COPY-friendly synthetic Turn (no sidecar, no
+// tool-call payload); it is identified later by isAlwaysBlock so L1/L2.5 never touch
+// it.
+func injectAlwaysBlock(turns []Turn, block string) []Turn {
+	if block == "" {
+		return turns
+	}
+	always := Turn{Seq: alwaysBlockSeq, Role: llm.RoleUser, Content: block, ToolCallID: alwaysBlockMarker}
+	start := 0
+	if len(turns) > 0 && turns[0].Seq == 1 && turns[0].Role == llm.RoleSystem {
+		start = 1
+	}
+	out := make([]Turn, 0, len(turns)+1)
+	out = append(out, turns[:start]...)
+	out = append(out, always)
+	out = append(out, turns[start:]...)
+	return out
+}
+
+// isAlwaysBlock reports whether t is the injected messages[1] always-block turn (the
+// synthetic seq=2 user-role marker). The ladder protects it like the system L0 turn
+// (Pitfall 3 / D-07 flagged constraint): neither L1 rewrite nor L2.5 pair-drop may
+// touch it.
+func isAlwaysBlock(t Turn) bool {
+	return t.ToolCallID == alwaysBlockMarker && t.Role == llm.RoleUser
 }
 
 // applyL1 rewrites the content of role='tool' turns older than evictAfter turns
@@ -179,10 +235,16 @@ func readToolOutputPointer(toolCallID string) string {
 // the system L0 turn and keeps the non-system remainder even (len(history)%2==0
 // for the non-system part). Returns the reduced turns + the count of pairs dropped.
 func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn, int) {
-	// Split off a leading system turn (seq=1) if present — it is never dropped.
+	// Split off the PROTECTED head: a leading system turn (seq=1) AND the messages[1]
+	// always-block (seq=2, D-07 / Pitfall 3) if present. Neither is ever dropped — the
+	// always-block is protected exactly like the system L0 turn so a long conversation
+	// never silently loses an always-on skill.
 	start := 0
 	if len(turns) > 0 && turns[0].Seq == 1 && turns[0].Role == llm.RoleSystem {
 		start = 1
+	}
+	if len(turns) > start && isAlwaysBlock(turns[start]) {
+		start++
 	}
 	system := turns[:start]
 	body := append([]Turn(nil), turns[start:]...)
@@ -218,6 +280,13 @@ func totalTokens(enc *tiktoken.Tiktoken, turns []Turn) int {
 func toMessages(turns []Turn) []llm.Message {
 	out := make([]llm.Message, 0, len(turns))
 	for _, t := range turns {
+		// The synthetic always-block carries an internal marker in ToolCallID for
+		// protection bookkeeping (isAlwaysBlock); strip it so the wire message is a
+		// clean user-role message (a user message must not carry a tool_call_id).
+		if isAlwaysBlock(t) {
+			out = append(out, llm.Message{Role: llm.RoleUser, Content: t.Content})
+			continue
+		}
 		msg, err := turnToMessage(t)
 		if err != nil {
 			msg = llm.Message{Role: t.Role, Content: t.Content, ToolCallID: t.ToolCallID}

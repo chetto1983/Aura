@@ -281,6 +281,29 @@ func (a *skillWriterAdapter) WriteMutation(ctx context.Context, action, name, de
 	return a.w.WriteMutationByName(ctx, action, name, description, body, always, skills.AuditActor{ActorID: "model"})
 }
 
+// alwaysBlockProvider returns a per-turn renderer of the messages[1] always-block
+// (D-07): it builds a loader over the active skills dir and renders the always:true
+// bodies via skills.RenderAlwaysBlock on each call, so a skill add/remove changes
+// messages[1] live (the loader's short TTL re-scans). A nil cfg / empty skills dir
+// yields a provider that always renders empty (no always-block turn). The loader is
+// goroutine-free (lazy TTL re-scan), so this provider adds no background goroutine.
+func alwaysBlockProvider(cfg *config.Config) func() string {
+	if cfg == nil || cfg.SkillsDir == "" {
+		return func() string { return "" }
+	}
+	loader := skills.NewLoader(skills.Config{
+		Roots:        []string{cfg.SkillsDir},
+		BodyCapBytes: cfg.SkillBodyCapBytes,
+	})
+	return func() string {
+		block, present := skills.RenderAlwaysBlock(loader.List())
+		if !present {
+			return ""
+		}
+		return block
+	}
+}
+
 // List projects the loaded skills into the tool-local SkillMeta shape.
 func (a *skillLoaderAdapter) List() []tools.SkillMeta {
 	loaded := a.loader.List()

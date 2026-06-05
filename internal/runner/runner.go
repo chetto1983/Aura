@@ -47,6 +47,11 @@ type Deps struct {
 	EvictAfter   int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
 	TitleTimeout time.Duration
 	StopTimeout  time.Duration
+	// AlwaysBlock renders the messages[1] always-on skill block per turn from current
+	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
+	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
+	// every turn so a skill add/remove changes messages[1] without busting messages[0].
+	AlwaysBlock func() string
 }
 
 // Runner is the orchestration layer (D-A1-01): it drives the agent turn-by-turn,
@@ -71,6 +76,8 @@ type Runner struct {
 
 	titleTimeout time.Duration
 	stopTimeout  time.Duration
+
+	alwaysBlock func() string // renders the messages[1] always-block per turn (D-07); nil → empty
 
 	wg sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
 }
@@ -99,6 +106,7 @@ func New(d Deps) *Runner {
 		evictAfter:   d.EvictAfter,
 		titleTimeout: titleTimeout,
 		stopTimeout:  stopTimeout,
+		alwaysBlock:  d.AlwaysBlock,
 	}
 }
 
@@ -230,10 +238,15 @@ func (r *Runner) nextSeq(ctx context.Context, convID string) (int, error) {
 // contextConfig builds the L1/L2/L2.5 ladder inputs from the Runner's llm.Config +
 // eviction knob.
 func (r *Runner) contextConfig() conversations.ContextConfig {
+	var block string
+	if r.alwaysBlock != nil {
+		block = r.alwaysBlock()
+	}
 	return conversations.ContextConfig{
 		ContextWindow:       r.cfg.ContextWindow,
 		MaxOutputTokens:     r.cfg.MaxOutputTokens,
 		ToolEvictAfterTurns: r.evictAfter,
+		AlwaysBlock:         block,
 	}
 }
 

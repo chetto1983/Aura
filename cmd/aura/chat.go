@@ -172,6 +172,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		RunDir:       cfg.RunDir,
 		PreviewCap:   cfg.ToolPreviewCap,
 		EvictAfter:   cfg.ContextToolEvictAfterTurns,
+		AlwaysBlock:  alwaysBlockProvider(cfg),
 	})
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, mcpClosers: mcpClosers}, nil
 }
