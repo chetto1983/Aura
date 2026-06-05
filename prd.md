@@ -2119,9 +2119,9 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > Si committa in **6 sub-slice ordinati** (Wave-0 amendment FIRST, then 7a-7e), ognuno atomic + smoke green (D-32):
 > - **11-01 (Wave-0, this amendment)**: doc-only PRD-amendment package (D-33) — supersede the 4 staleness classes; no code.
 > - **7a**: types + loader (filesystem + parser + cache 4-way split, parse-only validation per D-28) + `internal/skills/validator.go` (NFKC + literal blocklist single chokepoint, write-boundary only) + `internal/skills/paths.go` (`SanitizeName` single source) + the ONE `skill` tool with read actions `list`/`info` + the manifest-in-Description render (D-06). Read-only, no governance. ~500 LOC.
-> - **7b**: catalog client — skills.sh **`/api/search` JSON lax-decode** (D-11, spike 003), NOT HTML scrape; the `skill` tool gains `action=catalog`. **Browse default-ON (D-12, amendment #14 FLIPPED)** — read-only JSON has no scrape attack surface; `aura skills disable-catalog` is the default-deny escape hatch. ~350 LOC.
+> - **7b**: ~~catalog client — skills.sh `/api/search` JSON lax-decode (D-11, spike 003), NOT HTML scrape; the `skill` tool gains `action=catalog`. Browse default-ON (D-12, amendment #14 FLIPPED). ~350 LOC.~~ **[SUPERATA #51/D-40: nessun catalog client Go — discovery = `npx skills find` via shell nel sandbox, teaching nella builtin skill `find-skills-aura`. La sub-slice diventa la DELETION + skill builtin + Loader blocklist scan.]**
 > - **7c**: writer (atomic pending→active) + deleter + the `skill` tool mutation actions `create`/`update`/`delete` (ask_user governance). Schema `aura.skill_audit` (migration **`0010`**, floor 0009 — D-32) + sqlc queries + adapter + the **D-29 5-row audit-coherence matrix** CHECK. Tx wrapping esplicito attorno alla coppia (FS-move pending→active + INSERT skill_audit row): se INSERT fallisce, FS-move viene rollback-ato (rename inverso). ~600 LOC.
-> - **7d**: installer — native Go **`git clone --depth 1 --single-branch -c core.autocrlf=false`** (D-15, spike 004b) + symlink-strip + Aura canonical hash, NOT `npx`; the `skill` tool gains `action=install`. ~450 LOC.
+> - **7d**: ~~installer — native Go `git clone --depth 1 --single-branch -c core.autocrlf=false` (D-15, spike 004b) + symlink-strip + Aura canonical hash, NOT `npx`; the `skill` tool gains `action=install`. ~450 LOC.~~ **[SUPERATA #51/D-40: nessun installer Go model-facing — install = `npx skills add` self-service via shell, senza approval round-trip.]**
 > - **7e-core (v1, amendment #13)**: **executable code snippets** (multi-lang Python/shell, eseguibili by-path via the shipped `sandbox_exec` → `sandboxagent.Client` :2468 seam, ro `/skills` mount per D-17) + **TTL 90gg archived state** (sweep via the **`skill_ttl_sweep` cron TaskKind**, D-16 — NOT a goroutine; archived skip da discovery default). Estende SKILL.md con `type: instruction|snippet` field. ~450 LOC. **Dipende dal sandbox-agent portable hardening floor** (token + seccomp + no-new-privileges + read-only rootfs + egress allowlist — D-38) per esecuzione sicura di codice model-authored. **NO cross-conv pattern analyzer in v1.**
 > - **7f (v1.x, amendment #13 — deferred SKILL-V2-01)**: **pattern analysis multi-conversation auto-suggest** (cross-conv analyzer suggerisce save dopo 3+ pattern simili via Neo4j HNSW similarity clustering). ~250 LOC. **Dipende da Slice 0.7 Neo4j HNSW + Slice 7e-core + Slice 11 memory** (più downstream di v1 7-slice). Pattern reference: Voyager (Wang et al., NeurIPS 2023) skill library + mem0 procedural memory. Tracked in STATE.md Deferred Items `SKILL-V2-01`.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
@@ -2148,27 +2148,40 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > oggi non esistono.
 
 **Goal (amended #48, D-01).** **UNA** tool LLM-facing — `skill` — con un `action` enum, NON 7-11 tool dotted `skill.*` (i nomi dotted violano il constraint OpenAI-wire `^[a-zA-Z0-9_-]+$`; DeepSeek rifiuta sia i nomi dotted sia un `oneOf`/`enum` root). Copia il pattern `ActionRouter` di `internal/agent/tools/task.go` (Slice 6b, D-10 schema discipline: `required=["action"]` come unico requisito root, per-action fields nelle description, niente root `oneOf`). Il tool è **NON-deferred** (D-05, parity Claude Code — sempre visibile). Azioni:
-- Read-only: `action=list` (BM25-ranked, D-09), `action=info` (body via ToolResult preview+sidecar), `action=catalog` (skills.sh `/api/search`, **default-ON** per D-12).
-- Mutations (tier RISKY/DESTRUCTIVE da `internal/scoring/ComputeSkillTier`, atterrano in `pending/`, agente decide se gate via `ask_user`, Notifier alert se gate skipped): `action=create`, `action=update`, `action=delete`, `action=install`.
+- Read-only: `action=list` (BM25-ranked, D-09), `action=info` (body via ToolResult preview+sidecar), ~~`action=catalog`~~ **[RIMOSSA #51 — discovery via `npx skills find` nel sandbox]**.
+- Mutations (tier RISKY/DESTRUCTIVE da `internal/scoring/ComputeSkillTier`, atterrano in `pending/`, agente decide se gate via `ask_user`, Notifier alert se gate skipped): `action=create`, `action=update`, `action=delete`, ~~`action=install`~~ **[RIMOSSA #51 — install via `npx skills add` nel sandbox, no gate]**.
 - Snippet lifecycle (7e): `action=use` (ritorna istruzioni + path in-sandbox, D-04 — il modello esegue via `sandbox_exec`, MAI un bespoke `run`), `action=restore`, `action=archive`.
-- **NESSUNA `action=approve` model-facing (D-03)**: l'attivazione è solo umana (ask_user resume) o operatore (`aura skills approve` CLI).
+- **NESSUNA `action=approve` model-facing (D-03, NARROWED #51)**: l'attivazione delle mutation AUTHORED (create/update/delete) è solo umana (ask_user resume) o operatore (`aura skills approve` CLI). Gli install di terze parti sono fuori dal perimetro D-03 (#51/D-40: self-service via shell).
 
 Alimentati da:
 - Loader filesystem multi-root (TTL cache 1s, pattern pre-rewrite ben tarato; parse-only validation per D-28 — il blocklist è enforced SOLO alle write boundary, mai nel load path).
-- Catalog search via skills.sh — **client JSON `GET /api/search?q=` lax-decode** (D-11, spike 003; MAI `DisallowUnknownFields` — lo schema drifta `isDuplicate`/`count`), rank by `installs`. HTML scrape DEAD. Transport isolato per lo swap futuro alla public API (vercel-labs/skills#426).
-- Install via **native Go `git clone --depth 1 --single-branch -c core.autocrlf=false`** (D-15, spike 004b — native WINS vs npx: bit-identical, 3× più veloce, droppa la dipendenza node/npx host) + symlink-strip a materialization (riusa il pattern `ScanOrphans` Lstat-no-follow di Slice 1.8) + **Aura canonical hash** (byte-sorted `(relPath,bytes)` sha256 — NON interop con l'upstream `skills-lock.json` `computedHash`, locale/platform-sensitive). Post-install `ParseSkill()` re-validation prima di `Invalidate()`. `--ignore-scripts` era un no-op (il CLI non gira mai postinstall, D-14) — moot. **Amendment #49 (install-leg routing, live-E2E-driven):** il `repo` accetta lo shorthand `owner/repo` del campo `source` di skills.sh (normalizzato a `https://github.com/owner/repo`), e `InstallOpts.SkillName` seleziona la skill dentro un repo multi-skill (layout `anthropics/skills/<name>/SKILL.md`) — senza selettore il primo-SKILL.md-trovato installava una skill arbitraria, rompendo la catalog→install loop del North Star D-35. Il catalog client applica un **format-boost merge**: query multi-parola contenente un token formato (xlsx/pdf/docx/…, alias excel→xlsx ecc.) esegue anche la query bare-token e fonde i risultati per installs desc — la search semantica di skills.sh seppelliva `anthropics/skills/xlsx` (102k installs) sotto skill di dominio.
+- ~~Catalog search via skills.sh — client JSON `GET /api/search?q=` lax-decode (D-11, spike 003), rank by `installs`.~~ **[SUPERATO #51: discovery = `npx skills find` via shell — il client ufficiale assorbe il drift dello schema interno (#426); contract CLI in spike 011.]**
+- ~~Install via native Go `git clone` (D-15, spike 004b) + symlink-strip + Aura canonical hash + amendment #49 install-leg routing (owner/repo shorthand, multi-skill selector, catalog format-boost).~~ **[SUPERATO #51/D-40: install = `npx skills add <owner/repo> --skill <name> --copy -y` self-service via shell nel sandbox. Il multi-skill selector è il flag `--skill` del CLI; il format-keyword teaching vive nella builtin skill. 004b resta valido come misura (native 3× più veloce, hash canonico) ma moot quando è il modello a guidare il CLI.]**
 - Writer in `~/.aura/skills/pending/<name>/` per le mutation in attesa di approval; al `Approva` move atomico in `~/.aura/skills/active/`.
 - Audit log append-only in **Postgres** tabella `aura.skill_audit` di OGNI mutation con `{id, ts, actor_id (fk aura.identities), action, name, content_hash, source, approval_source (enum), paused_state_token fk, computed_risk_tier, gate_recommended, gate_taken, blocklist_override}`. Migrate **`0010_skill_audit.up.sql`** aggiunta in Slice 7c (floor `0009_scheduler` — D-32; NON `0007`, riservato da Slice 8/10 shipped). Query via sqlc `internal/db/queries/skill_audit.sql`. `approval_source` (Area #10 closed 2026-05-28) enum `{ask_user, cli, auto}` esplicito su COME la mutation è stata autorizzata, governato dalla matrice D-29 (vedi sotto). **Metadata consolidation (D-19)**: usage/archive state (status/last_used_at/use_count) NON è in colonne ALTER di `skill_audit` — vive in un sidecar JSON per-skill (atomic-write, la sola live-state source) + un'opzionale tabella `snippet_runs` (migration 0011) per le forensics per-run.
 
 **Discovery + prompt injection design (amended #48, D-06/D-07).** Le skill NON entrano nel system prompt (`messages[0]` resta byte-stable, CAP-04 invariant). Tre livelli:
 - **Manifest** (name + trigger-rich description per skill) vive nella **Description del tool `skill`**, generata a registry-build da `internal/skills/manifest.go` (precedente: `toolSearchDescription(reg)` in 08.1, D-06). Turn-stable: cambia solo su skill add/remove (busta la tools-prefix cache UNA volta, raro, accettato). Ordine alfabetico/byte-stable (cache-load-bearing). Oltre `AURA_SKILL_MANIFEST_CAP_BYTES` (~8k, Codex parity) il blocco termina con "N more — search with skill action=list {query}" (BM25 overflow, D-09 — riusa il ranker 08.1).
 - **`always:true` bodies** rendono in UN solo blocco user-role a **`messages[1]`** (D-07, pattern convergente Claude Code CLAUDE.md / Codex AGENTS.md; il concat in system-prompt di nanobot è l'anti-pattern). Questo è IL seam che Phase 14 Agent.md condivide (profile first, always-skills after). **VINCOLO FLAGGATO**: l'evictor L2.5 di `conversations/context.go` deve proteggere il blocco `messages[1]` come protegge il system L0 — altrimenti una conversazione lunga sfratta silenziosamente la always-mode.
-- **`messages[0]`** riceve la sezione frozen **"Skills — capability gaps"** del canonical system prompt (amendment #49, D-39 — supersede la "UNA sola frase" originale di D-06): check-installed-before-hand-building, artifact-family→catalog, install solo via ask_user approval, snippet execution BY-PATH. Resta una const byte-stable mechanism-not-enumeration (D-08/D-09 invarianti: zero timestamp, zero enumeration del tool set concreto).
+- **`messages[0]`** riceve la sezione frozen **"Skills — capability gaps"** del canonical system prompt (amendment #49, D-39) — **RIDOTTA a pointer dal #51/D-40**: il routing operativo (check-installed, format-token discovery, self-install, use-by-path) vive nella builtin skill `find-skills-aura` a messages[1]; messages[0] tiene solo il principio (skills esistono, la skill always-on insegna il loop). Resta una const byte-stable mechanism-not-enumeration (D-08/D-09 invarianti).
 
 > **Amendment #49 (D-39, Phase 11 gap-closure, live-E2E-driven, 2026-06-05).** Il live xlsx North-Star E2E (judge 0.40 vs gate ≥0.90, `docs/aura-skills-eval-2026-06-05.md`) ha provato che la policy D-06 "UNA sola frase" era insufficiente: il modello — istruito solo con "skills exist; the skill tool lists/applies them" + la doctrine `tool_search` — ha razionalmente brute-forzato web+sandbox (3× `tool_search` a vuoto, 15× `sandbox_exec` con Python ad-hoc) senza mai toccare la catalog→install path. Tre supersessioni discovery-routing, tutte cache-safe (const byte-stabili, nessun cambio schema, zero nuove dep), per il principio "se il modello non invoca il tool è bug del system prompt o del manifest, NON del test" (§Slice 1 + memoria `feedback_agent_must_know_tools_exist`):
 > 1. `agent.SystemPrompt` è promosso al **canonical capability-gap system prompt** (`docs/system_prompt.txt`, adottato verbatim): tone, loop budget discipline, tool doctrine (tool_search 2-phrasing cap), sezione "Skills — capability gaps" (installed-check prima di build-by-hand; artifact families → `skill action=catalog`; install SEMPRE via ask_user, mai self-granted; snippet BY-PATH `python3 /skills/<name>/...`), sandbox/artifact verify-before-report, honesty, nota operator-pinned `messages[1]`. Nomina solo i verbi strutturali (`tool_search`/`text_response`/`skill`/`ask_user`) — mai il tool set concreto: D-08/D-09 reggono.
 > 2. Il no-result di `tool_search` guadagna una coda fissa di orientamento verso `skill action=catalog` — il momento esatto del capability gap deve instradare DENTRO il sistema skills, non verso codice ad-hoc.
 > 3. Il lead della Description del tool `skill` nomina il loop catalog/install+approval (prima documentava solo list/info/use, lasciando catalog/install sepolti nella schema enum description).
+
+> **▶ Amendment #51 (D-40, skill-driven self-extension senza cerimonia — spikes 011/012a/012b/013, 2026-06-05).** Driver = direttiva operatore mid-spike ("stop use ask_user — you (Claude Code) never do it; stop acting like Aura is unsafe"), continuazione diretta della postura #50/D-15c (full-terminal home, operatore singolo fidato, gate per-identità futuro = capability_grants Slice 1.7). Evidenza live: il flusso tool-driven (#49 iterazione 6) falliva ancora l'E2E (judge 0.47, `docs/aura-skills-eval-2026-06-05.md`) mentre la variante skill-driven ha chiuso il loop autonomo completo find→add→use→artifact in UN turno (212s, 4/4 PASS — spike 012a); prior art di produzione: nanobot (242-LOC loader + clawhub SKILL.md ~55 righe = l'INTERO sistema skills, vs i 7.590 LOC di Aura). Blueprint completo: `Skill("spike-findings-Aura")` → references/skills-self-extension.md.
+>
+> **Architettura D-40 (sostituisce il discovery+install model-facing):**
+> 1. **Discovery = `npx skills find <query>` via shell nel sandbox** (node 22 + npx + git già nell'immagine — zero modifiche). Output piped machine-parseable (spike 011: ANSI-strip, entry `owner[/repo]@skill N installs`, exit 0 su empty/garbage query, `add --list` enumera repo multi-skill con description complete). NESSUN catalog client Go.
+> 2. **Install = `npx skills add <owner/repo> --skill <name> --copy -y` self-service via shell, SENZA approval round-trip.** Default session-scoped (cwd `/workspace`); install PERSISTENTE = cwd sul mount rw `/skills` (#50) — l'analogo del `--workdir` di nanobot/clawhub. Il CLI atterra in `<cwd>/.agents/skills/<name>/` (agent-detection): il Loader guadagna il root corrispondente (wiring esatto = decisione di piano). NESSUN installer Go model-facing.
+> 3. **Teaching = builtin skill `find-skills-aura`** (~50 righe, shippata via `MaterializeBuiltins`, `always:true` → messages[1]): query by format token, choose by installs+provenance (name-squatting LIVE nell'ecosistema — spike 011: clone di find-skills a 76K install outranka l'originale 1.9M su query semantiche), install + use by-path. Corpo provato live: `.planning/spikes/012a-discovery-skill-driven/find-skills-aura/SKILL.md`. La sezione "Skills — capability gaps" di `messages[0]` (#49/D-39) si RIDUCE a un pointer alla skill (resta const byte-stable; D-08/D-09 reggono).
+> 4. **L'UNICA security keep: il blocklist injection scan (D-27) si sposta al Loader** — gli install di terze parti non passano più dal Writer, quindi il write-boundary-only di D-28 è AMENDED: ogni body che entra nel manifest/messages[1] è scansionato al load (NFKC + literal blocklist, stesso chokepoint `validator.go`). Parse-only resta per il resto del load path.
+> 5. **D-03 NARROWED**: resta pieno per le mutation AUTHORED (7c create/update/delete via Writer: pending→approve, audit D-29, matrice invariata). NON si applica più agli install di terze parti (che escono dal perimetro Writer/audit: sono file nel filesystem ispezionabili con `aura skills list`; v1 = NESSUNA audit row per i self-install, lean per design).
+>
+> **Supersessioni esplicite:** sub-slice **7b INTERA** (catalog client D-11/D-12, #48 flip, #49 format-boost merge → DELETED); sub-slice **7d INTERA** (installer nativo D-15/spike-004b — resta storicamente valido, moot quando è il modello a guidare il CLI — + #49 install-leg routing + D-13 install red-flag gate → DELETED); le righe file-target `catalog.go`/`installer.go`; le actions `catalog`/`install` dello schema del tool `skill`; i sub-command CLI `catalog`/`install`/`disable-catalog`; le env `AURA_SKILL_CATALOG_URL`/`AURA_SKILL_INSTALL_TIMEOUT_SEC`. Superficie cancellabile misurata: **~2.050 LOC con test** (tabella spike 013).
+>
+> **D-35 North-Star gate RISCRITTO**: la sequenza hard-floor catalog→ask_user→install→sandbox_exec è superata E era strutturalmente non misurabile — doppio bug di produzione scoperto da spike 012b: (a) la capture dell'eval registra solo i NOMI dei tool (mai le action del tool `skill`) → seqOK sempre false; (b) il pause seam è name-gated su `ask_user` (`llm_agent_pause.go`) — l'`ErrAwaitingUserInput` di `action=install` collassava in `error: awaiting user input` via `runTool` (`Error()` = letterale, `ask_user.go:83`), rendendo il gate D-13 (red flags, question) DEAD CODE sul dispatch path: root cause del judge 0.40-0.47 e del churn #49. Vincolo architetturale documentato: **SOLO `ask_user` pausa il turno; nessun altro tool deve ritornare il sentinel aspettandosi una pausa.** Nuovo dual gate D-35: HARD FLOOR = (a) evidenza self-install da tool args strutturati (`npx skills add` targeting `anthropics/skills` + selector `xlsx`), (b) artifact ground-truth (.xlsx fresco in workspace, `-newermt` run-start, openpyxl read-back, data odierna); JUDGE = capability-gap recognition + output quality (la dimensione install_prudence è DROPPED). Harness pattern: spike 012a (capture action-aware dai tool args strutturati).
 
 **SKILL.md format** (agentskills.io spec compat, D-30):
 ```
@@ -2230,9 +2243,9 @@ lo STRIPpa incondizionatamente dalle skill di terze parti (D-10).
   | System (TTL `auto_archive`, `cleanup_pending_stale`) | `auto` | NULL | false | true |
 
 - [ ] **BEFORE TRUNCATE trigger (amendment #17, Pitfall #6 P0)**: function `raise_audit_immutable_truncate()` + trigger `skill_audit_truncate_block BEFORE TRUNCATE ON aura.skill_audit FOR EACH STATEMENT`. Acceptance test (`db_integration`): connect as `aura_migrate`, `TRUNCATE aura.skill_audit;` → returns explicit error `audit table is append-only`. Cross-link role separation: connect as `aura_app`, same TRUNCATE → returns permission denied (role lacks TRUNCATE privilege). Both gates active = belt-and-suspenders defense per Pitfall #6 P0.
-- [ ] **Catalog browse default-ON (amended #48, D-12 — amendment #14 FLIPPED)**: il `skill` tool advertise `action=catalog` di default (il razionale del #14 era la attack surface dello scrape HTML; il browse è ora JSON read-only via `/api/search`, niente scrape). Fresh install acceptance: `aura skills catalog list` ritorna risultati `/api/search` JSON out of the box. `aura skills disable-catalog` scrive `{catalog_enabled: false}` a `~/.aura/config.json` come **default-deny escape hatch**; quando disabilitato, `action=catalog` ritorna errore esplicito. Audit: `aura.skill_audit` INSERT row su enable/disable con `action='catalog_enable'|'catalog_disable'`, `approval_source='cli'`, `gate_recommended=false`... → corretto: usa la riga `auto`/`cli` coerente con D-29 (`gate_taken=true`).
+- [ ] ~~**Catalog browse default-ON (amended #48, D-12)**: `action=catalog`, `aura skills catalog list`, `disable-catalog` escape hatch, audit enable/disable.~~ **[SUPERATA #51/D-40: niente action=catalog, niente CLI catalog, niente escape hatch — discovery via `npx skills find` nel sandbox.]**
 - [ ] **`Validator.SanitizeName` chokepoint (audit round 1 P0)**: `internal/skills/paths.go` espone `SanitizeName(name) (clean string, err error)` — UNICA via per derivare path filesystem da user input. Regex `^[a-z0-9-]+$`, length 1-64, no reserved (`init`, `delete`, `.`, `..`). Writer + Deleter + Installer DEVONO chiamarlo prima di `filepath.Join(skillsDir, name)`. Test asserisce ogni file-touch site via static analysis (`grep -L 'SanitizeName' internal/skills/{writer,deleter,installer}.go` → empty).
-- [ ] **skills.sh integration via native Go clone (amended #48, D-14/D-15 — npx SUPERSEDED)**:
+- [ ] **skills.sh integration ~~via native Go clone (amended #48, D-14/D-15 — npx SUPERSEDED)~~ [SUPERATA #51/D-40: l'intero blocco sotto è la spec dell'installer Go cancellato — install = `npx skills add` via shell; symlink-risk e blocklist si spostano al Loader scan]**:
   - **NESSUNA dipendenza `node`/`npm` host** (droppata: native clone WINS, spike 004b).
   - Catalog browse: **client JSON `GET /api/search?q=` lax-decode** (D-11, spike 003), rank by `installs`, mai `DisallowUnknownFields`. HTML scrape DEAD.
   - Install: `exec.LookPath("git")` fixed-argv `git clone --depth 1 --single-branch -c core.autocrlf=false <repoURL> <scratchDir>` (D-15) + copy skill subdir + **symlink-strip a materialization** (Lstat-no-follow — i symlink risolvono in-container, spike 005) + **Aura canonical hash** (byte-sorted `(relPath,bytes)` sha256, TOFU pin — NON l'upstream `skills-lock.json` `computedHash`, locale/platform-sensitive). Post-install `ParseSkill()` re-validation prima di `Invalidate()`.
@@ -2262,18 +2275,18 @@ lo STRIPpa incondizionatamente dalle skill di terze parti (D-10).
 | `internal/skills/paths.go` | ~40 | `SanitizeName(name) (string, error)` — **single chokepoint path-traversal guard** (audit round 1 P0). Riusato da writer/deleter/installer. Test static-analysis: ogni file-touch site DEVE chiamarlo prima di `filepath.Join`. |
 | `internal/skills/writer.go` | ~120 | Atomic write a `pending/<name>/` + move pending→active. Path-traversal guard. Usato da create/update. |
 | `internal/skills/deleter.go` | ~70 | FS remove da active + `Invalidate()`. Path-traversal guard. |
-| `internal/skills/catalog.go` | ~140 | skills.sh `GET /api/search?q=` JSON lax-decode (D-11, spike 003), rank by `installs`, empty-query guard (server 400), transport-isolated for future public-API swap. NO HTML scrape, NO `DisallowUnknownFields`. |
-| `internal/skills/installer.go` | ~140 | Native `git clone --depth 1 --single-branch -c core.autocrlf=false` (LookPath fixed-argv, D-15) + symlink-strip (Lstat-no-follow) + Aura canonical hash (byte-sorted sha256 TOFU pin). `AURA_SKILL_INSTALL_TIMEOUT_SEC` ctx. Post-install ParseSkill re-validation prima di Invalidate. Path-traversal guard. NO npx/node. |
+| ~~`internal/skills/catalog.go`~~ | — | **[CANCELLATO #51/D-40 — discovery via npx CLI nel sandbox]** |
+| ~~`internal/skills/installer.go`~~ | — | **[CANCELLATO #51/D-40 — install via npx CLI nel sandbox]** |
 | `internal/skills/materialize.go` | ~80 | Activation → host export dir (`AURA_SKILL_EXPORT_DIR`); de-materialize on archive/delete; symlink-strip at materialization (D-17, spike 005 — symlinks resolve in-container). |
 | `internal/skills/audit.go` | ~70 | Thin adapter su sqlc `Queries.RecordSkillMutation` + `Queries.ListAuditSince`. Niente più file IO. |
 | `internal/db/queries/skill_audit.sql` | ~45 | **4 query sqlc**: `RecordSkillMutation`, `ListAuditSince`, `GetByName`, `ListPendingApproval`. |
 | `internal/db/migrations/0010_skill_audit.up.sql` | ~70 | **(amended #48, D-32: floor 0009, NOT 0007)** `CREATE TABLE aura.skill_audit` (id pk, ts timestamptz, actor_id uuid REFERENCES aura.identities(id), action text, name text, content_hash text, source text, `approval_source text NULL CHECK (approval_source IN ('ask_user','cli','auto'))`, `blocklist_override boolean NOT NULL DEFAULT false`, paused_state_token uuid REFERENCES aura.paused_states(token) ON DELETE SET NULL, `computed_risk_tier text NOT NULL DEFAULT 'risky' CHECK (computed_risk_tier IN ('safe','normal','risky','destructive'))`, `gate_recommended boolean NOT NULL DEFAULT true`, `gate_taken boolean NOT NULL DEFAULT true`). Indice su `ts DESC`, su `(gate_recommended, gate_taken) WHERE gate_recommended=true AND gate_taken=false`, su `(approval_source, ts DESC)`. **Triggers (Pitfall #6 P0): `skill_audit_append_only BEFORE UPDATE OR DELETE … FOR EACH ROW` + `skill_audit_truncate_block BEFORE TRUNCATE … FOR EACH STATEMENT` + role separation `aura_app` (INSERT/SELECT only, no TRUNCATE) vs `aura_migrate` (DDL).** **D-29 5-row coherence CHECK** (planner writes the exact SQL): `(approval_source IS NULL AND gate_recommended AND NOT gate_taken)` [pending] OR `(approval_source='ask_user' AND paused_state_token IS NOT NULL AND gate_taken)` OR `(approval_source='cli' AND paused_state_token IS NULL AND gate_taken)` OR `(approval_source='auto' AND paused_state_token IS NULL AND NOT gate_recommended AND gate_taken)`. (Optional `0011_snippet_runs` for per-run forensics, D-19.) |
-| `internal/agent/tools/skill.go` | ~250 | **(amended #48, D-01: ONE tool, ActionRouter — NOT 7 dotted `skill_*.go`)** Copia `task.go` (Slice 6b). Non-deferred (D-05). `Execute` parses `action` discriminator → `NewActionRouter(map[string]ActionFunc{list,info,catalog,create,update,delete,install,use,restore,archive})`. Schema: `required=["action"]` solo root, per-action fields nelle description, `action` string-enum wire-safe, NO root `oneOf`/`enum` (400s DeepSeek, D-10). `Spec().Description` = `renderManifestDescription()` (turn-stable manifest, D-06). `create`/`update` → `Writer.WritePending` + `ComputeSkillTier` + gate; `delete` → DESTRUCTIVE; `install` → native clone; `use` → ritorna path in-sandbox (D-04, esecuzione via `sandbox_exec`); NO `approve` (D-03). |
+| `internal/agent/tools/skill.go` | ~200 | **(amended #48 D-01 + #51 D-40)** ONE tool, ActionRouter, non-deferred (D-05). Actions **ridotte #51**: `{list,info,create,update,delete,use,restore,archive}` — ~~catalog~~/~~install~~ RIMOSSE (discovery+install via npx nel sandbox; schema enum aggiornato, D-10 invariato). `create`/`update` → `Writer.WritePending` + `ComputeSkillTier` + gate; `delete` → DESTRUCTIVE; `use` → path in-sandbox (D-04); NO `approve` (D-03, narrowed alle authored). |
 | `internal/skills/loader/loader_test.go` | ~120 | Multi-root precedence + cache TTL + invalid SKILL.md skip. |
 | `internal/skills/installer_test.go` | ~100 | Catalog fetch (fixture HTTP `/api/search`) + path traversal rejection + symlink-strip + ask_user flow. |
 | `internal/skills/writer_test.go` | ~80 | Atomic write + pending→active move + concurrent write race. |
 | `internal/skills/audit_integration_test.go` | ~80 | (`db_integration`) D-29 matrix INSERT coherence + immutability (UPDATE/DELETE/TRUNCATE rejected) + role-denied. |
-| `cmd/aura/main.go` (diff) | ~+30 | Registra la UNA tool `skill` (non-deferred) in `buildBaseRegistry`. Sub-command `aura skills {list|info|create|update|delete|install|approve|always|audit|snippet …|restore|archive|disable-catalog}`. |
+| `cmd/aura/main.go` (diff) | ~+30 | Registra la UNA tool `skill` (non-deferred) in `buildBaseRegistry`. Sub-command **(ridotti #51)** `aura skills {list|info|create|update|delete|approve|always|audit|snippet …|restore|archive}` — ~~install/catalog/disable-catalog~~ RIMOSSI. |
 
 **Open questions.**
 1. **~~`when_to_use` field~~ — ELIMINATO.** Confermato dall'esempio reale `D:/tmp/assistant-ui/.claude/skills/tap/SKILL.md` e dal pattern Claude Code: frontmatter minimo, description ricca incorpora il when-to-use.
@@ -2304,20 +2317,8 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ```
 
 ```
-slice 7b: skills catalog (skills.sh /api/search JSON, default-ON)
-
-catalog.go = GET /api/search?q= JSON lax-decode (D-11, spike 003), rank by
-installs, empty-query guard, transport-isolated. NO HTML scrape, NO
-DisallowUnknownFields. skill tool gains action=catalog, browse DEFAULT-ON
-(D-12, amendment #14 flipped); aura skills disable-catalog escape hatch.
-
-Smoke: aura chat "cerca su skills.sh una skill per analisi statistica" →
-skill(action=catalog) returns candidate list, model presents via ask_user
-kind=choice. Fresh install: aura skills catalog list works out of the box.
-
-LOC: +XXX src / +YY test.
-
-Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+[SUPERATO #51/D-40 — il template 7b (catalog client) è sostituito dal template
+"slice 7g" sotto: deletion del discovery/install Go + builtin find-skills-aura.]
 ```
 
 ```
@@ -2344,22 +2345,25 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ```
 
 ```
-slice 7d: skills installer (native git clone, D-15)
+slice 7g: skill-driven self-extension — delete the Go discovery/install
+complex, ship find-skills-aura (amendment #51, D-40)
 
-Installer = native Go git clone --depth 1 --single-branch -c
-core.autocrlf=false (LookPath fixed-argv, D-15 spike 004b — node/npx dep
-DROPPED) + symlink-strip at materialization (Lstat-no-follow, spike 005) +
-Aura canonical hash (byte-sorted (relPath,bytes) sha256 TOFU pin — NOT upstream
-skills-lock.json computedHash). AURA_SKILL_INSTALL_TIMEOUT_SEC ctx, post-install
-ParseSkill re-validation prior to Loader.Invalidate(). skill tool action=install
-with ErrAwaitingUserInput approval gate; gate surfaces red flags (D-13:
-metadata.*.install[], tool wildcards, bundled-exec count), strips always (D-10).
+DELETE catalog.go+test, skill_install.go (catalog+install actions)+test,
+installer.go+tests, CLI catalog/install/disable-catalog legs, serve/eval
+adapters, AURA_SKILL_CATALOG_URL/AURA_SKILL_INSTALL_TIMEOUT_SEC (~2,050 LOC,
+spike-013 table). ADD builtin find-skills-aura (always:true, messages[1])
+via MaterializeBuiltins; Loader-level injection blocklist scan (D-27 moves
+from write-boundary, D-28 amended); Loader root for persistent npx installs
+through the rw /skills mount (#50). SystemPrompt §Skills shrinks to a
+pointer (cache-safe const). Eval: action-aware capture + new D-35 dual gate
+(self-install evidence + artifact ground truth; install_prudence dropped).
 
-Smoke: malicious skill with a symlink escaping its tree → materialization
-strips it, test asserts. (--ignore-scripts was a no-op — clone never runs
-postinstall, D-14 — so that pre-rewrite assertion is moot/removed.)
+Smoke: aura chat "Fammi un file Excel con il mercato di Yahoo Finance di
+oggi" → npx skills find xlsx → npx skills add anthropics/skills --skill
+xlsx --copy -y → SKILL.md → .xlsx in workspace, openpyxl read-back, today's
+date (spike 012a: 4/4 live, single turn).
 
-LOC: +XXX src / +YY test.
+LOC: -XXX src (net negative) / +YY builtin+loader / eval rewrite.
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ```
@@ -4895,8 +4899,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SKILL_MANIFEST_CAP_BYTES` | `8192` | cap | 7 | Manifest-in-Description byte cap; past it the block ends "N more — search with skill action=list {query}" BM25 overflow (amendment #48, D-09/D-34). |
 | `AURA_SKILL_SNIPPET_TTL_DAYS` | `90` | cap | 7e | Idle threshold for the `skill_ttl_sweep` cron TaskKind to auto-archive a snippet (amendment #48, D-16/D-34). |
 | `AURA_SKILL_EXPORT_DIR` | `~/.aura/skills/export` | path | 7e | Host dir materialized to the sandbox `/skills` ro mount on activation (amendment #48, D-17/D-34). |
-| `AURA_SKILL_CATALOG_URL` | `https://www.skills.sh` | operative | 7 | skills.sh base for the `/api/search` JSON catalog client (amendment #48, D-11/D-34). |
-| `AURA_SKILL_INSTALL_TIMEOUT_SEC` | `90` | cap | 7 | `context.WithTimeout` for the native `git clone` install (amendment #48, D-15/D-34). |
+| ~~`AURA_SKILL_CATALOG_URL`~~ | — | — | 7 | **RIMOSSA #51/D-40** (niente catalog client Go — discovery via npx CLI nel sandbox). |
+| ~~`AURA_SKILL_INSTALL_TIMEOUT_SEC`~~ | — | — | 7 | **RIMOSSA #51/D-40** (niente installer Go — install via npx CLI nel sandbox; il timeout è quello della shell). |
 | `AURA_SANDBOX_AGENT_TOKEN` | (auto-gen at first boot, mirror `AURA_SETUP_TOKEN`) | secret | 2/7e | Bearer sent by `sandboxagent.Client` (`Authorization: Bearer`) so `:2468` enforces auth (today `--no-token`); the healthcheck must carry it too (amendment #48, D-38, spike 008). Model-authored snippet code makes this load-bearing. |
 | `AURA_SKILL_PATTERN_ANALYSIS_INTERVAL_MIN` | `60` | cap | 7e | Background pattern_analyzer goroutine interval (v1.x deferred Slice 7f per amendment #13). |
 | `AURA_SKILL_PATTERN_ANALYSIS_WINDOW_DAYS` | `7` | cap | 7e | Query execute logs window per cluster detection (v1.x deferred Slice 7f per amendment #13). |
