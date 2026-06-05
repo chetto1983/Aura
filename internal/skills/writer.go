@@ -131,6 +131,61 @@ func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, 
 	return StatusPendingApproval, nil
 }
 
+// WriteInstallPending lands an installed skill (a possibly-multi-file tree already
+// staged symlink-stripped + always-stripped on disk by the Installer) into pending/
+// <name>/ and records the D-29 pending audit tuple with action=install and the
+// installer's precomputed canonical hash. It is the installer's pending+audit sink
+// (11-06): the install is a gated mutation that NEVER self-activates (D-03) —
+// activation is the operator / ask_user resume path. Unlike WriteMutation (single
+// SKILL.md), this promotes the whole staged tree so bundled files travel into pending.
+func (w *Writer) WriteInstallPending(ctx context.Context, fm Frontmatter, body, stagedDir, hash string, actor AuditActor) (string, error) {
+	if w.pendingDir == "" {
+		return "", fmt.Errorf("install pending: pending dir not configured")
+	}
+	if err := os.MkdirAll(w.pendingDir, 0o750); err != nil {
+		return "", fmt.Errorf("install pending: mkdir pending root: %w", err)
+	}
+	dst := filepath.Join(w.pendingDir, fm.Name)
+	// Promote the staged tree into pending/<name>/ atomically: copy into a sibling
+	// temp dir (symlink-stripped) then rename, mirroring writePending's crash safety.
+	tmp, err := os.MkdirTemp(w.pendingDir, "."+fm.Name+"-tmp-*")
+	if err != nil {
+		return "", fmt.Errorf("install pending: mkdir temp: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = os.RemoveAll(tmp)
+		}
+	}()
+	if err := copyTreeNoSymlinks(stagedDir, tmp); err != nil {
+		return "", fmt.Errorf("install pending: copy staged tree: %w", err)
+	}
+	if err := os.RemoveAll(dst); err != nil {
+		return "", fmt.Errorf("install pending: clear stale pending %q: %w", fm.Name, err)
+	}
+	if err := os.Rename(tmp, dst); err != nil {
+		return "", fmt.Errorf("install pending: rename into place: %w", err)
+	}
+	committed = true
+
+	if err := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
+		return InsertAuditTx(ctx, q, AuditInsert{
+			ActorID:         actor.ActorID,
+			IdentityID:      actor.IdentityID,
+			SkillName:       fm.Name,
+			Action:          AuditInstall,
+			ContentHash:     hash,
+			ApprovalSource:  ApprovalNone,
+			GateRecommended: true,
+			GateTaken:       false,
+		})
+	}); err != nil {
+		return "", fmt.Errorf("install pending %q: audit: %w", fm.Name, err)
+	}
+	return StatusPendingApproval, nil
+}
+
 // WriteMutationByName is the string-keyed entry point the CLI and the model-tool
 // adapter share: it maps the action name + plain frontmatter fields onto the typed
 // WriteMutation. The actor labels the caller (the CLI passes "cli", the tool adapter
