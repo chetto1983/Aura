@@ -1,0 +1,15 @@
+: OPENROUTER PROCESSING
+
+data: {"choices":[{"delta":{"reasoning_content":"Let me"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"reasoning_content":" think."},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"reasoning_content":""},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":"Ciao"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{"content":", come stai?"},"finish_reason":null}]}
+
+data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]

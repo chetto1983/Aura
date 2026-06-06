@@ -65,12 +65,16 @@ type Usage struct {
 	Cost             *float64
 }
 
-// Chunk is one streamed delta from the LLM. Exactly one of Text, ToolCall, or
-// Usage is populated; FinishReason is set on the final content/tool chunk of the
-// stream. The trailing Usage chunk (when present) carries the final token+cost
-// summary so the agent can read it through the provider-neutral channel.
+// Chunk is one streamed delta from the LLM. Exactly one of Text, Reasoning,
+// ToolCall, or Usage is populated; FinishReason is set on the final content/tool
+// chunk of the stream. Reasoning carries a chain-of-thought delta (provider
+// `reasoning`/`reasoning_content` field) emitted token-per-token with the same
+// immediacy as Text; it is STREAM-ONLY and never folded into accumulated content
+// (amendment #57). The trailing Usage chunk (when present) carries the final
+// token+cost summary so the agent can read it through the provider-neutral channel.
 type Chunk struct {
 	Text         string
+	Reasoning    string
 	ToolCall     *ToolCall
 	FinishReason string
 	Usage        *Usage

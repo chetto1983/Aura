@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -28,6 +29,99 @@ func replayFixture(t *testing.T, name string) ([]llm.Chunk, parseResult) {
 		t.Fatalf("parseSSE(%s): %v", name, perr)
 	}
 	return chunks, res
+}
+
+// TestStream_ReasoningDualField (acceptance #33, amendment #57): the two golden
+// fixtures carry the SAME logical stream differing ONLY in the delta field name —
+// `reasoning` (vLLM/DGX local) vs `reasoning_content` (DeepSeek-V4 remote). Both
+// MUST decode to the IDENTICAL ordered []Chunk{Reasoning} sequence, every reasoning
+// Chunk MUST arrive before the content Chunks (immediacy/ordering), the accumulated
+// content MUST contain NONE of the reasoning text (stream-only, no leak), and an
+// empty reasoning delta MUST emit no Chunk.
+func TestStream_ReasoningDualField(t *testing.T) {
+	reasoningOf := func(chunks []llm.Chunk) []string {
+		var out []string
+		for _, c := range chunks {
+			if c.Reasoning != "" {
+				out = append(out, c.Reasoning)
+			}
+		}
+		return out
+	}
+	textOf := func(chunks []llm.Chunk) string {
+		var b string
+		for _, c := range chunks {
+			b += c.Text
+		}
+		return b
+	}
+	// firstContentIdx returns the index of the first content Chunk (-1 if none).
+	firstContentIdx := func(chunks []llm.Chunk) int {
+		for i, c := range chunks {
+			if c.Text != "" {
+				return i
+			}
+		}
+		return -1
+	}
+	lastReasoningIdx := func(chunks []llm.Chunk) int {
+		last := -1
+		for i, c := range chunks {
+			if c.Reasoning != "" {
+				last = i
+			}
+		}
+		return last
+	}
+
+	fieldChunks, _ := replayFixture(t, "reasoning-field.txt")
+	contentChunks, _ := replayFixture(t, "reasoning-content-field.txt")
+
+	wantReasoning := []string{"Let me", " think."}
+
+	gotField := reasoningOf(fieldChunks)
+	gotContent := reasoningOf(contentChunks)
+
+	// Accept-both: identical emitted reasoning sequence regardless of field name (#33).
+	if len(gotField) != len(wantReasoning) {
+		t.Fatalf("reasoning fixture emitted %v reasoning chunks, want %v", gotField, wantReasoning)
+	}
+	for i := range wantReasoning {
+		if gotField[i] != wantReasoning[i] {
+			t.Errorf("reasoning fixture chunk %d = %q, want %q", i, gotField[i], wantReasoning[i])
+		}
+		if gotContent[i] != gotField[i] {
+			t.Errorf("dual-field mismatch at %d: reasoning_content=%q, reasoning=%q (accept-both must be identical, #33)", i, gotContent[i], gotField[i])
+		}
+	}
+
+	// Empty reasoning delta emits no Chunk (mirror of the content guard).
+	if len(gotField) != 2 {
+		t.Errorf("empty reasoning delta leaked a Chunk: got %d reasoning chunks, want 2", len(gotField))
+	}
+
+	// Immediacy/ordering: every reasoning Chunk arrives before the first content Chunk.
+	for _, chunks := range [][]llm.Chunk{fieldChunks, contentChunks} {
+		lr := lastReasoningIdx(chunks)
+		fc := firstContentIdx(chunks)
+		if lr < 0 || fc < 0 {
+			t.Fatalf("fixture missing reasoning/content chunks: lastReasoning=%d firstContent=%d", lr, fc)
+		}
+		if lr >= fc {
+			t.Errorf("reasoning chunk at %d arrives at/after first content chunk at %d (immediacy/ordering broken)", lr, fc)
+		}
+	}
+
+	// No-leak: the accumulated content excludes every reasoning-delta string.
+	content := textOf(fieldChunks)
+	for _, r := range wantReasoning {
+		if strings.Contains(content, strings.TrimSpace(r)) {
+			t.Errorf("reasoning text %q leaked into accumulated content %q (must be stream-only)", r, content)
+		}
+	}
+	if content != "Ciao, come stai?" {
+		t.Errorf("accumulated content = %q, want %q", content, "Ciao, come stai?")
+	}
 }
 
 // TestStream_TextStop (Req#1): text_stop.sse — the `:` comment and `[DONE]`
