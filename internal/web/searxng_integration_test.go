@@ -60,21 +60,35 @@ func liveClient(t *testing.T) *Client {
 // that at least one result has a populated title + url.
 func TestSearch_Live(t *testing.T) {
 	c := liveClient(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
-	defer cancel()
 
-	results, err := c.Search(ctx, SearchParams{Query: "Neo4j HNSW vector index", MaxResults: 5})
-	if err != nil {
-		t.Fatalf("live Search failed (is the SearXNG container up + on the public internet?): %v", err)
+	queries := []SearchParams{
+		{Query: "Neo4j HNSW vector index", MaxResults: 5},
+		{Query: "SearXNG", Domains: []string{"wikipedia.org"}, MaxResults: 5},
 	}
-	if len(results) == 0 {
-		t.Fatal("live Search returned zero results — check the JSON format contract (settings.yml formats) and connectivity")
-	}
-	for i, r := range results {
-		if r.Title == "" || r.URL == "" {
-			t.Fatalf("result %d missing title/url: %+v", i, r)
+	var lastErr error
+	for _, q := range queries {
+		ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+		results, err := c.Search(ctx, q)
+		cancel()
+		if err != nil {
+			lastErr = err
+			continue
 		}
+		if len(results) == 0 {
+			lastErr = nil
+			continue
+		}
+		for i, r := range results {
+			if r.Title == "" || r.URL == "" {
+				t.Fatalf("result %d missing title/url for query %q: %+v", i, q.Query, r)
+			}
+		}
+		return
 	}
+	if lastErr != nil {
+		t.Fatalf("live Search failed (is the SearXNG container up + on the public internet?): %v", lastErr)
+	}
+	t.Fatal("live Search returned zero results for all smoke queries - check SearXNG upstream engines and the JSON format contract (settings.yml formats)")
 }
 
 // TestFetch_Live exercises SC#2 against a real public page: web.Fetch returns

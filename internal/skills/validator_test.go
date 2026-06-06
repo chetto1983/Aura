@@ -52,8 +52,27 @@ func TestViolatesBlocklist_FullwidthNFKCCollapse(t *testing.T) {
 
 func TestViolatesBlocklist_Benign(t *testing.T) {
 	body := "A perfectly normal skill body describing how to format spreadsheets."
-	if _, _, ok := violatesBlocklist(body, defaultBlocklistFixture); ok {
+	matched, pos, ok := violatesBlocklist(body, defaultBlocklistFixture)
+	if ok {
 		t.Fatalf("benign body must not trip the blocklist")
+	}
+	if matched != "" || pos != 0 {
+		t.Fatalf("benign miss = (%q, %d, false), want (\"\", 0, false)", matched, pos)
+	}
+}
+
+func TestViolatesBlocklist_EmptyEntriesAreIgnored(t *testing.T) {
+	body := "This skill is helpful and mentions [INST] later."
+	matched, _, ok := violatesBlocklist(body, []string{"", "[INST]"})
+	if !ok {
+		t.Fatalf("empty blocklist entry must be skipped so later entries are still checked")
+	}
+	if matched != "[INST]" {
+		t.Fatalf("matched = %q, want %q", matched, "[INST]")
+	}
+
+	if matched, pos, ok := violatesBlocklist("clean body", []string{""}); ok || matched != "" || pos != 0 {
+		t.Fatalf("only-empty blocklist = (%q, %d, %v), want (\"\", 0, false)", matched, pos, ok)
 	}
 }
 
@@ -142,6 +161,33 @@ func TestValidateForWrite_StructureChecks(t *testing.T) {
 	badType := Frontmatter{Name: "ok", Description: "x", Type: "wizardry"}
 	if err := ValidateForWrite(badType, "body", defaultBlocklistFixture, 32768, false); !errors.Is(err, ErrInvalidStructure) {
 		t.Fatalf("bad type err = %v, want ErrInvalidStructure", err)
+	}
+}
+
+func TestValidateForWrite_StructureBoundaries(t *testing.T) {
+	if maxSkillDescriptionLen != 1024 {
+		t.Fatalf("maxSkillDescriptionLen = %d, want 1024", maxSkillDescriptionLen)
+	}
+
+	exactDesc := Frontmatter{Name: "ok", Description: strings.Repeat("d", 1024), Type: TypeInstruction}
+	if err := ValidateForWrite(exactDesc, "body", defaultBlocklistFixture, 32768, false); err != nil {
+		t.Fatalf("description at max boundary rejected: %v", err)
+	}
+
+	tooLongDesc := Frontmatter{Name: "ok", Description: strings.Repeat("d", 1025), Type: TypeInstruction}
+	if err := ValidateForWrite(tooLongDesc, "body", defaultBlocklistFixture, 32768, false); !errors.Is(err, ErrInvalidStructure) {
+		t.Fatalf("description over max err = %v, want ErrInvalidStructure", err)
+	}
+
+	fm := Frontmatter{Name: "ok", Description: "x", Type: TypeInstruction}
+	if err := ValidateForWrite(fm, strings.Repeat("b", 10), defaultBlocklistFixture, 10, false); err != nil {
+		t.Fatalf("body at cap boundary rejected: %v", err)
+	}
+	if err := ValidateForWrite(fm, strings.Repeat("b", 2), defaultBlocklistFixture, 1, false); !errors.Is(err, ErrInvalidStructure) {
+		t.Fatalf("body over one-byte cap err = %v, want ErrInvalidStructure", err)
+	}
+	if err := ValidateForWrite(fm, strings.Repeat("b", 2048), defaultBlocklistFixture, 0, false); err != nil {
+		t.Fatalf("body cap 0 must disable size rejection, got %v", err)
 	}
 }
 
