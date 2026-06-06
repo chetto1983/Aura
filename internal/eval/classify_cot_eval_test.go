@@ -309,6 +309,41 @@ func TestRegistry_SeamFree(t *testing.T) {
 	}
 }
 
+// TestRegistrySnippetReuse_HasSkillTool is the no-key structural PARITY proof for the
+// snippet-reuse path (18-04 Task 1, Pitfall 3 / #52-#53 rule 4). buildSeamFreeSkillsRegistry
+// deliberately OMITS the `skill` tool (the find-skills loop self-extends via the host
+// terminal, not a tool) — but a snippet-REUSE scenario MUST resolve `skill action=use` /
+// `action=save_snippet`, so the sibling buildSnippetReuseRegistry registers the PRODUCTION
+// skill tool over a temp skills root. This test asserts that parity WITHOUT a paid run, so
+// a regression (the skill tool dropped from the reuse registry) fails CI's structural slot
+// even when the live tier is gated off (no-skip-as-green). A nil pool builds a loader-only
+// skill tool — enough to assert the tool's PRESENCE (the gate's live path supplies a pool
+// for the write actions). It also re-asserts the seam-free guarantees still hold on the
+// sibling (no sandbox_exec; the shell_exec host terminal present).
+func TestRegistrySnippetReuse_HasSkillTool(t *testing.T) {
+	cfg := config.LoadDB()
+	root := t.TempDir()
+	exportDir := t.TempDir()
+	reg := buildSnippetReuseRegistry(cfg, "", root, exportDir, nil)
+
+	got := map[string]bool{}
+	for _, tool := range reg.All() {
+		got[tool.Spec().Name] = true
+	}
+	if !got["skill"] {
+		t.Errorf("snippet-reuse registry MUST register the production `skill` tool (parity, Pitfall 3) — have %v", keysOf(got))
+	}
+	// Parity also keeps the host-terminal surface (shell_exec) so a snippet `use` frame's
+	// `<interpreter> <host-path>` command line has a tool to run it; sandbox_exec stays OUT
+	// (the snippet posture is host-primary, D-01) — it's only the named per-run escalation.
+	if !got["shell_exec"] {
+		t.Errorf("snippet-reuse registry must keep shell_exec (the host terminal the by-path snippet frame runs on) — have %v", keysOf(got))
+	}
+	if got["sandbox_exec"] {
+		t.Errorf("snippet-reuse registry must NOT register sandbox_exec — approved snippets run on the HOST terminal (D-01); sandbox is the named per-run escalation only")
+	}
+}
+
 func keysOf(m map[string]bool) []string {
 	out := make([]string, 0, len(m))
 	for k := range m {

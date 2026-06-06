@@ -228,6 +228,12 @@ func buildSkillsRegistry(t *testing.T, cfg *config.Config, workspace string) (re
 // shell_exec and the fs tools — the inspectable host run dir (empty in the no-key
 // TestRegistry_SeamFree, which only asserts the tool SET, never runs a command); in
 // production the empty root means process cwd, which IS the announced workspace.
+//
+// The `skill` tool is OMITTED here on purpose: the FIND-SKILLS path (TestSkillsE2E)
+// self-extends via the host terminal (`npx skills add`), never a tool. The SNIPPET-REUSE
+// path (18-04) is the exception — it needs `skill action=use`/`save_snippet` — so its
+// sibling constructor buildSnippetReuseRegistry adds the production skill tool on top of
+// this set (Pitfall 3 / #52-#53 rule 4), leaving this find-skills registry untouched.
 func buildSeamFreeSkillsRegistry(cfg *config.Config, workspace string) *tools.Registry {
 	reg := buildRegistry() // text_response + tool_search + read_tool_output + current_time
 	reg.Register(tools.AskUser{})
@@ -242,6 +248,10 @@ func buildSeamFreeSkillsRegistry(cfg *config.Config, workspace string) *tools.Re
 	reg.Register(&tools.FSGlob{WorkspaceRoot: workspace})
 	return reg
 }
+
+// The snippet-reuse eval registry (buildSnippetReuseRegistry) + its eval-test-only
+// loader/writer adapters live in skills_snippet_reuse_registry_cot_eval_test.go (the
+// 600-LOC cap split, mirroring the skills_xlsx_verify split).
 
 // runSkillsScenario drives the natural prompt through the agent loop, captures the
 // action-aware tool calls (self-install evidence from structured args), does the
