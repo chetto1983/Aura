@@ -18,15 +18,20 @@ fixed:
   - IN-01
   - IN-02
   - IN-03
+  - IN-04
   - IN-05
 fix_notes: >-
-  All Critical + Warnings resolved. WR-02 is resolved-by-documentation (the
-  deliberate full-forensic-capture posture is now commented at the args_raw
-  persistence site + a redaction/capping design todo is tracked in
-  .planning/STATE.md; no behavior change). WR-05 + IN-05 folded into the CR-01
-  fix (tool-boundary name trim + grammar validation). IN-04 (eval adapter
-  duplication) is the pre-existing deferred refactor already tracked in
-  .planning/STATE.md Pending Todos — not in this fix scope.
+  All Critical + Warnings resolved. WR-02 is now IMPLEMENTED (not
+  documented-deferred): internal/toolinvocations/redact.go caps args_raw to 8 KiB
+  / result_preview to 2 KiB (UTF-8-boundary-safe) and runs RedactForLedger — a
+  credential-pattern table (Authorization/Bearer headers, sk-/sk-or- keys, AKIA
+  AWS ids, password=/token=/api_key=/secret= values → [REDACTED]) — at the
+  toParams persistence chokepoint, so no secret lands verbatim in the un-deletable
+  ledger (commit cfd4c36a). WR-05 + IN-05 folded into the CR-01 fix (tool-boundary
+  name trim + grammar validation). IN-04 is now IMPLEMENTED (not deferred): the
+  skill loader/writer adapters were extracted into the shared internal/skilladapters
+  package importable from both cmd/aura and internal/eval, collapsing the eval-test
+  mirror (commit 240edd2d).
 ---
 
 # Phase 18 Code Review — Slice 7e Executable Snippet Reuse / Steady-State Artifact Runs
