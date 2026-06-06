@@ -77,6 +77,11 @@ type Config struct {
 	SwarmChildTimeoutSec int // AURA_SWARM_CHILD_TIMEOUT_SEC — per-child wall-clock deadline (D-11)
 	MaxSwarmConcurrent   int // AURA_SWARM_MAX_CONCURRENT — wave width; goals beyond this run in sequential waves (D-12)
 
+	// Scheduler agent_job wall-clock (#53/D-42). The 120s swarm-child analog starved
+	// real artifact jobs (a North-Star-class xlsx run measures 150-360s live); the
+	// serve composition root passes this into AgentDeps.MaxDuration.
+	AgentJobMaxDurationSec int // AURA_AGENT_JOB_MAX_DURATION_SEC — agent_job end-to-end wall-clock deadline
+
 	// Phase 11 (Slice 7) skills knobs (D-34). SkillsDir is the active skill root the
 	// loader scans + builtins materialize into; ExportDir is the ro `/skills` mount
 	// source. Cap knobs bound the per-skill body and the model-visible manifest.
@@ -198,6 +203,8 @@ func loadBase() *Config {
 		MaxSwarmGoals:        envIntDefault("AURA_SWARM_MAX_GOALS", 8),
 		SwarmChildTimeoutSec: envIntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120),
 		MaxSwarmConcurrent:   envIntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
+
+		AgentJobMaxDurationSec: envIntDefault("AURA_AGENT_JOB_MAX_DURATION_SEC", 600),
 
 		// Phase 11 skills knobs (D-34). Defaults derive from the per-user ~/.aura tree.
 		SkillsDir:             envDefault("AURA_SKILLS_DIR", defaultSkillsDir()),

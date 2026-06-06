@@ -143,6 +143,9 @@ func buildDispatch(chat *chatEnv, store *cron.Store) *cron.Dispatch {
 		Registry:   chat.reg,
 		PreviewCap: chat.cfg.ToolPreviewCap,
 		RunDir:     chat.cfg.RunDir,
+		// Real artifact jobs measure 150-360s live; the 120s handler fallback starved
+		// them mid-LLM-call (#53/D-42). Env-tunable: AURA_AGENT_JOB_MAX_DURATION_SEC.
+		MaxDuration: time.Duration(chat.cfg.AgentJobMaxDurationSec) * time.Second,
 	}
 	real := map[cron.TaskKind]handlers.Handler{
 		cron.KindReminder:       handlers.ReminderHandler{},

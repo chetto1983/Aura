@@ -4910,6 +4910,7 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SCHEDULER_TICK_SECONDS` | `30` | cap | 6 | Intervallo del tick loop DIY in secondi (amendment #46). |
 | `AURA_SCHEDULER_MAX_CONCURRENT_RUNS` | `4` | cap | 6 | Cap concorrenza held-conn (advisory lock per-run su conn dedicata, D-03 Pitfall 2). Dimensionato **strettamente sotto** `pool MaxConns` (amendment #46). |
 | `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS` | `3` | cap | 6 | Retry bounded della delivery prima del fallback definitivo a stdout + flag notification-undelivered (amendment #46, D-22). |
+| `AURA_AGENT_JOB_MAX_DURATION_SEC` | `600` | cap | 6 | Wall-clock end-to-end di un `agent_job` schedulato (amendment #53, D-42). Il fallback 120s analogo allo swarm-child affamava i job-artifact reali (150-360s misurati live); il composition root di `aura serve` lo passa in `AgentDeps.MaxDuration`. |
 | `AURA_BACKUP_DIR` | `~/.aura/backups/` | path | 6 | Destinazione dei dump di backup (`pg_dump`, `neo4j-admin database dump`) via `docker exec` (amendment #46, D-26; riconcilia `$AURA_BACKUP_DIR` del ROADMAP con il path PRD). Retention 14d/7d rolling. |
 | `AURA_SKILLS_DIR` | `~/.aura/skills` | path | 7 | Skills root (active/pending/archived dirs). Global FS; identity only in audit rows (amendment #48, D-34). |
 | `AURA_SKILL_BODY_CAP_BYTES` | `32768` (32 KiB) | cap | 7 | Write-time refuse cap for a SKILL.md body (D-34; also in Caps prose). |
