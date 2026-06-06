@@ -24,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/scoring"
+	"github.com/chetto1983/aura/internal/skilladapters"
 	"github.com/chetto1983/aura/internal/skills"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -220,17 +221,7 @@ func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) err
 	return nil
 }
 
-// --- skillLoader adapter (live `skill` tool, 11-02) ---
-
-// skillLoaderAdapter bridges the live *skills.Loader onto the tools.skillLoader seam
-// the `skill` tool dispatches against, keeping internal/agent/tools free of an
-// internal/skills import. It projects skills.Skill into the tool-local SkillMeta and
-// renders the manifest the tool's Description shows.
-type skillLoaderAdapter struct {
-	loader    *skills.Loader
-	manCap    int
-	exportDir string // AURA_SKILL_EXPORT_DIR — the host materialization target a snippet's HOST by-path use frame points at (D-01)
-}
+// --- skill tool wiring (live `skill` tool, 11-02; adapters in internal/skilladapters) ---
 
 // taskStorePool extracts the live pool from the task-store adapter (nil-safe): the
 // pool-free manifest path passes a nil store, so the skill tool's write actions are
@@ -248,7 +239,7 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // loader. When a skills dir is configured the builtins are materialized first so
 // skill-creator appears in the very first scan. When a live pool is supplied
 // (serve/chat boot) the write actions are wired to the durable, gated Writer (11-05)
-// via the skillWriterAdapter; the pool-free path leaves Writer nil (write actions
+// via skilladapters.NewWriter; the pool-free path leaves Writer nil (write actions
 // error loudly). Discovery+install is no longer a tool concern (amendment #51 /
 // D-40): the find-skills always-on skill teaches self-extension via the sandbox CLI.
 func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
@@ -263,10 +254,10 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 		BodyCapBytes: cfg.SkillBodyCapBytes,
 		Blocklist:    cfg.SkillInjectionBlocklist,
 	})
-	tool := &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes, exportDir: cfg.SkillExportDir}}
+	tool := &tools.SkillTool{Loader: skilladapters.NewLoader(loader, cfg.SkillManifestCapBytes, cfg.SkillExportDir)}
 	if pool != nil {
 		w := newSkillWriter(cfg, pool)
-		tool.Writer = &skillWriterAdapter{w: w}
+		tool.Writer = skilladapters.NewWriter(w)
 	}
 	return tool
 }
@@ -278,61 +269,6 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 // skill WINS on a name collision (scanRoot iterates roots in order, later root wins).
 func skillLoaderRoots(cfg *config.Config) []string {
 	return []string{filepath.Join(cfg.SkillExportDir, ".agents", "skills"), cfg.SkillsDir}
-}
-
-// skillWriterAdapter bridges the live *skills.Writer onto the tools.skillWriter seam
-// the skill tool's create/update/delete actions dispatch against, keeping
-// internal/agent/tools free of an internal/skills import. The model is the actor on
-// this path (allowBlocklisted=false is enforced inside WriteMutation).
-type skillWriterAdapter struct {
-	w *skills.Writer
-}
-
-// WriteMutation maps the tool's string-keyed call onto the live Writer, labeling the
-// actor "model". A blocklist/validation reject comes back as an error (the tool
-// surfaces it as a self-correct, NOT a pause).
-func (a *skillWriterAdapter) WriteMutation(ctx context.Context, action, name, description, body string, always bool) (string, error) {
-	return a.w.WriteMutationByName(ctx, action, name, description, body, always, skills.AuditActor{ActorID: "model"})
-}
-
-// SaveSnippet maps the tool's UNGATED save_snippet call onto the live Writer.SaveSnippet
-// (D-02), labeling the actor "model" on the D-29 pending audit tuple (so a model-authored
-// save is attributable, T-18-08-S). SaveSnippet still validates + runs the injection
-// blocklist on the CODE + lands pending — it NEVER self-activates; the model cannot bypass
-// the save-time gate. It returns the pending status string for the tool's confirmation.
-func (a *skillWriterAdapter) SaveSnippet(ctx context.Context, name, language, code, description string, needsNetwork, needsWorkspace bool) (string, error) {
-	fm := skills.Frontmatter{
-		Name:           name,
-		Description:    description,
-		NeedsNetwork:   needsNetwork,
-		NeedsWorkspace: needsWorkspace,
-	}
-	res, err := a.w.SaveSnippet(ctx, name, language, code, fm, skills.AuditActor{ActorID: "model"})
-	if err != nil {
-		return "", err
-	}
-	return res.Status, nil
-}
-
-// Restore maps the tool's restore call onto the live Writer.Restore (the inverse of
-// Archive), labeling the actor "model" with the cli ApprovalSource (the D-29 cli tuple
-// the 0010 CHECK accepts — restore audits as activate/cli, no new migration). It returns
-// the active status string.
-func (a *skillWriterAdapter) Restore(ctx context.Context, name string) (string, error) {
-	if err := a.w.Restore(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "model"}); err != nil {
-		return "", err
-	}
-	return skills.StatusActive, nil
-}
-
-// ArchiveSnippet maps the tool's archive call onto the live Writer.Archive (SAFE tier, no
-// gate), labeling the actor "model" with the cli ApprovalSource (the manual operator-source
-// archive, distinct from the TTL sweep's auto source). It returns an "archived" status.
-func (a *skillWriterAdapter) ArchiveSnippet(ctx context.Context, name string) (string, error) {
-	if err := a.w.Archive(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "model"}); err != nil {
-		return "", err
-	}
-	return "archived", nil
 }
 
 // alwaysBlockProvider returns a per-turn renderer of the messages[1] always-block
@@ -357,49 +293,6 @@ func alwaysBlockProvider(cfg *config.Config) func() string {
 		}
 		return block
 	}
-}
-
-// List projects the loaded skills into the tool-local SkillMeta shape.
-func (a *skillLoaderAdapter) List() []tools.SkillMeta {
-	loaded := a.loader.List()
-	out := make([]tools.SkillMeta, 0, len(loaded))
-	for _, s := range loaded {
-		out = append(out, tools.SkillMeta{Name: s.Name, Description: s.Description})
-	}
-	return out
-}
-
-// Body returns the named skill's markdown body.
-func (a *skillLoaderAdapter) Body(name string) (string, bool) {
-	s, ok := a.loader.Get(name)
-	if !ok {
-		return "", false
-	}
-	return s.Body, true
-}
-
-// ManifestDescription renders the turn-stable, alphabetical, cap-bounded manifest
-// the skill tool's Description shows (D-06/D-09).
-func (a *skillLoaderAdapter) ManifestDescription() string {
-	return skills.RenderManifest(a.loader.List(), a.manCap)
-}
-
-// Snippet resolves an active snippet skill into its HOST by-path invocation (D-01
-// host-primary): the docs instructions (the SKILL.md body) + the host export-dir path
-// the model runs through shell_exec + the interpreter. The host path is resolved under
-// the SAME export dir the Writer materializes into (cfg.SkillExportDir) so it points at
-// the real materialized file. ok=false for an absent or non-snippet skill (action=use
-// then falls back to the instruction-skill authority-frame path).
-func (a *skillLoaderAdapter) Snippet(name string) (instructions, hostPath, interpreter string, ok bool) {
-	s, found := a.loader.Get(name)
-	if !found || s.Type != skills.TypeSnippet {
-		return "", "", "", false
-	}
-	path, interp, perr := skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)
-	if perr != nil {
-		return "", "", "", false
-	}
-	return s.Body, path, interp, true
 }
 
 // snippetSweeperAdapter bridges the live *skills.Writer onto the handlers.SnippetSweeper
