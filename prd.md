@@ -1764,7 +1764,7 @@ Oltre alla regola "no nomi tool nel prompt E2E", ogni slice rispetta una **sogli
 | 5 (Web tools) | `web_fetch("google.com") returns html` | SSRF protection (loopback denied, allowlist enforced), redirect chain max 5, content-type sniffing, robots.txt respect verify |
 | 6 (Scheduler) | `task.fire after 10s` | `FOR UPDATE SKIP LOCKED` concurrency 5 workers, crash recovery `unknown_recovery` row, `ReschedulesOnRecovery` selective re-fire verify |
 | 7c (Skill mutation) | `skill_create writes file` | Tx rollback su INSERT fail (FS-move reversed), audit row immutable (UPDATE/DELETE rejected via trigger), `approval_source` constraint coherence enforced |
-| 8 (AG-UI) | `event.type == "TEXT_MESSAGE_CONTENT"` | AG-UI Dojo conformance suite full run, property-based on all ~25 event types, backpressure SSE channel cap 64 + drop with `RUN_ERROR` |
+| 8 (AG-UI) | `event.type == "TEXT_MESSAGE_CONTENT"` | AG-UI Dojo conformance suite full run [8b deferito #35], property-based sui 21 event types emessi (golden fixtures spike 015, #56), backpressure SSE channel cap 64 + drop with `RUN_ERROR` |
 | 9b (Telegram) | `bot.send("hello")` | Throttle 1500ms/500ms/1000ms enforce con `synctest`, 429 backoff exponential up to 30s, golden fixture per ogni AG-UI event type → Telegram message |
 | 10 (Onboarding) | Interview 1 question | LoopAgent max_iter=8 cap enforce, escalation event terminate, fact extraction recall on conv corpus (precision ≥ 0.7), audit profile_audit row con paused_state_token |
 | 11b (Ingest) | `ingest.file(pdf) returns ok` | Content_hash idempotent, mem0 2-fase conflict dedup (95% recall on duplicate entities), entity type taxonomy coverage 100% |
@@ -2690,20 +2690,20 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 
 > **Slice 0.9 amendment**: l'AG-UI emitter consuma `iter.Seq2[*Event, error]` direttamente da `(*LlmAgent).Run()` (Slice 0.9). Mapping `*Event` Aura → AG-UI event types diventa una sola funzione `mapToAGUI(*Event) []agui.Event` invece di subscribere a 5 channel/callback diversi del Loop. Saving stimato: **−100 LOC** (no Subscribe/emitter plumbing custom, range-over-func nativo).
 
-**Goal.** Esporre il Loop di Aura attraverso il protocollo **AG-UI** ([ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)), MIT, ~17-25 event types standard, transport SSE/WS/webhook. Aura diventa un'agent compatibile con qualsiasi UI AG-UI-aware (CopilotKit, AG-UI Dojo, future custom frontend, Telegram bot adapter, browser SPA). Niente lock-in al transport; sostituisce/preempt qualsiasi channel-adapter custom.
+**Goal.** Esporre il Loop di Aura attraverso il protocollo **AG-UI** ([ag-ui-protocol/ag-ui](https://github.com/ag-ui-protocol/ag-ui)), MIT, **28 event types attivi** (~~17-25~~ corretto #56 da spike 015; +5 `THINKING_*` deprecati da NON usare — `REASONING_*` è il canonico), transport SSE/WS/webhook. Aura diventa un'agent compatibile con qualsiasi UI AG-UI-aware (CopilotKit, AG-UI Dojo, future custom frontend, Telegram bot adapter, browser SPA). Niente lock-in al transport; sostituisce/preempt qualsiasi channel-adapter custom.
 
 **Razionale.** Out-of-scope ha sempre tenuto fuori Telegram, dashboard, web. Risolto via standard invece che codice custom: implementi una volta il protocollo, ogni transport ha il suo client (Telegram bot in-process via SSE, browser via fetch+SSE, CLI in-process). Pattern verificato production-grade: LangGraph + CrewAI (1st party), Microsoft Agent Framework + Google ADK + AWS Strands + Mastra + Pydantic AI + Agno + LlamaIndex + AG2 (1st party integrations), Claude Agent SDK + Langroid (community).
 
 **Pre-requisiti.**
 - Slice 1.8 conversation persistence (`threadId` = `conversation_id`).
-- Slice 1.5 multi-pause FIFO (`outcome.interrupted` con `interrupts[]` mappato da `PausedState[]`).
+- Slice 1.5 multi-pause FIFO (`outcome{type: interrupt}` con `interrupts[]` mappato da `PausedState[]` — literal #56).
 - Slice 1 streaming SSE accumulator (event delta merging già pronto).
 - Slice 1.7 identity (per future auth dell'endpoint `aura serve`, oggi local-only).
 
 **Dipendenza Go.**
 ```go
 // go.mod
-require github.com/ag-ui-protocol/ag-ui/sdks/community/go <SHA-post-2026-05-14> // SHA-pinned per amendment #6 (pseudo-version repo; pin to commit ≥ 2026-05-14). At Phase 12 Slice 8 impl time, resolve via `go list -m -json github.com/ag-ui-protocol/ag-ui/sdks/community/go@HEAD`.
+require github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9 // amendment #6+#56: pin = PSEUDO-VERSION literal (commit e9e910b230b9329c905e31ca024b4114dedf7918, 2026-05-14 "interrupt, resume, multimodal"; HEAD del SDK al 2026-06-06). Risolto live da spike 014, sigillato da go.sum. Gotcha CI bootstrap: pinnare PRIMA che il codice importi il modulo richiede un secondo `go get .../pkg/core/events@<pseudo-version>` per i sums transitivi (logrus).
 ```
 
 **Smoke.**
@@ -2748,27 +2748,29 @@ curl -N -X POST http://127.0.0.1:9080/agent/run \
   - `MESSAGES_SNAPSHOT` su `GET /threads/<id>/messages` (rehydration UI client).
   - `STATE_SNAPSHOT` opzionale al run start (current state della conv).
   - `STATE_DELTA` con `JSONPatchOperation[]` (RFC 6902) per update incrementali (es. cost USD running sum).
-  - `RUN_FINISHED` con `outcome.type ∈ {success, interrupted, errored}`. Se `interrupted`, `outcome.interrupts[]` mappato da `pending []*PausedState` (Slice 1.5 multi-pause).
+  - `RUN_FINISHED` con `outcome.type ∈ {success, interrupt}` (**#56**: i literal SDK sono questi due — ~~`interrupted`~~ non esiste; ~~`errored`~~ non è un outcome, il failure path è l'evento `RUN_ERROR`). Se `interrupt`, `outcome.interrupts[]` (`[]types.Interrupt{ID, Reason, Message, ToolCallID, ResponseSchema, ExpiresAt}`) mappato da `pending []*PausedState` (Slice 1.5 multi-pause); `ResponseSchema` (JSON Schema) pubblica la shape attesa della risposta — le `ask_user` options diventano schema, `ExpiresAt` disponibile per pause TTL.
   - `RUN_ERROR` per failure non recuperabili (LLM 5xx finale, panic loop, etc.).
 - [ ] **REASONING_* events (dual-field, amendment #33)**: se `reasoning_content` (stile DeepSeek-V4 remoto) **OPPURE `reasoning`** (vLLM ha rimosso il campo deprecato `reasoning_content` allineandosi alla guidance OpenAI — sul path local-LLM DGX il reasoning arriva qui) è presente in `usage.*`/`delta.*`, il client wire emette `REASONING_START` / `REASONING_MESSAGE_CONTENT` / `REASONING_END` parallelamente ai TEXT_MESSAGE_* (separate messageId). Accept-both, niente parse semantico, stream byte-per-byte. **Senza il dual-field il path DGX/`local-only` non emette mai reasoning** → la status-line "💭 Reasoning..." di Telegram resta vuota proprio sul deployment max-privacy. Acceptance: fixture SSE golden per entrambi i nomi campo → stessi eventi.
-- [ ] **Resume contract**: per riprendere un Loop interrupted, il client invia un nuovo `POST /agent/run` con stesso `threadId` + nuovo `runId` + `messages` includono i RoleTool answers per gli interrupts precedenti (matching su `tool_call_id`). Server riconosce e ricostruisce lo stato Loop via `LoadHistory + ResumeBatch(answers)`.
+- [ ] **Resume contract (riscritto #56 — protocol-native)**: per riprendere un Loop interrupted, il client invia un nuovo `POST /agent/run` con stesso `threadId` + nuovo `runId` + **`resume: []ResumeEntry{interruptId, status ∈ {resolved, cancelled}, payload}`** (campo first-class di `types.RunAgentInput` dal commit pinnato). ~~`messages` includono i RoleTool answers per gli interrupts precedenti (matching su `tool_call_id`)~~ — superato: il match è `interruptId` → `PausedState` token; il server ricostruisce lo stato Loop via `LoadHistory + ResumeBatch(answers)`. `status=cancelled` = HITL cancel nativo. Il parser/validation di `RunAgentInput` è SDK-provided (unmarshal dual camelCase/snake_case su ogni campo): `internal/agui/types.go` tiene SOLO la validazione semantica Aura (threadId = conversation UUID esistente, messages non vuoto).
 - [ ] **Auth dell'endpoint (Out of scope esplicito)**: niente auth in Slice 8 (continuità con Out of scope "Auth dell'endpoint `aura serve`"). Endpoint bind di default a `127.0.0.1:9080` (local-only). Future slice auth aggiunge bearer token + identity FK alle conversations.
 
 > **Amendment #35 (D15 split + reconciliation D00/D13, 2026-06-01) — RATIFY AG-UI + 3 fix.** AG-UI ratificato come transport standard 2026 (CopilotKit Series A 27M$ mag-2026; integrazioni 1st-party Google/Microsoft/AWS/Oracle; SSE copre il 99% dei casi; blast-radius confinato a `internal/agui/` ~440 LOC via translator puro → orphan-risk basso; WebSocket-rejected corretto). Tre aggiustamenti: **(1) Split 8a/8b.** Telegram (Slice 9b) consuma via **fanout in-process, NON via HTTP/SSE** (`agui_subscriber.go`/`fanout.go`) → solo `translator.go`+`fanout.go`+`client.go`+`types.go`+property-test sono sul critical-path = **Slice 8a** (pre-req di Slice 9). L'endpoint HTTP (`server.go`), `aura serve`, la Dojo conformance suite e `aura chat --via-agui` non hanno client in v1 (dashboard SPA out-of-scope) = **Slice 8b**, deferita finché non esiste un client HTTP reale **e** l'auth è progettata. **(2) Cloud-auth/D00 footgun (8b).** Il bind `127.0.0.1` + auth-out-of-scope è corretto su mini-PC/DGX (loopback) ma non copre il target **Hetzner cloud** (D00). `--bind` su indirizzo non-loopback DEVE richiedere auth (futura) e **fail-fast sotto `AURA_PRIVACY_MODE=local-only`** (coerente boot-fail #30/#33). Il check `identity_id != local → 403` è authorization SENZA authentication: non è un controllo di sicurezza finché l'auth non atterra. **(3) Reasoning dual-field** già risolto in Slice 1 (amendment #33): il renderer mappa REASONING_* da entrambi `reasoning`/`reasoning_content`.
+
+> **▶ Amendment #56 (Phase 12 pre-plan, spike ground-truth 014-016, 2026-06-06) — SDK reality fixes.** La spike session 4 (`.planning/spikes/014…016`, blueprint in `spike-findings-Aura/references/agui-gateway.md`) ha eseguito live pin + enumerazione event-surface + SSE round-trip sul SDK Go ufficiale. Quattro correzioni al testo Slice 8: **(1) Pin #6 = pseudo-version literal** `v0.0.0-20260514093510-e9e910b230b9` — il grep 40-hex originale non può MAI matchare (`require <path> <sha40>` non è sintassi go.mod valida; il repo non ha subdir tags → Go registra solo pseudo-version); gate CI riscritto sul literal, intent di #6 (no floating) pienamente servito via go.sum. **(2) Outcome literals** = `{success, interrupt}`; `errored` non esiste (failure → evento `RUN_ERROR`). **(3) Resume contract protocol-native**: `RunAgentInput.Resume []ResumeEntry` supera il design RoleTool-answers; `types.Interrupt.ResponseSchema` pubblica la shape della risposta, `status=cancelled` dà l'HITL cancel gratis. **(4) Conteggio eventi**: 28 active (+5 `THINKING_*` deprecati; `REASONING_*` canonico serve #33 coi nomi esatti); Aura ne emette 21 — i property-test targetizzano quelli (golden fixtures spike 015). Conferme live: il design iter.Seq2 −100 LOC regge (translator puro ~60 LOC core, ZERO modifiche a `internal/agent` — D-17 verificato); `SSEWriter.WriteEventWithType` produce il framing `event:`+`id:`+`data:` dello smoke (il default SDK è data-only — ri-verificare compat Dojo a 8b se si tiene `event:`); floor loopback 35-40ms coerente con OQ#4; obblighi translator: skip empty deltas + garanzia `messageId`/`toolCallId` (il `Validate()` SDK rigetta entrambi); logrus entra nel binario via `core/events/decoder.go` (tollerato, path decode client-side mai usato dall'emit).
 - [ ] **CORS**: header permissivi per dev (`Access-Control-Allow-Origin: *` se `AURA_AGUI_CORS_PERMISSIVE=1`, default `*` per `127.0.0.1` origin). Future restrittivo via env.
 - [ ] **Backpressure**: SSE writer buffered channel (capacity 64); su client lento, channel full → drop con WARN log + `RUN_ERROR` se persistente. Niente blocco del Loop.
 - [ ] **[8b — DEFERITO, amendment #35] AG-UI Dojo compliance**: test integrazione che esegue il Dojo conformance suite (50-200 LOC per building block come da spec) contro `aura serve --agui-port`. Validation: text streaming, tool calls, state sync, HITL interrupts.
-- [ ] Test unitario translator: input sequenza `*agent.Event` (Slice 0.9) → output `[]events.Event` AG-UI sequenza corretta. Property-based su tutti gli ~25 event types.
-- [ ] **go.mod pin verification (amendment #6)**: `go.mod` for `github.com/ag-ui-protocol/ag-ui/sdks/community/go` MUST be a specific commit SHA (NOT `latest`, NOT a date-based pseudo-version `v0.0.0-YYYYMMDDHHMMSS-xxxxxxxxxxxx` resolved at install time). CI gate: `grep -E '^require github\.com/ag-ui-protocol/ag-ui/sdks/community/go [a-f0-9]{40}$' go.mod` must return exactly 1 match.
+- [ ] Test unitario translator: input sequenza `*agent.Event` (Slice 0.9) → output `[]events.Event` AG-UI sequenza corretta. Property-based sui **21 event types che Aura emette** (#56; golden wire fixtures: `.planning/spikes/015-agui-event-surface/golden-events.json`). Obblighi translator da spike 016: skip empty deltas (il `Validate()` SDK li rigetta), garanzia `messageId`/`toolCallId` non vuoti, sort delle key STATE_DELTA multi-key nei golden compare (map iteration non deterministica).
+- [ ] **go.mod pin verification (amendment #6, gate riscritto #56)**: ~~`grep -E '^require github\.com/ag-ui-protocol/ag-ui/sdks/community/go [a-f0-9]{40}$' go.mod`~~ — insoddisfacibile per costruzione (`require <path> <sha40>` non è sintassi go.mod valida; nessun subdir tag → solo pseudo-version possibile). L'intent di #6 (no `latest` floating, no resolve a install time) è servito dal **literal pseudo-version** (immutabile via go.sum). CI gate corretto: `grep -E 'github\.com/ag-ui-protocol/ag-ui/sdks/community/go v0\.0\.0-20260514093510-e9e910b230b9' go.mod` must return exactly 1 match. Bump del pin = nuovo amendment con nuovo literal.
 
 **File targets** (~600 LOC src + ~300 test — saving −100 LOC riapplicato da Slice 0.9: il translator consume `iter.Seq2[*Event, error]` direttamente, no `Emitter` interface custom né plumbing channel-based):
 | Path | LOC | Note |
 |---|---|---|
 | `internal/agui/client.go` | ~80 | Wrapper sul Go SDK community `core/events`. Type aliases per evitare leak del package esterno nei call sites. |
-| `internal/agui/translator.go` | ~180 | `Translate(seq iter.Seq2[*agent.Event, error]) iter.Seq2[events.Event, error]` — mapping deterministico 1:N da `*agent.Event` Slice 0.9 a AG-UI event types (text/tool/state/lifecycle/reasoning, ~25 types). ID generation via `IDGenerator` interface. Funzione pura, no mutable state cross-event eccetto IDs. Sostituisce `Emitter` interface pre-0.9 (drop ~180 LOC plumbing). |
+| `internal/agui/translator.go` | ~180 | `Translate(seq iter.Seq2[*agent.Event, error]) iter.Seq2[events.Event, error]` — mapping deterministico 1:N da `*agent.Event` Slice 0.9 a AG-UI event types (text/tool/state/lifecycle/reasoning, 21 types emessi su 28 attivi — #56). ID generation via `IDGenerator` interface. Funzione pura, no mutable state cross-event eccetto IDs. Sostituisce `Emitter` interface pre-0.9 (drop ~180 LOC plumbing). |
 | `internal/agui/fanout.go` | ~80 | Fanout helper per in-process subscribers (Slice 9b Telegram consumer): `Fanout` struct wrappa `iter.Seq2[*agent.Event, error]` e distribuisce a N subscriber channel concurrent. Aggiunto qui per centralizzare la dependency Slice 9b → Slice 8 (era retro-aggiunto in Slice 9, fix audit Round 1). |
 | `internal/agui/server.go` **[8b deferito #35]** | ~200 | HTTP server: `POST /agent/run` (SSE response), `GET /threads/<id>/messages` (JSON `MESSAGES_SNAPSHOT`). Consume `(*LlmAgent).Run(ctx) iter.Seq2[*Event, error]` direttamente, passa a `Translate`, scrive SSE. Backpressure-bounded (buffered channel cap 64), CORS, graceful shutdown. `--bind` non-loopback richiede auth + fail-fast sotto `local-only` (#35). |
-| `internal/agui/types.go` | ~80 | `RunAgentInput` parser, validation (`threadId` UUID, `messages[]` non vuoto, etc.), helpers. |
+| `internal/agui/types.go` | ~40 (#56, era ~80) | Validazione semantica Aura su `types.RunAgentInput` SDK-provided (threadId = conversation UUID esistente, messages non vuoto policy) + helpers. Il parser JSON + dual-case unmarshal è del SDK — NON riscriverlo. |
 | `cmd/aura/main.go` (diff) | ~+80 | Subcommand `aura serve [--agui-port <N>] [--bind <addr>]`. |
 | `cmd/aura/chat.go` (diff) **[8b deferito #35]** | ~+50 | `aura chat --via-agui` flag opzionale (passa per il server invece che in-process). Default in-process. **Note refactor-on-touch**: questo file viene rinominato/migrato a `internal/channels/cli/cli.go` in Slice 9a — la diff `+50` qui resta come delta intermedio, Slice 9a refactor la assorbe. |
 | `internal/agui/server_test.go` **[8b deferito #35]** | ~180 | Integration test: spawn server, run AG-UI Dojo conformance suite, assert eventi. |
@@ -2791,19 +2793,20 @@ slice 8: AG-UI gateway (SSE event protocol transport)
 
 Aura speaks AG-UI (ag-ui-protocol/ag-ui, MIT). Endpoint
 aura serve --agui-port=9080 expone POST /agent/run (SSE stream)
-+ GET /threads/<id>/messages (snapshot). 25 event types emessi
-dal Loop via internal/agui/emitter.
++ GET /threads/<id>/messages (snapshot). 21 event types emessi
+dal Loop via internal/agui/translator (#56).
 
 Mapping Aura -> AG-UI:
   conversations.id (1.8)      <-> threadId
   Loop.Turn                   <-> runId (uuid)
-  PausedState[] (1.5 #4)      <-> outcome.interrupted.interrupts[]
+  PausedState[] (1.5 #4)      <-> outcome{type:interrupt}.interrupts[] (#56)
   ToolResult (1)              <-> TOOL_CALL_RESULT.content
-  RoleTool.ToolCallID         <-> tool_call_id matching su resume
+  ResumeEntry.interruptId     <-> PausedState token (resume[] nativo, #56)
 
-Reasoning events (10 types) emessi se provider returns
-reasoning_content (DeepSeek-V4) OPPURE reasoning (vLLM/local,
-amendment #33 dual-field). Future-proof.
+Reasoning events (REASONING_* canonico, 7 types; THINKING_*
+deprecati #56) emessi se provider returns reasoning_content
+(DeepSeek-V4) OPPURE reasoning (vLLM/local, amendment #33
+dual-field). Future-proof.
 
 Translator pattern (Slice 0.9): translate(iter.Seq2[*agent.Event]) ->
 iter.Seq2[events.Event] funzione pura, no Emitter interface custom.
@@ -2817,7 +2820,9 @@ Bind default 127.0.0.1, CORS env-driven.
 CLI default in-process (zero overhead), --via-agui opt-in per
 testing transport. Benchmark per scegliere mode finale post-1.9.
 
-Dipendenza go.mod: github.com/ag-ui-protocol/ag-ui/sdks/community/go (SHA-pinned per amendment #6 — no pseudo-version `latest`).
+Dipendenza go.mod: github.com/ag-ui-protocol/ag-ui/sdks/community/go
+v0.0.0-20260514093510-e9e910b230b9 (pseudo-version literal pinnata,
+amendment #6+#56 — no floating latest).
 
 Smoke: aura serve + curl /agent/run mostra SSE event stream
 conforme. AG-UI Dojo conformance suite verde.
