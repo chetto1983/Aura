@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 11-02-PLAN.md (skills read path / Slice 7a)
-last_updated: "2026-06-06T12:54:37.259Z"
-last_activity: 2026-06-06 -- Phase 18 execution started
+last_updated: "2026-06-06T13:04:43.494Z"
+last_activity: 2026-06-06
 progress:
   total_phases: 20
   completed_phases: 12
   total_plans: 89
-  completed_plans: 83
+  completed_plans: 85
   percent: 60
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 18 (slice-7e-executable-snippet-reuse-steady-state-artifact-runs) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 18
-Last activity: 2026-06-06 -- Phase 18 execution started
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-06-06
 
 Progress: [█████████░] 91%
 
@@ -106,6 +106,7 @@ Progress: [█████████░] 91%
 | Phase 11 P04 | ~45min | 2 tasks | 15 files |
 | Phase 11 P05 | ~50min | 2 tasks | 17 files |
 | Phase 11 P06 | 45min | 2 tasks | 15 files |
+| Phase 18 P18-02 | ~25min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -163,6 +164,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 11]: 11-04 (Slice 7c core): migration 0010 ships append-only aura.skill_audit (BEFORE UPDATE/DELETE row trigger + BEFORE TRUNCATE statement trigger + aura_app SELECT/INSERT-only grant, Pitfall #6) + D-29 coherence CHECK (4-tuple disjunction pending/ask_user/cli/system) + content_hash NOT NULL every row (D-23); 0009 scheduler_tasks_kind_check (live-verified auto-name) ALTERed to admit skill_ttl_sweep (A2 landmine, D-16). audit_store INSERT+SELECT-only, SQLSTATE 42501->ErrAuditImmutable / 23514->ErrAuditIncoherent. Writer gates via scoring.ComputeSkillTier/GateRecommended, validates allowBlocklisted=false (model never bypasses), writes pending atomically BEFORE the tx, records the pending tuple (NULL,NULL,true,false) in db.WithTx; Activate is a SEPARATE method (T-11-04-E1 self-approval block). materialize active-only into AURA_SKILL_EXPORT_DIR with Lstat-no-follow symlink strip (manual os.ReadDir recursion, gosec G122-clean); contenthash = byte-sorted (relPath,bytes) sha256 (D-15) shared writer+installer. db.MigrateSteps round-trip seam. db_integration RAN live, -race symlink green WSL, lint 0, all <=600 LOC. Commits 7b0d5d42/c50bc631.
 - [Phase ?]: [Phase 11]: 11-05 (Slice 7c governance): skill create/update/delete validate->gate->pending->ask_user pause (D-02); NO model-facing approve (D-03, no router key, tested); blocklist hit = tool error self-correct NOT a pause (D-27); skills.ResumeHandler accept->Writer.Activate / decline->DiscardPending+reject audit (cleanup_pending_stale + gate-taken tuple, no distinct D-29 reject shape); headless never self-activates structurally (D-26, WriteMutation never activates) + optional injectable Alerter not a cron import; messages[1] always-block byte-stable alphabetical (D-07/CAP-04) injected INTO the ladder as a marker-tagged seq=2 protected turn (ToolCallID marker, stripped on wire) the L1/L2.5 evictor never drops (Pitfall 3, 20-turn regression); cache_invariant_audit.sh green; aura skills CLI list|info|create|update|delete|approve(CLI source)|audit + purge surfaces the append-only role error (SC#2); boundary held (tools 0 internal/skills deps); race+lint0; all <=600 LOC. Commits 0b00e2c2/68a3cd01. CAP-07 NOT complete (7d install pending).
 - [Phase ?]: [Phase 11]: 11-06 (Slice 7d installer): native git clone (LookPath fixed-argv, autocrlf-off, GIT_TERMINAL_PROMPT=0, validateRepoURL guard, no npm/pip D-14) + symlink-strip stage + unconditional always-strip persisted (D-10) + red-flag detection (D-13) + CanonicalHash TOFU pin (formalizes 11-04 HashSkillDir, writes own lockfile key NEVER parses upstream D-15) + WriteInstallPending -> pending+D-29 audit, NEVER self-activates. Model skill action=catalog (default-ON D-12) + action=install (ask_user gate D-13, no self-approve D-03) via cycle-free seams. aura skills install/catalog/always CLI. CAP-07 COMPLETE. Commits b52fdc5f/e2eb3c72.
+- [Phase 18]: 18-02 (host-primary snippet use frame): action=use now hands the model a HOST shell_exec by-path frame (interpreter + AURA_SKILL_EXPORT_DIR path) as the PRIMARY instruction, sandbox_exec demoted to the named escalation (#55/D-01); host path derived fresh at use-time (RESEARCH option b); new SnippetHostPath/SnippetHostInvocation mirror the sandbox resolvers, SandboxPath kept for escalation; skillLoader.Snippet seam param sandboxPath->hostPath, adapter resolves from cfg.SkillExportDir; tools<->skills boundary held (0 deps); load-bearing-literal tests flipped in-commit; race+vet+build+cache-invariant green, all <=600 LOC. Commits b970916a/5bb4f4c8.
 
 ### Pending Todos
 
@@ -196,6 +198,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-05T16:12:01.522Z
+Last session: 2026-06-06T13:04:13.234Z
 Stopped at: Completed 11-02-PLAN.md (skills read path / Slice 7a)
 Resume file: None
