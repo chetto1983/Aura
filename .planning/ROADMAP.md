@@ -530,12 +530,12 @@ Plans:
 **Goal:** Collapse the chat-surface xlsx artifact loop from 29-30 LLM roundtrips (151-233s) to a snippet-reuse steady state of ~5 calls under 40s. 7e-core snippets already shipped in 11-07 (snippet store, TTL sweep cron, CLI, ro /skills mount) - this phase is wiring + posture + measurement, not greenfield: flip snippet execution posture to HOST-PRIMARY (D-01, approved snippets run via host shell_exec by-path; sandbox_exec stays as per-run escalation), add an UNGATED in-loop model snippet-save action (D-02), fill the restore/archive ActionRouter stubs, close the eval-to-production registry parity gap, and make the <40s/~5-call acceptance machine-checkable from the committed aura.tool_invocations ledger (grounded by a live characterization probe, D-03). PRD amendment + new CAP-08.1 land first (D-04).
 **Requirements**: CAP-08.1
 **Depends on:** Phase 11 (skills system - snippet store rides the 7a-7d loader/writer; NOT Phase 17 packaging)
-**Plans:** 4 plans (4 waves)
+**Plans:** 1/4 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 18-01-PLAN.md - Wave-0 gate: PRD amendment host-primary posture (D-01) + CAP-08.1 in REQUIREMENTS (D-04) + commit the in-flight tool_invocations ledger + live xlsx call-breakdown probe (D-03, operator-gated)
+- [x] 18-01-PLAN.md - Wave-0 gate: PRD amendment host-primary posture (D-01) + CAP-08.1 in REQUIREMENTS (D-04) + commit the in-flight tool_invocations ledger + live xlsx call-breakdown probe (D-03, operator-gated)
 
 **Wave 2** *(blocked on 18-01)*
 
