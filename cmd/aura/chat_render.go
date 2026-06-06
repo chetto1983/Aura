@@ -33,6 +33,7 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 		prose.WriteString(s)
 		_, _ = io.WriteString(w, s)
 	}
+	var reasoningStarted bool
 	for ev, runErr := range seq {
 		if runErr != nil {
 			return prose.String(), finish, usage, paused, runErr
@@ -70,6 +71,11 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 			// the REPL and never pollutes the prose buffer (which would make the
 			// final-Event flush diverge and double-print the answer).
 			continue
+		case resp.Reasoning != "":
+			// Live CoT (amendment #57e): stream the reasoning to the operator to mask
+			// the reasoning-phase latency. It is stream-only — written straight to w,
+			// NEVER to prose, so it never enters the returned/persisted answer.
+			renderReasoning(w, resp.Reasoning, &reasoningStarted)
 		case resp.Content != "":
 			// Streamed chunk (raw assistant content, content-stop fallback path).
 			emit(resp.Content)
@@ -137,6 +143,19 @@ func renderToolActivity(w io.Writer, calls []llm.ToolCall) {
 		}
 		_, _ = fmt.Fprintf(w, "\x1b[2m· %s\x1b[0m\n", name)
 	}
+}
+
+// renderReasoning streams a live chain-of-thought delta to w in dim style with a
+// one-time 💭 prefix (amendment #57e), mirroring renderToolActivity's dim ANSI.
+// started tracks whether the prefix has been emitted so the prefix shows once and
+// subsequent deltas continue the same dim line. Reasoning is stream-only — the
+// caller writes it to w only, never to the prose/answer buffer.
+func renderReasoning(w io.Writer, delta string, started *bool) {
+	if !*started {
+		_, _ = io.WriteString(w, "\x1b[2m💭 ")
+		*started = true
+	}
+	_, _ = io.WriteString(w, delta+"\x1b[0m")
 }
 
 // costFooter renders the per-turn footer (D-11): `· {tok} tok ({in} in / {out}
