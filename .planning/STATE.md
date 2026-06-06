@@ -4,8 +4,8 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 18-03-PLAN.md (snippet lifecycle + ungated save / Slice 7e)
-last_updated: "2026-06-06T21:15:49.960Z"
-last_activity: 2026-06-06 -- Phase 12 planning complete
+last_updated: "2026-06-06T21:18:18.913Z"
+last_activity: 2026-06-06 -- Phase 12 execution started
 progress:
   total_phases: 20
   completed_phases: 14
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 12 — AG-UI Gateway (next; 18 + 11 chiuse 2026-06-06)
+**Current focus:** Phase 12 — ag-ui-gateway
 
 ## Current Position
 
-Phase: 12 (AG-UI Gateway) — next up
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-06-06 -- Phase 12 planning complete
+Phase: 12 (ag-ui-gateway) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 12
+Last activity: 2026-06-06 -- Phase 12 execution started
 
 Progress: [███████▌░░] 75% (15/20 phases)
 
