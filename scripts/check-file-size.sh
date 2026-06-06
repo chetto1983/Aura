@@ -31,14 +31,21 @@ if [ -z "$TARGETS" ]; then
   exit 0
 fi
 
+# Iterate via a pipe-fed process substitution rather than a `<<< "$TARGETS"`
+# here-string: on the Windows Git Bash (MSYS/busybox) shell the here-string
+# mangles the final list entry (it re-feeds a "<tail>.go" fragment as a phantom
+# iteration, e.g. transport_test.go -> "t.go", which `wc` then can't open and
+# `set -e` turns into a false commit-blocking failure). Process substitution keeps
+# the loop in the CURRENT shell so the violations counter + exit code still propagate.
 violations=0
 while IFS= read -r f; do
+  [ -n "$f" ] || continue
   lines=$(wc -l < "$f" | tr -d '[:space:]')
   if [ "$lines" -gt "$CAP" ]; then
     printf "OVER CAP: %s (%d LOC > %d)\n" "$f" "$lines" "$CAP"
     violations=$((violations + 1))
   fi
-done <<< "$TARGETS"
+done < <(printf '%s\n' "$TARGETS")
 
 if [ "$violations" -gt 0 ]; then
   echo ""
