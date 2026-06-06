@@ -173,6 +173,7 @@ Recent decisions affecting current work:
 [From .planning/todos/pending/ — ideas captured during sessions]
 
 - **Restore Phase-8 sandbox isolation hardening lost in sandbox-agent pivot** (2026-06-05, area: general) — token auth (`--no-token` today), egress allowlist (lost D-08 proxy), gVisor `runsc` overlay + seccomp re-tightening. Spike-validated (008/009/010). Phase-11 D-37/D-38 depend on the portable floor; gVisor tier scoped here, NOT Phase 11. → `.planning/todos/pending/2026-06-05-restore-phase-8-sandbox-isolation-hardening.md`
+- **Extract the skill loader/writer adapters into a shared `internal/skilladapters` package** (2026-06-06, area: refactor, from 18-04) — `cmd/aura/serve_adapters.go`'s `skillLoaderAdapter`/`skillWriterAdapter` (over `*skills.Loader`/`*skills.Writer`) are package-main-private, so the 18-04 snippet-reuse eval registry (`internal/eval/skills_snippet_reuse_registry_cot_eval_test.go`) carries an eval-test-local MIRROR (`evalSkillLoaderAdapter`/`evalSkillWriterAdapter`, ~30 LOC). Option B was taken (not Option A — extract-to-shared) because extracting would rewire the cmd/aura composition root in a measurement-only plan AND a parallel session was concurrently editing cmd/aura. WHEN `cmd/aura/serve_adapters.go` is next touched: extract the two adapters into `internal/skilladapters` importable from BOTH cmd/aura (serve_adapters.go switches to use it) AND internal/eval (the eval mirror collapses into it), removing the duplication at its root.
 
 ### Blockers/Concerns
 
