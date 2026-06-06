@@ -1,48 +1,47 @@
-# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35, #51/D-40) — 2026-06-06T07:21:51Z
+# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35, #51/D-40, #52/D-41) — 2026-06-06T08:30:19Z
 
 Model: `deepseek/deepseek-v4-flash:exacto` (via OpenRouter). Live, paid, non-deterministic MANUAL gate — NOT CI.
 
 ## Reproduce
 
 ```bash
-docker compose build aura-sandbox-agent && make sandbox-up
+# #52/D-41: the skills loop runs on the HOST terminal (shell_exec) — no sandbox-up.
 docker compose up -d searxng
 set -a; . ./.env; set +a
 export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
-export AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468 AURA_SANDBOX_AGENT_TOKEN=... AURA_SKILLS_DIR=...
+export AURA_SKILLS_DIR=... AURA_RUN_DIR=...
 export SEARXNG_URL=http://127.0.0.1:18080/search
 go test -tags cot_eval -run TestSkillsE2E -timeout 900s -v ./internal/eval/
 ```
 
-## Hard floor (artifact-not-reply ground truth, D-35 #51/D-40)
+Host run workspace (open the produced .xlsx here): `D:/tmp/aura-run\aura-skills-e2e-1970364343`
+
+## Hard floor (artifact-not-reply ground truth, D-35 #51/D-40, #52/D-41 host surface)
 
 | Signal | Target | Observed | Pass |
 |---|---|---|---|
 | Natural prompt (no skill/install hint) | true | true | true |
-| self-install `npx skills add` (structured args) | ran | false | false |
-| self-install targeted anthropics/skills | true | false | false |
-| self-install carried --skill xlsx | true | false | false |
-| .xlsx produced FRESH in workspace | newer-than-start | false | false |
-| .xlsx re-opens via openpyxl | opens | true | true |
+| self-install `npx skills add` (structured args) | ran | true | true |
+| self-install targeted anthropics/skills | true | true | true |
+| self-install carried --skill xlsx | true | true | true |
+| .xlsx produced FRESH in host workspace | newer-than-start | false | false |
+| .xlsx re-opens via openpyxl | opens | false | false |
 | .xlsx contains today's date | present | false | false |
-| Artifact path | — | /workspace/Mercato_Finanziario_2026-06-05.xlsx | — |
-| Action-aware tool calls | — | current_time → sandbox_exec(npx skills find yahoo finance) → tool_search → tool_search → tool_search → tool_search → sandbox_exec(python3 --version) → sandbox_exec(python3 -c "import openpyxl; print(openpyx… | — |
+| Artifact path | — |  | — |
+| Action-aware tool calls | — | current_time → tool_search → shell_exec(npx skills find xlsx) → shell_exec(cd ~/.aura/skills/export && npx skills add anthropics/skills --skill xlsx --copy -y) → shell_exec(mkdir -p ~/.aura/skills/export && cd ~/… | — |
 
 ## Judge rubric (≥90% average gate over 2 dims, D-35 #51/D-40)
 
 | Dimension | Score /5 |
 |---|---|
-| capability_gap_recognition | 1 |
-| skill_output_quality | 2 |
+| capability_gap_recognition | 3 |
+| skill_output_quality | 1 |
 
-Skills-judge mean (capability-gap / output-quality): **0.30** (gate ≥0.90) → false
+Skills-judge mean (capability-gap / output-quality): **0.40** (gate ≥0.90) → false
 
 ## Notes
 
-- self-install did not target anthropics/skills
-- self-install did not carry the --skill xlsx selector
-- newest .xlsx is older than the run start (stale, not this run's output): XLSX_PATH=/workspace/Mercato_Finanziario_2026-06-05.xlsx XLSX_STALE XLSX_OPENS TODAY_MISSING AURA-XLSX-VERIFIED 
-- xlsx missing today's date (2026-06-06 | 06/06/2026 | 6/6/2026 | 06-06-2026 | 6 giugno 2026 | June 6, 2026)
-- selfInstall=false target=false selector=false xlsx(fresh=false opens=true today=false) judgeMean=0.30
+- no .xlsx found under the host workspace D:/tmp/aura-run\aura-skills-e2e-1970364343
+- selfInstall=true target=true selector=true xlsx(fresh=false opens=false today=false) judgeMean=0.40
 
 ## Overall verdict: FAIL (a dual-gate signal below threshold — see table)
