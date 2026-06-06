@@ -46,12 +46,23 @@ func TestShellExecReportsExitCode(t *testing.T) {
 	}
 }
 
+// shellIsCmd reports whether the resolved Windows shell is the degraded cmd.exe
+// fallback (no POSIX bash found) — the syntax the tests feed depends on it.
+func shellIsCmd() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	name, _ := shellInvocation("true")
+	base := strings.ToLower(filepath.Base(name))
+	return base == "cmd" || base == "cmd.exe"
+}
+
 func TestShellExecPassesEnv(t *testing.T) {
 	tool := &ShellExec{}
 	ctx := ctxWith(t, "sess-sh", "call-sh")
 
 	cmd := `echo "$AURA_SHELL_TEST"`
-	if runtime.GOOS == "windows" {
+	if shellIsCmd() {
 		cmd = "echo %AURA_SHELL_TEST%"
 	}
 	raw, _ := json.Marshal(shellExecArgs{Command: cmd, Env: map[string]string{"AURA_SHELL_TEST": "marker-42"}})
@@ -71,7 +82,7 @@ func TestShellExecHonorsCwd(t *testing.T) {
 	dir := t.TempDir()
 
 	cmd := "pwd"
-	if runtime.GOOS == "windows" {
+	if shellIsCmd() {
 		cmd = "cd"
 	}
 	raw, _ := json.Marshal(shellExecArgs{Command: cmd, Cwd: dir})
@@ -90,7 +101,7 @@ func TestShellExecTimesOut(t *testing.T) {
 	ctx := ctxWith(t, "sess-sh", "call-sh")
 
 	cmd := "sleep 3"
-	if runtime.GOOS == "windows" {
+	if shellIsCmd() {
 		cmd = "ping -n 4 127.0.0.1"
 	}
 	raw, _ := json.Marshal(shellExecArgs{Command: cmd, TimeoutMs: 200})

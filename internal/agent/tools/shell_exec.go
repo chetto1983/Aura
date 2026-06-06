@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -100,12 +101,34 @@ func (s *ShellExec) workdir(cwd string) string {
 	return s.WorkspaceRoot
 }
 
+// windowsShell resolves the best available shell on Windows ONCE: a POSIX bash
+// (Git Bash / MSYS / w64devkit) gives Claude-Code Bash-tool parity — the quoting,
+// heredocs, pipes, and `~` expansion the model writes by training prior. cmd.exe
+// is the degraded fallback only: it mangles POSIX quoting ("unterminated string
+// literal" on python -c) and caps the command line at ~8K — both observed breaking
+// the live xlsx North-Star run (amendment #52 / D-41).
+var windowsShell = sync.OnceValues(func() (string, string) {
+	if p, err := exec.LookPath("bash"); err == nil {
+		return p, "-c"
+	}
+	for _, p := range []string{
+		`C:\Program Files\Git\bin\bash.exe`,
+		`C:\Program Files\Git\usr\bin\bash.exe`,
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return p, "-c"
+		}
+	}
+	return "cmd", "/c"
+})
+
 // shellInvocation wraps the command line in the host system shell so pipes,
 // redirects, and chains work. `-c` (not `-lc`) keeps it fast and predictable; the
 // deployment sets PATH for the Aura process and the child inherits it.
 func shellInvocation(command string) (string, []string) {
 	if runtime.GOOS == "windows" {
-		return "cmd", []string{"/c", command}
+		name, flag := windowsShell()
+		return name, []string{flag, command}
 	}
 	return "/bin/sh", []string{"-c", command}
 }
