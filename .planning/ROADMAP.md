@@ -407,20 +407,25 @@ Wave 4:
   3. Operator runs `curl http://127.0.0.1:9080/threads/t1/messages` after a streamed run and observes the persisted turn history matching what was emitted in the SSE stream
   4. Operator runs `go.mod` inspection and observes AG-UI SDK pinned to the immutable pseudo-version literal `v0.0.0-20260514093510-e9e910b230b9` (NOT `latest`, NOT an unpinned install-time resolution; CI greps the literal — amendment #56: a pseudo-version IS the only valid go.mod form for this untagged subdir module, the original "no pseudo-version" wording was unsatisfiable)
 
-**Plans:** 4 plans (3 waves)
+**Plans:** 6 plans (4 waves) — 12-05/12-06 added by revision: reasoning data-plane (amendment #57)
 
 **Wave 1**
 
 - [ ] 12-01-PLAN.md — SDK pin (pseudo-version literal) + boundary/pin CI gates + golden fixtures + Aura-semantic types.go + the pure per-token→AG-UI translator state machine (SC2/SC4 + translator property)
+- [ ] 12-05-PLAN.md — reasoning data-plane (amendment #57): wireChunk.Delta accept-both reasoning/reasoning_content + immediate Chunk{Reasoning} + llm.Chunk.Reasoning + agent.LLMResponse.Reasoning + reasoningChunkEvent + dual-field golden fixtures (no agui overlap, parallel to 12-01)
 
-**Wave 2** *(blocked on 12-01)*
+**Wave 2** *(blocked on Wave 1)*
 
-- [ ] 12-02-PLAN.md — in-process fanout (cap-64 drop-on-full) + client subscriber seam + SDK type aliases (Slice-8a Telegram consumer dependency, centralized)
+- [ ] 12-02-PLAN.md — in-process fanout (cap-64 drop-on-full) + client subscriber seam + SDK type aliases (Slice-8a Telegram consumer dependency, centralized) *(blocked on 12-01)*
+- [ ] 12-06-PLAN.md — translator REASONING_* lifecycle (rsn- messageId, coalesced, interleave-before-TEXT) + live 💭 CLI reasoning render (amendment #57) *(blocked on 12-01 + 12-05)*
+
+**Wave 3** *(blocked on 12-01/02)*
+
 - [ ] 12-03-PLAN.md — minimal 8b server: POST /agent/run (SSE) + GET /threads/<id>/messages (JSON) + AURA_AGUI_* config + aura serve http.Server mount (SC1/SC3, loopback-only)
 
-**Wave 3** *(blocked on 12-01/02/03)*
+**Wave 4** *(blocked on 12-01/02/03/05/06)*
 
-- [ ] 12-04-PLAN.md — Gate-3: agui db_integration CI tier + live agui_smoke.sh curl round-trip + coverage ≥85% + translator mutation ≥70% + quality snapshot + operator live human-verify
+- [ ] 12-04-PLAN.md — Gate-3: agui db_integration CI tier + live agui_smoke.sh curl round-trip (incl. REASONING_* live leg) + coverage ≥85% + translator mutation ≥70% + quality snapshot + operator live human-verify
 
 ### Phase 13: Channels + Telegram + Multimodal
 
@@ -488,7 +493,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
-| 12. AG-UI Gateway | 0/TBD | Not started | - |
+| 12. AG-UI Gateway | 0/6 | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
