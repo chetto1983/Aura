@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -74,6 +75,45 @@ func TestPersistEvent_PersistsToolInvocationEvents(t *testing.T) {
 	if got := ledger.events[1]; got.Event != toolinvocations.EventEnd || got.Status != "ok" ||
 		got.ResultBytes != 3 || got.PreviewBytes != 3 || got.ExitCode == nil || *got.ExitCode != 0 {
 		t.Fatalf("end ledger row = %+v", got)
+	}
+}
+
+// TestPersistEvent_LedgerFailureDoesNotAbortTurn is the WR-01 regression: the ledger
+// is observability, not a permission system (migration 0011), so a transient insert
+// failure must be swallowed (logged) and the turn must continue — persistEvent returns
+// nil, never the store error. A nil ledger is likewise a no-op, not a turn-killer.
+func TestPersistEvent_LedgerFailureDoesNotAbortTurn(t *testing.T) {
+	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
+	convID := newConvID(t)
+	requestID := uuid.Must(uuid.NewV7())
+	startedAt := time.Now().UTC()
+	tr := &turnTracker{convID: convID}
+
+	start := &agent.Event{
+		RequestID: requestID,
+		Actions: agent.Actions{ToolInvocation: &agent.ToolInvocation{
+			Event:      agent.ToolInvocationStart,
+			ToolCallID: "call-1",
+			ToolName:   "shell_exec",
+			StartedAt:  &startedAt,
+		}},
+	}
+
+	// A failing ledger store must NOT abort the turn (persistEvent returns nil).
+	failing := newFakeToolInvocationStore()
+	failing.err = errors.New("transient pg hiccup")
+	r.toolInvocations = failing
+	if err := r.persistEvent(context.Background(), tr, start); err != nil {
+		t.Fatalf("a ledger insert failure must not abort the turn, got %v", err)
+	}
+	if len(failing.events) != 0 {
+		t.Fatalf("failing store should record nothing, got %d", len(failing.events))
+	}
+
+	// A nil ledger is likewise a logged no-op, never a turn-fatal error.
+	r.toolInvocations = nil
+	if err := r.persistEvent(context.Background(), tr, start); err != nil {
+		t.Fatalf("a nil ledger must be a no-op, got %v", err)
 	}
 }
 

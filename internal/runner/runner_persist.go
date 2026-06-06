@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -58,7 +59,17 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
 	}
 	if ev.Actions.ToolInvocation != nil {
-		return r.persistToolInvocation(ctx, tr, ev)
+		// The ledger is operational observability (migration 0011 header), NOT a
+		// permission system: a transient insert failure (pg hiccup, pool exhaustion,
+		// mid-round cancel) must NOT abort the user-facing turn. Log and continue.
+		// Contrast persistPause/persistAssistantAnswer, which gate durable history and
+		// stay turn-fatal below.
+		if err := r.persistToolInvocation(ctx, tr, ev); err != nil {
+			ti := ev.Actions.ToolInvocation
+			slog.Warn("tool invocation ledger insert failed (continuing)",
+				"tool", ti.ToolName, "tool_call_id", ti.ToolCallID, "event", ti.Event, "err", err)
+		}
+		return nil
 	}
 	if ev.LLMResponse != nil && ev.LLMResponse.FinishReason != "" {
 		return r.persistAssistantAnswer(ctx, tr.convID, ev)
@@ -68,7 +79,13 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 
 func (r *Runner) persistToolInvocation(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
 	if r.toolInvocations == nil {
-		return fmt.Errorf("persist tool invocation: tool invocation store is nil (composition root must inject one)")
+		// A nil ledger is a logged no-op, not a turn-killer: the ledger is observability,
+		// not a required dependency for a turn that dispatches a tool. The prod
+		// composition root injects one; a context without it (a test, a degraded boot)
+		// simply does not record the forensic fact.
+		slog.Warn("tool invocation ledger not wired; skipping ledger insert",
+			"tool", ev.Actions.ToolInvocation.ToolName)
+		return nil
 	}
 	ti := ev.Actions.ToolInvocation
 	e := toolinvocations.Event{
