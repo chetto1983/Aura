@@ -1,30 +1,31 @@
 //go:build cot_eval
 
 // scenarios_skills.go is the Phase 11 (CAP-07 / CAP-08 / D-35, RISCRITTO by
-// amendment #51 / D-40) live xlsx North-Star dataset — SEPARATE from scenarios() and
-// swarmScenarios() so neither TestCoTEval nor TestSwarmE2E runs it; only TestSkillsE2E
-// (skills_cot_eval_test.go) does, behind the same cot_eval build tag + OPENROUTER gate.
-// The single scenario is the product North Star (11-CONTEXT.md §specifics): a NATURAL
-// Italian prompt — NO "skill"/"install" word, asserted absent — that the model must
-// turn into the full autonomous self-extension loop on its own:
+// amendment #51 / D-40, host surface #52 / D-41) live xlsx North-Star dataset — SEPARATE
+// from scenarios() and swarmScenarios() so neither TestCoTEval nor TestSwarmE2E runs it;
+// only TestSkillsE2E (skills_cot_eval_test.go) does, behind the same cot_eval build tag +
+// OPENROUTER gate. The single scenario is the product North Star (11-CONTEXT.md
+// §specifics): a NATURAL Italian prompt — NO "skill"/"install" word, asserted absent —
+// that the model must turn into the full autonomous self-extension loop on its own:
 //
 //	recognize the capability gap → discover anthropics/skills/xlsx on skills.sh
-//	(`npx skills find xlsx` in the sandbox, taught by the always-on find-skills-aura
-//	skill) → self-install (`npx skills add anthropics/skills --skill xlsx`) →
-//	use the skill (bundled Python by-path in the sandbox) → pull today's data via the
-//	shipped web tools → produce the .xlsx.
+//	(`npx skills find xlsx` on the HOST terminal, taught by the always-on
+//	find-skills-aura skill) → self-install (`npx skills add anthropics/skills --skill
+//	xlsx --copy -y` from the skills home) → use the skill (bundled Python by-path on the
+//	host) → pull today's data via the shipped web tools → produce the .xlsx.
 //
-// The dual gate (D-35, RISCRITTO #51/D-40), enforced by skills_cot_eval_test.go:
+// The dual gate (D-35, RISCRITTO #51/D-40, host surface #52/D-41), enforced by
+// skills_cot_eval_test.go:
 //   - HARD FLOOR (artifact-not-reply ground truth, feedback_probe_must_verify_artifact_not_reply):
-//     (a) SELF-INSTALL evidence from STRUCTURED tool args — a sandbox_exec command line
+//     (a) SELF-INSTALL evidence from STRUCTURED tool args — a shell_exec command line
 //     ran `npx skills add` targeting `anthropics/skills` with the `xlsx` selector
 //     (read from resp.ToolCalls[].Function.Arguments, never the prose); (b) the produced
-//     .xlsx EXISTS in the workspace (fresh — newer than run start), OPENS (re-read via a
-//     sandbox_exec openpyxl read-back), and CONTAINS today's date — never an assertion on
-//     r.Reply.
+//     .xlsx EXISTS in the HOST run workspace (fresh — newer than run start), OPENS
+//     (re-read via a host openpyxl read-back), and CONTAINS today's date — never an
+//     assertion on r.Reply.
 //   - JUDGE ≥90% equal-weight mean over: autonomous capability-gap recognition + output
 //     quality (D-35). The install-prudence dimension is DROPPED (#51/D-40 — no
-//     install-approval ceremony; the model self-installs in the sandbox).
+//     install-approval ceremony; the model self-installs on its host terminal).
 package eval
 
 // skillsExpect declares the deterministic ground-truth signals the xlsx North-Star
@@ -65,8 +66,8 @@ func skillsScenarios() []scenario {
 			// NATURAL prompt — NO "skill"/"installa"/"install"/"catalogo". The user just
 			// wants today's Yahoo Finance market as a real Excel file; the model must
 			// recognise it lacks a battle-tested xlsx method, discover anthropics/skills/
-			// xlsx on skills.sh (`npx skills find xlsx`), self-install it in the sandbox,
-			// then use it to produce the .xlsx.
+			// xlsx on skills.sh (`npx skills find xlsx`), self-install it on its host
+			// terminal, then use it to produce the .xlsx.
 			prompts: []string{
 				"Fammi un file Excel con il mercato di Yahoo Finance di oggi. " +
 					"Voglio un .xlsx vero che si apra in un foglio di calcolo, con i dati di oggi.",

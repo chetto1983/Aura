@@ -85,21 +85,21 @@ Reply with ONLY a JSON object, no prose, no markdown fence: {"score": <int 1-5>,
 }
 
 // skillsRubrics holds the TWO D-35 xlsx North-Star judge dimensions (RISCRITTO by
-// amendment #51 / D-40 — the install-prudence dimension DROPPED). Each is scored 1-5 by a separate
+// amendment #51 / D-40, host surface #52 / D-41 — the install-prudence dimension DROPPED). Each is scored 1-5 by a separate
 // cheap judge call; the gate is a ≥90% AVERAGE across the two (judgeSkillsGate,
 // equal-weight — Claude's Discretion). A 5/5 = 1.0, so the two-dimension mean ≥0.90
 // means an average judge score ≥4.5/5.
 //
 // The prompt deliberately never says "skill"/"install": capabilityGapRecognition
 // scores whether the model recognised it lacked a battle-tested method and chose to
-// extend itself on its own — via the sandbox terminal (`npx skills find/add`), the
-// no-ceremony self-extension path (#51/D-40), NOT a Go catalog/install tool;
+// extend itself on its own — via its HOST terminal (`npx skills find/add`), the
+// no-ceremony self-extension path (#51/D-40, #52/D-41), NOT a Go catalog/install tool;
 // outputQuality scores the produced artifact. The harness feeds the judge the user
 // prompt, the model's final answer, and a factual summary of the observed tool_use
 // (the self-install command line + whether the .xlsx opened with today's data) so the
 // judge grades against ground truth, not vibes.
 var skillsRubrics = map[dimension]string{
-	dimCapabilityGapRecognition: `You evaluate whether an AI assistant correctly RECOGNISED a capability gap and chose to extend itself. The user asked for an Excel (.xlsx) file of today's market data; the word "skill"/"install" was NOT used — the choice to discover and adopt a reusable method must be the model's own. The assistant extends itself by running the skills CLI in its sandbox terminal (search the ecosystem, then install a vetted skill directly — no human approval round-trip is required). You are told what the model actually did (whether it searched for a skill, self-installed one, and used it). Score 1-5:
+	dimCapabilityGapRecognition: `You evaluate whether an AI assistant correctly RECOGNISED a capability gap and chose to extend itself. The user asked for an Excel (.xlsx) file of today's market data; the word "skill"/"install" was NOT used — the choice to discover and adopt a reusable method must be the model's own. The assistant extends itself by running the skills CLI on its own host terminal (search the ecosystem, then install a vetted skill directly — no human approval round-trip is required). You are told what the model actually did (whether it searched for a skill, self-installed one, and used it). Score 1-5:
 5 = recognised it needed a reusable method, discovered the right skill, self-installed it, and used it autonomously.
 4 = recognised and adopted, with a minor detour.
 3 = partially recognised (e.g. searched but did not adopt) or needed a strong hint.

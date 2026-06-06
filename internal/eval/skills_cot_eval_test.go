@@ -1,27 +1,36 @@
 //go:build cot_eval
 
 // skills_cot_eval_test.go is the Phase 11 (CAP-07 / CAP-08 / D-35, RISCRITTO by
-// amendment #51 / D-40) LIVE dual-gate xlsx North-Star E2E. It drives the REAL parent
-// agent.LlmAgent over the REAL openai_compat client against DeepSeek-V4 with a
-// SEAM-FREE registry (text_response + tool_search + read_tool_output + current_time +
-// ask_user + web_search + web_fetch + sandbox_exec — NO `skill` tool, NO catalog/
-// installer: those Go seams were deleted in 11-09), PLUS the always-on find-skills-aura
-// skill body injected at messages[1]. A NATURAL prompt (NO "skill"/"install" word) must
-// drive the model to recognise the capability gap, discover anthropics/skills/xlsx on
-// skills.sh via `npx skills find xlsx` IN THE SANDBOX, self-install it
-// (`npx skills add anthropics/skills --skill xlsx`), use it, pull today's data through
-// the web tools, and produce a real .xlsx — all on its own, no approval round-trip
-// (#51/D-40). This is the spike-012a buildSkillDrivenRegistry shape (4/4 live PASS, the
-// full find→add→use→artifact loop in one turn, 212s).
+// amendment #51 / D-40, SURFACE MOVED by #52 / D-41) LIVE dual-gate xlsx North-Star
+// E2E. It drives the REAL parent agent.LlmAgent over the REAL openai_compat client
+// against DeepSeek-V4 with a PRODUCTION-PARITY registry (text_response + tool_search +
+// read_tool_output + current_time + ask_user + web_search + web_fetch + shell_exec — the
+// HOST full terminal, NO sandbox_exec, NO `skill` tool, NO catalog/installer: those Go
+// seams were deleted in 11-09), PLUS the always-on find-skills-aura skill body injected
+// at messages[1]. A NATURAL prompt (NO "skill"/"install" word) must drive the model to
+// recognise the capability gap, discover anthropics/skills/xlsx on skills.sh via
+// `npx skills find xlsx` ON ITS HOST TERMINAL, self-install it
+// (`npx skills add anthropics/skills --skill xlsx --copy -y` from the skills home), use
+// it, pull today's data through the web tools, and produce a real .xlsx in its host
+// workspace — all on its own, no approval round-trip (#51/D-40, #52/D-41). This is the
+// spike-012a self-extension shape carried onto the host terminal per the operator
+// directive ("sandbox is the issue. Aura need run full terminal like Claude Code").
 //
-// The dual gate (D-35, RISCRITTO #51/D-40) is:
+// WHY shell_exec and not sandbox_exec (#52/D-41): the prior sandbox-only registry FAILED
+// the live gate 0.30 — sandbox_exec's wire is direct-spawn {command,args} with NO shell,
+// so the model could not write a script with redirects/heredocs, crashed 502 cramming
+// the command line into `command`, then tried shell_exec (the canonical prompt teaches it
+// as the primary terminal) and hit "unknown tool" because the registry omitted it. Eval
+// registries MUST mirror the production registry: the gate runs the agent as it ships.
+//
+// The dual gate (D-35, RISCRITTO #51/D-40, SURFACE #52/D-41) is:
 //
 //   - HARD FLOOR (artifact-not-reply ground truth): SELF-INSTALL evidence read from
-//     STRUCTURED tool args — a sandbox_exec command line ran `npx skills add` targeting
+//     STRUCTURED tool args — a shell_exec command line ran `npx skills add` targeting
 //     `anthropics/skills` with the `xlsx` selector (classifyCall over
 //     resp.ToolCalls[].Function.Arguments, NEVER the prose); AND the produced .xlsx
-//     EXISTS in the sandbox workspace FRESH (newer than run start), OPENS (re-read via a
-//     sandbox_exec openpyxl read-back), and CONTAINS today's date.
+//     EXISTS in the HOST run workspace FRESH (newer than run start), OPENS (re-read via a
+//     host openpyxl read-back), and CONTAINS today's date.
 //   - JUDGE ≥90% AVERAGE over: capability-gap recognition + output quality (D-35).
 //     The install-prudence dimension is DROPPED (#51/D-40 — no install-approval ceremony).
 //
@@ -35,31 +44,26 @@
 // the key, so a structural break is caught even when this paid tier is gated off.
 //
 // OPERATOR INVOCATION (the full live run that fills the docs/aura-quality-snapshot.md
-// TBD row with real numbers):
+// TBD row with real numbers). #52/D-41: NO sandbox-up for THIS gate — the loop runs on
+// the host terminal; only SearXNG (the web tools backend) and the skills root are needed:
 //
-//  1. Rebuild + bring up the sandbox-agent with the baked xlsx deps (openpyxl/
-//     defusedxml/lxml/validators, spike 006/007) + the ro /skills mount + the bearer:
-//
-//     docker compose build aura-sandbox-agent       # bake the xlsx deps (11-07 carry-over)
-//     make sandbox-up                               # --token + /skills ro mount
-//
-//  2. Bring up SearXNG (the web tools backend):
+//  1. Bring up SearXNG (the web tools backend):
 //
 //     docker compose up -d searxng                  # or the socat bridge per memory
 //
-//  3. Export the live env + run the tier:
+//  2. Export the live env + run the tier (host `npx` + `python3` must be on PATH):
 //
 //     set -a; . ./.env; set +a
 //     export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
-//     export AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468
-//     export AURA_SANDBOX_AGENT_TOKEN=<the .env token>
 //     export AURA_SKILLS_DIR=<the active skills root>            # find-skills-aura builtin
+//     export AURA_RUN_DIR=<an inspectable scratch root>          # the produced .xlsx lands here
 //     export SEARXNG_URL=http://127.0.0.1:18080/search           # or the bridge
 //     go test -tags cot_eval -run TestSkillsE2E -timeout 900s -v ./internal/eval/
 //
-//  4. OPEN the produced .xlsx visually (feedback_inspect_artifact_visually_not_just_pass_status)
-//     and replace the Phase-11 TBD placeholder rows in docs/aura-quality-snapshot.md
-//     with the observed judge %, coverage, and mutation numbers.
+//  3. OPEN the produced .xlsx visually (feedback_inspect_artifact_visually_not_just_pass_status)
+//     — the harness t.Logs its absolute host path — and replace the Phase-11 TBD
+//     placeholder rows in docs/aura-quality-snapshot.md with the observed judge %,
+//     coverage, and mutation numbers.
 package eval
 
 import (
@@ -76,7 +80,6 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
-	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/chetto1983/aura/internal/skills"
 	"github.com/chetto1983/aura/internal/web"
 	"github.com/google/uuid"
@@ -95,19 +98,20 @@ const maxSkillsHops = 6
 
 // skillsResult accumulates the observed hard-floor + judge numbers for the report.
 // The hard floor is action-aware: self-install evidence comes from STRUCTURED tool args
-// (classifyCall over Function.Arguments), the artifact from the live sandbox read-back —
-// never from the model's prose (T-11-10-T1 / feedback_probe_must_verify_artifact_not_reply).
+// (classifyCall over Function.Arguments), the artifact from the HOST workspace read-back
+// — never from the model's prose (T-11-10-T1 / feedback_probe_must_verify_artifact_not_reply).
 type skillsResult struct {
-	toolCalls     []string // action-aware tool calls (e.g. "sandbox_exec(npx skills add ...)")
+	toolCalls     []string // action-aware tool calls (e.g. "shell_exec(npx skills add ...)")
 	promptNatural bool     // the prompt contains none of the forbidden words
-	selfInstall   bool     // a sandbox command line ran `npx skills add` (structured-arg evidence)
+	selfInstall   bool     // a host command line ran `npx skills add` (structured-arg evidence)
 	installTarget bool     // the self-install targeted anthropics/skills (the North-Star repo)
 	installSel    bool     // the self-install carried the --skill xlsx selector
-	xlsxFresh     bool     // a .xlsx newer than run start exists in the workspace
+	xlsxFresh     bool     // a .xlsx newer than run start exists in the host workspace
 	xlsxExists    bool     // a .xlsx is present in the workspace (== xlsxFresh, ground truth)
-	xlsxOpens     bool     // the .xlsx re-opened via openpyxl read-back
+	xlsxOpens     bool     // the .xlsx re-opened via a host openpyxl read-back
 	xlsxToday     bool     // the re-opened .xlsx contains today's date
-	xlsxPath      string   // the workspace path of the produced artifact
+	xlsxPath      string   // the host workspace path of the produced artifact
+	workspaceRoot string   // the inspectable host run workspace (operator opens the .xlsx here)
 	judgeScores   map[dimension]int
 	judgeMean     float64
 	judgePass     bool
@@ -118,14 +122,17 @@ type skillsResult struct {
 func TestSkillsE2E(t *testing.T) {
 	if os.Getenv("OPENROUTER_API_KEY") == "" {
 		t.Skip("skills E2E: OPENROUTER_API_KEY unset — this is a MANUAL paid gate, NOT a CI job. " +
-			"See the file header for the operator invocation (sandbox-up + searxng + .env + go test). " +
+			"See the file header for the operator invocation (searxng + skills root + .env + go test; " +
+			"#52/D-41 — no sandbox-up, the loop runs on the host terminal). " +
 			"The structural surface (classifyCall + seam-free registry) is covered key-free by TestClassify*/TestRegistry*.")
 	}
-	sandboxURL := os.Getenv("AURA_SANDBOX_AGENT_URL")
+	// #52/D-41: AURA_SANDBOX_AGENT_URL is NO LONGER required — the skills loop rides the
+	// host full terminal (shell_exec), not the sandbox. AURA_SKILLS_DIR stays (the always-
+	// block root that carries find-skills-aura).
 	skillsDir := os.Getenv("AURA_SKILLS_DIR")
-	if sandboxURL == "" || skillsDir == "" {
-		t.Skip("skills E2E: set AURA_SANDBOX_AGENT_URL + AURA_SKILLS_DIR " +
-			"(the live sandbox + the active skills root that carries the find-skills-aura builtin). See the file header.")
+	if skillsDir == "" {
+		t.Skip("skills E2E: set AURA_SKILLS_DIR " +
+			"(the active skills root that carries the find-skills-aura builtin). See the file header.")
 	}
 
 	baseCfg, err := llm.Load()
@@ -136,38 +143,60 @@ func TestSkillsE2E(t *testing.T) {
 	client := openai_compat.New(*baseCfg)
 
 	appCfg := config.LoadDB()
-	reg, alwaysBlock, sandboxClient := buildSkillsRegistry(t, appCfg)
+	// The host run workspace is the inspectable scratch dir the model writes its .xlsx
+	// into and the read-back walks. It is NOT t.TempDir (that auto-deletes — the human
+	// gate must OPEN the .xlsx afterward), so it persists past the run (#52/D-41).
+	workspace := newInspectableWorkspace(t)
+	reg, alwaysBlock := buildSkillsRegistry(t, appCfg, workspace)
 
-	res := &skillsResult{judgeScores: map[dimension]int{}}
+	res := &skillsResult{judgeScores: map[dimension]int{}, workspaceRoot: workspace}
 	scs := skillsScenarios()
 	ctx := context.Background()
 	for _, sc := range scs {
 		if sc.skills == nil {
 			continue
 		}
-		runSkillsScenario(t, ctx, client, *baseCfg, secret, reg, alwaysBlock, appCfg, sc, sandboxClient, res)
+		runSkillsScenario(t, ctx, client, *baseCfg, secret, reg, alwaysBlock, appCfg, sc, workspace, res)
 	}
 
 	writeSkillsReport(t, baseCfg.Model, res)
 	enforceSkills(t, res)
 }
 
-// buildSkillsRegistry builds the SEAM-FREE eval registry for the skills North Star
-// (spike-012a buildSkillDrivenRegistry shape, #51/D-40): the production read tools +
-// ask_user + the web tools (web_search/web_fetch) + sandbox_exec (the live
-// sandbox-agent) — NO `skill` tool, NO catalog/installer (those Go seams were deleted
-// in 11-09). The model self-extends via the sandbox terminal + the always-on
-// find-skills-aura skill body returned as the messages[1] always-block. It returns the
-// registry, that always-block, and the raw sandbox-agent client so the read-back can
-// re-open the produced .xlsx by path.
-func buildSkillsRegistry(t *testing.T, cfg *config.Config) (reg *tools.Registry, alwaysBlock string, sandboxClient *sandboxagent.Client) {
+// newInspectableWorkspace creates the per-run host scratch dir the model writes its
+// artifact into. It is deliberately NOT t.TempDir (which auto-removes on test end — the
+// operator must OPEN the produced .xlsx for the human gate), so it lands under
+// AURA_RUN_DIR when set (else os.TempDir) and SURVIVES the run. The path is logged
+// prominently and recorded in the report so the operator finds it.
+func newInspectableWorkspace(t *testing.T) string {
 	t.Helper()
-	sandboxClient = sandboxagent.New(cfg.SandboxAgent)
-	reg = buildSeamFreeSkillsRegistry(cfg, sandboxClient)
+	parent := os.Getenv("AURA_RUN_DIR")
+	if parent == "" {
+		parent = os.TempDir()
+	}
+	ws, err := os.MkdirTemp(parent, "aura-skills-e2e-")
+	if err != nil {
+		t.Fatalf("skills E2E: create inspectable workspace under %q: %v", parent, err)
+	}
+	t.Logf("skills E2E: HOST run workspace = %s  (OPEN the produced .xlsx here after the run)", ws)
+	return ws
+}
+
+// buildSkillsRegistry builds the PRODUCTION-PARITY eval registry for the skills North
+// Star (#52/D-41): the production read tools + ask_user + the web tools
+// (web_search/web_fetch) + shell_exec (the HOST full terminal rooted at the inspectable
+// run workspace) — NO sandbox_exec, NO `skill` tool, NO catalog/installer (those Go seams
+// were deleted in 11-09). The model self-extends via its host terminal + the always-on
+// find-skills-aura skill body returned as the messages[1] always-block. It returns the
+// registry + that always-block; the read-back walks the host workspace directly.
+func buildSkillsRegistry(t *testing.T, cfg *config.Config, workspace string) (reg *tools.Registry, alwaysBlock string) {
+	t.Helper()
+	reg = buildSeamFreeSkillsRegistry(cfg, workspace)
 
 	// The always-on find-skills-aura skill teaches the `npx skills find/add` discovery+
-	// install loop. MaterializeBuiltins seeds it into the active root; RenderAlwaysBlock
-	// produces the byte-stable messages[1] block exactly as production does (D-07).
+	// install loop on the host terminal. MaterializeBuiltins seeds it into the active
+	// root; RenderAlwaysBlock produces the byte-stable messages[1] block exactly as
+	// production does (D-07).
 	if err := skills.MaterializeBuiltins(cfg.SkillsDir); err != nil {
 		t.Logf("skills E2E: materialize builtins (non-fatal): %v", err)
 	}
@@ -181,21 +210,23 @@ func buildSkillsRegistry(t *testing.T, cfg *config.Config) (reg *tools.Registry,
 		t.Logf("skills E2E: no always:true skill in %s — the model gets no discovery teaching; "+
 			"ensure find-skills-aura materialized", cfg.SkillsDir)
 	}
-	return reg, block, sandboxClient
+	return reg, block
 }
 
 // buildSeamFreeSkillsRegistry is the pure registry constructor (no t, no I/O) so the
 // no-key TestRegistry_SeamFree can build + assert the same tool set without a live run.
-// It is the spike-012a buildSkillDrivenRegistry surface: the production read tools +
-// ask_user + the web tools + sandbox_exec, with NO `skill` tool and NO catalog/installer
-// seam. sandboxClient is the live (or, in the test, nil) sandbox-agent runner.
-func buildSeamFreeSkillsRegistry(cfg *config.Config, sandboxClient *sandboxagent.Client) *tools.Registry {
+// It is the production tool surface (#52/D-41): the production read tools + ask_user +
+// the web tools + shell_exec (the HOST full terminal), with NO sandbox_exec, NO `skill`
+// tool, and NO catalog/installer seam. workspace is the shell_exec WorkspaceRoot — the
+// inspectable host run dir (empty in the no-key TestRegistry_SeamFree, which only asserts
+// the tool SET, never runs a command).
+func buildSeamFreeSkillsRegistry(cfg *config.Config, workspace string) *tools.Registry {
 	reg := buildRegistry() // text_response + tool_search + read_tool_output + current_time
 	reg.Register(tools.AskUser{})
 	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine})
-	reg.Register(&tools.SandboxExec{Runner: sandboxClient})
+	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace})
 	return reg
 }
 
@@ -204,7 +235,7 @@ func buildSeamFreeSkillsRegistry(cfg *config.Config, sandboxClient *sandboxagent
 // fresh-artifact read-back, and runs the 2-dim judge.
 func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg llm.Config,
 	secret string, reg *tools.Registry, alwaysBlock string, appCfg *config.Config, sc scenario,
-	sandboxClient *sandboxagent.Client, res *skillsResult,
+	workspace string, res *skillsResult,
 ) {
 	t.Helper()
 	prompt := sc.prompts[0]
@@ -238,10 +269,10 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 		res.notes = append(res.notes, "self-install did not carry the --skill "+sc.skills.installSelector+" selector")
 	}
 
-	// Artifact ground truth (artifact-not-reply, D-35): find the FRESH .xlsx in the
-	// workspace, re-open it via openpyxl, assert it carries today's date. NEVER trust
-	// the prose.
-	verifyXlsxArtifact(t, ctx, sandboxClient, sc.skills, runStart, res)
+	// Artifact ground truth (artifact-not-reply, D-35, #52/D-41): find the FRESH .xlsx in
+	// the HOST workspace, re-open it via a host openpyxl read-back, assert it carries
+	// today's date. NEVER trust the prose.
+	verifyXlsxArtifact(t, sc.skills, workspace, runStart, res)
 
 	observed := fmt.Sprintf(
 		"self-install ran `npx skills add`: %v; targeted %s: %v; --skill %s selector: %v; "+
@@ -265,12 +296,12 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 		res.selfInstall, res.installTarget, res.installSel, res.xlsxFresh, res.xlsxOpens, res.xlsxToday, res.judgeMean))
 }
 
-// driveSkillsLoop runs the agent over successive turns. The model self-installs in the
-// sandbox with no approval round-trip (#51/D-40), so the loop usually terminates in one
-// turn; any unexpected pause is answered generically ("proceed autonomously") and the
-// loop continues. Each turn's tool calls are captured ACTION-AWARE via classifyCall over
-// the structured arguments. It returns the final assistant prose (a turn that ended
-// without a pause).
+// driveSkillsLoop runs the agent over successive turns. The model self-installs on its
+// host terminal with no approval round-trip (#51/D-40, #52/D-41), so the loop usually
+// terminates in one turn; any unexpected pause is answered generically ("proceed
+// autonomously") and the loop continues. Each turn's tool calls are captured ACTION-AWARE
+// via classifyCall over the structured arguments. It returns the final assistant prose (a
+// turn that ended without a pause).
 func driveSkillsLoop(t *testing.T, ctx context.Context, client llm.Client, cfg llm.Config,
 	reg *tools.Registry, alwaysBlock string, appCfg *config.Config, prompt, sessionID string, res *skillsResult,
 ) string {
@@ -308,8 +339,9 @@ func driveSkillsLoop(t *testing.T, ctx context.Context, client llm.Client, cfg l
 }
 
 // runSkillsTurn constructs a real LlmAgent over the seam-free registry + the accumulated
-// history and drains one turn into a turnCapture. A fixed sessionID keeps the
-// sandbox-agent workspace consistent across hops so the produced .xlsx persists.
+// history and drains one turn into a turnCapture. The shell_exec WorkspaceRoot (the
+// inspectable host run dir, set once in the registry) keeps the produced .xlsx in one
+// place across hops; the fixed sessionID keeps the agent's run state consistent.
 func runSkillsTurn(t *testing.T, ctx context.Context, client llm.Client, cfg llm.Config,
 	reg *tools.Registry, appCfg *config.Config, history []llm.Message, sessionID string,
 ) *turnCapture {
@@ -357,7 +389,7 @@ func enforceSkills(t *testing.T, res *skillsResult) {
 		t.Errorf("HARD FLOOR: the prompt was not natural (a forbidden hint word leaked in)")
 	}
 	if !res.selfInstall {
-		t.Errorf("HARD FLOOR: no self-install evidence — no sandbox command line ran `npx skills add` (structured-arg ground truth), got %v", res.toolCalls)
+		t.Errorf("HARD FLOOR: no self-install evidence — no host command line ran `npx skills add` (structured-arg ground truth), got %v", res.toolCalls)
 	}
 	if !res.installTarget {
 		t.Errorf("HARD FLOOR: the self-install did not target anthropics/skills (the North-Star repo)")
@@ -366,7 +398,7 @@ func enforceSkills(t *testing.T, res *skillsResult) {
 		t.Errorf("HARD FLOOR: the self-install did not carry the --skill xlsx selector")
 	}
 	if !res.xlsxExists {
-		t.Errorf("HARD FLOOR: no FRESH .xlsx artifact found in the sandbox workspace (artifact-not-reply / stale)")
+		t.Errorf("HARD FLOOR: no FRESH .xlsx artifact found in the host run workspace (artifact-not-reply / stale)")
 	}
 	if !res.xlsxOpens {
 		t.Errorf("HARD FLOOR: the produced .xlsx did not re-open via openpyxl")
@@ -383,17 +415,18 @@ func writeSkillsReport(t *testing.T, model string, res *skillsResult) {
 	t.Helper()
 	var b strings.Builder
 	now := time.Now().UTC().Format(time.RFC3339)
-	fmt.Fprintf(&b, "# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35, #51/D-40) — %s\n\n", now)
+	fmt.Fprintf(&b, "# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35, #51/D-40, #52/D-41) — %s\n\n", now)
 	fmt.Fprintf(&b, "Model: `%s` (via OpenRouter). Live, paid, non-deterministic MANUAL gate — NOT CI.\n\n", model)
-	b.WriteString("## Reproduce\n\n```bash\ndocker compose build aura-sandbox-agent && make sandbox-up\ndocker compose up -d searxng\nset -a; . ./.env; set +a\nexport PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\"\nexport AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468 AURA_SANDBOX_AGENT_TOKEN=... AURA_SKILLS_DIR=...\nexport SEARXNG_URL=http://127.0.0.1:18080/search\ngo test -tags cot_eval -run TestSkillsE2E -timeout 900s -v ./internal/eval/\n```\n\n")
+	b.WriteString("## Reproduce\n\n```bash\n# #52/D-41: the skills loop runs on the HOST terminal (shell_exec) — no sandbox-up.\ndocker compose up -d searxng\nset -a; . ./.env; set +a\nexport PATH=\"$HOME/.local/bin:$HOME/go/bin:$PATH\"\nexport AURA_SKILLS_DIR=... AURA_RUN_DIR=...\nexport SEARXNG_URL=http://127.0.0.1:18080/search\ngo test -tags cot_eval -run TestSkillsE2E -timeout 900s -v ./internal/eval/\n```\n\n")
+	fmt.Fprintf(&b, "Host run workspace (open the produced .xlsx here): `%s`\n\n", res.workspaceRoot)
 
-	b.WriteString("## Hard floor (artifact-not-reply ground truth, D-35 #51/D-40)\n\n")
+	b.WriteString("## Hard floor (artifact-not-reply ground truth, D-35 #51/D-40, #52/D-41 host surface)\n\n")
 	b.WriteString("| Signal | Target | Observed | Pass |\n|---|---|---|---|\n")
 	fmt.Fprintf(&b, "| Natural prompt (no skill/install hint) | true | %v | %v |\n", res.promptNatural, res.promptNatural)
 	fmt.Fprintf(&b, "| self-install `npx skills add` (structured args) | ran | %v | %v |\n", res.selfInstall, res.selfInstall)
 	fmt.Fprintf(&b, "| self-install targeted anthropics/skills | true | %v | %v |\n", res.installTarget, res.installTarget)
 	fmt.Fprintf(&b, "| self-install carried --skill xlsx | true | %v | %v |\n", res.installSel, res.installSel)
-	fmt.Fprintf(&b, "| .xlsx produced FRESH in workspace | newer-than-start | %v | %v |\n", res.xlsxFresh, res.xlsxExists)
+	fmt.Fprintf(&b, "| .xlsx produced FRESH in host workspace | newer-than-start | %v | %v |\n", res.xlsxFresh, res.xlsxExists)
 	fmt.Fprintf(&b, "| .xlsx re-opens via openpyxl | opens | %v | %v |\n", res.xlsxOpens, res.xlsxOpens)
 	fmt.Fprintf(&b, "| .xlsx contains today's date | present | %v | %v |\n", res.xlsxToday, res.xlsxToday)
 	fmt.Fprintf(&b, "| Artifact path | — | %s | — |\n", res.xlsxPath)

@@ -52,13 +52,13 @@ const (
 	dimNoOverSpawn          dimension = "no_over_spawn"              // judge, ≥90% gate
 
 	// Phase 11 skills xlsx North-Star dual-gate dimensions (D-35, RISCRITTO by
-	// amendment #51 / D-40). The TWO judge dimensions average to the ≥90% gate
-	// (judgeSkillsGate); the hard-floor ground-truth assertions (self-install
+	// amendment #51 / D-40, host surface #52 / D-41). The TWO judge dimensions average to
+	// the ≥90% gate (judgeSkillsGate); the hard-floor ground-truth assertions (self-install
 	// evidence from structured tool args + the fresh-.xlsx artifact that opens and
 	// carries today's data) are scored deterministically under dimSkillsHardFloor.
 	// The install-prudence dimension is DROPPED: under the no-ceremony directive
-	// (#51/D-40) the model self-installs in the sandbox without an approval
-	// round-trip, so such a dimension would score absent behavior.
+	// (#51/D-40, #52/D-41) the model self-installs on its host terminal without an
+	// approval round-trip, so such a dimension would score absent behavior.
 	dimSkillsHardFloor          dimension = "skills_hard_floor"          // asserted (ground-truth, release-blocking)
 	dimCapabilityGapRecognition dimension = "capability_gap_recognition" // judge, ≥90% gate
 	dimSkillOutputQuality       dimension = "skill_output_quality"       // judge, ≥90% gate
