@@ -362,9 +362,12 @@ events, _ := toolStore.ListByConversation(ctx, convID)
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All 8 questions resolved 2026-06-06 via inline Q&A → locked decisions D-01..D-04 in `18-CONTEXT.md` + plan design (18-01..18-04). Inline markers below.
 
 1. **Execution posture: host `shell_exec` vs sandbox `sandbox_exec` vs both-with-a-flag?**
+   - **RESOLVED (D-01):** host-primary for approved snippets; `sandbox_exec` stays as deliberate per-run escalation. PRD amendment in 18-01-T1.
    - What we know: 11-07 shipped sandbox by-path; #52/D-41 pivoted the loop to host and left snippet posture OPEN; the prompt says "Run UNTRUSTED or model-generated code in the sandbox." A snippet IS model-generated code → arguably belongs in the sandbox. BUT the rest of the loop runs on the host, and host parity is the #52/D-41 directive.
    - What's unclear: whether model-authored snippet reuse should be treated as "untrusted" (sandbox) once it's been operator-approved at save time (it's no longer fresh model code — it's a vetted, gated artifact).
    - Recommendation: **host-primary for approved snippets** (they passed the save gate; treat them like instruction skills which run on the host), keeping `sandbox_exec` available for the model to escalate any individual run. Lock this in the Wave-0 PRD amendment. Decide in `/gsd-discuss-phase 18`.
@@ -372,22 +375,27 @@ events, _ := toolStore.ListByConversation(ctx, convID)
 2. **Does the model get an in-loop snippet-save action?**
    - What we know: only CLI today; the latency win needs the snippet to exist.
    - Recommendation: yes — a `skill` action that routes to `SaveSnippet` behind ask_user (the create/update gate shape). Confirm scope in discuss.
+   - **RESOLVED (D-02):** yes, UNGATED (no-ceremony directive) — returns a normal ToolResult, never the pause sentinel. Implemented in 18-03-T2.
 
 3. **What exactly do the 29–30 roundtrips spend on?**
    - What we know: registration commit says "re-authoring the build script from scratch every run"; the chat-surface E2E gate (11-08 / `internal/eval`) drives the xlsx North-Star. The secondary lever (machine-profile env pinning, ~7 probe calls) is explicitly OUT of scope.
    - What's unclear: the precise per-call breakdown — the planner should read the run transcripts / the ledger from a live run, OR instrument the existing E2E to dump the per-tool sequence (the ledger does this now). 
    - Recommendation: use the committed `tool_invocations` ledger from one live xlsx run to characterize the 29–30 calls empirically before finalizing the ~5-call target. Probe-before-plan.
+   - **RESOLVED (D-03):** Wave-0 characterization task — 18-01-T3 operator checkpoint dumps the per-call ledger breakdown to `docs/phase-18-xlsx-call-breakdown.md`; the ~5-call target is provisional until grounded.
 
 4. **How is the <40s / ≤~5-call acceptance enforced — extend the chat-surface gate, or a new gate?**
    - Recommendation: extend the existing 11-08 chat-surface E2E (real binary), run the scenario twice, assert the steady-state window from the ledger. Keep the artifact-not-reply discipline.
+   - **RESOLVED:** as recommended — 18-04-T2 runs the scenario twice via the production `runner.Runner` path (`Deps.ToolInvocations` wired) and asserts the 2nd-run ledger window (distinct request_ids + wall-clock) + fresh artifact.
 
 5. **Is the `skill_ttl_sweep` cron still the right shape?**
    - What we know: it's shipped, daily-seeded, D-16-correct. Phase-9/10 scheduler is complete.
    - Recommendation: yes — unchanged. Phase 18 only adds the `restore` inverse handler.
+   - **RESOLVED:** unchanged; `Writer.Restore` (inverse of Archive) lands in 18-03-T1, audited as `AuditActivate`/`ApprovalCLI` (no new constant — 0010 CHECK).
 
 6. **Migration + sqlc surface needed?**
    - What we know: snippet live-state is the sidecar JSON (D-19); `0011_snippet_runs` was skipped; `0011` slot is now `tool_invocations`. 
    - Recommendation: NO new migration for snippets. Snippet-run forensics ride the existing `tool_invocations` ledger (filter by tool_name). The only DB touch is committing the in-flight `0011_tool_invocations` (already authored).
+   - **RESOLVED:** as recommended — no snippet migration; 18-01-T2 verify-and-commits the in-flight ledger as-authored (scope boundary: sqlc regen + trivial mechanical fixes only, else STOP).
 
 7. **Which PRD sections need an amendment commit BEFORE code (PRD-first)?**
    - §Slice 7e-core "Idea" + "Acceptance 7e" + "Componenti" + Commit template: re-point execution from `sandbox_exec`/`/skills` to the locked posture (host-primary recommended) — supersede the by-path-in-sandbox wording.
@@ -396,9 +404,11 @@ events, _ := toolStore.ListByConversation(ctx, convID)
    - §Slice 11 pre-requisiti line ~3538 (`:UserSnippet` mirror): confirm DEFERRED with 7f (no change, just note).
    - CAP-08 (REQUIREMENTS.md): amend wording OR add CAP-08.1.
    - §Caps & Limits env catalog: if a posture flag is added, register it; otherwise no env change.
+   - **RESOLVED:** amendment scope locked into 18-01-T1 (PRD amendment #54: §Slice 7e-core re-pointing, ~2190 follow-up marked RESOLVED, CAP-08.1 in REQUIREMENTS.md, :UserSnippet deferral noted; no posture flag → no env change).
 
 8. **Neo4j `:UserSnippet` mirror — v1 or deferred?**
    - Recommendation: DEFERRED (with 7f / Phase 15). It's semantic discovery infra; v1 discovery is BM25 (D-21). OUT OF SCOPE.
+   - **RESOLVED:** deferred with 7f, confirmed in 18-CONTEXT.md `<deferred>`; 18-01-T1 notes the deferral in the PRD without changing it.
 
 ---
 
