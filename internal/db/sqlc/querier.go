@@ -41,6 +41,7 @@ type Querier interface {
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
 	InsertRun(ctx context.Context, arg InsertRunParams) (AuraAgentJobRuns, error)
 	InsertSkillAudit(ctx context.Context, arg InsertSkillAuditParams) (AuraSkillAudit, error)
+	InsertToolInvocation(ctx context.Context, arg InsertToolInvocationParams) error
 	ListActiveTasks(ctx context.Context) ([]AuraSchedulerTasks, error)
 	ListAppliedKnowledgeMigrations(ctx context.Context) ([]AuraKnowledgeMigrations, error)
 	ListCacheMetricsSince(ctx context.Context, since pgtype.Timestamptz) ([]AuraCacheMetrics, error)
@@ -52,6 +53,7 @@ type Querier interface {
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
 	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
+	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error

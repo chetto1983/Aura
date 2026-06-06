@@ -9,8 +9,9 @@ import (
 )
 
 // FSEdit replaces an exact string in a file. Like Claude Code's Edit, old_string
-// must match exactly and be unique unless replace_all is set.
-type FSEdit struct{ WorkspaceRoot string }
+// must match exactly and be unique unless replace_all is set. SkillsDir, when set,
+// fences edits out of the skills library (#54 / D-43); empty disables the fence.
+type FSEdit struct{ WorkspaceRoot, SkillsDir string }
 
 type fsEditArgs struct {
 	Path       string `json:"path"`
@@ -36,6 +37,7 @@ func (t *FSEdit) Spec() Spec {
 		Description: "Perform an exact-string replacement in a file. old_string must match the file byte-for-byte and be unique unless replace_all is true; this keeps edits surgical and unambiguous. Returns the number of occurrences replaced.",
 		Parameters:  params,
 		Deferred:    false,
+		Mutating:    true,
 	}
 }
 
@@ -51,6 +53,9 @@ func (t *FSEdit) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 		return ToolResult{}, fmt.Errorf("fs_edit: old_string and new_string are identical")
 	}
 	path := resolveFSPath(t.WorkspaceRoot, a.Path)
+	if err := deniedSkillsWrite(t.SkillsDir, path, "fs_edit"); err != nil {
+		return ToolResult{}, err
+	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("fs_edit: %w", err)

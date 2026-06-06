@@ -20,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
 // memConvStore is an in-memory conversations.Store stand-in. It keeps ordered
@@ -284,5 +285,13 @@ func (memIdentityStore) GetIdentityByName(_ context.Context, name string) (ident
 type memCacheMetricStore struct{}
 
 func (memCacheMetricStore) Insert(_ context.Context, _ sqlc.InsertCacheMetricParams) error {
+	return nil
+}
+
+// memToolInvocationStore is a no-op ToolInvocationStore for the in-memory
+// cache-audit runner. Production chat wires the Postgres-backed ledger.
+type memToolInvocationStore struct{}
+
+func (memToolInvocationStore) Insert(_ context.Context, _ toolinvocations.Event) error {
 	return nil
 }

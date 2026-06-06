@@ -167,6 +167,56 @@ func TestLlmAgent_EventOrder(t *testing.T) {
 	}
 }
 
+func TestLlmAgent_EmitsToolInvocationStartAndEndMetadata(t *testing.T) {
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("c1", "echo", `{"v":"hi"}`)),
+		agenttest.ToolCallTurn(textResponseCall("c2", "done")),
+	)
+	a := newAgent(t, fc, llm.Config{})
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(4)})))
+	if err != nil {
+		t.Fatalf("Run errored: %v", err)
+	}
+
+	var start, end *agent.ToolInvocation
+	for _, ev := range evs {
+		if ev.Actions.ToolInvocation == nil {
+			continue
+		}
+		switch ev.Actions.ToolInvocation.Event {
+		case agent.ToolInvocationStart:
+			start = ev.Actions.ToolInvocation
+		case agent.ToolInvocationEnd:
+			end = ev.Actions.ToolInvocation
+		}
+	}
+	if start == nil {
+		t.Fatal("missing tool invocation start event")
+	}
+	if end == nil {
+		t.Fatal("missing tool invocation end event")
+	}
+
+	if start.ToolCallID != "c1" || start.ToolName != "echo" || start.Arguments != `{"v":"hi"}` {
+		t.Fatalf("start metadata = %+v", start)
+	}
+	if start.ArgsBytes != len(`{"v":"hi"}`) || start.StartedAt == nil {
+		t.Fatalf("start byte/timestamp metadata = %+v", start)
+	}
+
+	wantPreview := `echo:{"v":"hi"}`
+	if end.ToolCallID != "c1" || end.ToolName != "echo" || end.Status != "ok" {
+		t.Fatalf("end identity/status metadata = %+v", end)
+	}
+	if end.StartedAt == nil || end.EndedAt == nil || end.EndedAt.Before(*end.StartedAt) {
+		t.Fatalf("end timestamps are not coherent: %+v", end)
+	}
+	if end.ResultPreview != wantPreview || end.ResultBytes != len(wantPreview) ||
+		end.PreviewBytes != len(wantPreview) || end.ResultTruncated {
+		t.Fatalf("end result metadata = %+v", end)
+	}
+}
+
 // TestLlmAgent_StepCap_Trips (Req#10 + Req#3/#4): distinct-arg tool calls exhaust
 // max_steps. The FIRST trip recovers (one bypass turn), whose distinct-arg echo
 // loops to the SECOND trip, which finalizes — the terminal Event carries

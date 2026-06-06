@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -245,6 +246,9 @@ func validateStructure(fm Frontmatter, dirName, body string, bodyCap int) error 
 	}
 	if fm.Type != TypeInstruction && fm.Type != TypeSnippet {
 		return fmt.Errorf("invalid type %q", fm.Type)
+	}
+	if strings.TrimSpace(body) == "" {
+		return fmt.Errorf("empty body")
 	}
 	if len(body) > bodyCap {
 		return fmt.Errorf("body %d bytes exceeds cap %d", len(body), bodyCap)

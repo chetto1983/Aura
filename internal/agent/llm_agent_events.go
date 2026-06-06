@@ -3,6 +3,7 @@ package agent
 import (
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -36,21 +37,105 @@ func (a *LlmAgent) toolCallEvent(ic InvocationContext, spanID [8]byte, parentSpa
 	return ev
 }
 
+func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+	call llm.ToolCall, startedAt time.Time,
+) *Event {
+	ev := a.newEvent(ic, spanID, parentSpanID)
+	ts := startedAt.UTC()
+	ev.Actions.ToolInvocation = &ToolInvocation{
+		Event:      ToolInvocationStart,
+		ToolCallID: call.ID,
+		ToolName:   call.Function.Name,
+		Arguments:  call.Function.Arguments,
+		ArgsBytes:  len(call.Function.Arguments),
+		StartedAt:  &ts,
+	}
+	return ev
+}
+
 // toolResultEvent carries the RoleTool preview threaded back into history. The
 // tool_call_id correlation lives in the appended RoleTool history message (Event
 // has no dedicated tool_call_id field this phase — AG-UI fan-out is Phase 12); the
 // id is passed for forward-compat callers but not stamped on the Event yet.
-func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, toolCallID, preview string) *Event {
+func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, run toolRunResult) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
-	ev.LLMResponse = &LLMResponse{Content: preview}
+	ev.LLMResponse = &LLMResponse{Content: run.Preview}
 	// Stamp the tool_call_id so a prose consumer (the REPL renderer) can tell this
 	// raw tool-result preview apart from a streamed assistant chunk — both carry
 	// the text in LLMResponse.Content with no FinishReason, so without this marker
 	// the renderer would stream the raw preview AND let it pollute the prose
 	// buffer, double-printing the final answer. It is also the AG-UI correlation
 	// id a Phase-12 gateway fans out.
+	ev.Actions.StateDelta = map[string]any{"tool_call_id": run.ToolCallID}
+	startedAt := run.StartedAt.UTC()
+	endedAt := run.EndedAt.UTC()
+	status := "ok"
+	if run.Err != "" {
+		status = "error"
+	}
+	ev.Actions.ToolInvocation = &ToolInvocation{
+		Event:             ToolInvocationEnd,
+		ToolCallID:        run.ToolCallID,
+		ToolName:          run.ToolName,
+		Arguments:         run.Arguments,
+		ArgsBytes:         len(run.Arguments),
+		StartedAt:         &startedAt,
+		EndedAt:           &endedAt,
+		DurationMS:        run.EndedAt.Sub(run.StartedAt).Milliseconds(),
+		Status:            status,
+		Error:             run.Err,
+		ResultPreview:     run.Preview,
+		PreviewBytes:      len(run.Preview),
+		ResultBytes:       run.Result.Bytes,
+		ResultTruncated:   run.Result.Truncated,
+		ResultSidecarPath: run.Result.FullPath,
+		ExitCode:          exitCodeFromMeta(run.Result.Meta),
+		Meta:              toolResultMetaMap(run.Result.Meta),
+	}
+	return ev
+}
+
+func (a *LlmAgent) toolPreviewEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, toolCallID, preview string) *Event {
+	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev.LLMResponse = &LLMResponse{Content: preview}
 	ev.Actions.StateDelta = map[string]any{"tool_call_id": toolCallID}
 	return ev
+}
+
+func toolResultMetaMap(meta *tools.ToolResultMeta) map[string]any {
+	if meta == nil {
+		return nil
+	}
+	out := make(map[string]any, len(*meta))
+	for k, v := range *meta {
+		out[k] = v
+	}
+	return out
+}
+
+func exitCodeFromMeta(meta *tools.ToolResultMeta) *int {
+	if meta == nil {
+		return nil
+	}
+	v, ok := (*meta)["exit_code"]
+	if !ok {
+		return nil
+	}
+	switch n := v.(type) {
+	case int:
+		return &n
+	case int32:
+		out := int(n)
+		return &out
+	case int64:
+		out := int(n)
+		return &out
+	case float64:
+		out := int(n)
+		return &out
+	default:
+		return nil
+	}
 }
 
 // finalEvent is the turn's terminal answer (text_response or content-stop

@@ -62,3 +62,4 @@ docs/*-live-soak-*.log
 # Local cache/sessions transient are excluded.
 .claude/*
 skills-lock.json
+nul

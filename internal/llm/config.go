@@ -31,6 +31,12 @@ const (
 	defaultContextWindow   = 1_000_000
 	defaultMaxOutputTokens = 32_768
 
+	// defaultCompletionGate is the production default for the completion critic
+	// gate (amendment #54 / D-43): ON. The zero-value Config (hand-built in unit
+	// tests) leaves it false, so the gate is OFF unless a test opts in — Load is
+	// the only path that turns it on.
+	defaultCompletionGate = true
+
 	// OpenRouter attribution headers (D-20): visibility in the OpenRouter
 	// dashboard and possible discount tiers. Sent on every request.
 	headerReferer = "https://github.com/chetto1983/aura"
@@ -49,6 +55,12 @@ const (
 	envConnectTimeoutSec = "AURA_LLM_CONNECT_TIMEOUT_SEC"
 	envContextWindow     = "AURA_MODEL_CONTEXT_WINDOW"
 	envMaxOutputTokens   = "AURA_MODEL_MAX_OUTPUT_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
+
+	// Completion gate knobs (amendment #54 / D-43). AURA_COMPLETION_* domain
+	// (not AURA_LLM_*) but they ride in llm.Config because the agent reads cfg
+	// directly — no extra plumbing through runner.Deps / LlmAgentConfig.
+	envCompletionGate        = "AURA_COMPLETION_GATE"
+	envCompletionCriticModel = "AURA_COMPLETION_CRITIC_MODEL"
 )
 
 // ErrMissingAPIKey is the clear, non-panic error surfaced when the API key is
@@ -73,6 +85,14 @@ type Config struct {
 	MaxOutputTokens   int // output-token reservation cap; L2 budget input
 	Headers           map[string]string
 	Prices            map[string]Price
+
+	// CompletionGate enables the agent's completion critic gate (amendment #54 /
+	// D-43): a voluntary termination (text_response / content-stop) on a turn
+	// that mutated host state is verified by a critic call before it is accepted.
+	// Zero-value false (off) so hand-built test configs skip it; Load() defaults
+	// it on. CompletionCriticModel overrides the critic model; empty → Model.
+	CompletionGate        bool
+	CompletionCriticModel string
 }
 
 // fileConfig mirrors the JSON shape of ~/.aura/llm.json. Every field is a
@@ -134,6 +154,13 @@ func Load() (*Config, error) {
 	if err := applyEnvOverrides(cfg); err != nil {
 		return nil, err
 	}
+
+	// Completion gate (amendment #54 / D-43): default ON. A malformed bool falls
+	// back to the default (non-fatal, like the root config bool knobs) — a typo
+	// in an opt-out toggle must not block startup. Empty critic model → the loop
+	// model is reused at call time.
+	cfg.CompletionGate = envBool(envCompletionGate, defaultCompletionGate)
+	cfg.CompletionCriticModel = os.Getenv(envCompletionCriticModel)
 
 	if cfg.APIKey == "" {
 		return nil, ErrMissingAPIKey
@@ -269,6 +296,22 @@ func envInt(key string) (val int, ok bool, err error) {
 		return 0, false, fmt.Errorf("%s=%q: not a valid integer", key, v)
 	}
 	return n, true, nil
+}
+
+// envBool reads key as a bool, falling back to `fallback` when unset, empty, or
+// malformed. Unlike envInt/envFloat this is NOT fail-fast: the completion-gate
+// toggle is operative, not budget-load-bearing — a typo should not block boot
+// (mirrors the root config envBoolDefault).
+func envBool(key string, fallback bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return fallback
+	}
+	return b
 }
 
 // envFloat reads key as a float, fail-fast on a set-but-malformed value.

@@ -182,15 +182,16 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 
 	client := agenttest.NewFakeClient(scriptTurns(turns)...)
 	r := runner.New(runner.Deps{
-		Conv:         newMemConvStore(),
-		Pause:        newMemPauseStore(),
-		Identity:     memIdentityStore{},
-		CacheMetrics: memCacheMetricStore{},
-		Client:       client,
-		Registry:     reg,
-		LLM:          llm.Config{Model: "cache-audit", ContextWindow: 1_000_000, MaxOutputTokens: 32768},
-		RunDir:       runDir,
-		AlwaysBlock:  alwaysBlockProvider(auditCfg), // the messages[1] always-block (D-07)
+		Conv:            newMemConvStore(),
+		Pause:           newMemPauseStore(),
+		Identity:        memIdentityStore{},
+		CacheMetrics:    memCacheMetricStore{},
+		ToolInvocations: memToolInvocationStore{},
+		Client:          client,
+		Registry:        reg,
+		LLM:             llm.Config{Model: "cache-audit", ContextWindow: 1_000_000, MaxOutputTokens: 32768},
+		RunDir:          runDir,
+		AlwaysBlock:     alwaysBlockProvider(auditCfg), // the messages[1] always-block (D-07)
 	})
 
 	convID := "00000000-0000-0000-0000-0000000000aa"

@@ -1,6 +1,8 @@
 package tools
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -15,10 +17,62 @@ import (
 // resolveFSPath returns an absolute path as-is and joins a relative path onto the
 // workspace root (or leaves it relative to the process cwd when no root is set).
 func resolveFSPath(root, p string) string {
+	p = expandHomePath(p)
+	root = expandHomePath(root)
 	if p == "" || filepath.IsAbs(p) || root == "" {
 		return p
 	}
 	return filepath.Join(root, p)
+}
+
+// expandHomePath gives native fs_* tools the same "~" ergonomics the host shell
+// already has. Without this, shell_exec can read ~/.aura/... while fs_read treats
+// "~" as a literal workspace child, causing pointless fallback shell calls.
+func expandHomePath(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") && !strings.HasPrefix(p, `~\`) {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	if p == "~" {
+		return home
+	}
+	return filepath.Join(home, p[2:])
+}
+
+// deniedSkillsWrite returns a redirect error when a resolved write/edit target is
+// inside the skills library (skillsDir). The full-host no-fence policy (#50 /
+// D-15c) stands everywhere else; this is the surgical exception (#54 / D-43) that
+// stops a direct file write from bypassing the gated `skill` authoring flow
+// (create→pending→approve). An empty skillsDir disables the fence (unit tests and
+// the pool-free manifest paths that construct the tools without a config).
+func deniedSkillsWrite(skillsDir, resolved, tool string) error {
+	if !withinDir(skillsDir, resolved) {
+		return nil
+	}
+	return fmt.Errorf("%s: %s is inside the skills library; author skills through the gated `skill` tool "+
+		"(action=create/update/delete), not direct file writes", tool, resolved)
+}
+
+// withinDir reports whether target is dir itself or a path nested inside it,
+// comparing cleaned absolute paths via filepath.Rel (a "../" prefix means
+// target escaped dir). An empty dir or an unresolvable path → false.
+func withinDir(dir, target string) bool {
+	if strings.TrimSpace(dir) == "" {
+		return false
+	}
+	da, err1 := filepath.Abs(dir)
+	ta, err2 := filepath.Abs(target)
+	if err1 != nil || err2 != nil {
+		return false
+	}
+	rel, err := filepath.Rel(da, ta)
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
 }
 
 // rootOrDefault picks the search root for the walking tools: the resolved path, or

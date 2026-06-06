@@ -34,6 +34,14 @@ type Spec struct {
 	Description string          // full description; only shown when not Deferred OR after a tool_search hit
 	Parameters  json.RawMessage // JSON-schema for the tool arguments
 	Deferred    bool            // true → full spec hidden until tool_search loads it
+	// Mutating marks a tool that can change host state (write a file, run a
+	// command, mutate the sandbox). The agent's completion gate (amendment #54 /
+	// D-43) only runs its critic on a turn that dispatched at least one mutating
+	// tool — a pure read/chat turn skips the gate at zero extra cost. It is NOT
+	// LLM-visible (never wire-encoded); it is a runtime hint only. Conservative by
+	// design: shell_exec is Mutating even though `ls` does not mutate, because the
+	// agent cannot know statically whether a command writes.
+	Mutating bool
 }
 
 // ToolResult is the value a tool's Execute returns. Preview is what the agent
@@ -47,7 +55,12 @@ type ToolResult struct {
 	FullPath  string // sidecar path holding the full bytes; empty when not spilled
 	Bytes     int    // full length of the original content in bytes
 	Truncated bool   // true when the output was spilled to a sidecar
+	Meta      *ToolResultMeta
 }
+
+// ToolResultMeta carries tool-specific structured fields for audit. It is behind
+// a pointer so the zero ToolResult remains comparable in existing tests.
+type ToolResultMeta map[string]any
 
 // Tool is what the agent loop dispatches against. Execute returns a ToolResult
 // (whose Preview is the content threaded back to the LLM) or an error.

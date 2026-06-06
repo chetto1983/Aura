@@ -42,13 +42,20 @@ type shellExecArgs struct {
 	Env       map[string]string `json:"env"`
 }
 
+type shellExecFooter struct {
+	ExitCode   *int   `json:"exit_code,omitempty"`
+	Cwd        string `json:"cwd"`
+	DurationMS int64  `json:"duration_ms"`
+	TimedOut   bool   `json:"timed_out"`
+}
+
 const defaultShellTimeout = 120 * time.Second
 
 func (s *ShellExec) Spec() Spec {
 	params := json.RawMessage(`{
   "type": "object",
   "properties": {
-    "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through the host system shell, so pipes, redirects, and && chains all work. For long scripts, write them to a file first (cat > work.py <<'EOF' ... EOF), then run the file."},
+    "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through the host system shell, so pipes, redirects, and && chains all work. For long scripts, create the file with fs_write first, then run it here."},
     "cwd": {"type": "string", "description": "Optional working directory override. Your working directory PERSISTS between calls (a cd carries over) and starts at your workspace."},
     "timeout_ms": {"type": "integer", "minimum": 0, "description": "Optional timeout in milliseconds. Omit for the default (120s)."},
     "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional extra environment variables for this command only."}
@@ -61,12 +68,15 @@ func (s *ShellExec) Spec() Spec {
 		Description: "Run a command line through the host system shell, in-process, with full access to the machine — this is your primary way to get things done, like a real terminal. " +
 			"Pipes, redirects, && chains, any installed interpreter (python, node, go), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at your workspace. " +
-			"Returns combined stdout and stderr, plus an exit-code marker when the command fails. " +
+			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +
 			"For running untrusted or model-generated code in isolation, use sandbox_exec instead.",
 		Parameters: params,
 		// NOT deferred: this is the keystone tool — the model must always see it and
 		// its argument schema, exactly like sandbox_exec.
 		Deferred: false,
+		// Conservatively Mutating (D-43): a command line can write files or mutate
+		// state and the agent cannot tell `ls` from `python build.py` statically.
+		Mutating: true,
 	}
 }
 
@@ -78,7 +88,7 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		// data). The hint steers the model to the incremental pattern instead of
 		// retrying the same oversized call (D-15 self-correction).
 		return ToolResult{}, fmt.Errorf("shell_exec args: %w — your arguments were likely truncated by the output budget; "+
-			"write long content to a file in SMALL appends across multiple calls (cat >> work.py <<'EOF' ... EOF), then run the file", err)
+			"put large or multi-line content in files with fs_write/fs_edit, then run the file here", err)
 	}
 	if strings.TrimSpace(a.Command) == "" {
 		return ToolResult{}, fmt.Errorf("shell_exec: command is required")
@@ -93,6 +103,7 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	}
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	started := time.Now()
 
 	// Models occasionally emit CRLF line endings inside command; under the POSIX
 	// shell a stray \r corrupts heredoc terminators and the cwd-tracking wrap
@@ -114,12 +125,36 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	runErr := cmd.Run()
 
 	out := stdout.String()
+	finalCwd := cmd.Dir
 	if posix {
-		var finalCwd string
-		out, finalCwd = extractCwdMarker(out)
-		s.storeCwd(ctx, finalCwd)
+		var capturedCwd string
+		out, capturedCwd = extractCwdMarker(out)
+		if capturedCwd != "" {
+			finalCwd = capturedCwd
+		}
+		s.storeCwd(ctx, capturedCwd)
 	}
-	return NewResult(ctx, renderShellOutput(out, stderr.String(), runErr, runCtx.Err()))
+	ecPtr := exitCodePtr(runErr, runCtx.Err())
+	rendered := renderShellOutput(out, stderr.String(), runErr, runCtx.Err())
+	rendered = appendShellFooter(rendered, shellExecFooter{
+		ExitCode:   ecPtr,
+		Cwd:        finalCwd,
+		DurationMS: time.Since(started).Milliseconds(),
+		TimedOut:   errors.Is(runCtx.Err(), context.DeadlineExceeded),
+	})
+	res, err := NewResult(ctx, rendered)
+	if err != nil {
+		return ToolResult{}, err
+	}
+	meta := ToolResultMeta{
+		"cwd":       finalCwd,
+		"timed_out": errors.Is(runCtx.Err(), context.DeadlineExceeded),
+	}
+	if ecPtr != nil {
+		meta["exit_code"] = *ecPtr
+	}
+	res.Meta = &meta
+	return res, nil
 }
 
 // workdir resolves the call's starting directory: explicit cwd arg > the session's
@@ -281,6 +316,34 @@ func exitCode(err error) (int, bool) {
 		return ee.ExitCode(), true
 	}
 	return 0, false
+}
+
+func exitCodePtr(runErr, ctxErr error) *int {
+	if errors.Is(ctxErr, context.DeadlineExceeded) {
+		return nil
+	}
+	if ec, ok := exitCode(runErr); ok {
+		return &ec
+	}
+	if runErr == nil {
+		ec := 0
+		return &ec
+	}
+	return nil
+}
+
+func appendShellFooter(output string, footer shellExecFooter) string {
+	raw, err := json.Marshal(footer)
+	if err != nil {
+		return output
+	}
+	var b strings.Builder
+	b.WriteString(output)
+	ensureTrailingNewline(&b)
+	b.WriteString("[aura_shell ")
+	b.Write(raw)
+	b.WriteByte(']')
+	return b.String()
 }
 
 func appendStatus(b *strings.Builder, status string) {

@@ -204,17 +204,17 @@ func TestAuditImmutable(t *testing.T) {
 // reversible+idempotent. It uses a migrate instance steered directly so it can
 // step down one and back up.
 func TestMigration0010_SchemaRoundTrip(t *testing.T) {
-	pool := migratedPool(t) // ensures roles + up-to-0010 first
+	pool := migratedPool(t) // ensures roles + migrations to head first
 	ctx := context.Background()
 
 	// Down one (0010 → 0009): the audit table must disappear and the kind CHECK
 	// must no longer admit skill_ttl_sweep.
 	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
-	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
-		t.Fatalf("migrate down -1: %v", err)
+	if err := db.MigrateSteps(ctx, migrateURL, -2); err != nil {
+		t.Fatalf("migrate down -2: %v", err)
 	}
 	if tableExists(t, pool, "skill_audit") {
-		t.Error("after down -1: aura.skill_audit still exists")
+		t.Error("after down -2: aura.skill_audit still exists")
 	}
 
 	// Up one (0009 → 0010): the table returns.

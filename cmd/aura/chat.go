@@ -34,6 +34,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/chetto1983/aura/internal/runner"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -100,13 +101,17 @@ func runChat(args []string) {
 // line, never a panic). The shared boot itself NEVER calls os.Exit, so `aura serve`
 // can reuse it and handle a transient boot error gracefully (Pitfall 6).
 func bootChat(ctx context.Context) *chatEnv {
+	return bootChatNamed(ctx, "aura chat")
+}
+
+func bootChatNamed(ctx context.Context, label string) *chatEnv {
 	env, err := bootChatEnv(ctx)
 	if err != nil {
 		if errors.Is(err, llm.ErrMissingAPIKey) || isMissingAPIKey(err) {
-			fmt.Fprintln(os.Stderr, "aura chat: "+llm.ErrMissingAPIKey.Error())
+			fmt.Fprintln(os.Stderr, label+": "+llm.ErrMissingAPIKey.Error())
 			os.Exit(1)
 		}
-		fmt.Fprintln(os.Stderr, "aura chat:", err)
+		fmt.Fprintln(os.Stderr, label+":", err)
 		os.Exit(1)
 	}
 	return env
@@ -136,6 +141,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 	pauseStore := askuser.New(pool)
 	idStore := identity.New(pool)
 	cacheStore := cachemetrics.New(pool)
+	toolInvocationStore := toolinvocations.New(pool)
 
 	// Boot reconciliation GC (D-A5-02 / Req#12): reconcile orphan sidecar dirs
 	// BEFORE serving. A scan failure is a WARN-level degradation, not a boot-blocker.
@@ -162,17 +168,18 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 
 	client := openai_compat.New(cfg.LLM)
 	run := runner.New(runner.Deps{
-		Conv:         convStore,
-		Pause:        pauseStore,
-		Identity:     idStore,
-		CacheMetrics: cacheStore,
-		Client:       client,
-		Registry:     reg,
-		LLM:          cfg.LLM,
-		RunDir:       cfg.RunDir,
-		PreviewCap:   cfg.ToolPreviewCap,
-		EvictAfter:   cfg.ContextToolEvictAfterTurns,
-		AlwaysBlock:  alwaysBlockProvider(cfg),
+		Conv:            convStore,
+		Pause:           pauseStore,
+		Identity:        idStore,
+		CacheMetrics:    cacheStore,
+		ToolInvocations: toolInvocationStore,
+		Client:          client,
+		Registry:        reg,
+		LLM:             cfg.LLM,
+		RunDir:          cfg.RunDir,
+		PreviewCap:      cfg.ToolPreviewCap,
+		EvictAfter:      cfg.ContextToolEvictAfterTurns,
+		AlwaysBlock:     alwaysBlockProvider(cfg),
 	})
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, mcpClosers: mcpClosers}, nil
 }
@@ -336,6 +343,10 @@ func mostRecentActive(ctx context.Context, conv *conversations.Store) (string, e
 // runReplOrExit runs the Runner-driven REPL, wiring the OTel TracerProvider
 // (flushed on exit) + the two-stage Ctrl+C, and exits non-zero on a fatal error.
 func runReplOrExit(ctx context.Context, env *chatEnv, convID string) {
+	runReplOrExitNamed(ctx, "aura chat", env, convID)
+}
+
+func runReplOrExitNamed(ctx context.Context, label string, env *chatEnv, convID string) {
 	tp, err := newTracer(ctx, env.cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "otel:", err)
@@ -359,7 +370,7 @@ func runReplOrExit(ctx context.Context, env *chatEnv, convID string) {
 	// Session-end Runner.Stop (auto-resolve orphan pendings + join auto-title
 	// workers) is owned by chatLoop's defer so the white-box tests drain workers too.
 	if err := chatLoop(ctx, deps); err != nil {
-		fmt.Fprintln(os.Stderr, "aura chat:", err)
+		fmt.Fprintln(os.Stderr, label+":", err)
 		os.Exit(1)
 	}
 }

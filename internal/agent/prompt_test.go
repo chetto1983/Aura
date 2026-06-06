@@ -22,6 +22,14 @@ func TestPrompt_Directive(t *testing.T) {
 	}
 }
 
+func TestPrompt_ShellTransactionDoctrine(t *testing.T) {
+	for _, needle := range []string{"shell transaction", "exit_code/cwd/duration", "separate calls for pwd or exit-code checks"} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt is missing shell-call reduction doctrine %q", needle)
+		}
+	}
+}
+
 // TestPrompt_NoTimestamp asserts the prompt contains no date/clock substring, so
 // it can never poison the byte-stable cached prefix (Req#14 / D-08).
 func TestPrompt_NoTimestamp(t *testing.T) {

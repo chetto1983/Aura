@@ -150,3 +150,29 @@ type AuraSkillAudit struct {
 	GateTaken         bool               `json:"gate_taken"`
 	BlocklistOverride bool               `json:"blocklist_override"`
 }
+
+// Append-only tool invocation ledger: start/end facts for dispatched tools with args, timestamps, status, bytes, sidecar path, exit code, and typed metadata.
+type AuraToolInvocations struct {
+	ID                pgtype.UUID        `json:"id"`
+	ConversationID    pgtype.UUID        `json:"conversation_id"`
+	RequestID         pgtype.UUID        `json:"request_id"`
+	ToolCallID        string             `json:"tool_call_id"`
+	ToolName          string             `json:"tool_name"`
+	EventKind         string             `json:"event_kind"`
+	Seq               int32              `json:"seq"`
+	Ts                pgtype.Timestamptz `json:"ts"`
+	StartedAt         pgtype.Timestamptz `json:"started_at"`
+	EndedAt           pgtype.Timestamptz `json:"ended_at"`
+	DurationMs        pgtype.Int8        `json:"duration_ms"`
+	ArgsRaw           pgtype.Text        `json:"args_raw"`
+	ArgsBytes         pgtype.Int4        `json:"args_bytes"`
+	Status            pgtype.Text        `json:"status"`
+	Error             pgtype.Text        `json:"error"`
+	ResultPreview     pgtype.Text        `json:"result_preview"`
+	PreviewBytes      pgtype.Int4        `json:"preview_bytes"`
+	ResultBytes       pgtype.Int4        `json:"result_bytes"`
+	ResultTruncated   pgtype.Bool        `json:"result_truncated"`
+	ResultSidecarPath pgtype.Text        `json:"result_sidecar_path"`
+	ExitCode          pgtype.Int4        `json:"exit_code"`
+	Meta              []byte             `json:"meta"`
+}

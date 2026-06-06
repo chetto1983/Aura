@@ -19,6 +19,15 @@ func TestShellExecSpecIsNotDeferred(t *testing.T) {
 	}
 }
 
+func TestShellExecSpecMentionsStructuredFooter(t *testing.T) {
+	s := (&ShellExec{}).Spec()
+	for _, needle := range []string{"[aura_shell", "exit_code", "cwd", "duration_ms"} {
+		if !strings.Contains(s.Description, needle) {
+			t.Fatalf("shell_exec description missing structured footer hint %q: %q", needle, s.Description)
+		}
+	}
+}
+
 func TestShellExecRunsCommand(t *testing.T) {
 	tool := &ShellExec{}
 	ctx := ctxWith(t, "sess-sh", "call-sh")
@@ -29,6 +38,48 @@ func TestShellExecRunsCommand(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "hello-aura") {
 		t.Fatalf("preview missing stdout: %q", res.Preview)
+	}
+	if res.Meta == nil {
+		t.Fatal("Meta is nil, want exit_code")
+	}
+	if got, ok := (*res.Meta)["exit_code"].(int); !ok || got != 0 {
+		t.Fatalf("Meta[exit_code] = %#v, want int(0)", (*res.Meta)["exit_code"])
+	}
+}
+
+func TestShellExecPreviewIncludesStructuredFooter(t *testing.T) {
+	tool := &ShellExec{}
+	ctx := ctxWith(t, "sess-sh-footer", "call-sh")
+
+	res, err := tool.Execute(ctx, json.RawMessage(`{"command":"echo hello-aura"}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	footer := lastNonEmptyLine(res.Preview)
+	if !strings.HasPrefix(footer, "[aura_shell ") || !strings.HasSuffix(footer, "]") {
+		t.Fatalf("preview missing structured aura_shell footer: %q", res.Preview)
+	}
+	var payload struct {
+		ExitCode   *int   `json:"exit_code"`
+		Cwd        string `json:"cwd"`
+		DurationMS int64  `json:"duration_ms"`
+		TimedOut   bool   `json:"timed_out"`
+	}
+	raw := strings.TrimSuffix(strings.TrimPrefix(footer, "[aura_shell "), "]")
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("footer is not JSON: %v; footer=%q", err, footer)
+	}
+	if payload.ExitCode == nil || *payload.ExitCode != 0 {
+		t.Fatalf("footer exit_code = %#v, want 0", payload.ExitCode)
+	}
+	if strings.TrimSpace(payload.Cwd) == "" {
+		t.Fatalf("footer cwd is empty: %q", footer)
+	}
+	if payload.DurationMS < 0 {
+		t.Fatalf("footer duration_ms = %d, want >= 0", payload.DurationMS)
+	}
+	if payload.TimedOut {
+		t.Fatalf("footer timed_out = true for successful echo")
 	}
 }
 
@@ -43,6 +94,12 @@ func TestShellExecReportsExitCode(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "[exit code 7]") {
 		t.Fatalf("preview missing exit-code marker: %q", res.Preview)
+	}
+	if res.Meta == nil {
+		t.Fatal("Meta is nil, want exit_code")
+	}
+	if got, ok := (*res.Meta)["exit_code"].(int); !ok || got != 7 {
+		t.Fatalf("Meta[exit_code] = %#v, want int(7)", (*res.Meta)["exit_code"])
 	}
 }
 
@@ -155,6 +212,16 @@ func TestShellExecCwdPersistsAcrossCalls(t *testing.T) {
 	}
 }
 
+func lastNonEmptyLine(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
 // TestShellExecNormalizesCRLF: a model that emits CRLF line endings inside
 // command must not corrupt heredoc terminators or the POSIX cwd-tracking wrap
 // (live run 9, amendment #53 / D-42).
@@ -205,5 +272,22 @@ func TestShellExecRejectsBadArgs(t *testing.T) {
 				t.Fatalf("err = %v, want substring %q", err, tt.want)
 			}
 		})
+	}
+}
+
+func TestShellExecBadJSONSteersLargeContentToFileTools(t *testing.T) {
+	tool := &ShellExec{}
+	ctx := ctxWith(t, "sess-sh", "call-sh")
+
+	_, err := tool.Execute(ctx, json.RawMessage(`{`))
+	if err == nil {
+		t.Fatal("Execute returned nil error for malformed JSON")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "fs_write") || !strings.Contains(msg, "fs_edit") {
+		t.Fatalf("malformed-args hint should steer large content to file tools, got: %q", msg)
+	}
+	if strings.Contains(msg, "cat >>") || strings.Contains(msg, "heredoc") {
+		t.Fatalf("malformed-args hint should not steer the model to shell heredocs/appends, got: %q", msg)
 	}
 }

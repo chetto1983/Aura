@@ -34,15 +34,16 @@ func newTestRunnerCfg(t *testing.T, client llm.Client, cfg llm.Config) (*Runner,
 	reg.Register(tools.AskUser{})
 	reg.Register(&tools.ReadToolOutput{})
 	r := New(Deps{
-		Conv:         conv,
-		Pause:        pause,
-		Identity:     id,
-		CacheMetrics: newFakeCacheMetricStore(),
-		Client:       client,
-		Registry:     reg,
-		LLM:          cfg,
-		TitleTimeout: 2 * time.Second,
-		StopTimeout:  2 * time.Second,
+		Conv:            conv,
+		Pause:           pause,
+		Identity:        id,
+		CacheMetrics:    newFakeCacheMetricStore(),
+		ToolInvocations: newFakeToolInvocationStore(),
+		Client:          client,
+		Registry:        reg,
+		LLM:             cfg,
+		TitleTimeout:    2 * time.Second,
+		StopTimeout:     2 * time.Second,
 	})
 	return r, conv, pause
 }

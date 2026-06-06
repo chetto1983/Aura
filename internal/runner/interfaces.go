@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
 // ConversationStore is the narrow conversation surface the Runner consumes
@@ -66,6 +67,13 @@ type PauseStore interface {
 // turn loop, so they are not part of the surface the Runner depends on.
 type CacheMetricStore interface {
 	Insert(ctx context.Context, p sqlc.InsertCacheMetricParams) error
+}
+
+// ToolInvocationStore is the narrow append-only tool ledger surface the Runner
+// consumes. It records start/end facts emitted by the agent around dispatched
+// tool execution.
+type ToolInvocationStore interface {
+	Insert(ctx context.Context, e toolinvocations.Event) error
 }
 
 // IdentityStore is the narrow identity surface the Runner consumes (D-A2-02).

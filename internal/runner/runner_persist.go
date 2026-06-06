@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/askuser"
@@ -11,6 +12,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 )
 
@@ -23,9 +25,15 @@ import (
 // accumulated here and the SINGLE combined assistant tool_call turn is written once
 // at round end (flushPause), not one assistant turn per Event.
 type turnTracker struct {
-	convID string
-	paused bool
-	pauses []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
+	convID  string
+	paused  bool
+	pauses  []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
+	toolSeq int
+}
+
+func (t *turnTracker) nextToolInvocationSeq() int {
+	t.toolSeq++
+	return t.toolSeq
 }
 
 // persistEvent is the Event-sourced persistence seam (ADK AppendEvent-per-Event,
@@ -38,10 +46,10 @@ type turnTracker struct {
 //     carrying ALL the round's calls is flushed once at round end (flushPause, CR-02),
 //     so resume history carries one wire-valid assistant-with-N-tool_calls message.
 //
-// Streamed chunk / tool_call / tool_result Events are transport-only here (the
-// LlmAgent threads tool results into its own in-memory history for the round; the
-// durable record is the assistant answer/pause). This keeps LoadHistory a function
-// of completed turns, not mid-stream deltas.
+// Streamed chunks and model tool_call announcements remain transport-only for
+// conversation_turns. ToolInvocation start/end facts go to the separate append-only
+// ledger, so LoadHistory stays a function of completed turns while audit sees each
+// dispatched tool.
 func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
 	if ev == nil {
 		return nil
@@ -49,10 +57,64 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	if ev.Actions.AwaitingInput != nil {
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
 	}
+	if ev.Actions.ToolInvocation != nil {
+		return r.persistToolInvocation(ctx, tr, ev)
+	}
 	if ev.LLMResponse != nil && ev.LLMResponse.FinishReason != "" {
 		return r.persistAssistantAnswer(ctx, tr.convID, ev)
 	}
 	return nil
+}
+
+func (r *Runner) persistToolInvocation(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
+	if r.toolInvocations == nil {
+		return fmt.Errorf("persist tool invocation: tool invocation store is nil (composition root must inject one)")
+	}
+	ti := ev.Actions.ToolInvocation
+	e := toolinvocations.Event{
+		ConversationID:    tr.convID,
+		RequestID:         ev.RequestID.String(),
+		ToolCallID:        ti.ToolCallID,
+		ToolName:          ti.ToolName,
+		Event:             ti.Event,
+		Seq:               tr.nextToolInvocationSeq(),
+		Timestamp:         toolInvocationTimestamp(ti, ev.Timestamp),
+		StartedAt:         timePtrValue(ti.StartedAt),
+		EndedAt:           timePtrValue(ti.EndedAt),
+		DurationMS:        ti.DurationMS,
+		Arguments:         ti.Arguments,
+		ArgsBytes:         ti.ArgsBytes,
+		Status:            ti.Status,
+		Error:             ti.Error,
+		ResultPreview:     ti.ResultPreview,
+		PreviewBytes:      ti.PreviewBytes,
+		ResultBytes:       ti.ResultBytes,
+		ResultTruncated:   ti.ResultTruncated,
+		ResultSidecarPath: ti.ResultSidecarPath,
+		ExitCode:          ti.ExitCode,
+		Meta:              ti.Meta,
+	}
+	if err := r.toolInvocations.Insert(ctx, e); err != nil {
+		return fmt.Errorf("persist tool invocation %s/%s: %w", ti.ToolName, ti.ToolCallID, err)
+	}
+	return nil
+}
+
+func timePtrValue(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return t.UTC()
+}
+
+func toolInvocationTimestamp(ti *agent.ToolInvocation, fallback time.Time) time.Time {
+	if ti.Event == agent.ToolInvocationStart && ti.StartedAt != nil {
+		return ti.StartedAt.UTC()
+	}
+	if ti.Event == agent.ToolInvocationEnd && ti.EndedAt != nil {
+		return ti.EndedAt.UTC()
+	}
+	return fallback.UTC()
 }
 
 // persistAssistantAnswer persists the terminal assistant answer turn with its

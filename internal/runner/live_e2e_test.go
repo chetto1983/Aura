@@ -46,6 +46,7 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -143,15 +144,16 @@ func newLiveHarness(t *testing.T) *liveHarness {
 	reg.Register(&tools.ReadToolOutput{})
 
 	r := New(Deps{
-		Conv:         convStore,
-		Pause:        pauseStore,
-		Identity:     identity.New(pool),
-		CacheMetrics: cachemetrics.New(pool),
-		Client:       client,
-		Registry:     reg,
-		LLM:          *cfg,
-		RunDir:       runDir,
-		PreviewCap:   2048,
+		Conv:            convStore,
+		Pause:           pauseStore,
+		Identity:        identity.New(pool),
+		CacheMetrics:    cachemetrics.New(pool),
+		ToolInvocations: toolinvocations.New(pool),
+		Client:          client,
+		Registry:        reg,
+		LLM:             *cfg,
+		RunDir:          runDir,
+		PreviewCap:      2048,
 		// StopTimeout must exceed TitleTimeout so Stop reliably JOINS an in-flight
 		// auto-title worker (its live LLM call can run up to TitleTimeout under load) —
 		// otherwise Stop returns a drain-timeout error AND leaves the worker's HTTP

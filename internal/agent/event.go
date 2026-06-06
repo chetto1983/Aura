@@ -65,10 +65,40 @@ type LLMResponse struct {
 // `awaiting_input` key on the wire (mirrors the MessageID *pointer omitempty
 // trick), keeping decode(encode())==identity.
 type Actions struct {
-	Escalate      bool           `json:"escalate,omitempty"`       // true → stop this branch / cancel siblings
-	StateDelta    map[string]any `json:"state_delta,omitempty"`    // termination_reason/limit_hit/steps_consumed, etc.
-	ArtifactDelta map[string]any `json:"artifact_delta,omitempty"` // produced-artifact deltas (forward-compat)
-	AwaitingInput *AwaitingInput `json:"awaiting_input,omitempty"` // HITL pause payload (Slice 1.5); nil unless ask_user fired
+	Escalate       bool            `json:"escalate,omitempty"`       // true → stop this branch / cancel siblings
+	StateDelta     map[string]any  `json:"state_delta,omitempty"`    // termination_reason/limit_hit/steps_consumed, etc.
+	ArtifactDelta  map[string]any  `json:"artifact_delta,omitempty"` // produced-artifact deltas (forward-compat)
+	AwaitingInput  *AwaitingInput  `json:"awaiting_input,omitempty"` // HITL pause payload (Slice 1.5); nil unless ask_user fired
+	ToolInvocation *ToolInvocation `json:"tool_invocation,omitempty"`
+}
+
+// ToolInvocationStart and ToolInvocationEnd label tool invocation lifecycle events.
+const (
+	ToolInvocationStart = "start"
+	ToolInvocationEnd   = "end"
+)
+
+// ToolInvocation is the typed audit payload emitted around real tool execution.
+// It is intentionally runtime-only shape, not a DB type: the Runner projects it
+// into the append-only tool invocation ledger.
+type ToolInvocation struct {
+	Event             string         `json:"event"`
+	ToolCallID        string         `json:"tool_call_id"`
+	ToolName          string         `json:"tool_name"`
+	Arguments         string         `json:"arguments,omitempty"`
+	ArgsBytes         int            `json:"args_bytes,omitempty"`
+	StartedAt         *time.Time     `json:"started_at,omitempty"`
+	EndedAt           *time.Time     `json:"ended_at,omitempty"`
+	DurationMS        int64          `json:"duration_ms,omitempty"`
+	Status            string         `json:"status,omitempty"`
+	Error             string         `json:"error,omitempty"`
+	ResultPreview     string         `json:"result_preview,omitempty"`
+	PreviewBytes      int            `json:"preview_bytes,omitempty"`
+	ResultBytes       int            `json:"result_bytes,omitempty"`
+	ResultTruncated   bool           `json:"result_truncated,omitempty"`
+	ResultSidecarPath string         `json:"result_sidecar_path,omitempty"`
+	ExitCode          *int           `json:"exit_code,omitempty"`
+	Meta              map[string]any `json:"meta,omitempty"`
 }
 
 // AwaitingInput is the pause payload an ask_user Event carries (D-A1-03). It is

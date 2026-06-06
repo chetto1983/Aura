@@ -4,14 +4,14 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Completed 11-02-PLAN.md (skills read path / Slice 7a)
-last_updated: "2026-06-06T12:08:50.245Z"
-last_activity: 2026-06-06 -- Phase 11 execution started
+last_updated: "2026-06-06T12:18:32.109Z"
+last_activity: 2026-06-06 -- Phase 18 execution started
 progress:
-  total_phases: 19
+  total_phases: 20
   completed_phases: 12
-  total_plans: 85
-  completed_plans: 81
-  percent: 63
+  total_plans: 89
+  completed_plans: 83
+  percent: 60
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 11 — skills
+**Current focus:** Phase 18 — slice-7e-executable-snippet-reuse-steady-state-artifact-runs
 
 ## Current Position
 
-Phase: 11 (skills) — EXECUTING
-Plan: 1 of 10
-Status: Ready to execute
-Last activity: 2026-06-06 -- Phase 11 execution started
+Phase: 18 (slice-7e-executable-snippet-reuse-steady-state-artifact-runs) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 18
+Last activity: 2026-06-06 -- Phase 18 execution started
 
 Progress: [█████████░] 91%
 

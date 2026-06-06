@@ -20,15 +20,16 @@ func newRunnerWithCacheFake(t *testing.T, client llm.Client, cache *fakeCacheMet
 	reg.Register(tools.TextResponse{})
 	reg.Register(tools.AskUser{})
 	r := New(Deps{
-		Conv:         conv,
-		Pause:        newFakePauseStore(),
-		Identity:     newFakeIdentityStore(),
-		CacheMetrics: cache,
-		Client:       client,
-		Registry:     reg,
-		LLM:          llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
-		TitleTimeout: time.Second,
-		StopTimeout:  time.Second,
+		Conv:            conv,
+		Pause:           newFakePauseStore(),
+		Identity:        newFakeIdentityStore(),
+		CacheMetrics:    cache,
+		ToolInvocations: newFakeToolInvocationStore(),
+		Client:          client,
+		Registry:        reg,
+		LLM:             llm.Config{Model: "test-model", ContextWindow: 1000000, MaxOutputTokens: 32768},
+		TitleTimeout:    time.Second,
+		StopTimeout:     time.Second,
 	})
 	return r, conv
 }

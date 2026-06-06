@@ -62,15 +62,16 @@ func testChatDeps(t *testing.T, in string, client *agenttest.FakeClient) (replDe
 
 	conv := newCmdConvFake()
 	run := runner.New(runner.Deps{
-		Conv:         conv,
-		Pause:        newCmdPauseFake(),
-		Identity:     newCmdIdentityFake(),
-		CacheMetrics: newCmdCacheMetricFake(),
-		Client:       client,
-		Registry:     reg,
-		LLM:          cfg.LLM,
-		TitleTimeout: time.Second,
-		StopTimeout:  time.Second,
+		Conv:            conv,
+		Pause:           newCmdPauseFake(),
+		Identity:        newCmdIdentityFake(),
+		CacheMetrics:    newCmdCacheMetricFake(),
+		ToolInvocations: newCmdToolInvocationFake(),
+		Client:          client,
+		Registry:        reg,
+		LLM:             cfg.LLM,
+		TitleTimeout:    time.Second,
+		StopTimeout:     time.Second,
 	})
 	convID, err := run.NewConversation(context.Background())
 	if err != nil {

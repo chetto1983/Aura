@@ -11,6 +11,7 @@ import (
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/toolinvocations"
 )
 
 // cmdConvFake is an in-memory runner.ConversationStore for the REPL tests (no DB).
@@ -258,5 +259,14 @@ type cmdCacheMetricFake struct{}
 func newCmdCacheMetricFake() *cmdCacheMetricFake { return &cmdCacheMetricFake{} }
 
 func (cmdCacheMetricFake) Insert(_ context.Context, _ sqlc.InsertCacheMetricParams) error {
+	return nil
+}
+
+// cmdToolInvocationFake is an in-memory runner.ToolInvocationStore for REPL tests.
+type cmdToolInvocationFake struct{}
+
+func newCmdToolInvocationFake() *cmdToolInvocationFake { return &cmdToolInvocationFake{} }
+
+func (cmdToolInvocationFake) Insert(_ context.Context, _ toolinvocations.Event) error {
 	return nil
 }

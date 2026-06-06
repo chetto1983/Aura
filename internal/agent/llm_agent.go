@@ -56,6 +56,15 @@ type LlmAgent struct {
 	// across the swarm tree, D-10 — and NOT InvocationContext) so recovery state is
 	// per-run and never leaks between branches.
 	recoveryAttempts int
+
+	// sideEffected is set true once a Mutating tool (fs_write/shell_exec/etc.) has
+	// been dispatched this run; the completion gate (D-43) only runs its critic on
+	// a side-effecting turn — a pure read/chat turn skips it at zero extra cost.
+	// completionAttempts is the gate's dedicated veto counter (max 1), orthogonal
+	// to recoveryAttempts so a budget recovery does not consume the gate's one
+	// veto. Both are per-run (a fresh LlmAgent per turn resets them).
+	sideEffected       bool
+	completionAttempts int
 }
 
 var _ Agent = (*LlmAgent)(nil)
@@ -213,6 +222,14 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				if finish == "length" {
 					answer += truncationNotice // D-21 — no auto-continue
 				}
+				// Completion gate (D-43): content-stop is also a voluntary termination.
+				// No tool_call to attach feedback to here, so a veto appends the proposed
+				// answer + a user-role nudge and continues one more turn (bounded once).
+				if veto, feedback := a.gateCompletion(ic, answer); veto {
+					a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
+					a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: feedback})
+					continue
+				}
 				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, finish, usage), nil)
 				return
@@ -259,10 +276,22 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 				// Malformed terminal args are NOT terminal: feed the error back so
 				// the model self-corrects (D-15), bounded by the budget.
 				a.appendToolError(call.ID, perr)
-				if !yield(a.toolResultEvent(ic, spanID, parentSpanID, call.ID, "parse error"), nil) {
+				if !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "parse error"), nil) {
 					return true, nil
 				}
 				continue
+			}
+			// Completion gate (D-43): on a side-effecting turn, verify the deliverable
+			// before accepting the terminal. A veto treats text_response like a tool
+			// that returned "not done" — append a RoleTool result (keeps the wire valid:
+			// the tool_call now has a matching result) and continue the loop one more
+			// turn. Bounded to one veto per run; fail-open when the critic is broken.
+			if veto, feedback := a.gateCompletion(ic, answer); veto {
+				a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
+				if !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "completion gate: not done"), nil) {
+					return true, nil
+				}
+				return false, nil
 			}
 			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 			yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", usage), nil)
@@ -285,16 +314,38 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			return true, nil
 		}
 
-		preview := a.runTool(ic.Ctx, ic.Budget, call)
+		startedAt := time.Now().UTC()
+		if !yield(a.toolStartEvent(ic, spanID, parentSpanID, call, startedAt), nil) {
+			return true, nil
+		}
+		run := a.runTool(ic.Ctx, ic.Budget, call, startedAt)
+		if run.Mutating {
+			a.sideEffected = true // D-43: this turn touched host state → arm the completion gate
+		}
+		preview := run.Preview
 		a.history = append(a.history, llm.Message{
 			Role: llm.RoleTool, ToolCallID: call.ID, Content: preview,
 		})
 		ic.Budget.AfterToolResult(call.Function.Name, canon, []byte(preview))
-		if !yield(a.toolResultEvent(ic, spanID, parentSpanID, call.ID, preview), nil) {
+		if !yield(a.toolResultEvent(ic, spanID, parentSpanID, run), nil) {
 			return true, nil
 		}
 	}
 	return false, nil
+}
+
+type toolRunResult struct {
+	ToolCallID string
+	ToolName   string
+	Arguments  string
+	StartedAt  time.Time
+	EndedAt    time.Time
+	Preview    string
+	Result     tools.ToolResult
+	Err        string
+	// Mutating mirrors the dispatched tool's Spec().Mutating so dispatch can flag
+	// the run as side-effecting (D-43) without re-resolving the spec.
+	Mutating bool
 }
 
 // runTool dispatches one tool call and returns the RoleTool history content. A
@@ -303,18 +354,35 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 // sidecar (D-25); the swarm ctx is also injected so a swarm_spawn dispatch can read
 // the parent budget/registry/client/config off the ctx (the cycle-free seam — only
 // swarm_spawn reads the key, every other tool ignores it).
-func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCall) string {
+func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCall, startedAt time.Time) toolRunResult {
+	run := toolRunResult{
+		ToolCallID: call.ID,
+		ToolName:   call.Function.Name,
+		Arguments:  call.Function.Arguments,
+		StartedAt:  startedAt,
+	}
 	tool, ok := a.registry.Get(call.Function.Name)
 	if !ok {
-		return fmt.Sprintf("error: unknown tool %q", call.Function.Name)
+		run.EndedAt = time.Now().UTC()
+		run.Err = fmt.Sprintf("unknown tool %q", call.Function.Name)
+		run.Preview = "error: " + run.Err
+		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
+		return run
 	}
+	run.Mutating = tool.Spec().Mutating
 	toolCtx := tools.WithToolCallContext(ctx, a.sessionID, call.ID, a.runDir, a.previewCap)
 	toolCtx = WithSwarmContext(toolCtx, budget, a.registry, a.client, a.cfg, a.sessionID)
 	res, err := tool.Execute(toolCtx, json.RawMessage(call.Function.Arguments))
+	run.EndedAt = time.Now().UTC()
 	if err != nil {
-		return fmt.Sprintf("error: %s", err.Error())
+		run.Err = err.Error()
+		run.Preview = "error: " + run.Err
+		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
+		return run
 	}
-	return res.Preview
+	run.Preview = res.Preview
+	run.Result = res
+	return run
 }
 
 // appendToolError appends a RoleTool error message for a malformed terminal-tool

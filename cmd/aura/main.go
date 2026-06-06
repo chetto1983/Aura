@@ -12,10 +12,10 @@
 //	aura chat <sub>         — multi-thread conversation REPL (list|new|resume|archive|unarchive|delete|rename|search)
 //	aura version            — print build metadata (version, commit, build date)
 //
-// Tabula-rasa scaffold: `tools`, `agent`, `db`, and `neo4j` are wired; `shell`
-// and `serve` print a TODO marker so the entry stays build-clean while the agent
-// runtime fills in. The Phase-1 `aura chat` stub + concrete Loop were removed in
-// Slice 0.9 (Plan 02-07); `aura chat` returns in Phase 3 wired to a real LlmAgent.
+// Tabula-rasa scaffold: `tools`, `agent`, `db`, `neo4j`, `chat`, `shell`, and
+// `serve` are wired through the real runtime composition roots. The Phase-1
+// `aura chat` stub + concrete Loop were removed in Slice 0.9 (Plan 02-07);
+// `aura chat` returned in Phase 3 wired to a real LlmAgent.
 package main
 
 import (
@@ -75,7 +75,7 @@ func main() {
 	case "serve":
 		runServe(os.Args[2:])
 	case "shell":
-		fmt.Println("TODO: implemented by the agent-loop and CLI slices")
+		runShell(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
@@ -117,10 +117,12 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	// access (amendment #50 / D-15c). sandbox_exec stays as the untrusted-code glove.
 	reg.Register(&tools.ShellExec{})
 	// Native in-process filesystem hands — Claude-Code-style file ergonomics, full
-	// host access, no path fence (amendment #50 / D-15c).
+	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical
+	// skills-library fence (#54 / D-43): fs_write/fs_edit refuse to write inside
+	// SkillsDir so the gated skill-authoring flow cannot be bypassed.
 	reg.Register(&tools.FSRead{})
-	reg.Register(&tools.FSWrite{})
-	reg.Register(&tools.FSEdit{})
+	reg.Register(&tools.FSWrite{SkillsDir: cfg.SkillsDir})
+	reg.Register(&tools.FSEdit{SkillsDir: cfg.SkillsDir})
 	reg.Register(&tools.FSGrep{})
 	reg.Register(&tools.FSGlob{})
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive

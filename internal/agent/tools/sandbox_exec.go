@@ -65,6 +65,8 @@ func (s *SandboxExec) Spec() Spec {
 		// correctly. A live E2E with it deferred had the agent cram the whole command
 		// line into `command` ("python3 -c ...") → sandbox-agent 502 "failed to spawn".
 		Deferred: false,
+		// Mutating (D-43): runs model-generated code that can produce artifacts.
+		Mutating: true,
 	}
 }
 

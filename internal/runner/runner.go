@@ -37,19 +37,20 @@ const localIdentityName = "local"
 // is built from (D-A1-05/Pattern-4), the llm.Config (model + L2 context window
 // inputs), and the bounded worker timeouts.
 type Deps struct {
-	Conv         ConversationStore
-	Pause        PauseStore
-	Identity     IdentityStore
-	CacheMetrics CacheMetricStore
-	Client       llm.Client
-	Registry     *tools.Registry
-	LLM          llm.Config
-	RunDir       string
-	PreviewCap   int
-	EvictAfter   int    // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
-	Workspace    string // shell workspace announced per turn (#52/D-41); "" → the process cwd
-	TitleTimeout time.Duration
-	StopTimeout  time.Duration
+	Conv            ConversationStore
+	Pause           PauseStore
+	Identity        IdentityStore
+	CacheMetrics    CacheMetricStore
+	ToolInvocations ToolInvocationStore
+	Client          llm.Client
+	Registry        *tools.Registry
+	LLM             llm.Config
+	RunDir          string
+	PreviewCap      int
+	EvictAfter      int    // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
+	Workspace       string // shell workspace announced per turn (#52/D-41); "" → the process cwd
+	TitleTimeout    time.Duration
+	StopTimeout     time.Duration
 	// AlwaysBlock renders the messages[1] always-on skill block per turn from current
 	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
@@ -65,10 +66,11 @@ type Deps struct {
 // CLI read conversations directly (list/search/lifecycle) without re-plumbing the
 // narrow interface; pause/title orchestration stays in the Runner.
 type Runner struct {
-	Conv         ConversationStore
-	pause        PauseStore
-	identity     IdentityStore
-	cacheMetrics CacheMetricStore
+	Conv            ConversationStore
+	pause           PauseStore
+	identity        IdentityStore
+	cacheMetrics    CacheMetricStore
+	toolInvocations ToolInvocationStore
 
 	client     llm.Client
 	registry   *tools.Registry
@@ -108,20 +110,21 @@ func New(d Deps) *Runner {
 		}
 	}
 	return &Runner{
-		Conv:         d.Conv,
-		pause:        d.Pause,
-		identity:     d.Identity,
-		cacheMetrics: d.CacheMetrics,
-		client:       d.Client,
-		registry:     d.Registry,
-		cfg:          d.LLM,
-		runDir:       d.RunDir,
-		previewCap:   d.PreviewCap,
-		evictAfter:   d.EvictAfter,
-		workspace:    workspace,
-		titleTimeout: titleTimeout,
-		stopTimeout:  stopTimeout,
-		alwaysBlock:  d.AlwaysBlock,
+		Conv:            d.Conv,
+		pause:           d.Pause,
+		identity:        d.Identity,
+		cacheMetrics:    d.CacheMetrics,
+		toolInvocations: d.ToolInvocations,
+		client:          d.Client,
+		registry:        d.Registry,
+		cfg:             d.LLM,
+		runDir:          d.RunDir,
+		previewCap:      d.PreviewCap,
+		evictAfter:      d.EvictAfter,
+		workspace:       workspace,
+		titleTimeout:    titleTimeout,
+		stopTimeout:     stopTimeout,
+		alwaysBlock:     d.AlwaysBlock,
 	}
 }
 
