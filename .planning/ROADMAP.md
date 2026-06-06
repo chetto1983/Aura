@@ -407,7 +407,7 @@ Wave 4:
   3. Operator runs `curl http://127.0.0.1:9080/threads/t1/messages` after a streamed run and observes the persisted turn history matching what was emitted in the SSE stream
   4. Operator runs `go.mod` inspection and observes AG-UI SDK pinned to the immutable pseudo-version literal `v0.0.0-20260514093510-e9e910b230b9` (NOT `latest`, NOT an unpinned install-time resolution; CI greps the literal — amendment #56: a pseudo-version IS the only valid go.mod form for this untagged subdir module, the original "no pseudo-version" wording was unsatisfiable)
 
-**Plans:** 2/6 plans executed
+**Plans:** 4/6 plans executed
 
 **Wave 1**
 
@@ -416,8 +416,8 @@ Wave 4:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 12-02-PLAN.md — in-process fanout (cap-64 drop-on-full) + client subscriber seam + SDK type aliases (Slice-8a Telegram consumer dependency, centralized) *(blocked on 12-01)*
-- [ ] 12-06-PLAN.md — translator REASONING_* lifecycle (rsn- messageId, coalesced, interleave-before-TEXT) + live 💭 CLI reasoning render (amendment #57) *(blocked on 12-01 + 12-05)*
+- [x] 12-02-PLAN.md — in-process fanout (cap-64 drop-on-full) + client subscriber seam + SDK type aliases (Slice-8a Telegram consumer dependency, centralized) *(blocked on 12-01)*
+- [x] 12-06-PLAN.md — translator REASONING_* lifecycle (rsn- messageId, coalesced, interleave-before-TEXT) + live 💭 CLI reasoning render (amendment #57) *(blocked on 12-01 + 12-05)*
 
 **Wave 3** *(blocked on 12-01/02)*
 
@@ -493,7 +493,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
-| 12. AG-UI Gateway | 2/6 | In Progress|  |
+| 12. AG-UI Gateway | 4/6 | In Progress|  |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
