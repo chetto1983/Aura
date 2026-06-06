@@ -19,12 +19,21 @@ import (
 var errAGUITest = errors.New("agui-test: simulated infra error")
 
 // fixedIDGen is a deterministic IDGenerator so golden compares are stable: every
-// message run gets msg-1, msg-2, … and tool results msg-tool-<callID>.
-type fixedIDGen struct{ n int }
+// message run gets msg-1, msg-2, …, reasoning runs rsn-1, rsn-2, … and tool
+// results msg-tool-<callID>.
+type fixedIDGen struct {
+	n   int
+	rsn int
+}
 
 func (g *fixedIDGen) NewMessageID() string {
 	g.n++
 	return "msg-" + strconv.Itoa(g.n)
+}
+
+func (g *fixedIDGen) NewReasoningID() string {
+	g.rsn++
+	return "rsn-" + strconv.Itoa(g.rsn)
 }
 
 func (g *fixedIDGen) NewToolResultID(toolCallID string) string {
@@ -319,6 +328,10 @@ func TestTranslatorStateDeltaSortedKeys(t *testing.T) {
 	}
 }
 
+// TestTranslatorReasoningRunCoalesces: a contiguous run of non-empty reasoning
+// deltas (with an empty one that must be skipped) collapses into ONE REASONING
+// lifecycle (START / MESSAGE_START / N*MESSAGE_CONTENT / MESSAGE_END / END), with
+// a separate rsn- messageId — mirror of the TEXT_MESSAGE coalescing.
 // TestTranslatorGoldenShapes asserts the translator's output for representative
 // inputs marshals to the golden wire shapes (golden ⊆ emitted on shared keys,
 // ignoring the auto-attached volatile timestamp).
@@ -404,7 +417,7 @@ func TestTranslatorProperty(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	rapid.Check(t, func(rt *rapid.T) {
 		n := rapid.IntRange(1, 20).Draw(rt, "n")
-		kinds := []string{"chunk", "empty", "tool", "state", "final", "preview"}
+		kinds := []string{"chunk", "empty", "tool", "state", "final", "preview", "reasoning", "reasoningEmpty"}
 		in := make([]*agent.Event, 0, n)
 		for i := 0; i < n; i++ {
 			switch rapid.SampledFrom(kinds).Draw(rt, "kind") {
@@ -412,6 +425,10 @@ func TestTranslatorProperty(t *testing.T) {
 				in = append(in, chunk(rapid.StringMatching(`[a-z ]{1,8}`).Draw(rt, "delta")))
 			case "empty":
 				in = append(in, chunk(""))
+			case "reasoning":
+				in = append(in, reasoning(rapid.StringMatching(`[a-z ]{1,8}`).Draw(rt, "rdelta")))
+			case "reasoningEmpty":
+				in = append(in, reasoning(""))
 			case "tool":
 				id := "call-" + strconv.Itoa(i)
 				in = append(in, toolStart(id, "t", `{"a":1}`), toolEnd(id, "t", "p"))
@@ -432,7 +449,7 @@ func TestTranslatorProperty(t *testing.T) {
 		if last != "RUN_FINISHED" && last != "RUN_ERROR" {
 			rt.Fatalf("terminal event = %s, want RUN_FINISHED or RUN_ERROR", last)
 		}
-		var openRuns int
+		var openRuns, openReasoning int
 		for _, ev := range evs {
 			if err := ev.Validate(); err != nil {
 				rt.Fatalf("emitted %s failed Validate: %v", ev.Type(), err)
@@ -440,17 +457,37 @@ func TestTranslatorProperty(t *testing.T) {
 			assertNonEmptyIDs(rt, ev)
 			switch string(ev.Type()) {
 			case "TEXT_MESSAGE_START":
+				// A text run never opens while a reasoning run is open (never nest):
+				// reasoning is always fully closed before TEXT begins.
+				if openReasoning != 0 {
+					rt.Fatalf("TEXT_MESSAGE_START while a reasoning run is open (must nest never): %v", typesOf(evs))
+				}
 				openRuns++
 			case "TEXT_MESSAGE_END":
 				openRuns--
 				if openRuns < 0 {
 					rt.Fatalf("TEXT_MESSAGE_END without matching START")
 				}
+			case "REASONING_START":
+				// Symmetric: a reasoning run never opens while a text run is open.
+				if openRuns != 0 {
+					rt.Fatalf("REASONING_START while a text run is open (must nest never): %v", typesOf(evs))
+				}
+				openReasoning++
+			case "REASONING_END":
+				openReasoning--
+				if openReasoning < 0 {
+					rt.Fatalf("REASONING_END without matching START")
+				}
 			}
 		}
 		if openRuns != 0 {
 			rt.Fatalf("unbalanced TEXT_MESSAGE lifecycle: %d open run(s) (%v)", openRuns, typesOf(evs))
 		}
+		if openReasoning != 0 {
+			rt.Fatalf("unbalanced REASONING lifecycle: %d open run(s) (%v)", openReasoning, typesOf(evs))
+		}
+		assertReasoningQuartets(rt, evs)
 	})
 }
 
@@ -491,6 +528,11 @@ func assertNonEmptyIDs(rt *rapid.T, ev events.Event) {
 	if string(ev.Type()) == "TEXT_MESSAGE_CONTENT" {
 		if d, _ := m["delta"].(string); d == "" {
 			rt.Fatalf("TEXT_MESSAGE_CONTENT carries empty delta (must be skipped)")
+		}
+	}
+	if string(ev.Type()) == "REASONING_MESSAGE_CONTENT" {
+		if d, _ := m["delta"].(string); d == "" {
+			rt.Fatalf("REASONING_MESSAGE_CONTENT carries empty delta (must be skipped)")
 		}
 	}
 }
