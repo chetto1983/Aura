@@ -1,4 +1,4 @@
-# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35, #51/D-40, #52/D-41) — 2026-06-06T09:04:53Z
+# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35, #51/D-40, #52/D-41) — 2026-06-06T09:44:11Z
 
 Model: `deepseek/deepseek-v4-flash:exacto` (via OpenRouter). Live, paid, non-deterministic MANUAL gate — NOT CI.
 
@@ -14,7 +14,7 @@ export SEARXNG_URL=http://127.0.0.1:18080/search
 go test -tags cot_eval -run TestSkillsE2E -timeout 900s -v ./internal/eval/
 ```
 
-Host run workspace (open the produced .xlsx here): `D:/tmp/aura-run\aura-e2e-2409919058`
+Host run workspace (open the produced .xlsx here): `D:/tmp/aura-run\aura-e2e-394307104`
 
 ## Hard floor (artifact-not-reply ground truth, D-35 #51/D-40, #52/D-41 host surface)
 
@@ -28,20 +28,20 @@ Host run workspace (open the produced .xlsx here): `D:/tmp/aura-run\aura-e2e-240
 | .xlsx re-opens via openpyxl | opens | false | false |
 | .xlsx contains today's date | present | false | false |
 | Artifact path | — |  | — |
-| Action-aware tool calls | — | current_time → shell_exec(npx skills find yahoo finance 2>&1 | head -40) → shell_exec(npx skills find xlsx 2>&1 | head -40) → shell_exec(cd ~/.aura/skills/export && npx skills add anthropics/skills --skill xlsx --c… | — |
+| Action-aware tool calls | — | current_time → tool_search → tool_search → web_search → shell_exec(npx skills find xlsx) → web_fetch → shell_exec(cd ~/.aura/skills/export && npx skills add anthropics/skills --skill xlsx --copy -y) → shell… | — |
 
 ## Judge rubric (≥90% average gate over 2 dims, D-35 #51/D-40)
 
 | Dimension | Score /5 |
 |---|---|
-| capability_gap_recognition | 3 |
+| capability_gap_recognition | 4 |
 | skill_output_quality | 1 |
 
-Skills-judge mean (capability-gap / output-quality): **0.40** (gate ≥0.90) → false
+Skills-judge mean (capability-gap / output-quality): **0.50** (gate ≥0.90) → false
 
 ## Notes
 
-- no .xlsx found under the host workspace D:/tmp/aura-run\aura-e2e-2409919058
-- selfInstall=true target=true selector=true xlsx(fresh=false opens=false today=false) judgeMean=0.40
+- no .xlsx found under the host workspace D:/tmp/aura-run\aura-e2e-394307104
+- selfInstall=true target=true selector=true xlsx(fresh=false opens=false today=false) judgeMean=0.50
 
 ## Overall verdict: FAIL (a dual-gate signal below threshold — see table)
