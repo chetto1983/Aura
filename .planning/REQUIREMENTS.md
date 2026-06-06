@@ -122,7 +122,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CAP-06 | Phase 10 — Scheduler | Complete |
 | CAP-07 | Phase 11 — Skills | Complete (7a read + 7b validator + 7c write/edit/governance + 7d install all shipped; catalog default-ON, native clone, audit-immutable 0010, NFKC 10K-fuzz validator) |
 | CAP-08 | Phase 11 — Skills | Complete (7e-core sandbox-posture shipped 11-07; host-posture follow-up = CAP-08.1 / Phase 18) |
-| CAP-08.1 | Phase 18 — Slice 7e snippet reuse steady-state | In Progress |
+| CAP-08.1 | Phase 18 — Slice 7e snippet reuse steady-state | Complete (host-primary posture #55/D-01 + ungated save D-02 + restore/archive + ledger-gated steady state: 5 dispatches/11.057s live PASS; coverage 86.1%) |
 | CAP-09 / MCP-V2-01 | Phase 16 — MCP Sidecar Manager + Third-Party Trust | Complete |
 | UX-01 | Phase 12 — AG-UI Gateway | Pending |
 | UX-02 | Phase 13 — Channels + Telegram + Multimodal | Pending |

@@ -365,8 +365,8 @@ trivially and gate nothing. The grounded replacement the gate enforces:
 | Reuse-run wall-clock (max ended_at − min started_at, FLOOR) | < 40s | 2026-06-06 | **11.057s — PASS** (live `TestSnippetReuseE2E`). Collapsed from D-03's 142.8s (≈13×). |
 | Reuse-run LLM roundtrips (DIAGNOSTIC, logged not gated) | advisory | 2026-06-06 | **5** (gap-derived, 4 tool-dispatching turns + 1 final reply). |
 | Fresh .xlsx (mtime ≥ run start, openpyxl read-back, today's date) | exists/opens/today | 2026-06-06 | **exists+opens+today=true — PASS** (`Mercato_Yahoo_2026-06-06.xlsx`, 10 tickers, real prices, `Aggiornato al 2026-06-06` cell; visually row-dumped). |
-| Owned-surface coverage (`internal/*`, full integration matrix) | ≥ 85% combined | pending-operator-run | **pending-operator-run** (`bash scripts/coverage_gate.sh`, WSL, stack up). |
-| New-handler mutation (Writer.Restore, actionRestore/actionArchive/actionSaveSnippet, SnippetHostPath) | ≥ 70% killed | pending-operator-run | **pending-operator-run** (go-mutesting, WSL). |
+| Owned-surface coverage (`internal/*`, full integration matrix) | ≥ 85% combined | 2026-06-06 | **86.1% — PASS** (`bash scripts/coverage_gate.sh`, WSL live, tags db_integration+neo4j_integration, post-review-fix final). |
+| New-handler mutation (Writer.Restore, actionRestore/actionArchive/actionSaveSnippet, SnippetHostPath) | ≥ 70% killed | 2026-06-06 | **skill_write.go 95.5%** (21/22, lone survivor = cosmetic equivalent) — PASS. **writer_activate.go 45.2% headline** (14/31): ALL meaningful + Restore-relevant mutants killed after `60eb932e`; the 17 survivors are documented FS-fault error-wrap near-equivalents (mid-op promote/materialize/rename failures — cross-platform-flaky to inject). Advisory-accept pending operator sign-off. |
 
 ### Live-run log (2026-06-06)
 
