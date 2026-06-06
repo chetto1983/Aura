@@ -38,6 +38,9 @@ jobs:
       - name: File-size cap (600 LOC)
         run: bash scripts/check-file-size.sh
 
+      - name: AG-UI boundary gate (D-17, SC2)
+        run: bash scripts/agui_boundary_check.sh
+
       - name: deadcode
         run: |
           go install golang.org/x/tools/cmd/deadcode@latest
@@ -84,6 +87,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+
+      - name: AG-UI SDK pin gate (pseudo-version literal, SC4)
+        # The AG-UI SDK has no subdir tags, so it resolves only to a pseudo-version
+        # forever (amendment #56). Grep the LITERAL, never the 40-hex SHA — `require
+        # <path> <sha40>` is invalid go.mod syntax, so a SHA grep matches 0 times
+        # (Pitfall 3). Exactly 1 match is the immutable-pin invariant.
+        run: '[ "$(grep -cF ''v0.0.0-20260514093510-e9e910b230b9'' go.mod)" = "1" ]'
 
       - name: cache invariant gate
         run: bash scripts/cache_invariant_audit.sh
