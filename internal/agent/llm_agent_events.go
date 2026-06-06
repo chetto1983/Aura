@@ -30,6 +30,15 @@ func (a *LlmAgent) chunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID
 	return ev
 }
 
+// reasoningChunkEvent is one streamed chain-of-thought delta (amendment #57). It
+// mirrors chunkEvent — same trace-identity stamping — but sets LLMResponse.Reasoning
+// (not Content) so the reasoning is stream-only and never enters accumulated content.
+func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, text string) *Event {
+	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev.LLMResponse = &LLMResponse{Reasoning: text}
+	return ev
+}
+
 // toolCallEvent announces a finalized tool call before dispatch (D-12 activity).
 func (a *LlmAgent) toolCallEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, call llm.ToolCall) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)

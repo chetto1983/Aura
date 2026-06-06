@@ -153,6 +153,65 @@ func TestEvent_NilAwaitingInput_OmitsKey(t *testing.T) {
 	}
 }
 
+// TestEvent_LLMResponseReasoning_RoundTripsByteIdentical (amendment #57): an Event
+// whose LLMResponse carries only Reasoning marshals with "reasoning" and no
+// "content" key, and decode(encode(ev)) is byte-identical.
+func TestEvent_LLMResponseReasoning_RoundTripsByteIdentical(t *testing.T) {
+	ev := Event{
+		RequestID: mustV7(t),
+		Author:    "aura",
+		LLMResponse: &LLMResponse{
+			Reasoning: "let me think",
+		},
+		Timestamp: time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC),
+	}
+
+	first, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(first, []byte("\"reasoning\":\"let me think\"")) {
+		t.Fatalf("set Reasoning must appear on the wire, got: %s", first)
+	}
+	if bytes.Contains(first, []byte("\"content\"")) {
+		t.Fatalf("a reasoning-only LLMResponse must omit the content key, got: %s", first)
+	}
+
+	var decoded Event
+	if err := json.Unmarshal(first, &decoded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if decoded.LLMResponse == nil || decoded.LLMResponse.Reasoning != "let me think" {
+		t.Fatalf("Reasoning lost in round-trip: %+v", decoded.LLMResponse)
+	}
+
+	second, err := json.Marshal(decoded)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatalf("round-trip not byte-identical:\n first=%s\nsecond=%s", first, second)
+	}
+}
+
+// TestEvent_EmptyReasoning_OmitsKey: an LLMResponse with empty Reasoning omits the
+// `reasoning` key on the wire (omitempty), keeping the wire byte-symmetric.
+func TestEvent_EmptyReasoning_OmitsKey(t *testing.T) {
+	ev := Event{
+		RequestID:   mustV7(t),
+		Author:      "aura",
+		LLMResponse: &LLMResponse{Content: "ciao"},
+		Timestamp:   time.Now().UTC(),
+	}
+	b, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(b, []byte("reasoning")) {
+		t.Fatalf("empty Reasoning must be omitted from the wire, got: %s", b)
+	}
+}
+
 func TestEvent_NilLLMResponse_OmitsObject(t *testing.T) {
 	ev := Event{
 		RequestID: mustV7(t),

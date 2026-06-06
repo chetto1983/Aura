@@ -16,12 +16,16 @@ const donePayload = "[DONE]"
 
 // wireChunk mirrors the OpenAI streaming-chunk envelope. Only consumed fields are
 // declared; unknown fields are ignored by encoding/json. usage is present only on
-// the final message (RESEARCH Pitfall 4).
+// the final message (RESEARCH Pitfall 4). Reasoning is accept-both (#33): vLLM/DGX
+// local emits `reasoning`, DeepSeek-V4 remote emits `reasoning_content`; either is
+// emitted as a Chunk{Reasoning} the instant it decodes (amendment #57).
 type wireChunk struct {
 	Choices []struct {
 		Delta struct {
-			Content   string          `json:"content"`
-			ToolCalls []toolCallDelta `json:"tool_calls"`
+			Content          string          `json:"content"`
+			Reasoning        string          `json:"reasoning"`
+			ReasoningContent string          `json:"reasoning_content"`
+			ToolCalls        []toolCallDelta `json:"tool_calls"`
 		} `json:"delta"`
 		FinishReason string `json:"finish_reason"`
 	} `json:"choices"`
@@ -44,6 +48,9 @@ type parseResult struct {
 //     before any json.Unmarshal (D-17 / T-03-06);
 //   - returns cleanly on the `data: [DONE]` sentinel without unmarshaling it;
 //   - emits each text delta as a Chunk{Text} immediately (Req#1, token-by-token);
+//   - emits each reasoning delta as a Chunk{Reasoning} immediately, accept-both on
+//     `reasoning` (vLLM/DGX) or `reasoning_content` (DeepSeek-V4) — stream-only, never
+//     accumulated into content (amendment #57 / #33);
 //   - accumulates tool_call deltas by index, emitting one Chunk{ToolCall} per call
 //     when the stream finalizes (Req#2);
 //   - captures the final usage object (Req#12 wire half);
@@ -110,14 +117,21 @@ func parseSSE(r io.Reader, emit func(llm.Chunk) bool) (parseResult, error) {
 }
 
 // handleChunk folds one decoded wireChunk into the running parse: it emits any
-// text delta immediately, records the finish_reason, captures usage, and feeds
-// tool-call deltas into the accumulator. It returns false if emit signalled the
-// consumer stopped draining.
+// text delta immediately, emits any reasoning delta immediately (accept-both #33),
+// records the finish_reason, captures usage, and feeds tool-call deltas into the
+// accumulator. It returns false if emit signalled the consumer stopped draining.
+// Reasoning is emitted with the same immediacy as Content and NEVER enters the
+// accumulator — it is stream-only (amendment #57).
 func handleChunk(wc *wireChunk, acc *accumulator, res *parseResult, emit func(llm.Chunk) bool) bool {
 	for i := range wc.Choices {
 		c := &wc.Choices[i]
 		if c.Delta.Content != "" {
 			if !emit(llm.Chunk{Text: c.Delta.Content}) {
+				return false
+			}
+		}
+		if r := reasoningDelta(c.Delta.Reasoning, c.Delta.ReasoningContent); r != "" {
+			if !emit(llm.Chunk{Reasoning: r}) {
 				return false
 			}
 		}
@@ -133,4 +147,14 @@ func handleChunk(wc *wireChunk, acc *accumulator, res *parseResult, emit func(ll
 		res.hasUsage = true
 	}
 	return true
+}
+
+// reasoningDelta resolves the accept-both reasoning field (#33): vLLM/DGX local
+// uses `reasoning`, DeepSeek-V4 remote uses `reasoning_content`. It prefers
+// `reasoning` when both are non-empty (no real provider sends both).
+func reasoningDelta(reasoning, reasoningContent string) string {
+	if reasoning != "" {
+		return reasoning
+	}
+	return reasoningContent
 }

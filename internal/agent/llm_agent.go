@@ -393,9 +393,11 @@ func (a *LlmAgent) appendToolError(callID string, err error) {
 	})
 }
 
-// consume drains one stream: it re-emits each text delta as a chunk Event, gathers
-// finalized tool calls, the finish_reason, and the trailing usage. Tool-call Events
-// are emitted as they finalize so the Event order is chunk -> tool_call (Req#9).
+// consume drains one stream: it re-emits each text delta as a chunk Event and each
+// reasoning delta as a reasoning chunk Event (stream-only — never added to the
+// accumulated text the caller persists, amendment #57), gathers finalized tool
+// calls, the finish_reason, and the trailing usage. Tool-call Events are emitted as
+// they finalize so the Event order is chunk -> tool_call (Req#9).
 func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
 	requestID string, yield func(*Event, error) bool,
 ) (text string, calls []llm.ToolCall, finish string, usage llm.Usage, stopped bool) {
@@ -416,6 +418,14 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 		case c.Text != "":
 			b.WriteString(c.Text)
 			if !yield(a.chunkEvent(ic, spanID, parentSpanID, c.Text), nil) {
+				for range ch { //nolint:revive // drain-to-close
+				}
+				return b.String(), calls, finish, usage, true
+			}
+		case c.Reasoning != "":
+			// Stream-only CoT: yield the reasoning Event but NEVER write to b — the
+			// returned text (what persistence reads) must stay reasoning-free (#57).
+			if !yield(a.reasoningChunkEvent(ic, spanID, parentSpanID, c.Reasoning), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
 				return b.String(), calls, finish, usage, true

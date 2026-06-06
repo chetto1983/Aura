@@ -51,6 +51,7 @@ type Event struct {
 // referenced via a pointer on Event so non-LLM events omit it entirely.
 type LLMResponse struct {
 	Content      string         `json:"content,omitempty"`       // assistant text
+	Reasoning    string         `json:"reasoning,omitempty"`     // stream-only CoT delta (amendment #57); never persisted to conversation_turns, additive D-17 forward-compat
 	ToolCalls    []llm.ToolCall `json:"tool_calls,omitempty"`    // reuses llm.ToolCall (D-17); its ID is the AG-UI tool_call_id
 	FinishReason string         `json:"finish_reason,omitempty"` // provider finish reason on the final turn
 }
