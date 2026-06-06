@@ -529,7 +529,7 @@ Plans:
 
 **Goal:** [To be planned]
 **Requirements**: TBD
-**Depends on:** Phase 17
+**Depends on:** Phase 11 (skills system - snippet store rides the 7a-7d loader/writer; NOT Phase 17 packaging)
 **Plans:** 0 plans
 
 Plans:
