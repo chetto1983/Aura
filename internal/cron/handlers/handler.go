@@ -11,6 +11,8 @@ package handlers
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -77,6 +79,10 @@ type AgentDeps struct {
 	Registry   *tools.Registry
 	PreviewCap int
 	RunDir     string
+	// Workspace is the shell workspace path announced in the per-turn tail hint
+	// (#52/D-41) — without it a scheduled agent never learns where deliverables go.
+	// Empty defaults to the process cwd in newAgentWorker, mirroring runner.New.
+	Workspace string
 	// MaxDuration bounds the whole agent_job wall-clock (D-11 swarm-child analog); 0
 	// disables the soft wall budget (the Budget's own wallclock still applies).
 	MaxDuration time.Duration
@@ -95,6 +101,15 @@ func childRegistry(parent *tools.Registry) *tools.Registry {
 // any resume turns (the ask_user auto-reject inject-and-continue, D-25); on the first
 // turn it is just the goal user turn.
 func newAgentWorker(deps AgentDeps, runID string, prior []llm.Message) *agent.LlmAgent {
+	// The workspace announced in the tail hint mirrors runner.New: shell_exec and
+	// the fs tools with an empty WorkspaceRoot resolve against the process cwd, so
+	// the hint must name exactly that when no explicit workspace is configured.
+	ws := deps.Workspace
+	if ws == "" {
+		if wd, err := os.Getwd(); err == nil {
+			ws = filepath.ToSlash(wd)
+		}
+	}
 	return agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     deps.Client,
 		LLM:        deps.LLM,
@@ -102,6 +117,7 @@ func newAgentWorker(deps AgentDeps, runID string, prior []llm.Message) *agent.Ll
 		PreviewCap: deps.PreviewCap,
 		RunDir:     deps.RunDir,
 		SessionID:  "agent_job:" + runID,
+		Workspace:  ws,
 		UserTurns:  prior,
 	})
 }
