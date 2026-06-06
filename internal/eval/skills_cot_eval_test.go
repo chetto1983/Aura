@@ -70,6 +70,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -260,7 +261,7 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 
 	sessionID := uuid.NewString()
 	runStart := time.Now()
-	finalProse := driveSkillsLoop(t, ctx, client, cfg, reg, alwaysBlock, appCfg, prompt, sessionID, res)
+	finalProse := driveSkillsLoop(t, ctx, client, cfg, reg, alwaysBlock, appCfg, prompt, sessionID, filepath.ToSlash(workspace), res)
 
 	if secret != "" && strings.Contains(finalProse, secret) {
 		res.notes = append(res.notes, "SECRET LEAK DETECTED")
@@ -310,7 +311,7 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 // via classifyCall over the structured arguments. It returns the final assistant prose (a
 // turn that ended without a pause).
 func driveSkillsLoop(t *testing.T, ctx context.Context, client llm.Client, cfg llm.Config,
-	reg *tools.Registry, alwaysBlock string, appCfg *config.Config, prompt, sessionID string, res *skillsResult,
+	reg *tools.Registry, alwaysBlock string, appCfg *config.Config, prompt, sessionID, workspace string, res *skillsResult,
 ) string {
 	t.Helper()
 	history := []llm.Message{}
@@ -321,7 +322,7 @@ func driveSkillsLoop(t *testing.T, ctx context.Context, client llm.Client, cfg l
 
 	transportRetried := false
 	for hop := 0; hop < maxSkillsHops; hop++ {
-		c := runSkillsTurn(t, ctx, client, cfg, reg, appCfg, history, sessionID)
+		c := runSkillsTurn(t, ctx, client, cfg, reg, appCfg, history, sessionID, workspace)
 		logTurnTrace(t, fmt.Sprintf("skills-hop-%d", hop), c)
 		captureSkillCalls(res, c)
 
@@ -361,7 +362,7 @@ func driveSkillsLoop(t *testing.T, ctx context.Context, client llm.Client, cfg l
 // inspectable host run dir, set once in the registry) keeps the produced .xlsx in one
 // place across hops; the fixed sessionID keeps the agent's run state consistent.
 func runSkillsTurn(t *testing.T, ctx context.Context, client llm.Client, cfg llm.Config,
-	reg *tools.Registry, appCfg *config.Config, history []llm.Message, sessionID string,
+	reg *tools.Registry, appCfg *config.Config, history []llm.Message, sessionID, workspace string,
 ) *turnCapture {
 	t.Helper()
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
@@ -371,6 +372,7 @@ func runSkillsTurn(t *testing.T, ctx context.Context, client llm.Client, cfg llm
 		PreviewCap: appCfg.ToolPreviewCap,
 		RunDir:     t.TempDir(),
 		SessionID:  sessionID,
+		Workspace:  workspace, // the per-turn <workspace> tail hint (#52/D-41)
 		UserTurns:  history,
 	})
 	bud, err := agent.NewBudget(agent.BudgetOptions{})

@@ -20,11 +20,19 @@ import (
 // capability (amendment #50 / D-15c). Untrusted, model-generated code still has the
 // deliberate sandbox_exec escalation.
 type ShellExec struct {
-	// WorkspaceRoot is the default working directory when a call omits cwd. Empty
-	// → the Aura process's current working directory.
+	// WorkspaceRoot is the default working directory when a call omits cwd and no
+	// tracked cwd exists yet. Empty → the Aura process's current working directory.
 	WorkspaceRoot string
 	// DefaultTimeout caps a call that omits timeout_ms. Zero → defaultShellTimeout.
 	DefaultTimeout time.Duration
+
+	// mu guards cwd: the per-session PERSISTENT working directory (Claude-Code
+	// Bash-tool parity — a `cd` in one call carries into the next). Keyed by the
+	// tool-call session id from WithToolCallContext ("" for bare-ctx callers). The
+	// tracked dir is the shell's final $PWD, captured via the cwd marker on POSIX
+	// shells; the cmd.exe fallback does not track (degraded mode, documented).
+	mu  sync.Mutex
+	cwd map[string]string
 }
 
 type shellExecArgs struct {
@@ -40,8 +48,8 @@ func (s *ShellExec) Spec() Spec {
 	params := json.RawMessage(`{
   "type": "object",
   "properties": {
-    "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through the host system shell, so pipes, redirects, and && chains all work."},
-    "cwd": {"type": "string", "description": "Optional working directory. Defaults to the workspace root."},
+    "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through the host system shell, so pipes, redirects, and && chains all work. For long scripts, write them to a file first (cat > work.py <<'EOF' ... EOF), then run the file."},
+    "cwd": {"type": "string", "description": "Optional working directory override. Your working directory PERSISTS between calls (a cd carries over) and starts at your workspace."},
     "timeout_ms": {"type": "integer", "minimum": 0, "description": "Optional timeout in milliseconds. Omit for the default (120s)."},
     "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional extra environment variables for this command only."}
   },
@@ -52,6 +60,7 @@ func (s *ShellExec) Spec() Spec {
 		Summary: "Run a shell command on the host — a full terminal.",
 		Description: "Run a command line through the host system shell, in-process, with full access to the machine — this is your primary way to get things done, like a real terminal. " +
 			"Pipes, redirects, && chains, any installed interpreter (python, node, go), git, and filesystem work all just work. " +
+			"Your working directory persists between calls (a cd carries over) and starts at your workspace. " +
 			"Returns combined stdout and stderr, plus an exit-code marker when the command fails. " +
 			"For running untrusted or model-generated code in isolation, use sandbox_exec instead.",
 		Parameters: params,
@@ -85,9 +94,14 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	name, args := shellInvocation(a.Command)
+	command := a.Command
+	posix := !shellIsCmdFallback()
+	if posix {
+		command = wrapForCwdTracking(command)
+	}
+	name, args := shellInvocation(command)
 	cmd := exec.CommandContext(runCtx, name, args...)
-	cmd.Dir = s.workdir(a.Cwd)
+	cmd.Dir = s.workdir(ctx, a.Cwd)
 	cmd.Env = mergeEnv(a.Env)
 
 	var stdout, stderr strings.Builder
@@ -95,27 +109,108 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	cmd.Stderr = &stderr
 	runErr := cmd.Run()
 
-	return NewResult(ctx, renderShellOutput(stdout.String(), stderr.String(), runErr, runCtx.Err()))
+	out := stdout.String()
+	if posix {
+		var finalCwd string
+		out, finalCwd = extractCwdMarker(out)
+		s.storeCwd(ctx, finalCwd)
+	}
+	return NewResult(ctx, renderShellOutput(out, stderr.String(), runErr, runCtx.Err()))
 }
 
-func (s *ShellExec) workdir(cwd string) string {
+// workdir resolves the call's starting directory: explicit cwd arg > the session's
+// tracked cwd (Bash-tool parity) > WorkspaceRoot. A tracked dir that no longer
+// exists (or a POSIX-only form a degraded shell stored) is skipped, never fatal.
+func (s *ShellExec) workdir(ctx context.Context, cwd string) string {
 	if strings.TrimSpace(cwd) != "" {
 		return cwd
+	}
+	s.mu.Lock()
+	tracked := s.cwd[shellSessionKey(ctx)]
+	s.mu.Unlock()
+	if tracked != "" {
+		if _, err := os.Stat(tracked); err == nil {
+			return tracked
+		}
 	}
 	// Empty is valid — exec falls back to the Aura process's current directory.
 	return s.WorkspaceRoot
 }
 
-// windowsShell resolves the best available shell on Windows ONCE: a POSIX bash
-// (Git Bash / MSYS / w64devkit) gives Claude-Code Bash-tool parity — the quoting,
-// heredocs, pipes, and `~` expansion the model writes by training prior. cmd.exe
-// is the degraded fallback only: it mangles POSIX quoting ("unterminated string
-// literal" on python -c) and caps the command line at ~8K — both observed breaking
-// the live xlsx North-Star run (amendment #52 / D-41).
-var windowsShell = sync.OnceValues(func() (string, string) {
-	if p, err := exec.LookPath("bash"); err == nil {
-		return p, "-c"
+// storeCwd records the shell's final $PWD as the session's tracked cwd. Empty
+// (marker missing — e.g. the command exited the group early, or a timeout kill)
+// keeps the previous tracking.
+func (s *ShellExec) storeCwd(ctx context.Context, dir string) {
+	if dir == "" {
+		return
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cwd == nil {
+		s.cwd = map[string]string{}
+	}
+	s.cwd[shellSessionKey(ctx)] = dir
+}
+
+// shellSessionKey scopes cwd tracking per conversation/session: the session id
+// from WithToolCallContext, "" for bare-ctx callers (unit tests, one-shot CLIs).
+func shellSessionKey(ctx context.Context) string {
+	if tc, ok := toolCallCtx(ctx); ok {
+		return tc.sessionID
+	}
+	return ""
+}
+
+// cwdMarker fences the shell's final $PWD on the last stdout line so Execute can
+// track cwd across calls. extractCwdMarker strips it before the model sees output.
+const cwdMarker = "__AURA_CWD__"
+
+// wrapForCwdTracking groups the user command, preserves its exit code, and prints
+// the final working directory behind the marker. `pwd -W` (Git Bash) yields a
+// Windows-valid path so the next call's cmd.Dir works; plain pwd is the POSIX
+// fallback (a non-Windows-valid form is skipped by the workdir Stat guard).
+func wrapForCwdTracking(command string) string {
+	return "{\n" + command + "\n}\n__aura_ec=$?\nprintf '\\n%s %s\\n' '" + cwdMarker + "' \"$(pwd -W 2>/dev/null || pwd)\"\nexit $__aura_ec"
+}
+
+// extractCwdMarker splits the marker line back out of stdout: returns the cleaned
+// output (the marker's injected leading newline removed) and the captured dir
+// ("" when the marker never printed).
+func extractCwdMarker(stdout string) (clean, dir string) {
+	idx := strings.LastIndex(stdout, cwdMarker+" ")
+	if idx < 0 {
+		return stdout, ""
+	}
+	tail := stdout[idx+len(cwdMarker)+1:]
+	if nl := strings.IndexByte(tail, '\n'); nl >= 0 {
+		tail = tail[:nl]
+	}
+	clean = stdout[:idx]
+	clean = strings.TrimSuffix(clean, "\n") // the printf-injected separator, not user output
+	return clean, strings.TrimSpace(tail)
+}
+
+// shellIsCmdFallback reports whether the resolved shell is the degraded cmd.exe
+// fallback (no POSIX bash found): no cwd tracking there — cmd has no brace
+// grouping and its cd semantics differ.
+func shellIsCmdFallback() bool {
+	if runtime.GOOS != "windows" {
+		return false
+	}
+	name, _ := windowsShell()
+	base := strings.ToLower(name)
+	return base == "cmd" || strings.HasSuffix(base, `\cmd.exe`)
+}
+
+// windowsShell resolves the best available shell on Windows ONCE: a POSIX bash
+// gives Claude-Code Bash-tool parity — the quoting, heredocs, pipes, and `~`
+// expansion the model writes by training prior. Git Bash's KNOWN locations are
+// preferred over a PATH lookup: build toolchains (w64devkit/MSYS busybox) often
+// shadow PATH with a stripped ash that lacks `pwd -W` (cwd tracking) and
+// coreutils. cmd.exe is the degraded fallback only: it mangles POSIX quoting
+// ("unterminated string literal" on python -c) and caps the command line at ~8K —
+// both observed breaking the live xlsx North-Star run (amendment #52 / D-41).
+var windowsShell = sync.OnceValues(func() (string, string) {
 	for _, p := range []string{
 		`C:\Program Files\Git\bin\bash.exe`,
 		`C:\Program Files\Git\usr\bin\bash.exe`,
@@ -123,6 +218,9 @@ var windowsShell = sync.OnceValues(func() (string, string) {
 		if _, err := os.Stat(p); err == nil {
 			return p, "-c"
 		}
+	}
+	if p, err := exec.LookPath("bash"); err == nil {
+		return p, "-c"
 	}
 	return "cmd", "/c"
 })

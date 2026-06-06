@@ -43,6 +43,7 @@ type LlmAgent struct {
 	previewCap  int
 	runDir      string
 	sessionID   string
+	workspace   string
 	builder     *prompt.PromptBuilder
 
 	history []llm.Message
@@ -69,6 +70,7 @@ type LlmAgentConfig struct {
 	PreviewCap  int    // AURA_CONTEXT_PREVIEW_CAP_BYTES (config.ToolPreviewCap)
 	RunDir      string // config.RunDir — sidecar root
 	SessionID   string // Event.ThreadID; sidecar dir key (D-26)
+	Workspace   string // the shell workspace path, rendered into the per-turn tail hint (#52/D-41); "" omits
 	UserTurns   []llm.Message
 }
 
@@ -97,6 +99,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		previewCap:  cfg.PreviewCap,
 		runDir:      cfg.RunDir,
 		sessionID:   cfg.SessionID,
+		workspace:   cfg.Workspace,
 		builder:     prompt.NewPromptBuilder(),
 		history:     hist,
 	}
@@ -168,7 +171,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// D-04): remaining is the shared balance, used = the steps this branch has
 			// spent (Remaining never exceeds the start, so used = start-remaining is
 			// the per-branch consumption — no MaxSteps() getter, landmine #11).
-			budget := prompt.Budget{Used: ic.Budget.BranchConsumed(), Remaining: ic.Budget.Remaining()}
+			budget := prompt.Budget{Used: ic.Budget.BranchConsumed(), Remaining: ic.Budget.Remaining(), Workspace: a.workspace}
 			req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)
 			req.SessionID = a.sessionID
 			ch, err := a.client.Stream(spanCtx, req)

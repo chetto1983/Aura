@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
@@ -20,23 +21,37 @@ type PromptBuilder struct{}
 func NewPromptBuilder() *PromptBuilder { return &PromptBuilder{} }
 
 // Budget carries the used/remaining tool-step counts that Build renders into the
-// trailing <budget> hint (D-06, Req#6). The agent passes branchConsumed as Used
-// and Remaining() as Remaining; there is no Budget.MaxSteps() getter (landmine
-// #11). The zero value (both fields 0) is the omit sentinel: Build emits no
-// <budget> message, preserving the byte-identical default for callers that do
-// not track a budget (e.g. the wave-1 placeholder at llm_agent.go).
+// trailing <budget> hint (D-06, Req#6), plus the per-conversation Workspace path
+// (#52/D-41 — the model must KNOW where its workspace is to honor the system
+// prompt's deliverables convention; live run 7 saved a perfect .xlsx to the
+// Desktop because nothing ever told it the path). Both ride the SAME trailing
+// message: per-turn volatile, appended AFTER history, so the cached prefix is
+// never poisoned. The agent passes branchConsumed as Used and Remaining() as
+// Remaining; there is no Budget.MaxSteps() getter (landmine #11). The zero value
+// is the omit sentinel: Build emits no trailing message, preserving the
+// byte-identical default for callers that track neither.
 type Budget struct {
 	Used      int
 	Remaining int
+	Workspace string
 }
 
-// present reports whether a <budget> block should be emitted. The zero value
-// (both 0) is the backward-compatible omit case.
-func (b Budget) present() bool { return b.Used != 0 || b.Remaining != 0 }
+// present reports whether the trailing hint message should be emitted. The zero
+// value (counts 0, no workspace) is the backward-compatible omit case.
+func (b Budget) present() bool { return b.Used != 0 || b.Remaining != 0 || b.Workspace != "" }
 
-// block renders the directional hint exactly as D-06 specifies.
+// block renders the directional hint: the D-06 budget line (omitted when both
+// counts are zero), plus the workspace line when a workspace is configured
+// (#52/D-41).
 func (b Budget) block() string {
-	return fmt.Sprintf("<budget>used=%d remaining=%d</budget>", b.Used, b.Remaining)
+	var lines []string
+	if b.Used != 0 || b.Remaining != 0 {
+		lines = append(lines, fmt.Sprintf("<budget>used=%d remaining=%d</budget>", b.Used, b.Remaining))
+	}
+	if b.Workspace != "" {
+		lines = append(lines, fmt.Sprintf("<workspace>%s</workspace>", b.Workspace))
+	}
+	return strings.Join(lines, "\n")
 }
 
 // Build assembles the chat-completion request from the supplied history, tool

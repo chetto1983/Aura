@@ -8,6 +8,29 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
+// TestWorkspaceLine pins the #52/D-41 workspace hint: the per-conversation
+// workspace path rides the SAME per-turn trailing message as the budget (after
+// history — never in the cached prefix), and a workspace-only Budget still emits.
+func TestWorkspaceLine(t *testing.T) {
+	t.Parallel()
+	b := NewPromptBuilder()
+	reg := testRegistry()
+	cfg := testConfig()
+	hist := seedHistory()
+
+	both := b.Build(hist, reg, "openrouter", cfg, Budget{Used: 1, Remaining: 2, Workspace: "D:/ws/run-1"})
+	last := both.Messages[len(both.Messages)-1]
+	if want := "<budget>used=1 remaining=2</budget>\n<workspace>D:/ws/run-1</workspace>"; last.Content != want {
+		t.Fatalf("budget+workspace block = %q, want %q", last.Content, want)
+	}
+
+	only := b.Build(hist, reg, "openrouter", cfg, Budget{Workspace: "D:/ws/run-1"})
+	last = only.Messages[len(only.Messages)-1]
+	if want := "<workspace>D:/ws/run-1</workspace>"; last.Content != want {
+		t.Fatalf("workspace-only block = %q, want %q", last.Content, want)
+	}
+}
+
 // TestBudgetBlockByteStable proves the cache-prefix integrity guard (T-07.1-02):
 // the trailing <budget> hint changes every turn, yet messages[0] marshals
 // byte-identically and the caller's history is never mutated (D-04/D-05).

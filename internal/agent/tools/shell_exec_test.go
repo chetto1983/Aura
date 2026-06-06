@@ -115,6 +115,57 @@ func TestShellExecTimesOut(t *testing.T) {
 	}
 }
 
+// TestShellExecCwdPersistsAcrossCalls: Bash-tool parity — a `cd` in one call
+// carries into the next call of the SAME session; a different session still starts
+// at the workspace root; the tracking marker never leaks into the model-visible
+// output. Skipped under the degraded cmd.exe fallback (no tracking there).
+func TestShellExecCwdPersistsAcrossCalls(t *testing.T) {
+	if shellIsCmd() {
+		t.Skip("cmd.exe fallback: cwd tracking is POSIX-only (degraded mode)")
+	}
+	root := t.TempDir()
+	tool := &ShellExec{WorkspaceRoot: root}
+
+	res, err := tool.Execute(ctxWith(t, "sess-cwd", "call-1"),
+		json.RawMessage(`{"command":"mkdir -p subdir && cd subdir && echo moved"}`))
+	if err != nil {
+		t.Fatalf("Execute(cd): %v", err)
+	}
+	if strings.Contains(res.Preview, cwdMarker) {
+		t.Fatalf("tracking marker leaked into output: %q", res.Preview)
+	}
+
+	res, err = tool.Execute(ctxWith(t, "sess-cwd", "call-2"),
+		json.RawMessage(`{"command":"pwd -W 2>/dev/null || pwd"}`))
+	if err != nil {
+		t.Fatalf("Execute(pwd): %v", err)
+	}
+	if !strings.Contains(res.Preview, "subdir") {
+		t.Fatalf("cwd did not persist across calls: pwd = %q (want .../subdir)", res.Preview)
+	}
+
+	// A DIFFERENT session must not inherit the first session's cd.
+	res, err = tool.Execute(ctxWith(t, "sess-other", "call-3"),
+		json.RawMessage(`{"command":"pwd -W 2>/dev/null || pwd"}`))
+	if err != nil {
+		t.Fatalf("Execute(pwd other session): %v", err)
+	}
+	if strings.Contains(res.Preview, "subdir") {
+		t.Fatalf("cwd LEAKED across sessions: pwd = %q", res.Preview)
+	}
+}
+
+func TestExtractCwdMarker(t *testing.T) {
+	clean, dir := extractCwdMarker("hello\n" + cwdMarker + " D:/work\n")
+	if clean != "hello" || dir != "D:/work" {
+		t.Fatalf("extract = (%q, %q), want (hello, D:/work)", clean, dir)
+	}
+	clean, dir = extractCwdMarker("no marker here")
+	if clean != "no marker here" || dir != "" {
+		t.Fatalf("no-marker extract = (%q, %q)", clean, dir)
+	}
+}
+
 func TestShellExecRejectsBadArgs(t *testing.T) {
 	tool := &ShellExec{}
 	ctx := ctxWith(t, "sess-sh", "call-sh")
