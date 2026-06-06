@@ -150,3 +150,9 @@ _No TDD multi-commit split: this is a deletion + thin-replacement plan, not a RE
 ## Known Stubs
 
 None. The two "not yet available" strings in `internal/agent/tools/skill.go` are the pre-existing `restore`/`archive` reserved-action handler (`notYetWired`), unchanged by this plan — not new stubs. find-skills-aura is fully wired (materialized → loaded → always-block → manifest pointer). The blocklist scan and persistent root are live in production wiring (newSkillTool, alwaysBlockProvider, the CLI).
+
+## Self-Check: PASSED
+
+- Created `internal/skills/embed/find-skills-aura/SKILL.md` — FOUND on disk.
+- Created `.planning/phases/11-skills/11-09-SUMMARY.md` — FOUND on disk.
+- Commits `f448c0ab`, `2ce33891`, `681bd96e`, `dc582f44` — all FOUND in `git log`.
