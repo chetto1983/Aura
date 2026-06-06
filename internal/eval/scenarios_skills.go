@@ -63,18 +63,17 @@ func skillsScenarios() []scenario {
 	return []scenario{
 		{
 			id: "skills-xlsx-northstar",
-			// NATURAL prompt — NO "skill"/"installa"/"install"/"catalogo". The user just
-			// wants today's Yahoo Finance market as a real Excel file; the model must
-			// recognise it lacks a battle-tested xlsx method, discover anthropics/skills/
-			// xlsx on skills.sh (`npx skills find xlsx`), self-install it on its host
-			// terminal, then use it to produce the .xlsx. {WORKSPACE} is substituted at
-			// run time with the inspectable host run dir (live run 5 saved a PERFECT
-			// 4-sheet .xlsx... into /tmp — a real user says where they want the file; the
-			// verify walks exactly this dir).
+			// NATURAL prompt — NO "skill"/"installa"/"install"/"catalogo" and NO save
+			// location: the user just wants today's Yahoo Finance market as a real Excel
+			// file. The model must recognise it lacks a battle-tested xlsx method,
+			// discover anthropics/skills/xlsx on skills.sh (`npx skills find xlsx`),
+			// self-install it on its host terminal, use it to produce the .xlsx — and
+			// save it IN ITS WORKSPACE because the system prompt's <machine> convention
+			// teaches deliverables go in the shell's working directory (the PRODUCT
+			// mechanism; run 5 saved a perfect .xlsx into /tmp before it existed).
 			prompts: []string{
 				"Fammi un file Excel con il mercato di Yahoo Finance di oggi. " +
-					"Voglio un .xlsx vero che si apra in un foglio di calcolo, con i dati di oggi. " +
-					"Salvalo nella cartella {WORKSPACE}.",
+					"Voglio un .xlsx vero che si apra in un foglio di calcolo, con i dati di oggi.",
 			},
 			dimensions: []dimension{
 				dimSkillsHardFloor, dimCapabilityGapRecognition, dimSkillOutputQuality,

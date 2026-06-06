@@ -70,7 +70,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -243,10 +242,10 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 	workspace string, res *skillsResult,
 ) {
 	t.Helper()
-	// {WORKSPACE} → the inspectable host run dir (forward slashes — the model's shell
-	// is POSIX bash). A real user says where they want the file; run 5 produced a
-	// perfect .xlsx into /tmp and failed only the workspace walk.
-	prompt := strings.ReplaceAll(sc.prompts[0], "{WORKSPACE}", filepath.ToSlash(workspace))
+	// The prompt is PURE natural — no save location: the system prompt's <machine>
+	// convention (deliverables go in the shell's working directory) is the PRODUCT
+	// mechanism that routes the artifact into the workspace the verify walks.
+	prompt := sc.prompts[0]
 
 	// The prompt MUST be natural: none of the forbidden hint words appear (D-35).
 	res.promptNatural = true
