@@ -19,17 +19,28 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/scoring"
 )
+
+// aguiShutdownTimeout bounds the graceful drain of in-flight SSE streams when the
+// daemon shuts down (after the scheduler tick loop returns on ctx-cancel).
+const aguiShutdownTimeout = 10 * time.Second
+
+// aguiReadHeaderTimeout bounds the request-header read to defang slow-loris on the
+// unauthenticated loopback endpoint (T-12-09).
+const aguiReadHeaderTimeout = 10 * time.Second
 
 const serveUsage = "usage: aura serve"
 
@@ -40,6 +51,7 @@ type serveEnv struct {
 	*chatEnv
 	store     *cron.Store
 	scheduler *cron.Scheduler
+	httpSrv   *http.Server // the AG-UI gateway (Slice 8b), mounted alongside the tick loop
 }
 
 // runServe is the `aura serve` entry point: boot, start the tick loop, block on a
@@ -64,11 +76,33 @@ func runServe(args []string) {
 	}
 	defer env.close()
 
+	// The AG-UI HTTP server runs in its own goroutine alongside the scheduler tick
+	// loop. ListenAndServe returning anything other than ErrServerClosed (the clean
+	// Shutdown signal) is logged but NEVER exits the process — the scheduler keeps the
+	// daemon useful even if the gateway port is taken (fail-soft, Pitfall 6).
+	slog.Info("aura serve: agui http server listening", "addr", env.cfg.AGUIBind)
+	go func() {
+		if err := env.httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("aura serve: agui http server stopped", "err", err)
+		}
+	}()
+
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
 	// Start blocks until ctx is cancelled (signal) or it returns an error; on a clean
 	// shutdown it returns nil after the in-flight tick joins its workers.
-	if err := env.scheduler.Start(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "aura serve: scheduler stopped:", err)
+	schedErr := env.scheduler.Start(ctx)
+
+	// Graceful HTTP drain on shutdown: bound the in-flight SSE streams so a slow client
+	// cannot wedge shutdown forever. Runs on a fresh ctx (the root ctx is already
+	// cancelled by the signal that returned Start).
+	shutCtx, cancel := context.WithTimeout(context.Background(), aguiShutdownTimeout)
+	defer cancel()
+	if err := env.httpSrv.Shutdown(shutCtx); err != nil {
+		slog.Warn("aura serve: agui http server shutdown", "err", err)
+	}
+
+	if schedErr != nil {
+		fmt.Fprintln(os.Stderr, "aura serve: scheduler stopped:", schedErr)
 		os.Exit(exitInfra)
 	}
 	slog.Info("aura serve: graceful shutdown complete")
@@ -93,7 +127,21 @@ func bootServe(ctx context.Context) (*serveEnv, error) {
 	if err := seedSkillTTLSweep(ctx, store); err != nil {
 		slog.Warn("aura serve: seed skill TTL sweep", "err", err)
 	}
-	return &serveEnv{chatEnv: chat, store: store, scheduler: scheduler}, nil
+
+	// The AG-UI gateway (Slice 8b) reuses the already-composed Runner + conversations
+	// store; it mounts on the same daemon and shares the graceful ctx-cancel drain
+	// (Assumption A3). The bind is hardcoded loopback via the config default — the
+	// compensating control for the auth-deferred posture this phase (amendment #35).
+	aguiServer := agui.NewServer(chat.run, chat.conv, agui.ServerConfig{
+		CORSPermissive: chat.cfg.AGUICORSPermissive,
+		BufferCap:      chat.cfg.AGUIBufferCap,
+	})
+	httpSrv := &http.Server{
+		Addr:              chat.cfg.AGUIBind,
+		Handler:           aguiServer.Mux(),
+		ReadHeaderTimeout: aguiReadHeaderTimeout,
+	}
+	return &serveEnv{chatEnv: chat, store: store, scheduler: scheduler, httpSrv: httpSrv}, nil
 }
 
 // seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16): it

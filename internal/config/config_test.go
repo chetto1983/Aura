@@ -157,6 +157,38 @@ func TestSwarmConfigDefaultsAndOverrides(t *testing.T) {
 	}
 }
 
+// TestAGUIConfigDefaultsAndOverrides locks the Phase 12 AG-UI gateway knobs (Slice 8b):
+// unset → loopback bind + restrictive CORS + cap-64; set → overrides. The loopback
+// default is the auth-deferred compensating control (Pitfall 6 / amendment #35).
+func TestAGUIConfigDefaultsAndOverrides(t *testing.T) {
+	clearPostgresEnv(t)
+
+	cfg := LoadDB()
+	if cfg.AGUIBind != "127.0.0.1:9080" {
+		t.Errorf("AGUIBind default = %q, want 127.0.0.1:9080", cfg.AGUIBind)
+	}
+	if cfg.AGUICORSPermissive {
+		t.Error("AGUICORSPermissive default = true, want false (restrictive)")
+	}
+	if cfg.AGUIBufferCap != 64 {
+		t.Errorf("AGUIBufferCap default = %d, want 64", cfg.AGUIBufferCap)
+	}
+
+	t.Setenv("AURA_AGUI_BIND", "127.0.0.1:9999")
+	t.Setenv("AURA_AGUI_CORS_PERMISSIVE", "true")
+	t.Setenv("AURA_AGUI_BUFFER_CAP", "128")
+	cfg = LoadDB()
+	if cfg.AGUIBind != "127.0.0.1:9999" {
+		t.Errorf("AGUIBind override = %q, want 127.0.0.1:9999", cfg.AGUIBind)
+	}
+	if !cfg.AGUICORSPermissive {
+		t.Error("AGUICORSPermissive override = false, want true")
+	}
+	if cfg.AGUIBufferCap != 128 {
+		t.Errorf("AGUIBufferCap override = %d, want 128", cfg.AGUIBufferCap)
+	}
+}
+
 // TestLoadDB_NoLLMKeyRequired is the CI regression for the db-migrate coupling:
 // `aura db migrate` (and ping/status/reset) go through config, but they are pure
 // DB operations and must NOT require OPENROUTER_API_KEY. Load() fail-fasts on an

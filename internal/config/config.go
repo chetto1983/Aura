@@ -97,6 +97,16 @@ type Config struct {
 	// the prd.md §Slice 7 builtin list; a comma-separated AURA_SKILL_INJECTION_BLOCKLIST
 	// replaces it wholesale.
 	SkillInjectionBlocklist []string // AURA_SKILL_INJECTION_BLOCKLIST — prompt-injection literal blocklist (D-27/D-34)
+
+	// Phase 12 (Slice 8) AG-UI gateway knobs. AGUIBind is hardcoded loopback this
+	// phase (auth deferred; the loopback bind IS the compensating control, Pitfall 6
+	// / amendment #35 — no --bind flag, no non-loopback escape). AGUICORSPermissive
+	// gates the `Access-Control-Allow-Origin: *` header (default restrictive, dev-only).
+	// AGUIBufferCap caps the per-connection SSE pump channel (drop-on-full, never
+	// blocks the Loop). All non-fatal envDefault fallbacks.
+	AGUIBind           string // AURA_AGUI_BIND — loopback-only HTTP bind (Pitfall 6)
+	AGUICORSPermissive bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
+	AGUIBufferCap      int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -214,6 +224,12 @@ func loadBase() *Config {
 		SkillSnippetTTLDays:   envIntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
 
 		SkillInjectionBlocklist: envSliceDefault("AURA_SKILL_INJECTION_BLOCKLIST", defaultSkillInjectionBlocklist()),
+
+		// Phase 12 AG-UI gateway. Loopback default is the compensating control for the
+		// auth-deferred posture (no --bind flag this phase, amendment #35).
+		AGUIBind:           envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
+		AGUICORSPermissive: envBoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
+		AGUIBufferCap:      envIntDefault("AURA_AGUI_BUFFER_CAP", 64),
 	}
 }
 
