@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -44,7 +46,8 @@ type Deps struct {
 	LLM          llm.Config
 	RunDir       string
 	PreviewCap   int
-	EvictAfter   int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
+	EvictAfter   int    // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
+	Workspace    string // shell workspace announced per turn (#52/D-41); "" → the process cwd
 	TitleTimeout time.Duration
 	StopTimeout  time.Duration
 	// AlwaysBlock renders the messages[1] always-on skill block per turn from current
@@ -73,6 +76,7 @@ type Runner struct {
 	runDir     string
 	previewCap int
 	evictAfter int
+	workspace  string // the shell workspace path the per-turn tail hint announces (#52/D-41)
 
 	titleTimeout time.Duration
 	stopTimeout  time.Duration
@@ -93,6 +97,16 @@ func New(d Deps) *Runner {
 	if stopTimeout <= 0 {
 		stopTimeout = defaultStopTimeout
 	}
+	// The workspace announced to the model (#52/D-41) is where its shell starts:
+	// shell_exec with an empty WorkspaceRoot runs in the Aura process's cwd, so the
+	// hint mirrors exactly that (Claude-Code parity: the harness tells the model its
+	// working directory). Best-effort — "" omits the hint, never fatal.
+	workspace := d.Workspace
+	if workspace == "" {
+		if wd, err := os.Getwd(); err == nil {
+			workspace = filepath.ToSlash(wd)
+		}
+	}
 	return &Runner{
 		Conv:         d.Conv,
 		pause:        d.Pause,
@@ -104,6 +118,7 @@ func New(d Deps) *Runner {
 		runDir:       d.RunDir,
 		previewCap:   d.PreviewCap,
 		evictAfter:   d.EvictAfter,
+		workspace:    workspace,
 		titleTimeout: titleTimeout,
 		stopTimeout:  stopTimeout,
 		alwaysBlock:  d.AlwaysBlock,
@@ -274,6 +289,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 		PreviewCap: r.previewCap,
 		RunDir:     r.runDir,
 		SessionID:  convID, // session_id == conversation_id (D-26)
+		Workspace:  r.workspace,
 		UserTurns:  seed,
 	})
 	ic := agent.InvocationContext{
