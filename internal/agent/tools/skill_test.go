@@ -126,11 +126,12 @@ func TestSkillDispatchErrors(t *testing.T) {
 		!strings.Contains(err.Error(), "valid actions are") {
 		t.Fatalf("unknown action err = %v, want 'valid actions are ...'", err)
 	}
-	// A reserved-but-unwired action returns the "not yet available" error. (catalog +
-	// install were removed in 11-09 / amendment #51; restore/archive remain reserved.)
-	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"restore"}`)); err == nil ||
-		!strings.Contains(err.Error(), "not yet available") {
-		t.Fatalf("reserved action err = %v, want 'not yet available'", err)
+	// restore/archive are WIRED now (18-03) — with no writer in this loader-only tool
+	// they dispatch to the real handler and return a clear "no writer" error (never the
+	// old "not yet available" placeholder, never a panic).
+	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"restore","name":"x"}`)); err == nil ||
+		!strings.Contains(err.Error(), "no writer") {
+		t.Fatalf("restore (wired, no writer) err = %v, want 'no writer'", err)
 	}
 }
 

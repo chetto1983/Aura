@@ -39,6 +39,18 @@ type skillWriter interface {
 	// resulting status (StatusPendingApproval) or an error (a blocklist hit, a
 	// validation failure, or an IO/DB failure).
 	WriteMutation(ctx context.Context, action string, name, description, body string, always bool) (status string, err error)
+	// SaveSnippet stages a snippet as pending UNGATED (D-02 — Claude-Code parity, no
+	// ask_user ceremony): it routes straight to the live Writer.SaveSnippet (which still
+	// validates + runs the injection blocklist on the CODE + computes the RISKY tier +
+	// lands pending; it NEVER self-activates). It returns the pending status or an error
+	// (a blocklist/validation reject → the model self-corrects, NEVER a pause).
+	SaveSnippet(ctx context.Context, name, language, code, description string, needsNetwork, needsWorkspace bool) (status string, err error)
+	// Restore unarchives a snippet (archived->active + re-materialize + audit), the
+	// inverse of Archive. It returns the resulting status (active) or an error.
+	Restore(ctx context.Context, name string) (status string, err error)
+	// ArchiveSnippet de-materializes + moves active->archived + audits (SAFE tier, no
+	// gate). It returns a status string or an error.
+	ArchiveSnippet(ctx context.Context, name string) (status string, err error)
 }
 
 // skillAlerter is the optional headless-alert seam (D-26): when a gated mutation is
@@ -50,14 +62,21 @@ type skillAlerter interface {
 	AlertPendingSkill(ctx context.Context, name, action string, tier scoring.RiskTier)
 }
 
-// skillWriteArgs is the wire shape for the create/update/delete actions, decoded
-// per-action from the same raw object the router dispatched.
+// skillWriteArgs is the wire shape for the create/update/delete actions plus the
+// 18-03 snippet-lifecycle actions (restore/archive/save_snippet), decoded per-action
+// from the same raw object the router dispatched. Language/Code are the save_snippet
+// fields (NeedsNetwork/NeedsWorkspace ride the frontmatter at the adapter, defaulting
+// false for the model path).
 type skillWriteArgs struct {
-	Action      string `json:"action"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Body        string `json:"body"`
-	Always      bool   `json:"always"`
+	Action         string `json:"action"`
+	Name           string `json:"name"`
+	Description    string `json:"description"`
+	Body           string `json:"body"`
+	Always         bool   `json:"always"`
+	Language       string `json:"language"`
+	Code           string `json:"code"`
+	NeedsNetwork   bool   `json:"needs_network"`
+	NeedsWorkspace bool   `json:"needs_workspace"`
 }
 
 // actionCreate handles action=create: a model-authored new skill. It validates +
@@ -135,6 +154,89 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 		Kind:     KindApproval,
 		Priority: skillApprovalPriority(tier),
 	}
+}
+
+// actionSaveSnippet handles action=save_snippet (D-02 — the in-loop snippet-save path,
+// UNGATED). It is the architectural INVERSE of writeAction: it decodes the args, requires
+// name+language+code, requires the writer seam, calls SaveSnippet (which still validates +
+// runs the injection blocklist on the CODE + lands pending — it NEVER self-activates), and
+// returns a NORMAL result confirming the pending save. It NEVER returns the
+// *ErrAwaitingUserInput sentinel (only ask_user may pause — TestAskUserOnlyPauseConstraint);
+// a validation/blocklist reject comes back as a plain tool error so the model self-corrects.
+// Future per-identity gating of the save lands with capability_grants (Slice 1.7), not here.
+func (t *SkillTool) actionSaveSnippet(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+	var a skillWriteArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return ToolResult{}, fmt.Errorf("skill save_snippet args: %w", err)
+	}
+	if a.Name == "" {
+		return ToolResult{}, fmt.Errorf("skill save_snippet: name is required")
+	}
+	if a.Language == "" {
+		return ToolResult{}, fmt.Errorf("skill save_snippet: language is required (one of python, shell, js)")
+	}
+	if a.Code == "" {
+		return ToolResult{}, fmt.Errorf("skill save_snippet: code is required (the executable snippet body)")
+	}
+	if t.Writer == nil {
+		return ToolResult{}, fmt.Errorf("skill save_snippet: no writer is wired in this context")
+	}
+	status, err := t.Writer.SaveSnippet(ctx, a.Name, a.Language, a.Code, a.Description, a.NeedsNetwork, a.NeedsWorkspace)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("skill save_snippet %q: %w", a.Name, err)
+	}
+	return NewResult(ctx, fmt.Sprintf(
+		"Snippet %q saved as pending (status=%s). Activate it (operator approval) before reuse; "+
+			"once active, call action=use to run it by path.", a.Name, status))
+}
+
+// actionRestore handles action=restore: it unarchives a snippet (archived->active +
+// re-materialize + audit, the inverse of Archive) via the writer seam and returns a
+// NORMAL result confirming the restore. Not a pause.
+func (t *SkillTool) actionRestore(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+	name, err := t.requireWriteName(raw, "restore")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	status, rerr := t.Writer.Restore(ctx, name)
+	if rerr != nil {
+		return ToolResult{}, fmt.Errorf("skill restore %q: %w", name, rerr)
+	}
+	return NewResult(ctx, fmt.Sprintf(
+		"Snippet %q restored (status=%s) — re-materialized into the skills dir; call action=use to run it by path.", name, status))
+}
+
+// actionArchive handles action=archive: a SAFE-tier manual de-materialize (active->
+// archived + audit, no gate per RESEARCH Pattern 1) via the writer seam. It returns a
+// NORMAL result confirming the archive. An over-eager archive is recoverable via
+// action=restore. Not a pause.
+func (t *SkillTool) actionArchive(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
+	name, err := t.requireWriteName(raw, "archive")
+	if err != nil {
+		return ToolResult{}, err
+	}
+	status, aerr := t.Writer.ArchiveSnippet(ctx, name)
+	if aerr != nil {
+		return ToolResult{}, fmt.Errorf("skill archive %q: %w", name, aerr)
+	}
+	return NewResult(ctx, fmt.Sprintf(
+		"Snippet %q archived (status=%s) — de-materialized; restore it with action=restore if needed.", name, status))
+}
+
+// requireWriteName decodes {name} and requires the writer seam — the shared guard for
+// the restore/archive lifecycle handlers (name-only, normal-result actions).
+func (t *SkillTool) requireWriteName(raw json.RawMessage, action string) (string, error) {
+	var a skillWriteArgs
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return "", fmt.Errorf("skill %s args: %w", action, err)
+	}
+	if a.Name == "" {
+		return "", fmt.Errorf("skill %s: name is required", action)
+	}
+	if t.Writer == nil {
+		return "", fmt.Errorf("skill %s: no writer is wired in this context", action)
+	}
+	return a.Name, nil
 }
 
 // skillApprovalPriority orders a skill-approval pause ahead of routine clarifications

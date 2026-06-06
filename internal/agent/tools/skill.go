@@ -14,12 +14,14 @@ import (
 // this tool's Description, so the spec must always be visible — a deferred skill
 // tool would hide the very manifest the model searches.
 //
-// This tool wires the READ actions list|info|use and the authoring actions
-// create|update|delete (gated, pending→approve). Discovery+install of third-party
-// skills is NOT a tool concern (amendment #51 / D-40): the always-on find-skills
-// skill teaches the model to self-extend via `npx skills find/add` in the sandbox,
-// so the catalog client + native installer + their tool actions were deleted. The
-// remaining reserved router keys (restore|archive) return a "not yet wired" error.
+// This tool wires the READ actions list|info|use, the authoring actions
+// create|update|delete (gated, pending→approve), and the snippet-lifecycle actions
+// save_snippet|restore|archive (18-03): save_snippet stages a reusable snippet UNGATED
+// (D-02 — normal result, never a pause), restore un-archives a snippet, archive
+// de-materializes one (SAFE tier). Discovery+install of third-party skills is NOT a
+// tool concern (amendment #51 / D-40): the always-on find-skills skill teaches the
+// model to self-extend via `npx skills find/add` in the sandbox, so the catalog client
+// + native installer + their tool actions were deleted.
 //
 // The live loader is injected at registration via the consumer-declared skillLoader
 // seam below (golang-structs-interfaces: the consumer owns the interface), so this
@@ -88,17 +90,19 @@ type skillArgs struct {
 // `action`; per-action requirements are spelled out in the field descriptions.
 // There is intentionally NO root-level oneOf/anyOf/enum — a root enum 400s
 // OpenAI-compat providers (DeepSeek). The `action` property does carry an enum
-// (a property-level enum on a string is wire-safe). The reserved restore/archive
-// actions stay in the enum so the schema is downstream-stable. Discovery+install
-// is NOT a tool action (amendment #51 / D-40 — the find-skills always-on skill
-// teaches `npx skills find/add` in the sandbox).
+// (a property-level enum on a string is wire-safe), as does the `language` property
+// for save_snippet. The snippet-lifecycle actions (save_snippet/restore/archive) are
+// wired (18-03). Discovery+install is NOT a tool action (amendment #51 / D-40 — the
+// find-skills always-on skill teaches `npx skills find/add` in the sandbox).
 const skillParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions to the current task by name); create (author a new skill); update (revise an existing skill); delete (remove a skill). create/update/delete are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. (restore and archive manage the skill library and are not yet available.)"},
-    "name": {"type": "string", "description": "Required when action=info, use, create, update, or delete. The exact skill name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, or remove."},
-    "description": {"type": "string", "description": "Required when action=create or update. A one-line summary of what the skill does (shown in the skill manifest)."},
+    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need — recoverable with restore). create/update/delete are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. save_snippet stages the snippet as pending too (it activates after operator approval); restore/archive take effect immediately."},
+    "name": {"type": "string", "description": "Required when action=info, use, create, update, delete, save_snippet, restore, or archive. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, remove, save, restore, or archive."},
+    "description": {"type": "string", "description": "Required when action=create or update (and optional for save_snippet). A one-line summary of what the skill/snippet does (shown in the skill manifest)."},
     "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
+    "language": {"type": "string", "enum": ["python", "shell", "js"], "description": "Required when action=save_snippet. The language of the snippet code (python, shell, or js)."},
+    "code": {"type": "string", "description": "Required when action=save_snippet. The executable snippet body (the code that will be saved and later run by path)."},
     "always": {"type": "boolean", "description": "Optional when action=create or update. When true the skill's instructions are always applied (an always-on skill); always-on skills are gated like any other change and reviewed loudly."},
     "query": {"type": "string", "description": "Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
   },
@@ -152,15 +156,6 @@ func (t *SkillTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	return t.actionRouter().Dispatch(ctx, head.Action, raw)
 }
 
-// notYetWired is the reserved-action handler: the schema enum lists restore/archive
-// from the start (D-01) so it is stable, but their handlers land in downstream
-// plans. Until then they return a clear error.
-func notYetWired(action string) ActionFunc {
-	return func(context.Context, json.RawMessage) (ToolResult, error) {
-		return ToolResult{}, fmt.Errorf("skill: action %q is not yet available", action)
-	}
-}
-
 func (t *SkillTool) actionRouter() *ActionRouter {
 	if t.router == nil {
 		t.router = NewActionRouter(map[string]ActionFunc{
@@ -173,11 +168,14 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"create": t.actionCreate,
 			"update": t.actionUpdate,
 			"delete": t.actionDelete,
-			// Reserved (D-01) — downstream plans fill these handlers. (Discovery+install
-			// is NOT a tool action — amendment #51 / D-40: the find-skills always-on
-			// skill teaches self-extension via the skills CLI in the sandbox.)
-			"restore": notYetWired("restore"),
-			"archive": notYetWired("archive"),
+			// Snippet lifecycle (18-03): save_snippet is the UNGATED in-loop save (D-02 —
+			// normal result, NEVER a pause); restore is Archive's inverse; archive is the
+			// manual SAFE-tier de-materialize. (Discovery+install is NOT a tool action —
+			// amendment #51 / D-40: the find-skills always-on skill teaches self-extension
+			// via the skills CLI in the sandbox.)
+			"save_snippet": t.actionSaveSnippet,
+			"restore":      t.actionRestore,
+			"archive":      t.actionArchive,
 		})
 	}
 	return t.router

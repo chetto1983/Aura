@@ -295,6 +295,46 @@ func (a *skillWriterAdapter) WriteMutation(ctx context.Context, action, name, de
 	return a.w.WriteMutationByName(ctx, action, name, description, body, always, skills.AuditActor{ActorID: "model"})
 }
 
+// SaveSnippet maps the tool's UNGATED save_snippet call onto the live Writer.SaveSnippet
+// (D-02), labeling the actor "model" on the D-29 pending audit tuple (so a model-authored
+// save is attributable, T-18-08-S). SaveSnippet still validates + runs the injection
+// blocklist on the CODE + lands pending — it NEVER self-activates; the model cannot bypass
+// the save-time gate. It returns the pending status string for the tool's confirmation.
+func (a *skillWriterAdapter) SaveSnippet(ctx context.Context, name, language, code, description string, needsNetwork, needsWorkspace bool) (string, error) {
+	fm := skills.Frontmatter{
+		Name:           name,
+		Description:    description,
+		NeedsNetwork:   needsNetwork,
+		NeedsWorkspace: needsWorkspace,
+	}
+	res, err := a.w.SaveSnippet(ctx, name, language, code, fm, skills.AuditActor{ActorID: "model"})
+	if err != nil {
+		return "", err
+	}
+	return res.Status, nil
+}
+
+// Restore maps the tool's restore call onto the live Writer.Restore (the inverse of
+// Archive), labeling the actor "model" with the cli ApprovalSource (the D-29 cli tuple
+// the 0010 CHECK accepts — restore audits as activate/cli, no new migration). It returns
+// the active status string.
+func (a *skillWriterAdapter) Restore(ctx context.Context, name string) (string, error) {
+	if err := a.w.Restore(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "model"}); err != nil {
+		return "", err
+	}
+	return skills.StatusActive, nil
+}
+
+// ArchiveSnippet maps the tool's archive call onto the live Writer.Archive (SAFE tier, no
+// gate), labeling the actor "model" with the cli ApprovalSource (the manual operator-source
+// archive, distinct from the TTL sweep's auto source). It returns an "archived" status.
+func (a *skillWriterAdapter) ArchiveSnippet(ctx context.Context, name string) (string, error) {
+	if err := a.w.Archive(ctx, name, skills.ApprovalCLI, skills.AuditActor{ActorID: "model"}); err != nil {
+		return "", err
+	}
+	return "archived", nil
+}
+
 // alwaysBlockProvider returns a per-turn renderer of the messages[1] always-block
 // (D-07): it builds a loader over the active skills dir and renders the always:true
 // bodies via skills.RenderAlwaysBlock on each call, so a skill add/remove changes
