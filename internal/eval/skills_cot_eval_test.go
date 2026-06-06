@@ -70,6 +70,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -238,7 +239,10 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 	workspace string, res *skillsResult,
 ) {
 	t.Helper()
-	prompt := sc.prompts[0]
+	// {WORKSPACE} → the inspectable host run dir (forward slashes — the model's shell
+	// is POSIX bash). A real user says where they want the file; run 5 produced a
+	// perfect .xlsx into /tmp and failed only the workspace walk.
+	prompt := strings.ReplaceAll(sc.prompts[0], "{WORKSPACE}", filepath.ToSlash(workspace))
 
 	// The prompt MUST be natural: none of the forbidden hint words appear (D-35).
 	res.promptNatural = true
@@ -312,10 +316,21 @@ func driveSkillsLoop(t *testing.T, ctx context.Context, client llm.Client, cfg l
 	}
 	history = append(history, llm.Message{Role: llm.RoleUser, Content: prompt})
 
+	transportRetried := false
 	for hop := 0; hop < maxSkillsHops; hop++ {
 		c := runSkillsTurn(t, ctx, client, cfg, reg, appCfg, history, sessionID)
 		logTurnTrace(t, fmt.Sprintf("skills-hop-%d", hop), c)
 		captureSkillCalls(res, c)
+
+		// A transport-level infra error (the iter.Seq2 error slot — e.g. an OpenRouter
+		// TCP reset, run 5's killer) is retried ONCE: the hop replays from the same
+		// history; work already materialized on the host (the .xlsx) survives, so the
+		// replay typically just verifies and answers. A second infra error ends the run.
+		if c.runErr != nil && !transportRetried {
+			transportRetried = true
+			res.notes = append(res.notes, "transport error, hop retried once: "+oneLine(c.runErr.Error()))
+			continue
+		}
 
 		if !c.paused || c.awaitingInput == nil {
 			return c.prose // a terminal turn — done

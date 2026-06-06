@@ -67,10 +67,14 @@ func skillsScenarios() []scenario {
 			// wants today's Yahoo Finance market as a real Excel file; the model must
 			// recognise it lacks a battle-tested xlsx method, discover anthropics/skills/
 			// xlsx on skills.sh (`npx skills find xlsx`), self-install it on its host
-			// terminal, then use it to produce the .xlsx.
+			// terminal, then use it to produce the .xlsx. {WORKSPACE} is substituted at
+			// run time with the inspectable host run dir (live run 5 saved a PERFECT
+			// 4-sheet .xlsx... into /tmp — a real user says where they want the file; the
+			// verify walks exactly this dir).
 			prompts: []string{
 				"Fammi un file Excel con il mercato di Yahoo Finance di oggi. " +
-					"Voglio un .xlsx vero che si apra in un foglio di calcolo, con i dati di oggi.",
+					"Voglio un .xlsx vero che si apra in un foglio di calcolo, con i dati di oggi. " +
+					"Salvalo nella cartella {WORKSPACE}.",
 			},
 			dimensions: []dimension{
 				dimSkillsHardFloor, dimCapabilityGapRecognition, dimSkillOutputQuality,
