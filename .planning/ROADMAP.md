@@ -407,7 +407,7 @@ Wave 4:
   3. Operator runs `curl http://127.0.0.1:9080/threads/t1/messages` after a streamed run and observes the persisted turn history matching what was emitted in the SSE stream
   4. Operator runs `go.mod` inspection and observes AG-UI SDK pinned to the immutable pseudo-version literal `v0.0.0-20260514093510-e9e910b230b9` (NOT `latest`, NOT an unpinned install-time resolution; CI greps the literal — amendment #56: a pseudo-version IS the only valid go.mod form for this untagged subdir module, the original "no pseudo-version" wording was unsatisfiable)
 
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 **Wave 1**
 
@@ -421,7 +421,7 @@ Wave 4:
 
 **Wave 3** *(blocked on 12-01/02)*
 
-- [ ] 12-03-PLAN.md — minimal 8b server: POST /agent/run (SSE) + GET /threads/<id>/messages (JSON) + AURA_AGUI_* config + aura serve http.Server mount (SC1/SC3, loopback-only)
+- [x] 12-03-PLAN.md — minimal 8b server: POST /agent/run (SSE) + GET /threads/<id>/messages (JSON) + AURA_AGUI_* config + aura serve http.Server mount (SC1/SC3, loopback-only)
 
 **Wave 4** *(blocked on 12-01/02/03/05/06)*
 
@@ -493,7 +493,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
-| 12. AG-UI Gateway | 4/6 | In Progress|  |
+| 12. AG-UI Gateway | 5/6 | In Progress|  |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
