@@ -111,7 +111,7 @@ func SnippetHostPath(name string, lang SnippetLanguage, exportDir string) (strin
 
 // SnippetInvocation resolves a snippet's by-path invocation from a (possibly aliased)
 // language string: the in-sandbox path AND the interpreter the caller passes to
-// sandbox_exec (D-04). It is the loader-adapter + CLI entry point (it accepts the raw
+// sandbox_exec (D-04). It is the CLI/escalation entry point (it accepts the raw
 // frontmatter language and validates the enum). An unknown language is a structured
 // error.
 func SnippetInvocation(name, language string) (sandboxPath, interpreter string, err error) {
@@ -120,6 +120,23 @@ func SnippetInvocation(name, language string) (sandboxPath, interpreter string, 
 		return "", "", lerr
 	}
 	path, perr := SnippetSandboxPath(name, lang)
+	if perr != nil {
+		return "", "", perr
+	}
+	return path, meta.interpreter, nil
+}
+
+// SnippetHostInvocation resolves a snippet's HOST by-path invocation from a (possibly
+// aliased) language string (D-01 host-primary): the host export-dir path the model runs
+// through shell_exec AND the interpreter. It is the loader-adapter entry point — it
+// validates the enum once and roots the path at exportDir (AURA_SKILL_EXPORT_DIR), the
+// same dir the Writer materializes into. An unknown language is a structured error.
+func SnippetHostInvocation(name, language, exportDir string) (hostPath, interpreter string, err error) {
+	lang, meta, lerr := validSnippetLanguage(language)
+	if lerr != nil {
+		return "", "", lerr
+	}
+	path, perr := SnippetHostPath(name, lang, exportDir)
 	if perr != nil {
 		return "", "", perr
 	}

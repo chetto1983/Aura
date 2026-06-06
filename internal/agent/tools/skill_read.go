@@ -86,10 +86,11 @@ func (t *SkillTool) actionInfo(ctx context.Context, raw json.RawMessage) (ToolRe
 }
 
 // actionUse applies a skill (D-08). For a SNIPPET (type:snippet) it returns the docs
-// instructions + the stable in-sandbox /skills path + the interpreter so the model
-// runs it BY PATH via sandbox_exec (D-04 — NO bespoke run, NEVER the exec bit). For
-// an instruction skill it returns the body wrapped in the authority frame. The body
-// is delivered via NewResult so a large skill pages through the sidecar (>preview cap).
+// instructions + the HOST export-dir path + the interpreter so the model runs it BY
+// PATH via the host shell_exec (D-01 host-primary — an approved snippet is a vetted
+// artifact; sandbox_exec stays the named escalation for untrusted code). For an
+// instruction skill it returns the body wrapped in the authority frame. The body is
+// delivered via NewResult so a large skill pages through the sidecar (>preview cap).
 func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	if t.Loader == nil {
 		return ToolResult{}, fmt.Errorf("skill use: no skill loader configured")
@@ -102,8 +103,8 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	if name == "" {
 		return ToolResult{}, fmt.Errorf("skill use: name is required")
 	}
-	if instructions, sandboxPath, interpreter, ok := t.Loader.Snippet(name); ok {
-		return NewResult(ctx, renderSnippetUse(instructions, sandboxPath, interpreter))
+	if instructions, hostPath, interpreter, ok := t.Loader.Snippet(name); ok {
+		return NewResult(ctx, renderSnippetUse(instructions, hostPath, interpreter))
 	}
 	body, ok := t.Loader.Body(name)
 	if !ok {
@@ -112,19 +113,23 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 	return NewResult(ctx, useAuthorityFrame+body)
 }
 
-// renderSnippetUse frames a snippet's by-path invocation for the model (D-04): the
-// instructions, then the exact sandbox_exec call to run the snippet by path (never
-// the exec bit). The literal command shape mirrors the sandbox_exec arg schema so the
+// renderSnippetUse frames a snippet's HOST by-path invocation for the model (D-01
+// host-primary): the instructions, then the PRIMARY instruction — a shell_exec call
+// running the snippet by path through the host terminal (the surface the production
+// loop and D-35 eval gate use). sandbox_exec is named ONLY as the secondary escalation
+// for an untrusted/one-off run, mirroring shell_exec.go's own Description. The literal
+// command shape ("<interpreter> <hostPath>") mirrors the shell_exec arg schema so the
 // model assembles a correct call.
-func renderSnippetUse(instructions, sandboxPath, interpreter string) string {
+func renderSnippetUse(instructions, hostPath, interpreter string) string {
 	var b strings.Builder
 	b.WriteString(useAuthorityFrame)
 	if instructions != "" {
 		b.WriteString(instructions)
 		b.WriteString("\n")
 	}
-	fmt.Fprintf(&b, "Run this snippet by path: call sandbox_exec with command=%q and args=[%q] (add further args as needed). Do NOT execute it as %s directly — always invoke the interpreter with the path.\n",
-		interpreter, sandboxPath, sandboxPath)
+	fmt.Fprintf(&b, "Run this stored snippet by path with shell_exec: command=%q (append further args as needed). "+
+		"For an untrusted or one-off run you may instead escalate to sandbox_exec.\n",
+		interpreter+" "+hostPath)
 	return b.String()
 }
 

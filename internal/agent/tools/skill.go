@@ -64,11 +64,13 @@ type skillLoader interface {
 	// ManifestDescription renders the byte-stable, alphabetical manifest block that
 	// becomes this tool's Description (with the BM25-overflow tail past the cap).
 	ManifestDescription() string
-	// Snippet resolves an ACTIVE snippet skill into its by-path invocation (D-04):
-	// the docs instructions, the in-sandbox /skills path, and the interpreter the
-	// model passes to sandbox_exec. ok=false when the named skill is absent or not a
-	// snippet (action=use falls back to the instruction-skill authority-frame path).
-	Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool)
+	// Snippet resolves an ACTIVE snippet skill into its HOST by-path invocation
+	// (D-01 host-primary): the docs instructions, the host export-dir path the model
+	// runs through shell_exec, and the interpreter. The host path is resolved in the
+	// cmd/aura adapter from AURA_SKILL_EXPORT_DIR via skills.SnippetHostPath. ok=false
+	// when the named skill is absent or not a snippet (action=use then falls back to
+	// the instruction-skill authority-frame path).
+	Snippet(name string) (instructions, hostPath, interpreter string, ok bool)
 }
 
 // skillArgs is the wire shape of the skill tool arguments. Only `action` is

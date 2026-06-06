@@ -227,8 +227,9 @@ func (s *cronTaskStore) ApproveScheduledTask(ctx context.Context, id string) err
 // internal/skills import. It projects skills.Skill into the tool-local SkillMeta and
 // renders the manifest the tool's Description shows.
 type skillLoaderAdapter struct {
-	loader *skills.Loader
-	manCap int
+	loader    *skills.Loader
+	manCap    int
+	exportDir string // AURA_SKILL_EXPORT_DIR — the host materialization target a snippet's HOST by-path use frame points at (D-01)
 }
 
 // taskStorePool extracts the live pool from the task-store adapter (nil-safe): the
@@ -262,7 +263,7 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 		BodyCapBytes: cfg.SkillBodyCapBytes,
 		Blocklist:    cfg.SkillInjectionBlocklist,
 	})
-	tool := &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes}}
+	tool := &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes, exportDir: cfg.SkillExportDir}}
 	if pool != nil {
 		w := newSkillWriter(cfg, pool)
 		tool.Writer = &skillWriterAdapter{w: w}
@@ -343,16 +344,18 @@ func (a *skillLoaderAdapter) ManifestDescription() string {
 	return skills.RenderManifest(a.loader.List(), a.manCap)
 }
 
-// Snippet resolves an active snippet skill into its by-path invocation (D-04): the
-// docs instructions (the SKILL.md body) + the stable in-sandbox /skills path + the
-// interpreter. ok=false for an absent or non-snippet skill (action=use then falls
-// back to the instruction-skill authority-frame path).
-func (a *skillLoaderAdapter) Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool) {
+// Snippet resolves an active snippet skill into its HOST by-path invocation (D-01
+// host-primary): the docs instructions (the SKILL.md body) + the host export-dir path
+// the model runs through shell_exec + the interpreter. The host path is resolved under
+// the SAME export dir the Writer materializes into (cfg.SkillExportDir) so it points at
+// the real materialized file. ok=false for an absent or non-snippet skill (action=use
+// then falls back to the instruction-skill authority-frame path).
+func (a *skillLoaderAdapter) Snippet(name string) (instructions, hostPath, interpreter string, ok bool) {
 	s, found := a.loader.Get(name)
 	if !found || s.Type != skills.TypeSnippet {
 		return "", "", "", false
 	}
-	path, interp, perr := skills.SnippetInvocation(s.Name, s.Language)
+	path, interp, perr := skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)
 	if perr != nil {
 		return "", "", "", false
 	}

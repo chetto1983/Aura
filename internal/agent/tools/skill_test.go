@@ -16,7 +16,7 @@ type fakeSkillLoader struct {
 
 type fakeSnippet struct {
 	instructions string
-	sandboxPath  string
+	hostPath     string
 	interpreter  string
 }
 
@@ -35,12 +35,12 @@ func (f *fakeSkillLoader) ManifestDescription() string {
 	return b.String()
 }
 
-func (f *fakeSkillLoader) Snippet(name string) (instructions, sandboxPath, interpreter string, ok bool) {
+func (f *fakeSkillLoader) Snippet(name string) (instructions, hostPath, interpreter string, ok bool) {
 	s, ok := f.snippets[name]
 	if !ok {
 		return "", "", "", false
 	}
-	return s.instructions, s.sandboxPath, s.interpreter, true
+	return s.instructions, s.hostPath, s.interpreter, true
 }
 
 func newFakeLoader() *fakeSkillLoader {
