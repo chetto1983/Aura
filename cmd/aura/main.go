@@ -76,6 +76,8 @@ func main() {
 		runServe(os.Args[2:])
 	case "shell":
 		runShell(os.Args[2:])
+	case "toolpipe": // hidden — non-LLM tool-layer latency harness (NDJSON stdin); not in usage()
+		runToolPipe(os.Args[2:])
 	default:
 		usage()
 		os.Exit(1)
