@@ -26,8 +26,14 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			return
 		}
 		st := textRunState{idgen: idgen}
+		rs := reasoningRunState{idgen: idgen}
+		// closeRuns ends BOTH open runs (reasoning before text is irrelevant since
+		// they never coexist) so any interruption — tool/state/final/pause/error —
+		// drains a dangling reasoning OR text run before the next family opens.
+		closeRuns := func() bool { return rs.close(yield) && st.close(yield) }
 		for ev, err := range seq {
 			if err != nil {
+				_ = closeRuns()
 				yield(events.NewRunErrorEvent(err.Error()), nil)
 				return
 			}
@@ -35,10 +41,10 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				continue
 			}
 
-			// A pause closes any open text run, then ends the run with an interrupt
+			// A pause closes any open run, then ends the run with an interrupt
 			// outcome and STOPS — no trailing success RUN_FINISHED.
 			if ai := ev.Actions.AwaitingInput; ai != nil {
-				if !st.close(yield) {
+				if !closeRuns() {
 					return
 				}
 				yield(events.NewRunFinishedEventWithOptions(threadID, runID,
@@ -46,9 +52,9 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 				return
 			}
 
-			// Tool lifecycle interrupts an open text run first.
+			// Tool lifecycle interrupts an open run first.
 			if ti := ev.Actions.ToolInvocation; ti != nil {
-				if !st.close(yield) {
+				if !closeRuns() {
 					return
 				}
 				if !emitToolInvocation(yield, idgen, ti) {
@@ -61,7 +67,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			// the tool_call_id marker in StateDelta (Pitfall 2): it is a TOOL_CALL_RESULT,
 			// NEVER assistant prose. Checked BEFORE the prose branch.
 			if callID, ok := toolResultCallID(ev); ok {
-				if !st.close(yield) {
+				if !closeRuns() {
 					return
 				}
 				preview := ""
@@ -75,9 +81,9 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			}
 
 			// A non-tool_call_id StateDelta (usage/cost/termination) interrupts the
-			// text run and maps to STATE_DELTA over SORTED keys (deterministic).
+			// open run and maps to STATE_DELTA over SORTED keys (deterministic).
 			if len(ev.Actions.StateDelta) > 0 {
-				if !st.close(yield) {
+				if !closeRuns() {
 					return
 				}
 				if !yield(events.NewStateDeltaEvent(stateDeltaOps(ev.Actions.StateDelta)), nil) {
@@ -92,20 +98,40 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			// The final Event carries the full answer + FinishReason: close the run as
 			// END-only, do NOT re-emit its Content (OQ1 policy a).
 			if ev.LLMResponse.FinishReason != "" {
+				if !closeRuns() {
+					return
+				}
+				continue
+			}
+			// A reasoning delta (CoT, stream-only): open START on the first non-empty
+			// delta, CONTENT per non-empty delta, skip empty deltas. Reasoning and
+			// Content are mutually exclusive on one Event (Plan 12-05), so this is
+			// checked alongside the Content branch. A reasoning delta never opens a
+			// text run, so reasoning fully precedes any following text (interleave-
+			// before-text emerges from the close-on-other-family rule below).
+			if ev.LLMResponse.Reasoning != "" {
 				if !st.close(yield) {
+					return
+				}
+				if !rs.content(yield, ev.LLMResponse.Reasoning) {
 					return
 				}
 				continue
 			}
 			// A streamed chunk delta: open START on the first non-empty delta, CONTENT
 			// per non-empty delta, skip empty deltas (Validate rejects empty deltas).
+			// Opening text first closes any open reasoning run so reasoning always
+			// fully precedes text (interleave-before-text).
 			if ev.LLMResponse.Content != "" {
+				if !rs.close(yield) {
+					return
+				}
 				if !st.content(yield, ev.LLMResponse.Content) {
 					return
 				}
 			}
 		}
-		if !st.close(yield) {
+		if !closeRuns() {
 			return
 		}
 		yield(events.NewRunFinishedEventWithOptions(threadID, runID, events.WithSuccessOutcome()), nil)
@@ -141,6 +167,49 @@ func (s *textRunState) close(yield func(events.Event, error) bool) bool {
 	id := s.msgID
 	s.msgID = ""
 	return yield(events.NewTextMessageEndEvent(id), nil)
+}
+
+// reasoningRunState coalesces a contiguous run of reasoning Events into ONE
+// REASONING_START / REASONING_MESSAGE_START / N*REASONING_MESSAGE_CONTENT /
+// REASONING_MESSAGE_END / REASONING_END lifecycle, carrying a SEPARATE rsn-
+// messageId (distinct from the assistant TEXT_MESSAGE id). It mirrors textRunState
+// but the lifecycle has the extra START/END envelope the SDK's REASONING_* family
+// requires (REASONING_START wraps REASONING_MESSAGE_*).
+type reasoningRunState struct {
+	idgen IDGenerator
+	msgID string
+	open  bool
+}
+
+// content emits a REASONING_MESSAGE_CONTENT delta, opening the run (REASONING_START
+// + REASONING_MESSAGE_START) lazily on the first non-empty delta.
+func (s *reasoningRunState) content(yield func(events.Event, error) bool, delta string) bool {
+	if !s.open {
+		s.msgID = s.idgen.NewReasoningID()
+		s.open = true
+		if !yield(events.NewReasoningStartEvent(s.msgID), nil) {
+			return false
+		}
+		if !yield(events.NewReasoningMessageStartEvent(s.msgID, "assistant"), nil) {
+			return false
+		}
+	}
+	return yield(events.NewReasoningMessageContentEvent(s.msgID, delta), nil)
+}
+
+// close ends an open reasoning run (REASONING_MESSAGE_END + REASONING_END) and
+// resets state; a no-op when none is open.
+func (s *reasoningRunState) close(yield func(events.Event, error) bool) bool {
+	if !s.open {
+		return true
+	}
+	s.open = false
+	id := s.msgID
+	s.msgID = ""
+	if !yield(events.NewReasoningMessageEndEvent(id), nil) {
+		return false
+	}
+	return yield(events.NewReasoningEndEvent(id), nil)
 }
 
 // emitToolInvocation maps a ToolInvocation lifecycle Event onto AG-UI tool events:

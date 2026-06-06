@@ -55,22 +55,28 @@ func ValidateRunInput(in types.RunAgentInput) error {
 // IDGenerator owns AG-UI id minting so the translator can guarantee non-empty
 // messageId/toolCallId (both are Validate()-required by the SDK) and so tests can
 // inject deterministic ids for stable golden compares. NewMessageID mints an
-// assistant message run id; NewToolResultID mints the message id carrying a tool
-// result (correlated to its toolCallID).
+// assistant message run id; NewReasoningID mints the SEPARATE rsn- message id a
+// REASONING lifecycle carries (distinct from the assistant TEXT_MESSAGE id so a
+// consumer never conflates CoT with the answer); NewToolResultID mints the message
+// id carrying a tool result (correlated to its toolCallID).
 type IDGenerator interface {
 	NewMessageID() string
+	NewReasoningID() string
 	NewToolResultID(toolCallID string) string
 }
 
 // uuidIDGenerator is the default production IDGenerator. Message ids are uuid-v4
-// with the PRD "msg-" prefix; tool-result message ids derive from the originating
-// tool call id so the correlation is observable on the wire.
+// with the PRD "msg-" prefix; reasoning ids with the "rsn-" prefix; tool-result
+// message ids derive from the originating tool call id so the correlation is
+// observable on the wire.
 type uuidIDGenerator struct{}
 
 // NewIDGenerator returns the default uuid-v4-backed IDGenerator.
 func NewIDGenerator() IDGenerator { return uuidIDGenerator{} }
 
 func (uuidIDGenerator) NewMessageID() string { return "msg-" + uuid.NewString() }
+
+func (uuidIDGenerator) NewReasoningID() string { return "rsn-" + uuid.NewString() }
 
 func (uuidIDGenerator) NewToolResultID(toolCallID string) string {
 	return "msg-tool-" + toolCallID
