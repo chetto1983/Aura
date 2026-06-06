@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -118,7 +119,7 @@ func (t *SkillTool) actionUse(ctx context.Context, raw json.RawMessage) (ToolRes
 // running the snippet by path through the host terminal (the surface the production
 // loop and D-35 eval gate use). sandbox_exec is named ONLY as the secondary escalation
 // for an untrusted/one-off run, mirroring shell_exec.go's own Description. The literal
-// command shape ("<interpreter> <hostPath>") mirrors the shell_exec arg schema so the
+// command shape ("<interpreter> '<hostPath>'") mirrors the shell_exec arg schema so the
 // model assembles a correct call.
 func renderSnippetUse(instructions, hostPath, interpreter string) string {
 	var b strings.Builder
@@ -129,8 +130,22 @@ func renderSnippetUse(instructions, hostPath, interpreter string) string {
 	}
 	fmt.Fprintf(&b, "Run this stored snippet by path with shell_exec: command=%q (append further args as needed). "+
 		"For an untrusted or one-off run you may instead escalate to sandbox_exec.\n",
-		interpreter+" "+hostPath)
+		interpreter+" "+shellQuotePath(hostPath))
 	return b.String()
+}
+
+// shellQuotePath makes a host snippet path safe to paste into the shell_exec command
+// the model runs (WR-04). shell_exec ALWAYS runs through bash -c (Git Bash on
+// Windows), where a Windows path with backslashes (C:\Users\...) mangles on \U/\n
+// escapes and a path under a spaced dir (C:\Program Files\...) word-splits. Normalize
+// to forward slashes (filepath.ToSlash for the host OS, plus an explicit backslash
+// fold so a path produced on a Windows host stays forward-slashed even when this runs
+// on a POSIX host — Git Bash accepts forward-slash drive paths, mirroring runner.go's
+// announced-workspace ToSlash treatment) and single-quote so spaces are safe; an
+// embedded single quote is escaped the POSIX way ('\”).
+func shellQuotePath(p string) string {
+	slashed := strings.ReplaceAll(filepath.ToSlash(p), `\`, "/")
+	return "'" + strings.ReplaceAll(slashed, "'", `'\''`) + "'"
 }
 
 // requireBody resolves the `name` arg and fetches the skill body, returning a

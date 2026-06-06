@@ -40,6 +40,28 @@ func TestRenderSnippetUseHostFrame(t *testing.T) {
 	if !strings.Contains(frame, "sandbox_exec") {
 		t.Fatalf("frame must still NAME sandbox_exec as the escalation: %q", frame)
 	}
+	// WR-04: the rendered command single-quotes the path so spaces are shell-safe.
+	if !strings.Contains(frame, "'"+host+"'") {
+		t.Fatalf("frame must single-quote the host path for shell safety: %q", frame)
+	}
+}
+
+// TestRenderSnippetUseShellSafePath is the WR-04 regression: a Windows host path
+// (backslashes + a spaced parent dir) is normalized to forward slashes and single-
+// quoted in the rendered shell_exec command, so a bash -c (Git Bash) consumer does
+// not mangle \U/\n escapes or word-split on the space.
+func TestRenderSnippetUseShellSafePath(t *testing.T) {
+	t.Parallel()
+	const winPath = `C:\Program Files\aura\export\calc\calc.py`
+	frame := renderSnippetUse("Adds two numbers.", winPath, "python3")
+
+	if strings.Contains(frame, `\Program`) || strings.Contains(frame, `C:\`) {
+		t.Fatalf("frame must not carry backslashes (bash -c mangles them): %q", frame)
+	}
+	want := `'C:/Program Files/aura/export/calc/calc.py'`
+	if !strings.Contains(frame, want) {
+		t.Fatalf("frame must carry the forward-slashed, single-quoted path %q: %q", want, frame)
+	}
 }
 
 // TestActionUseSnippetEmitsHostFrame asserts action=use on an active snippet hands the
