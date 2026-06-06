@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-06-06 (Phase 11 dual-gate reconciled to post-#51/D-40 thin shape; coverage 86.6% stamped)
+**Last updated:** 2026-06-06 (Phase 18 snippet-reuse steady-state live cells stamped: endEvents=5 / wallClock=11.057s after the fixture-to-intent repair)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -31,7 +31,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 | MCP manager mock E2E + policy gate (CAP-09 / MCP-V2-01) | mock stdio + Streamable HTTP + trust gate + policy gate pass; live tiers explicit | 2026-06-04 (automated mock tier) | **PASS** mock tier: `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1`; live WhatsApp/mail/Calendar/Docker checks operator-only, not run in CI | Phase 16 MCP manager | `cmd/aura/mcp*.go`, `internal/mcp/**`, `internal/agent/mcptools/**`, `docs/mcp-manager.md` |
 | Live CoT/tool-use eval (TestCoTEval, 12 scenarios × 10 dimensions, real agent vs DeepSeek-V4) | all asserted dimensions full; reasoning advisory | 2026-06-04 (live re-run alongside the swarm gate) | **PASS** 12/12 scenarios; secret_redaction 12/12, streaming 11/11, tool-loop 2/2, cost 8/8, cache-prefix 1/1, budget 1/1, cancellation 1/1, guardrails 2/2; reasoning 6/7 advisory; cache-hit 8/8 | Phase 3 Slice 1 | `internal/eval/**`, `internal/agent/llm_agent*.go`, `internal/llm/**` |
 | Scheduler North-Star live E2E (CAP-06 / SC#1-SC#4) — chaos failover + once-per-window + natural-prompt → `task` tool → persisted row, real DeepSeek-V4 | SC#2 no-dup survivor / SC#1 once/window / E2E ≥90% / coverage ≥85% / mutation ≥70% | 2026-06-04 (live, WSL, operator-delegated Gate-3) | **PASS** — E2E 2/2=100% (Q3 reminder/at + Q1 agent_job/cron, natural IT prompts); SC#2 chaos completed=1/distinct=1; SC#1 2 fires/2 windows (was 94, bug fixed); SC#3 valid pg dump (role fix) + 24h alert; SC#4 budget-10 + ask_user auto-reject; coverage 88.5%; schedule.go mutation 77.3% | Phase 10 Slice 6 | `internal/cron/**`, `internal/agent/tools/task.go`, `cmd/aura/serve.go`, `scripts/scheduler_chaos.sh` |
-| Snippet-reuse steady-state E2E (CAP-08.1 / D-03) — pre-seeded snippet → ONE reuse run via production `runner.Runner` (Deps.ToolInvocations wired) → 2nd-run-equivalent ledger window + fresh .xlsx, real DeepSeek-V4 | ≤6 tool dispatches (`event_kind='end'`) AND wall-clock <40s on the reuse run (grounded by D-03, NOT distinct-request_id) / fresh .xlsx opens+today / coverage ≥85% / mutation ≥70% on new handlers | **IMPLEMENTATION** (2026-06-06; structural tier green, live cells pending-operator-run) | **Structural tier PASS** key-free: `TestRegistrySnippetReuse_HasSkillTool` (eval registry registers the production `skill` tool) + `TestClassify*`/`TestRegistry_SeamFree` green with OPENROUTER_API_KEY unset (no live call, 0.44s). Live steady-state cells **pending-operator-run**: dispatch-count = **pending-operator-run**, wall-clock = **pending-operator-run**, coverage = **pending-operator-run**, mutation = **pending-operator-run**. The paid gate `TestSnippetReuseE2E` (cot_eval + db_integration, OPENROUTER + DSN gated) t.Skips cleanly without the key. | Phase 18 Slice 7e | `internal/skills/**`, `internal/agent/tools/skill*.go`, `internal/eval/skills_snippet_reuse*_cot_eval_test.go`, `internal/toolinvocations/**` |
+| Snippet-reuse steady-state E2E (CAP-08.1 / D-03) — pre-seeded snippet → ONE reuse run via production `runner.Runner` (Deps.ToolInvocations wired) → 2nd-run-equivalent ledger window + fresh .xlsx, real DeepSeek-V4 | ≤6 tool dispatches (`event_kind='end'`) AND wall-clock <40s on the reuse run (grounded by D-03, NOT distinct-request_id) / fresh .xlsx opens+today / coverage ≥85% / mutation ≥70% on new handlers | 2026-06-06 (live steady-state PASS; coverage/mutation pending WSL `make quality-full`) | **Live steady-state PASS** (paid, `TestSnippetReuseE2E`, deepseek-v4-flash:exacto): **endEvents=5 ≤6**, **wallClock=11.057s <40s**, fresh .xlsx opens+today=true (`Mercato_Yahoo_2026-06-06.xlsx`, 10 tickers, real prices). Collapsed from the D-03 authoring run (21 dispatches / 142.8s). Structural tier PASS key-free: `TestRegistrySnippetReuse_HasSkillTool` + `TestRegistry_SeamFree` (OPENROUTER unset, 0.42s, no live call). Required a fixture-to-intent repair (`6a3c9d84`): the pre-seeded snippet was a stub contradicting its own description — the first run (13/71.8s/today=false) was ledger-proven model+product recovery from the stub, not a product gap. Coverage/mutation cells **pending** (separate WSL stack op). See the Phase-18 detail's live-run log. | Phase 18 Slice 7e | `internal/skills/**`, `internal/agent/tools/skill*.go`, `internal/eval/skills_snippet_reuse*_cot_eval_test.go`, `internal/toolinvocations/**` |
 
 ---
 
@@ -361,14 +361,25 @@ trivially and gate nothing. The grounded replacement the gate enforces:
 | Sub-metric | Target | Last measured | Last value |
 |---|---|---|---|
 | Eval↔production registry parity (skill tool registered) | structural, key-free green | 2026-06-06 | **PASS** — `TestRegistrySnippetReuse_HasSkillTool` (env -u OPENROUTER_API_KEY, 0.44s, no live call). |
-| Reuse-run tool dispatches (`event_kind='end'`, PRIMARY budget) | ≤ 6 | pending-operator-run | **pending-operator-run** (live `TestSnippetReuseE2E`). |
-| Reuse-run wall-clock (max ended_at − min started_at, FLOOR) | < 40s | pending-operator-run | **pending-operator-run** (live `TestSnippetReuseE2E`). |
-| Reuse-run LLM roundtrips (DIAGNOSTIC, logged not gated) | advisory | pending-operator-run | **pending-operator-run**. |
-| Fresh .xlsx (mtime ≥ run start, openpyxl read-back, today's date) | exists/opens/today | pending-operator-run | **pending-operator-run** (artifact-not-reply). |
+| Reuse-run tool dispatches (`event_kind='end'`, PRIMARY budget) | ≤ 6 | 2026-06-06 | **5 — PASS** (live `TestSnippetReuseE2E`, deepseek-v4-flash:exacto; tools: `current_time → shell_exec → skill action=use → shell_exec by-path → shell_exec verify`). Collapsed from the D-03 authoring run's 21. |
+| Reuse-run wall-clock (max ended_at − min started_at, FLOOR) | < 40s | 2026-06-06 | **11.057s — PASS** (live `TestSnippetReuseE2E`). Collapsed from D-03's 142.8s (≈13×). |
+| Reuse-run LLM roundtrips (DIAGNOSTIC, logged not gated) | advisory | 2026-06-06 | **5** (gap-derived, 4 tool-dispatching turns + 1 final reply). |
+| Fresh .xlsx (mtime ≥ run start, openpyxl read-back, today's date) | exists/opens/today | 2026-06-06 | **exists+opens+today=true — PASS** (`Mercato_Yahoo_2026-06-06.xlsx`, 10 tickers, real prices, `Aggiornato al 2026-06-06` cell; visually row-dumped). |
 | Owned-surface coverage (`internal/*`, full integration matrix) | ≥ 85% combined | pending-operator-run | **pending-operator-run** (`bash scripts/coverage_gate.sh`, WSL, stack up). |
 | New-handler mutation (Writer.Restore, actionRestore/actionArchive/actionSaveSnippet, SnippetHostPath) | ≥ 70% killed | pending-operator-run | **pending-operator-run** (go-mutesting, WSL). |
 
-**Operator command (fills the pending-operator-run cells + the matrix row):**
+### Live-run log (2026-06-06)
+
+Two paid runs reached the gate; the FINAL steady-state run is the row of record.
+
+1. **Run 1 — fixture-defect (diagnostic, NOT the steady state):** `endEvents=13 / wallClock=71.8s / today=false` (conversation `019e9d32-2b8e-7c94-a4b8-eea944b9f7b6`). The pre-seeded snippet was a STUB (4 hardcoded tickers, columns Ticker/Nome/Data, no prices, no live fetch) while its description promised a fetched market table. The ledger PROVES the product path worked — `seq5 skill action=use market-xlsx-builder → seq7 host by-path exec` (the Phase-18 mechanic) — then the model inspected the stub's output, found it inadequate, and RECOVERED (`seq13-15` wrote+ran its own yfinance script, producing real today's data). The 7 extra dispatches + ~30s were recovery from the stub; the gate was unsatisfiable via the snippet as seeded. Root-caused as a fixture-to-intent defect (NOT a product gap), repaired in `6a3c9d84` (the snippet now honors its description: live yfinance fetch + a date cell).
+2. **Run 2 — steady state (the row of record):** `endEvents=5 / wallClock=11.057s / roundtrips(diag)=5 / today=true / fresh=true / opens=true`. Tool sequence `current_time → shell_exec → skill action=use → shell_exec by-path → shell_exec verify`. Artifact `Mercato_Yahoo_2026-06-06.xlsx` (10 tickers, real prices, `Aggiornato al 2026-06-06` cell) visually row-dumped. The reuse snippet's OWN output satisfied the strict today cell-value floor (no recovery churn).
+
+**Backlog finding (network resilience, NOT a blocker):** a first aborted attempt saw a ~186s network hang in the live fetch path before timing out. A tighter per-request HTTP timeout + 1 retry in the live data path is a backlog candidate; it did not recur on the two completed runs.
+
+**Coverage + mutation cells remain `pending-operator-run`:** those are a separate WSL `make quality-full` / `go-mutesting` stack operation (the new handlers `Writer.Restore`, `actionRestore/actionArchive/actionSaveSnippet`, `SnippetHostPath` are unit/db-covered in 18-02/18-03); this entry records only the live steady-state gate the fixture repair unblocked.
+
+**Operator command (reproduces the live steady-state run + the matrix row):**
 
 ```bash
 docker compose up -d searxng                               # web tools backend (today's data)
@@ -377,7 +388,7 @@ export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"           # host python3 + ope
 export AURA_DB_URL="postgres://aura_app:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
 export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
 export AURA_RUN_DIR=<inspectable scratch>; export SEARXNG_URL=http://127.0.0.1:18080/search
-go test -tags 'cot_eval db_integration' -run TestSnippetReuseE2E -timeout 900s -v ./internal/eval/
+go test -tags 'cot_eval db_integration' -run TestSnippetReuseE2E -timeout 540s -v ./internal/eval/
 # The harness t.Logs endEvents + wallClock; OPEN the produced .xlsx visually, then replace
 # the pending-operator-run cells above with the observed numbers + bump Last measured.
 # coverage: bash scripts/coverage_gate.sh ; mutation: go-mutesting internal/skills/writer_activate.go ...
