@@ -64,6 +64,26 @@ func (a *LlmAgent) maybeRecover(toolName string) (recovered bool) {
 	return true
 }
 
+// recoveryNudgeEmpty is the empty-response recovery variant: the provider returned
+// a completion with no tool calls AND no content (a hiccup, not an answer). The
+// nudge sends the model back to the task; it shares the recoveryAttempts counter
+// with the budget/dedup nudges so the combined recovery ceiling stays ONE turn.
+const recoveryNudgeEmpty = "Your last response was empty. Continue the task now — " +
+	"call the next tool you need, or deliver the final answer via text_response."
+
+// maybeRecoverEmptyResponse mirrors maybeRecover for the empty-completion case
+// (llm_agent.go natural-stop branch): first occurrence appends the empty-response
+// nudge and returns true for one more turn; any subsequent occurrence returns false
+// so the caller finalizes. Counter shared with maybeRecover — never a loop.
+func (a *LlmAgent) maybeRecoverEmptyResponse() bool {
+	if a.recoveryAttempts >= 1 {
+		return false
+	}
+	a.recoveryAttempts++
+	a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: recoveryNudgeEmpty})
+	return true
+}
+
 // stubLeadIn is the D-09 deterministic-stub lead-in: emitted (in Italian, no LLM
 // call) when synthesis returns empty/errors TWICE so the user always receives the
 // gathered data. Load-bearing literal — a test asserts the terminal content starts

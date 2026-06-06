@@ -194,6 +194,18 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 
 			// 3. No tool calls → terminal (content-stop fallback, D-13/D-16).
 			if len(calls) == 0 {
+				// A completion with NO calls and NO content is a provider hiccup, not
+				// an answer (observed live 2026-06-06: DeepSeek empty turn mid-task
+				// ended the xlsx North-Star run silently). One nudged retry keeps the
+				// task alive; a second empty routes to finalize — no path ever emits
+				// an empty terminal (Req#2).
+				if strings.TrimSpace(text) == "" {
+					if a.maybeRecoverEmptyResponse() {
+						continue
+					}
+					a.finalize(ic, spanID, parentSpanID, requestID, "empty_response", yield)
+					return
+				}
 				answer := text
 				if finish == "length" {
 					answer += truncationNotice // D-21 — no auto-continue
