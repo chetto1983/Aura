@@ -169,6 +169,83 @@ func TestPause_IntraTurnExclusivity(t *testing.T) {
 	}
 }
 
+// sentinelTool is a non-ask_user tool whose Execute returns the pause sentinel.
+// Under the name-gated pause (D-40), it must NOT pause the turn — runTool renders
+// its error as a RoleTool result instead.
+type sentinelTool struct{}
+
+func (sentinelTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name:        "fake_gate",
+		Summary:     "non-ask_user tool returning the pause sentinel",
+		Description: "non-ask_user tool returning the pause sentinel",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+		Deferred:    false,
+	}
+}
+
+func (sentinelTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+	return tools.ToolResult{}, &tools.ErrAwaitingUserInput{Question: "gate?", Kind: tools.KindApproval, Priority: 70}
+}
+
+// TestAskUserOnlyPauseConstraint is the behavioral proof of the architectural
+// constraint (amendment #51 / D-40, must_haves.truths[5]): ONLY ask_user pauses the
+// turn. A registered NON-ask_user tool whose Execute returns ErrAwaitingUserInput
+// must NOT pause — no AwaitingInput Event is emitted — and the call is rendered as a
+// RoleTool error result whose text is `error: awaiting user input` (the sentinel's
+// Error() string). This is the dead install-gate path spike 012b root-caused; the
+// payload (Question/red flags) is dropped, never surfaced as a pause.
+func TestAskUserOnlyPauseConstraint(t *testing.T) {
+	// Turn 1 calls the non-ask_user sentinel tool; turn 2 finalizes (so the loop
+	// continues past the non-pausing tool error rather than hanging).
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("g1", "fake_gate", `{}`)),
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("t1", "text_response", `{"text":"done"}`)),
+	)
+	r := tools.NewRegistry()
+	r.Register(tools.AskUser{})
+	r.Register(tools.TextResponse{})
+	r.Register(sentinelTool{})
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:     fc,
+		LLM:        llm.Config{Model: "test-model", Provider: "test", TotalTimeoutSec: 30},
+		Registry:   r,
+		PreviewCap: 2048,
+		RunDir:     t.TempDir(),
+		SessionID:  uuid.Must(uuid.NewV7()).String(),
+		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "go"}},
+	})
+
+	evs, err := collect(a.Run(newPauseIC(t)))
+	if err != nil {
+		t.Fatalf("Run errored: %v", err)
+	}
+
+	// (a) the turn must NOT pause — no AwaitingInput Event for the non-ask_user sentinel.
+	for _, ev := range evs {
+		if ev.Actions.AwaitingInput != nil {
+			t.Fatalf("a non-ask_user tool returning ErrAwaitingUserInput must NOT pause; got %+v", ev.Actions.AwaitingInput)
+		}
+	}
+
+	// (b) the call renders as a RoleTool error result with the sentinel's Error() text.
+	hist := a.HistoryForTest()
+	var gateResult string
+	found := false
+	for _, m := range hist {
+		if m.Role == llm.RoleTool && m.ToolCallID == "g1" {
+			gateResult = m.Content
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the non-ask_user sentinel call must produce a RoleTool result (id g1); history=%+v", hist)
+	}
+	if gateResult != "error: awaiting user input" {
+		t.Fatalf("RoleTool result for the sentinel = %q, want %q", gateResult, "error: awaiting user input")
+	}
+}
+
 // TestPause_MalformedAskUser_NotAPause: an ask_user that fails validation is NOT
 // a pause — it flows through normal dispatch as a RoleTool error and the loop is
 // not suspended (no AwaitingInput Event).

@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -257,8 +258,9 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 		slog.Warn("skill tool: materialize builtins failed", "dir", cfg.SkillsDir, "err", err)
 	}
 	loader := skills.NewLoader(skills.Config{
-		Roots:        []string{cfg.SkillsDir},
+		Roots:        skillLoaderRoots(cfg),
 		BodyCapBytes: cfg.SkillBodyCapBytes,
+		Blocklist:    cfg.SkillInjectionBlocklist,
 	})
 	tool := &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes}}
 	if pool != nil {
@@ -266,6 +268,15 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 		tool.Writer = &skillWriterAdapter{w: w}
 	}
 	return tool
+}
+
+// skillLoaderRoots is the single source of truth for the loader scan roots
+// (amendment #51 / D-40 + #50): the persistent-install dir <export>/.agents/skills
+// FIRST (where an in-sandbox `cd /skills && npx skills add …` lands a self-installed
+// skill through the rw mount), then the active SkillsDir LAST so an operator-authored
+// skill WINS on a name collision (scanRoot iterates roots in order, later root wins).
+func skillLoaderRoots(cfg *config.Config) []string {
+	return []string{filepath.Join(cfg.SkillExportDir, ".agents", "skills"), cfg.SkillsDir}
 }
 
 // skillWriterAdapter bridges the live *skills.Writer onto the tools.skillWriter seam
@@ -294,8 +305,9 @@ func alwaysBlockProvider(cfg *config.Config) func() string {
 		return func() string { return "" }
 	}
 	loader := skills.NewLoader(skills.Config{
-		Roots:        []string{cfg.SkillsDir},
+		Roots:        skillLoaderRoots(cfg),
 		BodyCapBytes: cfg.SkillBodyCapBytes,
+		Blocklist:    cfg.SkillInjectionBlocklist,
 	})
 	return func() string {
 		block, present := skills.RenderAlwaysBlock(loader.List())

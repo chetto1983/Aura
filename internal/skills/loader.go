@@ -35,21 +35,31 @@ type Skill struct {
 // Config configures a Loader. Roots are scanned in order with later-root-wins
 // precedence on a name collision (an operator override placed in a later root
 // shadows a builtin in an earlier one). CacheTTL/BodyCapBytes fall back to the
-// package defaults when zero.
+// package defaults when zero. Blocklist is the load-time NFKC+literal injection
+// scan applied to every body AND frontmatter description entering the manifest/
+// always-block (amendment #51 / D-40): self-installed skills land directly on
+// disk via the sandbox CLI without passing the Writer, so the blocklist must
+// also run at load. An empty Blocklist makes the scan a no-op.
 type Config struct {
 	Roots        []string
 	CacheTTL     time.Duration
 	BodyCapBytes int
+	Blocklist    []string
 }
 
 // Loader scans the configured roots for SKILL.md files and caches the parsed,
 // structurally-valid skills behind a short TTL. It is safe for concurrent use.
-// Validation is parse + name-regex + body-cap ONLY — NO blocklist (D-28: disk is
-// operator-trusted; blocklist enforcement lives at the write boundary, plan 11-04).
+// Validation is parse + name-regex + body-cap, plus — when a blocklist is
+// configured — a load-time NFKC+literal injection scan of every body AND
+// frontmatter description (amendment #51 / D-40): a self-installed skill lands on
+// disk via the sandbox CLI without passing the Writer, so the blocklist must also
+// run here. An empty blocklist preserves the original D-28 parse-only behavior
+// (disk is operator-trusted), keeping every loader built without a blocklist green.
 type Loader struct {
-	roots   []string
-	ttl     time.Duration
-	bodyCap int
+	roots     []string
+	ttl       time.Duration
+	bodyCap   int
+	blocklist []string
 
 	mu        sync.Mutex
 	snapshot  map[string]Skill
@@ -70,7 +80,9 @@ func NewLoader(cfg Config) *Loader {
 	}
 	roots := make([]string, len(cfg.Roots))
 	copy(roots, cfg.Roots)
-	return &Loader{roots: roots, ttl: ttl, bodyCap: cap}
+	blocklist := make([]string, len(cfg.Blocklist))
+	copy(blocklist, cfg.Blocklist)
+	return &Loader{roots: roots, ttl: ttl, bodyCap: cap, blocklist: blocklist}
 }
 
 // List returns the loaded skills in stable (name-sorted) order, re-scanning if the
@@ -160,9 +172,11 @@ func (l *Loader) scanRoot(root string, out map[string]Skill) {
 	}
 }
 
-// loadSkillDir reads <dir>/SKILL.md, parses it, and validates STRUCTURE only
-// (D-28): name regex + name==dirName + body cap. A failure at any step is
-// skip-logged and the skill is excluded (ok=false). NO blocklist is consulted.
+// loadSkillDir reads <dir>/SKILL.md, parses it, and validates STRUCTURE (name
+// regex + name==dirName + body cap) plus, when a blocklist is configured, the
+// load-time NFKC+literal injection scan on body AND frontmatter description
+// (amendment #51 / D-40). A failure at any step is skip-logged and the skill is
+// excluded (ok=false), never fatal.
 func (l *Loader) loadSkillDir(dir, dirName string) (Skill, bool) {
 	path := filepath.Join(dir, "SKILL.md")
 	info, lerr := os.Lstat(path)
@@ -187,6 +201,20 @@ func (l *Loader) loadSkillDir(dir, dirName string) (Skill, bool) {
 	}
 	if err := validateStructure(fm, dirName, body, l.bodyCap); err != nil {
 		slog.Warn("skills loader: skip invalid skill", "path", path, "err", err)
+		return Skill{}, false
+	}
+	// Load-time injection scan (amendment #51 / D-40): a self-installed skill body —
+	// and its frontmatter description, which renders into the model-visible manifest —
+	// crosses into context WITHOUT passing the Writer's blocklist. Scan both here; a
+	// hit skips the skill (never loads the body) and is logged, never fatal. An empty
+	// l.blocklist is a no-op (the scan finds nothing), so operator-trusted disk
+	// (no blocklist configured) keeps the original parse-only behavior.
+	if matched, pos, ok := violatesBlocklist(body, l.blocklist); ok {
+		slog.Warn("skills loader: skipping skill with blocklisted body", "path", path, "matched", matched, "pos", pos)
+		return Skill{}, false
+	}
+	if matched, pos, ok := violatesBlocklist(fm.Description, l.blocklist); ok {
+		slog.Warn("skills loader: skipping skill with blocklisted description", "path", path, "matched", matched, "pos", pos)
 		return Skill{}, false
 	}
 	return Skill{

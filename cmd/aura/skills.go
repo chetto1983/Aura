@@ -113,10 +113,13 @@ const (
 	skillsActionUpdate = "update"
 )
 
-// skillsList prints the active skills the loader sees (name + description).
+// skillsList prints the active skills the loader sees (name + description). It
+// scans the persistent-install root + the active SkillsDir and applies the load-time
+// blocklist, exactly like the model path (amendment #51 / D-40), so `aura skills list`
+// reflects what the model would see.
 func skillsList(_ context.Context, _ []string) {
 	cfg := config.LoadDB()
-	loader := skills.NewLoader(skills.Config{Roots: []string{cfg.SkillsDir}, BodyCapBytes: cfg.SkillBodyCapBytes})
+	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
 	loaded := loader.List()
 	if len(loaded) == 0 {
 		fmt.Println("ok: no skills")
@@ -137,7 +140,7 @@ func skillsInfo(_ context.Context, args []string) {
 		os.Exit(1)
 	}
 	cfg := config.LoadDB()
-	loader := skills.NewLoader(skills.Config{Roots: []string{cfg.SkillsDir}, BodyCapBytes: cfg.SkillBodyCapBytes})
+	loader := skills.NewLoader(skills.Config{Roots: skillLoaderRoots(cfg), BodyCapBytes: cfg.SkillBodyCapBytes, Blocklist: cfg.SkillInjectionBlocklist})
 	s, ok := loader.Get(args[0])
 	if !ok {
 		fmt.Fprintf(os.Stderr, "skill %q not found\n", args[0])

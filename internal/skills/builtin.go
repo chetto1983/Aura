@@ -9,9 +9,11 @@ import (
 	"path/filepath"
 )
 
-// builtinFS holds the skills Aura ships in-binary. ONLY skill-creator is embedded
-// (D-31): find-skills is NOT — it arrives via the install flow (plan 11-04), not
-// baked into the binary.
+// builtinFS holds the skills Aura ships in-binary. Two builtins are embedded:
+// skill-creator (D-31, the spec-compliant authoring meta-skill) and find-skills-aura
+// (amendment #51 / D-40, the always:true self-extension skill that teaches the
+// `npx skills find/add` discovery+install loop in the sandbox — superseding the
+// deleted catalog client + native installer + their tool actions).
 //
 //go:embed embed
 var builtinFS embed.FS

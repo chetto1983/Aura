@@ -31,6 +31,17 @@ var askUserToolName = tools.AskUser{}.Spec().Name
 // dispatch as a RoleTool error. The returned []llm.ToolCall is the ask_user-only
 // rewrite of the assistant message (D-A1-07 OpenAI wire-correctness): siblings are
 // dropped and re-emitted by the model on the next round.
+//
+// ARCHITECTURAL CONSTRAINT (amendment #51 / D-40): ONLY ask_user pauses the turn.
+// The pause is NAME-GATED here — a non-ask_user tool whose Execute returns
+// tools.ErrAwaitingUserInput does NOT pause; runTool renders it as a RoleTool error
+// (`error: awaiting user input`, the sentinel's Error() string) and the loop
+// continues. Spike 012b proved this: the old skill install-gate returned the
+// sentinel from a non-ask_user tool, its red-flag/question payload was silently
+// dropped, and the turn never paused. That dead install-gate path was deleted in
+// plan 11-09 Task 1. Any future tool needing to pause MUST route through ask_user
+// (or the dispatch must learn to surface tool sentinels) — never assume a tool
+// error pauses. Proven by TestAskUserOnlyPauseConstraint.
 func (a *LlmAgent) pauseCalls(ctx context.Context, calls []llm.ToolCall) []pauseCall {
 	var out []pauseCall
 	for i := range calls {
