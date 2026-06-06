@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -225,5 +226,17 @@ func TestUsageFromStateDelta(t *testing.T) {
 	}
 	if u.Cost == nil || *u.Cost != cost {
 		t.Fatalf("want cost %v, got %v", cost, u.Cost)
+	}
+
+	// IN-03: the StateDelta is decoded with UseNumber, so cost_usd can arrive as a
+	// json.Number; anyFloat must read it (and int64) rather than falling back to the
+	// price table.
+	jn := usageFromStateDelta(map[string]any{"cost_usd": json.Number("0.0125")})
+	if jn.Cost == nil || *jn.Cost != 0.0125 {
+		t.Fatalf("json.Number cost_usd must decode to 0.0125, got %v", jn.Cost)
+	}
+	i64 := usageFromStateDelta(map[string]any{"cost_usd": int64(2)})
+	if i64.Cost == nil || *i64.Cost != 2 {
+		t.Fatalf("int64 cost_usd must decode to 2, got %v", i64.Cost)
 	}
 }

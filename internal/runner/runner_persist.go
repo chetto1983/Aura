@@ -345,12 +345,21 @@ func anyInt(v any) int {
 	}
 }
 
+// anyFloat mirrors anyInt's type set and adds a json.Number case (IN-03): the
+// StateDelta is decoded with UseNumber (event.go), so cost_usd can arrive as a
+// json.Number rather than a float64. Without the json.Number/int64 cases a priced
+// turn would silently fall back to the price table instead of using the wire cost.
 func anyFloat(v any) (float64, bool) {
 	switch f := v.(type) {
 	case float64:
 		return f, true
 	case int:
 		return float64(f), true
+	case int64:
+		return float64(f), true
+	case json.Number:
+		n, err := f.Float64()
+		return n, err == nil
 	default:
 		return 0, false
 	}
