@@ -83,6 +83,49 @@ func (w *Writer) Archive(ctx context.Context, name string, src ApprovalSource, a
 	return nil
 }
 
+// Restore is the inverse of Archive (RESEARCH Pattern 1): it promotes
+// archived/<name> → active, re-materializes the snippet into the export dir (so the
+// loader + the D-01 host path see it again), flips the usage sidecar back to "active",
+// and records an audit row. It is the recovery path for an over-eager archive (manual
+// or TTL-swept) — action=restore in the skill tool, or the operator CLI.
+//
+// ACTION-CONSTANT DECISION (load-bearing): the 0010 `action` CHECK does NOT list
+// 'restore', and this phase is forbidden from adding a snippet migration (D-19 / the
+// forbidden-to-create list). A restore IS a re-activation, so it is recorded as the
+// EXISTING AuditActivate constant with the cli ApprovalCLI source — the D-29 cli tuple
+// (NULL token, gate_recommended=true, gate_taken=true) is already accepted by both the
+// action CHECK and the coherence CHECK. There is deliberately NO AuditRestore constant
+// (it would fail the live action CHECK). A future reader: restore audits as
+// 'activate'/'cli', not a missing 'restore' action.
+func (w *Writer) Restore(ctx context.Context, name string, src ApprovalSource, actor AuditActor) error {
+	// Validate the name grammar BEFORE joining it into a path (chokepoint, D-30): a
+	// name that passes ^[a-z0-9-]{1,64}$ cannot contain a path separator or "..".
+	if err := SanitizeName(name, name); err != nil {
+		return fmt.Errorf("restore %q: %w", name, err)
+	}
+	if w.archiveDir == "" {
+		return fmt.Errorf("restore %q: archive dir not configured", name)
+	}
+	srcDir := filepath.Join(w.archiveDir, name)
+	dstDir := filepath.Join(w.activeDir, name)
+
+	hash, _ := HashSkillDir(srcDir) // best-effort; hash the archived tree before the move
+
+	if err := promoteDir(srcDir, dstDir); err != nil {
+		return fmt.Errorf("restore %q: promote archived->active: %w", name, err)
+	}
+	if err := Materialize(name, dstDir, w.exportDir); err != nil {
+		return fmt.Errorf("restore %q: materialize: %w", name, err)
+	}
+	if err := w.SetUsageStatus(name, "active"); err != nil {
+		return fmt.Errorf("restore %q: usage status: %w", name, err)
+	}
+	if err := w.auditActivationLike(ctx, name, AuditActivate, hash, src, actor); err != nil {
+		return fmt.Errorf("restore %q: audit: %w", name, err)
+	}
+	return nil
+}
+
 // Delete is the Destructive-tiered removal: de-materialize, remove the skill dir
 // (active and pending), and record a delete audit row. It is invoked by
 // WriteMutation for action=delete and by the CLI.
