@@ -113,7 +113,7 @@ Wave 8:
 
 **Wave 9** *(slice 7g — amendment #51 / D-40, skill-driven self-extension; ADDED post-execution)*
 
-- [ ] 11-09-PLAN.md — 7g deletion: delete the model-facing discovery/install Go complex (~2,050 LOC: catalog client, native installer, skill_install actions, CLI legs, serve/eval adapters, 3 env knobs) + ship find-skills-aura builtin (always:true, messages[1]) + Loader-level injection blocklist scan (D-27/D-28 amended) + persistent-install Loader root (#50) + byte-stable SystemPrompt §Skills shrink (D-40)
+- [x] 11-09-PLAN.md — 7g deletion: delete the model-facing discovery/install Go complex (~2,050 LOC: catalog client, native installer, skill_install actions, CLI legs, serve/eval adapters, 3 env knobs) + ship find-skills-aura builtin (always:true, messages[1]) + Loader-level injection blocklist scan (D-27/D-28 amended) + persistent-install Loader root (#50) + byte-stable SystemPrompt §Skills shrink (D-40)
 
 **Wave 10** *(blocked on Wave 9)*
 
@@ -474,7 +474,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
-| 11. Skills | 7/8 | In Progress|  |
+| 11. Skills | 8/10 | In Progress|  |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
