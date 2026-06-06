@@ -94,6 +94,21 @@ func SnippetSandboxPath(name string, lang SnippetLanguage) (string, error) {
 	return inSandboxSkillsRoot + "/" + name + "/" + file, nil
 }
 
+// SnippetHostPath returns the HOST by-path target action=use hands out under D-01
+// (host-primary): exportDir/<name>/<name>.<ext>. It mirrors SnippetSandboxPath EXACTLY
+// (same snippetMetaByLang ext map, same structured ErrInvalidStructure for an unknown
+// language) but roots the path at AURA_SKILL_EXPORT_DIR via filepath.Join so the path
+// is OS-correct — it is the file the model runs through the host shell_exec, not the
+// in-container /skills mount (which SnippetSandboxPath still serves for the sandbox_exec
+// escalation).
+func SnippetHostPath(name string, lang SnippetLanguage, exportDir string) (string, error) {
+	file, err := SnippetCodeFile(name, lang)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(exportDir, name, file), nil
+}
+
 // SnippetInvocation resolves a snippet's by-path invocation from a (possibly aliased)
 // language string: the in-sandbox path AND the interpreter the caller passes to
 // sandbox_exec (D-04). It is the loader-adapter + CLI entry point (it accepts the raw
@@ -225,12 +240,13 @@ func (w *Writer) writePendingSnippet(name string, fm Frontmatter, docsBody, code
 // renderSnippetDocs builds the SKILL.md body a snippet carries: a human/model-facing
 // doc frame describing the language, the by-path invocation, and the optional
 // inputs_schema/outputs_desc/deps/tags (D-20, docs-only). It is NOT the code — the
-// code lives in the sibling <name>.<ext> file. use renders this verbatim.
+// code lives in the sibling <name>.<ext> file. use renders this verbatim. The frame
+// stays GENERIC (no baked execution-tier path, D-01/RESEARCH option b): the concrete
+// host vs sandbox invocation is computed at use-time by the tool layer, so an
+// already-materialized snippet needs no re-render when the posture changes.
 func renderSnippetDocs(fm Frontmatter, meta snippetMeta) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "Executable snippet (%s). Run it BY PATH in the sandbox:\n\n", fm.Language)
-	path, _ := SnippetSandboxPath(fm.Name, SnippetLanguage(fm.Language))
-	fmt.Fprintf(&b, "    sandbox_exec {command: %q, args: [%q, ...]}\n\n", meta.interpreter, path)
+	fmt.Fprintf(&b, "Executable snippet (%s). Run the %s interpreter against the snippet file by path (the exact invocation is provided when you use it).\n\n", fm.Language, meta.interpreter)
 	if fm.OutputsDesc != "" {
 		fmt.Fprintf(&b, "Outputs: %s\n", fm.OutputsDesc)
 	}
@@ -250,18 +266,24 @@ func renderSnippetDocs(fm Frontmatter, meta snippetMeta) string {
 }
 
 // SnippetUse is what UseSnippet returns: the docs-rendered instructions the model
-// reads + the stable in-sandbox path + interpreter so the model assembles the exact
-// sandbox_exec call (interpreter + path, D-04).
+// reads + the by-path targets + interpreter so the model assembles the exact run call.
+// HostPath is the D-01 host-primary target (run via shell_exec by path); SandboxPath
+// is the named sandbox_exec escalation target (in-container /skills mount). Both ride
+// so the tool layer frames host-primary while keeping the escalation available.
 type SnippetUse struct {
 	Instructions string
+	HostPath     string
 	SandboxPath  string
 	Interpreter  string
 	Language     SnippetLanguage
 }
 
-// UseSnippet resolves an ACTIVE snippet for the model (D-04): it returns the docs body
-// + the stable /skills/<name>/<name>.<ext> path + the interpreter. The model then
-// calls sandbox_exec {command: <interpreter>, args: [<path>, ...]}. It reads the
+// UseSnippet resolves an ACTIVE snippet for the model (D-01/D-04): it returns the docs
+// body + the HOST export-dir by-path target (the model runs it via shell_exec) + the
+// in-sandbox path (preserved for the sandbox_exec escalation) + the interpreter. The
+// host path is derived fresh at use-time from w.exportDir (RESEARCH option b) so an
+// already-materialized snippet needs no re-materialization. SanitizeName runs FIRST
+// (T-18-05-T) so a crafted name cannot traverse out of the export dir. It reads the
 // active SKILL.md frontmatter to learn the language; a non-snippet or unknown skill is
 // a structured error. It does NOT execute anything (no bespoke run, D-04).
 func (w *Writer) UseSnippet(name string) (SnippetUse, error) {
@@ -284,10 +306,12 @@ func (w *Writer) UseSnippet(name string) (SnippetUse, error) {
 	if lerr != nil {
 		return SnippetUse{}, fmt.Errorf("use snippet %q: %w", name, lerr)
 	}
-	path, _ := SnippetSandboxPath(name, lang)
+	sandboxPath, _ := SnippetSandboxPath(name, lang)
+	hostPath, _ := SnippetHostPath(name, lang, w.exportDir)
 	return SnippetUse{
 		Instructions: body,
-		SandboxPath:  path,
+		HostPath:     hostPath,
+		SandboxPath:  sandboxPath,
 		Interpreter:  meta.interpreter,
 		Language:     lang,
 	}, nil

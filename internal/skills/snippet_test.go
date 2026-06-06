@@ -56,6 +56,33 @@ func TestSnippetSandboxPath(t *testing.T) {
 	}
 }
 
+// TestSnippetHostPath asserts the host-path resolver joins the export dir with the
+// language-correct extension via filepath.Join (OS-correct separators). It is the
+// host-primary (D-01) mirror of SnippetSandboxPath: same ext map, but rooted at
+// AURA_SKILL_EXPORT_DIR instead of the in-container /skills mount.
+func TestSnippetHostPath(t *testing.T) {
+	t.Parallel()
+	export := filepath.Join("home", "u", ".aura", "skills", "export")
+	cases := map[SnippetLanguage]string{
+		LangPython: filepath.Join(export, "calc", "calc.py"),
+		LangShell:  filepath.Join(export, "calc", "calc.sh"),
+		LangJS:     filepath.Join(export, "calc", "calc.js"),
+	}
+	for lang, want := range cases {
+		got, err := SnippetHostPath("calc", lang, export)
+		if err != nil {
+			t.Fatalf("SnippetHostPath(calc,%q): %v", lang, err)
+		}
+		if got != want {
+			t.Fatalf("SnippetHostPath(calc,%q) = %q, want %q", lang, got, want)
+		}
+	}
+	// An unknown language returns the same structured error SnippetSandboxPath returns.
+	if _, err := SnippetHostPath("calc", SnippetLanguage("ruby"), export); !errors.Is(err, ErrInvalidStructure) {
+		t.Fatalf("SnippetHostPath(ruby) = %v, want ErrInvalidStructure", err)
+	}
+}
+
 // TestSnippetInvocationResolvesInterpreter asserts SnippetInvocation maps the (aliased)
 // language to the right interpreter + path.
 func TestSnippetInvocationResolvesInterpreter(t *testing.T) {
@@ -135,8 +162,10 @@ func TestSaveSnippetTierAndNetworkSurfaced(t *testing.T) {
 	}
 }
 
-// TestUseSnippetReturnsPath asserts UseSnippet returns the in-sandbox /skills path +
-// interpreter + the docs body for an ACTIVE snippet, and errors for a non-snippet.
+// TestUseSnippetReturnsPath asserts UseSnippet returns the HOST export-dir path (the
+// D-01 host-primary by-path target the model runs via shell_exec) + interpreter + the
+// docs body for an ACTIVE snippet, and errors for a non-snippet. The sandbox path stays
+// populated for the named sandbox_exec escalation.
 func TestUseSnippetReturnsPath(t *testing.T) {
 	t.Parallel()
 	w, root := newTestWriter(t)
@@ -157,8 +186,15 @@ func TestUseSnippetReturnsPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UseSnippet: %v", err)
 	}
+	// D-01 host-primary: the primary by-path target is the HOST export-dir path the
+	// model runs via shell_exec, derived fresh from the Writer's export dir.
+	wantHost := filepath.Join(root, "export", "calc", "calc.py")
+	if use.HostPath != wantHost {
+		t.Fatalf("HostPath = %q, want %q", use.HostPath, wantHost)
+	}
+	// The sandbox path stays populated for the named sandbox_exec escalation.
 	if use.SandboxPath != "/skills/calc/calc.py" {
-		t.Fatalf("SandboxPath = %q, want /skills/calc/calc.py", use.SandboxPath)
+		t.Fatalf("SandboxPath = %q, want /skills/calc/calc.py (escalation path preserved)", use.SandboxPath)
 	}
 	if use.Interpreter != "python3" {
 		t.Fatalf("Interpreter = %q, want python3", use.Interpreter)
