@@ -1,44 +1,48 @@
-# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35) — 2026-06-05T19:55:49Z
+# Aura Live Skills xlsx North-Star E2E (CAP-07 / CAP-08 / D-35, #51/D-40) — 2026-06-06T07:21:51Z
 
 Model: `deepseek/deepseek-v4-flash:exacto` (via OpenRouter). Live, paid, non-deterministic MANUAL gate — NOT CI.
 
 ## Reproduce
 
 ```bash
-docker compose build aura-sandbox-agent && make sandbox-up && make db-migrate
+docker compose build aura-sandbox-agent && make sandbox-up
 docker compose up -d searxng
 set -a; . ./.env; set +a
 export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
-export AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468 AURA_SANDBOX_AGENT_TOKEN=... AURA_SKILL_EXPORT_DIR=... AURA_SKILLS_DIR=...
-export AURA_DB_URL=... AURA_DB_MIGRATE_URL=... POSTGRES_PASSWORD=... SEARXNG_URL=http://127.0.0.1:18080/search
+export AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468 AURA_SANDBOX_AGENT_TOKEN=... AURA_SKILLS_DIR=...
+export SEARXNG_URL=http://127.0.0.1:18080/search
 go test -tags cot_eval -run TestSkillsE2E -timeout 900s -v ./internal/eval/
 ```
 
-## Hard floor (artifact-not-reply ground truth, D-35)
+## Hard floor (artifact-not-reply ground truth, D-35 #51/D-40)
 
 | Signal | Target | Observed | Pass |
 |---|---|---|---|
 | Natural prompt (no skill/install hint) | true | true | true |
-| tool_use seq catalog→ask_user→install→sandbox_exec | in order | [skill tool_search skill tool_search skill ask_user ask_user skill tool_search skill skill skill sandbox_exec tool_search tool_search web_search web_fetch read_tool_output read_tool_output web_fetch read_tool_output current_time web_fetch sandbox_exec read_tool_output sandbox_exec web_fetch sandbox_exec sandbox_exec sandbox_exec sandbox_exec sandbox_exec] | false |
-| Install-approval pause before install | fired+approved | false | false |
-| .xlsx produced in workspace | exists | true | true |
+| self-install `npx skills add` (structured args) | ran | false | false |
+| self-install targeted anthropics/skills | true | false | false |
+| self-install carried --skill xlsx | true | false | false |
+| .xlsx produced FRESH in workspace | newer-than-start | false | false |
 | .xlsx re-opens via openpyxl | opens | true | true |
 | .xlsx contains today's date | present | false | false |
-| Artifact path | — | /workspace/Yahoo_Finance_Mercato_2026-06-05.xlsx | — |
+| Artifact path | — | /workspace/Mercato_Finanziario_2026-06-05.xlsx | — |
+| Action-aware tool calls | — | current_time → sandbox_exec(npx skills find yahoo finance) → tool_search → tool_search → tool_search → tool_search → sandbox_exec(python3 --version) → sandbox_exec(python3 -c "import openpyxl; print(openpyx… | — |
 
-## Judge rubric (≥90% average gate, D-35)
+## Judge rubric (≥90% average gate over 2 dims, D-35 #51/D-40)
 
 | Dimension | Score /5 |
 |---|---|
-| capability_gap_recognition | 3 |
-| install_prudence | 1 |
-| skill_output_quality | 3 |
+| capability_gap_recognition | 1 |
+| skill_output_quality | 2 |
 
-Skills-judge mean (capability-gap/install-prudence/output-quality): **0.47** (gate ≥0.90) → false
+Skills-judge mean (capability-gap / output-quality): **0.30** (gate ≥0.90) → false
 
 ## Notes
 
-- xlsx missing today's date (2026-06-05 | 05/06/2026 | 5/6/2026 | 05-06-2026 | 5 giugno 2026 | June 5, 2026)
-- seqOK=false install_approved=false xlsx(exists=true opens=true today=false) judgeMean=0.47
+- self-install did not target anthropics/skills
+- self-install did not carry the --skill xlsx selector
+- newest .xlsx is older than the run start (stale, not this run's output): XLSX_PATH=/workspace/Mercato_Finanziario_2026-06-05.xlsx XLSX_STALE XLSX_OPENS TODAY_MISSING AURA-XLSX-VERIFIED 
+- xlsx missing today's date (2026-06-06 | 06/06/2026 | 6/6/2026 | 06-06-2026 | 6 giugno 2026 | June 6, 2026)
+- selfInstall=false target=false selector=false xlsx(fresh=false opens=true today=false) judgeMean=0.30
 
 ## Overall verdict: FAIL (a dual-gate signal below threshold — see table)
