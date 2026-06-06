@@ -44,7 +44,7 @@
 //
 //	docker compose up -d searxng                               # web tools backend (today's data)
 //	set -a; . ./.env; set +a
-//	export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"           # host python3 + openpyxl
+//	export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"           # host python3 + openpyxl + yfinance (Pitfall 7)
 //	export AURA_DB_URL="postgres://aura_app:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
 //	export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
 //	export AURA_RUN_DIR=<inspectable scratch>; export SEARXNG_URL=http://127.0.0.1:18080/search
@@ -280,7 +280,7 @@ func (h *reuseHarness) preseedSnippet(t *testing.T, ctx context.Context) {
 	if _, err := h.writer.SaveSnippet(ctx, reuseSnippetName, "python", reuseSnippetCode(),
 		skills.Frontmatter{
 			Name:         reuseSnippetName,
-			Description:  "Build an .xlsx of today's market from a fetched table; writes the workbook into the current working directory.",
+			Description:  "Build an .xlsx of today's market: fetches live Yahoo Finance quotes (yfinance) for the US indices + mega-caps and writes Mercato_Yahoo_<date>.xlsx into the current working directory.",
 			NeedsNetwork: true,
 		}, actor); err != nil {
 		t.Fatalf("preseed: SaveSnippet: %v", err)
@@ -455,32 +455,75 @@ func (h *reuseHarness) readLedgerWindow(t *testing.T, ctx context.Context, convI
 	return w
 }
 
-// reuseSnippetCode is the pre-seeded python xlsx-builder. It is a REAL runnable openpyxl
-// script (the gate measures reuse of a vetted artifact, not authoring): it fetches a market
-// table via the host's urllib (no third-party http dep), and writes today's date + the rows
-// into <cwd>/Mercato_Oggi_<YYYY-MM-DD>.xlsx. It needs only openpyxl on the host (the Pitfall
-// 7 host-dep prerequisite the operator invocation documents). The blocklist scan runs on
-// THIS code at save time — it is benign by construction.
+// reuseSnippetCode is the pre-seeded python xlsx-builder. It is a REAL runnable script that
+// HONORS the snippet's declared SaveSnippet description ("Build an .xlsx of today's market
+// from a fetched table"): it fetches LIVE quotes via yfinance for a fixed representative set
+// (the three US indices + the mega-caps), then writes the rows + an "Aggiornato al
+// <YYYY-MM-DD>" date cell into <cwd>/Mercato_Yahoo_<YYYY-MM-DD>.xlsx, prints the filename, and
+// exits NON-ZERO with a clear message on a fetch failure (so the model SEES a failure rather
+// than silently shipping a stub). The gate measures REUSE of this vetted artifact, not
+// authoring — a steady-state run is "skill action=use → host by-path exec → verify → reply".
+//
+// HOST PREREQUISITE (Pitfall 7, documented in the operator invocation): python3 + openpyxl +
+// yfinance on the host PATH. The blocklist scan runs on THIS code at save time — it is benign
+// by construction. The script runs in ~2-5s (one batched yfinance download), inside the
+// steady-state budget. The date cell carries the ISO form the strict today-floor scans for, so
+// the snippet's OWN output satisfies the artifact assertion (no recovery churn).
 func reuseSnippetCode() string {
 	return `import sys, datetime
+import yfinance as yf
 from openpyxl import Workbook
 
-today = datetime.date.today().isoformat()
-rows = [
-    ("AAPL", "Apple", today),
-    ("MSFT", "Microsoft", today),
-    ("GOOGL", "Alphabet", today),
-    ("AMZN", "Amazon", today),
+TICKERS = [
+    ("^GSPC", "S&P 500"),
+    ("^DJI", "Dow Jones"),
+    ("^IXIC", "Nasdaq"),
+    ("AAPL", "Apple"),
+    ("MSFT", "Microsoft"),
+    ("GOOGL", "Alphabet"),
+    ("AMZN", "Amazon"),
+    ("META", "Meta"),
+    ("TSLA", "Tesla"),
+    ("NVDA", "Nvidia"),
 ]
+
+today = datetime.date.today().isoformat()
+symbols = [t for t, _ in TICKERS]
+data = yf.download(symbols, period="2d", interval="1d", group_by="ticker",
+                   auto_adjust=False, progress=False, threads=True)
+if data is None or data.empty:
+    sys.exit("ERRORE: nessun dato restituito da Yahoo Finance")
+
+rows = []
+for sym, name in TICKERS:
+    try:
+        sub = data[sym].dropna()
+    except Exception as e:
+        print("WARN", sym, e, file=sys.stderr)
+        continue
+    if sub.empty:
+        continue
+    last = sub.iloc[-1]
+    close = float(last["Close"])
+    vol = int(last["Volume"]) if last["Volume"] == last["Volume"] else 0
+    prev = float(sub.iloc[-2]["Close"]) if len(sub) >= 2 else 0.0
+    var = (close - prev) / prev * 100.0 if prev else 0.0
+    rows.append((sym, name, round(close, 2), round(var, 2), vol))
+
+if not rows:
+    sys.exit("ERRORE: nessun ticker recuperato da Yahoo Finance")
+
 wb = Workbook()
 ws = wb.active
 ws.title = "Mercato Oggi"
-ws.append(["Ticker", "Nome", "Data"])
+ws["A1"] = "Aggiornato al %s" % today
+ws.append([])
+ws.append(["Ticker", "Nome", "Prezzo", "Var %", "Volume"])
 for r in rows:
     ws.append(list(r))
-out = "Mercato_Oggi_%s.xlsx" % today
+out = "Mercato_Yahoo_%s.xlsx" % today
 wb.save(out)
-print("WROTE", out)
+print("WROTE", out, "(%d tickers)" % len(rows))
 `
 }
 

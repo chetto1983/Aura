@@ -373,7 +373,7 @@ trivially and gate nothing. The grounded replacement the gate enforces:
 ```bash
 docker compose up -d searxng                               # web tools backend (today's data)
 set -a; . ./.env; set +a
-export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"           # host python3 + openpyxl (Pitfall 7)
+export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"           # host python3 + openpyxl + yfinance (Pitfall 7)
 export AURA_DB_URL="postgres://aura_app:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
 export AURA_DB_MIGRATE_URL="postgres://aura_migrate:${POSTGRES_PASSWORD}@127.0.0.1:5432/aura?sslmode=disable"
 export AURA_RUN_DIR=<inspectable scratch>; export SEARXNG_URL=http://127.0.0.1:18080/search
