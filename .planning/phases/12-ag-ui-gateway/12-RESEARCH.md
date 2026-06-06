@@ -411,7 +411,7 @@ AGUICORSPermissive: envBoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
 
 **These assumptions are LOW-risk and spike-grounded; none block planning. A2/A4 are the two design choices the planner should lock explicitly.**
 
-## Open Questions
+## Open Questions (RESOLVED — locked in plans 12-01/12-03)
 
 1. **Text-message run-boundary policy (the one real design decision)**
    - What we know: Real Run streams per-token chunk Events AND a final Event carrying the full answer + FinishReason (`llm_agent.go` consume→chunkEvent then finalEvent).
