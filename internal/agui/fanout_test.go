@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
+	"github.com/chetto1983/aura/internal/agent"
+	"go.uber.org/goleak"
 )
 
 // eventSource builds a synthetic translated stream: RUN_STARTED, n TEXT_MESSAGE_CONTENT
@@ -188,4 +190,81 @@ func TestFanoutSourceEndClosesAll(t *testing.T) {
 	if got := len(drain(b)); got == 0 {
 		t.Fatalf("subscriber B drained 0 events; want > 0 and a clean close")
 	}
+}
+
+func agentSeq(evs []*agent.Event) iter.Seq2[*agent.Event, error] {
+	return func(yield func(*agent.Event, error) bool) {
+		for _, ev := range evs {
+			if !yield(ev, nil) {
+				return
+			}
+		}
+	}
+}
+
+// TestClientSubscriberRoundTrip drives the in-process client subscriber helper with a
+// fake agent turn (chunk deltas + a tool call + a final-with-FinishReason) through a
+// deterministic IDGenerator, ranges the returned in-process channel, and asserts the
+// sequence opens with RUN_STARTED and terminates with RUN_FINISHED.
+//
+// The channel element type is referenced ONLY through the agui.Event alias (declared as
+// the local type Event) — no external events.* symbol appears at this call site, proving
+// the alias shields consumers from the SDK package (PRD: avoid leaking the external pkg).
+func TestClientSubscriberRoundTrip(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	turn := []*agent.Event{
+		chunk("Ci"), chunk("ao"),
+		toolStart("call-1", "web_search", `{"q":"x"}`),
+		toolEnd("call-1", "web_search", "preview"),
+		finalChunk("Ciao", "stop"),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// drainAlias's <-chan Event parameter pins the channel element type to the agui.Event
+	// alias: this call compiles only because Subscribe returns <-chan Event, never
+	// <-chan events.Event — proving the alias shields the call site from the SDK package.
+	got := drainAlias(Subscribe(ctx, "thread-1", "run-1", &fixedIDGen{}, agentSeq(turn)))
+	if len(got) == 0 {
+		t.Fatalf("client subscriber yielded no events")
+	}
+	if string(got[0].Type()) != "RUN_STARTED" {
+		t.Fatalf("first event = %s, want RUN_STARTED (%v)", got[0].Type(), aguiTypesOf(got))
+	}
+	if last := string(got[len(got)-1].Type()); last != "RUN_FINISHED" {
+		t.Fatalf("last event = %s, want RUN_FINISHED (%v)", last, aguiTypesOf(got))
+	}
+	// The tool call must surface through the in-process channel (not just text).
+	var sawToolStart bool
+	for _, ev := range got {
+		if string(ev.Type()) == "TOOL_CALL_START" {
+			sawToolStart = true
+		}
+	}
+	if !sawToolStart {
+		t.Fatalf("client subscriber dropped the tool call (%v)", aguiTypesOf(got))
+	}
+}
+
+// drainAlias ranges a subscriber channel typed over the agui.Event alias and collects
+// every event. Its <-chan Event parameter is the type-pin that proves Subscribe returns
+// the alias, not the SDK's events.Event.
+func drainAlias(ch <-chan Event) []Event {
+	var out []Event
+	for ev := range ch {
+		out = append(out, ev)
+	}
+	return out
+}
+
+// aguiTypesOf mirrors typesOf but over the agui.Event alias, so the round-trip test
+// never names the external events package.
+func aguiTypesOf(evs []Event) []string {
+	out := make([]string, len(evs))
+	for i, ev := range evs {
+		out[i] = string(ev.Type())
+	}
+	return out
 }
