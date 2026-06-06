@@ -64,7 +64,12 @@ func (s *ShellExec) Spec() Spec {
 func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
 	var a shellExecArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
-		return ToolResult{}, fmt.Errorf("shell_exec args: %w", err)
+		// Truncated args are almost always the output-token budget cutting a giant
+		// command mid-JSON (observed live: a one-shot python script carrying all its
+		// data). The hint steers the model to the incremental pattern instead of
+		// retrying the same oversized call (D-15 self-correction).
+		return ToolResult{}, fmt.Errorf("shell_exec args: %w — your arguments were likely truncated by the output budget; "+
+			"write long content to a file in SMALL appends across multiple calls (cat >> work.py <<'EOF' ... EOF), then run the file", err)
 	}
 	if strings.TrimSpace(a.Command) == "" {
 		return ToolResult{}, fmt.Errorf("shell_exec: command is required")
