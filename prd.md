@@ -1618,6 +1618,30 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ---
 
+## §Cross-cutting — Completion gate (amendment #54, D-43)
+
+**Gap scoperto (2026-06-06, live North-Star xlsx "Borsa" run + operator disaster review).** Il run-loop (`internal/agent`) terminava il turno su `text_response` (o sul content-stop fallback) **senza alcun contratto fra richiesta, side-effect e risposta**. Il prompt dichiara "verify before reporting / Done means the deliverable exists and is verified" ma è **solo prosa non imposta dal codice**: con un modello debole (DeepSeek-V4) il loop accettava "ho scritto lo script, eseguilo tu" come terminazione valida. Side-effect osservato: `fs_write create_borsa_excel.py` + `text_response` che promette `Borsa_Italiana_06_06_2026.xlsx`, file **mai prodotto**, turno chiuso verde. Radice: il modello decide quando ha finito, e sbaglia; il runtime non aveva stato "deliverable required/verified".
+
+**Decisione D-43 — critic-gate condizionale.** Prima di accettare una terminazione VOLONTARIA (`text_response` o content-stop; NON le terminazioni forzate da budget/dedup di D-04/D-08, che già finalizzano sotto pressione), il loop interroga un verificatore. Riusa il seam `maybeRecover` (counter-gated nudge-once, D-08) con un contatore dedicato `completionAttempts` (max 1), ortogonale a `recoveryAttempts`.
+
+- **Critic call** (modello in `AURA_COMPLETION_CRITIC_MODEL`, default = modello del loop): `ToolChoice="none"`, prompt compatto = richiesta utente + digest dei side-effect osservati (tool mutanti + risultati: path scritti, exit code) + risposta proposta. Output strutturato `DONE` / `NOT_DONE: <reason>`, parsato sul prefisso (NO regex su prosa — `feedback_no_regex_for_nlp`). Ordine esplicito al critic: **giudica dai risultati dei tool, non dalle affermazioni dell'assistant**.
+- **NOT_DONE** + `completionAttempts==0` → veto: il loop NON termina. Al ramo `text_response` il veto appende un `RoleTool` result (wire-valid: il tool_call ha la sua risposta) col feedback e continua un giro; al ramo content-stop appende la prosa proposta + un nudge `RoleUser` e continua. Il giro extra passa dal budget gate → bounded, niente loop infinito.
+- **DONE** / counter esaurito / critic rotto → terminazione accettata, invariata.
+
+**Tre guardrail (forma minima industriale, no over-engineering — `feedback_no_atomic_bombs_minimal_industrial_shape`):**
+
+1. **Solo su turni con side-effect.** Nuovo flag `Spec.Mutating` (precedente: `Spec.Deferred`): `fs_write`/`fs_edit`/`shell_exec`/`sandbox_exec`/`skill{create,update,delete}` = true; letture/web/time/`skill{list,info,use}`/`text_response`/`tool_search` = false. `shell_exec` è conservativamente `true` (non sappiamo staticamente se `ls` o `python x.py`). Turno di sola lettura / chat puro → gate mai eseguito, **zero costo extra**.
+2. **Una sola critic call per turno** (`completionAttempts` max 1; la critic call non spende uno step di budget — come `finalize`/`synthesize`).
+3. **Fail-open + off-switch.** Critic in errore/vuoto/non-parsabile → accetta la terminazione. `AURA_COMPLETION_GATE=0` lo disattiva. Lo zero-value `llm.Config{}` ha `CompletionGate=false` → i unit test (config a mano) hanno il gate OFF di default; `llm.Load()` lo accende (`AURA_COMPLETION_GATE` default `1`).
+
+**Narrowing di amendment #50/D-15c (no-path-fence) — fix #5.** La decisione "full host, nessun fence" di #50 lasciava `fs_write`/`fs_edit` liberi di scrivere dentro la skill-library (`$AURA_SKILLS_DIR`, export incluso), **aggirando il gate di authoring `skill action=create→pending→approve` (D-02/D-03)**. Osservato live: `fs_write` di un `SKILL.md` dentro `~/.aura/skills/export/.../xlsx/` durante un task utente. **Fence chirurgico SOLO sulla skills-dir**: un write/edit con target dentro `$AURA_SKILLS_DIR` ritorna errore che reindirizza al `skill` tool gated. La filosofia full-host di #50 resta intatta ovunque altro (NARROWING mirata, non ripristino del fence generale).
+
+**Fix collaterali stesso commit:** (#3) `resolveFSPath` espande `~`/`~/...` via `os.UserHomeDir()` — i tool `fs_*` erano asimmetrici vs `shell_exec` (bash espande `~`, da cui call extra `ls`/`realpath` di rumore); (#4) una riga in `<machine>` del system prompt guida l'uso di un interprete unico + `python -m pip` (cache-bust messages[0] una volta, sincronizzato a `docs/system_prompt.txt` — c'è un test che lo verifica).
+
+**Reason.** Il contratto runtime richiesta↔side-effect↔risposta mancava del tutto; prompt-only non regge su modelli deboli. Il gate condizionale è la forma minima che cattura il fail Borsa senza tassare i turni puri e senza un sottosistema di intent-classification.
+
+---
+
 ## §Cross-cutting — KV cache invariant CI (amendment #16, Pitfall #3 P0)
 
 Cache poisoning is the highest-risk cross-slice failure mode in Aura. Slice 4 owns the invariant (`messages[0]` byte-identical turn-su-turn) but Slices 1.8, 5, 7e-core, 10, 11e all mutate the message-construction pipeline. Without a cross-slice gate, every capability silently risks planting its own poisoning site. Reference: `reference_aura_cache_poisoning_sites_2026-05-27` (6 sites mapped pre-rewrite — historical record kept as warning).
@@ -4911,6 +4935,8 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `AURA_SCHEDULER_MAX_CONCURRENT_RUNS` | `4` | cap | 6 | Cap concorrenza held-conn (advisory lock per-run su conn dedicata, D-03 Pitfall 2). Dimensionato **strettamente sotto** `pool MaxConns` (amendment #46). |
 | `AURA_SCHEDULER_NOTIFY_RETRY_ATTEMPTS` | `3` | cap | 6 | Retry bounded della delivery prima del fallback definitivo a stdout + flag notification-undelivered (amendment #46, D-22). |
 | `AURA_AGENT_JOB_MAX_DURATION_SEC` | `600` | cap | 6 | Wall-clock end-to-end di un `agent_job` schedulato (amendment #53, D-42). Il fallback 120s analogo allo swarm-child affamava i job-artifact reali (150-360s misurati live); il composition root di `aura serve` lo passa in `AgentDeps.MaxDuration`. |
+| `AURA_COMPLETION_GATE` | `1` (true) | operative | 1 | **Completion critic gate on/off (amendment #54, D-43)**. Quando on, una terminazione volontaria (`text_response`/content-stop) su un turno con side-effect passa per una critic call che verifica che il deliverable esista (giudica dai risultati dei tool, non dalle affermazioni dell'assistant). `0` disattiva. Zero-value `llm.Config{}` = off (unit test a config manuale); `llm.Load()` default on. |
+| `AURA_COMPLETION_CRITIC_MODEL` | `=AURA_LLM_MODEL` | operative | 1 | Modello usato dalla critic call del completion gate (amendment #54, D-43). Vuoto → riusa il modello del loop. La call è `ToolChoice="none"`, bounded a ≤1 per turno, non spende budget step (come `finalize`). |
 | `AURA_BACKUP_DIR` | `~/.aura/backups/` | path | 6 | Destinazione dei dump di backup (`pg_dump`, `neo4j-admin database dump`) via `docker exec` (amendment #46, D-26; riconcilia `$AURA_BACKUP_DIR` del ROADMAP con il path PRD). Retention 14d/7d rolling. |
 | `AURA_SKILLS_DIR` | `~/.aura/skills` | path | 7 | Skills root (active/pending/archived dirs). Global FS; identity only in audit rows (amendment #48, D-34). |
 | `AURA_SKILL_BODY_CAP_BYTES` | `32768` (32 KiB) | cap | 7 | Write-time refuse cap for a SKILL.md body (D-34; also in Caps prose). |
