@@ -177,6 +177,7 @@ func (s *Server) streamSSE(ctx context.Context, w http.ResponseWriter, stream it
 			if !ok {
 				return
 			}
+			ev = redactEvent(ev)
 			if err := writer.WriteEventWithType(ctx, w, ev, string(ev.Type())); err != nil {
 				return // client gone — let the producer drain via ctx (Pitfall 4)
 			}
@@ -288,7 +289,11 @@ func sanitizeErr(err error) string {
 	if err == nil {
 		return ""
 	}
-	msg := err.Error()
+	return sanitizeString(err.Error())
+}
+
+// sanitizeString redacts credential-bearing DSN substrings from an arbitrary string.
+func sanitizeString(msg string) string {
 	return secretPattern.ReplaceAllStringFunc(msg, func(match string) string {
 		scheme := match
 		if idx := strings.Index(match, "://"); idx >= 0 {
@@ -296,4 +301,18 @@ func sanitizeErr(err error) string {
 		}
 		return scheme + "://[redacted]"
 	})
+}
+
+// redactEvent is the server-side belt-and-suspenders for T-12-10: the pure translator
+// forwards a runner error as a RUN_ERROR event carrying the raw err.Error() string. The
+// server sanitizes that message in-flight (before it reaches the wire) so a tool/infra
+// error embedding a DSN/key never leaks, without reaching into the boundary-tested
+// translator. Non-RUN_ERROR events pass through unchanged.
+func redactEvent(ev events.Event) events.Event {
+	re, ok := ev.(*events.RunErrorEvent)
+	if !ok {
+		return ev
+	}
+	re.Message = sanitizeString(re.Message)
+	return re
 }
