@@ -99,10 +99,11 @@ func (r *Runner) persistToolInvocation(ctx context.Context, tr *turnTracker, ev 
 		StartedAt:      timePtrValue(ti.StartedAt),
 		EndedAt:        timePtrValue(ti.EndedAt),
 		DurationMS:     ti.DurationMS,
-		// Arguments/ResultPreview are forwarded VERBATIM into the append-only ledger by
-		// deliberate forensic choice (WR-02): the raw arg JSON may carry a secret the
-		// model placed on a command line, and the ledger is un-deletable. The redaction/
-		// capping design is a tracked follow-up — see store.go toParams + .planning/STATE.md.
+		// Arguments/ResultPreview are forwarded as-observed; the store's toParams seam
+		// caps them to a byte ceiling and runs RedactForLedger over them BEFORE the
+		// durable column (WR-02), so a secret the model placed on a command line lands
+		// as [REDACTED] in the un-deletable ledger. The redaction lives at the store
+		// boundary (store.go toParams) so it covers every emitter, not just this one.
 		Arguments:         ti.Arguments,
 		ArgsBytes:         ti.ArgsBytes,
 		Status:            ti.Status,

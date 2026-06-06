@@ -3,6 +3,7 @@ package toolinvocations
 import (
 	"encoding/json"
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,6 +32,50 @@ func TestEventToParams_StartShape(t *testing.T) {
 	}
 	if !p.ArgsRaw.Valid || p.ArgsRaw.String != `{"command":"echo hi"}` {
 		t.Fatalf("ArgsRaw = %+v", p.ArgsRaw)
+	}
+}
+
+// TestEventToParams_RedactsArgsSecret is the WR-02 store-boundary regression: a
+// Bearer token placed in the tool Arguments must land [REDACTED] in the
+// InsertToolInvocationParams.ArgsRaw column, never verbatim, while ArgsBytes keeps
+// the pre-redaction forensic byte count of the original argument. result_preview is
+// likewise redacted.
+func TestEventToParams_RedactsArgsSecret(t *testing.T) {
+	const secret = "sk-or-v1deadbeefcafebabe0123"
+	args := `{"command":"curl -H \"Authorization: Bearer ` + secret + `\" https://x"}`
+	preview := `error: bad token sk-leakedpreviewkey1234567`
+	p, err := (Event{
+		ConversationID: "00000000-0000-0000-0000-000000000001",
+		RequestID:      "00000000-0000-0000-0000-000000000002",
+		ToolCallID:     "call-1",
+		ToolName:       "shell_exec",
+		Event:          EventEnd,
+		Seq:            2,
+		EndedAt:        time.Date(2026, 6, 6, 10, 0, 1, 0, time.UTC),
+		Arguments:      args,
+		ArgsBytes:      len(args),
+		ResultPreview:  preview,
+		PreviewBytes:   len(preview),
+		ResultBytes:    len(preview),
+	}).toParams()
+	if err != nil {
+		t.Fatalf("toParams: %v", err)
+	}
+	if !p.ArgsRaw.Valid {
+		t.Fatal("ArgsRaw must be valid")
+	}
+	if strings.Contains(p.ArgsRaw.String, secret) {
+		t.Errorf("secret persisted verbatim in ArgsRaw: %q", p.ArgsRaw.String)
+	}
+	if !strings.Contains(p.ArgsRaw.String, redactedPlaceholder) {
+		t.Errorf("ArgsRaw missing %q: %q", redactedPlaceholder, p.ArgsRaw.String)
+	}
+	// ArgsBytes records the ORIGINAL argument size, not the redacted footprint.
+	if p.ArgsBytes.Int32 != int32(len(args)) {
+		t.Errorf("ArgsBytes = %d, want pre-redaction byte count %d", p.ArgsBytes.Int32, len(args))
+	}
+	if strings.Contains(p.ResultPreview.String, "sk-leakedpreviewkey1234567") {
+		t.Errorf("secret persisted verbatim in ResultPreview: %q", p.ResultPreview.String)
 	}
 }
 
