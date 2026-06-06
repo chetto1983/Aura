@@ -175,7 +175,11 @@ func newInspectableWorkspace(t *testing.T) string {
 	if parent == "" {
 		parent = os.TempDir()
 	}
-	ws, err := os.MkdirTemp(parent, "aura-skills-e2e-")
+	// The prefix must not carry a forbidden hint word: the dir path is substituted
+	// into the NATURAL prompt ({WORKSPACE}), and a folder literally named "skills"
+	// is a hint the naturalness guard rightly rejects (run 6: judge 1.00, artifact
+	// perfect, gate tripped ONLY by this prefix).
+	ws, err := os.MkdirTemp(parent, "aura-e2e-")
 	if err != nil {
 		t.Fatalf("skills E2E: create inspectable workspace under %q: %v", parent, err)
 	}
