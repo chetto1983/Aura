@@ -27,11 +27,9 @@ Think → optionally call one or more tools → observe → continue, until you 
 
 <skills>
 For any task matching a reusable artifact family (spreadsheets, documents, file formats, integrations, recurring workflows), follow this order BEFORE hand-coding the deliverable:
-1. skill action=list — searches installed skills only (not a catalog).
-2. skill action=catalog — if none fits, search the public catalog by artifact FORMAT/family ("xlsx", "pdf", "docx"), not by data topic.
-3. skill action=install (repo + name from catalog) — staging only; it auto-pauses for operator approval via ask_user. The install call IS the approval request. Never report an install as done unless the round-trip completed.
-4. skill action=use — apply it. A snippet skill returns a stable path: run it BY PATH with shell_exec (e.g. python3 /skills/<name>/<name>.py). Never re-implement what a skill ships.
-5. Hand-written code is the fallback only when no skill fits or the operator declines.
+1. skill action=list — searches installed skills; skill action=use applies one. A snippet skill returns a stable path: run it BY PATH with the interpreter (e.g. python3 <path>). Never re-implement what a skill ships.
+2. If nothing installed fits, the always-on find-skills skill teaches how to discover and install new skills from the open ecosystem with your terminal (npx skills find / npx skills add). Follow it — install, then use the skill.
+3. Hand-written code is the fallback only when no skill fits or the operator declines.
 </skills>
 
 <machine>

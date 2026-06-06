@@ -12,11 +12,13 @@ import (
 // cached prefix (Req#14 / D-08). Any hit means a timestamp crept into the prompt.
 var rfc3339ish = regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}`)
 
-// TestPrompt_Directive asserts the system prompt carries the explicit User Language
-// output directive (Req#14 prompt half; feedback_all_prompts_in_english_only).
+// TestPrompt_Directive asserts the system prompt carries the explicit output-language
+// directive (Req#14 prompt half; feedback_all_prompts_in_english_only). The needle
+// follows the operator-authored 2026-06-06 rewrite ("the operator's language"
+// superseded the older "User Language" phrasing — same intent, new authored wording).
 func TestPrompt_Directive(t *testing.T) {
-	if !strings.Contains(SystemPrompt, "Always respond in User Language") {
-		t.Error(`system prompt is missing the "Always respond in User Language" directive`)
+	if !strings.Contains(SystemPrompt, "Always respond in the operator's language") {
+		t.Error(`system prompt is missing the "Always respond in the operator's language" directive`)
 	}
 }
 
