@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 18-03-PLAN.md (snippet lifecycle + ungated save / Slice 7e)
+stopped_at: Phase 18 + Phase 11 complete (2026-06-06) — next /gsd-discuss-phase 12
 last_updated: "2026-06-06T15:24:47.131Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 20
-  completed_phases: 14
+  completed_phases: 15
   total_plans: 89
-  completed_plans: 88
-  percent: 70
+  completed_plans: 89
+  percent: 75
 ---
 
 # Project State
@@ -21,20 +21,20 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 18 — slice-7e-executable-snippet-reuse-steady-state-artifact-runs
+**Current focus:** Phase 12 — AG-UI Gateway (next; 18 + 11 chiuse 2026-06-06)
 
 ## Current Position
 
-Phase: 16
+Phase: 12 (AG-UI Gateway) — next up
 Plan: Not started
-Status: Ready to execute
+Status: Ready to discuss
 Last activity: 2026-06-06
 
-Progress: [█████████░] 91%
+Progress: [███████▌░░] 75% (15/20 phases)
 
-### Next — Phase 08.1
+### Next — Phase 12
 
-`/gsd-plan-phase 08.1` — Tool Search hardening to Anthropic `defer_loading` parity (BM25/semantic search over name+description+arg fields, MCP tool namespacing, ≥1-non-deferred guard). Reference study in auto-memory + ROADMAP Phase 08.1 detail. Recommended pre-step: stack-up smoke of `sandbox_exec` (`make sandbox-up` → `python -c "print(40+2)"` → `42`).
+`/gsd-discuss-phase 12` — AG-UI Gateway: SSE event protocol transport con boundary `agent ⇸ agui` enforced (UX-01). Depends on Phase 11 (complete 2026-06-06). Remaining after 12: 13 Telegram/Multimodal → 14 Onboarding → 15 Memory → 17 Packaging.
 
 ## Performance Metrics
 

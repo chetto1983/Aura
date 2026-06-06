@@ -6,7 +6,7 @@ Project guidance for Claude Code (claude.ai/code) on this codebase.
 
 Tabula-rasa rewrite, 2026-05-27. Prior implementation at git tag `pre-rewrite-2026-05-27`.
 
-> **Resume work**: vedi [NEXT.md](NEXT.md) per stato sessione precedente + 3-step ripresa workflow + decisione open per ripartire. PRD + codebase map + GSD tooling + 46 skills sono tutti committati su `tabula-rasa`. Zero codice scritto: PRD-first principle. Next action raccomandata: `/gsd-discuss-phase 0.5` (Postgres infra).
+> **Resume work** (aggiornato 2026-06-06): vedi [NEXT.md](NEXT.md) per stato corrente + ripresa. Fasi completate: 0÷11 + 16 + 18 (15/20 — restano 12 AG-UI, 13 Telegram, 14 Onboarding, 15 Memory, 17 Packaging). Coverage owned-surface 86.1%, CI verde (CI + CodeQL + Skills). Next action raccomandata: `/gsd-discuss-phase 12` (AG-UI Gateway).
 
 - **Spike findings for Aura** (implementation patterns, constraints, gotchas — skills self-extension, sandbox runtime, MCP live servers) → `Skill("spike-findings-Aura")`
 
@@ -42,7 +42,7 @@ Transport + UX:
 17. **11** — Memory ingestion + taxonomy (Documents + Entities + Graph + Agent journal, 11a-11e) + **11f Task Canvas** (working-memory simbolica Mermaid effimera, sequencing-indipendente ~Phase 9-10). Pattern emendati #24 (valid-time/NOOP/reasoning traces) + #25 (Mermaid Canvas + score-cascade) studiati da **Tencent TencentDB-Agent-Memory** (<https://github.com/Tencent/TencentDB-Agent-Memory>) e adattati allo stack PG+Neo4J — vedi prd.md §Slice 11.
 18. **13** — Local LLM fallback (vLLM + LMCache disk-tier, doppio sidecar)
 
-Persistence: Postgres `aura.*` schema (**6 migrations shippate 0001-0006** — init/knowledge_migrations/paused_states/identity/conversations/conversation_turns_fts; le ulteriori migration delle slice a valle non sono ancora scritte — + Neo4j Cypher **0001**). `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
+Persistence: Postgres `aura.*` schema (**11 migrations shippate 0001-0011** — init/knowledge_migrations/paused_states/identity/conversations/conversation_turns_fts/cache_metrics/proxied_child_id_text/scheduler/skill_audit/tool_invocations — + Neo4j Cypher **0001**). `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph.
 
 ## Slice Q&A discipline (3 gate sequenziali, mandatory)
 
@@ -232,7 +232,7 @@ Fix issues before moving on.
 
 ## Persistence
 
-- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. **6 migrations shippate 0001-0006** (le successive atterrano con le rispettive slice — vedi prd.md §Persistence "Migration numbering — fonte di verità").
+- **Postgres** primary (port `5432`): schema `aura.*`, sqlc-generated client, golang-migrate. **11 migrations shippate 0001-0011** (lo slot 0011 = `tool_invocations`, NON `snippet_runs` — D-19/A4 skipped; le successive atterrano con le rispettive slice — vedi prd.md §Persistence "Migration numbering — fonte di verità").
 - **Neo4j** Community + APOC + GDS (`compose.yaml`): port `7687` bolt, `7474` browser. HNSW vector index 768d cosine. `mcp-neo4j-cypher` MCP server è l'interfaccia LLM al graph (no native Go adapter).
 - **Filesystem** per artifact: `$AURA_RUN_DIR/` (sidecar tool results + spillover content) + `~/.aura/agents/<id>/` (Agent.md profile) + `~/.aura/pyscripts/<id>/` (Slice 7e snippets) + `$AURA_SKILLS_DIR/` (skills instruction).
 - **Backup**: Postgres `pg_dump` + Neo4j `neo4j-admin database dump` (vedi PRD §Backup strategy).

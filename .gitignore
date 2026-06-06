@@ -43,6 +43,7 @@ coverage.txt
 coverage.html
 cover.out
 cover_phase2.out
+cover_gate.out*
 *.out.filtered
 .codex/*
 
