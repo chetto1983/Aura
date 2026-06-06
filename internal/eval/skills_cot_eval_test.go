@@ -220,11 +220,14 @@ func buildSkillsRegistry(t *testing.T, cfg *config.Config, workspace string) (re
 
 // buildSeamFreeSkillsRegistry is the pure registry constructor (no t, no I/O) so the
 // no-key TestRegistry_SeamFree can build + assert the same tool set without a live run.
-// It is the production tool surface (#52/D-41): the production read tools + ask_user +
-// the web tools + shell_exec (the HOST full terminal), with NO sandbox_exec, NO `skill`
-// tool, and NO catalog/installer seam. workspace is the shell_exec WorkspaceRoot — the
-// inspectable host run dir (empty in the no-key TestRegistry_SeamFree, which only asserts
-// the tool SET, never runs a command).
+// It is the production tool surface (#52/D-41, fs parity #53/D-42): the production read
+// tools + ask_user + the web tools + shell_exec (the HOST full terminal) + the 5 native
+// fs tools production registers since #50/D-15c (`cmd/aura/main.go` — omitting them
+// violated the #52 mirror rule and starved the model of fs_write, live run 9), with NO
+// sandbox_exec, NO `skill` tool, and NO catalog/installer seam. workspace roots both
+// shell_exec and the fs tools — the inspectable host run dir (empty in the no-key
+// TestRegistry_SeamFree, which only asserts the tool SET, never runs a command); in
+// production the empty root means process cwd, which IS the announced workspace.
 func buildSeamFreeSkillsRegistry(cfg *config.Config, workspace string) *tools.Registry {
 	reg := buildRegistry() // text_response + tool_search + read_tool_output + current_time
 	reg.Register(tools.AskUser{})
@@ -232,6 +235,11 @@ func buildSeamFreeSkillsRegistry(cfg *config.Config, workspace string) *tools.Re
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine})
 	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace})
+	reg.Register(&tools.FSRead{WorkspaceRoot: workspace})
+	reg.Register(&tools.FSWrite{WorkspaceRoot: workspace})
+	reg.Register(&tools.FSEdit{WorkspaceRoot: workspace})
+	reg.Register(&tools.FSGrep{WorkspaceRoot: workspace})
+	reg.Register(&tools.FSGlob{WorkspaceRoot: workspace})
 	return reg
 }
 

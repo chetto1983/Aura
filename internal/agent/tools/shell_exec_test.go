@@ -155,6 +155,27 @@ func TestShellExecCwdPersistsAcrossCalls(t *testing.T) {
 	}
 }
 
+// TestShellExecNormalizesCRLF: a model that emits CRLF line endings inside
+// command must not corrupt heredoc terminators or the POSIX cwd-tracking wrap
+// (live run 9, amendment #53 / D-42).
+func TestShellExecNormalizesCRLF(t *testing.T) {
+	if shellIsCmd() {
+		t.Skip("cmd.exe fallback: heredocs are POSIX-only")
+	}
+	tool := &ShellExec{WorkspaceRoot: t.TempDir()}
+
+	cmd := "cat > out.txt <<'EOF'\r\ncrlf-payload\r\nEOF\r\ncat out.txt"
+	raw, _ := json.Marshal(shellExecArgs{Command: cmd})
+
+	res, err := tool.Execute(ctxWith(t, "sess-crlf", "call-1"), raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(res.Preview, "crlf-payload") || strings.Contains(res.Preview, "syntax error") {
+		t.Fatalf("CRLF command corrupted the shell: %q", res.Preview)
+	}
+}
+
 func TestExtractCwdMarker(t *testing.T) {
 	clean, dir := extractCwdMarker("hello\n" + cwdMarker + " D:/work\n")
 	if clean != "hello" || dir != "D:/work" {

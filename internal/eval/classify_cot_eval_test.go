@@ -289,6 +289,9 @@ func TestRegistry_SeamFree(t *testing.T) {
 	want := []string{
 		"text_response", "tool_search", "read_tool_output", "current_time",
 		"ask_user", "web_search", "web_fetch", "shell_exec",
+		// fs parity #53/D-42: production registers the native fs tools (#50/D-15c);
+		// the eval mirror must too — fs_write is how the model authors file content.
+		"fs_read", "fs_write", "fs_edit", "fs_grep", "fs_glob",
 	}
 	for _, name := range want {
 		if !got[name] {

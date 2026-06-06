@@ -94,7 +94,11 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	command := a.Command
+	// Models occasionally emit CRLF line endings inside command; under the POSIX
+	// shell a stray \r corrupts heredoc terminators and the cwd-tracking wrap
+	// (live run 9, amendment #53 / D-42). Normalizing is always safe: no POSIX or
+	// cmd.exe construct needs a literal CR inside a command line.
+	command := strings.ReplaceAll(a.Command, "\r\n", "\n")
 	posix := !shellIsCmdFallback()
 	if posix {
 		command = wrapForCwdTracking(command)
