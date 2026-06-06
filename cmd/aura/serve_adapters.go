@@ -247,7 +247,8 @@ func taskStorePool(ts *cronTaskStore) *pgxpool.Pool {
 // skill-creator appears in the very first scan. When a live pool is supplied
 // (serve/chat boot) the write actions are wired to the durable, gated Writer (11-05)
 // via the skillWriterAdapter; the pool-free path leaves Writer nil (write actions
-// error loudly).
+// error loudly). Discovery+install is no longer a tool concern (amendment #51 /
+// D-40): the find-skills always-on skill teaches self-extension via the sandbox CLI.
 func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 	if cfg == nil || cfg.SkillsDir == "" {
 		return &tools.SkillTool{}
@@ -260,93 +261,11 @@ func newSkillTool(cfg *config.Config, pool *pgxpool.Pool) *tools.SkillTool {
 		BodyCapBytes: cfg.SkillBodyCapBytes,
 	})
 	tool := &tools.SkillTool{Loader: &skillLoaderAdapter{loader: loader, manCap: cfg.SkillManifestCapBytes}}
-	// The catalog is default-ON (D-12) and pool-free — wire it whenever a cfg exists so
-	// the model can discover skills even on a read-only manifest path.
-	tool.Catalog = &skillCatalogAdapter{client: newSkillCatalog(cfg)}
 	if pool != nil {
 		w := newSkillWriter(cfg, pool)
 		tool.Writer = &skillWriterAdapter{w: w}
-		tool.Installer = &skillInstallerAdapter{inst: newSkillInstaller(cfg, w)}
 	}
 	return tool
-}
-
-// newSkillCatalog builds the live CatalogClient from config (skills.sh /api/search,
-// default-ON unless AURA_SKILL_CATALOG_DISABLE, D-12).
-func newSkillCatalog(cfg *config.Config) *skills.CatalogClient {
-	return skills.NewCatalogClient(skills.CatalogConfig{
-		BaseURL:    cfg.SkillCatalogURL,
-		TimeoutSec: cfg.SkillInstallTimeoutSec,
-		Disabled:   cfg.SkillCatalogDisabled,
-	}, nil)
-}
-
-// newSkillInstaller builds the live Installer over the supplied Writer (the pending +
-// audit sink), carrying the blocklist + body cap so a model-installed skill is gated
-// at the write boundary exactly like an authored one.
-func newSkillInstaller(cfg *config.Config, w *skills.Writer) *skills.Installer {
-	return skills.NewInstaller(skills.InstallerConfig{
-		Writer:       w,
-		TimeoutSec:   cfg.SkillInstallTimeoutSec,
-		Blocklist:    cfg.SkillInjectionBlocklist,
-		BodyCapBytes: cfg.SkillBodyCapBytes,
-	})
-}
-
-// skillCatalogAdapter bridges the live *skills.CatalogClient onto the tools.skillCatalog
-// seam, projecting skills.CatalogItem into the tool-local CatalogResult. It keeps
-// internal/agent/tools free of an internal/skills import.
-type skillCatalogAdapter struct {
-	client *skills.CatalogClient
-}
-
-// Search runs the live catalog search and projects the items into CatalogResult.
-func (a *skillCatalogAdapter) Search(ctx context.Context, query string) ([]tools.CatalogResult, error) {
-	items, err := a.client.Search(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]tools.CatalogResult, 0, len(items))
-	for _, it := range items {
-		name := it.Name
-		if name == "" {
-			name = it.SkillID
-		}
-		out = append(out, tools.CatalogResult{Name: name, Source: it.Source, Installs: it.Installs, SkillID: it.SkillID})
-	}
-	return out, nil
-}
-
-// Disabled reports the D-12 escape-hatch state directly off the live client (no dial).
-func (a *skillCatalogAdapter) Disabled() bool {
-	return a.client.Disabled()
-}
-
-// skillInstallerAdapter bridges the live *skills.Installer onto the tools.skillInstaller
-// seam, projecting skills.InstallResult into the tool-local InstallSummary. The model
-// is the actor (allowBlocklisted=false is enforced inside Install).
-type skillInstallerAdapter struct {
-	inst *skills.Installer
-}
-
-// Install runs the live installer (model actor) and projects the result + red flags
-// into the tool-local InstallSummary the install gate frames.
-func (a *skillInstallerAdapter) Install(ctx context.Context, repoURL, skillName string) (tools.InstallSummary, error) {
-	res, err := a.inst.Install(ctx, repoURL, skills.InstallOpts{Actor: skills.AuditActor{ActorID: "model"}, SkillName: skillName})
-	if err != nil {
-		return tools.InstallSummary{}, err
-	}
-	flags := make([]string, 0, len(res.RedFlags))
-	for _, f := range res.RedFlags {
-		flags = append(flags, f.Detail)
-	}
-	return tools.InstallSummary{
-		Name:           res.Name,
-		ContentHash:    res.ContentHash,
-		AlwaysStripped: res.AlwaysStripped,
-		RedFlags:       flags,
-		Tier:           string(res.Tier),
-	}, nil
 }
 
 // skillWriterAdapter bridges the live *skills.Writer onto the tools.skillWriter seam

@@ -13,15 +13,12 @@ import (
 // model treats an applied skill — it is part of the contract.
 const useAuthorityFrame = "Follow these skill instructions for the current task:\n\n"
 
-// listCatalogTail rides on every list result (amendment #49, iterations 2-3): the
-// moment the model reads the installed-skill list and finds no match IS the
-// capability-gap decision point — without an explicit pointer there, live models
-// fall back to ad-hoc code instead of the catalog (proven by the 2026-06-05 E2E
-// runs). Run-6 showed a soft suggestion is still skipped: the model treats a
-// list miss as "no skill exists anywhere", so the no-match branch below states
-// the installed-vs-catalog distinction and the exact next call. Fixed per-turn
-// result literals — no cache invariant rides on them.
-const listCatalogTail = "\n\nNOTE: this listed INSTALLED skills only — it is NOT a catalog search. If none cover the task family at hand, search the public catalog of installable skills next: {\"action\":\"catalog\",\"query\":\"<keywords>\"}. Installing requires operator approval via ask_user."
+// listSkillTail rides on every list result: a list miss is the capability-gap
+// decision point. Discovery+install is NOT a tool action (amendment #51 / D-40) —
+// it points the model at the always-on find-skills skill, which teaches the
+// `npx skills find/add` self-extension loop in the sandbox. Fixed per-turn result
+// literal — no cache invariant rides on it.
+const listSkillTail = "\n\nNOTE: this listed INSTALLED skills only. If none cover the task family at hand, the always-on find-skills skill teaches how to discover and install skills from the open ecosystem — follow it before hand-coding the deliverable."
 
 // actionList renders the manifest, or — when a query is supplied and the skill set
 // is large — ranks the skills by BM25 over their name+description and returns the
@@ -37,26 +34,24 @@ func (t *SkillTool) actionList(ctx context.Context, raw json.RawMessage) (ToolRe
 	}
 	query := strings.TrimSpace(a.Query)
 	if query == "" {
-		return NewResult(ctx, t.Loader.ManifestDescription()+listCatalogTail)
+		return NewResult(ctx, t.Loader.ManifestDescription()+listSkillTail)
 	}
 
 	skills := t.Loader.List()
 	ranked := rankSkills(skills, query)
 	if len(ranked) == 0 {
-		// The strongest decision point: a queried list miss. State the next call
-		// verbatim — live models skip abstract suggestions but follow a concrete
-		// next step (run-6 evidence).
+		// A queried list miss is the capability-gap decision point. Discovery+install
+		// is NOT a tool action (amendment #51 / D-40): point the model at the always-on
+		// find-skills skill, which teaches the npx self-extension loop in the sandbox.
 		return NewResult(ctx, fmt.Sprintf(
-			"No INSTALLED skills match %q. This searched only the installed list — NOT the public catalog of installable skills.\n"+
-				"NEXT STEP (required for reusable artifact-family tasks before any hand-built fallback): search the catalog now:\n"+
-				"  {\"action\":\"catalog\",\"query\":%q}\n"+
-				"If you ALREADY have catalog results, the next step is the install call shown next to your chosen skill — installing stages the skill and automatically pauses for operator approval; calling install IS the approval request.", query, query))
+			"No INSTALLED skills match %q. This searched only the installed list.\n"+
+				"NEXT STEP (for a reusable artifact-family task before any hand-built fallback): the always-on find-skills skill teaches how to discover and install a skill from the open ecosystem — follow it.", query))
 	}
 	var b strings.Builder
 	for _, s := range ranked {
 		fmt.Fprintf(&b, "- %s: %s\n", s.Name, s.Description)
 	}
-	return NewResult(ctx, b.String()+listCatalogTail)
+	return NewResult(ctx, b.String()+listSkillTail)
 }
 
 // rankSkills ranks the skills by BM25 over a "name description" search document

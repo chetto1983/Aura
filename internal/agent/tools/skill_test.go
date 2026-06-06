@@ -84,10 +84,12 @@ func TestSkillSpecSchemaDiscipline(t *testing.T) {
 		}
 	}
 	// The action property carries a string enum including the read + reserved actions.
+	// "install"/"catalog" were removed (amendment #51 / D-40): the test asserted the
+	// superseded enum — discovery+install is now the find-skills always-on skill.
 	props, _ := schema["properties"].(map[string]any)
 	action, _ := props["action"].(map[string]any)
 	enum, _ := action["enum"].([]any)
-	want := map[string]bool{"list": false, "info": false, "use": false, "create": false, "install": false}
+	want := map[string]bool{"list": false, "info": false, "use": false, "create": false, "restore": false}
 	for _, v := range enum {
 		if s, ok := v.(string); ok {
 			if _, tracked := want[s]; tracked {
@@ -124,8 +126,8 @@ func TestSkillDispatchErrors(t *testing.T) {
 		!strings.Contains(err.Error(), "valid actions are") {
 		t.Fatalf("unknown action err = %v, want 'valid actions are ...'", err)
 	}
-	// A reserved-but-unwired action returns the "not yet available" error. (install +
-	// catalog are now wired in 11-06; restore/archive remain reserved.)
+	// A reserved-but-unwired action returns the "not yet available" error. (catalog +
+	// install were removed in 11-09 / amendment #51; restore/archive remain reserved.)
 	if _, err := tool.Execute(ctx, json.RawMessage(`{"action":"restore"}`)); err == nil ||
 		!strings.Contains(err.Error(), "not yet available") {
 		t.Fatalf("reserved action err = %v, want 'not yet available'", err)

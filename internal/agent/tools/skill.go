@@ -14,10 +14,12 @@ import (
 // this tool's Description, so the spec must always be visible — a deferred skill
 // tool would hide the very manifest the model searches.
 //
-// This plan (11-02) wires the READ actions list|info|use; the write/install
-// actions (create|update|delete|install|catalog|restore|archive) are reserved
-// router keys returning a "not yet wired" error so the schema enum is complete
-// from the start and downstream plans (11-03/04/05) just fill handlers.
+// This tool wires the READ actions list|info|use and the authoring actions
+// create|update|delete (gated, pending→approve). Discovery+install of third-party
+// skills is NOT a tool concern (amendment #51 / D-40): the always-on find-skills
+// skill teaches the model to self-extend via `npx skills find/add` in the sandbox,
+// so the catalog client + native installer + their tool actions were deleted. The
+// remaining reserved router keys (restore|archive) return a "not yet wired" error.
 //
 // The live loader is injected at registration via the consumer-declared skillLoader
 // seam below (golang-structs-interfaces: the consumer owns the interface), so this
@@ -36,14 +38,6 @@ type SkillTool struct {
 	// with no interactive resume (a swarm worker / cron job) so a gated mutation
 	// proposed there fires an immediate operator alert. Nil in the interactive REPL.
 	Alerter skillAlerter
-	// Catalog is the consumer-declared catalog seam the action=catalog handler
-	// dispatches against (11-06, default-ON D-12). Nil on the pool-free manifest path;
-	// action=catalog without a catalog returns a clear error, never a panic.
-	Catalog skillCatalog
-	// Installer is the consumer-declared install seam the action=install handler
-	// dispatches against (11-06). Nil on the pool-free manifest path; action=install
-	// without an installer returns a clear error, never a panic.
-	Installer skillInstaller
 
 	router *ActionRouter
 }
@@ -92,18 +86,19 @@ type skillArgs struct {
 // `action`; per-action requirements are spelled out in the field descriptions.
 // There is intentionally NO root-level oneOf/anyOf/enum — a root enum 400s
 // OpenAI-compat providers (DeepSeek). The `action` property does carry an enum
-// (a property-level enum on a string is wire-safe). The write/install actions are
-// in the enum from the start (reserved, D-01) so the schema is downstream-stable.
+// (a property-level enum on a string is wire-safe). The reserved restore/archive
+// actions stay in the enum so the schema is downstream-stable. Discovery+install
+// is NOT a tool action (amendment #51 / D-40 — the find-skills always-on skill
+// teaches `npx skills find/add` in the sandbox).
 const skillParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "install", "catalog", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions to the current task by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); catalog (browse skills.sh for installable skills by query); install (clone + stage a third-party skill from a repo URL). create/update/delete/install are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. (restore and archive manage the skill library and are not yet available.)"},
-    "name": {"type": "string", "description": "Required when action=info, use, create, update, or delete. The exact skill name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, or remove. With action=install it selects the skill inside a multi-skill repo (use the catalog result's name)."},
+    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions to the current task by name); create (author a new skill); update (revise an existing skill); delete (remove a skill). create/update/delete are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. (restore and archive manage the skill library and are not yet available.)"},
+    "name": {"type": "string", "description": "Required when action=info, use, create, update, or delete. The exact skill name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, or remove."},
     "description": {"type": "string", "description": "Required when action=create or update. A one-line summary of what the skill does (shown in the skill manifest)."},
     "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
     "always": {"type": "boolean", "description": "Optional when action=create or update. When true the skill's instructions are always applied (an always-on skill); always-on skills are gated like any other change and reviewed loudly."},
-    "repo": {"type": "string", "description": "Required when action=install. The skill's source: a git URL (https/ssh/git) or the catalog's owner/repo shorthand (e.g. anthropics/skills). The skill is cloned, staged as pending, and requires human approval; bundled scripts never run automatically."},
-    "query": {"type": "string", "description": "Required when action=catalog (the keyword phrase to search skills.sh). Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
+    "query": {"type": "string", "description": "Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
   },
   "required": ["action"]
 }`
@@ -125,14 +120,13 @@ func (t *SkillTool) Spec() Spec {
 // notice when no loader is wired (the pool/loader-free manifest path, e.g.
 // `aura tools`, still lists the tool's Spec without a half-wired loader).
 func (t *SkillTool) manifestDescription() string {
-	// The lead names the FULL grammar (amendment #49): the read verbs AND the
-	// catalog/install discovery loop — leaving catalog/install only in the schema
-	// enum description left live models unaware the catalog existed (the 2026-06-05
-	// E2E brute-forced ad-hoc code instead). Still a fixed const: turn-stable, D-06.
+	// The lead names ONLY the read/author verbs (amendment #51 / D-40): discovery+
+	// install of third-party skills is NOT a tool action — the always-on find-skills
+	// skill teaches the model to self-extend via the skills CLI in the sandbox. Fixed
+	// const: turn-stable, D-06.
 	const lead = "Skills are packaged capabilities (instructions and runnable snippets) that extend you for specific tasks. " +
 		"Call action=use with a skill name to apply its instructions to the current task; action=info reads a skill without applying it; action=list shows what is available. " +
-		"If NO installed skill covers a reusable task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
-		"action=catalog searches a public catalog of installable skills and action=install stages one — installation always requires operator approval via ask_user; you can request, never grant.\n\n" +
+		"When NO installed skill covers a reusable task family (spreadsheets, documents, file formats, integrations, recurring workflows), an always-on skill teaches how to discover and install skills from the open ecosystem.\n\n" +
 		"Available skills:\n"
 	if t.Loader == nil {
 		return lead + "(none loaded)\n"
@@ -156,9 +150,9 @@ func (t *SkillTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	return t.actionRouter().Dispatch(ctx, head.Action, raw)
 }
 
-// notYetWired is the reserved-action handler: the schema enum lists create/update/
-// delete/install/catalog/restore/archive from the start (D-01) so it is stable, but
-// their handlers land in downstream plans. Until then they return a clear error.
+// notYetWired is the reserved-action handler: the schema enum lists restore/archive
+// from the start (D-01) so it is stable, but their handlers land in downstream
+// plans. Until then they return a clear error.
 func notYetWired(action string) ActionFunc {
 	return func(context.Context, json.RawMessage) (ToolResult, error) {
 		return ToolResult{}, fmt.Errorf("skill: action %q is not yet available", action)
@@ -177,12 +171,9 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"create": t.actionCreate,
 			"update": t.actionUpdate,
 			"delete": t.actionDelete,
-			// Discovery→install loop (11-06): catalog browses skills.sh (default-ON,
-			// D-12); install clones + stages into pending + ask_user gate (D-13). Install
-			// NEVER self-activates (D-03).
-			"install": t.actionInstall,
-			"catalog": t.actionCatalog,
-			// Reserved (D-01) — downstream plans fill these handlers.
+			// Reserved (D-01) — downstream plans fill these handlers. (Discovery+install
+			// is NOT a tool action — amendment #51 / D-40: the find-skills always-on
+			// skill teaches self-extension via the skills CLI in the sandbox.)
 			"restore": notYetWired("restore"),
 			"archive": notYetWired("archive"),
 		})

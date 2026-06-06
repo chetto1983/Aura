@@ -309,7 +309,6 @@ func setupAuditSkills(runDir string) (*config.Config, func(), error) {
 		SkillExportDir:        exportDir,
 		SkillBodyCapBytes:     32768,
 		SkillManifestCapBytes: 8192,
-		SkillCatalogDisabled:  true, // no network in the audit
 	}
 	return cfg, func() {}, nil
 }

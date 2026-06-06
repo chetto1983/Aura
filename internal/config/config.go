@@ -92,14 +92,6 @@ type Config struct {
 	// the prd.md §Slice 7 builtin list; a comma-separated AURA_SKILL_INJECTION_BLOCKLIST
 	// replaces it wholesale.
 	SkillInjectionBlocklist []string // AURA_SKILL_INJECTION_BLOCKLIST — prompt-injection literal blocklist (D-27/D-34)
-
-	// Catalog client knobs (D-11/D-12/D-34). CatalogURL is the skills.sh base for
-	// the /api/search JSON client; CatalogDisabled is the default-ON browse escape
-	// hatch (D-12); SkillInstallTimeoutSec bounds both the catalog call and the
-	// native git-clone install (D-15).
-	SkillCatalogURL        string // AURA_SKILL_CATALOG_URL — skills.sh base for /api/search (D-11/D-34)
-	SkillCatalogDisabled   bool   // AURA_SKILL_CATALOG_DISABLE — disable-catalog escape hatch (D-12)
-	SkillInstallTimeoutSec int    // AURA_SKILL_INSTALL_TIMEOUT_SEC — catalog + git-clone ctx timeout (D-15/D-34)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -215,9 +207,6 @@ func loadBase() *Config {
 		SkillSnippetTTLDays:   envIntDefault("AURA_SKILL_SNIPPET_TTL_DAYS", 90),
 
 		SkillInjectionBlocklist: envSliceDefault("AURA_SKILL_INJECTION_BLOCKLIST", defaultSkillInjectionBlocklist()),
-		SkillCatalogURL:         envDefault("AURA_SKILL_CATALOG_URL", "https://www.skills.sh"),
-		SkillCatalogDisabled:    envBoolDefault("AURA_SKILL_CATALOG_DISABLE", false),
-		SkillInstallTimeoutSec:  envIntDefault("AURA_SKILL_INSTALL_TIMEOUT_SEC", 90),
 	}
 }
 

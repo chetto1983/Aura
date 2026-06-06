@@ -1,8 +1,10 @@
 // skills subcommand dispatcher for `aura skills {list|info|create|update|delete|
-// approve|audit}` (Slice 7c governance, plan 11-05). Hand-rolled switch tree
-// mirroring runIdentity/runTask (cmd/aura/identity.go), NOT cobra — go.mod has no
-// spf13/cobra and the codebase uses nested switch dispatchers; CLAUDE.md mandates
-// following existing patterns.
+// approve|always|snippet|audit}` (Slice 7c governance, plan 11-05). Hand-rolled
+// switch tree mirroring runIdentity/runTask (cmd/aura/identity.go), NOT cobra —
+// go.mod has no spf13/cobra and the codebase uses nested switch dispatchers;
+// CLAUDE.md mandates following existing patterns. The install/catalog legs were
+// removed in plan 11-09 (amendment #51 / D-40): discovery+install is the find-skills
+// always-on skill driving `npx skills` in the sandbox, not a CLI/tool leg.
 //
 // This is the operator-side governance channel (D-03): `approve <name>` activates a
 // pending skill via Writer.Activate with the CLI approval source (the human-only
@@ -18,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -30,7 +31,6 @@ import (
 
 const skillsUsage = "usage: aura skills {list|info <name>|create <name> --desc <d> --body <b> [--always]|" +
 	"update <name> --desc <d> --body <b> [--always]|delete <name>|approve <name>|" +
-	"install <repo> [--allow-blocklisted]|catalog {search <query>|disable-catalog|enable-catalog}|" +
 	"always <name> {on|off}|snippet {save <name> --lang <l> --code <c> [--desc <d>] [--needs-network]|exec <name> [args...]}|" +
 	"audit [--skill <name>] [--since <RFC3339>]}"
 
@@ -95,10 +95,6 @@ func runSkills(args []string) {
 		skillsDelete(ctx, args[1:])
 	case "approve":
 		skillsApprove(ctx, args[1:])
-	case "install":
-		skillsInstall(ctx, args[1:])
-	case "catalog":
-		skillsCatalog(ctx, args[1:])
 	case "always":
 		skillsAlways(ctx, args[1:])
 	case "snippet":
@@ -209,105 +205,6 @@ func skillsApprove(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 	fmt.Printf("ok: approved %q (now active)\n", args[0])
-}
-
-// skillsInstall clones a third-party skill repo natively and stages it as pending
-// (the operator can then `approve` it). --allow-blocklisted is the D-27 override the
-// operator passes ONLY after seeing the blocklist match; it surfaces the red flags +
-// the always-strip note so the operator weighs the supply-chain surface before
-// approving. The install NEVER self-activates (D-03).
-func skillsInstall(ctx context.Context, args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: aura skills install <repo> [skill-name] [--allow-blocklisted]")
-		os.Exit(1)
-	}
-	repo := args[0]
-	// Optional positional selector for multi-skill repos (catalog skillId,
-	// amendment #49): the first non-flag arg after the repo.
-	skillName := ""
-	if len(args) > 1 && !strings.HasPrefix(args[1], "--") {
-		skillName = args[1]
-	}
-	allowBlocklisted := hasFlag(args[1:], "--allow-blocklisted")
-
-	env := bootSkills(ctx)
-	defer env.close()
-
-	inst := skills.NewInstaller(skills.InstallerConfig{
-		Writer:       env.w,
-		TimeoutSec:   env.cfg.SkillInstallTimeoutSec,
-		Blocklist:    env.cfg.SkillInjectionBlocklist,
-		BodyCapBytes: env.cfg.SkillBodyCapBytes,
-	})
-	res, err := inst.Install(ctx, repo, skills.InstallOpts{
-		AllowBlocklisted: allowBlocklisted,
-		Actor:            skills.AuditActor{ActorID: "cli"},
-		SkillName:        skillName,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	fmt.Printf("ok: installed %q as pending (status=%s, hash=%s)\n", res.Name, res.Status, shortHash(res.ContentHash))
-	if res.AlwaysStripped {
-		fmt.Printf("  note: always:true was stripped (re-enable with `aura skills always %s on`)\n", res.Name)
-	}
-	if len(res.RedFlags) == 0 {
-		fmt.Println("  red flags: none")
-	} else {
-		fmt.Println("  red flags (review before approving):")
-		for _, f := range res.RedFlags {
-			fmt.Printf("    * %s\n", f.Detail)
-		}
-	}
-	fmt.Printf("  approve with `aura skills approve %s`\n", res.Name)
-}
-
-// skillsCatalog browses skills.sh (/api/search, default-ON D-12). `search <query>`
-// lists installs-ranked results; `disable-catalog` / `enable-catalog` print the env
-// knob the operator sets (the toggle is config-driven, AURA_SKILL_CATALOG_DISABLE).
-func skillsCatalog(ctx context.Context, args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: aura skills catalog {search <query>|disable-catalog|enable-catalog}")
-		os.Exit(1)
-	}
-	switch args[0] {
-	case "disable-catalog":
-		fmt.Println("set AURA_SKILL_CATALOG_DISABLE=1 to disable the catalog (D-12)")
-		return
-	case "enable-catalog":
-		fmt.Println("unset AURA_SKILL_CATALOG_DISABLE (or set it to 0) to enable the catalog (D-12, default-ON)")
-		return
-	case "search":
-		if len(args) < 2 {
-			fmt.Fprintln(os.Stderr, "usage: aura skills catalog search <query>")
-			os.Exit(1)
-		}
-		cfg := config.LoadDB()
-		client := skills.NewCatalogClient(skills.CatalogConfig{
-			BaseURL:    cfg.SkillCatalogURL,
-			TimeoutSec: cfg.SkillInstallTimeoutSec,
-			Disabled:   cfg.SkillCatalogDisabled,
-		}, nil)
-		results, err := client.Search(ctx, strings.Join(args[1:], " "))
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		if len(results) == 0 {
-			fmt.Println("ok: no catalog results")
-			return
-		}
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		_, _ = fmt.Fprintln(w, "NAME\tINSTALLS\tSOURCE")
-		for _, r := range results {
-			_, _ = fmt.Fprintf(w, "%s\t%d\t%s\n", r.Name, r.Installs, r.Source)
-		}
-		_ = w.Flush()
-	default:
-		fmt.Fprintln(os.Stderr, "usage: aura skills catalog {search <query>|disable-catalog|enable-catalog}")
-		os.Exit(1)
-	}
 }
 
 // skillsAlways re-enables (on) or disables (off) the always:true flag on an ACTIVE
