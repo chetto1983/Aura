@@ -117,16 +117,25 @@ func (e Event) toParams() (sqlc.InsertToolInvocationParams, error) {
 		startedAt = ts
 	}
 	return sqlc.InsertToolInvocationParams{
-		ConversationID:    conv,
-		RequestID:         req,
-		ToolCallID:        e.ToolCallID,
-		ToolName:          e.ToolName,
-		EventKind:         e.Event,
-		Seq:               clampInt32(e.Seq),
-		Ts:                timestamptz(ts),
-		StartedAt:         timestamptz(startedAt),
-		EndedAt:           timestamptz(e.EndedAt),
-		DurationMs:        int8OrNull(e.DurationMS, e.Event == EventEnd),
+		ConversationID: conv,
+		RequestID:      req,
+		ToolCallID:     e.ToolCallID,
+		ToolName:       e.ToolName,
+		EventKind:      e.Event,
+		Seq:            clampInt32(e.Seq),
+		Ts:             timestamptz(ts),
+		StartedAt:      timestamptz(startedAt),
+		EndedAt:        timestamptz(e.EndedAt),
+		DurationMs:     int8OrNull(e.DurationMS, e.Event == EventEnd),
+		// DELIBERATE full-forensic capture (WR-02): ArgsRaw/ResultPreview persist the
+		// VERBATIM tool argument JSON + result preview — including any secret a model
+		// placed on a shell_exec/sandbox_exec command line (e.g. an inline
+		// `Authorization: Bearer ...`). This is the chosen forensic posture for a
+		// single-operator host: capture everything for audit. SECURITY IMPLICATION: the
+		// ledger is append-only (migration 0011 triggers reject DELETE) and aura_app has
+		// SELECT, so any captured secret is durable and un-deletable, removed only by a
+		// conversation FK-cascade. Redaction/capping is a tracked follow-up (WR-02,
+		// .planning/STATE.md) — do NOT add a silent capture path without that design.
 		ArgsRaw:           textOrNull(e.Arguments, e.Arguments != "" || e.ArgsBytes > 0),
 		ArgsBytes:         int4OrNull(e.ArgsBytes, e.Arguments != "" || e.ArgsBytes > 0),
 		Status:            textOrNull(e.Status, e.Status != ""),

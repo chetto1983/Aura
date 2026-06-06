@@ -89,16 +89,20 @@ func (r *Runner) persistToolInvocation(ctx context.Context, tr *turnTracker, ev 
 	}
 	ti := ev.Actions.ToolInvocation
 	e := toolinvocations.Event{
-		ConversationID:    tr.convID,
-		RequestID:         ev.RequestID.String(),
-		ToolCallID:        ti.ToolCallID,
-		ToolName:          ti.ToolName,
-		Event:             ti.Event,
-		Seq:               tr.nextToolInvocationSeq(),
-		Timestamp:         toolInvocationTimestamp(ti, ev.Timestamp),
-		StartedAt:         timePtrValue(ti.StartedAt),
-		EndedAt:           timePtrValue(ti.EndedAt),
-		DurationMS:        ti.DurationMS,
+		ConversationID: tr.convID,
+		RequestID:      ev.RequestID.String(),
+		ToolCallID:     ti.ToolCallID,
+		ToolName:       ti.ToolName,
+		Event:          ti.Event,
+		Seq:            tr.nextToolInvocationSeq(),
+		Timestamp:      toolInvocationTimestamp(ti, ev.Timestamp),
+		StartedAt:      timePtrValue(ti.StartedAt),
+		EndedAt:        timePtrValue(ti.EndedAt),
+		DurationMS:     ti.DurationMS,
+		// Arguments/ResultPreview are forwarded VERBATIM into the append-only ledger by
+		// deliberate forensic choice (WR-02): the raw arg JSON may carry a secret the
+		// model placed on a command line, and the ledger is un-deletable. The redaction/
+		// capping design is a tracked follow-up — see store.go toParams + .planning/STATE.md.
 		Arguments:         ti.Arguments,
 		ArgsBytes:         ti.ArgsBytes,
 		Status:            ti.Status,
