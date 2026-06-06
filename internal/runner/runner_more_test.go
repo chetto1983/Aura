@@ -53,15 +53,28 @@ func TestSubmitAnswers_BatchResolvesAndInjects(t *testing.T) {
 	if _, err := drain(r.Turn(ctx, convID, nil)); err != nil {
 		t.Fatalf("resume turn: %v", err)
 	}
-	req := client.LastRequest()
-	answersSeen := 0
-	for _, m := range req.Messages {
-		if m.Role == llm.RoleTool && (strings.Contains(m.Content, "ans-a") || strings.Contains(m.Content, "ans-b")) {
-			answersSeen++
+	if err := r.Stop(ctx, convID); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	// Auto-title may issue a later LLM request, so the resume request is not
+	// guaranteed to be LastRequest. Search all recorded requests for the injected
+	// RoleTool answers.
+	sawA, sawB := false, false
+	for _, req := range client.Requests {
+		for _, m := range req.Messages {
+			if m.Role != llm.RoleTool {
+				continue
+			}
+			if strings.Contains(m.Content, "ans-a") {
+				sawA = true
+			}
+			if strings.Contains(m.Content, "ans-b") {
+				sawB = true
+			}
 		}
 	}
-	if answersSeen != 2 {
-		t.Fatalf("want both injected answers in the resume request, got %d", answersSeen)
+	if !sawA || !sawB {
+		t.Fatalf("want both injected answers in a resume request, got ans-a=%v ans-b=%v; requests=%+v", sawA, sawB, client.Requests)
 	}
 }
 
