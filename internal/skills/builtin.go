@@ -11,9 +11,9 @@ import (
 
 // builtinFS holds the skills Aura ships in-binary. Two builtins are embedded:
 // skill-creator (D-31, the spec-compliant authoring meta-skill) and find-skills-aura
-// (amendment #51 / D-40, the always:true self-extension skill that teaches the
-// `npx skills find/add` discovery+install loop in the sandbox — superseding the
-// deleted catalog client + native installer + their tool actions).
+// (amendment #51 / D-40, host surface #52 / D-41, the always:true self-extension skill
+// that teaches the `npx skills find/add` discovery+install loop on the HOST terminal —
+// superseding the deleted catalog client + native installer + their tool actions).
 //
 //go:embed embed
 var builtinFS embed.FS

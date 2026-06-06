@@ -14,7 +14,7 @@ scripts that beat ad-hoc code.
 
 ## How to search
 
-Run the skills CLI in the sandbox:
+Run the skills CLI in your terminal:
 
     npx skills find <query>
 
@@ -33,23 +33,20 @@ Run the skills CLI in the sandbox:
 
 ## How to install and use
 
-Install your chosen skill so it persists and loads. The `/skills` directory is your
-host-visible mount, so installing there keeps the skill across sessions and makes it
-loadable by name:
+Install your chosen skill so it persists and loads. Your skills home is `~/.aura/skills/export`
+(the directory the loader scans for installed skills); install there so the skill survives
+across sessions and is loadable by name:
 
-    cd /skills && npx skills add <owner/repo> --skill <skill-name> --copy -y
+    cd ~/.aura/skills/export && npx skills add <owner/repo> --skill <skill-name> --copy -y
 
-The skill lands under `/skills/.agents/skills/<skill-name>/`. Then:
+The skill lands under `~/.aura/skills/export/.agents/skills/<skill-name>/`. Then:
 
 1. Read its `SKILL.md` and follow the instructions it gives you.
 2. Run any bundled scripts BY PATH with the interpreter (e.g.
-   `python3 /skills/.agents/skills/<name>/scripts/...`) — never rely on the exec bit.
+   `python3 ~/.aura/skills/export/.agents/skills/<name>/scripts/...`) — never rely on the
+   exec bit.
 
-If you only need the skill for the current task and not afterward, install it into the
-session workspace instead (`cd /workspace && npx skills add ...`, landing under
-`/workspace/.agents/skills/<name>/`); that copy disappears when the workspace is purged.
-
-No approval round-trip is needed — install directly in the sandbox.
+No approval round-trip is needed — install directly in your terminal.
 
 ## If nothing fits
 
