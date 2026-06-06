@@ -1,6 +1,8 @@
 package agent
 
 import (
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -55,5 +57,45 @@ func TestPrompt_ByteStable(t *testing.T) {
 	}
 	if first != SystemPrompt {
 		t.Error("systemMessage() diverged from the SystemPrompt constant")
+	}
+}
+
+// TestPrompt_DocSyncByteIdentical asserts the SystemPrompt const and its authored
+// source of truth docs/system_prompt.txt are byte-identical (the txt carries a single
+// trailing newline the Go const does not). The two MUST be edited together — this test
+// is the enforcement the doc comment promises (amendment #51 / D-40 sync).
+func TestPrompt_DocSyncByteIdentical(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "system_prompt.txt"))
+	if err != nil {
+		t.Fatalf("read docs/system_prompt.txt: %v", err)
+	}
+	doc := strings.TrimRight(string(raw), "\n")
+	if doc != SystemPrompt {
+		t.Errorf("docs/system_prompt.txt diverged from the SystemPrompt const — edit both together.\n"+
+			"len(doc)=%d len(const)=%d", len(doc), len(SystemPrompt))
+	}
+}
+
+// TestPrompt_NoSupersededSkillRouting is the #51 supersession guard: the §Skills
+// section must NOT teach the deleted action=catalog/action=install routing (those
+// tool actions are gone; discovery+install is the always-on find-skills skill). A
+// future edit cannot reintroduce the dead teaching without tripping this — in BOTH
+// the const and the authored doc.
+func TestPrompt_NoSupersededSkillRouting(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "system_prompt.txt"))
+	if err != nil {
+		t.Fatalf("read docs/system_prompt.txt: %v", err)
+	}
+	for _, superseded := range []string{"action=catalog", "action=install"} {
+		if strings.Contains(SystemPrompt, superseded) {
+			t.Errorf("SystemPrompt reintroduced superseded routing %q (#51 removed it)", superseded)
+		}
+		if strings.Contains(string(raw), superseded) {
+			t.Errorf("docs/system_prompt.txt reintroduced superseded routing %q (#51 removed it)", superseded)
+		}
+	}
+	// The shrunk section must point at the always-on discovery skill.
+	if !strings.Contains(SystemPrompt, "always-on") {
+		t.Error("the §Skills section must name an always-on skill as the discovery/install teaching")
 	}
 }
