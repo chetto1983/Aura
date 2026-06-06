@@ -12,6 +12,11 @@ xlsx/pdf/docx, integrations, specialized workflows), search the ecosystem BEFORE
 hand-coding the deliverable — a vetted skill ships tested instructions and bundled
 scripts that beat ad-hoc code.
 
+Having the underlying libraries installed (openpyxl, pandas, a node package) is NOT
+having a method: the skill is the battle-tested playbook for the format — conventions,
+edge cases, bundled scripts — not the library. For any deliverable in a packaged task
+family, run the search below FIRST; hand-code only when it comes up empty.
+
 ## How to search
 
 Run the skills CLI in your terminal:
