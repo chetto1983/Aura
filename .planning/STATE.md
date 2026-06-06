@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 11-02-PLAN.md (skills read path / Slice 7a)
-last_updated: "2026-06-06T13:04:43.494Z"
+stopped_at: Completed 18-03-PLAN.md (snippet lifecycle + ungated save / Slice 7e)
+last_updated: "2026-06-06T13:28:14.140Z"
 last_activity: 2026-06-06
 progress:
   total_phases: 20
   completed_phases: 12
   total_plans: 89
-  completed_plans: 85
+  completed_plans: 86
   percent: 60
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 18 (slice-7e-executable-snippet-reuse-steady-state-artifact-runs) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-06-06
 
@@ -107,6 +107,7 @@ Progress: [█████████░] 91%
 | Phase 11 P05 | ~50min | 2 tasks | 17 files |
 | Phase 11 P06 | 45min | 2 tasks | 15 files |
 | Phase 18 P18-02 | ~25min | 2 tasks | 7 files |
+| Phase 18 P18-03 | ~45min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -165,6 +166,7 @@ Recent decisions affecting current work:
 - [Phase ?]: [Phase 11]: 11-05 (Slice 7c governance): skill create/update/delete validate->gate->pending->ask_user pause (D-02); NO model-facing approve (D-03, no router key, tested); blocklist hit = tool error self-correct NOT a pause (D-27); skills.ResumeHandler accept->Writer.Activate / decline->DiscardPending+reject audit (cleanup_pending_stale + gate-taken tuple, no distinct D-29 reject shape); headless never self-activates structurally (D-26, WriteMutation never activates) + optional injectable Alerter not a cron import; messages[1] always-block byte-stable alphabetical (D-07/CAP-04) injected INTO the ladder as a marker-tagged seq=2 protected turn (ToolCallID marker, stripped on wire) the L1/L2.5 evictor never drops (Pitfall 3, 20-turn regression); cache_invariant_audit.sh green; aura skills CLI list|info|create|update|delete|approve(CLI source)|audit + purge surfaces the append-only role error (SC#2); boundary held (tools 0 internal/skills deps); race+lint0; all <=600 LOC. Commits 0b00e2c2/68a3cd01. CAP-07 NOT complete (7d install pending).
 - [Phase ?]: [Phase 11]: 11-06 (Slice 7d installer): native git clone (LookPath fixed-argv, autocrlf-off, GIT_TERMINAL_PROMPT=0, validateRepoURL guard, no npm/pip D-14) + symlink-strip stage + unconditional always-strip persisted (D-10) + red-flag detection (D-13) + CanonicalHash TOFU pin (formalizes 11-04 HashSkillDir, writes own lockfile key NEVER parses upstream D-15) + WriteInstallPending -> pending+D-29 audit, NEVER self-activates. Model skill action=catalog (default-ON D-12) + action=install (ask_user gate D-13, no self-approve D-03) via cycle-free seams. aura skills install/catalog/always CLI. CAP-07 COMPLETE. Commits b52fdc5f/e2eb3c72.
 - [Phase 18]: 18-02 (host-primary snippet use frame): action=use now hands the model a HOST shell_exec by-path frame (interpreter + AURA_SKILL_EXPORT_DIR path) as the PRIMARY instruction, sandbox_exec demoted to the named escalation (#55/D-01); host path derived fresh at use-time (RESEARCH option b); new SnippetHostPath/SnippetHostInvocation mirror the sandbox resolvers, SandboxPath kept for escalation; skillLoader.Snippet seam param sandboxPath->hostPath, adapter resolves from cfg.SkillExportDir; tools<->skills boundary held (0 deps); load-bearing-literal tests flipped in-commit; race+vet+build+cache-invariant green, all <=600 LOC. Commits b970916a/5bb4f4c8.
+- [Phase ?]: [Phase 18]: 18-03 (snippet lifecycle + in-loop save): Writer.Restore = inverse of Archive (promote archived->active + Materialize + SetUsageStatus active + audit-as-AuditActivate/cli — NO new migration, no AuditRestore, the cli D-29 tuple is already CHECK-accepted, documented in a code comment); action=save_snippet routes to Writer.SaveSnippet UNGATED (D-02) returning a NORMAL ToolResult, NEVER the *ErrAwaitingUserInput pause (architectural inverse of the gated writeAction; only ask_user may pause, TestAskUserOnlyPauseConstraint holds) yet still runs validate->blocklist-on-CODE->RISKY->pending (never self-activates); restore/archive replace the notYetWired stubs, archive=SAFE-tier manual de-materialize recoverable via restore; save_snippet added to the property-level action enum + language enum (python|shell|js) + code field, root stays required=[action] only; skillWriterAdapter labels actor=model (T-18-08-S), cli ApprovalSource for restore/archive; tools<->skills boundary held (0 deps); race+lint0; <=600 LOC. Rule-3 fix: scripts/check-file-size.sh here-string mangled the final list entry on Windows bash -> process-substitution. Commits 3397c5ab/041778bc/1b254c59.
 
 ### Pending Todos
 
@@ -198,6 +200,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-06T13:04:13.234Z
-Stopped at: Completed 11-02-PLAN.md (skills read path / Slice 7a)
+Last session: 2026-06-06T13:28:04.394Z
+Stopped at: Completed 18-03-PLAN.md (snippet lifecycle + ungated save / Slice 7e)
 Resume file: None
