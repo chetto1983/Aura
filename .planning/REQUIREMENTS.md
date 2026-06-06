@@ -37,6 +37,7 @@
 - [x] **CAP-06**: Scheduler cron + `agent_job` persistente su Postgres con `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat. Backup TaskKind handlers (`backup_postgres`, `backup_neo4j`) cronnati. [Slice 6]
 - [x] **CAP-07**: Skills system instruction-based (7a read + 7b validator + 7c write/edit + 7d install) con SKILL.md format compat agentskills.io, exposed via ONE non-deferred `skill` tool (`action` enum, D-01). Catalog browse default-ON via skills.sh `/api/search` JSON (D-12); install via native Go clone (D-15, node dep dropped). Audit-immutable Postgres trigger BEFORE UPDATE/DELETE/TRUNCATE + role separation + D-29 coherence matrix enforced (migration 0010). Unicode NFKC validator (10K fuzz on skill content). [Slice 7a/b/c/d + amendments #14, #17, #48]
 - [ ] **CAP-08**: Skill executable code snippets v1 — save + by-path exec multi-lang con TTL archived (via the `skill_ttl_sweep` cron TaskKind, D-16). Reusa il sandbox-agent HTTP `:2468` seam (`tools.SandboxExec`, by-path exec — amendment #44/D-15b; il bespoke sandbox 2b è stato killed) + skill validator. NO cross-conv cluster auto-suggest in v1 (deferred a Slice 7f / v1.x). [Slice 7e-core — amendments #13, #48]
+- [ ] **CAP-08.1**: Snippet reuse steady-state — model-facing in-loop snippet save (UNGATED, D-02) + execution-posture resolution (host shell_exec by-path, D-01) + restore/archive lifecycle handlers + measured steady-state artifact reuse <40s / ~5 LLM calls from the aura.tool_invocations ledger. [Slice 7e-core follow-up — Phase 18, amendment #55]
 
 - [x] **CAP-09 / MCP-V2-01**: Aura MCP Manager control plane for v1. Managed MCP config grows profiles, recipe/catalog metadata, trust classes (`trusted_recipe`, `trusted_local`, `sandboxed_local`, `remote_http`, `blocked`), Streamable HTTP transport, doctor/status/logs, Calendar fixture recipe, sandboxed third-party local runtime, explicit trust approvals, redacted profile export, and mount-time tool risk-policy enforcement. New third-party local commands default to `blocked`; OpenClaw plugin-host runtime remains out-of-scope. [Phase 16 amendment]
 
@@ -120,7 +121,8 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CAP-05 | Phase 7 — Web Tools | Complete |
 | CAP-06 | Phase 10 — Scheduler | Complete |
 | CAP-07 | Phase 11 — Skills | Complete (7a read + 7b validator + 7c write/edit/governance + 7d install all shipped; catalog default-ON, native clone, audit-immutable 0010, NFKC 10K-fuzz validator) |
-| CAP-08 | Phase 11 — Skills | Pending |
+| CAP-08 | Phase 11 — Skills | Complete (7e-core sandbox-posture shipped 11-07; host-posture follow-up = CAP-08.1 / Phase 18) |
+| CAP-08.1 | Phase 18 — Slice 7e snippet reuse steady-state | In Progress |
 | CAP-09 / MCP-V2-01 | Phase 16 — MCP Sidecar Manager + Third-Party Trust | Complete |
 | UX-01 | Phase 12 — AG-UI Gateway | Pending |
 | UX-02 | Phase 13 — Channels + Telegram + Multimodal | Pending |
@@ -135,11 +137,11 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 
 **Coverage:**
 
-- v1 requirements: 28 total (1 PRD + 3 INFRA + 5 CORE + 9 CAP + 9 UX + 1 OPS)
-- Mapped to phases: 28
+- v1 requirements: 29 total (1 PRD + 3 INFRA + 5 CORE + 10 CAP + 9 UX + 1 OPS)
+- Mapped to phases: 29
 - Unmapped: 0 ✓
-- Phases used: 18 (P0 through P17)
+- Phases used: 19 (P0 through P18)
 
 ---
 *Requirements defined: 2026-05-29*
-*Last updated: 2026-06-05 after Phase 17 OPS-01 packaging & distribution registration (amendment #47)*
+*Last updated: 2026-06-06 after Phase 18 CAP-08.1 snippet reuse steady-state registration + CAP-08 reconciliation (amendment #55, D-01/D-04)*

@@ -2146,7 +2146,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > - **7b**: ~~catalog client — skills.sh `/api/search` JSON lax-decode (D-11, spike 003), NOT HTML scrape; the `skill` tool gains `action=catalog`. Browse default-ON (D-12, amendment #14 FLIPPED). ~350 LOC.~~ **[SUPERATA #51/D-40: nessun catalog client Go — discovery = `npx skills find` via shell nel sandbox, teaching nella builtin skill `find-skills-aura`. La sub-slice diventa la DELETION + skill builtin + Loader blocklist scan.]**
 > - **7c**: writer (atomic pending→active) + deleter + the `skill` tool mutation actions `create`/`update`/`delete` (ask_user governance). Schema `aura.skill_audit` (migration **`0010`**, floor 0009 — D-32) + sqlc queries + adapter + the **D-29 5-row audit-coherence matrix** CHECK. Tx wrapping esplicito attorno alla coppia (FS-move pending→active + INSERT skill_audit row): se INSERT fallisce, FS-move viene rollback-ato (rename inverso). ~600 LOC.
 > - **7d**: ~~installer — native Go `git clone --depth 1 --single-branch -c core.autocrlf=false` (D-15, spike 004b) + symlink-strip + Aura canonical hash, NOT `npx`; the `skill` tool gains `action=install`. ~450 LOC.~~ **[SUPERATA #51/D-40: nessun installer Go model-facing — install = `npx skills add` self-service via shell, senza approval round-trip.]**
-> - **7e-core (v1, amendment #13)**: **executable code snippets** (multi-lang Python/shell, eseguibili by-path via the shipped `sandbox_exec` → `sandboxagent.Client` :2468 seam, ro `/skills` mount per D-17) + **TTL 90gg archived state** (sweep via the **`skill_ttl_sweep` cron TaskKind**, D-16 — NOT a goroutine; archived skip da discovery default). Estende SKILL.md con `type: instruction|snippet` field. ~450 LOC. **Dipende dal sandbox-agent portable hardening floor** (token + seccomp + no-new-privileges + read-only rootfs + egress allowlist — D-38) per esecuzione sicura di codice model-authored. **NO cross-conv pattern analyzer in v1.**
+> - **7e-core (v1, amendment #13)**: **executable code snippets** (multi-lang Python/shell, ~~eseguibili by-path via the shipped `sandbox_exec` → `sandboxagent.Client` :2468 seam, ro `/skills` mount per D-17~~ **[SUPERATO #55/D-01: gli snippet APPROVATI girano by-path sul TERMINALE FULL DELL'HOST (`shell_exec`, `<interpreter> <host-export-path>` su `AURA_SKILL_EXPORT_DIR`), come le instruction skill; `sandbox_exec` resta l'escalation deliberata per untrusted/model code]**) + **TTL 90gg archived state** (sweep via the **`skill_ttl_sweep` cron TaskKind**, D-16 — NOT a goroutine; archived skip da discovery default). Estende SKILL.md con `type: instruction|snippet` field. ~450 LOC. **Dipende dal sandbox-agent portable hardening floor** (token + seccomp + no-new-privileges + read-only rootfs + egress allowlist — D-38) per esecuzione sicura di codice model-authored. **NO cross-conv pattern analyzer in v1.**
 > - **7f (v1.x, amendment #13 — deferred SKILL-V2-01)**: **pattern analysis multi-conversation auto-suggest** (cross-conv analyzer suggerisce save dopo 3+ pattern simili via Neo4j HNSW similarity clustering). ~250 LOC. **Dipende da Slice 0.7 Neo4j HNSW + Slice 7e-core + Slice 11 memory** (più downstream di v1 7-slice). Pattern reference: Voyager (Wang et al., NeurIPS 2023) skill library + mem0 procedural memory. Tracked in STATE.md Deferred Items `SKILL-V2-01`.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
@@ -2174,7 +2174,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 **Goal (amended #48, D-01).** **UNA** tool LLM-facing — `skill` — con un `action` enum, NON 7-11 tool dotted `skill.*` (i nomi dotted violano il constraint OpenAI-wire `^[a-zA-Z0-9_-]+$`; DeepSeek rifiuta sia i nomi dotted sia un `oneOf`/`enum` root). Copia il pattern `ActionRouter` di `internal/agent/tools/task.go` (Slice 6b, D-10 schema discipline: `required=["action"]` come unico requisito root, per-action fields nelle description, niente root `oneOf`). Il tool è **NON-deferred** (D-05, parity Claude Code — sempre visibile). Azioni:
 - Read-only: `action=list` (BM25-ranked, D-09), `action=info` (body via ToolResult preview+sidecar), ~~`action=catalog`~~ **[RIMOSSA #51 — discovery via `npx skills find` nel sandbox]**.
 - Mutations (tier RISKY/DESTRUCTIVE da `internal/scoring/ComputeSkillTier`, atterrano in `pending/`, agente decide se gate via `ask_user`, Notifier alert se gate skipped): `action=create`, `action=update`, `action=delete`, ~~`action=install`~~ **[RIMOSSA #51 — install via `npx skills add` nel sandbox, no gate]**.
-- Snippet lifecycle (7e): `action=use` (ritorna istruzioni + path in-sandbox, D-04 — il modello esegue via `sandbox_exec`, MAI un bespoke `run`), `action=restore`, `action=archive`.
+- Snippet lifecycle (7e): `action=use` (ritorna istruzioni + ~~path in-sandbox, D-04 — il modello esegue via `sandbox_exec`~~ **[SUPERATO #55/D-01: ritorna l'`<host-export-path>` — il modello esegue by-path sul terminale host via `shell_exec`; `sandbox_exec` resta l'escalation deliberata]**, MAI un bespoke `run`), `action=restore`, `action=archive`.
 - **NESSUNA `action=approve` model-facing (D-03, NARROWED #51)**: l'attivazione delle mutation AUTHORED (create/update/delete) è solo umana (ask_user resume) o operatore (`aura skills approve` CLI). Gli install di terze parti sono fuori dal perimetro D-03 (#51/D-40: self-service via shell).
 
 Alimentati da:
@@ -2211,7 +2211,7 @@ Alimentati da:
 >
 > **Nuova verità D-41:**
 > 1. **Lo skills self-extension loop + il D-35 North-Star gate cavalcano il TERMINALE FULL DELL'HOST (`tools.ShellExec`, `/bin/sh -c` POSIX / `cmd /c` Windows, single `command` string, cwd + env + combined output — Claude-Code Bash parity, postura #50/D-15c), NON il sandbox.** [SUPERATO #52] su tutto il wording #51 che metteva il loop npx discovery/install nel sandbox (`cd /skills && npx ...`, il mount ro/rw `/skills` come install-home, `sandbox_exec` come terminale dell'eval).
-> 2. **Il sandbox (`sandbox_exec` + `aura-sandbox-agent`) RESTA shippato** come superficie di escalation deliberata per codice untrusted / model-generated (il prompt lo dice già: "Run UNTRUSTED or model-generated code in the isolated sandbox tool"). Gli snippet Slice 7e mantengono INVARIATA la loro esecuzione by-path nel sandbox per ora; la loro postura è ri-valutata in una slice successiva (**follow-up aperto**, NON toccare il codice snippet in questo giro).
+> 2. **Il sandbox (`sandbox_exec` + `aura-sandbox-agent`) RESTA shippato** come superficie di escalation deliberata per codice untrusted / model-generated (il prompt lo dice già: "Run UNTRUSTED or model-generated code in the isolated sandbox tool"). ~~Gli snippet Slice 7e mantengono INVARIATA la loro esecuzione by-path nel sandbox per ora; la loro postura è ri-valutata in una slice successiva (**follow-up aperto**, NON toccare il codice snippet in questo giro).~~ **[RESOLVED #55/D-01 (Phase 18): postura snippet = HOST-PRIMARY — gli snippet APPROVATI girano by-path sul TERMINALE FULL DELL'HOST (`shell_exec`, `<interpreter> <host-export-path>`), come le instruction skill (#50/D-15c); `sandbox_exec` resta l'escalation deliberata per untrusted/model-generated. Follow-up CHIUSO, vedi Amendment #55.]**
 > 3. **`find-skills-aura` insegna `npx` sul terminale host**: `npx skills find <query>` nel terminale; install persistente = `cd` sulla skills-home (default `~/.aura/skills/export`, `AURA_SKILL_EXPORT_DIR`) + `npx skills add <owner/repo> --skill <name> --copy -y` (atterra in `.agents/skills/` sotto la home, che il Loader scandisce). Nessun path `/skills` sandbox, nessun "in the sandbox".
 > 4. **Le eval registry DEVONO rispecchiare la production registry** (tool insegnati dal prompt PRESENTI — il D-35 gate gira l'agente come ship: `shell_exec` primario). Mai un ambiente artificiale sandbox-only: la registry seam-free dell'eval registra ora `buildRegistry() + ask_user + web_search + web_fetch + shell_exec` (NO `sandbox_exec`) **[AMENDED #53: + i 5 fs tool nativi `fs_read`/`fs_write`/`fs_edit`/`fs_grep`/`fs_glob` rootati sul run workspace — la production registry li registra dal #50/D-15c (`cmd/aura/main.go`), ometterli violava questa stessa regola]**.
 > 5. **D-35 hard floor invariato in sostanza** — evidenza self-install structured-arg (`npx skills add anthropics/skills --skill xlsx`) + .xlsx fresco + data odierna + judge ≥0.90 a 2 dim — ma l'evidenza legge ora le command-line di `shell_exec` e l'artifact verify legge il workspace HOST (walk per `*.xlsx` con mtime ≥ run-start, read-back openpyxl via `python3 -c` sul terminale host).
@@ -2224,6 +2224,16 @@ Alimentati da:
 > 3. **`shell_exec` normalizza CRLF→LF nel `command`** (hardening: un modello che emette CRLF rompe il wrap POSIX di cwd-tracking — repro committata nel test). Nessun cambio di contratto wire.
 >
 > Il gate D-35 resta INVARIATO in sostanza (self-install structured-arg + .xlsx fresco nel workspace host + data odierna + judge ≥0.90 a 2 dim, prompt naturale). Nessuna nuova env, nessuna nuova dep, nessun nuovo tool: `fs_*` erano già shippati e in produzione — questo amendment chiude il gap eval↔production e il gap prompt↔toolbelt.
+
+> **▶ Amendment #55 (D-01, postura snippet HOST-PRIMARY — Phase 18 Slice 7e steady-state, 2026-06-06).** Driver = Phase 18 "snippet reuse steady-state" (il loop xlsx misurato a 151-233s / 29-30 roundtrip ri-autora lo script da zero ogni run; il riuso di uno snippet salvato collassa il loop a ~5 call/<40s). Continuazione diretta di #52/D-41 (lo skills self-extension loop cavalca il TERMINALE FULL DELL'HOST, NON il sandbox) — #52 lasciava DELIBERATAMENTE aperta la postura degli snippet Slice 7e (il follow-up a ~2214: "Gli snippet Slice 7e mantengono INVARIATA la loro esecuzione by-path nel sandbox per ora; … ri-valutata in una slice successiva"). Questo amendment **RISOLVE** quel follow-up: gli snippet APPROVATI sono artefatti vettati, non codice fresco del modello, e quindi devono girare come le instruction skill — sul terminale host.
+>
+> **Nuova verità D-01:**
+> 1. **Postura snippet = HOST-PRIMARY.** Uno snippet APPROVATO (saved→activated) viene materializzato su `AURA_SKILL_EXPORT_DIR` (la skills-home host, #51/#52) ed eseguito by-path via il TERMINALE FULL DELL'HOST (`tools.ShellExec`, `<interpreter> <host-export-path>` — es. `python3 ~/.aura/skills/export/<name>/<name>.py`), specchiando le instruction skill che già girano sull'host (#50/D-15c). Lo snippet attivo è un artefatto vettato al SAVE-time (validator + risk gate D-37 + audit D-29), NON model code fresco re-iniettato nel context — la postura host è coerente con la sua trust class.
+> 2. **`sandbox_exec` RESTA shippato come escalation deliberata per-run** per codice untrusted / model-generated (il prompt già dice "Run UNTRUSTED or model-generated code in the isolated sandbox tool" — identico al punto 2 di #52/D-41 per il loop). Uno snippet NON ancora salvato, o un run esplicitamente untrusted, può ancora essere instradato nel sandbox come scelta deliberata; la postura PRIMARIA per gli artefatti approvati è l'host.
+> 3. **Param-passing**: l'`action=use` ritorna l'`<host-export-path>` + le istruzioni; il modello esegue via `shell_exec` (D-04 invariato in sostanza — il codice non ri-entra mai nel context, NESSUN bespoke `run`/`executor.go`). Il contratto argv/stdin/env dello snippet è la discrezione del piano Phase 18.
+> 4. **Il mirror Neo4j `:UserSnippet`** (~3562/~3639, Slice 11 memory) RESTA **DEFERRED con 7f** (semantic search cross-conv) — questo amendment NON lo tocca; v1 discovery resta BM25 (#48/D-21).
+>
+> **Supersessioni esplicite #55:** il follow-up "INVARIATA … nel sandbox per ora" a ~2214 (marcato **RESOLVED** inline sotto); il wording §Slice 7e-core "Idea" / Acceptance / Componenti / commit-template che descriveva l'esecuzione snippet come "by-path via il shipped `sandbox_exec` → `sandboxagent.Client` :2468" come PATH PRIMARIO (marcato `[SUPERATO #55]` inline) — host shell_exec by-path è ora il primario, sandbox l'escalation; la riga `skill action=use` a ~2177 ("ritorna istruzioni + path in-sandbox … il modello esegue via `sandbox_exec`") (marcata `[SUPERATO #55]`). Nessuna nuova env, nessun cambio schema, nessuna nuova dep, nessun nuovo tool: `shell_exec`/`sandbox_exec` erano già shippati. La nuova requirement è tracciata come **CAP-08.1** (Phase 18).
 
 **SKILL.md format** (agentskills.io spec compat, D-30):
 ```
@@ -2414,7 +2424,7 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 
 > **Pattern reference**: rubato da Voyager (Wang et al., NeurIPS 2023) "skill library" pattern — agent costruisce libreria persistente di funzioni eseguibili discoverable via semantic embedding + lifelong learning. Plus mem0 procedural memory ADD-only pattern.
 >
-> **Idea (amended #48, D-04/D-15b/D-17/D-21)**: gli script Python/shell utili vengono **salvati** come `SKILL.md type: snippet`, **materializzati** come file su `AURA_SKILL_EXPORT_DIR` (host) montato ro su `/skills` nel container (D-17, spike 005), **scoperti** via BM25 `action=list` (D-21 — semantic Neo4j HNSW deferred a 7f/Phase 15), **eseguiti by-path** via il shipped `sandbox_exec` → `sandboxagent.Client` HTTP `:2468` (`python3 /skills/<name>.py`, interpreter+path MAI exec bit — spike 005). `action=use` ritorna le istruzioni + il path; il modello esegue via `sandbox_exec` (D-04 — il codice non ri-entra mai nel context, NESSUN bespoke `run`/`executor.go` con `sandbox.Runner.Execute`, che è DEAD). Token saving ~520/riuso.
+> **Idea (amended #48/#55, D-04/D-15b/D-17/D-21/D-01)**: gli script Python/shell utili vengono **salvati** come `SKILL.md type: snippet`, **materializzati** come file su `AURA_SKILL_EXPORT_DIR` (la skills-home host), **scoperti** via BM25 `action=list` (D-21 — semantic Neo4j HNSW deferred a 7f/Phase 15), **eseguiti by-path sul TERMINALE FULL DELL'HOST** (`shell_exec`, `<interpreter> <host-export-path>` — es. `python3 ~/.aura/skills/export/<name>/<name>.py`, interpreter+path MAI exec bit) **[SUPERATO #55/D-01 — postura HOST-PRIMARY (Phase 18): supera il wording #48 "eseguiti by-path via il shipped `sandbox_exec` → `sandboxagent.Client` HTTP `:2468` (`python3 /skills/<name>.py`)" come PATH PRIMARIO; `sandbox_exec` resta l'escalation deliberata per untrusted/model code]**. `action=use` ritorna le istruzioni + l'`<host-export-path>`; il modello esegue via `shell_exec` (D-04 — il codice non ri-entra mai nel context, NESSUN bespoke `run`/`executor.go` con `sandbox.Runner.Execute`, che è DEAD). Token saving ~520/riuso.
 >
 > **Dipendenze (amended #48)**: il **sandbox-agent portable hardening floor** (token D-38 + seccomp + no-new-privileges + read-only rootfs + egress allowlist D-37) — il codice model-authored rende load-bearing l'isolation gap. Il gVisor `runsc` overlay + seccomp re-tightening sono una **regressione sandbox-wide di Phase 8** (D-38 scope note), tracciata lì, NON owned da Phase 11; Phase 11 dipende solo dal floor portabile. NIENTE Slice 2b bespoke session (killed, amendment #44).
 >
@@ -2452,7 +2462,7 @@ print(result.to_json(orient="records"))
 ```
 ```
 
-Body = code block in fenced markdown con `language` matching. Parser estrae code, lo **materializza** come file su `AURA_SKILL_EXPORT_DIR` (ro `/skills` mount, D-17); `action=use` ritorna il path. L'esecuzione è **by-path via il shipped `sandbox_exec`** (`python3 /skills/<name>.py`, D-04) — NON `sandbox.Run(...)`/`sandbox.Runner.Execute(...)` (seam DEAD, amendment #44). Materializzazione solo su activation (pending/archived non materializzano; archive/delete de-materializza — mount in lockstep col loader state).
+Body = code block in fenced markdown con `language` matching. Parser estrae code, lo **materializza** come file su `AURA_SKILL_EXPORT_DIR` (la skills-home host); `action=use` ritorna il path. L'esecuzione è **by-path sul TERMINALE FULL DELL'HOST** (`shell_exec`, `<interpreter> <host-export-path>`, D-04/D-01) **[SUPERATO #55/D-01: supera il wording #48 "by-path via il shipped `sandbox_exec` (`python3 /skills/<name>.py`)" come primario; host shell_exec è ora il primario, sandbox l'escalation]** — NON `sandbox.Run(...)`/`sandbox.Runner.Execute(...)` (seam DEAD, amendment #44). Materializzazione solo su activation (pending/archived non materializzano; archive/delete de-materializza — export dir in lockstep col loader state).
 
 #### Pattern analysis multi-conversation (smart auto-suggest)
 
@@ -2518,9 +2528,10 @@ internal/skills/
                            #       extract code block by language, optional inputs_schema (D-20
                            #       docs-only, tolerated not enforced; deps LOAD-BEARING only if
                            #       on-demand dep model — D-36)
-  materialize.go           # (7a)  activation -> AURA_SKILL_EXPORT_DIR (ro /skills); de-materialize
+  materialize.go           # (7a)  activation -> AURA_SKILL_EXPORT_DIR (host skills-home); de-materialize
                            #       on archive/delete; symlink-strip (D-17). NO bespoke executor.go:
-                           #       exec is the shipped sandbox_exec by-path (D-04).
+                           #       exec is HOST shell_exec by-path (D-04/D-01, #55 — sandbox_exec is the
+                           #       deliberate escalation for untrusted/model code, not the primary path).
   metadata.go              # ~70   Sidecar JSON {last_used_at, status, use_count, archived_at}
                            #       atomic write (D-19, the ONLY live-state source)
 
@@ -2529,8 +2540,9 @@ internal/cron/handlers/skill_ttl.go  # ~80  skill_ttl_sweep cron.Handler (D-16, 
                            #       idle > AURA_SKILL_SNIPPET_TTL_DAYS, de-materializes, audit auto_archive
 
 internal/agent/tools/skill.go (diff)  # ~+60  (the ONE tool — NOT new dotted tools)
-  + action=use      - materializes + returns in-sandbox path + instructions (D-04;
-                      model executes via sandbox_exec, NO bespoke run)
+  + action=use      - materializes + returns HOST export-path + instructions (D-04/D-01 #55;
+                      model executes via HOST shell_exec by-path, NO bespoke run; sandbox_exec
+                      stays the deliberate escalation for untrusted/model code)
   + action=restore  - unarchives snippet, re-materializes
   + action=archive  - manual archive (tier SAFE, no gate), de-materializes
 
@@ -2564,8 +2576,10 @@ salvalo come parse_csv_groupby"
 aura chat "ho un CSV vendite per regione, raggruppami per regione"
 # → LLM chiama skill(action=list, query="CSV groupby")  # BM25-ranked
 # → top match: parse_csv_groupby
-# → LLM chiama skill(action=use, name="parse_csv_groupby") → ritorna path /skills/parse_csv_groupby.py
-# → LLM chiama sandbox_exec(command=python3, args=["/skills/parse_csv_groupby.py", ...])  # D-04 by-path
+# → LLM chiama skill(action=use, name="parse_csv_groupby") → ritorna host export-path
+#   es. ~/.aura/skills/export/parse_csv_groupby/parse_csv_groupby.py
+# → LLM chiama shell_exec(command="python3 ~/.aura/skills/export/parse_csv_groupby/parse_csv_groupby.py ...")
+#   # D-04/D-01 #55 host by-path (sandbox_exec resta l'escalation deliberata per untrusted/model code)
 # → ToolResult JSON array → LLM presenta risultato
 
 # === SECTION 3 BELOW DEFERRED TO SLICE 7f (v1.x) PER AMENDMENT #13 — kept here for forward-reference only ===
@@ -2590,7 +2604,7 @@ aura skills restore old_script_unused  # status='active' reseted, re-materialize
 #### Acceptance 7e (amended #48)
 
 - [ ] `internal/skills/snippet.go` parse `SKILL.md type: snippet` con language enum (python/shell/js), extract code block by language matching. `inputs_schema`/`outputs_desc`/`tags` = OPTIONAL docs-only (D-20, tolerated not enforced); `deps` LOAD-BEARING only under the on-demand dep model (D-36); `needs_network`/`needs_workspace` surfaced in the SAVE-time risk gate.
-- [ ] **Execution is by-path via the shipped `sandbox_exec` → `sandboxagent.Client` :2468 (D-04/D-15b)** — `action=use` materializes the file under `/skills` (ro) and returns `python3 /skills/<name>.py` (interpreter+path, NEVER exec bit — spike 005). NO `internal/skills/executor.go`, NO `sandbox.Runner.Execute` (DEAD seam, amendment #44).
+- [ ] **Execution is HOST-PRIMARY by-path via `shell_exec` (D-04/D-01, amendment #55)** — `action=use` materializes the file under `AURA_SKILL_EXPORT_DIR` (host skills-home) and returns `<interpreter> <host-export-path>` (e.g. `python3 ~/.aura/skills/export/<name>/<name>.py`, interpreter+path, NEVER exec bit — spike 005). `[SUPERATO #55: supera il wording #48 "by-path via the shipped `sandbox_exec` → `sandboxagent.Client` :2468 … `python3 /skills/<name>.py`" come PRIMARIO — `sandbox_exec` resta l'escalation deliberata per untrusted/model code.]` NO `internal/skills/executor.go`, NO `sandbox.Runner.Execute` (DEAD seam, amendment #44).
 - [ ] **TTL sweep = cron `skill_ttl_sweep` TaskKind (D-16, NOT a goroutine)** — `internal/cron/handlers/skill_ttl.go` implements `cron.Handler`, seeded daily; scans sidecars, archives idle > `AURA_SKILL_SNIPPET_TTL_DAYS`, de-materializes, audit `auto_archive` (D-29 row 5). The 0010 migration ALTERs the 0009 `scheduler_tasks.kind` CHECK to admit `skill_ttl_sweep`.
 - [ ] `skill(action=use, name)`: materializes + returns in-sandbox path + instructions; updates sidecar `last_used_at` + `use_count++` + optional INSERT `snippet_runs` row.
 - [ ] `skill(action=restore, name)`: unarchives + re-materializes, audit RESTORE entry.
@@ -2598,7 +2612,7 @@ aura skills restore old_script_unused  # status='active' reseted, re-materialize
 - [ ] Discovery filtro: `skill(action=list)` default `status='active'` (BM25-ranked, D-21). `--include-archived` flag/arg per mostrare tutti.
 - [ ] **Migration 0010** (floor 0009, D-32) carries `skill_audit` + the `scheduler_tasks.kind` CHECK widening; usage/archive live-state is the sidecar JSON (D-19 — NO `last_used_at`/`use_count` ALTER on `skill_audit`). Optional **0011** for `aura.snippet_runs` per-run forensics.
 - [ ] Test `skill_ttl_sweep` handler (`db_integration`): seeded task fires; snippet con `last_used_at = now()-91d` → archived next sweep.
-- [ ] Test by-path exec (`sandbox_integration db_integration`): `action=use` returns the `/skills/<name>.py` path; `sandbox_exec` executes it; output captured (SC#4).
+- [ ] Test by-path exec: `action=use` returns the `<host-export-path>`; HOST `shell_exec` executes it (`<interpreter> <host-export-path>`); output captured (SC#4). `[SUPERATO #55/D-01: era `sandbox_integration db_integration` con `sandbox_exec` su `/skills/<name>.py` — ora host-primary via `shell_exec`; il sandbox path resta esercitabile come escalation deliberata.]`
 - [ ] Risk-Based: snippet `needs_network=true OR needs_workspace=true` → tier RISKY al save (gate_recommended=true). `needs_network:true` routes through the allowlisted host forward-proxy at RISKY tier (D-37; advisory on Docker Desktop, enforced on native-Linux). Default `needs_*=false` → tier SAFE.
 
 #### Open questions Slice 7e
@@ -2614,9 +2628,11 @@ aura skills restore old_script_unused  # status='active' reseted, re-materialize
 slice 7e-core: executable code snippets + TTL archived (v1; pattern analyzer → 7f v1.x per amendment #13)
 
 Estende SKILL.md formato con type=snippet (multi-lang python/shell/js),
-eseguibili by-path via il shipped sandbox_exec -> sandboxagent.Client :2468
-(D-04/D-15b — NO sandbox 2b bespoke, killed amendment #44). Pattern reference:
-Voyager (Wang et al., NeurIPS 2023) skill library + mem0 procedural memory.
+eseguibili HOST-PRIMARY by-path via shell_exec (<interpreter> <host-export-path>
+su AURA_SKILL_EXPORT_DIR — D-04/D-01, amendment #55; sandbox_exec resta
+l'escalation deliberata per untrusted/model code, NON il path primario).
+Pattern reference: Voyager (Wang et al., NeurIPS 2023) skill library + mem0
+procedural memory.
 
 SKILL.md extended fields:
 - type: instruction|snippet (default instruction, backwards-compat 7a)
@@ -2625,11 +2641,13 @@ SKILL.md extended fields:
 - deps: array (LOAD-BEARING only under on-demand dep model, D-36)
 - needs_network/needs_workspace: surfaced in the SAVE-time risk gate (D-37)
 
-Snippet exec: action=use materializes the file under /skills (ro mount,
-D-17) and returns python3 /skills/<name>.py (interpreter+path, NEVER exec
-bit — spike 005); the model runs it via sandbox_exec (D-04). NO executor.go,
-NO sandbox.Runner.Execute. Updates sidecar last_used_at + use_count + optional
-snippet_runs row.
+Snippet exec: action=use materializes the file under AURA_SKILL_EXPORT_DIR
+(host skills-home) and returns <interpreter> <host-export-path> (e.g.
+python3 ~/.aura/skills/export/<name>/<name>.py, interpreter+path, NEVER exec
+bit — spike 005); the model runs it via HOST shell_exec by-path (D-04/D-01,
+amendment #55 — sandbox_exec stays the deliberate escalation for untrusted/
+model code). NO executor.go, NO sandbox.Runner.Execute. Updates sidecar
+last_used_at + use_count + optional snippet_runs row.
 
 TTL sweep = cron skill_ttl_sweep TaskKind (D-16, NOT a goroutine — Phase-10
 persistence/HA/catch-up free), seeded daily:
@@ -2645,7 +2663,7 @@ Migration 0011 (optional): aura.snippet_runs per-run forensics (D-19 —
 usage/archive live-state is the sidecar JSON, NO skill_audit ALTER).
 
 Tool actions added to the ONE skill tool:
-  action=use      - materializes + returns in-sandbox path (D-04)
+  action=use      - materializes + returns HOST export-path (D-04/D-01, #55)
   action=restore  - unarchives + re-materializes
   action=archive  - manual archive (tier SAFE)
 
