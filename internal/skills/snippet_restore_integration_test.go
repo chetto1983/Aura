@@ -15,6 +15,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -118,7 +119,14 @@ func TestRestoreErrorsWhenArchiveDirUnset(t *testing.T) {
 		BodyCapBytes: 32768,
 	})
 
-	if err := w.Restore(ctx, "anything", ApprovalCLI, AuditActor{ActorID: "cli"}); err == nil {
+	err := w.Restore(ctx, "anything", ApprovalCLI, AuditActor{ActorID: "cli"})
+	if err == nil {
 		t.Fatal("Restore with no archiveDir configured: want a clear error, got nil")
+	}
+	// The guard must carry its SPECIFIC diagnostic, not whatever a fall-through hits:
+	// without the explicit message the operator cannot tell a misconfigured Writer from
+	// a missing-archive failure.
+	if !strings.Contains(err.Error(), "archive dir not configured") {
+		t.Errorf("Restore unset-archive error = %q, want the 'archive dir not configured' diagnostic", err.Error())
 	}
 }

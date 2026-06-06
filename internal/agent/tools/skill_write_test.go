@@ -422,3 +422,112 @@ func TestSnippetLifecycleNoWriter(t *testing.T) {
 		t.Fatalf("save_snippet without writer: want a 'no writer' error, got %v", err)
 	}
 }
+
+// TestEmptyNameErrorIsContractual pins the EXACT model-facing message for a blank name
+// (the message IS the contract — the model self-corrects from it). It distinguishes the
+// "name is required" early-return from the downstream "invalid name %q" regex-mismatch
+// error: a missing name and a malformed name must give DIFFERENT hints. (Kills
+// skill_write.go.0: validWriteName's empty-name early-return no-op'd, which falls through
+// to the regex branch and emits "invalid name" instead of "name is required".)
+func TestEmptyNameErrorIsContractual(t *testing.T) {
+	w := &fakeSkillWriter{}
+	tool := &SkillTool{Writer: w}
+
+	_, err := execSkill(t, tool, map[string]any{"action": "create", "description": "d", "body": "b"})
+	if err == nil {
+		t.Fatal("create without name: want a tool error, got nil")
+	}
+	if !strings.Contains(err.Error(), "name is required") {
+		t.Errorf("blank-name error = %q, want it to carry the 'name is required' hint (not the regex-mismatch message)", err.Error())
+	}
+	// A whitespace-only name trims to empty and must hit the SAME early-return, not the regex.
+	_, err = execSkill(t, tool, map[string]any{"action": "create", "name": "   ", "description": "d", "body": "b"})
+	if err == nil || !strings.Contains(err.Error(), "name is required") {
+		t.Errorf("whitespace-only name error = %v, want 'name is required'", err)
+	}
+	if w.calls != 0 {
+		t.Errorf("writer must not be called on a blank name, calls=%d", w.calls)
+	}
+}
+
+// TestMalformedJSONWrapsArgs pins the "args:" wrap on a structurally-broken arg object
+// for every action that decodes its own raw payload. The decode-error branch is the
+// model-facing diagnostic that distinguishes a malformed-JSON failure from a
+// missing-field failure; without the wrap the model sees a generic empty-name error and
+// cannot tell its JSON was unparseable. (Kills skill_write.go.2 [writeAction],
+// .7 [actionSaveSnippet], .17 [requireWriteName via restore/archive].)
+func TestMalformedJSONWrapsArgs(t *testing.T) {
+	// A JSON value with the wrong type for a string field (name is a number) fails
+	// json.Unmarshal at the field, exercising the decode-error branch directly.
+	malformed := json.RawMessage(`{"action":"%s","name":123}`)
+	for _, action := range []string{"create", "save_snippet", "restore", "archive"} {
+		t.Run(action, func(t *testing.T) {
+			w := &fakeSkillWriter{}
+			tool := &SkillTool{Writer: w}
+			raw := json.RawMessage(strings.Replace(string(malformed), "%s", action, 1))
+			_, err := tool.Execute(context.Background(), raw)
+			if err == nil {
+				t.Fatalf("%s with malformed args: want a tool error, got nil", action)
+			}
+			if !strings.Contains(err.Error(), "args:") {
+				t.Errorf("%s malformed-args error = %q, want the 'args:' decode wrap", action, err.Error())
+			}
+			if w.calls != 0 || w.saveCalls != 0 || w.restoreCalls != 0 || w.archiveCalls != 0 {
+				t.Errorf("%s: writer must not be called when the args fail to decode", action)
+			}
+		})
+	}
+}
+
+// TestLifecycleWriterErrorSurfacesWithContext asserts a writer-side failure on the
+// save_snippet/restore/archive lifecycle actions surfaces as a tool error wrapping the
+// underlying cause + the skill name (the operator diagnostic), never swallowed into a
+// success result. (Kills skill_write.go.12 [save_snippet wrap], .14 [restore wrap],
+// .16 [archive wrap]: the no-op'd wrap falls through to a NewResult success.)
+func TestLifecycleWriterErrorSurfacesWithContext(t *testing.T) {
+	cases := []struct {
+		action string
+		args   map[string]any
+	}{
+		{"save_snippet", map[string]any{"action": "save_snippet", "name": "boom", "language": "python", "code": "x"}},
+		{"restore", map[string]any{"action": "restore", "name": "boom"}},
+		{"archive", map[string]any{"action": "archive", "name": "boom"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.action, func(t *testing.T) {
+			w := &fakeSkillWriter{lifecycleErr: errors.New("writer exploded")}
+			tool := &SkillTool{Writer: w}
+			res, err := execSkill(t, tool, tc.args)
+			if err == nil {
+				t.Fatalf("%s with a failing writer: want a tool error, got nil (res=%q)", tc.action, res.Preview)
+			}
+			var pause *ErrAwaitingUserInput
+			if errors.As(err, &pause) {
+				t.Fatalf("%s: a writer failure is a tool error, NOT a pause", tc.action)
+			}
+			if !strings.Contains(err.Error(), "writer exploded") {
+				t.Errorf("%s error = %q, want it to wrap the underlying cause", tc.action, err.Error())
+			}
+			if !strings.Contains(err.Error(), "boom") {
+				t.Errorf("%s error = %q, want it to name the skill (operator diagnostic)", tc.action, err.Error())
+			}
+		})
+	}
+}
+
+// TestApprovalPriorityIsTierOrdered pins the numeric priority ladder: a Destructive
+// (delete) gate is 80 and a Risky (create/update) gate is 60, so a removal outranks a
+// routine approval when several pauses are pending. (Kills skill_write.go.20:
+// `return 80` blanked to a bare `return` would yield 0, collapsing the ordering.)
+func TestApprovalPriorityIsTierOrdered(t *testing.T) {
+	if got := skillApprovalPriority(scoring.Destructive); got != 80 {
+		t.Errorf("Destructive priority = %d, want 80 (a delete must outrank a routine approval)", got)
+	}
+	if got := skillApprovalPriority(scoring.Risky); got != 60 {
+		t.Errorf("Risky priority = %d, want 60", got)
+	}
+	if skillApprovalPriority(scoring.Destructive) <= skillApprovalPriority(scoring.Risky) {
+		t.Errorf("Destructive (%d) must rank strictly above Risky (%d)",
+			skillApprovalPriority(scoring.Destructive), skillApprovalPriority(scoring.Risky))
+	}
+}
