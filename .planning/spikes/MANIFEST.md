@@ -32,6 +32,14 @@ Ground-truth probe of the MCP infrastructure Phase 9 (Swarm Minimal) depends on 
 - **NO install-approval ceremony for skill installs** (operator directive 2026-06-05, mid-spike-012): Aura self-installs with `npx skills add` via the sandbox terminal, Claude-Code-style — no ask_user gate, no pending/approve round-trip. SUPERSEDES D-03/D-35 install-prudence and the session-2 "native Go installer" gate framing. Posture per amendment #50 / D-15c (full-terminal home, rw `/skills`, --no-token): single trusted operator on their own box; the future per-identity gate is capability_grants (Slice 1.7), not ceremonies. The ONE security keep: the injection blocklist must scan at LOADER level (self-installed bodies no longer pass through the Writer).
 - Discovery + install teaching = **find-skills-style skill content** (messages[1] always-block), NOT bespoke routing prompt-engineering; the skills CLI is the transport (spike 011), the Go catalog+installer model-facing legs become deletable (spike 013 table). Production prior art: nanobot's clawhub skill (~55 lines md) + 242-LOC loader = the whole system.
 
+**Session-4 requirements (emerged from spikes 014-016, binding for `/gsd-plan-phase 12`; PRD amendment required before implementation):**
+
+- **SDK pin = pseudo-version, not 40-hex SHA**: `require github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9` (immutable via go.sum). Amendment #6's CI grep gate (`[a-f0-9]{40}` in go.mod) is structurally unsatisfiable — replace with a pseudo-version literal grep. CI bootstrap that pins before code imports the module needs a second `go get <module>/pkg/core/events@<pseudo-version>` for transitive sums.
+- **Resume contract = protocol-native `RunAgentInput.Resume []ResumeEntry`** (`interruptId`/`status`/`payload`), superseding the PRD's "RoleTool answers in messages" design. Slice-1.5 mapping: `PausedState` → `types.Interrupt{ID, Reason, ToolCallID, ResponseSchema}`; `ResumeStatusCancelled` covers HITL cancel; `ExpiresAt` available for pause TTL.
+- **Outcome literals**: `outcome.type ∈ {success, interrupt}` — the PRD's `interrupted`/`errored` don't exist; the error path is the RUN_ERROR event.
+- **Translator obligations**: skip empty LLM deltas and guarantee non-empty `messageId`/`toolCallId` (SDK `Validate()` rejects both); REASONING_* is the canonical family (THINKING_* deprecated); `internal/agui/types.go` halves — `RunAgentInput` parser+dual-case unmarshal is SDK-provided.
+- **SSE framing is a choice**: `WriteEventWithType` emits the PRD smoke's `event: TYPE` line; plain `WriteEvent` is data-only (TS-SDK default). Re-verify Dojo client compat at 8b time if `event:` framing is kept.
+
 ## Spikes
 
 | # | Name | Type | Validates | Verdict | Tags |

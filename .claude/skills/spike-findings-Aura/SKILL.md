@@ -1,6 +1,6 @@
 ---
 name: spike-findings-Aura
-description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Aura (skills self-extension, sandbox runtime, MCP live servers). Auto-loaded during implementation work.
+description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Aura (skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway). Auto-loaded during implementation work.
 ---
 
 <context>
@@ -8,11 +8,12 @@ description: Implementation blueprint from spike experiments. Requirements, prov
 
 Ground-truth spikes for the tabula-rasa rewrite: Phase-9 MCP infrastructure (mail +
 WhatsApp live mounts), Phase-11 Skills (discovery/install architecture — re-litigated
-session 3 into skill-driven self-extension with no approval ceremony), and the sandbox
-runtime posture (mounts, deps, hardening tiers vs the amendment-#50 full-terminal home).
+session 3 into skill-driven self-extension with no approval ceremony), the sandbox
+runtime posture (mounts, deps, hardening tiers vs the amendment-#50 full-terminal home),
+and the Phase-12 AG-UI gateway (official Go SDK pin, event surface, SSE round-trip).
 
 Spike sessions wrapped: 2026-06-04 (001-002), 2026-06-05 (003-010 session 2,
-011-013 session 3).
+011-013 session 3), 2026-06-06 (014-016 session 4).
 </context>
 
 <requirements>
@@ -39,6 +40,13 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
   Docker Desktop's accidental NAT is never a design input.
 - Posture: amendment #50 full-terminal home (rw /skills, --no-token); per-identity
   gating arrives with capability_grants (Slice 1.7), not ceremonies.
+- **AG-UI SDK pin = pseudo-version** `v0.0.0-20260514093510-e9e910b230b9` (amendment #6's
+  40-hex CI grep gate is structurally unsatisfiable — amend to a pseudo-version grep).
+  **PRD amendment required before Phase-12 implementation** (4 fixes — see
+  references/agui-gateway.md Requirements).
+- Resume contract = protocol-native `RunAgentInput.Resume []ResumeEntry`, superseding the
+  PRD's RoleTool-answers design; `outcome.type ∈ {success, interrupt}`; REASONING_* is
+  canonical (THINKING_* deprecated); translator must skip empty deltas + guarantee IDs.
 </requirements>
 
 <findings_index>
@@ -49,6 +57,7 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
 | Skills self-extension | references/skills-self-extension.md | Skill-content + npx CLI beats the bespoke tool flow 4/4 vs 2/3 live; full autonomous find→add→use→artifact loop in one turn; delete ~2,050 LOC, add ~50 lines of markdown (nanobot-proven shape) |
 | Sandbox runtime | references/sandbox-runtime.md | Compose binds work on Docker Desktop (no sync step needed); uv installs deps in 0.3-3s; hardening tiers (token/egress-proxy/gVisor) are the PROD menu — dev runs #50 full-trust |
 | MCP live servers | references/mcp-live-servers.md | mail-mcp mounts clean; whatsapp needs the chetto1983 fork (whatsmeow bump + self-echo patch); bridged tools must flip to Deferred or the manifest degrades |
+| AG-UI gateway | references/agui-gateway.md | SDK pin = pseudo-version (amendment-#6 grep gate unsatisfiable as written); 21/21 PRD events exist incl. native REASONING_*; resume contract is protocol-native `resume[]`; ~60-LOC pure iter.Seq2 translator + SDK SSEWriter round-trips the PRD smoke verbatim at 35-40ms loopback |
 
 ## Source Files
 
@@ -74,4 +83,7 @@ SKILL.md, the CONNECT proxy, and bridge-patch.diff are preserved under `sources/
 - 012a-discovery-skill-driven
 - 012b-discovery-tool-driven
 - 013-thin-surface-gate-parity
+- 014-agui-sdk-module-pin
+- 015-agui-event-surface
+- 016-agui-sse-roundtrip
 </metadata>

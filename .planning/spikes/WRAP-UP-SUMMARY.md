@@ -1,8 +1,8 @@
 # Spike Wrap-Up Summary
 
-**Date:** 2026-06-05
-**Spikes processed:** 15
-**Feature areas:** skills-self-extension, sandbox-runtime, mcp-live-servers
+**Date:** 2026-06-06 (sessions 1-3 wrapped 2026-06-05)
+**Spikes processed:** 18
+**Feature areas:** skills-self-extension, sandbox-runtime, mcp-live-servers, agui-gateway
 **Skill output:** `./.claude/skills/spike-findings-Aura/`
 
 ## Processed Spikes
@@ -24,6 +24,9 @@
 | 012a | discovery-skill-driven | comparison | VALIDATED ✓ WINNER | skills-self-extension |
 | 012b | discovery-tool-driven | comparison | VALIDATED ✓ baseline (dead-gate root cause found) | skills-self-extension |
 | 013 | thin-surface-gate-parity | standard | VALIDATED ✓ | skills-self-extension |
+| 014 | agui-sdk-module-pin | standard | VALIDATED ✓ (amendment-#6 CI gate unsatisfiable as written) | agui-gateway |
+| 015 | agui-event-surface | standard | VALIDATED ✓ (21/21 events; 4 amendments) | agui-gateway |
+| 016 | agui-sse-roundtrip | standard | VALIDATED ✓ (13/13 PRD order, 35-40ms loopback) | agui-gateway |
 
 ## Key Findings
 
@@ -48,9 +51,21 @@
 - **MCP**: both Phase-9 live servers mount through the existing seam; whatsapp needs
   the chetto1983 fork (whatsmeow bump + self-echo persistence patch); bridged tools
   must flip to Deferred before both servers mount (manifest degradation threshold).
+- **AG-UI gateway (session 4, pre-Phase-12)**: the official Go SDK at pin
+  `v0.0.0-20260514093510-e9e910b230b9` covers 21/21 PRD-required events (REASONING_*
+  native, #33 served; THINKING_* deprecated) and ships `RunAgentInput` with dual-case
+  unmarshal + a protocol-native `resume[]` contract that supersedes the PRD's
+  RoleTool-answers design (maps 1:1 to Slice-1.5 PausedState incl. HITL cancel).
+  The −100-LOC iter.Seq2 translator design round-trips live over the SDK SSEWriter
+  (13/13 PRD order, `event:`+`id:`+`data:` framing, 35-40ms loopback floor) with
+  zero changes to internal/agent (D-17 holds). Amendment-#6's 40-hex CI grep gate
+  is structurally unsatisfiable — pseudo-version grep instead.
 
 ## Pending follow-through
 
 - **PRD amendment** (supersedes D-03, D-13 gate surface, D-35 install-prudence,
   parts of #49; aligns with #50) BEFORE implementing the deletion/rewire slice.
+- **PRD amendment for Phase 12** (4 fixes: #6 gate regex → pseudo-version; outcome
+  literals {success, interrupt}; resume contract → protocol-native `resume[]`;
+  event-count language) BEFORE `/gsd-plan-phase 12`.
 - Binding decisions recorded in `.planning/spikes/MANIFEST.md` Requirements.

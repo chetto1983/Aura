@@ -1,0 +1,165 @@
+{
+  "MESSAGES_SNAPSHOT": {
+    "type": "MESSAGES_SNAPSHOT",
+    "timestamp": 1780766525937,
+    "messages": [
+      {
+        "id": "m1",
+        "role": "user",
+        "content": "ciao"
+      },
+      {
+        "id": "m2",
+        "role": "assistant",
+        "content": "4"
+      },
+      {
+        "id": "m3",
+        "role": "tool",
+        "content": "42",
+        "toolCallId": "call-1"
+      }
+    ]
+  },
+  "REASONING_END": {
+    "type": "REASONING_END",
+    "timestamp": 1780766525937,
+    "messageId": "rsn-1"
+  },
+  "REASONING_MESSAGE_CONTENT": {
+    "type": "REASONING_MESSAGE_CONTENT",
+    "timestamp": 1780766525937,
+    "messageId": "rsn-1",
+    "delta": "thinking…"
+  },
+  "REASONING_MESSAGE_END": {
+    "type": "REASONING_MESSAGE_END",
+    "timestamp": 1780766525937,
+    "messageId": "rsn-1"
+  },
+  "REASONING_MESSAGE_START": {
+    "type": "REASONING_MESSAGE_START",
+    "timestamp": 1780766525937,
+    "messageId": "rsn-1",
+    "role": "assistant"
+  },
+  "REASONING_START": {
+    "type": "REASONING_START",
+    "timestamp": 1780766525937,
+    "messageId": "rsn-1"
+  },
+  "RUN_ERROR": {
+    "type": "RUN_ERROR",
+    "timestamp": 1780766525937,
+    "message": "LLM 5xx finale"
+  },
+  "RUN_FINISHED(interrupt)": {
+    "type": "RUN_FINISHED",
+    "timestamp": 1780766525937,
+    "threadId": "thread-1",
+    "runId": "run-1",
+    "outcome": {
+      "type": "interrupt",
+      "interrupts": [
+        {
+          "id": "int-1",
+          "reason": "tool_call",
+          "message": "Serve conferma per procedere",
+          "toolCallId": "call-ask-1",
+          "responseSchema": {
+            "properties": {
+              "answer": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          }
+        }
+      ]
+    }
+  },
+  "RUN_FINISHED(success)": {
+    "type": "RUN_FINISHED",
+    "timestamp": 1780766525937,
+    "threadId": "thread-1",
+    "runId": "run-1",
+    "outcome": {
+      "type": "success"
+    }
+  },
+  "RUN_STARTED": {
+    "type": "RUN_STARTED",
+    "timestamp": 1780766525937,
+    "threadId": "thread-1",
+    "runId": "run-1"
+  },
+  "STATE_DELTA": {
+    "type": "STATE_DELTA",
+    "timestamp": 1780766525937,
+    "delta": [
+      {
+        "op": "replace",
+        "path": "/cost_usd",
+        "value": 0.0042
+      }
+    ]
+  },
+  "STATE_SNAPSHOT": {
+    "type": "STATE_SNAPSHOT",
+    "timestamp": 1780766525937,
+    "snapshot": {
+      "cost_usd": 0
+    }
+  },
+  "STEP_FINISHED": {
+    "type": "STEP_FINISHED",
+    "timestamp": 1780766525937,
+    "stepName": "step-1"
+  },
+  "STEP_STARTED": {
+    "type": "STEP_STARTED",
+    "timestamp": 1780766525937,
+    "stepName": "step-1"
+  },
+  "TEXT_MESSAGE_CONTENT": {
+    "type": "TEXT_MESSAGE_CONTENT",
+    "timestamp": 1780766525937,
+    "messageId": "msg-1",
+    "delta": "Ciao"
+  },
+  "TEXT_MESSAGE_END": {
+    "type": "TEXT_MESSAGE_END",
+    "timestamp": 1780766525937,
+    "messageId": "msg-1"
+  },
+  "TEXT_MESSAGE_START": {
+    "type": "TEXT_MESSAGE_START",
+    "timestamp": 1780766525937,
+    "messageId": "msg-1"
+  },
+  "TOOL_CALL_ARGS": {
+    "type": "TOOL_CALL_ARGS",
+    "timestamp": 1780766525937,
+    "toolCallId": "call-1",
+    "delta": "{\"query\":\"meteo"
+  },
+  "TOOL_CALL_END": {
+    "type": "TOOL_CALL_END",
+    "timestamp": 1780766525937,
+    "toolCallId": "call-1"
+  },
+  "TOOL_CALL_RESULT": {
+    "type": "TOOL_CALL_RESULT",
+    "timestamp": 1780766525937,
+    "messageId": "msg-2",
+    "toolCallId": "call-1",
+    "content": "result preview + footer",
+    "role": "tool"
+  },
+  "TOOL_CALL_START": {
+    "type": "TOOL_CALL_START",
+    "timestamp": 1780766525937,
+    "toolCallId": "call-1",
+    "toolCallName": "web_search"
+  }
+}
