@@ -48,6 +48,7 @@ type turnCapture struct {
 	usage          llm.Usage   // per-turn token+cost usage off the final Event StateDelta
 	eventKinds     []eventKind // ordered Event kinds
 	toolNames      []string    // non-terminal tool calls in call order
+	toolArgs       []string    // raw JSON arguments of each tool call, aligned with toolNames (action-aware capture, Phase 11)
 	toolCallMS     []float64   // ms-since-start of each tool call, aligned with toolNames
 	toolResults    []string    // raw tool-result previews threaded back to the model
 	toolResultMS   []float64   // ms-since-start of each tool result, aligned with toolResults
@@ -98,6 +99,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 			c.awaitingInput = ev.Actions.AwaitingInput
 			c.eventKinds = append(c.eventKinds, kindToolCall) // the ask_user call
 			c.toolNames = append(c.toolNames, askUserToolNameCapture)
+			c.toolArgs = append(c.toolArgs, "") // pause payload carried on awaitingInput, not args
 			c.toolCallMS = append(c.toolCallMS, float64(time.Since(start).Microseconds())/1000.0)
 			break
 		}
@@ -110,6 +112,7 @@ func captureTurn(run func() func(func(*agent.Event, error) bool)) *turnCapture {
 			c.eventKinds = append(c.eventKinds, kindToolCall)
 			for i := range resp.ToolCalls {
 				c.toolNames = append(c.toolNames, resp.ToolCalls[i].Function.Name)
+				c.toolArgs = append(c.toolArgs, resp.ToolCalls[i].Function.Arguments)
 				c.toolCallMS = append(c.toolCallMS, float64(time.Since(start).Microseconds())/1000.0)
 			}
 		case resp.FinishReason != "":

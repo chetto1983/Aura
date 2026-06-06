@@ -51,22 +51,24 @@ const (
 	dimAggregationQuality   dimension = "aggregation_quality"        // judge, ≥90% gate
 	dimNoOverSpawn          dimension = "no_over_spawn"              // judge, ≥90% gate
 
-	// Phase 11 skills xlsx North-Star dual-gate dimensions (D-35). The three judge
-	// dimensions average to the ≥90% gate (judgeSkillsGate); the hard-floor
-	// ground-truth assertions (catalog→ask_user→install→sandbox_exec sequence,
-	// the .xlsx exists/opens/contains-today's-data) are scored deterministically
-	// under dimSkillsHardFloor.
+	// Phase 11 skills xlsx North-Star dual-gate dimensions (D-35, RISCRITTO by
+	// amendment #51 / D-40). The TWO judge dimensions average to the ≥90% gate
+	// (judgeSkillsGate); the hard-floor ground-truth assertions (self-install
+	// evidence from structured tool args + the fresh-.xlsx artifact that opens and
+	// carries today's data) are scored deterministically under dimSkillsHardFloor.
+	// The install-prudence dimension is DROPPED: under the no-ceremony directive
+	// (#51/D-40) the model self-installs in the sandbox without an approval
+	// round-trip, so such a dimension would score absent behavior.
 	dimSkillsHardFloor          dimension = "skills_hard_floor"          // asserted (ground-truth, release-blocking)
 	dimCapabilityGapRecognition dimension = "capability_gap_recognition" // judge, ≥90% gate
-	dimInstallPrudence          dimension = "install_prudence"           // judge, ≥90% gate
 	dimSkillOutputQuality       dimension = "skill_output_quality"       // judge, ≥90% gate
 )
 
-// judgeSkillsGate is the fixed D-35 xlsx North-Star judge gate: the three skills
-// judge dimensions (capability-gap recognition, install prudence, output quality)
-// must average ≥90% (0.90), equal-weight (Claude's Discretion — D-35 fixes the
-// dimensions + the ≥90% mean, not the weighting). A 5/5 = 1.0, so the mean ≥0.90
-// means an average judge score ≥4.5/5.
+// judgeSkillsGate is the fixed D-35 xlsx North-Star judge gate (RISCRITTO by
+// amendment #51 / D-40): the TWO skills judge dimensions (capability-gap
+// recognition + output quality) must average ≥90% (0.90), equal-weight (Claude's
+// Discretion — D-35 fixes the dimensions + the ≥90% mean, not the weighting). A
+// 5/5 = 1.0, so the mean ≥0.90 means an average judge score ≥4.5/5.
 const judgeSkillsGate = 0.90
 
 // judgeSwarmGate is the fixed D-22 swarm judge gate: the four swarm judge

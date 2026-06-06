@@ -17,10 +17,11 @@ import (
 )
 
 // verifyXlsxArtifact is the artifact-not-reply ground truth (D-35): it locates the
-// produced .xlsx in the sandbox workspace and re-opens it via a sandbox_exec openpyxl
+// FRESH .xlsx the run produced in the sandbox workspace (newer than runStart, the
+// spike-012a freshXlsxInSandbox discipline) and re-opens it via a sandbox_exec openpyxl
 // read-back, asserting the workbook parses AND carries today's date. It NEVER inspects
 // the model's prose — the file on disk is the truth.
-func verifyXlsxArtifact(t *testing.T, ctx context.Context, sandboxClient *sandboxagent.Client, exp *skillsExpect, res *skillsResult) {
+func verifyXlsxArtifact(t *testing.T, ctx context.Context, sandboxClient *sandboxagent.Client, exp *skillsExpect, runStart time.Time, res *skillsResult) {
 	t.Helper()
 	// Today's date in every encoding a live artifact legitimately uses. The
 	// scenario prompt is Italian, so the produced sheet writes 05/06/2026 (or the
@@ -44,17 +45,26 @@ func verifyXlsxArtifact(t *testing.T, ctx context.Context, sandboxClient *sandbo
 	}
 	today := strings.Join(todayForms, " | ")
 	const marker = "AURA-XLSX-VERIFIED"
-	// One python read-back: find the newest *.xlsx under /workspace, open it with
-	// openpyxl, scan every cell's string form for ANY accepted encoding of today's
-	// date, and print a marker + the path. Exit 0 + marker = the file exists,
-	// opens, and contains today's data.
+	// runStart as a Unix epoch float: the freshness floor. A .xlsx whose mtime is
+	// before the run started is a stale artifact from a prior run, not THIS run's
+	// output (spike-012a -newermt run-start discipline).
+	startEpoch := runStart.Unix()
+	// One python read-back: find the newest *.xlsx under /workspace produced AFTER the
+	// run started, open it with openpyxl, scan every cell's string form for ANY
+	// accepted encoding of today's date, and print a marker + the path. Exit 0 +
+	// marker = the file exists, is fresh, opens, and contains today's data.
 	py := fmt.Sprintf(`
 import glob, os, sys
+START = %d
 files = sorted(glob.glob('/workspace/**/*%s', recursive=True), key=os.path.getmtime)
 if not files:
     print('NO_XLSX'); sys.exit(0)
 path = files[-1]
 print('XLSX_PATH=' + path)
+if os.path.getmtime(path) >= START:
+    print('XLSX_FRESH')
+else:
+    print('XLSX_STALE')
 try:
     import %s
     wb = %s.load_workbook(path, read_only=True, data_only=True)
@@ -73,7 +83,7 @@ for ws in wb.worksheets:
     if found: break
 print('TODAY_FOUND' if found else 'TODAY_MISSING')
 print('%s')
-`, exp.xlsxExt, exp.readBackImport, exp.readBackImport, strings.Join(formsPy, ", "), marker)
+`, startEpoch, exp.xlsxExt, exp.readBackImport, exp.readBackImport, strings.Join(formsPy, ", "), marker)
 
 	run, err := sandboxClient.Run(ctx, sandboxagent.RunRequest{Command: "python3", Args: []string{"-c", py}})
 	if err != nil {
@@ -86,15 +96,21 @@ print('%s')
 		res.notes = append(res.notes, "no .xlsx found in /workspace")
 		return
 	}
-	res.xlsxExists = true
 	if i := strings.Index(out, "XLSX_PATH="); i >= 0 {
 		rest := out[i+len("XLSX_PATH="):]
 		if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
 			res.xlsxPath = strings.TrimSpace(rest[:nl])
 		}
 	}
+	res.xlsxFresh = strings.Contains(out, "XLSX_FRESH")
+	// xlsxExists asserts the run PRODUCED the artifact — a stale .xlsx from a prior run
+	// must not satisfy the hard floor (spike-012a freshness discipline).
+	res.xlsxExists = res.xlsxFresh
 	res.xlsxOpens = strings.Contains(out, "XLSX_OPENS")
 	res.xlsxToday = strings.Contains(out, "TODAY_FOUND")
+	if !res.xlsxFresh {
+		res.notes = append(res.notes, "newest .xlsx is older than the run start (stale, not this run's output): "+oneLine(out))
+	}
 	if !res.xlsxOpens {
 		res.notes = append(res.notes, "xlsx did not open: "+oneLine(out))
 	}

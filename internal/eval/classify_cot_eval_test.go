@@ -1,0 +1,281 @@
+//go:build cot_eval
+
+// classify_cot_eval_test.go is the NO-KEY structural slot for the Phase 11 xlsx
+// North-Star eval (D-35, RISCRITTO #51/D-40). It holds:
+//
+//   - classifyCall: the PURE action-aware capture (parses a tool call's structured
+//     JSON arguments — the spike-012a pattern — and flags self-install evidence:
+//     `npx skills add` (selfInstall), targeting `anthropics/skills` (installTarget),
+//     with the `--skill xlsx` selector (installSel)). No I/O, no network.
+//   - captureSkillCalls / makeAskCall: thin glue the live harness uses.
+//   - TestClassifyCall_* / TestRegistry_SeamFree: table-driven pure tests that run
+//     WITHOUT OPENROUTER_API_KEY (they touch no network and MUST NOT t.Skip on the key),
+//     so a structural break — a deleted-seam reference, a regressed arg parser, a skill
+//     tool sneaking back into the registry — is caught even when the paid live tier is
+//     gated off. These tests are the answer to T-11-10-R1 (the old name-only ordered
+//     subsequence assertion was structurally unsatisfiable; this proves the new
+//     arg-aware capture parses real command lines and the registry stays seam-free).
+package eval
+
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/agenttest"
+	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/llm"
+)
+
+// classifyCall records one tool call action-aware and flags self-install evidence off
+// the STRUCTURED arguments (spike 012a). It is a PURE function of (name, rawArgs): it
+// only appends to res.toolCalls and sets the boolean flags — no I/O, no network — so
+// the table-driven TestClassifyCall_* tests can drive it directly. Self-install
+// evidence comes from a sandbox_exec command line running `npx skills add`, never from
+// the model's prose (T-11-10-T1).
+func classifyCall(res *skillsResult, name, rawArgs string) {
+	switch name {
+	case "sandbox_exec":
+		var a struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		}
+		_ = json.Unmarshal([]byte(rawArgs), &a)
+		cmd := strings.TrimSpace(a.Command + " " + strings.Join(a.Args, " "))
+		res.toolCalls = append(res.toolCalls, "sandbox_exec("+oneLine(cmd)+")")
+		flat := strings.Join(strings.Fields(cmd), " ")
+		// A discovery/listing call (`skills find`, `skills add --list`) is NOT an install.
+		isList := strings.Contains(flat, "skills find") ||
+			(strings.Contains(flat, "skills add") && strings.Contains(flat, "--list"))
+		if strings.Contains(flat, "skills add") && !isList {
+			res.selfInstall = true
+			if strings.Contains(flat, "anthropics/skills") {
+				res.installTarget = true
+			}
+			if hasSkillSelector(flat, "xlsx") {
+				res.installSel = true
+			}
+		}
+	default:
+		res.toolCalls = append(res.toolCalls, name)
+	}
+}
+
+// hasSkillSelector reports whether the flattened command line carries `--skill <sel>`
+// (the install selector). It checks both the spaced (`--skill xlsx`) and `=` forms.
+func hasSkillSelector(flat, sel string) bool {
+	return strings.Contains(flat, "--skill "+sel) || strings.Contains(flat, "--skill="+sel)
+}
+
+// captureSkillCalls feeds every captured tool call (name + raw args, aligned slices
+// from the turnCapture) through classifyCall so the live harness records action-aware
+// evidence. ask_user calls carry an empty args slot and fall to the default branch.
+func captureSkillCalls(res *skillsResult, c *turnCapture) {
+	for i := range c.toolNames {
+		args := ""
+		if i < len(c.toolArgs) {
+			args = c.toolArgs[i]
+		}
+		classifyCall(res, c.toolNames[i], args)
+	}
+}
+
+// makeAskCall reconstructs the assistant ask_user tool_call from a pause payload so the
+// drive loop can append the wire-correct assistant message before the resume answer
+// (D-A1-07 wire-correctness).
+func makeAskCall(ai *agent.AwaitingInput) llm.ToolCall {
+	return agenttest.MakeToolCall(ai.ToolCallID, "ask_user",
+		mustJSONString(map[string]any{"question": ai.Question, "kind": ai.Kind}))
+}
+
+func mustJSONString(v any) string {
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+// oneLine collapses newlines and truncates for compact log/report lines.
+func oneLine(s string) string {
+	s = strings.ReplaceAll(s, "\n", " ")
+	if len(s) > 220 {
+		return s[:220] + "…"
+	}
+	return s
+}
+
+// sandboxArgs renders a sandbox_exec arguments JSON string for the table-driven tests.
+func sandboxArgs(command string, args ...string) string {
+	return mustJSONString(map[string]any{"command": command, "args": args})
+}
+
+// TestClassifyCall_SelfInstall is the no-key structural proof that the action-aware
+// capture parses REAL command lines: a clean `npx skills add anthropics/skills --skill
+// xlsx` flags selfInstall + installTarget + installSel; a bare add to another repo flags
+// selfInstall only; a discovery `skills find` / `add --list` and a non-install
+// sandbox_exec flag NONE. This catches the spike-012b regression (name-only capture →
+// structurally-unsatisfiable assertion) without a live call.
+func TestClassifyCall_SelfInstall(t *testing.T) {
+	tests := []struct {
+		name       string
+		callName   string
+		rawArgs    string
+		wantSelf   bool
+		wantTarget bool
+		wantSel    bool
+	}{
+		{
+			name:       "clean anthropics xlsx add",
+			callName:   "sandbox_exec",
+			rawArgs:    sandboxArgs("npx", "skills", "add", "anthropics/skills", "--skill", "xlsx", "--copy", "-y"),
+			wantSelf:   true,
+			wantTarget: true,
+			wantSel:    true,
+		},
+		{
+			name:       "cd then add (single args string)",
+			callName:   "sandbox_exec",
+			rawArgs:    sandboxArgs("sh", "-c", "cd /skills && npx skills add anthropics/skills --skill xlsx --copy -y"),
+			wantSelf:   true,
+			wantTarget: true,
+			wantSel:    true,
+		},
+		{
+			name:       "selector with equals form",
+			callName:   "sandbox_exec",
+			rawArgs:    sandboxArgs("npx", "skills", "add", "anthropics/skills", "--skill=xlsx"),
+			wantSelf:   true,
+			wantTarget: true,
+			wantSel:    true,
+		},
+		{
+			name:       "bare add to another repo",
+			callName:   "sandbox_exec",
+			rawArgs:    sandboxArgs("npx", "skills", "add", "other/repo"),
+			wantSelf:   true,
+			wantTarget: false,
+			wantSel:    false,
+		},
+		{
+			name:       "discovery skills find is not an install",
+			callName:   "sandbox_exec",
+			rawArgs:    sandboxArgs("npx", "skills", "find", "xlsx"),
+			wantSelf:   false,
+			wantTarget: false,
+			wantSel:    false,
+		},
+		{
+			name:       "add --list enumerates, does not install",
+			callName:   "sandbox_exec",
+			rawArgs:    sandboxArgs("npx", "skills", "add", "anthropics/skills", "--list"),
+			wantSelf:   false,
+			wantTarget: false,
+			wantSel:    false,
+		},
+		{
+			name:       "non-install sandbox_exec",
+			callName:   "sandbox_exec",
+			rawArgs:    sandboxArgs("python3", "/skills/.agents/skills/xlsx/scripts/build.py"),
+			wantSelf:   false,
+			wantTarget: false,
+			wantSel:    false,
+		},
+		{
+			name:       "non-sandbox tool flagged none",
+			callName:   "web_search",
+			rawArgs:    `{"query":"yahoo finance today"}`,
+			wantSelf:   false,
+			wantTarget: false,
+			wantSel:    false,
+		},
+		{
+			name:       "malformed json flags none, no panic",
+			callName:   "sandbox_exec",
+			rawArgs:    `{not valid json`,
+			wantSelf:   false,
+			wantTarget: false,
+			wantSel:    false,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			res := &skillsResult{}
+			classifyCall(res, tc.callName, tc.rawArgs)
+			if res.selfInstall != tc.wantSelf {
+				t.Errorf("selfInstall = %v, want %v (args=%s)", res.selfInstall, tc.wantSelf, tc.rawArgs)
+			}
+			if res.installTarget != tc.wantTarget {
+				t.Errorf("installTarget = %v, want %v (args=%s)", res.installTarget, tc.wantTarget, tc.rawArgs)
+			}
+			if res.installSel != tc.wantSel {
+				t.Errorf("installSel = %v, want %v (args=%s)", res.installSel, tc.wantSel, tc.rawArgs)
+			}
+			if len(res.toolCalls) != 1 {
+				t.Errorf("expected exactly 1 recorded tool call, got %d (%v)", len(res.toolCalls), res.toolCalls)
+			}
+		})
+	}
+}
+
+// TestClassifyCall_Accumulates proves a full find→add→use sequence accumulates the
+// self-install flags exactly once and records every call action-aware — the realistic
+// one-turn loop shape (spike 012a) without a live model.
+func TestClassifyCall_Accumulates(t *testing.T) {
+	res := &skillsResult{}
+	seq := []struct{ name, args string }{
+		{"sandbox_exec", sandboxArgs("npx", "skills", "find", "xlsx")},
+		{"sandbox_exec", sandboxArgs("sh", "-c", "cd /skills && npx skills add anthropics/skills --skill xlsx --copy -y")},
+		{"web_search", `{"query":"yahoo finance market today"}`},
+		{"sandbox_exec", sandboxArgs("python3", "/skills/.agents/skills/xlsx/scripts/create.py")},
+	}
+	for _, s := range seq {
+		classifyCall(res, s.name, s.args)
+	}
+	if !res.selfInstall || !res.installTarget || !res.installSel {
+		t.Fatalf("expected self-install evidence after the add, got self=%v target=%v sel=%v",
+			res.selfInstall, res.installTarget, res.installSel)
+	}
+	if len(res.toolCalls) != len(seq) {
+		t.Fatalf("expected %d recorded calls, got %d (%v)", len(seq), len(res.toolCalls), res.toolCalls)
+	}
+	// The discovery call must be recorded but NOT counted as an install.
+	if !strings.Contains(res.toolCalls[0], "skills find") {
+		t.Errorf("first recorded call should be the discovery find, got %q", res.toolCalls[0])
+	}
+}
+
+// TestRegistry_SeamFree builds the seam-free skills registry (no live run, no key) and
+// asserts (a) the expected tool set is present and (b) NO `skill` tool is registered —
+// catalog/installer seams are gone (#51/D-40). This is the structural guard that the
+// eval registry never regrows a SkillTool with a Catalog/Installer field.
+func TestRegistry_SeamFree(t *testing.T) {
+	cfg := config.LoadDB()
+	reg := buildSeamFreeSkillsRegistry(cfg, nil)
+
+	got := map[string]bool{}
+	for _, tool := range reg.All() {
+		got[tool.Spec().Name] = true
+	}
+	want := []string{
+		"text_response", "tool_search", "read_tool_output", "current_time",
+		"ask_user", "web_search", "web_fetch", "sandbox_exec",
+	}
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("seam-free registry is missing the expected tool %q (have %v)", name, keysOf(got))
+		}
+	}
+	if got["skill"] {
+		t.Errorf("seam-free registry must NOT register a `skill` tool — discovery+install is the sandbox terminal (#51/D-40)")
+	}
+	if got["catalog"] || got["install"] {
+		t.Errorf("seam-free registry must NOT register catalog/install tools (deleted in 11-09)")
+	}
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

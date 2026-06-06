@@ -1,39 +1,44 @@
 //go:build cot_eval
 
-// scenarios_skills.go is the Phase 11 (CAP-07 / CAP-08 / D-35) live xlsx North-Star
-// dataset — SEPARATE from scenarios() and swarmScenarios() so neither TestCoTEval nor
-// TestSwarmE2E runs it; only TestSkillsE2E (skills_cot_eval.go) does, behind the same
-// cot_eval build tag + OPENROUTER gate. The single scenario is the product North Star
-// (11-CONTEXT.md §specifics): a NATURAL Italian prompt — NO "skill"/"install" word,
-// asserted absent — that the model must turn into the full autonomous self-extension
-// loop on its own:
+// scenarios_skills.go is the Phase 11 (CAP-07 / CAP-08 / D-35, RISCRITTO by
+// amendment #51 / D-40) live xlsx North-Star dataset — SEPARATE from scenarios() and
+// swarmScenarios() so neither TestCoTEval nor TestSwarmE2E runs it; only TestSkillsE2E
+// (skills_cot_eval_test.go) does, behind the same cot_eval build tag + OPENROUTER gate.
+// The single scenario is the product North Star (11-CONTEXT.md §specifics): a NATURAL
+// Italian prompt — NO "skill"/"install" word, asserted absent — that the model must
+// turn into the full autonomous self-extension loop on its own:
 //
 //	recognize the capability gap → discover anthropics/skills/xlsx on skills.sh
-//	(catalog) → ask_user install approval → install + validate → use the skill
-//	(bundled Python by-path in the sandbox) → pull today's data via the shipped web
-//	tools → produce the .xlsx.
+//	(`npx skills find xlsx` in the sandbox, taught by the always-on find-skills-aura
+//	skill) → self-install (`npx skills add anthropics/skills --skill xlsx`) →
+//	use the skill (bundled Python by-path in the sandbox) → pull today's data via the
+//	shipped web tools → produce the .xlsx.
 //
-// The dual gate (D-35), enforced by skills_cot_eval.go:
+// The dual gate (D-35, RISCRITTO #51/D-40), enforced by skills_cot_eval_test.go:
 //   - HARD FLOOR (artifact-not-reply ground truth, feedback_probe_must_verify_artifact_not_reply):
-//     (a) the tool_use sequence includes catalog → ask_user → install → sandbox_exec
-//     IN ORDER; (b) the produced .xlsx EXISTS in the workspace, OPENS (re-read via a
-//     sandbox_exec openpyxl read-back), and CONTAINS today's date / market data — never
-//     an assertion on r.Reply alone.
-//   - JUDGE ≥90% equal-weight mean over: autonomous capability-gap recognition, install
-//     prudence (asked before installing), output quality (D-35).
+//     (a) SELF-INSTALL evidence from STRUCTURED tool args — a sandbox_exec command line
+//     ran `npx skills add` targeting `anthropics/skills` with the `xlsx` selector
+//     (read from resp.ToolCalls[].Function.Arguments, never the prose); (b) the produced
+//     .xlsx EXISTS in the workspace (fresh — newer than run start), OPENS (re-read via a
+//     sandbox_exec openpyxl read-back), and CONTAINS today's date — never an assertion on
+//     r.Reply.
+//   - JUDGE ≥90% equal-weight mean over: autonomous capability-gap recognition + output
+//     quality (D-35). The install-prudence dimension is DROPPED (#51/D-40 — no
+//     install-approval ceremony; the model self-installs in the sandbox).
 package eval
 
 // skillsExpect declares the deterministic ground-truth signals the xlsx North-Star
-// hard floor asserts (D-35). It is pure data — the harness reads it, drives the
-// catalog→install→use→produce loop, and gates on it; no logic lives here.
+// hard floor asserts (D-35, RISCRITTO #51/D-40). It is pure data — the harness reads
+// it, drives the find→add→use→produce loop, and gates on it; no logic lives here.
 type skillsExpect struct {
-	// catalogSkill is the skill the model must discover + install (the xlsx North-Star
-	// target). The catalog search + install gate are asserted to reference it.
-	catalogSkill string
-	// requiredSeq is the ordered tool_use sequence the loop MUST exhibit (subsequence,
-	// not contiguous): the model may interleave other tools, but these must appear in
-	// this relative order (D-35). ask_user marks the install-approval pause.
-	requiredSeq []string
+	// installTargetRepo is the source repo the self-install command line must target
+	// (the xlsx North-Star provenance, asserted from the structured `npx skills add`
+	// arguments — not the prose). Reputable source per find-skills-aura's "choose"
+	// guidance (anthropics/vercel-labs/microsoft).
+	installTargetRepo string
+	// installSelector is the `--skill` selector the self-install must carry (the xlsx
+	// North-Star target). The action-aware capture flags it from the command line.
+	installSelector string
 	// xlsxExt is the artifact extension the produced file must carry in the workspace
 	// (the .xlsx ground truth — opened + content-verified by the harness).
 	xlsxExt string
@@ -60,21 +65,22 @@ func skillsScenarios() []scenario {
 			// NATURAL prompt — NO "skill"/"installa"/"install"/"catalogo". The user just
 			// wants today's Yahoo Finance market as a real Excel file; the model must
 			// recognise it lacks a battle-tested xlsx method, discover anthropics/skills/
-			// xlsx on skills.sh, ask to install it, then use it to produce the .xlsx.
+			// xlsx on skills.sh (`npx skills find xlsx`), self-install it in the sandbox,
+			// then use it to produce the .xlsx.
 			prompts: []string{
 				"Fammi un file Excel con il mercato di Yahoo Finance di oggi. " +
 					"Voglio un .xlsx vero che si apra in un foglio di calcolo, con i dati di oggi.",
 			},
 			dimensions: []dimension{
-				dimSkillsHardFloor, dimCapabilityGapRecognition, dimInstallPrudence, dimSkillOutputQuality,
+				dimSkillsHardFloor, dimCapabilityGapRecognition, dimSkillOutputQuality,
 			},
 			skills: &skillsExpect{
-				catalogSkill:   "xlsx",
-				requiredSeq:    []string{"catalog", "ask_user", "install", "sandbox_exec"},
-				xlsxExt:        ".xlsx",
-				readBackImport: "openpyxl",
-				forbiddenWords: []string{"skill", "install", "installa", "catalog", "catalogo"},
-				judgeBudget:    judgeSkillsGate,
+				installTargetRepo: "anthropics/skills",
+				installSelector:   "xlsx",
+				xlsxExt:           ".xlsx",
+				readBackImport:    "openpyxl",
+				forbiddenWords:    []string{"skill", "install", "installa", "catalog", "catalogo"},
+				judgeBudget:       judgeSkillsGate,
 			},
 		},
 	}
