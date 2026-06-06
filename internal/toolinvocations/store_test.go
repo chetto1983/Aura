@@ -2,6 +2,7 @@ package toolinvocations
 
 import (
 	"encoding/json"
+	"math"
 	"testing"
 	"time"
 )
@@ -74,5 +75,49 @@ func TestEventToParams_BadUUID(t *testing.T) {
 	_, err := (Event{ConversationID: "not-a-uuid", RequestID: "00000000-0000-0000-0000-000000000002"}).toParams()
 	if err == nil {
 		t.Fatal("toParams with bad conversation_id: want error")
+	}
+}
+
+// TestEventToParams_StartDefaultsStartedAt is the IN-01 regression: a start event
+// with a zero StartedAt defaults the column to the resolved ts so the event-shape
+// CHECK (started_at NOT NULL for a start row) cannot fail on a forgetful emitter.
+func TestEventToParams_StartDefaultsStartedAt(t *testing.T) {
+	ts := time.Date(2026, 6, 6, 12, 0, 0, 0, time.UTC)
+	p, err := (Event{
+		ConversationID: "00000000-0000-0000-0000-000000000001",
+		RequestID:      "00000000-0000-0000-0000-000000000002",
+		ToolCallID:     "call-1",
+		ToolName:       "shell_exec",
+		Event:          EventStart,
+		Seq:            1,
+		Timestamp:      ts, // StartedAt deliberately left zero
+	}).toParams()
+	if err != nil {
+		t.Fatalf("toParams: %v", err)
+	}
+	if !p.StartedAt.Valid || !p.StartedAt.Time.Equal(ts) {
+		t.Fatalf("StartedAt = %+v, want it defaulted to the resolved ts %s", p.StartedAt, ts)
+	}
+}
+
+// TestClampInt32 is the WR-03 regression: int byte-count/seq fields saturate at the
+// int32 bounds instead of wrapping into a wrong/negative forensic count.
+func TestClampInt32(t *testing.T) {
+	for _, tc := range []struct {
+		in   int
+		want int32
+	}{
+		{0, 0},
+		{42, 42},
+		{math.MaxInt32, math.MaxInt32},
+		{math.MaxInt32 + 1, math.MaxInt32},
+		{math.MaxInt64, math.MaxInt32},
+		{-1, -1},
+		{math.MinInt32, math.MinInt32},
+		{math.MinInt32 - 1, math.MinInt32},
+	} {
+		if got := clampInt32(tc.in); got != tc.want {
+			t.Errorf("clampInt32(%d) = %d, want %d", tc.in, got, tc.want)
+		}
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"math"
 	"time"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
@@ -107,15 +109,22 @@ func (e Event) toParams() (sqlc.InsertToolInvocationParams, error) {
 	if err != nil {
 		return sqlc.InsertToolInvocationParams{}, err
 	}
+	// The event-shape CHECK requires started_at NOT NULL for a start row. Default it to
+	// the resolved ts (IN-01) so a future emitter that forgets to set StartedAt on a
+	// start event degrades to the row's own timestamp instead of failing the CHECK.
+	startedAt := e.StartedAt
+	if e.Event == EventStart && startedAt.IsZero() {
+		startedAt = ts
+	}
 	return sqlc.InsertToolInvocationParams{
 		ConversationID:    conv,
 		RequestID:         req,
 		ToolCallID:        e.ToolCallID,
 		ToolName:          e.ToolName,
 		EventKind:         e.Event,
-		Seq:               int32(e.Seq),
+		Seq:               clampInt32(e.Seq),
 		Ts:                timestamptz(ts),
-		StartedAt:         timestamptz(e.StartedAt),
+		StartedAt:         timestamptz(startedAt),
 		EndedAt:           timestamptz(e.EndedAt),
 		DurationMs:        int8OrNull(e.DurationMS, e.Event == EventEnd),
 		ArgsRaw:           textOrNull(e.Arguments, e.Arguments != "" || e.ArgsBytes > 0),
@@ -152,7 +161,21 @@ func textOrNull(s string, valid bool) pgtype.Text {
 }
 
 func int4OrNull(n int, valid bool) pgtype.Int4 {
-	return pgtype.Int4{Int32: int32(n), Valid: valid}
+	return pgtype.Int4{Int32: clampInt32(n), Valid: valid}
+}
+
+// clampInt32 saturates an int to the int32 range so a >2 GiB args/result byte count
+// (or a pathological seq) never overflows into a wrong/negative forensic count in the
+// ledger. The byte fields are token-bounded in practice, so saturation is the honest
+// degradation: the count maxes out rather than wrapping.
+func clampInt32(n int) int32 {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	if n < math.MinInt32 {
+		return math.MinInt32
+	}
+	return int32(n)
 }
 
 func int8OrNull(n int64, valid bool) pgtype.Int8 {
@@ -209,7 +232,11 @@ func eventFromRow(r sqlc.AuraToolInvocations) Event {
 		out.ExitCode = &ec
 	}
 	if len(r.Meta) > 0 {
-		_ = json.Unmarshal(r.Meta, &out.Meta)
+		if err := json.Unmarshal(r.Meta, &out.Meta); err != nil {
+			// An append-only forensic ledger should not silently drop a corrupt meta
+			// jsonb (IN-02): log it. out.Meta stays nil/partial, the rest of the row reads.
+			slog.Warn("tool invocation meta unmarshal failed", "id", out.ID, "err", err)
+		}
 	}
 	return out
 }
