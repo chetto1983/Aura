@@ -372,12 +372,22 @@ func assertGoldenShape(t *testing.T, name string, want map[string]any, got event
 		t.Fatalf("%s unmarshal: %v", name, err)
 	}
 	for k, wv := range want {
+		// timestamp is auto-attached (volatile epoch). The TOOL_CALL_RESULT
+		// messageId is a translator-minted correlation id (derived from the
+		// toolCallId, msg-tool-<id>); the golden's "msg-2" is the spike's arbitrary
+		// value, not a wire contract — assert non-empty instead of byte-equal.
 		if k == "timestamp" {
 			continue
 		}
 		gv, ok := gotMap[k]
 		if !ok {
 			t.Fatalf("%s: emitted event missing golden key %q (emitted: %s)", name, k, raw)
+		}
+		if name == "TOOL_CALL_RESULT" && k == "messageId" {
+			if s, _ := gv.(string); s == "" {
+				t.Fatalf("%s: messageId is empty (Validate requires a non-empty id)", name)
+			}
+			continue
 		}
 		wb, _ := json.Marshal(wv)
 		gb, _ := json.Marshal(gv)
