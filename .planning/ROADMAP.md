@@ -407,7 +407,20 @@ Wave 4:
   3. Operator runs `curl http://127.0.0.1:9080/threads/t1/messages` after a streamed run and observes the persisted turn history matching what was emitted in the SSE stream
   4. Operator runs `go.mod` inspection and observes AG-UI SDK pinned to the immutable pseudo-version literal `v0.0.0-20260514093510-e9e910b230b9` (NOT `latest`, NOT an unpinned install-time resolution; CI greps the literal — amendment #56: a pseudo-version IS the only valid go.mod form for this untagged subdir module, the original "no pseudo-version" wording was unsatisfiable)
 
-**Plans**: TBD
+**Plans:** 4 plans (3 waves)
+
+**Wave 1**
+
+- [ ] 12-01-PLAN.md — SDK pin (pseudo-version literal) + boundary/pin CI gates + golden fixtures + Aura-semantic types.go + the pure per-token→AG-UI translator state machine (SC2/SC4 + translator property)
+
+**Wave 2** *(blocked on 12-01)*
+
+- [ ] 12-02-PLAN.md — in-process fanout (cap-64 drop-on-full) + client subscriber seam + SDK type aliases (Slice-8a Telegram consumer dependency, centralized)
+- [ ] 12-03-PLAN.md — minimal 8b server: POST /agent/run (SSE) + GET /threads/<id>/messages (JSON) + AURA_AGUI_* config + aura serve http.Server mount (SC1/SC3, loopback-only)
+
+**Wave 3** *(blocked on 12-01/02/03)*
+
+- [ ] 12-04-PLAN.md — Gate-3: agui db_integration CI tier + live agui_smoke.sh curl round-trip + coverage ≥85% + translator mutation ≥70% + quality snapshot + operator live human-verify
 
 ### Phase 13: Channels + Telegram + Multimodal
 
