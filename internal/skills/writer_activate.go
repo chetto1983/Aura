@@ -61,6 +61,13 @@ func (w *Writer) Activate(ctx context.Context, name string, src ApprovalSource, 
 // audit tuple is the system shape (auto) when src is ApprovalAuto (TTL sweep), else
 // the cli shape.
 func (w *Writer) Archive(ctx context.Context, name string, src ApprovalSource, actor AuditActor) error {
+	// Validate the name grammar BEFORE joining it into a path (chokepoint, D-30): a
+	// name that passes ^[a-z0-9-]{1,64}$ cannot contain a path separator or "..". The
+	// model fully controls this name on the action=archive path and it reaches
+	// os.RemoveAll — without this guard a "../" name deletes a tree outside exportDir.
+	if err := SanitizeName(name, name); err != nil {
+		return fmt.Errorf("archive %q: %w", name, err)
+	}
 	dstDir := filepath.Join(w.activeDir, name)
 	hash, _ := HashSkillDir(dstDir) // best-effort; a missing dir hashes empty
 
@@ -130,6 +137,12 @@ func (w *Writer) Restore(ctx context.Context, name string, src ApprovalSource, a
 // (active and pending), and record a delete audit row. It is invoked by
 // WriteMutation for action=delete and by the CLI.
 func (w *Writer) Delete(ctx context.Context, name string, actor AuditActor) (string, error) {
+	// Validate the name grammar BEFORE joining it into a path (chokepoint, D-30): the
+	// only live caller (WriteMutation) sanitizes upstream, but this self-guards the
+	// method so a future caller cannot reach os.RemoveAll with a traversal name.
+	if err := SanitizeName(name, name); err != nil {
+		return "", fmt.Errorf("delete %q: %w", name, err)
+	}
 	activeDir := filepath.Join(w.activeDir, name)
 	hash, _ := HashSkillDir(activeDir) // best-effort content_hash for the recovery path
 

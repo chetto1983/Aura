@@ -4,9 +4,34 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/scoring"
 )
+
+// skillNameRe mirrors internal/skills.SanitizeName's grammar (^[a-z0-9-]{1,64}$)
+// at the tool boundary so the tools package validates a model-supplied name BEFORE
+// forwarding it to the writer, without importing internal/skills (the read-path
+// boundary). The downstream chokepoint still re-validates — this is defense in depth
+// and a faster, grammar-hinted self-correction for the model.
+var skillNameRe = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
+
+// validWriteName trims whitespace and enforces the skill-name grammar at the tool
+// boundary for every name-bearing write/lifecycle action, so a structurally-invalid
+// name (blank, whitespace-only, "../" traversal) never reaches the writer regardless
+// of which downstream method it hits. The error carries the grammar hint the schema
+// description advertises so the model self-corrects in one step.
+func validWriteName(action, name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return "", fmt.Errorf("skill %s: name is required (lowercase, must match %s)", action, skillNameRe.String())
+	}
+	if !skillNameRe.MatchString(trimmed) {
+		return "", fmt.Errorf("skill %s: invalid name %q (must match %s)", action, trimmed, skillNameRe.String())
+	}
+	return trimmed, nil
+}
 
 // This file wires the skill tool's WRITE actions create|update|delete (Slice 7c
 // governance, plan 11-05), replacing the "not yet wired" placeholders from 11-02.
@@ -114,8 +139,9 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return ToolResult{}, fmt.Errorf("skill %s args: %w", action, err)
 	}
-	if a.Name == "" {
-		return ToolResult{}, fmt.Errorf("skill %s: name is required", action)
+	name, err := validWriteName(string(action), a.Name)
+	if err != nil {
+		return ToolResult{}, err
 	}
 	if t.Writer == nil {
 		return ToolResult{}, fmt.Errorf("skill %s: no writer is wired in this context", action)
@@ -124,9 +150,9 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 	// The writer validates at the boundary (model path: allowBlocklisted=false). A
 	// blocklist hit / validation failure returns here as an error — surfaced as a
 	// RoleTool error so the model self-corrects (D-27), never a pause.
-	status, err := t.Writer.WriteMutation(ctx, string(action), a.Name, a.Description, a.Body, a.Always)
+	status, err := t.Writer.WriteMutation(ctx, string(action), name, a.Description, a.Body, a.Always)
 	if err != nil {
-		return ToolResult{}, fmt.Errorf("skill %s %q: %w", action, a.Name, err)
+		return ToolResult{}, fmt.Errorf("skill %s %q: %w", action, name, err)
 	}
 
 	tier := scoring.ComputeSkillTier(action, a.Body)
@@ -137,7 +163,7 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 	// Activate). The interactive REPL leaves Alerter nil — the ask_user pause is its
 	// channel.
 	if t.Alerter != nil {
-		t.Alerter.AlertPendingSkill(ctx, a.Name, string(action), tier)
+		t.Alerter.AlertPendingSkill(ctx, name, string(action), tier)
 	}
 
 	// Pause the turn for human approval. The pause question frames the gated mutation
@@ -146,7 +172,7 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 	question := fmt.Sprintf(
 		"Approve skill %s %q (risk=%s)? It is staged as pending and will NOT take effect until you approve. "+
 			"Approve to activate, or decline to discard the pending change.",
-		action, a.Name, tier,
+		action, name, tier,
 	)
 	_ = status // StatusPendingApproval — the pause itself communicates the gate
 	return ToolResult{}, &ErrAwaitingUserInput{
@@ -169,8 +195,9 @@ func (t *SkillTool) actionSaveSnippet(ctx context.Context, raw json.RawMessage) 
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return ToolResult{}, fmt.Errorf("skill save_snippet args: %w", err)
 	}
-	if a.Name == "" {
-		return ToolResult{}, fmt.Errorf("skill save_snippet: name is required")
+	name, err := validWriteName("save_snippet", a.Name)
+	if err != nil {
+		return ToolResult{}, err
 	}
 	if a.Language == "" {
 		return ToolResult{}, fmt.Errorf("skill save_snippet: language is required (one of python, shell, js)")
@@ -181,13 +208,13 @@ func (t *SkillTool) actionSaveSnippet(ctx context.Context, raw json.RawMessage) 
 	if t.Writer == nil {
 		return ToolResult{}, fmt.Errorf("skill save_snippet: no writer is wired in this context")
 	}
-	status, err := t.Writer.SaveSnippet(ctx, a.Name, a.Language, a.Code, a.Description, a.NeedsNetwork, a.NeedsWorkspace)
+	status, err := t.Writer.SaveSnippet(ctx, name, a.Language, a.Code, a.Description, a.NeedsNetwork, a.NeedsWorkspace)
 	if err != nil {
-		return ToolResult{}, fmt.Errorf("skill save_snippet %q: %w", a.Name, err)
+		return ToolResult{}, fmt.Errorf("skill save_snippet %q: %w", name, err)
 	}
 	return NewResult(ctx, fmt.Sprintf(
 		"Snippet %q saved as pending (status=%s). Activate it (operator approval) before reuse; "+
-			"once active, call action=use to run it by path.", a.Name, status))
+			"once active, call action=use to run it by path.", name, status))
 }
 
 // actionRestore handles action=restore: it unarchives a snippet (archived->active +
@@ -230,13 +257,14 @@ func (t *SkillTool) requireWriteName(raw json.RawMessage, action string) (string
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return "", fmt.Errorf("skill %s args: %w", action, err)
 	}
-	if a.Name == "" {
-		return "", fmt.Errorf("skill %s: name is required", action)
+	name, err := validWriteName(action, a.Name)
+	if err != nil {
+		return "", err
 	}
 	if t.Writer == nil {
 		return "", fmt.Errorf("skill %s: no writer is wired in this context", action)
 	}
-	return a.Name, nil
+	return name, nil
 }
 
 // skillApprovalPriority orders a skill-approval pause ahead of routine clarifications

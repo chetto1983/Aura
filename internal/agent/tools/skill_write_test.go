@@ -353,6 +353,59 @@ func TestActionArchive(t *testing.T) {
 	}
 }
 
+// TestActionArchiveRejectsInvalidName is the CR-01/WR-05 regression: a traversal name
+// ("../../../tmp/x") or a whitespace-only name ("   ") on action=archive returns a
+// normal tool error (never a pause, never a writer call) at the tool boundary, so the
+// unsanitized name can never reach Writer.Archive -> os.RemoveAll.
+func TestActionArchiveRejectsInvalidName(t *testing.T) {
+	for _, name := range []string{"../../../tmp/x", "   ", "../sibling", "Bad Name"} {
+		t.Run(name, func(t *testing.T) {
+			w := &fakeSkillWriter{}
+			tool := &SkillTool{Writer: w}
+			_, err := execSkill(t, tool, map[string]any{"action": "archive", "name": name})
+			if err == nil {
+				t.Fatalf("archive %q: want a tool error, got nil", name)
+			}
+			var pause *ErrAwaitingUserInput
+			if errors.As(err, &pause) {
+				t.Fatalf("archive %q: must be a tool error, NOT a pause", name)
+			}
+			if w.archiveCalls != 0 {
+				t.Fatalf("archive %q: writer must NOT be invoked with an invalid name, archiveCalls=%d archiveName=%q", name, w.archiveCalls, w.archiveName)
+			}
+		})
+	}
+}
+
+// TestNameBearingActionsRejectInvalidName asserts every name-bearing write/lifecycle
+// action trims + rejects a structurally-invalid name at the tool boundary (WR-05/IN-05),
+// never forwarding it to the writer regardless of which downstream method it hits.
+func TestNameBearingActionsRejectInvalidName(t *testing.T) {
+	for _, action := range []string{"create", "update", "delete", "restore", "archive", "save_snippet"} {
+		t.Run(action, func(t *testing.T) {
+			w := &fakeSkillWriter{}
+			tool := &SkillTool{Writer: w}
+			args := map[string]any{"action": action, "name": "  ../evil  "}
+			if action == "create" || action == "update" {
+				args["description"], args["body"] = "d", "b"
+			}
+			if action == "save_snippet" {
+				args["language"], args["code"] = "python", "print(1)"
+			}
+			_, err := execSkill(t, tool, args)
+			if err == nil {
+				t.Fatalf("%s with invalid name: want a tool error, got nil", action)
+			}
+			if !strings.Contains(err.Error(), "[a-z0-9-]") {
+				t.Errorf("%s error should carry the name-grammar hint: %q", action, err.Error())
+			}
+			if w.calls != 0 || w.saveCalls != 0 || w.restoreCalls != 0 || w.archiveCalls != 0 {
+				t.Errorf("%s: writer must not be called on an invalid name", action)
+			}
+		})
+	}
+}
+
 // TestSnippetLifecycleNoWriter asserts restore/archive/save_snippet with no writer wired
 // return a clear error, never a panic.
 func TestSnippetLifecycleNoWriter(t *testing.T) {

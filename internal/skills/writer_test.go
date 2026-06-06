@@ -78,6 +78,41 @@ func TestSetAlwaysRejectsBadName(t *testing.T) {
 	}
 }
 
+// TestArchiveRejectsBadName is the CR-01 regression: Archive validates the name
+// grammar BEFORE joining it into a path (D-30 chokepoint), so a "../" traversal name
+// can never reach Dematerialize/os.RemoveAll outside the export dir. A sentinel tree
+// outside the export dir must survive an archive("../<sentinel>") attempt.
+func TestArchiveRejectsBadName(t *testing.T) {
+	w, root := newTestWriter(t)
+	for _, bad := range []string{"../escape", "Bad_Name", "a/b", "", "../../tmp/x"} {
+		if err := w.Archive(t.Context(), bad, ApprovalCLI, AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Archive(%q): want ErrInvalidName, got %v", bad, err)
+		}
+	}
+
+	// A sibling tree of the export dir must survive a traversal archive attempt.
+	sentinel := filepath.Join(root, "victim")
+	if err := os.MkdirAll(sentinel, 0o750); err != nil {
+		t.Fatalf("seed sentinel: %v", err)
+	}
+	_ = w.Archive(t.Context(), "../victim", ApprovalCLI, AuditActor{ActorID: "cli"})
+	if _, err := os.Stat(sentinel); err != nil {
+		t.Fatalf("traversal archive must not delete the sibling sentinel: %v", err)
+	}
+}
+
+// TestDeleteRejectsBadName proves Delete self-guards the name grammar (defense in
+// depth: WriteMutation already sanitizes upstream, but the method must not reach
+// os.RemoveAll with a traversal name if a future caller bypasses WriteMutation).
+func TestDeleteRejectsBadName(t *testing.T) {
+	w, _ := newTestWriter(t)
+	for _, bad := range []string{"../escape", "a/b", ""} {
+		if _, err := w.Delete(t.Context(), bad, AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Delete(%q): want ErrInvalidName, got %v", bad, err)
+		}
+	}
+}
+
 // TestWriterPendingWrite proves writePending lands a SKILL.md in pending/<name>/
 // atomically and the rendered file round-trips through the loader's parser with the
 // same name/description/type.
