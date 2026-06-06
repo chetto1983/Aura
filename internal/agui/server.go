@@ -92,6 +92,14 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	// A syntactically-invalid thread id can never identify an existing conversation:
+	// resolve it to 404 BEFORE the store round-trip so a malformed id (e.g. a non-UUID
+	// "does-not-exist") returns a clean 404 instead of leaking the store's parse error
+	// as a 500 (T-12-11 chokepoint; caught by the live agui smoke).
+	if _, err := uuid.Parse(in.ThreadID); err != nil {
+		http.Error(w, "thread not found", http.StatusNotFound)
+		return
+	}
 	if _, err := s.conv.Get(ctx, in.ThreadID); err != nil {
 		if errors.Is(err, conversations.ErrConversationNotFound) {
 			http.Error(w, "thread not found", http.StatusNotFound)
@@ -125,6 +133,13 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleMessages(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	ctx := r.Context()
+	// A malformed thread id (non-UUID) is definitionally not an existing thread —
+	// 404 before the store round-trip rather than a 500 from the id parse failure
+	// (T-12-11; the live smoke's `does-not-exist` chokepoint).
+	if _, err := uuid.Parse(id); err != nil {
+		http.Error(w, "thread not found", http.StatusNotFound)
+		return
+	}
 	if _, err := s.conv.Get(ctx, id); err != nil {
 		if errors.Is(err, conversations.ErrConversationNotFound) {
 			http.Error(w, "thread not found", http.StatusNotFound)

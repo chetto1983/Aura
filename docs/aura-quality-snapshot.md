@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-06-06 (Phase 18 snippet-reuse steady-state live cells stamped: endEvents=5 / wallClock=11.057s after the fixture-to-intent repair)
+**Last updated:** 2026-06-07 (Phase 12 AG-UI gateway Gate-3 cells stamped: live SSE+REASONING_* round-trip PASS, agui coverage 86.8%, translator.go mutation 76.2%, owned-surface 86.2%; operator Task-2 sign-off pending)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -31,6 +31,7 @@ This is a living document. The row values below are seeded placeholders (`TBD`);
 | MCP manager mock E2E + policy gate (CAP-09 / MCP-V2-01) | mock stdio + Streamable HTTP + trust gate + policy gate pass; live tiers explicit | 2026-06-04 (automated mock tier) | **PASS** mock tier: `go test ./cmd/aura/ ./internal/mcp/ ./internal/mcp/manager/ ./internal/agent/mcptools/ -count=1`; live WhatsApp/mail/Calendar/Docker checks operator-only, not run in CI | Phase 16 MCP manager | `cmd/aura/mcp*.go`, `internal/mcp/**`, `internal/agent/mcptools/**`, `docs/mcp-manager.md` |
 | Live CoT/tool-use eval (TestCoTEval, 12 scenarios × 10 dimensions, real agent vs DeepSeek-V4) | all asserted dimensions full; reasoning advisory | 2026-06-04 (live re-run alongside the swarm gate) | **PASS** 12/12 scenarios; secret_redaction 12/12, streaming 11/11, tool-loop 2/2, cost 8/8, cache-prefix 1/1, budget 1/1, cancellation 1/1, guardrails 2/2; reasoning 6/7 advisory; cache-hit 8/8 | Phase 3 Slice 1 | `internal/eval/**`, `internal/agent/llm_agent*.go`, `internal/llm/**` |
 | Scheduler North-Star live E2E (CAP-06 / SC#1-SC#4) — chaos failover + once-per-window + natural-prompt → `task` tool → persisted row, real DeepSeek-V4 | SC#2 no-dup survivor / SC#1 once/window / E2E ≥90% / coverage ≥85% / mutation ≥70% | 2026-06-04 (live, WSL, operator-delegated Gate-3) | **PASS** — E2E 2/2=100% (Q3 reminder/at + Q1 agent_job/cron, natural IT prompts); SC#2 chaos completed=1/distinct=1; SC#1 2 fires/2 windows (was 94, bug fixed); SC#3 valid pg dump (role fix) + 24h alert; SC#4 budget-10 + ask_user auto-reject; coverage 88.5%; schedule.go mutation 77.3% | Phase 10 Slice 6 | `internal/cron/**`, `internal/agent/tools/task.go`, `cmd/aura/serve.go`, `scripts/scheduler_chaos.sh` |
+| AG-UI gateway (UX-01 / SC1/SC3 + amendment #57 reasoning data-plane) — live SSE round-trip (`POST /agent/run`) + GET snapshot + REASONING_* lifecycle + `internal/agui` coverage + `translator.go` mutation | SC1/SC3 SSE+GET live (no-skip-as-green) / REASONING_* interleave-before-TEXT, stream-only / `internal/agui` ≥85% combined / `translator.go` mutation ≥70% killed / owned-surface ≥85% | 2026-06-07 (live, WSL, stack up — operator Gate-3 sign-off pending on Task 2) | **PASS** — `scripts/agui_smoke.sh` LIVE leg green (real OpenRouter, deepseek-v4-flash): `RUN_STARTED → REASONING_START → REASONING_MESSAGE_START → 15× REASONING_MESSAGE_CONTENT → REASONING_MESSAGE_END → REASONING_END → TEXT_MESSAGE_START → TEXT_MESSAGE_CONTENT → TEXT_MESSAGE_END → STATE_DELTA → RUN_FINISHED`; REASONING_END precedes the first TEXT_MESSAGE_START (#57 interleave-before-text); answer="4"; GET `MESSAGES_SNAPSHOT` shows user turns + assistant "4" with **NO CoT persisted** (reasoning stream-only); 404 on `does-not-exist`. DEGRADED leg (CI step, dummy key, CI=true) PASS: RUN_STARTED + terminal frame + MESSAGES_SNAPSHOT + 404 (proves the SSE pump/translator/daemon-mount wire without a paid call). **agui db_integration tier RUNS in CI** (`go test -tags db_integration -race -p 1 ./internal/db/... ./internal/cron/... ./internal/agui/...`; the three integration tests round-trip 0.04–0.05s each, not skip-as-green; envOrSkip t.Fatals under CI=true). **`internal/agui` combined coverage 86.8%** (unit + db_integration, WSL). **owned-surface coverage 86.2%** (`scripts/coverage_gate.sh`, full tag matrix). **`translator.go` mutation 76.2% killed** (48/63, go-mutesting WSL; incl. the REASONING coalesce/close-on-interruption branch; the 15 survivors are near-equivalent sort/enum-build mutants in the ask_user schema + STATE_DELTA helpers). | Phase 12 Slice 8b | `internal/agui/**`, `cmd/aura/serve.go`, `scripts/agui_smoke.sh`, `scripts/agui_boundary_check.sh`, `.github/workflows/ci.yml` |
 | Snippet-reuse steady-state E2E (CAP-08.1 / D-03) — pre-seeded snippet → ONE reuse run via production `runner.Runner` (Deps.ToolInvocations wired) → 2nd-run-equivalent ledger window + fresh .xlsx, real DeepSeek-V4 | ≤6 tool dispatches (`event_kind='end'`) AND wall-clock <40s on the reuse run (grounded by D-03, NOT distinct-request_id) / fresh .xlsx opens+today / coverage ≥85% / mutation ≥70% on new handlers | 2026-06-06 (live steady-state PASS; coverage/mutation pending WSL `make quality-full`) | **Live steady-state PASS** (paid, `TestSnippetReuseE2E`, deepseek-v4-flash:exacto): **endEvents=5 ≤6**, **wallClock=11.057s <40s**, fresh .xlsx opens+today=true (`Mercato_Yahoo_2026-06-06.xlsx`, 10 tickers, real prices). Collapsed from the D-03 authoring run (21 dispatches / 142.8s). Structural tier PASS key-free: `TestRegistrySnippetReuse_HasSkillTool` + `TestRegistry_SeamFree` (OPENROUTER unset, 0.42s, no live call). Required a fixture-to-intent repair (`6a3c9d84`): the pre-seeded snippet was a stub contradicting its own description — the first run (13/71.8s/today=false) was ledger-proven model+product recovery from the stub, not a product gap. Mutation spot-check on the two NEW-handler files **DONE** (2026-06-06, WSL go-mutesting, `--exec-timeout` 60s/120s): `internal/agent/tools/skill_write.go` = **95.5% (21/22)** [was 59% — the lone survivor is a cosmetic trailing-comment relocation on a `_ = status` no-op, a true equivalent mutant]; `internal/skills/writer_activate.go` = **45.2% (14/31)** [was 16% — the meaningful + Restore-relevant mutants are killed: Delete pending-dir cleanup, SetAlways flag-persist, the 5 lifecycle audit-wraps, the Restore SanitizeName + archive-dir-unset guards; the 17 remaining survivors are ALL FS-fault-injection error-wrap near-equivalents (mid-op promote/materialize/dematerialize/read/write/rename failures), documented-equivalent — killing them needs cross-platform-flaky filesystem fault injection, deliberately not chased]. Coverage cell still **pending** (separate WSL stack op). See the Phase-18 detail's live-run log. | Phase 18 Slice 7e | `internal/skills/**`, `internal/agent/tools/skill*.go`, `internal/eval/skills_snippet_reuse*_cot_eval_test.go`, `internal/toolinvocations/**` |
 
 ---
@@ -392,6 +393,46 @@ go test -tags 'cot_eval db_integration' -run TestSnippetReuseE2E -timeout 540s -
 # The harness t.Logs endEvents + wallClock; OPEN the produced .xlsx visually, then replace
 # the pending-operator-run cells above with the observed numbers + bump Last measured.
 # coverage: bash scripts/coverage_gate.sh ; mutation: go-mutesting internal/skills/writer_activate.go ...
+```
+
+---
+
+## Phase 12 AG-UI Gateway Detail (UX-01 / SC1/SC3 / amendment #57)
+
+> Phase 12 ships the minimal Slice-8b AG-UI gateway: `POST /agent/run` streams a
+> translated agent turn as SSE and `GET /threads/<id>/messages` returns the persisted
+> history as a `MESSAGES_SNAPSHOT`, mounted on the `aura serve` daemon (loopback bind,
+> auth-deferred, amendment #35). Amendment #57 adds the reasoning data-plane: the
+> DeepSeek-V4 CoT streams as a REASONING_* lifecycle (interleaved BEFORE the answer
+> TEXT, stream-only — never persisted) to mask the reasoning-phase latency. SC1/SC3 are
+> operator-observable HTTP behaviors proven LIVE (curl against a running daemon), not
+> just compile-checked. The autonomous CI gate is the fast `db_integration` tier
+> (scripted fake Runner, no LLM); the live OpenRouter round-trip + the REASONING_*
+> lifecycle is the operator Gate-3 leg (`scripts/agui_smoke.sh` with `AGUI_SMOKE_LIVE=1`).
+
+| Sub-metric | Target | Last measured | Last value |
+|---|---|---|---|
+| SC1 live SSE round-trip (`POST /agent/run`) | RUN_STARTED…RUN_FINISHED | 2026-06-07 | **PASS** — `scripts/agui_smoke.sh` LIVE leg (real OpenRouter): full frame lifecycle in order; answer="4" reconstructs from TEXT_MESSAGE_CONTENT deltas, not double-streamed. |
+| SC3 live GET snapshot (`GET /threads/<id>/messages`) | MESSAGES_SNAPSHOT ≥1 msg | 2026-06-07 | **PASS** — JSON body shows the user turns + the assistant "4"; **no CoT persisted** (reasoning stream-only, #57). 404 on `does-not-exist` (T-12-11 chokepoint; a Rule-1 fix maps a malformed/non-UUID id to 404 instead of leaking a 500). |
+| REASONING_* lifecycle (amendment #57) | interleave before TEXT, stream-only | 2026-06-07 | **PASS** — `REASONING_START → REASONING_MESSAGE_START → 15× REASONING_MESSAGE_CONTENT (token-per-token) → REASONING_MESSAGE_END → REASONING_END` ALL before the first `TEXT_MESSAGE_START`; reasoning not mixed into the answer; not in the GET snapshot. |
+| agui `db_integration` tier in CI (no-skip-as-green, T-12-14) | tier RUNS in CI | 2026-06-07 | **PASS** — `ci.yml` integration-test job adds `./internal/agui/...` to `go test -tags db_integration -race -p 1`; the 3 integration tests round-trip 0.04–0.05s each (not a sub-ms skip tell); `envOrSkip` t.Fatals under CI=true. A CI step also runs `bash scripts/agui_smoke.sh` (degraded leg, dummy key, Postgres up). |
+| `internal/agui` combined coverage (unit + db_integration) | ≥ 85% | 2026-06-07 | **86.8%** — `go test -tags db_integration -p 1 -coverprofile ./internal/agui/`. Folded into the owned-surface gate. Remaining sub-100% is the iter.Seq2 `!yield` consumer-break arms + the fanout drop-on-full WARN arm (no asilo nido). |
+| Owned-surface coverage (`internal/*`, full integration matrix) | ≥ 85% | 2026-06-07 | **86.2%** — `bash scripts/coverage_gate.sh` (WSL, full stack up, tags db_integration+neo4j_integration). |
+| `translator.go` mutation (go-mutesting, killed) | ≥ 70% | 2026-06-07 | **76.2%** (48/63 killed, 1 duplicated; incl. the REASONING coalesce/close-on-interruption branch). The 15 survivors are near-equivalent: a `sort.Strings(keys)` removal on already-deterministic output + enum-build/`answer["enum"]` mutants in the ask_user schema helper (cosmetic shape, the golden-shape tests pin the wire). Advisory-accept per project precedent (db.go 82.8% / budget.go 89.4%). |
+| Operator live Gate-3 sign-off (Task 2) | operator approval | pending | **PENDING** — the live OpenRouter SSE round-trip + REASONING_* + live 💭 CLI reasoning + GET (no CoT) + 404 + graceful shutdown. The executor pre-ran `agui_smoke.sh` LIVE (above) so the wire is proven; the operator confirms the CLI 💭 render + graceful Ctrl+C shutdown per the human-verify checkpoint. |
+
+**Operator command (reproduces the live SSE round-trip + the REASONING_* lifecycle):**
+
+```bash
+set +H; cd /mnt/d/Aura
+export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
+set -a; source <(tr -d '\r' < .env); set +a   # POSTGRES_PASSWORD + OPENROUTER_API_KEY (strip single quotes)
+export AGUI_SMOKE_LIVE=1                        # arm the live OpenRouter leg (REASONING_* hard-asserted)
+bash scripts/agui_smoke.sh                      # builds aura, seeds a conv, serves, curls SSE+GET+404, tears down
+# Then `./aura serve` + `./aura chat` against the same conversation to confirm the live dim 💭 reasoning render,
+# and Ctrl+C the daemon to confirm a graceful shutdown log line (no panic/leak).
+# coverage: bash scripts/coverage_gate.sh   # 86.2%
+# mutation: go-mutesting ./internal/agui/translator.go   # 0.762
 ```
 
 ---

@@ -169,10 +169,14 @@ jobs:
         # no-skip-as-green guard so a missing DSN fails rather than skips). The cron
         # store/claim/recover/dispatch integration tests apply migration 0009 themselves
         # (migratedPool → EnsureRoles + Migrate), so no extra migrate step is needed.
+        # Phase 12: the AG-UI gateway (internal/agui) db_integration tier (SC1 SSE
+        # round-trip + SC3 GET snapshot + the 404 chokepoint) rides the SAME job env —
+        # its migratedPool applies the Phase-4 migrations itself and its envOrSkip
+        # t.Fatals under CI=true when the DSN is unset (no-skip-as-green, T-12-14).
         # -p 1 is MANDATORY (same rule as scripts/coverage_gate.sh): the packages share
         # ONE Postgres and each runs EnsureRoles+Migrate; parallel package binaries
         # deadlock on pg_advisory_lock once >2 integration packages exist.
-        run: go test -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/...
+        run: go test -tags db_integration -race -count=1 -p 1 ./internal/db/... ./internal/cron/... ./internal/agui/...
 
       - name: aura db migrate (smoke, idempotency)
         run: |
@@ -180,6 +184,24 @@ jobs:
           go run ./cmd/aura db migrate
           go run ./cmd/aura db status
           go run ./cmd/aura db ping
+
+      - name: AG-UI gateway live smoke (FakeClient/degraded leg)
+        # Phase 12 SC1/SC3 LIVE wire gate: builds aura, seeds a conversation, starts
+        # `aura serve`, then curls POST /agent/run (asserts RUN_STARTED…terminal frame)
+        # + GET /threads/<id>/messages (asserts MESSAGES_SNAPSHOT ≥1 msg) + the 404
+        # chokepoint against the REAL daemon. No real OPENROUTER_API_KEY in CI, so the
+        # script runs its DEGRADED leg: a dummy non-empty key lets the daemon boot
+        # (config.Load fail-fasts on an EMPTY key), the agent turn 401s at OpenRouter,
+        # and the terminal frame is RUN_ERROR — RUN_STARTED + a terminal frame still
+        # prove the SSE pump + translator + daemon mount end-to-end. The REASONING_*
+        # assertion is gated behind the live key (operator Gate-3 only). CI=true +
+        # POSTGRES_PASSWORD/AURA_DB_URL are exported in the job env, so the smoke's
+        # no-skip-as-green guard fires (exit 2) if the DB env is ever dropped (T-12-14).
+        # The conversation is seeded via `docker exec aura-postgres psql` against the
+        # compose Postgres `make db-up` brought up.
+        env:
+          OPENROUTER_API_KEY: ci-degraded-no-network
+        run: bash scripts/agui_smoke.sh
 
       - name: Restore drill (<90s assertion)
         run: |
