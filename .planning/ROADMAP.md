@@ -396,7 +396,7 @@ Wave 4:
 
 ### Phase 12: AG-UI Gateway
 
-**Goal**: AG-UI SSE event protocol transport. Thin wrapper over in-process emitter — pure translator `iter.Seq2[*agent.Event, error] → iter.Seq2[agui.Event, error]`. **Boundary enforced**: `internal/agent` MUST NOT import `internal/agui` (verified via static analysis lint in CI). HTTP `POST /agent/run` (SSE) + `GET /threads/<id>/messages`. Pinned to AG-UI Go SDK commit SHA post-2026-05-14 (Amendment #6).
+**Goal**: AG-UI SSE event protocol transport. Thin wrapper over in-process emitter — pure translator `iter.Seq2[*agent.Event, error] → iter.Seq2[agui.Event, error]`. **Boundary enforced**: `internal/agent` MUST NOT import `internal/agui` (verified via static analysis lint in CI). HTTP `POST /agent/run` (SSE) + `GET /threads/<id>/messages`. Pinned to AG-UI Go SDK pseudo-version literal `v0.0.0-20260514093510-e9e910b230b9` (Amendment #6+#56 — spike-resolved commit e9e910b, 2026-05-14).
 **Depends on**: Phase 11
 **Requirements**: UX-01
 **Slices**: 8
@@ -405,7 +405,7 @@ Wave 4:
   1. Operator runs `aura serve` and `curl -N -X POST http://127.0.0.1:9080/agent/run -d '{"thread_id":"t1","messages":[...]}'` and observes a stream of AG-UI events (RUN_STARTED, TEXT_MESSAGE_*, TOOL_CALL_*, RUN_FINISHED) in SSE format
   2. CI gate: any commit attempting to import `internal/agui` from any file under `internal/agent/` fails the build with explicit boundary-violation error
   3. Operator runs `curl http://127.0.0.1:9080/threads/t1/messages` after a streamed run and observes the persisted turn history matching what was emitted in the SSE stream
-  4. Operator runs `go.mod` inspection and observes AG-UI SDK pinned to a specific commit SHA (NOT `latest` or pseudo-version `v0.0.0-...`)
+  4. Operator runs `go.mod` inspection and observes AG-UI SDK pinned to the immutable pseudo-version literal `v0.0.0-20260514093510-e9e910b230b9` (NOT `latest`, NOT an unpinned install-time resolution; CI greps the literal — amendment #56: a pseudo-version IS the only valid go.mod form for this untagged subdir module, the original "no pseudo-version" wording was unsatisfiable)
 
 **Plans**: TBD
 
