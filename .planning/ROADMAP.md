@@ -117,7 +117,7 @@ Wave 8:
 
 **Wave 10** *(blocked on Wave 9)*
 
-- [ ] 11-10-PLAN.md — 7g eval rewrite: action-aware capture from structured tool args + new D-35 dual gate (self-install evidence + .xlsx artifact ground truth; install_prudence dropped) + seam-free eval registry (D-40)
+- [x] 11-10-PLAN.md — 7g eval rewrite: action-aware capture from structured tool args + new D-35 dual gate (self-install evidence + .xlsx artifact ground truth; install_prudence dropped) + seam-free eval registry (D-40)
 
 ### Phase 2: Agent Cornerstone
 
@@ -474,7 +474,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 8. Sandbox via sandbox-agent (local container) | done | Complete | 2026-06-03 |
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
-| 11. Skills | 8/10 | In Progress|  |
+| 11. Skills | 9/10 | In Progress|  |
 | 12. AG-UI Gateway | 0/TBD | Not started | - |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
