@@ -96,7 +96,7 @@
 | (freeform) | "qui serve un gsd spike molto accurato con vLLM" | ✓ |
 
 **User's choice:** Spike GSD dedicato e accurato con vLLM.
-**Notes:** Follow-up freeform: "valutiamo altri modelli multimodali online con gpu da 4Gb del 2026" → lo spike è una survey di mercato 2026 (modelli multimodali STT+vision ≤4 GB VRAM) serviti con vLLM, baseline = llama.cpp + Gemma 4 E4B. "guarda questo PC ha 32Gb di ram e gpu da 4Gb" → l'hardware di misura è questo stesso PC (numeri di produzione reali).
+**Notes:** Follow-up freeform: "valutiamo altri modelli multimodali online con gpu da 4Gb del 2026" → lo spike è una survey di mercato 2026 (modelli multimodali STT+vision ≤4 GB VRAM) serviti con vLLM, baseline = llama.cpp + Gemma 4 E4B. "guarda questo PC ha 32Gb di ram e gpu da 4Gb" → l'hardware di misura è questo stesso PC (numeri di produzione reali). Addendum post-discussione: "ollama già installato su pc, monta solo vLLM come sidecar aggiuntivo" → Ollama host = probe rapido candidati; vLLM = unico sidecar nuovo; niente Ollama-as-sidecar.
 
 | Option | Description | Selected |
 |--------|-------------|----------|

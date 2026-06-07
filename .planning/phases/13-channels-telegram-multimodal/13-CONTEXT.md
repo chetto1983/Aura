@@ -39,6 +39,7 @@ Requirements: UX-02 (9b), UX-03 (9a), UX-04 (9c). Slices PRD: 9a, 9b, 9c.
 
 ### Multimodale 9c
 - **D-13 — SPIKE DEDICATO PRE-PLAN, 9c-blocking.** Prima di `/gsd-plan-phase 13` va fatta una sessione `/gsd-spike` accurata: **survey dei modelli multimodali 2026 (STT + vision) che girano in ≤4 GB VRAM**, serviti con **vLLM**, misurati sulla **GPU da 4 GB di questo PC (32 GB RAM)** — numeri di produzione reali. Metriche: WER su voice IT/EN, qualità vision, latenza p50/p95, VRAM/RAM steady. Il default PRD (llama.cpp + Gemma 4 E4B Q4) è il baseline di confronto / fallback CPU.
+- **D-15 — Setup engine dello spike (addendum operatore 2026-06-07): Ollama è GIÀ installato sull'host** — lo spike lo usa per la valutazione rapida dei modelli candidati (`ollama pull` + probe, zero setup). **L'unico sidecar NUOVO da montare è vLLM** (compose service aggiuntivo). NON installare/montare Ollama come sidecar. Confronto finale a tre: Ollama host (probe candidati) → vLLM sidecar (serving engine candidato per 9c) → llama.cpp (baseline PRD / fallback CPU).
 - **D-14 — Le open question PRD 9c (variante Gemma finale, vision fallback markitdown OCR) sono ASSORBITE dal verdetto dello spike.** Il design voice.go/photo.go non si pianifica prima del verdetto.
 
 ### Claude's Discretion
@@ -106,6 +107,7 @@ Requirements: UX-02 (9b), UX-03 (9a), UX-04 (9c). Slices PRD: 9a, 9b, 9c.
 - "look spike" — l'operatore vuole che planning e implementazione partano dai findings spike, non dal PRD nudo: i requirement session-5 del MANIFEST sono binding.
 - Lo spike multimodale deve guardare il mercato 2026 ("valutiamo altri modelli multimodali del 2026"), non solo Gemma 4 — il PRD su questo è invecchiato.
 - Hardware reale: questo PC = 32 GB RAM + GPU 4 GB VRAM. Lo spike misura qui.
+- Ollama già installato sull'host: canale rapido per provare i candidati 2026 senza setup; vLLM = unico sidecar aggiuntivo da montare per lo spike.
 
 </specifics>
 
