@@ -2848,6 +2848,16 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > - **9c**: Multimodal (voice + photo via Gemma 4 sidecar, documents via markitdown). ~400 LOC + 150 test.
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
+> **▶ Amendment #58 (Phase 13 pre-plan — spike ground-truth 017-019 + discuss decisions, 2026-06-07) — Slice 9 reality fixes + scope deltas.** La spike session 5 (`.planning/spikes/` 017…019, blueprint in `spike-findings-Aura/references/telegram-channel.md`) ha validato live transport, MarkdownV2, table rendering e artifact delivery contro il bot reale dell'operatore; la discuss-phase 13 (`.planning/phases/13-channels-telegram-multimodal/13-CONTEXT.md`) ha chiuso 4 gray area. Sette correzioni a §Slice 9:
+> **(1) Pin telebot = TAG `v4.0.0-beta.9`** (commit `9c28310e`, 2026-06-02). La premessa di amendment #5 ("untagged repo → SHA-pin") è STALE: il repo è taggato. CI gate = grep letterale `gopkg.in/telebot.v4 v4.0.0-beta.9` in go.mod (mirror inverso della lezione spike-014/#56: là il SHA-grep era insoddisfacibile, qui è superfluo).
+> **(2) Tabelle = PNG primario (NUOVO scope 9b).** Il renderer.go originale è silente sulle tabelle, ma i reply LLM ne sono pieni e il Bot API non ha table entity (lista entity verificata live). Detect markdown table (righe `|` + separatore `|---|`) → render gridded PNG pure-Go (`golang.org/x/image` opentype + gofont/gomono + gomonobold @2x = 28px, ~150 LOC, 5-21ms e 22-67KB misurati) → `sendPhoto`; la prosa circostante esce come testo MarkdownV2 normale. Fallback = pre-block monospace (zero-dep) se il render fallisce; key-value card SOLO per tabelle 2-col `key|value`. Verdetto head-to-head on-device dell'operatore (spike 018a/b/c, caso comune 4-col E stress 6-col). `x/image` promossa a dep diretta (≥v0.41.0, già indiretta). NO fogleman/gg, NO headless browser. Nuovo file `internal/channels/telegram/tables.go` ~150 LOC; 9b passa ~920→~1150 LOC src.
+> **(3) Artifact file delivery (NUOVO scope 9b — directive operatore 2026-06-07).** Tool **`send_file {path, caption?}`** esplicito: l'agente decide quando consegnare (NO auto-detect del renderer). Channel-agnostic: il tool emette un evento artifact generico nello stream AG-UI e ogni canale lo rende a modo suo — Telegram → `sendDocument` (`tele.Document{File: FromDisk(path), FileName: name}`; Telegram rileva il MIME da solo — spike 019: 4/4 tipi xlsx/pdf/docx/csv round-trip byte-identical con MIME esatto, 112-155ms), CLI → path testuale, AG-UI → evento custom. Path policy: **qualsiasi path leggibile** (coerente postura #50 full-host — shell_exec legge già tutto, un allowlist sarebbe teatro; gating futuro = capability_grants Slice 1.7). Cap upload Bot API 50 MB. Convenzione deferred-tool standard (`internal/agent/tools/send_file.go`).
+> **(4) mdv2.go entity-aware.** L'escaper (~80 LOC, amendment #4 invariato) escapa i reserved char FUORI dalle entity intenzionali, MAI whole-string (distrugge bold/code span; UN char nudo = 400 sull'INTERO send — Pitfall #18 strict-confirmed live). Dentro i fence pre/code solo backtick e backslash sono reserved (pipe/dash/dot fluiscono). Fallback: se l'escaped send 400a, resend plain-text senza ParseMode. Read-back ground truth nei test live = la response del Bot API (`msg.Text`/`Entities`/`Document`/`Photo`) — i messaggi bot-sent NON appaiono MAI in getUpdates.
+> **(5) Setup wizard 9a = SOLO API backend.** ~~`page.html` ~250 LOC embedded HTML+CSS+JS~~ → il frontend atterra nella **prossima milestone**. Restano gli endpoint token-gated: `POST /setup/token` (valida getMe), `POST /setup/onboard-link` → `{deep_link, qr_svg}`, `GET /setup/status`, `GET /setup/events` (SSE poll-2s); amendment #10 invariato (`AURA_SETUP_TOKEN` stampato a stdout primo boot, middleware 401). Percorso operatore: bot token via `curl POST /setup/token` oppure env `TELEGRAM_BOT_TOKEN`; onboarding utente via **QR ASCII in terminale** (`qrterminal`, dep già prevista) + deep-link `t.me/<bot>?start=<token>`. Il `qr_svg` resta nella risposta JSON per il frontend futuro. ROADMAP Phase-13 SC1 emendato di conseguenza.
+> **(6) CLI NON channel-ificata.** Il refactor `cmd/aura/chat.go → internal/channels/cli/cli.go` è **ANNULLATO**: la superficie CLI reale (chat.go + chat_render.go + chat_repl.go, provata live in Phase 12 incl. render 💭) è un REPL on-demand, non un daemon channel — channel-ificarla è churn da cerimonia su codice validato. `Channel` interface + `registry.go` restano da PRD (servono Telegram ora, WhatsApp/Discord poi). CLI = debug-only in `cmd/aura`.
+> **(7) 9c GATED su spike dedicato pre-plan.** Le open question 9c (variante Gemma finale, vision fallback markitdown OCR) sono ASSORBITE da una sessione `/gsd-spike` accurata PRIMA di `/gsd-plan-phase 13`: **survey dei modelli multimodali 2026 (STT + vision) che girano in ≤4 GB VRAM**, serviti con **vLLM**, misurati sulla **GPU da 4 GB del mini-PC (32 GB RAM)** — metriche: WER voice IT/EN, vision quality, latenza p50/p95, VRAM/RAM steady. Baseline di confronto / fallback CPU = llama.cpp + Gemma 4 E4B Q4 (il design corrente di questa sezione). Il design di voice.go/photo.go si pianifica DOPO il verdetto dello spike.
+> **Migration**: `0008_telegram` qui sotto è indicativo → atterra al prossimo libero = **0012** (floor shippato `0011_tool_invocations`; regola ordine-fase §Persistence "Migration numbering — fonte di verità" già vigente).
+
 **Goal.** Aura passa da CLI-only a multi-channel agnostico, con **Telegram come main user-facing channel** (gli utenti finali non usano CLI). Architettura `internal/channels/<name>/` permette di aggiungere WhatsApp/Discord/Signal futuri come slice incrementali. CLI rimane debug-only per dev. Setup completo via web wizard (paste bot token + scan QR del deep link Telegram), niente codici testuali.
 
 Slice 9 risolve Area #16 (transport agnostico) all'altezza prodotto: Slice 8 ha esposto AG-UI come standard, Slice 9 ne cabla il primo client production-grade (Telegram in-process subscriber).
@@ -2865,7 +2875,8 @@ Slice 9 risolve Area #16 (transport agnostico) all'altezza prodotto: Slice 8 ha 
 
 ```go
 // go.mod (Slice 9b)
-require gopkg.in/telebot.v4 <SHA-post-2026-05-08>                 // bot library — SHA-pinned per amendment #5 (untagged repo; pin to specific commit ≥ 2026-05-08 to avoid silent master drift). At Phase 1 Slice 9b implementation time, resolve to the latest commit SHA via `go list -m -json gopkg.in/telebot.v4@HEAD` and replace the placeholder.
+require gopkg.in/telebot.v4 v4.0.0-beta.9                       // bot library — TAG pin per amendment #58 (supersede #5: il repo è taggato dal 2026-06-02, commit 9c28310e; CI gate = grep letterale di questa riga in go.mod). Validato live spike 017 sotto Go 1.26.
+require golang.org/x/image v0.41.0                              // table→PNG rendering (amendment #58: opentype + gofont/gomono+gomonobold embedded, zero CGO; promossa da indiretta a diretta)
 require github.com/skip2/go-qrcode latest                       // QR code generation
 require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per console
 ```
@@ -2900,12 +2911,12 @@ require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per 
 internal/channels/
   channel.go              # ~70   Interface { Name(), Start(ctx, sub), Stop(), IsHealthy() }
   registry.go             # ~100  Lifecycle orchestration (StartAll/StopAll, error aggregation)
-  cli/cli.go              # ~150  CLI as channel (refactor cmd/aura/chat.go Slice 1.8 → qui)
+  cli/cli.go              # ~~~150  CLI as channel (refactor cmd/aura/chat.go Slice 1.8 → qui)~~ [ANNULLATO #58(6): CLI resta in cmd/aura, debug-only — nessun file qui]
 
 internal/setup/                # Slice 9a
   server.go               # ~150  HTTP server isolato porto 9081 (sempre on)
   handlers.go             # ~200  POST /setup/token (validate getMe), POST /setup/onboard-link, SSE /setup/events
-  page.html               # ~250  Embedded HTML+CSS+JS, dark theme stile master
+  page.html               # ~~~250  Embedded HTML+CSS+JS, dark theme stile master~~ [DEFERITO #58(5): frontend → prossima milestone; 9a = solo API backend]
   qr.go                   # ~50   QR SVG generation (skip2/go-qrcode)
   types.go                # ~40
 
@@ -2917,6 +2928,11 @@ internal/channels/telegram/    # Slice 9b
                           #       - Throttle status 1500ms + content 500ms + chat queue 1000ms
                           #       - 429 backoff adaptive
                           #       - tool_call_result preview + sidecar pointer (Cursor pattern)
+  tables.go               # ~150  [NUOVO #58(2)] markdown table → gridded PNG (x/image opentype,
+                          #       gofont/gomono+gomonobold @2x) → sendPhoto; fallback pre-block;
+                          #       key-value card solo 2-col key|value. Base: spike 018b sources.
+  artifact.go             # ~60   [NUOVO #58(3)] consumer dell'evento artifact → sendDocument
+                          #       (FromDisk path + FileName; MIME auto-rilevato da Telegram)
   status_pane.go          # ~180  Status pane manager (master pattern ridotto)
                           #       - sendMessage iniziale "⏳ thinking..."
                           #       - editMessageText cumulativo: tool calls list con glyph 🟡/✅/❌
@@ -2962,6 +2978,13 @@ internal/channels/telegram/    # Slice 9c (multimodal)
 
 internal/agui/emitter.go (diff)  # ~+50  fanout channel API per in-process subscribers
                                  #       (oltre all'HTTP SSE di Slice 8b, deferito #35)
+                                 #       [NOTA #58: internal/agui/fanout.go è già shippato da Phase 12
+                                 #       (Subscribe-before-Run, drop-on-full cap-64) — il diff residuo
+                                 #       è il wiring per-run lato canale, non un file nuovo]
+
+internal/agent/tools/send_file.go  # ~80  [NUOVO #58(3)] tool send_file {path, caption?}: emette
+                                   #      evento artifact channel-agnostic nello stream AG-UI;
+                                   #      qualsiasi path leggibile (postura #50); cap 50 MB Telegram
 
 internal/llm/openai_compat/models.go (diff)  # ~+30  SupportsVision/SupportsAudio capability flags
                                               #       per model
@@ -3033,13 +3056,15 @@ MULTIMODAL_API_KEY=no-key
 
 ### Smoke
 
-**9a smoke:**
+**9a smoke** *(emendato #58(5) — API-only, niente browser)*:
 ```bash
 ./aura serve --no-telegram                # niente bot, solo /setup endpoint attivo
-curl http://127.0.0.1:9081/setup | grep "Aura Setup"
-# admin apre browser, paste bot token → bot validato via getMe
-# admin click "Add user" → genera onboarding token + QR
-# QR scan → t.me/MyAuraBot?start=ONBOARD-XYZ
+# stdout primo boot: AURA_SETUP_TOKEN=<uuid>
+curl -X POST "http://127.0.0.1:9081/setup/token?token=$TOK" -d '{"token":"<bot-token>"}'   # valida via getMe
+curl -X POST "http://127.0.0.1:9081/setup/onboard-link?token=$TOK"                          # → {deep_link, qr_svg}
+# QR ASCII stampato in terminale (qrterminal) → scan → t.me/MyAuraBot?start=ONBOARD-XYZ
+curl "http://127.0.0.1:9081/setup/status?token=$TOK"                                        # → {bot_configured,...}
+curl "http://127.0.0.1:9081/setup/status"                                                   # → 401 (token gate)
 ```
 
 **9b smoke:**
@@ -3067,11 +3092,11 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 ### Acceptance
 
 #### 9a (Channel framework + Setup wizard)
-- [ ] `Channel` interface in `internal/channels/channel.go`. CLI implementata come `internal/channels/cli/cli.go` (refactor di Slice 1.8 `cmd/aura/chat.go` — file creato in 1.8 dedicato per i sub-command chat, ora migrato a channel abstraction).
+- [ ] `Channel` interface in `internal/channels/channel.go`. ~~CLI implementata come `internal/channels/cli/cli.go` (refactor di Slice 1.8 `cmd/aura/chat.go` — file creato in 1.8 dedicato per i sub-command chat, ora migrato a channel abstraction).~~ **[ANNULLATO #58(6): la CLI resta in `cmd/aura` debug-only; Channel interface + registry servono i daemon channel (Telegram + futuri).]**
 - [ ] `Registry` orchestration: `StartAll` boot tutti i channel enabled (env `AURA_CHANNEL_<NAME>_ENABLED`, default true); `StopAll` graceful drain.
 - [ ] Flag override per debug: `aura serve --no-telegram`, `aura serve --only=cli`.
 - [ ] Setup wizard HTTP server bind `127.0.0.1:9081` (override `AURA_SETUP_BIND=0.0.0.0:9081` per setup remote con QR scan).
-- [ ] `GET /setup` serve `page.html` embedded.
+- [ ] ~~`GET /setup` serve `page.html` embedded.~~ **[DEFERITO #58(5): frontend → prossima milestone; `GET /setup` può ritornare un JSON di cortesia `{status, endpoints}` o 404 — il wizard 9a è API-only.]**
 - [ ] **One-time token gate (amendment #10)**: `AURA_SETUP_TOKEN` env var. If unset at boot, `aura serve` generates a random UUIDv4 and prints `AURA_SETUP_TOKEN=<value>` to stdout (single line, parseable). Token persists in memory only (no disk). Middleware `requireSetupToken` on `/setup/*` returns 401 if `?token=` query param or `X-Aura-Setup-Token` header does not match. After successful Telegram onboarding (POST /setup/onboard-link completion event), the token is invalidated and a second navigation returns 401. Acceptance test: 401 without token, 200 with token, 401 after onboarding-complete.
 - [ ] `POST /setup/token` body `{token}`: valida via Telegram `getMe`, persiste in secrets store, restart bot goroutine (se già attivo).
 - [ ] `POST /setup/onboard-link`: genera UUID onboarding_token, INSERT `telegram_setup_pending` (TTL 1h), ritorna `{deep_link: "https://t.me/<bot_username>?start=<token>", qr_svg: "..."}`.
@@ -3093,19 +3118,17 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 - [ ] **Microcompact pointer handling**: il renderer riconosce `tool_call_result` content che inizia con `[tool_call_id=X: evicted from context...]` (formato L1 microcompact eviction Slice 1.8b) e lo rende come line "🗄️ Tool result evicted (X bytes archived)" invece di dump del puntatore raw nel Telegram message.
 - [ ] Test renderer: golden fixture per ogni event type AG-UI → Telegram message expected. Almeno 1 fixture per type, incluso microcompact pointer case.
 - [ ] Test commands: ogni command produce output atteso senza LLM call.
+- [ ] **[#58(2)] `tables.go`**: markdown table nel reply → gridded PNG via `sendPhoto` (prosa circostante = MarkdownV2 normale); fallback pre-block se il render fallisce; key-value card solo per 2-col `key|value`. Golden test: fixture tabella 4-col e 6-col → PNG deterministico (dimensioni + grid); live test (tag `telegram_integration`): sendPhoto round-trip con `msg.Photo` non-nil.
+- [ ] **[#58(3)] `send_file` tool**: emette evento artifact channel-agnostic; Telegram lo consegna via `sendDocument` (path+filename, MIME auto). Live test: xlsx/pdf round-trip con `msg.Document.{FileName,MIME,FileSize}` esatti (ground truth = response Bot API, MAI getUpdates). Path qualsiasi leggibile; >50 MB → errore UX.
+- [ ] **[#58(4)] mdv2.go entity-aware**: l'escaper preserva le entity intenzionali (bold/code/pre); il fuzz 10K (Pitfall #18) resta l'acceptance; in più: fixture con tabella dentro pre-fence → pipe/dash NON escapati dentro il fence.
 
 #### 9c (Multimodal)
 - [ ] `voice.go`: POST a Gemma 4 multimodal sidecar `/v1/audio/transcriptions`. 2 retry + hard fail messaggio UX.
 - [ ] `documents.go`: tiered sync/async via markitdown sidecar. ≤5 MB sync, 5-50 MB async background. Output > `AURA_CONVERSATION_TURN_CAP_BYTES` → sidecar.
 - [ ] `photo.go`: POST a Gemma 4 multimodal sidecar `/v1/chat/completions` con base64 image_url. Description text → user message AG-UI.
 - [ ] Test integration `multimodal_integration` build tag: requires sidecar up. Skipped in CI senza container.
-- [ ] **Open question pre-merge**: benchmark Gemma 4 E2B vs E4B vs 26B MoE su corpus reale Aura per:
-  - STT accuracy (WER su 20 audio sample IT/EN)
-  - Image description quality (manual rating su 10 sample)
-  - Latenza p50/p95
-  - RAM steady state
-  Default baseline E4B Q4 fino al benchmark.
-- [ ] **Open question pre-merge**: vision fallback strategy. Se Gemma quality < threshold → markitdown OCR fallback path attivato. Altrimenti rimosso.
+- [ ] ~~**Open question pre-merge**: benchmark Gemma 4 E2B vs E4B vs 26B MoE su corpus reale Aura~~ **[ASSORBITA #58(7): la scelta engine+modello esce dallo `/gsd-spike` multimodale pre-plan — survey modelli 2026 ≤4 GB VRAM + vLLM, misurato sulla GPU 4 GB del mini-PC. Metriche invariate: WER voice IT/EN, vision quality, latenza p50/p95, VRAM/RAM steady. Baseline/fallback CPU = llama.cpp + Gemma 4 E4B Q4.]**
+- [ ] ~~**Open question pre-merge**: vision fallback strategy. Se Gemma quality < threshold → markitdown OCR fallback path attivato. Altrimenti rimosso.~~ **[ASSORBITA #58(7): decisa dal verdetto dello spike.]**
 
 ### File targets cumulativi
 
@@ -3121,8 +3144,8 @@ Slice 0.5 RAM table emendata per riflettere (-Whisper +Gemma 4 multimodal).
 
 ### Open questions
 
-1. **Variant Gemma 4 finale**: E2B / E4B / 26B MoE / 31B. Decisione pre-merge Slice 9c dopo benchmark accuracy + latenza + RAM su corpus reale Aura. Default baseline E4B.
-2. **Vision fallback markitdown OCR**: necessario o no. Pre-merge benchmark decide.
+1. ~~**Variant Gemma 4 finale**: E2B / E4B / 26B MoE / 31B. Decisione pre-merge Slice 9c dopo benchmark accuracy + latenza + RAM su corpus reale Aura. Default baseline E4B.~~ **[ASSORBITA #58(7): verdetto dallo /gsd-spike multimodale pre-plan (modelli 2026 ≤4 GB VRAM + vLLM su GPU 4 GB).]**
+2. ~~**Vision fallback markitdown OCR**: necessario o no. Pre-merge benchmark decide.~~ **[ASSORBITA #58(7): decisa dal verdetto dello spike.]**
 3. **Setup wizard PostgreSQL LISTEN/NOTIFY vs poll**: SSE `/setup/events` può usare LISTEN/NOTIFY (efficient, ~1 connection ws) o poll DB ogni 2s (semplice, no extra deps). → *Default proposto*: poll 2s per Slice 9a, LISTEN/NOTIFY come ottimizzazione futura.
 4. **Channel framework: WhatsApp Business API / Discord / Signal future slice**: ogni new channel = nuova sub-slice in `internal/channels/<name>/`. Schema `<name>_accounts` table parallela. Non in scope Slice 9.
 

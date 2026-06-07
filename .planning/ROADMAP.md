@@ -429,16 +429,16 @@ Wave 4:
 
 ### Phase 13: Channels + Telegram + Multimodal
 
-**Goal**: Channels framework (`internal/channels/<name>/` with `Channel` interface) + Telegram primary user-facing channel via `gopkg.in/telebot.v4` SHA-pinned post-2026-05-08 (Amendment #5) + custom ~80 LOC MarkdownV2 escaper (Amendment #4, supply-chain risk avoidance) + `/cancel`, `/cost`, `/search` commands (Amendment #8). Setup wizard at `http://127.0.0.1:9081/setup` with one-time token `AURA_SETUP_TOKEN` printed to stdout on first boot (Amendment #10) + QR for bot token paste. Multimodal Gemma 4 sidecar (E4B Q4) for STT + image input via `ghcr.io/ggml-org/llama.cpp:server` + markitdown sidecar for document→markdown conversion.
+**Goal**: Channels framework (`internal/channels/<name>/` with `Channel` interface + registry; CLI stays in `cmd/aura` debug-only per Amendment #58) + Telegram primary user-facing channel via `gopkg.in/telebot.v4` **tag `v4.0.0-beta.9`** (Amendment #58 supersedes #5's SHA-pin) + custom ~80 LOC **entity-aware** MarkdownV2 escaper (Amendments #4+#58) + `/cancel`, `/cost`, `/search` commands (Amendment #8) + **tables→PNG rendering** (x/image, spike 018b) + **artifact file delivery** via `send_file` tool → channel-agnostic AG-UI event → sendDocument (Amendment #58, spike 019). Setup wizard **API backend only** (frontend → next milestone, Amendment #58): token-gated `/setup/*` endpoints on `127.0.0.1:9081`, one-time `AURA_SETUP_TOKEN` printed to stdout on first boot (Amendment #10), onboarding via terminal ASCII QR + deep-link. Multimodal 9c **gated on a dedicated pre-plan `/gsd-spike`** (2026 multimodal models ≤4 GB VRAM served with vLLM, measured on this PC's 4 GB GPU; baseline/CPU-fallback = llama.cpp + Gemma 4 E4B Q4) + markitdown sidecar for document→markdown conversion.
 **Depends on**: Phase 12
 **Requirements**: UX-02, UX-03, UX-04
 **Slices**: 9a, 9b, 9c
 **Success Criteria** (what must be TRUE):
 
-  1. Operator runs `aura serve` on first boot and observes `AURA_SETUP_TOKEN=<random>` printed to stdout; navigating to `http://127.0.0.1:9081/setup?token=<token>` shows the wizard with QR code for Telegram bot token paste; second navigation without valid token shows 401
+  1. Operator runs `aura serve` on first boot and observes `AURA_SETUP_TOKEN=<random>` printed to stdout; `POST /setup/token` (curl) validates the bot token via getMe, `POST /setup/onboard-link` returns `{deep_link, qr_svg}` and prints the ASCII QR to the terminal; any `/setup/*` call without valid token returns 401 *(amended #58: API backend only — web wizard page → next milestone)*
   2. User sends a message in Telegram and observes Aura's streamed reply with status pane + content reply rendered correctly (no `400 Bad Request: can't parse entities` errors — Pitfall #18 escape fuzz green)
   3. User sends `/cancel` in Telegram during a long-running tool call and observes immediate abort + Aura confirmation message; ctx-cancel propagated through HTTP + subprocess + DB query (`goleak` clean)
-  4. User sends a voice note and observes Aura transcribing via Gemma 4 STT (multimodal sidecar) and responding; same for an image with caption "what's in this picture?" returning a description
+  4. User sends a voice note and observes Aura transcribing via the multimodal sidecar STT and responding; same for an image with caption "what's in this picture?" returning a description *(engine+model = pre-plan spike verdict, Amendment #58 — baseline Gemma 4 E4B Q4 on llama.cpp)*
   5. User runs `/cost` and observes today's cumulative USD spend across all conversations; `/search "<query>"` returns matching turn excerpts (FTS from P4 wired into Telegram)
 
 **Plans**: TBD
