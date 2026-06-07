@@ -33,7 +33,9 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 		closeRuns := func() bool { return rs.close(yield) && st.close(yield) }
 		for ev, err := range seq {
 			if err != nil {
-				_ = closeRuns()
+				if !closeRuns() {
+					return
+				}
 				yield(events.NewRunErrorEvent(err.Error()), nil)
 				return
 			}

@@ -264,6 +264,44 @@ func TestTranslatorErrorStops(t *testing.T) {
 	}
 }
 
+// TestTranslatorErrorPathHonorsConsumerStop pins WR-02: on the error path the translator
+// closes any open run (which yields a TEXT_MESSAGE_END) BEFORE emitting RUN_ERROR. If the
+// consumer returns false on that END frame, the translator must NOT yield RUN_ERROR after —
+// a yield-after-false violates the iter.Seq2 contract (go test panics with "range function
+// continued iteration after function returned false"). The error branch must be guarded
+// like every other branch (`if !closeRuns() { return }`), not discard the close result.
+func TestTranslatorErrorPathHonorsConsumerStop(t *testing.T) {
+	seq := func(yield func(*agent.Event, error) bool) {
+		if !yield(chunk("partial"), nil) { // opens a text run
+			return
+		}
+		yield(nil, errAGUITest) // error path closes the open run, then RUN_ERROR
+	}
+
+	var got []events.Event
+	// A strict consumer that STOPS at the first END frame — the very frame closeRuns emits
+	// on the error path. A yield after this returns-false is the contract violation.
+	for ev, err := range Translate("thread-1", "run-1", &fixedIDGen{}, seq) {
+		if err != nil {
+			t.Fatalf("Translate must not propagate the error in the err slot: %v", err)
+		}
+		got = append(got, ev)
+		if string(ev.Type()) == "TEXT_MESSAGE_END" {
+			break // returns false to the range function
+		}
+	}
+
+	if last := string(got[len(got)-1].Type()); last != "TEXT_MESSAGE_END" {
+		t.Fatalf("consumer stopped at %s, want TEXT_MESSAGE_END (the close frame)", last)
+	}
+	// The guard means no RUN_ERROR is yielded after the stop — proven by reaching here
+	// without the range-function panic and by the absence of RUN_ERROR in the collected
+	// frames (the loop broke before it could be appended).
+	if countType(got, "RUN_ERROR") != 0 {
+		t.Fatalf("RUN_ERROR yielded after consumer stop: %v", typesOf(got))
+	}
+}
+
 // TestTranslatorToolCallLifecycle: a tool start (with args) + end emits
 // START/ARGS/END/RESULT in order; a start with empty args omits ARGS.
 func TestTranslatorToolCallLifecycle(t *testing.T) {
