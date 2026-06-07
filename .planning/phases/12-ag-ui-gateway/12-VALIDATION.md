@@ -44,8 +44,8 @@ created: 2026-06-06
 | SC-2 (boundary) | 12-01 | 1 | UX-01 | T-12-01 | one-way agent→agui import closure | ci-gate | `bash scripts/agui_boundary_check.sh` (go list -deps; exit 1 on violation) | ✅ | ✅ green |
 | Golden fixtures | 12-01 | 1 | UX-01 | — | 21 verified wire shapes seeded (incl. 5 REASONING_*) | static | `grep -q RUN_STARTED internal/agui/testdata/golden-events.json` (+ build green) | ✅ | ✅ green |
 | Translator state machine | 12-01 | 1 | UX-01 | T-12-03, T-12-04 | valid AG-UI seq; skip empty deltas; non-empty ids; sorted StateDelta; tool-result≠TEXT_MESSAGE | unit/property | `go test -race -run TestTranslatorProperty ./internal/agui/` (rapid + golden) | ✅ | ✅ green |
-| Reasoning wire dual-field | 12-05 | 1 | UX-01 | T-12-18 | wireChunk.Delta accept-both reasoning/reasoning_content → SAME emitted Chunk{Reasoning}; immediate token-per-token; no leak into content | unit | `go test -race -run TestParseSSEReasoning ./internal/llm/openai_compat/` (two golden fixtures → identical events, #33) | ✅ | ✅ green |
-| Reasoning Chunk + Event | 12-05 | 1 | UX-01 | T-12-17 | llm.Chunk.Reasoning + agent.LLMResponse.Reasoning additive; reasoningChunkEvent mirror; consume case; round-trip symmetric; stream-only (no content leak) | unit | `go test -race -run 'TestEventRoundTrip|TestConsumeReasoning' ./internal/agent/` | ✅ | ✅ green |
+| Reasoning wire dual-field | 12-05 | 1 | UX-01 | T-12-18 | wireChunk.Delta accept-both reasoning/reasoning_content → SAME emitted Chunk{Reasoning}; immediate token-per-token; no leak into content | unit | `go test -race -run TestStream_ReasoningDualField ./internal/llm/openai_compat/` (two golden fixtures → identical events, #33) | ✅ | ✅ green |
+| Reasoning Chunk + Event | 12-05 | 1 | UX-01 | T-12-17 | llm.Chunk.Reasoning + agent.LLMResponse.Reasoning additive; reasoningChunkEvent mirror; consume case; round-trip symmetric; stream-only (no content leak) | unit | `go test -race -run 'TestEvent_.*Reasoning' ./internal/agent/ && go test -race -run TestLlmAgent_ReasoningChunk_StreamOnly ./internal/agent/` | ✅ | ✅ green |
 | Translator REASONING lifecycle | 12-06 | 2 | UX-01 | T-12-20 | REASONING_START/MESSAGE_START/CONTENT*/MESSAGE_END/END; rsn- messageId; coalesced; interleave-before-TEXT; clean close on interruption; Validate() passes | unit/property | `go test -race -run TestTranslatorProperty ./internal/agui/` (reasoning invariants + 5 REASONING golden shapes) | ✅ | ✅ green |
 | CLI live 💭 reasoning render | 12-06 | 2 | UX-01 | T-12-19 | renderRunnerTurn streams dim 💭 reasoning live; stream-only (not in answer/prose buffer) | unit | `go test -race -run TestRenderRunnerTurnReasoning ./cmd/aura/` (→ ok, NOT "no tests to run") + `grep -c '💭' cmd/aura/chat_render.go` ≥1 | ✅ | ✅ green |
 | Fanout (drop-on-full) | 12-02 | 2 | UX-01 | T-12-05 | cap-64 buffered, drop+WARN, never block producer | unit | `go test -race -run TestFanout ./internal/agui/` (goleak) | ✅ | ✅ green |
@@ -125,3 +125,25 @@ Artifacts persisted in `D:/tmp/agui-e2e/` (`sse.txt`, `snap.json`, `serve.log`, 
 - Reasoning streamed live (173 chars CoT), never persisted.
 
 Phase 12 Gate-3 is closed.
+
+---
+
+## Validation Audit 2026-06-07
+
+| Metric | Count |
+|--------|-------|
+| Gaps found | 2 |
+| Resolved | 2 |
+| Escalated | 0 |
+
+Retroactive /gsd-validate-phase audit — every autonomous gate re-run live (WSL, `-count=1`):
+static ci-gates (pin grep=1, boundary script PASS, golden/config/serve/💭 greps), all unit race
+tiers green incl. full `./internal/agui/` goleak suite, db_integration tier green against the live
+stack (agui 1.9s / conversations 4.1s — real execution, not skips), `agui_smoke.sh` degraded leg
+PASS (RUN_STARTED + sanitized RUN_ERROR + snapshot + 404). Two Per-Task Map rows (Plan 12-05) carried
+**stale `-run` names** (`TestParseSSEReasoning`, `TestEventRoundTrip|TestConsumeReasoning`) that
+matched zero tests — `[no tests to run]` false-greens. The behaviors were in fact covered by
+`TestStream_ReasoningDualField` and `TestEvent_LLMResponseReasoning_RoundTripsByteIdentical` /
+`TestEvent_EmptyReasoning_OmitsKey` / `TestLlmAgent_ReasoningChunk_StreamOnly` (all verified green
+live). Fix was doc-only: the two Automated Command cells now name the real tests; corrected commands
+re-run as written (1 + 3 PASS, no stale match). `nyquist_compliant: true` stands.
