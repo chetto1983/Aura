@@ -118,7 +118,12 @@ func postRun(t *testing.T, srv *httptest.Server, body string) *http.Response {
 
 func newTestServer(t *testing.T, run Runner, conv ConversationStore) *httptest.Server {
 	t.Helper()
-	s := NewServer(run, conv, ServerConfig{})
+	return newTestServerCfg(t, run, conv, ServerConfig{})
+}
+
+func newTestServerCfg(t *testing.T, run Runner, conv ConversationStore, cfg ServerConfig) *httptest.Server {
+	t.Helper()
+	s := NewServer(run, conv, cfg)
 	s.idgen = &fixedIDGen{}
 	srv := httptest.NewServer(s.Mux())
 	t.Cleanup(srv.Close)
@@ -378,6 +383,65 @@ func TestServer_MessagesUnknownThread404(t *testing.T) {
 	if resp.StatusCode != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", resp.StatusCode)
 	}
+}
+
+// TestServer_CORSPermissive pins WR-05: with the knob on, a cross-origin browser flow
+// works end to end — the preflight OPTIONS /agent/run returns 204 with the
+// Allow-Origin/Methods/Headers triple, and ACAO is present on a 404 error response, not
+// only the 200 stream. With the knob off, neither header appears and OPTIONS is not a 204.
+func TestServer_CORSPermissive(t *testing.T) {
+	const tid = "99999999-9999-9999-9999-999999999999"
+	store := func() *fakeConvStore { return &fakeConvStore{known: map[string]bool{tid: true}} }
+
+	t.Run("on: preflight 204 + headers", func(t *testing.T) {
+		srv := newTestServerCfg(t, &scriptedRunner{}, store(), ServerConfig{CORSPermissive: true})
+		req, _ := http.NewRequest(http.MethodOptions, srv.URL+"/agent/run", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("OPTIONS /agent/run: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Fatalf("preflight status = %d, want 204", resp.StatusCode)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Errorf("preflight ACAO = %q, want *", got)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Methods"); !strings.Contains(got, "POST") {
+			t.Errorf("preflight Allow-Methods = %q, want POST present", got)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Headers"); !strings.Contains(got, "Content-Type") {
+			t.Errorf("preflight Allow-Headers = %q, want Content-Type present", got)
+		}
+	})
+
+	t.Run("on: ACAO on a 404 error response", func(t *testing.T) {
+		srv := newTestServerCfg(t, &scriptedRunner{}, &fakeConvStore{known: map[string]bool{}}, ServerConfig{CORSPermissive: true})
+		resp := postRun(t, srv, runPayload("22222222-2222-2222-2222-222222222222"))
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", resp.StatusCode)
+		}
+		if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Errorf("error-response ACAO = %q, want * (must be set on errors too)", got)
+		}
+	})
+
+	t.Run("off: no CORS headers, OPTIONS not 204", func(t *testing.T) {
+		srv := newTestServerCfg(t, &scriptedRunner{}, store(), ServerConfig{CORSPermissive: false})
+		req, _ := http.NewRequest(http.MethodOptions, srv.URL+"/agent/run", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("OPTIONS /agent/run: %v", err)
+		}
+		defer resp.Body.Close()
+		if got := resp.Header.Get("Access-Control-Allow-Origin"); got != "" {
+			t.Errorf("restrictive default set ACAO = %q, want none", got)
+		}
+		if resp.StatusCode == http.StatusNoContent {
+			t.Errorf("OPTIONS returned 204 with CORS off; want the mux's method-not-allowed default")
+		}
+	})
 }
 
 // TestServer_RunErrorRedaction (T-12-10): a Runner whose turn errors with a synthetic

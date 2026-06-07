@@ -69,12 +69,39 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 }
 
 // Mux registers the two routes using Go 1.22+ method-pattern routing (no chi/gorilla
-// — matches the no-router codebase posture).
-func (s *Server) Mux() *http.ServeMux {
+// — matches the no-router codebase posture). When CORSPermissive is on (the dev knob)
+// the handler is wrapped in withCORS so a browser cross-origin POST works end to end:
+// the preflight OPTIONS is answered and ACAO is set on every response, including errors.
+func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /agent/run", s.handleRun)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
-	return mux
+	return s.withCORS(mux)
+}
+
+// withCORS wraps the mux to make CORSPermissive functional rather than half-wired (WR-05).
+// When the knob is off it returns the mux unchanged (no headers, T-12-13 restrictive
+// default). When on it sets `Access-Control-Allow-Origin: *` on EVERY response — including
+// the 4xx/5xx error bodies the ServeMux/handlers emit — by setting the header before the
+// handler runs (Go accumulates response headers until WriteHeader), and short-circuits a
+// CORS preflight OPTIONS with 204 + the Allow-Origin/Methods/Headers triple. Without the
+// preflight an application/json cross-origin POST is rejected by the browser before it ever
+// reaches the handler.
+func (s *Server) withCORS(next http.Handler) http.Handler {
+	if !s.cfg.CORSPermissive {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("Access-Control-Allow-Origin", "*")
+		if r.Method == http.MethodOptions {
+			h.Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			h.Set("Access-Control-Allow-Headers", "Content-Type")
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // handleRun parses RunAgentInput, resolves the thread (404), applies any protocol-native
@@ -117,9 +144,8 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
-	if s.cfg.CORSPermissive {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-	}
+	// ACAO is set centrally by withCORS when CORSPermissive is on (WR-05) so it is present
+	// on the error responses above too, not only this 200 stream.
 
 	runID := "run-" + uuid.NewString()
 	userMsg := lastUserMessage(in.Messages)
