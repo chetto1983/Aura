@@ -97,11 +97,14 @@ Cumulativa stimata a fine Slice 7 (mini-PC 16-core, target 32 GB RAM):
 | aura-llama-embed (embeddinggemma CPU, 4 thread) | ~600 MB | 0.7 (sidecar embedding per Neo4j HNSW vector index) |
 | SearXNG | ~150 MB | 5 |
 | Sandbox Python sidecar | ~80 MB | 2 |
-| ~~Pocket-TTS~~ | — | **Rimosso dalla tabella**: nessuna slice del PRD attuale lo cita o lo usa. Era residuo di scope precedente. TTS resta out-of-scope. |
-| aura-llama-multimodal (Gemma 4 E4B Q4 baseline, vision+STT unified) | ~3 GB | 9c |
-| Markitdown sidecar | ~150 MB | 9c (sostituisce attribuzione "(esterno)" precedente — è sidecar attivo aggiunto da Slice 9c per document conversion) |
+| ~~Pocket-TTS~~ | — | **Rimosso dalla tabella** (residuo scope precedente). ~~TTS out-of-scope.~~ **[#59: TTS torna in scope via `aura-tts` Kokoro — riga sotto.]** |
+| ~~aura-llama-multimodal (Gemma 4 E4B Q4, vision+STT unified)~~ **[SUPERSEDUTO #59]** | ~~~3 GB~~ | 9c |
+| **aura-ocr-vl** (GLM-OCR Q8 / PaddleOCR-VL, llama.cpp CPU) **[#59]** | ~1.4 GB | 9c (vision/OCR, 0 VRAM) |
+| **aura-stt** (faster-whisper large-v3-turbo int8, `hwdsl2`) **[#59]** | ~1.5 GB | 9c (voice-in OGG/Opus, 0 VRAM) |
+| **aura-tts** (Kokoro-82M, voce `if_sara`) **[#59]** | ~0.5 GB | 9c (voice-out opus, 0 VRAM) |
+| Markitdown sidecar | ~150 MB | 9c (document conversion doc→markdown) |
 | Aura Go binary | ~150 MB | 1 |
-| **Totale idle** | **~5.7-6.2 GB** | (dopo correzione Pocket-TTS rimosso, Gemma 4 incluso) |
+| **Totale idle** | **~6.1-6.6 GB** | (#59: -Gemma 3 GB +ocr-vl/stt/tts 3.4 GB; GPU 0) |
 | Sotto carico (LLM batch + swarm 3 worker) | **+1 GB** | |
 | **Peak realistic** | **~7 GB** | |
 
@@ -2845,7 +2848,7 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > **Atomicity note:** ~2330 LOC totali = troppo per 1 commit. Diviso in 3 sub-slice atomici:
 > - **9a**: Channel framework + Setup wizard (QR/deep-link onboarding via web). ~1010 LOC + 300 test.
 > - **9b**: Telegram impl (bot, renderer, status pane, markdown, HITL, commands). ~920 LOC + 300 test.
-> - **9c**: Multimodal (voice + photo via Gemma 4 sidecar, documents via markitdown). ~400 LOC + 150 test.
+> - **9c**: Multimodal (voice-in via faster-whisper + **voice-out via Kokoro TTS** + photo via OCR-VL, documents via markitdown). ~520 LOC + 210 test. **[engine emendato #59: 3 sidecar CPU, vLLM/Gemma OUT]**
 > Ogni sub-slice atomic-commit, smoke green prima del successivo.
 
 > **▶ Amendment #58 (Phase 13 pre-plan — spike ground-truth 017-019 + discuss decisions, 2026-06-07) — Slice 9 reality fixes + scope deltas.** La spike session 5 (`.planning/spikes/` 017…019, blueprint in `spike-findings-Aura/references/telegram-channel.md`) ha validato live transport, MarkdownV2, table rendering e artifact delivery contro il bot reale dell'operatore; la discuss-phase 13 (`.planning/phases/13-channels-telegram-multimodal/13-CONTEXT.md`) ha chiuso 4 gray area. Sette correzioni a §Slice 9:
@@ -2857,6 +2860,22 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > **(6) CLI NON channel-ificata.** Il refactor `cmd/aura/chat.go → internal/channels/cli/cli.go` è **ANNULLATO**: la superficie CLI reale (chat.go + chat_render.go + chat_repl.go, provata live in Phase 12 incl. render 💭) è un REPL on-demand, non un daemon channel — channel-ificarla è churn da cerimonia su codice validato. `Channel` interface + `registry.go` restano da PRD (servono Telegram ora, WhatsApp/Discord poi). CLI = debug-only in `cmd/aura`.
 > **(7) 9c GATED su spike dedicato pre-plan.** Le open question 9c (variante Gemma finale, vision fallback markitdown OCR) sono ASSORBITE da una sessione `/gsd-spike` accurata PRIMA di `/gsd-plan-phase 13`: **survey dei modelli multimodali 2026 (STT + vision) che girano in ≤4 GB VRAM**, serviti con **vLLM**, misurati sulla **GPU da 4 GB del mini-PC (32 GB RAM)** — metriche: WER voice IT/EN, vision quality, latenza p50/p95, VRAM/RAM steady. Baseline di confronto / fallback CPU = llama.cpp + Gemma 4 E4B Q4 (il design corrente di questa sezione). Il design di voice.go/photo.go si pianifica DOPO il verdetto dello spike.
 > **Migration**: `0008_telegram` qui sotto è indicativo → atterra al prossimo libero = **0012** (floor shippato `0011_tool_invocations`; regola ordine-fase §Persistence "Migration numbering — fonte di verità" già vigente).
+
+> **▶ Amendment #59 (Phase 13 pre-plan — spike session 6 multimodal ground-truth 020-029, 2026-06-07) — 9c engine reality + TTS voice-out leg.** La sessione `/gsd-spike` mandata da #58(7) è stata eseguita live su QUESTO mini-PC (GPU **RTX A2000 Laptop 4096 MiB**, WSL VM **7 GiB RAM**, stack Aura in esecuzione). Evidenza completa: `.planning/spikes/` 020-029 + MANIFEST §Session-6 + blueprint `Skill("spike-findings-Aura")` + memoria `project_9c_multimodal_engine_pivot`. Il verdetto **rovescia la premessa di #58(7)** ("≤4GB VRAM + vLLM") e il design Gemma-4-sidecar-unico di questa sezione. Undici delta a §Slice 9c:
+> **(1) vLLM è OUT per 9c (spike 020 INVALIDATED).** Qwen3-VL-2B-FP8 = pesi 2.95 GiB (FP8 Marlin W8A16, no native su Ampere sm_86) + ~0.8 GiB overhead CUDA/torch → restano **0.09 GiB per la KV cache mentre 4096 ctx ne chiede 0.44**; la WSL VM da 7 GiB affama il load del checkpoint 3.23 GiB (9P fs, no mmap prefetch); dual-residency (STT+vision simultanei) strutturalmente impossibile. Il framing "9c serviti con vLLM sulla GPU 4GB" è morto su questo hardware. Engine 9c = **llama.cpp + faster-whisper + Kokoro, tutti CPU** (la GPU resta libera).
+> **(2) Il sidecar unico `aura-llama-multimodal` (Gemma 4) → TRE sidecar CPU OpenAI-compat.** GPU a 0, tutti `/v1/*`:
+>   - **`aura-ocr-vl`** (vision/photo + OCR documenti-immagine): **llama.cpp server** + un OCR-VL GGUF dedicato, `/v1/chat/completions` con `image_url`. Default **GLM-OCR** (Q8 ~1.4 GB, da `ggml-org/GLM-OCR-GGUF` + mmproj — ricostruisce **struttura tabella HTML + accenti**, utile anche all'ingest Slice 11; spike 026) — alternativa più veloce **PaddleOCR-VL-1.5** (0.9B ~1.8 GB, da `PaddlePaddle/PaddleOCR-VL-1.5-GGUF` — p50 ~1s CPU vs ~3s, testo piano, perde la `ì`; spike 025). Entrambi **IT OCR 7/7, 0 VRAM**. Pick finale GLM-vs-Paddle = scelta planner (qualità/struttura vs latenza).
+>   - **`aura-stt`** (voice-in): **faster-whisper** via `hwdsl2/whisper-server`, `WHISPER_MODEL=large-v3-turbo` `WHISPER_COMPUTE_TYPE=int8`, `/v1/audio/transcriptions`. **Ingerisce OGG/Opus DIRETTO** (PyAV/ffmpeg bundled) — risolve il blocco vero: whisper.cpp/miniaudio NON decoda Opus, avrebbe richiesto un pre-step ffmpeg (spike 027). IT auto-detect perfetto, **0.7× realtime CPU** (3.7× più veloce di whisper.cpp), 0 VRAM. Supersede Punto-7 "Whisper rimosso": Whisper **torna** (Gemma-4-audio-unifica-STT era la premessa #58, ma Gemma è OUT).
+>   - **`aura-tts`** (voice-out, NUOVO): **Kokoro-FastAPI** (remsky) + **Kokoro-82M** (Apache-2.0), `/v1/audio/speech`, `response_format: opus` = **voice note Telegram nativo, zero transcodifica**. **Voce di Aura = `if_sara`** (femminile italiano) — verdetto on-device operatore 2026-06-07 ("la voce femminile di kokoro è perfetta"). **0.3× realtime CPU**, 0 VRAM (spike 028).
+> **(3) 9c acquista una gamba TTS voice-out (NUOVO): Aura parla.** Nuovo file `internal/channels/telegram/tts.go` (~90 LOC): sintetizza il reply via `aura-tts` → `sendVoice` (opus). Trigger = `voice_mode` nelle preferences identità (Slice 10 `preferences.json` ha già `voice_mode`) e/o auto-reply-vocale quando l'utente ha mandato un voice note. Forma esatta del trigger (tool esplicito `send_voice` come `send_file`, o auto-detect) = scelta planner. Caveat live: caption `sendVoice` con emoji+parentesi+em-dash → HTTP 400; ASCII pulito passa (lezione coerente con mdv2 #58(4)).
+> **(4) OGG/Opus = contratto audio BIDIREZIONALE del canale.** In via `aura-stt` (faster-whisper decoda Opus inline), out via `aura-tts` (Kokoro opus → `sendVoice`). Niente conversione in nessuna delle due direzioni. `voice.go` (in) + `tts.go` (out).
+> **(5) Punto-7 (Decisioni cumulate) superseduto** (righe Vision model / Whisper / Vision fallback): Vision = **OCR-VL** (non Gemma); Whisper = **torna** (faster-whisper, non rimosso); Vision fallback = **`minimax/minimax-m3` cloud via OpenRouter** opzionale (validato vision spike 024, IT OCR ~100% $0.0005/call — ma cloud-dep + no audio), **NON** markitdown OCR.
+> **(6) `documents.go` invariato** (markitdown sidecar: doc→markdown, distinto dall'OCR-VL image→testo di `photo.go`). markitdown resta per PDF/docx/xlsx; `aura-ocr-vl` rimpiazza SOLO il modello vision di `photo.go`.
+> **(7) Open questions 1/2 RISOLTE** (erano "assorbite da #58(7)"): variant = OCR-VL GGUF (GLM/Paddle, planner pick); vision fallback = minimax-m3 cloud opzionale. **Voice cloning** sollevato (clone della voce "Isa" da audio operatore) e **DESCOPATO** (preset `if_sara` perfetta — spike 029); approccio MIT a scaffale = Chatterbox-multilingual via `travisvn/chatterbox-tts-api`.
+> **(8) Mini-PC budget**: 3 sidecar CPU piccoli (~1.4 GB OCR-VL + ~1.5 GB STT + ~0.5 GB TTS ≈ **3.4 GB RAM**) rimpiazzano il +3 GB Gemma; **GPU 0** (era il vincolo). Net simile su RAM, GPU liberata. Slice 0.5 RAM table da riemendare (-Gemma-multimodal +ocr-vl +stt +tts).
+> **(9) Env vars** (convenzione: sidecar di terze parti mantengono naming upstream): `aura-ocr-vl` → `MULTIMODAL_BASE_URL`/`MULTIMODAL_MODEL` riusati (è ancora `/v1/chat/completions`); `aura-stt` → `STT_BASE_URL=http://aura-stt:9000/v1` + `STT_MODEL=large-v3-turbo`; `aura-tts` → `TTS_BASE_URL=http://aura-tts:8880/v1` + `TTS_VOICE=if_sara` + `TTS_FORMAT=opus`. `LLAMA_MULTIMODAL_*` → `OCR_VL_*` (compose), pin immagine `cuXY`-matching-driver MAI `latest` (lezione spike 020) — ma di default CPU, nessuna GPU.
+> **(10) Pin & gotchas serving** (dalle spike, per il planner): llama.cpp lancio docker via PowerShell non Git-Bash (MSYS mangia `/models`); su WSL il libcuda-compat-stub dell'immagine CUDA shadowa il driver iniettato (fix `rm + ldconfig` in entrypoint) — irrilevante in CPU-default; `hwdsl2/whisper-server` env `WHISPER_MODEL`/`WHISPER_COMPUTE_TYPE`/`WHISPER_DEVICE`; Kokoro voci IT = `if_sara`/`im_nicola`, espeak-ng bundled.
+> **(11) LOC 9c**: `voice.go` più semplice (faster-whisper OGG diretto, niente quirk audio Gemma), `photo.go` → OCR-VL, **+`tts.go` ~90**. 9c ~400→~520 LOC src (+~60 test tts). I tre sidecar = config compose, non LOC Go.
 
 **Goal.** Aura passa da CLI-only a multi-channel agnostico, con **Telegram come main user-facing channel** (gli utenti finali non usano CLI). Architettura `internal/channels/<name>/` permette di aggiungere WhatsApp/Discord/Signal futuri come slice incrementali. CLI rimane debug-only per dev. Setup completo via web wizard (paste bot token + scan QR del deep link Telegram), niente codici testuali.
 
@@ -2899,9 +2918,10 @@ require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per 
 | 5 | Voice failure | 2 retry exponential (1s/2s), poi bot risponde `❌ Trascrizione non disponibile. Invia testo o riprova.` + reaction 😵 sul voice message. |
 | 6 | Document size | Tiered: sync ≤5 MB inline / async background 5-50 MB con `📄 Convertendo nome.pdf...` follow-up / refuse >50 MB. |
 | 6 | Convert lifecycle | Bot intermediario: niente INSERT in `conversation_turns` finché conversione ready. A done: 1 sendMessage real + AG-UI user message con contenuto convertito. |
-| 7 | Vision model | Gemma 4 multimodal sidecar (`aura-llama-multimodal`, llama.cpp server). Variant TBD post-benchmark (E2B/E4B/26B), default baseline **E4B Q4_0** (~3 GB RAM, audio + image nativi). |
-| 7 | Whisper | **Rimosso** da compose.yaml (Gemma 4 E4B audio nativo unifica STT). -300 MB RAM, 1 sidecar in meno. |
-| 7 | Vision fallback | TBD post-benchmark: se Gemma quality basta → solo vision sidecar; altrimenti → markitdown OCR fallback se Gemma sidecar down. |
+| 7 | Vision model | ~~Gemma 4 multimodal sidecar (`aura-llama-multimodal`, llama.cpp).~~ **[SUPERSEDUTO #59: `aura-ocr-vl` = OCR-VL GGUF dedicato su llama.cpp CPU (GLM-OCR default / PaddleOCR-VL alt), IT OCR 7/7, 0 VRAM. vLLM+Gemma OUT su 4GB.]** |
+| 7 | Whisper | ~~**Rimosso** (Gemma 4 audio unifica STT).~~ **[SUPERSEDUTO #59: Whisper TORNA — `aura-stt` = faster-whisper `hwdsl2/whisper-server` large-v3-turbo int8, OGG/Opus diretto, 0.7× realtime CPU. La premessa "Gemma unifica STT" è morta con Gemma OUT.]** |
+| 7 | Voice (TTS) | **[NUOVO #59: `aura-tts` = Kokoro-82M via Kokoro-FastAPI, voce `if_sara` (IT femminile, locked on-device), opus=voice note nativo. Aura PARLA. `tts.go`→`sendVoice`.]** |
+| 7 | Vision fallback | ~~markitdown OCR se Gemma down.~~ **[SUPERSEDUTO #59: fallback = `minimax/minimax-m3` cloud (OpenRouter) opzionale; markitdown resta SOLO per `documents.go` (doc→md), non per le immagini.]** |
 | 8 | Bot commands MVP | 10 commands: `/start /help /whoami /cancel /new /conversations /resume /reset /cost /search` (amendment #8 adds `/cost`; amendment #7 adds `/search`). |
 | 8 | Command dispatch | Bot-intercept (no LLM call per commands). `/cancel` chiama direttamente `Loop.Cancel`, `/new` crea conv via Slice 1.8 `Create`, ecc. Solo `/start <token>` ha logica onboarding speciale. |
 
@@ -2960,21 +2980,26 @@ internal/channels/telegram/    # Slice 9b
   config.go               # ~60   BotToken (env) + AllowedFallback (deprecated env) + bind addr
   store.go                # ~80   sqlc adapter aura.telegram_accounts + telegram_setup_pending
 
-internal/channels/telegram/    # Slice 9c (multimodal)
-  voice.go                # ~150  POST a aura-llama-multimodal /v1/audio/transcriptions
+internal/channels/telegram/    # Slice 9c (multimodal)  [#59: engine = aura-ocr-vl + aura-stt + aura-tts, tutti CPU]
+  voice.go                # ~130  POST a aura-stt /v1/audio/transcriptions (faster-whisper) [#59]
+                          #       - OGG/Opus DIRETTO (no ffmpeg pre-step — PyAV bundled decoda Opus)
                           #       - 2 retry exp 1s/2s, hard fail con UX message + reaction 😵
                           #       - download voice via Telegram API getFile + downloadURL
                           #       - transcript text → user message AG-UI
-  documents.go            # ~160  Tiered sync/async via markitdown sidecar /convert
+  tts.go                  # ~90   [NUOVO #59] POST a aura-tts /v1/audio/speech (Kokoro, voice if_sara)
+                          #       - response_format opus → sendVoice (voice note nativo, no transcode)
+                          #       - trigger: voice_mode preferences (Slice 10) o auto su input vocale
+                          #       - caption ASCII (emoji+parens → 400, lezione mdv2 #58(4))
+  documents.go            # ~160  Tiered sync/async via markitdown sidecar /convert  [#59: invariato]
                           #       - ≤5 MB sync (HTTP timeout 30s)
                           #       - 5-50 MB async: sendMessage placeholder + background goroutine + edit on done
                           #       - >50 MB refuse con messaggio
                           #       - output > AURA_CONVERSATION_TURN_CAP_BYTES → sidecar (Slice 1.8 pattern)
-  photo.go                # ~90   POST a aura-llama-multimodal /v1/chat/completions con image_url
+  photo.go                # ~90   POST a aura-ocr-vl /v1/chat/completions con image_url  [#59]
                           #       - base64 encode photo
-                          #       - prompt "Describe this image briefly"
-                          #       - description text → user message AG-UI
-                          #       - Fallback strategy TBD post-benchmark (markitdown OCR if Gemma down)
+                          #       - prompt "Leggi/descrivi (OCR-VL: GLM-OCR default / PaddleOCR-VL alt)"
+                          #       - description/OCR text → user message AG-UI
+                          #       - Fallback opzionale: minimax/minimax-m3 cloud (OpenRouter) se sidecar down
 
 internal/agui/emitter.go (diff)  # ~+50  fanout channel API per in-process subscribers
                                  #       (oltre all'HTTP SSE di Slice 8b, deferito #35)
@@ -3025,33 +3050,51 @@ CREATE INDEX telegram_setup_pending_active
   WHERE consumed_at IS NULL;
 ```
 
-### Sidecar compose.yaml changes (Slice 9c)
+### Sidecar compose.yaml changes (Slice 9c) — **emendato #59 (vLLM/Gemma OUT, 3 sidecar CPU)**
 
 ```yaml
-# RIMOSSO: aura-whisper (sostituito da Gemma 4 E4B audio nativo)
+# RIMOSSO: aura-whisper (mai shippato) E aura-llama-multimodal (Gemma 4) — #59
+# AGGIUNTI: 3 sidecar CPU OpenAI-compat, GPU a 0. Verdetto spike session 6 (020-029).
 
-# AGGIUNTO: aura-llama-multimodal
-aura-llama-multimodal:
-  image: ghcr.io/ggml-org/llama.cpp:${LLAMA_MULTIMODAL_IMAGE_TAG:-server}
+# Vision/OCR — OCR-VL GGUF dedicato (GLM-OCR default / PaddleOCR-VL alt)
+aura-ocr-vl:
+  image: ghcr.io/ggml-org/llama.cpp:${OCR_VL_IMAGE_TAG:-server}   # CPU; se GPU, pin cuXY-match-driver MAI latest
   command:
-    - -m /models/gemma-4-e4b-it-Q4_0.gguf       # variant default baseline
-    - --mmproj /models/gemma-4-e4b-mmproj-Q4_0.gguf
-    - --port 8082
-    - --ctx-size 4096
-    - --threads 4
-  volumes:
-    - aura-models:/models
-  ports:
-    - "127.0.0.1:${LLAMA_MULTIMODAL_HOST_PORT:-8082}:8082"
-  healthcheck:
-    test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+    - -m /models/${OCR_VL_MODEL:-GLM-OCR-Q8_0.gguf}                # GLM-OCR default; PaddleOCR-VL-1.5.gguf alt
+    - --mmproj /models/${OCR_VL_MMPROJ:-mmproj-GLM-OCR-Q8_0.gguf}
+    - --host 0.0.0.0 --port 8082 --temp 0 -c 8192 --threads 4
+  volumes: [aura-models:/models]
+  ports: ["127.0.0.1:${OCR_VL_HOST_PORT:-8082}:8082"]
+  healthcheck: { test: ["CMD","curl","-f","http://localhost:8082/health"] }
+
+# STT — faster-whisper (ingerisce OGG/Opus diretto)
+aura-stt:
+  image: hwdsl2/whisper-server:${STT_IMAGE_TAG:-latest}
+  environment:
+    - WHISPER_MODEL=${STT_MODEL:-large-v3-turbo}
+    - WHISPER_COMPUTE_TYPE=int8
+    - WHISPER_DEVICE=cpu
+  volumes: [whisper-data:/var/lib/whisper]
+  ports: ["127.0.0.1:${STT_HOST_PORT:-9000}:9000"]
+
+# TTS — Kokoro (voce di Aura: if_sara), opus = voice note Telegram nativo
+aura-tts:
+  image: ghcr.io/remsky/kokoro-fastapi-cpu:${TTS_IMAGE_TAG:-latest}
+  ports: ["127.0.0.1:${TTS_HOST_PORT:-8880}:8880"]
+  healthcheck: { test: ["CMD","curl","-f","http://localhost:8880/v1/audio/voices"] }
 ```
 
-Env propagati al container Aura:
+Env propagati al container Aura (#59):
 ```
-MULTIMODAL_BASE_URL=http://aura-llama-multimodal:8082/v1
-MULTIMODAL_MODEL=gemma-4-e4b
+MULTIMODAL_BASE_URL=http://aura-ocr-vl:8082/v1     # OCR-VL /v1/chat/completions (riusa il nome)
+MULTIMODAL_MODEL=glm-ocr                            # o paddleocr-vl
 MULTIMODAL_API_KEY=no-key
+STT_BASE_URL=http://aura-stt:9000/v1               # faster-whisper /v1/audio/transcriptions
+STT_MODEL=large-v3-turbo
+TTS_BASE_URL=http://aura-tts:8880/v1               # Kokoro /v1/audio/speech
+TTS_VOICE=if_sara
+TTS_FORMAT=opus
+# Opzionale vision fallback cloud: OPENROUTER_API_KEY + MULTIMODAL_FALLBACK_MODEL=minimax/minimax-m3
 ```
 
 ### Smoke
@@ -3077,13 +3120,14 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 # bot mostra status pane "⏳ thinking..." → "✅ done" e content "4"
 ```
 
-**9c smoke:**
+**9c smoke** *(emendato #59 — 3 sidecar CPU + voice-out)*:
 ```bash
-# user invia voice "ciao dimmi 2+2"
-# bot reaction 🎤 → transcription via Gemma 4 → "ciao dimmi 2+2" → process come testo
+# user invia voice note OGG/Opus "ciao dimmi 2+2"
+# bot reaction 🎤 → aura-stt (faster-whisper, OGG diretto) → "ciao dimmi 2+2" → process come testo
+# se voice_mode on → bot RISPONDE con voice note (aura-tts Kokoro if_sara, sendVoice opus)
 
-# user invia photo (snapshot di un'equazione)
-# bot reaction 🖼 → description via Gemma 4 → user message text → process
+# user invia photo (snapshot di una tabella/documento)
+# bot reaction 🖼 → aura-ocr-vl (GLM-OCR) → testo/struttura → user message text → process
 
 # user invia PDF di 3 MB
 # bot reaction 📄 → markitdown convert sync → markdown text → process
@@ -3122,11 +3166,12 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 - [ ] **[#58(3)] `send_file` tool**: emette evento artifact channel-agnostic; Telegram lo consegna via `sendDocument` (path+filename, MIME auto). Live test: xlsx/pdf round-trip con `msg.Document.{FileName,MIME,FileSize}` esatti (ground truth = response Bot API, MAI getUpdates). Path qualsiasi leggibile; >50 MB → errore UX.
 - [ ] **[#58(4)] mdv2.go entity-aware**: l'escaper preserva le entity intenzionali (bold/code/pre); il fuzz 10K (Pitfall #18) resta l'acceptance; in più: fixture con tabella dentro pre-fence → pipe/dash NON escapati dentro il fence.
 
-#### 9c (Multimodal)
-- [ ] `voice.go`: POST a Gemma 4 multimodal sidecar `/v1/audio/transcriptions`. 2 retry + hard fail messaggio UX.
-- [ ] `documents.go`: tiered sync/async via markitdown sidecar. ≤5 MB sync, 5-50 MB async background. Output > `AURA_CONVERSATION_TURN_CAP_BYTES` → sidecar.
-- [ ] `photo.go`: POST a Gemma 4 multimodal sidecar `/v1/chat/completions` con base64 image_url. Description text → user message AG-UI.
-- [ ] Test integration `multimodal_integration` build tag: requires sidecar up. Skipped in CI senza container.
+#### 9c (Multimodal) — **emendato #59**
+- [ ] `voice.go`: POST a **`aura-stt` (faster-whisper)** `/v1/audio/transcriptions`, **OGG/Opus diretto** (no ffmpeg pre-step). 2 retry + hard fail messaggio UX + reaction 😵.
+- [ ] **[NUOVO #59] `tts.go`**: POST a **`aura-tts` (Kokoro, `if_sara`)** `/v1/audio/speech` `response_format=opus` → `sendVoice`. Trigger `voice_mode` (Slice 10 preferences) o auto su input vocale. Caption ASCII-safe. Live test: `sendVoice` round-trip con `msg.Voice` non-nil (ground truth = response Bot API).
+- [ ] `documents.go`: tiered sync/async via markitdown sidecar. ≤5 MB sync, 5-50 MB async background. Output > `AURA_CONVERSATION_TURN_CAP_BYTES` → sidecar. **[#59 invariato]**
+- [ ] `photo.go`: POST a **`aura-ocr-vl` (GLM-OCR default / PaddleOCR-VL alt)** `/v1/chat/completions` con base64 image_url. OCR/description text → user message AG-UI. Fallback opzionale `minimax/minimax-m3` cloud.
+- [ ] Test integration `multimodal_integration` build tag: requires i 3 sidecar up. Skipped in CI senza container. Live: voice note IT round-trip (STT) + photo IT OCR (recall) + sendVoice (TTS).
 - [ ] ~~**Open question pre-merge**: benchmark Gemma 4 E2B vs E4B vs 26B MoE su corpus reale Aura~~ **[ASSORBITA #58(7): la scelta engine+modello esce dallo `/gsd-spike` multimodale pre-plan — survey modelli 2026 ≤4 GB VRAM + vLLM, misurato sulla GPU 4 GB del mini-PC. Metriche invariate: WER voice IT/EN, vision quality, latenza p50/p95, VRAM/RAM steady. Baseline/fallback CPU = llama.cpp + Gemma 4 E4B Q4.]**
 - [ ] ~~**Open question pre-merge**: vision fallback strategy. Se Gemma quality < threshold → markitdown OCR fallback path attivato. Altrimenti rimosso.~~ **[ASSORBITA #58(7): decisa dal verdetto dello spike.]**
 
@@ -3134,18 +3179,19 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 
 (Vedere sezione "Architettura componenti" sopra. Totale ~2330 LOC src + 750 test.)
 
-### Mini-PC RAM budget — delta vs pre-Slice 9
+### Mini-PC RAM budget — delta vs pre-Slice 9  **(emendato #59)**
 
-- **Rimosso** `aura-whisper` (Whisper.cpp server): -300 MB
-- **Aggiunto** `aura-llama-multimodal` (Gemma 4 E4B Q4 default): +3 GB
-- Net: +2.7 GB. Su mini-PC 32 GB rimane abbondante headroom.
+- ~~Rimosso `aura-whisper` -300 MB; Aggiunto `aura-llama-multimodal` Gemma 4 E4B Q4 +3 GB.~~ **[SUPERSEDUTO #59]**
+- **Aggiunti 3 sidecar CPU** (vLLM/Gemma OUT, spike 020 INVALIDATED): `aura-ocr-vl` ~1.4 GB (GLM-OCR Q8) + `aura-stt` ~1.5 GB (faster-whisper large-v3-turbo int8) + `aura-tts` ~0.5 GB (Kokoro-82M) = **~3.4 GB RAM, 0 VRAM**.
+- Net ~+3.4 GB RAM (≈ pari al +3 GB Gemma) ma **GPU completamente libera** (era il vincolo che ha ucciso vLLM). Su mini-PC 32 GB headroom abbondante.
 
-Slice 0.5 RAM table emendata per riflettere (-Whisper +Gemma 4 multimodal).
+Slice 0.5 RAM table da riemendare (-Gemma-multimodal +ocr-vl +stt +tts).
 
 ### Open questions
 
-1. ~~**Variant Gemma 4 finale**: E2B / E4B / 26B MoE / 31B. Decisione pre-merge Slice 9c dopo benchmark accuracy + latenza + RAM su corpus reale Aura. Default baseline E4B.~~ **[ASSORBITA #58(7): verdetto dallo /gsd-spike multimodale pre-plan (modelli 2026 ≤4 GB VRAM + vLLM su GPU 4 GB).]**
-2. ~~**Vision fallback markitdown OCR**: necessario o no. Pre-merge benchmark decide.~~ **[ASSORBITA #58(7): decisa dal verdetto dello spike.]**
+1. ~~**Variant Gemma 4 finale**.~~ **[RISOLTA #59: vLLM+Gemma OUT su 4GB; engine = `aura-ocr-vl` OCR-VL GGUF (GLM-OCR default / PaddleOCR-VL alt) su llama.cpp CPU. Pick GLM-vs-Paddle = scelta planner.]**
+2. ~~**Vision fallback markitdown OCR**.~~ **[RISOLTA #59: fallback = `minimax/minimax-m3` cloud opzionale; markitdown resta solo per `documents.go`.]**
+2b. ~~**Voice cloning** (clone voce da audio operatore).~~ **[RISOLTA/DESCOPATA #59: preset Kokoro `if_sara` perfetta (verdetto on-device); approccio MIT a scaffale = Chatterbox-multilingual via `travisvn/chatterbox-tts-api` se mai richiesto.]**
 3. **Setup wizard PostgreSQL LISTEN/NOTIFY vs poll**: SSE `/setup/events` può usare LISTEN/NOTIFY (efficient, ~1 connection ws) o poll DB ogni 2s (semplice, no extra deps). → *Default proposto*: poll 2s per Slice 9a, LISTEN/NOTIFY come ottimizzazione futura.
 4. **Channel framework: WhatsApp Business API / Discord / Signal future slice**: ogni new channel = nuova sub-slice in `internal/channels/<name>/`. Schema `<name>_accounts` table parallela. Non in scope Slice 9.
 
@@ -3194,27 +3240,28 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 ```
 
 ```
-slice 9c: telegram multimodal (voice/photo via Gemma 4, docs via markitdown)
+slice 9c: telegram multimodal (voice-in/out + photo OCR, docs via markitdown)
 
-aura-whisper sidecar RIMOSSO da compose.yaml. aura-llama-multimodal
-sidecar AGGIUNTO (Gemma 4 E4B Q4 baseline, variant TBD post-benchmark).
-Unifica STT + vision (audio + image nativi in Gemma 4 E2B/E4B).
-Net RAM: -300 MB + 3 GB = +2.7 GB su mini-PC 32 GB.
+Engine emendato #59 (spike session 6, 020-029): vLLM+Gemma 4 OUT su GPU 4GB
+(spike 020 INVALIDATED — KV cache starvation). 3 sidecar CPU OpenAI-compat,
+GPU a 0:
+- aura-ocr-vl: llama.cpp + GLM-OCR Q8 (default) / PaddleOCR-VL-1.5 (alt). IT OCR 7/7.
+- aura-stt: faster-whisper hwdsl2 large-v3-turbo int8. OGG/Opus diretto, 0.7x RT CPU.
+- aura-tts: Kokoro-82M, voce if_sara (IT femminile, locked on-device). 0.3x RT CPU.
+Net RAM ~+3.4 GB (= pari al Gemma rimosso), GPU completamente libera.
 
-voice.go: POST sidecar /v1/audio/transcriptions, 2 retry + hard fail.
-photo.go: POST sidecar /v1/chat/completions con image_url base64.
-documents.go: tiered sync/async via markitdown sidecar
-(<=5MB sync, 5-50MB async, >50MB refuse). Output > conversation_turn
-cap -> sidecar (Slice 1.8 pattern).
+voice.go: POST aura-stt /v1/audio/transcriptions (OGG/Opus diretto), 2 retry + hard fail.
+tts.go [NUOVO]: POST aura-tts /v1/audio/speech (opus) -> sendVoice (voice_mode/auto).
+photo.go: POST aura-ocr-vl /v1/chat/completions con image_url; fallback minimax-m3 cloud.
+documents.go: tiered sync/async via markitdown sidecar (invariato).
 
-Open questions pre-merge:
-- Benchmark variant E2B/E4B/26B per STT accuracy + image description
-  + latenza + RAM su corpus reale Aura.
-- Vision fallback markitdown OCR: necessario o no post-benchmark.
+OGG/Opus = contratto audio bidirezionale (in faster-whisper, out Kokoro, no transcode).
+Open questions risolte: variant=OCR-VL (GLM/Paddle planner pick), fallback=minimax-m3,
+voice-cloning descopato (preset if_sara perfetta).
 
-LOC: +XXX src / +YY test.
+LOC: ~520 src / ~210 test.
 
-Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 ```
 
 ---
@@ -4254,16 +4301,16 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 
 ## Slice 13 — Local LLM fallback (vLLM + LMCache disk-tier, doppio sidecar)
 
-> **Pattern doppio sidecar** (decisione 2026-05-28):
-> - `aura-llama-multimodal` (Slice 9c) **invariato**: llama.cpp + Gemma 4 E4B Q4 per vision/STT one-shot (lightweight, mature multimodal).
-> - `aura-vllm-chat` **NUOVO**: vLLM serving + LMCache disk-tier per chat fallback offline/privacy. Modello chat-only (no multimodal duplicato).
+> **Pattern doppio sidecar** (decisione 2026-05-28, **rivisto #59**):
+> - ~~`aura-llama-multimodal` (Slice 9c): llama.cpp + Gemma 4 E4B Q4 vision/STT.~~ **[#59: Slice 9c usa ora 3 sidecar CPU — `aura-ocr-vl` + `aura-stt` + `aura-tts` (vedi amendment #59). Il riferimento qui sotto va letto come "i sidecar multimodali 9c, CPU".]**
+> - `aura-vllm-chat` **NUOVO**: vLLM serving + LMCache disk-tier per chat fallback offline/privacy. Modello chat-only (no multimodal duplicato). **Nota #59**: vLLM è valido per CHAT su Slice 13 (modello testo che entra nel budget, KV cache LMCache disk-tier) — è SOLO per il vision-multimodale 4GB di 9c che vLLM è risultato non-fittabile. I due verdetti non confliggono.
 >
 > **Pattern reference**: LMCache ([github.com/LMCache/LMCache](https://github.com/LMCache/LMCache), 8.4k stars, Apache 2.0, prod in Google Cloud / GMI / CoreWeave). KV cache layer disk-tier per vLLM v1+, 3-10x TTFT reduction su long-context.
 
 **Goal.** Aura può scegliere il backend LLM per ogni conversation:
 1. **OpenRouter remote** (default, DeepSeek-V4 via Slice 1)
 2. **vLLM local + LMCache** (chat fallback offline / privacy mode / cost cap)
-3. **Gemma 4 multimodal local** (vision/STT one-shot via Slice 9c, invariato)
+3. **Multimodale local 9c** (vision via `aura-ocr-vl`, voice-in `aura-stt`, voice-out `aura-tts` — 3 sidecar CPU, #59)
 
 Trigger switching automatic e/o esplicito:
 - **Conv flag** `prefer_local=true` (esplicito user/agent decision via `aura chat new --local` o `/local` Telegram)
@@ -4294,7 +4341,7 @@ Trigger switching automatic e/o esplicito:
 
 | Aspetto | Decisione |
 |---|---|
-| Sidecar architecture | **Doppio sidecar**: `aura-llama-multimodal` (Slice 9c, vision/STT) + `aura-vllm-chat` (Slice 13, chat fallback). |
+| Sidecar architecture | **Doppio sidecar**: ~~`aura-llama-multimodal` (Slice 9c, vision/STT)~~ + `aura-vllm-chat` (Slice 13, chat fallback). **[#59: i sidecar 9c sono ora 3 CPU (ocr-vl/stt/tts) e NESSUNO è un modello chat-capable — l'opzione 13-bis "riusa il sidecar 9c per chat fallback" NON è più valida (OCR-VL è vision-only). 13-bis va ridisegnato quando si pianifica Slice 13: serve un modello chat dedicato.]** |
 | Modello chat fallback | **Default proposto**: Gemma 3 12B Instruct Q5_K_M (~7 GB RAM, multilingual IT/EN/ES eccellente). Alternative: Llama 3.1 8B (~5 GB), Qwen 2.5 7B (~4.5 GB). Decisione finale pre-merge via benchmark. |
 | KV cache layer | **LMCache disk-tier** (`/var/cache/lmcache/`, max 50 GB su NVMe). vLLM integration via `--kv-transfer-config`. |
 | Switching policy | 4 trigger: conv flag explicit, offline detection 30s, cost threshold $1/day, identity capability. |
@@ -5043,11 +5090,20 @@ Tabella di tutte le environment variables citate nel PRD, slice di provenance, d
 | `LMCACHE_MAX_LOCAL_DISK_GB` | `50` | cap | 13 | LMCache disk-tier max size GB. |
 | `TELEGRAM_BOT_TOKEN` | (richiesto via setup) | secret | 9a | Bot token (no prefix `AURA_` per convenzione lib). |
 | `OPENROUTER_API_KEY` | (richiesto via `.env`) | secret | 1 | Forwarded a `AURA_LLM_API_KEY`. |
-| `MULTIMODAL_BASE_URL` | `http://aura-llama-multimodal:8082/v1` | operative | 9c | Sidecar URL (compose-only). |
-| `MULTIMODAL_MODEL` | `gemma-4-e4b` | operative | 9c | Sidecar model name. |
+| `MULTIMODAL_BASE_URL` | `http://aura-ocr-vl:8082/v1` | operative | 9c | OCR-VL sidecar URL (compose-only). **[#59: era aura-llama-multimodal]** |
+| `MULTIMODAL_MODEL` | `glm-ocr` | operative | 9c | OCR-VL model (`glm-ocr` default / `paddleocr-vl`). **[#59]** |
 | `MULTIMODAL_API_KEY` | `no-key` | operative | 9c | Sidecar dummy key. |
-| `LLAMA_MULTIMODAL_IMAGE_TAG` | `server` | operative | 9c | Docker image tag. |
-| `LLAMA_MULTIMODAL_HOST_PORT` | `8082` | operative | 9c | Host port mapping. |
+| `OCR_VL_IMAGE_TAG` | `server` | operative | 9c | llama.cpp image tag (CPU; cuXY-match-driver se GPU). **[#59, era LLAMA_MULTIMODAL_*]** |
+| `OCR_VL_MODEL` / `OCR_VL_MMPROJ` | `GLM-OCR-Q8_0.gguf` / `mmproj-GLM-OCR-Q8_0.gguf` | operative | 9c | OCR-VL GGUF + mmproj. **[#59]** |
+| `OCR_VL_HOST_PORT` | `8082` | operative | 9c | Host port mapping. **[#59]** |
+| `STT_BASE_URL` | `http://aura-stt:9000/v1` | operative | 9c | faster-whisper `/v1/audio/transcriptions`. **[#59]** |
+| `STT_MODEL` | `large-v3-turbo` | operative | 9c | faster-whisper model (`WHISPER_MODEL` lato sidecar). **[#59]** |
+| `STT_HOST_PORT` | `9000` | operative | 9c | Host port mapping. **[#59]** |
+| `TTS_BASE_URL` | `http://aura-tts:8880/v1` | operative | 9c | Kokoro `/v1/audio/speech`. **[#59]** |
+| `TTS_VOICE` | `if_sara` | operative | 9c | Voce di Aura (IT femminile, locked on-device). **[#59]** |
+| `TTS_FORMAT` | `opus` | operative | 9c | Output TTS = voice note Telegram nativo. **[#59]** |
+| `TTS_HOST_PORT` | `8880` | operative | 9c | Host port mapping. **[#59]** |
+| `MULTIMODAL_FALLBACK_MODEL` | (unset) | operative | 9c | Vision fallback cloud opzionale (`minimax/minimax-m3` via OpenRouter). **[#59]** |
 
 **Convenzione naming**: env Aura-controlled usano prefix `AURA_<DOMAIN>_<UNIT>` (es. `AURA_SWARM_MAX_DEPTH`). Env per librerie/sidecar di terze parti (`TELEGRAM_BOT_TOKEN`, `OPENROUTER_API_KEY`, `MULTIMODAL_*`, `LLAMA_*`) mantengono il loro naming canonico per compatibilità con tooling esterno (compose, libreria bot, ecc.).
 
