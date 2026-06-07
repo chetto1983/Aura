@@ -303,7 +303,10 @@ func lastUserMessage(msgs []types.Message) *string {
 
 // projectMessages projects the persisted llm.Message history onto the AG-UI
 // events.Message shape for the MESSAGES_SNAPSHOT body. The id is a stable
-// 1-based index; the role string is converted to the SDK Role type.
+// 1-based index; the role string is converted to the SDK Role type. An assistant
+// turn's ToolCalls are projected too (WR-04) — a combined ask_user pause turn carries
+// an empty Content and its entire payload in ToolCalls, so dropping them would lose
+// the pending call when a client rehydrates a paused thread.
 func projectMessages(hist []llm.Message) []events.Message {
 	msgs := make([]events.Message, 0, len(hist))
 	for i, m := range hist {
@@ -312,9 +315,31 @@ func projectMessages(hist []llm.Message) []events.Message {
 			Role:       types.Role(m.Role),
 			Content:    m.Content,
 			ToolCallID: m.ToolCallID,
+			ToolCalls:  projectToolCalls(m.ToolCalls),
 		})
 	}
 	return msgs
+}
+
+// projectToolCalls maps the persisted llm.ToolCall slice onto the SDK types.ToolCall
+// shape (id/type + nested function name/arguments). Returns nil for an empty input so
+// the omitempty `toolCalls` key is absent on non-tool turns.
+func projectToolCalls(calls []llm.ToolCall) []types.ToolCall {
+	if len(calls) == 0 {
+		return nil
+	}
+	out := make([]types.ToolCall, 0, len(calls))
+	for _, c := range calls {
+		out = append(out, types.ToolCall{
+			ID:   c.ID,
+			Type: c.Type,
+			Function: types.FunctionCall{
+				Name:      c.Function.Name,
+				Arguments: c.Function.Arguments,
+			},
+		})
+	}
+	return out
 }
 
 // secretPattern collapses a whole DB DSN (scheme + userinfo + host path) to a

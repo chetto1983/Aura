@@ -3,6 +3,7 @@ package agui
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"iter"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
@@ -315,6 +317,52 @@ func TestServer_MessagesSnapshot(t *testing.T) {
 	for _, want := range []string{"ciao", "salve", `"msg-1"`, `"msg-2"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("snapshot missing %q in %q", want, body)
+		}
+	}
+}
+
+// TestProjectMessagesToolCalls pins WR-04: a persisted assistant turn whose payload lives
+// entirely in ToolCalls (the combined ask_user pause turn — empty Content) projects its
+// tool calls onto events.Message.ToolCalls so a client rehydrating a paused thread sees the
+// pending call, not a content-less message. Non-tool turns carry no ToolCalls.
+func TestProjectMessagesToolCalls(t *testing.T) {
+	var pauseCall llm.ToolCall
+	pauseCall.ID = "call-ask-1"
+	pauseCall.Type = "function"
+	pauseCall.Function.Name = "ask_user"
+	pauseCall.Function.Arguments = `{"question":"Confermi?"}`
+
+	hist := []llm.Message{
+		{Role: llm.RoleUser, Content: "ciao"},
+		{Role: llm.RoleAssistant, Content: "", ToolCalls: []llm.ToolCall{pauseCall}},
+	}
+	got := projectMessages(hist)
+	if len(got) != 2 {
+		t.Fatalf("projected %d messages, want 2", len(got))
+	}
+	if got[0].ToolCalls != nil {
+		t.Errorf("user turn carries ToolCalls %v, want none", got[0].ToolCalls)
+	}
+	tc := got[1].ToolCalls
+	if len(tc) != 1 {
+		t.Fatalf("assistant turn projected %d tool calls, want 1", len(tc))
+	}
+	if tc[0].ID != "call-ask-1" || tc[0].Type != "function" {
+		t.Errorf("tool call id/type = %q/%q, want call-ask-1/function", tc[0].ID, tc[0].Type)
+	}
+	if tc[0].Function.Name != "ask_user" || tc[0].Function.Arguments != `{"question":"Confermi?"}` {
+		t.Errorf("tool call function = %+v, want ask_user + the args", tc[0].Function)
+	}
+
+	// The snapshot JSON carries the tool call (the wire payload a client rehydrates), under
+	// the SDK's `toolCalls` key.
+	raw, err := json.Marshal(events.NewMessagesSnapshotEvent(got))
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	for _, want := range []string{"toolCalls", "call-ask-1", "ask_user", "Confermi?"} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("snapshot JSON missing %q in %s", want, raw)
 		}
 	}
 }
