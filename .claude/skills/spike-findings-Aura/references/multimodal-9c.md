@@ -112,6 +112,13 @@ docker run -d --name aura-tts -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:lat
   no OCR-VL sidecar to operate. Selected via `MULTIMODAL_FALLBACK_MODEL` (acts as a tier selector,
   not just failover). STT/TTS stay local in both tiers for now (cloud audio is a separate future
   extension). Aura is platform-shaped — the substrate is deployment-agnostic.
+  **Amendment #60 convergence**: `minimax/minimax-m3` is ALSO becoming Aura's **primary LLM**
+  (replacing DeepSeek-V4 — config-driven default, verified on OpenRouter: multimodal text+image+video,
+  1M ctx, caching `$0.06/M` present, reasoning+tools). So in tier B the vision isn't even a separate
+  model — the primary LLM receives the `image_url` in the chat turn. `photo.go` tier-B = pass image
+  to the primary loop; tier-A = local GLM-OCR for private media. Pre-merge gates for the LLM swap:
+  re-baseline cot_eval (was scored vs DeepSeek-V4), measure real cache-hit ratio (L0 ≥80% target),
+  review cost-cap defaults (minimax-m3 ~3-6× pricier than deepseek-v4-flash).
 
 ## Origin
 
