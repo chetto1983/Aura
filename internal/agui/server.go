@@ -317,15 +317,27 @@ func projectMessages(hist []llm.Message) []events.Message {
 	return msgs
 }
 
-// secretPattern matches credential-bearing substrings (DSN userinfo, bearer/api keys)
-// so sanitizeErr can strip them before an error reaches the wire (T-12-10). The agent
-// path already structurally redacts API keys (D-28); this is the server-side
-// belt-and-suspenders for tool/infra error strings the translator forwards.
+// secretPattern collapses a whole DB DSN (scheme + userinfo + host path) to a
+// scheme + "[redacted]" marker — the password AND the host path both leak operational
+// detail, so the entire connection string after the scheme is dropped (T-12-10 / V7).
 var secretPattern = regexp.MustCompile(`(?i)(postgres(?:ql)?|mysql|mongodb|redis|amqp)://[^\s"']*`)
 
+// urlUserinfoPattern matches `scheme://user:password@` for ANY URL scheme (an HTTP MCP
+// server, webhook, or proxy URL — not just the five DB DSNs above). Only the userinfo is
+// collapsed; the rest of the URL is left intact so the error stays diagnosable (WR-03).
+// The DSN pass runs first and already consumes its schemes, so this never double-matches
+// them.
+var urlUserinfoPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@`)
+
+// tokenPattern matches common credential tokens embedded in free-form error strings:
+// `Bearer <token>`, `api_key=<...>`, `api-key=<...>`, `apikey=<...>`, `token=<...>`. The
+// token body is collapsed, the prefix kept so the redaction is legible (WR-03).
+var tokenPattern = regexp.MustCompile(`(?i)(bearer\s+|api[_-]?key=|token=)\S+`)
+
 // sanitizeErr redacts credential-bearing substrings from an error string before it is
-// surfaced over the wire (RUN_ERROR / 4xx body). It collapses any DSN to a scheme +
-// "[redacted]" marker so neither the password nor the host path leaks (T-12-10 / V7).
+// surfaced over the wire (RUN_ERROR / 4xx body). The agent path already structurally
+// redacts the OpenRouter key (D-28); this is the server-side belt-and-suspenders for the
+// tool/infra error strings the translator forwards (T-12-10).
 func sanitizeErr(err error) string {
 	if err == nil {
 		return ""
@@ -333,14 +345,25 @@ func sanitizeErr(err error) string {
 	return sanitizeString(err.Error())
 }
 
-// sanitizeString redacts credential-bearing DSN substrings from an arbitrary string.
+// sanitizeString strips credential-bearing substrings from an arbitrary string: whole DB
+// DSNs collapse to a scheme marker, generic URL userinfo collapses to `scheme://[redacted]@`,
+// and bearer/api-key/token shapes collapse to a `prefix[redacted]` marker (WR-03). The DSN
+// pass runs first so the generic userinfo pass never reaches the five DB schemes.
 func sanitizeString(msg string) string {
-	return secretPattern.ReplaceAllStringFunc(msg, func(match string) string {
+	out := secretPattern.ReplaceAllStringFunc(msg, func(match string) string {
 		scheme := match
 		if idx := strings.Index(match, "://"); idx >= 0 {
 			scheme = match[:idx]
 		}
 		return scheme + "://[redacted]"
+	})
+	out = urlUserinfoPattern.ReplaceAllString(out, "${1}[redacted]@")
+	return tokenPattern.ReplaceAllStringFunc(out, func(match string) string {
+		prefix := match
+		if idx := strings.IndexAny(match, " =\t"); idx >= 0 {
+			prefix = match[:idx+1]
+		}
+		return prefix + "[redacted]"
 	})
 }
 
