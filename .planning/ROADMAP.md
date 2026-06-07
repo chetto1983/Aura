@@ -493,7 +493,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
-| 12. AG-UI Gateway | 6/6 | Complete   | 2026-06-07 |
+| 12. AG-UI Gateway | 6/6 | Complete    | 2026-06-07 |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
