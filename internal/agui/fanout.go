@@ -72,10 +72,22 @@ func (f *Fanout) Run(ctx context.Context) {
 	}()
 }
 
-// send performs the non-blocking fan-out send: deliver if the subscriber has room,
-// abort the producer on ctx-cancel, otherwise DROP (the subscriber is slow) with a
-// WARN. Returns false only on ctx-cancel so the producer unwinds and closes channels.
+// send performs the fan-out send: deliver if the subscriber has room, abort the producer
+// on ctx-cancel. A run-lifecycle frame (RUN_STARTED/RUN_FINISHED/RUN_ERROR) that cannot
+// fit falls back to a blocking send (still abortable on ctx-cancel) so the terminal frame
+// is never dropped — a consumer waiting on RUN_FINISHED would otherwise hang (WR-01). A
+// non-lifecycle delta that cannot fit is DROPPED (the subscriber is slow) with a WARN, so
+// the agent Loop never stalls on a slow consumer. Returns false only on ctx-cancel so the
+// producer unwinds and closes channels.
 func send(ctx context.Context, sub chan events.Event, ev events.Event) bool {
+	if isLifecycleFrame(ev.Type()) {
+		select {
+		case sub <- ev:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 	select {
 	case sub <- ev:
 		return true

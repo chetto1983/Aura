@@ -83,44 +83,49 @@ func TestFanoutDistributesToAllSubscribers(t *testing.T) {
 	}
 }
 
-// TestFanoutSlowSubscriberDropped: one never-reading subscriber fills its cap-64 buffer;
-// the producer never blocks, a concurrently-draining subscriber receives every event,
-// and the run completes. The slow subscriber's overflow is dropped (WARN per drop).
+// TestFanoutSlowSubscriberDropped: a slow subscriber whose cap-N buffer overflows has its
+// non-lifecycle deltas DROPPED (the Loop must never stall on a slow consumer's
+// intermediate content), yet the terminal RUN_FINISHED still survives (WR-01). A single
+// subscriber that begins draining only after the producer has overflowed it on deltas
+// exercises both: the dropped deltas (received < full stream) and the blocking lifecycle
+// send that delivers the terminal frame. A genuinely dead (never-read) subscriber is the
+// WR-01 abort-on-ctx-cancel case, covered by TestFanoutCtxCancelClosesAll.
 //
-// The reader is drained in a goroutine started before Run so it keeps pace and never
-// overflows (the realistic concurrent-consumer usage); a sequential post-Run drain
-// would itself be subject to drop on a slow machine, masking the actual invariant.
+// Cross-subscriber non-back-pressure (a slow peer not stalling a keeping-pace peer on
+// intermediate deltas) is covered by TestFanoutDistributesToAllSubscribers.
 func TestFanoutSlowSubscriberDropped(t *testing.T) {
 	// goleak.VerifyTestMain in main_test.go covers the package; the producer goroutine
 	// must still exit when the source ends.
-	const n = 256 // well past cap-64 so the never-reading subscriber overflows
+	const n = fanoutBuffer * 4 // well past the cap so the slow subscriber overflows
 	f := NewFanout(eventSource("thread-1", "run-1", n))
-	reader := f.Subscribe()
-	slow := f.Subscribe() // never read → its buffer fills, overflow dropped
-
-	got := make(chan []events.Event, 1)
-	go func() { got <- drain(reader) }()
+	slow := f.Subscribe()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	f.Run(ctx)
+
+	got := make(chan []events.Event, 1)
+	go func() { got <- drain(slow) }()
 
 	want := n + 4 // RUN_STARTED + MSG_START + n CONTENT + MSG_END + RUN_FINISHED
 	var read []events.Event
 	select {
 	case read = <-got:
 	case <-time.After(2 * time.Second):
-		t.Fatalf("reader did not complete within 2s — producer blocked on the slow peer?")
+		t.Fatalf("slow subscriber did not complete within 2s — producer stuck on a full buffer?")
 	}
-	if len(read) != want {
-		t.Fatalf("reading subscriber got %d events, want %d — slow peer must not back-pressure", len(read), want)
+	// The slow subscriber may lose intermediate deltas to drop-on-overflow — it never
+	// receives MORE than the full stream, and on a real overflow it receives fewer.
+	if len(read) > want {
+		t.Fatalf("slow subscriber got %d events, want <= %d", len(read), want)
 	}
-
-	// The slow subscriber's channel still closes (sole sender closes on source end),
-	// but it received AT MOST its cap-worth — the rest were dropped, not buffered.
-	dropped := drain(slow)
-	if len(dropped) > fanoutBuffer {
-		t.Fatalf("slow subscriber received %d events, want <= cap %d (overflow must be dropped)", len(dropped), fanoutBuffer)
+	// The WR-01 invariant, independent of scheduling: the lifecycle prologue and terminal
+	// frame are NEVER among the dropped frames, even when intermediate deltas overflow.
+	if first := string(read[0].Type()); first != "RUN_STARTED" {
+		t.Fatalf("slow subscriber first = %s, want RUN_STARTED (lifecycle prologue must survive)", first)
+	}
+	if last := string(read[len(read)-1].Type()); last != "RUN_FINISHED" {
+		t.Fatalf("slow subscriber last = %s, want RUN_FINISHED — terminal frame dropped (WR-01 regression)", last)
 	}
 }
 

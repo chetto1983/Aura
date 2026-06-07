@@ -203,10 +203,23 @@ func (s *Server) streamSSE(ctx context.Context, w http.ResponseWriter, stream it
 	}
 }
 
-// pumpSend delivers one event to the SSE channel without ever blocking the producer:
-// deliver if there is room, abort on ctx-cancel, otherwise DROP with a WARN (T-12-09).
-// Returns false only on ctx-cancel so the producer unwinds and closes the channel.
+// pumpSend delivers one event to the SSE channel without ever blocking the producer
+// indefinitely: deliver if there is room, abort on ctx-cancel. A run-lifecycle frame
+// (RUN_STARTED/RUN_FINISHED/RUN_ERROR) that cannot fit falls back to a blocking send
+// (still abortable on ctx-cancel) so the terminal frame is never dropped — an AG-UI
+// consumer waits on RUN_FINISHED, and silently dropping it is a protocol violation, not
+// graceful degradation (WR-01). A non-lifecycle delta that cannot fit is DROPPED with a
+// WARN (T-12-09: the Loop must never stall on a slow client). Returns false only on
+// ctx-cancel so the producer unwinds and closes the channel.
 func (s *Server) pumpSend(ctx context.Context, out chan events.Event, ev events.Event) bool {
+	if isLifecycleFrame(ev.Type()) {
+		select {
+		case out <- ev:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
 	select {
 	case out <- ev:
 		return true
@@ -215,6 +228,19 @@ func (s *Server) pumpSend(ctx context.Context, out chan events.Event, ev events.
 	default:
 		slog.Warn("agui server: SSE client slow, dropping event", "type", ev.Type())
 		return true
+	}
+}
+
+// isLifecycleFrame reports whether an event is a run-lifecycle terminal/boundary frame
+// (RUN_STARTED/RUN_FINISHED/RUN_ERROR). These are non-droppable: dropping the terminal
+// RUN_FINISHED/RUN_ERROR hangs a consumer that waits for it; dropping RUN_STARTED breaks
+// the protocol prologue. Shared by the SSE pump and the in-process fanout (WR-01).
+func isLifecycleFrame(t events.EventType) bool {
+	switch t {
+	case events.EventTypeRunStarted, events.EventTypeRunFinished, events.EventTypeRunError:
+		return true
+	default:
+		return false
 	}
 }
 
