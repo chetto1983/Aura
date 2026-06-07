@@ -116,7 +116,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CORE-05 | Phase 4 — HITL + Identity + Conversations | Complete |
 | CAP-01 | Phase 8 — Sandbox via sandbox-agent (local container) | Complete |
 | CAP-02 | Phase 8 — Sandbox via sandbox-agent (local container) | Complete |
-| CAP-03 | Phase 9 — Swarm (Minimal) | In Progress (09-01 doc-gate done; code waves 09-02..09-06 pending) |
+| CAP-03 | Phase 9 — Swarm (Minimal) | Complete (ephemeral swarm runner + Deferred swarm_spawn + proxied pause-as-report + live dual-gate E2E judge ≥90%; 09-VERIFICATION passed 10/10 2026-06-04) |
 | CAP-04 | Phase 6 — KV Cache Builder | Complete |
 | CAP-05 | Phase 7 — Web Tools | Complete |
 | CAP-06 | Phase 10 — Scheduler | Complete |
