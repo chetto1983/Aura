@@ -43,7 +43,7 @@
 
 ### Transport + UX (Slice 8–11)
 
-- [ ] **UX-01**: AG-UI gateway con SSE event protocol transport, thin wrapper over in-process emitter. `internal/agent` MUST NOT import `internal/agui` (boundary enforced via static analysis). [Slice 8]
+- [x] **UX-01**: AG-UI gateway con SSE event protocol transport, thin wrapper over in-process emitter. `internal/agent` MUST NOT import `internal/agui` (boundary enforced via static analysis). [Slice 8]
 - [ ] **UX-02**: Channels framework `internal/channels/<name>/` + Telegram come canale utente primario (`gopkg.in/telebot.v4` SHA-pinned) con MarkdownV2 custom ~80 LOC escaper (NON dependency telegramify) + `/cancel`, `/cost`, `/search` commands. [Slice 9b + amendments #4, #5, #8]
 - [ ] **UX-03**: Setup wizard `http://127.0.0.1:9081/setup` con one-time token `AURA_SETUP_TOKEN` printato su stdout primo boot, QR per Telegram bot token paste. [Slice 9a + amendment #10]
 - [ ] **UX-04**: Multimodal Gemma 4 sidecar (E4B Q4 baseline) per voice (STT) + image input via `ghcr.io/ggml-org/llama.cpp:server`. Markitdown sidecar per document → markdown conversion. [Slice 9c]
@@ -124,7 +124,7 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | CAP-08 | Phase 11 — Skills | Complete (7e-core sandbox-posture shipped 11-07; host-posture follow-up = CAP-08.1 / Phase 18) |
 | CAP-08.1 | Phase 18 — Slice 7e snippet reuse steady-state | Complete (host-primary posture #55/D-01 + ungated save D-02 + restore/archive + ledger-gated steady state: 5 dispatches/11.057s live PASS; coverage 86.1%) |
 | CAP-09 / MCP-V2-01 | Phase 16 — MCP Sidecar Manager + Third-Party Trust | Complete |
-| UX-01 | Phase 12 — AG-UI Gateway | Pending |
+| UX-01 | Phase 12 — AG-UI Gateway | Complete |
 | UX-02 | Phase 13 — Channels + Telegram + Multimodal | Pending |
 | UX-03 | Phase 13 — Channels + Telegram + Multimodal | Pending |
 | UX-04 | Phase 13 — Channels + Telegram + Multimodal | Pending |

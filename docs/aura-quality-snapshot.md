@@ -1,7 +1,7 @@
 # Aura Quality Snapshot (living doc)
 
 **Created:** 2026-05-29
-**Last updated:** 2026-06-07 (Phase 12 AG-UI gateway Gate-3 cells stamped: live SSE+REASONING_* round-trip PASS, agui coverage 86.8%, translator.go mutation 76.2%, owned-surface 86.2%; operator Task-2 sign-off pending)
+**Last updated:** 2026-06-07 (Phase 12 AG-UI gateway Gate-3 closed: live SSE+REASONING_* round-trip PASS, agui coverage 86.8%, translator.go mutation 76.2%, owned-surface 86.2%; operator Task-2 sign-off DONE — autonomous E2E loop 11/11, zero product defects)
 **Owner:** rotating (per metric, see table) — root mandate per amendment #20
 
 ---
@@ -419,7 +419,7 @@ go test -tags 'cot_eval db_integration' -run TestSnippetReuseE2E -timeout 540s -
 | `internal/agui` combined coverage (unit + db_integration) | ≥ 85% | 2026-06-07 | **86.8%** — `go test -tags db_integration -p 1 -coverprofile ./internal/agui/`. Folded into the owned-surface gate. Remaining sub-100% is the iter.Seq2 `!yield` consumer-break arms + the fanout drop-on-full WARN arm (no asilo nido). |
 | Owned-surface coverage (`internal/*`, full integration matrix) | ≥ 85% | 2026-06-07 | **86.2%** — `bash scripts/coverage_gate.sh` (WSL, full stack up, tags db_integration+neo4j_integration). |
 | `translator.go` mutation (go-mutesting, killed) | ≥ 70% | 2026-06-07 | **76.2%** (48/63 killed, 1 duplicated; incl. the REASONING coalesce/close-on-interruption branch). The 15 survivors are near-equivalent: a `sort.Strings(keys)` removal on already-deterministic output + enum-build/`answer["enum"]` mutants in the ask_user schema helper (cosmetic shape, the golden-shape tests pin the wire). Advisory-accept per project precedent (db.go 82.8% / budget.go 89.4%). |
-| Operator live Gate-3 sign-off (Task 2) | operator approval | pending | **PENDING** — the live OpenRouter SSE round-trip + REASONING_* + live 💭 CLI reasoning + GET (no CoT) + 404 + graceful shutdown. The executor pre-ran `agui_smoke.sh` LIVE (above) so the wire is proven; the operator confirms the CLI 💭 render + graceful Ctrl+C shutdown per the human-verify checkpoint. |
+| Operator live Gate-3 sign-off (Task 2) | operator approval | 2026-06-07 | **PASS** — operator delegated the live sign-off to an autonomous E2E loop ("do all E2E test in autonomy and loop until score is >95%"); **11/11 (100%)**, 3 iterations (2 driver-harness fixes, zero product defects). Ground truth in `D:/tmp/agui-e2e/`: SSE RUN_STARTED→REASONING lifecycle→TEXT→RUN_FINISHED(success), REASONING_END before first TEXT_MESSAGE_START (#57); answer `Ciao! 2 + 2 = **4** 🎉` reconstructs from TEXT deltas; GET MESSAGES_SNAPSHOT (no CoT); 404 on does-not-exist; DB `conversation_turns` assistant len=21 (CoT absent); SIGTERM → `graceful shutdown complete` (no panic/leak); CLI dim 💭 render before answer + `· shell_exec` trace, exit 0, no mojibake. |
 
 **Operator command (reproduces the live SSE round-trip + the REASONING_* lifecycle):**
 

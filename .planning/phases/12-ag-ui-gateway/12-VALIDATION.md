@@ -58,7 +58,7 @@ created: 2026-06-06
 | AURA_AGUI_* config | 12-03 | 3 | UX-01 | T-12-08, T-12-13 | loopback default; restrictive CORS; buffer-cap env | unit | `grep -c 'AURA_AGUI_BIND' internal/config/config.go` ≥1 + `grep -c 'AURA_AGUI_BUFFER_CAP' internal/config/config.go` ≥1 + `go test -race ./internal/config/` | ✅ | ✅ green |
 | serve.go daemon mount | 12-03 | 3 | UX-01 | T-12-08, T-12-09 | http.Server mounted on scheduler daemon; graceful Shutdown; no --bind flag | unit | `grep -c 'agui.NewServer' cmd/aura/serve.go` ==1 + `grep -c 'Shutdown' cmd/aura/serve.go` ≥1 + `go build ./...` | ✅ | ✅ green |
 | Smoke + CI tier + coverage/mutation | 12-04 | 4 | UX-01 | T-12-14, T-12-15 | no-skip-as-green; FRAME ground truth not secrets; REASONING_* on live leg | smoke/ci-gate | `go test -tags db_integration -race -count=1 -p 1 ./internal/agui/...` (autonomous) + `bash scripts/agui_smoke.sh` (operator) | ✅ | ✅ green |
-| Operator live Gate-3 | 12-04 | 4 | UX-01 | — | live OpenRouter SSE round-trip + REASONING_* lifecycle + live 💭 render + GET (no CoT persisted) + 404 + graceful shutdown | human-verify | `bash scripts/agui_smoke.sh` (live, AGUI_SMOKE_LIVE=1) + operator sign-off | ✅ | ⏳ operator |
+| Operator live Gate-3 | 12-04 | 4 | UX-01 | — | live OpenRouter SSE round-trip + REASONING_* lifecycle + live 💭 render + GET (no CoT persisted) + 404 + graceful shutdown | human-verify | `bash scripts/agui_smoke.sh` (live, AGUI_SMOKE_LIVE=1) + operator sign-off | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -98,10 +98,30 @@ created: 2026-06-06
 - [x] `nyquist_compliant: true` set in frontmatter (map pre-locked by the planner)
 - [x] `wave_0_complete: true` (Wave-0 artifacts — pin, golden, boundary, translator_test, smoke — all on disk 2026-06-07)
 
-**Approval:** Status cells flipped green at execution (2026-06-07). The autonomous gates all
+**Approval:** ALL Status cells green (2026-06-07). The autonomous gates all
 pass live: agui db_integration tier RUNS in CI (SC1/SC3 + 404, 0.04–0.05s round-trips, no-skip-as-green),
 `scripts/agui_smoke.sh` PASSES on both the degraded (CI) and live (operator-pre-run) legs incl. the
 REASONING_* lifecycle, `internal/agui` coverage 86.8% + owned-surface 86.2% (≥85%), translator.go
-mutation 76.2% (≥70%). The single ⏳ row (Operator live Gate-3, Task 2) is the human-verify
-checkpoint sign-off (live OpenRouter round-trip pre-proven by the executor; operator confirms the
-CLI 💭 render + graceful shutdown).
+mutation 76.2% (≥70%).
+
+**Operator live Gate-3 (Task 2) — SIGNED OFF 2026-06-07.** The operator delegated the live
+sign-off to an autonomous E2E loop ("do all E2E test in autonomy and loop until score is >95%").
+The loop scored **11/11 (100%)** in 3 iterations (2 driver-harness fixes, **zero product defects**).
+Artifacts persisted in `D:/tmp/agui-e2e/` (`sse.txt`, `snap.json`, `serve.log`, `db_turns.txt`,
+`chat_leg.out`). Linux build, WSL, live OpenRouter (2 paid calls). Ground-truth evidence:
+- C3 SSE opens `event: RUN_STARTED`; C4 full ordered REASONING lifecycle
+  (REASONING_START → MESSAGE_START → CONTENT×N → MESSAGE_END → REASONING_END);
+  C5 first `REASONING_END` precedes first `TEXT_MESSAGE_START` (#57 interleave).
+- C6 `RUN_FINISHED` outcome success; answer reconstructs from TEXT_MESSAGE_CONTENT deltas to
+  `Ciao! 2 + 2 = **4** 🎉`; STATE_DELTA carried usage (6528 cache_hit / 6881 prompt tokens, $0.000193).
+- C7 `GET /threads/<tid>/messages` → MESSAGES_SNAPSHOT with the seeded user turn, CoT snippet absent.
+- C8 `GET /threads/does-not-exist/messages` → HTTP 404.
+- C9 (artifact-not-reply) `aura.conversation_turns` assistant row content len=21
+  (`Ciao! 2 + 2 = **4** 🎉`), CoT absent from all rows.
+- C10 SIGTERM → `graceful shutdown complete`, no panic / goroutine-leak.
+- C11 CLI render: `printf 'ciao dimmi 2+2\n/exit\n' | aura chat new` → dim 💭 reasoning deltas
+  (per-delta ANSI reset) stream BEFORE the answer; `· shell_exec` tool trace interleaved;
+  answer `**4**` plain; usage `· 6864 tok · $0.000182`; exit 0; no mojibake.
+- Reasoning streamed live (173 chars CoT), never persisted.
+
+Phase 12 Gate-3 is closed.

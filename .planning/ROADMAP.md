@@ -30,7 +30,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 9: Swarm (Minimal)** - ParallelAgent reuse with 2-deep cap + child budget inheritance (completed 2026-06-04)
 - [x] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat (completed 2026-06-04)
 - [x] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger (completed 2026-06-06)
-- [ ] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced
+- [x] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced (completed 2026-06-07)
 - [ ] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image
 - [ ] **Phase 14: Onboarding + Agent.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
 - [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
@@ -407,7 +407,7 @@ Wave 4:
   3. Operator runs `curl http://127.0.0.1:9080/threads/t1/messages` after a streamed run and observes the persisted turn history matching what was emitted in the SSE stream
   4. Operator runs `go.mod` inspection and observes AG-UI SDK pinned to the immutable pseudo-version literal `v0.0.0-20260514093510-e9e910b230b9` (NOT `latest`, NOT an unpinned install-time resolution; CI greps the literal — amendment #56: a pseudo-version IS the only valid go.mod form for this untagged subdir module, the original "no pseudo-version" wording was unsatisfiable)
 
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 **Wave 1**
 
@@ -425,7 +425,7 @@ Wave 4:
 
 **Wave 4** *(blocked on 12-01/02/03/05/06)*
 
-- [ ] 12-04-PLAN.md — Gate-3: agui db_integration CI tier + live agui_smoke.sh curl round-trip (incl. REASONING_* live leg) + coverage ≥85% + translator mutation ≥70% + quality snapshot + operator live human-verify
+- [x] 12-04-PLAN.md — Gate-3: agui db_integration CI tier + live agui_smoke.sh curl round-trip (incl. REASONING_* live leg) + coverage ≥85% + translator mutation ≥70% + quality snapshot + operator live human-verify
 
 ### Phase 13: Channels + Telegram + Multimodal
 
@@ -493,7 +493,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 9. Swarm (Minimal) | 6/6 | Complete    | 2026-06-04 |
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
-| 12. AG-UI Gateway | 5/6 | In Progress|  |
+| 12. AG-UI Gateway | 6/6 | Complete   | 2026-06-07 |
 | 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
