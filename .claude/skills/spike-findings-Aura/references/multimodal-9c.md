@@ -10,7 +10,7 @@ OpenAI-compat sidecars**, GPU entirely free. Binds to PRD amendment #59.
   host a 2B multimodal model with KV-cache headroom (spike 020). The 4GB GPU stays free; 9c
   runs on CPU.
 - **Three sidecars, all OpenAI-compat, all CPU:**
-  - **`aura-ocr-vl`** — vision/photo + image-OCR. `llama.cpp` server + a dedicated OCR-VL GGUF.
+  - **`aura-ocr-vl`** — vision/photo + image-OCR. `llama.cpp` server + **GLM-OCR** (decided 2026-06-07).
   - **`aura-stt`** — voice-in. `faster-whisper` (`hwdsl2/whisper-server`), large-v3-turbo int8.
   - **`aura-tts`** — voice-out. Kokoro-82M (`Kokoro-FastAPI`), voice **`if_sara`** (locked).
 - **OGG/Opus is the bidirectional audio contract.** Telegram voice notes are OGG/Opus in BOTH
@@ -24,9 +24,10 @@ OpenAI-compat sidecars**, GPU entirely free. Binds to PRD amendment #59.
 
 ### Sidecar 1 — Vision/OCR (`aura-ocr-vl`, llama.cpp CPU)
 
-Two validated finalists; pick by quality-vs-latency (both IT OCR 7/7, 0 VRAM):
+**DECIDED (operator 2026-06-07): GLM-OCR.** PaddleOCR-VL-1.5 stays a documented latency-only
+fallback (env override) if per-page speed ever becomes the bottleneck. Both IT OCR 7/7, 0 VRAM:
 
-| | GLM-OCR (default) | PaddleOCR-VL-1.5 (alt) |
+| | **GLM-OCR (DECIDED)** | PaddleOCR-VL-1.5 (fallback) |
 |---|---|---|
 | Source | `ggml-org/GLM-OCR-GGUF` (Q8 ~950MB + mmproj ~484MB) | `PaddlePaddle/PaddleOCR-VL-1.5-GGUF` (~936MB + mmproj ~882MB) |
 | Output | **HTML table structure + accents** (`Mondovì`) | plain text, drops accent (`Mondovi`) |

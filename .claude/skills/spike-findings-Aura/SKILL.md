@@ -62,7 +62,7 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
   `$AURA_RUN_DIR`//workspace artifacts to the chat.
 - **9c multimodal = three local CPU sidecars, vLLM OUT** (spike session 6, PRD amendment #59):
   vLLM cannot host a 2B multimodal on the 4GB A2000 (KV starvation + WSL 7GiB RAM). Replace the
-  single Gemma sidecar with `aura-ocr-vl` (llama.cpp + GLM-OCR default / PaddleOCR-VL alt, vision),
+  single Gemma sidecar with `aura-ocr-vl` (llama.cpp + **GLM-OCR**, decided 2026-06-07; PaddleOCR-VL fallback),
   `aura-stt` (faster-whisper `hwdsl2/whisper-server`, voice-in), `aura-tts` (Kokoro-82M, voice-out).
   All CPU, GPU free, permissive licenses. **PRD amendment #59 committed.**
 - **Aura speaks** (operator directive "facciamo parlare Aura"): TTS voice-out leg added to 9c;
@@ -81,7 +81,7 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
 | MCP live servers | references/mcp-live-servers.md | mail-mcp mounts clean; whatsapp needs the chetto1983 fork (whatsmeow bump + self-echo patch); bridged tools must flip to Deferred or the manifest degrades |
 | AG-UI gateway | references/agui-gateway.md | SDK pin = pseudo-version (amendment-#6 grep gate unsatisfiable as written); 21/21 PRD events exist incl. native REASONING_*; resume contract is protocol-native `resume[]`; ~60-LOC pure iter.Seq2 translator + SDK SSEWriter round-trips the PRD smoke verbatim at 35-40ms loopback |
 | Telegram channel | references/telegram-channel.md | telebot pin is a TAG now (v4.0.0-beta.9); tables render to PNG (pure Go x/image, 5-21ms, on-device WINNER over pre-block and key-value); sendDocument round-trips xlsx/pdf/docx/csv with exact MIME; send responses are the read-back ground truth |
-| Multimodal 9c | references/multimodal-9c.md | vLLM-4GB INVALIDATED → three local CPU OpenAI-compat sidecars: `aura-ocr-vl` (llama.cpp + GLM-OCR/PaddleOCR-VL, IT OCR 7/7), `aura-stt` (faster-whisper, OGG/Opus direct, 0.7× RT), `aura-tts` (Kokoro `if_sara`, opus voice note, 0.3× RT). GPU free, permissive licenses. OGG/Opus bidirectional. PRD amendment #59 |
+| Multimodal 9c | references/multimodal-9c.md | vLLM-4GB INVALIDATED → three local CPU OpenAI-compat sidecars: `aura-ocr-vl` (llama.cpp + **GLM-OCR**, decided; PaddleOCR-VL fallback; IT OCR 7/7), `aura-stt` (faster-whisper, OGG/Opus direct, 0.7× RT), `aura-tts` (Kokoro `if_sara`, opus voice note, 0.3× RT). GPU free, permissive licenses. OGG/Opus bidirectional. PRD amendment #59 |
 
 ## Source Files
 

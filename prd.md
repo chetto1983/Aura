@@ -2864,14 +2864,14 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 > **▶ Amendment #59 (Phase 13 pre-plan — spike session 6 multimodal ground-truth 020-029, 2026-06-07) — 9c engine reality + TTS voice-out leg.** La sessione `/gsd-spike` mandata da #58(7) è stata eseguita live su QUESTO mini-PC (GPU **RTX A2000 Laptop 4096 MiB**, WSL VM **7 GiB RAM**, stack Aura in esecuzione). Evidenza completa: `.planning/spikes/` 020-029 + MANIFEST §Session-6 + blueprint `Skill("spike-findings-Aura")` + memoria `project_9c_multimodal_engine_pivot`. Il verdetto **rovescia la premessa di #58(7)** ("≤4GB VRAM + vLLM") e il design Gemma-4-sidecar-unico di questa sezione. Undici delta a §Slice 9c:
 > **(1) vLLM è OUT per 9c (spike 020 INVALIDATED).** Qwen3-VL-2B-FP8 = pesi 2.95 GiB (FP8 Marlin W8A16, no native su Ampere sm_86) + ~0.8 GiB overhead CUDA/torch → restano **0.09 GiB per la KV cache mentre 4096 ctx ne chiede 0.44**; la WSL VM da 7 GiB affama il load del checkpoint 3.23 GiB (9P fs, no mmap prefetch); dual-residency (STT+vision simultanei) strutturalmente impossibile. Il framing "9c serviti con vLLM sulla GPU 4GB" è morto su questo hardware. Engine 9c = **llama.cpp + faster-whisper + Kokoro, tutti CPU** (la GPU resta libera).
 > **(2) Il sidecar unico `aura-llama-multimodal` (Gemma 4) → TRE sidecar CPU OpenAI-compat.** GPU a 0, tutti `/v1/*`:
->   - **`aura-ocr-vl`** (vision/photo + OCR documenti-immagine): **llama.cpp server** + un OCR-VL GGUF dedicato, `/v1/chat/completions` con `image_url`. Default **GLM-OCR** (Q8 ~1.4 GB, da `ggml-org/GLM-OCR-GGUF` + mmproj — ricostruisce **struttura tabella HTML + accenti**, utile anche all'ingest Slice 11; spike 026) — alternativa più veloce **PaddleOCR-VL-1.5** (0.9B ~1.8 GB, da `PaddlePaddle/PaddleOCR-VL-1.5-GGUF` — p50 ~1s CPU vs ~3s, testo piano, perde la `ì`; spike 025). Entrambi **IT OCR 7/7, 0 VRAM**. Pick finale GLM-vs-Paddle = scelta planner (qualità/struttura vs latenza).
+>   - **`aura-ocr-vl`** (vision/photo + OCR documenti-immagine): **llama.cpp server** + **GLM-OCR** (Q8 ~1.4 GB, da `ggml-org/GLM-OCR-GGUF` + mmproj), `/v1/chat/completions` con `image_url`. **DECISO operatore 2026-06-07** — ricostruisce **struttura tabella HTML + accenti** (IT OCR 7/7, 0 VRAM; spike 026), utile anche all'ingest Slice 11. **PaddleOCR-VL-1.5** (0.9B, p50 ~1s CPU vs ~3s, testo piano, perde la `ì`; spike 025) resta **fallback latency-only documentato** se la latenza diventasse un problema — non default.
 >   - **`aura-stt`** (voice-in): **faster-whisper** via `hwdsl2/whisper-server`, `WHISPER_MODEL=large-v3-turbo` `WHISPER_COMPUTE_TYPE=int8`, `/v1/audio/transcriptions`. **Ingerisce OGG/Opus DIRETTO** (PyAV/ffmpeg bundled) — risolve il blocco vero: whisper.cpp/miniaudio NON decoda Opus, avrebbe richiesto un pre-step ffmpeg (spike 027). IT auto-detect perfetto, **0.7× realtime CPU** (3.7× più veloce di whisper.cpp), 0 VRAM. Supersede Punto-7 "Whisper rimosso": Whisper **torna** (Gemma-4-audio-unifica-STT era la premessa #58, ma Gemma è OUT).
 >   - **`aura-tts`** (voice-out, NUOVO): **Kokoro-FastAPI** (remsky) + **Kokoro-82M** (Apache-2.0), `/v1/audio/speech`, `response_format: opus` = **voice note Telegram nativo, zero transcodifica**. **Voce di Aura = `if_sara`** (femminile italiano) — verdetto on-device operatore 2026-06-07 ("la voce femminile di kokoro è perfetta"). **0.3× realtime CPU**, 0 VRAM (spike 028).
 > **(3) 9c acquista una gamba TTS voice-out (NUOVO): Aura parla.** Nuovo file `internal/channels/telegram/tts.go` (~90 LOC): sintetizza il reply via `aura-tts` → `sendVoice` (opus). Trigger = `voice_mode` nelle preferences identità (Slice 10 `preferences.json` ha già `voice_mode`) e/o auto-reply-vocale quando l'utente ha mandato un voice note. Forma esatta del trigger (tool esplicito `send_voice` come `send_file`, o auto-detect) = scelta planner. Caveat live: caption `sendVoice` con emoji+parentesi+em-dash → HTTP 400; ASCII pulito passa (lezione coerente con mdv2 #58(4)).
 > **(4) OGG/Opus = contratto audio BIDIREZIONALE del canale.** In via `aura-stt` (faster-whisper decoda Opus inline), out via `aura-tts` (Kokoro opus → `sendVoice`). Niente conversione in nessuna delle due direzioni. `voice.go` (in) + `tts.go` (out).
 > **(5) Punto-7 (Decisioni cumulate) superseduto** (righe Vision model / Whisper / Vision fallback): Vision = **OCR-VL** (non Gemma); Whisper = **torna** (faster-whisper, non rimosso); Vision fallback = **`minimax/minimax-m3` cloud via OpenRouter** opzionale (validato vision spike 024, IT OCR ~100% $0.0005/call — ma cloud-dep + no audio), **NON** markitdown OCR.
 > **(6) `documents.go` invariato** (markitdown sidecar: doc→markdown, distinto dall'OCR-VL image→testo di `photo.go`). markitdown resta per PDF/docx/xlsx; `aura-ocr-vl` rimpiazza SOLO il modello vision di `photo.go`.
-> **(7) Open questions 1/2 RISOLTE** (erano "assorbite da #58(7)"): variant = OCR-VL GGUF (GLM/Paddle, planner pick); vision fallback = minimax-m3 cloud opzionale. **Voice cloning** sollevato (clone della voce "Isa" da audio operatore) e **DESCOPATO** (preset `if_sara` perfetta — spike 029); approccio MIT a scaffale = Chatterbox-multilingual via `travisvn/chatterbox-tts-api`.
+> **(7) Open questions 1/2 RISOLTE** (erano "assorbite da #58(7)"): variant = **GLM-OCR (DECISO operatore 2026-06-07)**, PaddleOCR-VL fallback latency-only; vision fallback = minimax-m3 cloud opzionale. **Voice cloning** sollevato (clone della voce "Isa" da audio operatore) e **DESCOPATO** (preset `if_sara` perfetta — spike 029); approccio MIT a scaffale = Chatterbox-multilingual via `travisvn/chatterbox-tts-api`.
 > **(8) Mini-PC budget**: 3 sidecar CPU piccoli (~1.4 GB OCR-VL + ~1.5 GB STT + ~0.5 GB TTS ≈ **3.4 GB RAM**) rimpiazzano il +3 GB Gemma; **GPU 0** (era il vincolo). Net simile su RAM, GPU liberata. Slice 0.5 RAM table da riemendare (-Gemma-multimodal +ocr-vl +stt +tts).
 > **(9) Env vars** (convenzione: sidecar di terze parti mantengono naming upstream): `aura-ocr-vl` → `MULTIMODAL_BASE_URL`/`MULTIMODAL_MODEL` riusati (è ancora `/v1/chat/completions`); `aura-stt` → `STT_BASE_URL=http://aura-stt:9000/v1` + `STT_MODEL=large-v3-turbo`; `aura-tts` → `TTS_BASE_URL=http://aura-tts:8880/v1` + `TTS_VOICE=if_sara` + `TTS_FORMAT=opus`. `LLAMA_MULTIMODAL_*` → `OCR_VL_*` (compose), pin immagine `cuXY`-matching-driver MAI `latest` (lezione spike 020) — ma di default CPU, nessuna GPU.
 > **(10) Pin & gotchas serving** (dalle spike, per il planner): llama.cpp lancio docker via PowerShell non Git-Bash (MSYS mangia `/models`); su WSL il libcuda-compat-stub dell'immagine CUDA shadowa il driver iniettato (fix `rm + ldconfig` in entrypoint) — irrilevante in CPU-default; `hwdsl2/whisper-server` env `WHISPER_MODEL`/`WHISPER_COMPUTE_TYPE`/`WHISPER_DEVICE`; Kokoro voci IT = `if_sara`/`im_nicola`, espeak-ng bundled.
@@ -2918,7 +2918,7 @@ require github.com/mdp/qrterminal/v3 latest                     // ASCII QR per 
 | 5 | Voice failure | 2 retry exponential (1s/2s), poi bot risponde `❌ Trascrizione non disponibile. Invia testo o riprova.` + reaction 😵 sul voice message. |
 | 6 | Document size | Tiered: sync ≤5 MB inline / async background 5-50 MB con `📄 Convertendo nome.pdf...` follow-up / refuse >50 MB. |
 | 6 | Convert lifecycle | Bot intermediario: niente INSERT in `conversation_turns` finché conversione ready. A done: 1 sendMessage real + AG-UI user message con contenuto convertito. |
-| 7 | Vision model | ~~Gemma 4 multimodal sidecar (`aura-llama-multimodal`, llama.cpp).~~ **[SUPERSEDUTO #59: `aura-ocr-vl` = OCR-VL GGUF dedicato su llama.cpp CPU (GLM-OCR default / PaddleOCR-VL alt), IT OCR 7/7, 0 VRAM. vLLM+Gemma OUT su 4GB.]** |
+| 7 | Vision model | ~~Gemma 4 multimodal sidecar (`aura-llama-multimodal`, llama.cpp).~~ **[SUPERSEDUTO #59: `aura-ocr-vl` = **GLM-OCR** su llama.cpp CPU (DECISO operatore 2026-06-07; PaddleOCR-VL fallback latency-only). IT OCR 7/7, 0 VRAM. vLLM+Gemma OUT su 4GB.]** |
 | 7 | Whisper | ~~**Rimosso** (Gemma 4 audio unifica STT).~~ **[SUPERSEDUTO #59: Whisper TORNA — `aura-stt` = faster-whisper `hwdsl2/whisper-server` large-v3-turbo int8, OGG/Opus diretto, 0.7× realtime CPU. La premessa "Gemma unifica STT" è morta con Gemma OUT.]** |
 | 7 | Voice (TTS) | **[NUOVO #59: `aura-tts` = Kokoro-82M via Kokoro-FastAPI, voce `if_sara` (IT femminile, locked on-device), opus=voice note nativo. Aura PARLA. `tts.go`→`sendVoice`.]** |
 | 7 | Vision fallback | ~~markitdown OCR se Gemma down.~~ **[SUPERSEDUTO #59: fallback = `minimax/minimax-m3` cloud (OpenRouter) opzionale; markitdown resta SOLO per `documents.go` (doc→md), non per le immagini.]** |
@@ -2997,7 +2997,7 @@ internal/channels/telegram/    # Slice 9c (multimodal)  [#59: engine = aura-ocr-
                           #       - output > AURA_CONVERSATION_TURN_CAP_BYTES → sidecar (Slice 1.8 pattern)
   photo.go                # ~90   POST a aura-ocr-vl /v1/chat/completions con image_url  [#59]
                           #       - base64 encode photo
-                          #       - prompt "Leggi/descrivi (OCR-VL: GLM-OCR default / PaddleOCR-VL alt)"
+                          #       - prompt "Leggi/descrivi" (OCR-VL = GLM-OCR, DECISO 2026-06-07)
                           #       - description/OCR text → user message AG-UI
                           #       - Fallback opzionale: minimax/minimax-m3 cloud (OpenRouter) se sidecar down
 
@@ -3056,11 +3056,11 @@ CREATE INDEX telegram_setup_pending_active
 # RIMOSSO: aura-whisper (mai shippato) E aura-llama-multimodal (Gemma 4) — #59
 # AGGIUNTI: 3 sidecar CPU OpenAI-compat, GPU a 0. Verdetto spike session 6 (020-029).
 
-# Vision/OCR — OCR-VL GGUF dedicato (GLM-OCR default / PaddleOCR-VL alt)
+# Vision/OCR — GLM-OCR (DECISO 2026-06-07; PaddleOCR-VL = fallback latency-only via env override)
 aura-ocr-vl:
   image: ghcr.io/ggml-org/llama.cpp:${OCR_VL_IMAGE_TAG:-server}   # CPU; se GPU, pin cuXY-match-driver MAI latest
   command:
-    - -m /models/${OCR_VL_MODEL:-GLM-OCR-Q8_0.gguf}                # GLM-OCR default; PaddleOCR-VL-1.5.gguf alt
+    - -m /models/${OCR_VL_MODEL:-GLM-OCR-Q8_0.gguf}                # GLM-OCR (deciso); PaddleOCR-VL-1.5.gguf = override fallback
     - --mmproj /models/${OCR_VL_MMPROJ:-mmproj-GLM-OCR-Q8_0.gguf}
     - --host 0.0.0.0 --port 8082 --temp 0 -c 8192 --threads 4
   volumes: [aura-models:/models]
@@ -3170,7 +3170,7 @@ TELEGRAM_BOT_TOKEN=xxx ./aura serve &
 - [ ] `voice.go`: POST a **`aura-stt` (faster-whisper)** `/v1/audio/transcriptions`, **OGG/Opus diretto** (no ffmpeg pre-step). 2 retry + hard fail messaggio UX + reaction 😵.
 - [ ] **[NUOVO #59] `tts.go`**: POST a **`aura-tts` (Kokoro, `if_sara`)** `/v1/audio/speech` `response_format=opus` → `sendVoice`. Trigger `voice_mode` (Slice 10 preferences) o auto su input vocale. Caption ASCII-safe. Live test: `sendVoice` round-trip con `msg.Voice` non-nil (ground truth = response Bot API).
 - [ ] `documents.go`: tiered sync/async via markitdown sidecar. ≤5 MB sync, 5-50 MB async background. Output > `AURA_CONVERSATION_TURN_CAP_BYTES` → sidecar. **[#59 invariato]**
-- [ ] `photo.go`: POST a **`aura-ocr-vl` (GLM-OCR default / PaddleOCR-VL alt)** `/v1/chat/completions` con base64 image_url. OCR/description text → user message AG-UI. Fallback opzionale `minimax/minimax-m3` cloud.
+- [ ] `photo.go`: POST a **`aura-ocr-vl` (GLM-OCR — DECISO 2026-06-07)** `/v1/chat/completions` con base64 image_url. OCR/description text → user message AG-UI. Fallback opzionale `minimax/minimax-m3` cloud; PaddleOCR-VL via env override solo se latenza critica.
 - [ ] Test integration `multimodal_integration` build tag: requires i 3 sidecar up. Skipped in CI senza container. Live: voice note IT round-trip (STT) + photo IT OCR (recall) + sendVoice (TTS).
 - [ ] ~~**Open question pre-merge**: benchmark Gemma 4 E2B vs E4B vs 26B MoE su corpus reale Aura~~ **[ASSORBITA #58(7): la scelta engine+modello esce dallo `/gsd-spike` multimodale pre-plan — survey modelli 2026 ≤4 GB VRAM + vLLM, misurato sulla GPU 4 GB del mini-PC. Metriche invariate: WER voice IT/EN, vision quality, latenza p50/p95, VRAM/RAM steady. Baseline/fallback CPU = llama.cpp + Gemma 4 E4B Q4.]**
 - [ ] ~~**Open question pre-merge**: vision fallback strategy. Se Gemma quality < threshold → markitdown OCR fallback path attivato. Altrimenti rimosso.~~ **[ASSORBITA #58(7): decisa dal verdetto dello spike.]**
@@ -3189,7 +3189,7 @@ Slice 0.5 RAM table da riemendare (-Gemma-multimodal +ocr-vl +stt +tts).
 
 ### Open questions
 
-1. ~~**Variant Gemma 4 finale**.~~ **[RISOLTA #59: vLLM+Gemma OUT su 4GB; engine = `aura-ocr-vl` OCR-VL GGUF (GLM-OCR default / PaddleOCR-VL alt) su llama.cpp CPU. Pick GLM-vs-Paddle = scelta planner.]**
+1. ~~**Variant Gemma 4 finale**.~~ **[RISOLTA #59: vLLM+Gemma OUT su 4GB; engine = `aura-ocr-vl` = **GLM-OCR** su llama.cpp CPU (DECISO operatore 2026-06-07). PaddleOCR-VL = fallback latency-only via env override.]**
 2. ~~**Vision fallback markitdown OCR**.~~ **[RISOLTA #59: fallback = `minimax/minimax-m3` cloud opzionale; markitdown resta solo per `documents.go`.]**
 2b. ~~**Voice cloning** (clone voce da audio operatore).~~ **[RISOLTA/DESCOPATA #59: preset Kokoro `if_sara` perfetta (verdetto on-device); approccio MIT a scaffale = Chatterbox-multilingual via `travisvn/chatterbox-tts-api` se mai richiesto.]**
 3. **Setup wizard PostgreSQL LISTEN/NOTIFY vs poll**: SSE `/setup/events` può usare LISTEN/NOTIFY (efficient, ~1 connection ws) o poll DB ogni 2s (semplice, no extra deps). → *Default proposto*: poll 2s per Slice 9a, LISTEN/NOTIFY come ottimizzazione futura.
@@ -3245,7 +3245,7 @@ slice 9c: telegram multimodal (voice-in/out + photo OCR, docs via markitdown)
 Engine emendato #59 (spike session 6, 020-029): vLLM+Gemma 4 OUT su GPU 4GB
 (spike 020 INVALIDATED — KV cache starvation). 3 sidecar CPU OpenAI-compat,
 GPU a 0:
-- aura-ocr-vl: llama.cpp + GLM-OCR Q8 (default) / PaddleOCR-VL-1.5 (alt). IT OCR 7/7.
+- aura-ocr-vl: llama.cpp + GLM-OCR Q8 (DECISO; PaddleOCR-VL = fallback). IT OCR 7/7.
 - aura-stt: faster-whisper hwdsl2 large-v3-turbo int8. OGG/Opus diretto, 0.7x RT CPU.
 - aura-tts: Kokoro-82M, voce if_sara (IT femminile, locked on-device). 0.3x RT CPU.
 Net RAM ~+3.4 GB (= pari al Gemma rimosso), GPU completamente libera.
@@ -3256,7 +3256,7 @@ photo.go: POST aura-ocr-vl /v1/chat/completions con image_url; fallback minimax-
 documents.go: tiered sync/async via markitdown sidecar (invariato).
 
 OGG/Opus = contratto audio bidirezionale (in faster-whisper, out Kokoro, no transcode).
-Open questions risolte: variant=OCR-VL (GLM/Paddle planner pick), fallback=minimax-m3,
+Open questions risolte: variant=GLM-OCR (DECISO 2026-06-07), fallback=minimax-m3,
 voice-cloning descopato (preset if_sara perfetta).
 
 LOC: ~520 src / ~210 test.
