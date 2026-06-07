@@ -112,15 +112,16 @@ docker run -d --name aura-tts -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:lat
   no OCR-VL sidecar to operate. Selected via `MULTIMODAL_FALLBACK_MODEL` (acts as a tier selector,
   not just failover). STT/TTS stay local in both tiers for now (cloud audio is a separate future
   extension). Aura is platform-shaped — the substrate is deployment-agnostic.
-  **Amendment #60 — config-only switch (default UNCHANGED)**: the default stays DeepSeek-V4 +
-  GLM-OCR. The requirement is that switching to `minimax/minimax-m3` (multimodal primary → no OCR
-  sidecar) is **pure config, zero code**. Mechanism: `photo.go` routes on the primary model's
-  `SupportsVision` capability flag (`internal/llm/openai_compat/models.go`) — true (minimax-m3) →
-  attach `image_url` to the primary LLM turn, skip the sidecar; false (DeepSeek-V4) → POST to
-  `aura-ocr-vl`. Switching = set `AURA_LLM_MODEL`, the registry knows it's multimodal, routing flips.
-  minimax-m3 verified on OpenRouter (text+image+video, 1M ctx, caching `$0.06/M`, reasoning+tools,
-  ~3-6× pricier). Gates *when/if* switched (not now): re-baseline cot_eval, measure cache-ratio,
-  review cost-cap, seed A3 price table.
+  **Amendment #60 — explicit `.env` switch `AURA_VISION_CLOUD` (default UNCHANGED)**: default stays
+  DeepSeek-V4 + GLM-OCR (`AURA_VISION_CLOUD=false`). `photo.go` routes on the explicit bool, not on
+  inference: **`false`** → POST to `aura-ocr-vl` (GLM-OCR, local); **`true`** → OpenRouter — the
+  primary LLM if multimodal (`Model.SupportsVision`, e.g. minimax-m3), else `MULTIMODAL_FALLBACK_MODEL`
+  (default minimax-m3). With `AURA_VISION_CLOUD=true` the operator doesn't start `aura-ocr-vl`; STT/TTS
+  stay local. `models.go` carries `SupportsVision` per model (minimax-m3=true, deepseek-v4=false).
+  Switching the PRIMARY chat model (`AURA_LLM_MODEL=minimax/minimax-m3`) is a separate optional step
+  (then cloud vision reuses the primary) — gated by cot_eval re-baseline + cache-ratio + cost-cap,
+  NOT required by `AURA_VISION_CLOUD`. minimax-m3 verified on OpenRouter (text+image+video, 1M ctx,
+  caching `$0.06/M`, reasoning+tools, ~3-6× pricier).
 
 ## Origin
 
