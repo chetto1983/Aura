@@ -10,12 +10,14 @@ Ground-truth spikes for the tabula-rasa rewrite: Phase-9 MCP infrastructure (mai
 WhatsApp live mounts), Phase-11 Skills (discovery/install architecture — re-litigated
 session 3 into skill-driven self-extension with no approval ceremony), the sandbox
 runtime posture (mounts, deps, hardening tiers vs the amendment-#50 full-terminal home),
-the Phase-12 AG-UI gateway (official Go SDK pin, event surface, SSE round-trip), and the
+the Phase-12 AG-UI gateway (official Go SDK pin, event surface, SSE round-trip), the
 Phase-13 Telegram channel (telebot pin, MarkdownV2 discipline, table rendering
-head-to-head, artifact file delivery).
+head-to-head, artifact file delivery), and the Phase-13 Slice-9c multimodal engine
+(vLLM-4GB killed → three local CPU sidecars: OCR-VL + faster-whisper STT + Kokoro TTS).
 
 Spike sessions wrapped: 2026-06-04 (001-002), 2026-06-05 (003-010 session 2,
-011-013 session 3), 2026-06-06 (014-016 session 4), 2026-06-07 (017-019 session 5).
+011-013 session 3), 2026-06-06 (014-016 session 4), 2026-06-07 (017-019 session 5,
+020-029 session 6).
 </context>
 
 <requirements>
@@ -58,6 +60,15 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
 - **The Telegram channel MUST deliver file artifacts** (operator directive 2026-06-07):
   `sendDocument` with path + filename only (Telegram detects MIME); wire
   `$AURA_RUN_DIR`//workspace artifacts to the chat.
+- **9c multimodal = three local CPU sidecars, vLLM OUT** (spike session 6, PRD amendment #59):
+  vLLM cannot host a 2B multimodal on the 4GB A2000 (KV starvation + WSL 7GiB RAM). Replace the
+  single Gemma sidecar with `aura-ocr-vl` (llama.cpp + GLM-OCR default / PaddleOCR-VL alt, vision),
+  `aura-stt` (faster-whisper `hwdsl2/whisper-server`, voice-in), `aura-tts` (Kokoro-82M, voice-out).
+  All CPU, GPU free, permissive licenses. **PRD amendment #59 committed.**
+- **Aura speaks** (operator directive "facciamo parlare Aura"): TTS voice-out leg added to 9c;
+  **voice = Kokoro `if_sara`** (female Italian), locked on-device. Voice cloning descoped.
+- **OGG/Opus is the channel audio contract both ways** — faster-whisper decodes it inline
+  (whisper.cpp can't); Kokoro `response_format: opus` → `sendVoice` with no transcode.
 </requirements>
 
 <findings_index>
@@ -70,6 +81,7 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
 | MCP live servers | references/mcp-live-servers.md | mail-mcp mounts clean; whatsapp needs the chetto1983 fork (whatsmeow bump + self-echo patch); bridged tools must flip to Deferred or the manifest degrades |
 | AG-UI gateway | references/agui-gateway.md | SDK pin = pseudo-version (amendment-#6 grep gate unsatisfiable as written); 21/21 PRD events exist incl. native REASONING_*; resume contract is protocol-native `resume[]`; ~60-LOC pure iter.Seq2 translator + SDK SSEWriter round-trips the PRD smoke verbatim at 35-40ms loopback |
 | Telegram channel | references/telegram-channel.md | telebot pin is a TAG now (v4.0.0-beta.9); tables render to PNG (pure Go x/image, 5-21ms, on-device WINNER over pre-block and key-value); sendDocument round-trips xlsx/pdf/docx/csv with exact MIME; send responses are the read-back ground truth |
+| Multimodal 9c | references/multimodal-9c.md | vLLM-4GB INVALIDATED → three local CPU OpenAI-compat sidecars: `aura-ocr-vl` (llama.cpp + GLM-OCR/PaddleOCR-VL, IT OCR 7/7), `aura-stt` (faster-whisper, OGG/Opus direct, 0.7× RT), `aura-tts` (Kokoro `if_sara`, opus voice note, 0.3× RT). GPU free, permissive licenses. OGG/Opus bidirectional. PRD amendment #59 |
 
 ## Source Files
 
@@ -103,4 +115,13 @@ SKILL.md, the CONNECT proxy, and bridge-patch.diff are preserved under `sources/
 - 018b-table-as-image
 - 018c-table-restructured
 - 019-artifact-file-delivery
+- 020-vllm-sidecar-4gb-fit
+- 021-survey-2026-shortlist
+- 022-stt-wer-it-en
+- 024-openrouter-minimax-m3-vision
+- 025-paddleocr-vl-local
+- 026-glm-ocr-local
+- 027-stt-half
+- 028-kokoro-tts
+- 029-voice-cloning
 </metadata>

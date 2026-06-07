@@ -1,8 +1,8 @@
 # Spike Wrap-Up Summary
 
-**Date:** 2026-06-07 (sessions 1-3 wrapped 2026-06-05, session 4 2026-06-06, session 5 2026-06-07)
-**Spikes processed:** 23
-**Feature areas:** skills-self-extension, sandbox-runtime, mcp-live-servers, agui-gateway, telegram-channel
+**Date:** 2026-06-07 (sessions 1-3 wrapped 2026-06-05, session 4 2026-06-06, sessions 5-6 2026-06-07)
+**Spikes processed:** 32
+**Feature areas:** skills-self-extension, sandbox-runtime, mcp-live-servers, agui-gateway, telegram-channel, multimodal-9c
 **Skill output:** `./.claude/skills/spike-findings-Aura/`
 
 ## Processed Spikes
@@ -32,6 +32,15 @@
 | 018b | table-as-image | comparison | VALIDATED ✓ WINNER (T2 + T3 on-device) | telegram-channel |
 | 018c | table-restructured | comparison | VALIDATED ✓ (loser; key\|value 2-col cards only) | telegram-channel |
 | 019 | artifact-file-delivery | standard | VALIDATED ✓ (4/4 MIME exact, all open on-device) | telegram-channel |
+| 020 | vllm-sidecar-4gb-fit | standard | INVALIDATED ✗ (4GB KV starvation + WSL 7GiB RAM; vLLM OUT for 9c) | multimodal-9c |
+| 021 | survey-2026-shortlist | standard | SUPERSEDED ⚠ (Gemma e4b 9.6GB/e2b 7.2GB; pivot to OCR-VL GGUF) | multimodal-9c |
+| 022 | stt-wer-it-en | comparison | FOLDED→027 (FLEURS WER harvester kept; formal WER deferred) | multimodal-9c |
+| 024 | openrouter-minimax-m3-vision | standard | VALIDATED ✓ (cloud vision, IT OCR ~100%, $0.0005/call; NO audio) | multimodal-9c |
+| 025 | paddleocr-vl-local | comparison | VALIDATED ✓ (IT OCR 7/7 CPU, p50 1.06s, faster, plain text) | multimodal-9c |
+| 026 | glm-ocr-local | comparison | VALIDATED ✓ (IT OCR 7/7 CPU, HTML table + accents, p50 2.95s) | multimodal-9c |
+| 027 | stt-half | comparison | VALIDATED ✓ (faster-whisper OGG/Opus direct, 0.7× RT CPU, beats whisper.cpp 3.7×) | multimodal-9c |
+| 028 | kokoro-tts | standard | VALIDATED ✓ (Kokoro `if_sara` locked on-device, opus voice note, 0.3× RT CPU) | multimodal-9c |
+| 029 | voice-cloning | standard | DESCOPED (preset perfect; Chatterbox-multilingual MIT shelved) | multimodal-9c |
 
 ## Key Findings
 
@@ -66,6 +75,19 @@
   zero changes to internal/agent (D-17 holds). Amendment-#6's 40-hex CI grep gate
   is structurally unsatisfiable — pseudo-version grep instead.
 
+- **Multimodal 9c engine (session 6, pre-Phase-13)**: the PRD "Gemma 4 served by vLLM on the
+  4GB GPU" design is **dead** — spike 020 INVALIDATED it (Qwen3-VL-2B-FP8 leaves 0.09GiB for KV
+  vs 0.44 needed; WSL 7GiB RAM starves the load; dual-residency impossible). Operator re-steered
+  the engine live into **three local CPU OpenAI-compat sidecars, GPU free**: `aura-ocr-vl`
+  (llama.cpp + **GLM-OCR** default / PaddleOCR-VL alt — IT OCR 7/7, GLM keeps table structure +
+  accents), `aura-stt` (**faster-whisper** `hwdsl2/whisper-server` — ingests Telegram OGG/Opus
+  DIRECT, 0.7× realtime, 3.7× faster than whisper.cpp whose miniaudio can't decode Opus), and a
+  NEW `aura-tts` leg (**Kokoro-82M**, voice **`if_sara`** — operator locked on-device — opus =
+  native Telegram voice note). minimax-m3 (OpenRouter) is the validated cloud vision fallback;
+  voice cloning was raised and descoped. **OGG/Opus is the bidirectional audio contract.**
+  Permissive licenses throughout (Kokoro Apache, faster-whisper MIT; F5/XTTS excluded). Captured
+  in PRD amendment #59.
+
 - **Telegram channel (session 5, pre-Phase-13)**: telebot.v4 pin is a **tag** now
   (`v4.0.0-beta.9` — amendment #5's SHA-pin premise stale); Pitfall #18 verified strict
   (one naked reserved char = whole send 400s → mdv2.go must be entity-aware); **tables
@@ -84,5 +106,11 @@
   event-count language) BEFORE `/gsd-plan-phase 12`.
 - **PRD amendment for Phase 13** (3 items: #5 refresh → tag pin `v4.0.0-beta.9`;
   table-rendering policy PNG-primary in renderer.go; artifact-delivery requirement
-  via `sendDocument`) BEFORE `/gsd-plan-phase 13`.
-- Binding decisions recorded in `.planning/spikes/MANIFEST.md` Requirements.
+  via `sendDocument`) BEFORE `/gsd-plan-phase 13`. **DONE — amendment #58.**
+- **PRD amendment #59 for Phase-13 Slice 9c** (vLLM OUT; single Gemma sidecar → three CPU
+  sidecars ocr-vl/stt/tts; TTS voice-out leg; OGG/Opus bidirectional; open questions resolved;
+  voice cloning descoped) BEFORE `/gsd-plan-phase 13`. **DONE — amendment #59 committed.**
+- Open planner decisions for `/gsd-plan-phase 13` 9c: OCR engine GLM-OCR vs PaddleOCR-VL
+  (quality/structure vs latency); STT CPU vs GPU; TTS trigger (explicit `send_voice` tool vs
+  auto-on-voice-input). Formal FLEURS IT/EN WER (jiwer) is the one deferred measurement.
+- Binding decisions recorded in `.planning/spikes/MANIFEST.md` Requirements §Session-6.
