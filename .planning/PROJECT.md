@@ -119,4 +119,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-04 — Phase 10 (Scheduler, CAP-06) complete: cron+agent_job HA su Postgres (SKIP LOCKED + advisory lock + heartbeat + catch-up), task tool + CLI + serve daemon; chaos PASS, E2E reale 100%, review 7/7 fixed, UAT 3/3. Phase 16 (MCP Manager) anch'essa completata oggi.*
+*Last updated: 2026-06-07 — Phase 12 (AG-UI Gateway, UX-01) complete: SDK pinned, pure translator + REASONING lifecycle (#57), fanout seam per Phase 13, SSE server `POST /agent/run` + snapshot GET montati su `aura serve`; CoT live (💭 CLI) e mai persistita; verifica 13/13, E2E autonomo 11/11, coverage owned-surface 86.2%, mutation translator 76.2%. Precedenti: Phase 10 (Scheduler) + 16 (MCP Manager) 2026-06-04.*
