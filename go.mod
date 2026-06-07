@@ -23,11 +23,11 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/text v0.37.0
 	pgregory.net/rapid v1.3.0
+	github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9
 )
 
 require (
-	github.com/JohannesKaufmann/dom v0.2.0 // indirect
-	github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9 // indirect
+	github.com/JohannesKaufmann/dom v0.2.0 // indirect 
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
