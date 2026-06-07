@@ -103,8 +103,15 @@ docker run -d --name aura-tts -p 8880:8880 ghcr.io/remsky/kokoro-fastapi-cpu:lat
 - RAM: ~1.4 (OCR-VL) + ~1.5 (STT) + ~0.5 (TTS) ≈ **3.4 GB**, 0 VRAM.
 - Images: `ghcr.io/ggml-org/llama.cpp:server` (188MB CPU), `hwdsl2/whisper-server` (~190MB CPU),
   `ghcr.io/remsky/kokoro-fastapi-cpu` (torch-heavy). All pull the model on first run.
-- Cloud vision fallback (optional): `minimax/minimax-m3` via OpenRouter — text+image+video, 1M ctx,
+- Cloud vision = `minimax/minimax-m3` via OpenRouter — text+image+video, 1M ctx,
   $0.30/$1.20 per M (~$0.0005/call), Italian OCR ~100% with accents. NO audio.
+  **Product positioning (operator 2026-06-07): this is the vision tier for the no-GPU /
+  no-local-sidecar customer segment, not merely a sidecar-down fallback.** Two deployment tiers:
+  (A) **local full-stack** (DGX bundle / capable box) = the three 9c sidecars (GLM-OCR +
+  faster-whisper + Kokoro, private, CPU, GPU free); (B) **light/cloud** = vision via minimax-m3,
+  no OCR-VL sidecar to operate. Selected via `MULTIMODAL_FALLBACK_MODEL` (acts as a tier selector,
+  not just failover). STT/TTS stay local in both tiers for now (cloud audio is a separate future
+  extension). Aura is platform-shaped — the substrate is deployment-agnostic.
 
 ## Origin
 
