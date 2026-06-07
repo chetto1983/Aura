@@ -8,7 +8,7 @@ Tabula-rasa rewrite, 2026-05-27. Prior implementation at git tag `pre-rewrite-20
 
 > **Resume work** (aggiornato 2026-06-06): vedi [NEXT.md](NEXT.md) per stato corrente + ripresa. Fasi completate: 0÷11 + 16 + 18 (15/20 — restano 12 AG-UI, 13 Telegram, 14 Onboarding, 15 Memory, 17 Packaging). Coverage owned-surface 86.1%, CI verde (CI + CodeQL + Skills). Next action raccomandata: `/gsd-discuss-phase 12` (AG-UI Gateway).
 
-- **Spike findings for Aura** (implementation patterns, constraints, gotchas — skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway) → `Skill("spike-findings-Aura")`
+- **Spike findings for Aura** (implementation patterns, constraints, gotchas — skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway, Telegram channel) → `Skill("spike-findings-Aura")`
 
 ## PRD-first principle (absolute)
 

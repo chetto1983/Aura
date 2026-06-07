@@ -1,8 +1,8 @@
 # Spike Wrap-Up Summary
 
-**Date:** 2026-06-06 (sessions 1-3 wrapped 2026-06-05)
-**Spikes processed:** 18
-**Feature areas:** skills-self-extension, sandbox-runtime, mcp-live-servers, agui-gateway
+**Date:** 2026-06-07 (sessions 1-3 wrapped 2026-06-05, session 4 2026-06-06, session 5 2026-06-07)
+**Spikes processed:** 23
+**Feature areas:** skills-self-extension, sandbox-runtime, mcp-live-servers, agui-gateway, telegram-channel
 **Skill output:** `./.claude/skills/spike-findings-Aura/`
 
 ## Processed Spikes
@@ -27,6 +27,11 @@
 | 014 | agui-sdk-module-pin | standard | VALIDATED ✓ (amendment-#6 CI gate unsatisfiable as written) | agui-gateway |
 | 015 | agui-event-surface | standard | VALIDATED ✓ (21/21 events; 4 amendments) | agui-gateway |
 | 016 | agui-sse-roundtrip | standard | VALIDATED ✓ (13/13 PRD order, 35-40ms loopback) | agui-gateway |
+| 017 | telebot-v4-sha-pin-live-send | standard | VALIDATED ✓ (pin is a TAG now — amendment #5 stale) | telegram-channel |
+| 018a | table-pre-block | comparison | VALIDATED ✓ (loser; zero-dep fallback, no wrap ≤56 chars) | telegram-channel |
+| 018b | table-as-image | comparison | VALIDATED ✓ WINNER (T2 + T3 on-device) | telegram-channel |
+| 018c | table-restructured | comparison | VALIDATED ✓ (loser; key\|value 2-col cards only) | telegram-channel |
+| 019 | artifact-file-delivery | standard | VALIDATED ✓ (4/4 MIME exact, all open on-device) | telegram-channel |
 
 ## Key Findings
 
@@ -61,6 +66,15 @@
   zero changes to internal/agent (D-17 holds). Amendment-#6's 40-hex CI grep gate
   is structurally unsatisfiable — pseudo-version grep instead.
 
+- **Telegram channel (session 5, pre-Phase-13)**: telebot.v4 pin is a **tag** now
+  (`v4.0.0-beta.9` — amendment #5's SHA-pin premise stale); Pitfall #18 verified strict
+  (one naked reserved char = whole send 400s → mdv2.go must be entity-aware); **tables
+  render to PNG** (pure Go x/image + gofont/gomono 2x, 5-21ms, ~150 LOC) — operator
+  on-device WINNER over pre-block and key-value on both the common and the stress case;
+  `sendDocument` round-trips xlsx/pdf/docx/csv byte-identical with exact MIME detection
+  (operator requirement: the channel MUST deliver file artifacts). Bot-API send
+  responses are the read-back ground truth (bot messages never hit getUpdates).
+
 ## Pending follow-through
 
 - **PRD amendment** (supersedes D-03, D-13 gate surface, D-35 install-prudence,
@@ -68,4 +82,7 @@
 - **PRD amendment for Phase 12** (4 fixes: #6 gate regex → pseudo-version; outcome
   literals {success, interrupt}; resume contract → protocol-native `resume[]`;
   event-count language) BEFORE `/gsd-plan-phase 12`.
+- **PRD amendment for Phase 13** (3 items: #5 refresh → tag pin `v4.0.0-beta.9`;
+  table-rendering policy PNG-primary in renderer.go; artifact-delivery requirement
+  via `sendDocument`) BEFORE `/gsd-plan-phase 13`.
 - Binding decisions recorded in `.planning/spikes/MANIFEST.md` Requirements.

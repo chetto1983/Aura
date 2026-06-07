@@ -1,6 +1,6 @@
 ---
 name: spike-findings-Aura
-description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Aura (skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway). Auto-loaded during implementation work.
+description: Implementation blueprint from spike experiments. Requirements, proven patterns, and verified knowledge for building Aura (skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway, Telegram channel). Auto-loaded during implementation work.
 ---
 
 <context>
@@ -10,10 +10,12 @@ Ground-truth spikes for the tabula-rasa rewrite: Phase-9 MCP infrastructure (mai
 WhatsApp live mounts), Phase-11 Skills (discovery/install architecture — re-litigated
 session 3 into skill-driven self-extension with no approval ceremony), the sandbox
 runtime posture (mounts, deps, hardening tiers vs the amendment-#50 full-terminal home),
-and the Phase-12 AG-UI gateway (official Go SDK pin, event surface, SSE round-trip).
+the Phase-12 AG-UI gateway (official Go SDK pin, event surface, SSE round-trip), and the
+Phase-13 Telegram channel (telebot pin, MarkdownV2 discipline, table rendering
+head-to-head, artifact file delivery).
 
 Spike sessions wrapped: 2026-06-04 (001-002), 2026-06-05 (003-010 session 2,
-011-013 session 3), 2026-06-06 (014-016 session 4).
+011-013 session 3), 2026-06-06 (014-016 session 4), 2026-06-07 (017-019 session 5).
 </context>
 
 <requirements>
@@ -47,6 +49,15 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
 - Resume contract = protocol-native `RunAgentInput.Resume []ResumeEntry`, superseding the
   PRD's RoleTool-answers design; `outcome.type ∈ {success, interrupt}`; REASONING_* is
   canonical (THINKING_* deprecated); translator must skip empty deltas + guarantee IDs.
+- **telebot.v4 pin = tag `v4.0.0-beta.9`** (repo is tagged now — amendment #5's SHA-pin
+  premise stale; CI gate = literal version grep). **PRD amendment required before Phase-13.**
+- **Tables on Telegram = PNG primary** (operator on-device verdict, common + stress case):
+  markdown tables → gridded PNG via x/image + gofont/gomono 2x → `sendPhoto`; pre-block
+  is the zero-dep fallback. mdv2.go escaper must be entity-aware (whole-string destroys
+  intended formatting; one naked reserved char = whole send 400s).
+- **The Telegram channel MUST deliver file artifacts** (operator directive 2026-06-07):
+  `sendDocument` with path + filename only (Telegram detects MIME); wire
+  `$AURA_RUN_DIR`//workspace artifacts to the chat.
 </requirements>
 
 <findings_index>
@@ -58,6 +69,7 @@ Non-negotiable decisions that emerged during spiking (full text + provenance in
 | Sandbox runtime | references/sandbox-runtime.md | Compose binds work on Docker Desktop (no sync step needed); uv installs deps in 0.3-3s; hardening tiers (token/egress-proxy/gVisor) are the PROD menu — dev runs #50 full-trust |
 | MCP live servers | references/mcp-live-servers.md | mail-mcp mounts clean; whatsapp needs the chetto1983 fork (whatsmeow bump + self-echo patch); bridged tools must flip to Deferred or the manifest degrades |
 | AG-UI gateway | references/agui-gateway.md | SDK pin = pseudo-version (amendment-#6 grep gate unsatisfiable as written); 21/21 PRD events exist incl. native REASONING_*; resume contract is protocol-native `resume[]`; ~60-LOC pure iter.Seq2 translator + SDK SSEWriter round-trips the PRD smoke verbatim at 35-40ms loopback |
+| Telegram channel | references/telegram-channel.md | telebot pin is a TAG now (v4.0.0-beta.9); tables render to PNG (pure Go x/image, 5-21ms, on-device WINNER over pre-block and key-value); sendDocument round-trips xlsx/pdf/docx/csv with exact MIME; send responses are the read-back ground truth |
 
 ## Source Files
 
@@ -86,4 +98,9 @@ SKILL.md, the CONNECT proxy, and bridge-patch.diff are preserved under `sources/
 - 014-agui-sdk-module-pin
 - 015-agui-event-surface
 - 016-agui-sse-roundtrip
+- 017-telebot-v4-sha-pin-live-send
+- 018a-table-pre-block
+- 018b-table-as-image
+- 018c-table-restructured
+- 019-artifact-file-delivery
 </metadata>
