@@ -4,6 +4,7 @@ import (
 	"context"
 	"iter"
 	"log/slog"
+	"sync/atomic"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 )
@@ -30,8 +31,9 @@ const fanoutBuffer = 64
 // (the translated stream is pure events.Event), so Fanout never inspects the error
 // slot — it just forwards whatever Translate yields.
 type Fanout struct {
-	source iter.Seq2[events.Event, error]
-	subs   []chan events.Event
+	source  iter.Seq2[events.Event, error]
+	subs    []chan events.Event
+	started atomic.Bool
 }
 
 // NewFanout wraps a translated event stream. Subscribe before Run to register a
@@ -42,9 +44,13 @@ func NewFanout(source iter.Seq2[events.Event, error]) *Fanout {
 
 // Subscribe registers a new consumer and returns its receive-only channel. The channel
 // is cap-64 buffered and is closed by the producer goroutine when the source ends or
-// ctx is cancelled. Subscribe must be called before Run (subscribers registered after
-// the producer starts are not retroactively fed).
+// ctx is cancelled. Subscribe MUST be called before Run: a subscriber registered after
+// the producer has snapshotted f.subs is never fed (and racing the snapshot is a data
+// race), so Subscribe-after-Run panics loudly rather than failing silently (WR-06).
 func (f *Fanout) Subscribe() <-chan events.Event {
+	if f.started.Load() {
+		panic("agui: Fanout.Subscribe called after Run — subscribe all consumers before starting the producer")
+	}
 	ch := make(chan events.Event, fanoutBuffer)
 	f.subs = append(f.subs, ch)
 	return ch
@@ -54,8 +60,13 @@ func (f *Fanout) Subscribe() <-chan events.Event {
 // fans each event to every subscriber. It returns immediately; the goroutine exits on
 // ctx-cancel or source end, closing every subscriber channel on the way out (sole
 // sender closes — golang-concurrency principle #4). Run is non-blocking and must be
-// called at most once.
+// called AT MOST ONCE: a second Run would launch a second producer that double-closes
+// the subscriber channels (panic: close of closed channel). The started guard makes the
+// misuse loud at the call site instead (WR-06).
 func (f *Fanout) Run(ctx context.Context) {
+	if !f.started.CompareAndSwap(false, true) {
+		panic("agui: Fanout.Run called twice — a Fanout drives its source exactly once")
+	}
 	subs := f.subs
 	go func() {
 		defer closeAll(subs)

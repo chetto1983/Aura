@@ -129,6 +129,54 @@ func TestFanoutSlowSubscriberDropped(t *testing.T) {
 	}
 }
 
+// TestFanoutSubscribeAfterRunPanics pins WR-06: registering a subscriber after Run has
+// started the producer is loud (panic) rather than silently never-fed (or a data race on
+// the f.subs slice the producer already snapshotted).
+func TestFanoutSubscribeAfterRunPanics(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	f := NewFanout(eventSource("thread-1", "run-1", 1))
+	first := f.Subscribe()
+	f.Run(ctx)
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("Subscribe after Run did not panic; want a loud failure (WR-06)")
+			}
+		}()
+		f.Subscribe()
+	}()
+
+	// Tear the producer down cleanly so goleak (TestMain) stays green: cancel and drain
+	// the legitimately-registered subscriber until its channel closes.
+	cancel()
+	for range first {
+	}
+}
+
+// TestFanoutDoubleRunPanics pins WR-06: a second Run is loud (panic) rather than launching
+// a second producer that double-closes the subscriber channels.
+func TestFanoutDoubleRunPanics(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	f := NewFanout(eventSource("thread-1", "run-1", 1))
+	sub := f.Subscribe()
+	f.Run(ctx)
+
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("second Run did not panic; want a loud failure (WR-06)")
+			}
+		}()
+		f.Run(ctx)
+	}()
+
+	// The first (only) producer is real — drain it to completion so no goroutine leaks.
+	cancel()
+	for range sub {
+	}
+}
+
 // TestFanoutCtxCancelClosesAll: cancelling mid-stream exits the producer and all
 // subscriber-feeder work; every subscriber channel closes and goroutines return to
 // baseline (Pitfall 4 leak discipline).
