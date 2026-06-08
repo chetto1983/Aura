@@ -44,11 +44,16 @@ type consumerFactory func(bot botSender, to tele.Recipient) (status, content eve
 // Subscribe MUST register BOTH consumers before Run (fanout.go:51 panics on
 // Subscribe-after-Run); exactly one Fanout drives one turn (fanout.go:67 panics on
 // double-Run). A fresh Fanout is built per turn — never one at channel start.
-func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, userMsg string) {
+//
+// userMsg is the inbound user message for a fresh turn; nil drives a CONTINUATION
+// turn (runner.Turn(ctx, convID, nil)) — the resume path after a HITL pause
+// resolves, so the resumed answer renders through the SAME per-turn fanout as a
+// normal message (plan 13-10: a tap/reply resumes the loop AND the user sees it).
+func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, userMsg *string) {
 	idgen := agui.NewIDGenerator()
 	runID := uuid.NewString()
 
-	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), &userMsg))
+	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), userMsg))
 	fo := agui.NewFanout(translated)
 	statusCh := fo.Subscribe()  // → status pane
 	contentCh := fo.Subscribe() // → renderer  (BOTH before Run)

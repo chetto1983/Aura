@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"iter"
-	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -115,6 +114,16 @@ type Telegram struct {
 	bot     *tele.Bot
 	wg      sync.WaitGroup
 	started bool
+
+	// Per-channel dispatch instances, built ONCE at Start from Deps (never per
+	// message): cmds owns the /command intercept + the per-chat /cancel registry;
+	// the media clients hold their HTTP clients; docs owns the async-convert wg that
+	// Stop drains (goleak-clean). Guarded by mu; read under the handler goroutines.
+	cmds  *commands
+	voice *voiceClient
+	photo *photoClient
+	docs  *documentsClient
+	tts   *ttsClient
 }
 
 // NewChannel builds an unstarted Telegram channel over the supplied deps. (Named
@@ -191,7 +200,11 @@ func (t *Telegram) Start(ctx context.Context) error {
 		return fmt.Errorf("telegram start: construct bot: %w", err)
 	}
 
-	bot.Handle(tele.OnText, t.makeTextHandler(ctx))
+	// Build the dispatch instances ONCE (not per message) so the documents async wg
+	// is a single instance Stop drains, and the /cancel registry is shared across a
+	// chat's turns.
+	t.buildDispatch()
+	t.registerHandlers(ctx, bot)
 
 	t.bot = bot
 	t.started = true
@@ -208,7 +221,7 @@ func (t *Telegram) Start(ctx context.Context) error {
 // Stop gracefully shuts the poller down and joins the polling goroutine. It is
 // goleak-clean (Bot.Stop unblocks Bot.Start, the goroutine returns, the WaitGroup
 // drains). Idempotent: a Stop on a never-started channel is a clean no-op.
-func (t *Telegram) Stop(_ context.Context) error {
+func (t *Telegram) Stop(ctx context.Context) error {
 	t.mu.Lock()
 	bot := t.bot
 	started := t.started
@@ -219,6 +232,16 @@ func (t *Telegram) Stop(_ context.Context) error {
 	}
 	bot.Stop()
 	t.wg.Wait()
+
+	// Drain any in-flight async document-convert goroutines (goleak-clean — the
+	// package TestMain catches a leaked convert goroutine). The poller is already
+	// stopped, so no new conversion is accepted past this point.
+	t.mu.Lock()
+	docs := t.docs
+	t.mu.Unlock()
+	if docs != nil {
+		docs.Stop(ctx)
+	}
 
 	t.mu.Lock()
 	t.started = false
@@ -232,25 +255,6 @@ func (t *Telegram) IsHealthy() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return t.started && t.bot != nil
-}
-
-// makeTextHandler builds the telebot text handler bound to the daemon ctx. Each
-// incoming text message drives one turn through the per-turn fanout wiring
-// (handleTurn). The handler returns nil to telebot (errors are logged, never
-// surfaced to the poller — a single bad turn must not wedge polling).
-func (t *Telegram) makeTextHandler(daemonCtx context.Context) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		msg := c.Message()
-		if msg == nil || msg.Chat == nil {
-			return nil
-		}
-		if t.deps.Turn == nil {
-			slog.Warn("telegram: text message but no turn driver wired", "chat", msg.Chat.ID)
-			return nil
-		}
-		t.handleTurn(daemonCtx, t.sender(c), msg.Chat.ID, c.Text())
-		return nil
-	}
 }
 
 // sender returns the botSender the render consumers use. The live bot satisfies

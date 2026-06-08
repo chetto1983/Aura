@@ -94,7 +94,8 @@ func TestHandleTurnFanoutDistributesToBothConsumers(t *testing.T) {
 		},
 	})
 
-	tg.handleTurn(context.Background(), nil, 4242, "hello")
+	userMsg := "hello"
+	tg.handleTurn(context.Background(), nil, 4242, &userMsg)
 
 	// Both subscribers must have seen the lifecycle frames the producer guarantees.
 	for name, c := range map[string]*recordingConsumer{"status": status, "content": content} {
