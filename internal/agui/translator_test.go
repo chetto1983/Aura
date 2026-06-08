@@ -455,7 +455,7 @@ func TestTranslatorProperty(t *testing.T) {
 	defer goleak.VerifyNone(t)
 	rapid.Check(t, func(rt *rapid.T) {
 		n := rapid.IntRange(1, 20).Draw(rt, "n")
-		kinds := []string{"chunk", "empty", "tool", "state", "final", "preview", "reasoning", "reasoningEmpty"}
+		kinds := []string{"chunk", "empty", "tool", "state", "final", "preview", "reasoning", "reasoningEmpty", "artifact"}
 		in := make([]*agent.Event, 0, n)
 		for i := 0; i < n; i++ {
 			switch rapid.SampledFrom(kinds).Draw(rt, "kind") {
@@ -467,6 +467,9 @@ func TestTranslatorProperty(t *testing.T) {
 				in = append(in, reasoning(rapid.StringMatching(`[a-z ]{1,8}`).Draw(rt, "rdelta")))
 			case "reasoningEmpty":
 				in = append(in, reasoning(""))
+			case "artifact":
+				in = append(in, artifactEvent(map[string]any{
+					"path": "/abs/f" + strconv.Itoa(i) + ".bin", "filename": "f.bin", "caption": "c"}))
 			case "tool":
 				id := "call-" + strconv.Itoa(i)
 				in = append(in, toolStart(id, "t", `{"a":1}`), toolEnd(id, "t", "p"))

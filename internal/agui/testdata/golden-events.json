@@ -1,4 +1,14 @@
 {
+  "CUSTOM": {
+    "type": "CUSTOM",
+    "timestamp": 1780766525937,
+    "name": "aura.artifact",
+    "value": {
+      "path": "/abs/results.xlsx",
+      "filename": "results.xlsx",
+      "caption": "results"
+    }
+  },
   "MESSAGES_SNAPSHOT": {
     "type": "MESSAGES_SNAPSHOT",
     "timestamp": 1780766525937,

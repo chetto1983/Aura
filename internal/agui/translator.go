@@ -9,6 +9,12 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 )
 
+// artifactEventName is the stable AG-UI CUSTOM-event name the artifact branch
+// emits (D-06). A channel consumer keys on this name to render a delivered file
+// (Telegram → sendDocument, CLI → print path, AG-UI HTTP → pass-through). It is
+// namespaced so it never collides with another application's custom events.
+const artifactEventName = "aura.artifact"
+
 // Translate maps Aura's per-token *agent.Event stream onto a valid AG-UI
 // events.Event sequence. It is a PURE function (no I/O, no goroutines): RUN_STARTED
 // first, RUN_FINISHED(success) last, with a chunk-coalescing text-message state
@@ -77,6 +83,22 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 					preview = ev.LLMResponse.Content
 				}
 				if !yield(events.NewToolCallResultEvent(idgen.NewToolResultID(callID), callID, preview), nil) {
+					return
+				}
+				continue
+			}
+
+			// An artifact delta (send_file via the toolResultEvent Meta→ArtifactDelta
+			// lift, Plan 13-02) closes any open run and yields ONE dedicated CUSTOM
+			// AG-UI event carrying the descriptor — channel-agnostic (D-06), each
+			// channel renders or ignores it. Slotted before the generic STATE_DELTA
+			// branch; an artifact Event carries no StateDelta, so the order only
+			// documents precedence. Additive: a nil/empty ArtifactDelta falls through.
+			if len(ev.Actions.ArtifactDelta) > 0 {
+				if !closeRuns() {
+					return
+				}
+				if !yield(events.NewCustomEvent(artifactEventName, events.WithValue(ev.Actions.ArtifactDelta)), nil) {
 					return
 				}
 				continue
