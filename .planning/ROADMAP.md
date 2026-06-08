@@ -450,7 +450,7 @@ Plans:
 - [x] 13-01-PLAN.md — deps legitimacy gate + migration 0012 (telegram_accounts/setup_pending) + telegram.Store + 3 goleak TestMains (completed 2026-06-08)
 - [x] 13-02-PLAN.md — send_file Deferred tool + translator ArtifactDelta→custom-event branch (channel-agnostic, D-05/D-06) (completed 2026-06-08)
 - [x] 13-03-PLAN.md — net-new model capability flags (SupportsVision/SupportsAudio) + MarkdownV2 entity-aware escaper (10K fuzz) + tables→PNG (x/image) (completed 2026-06-08)
-- [ ] 13-04-PLAN.md — Channel interface + fail-soft Registry (AURA_CHANNEL_*_ENABLED) + telegram config + AURA_* env surface
+- [x] 13-04-PLAN.md — Channel interface + fail-soft Registry (AURA_CHANNEL_*_ENABLED) + telegram config + AURA_* env surface (completed 2026-06-08)
 
 **Wave 2** (Telegram channel core — blocked on Wave 1)
 
@@ -516,7 +516,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
 | 12. AG-UI Gateway | 6/6 | Complete    | 2026-06-07 |
-| 13. Channels + Telegram + Multimodal | 0/TBD | Not started | - |
+| 13. Channels + Telegram + Multimodal | 4/9 | In progress | - |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
