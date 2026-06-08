@@ -415,14 +415,57 @@ func TestRendererTableCaptionPlainFallback(t *testing.T) {
 		events.NewTextMessageEndEvent("m"),
 	})
 
-	var plainPhoto bool
-	for _, c := range bot.recorded() {
+	var plainPhoto *sendCall
+	for i := range bot.recorded() {
+		c := bot.recorded()[i]
 		if c.photo != nil && c.parseMode == tele.ModeDefault {
-			plainPhoto = true
+			plainPhoto = &c
 		}
 	}
-	if !plainPhoto {
-		t.Errorf("a table caption that 400s must resend the photo with a plain caption; calls=%+v", bot.recorded())
+	if plainPhoto == nil {
+		t.Fatalf("a table caption that 400s must resend the photo with a plain caption; calls=%+v", bot.recorded())
+	}
+	// The resent caption must be the UNESCAPED plain text, not the MarkdownV2 one
+	// (kills the `photo.Caption = capRunes(PlainTextFallback(...))` reassignment).
+	if strings.Contains(plainPhoto.text, `\`) {
+		t.Errorf("plain-fallback photo caption must be unescaped; got %q", plainPhoto.text)
+	}
+}
+
+// TestRendererConsumeStopsOnCancelledCtx proves the consume loop returns without
+// rendering when the context is already cancelled (kills the `if ctx.Err() != nil
+// { return }` guard in the loop).
+func TestRendererConsumeStopsOnCancelledCtx(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	r := newTestRenderer(bot)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	ch := make(chan events.Event, 2)
+	ch <- events.NewTextMessageContentEvent("m", "x")
+	ch <- events.NewTextMessageContentEvent("m", "y")
+	close(ch)
+	r.consume(ctx, ch)
+
+	if n := len(bot.recorded()); n != 0 {
+		t.Errorf("a pre-cancelled context must stop the consume loop before any send; got %d sends", n)
+	}
+}
+
+// TestRendererPhotoResetsMsg proves a table photo resets msg #2 to nil so a later
+// text flush opens a FRESH message instead of editing the photo (kills the
+// `r.msg = nil` reset in sendTable).
+func TestRendererPhotoResetsMsg(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	r := newTestRenderer(bot)
+	r.msg = &tele.Message{ID: 42} // a prior streamed text msg #2
+
+	r.send("Prosa.\n| a | b |\n|---|---|\n| 1 | 2 |") // a table → sendPhoto
+
+	if r.msg != nil {
+		t.Error("after a table photo, msg must reset to nil so a following text opens a fresh message")
 	}
 }
 
