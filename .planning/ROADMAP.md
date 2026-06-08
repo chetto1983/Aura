@@ -459,7 +459,7 @@ Plans:
 
 **Wave 3** (setup API + multimodal — blocked on Wave 2)
 
-- [ ] 13-07-PLAN.md — setup :9081 token-gated API (token/onboard-link/status/events SSE) + one-time AURA_SETUP_TOKEN + ASCII QR (qr_svg deferred)
+- [x] 13-07-PLAN.md — setup :9081 token-gated API (token/onboard-link/status/events SSE) + one-time AURA_SETUP_TOKEN + ASCII QR (qr_svg deferred) (completed 2026-06-08)
 - [ ] 13-08-PLAN.md — 9c sidecar clients: voice.go (STT OGG-direct) + tts.go (Kokoro opus→sendVoice) + photo.go (single AURA_VISION_CLOUD branch) + documents.go (tiered markitdown)
 
 **Wave 4** (wiring + Gate-3 — blocked on Wave 3)
