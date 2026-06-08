@@ -16,17 +16,23 @@
 //
 // NOTE (Plan 13-03): `golang.org/x/image` is no longer anchored here — its real
 // consumer internal/channels/telegram/tables.go now imports opentype + gomono +
-// gomonobold genuinely, keeping x/image DIRECT at the amendment-#58 pin v0.41.0
-// (verified: `go mod tidy` + `go build ./...` stay green after the anchor's
-// removal). telebot/qrterminal anchors remain until their downstream consumers land.
+// gomonobold genuinely, keeping x/image DIRECT at the amendment-#58 pin v0.41.0.
+//
+// NOTE (Plan 13-07): `github.com/mdp/qrterminal/v3` is no longer anchored here —
+// its real consumer internal/setup/qr.go now imports it genuinely (printQR's
+// terminal ASCII onboarding QR, D-04), keeping qrterminal DIRECT at the
+// amendment-#58 pin v3.2.1 (verified: `go mod tidy` + `go build ./...` stay green
+// after the anchor's removal, mirroring the 13-03 x/image removal).
+//
+// telebot.v4 stays anchored: although the telegram channel files now import it
+// genuinely, the anchor is the amendment-#58 CI pin gate's stable grep target and
+// is left untouched (out of this plan's scope — a pre-existing redundancy, not a
+// regression).
 package channels
 
 import (
 	// telebot.v4 — Telegram bot transport (polling, Send, sendDocument/Photo/Voice),
-	// consumed by internal/channels/telegram/bot.go (Plan 13-05).
+	// consumed by internal/channels/telegram/bot.go (Plan 13-05). Anchor retained as
+	// the amendment-#58 CI pin gate's stable grep target.
 	_ "gopkg.in/telebot.v4"
-
-	// qrterminal/v3 — terminal ASCII QR for the onboarding deep-link
-	// (internal/setup onboarding, Plan 13-07; D-04).
-	_ "github.com/mdp/qrterminal/v3"
 )

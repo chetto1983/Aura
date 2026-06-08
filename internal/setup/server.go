@@ -64,6 +64,9 @@ type Deps struct {
 	Token      string
 	IdentityID string
 	TokenOut   io.Writer // os.Stdout in prod; a buffer in tests (nil → os.Stdout)
+	// QROut is where the onboarding ASCII QR is rendered (os.Stdout in prod; a
+	// discard/buffer in tests to keep output quiet). nil → os.Stdout.
+	QROut io.Writer
 	// PollInterval is the SSE consumed_at poll period (default 2s, D-03). A test
 	// shortens it so the SSE assertion does not wait 2s for a tick.
 	PollInterval time.Duration
@@ -80,6 +83,8 @@ type Server struct {
 	token        *Token
 	identityID   string
 	pollInterval time.Duration
+
+	qrOut io.Writer
 
 	mu            sync.RWMutex
 	botUsername   string
@@ -98,6 +103,10 @@ func NewServer(deps Deps) *Server {
 	if out == nil {
 		out = os.Stdout
 	}
+	qrOut := deps.QROut
+	if qrOut == nil {
+		qrOut = os.Stdout
+	}
 	poll := deps.PollInterval
 	if poll <= 0 {
 		poll = defaultPollInterval
@@ -108,6 +117,7 @@ func NewServer(deps Deps) *Server {
 		token:        NewToken(deps.Token, out),
 		identityID:   deps.IdentityID,
 		pollInterval: poll,
+		qrOut:        qrOut,
 	}
 }
 
