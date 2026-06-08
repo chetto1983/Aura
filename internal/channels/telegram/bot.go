@@ -19,6 +19,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/channels"
+	"github.com/chetto1983/aura/internal/llm"
 )
 
 // channelName keys AURA_CHANNEL_TELEGRAM_ENABLED (the registry enable gate).
@@ -63,6 +64,29 @@ type Deps struct {
 	// Store is the onboarding/account DB seam (plan 13-01). Optional here: the
 	// core render path does not touch it (onboarding is plan 13-07).
 	Store *Store
+
+	// Multimodal carries the 9c sidecar wiring (STT/TTS/vision/documents) the media
+	// handlers (OnVoice/OnPhoto/OnDocument) + the TTS-out path read. A zero value
+	// means a modality is unconfigured — the handler degrades, never panics. Built
+	// by the composition root from config.Config (serve_channels.go).
+	Multimodal MultimodalConfig
+
+	// Command backends drive the bot-intercept dispatch (commands.go). Search ==
+	// conversations.SearchConversationTurns (CLI parity); Cost == the cachemetrics
+	// daily aggregation; Prices/Model render the /cost USD via llm.CostUSD. A nil
+	// backend degrades its command to an "unavailable" reply (never a panic).
+	Search searchBackend
+	Cost   costBackend
+	Prices map[string]llm.Price
+	Model  string
+
+	// Resume / ResumeTurn are the HITL seam (hitl.go). Resume is the Runner's pause
+	// surface (PendingFor/SubmitAnswer — *runner.Runner satisfies it); ResumeTurn
+	// drives a continuation turn after a pause resolves (a closure over
+	// run.Turn(ctx, convID, nil), wired by the composition root). Both nil → HITL is
+	// inert (no button render, no resume) but the channel still serves plain turns.
+	Resume     resumeRunner
+	ResumeTurn resumeFunc
 
 	// StatusThrottle / ContentThrottle bound the two render consumers; ChatRate
 	// bounds the per-chat send queue. Zero → the package defaults (see config).

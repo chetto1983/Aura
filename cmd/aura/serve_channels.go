@@ -26,10 +26,14 @@ import (
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/channels/telegram"
+	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/setup"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // localIdentityName is the seeded `local` identity (migration 0004) the
@@ -55,6 +59,13 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 		Turn:              chat.run.Turn,
 		Token:             tgCfg.BotToken,
 		Store:             telegram.New(chat.pool),
+		Multimodal:        multimodalConfig(chat.cfg),
+		Search:            chat.conv,
+		Cost:              newTodayCost(chat.pool),
+		Prices:            chat.cfg.LLM.Prices,
+		Model:             chat.cfg.LLM.Model,
+		Resume:            chat.run,
+		ResumeTurn:        resumeTurnFunc(chat.run),
 		StatusThrottleMS:  tgCfg.StatusThrottleMS,
 		ContentThrottleMS: tgCfg.ContentThrottleMS,
 		ChatRateLimitMS:   tgCfg.ChatRateLimitMS,
@@ -68,6 +79,73 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 
 	setupSrv := buildSetupServer(ctx, chat)
 	return reg, setupSrv
+}
+
+// multimodalConfig projects the central config.Config multimodal knobs onto the
+// telegram-package MultimodalConfig the media handlers read. The cloud-vision leg
+// (AURA_VISION_CLOUD=true) reuses the LLM client's OpenRouter base + key (the same
+// credential the agent loop uses); the local-vision/STT/TTS/documents legs read
+// the upstream-named sidecar URLs. This is the serve-side mapper the patterns map
+// called for — it lives here (cmd/aura imports both packages) so the telegram
+// package stays free of an internal/config import (the sidecar.go contract).
+func multimodalConfig(cfg *config.Config) telegram.MultimodalConfig {
+	return telegram.MultimodalConfig{
+		VisionCloud:       cfg.VisionCloud,
+		Model:             cfg.LLM.Model,
+		MultimodalBaseURL: cfg.MultimodalBaseURL,
+		MultimodalModel:   cfg.MultimodalModel,
+		FallbackModel:     cfg.MultimodalFallbackModel,
+		OpenRouterBaseURL: cfg.LLM.BaseURL,
+		OpenRouterAPIKey:  cfg.LLM.APIKey,
+		STTBaseURL:        cfg.STTBaseURL,
+		STTModel:          cfg.STTModel,
+		TTSBaseURL:        cfg.TTSBaseURL,
+		TTSVoice:          cfg.TTSVoice,
+		TTSFormat:         cfg.TTSFormat,
+		DocumentsBaseURL:  cfg.DocumentsBaseURL,
+	}
+}
+
+// todayCost satisfies telegram's costBackend over the cachemetrics daily
+// aggregation. It sums the cache_metrics rows since local midnight and reports the
+// provider-reported total cost as the authoritative figure (the OpenRouter
+// usage.cost the runner already persisted), so /cost renders the SAME USD the CLI
+// footer shows for the same window. completionTokens is not tracked separately in
+// cache_metrics; the provider cost (not a token-rate recompute) is the source of
+// truth, so it is returned non-nil and llm.CostUSD uses the provider-first path.
+type todayCost struct {
+	metrics *cachemetrics.Store
+}
+
+func newTodayCost(pool *pgxpool.Pool) *todayCost {
+	return &todayCost{metrics: cachemetrics.New(pool)}
+}
+
+func (c *todayCost) TodayUsage(ctx context.Context) (promptTokens, completionTokens int, providerCost *float64, err error) {
+	now := time.Now()
+	midnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	agg, err := c.metrics.AggregateSince(ctx, midnight)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	cost := agg.TotalCostUSD
+	return int(agg.TotalPromptTokens), 0, &cost, nil
+}
+
+// resumeTurnFunc returns the HITL continuation driver: after a pause resolves it
+// drives a fresh runner turn (run.Turn(ctx, convID, nil)) and drains it to
+// completion. The composition-root default advances the runner; the bot dispatch
+// (plan 13-10 Task 2) renders the resumed turn through the channel's per-turn
+// fanout where it has the bot + chat id.
+func resumeTurnFunc(run *runner.Runner) func(ctx context.Context, convID string) {
+	return func(ctx context.Context, convID string) {
+		for _, err := range run.Turn(ctx, convID, nil) {
+			if err != nil {
+				slog.Warn("aura serve: telegram resume turn", "conv", convID, "err", err)
+				return
+			}
+		}
+	}
 }
 
 // buildSetupServer constructs the loopback setup-wizard HTTP server (:9081). The

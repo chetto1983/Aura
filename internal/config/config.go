@@ -137,6 +137,7 @@ type Config struct {
 	TTSBaseURL              string // TTS_BASE_URL — aura-tts OpenAI-compat base
 	TTSVoice                string // TTS_VOICE — Kokoro voice id (default if_sara)
 	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
+	DocumentsBaseURL        string // DOCUMENTS_BASE_URL — markitdown /convert base (UX-04 documents leg)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -275,6 +276,7 @@ func loadBase() *Config {
 		TTSBaseURL:              os.Getenv("TTS_BASE_URL"),
 		TTSVoice:                envDefault("TTS_VOICE", "if_sara"),
 		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
+		DocumentsBaseURL:        os.Getenv("DOCUMENTS_BASE_URL"),
 	}
 }
 
