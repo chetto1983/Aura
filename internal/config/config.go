@@ -107,6 +107,36 @@ type Config struct {
 	AGUIBind           string // AURA_AGUI_BIND — loopback-only HTTP bind (Pitfall 6)
 	AGUICORSPermissive bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
 	AGUIBufferCap      int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
+
+	// Phase 13 (Slice 9) channels + setup-wizard + multimodal knobs. Aura-native
+	// knobs use the AURA_<DOMAIN>_<UNIT> convention; third-party sidecars keep
+	// upstream naming (MULTIMODAL_*/STT_*/TTS_*) per the CLAUDE.md exception. All
+	// non-fatal silent-fallback loads — a typo falls back, never boots fatal.
+	//
+	// SetupBind is a loopback default on a port DISTINCT from the AG-UI :9080
+	// (T-13-04-SetupExposure: the loopback bind IS the compensating control; the
+	// override exists only for a deliberate remote-QR scan, token gate is plan
+	// 13-07). SetupToken empty default → a random UUIDv4 is generated and printed
+	// to stdout on first boot (plan 13-07), never read from disk here.
+	SetupBind  string // AURA_SETUP_BIND — loopback setup-wizard HTTP bind, distinct from :9080
+	SetupToken string // AURA_SETUP_TOKEN — setup-API gate; empty → generated at boot (13-07)
+
+	// VisionCloud routes image understanding: false (default) → local aura-ocr-vl
+	// sidecar; true → OpenRouter/minimax-m3 cloud (no GPU). One env branch, zero
+	// code dup (#60 / Pitfall 6).
+	VisionCloud bool // AURA_VISION_CLOUD — false=local GLM-OCR sidecar, true=cloud vision
+
+	// Multimodal sidecar URLs/models (upstream naming, CLAUDE.md third-party
+	// exception). MultimodalFallbackModel is the cloud vision model used when
+	// VisionCloud is true and the primary model lacks SupportsVision.
+	MultimodalBaseURL       string // MULTIMODAL_BASE_URL — aura-ocr-vl OpenAI-compat base
+	MultimodalModel         string // MULTIMODAL_MODEL — local vision model id
+	MultimodalFallbackModel string // MULTIMODAL_FALLBACK_MODEL — cloud vision fallback (default minimax/minimax-m3)
+	STTBaseURL              string // STT_BASE_URL — aura-stt OpenAI-compat base
+	STTModel                string // STT_MODEL — speech-to-text model id
+	TTSBaseURL              string // TTS_BASE_URL — aura-tts OpenAI-compat base
+	TTSVoice                string // TTS_VOICE — Kokoro voice id (default if_sara)
+	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -230,6 +260,21 @@ func loadBase() *Config {
 		AGUIBind:           envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
 		AGUICORSPermissive: envBoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
 		AGUIBufferCap:      envIntDefault("AURA_AGUI_BUFFER_CAP", 64),
+
+		// Phase 13 channels + setup + multimodal. Setup bind defaults to :9081 —
+		// a loopback port DISTINCT from the AG-UI :9080 (separate-port requirement).
+		SetupBind:   envDefault("AURA_SETUP_BIND", "127.0.0.1:9081"),
+		SetupToken:  os.Getenv("AURA_SETUP_TOKEN"),
+		VisionCloud: envBoolDefault("AURA_VISION_CLOUD", false),
+
+		MultimodalBaseURL:       os.Getenv("MULTIMODAL_BASE_URL"),
+		MultimodalModel:         os.Getenv("MULTIMODAL_MODEL"),
+		MultimodalFallbackModel: envDefault("MULTIMODAL_FALLBACK_MODEL", "minimax/minimax-m3"),
+		STTBaseURL:              os.Getenv("STT_BASE_URL"),
+		STTModel:                os.Getenv("STT_MODEL"),
+		TTSBaseURL:              os.Getenv("TTS_BASE_URL"),
+		TTSVoice:                envDefault("TTS_VOICE", "if_sara"),
+		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
 	}
 }
 
