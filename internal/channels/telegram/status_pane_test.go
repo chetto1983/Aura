@@ -135,26 +135,35 @@ func TestStatusPaneMicrocompactPointerIsOK(t *testing.T) {
 	}
 }
 
-// TestStatusPaneReasoningClearedOnFinish proves the 💭 reasoning is auto-deleted
-// once the turn finishes (the final answer has arrived), leaving only the durable
-// tool list + cost footer — not a stale wall of thinking.
-func TestStatusPaneReasoningClearedOnFinish(t *testing.T) {
+// TestStatusPaneReasoningSurvivesFinishWithLatestSnippet proves the reasoning line
+// remains useful after the final answer lands: compact, recent, and with the cost
+// footer still intact.
+func TestStatusPaneReasoningSurvivesFinishWithLatestSnippet(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
+	oldMarker := "VERY-OLD-MARKER"
+	latest := "latest useful detail"
 	drivePane(bot, []events.Event{
 		events.NewRunStartedEvent("t", "r"),
-		events.NewReasoningMessageContentEvent("rsn1", "Sto ragionando sul meteo…"),
+		events.NewReasoningMessageContentEvent("rsn1", oldMarker+" "+strings.Repeat("stale context ", 30)),
+		events.NewReasoningMessageContentEvent("rsn1", latest),
 		events.NewStateDeltaEvent([]events.JSONPatchOperation{
 			{Op: "replace", Path: "/cost_usd", Value: "0.0012"},
 		}),
 		events.NewRunFinishedEvent("t", "r"),
 	})
 	got := lastText(bot)
-	if containsRune(got, '💭') {
-		t.Errorf("reasoning 💭 must be gone after RUN_FINISHED, got: %q", got)
+	if !containsRune(got, '💭') {
+		t.Errorf("reasoning line must survive RUN_FINISHED, got: %q", got)
+	}
+	if !strings.Contains(got, latest) {
+		t.Errorf("reasoning line must keep the latest useful detail, got: %q", got)
+	}
+	if strings.Contains(got, oldMarker) {
+		t.Errorf("reasoning line must prefer recent context over old opening text, got: %q", got)
 	}
 	if !strings.Contains(got, "0.0012") {
-		t.Errorf("cost footer must survive the reasoning clear, got: %q", got)
+		t.Errorf("cost footer must survive RUN_FINISHED, got: %q", got)
 	}
 }
 
@@ -202,6 +211,28 @@ func TestStatusPaneThrottleCoalesces(t *testing.T) {
 		close(ch)
 		<-done
 	})
+}
+
+// TestStatusPaneSuppressesAskUser proves the ask_user HITL pause primitive is NOT
+// shown as a pane tool row. A clean pause never reaches the pane (the translator
+// emits RUN_FINISHED-interrupt, no TOOL_CALL events); a MALFORMED ask_user that falls
+// through to tool dispatch as an error must not flash "❌ ask_user" while the model
+// self-corrects — its UI is the inline keyboard (hitl.go), not a pane row.
+func TestStatusPaneSuppressesAskUser(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePane(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewToolCallStartEvent("c1", "ask_user"),
+		events.NewToolCallResultEvent("m", "c1", `error: ask_user: kind "" must be one of clarification|approval|choice`),
+	})
+	got := lastText(bot)
+	if strings.Contains(got, "ask_user") {
+		t.Errorf("ask_user (a HITL control primitive) must not appear in the status pane, got %q", got)
+	}
+	if containsRune(got, '❌') {
+		t.Errorf("a suppressed ask_user must not render a ❌ tool row, got %q", got)
+	}
 }
 
 func containsRune(s string, r rune) bool {

@@ -96,6 +96,15 @@ func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, 
 	<-paneDone
 	<-artDone
 
+	// HITL pause render: a turn that called ask_user suspended the loop with NO final
+	// answer (the translator emitted RUN_FINISHED-interrupt, not success), leaving a
+	// pending paused_states row. Render it as an inline keyboard / ForceReply so the
+	// user can answer — this is the render half of HITL, the counterpart to the
+	// onCallback/onReply resolve half. PendingFor is the ground truth: a turn that
+	// finished normally leaves none, so this no-ops on the common path; a continuation
+	// turn that pauses again re-enters here and renders the next pause the same way.
+	t.promptPendingPause(ctx, bot, chatID)
+
 	// TTS-out (after the text render, never blocking it): synthesize the final answer
 	// to a voice note when ShouldSpeak. Skipped on a cancelled ctx (a /cancel mid-turn
 	// must not still produce a voice note) or when TTS is unconfigured.

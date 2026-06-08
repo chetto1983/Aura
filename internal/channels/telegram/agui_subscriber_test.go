@@ -10,6 +10,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/askuser"
 )
 
 // artifactAgentEvent builds an *agent.Event carrying an Actions.ArtifactDelta
@@ -229,5 +230,41 @@ func TestHandleTurnTTSSkippedOnCancelledCtx(t *testing.T) {
 
 	if got := len(bot.sentVoices()); got != 0 {
 		t.Errorf("a cancelled turn must NOT speak, got %d voice notes", got)
+	}
+}
+
+// TestHandleTurnRendersPendingPauseAsKeyboard proves the RENDER half of HITL is wired:
+// a turn that called ask_user (an AwaitingInput Event → the translator's
+// RUN_FINISHED-interrupt) leaves a pending pause, and handleTurn renders it as an
+// inline keyboard via hitl.prompt. This is the fix for the bug where the pause
+// persisted but no buttons ever appeared. Drain consumers isolate the render so the
+// only bot Send is the keyboard.
+func TestHandleTurnRendersPendingPauseAsKeyboard(t *testing.T) {
+	t.Parallel()
+	pause := &agent.Event{Actions: agent.Actions{AwaitingInput: &agent.AwaitingInput{
+		Question: "Confermi l'eliminazione?", Kind: "approval", ToolCallID: "tc-1",
+	}}}
+	rs := &fakeResume{pending: []askuser.Pending{{
+		Token: "tok-1", Kind: "approval", Question: "Confermi l'eliminazione?", ToolCallID: "tc-1",
+	}}}
+	bot := &hitlBot{}
+	tg := NewChannel(Deps{
+		Turn:            syntheticTurn([]*agent.Event{pause}),
+		Resume:          rs,
+		Offline:         true,
+		consumerFactory: recordingFactory(),
+	})
+
+	userMsg := "elimina tutti i miei dati"
+	tg.handleTurn(context.Background(), bot, 42, &userMsg, false)
+
+	var keyboards int
+	for _, s := range bot.recorded() {
+		if s.markup != nil && len(s.markup.InlineKeyboard) > 0 {
+			keyboards++
+		}
+	}
+	if keyboards != 1 {
+		t.Fatalf("a paused turn must render exactly 1 inline keyboard (hitl.prompt), got %d of %d sends", keyboards, len(bot.recorded()))
 	}
 }

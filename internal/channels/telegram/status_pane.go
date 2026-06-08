@@ -21,7 +21,18 @@ const (
 	glyphOK      = "✅"
 	glyphFail    = "❌"
 	glyphThink   = "💭"
+
+	statusReasoningCap = 160
 )
+
+// hitlPauseToolName is the ask_user pause primitive's tool name. ask_user is a HITL
+// control rendered as an inline keyboard / ForceReply (hitl.go), NOT a work tool, so
+// the status pane suppresses it from the tool list. A CLEAN pause never reaches the
+// pane anyway (the translator emits RUN_FINISHED-interrupt, no TOOL_CALL events); the
+// only way ask_user surfaces here is a MALFORMED call (validation-failed → dispatched
+// as a RoleTool error), and that must not flash a confusing "❌ ask_user" while the
+// model self-corrects on the next round. Mirrors tools.AskUser{}.Spec().Name.
+const hitlPauseToolName = "ask_user"
 
 // toolState tracks one tool call's lifecycle in the pane (ordered by first-seen).
 type toolState struct {
@@ -43,6 +54,7 @@ type statusPane struct {
 	msg      *tele.Message
 	tools    []*toolState
 	byID     map[string]*toolState
+	hidden   map[string]struct{} // tool_call ids suppressed from the pane (HITL ask_user)
 	thinking string
 	cost     string
 	failed   bool
@@ -61,6 +73,7 @@ func newStatusPane(bot botSender, to tele.Recipient, throttle time.Duration) *st
 		now:      time.Now,
 		sleep:    time.Sleep,
 		byID:     make(map[string]*toolState),
+		hidden:   make(map[string]struct{}),
 	}
 }
 
@@ -102,16 +115,20 @@ func (p *statusPane) handle(ev events.Event) {
 		p.failed = true
 		p.dirty = true
 	case *events.RunFinishedEvent:
-		// The 💭 reasoning is transient live-progress: once the turn finishes (the
-		// final answer is in msg #2) drop it so the pane settles to just the durable
-		// tool list + cost footer, not a stale wall of thinking.
-		p.thinking = ""
+		// Keep the compact final 💭 line: Telegram users read it as the run's last
+		// visible status, while msg #2 carries the actual answer.
 		p.dirty = true
 	}
 }
 
-// startTool registers a tool call as in-flight (🟡), ordered by first-seen.
+// startTool registers a tool call as in-flight (🟡), ordered by first-seen. The
+// ask_user HITL pause primitive is suppressed (its UI is the inline keyboard, not a
+// pane row) — its id is remembered so the matching result is dropped too.
 func (p *statusPane) startTool(id, name string) {
+	if name == hitlPauseToolName {
+		p.hidden[id] = struct{}{}
+		return
+	}
 	if _, ok := p.byID[id]; ok {
 		return
 	}
@@ -124,6 +141,9 @@ func (p *statusPane) startTool(id, name string) {
 // finishTool resolves a tool's spinner to ✅ or ❌ based on the result preview. A
 // result whose preview carries an error marker resolves to ❌.
 func (p *statusPane) finishTool(id, preview string) {
+	if _, suppressed := p.hidden[id]; suppressed {
+		return // ask_user pause primitive — never a pane row (start suppressed it)
+	}
 	ts, ok := p.byID[id]
 	if !ok {
 		// A RESULT without a START (preview-only) still appears as a resolved row.
@@ -203,8 +223,8 @@ func (p *statusPane) text() string {
 		b.WriteString("\n")
 		b.WriteString(ts.glyph + " " + ts.name)
 	}
-	if reasoning := collapseWhitespace(p.thinking); reasoning != "" {
-		b.WriteString("\n" + glyphThink + " " + capRunes(reasoning, 160))
+	if reasoning := statusReasoningSnippet(p.thinking); reasoning != "" {
+		b.WriteString("\n" + glyphThink + " " + reasoning)
 	}
 	if p.cost != "" {
 		b.WriteString("\n— " + p.cost)
@@ -224,4 +244,26 @@ func looksLikeToolError(preview string) bool {
 // reasoning delta renders as one compact 💭 line.
 func collapseWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+// statusReasoningSnippet renders the most recent part of a streamed reasoning
+// buffer. Long streams usually become more useful near the end, after tool choice
+// and synthesis have narrowed the answer.
+func statusReasoningSnippet(s string) string {
+	return capRunesTail(collapseWhitespace(s), statusReasoningCap)
+}
+
+// capRunesTail truncates s to at most n runes, preserving the newest content.
+func capRunesTail(s string, n int) string {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return s
+	}
+	if n <= 0 {
+		return ""
+	}
+	if n <= 3 {
+		return string(runes[len(runes)-n:])
+	}
+	return "..." + string(runes[len(runes)-(n-3):])
 }

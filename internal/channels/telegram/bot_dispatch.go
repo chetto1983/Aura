@@ -190,7 +190,13 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := cb.Message.Chat.ID
-		t.hitlFor(c, chatID).handleCallback(daemonCtx, cb.Data, convID(chatID))
+		if !t.hitlFor(c, chatID).handleCallback(daemonCtx, cb.Data, convID(chatID)) {
+			// Not resumed → either more FIFO pauses remain (render the next one) or it
+			// was a cancel/no-op (PendingFor is empty after the cancel auto-resolve, so
+			// the render no-ops). A resume (resumed==true) drove a continuation turn
+			// whose handleTurn already rendered any further pause — don't double-render.
+			t.promptPendingPause(daemonCtx, t.sender(c), chatID)
+		}
 		// Acknowledge the callback so the client clears the button's spinner.
 		_ = c.Respond()
 		return nil
@@ -332,8 +338,26 @@ func (t *Telegram) hitlHandlesText(daemonCtx context.Context, c tele.Context, ch
 	if err != nil || len(pending) == 0 {
 		return false
 	}
-	t.hitlFor(c, chatID).handleTextReply(daemonCtx, convID(chatID), text)
+	if !t.hitlFor(c, chatID).handleTextReply(daemonCtx, convID(chatID), text) {
+		// The answer left a further FIFO pause unresolved (remaining>0) — render it so
+		// the user is prompted for the next one rather than left silently waiting.
+		t.promptPendingPause(daemonCtx, t.sender(c), chatID)
+	}
 	return true
+}
+
+// promptPendingPause renders the FIRST unresolved pause for the chat (if any) as an
+// inline keyboard / ForceReply — the channel-side RENDER half of HITL, counterpart to
+// the resolve half (onCallback/onReply). handleTurn calls it after a turn drains so a
+// pause that suspended the loop is shown to the user; the callback/reply legs call it
+// to surface the NEXT FIFO pause when one answer still leaves others pending. A nil
+// Resume seam or a cancelled ctx makes it inert; with no pending pause hitl.prompt is
+// a no-op (the common, non-paused turn), so it is cheap to call unconditionally.
+func (t *Telegram) promptPendingPause(ctx context.Context, bot botSender, chatID int64) {
+	if t.deps.Resume == nil || ctx.Err() != nil {
+		return
+	}
+	newHitl(t.deps.Resume, nil).prompt(ctx, bot, chatID, convID(chatID))
 }
 
 // hitlFor builds a HITL surface whose resume renders the continuation turn through
