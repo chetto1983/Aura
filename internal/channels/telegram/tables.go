@@ -134,12 +134,12 @@ func RenderTablePNG(grid [][]string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer bodyFace.Close()
+	defer func() { _ = bodyFace.Close() }()
 	headFace, err := newFace(gomonobold.TTF)
 	if err != nil {
 		return nil, err
 	}
-	defer headFace.Close()
+	defer func() { _ = headFace.Close() }()
 
 	cols := len(grid[0])
 	rows := len(grid)

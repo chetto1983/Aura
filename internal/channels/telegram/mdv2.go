@@ -78,11 +78,11 @@ func EscapeMarkdownV2(s string) string {
 				b.WriteRune(c)
 			}
 		case inInline:
-			switch {
-			case c == '`':
+			switch c {
+			case '`':
 				b.WriteByte('`')
 				m = outside
-			case c == '\\':
+			case '\\':
 				b.WriteString("\\\\")
 			default:
 				b.WriteRune(c)

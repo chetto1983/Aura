@@ -123,13 +123,13 @@ func validateMarkdownV2(s string) bool {
 				return false
 			}
 		case inPre:
-			switch {
-			case c == '\\':
+			switch c {
+			case '\\':
 				if i+1 >= len(runes) {
 					return false
 				}
 				i++
-			case c == '`':
+			case '`':
 				if i+2 < len(runes) && runes[i+1] == '`' && runes[i+2] == '`' {
 					m = outside
 					i += 2
@@ -139,13 +139,13 @@ func validateMarkdownV2(s string) bool {
 				}
 			}
 		case inInline:
-			switch {
-			case c == '\\':
+			switch c {
+			case '\\':
 				if i+1 >= len(runes) {
 					return false
 				}
 				i++
-			case c == '`':
+			case '`':
 				m = outside
 			}
 		}
