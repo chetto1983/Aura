@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: 13-09-PLAN.md Tasks 1-2 done — PAUSED at Task-3 Gate-3 human-verify checkpoint (orchestrator-owned)
-last_updated: "2026-06-08T10:40:00.000Z"
-last_activity: 2026-06-08 -- Phase 13 Plan 09 Tasks 1-2 done, PAUSED at the Task-3 Gate-3 checkpoint (UX-02/03/04 NOT yet complete — awaiting the live matrix + operator sign-off). Task 1 (commit 9c3631bf, feat): serveEnv gains channels *channels.Registry + setupSrv *http.Server; bootServe builds the Telegram channel over the shared composition root [chat.run.Turn + chat.pool + telegram.LoadConfig() TELEGRAM_BOT_TOKEN + AURA_TELEGRAM_* throttles — the plan's chat.cfg.TelegramBotToken does NOT exist as a field], registers it in channels.NewRegistry(), builds the loopback setup :9081 server with a telebot getMe BotProbe closure + setupStoreAdapter [Rule-3 bridge: setup.InsertPendingParams→telegram.InsertPendingParams cross-package projection] + resolveLocalIdentityID [seeded local id FK, fail-soft]. runServe StartAll the registry + runs setup fail-soft [mirrors the AG-UI ListenAndServe goroutine], StopAll + Shutdown BEFORE env.close(). --no-telegram/--only=cli override the enable gate via serveTelegramOverride. serve_channels.go split out [refactor-on-touch, serve.go 287 LOC]. serve_test.go proves StartAll/StopAll + fail-soft + ordering + flag override with a fake channel, goleak-clean. Task 2 (commit e2fe7eb8, test): integration_test.go [//go:build telegram_integration] live sendPhoto/Document/Voice asserting on the Bot-API RESPONSE [msg.Photo/Document.{FileName,MIME,FileSize}/Voice non-nil], grep -c getUpdates=0 [ground truth = Send reply, spike 017/019]; multimodal_integration_test.go [//go:build multimodal_integration] the TTS→STT audio loop + OCR vision round-trip; BOTH tiers t.Fatal under $CI when env set [no-skip-as-green]. compose.yaml += aura-stt/aura-tts/aura-ocr-vl/markitdown [config-only, separate hunk from the parallel Codex aura-llama-embed -ub change left unstaged]. ci.yml += sidecar-gated multimodal_integration job + operator-token-gated telegram_integration job [compile floor always runs, live send gated on the secret]. Verified THIS plan: build+vet+both-tier-vet+cmd/aura tests+race+golangci-lint 0 [default & integration tags]. PENDING (Task 3, orchestrator-owned): full tag matrix live + make coverage ≥85% + go-mutesting ≥70% on mdv2/renderer + docs/aura-quality-snapshot.md rows + operator sign-off on the 5 live behaviours.
+stopped_at: "13-10-PLAN.md Tasks 1-3 done — PAUSED at Task-4 checkpoint:human-verify (gate=blocking, LIVE operator inbound sign-off, orchestrator-owned)"
+last_updated: "2026-06-08T13:30:00.000Z"
+last_activity: 2026-06-08 -- Phase 13 Plan 10 (inbound dispatch wiring) Tasks 1-3 committed (e5576212/b4cfa1a2/8e99e2b3), PAUSED at the Task-4 live human-verify checkpoint. Task 1 (e5576212, feat): telegram.Deps gains Multimodal MultimodalConfig + command backends (Search==conversations.SearchConversationTurns, Cost==cachemetrics daily aggregation reporting provider USD, Prices/Model) + the HITL seam (Resume==*runner.Runner, ResumeTurn); internal/config += DOCUMENTS_BASE_URL; serve_channels.go multimodalConfig mapper (+ LLM OpenRouter base/key for cloud vision) + newTodayCost + resumeTurnFunc. Task 2 (b4cfa1a2, feat): bot_dispatch.go (split from bot.go, both ≤600 LOC) registers OnText (command-intercept-before-LLM + pending-pause→HITL + turn) / OnVoice (Transcribe→turn, hard-fail 😵+IT copy) / OnPhoto (Describe→turn) / OnDocument (Convert sync/async/refuse) / the callbackUnique HITL button + OnCallback fallback / OnReply; handleTurn takes userMsg *string (nil=resume render); /cancel registry brackets each turn; Stop drains the documents async wg. Task 3 (8e99e2b3, feat): handleTurn Subscribe×3 (status+content+artifact, artifact CUSTOM→sendDocument) + post-render TTS-out gated on ShouldSpeak (inboundWasVoice/voice-mode), ctx-cancel-aware, goleak-clean; renderer.finalText() feeds the synthesis. Verified THIS plan: build+vet+go test -race ./internal/channels/telegram/ ./internal/agui/ ./internal/config/ ./cmd/aura/ green, golangci-lint 0, grep tele.OnVoice|OnPhoto|OnDocument|OnCallback matches, bot.go 282 / bot_dispatch.go 332 ≤600 LOC. PENDING (Task 4, orchestrator-owned, gate=blocking): LIVE operator sends /cost /search /cancel + voice + photo + document + ask_user button-tap to the real bot; on sign-off the continuation writes 13-10-SUMMARY.md + re-stamps docs/aura-quality-snapshot.md + ROADMAP success criteria as live-confirmed.
 progress:
   total_phases: 20
   completed_phases: 15
-  total_plans: 104
-  completed_plans: 102
-  percent: 76
+  total_plans: 105
+  completed_plans: 103
+  percent: 75
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 13 COMPLETE (Gate-3 closed, E2E 11/11) → next Phase 14 (Onboarding + Agent.md)
+**Current focus:** Phase 13 — channels-telegram-multimodal
 
 ## Current Position
 
-Phase: 13 (channels-telegram-multimodal) — COMPLETE (Gate-3 closed 2026-06-08)
-Plan: 9 of 9 — all plans complete; 13-09 Gate-3 closed
-Status: Phase 13 COMPLETE. Gate-3: coverage 86.8% (≥85%), mutation mdv2 81.8% + renderer 74.1% (≥70%, 3 autopsy passes), lint=0, live autonomous E2E 11/11=100% (scripts/telegram_e2e.sh: telegram 3 + multimodal 3 live sidecars + setup-wizard :9081 5/5). Live run fixed the STT compose defect (→ hwdsl2 spike-027); markitdown image deferred. UX-02/03/04 satisfied. Next: Phase 14 (Onboarding + Agent.md).
-Last activity: 2026-06-08 -- 13-09 Tasks 1-2 done (mount + live tiers + compose sidecars + CI wiring). Task 1 (9c3631bf, feat): channels Registry + setup :9081 server mounted fail-soft in bootServe/runServe [StopAll/Shutdown before env.close()], --no-telegram/--only=cli override, serve_channels.go split, fake-channel lifecycle test goleak-clean. Task 2 (e2fe7eb8, test): telegram_integration tier [response-asserted msg.Photo/Document/Voice, grep -c getUpdates=0] + multimodal_integration tier [TTS→STT loop + OCR], both t.Fatal-under-$CI; compose += 4 sidecars [separate hunk from the Codex -ub change, unstaged]; ci.yml += 2 gated jobs. build+vet+both-tier-vet+race+lint 0 green. PENDING Task 3 (orchestrator): full tag matrix live + make coverage ≥85% + mutation ≥70% mdv2/renderer + snapshot rows + operator sign-off.
+Phase: 13 (channels-telegram-multimodal) — EXECUTING
+Plan: 10 of 10 — Tasks 1-3 done, PAUSED at the Task-4 live human-verify checkpoint
+Status: 13-10 inbound dispatch wired (commands/voice/photo/document/HITL/artifact/TTS all reachable); awaiting the LIVE operator inbound sign-off (Task 4, gate=blocking)
+Last activity: 2026-06-08 -- Phase 13 Plan 10 Tasks 1-3 committed; paused at Task-4 checkpoint
 
 Progress: [████████░░] 80% (16/20 phases)
 
