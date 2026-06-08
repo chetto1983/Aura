@@ -105,7 +105,9 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		if t.hitlHandlesText(daemonCtx, c, chatID, text) {
 			return nil
 		}
-		// 3) Ordinary message → a normal turn.
+		// 3) Ordinary message → a normal turn (with the "Aura is working" indicator).
+		stop := keepWorking(daemonCtx, c, tele.Typing)
+		defer stop()
 		t.runTurn(daemonCtx, c, chatID, text, false)
 		return nil
 	}
@@ -167,6 +169,8 @@ func (t *Telegram) onVoice(daemonCtx context.Context) tele.HandlerFunc {
 		if !ok {
 			return nil
 		}
+		stop := keepWorking(daemonCtx, c, tele.Typing) // STT + turn can take seconds
+		defer stop()
 		transcript, err := t.voice.Transcribe(daemonCtx, filer, tele.ChatID(chatID), msg.Voice)
 		if err != nil {
 			slog.Warn("telegram: voice transcription failed", "chat", chatID, "err", err)
@@ -194,6 +198,8 @@ func (t *Telegram) onPhoto(daemonCtx context.Context) tele.HandlerFunc {
 		if !ok {
 			return nil
 		}
+		stop := keepWorking(daemonCtx, c, tele.Typing) // OCR + turn can take seconds
+		defer stop()
 		image, err := downloadFile(filer, &msg.Photo.File)
 		if err != nil {
 			slog.Warn("telegram: photo download failed", "chat", chatID, "err", err)
@@ -225,6 +231,8 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 		if !ok {
 			return nil
 		}
+		stop := keepWorking(daemonCtx, c, tele.Typing) // download + convert + turn
+		defer stop()
 		payload, err := downloadFile(filer, &msg.Document.File)
 		if err != nil {
 			slog.Warn("telegram: document download failed", "chat", chatID, "err", err)

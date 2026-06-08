@@ -32,6 +32,7 @@ type dispatchBot struct {
 	sends     []string
 	reactions []string
 	responds  int
+	notifies  int
 }
 
 func (b *dispatchBot) Send(_ tele.Recipient, what any, _ ...any) (*tele.Message, error) {
@@ -63,6 +64,15 @@ func (b *dispatchBot) React(_ tele.Recipient, _ tele.Editable, r tele.Reactions)
 func (b *dispatchBot) Respond(_ *tele.Callback, _ ...*tele.CallbackResponse) error {
 	b.mu.Lock()
 	b.responds++
+	b.mu.Unlock()
+	return nil
+}
+
+// Notify records the "Aura is working" chat action (keepWorking). Overriding it
+// keeps the embedded nil tele.API from panicking when a handler shows the indicator.
+func (b *dispatchBot) Notify(_ tele.Recipient, _ tele.ChatAction, _ ...int) error {
+	b.mu.Lock()
+	b.notifies++
 	b.mu.Unlock()
 	return nil
 }
