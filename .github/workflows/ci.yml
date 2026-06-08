@@ -319,6 +319,7 @@ jobs:
       AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
       AURA_EMBED_DIMENSIONS: "768"
+      COMPOSE_FILE: compose.yaml:compose.ci.embed.yaml
       # recall@5 = 5/5 is the hard, hardware-independent correctness gate. p95 is
       # latency-sensitive: a shared runner with a cold HNSW index cannot meet the
       # operator's 30ms SC#5 budget (measured 57ms cold vs 1-8ms warm), so it is
@@ -339,6 +340,29 @@ jobs:
         run: |
           pipx install mcp-neo4j-cypher==0.6.0
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Write CI-only 768d embed sidecar override
+        run: |
+          cat > compose.ci.embed.yaml <<'YAML'
+          services:
+            aura-llama-embed:
+              command:
+                - --hf-repo
+                - ggml-org/embeddinggemma-300M-GGUF
+                - --hf-file
+                - embeddinggemma-300M-Q8_0.gguf
+                - --embeddings
+                - --embd-normalize
+                - "2"
+                - --host
+                - 0.0.0.0
+                - --port
+                - "8081"
+                - -t
+                - "4"
+                - -ub
+                - "2048"
+          YAML
 
       - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
         run: make neo4j-migrate
