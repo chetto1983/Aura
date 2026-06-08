@@ -9,11 +9,17 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 )
 
-// artifactEventName is the stable AG-UI CUSTOM-event name the artifact branch
+// ArtifactEventName is the stable AG-UI CUSTOM-event name the artifact branch
 // emits (D-06). A channel consumer keys on this name to render a delivered file
 // (Telegram → sendDocument, CLI → print path, AG-UI HTTP → pass-through). It is
 // namespaced so it never collides with another application's custom events.
-const artifactEventName = "aura.artifact"
+// Exported so the channel consumers (e.g. telegram artifact.go, plan 13-06) key
+// on the SAME canonical name rather than a duplicated magic string.
+const ArtifactEventName = "aura.artifact"
+
+// artifactEventName is the package-internal alias kept so the existing translator
+// body + its golden tests read unchanged after exporting the canonical name.
+const artifactEventName = ArtifactEventName
 
 // Translate maps Aura's per-token *agent.Event stream onto a valid AG-UI
 // events.Event sequence. It is a PURE function (no I/O, no goroutines): RUN_STARTED
