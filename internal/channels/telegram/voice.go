@@ -146,6 +146,13 @@ func (v *voiceClient) postTranscription(ctx context.Context, ogg []byte) (string
 			return "", err
 		}
 	}
+	// Pin the transcription language: whisper auto-detect mis-reads short voice
+	// notes (spike-027 probe used language=it; a 2.8s IT clip auto-detected as 'ja').
+	if v.cfg.STTLanguage != "" {
+		if err = mw.WriteField("language", v.cfg.STTLanguage); err != nil {
+			return "", err
+		}
+	}
 	if err = mw.Close(); err != nil {
 		return "", err
 	}

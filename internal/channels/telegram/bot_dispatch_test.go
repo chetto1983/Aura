@@ -218,7 +218,7 @@ func TestOnVoiceRoutesToTranscribe(t *testing.T) {
 
 	rt := &recordingTurn{}
 	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Multimodal = MultimodalConfig{STTBaseURL: srv.URL, STTModel: "large-v3-turbo"}
+		d.Multimodal = MultimodalConfig{STTBaseURL: srv.URL, STTModel: "large-v3-turbo", STTLanguage: "it"}
 	})
 
 	bot := &dispatchBot{ogg: ogg}

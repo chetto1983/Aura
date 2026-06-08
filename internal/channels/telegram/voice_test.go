@@ -70,6 +70,7 @@ func sttHandler(t *testing.T, wantOGG []byte, transcript string, status int) htt
 		}
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		var gotFile []byte
+		var gotLang string
 		for {
 			part, perr := mr.NextPart()
 			if errors.Is(perr, io.EOF) {
@@ -78,12 +79,21 @@ func sttHandler(t *testing.T, wantOGG []byte, transcript string, status int) htt
 			if perr != nil {
 				t.Fatalf("STT multipart read: %v", perr)
 			}
-			if part.FormName() == "file" {
+			switch part.FormName() {
+			case "file":
 				gotFile, _ = io.ReadAll(part)
+			case "language":
+				b, _ := io.ReadAll(part)
+				gotLang = string(b)
 			}
 		}
 		if string(gotFile) != string(wantOGG) {
 			t.Errorf("STT file field = %q, want the OGG bytes %q (no ffmpeg transcode)", gotFile, wantOGG)
+		}
+		// Regression guard (spike-027): the language MUST be pinned so whisper does
+		// not auto-detect a short IT clip as the wrong language (observed 'ja' live).
+		if gotLang != "it" {
+			t.Errorf("STT language field = %q, want %q (pinned, not auto-detect)", gotLang, "it")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"text":"`+transcript+`"}`)
@@ -91,7 +101,7 @@ func sttHandler(t *testing.T, wantOGG []byte, transcript string, status int) htt
 }
 
 func sttTestConfig(base string) MultimodalConfig {
-	return MultimodalConfig{STTBaseURL: base, STTModel: "large-v3-turbo"}
+	return MultimodalConfig{STTBaseURL: base, STTModel: "large-v3-turbo", STTLanguage: "it"}
 }
 
 // TestVoiceTranscribeHappyPath proves the OGG/Opus bytes are POSTed directly

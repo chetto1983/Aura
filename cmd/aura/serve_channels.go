@@ -101,6 +101,7 @@ func multimodalConfig(cfg *config.Config) telegram.MultimodalConfig {
 		OpenRouterAPIKey:  cfg.LLM.APIKey,
 		STTBaseURL:        cfg.STTBaseURL,
 		STTModel:          cfg.STTModel,
+		STTLanguage:       cfg.STTLanguage,
 		TTSBaseURL:        cfg.TTSBaseURL,
 		TTSVoice:          cfg.TTSVoice,
 		TTSFormat:         cfg.TTSFormat,

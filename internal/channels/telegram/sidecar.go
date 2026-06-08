@@ -48,8 +48,11 @@ type MultimodalConfig struct {
 	OpenRouterAPIKey  string
 
 	// STTBaseURL/Model are the speech-to-text sidecar (aura-stt, faster-whisper).
-	STTBaseURL string
-	STTModel   string
+	// STTLanguage pins the transcription language ("it"); empty = whisper
+	// auto-detect, which mis-detects short clips (spike-027: probe used language=it).
+	STTBaseURL  string
+	STTModel    string
+	STTLanguage string
 
 	// TTSBaseURL/Voice/Format are the text-to-speech sidecar (aura-tts, Kokoro).
 	// TTSCaption is the (optional) ASCII-safe caption put on the voice note.

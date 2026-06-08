@@ -134,6 +134,7 @@ type Config struct {
 	MultimodalFallbackModel string // MULTIMODAL_FALLBACK_MODEL — cloud vision fallback (default minimax/minimax-m3)
 	STTBaseURL              string // STT_BASE_URL — aura-stt OpenAI-compat base
 	STTModel                string // STT_MODEL — speech-to-text model id
+	STTLanguage             string // STT_LANGUAGE — transcription language hint (default "it"; "" = whisper auto-detect, unreliable on short clips — spike-027)
 	TTSBaseURL              string // TTS_BASE_URL — aura-tts OpenAI-compat base
 	TTSVoice                string // TTS_VOICE — Kokoro voice id (default if_sara)
 	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
@@ -273,6 +274,7 @@ func loadBase() *Config {
 		MultimodalFallbackModel: envDefault("MULTIMODAL_FALLBACK_MODEL", "minimax/minimax-m3"),
 		STTBaseURL:              os.Getenv("STT_BASE_URL"),
 		STTModel:                os.Getenv("STT_MODEL"),
+		STTLanguage:             envDefault("STT_LANGUAGE", "it"),
 		TTSBaseURL:              os.Getenv("TTS_BASE_URL"),
 		TTSVoice:                envDefault("TTS_VOICE", "if_sara"),
 		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
