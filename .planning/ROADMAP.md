@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced (completed 2026-06-07)
 - [x] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, voice/image/document multimodal sidecars, commands, HITL, artifact delivery, TTS-out, and live inbound command validation closed on 2026-06-08.
 - [ ] **Phase 14: Onboarding + AGENT.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
-- [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
+- [ ] **Phase 15: Memory Subsystem** - **Amendment #61 (2026-06-08): adopts the forked `neo4j-labs/agent-memory` MCP sidecar off-the-shelf** (POLE+O long-term + short-term + reasoning, mounted via streamable-HTTP), superseding the bespoke 11a/11b/11d/11e build. Spikes 031-035 VALIDATED live (mount, write/read, dedup-chaos, agent-loop recall); provenance-safe-dedup fork fix re-validated. Owned-surface = Go wiring + `aura memory` commands.
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
  (completed 2026-06-04)
 
@@ -487,10 +487,12 @@ Plans:
 
 ### Phase 15: Memory Subsystem
 
-**Goal**: Most downstream phase — needs every prior slice. Document ingestion (11a) → chunk + embed via Document → Chunk → Entity pipeline (11b, idempotent via content hash) → entity resolution + community detection via GDS Leiden (11c, UNIQUE constraint + chaos test 10 concurrent goroutines) → GraphRAG hybrid retrieval (11d, HNSW vector + fulltext BM25 + graph traversal + LLM re-rank, HNSW `M=32` per Amendment #20) → agent journal `:AgentEpisode` + `:AgentInsight` (11e, retrieval cached N minutes per Amendment #11 to preserve `messages[2]` KV cache stability). Pre-merge benchmark: recall@5 ≥ 0.8 @ 1K/10K/100K corpus, p95 vector search ≤ 30ms, snapshot recorded in `docs/aura-quality-snapshot.md`.
+> **▶ Amendment #61 (2026-06-08) — Phase 15 concludes by adopting the forked `neo4j-labs/agent-memory` MCP sidecar off-the-shelf, superseding the bespoke 11a/11b/11d/11e build.** See `prd.md` §Slice 11 Amendment #61 for the full record. The package (v0.5.0, Beta, 2443 tests + TCK, Apache-2.0) provides short-term + long-term (POLE+O) + reasoning memory in one Neo4j graph, mounted via streamable-HTTP MCP (profile extended) — the same shape as `mcp-neo4j-cypher`/`sandbox-agent`. Live-validated by spikes 031-035 (`.planning/spikes/`): 032 mount, 033 write/read, 034 dedup-chaos (over_merge=false ×2 after the `aura/provenance-safe-dedup` fork fix), 035 real `LlmAgent` recall loop. **Aura owned-surface (Go, under project gates)** = MCP sidecar wiring (fail-soft/reconnect), embedder, `aura memory ingest/search/recall-insights`, KV-cache `messages[2]` reconciliation — a few hundred LOC, not the ~1850 of the bespoke build. The package is a vendored dependency (not re-measured under the 85% floor). **Open at plan-time**: KV-cache invariant, embedding dimension (384d granite vs 768d legacy), per-source provenance metadata for dedup scope, reproducible `build:` for the compose image, and the PRD amendment that supersedes 11a-11e. The bespoke Goal/Slices/Success Criteria below are retained as the design source the spikes drew from; they will be re-derived against the agent-memory MCP surface during plan-phase.
+
+**Goal** *(bespoke — superseded by Amendment #61; retained for design reference)*: Most downstream phase — needs every prior slice. Document ingestion (11a) → chunk + embed via Document → Chunk → Entity pipeline (11b, idempotent via content hash) → entity resolution + community detection via GDS Leiden (11c, UNIQUE constraint + chaos test 10 concurrent goroutines) → GraphRAG hybrid retrieval (11d, HNSW vector + fulltext BM25 + graph traversal + LLM re-rank, HNSW `M=32` per Amendment #20) → agent journal `:AgentEpisode` + `:AgentInsight` (11e, retrieval cached N minutes per Amendment #11 to preserve `messages[2]` KV cache stability). Pre-merge benchmark: recall@5 ≥ 0.8 @ 1K/10K/100K corpus, p95 vector search ≤ 30ms, snapshot recorded in `docs/aura-quality-snapshot.md`.
 **Depends on**: Phase 14
 **Requirements**: UX-06, UX-07, UX-08, UX-09
-**Slices**: 11a, 11b, 11c, 11d, 11e
+**Slices**: ~~11a, 11b, 11c, 11d, 11e~~ → **superseded by Amendment #61 (agent-memory MCP adoption)**; 11f Task Canvas (#25) remains independent. Plan-phase will re-derive the slice breakdown around the MCP sidecar wiring + `aura memory` commands.
 **Success Criteria** (what must be TRUE):
 
   1. Operator runs `aura memory ingest <file.pdf>` twice (same file) and observes second run skipped via content-hash dedup; first run produces `:Document` + N `:Chunk` (with 768d `embedding`) + extracted `:Entity` nodes; embed boot assertion (Pitfall #7) confirms `model.output_dim == AURA_EMBED_DIMENSIONS`
@@ -522,7 +524,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 12. AG-UI Gateway | 6/6 | Complete    | 2026-06-07 |
 | 13. Channels + Telegram + Multimodal | 10/10 | Complete | 2026-06-08 |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
-| 15. Memory Subsystem | 0/TBD | Not started | - |
+| 15. Memory Subsystem | 0/TBD | Not started (de-risked: spikes 031-035 ✓ + Amendment #61 — adopts agent-memory MCP) | - |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
 | 17. Packaging & Distribution | 0/TBD | Not started | - |
 
