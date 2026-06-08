@@ -21,19 +21,12 @@ func mcpTools(ctx context.Context, args []string, out io.Writer) error {
 	if server, ok, err := effectiveManagedMCPServer(name); err != nil {
 		return err
 	} else if ok {
-		if len(server.ToolPolicy.Allow) == 0 && len(server.ToolPolicy.Deny) == 0 && len(server.ToolPolicy.DenyRisk) == 0 {
-			server.ToolPolicy.Allow = mcpAllowlist(name)
-		}
 		cli, defs, err := openAndListManagedMCPTools(ctx, name, server)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = cli.Close() }()
-		return writeMCPToolDecisions(out, defs, server)
-	}
-	server, err := mcpToolPolicyServer(name)
-	if err != nil {
-		return err
+		return writeMCPTools(out, defs)
 	}
 	cfg, err := effectiveMCPServer(name)
 	if err != nil {
@@ -44,43 +37,20 @@ func mcpTools(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 	defer func() { _ = cli.Close() }()
-	return writeMCPToolDecisions(out, defs, server)
+	return writeMCPTools(out, defs)
 }
 
-func writeMCPToolDecisions(out io.Writer, defs []mcp.ToolDef, server mcp.ManagedServer) error {
-	descriptions := make(map[string]string, len(defs))
-	for _, d := range defs {
-		descriptions[d.Name] = d.Description
-	}
-	decisions := mcpmanager.PolicyDecisionsForTools(defs, server)
-	sort.Slice(decisions, func(i, j int) bool { return decisions[i].ToolName < decisions[j].ToolName })
-	for _, decision := range decisions {
-		status := "mounted"
-		if !decision.Allowed {
-			status = "blocked: " + decision.BlockReason
-		}
-		if err := writef(out, "%s\t%s\t%s\t%s\n",
-			decision.ToolName,
-			strings.Join(decision.RiskLabels, ","),
-			status,
-			firstMCPDescriptionLine(descriptions[decision.ToolName]),
+func writeMCPTools(out io.Writer, defs []mcp.ToolDef) error {
+	sort.Slice(defs, func(i, j int) bool { return defs[i].Name < defs[j].Name })
+	for _, def := range defs {
+		if err := writef(out, "%s\tmounted\t%s\n",
+			def.Name,
+			firstMCPDescriptionLine(def.Description),
 		); err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func mcpToolPolicyServer(name string) (mcp.ManagedServer, error) {
-	doc, _, err := loadManagedMCPConfig()
-	if err != nil {
-		return mcp.ManagedServer{}, err
-	}
-	server := doc.MCPServers[name]
-	if len(server.ToolPolicy.Allow) == 0 && len(server.ToolPolicy.Deny) == 0 && len(server.ToolPolicy.DenyRisk) == 0 {
-		server.ToolPolicy.Allow = mcpAllowlist(name)
-	}
-	return server, nil
 }
 
 func effectiveManagedMCPServer(name string) (mcp.ManagedServer, bool, error) {

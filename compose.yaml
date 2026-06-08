@@ -46,6 +46,8 @@ services:
     ports:
       - "127.0.0.1:7474:7474"
       - "127.0.0.1:7687:7687"
+      # Alias for local MCP clients configured to use Aura's Neo4j spike port.
+      - "127.0.0.1:17687:7687"
     volumes:
       - aura-neo4j:/data
       - aura-neo4j-plugins:/plugins
@@ -63,16 +65,22 @@ services:
     restart: unless-stopped
     command:
       - --hf-repo
-      - ggml-org/embeddinggemma-300M-GGUF
+      - mykor/granite-embedding-97m-multilingual-r2-GGUF
       - --hf-file
-      - embeddinggemma-300M-Q8_0.gguf
+      - granite-embedding-97M-multilingual-r2-Q8_0.gguf
       - --embeddings
+      - --pooling
+      - cls
+      - --embd-normalize
+      - "2"
       - --host
       - 0.0.0.0
       - --port
       - "8081"
       - -t
       - "4"                                    # mini-PC CPU budget cap (feedback_minipc_cpu_budget)
+      - -ub
+      - "2048"                                 # manual chunks exceeded 1024 tokens in the Granite run
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
@@ -84,6 +92,69 @@ services:
       retries: 12
       start_period: 60s                        # first-boot HF model download
 
+  # Phase 15 spike — Granite 97M multilingual embeddings for agent-memory MCP.
+  # Phase 15 spike — Neo4j Labs agent-memory MCP, colocated on the compose
+  # network so the Python Neo4j driver talks to `neo4j:7687` directly instead of
+  # the Windows-published `127.0.0.1:7687` port. Aura can mount it as streamable
+  # HTTP at http://127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}/mcp/.
+  aura-agent-memory-mcp:
+    image: ${AURA_AGENT_MEMORY_MCP_IMAGE:-aura-agent-memory-mcp:spike-fixed}
+    container_name: aura-agent-memory-mcp
+    restart: unless-stopped
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      aura-llama-embed:
+        condition: service_healthy
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
+      NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
+      NAM_BACKEND: bolt
+      NAM_LLM: openai/${AURA_LLM_MODEL:-deepseek/deepseek-v4-flash:exacto}
+      NAM_LLM_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
+      NAM_EMBEDDING: openai/granite-embedding-97m-multilingual-r2-q8
+      OPENAI_API_KEY: local-llama
+      OPENAI_BASE_URL: http://aura-llama-embed:8081/v1
+    command:
+      - sh
+      - -lc
+      - |
+        python - <<'PY'
+        import socket
+        import time
+
+        targets = [("neo4j", 7687), ("aura-llama-embed", 8081)]
+        deadline = time.monotonic() + 240
+        for host, port in targets:
+            while True:
+                try:
+                    with socket.create_connection((host, port), 5):
+                        break
+                except OSError as exc:
+                    if time.monotonic() >= deadline:
+                        raise SystemExit(f"timed out waiting for {host}:{port}: {exc}")
+                    time.sleep(2)
+        PY
+        exec neo4j-agent-memory mcp serve \
+          --transport http \
+          --host 0.0.0.0 \
+          --port 8080 \
+          --profile extended \
+          --session-strategy persistent \
+          --user-id aura-local \
+          --llm-api-base ${AURA_LLM_BASE_URL:-https://openrouter.ai/api/v1} \
+          --embedding-dimensions 384 \
+          --no-auto-preferences
+    ports:
+      - "127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('127.0.0.1', 8080), 5); s.close()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
   # Local sandbox-agent container. Aura talks to this over 127.0.0.1 only via
   # AURA_SANDBOX_AGENT_URL; the sandbox itself sits on a non-masquerading Docker
   # bridge so process code has no public internet egress. No Docker socket is mounted.
@@ -164,13 +235,18 @@ services:
   # as an invalid model size; spike 027 picked hwdsl2 precisely because it supports
   # turbo natively and ingests Telegram OGG/Opus directly).
   aura-stt:
+    # STT stays on CPU: it is ~2s on a downscaled/short clip (fast enough), and the
+    # hwdsl2 :cuda image needs CUDA >= 12.9 (driver >= ~575) — this host's 573.91
+    # tops out lower, so the GPU image fails to start. To run STT on GPU after a
+    # driver update: AURA_STT_IMAGE=hwdsl2/whisper-server:cuda STT_DEVICE=cuda
+    # STT_COMPUTE_TYPE=int8_float16 + add the nvidia deploy block (see aura-ocr-vl).
     image: ${AURA_STT_IMAGE:-hwdsl2/whisper-server:latest}
     container_name: aura-stt
     restart: unless-stopped
     environment:
       WHISPER_MODEL: ${STT_MODEL:-large-v3-turbo}
-      WHISPER_COMPUTE_TYPE: int8
-      WHISPER_DEVICE: cpu
+      WHISPER_COMPUTE_TYPE: ${STT_COMPUTE_TYPE:-int8}
+      WHISPER_DEVICE: ${STT_DEVICE:-cpu}
     ports:
       - "127.0.0.1:${AURA_STT_PORT:-9000}:9000"
     healthcheck:
@@ -199,7 +275,7 @@ services:
   # http://aura-ocr-vl:8082/v1, POST /chat/completions with a base64 image_url.
   # NOT started when AURA_VISION_CLOUD=true (the cloud-vision tier B).
   aura-ocr-vl:
-    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     container_name: aura-ocr-vl
     restart: unless-stopped
     command:
@@ -209,8 +285,17 @@ services:
       - 0.0.0.0
       - --port
       - "8082"
+      - -ngl
+      - "${AURA_OCR_VL_NGL:-99}"               # offload all layers to GPU (CPU OCR took ~55s; GLM-OCR is ~1.4GB → fits 4GB)
       - -t
       - "4"                                    # mini-PC CPU budget cap (feedback_minipc_cpu_budget)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     ports:
       - "127.0.0.1:${AURA_OCR_VL_PORT:-8082}:8082"
     volumes:

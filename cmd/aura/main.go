@@ -28,7 +28,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
@@ -174,42 +173,20 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskS
 		// (Claude Code/Desktop, VS Code). Already-mounted servers stay registered —
 		// do NOT closeMCPServers, do NOT abort. The non-deferred built-ins keep the
 		// registry valid even when every MCP server is dropped (Pitfall 6).
-		policy := cfg.MCPPolicies[name]
-		if len(policy.ToolPolicy.Allow) == 0 && len(policy.ToolPolicy.Deny) == 0 && len(policy.ToolPolicy.DenyRisk) == 0 {
-			policy.ToolPolicy.Allow = mcpAllowlist(name)
-		}
 		var closer func() error
-		var blocked []mcpmanager.PolicyDecision
 		var err error
 		if _, managed := cfg.MCPPolicies[name]; managed {
-			closer, _, blocked, err = mcptools.MountManagedServerWithPolicy(ctx, reg, name, policy)
+			closer, _, err = mcptools.MountManagedServer(ctx, reg, name, cfg.MCPPolicies[name])
 		} else {
-			closer, _, blocked, err = mcptools.MountServerWithPolicy(ctx, reg, name, cfg.MCPServers[name], policy)
+			closer, _, err = mcptools.MountServer(ctx, reg, name, cfg.MCPServers[name])
 		}
 		if err != nil {
 			slog.Warn("mcp mount failed", "server", name, "err", err)
 			continue
 		}
-		for _, decision := range blocked {
-			slog.Warn("mcp tool blocked by policy", "server", name, "tool", decision.ToolName, "reason", decision.BlockReason)
-		}
 		closers = append(closers, closer)
 	}
 	return reg, closers, nil
-}
-
-// mcpAllowlist resolves the per-server v1 tool allowlist (D-20). mail/whatsapp scope
-// destructive MCP footguns out of every worker's reach; all other servers (e.g. the
-// calculator recipe) get nil = mount all advertised tools.
-func mcpAllowlist(server string) []string {
-	switch server {
-	case "mail":
-		return []string{"send_email", "fetch_emails", "search_emails", "get_thread"}
-	case "whatsapp":
-		return []string{"send_message", "list_messages", "list_chats", "search_contacts"}
-	default:
-		return nil
-	}
 }
 
 func closeMCPServers(closers []func() error) error {

@@ -24,26 +24,19 @@ const (
 )
 
 // StatusSnapshot is the per-server status view surfaced to the CLI/UI: trust,
-// runtime, startup and auth state, tool/policy counts, risk labels, and block
-// reasons.
+// runtime, startup and auth state.
 type StatusSnapshot struct {
-	Name             string        `json:"name"`
-	Profiles         []string      `json:"profiles,omitempty"`
-	Trust            string        `json:"trust"`
-	Runtime          string        `json:"runtime"`
-	StartupState     string        `json:"startupState"`
-	AuthStatus       string        `json:"authStatus"`
-	ToolCount        int           `json:"toolCount"`
-	MountedToolCount int           `json:"mountedToolCount"`
-	BlockedToolCount int           `json:"blockedToolCount"`
-	RiskLabels       []string      `json:"riskLabels,omitempty"`
-	BlockReasons     []PolicyBlock `json:"blockReasons,omitempty"`
-	LastError        string        `json:"lastError,omitempty"`
-	PolicySummary    string        `json:"policySummary,omitempty"`
+	Name         string   `json:"name"`
+	Profiles     []string `json:"profiles,omitempty"`
+	Trust        string   `json:"trust"`
+	Runtime      string   `json:"runtime"`
+	StartupState string   `json:"startupState"`
+	AuthStatus   string   `json:"authStatus"`
+	LastError    string   `json:"lastError,omitempty"`
 }
 
 // SnapshotStatus computes a StatusSnapshot for every server in doc, sorted by
-// name, deriving startup state from enabled/trust and folding in policy counts.
+// name, deriving startup state from enabled/trust.
 func SnapshotStatus(doc mcp.ManagedConfig) []StatusSnapshot {
 	names := make([]string, 0, len(doc.MCPServers))
 	for name := range doc.MCPServers {
@@ -62,20 +55,13 @@ func SnapshotStatus(doc mcp.ManagedConfig) []StatusSnapshot {
 		case trust == mcp.TrustBlocked:
 			state = StartupBlocked
 		}
-		mounted, blocked := PolicyCounts(server)
 		out = append(out, StatusSnapshot{
-			Name:             name,
-			Profiles:         profilesForServer(doc, name),
-			Trust:            trust,
-			Runtime:          runtimeName(server),
-			StartupState:     state,
-			AuthStatus:       authStatus(server),
-			ToolCount:        mounted,
-			MountedToolCount: mounted,
-			BlockedToolCount: blocked,
-			RiskLabels:       append([]string(nil), server.RiskLabels...),
-			BlockReasons:     ConfiguredPolicyBlocks(server),
-			PolicySummary:    policySummary(server),
+			Name:         name,
+			Profiles:     profilesForServer(doc, name),
+			Trust:        trust,
+			Runtime:      runtimeName(server),
+			StartupState: state,
+			AuthStatus:   authStatus(server),
 		})
 	}
 	return out
@@ -129,21 +115,4 @@ func authStatus(server mcp.ManagedServer) string {
 		}
 	}
 	return AuthUnsupported
-}
-
-func policySummary(server mcp.ManagedServer) string {
-	parts := []string{}
-	if len(server.RiskLabels) > 0 {
-		parts = append(parts, "risk="+strings.Join(server.RiskLabels, ","))
-	}
-	if len(server.ToolPolicy.Allow) > 0 {
-		parts = append(parts, "allow="+strings.Join(server.ToolPolicy.Allow, ","))
-	}
-	if len(server.ToolPolicy.Deny) > 0 {
-		parts = append(parts, "deny="+strings.Join(server.ToolPolicy.Deny, ","))
-	}
-	if len(server.ToolPolicy.DenyRisk) > 0 {
-		parts = append(parts, "denyRisk="+strings.Join(server.ToolPolicy.DenyRisk, ","))
-	}
-	return strings.Join(parts, " ")
 }

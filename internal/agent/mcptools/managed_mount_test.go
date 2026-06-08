@@ -10,19 +10,15 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-// httpMCPServer stands up an httptest streamable-HTTP MCP server that completes the
-// initialize handshake and serves a scripted tools/list, so the managed/HTTP mount
-// helpers run end-to-end through the real *mcp.HTTPClient transport — no subprocess,
-// no Docker. The returned closer is goleak-relevant: every mount that opens it must
-// be Close()d or TestMain trips on a leaked persistConn.
+// httpMCPServer stands up an httptest streamable-HTTP MCP server that completes
+// the initialize handshake and serves a scripted tools/list, so the managed/HTTP
+// mount helpers run end-to-end through the real *mcp.HTTPClient transport.
 func httpMCPServer(t *testing.T, defs []mcp.ToolDef) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
-			// Session teardown on Close(): accept it so Close returns nil cleanly.
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -75,26 +71,20 @@ func managedDefs() []mcp.ToolDef {
 	}
 }
 
-// TestMountManagedServerWithPolicy_HTTPSuccess drives MountManagedServerWithPolicy
-// and openManagedServer through the real streamable-HTTP transport: a managed server
-// with a URL opens via OpenServer, its policy-allowed tool is mounted, and the
-// destructive tool is returned as a blocked PolicyDecision. The closer must shut the
-// HTTP session down cleanly (goleak guard in TestMain).
-func TestMountManagedServerWithPolicy_HTTPSuccess(t *testing.T) {
+// TestMountManagedServer_HTTPSuccess drives MountManagedServer and
+// openManagedServer through the real streamable-HTTP transport. Every advertised
+// tool mounts and the closer shuts the HTTP session down cleanly.
+func TestMountManagedServer_HTTPSuccess(t *testing.T) {
 	httpSrv := httpMCPServer(t, managedDefs())
 	reg := tools.NewRegistry()
 	server := mcp.ManagedServer{
 		Type: mcp.ServerTypeStreamableHTTP,
 		URL:  httpSrv.URL,
-		ToolPolicy: mcp.ManagedToolPolicy{
-			Allow:    []string{"read_doc", "delete_doc"},
-			DenyRisk: []string{mcpmanager.RiskDestructive},
-		},
 	}
 
-	closer, names, blocked, err := MountManagedServerWithPolicy(context.Background(), reg, "docs", server)
+	closer, names, err := MountManagedServer(context.Background(), reg, "docs", server)
 	if err != nil {
-		t.Fatalf("MountManagedServerWithPolicy: %v", err)
+		t.Fatalf("MountManagedServer: %v", err)
 	}
 	if closer == nil {
 		t.Fatal("success must return a non-nil closer")
@@ -105,106 +95,70 @@ func TestMountManagedServerWithPolicy_HTTPSuccess(t *testing.T) {
 		}
 	}()
 
-	if len(names) != 1 || names[0] != "docs__read_doc" {
-		t.Fatalf("only read_doc should mount, got %v", names)
+	if len(names) != 2 {
+		t.Fatalf("all advertised tools should mount, got %v", names)
 	}
-	if _, ok := reg.Get("docs__read_doc"); !ok {
-		t.Fatal("docs__read_doc not registered")
-	}
-	if _, ok := reg.Get("docs__delete_doc"); ok {
-		t.Fatal("delete_doc is destructive and must be blocked")
-	}
-	if len(blocked) != 1 || blocked[0].ToolName != "delete_doc" || blocked[0].Allowed {
-		t.Fatalf("delete_doc must be the single blocked decision, got %#v", blocked)
+	for _, want := range []string{"docs__read_doc", "docs__delete_doc"} {
+		if _, ok := reg.Get(want); !ok {
+			t.Fatalf("%s not registered", want)
+		}
 	}
 }
 
-// TestMountManagedServerWithPolicy_OpenFailure covers openManagedServer's error
-// return for the stdio branch: a blocked-trust server makes RuntimeLaunchConfig fail
-// before any process spawns, so the helper returns the error with a nil closer and an
-// untouched registry.
-func TestMountManagedServerWithPolicy_OpenFailure(t *testing.T) {
+// TestMountManagedServer_OpenFailure covers openManagedServer's error return for
+// the stdio branch: a blocked-trust server makes RuntimeLaunchConfig fail before
+// any process spawns.
+func TestMountManagedServer_OpenFailure(t *testing.T) {
 	reg := tools.NewRegistry()
-	// No type, no URL → stdio branch → RuntimeLaunchConfig. With no trust class and
-	// no recipe source the server resolves to TrustBlocked, so launch config errors
-	// out before spawning anything.
 	server := mcp.ManagedServer{Command: "anything"}
 
-	closer, names, blocked, err := MountManagedServerWithPolicy(context.Background(), reg, "blocked", server)
+	closer, names, err := MountManagedServer(context.Background(), reg, "blocked", server)
 	if err == nil {
 		t.Fatal("a blocked-trust server must fail to open")
 	}
 	if closer != nil {
 		t.Fatal("on open failure closer must be nil")
 	}
-	if names != nil || blocked != nil {
-		t.Fatalf("names/blocked must be nil on open failure, got names=%v blocked=%v", names, blocked)
+	if names != nil {
+		t.Fatalf("names must be nil on open failure, got names=%v", names)
 	}
 	if len(reg.All()) != 0 {
 		t.Fatalf("registry must stay empty on open failure, got %d tools", len(reg.All()))
 	}
 }
 
-// TestMountManagedServerWithPolicy_MountFailureReapsServer covers the
-// MountManagedServerWithPolicy failure path AFTER a successful open: the transport
-// opens and lists tools, but registration collides with an already-registered name.
-// The helper must wrap the error, return nil names/blocked, and Close the opened
-// transport (no leaked HTTP session — TestMain enforces this).
-func TestMountManagedServerWithPolicy_MountFailureReapsServer(t *testing.T) {
+// TestMountManagedServer_MountFailureReapsServer covers the failure path after a
+// successful open: the transport opens and lists tools, but registration collides
+// with an already-registered name. The helper closes the opened transport.
+func TestMountManagedServer_MountFailureReapsServer(t *testing.T) {
 	httpSrv := httpMCPServer(t, []mcp.ToolDef{
 		{Name: "read_doc", Description: "Read a document.", InputSchema: json.RawMessage(`{"type":"object"}`)},
 	})
 	reg := tools.NewRegistry()
-	// Pre-register the namespaced name so the policy-allowed tool collides on mount.
 	if _, err := Mount(context.Background(), reg, "docs",
-		&fakeServer{defs: []mcp.ToolDef{{Name: "read_doc", Description: "Read a document."}}}, nil); err != nil {
+		&fakeServer{defs: []mcp.ToolDef{{Name: "read_doc", Description: "Read a document."}}}); err != nil {
 		t.Fatalf("seed Mount: %v", err)
 	}
 
 	server := mcp.ManagedServer{
-		Type:       mcp.ServerTypeStreamableHTTP,
-		URL:        httpSrv.URL,
-		ToolPolicy: mcp.ManagedToolPolicy{Allow: []string{"read_doc"}},
+		Type: mcp.ServerTypeStreamableHTTP,
+		URL:  httpSrv.URL,
 	}
-	closer, names, blocked, err := MountManagedServerWithPolicy(context.Background(), reg, "docs", server)
+	closer, names, err := MountManagedServer(context.Background(), reg, "docs", server)
 	if err == nil || !strings.Contains(err.Error(), "collision") {
 		t.Fatalf("want a wrapped registration collision error, got %v", err)
 	}
 	if closer != nil {
 		t.Fatal("on mount failure closer must be nil (the transport is reaped internally)")
 	}
-	if names != nil || blocked != nil {
-		t.Fatalf("names/blocked must be nil on mount failure, got names=%v blocked=%v", names, blocked)
+	if names != nil {
+		t.Fatalf("names must be nil on mount failure, got names=%v", names)
 	}
 }
 
-// TestMountServerWithPolicy_SpawnFailureLeavesRegistryClean covers
-// MountServerWithPolicy's open-failure early return: a missing binary makes mcp.Open
-// fail, so the helper returns the error with nil closer/names/blocked and an
-// untouched registry — the policy variant of the plain MountServer spawn-failure
-// guard.
-func TestMountServerWithPolicy_SpawnFailureLeavesRegistryClean(t *testing.T) {
-	reg := tools.NewRegistry()
-	closer, names, blocked, err := MountServerWithPolicy(context.Background(), reg, "bad",
-		mcp.ServerConfig{Command: "aura-nonexistent-mcp-binary-xyz"}, mcp.ManagedServer{})
-	if err == nil {
-		t.Fatal("want spawn error for a missing binary")
-	}
-	if closer != nil {
-		t.Fatal("on failure closer must be nil")
-	}
-	if names != nil || blocked != nil {
-		t.Fatalf("names/blocked must be nil on spawn failure, got names=%v blocked=%v", names, blocked)
-	}
-	if len(reg.All()) != 0 {
-		t.Fatalf("registry must stay empty on spawn failure, got %d tools", len(reg.All()))
-	}
-}
-
-// TestOpenManagedServer_StdioBranchFailure covers openManagedServer's stdio branch
-// (no Type, no URL) directly: with a non-blocked trust class RuntimeLaunchConfig
-// succeeds, then mcp.Open fails on the missing binary, so the error propagates with
-// no transport returned.
+// TestOpenManagedServer_StdioBranchFailure covers openManagedServer's stdio
+// branch directly: with a non-blocked trust class RuntimeLaunchConfig succeeds,
+// then mcp.Open fails on the missing binary.
 func TestOpenManagedServer_StdioBranchFailure(t *testing.T) {
 	server := mcp.ManagedServer{
 		Command: "aura-nonexistent-mcp-binary-xyz",
@@ -214,16 +168,10 @@ func TestOpenManagedServer_StdioBranchFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("want spawn error from mcp.Open on a missing binary")
 	}
-	// NB: the returned transport is NOT asserted nil here. mcp.Open returns a
-	// concrete *mcp.Client; openManagedServer's `return mcp.Open(...)` widens that
-	// nil pointer into a non-nil mcp.Transport interface (the classic typed-nil
-	// quirk). Every caller checks err first and never touches the transport on
-	// error, so this is harmless — but it means the interface value is non-nil.
 }
 
 // TestOpenManagedServer_HTTPBranch covers openManagedServer's HTTP branch via Type
-// and via a bare URL (Type empty), confirming both routes reach OpenServer and
-// return a usable transport that lists the scripted tools.
+// and via a bare URL, confirming both routes reach OpenServer and list tools.
 func TestOpenManagedServer_HTTPBranch(t *testing.T) {
 	httpSrv := httpMCPServer(t, managedDefs())
 	cases := []struct {

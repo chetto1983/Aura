@@ -12,19 +12,17 @@ import (
 	"github.com/chetto1983/aura/internal/agent/mcptools"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 type summary struct {
-	Spike            string   `json:"spike"`
-	Endpoint         string   `json:"endpoint"`
-	RawToolCount     int      `json:"raw_tool_count"`
-	RawTools         []string `json:"raw_tools"`
-	MountedReadTools []string `json:"mounted_read_tools"`
-	BlockedTools     []string `json:"blocked_tools"`
-	MissingExpected  []string `json:"missing_expected"`
-	AllDeferred      bool     `json:"all_deferred"`
-	Verdict          string   `json:"verdict"`
+	Spike           string   `json:"spike"`
+	Endpoint        string   `json:"endpoint"`
+	RawToolCount    int      `json:"raw_tool_count"`
+	RawTools        []string `json:"raw_tools"`
+	MountedTools    []string `json:"mounted_tools"`
+	MissingExpected []string `json:"missing_expected"`
+	AllDeferred     bool     `json:"all_deferred"`
+	Verdict         string   `json:"verdict"`
 }
 
 func main() {
@@ -75,26 +73,19 @@ func main() {
 		"memory_record_step",
 		"memory_complete_trace",
 		"memory_get_observations",
+		"memory_get_facts",
 		"graph_query",
 	}
 	missing := missingNames(rawNames, expected)
 
-	policyServer := server
-	policyServer.ToolPolicy = mcp.ManagedToolPolicy{DenyRisk: []string{mcpmanager.RiskWrite}}
 	reg := tools.NewRegistry()
-	closer, mounted, blocked, err := mcptools.MountManagedServerWithPolicy(ctx, reg, "memory", policyServer)
+	closer, mounted, err := mcptools.MountManagedServer(ctx, reg, "memory", server)
 	if err != nil {
-		failf("policy mount: %v", err)
+		failf("mount: %v", err)
 	}
 	defer func() { _ = closer() }()
 
 	sort.Strings(mounted)
-	blockedNames := make([]string, 0, len(blocked))
-	for _, decision := range blocked {
-		blockedNames = append(blockedNames, decision.ToolName)
-	}
-	sort.Strings(blockedNames)
-
 	allDeferred := true
 	for _, name := range mounted {
 		t, ok := reg.Get(name)
@@ -105,36 +96,32 @@ func main() {
 			allDeferred = false
 		}
 	}
-	logf("POLICY", "DenyRisk=write mounted %d read-ish tools, blocked %d write-ish tools", len(mounted), len(blockedNames))
+	logf("MOUNT", "mounted %d tools", len(mounted))
 
-	readNeedles := []string{"memory__memory_search", "memory__memory_get_context", "memory__memory_get_conversation"}
-	mountedReads := intersect(mounted, readNeedles)
-	if len(missing) > 0 || !allDeferred || len(mountedReads) < 2 || len(blockedNames) == 0 {
+	if len(missing) > 0 || !allDeferred || len(mounted) != len(rawNames) {
 		out := summary{
-			Spike:            "032-agent-memory-mcp-live-mount",
-			Endpoint:         endpoint,
-			RawToolCount:     len(rawNames),
-			RawTools:         rawNames,
-			MountedReadTools: mountedReads,
-			BlockedTools:     blockedNames,
-			MissingExpected:  missing,
-			AllDeferred:      allDeferred,
-			Verdict:          "INVALIDATED",
+			Spike:           "032-agent-memory-mcp-live-mount",
+			Endpoint:        endpoint,
+			RawToolCount:    len(rawNames),
+			RawTools:        rawNames,
+			MountedTools:    mounted,
+			MissingExpected: missing,
+			AllDeferred:     allDeferred,
+			Verdict:         "INVALIDATED",
 		}
 		printSummary(out)
 		os.Exit(1)
 	}
 
 	out := summary{
-		Spike:            "032-agent-memory-mcp-live-mount",
-		Endpoint:         endpoint,
-		RawToolCount:     len(rawNames),
-		RawTools:         rawNames,
-		MountedReadTools: mountedReads,
-		BlockedTools:     blockedNames,
-		MissingExpected:  nil,
-		AllDeferred:      allDeferred,
-		Verdict:          "VALIDATED",
+		Spike:           "032-agent-memory-mcp-live-mount",
+		Endpoint:        endpoint,
+		RawToolCount:    len(rawNames),
+		RawTools:        rawNames,
+		MountedTools:    mounted,
+		MissingExpected: nil,
+		AllDeferred:     allDeferred,
+		Verdict:         "VALIDATED",
 	}
 	printSummary(out)
 }
@@ -174,28 +161,13 @@ func missingNames(have, want []string) []string {
 	return missing
 }
 
-func intersect(have, want []string) []string {
-	present := make(map[string]struct{}, len(have))
-	for _, name := range have {
-		present[name] = struct{}{}
-	}
-	var out []string
-	for _, name := range want {
-		if _, ok := present[name]; ok {
-			out = append(out, name)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
 func printSummary(out summary) {
 	encoded, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
 		panic(err)
 	}
 	fmt.Println(string(encoded))
-	logf("SUMMARY", "verdict=%s raw_tools=%d mounted_reads=%d blocked=%d", out.Verdict, out.RawToolCount, len(out.MountedReadTools), len(out.BlockedTools))
+	logf("SUMMARY", "verdict=%s raw_tools=%d mounted=%d", out.Verdict, out.RawToolCount, len(out.MountedTools))
 }
 
 func logf(category, format string, args ...any) {

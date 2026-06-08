@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 func withTempMCPConfig(t *testing.T) string {
@@ -188,18 +187,13 @@ func TestMCPStatusJSONShowsBlockedServer(t *testing.T) {
 	}
 }
 
-func TestMCPStatusShowsPolicyCountsAndRiskLabels(t *testing.T) {
+func TestMCPStatusShowsLifecycleWithoutPolicyColumns(t *testing.T) {
 	path := withTempMCPConfig(t)
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"mail": {
-			Command:    "npx",
-			Source:     "recipe:mail",
-			Trust:      mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-			RiskLabels: []string{mcpmanager.RiskPrivateData, mcpmanager.RiskExternalSend},
-			ToolPolicy: mcp.ManagedToolPolicy{
-				Allow:    []string{"send_email", "fetch_emails"},
-				DenyRisk: []string{mcpmanager.RiskDestructive, mcpmanager.RiskUnknown},
-			},
+			Command: "npx",
+			Source:  "recipe:mail",
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 		},
 	}}
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
@@ -210,8 +204,10 @@ func TestMCPStatusShowsPolicyCountsAndRiskLabels(t *testing.T) {
 	if err := runMCPCommand(context.Background(), []string{"status"}, &out); err != nil {
 		t.Fatalf("mcp status: %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "mounted\tblocked") || !strings.Contains(got, "mail") || !strings.Contains(got, "\t2\t2\t") {
-		t.Fatalf("status output missing policy counts:\n%s", got)
+	if got := out.String(); !strings.Contains(got, "name\tprofiles\ttrust\truntime\tstartup\tauth\terror") || !strings.Contains(got, "mail") {
+		t.Fatalf("status output missing lifecycle columns:\n%s", got)
+	} else if strings.Contains(got, "mounted\tblocked") {
+		t.Fatalf("status output still has policy columns:\n%s", got)
 	}
 
 	out.Reset()
@@ -219,15 +215,14 @@ func TestMCPStatusShowsPolicyCountsAndRiskLabels(t *testing.T) {
 		t.Fatalf("mcp status --json: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{
-		`"riskLabels":["private_data","external_send"]`,
-		`"mountedToolCount":2`,
-		`"blockedToolCount":2`,
-		`"risk":"destructive"`,
-		`"risk":"unknown"`,
-	} {
+	for _, want := range []string{`"name":"mail"`, `"trust":"trusted_recipe"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("status json missing %q:\n%s", want, got)
+		}
+	}
+	for _, gone := range []string{`"riskLabels"`, `"mountedToolCount"`, `"blockedToolCount"`, `"policySummary"`} {
+		if strings.Contains(got, gone) {
+			t.Fatalf("status json still contains policy field %q:\n%s", gone, got)
 		}
 	}
 }
@@ -359,8 +354,8 @@ func TestMCPManagerMockE2EProfileRecipeBlockedAndTools(t *testing.T) {
 	if err := runMCPCommand(context.Background(), []string{"tools", "calculator"}, &out); err != nil {
 		t.Fatalf("tools calculator: %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "calculate\tread\tmounted\tEvaluate a mathematical expression.") {
-		t.Fatalf("tools calculator output missing risk/mounted row:\n%s", got)
+	if got := out.String(); !strings.Contains(got, "calculate\tmounted\tEvaluate a mathematical expression.") {
+		t.Fatalf("tools calculator output missing mounted row:\n%s", got)
 	}
 
 	out.Reset()
@@ -394,9 +389,6 @@ func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
 			URL:    server.URL,
 			Source: "manual:http",
 			Trust:  mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
-			ToolPolicy: mcp.ManagedToolPolicy{
-				Allow: []string{"echo"},
-			},
 		},
 	}}
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
@@ -407,31 +399,35 @@ func TestMCPToolsSupportsManagedStreamableHTTPServer(t *testing.T) {
 	if err := runMCPCommand(context.Background(), []string{"tools", "remote"}, &out); err != nil {
 		t.Fatalf("mcp tools remote: %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, "echo\tread\tmounted\tGet echo text.") {
+	if got := out.String(); !strings.Contains(got, "echo\tmounted\tGet echo text.") {
 		t.Fatalf("tools output missing remote HTTP tool:\n%s", got)
 	}
 }
 
-func TestMCPToolsShowsRiskLabelsAndBlockedTools(t *testing.T) {
+func TestMCPToolsIgnoresLegacyPolicyAndMountsAllTools(t *testing.T) {
 	path := withTempMCPConfig(t)
-	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
-		"mail": {
-			Command: os.Args[0],
-			Args:    []string{"-test.run=TestMCPServerHelperProcess", "--"},
-			Env:     []string{"AURA_MCP_HELPER=1", "AURA_MCP_HELPER_TOOLS=policy"},
-			Source:  "recipe:mail",
-			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-			RiskLabels: []string{
-				mcpmanager.RiskPrivateData,
-			},
-			ToolPolicy: mcp.ManagedToolPolicy{
-				Allow:    []string{"send_email", "fetch_emails", "delete_mailbox", "mystery"},
-				DenyRisk: []string{mcpmanager.RiskDestructive, mcpmanager.RiskUnknown},
+	raw, err := json.MarshalIndent(map[string]any{
+		"version": mcp.ManagedConfigVersion,
+		"mcpServers": map[string]any{
+			"mail": map[string]any{
+				"command":    os.Args[0],
+				"args":       []string{"-test.run=TestMCPServerHelperProcess", "--"},
+				"env":        []string{"AURA_MCP_HELPER=1", "AURA_MCP_HELPER_TOOLS=policy"},
+				"source":     "recipe:mail",
+				"trust":      map[string]any{"class": mcp.TrustTrustedRecipe},
+				"riskLabels": []string{"private_data"},
+				"toolPolicy": map[string]any{
+					"allow":    []string{"send_email", "fetch_emails"},
+					"denyRisk": []string{"destructive", "unknown"},
+				},
 			},
 		},
-	}}
-	if err := mcp.SaveManagedConfig(path, doc); err != nil {
-		t.Fatalf("save managed config: %v", err)
+	}, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal legacy managed config: %v", err)
+	}
+	if err := os.WriteFile(path, append(raw, '\n'), 0o600); err != nil {
+		t.Fatalf("write managed config: %v", err)
 	}
 
 	var out bytes.Buffer
@@ -440,10 +436,10 @@ func TestMCPToolsShowsRiskLabelsAndBlockedTools(t *testing.T) {
 	}
 	got := out.String()
 	for _, want := range []string{
-		"send_email\texternal_send,private_data,write\tmounted",
-		"fetch_emails\tprivate_data,read\tmounted",
-		"delete_mailbox\tdestructive,private_data,write\tblocked: risk destructive denied",
-		"mystery\tprivate_data,unknown\tblocked: risk unknown denied",
+		"send_email\tmounted",
+		"fetch_emails\tmounted",
+		"delete_mailbox\tmounted",
+		"mystery\tmounted",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("tools output missing %q:\n%s", want, got)

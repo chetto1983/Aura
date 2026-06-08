@@ -31,19 +31,17 @@ func mcpStatus(args []string, out io.Writer) error {
 		_, err = out.Write(append(data, '\n'))
 		return err
 	}
-	if err := writef(out, "name\tprofiles\ttrust\truntime\tstartup\tauth\tmounted\tblocked\terror\n"); err != nil {
+	if err := writef(out, "name\tprofiles\ttrust\truntime\tstartup\tauth\terror\n"); err != nil {
 		return err
 	}
 	for _, status := range statuses {
-		if err := writef(out, "%s\t%s\t%s\t%s\t%s\t%s\t%d\t%d\t%s\n",
+		if err := writef(out, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			status.Name,
 			strings.Join(status.Profiles, ","),
 			status.Trust,
 			status.Runtime,
 			status.StartupState,
 			status.AuthStatus,
-			status.MountedToolCount,
-			status.BlockedToolCount,
 			status.LastError,
 		); err != nil {
 			return err

@@ -14,7 +14,7 @@ func TestStatusSnapshotsShowBlockedDisabledAndProfiles(t *testing.T) {
 		Profiles: map[string]mcp.ManagedProfile{"work": {Servers: []string{"manual", "mail"}}},
 		MCPServers: map[string]mcp.ManagedServer{
 			"manual": {Command: "node", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
-			"mail":   {Command: "npx", Source: "recipe:mail", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}, RiskLabels: []string{"private_data"}},
+			"mail":   {Command: "npx", Source: "recipe:mail", Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
 			"off":    {Command: "uvx", Enabled: &disabled, Source: "recipe:calculator"},
 		},
 	}
@@ -32,7 +32,7 @@ func TestStatusSnapshotsShowBlockedDisabledAndProfiles(t *testing.T) {
 		t.Fatalf("disabled startup = %q, want %q", off.StartupState, StartupDisabled)
 	}
 	mail := findStatus(t, got, "mail")
-	if mail.AuthStatus != AuthUnsupported || !strings.Contains(mail.PolicySummary, "private_data") {
+	if mail.AuthStatus != AuthUnsupported {
 		t.Fatalf("mail status = %+v", mail)
 	}
 
@@ -94,46 +94,6 @@ func TestAuthStatus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if got := authStatus(tt.server); got != tt.want {
 				t.Fatalf("authStatus = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPolicySummary(t *testing.T) {
-	tests := []struct {
-		name   string
-		server mcp.ManagedServer
-		want   []string
-	}{
-		{name: "empty", server: mcp.ManagedServer{}, want: nil},
-		{
-			name: "all parts",
-			server: mcp.ManagedServer{
-				RiskLabels: []string{"read", "write"},
-				ToolPolicy: mcp.ManagedToolPolicy{
-					Allow:    []string{"a", "b"},
-					Deny:     []string{"c"},
-					DenyRisk: []string{"destructive"},
-				},
-			},
-			want: []string{"risk=read,write", "allow=a,b", "deny=c", "denyRisk=destructive"},
-		},
-		{
-			name:   "allow only",
-			server: mcp.ManagedServer{ToolPolicy: mcp.ManagedToolPolicy{Allow: []string{"x"}}},
-			want:   []string{"allow=x"},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := policySummary(tt.server)
-			for _, part := range tt.want {
-				if !strings.Contains(got, part) {
-					t.Fatalf("policySummary = %q, missing %q", got, part)
-				}
-			}
-			if len(tt.want) == 0 && got != "" {
-				t.Fatalf("policySummary = %q, want empty", got)
 			}
 		})
 	}

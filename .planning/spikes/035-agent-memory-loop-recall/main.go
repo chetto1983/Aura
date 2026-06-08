@@ -66,12 +66,12 @@ func main() {
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
 	reg.Register(&tools.ReadToolOutput{})
-	closer, mounted, blocked, err := mcptools.MountManagedServerWithPolicy(ctx, reg, "memory", server)
+	closer, mounted, err := mcptools.MountManagedServer(ctx, reg, "memory", server)
 	if err != nil {
 		failf("mount memory MCP: %v", err)
 	}
 	defer func() { _ = closer() }()
-	logf("MOUNT", "mounted=%d blocked=%d", len(mounted), len(blocked))
+	logf("MOUNT", "mounted=%d", len(mounted))
 
 	searchArgs := fmt.Sprintf(`{"query":%q,"limit":5,"memory_types":["messages"],"session_id":%q,"threshold":0}`, tag, sessionID)
 	fake := agenttest.NewFakeClient(

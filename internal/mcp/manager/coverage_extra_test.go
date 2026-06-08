@@ -91,7 +91,7 @@ func TestRuntimeErrorAndClassificationBranches(t *testing.T) {
 	}
 }
 
-func TestStatusAuthRuntimeAndPolicySummaryBranches(t *testing.T) {
+func TestStatusAuthRuntimeBranches(t *testing.T) {
 	if got := runtimeName(mcp.ManagedServer{Runtime: mcp.ManagedRuntime{Kind: "  docker  "}}); got != "docker" {
 		t.Fatalf("runtimeName kind = %q", got)
 	}
@@ -111,58 +111,5 @@ func TestStatusAuthRuntimeAndPolicySummaryBranches(t *testing.T) {
 		if got := authStatus(server); got != want {
 			t.Fatalf("authStatus = %q, want %q for %#v", got, want, server)
 		}
-	}
-	summary := policySummary(mcp.ManagedServer{
-		RiskLabels: []string{"read"},
-		ToolPolicy: mcp.ManagedToolPolicy{
-			Allow:    []string{"list"},
-			Deny:     []string{"delete"},
-			DenyRisk: []string{RiskExternalSend},
-		},
-	})
-	for _, want := range []string{"risk=read", "allow=list", "deny=delete", "denyRisk=external_send"} {
-		if !strings.Contains(summary, want) {
-			t.Fatalf("policySummary = %q, missing %q", summary, want)
-		}
-	}
-}
-
-func TestPolicyDecisionCollectionAndConfiguredBlocks(t *testing.T) {
-	server := mcp.ManagedServer{
-		ToolPolicy: mcp.ManagedToolPolicy{
-			Allow:    []string{"list_events", "send_email"},
-			Deny:     []string{"send_email", " "},
-			DenyRisk: []string{RiskExternalSend},
-		},
-	}
-	decisions := PolicyDecisionsForTools([]mcp.ToolDef{
-		{Name: "list_events", Description: "List calendar events"},
-		{Name: "send_email", Description: "Send an email"},
-		{Name: "delete_event", Description: "Delete a calendar event"},
-	}, server)
-	if len(decisions) != 3 || !decisions[0].Allowed || decisions[1].Allowed || decisions[2].Allowed {
-		t.Fatalf("unexpected decisions: %+v", decisions)
-	}
-	if decisions[1].BlockReason != "denied by tool policy" || decisions[2].BlockReason != "not in allowlist" {
-		t.Fatalf("unexpected block reasons: %+v", decisions)
-	}
-
-	blocks := ConfiguredPolicyBlocks(server)
-	var sawTool, sawDefaultRisk, sawConfiguredRisk bool
-	for _, block := range blocks {
-		switch {
-		case block.ToolName == "send_email":
-			sawTool = true
-		case block.Risk == RiskUnknown:
-			sawDefaultRisk = true
-		case block.Risk == RiskExternalSend:
-			sawConfiguredRisk = true
-		}
-		if strings.TrimSpace(block.Reason) == "" {
-			t.Fatalf("block missing reason: %+v", block)
-		}
-	}
-	if !sawTool || !sawDefaultRisk || !sawConfiguredRisk {
-		t.Fatalf("configured blocks missing expected entries: %+v", blocks)
 	}
 }

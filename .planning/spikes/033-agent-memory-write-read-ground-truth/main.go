@@ -44,13 +44,13 @@ func main() {
 		Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
 	}
 	reg := tools.NewRegistry()
-	closer, mounted, blocked, err := mcptools.MountManagedServerWithPolicy(ctx, reg, "memory", server)
+	closer, mounted, err := mcptools.MountManagedServer(ctx, reg, "memory", server)
 	if err != nil {
 		failf("mount memory MCP: %v", err)
 	}
 	defer func() { _ = closer() }()
 	sort.Strings(mounted)
-	logf("MOUNT", "mounted=%d blocked=%d", len(mounted), len(blocked))
+	logf("MOUNT", "mounted=%d", len(mounted))
 
 	direct, err := mcp.OpenServer(ctx, "agent-memory-direct", server)
 	if err != nil {

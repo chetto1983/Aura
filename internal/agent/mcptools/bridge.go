@@ -14,12 +14,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
-	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
 // Server is the narrow MCP surface the bridge needs; *mcp.Client satisfies it.
@@ -73,79 +71,17 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 // defend. The model sees only name+summary by default and loads the full spec on
 // demand via tool_search, which indexes the deferred tool's name, description, and
 // argument-field names — so deferred MCP tools stay fully discoverable.
-//
-// allow is an optional per-server tool allowlist: when len(allow) > 0, only tools
-// whose RAW name appears in allow are bridged (destructive footguns like
-// delete_mailbox/move_message/create_mailbox never reach a worker — spike 001 census,
-// D-20). A nil or empty allow bridges every advertised tool (calculator back-compat).
-func Bridge(ctx context.Context, namespace string, srv Server, allow []string) ([]tools.Tool, error) {
+func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var allowed map[string]struct{}
-	if len(allow) > 0 {
-		allowed = make(map[string]struct{}, len(allow))
-		for _, name := range allow {
-			allowed[name] = struct{}{}
-		}
-	}
-	matched := make(map[string]struct{}, len(allow))
-	out := bridgeAllowedTools(namespace, srv, defs, func(d mcp.ToolDef) bool {
-		if allowed == nil {
-			return true
-		}
-		if _, ok := allowed[d.Name]; !ok {
-			return false
-		}
-		matched[d.Name] = struct{}{}
-		return true
-	})
-	// WARN-not-fatal on an allowlist entry that matched no advertised tool: the
-	// intersection drops advertised tools not in allow (the security direction, D-20),
-	// but a typo or a server-side rename silently turns an intended *capability* into a
-	// gap with no signal. Surface it so an operator can notice, while keeping fail-soft
-	// boot (WR-04).
-	for _, name := range allow {
-		if _, ok := matched[name]; !ok {
-			slog.Warn("mcp allowlist entry matched no advertised tool",
-				"namespace", namespace, "tool", name)
-		}
-	}
-	return out, nil
+	return bridgeTools(namespace, srv, defs), nil
 }
 
-// BridgeWithPolicy lists srv's tools, evaluates each against server's risk
-// policy, and bridges only the allowed ones under namespace. It returns the
-// bridged tools alongside the PolicyDecisions for the tools that were blocked.
-func BridgeWithPolicy(ctx context.Context, namespace string, srv Server, server mcp.ManagedServer) ([]tools.Tool, []mcpmanager.PolicyDecision, error) {
-	defs, err := srv.ListTools(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	decisions := mcpmanager.PolicyDecisionsForTools(defs, server)
-	allowed := make(map[string]bool, len(decisions))
-	for _, decision := range decisions {
-		allowed[decision.ToolName] = decision.Allowed
-	}
-	out := bridgeAllowedTools(namespace, srv, defs, func(d mcp.ToolDef) bool {
-		return allowed[d.Name]
-	})
-	blocked := make([]mcpmanager.PolicyDecision, 0)
-	for _, decision := range decisions {
-		if !decision.Allowed {
-			blocked = append(blocked, decision)
-		}
-	}
-	return out, blocked, nil
-}
-
-func bridgeAllowedTools(namespace string, srv Server, defs []mcp.ToolDef, allow func(mcp.ToolDef) bool) []tools.Tool {
+func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef) []tools.Tool {
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
-		if !allow(d) {
-			continue
-		}
 		params := emptyObjectSchema
 		if len(strings.TrimSpace(string(d.InputSchema))) > 0 {
 			params = d.InputSchema
@@ -170,35 +106,19 @@ func bridgeAllowedTools(namespace string, srv Server, defs []mcp.ToolDef, allow 
 	return out
 }
 
-// Mount bridges srv's tools under namespace and registers them into reg,
-// all-or-nothing. allow is the optional per-server tool allowlist threaded into
-// Bridge (nil/empty = mount all; D-20). Two distinct raw tool names that sanitize to
-// the same namespaced name are disambiguated with a deterministic hash suffix before
-// registration. It still refuses to clobber an existing tool name (a collision with a
-// built-in or another mounted server is a config error), so a mounted server can
+// Mount bridges all of srv's advertised tools under namespace and registers them
+// into reg, all-or-nothing. Two distinct raw tool names that sanitize to the same
+// namespaced name are disambiguated with a deterministic hash suffix before
+// registration. It still refuses to clobber an existing tool name (a collision with
+// a built-in or another mounted server is a config error), so a mounted server can
 // never silently shadow a built-in. On any residual collision NOTHING is registered
 // and the colliding name is reported.
-func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server, allow []string) ([]string, error) {
-	bridged, err := Bridge(ctx, namespace, srv, allow)
+func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server) ([]string, error) {
+	bridged, err := Bridge(ctx, namespace, srv)
 	if err != nil {
 		return nil, err
 	}
 	return registerBridged(reg, bridged)
-}
-
-// MountWithPolicy bridges srv's policy-allowed tools under namespace and
-// registers them into reg, all-or-nothing. It returns the registered tool names
-// and the PolicyDecisions for the tools that were blocked by the risk policy.
-func MountWithPolicy(ctx context.Context, reg *tools.Registry, namespace string, srv Server, server mcp.ManagedServer) ([]string, []mcpmanager.PolicyDecision, error) {
-	bridged, blocked, err := BridgeWithPolicy(ctx, namespace, srv, server)
-	if err != nil {
-		return nil, nil, err
-	}
-	names, err := registerBridged(reg, bridged)
-	if err != nil {
-		return nil, nil, err
-	}
-	return names, blocked, nil
 }
 
 func registerBridged(reg *tools.Registry, bridged []tools.Tool) ([]string, error) {

@@ -39,28 +39,25 @@ type ManagedConfig struct {
 	MCPServers    map[string]ManagedServer  `json:"mcpServers"`
 }
 
-// ManagedProfile is a named selection of servers plus a profile-wide tool policy,
-// letting an operator scope which MCP servers and tools are active at once.
+// ManagedProfile is a named selection of servers, letting an operator scope
+// which MCP servers are active at once.
 type ManagedProfile struct {
-	Servers    []string          `json:"servers,omitempty"`
-	ToolPolicy ManagedToolPolicy `json:"toolPolicy,omitempty"`
+	Servers []string `json:"servers,omitempty"`
 }
 
 // ManagedServer is one configured MCP server in Aura's local registry. When
 // Enabled is nil the server is enabled, matching the least-surprising behavior for
 // imported Claude-style config.
 type ManagedServer struct {
-	Command    string            `json:"command"`
-	Args       []string          `json:"args,omitempty"`
-	Env        []string          `json:"env,omitempty"`
-	Enabled    *bool             `json:"enabled,omitempty"`
-	Source     string            `json:"source,omitempty"`
-	Type       string            `json:"type,omitempty"`
-	URL        string            `json:"url,omitempty"`
-	Trust      ManagedTrust      `json:"trust,omitempty"`
-	Runtime    ManagedRuntime    `json:"runtime,omitempty"`
-	ToolPolicy ManagedToolPolicy `json:"toolPolicy,omitempty"`
-	RiskLabels []string          `json:"riskLabels,omitempty"`
+	Command string         `json:"command"`
+	Args    []string       `json:"args,omitempty"`
+	Env     []string       `json:"env,omitempty"`
+	Enabled *bool          `json:"enabled,omitempty"`
+	Source  string         `json:"source,omitempty"`
+	Type    string         `json:"type,omitempty"`
+	URL     string         `json:"url,omitempty"`
+	Trust   ManagedTrust   `json:"trust,omitempty"`
+	Runtime ManagedRuntime `json:"runtime,omitempty"`
 }
 
 // ManagedTrust records the trust class assigned to a server and the audit trail for
@@ -83,14 +80,6 @@ type ManagedRuntime struct {
 	CPUs    string   `json:"cpus,omitempty"`
 	Memory  string   `json:"memory,omitempty"`
 	Profile string   `json:"profile,omitempty"`
-}
-
-// ManagedToolPolicy filters which of a server's tools are exposed: an allow/deny
-// list by tool name plus DenyRisk to block tools carrying given risk labels.
-type ManagedToolPolicy struct {
-	Allow    []string `json:"allow,omitempty"`
-	Deny     []string `json:"deny,omitempty"`
-	DenyRisk []string `json:"denyRisk,omitempty"`
 }
 
 // ManagedConfigPath returns Aura's managed MCP config path. AURA_MCP_CONFIG is a

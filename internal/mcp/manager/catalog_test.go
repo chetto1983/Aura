@@ -31,9 +31,6 @@ func TestCatalogIncludesTrustedRecipesAndCalendarFixture(t *testing.T) {
 	if !containsString(calendar.RequiredEnv, "AURA_CALENDAR_MODE=fixture") {
 		t.Fatalf("calendar required env missing fixture mode: %#v", calendar.RequiredEnv)
 	}
-	if !containsString(calendar.Server.RiskLabels, "private_data") {
-		t.Fatalf("calendar risk labels missing private_data: %#v", calendar.Server.RiskLabels)
-	}
 }
 
 func TestLookupCatalogNotFound(t *testing.T) {

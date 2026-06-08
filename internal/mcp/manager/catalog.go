@@ -7,18 +7,16 @@ import (
 )
 
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
-// LLM-facing metadata (summary, trust class, risk labels, tool policy) with the
-// concrete mcp.ManagedServer launch spec used to install it.
+// LLM-facing metadata (summary, trust class, runtime) with the concrete
+// mcp.ManagedServer launch spec used to install it.
 type CatalogEntry struct {
-	Name        string                `json:"name"`
-	Summary     string                `json:"summary"`
-	Source      string                `json:"source"`
-	TrustClass  string                `json:"trustClass"`
-	Runtime     string                `json:"runtime"`
-	RequiredEnv []string              `json:"requiredEnv,omitempty"`
-	RiskLabels  []string              `json:"riskLabels,omitempty"`
-	ToolPolicy  mcp.ManagedToolPolicy `json:"toolPolicy,omitempty"`
-	Server      mcp.ManagedServer     `json:"server"`
+	Name        string            `json:"name"`
+	Summary     string            `json:"summary"`
+	Source      string            `json:"source"`
+	TrustClass  string            `json:"trustClass"`
+	Runtime     string            `json:"runtime"`
+	RequiredEnv []string          `json:"requiredEnv,omitempty"`
+	Server      mcp.ManagedServer `json:"server"`
 }
 
 // BuiltInCatalog returns the curated set of shipped MCP server recipes
@@ -31,7 +29,6 @@ func BuiltInCatalog() []CatalogEntry {
 			Source:     "recipe:calculator",
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",
-			RiskLabels: []string{"read"},
 			Server: mcp.ManagedServer{
 				Command: "uvx",
 				Args: []string{
@@ -41,11 +38,10 @@ func BuiltInCatalog() []CatalogEntry {
 					"calculator-mcp-server",
 					"--stdio",
 				},
-				Env:        []string{"PYTHONUNBUFFERED=1"},
-				Source:     "recipe:calculator",
-				Trust:      mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-				Runtime:    mcp.ManagedRuntime{Kind: "local"},
-				RiskLabels: []string{"read"},
+				Env:     []string{"PYTHONUNBUFFERED=1"},
+				Source:  "recipe:calculator",
+				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+				Runtime: mcp.ManagedRuntime{Kind: "local"},
 			},
 		},
 		{
@@ -58,10 +54,6 @@ func BuiltInCatalog() []CatalogEntry {
 				"AURA_CALENDAR_MODE=fixture",
 				"AURA_CALENDAR_FIXTURE=basic",
 			},
-			RiskLabels: []string{"read", "private_data"},
-			ToolPolicy: mcp.ManagedToolPolicy{
-				Allow: []string{"list_calendars", "list_events", "search_events"},
-			},
 			Server: mcp.ManagedServer{
 				Command: "aura-calendar-mcp-fixture",
 				Env: []string{
@@ -73,10 +65,6 @@ func BuiltInCatalog() []CatalogEntry {
 				Runtime: mcp.ManagedRuntime{
 					Kind: "local",
 				},
-				ToolPolicy: mcp.ManagedToolPolicy{
-					Allow: []string{"list_calendars", "list_events", "search_events"},
-				},
-				RiskLabels: []string{"read", "private_data"},
 			},
 		},
 		{
@@ -86,10 +74,6 @@ func BuiltInCatalog() []CatalogEntry {
 			TrustClass:  mcp.TrustTrustedRecipe,
 			Runtime:     "local",
 			RequiredEnv: []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"},
-			RiskLabels:  []string{"read", "private_data", "external_send"},
-			ToolPolicy: mcp.ManagedToolPolicy{
-				Allow: []string{"send_email", "fetch_emails", "search_emails", "get_thread"},
-			},
 			Server: mcp.ManagedServer{
 				Command: "npx",
 				Args: []string{
@@ -103,11 +87,9 @@ func BuiltInCatalog() []CatalogEntry {
 					"SMTP_PASS=CHANGE_ME_app_password",
 					"SMTP_FROM=you@example.com",
 				},
-				Source:     "recipe:mail",
-				Trust:      mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-				Runtime:    mcp.ManagedRuntime{Kind: "local"},
-				ToolPolicy: mcp.ManagedToolPolicy{Allow: []string{"send_email", "fetch_emails", "search_emails", "get_thread"}},
-				RiskLabels: []string{"read", "private_data", "external_send"},
+				Source:  "recipe:mail",
+				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+				Runtime: mcp.ManagedRuntime{Kind: "local"},
 			},
 		},
 		{
@@ -116,21 +98,15 @@ func BuiltInCatalog() []CatalogEntry {
 			Source:     "recipe:whatsapp",
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",
-			RiskLabels: []string{"read", "private_data", "external_send"},
-			ToolPolicy: mcp.ManagedToolPolicy{
-				Allow: []string{"send_message", "list_messages", "list_chats", "search_contacts"},
-			},
 			Server: mcp.ManagedServer{
 				Command: "wsl.exe",
 				Args: []string{
 					"-e", "bash", "-lc",
 					"cd ~/whatsapp-mcp/whatsapp-mcp-server && uv run main.py",
 				},
-				Source:     "recipe:whatsapp",
-				Trust:      mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-				Runtime:    mcp.ManagedRuntime{Kind: "local"},
-				ToolPolicy: mcp.ManagedToolPolicy{Allow: []string{"send_message", "list_messages", "list_chats", "search_contacts"}},
-				RiskLabels: []string{"read", "private_data", "external_send"},
+				Source:  "recipe:whatsapp",
+				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+				Runtime: mcp.ManagedRuntime{Kind: "local"},
 			},
 		},
 	}

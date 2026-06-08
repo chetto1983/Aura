@@ -5,6 +5,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -131,6 +132,29 @@ func TestStatusPaneMicrocompactPointerIsOK(t *testing.T) {
 	}
 	if containsRune(got, '❌') {
 		t.Errorf("microcompact pointer tool wrongly marked failed: %q", got)
+	}
+}
+
+// TestStatusPaneReasoningClearedOnFinish proves the 💭 reasoning is auto-deleted
+// once the turn finishes (the final answer has arrived), leaving only the durable
+// tool list + cost footer — not a stale wall of thinking.
+func TestStatusPaneReasoningClearedOnFinish(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePane(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningMessageContentEvent("rsn1", "Sto ragionando sul meteo…"),
+		events.NewStateDeltaEvent([]events.JSONPatchOperation{
+			{Op: "replace", Path: "/cost_usd", Value: "0.0012"},
+		}),
+		events.NewRunFinishedEvent("t", "r"),
+	})
+	got := lastText(bot)
+	if containsRune(got, '💭') {
+		t.Errorf("reasoning 💭 must be gone after RUN_FINISHED, got: %q", got)
+	}
+	if !strings.Contains(got, "0.0012") {
+		t.Errorf("cost footer must survive the reasoning clear, got: %q", got)
 	}
 }
 

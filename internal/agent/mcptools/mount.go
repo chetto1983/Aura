@@ -10,18 +10,17 @@ import (
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
 )
 
-// MountServer spawns one stdio MCP server, mounts its tools into reg, and returns
-// a closer that shuts the subprocess down. allow is the optional per-server tool
-// allowlist (nil/empty = mount all; D-20). On any failure (spawn, tools/list, name
-// collision) it returns an error and leaves reg untouched / the subprocess reaped,
-// so a misconfigured server can never half-register or leak a process. The closer
-// MUST be called at agent shutdown (goleak-clean).
-func MountServer(ctx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, allow []string) (closer func() error, names []string, err error) {
+// MountServer spawns one stdio MCP server, mounts all advertised tools into reg,
+// and returns a closer that shuts the subprocess down. On any failure (spawn,
+// tools/list, name collision) it returns an error and leaves reg untouched / the
+// subprocess reaped, so a misconfigured server can never half-register or leak a
+// process. The closer MUST be called at agent shutdown (goleak-clean).
+func MountServer(ctx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig) (closer func() error, names []string, err error) {
 	cli, err := mcp.Open(ctx, name, cfg)
 	if err != nil {
 		return nil, nil, err
 	}
-	names, err = Mount(ctx, reg, name, cli, allow)
+	names, err = Mount(ctx, reg, name, cli)
 	if err != nil {
 		_ = cli.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
@@ -29,39 +28,20 @@ func MountServer(ctx context.Context, reg *tools.Registry, name string, cfg mcp.
 	return cli.Close, names, nil
 }
 
-// MountServerWithPolicy spawns one stdio MCP server, mounts its policy-allowed
-// tools into reg, and returns a closer that shuts the subprocess down along with
-// the PolicyDecisions for the tools blocked by server's risk policy. On any
-// failure it returns an error and leaves reg untouched / the subprocess reaped.
-func MountServerWithPolicy(ctx context.Context, reg *tools.Registry, name string, cfg mcp.ServerConfig, server mcp.ManagedServer) (closer func() error, names []string, blocked []mcpmanager.PolicyDecision, err error) {
-	cli, err := mcp.Open(ctx, name, cfg)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	names, blocked, err = MountWithPolicy(ctx, reg, name, cli, server)
-	if err != nil {
-		_ = cli.Close()
-		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
-	}
-	return cli.Close, names, blocked, nil
-}
-
-// MountManagedServerWithPolicy opens a managed MCP server (stdio or streamable
-// HTTP, resolved from its config), mounts its policy-allowed tools into reg, and
-// returns a closer plus the PolicyDecisions for the tools blocked by the risk
-// policy. On any failure it returns an error and leaves reg untouched / the
-// transport closed.
-func MountManagedServerWithPolicy(ctx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, blocked []mcpmanager.PolicyDecision, err error) {
+// MountManagedServer opens a managed MCP server (stdio or streamable HTTP,
+// resolved from its config), mounts all advertised tools into reg, and returns a
+// closer for the underlying transport.
+func MountManagedServer(ctx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
 	srv, err := openManagedServer(ctx, name, server)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	names, blocked, err = MountWithPolicy(ctx, reg, name, srv, server)
+	names, err = Mount(ctx, reg, name, srv)
 	if err != nil {
 		_ = srv.Close()
-		return nil, nil, nil, fmt.Errorf("mount %q: %w", name, err)
+		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
-	return srv.Close, names, blocked, nil
+	return srv.Close, names, nil
 }
 
 func openManagedServer(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, error) {

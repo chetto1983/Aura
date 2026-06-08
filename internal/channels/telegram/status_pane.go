@@ -102,6 +102,10 @@ func (p *statusPane) handle(ev events.Event) {
 		p.failed = true
 		p.dirty = true
 	case *events.RunFinishedEvent:
+		// The 💭 reasoning is transient live-progress: once the turn finishes (the
+		// final answer is in msg #2) drop it so the pane settles to just the durable
+		// tool list + cost footer, not a stale wall of thinking.
+		p.thinking = ""
 		p.dirty = true
 	}
 }

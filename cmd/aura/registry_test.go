@@ -112,9 +112,6 @@ func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
 				Type:  mcp.ServerTypeStreamableHTTP,
 				URL:   server.URL,
 				Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
-				ToolPolicy: mcp.ManagedToolPolicy{
-					Allow: []string{"echo"},
-				},
 			},
 		},
 		SandboxAgent: config.LoadDB().SandboxAgent,

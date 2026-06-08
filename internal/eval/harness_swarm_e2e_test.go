@@ -152,7 +152,7 @@ func TestSwarmE2E(t *testing.T) {
 
 // buildSwarmRegistry mirrors cmd/aura/main.go buildBaseRegistry + the fail-soft MCP
 // mount loop: the production tool set + swarm_spawn (live RunnerAdapter) + the mail +
-// whatsapp MCP servers from the managed config, each behind its D-20 allowlist. It is
+// whatsapp MCP servers from the managed config. It is
 // the SAME boot path `aura chat` uses, so the harness exercises swarm_spawn against a
 // real MCP-mounted registry (D-19/D-20/D-21 first live exercise from the eval tier).
 func buildSwarmRegistry(t *testing.T, cfg *config.Config) (reg *tools.Registry, mail, wa []string, closers []func() error) {
@@ -171,7 +171,7 @@ func buildSwarmRegistry(t *testing.T, cfg *config.Config) (reg *tools.Registry, 
 			t.Logf("swarm E2E: MCP server %q not registered — `aura mcp install %s` first (see header)", name, name)
 			continue
 		}
-		closer, names, err := mcptools.MountServer(ctx, reg, name, sc, swarmMCPAllowlist(name))
+		closer, names, err := mcptools.MountServer(ctx, reg, name, sc)
 		if err != nil {
 			t.Logf("swarm E2E: MCP server %q failed to mount (fail-soft): %v", name, err)
 			continue
@@ -184,18 +184,6 @@ func buildSwarmRegistry(t *testing.T, cfg *config.Config) (reg *tools.Registry, 
 		}
 	}
 	return reg, mail, wa, closers
-}
-
-// swarmMCPAllowlist mirrors cmd/aura/main.go mcpAllowlist (the D-20 v1 footgun sets).
-func swarmMCPAllowlist(server string) []string {
-	switch server {
-	case "mail":
-		return []string{"send_email", "fetch_emails", "search_emails", "get_thread"}
-	case "whatsapp":
-		return []string{"send_message", "list_messages", "list_chats", "search_contacts"}
-	default:
-		return nil
-	}
 }
 
 // runSwarmScenario runs the natural autonomous prompt (with the per-run tags
