@@ -150,8 +150,8 @@ func (s *Store) CleanupExpired(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
-// PendingExists reports whether a token row exists (unconsumed or not), mapping a
-// missing row to ErrTokenNotFound. Used by the setup-status / SSE-poll path.
+// PendingConsumed reports whether a token row exists and has been consumed, mapping
+// a missing row to ErrTokenNotFound. Used by the setup-status / SSE-poll path.
 func (s *Store) PendingConsumed(ctx context.Context, onboardingToken string) (bool, error) {
 	row, err := s.q.GetTelegramSetupPending(ctx, onboardingToken)
 	if err != nil {
