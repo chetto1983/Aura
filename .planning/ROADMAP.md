@@ -464,7 +464,7 @@ Plans:
 
 **Wave 4** (wiring + Gate-3 — blocked on Wave 3)
 
-- [ ] 13-09-PLAN.md — serve.go mount (channels Registry + setup server, fail-soft) + telegram_integration/multimodal_integration tiers + compose sidecars + CI + Gate-3 live sign-off
+- [~] 13-09-PLAN.md — Tasks 1-2 DONE (serve.go mount: channels Registry + setup server fail-soft [9c3631bf]; telegram_integration/multimodal_integration tiers + compose sidecars + CI no-skip-as-green [e2fe7eb8]). PAUSED at Task-3 Gate-3 (full tag matrix live + coverage ≥85% + mutation ≥70% mdv2/renderer + operator sign-off — orchestrator-owned). UX-02/03/04 NOT yet complete.
 
 ### Phase 14: Onboarding + Agent.md
 
