@@ -61,7 +61,11 @@ type ttsRequest struct {
 // msg.Voice the caller asserts on). The caption is ASCII-sanitized so it never
 // 400s. A sidecar error surfaces and no voice note is sent.
 func (t *ttsClient) Speak(ctx context.Context, bot botSender, to tele.Recipient, text string) (*tele.Message, error) {
-	opus, err := t.synthesize(ctx, text)
+	spoken := sanitizeForSpeech(text)
+	if spoken == "" {
+		return nil, nil // nothing speakable (e.g. an emoji-only reply) — skip the voice note
+	}
+	opus, err := t.synthesize(ctx, spoken)
 	if err != nil {
 		return nil, err
 	}
