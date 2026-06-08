@@ -13,6 +13,9 @@ Patterns and stack choices established across spike sessions. New spikes follow 
 - One dir per spike: `main.go` (harness) + `README.md` (frontmatter, investigation trail, results) + artifacts (e.g. `bridge-patch.diff`).
 - Harness output = forensic log: ISO-timestamped `[CATEGORY] message` lines, `[SUMMARY]` verdict line, exit 0 = VALIDATED / 1 = failure.
 - Live side-effecting probes (email/WhatsApp sends) target ONLY the operator's own account and embed a unique `AURA-SPIKE-NNN-<unix>` tag for read-back assertion.
+- Memory MCP live probes default to `http://127.0.0.1:8091/mcp/` and accept `AURA_AGENT_MEMORY_MCP_URL` / `AURA_AGENT_MEMORY_MCP_PORT` overrides. They mount through Aura's real `mcp.OpenServer` / `mcptools.MountManagedServerWithPolicy` path, not raw HTTP.
+- Semantic-memory probes need both semantic search and exact graph/readback assertions. Unique tags prove recall, but repeated semantically similar tags deliberately test over-merge; treat entity/preference search hits as UX recall evidence, not provenance-boundary proof.
+- Deterministic agent-loop memory probes use `agenttest.FakeClient` with the real `LlmAgent`, `tool_search`, and mounted MCP tools. This validates loop plumbing before spending live model calls on autonomous tool choice.
 
 ## Patterns
 
