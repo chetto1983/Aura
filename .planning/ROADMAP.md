@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat (completed 2026-06-04)
 - [x] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger (completed 2026-06-06)
 - [x] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced (completed 2026-06-07)
-- [x] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image
+- [~] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image (components + Gate-3 done; 13-10 wires the live inbound dispatch — commands/HITL/voice/photo/document/artifact were built+tested but only OnText is registered)
 - [ ] **Phase 14: Onboarding + AGENT.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
 - [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
@@ -464,7 +464,11 @@ Plans:
 
 **Wave 4** (wiring + Gate-3 — blocked on Wave 3)
 
-- [x] 13-09-PLAN.md — serve.go mount (channels Registry + setup server fail-soft [9c3631bf]) + telegram_integration/multimodal_integration tiers + compose sidecars + CI no-skip-as-green [e2fe7eb8]. **Gate-3 CLOSED 2026-06-08**: coverage 86.8% (≥85%), mutation mdv2 81.8% + renderer 74.1% (both ≥70%, 3 autopsy passes [7b9d82ed/89e416f6/87f4ee05]), lint=0; live autonomous E2E **11/11 = 100%** (scripts/telegram_e2e.sh — telegram 3 + multimodal 3 against the live 9c sidecars + setup-wizard :9081 5/5). Live run fixed 2 compose defects vs the validated spikes (STT→hwdsl2 spike-027 [38870e40]; markitdown image deferred). UX-02/03/04 satisfied (completed 2026-06-08).
+- [x] 13-09-PLAN.md — serve.go mount (channels Registry + setup server fail-soft [9c3631bf]) + telegram_integration/multimodal_integration tiers + compose sidecars + CI no-skip-as-green [e2fe7eb8]. **Gate-3 CLOSED 2026-06-08**: coverage 86.8% (≥85%), mutation mdv2 81.8% + renderer 74.1% (both ≥70%, 3 autopsy passes [7b9d82ed/89e416f6/87f4ee05]), lint=0; live autonomous E2E **11/11 = 100%** (scripts/telegram_e2e.sh — telegram 3 + multimodal 3 against the live 9c sidecars + setup-wizard :9081 5/5). Live run fixed 2 compose defects vs the validated spikes (STT→hwdsl2 spike-027 [38870e40]; markitdown now built in-repo over the official lib [5d053598]). NOTE: the Gate-3 E2E validated COMPONENTS in isolation; the live inbound bot dispatch was found unwired (only OnText registered) — see 13-10.
+
+**Wave 5** (live inbound integration — the gap 13-09 missed)
+
+- [ ] 13-10-PLAN.md — wire the Telegram inbound dispatch: commands (/cost,/cancel,/search intercept) + HITL (OnCallback/OnReply resume) + multimodal (OnVoice/OnPhoto/OnDocument → transcribe/describe/convert → turn) + artifact (Subscribe×3) + TTS-out, plumbing MultimodalConfig+deps through telegram.Deps. The components (13-05/06/08) were built+unit-tested but their constructors are never called in production (only OnText is registered). Closes UX-02/03/04 as USER-reachable. PLANNED 2026-06-08 — awaiting review.
 
 ### Phase 14: Onboarding + Agent.md
 
