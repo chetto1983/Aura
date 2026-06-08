@@ -78,4 +78,10 @@ Evidence from `go run`:
 - Proof, architecture tradeoff, and distributed debugging prompts still mapped to `DEEP_REASONING` with `max_tokens=4096`.
 - `messages[0]` stayed byte-stable for every sample, protecting Aura's stable-prefix/cache invariant.
 
-Build signal: add a small `MaxTokens` policy layer near request assembly if Aura wants adaptive routing now. For OpenRouter-backed reasoning models, the next step is not just a raw top-level `reasoning_effort` string; it is a provider-neutral `Reasoning` config that can map no/small/deep decisions to OpenRouter's `reasoning` object while preserving `messages[0]`, `ToolChoice`, billing visibility, and any required `reasoning_details` round-trip behavior. Do not present the shim as AutoThink-equivalent unless/until a live benchmark validates quality gains.
+Production follow-up validation:
+
+- `internal/llm/openai_compat.TestAdaptiveReasoningItalianCorpusE2E` exercises the real PromptBuilder -> OpenAI-compatible request-body path with 60 natural Italian queries.
+- The score gate is `>=90%`; the first committed corpus run scored `100.0% (60/60)`.
+- The corpus covers greeting/factual prompts (`none`/512), news/search/current lookup prompts (`low`/2048), and code/debug/design/proof prompts (`high`/4096).
+
+Build signal: production now has a small `MaxTokens` policy layer near request assembly plus provider-neutral `Reasoning` config projected to OpenRouter's `reasoning` object. The implementation preserves `messages[0]`, `ToolChoice`, endpoint configurability, and an operator opt-out via `AURA_LLM_ADAPTIVE_REASONING=false`. Do not present the shim as AutoThink-equivalent unless/until a live benchmark validates quality gains.

@@ -71,17 +71,26 @@ func classifyReasoningTier(content string) reasoningTier {
 		"step by step", "complex", "why", "how", "failure", "production",
 		"scheduler", "memory retrieval", "contradiction", "script", "scraping",
 		"scrape", "crawler", "codice", "codifica", "implement", "implementa",
+		"analizza", "analisi", "confronta", "paragona", "debugga", "debuggare",
+		"risolvi", "dimostra", "dimostrare", "dimostrazione", "spiega perche",
+		"spiega perché", "perché", "perche", "architettura", "progetta",
+		"progettare", "ottimizza", "ottimizzare", "refactor", "scraper",
+		"programma", "funzione", "query sql", "dockerfile", "workflow", "api",
+		"algoritmo", "strategia", "piano tecnico",
 	}
 	smallIndicators := []string{
 		"cerca", "notizie", "news", "search", "trova", "aggiornamenti",
 		"lookup", "ricerca", "recupera", "fonti", "sources",
+		"meteo", "previsioni", "ultime", "aggiorna", "controlla", "verifica",
+		"prezzo", "costa", "quotazione", "orari", "aperto", "farmacia",
+		"traffico", "sciopero", "evento", "risultato", "classifica",
 	}
 
 	deepHits := countIndicators(q, deepIndicators)
 	smallHits := countIndicators(q, smallIndicators)
 	wordCount := len(strings.Fields(content))
 	deepScore := float64(deepHits)*0.35 + minFloat(float64(wordCount)/40.0, 0.55)
-	if deepHits >= 1 && deepScore >= 0.55 {
+	if deepHits >= 2 || (deepHits >= 1 && deepScore >= 0.55) {
 		return tierDeepReasoning
 	}
 	if smallHits >= 1 {
