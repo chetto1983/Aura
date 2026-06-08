@@ -148,12 +148,97 @@ services:
       retries: 10
       start_period: 20s
 
+  # ↓↓ Slice 9c — multimodal CPU sidecars (Phase 13, UX-04) ↓↓
+  # Three thin OpenAI-compat CPU sidecars + markitdown. Aura talks to each over the
+  # Docker network (the telegram voice/photo/tts/documents clients), never with Go
+  # ML in-process. All loopback-published; operator-started (compose, not boot —
+  # T-13-09-SC accept). With AURA_VISION_CLOUD=true the operator simply does not
+  # start aura-ocr-vl (tier B, no-GPU → OpenRouter cloud vision). STT/TTS stay local
+  # in both tiers. Endpoints/ports per 13-RESEARCH.md §7.
+
+  # aura-stt — faster-whisper STT (OGG/Opus direct, no ffmpeg). STT_BASE_URL=
+  # http://aura-stt:9000/v1, POST /audio/transcriptions (multipart).
+  aura-stt:
+    image: ${AURA_STT_IMAGE:-fedirz/faster-whisper-server:latest-cpu}
+    container_name: aura-stt
+    restart: unless-stopped
+    environment:
+      WHISPER__MODEL: ${STT_MODEL:-large-v3-turbo}
+      WHISPER__INFERENCE_DEVICE: cpu
+      WHISPER__NUM_WORKERS: "1"
+    ports:
+      - "127.0.0.1:${AURA_STT_PORT:-9000}:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s                        # first-boot model download
+
+  # aura-tts — Kokoro-82M (voice if_sara) → opus voice note. TTS_BASE_URL=
+  # http://aura-tts:8880/v1, POST /audio/speech response_format=opus.
+  aura-tts:
+    image: ${AURA_TTS_IMAGE:-ghcr.io/remsky/kokoro-fastapi-cpu:latest}
+    container_name: aura-tts
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AURA_TTS_PORT:-8880}:8880"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8880/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+
+  # aura-ocr-vl — GLM-OCR Q8 (llama.cpp CPU vision). MULTIMODAL_BASE_URL=
+  # http://aura-ocr-vl:8082/v1, POST /chat/completions with a base64 image_url.
+  # NOT started when AURA_VISION_CLOUD=true (the cloud-vision tier B).
+  aura-ocr-vl:
+    image: ${AURA_OCR_VL_IMAGE:-ghcr.io/ggml-org/llama.cpp:server}
+    container_name: aura-ocr-vl
+    restart: unless-stopped
+    command:
+      - --hf-repo
+      - ${AURA_OCR_VL_HF_REPO:-ggml-org/glm-ocr-GGUF}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8082"
+      - -t
+      - "4"                                    # mini-PC CPU budget cap (feedback_minipc_cpu_budget)
+    ports:
+      - "127.0.0.1:${AURA_OCR_VL_PORT:-8082}:8082"
+    volumes:
+      - aura-ocr-vl:/root/.cache/llama.cpp
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8082/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s                        # first-boot HF model download
+
+  # markitdown — document → markdown converter. POST /convert (tiered ≤5MB sync /
+  # 5-50MB async / >50MB refuse on the Aura side). DOCUMENTS_BASE_URL points here.
+  markitdown:
+    image: ${AURA_MARKITDOWN_IMAGE:-ghcr.io/microsoft/markitdown:latest}
+    container_name: aura-markitdown
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${AURA_MARKITDOWN_PORT:-8083}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
 volumes:
   aura-postgres:
   aura-neo4j:
   aura-neo4j-plugins:
   aura-llama-embed:
   aura-sandbox-agent:
+  aura-ocr-vl:
 
 networks:
   aura-sandbox-local:

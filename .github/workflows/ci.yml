@@ -354,3 +354,114 @@ jobs:
         # job. NO-SKIP-AS-GREEN: the tagged tiers t.Fatal under $CI when env is
         # unset, so a skipped tier fails the gate rather than passing it green.
         run: bash scripts/coverage_gate.sh
+
+  multimodal-integration-test:
+    name: Multimodal sidecars (multimodal_integration tier, live STT/OCR/TTS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # guards against a hung sidecar model download
+    # Phase 13 (Slice 9c, UX-04). The three 9c CPU sidecars (aura-stt/aura-tts/
+    # aura-ocr-vl) are brought up via `docker compose`; the multimodal_integration
+    # tier round-trips them (TTS→STT audio loop + OCR vision). The base URLs below
+    # are exported so the sidecarEnvOrSkip helper t.Fatal's under $CI when one is
+    # unset — a skipped tier FAILS the job, never passes it green (no-skip-as-green,
+    # CLAUDE.md / VALIDATION). aura-ocr-vl is the local-vision leg (AURA_VISION_CLOUD
+    # stays false in CI). POSTGRES_PASSWORD/NEO4J_PASSWORD are present so the whole
+    # compose file parses (the fail-fast vars) even though this job starts only the
+    # sidecars.
+    env:
+      CI: "true"  # arms the sidecarEnvOrSkip no-skip-as-green guards
+      POSTGRES_PASSWORD: ci-test-password
+      NEO4J_PASSWORD: ci-test-password
+      # The loopback-published sidecar endpoints the tier reads (compose maps each
+      # service to 127.0.0.1; the /v1 suffix matches the OpenAI-compat base).
+      STT_BASE_URL: http://127.0.0.1:9000/v1
+      MULTIMODAL_BASE_URL: http://127.0.0.1:8082/v1
+      MULTIMODAL_MODEL: glm-ocr
+      TTS_BASE_URL: http://127.0.0.1:8880/v1
+      TTS_VOICE: if_sara
+      TTS_FORMAT: opus
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile the multimodal_integration tier (always — no-skip-as-green floor)
+        # The tier ALWAYS compiles in CI (the cheap, always-green floor that proves the
+        # tagged file never rots). The live round-trip below runs only when the sidecars
+        # are reachable; the compile gate runs unconditionally.
+        run: go vet -tags multimodal_integration ./internal/channels/telegram/
+
+      - name: Bring up the 9c sidecars (aura-stt + aura-tts + aura-ocr-vl)
+        run: docker compose up -d aura-stt aura-tts aura-ocr-vl
+
+      - name: Wait for the sidecars healthy
+        run: |
+          for svc in aura-stt aura-tts aura-ocr-vl; do
+            ok=""
+            for i in $(seq 1 60); do
+              status="$(docker inspect -f '{{.State.Health.Status}}' "$svc" 2>/dev/null || echo starting)"
+              echo "$svc health: $status"
+              [ "$status" = "healthy" ] && ok=1 && break
+              sleep 10
+            done
+            if [ -z "$ok" ]; then
+              echo "$svc did not become healthy" >&2
+              docker logs "$svc" --tail 60 || true
+              exit 1
+            fi
+          done
+
+      - name: Live multimodal_integration tier (TTS->STT loop + OCR vision)
+        run: go test -race -count=1 -tags multimodal_integration ./internal/channels/telegram/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
+
+  telegram-integration-test:
+    name: Telegram live Bot-API (telegram_integration tier, operator-token-gated)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Phase 13 (Slice 9b, UX-02). The live Bot-API tier sends a photo/document/voice
+    # to the OPERATOR's own chat and asserts on the Send RESPONSE (msg.Photo/Document/
+    # Voice non-nil) — ground truth = the response, never the poll stream (spike
+    # 017/019). It needs the operator's bot token + chat id, which live in repo
+    # secrets and are ABSENT on fork PRs — so this job is optional by nature. The
+    # compile-check ALWAYS runs (the always-green floor); the live send runs ONLY when
+    # the secret is present (the `if` guard). When it runs, CI=true + the exported env
+    # arm liveEnvOrSkip's no-skip-as-green t.Fatal (a missing var under CI fails, never
+    # skips green).
+    env:
+      CI: "true"  # arms the liveEnvOrSkip no-skip-as-green guards
+      # Map the secrets to job env at the job level (the secrets context is not
+      # usable in a step-level `if`). HAS_BOT_TOKEN gates the live step; the actual
+      # token/chat are passed only to the gated step's env.
+      HAS_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile the telegram_integration tier (always — no-skip-as-green floor)
+        run: go vet -tags telegram_integration ./internal/channels/telegram/
+
+      - name: Live telegram_integration tier (operator bot, response-asserted)
+        # Runs ONLY when the operator token secret is configured (absent on fork PRs).
+        # The token/chat are exported INSIDE the gated step so liveEnvOrSkip sees them
+        # and runs the live send; without the secret the step is skipped (not falsely
+        # green — the compile floor above always ran).
+        if: ${{ env.HAS_BOT_TOKEN == 'true' }}
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          AURA_E2E_CHAT_ID: ${{ secrets.AURA_E2E_CHAT_ID }}
+        run: go test -race -count=1 -tags telegram_integration ./internal/channels/telegram/
