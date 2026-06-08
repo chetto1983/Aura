@@ -192,6 +192,38 @@ func TestOnTextCommandInterceptNoTurn(t *testing.T) {
 	}
 }
 
+// TestOnTextStartPayloadRoutesToOnboarding proves a Telegram deep link
+// (/start <token>) is routed to the onboarding handler before the generic command
+// dispatcher. Without this, the setup deep link silently falls through to the
+// ordinary /start greeting and the token is never consumed.
+func TestOnTextStartPayloadRoutesToOnboarding(t *testing.T) {
+	t.Parallel()
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Cost = &fakeCost{}
+		d.Search = &fakeSearch{}
+	})
+
+	bot := &dispatchBot{}
+	msg := chatMsg(42)
+	msg.Sender = &tele.User{ID: 555, Username: "dav", FirstName: "Davide"}
+	msg.Text = "/start tok-good"
+	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onText(/start token): %v", err)
+	}
+
+	if calls, _ := rt.snapshot(); calls != 0 {
+		t.Errorf("a /start onboarding payload must not drive a turn, got %d calls", calls)
+	}
+	texts := bot.sentTexts()
+	if len(texts) != 1 {
+		t.Fatalf("expected one onboarding reply, got %d: %v", len(texts), texts)
+	}
+	if !strings.Contains(texts[0], "Onboarding non disponibile") {
+		t.Fatalf("/start token was not routed to onboarding, reply: %q", texts[0])
+	}
+}
+
 // TestOnTextPlainMessageDrivesTurn proves a non-command message is NOT intercepted
 // and drives a turn with the message text.
 func TestOnTextPlainMessageDrivesTurn(t *testing.T) {

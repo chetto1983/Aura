@@ -119,11 +119,12 @@ type Telegram struct {
 	// message): cmds owns the /command intercept + the per-chat /cancel registry;
 	// the media clients hold their HTTP clients; docs owns the async-convert wg that
 	// Stop drains (goleak-clean). Guarded by mu; read under the handler goroutines.
-	cmds  *commands
-	voice *voiceClient
-	photo *photoClient
-	docs  *documentsClient
-	tts   *ttsClient
+	cmds    *commands
+	onboard *onboarding
+	voice   *voiceClient
+	photo   *photoClient
+	docs    *documentsClient
+	tts     *ttsClient
 }
 
 // NewChannel builds an unstarted Telegram channel over the supplied deps. (Named

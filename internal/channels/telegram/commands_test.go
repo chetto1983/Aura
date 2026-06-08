@@ -229,3 +229,42 @@ func TestSearchBackendErrorReported(t *testing.T) {
 		t.Error("/search backend error should surface a user-facing message")
 	}
 }
+
+// TestThreadBoundCommandsDoNotClaimUnsupportedStateChanges keeps Telegram command
+// copy honest: this channel currently maps one Telegram chat to one continuous
+// thread, so /new and /reset must not claim they created or erased persisted
+// conversation state.
+func TestThreadBoundCommandsDoNotClaimUnsupportedStateChanges(t *testing.T) {
+	t.Parallel()
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &fakeCost{}})
+
+	_, newReply := cmds.dispatch(context.Background(), 42, "/new")
+	if !strings.Contains(strings.ToLower(newReply), "thread continuo") {
+		t.Fatalf("/new should explain the continuous Telegram thread, got %q", newReply)
+	}
+
+	_, resetReply := cmds.dispatch(context.Background(), 42, "/reset")
+	lowerReset := strings.ToLower(resetReply)
+	if strings.Contains(lowerReset, "azzerata") || strings.Contains(lowerReset, "azzerato") {
+		t.Fatalf("/reset must not claim persisted history was erased, got %q", resetReply)
+	}
+	if !strings.Contains(lowerReset, "annull") {
+		t.Fatalf("/reset should still explain it cancels any running turn, got %q", resetReply)
+	}
+}
+
+func TestHelpCopyMatchesThreadBoundSemantics(t *testing.T) {
+	t.Parallel()
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &fakeCost{}})
+
+	_, reply := cmds.dispatch(context.Background(), 42, "/help")
+	lower := strings.ToLower(reply)
+	for _, bad := range []string{"nuova conversazione", "azzera", "ferma aura"} {
+		if strings.Contains(lower, bad) {
+			t.Fatalf("/help advertises unsupported Telegram state change %q in %q", bad, reply)
+		}
+	}
+	if !strings.Contains(lower, "thread continuo") {
+		t.Fatalf("/help should explain Telegram's continuous thread model, got %q", reply)
+	}
+}

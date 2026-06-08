@@ -10,8 +10,9 @@
 // (UX-02/03/04 unreachable). registerHandlers wires them all.
 //
 // Routing rules (plan 13-10):
-//   - OnText  : commands.dispatch FIRST (a /command never drives the LLM —
-//     T-13-10-CmdToLLM); else a pending pause → hitl.handleTextReply; else a turn.
+//   - OnText  : /start <token> consumes onboarding first; then commands.dispatch
+//     intercepts (a /command never drives the LLM — T-13-10-CmdToLLM); else a
+//     pending pause → hitl.handleTextReply; else a turn.
 //   - OnVoice : getFile → voiceClient.Transcribe → turn driven by the transcript;
 //     on a hard STT failure send the IT copy + the 😵 reaction.
 //   - OnPhoto : getFile → photoClient.Describe (the single AURA_VISION_CLOUD
@@ -58,6 +59,11 @@ func (t *Telegram) buildDispatch() {
 		Prices: t.deps.Prices,
 		Model:  t.deps.Model,
 	})
+	var onboardStore onboardingStore
+	if t.deps.Store != nil {
+		onboardStore = t.deps.Store
+	}
+	t.onboard = newOnboarding(onboardStore)
 	t.voice = newVoiceClient(t.deps.Multimodal)
 	t.photo = newPhotoClient(t.deps.Multimodal)
 	t.docs = newDocumentsClient(t.deps.Multimodal)
@@ -96,6 +102,10 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		}
 		chatID := msg.Chat.ID
 		text := c.Text()
+		if reply, ok := t.handleStartPayload(daemonCtx, msg, text); ok {
+			t.reply(c, reply)
+			return nil
+		}
 
 		// 1) Command intercept — a handled /command never reaches the LLM.
 		if handled, reply := t.cmds.dispatch(daemonCtx, chatID, text); handled {
@@ -111,6 +121,49 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		t.runTurn(daemonCtx, c, chatID, text, false)
 		return nil
 	}
+}
+
+// handleStartPayload consumes a Telegram deep-link "/start <token>" before the
+// generic command dispatcher sees it. A bare /start is left to commands.dispatch
+// so the ordinary greeting remains unchanged.
+func (t *Telegram) handleStartPayload(ctx context.Context, msg *tele.Message, text string) (reply string, handled bool) {
+	name, _ := splitCommand(text)
+	if name != "/start" {
+		return "", false
+	}
+	token := parseStartPayload(text)
+	if token == "" {
+		return "", false
+	}
+
+	onboard := t.onboard
+	if onboard == nil {
+		var onboardStore onboardingStore
+		if t.deps.Store != nil {
+			onboardStore = t.deps.Store
+		}
+		onboard = newOnboarding(onboardStore)
+	}
+	reply, _ = onboard.handleStart(ctx, startMsgFromMessage(msg, token))
+	return reply, true
+}
+
+func startMsgFromMessage(msg *tele.Message, token string) startMsg {
+	out := startMsg{Token: token}
+	if msg == nil {
+		return out
+	}
+	if msg.Chat != nil {
+		out.TelegramUserID = msg.Chat.ID
+		out.Username = msg.Chat.Username
+		out.FirstName = msg.Chat.FirstName
+	}
+	if msg.Sender != nil {
+		out.TelegramUserID = msg.Sender.ID
+		out.Username = msg.Sender.Username
+		out.FirstName = msg.Sender.FirstName
+	}
+	return out
 }
 
 // onReply handles a ForceReply answer to an ask_user clarification. telebot fires

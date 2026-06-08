@@ -107,32 +107,33 @@ func (c *commands) dispatch(ctx context.Context, chatID int64, text string) (han
 	case "/search":
 		return true, c.search(ctx, arg)
 	case "/new":
-		return true, "Nuova conversazione avviata."
+		return true, "In Telegram questa chat resta un thread continuo. Per aprire o gestire conversazioni separate usa l'app o la CLI."
 	case "/list":
 		return true, "Usa l'app per sfogliare le conversazioni; qui ogni chat è un thread continuo."
 	case "/reset":
-		return true, c.cancel(chatID) + "\nConversazione azzerata."
+		return true, c.cancel(chatID) + "\nLo storico resta come prima in questa build Telegram."
 	case "/whoami":
 		return true, "Sei l'utente locale di questa istanza di Aura."
 	case "/stop":
-		return true, c.cancel(chatID) + "\nMi fermo."
+		return true, c.cancel(chatID) + "\nIl bot resta attivo."
 	default:
 		return true, "Istruzione non riconosciuta. Usa /help per la lista dei comandi."
 	}
 }
 
 // helpText lists the 10 bot-intercept commands (no LLM call drives a command).
-const helpText = "Comandi disponibili:\n" +
-	"/start — avvia\n" +
-	"/help — questa lista\n" +
-	"/cancel — annulla il turno in corso\n" +
-	"/cost — spesa cumulativa di oggi\n" +
-	"/search <testo> — cerca nelle conversazioni\n" +
-	"/new — nuova conversazione\n" +
-	"/list — info conversazioni\n" +
-	"/reset — azzera la conversazione\n" +
-	"/whoami — chi sei\n" +
-	"/stop — ferma Aura"
+const helpText = "Comandi Aura:\n" +
+	"/start - saluta o completa un link di setup\n" +
+	"/help - mostra questa lista\n" +
+	"/cancel - annulla il turno in corso\n" +
+	"/cost - mostra la spesa cumulativa di oggi\n" +
+	"/search <testo> - cerca nei turni salvati\n" +
+	"/new - spiega il thread continuo Telegram\n" +
+	"/list - indica dove sfogliare le conversazioni\n" +
+	"/reset - annulla il turno; non cancella lo storico\n" +
+	"/whoami - mostra l'identita collegata\n" +
+	"/stop - annulla il turno; il bot resta attivo\n\n" +
+	"In Telegram questa chat e un thread continuo. Puoi mandare testo, vocali, foto o documenti."
 
 // cancel fires the in-flight turn's ctx-cancel for a chat (SC#3) and confirms. A
 // /cancel with no running turn is a clean no-op confirmation (idempotent).
