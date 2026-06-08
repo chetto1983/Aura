@@ -3,7 +3,8 @@ spike: 034
 name: agent-memory-dedup-chaos
 type: standard
 validates: "Given concurrent Mario Rossi variants through the agent-memory MCP surface, when writes race, then Neo4j memory dedup does not fragment tagged entities or over-merge into unrelated entities"
-verdict: INVALIDATED
+verdict: VALIDATED
+verdict_history: "INVALIDATED 2026-06-08 (cross-run over-merge) -> fixed in fork branch aura/provenance-safe-dedup (commit c1c2d65) -> re-VALIDATED 2026-06-08T19:03 live against image aura-agent-memory-mcp:spike-fixed"
 related: [031, 033]
 tags: [phase-15, memory, neo4j, dedup, chaos, mcp]
 ---
@@ -45,8 +46,17 @@ The JSON summary includes every write result, the tagged entity rows returned by
 - Similarity scores for the cross-run merge ranged from roughly `0.9536` to `0.9973`.
 - `graph_query` for the new tag returned `tagged_count=0` and `exact_name_count=0`; the harness flagged `over_merge=true`, `fragmented=false`.
 
+### Re-validation after fix (2026-06-08T19:03, live `aura-agent-memory-mcp:spike-fixed`)
+
+The cross-run over-merge was fixed in the fork branch `aura/provenance-safe-dedup` (commit `c1c2d65`, provenance-scoped dedup; 83/83 package unit tests green). Re-run live against the rebuilt `:spike-fixed` image, **two consecutive runs**:
+
+- Run 1 (tag `AURA-SPIKE-034-1780945405`): 10 variants collapsed into the single canonical entity of *this* run; `over_merge=false`, `fragmented=false`, `tagged_count=1`, `exact_name_count=1`.
+- Run 2 (tag `AURA-SPIKE-034-1780945434`, the decisive cross-run case): the first write returned `matched_entity_name=null` — it created *its own* canonical entity instead of disappearing into Run 1's `...405` entity, despite ~0.97 embedding similarity; the remaining 9 variants merged into Run 2's canonical. `over_merge=false`, `tagged_count=1`.
+
+Both runs reported `verdict=VALIDATED`. Provenance-safe isolation now holds across runs through the live MCP surface, not only in package unit tests.
+
 ## Results
 
-Verdict: INVALIDATED.
+Verdict: VALIDATED (originally INVALIDATED — see verdict_history + re-validation above).
 
-Neo4j Agent Memory's entity dedup is strong enough to avoid same-run fragmentation, but it is too aggressive for provenance-safe exact isolation. A new synthetic Mario Rossi run can disappear into an older Mario Rossi entity even though the run tag differs. Aura's Phase 15 design needs an exact identity/provenance key, source-bound constraints, or an application-side merge policy before accepting upstream semantic dedup as the only guardrail.
+The original run proved Neo4j Agent Memory's stock semantic dedup was too aggressive for provenance-safe isolation: a new tagged Mario Rossi run disappeared into an older one at similarity `0.95`–`0.997`. The `aura/provenance-safe-dedup` fork fix (provenance-scoped dedup keyed off write metadata) resolves this, and the live re-run against `:spike-fixed` confirms cross-run isolation holds. Standing Phase 15 caveat: the scope only engages when the ingest path supplies provenance metadata (`source_id`/`document_id`/`run_id`); a single persistent session with no per-source key still shares one global scope — intended for same-user merges, but to be decided consciously at plan time.

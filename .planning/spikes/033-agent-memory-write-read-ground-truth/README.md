@@ -3,7 +3,8 @@ spike: 033
 name: agent-memory-write-read-ground-truth
 type: standard
 validates: "Given the mounted agent-memory MCP server and a unique session id, when Aura stores messages, entities, preferences, and facts, then read tools return the same tagged memory with session isolation"
-verdict: PARTIAL
+verdict: VALIDATED
+verdict_history: "PARTIAL 2026-06-08 (long-term entity/preference isolation failed) -> fixed in fork branch aura/provenance-safe-dedup (commit c1c2d65) -> re-VALIDATED 2026-06-08T19:07 live against image aura-agent-memory-mcp:spike-fixed (all 10 checks pass)"
 related: [032]
 tags: [phase-15, memory, mcp, neo4j, write-read, ground-truth]
 ---
@@ -54,8 +55,17 @@ The harness emits ISO-timestamped log lines and a JSON summary of every check.
 - Long-term entity isolation failed: the new `RoboManual AURA-SPIKE-033-1780926447` entity was merged into a prior spike run (`RoboManual AURA-SPIKE-033-1780926389`) at similarity `0.997314453125`, so entity search returned the prior run's description rather than the new tag.
 - Preference writes also reused a prior preference id in this repeated-tag-family scenario, showing the same semantic-dedup/provenance risk for preference memory.
 
+### Re-validation after fix (2026-06-08T19:07, live `aura-agent-memory-mcp:spike-fixed`)
+
+The long-term isolation failure shared its root cause with spike 034 and was fixed in the fork branch `aura/provenance-safe-dedup` (commit `c1c2d65`). Re-run live against `:spike-fixed`, tag `AURA-SPIKE-033-1780945610`, **all 10 checks pass**:
+
+- `store_message`, `add_entity`, `add_preference`, `add_fact` all stored.
+- The new entity `RoboManual AURA-SPIKE-033-1780945610` wrote with `deduplication: action=none, matched_entity_name=null, similarity_score=0.0` — no merge into a prior run's entity.
+- `entity_search_readback` and `preference_search_readback` returned *this* run's records (isolation holds).
+- `conversation_readback`, `message_search_readback`, `context_readback`, `fact_graph_readback` all pass.
+
 ## Results
 
-Verdict: PARTIAL.
+Verdict: VALIDATED (originally PARTIAL — see verdict_history + re-validation above).
 
-Short-term message storage, conversation read-back, context retrieval, and fact read-back are validated through the live MCP service. Exact run isolation for long-term semantic memories is invalidated: entity/preference dedup can merge distinct tagged harness runs that are intentionally similar. Production memory should not rely on semantic similarity alone when tenant/session/source/provenance boundaries matter.
+The original run validated the short-term write/read path (messages, conversation, context, fact read-back) but found long-term entity/preference dedup merged distinct tagged runs at similarity ~0.997. The `aura/provenance-safe-dedup` fork fix resolves this; the live re-run confirms long-term entity and preference isolation now hold through the MCP surface, with all ten checks green. The same standing caveat as spike 034 applies: provenance scope engages only when the ingest path supplies a per-source/per-run key.
