@@ -151,6 +151,26 @@ type AuraSkillAudit struct {
 	BlocklistOverride bool               `json:"blocklist_override"`
 }
 
+// Known Telegram accounts (Slice 9a / Phase 13, amendment #58). PK telegram_user_id; identity_id FKs aura.identities (single-user `local` this phase, D-07).
+type AuraTelegramAccounts struct {
+	TelegramUserID int64              `json:"telegram_user_id"`
+	IdentityID     pgtype.UUID        `json:"identity_id"`
+	Username       pgtype.Text        `json:"username"`
+	FirstName      pgtype.Text        `json:"first_name"`
+	AddedAt        pgtype.Timestamptz `json:"added_at"`
+	LastSeenAt     pgtype.Timestamptz `json:"last_seen_at"`
+}
+
+// Single-use onboarding tokens (Slice 9a / Phase 13, amendment #58). consumed_at marks the token spent (T-13-01-TokenReplay); expires_at is a 1h TTL; the partial active index keys the cleanup scan.
+type AuraTelegramSetupPending struct {
+	OnboardingToken string             `json:"onboarding_token"`
+	IdentityID      pgtype.UUID        `json:"identity_id"`
+	GeneratedBy     pgtype.Text        `json:"generated_by"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	ConsumedAt      pgtype.Timestamptz `json:"consumed_at"`
+}
+
 // Append-only tool invocation ledger: start/end facts for dispatched tools with args, timestamps, status, bytes, sidecar path, exit code, and typed metadata.
 type AuraToolInvocations struct {
 	ID                pgtype.UUID        `json:"id"`
