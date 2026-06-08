@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -224,6 +225,30 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 		// because the agent emits one pause Event per call but rewrites its history to
 		// a single multi-tool_call assistant message.
 		tr := &turnTracker{convID: convID}
+		// flushPause writes the single combined assistant ask_user tool_call turn (CR-02)
+		// — the message the injected RoleTool answers attach to on resume. It MUST run
+		// even when the consumer stops iterating ON the pause Event: the AG-UI translator
+		// returns on the interrupt outcome, so `yield` below returns false and the loop
+		// early-returns. A plain post-loop call is then SKIPPED, leaving resume history
+		// with orphaned tool answers (a tool result with no matching assistant tool_call)
+		// → the model can't tell the pause was answered and re-asks ask_user every resume
+		// → an infinite pause loop (live-found via Telegram). Deferring guarantees the turn
+		// is persisted on every return path; WithoutCancel so a /cancel of the turn ctx
+		// cannot abort the durable write the resume (and the cancel path) depend on.
+		flushed := false
+		flushOnce := func() error {
+			if flushed {
+				return nil
+			}
+			flushed = true
+			return r.flushPause(context.WithoutCancel(ctx), tr)
+		}
+		defer func() {
+			if err := flushOnce(); err != nil {
+				slog.Error("runner: flush pause assistant turn failed; resume history may be malformed",
+					"conv", convID, "err", err)
+			}
+		}()
 		for ev, runErr := range la.Run(ic) {
 			if runErr != nil {
 				yield(nil, runErr)
@@ -238,10 +263,10 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 			}
 		}
 
-		// Flush the single combined assistant ask_user turn (no-op when the round did
-		// not pause). Done after la.Run drains so the persisted turn carries ALL the
-		// round's ask_user tool_calls in one wire-valid message (CR-02).
-		if err := r.flushPause(ctx, tr); err != nil {
+		// Natural completion (the consumer drained the pause too — the CLI path): flush
+		// here so a persist error surfaces on the iter.Seq2 error slot. The deferred flush
+		// (above) covers the early-return path where yielding is forbidden; flushed dedups.
+		if err := flushOnce(); err != nil {
 			yield(nil, err)
 			return
 		}

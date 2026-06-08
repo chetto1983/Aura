@@ -141,3 +141,65 @@ func TestCancelBatch_RehydratedHistoryWireValid_CR01(t *testing.T) {
 		t.Fatalf("CR-01 batch: both ask_user calls must be answered on cancel, got %v", answered)
 	}
 }
+
+// TestPause_AssistantTurnPersistedWhenConsumerStopsOnPause is the live-found loop
+// regression (Telegram): the AG-UI translator returns on the pause interrupt, so the
+// consumer STOPS iterating on the pause Event. The combined assistant ask_user
+// tool_call turn must still be persisted (the deferred flush) — otherwise the injected
+// answer is orphaned on resume (a tool result with no matching assistant tool_call) and
+// the model re-asks ask_user every resume (an infinite pause loop).
+func TestPause_AssistantTurnPersistedWhenConsumerStopsOnPause(t *testing.T) {
+	client := agenttest.NewFakeClient(agenttest.ToolCallTurn(askUserCall("call-1", "Quale nome?", "approval")))
+	r, conv, _ := newTestRunner(t, client)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+
+	// Drive the turn but STOP on the pause Event — mimics the AG-UI translator returning
+	// on the interrupt outcome (yield returns false to runner.Turn → its early return).
+	var sawPause bool
+	for ev, err := range r.Turn(ctx, convID, userPtr("dammi un nome")) {
+		if err != nil {
+			t.Fatalf("turn: %v", err)
+		}
+		if ev.Actions.AwaitingInput != nil {
+			sawPause = true
+			break
+		}
+	}
+	if !sawPause {
+		t.Fatal("expected a pause Event")
+	}
+
+	// Answer the pause (the user's button tap) and load the resume history: it must be
+	// wire-valid — the injected tool answer attaches to the persisted assistant ask_user
+	// tool_call. Without the deferred flush the assistant turn is missing, the answer is
+	// orphaned, and the model re-asks ask_user forever.
+	pending, err := r.PendingFor(ctx, convID)
+	if err != nil || len(pending) != 1 {
+		t.Fatalf("want exactly 1 pending pause, got %d (err=%v)", len(pending), err)
+	}
+	if _, err := r.SubmitAnswer(ctx, pending[0].Token, ResponseInput{Action: askuser.ActionAccept, Content: "Kai"}); err != nil {
+		t.Fatalf("submit answer: %v", err)
+	}
+	hist, err := conv.LoadHistory(ctx, convID)
+	if err != nil {
+		t.Fatalf("load history: %v", err)
+	}
+	assertWireValid(t, hist) // [user][assistant ask_user call-1][tool "Kai" call-1] — orphaned without the fix
+	var found bool
+	for _, m := range hist {
+		if m.Role != llm.RoleAssistant {
+			continue
+		}
+		for _, tc := range m.ToolCalls {
+			if tc.Function.Name == "ask_user" && tc.ID == "call-1" {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("the assistant ask_user tool_call turn was not persisted after a consumer stop "+
+			"(resume orphans the answer → ask_user pause loop); history=%+v", hist)
+	}
+}
