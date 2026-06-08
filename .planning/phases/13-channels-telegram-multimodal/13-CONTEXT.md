@@ -1,7 +1,7 @@
 # Phase 13: Channels + Telegram + Multimodal - Context
 
 **Gathered:** 2026-06-07
-**Status:** Ready for planning — **GATED on two pre-planning actions** (see Decisions D-01 and D-13)
+**Status:** Ready for planning — both pre-planning gates **CLOSED** (D-01 amendment committed = PRD Amendment #58, commit `49ea7ba1`; D-13 multimodal spike completed = session 6 / spikes 020–029, verdict committed in PRD Amendments #59/#60). *9c framing below refreshed 2026-06-08 to the committed verdict.*
 
 <domain>
 ## Phase Boundary
@@ -11,7 +11,7 @@ Il primo canale production user-facing di Aura. La fase consegna:
 1. **Channels framework** — `internal/channels/channel.go` (Channel interface ~70 LOC) + `registry.go` (StartAll/StopAll ~100 LOC, env `AURA_CHANNEL_<NAME>_ENABLED`), per daemon channel (Telegram ora, WhatsApp/Discord futuri).
 2. **Telegram channel** (`internal/channels/telegram/`) — bot telebot.v4 polling, subscriber in-process del fanout AG-UI (`internal/agui/fanout.go`), status pane pattern B (2 msg/turn), escaper MarkdownV2 entity-aware, HITL inline keyboard/ForceReply, 10 commands bot-intercept, **tabelle→PNG** via x/image, **artifact delivery** via `send_file` tool + sendDocument.
 3. **Setup wizard — SOLO API backend** (`internal/setup/`) — endpoint `/setup/*` token-gated su `:9081`; QR ASCII in terminale + deep-link via API; **nessuna pagina HTML** (frontend = prossima milestone).
-4. **Multimodale 9c** — voice STT + image + documents (markitdown). **Engine + modello decisi da spike dedicato pre-plan** (survey modelli multimodali 2026 ≤4 GB VRAM + vLLM, misurato sulla GPU 4 GB di questo PC).
+4. **Multimodale 9c** — voice (STT in + TTS out) + image + documents (markitdown). **Engine DECISO dallo spike (session 6, spikes 020–029):** 3 sidecar CPU OpenAI-compat (GPU libera) — `aura-ocr-vl` (GLM-OCR Q8/llama.cpp, vision/photo + OCR doc-immagine), `aura-stt` (faster-whisper large-v3-turbo int8, voice-in OGG/Opus diretto), `aura-tts` (Kokoro-82M voce `if_sara`, voice-out opus). Vision switch `AURA_VISION_CLOUD` (false=GLM-OCR locale, true=OpenRouter). **vLLM + Gemma 4 sono OUT su 4 GB.** Dettaglio: PRD §Slice 9c + Amendments #59/#60.
 
 Requirements: UX-02 (9b), UX-03 (9a), UX-04 (9c). Slices PRD: 9a, 9b, 9c.
 
@@ -21,7 +21,7 @@ Requirements: UX-02 (9b), UX-03 (9a), UX-04 (9c). Slices PRD: 9a, 9b, 9c.
 ## Implementation Decisions
 
 ### PRD amendments + scope (pre-planning gate)
-- **D-01 — Amendment PRD COMMIT ORA, pre-planning.** L'amendment al `prd.md` viene scritto e committato PRIMA di `/gsd-plan-phase 13`. Contenuto: (a) telebot.v4 pin = **tag `v4.0.0-beta.9`** con CI gate = grep letterale in go.mod (amendment #5 stale: il repo è taggato dal 2026-06-02); (b) tabelle Telegram = **PNG primario** (renderer.go + tables.go, pre-block fallback, key-value card solo per 2-col key|value); (c) **artifact file delivery** via sendDocument (directive operatore 2026-06-07); (d) migration slot **0008→0012** (0008 è occupato da proxied_child_id_text); (e) descope wizard → solo API backend; (f) CLI non channel-ificata (vedi D-08); (g) 9c rimandata a verdetto spike (vedi D-13). ROADMAP success criterion 1 va emendato di conseguenza (niente pagina web).
+- **D-01 — Amendment PRD ✅ COMMITTATO (pre-planning gate CLOSED).** L'amendment al `prd.md` è stato scritto e committato (= **Amendment #58**, commit `49ea7ba1`, 2026-06-07), con il verdetto 9c poi aggiunto da #59/#60. Contenuto: (a) telebot.v4 pin = **tag `v4.0.0-beta.9`** con CI gate = grep letterale in go.mod (amendment #5 stale: il repo è taggato dal 2026-06-02); (b) tabelle Telegram = **PNG primario** (renderer.go + tables.go, pre-block fallback, key-value card solo per 2-col key|value); (c) **artifact file delivery** via sendDocument (directive operatore 2026-06-07); (d) migration slot **0008→0012** (0008 è occupato da proxied_child_id_text); (e) descope wizard → solo API backend; (f) CLI non channel-ificata (vedi D-08); (g) 9c rimandata a verdetto spike (vedi D-13). ROADMAP success criterion 1 va emendato di conseguenza (niente pagina web).
 - **D-02 — Tabelle-PNG + sendDocument DENTRO 9b** (no sub-slice dedicata). 9b passa ~920→~1150 LOC src: è tutto "come il bot parla".
 
 ### Setup wizard (9a)
@@ -38,9 +38,9 @@ Requirements: UX-02 (9b), UX-03 (9a), UX-04 (9c). Slices PRD: 9a, 9b, 9c.
 - **D-09 — Channel interface + registry da PRD** anche con un solo canale reale: deliverable UX-02, ~170 LOC totali, già dimensionato.
 
 ### Multimodale 9c
-- **D-13 — SPIKE DEDICATO PRE-PLAN, 9c-blocking.** Prima di `/gsd-plan-phase 13` va fatta una sessione `/gsd-spike` accurata: **survey dei modelli multimodali 2026 (STT + vision) che girano in ≤4 GB VRAM**, serviti con **vLLM**, misurati sulla **GPU da 4 GB di questo PC (32 GB RAM)** — numeri di produzione reali. Metriche: WER su voice IT/EN, qualità vision, latenza p50/p95, VRAM/RAM steady. Il default PRD (llama.cpp + Gemma 4 E4B Q4) è il baseline di confronto / fallback CPU.
-- **D-15 — Setup engine dello spike (addendum operatore 2026-06-07): Ollama è GIÀ installato sull'host** — lo spike lo usa per la valutazione rapida dei modelli candidati (`ollama pull` + probe, zero setup). **L'unico sidecar NUOVO da montare è vLLM** (compose service aggiuntivo). NON installare/montare Ollama come sidecar. Confronto finale a tre: Ollama host (probe candidati) → vLLM sidecar (serving engine candidato per 9c) → llama.cpp (baseline PRD / fallback CPU).
-- **D-14 — Le open question PRD 9c (variante Gemma finale, vision fallback markitdown OCR) sono ASSORBITE dal verdetto dello spike.** Il design voice.go/photo.go non si pianifica prima del verdetto.
+- **D-13 — SPIKE DEDICATO ✅ COMPLETATO (9c-blocking gate CLOSED).** La sessione `/gsd-spike` (session 6, spikes 020–029, live su questo mini-PC: GPU RTX A2000 Laptop 4096 MiB, WSL VM 7 GiB) ha prodotto il verdetto, ora committato nel PRD (**Amendments #59/#60**). **Verdetto: vLLM è OUT su 4 GB** (spike 020 — pesi FP8 + overhead CUDA lasciano ~0.09 GiB di KV cache contro ~0.44 richiesti a 4096 ctx; dual-residency STT+vision strutturalmente impossibile). Engine 9c = **tre sidecar CPU** (GPU libera): `aura-ocr-vl` (GLM-OCR Q8/llama.cpp — vision/photo + OCR doc-immagine, IT 7/7), `aura-stt` (faster-whisper large-v3-turbo int8 / `hwdsl2/whisper-server` — voice-in OGG/Opus diretto, 0.7× realtime), `aura-tts` (Kokoro-82M voce `if_sara` — voice-out opus). PaddleOCR-VL = fallback latency-only documentato. Baseline PRD Gemma 4 E4B = morto con Gemma OUT.
+- **D-15 — [STORICO — spike completato] Setup engine dello spike** (Ollama host per probe rapido dei candidati + vLLM come unico sidecar candidato). Reso obsoleto dal verdetto D-13: vLLM scartato, engine finale = 3 sidecar CPU (llama.cpp/GLM-OCR + faster-whisper + Kokoro). Conservato come traccia di processo.
+- **D-14 — Open question PRD 9c RISOLTE dal verdetto spike (ora pianificabili).** Variante vision = **GLM-OCR** (deciso operatore 2026-06-07; PaddleOCR-VL fallback latency-only); vision fallback / tier-cloud no-GPU = **`minimax/minimax-m3` via OpenRouter** (NON markitdown OCR). `voice.go` (faster-whisper OGG diretto) + `tts.go` (NUOVO, Kokoro→`sendVoice`) + `photo.go` (branch `AURA_VISION_CLOUD`) si pianificano ORA. Dettaglio: PRD §Slice 9c + Amendment #59 punti (1)-(11).
 
 ### Claude's Discretion
 - Forma esatta dell'evento artifact AG-UI (custom event vs estensione tool_call_result) — il planner decide con lo stream reale in mano.
@@ -105,9 +105,9 @@ Requirements: UX-02 (9b), UX-03 (9a), UX-04 (9c). Slices PRD: 9a, 9b, 9c.
 
 - Tabelle: verdetto operatore on-device head-to-head (spike 018) — PNG vince sia sul caso comune 4-col sia sullo stress 6-col; pre-block leggibile solo ≤56 char di riga.
 - "look spike" — l'operatore vuole che planning e implementazione partano dai findings spike, non dal PRD nudo: i requirement session-5 del MANIFEST sono binding.
-- Lo spike multimodale deve guardare il mercato 2026 ("valutiamo altri modelli multimodali del 2026"), non solo Gemma 4 — il PRD su questo è invecchiato.
-- Hardware reale: questo PC = 32 GB RAM + GPU 4 GB VRAM. Lo spike misura qui.
-- Ollama già installato sull'host: canale rapido per provare i candidati 2026 senza setup; vLLM = unico sidecar aggiuntivo da montare per lo spike.
+- Lo spike multimodale (fatto, session 6) ha guardato il mercato 2026 oltre Gemma 4 — verdetto: GLM-OCR + faster-whisper + Kokoro, tutti CPU; vLLM/Gemma OUT su 4 GB.
+- Hardware reale: questo PC = 32 GB RAM + GPU 4 GB VRAM. Lo spike ha misurato qui (GPU RTX A2000 Laptop 4096 MiB, WSL VM 7 GiB).
+- [storico] Ollama host + vLLM sidecar erano i canali di valutazione dello spike; superati dal verdetto a 3 sidecar CPU.
 
 </specifics>
 
