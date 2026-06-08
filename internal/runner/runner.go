@@ -162,6 +162,27 @@ func (r *Runner) NewConversationWithID(ctx context.Context, conversationID strin
 	return conversationID, nil
 }
 
+// EnsureConversation lazily creates the conversation row when it is absent and is
+// a no-op when it already exists. Channels that key a stable conversation id off
+// an external identifier (e.g. a Telegram chat id via a deterministic UUIDv5)
+// have no explicit "new conversation" step like the REPL, so the first inbound
+// message must create the row before Turn appends to it (appendUserTurn's
+// AppendTurn FK-references the conversation). A Get short-circuits the common
+// path; a concurrent first-message race that loses the Create is reconciled by a
+// re-Get rather than surfaced as an error.
+func (r *Runner) EnsureConversation(ctx context.Context, convID string) error {
+	if _, err := r.Conv.Get(ctx, convID); err == nil {
+		return nil
+	}
+	if _, err := r.NewConversationWithID(ctx, convID); err != nil {
+		if _, getErr := r.Conv.Get(ctx, convID); getErr == nil {
+			return nil // a concurrent creator won the race — the row now exists
+		}
+		return err
+	}
+	return nil
+}
+
 // Turn drives ONE LLM round over the conversation and is the sole loop-driver
 // (D-A1-06). userMsg!=nil starts a round with a fresh user message; userMsg=nil is
 // "continue after resume" — the resolved answers are already RoleTool turns in the

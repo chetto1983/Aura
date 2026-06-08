@@ -20,12 +20,14 @@ package main
 import (
 	"context"
 	"errors"
+	"iter"
 	"log/slog"
 	"net/http"
 	"time"
 
 	tele "gopkg.in/telebot.v4"
 
+	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/cachemetrics"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/channels/telegram"
@@ -56,7 +58,7 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 	tgCfg := telegram.LoadConfig()
 
 	tg := telegram.NewChannel(telegram.Deps{
-		Turn:              chat.run.Turn,
+		Turn:              ensuringTurn(chat.run),
 		Token:             tgCfg.BotToken,
 		Store:             telegram.New(chat.pool),
 		Multimodal:        multimodalConfig(chat.cfg),
@@ -144,6 +146,25 @@ func resumeTurnFunc(run *runner.Runner) func(ctx context.Context, convID string)
 				slog.Warn("aura serve: telegram resume turn", "conv", convID, "err", err)
 				return
 			}
+		}
+	}
+}
+
+// ensuringTurn wraps Runner.Turn so the first inbound message for a chat lazily
+// creates its conversation row before the loop appends to it. Telegram keys a
+// stable conversation id off the chat id (a deterministic UUIDv5) and has no
+// explicit "new conversation" step like the CLI REPL, so without this the first
+// AppendTurn FK-fails and the user sees a generic "❌ Errore". EnsureConversation
+// is idempotent, so every later turn pays only a cheap existence Get. A create
+// failure surfaces through the turn's error channel exactly as a Turn error would.
+func ensuringTurn(run *runner.Runner) func(context.Context, string, *string) iter.Seq2[*agent.Event, error] {
+	return func(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
+		return func(yield func(*agent.Event, error) bool) {
+			if err := run.EnsureConversation(ctx, convID); err != nil {
+				yield(nil, err)
+				return
+			}
+			run.Turn(ctx, convID, userMsg)(yield)
 		}
 	}
 }
