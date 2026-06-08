@@ -23,6 +23,7 @@ const (
 	defaultMaxTokens         = 4096
 	defaultTotalTimeoutSec   = 120
 	defaultConnectTimeoutSec = 10
+	defaultAdaptiveReasoning = true
 
 	// L2 budget inputs (Phase 4 AM, resolves OPEN QUESTION 2). ContextWindow is
 	// the ~1M DeepSeek-V4 window; MaxOutputTokens is a sane reservation cap. The
@@ -51,6 +52,7 @@ const (
 	envBaseURL           = "AURA_LLM_BASE_URL"
 	envTemperature       = "AURA_LLM_TEMPERATURE"
 	envMaxTokens         = "AURA_LLM_MAX_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
+	envAdaptiveReasoning = "AURA_LLM_ADAPTIVE_REASONING"
 	envTotalTimeoutSec   = "AURA_LLM_TOTAL_TIMEOUT_SEC"
 	envConnectTimeoutSec = "AURA_LLM_CONNECT_TIMEOUT_SEC"
 	envContextWindow     = "AURA_MODEL_CONTEXT_WINDOW"
@@ -81,6 +83,7 @@ type Config struct {
 	ConnectTimeoutSec int
 	Temperature       float64
 	MaxTokens         int
+	AdaptiveReasoning bool
 	ContextWindow     int // total model context window (tokens); L2 budget input
 	MaxOutputTokens   int // output-token reservation cap; L2 budget input
 	Headers           map[string]string
@@ -108,6 +111,7 @@ type fileConfig struct {
 	ConnectTimeoutSec *int              `json:"connect_timeout_sec,omitempty"`
 	Temperature       *float64          `json:"temperature,omitempty"`
 	MaxTokens         *int              `json:"max_tokens,omitempty"`
+	AdaptiveReasoning *bool             `json:"adaptive_reasoning,omitempty"`
 	ContextWindow     *int              `json:"context_window,omitempty"`
 	MaxOutputTokens   *int              `json:"max_output_tokens,omitempty"`
 	Headers           map[string]string `json:"headers,omitempty"`
@@ -131,6 +135,7 @@ func Load() (*Config, error) {
 		BaseURL:           defaultBaseURL,
 		Temperature:       defaultTemperature,
 		MaxTokens:         defaultMaxTokens,
+		AdaptiveReasoning: defaultAdaptiveReasoning,
 		ContextWindow:     defaultContextWindow,
 		MaxOutputTokens:   defaultMaxOutputTokens,
 		TotalTimeoutSec:   defaultTotalTimeoutSec,
@@ -227,6 +232,9 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	if fc.MaxTokens != nil {
 		cfg.MaxTokens = *fc.MaxTokens
 	}
+	if fc.AdaptiveReasoning != nil {
+		cfg.AdaptiveReasoning = *fc.AdaptiveReasoning
+	}
 	if fc.ContextWindow != nil {
 		cfg.ContextWindow = *fc.ContextWindow
 	}
@@ -260,6 +268,9 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.MaxTokens = v
+	}
+	if v := os.Getenv(envAdaptiveReasoning); v != "" {
+		cfg.AdaptiveReasoning = envBool(envAdaptiveReasoning, cfg.AdaptiveReasoning)
 	}
 	if v, ok, err := envInt(envContextWindow); err != nil {
 		return err

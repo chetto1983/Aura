@@ -17,7 +17,7 @@ func withTempHome(t *testing.T) string {
 	t.Setenv("USERPROFILE", home) // os.UserHomeDir on Windows reads USERPROFILE
 	t.Setenv("OPENROUTER_API_KEY", "")
 	// Neutralize any AURA_LLM_* overrides leaking from the dev environment.
-	for _, k := range []string{"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE", "AURA_LLM_MAX_TOKENS"} {
+	for _, k := range []string{"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE", "AURA_LLM_MAX_TOKENS", "AURA_LLM_ADAPTIVE_REASONING"} {
 		t.Setenv(k, "")
 	}
 	return filepath.Join(home, ".aura", "llm.json")
@@ -75,6 +75,26 @@ func TestConfig_SetNumericValidation(t *testing.T) {
 	}
 	if err := setConfigKey(raw, "llm.temperature", "0.3"); err != nil {
 		t.Fatalf("setConfigKey valid float: %v", err)
+	}
+}
+
+// TestConfig_SetThenGetAdaptiveReasoning asserts the adaptive reasoning knob is
+// available through the same file-tier config surface as the rest of llm.Config.
+func TestConfig_SetThenGetAdaptiveReasoning(t *testing.T) {
+	withTempHome(t)
+
+	configSet([]string{"llm.adaptive_reasoning", "false"})
+
+	cfg, err := loadLLMConfigTolerant()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	got, ok := getConfigKey(cfg, "llm.adaptive_reasoning")
+	if !ok {
+		t.Fatal("getConfigKey llm.adaptive_reasoning: not ok")
+	}
+	if got != "false" {
+		t.Fatalf("get llm.adaptive_reasoning = %q, want false", got)
 	}
 }
 

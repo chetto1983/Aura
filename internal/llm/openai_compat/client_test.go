@@ -344,6 +344,37 @@ func TestRequestBody_ToolChoice(t *testing.T) {
 	})
 }
 
+// TestRequestBody_Reasoning asserts the provider-neutral llm.Request.Reasoning
+// field projects to OpenRouter's unified `reasoning` object, including explicit
+// exclude:false (the default is false, but Aura sends it intentionally so the
+// policy decision is observable on the wire).
+func TestRequestBody_Reasoning(t *testing.T) {
+	exclude := false
+	bodyBytes := captureBody(t, llm.Request{
+		Model:       "deepseek/deepseek-v4-flash:exacto",
+		Messages:    []llm.Message{{Role: "user", Content: "scrivi uno script"}},
+		MaxTokens:   4096,
+		ToolChoice:  "auto",
+		Reasoning:   llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh, Exclude: &exclude},
+		Temperature: 0.2,
+	})
+
+	var body map[string]any
+	if err := json.Unmarshal(bodyBytes, &body); err != nil {
+		t.Fatalf("request body not JSON: %v", err)
+	}
+	reasoning, _ := body["reasoning"].(map[string]any)
+	if reasoning == nil {
+		t.Fatalf("reasoning object absent from request body: %s", bodyBytes)
+	}
+	if reasoning["effort"] != "high" {
+		t.Errorf("reasoning.effort = %v, want high", reasoning["effort"])
+	}
+	if reasoning["exclude"] != false {
+		t.Errorf("reasoning.exclude = %v, want explicit false", reasoning["exclude"])
+	}
+}
+
 // TestMessagesImmutable (Req#13 seed): Stream never mutates req.Messages.
 func TestMessagesImmutable(t *testing.T) {
 	srv := httptest.NewServer(fixtureHandler(t, "text_stop.sse"))

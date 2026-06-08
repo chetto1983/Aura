@@ -18,6 +18,7 @@ func testConfig() llm.Config {
 	return llm.Config{
 		Provider:    "openrouter",
 		Model:       "deepseek/deepseek-v4-flash:exacto",
+		BaseURL:     "https://openrouter.ai/api/v1",
 		Temperature: 0.7,
 		MaxTokens:   4096,
 	}

@@ -43,7 +43,7 @@ func runConfig(args []string) {
 
 func configUsage() {
 	fmt.Fprintln(os.Stderr, "usage: aura config {show|get <key>|set <key> <value>}")
-	fmt.Fprintln(os.Stderr, "  keys: llm.provider llm.model llm.base_url llm.temperature llm.max_tokens llm.total_timeout_sec llm.connect_timeout_sec")
+	fmt.Fprintln(os.Stderr, "  keys: llm.provider llm.model llm.base_url llm.temperature llm.max_tokens llm.adaptive_reasoning llm.total_timeout_sec llm.connect_timeout_sec")
 }
 
 // configShow prints the effective config. config.Load fails-fast on an empty API
@@ -66,6 +66,7 @@ func configShow() {
 	fmt.Printf("api_key:             %s\n", apiKey)
 	fmt.Printf("temperature:         %g\n", cfg.Temperature)
 	fmt.Printf("max_tokens:          %d\n", cfg.MaxTokens)
+	fmt.Printf("adaptive_reasoning:  %t\n", cfg.AdaptiveReasoning)
 	fmt.Printf("total_timeout_sec:   %d\n", cfg.TotalTimeoutSec)
 	fmt.Printf("connect_timeout_sec: %d\n", cfg.ConnectTimeoutSec)
 }
@@ -161,6 +162,8 @@ func getConfigKey(cfg *llm.Config, key string) (string, bool) {
 		return strconv.FormatFloat(cfg.Temperature, 'g', -1, 64), true
 	case "llm.max_tokens":
 		return strconv.Itoa(cfg.MaxTokens), true
+	case "llm.adaptive_reasoning":
+		return strconv.FormatBool(cfg.AdaptiveReasoning), true
 	case "llm.total_timeout_sec":
 		return strconv.Itoa(cfg.TotalTimeoutSec), true
 	case "llm.connect_timeout_sec":
@@ -192,6 +195,12 @@ func setConfigKey(raw map[string]json.RawMessage, key, value string) error {
 		if err := setIntKey(raw, "max_tokens", value); err != nil {
 			return err
 		}
+	case "llm.adaptive_reasoning":
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return fmt.Errorf("llm.adaptive_reasoning %q: not a valid bool", value)
+		}
+		raw["adaptive_reasoning"] = jsonBool(b)
 	case "llm.total_timeout_sec":
 		if err := setIntKey(raw, "total_timeout_sec", value); err != nil {
 			return err
@@ -223,6 +232,13 @@ func jsonString(s string) json.RawMessage {
 }
 
 func jsonNumber(s string) json.RawMessage { return json.RawMessage(s) }
+
+func jsonBool(v bool) json.RawMessage {
+	if v {
+		return json.RawMessage("true")
+	}
+	return json.RawMessage("false")
+}
 
 // userConfigFilePath returns ~/.aura/llm.json, creating no file yet.
 func userConfigFilePath() (string, error) {

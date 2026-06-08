@@ -20,6 +20,7 @@ func clearLLMEnv(t *testing.T) {
 		"AURA_LLM_BASE_URL",
 		"AURA_LLM_TEMPERATURE",
 		"AURA_LLM_MAX_TOKENS",
+		"AURA_LLM_ADAPTIVE_REASONING",
 		"AURA_LLM_TOTAL_TIMEOUT_SEC",
 		"AURA_LLM_CONNECT_TIMEOUT_SEC",
 	} {
@@ -65,6 +66,9 @@ func TestConfigLoadOrder(t *testing.T) {
 		if cfg.MaxTokens != 4096 {
 			t.Errorf("MaxTokens = %d, want 4096", cfg.MaxTokens)
 		}
+		if !cfg.AdaptiveReasoning {
+			t.Error("AdaptiveReasoning = false, want true default")
+		}
 		if cfg.TotalTimeoutSec != 120 || cfg.ConnectTimeoutSec != 10 {
 			t.Errorf("timeouts = %d/%d, want 120/10", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)
 		}
@@ -84,7 +88,7 @@ func TestConfigLoadOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 		const fileModel = "file/model:from-json"
-		js := `{"model":"` + fileModel + `","base_url":"https://file.example/v1","temperature":0.3}`
+		js := `{"model":"` + fileModel + `","base_url":"https://file.example/v1","temperature":0.3,"adaptive_reasoning":false}`
 		if err := os.WriteFile(filepath.Join(auraDir, "llm.json"), []byte(js), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -103,6 +107,9 @@ func TestConfigLoadOrder(t *testing.T) {
 		if cfg.Temperature != 0.3 {
 			t.Errorf("file tier: Temperature = %v, want 0.3", cfg.Temperature)
 		}
+		if cfg.AdaptiveReasoning {
+			t.Error("file tier: AdaptiveReasoning = true, want false")
+		}
 
 		// Tier 4: AURA_LLM_MODEL overrides the file value.
 		const envModel = "env/model:wins"
@@ -117,6 +124,9 @@ func TestConfigLoadOrder(t *testing.T) {
 		// The file's base_url still applies (no env override for it).
 		if cfg2.BaseURL != "https://file.example/v1" {
 			t.Errorf("env tier: BaseURL = %q, want the file value to persist", cfg2.BaseURL)
+		}
+		if cfg2.AdaptiveReasoning {
+			t.Error("env tier: AdaptiveReasoning = true, want file false to persist")
 		}
 	})
 }
@@ -184,6 +194,7 @@ func TestConfigEnvNumericOverrides(t *testing.T) {
 	t.Setenv("AURA_LLM_TOTAL_TIMEOUT_SEC", "45")
 	t.Setenv("AURA_LLM_CONNECT_TIMEOUT_SEC", "7")
 	t.Setenv("AURA_LLM_BASE_URL", "https://env.example/v1")
+	t.Setenv("AURA_LLM_ADAPTIVE_REASONING", "false")
 
 	cfg, err := llm.Load()
 	if err != nil {
@@ -200,6 +211,9 @@ func TestConfigEnvNumericOverrides(t *testing.T) {
 	}
 	if cfg.BaseURL != "https://env.example/v1" {
 		t.Errorf("BaseURL = %q, want the env value", cfg.BaseURL)
+	}
+	if cfg.AdaptiveReasoning {
+		t.Error("AdaptiveReasoning = true, want env false")
 	}
 }
 
@@ -222,6 +236,7 @@ func TestConfigFileOverlayAllFields(t *testing.T) {
 	  "api_key": "sk-file-key",
 	  "temperature": 0.42,
 	  "max_tokens": 333,
+	  "adaptive_reasoning": false,
 	  "total_timeout_sec": 99,
 	  "connect_timeout_sec": 11,
 	  "headers": {"X-Extra": "from-file"},
@@ -246,6 +261,9 @@ func TestConfigFileOverlayAllFields(t *testing.T) {
 	}
 	if cfg.Temperature != 0.42 || cfg.MaxTokens != 333 {
 		t.Errorf("temperature/max_tokens = %v/%d, want 0.42/333", cfg.Temperature, cfg.MaxTokens)
+	}
+	if cfg.AdaptiveReasoning {
+		t.Error("AdaptiveReasoning = true, want file false")
 	}
 	if cfg.TotalTimeoutSec != 99 || cfg.ConnectTimeoutSec != 11 {
 		t.Errorf("timeouts = %d/%d, want 99/11", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)

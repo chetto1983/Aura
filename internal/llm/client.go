@@ -100,6 +100,10 @@ type Request struct {
 	Tools       []ToolDef
 	Temperature float64
 	MaxTokens   int
+	// Reasoning is an optional provider-neutral request hint for thinking-token
+	// models. Wire clients translate the populated fields they support; callers
+	// must keep it empty when the provider/model should receive no reasoning knob.
+	Reasoning ReasoningConfig
 	// SessionID is OpenRouter's sticky-routing key. The agent sets it from its
 	// stable conversation/session id so multi-turn prompt-cache reads stay on the
 	// same provider endpoint without changing the byte-stable message prefix.
@@ -118,4 +122,34 @@ type Request struct {
 	// assistant content. No json tag — this struct is projected by buildWireRequest,
 	// never marshalled directly.
 	ToolChoice string
+}
+
+// ReasoningEffort is the provider-neutral effort vocabulary used by reasoning
+// models that expose coarse effort levels. OpenRouter projects these values to
+// its `reasoning.effort` object field.
+type ReasoningEffort string
+
+const (
+	ReasoningEffortXHigh   ReasoningEffort = "xhigh"
+	ReasoningEffortHigh    ReasoningEffort = "high"
+	ReasoningEffortMedium  ReasoningEffort = "medium"
+	ReasoningEffortLow     ReasoningEffort = "low"
+	ReasoningEffortMinimal ReasoningEffort = "minimal"
+	ReasoningEffortNone    ReasoningEffort = "none"
+)
+
+// ReasoningConfig describes request-side reasoning controls without committing
+// the core agent loop to one provider's wire shape. Effort and MaxTokens are
+// mutually exclusive for OpenRouter-style projections; the builder currently
+// populates Effort only.
+type ReasoningConfig struct {
+	Effort    ReasoningEffort
+	MaxTokens int
+	Exclude   *bool
+	Enabled   *bool
+}
+
+// Empty reports whether the request should omit provider reasoning parameters.
+func (r ReasoningConfig) Empty() bool {
+	return r.Effort == "" && r.MaxTokens == 0 && r.Exclude == nil && r.Enabled == nil
 }

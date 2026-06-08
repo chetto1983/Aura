@@ -61,7 +61,9 @@ func (b Budget) block() string {
 // stays byte-identical (D-01). When budget is present, a trailing user-role
 // <budget> message is appended to a COPY of history (the caller's slice and
 // messages[0] are never mutated — KV-cache poisoning guard, D-04/D-05). The
-// provider branch runs last and is a no-op unless provider == "anthropic".
+// adaptive reasoning policy and provider branch run last. Adaptive reasoning is
+// active only when cfg opts in and provider == "openrouter"; cache_control remains
+// a no-op unless provider == "anthropic".
 func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget) llm.Request {
 	msgs := history
 	if budget.present() {
@@ -74,6 +76,7 @@ func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provid
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
 	}
+	applyAdaptiveReasoning(&req, provider, cfg, history)
 	injectCacheControl(&req, provider)
 	return req
 }

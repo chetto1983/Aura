@@ -52,15 +52,23 @@ func New(cfg llm.Config) *Client {
 // usage:{include} or stream_options:{include_usage} — both are deprecated no-ops
 // on OpenRouter (RESEARCH State of the Art).
 type wireRequest struct {
-	Model       string        `json:"model"`
-	Messages    []llm.Message `json:"messages"`
-	Tools       []llm.ToolDef `json:"tools,omitempty"`
-	ToolChoice  string        `json:"tool_choice,omitempty"`
-	Temperature float64       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens"`
-	SessionID   string        `json:"session_id,omitempty"`
-	Stream      bool          `json:"stream"`
-	Provider    providerObj   `json:"provider"`
+	Model       string         `json:"model"`
+	Messages    []llm.Message  `json:"messages"`
+	Tools       []llm.ToolDef  `json:"tools,omitempty"`
+	ToolChoice  string         `json:"tool_choice,omitempty"`
+	Temperature float64        `json:"temperature"`
+	MaxTokens   int            `json:"max_tokens"`
+	Reasoning   *wireReasoning `json:"reasoning,omitempty"`
+	SessionID   string         `json:"session_id,omitempty"`
+	Stream      bool           `json:"stream"`
+	Provider    providerObj    `json:"provider"`
+}
+
+type wireReasoning struct {
+	Effort    string `json:"effort,omitempty"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
+	Exclude   *bool  `json:"exclude,omitempty"`
+	Enabled   *bool  `json:"enabled,omitempty"`
 }
 
 type providerObj struct {
@@ -149,8 +157,21 @@ func (c *Client) buildWireRequest(req llm.Request) wireRequest {
 		ToolChoice:  choice,
 		Temperature: req.Temperature,
 		MaxTokens:   req.MaxTokens,
+		Reasoning:   buildWireReasoning(req.Reasoning),
 		SessionID:   req.SessionID,
 		Stream:      true,
 		Provider:    providerObj{DataCollection: "deny"},
+	}
+}
+
+func buildWireReasoning(r llm.ReasoningConfig) *wireReasoning {
+	if r.Empty() {
+		return nil
+	}
+	return &wireReasoning{
+		Effort:    string(r.Effort),
+		MaxTokens: r.MaxTokens,
+		Exclude:   r.Exclude,
+		Enabled:   r.Enabled,
 	}
 }
