@@ -454,7 +454,7 @@ Plans:
 
 **Wave 2** (Telegram channel core — blocked on Wave 1)
 
-- [ ] 13-05-PLAN.md — bot.go (Channel impl, polling) + agui_subscriber (per-turn Subscribe-before-Run) + renderer + status_pane (status-pane-B, mdv2 fallback, tables PNG)
+- [x] 13-05-PLAN.md — bot.go (Channel impl, polling) + agui_subscriber (per-turn Subscribe-before-Run) + renderer + status_pane (status-pane-B, mdv2 fallback, tables PNG) (completed 2026-06-08)
 - [ ] 13-06-PLAN.md — commands (10 bot-intercept, /cost==CLI /search==CLI, /cancel) + hitl (InlineKeyboard/ForceReply→Runner resume) + artifact→sendDocument + onboarding
 
 **Wave 3** (setup API + multimodal — blocked on Wave 2)
