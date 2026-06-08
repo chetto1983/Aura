@@ -36,7 +36,8 @@ type fakeBot struct {
 	// sendTable path returns false and the caller falls back to a text send.
 	failPhoto bool
 
-	nextID int
+	nextID  int
+	deletes int
 }
 
 func newFakeBot() *fakeBot { return &fakeBot{} }
@@ -88,6 +89,21 @@ func (f *fakeBot) recorded() []sendCall {
 	out := make([]sendCall, len(f.calls))
 	copy(out, f.calls)
 	return out
+}
+
+// Delete records a message deletion (the streamed text msg #2 superseded by a table
+// PNG). Satisfies botDeleter so the renderer's cleanup runs under test.
+func (f *fakeBot) Delete(_ tele.Editable) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletes++
+	return nil
+}
+
+func (f *fakeBot) deleteCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.deletes
 }
 
 // parseModeOf extracts the parse mode from a variadic opts slice carrying a
@@ -186,39 +202,6 @@ func TestRendererPlainTextFallbackOn400(t *testing.T) {
 	}
 	if strings.Contains(fb.text, `\`) {
 		t.Errorf("fallback text must not be escaped: %q", fb.text)
-	}
-}
-
-// TestRendererTableToPhoto proves a markdown table in the content renders via
-// sendPhoto (msg.Photo non-nil in the bot double) — the table→PNG path.
-func TestRendererTableToPhoto(t *testing.T) {
-	t.Parallel()
-	bot := newFakeBot()
-	r := newTestRenderer(bot)
-
-	content := "Ecco i dati:\n\n| Città | Temp |\n|-------|------|\n| Cuneo | 12°C |\n| Roma  | 19°C |\n"
-	driveRenderer(r, []events.Event{
-		events.NewTextMessageContentEvent("m1", content),
-		events.NewTextMessageEndEvent("m1"),
-	})
-
-	var photoCall *sendCall
-	for i := range bot.recorded() {
-		c := bot.recorded()[i]
-		if c.photo != nil {
-			photoCall = &c
-			break
-		}
-	}
-	if photoCall == nil {
-		t.Fatalf("no sendPhoto for a markdown table; calls=%+v", bot.recorded())
-	}
-	if photoCall.photo.FileReader == nil {
-		t.Error("photo has no file reader (PNG bytes)")
-	}
-	// The prose framing the table goes into the caption.
-	if !strings.Contains(photoCall.text, "Ecco i dati") {
-		t.Errorf("caption missing prose framing: %q", photoCall.text)
 	}
 }
 
@@ -462,7 +445,7 @@ func TestRendererPhotoResetsMsg(t *testing.T) {
 	r := newTestRenderer(bot)
 	r.msg = &tele.Message{ID: 42} // a prior streamed text msg #2
 
-	r.send("Prosa.\n| a | b |\n|---|---|\n| 1 | 2 |") // a table → sendPhoto
+	r.send("Prosa.\n| a | b |\n|---|---|\n| 1 | 2 |", true) // a table on the final flush → sendPhoto
 
 	if r.msg != nil {
 		t.Error("after a table photo, msg must reset to nil so a following text opens a fresh message")

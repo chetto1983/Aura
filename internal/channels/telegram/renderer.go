@@ -46,10 +46,18 @@ type renderer struct {
 	now   func() time.Time
 	sleep func(time.Duration)
 
-	buf      strings.Builder // accumulated content for the open text message
-	msg      *tele.Message   // msg #2 once first sent; edited in place thereafter
-	lastSend time.Time       // last successful send/edit (throttle + rate-limit gate)
-	plain    bool            // once a 400 forced the plain-text fallback, stay plain for this message
+	buf       strings.Builder // accumulated content for the open text message
+	msg       *tele.Message   // msg #2 once first sent; edited in place thereafter
+	lastSend  time.Time       // last successful send/edit (throttle + rate-limit gate)
+	plain     bool            // once a 400 forced the plain-text fallback, stay plain for this message
+	tableSent bool            // a table PNG finalized this turn — ignore further flushes (no duplicate photos)
+}
+
+// botDeleter is the optional telebot surface for removing a superseded message —
+// the streamed text msg #2 once a table PNG replaces it. *tele.Bot satisfies it; a
+// double that omits Delete makes the cleanup a no-op.
+type botDeleter interface {
+	Delete(msg tele.Editable) error
 }
 
 // newRenderer builds a content renderer bound to a chat with the content throttle
@@ -104,14 +112,14 @@ func (r *renderer) finalText() string {
 // non-final flush inside the throttle window is skipped (coalesced).
 func (r *renderer) flush(ctx context.Context, final bool) {
 	content := r.buf.String()
-	if content == "" {
-		return
+	if content == "" || r.tableSent {
+		return // nothing buffered, or the turn already finalized as a table PNG
 	}
 	if !final && r.now().Sub(r.lastSend) < r.throttle {
 		return // coalesce: within the throttle window, wait for the next delta/END
 	}
 	r.rateLimit(ctx)
-	r.send(content)
+	r.send(content, final)
 	r.lastSend = r.now()
 }
 
@@ -130,9 +138,16 @@ func (r *renderer) rateLimit(ctx context.Context) {
 // send renders content to Telegram: a markdown table goes out as a PNG sendPhoto;
 // otherwise the text is MarkdownV2-escaped and sent/edited, with the plain-text
 // fallback on a 400 can't-parse-entities.
-func (r *renderer) send(content string) {
+func (r *renderer) send(content string, final bool) {
 	if grid, ok := ParseMarkdownTable(content); ok {
+		// A markdown table renders to a PNG ONCE, on the FINAL flush only. Sending it
+		// on every streamed flush posts duplicate photos (the 4× bug); deferring all
+		// table output to final also avoids a mid-stream text→PNG flicker.
+		if !final {
+			return
+		}
 		if r.sendTable(grid, content) {
+			r.tableSent = true
 			return
 		}
 		// table render failed → fall through to text rendering of the raw content
@@ -200,11 +215,24 @@ func (r *renderer) sendTable(grid [][]string, content string) bool {
 	if sendErr != nil {
 		return false
 	}
-	// A photo is a NEW message (not an edit of the streamed text msg #2); reset msg
-	// so a following text flush opens a fresh message rather than editing the photo.
+	// The streamed text msg #2 (if any) is now superseded by the table PNG — delete
+	// it so the user sees the table ONCE (the PNG + prose caption), not the streamed
+	// prose/markdown AND the photo. Then reset msg so a later text flush opens fresh.
+	r.deleteStreamed()
 	r.msg = nil
 	_ = out
 	return true
+}
+
+// deleteStreamed best-effort removes the streamed text msg #2 once a table PNG has
+// superseded it. No-op when nothing was streamed or the bot lacks Delete.
+func (r *renderer) deleteStreamed() {
+	if r.msg == nil {
+		return
+	}
+	if d, ok := r.bot.(botDeleter); ok {
+		_ = d.Delete(r.msg)
+	}
 }
 
 // tableCaption returns the prose surrounding a markdown table (the lines that are
