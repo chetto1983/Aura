@@ -1,0 +1,257 @@
+package channels
+
+import (
+	"context"
+	"errors"
+	"sync"
+	"testing"
+)
+
+// fakeChannel is the test double standing in for a real daemon channel. It
+// records Start/Stop calls and can be configured to fail either, so the
+// registry's fail-soft + enable-gate + errors.Join contract is exercised without
+// a live bot.
+type fakeChannel struct {
+	name     string
+	startErr error
+	stopErr  error
+
+	mu         sync.Mutex
+	startCalls int
+	stopCalls  int
+	healthy    bool
+}
+
+func (c *fakeChannel) Name() string { return c.name }
+
+func (c *fakeChannel) Start(context.Context) error {
+	c.mu.Lock()
+	c.startCalls++
+	c.mu.Unlock()
+	return c.startErr
+}
+
+func (c *fakeChannel) Stop(context.Context) error {
+	c.mu.Lock()
+	c.stopCalls++
+	c.mu.Unlock()
+	return c.stopErr
+}
+
+func (c *fakeChannel) IsHealthy() bool { return c.healthy }
+
+func (c *fakeChannel) starts() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.startCalls
+}
+
+func (c *fakeChannel) stops() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stopCalls
+}
+
+func TestRegistryStartAllStartsEnabledChannels(t *testing.T) {
+	a := &fakeChannel{name: "alpha"}
+	b := &fakeChannel{name: "beta"}
+	reg := NewRegistry()
+	reg.Register(a)
+	reg.Register(b)
+
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	if a.starts() != 1 {
+		t.Errorf("alpha starts = %d, want 1", a.starts())
+	}
+	if b.starts() != 1 {
+		t.Errorf("beta starts = %d, want 1", b.starts())
+	}
+}
+
+func TestRegistryStartAllFailSoftAggregatesErrors(t *testing.T) {
+	failErr := errors.New("boom")
+	failing := &fakeChannel{name: "failing", startErr: failErr}
+	healthy := &fakeChannel{name: "healthy"}
+	reg := NewRegistry()
+	reg.Register(failing)
+	reg.Register(healthy)
+
+	err := reg.StartAll(context.Background())
+	if err == nil {
+		t.Fatal("StartAll: want aggregated error, got nil")
+	}
+	if !errors.Is(err, failErr) {
+		t.Errorf("StartAll error = %v, want it to wrap %v", err, failErr)
+	}
+	// Fail-soft: the failing channel must NOT abort the sibling.
+	if healthy.starts() != 1 {
+		t.Errorf("healthy starts = %d, want 1 (one failure must not abort siblings)", healthy.starts())
+	}
+}
+
+func TestRegistryEnableGateSkipsDisabledChannel(t *testing.T) {
+	disabled := &fakeChannel{name: "disabled"}
+	enabled := &fakeChannel{name: "enabled"}
+	reg := NewRegistry()
+	reg.Register(disabled)
+	reg.Register(enabled)
+
+	t.Setenv("AURA_CHANNEL_DISABLED_ENABLED", "false")
+
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	if disabled.starts() != 0 {
+		t.Errorf("disabled starts = %d, want 0 (enable gate respected)", disabled.starts())
+	}
+	if enabled.starts() != 1 {
+		t.Errorf("enabled starts = %d, want 1", enabled.starts())
+	}
+}
+
+func TestRegistryDefaultEnabledTrue(t *testing.T) {
+	c := &fakeChannel{name: "gamma"}
+	reg := NewRegistry()
+	reg.Register(c)
+
+	// No AURA_CHANNEL_GAMMA_ENABLED set → defaults to true.
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	if c.starts() != 1 {
+		t.Errorf("gamma starts = %d, want 1 (default-enabled)", c.starts())
+	}
+}
+
+func TestRegistryStopAllOnlyStopsStarted(t *testing.T) {
+	started := &fakeChannel{name: "started"}
+	disabled := &fakeChannel{name: "skip"}
+	reg := NewRegistry()
+	reg.Register(started)
+	reg.Register(disabled)
+
+	t.Setenv("AURA_CHANNEL_SKIP_ENABLED", "false")
+
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	if err := reg.StopAll(context.Background()); err != nil {
+		t.Fatalf("StopAll: unexpected error: %v", err)
+	}
+	if started.stops() != 1 {
+		t.Errorf("started stops = %d, want 1", started.stops())
+	}
+	// A disabled (never-started) channel must NOT be stopped.
+	if disabled.stops() != 0 {
+		t.Errorf("skip stops = %d, want 0 (StopAll only stops what it started)", disabled.stops())
+	}
+}
+
+func TestRegistryStopAllAggregatesErrors(t *testing.T) {
+	stopErr := errors.New("drain failed")
+	a := &fakeChannel{name: "a", stopErr: stopErr}
+	b := &fakeChannel{name: "b"}
+	reg := NewRegistry()
+	reg.Register(a)
+	reg.Register(b)
+
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	err := reg.StopAll(context.Background())
+	if err == nil {
+		t.Fatal("StopAll: want aggregated error, got nil")
+	}
+	if !errors.Is(err, stopErr) {
+		t.Errorf("StopAll error = %v, want it to wrap %v", err, stopErr)
+	}
+	if b.stops() != 1 {
+		t.Errorf("b stops = %d, want 1 (one Stop failure must not abort siblings)", b.stops())
+	}
+}
+
+func TestRegistryStopAllIdempotent(t *testing.T) {
+	c := &fakeChannel{name: "c"}
+	reg := NewRegistry()
+	reg.Register(c)
+
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	if err := reg.StopAll(context.Background()); err != nil {
+		t.Fatalf("StopAll #1: unexpected error: %v", err)
+	}
+	if err := reg.StopAll(context.Background()); err != nil {
+		t.Fatalf("StopAll #2: unexpected error: %v", err)
+	}
+	// Second StopAll is a no-op — the channel was already stopped.
+	if c.stops() != 1 {
+		t.Errorf("c stops = %d, want 1 (StopAll idempotent)", c.stops())
+	}
+}
+
+func TestRegistryStopAllBeforeStartAllNoop(t *testing.T) {
+	c := &fakeChannel{name: "c"}
+	reg := NewRegistry()
+	reg.Register(c)
+
+	// StopAll with nothing started is a clean no-op.
+	if err := reg.StopAll(context.Background()); err != nil {
+		t.Fatalf("StopAll: unexpected error: %v", err)
+	}
+	if c.stops() != 0 {
+		t.Errorf("c stops = %d, want 0 (nothing started)", c.stops())
+	}
+}
+
+func TestRegistryOverrideForcesChannelOff(t *testing.T) {
+	// The serve.go --no-telegram / --only=cli flags (parsed in plan 13-09)
+	// override the env gate. Here the registry accepts an override predicate.
+	off := &fakeChannel{name: "telegram"}
+	on := &fakeChannel{name: "cli"}
+	reg := NewRegistry()
+	reg.Register(off)
+	reg.Register(on)
+
+	// Env says enabled (default), but the override forces telegram off.
+	reg.SetEnabledOverride(func(name string) (bool, bool) {
+		if name == "telegram" {
+			return false, true // forced off
+		}
+		return false, false // no override → fall back to env
+	})
+
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	if off.starts() != 0 {
+		t.Errorf("telegram starts = %d, want 0 (override forced off)", off.starts())
+	}
+	if on.starts() != 1 {
+		t.Errorf("cli starts = %d, want 1", on.starts())
+	}
+}
+
+func TestRegistryOverrideForcesChannelOnDespiteEnvDisabled(t *testing.T) {
+	c := &fakeChannel{name: "telegram"}
+	reg := NewRegistry()
+	reg.Register(c)
+
+	// Env disables, but the override forces it on (e.g. --only=telegram).
+	t.Setenv("AURA_CHANNEL_TELEGRAM_ENABLED", "false")
+	reg.SetEnabledOverride(func(name string) (bool, bool) {
+		if name == "telegram" {
+			return true, true // forced on
+		}
+		return false, false
+	})
+
+	if err := reg.StartAll(context.Background()); err != nil {
+		t.Fatalf("StartAll: unexpected error: %v", err)
+	}
+	if c.starts() != 1 {
+		t.Errorf("telegram starts = %d, want 1 (override forced on despite env=false)", c.starts())
+	}
+}
