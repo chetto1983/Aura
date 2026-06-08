@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/scoring"
@@ -42,7 +43,7 @@ const aguiShutdownTimeout = 10 * time.Second
 // unauthenticated loopback endpoint (T-12-09).
 const aguiReadHeaderTimeout = 10 * time.Second
 
-const serveUsage = "usage: aura serve"
+const serveUsage = "usage: aura serve [--no-telegram | --only=cli]"
 
 // serveEnv is the booted daemon: the shared chat composition root plus the cron
 // Store + Scheduler the tick loop runs. close() reverse-releases everything the boot
@@ -52,6 +53,13 @@ type serveEnv struct {
 	store     *cron.Store
 	scheduler *cron.Scheduler
 	httpSrv   *http.Server // the AG-UI gateway (Slice 8b), mounted alongside the tick loop
+
+	// channels is the Phase-13 channels Registry (Telegram). It mounts as a
+	// fail-soft daemon sibling of the AG-UI gateway; runServe StartAll/StopAll it.
+	channels *channels.Registry
+	// setupSrv is the loopback setup-wizard HTTP server (:9081, Slice 9a/UX-03), a
+	// third http.Server sibling to httpSrv. runServe runs + Shutdowns it fail-soft.
+	setupSrv *http.Server
 }
 
 // runServe is the `aura serve` entry point: boot, start the tick loop, block on a
@@ -59,17 +67,20 @@ type serveEnv struct {
 // human-readable line (sysexits posture, the web/task CLI convention); the daemon
 // itself never panics on a transient fault.
 func runServe(args []string) {
-	if len(args) > 0 {
-		fmt.Fprintln(os.Stderr, serveUsage)
-		os.Exit(exitUsage)
+	for _, a := range args {
+		if a != "--no-telegram" && a != "--only=cli" {
+			fmt.Fprintln(os.Stderr, serveUsage)
+			os.Exit(exitUsage)
+		}
 	}
+	override, _ := serveTelegramOverride(args)
 
 	// signal.NotifyContext cancels the root ctx on SIGINT/SIGTERM; the scheduler's
 	// Start returns on that cancel after the in-flight tick drains (graceful, D-15).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	env, err := bootServe(ctx)
+	env, err := bootServe(ctx, override)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura serve:", err)
 		os.Exit(exitInfra)
@@ -87,10 +98,20 @@ func runServe(args []string) {
 		}
 	}()
 
+	// The channels Registry (Telegram) + the setup wizard server (:9081) mount as
+	// fail-soft siblings of the AG-UI gateway: a failed channel or a taken setup
+	// port is logged, never aborts the daemon (T-13-09-DaemonAbort).
+	startChannelSubsystems(ctx, env.channels, env.setupSrv)
+
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
 	// Start blocks until ctx is cancelled (signal) or it returns an error; on a clean
 	// shutdown it returns nil after the in-flight tick joins its workers.
 	schedErr := env.scheduler.Start(ctx)
+
+	// Drain the channels Registry + setup server FIRST (StopAll joins the pollers
+	// goleak-clean, Shutdown drains the setup server) — BEFORE env.close() releases
+	// the pool the channels still hold. env.close() runs last (deferred at the top).
+	stopChannelSubsystems(ctx, env.channels, env.setupSrv)
 
 	// Graceful HTTP drain on shutdown: bound the in-flight SSE streams so a slow client
 	// cannot wedge shutdown forever. Runs on a fresh ctx (the root ctx is already
@@ -112,7 +133,7 @@ func runServe(args []string) {
 // bootChatEnv (pool + MCP mounts + registry + Runner) and adds the cron Store + the
 // Dispatcher wired with the live handlers, Notifier, and quiet-hours predicate. A boot
 // failure returns the error so runServe can exit cleanly without a leaked pool/MCP.
-func bootServe(ctx context.Context) (*serveEnv, error) {
+func bootServe(ctx context.Context, channelOverride func(name string) (enabled, ok bool)) (*serveEnv, error) {
 	chat, err := bootChatEnv(ctx)
 	if err != nil {
 		return nil, err
@@ -141,7 +162,20 @@ func bootServe(ctx context.Context) (*serveEnv, error) {
 		Handler:           aguiServer.Mux(),
 		ReadHeaderTimeout: aguiReadHeaderTimeout,
 	}
-	return &serveEnv{chatEnv: chat, store: store, scheduler: scheduler, httpSrv: httpSrv}, nil
+
+	// The channels Registry (Telegram) + the setup-wizard server (:9081) are built
+	// over the same composition root and mounted by runServe (Phase 13, UX-02/03).
+	// The override carries --no-telegram/--only=cli into the registry enable gate.
+	reg, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
+
+	return &serveEnv{
+		chatEnv:   chat,
+		store:     store,
+		scheduler: scheduler,
+		httpSrv:   httpSrv,
+		channels:  reg,
+		setupSrv:  setupSrv,
+	}, nil
 }
 
 // seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16): it
