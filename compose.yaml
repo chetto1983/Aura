@@ -156,24 +156,29 @@ services:
   # start aura-ocr-vl (tier B, no-GPU → OpenRouter cloud vision). STT/TTS stay local
   # in both tiers. Endpoints/ports per 13-RESEARCH.md §7.
 
-  # aura-stt — faster-whisper STT (OGG/Opus direct, no ffmpeg). STT_BASE_URL=
-  # http://aura-stt:9000/v1, POST /audio/transcriptions (multipart).
+  # aura-stt — faster-whisper STT via hwdsl2/whisper-server (spike 027 VALIDATED:
+  # large-v3-turbo int8 on CPU; OGG/Opus decoded inline via PyAV — no ffmpeg shim).
+  # STT_BASE_URL=http://aura-stt:9000/v1, POST /audio/transcriptions (multipart).
+  # NOTE: this image uses WHISPER_MODEL (single underscore) + listens on :9000 — NOT
+  # fedirz/faster-whisper-server's WHISPER__MODEL/:8000 (which rejects large-v3-turbo
+  # as an invalid model size; spike 027 picked hwdsl2 precisely because it supports
+  # turbo natively and ingests Telegram OGG/Opus directly).
   aura-stt:
-    image: ${AURA_STT_IMAGE:-fedirz/faster-whisper-server:latest-cpu}
+    image: ${AURA_STT_IMAGE:-hwdsl2/whisper-server:latest}
     container_name: aura-stt
     restart: unless-stopped
     environment:
-      WHISPER__MODEL: ${STT_MODEL:-large-v3-turbo}
-      WHISPER__INFERENCE_DEVICE: cpu
-      WHISPER__NUM_WORKERS: "1"
+      WHISPER_MODEL: ${STT_MODEL:-large-v3-turbo}
+      WHISPER_COMPUTE_TYPE: int8
+      WHISPER_DEVICE: cpu
     ports:
-      - "127.0.0.1:${AURA_STT_PORT:-9000}:8000"
+      - "127.0.0.1:${AURA_STT_PORT:-9000}:9000"
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:8000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:9000/health || curl -sf http://localhost:9000/v1/models || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 60s                        # first-boot model download
+      start_period: 120s                       # first-boot turbo model download (~1.6GB)
 
   # aura-tts — Kokoro-82M (voice if_sara) → opus voice note. TTS_BASE_URL=
   # http://aura-tts:8880/v1, POST /audio/speech response_format=opus.
