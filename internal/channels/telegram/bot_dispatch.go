@@ -238,7 +238,7 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 				slog.Warn("telegram: async document convert failed", "chat", chatID, "err", convErr)
 				return
 			}
-			t.handleTurn(daemonCtx, sender, chatID, &markdown)
+			t.handleTurn(daemonCtx, sender, chatID, &markdown, false)
 		}
 
 		res, err := t.docs.Convert(daemonCtx, payload, msg.Document.FileName)
@@ -282,7 +282,9 @@ func (t *Telegram) hitlHandlesText(daemonCtx context.Context, c tele.Context, ch
 func (t *Telegram) hitlFor(c tele.Context, chatID int64) *hitl {
 	sender := t.sender(c)
 	resume := func(ctx context.Context, _ string) {
-		t.handleTurn(ctx, sender, chatID, nil) // nil userMsg → a continuation turn
+		// nil userMsg → a continuation turn; inboundWasVoice=false (a resume is a
+		// button/text answer, never itself a voice note).
+		t.handleTurn(ctx, sender, chatID, nil, false)
 	}
 	return newHitl(t.deps.Resume, resume)
 }
@@ -302,8 +304,7 @@ func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int
 	t.cmds.registerTurn(chatID, cancel)
 	defer t.cmds.unregisterTurn(chatID)
 
-	_ = inboundWasVoice // the echo-modality TTS-out path is wired in Task 3.
-	t.handleTurn(turnCtx, t.sender(c), chatID, &text)
+	t.handleTurn(turnCtx, t.sender(c), chatID, &text, inboundWasVoice)
 }
 
 // reply sends a plain user-facing message (a command reply / a fail copy). It is

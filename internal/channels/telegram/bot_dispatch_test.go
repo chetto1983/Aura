@@ -121,8 +121,8 @@ func (r *recordingTurn) snapshot() (calls int, msgs []string) {
 // handleTurn's render path runs goleak-clean without the real status_pane/renderer
 // (the dispatch tests assert on routing, not on the rendered bytes).
 func recordingFactory() consumerFactory {
-	return func(_ botSender, _ tele.Recipient) (eventConsumer, eventConsumer) {
-		return newRecordingConsumer(), newRecordingConsumer()
+	return func(_ botSender, _ tele.Recipient) (eventConsumer, eventConsumer, eventConsumer) {
+		return newRecordingConsumer(), newRecordingConsumer(), newRecordingConsumer()
 	}
 }
 

@@ -6,6 +6,7 @@ package telegram
 
 import (
 	"context"
+	"log/slog"
 	"strconv"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
@@ -25,67 +26,118 @@ type eventConsumer interface {
 	consume(ctx context.Context, ch <-chan events.Event)
 }
 
-// consumerFactory builds the two per-turn consumers (status pane → msg #1, renderer
-// → msg #2) bound to a chat. It is a field on Telegram so production wires the real
-// status_pane/renderer (Task 2) and tests wire recorders. The default factory
-// (set in New) builds the real consumers.
-type consumerFactory func(bot botSender, to tele.Recipient) (status, content eventConsumer)
+// consumerFactory builds the THREE per-turn consumers (status pane → msg #1,
+// renderer → msg #2, artifact → sendDocument) bound to a chat. It is a field on
+// Telegram so production wires the real status_pane/renderer/artifact and tests
+// wire recorders. The default factory (set in consumers) builds the real
+// consumers.
+type consumerFactory func(bot botSender, to tele.Recipient) (status, content, artifact eventConsumer)
 
-// handleTurn drives ONE turn through the per-turn fanout wiring (research §2 code
-// example, verbatim):
+// finalTexter exposes the accumulated answer text a content consumer rendered, read
+// after consume returns to feed the optional TTS-out. The production renderer
+// implements it; a test recorder may implement it to drive the TTS path.
+type finalTexter interface {
+	finalText() string
+}
+
+// handleTurn drives ONE turn through the per-turn fanout wiring (research §2):
 //
 //	Translate(convID, runID, idgen, runner.Turn(...))  → an AG-UI events.Event stream
 //	NewFanout(translated)
-//	statusCh := fo.Subscribe()   // status pane (msg #1)
-//	contentCh := fo.Subscribe()  // content    (msg #2)   — BOTH before Run
-//	fo.Run(ctx)                  // single producer goroutine, closes both chans on end/cancel
-//	→ status pane consumes statusCh ; renderer consumes contentCh
+//	statusCh   := fo.Subscribe()  // status pane (msg #1)
+//	contentCh  := fo.Subscribe()  // content     (msg #2)
+//	artifactCh := fo.Subscribe()  // artifact    (sendDocument)  — ALL THREE before Run
+//	fo.Run(ctx)                   // single producer goroutine, closes every chan on end/cancel
 //
-// Subscribe MUST register BOTH consumers before Run (fanout.go:51 panics on
-// Subscribe-after-Run); exactly one Fanout drives one turn (fanout.go:67 panics on
-// double-Run). A fresh Fanout is built per turn — never one at channel start.
+// Subscribe MUST register every consumer before Run (fanout.go panics on
+// Subscribe-after-Run); exactly one Fanout drives one turn (fanout.go panics on
+// double-Run). A fresh Fanout is built per turn — never one at channel start. The
+// fanout supports N subscribers, so the artifact consumer is just a third channel.
 //
 // userMsg is the inbound user message for a fresh turn; nil drives a CONTINUATION
 // turn (runner.Turn(ctx, convID, nil)) — the resume path after a HITL pause
 // resolves, so the resumed answer renders through the SAME per-turn fanout as a
 // normal message (plan 13-10: a tap/reply resumes the loop AND the user sees it).
-func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, userMsg *string) {
+//
+// inboundWasVoice flags the echo-modality TTS-out: after the content render
+// completes, when ShouldSpeak (voice-mode pref OR the inbound was a voice note) the
+// final answer is synthesized to a voice note. The TTS-out runs AFTER the text
+// render (it never blocks it) and is ctx-cancel-aware.
+func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, userMsg *string, inboundWasVoice bool) {
 	idgen := agui.NewIDGenerator()
 	runID := uuid.NewString()
 
 	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), userMsg))
 	fo := agui.NewFanout(translated)
-	statusCh := fo.Subscribe()  // → status pane
-	contentCh := fo.Subscribe() // → renderer  (BOTH before Run)
+	statusCh := fo.Subscribe()   // → status pane
+	contentCh := fo.Subscribe()  // → renderer
+	artifactCh := fo.Subscribe() // → artifact (ALL THREE before Run)
 	fo.Run(ctx)
 
 	to := tele.ChatID(chatID)
-	pane, rend := t.consumers(bot, to)
+	pane, rend, art := t.consumers(bot, to)
 
-	// The status pane consumes on its own goroutine (it edits msg #1 in place); the
+	// The status pane + artifact consumer each drain on their own goroutine; the
 	// renderer consumes inline on the handler goroutine (it streams msg #2 and
-	// returns when the content channel closes). Both channels are closed by the sole
-	// Fanout producer on source-end/ctx-cancel, so both consumers terminate without
-	// a leak.
-	done := make(chan struct{})
+	// returns when the content channel closes). Every channel is closed by the sole
+	// Fanout producer on source-end/ctx-cancel, so all three consumers terminate
+	// without a leak (goleak).
+	paneDone := make(chan struct{})
+	artDone := make(chan struct{})
 	go func() {
-		defer close(done)
+		defer close(paneDone)
 		pane.consume(ctx, statusCh)
 	}()
+	go func() {
+		defer close(artDone)
+		art.consume(ctx, artifactCh)
+	}()
 	rend.consume(ctx, contentCh)
-	<-done
+	<-paneDone
+	<-artDone
+
+	// TTS-out (after the text render, never blocking it): synthesize the final answer
+	// to a voice note when ShouldSpeak. Skipped on a cancelled ctx (a /cancel mid-turn
+	// must not still produce a voice note) or when TTS is unconfigured.
+	t.speakIfNeeded(ctx, bot, to, rend, inboundWasVoice)
 }
 
-// consumers builds the per-turn status + content consumers via the configured
-// factory, falling back to the production status_pane/renderer when no factory was
-// injected (the common path; tests inject recorders).
-func (t *Telegram) consumers(bot botSender, to tele.Recipient) (status, content eventConsumer) {
+// speakIfNeeded synthesizes the rendered answer to a Telegram voice note when the
+// TTS trigger fires (voice-mode pref OR an inbound voice note — ShouldSpeak). It is
+// best-effort: a TTS sidecar failure is logged, never surfaced (the text answer
+// already reached the user). It no-ops on a cancelled ctx, an unconfigured TTS
+// sidecar, an empty answer, or a content consumer that does not expose finalText.
+func (t *Telegram) speakIfNeeded(ctx context.Context, bot botSender, to tele.Recipient, content eventConsumer, inboundWasVoice bool) {
+	if ctx.Err() != nil || t.tts == nil || t.tts.cfg.TTSBaseURL == "" {
+		return
+	}
+	if !ShouldSpeak(VoiceModePref(""), inboundWasVoice) {
+		return
+	}
+	ft, ok := content.(finalTexter)
+	if !ok {
+		return
+	}
+	text := ft.finalText()
+	if text == "" {
+		return
+	}
+	if _, err := t.tts.Speak(ctx, bot, to, text); err != nil {
+		slog.Warn("telegram: tts-out failed", "err", err)
+	}
+}
+
+// consumers builds the per-turn status + content + artifact consumers via the
+// configured factory, falling back to the production status_pane/renderer/artifact
+// when no factory was injected (the common path; tests inject recorders).
+func (t *Telegram) consumers(bot botSender, to tele.Recipient) (status, content, artifact eventConsumer) {
 	if t.deps.consumerFactory != nil {
 		return t.deps.consumerFactory(bot, to)
 	}
 	pane := newStatusPane(bot, to, t.statusThrottle())
 	rend := newRenderer(bot, to, t.contentThrottle(), t.chatRateLimit())
-	return pane, rend
+	art := newArtifact(bot, to)
+	return pane, rend, art
 }
 
 // convID derives the conversation id for a Telegram chat. One conversation per

@@ -85,17 +85,18 @@ func TestHandleTurnFanoutDistributesToBothConsumers(t *testing.T) {
 
 	status := newRecordingConsumer()
 	content := newRecordingConsumer()
+	artifact := newRecordingConsumer()
 
 	tg := NewChannel(Deps{
 		Turn:    syntheticTurn(stream),
 		Offline: true,
-		consumerFactory: func(_ botSender, _ tele.Recipient) (eventConsumer, eventConsumer) {
-			return status, content
+		consumerFactory: func(_ botSender, _ tele.Recipient) (eventConsumer, eventConsumer, eventConsumer) {
+			return status, content, artifact
 		},
 	})
 
 	userMsg := "hello"
-	tg.handleTurn(context.Background(), nil, 4242, &userMsg)
+	tg.handleTurn(context.Background(), nil, 4242, &userMsg, false)
 
 	// Both subscribers must have seen the lifecycle frames the producer guarantees.
 	for name, c := range map[string]*recordingConsumer{"status": status, "content": content} {

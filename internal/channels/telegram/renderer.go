@@ -91,6 +91,14 @@ func (r *renderer) consume(ctx context.Context, ch <-chan events.Event) {
 	r.flush(ctx, true)
 }
 
+// finalText returns the full accumulated answer text for this turn (the buffer the
+// content deltas streamed into). handleTurn reads it after consume returns to feed
+// the optional TTS-out path (ShouldSpeak); it is the rendered answer, not a
+// re-derivation. Empty when the turn produced no text content.
+func (r *renderer) finalText() string {
+	return r.buf.String()
+}
+
 // flush sends/edits msg #2 with the accumulated content. final forces a send even
 // if the throttle window has not elapsed (the END/RUN_FINISHED finalization). A
 // non-final flush inside the throttle window is skipped (coalesced).
