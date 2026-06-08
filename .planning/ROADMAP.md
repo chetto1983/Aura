@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger (completed 2026-06-06)
 - [x] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced (completed 2026-06-07)
 - [ ] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image
-- [ ] **Phase 14: Onboarding + Agent.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
+- [ ] **Phase 14: Onboarding + AGENT.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
 - [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
  (completed 2026-06-04)
@@ -441,8 +441,30 @@ Wave 4:
   4. User sends a voice note and observes Aura transcribing via `aura-stt` (faster-whisper, OGG/Opus direct) and responding — optionally with a voice-note reply via `aura-tts` (Kokoro `if_sara`); same for an image with caption "what's in this picture?" returning a description via `aura-ocr-vl` (GLM-OCR) or, with `AURA_VISION_CLOUD=true`, OpenRouter *(engine = spike session-6 verdict, Amendments #59/#60 — Gemma 4 / vLLM are OUT)*
   5. User runs `/cost` and observes today's cumulative USD spend across all conversations; `/search "<query>"` returns matching turn excerpts (FTS from P4 wired into Telegram)
 
-**Plans**: TBD
+**Plans**: 9 plans (4 waves)
 **UI hint**: yes
+
+Plans:
+**Wave 1** (substrate + framework — no inter-dependencies)
+
+- [ ] 13-01-PLAN.md — deps legitimacy gate + migration 0012 (telegram_accounts/setup_pending) + telegram.Store + 3 goleak TestMains
+- [ ] 13-02-PLAN.md — send_file Deferred tool + translator ArtifactDelta→custom-event branch (channel-agnostic, D-05/D-06)
+- [ ] 13-03-PLAN.md — net-new model capability flags (SupportsVision/SupportsAudio) + MarkdownV2 entity-aware escaper (10K fuzz) + tables→PNG (x/image)
+- [ ] 13-04-PLAN.md — Channel interface + fail-soft Registry (AURA_CHANNEL_*_ENABLED) + telegram config + AURA_* env surface
+
+**Wave 2** (Telegram channel core — blocked on Wave 1)
+
+- [ ] 13-05-PLAN.md — bot.go (Channel impl, polling) + agui_subscriber (per-turn Subscribe-before-Run) + renderer + status_pane (status-pane-B, mdv2 fallback, tables PNG)
+- [ ] 13-06-PLAN.md — commands (10 bot-intercept, /cost==CLI /search==CLI, /cancel) + hitl (InlineKeyboard/ForceReply→Runner resume) + artifact→sendDocument + onboarding
+
+**Wave 3** (setup API + multimodal — blocked on Wave 2)
+
+- [ ] 13-07-PLAN.md — setup :9081 token-gated API (token/onboard-link/status/events SSE) + one-time AURA_SETUP_TOKEN + ASCII QR (qr_svg deferred)
+- [ ] 13-08-PLAN.md — 9c sidecar clients: voice.go (STT OGG-direct) + tts.go (Kokoro opus→sendVoice) + photo.go (single AURA_VISION_CLOUD branch) + documents.go (tiered markitdown)
+
+**Wave 4** (wiring + Gate-3 — blocked on Wave 3)
+
+- [ ] 13-09-PLAN.md — serve.go mount (channels Registry + setup server, fail-soft) + telegram_integration/multimodal_integration tiers + compose sidecars + CI + Gate-3 live sign-off
 
 ### Phase 14: Onboarding + Agent.md
 
