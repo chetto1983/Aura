@@ -101,7 +101,34 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 		ExitCode:          exitCodeFromMeta(run.Result.Meta),
 		Meta:              toolResultMetaMap(run.Result.Meta),
 	}
+	// A tool (send_file) may carry a channel-agnostic artifact descriptor on its
+	// Meta. Lift it onto Actions.ArtifactDelta (the named emit seam D-06): this is
+	// the ONLY route that populates the forward-compat ArtifactDelta field, and the
+	// AG-UI translator's artifact branch keys off it. Purely additive — a run
+	// without the key leaves ArtifactDelta nil, so every existing event is unchanged.
+	if art, ok := metaArtifact(run.Result.Meta); ok {
+		ev.Actions.ArtifactDelta = art
+	}
 	return ev
+}
+
+// metaArtifact pulls the `artifact` descriptor off a ToolResult.Meta map, mirroring
+// toolResultMetaMap/exitCodeFromMeta. It reports ok=false when the meta is nil, the
+// key is absent, or the value is not a map[string]any — so a malformed meta never
+// produces a bogus ArtifactDelta.
+func metaArtifact(meta *tools.ToolResultMeta) (map[string]any, bool) {
+	if meta == nil {
+		return nil, false
+	}
+	v, ok := (*meta)["artifact"]
+	if !ok {
+		return nil, false
+	}
+	art, ok := v.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	return art, true
 }
 
 func (a *LlmAgent) toolPreviewEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, toolCallID, preview string) *Event {
