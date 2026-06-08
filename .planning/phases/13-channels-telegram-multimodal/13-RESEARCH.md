@@ -378,7 +378,7 @@ sqlc query files: `telegram_accounts.sql` (~6 queries: insert/get-by-tg-id/get-b
 | `aura-tts` (Kokoro-82M `if_sara`) | `POST /v1/audio/speech` `response_format=opus` | tts.go | `TTS_BASE_URL=http://aura-tts:8880/v1`, `TTS_VOICE=if_sara`, `TTS_FORMAT=opus` | text in → **opus voice note out** → sendVoice |
 | markitdown | `POST /convert` | documents.go | (markitdown sidecar URL) | doc → markdown; tiered ≤5MB sync / 5-50MB async / >50MB refuse |
 
-- **Vision branch (`AURA_VISION_CLOUD`, default false):** `false` → POST aura-ocr-vl; `true` → attach `image_url` to the primary LLM turn if `Model.SupportsVision` (e.g. minimax-m3), else `MULTIMODAL_FALLBACK_MODEL` (default `minimax/minimax-m3`) — both OpenRouter, no sidecar. Add `SupportsVision`/`SupportsAudio` flags to `internal/llm/openai_compat/models.go` (`deepseek/deepseek-v4-flash`=false, `minimax/minimax-m3`=true).
+- **Vision branch (`AURA_VISION_CLOUD`, default false):** `false` → POST aura-ocr-vl; `true` → attach `image_url` to the primary LLM turn if `Model.SupportsVision` (e.g. minimax-m3), else `MULTIMODAL_FALLBACK_MODEL` (default `minimax/minimax-m3`) — both OpenRouter, no sidecar. Add `SupportsVision`/`SupportsAudio` lookups to `internal/llm/models.go` (NEW — see 13-PATTERNS.md §"No Analog Found"; `Model` is a bare string at `internal/llm/config.go:77`, there is NO `Model` struct and NO `openai_compat/` package). Seed: `deepseek/deepseek-v4-flash`=false, `minimax/minimax-m3`=true.
 - **Env var convention:** third-party sidecars keep upstream naming (`MULTIMODAL_*`, `STT_*`, `TTS_*`) per CLAUDE.md exception; Aura-native knobs use `AURA_<DOMAIN>_<UNIT>` (`AURA_VISION_CLOUD`, `AURA_CHANNEL_TELEGRAM_ENABLED`, `AURA_SETUP_TOKEN`, `AURA_SETUP_BIND`, `AURA_TELEGRAM_STATUS_THROTTLE_MS`/`_CONTENT_THROTTLE_MS`/`_CHAT_RATE_LIMIT_MS`). `TELEGRAM_BOT_TOKEN` keeps upstream naming (third-party).
 - **Compose:** the 3 sidecars + markitdown are compose services (config, not Go LOC). With `AURA_VISION_CLOUD=true` the operator simply doesn't start `aura-ocr-vl` (tier B no-GPU). STT/TTS stay local in both tiers.
 
@@ -493,25 +493,32 @@ sqlc query files: `telegram_accounts.sql` (~6 queries: insert/get-by-tg-id/get-b
 |---|-------|---------|---------------|
 | A1 | telebot.v4 / qrterminal / skip2 package *identities* (not just registry existence) are legitimate | Standard Stack, Audit | slopcheck unavailable; planner must verify repos before `go get`. Low risk (PRD/spike-named, telebot live-validated spike 017). |
 | A2 | markitdown sidecar exposes `POST /convert` (not OpenAI-compat) | §7 documents.go | If the endpoint differs, documents.go client shape changes — verify the markitdown image's API at implementation time. The OCR/STT/TTS endpoints ARE spike-verified OpenAI-compat. |
-| A3 | `Model.SupportsVision`/`SupportsAudio` flags don't yet exist in `openai_compat/models.go` | §7 photo.go | Confirmed absent by grep; planner adds them (~+30 LOC per PRD). |
+| A3 | No `Model` capability struct exists; `internal/llm/models.go` is net-new (the research's earlier `openai_compat/models.go` path was stale) | §7 photo.go | Confirmed: `Model` is a bare string at `internal/llm/config.go:77`, no `openai_compat/` package. Planner creates `internal/llm/models.go` with `SupportsVision`/`SupportsAudio` lookups (~30 LOC). |
 | A4 | The Runner exposes `SubmitAnswer`/`PendingFor`/`Turn(convID,nil)` for HITL resume (seen in chat_repl.go usage) | §1, hitl.go | If signatures differ, hitl.go wiring adjusts; the REPL proves the surface exists. |
 | A5 | `qr_svg` may be safely deferred/stubbed this phase (frontend deferred) | Supporting | If the operator wants real SVG now, add boombuler/barcode; low risk (D-03 defers the frontend). |
+| A6 | No outbound `ToolResult`→`Actions.ArtifactDelta` path exists yet; the seam must be ADDED in `internal/agent/llm_agent_events.go` | §5, OQ1 | Confirmed by live read: `toolResultEvent` (`llm_agent_events.go:69-105`) already lifts `ToolResult.Meta` (`tools/spec.go:58`) onto the Event but never stamps `Actions.ArtifactDelta`. send_file writes the descriptor into `ToolResult.Meta`; one new line in `toolResultEvent` lifts it to `Actions.ArtifactDelta` (analog: shell_exec exit_code via Meta, `tools/shell_exec.go:156`). Low risk, additive. |
 
-## Open Questions (left to the planner)
+## Open Questions (RESOLVED)
 
 1. **Artifact event shape (D-06 discretion — RECOMMENDATION provided).**
+   **RESOLVED:** custom AG-UI event off `Actions.ArtifactDelta` (Plan 13-02). The substrate emits a dedicated AG-UI custom event (not an overloaded `TOOL_CALL_RESULT`), keeping the artifact path channel-agnostic.
    - What we know: `Actions.ArtifactDelta map[string]any` already exists on `internal/agent/event.go:71` (forward-compat, currently unmapped by `translator.go`). The translator already has a clean STATE_DELTA branch pattern (`translator.go:87-95`) to copy.
-   - What's unclear: emit a NEW AG-UI custom event for artifacts, OR extend the existing `TOOL_CALL_RESULT` path with an artifact marker (like the `tool_call_id` StateDelta marker pattern at `translator.go:71`).
-   - **Recommendation:** Use `Actions.ArtifactDelta` + a dedicated translator branch emitting an AG-UI **custom event** (the SDK has custom-event support per spike 015's 28-event surface). It's channel-agnostic (D-06), keeps tool results clean, and reuses the field already designed for it. Tradeoff: a custom event needs each channel to handle-or-ignore it (Telegram→sendDocument, CLI→print path, AG-UI HTTP→pass through); the tool_call_result-marker approach avoids a new event type but conflates "artifact produced" with "tool returned text," which is exactly the conflation `translator.go:71` already had to special-case. Prefer the clean custom event.
+   - **Emit seam (named, read live):** there is NO existing outbound path from a `ToolResult` to `Actions.ArtifactDelta`. The concrete plumbing is: `runTool` (`llm_agent.go:357`) returns the tool's `ToolResult` as `run.Result`; `toolResultEvent` (`llm_agent_events.go:69-105`) projects that onto the Event and ALREADY reads `run.Result.Meta` (`tools/spec.go:58`, `map[string]any`) via `toolResultMetaMap`/`exitCodeFromMeta` (lines 101-102). send_file writes its `{path,filename,caption}` artifact descriptor into `ToolResult.Meta` (exactly as `shell_exec` writes `exit_code` at `tools/shell_exec.go:156` `res.Meta = &meta`); `toolResultEvent` gains ONE new line stamping `ev.Actions.ArtifactDelta` from that meta key. This is the minimal addition and `internal/agent/llm_agent_events.go` owns it. NOTE: this is NOT the `ask_user` sentinel mechanism — that path is name-gated to `ask_user` only (amendment #51/D-40) and a non-ask_user sentinel is dropped as a RoleTool error.
+   - What's unclear (now decided): emit a NEW AG-UI custom event for artifacts, OR extend the existing `TOOL_CALL_RESULT` path with an artifact marker (like the `tool_call_id` StateDelta marker pattern at `translator.go:71`). → custom event chosen.
+   - **Rationale:** Use `Actions.ArtifactDelta` + a dedicated translator branch emitting an AG-UI **custom event** (the SDK has custom-event support per spike 015's 28-event surface). It's channel-agnostic (D-06), keeps tool results clean, and reuses the field already designed for it. Tradeoff: a custom event needs each channel to handle-or-ignore it (Telegram→sendDocument, CLI→print path, AG-UI HTTP→pass through); the tool_call_result-marker approach avoids a new event type but conflates "artifact produced" with "tool returned text," which is exactly the conflation `translator.go:71` already had to special-case. Prefer the clean custom event.
 
 2. **TTS trigger shape (#59 point 3 discretion).**
+   **RESOLVED:** `voice_mode` pref + auto-echo on voice input (Plan 13-08). No explicit `send_voice` tool this phase; the modality echoes the user's input modality plus the `voice_mode` preference.
    - Explicit `send_voice` tool (symmetric with `send_file`, deferred-tool pattern) vs auto-reply-vocale when the user sent a voice note vs `voice_mode` preference (Slice 10 `preferences.json` already has the field).
-   - **Recommendation:** Support BOTH the `voice_mode` preference AND auto-on-voice-input (cheap, no new tool). Defer an explicit `send_voice` tool unless the operator wants the agent to *choose* per-message — `voice_mode` + echo-modality covers the smoke. Note Slice 10 isn't shipped yet, so `voice_mode` reading may need a stub/default until Phase 14.
+   - **Rationale:** Support BOTH the `voice_mode` preference AND auto-on-voice-input (cheap, no new tool). Defer an explicit `send_voice` tool unless the operator wants the agent to *choose* per-message — `voice_mode` + echo-modality covers the smoke. Note Slice 10 isn't shipped yet, so `voice_mode` reading may need a stub/default until Phase 14.
 
 3. **send_file `Deferred` flag + overflow (CONTEXT discretion).**
-   - **Recommendation:** `Deferred: true` (it has a path/caption schema + examples, fits the deferred rule) and `Mutating: false` (it reads a file, sends it — no host mutation). On >50MB: return an error ToolResult the agent surfaces as a user-facing message (don't silently truncate). Caption ASCII-safe (Pitfall 4 applies to document captions too).
+   **RESOLVED:** `Deferred:true`, `Mutating:false`, error on >50MB (Plan 13-02). The tool returns an error ToolResult the agent surfaces, never a silent truncation.
+   - **Rationale:** `Deferred: true` (it has a path/caption schema + examples, fits the deferred rule) and `Mutating: false` (it reads a file, sends it — no host mutation). On >50MB: return an error ToolResult the agent surfaces as a user-facing message (don't silently truncate). Caption ASCII-safe (Pitfall 4 applies to document captions too).
 
-4. **qr_svg this phase or deferred?** See A5 — recommend deferring the SVG body (frontend deferred) and returning an empty/omitted `qr_svg`, keeping the JSON field for forward-compat. Terminal ASCII QR (qrterminal) is the real onboarding path this phase.
+4. **qr_svg this phase or deferred?**
+   **RESOLVED:** deferred SVG stub, terminal ASCII QR is the real path this phase (Plan 13-07). The `qr_svg` JSON field stays for forward-compat (empty/omitted body); `qrterminal` ASCII QR is the live onboarding path.
+   - **Rationale:** See A5 — recommend deferring the SVG body (frontend deferred) and returning an empty/omitted `qr_svg`, keeping the JSON field for forward-compat. Terminal ASCII QR (qrterminal) is the real onboarding path this phase.
 
 ## Sources
 
@@ -519,12 +526,16 @@ sqlc query files: `telegram_accounts.sql` (~6 queries: insert/get-by-tg-id/get-b
 - `internal/agui/fanout.go` (Subscribe-before-Run, Run-once, drop-on-full cap-64, lifecycle-frame guarantee) — file:line cited throughout §2.
 - `internal/agui/translator.go` + `types.go` (real AG-UI event set, ID generators, interrupt mapping) — §2.
 - `internal/agent/event.go:37-129` (`Actions.ArtifactDelta` field, ToolInvocation, AwaitingInput) — §5 artifact decision.
+- `internal/agent/llm_agent.go:357` (`runTool` → `ToolResult` projection) + `internal/agent/llm_agent_events.go:69-105` (`toolResultEvent` lifts `ToolResult.Meta` onto the Event; the ArtifactDelta stamp lands here) — §5 emit seam.
+- `internal/agent/tools/spec.go:53-63` (`ToolResult.Meta *ToolResultMeta` outbound channel) + `internal/agent/tools/shell_exec.go:156` (`res.Meta = &meta` analog) — §5 emit seam.
+- `internal/agent/tools/result.go` (`WithToolCallContext`/`toolCallCtx` — INBOUND-only ctx; NOT an outbound Event stamp) + `internal/agent/tools/web_fetch.go` (reads inbound convID, returns a normal ToolResult) + `internal/agent/llm_agent_pause.go` (the ask_user sentinel→Event stamp, name-gated to ask_user) — §5 (why send_file uses Meta, not the sentinel).
 - `internal/runner/runner.go:177` (`Turn` iterator), `interfaces.go` (narrow stores) — §1/§2.
 - `cmd/aura/serve.go:50-145` (`serveEnv`/`bootServe` mount pattern, fail-soft HTTP) — §1.
 - `cmd/aura/chat_repl.go` (Runner-driven turn loop, pause render, /search excerpt) — §1, HITL.
 - `internal/agent/tools/spec.go` + `current_time.go` + `ask_user.go` (deferred-tool convention, ToolResult) — §5, send_file.
 - `internal/askuser/store.go` + `internal/llm/prices.go` + `internal/conversations/store.go:418` (HITL/cost/search backends) — Don't Hand-Roll.
 - `internal/db/migrations/0004,0009` (migration + grant + COMMENT pattern) — §8.
+- `internal/llm/config.go:77` (`Model` is a bare string field; no `Model` struct, no `openai_compat/` package — the basis for the net-new `internal/llm/models.go`) — §7.
 - `internal/config/config.go` (env helpers, loopback bind, `:9080` AG-UI) — env catalog.
 - `prd.md` §Slice 9 (2856-3208) + amendments #58/#59/#60 — binding decisions (status pane B, throttle 1500/500/1000, 10 commands, doc tiers, migration schema, sidecar compose, AURA_VISION_CLOUD).
 - `.claude/skills/spike-findings-Aura/references/telegram-channel.md` — binding 9b blueprint (telebot pin, MarkdownV2 Pitfall #18, tables PNG, sendDocument).
@@ -552,11 +563,11 @@ sqlc query files: `telegram_accounts.sql` (~6 queries: insert/get-by-tg-id/get-b
 
 ## RESEARCH COMPLETE
 
-Phase 13 is implementation wiring over already-locked decisions. The Telegram channel consumes the Phase-12 `internal/agui/fanout.go` seam via **Subscribe-before-Run per turn** (status + content consumers), driving `runner.Turn` through `agui.Translate` → `NewFanout` → `Run`; the `Channel` interface + `Registry` mount in `bootServe` exactly like the existing scheduler/AG-UI subsystems; the setup wizard is a token-gated loopback HTTP+SSE API on `:9081` (poll-DB-2s); migration is **0012** (not the PRD's stale 0008); and 9c is four thin OpenAI-compat HTTP clients to CPU sidecars with a single `AURA_VISION_CLOUD` env branch. All external deps are registry-verified at the exact spike-pinned versions. The biggest enabling discovery is that `Actions.ArtifactDelta` already exists on the Event for the channel-agnostic artifact path, making D-06 a low-risk additive translator branch.
+Phase 13 is implementation wiring over already-locked decisions. The Telegram channel consumes the Phase-12 `internal/agui/fanout.go` seam via **Subscribe-before-Run per turn** (status + content consumers), driving `runner.Turn` through `agui.Translate` → `NewFanout` → `Run`; the `Channel` interface + `Registry` mount in `bootServe` exactly like the existing scheduler/AG-UI subsystems; the setup wizard is a token-gated loopback HTTP+SSE API on `:9081` (poll-DB-2s); migration is **0012** (not the PRD's stale 0008); and 9c is four thin OpenAI-compat HTTP clients to CPU sidecars with a single `AURA_VISION_CLOUD` env branch. All external deps are registry-verified at the exact spike-pinned versions. The biggest enabling discovery is that `Actions.ArtifactDelta` already exists on the Event for the channel-agnostic artifact path, making D-06 a low-risk additive translator branch (the emit seam itself must be added in `toolResultEvent` — see OQ1).
 
-**Open decisions left to the planner (none blocking):**
-1. Artifact event shape — RECOMMENDED: custom AG-UI event off `Actions.ArtifactDelta` (clean, channel-agnostic) over the tool_call_result-marker hack.
-2. TTS trigger — RECOMMENDED: `voice_mode` pref + auto-on-voice-input; defer an explicit `send_voice` tool.
-3. send_file flags — RECOMMENDED: `Deferred:true`, `Mutating:false`, error (not truncate) on >50MB, ASCII caption.
-4. `qr_svg` — RECOMMENDED: defer the SVG body (frontend deferred), keep the JSON field; terminal ASCII QR (qrterminal) is the real path.
+**Open decisions (all RESOLVED — see §Open Questions (RESOLVED)):**
+1. Artifact event shape — RESOLVED: custom AG-UI event off `Actions.ArtifactDelta`; emit seam added in `toolResultEvent` lifting `ToolResult.Meta` (Plan 13-02).
+2. TTS trigger — RESOLVED: `voice_mode` pref + auto-on-voice-input; explicit `send_voice` tool deferred (Plan 13-08).
+3. send_file flags — RESOLVED: `Deferred:true`, `Mutating:false`, error (not truncate) on >50MB, ASCII caption (Plan 13-02).
+4. `qr_svg` — RESOLVED: defer the SVG body, keep the JSON field; terminal ASCII QR (qrterminal) is the real path (Plan 13-07).
 5. Package legitimacy (slopcheck unavailable) — planner gates each `go get` behind a verify checkpoint (A1).
