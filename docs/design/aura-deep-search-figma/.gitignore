@@ -1,0 +1,4 @@
+node_modules/
+.visual-debug/
+playwright-report/
+test-results/

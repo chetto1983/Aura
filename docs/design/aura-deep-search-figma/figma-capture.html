@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=3200, initial-scale=1" />
+    <title>Aura Deep Search - Figma Project Infrastructure</title>
+    <script src="https://mcp.figma.com/mcp/html-to-design/capture.js" async></script>
+    <style>
+      :root {
+        --bg: #080b0f;
+        --app: #0f141b;
+        --shell: #121820;
+        --surface: #171e27;
+        --raised: #1d2631;
+        --soft: #202b36;
+        --border: #334150;
+        --border-strong: #3c4b5b;
+        --text: #f4f7fb;
+        --muted: #9ca9b7;
+        --faint: #687789;
+        --accent: #64d28b;
+        --accent-soft: #183425;
+        --cyan: #72c9ff;
+        --cyan-soft: #152d3d;
+        --warning: #d5963d;
+        --warning-soft: #3b2b15;
+        --danger: #c05262;
+        --danger-soft: #34191e;
+        --entity: #43a6a9;
+        --agent: #a6c85d;
+        --radius: 10px;
+        --shadow: 0 18px 44px rgba(0, 0, 0, 0.42);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        min-width: 3200px;
+        min-height: 12200px;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
+      }
+
+      body {
+        padding: 64px;
+      }
+
+      #aura-figma-project {
+        width: 3072px;
+      }
+
+      .frame {
+        background: var(--app);
+        border: 1px solid #28323d;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        margin-bottom: 48px;
+        padding: 34px;
+        position: relative;
+      }
+
+      .frame-title {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 32px;
+        margin-bottom: 28px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 56px;
+        line-height: 66px;
+        font-weight: 780;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 32px;
+        line-height: 40px;
+        font-weight: 740;
+        letter-spacing: 0;
+      }
+
+      h3 {
+        font-size: 21px;
+        line-height: 28px;
+        font-weight: 720;
+        letter-spacing: 0;
+      }
+
+      p,
+      li,
+      td,
+      th {
+        font-size: 17px;
+        line-height: 25px;
+        letter-spacing: 0;
+      }
+
+      .small {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 20px;
+      }
+
+      .eyebrow {
+        color: var(--faint);
+        font-size: 13px;
+        font-weight: 720;
+        letter-spacing: 0.08em;
+        line-height: 18px;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+      }
+
+      .grid {
+        display: grid;
+        gap: 24px;
+      }
+
+      .cols-2 {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .cols-3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .cols-4 {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .cols-6 {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+      }
+
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 22px;
+      }
+
+      .panel.raised {
+        background: var(--raised);
+        border-color: var(--border-strong);
+      }
+
+      .band {
+        background: var(--shell);
+        border: 1px solid #2d3844;
+        border-radius: var(--radius);
+        padding: 24px;
+      }
+
+      .chip-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .chip {
+        align-items: center;
+        background: var(--soft);
+        border: 1px solid var(--border-strong);
+        border-radius: 7px;
+        color: var(--muted);
+        display: inline-flex;
+        font-size: 13px;
+        font-weight: 650;
+        gap: 8px;
+        line-height: 18px;
+        padding: 7px 11px;
+      }
+
+      .chip.accent {
+        background: var(--accent-soft);
+        border-color: #3f9c61;
+        color: var(--text);
+      }
+
+      .chip.cyan {
+        background: var(--cyan-soft);
+        border-color: #3f8fbe;
+        color: var(--text);
+      }
+
+      .chip.warn {
+        background: var(--warning-soft);
+        border-color: var(--warning);
+        color: var(--text);
+      }
+
+      .chip.danger {
+        background: var(--danger-soft);
+        border-color: var(--danger);
+        color: var(--text);
+      }
+
+      .dot {
+        border-radius: 999px;
+        display: inline-block;
+        height: 10px;
+        width: 10px;
+      }
+
+      .dot.accent {
+        background: var(--accent);
+      }
+
+      .dot.cyan {
+        background: var(--cyan);
+      }
+
+      .dot.warn {
+        background: var(--warning);
+      }
+
+      .dot.danger {
+        background: var(--danger);
+      }
+
+      .dot.entity {
+        background: var(--entity);
+      }
+
+      .dot.agent {
+        background: var(--agent);
+      }
+
+      .cover {
+        min-height: 620px;
+      }
+
+      .cover-copy {
+        max-width: 1560px;
+      }
+
+      .cover-copy p {
+        color: var(--muted);
+        font-size: 22px;
+        line-height: 32px;
+        margin-top: 18px;
+      }
+
+      .readme-list {
+        display: grid;
+        gap: 14px;
+        margin: 0;
+        padding-left: 22px;
+      }
+
+      .page-card {
+        min-height: 164px;
+      }
+
+      .page-card strong {
+        color: var(--text);
+        display: block;
+        font-size: 18px;
+        line-height: 25px;
+        margin-bottom: 8px;
+      }
+
+      .page-card p {
+        color: var(--muted);
+      }
+
+      .token-swatch {
+        align-items: center;
+        display: grid;
+        grid-template-columns: 74px 1fr;
+        gap: 14px;
+      }
+
+      .swatch {
+        border: 1px solid rgba(244, 247, 251, 0.16);
+        border-radius: 8px;
+        height: 54px;
+      }
+
+      .mono {
+        color: var(--muted);
+        font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 20px;
+      }
+
+      table {
+        border-collapse: collapse;
+        width: 100%;
+      }
+
+      th {
+        color: var(--faint);
+        font-size: 13px;
+        font-weight: 720;
+        line-height: 18px;
+        padding: 14px 16px;
+        text-align: left;
+        text-transform: uppercase;
+      }
+
+      td {
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        padding: 15px 16px;
+        vertical-align: top;
+      }
+
+      td:first-child {
+        color: var(--text);
+        font-weight: 680;
+      }
+
+      .flow {
+        align-items: center;
+        display: grid;
+        gap: 18px;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+
+      .flow-step {
+        min-height: 122px;
+        position: relative;
+      }
+
+      .flow-step:after {
+        background: var(--border-strong);
+        content: "";
+        height: 2px;
+        position: absolute;
+        right: -18px;
+        top: 61px;
+        width: 18px;
+      }
+
+      .flow-step:last-child:after {
+        display: none;
+      }
+
+      .component-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 18px;
+      }
+
+      .component-row {
+        align-items: center;
+        background: var(--raised);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        display: grid;
+        gap: 12px;
+        grid-template-columns: 270px 1fr 150px;
+        padding: 12px 14px;
+      }
+
+      .component-row span:first-child {
+        color: var(--text);
+        font-weight: 680;
+      }
+
+      .capability-card {
+        min-height: 236px;
+      }
+
+      .capability-card h3 {
+        margin-bottom: 12px;
+      }
+
+      .capability-card p {
+        color: var(--muted);
+      }
+
+      .capability-meta {
+        display: grid;
+        gap: 8px;
+        margin-top: 16px;
+      }
+
+      .capability-meta div {
+        align-items: start;
+        display: grid;
+        gap: 10px;
+        grid-template-columns: 108px 1fr;
+      }
+
+      .capability-meta strong {
+        color: var(--faint);
+        font-size: 12px;
+        line-height: 18px;
+        text-transform: uppercase;
+      }
+
+      .capability-table td:first-child {
+        width: 260px;
+      }
+
+      .screen-board {
+        padding: 0;
+        overflow: hidden;
+      }
+
+      .screen-board .frame-title {
+        padding: 34px 34px 0;
+      }
+
+      #source-svg {
+        background: var(--bg);
+        min-height: 3860px;
+      }
+
+      #source-svg svg {
+        display: block;
+        height: 3860px;
+        width: 3000px;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="aura-figma-project" aria-label="Aura Deep Search Figma project">
+      <section class="frame cover">
+        <div class="frame-title">
+          <div class="cover-copy">
+            <div class="eyebrow">00 README / Senior design workspace</div>
+            <h1>Aura Deep Search - Product Design System</h1>
+            <p>
+              A Figma-ready workspace for Aura's dark operator cockpit:
+              chat-first investigation, typed displays, Neo4j graph evidence,
+              dockable tools, MCP configuration, governed skills install, and
+              auditable approval flows.
+            </p>
+          </div>
+          <div class="panel raised" style="width: 680px">
+            <h3>Project health</h3>
+            <div class="chip-row">
+              <span class="chip accent"><span class="dot accent"></span> Source board imported</span>
+              <span class="chip cyan"><span class="dot cyan"></span> Token manifest ready</span>
+              <span class="chip warn"><span class="dot warn"></span> Library publish gated by Figma plan</span>
+              <span class="chip danger"><span class="dot danger"></span> Risk flows explicit</span>
+            </div>
+            <p class="small" style="margin-top: 18px">
+              Use this file as a product/design-system workspace first. Publish
+              only after foundations and components pass QA.
+            </p>
+          </div>
+        </div>
+
+        <div class="grid cols-3">
+          <div class="panel">
+            <h3>How to use this file</h3>
+            <ol class="readme-list small" style="margin-top: 16px">
+              <li>Start from pages 00-02 to understand product constraints and tokens.</li>
+              <li>Use page 03 as the component source of truth and naming map.</li>
+              <li>Validate workflows on pages 04-06 before implementation handoff.</li>
+              <li>Move unresolved explorations to 99 Archive, never into the library surface.</li>
+            </ol>
+          </div>
+          <div class="panel">
+            <h3>Design stance</h3>
+            <p class="small" style="margin-top: 16px">
+              Minimal industrial UI, dense evidence review, typed renderers,
+              no generic marketing hero, no decorative graph hairballs, and no
+              hidden control-plane actions.
+            </p>
+            <div class="chip-row">
+              <span class="chip">Chat</span>
+              <span class="chip">Tree</span>
+              <span class="chip">Graph</span>
+              <span class="chip">Displays</span>
+              <span class="chip">Settings</span>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Designer handoff contract</h3>
+            <p class="small" style="margin-top: 16px">
+              Every final screen needs: responsive frame, prototype note,
+              component coverage, token coverage, empty/error/loading state,
+              accessibility note, and event payload mapping.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="frame">
+        <div class="frame-title">
+          <div>
+            <div class="eyebrow">01 File architecture</div>
+            <h2>Pages, source of truth, and library boundaries</h2>
+          </div>
+          <p class="small" style="max-width: 980px">
+            Figma organizes library assets by file, page, and frame. This
+            project keeps foundations, components, patterns, screens, and QA
+            separate so a senior designer can navigate without guessing.
+          </p>
+        </div>
+
+        <div class="grid cols-4">
+          <div class="panel page-card">
+            <strong>00 README</strong>
+            <p>Project overview, constraints, links, status, and contribution rules.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>01 Research</strong>
+            <p>Elysia and Odysseus source-study notes, product deltas, non-goals.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>02 Foundations</strong>
+            <p>Variables, color, type, spacing, radius, effects, density, grids.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>03 Components</strong>
+            <p>Main components, variants, descriptions, usage notes, QA states.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>04 Patterns</strong>
+            <p>Typed payloads, dockable tools, ui_control, approvals, graph evidence.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>05 Backend Map</strong>
+            <p>Runtime, tools, scheduler, MCP, skills, AG-UI, memory, packaging.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>06 Screens</strong>
+            <p>Desktop, mobile, graph, source explorer, MCP, skills, events.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>07 Prototype QA</strong>
+            <p>Click paths, review checklist, accessibility, red-team flows.</p>
+          </div>
+          <div class="panel page-card">
+            <strong>99 Archive</strong>
+            <p>Old boards, rejected concepts, experiments, screenshots, parking lot.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="frame">
+        <div class="frame-title">
+          <div>
+            <div class="eyebrow">02 Foundations</div>
+            <h2>Aura variables and visual system</h2>
+          </div>
+          <p class="small" style="max-width: 980px">
+            Variables should mirror implementation tokens. Use modes for
+            contexts such as dark, compact, operator, review, and mobile when
+            Figma plan support allows it.
+          </p>
+        </div>
+
+        <div class="grid cols-3">
+          <div class="band">
+            <h3>Color tokens</h3>
+            <div class="grid" style="gap: 14px; margin-top: 20px">
+              <div class="token-swatch">
+                <div class="swatch" style="background: #080b0f"></div>
+                <div><strong>color/background</strong><p class="mono">#080b0f</p></div>
+              </div>
+              <div class="token-swatch">
+                <div class="swatch" style="background: #171e27"></div>
+                <div><strong>color/surface</strong><p class="mono">#171e27</p></div>
+              </div>
+              <div class="token-swatch">
+                <div class="swatch" style="background: #64d28b"></div>
+                <div><strong>color/accent</strong><p class="mono">#64d28b</p></div>
+              </div>
+              <div class="token-swatch">
+                <div class="swatch" style="background: #72c9ff"></div>
+                <div><strong>color/mcp</strong><p class="mono">#72c9ff</p></div>
+              </div>
+              <div class="token-swatch">
+                <div class="swatch" style="background: #c05262"></div>
+                <div><strong>color/approval</strong><p class="mono">#c05262</p></div>
+              </div>
+            </div>
+          </div>
+          <div class="band">
+            <h3>Typography</h3>
+            <div style="margin-top: 20px">
+              <p style="font-size: 40px; line-height: 48px; font-weight: 780">H1 / 28-56</p>
+              <p style="font-size: 28px; line-height: 36px; font-weight: 740; margin-top: 18px">H2 / Workspace headers</p>
+              <p style="font-size: 21px; line-height: 28px; font-weight: 720; margin-top: 18px">H3 / Panel titles</p>
+              <p style="font-size: 17px; line-height: 25px; margin-top: 18px; color: var(--muted)">Body / Evidence, guidance, table values</p>
+              <p class="mono" style="margin-top: 18px">Mono / Cypher, CLI, hashes, paths, audit</p>
+            </div>
+          </div>
+          <div class="band">
+            <h3>Spacing, radius, effects</h3>
+            <div class="chip-row">
+              <span class="chip">space/xs 4</span>
+              <span class="chip">space/sm 8</span>
+              <span class="chip">space/md 12</span>
+              <span class="chip">space/lg 16</span>
+              <span class="chip">space/xl 24</span>
+              <span class="chip">radius/control 8</span>
+              <span class="chip">radius/panel 10</span>
+              <span class="chip">radius/composer 12</span>
+            </div>
+            <div class="panel raised" style="margin-top: 22px">
+              <p class="small">Effect/panel shadow</p>
+              <p class="mono">0 14px 34px rgba(0,0,0,.38)</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="frame">
+        <div class="frame-title">
+          <div>
+            <div class="eyebrow">03 Components</div>
+            <h2>Component library naming and inventory</h2>
+          </div>
+          <p class="small" style="max-width: 980px">
+            Use slash-separated names so components are grouped in Assets and
+            swap menus. Add descriptions with purpose, state rules, and payload
+            dependencies.
+          </p>
+        </div>
+
+        <div class="grid cols-2">
+          <div class="panel">
+            <h3>Core components to publish</h3>
+            <div class="component-list">
+              <div class="component-row"><span>Aura/Button</span><span>primary, secondary, danger, ghost, icon</span><span class="chip accent">ready</span></div>
+              <div class="component-row"><span>Aura/Chip</span><span>source, risk, state, dock, density, filter</span><span class="chip accent">ready</span></div>
+              <div class="component-row"><span>Aura/Input</span><span>query composer, command palette, env editor</span><span class="chip warn">needs QA</span></div>
+              <div class="component-row"><span>Aura/Table</span><span>source explorer, tools allowlist, audit log</span><span class="chip warn">needs QA</span></div>
+              <div class="component-row"><span>Aura/Panel</span><span>display workspace, inspector, drawer, modal</span><span class="chip accent">ready</span></div>
+              <div class="component-row"><span>Aura/RiskBadge</span><span>safe, normal, risky, destructive</span><span class="chip danger">critical</span></div>
+            </div>
+          </div>
+          <div class="panel">
+            <h3>Product-specific patterns</h3>
+            <div class="component-list">
+              <div class="component-row"><span>Aura/Shell/Rail</span><span>active, minimized, running, warning, completed</span><span class="chip cyan">shell</span></div>
+              <div class="component-row"><span>Aura/DisplayRouter</span><span>document, table, chart, code, graph_chunk, system_event</span><span class="chip cyan">display</span></div>
+              <div class="component-row"><span>Aura/Graph/Canvas</span><span>path, schema, node, edge, inspector, Cypher preview</span><span class="chip cyan">graph</span></div>
+              <div class="component-row"><span>Aura/MCP/ServerRow</span><span>recipe, manual, env, doctor, tools, fail-soft warning</span><span class="chip warn">governance</span></div>
+              <div class="component-row"><span>Aura/Skill/InstallGate</span><span>source, hash, risk, validation, pending path, approval</span><span class="chip danger">critical</span></div>
+              <div class="component-row"><span>Aura/Approval/QueueItem</span><span>resume token, diff, command, risk tier, approve/reject</span><span class="chip danger">critical</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="frame">
+        <div class="frame-title">
+          <div>
+            <div class="eyebrow">04 Patterns and flows</div>
+            <h2>Aura event lanes and product workflows</h2>
+          </div>
+          <p class="small" style="max-width: 980px">
+            The design model is event-first. Screens should show how payloads
+            move through chat, displays, graph, system events, UI control, and
+            governance.
+          </p>
+        </div>
+
+        <div class="grid" style="gap: 30px">
+          <div class="flow">
+            <div class="panel flow-step"><h3>Aura event</h3><p class="small">Tool, MCP, graph, source, worker, or user event.</p></div>
+            <div class="panel flow-step"><h3>Classifier</h3><p class="small">Typed payload, system event, or governed mutation.</p></div>
+            <div class="panel flow-step"><h3>Renderer</h3><p class="small">Chat, display, code/raw, graph, drawer, table.</p></div>
+            <div class="panel flow-step"><h3>Inspector</h3><p class="small">Source, Cypher, metadata, audit, citations.</p></div>
+            <div class="panel flow-step"><h3>Handoff</h3><p class="small">Accessible state, export, replay, QA evidence.</p></div>
+          </div>
+
+          <div class="grid cols-3">
+            <div class="panel">
+              <h3>Graph evidence path</h3>
+              <p class="small" style="margin-top: 12px">
+                Natural language query -> Cypher preview -> filtered path
+                canvas -> selected path strip -> node inspector -> citations.
+              </p>
+            </div>
+            <div class="panel">
+              <h3>MCP governance</h3>
+              <p class="small" style="margin-top: 12px">
+                Server config -> env redaction -> doctor -> advertised tools
+                -> mounted tools -> fail-soft warning -> audit event.
+              </p>
+            </div>
+            <div class="panel">
+              <h3>Skills approval</h3>
+              <p class="small" style="margin-top: 12px">
+                Source -> sanitized install -> validation -> pending path ->
+                explicit approval -> activation or archive -> immutable audit.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="frame">
+        <div class="frame-title">
+          <div>
+            <div class="eyebrow">05 Backend capability map</div>
+            <h2>Aura backend surfaces exposed to design</h2>
+          </div>
+          <p class="small" style="max-width: 980px">
+            This section maps Aura source-code capabilities to UI surfaces. It is
+            the designer-facing checklist for what must exist before the Figma
+            project can be called complete.
+          </p>
+        </div>
+
+        <div class="grid cols-4">
+          <div class="panel capability-card">
+            <h3>Runtime shell</h3>
+            <p class="small">Daemon, CLI, registry boot, graceful shutdown, debug commands.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">serve, shell, chat, tools, agent dry-run</span></div>
+              <div><strong>Surface</strong><span class="small">App shell, run status, AG-UI health, registry warning banner.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Agent loop</h3>
+            <p class="small">Budgeted LLM loop with reasoning chunks, tool lifecycle, dedup recovery, final answer channel.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">LlmAgent, Event, text_response</span></div>
+              <div><strong>Surface</strong><span class="small">Run timeline, reasoning drawer, tool activity stream, completion gate.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Tool registry</h3>
+            <p class="small">Non-deferred core tools, deferred discovery, mounted MCP tools, and sidecar output paging.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">tool_search, read_tool_output, web_*, fs_*, shell_exec</span></div>
+              <div><strong>Surface</strong><span class="small">Tool catalog, deferred spec search, mounted vs blocked tools.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Conversations + HITL</h3>
+            <p class="small">Persisted threads, FTS search, sidecar turn spill, ask_user pause and resume.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">conversations, paused_states, identity</span></div>
+              <div><strong>Surface</strong><span class="small">Conversation list, approval queue, resume-token drawer, identity settings.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Web safety</h3>
+            <p class="small">SearXNG search and readable fetch with DNS pinning, SSRF defense, redirect validation, and safe error classes.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">web_search, web_fetch, blocked_url</span></div>
+              <div><strong>Surface</strong><span class="small">Source preview, blocked URL event, unsupported content and timeout states.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Execution tools</h3>
+            <p class="small">Host shell, sandbox container, filesystem read/write/edit/search, output truncation and sidecars.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">sandbox_exec, shell_exec, fs_read/write/edit/grep/glob</span></div>
+              <div><strong>Surface</strong><span class="small">Execution console, host/sandbox label, file diff, output pager.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Scheduler</h3>
+            <p class="small">One-shot, interval, and cron tasks with approval, run ledger, doctor, notifications, quiet-hours handling.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">task schedule/list/approve/runs/doctor</span></div>
+              <div><strong>Surface</strong><span class="small">Scheduler board, pending approval state, heartbeat/run history.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Skills + snippets</h3>
+            <p class="small">Instruction skills, executable snippets, pending activation, archive/restore, always-on block, append-only audit.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">skill, aura skills, skill_audit</span></div>
+              <div><strong>Surface</strong><span class="small">Skills library, install gate, snippet lifecycle, immutable audit table.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>MCP manager</h3>
+            <p class="small">Managed config v2, recipes, profiles, trust, runtime, status/logs/doctor/tools, risk policy.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">aura mcp, ManagedConfig, PolicyDecision</span></div>
+              <div><strong>Surface</strong><span class="small">Recipe install, profile selector, trust gate, doctor/tools table.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Knowledge + memory</h3>
+            <p class="small">Neo4j MCP, schema DDL executor, graph evidence, and planned Phase 15 ingest/entity/GraphRAG/journal.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">neo4j, knowledge, memory phase 15</span></div>
+              <div><strong>Surface</strong><span class="small">Graph explorer, Cypher preview, schema panel, memory ingest states.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Swarm + AG-UI</h3>
+            <p class="small">Deferred worker fan-out, child reports, depth/budget guards, SSE transport, interrupts, message snapshot.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">swarm_spawn, POST /agent/run, GET /threads/{id}/messages</span></div>
+              <div><strong>Surface</strong><span class="small">Worker reports, fan-out preflight, SSE timeline, interrupt resume form.</span></div>
+            </div>
+          </div>
+          <div class="panel capability-card">
+            <h3>Channels + packaging</h3>
+            <p class="small">Planned Telegram/multimodal channel, setup API, artifact delivery, fat container, keyless boot.</p>
+            <div class="capability-meta">
+              <div><strong>Backend</strong><span class="mono">phases 13, 17</span></div>
+              <div><strong>Surface</strong><span class="small">Channel setup wizard, service health, installer/onboarding flow.</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="band" style="margin-top: 28px">
+          <h3>Backend-to-design QA contract</h3>
+          <div class="chip-row">
+            <span class="chip accent">Every mutating path shows provenance</span>
+            <span class="chip danger">Risky/destructive actions have gates</span>
+            <span class="chip cyan">Deferred tools are searchable</span>
+            <span class="chip warn">Blocked web states are safe and specific</span>
+            <span class="chip">Sidecar output has a pager</span>
+            <span class="chip">Append-only ledgers are visible</span>
+            <span class="chip">Planned memory/channel work is framed, not hidden</span>
+          </div>
+        </div>
+
+        <div class="panel" style="margin-top: 28px">
+          <table class="capability-table">
+            <thead>
+              <tr>
+                <th>Design surface</th>
+                <th>Backend contract</th>
+                <th>Required states</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Run timeline</td>
+                <td>Agent Event stream plus AG-UI SSE translation.</td>
+                <td>started, reasoning, text, tool start, args, result, pause, finish, error.</td>
+              </tr>
+              <tr>
+                <td>Approval center</td>
+                <td>`ask_user`, `paused_states`, skill/task/MCP trust gates.</td>
+                <td>pending, accepted, declined, cancelled, auto-terminated, stale token.</td>
+              </tr>
+              <tr>
+                <td>Tool inspector</td>
+                <td>Registry spec, deferred flag, mutating flag, MCP policy decision.</td>
+                <td>available, deferred, mounted, blocked, failed, output truncated.</td>
+              </tr>
+              <tr>
+                <td>Operations dashboard</td>
+                <td>Scheduler doctor, cache stats, tool ledger, MCP status, AG-UI bind.</td>
+                <td>healthy, warning, failed, disabled, pending approval, unavailable.</td>
+              </tr>
+              <tr>
+                <td>Graph and memory</td>
+                <td>Neo4j schema/client today; Phase 15 ingest/entity/retrieval later.</td>
+                <td>schema ready, query preview, no results, conflict, source missing, ingest pending.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="frame screen-board">
+        <div class="frame-title">
+          <div>
+            <div class="eyebrow">06 Screens / imported source board</div>
+            <h2>Existing Aura Deep Search screen board</h2>
+          </div>
+          <p class="small" style="max-width: 980px">
+            This is the original Elysia/Odysseus-informed board from the docs.
+            Keep it as the screen source until componentized variants replace it.
+          </p>
+        </div>
+        <div id="source-svg" aria-label="Imported Aura Deep Search source board"></div>
+      </section>
+
+      <section class="frame">
+        <div class="frame-title">
+          <div>
+            <div class="eyebrow">07 Prototype QA</div>
+            <h2>Definition of ready for senior design review</h2>
+          </div>
+          <p class="small" style="max-width: 980px">
+            Use this board to decide what can become a library component,
+            what is still a screen-local pattern, and what needs product
+            clarification before engineering.
+          </p>
+        </div>
+
+        <div class="panel">
+          <table>
+            <thead>
+              <tr>
+                <th>Gate</th>
+                <th>Designer check</th>
+                <th>Aura-specific evidence</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Component coverage</td>
+                <td>Main components have names, variants, descriptions, and sample instances.</td>
+                <td>Risk badges, approval cards, MCP rows, and graph inspector are not generic cards.</td>
+              </tr>
+              <tr>
+                <td>Token coverage</td>
+                <td>Colors, type, spacing, radius, and effects map to variable/style names.</td>
+                <td>Dark operator palette remains readable without one-note color dominance.</td>
+              </tr>
+              <tr>
+                <td>Responsive behavior</td>
+                <td>Desktop, compact rail, mobile drawer, and keyboard/focus flows are represented.</td>
+                <td>Hover is never the only path to graph node details or citations.</td>
+              </tr>
+              <tr>
+                <td>Safety states</td>
+                <td>Loading, empty, warning, error, destructive, and blocked states are visible.</td>
+                <td>SSRF, destructive tools, skill install, and raw secrets all show safe handling.</td>
+              </tr>
+              <tr>
+                <td>Handoff</td>
+                <td>Frames include payload contract, event source, and implementation notes.</td>
+                <td>Every screen maps back to Aura event models and local provenance rules.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+
+    <script>
+      fetch("./aura-deep-search-elysia-informed.svg")
+        .then((response) => response.text())
+        .then((svg) => {
+          document.getElementById("source-svg").innerHTML = svg;
+          document.documentElement.dataset.captureReady = "true";
+        });
+    </script>
+  </body>
+</html>

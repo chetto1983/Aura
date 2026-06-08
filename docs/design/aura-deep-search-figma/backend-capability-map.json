@@ -1,0 +1,93 @@
+{
+  "meta": {
+    "name": "Aura Backend Capability Map",
+    "created": "2026-06-08",
+    "purpose": "Expose Aura backend/control-plane functionality as Figma design surfaces.",
+    "sourceDocument": "BACKEND_CAPABILITY_MAP.md"
+  },
+  "groups": [
+    {
+      "id": "runtime-shell",
+      "label": "Runtime Shell",
+      "backend": ["aura serve", "aura shell", "aura chat", "aura agent dry-run", "shared registry boot"],
+      "figmaSurfaces": ["App shell", "Run status", "AG-UI health", "Registry status"]
+    },
+    {
+      "id": "agent-loop",
+      "label": "Agent Loop",
+      "backend": ["LlmAgent", "budget gate", "dedup gate", "text_response", "reasoning chunks", "tool invocation lifecycle"],
+      "figmaSurfaces": ["Run timeline", "Reasoning drawer", "Tool activity stream", "Finalization states"]
+    },
+    {
+      "id": "tool-registry",
+      "label": "Tool Registry",
+      "backend": ["tool_search", "read_tool_output", "web_search", "web_fetch", "sandbox_exec", "shell_exec", "filesystem tools", "swarm_spawn", "MCP-mounted tools"],
+      "figmaSurfaces": ["Tool catalog", "Deferred spec search", "Mounted/blocked tools", "Manifest inspector"]
+    },
+    {
+      "id": "conversation-hitl",
+      "label": "Conversation, HITL, Identity",
+      "backend": ["conversation_turns", "sidecar spill", "chat search", "ask_user", "paused_states", "capability_grants"],
+      "figmaSurfaces": ["Conversation list", "Search results", "Approval queue", "Resume-token drawer", "Identity settings"]
+    },
+    {
+      "id": "web-safety",
+      "label": "Web And Safety",
+      "backend": ["SearXNG search", "readable fetch", "DNS pin", "SSRF block", "redirect validation", "content/body caps"],
+      "figmaSurfaces": ["Search panel", "Source preview", "Blocked URL event", "Unsupported content state", "Safe reason copy"]
+    },
+    {
+      "id": "execution",
+      "label": "Execution Tools",
+      "backend": ["sandbox-agent POST /v1/processes/run", "shell_exec", "fs_read", "fs_write", "fs_edit", "fs_grep", "fs_glob"],
+      "figmaSurfaces": ["Execution console", "Host/sandbox distinction", "File diff panel", "Output pager", "Mutating warning"]
+    },
+    {
+      "id": "scheduler",
+      "label": "Scheduler",
+      "backend": ["task schedule", "task list", "task approve", "task runs", "task doctor", "reminder", "agent_job", "backups", "skill_ttl_sweep"],
+      "figmaSurfaces": ["Scheduler board", "Task approval state", "Run ledger", "Doctor panel", "Quiet-hours controls"]
+    },
+    {
+      "id": "skills",
+      "label": "Skills And Snippets",
+      "backend": ["skills list/info/create/update/delete/approve", "skill tool", "pending roots", "active roots", "archived roots", "snippet save/restore/archive", "audit ledger"],
+      "figmaSurfaces": ["Skills library", "Install/create gate", "Snippet lifecycle", "Audit table", "Always-on indicator"]
+    },
+    {
+      "id": "mcp",
+      "label": "MCP Manager",
+      "backend": ["managed config v2", "recipes", "profiles", "trust classes", "runtime kinds", "status/logs/doctor/tools", "risk policy"],
+      "figmaSurfaces": ["MCP settings", "Recipe install", "Profile selector", "Trust gate", "Doctor/tools table", "Redacted logs"]
+    },
+    {
+      "id": "knowledge-memory",
+      "label": "Knowledge, Memory, Graph",
+      "backend": ["Neo4j schema executor", "mcp-neo4j-cypher", "read/write Cypher", "Phase 15 document ingest", "entity resolution", "GraphRAG", "agent journal"],
+      "figmaSurfaces": ["Graph explorer", "Cypher preview", "Schema panel", "Node inspector", "Memory ingest", "Insight timeline"]
+    },
+    {
+      "id": "swarm-agui",
+      "label": "Swarm And AG-UI",
+      "backend": ["swarm_spawn", "child reports", "depth/budget guards", "POST /agent/run", "GET /threads/{id}/messages", "SSE events", "interrupts", "redaction"],
+      "figmaSurfaces": ["Worker reports", "Fan-out preflight", "SSE timeline", "Interrupt resume form", "Error redaction states"]
+    },
+    {
+      "id": "channels-packaging",
+      "label": "Channels And Packaging",
+      "backend": ["Phase 13 Telegram", "multimodal sidecars", "setup API", "artifact delivery", "Phase 17 fat container", "keyless boot"],
+      "figmaSurfaces": ["Channel setup wizard", "Telegram status", "Multimodal intake", "Installer/onboarding flow", "Service health"]
+    }
+  ],
+  "figmaPages": [
+    "00 README",
+    "01 Research",
+    "02 Foundations",
+    "03 Components",
+    "04 Patterns",
+    "05 Backend Map",
+    "06 Screens",
+    "07 Prototype QA",
+    "99 Archive"
+  ]
+}

@@ -33,6 +33,13 @@ managed MCP server configuration and skills install/lifecycle governance. These
 are not hidden advanced settings. They are operator workflows because they
 change what tools and instructions the agent can use.
 
+This revision now also exposes Aura's backend capability map directly in the
+Figma project. The design source is no longer only Elysia/Odysseus UX patterns;
+it also includes Aura's own Go backend surfaces: runtime boot, event stream,
+tool registry, conversations, HITL, web safety, execution, scheduler, skills,
+MCP manager, Neo4j knowledge, swarm, AG-UI, planned channels, planned memory,
+and packaging.
+
 ## Elysia Patterns Adopted
 
 - Chat page mode switch: `Chat`, `Tree`, `Settings`, plus Aura's `Graph` and
@@ -105,6 +112,37 @@ change what tools and instructions the agent can use.
   until approved by `ask_user` resume or explicit CLI.
 - Skill run/restore/archive actions must show capability scope, last used, use
   count, TTL/archive state, and audit trail.
+
+## Aura Backend Capability Patterns
+
+- Runtime is a product surface. `aura serve`, AG-UI health, scheduler state,
+  registry validity, MCP mount warnings, and cache/tool ledgers need visible
+  status rather than terminal-only feedback.
+- The agent Event stream maps to a run timeline: reasoning chunks, text chunks,
+  tool start/args/end/result, state deltas, pauses, finalization, and run errors.
+- Tool registry state must show active, deferred, mutating, mounted, blocked,
+  and failed tools. Deferred tools such as `web_search`, `web_fetch`, and
+  `swarm_spawn` need search/discovery UI.
+- Conversations need history, archive/delete/rename, FTS search, sidecar output
+  pointers, context budget, cost/cache metrics, and auto-title behavior.
+- `ask_user` is not just a chat message. Clarification, choice, approval,
+  priority, resume token, accept/decline/cancel, and stale/auto-terminated
+  states need an approval-center component.
+- Web safety states must render stable backend error classes: blocked URL,
+  redirect blocked, unsupported scheme, unsupported content type, response too
+  large, timeout, HTTP error, extraction failed, and SearXNG unavailable.
+- Execution tools must distinguish host shell, sandbox container, and filesystem
+  operations. Mutating operations need warning/confirmation language and a
+  post-run output/audit inspector.
+- Scheduler design needs task creation, pending approval, active/cancelled rows,
+  run history, heartbeat, doctor, quiet-hours deferral, and notification route.
+- MCP design needs recipe/manual/source, profile membership, trust class,
+  runtime kind, env redaction, auth posture, doctor/tools/logs, allow/deny/risk
+  policy, and fail-soft mount warnings.
+- Skills design needs active/pending/archived/audit tabs, validation results,
+  snippet host path, restore/archive, always-on state, and immutable audit rows.
+- Memory and channel screens can be designed now as planned surfaces, but they
+  must be labelled as Phase 13/15/17 until implementation lands.
 
 ## Aura Design Direction
 
@@ -461,6 +499,25 @@ Suggested skill governance model:
 - `skill_audit_event`: action, actor/source, name, hash, risk tier, approval
   source, timestamp.
 
+Suggested backend capability model:
+
+- `runtime_status`: daemon state, AG-UI bind, scheduler tick state, registry
+  valid flag, MCP mounted/failed count, cache hit rate.
+- `run_timeline_event`: type, request id, span id, message id, tool call id,
+  author, branch, timestamp, preview, sidecar pointer.
+- `tool_registry_entry`: name, summary, source, deferred, mutating, mounted,
+  blocked reason, risk labels, last call status.
+- `approval_item`: target kind, question, options, priority, token, source
+  event, action taken, resolved at.
+- `scheduler_task`: kind, schedule, next run, status, risk tier, notify route,
+  last run status, heartbeat.
+- `mcp_status`: server, profile, trust, runtime, auth, startup state, mounted
+  tool count, blocked tool count, policy summary, last error.
+- `skill_state`: name, type, status, always, content hash, pending path, audit
+  count, last used.
+- `web_safety_event`: error, reason, message, status code, source URL class,
+  safe remediation copy.
+
 ## Important Non-Goals
 
 - Do not copy Elysia's Weaviate collection model directly.
@@ -486,6 +543,41 @@ Suggested skill governance model:
 
 - `cmd/aura/mcp.go`
 - `cmd/aura/main.go`
+- `cmd/aura/serve.go`
+- `cmd/aura/chat.go`
+- `cmd/aura/task.go`
+- `cmd/aura/skills.go`
+- `cmd/aura/web.go`
+- `cmd/aura/neo4j.go`
+- `cmd/aura/identity.go`
+- `cmd/aura/paused_states.go`
+- `internal/agent/event.go`
+- `internal/agent/llm_agent.go`
+- `internal/agent/tools/spec.go`
+- `internal/agent/tools/task.go`
+- `internal/agent/tools/skill.go`
+- `internal/agent/tools/skill_write.go`
+- `internal/agent/tools/swarm_spawn.go`
+- `internal/agui/server.go`
+- `internal/agui/translator.go`
+- `internal/askuser/store.go`
+- `internal/conversations/store.go`
+- `internal/conversations/context.go`
+- `internal/cron/store.go`
+- `internal/cron/dispatch.go`
+- `internal/mcp/managed_config.go`
+- `internal/mcp/manager/catalog.go`
+- `internal/mcp/manager/policy.go`
+- `internal/mcp/manager/status.go`
+- `internal/web/client.go`
+- `internal/web/searxng.go`
+- `internal/web/fetcher.go`
+- `internal/web/ssrf.go`
+- `internal/web/errors.go`
+- `internal/knowledge/client.go`
+- `internal/knowledge/schema.go`
+- `internal/sandboxagent/client.go`
+- `internal/toolinvocations/store.go`
 - `README.md`
 - `prd.md`
 - `CLAUDE.md`

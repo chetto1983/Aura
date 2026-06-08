@@ -1,0 +1,284 @@
+{
+  "project": {
+    "name": "Aura Deep Search - Product Design System",
+    "figmaFileKey": "mxtyHm1htJhd2lAg8ZxdN8",
+    "figmaUrl": "https://www.figma.com/design/mxtyHm1htJhd2lAg8ZxdN8?node-id=2-2",
+    "sourceBoard": "aura-deep-search-elysia-informed.svg",
+    "captureHelper": "figma-capture.html",
+    "designPackage": "docs/design/aura-deep-search-figma",
+    "status": "source-board-imported; project-infra-capture-ready; Figma MCP write limited by Starter plan"
+  },
+  "pages": [
+    {
+      "name": "00 README",
+      "purpose": "Project overview, status, constraints, links, and contribution rules."
+    },
+    {
+      "name": "01 Research",
+      "purpose": "Elysia and Odysseus source-study notes, product deltas, and non-goals."
+    },
+    {
+      "name": "02 Foundations",
+      "purpose": "Variables, colors, typography, spacing, radius, effects, density, and grids."
+    },
+    {
+      "name": "03 Components",
+      "purpose": "Main components, variants, descriptions, usage notes, and QA states."
+    },
+    {
+      "name": "04 Patterns",
+      "purpose": "Typed payloads, dockable tools, ui_control events, approvals, and graph evidence."
+    },
+    {
+      "name": "05 Backend Map",
+      "purpose": "Source-backed Aura backend capability map: runtime, tools, conversations, web safety, execution, scheduler, skills, MCP, graph, swarm, AG-UI, channels, memory, and packaging."
+    },
+    {
+      "name": "06 Screens",
+      "purpose": "Desktop, mobile, graph, source explorer, MCP, skills, and system-event screens."
+    },
+    {
+      "name": "07 Prototype QA",
+      "purpose": "Click paths, review checklist, accessibility, and red-team flows."
+    },
+    {
+      "name": "99 Archive",
+      "purpose": "Old boards, rejected concepts, experiments, screenshots, and parking lot."
+    }
+  ],
+  "variableCollections": [
+    {
+      "name": "Aura / Color",
+      "source": "tokens.json#/color",
+      "modes": ["Dark"],
+      "groups": ["background", "surface", "text", "brand", "graph", "governance", "status"]
+    },
+    {
+      "name": "Aura / Space",
+      "source": "tokens.json#/spacing",
+      "modes": ["Default"],
+      "groups": ["scale"]
+    },
+    {
+      "name": "Aura / Radius",
+      "source": "tokens.json#/radius",
+      "modes": ["Default"],
+      "groups": ["frame", "shell", "panel", "control", "chip", "composer", "mobile"]
+    },
+    {
+      "name": "Aura / Typography",
+      "source": "tokens.json#/typography",
+      "modes": ["Desktop"],
+      "groups": ["family", "scale", "mono"]
+    },
+    {
+      "name": "Aura / Governance",
+      "source": "tokens.json#/governance",
+      "modes": ["Default"],
+      "groups": ["risk", "mcp", "skill", "secret"]
+    }
+  ],
+  "textStyles": [
+    "Aura/H1",
+    "Aura/H2",
+    "Aura/H3",
+    "Aura/Body",
+    "Aura/Small",
+    "Aura/Tiny",
+    "Aura/Label",
+    "Aura/Mono/Tiny"
+  ],
+  "effectStyles": [
+    "Aura/Shadow/Panel"
+  ],
+  "componentGroups": [
+    {
+      "name": "Aura/Button",
+      "variants": ["primary", "secondary", "danger", "ghost", "icon"],
+      "properties": ["intent", "size", "state", "icon"]
+    },
+    {
+      "name": "Aura/Chip",
+      "variants": ["source", "risk", "state", "dock", "density", "filter"],
+      "properties": ["tone", "selected", "status"]
+    },
+    {
+      "name": "Aura/Shell/Rail",
+      "variants": ["wide", "collapsed"],
+      "properties": ["active", "minimized", "running", "warning", "completed"]
+    },
+    {
+      "name": "Aura/DisplayRouter",
+      "variants": ["document", "table", "chart", "code", "graph_chunk", "system_event"],
+      "properties": ["payloadType", "source", "selected"]
+    },
+    {
+      "name": "Aura/Graph",
+      "variants": ["query_panel", "canvas", "path_strip", "inspector", "cypher_drawer"],
+      "properties": ["labelFamily", "selected", "confidence", "edgeType"]
+    },
+    {
+      "name": "Aura/MCP",
+      "variants": ["server_row", "recipe_panel", "env_editor", "doctor_result", "tool_allowlist"],
+      "properties": ["enabled", "doctorStatus", "envHealth", "mounted"]
+    },
+    {
+      "name": "Aura/Skill",
+      "variants": ["source_picker", "install_gate", "library_row", "audit_event"],
+      "properties": ["riskTier", "state", "approved", "pending"]
+    },
+    {
+      "name": "Aura/Approval",
+      "variants": ["queue_item", "detail_drawer", "resume_token"],
+      "properties": ["targetKind", "riskTier", "decision"]
+    },
+    {
+      "name": "Aura/SystemEvent",
+      "variants": ["warning", "blocked_url", "rate_limit", "suggestion", "self_healing_error"],
+      "properties": ["severity", "actionable", "expanded"]
+    }
+  ],
+  "backendCapabilityGroups": [
+    {
+      "name": "Runtime Shell",
+      "backend": ["aura serve", "aura shell", "aura chat", "aura agent dry-run", "shared registry boot"],
+      "figmaSurfaces": ["App shell", "Run status", "AG-UI health", "Registry status"]
+    },
+    {
+      "name": "Agent Loop",
+      "backend": ["LlmAgent", "budget gate", "dedup gate", "text_response", "reasoning chunks", "tool invocation lifecycle"],
+      "figmaSurfaces": ["Run timeline", "Reasoning drawer", "Tool activity stream", "Finalization states"]
+    },
+    {
+      "name": "Tool Registry",
+      "backend": ["tool_search", "read_tool_output", "web_search", "web_fetch", "sandbox_exec", "shell_exec", "filesystem tools", "swarm_spawn", "MCP-mounted tools"],
+      "figmaSurfaces": ["Tool catalog", "Deferred spec search", "Mounted/blocked tools", "Manifest inspector"]
+    },
+    {
+      "name": "Conversation, HITL, Identity",
+      "backend": ["conversation_turns", "sidecar spill", "chat search", "ask_user", "paused_states", "capability_grants"],
+      "figmaSurfaces": ["Conversation list", "Search results", "Approval queue", "Resume-token drawer", "Identity settings"]
+    },
+    {
+      "name": "Web And Safety",
+      "backend": ["SearXNG search", "readable fetch", "DNS pin", "SSRF block", "redirect validation", "content/body caps"],
+      "figmaSurfaces": ["Search panel", "Source preview", "Blocked URL event", "Unsupported content state", "Safe reason copy"]
+    },
+    {
+      "name": "Execution Tools",
+      "backend": ["sandbox-agent", "shell_exec", "fs_read", "fs_write", "fs_edit", "fs_grep", "fs_glob"],
+      "figmaSurfaces": ["Execution console", "Host/sandbox distinction", "File diff panel", "Output pager", "Mutating warning"]
+    },
+    {
+      "name": "Scheduler",
+      "backend": ["task schedule", "task list", "task approve", "task runs", "task doctor", "reminder", "agent_job", "backups", "skill_ttl_sweep"],
+      "figmaSurfaces": ["Scheduler board", "Task approval state", "Run ledger", "Doctor panel", "Quiet-hours controls"]
+    },
+    {
+      "name": "Skills And Snippets",
+      "backend": ["skills CLI", "skill tool", "pending roots", "active roots", "archived roots", "snippet save/restore/archive", "audit ledger"],
+      "figmaSurfaces": ["Skills library", "Install/create gate", "Snippet lifecycle", "Audit table", "Always-on indicator"]
+    },
+    {
+      "name": "MCP Manager",
+      "backend": ["managed config v2", "recipes", "profiles", "trust classes", "runtime kinds", "status/logs/doctor/tools", "risk policy"],
+      "figmaSurfaces": ["MCP settings", "Recipe install", "Profile selector", "Trust gate", "Doctor/tools table", "Redacted logs"]
+    },
+    {
+      "name": "Knowledge, Memory, Graph",
+      "backend": ["Neo4j schema executor", "mcp-neo4j-cypher", "read/write Cypher", "Phase 15 document ingest", "entity resolution", "GraphRAG", "agent journal"],
+      "figmaSurfaces": ["Graph explorer", "Cypher preview", "Schema panel", "Node inspector", "Memory ingest", "Insight timeline"]
+    },
+    {
+      "name": "Swarm And AG-UI",
+      "backend": ["swarm_spawn", "child reports", "depth/budget guards", "POST /agent/run", "GET /threads/{id}/messages", "SSE events", "interrupts", "redaction"],
+      "figmaSurfaces": ["Worker reports", "Fan-out preflight", "SSE timeline", "Interrupt resume form", "Error redaction states"]
+    },
+    {
+      "name": "Channels And Packaging",
+      "backend": ["Phase 13 Telegram", "multimodal sidecars", "setup API", "artifact delivery", "Phase 17 fat container", "keyless boot"],
+      "figmaSurfaces": ["Channel setup wizard", "Telegram status", "Multimodal intake", "Installer/onboarding flow", "Service health"]
+    }
+  ],
+  "backendDesignSources": [
+    "BACKEND_CAPABILITY_MAP.md",
+    "backend-capability-map.json",
+    ".planning/ROADMAP.md",
+    "cmd/aura/main.go",
+    "cmd/aura/serve.go",
+    "cmd/aura/chat.go",
+    "cmd/aura/mcp.go",
+    "cmd/aura/task.go",
+    "cmd/aura/skills.go",
+    "internal/agent/event.go",
+    "internal/agent/llm_agent.go",
+    "internal/agui/server.go",
+    "internal/agui/translator.go",
+    "internal/mcp/managed_config.go",
+    "internal/mcp/manager/policy.go",
+    "internal/web/fetcher.go",
+    "internal/web/searxng.go",
+    "internal/cron/store.go",
+    "internal/cron/dispatch.go",
+    "internal/toolinvocations/store.go"
+  ],
+  "screenFrames": [
+    "Frame 01 - Aura Chat + Display Workspace",
+    "Frame 02 - Tree View + Reasoning Drawer",
+    "Frame 03 - Source Explorer",
+    "Frame 04 - System Events",
+    "Frame 05 - Mobile",
+    "Frame 06 - Neo4j Graph Explorer",
+    "Frame 07 - Odysseus Operator OS Patterns",
+    "Frame 08 - MCP Configuration + Skills Install"
+  ],
+  "prototypeFlows": [
+    "desktop chat to display workspace",
+    "answer citation to source detail",
+    "chat to graph selected path",
+    "graph node to inspector drawer",
+    "source explorer warning to metadata mapping",
+    "MCP server doctor to tools allowlist",
+    "skill install request to approval queue",
+    "destructive action to confirmation and audit",
+    "mobile display drawer and graph inspector"
+  ],
+  "reviewGates": [
+    "page architecture present",
+    "variables and text styles created",
+    "components named with Aura slash hierarchy",
+    "component descriptions added",
+    "desktop and mobile frames represented",
+    "loading empty warning blocked error destructive states represented",
+    "graph is evidence-bearing and inspectable",
+    "MCP and skills governance cannot hide risky actions",
+    "handoff notes map UI to Aura event payloads"
+  ],
+  "onlineGuidance": [
+    {
+      "source": "Figma components, styles, and shared libraries best practices",
+      "url": "https://www.figma.com/best-practices/components-styles-and-shared-libraries/",
+      "appliedDecision": "Use reusable atomic components, styles, and publishable library boundaries."
+    },
+    {
+      "source": "Figma name and organize components",
+      "url": "https://help.figma.com/hc/en-us/articles/360038663994-Name-and-organize-components",
+      "appliedDecision": "Use page/frame structure and slash-separated component names."
+    },
+    {
+      "source": "Figma variables, collections, and modes",
+      "url": "https://help.figma.com/hc/en-us/articles/14506821864087-Overview-of-variables-collections-and-modes",
+      "appliedDecision": "Map Aura implementation tokens to variable collections and modes."
+    },
+    {
+      "source": "Figma guide to libraries",
+      "url": "https://help.figma.com/hc/en-us/articles/360041051154-Guide-to-libraries-in-Figma",
+      "appliedDecision": "Treat components, styles, and variables as library assets after QA."
+    },
+    {
+      "source": "Figma descriptions for styles, components, and variables",
+      "url": "https://help.figma.com/hc/en-us/articles/7938814091287-Add-descriptions-to-styles-components-and-variables",
+      "appliedDecision": "Require descriptions for search, Assets panel usage, and Dev Mode handoff."
+    }
+  ]
+}
