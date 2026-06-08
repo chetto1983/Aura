@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 13 — channels-telegram-multimodal
+**Current focus:** Phase 13 COMPLETE (Gate-3 closed, E2E 11/11) → next Phase 14 (Onboarding + Agent.md)
 
 ## Current Position
 
-Phase: 13 (channels-telegram-multimodal) — EXECUTING
-Plan: 9 of 9 — Tasks 1-2 done, PAUSED at the Task-3 Gate-3 human-verify checkpoint
-Status: Plan 13-09 awaiting Gate-3 (live full matrix + coverage + mutation + operator sign-off; orchestrator-owned). UX-02/03/04 NOT marked complete.
+Phase: 13 (channels-telegram-multimodal) — COMPLETE (Gate-3 closed 2026-06-08)
+Plan: 9 of 9 — all plans complete; 13-09 Gate-3 closed
+Status: Phase 13 COMPLETE. Gate-3: coverage 86.8% (≥85%), mutation mdv2 81.8% + renderer 74.1% (≥70%, 3 autopsy passes), lint=0, live autonomous E2E 11/11=100% (scripts/telegram_e2e.sh: telegram 3 + multimodal 3 live sidecars + setup-wizard :9081 5/5). Live run fixed the STT compose defect (→ hwdsl2 spike-027); markitdown image deferred. UX-02/03/04 satisfied. Next: Phase 14 (Onboarding + Agent.md).
 Last activity: 2026-06-08 -- 13-09 Tasks 1-2 done (mount + live tiers + compose sidecars + CI wiring). Task 1 (9c3631bf, feat): channels Registry + setup :9081 server mounted fail-soft in bootServe/runServe [StopAll/Shutdown before env.close()], --no-telegram/--only=cli override, serve_channels.go split, fake-channel lifecycle test goleak-clean. Task 2 (e2fe7eb8, test): telegram_integration tier [response-asserted msg.Photo/Document/Voice, grep -c getUpdates=0] + multimodal_integration tier [TTS→STT loop + OCR], both t.Fatal-under-$CI; compose += 4 sidecars [separate hunk from the Codex -ub change, unstaged]; ci.yml += 2 gated jobs. build+vet+both-tier-vet+race+lint 0 green. PENDING Task 3 (orchestrator): full tag matrix live + make coverage ≥85% + mutation ≥70% mdv2/renderer + snapshot rows + operator sign-off.
 
-Progress: [███████▋░░] 76% (15/20 phases)
+Progress: [████████░░] 80% (16/20 phases)
 
 ### Next — Phase 13
 
