@@ -64,7 +64,7 @@ duration: ~35min
 completed: 2026-06-08
 ---
 
-# Phase 13 Plan 09: Channels + Setup + Multimodal Wiring Summary (Tasks 1-2 — Gate-3 PENDING)
+# Phase 13 Plan 09: Channels + Setup + Multimodal Wiring Summary (Tasks 1-2 — Gate-3 superseded/closed by 13-10)
 
 **channels Registry (Telegram) + setup :9081 server mounted fail-soft into `aura serve`, plus the two live integration tiers (telegram_integration response-asserted, multimodal_integration STT/OCR/TTS round-trip) + the 4 compose sidecars + the no-skip-as-green CI wiring — both tiers COMPILE; the live full matrix + coverage + mutation + operator sign-off is the orchestrator-owned Task-3 checkpoint.**
 
@@ -135,9 +135,15 @@ _Task 1 was a `tdd="true"` task: the RED test + GREEN implementation were verifi
 
 - **Parallel Codex session collision in compose.yaml:** an uncommitted 2-line `aura-llama-embed -ub 1024` change from a concurrent Codex session shared the file. Handled per the objective's mandate: my 4 sidecar services were appended AFTER the existing services (a separate git hunk); I built a filtered patch (`git apply --cached` with only my services+volumes hunk) and DECLINED the `-ub`/`1024` hunk. Verified `git diff --cached compose.yaml` contains 0 occurrences of `-ub`/`1024`; the Codex change remains unstaged + intact in the working tree. `.planning/spikes/MANIFEST.md` (modified) and `.planning/spikes/032-logo-manual-live-ingest/` (untracked) were also left untouched.
 
-## Gate-3 Checkpoint — PENDING (Task 3, orchestrator-owned)
+## Gate-3 Checkpoint — Superseded / Closed By 13-10
 
-This plan is **NOT complete**. Task 3 is a `checkpoint:human-verify` (`gate="blocking"`) owned by the orchestrator. UX-02/03/04 are **NOT** marked complete. The orchestrator must, before operator sign-off:
+This plan originally stopped before the inbound dispatch gap was discovered. That
+checkpoint is now superseded by `13-10-PLAN.md` and closed by the
+`$gsd-validate-phase 13` audit. UX-02/03/04 are marked complete in
+`13-VALIDATION.md`; `13-10-SUMMARY.md` records the inbound command CDP evidence
+and the automated media/HITL coverage.
+
+Historical checklist from the original stop point:
 
 1. **Full tag matrix live:** `go test -race -tags 'db_integration telegram_integration multimodal_integration' ./...` with Postgres + the 3 sidecars (`make ...` / compose up `aura-stt aura-tts aura-ocr-vl`) + the operator bot token (`TELEGRAM_BOT_TOKEN` + `AURA_E2E_CHAT_ID`) up. The no-skip-as-green guards must FIRE (not a sub-second skip).
 2. **Coverage:** `make coverage` — owned-surface ≥85% (CLAUDE.md floor) across the full matrix.
@@ -145,11 +151,15 @@ This plan is **NOT complete**. Task 3 is a `checkpoint:human-verify` (`gate="blo
 4. **Snapshot:** append the full-matrix/coverage/mutation rows to `docs/aura-quality-snapshot.md`.
 5. **Operator sign-off** on the 5 live manual-only behaviours (setup token 401/200, live render no-400, /cancel, voice + image, onboarding deep-link).
 
-What is DONE + green (this plan's scope): `go build ./...`, `go vet ./...`, `go vet -tags 'telegram_integration multimodal_integration'` (both tiers COMPILE), `go test ./cmd/aura/ -run 'Serve|Boot|Channel|Setup'`, `go test -race ./cmd/aura/ ./internal/channels/... ./internal/setup/...`, and `golangci-lint run` (0 issues, default + integration tags). The sidecar/bot-dependent live tiers were deliberately NOT run here — they are the orchestrator's Gate-3.
+What was done + green in this plan's scope: `go build ./...`, `go vet ./...`,
+`go vet -tags 'telegram_integration multimodal_integration'`, `go test ./cmd/aura/ -run 'Serve|Boot|Channel|Setup'`,
+`go test -race ./cmd/aura/ ./internal/channels/... ./internal/setup/...`, and
+`golangci-lint run`. The later 13-10 closeout added inbound dispatch wiring and
+validation.
 
 ## Next Phase Readiness
 
-- The phase is wired into `aura serve`; the only remaining work for Phase 13 closure is the Gate-3 live matrix + operator sign-off (Task 3).
+- The phase is wired into `aura serve`; the remaining Phase-13 closure work was completed in 13-10.
 - The setup `IdentityID` resolves the seeded `local` identity at boot; a fresh DB before the seed logs a WARN and the setup server still boots (fail-soft) — Phase 14 onboarding consumes the same `telegram_setup_pending` surface.
 - **A2 caveat (carried from 13-08):** the markitdown `/convert` request/response shape is `[ASSUMED]`; the live `multimodal_integration` tier does NOT exercise markitdown (it round-trips STT/OCR/TTS), so a real markitdown image mismatch would surface at Gate-3 or in Phase 14 — isolated to `documents.go::postConvert` for a one-line fix.
 
@@ -167,4 +177,4 @@ What is DONE + green (this plan's scope): `go build ./...`, `go vet ./...`, `go 
 
 ---
 *Phase: 13-channels-telegram-multimodal*
-*Completed (Tasks 1-2): 2026-06-08 — Task 3 Gate-3 checkpoint PENDING (orchestrator-owned)*
+*Completed (Tasks 1-2): 2026-06-08 — superseded/closed by 13-10 on 2026-06-08*

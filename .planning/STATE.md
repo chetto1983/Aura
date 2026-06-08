@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: executing
-stopped_at: "13-10-PLAN.md Tasks 1-3 done — PAUSED at Task-4 checkpoint:human-verify (gate=blocking, LIVE operator inbound sign-off, orchestrator-owned)"
-last_updated: "2026-06-08T13:30:00.000Z"
-last_activity: 2026-06-08 -- Phase 13 Plan 10 (inbound dispatch wiring) Tasks 1-3 committed (e5576212/b4cfa1a2/8e99e2b3), PAUSED at the Task-4 live human-verify checkpoint. Task 1 (e5576212, feat): telegram.Deps gains Multimodal MultimodalConfig + command backends (Search==conversations.SearchConversationTurns, Cost==cachemetrics daily aggregation reporting provider USD, Prices/Model) + the HITL seam (Resume==*runner.Runner, ResumeTurn); internal/config += DOCUMENTS_BASE_URL; serve_channels.go multimodalConfig mapper (+ LLM OpenRouter base/key for cloud vision) + newTodayCost + resumeTurnFunc. Task 2 (b4cfa1a2, feat): bot_dispatch.go (split from bot.go, both ≤600 LOC) registers OnText (command-intercept-before-LLM + pending-pause→HITL + turn) / OnVoice (Transcribe→turn, hard-fail 😵+IT copy) / OnPhoto (Describe→turn) / OnDocument (Convert sync/async/refuse) / the callbackUnique HITL button + OnCallback fallback / OnReply; handleTurn takes userMsg *string (nil=resume render); /cancel registry brackets each turn; Stop drains the documents async wg. Task 3 (8e99e2b3, feat): handleTurn Subscribe×3 (status+content+artifact, artifact CUSTOM→sendDocument) + post-render TTS-out gated on ShouldSpeak (inboundWasVoice/voice-mode), ctx-cancel-aware, goleak-clean; renderer.finalText() feeds the synthesis. Verified THIS plan: build+vet+go test -race ./internal/channels/telegram/ ./internal/agui/ ./internal/config/ ./cmd/aura/ green, golangci-lint 0, grep tele.OnVoice|OnPhoto|OnDocument|OnCallback matches, bot.go 282 / bot_dispatch.go 332 ≤600 LOC. PENDING (Task 4, orchestrator-owned, gate=blocking): LIVE operator sends /cost /search /cancel + voice + photo + document + ask_user button-tap to the real bot; on sign-off the continuation writes 13-10-SUMMARY.md + re-stamps docs/aura-quality-snapshot.md + ROADMAP success criteria as live-confirmed.
+status: ready_for_next_phase
+stopped_at: "Phase 13 complete after gsd-validate-phase 13; next phase is Phase 14"
+last_updated: "2026-06-08T20:35:00.000Z"
+last_activity: 2026-06-08 -- Phase 13 Plan 10 closed. Telegram inbound dispatch is wired for commands, HITL, voice, photo, document, artifact delivery, status-pane cancel, search pagination, and TTS-out. Telegram UX cleanup from docs/telegram-ux-best-practices.md is implemented and pushed in 6d9ebdbf. gsd-validate-phase 13 audited 13-VALIDATION.md to Nyquist-compliant, created 13-10-SUMMARY.md, and live-checked the logged-in Telegram Web Aura_bot chat via CDP: /search meteo -> Nessun risultato, /cost -> today spend summary, /cancel -> no-running-turn confirmation. Verification green: go test -race ./internal/channels/telegram/ ./internal/agui/ ./internal/config/ ./cmd/aura/; go test ./internal/channels/... ./internal/setup/... ./internal/agent/tools/ -count=1; go test ./... -count=1; git diff --check; pre-push lint/build on the implementation commit.
 progress:
   total_phases: 20
-  completed_phases: 15
+  completed_phases: 16
   total_plans: 105
-  completed_plans: 103
-  percent: 75
+  completed_plans: 104
+  percent: 80
 ---
 
 # Project State
@@ -21,22 +21,22 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 13 — channels-telegram-multimodal
+**Current focus:** Phase 14 — Onboarding + Agent.md
 
 ## Current Position
 
-Phase: 13 (channels-telegram-multimodal) — EXECUTING
-Plan: 10 of 10 — Tasks 1-3 done, PAUSED at the Task-4 live human-verify checkpoint
-Status: 13-10 inbound dispatch wired (commands/voice/photo/document/HITL/artifact/TTS all reachable); awaiting the LIVE operator inbound sign-off (Task 4, gate=blocking)
-Last activity: 2026-06-08 -- Phase 13 Plan 10 Tasks 1-3 committed; paused at Task-4 checkpoint
+Phase: 13 (channels-telegram-multimodal) — COMPLETE
+Plan: 10 of 10 — complete
+Status: Phase 13 closed by `$gsd-validate-phase 13`; next phase is Phase 14.
+Last activity: 2026-06-08 -- Phase 13 validation complete; 13-10-SUMMARY.md written; 13-VALIDATION.md marked Nyquist-compliant.
 
 Progress: [████████░░] 80% (16/20 phases)
 
-### Next — Phase 13
+### Next — Phase 14
 
 Phase 12 AG-UI Gateway closed: live SSE round-trip (POST /agent/run) + GET MESSAGES_SNAPSHOT + REASONING_* lifecycle (amendment #57) proven live; operator delegated Gate-3 to an autonomous E2E loop scoring 11/11. UX-01 complete.
 
-`/gsd-verify-work 12` then `/gsd-plan-phase 13` — Channels + Telegram + Multimodal (UX-02/03/04, depends on Phase 12). Remaining after 13: 14 Onboarding → 15 Memory → 17 Packaging.
+`/gsd-plan-phase 14` — Onboarding + Agent.md, using the now-complete Phase 13 Telegram/setup surface. Remaining after 14: 15 Memory -> 17 Packaging.
 
 ## Performance Metrics
 

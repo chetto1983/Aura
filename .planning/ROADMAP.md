@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 10: Scheduler** - cron + persistent `agent_job` with `FOR UPDATE SKIP LOCKED` + advisory lock + heartbeat (completed 2026-06-04)
 - [x] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger (completed 2026-06-06)
 - [x] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced (completed 2026-06-07)
-- [~] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, Gemma 4 voice+image (components + Gate-3 done; 13-10 wires the live inbound dispatch — commands/HITL/voice/photo/document/artifact were built+tested but only OnText is registered)
+- [x] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, voice/image/document multimodal sidecars, commands, HITL, artifact delivery, TTS-out, and live inbound command validation closed on 2026-06-08.
 - [ ] **Phase 14: Onboarding + AGENT.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
 - [ ] **Phase 15: Memory Subsystem** - Document ingest + entity resolution + GraphRAG hybrid retrieval + agent journal
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
@@ -441,7 +441,7 @@ Wave 4:
   4. User sends a voice note and observes Aura transcribing via `aura-stt` (faster-whisper, OGG/Opus direct) and responding — optionally with a voice-note reply via `aura-tts` (Kokoro `if_sara`); same for an image with caption "what's in this picture?" returning a description via `aura-ocr-vl` (GLM-OCR) or, with `AURA_VISION_CLOUD=true`, OpenRouter *(engine = spike session-6 verdict, Amendments #59/#60 — Gemma 4 / vLLM are OUT)*
   5. User runs `/cost` and observes today's cumulative USD spend across all conversations; `/search "<query>"` returns matching turn excerpts (FTS from P4 wired into Telegram)
 
-**Plans**: 9 plans (4 waves)
+**Plans**: 10 plans (5 waves)
 **UI hint**: yes
 
 Plans:
@@ -468,7 +468,7 @@ Plans:
 
 **Wave 5** (live inbound integration — the gap 13-09 missed)
 
-- [ ] 13-10-PLAN.md — wire the Telegram inbound dispatch: commands (/cost,/cancel,/search intercept) + HITL (OnCallback/OnReply resume) + multimodal (OnVoice/OnPhoto/OnDocument → transcribe/describe/convert → turn) + artifact (Subscribe×3) + TTS-out, plumbing MultimodalConfig+deps through telegram.Deps. The components (13-05/06/08) were built+unit-tested but their constructors are never called in production (only OnText is registered). Closes UX-02/03/04 as USER-reachable. PLANNED 2026-06-08 — awaiting review.
+- [x] 13-10-PLAN.md — Telegram inbound dispatch wired: commands (/cost,/cancel,/search intercept) + HITL (OnCallback/OnReply resume) + multimodal (OnVoice/OnPhoto/OnDocument → transcribe/describe/convert → turn) + artifact (Subscribe×3) + TTS-out, plumbing MultimodalConfig+deps through telegram.Deps. Closed 2026-06-08 with automated handler/race coverage, Telegram UX cleanup, `13-VALIDATION.md` Nyquist audit, and live Telegram Web CDP command checks for `/search`, `/cost`, and `/cancel` no-turn.
 
 ### Phase 14: Onboarding + Agent.md
 
@@ -520,7 +520,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 10. Scheduler | 6/6 | Complete    | 2026-06-04 |
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
 | 12. AG-UI Gateway | 6/6 | Complete    | 2026-06-07 |
-| 13. Channels + Telegram + Multimodal | 4/9 | In progress | - |
+| 13. Channels + Telegram + Multimodal | 10/10 | Complete | 2026-06-08 |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
 | 15. Memory Subsystem | 0/TBD | Not started | - |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
