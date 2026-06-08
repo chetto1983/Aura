@@ -447,7 +447,7 @@ Wave 4:
 Plans:
 **Wave 1** (substrate + framework — no inter-dependencies)
 
-- [ ] 13-01-PLAN.md — deps legitimacy gate + migration 0012 (telegram_accounts/setup_pending) + telegram.Store + 3 goleak TestMains
+- [x] 13-01-PLAN.md — deps legitimacy gate + migration 0012 (telegram_accounts/setup_pending) + telegram.Store + 3 goleak TestMains (completed 2026-06-08)
 - [ ] 13-02-PLAN.md — send_file Deferred tool + translator ArtifactDelta→custom-event branch (channel-agnostic, D-05/D-06)
 - [ ] 13-03-PLAN.md — net-new model capability flags (SupportsVision/SupportsAudio) + MarkdownV2 entity-aware escaper (10K fuzz) + tables→PNG (x/image)
 - [ ] 13-04-PLAN.md — Channel interface + fail-soft Registry (AURA_CHANNEL_*_ENABLED) + telegram config + AURA_* env surface
