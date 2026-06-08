@@ -29,6 +29,30 @@ This is an evidence-gathering spike, not a live benchmark. The verdict is `PARTI
 | `D:/tmp/recursive-llm` | local master checkout | Useful follow-up for reducing extraction calls over long documents, but risky as the Phase 15 core ingest path. |
 | `D:/tmp/graphify` | local master checkout | Useful graph-inspection and relevance-model prior art, not a backing-store implementation. |
 | `D:/tmp/llm_wiki` | local master checkout | Useful source-of-truth, incremental-cache, graph expansion, and token-budget ideas. |
+| `D:/tmp/nanobot` | local master checkout | Useful for user-visible memory UX: append-only `history.jsonl`, slower "Dream" consolidation, and auditable restore. Not a graph/vector implementation. |
+| `D:/tmp/ruflo` | local master checkout | Useful as conceptual prior art for HNSW-backed pattern retrieval, memory namespaces, retrieve/judge/distill/consolidate loops, and memory-write governance. Too sprawling to port. |
+| `D:/tmp/elysia` + `D:/tmp/elysia-frontend` | local master checkout | Weaviate-oriented agentic RAG. Relevant only as a decision-tree/tool-routing comparison, not Aura's Neo4j memory store. |
+| `D:/tmp/markitdown` | local master checkout | Relevant for document-to-Markdown conversion inputs before chunking. It is not a memory store, but may inform Phase 15 ingest format adapters. |
+
+## D:/tmp Repo Triage
+
+The full local git repo set was enumerated before narrowing. The repos below were reviewed at README/docs/example level for Phase 15 terms such as `neo4j`, `GraphRAG`, `knowledge graph`, `memory`, `embedding`, `vector`, `fulltext`, `Leiden`, and `community`.
+
+| Repo | Triage |
+|---|---|
+| `llm-graph-builder` | Primary Phase 15 source. Use for Neo4j, GraphRAG, vector/fulltext, duplicate cleanup, and Leiden patterns. |
+| `aura-neo4j-spike-2026-05-27` | Primary local benchmark evidence. Use for performance expectations and prior Aura design decisions. |
+| `mem0` | Medium signal. Use V3 phased batch memory shape; avoid old OSS graph-memory examples. |
+| `recursive-llm` | Medium signal. Candidate follow-up for extraction-call reduction over long docs. |
+| `graphify` | Medium signal. Use as graph-inspection/relevance-model prior art; not a store. |
+| `llm_wiki` | Medium signal. Use for graph expansion, token budget, and hybrid search UX. |
+| `nanobot` | Medium signal. Use for memory lifecycle UX and auditability: raw history, consolidation, versioned restore. |
+| `ruflo` | Medium signal. Use selectively for pattern-memory vocabulary, HNSW retrieval, namespaces, and governance cautions. |
+| `elysia`, `elysia-frontend` | Low signal. Weaviate agentic RAG comparison only. |
+| `markitdown` | Low signal. Possible ingest adapter for office/PDF/media to Markdown before chunking. |
+| `assistant-ui`, `codex`, `adk-go-study`, `hermes-agent`, `openhuman` | Low/no direct storage signal for Phase 15; more relevant to agent loop or UI phases. |
+| `agent-infra-sandbox`, `aura-skill-install`, `calculator-mcp-server`, `mail-mcp`, `whatsapp-mcp`, `skilltest`, `spike-004b-lf` | Prior phase infrastructure; no direct Phase 15 memory-store signal. |
+| `cli-printing-press`, `kokopop`, `logseq`, `odysseus`, `picobot`, `pocket-tts`, `ralph-src`, `react-filemanager`, `system_prompts_leaks`, `TTS.cpp` | No actionable Phase 15 memory-store signal found in README/docs/examples scan. |
 
 ## Findings
 
