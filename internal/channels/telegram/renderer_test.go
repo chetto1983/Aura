@@ -32,6 +32,10 @@ type fakeBot struct {
 	fail400OnMarkdownV2 bool
 	tripped             bool
 
+	// failPhoto makes every *tele.Photo send return a hard (non-400) error so the
+	// sendTable path returns false and the caller falls back to a text send.
+	failPhoto bool
+
 	nextID int
 }
 
@@ -55,6 +59,14 @@ func (f *fakeBot) record(edit bool, what any, opts []any) (*tele.Message, error)
 		f.tripped = true
 		f.calls = append(f.calls, c)
 		return nil, &tele.Error{Code: 400, Description: "Bad Request: can't parse entities: bad escape"}
+	}
+
+	if f.failPhoto {
+		if _, isPhoto := what.(*tele.Photo); isPhoto {
+			f.calls = append(f.calls, c)
+			// A non-400 hard error: NOT a parse-entities fallback, so sendTable bails.
+			return nil, &tele.Error{Code: 413, Description: "Request Entity Too Large"}
+		}
 	}
 
 	f.calls = append(f.calls, c)
@@ -411,6 +423,77 @@ func TestRendererTableCaptionPlainFallback(t *testing.T) {
 	}
 	if !plainPhoto {
 		t.Errorf("a table caption that 400s must resend the photo with a plain caption; calls=%+v", bot.recorded())
+	}
+}
+
+// TestRendererFlushAppliesRateLimit proves flush() applies the per-chat rate limit
+// (kills the rateLimit() call removal inside flush): a finalize flush whose last
+// send was inside the rate window sleeps the remainder before sending.
+func TestRendererFlushAppliesRateLimit(t *testing.T) {
+	t.Parallel()
+	base := time.Unix(3000, 0)
+	// lastSend == now → fully inside the 200ms rate window → flush must sleep.
+	r, _, slept := rendererAt(0, 200*time.Millisecond, base, base, "hello")
+	r.flush(context.Background(), true)
+	if len(*slept) == 0 {
+		t.Error("flush must apply the per-chat rate limit (sleep inside the window)")
+	}
+}
+
+// TestRendererPhotoHardFailFallsBackToText proves a table whose photo send hard-fails
+// (a non-400 error, so NOT the caption fallback) falls through to a plain text send
+// (kills the sendTable `return false` + the send() fallthrough).
+func TestRendererPhotoHardFailFallsBackToText(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	bot.failPhoto = true
+	r := newTestRenderer(bot)
+
+	content := "Dati:\n| a | b |\n|---|---|\n| 1 | 2 |"
+	driveRenderer(r, []events.Event{
+		events.NewTextMessageContentEvent("m", content),
+		events.NewTextMessageEndEvent("m"),
+	})
+
+	var sawPhoto, sawText bool
+	for _, c := range bot.recorded() {
+		if c.photo != nil {
+			sawPhoto = true
+		} else if c.text != "" {
+			sawText = true
+		}
+	}
+	if !sawPhoto {
+		t.Fatal("expected a (failed) photo attempt for the table")
+	}
+	if !sawText {
+		t.Error("a hard-failed photo send must fall back to a text send")
+	}
+}
+
+// TestRendererTracksMsgForEdits proves msg #2 is tracked: the first delivery is a
+// fresh Send and every subsequent delivery Edits that message in place (kills the
+// `r.msg = out` tracking removal and the deliver Send/Edit branch selection).
+func TestRendererTracksMsgForEdits(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	r := newTestRenderer(bot) // throttle 0 → every delta flushes immediately
+
+	driveRenderer(r, []events.Event{
+		events.NewTextMessageContentEvent("m", "one "),
+		events.NewTextMessageContentEvent("m", "two"),
+		events.NewTextMessageEndEvent("m"),
+	})
+
+	calls := bot.recorded()
+	if len(calls) < 2 {
+		t.Fatalf("expected at least a Send + an Edit, got %d", len(calls))
+	}
+	if calls[0].edit {
+		t.Error("the first delivery must be a Send (msg #2 opened), not an Edit")
+	}
+	if !calls[1].edit {
+		t.Error("subsequent deliveries must Edit msg #2 in place (msg must be tracked)")
 	}
 }
 
