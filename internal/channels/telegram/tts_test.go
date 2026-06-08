@@ -3,7 +3,6 @@ package telegram
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -183,7 +182,3 @@ func TestVoiceModeDefaultFalse(t *testing.T) {
 		t.Error("voice_mode must default false (Slice 10 preferences not shipped)")
 	}
 }
-
-// drainBody is a tiny guard so a future change that forgets to read the sidecar
-// body still compiles the test against the io import.
-var _ = io.Discard
