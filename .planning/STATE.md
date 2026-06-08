@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 13-07-PLAN.md
-last_updated: "2026-06-08T09:48:13.000Z"
-last_activity: 2026-06-08 -- Completed Phase 13 Plan 07 (Wave-3 setup wizard backend, UX-03: isolated loopback :9081 HTTP/SSE API gated by a one-time in-memory AURA_SETUP_TOKEN [empty→UUIDv4 printed once to stdout, in-memory, invalidated after onboarding; constant-time gate on all 4 routes, 401-without/200-with/401-after]; /setup/token getMe-validates the bot token via the BotProbe seam NEVER logging it; /setup/onboard-link mints a 1h single-use telegram_setup_pending row + deep_link + terminal ASCII QR [qrterminal], qr_svg empty [OQ4]; /setup/status bot_configured+account_count; /setup/events SSE poll-2s consumed_at→onboarding_completed, pump goleak-clean on ctx-cancel. Commits 2a2f8935/3f311092)
+stopped_at: Completed 13-08-PLAN.md
+last_updated: "2026-06-08T10:03:57.000Z"
+last_activity: 2026-06-08 -- Completed Phase 13 Plan 08 (Wave-3 multimodal 9c sidecar clients, UX-04: four thin OpenAI-compat HTTP clients [zero Go ML] sharing sidecar.go [ctx-timeout dialer + DisableKeepAlives, mirrors openai_compat] + a telegram-local MultimodalConfig projection. voice.go = faster-whisper STT, downloads the OGG/Opus voice note via a botFiler seam and POSTs the bytes DIRECT [mime/multipart, NO ffmpeg — faster-whisper decodes Opus inline, spike 027] to STT_BASE_URL/audio/transcriptions; 2-retry exp backoff [1s/2s, ctx-honoring sleep] → hard-fail returns an error + HardFail applies a 😵 reaction on the inbound MESSAGE [*tele.Voice not Editable] + the IT copy "Trascrizione non disponibile."; transcript→text user message for runner.Turn. tts.go = Kokoro opus→sendVoice [response_format=opus, voice if_sara] with an ASCII-sanitized caption [Pitfall 4, reuses asciiCaption]; trigger ShouldSpeak[voice_mode OR inbound-was-voice echo], NO explicit send_voice tool [OQ2], VoiceModePref stub false until Phase 14. photo.go = ONE public entry Describe with ONE config-only branch isolated in route[]: AURA_VISION_CLOUD=false [UNCHANGED default] → local aura-ocr-vl base64 image_url /chat/completions; true → OpenRouter using the PRIMARY model when llm.SupportsVision[model] else MULTIMODAL_FALLBACK_MODEL minimax-m3 [T-13-08-VisionMisroute], switch is .env-only zero code dup [Pitfall 6/#60]. documents.go = tiered markitdown /convert: ≤5MB sync / 5-50MB async [WaitGroup-tracked goroutine drained by Stop, ctx detached via WithoutCancel, goleak-clean] / >50MB refuse [IT message, no sidecar call]. Unit tier = httptest mock sidecars [live multimodal_integration delegated to 13-09]; both photo branches + SupportsVision gating proven; vet/build/test/-race green, golangci-lint 0, all ≤600 LOC. Commits e029140c/8136aa6c)
 progress:
   total_phases: 20
   completed_phases: 15
   total_plans: 104
-  completed_plans: 101
+  completed_plans: 102
   percent: 76
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 13 (channels-telegram-multimodal) — EXECUTING
-Plan: 8 of 9
+Plan: 9 of 9
 Status: Executing Phase 13
-Last activity: 2026-06-08 -- Completed 13-06 (Wave-2 Telegram interaction surfaces, UX-02/UX-03: commands.go intercepts the 10 PRD slash-commands BEFORE any LLM dispatch [handled=true short-circuits handleTurn, T-13-06-CmdLLMBypass]; /cost reuses llm.CostUSD over a TodayUsage seam and /search reuses conversations.SearchConversationTurns byte-for-byte with a verbatim port of the CLI excerpt window [cross-slice invariant Telegram==CLI]; /cancel fires a per-chat in-flight-turn ctx-cancel registry [SC#3]. hitl.go renders an ask_user pause as InlineKeyboard [choice/approval + trailing Annulla safety] or ForceReply [clarification] and resolves a callback/reply via runner.SubmitAnswer [three-action accept/decline/cancel] then drives runner.Turn(convID,nil) ONLY when remaining==0 and not a cancel — render-only over the Runner via PendingFor/SubmitAnswer, NEVER writes paused_states [T-13-06-PauseHijack, Runner sole writer]. artifact.go consumes the channel-agnostic AG-UI CUSTOM event [exported agui.ArtifactEventName, plan 13-02] → tele.Document{FromDisk,FileName,Caption} sendDocument, assertion on the Send RESPONSE not getUpdates, ASCII-safe caption [Pitfall 4]. onboarding.go /start <token> → atomic Store.ConsumeOnboarding → INSERT telegram_accounts; replayed/expired/unknown token writes no account + invalid-link reply [T-13-06-TokenReplay]. Consumer-side seams [searchBackend/costBackend/resumeRunner/onboardingStore] keep all four unit-testable with no live Runner/DB/network. vet/build/test/-race green, lint 0, all ≤600 LOC. Commits 2731729c/553d62c2/325c6b50)
+Last activity: 2026-06-08 -- Completed 13-08 (Wave-3 multimodal 9c sidecar clients, UX-04: four thin OpenAI-compat HTTP clients [zero Go ML] sharing sidecar.go [ctx-timeout dialer + DisableKeepAlives] + a telegram-local MultimodalConfig. voice.go = faster-whisper STT [OGG/Opus DIRECT multipart, NO ffmpeg], 2-retry exp backoff → hard-fail [😵 reaction + IT "Trascrizione non disponibile."]. tts.go = Kokoro opus→sendVoice [ASCII caption, Pitfall 4]; ShouldSpeak[voice_mode OR echo], NO send_voice tool [OQ2], VoiceModePref stub. photo.go = ONE Describe entry, ONE config-only AURA_VISION_CLOUD branch in route[]: false=local GLM-OCR sidecar [unchanged default], true=OpenRouter SupportsVision-gated primary-vs-fallback minimax-m3 [Pitfall 6/#60]. documents.go = tiered markitdown /convert ≤5MB sync / 5-50MB async [WaitGroup-drained, goleak-clean] / >50MB refuse. Unit tier httptest mocks [live multimodal_integration → 13-09]; both photo branches proven; vet/build/test/-race green, lint 0, ≤600 LOC. Commits e029140c/8136aa6c)
 
 Progress: [███████▋░░] 76% (15/20 phases)
 
@@ -121,6 +121,7 @@ Phase 12 AG-UI Gateway closed: live SSE round-trip (POST /agent/run) + GET MESSA
 | Phase 13 P13-05 | ~30min | 2 tasks | 15 files |
 | Phase 13 P13-06 | ~35min | 3 tasks | 9 files |
 | Phase 13 P13-07 | ~13min | 2 tasks | 9 files |
+| Phase 13 P13-08 | ~10min | 2 tasks | 9 files |
 
 ## Accumulated Context
 
