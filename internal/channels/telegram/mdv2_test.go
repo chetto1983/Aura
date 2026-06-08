@@ -84,6 +84,55 @@ func TestEscapeMarkdownV2_NeverWholeStringEscape(t *testing.T) {
 	}
 }
 
+// TestEscapeMarkdownV2_FenceExactOutput pins the EXACT escaped output across a
+// fence open → content → close → trailing prose. The fuzz oracle only proves
+// well-formedness (no would-400); these exact matches exercise the fence-skip
+// (i += 2), the mode transitions, the in-pre lone-backtick escape, and the
+// triple-backtick lookahead boundary that the well-formedness check leaves alive.
+func TestEscapeMarkdownV2_FenceExactOutput(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			// Inside the fence |, -, . pass through; the closing ``` survives; the
+			// trailing prose escapes its - and . outside the fence.
+			name: "fence_then_reserved_prose",
+			in:   "```\na | b - 1.0\n```\nafter - dot.",
+			want: "```\na | b - 1.0\n```\nafter \\- dot\\.",
+		},
+		{
+			// A single ` inside a ``` block is reserved and must be escaped.
+			name: "lone_backtick_in_pre_escaped",
+			in:   "```\na`b\n```",
+			want: "```\na\\`b\n```",
+		},
+		{
+			// A single-backtick inline span passes its content through; the trailing
+			// dot outside the span is escaped.
+			name: "inline_span_then_reserved",
+			in:   "use `x-y` now.",
+			want: "use `x-y` now\\.",
+		},
+		{
+			// Two backticks at the very end (i+2 == len at the first): the first
+			// opens an inline span, the second closes it — no index-out-of-range
+			// (the `<` lookahead bound), no escaping.
+			name: "two_trailing_backticks_no_panic",
+			in:   "ab``",
+			want: "ab``",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := EscapeMarkdownV2(tt.in); got != tt.want {
+				t.Errorf("EscapeMarkdownV2(%q)\n  got  %q\n  want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
 // validateMarkdownV2 is the oracle: it walks the escaped output the same way the
 // Telegram parser does and returns false if any reserved char appears unescaped
 // outside a fence, or a fence is left open — i.e. the cases that 400 with

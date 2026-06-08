@@ -23,6 +23,7 @@ package telegram
 
 import (
 	"bytes"
+	"net/http"
 	"os"
 	"strconv"
 	"testing"
@@ -60,8 +61,17 @@ func liveBot(t *testing.T) (*tele.Bot, tele.Recipient) {
 		t.Fatalf("AURA_E2E_CHAT_ID %q is not an int64: %v", chatRaw, err)
 	}
 
+	// A dedicated transport reaped in cleanup: telebot's keep-alive HTTP/2
+	// connection to api.telegram.org otherwise leaves its readLoop goroutine alive
+	// past the test, which the package goleak TestMain (amendment #15) flags as a
+	// leak. Production closes the bot's client on serve shutdown; the live test
+	// closes its idle connections the same way.
+	tr := &http.Transport{}
+	t.Cleanup(tr.CloseIdleConnections)
+
 	bot, err := tele.NewBot(tele.Settings{
-		Token: token,
+		Token:  token,
+		Client: &http.Client{Transport: tr},
 		// No poller is started — these tests only Send (the bot-side artifact), so
 		// the default LongPoller is never engaged; the bot is used as a Bot-API client.
 		Offline: false,
