@@ -199,31 +199,55 @@ func TestAuditImmutable(t *testing.T) {
 	}
 }
 
-// TestMigration0010_SchemaRoundTrip applies the 0010 down then up and asserts the
-// table is gone after down and present after re-up, proving the migration is
-// reversible+idempotent. It uses a migrate instance steered directly so it can
-// step down one and back up.
+// TestMigration0010_SchemaRoundTrip migrates back to the 0009 floor, then up to
+// head again and asserts the table is gone after down and present after re-up,
+// proving the migration is reversible+idempotent even as later migrations are
+// added above 0010.
 func TestMigration0010_SchemaRoundTrip(t *testing.T) {
 	pool := migratedPool(t) // ensures roles + migrations to head first
 	ctx := context.Background()
 
-	// Down one (0010 → 0009): the audit table must disappear and the kind CHECK
-	// must no longer admit skill_ttl_sweep.
+	// Down to 0009: the audit table must disappear and the kind CHECK must no
+	// longer admit skill_ttl_sweep. The step count is computed from the current
+	// head so this test does not rot when 0011+ migrations are added.
 	migrateURL := envOrSkip(t, "AURA_DB_MIGRATE_URL")
-	if err := db.MigrateSteps(ctx, migrateURL, -2); err != nil {
-		t.Fatalf("migrate down -2: %v", err)
+	if err := migrateToVersion(t, ctx, migrateURL, 9); err != nil {
+		t.Fatalf("migrate down to 0009: %v", err)
 	}
 	if tableExists(t, pool, "skill_audit") {
-		t.Error("after down -2: aura.skill_audit still exists")
+		t.Error("after down to 0009: aura.skill_audit still exists")
 	}
 
-	// Up one (0009 → 0010): the table returns.
+	// Up to head: the table returns.
 	if _, err := db.Migrate(ctx, migrateURL); err != nil {
 		t.Fatalf("migrate up: %v", err)
 	}
 	if !tableExists(t, pool, "skill_audit") {
 		t.Error("after re-up: aura.skill_audit missing")
 	}
+}
+
+func migrateToVersion(t *testing.T, ctx context.Context, migrateURL string, target int64) error {
+	t.Helper()
+	migratePool, err := db.Open(ctx, &db.Config{URL: migrateURL})
+	if err != nil {
+		return fmt.Errorf("open migrate pool: %w", err)
+	}
+	defer migratePool.Close()
+
+	rows, err := db.Status(ctx, migratePool)
+	if err != nil {
+		return fmt.Errorf("migration status: %w", err)
+	}
+	if len(rows) == 0 {
+		return fmt.Errorf("migration status: no applied migrations")
+	}
+	current := rows[len(rows)-1].Version
+	steps := int(target - current)
+	if steps == 0 {
+		return nil
+	}
+	return db.MigrateSteps(ctx, migrateURL, steps)
 }
 
 // TestWriterPendingAuditRow proves the writer's WriteMutation lands a pending skill
