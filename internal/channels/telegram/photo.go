@@ -74,7 +74,13 @@ type chatResponse struct {
 func (p *photoClient) Describe(ctx context.Context, image []byte, mimeType, caption string) (string, error) {
 	baseURL, apiKey, model := p.route()
 
-	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(image)
+	// Downscale oversized photos so the CPU vision sidecar stays in spike-range
+	// latency (a full-res phone photo otherwise takes ~55s and blows the timeout).
+	imgBytes := image
+	if ds, dsMime := downscaleForVision(image); dsMime != "" {
+		imgBytes, mimeType = ds, dsMime
+	}
+	dataURL := "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(imgBytes)
 	prompt := caption
 	if prompt == "" {
 		prompt = "Describe this image."
