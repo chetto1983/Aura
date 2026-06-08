@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"iter"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
@@ -206,6 +207,7 @@ func (t *Telegram) Start(ctx context.Context) error {
 	// chat's turns.
 	t.buildDispatch()
 	t.registerHandlers(ctx, bot)
+	t.registerBotCommands(bot)
 
 	t.bot = bot
 	t.started = true
@@ -217,6 +219,30 @@ func (t *Telegram) Start(ctx context.Context) error {
 		bot.Start()
 	}()
 	return nil
+}
+
+func (t *Telegram) registerBotCommands(bot *tele.Bot) {
+	if t.deps.Offline {
+		return
+	}
+	if err := bot.SetCommands(botMenuCommands()); err != nil {
+		slog.Warn("telegram: set bot commands failed", "err", err)
+	}
+}
+
+func botMenuCommands() []tele.Command {
+	return []tele.Command{
+		{Text: "start", Description: "Saluta o completa un link di setup"},
+		{Text: "help", Description: "Mostra la lista dei comandi"},
+		{Text: "cancel", Description: "Annulla il turno in corso"},
+		{Text: "cost", Description: "Mostra la spesa cumulativa di oggi"},
+		{Text: "search", Description: "Cerca nei turni salvati"},
+		{Text: "new", Description: "Spiega il thread continuo Telegram"},
+		{Text: "list", Description: "Indica dove sfogliare le conversazioni"},
+		{Text: "reset", Description: "Annulla il turno senza cancellare lo storico"},
+		{Text: "whoami", Description: "Mostra l'identita collegata"},
+		{Text: "stop", Description: "Annulla il turno; il bot resta attivo"},
+	}
 }
 
 // Stop gracefully shuts the poller down and joins the polling goroutine. It is

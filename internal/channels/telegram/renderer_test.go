@@ -15,6 +15,7 @@ import (
 type sendCall struct {
 	text      string
 	parseMode tele.ParseMode
+	markup    *tele.ReplyMarkup
 	photo     *tele.Photo
 	edit      bool
 }
@@ -47,7 +48,7 @@ func (f *fakeBot) record(edit bool, what any, opts []any) (*tele.Message, error)
 	defer f.mu.Unlock()
 
 	mode := parseModeOf(opts)
-	c := sendCall{parseMode: mode, edit: edit}
+	c := sendCall{parseMode: mode, markup: markupOf(opts), edit: edit}
 	switch w := what.(type) {
 	case string:
 		c.text = w
@@ -205,23 +206,31 @@ func TestRendererPlainTextFallbackOn400(t *testing.T) {
 	}
 }
 
-// TestRendererCapsAt4096 proves an over-long content is capped to the Bot-API
-// 4096-rune ceiling.
-func TestRendererCapsAt4096(t *testing.T) {
+// TestRendererSplitsOver4096PreservesTail proves an over-long answer is split
+// into Telegram-sized messages instead of silently truncating the tail.
+func TestRendererSplitsOver4096PreservesTail(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
 	r := newTestRenderer(bot)
 
-	big := strings.Repeat("a", 5000)
+	big := strings.Repeat("a", telegramTextCap) + "TAIL"
 	driveRenderer(r, []events.Event{
 		events.NewTextMessageContentEvent("m1", big),
 		events.NewTextMessageEndEvent("m1"),
 	})
 
 	calls := bot.recorded()
-	last := calls[len(calls)-1]
-	if n := len([]rune(last.text)); n > telegramTextCap {
-		t.Errorf("sent text length = %d runes, want <= %d", n, telegramTextCap)
+	var sawTail bool
+	for _, c := range calls {
+		if n := len([]rune(c.text)); n > telegramTextCap {
+			t.Errorf("sent text length = %d runes, want <= %d", n, telegramTextCap)
+		}
+		if strings.Contains(c.text, "TAIL") {
+			sawTail = true
+		}
+	}
+	if !sawTail {
+		t.Fatalf("over-long answer tail was lost; calls=%+v", calls)
 	}
 }
 

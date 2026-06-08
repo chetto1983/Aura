@@ -51,6 +51,7 @@ type renderer struct {
 	lastSend  time.Time       // last successful send/edit (throttle + rate-limit gate)
 	plain     bool            // once a 400 forced the plain-text fallback, stay plain for this message
 	tableSent bool            // a table PNG finalized this turn — ignore further flushes (no duplicate photos)
+	textDone  bool            // final text chunks were already sent; ignore duplicate final flushes
 }
 
 // botDeleter is the optional telebot surface for removing a superseded message —
@@ -112,14 +113,16 @@ func (r *renderer) finalText() string {
 // non-final flush inside the throttle window is skipped (coalesced).
 func (r *renderer) flush(ctx context.Context, final bool) {
 	content := r.buf.String()
-	if content == "" || r.tableSent {
+	if content == "" || r.tableSent || (final && r.textDone) {
 		return // nothing buffered, or the turn already finalized as a table PNG
 	}
 	if !final && r.now().Sub(r.lastSend) < r.throttle {
 		return // coalesce: within the throttle window, wait for the next delta/END
 	}
 	r.rateLimit(ctx)
-	r.send(content, final)
+	if r.send(content, final) && final {
+		r.textDone = true
+	}
 	r.lastSend = r.now()
 }
 
@@ -138,57 +141,75 @@ func (r *renderer) rateLimit(ctx context.Context) {
 // send renders content to Telegram: a markdown table goes out as a PNG sendPhoto;
 // otherwise the text is MarkdownV2-escaped and sent/edited, with the plain-text
 // fallback on a 400 can't-parse-entities.
-func (r *renderer) send(content string, final bool) {
+func (r *renderer) send(content string, final bool) bool {
 	if grid, ok := ParseMarkdownTable(content); ok {
 		// A markdown table renders to a PNG ONCE, on the FINAL flush only. Sending it
 		// on every streamed flush posts duplicate photos (the 4× bug); deferring all
 		// table output to final also avoids a mid-stream text→PNG flicker.
 		if !final {
-			return
+			return false
 		}
 		if r.sendTable(grid, content) {
 			r.tableSent = true
-			return
+			return true
 		}
 		// table render failed → fall through to text rendering of the raw content
 	}
-	r.sendText(content)
+	return r.sendText(content, final)
 }
 
-// sendText sends or edits msg #2 with MarkdownV2, capping at the 4096 ceiling. On a
-// Bot-API 400 "can't parse entities" it resends the ORIGINAL text WITHOUT ParseMode
-// (PlainTextFallback) — the SC#2 guarantee.
-func (r *renderer) sendText(content string) {
-	capped := capRunes(content, telegramTextCap)
+// sendText sends/edits msg #2 with MarkdownV2. During live streaming it caps the
+// draft to the first Telegram-sized chunk; on finalization it splits the complete
+// answer into Telegram-sized messages so the tail is not silently lost.
+func (r *renderer) sendText(content string, final bool) bool {
+	chunks := []string{capRunes(content, telegramTextCap)}
+	if final {
+		chunks = splitTelegramText(content, telegramTextCap)
+	}
+	for i, chunk := range chunks {
+		if chunk == "" {
+			continue
+		}
+		if !r.sendTextChunk(chunk, final && i > 0) {
+			return i > 0
+		}
+	}
+	return len(chunks) > 0
+}
 
+// sendTextChunk sends one Telegram-sized text chunk. forceNew is true for chunk 2+
+// of a finalized long answer; chunk 1 edits the streamed message in place.
+func (r *renderer) sendTextChunk(chunk string, forceNew bool) bool {
 	// Once a 400 forced the fallback for this message, stay in plain mode: editing
 	// it back to MarkdownV2 would just 400 again (the content only grows).
 	if r.plain {
-		if out, err := r.deliver(PlainTextFallback(capped), tele.ModeDefault); err == nil && out != nil {
+		if out, err := r.deliver(PlainTextFallback(chunk), tele.ModeDefault, forceNew); err == nil && out != nil {
 			r.msg = out
+			return true
 		}
-		return
+		return false
 	}
 
-	out, err := r.deliver(EscapeMarkdownV2(capped), tele.ModeMarkdownV2)
+	out, err := r.deliver(EscapeMarkdownV2(chunk), tele.ModeMarkdownV2, forceNew)
 	if isCantParseEntities(err) {
 		// Resend the unescaped original without ParseMode (plain-text fallback) and
 		// latch plain mode so subsequent edits of this message stay plain.
 		r.plain = true
-		out, err = r.deliver(PlainTextFallback(capped), tele.ModeDefault)
+		out, err = r.deliver(PlainTextFallback(chunk), tele.ModeDefault, forceNew)
 	}
 	if err != nil {
-		return // best-effort: a failed content send must not wedge the turn
+		return false // best-effort: a failed content send must not wedge the turn
 	}
 	if out != nil {
 		r.msg = out
 	}
+	return true
 }
 
 // deliver sends a fresh msg #2 or edits the existing one with the given parse mode.
-func (r *renderer) deliver(text, mode tele.ParseMode) (*tele.Message, error) {
+func (r *renderer) deliver(text string, mode tele.ParseMode, forceNew bool) (*tele.Message, error) {
 	opts := sendOpts(mode)
-	if r.msg == nil {
+	if forceNew || r.msg == nil {
 		return r.bot.Send(r.to, text, opts)
 	}
 	return r.bot.Edit(r.msg, text, opts)
@@ -281,4 +302,41 @@ func capRunes(s string, n int) string {
 		return s
 	}
 	return string([]rune(s)[:n])
+}
+
+func splitTelegramText(s string, n int) []string {
+	if s == "" || n <= 0 {
+		return nil
+	}
+	var chunks []string
+	rest := s
+	for len([]rune(rest)) > n {
+		cut := splitBoundary(rest, n)
+		chunk := strings.TrimRight(rest[:cut], " \t\r\n")
+		if chunk == "" {
+			chunk = capRunes(rest, n)
+			cut = len(chunk)
+		}
+		chunks = append(chunks, chunk)
+		rest = strings.TrimLeft(rest[cut:], " \t\r\n")
+	}
+	if rest != "" {
+		chunks = append(chunks, rest)
+	}
+	return chunks
+}
+
+func splitBoundary(s string, n int) int {
+	runes := []rune(s)
+	if len(runes) <= n {
+		return len(s)
+	}
+	prefix := string(runes[:n])
+	min := n / 2
+	for _, sep := range []string{"\n\n", "\n", ". ", "! ", "? ", " "} {
+		if idx := strings.LastIndex(prefix, sep); idx >= min {
+			return idx + len(sep)
+		}
+	}
+	return len(prefix)
 }

@@ -135,6 +135,68 @@ func TestStatusPaneMicrocompactPointerIsOK(t *testing.T) {
 	}
 }
 
+func TestStatusPaneCancelButtonLifecycle(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePane(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewRunFinishedEvent("t", "r"),
+	})
+	calls := bot.recorded()
+	if len(calls) < 2 {
+		t.Fatalf("status pane should send then finalize, got %d calls", len(calls))
+	}
+	start := calls[0].markup
+	if start == nil || len(start.InlineKeyboard) == 0 {
+		t.Fatalf("running status pane must include a cancel inline keyboard, got %+v", start)
+	}
+	if got := start.InlineKeyboard[0][0].Unique; got != statusCancelUnique {
+		t.Fatalf("cancel button unique = %q, want %q", got, statusCancelUnique)
+	}
+	final := calls[len(calls)-1].markup
+	if final == nil {
+		t.Fatalf("final status pane edit must carry empty markup to remove the cancel button")
+	}
+	if len(final.InlineKeyboard) != 0 {
+		t.Fatalf("final status pane markup must be empty, got %+v", final.InlineKeyboard)
+	}
+}
+
+func TestStatusPaneCollapsesSuccessfulToolListOnFinish(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePane(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewToolCallStartEvent("c1", "web_search"),
+		events.NewToolCallResultEvent("m", "c1", "ok"),
+		events.NewToolCallStartEvent("c2", "fs_read"),
+		events.NewToolCallResultEvent("m", "c2", "ok"),
+		events.NewRunFinishedEvent("t", "r"),
+	})
+	got := lastText(bot)
+	if strings.Contains(got, "web_search") || strings.Contains(got, "fs_read") {
+		t.Fatalf("successful finished pane should collapse tool names, got %q", got)
+	}
+	if !strings.Contains(got, "2 strumenti") {
+		t.Fatalf("successful finished pane should summarize tool count, got %q", got)
+	}
+}
+
+func TestStatusPaneKeepsFailedToolDetailOnFinish(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePane(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewToolCallStartEvent("c1", "web_fetch"),
+		events.NewToolCallResultEvent("m", "c1", "error: timeout"),
+		events.NewRunFinishedEvent("t", "r"),
+	})
+	got := lastText(bot)
+	if !strings.Contains(got, "web_fetch") || !containsRune(got, '❌') {
+		t.Fatalf("failed finished pane should keep diagnostic tool detail, got %q", got)
+	}
+}
+
 // TestStatusPaneReasoningSurvivesFinishWithLatestSnippet proves the reasoning line
 // remains useful after the final answer lands: compact, recent, and with the cost
 // footer still intact.

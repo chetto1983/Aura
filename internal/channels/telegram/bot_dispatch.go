@@ -84,6 +84,8 @@ func (t *Telegram) registerHandlers(daemonCtx context.Context, bot *tele.Bot) {
 	// \f<unique> prefix, leaving the raw token|action|value payload parseCallback
 	// expects.
 	bot.Handle(&tele.InlineButton{Unique: callbackUnique}, t.onCallback(daemonCtx))
+	bot.Handle(&tele.InlineButton{Unique: searchCallbackUnique}, t.onSearchCallback())
+	bot.Handle(&tele.InlineButton{Unique: statusCancelUnique}, t.onStatusCancelCallback())
 	// A callback NOT matching the HITL button falls through to OnCallback: ack it so
 	// the client clears the spinner; it carries no live pause to resolve (a forged
 	// or stale callback is a no-op — T-13-10-PauseHijack).
@@ -108,8 +110,8 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		}
 
 		// 1) Command intercept — a handled /command never reaches the LLM.
-		if handled, reply := t.cmds.dispatch(daemonCtx, chatID, text); handled {
-			t.reply(c, reply)
+		if handled, reply := t.cmds.dispatchRich(daemonCtx, chatID, text); handled {
+			t.replyCommand(c, reply)
 			return nil
 		}
 		// 2) A pending pause + a non-command message → a free-text HITL answer.
@@ -119,6 +121,54 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		// 3) Ordinary message → a normal turn (runTurn runs it async + shows the
 		// "Aura is working" indicator, so the poller stays free for /cancel).
 		t.runTurn(daemonCtx, c, chatID, text, false)
+		return nil
+	}
+}
+
+func (t *Telegram) onStatusCancelCallback() tele.HandlerFunc {
+	return func(c tele.Context) error {
+		cb := c.Callback()
+		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
+			return nil
+		}
+		reply := "Nessun turno in corso da annullare."
+		if t.cmds != nil {
+			reply = t.cmds.cancel(cb.Message.Chat.ID)
+		}
+		_ = c.Respond(&tele.CallbackResponse{Text: reply})
+		t.disarmCallbackKeyboard(c.Bot(), cb.Message)
+		return nil
+	}
+}
+
+func (t *Telegram) onSearchCallback() tele.HandlerFunc {
+	return func(c tele.Context) error {
+		cb := c.Callback()
+		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
+			return nil
+		}
+		page, closePager, ok := parseSearchCallback(cb.Data)
+		_ = c.Respond(&tele.CallbackResponse{Text: "Ricevuto"})
+		if !ok {
+			return nil
+		}
+		if closePager {
+			if deleter, ok := c.Bot().(botDeleter); ok {
+				_ = deleter.Delete(cb.Message)
+			}
+			return nil
+		}
+		out := t.cmds.searchPage(cb.Message.Chat.ID, page)
+		if out.text == "" {
+			return nil
+		}
+		opts := []any{}
+		if out.markup != nil {
+			opts = append(opts, &tele.SendOptions{ReplyMarkup: out.markup})
+		}
+		if _, err := c.Bot().Edit(cb.Message, out.text, opts...); err != nil {
+			slog.Warn("telegram search: page edit failed", "err", err)
+		}
 		return nil
 	}
 }
@@ -190,16 +240,50 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := cb.Message.Chat.ID
-		if !t.hitlFor(c, chatID).handleCallback(daemonCtx, cb.Data, convID(chatID)) {
+		_, action, _, valid := parseCallback(cb.Data)
+		// Acknowledge immediately so Telegram clears the button spinner and shows a
+		// small toast before any continuation turn starts rendering.
+		_ = c.Respond(callbackToast(action, valid))
+		out := t.hitlFor(c, chatID).handleCallbackResult(daemonCtx, cb.Data, convID(chatID), func(callbackOutcome) {
+			t.disarmCallbackKeyboard(c.Bot(), cb.Message)
+		})
+		if out.submitted && !out.resumed {
 			// Not resumed → either more FIFO pauses remain (render the next one) or it
 			// was a cancel/no-op (PendingFor is empty after the cancel auto-resolve, so
 			// the render no-ops). A resume (resumed==true) drove a continuation turn
 			// whose handleTurn already rendered any further pause — don't double-render.
 			t.promptPendingPause(daemonCtx, t.sender(c), chatID)
 		}
-		// Acknowledge the callback so the client clears the button's spinner.
-		_ = c.Respond()
 		return nil
+	}
+}
+
+func callbackToast(action string, valid bool) *tele.CallbackResponse {
+	return &tele.CallbackResponse{Text: callbackToastText(action, valid)}
+}
+
+func callbackToastText(action string, valid bool) string {
+	if !valid {
+		return "Non disponibile"
+	}
+	switch action {
+	case "accept":
+		return "Confermato ✓"
+	case "decline":
+		return "Rifiutato"
+	case "cancel":
+		return "Annullato"
+	default:
+		return "Ricevuto"
+	}
+}
+
+func (t *Telegram) disarmCallbackKeyboard(bot tele.API, msg *tele.Message) {
+	if bot == nil || msg == nil {
+		return
+	}
+	if _, err := bot.EditReplyMarkup(msg, nil); err != nil {
+		slog.Warn("telegram hitl: prompt markup clear failed", "err", err)
 	}
 }
 
@@ -418,6 +502,19 @@ func (t *Telegram) reply(c tele.Context, text string) {
 	}
 	if err := c.Send(text); err != nil {
 		slog.Warn("telegram: reply send failed", "err", err)
+	}
+}
+
+func (t *Telegram) replyCommand(c tele.Context, out commandReply) {
+	if out.text == "" {
+		return
+	}
+	if out.markup == nil {
+		t.reply(c, out.text)
+		return
+	}
+	if err := c.Send(out.text, &tele.SendOptions{ReplyMarkup: out.markup}); err != nil {
+		slog.Warn("telegram: command reply send failed", "err", err)
 	}
 }
 

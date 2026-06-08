@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -61,6 +62,26 @@ func TestCommandsInterceptTenWithoutLLM(t *testing.T) {
 	}
 }
 
+func TestBotMenuCommandsMirrorInterceptedCommands(t *testing.T) {
+	t.Parallel()
+	want := []string{"start", "help", "cancel", "cost", "search", "new", "list", "reset", "whoami", "stop"}
+	got := botMenuCommands()
+	if len(got) != len(want) {
+		t.Fatalf("menu command count = %d, want %d", len(got), len(want))
+	}
+	for i, cmd := range got {
+		if cmd.Text != want[i] {
+			t.Errorf("menu command %d = %q, want %q", i, cmd.Text, want[i])
+		}
+		if strings.HasPrefix(cmd.Text, "/") {
+			t.Errorf("menu command %q must omit the slash for setMyCommands", cmd.Text)
+		}
+		if cmd.Description == "" {
+			t.Errorf("menu command %q has empty description", cmd.Text)
+		}
+	}
+}
+
 // TestUnknownCommandReturnsHelpHintNoLLM proves an unknown /command is handled
 // (a help hint), never an LLM call (T-13-06-CmdLLMBypass).
 func TestUnknownCommandReturnsHelpHintNoLLM(t *testing.T) {
@@ -114,6 +135,34 @@ func TestSearchEqualsCLI(t *testing.T) {
 		if !strings.Contains(reply, ex) {
 			t.Errorf("/search reply missing CLI-identical excerpt %q\nreply:\n%s", ex, reply)
 		}
+	}
+}
+
+func TestSearchRichPaginatesResults(t *testing.T) {
+	t.Parallel()
+	hits := make([]conversations.SearchResult, 0, searchPageSize+1)
+	for i := 0; i < searchPageSize+1; i++ {
+		hits = append(hits, conversations.SearchResult{Seq: i + 1, Content: "meteo risultato " + strconv.Itoa(i+1)})
+	}
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{results: hits}, Cost: &fakeCost{}})
+
+	out := cmds.searchRich(context.Background(), 42, "meteo")
+	if out.text == "" {
+		t.Fatal("paginated search must render the first page")
+	}
+	if strings.Contains(out.text, "risultato "+strconv.Itoa(searchPageSize+1)) {
+		t.Fatalf("first page must not include page 2 result, got %q", out.text)
+	}
+	if out.markup == nil || len(out.markup.InlineKeyboard) == 0 {
+		t.Fatalf("paginated search must include inline navigation markup")
+	}
+
+	next := cmds.searchPage(42, 1)
+	if !strings.Contains(next.text, "risultato "+strconv.Itoa(searchPageSize+1)) {
+		t.Fatalf("next page must render the stored second page, got %q", next.text)
+	}
+	if next.markup == nil {
+		t.Fatalf("next page must keep navigation markup")
 	}
 }
 

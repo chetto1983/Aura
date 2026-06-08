@@ -45,10 +45,19 @@ const callbackUnique = "aura_hitl"
 // value, not free prose).
 const callbackSep = "|"
 
+const callbackDataMaxBytes = 64
+
 // hitl renders ask_user pauses and resolves them through the Runner.
 type hitl struct {
 	runner resumeRunner
 	resume resumeFunc
+}
+
+type callbackOutcome struct {
+	action    string
+	content   string
+	submitted bool
+	resumed   bool
 }
 
 // newHitl builds the HITL surface over the Runner pause backend + the resume
@@ -95,14 +104,40 @@ func (h *hitl) send(bot botSender, to tele.Recipient, text string, markup *tele.
 // Runner already injected the terminating answers + auto-resolved). It returns
 // whether a resume was driven.
 func (h *hitl) handleCallback(ctx context.Context, data, convID string) (resumed bool) {
+	return h.handleCallbackResult(ctx, data, convID, nil).resumed
+}
+
+func (h *hitl) handleCallbackResult(
+	ctx context.Context,
+	data, convID string,
+	afterSubmit func(callbackOutcome),
+) callbackOutcome {
 	token, action, value, ok := parseCallback(data)
 	if !ok {
-		return false
+		return callbackOutcome{}
 	}
+	out := callbackOutcome{action: action}
 	if action == askuser.ActionAccept {
 		value = h.resolveChoiceValue(ctx, convID, token, value)
 	}
-	return h.submit(ctx, convID, token, action, value)
+	out.content = value
+	remaining, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: value})
+	if err != nil {
+		slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
+		return out
+	}
+	out.submitted = true
+	if afterSubmit != nil {
+		afterSubmit(out)
+	}
+	if action == askuser.ActionCancel || remaining > 0 {
+		return out
+	}
+	if h.resume != nil {
+		h.resume(ctx, convID)
+	}
+	out.resumed = true
+	return out
 }
 
 // resolveChoiceValue maps a choice button's compact option INDEX (carried in
@@ -222,7 +257,11 @@ func decodeOptions(raw []byte) []pauseOption {
 // is kept compact (an option value or a short marker), well under Telegram's
 // 64-byte callback_data ceiling.
 func callbackData(token, action, value string) string {
-	return strings.Join([]string{token, action, value}, callbackSep)
+	data := strings.Join([]string{token, action, value}, callbackSep)
+	if len(data) > callbackDataMaxBytes {
+		panic("telegram callback_data exceeds 64 bytes")
+	}
+	return data
 }
 
 // parseCallback splits a token|action|value payload, validating the token+action

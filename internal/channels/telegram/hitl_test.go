@@ -394,3 +394,13 @@ func TestHITLChoiceCallbackResolvesIndexToValue(t *testing.T) {
 		t.Errorf("submitted content = %q, want the resolved option value %q", calls[0].content, val)
 	}
 }
+
+func TestCallbackDataPanicsOverTelegramLimit(t *testing.T) {
+	t.Parallel()
+	defer func() {
+		if recover() == nil {
+			t.Fatal("callbackData must fail loudly when the internal payload exceeds Telegram's 64-byte limit")
+		}
+	}()
+	callbackData(strings.Repeat("x", 65), askuser.ActionAccept, "")
+}

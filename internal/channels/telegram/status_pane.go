@@ -23,6 +23,8 @@ const (
 	glyphThink   = "💭"
 
 	statusReasoningCap = 160
+	statusCancelUnique = "aura_cancel"
+	statusCancelData   = "cancel"
 )
 
 // hitlPauseToolName is the ask_user pause primitive's tool name. ask_user is a HITL
@@ -58,6 +60,7 @@ type statusPane struct {
 	thinking string
 	cost     string
 	failed   bool
+	done     bool
 
 	lastEdit time.Time
 	dirty    bool
@@ -113,10 +116,12 @@ func (p *statusPane) handle(ev events.Event) {
 		p.applyCost(e.Delta)
 	case *events.RunErrorEvent:
 		p.failed = true
+		p.done = true
 		p.dirty = true
 	case *events.RunFinishedEvent:
 		// Keep the compact final 💭 line: Telegram users read it as the run's last
 		// visible status, while msg #2 carries the actual answer.
+		p.done = true
 		p.dirty = true
 	}
 }
@@ -193,14 +198,15 @@ func (p *statusPane) render(_ context.Context, final bool) {
 	if text == "" {
 		return
 	}
+	opts := &tele.SendOptions{ReplyMarkup: p.markup()}
 	if p.msg == nil {
-		out, err := p.bot.Send(p.to, text)
+		out, err := p.bot.Send(p.to, text, opts)
 		if err != nil {
 			return
 		}
 		p.msg = out
 	} else {
-		out, err := p.bot.Edit(p.msg, text)
+		out, err := p.bot.Edit(p.msg, text, opts)
 		if err == nil && out != nil {
 			p.msg = out
 		}
@@ -219,9 +225,14 @@ func (p *statusPane) text() string {
 	} else {
 		b.WriteString("Aura")
 	}
-	for _, ts := range p.tools {
+	if p.collapseTools() {
 		b.WriteString("\n")
-		b.WriteString(ts.glyph + " " + ts.name)
+		b.WriteString(glyphOK + " " + toolCountLabel(len(p.tools)))
+	} else {
+		for _, ts := range p.tools {
+			b.WriteString("\n")
+			b.WriteString(ts.glyph + " " + ts.name)
+		}
 	}
 	if reasoning := statusReasoningSnippet(p.thinking); reasoning != "" {
 		b.WriteString("\n" + glyphThink + " " + reasoning)
@@ -230,6 +241,34 @@ func (p *statusPane) text() string {
 		b.WriteString("\n— " + p.cost)
 	}
 	return b.String()
+}
+
+func (p *statusPane) collapseTools() bool {
+	if !p.done || p.failed || len(p.tools) == 0 {
+		return false
+	}
+	for _, ts := range p.tools {
+		if ts.failed || ts.glyph == glyphFail {
+			return false
+		}
+	}
+	return true
+}
+
+func toolCountLabel(n int) string {
+	if n == 1 {
+		return "1 strumento"
+	}
+	return fmt.Sprintf("%d strumenti", n)
+}
+
+func (p *statusPane) markup() *tele.ReplyMarkup {
+	if p.done {
+		return &tele.ReplyMarkup{}
+	}
+	return &tele.ReplyMarkup{InlineKeyboard: [][]tele.InlineButton{{
+		{Unique: statusCancelUnique, Text: "Annulla", Data: statusCancelData},
+	}}}
 }
 
 // looksLikeToolError reports whether a tool-result preview indicates a failure (the

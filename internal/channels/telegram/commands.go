@@ -12,12 +12,14 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	tele "gopkg.in/telebot.v4"
 )
 
 // searchBackend is the consumer-side seam over the locked FTS query
@@ -40,6 +42,12 @@ type costBackend interface {
 // searchResultLimit bounds the /search backend call (the CLI default).
 const searchResultLimit = 20
 
+const (
+	searchPageSize       = 5
+	searchCallbackUnique = "aura_search"
+	searchCallbackPrefix = "srch"
+)
+
 // commandDeps are the dispatcher inputs: the two reused backends plus the price
 // table + model that drive the /cost render (identical to the CLI cost footer).
 type commandDeps struct {
@@ -54,13 +62,23 @@ type commandDeps struct {
 type commands struct {
 	deps commandDeps
 
-	mu      sync.Mutex
-	cancels map[int64]context.CancelFunc // chatID → the in-flight turn's cancel
+	mu          sync.Mutex
+	cancels     map[int64]context.CancelFunc // chatID → the in-flight turn's cancel
+	searchPages map[int64]searchPagerState
 }
 
 // newCommands builds a dispatcher over the supplied backends.
 func newCommands(d commandDeps) *commands {
-	return &commands{deps: d, cancels: make(map[int64]context.CancelFunc)}
+	return &commands{deps: d, cancels: make(map[int64]context.CancelFunc), searchPages: make(map[int64]searchPagerState)}
+}
+
+type commandReply struct {
+	text   string
+	markup *tele.ReplyMarkup
+}
+
+type searchPagerState struct {
+	pages []string
 }
 
 // registerTurn records the in-flight turn's cancel func for a chat so a later
@@ -90,35 +108,44 @@ func (c *commands) unregisterTurn(chatID int64) {
 // unknown one (a /help hint) — so a command NEVER reaches handleTurn. A
 // non-command message returns handled=false; the caller then drives an LLM turn.
 func (c *commands) dispatch(ctx context.Context, chatID int64, text string) (handled bool, reply string) {
+	handled, out := c.dispatchRich(ctx, chatID, text)
+	return handled, out.text
+}
+
+func (c *commands) dispatchRich(ctx context.Context, chatID int64, text string) (handled bool, reply commandReply) {
 	trimmed := strings.TrimSpace(text)
 	if !strings.HasPrefix(trimmed, "/") {
-		return false, ""
+		return false, commandReply{}
 	}
 	name, arg := splitCommand(trimmed)
 	switch name {
 	case "/start":
-		return true, "Ciao! Sono Aura. Scrivimi quello che ti serve, oppure usa /help per i comandi."
+		return true, textReply("Ciao! Sono Aura. Scrivimi quello che ti serve, oppure usa /help per i comandi.")
 	case "/help":
-		return true, helpText
+		return true, textReply(helpText)
 	case "/cancel":
-		return true, c.cancel(chatID)
+		return true, textReply(c.cancel(chatID))
 	case "/cost":
-		return true, c.cost(ctx)
+		return true, textReply(c.cost(ctx))
 	case "/search":
-		return true, c.search(ctx, arg)
+		return true, c.searchRich(ctx, chatID, arg)
 	case "/new":
-		return true, "In Telegram questa chat resta un thread continuo. Per aprire o gestire conversazioni separate usa l'app o la CLI."
+		return true, textReply("In Telegram questa chat resta un thread continuo. Per aprire o gestire conversazioni separate usa l'app o la CLI.")
 	case "/list":
-		return true, "Usa l'app per sfogliare le conversazioni; qui ogni chat è un thread continuo."
+		return true, textReply("Usa l'app per sfogliare le conversazioni; qui ogni chat è un thread continuo.")
 	case "/reset":
-		return true, c.cancel(chatID) + "\nLo storico resta come prima in questa build Telegram."
+		return true, textReply(c.cancel(chatID) + "\nLo storico resta come prima in questa build Telegram.")
 	case "/whoami":
-		return true, "Sei l'utente locale di questa istanza di Aura."
+		return true, textReply("Sei l'utente locale di questa istanza di Aura.")
 	case "/stop":
-		return true, c.cancel(chatID) + "\nIl bot resta attivo."
+		return true, textReply(c.cancel(chatID) + "\nIl bot resta attivo.")
 	default:
-		return true, "Istruzione non riconosciuta. Usa /help per la lista dei comandi."
+		return true, textReply("Istruzione non riconosciuta. Usa /help per la lista dei comandi.")
 	}
+}
+
+func textReply(s string) commandReply {
+	return commandReply{text: s}
 }
 
 // helpText lists the 10 bot-intercept commands (no LLM call drives a command).
@@ -163,33 +190,119 @@ func (c *commands) cost(ctx context.Context) string {
 	return fmt.Sprintf("Spesa di oggi: %s (%d token in, %d token out)", display, prompt, completion)
 }
 
-// search reuses conversations.SearchConversationTurns byte-for-byte and renders
+// searchRich reuses conversations.SearchConversationTurns byte-for-byte and renders
 // the matching turn excerpts with the SAME excerpt window the CLI uses
 // (cross-slice invariant). An empty query returns a usage hint without a backend
 // call.
-func (c *commands) search(ctx context.Context, query string) string {
+func (c *commands) searchRich(ctx context.Context, chatID int64, query string) commandReply {
 	query = strings.TrimSpace(query)
 	if query == "" {
-		return "Uso: /search <testo da cercare>"
+		return textReply("Uso: /search <testo da cercare>")
 	}
 	if c.deps.Search == nil {
-		return "Ricerca non disponibile."
+		return textReply("Ricerca non disponibile.")
 	}
 	hits, err := c.deps.Search.SearchConversationTurns(ctx, query, searchResultLimit)
 	if err != nil {
-		return "Ricerca non disponibile per ora."
+		return textReply("Ricerca non disponibile per ora.")
 	}
 	if len(hits) == 0 {
-		return "Nessun risultato."
+		return textReply("Nessun risultato.")
 	}
-	var b strings.Builder
-	for i, h := range hits {
-		if i > 0 {
-			b.WriteByte('\n')
+	lines := make([]string, 0, len(hits))
+	for _, h := range hits {
+		lines = append(lines, fmt.Sprintf("• [%d] %s", h.Seq, searchExcerpt(h.Content, query)))
+	}
+	pages := paginateSearchLines(lines)
+	if len(pages) <= 1 {
+		return textReply(strings.Join(lines, "\n"))
+	}
+	c.mu.Lock()
+	c.searchPages[chatID] = searchPagerState{pages: pages}
+	c.mu.Unlock()
+	return c.renderSearchPage(chatID, 0)
+}
+
+func (c *commands) searchPage(chatID int64, page int) commandReply {
+	return c.renderSearchPage(chatID, page)
+}
+
+func (c *commands) renderSearchPage(chatID int64, page int) commandReply {
+	c.mu.Lock()
+	state, ok := c.searchPages[chatID]
+	c.mu.Unlock()
+	if !ok || len(state.pages) == 0 {
+		return textReply("Ricerca scaduta. Ripeti /search.")
+	}
+	if page < 0 {
+		page = 0
+	}
+	if page >= len(state.pages) {
+		page = len(state.pages) - 1
+	}
+	return commandReply{
+		text:   fmt.Sprintf("%s\n\nPagina %d/%d", state.pages[page], page+1, len(state.pages)),
+		markup: searchMarkup(page, len(state.pages)),
+	}
+}
+
+func paginateSearchLines(lines []string) []string {
+	if len(lines) == 0 {
+		return nil
+	}
+	pages := make([]string, 0, (len(lines)+searchPageSize-1)/searchPageSize)
+	for start := 0; start < len(lines); start += searchPageSize {
+		end := start + searchPageSize
+		if end > len(lines) {
+			end = len(lines)
 		}
-		fmt.Fprintf(&b, "• [%d] %s", h.Seq, searchExcerpt(h.Content, query))
+		pages = append(pages, strings.Join(lines[start:end], "\n"))
 	}
-	return b.String()
+	return pages
+}
+
+func searchMarkup(page, total int) *tele.ReplyMarkup {
+	mk := &tele.ReplyMarkup{}
+	prev := page - 1
+	if prev < 0 {
+		prev = 0
+	}
+	next := page + 1
+	if next >= total {
+		next = total - 1
+	}
+	mk.InlineKeyboard = [][]tele.InlineButton{
+		{
+			{Unique: searchCallbackUnique, Text: "Indietro", Data: searchCallbackData(prev)},
+			{Unique: searchCallbackUnique, Text: fmt.Sprintf("%d/%d", page+1, total), Data: searchCallbackData(page)},
+			{Unique: searchCallbackUnique, Text: "Avanti", Data: searchCallbackData(next)},
+		},
+		{{Unique: searchCallbackUnique, Text: "Chiudi", Data: searchCallbackCloseData()}},
+	}
+	return mk
+}
+
+func searchCallbackData(page int) string {
+	return fmt.Sprintf("%s|%d", searchCallbackPrefix, page)
+}
+
+func searchCallbackCloseData() string {
+	return searchCallbackPrefix + "|close"
+}
+
+func parseSearchCallback(data string) (page int, close bool, ok bool) {
+	prefix, raw, found := strings.Cut(data, callbackSep)
+	if !found || prefix != searchCallbackPrefix {
+		return 0, false, false
+	}
+	if raw == "close" {
+		return 0, true, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false, false
+	}
+	return n, false, true
 }
 
 // splitCommand splits "/name rest of args" into the lowercased command name and
