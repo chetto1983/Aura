@@ -224,8 +224,14 @@ services:
 
   # markitdown — document → markdown converter. POST /convert (tiered ≤5MB sync /
   # 5-50MB async / >50MB refuse on the Aura side). DOCUMENTS_BASE_URL points here.
+  # Built in-repo (docker/markitdown): a thin FastAPI /convert over the OFFICIAL
+  # microsoft/markitdown lib — the lib ships no HTTP server, and an unpinned
+  # community image would dodge the supply-chain discipline (cf. the 13-01 deps gate).
   markitdown:
-    image: ${AURA_MARKITDOWN_IMAGE:-ghcr.io/microsoft/markitdown:latest}
+    build:
+      context: ./docker/markitdown
+    image: ${AURA_MARKITDOWN_IMAGE:-aura-markitdown:local}
+    pull_policy: never
     container_name: aura-markitdown
     restart: unless-stopped
     ports:
@@ -235,7 +241,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 12
-      start_period: 20s
+      start_period: 40s                        # first-boot: markitdown[all] import
 
 volumes:
   aura-postgres:

@@ -27,6 +27,7 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -58,6 +59,7 @@ func liveMultimodalConfig() MultimodalConfig {
 		TTSBaseURL:        os.Getenv("TTS_BASE_URL"),
 		TTSVoice:          envOr("TTS_VOICE", "if_sara"),
 		TTSFormat:         envOr("TTS_FORMAT", "opus"),
+		DocumentsBaseURL:  os.Getenv("DOCUMENTS_BASE_URL"),
 		// A live sidecar round-trip can take seconds on CPU; keep the per-request
 		// ceiling generous so a healthy-but-slow synthesis is not aborted mid-read.
 		TimeoutSec: 60,
@@ -142,6 +144,32 @@ func TestLiveTTSVoiceBytes(t *testing.T) {
 	}
 	if len(opus) == 0 {
 		t.Fatal("aura-tts produced zero opus bytes")
+	}
+}
+
+// TestLiveDocumentConvert sends a small document through the tiered documentsClient
+// to the markitdown sidecar and asserts the ≤5MB SYNC tier returns non-empty
+// markdown carrying the document's text — the UX-04 documents leg, the official
+// microsoft/markitdown lib behind the in-repo docker/markitdown /convert wrapper.
+func TestLiveDocumentConvert(t *testing.T) {
+	docURL := sidecarEnvOrSkip(t, "DOCUMENTS_BASE_URL")
+
+	cfg := liveMultimodalConfig()
+	cfg.DocumentsBaseURL = docURL
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	doc := []byte("<h1>Relazione Aura</h1>\n<p>Questo è un documento di prova.</p>\n")
+	res, err := newDocumentsClient(cfg).Convert(ctx, doc, "relazione.html")
+	if err != nil {
+		t.Fatalf("live markitdown convert: %v", err)
+	}
+	if res.Status != ConvertSync {
+		t.Fatalf("a small (≤5MB) document must convert synchronously; got status %v", res.Status)
+	}
+	if !strings.Contains(res.Markdown, "Relazione Aura") {
+		t.Fatalf("converted markdown missing the document heading; got %q", res.Markdown)
 	}
 }
 

@@ -49,6 +49,7 @@ export NEO4J_PASSWORD="$(getenv NEO4J_PASSWORD)"
 export STT_BASE_URL="${STT_BASE_URL:-http://127.0.0.1:9000/v1}"
 export TTS_BASE_URL="${TTS_BASE_URL:-http://127.0.0.1:8880/v1}"
 export MULTIMODAL_BASE_URL="${MULTIMODAL_BASE_URL:-http://127.0.0.1:8082/v1}"
+export DOCUMENTS_BASE_URL="${DOCUMENTS_BASE_URL:-http://127.0.0.1:8083}"  # markitdown /convert is at root (no /v1)
 HOST="${PGHOST:-127.0.0.1}"; PORT="${PGPORT:-5432}"
 PWD_ENC="$(python3 -c "import urllib.parse,os;print(urllib.parse.quote(os.environ['POSTGRES_PASSWORD'],safe=''))")"
 export AURA_DB_URL="postgres://aura_app:${PWD_ENC}@${HOST}:${PORT}/aura?sslmode=disable"
@@ -70,7 +71,7 @@ run_tier() { # tag, runregex, label
   done < <(printf '%s\n' "$out")
 }
 run_tier telegram_integration 'TestLiveSend' telegram
-run_tier multimodal_integration 'TestLiveTTSThenSTTRoundTrip|TestLivePhotoOCRRoundTrip|TestLiveTTSVoiceBytes' multimodal
+run_tier multimodal_integration 'TestLiveTTSThenSTTRoundTrip|TestLivePhotoOCRRoundTrip|TestLiveTTSVoiceBytes|TestLiveDocumentConvert' multimodal
 
 # --- 2) setup-wizard HTTP E2E via aura serve ----------------------------------
 echo "==> [2/2] setup-wizard :9081 E2E (aura serve)"
