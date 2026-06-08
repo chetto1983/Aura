@@ -208,6 +208,7 @@ func TestOnTextPlainMessageDrivesTurn(t *testing.T) {
 	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onText(plain): %v", err)
 	}
+	tg.wg.Wait() // the turn now runs async off the poller — join it before asserting
 
 	calls, msgs := rt.snapshot()
 	if calls != 1 {
@@ -215,6 +216,64 @@ func TestOnTextPlainMessageDrivesTurn(t *testing.T) {
 	}
 	if len(msgs) != 1 || msgs[0] != "ciao Aura" {
 		t.Errorf("turn userMsg = %v, want [ciao Aura]", msgs)
+	}
+}
+
+// TestOnTextCancelInterruptsRunningTurn proves the live poller-blocking fix: a turn
+// runs OFF the handler goroutine, so while one is in-flight (a) a second message is
+// rejected with the busy copy (no concurrent turn on the same conversation) and (b)
+// /cancel reaches its handler and aborts the running turn. If the turn ran
+// synchronously the first onText would block forever and this test would time out —
+// its completion is itself proof the dispatch is async.
+func TestOnTextCancelInterruptsRunningTurn(t *testing.T) {
+	t.Parallel()
+	started := make(chan struct{})
+	var once sync.Once
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Cost = &fakeCost{}
+		d.Search = &fakeSearch{}
+		d.Turn = func(ctx context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {
+			return func(_ func(*agent.Event, error) bool) {
+				once.Do(func() { close(started) })
+				<-ctx.Done() // block until /cancel fires the turn ctx
+			}
+		}
+	})
+
+	bot := &dispatchBot{}
+	handle := tg.onText(context.Background())
+
+	first := chatMsg(7)
+	first.Text = "scrivimi una storia lunga"
+	if err := handle(msgContext(bot, first)); err != nil { // returns immediately if async
+		t.Fatalf("onText(first): %v", err)
+	}
+	<-started // turn 1 is in-flight + registered
+
+	second := chatMsg(7)
+	second.Text = "un'altra cosa"
+	if err := handle(msgContext(bot, second)); err != nil { // busy → no 2nd turn
+		t.Fatalf("onText(second): %v", err)
+	}
+
+	cancelMsg := chatMsg(7)
+	cancelMsg.Text = "/cancel"
+	if err := handle(msgContext(bot, cancelMsg)); err != nil { // reaches handler → aborts turn 1
+		t.Fatalf("onText(/cancel): %v", err)
+	}
+	tg.wg.Wait() // turn 1 unblocks once its ctx is cancelled
+
+	var busy, cancelled bool
+	for _, s := range bot.sentTexts() {
+		busy = busy || strings.Contains(s, "ancora elaborando")
+		cancelled = cancelled || strings.Contains(s, "annullato")
+	}
+	if !busy {
+		t.Errorf("a 2nd message while a turn runs must get the busy copy; texts=%v", bot.sentTexts())
+	}
+	if !cancelled {
+		t.Errorf("/cancel must abort the running turn and confirm; texts=%v", bot.sentTexts())
 	}
 }
 
@@ -237,6 +296,7 @@ func TestOnVoiceRoutesToTranscribe(t *testing.T) {
 	if err := tg.onVoice(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onVoice: %v", err)
 	}
+	tg.wg.Wait() // the turn now runs async off the poller — join it before asserting
 
 	calls, msgs := rt.snapshot()
 	if calls != 1 {
@@ -300,6 +360,7 @@ func TestOnPhotoRoutesToDescribe(t *testing.T) {
 	if err := tg.onPhoto(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onPhoto: %v", err)
 	}
+	tg.wg.Wait() // the turn now runs async off the poller — join it before asserting
 
 	calls, msgs := rt.snapshot()
 	if calls != 1 {
@@ -334,6 +395,7 @@ func TestOnDocumentSyncRoutesToConvert(t *testing.T) {
 	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onDocument: %v", err)
 	}
+	tg.wg.Wait() // the turn now runs async off the poller — join it before asserting
 
 	calls, msgs := rt.snapshot()
 	if calls != 1 {

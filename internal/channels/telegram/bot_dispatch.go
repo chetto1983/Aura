@@ -44,6 +44,7 @@ const (
 	describeFailMessage     = "❌ Analisi dell'immagine non disponibile."
 	convertFailMessage      = "❌ Conversione del documento non disponibile."
 	documentAcceptedMessage = "📄 Documento ricevuto, lo sto elaborando…"
+	turnBusyMessage         = "⏳ Sto ancora elaborando la richiesta precedente. Usa /cancel per annullarla."
 )
 
 // buildDispatch constructs the per-channel dispatch instances ONCE from Deps. The
@@ -105,9 +106,8 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		if t.hitlHandlesText(daemonCtx, c, chatID, text) {
 			return nil
 		}
-		// 3) Ordinary message → a normal turn (with the "Aura is working" indicator).
-		stop := keepWorking(daemonCtx, c, tele.Typing)
-		defer stop()
+		// 3) Ordinary message → a normal turn (runTurn runs it async + shows the
+		// "Aura is working" indicator, so the poller stays free for /cancel).
 		t.runTurn(daemonCtx, c, chatID, text, false)
 		return nil
 	}
@@ -308,11 +308,29 @@ func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int
 		return
 	}
 	turnCtx, cancel := context.WithCancel(daemonCtx)
-	defer cancel()
-	t.cmds.registerTurn(chatID, cancel)
-	defer t.cmds.unregisterTurn(chatID)
-
-	t.handleTurn(turnCtx, t.sender(c), chatID, &text, inboundWasVoice)
+	if !t.cmds.registerTurn(chatID, cancel) {
+		cancel()
+		t.reply(c, turnBusyMessage) // a turn is already running for this chat
+		return
+	}
+	// Run the turn OFF the telebot handler goroutine: telebot dispatches updates
+	// sequentially, so a synchronous turn blocks the poller — a long/hung turn would
+	// freeze the whole bot AND make /cancel undeliverable (it can never reach its
+	// handler to fire the cancel). Capture the stable bot + recipient before spawning
+	// (the tele.Context is recycled once the handler returns). The goroutine is
+	// tracked by t.wg so Stop drains it (goleak-clean).
+	sender := t.sender(c)
+	notifier, _ := c.Bot().(botNotifier)
+	to := c.Recipient()
+	t.wg.Add(1)
+	go func() {
+		defer t.wg.Done()
+		defer cancel()
+		defer t.cmds.unregisterTurn(chatID)
+		stop := pulseChatAction(turnCtx, notifier, to, tele.Typing) // "Aura is working" for the whole turn
+		defer stop()
+		t.handleTurn(turnCtx, sender, chatID, &text, inboundWasVoice)
+	}()
 }
 
 // reply sends a plain user-facing message (a command reply / a fail copy). It is

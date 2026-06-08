@@ -64,12 +64,18 @@ func newCommands(d commandDeps) *commands {
 }
 
 // registerTurn records the in-flight turn's cancel func for a chat so a later
-// /cancel can fire it. The channel registers on turn start and unregisters on
-// turn end (a stale func is never fired).
-func (c *commands) registerTurn(chatID int64, cancel context.CancelFunc) {
+// /cancel can fire it. It returns false when a turn is ALREADY in flight for the
+// chat — the caller must not start a second concurrent turn on the same
+// conversation (it would race appendUserTurn / interleave the persisted history).
+// The channel registers on turn start and unregisters on turn end.
+func (c *commands) registerTurn(chatID int64, cancel context.CancelFunc) bool {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, busy := c.cancels[chatID]; busy {
+		return false
+	}
 	c.cancels[chatID] = cancel
-	c.mu.Unlock()
+	return true
 }
 
 // unregisterTurn drops a chat's in-flight cancel func (turn ended).
