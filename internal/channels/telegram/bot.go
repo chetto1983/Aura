@@ -18,10 +18,15 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/channels"
 )
 
 // channelName keys AURA_CHANNEL_TELEGRAM_ENABLED (the registry enable gate).
 const channelName = "telegram"
+
+// compile-time proof that *Telegram satisfies the narrow channels.Channel
+// lifecycle contract (Name/Start/Stop/IsHealthy) — the registry mounts it as one.
+var _ channels.Channel = (*Telegram)(nil)
 
 // turnDriver is the per-turn loop seam: it yields the agent's *agent.Event stream
 // for one round over a conversation. *runner.Runner.Turn satisfies it. Declaring
