@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: ready_for_next_phase
-stopped_at: "Phase 13 complete after gsd-validate-phase 13; next phase is Phase 14"
-last_updated: "2026-06-08T20:35:00.000Z"
-last_activity: 2026-06-08 -- Phase 13 Plan 10 closed. Telegram inbound dispatch is wired for commands, HITL, voice, photo, document, artifact delivery, status-pane cancel, search pagination, and TTS-out. Telegram UX cleanup from docs/telegram-ux-best-practices.md is implemented and pushed in 6d9ebdbf. gsd-validate-phase 13 audited 13-VALIDATION.md to Nyquist-compliant, created 13-10-SUMMARY.md, and live-checked the logged-in Telegram Web Aura_bot chat via CDP: /search meteo -> Nessun risultato, /cost -> today spend summary, /cancel -> no-running-turn confirmation. Verification green: go test -race ./internal/channels/telegram/ ./internal/agui/ ./internal/config/ ./cmd/aura/; go test ./internal/channels/... ./internal/setup/... ./internal/agent/tools/ -count=1; go test ./... -count=1; git diff --check; pre-push lint/build on the implementation commit.
+status: ready_to_execute
+stopped_at: "Phase 14 planned; ready to execute Wave 1"
+last_updated: "2026-06-08T19:16:28.258Z"
+last_activity: 2026-06-08 -- Phase 14 planning complete
 progress:
   total_phases: 20
   completed_phases: 16
-  total_plans: 105
+  total_plans: 110
   completed_plans: 104
   percent: 80
 ---
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 13 (channels-telegram-multimodal) — COMPLETE
-Plan: 10 of 10 — complete
-Status: Phase 13 closed by `$gsd-validate-phase 13`; next phase is Phase 14.
-Last activity: 2026-06-08 -- Phase 13 validation complete; 13-10-SUMMARY.md written; 13-VALIDATION.md marked Nyquist-compliant.
+Phase: 14 (onboarding-agent-md) -- PLANNED
+Plan: 0 of 5 -- ready
+Status: Phase 14 planned; ready to execute Wave 1 (`14-01-PLAN.md` + `14-02-PLAN.md`).
+Last activity: 2026-06-08 -- Phase 14 planning complete
 
 Progress: [████████░░] 80% (16/20 phases)
 
 ### Next — Phase 14
 
-Phase 12 AG-UI Gateway closed: live SSE round-trip (POST /agent/run) + GET MESSAGES_SNAPSHOT + REASONING_* lifecycle (amendment #57) proven live; operator delegated Gate-3 to an autonomous E2E loop scoring 11/11. UX-01 complete.
+Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegram/setup seams.
 
-`/gsd-plan-phase 14` — Onboarding + Agent.md, using the now-complete Phase 13 Telegram/setup surface. Remaining after 14: 15 Memory -> 17 Packaging.
+`/gsd-execute-phase 14` -- start Wave 1 with profile filesystem/CLI plus identity-aware `messages[1]` prompt injection. Remaining after 14: 15 Memory -> 17 Packaging.
 
 ## Performance Metrics
 
@@ -223,5 +223,5 @@ Items acknowledged and carried forward from previous milestone close:
 ## Session Continuity
 
 Last session: 2026-06-08T09:48:13.000Z
-Stopped at: Completed 13-07-PLAN.md (Wave-3 setup wizard backend: isolated :9081 token-gated HTTP/SSE API — getMe-validate, onboard-link+ASCII QR, status, events SSE poll-2s goleak-clean)
-Resume file: .planning/phases/13-channels-telegram-multimodal/13-08-PLAN.md
+Stopped at: Phase 14 planned; ready to execute Wave 1.
+Resume file: .planning/phases/14-onboarding-agent-md/14-01-PLAN.md

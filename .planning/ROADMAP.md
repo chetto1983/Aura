@@ -392,7 +392,26 @@ Wave 4:
   4. Operator saves a Python snippet via `aura skills snippet save --lang python --name fetch-issue` and runs it via `aura skills snippet exec fetch-issue` — observes execution in sandbox 2b session, output captured, TTL archive after `AURA_SKILL_SNIPPET_TTL_DAYS`
   5. Operator runs `aura skills catalog list` on a fresh install and observes skills.sh `/api/search` JSON results out of the box (catalog browse is default-ON); `aura skills disable-catalog` is the default-deny escape hatch (D-12, amendment #14 FLIPPED)
 
-**Plans**: TBD
+**Plans**:
+
+**Wave 1** (parallel foundations)
+
+- [ ] 14-01-PLAN.md — Profile filesystem store + CLI: `internal/profile` owns per-identity `Agent.md`, `preferences.json`, `metadata.json`, and `changelog.md`; Windows uses replace-with-write-through instead of bare overwrite; `aura profile show/add-fact` exposes the operator surface.
+- [ ] 14-02-PLAN.md — Identity-aware `messages[1]` injection: runner resolves the active identity, composes profile-first always block, preserves `messages[0]` byte stability, and extends the cache audit to prove Agent.md stays at protected user-role `messages[1]`.
+
+**Wave 2** (blocked on Wave 1)
+
+- [ ] 14-03-PLAN.md — Profile onboarding workflow: build the `LoopAgent[InterviewStepAgent]` conversation, deterministic profile extraction/rendering, and confirmation escalation via `Event{Actions.Escalate=true}`.
+
+**Wave 3** (blocked on Wave 2)
+
+- [ ] 14-04-PLAN.md — Telegram profile onboarding integration: first-time profile onboarding and `/onboard` route, while keeping Phase 13 setup `/start <token>` account activation separate and higher priority.
+
+**Wave 4** (blocked on Wave 3)
+
+- [ ] 14-05-PLAN.md — Integrated verification and live signoff: cache-invariant replay, CLI profile update proof, Telegram live checkpoint, docs/status closure, and UX-05 completion evidence.
+
+**Cross-cutting constraints**: `Agent.md` must be filesystem-backed, not Neo4j/Postgres; it must inject at `messages[1]` as `RoleUser`, never `messages[0]` or a second system message; cache audit and live validation must pass before UX-05 is marked complete.
 
 ### Phase 12: AG-UI Gateway
 
