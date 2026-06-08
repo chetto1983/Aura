@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 13-01-PLAN.md
-last_updated: "2026-06-08T08:20:00.000Z"
-last_activity: 2026-06-08 -- Completed Phase 13 Plan 01 (deps + migration 0012 + telegram.Store + goleak harnesses)
+stopped_at: Completed 13-02-PLAN.md
+last_updated: "2026-06-08T09:05:00.000Z"
+last_activity: 2026-06-08 -- Completed Phase 13 Plan 02 (send_file Deferred tool + Meta→ArtifactDelta lift + translator CUSTOM(aura.artifact) branch)
 progress:
   total_phases: 20
   completed_phases: 15
   total_plans: 104
-  completed_plans: 95
+  completed_plans: 96
   percent: 75
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 13 (channels-telegram-multimodal) — EXECUTING
-Plan: 2 of 9
+Plan: 3 of 9
 Status: Executing Phase 13
-Last activity: 2026-06-08 -- Completed 13-01 (Wave-1 substrate: deps + migration 0012 + telegram.Store + 3 goleak TestMains)
+Last activity: 2026-06-08 -- Completed 13-02 (Wave-1 artifact substrate: send_file Deferred tool + Meta→ArtifactDelta lift + translator CUSTOM(aura.artifact) branch)
 
 Progress: [███████▌░░] 75% (15/20 phases)
 
@@ -115,6 +115,7 @@ Phase 12 AG-UI Gateway closed: live SSE round-trip (POST /agent/run) + GET MESSA
 | Phase 18 P18-03 | ~45min | 2 tasks | 7 files |
 | Phase Phase 12 PP12-04 | ~2h | 2 tasks (1 auto + 1 checkpoint) tasks | 10 files files |
 | Phase 13 P13-01 | ~22min | 3 tasks | 16 files |
+| Phase 13 P13-02 | ~28min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -175,6 +176,7 @@ Recent decisions affecting current work:
 - [Phase 18]: 18-02 (host-primary snippet use frame): action=use now hands the model a HOST shell_exec by-path frame (interpreter + AURA_SKILL_EXPORT_DIR path) as the PRIMARY instruction, sandbox_exec demoted to the named escalation (#55/D-01); host path derived fresh at use-time (RESEARCH option b); new SnippetHostPath/SnippetHostInvocation mirror the sandbox resolvers, SandboxPath kept for escalation; skillLoader.Snippet seam param sandboxPath->hostPath, adapter resolves from cfg.SkillExportDir; tools<->skills boundary held (0 deps); load-bearing-literal tests flipped in-commit; race+vet+build+cache-invariant green, all <=600 LOC. Commits b970916a/5bb4f4c8.
 - [Phase ?]: [Phase 18]: 18-03 (snippet lifecycle + in-loop save): Writer.Restore = inverse of Archive (promote archived->active + Materialize + SetUsageStatus active + audit-as-AuditActivate/cli — NO new migration, no AuditRestore, the cli D-29 tuple is already CHECK-accepted, documented in a code comment); action=save_snippet routes to Writer.SaveSnippet UNGATED (D-02) returning a NORMAL ToolResult, NEVER the *ErrAwaitingUserInput pause (architectural inverse of the gated writeAction; only ask_user may pause, TestAskUserOnlyPauseConstraint holds) yet still runs validate->blocklist-on-CODE->RISKY->pending (never self-activates); restore/archive replace the notYetWired stubs, archive=SAFE-tier manual de-materialize recoverable via restore; save_snippet added to the property-level action enum + language enum (python|shell|js) + code field, root stays required=[action] only; skillWriterAdapter labels actor=model (T-18-08-S), cli ApprovalSource for restore/archive; tools<->skills boundary held (0 deps); race+lint0; <=600 LOC. Rule-3 fix: scripts/check-file-size.sh here-string mangled the final list entry on Windows bash -> process-substitution. Commits 3397c5ab/041778bc/1b254c59.
 - [Phase 13]: 13-01 (Wave-1 substrate + dep floor): three external deps installed behind the operator-approved legitimacy gate at the amendment-#58 pins — gopkg.in/telebot.v4 v4.0.0-beta.9 (literal CI pin), golang.org/x/image v0.41.0 (promoted DIRECT), github.com/mdp/qrterminal/v3 v3.2.1. [Rule 3 blocking-fix] go mod tidy drops not-yet-imported pins (consumers are Wave plans 13-02..13-08), which would break the pin-gate + re-demote x/image to indirect → fixed with internal/channels/deps.go blank-import anchor (mirrors internal/cron/tzdata.go; blank-imports telebot.v4 root + x/image/font/opentype + gofont/gomono + qrterminal/v3). Migration 0012 (NOT the PRD's stale 0008; floor is 0011_tool_invocations) ships aura.telegram_accounts (PK telegram_user_id bigint, FK identity_id→aura.identities) + aura.telegram_setup_pending (single-use consumed_at, 1h expires_at, partial active index WHERE consumed_at IS NULL) with aura_app DML / aura_migrate GRANT ALL + COMMENT (mirrors 0009/0004). sqlc: telegram_accounts.sql (6 queries) + telegram_setup_pending.sql (3, incl. atomic ConsumeTelegramSetupPending UPDATE...RETURNING with consumed_at-IS-NULL + expires_at>now() guards, and :execrows cleanup — first :execrows use in the codebase). telegram.Store copies the askuser/identity canonical pattern: ConsumeOnboarding is the single-use chokepoint (one db.WithTx consume-then-INSERT-account; re-consume/expired/unknown→ErrTokenConsumed; duplicate account→ErrAccountExists via SQLSTATE 23505 errors.As+pgErr.Code; PendingConsumed distinguishes unknown via ErrTokenNotFound). db_integration test compiles+vets clean under -tags db_integration (live PG round-trip delegated to the orchestrator Wave-1 post-build gate; no-skip-as-green env gate). Three goleak.VerifyTestMain harnesses (internal/channels, internal/channels/telegram, internal/setup — the last a test-only package until 13-07 lands server.go) satisfy amendment #15 for the downstream bot-polling/SSE-pump/async-convert goroutines. go vet+build+test+-race green module-wide; gofmt clean; all files ≤600 LOC. Commits 05eeca32/3ec353e8/1606a077.
+- [Phase 13]: 13-02 (Wave-1 artifact substrate, UX-02): channel-agnostic file delivery built in two additive halves (D-05/D-06). send_file is a Deferred:true/Mutating:false tool with a {path, caption?} schema; Execute stat-gates the path and, on a ≤50MB readable file, sets res.Meta["artifact"]={path,filename,caption} mirroring the shell_exec OUTBOUND res.Meta seam (NOT the ask_user sentinel — that path is name-gated to ask_user only, amendment #51/D-40, and silently drops any other tool's sentinel). >50MB → file_too_large error ToolResult (never a silent truncation, OQ3/T-13-02-Artifact); unreadable/dir/empty → file_unreadable; neither carries artifact Meta. Caption is ASCII-sanitized in-tool (asciiCaption/foldToASCII: accented Latin folded to base letters, rest dropped — Pitfall 4/T-13-02-CaptionInject), no channel coupling. toolResultEvent (llm_agent_events.go) gained the metaArtifact helper + the lone lift `ev.Actions.ArtifactDelta = art` — the SINGLE named route that populates the previously-unmapped forward-compat ArtifactDelta field (event.go:71); purely additive, a run without the key leaves it nil so every existing event is byte-identical. translator.go gained an additive branch (before STATE_DELTA, mirroring its close-first idiom): a non-empty Actions.ArtifactDelta closes any open run then yields ONE namespaced CUSTOM event NewCustomEvent("aura.artifact", WithValue(descriptor)) and continues — channel-agnostic (D-06), NOT an overloaded TOOL_CALL_RESULT. New CUSTOM golden fixture added (all prior fixtures byte-identical); the property test now interleaves random artifact events under the lifecycle-balance invariants. No "telegram" in either substrate file (grep-clean). The Telegram artifact.go→sendDocument CONSUMER is explicitly 13-06, not this plan (substrate/consumer split). send_file is NOT yet registered into buildBaseRegistry — registration lands with the channel wiring (13-05/13-06). vet/build/test/-race green on internal/agent + internal/agui; golangci-lint 0; all files ≤600 LOC (send_file 178, translator 321). Commits 99397e43/604a0bfa.
 - [Phase 12]: 12-04 (AG-UI Gateway Gate-3 closure, CLOSES Phase 12 / UX-01): scripts/agui_smoke.sh is the live SSE Gate-3 reference — builds aura, seeds a conversation KEY-FREE (docker exec psql), polls 127.0.0.1:9080 (no fixed sleep), POSTs a RunAgentInput and asserts FRAME ground truth (RUN_STARTED…RUN_FINISHED; + REASONING_START…REASONING_END before the first TEXT_MESSAGE_START on the LIVE leg, amendment #57), then GETs the MESSAGES_SNAPSHOT + asserts a 404 chokepoint; two legs (DEGRADED dummy-key CI / LIVE AGUI_SMOKE_LIVE=1). No-skip-as-green: exits non-zero under $CI when the DB env is unset. ci.yml adds ./internal/agui/... to the db_integration -race -p 1 package list (0.04–0.05s round-trips, not a skip tell) + a degraded-leg smoke step. [Rule 1] a malformed/non-UUID thread id now maps to 404 at BOTH handlers (uuid.Parse guard before the store round-trip) instead of leaking the store parse error as a 500 — caught live by the does-not-exist chokepoint (T-12-11). internal/agui coverage 86.8% (owned-surface 86.2%, ≥85%); translator.go mutation 76.2% (48/63 killed, 15 near-equivalent survivors advisory-accepted per db.go/budget.go precedent). Operator DELEGATED the live Gate-3 sign-off to an autonomous E2E loop ("do all E2E test in autonomy and loop until score is >95%") — 11/11 (100%), 3 iterations (2 driver-harness fixes, ZERO product defects); ground truth in D:/tmp/agui-e2e/ (sse.txt ordering, snap.json no-CoT, db_turns.txt assistant len=21, serve.log graceful shutdown, chat_leg.out live 💭 render). Commit 1867c0c2. CAP/UX-01 Phase 12 COMPLETE (6/6 plans).
 
 ### Pending Todos
@@ -209,6 +211,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T08:20:00.000Z
-Stopped at: Completed 13-01-PLAN.md (Wave-1 substrate)
-Resume file: .planning/phases/13-channels-telegram-multimodal/13-02-PLAN.md
+Last session: 2026-06-08T09:05:00.000Z
+Stopped at: Completed 13-02-PLAN.md (Wave-1 artifact substrate)
+Resume file: .planning/phases/13-channels-telegram-multimodal/13-03-PLAN.md
