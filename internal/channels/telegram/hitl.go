@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	tele "gopkg.in/telebot.v4"
@@ -98,7 +99,37 @@ func (h *hitl) handleCallback(ctx context.Context, data, convID string) (resumed
 	if !ok {
 		return false
 	}
+	if action == askuser.ActionAccept {
+		value = h.resolveChoiceValue(ctx, convID, token, value)
+	}
 	return h.submit(ctx, convID, token, action, value)
+}
+
+// resolveChoiceValue maps a choice button's compact option INDEX (carried in
+// callback_data to stay under Telegram's 64-byte cap — embedding a long option value
+// 400s BUTTON_DATA_INVALID) back to the option's full value, which is the answer the
+// Runner records. A non-numeric value (an approval "yes") or a token whose pause has
+// no matching option passes through unchanged, so approval/clarification are untouched.
+func (h *hitl) resolveChoiceValue(ctx context.Context, convID, token, value string) string {
+	idx, err := strconv.Atoi(value)
+	if err != nil {
+		return value
+	}
+	pending, err := h.runner.PendingFor(ctx, convID)
+	if err != nil {
+		return value
+	}
+	for _, p := range pending {
+		if p.Token != token {
+			continue
+		}
+		opts := decodeOptions(p.Options)
+		if idx >= 0 && idx < len(opts) {
+			return opts[idx].Value
+		}
+		break
+	}
+	return value
 }
 
 // handleTextReply resolves a free-text ForceReply answer: it reads the first
@@ -146,17 +177,20 @@ func approvalMarkup(token string) *tele.ReplyMarkup {
 }
 
 // choiceMarkup builds one InlineButton per discrete option, each callback carrying
-// the pause token + the option's value (the resume content). A malformed/empty
-// options blob degrades to a single cancel button so the user is never stuck.
+// the pause token + the option's INDEX (NOT its value): callback_data is capped at 64
+// bytes by Telegram, and a free-prose option value (e.g. a full sentence) overflows it
+// → BUTTON_DATA_INVALID (400). The index is resolved back to the value on the callback
+// (resolveChoiceValue). A malformed/empty options blob degrades to a single cancel
+// button so the user is never stuck.
 func choiceMarkup(token string, raw json.RawMessage) *tele.ReplyMarkup {
 	opts := decodeOptions(raw)
 	mk := &tele.ReplyMarkup{}
 	rows := make([][]tele.InlineButton, 0, len(opts)+1)
-	for _, o := range opts {
+	for i, o := range opts {
 		rows = append(rows, []tele.InlineButton{{
 			Unique: callbackUnique,
 			Text:   o.Label,
-			Data:   callbackData(token, askuser.ActionAccept, o.Value),
+			Data:   callbackData(token, askuser.ActionAccept, strconv.Itoa(i)),
 		}})
 	}
 	rows = append(rows, []tele.InlineButton{{

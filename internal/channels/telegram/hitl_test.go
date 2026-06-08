@@ -341,3 +341,56 @@ func TestHITLSubmitErrorNoResume(t *testing.T) {
 		t.Error("a SubmitAnswer error must not resume")
 	}
 }
+
+// TestHITLChoiceCallbackDataUnder64Bytes guards Telegram's 64-byte callback_data cap:
+// a choice with long, free-prose option values must still render buttons whose
+// callback_data fits — the option INDEX, not the value, is embedded. Without it a long
+// value 400s BUTTON_DATA_INVALID on send (the live-found bug).
+func TestHITLChoiceCallbackDataUnder64Bytes(t *testing.T) {
+	t.Parallel()
+	long1 := "Tamone — dal Monte Tamone, originale e robusto per un cane da montagna"
+	long2 := "Kai — corto, giapponese, facilissimo da richiamare sui sentieri di Valle Grana"
+	bot := &hitlBot{}
+	rs := &fakeResume{pending: []askuser.Pending{{
+		Token: "019ea841-fa1f-7885-9e46-179928f3fa28", Kind: "choice", Question: "Quale nome?",
+		Options:    optsJSON(t, [2]string{long1, long1}, [2]string{long2, long2}),
+		ToolCallID: "tc-1",
+	}}}
+	h := newHitl(rs, rs.resumeTurn)
+	h.prompt(context.Background(), bot, 42, "conv-1")
+
+	mk := bot.recorded()[0].markup
+	if mk == nil || len(mk.InlineKeyboard) == 0 {
+		t.Fatalf("choice must render an InlineKeyboard")
+	}
+	for _, row := range mk.InlineKeyboard {
+		for _, b := range row {
+			if n := len([]byte(b.Data)); n > 64 {
+				t.Errorf("callback_data %q is %d bytes > 64 (Telegram BUTTON_DATA_INVALID)", b.Data, n)
+			}
+		}
+	}
+}
+
+// TestHITLChoiceCallbackResolvesIndexToValue proves a choice button tap (callback_data
+// carries the option INDEX) submits the option's full VALUE to the Runner, not the raw
+// index — the 64-byte fix must not lose the answer.
+func TestHITLChoiceCallbackResolvesIndexToValue(t *testing.T) {
+	t.Parallel()
+	val := "Tamone — dal Monte Tamone, originale e robusto"
+	rs := &fakeResume{remaining: 0, pending: []askuser.Pending{{
+		Token: "tok-1", Kind: "choice", Question: "Quale nome?",
+		Options:    optsJSON(t, [2]string{"Kai", "Kai"}, [2]string{val, val}),
+		ToolCallID: "tc-1",
+	}}}
+	h := newHitl(rs, rs.resumeTurn)
+	// The user tapped the SECOND option (index 1) → callback_data token|accept|1.
+	h.handleCallback(context.Background(), callbackData("tok-1", askuser.ActionAccept, "1"), "conv-1")
+	calls := rs.calls()
+	if len(calls) != 1 {
+		t.Fatalf("want 1 SubmitAnswer, got %d", len(calls))
+	}
+	if calls[0].content != val {
+		t.Errorf("submitted content = %q, want the resolved option value %q", calls[0].content, val)
+	}
+}
