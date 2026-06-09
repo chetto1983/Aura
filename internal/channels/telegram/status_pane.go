@@ -23,7 +23,6 @@ const (
 	glyphFail    = "❌"
 	glyphThink   = "💭"
 
-	statusReasoningCap = 160
 	statusCancelUnique = "aura_cancel"
 	statusCancelData   = "cancel"
 )
@@ -110,20 +109,21 @@ func (p *statusPane) handle(ev events.Event) {
 			ts.glyph = glyphOK
 			p.dirty = true
 		}
+	case *events.ReasoningStartEvent:
+		p.thinking = "in corso"
+		p.dirty = true
 	case *events.ReasoningMessageContentEvent:
 		reasoningtrace.Record("telegram_status_reasoning_delta", map[string]any{
-			"message_id":      e.MessageID,
-			"chars":           reasoningtrace.RuneLen(e.Delta),
-			"reasoning_delta": e.Delta,
+			"message_id": e.MessageID,
+			"chars":      reasoningtrace.RuneLen(e.Delta),
+			"redacted":   true,
 		})
-		p.thinking += e.Delta // accumulate raw; collapse for display in text()
-		reasoningtrace.Record("telegram_status_reasoning_buffer", map[string]any{
-			"message_id":    e.MessageID,
-			"buffer_chars":  reasoningtrace.RuneLen(p.thinking),
-			"buffer":        p.thinking,
-			"display_chars": reasoningtrace.RuneLen(statusReasoningSnippet(p.thinking)),
-			"display":       statusReasoningSnippet(p.thinking),
-		})
+		if p.thinking == "" {
+			p.thinking = "in corso"
+		}
+		p.dirty = true
+	case *events.ReasoningEndEvent:
+		p.thinking = "completato"
 		p.dirty = true
 	case *events.StateDeltaEvent:
 		p.applyCost(e.Delta)
@@ -217,7 +217,7 @@ func (p *statusPane) render(_ context.Context, final bool) {
 		"text_chars":     reasoningtrace.RuneLen(text),
 		"text":           text,
 		"thinking_chars": reasoningtrace.RuneLen(p.thinking),
-		"thinking":       p.thinking,
+		"thinking_state": p.thinking,
 	})
 	opts := &tele.SendOptions{ReplyMarkup: p.markup()}
 	if p.msg == nil {
@@ -274,47 +274,52 @@ func (p *statusPane) render(_ context.Context, final bool) {
 // reasoning line, and an optional running-cost footer. Plain text (no MarkdownV2) —
 // the status pane uses glyphs, not entities, so it never risks a parse-entity 400.
 func (p *statusPane) text() string {
-	var b strings.Builder
-	if p.failed {
-		b.WriteString(glyphFail + " Errore")
-	} else {
-		b.WriteString("Aura")
+	base := p.baseText()
+	cost := p.costText()
+	if over := runeLen(base) + runeLen(cost) - telegramTextCap; over > 0 {
+		base = capRunes(base, max(0, runeLen(base)-over))
 	}
-	if p.collapseTools() {
-		b.WriteString("\n")
-		b.WriteString(glyphOK + " " + toolCountLabel(len(p.tools)))
-	} else {
+	reasoning := ""
+	if collapsed := safeReasoningState(p.thinking); collapsed != "" {
+		header := "\n" + glyphThink + " Ragionamento:\n"
+		budget := telegramTextCap - runeLen(base) - runeLen(cost) - runeLen(header)
+		if budget > 0 {
+			reasoning = header + capRunes(collapsed, budget)
+		}
+	}
+	return base + reasoning + cost
+}
+
+func (p *statusPane) baseText() string {
+	var b strings.Builder
+	b.WriteString("Aura")
+	switch {
+	case p.failed:
+		b.WriteString("\nStato: errore")
+	case p.done:
+		b.WriteString("\nStato: completato")
+	default:
+		b.WriteString("\nStato: in corso")
+	}
+	if len(p.tools) > 0 {
+		b.WriteString("\nStrumenti:")
 		for _, ts := range p.tools {
 			b.WriteString("\n")
 			b.WriteString(ts.glyph + " " + ts.name)
 		}
 	}
-	if reasoning := statusReasoningSnippet(p.thinking); reasoning != "" {
-		b.WriteString("\n" + glyphThink + " " + reasoning)
-	}
-	if p.cost != "" {
-		b.WriteString("\n— " + p.cost)
-	}
 	return b.String()
 }
 
-func (p *statusPane) collapseTools() bool {
-	if !p.done || p.failed || len(p.tools) == 0 {
-		return false
+func (p *statusPane) costText() string {
+	if p.cost == "" {
+		return ""
 	}
-	for _, ts := range p.tools {
-		if ts.failed || ts.glyph == glyphFail {
-			return false
-		}
-	}
-	return true
+	return "\nCosto: " + p.cost
 }
 
-func toolCountLabel(n int) string {
-	if n == 1 {
-		return "1 strumento"
-	}
-	return fmt.Sprintf("%d strumenti", n)
+func runeLen(s string) int {
+	return len([]rune(s))
 }
 
 func (p *statusPane) markup() *tele.ReplyMarkup {
@@ -336,28 +341,15 @@ func looksLikeToolError(preview string) bool {
 
 // collapseWhitespace squeezes runs of whitespace to single spaces so a streamed
 // reasoning delta renders as one compact 💭 line.
-func collapseWhitespace(s string) string {
-	return strings.Join(strings.Fields(s), " ")
-}
-
-// statusReasoningSnippet renders the most recent part of a streamed reasoning
-// buffer. Long streams usually become more useful near the end, after tool choice
-// and synthesis have narrowed the answer.
-func statusReasoningSnippet(s string) string {
-	return capRunesTail(collapseWhitespace(s), statusReasoningCap)
+func safeReasoningState(s string) string {
+	switch strings.TrimSpace(s) {
+	case "in corso":
+		return "in corso"
+	case "completato":
+		return "completato"
+	default:
+		return ""
+	}
 }
 
 // capRunesTail truncates s to at most n runes, preserving the newest content.
-func capRunesTail(s string, n int) string {
-	runes := []rune(s)
-	if len(runes) <= n {
-		return s
-	}
-	if n <= 0 {
-		return ""
-	}
-	if n <= 3 {
-		return string(runes[len(runes)-n:])
-	}
-	return "..." + string(runes[len(runes)-(n-3):])
-}

@@ -298,11 +298,11 @@ func TestPingMCP_Branches(t *testing.T) {
 }
 
 func TestPing_Unit(t *testing.T) {
-	// Happy: good MCP version + sidecar returning 768-dim.
+	// Happy: good MCP version + sidecar returning the default dim.
 	embedSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		var sb strings.Builder
 		sb.WriteString(`{"data":[{"embedding":[`)
-		for i := range 768 {
+		for i := range DefaultEmbedDimensions {
 			if i > 0 {
 				sb.WriteByte(',')
 			}
@@ -314,13 +314,13 @@ func TestPing_Unit(t *testing.T) {
 	defer embedSrv.Close()
 
 	c, _ := newFakeClient(componentsResp("5.26.26"), "")
-	res, err := Ping(context.Background(), c, &Config{EmbedURL: embedSrv.URL, EmbedDimensions: 768})
-	if err != nil || res.ServerVersion != "5.26.26" || res.EmbedDim != 768 {
+	res, err := Ping(context.Background(), c, &Config{EmbedURL: embedSrv.URL, EmbedDimensions: DefaultEmbedDimensions})
+	if err != nil || res.ServerVersion != "5.26.26" || res.EmbedDim != DefaultEmbedDimensions {
 		t.Fatalf("Ping happy: res=%+v err=%v", res, err)
 	}
 	// MCP failure short-circuits before the embed probe.
 	c, _ = newFakeClient(componentsResp("4.0.0"), "")
-	if _, err := Ping(context.Background(), c, &Config{EmbedURL: embedSrv.URL, EmbedDimensions: 768}); err == nil {
+	if _, err := Ping(context.Background(), c, &Config{EmbedURL: embedSrv.URL, EmbedDimensions: DefaultEmbedDimensions}); err == nil {
 		t.Error("Ping: want error on version mismatch")
 	}
 	// Good MCP version but embed sidecar returns the wrong dim -> Ping fails on probe.

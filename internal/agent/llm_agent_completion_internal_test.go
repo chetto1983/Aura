@@ -5,6 +5,7 @@ package agent
 // reason extractor, the nudge-skipping request finder, and the side-effect digest.
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -100,5 +101,34 @@ func TestSideEffectDigest_IncludesToolsExcludesTerminal(t *testing.T) {
 	}
 	if strings.Contains(got, terminalTool) {
 		t.Errorf("digest must exclude the terminal tool, got: %q", got)
+	}
+}
+
+func TestSideEffectDigest_PrefersLatestVerificationEvidence(t *testing.T) {
+	a, _ := synthAgent("s")
+	for i := 0; i < 20; i++ {
+		id := fmt.Sprintf("noise-%02d", i)
+		tc := llm.ToolCall{ID: id, Type: "function"}
+		tc.Function.Name = "skill"
+		tc.Function.Arguments = `{"action":"info","name":"very-large-skill"}`
+		a.history = append(a.history,
+			llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{tc}},
+			llm.Message{Role: llm.RoleTool, ToolCallID: id, Content: strings.Repeat("early setup noise ", 80)},
+		)
+	}
+	verify := llm.ToolCall{ID: "verify", Type: "function"}
+	verify.Function.Name = "shell_exec"
+	verify.Function.Arguments = `{"command":"python verify_xlsx.py"}`
+	a.history = append(a.history,
+		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{verify}},
+		llm.Message{Role: llm.RoleTool, ToolCallID: "verify", Content: "openpyxl OK yahoo_market_oggi.xlsx contains 2026-06-09"},
+	)
+
+	got := a.sideEffectDigest()
+	if !strings.Contains(got, "openpyxl OK yahoo_market_oggi.xlsx") {
+		t.Fatalf("digest omitted latest verification evidence: %q", got)
+	}
+	if strings.Contains(got, "early setup noise") && !strings.Contains(got, "verify_xlsx.py") {
+		t.Fatalf("digest kept setup noise but lost the verifier: %q", got)
 	}
 }

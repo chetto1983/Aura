@@ -106,6 +106,16 @@ func TestArtifactCaptionSanitizedASCII(t *testing.T) {
 	}
 }
 
+func TestASCIICaptionFoldsCommonLatinFamilies(t *testing.T) {
+	t.Parallel()
+	input := "\u00e0\u0113\u00ef\u00f6\u016b\u0107\u00f1\u00ff " +
+		"\u00c4\u00c9\u00ce\u00d8\u00dc\u010c\u00d1 \u03a9"
+	want := "aeioucny AEIOUCN"
+	if got := asciiCaption(input); got != want {
+		t.Fatalf("asciiCaption() = %q, want %q", got, want)
+	}
+}
+
 // TestArtifactNonArtifactEventIgnored: a non-artifact event (a plain text frame or
 // a CUSTOM with a different name) is NOT consumed as an artifact.
 func TestArtifactNonArtifactEventIgnored(t *testing.T) {

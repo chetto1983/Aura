@@ -55,7 +55,7 @@ func smokeConfig(t *testing.T) *Config {
 		Password:        pw,
 		Database:        envOr("AURA_NEO4J_DATABASE", "neo4j"),
 		EmbedURL:        envOr("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-		EmbedDimensions: 768,
+		EmbedDimensions: envIntOr(t, "AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),
 	}
 }
 

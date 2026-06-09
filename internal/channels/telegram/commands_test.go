@@ -166,6 +166,64 @@ func TestSearchRichPaginatesResults(t *testing.T) {
 	}
 }
 
+func TestSearchPageClampsAndExpires(t *testing.T) {
+	t.Parallel()
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &fakeCost{}})
+
+	expired := cmds.searchPage(404, 0)
+	if !strings.Contains(expired.text, "Ricerca scaduta") {
+		t.Fatalf("missing search state should render expiry hint, got %q", expired.text)
+	}
+
+	cmds.searchPages[42] = searchPagerState{pages: []string{"prima", "seconda"}}
+	if got := cmds.searchPage(42, -10).text; !strings.Contains(got, "prima") || !strings.Contains(got, "Pagina 1/2") {
+		t.Fatalf("negative page should clamp to first page, got %q", got)
+	}
+	if got := cmds.searchPage(42, 99).text; !strings.Contains(got, "seconda") || !strings.Contains(got, "Pagina 2/2") {
+		t.Fatalf("overflow page should clamp to last page, got %q", got)
+	}
+}
+
+func TestParseSearchCallback(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		data      string
+		wantPage  int
+		wantClose bool
+		wantOK    bool
+	}{
+		{name: "page", data: searchCallbackData(3), wantPage: 3, wantOK: true},
+		{name: "close", data: searchCallbackCloseData(), wantClose: true, wantOK: true},
+		{name: "missing separator", data: searchCallbackPrefix, wantOK: false},
+		{name: "wrong prefix", data: "other|1", wantOK: false},
+		{name: "bad page", data: searchCallbackPrefix + "|nope", wantOK: false},
+		{name: "negative page", data: searchCallbackPrefix + "|-2", wantPage: -2, wantOK: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			gotPage, gotClose, gotOK := parseSearchCallback(tt.data)
+			if gotPage != tt.wantPage || gotClose != tt.wantClose || gotOK != tt.wantOK {
+				t.Fatalf("parseSearchCallback(%q) = (%d, %v, %v), want (%d, %v, %v)",
+					tt.data, gotPage, gotClose, gotOK, tt.wantPage, tt.wantClose, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestClampExcerptRuneSafeEllipses(t *testing.T) {
+	t.Parallel()
+	s := "ab\u00e8cd\u20acfg"
+	got := clampExcerpt(s, 3, 7)
+	if got != "\u2026cd\u2026" {
+		t.Fatalf("clampExcerpt should move byte indexes to rune starts with ellipses, got %q", got)
+	}
+	if got := clampExcerpt(s, -10, len(s)+10); got != s {
+		t.Fatalf("full-range clampExcerpt = %q, want %q", got, s)
+	}
+}
+
 // TestSearchEmptyQueryHint proves /search with no query returns a usage hint, not
 // a backend call.
 func TestSearchEmptyQueryHint(t *testing.T) {

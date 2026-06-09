@@ -35,8 +35,29 @@ func TestRendererStripsProtocolToolBlocks(t *testing.T) {
 		}
 	}
 	last := calls[len(calls)-1]
-	if !strings.Contains(last.text, `Risposta finale\.`) {
+	if !strings.Contains(last.text, `Risposta finale.`) {
 		t.Fatalf("final send missing answer: %q", last.text)
+	}
+}
+
+func TestRendererSuppressesSplitProtocolOpenTag(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	r := newTestRenderer(bot)
+
+	driveRenderer(r, []events.Event{
+		events.NewTextMessageContentEvent("m1", "<to"),
+		events.NewTextMessageContentEvent("m1", "ol_call>\n<tool_name>shell_exec</tool_name>\n</tool_call>\nVisible."),
+		events.NewTextMessageEndEvent("m1"),
+	})
+
+	if got := r.finalText(); got != "Visible." {
+		t.Fatalf("finalText = %q, want only the visible answer", got)
+	}
+	for i, c := range bot.recorded() {
+		if strings.Contains(c.text, "&lt;to") || strings.Contains(c.text, "tool_call") || strings.Contains(c.text, "shell_exec") {
+			t.Fatalf("call %d leaked a split protocol tag: %q", i, c.text)
+		}
 	}
 }
 
@@ -55,5 +76,25 @@ func TestRendererSuppressesOpenProtocolToolBlock(t *testing.T) {
 	}
 	if calls := bot.recorded(); len(calls) != 0 {
 		t.Fatalf("unterminated protocol block must not be sent; calls=%+v", calls)
+	}
+}
+
+func TestRendererKeepsFinalPartialProtocolPrefixAsText(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	r := newTestRenderer(bot)
+
+	driveRenderer(r, []events.Event{
+		events.NewTextMessageContentEvent("m1", "Use the literal prefix <tool"),
+		events.NewTextMessageEndEvent("m1"),
+	})
+
+	calls := bot.recorded()
+	if len(calls) == 0 {
+		t.Fatal("renderer did not send final literal text")
+	}
+	last := calls[len(calls)-1]
+	if !strings.Contains(last.text, "&lt;tool") {
+		t.Fatalf("final partial protocol prefix was not preserved/escaped: %q", last.text)
 	}
 }

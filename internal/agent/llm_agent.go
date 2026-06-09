@@ -180,11 +180,20 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// The builder is the single assembly chokepoint (D-01): it reproduces the
 			// byte-stable messages[0] and routes the provider-aware cache_control seam.
 			// a.history stays read-only — the client never mutates it (Req#13). The
-			// live <budget> block is tail-injected to a COPY (messages[0] untouched,
+			// live volatile hints are tail-injected to a COPY (messages[0] untouched,
 			// D-04): remaining is the shared balance, used = the steps this branch has
 			// spent (Remaining never exceeds the start, so used = start-remaining is
-			// the per-branch consumption — no MaxSteps() getter, landmine #11).
-			budget := prompt.Budget{Used: ic.Budget.BranchConsumed(), Remaining: ic.Budget.Remaining(), Workspace: a.workspace}
+			// the per-branch consumption — no MaxSteps() getter, landmine #11). Current
+			// time rides here too, not in the system prompt, so date-sensitive turns are
+			// deterministic without poisoning the cached prefix.
+			now := ic.Budget.Now()
+			budget := prompt.Budget{
+				Used:        ic.Budget.BranchConsumed(),
+				Remaining:   ic.Budget.Remaining(),
+				Workspace:   a.workspace,
+				CurrentTime: now.Format(time.RFC3339),
+				Today:       now.Format("2006-01-02"),
+			}
 			if !adaptiveTierSet {
 				adaptiveTier, adaptiveTierOK = a.adaptiveReasoningTier(ic.Ctx)
 				adaptiveTierSet = true
@@ -205,7 +214,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				"reasoning":   req.Reasoning,
 				"history":     a.history,
 			})
-			ch, err := a.client.Stream(spanCtx, req)
+			ch, err := a.streamWithOpenRetry(spanCtx, req, requestID)
 			if err != nil {
 				span.End()
 				cancel()
@@ -466,10 +475,10 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			// Stream-only CoT: yield the reasoning Event but NEVER write to b — the
 			// returned text (what persistence reads) must stay reasoning-free (#57).
 			reasoningtrace.Record("agent_consume_reasoning_chunk", map[string]any{
-				"request_id":      requestID,
-				"thread_id":       a.sessionID,
-				"chars":           reasoningtrace.RuneLen(c.Reasoning),
-				"reasoning_delta": c.Reasoning,
+				"request_id": requestID,
+				"thread_id":  a.sessionID,
+				"chars":      reasoningtrace.RuneLen(c.Reasoning),
+				"redacted":   true,
 			})
 			if !yield(a.reasoningChunkEvent(ic, spanID, parentSpanID, c.Reasoning), nil) {
 				for range ch { //nolint:revive // drain-to-close

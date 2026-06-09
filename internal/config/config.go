@@ -214,7 +214,7 @@ func loadBase() *Config {
 			MCPBinary:         envDefault("AURA_MCP_NEO4J_CYPHER_BIN", "mcp-neo4j-cypher"),
 			ConnectTimeoutSec: envIntDefault("AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC", 10),
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", 768),
+			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", knowledge.DefaultEmbedDimensions),
 		},
 		MCPServers:    mcpServers,
 		MCPPolicies:   mcpPolicies,

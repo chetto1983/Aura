@@ -29,8 +29,8 @@ func TestAdaptiveReasoningTierWireE2E(t *testing.T) {
 		maxTokens int
 	}{
 		{prompt.ReasoningTierNone, "none", true, 512},
-		{prompt.ReasoningTierLow, "low", false, 2048},
-		{prompt.ReasoningTierHigh, "high", false, 4096},
+		{prompt.ReasoningTierLow, "low", true, 2048},
+		{prompt.ReasoningTierHigh, "high", true, 4096},
 	}
 
 	for _, tc := range cases {

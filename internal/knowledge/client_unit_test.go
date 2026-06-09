@@ -25,13 +25,13 @@ func TestMain(m *testing.M) {
 
 // TestPingEmbed_DimMismatch asserts the Pattern 5 self-test refuses a wrong-dim
 // sidecar with the load-bearing literal error (T-1.07-05). The sidecar is mocked
-// to return a 384-element vector against an expected 768.
+// to return a 768-element vector against the default 384.
 func TestPingEmbed_DimMismatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		var sb strings.Builder
 		sb.WriteString(`{"data":[{"embedding":[`)
-		for i := range 384 {
+		for i := range 768 {
 			if i > 0 {
 				sb.WriteByte(',')
 			}
@@ -42,13 +42,13 @@ func TestPingEmbed_DimMismatch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	err := pingEmbed(context.Background(), srv.URL, 768)
+	err := pingEmbed(context.Background(), srv.URL, DefaultEmbedDimensions)
 	if err == nil {
 		t.Fatal("pingEmbed: want error on dim mismatch, got nil")
 	}
 	for _, want := range []string{
-		"embedding sidecar returned dim=384",
-		"AURA_EMBED_DIMENSIONS=768",
+		"embedding sidecar returned dim=768",
+		"AURA_EMBED_DIMENSIONS=384",
 		"refuse to start (Pitfall #7 silent corruption)",
 		"amendment #18 swap runbook",
 	} {

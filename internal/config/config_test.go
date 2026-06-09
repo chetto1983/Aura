@@ -425,7 +425,7 @@ func TestLoad_Neo4jEnvOverrides(t *testing.T) {
 }
 
 // TestEmbedDimensions_RequiredNonZero asserts EmbedDimensions defaults to the
-// 768 contract (Amendment #18) when AURA_EMBED_DIMENSIONS is unset — a non-zero
+// Granite sidecar contract when AURA_EMBED_DIMENSIONS is unset — a non-zero
 // value is required for the Pattern 5 boot self-test to be meaningful. A literal
 // "0" is a deliberate misconfiguration that envIntDefault passes through verbatim
 // (Atoi succeeds); it is caught downstream by the ping dim self-test, not here.
@@ -436,8 +436,8 @@ func TestEmbedDimensions_RequiredNonZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.Neo4j.EmbedDimensions != 768 {
-		t.Errorf("EmbedDimensions: want non-zero contract default 768, got %d", cfg.Neo4j.EmbedDimensions)
+	if cfg.Neo4j.EmbedDimensions != 384 {
+		t.Errorf("EmbedDimensions: want non-zero contract default 384, got %d", cfg.Neo4j.EmbedDimensions)
 	}
 }
 

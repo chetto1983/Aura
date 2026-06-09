@@ -40,7 +40,20 @@ score() { # name, ok(0/1), detail
 }
 
 # --- env (individual extraction; .env has JSON values that break `source`) ------
-getenv() { grep -E "^$1=" .env | head -1 | cut -d= -f2- | tr -d '\r' | sed -E "s/^'//;s/'$//;s/^\"//;s/\"$//"; }
+getenv() {
+  awk -F= -v key="$1" '
+    $1 == key {
+      sub(/\r$/, "", $0)
+      sub(/^[^=]*=/, "", $0)
+      sub(/^'\''/, "", $0)
+      sub(/'\''$/, "", $0)
+      sub(/^"/, "", $0)
+      sub(/"$/, "", $0)
+      print
+      exit
+    }
+  ' .env
+}
 export POSTGRES_PASSWORD="$(getenv POSTGRES_PASSWORD)"
 export TELEGRAM_BOT_TOKEN="$(getenv TELEGRAM_BOT_TOKEN)"
 export AURA_E2E_CHAT_ID="$(getenv AURA_E2E_CHAT_ID)"

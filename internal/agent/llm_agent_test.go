@@ -358,19 +358,22 @@ func TestMessagesImmutable(t *testing.T) {
 	if first.Messages[0].Content != agent.SystemPrompt {
 		t.Error("messages[0] is not the byte-stable system prompt")
 	}
-	// The conversation prefix is system+user; the live <budget> block (07.1-04,
-	// Req#6) tail-injects a trailing user message to a COPY, so the first request is
-	// system+user+budget = 3 messages. The block must be the LAST message (never the
+	// The conversation prefix is system+user; live volatile hints (07.1-04, Req#6)
+	// tail-inject a trailing user message to a COPY, so the first request is
+	// system+user+hints = 3 messages. The block must be the LAST message (never the
 	// prefix) so messages[0] stays cache-stable.
 	if len(first.Messages) != 3 {
-		t.Errorf("first call had %d messages, want 3 (system+user+budget) — prefix mutated?", len(first.Messages))
+		t.Errorf("first call had %d messages, want 3 (system+user+hints) — prefix mutated?", len(first.Messages))
 	}
 	tail := first.Messages[len(first.Messages)-1]
 	if tail.Role != llm.RoleUser || !strings.HasPrefix(tail.Content, "<budget>") {
-		t.Errorf("last message = {%q,%q}, want the trailing <budget> user block", tail.Role, tail.Content)
+		t.Errorf("last message = {%q,%q}, want the trailing volatile user hint block", tail.Role, tail.Content)
+	}
+	if !strings.Contains(tail.Content, "<current_time>") || !strings.Contains(tail.Content, "<today>") {
+		t.Errorf("trailing hint block missing current time/today tags: %q", tail.Content)
 	}
 	if first.Messages[1].Content != "ciao" {
-		t.Errorf("messages[1] = %q, want the original user turn (budget must not displace it)", first.Messages[1].Content)
+		t.Errorf("messages[1] = %q, want the original user turn (hints must not displace it)", first.Messages[1].Content)
 	}
 }
 
@@ -511,9 +514,9 @@ func TestLlmAgent_LengthTruncation(t *testing.T) {
 }
 
 // TestLlmAgent_ReasoningChunk_StreamOnly (amendment #57): a turn that streams a
-// reasoning Chunk then content Chunks emits a reasoning Event (LLMResponse.Reasoning
-// set, Content empty) and the reasoning text NEVER appears in the final accumulated
-// answer (stream-only, no persistence leak).
+// reasoning Chunk then content Chunks emits a redacted reasoning Event
+// (LLMResponse.Reasoning set, Content empty) and the provider reasoning text NEVER
+// appears in the final accumulated answer (stream-only, no persistence leak).
 func TestLlmAgent_ReasoningChunk_StreamOnly(t *testing.T) {
 	recordingProvider(t)
 	const reasoning = "let me think about this"
@@ -537,8 +540,8 @@ func TestLlmAgent_ReasoningChunk_StreamOnly(t *testing.T) {
 			continue
 		}
 		sawReasoning = true
-		if ev.LLMResponse.Reasoning != reasoning {
-			t.Errorf("reasoning Event content = %q, want %q", ev.LLMResponse.Reasoning, reasoning)
+		if ev.LLMResponse.Reasoning != "[reasoning redacted]" {
+			t.Errorf("reasoning Event content = %q, want redacted marker", ev.LLMResponse.Reasoning)
 		}
 		if ev.LLMResponse.Content != "" {
 			t.Errorf("reasoning Event must carry empty Content, got %q", ev.LLMResponse.Content)
@@ -554,6 +557,9 @@ func TestLlmAgent_ReasoningChunk_StreamOnly(t *testing.T) {
 	}
 	if !strings.Contains(last.LLMResponse.Content, "La risposta.") {
 		t.Errorf("final answer = %q, want the streamed content", last.LLMResponse.Content)
+	}
+	if strings.Contains(last.LLMResponse.Content, reasoning) {
+		t.Errorf("final answer leaked provider reasoning: %q", last.LLMResponse.Content)
 	}
 	if strings.Contains(last.LLMResponse.Content, reasoning) {
 		t.Errorf("reasoning text leaked into the final answer %q (must be stream-only)", last.LLMResponse.Content)

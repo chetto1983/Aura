@@ -134,6 +134,25 @@ func TestShellExecPassesEnv(t *testing.T) {
 	}
 }
 
+func TestShellExecDefaultsPythonUTF8(t *testing.T) {
+	tool := &ShellExec{}
+	ctx := ctxWith(t, "sess-sh-utf8", "call-sh")
+
+	cmd := `printf '%s:%s\n' "$PYTHONIOENCODING" "$PYTHONUTF8"`
+	if shellIsCmd() {
+		cmd = "echo %PYTHONIOENCODING%:%PYTHONUTF8%"
+	}
+	raw, _ := json.Marshal(shellExecArgs{Command: cmd})
+
+	res, err := tool.Execute(ctx, raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(res.Preview, "utf-8:1") {
+		t.Fatalf("Python UTF-8 defaults not visible to shell command: %q", res.Preview)
+	}
+}
+
 func TestShellExecHonorsCwd(t *testing.T) {
 	tool := &ShellExec{}
 	ctx := ctxWith(t, "sess-sh", "call-sh")

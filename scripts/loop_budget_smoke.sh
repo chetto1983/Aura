@@ -50,14 +50,19 @@ echo "==> B4: phase-close coverage floor (>= 85%, CLAUDE.md)"
 # either in a UNIT-coverage gate measures the wrong code, so the profile is filtered
 # to the Phase-2 surface before the floor is applied.
 go test -coverprofile=cover.out ./internal/agent/ ./internal/agent/workflow/ ./internal/canonicaljson/ ./cmd/aura/ >/dev/null
-# Exclude the non-Phase-2 cmd/aura subcommands and the pre-rewrite tools skeleton.
+# Exclude non-Phase-2 cmd/aura subcommands and the pre-rewrite tools skeleton.
+# cmd/aura has grown well beyond the dry-run CLI since this gate was written; the
+# Phase-2 surface here is only cmd/aura/agent.go, not chat/setup/task/etc.
 # Anchor each excluded file to a PATH-SEGMENT boundary ('/<file>:') so a future
-# file whose name merely CONTAINS one of these (e.g. cmd/aura/agentmain.go) is NOT
-# silently dropped from the floor (WR-06). cover.out rows are
-# '<module>/cmd/aura/main.go:line.col,...', so the leading '/' anchors the segment.
+# file whose name merely CONTAINS one of these is NOT silently dropped from the
+# floor (WR-06). cover.out rows are '<module>/cmd/aura/<file>:line.col,...'.
 {
   head -1 cover.out
-  grep -v '^mode:' cover.out | grep -v -E '/cmd/aura/(db|neo4j|main)\.go:|/internal/agent/tools/'
+  grep -v '^mode:' cover.out | awk '
+    /\/internal\/agent\/tools\// { next }
+    /\/cmd\/aura\// && !/\/cmd\/aura\/agent\.go:/ { next }
+    { print }
+  '
 } > cover_phase2.out
 
 # The filtered profile MUST retain real statement rows beyond the mode: header;

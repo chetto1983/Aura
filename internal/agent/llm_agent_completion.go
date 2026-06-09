@@ -121,9 +121,11 @@ func (a *LlmAgent) completionCriticUser(answer string) string {
 }
 
 // sideEffectDigest builds a `- name(args) → result` line per tool call in this
-// run (the terminal tool excluded), preserving call order and bounding each
-// field + the whole digest. Reads are kept too: a read-back after a write is the
-// verification evidence the critic needs.
+// run (the terminal tool excluded), preserving call order for the selected
+// suffix and bounding each field + the whole digest. Reads are kept too: a
+// read-back after a write is the verification evidence the critic needs. When a
+// long setup phase would overflow the digest, the latest tool results win because
+// they carry the final creation/verification evidence.
 func (a *LlmAgent) sideEffectDigest() string {
 	type toolCall struct{ name, args string }
 	calls := map[string]toolCall{}
@@ -140,26 +142,38 @@ func (a *LlmAgent) sideEffectDigest() string {
 			results[m.ToolCallID] = m.Content
 		}
 	}
-	var b strings.Builder
+	lines := make([]string, 0, len(order))
 	for _, id := range order {
 		c := calls[id]
 		if c.name == terminalTool {
 			continue
 		}
-		if b.Len() >= criticDigestCap {
-			break
-		}
-		b.WriteString("\n- ")
-		b.WriteString(c.name)
-		b.WriteString("(")
-		b.WriteString(truncateBytes(c.args, criticArgsCap))
-		b.WriteString(") → ")
-		b.WriteString(truncateBytes(results[id], criticResultCap))
+		var line strings.Builder
+		line.WriteString("\n- ")
+		line.WriteString(c.name)
+		line.WriteString("(")
+		line.WriteString(truncateBytes(c.args, criticArgsCap))
+		line.WriteString(") → ")
+		line.WriteString(truncateBytes(results[id], criticResultCap))
+		lines = append(lines, line.String())
 	}
-	if b.Len() == 0 {
+	if len(lines) == 0 {
 		return "\n(no tool calls)"
 	}
-	return truncateBytes(b.String(), criticDigestCap)
+	start := len(lines)
+	total := 0
+	for start > 0 {
+		next := len(lines[start-1])
+		if total > 0 && total+next > criticDigestCap {
+			break
+		}
+		start--
+		total += next
+		if total >= criticDigestCap {
+			break
+		}
+	}
+	return truncateBytes(strings.Join(lines[start:], ""), criticDigestCap)
 }
 
 // parseCriticVerdict reads the DONE / NOT_DONE verdict. NOT_DONE is checked first

@@ -14,7 +14,7 @@ set -euo pipefail
 # container's NEO4J_AUTH) unless the operator already exported NEO4J_PASSWORD.
 if [[ -z "${NEO4J_PASSWORD:-}" ]] && command -v docker >/dev/null 2>&1; then
   NEO4J_PASSWORD=$(docker inspect aura-neo4j --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
-    | grep '^NEO4J_AUTH=' | sed 's|^NEO4J_AUTH=neo4j/||' | tr -d '\r' || true)
+    | grep '^NEO4J_AUTH=' | sed 's|^NEO4J_AUTH=neo4j/||' | awk '{ sub(/\r$/, ""); print }' || true)
   export NEO4J_PASSWORD
 fi
 

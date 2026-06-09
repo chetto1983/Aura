@@ -249,6 +249,10 @@ func (b *Budget) Remaining() int {
 // than deriving used from a cap.
 func (b *Budget) BranchConsumed() int { return int(b.branchConsumed.Load()) }
 
+// Now returns the budget's clock value. It is the runtime's single per-turn time
+// source so prompt hints and wallclock gates agree in tests and production.
+func (b *Budget) Now() time.Time { return b.now() }
+
 // SetMaxSteps overrides the shared step counter (CLI flag precedence, D-06).
 // It resets the WHOLE tree's remaining budget; intended only at boot before any
 // child is spawned.

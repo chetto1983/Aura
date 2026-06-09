@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
+	tele "gopkg.in/telebot.v4"
 )
 
 // TestRendererTableToPhoto proves a markdown table in the content renders via
@@ -37,6 +38,65 @@ func TestRendererTableToPhoto(t *testing.T) {
 	// The prose framing the table goes into the caption.
 	if !strings.Contains(photoCall.text, "Ecco i dati") {
 		t.Errorf("caption missing prose framing: %q", photoCall.text)
+	}
+}
+
+func TestRendererTableCaptionUsesHTML(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	r := newTestRenderer(bot)
+
+	content := "*Dati* <ok>&\n\n| Citta | Temp |\n|---|---|\n| Cuneo | 12 |"
+	driveRenderer(r, []events.Event{
+		events.NewTextMessageContentEvent("m1", content),
+		events.NewTextMessageEndEvent("m1"),
+	})
+
+	var photoCall *sendCall
+	for i := range bot.recorded() {
+		c := bot.recorded()[i]
+		if c.photo != nil {
+			photoCall = &c
+			break
+		}
+	}
+	if photoCall == nil {
+		t.Fatalf("no sendPhoto for table; calls=%+v", bot.recorded())
+	}
+	if photoCall.parseMode != tele.ModeHTML {
+		t.Fatalf("photo caption parse mode = %q, want HTML", photoCall.parseMode)
+	}
+	for _, want := range []string{"<b>Dati</b>", "&lt;ok&gt;&amp;"} {
+		if !strings.Contains(photoCall.text, want) {
+			t.Errorf("caption missing %q in %q", want, photoCall.text)
+		}
+	}
+}
+
+func TestRendererTableCaptionCapsBeforeHTMLConversion(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	r := newTestRenderer(bot)
+
+	content := strings.Repeat("<", telegramCaptionCap) + "\n\n| Citta | Temp |\n|---|---|\n| Cuneo | 12 |"
+	driveRenderer(r, []events.Event{
+		events.NewTextMessageContentEvent("m1", content),
+		events.NewTextMessageEndEvent("m1"),
+	})
+
+	var photoCall *sendCall
+	for i := range bot.recorded() {
+		c := bot.recorded()[i]
+		if c.photo != nil {
+			photoCall = &c
+			break
+		}
+	}
+	if photoCall == nil {
+		t.Fatalf("no sendPhoto for table; calls=%+v", bot.recorded())
+	}
+	if got := strings.Count(photoCall.text, "&lt;"); got != telegramCaptionCap {
+		t.Fatalf("caption should cap raw text before HTML conversion: got %d escaped brackets, want %d", got, telegramCaptionCap)
 	}
 }
 

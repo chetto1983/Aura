@@ -426,7 +426,7 @@ go test -tags 'cot_eval db_integration' -run TestSnippetReuseE2E -timeout 540s -
 ```bash
 set +H; cd /mnt/d/Aura
 export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"
-set -a; source <(tr -d '\r' < .env); set +a   # POSTGRES_PASSWORD + OPENROUTER_API_KEY (strip single quotes)
+set -a; source <(awk '{ sub(/\r$/, ""); print }' .env); set +a   # POSTGRES_PASSWORD + OPENROUTER_API_KEY (strip single quotes)
 export AGUI_SMOKE_LIVE=1                        # arm the live OpenRouter leg (REASONING_* hard-asserted)
 bash scripts/agui_smoke.sh                      # builds aura, seeds a conv, serves, curls SSE+GET+404, tears down
 # Then `./aura serve` + `./aura chat` against the same conversation to confirm the live dim 💭 reasoning render,

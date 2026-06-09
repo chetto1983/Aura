@@ -111,7 +111,7 @@ scripts/                 smoke, restore drill, coverage gate, file-size cap
 
 ## Architecture & process
 
-Aura is built **PRD-first**: [`prd.md`](prd.md) is the source of truth and [`CLAUDE.md`](CLAUDE.md) the working contract. Work proceeds in numbered slices through a phased GSD workflow (spec → discuss → plan → execute → verify → review). Persistence is Postgres `aura.*` + Neo4j HNSW (768d cosine).
+Aura is built **PRD-first**: [`prd.md`](prd.md) is the source of truth and [`CLAUDE.md`](CLAUDE.md) the working contract. Work proceeds in numbered slices through a phased GSD workflow (spec → discuss → plan → execute → verify → review). Persistence is Postgres `aura.*` + Neo4j HNSW (384d cosine).
 
 ## What's deliberately not here
 

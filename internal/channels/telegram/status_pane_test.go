@@ -66,8 +66,9 @@ func goldenCases() map[string][]events.Event {
 		},
 		"reasoning": {
 			events.NewRunStartedEvent("t", "r"),
-			events.NewReasoningMessageContentEvent("rsn1", "Sto cercando "),
-			events.NewReasoningMessageContentEvent("rsn1", "i dati meteo."),
+			events.NewReasoningStartEvent("rsn1"),
+			events.NewReasoningMessageContentEvent("rsn1", "SECRET-RAW-REASONING"),
+			events.NewReasoningEndEvent("rsn1"),
 		},
 		"cost_footer": {
 			events.NewRunStartedEvent("t", "r"),
@@ -113,8 +114,9 @@ func TestStatusPaneGoldenPerEvent(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read golden %s (run -update to create): %v", golden, err)
 			}
-			if got != string(want) {
-				t.Errorf("pane text mismatch\n got: %q\nwant: %q", got, string(want))
+			wantText := strings.TrimSuffix(string(want), "\n")
+			if got != wantText {
+				t.Errorf("pane text mismatch\n got: %q\nwant: %q", got, wantText)
 			}
 		})
 	}
@@ -162,7 +164,7 @@ func TestStatusPaneCancelButtonLifecycle(t *testing.T) {
 	}
 }
 
-func TestStatusPaneCollapsesSuccessfulToolListOnFinish(t *testing.T) {
+func TestStatusPaneKeepsSuccessfulToolDetailOnFinish(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
 	drivePane(bot, []events.Event{
@@ -174,11 +176,11 @@ func TestStatusPaneCollapsesSuccessfulToolListOnFinish(t *testing.T) {
 		events.NewRunFinishedEvent("t", "r"),
 	})
 	got := lastText(bot)
-	if strings.Contains(got, "web_search") || strings.Contains(got, "fs_read") {
-		t.Fatalf("successful finished pane should collapse tool names, got %q", got)
+	if !strings.Contains(got, "web_search") || !strings.Contains(got, "fs_read") {
+		t.Fatalf("successful finished pane should keep tool detail, got %q", got)
 	}
-	if !strings.Contains(got, "2 strumenti") {
-		t.Fatalf("successful finished pane should summarize tool count, got %q", got)
+	if strings.Contains(got, "2 strumenti") {
+		t.Fatalf("successful finished pane must not collapse tools to a count, got %q", got)
 	}
 }
 
@@ -197,18 +199,19 @@ func TestStatusPaneKeepsFailedToolDetailOnFinish(t *testing.T) {
 	}
 }
 
-// TestStatusPaneReasoningSurvivesFinishWithLatestSnippet proves the reasoning line
-// remains useful after the final answer lands: compact, recent, and with the cost
-// footer still intact.
-func TestStatusPaneReasoningSurvivesFinishWithLatestSnippet(t *testing.T) {
+// TestStatusPaneReasoningSurvivesFinish proves the safe reasoning lifecycle stays
+// visible after the final answer lands, with the cost footer intact.
+func TestStatusPaneReasoningSurvivesFinish(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
 	oldMarker := "VERY-OLD-MARKER"
 	latest := "latest useful detail"
 	drivePane(bot, []events.Event{
 		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningStartEvent("rsn1"),
 		events.NewReasoningMessageContentEvent("rsn1", oldMarker+" "+strings.Repeat("stale context ", 30)),
 		events.NewReasoningMessageContentEvent("rsn1", latest),
+		events.NewReasoningEndEvent("rsn1"),
 		events.NewStateDeltaEvent([]events.JSONPatchOperation{
 			{Op: "replace", Path: "/cost_usd", Value: "0.0012"},
 		}),
@@ -218,14 +221,70 @@ func TestStatusPaneReasoningSurvivesFinishWithLatestSnippet(t *testing.T) {
 	if !containsRune(got, '💭') {
 		t.Errorf("reasoning line must survive RUN_FINISHED, got: %q", got)
 	}
-	if !strings.Contains(got, latest) {
-		t.Errorf("reasoning line must keep the latest useful detail, got: %q", got)
+	if !strings.Contains(got, "completato") {
+		t.Errorf("reasoning line must show the safe lifecycle state, got: %q", got)
 	}
-	if strings.Contains(got, oldMarker) {
-		t.Errorf("reasoning line must prefer recent context over old opening text, got: %q", got)
+	if strings.Contains(got, latest) || strings.Contains(got, oldMarker) {
+		t.Errorf("reasoning line must not expose raw provider reasoning, got: %q", got)
 	}
 	if !strings.Contains(got, "0.0012") {
 		t.Errorf("cost footer must survive RUN_FINISHED, got: %q", got)
+	}
+}
+
+func TestStatusPaneShowsOnlySafeReasoningLifecycle(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	opening := "OPENING-REASONING"
+	closing := "CLOSING-REASONING"
+	drivePane(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningStartEvent("rsn1"),
+		events.NewReasoningMessageContentEvent("rsn1", opening+" "+strings.Repeat("detail ", 30)),
+		events.NewReasoningMessageContentEvent("rsn1", closing),
+		events.NewReasoningEndEvent("rsn1"),
+		events.NewRunFinishedEvent("t", "r"),
+	})
+	got := lastText(bot)
+	if !strings.Contains(got, "completato") {
+		t.Fatalf("safe reasoning lifecycle missing, got: %q", got)
+	}
+	if strings.Contains(got, opening) || strings.Contains(got, closing) {
+		t.Fatalf("raw provider reasoning leaked into status pane: %q", got)
+	}
+}
+
+func TestStatusPaneCapsReasoningToTelegramLimitWithManyToolsAndCost(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	evs := []events.Event{events.NewRunStartedEvent("t", "r")}
+	for i := 0; i < 40; i++ {
+		id := "tool-call-with-long-name-" + strings.Repeat("x", 20) + string(rune('a'+i%26))
+		evs = append(evs,
+			events.NewToolCallStartEvent(id, id),
+			events.NewToolCallResultEvent("m", id, "ok"),
+		)
+	}
+	evs = append(evs,
+		events.NewReasoningStartEvent("rsn1"),
+		events.NewReasoningMessageContentEvent("rsn1", "OPENING "+strings.Repeat("reasoning ", 700)),
+		events.NewReasoningMessageContentEvent("rsn1", "TAIL"),
+		events.NewReasoningEndEvent("rsn1"),
+		events.NewStateDeltaEvent([]events.JSONPatchOperation{
+			{Op: "replace", Path: "/cost_usd", Value: "0.0099"},
+		}),
+		events.NewRunFinishedEvent("t", "r"),
+	)
+	drivePane(bot, evs)
+	got := lastText(bot)
+	if n := len([]rune(got)); n > telegramTextCap {
+		t.Fatalf("status pane exceeded Telegram text cap: got %d runes, want <= %d", n, telegramTextCap)
+	}
+	if strings.Contains(got, "TAIL") || strings.Contains(got, "OPENING") {
+		t.Fatalf("status pane must not expose raw provider reasoning, got %q", got)
+	}
+	if !strings.Contains(got, "Costo: $0.0099") {
+		t.Fatalf("cost footer should survive reasoning cap, got %q", got)
 	}
 }
 

@@ -58,7 +58,7 @@ services:
       retries: 10
       start_period: 40s   # APOC + GDS auto-download takes time on first boot
 
-  # ↓↓ Slice 0.7 — embeddinggemma-300m OpenAI-compat sidecar ↓↓
+  # ↓↓ Slice 0.7 — Granite 97M OpenAI-compat embedding sidecar ↓↓
   aura-llama-embed:
     image: ghcr.io/ggml-org/llama.cpp:server
     container_name: aura-llama-embed

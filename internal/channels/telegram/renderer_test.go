@@ -21,17 +21,17 @@ type sendCall struct {
 }
 
 // fakeBot is the botSender double: it records every Send/Edit and can be told to
-// reject a MarkdownV2 send with a Bot-API 400 "can't parse entities" (the
+// reject a parsed send with a Bot-API 400 "can't parse entities" (the
 // plain-text fallback trigger). Assertions read the recorded calls (the spike
 // ground truth: the Send RESPONSE, never getUpdates).
 type fakeBot struct {
 	mu    sync.Mutex
 	calls []sendCall
 
-	// fail400OnMarkdownV2 makes the FIRST MarkdownV2 Send/Edit return a 400
+	// fail400OnParsed makes the FIRST parsed Send/Edit return a 400
 	// can't-parse-entities; subsequent (plain-text) sends succeed.
-	fail400OnMarkdownV2 bool
-	tripped             bool
+	fail400OnParsed bool
+	tripped         bool
 
 	// failPhoto makes every *tele.Photo send return a hard (non-400) error so the
 	// sendTable path returns false and the caller falls back to a text send.
@@ -57,7 +57,7 @@ func (f *fakeBot) record(edit bool, what any, opts []any) (*tele.Message, error)
 		c.text = w.Caption
 	}
 
-	if f.fail400OnMarkdownV2 && !f.tripped && mode == tele.ModeMarkdownV2 {
+	if f.fail400OnParsed && !f.tripped && mode != tele.ModeDefault {
 		f.tripped = true
 		f.calls = append(f.calls, c)
 		return nil, &tele.Error{Code: 400, Description: "Bad Request: can't parse entities: bad escape"}
@@ -141,8 +141,8 @@ func newTestRenderer(bot botSender) *renderer {
 	return r
 }
 
-// TestRendererStreamsAndFinalizes proves TEXT_MESSAGE_* content is sent
-// MarkdownV2-escaped and finalized on RUN_FINISHED.
+// TestRendererStreamsAndFinalizes proves TEXT_MESSAGE_* content is sent as
+// Telegram HTML and finalized on RUN_FINISHED.
 func TestRendererStreamsAndFinalizes(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
@@ -161,23 +161,22 @@ func TestRendererStreamsAndFinalizes(t *testing.T) {
 		t.Fatal("renderer made no send")
 	}
 	last := calls[len(calls)-1]
-	if last.parseMode != tele.ModeMarkdownV2 {
-		t.Errorf("final send parse mode = %q, want MarkdownV2", last.parseMode)
+	if last.parseMode != tele.ModeHTML {
+		t.Errorf("final send parse mode = %q, want HTML", last.parseMode)
 	}
-	// "." is reserved → escaped to "\." in MarkdownV2.
-	if !strings.Contains(last.text, `mondo\.`) {
-		t.Errorf("final text not mdv2-escaped: %q", last.text)
+	if !strings.Contains(last.text, `mondo.`) {
+		t.Errorf("final text missing plain punctuation in HTML mode: %q", last.text)
 	}
 }
 
-// TestRendererPlainTextFallbackOn400 proves a MarkdownV2 send that 400s with
+// TestRendererPlainTextFallbackOn400 proves a parsed HTML send that 400s with
 // "can't parse entities" is resent WITHOUT ParseMode carrying the ORIGINAL
 // (unescaped) text — the SC#2 guarantee. Asserts on the Send RESPONSE, not
 // getUpdates.
 func TestRendererPlainTextFallbackOn400(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
-	bot.fail400OnMarkdownV2 = true
+	bot.fail400OnParsed = true
 	r := newTestRenderer(bot)
 
 	driveRenderer(r, []events.Event{
@@ -187,11 +186,11 @@ func TestRendererPlainTextFallbackOn400(t *testing.T) {
 
 	calls := bot.recorded()
 	if len(calls) < 2 {
-		t.Fatalf("expected a failed mdv2 send + a plain-text resend, got %d calls", len(calls))
+		t.Fatalf("expected a failed parsed send + a plain-text resend, got %d calls", len(calls))
 	}
-	// First call: MarkdownV2 (the one that 400s).
-	if calls[0].parseMode != tele.ModeMarkdownV2 {
-		t.Errorf("first send parse mode = %q, want MarkdownV2", calls[0].parseMode)
+	// First call: HTML (the one that 400s).
+	if calls[0].parseMode != tele.ModeHTML {
+		t.Errorf("first send parse mode = %q, want HTML", calls[0].parseMode)
 	}
 	// The fallback resend: ModeDefault (no ParseMode) carrying the ORIGINAL text.
 	fb := calls[len(calls)-1]
@@ -392,13 +391,13 @@ func TestRendererConsumeFinalizesCoalescedTail(t *testing.T) {
 	}
 }
 
-// TestRendererTableCaptionPlainFallback proves a markdown table whose MarkdownV2
+// TestRendererTableCaptionPlainFallback proves a markdown table whose HTML
 // caption 400s is resent as a photo with a PLAIN caption (kills the sendTable
 // caption-fallback removal).
 func TestRendererTableCaptionPlainFallback(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
-	bot.fail400OnMarkdownV2 = true
+	bot.fail400OnParsed = true
 	r := newTestRenderer(bot)
 
 	content := "Prosa con - trattino.\n\n| Città | Temp |\n|-------|------|\n| Cuneo | 12 |"
@@ -417,7 +416,7 @@ func TestRendererTableCaptionPlainFallback(t *testing.T) {
 	if plainPhoto == nil {
 		t.Fatalf("a table caption that 400s must resend the photo with a plain caption; calls=%+v", bot.recorded())
 	}
-	// The resent caption must be the UNESCAPED plain text, not the MarkdownV2 one
+	// The resent caption must be the UNESCAPED plain text, not the HTML one
 	// (kills the `photo.Caption = capRunes(PlainTextFallback(...))` reassignment).
 	if strings.Contains(plainPhoto.text, `\`) {
 		t.Errorf("plain-fallback photo caption must be unescaped; got %q", plainPhoto.text)
@@ -538,7 +537,7 @@ func TestRendererTracksMsgForEdits(t *testing.T) {
 func TestRendererPlainLatchAndMsgTracking(t *testing.T) {
 	t.Parallel()
 	bot := newFakeBot()
-	bot.fail400OnMarkdownV2 = true
+	bot.fail400OnParsed = true
 	r := newTestRenderer(bot)
 
 	driveRenderer(r, []events.Event{
@@ -553,14 +552,14 @@ func TestRendererPlainLatchAndMsgTracking(t *testing.T) {
 	if r.msg == nil {
 		t.Error("msg #2 must be tracked after a successful send")
 	}
-	// Every send AFTER the latch must be ModeDefault (plain), never MarkdownV2.
+	// Every send AFTER the latch must be ModeDefault (plain), never parsed HTML.
 	calls := bot.recorded()
 	for i, c := range calls {
 		if i == 0 {
-			continue // the first (MarkdownV2) send is the one that 400s
+			continue // the first parsed send is the one that 400s
 		}
-		if c.parseMode == tele.ModeMarkdownV2 {
-			t.Errorf("call %d after the 400 latch used MarkdownV2; must stay plain", i)
+		if c.parseMode != tele.ModeDefault {
+			t.Errorf("call %d after the 400 latch used parse mode %q; must stay plain", i, c.parseMode)
 		}
 	}
 }

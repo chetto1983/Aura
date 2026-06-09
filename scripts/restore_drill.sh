@@ -29,9 +29,16 @@ PG_SERVICE="${PG_CONTAINER:-postgres}"
 SOURCE_DB="${SOURCE_DB:-aura}"
 DB_USER="${POSTGRES_USER:-aura}"
 DB_PASS="${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in environment}"
+if [[ -z "${DOCKER:-}" ]]; then
+    if command -v docker.exe >/dev/null 2>&1; then
+        DOCKER=docker.exe
+    else
+        DOCKER=docker
+    fi
+fi
 
 run() {
-    docker compose exec -T -e PGPASSWORD="$DB_PASS" "$PG_SERVICE" "$@"
+    "$DOCKER" compose exec -T -e PGPASSWORD="$DB_PASS" "$PG_SERVICE" "$@"
 }
 
 # 1. Make sure dump exists (inside container at $DUMPFILE).

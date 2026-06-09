@@ -153,9 +153,7 @@ func handleChunk(wc *wireChunk, acc *accumulator, res *parseResult, emit func(ll
 				"reasoning_chars":         reasoningtrace.RuneLen(c.Delta.Reasoning),
 				"reasoning_content_chars": reasoningtrace.RuneLen(c.Delta.ReasoningContent),
 				"chosen_delta_chars":      reasoningtrace.RuneLen(r),
-				"reasoning_delta":         c.Delta.Reasoning,
-				"reasoning_content_delta": c.Delta.ReasoningContent,
-				"chosen_reasoning_delta":  r,
+				"redacted":                true,
 			})
 			if !emit(llm.Chunk{Reasoning: r}) {
 				return false

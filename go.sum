@@ -68,6 +68,8 @@ github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.1/go.mod h1:KUwy/WLgv9kv2ye
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/OneOfOne/xxhash v1.2.2/go.mod h1:HSdplMjZKSmBqAxg5vPj2TmRDmfkzw+cTzAElWljhcU=
+github.com/PaulSonOfLars/gotg_md2html v0.0.0-20260314092343-61634cbfb443 h1:CkicKmH5KH92vJ8jPJvvYXHY8hIrSbxpoBMN/s6XHV0=
+github.com/PaulSonOfLars/gotg_md2html v0.0.0-20260314092343-61634cbfb443/go.mod h1:pMelqhFmDBmz/i7ct5sn/3TKye1iNQo0XzUi+EpsOpQ=
 github.com/adhocore/gronx v1.20.0 h1:PD13Mo0wekkZ7ZZR9yb1TqeqTfybs7/K3ez9DmjQwEs=
 github.com/adhocore/gronx v1.20.0/go.mod h1:7oUY1WAU8rEJWmAxXR2DN0JaO4gi9khSgKjiRypqteg=
 github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9 h1:DQFhA6IAPabs7cQ/Ryv1DfhfnGQ5cZLCBtf8YRqx2FY=

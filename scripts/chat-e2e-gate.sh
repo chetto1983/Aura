@@ -32,9 +32,19 @@ cd "$ROOT"
 set -a; . ./.env; set +a
 export AURA_SKILLS_DIR="${AURA_SKILLS_DIR:-$USERPROFILE/.aura/skills}"
 export AURA_RUN_DIR="${AURA_RUN_DIR:-D:/tmp/aura-run}"
+export AURA_LOOP_MAX_STEPS="${AURA_CHAT_GATE_MAX_STEPS:-40}"
+export AURA_LOOP_MAX_WALLCLOCK_SEC="${AURA_CHAT_GATE_WALLCLOCK_SEC:-$MAX_SEC}"
 
 # mktemp is unreliable under MSYS (empty output observed live) — plain mkdir.
-WS="/d/tmp/aura-chat-gate-$(date +%s)-$$"
+# Prefer the real Windows temp root the operator requested; w64devkit maps
+# /d/tmp to D:\d\tmp, not D:\tmp. AURA_CHAT_GATE_TMP can override this.
+TMP_ROOT="${AURA_CHAT_GATE_TMP:-}"
+if [ -z "$TMP_ROOT" ]; then
+  if [ -d "D:/tmp" ]; then TMP_ROOT="D:/tmp"; else TMP_ROOT="${TMPDIR:-${TEMP:-${TMP:-/tmp}}}"; fi
+fi
+TMP_ROOT="${TMP_ROOT//\\//}"
+TMP_ROOT="${TMP_ROOT%/}"
+WS="$TMP_ROOT/aura-chat-gate-$(date +%s)-$$"
 mkdir -p "$WS" || { echo "FATAL: cannot create workspace $WS"; exit 2; }
 echo "== chat E2E gate: workspace $WS"
 

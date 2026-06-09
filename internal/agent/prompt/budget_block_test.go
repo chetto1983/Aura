@@ -8,10 +8,10 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-// TestWorkspaceLine pins the #52/D-41 workspace hint: the per-conversation
-// workspace path rides the SAME per-turn trailing message as the budget (after
-// history — never in the cached prefix), and a workspace-only Budget still emits.
-func TestWorkspaceLine(t *testing.T) {
+// TestVolatileHintLines pins the #52/D-41 workspace hint and the current-time
+// hint: both ride the SAME per-turn trailing message as the budget (after
+// history, never in the cached prefix), and each can emit without step counts.
+func TestVolatileHintLines(t *testing.T) {
 	t.Parallel()
 	b := NewPromptBuilder()
 	reg := testRegistry()
@@ -28,6 +28,27 @@ func TestWorkspaceLine(t *testing.T) {
 	last = only.Messages[len(only.Messages)-1]
 	if want := "<workspace>D:/ws/run-1</workspace>"; last.Content != want {
 		t.Fatalf("workspace-only block = %q, want %q", last.Content, want)
+	}
+
+	withTime := b.Build(hist, reg, "openrouter", cfg, Budget{
+		Used:        1,
+		Remaining:   2,
+		Workspace:   "D:/ws/run-1",
+		CurrentTime: "2026-06-09T12:34:56+02:00",
+		Today:       "2026-06-09",
+	})
+	last = withTime.Messages[len(withTime.Messages)-1]
+	if want := "<budget>used=1 remaining=2</budget>\n<workspace>D:/ws/run-1</workspace>\n<current_time>2026-06-09T12:34:56+02:00</current_time>\n<today>2026-06-09</today>"; last.Content != want {
+		t.Fatalf("budget+workspace+time block = %q, want %q", last.Content, want)
+	}
+
+	timeOnly := b.Build(hist, reg, "openrouter", cfg, Budget{
+		CurrentTime: "2026-06-09T12:34:56+02:00",
+		Today:       "2026-06-09",
+	})
+	last = timeOnly.Messages[len(timeOnly.Messages)-1]
+	if want := "<current_time>2026-06-09T12:34:56+02:00</current_time>\n<today>2026-06-09</today>"; last.Content != want {
+		t.Fatalf("time-only block = %q, want %q", last.Content, want)
 	}
 }
 

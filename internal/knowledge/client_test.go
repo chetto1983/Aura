@@ -14,6 +14,7 @@ package knowledge
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -39,7 +40,7 @@ func testConfig(t *testing.T) *Config {
 		MCPBinary:         envOr("AURA_MCP_NEO4J_CYPHER_BIN", "mcp-neo4j-cypher"),
 		ConnectTimeoutSec: 10,
 		EmbedURL:          envOr("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
-		EmbedDimensions:   768,
+		EmbedDimensions:   envIntOr(t, "AURA_EMBED_DIMENSIONS", DefaultEmbedDimensions),
 	}
 }
 
@@ -98,7 +99,8 @@ func TestPing_Full(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ping: %v", err)
 	}
-	if !strings.HasPrefix(res.ServerVersion, "5.26") || res.EmbedDim != 768 {
+	wantDim := testConfig(t).EmbedDimensions
+	if !strings.HasPrefix(res.ServerVersion, "5.26") || res.EmbedDim != wantDim {
 		t.Errorf("Ping result: %+v", res)
 	}
 }
@@ -327,10 +329,12 @@ func TestInitCypher_AllArtifactsPresent(t *testing.T) {
 			t.Errorf("SHOW INDEXES missing %q\n  got: %s", want, idx)
 		}
 	}
-	// HNSW vector index config (Amendment #18/#20): 768d cosine (Neo4j reports
+	// HNSW vector index config (Amendment #18/#20): configured dim + cosine
+	// (Neo4j reports
 	// the similarity function uppercased as COSINE).
-	if !strings.Contains(idx, "768") || !strings.Contains(strings.ToLower(idx), "cosine") {
-		t.Errorf("chunk_embedding HNSW config missing 768/cosine\n  got: %s", idx)
+	wantDim := strconv.Itoa(testConfig(t).EmbedDimensions)
+	if !strings.Contains(idx, wantDim) || !strings.Contains(strings.ToLower(idx), "cosine") {
+		t.Errorf("chunk_embedding HNSW config missing %s/cosine\n  got: %s", wantDim, idx)
 	}
 
 	consRaw, err := mcp.Cypher(ctx, "SHOW CONSTRAINTS YIELD name RETURN name", nil, false)

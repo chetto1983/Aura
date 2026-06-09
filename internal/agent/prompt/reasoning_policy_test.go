@@ -33,14 +33,14 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 			name:       "low_reasoning",
 			tier:       ReasoningTierLow,
 			wantEffort: llm.ReasoningEffortLow,
-			wantExcl:   false,
+			wantExcl:   true,
 			wantTokens: 2048,
 		},
 		{
 			name:       "high_reasoning",
 			tier:       ReasoningTierHigh,
 			wantEffort: llm.ReasoningEffortHigh,
-			wantExcl:   false,
+			wantExcl:   true,
 			wantTokens: 4096,
 		},
 	}
@@ -170,6 +170,18 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 			{Role: llm.RoleUser, Content: "Stop calling tools. Using only the tool results already gathered above, write the final answer to the user's original question now."},
 		}
 		if got := LastGenuineUserContent(hist); got != "scrivi uno script di scraping di la stampa" {
+			t.Fatalf("LastGenuineUserContent = %q", got)
+		}
+	})
+
+	t.Run("skips_synthetic_time_hint", func(t *testing.T) {
+		t.Parallel()
+		hist := []llm.Message{
+			{Role: llm.RoleSystem, Content: "system prefix"},
+			{Role: llm.RoleUser, Content: "crea un xlsx con la data di oggi"},
+			{Role: llm.RoleUser, Content: "<current_time>2026-06-09T12:34:56+02:00</current_time>\n<today>2026-06-09</today>"},
+		}
+		if got := LastGenuineUserContent(hist); got != "crea un xlsx con la data di oggi" {
 			t.Fatalf("LastGenuineUserContent = %q", got)
 		}
 	})

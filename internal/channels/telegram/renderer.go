@@ -2,9 +2,9 @@
 // streamed answer). It consumes the TEXT_MESSAGE_* / TOOL_CALL_RESULT family the
 // AG-UI translator produces and renders them to Telegram with three guarantees:
 //
-//   - MarkdownV2-escaped sends (mdv2.go) with a PLAIN-TEXT FALLBACK on a Bot-API
+//   - HTML parse-mode sends (html.go) with a PLAIN-TEXT FALLBACK on a Bot-API
 //     400 "can't parse entities" — the SC#2 "no can't parse entities" guarantee:
-//     a rejected MarkdownV2 send is resent WITHOUT ParseMode.
+//     a rejected parsed send is resent WITHOUT ParseMode.
 //   - markdown tables in the content render to a gridded PNG (tables.go) and go out
 //     via sendPhoto (caption capped at 1024).
 //   - content edits coalesce to the content throttle and per-chat sends are bounded
@@ -33,7 +33,7 @@ const (
 const canParseEntitiesMarker = "can't parse entities"
 
 // renderer streams msg #2 for one turn: TEXT_MESSAGE_* deltas accumulate into the
-// content message, sent MarkdownV2-escaped with a plain-text fallback, throttled
+// content message, sent as Telegram HTML with a plain-text fallback, throttled
 // and rate-limited. A detected markdown table renders to a PNG sendPhoto.
 type renderer struct {
 	bot      botSender
@@ -113,6 +113,9 @@ func (r *renderer) finalText() string {
 // non-final flush inside the throttle window is skipped (coalesced).
 func (r *renderer) flush(ctx context.Context, final bool) {
 	content := stripProtocolToolBlocks(r.buf.String())
+	if !final {
+		content = suppressPartialProtocolOpen(content)
+	}
 	if content == "" || r.tableSent || (final && r.textDone) {
 		return // nothing buffered, or the turn already finalized as a table PNG
 	}
@@ -139,7 +142,7 @@ func (r *renderer) rateLimit(ctx context.Context) {
 }
 
 // send renders content to Telegram: a markdown table goes out as a PNG sendPhoto;
-// otherwise the text is MarkdownV2-escaped and sent/edited, with the plain-text
+// otherwise the text is converted to Telegram HTML and sent/edited, with the plain-text
 // fallback on a 400 can't-parse-entities.
 func (r *renderer) send(content string, final bool) bool {
 	if grid, ok := ParseMarkdownTable(content); ok {
@@ -158,7 +161,7 @@ func (r *renderer) send(content string, final bool) bool {
 	return r.sendText(content, final)
 }
 
-// sendText sends/edits msg #2 with MarkdownV2. During live streaming it caps the
+// sendText sends/edits msg #2 as Telegram HTML. During live streaming it caps the
 // draft to the first Telegram-sized chunk; on finalization it splits the complete
 // answer into Telegram-sized messages so the tail is not silently lost.
 func (r *renderer) sendText(content string, final bool) bool {
@@ -181,7 +184,7 @@ func (r *renderer) sendText(content string, final bool) bool {
 // of a finalized long answer; chunk 1 edits the streamed message in place.
 func (r *renderer) sendTextChunk(chunk string, forceNew bool) bool {
 	// Once a 400 forced the fallback for this message, stay in plain mode: editing
-	// it back to MarkdownV2 would just 400 again (the content only grows).
+	// it back to parsed HTML would just 400 again (the content only grows).
 	if r.plain {
 		if out, err := r.deliver(PlainTextFallback(chunk), tele.ModeDefault, forceNew); err == nil && out != nil {
 			r.msg = out
@@ -190,7 +193,7 @@ func (r *renderer) sendTextChunk(chunk string, forceNew bool) bool {
 		return false
 	}
 
-	out, err := r.deliver(EscapeMarkdownV2(chunk), tele.ModeMarkdownV2, forceNew)
+	out, err := r.deliver(RenderTelegramHTML(chunk), tele.ModeHTML, forceNew)
 	if isCantParseEntities(err) {
 		// Resend the unescaped original without ParseMode (plain-text fallback) and
 		// latch plain mode so subsequent edits of this message stay plain.
@@ -223,12 +226,12 @@ func (r *renderer) sendTable(grid [][]string, content string) bool {
 	if err != nil {
 		return false
 	}
-	caption := capRunes(EscapeMarkdownV2(tableCaption(content)), telegramCaptionCap)
+	caption := RenderTelegramHTML(capRunes(tableCaption(content), telegramCaptionCap))
 	photo := &tele.Photo{
 		File:    tele.FromReader(bytes.NewReader(png)),
 		Caption: caption,
 	}
-	out, sendErr := r.bot.Send(r.to, photo, sendOpts(tele.ModeMarkdownV2))
+	out, sendErr := r.bot.Send(r.to, photo, sendOpts(tele.ModeHTML))
 	if isCantParseEntities(sendErr) {
 		photo.Caption = capRunes(PlainTextFallback(tableCaption(content)), telegramCaptionCap)
 		out, sendErr = r.bot.Send(r.to, photo, sendOpts(tele.ModeDefault))
@@ -337,6 +340,19 @@ func firstIndexFrom(s string, from int, needles ...string) int {
 		}
 	}
 	return best
+}
+
+func suppressPartialProtocolOpen(s string) string {
+	lower := strings.ToLower(s)
+	for _, opener := range []string{"<tool_call", "<tool_exec"} {
+		maxSuffix := min(len(lower), len(opener)-1)
+		for n := maxSuffix; n > 0; n-- {
+			if strings.HasSuffix(lower, opener[:n]) {
+				return strings.TrimSpace(s[:len(s)-n])
+			}
+		}
+	}
+	return s
 }
 
 // sendOpts builds the SendOptions carrying a parse mode (mode "" disables parsing).

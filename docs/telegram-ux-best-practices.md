@@ -8,9 +8,9 @@ docs + community guides (cited inline), curated local sources in `D:/tmp`, and t
 Aura's current Telegram surfaces (the system this informs):
 - **Status pane** — msg #1, edited in place per turn: tool list with 🟡/✅/❌, a 💭
   reasoning line, a running-cost footer; throttled edits (`status_pane.go`).
-- **Content renderer** — msg #2: streamed answer, MarkdownV2-escaped with a plain-text
+- **Content renderer** — msg #2: streamed answer, converted to Telegram HTML with a plain-text
   fallback on the "can't parse entities" 400; markdown tables → PNG via sendPhoto
-  (`renderer.go`, `mdv2.go`, `tables.go`).
+  (`renderer.go`, `html.go`, `tables.go`).
 - **HITL inline keyboards** via `ask_user`: approval (Sì/No), choice (2–4 buttons +
   Annulla), clarification (ForceReply) (`hitl.go`, `bot_dispatch.go`).
 - **Multimodal** — voice (STT), photo (OCR/vision), documents (markitdown), TTS-out.
@@ -28,7 +28,7 @@ Aura's current Telegram surfaces (the system this informs):
 | 1 | ✅ **Adopt the index→server-side-map callback_data pattern everywhere, and harden it.** Choice buttons carry indices and `callbackData()` guards the 64-byte cap. | High | Done | `hitl.go` |
 | 2 | ✅ **Remove the keyboard once a HITL pause is answered.** Valid taps now clear the prompt markup immediately. | High | Done | `hitl.go`, `bot_dispatch.go` |
 | 3 | ✅ **Always answer the callback with context.** HITL taps now show short confirmation toasts before resume rendering. | High | Done | `bot_dispatch.go: onCallback` |
-| 4 | ✅ **Close parse_mode=HTML/entity-array spike as deferred.** The current MarkdownV2 escaper + plain-text fallback is heavily tested; moving to HTML/entities would be a dedicated renderer migration outside this UX cleanup. | High | Closed | `mdv2.go`, `renderer.go` |
+| 4 | ✅ **Adopt HTML parse mode for the answer renderer.** `gotg_md2html` converts Markdown-ish model output to Telegram-safe HTML, with the existing plain-text fallback retained. | High | Done | `html.go`, `renderer.go` |
 | 5 | ✅ **Paginate long `/search` output.** Long result sets now use inline prev/next pagination with server-side state. | Med | Done | `commands.go`, `bot_dispatch.go` |
 | 6 | ✅ **Register a command menu via setMyCommands.** Live `Start` registers the 10 slash-commands for Telegram autocomplete. | Med | Done | `bot.go` |
 | 7 | ✅ **Split / chunk content over 4096 chars.** Finalized long answers are sent as multiple Telegram-sized messages. | Med | Done | `renderer.go` |
@@ -242,7 +242,7 @@ Read (pre-vetted): `picobot` (Go agent w/ Telegram channel — closest analog),
   raw `POST /sendMessage` over `net/http` with only `chat_id` + `text`. **No** parse mode,
   **no** chat action / typing, **no** inline keyboards, **no** message chunking, **no**
   edit-in-place. It confirms Aura's channel is already far more advanced (status pane,
-  streaming edits, HITL keyboards, multimodal, MarkdownV2 + fallback). The one transferable
+  streaming edits, HITL keyboards, multimodal, HTML parse mode + fallback). The one transferable
   idea: picobot keeps the channel *dead simple* and pushes all logic to a hub — a reminder
   not to over-engineer the transport. Nothing to copy into Aura beyond that discipline.
 - **nanobot / codex / cli-printing-press** — no Telegram UI surface. codex's TUI is a
@@ -296,18 +296,16 @@ Ordered by impact ÷ effort. Each is a self-contained change.
    and document "index, never prose" as the package invariant. *Rationale:* turn the live
    bug class into a compile/test-time guard. *Effort: ~1–2h.*
 
-8. ✅ **Close parse_mode=HTML or entity-array spike as deferred** — `mdv2.go`, `renderer.go`.
-   Decision: keep the current MarkdownV2 renderer for this UX pass. Aura already has a
-   purpose-built entity-aware escaper, plain-text fallback, table-to-PNG path, and tests
-   covering the 400 fallback contract. Switching to **HTML** (`<b><i><code><pre>`) or
-   entity-array sends would rewrite markdown semantics and belongs in a dedicated renderer
-   migration, not this Telegram UX cleanup. *Rationale:* no active defect remains after
-   the fallback and long-content split fixes; reopen only with a renderer migration spec.
-   [botnamefinder MarkdownV2 escape guide](https://botnamefinder.com/blog/telegram-markdownv2-escape-characters)
+8. ✅ **Adopt parse_mode=HTML for streamed answers** — `html.go`, `renderer.go`.
+   Decision: use `github.com/PaulSonOfLars/gotg_md2html` `MD2HTMLV2` for message chunks
+   and table captions, send with `tele.ModeHTML`, and retain the plain-text fallback for
+   any 400 "can't parse entities" response. *Rationale:* avoids MarkdownV2 backslash noise
+   while keeping Telegram-safe formatting and raw-HTML escaping.
 
-9. ✅ **Collapse status pane on success** — `status_pane.go: text/handle`.
-   On `RUN_FINISHED` (no failure), collapse the tool list to a one-line summary; keep the
-   full list only when `failed`. *Rationale:* less vertical noise per turn. *Effort: ~half day.*
+9. ✅ **Keep final status-pane detail visible** — `status_pane.go: text/handle`.
+   On `RUN_FINISHED`, keep the full tool list and a safe reasoning lifecycle label visible
+   when it fits; provider reasoning text is excluded/redacted and never shown raw. *Rationale:*
+   final Telegram turns remain auditable without exposing hidden chain-of-thought.
 
 10. ✅ **Close native streaming via sendMessageDraft as gated** — `renderer.go`.
     Decision: keep edit-based streaming. `sendMessageDraft` requires Bot API 9.5 support

@@ -9,7 +9,7 @@ CREATE CONSTRAINT chunk_id IF NOT EXISTS
 CREATE VECTOR INDEX chunk_embedding IF NOT EXISTS
   FOR (c:Chunk) ON c.embedding
   OPTIONS { indexConfig: {
-    `vector.dimensions`: 768,
+    `vector.dimensions`: 384,
     `vector.similarity_function`: 'cosine',
     `vector.hnsw.m`: 32,
     `vector.hnsw.ef_construction`: 200

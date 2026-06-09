@@ -52,8 +52,8 @@ func TestLlmAgent_AdaptiveReasoningRouterKeepsToolsVisible(t *testing.T) {
 	if main.Reasoning.Effort != llm.ReasoningEffortLow {
 		t.Fatalf("main Reasoning.Effort = %q, want low", main.Reasoning.Effort)
 	}
-	if main.Reasoning.Exclude == nil || *main.Reasoning.Exclude {
-		t.Fatalf("main Reasoning.Exclude = %v, want false", main.Reasoning.Exclude)
+	if main.Reasoning.Exclude == nil || !*main.Reasoning.Exclude {
+		t.Fatalf("main Reasoning.Exclude = %v, want true", main.Reasoning.Exclude)
 	}
 }
 

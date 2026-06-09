@@ -20,29 +20,32 @@ type PromptBuilder struct{}
 // NewPromptBuilder returns a stateless builder.
 func NewPromptBuilder() *PromptBuilder { return &PromptBuilder{} }
 
-// Budget carries the used/remaining tool-step counts that Build renders into the
-// trailing <budget> hint (D-06, Req#6), plus the per-conversation Workspace path
-// (#52/D-41 — the model must KNOW where its workspace is to honor the system
-// prompt's deliverables convention; live run 7 saved a perfect .xlsx to the
-// Desktop because nothing ever told it the path). Both ride the SAME trailing
-// message: per-turn volatile, appended AFTER history, so the cached prefix is
-// never poisoned. The agent passes branchConsumed as Used and Remaining() as
-// Remaining; there is no Budget.MaxSteps() getter (landmine #11). The zero value
-// is the omit sentinel: Build emits no trailing message, preserving the
-// byte-identical default for callers that track neither.
+// Budget carries the per-turn volatile hints Build renders after history:
+// used/remaining tool-step counts (D-06, Req#6), the per-conversation Workspace
+// path (#52/D-41 — the model must KNOW where its workspace is to honor the
+// system prompt's deliverables convention; live run 7 saved a perfect .xlsx to
+// the Desktop because nothing ever told it the path), and current local time for
+// "today" requests. They ride the SAME trailing message, appended AFTER history,
+// so the cached prefix is never poisoned. The agent passes branchConsumed as
+// Used and Remaining() as Remaining; there is no Budget.MaxSteps() getter
+// (landmine #11). The zero value is the omit sentinel: Build emits no trailing
+// message, preserving the byte-identical default for callers that track none.
 type Budget struct {
-	Used      int
-	Remaining int
-	Workspace string
+	Used        int
+	Remaining   int
+	Workspace   string
+	CurrentTime string
+	Today       string
 }
 
 // present reports whether the trailing hint message should be emitted. The zero
-// value (counts 0, no workspace) is the backward-compatible omit case.
-func (b Budget) present() bool { return b.Used != 0 || b.Remaining != 0 || b.Workspace != "" }
+// value (counts 0, no workspace/time) is the backward-compatible omit case.
+func (b Budget) present() bool {
+	return b.Used != 0 || b.Remaining != 0 || b.Workspace != "" || b.CurrentTime != "" || b.Today != ""
+}
 
 // block renders the directional hint: the D-06 budget line (omitted when both
-// counts are zero), plus the workspace line when a workspace is configured
-// (#52/D-41).
+// counts are zero), plus workspace/current-time lines when configured (#52/D-41).
 func (b Budget) block() string {
 	var lines []string
 	if b.Used != 0 || b.Remaining != 0 {
@@ -51,6 +54,12 @@ func (b Budget) block() string {
 	if b.Workspace != "" {
 		lines = append(lines, fmt.Sprintf("<workspace>%s</workspace>", b.Workspace))
 	}
+	if b.CurrentTime != "" {
+		lines = append(lines, fmt.Sprintf("<current_time>%s</current_time>", b.CurrentTime))
+	}
+	if b.Today != "" {
+		lines = append(lines, fmt.Sprintf("<today>%s</today>", b.Today))
+	}
 	return strings.Join(lines, "\n")
 }
 
@@ -58,8 +67,8 @@ func (b Budget) block() string {
 // registry, provider, and config. It reproduces the previous inline construction
 // byte-for-byte (Tools = reg.RenderToolDefs() with its cache-load-bearing
 // alphabetical order untouched, scalars from cfg) so the emitted messages[0]
-// stays byte-identical (D-01). When budget is present, a trailing user-role
-// <budget> message is appended to a COPY of history (the caller's slice and
+// stays byte-identical (D-01). When a volatile hint is present, a trailing user-role
+// hint message is appended to a COPY of history (the caller's slice and
 // messages[0] are never mutated — KV-cache poisoning guard, D-04/D-05). The
 // provider branch runs last. Adaptive reasoning is applied only by
 // BuildWithReasoningTier, after a caller has produced a tier outside the pure

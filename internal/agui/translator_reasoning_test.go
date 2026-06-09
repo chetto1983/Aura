@@ -133,6 +133,16 @@ func TestTranslatorReasoningGoldenShapes(t *testing.T) {
 		if !ok {
 			t.Fatalf("translator did not emit %s (got %v)", name, typesOf(evs))
 		}
+		if name == "REASONING_MESSAGE_CONTENT" {
+			msg, ok := ev.(*events.ReasoningMessageContentEvent)
+			if !ok {
+				t.Fatalf("REASONING_MESSAGE_CONTENT type = %T", ev)
+			}
+			if msg.Delta != redactedReasoningDelta {
+				t.Fatalf("reasoning content delta = %q, want redacted marker", msg.Delta)
+			}
+			continue
+		}
 		assertGoldenShape(t, name, golden[name], ev)
 	}
 }

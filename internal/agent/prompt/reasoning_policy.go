@@ -59,9 +59,9 @@ func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
 func (t ReasoningTier) reasoning() llm.ReasoningConfig {
 	switch t {
 	case ReasoningTierHigh:
-		return llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh, Exclude: boolPtr(false)}
+		return llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh, Exclude: boolPtr(true)}
 	case ReasoningTierLow:
-		return llm.ReasoningConfig{Effort: llm.ReasoningEffortLow, Exclude: boolPtr(false)}
+		return llm.ReasoningConfig{Effort: llm.ReasoningEffortLow, Exclude: boolPtr(true)}
 	default:
 		return llm.ReasoningConfig{Effort: llm.ReasoningEffortNone, Exclude: boolPtr(true)}
 	}
@@ -79,7 +79,7 @@ func (t ReasoningTier) maxTokens(configuredMax int) int {
 }
 
 // LastGenuineUserContent returns the newest real user request, skipping synthetic
-// budget, workspace, recovery, and completion-check nudges.
+// budget, workspace, time, recovery, and completion-check nudges.
 func LastGenuineUserContent(history []llm.Message) string {
 	for i := len(history) - 1; i >= 0; i-- {
 		m := history[i]
@@ -98,6 +98,8 @@ func isSyntheticUserHint(content string) bool {
 	trimmed := strings.TrimSpace(content)
 	return strings.HasPrefix(trimmed, "<budget>") ||
 		strings.HasPrefix(trimmed, "<workspace>") ||
+		strings.HasPrefix(trimmed, "<current_time>") ||
+		strings.HasPrefix(trimmed, "<today>") ||
 		strings.HasPrefix(trimmed, "Stop calling tools.") ||
 		strings.HasPrefix(trimmed, "You have run out of tool-call budget") ||
 		strings.HasPrefix(trimmed, "You have already called `") ||

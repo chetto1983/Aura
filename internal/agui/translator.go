@@ -18,6 +18,8 @@ import (
 // on the SAME canonical name rather than a duplicated magic string.
 const ArtifactEventName = "aura.artifact"
 
+const redactedReasoningDelta = "[reasoning redacted]"
+
 // artifactEventName is the package-internal alias kept so the existing translator
 // body + its golden tests read unchanged after exporting the canonical name.
 const artifactEventName = ArtifactEventName
@@ -147,7 +149,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 					"request_id":      ev.RequestID.String(),
 					"agent_thread_id": ev.ThreadID,
 					"chars":           reasoningtrace.RuneLen(ev.LLMResponse.Reasoning),
-					"reasoning_delta": ev.LLMResponse.Reasoning,
+					"redacted":        true,
 				})
 				if !st.close(yield) {
 					return
@@ -247,13 +249,13 @@ func (s *reasoningRunState) content(yield func(events.Event, error) bool, delta 
 		}
 	}
 	reasoningtrace.Record("agui_reasoning_content_event", map[string]any{
-		"thread_id":       s.threadID,
-		"run_id":          s.runID,
-		"message_id":      s.msgID,
-		"chars":           reasoningtrace.RuneLen(delta),
-		"reasoning_delta": delta,
+		"thread_id":  s.threadID,
+		"run_id":     s.runID,
+		"message_id": s.msgID,
+		"chars":      reasoningtrace.RuneLen(delta),
+		"redacted":   true,
 	})
-	return yield(events.NewReasoningMessageContentEvent(s.msgID, delta), nil)
+	return yield(events.NewReasoningMessageContentEvent(s.msgID, redactedReasoningDelta), nil)
 }
 
 // close ends an open reasoning run (REASONING_MESSAGE_END + REASONING_END) and

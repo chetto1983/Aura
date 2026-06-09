@@ -276,13 +276,15 @@ func shellInvocation(command string) (string, []string) {
 	return "/bin/sh", []string{"-c", command}
 }
 
-// mergeEnv returns nil when there are no extras (nil → child inherits the Aura
-// process environment unchanged); otherwise the process env plus the overrides.
+// mergeEnv returns the process env plus Aura's runtime-safe defaults and the
+// caller's overrides. Python defaults to UTF-8 so model-written scripts with
+// symbols in progress output do not fail under Windows cp1252 consoles.
 func mergeEnv(extra map[string]string) []string {
-	if len(extra) == 0 {
-		return nil
-	}
 	env := os.Environ()
+	env = append(env,
+		"PYTHONIOENCODING=utf-8",
+		"PYTHONUTF8=1",
+	)
 	for k, v := range extra {
 		env = append(env, k+"="+v)
 	}

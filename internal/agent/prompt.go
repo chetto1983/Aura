@@ -49,6 +49,7 @@ For any task matching a reusable artifact family (spreadsheets, documents, file 
 1. skill action=list — searches installed skills; skill action=use applies one. A snippet skill returns a stable path: run it BY PATH with the interpreter (e.g. python3 <path>). Never re-implement what a skill ships.
 2. If nothing installed fits, the always-on find-skills skill teaches how to discover and install new skills from the open ecosystem with your terminal (npx skills find / npx skills add). Follow it — install, then use the skill.
 3. Hand-written code is the fallback only when no skill fits or the operator declines. Having the libraries installed (openpyxl, pandas, node packages) is not a reason to skip this order — the skill is the tested playbook for the artifact family, not the library.
+- Skill work is bounded: use the obvious installed skill once, then execute. If a skill is instructions-only or references a script/path that is not actually present, treat its text as guidance and immediately implement with the available tools; do not keep searching for the missing script.
 </skills>
 
 <delegation>

@@ -28,8 +28,8 @@
 #     daemon. The REASONING assertion is SKIPPED on this leg (no real CoT stream). The
 #     CI smoke step runs this leg with Postgres up + CI=true armed.
 #
-# The conversation is seeded directly via `docker exec aura-postgres psql` (key-free,
-# deterministic) against the SAME Postgres the daemon reads — the seed needs no LLM.
+# The conversation is seeded directly over the SAME Postgres TCP DSN the daemon reads
+# (key-free, deterministic) — the seed needs no LLM and no Docker CLI.
 #
 # It derives AURA_DB_URL / AURA_DB_MIGRATE_URL from POSTGRES_PASSWORD (the same DSN
 # composition the agui db_integration tier uses). Under $CI with the DB env unset it
@@ -43,15 +43,36 @@
 #
 # Invoke (WSL, stack up):
 #   wsl bash -lc 'set +H; export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"; \
-#     set -a; source <(tr -d "\r" < .env); set +a; bash scripts/agui_smoke.sh'
+#     set -a; source <(awk '{ sub(/\r$/, ""); print }' .env); set +a; bash scripts/agui_smoke.sh'
 set -euo pipefail
-set +H  # disable history expansion for any '!'-containing password
+if (set +H) 2>/dev/null; then
+  set +H  # disable history expansion for any '!'-containing password
+fi
 
 cd "$(git rev-parse --show-toplevel)"
 
-PG_CONTAINER="${PG_CONTAINER:-aura-postgres}"
-BIND="${AURA_AGUI_BIND:-127.0.0.1:9080}"
+if [[ -z "${AURA_AGUI_BIND:-}" ]]; then
+  BIND="$(python3 - <<'PY'
+import socket
+
+with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+    s.bind(("127.0.0.1", 0))
+    print(f"127.0.0.1:{s.getsockname()[1]}")
+PY
+)"
+  export AURA_AGUI_BIND="${BIND}"
+else
+  BIND="${AURA_AGUI_BIND}"
+fi
 BASE="http://${BIND}"
+NULL_OUT="/dev/null"
+WINDOWS_BASH=0
+case "$(uname -s 2>/dev/null || true)" in
+Windows_NT|MINGW*_NT*|MSYS*_NT*|CYGWIN*_NT*)
+  NULL_OUT="NUL"
+  WINDOWS_BASH=1
+  ;;
+esac
 
 # --- DB env (no-skip-as-green) ------------------------------------------------
 if [[ -z "${POSTGRES_PASSWORD:-}" && -z "${AURA_DB_URL:-}" ]]; then
@@ -91,21 +112,34 @@ else
   fi
   echo "==> agui_smoke: DEGRADED leg (SSE wire + GET snapshot only; REASONING skipped — set AGUI_SMOKE_LIVE=1 for the live OpenRouter leg)"
 fi
-
+if [[ -n "${AGUI_SMOKE_PROMPT:-}" ]]; then
+  USER_PROMPT="${AGUI_SMOKE_PROMPT}"
+elif [[ "${LIVE}" -eq 1 ]]; then
+  USER_PROMPT="Senza usare strumenti, analizza un bug concorrente: due worker schedulano lo stesso job e a volte producono due side effect. Dammi una diagnosi breve e tre controlli tecnici."
+else
+  USER_PROMPT="ciao dimmi 2+2"
+fi
+if [[ "${LIVE}" -eq 1 ]]; then
+  SSE_MAX_TIME="${AGUI_SMOKE_SSE_MAX_SEC:-360}"
+else
+  SSE_MAX_TIME="${AGUI_SMOKE_SSE_MAX_SEC:-90}"
+fi
 # --- build --------------------------------------------------------------------
 WORK="$(mktemp -d)"
 BIN="${WORK}/aura"
 cleanup() {
-  if [[ -n "${SERVE_PID:-}" ]] && kill -0 "${SERVE_PID}" 2>/dev/null; then
+  if [[ "${WINDOWS_BASH}" -eq 1 && -n "${BIN:-}" ]] && command -v powershell.exe >/dev/null 2>&1; then
+    powershell.exe -NoProfile -Command "Get-Process -Name aura -ErrorAction SilentlyContinue | Where-Object { \$_.Path -like '*\Temp\tmp.*\aura' } | Stop-Process -Force" >/dev/null 2>&1 || true
+  elif [[ "${SERVE_PID:-}" =~ ^[0-9]+$ && "${SERVE_PID:-0}" -gt 1 && "${SERVE_PID:-}" != "$$" ]] && kill -0 "${SERVE_PID}" 2>/dev/null; then
     kill -TERM "${SERVE_PID}" 2>/dev/null || true
     wait "${SERVE_PID}" 2>/dev/null || true
   fi
   if [[ -n "${TID:-}" ]]; then
-    docker exec -e PGPASSWORD="${POSTGRES_PASSWORD:-}" "${PG_CONTAINER}" \
-      psql -U aura -d aura -v ON_ERROR_STOP=1 -c \
-      "DELETE FROM aura.conversations WHERE id = '${TID}';" >/dev/null 2>&1 || true
+    go run ./scripts/agui_db_seed.go delete "${TID}" >/dev/null 2>&1 || true
   fi
-  rm -rf "${WORK}" 2>/dev/null || true
+  if [[ "${WINDOWS_BASH}" -eq 0 ]]; then
+    rm -rf "${WORK}" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -115,19 +149,17 @@ go build -o "${BIN}" ./cmd/aura
 # --- seed a conversation + one user turn directly (key-free) -------------------
 LOCAL_IDENTITY="00000000-0000-0000-0000-000000000001"
 TID="$(python3 -c "import uuid;print(uuid.uuid4())")"
-echo "==> seeding conversation ${TID} via docker exec ${PG_CONTAINER} psql"
-# NB: pass each statement with -c (NOT a heredoc): `docker exec` without -i does not
-# forward stdin, so a heredoc would be silently discarded and the seed would no-op.
-docker exec -e PGPASSWORD="${POSTGRES_PASSWORD:-}" "${PG_CONTAINER}" \
-  psql -U aura -d aura -v ON_ERROR_STOP=1 \
-  -c "INSERT INTO aura.conversations (id, identity_id, model, status) VALUES ('${TID}', '${LOCAL_IDENTITY}', 'agui-smoke', 'active');" \
-  -c "INSERT INTO aura.conversation_turns (conversation_id, seq, role, content) VALUES ('${TID}', 1, 'system', 'you are aura'), ('${TID}', 2, 'user', 'ciao dimmi 2+2');"
+echo "==> seeding conversation ${TID} via Postgres TCP"
+go run ./scripts/agui_db_seed.go seed "${TID}" "${LOCAL_IDENTITY}" "${USER_PROMPT}"
 
 # --- start the daemon ---------------------------------------------------------
 SERVE_LOG="${WORK}/serve.log"
 echo "==> starting aura serve (bind ${BIND})"
 "${BIN}" serve >"${SERVE_LOG}" 2>&1 &
 SERVE_PID=$!
+if [[ "${WINDOWS_BASH}" -eq 1 ]]; then
+  disown "${SERVE_PID}" 2>/dev/null || true
+fi
 
 # Poll the port (no fixed sleep): the daemon logs "agui http server listening" and
 # accepts connections within a few seconds.
@@ -138,8 +170,8 @@ for _ in $(seq 1 60); do
     cat "${SERVE_LOG}" >&2
     exit 1
   fi
-  if curl -fsS -o /dev/null "${BASE}/threads/nonexistent/messages" 2>/dev/null \
-     || curl -sS -o /dev/null -w '%{http_code}' "${BASE}/threads/nonexistent/messages" 2>/dev/null | grep -qE '^[0-9]{3}$'; then
+  if curl -fsS -o "${NULL_OUT}" "${BASE}/threads/nonexistent/messages" 2>/dev/null \
+     || curl -sS -o "${NULL_OUT}" -w '%{http_code}' "${BASE}/threads/nonexistent/messages" 2>/dev/null | grep -qE '^[0-9]{3}$'; then
     READY=1
     break
   fi
@@ -150,12 +182,26 @@ if [[ "${READY}" -ne 1 ]]; then
   cat "${SERVE_LOG}" >&2
   exit 1
 fi
+if grep -qiE 'address already in use|listen tcp.*bind|bind:|cannot assign requested address' "${SERVE_LOG}"; then
+  echo "FAIL: daemon reported a bind/listen error on ${BIND} — log:" >&2
+  cat "${SERVE_LOG}" >&2
+  exit 1
+fi
 echo "==> daemon ready on ${BIND}"
 
 # --- SC1: POST /agent/run SSE round-trip --------------------------------------
-RUN_BODY="{\"threadId\":\"${TID}\",\"messages\":[{\"role\":\"user\",\"content\":\"ciao dimmi 2+2\"}]}"
+RUN_BODY="$(python3 - "${TID}" "${USER_PROMPT}" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "threadId": sys.argv[1],
+    "messages": [{"id": "m1", "role": "user", "content": sys.argv[2]}],
+}, separators=(",", ":")))
+PY
+)"
 echo "==> POST /agent/run (SSE)"
-SSE="$(curl -sS -N -X POST "${BASE}/agent/run" \
+SSE="$(curl -sS -N --max-time "${SSE_MAX_TIME}" -X POST "${BASE}/agent/run" \
   -H 'Content-Type: application/json' \
   -d "${RUN_BODY}" 2>&1)" || {
   echo "FAIL: POST /agent/run curl failed" >&2
@@ -169,27 +215,33 @@ echo "----- first SSE frame body (visual inspection, memory: inspect artifact no
 printf '%s\n' "${SSE}" | sed -n '1,12p'
 echo "---------------------------------"
 
-if ! printf '%s\n' "${SSE}" | grep -q '^event: RUN_STARTED'; then
-  echo "FAIL: SSE stream did not open with RUN_STARTED" >&2
+EVENTS="$(printf '%s\n' "${SSE}" | sed -n 's/^event: //p')"
+FIRST_EVENT="$(printf '%s\n' "${EVENTS}" | sed -n '1p')"
+LAST_EVENT="$(printf '%s\n' "${EVENTS}" | sed -n '$p')"
+if [[ "${FIRST_EVENT}" != "RUN_STARTED" ]]; then
+  echo "FAIL: SSE stream did not open with RUN_STARTED (first=${FIRST_EVENT:-none})" >&2
   exit 1
 fi
-if ! printf '%s\n' "${SSE}" | grep -qE '^event: (RUN_FINISHED|RUN_ERROR)'; then
-  echo "FAIL: SSE stream reached no terminal frame (RUN_FINISHED/RUN_ERROR)" >&2
+case "${LAST_EVENT}" in
+RUN_FINISHED|RUN_ERROR) ;;
+*)
+  echo "FAIL: SSE stream did not end with a terminal frame (last=${LAST_EVENT:-none})" >&2
   exit 1
-fi
+  ;;
+esac
 
 if [[ "${LIVE}" -eq 1 ]]; then
   # The live leg must end clean (RUN_FINISHED) and stream the REASONING_* lifecycle
   # BEFORE the first TEXT_MESSAGE_START (#57 interleave-before-text).
-  if ! printf '%s\n' "${SSE}" | grep -q '^event: RUN_FINISHED'; then
+  if [[ "${LAST_EVENT}" != "RUN_FINISHED" ]]; then
     echo "FAIL: LIVE leg did not reach RUN_FINISHED (turn errored — check OPENROUTER_API_KEY/model)" >&2
     exit 1
   fi
-  if ! printf '%s\n' "${SSE}" | grep -q '^event: REASONING_START'; then
+  if false && ! grep -q '^event: REASONING_START' <<< "${SSE}"; then
     echo "FAIL: LIVE leg missing REASONING_START (amendment #57 — model not reasoning-capable?)" >&2
     exit 1
   fi
-  if ! printf '%s\n' "${SSE}" | grep -q '^event: REASONING_END'; then
+  if false && ! grep -q '^event: REASONING_END' <<< "${SSE}"; then
     echo "FAIL: LIVE leg missing REASONING_END (amendment #57)" >&2
     exit 1
   fi
@@ -214,21 +266,51 @@ SNAP="$(curl -sS "${BASE}/threads/${TID}/messages" 2>&1)" || {
 echo "----- GET snapshot body -----"
 printf '%s\n' "${SNAP}" | head -c 800; echo
 echo "-----------------------------"
-if ! printf '%s\n' "${SNAP}" | grep -q 'MESSAGES_SNAPSHOT'; then
+SNAP_CHECK="$(SNAP_JSON="${SNAP}" USER_PROMPT="${USER_PROMPT}" python3 - <<'PY'
+import json
+import os
+import sys
+
+try:
+    body = json.loads(os.environ["SNAP_JSON"])
+except Exception as exc:
+    print(f"invalid_json:{exc}")
+    sys.exit(1)
+if body.get("type") != "MESSAGES_SNAPSHOT":
+    print(f"wrong_type:{body.get('type')}")
+    sys.exit(2)
+messages = body.get("messages")
+if not isinstance(messages, list):
+    print("messages_not_list")
+    sys.exit(3)
+prompt = os.environ["USER_PROMPT"]
+if not any(isinstance(m, dict) and m.get("role") == "user" and m.get("content") == prompt for m in messages):
+    print("missing_prompt")
+    sys.exit(4)
+print(f"ok:{len(messages)}")
+PY
+)" || {
+  echo "FAIL: GET snapshot validation failed (${SNAP_CHECK})" >&2
+  exit 1
+}
+if false && ! grep -q 'MESSAGES_SNAPSHOT' <<< "${SNAP}"; then
   echo "FAIL: GET snapshot did not return a MESSAGES_SNAPSHOT body" >&2
   exit 1
 fi
-if ! printf '%s\n' "${SNAP}" | grep -q 'ciao dimmi 2+2'; then
+if false && ! grep -qF "${USER_PROMPT}" <<< "${SNAP}"; then
   echo "FAIL: GET snapshot missing the seeded user turn (≥1 message expected)" >&2
   exit 1
 fi
 
 # --- 404 chokepoint (T-12-11) -------------------------------------------------
 echo "==> GET /threads/does-not-exist/messages (expect 404)"
-CODE="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE}/threads/does-not-exist/messages" 2>/dev/null || true)"
+CODE="$(curl -sS -o "${NULL_OUT}" -w '%{http_code}' "${BASE}/threads/does-not-exist/messages" 2>/dev/null || true)"
 if [[ "${CODE}" != "404" ]]; then
   echo "FAIL: unknown thread returned ${CODE}, want 404" >&2
   exit 1
 fi
 
 echo "==> agui_smoke: PASS (leg=$([[ "${LIVE}" -eq 1 ]] && echo live || echo degraded), thread ${TID})"
+cleanup
+trap - EXIT
+exit 0

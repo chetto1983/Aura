@@ -5,6 +5,7 @@ go 1.26.4
 require (
 	codeberg.org/readeck/go-readability/v2 v2.1.1
 	github.com/JohannesKaufmann/html-to-markdown/v2 v2.5.1
+	github.com/PaulSonOfLars/gotg_md2html v0.0.0-20260314092343-61634cbfb443
 	github.com/adhocore/gronx v1.20.0
 	github.com/ag-ui-protocol/ag-ui/sdks/community/go v0.0.0-20260514093510-e9e910b230b9
 	github.com/goccy/go-yaml v1.19.2
