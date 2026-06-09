@@ -242,8 +242,9 @@ func (w *Writer) SetAlways(ctx context.Context, name string, always bool, actor 
 	return nil
 }
 
-// promoteDir moves src → dst, creating dst's parent and replacing any stale dst. A
-// cross-device rename (EXDEV) falls back to a copy+remove. A missing src is an error.
+// promoteDir moves src → dst, creating dst's parent and replacing any stale dst. src
+// and dst are always co-located under the skills root, so a single rename suffices (no
+// cross-device fallback is needed). A missing src surfaces as the rename error.
 func promoteDir(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err

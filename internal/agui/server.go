@@ -378,7 +378,7 @@ var secretPattern = regexp.MustCompile(`(?i)(postgres(?:ql)?|mysql|mongodb|redis
 // collapsed; the rest of the URL is left intact so the error stays diagnosable (WR-03).
 // The DSN pass runs first and already consumes its schemes, so this never double-matches
 // them.
-var urlUserinfoPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@`)
+var urlUserinfoPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^\s@]+@`)
 
 // tokenPattern matches common credential tokens embedded in free-form error strings:
 // `Bearer <token>`, `api_key=<...>`, `api-key=<...>`, `apikey=<...>`, `token=<...>`. The

@@ -258,7 +258,7 @@ func enforce(t *testing.T, results map[dimension]*dimResult) {
 		t.Fatalf("RELEASE-BLOCKING: secret_redaction %d/%d — key value leaked", r.pass, r.total)
 	}
 	// asserted (non-extension) dimensions must be 100%.
-	for _, d := range []dimension{dimStreamingFidelity, dimToolLoop, dimCostHonesty, dimBudget, dimCancellation, dimGuardrail} {
+	for _, d := range []dimension{dimStreamingFidelity, dimToolLoop, dimCostHonesty, dimCachePrefix, dimBudget, dimCancellation, dimGuardrail} {
 		r := results[d]
 		if r == nil || r.total == 0 {
 			continue

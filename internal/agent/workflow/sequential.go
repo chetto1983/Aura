@@ -62,6 +62,11 @@ func (a *SequentialAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event
 				if !yield(ev, err) {
 					return
 				}
+				// A sub error aborts the chain (parity with LoopAgent): later subs must
+				// not run in a degraded state after a known failure (Req#4).
+				if err != nil {
+					return
+				}
 				if ev != nil && ev.Actions.Escalate {
 					return
 				}

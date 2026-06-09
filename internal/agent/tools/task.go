@@ -145,6 +145,11 @@ func (t *TaskTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 	if head.Action == "" {
 		return ToolResult{}, fmt.Errorf("task: action is required")
 	}
+	// The pool-free manifest path constructs a TaskTool with a nil Store (Spec only);
+	// every action dereferences Store, so guard here rather than nil-panic mid-dispatch.
+	if t.Store == nil {
+		return ToolResult{}, fmt.Errorf("task %s: no task store is configured in this context", head.Action)
+	}
 	return t.actionRouter().Dispatch(ctx, head.Action, raw)
 }
 
