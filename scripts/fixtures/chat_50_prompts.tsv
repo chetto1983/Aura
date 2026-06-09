@@ -1,0 +1,51 @@
+# id	flags	prompt
+001	today,tool	Che giorno e oggi? Rispondi con la data ISO e una frase breve.
+002	normal	Riassumi in due frasi come organizzare una mattina produttiva.
+003	normal	Spiegami la differenza tra backup e sincronizzazione con parole semplici.
+004	today,tool	Controlla l'orario corrente disponibile, dimmi la data di oggi in formato ISO e poi consigliami una priorita per il lavoro.
+005	normal	Scrivi un messaggio gentile per dire che arrivo con dieci minuti di ritardo.
+006	normal	Fammi una lista di tre idee sane per una cena veloce.
+007	normal	Correggi questa frase: domani o bisogno di chiamare marco.
+008	today,tool	Qual e la data ISO di oggi e che ora risulta adesso? Aggiungi una nota su cosa controllare nel calendario.
+009	normal	Traduci in inglese: possiamo risentirci nel pomeriggio.
+010	normal	Dammi tre domande utili da fare in una retrospettiva di team.
+011	today	Siamo nel giorno di oggi: scrivi la data ISO e un promemoria breve.
+012	normal	Spiegami in modo pratico cosa significa autenticazione a due fattori.
+013	normal	Crea un oggetto per una email: devo chiedere conferma di un appuntamento.
+014	normal	Fammi una mini checklist per preparare una valigia da due giorni.
+015	today,tool	Per favore dimmi oggi che data e in ISO, controllando il tempo corrente senza aggiungere dati inventati.
+016	normal	Suggerisci cinque nomi sobri per una dashboard interna di monitoraggio.
+017	normal	Riscrivi in tono piu professionale: ci penso io appena posso.
+018	normal	Spiegami la regola del 80/20 con un esempio di lavoro.
+019	today	Ho bisogno della data di oggi in ISO per un verbale, poi una frase di apertura.
+020	normal	Dammi tre modi per ridurre il rumore in una chat di progetto.
+021	normal	Scrivi una risposta breve a un cliente che chiede aggiornamenti.
+022	normal	Quali sono tre segnali che una riunione non serve?
+023	today	Indica la data ISO di oggi e una cosa da verificare prima di inviare un report.
+024	normal	Spiega a un principiante cosa fa un indice in un database.
+025	normal	Fammi una piccola tabella testuale con pro e contro del lavoro remoto.
+026	normal	Scrivi un promemoria per bere acqua durante una giornata intensa.
+027	today,tool	Che data ISO devo mettere su un documento creato oggi? Verifica anche l'orario corrente in modo breve.
+028	normal	Consigliami tre passaggi per pulire una scrivania piena di carte.
+029	normal	Dammi un esempio di messaggio per chiedere feedback dopo una demo.
+030	normal	Spiega la differenza tra urgente e importante.
+031	today	Scrivi una riga di diario con la data ISO di oggi e un obiettivo semplice.
+032	normal	Crea una lista di cinque scorciatoie mentali per leggere meglio una email lunga.
+033	normal	Suggerisci una formula cortese per rifiutare una richiesta non prioritaria.
+034	normal	Spiegami cosa vuol dire idempotente con un esempio quotidiano.
+035	today	Qual e la data ISO di oggi per nominare una cartella di lavoro?
+036	normal	Dammi tre criteri per scegliere una password manager.
+037	normal	Riscrivi questo testo in modo piu chiaro: la cosa e bloccata perche manca roba.
+038	normal	Fammi un piano di studio di 30 minuti per ripassare Git.
+039	today,tool	Mostrami la data ISO di oggi, controlla l'ora attuale e aggiungi una frase breve per un registro attivita.
+040	normal	Spiega in due frasi perche i test automatici aiutano un progetto.
+041	normal	Dammi tre idee per rendere piu leggibile una pagina di documentazione.
+042	normal	Scrivi un messaggio breve per ringraziare un collega.
+043	today	Dimmi oggi in formato ISO e poi suggerisci un titolo per una nota giornaliera.
+044	normal	Fammi un confronto rapido tra lista di cose da fare e calendario.
+045	normal	Spiegami cosa significa latenza in un servizio web.
+046	normal	Suggerisci tre modi per evitare dimenticanze durante una consegna.
+047	today	Per un file creato oggi, quale data ISO devo usare? Rispondi anche con un nome file esempio.
+048	normal	Scrivi una breve descrizione di un bug: il pulsante salva non mostra conferma.
+049	normal	Dammi tre domande per capire se un problema e di prodotto o di infrastruttura.
+050	today	Chiudi questo controllo scrivendo la data ISO di oggi e una frase di conferma.
