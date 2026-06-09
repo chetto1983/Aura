@@ -70,6 +70,44 @@ func TestOnCallbackToastsAndDisarmsPromptKeyboard(t *testing.T) {
 	}
 }
 
+// TestOnCallbackResumeHonorsBusyGate proves a HITL resume continuation cannot
+// bypass the same per-chat busy gate used by ordinary inbound turns.
+func TestOnCallbackResumeHonorsBusyGate(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{remaining: 0}
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) { d.Resume = rs })
+
+	const chatID int64 = 80
+	if !tg.cmds.registerTurn(chatID, func() {}) {
+		t.Fatal("failed to pre-register busy turn")
+	}
+	defer tg.cmds.unregisterTurn(chatID)
+
+	bot := &dispatchBot{}
+	cb := &tele.Callback{
+		Message: chatMsg(chatID),
+		Data:    callbackData("tok-1", askuser.ActionAccept, "x"),
+	}
+	if err := tg.onCallback(context.Background())(tele.NewContext(bot, tele.Update{Callback: cb})); err != nil {
+		t.Fatalf("onCallback: %v", err)
+	}
+	tg.wg.Wait()
+
+	if calls, _ := rt.snapshot(); calls != 0 {
+		t.Fatalf("HITL resume must not bypass busy gate, got %d turn calls", calls)
+	}
+	var sawBusy bool
+	for _, text := range bot.sentTexts() {
+		if strings.Contains(text, turnBusyMessage) {
+			sawBusy = true
+		}
+	}
+	if !sawBusy {
+		t.Fatalf("busy HITL resume must send busy copy, sent=%v", bot.sentTexts())
+	}
+}
+
 func TestOnStatusCancelCallbackCancelsTurnAndDisarmsButton(t *testing.T) {
 	t.Parallel()
 	rt := &recordingTurn{}

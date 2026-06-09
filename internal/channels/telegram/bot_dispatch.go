@@ -18,7 +18,7 @@
 //   - OnPhoto : getFile → photoClient.Describe (the single AURA_VISION_CLOUD
 //     branch) → turn driven by the description.
 //   - OnDocument: getFile → documentsClient.Convert; ≤5MB sync → turn on the
-//     markdown; 5-50MB async → turn when OnAsyncResult fires; >50MB → the refuse
+//     markdown; 5-50MB async → turn when the per-request callback fires; >50MB → the refuse
 //     copy.
 //   - OnCallback (callbackUnique) / OnReply: hitl resolves the pause through the
 //     Runner and resumes the SAME loop, rendering the continuation through the
@@ -49,9 +49,9 @@ const (
 )
 
 // buildDispatch constructs the per-channel dispatch instances ONCE from Deps. The
-// documents client's OnAsyncResult is left nil here and bound in registerHandlers
-// where the bot + chat context is available (the >5MB tier drives a turn on the
-// inbound chat). Called under t.mu from Start.
+// document conversion callbacks are passed per request where the bot + chat
+// context is available (the >5MB tier drives a turn on the inbound chat). Called
+// under t.mu from Start.
 func (t *Telegram) buildDispatch() {
 	t.cmds = newCommands(commandDeps{
 		Search: t.deps.Search,
@@ -361,7 +361,7 @@ func (t *Telegram) onPhoto(daemonCtx context.Context) tele.HandlerFunc {
 
 // onDocument converts a document via the markitdown sidecar (size-tiered) and
 // drives a turn on the markdown. A ≤5MB document converts inline; a 5-50MB one is
-// accepted async and drives a turn when OnAsyncResult fires; a >50MB one is
+// accepted async and drives a turn when its per-request callback fires; a >50MB one is
 // refused with a user-facing message.
 func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 	return func(c tele.Context) error {
@@ -381,18 +381,18 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 			slog.Warn("telegram: document download failed", "chat", chatID, "err", err)
 			return nil
 		}
-		// Bind the async-result callback to THIS chat before the convert call so the
-		// >5MB tier drives a turn on the originating chat when it completes.
 		sender := t.sender(c)
-		t.docs.OnAsyncResult = func(_ string, markdown string, convErr error) {
+		notifier, _ := sender.(botNotifier)
+		asyncResult := func(_ string, markdown string, convErr error) {
 			if convErr != nil {
 				slog.Warn("telegram: async document convert failed", "chat", chatID, "err", convErr)
 				return
 			}
-			t.handleTurn(daemonCtx, sender, chatID, &markdown, false)
+			t.startTurn(daemonCtx, sender, notifier, tele.ChatID(chatID), chatID, &markdown, false,
+				func() { t.sendBusy(sender, chatID) })
 		}
 
-		res, err := t.docs.Convert(daemonCtx, payload, msg.Document.FileName)
+		res, err := t.docs.Convert(daemonCtx, payload, msg.Document.FileName, asyncResult)
 		if err != nil {
 			slog.Warn("telegram: document convert failed", "chat", chatID, "err", err)
 			t.reply(c, convertFailMessage)
@@ -450,10 +450,12 @@ func (t *Telegram) promptPendingPause(ctx context.Context, bot botSender, chatID
 // captures the bot + chat id available only at dispatch time.
 func (t *Telegram) hitlFor(c tele.Context, chatID int64) *hitl {
 	sender := t.sender(c)
+	notifier, _ := sender.(botNotifier)
 	resume := func(ctx context.Context, _ string) {
 		// nil userMsg → a continuation turn; inboundWasVoice=false (a resume is a
 		// button/text answer, never itself a voice note).
-		t.handleTurn(ctx, sender, chatID, nil, false)
+		t.startTurn(ctx, sender, notifier, tele.ChatID(chatID), chatID, nil, false,
+			func() { t.sendBusy(sender, chatID) })
 	}
 	return newHitl(t.deps.Resume, resume)
 }
@@ -464,6 +466,23 @@ func (t *Telegram) hitlFor(c tele.Context, chatID int64) *hitl {
 // never fires a stale one. inboundWasVoice flags the echo-modality TTS-out path
 // (plan 13-10 Task 3 reads it).
 func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int64, text string, inboundWasVoice bool) {
+	sender := t.sender(c)
+	notifier, _ := c.Bot().(botNotifier)
+	to := c.Recipient()
+	t.startTurn(daemonCtx, sender, notifier, to, chatID, &text, inboundWasVoice,
+		func() { t.reply(c, turnBusyMessage) })
+}
+
+func (t *Telegram) startTurn(
+	daemonCtx context.Context,
+	sender botSender,
+	notifier botNotifier,
+	to tele.Recipient,
+	chatID int64,
+	text *string,
+	inboundWasVoice bool,
+	onBusy func(),
+) {
 	if t.deps.Turn == nil {
 		slog.Warn("telegram: inbound message but no turn driver wired", "chat", chatID)
 		return
@@ -471,7 +490,9 @@ func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int
 	turnCtx, cancel := context.WithCancel(daemonCtx)
 	if !t.cmds.registerTurn(chatID, cancel) {
 		cancel()
-		t.reply(c, turnBusyMessage) // a turn is already running for this chat
+		if onBusy != nil {
+			onBusy()
+		}
 		return
 	}
 	// Run the turn OFF the telebot handler goroutine: telebot dispatches updates
@@ -480,9 +501,11 @@ func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int
 	// handler to fire the cancel). Capture the stable bot + recipient before spawning
 	// (the tele.Context is recycled once the handler returns). The goroutine is
 	// tracked by t.wg so Stop drains it (goleak-clean).
-	sender := t.sender(c)
-	notifier, _ := c.Bot().(botNotifier)
-	to := c.Recipient()
+	var userMsg *string
+	if text != nil {
+		msg := *text
+		userMsg = &msg
+	}
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
@@ -490,8 +513,17 @@ func (t *Telegram) runTurn(daemonCtx context.Context, c tele.Context, chatID int
 		defer t.cmds.unregisterTurn(chatID)
 		stop := pulseChatAction(turnCtx, notifier, to, tele.Typing) // "Aura is working" for the whole turn
 		defer stop()
-		t.handleTurn(turnCtx, sender, chatID, &text, inboundWasVoice)
+		t.handleTurn(turnCtx, sender, chatID, userMsg, inboundWasVoice)
 	}()
+}
+
+func (t *Telegram) sendBusy(sender botSender, chatID int64) {
+	if sender == nil {
+		return
+	}
+	if _, err := sender.Send(tele.ChatID(chatID), turnBusyMessage); err != nil {
+		slog.Warn("telegram: busy reply send failed", "chat", chatID, "err", err)
+	}
 }
 
 // reply sends a plain user-facing message (a command reply / a fail copy). It is

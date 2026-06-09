@@ -171,6 +171,10 @@ func (f *fakeConvStore) AppendAssistantTurnWithCacheMetric(_ context.Context, p 
 		}
 		f.cache.mu.Unlock()
 	}
+	p = f.assignTurnSeqLocked(p)
+	if metric.Seq <= 0 {
+		metric.Seq = int32(p.Seq)
+	}
 	f.appendTurnFieldsLocked(p)
 	if f.cache != nil {
 		f.cache.mu.Lock()
@@ -192,7 +196,15 @@ func (f *fakeConvStore) appendTurnLocked(p conversations.AppendTurnParams) error
 	return nil
 }
 
+func (f *fakeConvStore) assignTurnSeqLocked(p conversations.AppendTurnParams) conversations.AppendTurnParams {
+	if p.Seq <= 0 {
+		p.Seq = len(f.turns[p.ConversationID]) + 1
+	}
+	return p
+}
+
 func (f *fakeConvStore) appendTurnFieldsLocked(p conversations.AppendTurnParams) {
+	p = f.assignTurnSeqLocked(p)
 	f.turns[p.ConversationID] = append(f.turns[p.ConversationID], p)
 	c, ok := f.convs[p.ConversationID]
 	if ok {

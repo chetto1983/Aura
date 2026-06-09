@@ -364,6 +364,7 @@ func TestOnCallbackRoutesToHITL(t *testing.T) {
 	if err := ctxFn(tele.NewContext(bot, tele.Update{Callback: cb})); err != nil {
 		t.Fatalf("onCallback: %v", err)
 	}
+	tg.wg.Wait()
 
 	calls := rs.calls()
 	if len(calls) != 1 {
@@ -404,6 +405,7 @@ func TestOnReplyForceReplyAnswerResumes(t *testing.T) {
 	if err := tg.onReply(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onReply: %v", err)
 	}
+	tg.wg.Wait()
 
 	calls := rs.calls()
 	if len(calls) != 1 || calls[0].content != "Davide" || calls[0].action != askuser.ActionAccept {
@@ -433,6 +435,7 @@ func TestOnTextPendingPauseRoutesToHITL(t *testing.T) {
 	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
 		t.Fatalf("onText(pending): %v", err)
 	}
+	tg.wg.Wait()
 
 	if len(rs.calls()) != 1 {
 		t.Fatalf("a pending pause must consume the message via HITL, got %d submits", len(rs.calls()))

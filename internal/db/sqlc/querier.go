@@ -69,8 +69,10 @@ type Querier interface {
 	ListTelegramAccounts(ctx context.Context) ([]AuraTelegramAccounts, error)
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
+	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
+	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
 	RecordKnowledgeMigration(ctx context.Context, arg RecordKnowledgeMigrationParams) error
 	RenameConversation(ctx context.Context, arg RenameConversationParams) error
 	RevokeCapability(ctx context.Context, arg RevokeCapabilityParams) error

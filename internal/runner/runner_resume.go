@@ -129,13 +129,8 @@ func (r *Runner) injectAnswer(ctx context.Context, pending askuser.Pending, resp
 	if resp.Action == askuser.ActionDecline {
 		content = declinedContent
 	}
-	seq, err := r.nextSeq(ctx, pending.ConversationID)
-	if err != nil {
-		return err
-	}
 	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: pending.ConversationID,
-		Seq:            seq,
 		Role:           llm.RoleTool,
 		ToolCallID:     pending.ToolCallID,
 		Content:        content,

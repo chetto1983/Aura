@@ -125,15 +125,31 @@ func (m *memConvStore) CountTurns(_ context.Context, id string) (int, error) {
 func (m *memConvStore) AppendTurn(_ context.Context, p conversations.AppendTurnParams) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.turns[p.ConversationID] = append(m.turns[p.ConversationID], p)
+	m.appendTurnFieldsLocked(p)
 	return nil
 }
 
-func (m *memConvStore) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, _ sqlc.InsertCacheMetricParams) error {
+func (m *memConvStore) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, metric sqlc.InsertCacheMetricParams) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.turns[p.ConversationID] = append(m.turns[p.ConversationID], p)
+	p = m.assignTurnSeqLocked(p)
+	if metric.Seq <= 0 {
+		metric.Seq = int32(p.Seq)
+	}
+	m.appendTurnFieldsLocked(p)
 	return nil
+}
+
+func (m *memConvStore) assignTurnSeqLocked(p conversations.AppendTurnParams) conversations.AppendTurnParams {
+	if p.Seq <= 0 {
+		p.Seq = len(m.turns[p.ConversationID]) + 1
+	}
+	return p
+}
+
+func (m *memConvStore) appendTurnFieldsLocked(p conversations.AppendTurnParams) {
+	p = m.assignTurnSeqLocked(p)
+	m.turns[p.ConversationID] = append(m.turns[p.ConversationID], p)
 }
 
 func (m *memConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message, error) {

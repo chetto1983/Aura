@@ -100,6 +100,33 @@ func (q *Queries) ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID
 	return items, nil
 }
 
+const lockConversationForTurnAppend = `-- name: LockConversationForTurnAppend :one
+SELECT id
+FROM aura.conversations
+WHERE id = $1
+FOR UPDATE
+`
+
+func (q *Queries) LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockConversationForTurnAppend, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
+const nextConversationTurnSeq = `-- name: NextConversationTurnSeq :one
+SELECT (COALESCE(MAX(seq), 0) + 1)::int AS seq
+FROM aura.conversation_turns
+WHERE conversation_id = $1
+`
+
+func (q *Queries) NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error) {
+	row := q.db.QueryRow(ctx, nextConversationTurnSeq, conversationID)
+	var seq int32
+	err := row.Scan(&seq)
+	return seq, err
+}
+
 const searchConversationTurns = `-- name: SearchConversationTurns :many
 SELECT conversation_id, seq, content, similarity(content, $1) AS sim
 FROM aura.conversation_turns

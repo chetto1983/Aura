@@ -234,7 +234,8 @@ func (s *Store) SetTitleIfNull(ctx context.Context, conversationID, title string
 }
 
 // CountTurns returns the number of persisted turns for a conversation. The Runner
-// reads it to decide the next seq and whether to fire the auto-title (seq >= 3).
+// uses it for non-fatal bookkeeping such as auto-title eligibility; append sequence
+// allocation happens inside AppendTurn's transaction.
 func (s *Store) CountTurns(ctx context.Context, conversationID string) (int, error) {
 	id, err := parseUUID("id", conversationID)
 	if err != nil {
@@ -249,7 +250,8 @@ func (s *Store) CountTurns(ctx context.Context, conversationID string) (int, err
 
 // AppendTurnParams carries one new turn plus its token/cost delta. Cost is the
 // USD figure to fold into the running total_cost_usd aggregate (RESEARCH OQ4 —
-// aggregated in SQL inside the same tx).
+// aggregated in SQL inside the same tx). A Seq <= 0 asks the Store to allocate the
+// next per-conversation seq inside the append transaction.
 type AppendTurnParams struct {
 	ConversationID string
 	Seq            int
@@ -266,16 +268,35 @@ type AppendTurnParams struct {
 // AppendTurn writes one turn AND folds its token/cost delta into the conversation
 // aggregates in a SINGLE db.WithTx transaction (SC-2): a failure between the turn
 // INSERT and the aggregates UPDATE rolls the whole thing back, leaving no partial
-// turn. Content over turnCapBytes spills to a sidecar file BEFORE the tx (the file
-// write is not part of the DB atomicity; a later boot scan reconciles an orphaned
-// file if the tx rolls back). The row then stores content=NULL + content_sidecar_path.
+// turn. When Seq <= 0, the Store row-locks the parent conversation and allocates
+// MAX(seq)+1 inside the same tx so concurrent appenders cannot race. Content over
+// turnCapBytes spills to a sidecar file once the final seq is known (the file write
+// is not part of the DB atomicity; a later boot scan reconciles an orphaned file if
+// the tx rolls back). The row then stores content=NULL + content_sidecar_path.
 func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
-	turn, agg, err := s.appendTurnWrites(p)
-	if err != nil {
-		return err
+	if p.Seq > 0 {
+		turn, agg, err := s.appendTurnWrites(p)
+		if err != nil {
+			return err
+		}
+		if err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+			return insertTurnAndAggregates(ctx, q, turn, agg)
+		}); err != nil {
+			return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+		}
+		return nil
 	}
 
 	if err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		seq, err := s.allocateTurnSeq(ctx, q, p.ConversationID)
+		if err != nil {
+			return err
+		}
+		p.Seq = seq
+		turn, agg, err := s.appendTurnWrites(p)
+		if err != nil {
+			return err
+		}
 		return insertTurnAndAggregates(ctx, q, turn, agg)
 	}); err != nil {
 		return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
@@ -289,12 +310,36 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 // metric failure cannot leave the conversation with an answer the caller never
 // receives.
 func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p AppendTurnParams, metric sqlc.InsertCacheMetricParams) error {
-	turn, agg, err := s.appendTurnWrites(p)
-	if err != nil {
-		return err
+	if p.Seq > 0 {
+		turn, agg, err := s.appendTurnWrites(p)
+		if err != nil {
+			return err
+		}
+		if err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+			if err := insertTurnAndAggregates(ctx, q, turn, agg); err != nil {
+				return err
+			}
+			if err := q.InsertCacheMetric(ctx, metric); err != nil {
+				return fmt.Errorf("insert cache metric: %w", err)
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("append assistant turn with cache metric %s seq %d: %w", p.ConversationID, p.Seq, err)
+		}
+		return nil
 	}
 
 	if err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		seq, err := s.allocateTurnSeq(ctx, q, p.ConversationID)
+		if err != nil {
+			return err
+		}
+		p.Seq = seq
+		metric.Seq = int32(seq)
+		turn, agg, err := s.appendTurnWrites(p)
+		if err != nil {
+			return err
+		}
 		if err := insertTurnAndAggregates(ctx, q, turn, agg); err != nil {
 			return err
 		}
@@ -306,6 +351,24 @@ func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p Append
 		return fmt.Errorf("append assistant turn with cache metric %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}
 	return nil
+}
+
+func (s *Store) allocateTurnSeq(ctx context.Context, q *sqlc.Queries, conversationID string) (int, error) {
+	id, err := parseUUID("conversation_id", conversationID)
+	if err != nil {
+		return 0, fmt.Errorf("allocate turn seq: %w", err)
+	}
+	if _, err := q.LockConversationForTurnAppend(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return 0, fmt.Errorf("allocate turn seq %s: %w", conversationID, ErrConversationNotFound)
+		}
+		return 0, fmt.Errorf("lock conversation %s for turn append: %w", conversationID, err)
+	}
+	seq, err := q.NextConversationTurnSeq(ctx, id)
+	if err != nil {
+		return 0, fmt.Errorf("next turn seq %s: %w", conversationID, err)
+	}
+	return int(seq), nil
 }
 
 func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTurnParams, sqlc.UpdateConversationAggregatesParams, error) {

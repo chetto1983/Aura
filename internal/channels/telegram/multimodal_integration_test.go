@@ -161,7 +161,7 @@ func TestLiveDocumentConvert(t *testing.T) {
 	defer cancel()
 
 	doc := []byte("<h1>Relazione Aura</h1>\n<p>Questo è un documento di prova.</p>\n")
-	res, err := newDocumentsClient(cfg).Convert(ctx, doc, "relazione.html")
+	res, err := newDocumentsClient(cfg).Convert(ctx, doc, "relazione.html", nil)
 	if err != nil {
 		t.Fatalf("live markitdown convert: %v", err)
 	}

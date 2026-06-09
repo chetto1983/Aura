@@ -143,6 +143,52 @@ func TestOnDocumentSyncRoutesToConvert(t *testing.T) {
 	}
 }
 
+// TestOnDocumentAsyncResultHonorsBusyGate proves the async document completion
+// path uses the same per-chat busy gate as ordinary inbound turns.
+func TestOnDocumentAsyncResultHonorsBusyGate(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(convertHandler(t, &hits, "# Relazione async", http.StatusOK))
+	defer srv.Close()
+
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Multimodal = MultimodalConfig{DocumentsBaseURL: srv.URL}
+	})
+	defer tg.docs.Stop(context.Background())
+
+	const chatID int64 = 32
+	if !tg.cmds.registerTurn(chatID, func() {}) {
+		t.Fatal("failed to pre-register busy turn")
+	}
+	defer tg.cmds.unregisterTurn(chatID)
+
+	bot := &dispatchBot{ogg: make([]byte, asyncTierMinBytes+1)}
+	msg := chatMsg(chatID)
+	msg.Document = &tele.Document{FileName: "async.pdf"}
+	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onDocument(async busy): %v", err)
+	}
+	tg.docs.Stop(context.Background())
+	tg.wg.Wait()
+
+	if calls, _ := rt.snapshot(); calls != 0 {
+		t.Fatalf("async document result must not bypass busy gate, got %d turn calls", calls)
+	}
+	var sawBusy bool
+	for _, text := range bot.sentTexts() {
+		if strings.Contains(text, turnBusyMessage) {
+			sawBusy = true
+		}
+	}
+	if !sawBusy {
+		t.Fatalf("async document busy result must send busy copy, sent=%v", bot.sentTexts())
+	}
+	if hits.Load() != 1 {
+		t.Errorf("async document should still convert once, got %d hits", hits.Load())
+	}
+}
+
 // TestOnDocumentRefuseTier proves a >50MB document is refused with the user-facing
 // message and drives NO turn + NO sidecar call.
 func TestOnDocumentRefuseTier(t *testing.T) {

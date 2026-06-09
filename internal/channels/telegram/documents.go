@@ -5,7 +5,7 @@
 //   - ≤5MB  : SYNChronous — convert inline, return the markdown.
 //   - 5-50MB: ASYNChronous — convert on a goroutine the client tracks with a
 //     WaitGroup that Stop drains (goleak-clean, Pitfall 5); the result is
-//     delivered over the OnAsyncResult callback the handler wires.
+//     delivered over the per-request callback passed to Convert.
 //   - >50MB : REFUSED — return a user-facing message, NO sidecar call.
 //
 // The converted markdown becomes a text user message fed to runner.Turn
@@ -42,7 +42,7 @@ const (
 	// ConvertSync — the document was converted inline; Markdown is populated.
 	ConvertSync ConvertStatus = iota
 	// ConvertAsync — the document was accepted for async conversion; the markdown
-	// arrives later over OnAsyncResult.
+	// arrives later over the Convert callback.
 	ConvertAsync
 	// ConvertRefused — the document exceeded the 50MB ceiling; Message is the
 	// user-facing copy, no conversion was attempted.
@@ -50,7 +50,7 @@ const (
 )
 
 // ConvertResult is the immediate outcome of a Convert call. For ConvertSync it
-// carries the Markdown; for ConvertAsync the markdown follows over OnAsyncResult;
+// carries the Markdown; for ConvertAsync the markdown follows over the Convert callback;
 // for ConvertRefused it carries the user-facing Message.
 type ConvertResult struct {
 	Status   ConvertStatus
@@ -58,17 +58,14 @@ type ConvertResult struct {
 	Message  string
 }
 
+type documentAsyncCallback func(fileName, markdown string, err error)
+
 // documentsClient converts documents via the markitdown sidecar with the size
 // tiers. The async tier's goroutines are tracked by wg so Stop drains them
 // (goleak). Thin OpenAI-compat-style HTTP client (zero Go ML).
 type documentsClient struct {
 	cfg        MultimodalConfig
 	httpClient *http.Client
-
-	// OnAsyncResult delivers a 5-50MB async conversion outcome to the handler
-	// (fileName, markdown, err). Wired by the composition root (13-09); nil → the
-	// async result is dropped (the conversion still runs and is drained by Stop).
-	OnAsyncResult func(fileName, markdown string, err error)
 
 	wg       sync.WaitGroup
 	stopOnce sync.Once
@@ -81,9 +78,9 @@ func newDocumentsClient(cfg MultimodalConfig) *documentsClient {
 
 // Convert routes a document to the right size tier. ≤5MB converts synchronously
 // and returns the markdown; 5-50MB returns ConvertAsync immediately and converts
-// on a tracked goroutine (result over OnAsyncResult); >50MB returns ConvertRefused
+// on a tracked goroutine (result over onAsync); >50MB returns ConvertRefused
 // with the user-facing message and never touches the sidecar.
-func (d *documentsClient) Convert(ctx context.Context, payload []byte, fileName string) (ConvertResult, error) {
+func (d *documentsClient) Convert(ctx context.Context, payload []byte, fileName string, onAsync documentAsyncCallback) (ConvertResult, error) {
 	switch {
 	case len(payload) >= refuseTierMinBytes:
 		return ConvertResult{Status: ConvertRefused, Message: documentRefuseMessage}, nil
@@ -95,8 +92,8 @@ func (d *documentsClient) Convert(ctx context.Context, payload []byte, fileName 
 		go func() {
 			defer d.wg.Done()
 			md, err := d.postConvert(context.WithoutCancel(ctx), payload, fileName)
-			if d.OnAsyncResult != nil {
-				d.OnAsyncResult(fileName, md, err)
+			if onAsync != nil {
+				onAsync(fileName, md, err)
 			}
 		}()
 		return ConvertResult{Status: ConvertAsync}, nil

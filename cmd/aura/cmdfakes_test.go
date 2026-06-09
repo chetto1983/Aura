@@ -93,25 +93,36 @@ func (f *cmdConvFake) CountTurns(_ context.Context, id string) (int, error) {
 func (f *cmdConvFake) AppendTurn(_ context.Context, p conversations.AppendTurnParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.turns[p.ConversationID] = append(f.turns[p.ConversationID], p)
-	if c, ok := f.convs[p.ConversationID]; ok {
-		c.TotalInputTokens += int64(p.InputTokens)
-		c.TotalOutputTokens += int64(p.OutputTokens)
-		c.TotalCostUSD += p.CostUSD
-	}
+	f.appendTurnFieldsLocked(p)
 	return nil
 }
 
-func (f *cmdConvFake) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, _ sqlc.InsertCacheMetricParams) error {
+func (f *cmdConvFake) AppendAssistantTurnWithCacheMetric(_ context.Context, p conversations.AppendTurnParams, metric sqlc.InsertCacheMetricParams) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	p = f.assignTurnSeqLocked(p)
+	if metric.Seq <= 0 {
+		metric.Seq = int32(p.Seq)
+	}
+	f.appendTurnFieldsLocked(p)
+	return nil
+}
+
+func (f *cmdConvFake) assignTurnSeqLocked(p conversations.AppendTurnParams) conversations.AppendTurnParams {
+	if p.Seq <= 0 {
+		p.Seq = len(f.turns[p.ConversationID]) + 1
+	}
+	return p
+}
+
+func (f *cmdConvFake) appendTurnFieldsLocked(p conversations.AppendTurnParams) {
+	p = f.assignTurnSeqLocked(p)
 	f.turns[p.ConversationID] = append(f.turns[p.ConversationID], p)
 	if c, ok := f.convs[p.ConversationID]; ok {
 		c.TotalInputTokens += int64(p.InputTokens)
 		c.TotalOutputTokens += int64(p.OutputTokens)
 		c.TotalCostUSD += p.CostUSD
 	}
-	return nil
 }
 
 func (f *cmdConvFake) messages(id string) []llm.Message {

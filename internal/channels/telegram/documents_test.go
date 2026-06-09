@@ -47,7 +47,7 @@ func TestDocumentsSyncTier(t *testing.T) {
 	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
 	defer dc.Stop(context.Background())
 
-	res, err := dc.Convert(context.Background(), []byte("small doc"), "doc.pdf")
+	res, err := dc.Convert(context.Background(), []byte("small doc"), "doc.pdf", nil)
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
@@ -73,10 +73,10 @@ func TestDocumentsAsyncTier(t *testing.T) {
 
 	done := make(chan string, 1)
 	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
-	dc.OnAsyncResult = func(_ string, md string, _ error) { done <- md }
 
 	payload := make([]byte, asyncTierMinBytes+1) // > 5MB → async tier
-	res, err := dc.Convert(context.Background(), payload, "big.pdf")
+	res, err := dc.Convert(context.Background(), payload, "big.pdf",
+		func(_ string, md string, _ error) { done <- md })
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
@@ -101,6 +101,64 @@ func TestDocumentsAsyncTier(t *testing.T) {
 	}
 }
 
+// TestDocumentsAsyncTierUsesPerRequestCallbacks proves async conversion results
+// are delivered to the callback passed with that Convert call, not through mutable
+// client-wide state that a later document can overwrite.
+func TestDocumentsAsyncTierUsesPerRequestCallbacks(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"markdown":"converted markdown"}`)
+	}))
+	defer srv.Close()
+
+	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
+	defer dc.Stop(context.Background())
+
+	first := make(chan string, 1)
+	second := make(chan string, 1)
+	payload := make([]byte, asyncTierMinBytes+1)
+	if _, err := dc.Convert(context.Background(), payload, "one.pdf",
+		func(fileName, md string, err error) {
+			if err != nil {
+				first <- "error: " + err.Error()
+				return
+			}
+			first <- fileName + ":" + md
+		}); err != nil {
+		t.Fatalf("first Convert: %v", err)
+	}
+	if _, err := dc.Convert(context.Background(), payload, "two.pdf",
+		func(fileName, md string, err error) {
+			if err != nil {
+				second <- "error: " + err.Error()
+				return
+			}
+			second <- fileName + ":" + md
+		}); err != nil {
+		t.Fatalf("second Convert: %v", err)
+	}
+
+	var gotFirst, gotSecond string
+	select {
+	case gotFirst = <-first:
+	case <-time.After(3 * time.Second):
+		t.Fatal("first async conversion did not call its callback")
+	}
+	select {
+	case gotSecond = <-second:
+	case <-time.After(3 * time.Second):
+		t.Fatal("second async conversion did not call its callback")
+	}
+	if !strings.HasPrefix(gotFirst, "one.pdf:") {
+		t.Fatalf("first callback got %q, want one.pdf result", gotFirst)
+	}
+	if !strings.HasPrefix(gotSecond, "two.pdf:") {
+		t.Fatalf("second callback got %q, want two.pdf result", gotSecond)
+	}
+}
+
 // TestDocumentsRefuseTier proves a >50MB document is refused with a user-facing
 // message and NO sidecar call (T-13-08-SidecarDoS).
 func TestDocumentsRefuseTier(t *testing.T) {
@@ -112,7 +170,7 @@ func TestDocumentsRefuseTier(t *testing.T) {
 	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
 	defer dc.Stop(context.Background())
 
-	res, err := dc.Convert(context.Background(), make([]byte, refuseTierMinBytes+1), "huge.pdf")
+	res, err := dc.Convert(context.Background(), make([]byte, refuseTierMinBytes+1), "huge.pdf", nil)
 	if err != nil {
 		t.Fatalf("Convert (refuse) must not error, it returns a refuse status: %v", err)
 	}
@@ -137,7 +195,7 @@ func TestDocumentsSyncSidecarError(t *testing.T) {
 	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
 	defer dc.Stop(context.Background())
 
-	if _, err := dc.Convert(context.Background(), []byte("small"), "doc.pdf"); err == nil {
+	if _, err := dc.Convert(context.Background(), []byte("small"), "doc.pdf", nil); err == nil {
 		t.Fatal("a sync sidecar 5xx must surface an error")
 	}
 }

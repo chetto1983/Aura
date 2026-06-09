@@ -298,22 +298,9 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 
 // appendUserTurn persists the user message as the next turn.
 func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) error {
-	seq, err := r.nextSeq(ctx, convID)
-	if err != nil {
-		return err
-	}
 	return r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
-		ConversationID: convID, Seq: seq, Role: llm.RoleUser, Content: content,
+		ConversationID: convID, Role: llm.RoleUser, Content: content,
 	})
-}
-
-// nextSeq returns the seq of the next turn (CountTurns + 1).
-func (r *Runner) nextSeq(ctx context.Context, convID string) (int, error) {
-	n, err := r.Conv.CountTurns(ctx, convID)
-	if err != nil {
-		return 0, fmt.Errorf("next seq: %w", err)
-	}
-	return n + 1, nil
 }
 
 // contextConfig builds the L1/L2/L2.5 ladder inputs from the Runner's llm.Config +

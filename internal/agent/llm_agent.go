@@ -319,6 +319,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 			// turn. Bounded to one veto per run; fail-open when the critic is broken.
 			if veto, feedback := a.gateCompletion(ic, answer); veto {
 				a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
+				a.appendSyntheticToolResults(calls[i+1:], "skipped: completion gate requested a revised final answer before this sibling tool ran")
 				if !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "completion gate: not done"), nil) {
 					return true, nil
 				}
@@ -338,6 +339,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 		// two-trips-one-nudge path (RESEARCH Open Question #2).
 		canon := canonicalArgs(call.Function.Arguments)
 		if dedup, reason := ic.Budget.BeforeToolCall(call.Function.Name, canon); dedup {
+			a.appendSyntheticToolResults(calls[i:], "skipped: duplicate call suppressed by the dedup guard")
 			if a.maybeRecover(call.Function.Name) {
 				return false, nil
 			}
@@ -363,6 +365,19 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 		}
 	}
 	return false, nil
+}
+
+func (a *LlmAgent) appendSyntheticToolResults(calls []llm.ToolCall, content string) {
+	for _, call := range calls {
+		if call.ID == "" {
+			continue
+		}
+		a.history = append(a.history, llm.Message{
+			Role:       llm.RoleTool,
+			ToolCallID: call.ID,
+			Content:    content,
+		})
+	}
 }
 
 type toolRunResult struct {

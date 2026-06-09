@@ -23,15 +23,19 @@ func TestTurn_AppendUserTurnError(t *testing.T) {
 	}
 }
 
-// TestTurn_CountTurnsError surfaces a nextSeq failure (CountTurns error).
-func TestTurn_CountTurnsError(t *testing.T) {
-	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient())
+// TestTurn_CountTurnsErrorDoesNotBlockTurn keeps CountTurns on the non-fatal
+// bookkeeping path. Sequence allocation belongs to the conversation store append
+// transaction, so a count failure must not abort a user-visible turn.
+func TestTurn_CountTurnsErrorDoesNotBlockTurn(t *testing.T) {
+	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(textResponseCall("call-1", "ok")),
+	))
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 	conv.countErr = errFake
-	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err == nil {
-		t.Fatal("expected the count-turns error to surface")
+	if _, err := drain(r.Turn(ctx, convID, userPtr("hi"))); err != nil {
+		t.Fatalf("turn must not fail on CountTurns: %v", err)
 	}
 }
 

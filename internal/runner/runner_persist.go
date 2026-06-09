@@ -147,10 +147,6 @@ func toolInvocationTimestamp(ti *agent.ToolInvocation, fallback time.Time) time.
 // assistant-write seam. A metric failure rolls the turn back, so callers never see a
 // failed turn while the conversation history already contains the answer.
 func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *agent.Event) error {
-	seq, err := r.nextSeq(ctx, convID)
-	if err != nil {
-		return err
-	}
 	u := usageFromStateDelta(ev.Actions.StateDelta)
 	// Prefer the provider's wire-reported cost (D-18); fall back to the seeded price
 	// table (D-23) when the provider omits it, so a priced turn never persists $0 while
@@ -162,7 +158,6 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 	}
 	turn := conversations.AppendTurnParams{
 		ConversationID: convID,
-		Seq:            seq,
 		Role:           llm.RoleAssistant,
 		Content:        ev.LLMResponse.Content,
 		InputTokens:    u.PromptTokens,
@@ -170,7 +165,7 @@ func (r *Runner) persistAssistantAnswer(ctx context.Context, convID string, ev *
 		CachedTokens:   u.CachedTokens,
 		CostUSD:        cost,
 	}
-	metric, err := r.cacheMetricParams(convID, seq, u, cost)
+	metric, err := r.cacheMetricParams(convID, 0, u, cost)
 	if err != nil {
 		return err
 	}
@@ -257,13 +252,8 @@ func (r *Runner) flushPause(ctx context.Context, tr *turnTracker) error {
 	if err != nil {
 		return err
 	}
-	seq, err := r.nextSeq(ctx, tr.convID)
-	if err != nil {
-		return err
-	}
 	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
 		ConversationID: tr.convID,
-		Seq:            seq,
 		Role:           llm.RoleAssistant,
 		ToolCalls:      toolCalls,
 	}); err != nil {
