@@ -57,9 +57,7 @@ func Open(ctx context.Context, cfg *Config) (*Client, error) {
 	}
 	// G204: MCPBinary is an operator-configured path (AURA_MCP_NEO4J_CYPHER_BIN),
 	// resolved from .env / config — not attacker-controlled user input.
-	cmdCtx, cancel := connectContext(ctx, cfg)
-	defer cancel()
-	cmd := exec.CommandContext(cmdCtx, cfg.MCPBinary, args...) //nolint:gosec
+	cmd := exec.Command(cfg.MCPBinary, args...) //nolint:gosec
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
@@ -82,11 +80,37 @@ func Open(ctx context.Context, cfg *Config) (*Client, error) {
 	}
 	// mcp-neo4j-cypher (FastMCP) rejects tools/call until the MCP lifecycle
 	// handshake completes. Verified by the Wave 0 probe (Assumption A10).
-	if err := c.initialize(); err != nil {
+	initCtx, cancel := connectContext(ctx, cfg)
+	defer cancel()
+	if err := c.initializeWithContext(initCtx); err != nil {
 		_ = c.Close()
 		return nil, err
 	}
 	return c, nil
+}
+
+func (c *Client) initializeWithContext(ctx context.Context) error {
+	done := make(chan error, 1)
+	go func() {
+		done <- c.initialize()
+	}()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		if c.cmd != nil && c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
+		select {
+		case err := <-done:
+			if err != nil {
+				return fmt.Errorf("initialize timeout: %w; after kill: %v", ctx.Err(), err)
+			}
+		case <-time.After(time.Second):
+		}
+		return fmt.Errorf("initialize timeout: %w", ctx.Err())
+	}
 }
 
 // initialize performs the MCP handshake: an `initialize` request/response then
