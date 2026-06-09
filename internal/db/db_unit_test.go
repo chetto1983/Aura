@@ -6,6 +6,7 @@ package db
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +36,20 @@ func TestMigrateAllCountingStepsCountsAppliedSteps(t *testing.T) {
 	}
 	if f.calls != 3 {
 		t.Fatalf("Steps calls = %d, want 3 including ErrNoChange probe", f.calls)
+	}
+}
+
+func TestMigrateAllCountingStepsStopsOnNoNextMigration(t *testing.T) {
+	f := &fakeStepMigrator{errs: []error{nil, os.ErrNotExist}}
+	n, err := migrateAllCountingSteps(f)
+	if err != nil {
+		t.Fatalf("migrateAllCountingSteps: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("applied steps = %d, want 1", n)
+	}
+	if f.calls != 2 {
+		t.Fatalf("Steps calls = %d, want 2 including no-next probe", f.calls)
 	}
 }
 

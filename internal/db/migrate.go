@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -65,7 +66,7 @@ func migrateAllCountingSteps(m migrationStepper) (int, error) {
 	applied := 0
 	for {
 		if err := m.Steps(1); err != nil {
-			if errors.Is(err, migrate.ErrNoChange) {
+			if errors.Is(err, migrate.ErrNoChange) || errors.Is(err, os.ErrNotExist) {
 				return applied, nil
 			}
 			return applied, err
