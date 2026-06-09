@@ -23,6 +23,9 @@ func applyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, h
 	tier := classifyReasoningTier(lastGenuineUserContent(history))
 	req.Reasoning = tier.reasoning()
 	req.MaxTokens = tier.maxTokens(cfg.MaxTokens)
+	if tier == tierNoReasoning {
+		req.ToolChoice = "none"
+	}
 }
 
 func isOpenRouterReasoningTarget(provider, baseURL string) bool {

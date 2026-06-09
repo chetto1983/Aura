@@ -228,8 +228,9 @@ func parseChoice(s string, n int) (int, bool) {
 	return v - 1, true
 }
 
-// trimLine strips the trailing newline/CR and surrounding spaces from a read line.
+// trimLine strips BOM, trailing newline/CR, and surrounding spaces from a read line.
 func trimLine(s string) string {
+	s = strings.TrimPrefix(s, "\ufeff")
 	for len(s) > 0 && (s[len(s)-1] == '\n' || s[len(s)-1] == '\r') {
 		s = s[:len(s)-1]
 	}

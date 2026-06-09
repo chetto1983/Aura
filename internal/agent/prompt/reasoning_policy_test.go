@@ -21,6 +21,7 @@ func TestAdaptiveReasoningPolicy(t *testing.T) {
 		wantEffort llm.ReasoningEffort
 		wantExcl   bool
 		wantTokens int
+		wantChoice string
 	}{
 		{
 			name:       "greeting_no_reasoning",
@@ -28,6 +29,7 @@ func TestAdaptiveReasoningPolicy(t *testing.T) {
 			wantEffort: llm.ReasoningEffortNone,
 			wantExcl:   true,
 			wantTokens: 512,
+			wantChoice: "none",
 		},
 		{
 			name:       "news_search_small_reasoning",
@@ -70,8 +72,8 @@ func TestAdaptiveReasoningPolicy(t *testing.T) {
 			if req.Reasoning.Exclude == nil || *req.Reasoning.Exclude != tc.wantExcl {
 				t.Fatalf("Reasoning.Exclude = %v, want %v", req.Reasoning.Exclude, tc.wantExcl)
 			}
-			if req.ToolChoice != "" {
-				t.Fatalf("ToolChoice = %q, want unchanged empty default", req.ToolChoice)
+			if req.ToolChoice != tc.wantChoice {
+				t.Fatalf("ToolChoice = %q, want %q", req.ToolChoice, tc.wantChoice)
 			}
 		})
 	}

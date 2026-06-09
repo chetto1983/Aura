@@ -96,7 +96,7 @@ func TestChat_TwoTurns(t *testing.T) {
 		textResponseTurn("call-1", "Ciao, come posso aiutarti?", llm.Usage{PromptTokens: 120, CompletionTokens: 30}),
 		textResponseTurn("call-2", "Ricordo il tuo nome.", llm.Usage{PromptTokens: 180, CompletionTokens: 25}),
 	)
-	d, out, _ := testChatDeps(t, "ciao\nmi chiamo Davide\n", fc)
+	d, out, _ := testChatDeps(t, "prima domanda\nmi chiamo Davide\n", fc)
 
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop: %v", err)
@@ -122,7 +122,7 @@ func TestChat_TwoTurns(t *testing.T) {
 	second := fc.Requests[1]
 	sawFirstUser := false
 	for _, m := range second.Messages {
-		if m.Role == llm.RoleUser && strings.Contains(m.Content, "ciao") {
+		if m.Role == llm.RoleUser && strings.Contains(m.Content, "prima domanda") {
 			sawFirstUser = true
 		}
 	}

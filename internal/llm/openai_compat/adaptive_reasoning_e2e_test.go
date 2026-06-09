@@ -105,12 +105,17 @@ func TestAdaptiveReasoningItalianCorpusE2E(t *testing.T) {
 		body := decodeBody(t, captureBody(t, req))
 		effort, exclude, ok := reasoningFields(body)
 		gotMax, _ := body["max_tokens"].(float64)
-		if ok && effort == tc.effort && exclude == tc.exclude && int(gotMax) == tc.maxTokens {
+		choice, _ := body["tool_choice"].(string)
+		_, toolsPresent := body["tools"]
+		wantChoice, wantTools := expectedToolWire(tc.effort)
+		if ok && effort == tc.effort && exclude == tc.exclude && int(gotMax) == tc.maxTokens &&
+			choice == wantChoice && toolsPresent == wantTools {
 			correct++
 			continue
 		}
-		misses = append(misses, fmt.Sprintf("%q (%s): got effort=%q exclude=%v max_tokens=%d, want effort=%q exclude=%v max_tokens=%d",
-			tc.query, tc.wantReason, effort, exclude, int(gotMax), tc.effort, tc.exclude, tc.maxTokens))
+		misses = append(misses, fmt.Sprintf("%q (%s): got effort=%q exclude=%v max_tokens=%d tool_choice=%q tools=%v, want effort=%q exclude=%v max_tokens=%d tool_choice=%q tools=%v",
+			tc.query, tc.wantReason, effort, exclude, int(gotMax), choice, toolsPresent,
+			tc.effort, tc.exclude, tc.maxTokens, wantChoice, wantTools))
 	}
 
 	score := float64(correct) / float64(len(cases))
@@ -138,6 +143,13 @@ func reasoningFields(body map[string]any) (effort string, exclude bool, ok bool)
 	effort, _ = reasoning["effort"].(string)
 	exclude, _ = reasoning["exclude"].(bool)
 	return effort, exclude, effort != ""
+}
+
+func expectedToolWire(effort string) (choice string, toolsPresent bool) {
+	if effort == "none" {
+		return "none", false
+	}
+	return "auto", true
 }
 
 func joinLines(lines []string) string {

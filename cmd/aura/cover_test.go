@@ -388,10 +388,11 @@ func (badReader) Read([]byte) (int, error) { return 0, errWireDead }
 // TestTrimLine covers trimLine's leading/trailing-space trimming and CR/LF strip.
 func TestTrimLine(t *testing.T) {
 	cases := map[string]string{
-		"  /exit  \n": "/exit",
-		"ciao\r\n":    "ciao",
-		"   ":         "",
-		"a b\n":       "a b", // interior spaces preserved
+		"  /exit  \n":    "/exit",
+		"ciao\r\n":       "ciao",
+		"\ufeffciao\r\n": "ciao",
+		"   ":            "",
+		"a b\n":          "a b", // interior spaces preserved
 	}
 	for in, want := range cases {
 		if got := trimLine(in); got != want {
@@ -420,7 +421,7 @@ func TestChat_MalformedBudgetEnv_SurfacesError(t *testing.T) {
 	fc := agenttest.NewFakeClient(
 		textResponseTurn("call-1", "should never reach the model", llm.Usage{PromptTokens: 1, CompletionTokens: 1}),
 	)
-	d, _, errOut := testChatDeps(t, "ciao\n", fc)
+	d, _, errOut := testChatDeps(t, "fai una cosa\n", fc)
 	if err := chatLoop(context.Background(), d); err != nil {
 		t.Fatalf("chatLoop must keep running and print the turn error, got fatal: %v", err)
 	}

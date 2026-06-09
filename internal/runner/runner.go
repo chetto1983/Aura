@@ -204,6 +204,23 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 				yield(nil, err)
 				return
 			}
+			if answer, ok := fastReplyFor(*userMsg); ok {
+				ev, err := fastReplyEvent(convID, answer)
+				if err != nil {
+					yield(nil, err)
+					return
+				}
+				tr := &turnTracker{convID: convID}
+				if err := r.persistEvent(ctx, tr, ev); err != nil {
+					yield(nil, err)
+					return
+				}
+				if !yield(fastReplyChunkEvent(ev), nil) {
+					return
+				}
+				yield(ev, nil)
+				return
+			}
 		}
 
 		history, err := r.Conv.LoadManagedHistory(ctx, convID, r.contextConfig())

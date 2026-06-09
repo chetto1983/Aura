@@ -258,6 +258,47 @@ func TestStop_AutoResolvesAndJoinsWaitGroup(t *testing.T) {
 	}
 }
 
+func TestTurn_FastGreetingSkipsLLM(t *testing.T) {
+	client := agenttest.NewFakeClient()
+	r, conv, _ := newTestRunner(t, client)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+
+	evs, err := drain(r.Turn(ctx, convID, userPtr("ciao")))
+	if err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	if client.CallCount() != 0 {
+		t.Fatalf("fast greeting must not call the LLM, got %d calls", client.CallCount())
+	}
+	if len(evs) != 2 || evs[0].LLMResponse == nil || evs[0].LLMResponse.FinishReason != "" ||
+		evs[1].LLMResponse == nil || evs[1].LLMResponse.FinishReason != "fast_path" {
+		t.Fatalf("fast greeting events = %+v, want streamed chunk then fast_path final event", evs)
+	}
+	if evs[0].LLMResponse.Content == "" || evs[1].LLMResponse.Content != evs[0].LLMResponse.Content {
+		t.Fatal("fast greeting returned empty content")
+	}
+	hist, err := conv.LoadHistory(ctx, convID)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(hist) != 2 || hist[0].Role != llm.RoleUser || hist[0].Content != "ciao" ||
+		hist[1].Role != llm.RoleAssistant || hist[1].Content != evs[1].LLMResponse.Content {
+		t.Fatalf("history after fast greeting = %+v", hist)
+	}
+}
+
+func TestFastReplyFor_NormalizesItalianGreeting(t *testing.T) {
+	cases := []string{"ciao", "Ciao!", "ciao Aura", "\ufeffciao"}
+	for _, in := range cases {
+		answer, ok := fastReplyFor(in)
+		if !ok || answer == "" {
+			t.Fatalf("fastReplyFor(%q) = (%q, %v), want non-empty fast reply", in, answer, ok)
+		}
+	}
+}
+
 // TestAutoTitle_FiresAfterSeq3 asserts the auto-title worker sets the title after
 // the history reaches seq>=3, using the fake client to produce the title.
 func TestAutoTitle_FiresAfterSeq3(t *testing.T) {
