@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
 // donePayload is the literal end-of-stream sentinel. It is NOT valid JSON and is
@@ -90,11 +91,17 @@ func parseSSE(r io.Reader, emit func(llm.Chunk) bool) (parseResult, error) {
 			case strings.HasPrefix(line, "data: "):
 				payload := strings.TrimPrefix(line, "data: ")
 				if payload == donePayload {
+					reasoningtrace.Record("openai_compat_sse_done", map[string]any{
+						"payload": payload,
+					})
 					if !finalize() {
 						return res, nil
 					}
 					return res, nil
 				}
+				reasoningtrace.Record("openai_compat_sse_payload", map[string]any{
+					"payload": payload,
+				})
 				var wc wireChunk
 				if jErr := json.Unmarshal([]byte(payload), &wc); jErr != nil {
 					return res, fmt.Errorf("openai_compat: malformed SSE chunk: %w", jErr)
@@ -126,11 +133,30 @@ func handleChunk(wc *wireChunk, acc *accumulator, res *parseResult, emit func(ll
 	for i := range wc.Choices {
 		c := &wc.Choices[i]
 		if c.Delta.Content != "" {
+			reasoningtrace.Record("openai_compat_parsed_text_delta", map[string]any{
+				"choice_index": i,
+				"chars":        reasoningtrace.RuneLen(c.Delta.Content),
+				"delta":        c.Delta.Content,
+			})
 			if !emit(llm.Chunk{Text: c.Delta.Content}) {
 				return false
 			}
 		}
 		if r := reasoningDelta(c.Delta.Reasoning, c.Delta.ReasoningContent); r != "" {
+			field := "reasoning_content"
+			if c.Delta.Reasoning != "" {
+				field = "reasoning"
+			}
+			reasoningtrace.Record("openai_compat_parsed_reasoning_delta", map[string]any{
+				"choice_index":            i,
+				"field":                   field,
+				"reasoning_chars":         reasoningtrace.RuneLen(c.Delta.Reasoning),
+				"reasoning_content_chars": reasoningtrace.RuneLen(c.Delta.ReasoningContent),
+				"chosen_delta_chars":      reasoningtrace.RuneLen(r),
+				"reasoning_delta":         c.Delta.Reasoning,
+				"reasoning_content_delta": c.Delta.ReasoningContent,
+				"chosen_reasoning_delta":  r,
+			})
 			if !emit(llm.Chunk{Reasoning: r}) {
 				return false
 			}
@@ -139,10 +165,21 @@ func handleChunk(wc *wireChunk, acc *accumulator, res *parseResult, emit func(ll
 			acc.add(d)
 		}
 		if c.FinishReason != "" {
+			reasoningtrace.Record("openai_compat_parsed_finish_reason", map[string]any{
+				"choice_index":  i,
+				"finish_reason": c.FinishReason,
+			})
 			res.finishReason = c.FinishReason
 		}
 	}
 	if wc.Usage != nil {
+		reasoningtrace.Record("openai_compat_parsed_usage", map[string]any{
+			"prompt_tokens":      wc.Usage.PromptTokens,
+			"completion_tokens":  wc.Usage.CompletionTokens,
+			"total_tokens":       wc.Usage.TotalTokens,
+			"cached_tokens":      wc.Usage.PromptTokensDetails.CachedTokens,
+			"cache_write_tokens": wc.Usage.PromptTokensDetails.CacheWriteTokens,
+		})
 		res.usage = wc.Usage.toUsage()
 		res.hasUsage = true
 	}

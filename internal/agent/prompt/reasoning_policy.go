@@ -11,24 +11,44 @@ const (
 	smallReasoningMaxTokens = 2048
 )
 
-// applyAdaptiveReasoning maps the latest genuine user request to a conservative
-// OpenRouter reasoning tier. The production request remains provider-neutral:
-// Build populates llm.Request.Reasoning, and the wire layer decides how to
-// serialize it.
-func applyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, history []llm.Message) {
-	if !cfg.AdaptiveReasoning || !isOpenRouterReasoningTarget(provider, cfg.BaseURL) {
-		return
-	}
+// ReasoningTier is the small provider-neutral routing result the runtime applies
+// to the main request after an external policy/router has classified the turn.
+type ReasoningTier string
 
-	tier := classifyReasoningTier(lastGenuineUserContent(history))
-	req.Reasoning = tier.reasoning()
-	req.MaxTokens = tier.maxTokens(cfg.MaxTokens)
-	if tier == tierNoReasoning {
-		req.ToolChoice = "none"
+const (
+	// ReasoningTierNone asks the provider to avoid reasoning tokens on simple turns.
+	ReasoningTierNone ReasoningTier = "none"
+	// ReasoningTierLow requests a small reasoning budget for lookup/tool turns.
+	ReasoningTierLow ReasoningTier = "low"
+	// ReasoningTierHigh requests a deeper reasoning budget for complex work.
+	ReasoningTierHigh ReasoningTier = "high"
+)
+
+// Valid reports whether t is one of the supported routing tiers.
+func (t ReasoningTier) Valid() bool {
+	switch t {
+	case ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh:
+		return true
+	default:
+		return false
 	}
 }
 
-func isOpenRouterReasoningTarget(provider, baseURL string) bool {
+// ApplyAdaptiveReasoning applies a precomputed tier to the main request. It never
+// forces ToolChoice="none": the hot manifest keeps active tools and deferred tool
+// names visible, so the model can still call tool_search when needed.
+func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, tier ReasoningTier) {
+	if !cfg.AdaptiveReasoning || !IsOpenRouterReasoningTarget(provider, cfg.BaseURL) || !tier.Valid() {
+		return
+	}
+
+	req.Reasoning = tier.reasoning()
+	req.MaxTokens = tier.maxTokens(cfg.MaxTokens)
+}
+
+// IsOpenRouterReasoningTarget reports whether provider/baseURL support this
+// OpenRouter reasoning projection.
+func IsOpenRouterReasoningTarget(provider, baseURL string) bool {
 	if !strings.EqualFold(provider, "openrouter") {
 		return false
 	}
@@ -36,73 +56,31 @@ func isOpenRouterReasoningTarget(provider, baseURL string) bool {
 	return base == "" || strings.Contains(base, "openrouter.ai")
 }
 
-type reasoningTier int
-
-const (
-	tierNoReasoning reasoningTier = iota
-	tierSmallReasoning
-	tierDeepReasoning
-)
-
-func (t reasoningTier) reasoning() llm.ReasoningConfig {
+func (t ReasoningTier) reasoning() llm.ReasoningConfig {
 	switch t {
-	case tierDeepReasoning:
+	case ReasoningTierHigh:
 		return llm.ReasoningConfig{Effort: llm.ReasoningEffortHigh, Exclude: boolPtr(false)}
-	case tierSmallReasoning:
+	case ReasoningTierLow:
 		return llm.ReasoningConfig{Effort: llm.ReasoningEffortLow, Exclude: boolPtr(false)}
 	default:
 		return llm.ReasoningConfig{Effort: llm.ReasoningEffortNone, Exclude: boolPtr(true)}
 	}
 }
 
-func (t reasoningTier) maxTokens(configuredMax int) int {
+func (t ReasoningTier) maxTokens(configuredMax int) int {
 	switch t {
-	case tierDeepReasoning:
+	case ReasoningTierHigh:
 		return configuredOrDefault(configuredMax)
-	case tierSmallReasoning:
+	case ReasoningTierLow:
 		return cappedTokens(smallReasoningMaxTokens, configuredMax)
 	default:
 		return cappedTokens(noReasoningMaxTokens, configuredMax)
 	}
 }
 
-func classifyReasoningTier(content string) reasoningTier {
-	q := strings.ToLower(content)
-	deepIndicators := []string{
-		"analyze", "analyse", "compare", "debug", "prove", "justify", "derive", "design",
-		"tradeoff", "tradeoffs", "architecture", "distributed", "multi-step",
-		"step by step", "complex", "why", "how", "failure", "production",
-		"scheduler", "memory retrieval", "contradiction", "script", "scraping",
-		"scrape", "crawler", "codice", "codifica", "implement", "implementa",
-		"analizza", "analisi", "confronta", "paragona", "debugga", "debuggare",
-		"risolvi", "dimostra", "dimostrare", "dimostrazione", "spiega perche",
-		"spiega perché", "perché", "perche", "architettura", "progetta",
-		"progettare", "ottimizza", "ottimizzare", "refactor", "scraper",
-		"programma", "funzione", "query sql", "dockerfile", "workflow", "api",
-		"algoritmo", "strategia", "piano tecnico",
-	}
-	smallIndicators := []string{
-		"cerca", "notizie", "news", "search", "trova", "aggiornamenti",
-		"lookup", "ricerca", "recupera", "fonti", "sources",
-		"meteo", "previsioni", "ultime", "aggiorna", "controlla", "verifica",
-		"prezzo", "costa", "quotazione", "orari", "aperto", "farmacia",
-		"traffico", "sciopero", "evento", "risultato", "classifica",
-	}
-
-	deepHits := countIndicators(q, deepIndicators)
-	smallHits := countIndicators(q, smallIndicators)
-	wordCount := len(strings.Fields(content))
-	deepScore := float64(deepHits)*0.35 + minFloat(float64(wordCount)/40.0, 0.55)
-	if deepHits >= 2 || (deepHits >= 1 && deepScore >= 0.55) {
-		return tierDeepReasoning
-	}
-	if smallHits >= 1 {
-		return tierSmallReasoning
-	}
-	return tierNoReasoning
-}
-
-func lastGenuineUserContent(history []llm.Message) string {
+// LastGenuineUserContent returns the newest real user request, skipping synthetic
+// budget, workspace, recovery, and completion-check nudges.
+func LastGenuineUserContent(history []llm.Message) string {
 	for i := len(history) - 1; i >= 0; i-- {
 		m := history[i]
 		if m.Role != llm.RoleUser || strings.TrimSpace(m.Content) == "" {
@@ -126,16 +104,6 @@ func isSyntheticUserHint(content string) bool {
 		strings.HasPrefix(trimmed, "Completion check FAILED:")
 }
 
-func countIndicators(q string, indicators []string) int {
-	hits := 0
-	for _, indicator := range indicators {
-		if strings.Contains(q, indicator) {
-			hits++
-		}
-	}
-	return hits
-}
-
 func cappedTokens(target, configuredMax int) int {
 	if configuredMax <= 0 {
 		return target
@@ -154,10 +122,3 @@ func configuredOrDefault(configuredMax int) int {
 }
 
 func boolPtr(v bool) *bool { return &v }
-
-func minFloat(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}

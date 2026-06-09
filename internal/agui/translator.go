@@ -7,6 +7,7 @@ import (
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/types"
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
 // ArtifactEventName is the stable AG-UI CUSTOM-event name the artifact branch
@@ -38,7 +39,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			return
 		}
 		st := textRunState{idgen: idgen}
-		rs := reasoningRunState{idgen: idgen}
+		rs := reasoningRunState{idgen: idgen, threadID: threadID, runID: runID}
 		// closeRuns ends BOTH open runs (reasoning before text is irrelevant since
 		// they never coexist) so any interruption — tool/state/final/pause/error —
 		// drains a dangling reasoning OR text run before the next family opens.
@@ -140,6 +141,14 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 			// text run, so reasoning fully precedes any following text (interleave-
 			// before-text emerges from the close-on-other-family rule below).
 			if ev.LLMResponse.Reasoning != "" {
+				reasoningtrace.Record("agui_received_agent_reasoning", map[string]any{
+					"thread_id":       threadID,
+					"run_id":          runID,
+					"request_id":      ev.RequestID.String(),
+					"agent_thread_id": ev.ThreadID,
+					"chars":           reasoningtrace.RuneLen(ev.LLMResponse.Reasoning),
+					"reasoning_delta": ev.LLMResponse.Reasoning,
+				})
 				if !st.close(yield) {
 					return
 				}
@@ -206,9 +215,11 @@ func (s *textRunState) close(yield func(events.Event, error) bool) bool {
 // but the lifecycle has the extra START/END envelope the SDK's REASONING_* family
 // requires (REASONING_START wraps REASONING_MESSAGE_*).
 type reasoningRunState struct {
-	idgen IDGenerator
-	msgID string
-	open  bool
+	idgen    IDGenerator
+	threadID string
+	runID    string
+	msgID    string
+	open     bool
 }
 
 // content emits a REASONING_MESSAGE_CONTENT delta, opening the run (REASONING_START
@@ -217,13 +228,31 @@ func (s *reasoningRunState) content(yield func(events.Event, error) bool, delta 
 	if !s.open {
 		s.msgID = s.idgen.NewReasoningID()
 		s.open = true
+		reasoningtrace.Record("agui_reasoning_start_event", map[string]any{
+			"thread_id":  s.threadID,
+			"run_id":     s.runID,
+			"message_id": s.msgID,
+		})
 		if !yield(events.NewReasoningStartEvent(s.msgID), nil) {
 			return false
 		}
+		reasoningtrace.Record("agui_reasoning_message_start_event", map[string]any{
+			"thread_id":  s.threadID,
+			"run_id":     s.runID,
+			"message_id": s.msgID,
+			"role":       "assistant",
+		})
 		if !yield(events.NewReasoningMessageStartEvent(s.msgID, "assistant"), nil) {
 			return false
 		}
 	}
+	reasoningtrace.Record("agui_reasoning_content_event", map[string]any{
+		"thread_id":       s.threadID,
+		"run_id":          s.runID,
+		"message_id":      s.msgID,
+		"chars":           reasoningtrace.RuneLen(delta),
+		"reasoning_delta": delta,
+	})
 	return yield(events.NewReasoningMessageContentEvent(s.msgID, delta), nil)
 }
 
@@ -236,9 +265,19 @@ func (s *reasoningRunState) close(yield func(events.Event, error) bool) bool {
 	s.open = false
 	id := s.msgID
 	s.msgID = ""
+	reasoningtrace.Record("agui_reasoning_message_end_event", map[string]any{
+		"thread_id":  s.threadID,
+		"run_id":     s.runID,
+		"message_id": id,
+	})
 	if !yield(events.NewReasoningMessageEndEvent(id), nil) {
 		return false
 	}
+	reasoningtrace.Record("agui_reasoning_end_event", map[string]any{
+		"thread_id":  s.threadID,
+		"run_id":     s.runID,
+		"message_id": id,
+	})
 	return yield(events.NewReasoningEndEvent(id), nil)
 }
 

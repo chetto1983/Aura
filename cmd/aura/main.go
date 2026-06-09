@@ -114,8 +114,9 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	reg.Register(&tools.SandboxExec{Runner: sandboxagent.New(cfg.SandboxAgent)})
-	// shell_exec — the keystone full-terminal tool: a host shell, in-process, full
-	// access (amendment #50 / D-15c). sandbox_exec stays as the untrusted-code glove.
+	// shell_exec is the full host terminal, but deferred so simple chat/web turns do
+	// not carry a giant shell schema in the hot manifest. sandbox_exec stays as the
+	// untrusted-code glove.
 	reg.Register(&tools.ShellExec{})
 	// Native in-process filesystem hands — Claude-Code-style file ergonomics, full
 	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical

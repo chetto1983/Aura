@@ -105,14 +105,14 @@ func (r *renderer) consume(ctx context.Context, ch <-chan events.Event) {
 // the optional TTS-out path (ShouldSpeak); it is the rendered answer, not a
 // re-derivation. Empty when the turn produced no text content.
 func (r *renderer) finalText() string {
-	return r.buf.String()
+	return stripProtocolToolBlocks(r.buf.String())
 }
 
 // flush sends/edits msg #2 with the accumulated content. final forces a send even
 // if the throttle window has not elapsed (the END/RUN_FINISHED finalization). A
 // non-final flush inside the throttle window is skipped (coalesced).
 func (r *renderer) flush(ctx context.Context, final bool) {
-	content := r.buf.String()
+	content := stripProtocolToolBlocks(r.buf.String())
 	if content == "" || r.tableSent || (final && r.textDone) {
 		return // nothing buffered, or the turn already finalized as a table PNG
 	}
@@ -274,6 +274,69 @@ func tableCaption(content string) string {
 		b.WriteString(line)
 	}
 	return b.String()
+}
+
+// stripProtocolToolBlocks prevents model-emitted tool protocol text from leaking
+// into Telegram's user-visible answer stream. Structured tool events still render
+// through the status pane; this only strips literal XML-ish scaffolding that arrived
+// as TEXT_MESSAGE_CONTENT.
+func stripProtocolToolBlocks(s string) string {
+	if s == "" {
+		return ""
+	}
+	lower := strings.ToLower(s)
+	var b strings.Builder
+	pos := 0
+	stripped := false
+	for pos < len(s) {
+		start := nextProtocolToolOpen(lower, pos)
+		if start < 0 {
+			b.WriteString(s[pos:])
+			break
+		}
+		stripped = true
+		b.WriteString(s[pos:start])
+		end := nextProtocolToolClose(lower, start)
+		if end < 0 {
+			break
+		}
+		pos = end
+	}
+	out := b.String()
+	if stripped {
+		return strings.TrimSpace(out)
+	}
+	return out
+}
+
+func nextProtocolToolOpen(s string, from int) int {
+	return firstIndexFrom(s, from, "<tool_call", "<tool_exec")
+}
+
+func nextProtocolToolClose(s string, from int) int {
+	best := -1
+	for _, tag := range []string{"</tool_call>", "</tool_exec>"} {
+		if idx := strings.Index(s[from:], tag); idx >= 0 {
+			end := from + idx + len(tag)
+			if best < 0 || end < best {
+				best = end
+			}
+		}
+	}
+	return best
+}
+
+func firstIndexFrom(s string, from int, needles ...string) int {
+	best := -1
+	for _, needle := range needles {
+		if idx := strings.Index(s[from:], needle); idx >= 0 {
+			idx += from
+			if best < 0 || idx < best {
+				best = idx
+			}
+		}
+	}
+	return best
 }
 
 // sendOpts builds the SendOptions carrying a parse mode (mode "" disables parsing).

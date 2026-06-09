@@ -64,3 +64,4 @@ docs/*-live-soak-*.log
 .claude/*
 skills-lock.json
 nul
+output/*

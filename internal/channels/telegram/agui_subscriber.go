@@ -13,6 +13,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agui"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 	"github.com/google/uuid"
 )
 
@@ -72,6 +73,16 @@ func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, 
 	statusCh := fo.Subscribe()   // → status pane
 	contentCh := fo.Subscribe()  // → renderer
 	artifactCh := fo.Subscribe() // → artifact (ALL THREE before Run)
+	reasoningtrace.Record("telegram_handle_turn_subscribers", map[string]any{
+		"chat_id": chatID,
+		"conv_id": convID(chatID),
+		"run_id":  runID,
+		"subscribers": []map[string]any{
+			{"index": 0, "consumer": "status"},
+			{"index": 1, "consumer": "content"},
+			{"index": 2, "consumer": "artifact"},
+		},
+	})
 	fo.Run(ctx)
 
 	to := tele.ChatID(chatID)

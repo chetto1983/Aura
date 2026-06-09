@@ -5,6 +5,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
 // newEvent stamps the trace identity (Author/Branch/RequestID/SpanID/ParentSpanID/
@@ -36,6 +37,13 @@ func (a *LlmAgent) chunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID
 func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, text string) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
 	ev.LLMResponse = &LLMResponse{Reasoning: text}
+	reasoningtrace.Record("agent_event_reasoning_created", map[string]any{
+		"request_id":      ic.RequestID.String(),
+		"thread_id":       a.sessionID,
+		"branch":          ic.Branch,
+		"chars":           reasoningtrace.RuneLen(text),
+		"reasoning_delta": text,
+	})
 	return ev
 }
 

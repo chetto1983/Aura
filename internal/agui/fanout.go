@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
 // fanoutBuffer is the per-subscriber channel capacity. A slow subscriber that fills
@@ -74,8 +75,13 @@ func (f *Fanout) Run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			for _, sub := range subs {
-				if !send(ctx, sub, ev) {
+			reasoningtrace.Record("agui_fanout_source_event", map[string]any{
+				"event_type":        string(ev.Type()),
+				"subscribers_count": len(subs),
+				"event_json":        eventJSONString(ev),
+			})
+			for i, sub := range subs {
+				if !send(ctx, sub, ev, i) {
 					return // ctx cancelled — stop the whole producer
 				}
 			}
@@ -90,10 +96,14 @@ func (f *Fanout) Run(ctx context.Context) {
 // non-lifecycle delta that cannot fit is DROPPED (the subscriber is slow) with a WARN, so
 // the agent Loop never stalls on a slow consumer. Returns false only on ctx-cancel so the
 // producer unwinds and closes channels.
-func send(ctx context.Context, sub chan events.Event, ev events.Event) bool {
+func send(ctx context.Context, sub chan events.Event, ev events.Event, subscriberIndex int) bool {
 	if isLifecycleFrame(ev.Type()) {
 		select {
 		case sub <- ev:
+			reasoningtrace.Record("agui_fanout_delivered", map[string]any{
+				"subscriber_index": subscriberIndex,
+				"event_type":       string(ev.Type()),
+			})
 			return true
 		case <-ctx.Done():
 			return false
@@ -101,13 +111,33 @@ func send(ctx context.Context, sub chan events.Event, ev events.Event) bool {
 	}
 	select {
 	case sub <- ev:
+		reasoningtrace.Record("agui_fanout_delivered", map[string]any{
+			"subscriber_index": subscriberIndex,
+			"event_type":       string(ev.Type()),
+		})
 		return true
 	case <-ctx.Done():
 		return false
 	default:
+		reasoningtrace.Record("agui_fanout_dropped", map[string]any{
+			"subscriber_index": subscriberIndex,
+			"event_type":       string(ev.Type()),
+			"event_json":       eventJSONString(ev),
+		})
 		slog.Warn("agui fanout: subscriber slow, dropping event", "type", ev.Type())
 		return true
 	}
+}
+
+func eventJSONString(ev events.Event) string {
+	if ev == nil {
+		return ""
+	}
+	b, err := ev.ToJSON()
+	if err != nil {
+		return err.Error()
+	}
+	return string(b)
 }
 
 // closeAll closes every subscriber channel. The producer goroutine is the sole sender

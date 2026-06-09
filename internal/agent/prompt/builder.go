@@ -61,10 +61,25 @@ func (b Budget) block() string {
 // stays byte-identical (D-01). When budget is present, a trailing user-role
 // <budget> message is appended to a COPY of history (the caller's slice and
 // messages[0] are never mutated — KV-cache poisoning guard, D-04/D-05). The
-// adaptive reasoning policy and provider branch run last. Adaptive reasoning is
-// active only when cfg opts in and provider == "openrouter"; cache_control remains
-// a no-op unless provider == "anthropic".
+// provider branch runs last. Adaptive reasoning is applied only by
+// BuildWithReasoningTier, after a caller has produced a tier outside the pure
+// builder. cache_control remains a no-op unless provider == "anthropic".
 func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget) llm.Request {
+	req := b.buildBase(history, reg, cfg, budget)
+	injectCacheControl(&req, provider)
+	return req
+}
+
+// BuildWithReasoningTier assembles a request and applies the caller-provided
+// adaptive reasoning tier before provider-specific cache-control handling.
+func (b *PromptBuilder) BuildWithReasoningTier(history []llm.Message, reg *tools.Registry, provider string, cfg llm.Config, budget Budget, tier ReasoningTier) llm.Request {
+	req := b.buildBase(history, reg, cfg, budget)
+	ApplyAdaptiveReasoning(&req, provider, cfg, tier)
+	injectCacheControl(&req, provider)
+	return req
+}
+
+func (b *PromptBuilder) buildBase(history []llm.Message, reg *tools.Registry, cfg llm.Config, budget Budget) llm.Request {
 	msgs := history
 	if budget.present() {
 		msgs = append(append([]llm.Message(nil), history...), llm.Message{Role: llm.RoleUser, Content: budget.block()})
@@ -76,7 +91,5 @@ func (b *PromptBuilder) Build(history []llm.Message, reg *tools.Registry, provid
 		Temperature: cfg.Temperature,
 		MaxTokens:   cfg.MaxTokens,
 	}
-	applyAdaptiveReasoning(&req, provider, cfg, history)
-	injectCacheControl(&req, provider)
 	return req
 }

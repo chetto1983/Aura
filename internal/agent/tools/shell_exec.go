@@ -65,15 +65,16 @@ func (s *ShellExec) Spec() Spec {
 	return Spec{
 		Name:    "shell_exec",
 		Summary: "Run a shell command on the host — a full terminal.",
-		Description: "Run a command line through the host system shell, in-process, with full access to the machine — this is your primary way to get things done, like a real terminal. " +
+		Description: "Run a command line through the host system shell, in-process, with full access to the machine — use it for local commands, builds, scripts, and glue work that dedicated tools do not cover. " +
 			"Pipes, redirects, && chains, any installed interpreter (python, node, go), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at your workspace. " +
 			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +
 			"For running untrusted or model-generated code in isolation, use sandbox_exec instead.",
 		Parameters: params,
-		// NOT deferred: this is the keystone tool — the model must always see it and
-		// its argument schema, exactly like sandbox_exec.
-		Deferred: false,
+		// Deferred: the full terminal stays available through tool_search, but its
+		// large, permissive schema should not dominate the hot manifest for simple
+		// chat/web tasks.
+		Deferred: true,
 		// Conservatively Mutating (D-43): a command line can write files or mutate
 		// state and the agent cannot tell `ls` from `python build.py` statically.
 		Mutating: true,

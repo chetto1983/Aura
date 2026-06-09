@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
 // chunkBuffer bounds the channel so the stream goroutine can run a little ahead
@@ -86,10 +87,22 @@ type providerObj struct {
 // ctx-cancel; cancellation rides http.NewRequestWithContext so resp.Body.Read
 // unblocks within ~100ms and the goroutine returns with zero leak (Req#3).
 func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk, error) {
-	body, err := json.Marshal(c.buildWireRequest(req))
+	wire := c.buildWireRequest(req)
+	body, err := json.Marshal(wire)
 	if err != nil {
 		return nil, err
 	}
+	reasoningtrace.Record("openai_compat_request", map[string]any{
+		"base_url":       c.cfg.BaseURL,
+		"model":          wire.Model,
+		"session_id":     wire.SessionID,
+		"tool_choice":    wire.ToolChoice,
+		"tools_count":    len(wire.Tools),
+		"max_tokens":     wire.MaxTokens,
+		"reasoning":      wire.Reasoning,
+		"wire_body_json": string(body),
+		"trace_file":     reasoningtrace.Path(),
+	})
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 		c.cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
@@ -112,6 +125,10 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 		_ = resp.Body.Close()
 		return nil, herr
 	}
+	reasoningtrace.Record("openai_compat_response_start", map[string]any{
+		"status":       resp.StatusCode,
+		"content_type": resp.Header.Get("Content-Type"),
+	})
 
 	out := make(chan llm.Chunk, chunkBuffer)
 	go func() {
@@ -125,7 +142,19 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 				return false
 			}
 		}
-		res, _ := parseSSE(resp.Body, emit)
+		res, parseErr := parseSSE(resp.Body, emit)
+		errString := ""
+		if parseErr != nil {
+			errString = parseErr.Error()
+		}
+		reasoningtrace.Record("openai_compat_stream_done", map[string]any{
+			"finish_reason":     res.finishReason,
+			"has_usage":         res.hasUsage,
+			"prompt_tokens":     res.usage.PromptTokens,
+			"completion_tokens": res.usage.CompletionTokens,
+			"cached_tokens":     res.usage.CachedTokens,
+			"parse_error":       errString,
+		})
 		// Surface the captured usage to the agent through the provider-neutral
 		// channel as a trailing Usage chunk (Req#12 — the llm.Client interface
 		// has no other way to carry the final token+cost summary). Omitted when

@@ -8,7 +8,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
-func TestAdaptiveReasoningPolicy(t *testing.T) {
+func TestAdaptiveReasoningTierApplication(t *testing.T) {
 	t.Parallel()
 	b := NewPromptBuilder()
 	reg := testRegistry()
@@ -17,30 +17,28 @@ func TestAdaptiveReasoningPolicy(t *testing.T) {
 
 	cases := []struct {
 		name       string
-		query      string
+		tier       ReasoningTier
 		wantEffort llm.ReasoningEffort
 		wantExcl   bool
 		wantTokens int
-		wantChoice string
 	}{
 		{
-			name:       "greeting_no_reasoning",
-			query:      "ciao",
+			name:       "none_keeps_tools_visible",
+			tier:       ReasoningTierNone,
 			wantEffort: llm.ReasoningEffortNone,
 			wantExcl:   true,
 			wantTokens: 512,
-			wantChoice: "none",
 		},
 		{
-			name:       "news_search_small_reasoning",
-			query:      "cerca notizie di cuneo",
+			name:       "low_reasoning",
+			tier:       ReasoningTierLow,
 			wantEffort: llm.ReasoningEffortLow,
 			wantExcl:   false,
 			wantTokens: 2048,
 		},
 		{
-			name:       "scraping_script_deep_reasoning",
-			query:      "scrivi uno script di scraping di la stampa",
+			name:       "high_reasoning",
+			tier:       ReasoningTierHigh,
 			wantEffort: llm.ReasoningEffortHigh,
 			wantExcl:   false,
 			wantTokens: 4096,
@@ -53,11 +51,11 @@ func TestAdaptiveReasoningPolicy(t *testing.T) {
 			t.Parallel()
 			hist := []llm.Message{
 				{Role: llm.RoleSystem, Content: "system prefix"},
-				{Role: llm.RoleUser, Content: tc.query},
+				{Role: llm.RoleUser, Content: "che tempo fa domani a Caraglio?"},
 			}
 			before, _ := json.Marshal(hist[0])
 
-			req := b.Build(hist, reg, "openrouter", cfg, Budget{})
+			req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tc.tier)
 
 			after, _ := json.Marshal(req.Messages[0])
 			if string(before) != string(after) {
@@ -72,8 +70,11 @@ func TestAdaptiveReasoningPolicy(t *testing.T) {
 			if req.Reasoning.Exclude == nil || *req.Reasoning.Exclude != tc.wantExcl {
 				t.Fatalf("Reasoning.Exclude = %v, want %v", req.Reasoning.Exclude, tc.wantExcl)
 			}
-			if req.ToolChoice != tc.wantChoice {
-				t.Fatalf("ToolChoice = %q, want %q", req.ToolChoice, tc.wantChoice)
+			if req.ToolChoice == "none" {
+				t.Fatal("adaptive reasoning must not force ToolChoice=none; deferred tools must stay discoverable")
+			}
+			if len(req.Tools) == 0 {
+				t.Fatal("adaptive reasoning must keep tools in the main request")
 			}
 		})
 	}
@@ -90,10 +91,10 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		t.Parallel()
 		cfg := cfg
 		cfg.MaxTokens = 1000
-		req := b.Build([]llm.Message{
+		req := b.BuildWithReasoningTier([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "openrouter", cfg, Budget{})
+		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh)
 		if req.MaxTokens != 1000 {
 			t.Fatalf("MaxTokens = %d, want configured cap 1000", req.MaxTokens)
 		}
@@ -102,10 +103,8 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		}
 	})
 
-	t.Run("disabled_leaves_request_unchanged", func(t *testing.T) {
+	t.Run("plain_build_leaves_request_unchanged", func(t *testing.T) {
 		t.Parallel()
-		cfg := cfg
-		cfg.AdaptiveReasoning = false
 		hist := seedHistory()
 		got := b.Build(hist, reg, "openrouter", cfg, Budget{})
 		want := llm.Request{
@@ -116,16 +115,28 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 			MaxTokens:   cfg.MaxTokens,
 		}
 		if !reflect.DeepEqual(got, want) {
+			t.Fatalf("plain Build drifted request:\n got=%+v\nwant=%+v", got, want)
+		}
+	})
+
+	t.Run("disabled_leaves_request_unchanged", func(t *testing.T) {
+		t.Parallel()
+		cfg := cfg
+		cfg.AdaptiveReasoning = false
+		hist := seedHistory()
+		got := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh)
+		want := b.Build(hist, reg, "openrouter", cfg, Budget{})
+		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("disabled adaptive reasoning drifted request:\n got=%+v\nwant=%+v", got, want)
 		}
 	})
 
 	t.Run("non_openrouter_leaves_reasoning_empty", func(t *testing.T) {
 		t.Parallel()
-		req := b.Build([]llm.Message{
+		req := b.BuildWithReasoningTier([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "anthropic", cfg, Budget{})
+		}, reg, "anthropic", cfg, Budget{}, ReasoningTierHigh)
 		if !req.Reasoning.Empty() {
 			t.Fatalf("non-openrouter request carried reasoning: %+v", req.Reasoning)
 		}
@@ -138,10 +149,10 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		t.Parallel()
 		cfg := cfg
 		cfg.BaseURL = "http://127.0.0.1:8080/v1"
-		req := b.Build([]llm.Message{
+		req := b.BuildWithReasoningTier([]llm.Message{
 			{Role: llm.RoleSystem, Content: "system prefix"},
 			{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
-		}, reg, "openrouter", cfg, Budget{})
+		}, reg, "openrouter", cfg, Budget{}, ReasoningTierHigh)
 		if !req.Reasoning.Empty() {
 			t.Fatalf("local endpoint request carried reasoning: %+v", req.Reasoning)
 		}
@@ -158,9 +169,8 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 			{Role: llm.RoleAssistant, Content: "working"},
 			{Role: llm.RoleUser, Content: "Stop calling tools. Using only the tool results already gathered above, write the final answer to the user's original question now."},
 		}
-		req := b.Build(hist, reg, "openrouter", cfg, Budget{})
-		if req.Reasoning.Effort != llm.ReasoningEffortHigh {
-			t.Fatalf("Reasoning.Effort = %q, want high from original user request", req.Reasoning.Effort)
+		if got := LastGenuineUserContent(hist); got != "scrivi uno script di scraping di la stampa" {
+			t.Fatalf("LastGenuineUserContent = %q", got)
 		}
 	})
 }

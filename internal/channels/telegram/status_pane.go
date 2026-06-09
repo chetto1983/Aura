@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -110,7 +111,19 @@ func (p *statusPane) handle(ev events.Event) {
 			p.dirty = true
 		}
 	case *events.ReasoningMessageContentEvent:
+		reasoningtrace.Record("telegram_status_reasoning_delta", map[string]any{
+			"message_id":      e.MessageID,
+			"chars":           reasoningtrace.RuneLen(e.Delta),
+			"reasoning_delta": e.Delta,
+		})
 		p.thinking += e.Delta // accumulate raw; collapse for display in text()
+		reasoningtrace.Record("telegram_status_reasoning_buffer", map[string]any{
+			"message_id":    e.MessageID,
+			"buffer_chars":  reasoningtrace.RuneLen(p.thinking),
+			"buffer":        p.thinking,
+			"display_chars": reasoningtrace.RuneLen(statusReasoningSnippet(p.thinking)),
+			"display":       statusReasoningSnippet(p.thinking),
+		})
 		p.dirty = true
 	case *events.StateDeltaEvent:
 		p.applyCost(e.Delta)
@@ -198,17 +211,59 @@ func (p *statusPane) render(_ context.Context, final bool) {
 	if text == "" {
 		return
 	}
+	reasoningtrace.Record("telegram_status_render_text", map[string]any{
+		"final":          final,
+		"has_message":    p.msg != nil,
+		"text_chars":     reasoningtrace.RuneLen(text),
+		"text":           text,
+		"thinking_chars": reasoningtrace.RuneLen(p.thinking),
+		"thinking":       p.thinking,
+	})
 	opts := &tele.SendOptions{ReplyMarkup: p.markup()}
 	if p.msg == nil {
 		out, err := p.bot.Send(p.to, text, opts)
 		if err != nil {
+			reasoningtrace.Record("telegram_status_send_result", map[string]any{
+				"op":    "send",
+				"ok":    false,
+				"error": err.Error(),
+				"text":  text,
+			})
 			return
 		}
+		reasoningtrace.Record("telegram_status_send_result", map[string]any{
+			"op":         "send",
+			"ok":         true,
+			"message_id": out.ID,
+			"text":       text,
+		})
 		p.msg = out
 	} else {
 		out, err := p.bot.Edit(p.msg, text, opts)
 		if err == nil && out != nil {
+			reasoningtrace.Record("telegram_status_send_result", map[string]any{
+				"op":         "edit",
+				"ok":         true,
+				"message_id": out.ID,
+				"text":       text,
+			})
 			p.msg = out
+		} else if err != nil {
+			reasoningtrace.Record("telegram_status_send_result", map[string]any{
+				"op":         "edit",
+				"ok":         false,
+				"message_id": p.msg.ID,
+				"error":      err.Error(),
+				"text":       text,
+			})
+		} else {
+			reasoningtrace.Record("telegram_status_send_result", map[string]any{
+				"op":         "edit",
+				"ok":         false,
+				"message_id": p.msg.ID,
+				"error":      "nil message",
+				"text":       text,
+			})
 		}
 	}
 	p.lastEdit = p.now()

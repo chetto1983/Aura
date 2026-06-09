@@ -22,6 +22,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
 
 // truncationNotice is appended to a finish_reason="length" final answer (D-21).
@@ -140,6 +141,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 	requestID := ic.RequestID.String()
 
 	return func(yield func(*Event, error) bool) {
+		var adaptiveTier prompt.ReasoningTier
+		var adaptiveTierSet bool
+		var adaptiveTierOK bool
 		// skipBudgetGate carries the one recovery turn PAST the budget gate without
 		// spending a step (Req#4, D-08): when a trip increments recoveryAttempts the
 		// budget is already exhausted, so re-entering the loop normally would just
@@ -181,8 +185,26 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// spent (Remaining never exceeds the start, so used = start-remaining is
 			// the per-branch consumption — no MaxSteps() getter, landmine #11).
 			budget := prompt.Budget{Used: ic.Budget.BranchConsumed(), Remaining: ic.Budget.Remaining(), Workspace: a.workspace}
+			if !adaptiveTierSet {
+				adaptiveTier, adaptiveTierOK = a.adaptiveReasoningTier(ic.Ctx)
+				adaptiveTierSet = true
+			}
 			req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)
+			if adaptiveTierOK {
+				req = a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, adaptiveTier)
+			}
 			req.SessionID = a.sessionID
+			reasoningtrace.Record("agent_request_built", map[string]any{
+				"request_id":  requestID,
+				"thread_id":   a.sessionID,
+				"provider":    a.cfg.Provider,
+				"model":       req.Model,
+				"max_tokens":  req.MaxTokens,
+				"tool_choice": req.ToolChoice,
+				"tools_count": len(req.Tools),
+				"reasoning":   req.Reasoning,
+				"history":     a.history,
+			})
 			ch, err := a.client.Stream(spanCtx, req)
 			if err != nil {
 				span.End()
@@ -406,8 +428,20 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 		switch {
 		case c.Usage != nil:
 			usage = *c.Usage
+			reasoningtrace.Record("agent_consume_usage_chunk", map[string]any{
+				"request_id":        requestID,
+				"thread_id":         a.sessionID,
+				"prompt_tokens":     c.Usage.PromptTokens,
+				"completion_tokens": c.Usage.CompletionTokens,
+				"cached_tokens":     c.Usage.CachedTokens,
+			})
 		case c.ToolCall != nil:
 			calls = append(calls, *c.ToolCall)
+			reasoningtrace.Record("agent_consume_tool_call_chunk", map[string]any{
+				"request_id": requestID,
+				"thread_id":  a.sessionID,
+				"tool_call":  *c.ToolCall,
+			})
 			if !yield(a.toolCallEvent(ic, spanID, parentSpanID, *c.ToolCall), nil) {
 				// Consumer stopped: drain the rest to let the client close cleanly,
 				// then report stopped so Run never yields again (iter.Seq2 contract).
@@ -417,6 +451,12 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			}
 		case c.Text != "":
 			b.WriteString(c.Text)
+			reasoningtrace.Record("agent_consume_text_chunk", map[string]any{
+				"request_id": requestID,
+				"thread_id":  a.sessionID,
+				"chars":      reasoningtrace.RuneLen(c.Text),
+				"delta":      c.Text,
+			})
 			if !yield(a.chunkEvent(ic, spanID, parentSpanID, c.Text), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
@@ -425,6 +465,12 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 		case c.Reasoning != "":
 			// Stream-only CoT: yield the reasoning Event but NEVER write to b — the
 			// returned text (what persistence reads) must stay reasoning-free (#57).
+			reasoningtrace.Record("agent_consume_reasoning_chunk", map[string]any{
+				"request_id":      requestID,
+				"thread_id":       a.sessionID,
+				"chars":           reasoningtrace.RuneLen(c.Reasoning),
+				"reasoning_delta": c.Reasoning,
+			})
 			if !yield(a.reasoningChunkEvent(ic, spanID, parentSpanID, c.Reasoning), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
@@ -432,6 +478,11 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			}
 		case c.FinishReason != "":
 			finish = c.FinishReason
+			reasoningtrace.Record("agent_consume_finish_reason", map[string]any{
+				"request_id":    requestID,
+				"thread_id":     a.sessionID,
+				"finish_reason": c.FinishReason,
+			})
 		}
 	}
 	return b.String(), calls, finish, usage, false

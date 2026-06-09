@@ -8,14 +8,15 @@ import (
 	"testing"
 )
 
-func TestShellExecSpecIsNotDeferred(t *testing.T) {
+func TestShellExecSpecIsDeferred(t *testing.T) {
 	s := (&ShellExec{}).Spec()
 	if s.Name != "shell_exec" {
 		t.Fatalf("name = %q, want shell_exec", s.Name)
 	}
-	// Keystone tool: the model must always see it + its arg schema (like sandbox_exec).
-	if s.Deferred {
-		t.Fatal("shell_exec must NOT be deferred — the model needs the arg schema")
+	// Full host shell remains discoverable via tool_search, but should not dominate
+	// the hot manifest for simple chat/web tasks.
+	if !s.Deferred {
+		t.Fatal("shell_exec must be deferred; load the full schema through tool_search")
 	}
 }
 
