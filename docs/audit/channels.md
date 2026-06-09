@@ -1,100 +1,83 @@
 # Audit: internal/channels
 
-**Verdict:** needs-work — two not-wired symbols (a dead struct field and a dangling comment), one dead method reachable only from tests, and three Store methods with no production callers. No critical bugs or races.
+**Verdict:** needs-work — three dead-code exports, one misplaced doc comment, one test-only unexported function; no critical bugs or data races found.
 
-**Counts:** critical 0 / high 1 / medium 2 / low 3
-
----
+**Counts:** critical 0 / high 0 / medium 2 / low 3
 
 ## Findings
 
-### [HIGH][NOT-WIRED] `Deps.ResumeTurn` field is populated but never consumed
+---
 
-**Location:** `internal/channels/telegram/bot.go:89`, `cmd/aura/serve_channels.go:70`
+### [MEDIUM][DEAD-CODE] `EscapeMarkdownV2` is exported but never called in production
+
+**Location:** `internal/channels/telegram/mdv2.go:34`
+
 **Confidence:** high
 
-`Deps.ResumeTurn resumeFunc` is declared in the `Deps` struct and wired at the composition root (`serve_channels.go:70`), but no code in the `telegram` package ever reads `t.deps.ResumeTurn`. The actual HITL resume rendering goes through the closure built in `hitlFor` (`bot_dispatch.go:451–461`), which constructs a local `resume` func that calls `t.startTurn`. `Deps.ResumeTurn` is a dead field — setting it at the composition root has zero effect.
+**Detail:** `EscapeMarkdownV2` is an exported function for MarkdownV2 escaping. The production renderer (`renderer.go`) uses `RenderTelegramHTML` (HTML parse-mode) and never calls `EscapeMarkdownV2`. No cross-package caller exists anywhere in the repo (`grep telegram.EscapeMarkdownV2` returns zero results). The only callers are within `mdv2_test.go`. The function is dead code that may mislead maintainers into thinking a MarkdownV2 render path is wired.
 
-As a corollary, `resumeTurnFunc` in `serve_channels.go` (lines 144–153) is dead code too: it is assigned to `Deps.ResumeTurn` which is never read.
-
-**Suggested fix:** Remove the `ResumeTurn resumeFunc` field from `Deps`, remove the `resumeTurnFunc` helper from `serve_channels.go`, and delete the corresponding comment block in `bot.go:83–89`. The real resume path is already correct via `hitlFor`.
+**Suggested fix:** Unexport to `escapeMarkdownV2` so it's test-accessible in the same package but clearly not a public API, or remove it entirely if the MarkdownV2 path is definitively abandoned in favour of HTML mode.
 
 ---
 
-### [MEDIUM][DEAD-CODE] `(*hitl).handleCallback` is never called in production
-
-**Location:** `internal/channels/telegram/hitl.go:106–108`
-**Confidence:** high
-
-```go
-func (h *hitl) handleCallback(ctx context.Context, data, convID string) (resumed bool) {
-    return h.handleCallbackResult(ctx, data, convID, nil).resumed
-}
-```
-
-Production dispatch (`bot_dispatch.go:247`) calls `handleCallbackResult` directly. `handleCallback` is referenced only in `hitl_test.go` (7 call sites). It is a thin wrapper with no additional logic.
-
-**Suggested fix:** Remove `handleCallback` from `hitl.go`. The 7 test call sites should call `handleCallbackResult(..., nil).resumed` directly, or the test helper can live in the test file.
-
----
-
-### [MEDIUM][DEAD-CODE] Dangling comment stub `capRunesTail` — function body missing
-
-**Location:** `internal/channels/telegram/status_pane.go:355–356`
-**Confidence:** high
-
-```
-// capRunesTail truncates s to at most n runes, preserving the newest content.
-```
-
-The file ends after this comment with no function body following it. The function is never referenced anywhere in the repo (`grep` across D:/Aura returns no non-comment hits). This is either a leftover from a refactor that deleted the body, or a planned function that was never written.
-
-**Suggested fix:** Delete the orphan comment.
-
----
-
-### [LOW][NOT-WIRED] `Store.GetAccountByTelegramID`, `TouchLastSeen`, and `ListAccounts` have no production callers
-
-**Location:** `internal/channels/telegram/store.go:169`, `:181`, `:198`
-**Confidence:** high
-
-All three exported Store methods are defined, documented, and exercised in `store_integration_test.go`, but have zero non-test, non-definition references anywhere in the repo. They are forward-provision for a future auth-gate or admin surface that has not yet been wired (the /setup admin panel, `/whoami`, per-account touch, etc.).
-
-This is not a bug — the methods are correct — but they inflate the interface surface and the integration-test coverage baseline without providing any runtime value today.
-
-**Suggested fix:** Accept as forward provision and document the intended consumer in each function's godoc, or defer to the phase that actually wires them.
-
----
-
-### [LOW][NOT-WIRED] `PreBlockTable` is defined but never called in production
+### [MEDIUM][DEAD-CODE] `PreBlockTable` is exported but never called in production
 
 **Location:** `internal/channels/telegram/tables.go:248`
+
 **Confidence:** high
 
-`PreBlockTable` is an exported function that renders a grid to a monospace ``` block fallback. The renderer (`renderer.go`) never calls it — it falls through to `sendText` when `RenderTablePNG` fails. Only `tables_test.go` references `PreBlockTable`. The comment says "Used when PNG rendering is unavailable or the channel prefers text", but neither condition is wired in `renderer.go`.
+**Detail:** `PreBlockTable` renders a markdown grid inside a ``` monospace fence as a text fallback. The production `renderer.send` calls `RenderTablePNG` (PNG path) and falls through to `sendText` (HTML path) on PNG failure — it never calls `PreBlockTable`. The only callers are within `tables_test.go`. No cross-package reference exists in the repo. The function is exported dead code.
 
-**Suggested fix:** Either wire it as the fallback in `renderer.sendTable` when `RenderTablePNG` fails (replacing the current `sendText` fallback), or drop it and document the "plain text" fallback as intentional.
+**Suggested fix:** Unexport to `preBlockTable` or remove. If it is intended as a future fallback, wire it into `sendTable` when `RenderTablePNG` fails and the bot cannot send a photo.
 
 ---
 
-### [LOW][NOT-WIRED] `MultimodalConfig.TTSCaption` is never set by the composition root
+### [LOW][DEAD-CODE] `hitl.handleCallback` is an unexported method only called from tests
 
-**Location:** `internal/channels/telegram/sidecar.go:62`, `cmd/aura/serve_channels.go:93–111`
+**Location:** `internal/channels/telegram/hitl.go:106–108`
+
 **Confidence:** high
 
-`MultimodalConfig.TTSCaption` is read in `tts.go:79` (`asciiCaption(t.cfg.TTSCaption)`) and exercised in `tts_test.go`, but `multimodalConfig()` in `serve_channels.go` never populates it. TTS voice notes will always have an empty caption in production. This is a low-severity UX gap — an empty caption is valid — but the field's existence suggests it was meant to be configurable.
+**Detail:** `handleCallback` is a thin wrapper around `handleCallbackResult(ctx, data, convID, nil)`. The production dispatch path (`bot_dispatch.go:249`) calls `handleCallbackResult` directly with a non-nil `afterSubmit`. Only `hitl_test.go` calls `handleCallback`. Since both functions live in the same package, the wrapper adds no test isolation; tests can call `handleCallbackResult` with `nil` directly.
 
-**Suggested fix:** Either add `TTSCaption: cfg.TTSCaption` to `multimodalConfig` (once `config.Config` adds the field + env var `AURA_TTS_CAPTION`), or drop the field and hardcode the caption as empty.
+**Suggested fix:** Delete `handleCallback`; update tests to call `h.handleCallbackResult(ctx, data, convID, nil).resumed` explicitly. Alternatively, keep it as an unexported convenience, but annotate with `// test helper` so it is not confused with a wired path.
 
 ---
 
-## What was checked and found clean
+### [LOW][DEAD-CODE] `commands.dispatch` is an unexported method only called from tests
 
-- **Nil-pointer derefs:** All handler entrypoints guard `msg == nil || msg.Chat == nil` before accessing fields. `sender()` falls back to `t.bot`. `cmds` is nil-checked in `onStatusCancelCallback`. `hitlHandlesText` checks `t.deps.Resume == nil` before calling `PendingFor`.
-- **Resource leaks:** All HTTP response bodies are `defer`'d closed. `pulseChatAction` goroutines are joined by `stop()`. `documentsClient.wg` is drained by `Stop`. The `stopWaitPoller` goroutine drains on `bot.Stop()`. No ticker leaks found.
-- **Context propagation:** Request contexts (`reqCtx`) are derived with `withTimeout`; all callers `defer cancel()`. `context.WithoutCancel` in async convert is intentional and documented.
-- **Error wrapping:** All errors use `%w` where the sentinel is inspectable; SQLSTATE classification uses `errors.As + pgErr.Code`, never string matching.
-- **Concurrency:** `commands` map accesses (`cancels`, `searchPages`) are protected by `c.mu`. `Telegram.started` map is protected by `t.mu`. `documentsClient.wg` does not need a mutex (sync.WaitGroup is goroutine-safe). No data races found.
-- **Callback_data overflow:** `callbackData` panics on >64 bytes. For all current call sites (UUID 36b + action 7b + index/value ≤3b + 2 separators = ≤48b), the ceiling is never reached.
-- **MarkdownV2 escaping:** Unterminated fence deterministically closed. Fallback to plain text on 400 via `isCantParseEntities`.
-- **Registry:** `Register` and `SetEnabledOverride` are called sequentially before `StartAll` (single-goroutine composition root); `channels` map is not protected by mutex but is only written during setup, never concurrently with `StartAll`.
+**Location:** `internal/channels/telegram/commands.go:110–113`
+
+**Confidence:** high
+
+**Detail:** `dispatch` wraps `dispatchRich` and returns only the text field of `commandReply`, discarding the markup. The production text handler (`bot_dispatch.go:115`) calls `dispatchRich` directly. Only `commands_test.go` calls `dispatch`. It is test-only dead code.
+
+**Suggested fix:** Delete `dispatch`; update tests to call `dispatchRich` directly (they can discard the markup field). This removes a wrapper that could mislead a reader into thinking plain-text dispatch is wired in production.
+
+---
+
+### [LOW][BUG] Doc comment for `promptPendingPause` is misplaced above `hitlHandlesReply`
+
+**Location:** `internal/channels/telegram/bot_dispatch.go:435–441`
+
+**Confidence:** high
+
+**Detail:** The comment block at lines 435–441 ("promptPendingPause renders the FIRST unresolved pause for the chat…") describes `promptPendingPause` (defined at line 483), but is placed immediately before `hitlHandlesReply` (defined at line 442). Go tooling (godoc, IDEs) will render this as the doc comment for `hitlHandlesReply`, and `promptPendingPause` will appear undocumented. The misplacement is a copy-paste residue from a refactor.
+
+**Suggested fix:** Move the comment block to line 483 (immediately before `func (t *Telegram) promptPendingPause`), and add an accurate doc comment for `hitlHandlesReply` explaining its deduplication role.
+
+---
+
+## Clean
+
+The following areas were checked and found clean:
+
+- **Goroutine lifecycle**: `pulseChatAction` (bot_typing.go) uses a done-channel + `sync.Once` + `<-finished` join — goleak-clean. Turn goroutines are tracked via `t.wg.Add(1)` / `defer t.wg.Done()`. Async document goroutines tracked via `documentsClient.wg`. All three are drained in `Stop`.
+- **Mutex discipline**: `t.mu` guards `t.bot`, `t.started`, `t.cmds`, `t.docs`, `t.tts`, `t.hitlRepliesHandled`. Every field is read/written under the lock at handler registration time. Handler goroutines read these fields after `buildDispatch` completes under `mu`, so no race.
+- **`hitlRepliesHandled` deduplication**: Telebot fires `OnReply` before `OnText` for a reply message (verified in `gopkg.in/telebot.v4@v4.0.0-beta.7/update.go:84–88`). `markHitlReplyHandled` is called in `onReply` before `takeHitlReplyHandled` in `onText`, so the dedup key is always present when `onText` checks it. The map is guarded by `t.mu`.
+- **`callbackData` panic**: Only reachable at call sites that construct the data: approval (`token|accept|yes` ≈ 45 bytes), decline (`token|decline|` ≈ 45 bytes), cancel (`token|cancel|` ≈ 44 bytes), choice (`token|accept|<idx>` ≤ 46 bytes for 2-digit index). All token values come from UUID v7 (36 bytes fixed). The 64-byte ceiling is not reachable in normal operation; the guard is correct.
+- **`documentsClient.Stop` + `stopOnce`**: The poller is stopped before `docs.Stop` is called. No new `OnDocument` messages arrive post-stop, so no new `wg.Add` races the completed `wg.Wait`.
+- **Error classification**: SQLSTATE-based via `errors.As`+`pgErr.Code`, never string matching, in `store.go`. Consistent with the project idiom.
+- **Resource cleanup**: `downloadFile` and all sidecar HTTP responses defer-close their `ReadCloser`/`Body`. No resource leaks found.
+- **`Registry` locking**: `r.mu` guards only `r.started` (written by StartAll, read by StopAll). `r.channels` is written by `Register` and read by `StartAll`/`StopAll` — always sequentially (setup then start), never concurrently. No race in the daemon lifecycle.
+- **`speakIfNeeded` empty convID**: `VoiceModePref("")` is a documented stub (Phase 14 deferred). The empty string is harmless until the real pref store lands; the call site will need updating then.

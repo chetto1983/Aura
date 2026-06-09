@@ -1,91 +1,129 @@
 # Audit: internal/cachemetrics
 
-**Verdict:** needs-work — two defensive gaps in numeric encoding and one not-wired interface seam.
-**Counts:** critical 0 / high 0 / medium 1 / low 2
+**Verdict:** needs-work — one not-wired method, one misplaced constant; no bugs, no races
+**Counts:** critical 0 / high 0 / medium 1 / low 1
+
+## Scope
+
+Files audited (production, excluding `*_test.go`):
+- `internal/cachemetrics/store.go`
+- `internal/cachemetrics/store_helpers.go`
+
+Tests read for intent:
+- `internal/cachemetrics/store_helpers_test.go`
+- `internal/runner/runner_cachemetric_test.go`
+- `internal/db/cache_metrics_integration_test.go`
+
+Cross-repo grep performed across `D:/Aura` for all exported and unexported symbols.
 
 ---
 
 ## Findings
 
-### [MEDIUM][BUG] NaN bypasses the range guard in `numericFromFloat`, producing a corrupt DB mantissa
+### [MEDIUM][NOT-WIRED] `cachemetrics.Store.Insert` is defined but never dispatched in any production path
 
-**Location:** `internal/cachemetrics/store_helpers.go:73-82`
+**Location:** `internal/cachemetrics/store.go:40-44`
 **Confidence:** high
 
-**Detail:**  
-The range guard is:
-```go
-if f > numericMaxCost || f < -numericMaxCost {
-    return pgtype.Numeric{}, fmt.Errorf(...)
-}
+**Detail:**
+
+`(*Store).Insert` satisfies the `runner.CacheMetricStore` interface (declared at
+`internal/runner/interfaces.go:68`). The runner stores the concrete `*cachemetrics.Store`
+in its private `cacheMetrics` field (`runner.go:79,124`) and checks it for `nil`
+(`runner_persist.go:183`). However, `r.cacheMetrics.Insert(...)` is **never called anywhere
+in the runner or in any other production code path**.
+
+The actual per-turn INSERT executes through a different route:
+
 ```
-Both comparisons return `false` for `math.NaN()` (NaN is unordered), so NaN silently passes. The subsequent `scaled := f * 1e4` produces NaN; `int64(NaN*1e4)` on amd64 produces `math.MinInt64` (-9223372036854775808), and the function returns `pgtype.Numeric{Int: big.NewInt(math.MinInt64), Exp: -4, Valid: true}` — a corrupt value inserted into the DB without error.
-
-The analogous `numericFromFloat` in `internal/conversations/store_helpers.go` has no range guard at all (accepts any float), so the gap is unique to this package.
-
-In the current production path, `cost` in `runner_persist.go` comes from `llm.CostUSDValue`, which either dereferences a `*float64` from JSON-decoded provider data or computes a price-table product. Standard `encoding/json` never decodes a NaN (NaN is not valid JSON), so the bug is not reachable today. It becomes reachable if the cost value is ever sourced from a non-JSON path (e.g., a test mock, or a future provider adapter using a different wire format).
-
-**Suggested fix:**  
-Add a `math.IsNaN(f)` check before the range guard:
-```go
-if math.IsNaN(f) || f > numericMaxCost || f < -numericMaxCost {
-    return pgtype.Numeric{}, fmt.Errorf("cost %v out of numeric(10,4) range ±%v", f, numericMaxCost)
-}
+runner_persist.go:172  r.Conv.AppendAssistantTurnWithCacheMetric(ctx, turn, metric)
+  → conversations/store.go:318,346  q.InsertCacheMetric(ctx, metric)   ← real DB insert
 ```
+
+The `metric` value (`sqlc.InsertCacheMetricParams`) is built by `cacheMetricParams`
+(which validates that `r.cacheMetrics != nil`), but it is then forwarded directly to the
+conversation store's transactional helper — bypassing `r.cacheMetrics.Insert` entirely.
+
+`cache_stats.go` uses only `AggregateSince` and `ListSince`, not `Insert`.
+
+The nil-guard in `cacheMetricParams` gives the false impression that a non-nil
+`cacheMetrics` store is required for the Insert path; in reality the guard exists only to
+signal a composition-root wiring error — but the wired store's only method is never called.
+
+In the unit-test fake (`fakes_test.go:156-184`), `fakeConvStore.AppendAssistantTurnWithCacheMetric`
+appends directly to `f.cache.inserts` without calling `f.cache.Insert()`, which is
+consistent with production behaviour but means the tests do not exercise the production
+`cachemetrics.Store.Insert` code path at all.
+
+**Suggested fix:**
+
+Option A — Remove the wiring entirely and drop the `CacheMetricStore` interface from
+the runner. The nil guard in `cacheMetricParams` is misleading; delete it together with
+the `Deps.CacheMetrics` field and `r.cacheMetrics`. The actual insert already happens
+transactionally through `ConversationStore`.
+
+Option B — If a future use case (e.g. a non-transactional, best-effort metric path)
+wants a standalone `CacheMetricStore.Insert`, add a call site at that time. Until then,
+the field, interface method, and nil guard are dead weight that creates a false
+requirement during dependency injection.
 
 ---
 
-### [LOW][BUG] `floatFromNumeric` silently propagates `+Inf`/`-Inf` from a Postgres Infinity numeric
+### [LOW][DEAD-CODE] `numericScale` constant defined in `store.go` but belongs with its sole user in `store_helpers.go`
 
-**Location:** `internal/cachemetrics/store_helpers.go:87-96`
-**Confidence:** medium
-
-**Detail:**  
-`floatFromNumeric` guards for `n.NaN` (returns 0) but not for `n.InfinityModifier`. `pgtype.Numeric.Float64Value()` returns `math.Inf(±1)` with `Valid: true` for numerics carrying `InfinityModifier == Infinity | NegativeInfinity`. The code path `f, err := n.Float64Value()` returns no error and `f.Valid = true`, so `floatFromNumeric` returns `+Inf` or `-Inf` instead of 0 or an error.
-
-This propagates through `anyNumericFloat` (the `pgtype.Numeric` branch) into `Aggregate.TotalCostUSD` and ultimately the Telegram `/cost` display. The write path (`numericFromFloat`) correctly rejects `±Inf` via the `numericMaxCost` range guard, so a DB Infinity can only be introduced via direct DB manipulation or a future path that bypasses this package's write seam. The risk is low but the function's own comment (via `anyNumericFloat`'s WR-02 guarantee: "never a silent 0 for an unrecognizable aggregate") is violated in the opposite direction for Infinity inputs.
-
-**Suggested fix:**  
-Add an Infinity guard after the `n.NaN` check:
-```go
-func floatFromNumeric(n pgtype.Numeric) float64 {
-    if !n.Valid || n.NaN || n.InfinityModifier != pgtype.Finite {
-        return 0
-    }
-    ...
-}
-```
-Or, to preserve the WR-02 "loud error" contract, promote the Infinity case to an error in `anyNumericFloat` before calling `floatFromNumeric`.
-
----
-
-### [LOW][NOT-WIRED] `CacheMetricStore.Insert` is declared and injected but never dispatched by the Runner
-
-**Location:** `internal/runner/interfaces.go:68-70`, `internal/runner/runner_persist.go:183-184`
+**Location:** `internal/cachemetrics/store.go:23-24`
 **Confidence:** high
 
-**Detail:**  
-The `CacheMetricStore` interface declares `Insert(ctx, p sqlc.InsertCacheMetricParams) error`. The `Runner` accepts this interface as `d.CacheMetrics`, nil-checks it in `cacheMetricParams`, but never calls `r.cacheMetrics.Insert(...)`. The actual cache metric insert is performed inside `r.Conv.AppendAssistantTurnWithCacheMetric`, which calls `q.InsertCacheMetric` directly via the conversation store's transaction (see `internal/conversations/store.go:346`). The `cacheMetrics` field functions only as a presence guard (not-nil check), not as a call seam.
+**Detail:**
 
-Consequences:
-1. A test double or production implementation that returns an error from `Insert` will never surface that error through the runner.
-2. The `CacheMetricStore` interface is misleading: it implies the runner dispatches to it, but the write goes through a different path entirely.
-3. The nil-check in `cacheMetricParams` protects against a missing store but cannot prevent a broken store from going undetected.
+`numericScale` (value `4`) is declared in `store.go` but is only ever consumed in
+`store_helpers.go:83`:
 
-**Verified with grep:** no production code calls `r.cacheMetrics.Insert(...)` or any method on the field — only the nil-guard at line 183.
+```go
+// store_helpers.go:83
+return pgtype.Numeric{Int: big.NewInt(int64(scaled)), Exp: -numericScale, Valid: true}, nil
+```
 
-**Suggested fix:**  
-Either (a) remove `CacheMetricStore` and replace the nil-check with a check that `Conv` satisfies the metric-write path, clearly documenting the wiring; or (b) make the runner actually call `r.cacheMetrics.Insert` independently and remove the metric parameter from `AppendAssistantTurnWithCacheMetric` (separating the write seams). Option (b) also requires a compensating transaction pattern to keep the two writes atomic.
+`store.go` itself never references `numericScale`. Placing it in `store.go` breaks
+colocation — a reader of `store_helpers.go` who wants to understand `numericFromFloat`
+must chase the constant across files. The parallel in `internal/conversations/store_helpers.go:19`
+correctly co-locates `numericScale` beside `numericFromFloat` in the same file.
+
+This is not a bug (same package, compiles fine), but it is an avoidable maintenance
+hazard: if `numericFromFloat` is ever moved, the constant is silently left behind.
+
+**Suggested fix:** Move the `numericScale` constant (and its comment) from `store.go`
+to `store_helpers.go`, immediately above `numericFromFloat`. Remove the vacated lines
+from `store.go`.
 
 ---
 
-## What was checked
+## What was checked and found clean
 
-- All non-test Go files in `internal/cachemetrics/`: `store.go`, `store_helpers.go`.
-- Test file `store_helpers_test.go` read for intended behavior baseline.
-- Verified all exported symbols (`Store`, `Metric`, `Aggregate`, `MetricParams`, `NewInsertParams`, `New`) are used in production code via grep across `D:/Aura`.
-- Verified no goroutines, channels, or shared mutable state (no race surface).
-- Verified `go vet ./internal/cachemetrics/` is clean.
-- Traced the full call path from `runner_persist.go` → `cacheMetricParams` → `AppendAssistantTurnWithCacheMetric` → `q.InsertCacheMetric` to confirm wiring.
-- Inspected `pgtype.Numeric.Float64Value()` source at `~/go/pkg/mod/github.com/jackc/pgx/v5@v5.9.2/pgtype/numeric.go` for NaN/Infinity behavior.
-- No dead unexported symbols: `timestamptzFrom`, `uuidFrom`, `numericFromFloat`, `floatFromNumeric`, `anyInt64`, `anyNumericFloat`, `numericMaxCost`, `numericScale` are all referenced within the package.
+- **Nil-pointer dereference:** `Store.q` is always non-nil (`New` assigns
+  `sqlc.New(pool)` unconditionally; pool nil panics in sqlc, not here). No other
+  pointer dereferences without guards.
+- **Unchecked/swallowed errors:** All errors are `%w`-wrapped and returned. No silent
+  discards.
+- **Resource leaks:** `ListSince` calls `q.ListCacheMetricsSince`; the generated sqlc
+  code (`cache_metrics.sql.go:78-103`) opens `rows`, calls `defer rows.Close()`, and
+  checks `rows.Err()` — no leak.
+- **Data races:** No goroutines, no shared mutable state. The package is stateless
+  beyond the embedded `*sqlc.Queries` (which is safe by its own contract).
+- **Integer overflow:** `int → int32` conversions for `Seq`, `PromptTokens`,
+  `CachedTokens` in `NewInsertParams` are safe under realistic values (<2^31 tokens
+  per turn). `numericFromFloat`'s `int64(scaled)` is safe for all values passing the
+  `numericMaxCost` guard (max mantissa 9 999 999 999 << int64 max).
+- **Rounding correctness:** `numericFromFloat` applies half-away-from-zero rounding
+  (positive: `+0.5` then truncate; negative: `-0.5` then truncate via Go's toward-zero
+  `int64(float64)` conversion — both branches are correct).
+- **NaN/Inf guard order:** `math.IsNaN(f)` is evaluated first (short-circuit), so NaN
+  never reaches the range comparison where NaN ordering is undefined.
+- **`floatFromNumeric` error drop:** `Float64Value` errors and `!f.Valid` are coerced
+  to `0.0`. This is intentional (documented) and appropriate at the read boundary for
+  an aggregate display function — a database NULL reads as zero, not a fatal error.
+- **`anyInt64`/`anyNumericFloat` WR-02 discipline:** Unmodeled driver shapes return
+  errors (not silent zeros). Tests confirm all documented shapes and the error path.
+- **Dead unexported symbols:** All unexported functions (`uuidFrom`, `numericFromFloat`,
+  `floatFromNumeric`, `anyInt64`, `anyNumericFloat`, `timestamptzFrom`) are referenced
+  from production code within the package. None are test-only.

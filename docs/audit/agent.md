@@ -1,57 +1,54 @@
 # Audit: internal/agent
 
-**Verdict:** needs-work — two correctness defects (misclassified reasoning tier, redundant LLM request build), three API-surface knobs parsed and stored but never consumed in production paths.
-
-**Counts:** critical 0 / high 1 / medium 2 / low 2
-
----
+**Verdict:** needs-work — two dead-code issues and one efficiency bug are actionable; no critical defects.
+**Counts:** critical 0 / high 0 / medium 2 / low 3
 
 ## Findings
 
-### [HIGH][BUG] `isSyntheticUserHint` misses `recoveryNudgeEmpty` — router classifies agent's own nudge as the user's request
+### [MEDIUM][DEAD-CODE] `requestID` parameter accepted and immediately discarded in `finalEvent`
 
-**Location:** `internal/agent/prompt/reasoning_policy.go:97-107`
+**Location:** `internal/agent/llm_agent_events.go:193-196`
+
 **Confidence:** high
 
 **Detail:**
-`LastGenuineUserContent` (called by `adaptiveReasoningTier` on every first loop iteration) walks history backward and calls `isSyntheticUserHint` to skip the agent's own injected user-role messages. `isSyntheticUserHint` filters: `<budget>`, `<workspace>`, `<current_time>`, `<today>`, "Stop calling tools.", "You have run out of tool-call budget", "You have already called \`", "Completion check FAILED:". It does NOT check for `recoveryNudgeEmpty` = `"Your last response was empty. Continue the task now — ..."` (defined in `internal/agent/llm_agent_finalize.go:71`).
-
-The companion function `isAgentNudge` in `llm_agent_completion.go:229-233` correctly handles all four nudge variants including `recoveryNudgeEmpty`. The two filters diverged.
-
-When `maybeRecoverEmptyResponse` fires (provider sent an empty completion), it appends the `recoveryNudgeEmpty` string as a user-role message. On the next turn, `LastGenuineUserContent` returns that nudge string. The adaptive reasoning router then classifies "Your last response was empty. Continue the task now" as the user's request — this scores as "high" reasoning (it matches the "multi-step analysis" heuristic), inflating both `reasoning_tokens` and `max_tokens` for a turn that should inherit the original user's tier. The misclassification is silent: no error, just a quietly wrong reasoning budget.
-
-**Suggested fix:**
-Add the `recoveryNudgeEmpty` prefix check to `isSyntheticUserHint` in `reasoning_policy.go`, mirroring `isAgentNudge`:
+`finalEvent` declares `requestID string` as a parameter but immediately blanks it with `_ = requestID` (line 196). The field is never used inside the function body. All three call sites in the package pass the local `requestID` variable, wasting a string copy per call. The only reason to keep a dead parameter would be forward-compat, but the method is unexported and the `requestID` is already reachable via `ic.RequestID`.
 
 ```go
-strings.HasPrefix(trimmed, "Your last response was empty.") ||
+// llm_agent_events.go:193-196
+func (a *LlmAgent) finalEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+	requestID, answer, finish string, usage llm.Usage,
+) *Event {
+	_ = requestID   // dead — never read
 ```
 
-Or better, define a shared package-level sentinel set that both functions draw from instead of maintaining two copies of the same list.
+Call sites (all three pass `requestID` uselessly):
+- `internal/agent/llm_agent.go:265`
+- `internal/agent/llm_agent.go:329`
+- `internal/agent/llm_agent_finalize.go:245`
+
+**Suggested fix:** Drop `requestID` from the `finalEvent` signature and remove it from all three call sites. If future OTel wiring needs it, use `ic.RequestID.String()` directly inside the function.
 
 ---
 
-### [MEDIUM][BUG] Redundant `Build` call discarded unconditionally when adaptive reasoning is active
+### [MEDIUM][BUG] Double `Build` call on every agent-loop iteration when adaptive reasoning is enabled
 
 **Location:** `internal/agent/llm_agent.go:201-204`
+
 **Confidence:** high
 
 **Detail:**
-On every loop iteration the code unconditionally calls `a.builder.Build(...)` (line 201), then immediately overwrites `req` with `a.builder.BuildWithReasoningTier(...)` (line 203) when `adaptiveTierOK` is true. The first `Build` call — which copies all of `a.history`, sorts and renders all `tools.ToolDef`s, applies `cache_control`, and clones the message slice — is pure waste: its result is thrown away on every turn when adaptive reasoning is enabled.
-
-When `AURA_ADAPTIVE_REASONING=true` (the intended production path), `adaptiveTierOK` is true after the first turn, meaning EVERY subsequent loop iteration runs `Build` twice. With large histories and many registered tools this can be measurable (history clone + tool sort is O(N log N) per turn).
+On every iteration of the main `for {}` loop in `LlmAgent.Run`, the code unconditionally calls `a.builder.Build(...)` (line 201) and assigns the result to `req`. Immediately after, when `adaptiveTierOK` is true, it calls `a.builder.BuildWithReasoningTier(...)` (line 203) and reassigns `req`, discarding the first result entirely. Both calls invoke `buildBase` internally, which calls `reg.RenderToolDefs()` — allocating and marshalling the full tool-definition list. For a registry with N tools, this means N-tool renders happen twice per LLM call when adaptive reasoning is active (OpenRouter provider + `AdaptiveReasoning: true`).
 
 ```go
-// line 201 — always called, result thrown away when adaptiveTierOK:
-req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)
+// llm_agent.go:201-204
+req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget) // allocated and discarded
 if adaptiveTierOK {
-    // line 203 — replaces req entirely; the Build above is wasted
-    req = a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, adaptiveTier)
+    req = a.builder.BuildWithReasoningTier(...)  // replaces req entirely
 }
 ```
 
-**Suggested fix:**
-Skip the unconditional `Build` when a tier is available:
+**Suggested fix:** Use a conditional assignment instead of the unconditional `Build`:
 
 ```go
 var req llm.Request
@@ -64,68 +61,86 @@ if adaptiveTierOK {
 
 ---
 
-### [MEDIUM][NOT-WIRED] `Budget.NodeTimeout()` parsed and stored but never consumed in production
+### [LOW][DEAD-CODE] Four exported `Budget` methods referenced only from test files
 
-**Location:** `internal/agent/budget.go:138-142`, `169`, `299`, `326-328`
+**Location:** `internal/agent/budget.go:267`, `internal/agent/budget.go:328`, `internal/agent/budget.go:322`, `internal/agent/budget.go:259`
+
 **Confidence:** high
 
 **Detail:**
-`AURA_LOOP_NODE_TIMEOUT_SEC` is parsed by `NewBudget`, stored in `b.nodeTimeout`, propagated to children via `Child()`, and surfaced via `NodeTimeout()`. No production caller ever calls `b.NodeTimeout()` outside tests. Grep across the entire repo (`D:/Aura`) confirms the only non-definition, non-test references are in `budget_test.go`. The intended behaviour (per D-13 and the PRD) is that when non-zero this value bounds a per-node sub-context so one hung tool cannot eat the whole wallclock budget. That context derivation is never performed — the knob is dead.
+The following exported `Budget` methods have zero production call sites. Every reference is in a `_test.go` file:
 
-**Suggested fix:**
-In `LlmAgent.Run`, after the per-call `context.WithTimeout` that applies `TotalTimeoutSec`, additionally derive a node-scoped child context when `ic.Budget.NodeTimeout() > 0`:
+| Method | Defined at | Test references only |
+|---|---|---|
+| `SoftCapExceeded()` | `budget.go:267` | `budget_test.go:433,480,493,499` |
+| `NodeTimeout()` | `budget.go:328` | `budget_test.go:457` |
+| `WithDeadline()` | `budget.go:322` | `budget_test.go:443` |
+| `SetMaxSteps()` | `budget.go:259` | `budget_test.go:413`, `workflow/parallel_test.go:130`, `agenttest/mocks_test.go:21` |
 
-```go
-if nt := ic.Budget.NodeTimeout(); nt > 0 {
-    callCtx, cancel = context.WithTimeout(callCtx, nt)
-}
-```
+`SoftCapExceeded` and `NodeTimeout` are intended for the Phase-12 swarm and the per-node timeout feature respectively (referenced in planning docs but not yet consumed). `WithDeadline` was planned for the Runner's context cancellation path. `SetMaxSteps` is used only for test setup.
 
-Or file a TODO/open-question tracking the gap, since the D-13 comment marks this as deferred.
+None of these constitutes a production defect today. Flagged as dead-code for the fixer to decide: either expose via an internal test-helper (`export_test.go`) to avoid exporting them, or accept as forward-compat API stubs and document them as such.
+
+**Suggested fix (optional):** Move `SetMaxSteps` (purely a test-setup helper) to `export_test.go`. Mark `SoftCapExceeded`, `NodeTimeout`, and `WithDeadline` with a `// Future: consumed by Phase-N` comment so the next audit pass knows they are intentional forward-compat stubs, not dead code.
 
 ---
 
-### [LOW][NOT-WIRED] `Budget.WithDeadline` and `Budget.SoftCapExceeded` have no production callers
+### [LOW][DEAD-CODE] `Event.SetAuthorIfEmpty` exported but never called in production
 
-**Location:** `internal/agent/budget.go:263-271` (`SoftCapExceeded`), `319-323` (`WithDeadline`)
+**Location:** `internal/agent/event.go:135`
+
 **Confidence:** high
 
 **Detail:**
-Both exported methods are defined, unit-tested, and mentioned in design docs:
+`SetAuthorIfEmpty` is an exported method on `*Event`. Grep across the whole repo finds it called only from:
+- `internal/agent/agenttest/mocks.go:147` — a test-helper package
+- `internal/agent/event_test.go:376` — a direct unit test
 
-- `WithDeadline(parent context.Context)` — designed to thread the budget's wallclock into an in-flight LLM/tool call's context so long-running calls are cancelled end-to-end (D-13). No production caller invokes it; the `LlmAgent` loop uses a plain `context.WithTimeout` against `TotalTimeoutSec` instead.
-- `SoftCapExceeded()` — designed as a passive per-branch fairness signal for `ParallelAgent` scheduling (D-12). `ParallelAgent` never calls it; it only checks `ic.Budget.ConsumeStep()`.
+No production code (cmd/, internal/runner, internal/swarm, internal/channels) ever calls it. The `agenttest` package is imported only by `_test.go` files.
 
-Both are exported API surface that the `ParallelAgent` and `LlmAgent` were intended to consume per the D-12/D-13 design decisions, but the wiring was deferred and never completed. They are not dead code (their behaviour is tested), but they are not-wired in the production execution path.
-
-**Suggested fix:**
-Either wire the methods (add the `WithDeadline`-derived context inside the per-call timeout chain; add a `SoftCapExceeded` fairness check in `ParallelAgent.Run`), or mark them `// Planned: D-12/D-13 — not yet wired in production` to make the gap explicit and prevent confusion during future phases.
+**Suggested fix:** Move to `export_test.go` or document as a helper the Phase-12 AG-UI gateway is expected to use (if that is the intent). If the only caller is `agenttest`, unexport it to `setAuthorIfEmpty` in `agenttest/mocks.go` directly.
 
 ---
 
-### [LOW][DEAD-CODE] `terminalBudgetEvent` has no external callers; sole use is key extraction inside `finalizeEvent`
+### [LOW][BUG] `otel.SetErrorHandler(no-op)` permanently silences global OTel error handler in OTLP mode
 
-**Location:** `internal/agent/llm_agent_events.go:222-232`
+**Location:** `internal/agent/tracing.go:63`
+
 **Confidence:** medium
 
 **Detail:**
-`terminalBudgetEvent` was the original budget-exhaustion terminal event builder. After Phase 07.1 (forced finalization), both trip sites were re-routed to `finalize()`, so `terminalBudgetEvent` is never yielded to the caller. Its sole surviving use is in `finalizeEvent` (line 246), which calls it only to extract the `StateDelta` key names for observability consistency:
+When `newTracerProvider` is called with `mode == "otlp"` (the default), it installs a global no-op OTel error handler (`otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) {}))`) that is **never restored**. This is intentional in production to suppress "connection refused" noise from a missing collector. However:
 
+1. In the test binary, `TestNewTracerProvider_OTLPNoCollector` triggers this path and leaves the no-op handler installed for the entire process lifetime. Any OTel error that occurs in subsequent tests (e.g. from a real-provider test that misbehaves) is silently swallowed.
+2. The `t.Cleanup` in `TestNewTracerProvider_OTLPNoCollector` correctly shuts down the provider, but does not restore the original global error handler.
+
+This is a test-isolation bug, not a production bug.
+
+**Suggested fix:** In `TestNewTracerProvider_OTLPNoCollector`, save the previous error handler before the test and restore it in `t.Cleanup`:
 ```go
-for k, v := range a.terminalBudgetEvent(ic, spanID, parentSpanID, reason).Actions.StateDelta {
-    ev.Actions.StateDelta[k] = v
-}
+prev := otel.GetErrorHandler()
+t.Cleanup(func() { otel.SetErrorHandler(prev) })
 ```
+For production use, the current behavior (permanent no-op) is correct and documented.
 
-This is clever for byte-consistency, but it means a full `*Event` is allocated and immediately discarded (only its map is read). The function is not dead-code in the strict sense (it is called), but its semantic role — yielding an Escalate event as the last action — is dead. The comment at line 219 says "never the iter.Seq2 error slot" and "termination is Event-only", but no run actually ends on this event anymore.
+## Coverage
 
-**Suggested fix:**
-Extract the StateDelta key constants to package-level consts (`terminationReasonKey = "termination_reason"`, `limitHitKey = "limit_hit"`) and use them directly in both `terminalBudgetEvent` and `finalizeEvent`. This eliminates the allocation and makes the key-sharing explicit without the current indirect approach. Low priority — no correctness impact.
+Files read and checked (non-test):
+- `agent.go` — Agent interface, InvocationContext, WithContext/WithSubAgent
+- `errors.go` — ErrBudgetExhausted sentinel
+- `budget.go` — Budget struct, NewBudget/NewBudgetFromEnv, ConsumeStep, Child, soft-cap, deadline
+- `budget_dedup.go` — dedupRing, BeforeToolCall, AfterToolResult, ExemptToolsFromEnv
+- `event.go` — Event struct, MarshalJSON/UnmarshalJSON, SetAuthorIfEmpty, helper types
+- `llm_agent.go` — LlmAgent struct, NewLlmAgent, Run, dispatch, runTool, consume, parseTextResponse, canonicalArgs
+- `llm_agent_completion.go` — gateCompletion, runCompletionCritic, sideEffectDigest, parseCriticVerdict
+- `llm_agent_events.go` — newEvent, all event constructors, finalEvent, usageStateDelta, exitCodeFromMeta
+- `llm_agent_finalize.go` — finalize, synthesizeWithFallback, stubDigest, synthesize, finalizeEvent, maybeRecover
+- `llm_agent_pause.go` — pauseCalls, pauseToolCalls, detectPause, emitPauses, pauseEvent
+- `llm_agent_reasoning.go` — adaptiveReasoningTier, parseReasoningRouterTier, normalizeReasoningTier
+- `llm_agent_stream_retry.go` — streamWithOpenRetry, retryableStreamOpenError
+- `prompt.go` — SystemPrompt constant, systemMessage
+- `swarm_context.go` — SwarmContextValue, WithSwarmContext, SwarmContext
+- `tracing.go` — newTracerProvider, NewTracerProvider, mintSpanID, rootSpanIDs, startLLMSpan, setSpanAttrs
+- `workflow/loop.go`, `workflow/parallel.go`, `workflow/sequential.go` — workflow agents (scoped read for wiring verification)
 
----
-
-## What was checked
-
-Audited all non-test Go files in `internal/agent` (root package, `workflow/`, `prompt/`, `mcptools/`, `agenttest/`, `tools/`): `agent.go`, `budget.go`, `budget_dedup.go`, `errors.go`, `event.go`, `llm_agent.go`, `llm_agent_completion.go`, `llm_agent_events.go`, `llm_agent_finalize.go`, `llm_agent_pause.go`, `llm_agent_reasoning.go`, `llm_agent_stream_retry.go`, `prompt.go`, `swarm_context.go`, `tracing.go`, `workflow/{workflow,loop,parallel,sequential}.go`, `prompt/{builder,cache_anthropic,hash,reasoning_policy}.go`, `mcptools/{bridge,mount,name}.go`, `agenttest/{fakeclient,mocks}.go`, `tools/{action,ask_user,spec,registry,manifest,result}.go`.
-
-Grepped across the full repo (`D:/Aura`) to verify every usage claim and confirm production vs test-only references. No goroutine leak paths found in production code (all `consume` drain paths cover the stopped case). No unchecked errors that carry real consequences. No slice aliasing or integer overflow risks. The `otel.SetErrorHandler` global mutation in `tracing.go` is not a race because no tests run that path in parallel. Go module version is 1.26.4, so loop-capture is not a concern.
+Cross-repo grep confirmed: all production call sites verified for `ExemptToolsFromEnv`, `SwarmContext`, `NewTracerProvider`, `NewBudget`, `NewBudgetFromEnv`. No missing wiring found for the primary loop path.

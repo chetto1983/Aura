@@ -1,134 +1,115 @@
 # Audit: internal/cron
 
-**Verdict:** needs-work — four not-wired methods accumulate technical debt; one structural latency hazard in the boot path; one duplicate Scheduler allocation leaks a minor design smell.
+**Verdict:** needs-work — two not-wired struct fields, one dead exported method, one misleading sentinel, one style inconsistency in raw SQL binding.
 
-**Counts:** critical 0 / high 1 / medium 2 / low 2
+**Counts:** critical 0 / high 0 / medium 3 / low 2
 
 ---
 
 ## Findings
 
-### [HIGH][NOT-WIRED] `Store.CreateRunAndAdvance` is never called in production
+### [MEDIUM][NOT-WIRED] `HandlerMeta.MaxDuration` and `ReschedulesOnRecovery` in `cron.Dispatch` are never consumed
 
-**Location:** `internal/cron/store.go:220`
+**Location:** `internal/cron/dispatch.go:31-32`, `internal/cron/dispatch.go:96-115`
+
 **Confidence:** high
 
-`Store.CreateRunAndAdvance` is documented as the "atomic claim-then-reschedule write" that opens a run row AND advances `next_run_at` in one transaction. However, the actual production claim path (`claim.go`) uses `insertRunOnConn` on the held advisory-lock connection, and `reschedule` (`scheduler.go:247`) calls `store.UpdateNextRunAt` through the pool — two separate operations protected by the advisory lock, not a DB transaction.
+**Detail:**
+`Dispatch.Dispatch` routes a task to its handler and calls `h.Run(ctx, job)` directly, passing the raw context without consulting `h.Meta().MaxDuration` to create a deadline. The dispatcher never calls `h.Meta()` at all. Both fields in the cron-local `HandlerMeta` struct are populated (via the `handlerAdapter` in `cmd/aura/serve.go:270-276`) but neither is read at dispatch time:
 
-`CreateRunAndAdvance` only appears in tests (`store_test.go`). Critically, it opens a pool transaction (via `db.WithTx`) on an **ordinary pool connection**, not the held advisory-lock conn. Any future caller who reaches for this method as the "atomic" insert+advance will bypass the per-session advisory-lock invariant (Pitfall 2), because the transaction runs on a different connection than the one holding the lock. The method is a trap: its name and doc imply "the correct atomic pattern" but it does not satisfy the advisory-lock session constraint that the real production path requires.
+- `MaxDuration`: each handler self-enforces via its own `context.WithTimeout` call (agentjob.go:73, backup.go:97), making the cron-boundary field redundant dead state.
+- `ReschedulesOnRecovery`: the boot catch-up (`recover.go:catchUpMissed`) fires ALL overdue tasks unconditionally regardless of this field. A reminder with `ReschedulesOnRecovery: false` is still dispatched at boot if overdue — correct per D-18 semantics, but the field is never the decision gate anywhere in the production path.
 
-**Suggested fix:** Either delete the method and add a comment pointing to the two-step production path (`insertRunOnConn` + `reschedule`), or rename it `CreateRunAndAdvanceForTests` with an explicit `//go:build db_integration` tag and a doc comment warning that it does NOT preserve the advisory-lock session.
+The risk: future code assuming the dispatcher enforces these fields will be surprised. The `ReschedulesOnRecovery` field is confirmed non-wired via grep (no call site reads it outside handler tests asserting its return value).
+
+**Suggested fix:** Either (a) have the dispatcher read `h.Meta().MaxDuration` and enforce a per-kind `context.WithTimeout` wrapper before calling `h.Run`, removing the self-enforcement duplication in each handler; or (b) remove `MaxDuration` and `ReschedulesOnRecovery` from the cron-local `HandlerMeta` (they live correctly in the handlers-level `HandlerMeta`) and document that timeout enforcement is handler-local. Also add a `recoveryCandidates` filter in `catchUpMissed` or `runMissed` if per-kind recovery gating is intended.
 
 ---
 
-### [MEDIUM][NOT-WIRED] `Store.InsertRun`, `Store.Heartbeat`, and `Store.GetRun` are test-only methods on the public API
+### [MEDIUM][NOT-WIRED] `Store.CreateRunAndAdvance` is an exported method with no production caller
 
-**Location:** `internal/cron/store.go:200` (`InsertRun`), `store.go:245` (`Heartbeat`), `store_runs.go:59` (`GetRun`)
+**Location:** `internal/cron/store.go:220-241`
+
 **Confidence:** high
 
-All three exported `Store` methods have zero production callsites. Production uses:
-- `insertRunOnConn` (unexported, held-conn) instead of `InsertRun`
-- a raw `conn.Exec` UPDATE in `heartbeat.go` instead of `Heartbeat`
-- no run-by-ID read in production flow (only diagnostic/test tooling)
+**Detail:**
+`CreateRunAndAdvance` was designed as the atomic insert-run + advance-next_run_at write (in a single `db.WithTx`). The 10-03 held-conn approach superseded it: production claim flow uses `insertRunOnConn` (on the held advisory-lock conn) followed by a separate `reschedule` call (which calls `UpdateNextRunAt`). `CreateRunAndAdvance` is now called only from two integration tests in `store_test.go` (lines 242, 394). Confirmed via repo-wide grep — no non-test call site exists.
 
-These exported methods present the same advisory-lock session hazard as `CreateRunAndAdvance`: `InsertRun` and `Heartbeat` both use the pool, not the held conn. A caller who reaches for `store.InsertRun` inside a locked claim context would open the run row on a DIFFERENT connection than the advisory lock, violating the single-session invariant.
+This is an exported method that was overtaken by a different architecture. It carries real pool-level transaction cost and its existence implies a public API contract that nothing actually satisfies.
 
-Grep evidence — all non-test, non-definition references:
-- `InsertRun`: zero production callsites (all in `*_test.go`)
-- `Heartbeat`: zero production callsites
-- `GetRun`: zero production callsites
-
-**Suggested fix:** Either unexport all three (making them `insertRun`, `heartbeat`, `getRun`) so the held-conn versions are the only visible surface, or add build-tag guards to keep them as explicit test helpers. At minimum, add a doc comment on each: "Test helper — uses the pool, not a held advisory-lock connection. Do not use inside a claimed run."
+**Suggested fix:** Unexport to `createRunAndAdvance` if needed for tests, or delete it entirely and have the two tests use the real claim path (`insertRunOnConn` + `reschedule`). The `db_integration`-tagged tests should prove the claim lifecycle, not a superseded code path.
 
 ---
 
-### [MEDIUM][BUG] Boot-phase missed dispatches run serially with no concurrency cap, blocking the ticker for N × MaxDuration
+### [MEDIUM][BUG] `ErrAlreadyRunning` sentinel documents one failure mode but is used for two semantically distinct errors
 
-**Location:** `internal/cron/scheduler.go:126-128`
+**Location:** `internal/cron/store.go:19-24`, `internal/cron/claim.go:68`
+
 **Confidence:** high
 
-`Start()` dispatches all missed catch-up tasks serially before starting the tick loop:
+**Detail:**
+The doc comment for `ErrAlreadyRunning` reads:
 
-```go
-for _, m := range missed {
-    s.runMissed(ctx, m)  // each can block up to MaxDuration (default 120s per agent_job)
-}
-```
+> "the idempotency rejection when a duplicate completion hits the completed_with_hash UNIQUE constraint (the SC#2 swallow point)"
 
-`runMissed` runs the handler synchronously. With the default `agentJobMaxDuration = 120s`, N missed `agent_job` tasks at boot block the ticker for up to `N × 120s` before the first normal tick fires. After a 2-hour outage with 10 pending agent jobs, the daemon is effectively unavailable for scheduling new tasks for up to 20 minutes post-restart.
+But the sentinel is also wrapped in `claim.go:68` for the advisory lock lost case ("another worker holds the task's session lock"). These are two semantically different failure modes:
+1. Lock-lost path (`claim.go:68`): a concurrent worker is actively running this task right now — safe to skip + reschedule.
+2. Duplicate completion (`store.go:282`): a completed run's hash was re-submitted — safe to swallow.
 
-The tick path (`scheduler.go:151`) uses a bounded semaphore (`make(chan struct{}, s.maxConcurrent)`) and a `sync.WaitGroup`, giving concurrent dispatch capped at `maxConcurrent`. The boot catch-up has no equivalent bound.
+The error message (`"agent job already running for this completion hash"`) is misleading for the lock-lost path. A caller that wraps one of these errors and then does `errors.Is(err, ErrAlreadyRunning)` cannot distinguish them.
 
-This is not catastrophic (the advisory lock still prevents double-firing; the context cancel still drains correctly), but it contradicts the concurrency model applied in `tick`.
+In the current code, `scheduler.go:179,220` treats both as "skip and continue," which happens to be correct for both cases — but only by coincidence. A future handler that needs to distinguish "task was already running (concurrent)" from "completion was already recorded (idempotency)" will get burned.
 
-**Suggested fix:** Apply the same semaphore pattern used in `tick` to the boot catch-up loop, OR dispatch each `runMissed` in a goroutine with a `sync.WaitGroup` and the same `sem` channel, waiting for all to finish before entering the tick loop. Cap at `s.maxConcurrent` to preserve the held-conn headroom invariant (Pitfall 2).
+**Suggested fix:** Split into two sentinels: `ErrLockContended` (advisory lock lost, concurrent runner) and `ErrAlreadyCompleted` (duplicate completion hash). Update `claim.go:68` and `store.go:282` accordingly. Update `scheduler.go` to handle both.
 
 ---
 
-### [LOW][NOT-WIRED] Duplicate `NewScheduler` allocation in `buildDispatch` solely for `DuringQuietHours` method value
+### [LOW][BUG] Raw string `runID` passed to UUID column in `setMissedSinceOnConn` and `startHeartbeat` — inconsistent with the rest of the package
 
-**Location:** `cmd/aura/serve.go:254`
-**Confidence:** high
+**Location:** `internal/cron/store_runs.go:50-51`, `internal/cron/heartbeat.go:38`
 
-```go
-QuietHours: cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{}).DuringQuietHours,
-```
-
-A second `*Scheduler` instance is created with default `Now = time.Now` solely to bind `DuringQuietHours` as a function value. The live scheduler (line 143) also uses `time.Now` by default, so both schedulers agree on the clock in production. However:
-
-1. The second scheduler is never `Start()`ed, yet it acquires a pool reference and a store reference — two allocations with no lifecycle cleanup.
-2. If a future test or config path injects a synthetic `Now` into the live scheduler but not the quiet-hours scheduler, the two would diverge silently.
-3. `DuringQuietHours` is a pure function of `Now()` and `AURA_SCHEDULER_QUIET_HOURS` env — it does not need to be a method on a stateful `Scheduler`.
-
-**Suggested fix:** Extract `DuringQuietHours` as a package-level function `cron.DuringQuietHours(tz string, now func() time.Time) bool` (or a `QuietHoursChecker` type) so the caller supplies `time.Now` directly. This eliminates the phantom `Scheduler` and removes the clock-divergence footgun.
-
----
-
-### [LOW][BUG] `pg_advisory_unlock` error silently discarded in `Claim.release`
-
-**Location:** `internal/cron/claim.go:91`
 **Confidence:** medium
 
+**Detail:**
+Every other `conn.Exec` / `q.SomeQuery` call in this package converts the string UUID via `parseUUID(id)` before binding (see `store.go:150`, `store.go:245`, `store_runs.go:24`, `store.go:272`). Two sites pass the raw `string` directly:
+
+- `store_runs.go:50`: `conn.Exec(ctx, "UPDATE ... WHERE id = $1", runID, ...)`
+- `heartbeat.go:38`: `conn.Exec(hbCtx, "UPDATE ... WHERE id = $1", runID)`
+
+pgx v5 sends a Go `string` as OID 0 (unspecified text), and PostgreSQL's implicit `text → uuid` cast makes this work at runtime. But it is relying on an undocumented implicit cast path rather than the explicit `pgtype.UUID` binding the rest of the codebase uses. A schema migration that removes the implicit cast, or a pgx version that sends `text` OID explicitly (PostgreSQL may reject explicit-text-to-uuid), would silently break only these two paths.
+
+**Suggested fix:** Apply `parseUUID` to `runID` in both sites before binding, consistent with all other Store methods. Since `runID` is always a valid UUID (it was produced by `newUUID()` at claim time), `parseUUID` will never fail — the conversion is mechanical:
+
 ```go
-_, _ = c.conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", c.hash)
-c.conn.Release()
+// store_runs.go:setMissedSinceOnConn
+ru, err := parseUUID(runID)
+if err != nil {
+    return fmt.Errorf("set missed_since: invalid run id: %w", err)
+}
+if _, err := conn.Exec(ctx, `UPDATE aura.agent_job_runs SET missed_since = $2 WHERE id = $1`, ru, missedSince.UTC()); err != nil {
 ```
 
-The advisory unlock error is discarded. If `ctx` is already cancelled (graceful shutdown) before `release` is called — which is a realistic scenario since `claim.release` is deferred and the parent context may have been cancelled — the `Exec` call will fail with `context.Canceled`. The lock is then NOT explicitly released via SQL; however, Postgres auto-releases session advisory locks when the connection is returned to the pool and the underlying session is reused/reset.
-
-The real risk: `pgxpool.Conn.Release()` does NOT close the underlying connection by default — it returns it to the pool. The session advisory lock MAY persist on the pooled connection until the pool decides to close or reset it, which can range from immediately (idle timeout) to never (the pool reuses the connection for another purpose, which inherits the lock). This is a subtle held-lock window.
-
-**Suggested fix:** If the context is cancelled, pass `context.Background()` for the unlock exec to ensure the unlock actually runs regardless of cancellation state. Pattern:
-
 ```go
-func (c *Claim) release(ctx context.Context) {
-    if c == nil || c.conn == nil {
-        return
-    }
-    // Use a fresh background context for the unlock so a cancelled parent ctx
-    // does not leave the advisory lock held on the pooled connection.
-    unlockCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-    defer cancel()
-    _, _ = c.conn.Exec(unlockCtx, "SELECT pg_advisory_unlock($1)", c.hash)
-    c.conn.Release()
-    c.conn = nil
-}
+// heartbeat.go: pass pgtype.UUID instead of string
+ru, _ := parseUUID(runID) // runID is always a valid UUID at this call site
+_, _ = conn.Exec(hbCtx, "UPDATE aura.agent_job_runs SET last_heartbeat_at = now() WHERE id = $1", ru)
 ```
 
 ---
 
-## Clean sections (what was checked and found sound)
+### [LOW][DEAD-CODE] `Store.GetTask`, `Store.GetRun`, and `Store.Heartbeat` have no production callers
 
-- **Schedule engine** (`schedule.go`): `ParseSchedule`, `NextRunAt`, `FirstFire` — DST-safe, correct `strings.Cut` on `-` separator (cuts at first `-`, preserving `HH:MM` tokens), proper zone-aware `gronx.NextTickAfter`, `ErrPastRunAt` gate for past one-shots.
-- **Tick concurrency** (`scheduler.go:tick`): semaphore + `sync.WaitGroup` correctly bounds concurrent claims; loop-variable capture is safe (Go 1.26 loopvar fix; the `task` arg copy is explicit anyway).
-- **Heartbeat** (`heartbeat.go`): goroutine-clean (`defer ticker.Stop()` + joinable `stop()` via `close(done)`); uses `hbCtx` (child of `ctx`) so parent cancel exits cleanly; goleak gate passes.
-- **Advisory lock session invariant** (`claim.go`): `insertRunOnConn` runs on the held conn; heartbeat UPDATE runs on the held conn; `pg_advisory_unlock` runs on the held conn before `Release()`. Pitfall 1 is correctly addressed.
-- **Race safety**: `Dispatch.handlers` and `Scheduler` fields are set once at construction; concurrent goroutine reads in `tick` are safe. No shared mutable state written post-construction.
-- **Error classification**: `isUniqueViolation` uses `errors.As` + SQLSTATE `23505` (never string matching); `ErrAlreadyRunning` and `ErrTaskNotFound` are sentinel errors for clean `errors.Is` chains.
-- **pgtype helpers**: `text`, `int4OrNull`, `tsOrNull`, `uuidOrNull` all correctly project zero/empty to `pgtype.{}` (NULL) and non-zero to valid typed values. `tsOrNull` always stores UTC.
-- **DueTasks clamping** (`store_runs.go:81-84`): `limit <= 0 || limit > math.MaxInt32` clamped to 1 — WR-02 overflow guard is correct.
-- **Quiet-hours wrap-around** (`scheduler.go:278-281`): midnight-crossing window (e.g. `23:00-07:30`) is handled by the `start > end` branch; boundary semantics (start inclusive, end exclusive) match the test suite.
-- **Backup handler** (`handlers/backup.go`): FIXED argv (no payload interpolation, T-10-16); `docker` LookPath-gated; WR-04 bind-mount artifact check; retention sweep is best-effort (pruning failure does not fail the backup); `MissedBackupAlert` fires only past the 24h window.
-- **Reminder handler** (`handlers/reminder.go`): pure text delivery, no LLM, no tools; empty payload degrades gracefully.
-- **AgentJobHandler** (`handlers/agentjob.go`): `maxAutoRejects` loop bound prevents infinite ask_user loops (D-25); `childRegistry` drops `swarm_spawn` without importing `internal/swarm`; step budget inherited from row.
-- **SkillTTLSweepHandler** (`handlers/skill_ttl.go`): nil sweeper and non-positive TTL are no-op successes; clock injectable for tests via unexported `now` field; `"auto"` actor for D-29 audit rows.
+**Location:** `internal/cron/store.go:146-158` (GetTask), `internal/cron/store_runs.go:59-72` (GetRun), `internal/cron/store.go:245-254` (Heartbeat)
+
+**Confidence:** medium
+
+**Detail:**
+Confirmed via repo-wide grep that none of these three exported methods are called outside `internal/cron/*_test.go` files:
+
+- `GetTask`: only in `store_test.go`, `scheduler_integration_test.go`, `recover_test.go`, `dispatch_integration_test.go`.
+- `GetRun`: only in `store_runs.go` (definition) + `recover_test.go`, `heartbeat_test.go`, `dispatch_integration_test.go`.
+- `Store.Heartbeat` (pool-based): only in `store_test.go`.
+
+The production heartbeat path uses `startHeartbeat` (direct SQL on the held conn), never `Store.Heartbeat`. These methods are reasonable test scaffolding and may be future API surface, but they contribute to the exported footprint with no current production consumer. Unlike `CreateRunAndAdvance`, these are arguably natural convenience accessors — flagged only because they inflate the public surface.
+
+**Suggested fix:** No action required unless the team wants to keep the exported API surface minimal. If retained, add a `// Test-only convenience method` comment so future auditors know the intent. If the package is intended to be a stable library with external callers, keep them and document them accordingly.

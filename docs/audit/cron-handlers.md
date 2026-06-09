@@ -1,73 +1,104 @@
 # Audit: internal/cron/handlers
 
-**Verdict:** needs-work — two not-wired fields + one swallowed-error diagnostic issue
+**Verdict:** needs-work — one not-wired bool return value, one cosmetically redundant double-timeout, otherwise clean.
+
 **Counts:** critical 0 / high 0 / medium 1 / low 2
 
 ## Findings
 
-### [MEDIUM][NOT-WIRED] `HandlerMeta.ReschedulesOnRecovery` is declared, set, and transferred — but never consumed
+---
 
-**Location:** `internal/cron/handlers/handler.go:44`, `internal/cron/handlers/agentjob.go:53`, `internal/cron/handlers/backup.go:68`, `internal/cron/handlers/reminder.go:28`, `internal/cron/handlers/skill_ttl.go:39`; consumption gap in `internal/cron/recover.go` (entire file) and `internal/cron/scheduler.go` (entire file)
+### [MEDIUM][NOT-WIRED] `MissedBackupAlert` bool return value is never consumed by its only production caller
+
+**Location:** `internal/cron/handlers/backup.go:79`, `backup.go:222-237`
 
 **Confidence:** high
 
-**Detail:** Every handler sets `ReschedulesOnRecovery` precisely per D-18 (true for agent_job/backup, false for reminder/skill_ttl_sweep). The field flows through `handlerAdapter.Meta()` in `cmd/aura/serve.go:275` into `cron.HandlerMeta`. However, neither `recover.go` (`catchUpMissed`, `recoverOrphans`) nor `scheduler.go` (`runMissed`, `tick`) reads this field. `catchUpMissed` (recover.go:55-82) fires every overdue task unconditionally regardless of the variant: a reminder whose fire was missed but `ReschedulesOnRecovery=false` is still dispatched by `runMissed` with a `MissedSince`. The field is dead specification — it documents intent but governs nothing at runtime. The tests in `agentjob_test.go:173`, `backup_test.go:142`, `reminder_test.go:49`, and `skill_ttl_test.go:39` assert the field value but none of those tests exercise the scheduling path that should branch on it.
+**Detail:**
 
-**Suggested fix:** In `catchUpMissed` (recover.go), after resolving the handler via the dispatcher map, check `h.Meta().ReschedulesOnRecovery`: if false, skip adding to the `missed` slice (i.e. advance `next_run_at` but do not fire a catch-up run). Alternatively, if the PRD intent for a "no-reschedule" task is to still fire the catch-up once (contradicting the field name), document that intent and remove the field to prevent future confusion. The current state — the field is set everywhere and consumed nowhere — is a silent specification lie.
+`MissedBackupAlert` is exported and documented as returning `true` when an alert fires "so the dispatcher can also ride it through the Notifier (D-21)". Its docstring explicitly promises this use case. In the only production call site (line 79):
+
+```go
+MissedBackupAlert(h.Variant, job.MissedSince, time.Now().UTC())
+```
+
+the return value is discarded. The alert is delivered exclusively via `slog.Warn` — the Notifier path described in the function comment is never exercised. Callers outside this package (non-test) do not exist (verified by grep across `D:/Aura`). The exported function's advertised contract (Notifier riding) has no wiring to make it real.
+
+This means a missed-backup-past-24h event produces a daemon log line but never reaches the user's Telegram route (D-19/D-21), contrary to the SC#3 requirement description.
+
+**Suggested fix:**
+
+Either (a) have `Run` incorporate the alert result into the returned summary/error so the dispatcher's existing Notifier call picks it up, or (b) have `BackupHandler.Run` call the Notifier directly (via a field on the struct), or (c) lower the visibility to unexported and remove the misleading bool (if log-only is the accepted design). The simplest correct fix that preserves the Notifier path:
+
+```go
+// inside Run, after MissedBackupAlert fires:
+alerted := MissedBackupAlert(h.Variant, job.MissedSince, time.Now().UTC())
+// ... rest of Run ...
+summary := fmt.Sprintf("backup %s ok → %s ...", ...)
+if alerted {
+    summary = "[SC#3 MISSED BACKUP ALERT] " + summary
+}
+return summary, nil
+```
+
+This threads the alert through the Notifier via the normal dispatcher summary-notification path (dispatch.go line 158), without adding a Notifier dependency to the handlers package.
 
 ---
 
-### [LOW][NOT-WIRED] `handlers.TaskKind` constants duplicate `cron.TaskKind` with no compile-time enforcement
+### [LOW][BUG] `BackupHandler.Run` creates a redundant inner `WithTimeout` that duplicates the dispatcher's outer budget
 
-**Location:** `internal/cron/handlers/handler.go:26-35` vs `internal/cron/store.go:28-39`
+**Location:** `internal/cron/handlers/backup.go:97`
 
-**Confidence:** high
+**Confidence:** medium
 
-**Detail:** Both packages define a `TaskKind` type (plain `string`) with five identical constants (`"reminder"`, `"agent_job"`, `"backup_postgres"`, `"backup_neo4j"`, `"skill_ttl_sweep"`). The duplication is intentional (D-24 import-cycle avoidance) and documented. The adapter in `cmd/aura/serve.go:273` uses an unchecked `cron.TaskKind(m.Kind)` cast to bridge them. There is no compile-time guarantee the two sets remain in sync: adding a new kind to `cron` but not to `handlers` (or vice versa) silently produces a handler map miss, which the dispatcher converts to a `"no handler for kind %q"` terminal run failure — visible only at runtime. Currently all five values match, so there is no live bug. The risk is future drift.
+**Detail:**
 
-**Suggested fix:** Add a `TestTaskKindConstantsInSync` test in `internal/cron/handlers` that iterates both string tables and asserts equality. Alternatively, move the constants to a shared `internal/cron/kinds` sub-package importable by both without a cycle (neither `internal/cron` nor `internal/cron/handlers` would import each other — both import the leaf).
+`BackupHandler.Meta()` returns `MaxDuration: backupMaxDuration` (30 minutes). The cron dispatcher (`dispatch.go`) applies this as a hard deadline to the `ctx` it passes to `Run`. Inside `Run`, another `context.WithTimeout(ctx, backupMaxDuration)` is applied — with the same duration. Because both timers start almost simultaneously, the inner `runCtx` always expires at approximately the same wall time as the outer, making the inner one purely redundant. The only distinction is that the inner cancel is deferred, which is correct hygiene, but the second `backupMaxDuration` constant adds no safety margin.
+
+This is not a functional bug (the behavior is correct), but it obscures intent: a reader might think the inner timeout is shorter or deliberately independent of the outer one.
+
+**Suggested fix:**
+
+Drop the inner `WithTimeout` and just use `ctx` directly in `exec.CommandContext`. The outer dispatcher-applied deadline already provides the bound. If a tighter inner bound is desired, document the intended relationship explicitly:
+
+```go
+// ctx already carries the Meta().MaxDuration deadline from the dispatcher;
+// pass it directly to CommandContext.
+cmd := exec.CommandContext(ctx, docker, args...)
+```
 
 ---
 
-### [LOW][BUG] `agentJobGoal` swallows `json.Unmarshal` error, producing a misleading terminal error
+### [LOW][DEAD-CODE] `MissedBackupAlert` bool return value is never read in production (dead return slot)
 
-**Location:** `internal/cron/handlers/agentjob.go:173-179`, called at `agentjob.go:63`
+**Location:** `internal/cron/handlers/backup.go:227`
 
 **Confidence:** high
 
-**Detail:** `agentJobGoal` silently swallows any `json.Unmarshal` error and returns `""`. When `Run` receives an empty string it emits `fmt.Errorf("agent_job: payload has no goal")`. This error message is correct for a well-formed `{"goal":""}` but misleading for a corrupted or non-JSON payload — both produce the same opaque string. In practice this means a database corruption or a mis-serialized task payload (e.g. the scheduler stored something other than JSON in `payload`) is diagnosed as "no goal" with no indication of the unmarshal failure, making the audit trail harder to triage.
+**Detail:**
 
-**Suggested fix:** Propagate the error:
+The `bool` return of `MissedBackupAlert` has zero production consumers (verified by grep: only `backup_test.go` reads it). The function is exported solely for the test and for a production wiring path (Notifier) that does not exist. This is a subset of the NOT-WIRED finding above, flagged separately because the dead return slot also signals that the exported surface is larger than needed.
 
+If the Notifier wiring gap (medium finding above) is accepted as won't-fix, the function should be unexported (`missedBackupAlert`) to remove the false contract from the public API.
+
+**Suggested fix:**
+
+If the Notifier path remains unwired, make the function unexported:
 ```go
-func agentJobGoal(payload []byte) (string, error) {
-    var p agentJobPayload
-    if err := json.Unmarshal(payload, &p); err != nil {
-        return "", fmt.Errorf("unmarshal agent_job payload: %w", err)
-    }
-    return strings.TrimSpace(p.Goal), nil
-}
+func missedBackupAlert(variant BackupVariant, missedSince, now time.Time) bool {
 ```
+and update the single call site and the tests (which are in `package handlers`, so they can still call it).
 
-Then in `Run`:
-```go
-goal, parseErr := agentJobGoal(job.Payload)
-if parseErr != nil {
-    return "", fmt.Errorf("agent_job: %w", parseErr)
-}
-if goal == "" {
-    return "", fmt.Errorf("agent_job: payload has no goal")
-}
-```
+---
 
-## What was checked and found clean
+## Clean sections (classes with no findings)
 
-- **Nil-pointer derefs:** `drain` guards `ev == nil` before accessing fields. `AwaitingInput`, `LLMResponse` are all pointer-guarded. `claim.release` is nil-safe.
-- **Resource leaks:** No unclosed `os.ReadDir` entries, no goroutine leaks. `context.WithTimeout` cancels are always deferred. `exec.CommandContext` is bound to `runCtx`. `sweepRetention` is best-effort and does not leak resources.
-- **Context propagation:** `agentjob.Run` creates `runCtx` from the parent `ctx` with a timeout; `drain` passes it to `InvocationContext.Ctx`; `backup.Run` does the same with `backupMaxDuration`. The parent `ctx` cancellation is honoured everywhere.
-- **Races:** All auto-reject iterations are sequential (no goroutines inside `Run`). The shared `*agent.Budget` pointer is passed to sequential `drain` calls, never concurrently. No maps or shared state mutated concurrently.
-- **Shared budget pointer:** Each `drain` call within `Run` shares the same `*Budget` — intentional design (the budget is global for the job). Sequential calls ensure no race.
-- **`uuid.Must` panic risk:** `uuid.NewV7()` failure would panic, but this pattern is used uniformly across the codebase. Not flagged as an actionable local issue.
-- **`sweepRetention` TOCTOU:** `e.Info()` after `ReadDir` can race with filesystem changes, but the function is documented best-effort and the sweep success/failure does not affect correctness.
-- **Duplicate constant string values:** All five `handlers.TaskKind` strings are currently byte-identical to their `cron.TaskKind` counterparts — no live mismatch.
-- **Dead code:** All exported and unexported symbols in the package are referenced. `childRegistry`, `newAgentWorker`, `appendLine`, `agentJobGoal`, `assistantAskUserTurn`, `askUserKind`, `newJobBudget`, `MissedBackupAlert`, `backupDir`, `sweepRetention`, `reminderText` are all called from production paths. The `dockerCLI` unexported field is accessible to tests in the same package. `SnippetSweeper` interface is satisfied by `snippetSweeperAdapter` in `cmd/aura/serve_adapters.go`.
+**BUGS (excluding the double-timeout):** No nil-pointer derefs, no unchecked errors that matter (all `os.Remove`/`os.Stat` errors are either surfaced or deliberately best-effort with a log), no swallowed errors in the happy path, no off-by-one. The `for attempt := 0; attempt <= maxAutoRejects; attempt++` loop correctly runs `maxAutoRejects + 1` iterations. `agentJobGoal` and `reminderText` swallow JSON parse errors intentionally and correctly (empty means "no content" in both cases — degraded but not silently wrong). The `backupDir` tilde expansion correctly handles `~`, `~/path`, and `~path` (the last being non-standard but deterministic).
+
+**RACES:** No goroutine spawning in any handler. `AgentJobHandler.Run` is synchronous. `drain` runs the iterator synchronously; the `for-range` over `iter.Seq2` is single-threaded. `SkillTTLSweepHandler.now` is an unexported, read-once field with no concurrent access. `BackupHandler.dockerCLI` is set at construction and read-only thereafter. No shared mutable state.
+
+**ITERATOR SAFETY (drain early return):** When `drain` returns early on detecting `ev.Actions.AwaitingInput != nil` (agentjob.go:124–126), this is safe: `LlmAgent.Run` calls `emitPauses` then immediately `return`s, so the pause event IS the last yield of that iterator invocation. The Go 1.23 range-over-func mechanism correctly handles the early return (yield returns false on the next call attempt, which never arrives). No goroutine leak; confirmed by the package-level `goleak.VerifyTestMain`.
+
+**NOT-WIRED (handlers registration):** All five `TaskKind` constants (`KindReminder`, `KindAgentJob`, `KindBackupPostgres`, `KindBackupNeo4j`, `KindSkillTTLSweep`) and all five handler types are wired in `cmd/aura/serve.go:232–241`. The `handlerAdapter` at `cmd/aura/serve.go:258–287` correctly projects both `HandlerMeta` and `Job` fields. `SnippetSweeper` is satisfied by `snippetSweeperAdapter` in `cmd/aura/serve_adapters.go:330`.
+
+**DEAD CODE:** `childRegistry`, `newAgentWorker`, `appendLine`, `agentJobGoal`, `assistantAskUserTurn`, `askUserKind`, `newJobBudget`, `drain`, `reminderText` — all called from production paths within the package. `backupDir`, `sweepRetention`, `resolveDocker`, `dumpArgv`, `dumpFilename`, `filePrefix`, `containerName`, `retention` — all called from `BackupHandler.Run`.

@@ -1,6 +1,6 @@
 # Audit: internal/llm
 
-**Verdict:** needs-work — four low-severity issues found; no critical or high-severity defects.
+**Verdict:** needs-work — one medium bug (swallowed mid-stream parse error), one low dead-code field, two low dead-code constants.
 
 **Counts:** critical 0 / high 0 / medium 1 / low 3
 
@@ -8,135 +8,132 @@
 
 ---
 
-### [MEDIUM][DEAD-CODE] `firstSeen` field written but never read
+### [MEDIUM][BUG] mid-stream parse error silently swallowed — channel closes without any error signal
 
-**Location:** `internal/llm/openai_compat/accumulate.go:32,53`
+**Location:** `internal/llm/openai_compat/client.go:145–165`
 
 **Confidence:** high
 
 **Detail:**
-`toolCallAcc.firstSeen` is set on line 53 (`acc = &toolCallAcc{firstSeen: a.order}`) but
-is never read by any method, including `finalize()`. The `finalize()` method sorts by
-`index` (delta wire index) via `sort.Ints(indices)`, not by `firstSeen`. The comment
-on line 26 says it "records arrival order as a stable tiebreaker" — but no tiebreaking
-logic exists. The `accumulator.order` counter is incremented for this field only;
-removing `firstSeen` would allow removing `order` too.
 
-**Suggested fix:**
-Remove the `firstSeen` field from `toolCallAcc` and the `order` field from `accumulator`.
-The sort is already deterministic: tool-call indices are stable integers emitted by the
-model in ascending order. If insertion-order tiebreaking is ever needed, reintroduce
-with the actual sort key.
+`parseSSE` can return a non-nil error for two causes: a malformed SSE chunk (JSON parse failure) and a non-EOF transport read failure. In both cases the `Stream` goroutine captures the error into `errString`, logs it to the trace file, and exits — closing `out` with no in-band error signal.
 
 ```go
-// Before
-type toolCallAcc struct {
-    id, typ, name, args string
-    firstSeen           int   // dead — remove
+res, parseErr := parseSSE(resp.Body, emit)
+errString := ""
+if parseErr != nil {
+    errString = parseErr.Error()   // logged only
 }
-type accumulator struct {
-    byIndex map[int]*toolCallAcc
-    order   int   // dead — remove
+reasoningtrace.Record(...)         // trace only
+if res.hasUsage {
+    u := res.usage.toLLMUsage()
+    emit(llm.Chunk{Usage: &u})     // still emits usage even on error
 }
-
-// In add():
-acc = &toolCallAcc{firstSeen: a.order}   // dead — simplify to &toolCallAcc{}
-a.order++                                 // dead — remove
-
-// After
-type toolCallAcc struct{ id, typ, name, args string }
-type accumulator struct{ byIndex map[int]*toolCallAcc }
+// goroutine exits → close(out)
 ```
+
+The consumer (`llm_agent.go:consume`) iterates `for c := range ch` and simply terminates when the channel closes, returning `finish = ""` (empty finish reason) and zero usage. The agent loop then treats this as a normal empty-response turn and routes to `maybeRecoverEmptyResponse()` or `finalize()` — masking an infrastructure failure as a model-side empty reply. A malformed-JSON chunk mid-stream (e.g., a provider sending a partial chunk on network failure) is therefore indistinguishable to the agent from a clean context-cancel or an intentional empty response.
+
+The `llm.Client.Stream` doc comment says "closes the channel on [DONE], EOF, or ctx-cancel" — parse errors are not listed, and there is no `Chunk.Err` field in the interface.
+
+**Suggested fix:**
+
+Add a sentinel chunk type to signal in-band parse errors, or add an `Err` field to `llm.Chunk`:
+
+```go
+type Chunk struct {
+    // ... existing fields ...
+    Err error // non-nil on a mid-stream parse/transport error
+}
+```
+
+Then in the goroutine:
+
+```go
+if parseErr != nil {
+    emit(llm.Chunk{Err: parseErr})
+}
+```
+
+And in `consume`, check `c.Err != nil` and propagate it as an infra failure via `yield(nil, err)`. Alternatively, keep the current channel-based design but update the doc comment to document the silent-close-on-error behavior so callers can detect truncation via `finish == ""` and missing usage.
 
 ---
 
-### [LOW][DEAD-CODE] `tc := tc` self-shadow is dead in Go 1.22+
+### [LOW][DEAD-CODE] `toolCallAcc.firstSeen` field written but never read
 
-**Location:** `internal/llm/openai_compat/sse.go:73`
+**Location:** `internal/llm/openai_compat/accumulate.go:26–54`
 
 **Confidence:** high
 
 **Detail:**
-`go.mod` declares `go 1.26.4`. Since Go 1.22 each `for _, tc := range` iteration
-already captures a fresh copy of `tc`, so the self-shadowing line `tc := tc` on line 73
-is a no-op. Taking `&tc` on line 74 is already safe without the shadow. The line was a
-pre-1.22 loop-escape idiom that is now dead code and misleading to readers.
+
+The `toolCallAcc` struct has a `firstSeen int` field and `accumulator.order int` counter that are both written in `add()`:
+
+```go
+acc = &toolCallAcc{firstSeen: a.order}
+a.order++
+```
+
+The field is documented as "records arrival order as a stable tiebreaker." However, `finalize()` sorts by `index` (via `sort.Ints(indices)`), never by `firstSeen`. The `firstSeen` field and `a.order` counter are dead — their values are never consumed.
+
+Verified with `grep -r firstSeen D:/Aura --include="*.go"`: only two write sites, zero read sites.
 
 **Suggested fix:**
-Delete line 73 (`tc := tc`).
+
+Remove the `firstSeen int` field from `toolCallAcc` and the `order int` field from `accumulator`. If arrival-order tiebreaking is ever needed (parallel multi-call streams where indices collide), add it back with a sorting key in `finalize()`.
 
 ---
 
-### [LOW][DEAD-CODE] `ReasoningEffortXHigh` and `ReasoningEffortMinimal` constants never referenced
+### [LOW][DEAD-CODE] `ReasoningEffortXHigh` and `ReasoningEffortMinimal` — exported constants with zero non-definition references
 
 **Location:** `internal/llm/client.go:133,137`
 
 **Confidence:** high
 
 **Detail:**
-`ReasoningEffortXHigh = "xhigh"` and `ReasoningEffortMinimal = "minimal"` are exported
-constants in the `ReasoningEffort` block. A repo-wide search confirms no production file
-(excluding the defining file and tests) references either constant. The `reasoning_policy.go`
-consumer only uses `ReasoningEffortLow`, `ReasoningEffortNone`, `ReasoningEffortMedium`,
-and `ReasoningEffortHigh`. The two dead constants represent effort levels that are
-defined in the vocabulary but unimplemented in the adaptive policy.
+
+```go
+ReasoningEffortXHigh   ReasoningEffort = "xhigh"
+ReasoningEffortMinimal ReasoningEffort = "minimal"
+```
+
+Verified with `grep -r "ReasoningEffortXHigh\|ReasoningEffortMinimal" D:/Aura --include="*.go"`: only the definition lines match. No production code, no test code references them.
+
+`ReasoningEffortMedium` (`"medium"`) is similarly unused: `grep "ReasoningEffortMedium"` returns only its definition line.
+
+These are forward-compat stubs for effort levels that neither `reasoning_policy.go` nor any caller currently exercises. They carry no runtime cost but pollute the exported API surface.
 
 **Suggested fix:**
-Either remove both constants, or add a `// Forward-compat; unused until policy X` comment
-and register them in `reasoning_policy.go`'s effort ladder when the policy is extended.
-Leaving them silently undefined in the policy creates a footgun: a caller that sets
-`Effort: ReasoningEffortXHigh` gets a value that OpenRouter may or may not honour but
-that Aura's own policy never selects.
+
+Either document them explicitly as "reserved for future use" (a `//nolint:unused` comment or a `_ = ReasoningEffortXHigh` compile-check in a `_test.go` file to confirm they build), or remove them until the caller that needs them is written. At minimum, add a comment stating they are intentionally unused stubs, so a future linter run does not report a false finding.
 
 ---
 
-### [LOW][NOT-WIRED] `SupportsAudio` exported function has no production caller
+### [LOW][DEAD-CODE] `ReasoningEffortMedium` — exported constant with zero non-definition references
 
-**Location:** `internal/llm/models.go:51-53`
+**Location:** `internal/llm/client.go:135`
 
 **Confidence:** high
 
 **Detail:**
-`SupportsAudio` is exported and documented as a forward-compat stub ("audio is
-sidecar-routed this phase"). A repo-wide search finds it referenced only in its
-definition and in `models_test.go`. No production file in any package calls it.
-`SupportsVision` (same file) has genuine callers in `internal/channels/telegram/`.
 
-This is an intentional stub by design (see the comment), so it is not a defect.
-It is recorded here so the fixer can decide: either annotate it with a
-`//nolint:deadcode` or a `// Stub — wired by Phase N` comment, or delete it and
-re-add when audio routing moves from sidecar to model.
+See llm-3 above. Listed separately for tracking clarity. `ReasoningEffortMedium = "medium"` has zero references outside its own definition line.
 
-**Suggested fix:**
-Add `// Stub: audio is sidecar-only this phase. Wire when a native-audio model is added.`
-to the godoc, or delete and re-add at Phase 13 / audio model introduction. No functional
-change required.
+**Suggested fix:** Same as llm-3.
 
 ---
 
-## Clean areas checked
+## Clean sections
 
-- **Goroutine / resource leaks:** `Stream` goroutine closes `resp.Body` via `defer`, and
-  exits on `ctx.Done()` via the `emit` select — no leak path found. `DisableKeepAlives`
-  suppresses persistConn goroutines. No ticker or timer created anywhere in the package.
-- **Nil-pointer derefs:** `Usage.Cost` is a `*float64` properly nil-checked at every
-  call site. `providerCost` is guarded before deref in `CostUSDValue`.
-- **Error handling:** All `json.Unmarshal`, `os.ReadFile`, `strconv.Atoi/ParseFloat`
-  errors are propagated. The `godotenv.Load()` best-effort blank-assign is intentional
-  and documented. `resp.Body.Close()` errors are intentionally ignored (standard
-  close-after-read idiom).
-- **Race conditions:** `accumulator` is single-goroutine (one stream goroutine owns it).
-  `reasoningtrace.Record` uses a package-level mutex. `Config` is value-copied into
-  `Client.cfg` at `New()` time — no shared mutable state.
-- **Context propagation:** `http.NewRequestWithContext(ctx, ...)` propagates the caller's
-  context end-to-end; cancellation unblocks `resp.Body.Read` within the transport's
-  cancel window (~100ms).
-- **Price / cost logic:** `CostUSDValue` and `CostUSD` correctly prefer
-  `providerCost` over table lookup, and return `(0, false)` for unknown models.
-  Price table key `"deepseek/deepseek-v4-flash:exacto"` matches the default
-  `Config.Model`; the design is intentionally suffix-exact (unlike the capability table
-  which normalizes). No mismatch with current callers.
-- **Config load:** `Load()` 4-tier precedence is correctly ordered. `envBool` is
-  non-fatal by design (documented). `envInt`/`envFloat` are fail-fast on
-  set-but-malformed values. Missing `.env` and missing `~/.aura/llm.json` are
-  both handled gracefully.
+The following aspects were checked and found clean:
+
+- **Nil-pointer / unchecked errors:** `Load()` guards every returned pointer before use; `applyFileConfig` / `overlayFile` handle nil `fileConfig` fields correctly. `newHTTPError` calls `io.ReadAll` on a `LimitReader` — no unbounded read. `resp.Body.Close()` is always deferred after a successful `Do()`.
+- **Context propagation:** `http.NewRequestWithContext` carries `ctx` into the HTTP round-trip; `bufio.Reader.ReadString` unblocks when the connection closes on ctx-cancel (~100ms). The `emit` select properly exits on `ctx.Done()`.
+- **Goroutine leaks:** The one goroutine spawned by `Stream` is guaranteed to exit: `resp.Body.Close()` is deferred, and the `emit` select exits on ctx-cancel. `DisableKeepAlives: true` prevents lingering `persistConn` goroutines.
+- **Resource leaks:** `resp.Body` is closed either by `newHTTPError` (non-2xx) or by the `defer func() { _ = resp.Body.Close() }()` in the goroutine (2xx).
+- **Races:** The goroutine closes over `ctx`, `out`, and `resp` — all of which are owned exclusively by the goroutine after launch; `ctx` is read-only from the goroutine side. `accumulator` is single-goroutine by design.
+- **Config load chain:** The 4-tier precedence (default < .env < llm.json < env overrides) is correct; numeric env overrides are fail-fast; the bool toggle is non-fatal (intentional). `overlayFile` never clobbers defaults with a nil pointer.
+- **Price / cost logic:** `CostUSDValue` short-circuits to the provider's reported cost when non-nil (correct D-18 precedence); the table fallback uses exact key match — consistent with all callers passing `cfg.Model` verbatim (which carries the full `:exacto` suffix).
+- **SSE framing:** `bufio.Reader.ReadString('\n')` avoids the `bufio.Scanner` 64 KiB token cap; `[DONE]` is checked before `json.Unmarshal`; `:` comment lines and blank lines are skipped; EOF-without-DONE finalizes correctly.
+- **Tool-call accumulation:** Delta concatenation in `add()` and `sort.Ints`-ordered emission in `finalize()` are correct; the `index`-based sort is deterministic.
+- **Model capability table:** `normalizeModelID` strips `:` suffixes before the map lookup; the conservative `false` default for unknown models is correct for threat T-13-03-UnknownModelVision.

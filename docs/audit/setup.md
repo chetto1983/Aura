@@ -1,49 +1,96 @@
 # Audit: internal/setup
 
-**Verdict:** needs-work — one dead struct field, one intentional stub flagged for tracking; no bugs or races.
-**Counts:** critical 0 / high 0 / medium 1 / low 1
+**Verdict:** needs-work — one not-wired field misleads callers; one variable-shadows-function pattern is a maintenance footgun; SSE error-swallowing is intentional but undiscoverable.
+
+**Counts:** critical 0 / high 0 / medium 2 / low 1
 
 ## Findings
 
-### [MEDIUM][NOT-WIRED] `Deps.Bind` is written by every caller but never read by `NewServer`
+---
 
-**Location:** `internal/setup/server.go:63`
+### [MEDIUM][NOT-WIRED] `Deps.Bind` is documented but never consumed by `NewServer`
+
+**Location:** `internal/setup/server.go:63` (field declaration), `internal/setup/server.go:101-122` (NewServer body)
 
 **Confidence:** high
 
 **Detail:**
-`Deps` declares a `Bind string` field (line 63) and the doc-comment on line 55 says "Bind defaults to the loopback :9081 (config resolves AURA_SETUP_BIND)", implying `NewServer` should pick it up. But `NewServer` (lines 101-122) reads `deps.TokenOut`, `deps.QROut`, `deps.PollInterval`, `deps.Store`, `deps.Probe`, `deps.Token`, and `deps.IdentityID` — it never touches `deps.Bind`. The bind address is not stored in the `Server` struct and is not passed to `HTTPServer` from within `NewServer`. The composition root at `cmd/aura/serve_channels.go:184` correctly passes the bind twice — once as `Deps.Bind` (silently ignored) and once as the `bind` argument to `HTTPServer(chat.cfg.SetupBind)` on line 188. The field is purely phantom: it adds API surface that misleads callers into thinking the bind flows through `Deps`, and any future caller that sets `Deps.Bind` but omits the `HTTPServer(bind)` argument will silently bind to `":0"` (OS-chosen ephemeral port).
+`Deps.Bind` is declared with the comment "Bind defaults to the loopback :9081 (config resolves AURA_SETUP_BIND)" — implying it controls the bind address. However, `NewServer` reads `deps.TokenOut`, `deps.QROut`, `deps.PollInterval`, `deps.Token`, `deps.Store`, `deps.Probe`, and `deps.IdentityID`, but **never reads `deps.Bind`**. The `Server` struct has no `bind` field. The bind address only reaches `HTTPServer` when the caller passes it directly:
 
-**Suggested fix:**
-Either (a) remove `Bind` from `Deps` entirely — the composition root already passes it directly to `HTTPServer`, making `Deps.Bind` redundant — or (b) have `NewServer` store it in the `Server` struct and expose a `ListenAndServe()`/`Run()` method that uses it, eliminating the two-argument call pattern.
+```go
+// cmd/aura/serve_channels.go:164-171
+srv := setup.NewServer(setup.Deps{
+    ...
+    Bind: chat.cfg.SetupBind,   // written here
+    ...
+})
+return srv.HTTPServer(chat.cfg.SetupBind)  // but passed directly here, not through Deps.Bind
+```
+
+`Deps.Bind` is populated in the only production call site but has no effect inside `NewServer`. A future caller that sets `Deps.Bind` and expects it to route through `HTTPServer` automatically will silently bind the wrong address.
+
+**Suggested fix:** Either (a) remove `Deps.Bind` from the struct and update the comment, accepting that callers pass bind to `HTTPServer` directly; or (b) store it in the `Server` struct and expose a no-arg `ListenAndServe()` / `HTTPServer()` that uses it, removing the redundant parameter from the call site.
 
 ---
 
-### [LOW][DEAD-CODE] `qrSVG` always returns `""` and discards its parameter
+### [MEDIUM][BUG] `handleOnboardLink` variable `deepLink` shadows the package-level function `deepLink`
 
-**Location:** `internal/setup/qr.go:10-13`
+**Location:** `internal/setup/handlers.go:80`
 
 **Confidence:** high
 
 **Detail:**
-`qrSVG(deepLink string) string` receives `deepLink` only to blank-assign it (`_ = deepLink`) and return `""`. The function is called from `handleOnboardLink` (handlers.go:87) and the intent is documented (OQ4 deferral, forward-compat stub). The code is correct but the function signature accepts a parameter it cannot use: any static analyser flags it as a dead parameter, and future maintainers touching `qr.go` have to understand the stub contract from comments rather than the signature. When the SVG generator lands, the correct implementation must also wire the actual SVG library here.
+```go
+deepLink := deepLink(bot, onboardingToken)
+```
+This is valid Go (RHS is evaluated before the LHS variable is declared), and the code produces the correct result. However, after line 80, the name `deepLink` in scope resolves to the `string` variable, not the package-level function. Any future code added between lines 80 and the end of the handler that calls `deepLink(...)` will fail to compile with a cryptic "cannot call non-function deepLink (variable of type string)" error, and the developer will need to understand the shadowing to diagnose it.
 
-This is intentional per the design notes (OQ4), so it is advisory rather than a hard defect. Flagging so the OQ4 resolution has a concrete file:line target.
+The same pattern appears when `deepLink` is passed to `qrSVG(deepLink)` on line 87 — this is the `string` variable, which is correct, but it reads ambiguously.
 
-**Suggested fix:**
-Either (a) keep as-is with the comment (acceptable short-term), or (b) change the call site signature to `qrSVG() string` until the SVG body is implemented — this makes the stub nature explicit in the type system and eliminates the misleading parameter.
+**Suggested fix:** Rename the local variable to avoid the shadow:
+```go
+link := deepLink(bot, onboardingToken)
+qrterminal.Generate(link, qrterminal.L, s.qrOut)
+writeJSON(w, OnboardLinkResponse{DeepLink: link, QRSVG: qrSVG(link)})
+```
 
 ---
 
-## What was checked (no finding)
+### [LOW][BUG] `pollCompletion` silently swallows `ErrTokenNotFound`, masking invalid `?onboarding=` tokens indefinitely
 
-- **Nil dereferences:** `s.probe` nil-guarded before calling (handlers.go:36-39); `s.store` set from `deps.Store` in constructor (no guard, but all callers set it); `s.token` always non-nil (`NewToken` always returns a valid pointer).
-- **Mutex correctness:** `Server.mu` (RWMutex) guards `botUsername`/`botConfigured` on every read (`RLock`) and write (`Lock`); `Token.mu` guards `value`/`valid` on every read (`RLock`) and write (`Lock`). No missed path found.
-- **SSE goroutine leak:** `handleEvents` selects on `ctx.Done()` as the primary exit; `ticker.Stop()` is deferred; goleak `TestMain` gate is in place (`main_test.go`). Clean.
-- **Context propagation:** All store calls (`InsertPending`, `PendingConsumed`, `CountAccounts`) receive `r.Context()` or the passed `ctx`. `pollCompletion` receives the request context correctly.
-- **Resource leaks:** `MaxBytesReader` wraps `r.Body` in `handleToken`; no `rows.Close()` calls needed (Store is an interface; the real store is in `internal/channels/telegram`). No file handles opened here.
-- **Constant-time comparison:** `Token.Valid` uses `crypto/subtle.ConstantTimeCompare` (token.go:51). Correct.
-- **Header/write ordering in SSE:** Headers are set before `w.WriteHeader(http.StatusOK)` in `handleEvents`. `writeJSON` sets Content-Type before the first `Encode` write (which triggers the implicit 200). Correct.
-- **`Deps.Bind` in production:** The production call site passes the bind correctly to `HTTPServer` directly, so the nil-bind issue does not cause a runtime failure today — only a misleading API.
-- **Wiring:** `setup.NewServer` is called at `cmd/aura/serve_channels.go:181`, the returned `*http.Server` is passed into `startChannelSubsystems` and `stopChannelSubsystems` for full lifecycle management (start + graceful shutdown). `InvalidateToken` is called from `handleEvents` after the SSE terminal event (handlers.go:150).
-- **`loopvar` capture:** Go 1.26 module; no loop-variable capture issues possible.
+**Location:** `internal/setup/handlers.go:162-175`
+
+**Confidence:** medium
+
+**Detail:**
+`pollCompletion` treats ALL store errors as "Unknown/transient — keep polling". In the real `telegram.Store`, `PendingConsumed` returns `ErrTokenNotFound` (not a transient error) when the token row does not exist. If a client opens `GET /setup/events?onboarding=garbage-token`, the SSE stream will poll at 2-second intervals forever (until the client disconnects), making no progress, with no log warning to the operator. The comment acknowledges the "unknown" case but does not distinguish it from transient errors.
+
+Operationally this is low severity: the token gate already rejects unauthorized clients, so a garbage `?onboarding=` value requires a valid setup token to reach. The stream terminates on client disconnect. The issue surfaces as a silent resource hold on misconfigured wizard clients, not a security or data-integrity defect.
+
+**Suggested fix:** Detect `ErrTokenNotFound` specifically and either (a) log a one-time warning and continue polling (the token may not be inserted yet if the client races), or (b) terminate the stream with a structured error SSE frame after N consecutive `ErrTokenNotFound` responses:
+```go
+if errors.Is(err, telegram.ErrTokenNotFound) {
+    slog.Warn("setup: SSE poll for unknown onboarding token", "token_prefix", onboardingToken[:8])
+    // optionally break after N misses
+}
+```
+Note: `pollCompletion` would need to know about `ErrTokenNotFound` — this either requires importing the telegram package (breaks the no-telegram-import invariant) or threading a sentinel through the `Store` seam.
+
+---
+
+## What was checked
+
+- All five non-test files: `types.go`, `token.go`, `server.go`, `handlers.go`, `qr.go`.
+- Test files read to understand intended contracts: `main_test.go`, `server_test.go`, `handlers_test.go`, `events_test.go`.
+- `go vet ./internal/setup/` — clean.
+- `go test -race -count=1 ./internal/setup/` — clean (1.4 s, goleak verified).
+- Grep across the full repo (`D:/Aura`) for all exported symbols, wiring points, and cross-package references.
+- Mutex usage: `s.mu` (RWMutex) guards `botUsername`/`botConfigured` — Lock on write in `handleToken`, RLock on read in `handleOnboardLink` and `handleStatus`. Correct.
+- `Token` concurrency: `t.mu` (RWMutex) guards `value`/`valid` — Lock in `Invalidate`, RLock in `Valid`. Correct.
+- SSE pump lifecycle: `ticker.Stop()` via `defer`, goroutine exits on `ctx.Done()`. Goleak-clean.
+- HTTP header ordering: `writeJSON` sets Content-Type before the implicit `WriteHeader`; `handleEvents` sets headers before `WriteHeader(200)`. Correct.
+- Token constant-time compare: `subtle.ConstantTimeCompare` used for the gate. Correct.
+- Bot token leak: error from probe is NOT surfaced verbatim in the response or logs. Correct.
+- `Deps.Bind` not-wired confirmed by grepping all call sites (`cmd/aura/serve_channels.go:164-171`).
+- `qrSVG` is called from `handlers.go:87` — not dead code, intentionally deferred stub.
+- `onboardingCompletedEvent` constant used in `handlers.go` and `types.go` — not dead code.

@@ -1,140 +1,155 @@
 # Audit: cmd/aura
 
-**Verdict:** needs-work — two confirmed bugs, one permanent stub, one minor dead-code unreachable return.
+Auditor: Claude Code (claude-sonnet-4-6)
+Date: 2026-06-10
+Scope: every non-test `.go` file in `cmd/aura/` — 14 files, ~3 600 LOC of production CLI code.
+Method: read every file, grep across the full repo to confirm cross-package usage, verify all claims with code evidence.
 
-**Counts:** critical 0 / high 0 / medium 2 / low 2
+---
+
+## Executive summary
+
+`cmd/aura` is in good shape. No data races or critical bugs were found. Four lower-severity findings were confirmed:
+
+1. **BUG (medium)** — `cmdfakes_test.go` `cmdConvFake.List` silently omits `StatusDeleted` filter present in the production fake, masking a divergence between test and production `List` semantics (test-only fake, no user impact).
+2. **BUG (low)** — `mcp.go` `probeWhatsAppBridgeHTTP` closes the HTTP response body without draining it first, preventing connection reuse.
+3. **DEAD CODE (low)** — `cachefakes.go` `setupAuditSkills` returns a no-op `func(){}` cleanup; the real cleanup is via `os.RemoveAll(runDir)` in the caller. The returned function is misleading but functionally correct.
+4. **NOT-WIRED (low)** — `serve_channels.go` `stopChannelSubsystems` passes the already-cancelled signal context to `reg.StopAll`. The Telegram `Stop` discards the context (`docs.Stop` is `_ context.Context`), so no functional impact today — but the pattern is fragile and any future `ch.Stop` that performs context-sensitive teardown will silently fail.
+
+No goroutine leaks, no actual data races, no orphan dead code of significance.
+
+---
 
 ## Findings
 
-### [MEDIUM][BUG] `rebuildMessages` silently swallows `json.Unmarshal` error
+### F-01: Response body not drained before close in `probeWhatsAppBridgeHTTP`
 
-**Location:** `cmd/aura/cachefakes.go:182`
-
+**File:** `cmd/aura/mcp.go:386`
+**Severity:** low
+**Category:** bug
 **Confidence:** high
 
-**Detail:**
-
 ```go
-_ = json.Unmarshal(t.ToolCalls, &calls)
-msg.ToolCalls = calls
+defer func() { _ = resp.Body.Close() }()
 ```
 
-The production path (`internal/conversations/store_helpers.go:turnToMessage`) propagates the unmarshal error:
-```go
-calls, err := decodeToolCalls(t.ToolCalls)
-if err != nil {
-    return llm.Message{}, fmt.Errorf("decode tool_calls: %w", err)
-}
-```
-
-The fake silently sets `msg.ToolCalls = nil` on a corrupt JSON blob. In the cache audit (`cacheAuditMain`), this means a turn whose tool-call JSON is corrupted in-flight would produce a message with no tool calls — the LLM request built from it would have a different shape than the real Runner would produce, and the prefix hash would diverge for a reason unrelated to messages[0] mutation. The audit could then either generate a false-positive MUTATION exit or (if the corruption happens to produce the same hash) silently pass over a real invariant break. In normal operation the ToolCalls bytes are marshaled by the runner in the same process, so corruption is impossible — but the divergence makes the fake less trustworthy as a test stand-in and was flagged at code-review depth in the production store comments.
+The body is never read. `http.DefaultClient` uses keepalive connections; closing a body that has not been fully consumed prevents the underlying TCP connection from being returned to the pool. For a one-shot `mcp doctor` CLI command this is negligible — no pool is hot. However, it is technically incorrect and could matter if `probeWhatsAppBridgeHTTP` is called in a loop (e.g., repeated doctor runs in the same process lifetime).
 
 **Suggested fix:**
 
 ```go
-if len(t.ToolCalls) > 0 {
-    var calls []llm.ToolCall
-    if err := json.Unmarshal(t.ToolCalls, &calls); err != nil {
-        // Mirror production turnToMessage: caller must surface corrupt turns.
-        // Return early; rebuildMessages should return ([]llm.Message, error).
-        // Alternatively log and skip the turn (matching audit exitFixture semantics).
-        return nil // or propagate error if signature is changed
-    }
-    msg.ToolCalls = calls
-}
+defer func() {
+    _, _ = io.Copy(io.Discard, resp.Body)
+    _ = resp.Body.Close()
+}()
 ```
-
-The cleanest fix is to change `rebuildMessages` to `([]llm.Message, error)` and have `messagesLocked` / `LoadHistory` / `LoadManagedHistory` return the error — mirroring the production Store. The callers in `cacheAuditMain` → `replayAudit` already check errors and map them to `exitFixture`.
 
 ---
 
-### [MEDIUM][NOT-WIRED] `mcpLogs` is a permanently-stub command — always returns a static string
+### F-02: Cancelled context forwarded to `reg.StopAll` on daemon shutdown
 
-**Location:** `cmd/aura/mcp_status.go:79-91`, wired at `cmd/aura/mcp.go:51`
-
+**File:** `cmd/aura/serve.go:114` → `cmd/aura/serve_channels.go:259`
+**Severity:** medium
+**Category:** bug
 **Confidence:** high
 
-**Detail:**
-
 ```go
-func mcpLogs(args []string, out io.Writer) error {
-    // ...
-    return writef(out, "%s logs: no captured log tail yet; run doctor for live diagnostics\n", args[0])
-}
+// serve.go:114
+stopChannelSubsystems(ctx, env.channels, env.setupSrv)  // ctx is already cancelled
 ```
 
-`aura mcp logs <name>` is reachable (it is case `"logs"` in `runMCPCommand`), but it always returns the static string regardless of the server, config, or runtime state. There is no captured log infrastructure behind it. The command is NOT listed in `mcpUsage` (line 22), confirming it was added as a placeholder but never completed. Operators who discover the command (e.g. via shell completion) get a confusing "no captured log tail yet" every time, with no indication the feature will ever provide real output.
+```go
+// serve_channels.go:259
+if err := reg.StopAll(ctx); err != nil {  // passes cancelled ctx
+```
 
-**Suggested fix:**
+`reg.StopAll` (internal/channels/registry.go) passes this cancelled context to each `ch.Stop(ctx)`. Currently, `Telegram.Stop` and `documentsClient.Stop` both discard the context (`_ context.Context`), so the cancellation does not break anything today. However:
 
-Either (a) delete the `case "logs":` dispatch and `mcpLogs` function (removing the hidden stub), or (b) add a real log-tail implementation backed by the MCP server lifecycle (e.g. a ring buffer per server name stored by the MCP manager). Option (a) is the minimal fix; option (b) is the correct long-term completion. If deferred, add a `// TODO: not implemented` comment and expose the command in `mcpUsage` so it is at least discoverable.
+- This is an implementation contract that is not enforced — a future channel `Stop` that uses the context for cleanup (e.g., DB auto-resolve, flushing buffered messages) will receive an already-cancelled context and all its DB/IO operations will fail immediately.
+- The `setupSrv.Shutdown` at line 264 in the same function correctly uses a fresh `context.Background()`-derived timeout context, making the inconsistency visible.
 
----
+**Suggested fix:** pass a fresh timeout context to `stopChannelSubsystems`, or have `stopChannelSubsystems` itself create the drain context:
 
-### [LOW][BUG] `rebuildMessages` always-block mismatch: `memConvStore.AppendTurn` does not assign `Seq` before `appendTurnFieldsLocked`, causing double seq-increment on the assistant-with-cache-metric path
-
-**Location:** `cmd/aura/cachefakes.go:125-153`
-
-**Confidence:** medium
-
-**Detail:**
-
-`AppendTurn` calls `appendTurnFieldsLocked(p)` directly; `appendTurnFieldsLocked` calls `assignTurnSeqLocked(p)` internally. This is correct and idiomatic.
-
-`AppendAssistantTurnWithCacheMetric` calls `assignTurnSeqLocked(p)` at line 135 to populate `p.Seq`, then passes the result to `appendTurnFieldsLocked` at line 139, which calls `assignTurnSeqLocked` again at line 151. Because the guard `if p.Seq <= 0` is respected, the second call is a no-op. There is no double-increment in practice.
-
-However the double-call makes the invariant fragile: if `assignTurnSeqLocked` is ever changed to be non-idempotent (e.g. to advance a counter rather than reading `len(m.turns)`), the `AppendAssistantTurnWithCacheMetric` path would increment seq twice. The fix is to remove the `p = m.assignTurnSeqLocked(p)` call from `appendTurnFieldsLocked` and require all callers to pre-assign seq — matching the single-assignment discipline the real Store uses.
-
-**Suggested fix:**
-
-Remove the `assignTurnSeqLocked` call from `appendTurnFieldsLocked` and make both `AppendTurn` and `AppendAssistantTurnWithCacheMetric` call it explicitly before calling `appendTurnFieldsLocked`.
+```go
+// stopChannelSubsystems should create its own drain context:
+drainCtx, cancel := context.WithTimeout(context.Background(), channelDrainTimeout)
+defer cancel()
+if err := reg.StopAll(drainCtx); err != nil { ... }
+```
 
 ---
 
-### [LOW][DEAD-CODE] Unreachable `return` in `triadToSpec` default branch
+### F-03: `setupAuditSkills` returns a no-op cleanup closure
 
-**Location:** `cmd/aura/task.go:157`
-
+**File:** `cmd/aura/cache_audit.go` (line where `setupAuditSkills` is defined and returned)
+**Severity:** low
+**Category:** dead-code
 **Confidence:** high
 
-**Detail:**
+`setupAuditSkills` returns `func(){}` as the cleanup function. The actual cleanup of the temp skills directory is performed by `os.RemoveAll(runDir)` in the outer `replayAudit` function — the returned no-op is never actually needed and misleads a reader into thinking the caller is responsible for a resource the callee already cleans up.
 
-```go
-default:
-    fmt.Fprintln(os.Stderr, "aura task schedule: exactly one of --cron/--at/--every is required")
-    os.Exit(exitUsage)
-    return "", time.Time{} // unreachable: os.Exit terminates the process
-```
+This is safe but confusing. If a caller were ever added that does not call `os.RemoveAll(runDir)`, the cleanup would be missed.
 
-The `return` on line 157 is dead code — the compiler requires it because `os.Exit` does not have `noreturn` semantics in Go's flow analysis, but execution never reaches it. This is a minor readability issue, not a correctness problem. It is idiomatic Go but technically dead code.
-
-**Suggested fix:**
-
-No change required for correctness. If the team prefers to avoid the dead `return`, wrap the default branch in a helper:
-
-```go
-default:
-    // unreachable in the Go flow checker's view; os.Exit never returns
-    usageAndExit("aura task schedule: exactly one of --cron/--at/--every is required")
-    panic("unreachable")
-```
-
-Or accept the status quo — this pattern is ubiquitous in Go CLI code.
+**Suggested fix:** Either return `func() { os.RemoveAll(skillsDir) }` from `setupAuditSkills` and remove the `os.RemoveAll(runDir)` call from the outer function (clean separation of concerns), or document clearly that cleanup is always the outer `runDir` removal.
 
 ---
 
-## What was checked
+### F-04: `cmdConvFake.List` missing `StatusDeleted` filter present in `memConvStore.List`
 
-- All 23 non-test `.go` files in `cmd/aura/` (agent.go, cache.go, cache_audit.go, cache_stats.go, cachefakes.go, chat.go, chat_render.go, chat_repl.go, config.go, db.go, exit_codes.go, identity.go, main.go, mcp.go, mcp_profile.go, mcp_status.go, mcp_tools.go, neo4j.go, paused_states.go, serve.go, serve_adapters.go, serve_channels.go, shell.go, skills.go, skills_snippet.go, swarm_demo.go, task.go, toolpipe.go, version.go, web.go).
-- All pgx `Query`/`Exec` call sites: `defer rows.Close()` and `rows.Err()` are consistently present.
-- All `http.Response.Body` readers: `defer resp.Body.Close()` is present in `probeWhatsAppBridgeHTTP`.
-- Goroutine leak paths: `startChannelSubsystems` goroutines are joined by `stopChannelSubsystems`; `resumeTurnFunc` early-returns on error (valid under `iter.Seq2` contract).
-- `dbReset` / `neo4jReset` dual-guard (`||`): correctly implements AND semantics via De Morgan.
-- `mcpProfileRemove` self-aliasing filter: safe (write cursor always behind read cursor in Go range-over-slice).
-- `wslProbePrefixArgs` returning nil: `append(nil, ...)` is valid Go.
-- `buildDispatch` ephemeral `cron.NewScheduler`: constructor is side-effect-free.
-- `loadLLMConfigTolerant` `os.Setenv`/`os.Unsetenv`: CLI single-goroutine path, no concurrent goroutine race.
-- Loop-variable capture: Go 1.26 — not applicable.
-- `rebuildMessages` JSON error: confirmed divergence from production `turnToMessage`.
-- `mcpLogs`: confirmed permanent stub, absent from `mcpUsage`.
-- Exported symbols in `cmd/aura`: package is `main`; no exported symbols to check for dead external usage.
+**File:** `cmd/aura/cmdfakes_test.go:46-57` vs `cmd/aura/cachefakes.go:68-83`
+**Severity:** low
+**Category:** bug
+**Confidence:** high
+
+`memConvStore.List` (production fake used by `cache-audit`) filters `StatusDeleted` conversations:
+```go
+if c.Status == conversations.StatusDeleted { continue }
+```
+
+`cmdConvFake.List` (test fake used by REPL tests) does NOT filter `StatusDeleted`:
+```go
+// Only filters StatusArchived, not StatusDeleted
+if c.Status == conversations.StatusArchived && !includeArchived { continue }
+```
+
+If a REPL test exercises `delete` followed by `list`, the deleted conversation would appear in the list, masking the bug from test coverage. The production `conversations.Store.List` (postgres) presumably does filter deleted rows.
+
+**Suggested fix:** Add the deleted filter to `cmdConvFake.List`:
+```go
+if c.Status == conversations.StatusDeleted { continue }
+```
+
+---
+
+## Verified-clean items (investigation log)
+
+These were investigated and confirmed NOT to be issues:
+
+| Concern | Verdict |
+|---|---|
+| `loadLLMConfigTolerant` `os.Setenv`/`os.Unsetenv` without defer | Safe in single-threaded CLI context; `llm.Load()` does not panic; `Unsetenv` executes unconditionally on the sequential path |
+| `dbReset` double-gate logic (`!slices.Contains` \|\| `os.Getenv`) | Correct — De Morgan's law: BOTH conditions must be satisfied (allow = `Contains("--yes")` AND `AURA_RESET_YES=1`) |
+| `buildRegistryWithMCP` early-return on `cfg.MCPServersErr != nil` | No pool leak — early-return fires before any MCP client is allocated |
+| `chatLoop` `defer d.run.Stop(context.Background(), ...)` | Correct — must use `context.Background()` not the turn context (which is cancelled on exit) |
+| `memConvStore.AppendAssistantTurnWithCacheMetric` double `assignTurnSeqLocked` | Idempotent — second call is a no-op if `p.Seq > 0` |
+| `mcpProfileRemove` in-place slice filter + `append([]string(nil), next...)` | Correct pattern — read-ahead loop never aliases write position; final copy breaks aliasing |
+| `telegramGetMeProbe` / `tele.NewBot` goroutine concern | Confirmed `tele.NewBot` does only a synchronous getMe HTTP call; no goroutines are started |
+| `cron.NewScheduler` ephemeral in `buildDispatch` | Just struct initialization; no goroutines until `Start` is called |
+| `stopChannelSubsystems` cancelled-ctx → `Telegram.Stop` → `docs.Stop` | `docs.Stop(_ context.Context)` discards the context; `bot.Stop()` is unconditional; no DB operations in `Telegram.Stop` |
+| `mcp.go` `wslProbePrefixArgs` `append([]string(nil), args[:i]...)` | Always allocates a fresh backing array; no aliasing |
+| `mcp.go` `renderMCPCommand` `append([]string{cfg.Command}, cfg.Args...)` | `[]string{cfg.Command}` is a fresh 1-element slice; always reallocates |
+| `serve_channels.go` `buildDispatch` ephemeral `cron.NewScheduler` for `DuringQuietHours` | Both ephemeral and real scheduler default `Now=time.Now`; behavior is identical |
+| `Telegram.Stop` unbounded `wg.Wait()` | Bounded by `bot.Stop()` which closes the stop channel causing `bot.Start()` to return, which calls `wg.Done()` |
+| `signalTurnCtx` goroutine leak | Confirmed goleak-clean — `signal.NotifyContext` goroutine is cleaned up by the cancel returned and deferred |
+| `rebuildMessages` (cachefakes.go) dead code | Used by `messagesLocked` which is called by `LoadHistory`/`LoadManagedHistory` |
+
+---
+
+## Statistics
+
+| Severity | Count |
+|---|---|
+| Critical | 0 |
+| High | 0 |
+| Medium | 1 (F-02) |
+| Low | 3 (F-01, F-03, F-04) |

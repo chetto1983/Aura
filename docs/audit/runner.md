@@ -1,147 +1,118 @@
 # Audit: internal/runner
 
-**Verdict:** needs-work — two real correctness bugs (partial-write in `SubmitAnswers`, wire-invalid history after `Stop` with active pauses), one transient goroutine accumulation in `waitWorkers`, plus a minor auto-title coverage gap on the fast path.
+**Verdict:** needs-work — three real defects (two data-consistency bugs, one goroutine leak with misleading comment), one latent silent-data-loss path.
 
-**Counts:** critical 0 / high 1 / medium 2 / low 2
+**Counts:** critical 0 / high 0 / medium 3 / low 1
 
 ---
 
 ## Findings
 
-### [HIGH][BUG] runner-1: `SubmitAnswers` partial-write leaves wire-invalid history on `injectAnswer` failure
+### [MEDIUM][BUG] `Stop` skips `AutoResolveForConversation` when inject fails — orphaned `paused_states` rows
 
-**Location:** `internal/runner/runner_resume.go:113-120`
-
+**Location:** `internal/runner/runner_resume.go:220-236`
 **Confidence:** high
 
-**Detail:**
-`MarkResumedBatch` is called atomically (one DB transaction) marking all tokens as resumed. If that succeeds but the subsequent per-token `injectAnswer` loop fails midway (e.g. transient `AppendTurn` error), the DB state and conversation_turns diverge:
-
-- `paused_states.resumed_at` is set for ALL tokens (atomically, irreversibly).
-- `conversation_turns` has RoleTool answers only for the tokens processed before the failure.
-- The remaining tokens' tool_call_ids are left unanswered in the history.
-
-On the next `Turn(convID, nil)` resume, `LoadManagedHistory` reconstructs this partial history. The LLM request carries an assistant message with N tool_calls but fewer than N `tool` responses — a wire-invalid request per OpenAI spec. The model may re-emit `ask_user` for the unanswered calls, creating a duplicate-question loop.
+`Stop` is documented to guarantee "zero unresolved rows after". The implementation:
 
 ```go
-// runner_resume.go:113
-if err := r.pause.MarkResumedBatch(ctx, batch); err != nil { // atomic DB update
-    return 0, fmt.Errorf("submit answers: %w", err)
+resolveErr := r.injectCancelledAnswers(ctx, convID)
+if resolveErr == nil {
+    resolveErr = r.pause.AutoResolveForConversation(ctx, convID)
 }
-for token, resp := range answers {
+```
+
+If `injectCancelledAnswers` returns an error (e.g., an `AppendTurn` failure), `AutoResolveForConversation` is never called. The `paused_states` rows remain unresolved in the DB even though the conversation is forcefully stopped. Any subsequent `ListPending` call will see dangling rows, and future tooling that inspects pending counts gets a corrupted view. `cancelConversation` (line 164-172) has the same pattern — but there the caller re-surfaces the error and can retry. In `Stop`, the caller has no mechanism to complete the resolve.
+
+**Suggested fix:** Always run `AutoResolveForConversation` regardless of inject failure. Accumulate both errors:
+
+```go
+resolveErr := r.injectCancelledAnswers(ctx, convID)
+if arErr := r.pause.AutoResolveForConversation(ctx, convID); arErr != nil && resolveErr == nil {
+    resolveErr = arErr
+}
+```
+
+---
+
+### [MEDIUM][BUG] `SubmitAnswers` inject loop is non-atomic — partial inject leaves history/state inconsistent on retry
+
+**Location:** `internal/runner/runner_resume.go:112-129`
+**Confidence:** high
+
+The inject loop iterates a `map[string]ResponseInput` (non-deterministic order). If `injectAnswer` fails midway, some `RoleTool` turns are already appended to `conversation_turns` but `MarkResumedBatch` has not run, so the corresponding `paused_states` rows remain unresolved. The caller sees an error and may retry with the same full map — re-injecting already-persisted answers, creating duplicate `RoleTool` turns for the same `tool_call_id`. This produces a wire-invalid history (two tool-result messages for one tool_call) that confuses the model on resume.
+
+```go
+// Loop 2: inject — can fail at any point
+for token, resp := range answers {  // non-deterministic order
     if err := r.injectAnswer(ctx, pendings[token], resp); err != nil {
-        return 0, err // partial write: MarkResumedBatch already committed
+        return 0, err  // some turns already appended; rows still unresolved
+    }
+}
+// Loop 3: mark resolved — only reached if ALL injects succeed
+if err := r.pause.MarkResumedBatch(ctx, batch); err != nil { ... }
+```
+
+**Suggested fix:** Track which tokens were successfully injected and skip them on error returns, or — more robustly — validate that each token has no existing `RoleTool` answer before injecting (idempotent upsert pattern). A simpler guard: add a `paused_states` unique constraint on `(conversation_id, tool_call_id)` so a duplicate inject is a no-op at the DB level.
+
+---
+
+### [MEDIUM][BUG] `anyInt` missing `json.Number` case — token counts silently zeroed on JSON-decoded StateDelta
+
+**Location:** `internal/runner/runner_persist.go:334-345`
+**Confidence:** medium
+
+`usageFromStateDelta` calls `anyInt` for `prompt_tokens`, `completion_tokens`, and `cache_hit_tokens`. `anyFloat` (used for `cost_usd`) explicitly handles the `json.Number` case with this comment: *"the StateDelta is decoded with UseNumber (event.go), so cost_usd can arrive as a json.Number"*. `anyInt` does not:
+
+```go
+func anyInt(v any) int {
+    switch n := v.(type) {
+    case int:    return n
+    case int64:  return int(n)
+    case float64: return int(n)
+    default:     return 0  // json.Number falls here → silently 0
     }
 }
 ```
 
-**Suggested fix:**
-Inject all `conversation_turns` RoleTool answers BEFORE calling `MarkResumedBatch`. This way, if the injection loop fails, `paused_states` rows are still pending and the caller can retry. Alternatively, wrap the entire operation (inject all + mark batch) in a single DB transaction via `db.WithTx`, which requires the conversation store and pause store to share the same transaction handle.
+Currently, the runner only receives Events in-process from `LlmAgent.Run` (native `map[string]any` with `int` values), so this does not fire today. The risk activates if Events are JSON-round-tripped before `usageFromStateDelta` is called — e.g., an AG-UI replay path or a future serialized-event store. When it does fire, every token count is silently persisted as 0 while `cost_usd` is correctly decoded, resulting in a misleading cache/cost picture.
 
----
-
-### [MEDIUM][BUG] runner-2: `Stop` leaves wire-invalid history when active pauses exist
-
-**Location:** `internal/runner/runner_resume.go:198-210`
-
-**Confidence:** high
-
-**Detail:**
-`Stop` calls `AutoResolveForConversation` which marks `paused_states` rows as auto-resolved but does NOT inject matching `RoleTool` turns into `conversation_turns`. In contrast, `cancelConversation` (called by `SubmitAnswer` with the `cancel` action) injects a `cancelledContent` RoleTool answer for each pending before auto-resolving.
-
-When a conversation is force-terminated (e.g. the CLI REPL exits on EOF while a pause is active), `defer Stop()` fires and only resolves the `paused_states` rows. The `flushPause` defer in `Turn` has already written the assistant tool_call turn(s) to `conversation_turns`. So the history contains orphaned assistant/tool_calls messages with no matching tool responses.
-
-If the same conversation is later resumed via `aura chat resume <id>`, `Turn(convID, nil)` loads this wire-invalid history and the LLM request fails or loops.
-
-**Suggested fix:**
-Add a helper `injectCancelledAnswers` (analogous to `cancelConversation`'s injection loop) called from `Stop` before `AutoResolveForConversation`, or delegate to `cancelConversation` directly. The distinction between explicit cancel and force-stop at the wire level is irrelevant — both need matching RoleTool turns.
-
----
-
-### [MEDIUM][RACE] runner-3: `waitWorkers` goroutine outlives the timeout it is meant to bound
-
-**Location:** `internal/runner/runner_resume.go:216-228`
-
-**Confidence:** high
-
-**Detail:**
-The internal comment "A separate goroutine signals completion so the bounded wait never leaks" is inaccurate. When `time.After(timeout)` fires (the `stopTimeout` path), `waitWorkers` returns `false`, but the goroutine launched at line 218 is still blocked on `r.wg.Wait()`. That goroutine will eventually exit when the title workers finish (bounded by `titleTimeout`), but during that window there is a goroutine accumulation that violates the "goleak-clean" claim in the doc comment.
+**Suggested fix:** Add `json.Number` (and `int32`) cases to `anyInt`:
 
 ```go
-func (r *Runner) waitWorkers(timeout time.Duration) bool {
-    done := make(chan struct{})
-    go func() {          // <-- leaks until wg drains (up to titleTimeout after Stop returns)
-        r.wg.Wait()
-        close(done)
-    }()
-    select {
-    case <-done:
-        return true
-    case <-time.After(timeout):
-        return false     // <-- goroutine above is still running
-    }
-}
+case int32:      return int(n)
+case json.Number:
+    i, err := n.Int64()
+    if err != nil { return 0 }
+    return int(i)
 ```
 
-In `TestStop_WorkerTimeout`, the test sidesteps this by immediately closing `release` after `Stop` returns, so goleak (at package end) sees a clean state. In production, a timeout means `Stop` returns but a goroutine lingers for up to `titleTimeout` (30 s default).
-
-**Suggested fix:**
-Use `sync.WaitGroup.Wait` with a context-based cancellation or replace the inner goroutine with a channel that signals on `wg.Wait()`. The simplest fix is to document the known-transient behavior explicitly. A stricter fix is to use `sync.WaitGroup` with a `done` context: `ctx, cancel := context.WithTimeout(context.Background(), timeout); defer cancel()` and pass it to a goroutine that selects between `wg.Wait()` done and `ctx.Done()`, making the inner goroutine's exit deterministic.
-
 ---
 
-### [LOW][NOT-WIRED] runner-4: Auto-title worker not fired on fast-path greeting replies
+### [LOW][BUG] `waitWorkers` goroutine persists past timeout — comment claims otherwise
 
-**Location:** `internal/runner/runner.go:207-223`
-
+**Location:** `internal/runner/runner_resume.go:238-253`
 **Confidence:** high
 
-**Detail:**
-The fast-path branch (triggered when `fastReplyFor` matches a greeting like "ciao") returns early after persisting the assistant turn. `maybeAutoTitle` is never called in this branch. The `if !tr.paused { r.maybeAutoTitle(...) }` block is only reachable in the non-fast-path flow.
+The comment says "the bounded wait never leaks". This is incorrect. When `time.After(timeout)` fires and `waitWorkers` returns `false`, the `go func() { r.wg.Wait(); close(done) }()` goroutine continues running, blocked on `r.wg.Wait()`, until all title workers drain. This is a temporary goroutine leak on every `Stop` timeout. The goroutine is self-healing (exits when workers eventually drain), so goleak only catches it if a test exits while workers are still running — and `TestStop_WorkerTimeout` correctly releases the worker after the assert, keeping goleak clean. In production a hung title worker would hold this goroutine open indefinitely (the title worker is already bounded by `titleTimeout`, so the max duration is `stopTimeout + titleTimeout`).
 
-If a conversation has accumulated seq >= 3 turns and the user sends a greeting, the auto-title worker never fires. The title remains NULL despite the conversation qualifying for auto-titling.
+The design is acceptable (the goroutine is bounded), but the comment misrepresents the behaviour.
 
-This is likely intentional (greeting replies are poor title candidates), but:
-1. The behavior is undocumented.
-2. A follow-up non-greeting turn would correctly fire the title worker, so the title is not permanently lost — it's deferred to the next qualifying turn.
-
-**Suggested fix:**
-Add a comment explaining why `maybeAutoTitle` is skipped on the fast path. If the intent is to fire the title worker even on greeting turns, move `r.maybeAutoTitle(ctx, convID, history)` after the early return via a labeled block or a deferred call.
+**Suggested fix:** Correct the comment: *"On timeout the wg.Wait goroutine persists until workers drain (bounded by their own titleTimeout); the goroutine is self-healing, not permanently leaked."* Optionally replace with a context-cancelled wg pattern to make it truly non-leaking.
 
 ---
 
-### [LOW][BUG] runner-5: `localIdentityName` duplicated between `runner` and `cmd/aura`
+## What was checked (no findings)
 
-**Location:** `internal/runner/runner.go:34` and `cmd/aura/serve_channels.go:44`
-
-**Confidence:** high
-
-**Detail:**
-The constant `localIdentityName = "local"` is independently defined in both packages. There is no shared package-level constant. If the identity name ever changes (e.g. a migration renames the seeded row), one definition could diverge silently. Both currently resolve to `"local"`, so there is no runtime bug today.
-
-```go
-// internal/runner/runner.go:34
-const localIdentityName = "local"
-
-// cmd/aura/serve_channels.go:44
-const localIdentityName = "local"
-```
-
-**Suggested fix:**
-Expose the constant from a shared location (e.g. `internal/identity` or a new `internal/identities` package) and import it in both locations. This is a minor refactor but eliminates the duplication risk.
-
----
-
-## What was checked and found clean
-
-- **Nil pointer derefs:** All event fields (`ev.LLMResponse`, `ev.Actions.AwaitingInput`, `ev.Actions.ToolInvocation`, `ti.StartedAt`, `ti.EndedAt`) are nil-checked before use. `r.toolInvocations == nil` is explicitly guarded with a warn-and-skip. `r.cacheMetrics == nil` returns an error (intentional hard failure).
-- **Context propagation:** `context.WithoutCancel` is correctly applied in both `flushPause` (deferred) and the auto-title goroutine. No context is dropped inadvertently.
-- **Error wrapping:** All `fmt.Errorf` calls use `%w`. No error is swallowed except for `_ = r.Conv.SetTitleIfNull(...)` (best-effort, documented).
-- **Slice aliasing:** `buildAgent` calls `stripLeadingSystem(history)` which returns a sub-slice, but `NewLlmAgent` copies the elements via `append(hist, cfg.UserTurns...)`. The `maybeAutoTitle` goroutine independently copies history via `append([]llm.Message(nil), history...)` (WR-03). No aliasing race.
-- **JSON handling:** `anyFloat` correctly handles `json.Number` (the UseNumber decode path for cost_usd). `anyInt` lacks `json.Number` but this is non-reachable in the Runner's direct in-memory path (token counts are native `int` from `usageStateDelta`).
-- **Timer/ticker leaks:** `time.After` in `waitWorkers` does not leak the timer on Go 1.23+ (the module is on Go 1.26.4). The `context.WithTimeout` in `maybeAutoTitle` is correctly deferred-cancelled.
-- **Goroutine tracking:** `r.wg.Add(1)` / `defer r.wg.Done()` pair in `maybeAutoTitle` is correct. The `wg` is the sole sync point for title workers.
-- **Race on history slice:** History is loaded, then passed to `buildAgent` (copies into agent's internal slice) and `maybeAutoTitle` (copies snapshot). No concurrent mutation.
-- **`EnsureConversation` TOCTOU:** The check-then-act pattern has a correct recovery path (re-Get after Create failure) for concurrent first-message races.
-- **Dead code:** All unexported functions (`fastReplyFor`, `normalizeGreeting`, `fastReplyEvent`, `fastReplyChunkEvent`, `stripLeadingSystem`, `buildAgent`, `contextConfig`, `appendUserTurn`, `waitWorkers`, `maybeAutoTitle`, `persistEvent`, `persistToolInvocation`, `persistAssistantAnswer`, `cacheMetricParams`, `persistPause`, `flushPause`, `assistantAskUserToolCalls`, `pauseOptionsJSON`, `usageFromStateDelta`, `anyInt`, `anyFloat`, `timePtrValue`, `toolInvocationTimestamp`, `toResumeAnswer`, `remainingPending`, `injectAnswer`, `cancelConversation`) are all called within the package or by tests. No dead unexported symbols found.
-- **`SubmitAnswers` cancel early-exit:** When a cancel token is encountered mid-loop, `cancelConversation` uses `p.ConversationID` (not the accumulated `convID`) — correct.
+- **Nil-pointer paths:** `ev == nil` guard in `persistEvent`, `r.toolInvocations == nil` fast-exit, `r.cacheMetrics == nil` loud-error — all correct.
+- **Context propagation:** `context.WithoutCancel` used correctly in both the title worker and `flushPause` defer to outlive the turn context.
+- **Race on `r.wg`:** Only ever accessed from `maybeAutoTitle` (Add+goroutine) and `waitWorkers` (Wait). Correct WaitGroup usage; no races.
+- **Fast-path (`runner_fastpath.go`):** Persist + chunk + final event yield sequence is correct; `yield(false)` guard respected.
+- **`EnsureConversation` TOCTOU:** The concurrent-creator reconciliation (`Create → fail → re-Get`) is intentional and correctly documented.
+- **`flushPause` defer:** Correctly uses `context.WithoutCancel(ctx)` so a turn-cancel cannot abort the durable write the resume depends on.
+- **`stripLeadingSystem`:** Correct slice handling; does not alias.
+- **`anyFloat` json.Number:** Correctly handled.
+- **Dead code:** All unexported symbols are reachable from within the package. No dead exports identified.
+- **Not-wired code:** All public methods (`Turn`, `Stop`, `SubmitAnswer`, `SubmitAnswers`, `PendingFor`, `EnsureConversation`, `NewConversation`, `NewConversationWithID`) are wired at `cmd/aura/chat.go` and/or `internal/agui/server.go`. `ResumeHook` is wired at `cmd/aura/serve_adapters.go:267`.
+- **`cacheMetricParams(seq=0)`:** The real `conversations.Store.AppendAssistantTurnWithCacheMetric` allocates seq inside the transaction when `p.Seq <= 0`. Correct.
+- **`SubmitAnswers` convID undefined:** All tokens are expected to belong to one conversation (API contract). The last-iteration `convID` is used only for `remainingPending` at the end, after all tokens are validated to belong to the same conversation in practice.

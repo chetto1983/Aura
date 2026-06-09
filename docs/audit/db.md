@@ -1,112 +1,136 @@
 # Audit: internal/db
 
-**Verdict:** needs-work — two real bugs (version-count arithmetic, hardcoded DB name in EnsureRoles) and no races or dead code.
+**Verdict:** needs-work — two real defects (misplaced doc comment, error-chain break on redaction), one type-safety smell in generated code, all low-to-medium severity; no critical or high findings.
 
-**Counts:** critical 0 / high 1 / medium 1 / low 1
+**Counts:** critical 0 / high 0 / medium 2 / low 1
 
 ---
 
 ## Findings
 
-### [HIGH][BUG] Migrate() counts migrations by version-number difference, not by actual migration count
+### [MEDIUM][BUG] Misplaced doc comment: `redactErrorPassword` comment documents `databaseNameFromDSN`
 
-**Location:** `internal/db/migrate.go:52-57`
-
-**Confidence:** high
-
-**Detail:**
-
-```go
-pre, _, _ := m.Version()      // uint: last applied version number (0 if ErrNilVersion on fresh DB)
-...m.Up()...
-post, _, _ := m.Version()     // uint: last applied version number after Up
-return int(post) - int(pre), nil
-```
-
-`m.Version()` returns the file-version number of the last applied migration (e.g., `12` after applying `0012_telegram.up.sql`), not a sequential count of applied files. The subtraction `int(post) - int(pre)` gives the difference between version numbers, which equals the number of migrations applied only when numbering is perfectly sequential and gapless.
-
-Current state (0001–0012) happens to be sequential so the test at `db_test.go:164` passes. But the contract is wrong: if the next migration is `0014` (skipping `0013`), then after applying it, `post=14, pre=12, diff=2`, but only one migration was applied. The caller at `cmd/aura/db.go` prints `"applied N migrations"` — it would print `2` when only `1` was applied.
-
-The error-case is also silently swallowed: when the DB is fresh, `m.Version()` returns `(0, false, migrate.ErrNilVersion)`. The `_` discards this error and `pre=0` happens to be the correct baseline, but only by the accident of zero-value matching the desired "no migrations" baseline.
-
-**Suggested fix:**
-
-Count applied migrations before and after by counting rows in `schema_migrations`, or use a dedicated counter driven by the source. The simplest correct approach:
-
-```go
-// Count *.up.sql entries in the source before and after is fragile.
-// Instead, query the tracker directly after Up:
-var priorCount, postCount int
-// pool.QueryRow(ctx, "SELECT count(*) FROM public.schema_migrations").Scan(&priorCount)
-// m.Up()
-// pool.QueryRow(ctx, "SELECT count(*) FROM public.schema_migrations").Scan(&postCount)
-// return postCount - priorCount, nil
-```
-
-Alternatively, if the sequential-version invariant is intended to be maintained forever, document it explicitly in a code comment AND add a CI check that verifies no gaps exist in the migration file sequence.
-
----
-
-### [MEDIUM][BUG] EnsureRoles hardcodes database name "aura" in GRANT statement
-
-**Location:** `internal/db/migrate.go:114`
+**Location:** `internal/db/migrate.go:158-162`
 
 **Confidence:** high
 
 **Detail:**
+Lines 158-161 are a Go doc comment that begins `// redactErrorPassword scrubs known passwords…`. In Go, a doc comment attaches to the _immediately following_ declaration. The immediately following declaration is `func databaseNameFromDSN(dsn string) (string, error)` (line 162). As a result:
+- `go doc` and IDEs display `redactErrorPassword scrubs…` as the documentation for `databaseNameFromDSN`.
+- The actual `redactErrorPassword` function (line 182) has no doc comment at all.
 
-```go
-if _, err := pool.Exec(ctx, "GRANT CREATE ON DATABASE aura TO aura_migrate"); err != nil {
-```
-
-The pool is opened against `bootstrapURL`, which the caller controls. The database name in the GRANT is hardcoded as `"aura"` regardless of what database `bootstrapURL` points to. If `bootstrapURL` connects to a cluster where the application database is named differently (e.g., `aura_staging`), the GRANT lands on the wrong database or fails with "database does not exist", while the schema and public grants further below use the connected database (executing `CREATE SCHEMA` in the connected DB).
-
-This inconsistency is self-concealing in the standard local-dev path because `bootstrapURL` always connects to `aura`. The test `TestMigrate_Phase4_AppliesAndSeeds` avoids this path entirely — it issues the grant manually (`admin.Exec(ctx, "GRANT CREATE ON DATABASE "+freshDB+" TO aura_migrate")`) instead of calling `EnsureRoles` for the fresh database.
+This is a cut-paste error: the comment block was written for `redactErrorPassword` but was placed one function too early, likely when the helper functions were reordered. The mislabelling is confirmed by reading the comment text: it accurately describes `redactErrorPassword`'s scrub-and-replace logic, not `databaseNameFromDSN`'s path-extraction logic.
 
 **Suggested fix:**
-
-Extract the database name from `bootstrapURL` at the top of `EnsureRoles` using `url.Parse`, validate it is non-empty, and substitute it into the GRANT statement:
+Move the comment block to immediately precede `func redactErrorPassword(…)` at line 182, and add a separate concise comment for `databaseNameFromDSN`:
 
 ```go
-u, _ := url.Parse(bootstrapURL)
-dbName := strings.TrimPrefix(u.Path, "/")
-pool.Exec(ctx, fmt.Sprintf("GRANT CREATE ON DATABASE %s TO aura_migrate", pgIdentQuote(dbName)))
-```
+// databaseNameFromDSN extracts the database name component from a Postgres DSN.
+func databaseNameFromDSN(dsn string) (string, error) { … }
 
-Where `pgIdentQuote` double-quotes and escapes the identifier to prevent SQL injection via a crafted DB name.
+// redactErrorPassword scrubs known passwords from an error message before it
+// is wrapped. Defense-in-depth on top of parametrized queries — if a Postgres
+// error message ever echoes a literal substring of the password (e.g. via
+// an unexpected upstream code path), this strips it.
+func redactErrorPassword(err error, passwords ...string) error { … }
+```
 
 ---
 
-### [LOW][BUG] m.Version() error silently discarded — dirty-migration baseline is invisible
+### [MEDIUM][BUG] `redactErrorPassword` silently breaks the error chain when redaction fires
 
-**Location:** `internal/db/migrate.go:52` and `internal/db/migrate.go:56`, same pattern in `reset.go:N/A` (Reset does not call Version)
+**Location:** `internal/db/migrate.go:182-197`, call sites `migrate.go:118,126,134,137,144,153`
 
-**Confidence:** medium
+**Confidence:** high
 
 **Detail:**
+`redactErrorPassword` has two return paths:
 
-```go
-pre, _, _ := m.Version()
-```
+1. No password found in error text → returns the **original** `err` unchanged (line 194). Wrapping with `%w` preserves the full `pgconn.PgError` chain.
+2. Password found and replaced → returns `errors.New(msg)` (line 196). This is an opaque error with no `Unwrap()` method; it is **not** the original Postgres error. The `%w` in every call site (`fmt.Errorf("…: %w", redactErrorPassword(err, password))`) then wraps this opaque value, not the original, permanently destroying the error chain.
 
-`m.Version()` returns `(version uint, dirty bool, err error)`. Three values are discarded: the dirty flag and the error. On a fresh database `err = migrate.ErrNilVersion` and `version = 0`, which is the correct pre-Up baseline by coincidence. But `dirty = true` (a prior interrupted migration) is silently dropped — if `pre` version is dirty, `m.Up()` will fail with an "error: Dirty database version N. Fix and force version." error, which is correctly propagated. The issue is that the returned count is still `int(post) - int(pre)` where `post = 0` (Up failed), so `Migrate` returns `(0, error)`. The count is never used in the error path, so this is benign in practice.
+Consequence: any downstream consumer that calls `errors.As(err, &pgconn.PgError{})` on an EnsureRoles error will silently get `false` when the password happened to appear in the error message (e.g., a malformed ALTER ROLE that echoes the literal). The error remains propagated as a string — no silent swallow — but the structured SQLSTATE is irrecoverable.
 
-However the dirty flag discard means callers have no way to distinguish "no migrations applied because database is already at target" from "no migrations applied because `m.Version()` returned a non-ErrNilVersion error (connection problem) and pre defaulted to 0". Both return a count of 0 on success. This could mask a misconfigured URL that gets its `Version()` call to fail (returning `pre=0`) just before `m.Up()` succeeds against a different backend.
+No current caller of `EnsureRoles` uses `errors.Is`/`errors.As`, so this is latent rather than actively triggered. However, the `%w` verb's stated purpose (preserving structure) is defeated whenever redaction fires, making the wrapping misleading.
 
 **Suggested fix:**
+Return a sentinel error type that wraps the original while substituting the message string, so the `pgconn.PgError` remains unwrappable:
 
-Log (via `slog.Warn`) when `err != nil && !errors.Is(err, migrate.ErrNilVersion)` on the `pre` version call; treat the pre-version error as a baseline ambiguity rather than a silent 0. At minimum, change the comment to document that `ErrNilVersion` is expected and other errors are ignored.
+```go
+type redactedError struct {
+    msg  string
+    orig error
+}
+
+func (e *redactedError) Error() string  { return e.msg }
+func (e *redactedError) Unwrap() error  { return e.orig }
+
+func redactErrorPassword(err error, passwords ...string) error {
+    if err == nil {
+        return nil
+    }
+    msg := err.Error()
+    for _, p := range passwords {
+        if p == "" {
+            continue
+        }
+        msg = strings.ReplaceAll(msg, p, "***")
+    }
+    if msg == err.Error() {
+        return err
+    }
+    return &redactedError{msg: msg, orig: err}
+}
+```
+
+---
+
+### [LOW][BUG] `AggregateCacheMetricsSinceRow` uses `interface{}` for aggregate columns, defeating compile-time type safety
+
+**Location:** `internal/db/sqlc/cache_metrics.sql.go:23-28`
+
+**Confidence:** high
+
+**Detail:**
+The generated struct for the `AggregateCacheMetricsSince` query has three `interface{}` fields:
+
+```go
+type AggregateCacheMetricsSinceRow struct {
+    Turns             int64       `json:"turns"`
+    TotalPromptTokens interface{} `json:"total_prompt_tokens"`
+    TotalCachedTokens interface{} `json:"total_cached_tokens"`
+    TotalCostUsd      interface{} `json:"total_cost_usd"`
+}
+```
+
+This is a known sqlc limitation with `COALESCE(SUM(...), 0)` aggregates that mix numeric types in a way the generator cannot statically resolve. The `cachemetrics` package compensates via the `anyInt64`/`anyNumericFloat` type-switch helpers (`internal/cachemetrics/store_helpers.go`), which handle multiple pgx runtime shapes.
+
+The risk is: any future direct consumer of `AggregateCacheMetricsSinceRow` that accesses these fields without going through `anyInt64` will compile fine but panic at runtime on unexpected type assertions. The file carries a `DO NOT EDIT` header, so the fix belongs in the sqlc query configuration.
+
+**Suggested fix:**
+In the sqlc query configuration (`internal/db/queries/cache_metrics.sql` or equivalent), cast the aggregate expressions to typed aliases so sqlc can infer a concrete type:
+
+```sql
+SELECT count(*)                                        AS turns,
+       coalesce(sum(prompt_tokens), 0)::bigint         AS total_prompt_tokens,
+       coalesce(sum(cached_tokens), 0)::bigint         AS total_cached_tokens,
+       coalesce(sum(cost_usd),      0)::numeric(10,4)  AS total_cost_usd
+FROM aura.cache_metrics
+WHERE ts >= $1::timestamptz
+```
+
+After regeneration, the struct fields would be `int64` / `pgtype.Numeric`, eliminating the `interface{}` escape hatch and the `anyInt64`/`anyNumericFloat` helpers.
 
 ---
 
 ## What was checked and found clean
 
-- **Nil pointer derefs**: `Open`, `Ping`, `Status` all guard against nil `cfg`/`pool` inputs at the function entry point. `WithTx` has no nil pool guard but pool.Begin will return a descriptive error immediately; no panic path.
-- **Resource leaks**: All `pool.Query` call sites (`Status`, all sqlc-generated `:many` queries) have `defer rows.Close()`. `pgxpool.Pool.Close()` is the caller's responsibility (open/close at the cmd layer), not the package's. `pgxpool.New` in `EnsureRoles` has `defer pool.Close()`. The migrate/reset migrators use `defer func() { _, _ = m.Close() }()` consistently.
-- **Unchecked errors**: All `pool.QueryRow.Scan`, `pool.Query`, `pool.Exec` results are checked. The `m.Close()` error is intentionally discarded (golang-migrate convention; the resource is being released, not committed). `tx.Rollback` in `WithTx` is intentionally fire-and-forget (best-effort cleanup; the original error is already set).
-- **WithTx panic recovery**: The named-return + defer pattern is correctly structured. A panic inside `fn` triggers Rollback and re-panics; a nil fn-return triggers Commit and its error replaces nil; a non-nil fn-return triggers Rollback and returns fn's error.
-- **Races**: No shared mutable state in this package. `redactDSN`, `redactDSNUsername`, `redactErrorPassword` are stateless pure functions. No goroutines are spawned. `pgxpool` is concurrency-safe by design. No maps or slices with concurrent access.
-- **Dead code**: All exported functions (`Open`, `Migrate`, `MigrateSteps`, `Reset`, `EnsureRoles`, `Ping`, `Status`, `WithTx`, `MigrationRow`, `Config`) are referenced by at least one non-test caller in the repo. Unexported functions (`redactDSN`, `redactDSNUsername`, `redactErrorPassword`, `isUndefinedTable`) are all called within the package. The sqlc-generated `(*Queries).WithTx` method is generated code and not flagged.
-- **Not-wired code**: `MigrateSteps` is called only from `internal/skills/audit_store_integration_test.go` (a test) and not from any production path. This is intentional — it is the reversibility seam for integration tests.
-- **SQL correctness**: `SearchConversationTurns` correctly filters NULL-content rows via `WHERE content % $1` (trigram NULL comparison returns NULL/false). `LockConversationForTurnAppend` + `NextConversationTurnSeq` are always called together inside a `db.WithTx`, so seq allocation is serialized by the `SELECT FOR UPDATE` lock. `ON CONFLICT DO NOTHING` on `InsertCacheMetric` and `InsertToolInvocation` is intentional idempotency (documented).
-- **Password redaction**: `redactDSN` correctly handles empty string, unparseable URL, no userinfo, no password, and password-present cases. `redactErrorPassword` correctly skips empty password entries and returns the original error unchanged when no scrubbing is needed (preserving the original error identity for `errors.Is`/`errors.As` chains when no substitution occurs).
+- **Resource leaks**: All `rows.Close()` calls are deferred immediately after `Query`. All migration `m.Close()` calls are in deferred closures. `pgxpool.Pool.Close()` is called in all error-exit and deferred paths. No resource leak found.
+- **Context propagation**: Every public function accepts and threads `ctx` through all DB calls. No `context.Background()` injection inside library code.
+- **Nil-pointer risks**: `Open`, `Ping`, `Status`, `WithTx` all guard against `nil` pool/config arguments with explicit fast-fail errors.
+- **SQL injection**: All parameterized queries use `$N` placeholders. The only dynamic SQL construction is in `EnsureRoles` (CREATE/ALTER ROLE with inlined password) — this is explicitly documented and defended by `strings.ReplaceAll(password, "'", "''")` SQL-literal escaping, plus the `redactErrorPassword` defense-in-depth. Database and role names in `grantCreateDatabaseSQL` use `quoteIdent` (double-quote escaping). The role names are hardcoded constants, not user input.
+- **Race conditions**: No shared mutable state in the package. The `pgxpool.Pool` is goroutine-safe per pgx documentation. No maps, slices, or structs with concurrent write access without synchronization.
+- **Dead code**: All unexported functions (`redactDSN`, `redactDSNUsername`, `redactErrorPassword`, `databaseNameFromDSN`, `grantCreateDatabaseSQL`, `quoteIdent`, `isUndefinedTable`, `migrateAllCountingSteps`) are referenced by package-internal callers or tests. `migrationStepper` interface is used by `migrateAllCountingSteps`. `MigrateSteps` is referenced by `internal/skills/audit_store_integration_test.go`. No dead code found.
+- **Not-wired code**: All exported functions (`Open`, `Migrate`, `MigrateSteps`, `Reset`, `Status`, `Ping`, `EnsureRoles`, `WithTx`) are called from at least one non-test production caller. All sqlc-generated query methods are referenced from their respective domain stores.
+- **Error wrapping discipline**: All errors use `%w` except when intentionally creating opaque sentinels (`errors.New(errMissingMigrateURL)`). The one exception is the chain-break case documented in db-2.
+- **`go vet ./internal/db/...`**: clean (verified).

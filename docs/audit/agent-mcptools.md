@@ -1,162 +1,129 @@
 # Audit: internal/agent/mcptools
 
-**Verdict:** needs-work — two logic bugs (one silent semantic corruption, one schema passthrough defect) in otherwise well-structured code.
-**Counts:** critical 0 / high 1 / medium 1 / low 1
+**Verdict:** needs-work — two latent correctness issues; no crashes or races in production paths.
+
+**Counts:** critical 0 / high 0 / medium 1 / low 2
 
 ## Findings
 
 ---
 
-### [HIGH][BUG] `namespacedName`: namespace delimiter silently stripped for namespaces ≥ 62 characters
+### [MEDIUM][BUG] `openManagedServer` routing condition diverges from `normalizedServerType`
 
-**Location:** `internal/agent/mcptools/name.go:57-58`
+**Location:** `internal/agent/mcptools/mount.go:48`
+
 **Confidence:** high
 
 **Detail:**
-When `len(sanitizeName(namespace)) + 2` (prefix length) exceeds `budget = maxToolNameLen - len(suffix) = 51`, the code executes:
+
+`openManagedServer` routes to `mcp.OpenServer` when either `server.Type == "streamable_http"` OR `server.URL != ""`:
 
 ```go
-return prefix[:budget] + suffix
+if strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != "" {
+    return mcp.OpenServer(ctx, name, server)
+}
 ```
 
-`prefix` is `sanitizeName(namespace) + "__"`. When the sanitized namespace is ≥ 50 characters, `prefix` is ≥ 52 bytes. `prefix[:51]` truncates INTO or PAST the trailing `"__"` delimiter. For namespace length ≥ 62 chars (sanitized ≥ 62, prefix ≥ 64), `prefix[:51]` is all `n` characters — the `"__"` is gone entirely.
+Every other classification site in the codebase uses `normalizedServerType`, which classifies a server as HTTP only when `URL != "" AND Command == ""`. The gap matters for a `ManagedServer` where both `URL` and `Command` are non-empty and `Type` is unset:
 
-Verified with the production function:
+- `openManagedServer`: URL is set → routes to `OpenServer`.
+- `OpenServer` internally uses `normalizedServerType`: Command is non-empty → classifies as stdio → launches the subprocess with `Command`, silently ignoring `URL`.
 
-```
-ns=62n, tool="alpha":
-result = "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn_5608cce1a837"
-contains "__": false
-```
+The operator effect: an HTTP URL is silently dropped, the stdio binary is launched instead. No crash — but the mount succeeds with the wrong transport.
 
-The model-facing tool name looks like a non-namespaced tool, defeating the shadow-protection invariant (the tool can no longer be distinguished from a built-in by name prefix). Two different tools under the same 62+-char namespace produce distinct names (different hash suffixes), so the uniqueness property holds — only the namespace separator is lost.
-
-The existing adversarial test suite (`TestNamespacedName_AdversarialLenSweep`, `TestNamespacedName_LongNamespaceCap`) checks length ≤ 64 and suffix-distinctness but NOT `"__"` presence for the long-namespace path, so this goes undetected.
+This does not fire through the standard config loading path (`loadMCPServers`): a URL+Command server without explicit Type is classified as stdio by `normalizedServerType`, so it lands in `MCPServers` (via `RuntimeServers`), not in `MCPPolicies`, and is mounted via `MountServer` (which does not call `openManagedServer`). However, code that constructs a `ManagedServer` inline and passes it directly to `MountManagedServer` (e.g. tests, spike scripts, or future call sites) will hit this silently.
 
 **Suggested fix:**
-After computing `budget` and detecting `len(prefix) > budget`, preserve the `"__"` delimiter by using the namespace portion only:
+
+Replace the bespoke condition with `normalizedServerType`:
 
 ```go
-if len(prefix) > budget {
-    // Keep as many namespace chars as fit before the suffix; the
-    // tool part is fully dropped (the hash distinguishes inputs).
-    nsChars := budget - len(nsDelimiter)
-    if nsChars < 0 {
-        nsChars = 0
+func openManagedServer(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, error) {
+    if mcp.NormalizedServerType(server) == mcp.ServerTypeStreamableHTTP {
+        return mcp.OpenServer(ctx, name, server)
     }
-    return sanitizeName(namespace)[:nsChars] + nsDelimiter[:budget-nsChars] + suffix
+    cfg, err := mcpmanager.RuntimeLaunchConfig(name, server)
+    if err != nil {
+        return nil, err
+    }
+    return mcp.Open(ctx, name, cfg)
 }
 ```
 
-Or simpler: always include the delimiter if it fits, otherwise just use the namespace prefix truncated:
-
-```go
-if len(prefix) > budget {
-    // Truncate to budget; if "budget" >= 2 keep the delimiter, else just ns chars.
-    cut := prefix
-    if len(cut) > budget {
-        cut = cut[:budget]
-    }
-    return cut + suffix
-}
-```
-
-The real fix is to ensure at least the `"__"` separator is preserved by computing the ns-portion budget as `budget - len(nsDelimiter)` and joining explicitly. Add a test asserting `strings.Contains(result, "__")` for all adversarial inputs.
+(`normalizedServerType` is currently unexported; export it as `NormalizedServerType` or expose it via a helper in `managed_config.go`.) Alternatively, call `mcp.OpenServer` unconditionally and let it dispatch internally — but that bypasses the trust gate (`RuntimeLaunchConfig`) for stdio servers.
 
 ---
 
-### [MEDIUM][BUG] `bridgeTools`: JSON `null` `inputSchema` passes through as tool Parameters instead of falling back to `emptyObjectSchema`
+### [LOW][NOT-WIRED] `Bridge` is exported but has no production caller outside the package
 
-**Location:** `internal/agent/mcptools/bridge.go:85-88`
+**Location:** `internal/agent/mcptools/bridge.go:74`
+
 **Confidence:** high
 
 **Detail:**
-The check for "no inputSchema" is:
 
-```go
-if len(strings.TrimSpace(string(d.InputSchema))) > 0 {
-    params = d.InputSchema
-}
+`Bridge` is an exported function. A grep across the entire repo (excluding tests and spike scripts under `.planning/`) shows zero calls to `mcptools.Bridge` in production code:
+
+```
+# production callers of mcptools.*:
+cmd/aura/main.go:180: mcptools.MountManagedServer(...)
+cmd/aura/main.go:182: mcptools.MountServer(...)
 ```
 
-`json.RawMessage("null")` has `TrimSpace = "null"`, `len = 4 > 0`, so it passes through as `params = json.RawMessage("null")`. This is valid JSON but not a valid JSON Schema object. Downstream:
+`Bridge` is called only from within the package (by `Mount` at bridge.go:117) and from `bridge_test.go`. The `.planning/` spike scripts call `mcptools.Mount`, not `mcptools.Bridge`.
 
-- `tools/bm25.go:45`: `json.Unmarshal(s.Parameters, &node)` succeeds but parses `null` as a null node (no properties indexed for BM25 search).
-- `tools/manifest.go:64`: `def.Function.Parameters = null` is sent to the OpenAI-compatible API, which typically rejects a `null` input schema with a 400 error (the API requires an object schema).
-
-MCP servers are permitted to omit `inputSchema` (represented as `null` in JSON decoding of a `{"inputSchema": null}` field). This can happen with some MCP server implementations.
-
-The current code also accepts whitespace-only `InputSchema` (e.g., `"   "`) but not `null`. The empty-string case (`json.RawMessage("")` or `nil`) is correctly handled.
+`Bridge` is a legitimate public seam — callers that want a `[]tools.Tool` slice without immediately registering it (e.g. to inspect or filter) have a valid use case. But it is currently untested in that external role and is invisible to API users who only import `mcptools`. If it is intentional public API, add a doc comment clarifying the external contract. If it is not intended to be public, unexport it.
 
 **Suggested fix:**
-Add a JSON-type check after the length check, falling back if the schema is not an object:
 
-```go
-params := emptyObjectSchema
-raw := d.InputSchema
-if len(raw) > 0 && json.Valid(raw) {
-    var probe struct{ Type string `json:"type"` }
-    if json.Unmarshal(raw, &probe) == nil && probe.Type != "" {
-        params = raw
-    } else if probe.Type == "" {
-        // Could be a schema without "type" (still valid); pass through unless null.
-        var check any
-        if json.Unmarshal(raw, &check) == nil {
-            if _, isNil := check.(nil); !isNil {
-                params = raw
-            }
-        }
-    }
-}
-```
-
-Or more simply — check that the raw bytes are not the `null` literal:
-
-```go
-if len(strings.TrimSpace(string(d.InputSchema))) > 0 && !bytes.Equal(bytes.TrimSpace(d.InputSchema), []byte("null")) {
-    params = d.InputSchema
-}
-```
+If the external use case is future-only and not yet planned, unexport: rename to `bridgeTools` (already exists as the inner implementation; merge the two) and make `Mount` the sole public entry point. If public API is intended, add a doc comment confirming the contract.
 
 ---
 
-### [LOW][BUG] `registerBridged`: type assertion `t.(*bridgedTool)` panics if caller passes a non-`*bridgedTool` element
+### [LOW][BUG] Unchecked type assertion `t.(*bridgedTool)` in `registerBridged`
 
 **Location:** `internal/agent/mcptools/bridge.go:128`
-**Confidence:** medium
+
+**Confidence:** high
 
 **Detail:**
-`registerBridged` is unexported but accepts `[]tools.Tool`, a public interface. The type assertion:
 
 ```go
 bt := t.(*bridgedTool)
 ```
 
-will panic if any element is not a `*bridgedTool`. Today the only caller is `Mount → Bridge → bridgeTools`, which only ever appends `*bridgedTool` — so this cannot trigger in production. However, there is no package-level protection against a future internal caller passing a different `tools.Tool` implementation, and there is no compile-time assertion. A missed assertion produces a runtime panic in a production mount, not a graceful error.
+`registerBridged` accepts `[]tools.Tool` (interface slice) but unconditionally asserts each element to `*bridgedTool`. A nil element or any non-`*bridgedTool` value panics with no recovery. The function is unexported and its only call site (`Mount`, bridge.go:121) passes the output of `Bridge`, which is always `[]*bridgedTool` — so no panic occurs today.
+
+The risk is maintenance: if a future refactor passes a different concrete type through the same function (e.g. wrapping for observability), the panic surface is non-obvious and has no defensive check.
 
 **Suggested fix:**
-Change to a safe assertion that returns a graceful error:
+
+Either change the slice type to `[]*bridgedTool` so the type system enforces the invariant:
+
+```go
+func registerBridged(reg *tools.Registry, bridged []*bridgedTool) ([]string, error) {
+```
+
+Or add a checked assertion with a clear error:
 
 ```go
 bt, ok := t.(*bridgedTool)
 if !ok {
-    return nil, fmt.Errorf("mcp bridge: internal error: non-bridgedTool passed to registerBridged (%T)", t)
+    return nil, fmt.Errorf("mcp bridge: internal error: expected *bridgedTool, got %T", t)
 }
 ```
 
-This costs two lines and is zero-overhead on the happy path.
-
 ---
 
-## What was checked
+## Clean checks (no findings)
 
-- All three non-test source files: `bridge.go`, `mount.go`, `name.go` — read in full.
-- Test files read to understand intended invariants and coverage gaps.
-- Greps across the full repo (`D:/Aura`) to confirm usage of every exported and unexported symbol.
-- Live execution of `go test ./internal/agent/mcptools/` — all 25 tests pass.
-- Manual tracing of `namespacedName` overflow branches for namespace lengths 50, 55, 62, 63 to find the delimiter-loss threshold.
-- Manual tracing of `registerBridged` for 2-way and 3-way sanitize collisions.
-- Downstream consumers of `spec.Parameters` traced through `tools/bm25.go` and `tools/manifest.go` to assess blast radius of the `null` schema passthrough.
-- No races: `Registry` is built single-threaded at boot; `bridgedTool` is read-only after construction; no shared mutable state; no goroutines spawned in this package.
-- No dead code: `Bridge` and `Server` are exported for external callers (spike scripts use them; they are a designed API surface); all unexported helpers are reachable through the exported entry points.
-- No not-wired code: `MountServer` and `MountManagedServer` are called from `cmd/aura/main.go` (production boot). `Mount` is called from both `MountServer` and spike scripts.
+The following were checked exhaustively and found to be clean:
+
+- **Collision disambiguation** (`registerBridged`, bridge.go:124-160): the two-pass design (validation pass with `seenRaw`/`chosen` mutation, then registration pass) is correct for N-way collisions. Hash keys include the raw tool name (`bt.name`), so distinct raw names that sanitize identically always get distinct suffixes. The post-disambiguation `chosen[name]` guard correctly catches SHA-256 suffix collisions (astronomically rare) as an all-or-nothing error.
+- **Name length cap** (`namespacedName`, name.go:49-65): the overflow branch correctly reserves space for both the `__` delimiter and the 13-byte hash suffix before truncating; the `max(budget-len(nsDelimiter), 0)` guard prevents negative slice indices for extremely long namespaces. Verified by the adversarial sweep in `name_test.go`.
+- **Nil/null InputSchema fallback** (bridge.go:85-88): `strings.TrimSpace(string(nil)) == ""` in Go, so `nil`, `json.RawMessage("null")`, and empty schemas all fall through to `emptyObjectSchema`. Verified.
+- **Context propagation**: context is threaded through every call chain (`Open`, `ListTools`, `CallTool`, `NewResult`). No context is dropped or ignored.
+- **Goroutine safety**: no goroutines are spawned in this package. The Registry and all types are single-owner (built at mount time, immutable thereafter). No races.
+- **Error wrapping**: all errors use `%w` or are passed through unchanged. `Bridge` errors propagate from `srv.ListTools`; `Mount` wraps spawn/registration failures with `fmt.Errorf("mount %q: %w", name, err)`.
+- **Execute error contract**: CallTool errors are converted to inline `"error: ..."` content (not Go errors), matching the web_search contract. JSON unmarshal failures on args ARE Go errors (correct — the model cannot self-correct from malformed JSON structure).
+- **Resource cleanup**: on any error in `MountServer`/`MountManagedServer`, the underlying transport is explicitly closed before returning (`_ = cli.Close()` / `_ = srv.Close()`). The success path returns the closer for the caller to call at shutdown.

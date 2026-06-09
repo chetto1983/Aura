@@ -1,12 +1,14 @@
 # Audit: internal/skilladapters
 
-**Verdict:** needs-work — one silent-failure bug masks snippet degradation from the model and audit log; one attribution inconsistency in the audit record.
+**Verdict:** needs-work — one silent error-swallow that degrades snippet resolution to a confusing instruction-skill fallback with no diagnostic trace; no unit tests for the package.
 
 **Counts:** critical 0 / high 0 / medium 1 / low 1
 
+---
+
 ## Findings
 
-### [MEDIUM][BUG] `Loader.Snippet()` silently swallows language-resolution errors, degrading snippet to instruction-skill
+### [MEDIUM][BUG] Snippet: silent error discard on SnippetHostInvocation failure
 
 **Location:** `internal/skilladapters/skilladapters.go:79-82`
 
@@ -14,77 +16,65 @@
 
 **Detail:**
 
-`Snippet()` calls `skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)` and, when that returns a non-nil `perr`, returns `"", "", "", false` silently — no log, no metric, no propagated error:
+When `skills.SnippetHostInvocation` returns an error (bad or unknown `Language` in the active SKILL.md frontmatter — e.g. after external editing, an upgrade/rollback, or on-disk corruption), `Loader.Snippet` discards `perr` silently and returns `ok=false`. The caller (`tools.SkillTool.actionUse`, `skill_read.go:107-110`) falls through to `Loader.Body(name)`, which returns the snippet's SKILL.md docs body verbatim (`renderSnippetDocs` output). That body says: *"Executable snippet (python). Run the python3 interpreter against the snippet file by path (the exact invocation is provided when you use it)"* — but no invocation is ever provided because the snippet branch returned `ok=false`. The model receives contradictory instructions with no usable path.
+
+There is no log line emitted at any level, so an operator has no trace that a snippet skill silently fell back to the instruction path.
+
+Note: this is not a panic or data-corruption risk, but it produces a confusing model experience and is invisible at the operations layer.
 
 ```go
-path, interp, perr := skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)
+// current (line 80-81):
 if perr != nil {
-    return "", "", "", false
+    return "", "", "", false   // perr dropped on the floor
 }
 ```
-
-`ok=false` causes `actionUse` in `skill_read.go:110` to fall through to `t.Loader.Body(name)` and deliver the snippet's docs body (the `renderSnippetDocs` frame: "Executable snippet (python). Run the python3 interpreter...") wrapped in the instruction authority-frame. The model receives text that says to run the snippet by path but receives no path and no interpreter. The call is silently degraded to an instruction skill without the model knowing why.
-
-This can be triggered for operator-installed snippets that have an invalid or empty `language:` field: `validateStructure` in `loader.go:235-257` does NOT check the `Language` field for type:snippet skills (it only checks Name, Description, Type, and Body), so a snippet with `language: ruby` or `language:` (empty) passes the loader but fails the language enum check inside `SnippetHostInvocation`.
-
-The `SaveSnippet` path (`skills.Writer.SaveSnippet`) always validates the language via `validSnippetLanguage`, so snippets written through the model tool cannot carry a bad language. However, operator-installed skills from disk (via `npx skills add` into the export root) bypass `SaveSnippet` entirely and land directly on disk. The loader's `validateStructure` gap means a bad-language snippet from the ecosystem gets loaded silently and then fails silently at use-time.
 
 **Suggested fix:**
 
-Log the language resolution error before returning `false` so operators see the degradation:
+Add a `slog.Warn` before returning `ok=false` so the operator can see the degraded skill:
 
 ```go
-path, interp, perr := skills.SnippetHostInvocation(s.Name, s.Language, a.exportDir)
 if perr != nil {
-    slog.Warn("skilladapters: snippet language resolution failed, falling back to instruction path",
-        "name", s.Name, "language", s.Language, "err", perr)
+    slog.Warn("skilladapters: snippet host invocation failed; falling back to instruction path",
+        "skill", name, "language", s.Language, "err", perr)
     return "", "", "", false
 }
 ```
 
-Additionally, consider adding language validation to `validateStructure` for type:snippet so the loader rejects bad-language snippets at scan time (same skip-and-warn pattern the loader uses for other structural failures), which would prevent the fallback from being reached at all.
-
 ---
 
-### [LOW][BUG] `ArchiveSnippet` audit record is misleading: model-initiated archive audits as `approval_source=cli`
+### [LOW][DEAD-CODE] Package has zero tests
 
-**Location:** `internal/skilladapters/skilladapters.go:136-144`
+**Location:** `internal/skilladapters/skilladapters.go` (whole file)
 
 **Confidence:** high
 
 **Detail:**
 
-Both `Restore()` (line 130) and `ArchiveSnippet()` (line 140) pass `skills.ApprovalCLI` as the approval source when calling the underlying `w.Restore` / `w.Archive`:
+`internal/skilladapters` has exactly one non-test file and no `*_test.go` files at all. The only test exercising the adapters is `internal/eval/skills_snippet_reuse_registry_cot_eval_test.go`, gated behind the `cot_eval` build tag (requires a live OpenRouter key and is excluded from normal CI). The unit behaviour of every method — `List`, `Body`, `ManifestDescription`, `Snippet`, `WriteMutation`, `SaveSnippet`, `Restore`, `ArchiveSnippet` — is never exercised by the standard `go test ./...` or the integration tier.
 
-```go
-// Restore
-if err := a.w.Restore(ctx, name, skills.ApprovalCLI, modelActor); err != nil {
-
-// ArchiveSnippet  
-if err := a.w.Archive(ctx, name, skills.ApprovalCLI, modelActor); err != nil {
-```
-
-The `modelActor` carries `ActorID: "model"` but `ApprovalSource: "cli"`. The resulting audit rows in `aura.skill_audit` have `actor_id=model` and `approval_source=cli` — a contradiction, since `cli` is defined as the "operator CLI approve" source (audit_store.go:49). An operator reading the audit trail cannot distinguish a model-triggered archive/restore from a CLI-triggered one.
-
-For `Restore`, the code comment on lines 126-128 acknowledges this as an intentional workaround: "restore audits as activate/cli, no new migration" (the 0010 CHECK does not include a `model` approval source). The constraint is real.
-
-For `ArchiveSnippet`, the comment on line 137 says "labeling the actor 'model' with the cli ApprovalSource (the manual operator-source archive, distinct from the TTL sweep's auto source)" — but the "manual operator-source" framing is incorrect when the action is model-initiated.
-
-This does not cause a runtime failure or DB coherence violation (the D-29 CHECK accepts `cli` for archive actions). It produces misleading audit records in a security-relevant ledger.
+In particular, the `Snippet` silent-fallback path described above (MEDIUM finding) cannot be caught without tests.
 
 **Suggested fix:**
 
-The constraint is the 0010 migration's `action` CHECK not including a `model` source. The correct fix is to add a `ApprovalModel = "model"` constant to `audit_store.go` and add it to the DB CHECK in a follow-up migration, then use it here. Until the migration ships, the comment should be updated on `ArchiveSnippet` to explicitly state the workaround: "audits as cli because the 0010 CHECK has no model source; tracked for amendment."
+Add a `skilladapters_test.go` with at least:
+- A table test covering `Loader.Snippet` for: (a) absent skill, (b) non-snippet skill, (c) valid snippet, (d) snippet with broken language (exercises the silent-fallback path).
+- A smoke test for `Writer.WriteMutation`, `Writer.SaveSnippet`, `Writer.Restore`, `Writer.ArchiveSnippet` using an in-memory or temp-dir fake `*skills.Writer` (or just the real one against a test dir without a DB, verifying the adapter routes the call correctly).
 
 ---
 
 ## What was checked and found clean
 
-- **Nil-pointer safety**: `Loader.loader` and `Writer.w` are always non-nil (set in constructors, no code path sets them to nil after construction). `NewLoader` and `NewWriter` are called at the composition root only when the live `*skills.Loader` / `*skills.Writer` are available. No nil dereference risk.
-- **Concurrency**: No shared mutable state in the adapter structs. `Loader.List()`, `Body()`, `ManifestDescription()`, and `Snippet()` all delegate to `skills.Loader` methods that are mutex-guarded. `Writer` methods delegate directly to `skills.Writer` which is not documented as concurrent-safe but is only called from the single tool dispatch goroutine. The package-level `var modelActor` is write-once at init, safe to read concurrently.
-- **Error wrapping**: All errors are propagated via `return "", err` or `return "", "", "", false` — no %w incorrectness within this package (the adapter does not wrap errors itself; the underlying methods wrap them).
-- **Dead code**: All exported symbols (`NewLoader`, `NewWriter`, `Loader`, `Writer`, and all their methods) have verified non-test callers in `cmd/aura/serve_adapters.go` and `internal/eval/skills_snippet_reuse_registry_cot_eval_test.go`.
-- **Resource leaks**: No goroutines, no file handles, no DB rows opened in this package. Nothing to close.
-- **Context propagation**: Every method that takes a `context.Context` forwards it correctly to the underlying `skills.Writer` calls.
-- **`SaveSnippet` `Frontmatter` construction**: The adapter constructs a `Frontmatter` with no `Language` field (line 112-117), but `skills.Writer.SaveSnippet` immediately overwrites `fm.Language` at line 173 of `snippet.go` before any language-dependent logic runs. Not a bug.
-- **`ArchiveSnippet` returns hardcoded `"archived"` string**: The string is only used as a display status in the tool result message. The `skills` package has no exported `StatusArchived` constant, so the hardcoded literal is the correct approach given the current package API. Minor style inconsistency (not a bug).
+1. **Interface alignment** — `Loader` satisfies `tools.skillLoader` exactly (List/Body/ManifestDescription/Snippet match the consumer-declared seam). `Writer` satisfies `tools.skillWriter` exactly (WriteMutation/SaveSnippet/Restore/ArchiveSnippet). Signatures match the interface declarations at `internal/agent/tools/skill.go` and `skill_write.go`.
+
+2. **Concurrency** — Both adapter structs are constructed once and all fields are immutable after `New*`. The underlying `*skills.Loader` carries its own `sync.Mutex`. No shared mutable state in the adapter layer.
+
+3. **Error propagation** — All `w.*` calls propagate errors with `%w`; the one exception is the `Snippet`/`perr` discard (covered above). The `SaveSnippet` adapter extracts only `res.Status` from `SnippetSaveResult`, correctly ignoring the tier/language/needs_* (the adapter's job is to return the status string the tool prints).
+
+4. **Actor labelling** — `modelActor` (actor_id="model") is applied consistently to all four write paths. `ApprovalCLI` on `Restore` and `ArchiveSnippet` matches the documented D-29 cli tuple and is intentional per the inline comments.
+
+5. **Wiring** — Both `NewLoader` and `NewWriter` are used in production at `cmd/aura/serve_adapters.go:259-262` and in the eval registry at `internal/eval/skills_snippet_reuse_registry_cot_eval_test.go:46-58`. No exported symbol is dead.
+
+6. **Nil-pointer safety** — `Loader.loader` and `Writer.w` are never nil post-construction; no nil-deref path exists in the adapter layer.
+
+7. **exportDir empty** — `filepath.Join("", name, file)` would yield a relative path if `exportDir` is empty, but all production callers pass `cfg.SkillExportDir` which always has a non-empty default (`defaultSkillExportDir()`). Not flagged as a bug given the config-level guarantee.

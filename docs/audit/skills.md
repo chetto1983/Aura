@@ -1,126 +1,124 @@
 # Audit: internal/skills
 
-**Verdict:** needs-work — one high-severity not-wired defect (ResumeHandler never activated in REPL), one medium bug (orphan dir from post-Archive SetUsageStatus), several low not-wired/dead-code exports, and a doc mismatch.
+**Verdict:** needs-work — one stale comment documents a lie (promoteDir EXDEV fallback), one doc-code contract mismatch in resume.go, and several exported symbols with zero production callers.
 
-**Counts:** critical 0 / high 1 / medium 2 / low 7
+**Counts:** critical 0 / high 1 / medium 2 / low 3
 
 ---
 
 ## Findings
 
-### [HIGH][NOT-WIRED] ResumeHandler never called in REPL skill-approval flow
+### [HIGH][BUG] promoteDir comment promises EXDEV fallback that is not implemented
 
-**Location:** `internal/skills/resume.go:19-56`, `internal/runner/runner_resume.go:68-84`
-
-**Confidence:** high
-
-**Detail:** `skills.NewResumeHandler` / `ResumeHandler.Resume` exist to translate a human "yes" answer to a `KindApproval` pause into `Writer.Activate` — this is the D-03 REPL activation channel. But `runner.SubmitAnswer` → `injectAnswer` only appends the answer as a `RoleTool` turn and drives the next `Turn(convID, nil)`. There is no hook anywhere in the runner to dispatch to `ResumeHandler.Resume` on `KindApproval` + `ActionAccept`. A skill that fires `ErrAwaitingUserInput{Kind: KindApproval}` in the REPL will pause, the user will answer "y", the answer is injected as context, the conversation continues — but the skill remains in `pending/` and never activates. The operator must run `aura skills approve <name>` out-of-band; the REPL "y" answer is a no-op for activation. `NewResumeHandler` is referenced only from `resume_integration_test.go`.
-
-**Suggested fix:** Wire `ResumeHandler` into `runner.Deps` as an optional `SkillApprover interface { ApproveSkill(ctx, name, pausedToken string, actor AuditActor) error }`. In `injectAnswer`, detect `pending.Kind == KindApproval && resp.Action == ActionAccept` and call `deps.SkillApprover.ApproveSkill(...)` before the conversation injection. For decline, call `writer.DiscardPending`. This closes the loop that `skills_write.go:42` already describes.
-
----
-
-### [MEDIUM][BUG] SetUsageStatus recreates orphan active dir after Archive moves it
-
-**Location:** `internal/skills/snippet_usage.go:135-172` (SweepExpiredSnippets, lines 164-168), `internal/skills/snippet_usage.go:56-88` (writeUsageAtomic, line 58)
+**Location:** `internal/skills/writer_activate.go:245-258`
 
 **Confidence:** high
 
-**Detail:** In `SweepExpiredSnippets`, after a successful `Archive(ctx, name, ApprovalAuto, actor)` call (which runs `promoteDir(activeDir/name, archiveDir/name)` — moving the entire dir including `.usage.json`), the code calls `_ = w.SetUsageStatus(name, "archived")`. `SetUsageStatus` calls `ReadUsage(name)` which reads `activeDir/name/.usage.json`; that path no longer exists, so `ReadUsage` returns a zero-value `UsageSidecar{Status: "active"}` without error (by design — missing sidecar is not an error). Then `writeUsageAtomic` calls `os.MkdirAll(filepath.Join(w.activeDir, name), 0o750)`, **recreating the now-empty active dir**, and writes a `.usage.json` there. Result: `activeDir/name/` is recreated as a ghost directory containing only `.usage.json`. The loader scans it next refresh, tries `loadSkillDir`, finds no `SKILL.md`, logs a warning, and skips it — but the orphan dir persists on disk until manually removed. On subsequent sweeps, `snippetIsStale` reads `activeDir/name/SKILL.md` → not found → `ok=false` → skip, so the ghost is permanently orphaned.
+**Detail:**
+The function comment reads "A cross-device rename (EXDEV) falls back to a copy+remove." The body does no such thing: it calls `os.Rename` and wraps any error unconditionally. If `pending/`, `active/`, and `archived/` are ever placed on different filesystems (e.g. a Docker volume bind-mount for `archived/`), every `Activate`/`Restore`/`Archive` call will return `EXDEV` and fail. In the default single-`SkillsDir` configuration this never triggers, but the comment creates false confidence for any operator who does split the paths. The contract is a lie-in-comment, not a latent runtime safety net.
 
-**Suggested fix:** Remove the `_ = w.SetUsageStatus(name, "archived")` call from `SweepExpiredSnippets` (line 168). The sidecar moved with the skill dir into `archiveDir/name/`; if `snippetIsStale` needs to confirm "already archived", it should read from `archiveDir` not `activeDir`. Alternatively, if the sidecar is still needed post-archive, update `SetUsageStatus` / `writeUsageAtomic` to accept an explicit dir path rather than always using `activeDir`.
+**Suggested fix:**
+Either (a) implement the EXDEV fallback — detect `syscall.EXDEV` via `errors.Is` and fall back to `copyTreeNoSymlinks` + `os.RemoveAll(src)` — or (b) remove the claim from the comment. Option (b) is the minimal fix; option (a) is the correct long-term fix and uses `copyTreeNoSymlinks` which already exists.
 
 ---
 
-### [MEDIUM][NOT-WIRED] WriteInstallPending has no callers in the production Go build
+### [MEDIUM][BUG] resume.go doc comments contradict the audit record on decline/cancel gate_taken
 
-**Location:** `internal/skills/writer.go:134-187`
+**Location:** `internal/skills/resume.go:44`, `internal/skills/resume.go:63`
 
 **Confidence:** high
 
-**Detail:** `WriteInstallPending` is defined as an exported method but searched across every `.go` file in the repo, the only references are its own definition. The planning docs (`.planning/phases/11-skills/11-06-SUMMARY.md`) document it as the installer's pending+audit sink, but the installer (Slice 11-06) has not been built. Additionally, the method accepts a `body string` parameter (signature: `fm Frontmatter, body, stagedDir, hash string`) that is never read inside the function — all file content comes from `copyTreeNoSymlinks(stagedDir, tmp)`; the SKILL.md inside `stagedDir` is what lands in `pending/`.
+**Detail:**
+Two doc comments state that a decline/cancel resume records `gate_taken=false`:
+- Line 44 (Resume doc): "on decline/cancel it DISCARDS the pending skill + audit the ask_user rejection (gate_taken=false: the human declined the gate)"
+- Line 63 (DiscardPending doc): "recording the gate as recommended-but-not-taken (gate_taken=false)"
 
-**Suggested fix:** Either (a) build the installer and wire `WriteInstallPending`, or (b) drop the dead `body` parameter from the signature to prevent caller confusion. If keeping as a forward stub, add a build-tag or a clear `// not yet called` note.
+The implementation at `writer_activate.go:187` uses `GateTaken: true`. The `auditRejection` comment at line 171 correctly says `gate_taken=true`. The implementation is consistent and intentional (the D-29 matrix, as documented in `writer_activate.go:171-175`, treats a human reject as `gate_taken=true` — the human DID take the gate, they just said no). The `resume.go` doc comments are wrong and will mislead anyone building on or auditing the D-29 tuple contract.
 
----
-
-### [LOW][BUG] yamlScalar does not escape embedded newlines in double-quoted scalars
-
-**Location:** `internal/skills/writer.go:271-295`
-
-**Confidence:** medium
-
-**Detail:** `yamlScalar` checks for `\n` in a description and sets `needsQuote = true`, but the escaping loop (lines 287-292) only escapes `"` and `\`. A bare newline inside a YAML double-quoted scalar is subject to YAML line-folding: the parser replaces it with a single space. A description containing `\n` (e.g., `"Does X\nand Y"`) will be serialized as a double-quoted scalar with a literal newline and parsed back as `"Does X and Y"` — silently losing the linebreak. `ValidateForWrite` does not enforce single-line descriptions, so this is reachable.
-
-**Suggested fix:** In the escaping loop, add `case s[i] == '\n': out = append(out, '\\', 'n'); continue` and similarly for `\r` → `\r`. This matches YAML 1.2 double-quoted escape sequences.
+**Suggested fix:**
+Update `resume.go` lines 44 and 63 to say `gate_taken=true`. The correct rationale is in `writer_activate.go:171-175`: the approve-vs-reject distinction lives in the resume answer, not the `gate_taken` field; both accept AND decline are `gate_taken=true` (the gate was exercised).
 
 ---
 
-### [LOW][NOT-WIRED] ValidateNameAgainstDir has no production callers
+### [MEDIUM][NOT-WIRED] BM25Corpus exported but has no production caller
+
+**Location:** `internal/skills/manifest.go:53-62`
+
+**Confidence:** high
+
+**Detail:**
+`BM25Corpus` is exported and intended to feed the overflow `list` ranker (D-09). The only non-test reference is a comment in `internal/agent/tools/skill.go:62`. The live overflow list ranker lives in `internal/agent/tools/bm25.go` and operates over tool specs, not skills. The `skilladapters.Loader` never calls `BM25Corpus` — it calls `RenderManifest` only. The function is reachable only from tests (`manifest_test.go:71`). The planning docs for the D-09 overflow ranker exist but the wiring commit has not landed.
+
+**Suggested fix:**
+Either wire the overflow list ranking — `skillLoader` seam needs a `Corpus() []string` method that the list action uses to rank results — or mark the function with a `// TODO(D-09): wire into the list action overflow ranker` comment to signal intentional scaffolding. Until wired, every overflow list hit falls back to a name-prefix substring match.
+
+---
+
+### [LOW][NOT-WIRED] ValidateNameAgainstDir exported but has no production caller
 
 **Location:** `internal/skills/validator.go:108-115`
 
 **Confidence:** high
 
-**Detail:** `ValidateNameAgainstDir` is documented as "the installer's name+dir chokepoint" but the installer (Slice 11-06) does not exist yet. Searching all `.go` files: the only references are the definition and `validator_test.go:194-199`. No production code imports it.
+**Detail:**
+The doc says "the installer's name+dir chokepoint" (plan 11-06 installer). The installer (Slice 7d/11-06) does not exist yet. The function is called only from `validator_test.go:194-199`. It is not wired in any production path.
 
-**Suggested fix:** Either build the installer that uses it, or unexport it as `validateNameAgainstDir` until the installer lands (keeping the test as an internal test).
+**Suggested fix:**
+No action needed before the installer lands. Document with `// TODO(plan-11-06)` to make the scaffolding intent explicit, or keep it as is — the function is correct and ready.
 
 ---
 
-### [LOW][NOT-WIRED] SnippetInvocation has no callers in the production module build
+### [LOW][NOT-WIRED] SnippetInvocation / SnippetCodeFile / SnippetSandboxPath / SnippetHostPath — exported helpers with no production callers outside the package
 
-**Location:** `internal/skills/snippet.go:112-127`
+**Location:** `internal/skills/snippet.go:78-110, 117-127`
 
 **Confidence:** high
 
-**Detail:** `SnippetInvocation` (sandbox-path resolver) is referenced only in `snippet_test.go` and `.planning/spikes/012a-discovery-skill-driven/main.go` (a `package main` outside the module build path). Production code uses `SnippetHostInvocation` (added in Phase 18-02). The 18-02-SUMMARY.md notes it is kept "for the sandbox_exec escalation path" but no production escalation path calls it.
+**Detail:**
+Four exported snippet helpers:
+- `SnippetCodeFile` — only called from within `snippet.go` itself (lines 90, 105).
+- `SnippetSandboxPath` — only called from within `snippet.go` (line 326) and smoke tests.
+- `SnippetHostPath` — only called from within `snippet.go` (line 327) and tests.
+- `SnippetInvocation` — only called from a spike prototype (`.planning/spikes/012a-discovery-skill-driven/main.go`, not in the production binary).
 
-**Suggested fix:** Keep it with a `// sandbox_exec escalation path — wired in Phase 12 AG-UI gateway` comment so intent is clear, or unexport it until the escalation path is built.
+The live production path uses `UseSnippet` (which calls these internally) and `SnippetHostInvocation` (via `skilladapters`). These are correct scaffolding — they were the building blocks before `UseSnippet` was added as the stable seam — but their external surface is now unused.
 
----
-
-### [LOW][DEAD-CODE] InsertAuditTx exported but has no external callers
-
-**Location:** `internal/skills/audit_store.go:159-171`
-
-**Confidence:** high
-
-**Detail:** `InsertAuditTx` is exported but only called within `internal/skills` (by `writer.go`, `writer_activate.go`, `snippet.go`). No package outside `internal/skills` imports it. It is designed for tx-bound audit inserts, which is an internal concern.
-
-**Suggested fix:** Unexport as `insertAuditTx`. Update the three internal callers.
+**Suggested fix:**
+If no installer or external caller is planned, consider unexporting `SnippetCodeFile`, `SnippetSandboxPath`, and `SnippetHostPath` (keep `SnippetHostInvocation` and `SnippetInvocation` for the installer's use). Or leave exported with a note that the installer will consume them.
 
 ---
 
-### [LOW][DEAD-CODE] SnippetCodeFile exported but has no external callers
+### [LOW][BUG] DiscardPending hashes pendingDir unconditionally even when pendingDir is empty
 
-**Location:** `internal/skills/snippet.go:75-84`
+**Location:** `internal/skills/resume.go:67-68`
 
-**Confidence:** high
+**Confidence:** low
 
-**Detail:** `SnippetCodeFile` is exported but only called from within `snippet.go` (lines 90, 105). No external package references `skills.SnippetCodeFile`.
+**Detail:**
+```go
+pendingDir := filepath.Join(w.pendingDir, name)
+hash, _ := HashSkillDir(pendingDir) // best-effort
+if w.pendingDir != "" {
+    ...
+}
+```
+When `w.pendingDir == ""`, `pendingDir` resolves to `"/" + name` (an absolute path derived from an empty component). `HashSkillDir` is then called on that path — on most systems this will fail (directory not found) and `hash` will be `""` (the error is swallowed). This is a best-effort hash so the impact is limited to an empty `content_hash` in the rejection audit row. In production `pendingDir` is always set (see `newSkillWriter`), so the condition never fires. Still, a misplaced empty-string guard makes the hash call structurally redundant.
 
-**Suggested fix:** Unexport as `snippetCodeFile`. Update the two internal callers.
-
----
-
-### [LOW][BUG] DiscardPending doc says gate_taken=false but code records true
-
-**Location:** `internal/skills/resume.go:59-80` (DiscardPending docstring vs `writer_activate.go:176-190` auditRejection)
-
-**Confidence:** high
-
-**Detail:** `DiscardPending`'s docstring says "marking the gate as recommended-but-not-taken (gate_taken=false)". But `auditRejection` (called by `DiscardPending`) sets `GateTaken: true`. The `auditRejection` docstring is correct: a decline exercises the gate (the human reviewed and said no), so `gate_taken=true` is the right semantic. The `DiscardPending` comment is misleading to future readers of the D-29 matrix.
-
-**Suggested fix:** Fix the `DiscardPending` docstring: change "gate_taken=false" to "gate_taken=true (the human exercised the gate)".
+**Suggested fix:**
+Move `hash, _ := HashSkillDir(pendingDir)` inside the `if w.pendingDir != ""` block, mirroring the guard that protects `os.RemoveAll`.
 
 ---
 
-## What was checked
+## What was checked and found clean
 
-- All 10 non-test `.go` files in `internal/skills/`: `manifest.go`, `frontmatter.go`, `loader.go`, `validator.go`, `audit_store.go`, `materialize.go`, `writer.go`, `writer_activate.go`, `resume.go`, `snippet.go`, `snippet_usage.go`, `contenthash.go`, `messages.go`, `builtin.go`.
-- All exported symbols grepped across the full repo (every `.go` file in `D:/Aura`) to confirm wiring status.
-- Test files read for intended behavior context.
-- No races found: the `Loader` is mutex-guarded with a single lock; no shared mutable state; no goroutines spawned by any function in the package.
-- No integer overflow risks: `int32(limit)` in `audit_store.go:196` is bounded by the default-100 path and CLI-supplied inputs; theoretical overflow at >2B not exploitable in practice.
-- `go.mod` declares `go 1.26.4`: loop-variable capture is not an issue.
+- **No goroutine leaks.** The loader is mutex-guarded lazy-on-read with no background goroutine. `TestMain` installs `goleak.VerifyTestMain` confirming this.
+- **No races.** `Loader` uses `sync.Mutex` for all snapshot accesses. `Writer` is stateless between calls (all state is in files/DB). No shared mutable maps written concurrently.
+- **No unchecked errors that matter.** All `hash, _ :=` discards are documented best-effort (recovery-path hash — an empty hash is auditable but not fatal). The write paths (`writePending`, `writePendingSnippet`) check every FS error.
+- **No resource leaks.** No open file handles, no `http.Response.Body` (no HTTP in this package), no DB rows (sqlc cursor is closed by the generated layer).
+- **No nil-pointer derefs.** `w.pool` nil is only reached in FS-only test writers and the audit-INSERT paths are guarded by the integration test tag.
+- **No JSON mishandling.** `json.Marshal`/`json.Unmarshal` on `UsageSidecar` check errors; goccy YAML unmarshaling checks errors.
+- **No off-by-one in RenderManifest overflow.** The `rendered > 0` guard intentionally allows the first entry regardless of size (always-show-at-least-one design).
+- **`yamlScalar` byte indexing is safe.** UTF-8 continuation bytes (0x80–0xBF) never alias `"` (0x22) or `\` (0x5C), so the byte-walk escape is correct.
+- **`int32(limit)` in AuditStore.List.** Overflow only possible if a caller passes Limit > 2^31, which no internal caller does (default 100, CLI-bounded).
+- **`SweepExpiredSnippets` double-status-write.** After `Archive` moves the dir, `setUsageStatusInRoot(archiveDir, name, "archived")` correctly updates the sidecar in the new location. Not a double-write bug.
+- **`SanitizeName` before every filepath.Join** in Archive/Delete/Restore/SetAlways/UseSnippet — all path-traversal chokepoints are present.

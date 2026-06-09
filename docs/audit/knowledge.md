@@ -1,110 +1,100 @@
 # Audit: internal/knowledge
 
-**Verdict:** needs-work — one not-wired config knob, one Close/Cypher unsynchronised access, one version-prefix over-match.  
-**Counts:** critical 0 / high 1 / medium 1 / low 1
+**Verdict:** needs-work — two latent races in the initialize timeout path; one nil-deref on use-after-close; all other surfaces clean.
 
-## Scope
-
-Files audited (non-test only):
-
-- `internal/knowledge/client.go`
-- `internal/knowledge/config.go`
-- `internal/knowledge/migrate.go`
-- `internal/knowledge/ping.go`
-- `internal/knowledge/reset.go`
-- `internal/knowledge/schema.go`
-- `internal/knowledge/status.go`
-- `internal/knowledge/migrations/0001_init.cypher`
-
-Test files read for intent:
-`client_test.go`, `client_unit_test.go`, `client_paths_test.go`, `smoke_test.go`, `integration_env_test.go`, `test_helpers_test.go`.
-
-Callers grepped across the full repo (`D:/Aura/**/*.go`).
+**Counts:** critical 0 / high 0 / medium 2 / low 1
 
 ---
 
 ## Findings
 
-### [HIGH][NOT-WIRED] `Config.ConnectTimeoutSec` is parsed and documented but never consumed
+### [MEDIUM][RACE] Data race: `c.stdin` accessed in goroutine without lock while `Close()` can set it to nil
 
-**Location:** `internal/knowledge/config.go:23`, `internal/knowledge/client.go:49-87`, `internal/knowledge/schema.go:30-39`  
-**Confidence:** high
+**Location:** `internal/knowledge/client.go:102–113` (goroutine) and `internal/knowledge/client.go:229–231` (Close)
 
-`Config.ConnectTimeoutSec` is declared with the doc comment "first-call connect/retry budget" and is populated from `AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC` by `internal/config/config.go:215`. Neither `Open()` nor `OpenSchema()` reads this field:
-
-- `Open()` calls `exec.CommandContext(ctx, cfg.MCPBinary, args...)` — the context deadline (if any) is all it gets; `ConnectTimeoutSec` is not applied.
-- `OpenSchema()` calls `driver.VerifyConnectivity(ctx)` with the caller's context; `ConnectTimeoutSec` is not applied.
-- `pingEmbed()` creates `http.Client{Timeout: 10 * time.Second}` — hardcoded, not derived from `ConnectTimeoutSec`.
-
-The operator sets `AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC=25` expecting a longer connect budget; nothing changes. The config key, the struct field, the test assertion in `internal/config/config_test.go:416`, and the `aura config` display in `cmd/aura/config.go:71` all give a false impression that the knob works.
-
-**Suggested fix:** In `Open()`, wrap the caller's context with `context.WithTimeout(ctx, time.Duration(cfg.ConnectTimeoutSec)*time.Second)` to apply the budget to subprocess spawn + MCP handshake. Apply the same wrapping in `OpenSchema()`'s `VerifyConnectivity` call. Replace the hardcoded `10 * time.Second` in `pingEmbed` with `time.Duration(expectedDim /* wrong — pass cfg */)` — or pass `cfg.ConnectTimeoutSec` into `pingEmbed`. Alternatively, if the intent is that callers always supply a deadline-scoped context, remove the field from `Config` and delete the associated env-var parsing in `internal/config/config.go` to avoid the false knob.
-
----
-
-### [MEDIUM][RACE] `Close()` accesses `c.stdin` without holding `c.mu`
-
-**Location:** `internal/knowledge/client.go:199-207`  
 **Confidence:** medium
 
-`Cypher()` holds `c.mu` for the entire request-response cycle and calls `fmt.Fprintln(c.stdin, ...)` on the write side of the stdio pipe. `Close()` does not acquire `c.mu` before calling `c.stdin.Close()`. If a caller concurrently calls `Cypher()` and `Close()` (e.g., context-cancellation racing a shutdown path), there is an unsynchronised read/write of `c.stdin` between the two goroutines.
+**Detail:**
+`initializeWithContext` launches a goroutine that runs `c.initialize()`. When `ctx.Done()` fires, the function kills the process and waits up to 1 second in the inner `select`. If `time.After(1s)` fires first (goroutine still alive — blocked on `c.stdout.ReadBytes`), `initializeWithContext` returns. `Open` (caller) then calls `c.Close()`, which under `c.mu` calls `c.stdin.Close()` and sets `c.stdin = nil`. If the goroutine then unblocks and reaches `fmt.Fprintln(c.stdin, ...)` (line 134) or `fmt.Fprintln(c.stdin, ...)` (line 148), it reads `c.stdin` concurrently with `Close()` writing it — a Go memory model data race. `initialize()` holds no lock when reading `c.stdin`; `Close()` holds `c.mu` when writing it.
 
-In practice the current callers in `cmd/aura/neo4j.go` are sequential (defer close after the last cypher call), so this does not fire today. But it is a latent race for any future caller (or an AGUI / Telegram goroutine) that issues a `Cypher()` while another goroutine calls `Close()` on shutdown.
+In practice the window is narrow: after `Process.Kill()`, the OS closes the pipe immediately, so the goroutine finishes quickly. But this is an OS timing assumption — under load or a slow reaper, the 1 s drain budget can expire while the goroutine is mid-write, making the race reachable.
 
-**Suggested fix:** Acquire `c.mu` at the top of `Close()` before accessing `c.stdin`:
-
+**Suggested fix:**
+Add a boolean `closing atomic.Bool` or re-check `c.stdin` under `c.mu` inside `initialize`, or extend `c.mu` to cover `initialize()` since the comment "needs no lock (the client is not yet shared)" no longer holds once `initializeWithContext` introduces concurrent call paths. The cleanest fix is to ensure `c.stdin.Close()` inside `Close()` is called first (it will cause `fmt.Fprintln` to return an error), and then set `c.stdin = nil` only after the goroutine has drained — i.e., always wait on `done` in the inner select before calling `Close`:
 ```go
-func (c *Client) Close() error {
-    c.mu.Lock()
-    stdin := c.stdin
-    c.mu.Unlock()
-    if stdin != nil {
-        _ = stdin.Close()
-    }
-    if c.cmd == nil {
-        return nil
-    }
-    return c.cmd.Wait()
-}
+case <-time.After(time.Second):
+    // goroutine may still hold c.stdin; do not race — the caller's c.Close()
+    // will close stdin, unblocking the goroutine within microseconds.
+    // nothing more to do here — fall through to error return
 ```
-
-Note: `cmd.Wait()` must be called without holding `mu` since it blocks; the snapshot approach above is sufficient to serialize the `stdin.Close()` call.
+The current code is already structured this way but the race exists between the goroutine's pending `c.stdin` read and `Close`'s `c.stdin = nil` write. Removing the `c.stdin = nil` line from `Close` (leaving it for GC) or protecting `c.stdin` reads in `initialize()` with `c.mu` closes the race.
 
 ---
 
-### [LOW][BUG] `kernelVersion` / `pingMCP` version prefix check over-matches future Neo4j minor lines
+### [MEDIUM][BUG] Goroutine leaked for up to 1 second when `initializeWithContext` inner drain timer fires
 
-**Location:** `internal/knowledge/ping.go:52`  
-**Confidence:** low
+**Location:** `internal/knowledge/client.go:105–111`
 
+**Confidence:** high
+
+**Detail:**
+When the context deadline fires during initialization and the inner `time.After(time.Second)` case is selected (goroutine still alive), `initializeWithContext` returns with the goroutine still running. The goroutine accesses `c` (stdin, stdout, stderr, password) after `initializeWithContext` has returned and `c.Close()` has been called. The goroutine will eventually exit (broken pipe from the killed subprocess), but there is an indeterminate window during which it is leaked.
+
+`goleak.VerifyTestMain` in `client_unit_test.go` would catch this leak, but no unit or integration test exercises the exact path: `ConnectTimeoutSec=1`, subprocess slow to respond to Kill (i.e., the inner 1 s budget expires). `TestOpenKeepsProcessAliveAfterConnectTimeout` uses a well-behaved fake MCP that always completes initialization, so it never hits the abort branch.
+
+**Suggested fix:**
+In the timeout branch, always drain `done` before returning, with a generous but bounded deadline (e.g., 2 s after the kill). Remove the fall-through path that leaves the goroutine alive:
 ```go
-if !strings.HasPrefix(version, "5.26") {
-    return "", fmt.Errorf("unexpected Neo4j version %q (want 5.26.x ...)", version)
+case <-ctx.Done():
+    if c.cmd != nil && c.cmd.Process != nil {
+        _ = c.cmd.Process.Kill()
+    }
+    // Block until goroutine exits (pipe closed by Kill → quick).
+    select {
+    case <-done:
+    case <-time.After(2 * time.Second):
+        // Truly stuck; accept the leak rather than blocking forever.
+    }
+    return fmt.Errorf("initialize timeout: %w", ctx.Err())
+```
+This ensures goleak passes and removes the concurrent access window described in knowledge-1.
+
+---
+
+### [LOW][BUG] Nil-deref panic if `Cypher()` is called after `Close()`
+
+**Location:** `internal/knowledge/client.go:208` (`Cypher`), `internal/knowledge/client.go:231` (`Close`)
+
+**Confidence:** high
+
+**Detail:**
+`Close()` sets `c.stdin = nil` under `c.mu`. `Cypher()` also acquires `c.mu`, so the two cannot run concurrently — but if `Cypher` is called sequentially after `Close`, it reaches `fmt.Fprintln(c.stdin, string(enc))` with `c.stdin == nil` (a nil `io.WriteCloser` interface), causing a nil pointer dereference panic at the `w.Write(p)` call inside `fmt.Fprintln`.
+
+No production code currently reaches this path: the CLI defers `mcp.Close()` after all Cypher calls. However, there is no programmatic guard, so any future caller that reuses the client object after closing it will panic rather than receive a clean error.
+
+**Suggested fix:**
+Add a sentinel check in `Cypher` after acquiring the lock:
+```go
+c.mu.Lock()
+defer c.mu.Unlock()
+if c.stdin == nil {
+    return nil, fmt.Errorf("cypher call on closed client")
 }
 ```
-
-`strings.HasPrefix` matches any string whose first four characters are `5.26`, including hypothetical future versions `5.260`, `5.261`, `5.269`. If Neo4j ever ships a `5.260.x` (unlikely but not impossible given their versioning history), this check would silently accept it. More concretely, it would also accept `5.26` with no patch suffix (bare version string from a dev build).
-
-**Suggested fix:** Tighten the check to match the full minor segment:
-
-```go
-if !strings.HasPrefix(version, "5.26.") {
-    return "", fmt.Errorf(...)
-}
-```
-
-This is a one-character change (add the trailing `.`) that eliminates the over-match without requiring semver parsing.
 
 ---
 
 ## What was checked and found clean
 
-- **Nil-pointer derefs:** `Client` fields (`cmd`, `stdin`, `stderr`) are all guarded before use in `Close()` and `Open()`. `decodeRows` checks `len(result) == 0` before unmarshal.
-- **Unchecked errors:** All `fmt.Fprintln` write errors are checked. `resp.Body.Close()` is deliberately discarded (idiomatic). `schema.Close()` in `OpenSchema` error path is deliberately discarded with `_`.
-- **Resource leaks:** `StdinPipe` and `StdoutPipe` are handled correctly — `stdin.Close()` signals EOF; `cmd.Wait()` cleans up the stdout pipe per `exec.Cmd` contract. The `safeBuffer` does not spawn goroutines. `pingEmbed`'s `resp.Body.Close()` is deferred correctly; `CloseIdleConnections()` is also deferred to prevent goroutine leaks in goleak.
-- **Context propagation:** `Cypher()` checks `ctx.Err()` before acquiring the lock. `OpenSchema()` passes `ctx` to `VerifyConnectivity` and `driver.Close`. `pingEmbed` uses `http.NewRequestWithContext`.
-- **Dead code:** All exported symbols (`Open`, `Close`, `Cypher`, `OpenSchema`, `SchemaExecutor.Exec`, `SchemaExecutor.Close`, `Migrate`, `Reset`, `Status`, `Ping`, `PingResult`, `MigrationRow`, `Config`, `DefaultEmbedDimensions`) are referenced from `cmd/aura/neo4j.go` and/or `internal/config/config.go`. All unexported helpers (`decodeRows`, `kernelVersion`, `pingEmbed`, `pingMCP`, `splitCypherStatements`, `loadMigrations`, `parseMigrationName`, `stderrTail`, `redactSecrets`, `buildRequest`, `safeBuffer`) are called within the package.
-- **SQL/JSON mishandling:** `decodeRows` correctly handles the nested `{"content":[{"type":"text","text":"<json>"}]}` envelope, including `isError`, empty content, and invalid inner JSON.
-- **Migration idempotency:** The `IF NOT EXISTS` guards in `0001_init.cypher` make partial re-runs safe even though Cypher DDL cannot be transactional.
-- **Integer conversion:** `parseMigrationName` bounds the version to `[1, 999999]` before converting `int` to `int32` — provably safe.
-- **`safeBuffer` concurrency:** Both `Write` and `String` acquire the embedded mutex; concurrent subprocess writes and error-path reads are safe.
+- **No dead exported symbols.** Every exported identifier (`Client`, `Config`, `Open`, `Close`, `Cypher`, `Migrate`, `Reset`, `Status`, `Ping`, `PingResult`, `MigrationRow`, `SchemaExecutor`, `OpenSchema`, `DefaultEmbedDimensions`) is referenced in production code (`cmd/aura/neo4j.go`, `internal/config/config.go`). Verified with Grep across the full repo.
+- **No unexported dead code.** All unexported helpers (`pingMCP`, `pingEmbed`, `kernelVersion`, `connectContext`, `stderrTail`, `redactSecrets`, `decodeRows`, `loadMigrations`, `parseMigrationName`, `splitCypherStatements`, `safeBuffer`, `rpcReq`, `rpcResp`) are called from within the package.
+- **`splitCypherStatements` semicolon logic.** Trailing `;` produces an empty final segment; the `len(keep) > 0` guard correctly discards it. All three migration statements use `IF NOT EXISTS`, so a partial-migration re-run (schema DDL applied but audit row absent) is idempotent.
+- **`safeBuffer` concurrency.** Both `Write` and `String` hold `sb.mu` — race-free under concurrent subprocess stderr writes and goroutine error-path reads.
+- **`Close()` idempotency.** Double-close is safe: second call sees `c.stdin == nil` and `c.cmd == nil`, returns nil without action.
+- **`pingEmbed` defer order.** `resp.Body.Close()` is deferred later (executes first), then `client.CloseIdleConnections()` fires — correct ordering; the connection is idle before `CloseIdleConnections` is called.
+- **No unchecked HTTP status path.** `pingEmbed` checks `resp.StatusCode != http.StatusOK` and returns an error before decoding.
+- **`parseMigrationName` int32 overflow guard.** The explicit `[1, 999999]` bound before `int32(n)` makes the conversion provably safe.
+- **`int64` ID counter.** `c.nextID` is `atomic.Int64`, safe under concurrent use.
+- **Context propagation.** All Cypher calls pass `ctx` through; the short-circuit `ctx.Err()` check at `Cypher` entry is correct. `pingEmbed` uses `http.NewRequestWithContext`.
+- **go.mod version.** `go 1.26.4` — `strings.SplitSeq` (1.24+) and `for i := range N` (1.22+) are valid.
+- **`go vet ./internal/knowledge/` output:** clean (no issues).

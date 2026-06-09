@@ -1,71 +1,48 @@
 # Audit: internal/llm/openai_compat
 
-**Verdict:** needs-work — two dead-state fields + one not-wired struct field carrier; no critical bugs or races.
-
-**Counts:** critical 0 / high 0 / medium 2 / low 2
-
----
+**Verdict:** needs-work — two dead-code items; no bugs, no races, no missing wiring
+**Counts:** critical 0 / high 0 / medium 1 / low 1
 
 ## Findings
 
-### [MEDIUM][DEAD-CODE] `toolCallAcc.firstSeen` is written but never read
+### [MEDIUM][DEAD-CODE] `toolCallAcc.firstSeen` and `accumulator.order` are written but never read
 
-**Location:** `internal/llm/openai_compat/accumulate.go:32,53`
-
+**Location:** `internal/llm/openai_compat/accumulate.go:32,40,53-54`
 **Confidence:** high
 
-**Detail:**
-`toolCallAcc.firstSeen` is documented as "records arrival order as a stable tiebreaker" and is set in `add()` via `&toolCallAcc{firstSeen: a.order}`. However, `finalize()` sorts by wire index using `sort.Ints(indices)` — it never reads `firstSeen`. No other code in the repo (confirmed by Grep across `D:/Aura`) reads the field. The state is written, incremented, and thrown away. The `a.order` counter likewise increments uselessly on every new index.
+`toolCallAcc` carries a `firstSeen int` field (line 32). `accumulator` carries an `order int` counter (line 40). In `add()` (lines 53-54), every new index-entry is stamped with `firstSeen: a.order` and `a.order` is incremented. Neither `firstSeen` nor `order` is ever read anywhere in the package or the wider repo (grep across `D:/Aura` confirms zero non-definition, non-test references to `.firstSeen`).
 
-**Suggested fix:**
-Remove `firstSeen int` from `toolCallAcc` and remove the `order int` counter from `accumulator`. The sort-by-wire-index is already deterministic without a tiebreaker. Update the doc comment on `toolCallAcc` to remove the tiebreaker claim.
+`finalize()` sorts accumulated calls by wire index (`sort.Ints(indices)`, line 83), ignoring `firstSeen` entirely. The doc-comment on `toolCallAcc` says "firstSeen records arrival order as a stable tiebreaker" — that role is never exercised.
+
+**Suggested fix:** Remove `firstSeen int` from `toolCallAcc`, remove `order int` from `accumulator`, and remove the write `firstSeen: a.order` / `a.order++` in `add()`. If arrival-order tiebreaking is desired in the future, re-add it with a read site.
 
 ---
 
-### [MEDIUM][DEAD-CODE] Exported `Usage` type has zero external consumers
-
-**Location:** `internal/llm/openai_compat/usage.go:27`
-
-**Confidence:** high
-
-**Detail:**
-`Usage` is an exported struct serving as an intermediate projection between `usageWire.toUsage()` and `Usage.toLLMUsage()`. Grep confirms `openai_compat.Usage` appears nowhere in any Go file outside the package (only in planning `.md` docs). All callers of `openai_compat.New` receive `llm.Usage` chunks via the `llm.Client` interface — they never interact with `openai_compat.Usage` by name. Exporting an implementation-internal pipeline stage leaks the abstraction boundary.
-
-**Suggested fix:**
-Rename to `usage` (unexported). Update `parseResult.usage` field type, `usageWire.toUsage()` return type, and `(usage).toLLMUsage()` receiver accordingly. No external callers need updating.
-
----
-
-### [LOW][NOT-WIRED] `HTTPError.RetryAfterSec` is parsed but no production caller reads it
-
-**Location:** `internal/llm/openai_compat/httperror.go:26,49`
-
-**Confidence:** high
-
-**Detail:**
-`newHTTPError` correctly parses the `Retry-After` header on 429 responses and stores it in `HTTPError.RetryAfterSec`. The field surfaces in the `Error()` string. However, the only production retry logic (`internal/agent/llm_agent_stream_retry.go:retryableStreamOpenError`) does not check `*HTTPError` at all — a 429 falls through to returning `false` (no retry), and no backoff based on `RetryAfterSec` is implemented. Only tests (`client_test.go`, `httperror_test.go`) read the field. The parsed value sits in the struct with no consumer that honors it.
-
-This is an intentional design choice (Req#4: zero retries at the wire layer), but the value's presence in the struct implies it should be usable by callers. No production caller imports the type to call `errors.As` and read it.
-
-**Suggested fix:**
-Either (a) document explicitly that `RetryAfterSec` is reserved for future callers and add a placeholder in `retryableStreamOpenError` or the agent loop, or (b) if the field will never be consumed, remove it and only surface the hint in the `Error()` string from the raw header value. The current state misleads readers into believing someone uses this.
-
----
-
-### [LOW][DEAD-CODE] Redundant loop-variable shadow `tc := tc` in `finalize` closure
+### [LOW][DEAD-CODE] Redundant loop-variable shadow `tc := tc` in Go 1.26
 
 **Location:** `internal/llm/openai_compat/sse.go:73`
-
 **Confidence:** high
 
-**Detail:**
-The line `tc := tc` inside the `for _, tc := range acc.finalize()` loop was the pre-Go-1.22 idiom to capture the loop variable before taking its address. The module is `go 1.26.4`; since Go 1.22, loop variables have per-iteration scope, so the shadow is a no-op. The shadow variable and the original are identical; `&tc` refers to the same allocation either way.
-
-**Suggested fix:**
-Delete `tc := tc`. The loop body becomes:
 ```go
-if !emit(llm.Chunk{ToolCall: &tc}) {
-    return false
-}
+for _, tc := range acc.finalize() {
+    tc := tc  // shadow copy — unnecessary in Go ≥ 1.22
+    if !emit(llm.Chunk{ToolCall: &tc}) {
 ```
-No behavioral change; reduces noise and eliminates the false impression that an escape-prevention technique is still needed.
+
+Go 1.22 (loopvar fix, enabled by default from 1.22) makes each loop iteration's `tc` a distinct variable, so `&tc` in `emit()` is already stable per-iteration. `go.mod` declares `go 1.26.4`. The shadow copy is a no-op — not harmful, but it's misleading defensive code.
+
+**Suggested fix:** Remove the `tc := tc` line.
+
+---
+
+## Clean
+
+The following categories were checked and found clean:
+
+**Bugs:** `parseSSE` correctly handles partial reads (both `line` and `readErr` from `bufio.Reader.ReadString`), the `[DONE]` sentinel is caught before `json.Unmarshal`, `io.EOF` is compared by identity (correct for `bufio.Reader`), and `finalize()` cannot be called twice in one stream. The `newHTTPError` body-read / body-close sequence is correct (read in `newHTTPError`, closed by the caller at `client.go:125` — one close, not two). The final `emit(llm.Chunk{Usage: &u})` at `client.go:164` discards its return value safely — it is the last goroutine statement; either path (ctx cancelled → false, consumer draining → true) exits cleanly via `defer close(out)`. The `wireRequest` struct excludes the API key (set only on the Authorization header), so wire-body tracing cannot leak credentials.
+
+**Races:** The stream goroutine is the sole owner of `accumulator`, `parseResult`, and `resp.Body`; no shared mutable state is accessed concurrently. `reasoningtrace.Record` is mutex-guarded. The `emit` closure selects on a buffered channel and `ctx.Done()` — both goroutine-safe primitives.
+
+**Not-wired:** `Client.Stream` is wired in `cmd/aura/chat.go`, `internal/runner/live_e2e_test.go`, `internal/agent/live_finalize_test.go`, and multiple eval harnesses. `HTTPError` is used as a typed error by callers via `errors.As`. `Usage`/`toLLMUsage` projects into `llm.Usage` consumed by the agent's `consume()`. `newHTTPError` is called on every non-2xx response. No exported or unexported symbol in the package is unconnected to production flow (other than the `firstSeen` field documented above).
+
+**`ToolsCacheControl` in `llm.Request` ignored here:** intentional by design — it is an Anthropic-direct marker, documented in `llm/client.go:112-116`, consumed by the future Anthropic-native wire client only.

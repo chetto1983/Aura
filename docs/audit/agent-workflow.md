@@ -1,87 +1,117 @@
 # Audit: internal/agent/workflow
 
-**Verdict:** needs-work — one infinite busy-loop defect (empty-subs + maxIter=0) + one ignored yield return value in LoopAgent.
+**Verdict:** needs-work — one untested error-abort asymmetry between SequentialAgent and LoopAgent; otherwise the concurrency and budget logic is well-engineered.
 
-**Counts:** critical 0 / high 0 / medium 1 / low 1
+**Counts:** critical 0 / high 1 / medium 0 / low 1
 
 ## Findings
 
-### [MEDIUM][BUG] LoopAgent with empty subs and maxIterations=0 spins forever
-
-**Location:** `internal/agent/workflow/loop.go:67-126`
-
-**Confidence:** high
-
-**Detail:**
-`LoopAgent.Run` has two nested loops: the outer `for iterIdx` loop (infinite when `maxIterations == 0`) and the inner `for _, sub := range a.subs`. When `subs` is empty, the inner loop body never executes: no budget step is consumed, no event is yielded, no escalation fires, and `ic.Ctx.Done()` is never checked. The outer loop therefore spins at 100% CPU on one goroutine indefinitely with zero observable effect.
-
-Relevant code path:
-```go
-// loop.go:67
-for iterIdx := uint(0); a.maxIterations == 0 || iterIdx < a.maxIterations; iterIdx++ {
-    for _, sub := range a.subs {   // if len(subs)==0: body never runs
-        subIC := ic.WithSubAgent(sub)
-        ...
-        // all budget.ConsumeStep / yield calls are inside this body
-    }
-    // nothing outside the inner loop breaks the outer one
-}
-```
-
-All current callers pass at least one sub (verified across the full repo). The public variadic constructor `NewLoop(name string, maxIter uint, subs ...agent.Agent)` accepts zero subs without error. Any future caller that constructs `NewLoop("name", 0)` with no subs triggers an unrecoverable CPU-spin on the calling goroutine.
-
-**Suggested fix:** Guard at the top of `Run` (or in `NewLoop`):
-```go
-// In NewLoop: validate at construction time.
-if len(subs) == 0 {
-    panic("workflow.NewLoop: at least one sub-agent is required")
-}
-// OR in Run: break out of the outer loop immediately.
-if len(a.subs) == 0 {
-    return
-}
-```
-A panic in the constructor is preferable (fail-fast, caught by tests) over a silent early return in Run.
-
 ---
 
-### [LOW][BUG] Ignored yield return value in LoopAgent.Run on error path
+### [HIGH][BUG] SequentialAgent.Run does not abort the chain on a sub error
 
-**Location:** `internal/agent/workflow/loop.go:74`
+**Location:** `internal/agent/workflow/sequential.go:56-70`
 
 **Confidence:** high
 
 **Detail:**
-When a sub-agent yields `(ev, err)` with a non-nil error, `LoopAgent.Run` calls:
+
+`SequentialAgent.Run` iterates sub agents in order. When a sub yields a real error `(ev, err)` through the iterator, the sequential agent calls `yield(ev, err)` and — if the consumer returns `true` (continues) — keeps ranging over the same sub's remaining events and then advances to the **next sub in the chain**. It does NOT abort the sequential chain on error.
+
+`LoopAgent.Run` (loop.go:76-79) has the opposite behavior:
+
 ```go
-yield(ev, err) // a REAL failure surfaces through the error slot, then stop
-return
+if err != nil {
+    yield(ev, err) // surface the error
+    return         // ← STOPS the entire loop immediately
+}
 ```
-The bool return of `yield` is discarded. Because `return` follows unconditionally, the consumer's break signal is already honoured (the iterator stops regardless), so there is no functional defect. However, this is inconsistent with the adjacent pattern in `sequential.go:62` (`if !yield(ev, err) { return }`) and with Go's range-over-function contract, which specifies that producers must not call `yield` after it returns `false`. Discarding the bool here is technically permitted (the function never calls yield again), but it obscures intent and could produce a linter warning if the linter is strict.
+
+`SequentialAgent.Run` (sequential.go:61-68) has no equivalent guard:
+
+```go
+for ev, err := range sub.Run(subIC) {
+    if !yield(ev, err) {
+        return // only stops on consumer break
+    }
+    if ev != nil && ev.Actions.Escalate {
+        return // only stops on escalate
+    }
+    // ← falls through to the next iteration of sub.Run, then the next sub
+}
+```
+
+**Consequence:** if sub1 fails (e.g., LLM timeout), sub2 and sub3 still execute in a degraded state. The consumer sees the error tuple from sub1 and then normal events from sub2/sub3 interleaved — there is no clean abort. For the intended use cases (onboarding loop Phase 14, AG-UI fan-out Phase 12), this can result in partial-work being committed after a known failure.
+
+There is no test that covers the error path in `SequentialAgent.Run`; the two existing tests (`TestSequentialAgent_RunsAllSubsInOrder`, `TestSequentialAgent_PropagatesEscalate`) use only happy-path and escalate fixtures.
 
 **Suggested fix:**
+
+Add the same early-return-on-error guard as LoopAgent:
+
 ```go
-// loop.go:73-75
-if err != nil {
-    _ = yield(ev, err) // bool intentionally ignored: we return immediately
-    return
+for ev, err := range sub.Run(subIC) {
+    if !yield(ev, err) {
+        return
+    }
+    if err != nil {
+        return // abort the chain on a real sub failure (D-04 parity with LoopAgent)
+    }
+    if ev != nil && ev.Actions.Escalate {
+        return
+    }
 }
 ```
-Or follow the SequentialAgent pattern exactly: `if !yield(ev, err) { return }`.
-The explicit `_ =` documents intent; `!yield` + return is equally correct.
+
+Update the docstring to mention this invariant, and add a test using an `erroringAgent` fixture (already defined in `parallel_test.go`) to assert sub3 is not invoked after sub2 fails.
 
 ---
 
-## What was checked and found clean
+### [LOW][BUG] ParallelAgent uses `chan bool` as a close-only signal channel
 
-- **Goroutine leaks (ParallelAgent):** The done/results/ack channel choreography is correct. `close(results)` is called exactly once (by the background goroutine after `eg.Wait()`). `close(done)` is called exactly once (by `defer close(done)` in the iterator frame). No send-on-closed-channel is possible: `runSub` goroutines are all joined by `eg.Wait()` before `close(results)` executes.
-- **Backpressure ack:** Each per-event `ack` channel is created fresh and closed at most once (by the iterator frame at line 121). `runSub` only reads from it. No double-close path.
-- **Budget sharing (SC#3):** `ParallelAgent` calls `ic.Budget.Child(len(a.subs))` per child, sharing the `*atomic.Int32` step counter across the whole tree. `LoopAgent` calls `ic.WithSubAgent(sub)` which shares the same Budget (no forking). Correct per D-09/D-10.
-- **TOCTOU-safe ConsumeStep:** `budget.go:ConsumeStep` uses atomic decrement-then-restore; concurrent goroutines in `ParallelAgent` cannot over-spend the shared cap.
-- **Escalation propagation:** Both SequentialAgent and LoopAgent yield the escalate event before returning (D-21). LoopAgent correctly propagates escalate on non-tool events (line 84-86) and on multi-tool events after all per-call step events are yielded (line 120-122).
-- **WR-01 (escalate on exactly one step event):** `scopeToToolCall` clears `Escalate` on all but the last per-call event for multi-tool turns.
-- **WR-02 (within-turn dedup counting):** `seenThisTurn` map correctly gates the dedup ring for duplicate (name,args) calls within a single Event.
-- **Dead code:** All unexported functions (`joinBranch`, `findInTree`, `iterLabel`, `toolCalls`, `resultPreview`, `canonArgs`, `scopeToToolCall`, `terminalEvent`, `guardToolCall`, `runSub`) are called within the package. All exported types and constructors are referenced in production code (`cmd/aura/agent.go`, `internal/runner/runner.go`).
-- **Not-wired code:** All three agents (`LoopAgent`, `SequentialAgent`, `ParallelAgent`) are wired into production paths and tests. No dead constructors or unused struct fields.
-- **Race conditions:** LoopAgent and SequentialAgent are single-goroutine. ParallelAgent's concurrency is bounded by errgroup + per-event ack backpressure; no shared mutable state outside the atomic Budget counter (which is safe by construction).
-- **Context propagation:** `LoopAgent` and `SequentialAgent` propagate `ic.Ctx` via `WithSubAgent` (shared Ctx). `ParallelAgent` uses `WithContext(egCtx)` with an errgroup-derived context that cancels on first child error or explicit `cancel()`.
+**Location:** `internal/agent/workflow/parallel.go:83`
+
+**Confidence:** high
+
+**Detail:**
+
+```go
+done := make(chan bool)
+```
+
+`done` is used exclusively as a **close signal**: it is only ever closed (`defer close(done)`) and received from (`case <-done`). No values are ever sent into it. The canonical Go idiom for a close-signal channel is `chan struct{}`, which costs 0 bytes per receive vs 1 byte for `chan bool`. The current code is correct (closing a `chan bool` unblocks all receivers), but deviates from the standard Go convention that `chan struct{}` is the zero-allocation signal type, and could mislead a future reader into thinking boolean values are being communicated.
+
+**Suggested fix:**
+
+```go
+done := make(chan struct{})
+```
+
+Update the `runSub` signature accordingly:
+
+```go
+func runSub(ctx context.Context, ic agent.InvocationContext, sub agent.Agent,
+    results chan<- result, done <-chan struct{}) error {
+```
+
+---
+
+## What was checked
+
+- All four non-test `.go` files in `internal/agent/workflow/`: `workflow.go`, `loop.go`, `sequential.go`, `parallel.go`.
+- All five test files read to understand intended behavior and confirmed coverage gaps.
+- All exported symbols grepped across the repo (`D:/Aura`) to verify wiring and usage.
+- `go vet ./internal/agent/workflow/` — clean.
+
+**No issues found in:**
+- LoopAgent budget/dedup logic (guardToolCall, terminalEvent, scopeToToolCall): correct.
+- LoopAgent multi-tool per turn (WR-05): correct — one step Event per tool call, steps_consumed = yielded step Events.
+- LoopAgent WR-01 (escalate rides exactly one scoped Event): correct.
+- LoopAgent WR-02 (within-turn duplicate skips dedup ring): correct via seenThisTurn map.
+- ParallelAgent goroutine drain on early consumer break (D-23): correct — defer close(done) drains runSub goroutines.
+- ParallelAgent escalate-cancels-siblings (D-03): correct — captured cancel(), not a fake error.
+- ParallelAgent error forwarding (D-04/D-05): correct — real errors surface once through errgroup; intentional cancels return nil.
+- ParallelAgent waiter goroutine: no leak — exits after eg.Wait() completes.
+- Budget sharing (SC#3): LoopAgent uses ic.WithSubAgent (same Budget), ParallelAgent uses Budget.Child (shared *atomic.Int32, distinct dedup ring) — correct.
+- Dead code: none. All unexported helpers (joinBranch, findInTree, iterLabel, toolCalls, resultPreview, canonArgs, scopeToToolCall, terminalEvent, guardToolCall) are used within the package.
+- Not-wired: NewLoop is used in cmd/aura/agent.go (dry-run) and spike prototypes. NewSequential and NewParallel are infrastructure for future slices (Phase 12/14) — this is expected given the tabula-rasa phase sequencing.

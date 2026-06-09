@@ -1,158 +1,88 @@
 # Audit: internal/mcp/manager
 
-**Verdict:** needs-work — three dead-code issues and one security-relevant logic divergence between two trust-normalisation functions.
+**Verdict:** needs-work — three dead-code / not-wired findings; no bugs or races.
 
-**Counts:** critical 0 / high 1 / medium 1 / low 2
+**Counts:** critical 0 / high 0 / medium 2 / low 1
 
 ---
 
 ## Findings
 
----
-
-### [HIGH][BUG] `normalizedTrustForServer` accepts unknown/invalid trust class, bypassing blocked gate
-
-**Location:** `internal/mcp/manager/runtime.go:153-164`
-
-**Confidence:** high
-
-**Detail:**
-
-`normalizedTrustForServer` (runtime.go) returns `server.Trust.Class` verbatim whenever it is non-empty
-(line 154-155), without validating it against the known trust-class enum.
-`RuntimeLaunchConfig` then only blocks when `trust == mcp.TrustBlocked` (line 85).
-
-Consequence: a server whose `trust.class` field contains a typo or an unrecognised value (e.g.,
-`"trusted_local_typo"`) will pass the blocked gate and be launched — contrary to the fail-safe default
-of `TrustBlocked` for unknown servers.
-
-By contrast, the sister function `ManagedConfig.NormalizedTrust` in `internal/mcp/managed_config.go:220`
-uses `isKnownTrust()` and falls through to source/type inference when the class is not recognised.
-The two functions diverge on this input, making `RunnableManagedServers` / `RuntimeLaunchConfig` less
-restrictive than `SnapshotStatus`.
-
-Note: `SaveManagedConfig` calls `validateManagedServers` which rejects unknown trust classes on write,
-so an in-memory-only or deserialized-but-not-re-saved config is the realistic attack surface (e.g., a
-file edited directly on disk).
-
-**Suggested fix:**
-
-```go
-func normalizedTrustForServer(server mcp.ManagedServer) string {
-    if server.Trust.Class != "" && isKnownTrust(server.Trust.Class) {
-        return server.Trust.Class
-    }
-    if strings.HasPrefix(strings.TrimSpace(server.Source), "recipe:") {
-        return mcp.TrustTrustedRecipe
-    }
-    if server.Type == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != "" {
-        return mcp.TrustRemoteHTTP
-    }
-    return mcp.TrustBlocked
-}
-```
-
-`isKnownTrust` is unexported in the `mcp` package; either export it or duplicate the switch locally
-(it is 5 lines).
-
----
-
-### [MEDIUM][DEAD-CODE] `StartupStarting`, `StartupReady`, `StartupFailed` constants are never referenced
+### [MEDIUM][DEAD-CODE] StartupStarting / StartupReady / StartupFailed never produced
 
 **Location:** `internal/mcp/manager/status.go:13-15`
 
 **Confidence:** high
 
 **Detail:**
-
-Three of the six `Startup*` constants are defined but never referenced anywhere outside their own
-definition file. `StartupBlocked`, `StartupDisabled`, and `StartupUnknown` are used inside
-`SnapshotStatus` and in tests; `StartupStarting`, `StartupReady`, and `StartupFailed` are not
-referenced in any production or test code across the entire repo (verified with `grep -r` across
-`D:/Aura`).
-
-`SnapshotStatus` assigns exactly three states: `StartupDisabled`, `StartupBlocked`, and
-`StartupUnknown` (the zero value). There is no runtime machinery that ever transitions a server to
-`starting`, `ready`, or `failed` — those states belong to a lifecycle model that has not been
-implemented. They are aspirational dead code.
+`SnapshotStatus` initialises `state` to `StartupUnknown` and transitions only to
+`StartupDisabled` or `StartupBlocked`. The three constants `StartupStarting`,
+`StartupReady`, and `StartupFailed` are never assigned to any `StatusSnapshot.StartupState`
+in this file, and a repo-wide search confirms they appear nowhere else in non-test
+production code. Consumers that switch on `StartupState` values (e.g. a future UI)
+will never observe these three states.
 
 **Suggested fix:**
-
-Remove `StartupStarting`, `StartupReady`, and `StartupFailed` from `status.go` until the lifecycle
-state machine is implemented. If they are intentionally reserved for future use, document them with a
-`// TODO(slice-N):` comment; otherwise removing them keeps the surface honest.
+Either (a) remove the three constants if static status is the design intent, or
+(b) wire actual process-lifecycle tracking (start/ready/failed signals from the
+`mcp.Client` lifecycle) so the constants carry real meaning.
 
 ---
 
-### [LOW][DEAD-CODE] `ExportProfile`, `ImportProfile`, and `ImportOptions` are never called from production code
+### [MEDIUM][NOT-WIRED] ExportProfile / ImportProfile / ImportOptions / RedactEnv have no production callers
 
-**Location:** `internal/mcp/manager/config.go:13-73`
+**Location:** `internal/mcp/manager/config.go:19, 46, 13, 77`
 
 **Confidence:** high
 
 **Detail:**
-
-`ExportProfile`, `ImportProfile`, and `ImportOptions` are exported and well-tested, but no non-test
-caller exists anywhere in the repo. The `aura mcp profile` commands (`cmd/aura/mcp_profile.go`)
-implement profile creation, switching, and membership management inline without calling these
-functions. The `aura mcp install` command in `cmd/aura/mcp.go` also does not use them.
-
-References verified: `grep` across `D:/Aura` finds only `config.go` (definition), `config_test.go`,
-and `config_extra_test.go`.
-
-These are not-wired public API — they exist for a profile-sharing workflow (`export` → share file →
-`import`) that has not been wired to any CLI subcommand.
+`ExportProfile`, `ImportProfile`, `ImportOptions`, and `RedactEnv` are exported
+symbols with full implementations and test coverage, but grep across all non-test
+`.go` files in the repo reveals zero call sites outside the package's own `*_test.go`
+files. The `aura mcp profile` command (`cmd/aura/mcp_profile.go`) handles profiles
+without using these functions; there is no `aura mcp profile export|import` subcommand.
+`RedactEnv` is called internally only by `ExportProfile` — if `ExportProfile` is dead,
+`RedactEnv` is also dead outside the package.
 
 **Suggested fix:**
-
-Either wire `ExportProfile` / `ImportProfile` to `aura mcp profile export <name>` and
-`aura mcp profile import <file>` CLI subcommands (if the feature is intended), or mark them
-unexported (`exportProfile`, `importProfile`) until they are wired, so they don't create a false
-surface for callers.
+Wire `ExportProfile` / `ImportProfile` to an `aura mcp profile export|import`
+subcommand (as the PRD profile-sharing use-case implies), or move the functions to
+`internal` (unexported) helpers until a caller exists. Keeping exported symbols with
+no callers inflates the package surface and misleads auditors.
 
 ---
 
-### [LOW][BUG] `mergeEnvPreserveCredentials`: two consecutive `if` blocks are logically identical — second branch is unreachable
+### [LOW][DEAD-CODE] Redundant branch in mergeEnvPreserveCredentials collapses to a single condition
 
 **Location:** `internal/mcp/manager/config.go:117-124`
 
 **Confidence:** high
 
 **Detail:**
+The two consecutive `if` blocks:
 
 ```go
-// line 117
 if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) && isPlaceholderValue(key, value) {
     out = append(out, prior)
     continue
 }
-// line 121
 if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) && !isPlaceholderValue(key, value) {
     out = append(out, prior)
     continue
 }
 ```
 
-The two guards differ only in `isPlaceholderValue` vs `!isPlaceholderValue` — their union covers all
-cases where `existingByKey[key]` exists and `isSecretEnvKey(key)` is true. The second `if` block is
-thus unreachable by any path that was not already caught by the first, making it dead code.
-
-Both blocks perform the same action (`out = append(out, prior); continue`), so there is no observable
-misbehavior today. However, the split into two visually distinct branches implies different intended
-behavior (e.g., the second branch was perhaps meant to use `entry` rather than `prior` to accept an
-incoming real credential on overwrite). The current code silently keeps the existing credential for
-both placeholder and real incoming values, which is the tested and documented behavior, but the
-redundant branch is a maintenance trap — a future maintainer might change one branch without
-noticing the other is identical.
+are logically equivalent to the single condition `ok && isSecretEnvKey(key)` because
+`isPlaceholderValue` and `!isPlaceholderValue` partition the full boolean domain: one
+of the two `if` bodies always executes when `ok && isSecretEnvKey(key)`. The second
+`existingByKey[key]` lookup is redundant. The code is correct — the prior always wins
+for a secret key — but the distinction introduced by `isPlaceholderValue` is inert,
+which is misleading (a reader may think the two cases produce different output).
 
 **Suggested fix:**
-
-Collapse the two guards into one:
-
+Collapse to one branch:
 ```go
 if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) {
-    // Always preserve the stored credential over any incoming value
-    // (placeholder or real) when OverwriteCredentials is false.
     out = append(out, prior)
     continue
 }
@@ -160,15 +90,23 @@ if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) {
 
 ---
 
-## What was checked
+## What was checked and found clean
 
-- All four non-test `.go` files: `config.go`, `runtime.go`, `status.go`, `catalog.go` (total ~400 LOC).
-- All test files read to establish intended behaviour contracts.
-- `internal/mcp/managed_config.go` read for type definitions and `NormalizedTrust` comparison.
-- `cmd/aura/mcp.go`, `cmd/aura/mcp_profile.go`, `cmd/aura/mcp_status.go`, `cmd/aura/mcp_tools.go`,
-  `internal/config/config.go`, `internal/agent/mcptools/mount.go` inspected for wiring.
-- Grep across entire repo for every exported symbol and for every constant defined in the package.
-- Go module version is 1.26 — loop-variable capture fix is in effect; no loop-capture issues exist.
-- No goroutines, channels, mutexes, or shared state in this package — no race surface.
-- No I/O, no DB, no HTTP clients, no `defer` usage — no resource-leak surface.
-- `errMCPServerBlocked` is package-private sentinel used correctly with `errors.Is`.
+- **Nil-pointer / panic:** All map accesses use the two-value form or are guarded by
+  `ProfileServerNames` which pre-filters to known keys. No unchecked indexing.
+- **Unchecked errors:** `ImportProfile` always returns `nil` — the signature is
+  consistent (no error path exists in the body). Callers check the error correctly.
+- **Resource leaks / goroutines:** The package is pure computation (no goroutines,
+  no I/O handles, no timers). Nothing to leak.
+- **Races:** No shared mutable state; all functions accept value or pointer parameters
+  with no background goroutines.
+- **Context propagation:** Not applicable — no I/O paths in this package.
+- **Slice aliasing:** `dockerRuntimeConfig` builds `env` with `append([]string(nil), server.Env...)` — correct defensive copy. `mergeEnvPreserveCredentials` similarly copies.
+- **errMCPServerBlocked wrapping:** `fmt.Errorf("%w: ...", errMCPServerBlocked)` is
+  correct; callers use `errors.Is`, which unwraps correctly.
+- **Docker env forwarding:** The `-e KEY` / `cmd.Env` split is intentional and correct:
+  `cfg.Env` (`KEY=VALUE`) is appended to the Docker process env via `mcp.Open`
+  (`cmd.Env = append(os.Environ(), cfg.Env...)`), and Docker's own `-e KEY` (no value)
+  reads from that process env — so container sees the value. Not a bug.
+- **Trust fallthrough:** `normalizedTrustForServer` defaults to `TrustBlocked` for
+  unknown sources — correct fail-safe.

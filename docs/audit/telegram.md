@@ -1,122 +1,140 @@
 # Audit: internal/channels/telegram
 
-**Verdict:** needs-work — one confirmed race/double-dispatch bug, two dead-production symbols, one not-wired exported function, one goroutine-leak under Stop.
+**Verdict:** needs-work — one logic bug silently swallows user HITL answers on DB error; several not-wired functions and two dead methods/stubs accumulate noise.
 
-**Counts:** critical 0 / high 2 / medium 1 / low 2
+**Counts:** critical 0 / high 1 / medium 2 / low 4
 
 ---
 
 ## Findings
 
-### [HIGH][BUG] ForceReply answer double-dispatches: OnReply + OnText both fire, producing an unintended LLM turn
+### [HIGH][BUG] telegram-1: HITL text answer silently swallowed on SubmitAnswer error
 
-**Location:** `internal/channels/telegram/bot_dispatch.go:93` (handler registration), `internal/channels/telegram/bot_dispatch.go:223-231` (`onReply`), `internal/channels/telegram/bot_dispatch.go:99-125` (`onText`)
+**Location:** `internal/channels/telegram/bot_dispatch.go:419-433` (`hitlHandlesText`)
 
 **Confidence:** high
 
 **Detail:**
 
-telebot's `ProcessContext` (confirmed from source `gopkg.in/telebot.v4@v4.0.0-beta.7/update.go:84-89`) does NOT return after `OnReply` — it falls through:
+`hitlHandlesText` first confirms there are pending pauses (`PendingFor` at line 423). It then calls `handleTextReply`, which internally calls `SubmitAnswer`. If `SubmitAnswer` returns an error, `submit` (hitl.go:186-189) logs a warn and returns `false`. Back in `hitlHandlesText`, `!false` is true, so `promptPendingPause` re-renders the same pause — and the function returns `true`, telling `onText` that HITL "consumed" the user's message.
 
-```go
-if m.ReplyTo != nil {
-    b.handle(OnReply, c)
-}
-b.handle(OnText, c)   // always fires — no return above
-```
+The user's text is silently discarded. The same pause is re-shown. On a persistent DB error the user is stuck in an infinite re-prompt loop with no visible error message. The `slog.Warn` is the only signal.
 
-With `synchronous=false` (the default), `runHandler` spawns a goroutine for each. Both `onReply` and `onText` execute concurrently on the same message.
+The same flaw applies to `hitlHandlesReply` (line 442-455): `markHitlReplyHandled` marks the reply key before calling `handleTextReply`, so even on a submission error the key is consumed — `onText`'s `takeHitlReplyHandled` guard fires, the message is fully silenced, and the user never gets an ordinary turn as fallback.
 
-In `onReply`, `hitlHandlesText` calls `Resume.PendingFor`, finds the pending pause, submits the answer via `SubmitAnswer`, and triggers a resume turn. Concurrently, `onText` calls `hitlHandlesText` which also calls `PendingFor`. Two outcomes are possible depending on timing:
+**Suggested fix:**
 
-1. `onText` wins the race — reads `PendingFor` before `SubmitAnswer` completes, sees the pending pause, and also submits the answer (`double submit`).
-2. `onText` loses the race — reads `PendingFor` after `SubmitAnswer` completes, sees nothing pending, falls through to `runTurn(text)` — the ForceReply answer text becomes a **new LLM turn input**, not the HITL resolve.
-
-The comment at line 221 ("telebot fires OnReply (then OnText) for a reply") acknowledges the double-dispatch but claims no double-handling; that claim only holds for sequential execution, not concurrent goroutines.
-
-The tests `TestOnReplyForceReplyAnswerResumes` and `TestOnTextPendingPauseRoutesToHITL` exercise these handlers in strict isolation (one call each) and do not replicate the concurrent double-dispatch.
-
-**Suggested fix:** In `onReply`, after `hitlHandlesText` consumes the pause, store a per-chat flag (e.g., in `commands.cancels` or a new `recentlyConsumedHITL sync.Map`) that `onText` checks before falling through to `runTurn`. Alternatively, make `onReply` responsible for both the HITL resolve AND the command/LLM routing (replacing `onText` for reply messages), so `onText` is never registered for messages where `ReplyTo != nil`.
+Propagate the submit error distinctly. Change `handleTextReply` to return `(resumed bool, err error)` and thread the error up. In `hitlHandlesText`/`hitlHandlesReply`, when `err != nil`, send the user a transient "risposta non registrata, riprova" message instead of re-prompting the same pause. Alternatively, distinguish the "no pending" false from the "submit failed" false with a third return value or a sentinel.
 
 ---
 
-### [HIGH][BUG] Goroutine leak: async document-convert turn escapes Stop's drain
+### [MEDIUM][BUG] telegram-2: TOCTOU window allows HITL to swallow a legitimate plain-text message
 
-**Location:** `internal/channels/telegram/bot.go:260-271` (`Stop`), `internal/channels/telegram/bot_dispatch.go:386-393` (async `asyncResult` closure), `internal/channels/telegram/bot_dispatch.go:509` (`t.wg.Add(1)`)
+**Location:** `internal/channels/telegram/bot_dispatch.go:419-433` (`hitlHandlesText`) and `hitl.go:174-180` (`handleTextReply`)
 
 **Confidence:** medium
 
 **Detail:**
 
-`Stop` drains goroutines in two separate WaitGroups across two steps:
+`hitlHandlesText` checks `PendingFor` (line 423) and, finding pauses, routes the message to HITL. `handleTextReply` calls `PendingFor` a second time (hitl.go:175). In the window between the two calls, a concurrent inline-button callback from another client device could resolve the last pause (the `onCallback` goroutine runs under a separate handler; although telebot serialises same-update-type deliveries, a callback is a separate update dispatched potentially on a concurrent poller iteration depending on bot settings). If the pause is resolved in that window, `handleTextReply` finds `len(pending) == 0` and returns `false (resumed=false)`, but `hitlHandlesText` — having already decided to intercept — returns `true`, silently dropping what is now an ordinary user message.
 
-1. `t.wg.Wait()` — joins the polling goroutine (and any in-flight turn goroutines tracked by `t.wg`).
-2. `docs.Stop(ctx)` — waits for in-flight async document-convert goroutines via `d.wg`.
-
-The async convert goroutine (tracked in `d.wg`) can call the `asyncResult` closure, which calls `t.startTurn(...)`, which calls `t.wg.Add(1)` and spawns a new turn goroutine. This `t.wg.Add(1)` occurs AFTER step 1 (`t.wg.Wait()`) has already returned. `Stop` never calls `t.wg.Wait()` a second time, so the turn goroutine spawned by the async convert callback is never joined — it leaks.
-
-In practice this requires: a document conversion was accepted async just before Stop was called, the sidecar responds successfully during `docs.Stop`, and the async callback drives a new turn. The window is narrow but real.
-
-**Suggested fix:** Replace the sequential `t.wg.Wait()` + `docs.Stop()` with a single drain loop: move `docs.Stop` before `t.wg.Wait`, or collect both WaitGroups into a single combined drain. Simplest: call `docs.Stop(ctx)` first (it blocks until converts complete and their callbacks fire), then call `t.wg.Wait()` to drain all turn goroutines including those spawned by callbacks.
-
----
-
-### [MEDIUM][DEAD-CODE] `hitl.handleCallback` is production-dead; only test-referenced
-
-**Location:** `internal/channels/telegram/hitl.go:106-108`
-
-**Confidence:** high
-
-**Detail:**
-
-```go
-func (h *hitl) handleCallback(ctx context.Context, data, convID string) (resumed bool) {
-    return h.handleCallbackResult(ctx, data, convID, nil).resumed
-}
-```
-
-The production `onCallback` handler in `bot_dispatch.go:247` calls `h.handleCallbackResult(...)` directly. `handleCallback` is never called in production code — grep across the entire repo (`D:/Aura`) confirms all seven call sites are in `internal/channels/telegram/hitl_test.go`.
-
-**Suggested fix:** Delete `handleCallback`. Update the test call sites to call `handleCallbackResult(..., nil).resumed` inline, or keep a test-only helper local to the test file.
-
----
-
-### [LOW][NOT-WIRED] `EscapeMarkdownV2` is exported but has zero production callers
-
-**Location:** `internal/channels/telegram/mdv2.go:34`
-
-**Confidence:** high
-
-**Detail:**
-
-`EscapeMarkdownV2` is exported. Grep across `D:/Aura` shows it is only referenced in `internal/channels/telegram/mdv2_test.go`. The renderer (`renderer.go`) uses `RenderTelegramHTML` (the `html.go` gotg_md2html wrapper), never MarkdownV2 escaping. The mdv2 escaper is well-tested but completely bypassed in the production render path.
-
-`PlainTextFallback` (same file, line 113) is also exported and only referenced from `renderer.go` (production) and `renderer_protocol_test.go` (test) — that one is wired.
-
-**Suggested fix:** Either unexport `EscapeMarkdownV2` (rename to `escapeMarkdownV2`) if it is internal to the package, or wire it into the render path if it was intended to replace `RenderTelegramHTML`.
-
----
-
-### [LOW][NOT-WIRED] `PreBlockTable` is exported but has zero production callers; `TouchLastSeen` has zero callers at all
-
-**Location:** `internal/channels/telegram/tables.go:248` (`PreBlockTable`), `internal/channels/telegram/store.go:181` (`TouchLastSeen`)
-
-**Confidence:** high
-
-**Detail:**
-
-`PreBlockTable`: grep across `D:/Aura` finds it only in `tables_test.go`. The renderer's `sendTable` fallback path (renderer.go:158-160) falls through to `sendText` when PNG rendering fails — it does not call `PreBlockTable`. The comment on tables.go:20 ("the renderer treats it as "fall back to PreBlockTable"") is stale.
-
-`TouchLastSeen`: grep across the entire repo (all `.go` files) finds it only in `store.go` itself (definition). No caller exists anywhere — not in production, not in tests. The method compiles and is exported but is a complete dead export.
+This is lower-risk under default single-bot-instance Telegram (the polling goroutine is one goroutine; callbacks and text arrive sequentially to their handlers), but becomes a real race if `Settings.Poller` is swapped for a concurrent webhook server.
 
 **Suggested fix:**
-- `PreBlockTable`: unexport and either delete or wire it into the renderer's table-send fallback path.
-- `TouchLastSeen`: delete or add a caller (e.g., bump last_seen_at on each inbound turn via `GetAccountByTelegramID` + `TouchLastSeen`).
+
+Eliminate the second `PendingFor` call: pass the `pending` slice obtained in `hitlHandlesText` directly into `handleTextReply` so there is one consistent view per message.
 
 ---
 
-## Notes
+### [MEDIUM][DEAD-CODE] telegram-3: EscapeMarkdownV2 defined and tested but never called in production
 
-- `searchPages map[int64]searchPagerState` in `commands.go` grows unbounded — each `/search` upserts an entry, the "Chiudi" callback deletes the message but not the map entry. For a single-user bot this is cosmetic; for a multi-user deployment it is a memory leak. Not filed as a separate finding given the current single-user scope, but worth noting.
-- `route()` in `photo.go:143` declares `model :=` (short var) inside the `if` branch, shadowing the named return `model`. Correct logic (the explicit `return ..., model` returns the local), but the shadow makes the code harder to audit. `go vet` does not flag it.
-- The `min` local variable in `renderer.go:414` (`splitBoundary`) shadows the Go 1.21+ builtin `min`. Correct behavior, no defect.
+**Location:** `internal/channels/telegram/mdv2.go:34` (`EscapeMarkdownV2`)
+
+**Confidence:** high
+
+**Detail:**
+
+`EscapeMarkdownV2` is an exported function with a full test suite (mdv2_test.go). The renderer (`renderer.go`) exclusively uses `RenderTelegramHTML` (the `gotg_md2html` library) and never calls `EscapeMarkdownV2`. A repo-wide grep confirms zero non-test, non-definition references to `EscapeMarkdownV2`. The function was likely scaffolded for a MarkdownV2 send-mode that was later replaced by the HTML send path.
+
+`PlainTextFallback` in the same file is used in production (renderer.go:189, 201, 236) and is fine.
+
+**Suggested fix:**
+
+If the MarkdownV2 path is not planned for the near term, delete `EscapeMarkdownV2` and its test coverage. If it is planned, document the wiring gap with a `// TODO` and the slice that will call it.
+
+---
+
+### [LOW][DEAD-CODE] telegram-4: PreBlockTable defined and tested but never called in production
+
+**Location:** `internal/channels/telegram/tables.go:248` (`PreBlockTable`)
+
+**Confidence:** high
+
+**Detail:**
+
+`PreBlockTable` is referenced only from `tables_test.go`. The production renderer falls back to plain-text rendering of the raw markdown when `RenderTablePNG` fails (renderer.go:155-162) — it does NOT fall through to `PreBlockTable`. The function comment claims "the renderer treats it as a fall back to PreBlockTable" which is incorrect: the renderer falls back to `sendText(content, final)` with the raw markdown, not `PreBlockTable`.
+
+**Suggested fix:**
+
+Either wire `PreBlockTable` as the actual text fallback inside `renderer.go` (replacing the current raw-markdown fallback) to align code with comment, or delete it along with its tests.
+
+---
+
+### [LOW][DEAD-CODE] telegram-5: Four Store methods with no production callers
+
+**Location:** `internal/channels/telegram/store.go` — `GetAccountByTelegramID` (line 169), `TouchLastSeen` (line 181), `CleanupExpired` (line 145), `ListAccounts` (line 197)
+
+**Confidence:** high
+
+**Detail:**
+
+A repo-wide grep finds references to these four methods only in `store_integration_test.go`. No production code path calls them:
+
+- `GetAccountByTelegramID`: no caller outside tests; the onboarding handler does not look up accounts post-consume.
+- `TouchLastSeen`: no caller; the "best-effort activity marker" semantics implies it was planned but not wired.
+- `CleanupExpired`: no caller; GC of expired tokens is not scheduled anywhere.
+- `ListAccounts`: no caller; admin/setup paths do not use it.
+
+These are not technically harmful (they are exported from a concrete type, not an interface), but they are untested in production context and accumulate dead surface area.
+
+**Suggested fix:**
+
+Wire `CleanupExpired` to a scheduler job (or the setup SSE-pump GC scan mentioned in the comment). Wire `TouchLastSeen` in the `onText` handler. Delete or document `GetAccountByTelegramID` and `ListAccounts` if they have no planned consumer.
+
+---
+
+### [LOW][DEAD-CODE] telegram-6: Three unexported methods only referenced from tests
+
+**Location:**
+- `internal/channels/telegram/commands.go:110` — `commands.dispatch`
+- `internal/channels/telegram/hitl.go:106` — `hitl.handleCallback`
+- `internal/channels/telegram/status_pane.go:355` — dangling doc comment for `capRunesTail` (function body absent)
+
+**Confidence:** high
+
+**Detail:**
+
+`commands.dispatch` (line 110-113) is a thin wrapper over `dispatchRich` that strips the `commandReply` markup. Production uses `dispatchRich` exclusively (bot_dispatch.go:115). `dispatch` is only called from `commands_test.go`. Since tests should test the same path production uses, these tests provide false coverage: they exercise only the `text` field of `commandReply`, never the `markup` field that `/search` produces. The test suite should migrate to `dispatchRich`.
+
+`hitl.handleCallback` (line 106-108) is a one-liner wrapper over `handleCallbackResult`. Production calls `handleCallbackResult` directly (bot_dispatch.go:249). The wrapper exists solely for tests.
+
+`capRunesTail` (status_pane.go:355) is a doc comment for a function that was never written (or was deleted): the file ends at that line. It is a dangling stub.
+
+**Suggested fix:**
+
+Delete `commands.dispatch` and update `commands_test.go` to call `dispatchRich` directly. Delete `hitl.handleCallback` and update `hitl_test.go` to call `handleCallbackResult`. Remove the dangling `capRunesTail` comment.
+
+---
+
+## What was checked and found clean
+
+- **Goroutine leaks / ticker leaks**: `pulseChatAction` properly closes `done` + joins `finished` via `sync.Once`. `docs.Convert` async goroutines tracked by `wg`, drained by `Stop`. `startTurn` goroutines tracked by `t.wg`. No leaks found.
+- **Context propagation**: all sidecar requests use `context.WithTimeout` from `withTimeout`; all long operations propagate `daemonCtx`. The async document goroutine correctly detaches via `context.WithoutCancel` (intentional).
+- **Mutex coverage**: `t.mu` guards `hitlRepliesHandled` (mark + take both lock). `commands.mu` guards `cancels` and `searchPages`. No unguarded shared map writes found.
+- **Resource leaks**: all HTTP `resp.Body` closed via `defer`. `io.ReadCloser` from `bot.File()` deferred-closed.
+- **Nil dereferences**: all `msg`, `msg.Chat`, `msg.Voice/Photo/Document`, `cb`, `cb.Message` guarded before use.
+- **Error wrapping**: `%w` used consistently; sentinel errors use `errors.Is` for classification, not string matching.
+- **Integer conversions**: no unsafe int/int64 conversions identified.
+- **Fanout wiring**: `Subscribe` × 3 before `Run` — correct. Cap-64 buffered channels prevent blocking on startup lag.
+- **`callbackData` panic on oversized payload**: this is a compile-time invariant (UUIDs are 36 bytes + short action); panic is the correct guard for a bug that would produce a bot-API 400 if silently truncated.
+- **`onReply` / `onText` double-dispatch**: sequential poller guarantees `onReply` runs before `onText`; `markHitlReplyHandled` + `takeHitlReplyHandled` correctly prevents double-handling in the success path.

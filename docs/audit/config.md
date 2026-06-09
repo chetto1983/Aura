@@ -1,76 +1,107 @@
 # Audit: internal/config
 
-**Verdict:** needs-work — two confirmed defects: a not-wired config field and a DSN injection via unescaped query/authority components.
+**Verdict:** needs-work — one genuinely unwired config knob, one confusing deferred-error UX, and a misleading parse fallback; no critical bugs or races.
 
-**Counts:** critical 0 / high 1 / medium 1 / low 0
+**Counts:** critical 0 / high 0 / medium 2 / low 2
 
 ---
 
 ## Findings
 
-### [HIGH][NOT-WIRED] `HistoryHardCapTurns` parsed and stored but never consumed
+### [MEDIUM][NOT-WIRED] `HistoryHardCapTurns` — config knob parsed but never consumed
 
-**Location:** `internal/config/config.go:54,233`
+**Location:** `internal/config/config.go:55,235`
 **Confidence:** high
 
-`Config.HistoryHardCapTurns` (env `AURA_HISTORY_HARD_CAP_TURNS`, default 50) is declared in the struct (line 54) and populated via `envIntDefault` (line 233). A `grep` across the entire repo (`D:/Aura/**/*.go`) finds zero non-definition, non-test reads of this field:
+`HistoryHardCapTurns` (`AURA_HISTORY_HARD_CAP_TURNS`, default 50) is declared in `Config`, populated from the env by `loadBase()`, documented in the PRD as "L2.5 picobot hard rolling buffer cap", and tested for its default value in phase-4 verification docs. It is never read outside `internal/config`. No grep match for `.HistoryHardCapTurns`, `HardCapTurns`, or `HISTORY_HARD_CAP` appears in any non-config `.go` file (confirmed across the whole repo).
 
-```
-internal/config/config.go:54  HistoryHardCapTurns int   // definition
-internal/config/config.go:233 HistoryHardCapTurns: ...  // assignment in loadBase
-```
+The PRD §Slice 1.8 describes this as an L2.5 rolling-buffer cap that `runner.Deps` should receive, analogous to `EvictAfter` (which IS wired at `cmd/aura/chat.go:181`). The runner struct at `internal/runner/runner.go:52` has no corresponding field, and `bootChatEnv` in `cmd/aura/chat.go` does not pass it.
 
-No other `.go` file reads `cfg.HistoryHardCapTurns`. The comment says "L2.5 picobot hard rolling buffer cap", but `internal/conversations/context.go` computes its hard cap from `ContextWindow − max(MaxOutputTokens, 20 000) − 13 000` (token budget, not turn count), and `internal/runner/runner.go` never passes a `HardCapTurns` field anywhere. The `.planning/phases/04-VERIFICATION.md` lists the field as "VERIFIED" for having a default, but verification of the default value is not verification of the field being consumed downstream.
+**Impact:** an operator setting `AURA_HISTORY_HARD_CAP_TURNS` to any value gets silently ignored. The PRD-intended L2.5 cap is never enforced, regardless of configuration.
 
-**Impact:** the env knob `AURA_HISTORY_HARD_CAP_TURNS` silently does nothing; operators who tune it believe they are capping rolling history when they are not.
-
-**Suggested fix:** Either (a) wire the field into `runner.Deps` and thread it through to the L2.5 drop loop in `conversations.ApplyContextLadder`, or (b) remove the field and the env knob entirely and document that the rolling cap is purely token-budget-driven.
+**Suggested fix:** Add a `HardCapTurns int` field to `runner.Deps` and pass `cfg.HistoryHardCapTurns` at the call site in `bootChatEnv`. Wire it through to `conversations.ApplyContextLadder` (or wherever the rolling-buffer drop is meant to occur). Alternatively, if the feature was deliberately deferred, add a `//nolint:unused` comment and a TODO referencing the PRD slice, so this doesn't look like accidental omission.
 
 ---
 
-### [MEDIUM][BUG] `composeDSN` does not escape `host`, `port`, or `sslmode`
+### [MEDIUM][BUG] `parseMCPServersJSON` silently falls through when `"mcpServers"` key is present but JSON-null
 
-**Location:** `internal/config/config.go:293-299`
+**Location:** `internal/config/config.go:347-366`
 **Confidence:** high
 
 ```go
-return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-    url.QueryEscape(role),
-    url.QueryEscape(password),
-    host, port,              // NOT escaped
-    url.QueryEscape(dbname),
-    sslmode,                 // NOT query-escaped
-)
+if wrapped.MCPServers != nil {
+    return validateMCPServers(wrapped.MCPServers)
+}
+// fallthrough: attempt direct-map unmarshal of the ENTIRE JSON object
 ```
 
-`role`, `password`, and `dbname` are correctly `url.QueryEscape`d. `host`, `port`, and `sslmode` are interpolated raw into the DSN string.
+When the env var contains `{"mcpServers": null, ...}`, Go's JSON decoder sets `wrapped.MCPServers` to `nil`. The guard `!= nil` is false, so the code falls through and re-unmarshals the whole JSON blob as a flat `map[string]mcp.ServerConfig`. Every top-level key in the original object — including the literal key `"mcpServers"` — becomes a server name entry with `Command: ""`. `validateMCPServers` then returns an error `server "mcpServers" command cannot be empty`, which is stored in `MCPServersErr` (not returned from `Load`/`LoadDB`) and surfaces only when `buildRegistryWithMCP` is first called.
 
-**Concrete injections:**
+The operator sees: `mcp: AURA_MCP_SERVERS_JSON: server "mcpServers" command cannot be empty` — a confusing message that names `"mcpServers"` as if it is a server, giving no hint that the root cause is a null value in the JSON.
 
-- `POSTGRES_SSLMODE=disable&connect_timeout=0` → DSN becomes `…?sslmode=disable&connect_timeout=0`, injecting an extra connection parameter.
-- `POSTGRES_HOST=evil@real-host` → DSN becomes `postgres://role:pass@evil@real-host:5432/db?…`, confusing the URL authority parser (the `@` demarcates userinfo from host; the parser sees `real-host` as the host and `role:pass@evil` as userinfo, breaking auth).
-- `POSTGRES_PORT=5432/extra` → injects a path segment.
-
-All three values are operator-supplied via environment variables, so this is an operator misconfiguration risk rather than an external attacker path. However, the current code trusts the operator to never include URL-significant chars in these fields, which is not enforced and is not documented in comments.
-
-**Suggested fix:**
+**Suggested fix:** Distinguish JSON-null from key-absent by checking whether the wrapper key was present before falling through:
 
 ```go
-import "net/url"
+var wrapper struct {
+    MCPServers *map[string]mcp.ServerConfig `json:"mcpServers"`
+}
+if err := json.Unmarshal([]byte(raw), &wrapper); err != nil { ... }
+if wrapper.MCPServers != nil {
+    return validateMCPServers(*wrapper.MCPServers)
+}
+// wrapper.MCPServers == nil means no "mcpServers" key at all — try direct format
+```
 
-func composeDSN(role, password, host, port, dbname, sslmode string) string {
-    if password == "" {
-        return ""
-    }
-    u := &url.URL{
-        Scheme: "postgres",
-        User:   url.UserPassword(role, password),
-        Host:   net.JoinHostPort(host, port),
-        Path:   "/" + url.PathEscape(dbname),
-        RawQuery: url.Values{"sslmode": {sslmode}}.Encode(),
-    }
-    return u.String()
+With a pointer-to-map, both absent and null produce `nil`; the operator-intent ambiguity is resolved by also checking for the presence of any `"mcpServers"` key with explicit error if it's null.
+
+---
+
+### [LOW][NOT-WIRED] `Load()` / `LoadDB()` doc-contract gap: `MCPServersErr` deferred-error is undocumented
+
+**Location:** `internal/config/config.go:146-173`
+**Confidence:** high
+
+Both `Load()` and `LoadDB()` may return a non-nil `*Config` while simultaneously having `config.MCPServersErr != nil`. The doc-comment on `Load()` mentions only the LLM error path (`ErrMissingAPIKey`) as a failure mode; `MCPServersErr` is not mentioned. Callers who check only the returned `error` value assume a non-error return means the config is fully valid. The `MCPServersErr` field is a deliberately deferred error (not a design bug — it avoids blocking `aura db migrate` when MCP config is malformed), but this contract is not documented on the public surface.
+
+**Suggested fix:** Add a note to the `Load()` / `LoadDB()` godoc:
+
+```
+// MCP server parse errors are not returned here; they are stored in
+// Config.MCPServersErr and surfaced when the agent registry is built.
+// Callers that mount MCP servers (e.g. buildRegistryWithMCP) must check
+// this field explicitly.
+```
+
+---
+
+### [LOW][BUG] `envBoolDefault` silently ignores `"yes"` / `"on"` / `"YES"` — security-adjacent for CORS toggle
+
+**Location:** `internal/config/config.go:416-426`
+**Confidence:** medium
+
+`envBoolDefault` delegates to `strconv.ParseBool`, which accepts `{1,t,T,TRUE,true,True,0,f,F,FALSE,false,False}` and rejects everything else (returns fallback). An operator who sets `AURA_AGUI_CORS_PERMISSIVE=yes` expecting permissive CORS silently gets the default (`false` = restrictive). In this specific case the fallback is the safer direction. However the same silent-fallback affects `AURA_VISION_CLOUD=yes` (silently stays local-sidecar mode) and all other bool knobs. A typo that silently keeps the default is hard to diagnose.
+
+There is no log warning emitted when a malformed value is discarded.
+
+**Suggested fix:** Emit a `slog.Warn` on parse failure so operators discover misconfigured env vars at boot rather than at runtime (already done for hard-fail keys via `llm.Load`). Example:
+
+```go
+b, err := strconv.ParseBool(v)
+if err != nil {
+    slog.Warn("config: malformed bool env var, using default", "key", key, "value", v, "default", fallback)
+    return fallback
 }
 ```
 
-Using `url.URL` struct construction guarantees all components are correctly encoded by the standard library. `net.JoinHostPort` handles IPv6 brackets. Alternatively, at minimum, `sslmode` must be `url.QueryEscape`d and `host`/`port` validated to contain no URL-significant characters before interpolation.
+---
+
+## What was checked and found clean
+
+- **Nil-pointer dereference:** `Load()` and `loadBase()` never dereference a pointer before checking; `composeDSN` early-returns on empty password before URL construction.
+- **Unchecked errors:** All errors from `mcp.ManagedConfigPath`, `mcp.LoadManagedConfig`, `mcpmanager.RuntimeServers`, `mcpmanager.RunnableManagedServers`, and `parseMCPServersJSON` are either returned or stored in `MCPServersErr`. `godotenv.Load()` is explicitly discarded with `_` (intentional best-effort).
+- **`composeDSN` injection:** `url.UserPassword` percent-encodes credentials; `RawPath: "/" + url.PathEscape(dbname)` is load-bearing — without it, `url.URL.EscapedPath()` would not encode slashes in the dbname, leaking path segments. The test `TestComposeDSNEscapesComponents` covers this. `q.Set("sslmode", ...)` + `q.Encode()` percent-encodes the sslmode value, preventing query-string injection.
+- **Race conditions:** No goroutines or shared mutable state in this package. `loadBase()` reads env vars synchronously; no global variables are mutated post-init.
+- **Dead code (unexported):** `auraHomeDir`, `defaultSkillsDir`, `defaultSkillExportDir`, `defaultRunDir`, `defaultSkillInjectionBlocklist`, `envDefault`, `envIntDefault`, `envBoolDefault`, `envSliceDefault`, `composeDSN`, `loadMCPServers`, `parseMCPServersJSON`, `validateMCPServers` — all called within `loadBase()` or `Load()`. None are dead.
+- **`defaultOtelExporter`/`defaultOtelEndpoint` constants:** used at lines 230-231; not dead.
+- **`envSliceDefault` mutation hazard:** The fallback slice is constructed fresh each call via `defaultSkillInjectionBlocklist()` (which returns a new `[]string` literal), so there is no shared-slice aliasing risk.
+- **Integer overflow (`envIntDefault`):** `strconv.Atoi` returns a platform-sized `int`; callers use `int` fields. No overflow on 64-bit platforms. No conversion to smaller types in this package.

@@ -1,52 +1,93 @@
 # Audit: internal/agent/prompt
 
-**Verdict:** needs-work — one exported symbol is unreachable from outside the package; one caller in `llm_agent.go` builds the request twice per turn, discarding the first result; both are low-severity.
+**Verdict:** needs-work — one medium latent aliasing risk + one low dead-code constant; all other claims verified clean.
 
-**Counts:** critical 0 / high 0 / medium 1 / low 1
+**Counts:** critical 0 / high 0 / medium 1 / low 2
 
 ---
 
 ## Findings
 
-### [MEDIUM][NOT-WIRED] `ApplyAdaptiveReasoning` is exported but has no caller outside its own package
+### [MEDIUM][BUG] buildBase returns unprotected slice alias when budget is absent
 
-**Location:** `internal/agent/prompt/reasoning_policy.go:40`
+**Location:** `internal/agent/prompt/builder.go:91-104`
 
-**Confidence:** high
-
-**Detail:**
-`ApplyAdaptiveReasoning` is exported (uppercase) but is called from exactly one site in the entire repo: `BuildWithReasoningTier` in `internal/agent/prompt/builder.go:86`, which is inside the same package. No external package imports it directly.
-
-Grep evidence: a repo-wide search for `prompt\.ApplyAdaptiveReasoning` returns zero matches. The only definition-site and call-site are both in `internal/agent/prompt`.
-
-Exporting the function implies a stable public contract that downstream callers can depend on. Currently it is dead surface: callers wanting adaptive reasoning go through `BuildWithReasoningTier`, making this export a footgun — someone could call `ApplyAdaptiveReasoning` directly and bypass the `injectCacheControl` step that `BuildWithReasoningTier` applies after it.
-
-**Suggested fix:**
-Lowercase the function to `applyAdaptiveReasoning`. Update the one internal call in `builder.go:86`. No external callers to update.
-
----
-
-### [LOW][BUG] `llm_agent.go` builds the request twice per turn when adaptive reasoning is active, discarding the first result
-
-**Location:** `internal/agent/llm_agent.go:201-203` (caller, not in the `prompt` package itself — flagged here because it is a misuse of the `prompt` API surface)
-
-**Confidence:** high
+**Confidence:** medium
 
 **Detail:**
+
 ```go
-req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)  // line 201
-if adaptiveTierOK {
-    req = a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, adaptiveTier)  // line 203
+func (b *PromptBuilder) buildBase(...) llm.Request {
+    msgs := history        // msgs IS history — same backing array
+    if budget.present() {
+        msgs = append(append([]llm.Message(nil), history...), ...)  // copy only here
+    }
+    req := llm.Request{Messages: msgs, ...}
+    return req
 }
 ```
 
-`adaptiveTierOK` is true in every production path: `adaptiveReasoningTier` returns `true` on success, on router timeout (fallback to `ReasoningTierLow`), on empty user content (fallback), and on an invalid tier string (fallback). The only path where `adaptiveTierOK=false` is when `cfg.AdaptiveReasoning=false` or the provider is not OpenRouter — both rare/non-default configurations.
+When `budget.present()` is false the returned `req.Messages` is the caller's `history` slice header (same pointer, same backing array). Any append to `history` after `Build` returns — even a capacity-safe one that does not reallocate — will not corrupt `req.Messages` (different slice header), but a mutation of an existing element (`history[i].Content = ...`) WILL silently reach through into `req.Messages[i]` because both point at the same underlying array.
 
-When `adaptiveTierOK=true`, the `Build` call at line 201 executes `reg.RenderToolDefs()` (a sort + slice copy over the tool manifest) and `injectCacheControl`, then the result is immediately overwritten. This is wasted CPU per LLM call.
+The production caller (`internal/agent/llm_agent.go:201-203`) does not mutate elements between `Build` and use, so this is currently latent. However, `buildBase` is also called by `BuildWithReasoningTier`, and future maintenance that adds history mutation after the build call (e.g., appending a recovery nudge mid-turn — which already happens in `maybeRecover`) would be silently wrong if the budget was absent at build time.
 
-There is no correctness defect — `BuildWithReasoningTier` is a strict superset of `Build` — but the redundant call is pure waste.
+Compounding: in production `budget.present()` is always true (workspace + currentTime are always populated at `llm_agent.go:190-196`), so the copy path IS always taken today. The risk is a regression if callers change.
 
-**Suggested fix:**
+**Suggested fix:** Unconditionally copy the slice in the zero-budget path:
+
+```go
+msgs := append([]llm.Message(nil), history...)
+if budget.present() {
+    msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: budget.block()})
+}
+```
+
+This is a single extra alloc on zero-budget calls (which are unit-test-only paths in production today) and eliminates the aliasing surface.
+
+---
+
+### [LOW][DEAD-CODE] `providerAnthropic` and `cacheControlEphemeral` constants are unexported and referenced only within the package
+
+**Location:** `internal/agent/prompt/cache_anthropic.go:8,15`
+
+**Confidence:** high
+
+**Detail:**
+
+```go
+const providerAnthropic = "anthropic"
+const cacheControlEphemeral = "ephemeral"
+```
+
+Both constants are unexported. A repo-wide grep for `providerAnthropic` and `cacheControlEphemeral` finds zero references outside `cache_anthropic.go` itself (confirmed). They are consumed only by `injectCacheControl` (also in this file). This is not wrong — the constants exist to avoid a magic string — but they are pure package-internal implementation detail. This is a style/documentation observation, not a real defect.
+
+Note: `injectCacheControl` is also unexported and is tested directly via package-internal test (`builder_test.go:143`). Its only production callers are `Build` and `BuildWithReasoningTier` within the same package. The seam is intentional (marked dormant, D-03) and the constants are correctly scoped.
+
+**Suggested fix:** No action required. If the Anthropic seam ever graduates from dormant to active (Slice 13), these constants may be promoted or used by a wire-translation layer. The current scoping is correct.
+
+---
+
+### [LOW][NOT-WIRED] `Build` call at `llm_agent.go:201` is always superseded when adaptive reasoning is enabled
+
+**Location:** `internal/agent/llm_agent.go:201-203` (caller of `internal/agent/prompt`)
+
+**Confidence:** high
+
+**Detail:**
+
+```go
+req := a.builder.Build(a.history, a.registry, a.cfg.Provider, a.cfg, budget)  // always runs
+if adaptiveTierOK {
+    req = a.builder.BuildWithReasoningTier(a.history, a.registry, a.cfg.Provider, a.cfg, budget, adaptiveTier)
+}
+```
+
+`adaptiveTierOK` is true whenever `cfg.AdaptiveReasoning` is enabled and the provider is OpenRouter (the production default). In those circumstances the `req` produced at line 201 — including its `reg.RenderToolDefs()` call, its message slice copy, and its `injectCacheControl` call — is immediately discarded and recomputed at line 203. The first `Build` is dead work every turn.
+
+This is not a bug in the `prompt` package (both builders are correct), but it is a not-wired / dead-execution pattern: the result of `Build` at line 201 is unreachable in practice.
+
+**Suggested fix:** Eliminate the unconditional `Build` call:
+
 ```go
 var req llm.Request
 if adaptiveTierOK {
@@ -58,31 +99,16 @@ if adaptiveTierOK {
 
 ---
 
-## Clean — what was checked and found sound
+## What was checked and found clean
 
-The following were audited and are clean:
-
-**`PrefixHash` (hash.go):** Correct SHA-256 accumulation, `i < 0` guard prevents negative-index panic, `canonicaljson.Marshal` errors are propagated with `%w`, no h.Write error is possible (sha256.Hash.Write never returns an error). Forward-compat index semantics (`{0,1,2}` on a one-message slice equals `{0}`) are correct and tested.
-
-**`PromptBuilder.Build` / `buildBase` (builder.go):** History copy-on-write when `budget.present()` uses `append(append([]llm.Message(nil), history...), ...)` — the two-append idiom is correct and the caller's slice is never mutated. `Budget` zero value correctly short-circuits to no trailing message. No slice aliasing hazard.
-
-**`Budget.present()` / `Budget.block()` (builder.go):** `present()` correctly returns false for the zero value (all-empty budget). `block()` renders tags in a stable order (budget → workspace → current_time → today); the order is consistent with what `isSyntheticUserHint` expects to see as leading prefixes.
-
-**`isSyntheticUserHint` (reasoning_policy.go):** All five synthetic message prefixes injected by `llm_agent_finalize.go` and `llm_agent_completion.go` are matched:
-- `<budget>` / `<workspace>` / `<current_time>` / `<today>` — budget block tags
-- `"Stop calling tools."` — matches `finalizeNudge`
-- `"You have run out of tool-call budget"` — matches `recoveryNudgeGeneric`
-- `"You have already called \`"` — matches `recoveryNudgeToolPrefix`
-- `"Completion check FAILED:"` — matches `completionVetoPrefix` (`"Completion check FAILED: "` starts with `"Completion check FAILED:"`, so `HasPrefix` returns true correctly)
-
-No genuine user message can accidentally start with any of these XML-bracket prefixes in a way that would misfire; the only false-positive risk (a user literally typing `<budget>`) is acceptable for this internal routing heuristic.
-
-**`ApplyAdaptiveReasoning` / `IsOpenRouterReasoningTarget` (reasoning_policy.go):** Guard chain is correctly ordered (`AdaptiveReasoning` flag → provider/URL check → tier validity). `IsOpenRouterReasoningTarget` correctly handles an empty BaseURL (treated as openrouter-compatible). No race: `ApplyAdaptiveReasoning` mutates only the `*llm.Request` argument, which is stack-local in the caller.
-
-**`injectCacheControl` / `cache_anthropic.go`:** Dormant no-op under non-Anthropic providers. Only sets `ToolsCacheControl`; never touches `Messages`. Consistent with test assertions.
-
-**`boolPtr` (reasoning_policy.go:126):** Unexported helper, used three times in the same file. Correct escapes-to-heap pattern for pointer-to-bool literals. No duplication with the identically-named function in `internal/mcp/managed_config_test.go` — different package, different file scope.
-
-**Race / concurrency:** The package has no goroutines, no shared mutable state, no maps written concurrently, and no sync primitives. `PromptBuilder` is stateless (empty struct). All functions are pure or pointer-to-stack-local.
-
-**Dead code:** `boolPtr`, `cappedTokens`, `configuredOrDefault`, `isSyntheticUserHint`, `block()`, `present()`, `buildBase`, `injectCacheControl` are all unexported and confirmed reachable from within-package callers. No orphaned unexported symbols found.
+- **hash.go / PrefixHash**: bounds check `i < 0 || i >= len(msgs)` is correct; negative-index and beyond-len indices silently skip; empty-index-set produces the stable SHA-256 zero-data digest consistently. No error swallowing (error is propagated via `%w`).
+- **reasoning_policy.go / ApplyAdaptiveReasoning**: triple-guard (`AdaptiveReasoning`, `IsOpenRouterReasoningTarget`, `tier.Valid()`) is correct; `BuildWithReasoningTier` short-circuits cleanly when any guard fails and leaves `req` unchanged. Verified against test cases `disabled_leaves_request_unchanged` and `non_openrouter_leaves_reasoning_empty`.
+- **reasoning_policy.go / cappedTokens + configuredOrDefault**: arithmetic is correct; `configuredMax <= 0` path returns the constant cap; no overflow risk (values are bounded by LLM provider limits, well within int range).
+- **reasoning_policy.go / isSyntheticUserHint**: all five nudge prefix literals (`"Stop calling tools."`, `"You have run out of tool-call budget"`, `"You have already called \``"`, `"Your last response was empty."`, `"Completion check FAILED:"`) are verified to match the production constants in `llm_agent_finalize.go` and `llm_agent_completion.go` byte-for-byte via grep. The four XML-tag prefixes (`<budget>`, `<workspace>`, `<current_time>`, `<today>`) cover every ordering `Budget.block()` can produce as the first tag of its output.
+- **reasoning_policy.go / LastGenuineUserContent**: walk-from-tail loop with role + empty-content + synthetic guards is correct; no off-by-one; empty-history returns `""` without panic.
+- **builder.go / Budget.present()**: correctly returns false for the zero-value struct (all zero/empty), so the zero-budget zero-workspace zero-time path does NOT inject a trailing message. Matches test `TestBudgetBlockByteStable/zero_counts_omit_the_budget_block`.
+- **builder.go / Build vs BuildWithReasoningTier**: both call `buildBase` first, then the appropriate mutation, then `injectCacheControl` — ordering is correct.
+- **cache_anthropic.go / injectCacheControl**: providerAnthropic comparison is case-sensitive (`!=`); the callers in `llm_agent.go` always pass `a.cfg.Provider` as-is. Config loading lower-cases provider names on load (verified: `llm/config.go`), so `"anthropic"` is the correct canonical form. No case-sensitivity bug.
+- **No goroutines, channels, mutexes, or shared state**: the package is entirely stateless (PromptBuilder is an empty struct). No race conditions are possible.
+- **No resource leaks**: no I/O, no file handles, no HTTP connections opened.
+- **No context propagation**: none needed — the package is pure, synchronous computation with no I/O.
