@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -59,5 +60,26 @@ func TestPersistPause_DirectPauseLeavesProxiedNil(t *testing.T) {
 	}
 	if got.ProxiedToolCallID != "" {
 		t.Errorf("a direct pause must forward an empty tool_call id, got %q", got.ProxiedToolCallID)
+	}
+}
+
+func TestPersistPause_ForwardsResumeContext(t *testing.T) {
+	r, _, pause := newTestRunner(t, agenttest.NewFakeClient())
+	convID := newConvID(t)
+	tr := &turnTracker{convID: convID}
+
+	resumeContext := json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`)
+	ai := &agent.AwaitingInput{
+		Question:      "approve skill?",
+		Kind:          "approval",
+		ToolCallID:    "tc1",
+		ResumeContext: resumeContext,
+	}
+	if err := r.persistPause(context.Background(), tr, ai); err != nil {
+		t.Fatalf("persistPause: %v", err)
+	}
+
+	if string(pause.lastInsert.ResumeContext) != string(resumeContext) {
+		t.Fatalf("ResumeContext not forwarded: got %s want %s", pause.lastInsert.ResumeContext, resumeContext)
 	}
 }

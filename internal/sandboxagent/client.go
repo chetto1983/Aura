@@ -22,11 +22,13 @@ const (
 type Config struct {
 	BaseURL    string
 	TimeoutSec int
+	Token      string
 }
 
 type Client struct {
 	baseURL string
 	http    *http.Client
+	token   string
 }
 
 type RunRequest struct {
@@ -60,6 +62,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		baseURL: base,
 		http:    &http.Client{Timeout: time.Duration(timeout) * time.Second},
+		token:   strings.TrimSpace(cfg.Token),
 	}
 }
 
@@ -67,6 +70,9 @@ func New(cfg Config) *Client {
 func (c *Client) jsonHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
 }
 
 func (c *Client) Run(ctx context.Context, req RunRequest) (RunResponse, error) {

@@ -74,11 +74,14 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 		return r.cancelConversation(ctx, pending.ConversationID)
 	}
 
+	if err := r.injectAnswer(ctx, pending, resp); err != nil {
+		return 0, err
+	}
 	if err := r.pause.MarkResumed(ctx, token, toResumeAnswer(resp)); err != nil {
 		return 0, fmt.Errorf("submit answer: %w", err)
 	}
-	if err := r.injectAnswer(ctx, pending, resp); err != nil {
-		return 0, err
+	if err := r.applyResumeHook(ctx, pending, resp); err != nil {
+		return 0, fmt.Errorf("submit answer: %w", err)
 	}
 	return r.remainingPending(ctx, pending.ConversationID)
 }
@@ -106,6 +109,11 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 		}
 	}
 
+	for token, resp := range answers {
+		if err := r.injectAnswer(ctx, pendings[token], resp); err != nil {
+			return 0, err
+		}
+	}
 	batch := make(map[string]askuser.ResumeAnswer, len(answers))
 	for token, resp := range answers {
 		batch[token] = toResumeAnswer(resp)
@@ -114,11 +122,18 @@ func (r *Runner) SubmitAnswers(ctx context.Context, answers map[string]ResponseI
 		return 0, fmt.Errorf("submit answers: %w", err)
 	}
 	for token, resp := range answers {
-		if err := r.injectAnswer(ctx, pendings[token], resp); err != nil {
-			return 0, err
+		if err := r.applyResumeHook(ctx, pendings[token], resp); err != nil {
+			return 0, fmt.Errorf("submit answers: %w", err)
 		}
 	}
 	return r.remainingPending(ctx, convID)
+}
+
+func (r *Runner) applyResumeHook(ctx context.Context, pending askuser.Pending, resp ResponseInput) error {
+	if r.resumeHook == nil || len(pending.ResumeContext) == 0 {
+		return nil
+	}
+	return r.resumeHook(ctx, pending, resp)
 }
 
 // injectAnswer appends the RoleTool answer turn keyed by the original tool_call_id
@@ -147,19 +162,26 @@ func (r *Runner) injectAnswer(ctx context.Context, pending askuser.Pending, resp
 // caller treats a cancel as a turn termination — it does NOT drive a fresh
 // Turn(convID, nil) afterward. Returns the remaining count (0 after auto-resolve).
 func (r *Runner) cancelConversation(ctx context.Context, conversationID string) (int, error) {
-	pendings, err := r.pause.ListPending(ctx, conversationID)
-	if err != nil {
+	if err := r.injectCancelledAnswers(ctx, conversationID); err != nil {
 		return 0, fmt.Errorf("submit answer (cancel): %w", err)
-	}
-	for _, p := range pendings {
-		if err := r.injectAnswer(ctx, p, ResponseInput{Action: askuser.ActionCancel, Content: cancelledContent}); err != nil {
-			return 0, fmt.Errorf("submit answer (cancel): %w", err)
-		}
 	}
 	if err := r.pause.AutoResolveForConversation(ctx, conversationID); err != nil {
 		return 0, fmt.Errorf("submit answer (cancel): %w", err)
 	}
 	return r.remainingPending(ctx, conversationID)
+}
+
+func (r *Runner) injectCancelledAnswers(ctx context.Context, conversationID string) error {
+	pendings, err := r.pause.ListPending(ctx, conversationID)
+	if err != nil {
+		return err
+	}
+	for _, p := range pendings {
+		if err := r.injectAnswer(ctx, p, ResponseInput{Action: askuser.ActionCancel, Content: cancelledContent}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // PendingFor returns the still-unresolved pauses for a conversation in FIFO order
@@ -196,7 +218,10 @@ func toResumeAnswer(resp ResponseInput) askuser.ResumeAnswer {
 // WaitGroup with a bounded wait so a hung worker cannot wedge shutdown (goleak-clean,
 // D-A5-01). The wg.Wait() is the sync point tests hit so goleak sees no leak.
 func (r *Runner) Stop(ctx context.Context, convID string) error {
-	resolveErr := r.pause.AutoResolveForConversation(ctx, convID)
+	resolveErr := r.injectCancelledAnswers(ctx, convID)
+	if resolveErr == nil {
+		resolveErr = r.pause.AutoResolveForConversation(ctx, convID)
+	}
 	if !r.waitWorkers(r.stopTimeout) {
 		// The drain timed out — surface it, but the auto-resolve already ran.
 		if resolveErr != nil {

@@ -14,6 +14,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/golang-migrate/migrate/v4"
@@ -49,12 +50,28 @@ func Migrate(ctx context.Context, migrateURL string) (int, error) {
 		return 0, fmt.Errorf("new migrator to %s: %w", redactDSN(migrateURL), err)
 	}
 	defer func() { _, _ = m.Close() }()
-	pre, _, _ := m.Version()
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+	applied, err := migrateAllCountingSteps(m)
+	if err != nil {
 		return 0, fmt.Errorf("migrate up against %s: %w", redactDSN(migrateURL), err)
 	}
-	post, _, _ := m.Version()
-	return int(post) - int(pre), nil
+	return applied, nil
+}
+
+type migrationStepper interface {
+	Steps(int) error
+}
+
+func migrateAllCountingSteps(m migrationStepper) (int, error) {
+	applied := 0
+	for {
+		if err := m.Steps(1); err != nil {
+			if errors.Is(err, migrate.ErrNoChange) {
+				return applied, nil
+			}
+			return applied, err
+		}
+		applied++
+	}
 }
 
 // EnsureRoles bootstraps the aura_app + aura_migrate Postgres roles AND the
@@ -111,8 +128,12 @@ func EnsureRoles(ctx context.Context, bootstrapURL, password string) error {
 	// Database-level CREATE for aura_migrate — required by 0001_init's
 	// `CREATE SCHEMA IF NOT EXISTS aura` (Postgres still checks the privilege
 	// even when the schema already exists).
-	if _, err := pool.Exec(ctx, "GRANT CREATE ON DATABASE aura TO aura_migrate"); err != nil {
-		return fmt.Errorf("grant CREATE on database aura: %w", redactErrorPassword(err, password))
+	dbname, err := databaseNameFromDSN(bootstrapURL)
+	if err != nil {
+		return fmt.Errorf("grant CREATE on database: %w", redactErrorPassword(err, password))
+	}
+	if _, err := pool.Exec(ctx, grantCreateDatabaseSQL(dbname)); err != nil {
+		return fmt.Errorf("grant CREATE on database %s: %w", dbname, redactErrorPassword(err, password))
 	}
 	// Pre-create the aura schema with aura_migrate as owner. 0001_init's
 	// `CREATE SCHEMA IF NOT EXISTS aura` becomes a documented no-op once this
@@ -137,6 +158,26 @@ func EnsureRoles(ctx context.Context, bootstrapURL, password string) error {
 // is wrapped. Defense-in-depth on top of parametrized queries — if a Postgres
 // error message ever echoes a literal substring of the password (e.g. via
 // an unexpected upstream code path), this strips it.
+func databaseNameFromDSN(dsn string) (string, error) {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "", err
+	}
+	dbname := strings.TrimPrefix(u.Path, "/")
+	if dbname == "" {
+		return "", errors.New("database name is empty")
+	}
+	return dbname, nil
+}
+
+func grantCreateDatabaseSQL(dbname string) string {
+	return "GRANT CREATE ON DATABASE " + quoteIdent(dbname) + " TO aura_migrate"
+}
+
+func quoteIdent(s string) string {
+	return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+}
+
 func redactErrorPassword(err error, passwords ...string) error {
 	if err == nil {
 		return nil

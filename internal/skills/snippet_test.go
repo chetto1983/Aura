@@ -293,3 +293,47 @@ func TestSetUsageStatus(t *testing.T) {
 		t.Fatalf("use_count = %d, want 1 (preserved across status change)", u.UseCount)
 	}
 }
+
+// TestArchivedUsageStatusUpdatesMovedSidecarWithoutActiveGhost pins the TTL-sweep
+// archive bug: after active/<name> is moved to archived/<name>, marking the moved
+// sidecar archived must not recreate active/<name> as a ghost dir containing only
+// .usage.json.
+func TestArchivedUsageStatusUpdatesMovedSidecarWithoutActiveGhost(t *testing.T) {
+	t.Parallel()
+	w, root := newTestWriter(t)
+	name := "calc"
+
+	if err := w.StampUsage(name, time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("StampUsage: %v", err)
+	}
+	activeDir := filepath.Join(root, "active", name)
+	archivedDir := filepath.Join(root, "archived", name)
+	if err := os.MkdirAll(filepath.Dir(archivedDir), 0o750); err != nil {
+		t.Fatalf("mkdir archived root: %v", err)
+	}
+	if err := os.Rename(activeDir, archivedDir); err != nil {
+		t.Fatalf("move active to archived: %v", err)
+	}
+
+	if err := w.setUsageStatusInRoot(w.archiveDir, name, "archived"); err != nil {
+		t.Fatalf("set archived usage status: %v", err)
+	}
+	if _, statErr := os.Stat(activeDir); !os.IsNotExist(statErr) {
+		t.Fatalf("marking archived sidecar must not recreate active ghost dir (stat err=%v)", statErr)
+	}
+
+	raw, err := os.ReadFile(filepath.Join(archivedDir, ".usage.json"))
+	if err != nil {
+		t.Fatalf("read archived sidecar: %v", err)
+	}
+	var u UsageSidecar
+	if err := json.Unmarshal(raw, &u); err != nil {
+		t.Fatalf("archived sidecar JSON: %v", err)
+	}
+	if u.Status != "archived" {
+		t.Fatalf("archived sidecar status = %q, want archived", u.Status)
+	}
+	if u.UseCount != 1 {
+		t.Fatalf("archived sidecar use_count = %d, want preserved count 1", u.UseCount)
+	}
+}

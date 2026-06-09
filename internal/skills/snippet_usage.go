@@ -30,11 +30,8 @@ func (w *Writer) usageSidecarPath(name string) string {
 	return filepath.Join(w.activeDir, name, ".usage.json")
 }
 
-// ReadUsage loads a skill's usage sidecar. A missing sidecar is NOT an error — it
-// returns a zero-value UsageSidecar (status active, never used), so the TTL sweep
-// treats a never-used snippet by its on-disk mtime path (the caller's policy).
-func (w *Writer) ReadUsage(name string) (UsageSidecar, error) {
-	data, err := os.ReadFile(w.usageSidecarPath(name)) // #nosec G304 -- path = activeRoot/<name>/.usage.json
+func readUsageSidecar(path, name string) (UsageSidecar, error) {
+	data, err := os.ReadFile(path) // #nosec G304 -- caller builds this under a configured skill root.
 	if err != nil {
 		if os.IsNotExist(err) {
 			return UsageSidecar{Status: "active"}, nil
@@ -51,12 +48,32 @@ func (w *Writer) ReadUsage(name string) (UsageSidecar, error) {
 	return u, nil
 }
 
+// ReadUsage loads a skill's usage sidecar. A missing sidecar is NOT an error — it
+// returns a zero-value UsageSidecar (status active, never used), so the TTL sweep
+// treats a never-used snippet by its on-disk mtime path (the caller's policy).
+func (w *Writer) ReadUsage(name string) (UsageSidecar, error) {
+	return readUsageSidecar(w.usageSidecarPath(name), name)
+}
+
 // writeUsageAtomic writes the usage sidecar atomically (temp file in the same dir +
 // rename), so a crash mid-write never leaves a half-written sidecar the sweep reads.
 func (w *Writer) writeUsageAtomic(name string, u UsageSidecar) error {
-	dir := filepath.Join(w.activeDir, name)
-	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return fmt.Errorf("usage %q: mkdir: %w", name, err)
+	return writeUsageAtomicInDir(filepath.Join(w.activeDir, name), name, u, true)
+}
+
+func writeUsageAtomicInDir(dir, name string, u UsageSidecar, createDir bool) error {
+	if createDir {
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			return fmt.Errorf("usage %q: mkdir: %w", name, err)
+		}
+	} else {
+		info, err := os.Stat(dir)
+		if err != nil {
+			return fmt.Errorf("usage %q: stat dir: %w", name, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("usage %q: sidecar parent is not a directory", name)
+		}
 	}
 	data, err := json.Marshal(u)
 	if err != nil {
@@ -80,11 +97,21 @@ func (w *Writer) writeUsageAtomic(name string, u UsageSidecar) error {
 	if cerr := tmp.Close(); cerr != nil {
 		return fmt.Errorf("usage %q: close temp: %w", name, cerr)
 	}
-	if rerr := os.Rename(tmpName, w.usageSidecarPath(name)); rerr != nil {
+	if rerr := os.Rename(tmpName, filepath.Join(dir, ".usage.json")); rerr != nil {
 		return fmt.Errorf("usage %q: rename: %w", name, rerr)
 	}
 	committed = true
 	return nil
+}
+
+func (w *Writer) setUsageStatusInRoot(root, name, status string) error {
+	dir := filepath.Join(root, name)
+	u, err := readUsageSidecar(filepath.Join(dir, ".usage.json"), name)
+	if err != nil {
+		return err
+	}
+	u.Status = status
+	return writeUsageAtomicInDir(dir, name, u, false)
 }
 
 // StampUsage bumps use_count + last_used_at on a skill's usage sidecar atomically
@@ -165,7 +192,13 @@ func (w *Writer) SweepExpiredSnippets(ctx context.Context, ttl time.Duration, no
 			slog.Warn("snippet TTL sweep: archive failed", "skill", name, "err", aerr)
 			continue
 		}
-		_ = w.SetUsageStatus(name, "archived") // sidecar moved with the dir; mark archived
+		if w.archiveDir != "" {
+			if uerr := w.setUsageStatusInRoot(w.archiveDir, name, "archived"); uerr != nil {
+				slog.Warn("snippet TTL sweep: archived usage status failed", "skill", name, "err", uerr)
+			}
+		} else if uerr := w.SetUsageStatus(name, "archived"); uerr != nil {
+			slog.Warn("snippet TTL sweep: usage status failed", "skill", name, "err", uerr)
+		}
 		res.Archived = append(res.Archived, name)
 	}
 	return res, nil

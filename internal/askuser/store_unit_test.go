@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/db/sqlc"
 )
 
 // TestEncodeAnswer_ValidActions accepts the three MCP actions and round-trips the
@@ -32,6 +34,39 @@ func TestEncodeAnswer_RejectsUnknownAction(t *testing.T) {
 		if _, err := encodeAnswer(ResumeAnswer{Action: bad}); !errors.Is(err, ErrInvalidAnswer) {
 			t.Errorf("encodeAnswer(%q): want ErrInvalidAnswer, got %v", bad, err)
 		}
+	}
+}
+
+func TestDecodeResumedAnswerRejectsNonObject(t *testing.T) {
+	_, err := decodeResumedAnswer("tok", []byte(`42`))
+	if err == nil {
+		t.Fatal("decodeResumedAnswer(non-object): want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "decode resumed_answer") {
+		t.Fatalf("error should name resumed_answer decode, got %v", err)
+	}
+}
+
+func TestFromRowCarriesResumeContext(t *testing.T) {
+	tok, err := parseUUID("token", "11111111-1111-1111-1111-111111111111")
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := parseUUID("conversation_id", "22222222-2222-2222-2222-222222222222")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte(`{"type":"skill_approval","skill_name":"calc"}`)
+	got := fromRow(sqlc.AuraPausedStates{
+		Token:          tok,
+		ConversationID: conv,
+		Kind:           "approval",
+		Question:       "approve?",
+		ResumeContext:  raw,
+		ToolCallID:     "tc1",
+	})
+	if string(got.ResumeContext) != string(raw) {
+		t.Fatalf("ResumeContext = %s, want %s", got.ResumeContext, raw)
 	}
 }
 

@@ -95,9 +95,10 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 		"caption":  asciiCaption(a.Caption),
 	}
 	meta := ToolResultMeta{"artifact": descriptor}
+	preview := fmt.Sprintf("queued %s for delivery", filepath.Base(path))
 	return ToolResult{
-		Preview: fmt.Sprintf("queued %s for delivery", filepath.Base(path)),
-		Bytes:   len(filepath.Base(path)),
+		Preview: preview,
+		Bytes:   len(preview),
 		Meta:    &meta,
 	}, nil
 }

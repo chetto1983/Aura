@@ -81,6 +81,28 @@ func TestHTTPDecodeSSEResponse(t *testing.T) {
 	}
 }
 
+func TestHTTPDecodeSSELargeDataLine(t *testing.T) {
+	largeText := strings.Repeat("x", 70*1024)
+	srv := httptest.NewServer(httpInitHandler(t, "sse-large", func(w http.ResponseWriter, r *http.Request) {
+		var req rpcReq
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "data: %s\n\n", mustRaw(t, rpcResp{JSONRPC: "2.0", ID: &req.ID, Result: mustRaw(t, map[string]any{
+			"content": []map[string]any{{"type": "text", "text": largeText}}})}))
+	}))
+	defer srv.Close()
+	c := openHTTPTest(t, srv, HTTPConfig{})
+	defer func() { _ = c.Close() }()
+
+	got, err := c.CallTool(context.Background(), "echo", map[string]any{})
+	if err != nil {
+		t.Fatalf("CallTool over large SSE: %v", err)
+	}
+	if got != largeText {
+		t.Fatalf("large SSE text length = %d, want %d", len(got), len(largeText))
+	}
+}
+
 func TestHTTPDecodeSSEMissingID(t *testing.T) {
 	srv := httptest.NewServer(httpInitHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")

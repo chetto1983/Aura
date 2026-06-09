@@ -180,6 +180,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		PreviewCap:      cfg.ToolPreviewCap,
 		EvictAfter:      cfg.ContextToolEvictAfterTurns,
 		AlwaysBlock:     alwaysBlockProvider(cfg),
+		ResumeHook:      newSkillResumeHook(cfg, pool),
 	})
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, mcpClosers: mcpClosers}, nil
 }

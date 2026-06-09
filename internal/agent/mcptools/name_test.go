@@ -110,6 +110,9 @@ func TestNamespacedName_LongNamespaceCap(t *testing.T) {
 	if !isHex(suffix[1:]) {
 		t.Errorf("long-namespace suffix should be hex, got %q", suffix[1:])
 	}
+	if !strings.Contains(got, nsDelimiter) {
+		t.Fatalf("long-namespace result must preserve namespace delimiter %q, got %q", nsDelimiter, got)
+	}
 }
 
 // TestNamespacedName_DistinctLongNamespacesNoRecollision proves the hash suffix is

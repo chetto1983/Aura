@@ -5,6 +5,7 @@ package conversations
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"strings"
 	"testing"
@@ -141,6 +142,15 @@ func TestNumericFromFloat_Negative(t *testing.T) {
 	}
 	if got := floatFromNumeric(n); got > -1.2344 || got < -1.2346 {
 		t.Errorf("negative round-trip: got %v", got)
+	}
+}
+
+func TestNumericFromFloat_RejectsNonFiniteAndOverflow(t *testing.T) {
+	t.Parallel()
+	for _, in := range []float64{math.NaN(), math.Inf(1), math.Inf(-1), 1e12, -1e12} {
+		if _, err := numericFromFloat(in); err == nil {
+			t.Errorf("numericFromFloat(%v): want error, got nil", in)
+		}
 	}
 }
 

@@ -207,6 +207,22 @@ func TestFetch_UnsupportedScheme(t *testing.T) {
 	assertWebErr(t, err, CodeUnsupportedScheme, "")
 }
 
+func TestFetch_ContextDeadlineReturnsTimeout(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte(richHTML))
+	}))
+	defer srv.Close()
+	_, port := hostPort(t, srv.URL)
+	c := fetchClient(t, map[string][]netip.Addr{"page.test": {publicIP}})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	_, err := c.Fetch(ctx, "c", "http://page.test:"+port+"/slow")
+	assertWebErr(t, err, CodeTimeout, "")
+}
+
 func TestFetch_PerHostConcurrencyCap(t *testing.T) {
 	var inFlight atomic.Int32
 	var maxObserved atomic.Int32

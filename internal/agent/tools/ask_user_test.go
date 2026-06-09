@@ -138,6 +138,19 @@ func TestAskUser_Execute_ProxiedIDsOptional(t *testing.T) {
 	}
 }
 
+func TestAskUser_Execute_ResumeContextParsed(t *testing.T) {
+	_, err := AskUser{}.Execute(context.Background(),
+		json.RawMessage(`{"question":"approve skill?","kind":"approval","resume_context":{"type":"skill_approval","skill_name":"calc"}}`))
+	var pause *ErrAwaitingUserInput
+	if !errors.As(err, &pause) {
+		t.Fatalf("want sentinel, got %v", err)
+	}
+	want := `{"type":"skill_approval","skill_name":"calc"}`
+	if string(pause.ResumeContext) != want {
+		t.Fatalf("resume_context = %s, want %s", pause.ResumeContext, want)
+	}
+}
+
 func TestAskUser_Spec_ProxiedFieldsNotRequired(t *testing.T) {
 	s := AskUser{}.Spec()
 	var schema struct {
@@ -147,7 +160,7 @@ func TestAskUser_Spec_ProxiedFieldsNotRequired(t *testing.T) {
 	if err := json.Unmarshal(s.Parameters, &schema); err != nil {
 		t.Fatalf("Parameters not valid JSON: %v", err)
 	}
-	for _, p := range []string{"proxied_from_child_id", "proxied_tool_call_id"} {
+	for _, p := range []string{"proxied_from_child_id", "proxied_tool_call_id", "resume_context"} {
 		if _, ok := schema.Properties[p]; !ok {
 			t.Errorf("Spec params missing optional property %q", p)
 		}

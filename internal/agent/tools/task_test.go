@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -211,6 +212,19 @@ func TestTaskUnknownActionStructuredError(t *testing.T) {
 	if !strings.Contains(err.Error(), "explode") {
 		t.Errorf("error must name the bad action, got %q", err.Error())
 	}
+}
+
+func TestTaskToolConcurrentExecuteInitializesRouterOnce(t *testing.T) {
+	tool := &TaskTool{Store: &fakeTaskStore{}}
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = tool.Execute(context.Background(), json.RawMessage(`{"action":"explode"}`))
+		}()
+	}
+	wg.Wait()
 }
 
 func TestTaskMissingAction(t *testing.T) {

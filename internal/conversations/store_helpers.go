@@ -3,6 +3,7 @@ package conversations
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 // numericScale is the fixed scale of total_cost_usd (numeric(10,4)). The cost
 // delta is encoded at this scale so the SQL `total_cost_usd + $delta` stays exact.
 const numericScale = 4
+const numericMaxCost = 999999.9999
 
 // conversationFromRow projects a generated conversations row onto the domain type,
 // converting the pgtype wrappers (Pitfall 5) at the boundary: pgtype.Text title ->
@@ -149,6 +151,9 @@ func floatFromNumeric(n pgtype.Numeric) float64 {
 // so the SQL `total_cost_usd + $delta` stays exact (Pitfall 5). The value is
 // rounded to 4 decimals via an integer-mantissa construction (Int * 10^-4).
 func numericFromFloat(f float64) (pgtype.Numeric, error) {
+	if math.IsNaN(f) || math.IsInf(f, 0) || f > numericMaxCost || f < -numericMaxCost {
+		return pgtype.Numeric{}, fmt.Errorf("cost %v out of numeric(10,4) range +/-%.4f", f, numericMaxCost)
+	}
 	// Scale to 4 decimals as an integer mantissa, rounding half-away-from-zero.
 	scaled := f * 1e4
 	if scaled >= 0 {

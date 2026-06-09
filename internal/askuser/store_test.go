@@ -285,6 +285,32 @@ func TestMarkResumedBatch_UnknownTokenRollsBack(t *testing.T) {
 	}
 }
 
+// TestMarkResumedBatch_AlreadyResumedRollsBack proves an already-resumed token is
+// rejected like an unknown token, and the whole batch remains pending/retryable.
+func TestMarkResumedBatch_AlreadyResumedRollsBack(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	convID := newConversation(t, pool)
+	ctx := context.Background()
+
+	good := insertPause(t, s, convID, "approval", "a", 0)
+	done := insertPause(t, s, convID, "approval", "b", 0)
+	if err := s.MarkResumed(ctx, done, ResumeAnswer{Action: ActionAccept, Content: "done"}); err != nil {
+		t.Fatalf("pre-resume token: %v", err)
+	}
+
+	err := s.MarkResumedBatch(ctx, map[string]ResumeAnswer{
+		good: {Action: ActionAccept, Content: "yes"},
+		done: {Action: ActionAccept, Content: "again"},
+	})
+	if !isPauseNotFound(err) {
+		t.Fatalf("batch with already-resumed token: want ErrPauseNotFound, got %v", err)
+	}
+	if n := countPending(t, pool, convID); n != 1 {
+		t.Errorf("rollback must leave the good token pending, got %d pending", n)
+	}
+}
+
 // TestAutoResolveForConversation: Loop.Stop leaves zero pending for the conversation.
 func TestAutoResolveForConversation(t *testing.T) {
 	pool := migratedPool(t)

@@ -63,6 +63,7 @@ func TestMarshal_StrictRejectsNonCanonicalizable(t *testing.T) {
 		{"NaN", math.NaN()},
 		{"PosInf", math.Inf(1)},
 		{"NegInf", math.Inf(-1)},
+		{"OverflowNumberLiteral", json.RawMessage(`1e9999`)},
 		{"func", func() {}},
 		{"chan", make(chan int)},
 	}

@@ -67,7 +67,6 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 		Prices:            chat.cfg.LLM.Prices,
 		Model:             chat.cfg.LLM.Model,
 		Resume:            chat.run,
-		ResumeTurn:        resumeTurnFunc(chat.run),
 		StatusThrottleMS:  tgCfg.StatusThrottleMS,
 		ContentThrottleMS: tgCfg.ContentThrottleMS,
 		ChatRateLimitMS:   tgCfg.ChatRateLimitMS,
@@ -134,22 +133,6 @@ func (c *todayCost) TodayUsage(ctx context.Context) (promptTokens, completionTok
 	}
 	cost := agg.TotalCostUSD
 	return int(agg.TotalPromptTokens), 0, &cost, nil
-}
-
-// resumeTurnFunc returns the HITL continuation driver: after a pause resolves it
-// drives a fresh runner turn (run.Turn(ctx, convID, nil)) and drains it to
-// completion. The composition-root default advances the runner; the bot dispatch
-// (plan 13-10 Task 2) renders the resumed turn through the channel's per-turn
-// fanout where it has the bot + chat id.
-func resumeTurnFunc(run *runner.Runner) func(ctx context.Context, convID string) {
-	return func(ctx context.Context, convID string) {
-		for _, err := range run.Turn(ctx, convID, nil) {
-			if err != nil {
-				slog.Warn("aura serve: telegram resume turn", "conv", convID, "err", err)
-				return
-			}
-		}
-	}
 }
 
 // ensuringTurn wraps Runner.Turn so the first inbound message for a chat lazily

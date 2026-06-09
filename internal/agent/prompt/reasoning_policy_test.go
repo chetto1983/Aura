@@ -174,6 +174,19 @@ func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 		}
 	})
 
+	t.Run("skips_empty_response_recovery_nudge", func(t *testing.T) {
+		t.Parallel()
+		hist := []llm.Message{
+			{Role: llm.RoleSystem, Content: "system prefix"},
+			{Role: llm.RoleUser, Content: "fai una ricerca e rispondi oggi"},
+			{Role: llm.RoleAssistant, Content: ""},
+			{Role: llm.RoleUser, Content: "Your last response was empty. Provide a concise final answer now."},
+		}
+		if got := LastGenuineUserContent(hist); got != "fai una ricerca e rispondi oggi" {
+			t.Fatalf("LastGenuineUserContent = %q", got)
+		}
+	})
+
 	t.Run("skips_synthetic_time_hint", func(t *testing.T) {
 		t.Parallel()
 		hist := []llm.Message{

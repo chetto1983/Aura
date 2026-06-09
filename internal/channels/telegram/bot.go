@@ -80,13 +80,11 @@ type Deps struct {
 	Prices map[string]llm.Price
 	Model  string
 
-	// Resume / ResumeTurn are the HITL seam (hitl.go). Resume is the Runner's pause
-	// surface (PendingFor/SubmitAnswer — *runner.Runner satisfies it); ResumeTurn
-	// drives a continuation turn after a pause resolves (a closure over
-	// run.Turn(ctx, convID, nil), wired by the composition root). Both nil → HITL is
-	// inert (no button render, no resume) but the channel still serves plain turns.
-	Resume     resumeRunner
-	ResumeTurn resumeFunc
+	// Resume is the HITL seam (hitl.go): the Runner's pause surface
+	// (PendingFor/SubmitAnswer — *runner.Runner satisfies it). Nil → HITL is inert
+	// (no button render, no resume) but the channel still serves plain turns. The
+	// continuation turn after a pause resolves is built locally in hitlFor.
+	Resume resumeRunner
 
 	// StatusThrottle / ContentThrottle bound the two render consumers; ChatRate
 	// bounds the per-chat send queue. Zero → the package defaults (see config).
@@ -126,6 +124,13 @@ type Telegram struct {
 	photo   *photoClient
 	docs    *documentsClient
 	tts     *ttsClient
+
+	hitlRepliesHandled map[hitlReplyKey]struct{}
+}
+
+type hitlReplyKey struct {
+	chatID int64
+	msgID  int
 }
 
 // NewChannel builds an unstarted Telegram channel over the supplied deps. (Named
@@ -258,7 +263,6 @@ func (t *Telegram) Stop(ctx context.Context) error {
 		return nil
 	}
 	bot.Stop()
-	t.wg.Wait()
 
 	// Drain any in-flight async document-convert goroutines (goleak-clean — the
 	// package TestMain catches a leaked convert goroutine). The poller is already
@@ -269,6 +273,7 @@ func (t *Telegram) Stop(ctx context.Context) error {
 	if docs != nil {
 		docs.Stop(ctx)
 	}
+	t.wg.Wait()
 
 	t.mu.Lock()
 	t.started = false

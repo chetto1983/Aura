@@ -413,6 +413,45 @@ func TestOnReplyForceReplyAnswerResumes(t *testing.T) {
 	}
 }
 
+func TestOnReplyThenOnTextDoesNotDoubleDispatchForceReply(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{
+		remaining:            0,
+		pending:              []askuser.Pending{{Token: "tok-c", Kind: "clarification", Question: "Nome?"}},
+		clearPendingOnSubmit: true,
+	}
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Resume = rs
+		d.Cost = &fakeCost{}
+		d.Search = &fakeSearch{}
+	})
+
+	bot := &dispatchBot{}
+	msg := chatMsg(51)
+	msg.ID = 99
+	msg.Text = "Davide"
+	msg.ReplyTo = &tele.Message{ID: 1}
+	if err := tg.onReply(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onReply: %v", err)
+	}
+	tg.wg.Wait()
+	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onText(after OnReply): %v", err)
+	}
+	tg.wg.Wait()
+
+	if len(rs.calls()) != 1 {
+		t.Fatalf("ForceReply answer must submit once, got %d submits", len(rs.calls()))
+	}
+	_, msgs := rt.snapshot()
+	for _, m := range msgs {
+		if m == "Davide" {
+			t.Fatalf("OnText must not drive a fresh turn for a ForceReply answer after OnReply; msgs=%v", msgs)
+		}
+	}
+}
+
 // TestOnTextPendingPauseRoutesToHITL proves a non-command message routed while a
 // pause is pending is consumed by HITL (a free-text answer), NOT driven as a fresh
 // turn.

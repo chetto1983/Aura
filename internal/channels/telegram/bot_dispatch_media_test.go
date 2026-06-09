@@ -2,13 +2,18 @@ package telegram
 
 import (
 	"context"
+	"io"
+	"iter"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	tele "gopkg.in/telebot.v4"
+
+	"github.com/chetto1983/aura/internal/agent"
 )
 
 // TestOnVoiceRoutesToTranscribe proves a voice update downloads the OGG bytes and
@@ -186,6 +191,79 @@ func TestOnDocumentAsyncResultHonorsBusyGate(t *testing.T) {
 	}
 	if hits.Load() != 1 {
 		t.Errorf("async document should still convert once, got %d hits", hits.Load())
+	}
+}
+
+func TestStopDrainsAsyncDocumentTurn(t *testing.T) {
+	convertEntered := make(chan struct{})
+	allowConvert := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+		select {
+		case <-convertEntered:
+		default:
+			close(convertEntered)
+		}
+		<-allowConvert
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"markdown":"# Relazione async"}`))
+	}))
+	defer srv.Close()
+
+	turnStarted := make(chan struct{})
+	releaseTurn := make(chan struct{})
+	rt := &recordingTurn{}
+	tg := NewChannel(Deps{
+		Offline:         true,
+		consumerFactory: recordingFactory(),
+		Multimodal:      MultimodalConfig{DocumentsBaseURL: srv.URL},
+		Turn: func(ctx context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {
+			return func(yield func(*agent.Event, error) bool) {
+				rt.mu.Lock()
+				rt.calls++
+				rt.mu.Unlock()
+				select {
+				case <-turnStarted:
+				default:
+					close(turnStarted)
+				}
+				select {
+				case <-releaseTurn:
+				case <-ctx.Done():
+				}
+				yield(textEvent("ok"), nil)
+			}
+		},
+	})
+	if err := tg.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	bot := &dispatchBot{ogg: make([]byte, asyncTierMinBytes+1)}
+	msg := chatMsg(34)
+	msg.Document = &tele.Document{FileName: "async.pdf"}
+	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onDocument(async): %v", err)
+	}
+	<-convertEntered
+
+	stopDone := make(chan error, 1)
+	go func() { stopDone <- tg.Stop(context.Background()) }()
+	close(allowConvert)
+	<-turnStarted
+
+	select {
+	case err := <-stopDone:
+		t.Fatalf("Stop returned before draining async document turn: %v", err)
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(releaseTurn)
+	if err := <-stopDone; err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if calls, _ := rt.snapshot(); calls != 1 {
+		t.Fatalf("async document should drive exactly one drained turn, got %d", calls)
 	}
 }
 

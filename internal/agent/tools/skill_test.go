@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -133,6 +134,19 @@ func TestSkillDispatchErrors(t *testing.T) {
 		!strings.Contains(err.Error(), "no writer") {
 		t.Fatalf("restore (wired, no writer) err = %v, want 'no writer'", err)
 	}
+}
+
+func TestSkillToolConcurrentExecuteInitializesRouterOnce(t *testing.T) {
+	tool := &SkillTool{Loader: newFakeLoader()}
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _ = tool.Execute(context.Background(), json.RawMessage(`{"action":"bogus"}`))
+		}()
+	}
+	wg.Wait()
 }
 
 func TestSkillReadActions(t *testing.T) {

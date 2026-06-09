@@ -14,6 +14,7 @@ import (
 )
 
 const httpProtocolVersion = "2025-06-18"
+const httpSSEMaxLineBytes = 1024 * 1024
 
 // HTTPConfig declares how to reach a Streamable-HTTP MCP server: its endpoint URL
 // plus optional static headers, bearer token, and an override http.Client.
@@ -147,6 +148,8 @@ func (c *HTTPClient) Ping(ctx context.Context) error {
 // Close terminates the MCP session with an HTTP DELETE when one is open; a server
 // that does not support session deletion (405/404) is treated as already closed.
 func (c *HTTPClient) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.sessionID == "" {
 		return nil
 	}
@@ -267,6 +270,7 @@ func decodeHTTPRPC(body io.ReadCloser, wantID int64, contentType string) (json.R
 
 func decodeHTTPSSE(r io.Reader, wantID int64) (json.RawMessage, error) {
 	scanner := bufio.NewScanner(r)
+	scanner.Buffer(make([]byte, 64*1024), httpSSEMaxLineBytes)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if !strings.HasPrefix(line, "data:") {

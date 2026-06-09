@@ -103,6 +103,7 @@ func isSyntheticUserHint(content string) bool {
 		strings.HasPrefix(trimmed, "Stop calling tools.") ||
 		strings.HasPrefix(trimmed, "You have run out of tool-call budget") ||
 		strings.HasPrefix(trimmed, "You have already called `") ||
+		strings.HasPrefix(trimmed, "Your last response was empty.") ||
 		strings.HasPrefix(trimmed, "Completion check FAILED:")
 }
 

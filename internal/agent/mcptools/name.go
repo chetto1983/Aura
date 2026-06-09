@@ -55,7 +55,11 @@ func namespacedName(namespace, tool string) string {
 	suffix := hashSuffix(namespace + "\x00" + tool)
 	budget := maxToolNameLen - len(suffix)
 	if len(prefix) > budget {
-		return prefix[:budget] + suffix
+		// Truncating prefix[:budget] directly would strip the trailing nsDelimiter for
+		// long namespaces, erasing the "__" boundary the shadow-protection invariant
+		// relies on. Reserve delimiter space so "__" always survives.
+		nsChars := max(budget-len(nsDelimiter), 0)
+		return sanitizeName(namespace)[:nsChars] + nsDelimiter + suffix
 	}
 	return prefix + sanitizeName(tool)[:budget-len(prefix)] + suffix
 }

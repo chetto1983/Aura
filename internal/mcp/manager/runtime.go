@@ -151,7 +151,7 @@ func runtimeKind(server mcp.ManagedServer) string {
 }
 
 func normalizedTrustForServer(server mcp.ManagedServer) string {
-	if server.Trust.Class != "" {
+	if mcp.IsKnownTrust(server.Trust.Class) {
 		return server.Trust.Class
 	}
 	if strings.HasPrefix(strings.TrimSpace(server.Source), "recipe:") {

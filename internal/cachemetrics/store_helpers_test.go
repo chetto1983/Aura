@@ -1,6 +1,7 @@
 package cachemetrics
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -32,7 +33,7 @@ func TestNumericFromFloat_RoundTrip(t *testing.T) {
 
 func TestNumericFromFloat_OutOfRange(t *testing.T) {
 	t.Parallel()
-	cases := []float64{numericMaxCost + 1, -numericMaxCost - 1, 1e9, -1e9}
+	cases := []float64{numericMaxCost + 1, -numericMaxCost - 1, 1e9, -1e9, math.NaN(), math.Inf(1), math.Inf(-1)}
 	for _, in := range cases {
 		if _, err := numericFromFloat(in); err == nil {
 			t.Errorf("numericFromFloat(%v): want out-of-range error, got nil", in)

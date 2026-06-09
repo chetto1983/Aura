@@ -70,6 +70,32 @@ func TestClientRunPostsOneShotCommand(t *testing.T) {
 	}
 }
 
+func TestClientSendsBearerToken(t *testing.T) {
+	const token = "sandbox-secret"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Fatalf("Authorization = %q, want bearer token", got)
+		}
+		switch r.URL.Path {
+		case "/v1/processes/run":
+			_ = json.NewEncoder(w).Encode(RunResponse{ExitCode: intPtr(0)})
+		case "/v1/health":
+			w.WriteHeader(http.StatusOK)
+		default:
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+
+	c := New(Config{BaseURL: srv.URL, TimeoutSec: 5, Token: token})
+	if _, err := c.Run(context.Background(), RunRequest{Command: "true"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if err := c.Health(context.Background()); err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+}
+
 func TestClientRunRequestBuildError(t *testing.T) {
 	c := New(Config{BaseURL: "http://[::1"})
 

@@ -230,6 +230,7 @@ func (r *Runner) persistPause(ctx context.Context, tr *turnTracker, ai *agent.Aw
 		Options:            options,
 		Priority:           ai.Priority,
 		ToolCallID:         ai.ToolCallID,
+		ResumeContext:      ai.ResumeContext,
 		ProxiedFromChildID: proxiedChild,
 		ProxiedToolCallID:  ai.ProxiedToolCallID,
 	}); err != nil {
@@ -279,6 +280,9 @@ func assistantAskUserToolCalls(pauses []*agent.AwaitingInput) ([]byte, error) {
 		}
 		if ai.Priority != 0 {
 			args["priority"] = ai.Priority
+		}
+		if len(ai.ResumeContext) > 0 {
+			args["resume_context"] = json.RawMessage(ai.ResumeContext)
 		}
 		argsJSON, err := json.Marshal(args)
 		if err != nil {

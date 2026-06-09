@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/cron"
@@ -30,7 +31,8 @@ type TaskTool struct {
 	// an argument, never reads env). Empty defaults to Risky.
 	AlertThreshold scoring.RiskTier
 
-	router *ActionRouter
+	routerOnce sync.Once
+	router     *ActionRouter
 }
 
 // ScheduledTask is the tool-local projection of a scheduler row the task tool
@@ -147,7 +149,7 @@ func (t *TaskTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 }
 
 func (t *TaskTool) actionRouter() *ActionRouter {
-	if t.router == nil {
+	t.routerOnce.Do(func() {
 		t.router = NewActionRouter(map[string]ActionFunc{
 			"schedule": t.actionSchedule,
 			"list":     t.actionList,
@@ -155,7 +157,7 @@ func (t *TaskTool) actionRouter() *ActionRouter {
 			"run_now":  t.actionRunNow,
 			"approve":  t.actionApprove,
 		})
-	}
+	})
 	return t.router
 }
 

@@ -11,6 +11,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -222,6 +223,7 @@ func loadBase() *Config {
 		SandboxAgent: sandboxagent.Config{
 			BaseURL:    envDefault("AURA_SANDBOX_AGENT_URL", sandboxagent.DefaultBaseURL),
 			TimeoutSec: envIntDefault("AURA_SANDBOX_AGENT_TIMEOUT_SEC", sandboxagent.DefaultTimeoutSec),
+			Token:      os.Getenv("AURA_SANDBOX_AGENT_TOKEN"),
 		},
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
@@ -290,13 +292,17 @@ func composeDSN(role, password, host, port, dbname, sslmode string) string {
 	if password == "" {
 		return ""
 	}
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		url.QueryEscape(role),
-		url.QueryEscape(password),
-		host, port,
-		url.QueryEscape(dbname),
-		sslmode,
-	)
+	u := url.URL{
+		Scheme:  "postgres",
+		User:    url.UserPassword(role, password),
+		Host:    net.JoinHostPort(host, port),
+		Path:    "/" + dbname,
+		RawPath: "/" + url.PathEscape(dbname),
+	}
+	q := url.Values{}
+	q.Set("sslmode", sslmode)
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer, error) {

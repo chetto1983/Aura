@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 )
 
 // SkillTool is the ONE non-deferred skills verb the model sees (D-01/D-05). A
@@ -41,7 +42,8 @@ type SkillTool struct {
 	// proposed there fires an immediate operator alert. Nil in the interactive REPL.
 	Alerter skillAlerter
 
-	router *ActionRouter
+	routerOnce sync.Once
+	router     *ActionRouter
 }
 
 // SkillMeta is the tool-local projection of a loaded skill the manifest renders
@@ -157,7 +159,7 @@ func (t *SkillTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 }
 
 func (t *SkillTool) actionRouter() *ActionRouter {
-	if t.router == nil {
+	t.routerOnce.Do(func() {
 		t.router = NewActionRouter(map[string]ActionFunc{
 			"list": t.actionList,
 			"info": t.actionInfo,
@@ -177,6 +179,6 @@ func (t *SkillTool) actionRouter() *ActionRouter {
 			"restore":      t.actionRestore,
 			"archive":      t.actionArchive,
 		})
-	}
+	})
 	return t.router
 }

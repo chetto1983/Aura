@@ -176,6 +176,24 @@ func TestClose_NilCmd(t *testing.T) {
 	}
 }
 
+func TestConnectContextUsesConfiguredTimeout(t *testing.T) {
+	ctx, cancel := connectContext(context.Background(), &Config{ConnectTimeoutSec: 2})
+	defer cancel()
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		t.Fatal("connectContext with timeout: want deadline")
+	}
+	if remaining := time.Until(deadline); remaining <= 0 || remaining > 2*time.Second {
+		t.Fatalf("deadline remaining = %s, want within configured timeout", remaining)
+	}
+
+	ctx, cancel = connectContext(context.Background(), &Config{})
+	defer cancel()
+	if _, ok := ctx.Deadline(); ok {
+		t.Fatal("zero ConnectTimeoutSec should not add a deadline")
+	}
+}
+
 func TestOpen_SpawnFailure(t *testing.T) {
 	cfg := &Config{MCPBinary: "aura-nonexistent-mcp-binary-xyz", BoltURL: "bolt://127.0.0.1:7687", User: "neo4j", Database: "neo4j"}
 	_, err := Open(context.Background(), cfg)

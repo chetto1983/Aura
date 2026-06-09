@@ -27,6 +27,8 @@ type fakeResume struct {
 	resumes    int // Turn(convID,nil) drives
 	submitErr  error
 	pendingErr error
+
+	clearPendingOnSubmit bool
 }
 
 type submitCall struct {
@@ -50,6 +52,9 @@ func (f *fakeResume) SubmitAnswer(_ context.Context, token string, resp runner.R
 	f.submitted = append(f.submitted, submitCall{token: token, action: resp.Action, content: resp.Content})
 	if f.submitErr != nil {
 		return 0, f.submitErr
+	}
+	if f.clearPendingOnSubmit {
+		f.pending = nil
 	}
 	return f.remaining, nil
 }

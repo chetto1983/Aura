@@ -34,6 +34,12 @@ func TestRedactForLedger_Patterns(t *testing.T) {
 			wantRedact: true,
 		},
 		{
+			name:       "bare bearer standard base64 token",
+			in:         `using bearer abc+def/ghi== for request`,
+			wantGone:   "def/ghi",
+			wantRedact: true,
+		},
+		{
 			name:       "openai sk key",
 			in:         `export OPENAI_API_KEY=sk-abcd1234efgh5678ijkl`,
 			wantGone:   "sk-abcd1234efgh5678ijkl",
@@ -49,6 +55,12 @@ func TestRedactForLedger_Patterns(t *testing.T) {
 			name:       "aws access key id",
 			in:         `AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE`,
 			wantGone:   "AKIAIOSFODNN7EXAMPLE",
+			wantRedact: true,
+		},
+		{
+			name:       "aws temporary access key id",
+			in:         `AWS_ACCESS_KEY_ID=ASIAIOSFODNN7EXAMPLE`,
+			wantGone:   "ASIAIOSFODNN7EXAMPLE",
 			wantRedact: true,
 		},
 		{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"iter"
 	"log/slog"
+	"sync"
 	"sync/atomic"
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
@@ -33,6 +34,7 @@ const fanoutBuffer = 64
 // slot — it just forwards whatever Translate yields.
 type Fanout struct {
 	source  iter.Seq2[events.Event, error]
+	mu      sync.Mutex
 	subs    []chan events.Event
 	started atomic.Bool
 }
@@ -49,6 +51,8 @@ func NewFanout(source iter.Seq2[events.Event, error]) *Fanout {
 // the producer has snapshotted f.subs is never fed (and racing the snapshot is a data
 // race), so Subscribe-after-Run panics loudly rather than failing silently (WR-06).
 func (f *Fanout) Subscribe() <-chan events.Event {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.started.Load() {
 		panic("agui: Fanout.Subscribe called after Run — subscribe all consumers before starting the producer")
 	}
@@ -65,15 +69,24 @@ func (f *Fanout) Subscribe() <-chan events.Event {
 // the subscriber channels (panic: close of closed channel). The started guard makes the
 // misuse loud at the call site instead (WR-06).
 func (f *Fanout) Run(ctx context.Context) {
+	f.mu.Lock()
 	if !f.started.CompareAndSwap(false, true) {
+		f.mu.Unlock()
 		panic("agui: Fanout.Run called twice — a Fanout drives its source exactly once")
 	}
-	subs := f.subs
+	subs := append([]chan events.Event(nil), f.subs...)
+	f.mu.Unlock()
 	go func() {
 		defer closeAll(subs)
-		for ev := range f.source {
+		for ev, err := range f.source {
 			if ctx.Err() != nil {
 				return
+			}
+			if err != nil {
+				ev = events.NewRunErrorEvent(err.Error())
+			}
+			if ev == nil {
+				continue
 			}
 			reasoningtrace.Record("agui_fanout_source_event", map[string]any{
 				"event_type":        string(ev.Type()),

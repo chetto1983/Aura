@@ -2,6 +2,7 @@ package cachemetrics
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strconv"
 	"time"
@@ -70,7 +71,7 @@ const numericMaxCost = 999999.9999
 // within the column range (WR-01/IN-06): a value outside ±numericMaxCost is rejected
 // here so a pathological cost surfaces as an error, never a silently-overflowed mantissa.
 func numericFromFloat(f float64) (pgtype.Numeric, error) {
-	if f > numericMaxCost || f < -numericMaxCost {
+	if math.IsNaN(f) || math.IsInf(f, 0) || f > numericMaxCost || f < -numericMaxCost {
 		return pgtype.Numeric{}, fmt.Errorf("cost %v out of numeric(10,4) range ±%v", f, numericMaxCost)
 	}
 	scaled := f * 1e4

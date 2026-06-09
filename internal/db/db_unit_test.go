@@ -9,7 +9,47 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/golang-migrate/migrate/v4"
 )
+
+type fakeStepMigrator struct {
+	errs  []error
+	calls int
+}
+
+func (f *fakeStepMigrator) Steps(int) error {
+	err := f.errs[f.calls]
+	f.calls++
+	return err
+}
+
+func TestMigrateAllCountingStepsCountsAppliedSteps(t *testing.T) {
+	f := &fakeStepMigrator{errs: []error{nil, nil, migrate.ErrNoChange}}
+	n, err := migrateAllCountingSteps(f)
+	if err != nil {
+		t.Fatalf("migrateAllCountingSteps: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("applied steps = %d, want 2", n)
+	}
+	if f.calls != 3 {
+		t.Fatalf("Steps calls = %d, want 3 including ErrNoChange probe", f.calls)
+	}
+}
+
+func TestEnsureRolesGrantSQLUsesBootstrapDatabase(t *testing.T) {
+	dbname, err := databaseNameFromDSN("postgres://aura:pw@127.0.0.1:5432/custom-db?sslmode=disable")
+	if err != nil {
+		t.Fatalf("databaseNameFromDSN: %v", err)
+	}
+	if dbname != "custom-db" {
+		t.Fatalf("databaseNameFromDSN = %q, want custom-db", dbname)
+	}
+	if got, want := grantCreateDatabaseSQL(dbname), `GRANT CREATE ON DATABASE "custom-db" TO aura_migrate`; got != want {
+		t.Fatalf("grant SQL = %q, want %q", got, want)
+	}
+}
 
 func TestRedactDSN_StripsPassword(t *testing.T) {
 	cases := []struct {

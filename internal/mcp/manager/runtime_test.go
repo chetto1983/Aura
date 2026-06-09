@@ -143,6 +143,7 @@ func TestNormalizedTrustForServer(t *testing.T) {
 		want   string
 	}{
 		{name: "explicit class", server: mcp.ManagedServer{Trust: mcp.ManagedTrust{Class: mcp.TrustSandboxedLocal}}, want: mcp.TrustSandboxedLocal},
+		{name: "unknown explicit class blocked", server: mcp.ManagedServer{Command: "node", Source: "manual", Trust: mcp.ManagedTrust{Class: "admin"}}, want: mcp.TrustBlocked},
 		{name: "recipe source", server: mcp.ManagedServer{Source: "recipe:calculator"}, want: mcp.TrustTrustedRecipe},
 		{name: "http type", server: mcp.ManagedServer{Type: mcp.ServerTypeStreamableHTTP}, want: mcp.TrustRemoteHTTP},
 		{name: "url implies http", server: mcp.ManagedServer{URL: "https://mcp.example.com"}, want: mcp.TrustRemoteHTTP},

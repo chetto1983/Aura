@@ -70,6 +70,10 @@ type ErrAwaitingUserInput struct {
 	Kind       string
 	Priority   int
 	ToolCallID string
+	// ResumeContext is optional machine-readable context for the caller that will
+	// handle the human answer. It is persisted by the Runner but never rendered as
+	// answer text; e.g. skill approvals carry {"type":"skill_approval","skill_name":"x"}.
+	ResumeContext json.RawMessage
 	// ProxiedFromChildID / ProxiedToolCallID are the optional swarm-relay ids the
 	// model MAY fill when this ask_user relays a child's needs_user_input report
 	// (D-05). Empty on a direct (non-proxied) pause; they stamp into
@@ -86,12 +90,13 @@ func (e *ErrAwaitingUserInput) Error() string { return "awaiting user input" }
 // are optional (D-05): the model fills them only when relaying a child's
 // needs_user_input report, never on a direct pause.
 type askUserArgs struct {
-	Question           string   `json:"question"`
-	Options            []Option `json:"options"`
-	Kind               string   `json:"kind"`
-	Priority           *int     `json:"priority"`
-	ProxiedFromChildID string   `json:"proxied_from_child_id"`
-	ProxiedToolCallID  string   `json:"proxied_tool_call_id"`
+	Question           string          `json:"question"`
+	Options            []Option        `json:"options"`
+	Kind               string          `json:"kind"`
+	Priority           *int            `json:"priority"`
+	ResumeContext      json.RawMessage `json:"resume_context"`
+	ProxiedFromChildID string          `json:"proxied_from_child_id"`
+	ProxiedToolCallID  string          `json:"proxied_tool_call_id"`
 }
 
 func (AskUser) Spec() Spec {
@@ -102,6 +107,7 @@ func (AskUser) Spec() Spec {
     "options": {"type": "array", "minItems": 2, "maxItems": 4, "items": {"type": ["string", "object"]}, "description": "For kind=choice: 2-4 distinct options, each a string or {label, value} object."},
     "kind": {"type": "string", "enum": ["clarification", "approval", "choice"], "description": "clarification = free-text answer; approval = yes/no for an action; choice = pick one of the supplied options."},
     "priority": {"type": "integer", "minimum": 0, "maximum": 100, "description": "Optional 0-100 ordering hint when several pauses are pending (higher = answered first). Defaults to 0."},
+    "resume_context": {"type": "object", "description": "Optional machine-readable resume payload for host-side approval handlers. For skill approval use {\"type\":\"skill_approval\",\"skill_name\":\"<name>\"}. Omit for ordinary user questions."},
     "proxied_from_child_id": {"type": "string", "description": "Optional, model-discretionary. Fill ONLY when relaying a child agent's needs_user_input report: the originating child's id (the flat worker id from the swarm report, e.g. \"w2\"). Omit on a direct question to the user."},
     "proxied_tool_call_id": {"type": "string", "description": "Optional, model-discretionary. Fill ONLY when relaying a child agent's needs_user_input report: the child's originating tool_call id (ground-truth from the swarm report). Omit on a direct question to the user."}
   },
@@ -146,11 +152,16 @@ func (AskUser) Execute(_ context.Context, raw json.RawMessage) (ToolResult, erro
 			return ToolResult{}, fmt.Errorf("ask_user: priority %d is outside 0-100", priority)
 		}
 	}
+	resumeContext := json.RawMessage(nil)
+	if len(a.ResumeContext) > 0 && string(a.ResumeContext) != "null" {
+		resumeContext = append(resumeContext, a.ResumeContext...)
+	}
 	return ToolResult{}, &ErrAwaitingUserInput{
 		Question:           a.Question,
 		Options:            a.Options,
 		Kind:               a.Kind,
 		Priority:           priority,
+		ResumeContext:      resumeContext,
 		ProxiedFromChildID: a.ProxiedFromChildID,
 		ProxiedToolCallID:  a.ProxiedToolCallID,
 	}

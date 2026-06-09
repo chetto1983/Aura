@@ -142,6 +142,41 @@ func TestCancelBatch_RehydratedHistoryWireValid_CR01(t *testing.T) {
 	}
 }
 
+// TestStop_RehydratedHistoryWireValid_CR01 locks the Stop path: force-stop with an
+// active pause must inject a synthetic cancel tool answer before auto-resolving,
+// otherwise a later resume sees an assistant tool_call with no RoleTool response.
+func TestStop_RehydratedHistoryWireValid_CR01(t *testing.T) {
+	client := agenttest.NewFakeClient(agenttest.ToolCallTurn(askUserCall("call-1", "Continue?", "approval")))
+	r, conv, pause := newTestRunner(t, client)
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+
+	if _, err := drain(r.Turn(ctx, convID, userPtr("pause then stop"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	if pause.unresolvedCount(convID) != 1 {
+		t.Fatalf("want 1 unresolved before Stop, got %d", pause.unresolvedCount(convID))
+	}
+	if err := r.Stop(ctx, convID); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	hist, err := conv.LoadHistory(ctx, convID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertWireValid(t, hist)
+	var sawCancel bool
+	for _, m := range hist {
+		if m.Role == llm.RoleTool && m.ToolCallID == "call-1" && m.Content == cancelledContent {
+			sawCancel = true
+		}
+	}
+	if !sawCancel {
+		t.Fatalf("Stop must inject a cancel RoleTool for call-1; history=%+v", hist)
+	}
+}
+
 // TestPause_AssistantTurnPersistedWhenConsumerStopsOnPause is the live-found loop
 // regression (Telegram): the AG-UI translator returns on the pause interrupt, so the
 // consumer STOPS iterating on the pause Event. The combined assistant ask_user

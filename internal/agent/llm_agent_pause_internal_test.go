@@ -189,6 +189,26 @@ func TestPauseEvent_CarriesProxiedIDs(t *testing.T) {
 // TestPauseOptions_EmptyVsPopulated pins llm_agent_pause.go:120 — the
 // `if len(opts) == 0 { return nil }` early return. The nil-return arm is observed
 // here as len==0; the populated arm must map labels/values 1:1.
+func TestPauseEvent_CarriesResumeContext(t *testing.T) {
+	a := newBareAgent(t, tools.NewRegistry())
+	var span [8]byte
+
+	resumeContext := json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`)
+	ev := a.pauseEvent(internalPauseIC(t), span, nil, &tools.ErrAwaitingUserInput{
+		Question:      "approve skill?",
+		Kind:          tools.KindApproval,
+		ToolCallID:    "p1",
+		ResumeContext: resumeContext,
+	})
+	ai := ev.Actions.AwaitingInput
+	if ai == nil {
+		t.Fatal("pauseEvent must set Actions.AwaitingInput")
+	}
+	if string(ai.ResumeContext) != string(resumeContext) {
+		t.Fatalf("resume_context = %s, want %s", ai.ResumeContext, resumeContext)
+	}
+}
+
 func TestPauseOptions_EmptyVsPopulated(t *testing.T) {
 	// Contract: no options returns a nil slice (not an allocated empty slice).
 	// The nil arm matters for callers/log clarity even though the wire form is

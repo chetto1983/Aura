@@ -19,6 +19,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -56,7 +57,9 @@ func Open(ctx context.Context, cfg *Config) (*Client, error) {
 	}
 	// G204: MCPBinary is an operator-configured path (AURA_MCP_NEO4J_CYPHER_BIN),
 	// resolved from .env / config — not attacker-controlled user input.
-	cmd := exec.CommandContext(ctx, cfg.MCPBinary, args...) //nolint:gosec
+	cmdCtx, cancel := connectContext(ctx, cfg)
+	defer cancel()
+	cmd := exec.CommandContext(cmdCtx, cfg.MCPBinary, args...) //nolint:gosec
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
@@ -197,13 +200,25 @@ func (c *Client) Cypher(ctx context.Context, query string, params map[string]any
 
 // Close shuts the subprocess down by closing its stdin and waiting for exit.
 func (c *Client) Close() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.stdin != nil {
 		_ = c.stdin.Close()
+		c.stdin = nil
 	}
-	if c.cmd == nil {
+	cmd := c.cmd
+	c.cmd = nil
+	if cmd == nil {
 		return nil
 	}
-	return c.cmd.Wait()
+	return cmd.Wait()
+}
+
+func connectContext(parent context.Context, cfg *Config) (context.Context, context.CancelFunc) {
+	if cfg != nil && cfg.ConnectTimeoutSec > 0 {
+		return context.WithTimeout(parent, time.Duration(cfg.ConnectTimeoutSec)*time.Second)
+	}
+	return context.WithCancel(parent)
 }
 
 // stderrTail returns a redacted, length-capped suffix of captured stderr for

@@ -84,6 +84,9 @@ func TestSendFileExecuteSetsArtifactMeta(t *testing.T) {
 	if res.Preview == "" {
 		t.Fatal("Preview must be a short confirmation the model can narrate")
 	}
+	if res.Bytes != len(res.Preview) {
+		t.Fatalf("Bytes = %d, want preview length %d", res.Bytes, len(res.Preview))
+	}
 }
 
 // TestSendFileCaptionASCIISanitized pins Pitfall 4 / T-13-02-CaptionInject: a

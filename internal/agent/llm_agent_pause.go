@@ -125,6 +125,7 @@ func (a *LlmAgent) pauseEvent(ic InvocationContext, spanID [8]byte, parentSpanID
 		Kind:               pause.Kind,
 		Priority:           pause.Priority,
 		ToolCallID:         pause.ToolCallID,
+		ResumeContext:      pause.ResumeContext,
 		OriginAgent:        a.name,
 		ProxiedFromChildID: pause.ProxiedFromChildID,
 		ProxiedToolCallID:  pause.ProxiedToolCallID,

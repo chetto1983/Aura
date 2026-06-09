@@ -73,6 +73,7 @@ type Pending struct {
 	Options        json.RawMessage
 	Priority       int
 	ToolCallID     string
+	ResumeContext  json.RawMessage
 }
 
 // ResumeAnswer is the AM-02 resolution payload persisted as resumed_answer jsonb.
@@ -207,12 +208,11 @@ func (s *Store) ListRecent(ctx context.Context, limit int) ([]Record, error) {
 			Priority:       int(r.Priority),
 			Resumed:        r.ResumedAt.Valid,
 		}
-		if len(r.ResumedAnswer) > 0 {
-			var ans ResumeAnswer
-			if json.Unmarshal(r.ResumedAnswer, &ans) == nil {
-				rec.ResumedAnswer = ans.Content
-			}
+		answer, err := decodeResumedAnswer(rec.Token, r.ResumedAnswer)
+		if err != nil {
+			return nil, fmt.Errorf("list recent paused states: %w", err)
 		}
+		rec.ResumedAnswer = answer
 		out = append(out, rec)
 	}
 	return out, nil
@@ -254,36 +254,41 @@ func (s *Store) MarkResumedBatch(ctx context.Context, answers map[string]ResumeA
 	if len(answers) == 0 {
 		return nil
 	}
-	return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
-		for token, ans := range answers {
-			id, err := parseUUID("token", token)
-			if err != nil {
-				return fmt.Errorf("mark resumed batch: %w", err)
-			}
-			answer, err := encodeAnswer(ans)
-			if err != nil {
-				return fmt.Errorf("mark resumed batch %s: %w", token, err)
-			}
-			if err := q.MarkPausedStateResumed(ctx, sqlc.MarkPausedStateResumedParams{
-				Token: id, ResumedAnswer: answer,
-			}); err != nil {
-				return fmt.Errorf("mark resumed batch %s: %w", token, err)
-			}
-			// The generated :exec discards RowsAffected; re-check existence so an
-			// unknown token rolls the batch back rather than silently committing.
-			row, err := q.GetPausedStateByToken(ctx, id)
-			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return fmt.Errorf("mark resumed batch %s: %w", token, ErrPauseNotFound)
-				}
-				return fmt.Errorf("mark resumed batch %s: %w", token, err)
-			}
-			if !row.ResumedAt.Valid {
-				return fmt.Errorf("mark resumed batch %s: %w", token, ErrPauseNotFound)
-			}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
 		}
-		return nil
-	})
+	}()
+	for token, ans := range answers {
+		id, parseErr := parseUUID("token", token)
+		if parseErr != nil {
+			err = fmt.Errorf("mark resumed batch: %w", parseErr)
+			return err
+		}
+		answer, encodeErr := encodeAnswer(ans)
+		if encodeErr != nil {
+			err = fmt.Errorf("mark resumed batch %s: %w", token, encodeErr)
+			return err
+		}
+		tag, execErr := tx.Exec(ctx, markResumedSQL, id, answer)
+		if execErr != nil {
+			err = fmt.Errorf("mark resumed batch %s: %w", token, execErr)
+			return err
+		}
+		if tag.RowsAffected() == 0 {
+			err = fmt.Errorf("mark resumed batch %s: %w", token, ErrPauseNotFound)
+			return err
+		}
+	}
+	if commitErr := tx.Commit(ctx); commitErr != nil {
+		err = commitErr
+		return err
+	}
+	return nil
 }
 
 // AutoResolveForConversation is the SPEC Req#11 Loop.Stop helper: resolve every
@@ -328,6 +333,7 @@ func fromRow(r sqlc.AuraPausedStates) Pending {
 		Options:        r.Options,
 		Priority:       int(r.Priority),
 		ToolCallID:     r.ToolCallID,
+		ResumeContext:  append(json.RawMessage(nil), r.ResumeContext...),
 	}
 }
 
@@ -343,6 +349,17 @@ func encodeAnswer(ans ResumeAnswer) ([]byte, error) {
 		return nil, fmt.Errorf("%w: marshal: %v", ErrInvalidAnswer, err)
 	}
 	return b, nil
+}
+
+func decodeResumedAnswer(token string, raw []byte) (string, error) {
+	if len(raw) == 0 {
+		return "", nil
+	}
+	var ans ResumeAnswer
+	if err := json.Unmarshal(raw, &ans); err != nil {
+		return "", fmt.Errorf("decode resumed_answer for %s: %w", token, err)
+	}
+	return ans.Content, nil
 }
 
 // parseUUID converts a canonical UUID string into the pgtype.UUID the generated

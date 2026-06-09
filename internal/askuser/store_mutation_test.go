@@ -117,6 +117,29 @@ func TestListRecent_ResolvedAnswerRoundTrip(t *testing.T) {
 	}
 }
 
+func TestListRecent_InvalidResumedAnswerErrors(t *testing.T) {
+	pool := migratedPool(t)
+	s := New(pool)
+	convID := newConversation(t, pool)
+	ctx := context.Background()
+
+	tok := insertPause(t, s, convID, "approval", "deploy?", 0)
+	if err := s.MarkResumed(ctx, tok, ResumeAnswer{Action: ActionAccept, Content: "ok"}); err != nil {
+		t.Fatalf("MarkResumed: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "UPDATE aura.paused_states SET resumed_answer = '42'::jsonb WHERE token = $1", tok); err != nil {
+		t.Fatalf("corrupt resumed_answer: %v", err)
+	}
+
+	_, err := s.ListRecent(ctx, 50)
+	if err == nil {
+		t.Fatal("ListRecent with non-object resumed_answer: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "decode resumed_answer") {
+		t.Fatalf("ListRecent error should name resumed_answer decode, got %v", err)
+	}
+}
+
 // TestMarkResumedBatch_InvalidActionWrap pins the batch encodeAnswer wrap: a bad
 // action inside a batch fails encoding (ErrInvalidAnswer) with the
 // "mark resumed batch <token>:" context, before any row is written, and rolls back.

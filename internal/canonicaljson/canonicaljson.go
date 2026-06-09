@@ -100,10 +100,11 @@ func encodeString(buf *bytes.Buffer, s string) error {
 // It rejects non-finite floats defensively; UseNumber decoding never yields NaN/Inf
 // as a json.Number, but a literal that parses to a non-finite float must not pass.
 func encodeNumber(buf *bytes.Buffer, n json.Number) error {
-	if f, err := strconv.ParseFloat(n.String(), 64); err == nil {
-		if math.IsNaN(f) || math.IsInf(f, 0) {
-			return fmt.Errorf("non-finite number %q", n.String())
-		}
+	// ParseFloat returns ±Inf (with ErrRange) on overflow literals such as 1e999, so
+	// inspect the parsed value directly rather than gating on err == nil. Underflow
+	// (1e-999 → 0 with ErrRange) is finite and correctly passes through.
+	if f, _ := strconv.ParseFloat(n.String(), 64); math.IsNaN(f) || math.IsInf(f, 0) {
+		return fmt.Errorf("non-finite number %q", n.String())
 	}
 	buf.WriteString(n.String())
 	return nil

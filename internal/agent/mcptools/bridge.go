@@ -83,7 +83,7 @@ func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef) []tools.Tool 
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
 		params := emptyObjectSchema
-		if len(strings.TrimSpace(string(d.InputSchema))) > 0 {
+		if schema := strings.TrimSpace(string(d.InputSchema)); schema != "" && schema != "null" {
 			params = d.InputSchema
 		}
 		out = append(out, &bridgedTool{

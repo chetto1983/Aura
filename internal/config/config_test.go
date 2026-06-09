@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -25,7 +26,7 @@ func clearPostgresEnv(t *testing.T) {
 		"AURA_LLM_MODEL", "AURA_LLM_BASE_URL", "AURA_LLM_TEMPERATURE",
 		"AURA_LLM_MAX_TOKENS", "AURA_LLM_TOTAL_TIMEOUT_SEC", "AURA_LLM_CONNECT_TIMEOUT_SEC",
 		"AURA_OTEL_EXPORTER", "AURA_OTEL_ENDPOINT",
-		"AURA_SANDBOX_AGENT_URL", "AURA_SANDBOX_AGENT_TIMEOUT_SEC",
+		"AURA_SANDBOX_AGENT_URL", "AURA_SANDBOX_AGENT_TIMEOUT_SEC", "AURA_SANDBOX_AGENT_TOKEN",
 		"SEARXNG_URL", "AURA_WEB_DNS_PIN_TTL_SEC", "AURA_WEB_FETCH_MAX_BODY_BYTES",
 		"AURA_WEB_CACHE_PERSISTENT", "AURA_WEB_SEARCH_TIMEOUT_SEC",
 		"AURA_WEB_FETCH_TIMEOUT_SEC", "AURA_WEB_USER_AGENT",
@@ -119,15 +120,22 @@ func TestLoad_SandboxAgentDefaultsAndOverrides(t *testing.T) {
 	if cfg.SandboxAgent.TimeoutSec != 30 {
 		t.Errorf("SandboxAgent.TimeoutSec default = %d, want 30", cfg.SandboxAgent.TimeoutSec)
 	}
+	if cfg.SandboxAgent.Token != "" {
+		t.Errorf("SandboxAgent.Token default = %q, want empty", cfg.SandboxAgent.Token)
+	}
 
 	t.Setenv("AURA_SANDBOX_AGENT_URL", "http://127.0.0.1:3333")
 	t.Setenv("AURA_SANDBOX_AGENT_TIMEOUT_SEC", "45")
+	t.Setenv("AURA_SANDBOX_AGENT_TOKEN", "tok")
 	cfg = LoadDB()
 	if cfg.SandboxAgent.BaseURL != "http://127.0.0.1:3333" {
 		t.Errorf("SandboxAgent.BaseURL override = %q", cfg.SandboxAgent.BaseURL)
 	}
 	if cfg.SandboxAgent.TimeoutSec != 45 {
 		t.Errorf("SandboxAgent.TimeoutSec override = %d", cfg.SandboxAgent.TimeoutSec)
+	}
+	if cfg.SandboxAgent.Token != "tok" {
+		t.Errorf("SandboxAgent.Token override = %q", cfg.SandboxAgent.Token)
 	}
 }
 
@@ -349,6 +357,25 @@ func TestLoad_PrimitivesAndRoleOverrides(t *testing.T) {
 	}
 	if !strings.Contains(cfg.DB.BootstrapURL, "supr:") {
 		t.Errorf("DB.BootstrapURL did not use POSTGRES_USER: %q", cfg.DB.BootstrapURL)
+	}
+}
+
+func TestComposeDSNEscapesComponents(t *testing.T) {
+	got := composeDSN("role", "p@ss/word", "db.internal", "5432", "aura/db", "disable&connect_timeout=0")
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("parse composed DSN %q: %v", got, err)
+	}
+	q := u.Query()
+	if q.Get("connect_timeout") != "" {
+		t.Fatalf("sslmode escaped incorrectly; injected connect_timeout in %q", got)
+	}
+	if q.Get("sslmode") != "disable&connect_timeout=0" {
+		t.Fatalf("sslmode query = %q, want literal value escaped in DSN %q", q.Get("sslmode"), got)
+	}
+	hostInjected := composeDSN("role", "pw", "db.internal/evil", "5432", "aura", "disable")
+	if strings.Contains(hostInjected, "/evil") {
+		t.Fatalf("host path injection was not escaped in %q", hostInjected)
 	}
 }
 

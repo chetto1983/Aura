@@ -217,7 +217,11 @@ func classifyTransportErr(err error) error {
 	if errors.As(err, &ie) {
 		return ie // SSRF/blocked — non-retryable, sanitized by the caller
 	}
-	return errRetryable
+	// Wrap (don't replace) errRetryable so the one-retry loop still matches it via
+	// errors.Is, while the underlying deadline/net-timeout survives for classifyFetchErr
+	// to surface as CodeTimeout instead of a generic http_error (the retry guard already
+	// suppresses a pointless retry once ctx is done).
+	return errors.Join(errRetryable, err)
 }
 
 // classifyFetchErr is the terminal mapper: a *WebError or *internalError passes

@@ -56,14 +56,14 @@ type secretPattern struct {
 var secretPatterns = []secretPattern{
 	// Authorization header carrying any scheme value (Bearer/Basic/token), e.g.
 	// `Authorization: Bearer abc.def` or `-H "Authorization: Basic Zm9v"`.
-	{"authorization_header", regexp.MustCompile(`(?i)authorization\s*[:=]\s*("?)[^"\s][^"\r\n]*`)},
+	{"authorization_header", regexp.MustCompile(`(?i)authorization\s*[:=]\s*[^\r\n]+`)},
 	// A bare Bearer credential not preceded by the Authorization keyword.
-	{"bearer_token", regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._\-]+`)},
+	{"bearer_token", regexp.MustCompile(`(?i)bearer\s+[A-Za-z0-9._\-+/=]+`)},
 	// OpenAI / OpenRouter style keys: sk-… and sk-or-… (sk-or- is a prefix of sk-,
 	// but the charset run captures the whole key either way).
 	{"openai_key", regexp.MustCompile(`sk-(or-)?[A-Za-z0-9]{16,}`)},
-	// AWS access key id.
-	{"aws_akid", regexp.MustCompile(`AKIA[0-9A-Z]{16}`)},
+	// AWS access key ids (permanent IAM keys and temporary STS credentials).
+	{"aws_key", regexp.MustCompile(`(AKIA|ASIA|AROA|AIDA|ANPA|ANVA|AIAA)[0-9A-Z]{16}`)},
 	// Inline credential assignments: password=…, token=…, api_key=… / apikey=… —
 	// value runs to the next whitespace, quote, or ampersand (query-string safe).
 	{"inline_credential", regexp.MustCompile(`(?i)(password|api[_-]?key|token|secret)\s*[:=]\s*("?)[^"\s&]+`)},

@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -108,6 +109,55 @@ func TestSubmitAnswer_Decline(t *testing.T) {
 	}
 	if !sawDeclined {
 		t.Fatal("expected a 'user declined' RoleTool turn")
+	}
+}
+
+func TestSubmitAnswer_RunsResumeHookForContext(t *testing.T) {
+	r, _, pause := newTestRunner(t, agenttest.NewFakeClient())
+	convID := newConvID(t)
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+
+	token := "pause-token"
+	resumeContext := json.RawMessage(`{"type":"skill_approval","skill_name":"calc"}`)
+	if err := pause.Insert(ctx, askuser.InsertParams{
+		Token:          token,
+		ConversationID: convID,
+		Kind:           "approval",
+		Question:       "approve skill?",
+		ToolCallID:     "tc1",
+		ResumeContext:  resumeContext,
+	}); err != nil {
+		t.Fatalf("seed pending: %v", err)
+	}
+
+	called := false
+	r.resumeHook = func(_ context.Context, p askuser.Pending, resp ResponseInput) error {
+		called = true
+		if p.Token != token || p.ConversationID != convID || string(p.ResumeContext) != string(resumeContext) {
+			t.Fatalf("hook pending = %+v, want token/context %s/%s", p, token, resumeContext)
+		}
+		if resp.Action != askuser.ActionAccept || resp.Content != "yes" {
+			t.Fatalf("hook response = %+v, want accept/yes", resp)
+		}
+		pause.mu.Lock()
+		_, resumed := pause.answers[token]
+		pause.mu.Unlock()
+		if !resumed {
+			t.Fatal("resume hook must run after the paused row is marked resumed")
+		}
+		return nil
+	}
+
+	remaining, err := r.SubmitAnswer(ctx, token, ResponseInput{Action: askuser.ActionAccept, Content: "yes"})
+	if err != nil {
+		t.Fatalf("SubmitAnswer: %v", err)
+	}
+	if remaining != 0 {
+		t.Fatalf("remaining = %d, want 0", remaining)
+	}
+	if !called {
+		t.Fatal("resume hook was not called")
 	}
 }
 
@@ -264,6 +314,9 @@ func TestSubmitAnswers_InjectError(t *testing.T) {
 	answers := map[string]ResponseInput{pending[0].Token: {Action: "accept", Content: "x"}}
 	if _, err := r.SubmitAnswers(ctx, answers); err == nil {
 		t.Fatal("expected an inject error from the batch path")
+	}
+	if got := pause.unresolvedCount(convID); got != 1 {
+		t.Fatalf("failed injection must leave pending pause retryable, unresolved=%d want 1", got)
 	}
 }
 

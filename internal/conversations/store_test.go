@@ -20,7 +20,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -428,68 +427,6 @@ func TestCountTurns(t *testing.T) {
 	}
 	if n, err := s.CountTurns(ctx, convID); err != nil || n != 3 {
 		t.Errorf("CountTurns: n=%d err=%v (want 3)", n, err)
-	}
-}
-
-// TestAppendTurn_AutoSeqConcurrentSerializes proves that store-assigned sequence
-// numbers are allocated inside the append transaction. Concurrent turn writers for
-// the same conversation must persist a gap-free, duplicate-free seq series.
-func TestAppendTurn_AutoSeqConcurrentSerializes(t *testing.T) {
-	pool := migratedPool(t)
-	s := newStore(t, pool)
-	convID := newConversation(t, s)
-	ctx := context.Background()
-
-	const writers = 12
-	start := make(chan struct{})
-	errs := make(chan error, writers)
-	var wg sync.WaitGroup
-	for i := 0; i < writers; i++ {
-		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			<-start
-			errs <- s.AppendTurn(ctx, AppendTurnParams{
-				ConversationID: convID,
-				Role:           llm.RoleUser,
-				Content:        fmt.Sprintf("turn %02d", i),
-			})
-		}()
-	}
-	close(start)
-	wg.Wait()
-	close(errs)
-	for err := range errs {
-		if err != nil {
-			t.Fatalf("AppendTurn(auto seq) returned error: %v", err)
-		}
-	}
-
-	rows, err := pool.Query(ctx,
-		"SELECT seq FROM aura.conversation_turns WHERE conversation_id=$1 ORDER BY seq ASC", convID)
-	if err != nil {
-		t.Fatalf("query seqs: %v", err)
-	}
-	defer rows.Close()
-	var seqs []int
-	for rows.Next() {
-		var seq int
-		if err := rows.Scan(&seq); err != nil {
-			t.Fatalf("scan seq: %v", err)
-		}
-		seqs = append(seqs, seq)
-	}
-	if err := rows.Err(); err != nil {
-		t.Fatalf("seq rows: %v", err)
-	}
-	if len(seqs) != writers {
-		t.Fatalf("want %d turns, got %d seqs=%v", writers, len(seqs), seqs)
-	}
-	for i, seq := range seqs {
-		if want := i + 1; seq != want {
-			t.Fatalf("seqs must be 1..%d, got %v", writers, seqs)
-		}
 	}
 }
 

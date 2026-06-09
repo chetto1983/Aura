@@ -322,3 +322,10 @@ func isKnownTrust(class string) bool {
 		return false
 	}
 }
+
+// IsKnownTrust reports whether class is a recognized trust class. It lets callers
+// outside this package (e.g. the manager runtime) gate an explicit Trust.Class the
+// same way NormalizedTrust does, instead of trusting an arbitrary string.
+func IsKnownTrust(class string) bool {
+	return isKnownTrust(class)
+}

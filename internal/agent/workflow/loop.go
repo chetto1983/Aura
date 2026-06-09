@@ -63,6 +63,9 @@ func (*LoopAgent) Description() string {
 // returns (the escalate Event ALWAYS precedes the iterator returning, D-21).
 func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
+		if len(a.subs) == 0 {
+			return
+		}
 		var stepsConsumed int
 		for iterIdx := uint(0); a.maxIterations == 0 || iterIdx < a.maxIterations; iterIdx++ {
 			for _, sub := range a.subs {

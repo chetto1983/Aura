@@ -2,8 +2,10 @@ package agui
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -47,12 +49,43 @@ func blockingSource(ctx context.Context, first events.Event) iter.Seq2[events.Ev
 	}
 }
 
+func sourceError(err error) iter.Seq2[events.Event, error] {
+	return func(yield func(events.Event, error) bool) {
+		if !yield(events.NewRunStartedEvent("thread-1", "run-1"), nil) {
+			return
+		}
+		yield(nil, err)
+	}
+}
+
 func drain(ch <-chan events.Event) []events.Event {
 	var out []events.Event
 	for ev := range ch {
 		out = append(out, ev)
 	}
 	return out
+}
+
+func TestFanoutSourceErrorYieldsRunError(t *testing.T) {
+	err := errors.New("fanout source exploded")
+	f := NewFanout(sourceError(err))
+	sub := f.Subscribe()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.Run(ctx)
+
+	got := drain(sub)
+	if len(got) == 0 {
+		t.Fatal("fanout yielded no events")
+	}
+	last := got[len(got)-1]
+	if string(last.Type()) != "RUN_ERROR" {
+		t.Fatalf("last event = %s, want RUN_ERROR; stream=%v", last.Type(), typesOf(got))
+	}
+	if js := eventJSONString(last); !strings.Contains(js, err.Error()) {
+		t.Fatalf("RUN_ERROR payload %q does not contain source error %q", js, err.Error())
+	}
 }
 
 // TestFanoutDistributesToAllSubscribers: K subscribers that all read receive every event

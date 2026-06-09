@@ -12,6 +12,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
@@ -57,7 +58,12 @@ type Deps struct {
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
 	// every turn so a skill add/remove changes messages[1] without busting messages[0].
 	AlwaysBlock func() string
+	ResumeHook  ResumeHook
 }
+
+// ResumeHook is called after a paused ask_user response is persisted and before
+// the runner resumes the pending turn.
+type ResumeHook func(ctx context.Context, pending askuser.Pending, resp ResponseInput) error
 
 // Runner is the orchestration layer (D-A1-01): it drives the agent turn-by-turn,
 // persists each turn, is the SOLE writer of paused_states, resolves resumes as a
@@ -83,6 +89,7 @@ type Runner struct {
 
 	titleTimeout time.Duration
 	stopTimeout  time.Duration
+	resumeHook   ResumeHook
 
 	alwaysBlock func() string // renders the messages[1] always-block per turn (D-07); nil → empty
 
@@ -125,6 +132,7 @@ func New(d Deps) *Runner {
 		workspace:       workspace,
 		titleTimeout:    titleTimeout,
 		stopTimeout:     stopTimeout,
+		resumeHook:      d.ResumeHook,
 		alwaysBlock:     d.AlwaysBlock,
 	}
 }

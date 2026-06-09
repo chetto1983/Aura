@@ -27,7 +27,6 @@ package telegram
 
 import (
 	"context"
-	"io"
 	"log/slog"
 
 	tele "gopkg.in/telebot.v4"
@@ -104,6 +103,9 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		}
 		chatID := msg.Chat.ID
 		text := c.Text()
+		if msg.ReplyTo != nil && t.takeHitlReplyHandled(chatID, msg.ID) {
+			return nil
+		}
 		if reply, ok := t.handleStartPayload(daemonCtx, msg, text); ok {
 			t.reply(c, reply)
 			return nil
@@ -226,7 +228,7 @@ func (t *Telegram) onReply(daemonCtx context.Context) tele.HandlerFunc {
 		if msg == nil || msg.Chat == nil {
 			return nil
 		}
-		t.hitlHandlesText(daemonCtx, c, msg.Chat.ID, c.Text())
+		t.hitlHandlesReply(daemonCtx, c, msg.Chat.ID, msg.ID, c.Text())
 		return nil
 	}
 }
@@ -437,6 +439,47 @@ func (t *Telegram) hitlHandlesText(daemonCtx context.Context, c tele.Context, ch
 // to surface the NEXT FIFO pause when one answer still leaves others pending. A nil
 // Resume seam or a cancelled ctx makes it inert; with no pending pause hitl.prompt is
 // a no-op (the common, non-paused turn), so it is cheap to call unconditionally.
+func (t *Telegram) hitlHandlesReply(daemonCtx context.Context, c tele.Context, chatID int64, msgID int, text string) bool {
+	if t.deps.Resume == nil {
+		return false
+	}
+	pending, err := t.deps.Resume.PendingFor(daemonCtx, convID(chatID))
+	if err != nil || len(pending) == 0 {
+		return false
+	}
+	t.markHitlReplyHandled(chatID, msgID)
+	if !t.hitlFor(c, chatID).handleTextReply(daemonCtx, convID(chatID), text) {
+		t.promptPendingPause(daemonCtx, t.sender(c), chatID)
+	}
+	return true
+}
+
+func (t *Telegram) markHitlReplyHandled(chatID int64, msgID int) {
+	if msgID == 0 {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.hitlRepliesHandled == nil {
+		t.hitlRepliesHandled = make(map[hitlReplyKey]struct{})
+	}
+	t.hitlRepliesHandled[hitlReplyKey{chatID: chatID, msgID: msgID}] = struct{}{}
+}
+
+func (t *Telegram) takeHitlReplyHandled(chatID int64, msgID int) bool {
+	if msgID == 0 {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	key := hitlReplyKey{chatID: chatID, msgID: msgID}
+	if _, ok := t.hitlRepliesHandled[key]; !ok {
+		return false
+	}
+	delete(t.hitlRepliesHandled, key)
+	return true
+}
+
 func (t *Telegram) promptPendingPause(ctx context.Context, bot botSender, chatID int64) {
 	if t.deps.Resume == nil || ctx.Err() != nil {
 		return
@@ -548,17 +591,4 @@ func (t *Telegram) replyCommand(c tele.Context, out commandReply) {
 	if err := c.Send(out.text, &tele.SendOptions{ReplyMarkup: out.markup}); err != nil {
 		slog.Warn("telegram: command reply send failed", "err", err)
 	}
-}
-
-// downloadFile pulls a media file's bytes off the Telegram file server via the
-// narrow botFiler seam (the same surface voice.go downloads through). The Bot-API
-// getFile endpoint caps a download at the 20MB file ceiling, so the read is bounded
-// upstream (T-13-10-MediaDoS); the document size tiers add the convert-side guard.
-func downloadFile(filer botFiler, file *tele.File) ([]byte, error) {
-	rc, err := filer.File(file)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rc.Close() }()
-	return io.ReadAll(rc)
 }

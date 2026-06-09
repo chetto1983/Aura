@@ -83,10 +83,14 @@ func (f *FakeClient) CallCount() int {
 	return f.next
 }
 
-// LastRequest returns the most recent recorded request (panics if none).
+// LastRequest returns the most recent recorded request, or the zero request when
+// Stream has not been called yet.
 func (f *FakeClient) LastRequest() llm.Request {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if len(f.Requests) == 0 {
+		return llm.Request{}
+	}
 	return f.Requests[len(f.Requests)-1]
 }
 

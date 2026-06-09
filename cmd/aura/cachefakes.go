@@ -12,6 +12,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -155,36 +156,38 @@ func (m *memConvStore) appendTurnFieldsLocked(p conversations.AppendTurnParams) 
 func (m *memConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.messagesLocked(id), nil
+	return m.messagesLocked(id)
 }
 
 func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, _ conversations.ContextConfig) ([]llm.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.messagesLocked(id), nil
+	return m.messagesLocked(id)
 }
 
 // messagesLocked rebuilds the loop messages from the persisted turns (the same
 // shape conversations.Store.LoadHistory yields). Caller holds the lock.
-func (m *memConvStore) messagesLocked(id string) []llm.Message {
+func (m *memConvStore) messagesLocked(id string) ([]llm.Message, error) {
 	return rebuildMessages(m.turns[id])
 }
 
 // rebuildMessages reconstructs the llm.Message history from persisted turns,
 // decoding the tool_calls jsonb — the in-process equivalent of
 // conversations.Store.LoadHistory. Shared by the audit + REPL in-memory fakes.
-func rebuildMessages(turns []conversations.AppendTurnParams) []llm.Message {
+func rebuildMessages(turns []conversations.AppendTurnParams) ([]llm.Message, error) {
 	out := make([]llm.Message, 0, len(turns))
 	for _, t := range turns {
 		msg := llm.Message{Role: t.Role, Content: t.Content, ToolCallID: t.ToolCallID}
 		if len(t.ToolCalls) > 0 {
 			var calls []llm.ToolCall
-			_ = json.Unmarshal(t.ToolCalls, &calls)
+			if err := json.Unmarshal(t.ToolCalls, &calls); err != nil {
+				return nil, fmt.Errorf("decode tool_calls for seq %d: %w", t.Seq, err)
+			}
 			msg.ToolCalls = calls
 		}
 		out = append(out, msg)
 	}
-	return out
+	return out, nil
 }
 
 func (m *memConvStore) SearchConversationTurns(_ context.Context, _ string, _ int) ([]conversations.SearchResult, error) {

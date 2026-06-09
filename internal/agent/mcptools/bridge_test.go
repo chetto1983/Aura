@@ -84,6 +84,17 @@ func TestBridge_Namespaced(t *testing.T) {
 	}
 }
 
+func TestBridge_NullInputSchemaFallback(t *testing.T) {
+	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "ping", Description: "Ping.", InputSchema: json.RawMessage(`null`)}}}
+	got, err := Bridge(context.Background(), "srv", srv)
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	if params := string(got[0].Spec().Parameters); params != `{"type":"object"}` {
+		t.Fatalf("null inputSchema fallback = %s", params)
+	}
+}
+
 func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callText: "42"}
 	got, _ := Bridge(context.Background(), "sb", srv)
