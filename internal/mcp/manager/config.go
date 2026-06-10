@@ -108,17 +108,17 @@ func mergeEnvPreserveCredentials(existing, incoming []string) []string {
 	seen := map[string]struct{}{}
 	out := make([]string, 0, len(incoming)+len(existing))
 	for _, entry := range incoming {
-		key, value, ok := cutEnv(entry)
+		key, _, ok := cutEnv(entry)
 		if !ok {
 			out = append(out, entry)
 			continue
 		}
 		seen[key] = struct{}{}
-		if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) && isPlaceholderValue(key, value) {
-			out = append(out, prior)
-			continue
-		}
-		if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) && !isPlaceholderValue(key, value) {
+		// Preserve an EXISTING real credential against any incoming override: the merge
+		// must never clobber a configured secret. But when the existing value is itself a
+		// placeholder, the incoming value wins so a real credential replaces it — the prior
+		// code kept the existing placeholder even when a real credential was incoming.
+		if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) && !isPlaceholderValue(key, prior) {
 			out = append(out, prior)
 			continue
 		}

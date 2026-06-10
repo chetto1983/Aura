@@ -311,6 +311,7 @@ func (s *Store) AppendTurn(ctx context.Context, p AppendTurnParams) error {
 // receives.
 func (s *Store) AppendAssistantTurnWithCacheMetric(ctx context.Context, p AppendTurnParams, metric sqlc.InsertCacheMetricParams) error {
 	if p.Seq > 0 {
+		metric.Seq = int32(p.Seq) // sync the cache_metric seq to the caller-supplied turn seq
 		turn, agg, err := s.appendTurnWrites(p)
 		if err != nil {
 			return err

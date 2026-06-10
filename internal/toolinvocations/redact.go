@@ -64,6 +64,10 @@ var secretPatterns = []secretPattern{
 	{"openai_key", regexp.MustCompile(`sk-(or-)?[A-Za-z0-9]{16,}`)},
 	// AWS access key ids (permanent IAM keys and temporary STS credentials).
 	{"aws_key", regexp.MustCompile(`(AKIA|ASIA|AROA|AIDA|ANPA|ANVA|AIAA)[0-9A-Z]{16}`)},
+	// JSON-encoded credential fields, e.g. {"password":"hunter2"} or "api_key": "abc".
+	// inline_credential misses these because a quote sits between the key and the colon.
+	// The {4,} lower bound avoids redacting trivially short ("" / "x") values.
+	{"json_credential", regexp.MustCompile(`(?i)"(password|api[_-]?key|token|secret)"\s*:\s*"[^"]{4,}"`)},
 	// Inline credential assignments: password=…, token=…, api_key=… / apikey=… —
 	// value runs to the next whitespace, quote, or ampersand (query-string safe).
 	{"inline_credential", regexp.MustCompile(`(?i)(password|api[_-]?key|token|secret)\s*[:=]\s*("?)[^"\s&]+`)},
