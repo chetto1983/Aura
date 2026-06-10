@@ -139,9 +139,11 @@ func (c *todayCost) TodayUsage(ctx context.Context) (promptTokens, completionTok
 // creates its conversation row before the loop appends to it. Telegram keys a
 // stable conversation id off the chat id (a deterministic UUIDv5) and has no
 // explicit "new conversation" step like the CLI REPL, so without this the first
-// AppendTurn FK-fails and the user sees a generic "❌ Errore". EnsureConversation
-// is idempotent, so every later turn pays only a cheap existence Get. A create
-// failure surfaces through the turn's error channel exactly as a Turn error would.
+// AppendTurn FK-fails. EnsureConversation is idempotent, so every later turn pays
+// only a cheap existence Get. A create failure is yielded on the turn's error
+// channel, which the translator emits as a RUN_ERROR; the Telegram renderer now
+// surfaces that sanitized reason to the user (renderer.go RunErrorEvent case),
+// exactly as any other Turn error.
 func ensuringTurn(run *runner.Runner) func(context.Context, string, *string) iter.Seq2[*agent.Event, error] {
 	return func(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
 		return func(yield func(*agent.Event, error) bool) {

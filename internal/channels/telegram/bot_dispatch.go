@@ -388,6 +388,15 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 		asyncResult := func(_ string, markdown string, convErr error) {
 			if convErr != nil {
 				slog.Warn("telegram: async document convert failed", "chat", chatID, "err", convErr)
+				// Notify the user the async conversion failed instead of leaving them on
+				// "📄 …elaborando…" forever (H3). Mirrors the sync ≤5MB sibling
+				// (t.reply(c, convertFailMessage)) via the captured sender — the
+				// tele.Context is gone by the time this per-request callback fires.
+				if sender != nil {
+					if _, err := sender.Send(tele.ChatID(chatID), convertFailMessage); err != nil {
+						slog.Warn("telegram: async convert-fail notice send failed", "chat", chatID, "err", err)
+					}
+				}
 				return
 			}
 			t.startTurn(daemonCtx, sender, notifier, tele.ChatID(chatID), chatID, &markdown, false,

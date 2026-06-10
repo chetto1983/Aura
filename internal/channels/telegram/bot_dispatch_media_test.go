@@ -194,6 +194,54 @@ func TestOnDocumentAsyncResultHonorsBusyGate(t *testing.T) {
 	}
 }
 
+// TestOnDocumentAsyncConvertFailureNotifiesUser proves an async (5-50MB)
+// conversion that fails notifies the user with convertFailMessage instead of
+// leaving them on "📄 …elaborando…" forever (H3). BEFORE the fix the async callback
+// logged convErr and returned silently; AFTER, the captured sender delivers the
+// fail copy. The sync ≤5MB sibling already did this — the async tier now matches.
+func TestOnDocumentAsyncConvertFailureNotifiesUser(t *testing.T) {
+	t.Parallel()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body) // drain the >5MB upload before responding
+		http.Error(w, "boom", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Multimodal = MultimodalConfig{DocumentsBaseURL: srv.URL}
+	})
+	defer tg.docs.Stop(context.Background())
+
+	bot := &dispatchBot{ogg: make([]byte, asyncTierMinBytes+1)} // > 5MB → async tier
+	msg := chatMsg(35)
+	msg.Document = &tele.Document{FileName: "async-fail.pdf"}
+	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onDocument(async fail): %v", err)
+	}
+	tg.docs.Stop(context.Background()) // drain the async convert goroutine
+	tg.wg.Wait()
+
+	if calls, _ := rt.snapshot(); calls != 0 {
+		t.Errorf("a failed async conversion must NOT drive a turn, got %d", calls)
+	}
+	var sawFail, sawAccepted bool
+	for _, text := range bot.sentTexts() {
+		if strings.Contains(text, convertFailMessage) {
+			sawFail = true
+		}
+		if strings.Contains(text, documentAcceptedMessage) {
+			sawAccepted = true
+		}
+	}
+	if !sawAccepted {
+		t.Errorf("the async tier must first acknowledge the document, sent=%v", bot.sentTexts())
+	}
+	if !sawFail {
+		t.Fatalf("a failed async conversion must notify the user with the fail copy, sent=%v", bot.sentTexts())
+	}
+}
+
 func TestStopDrainsAsyncDocumentTurn(t *testing.T) {
 	convertEntered := make(chan struct{})
 	allowConvert := make(chan struct{})

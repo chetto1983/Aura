@@ -20,6 +20,8 @@ import (
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	tele "gopkg.in/telebot.v4"
+
+	"github.com/chetto1983/aura/internal/agui"
 )
 
 // Bot-API constraints (spike telegram-channel.md §Constraints).
@@ -27,6 +29,11 @@ const (
 	telegramTextCap    = 4096
 	telegramCaptionCap = 1024
 )
+
+// runErrorPrefix labels the sanitized failure reason a RUN_ERROR renders to the
+// user (always Italian — the output-language directive). Without a reason the user
+// only sees the status pane's bare "Stato: errore" glyph (H2).
+const runErrorPrefix = "❌ Errore: "
 
 // canParseEntitiesMarker is the Bot-API 400 description substring that signals a
 // MarkdownV2 entity-parse rejection — the plain-text fallback trigger.
@@ -93,6 +100,14 @@ func (r *renderer) consume(ctx context.Context, ch <-chan events.Event) {
 			// Finalize any buffered content the END frame did not flush (a run that
 			// ends without a trailing TEXT_MESSAGE_END still delivers its text).
 			r.flush(ctx, true)
+		case *events.RunErrorEvent:
+			// The turn failed: surface the reason instead of dropping it (H2). The
+			// status pane only flips to a bare "Stato: errore" glyph; without this the
+			// user never learns WHY. The message is sanitized through the same
+			// agui.SanitizeString chokepoint the HTTP RUN_ERROR path uses so a DSN /
+			// token embedded in the error never reaches the user (T-19-11).
+			r.flush(ctx, true) // deliver any partial answer streamed before the error
+			r.sendError(ctx, e.Message)
 		}
 	}
 	// The producer closed the channel (source end or ctx-cancel) — make sure any
@@ -125,6 +140,29 @@ func (r *renderer) flush(ctx context.Context, final bool) {
 	r.rateLimit(ctx)
 	if r.send(content, final) && final {
 		r.textDone = true
+	}
+	r.lastSend = r.now()
+}
+
+// sendError delivers a sanitized turn-failure reason as a FRESH user-facing
+// message (H2). It routes msg through agui.SanitizeString — the one redaction
+// contract the HTTP RUN_ERROR path uses — so a credential-bearing error never
+// leaks (T-19-11). An empty reason still sends the generic failure copy so the
+// user is never left with only the status pane's bare glyph. forceNew=true so the
+// streamed answer msg #2 is never overwritten by the error notice.
+func (r *renderer) sendError(ctx context.Context, msg string) {
+	reason := strings.TrimSpace(agui.SanitizeString(msg))
+	text := runErrorPrefix + reason
+	if reason == "" {
+		text = strings.TrimSpace(runErrorPrefix)
+	}
+	r.rateLimit(ctx)
+	out, err := r.deliver(RenderTelegramHTML(text), tele.ModeHTML, true)
+	if isCantParseEntities(err) {
+		out, err = r.deliver(PlainTextFallback(text), tele.ModeDefault, true)
+	}
+	if err == nil && out != nil {
+		r.msg = out
 	}
 	r.lastSend = r.now()
 }
