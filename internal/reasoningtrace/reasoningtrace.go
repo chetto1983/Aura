@@ -1,7 +1,6 @@
 package reasoningtrace
 
 import (
-	"context"
 	"encoding/json"
 	"log/slog"
 	"os"
@@ -34,26 +33,6 @@ func Path() string {
 		return p
 	}
 	return filepath.Join(os.TempDir(), "aura-reasoning-trace.jsonl")
-}
-
-// Log writes a structured trace row and mirrors it to slog when tracing is enabled.
-func Log(stage string, attrs ...any) {
-	LogContext(context.Background(), stage, attrs...)
-}
-
-// LogContext writes a context-aware structured trace row when tracing is enabled.
-func LogContext(ctx context.Context, stage string, attrs ...any) {
-	if !Enabled() {
-		return
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	args := make([]any, 0, len(attrs)+2)
-	args = append(args, "stage", stage)
-	args = append(args, attrs...)
-	slog.InfoContext(ctx, "reasoning trace", args...)
-	Record(stage, attrsToMap(attrs...))
 }
 
 // Record writes a JSONL row with redacted fields when tracing is enabled.
@@ -96,18 +75,6 @@ func Record(stage string, fields map[string]any) {
 // RuneLen returns the number of UTF-8 runes in s for trace-size metadata.
 func RuneLen(s string) int {
 	return utf8.RuneCountInString(s)
-}
-
-func attrsToMap(attrs ...any) map[string]any {
-	out := make(map[string]any, len(attrs)/2)
-	for i := 0; i < len(attrs)-1; i += 2 {
-		key, ok := attrs[i].(string)
-		if !ok || key == "" {
-			continue
-		}
-		out[key] = attrs[i+1]
-	}
-	return out
 }
 
 func redactValue(v any) any {
