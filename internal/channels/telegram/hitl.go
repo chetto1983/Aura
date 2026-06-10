@@ -171,34 +171,36 @@ func (h *hitl) resolveChoiceValue(ctx context.Context, convID, token, value stri
 // pending pause and, when there is one, submits the text as an accept answer. It
 // returns whether a resume was driven. With no pending pause it is a no-op
 // (handled==false) so an ordinary message is not stolen by HITL.
-func (h *hitl) handleTextReply(ctx context.Context, convID, text string) (resumed bool) {
-	pending, err := h.runner.PendingFor(ctx, convID)
-	if err != nil || len(pending) == 0 {
-		return false
+func (h *hitl) handleTextReply(ctx context.Context, convID, text string) (resumed bool, err error) {
+	pending, perr := h.runner.PendingFor(ctx, convID)
+	if perr != nil || len(pending) == 0 {
+		return false, nil
 	}
 	return h.submit(ctx, convID, pending[0].Token, askuser.ActionAccept, text)
 }
 
 // submit resolves ONE pause via the Runner (the sole paused_states writer) and
-// drives a resume Turn when remaining==0 and the action was not a cancel.
-func (h *hitl) submit(ctx context.Context, convID, token, action, content string) (resumed bool) {
+// drives a resume Turn when remaining==0 and the action was not a cancel. A submit
+// error is returned (not just logged) so the channel can tell the user their answer
+// did not register — the pause stays open, so silent swallowing would strand them.
+func (h *hitl) submit(ctx context.Context, convID, token, action, content string) (resumed bool, err error) {
 	remaining, err := h.runner.SubmitAnswer(ctx, token, runner.ResponseInput{Action: action, Content: content})
 	if err != nil {
 		slog.Warn("telegram hitl: submit answer failed", "conv", convID, "err", err)
-		return false
+		return false, err
 	}
 	// A cancel terminates the turn (the Runner injected the terminating answers and
 	// auto-resolved) — never drive a continuation Turn.
 	if action == askuser.ActionCancel {
-		return false
+		return false, nil
 	}
 	if remaining > 0 {
-		return false // more pauses to answer first (FIFO)
+		return false, nil // more pauses to answer first (FIFO)
 	}
 	if h.resume != nil {
 		h.resume(ctx, convID)
 	}
-	return true
+	return true, nil
 }
 
 // approvalMarkup builds the accept/decline InlineKeyboard for an approval pause.

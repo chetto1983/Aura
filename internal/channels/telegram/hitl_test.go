@@ -299,7 +299,7 @@ func TestHITLForceReplyAnswerResumes(t *testing.T) {
 	}
 	h := newHitl(rs, rs.resumeTurn)
 
-	resumed := h.handleTextReply(context.Background(), "conv-1", "Davide")
+	resumed, _ := h.handleTextReply(context.Background(), "conv-1", "Davide")
 	calls := rs.calls()
 	if len(calls) != 1 {
 		t.Fatalf("ForceReply answer must submit exactly once, got %d", len(calls))
@@ -312,13 +312,33 @@ func TestHITLForceReplyAnswerResumes(t *testing.T) {
 	}
 }
 
+// TestHITLTextReplySubmitErrorSurfaced: when SubmitAnswer fails, handleTextReply
+// returns the error (no longer swallowed) so the channel can notify the user to
+// retry, and no resume is driven while the pause stays open.
+func TestHITLTextReplySubmitErrorSurfaced(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{
+		pending:   []askuser.Pending{{Token: "tok-e", Kind: "clarification", Question: "Nome?", ToolCallID: "tc-e"}},
+		submitErr: errors.New("submit boom"),
+	}
+	h := newHitl(rs, rs.resumeTurn)
+
+	resumed, err := h.handleTextReply(context.Background(), "conv-1", "Davide")
+	if err == nil {
+		t.Fatal("a SubmitAnswer error must be surfaced, not silently swallowed")
+	}
+	if resumed {
+		t.Error("a failed submit must not drive a resume")
+	}
+}
+
 // TestHITLNoPendingTextReplyIgnored: a text reply with NO pending pause is a
 // no-op (handled==false), so an ordinary message is not stolen by HITL.
 func TestHITLNoPendingTextReplyIgnored(t *testing.T) {
 	t.Parallel()
 	rs := &fakeResume{} // no pending
 	h := newHitl(rs, rs.resumeTurn)
-	if resumed := h.handleTextReply(context.Background(), "conv-1", "hello"); resumed {
+	if resumed, _ := h.handleTextReply(context.Background(), "conv-1", "hello"); resumed {
 		t.Error("a text reply with no pending pause must not resume")
 	}
 	if len(rs.calls()) != 0 {
