@@ -1,97 +1,53 @@
 # Audit: internal/scoring
 
-**Verdict:** needs-work — two not-wired symbols scheduled for deletion are still present; one logic gap in body-content gating.
+**Verdict:** needs-work — two low-severity issues found; logic is sound, no bugs or races.
 
-**Counts:** critical 0 / high 1 / medium 1 / low 1
-
----
+**Counts:** critical 0 / high 0 / medium 1 / low 1
 
 ## Findings
 
-### [HIGH][NOT-WIRED] `ComputeSandboxTier`, `SandboxArgs`, `onlyPyPI` have zero production callers
+---
 
-**Location:** `internal/scoring/scoring.go:33-36, 91-113`
+### [MEDIUM][DEAD-CODE] `SkillInstall` enum value unreachable from any production dispatch path
 
+**Location:** `internal/scoring/scoring.go:46`
 **Confidence:** high
 
-**Detail:**
-`SandboxArgs` (struct, lines 33-36), `onlyPyPI` (unexported func, lines 91-100), and `ComputeSandboxTier` (exported func, lines 105-113) are defined but have no callers outside the `internal/scoring` package itself.
+`SkillInstall SkillAction = "install"` is defined and handled in `ComputeSkillTier`'s case arm (line 131) and mapped in `internal/skills/writer.go:304` (`auditActionFor`). However, the only direct tool dispatcher that could invoke `writeAction(ctx, raw, scoring.SkillInstall)` is `internal/agent/tools/skill_write.go` — which only wires `scoring.SkillCreate`, `scoring.SkillUpdate`, and `scoring.SkillDelete` (lines 112, 120, 127). The test comment at `internal/agent/tools/skill_test.go:88` explicitly records that `"install"` was removed from the tool dispatch (amendment #51 / D-40).
 
-Verification: `grep -r "ComputeSandboxTier\|SandboxArgs" --include="*.go" D:/Aura` returns only `internal/scoring/scoring.go` and `internal/scoring/scoring_test.go`. No production package imports or calls these symbols.
+The only remaining path is via `WriteMutationByName`/`WriteMutationCLI` with a raw string `"install"`, which coerces to `scoring.SkillAction("install")`. No CLI command, no test, and no non-test caller passes `"install"` to these helpers in production.
 
-`docs/sandbox-removal-plan.md` documents that these three symbols are explicitly earmarked for deletion as part of the sandbox removal ("Delete those 3 symbols; KEEP everything else" — line 42). The plan has not been executed, leaving dead exported API surface that silently misleads readers into thinking the sandbox advisory path is wired.
+The `ComputeSkillTier` and `auditActionFor` case arms for `SkillInstall` are therefore dead from a production dispatch perspective; the constant itself is orphaned in the scoring package.
 
-**Suggested fix:** Execute step 4 of `docs/sandbox-removal-plan.md`: delete `type SandboxArgs struct { … }`, `func onlyPyPI(…)`, and `func ComputeSandboxTier(…)` from `scoring.go`, and delete the `ComputeSandboxTier` subtest block (lines 16-42) from `scoring_test.go`. No other package is affected.
+**Suggested fix:** If the install action is intentionally decommissioned (D-40 says so), remove `SkillInstall` from the `scoring` package enum and its case arms in `ComputeSkillTier` and `auditActionFor`, then delete the corresponding test row in `scoring_test.go` and `writer_test.go`. If it will be re-wired in a future slice, add a `// Future: wired in Slice X` comment to suppress confusion.
 
 ---
 
-### [MEDIUM][BUG] `ComputeSkillTier` silently discards `body`; destructive-keyword content in skill bodies is not escalated
+### [LOW][DEAD-CODE] `ComputeSkillTier` default case is unreachable given current enum design
 
-**Location:** `internal/scoring/scoring.go:164`
-
+**Location:** `internal/scoring/scoring.go:133-135`
 **Confidence:** medium
 
-**Detail:**
 ```go
-func ComputeSkillTier(action SkillAction, body string) RiskTier {
-    _ = body   // ← body is ignored
-    ...
-}
+default:
+    return Risky
 ```
 
-`ComputeTaskTier` scans `TaskArgs.Payload` for `destructiveKeyword` and jumps straight to `Destructive` when a payload contains `rm`, `delete`, `drop`, `purge`, or `truncate`. `ComputeSkillTier` accepts an analogous `body` parameter (callers pass real skill code: `internal/skills/writer.go:89`, `internal/skills/snippet.go:183`) but unconditionally ignores it.
+The `default` arm in `ComputeSkillTier` returns `Risky` — identical to the explicit `case SkillCreate, SkillUpdate, SkillInstall` arm immediately above. Because `SkillAction` is a plain `string` type (not a Go enum), an unknown value can reach the default; the fallback to `Risky` is intentional and documented. However, the conservative choice is inconsistent with `rank`'s fallback (also `Risky`) but differs from `GateRecommended`, which would then return `true`. The code is not wrong, but the comment on line 123-125 says "action alone decides the tier" while not mentioning that an unrecognised action is silently tiered `Risky`.
 
-A skill body containing `rm -rf /` or `DROP TABLE` passes through as merely `Risky` (same tier as an empty body), while an equivalent scheduler payload would correctly escalate to `Destructive`. This is an asymmetry in the risk model that the PRD's UP-only invariant was designed to prevent.
+The real risk is that if a new `SkillAction` value is added without updating this switch, it will silently tier as `Risky` (not `Destructive`) — a false-negative for safety-critical additions.
 
-The comment on line 161 ("The body is reserved for future content-based escalation; today the action alone decides the tier") documents this as a deliberate deferral, not an oversight — so the severity is medium rather than high. However, the asymmetry is a security-relevant gap: callers pass real executable code and receive a tier that does not reflect it.
-
-**Suggested fix:** Apply `destructiveKeyword.Match([]byte(body))` check inside `ComputeSkillTier`, mirroring `baseTaskTier`. If matched, bump the result to `Destructive` (or at minimum `Risky` → `Destructive` for `SkillCreate`/`SkillInstall`). Update `scoring_test.go` with a corresponding table row. Alternatively, if deferral is intentional, document it with a `TODO(slice-N):` and a reference to the PRD item that tracks it.
-
----
-
-### [LOW][BUG] `rank()` uses recursion for the unknown-tier fallback; a mutable `tierOrder` would cause infinite recursion
-
-**Location:** `internal/scoring/scoring.go:67-74`
-
-**Confidence:** low
-
-**Detail:**
-```go
-func rank(t RiskTier) int {
-    for i, known := range tierOrder {
-        if known == t {
-            return i
-        }
-    }
-    return rank(Risky)  // ← recursive call
-}
-```
-
-In the current codebase this is safe: `tierOrder` is a package-level `var` initialized with the four known tiers, `Risky` is always found in the linear scan, and there is no mutation path. However, the recursive fallback is fragile by construction: if `tierOrder` were ever modified to omit `Risky` (e.g., during a future refactor that renames the tier), the function would recurse infinitely and stack-overflow. The comment says "An unknown tier sorts at Risky" but the implementation couples the fallback to the presence of `Risky` in `tierOrder` rather than its index.
-
-**Suggested fix:** Replace the recursive fallback with an explicit constant:
-```go
-func rank(t RiskTier) int {
-    for i, known := range tierOrder {
-        if known == t {
-            return i
-        }
-    }
-    return 2 // conservative fallback: Risky (index 2 in Safe<Normal<Risky<Destructive)
-}
-```
-Or add a `const riskyRank = 2` to make the intent explicit. This decouples the fallback from the scan, makes the function total and non-recursive, and survives `tierOrder` refactors.
+**Suggested fix:** Add a test case asserting the default-case behaviour (already partially covered by `scoring_test.go:65` with `SkillAction("mystery")` → `Risky`), and add a one-line comment to the `default` branch: `// Unknown actions are treated as Risky, not Safe; add explicit cases for new SkillAction values.` This makes the fail-safe intent visible so future additions don't silently slip through.
 
 ---
 
 ## What was checked and found clean
 
-- **Nil-pointer / unchecked errors:** all functions are pure transforms with no I/O, no pointer receivers, no error returns. Not applicable.
-- **Data races:** no goroutines, no shared mutable state. `tierOrder` and `destructiveKeyword` are package-level vars initialized once at startup (no writes after init). Clean.
-- **Resource leaks:** no file handles, DB rows, HTTP bodies, tickers, or goroutines. Clean.
-- **Context propagation:** no I/O, no context needed. Clean.
-- **Integer overflow:** `rank()` returns an `int` from a 4-element slice; `bumpTier` adds 1 before bounds-checking. No overflow possible.
-- **Incorrect `%w` wrapping:** no error values in this package.
-- **Slice aliasing:** `NetworkAllow []string` is read-only in `onlyPyPI`/`ComputeSandboxTier`. Clean.
-- **`for range taskModifierBumps(a)` when base is already `Destructive`:** wasted iterations but `bumpTier(Destructive)` saturates correctly. Not a bug.
-- **Dead exported symbols (other than the sandbox triad):** `RiskTier`, `Safe`/`Normal`/`Risky`/`Destructive`, `TaskArgs`, `SkillAction`, `SkillCreate`/`SkillUpdate`/`SkillInstall`/`SkillDelete`, `ComputeTaskTier`, `ComputeSkillTier`, `GateRecommended`, `RequiresImmediateAlert` — all confirmed used in production callers (`internal/cron`, `internal/skills`, `internal/agent/tools`, `cmd/aura`).
+- **Nil-pointer / unchecked errors:** None. The package contains only pure functions with no IO, DB, or network calls. No error returns exist, so there is nothing to miss.
+- **Races:** None. All state is immutable: `tierOrder` is a package-level slice never written after init; `destructiveKeyword` is a compiled regexp assigned once at init. No goroutines or shared mutation.
+- **Resource leaks:** Not applicable — no files, connections, or goroutines opened.
+- **`rank` infinite recursion:** Superficially suspicious (`rank` calls `rank(Risky)` in the fallback), but `Risky` is always in `tierOrder` (index 2), so the recursion terminates in one extra call. No stack overflow possible.
+- **`for range taskModifierBumps(a)`:** Valid Go 1.22+ range-over-int. `taskModifierBumps` returns values in `{0,1,2,3}`; a negative return would silently range zero times (no panic), but the function cannot return negative values given its logic.
+- **`bumpTier` saturation:** Correct. `rank(Destructive)` == 3 == `len(tierOrder)-1`, so `next >= len(tierOrder)` saturates to `Destructive` without out-of-bounds access.
+- **`ComputeTaskTier` + `baseTaskTier`:** Logic matches documented intent. Destructive-keyword detection applies only to `agent_job` (not `reminder`/`backup_*`), which is correct per the test at line 31.
+- **Wiring (production consumers):** `ComputeTaskTier` is called in `cmd/aura/task.go:107`, `internal/cron/dispatch.go:177`, and `internal/agent/tools/task.go:194`. `ComputeSkillTier` is called in `internal/skills/writer.go:89`, `internal/skills/snippet.go:183`, and `internal/agent/tools/skill_write.go:158`. `GateRecommended` is called in `cmd/aura/task.go:109`, `internal/skills/writer.go:90`, `internal/agent/tools/task.go:200`, and `internal/skills/snippet.go` (indirectly). `RequiresImmediateAlert` is called in `internal/cron/dispatch.go:153` and `internal/agent/tools/task.go:225`. All four exported functions are live.

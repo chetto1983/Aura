@@ -1,89 +1,63 @@
 # Audit: internal/swarm
 
-**Verdict:** needs-work — one silent-misconfiguration bug; one structural dead code
-
-**Counts:** critical 0 / high 0 / medium 1 / low 1
+**Verdict:** needs-work — one real bug (zero-duration timeout kills all workers silently); package is otherwise clean.
+**Counts:** critical 0 / high 0 / medium 1 / low 0
 
 ## Findings
 
----
-
-### [MEDIUM][BUG] Zero child-timeout silently kills every worker
+### [MEDIUM][BUG] Zero SwarmChildTimeoutSec creates immediately-expired child context
 
 **Location:** `internal/swarm/swarm.go:109-118`
 **Confidence:** high
 
 **Detail:**
+`runWave` computes `childTimeout := time.Duration(rc.Cfg.SwarmChildTimeoutSec) * time.Second` with no guard for zero. `context.WithTimeout(egCtx, 0)` produces a context that is already expired at creation (`ctx.Err() == context.DeadlineExceeded` immediately). Every child goroutine starts with a dead context, the stream open fails with `context.DeadlineExceeded`, and the D-11 normalization at line 185 turns every report into `{failed, "timeout"}`. The operator intent for `SwarmChildTimeoutSec=0` is almost certainly "no per-child timeout" (rely on the parent's context), but the code implements "instant kill all workers."
 
-`runWave` computes the per-child context deadline as:
-
-```go
-childTimeout := time.Duration(rc.Cfg.SwarmChildTimeoutSec) * time.Second
-// …
-childCtx, ccancel := context.WithTimeout(egCtx, childTimeout)
-```
-
-`context.WithTimeout(parent, 0)` expands to `context.WithDeadline(parent, time.Now())` — the deadline is in the past at the moment of construction, so `childCtx` is already cancelled when `runChild` receives it. Every LLM call inside the worker immediately fails with `context.DeadlineExceeded`, which the post-loop normalization re-labels to `{failed, "timeout"}`. The result is that every goal silently fails as "timeout" with no error distinguishing the zero-timeout misconfiguration from a genuine overrun.
-
-`config.envIntDefault("AURA_SWARM_CHILD_TIMEOUT_SEC", 120)` has no lower-bound guard (it passes through a parsed `0` without error), and `runWave` does not guard either. Setting `AURA_SWARM_CHILD_TIMEOUT_SEC=0` triggers the failure silently at runtime with no warning log or startup error.
+The default is 120 s (from `config.go:238`) and all callers in the repo set explicit positive values (swarm_demo.go: 30, tests: 30), so this is not triggered by normal operation. It becomes a silent footgun if an operator sets `AURA_SWARM_CHILD_TIMEOUT_SEC=0`.
 
 **Suggested fix:**
-
-Add a lower-bound guard in `runWave` before the loop (matching how `concurrent < 1` is clamped to 1 at `swarm.go:54`):
-
 ```go
-childTimeout := time.Duration(rc.Cfg.SwarmChildTimeoutSec) * time.Second
-if childTimeout <= 0 {
-    childTimeout = 120 * time.Second // match the builtin default
+// runWave, after computing childTimeout:
+var childCtx context.Context
+var ccancel context.CancelFunc
+if childTimeout > 0 {
+    childCtx, ccancel = context.WithTimeout(egCtx, childTimeout)
+} else {
+    childCtx, ccancel = context.WithCancel(egCtx) // no per-child deadline
 }
+defer ccancel()
 ```
-
-Alternatively, add validation in `config.Load` rejecting `SwarmChildTimeoutSec <= 0` at startup (fail-fast, matching the `Budget.NewBudget` pattern).
+Or add a guard in `config.go`'s `Load` (or in `runWave`) to clamp `SwarmChildTimeoutSec <= 0` to the default.
 
 ---
 
-### [LOW][DEAD-CODE] Redundant `context.WithCancel` wrapper in `runWave`
+## Clean (everything else checked)
 
-**Location:** `internal/swarm/swarm.go:105-107`
-**Confidence:** high
+The following areas were explicitly verified and found clean:
 
-**Detail:**
+**Races:**
+- `reports[idx]` written by goroutines: each goroutine writes a distinct index (`idx := i` capture before `eg.Go`), no aliasing. No data race.
+- `routerClient` in tests uses a `sync.Mutex` correctly.
+- No shared mutable state in production code paths (`ChildReport` fields are written once per goroutine, read after `eg.Wait()`).
 
-```go
-eg, egCtx := errgroup.WithContext(ctx)
-egCtx, cancel := context.WithCancel(egCtx)
-defer cancel()
-```
+**Resource leaks:**
+- `context.WithTimeout`/`context.WithCancel` cancel functions are always deferred inside goroutines (`defer ccancel()` at line 119) and at the wave level (`defer cancel()` at line 107). No context leaks.
+- `dumpTranscript` opens files with `defer f.Close()` (line 69). Write errors are swallowed with `slog.Warn` — intentional (best-effort transcript, D-18).
+- `errgroup.Wait()` is always called (line 124), preventing goroutine leaks regardless of child outcome.
 
-`errgroup.WithContext` already manages its own internal cancel: it fires when `eg.Wait()` returns (after all goroutines finish). Because every goroutine always returns `nil` (D-02: child failures are captured into the report slot, never propagated as errors), the errgroup's cancel fires exactly when `eg.Wait()` returns — the same point at which `defer cancel()` fires. The extra `context.WithCancel` wrapping adds a second cancel that is simultaneous with the errgroup's own cancel. It provides no additional protection and no observable difference in cancellation semantics.
+**Dead code:**
+- All unexported functions (`preflight`, `runWave`, `runChild`, `optionLabels`, `structuredBrief`, `maxDepth`, `checkDepth`, `dumpTranscript`, `marshalReports`) are referenced within the package.
+- All unexported constants are used: `budgetReserve` (line 90/93), `swarmSpawnTool` (line 139), `workerOverlay`/`brief*` (brief.go, asserted by test).
 
-This is pure structural dead code: the wrapped `egCtx` with the extra cancel is the same cancellation point, just with an extra goroutine resource reference. The comment block references the `#61611` spawn-loop guard (`if egCtx.Err() != nil { return nil }`) which is valid and necessary — but it would work identically without the extra `WithCancel` layer, since the errgroup's own `egCtx` carries the same cancellation signal.
+**Not-wired code:**
+- `RunnerAdapter`/`NewRunnerAdapter` are wired at `cmd/aura/main.go:133` and in `internal/eval/harness_swarm_e2e_test.go:162`.
+- `swarm.Run` is called by `RunnerAdapter.Run` (production path) and directly by `cmd/aura/swarm_demo.go:101` (demo path).
+- `StatusOK`/`StatusFailed`/`StatusNeedsUserInput` are consumed by `cmd/aura/swarm_demo_test.go` and the swarm tests.
+- `ChildReport` type and its JSON fields are consumed by callers that unmarshal the `Run` output.
 
-**Suggested fix:**
-
-Remove the extra `context.WithCancel` and its `defer cancel()`:
-
-```go
-eg, egCtx := errgroup.WithContext(ctx)
-// errgroup manages egCtx cancellation; no extra wrapper needed
-for i := start; i < end; i++ {
-    ...
-}
-_ = eg.Wait()
-```
-
----
-
-## What was checked and found clean
-
-- **Nil dereference:** `ev` is checked for `nil` at line 161 before dereference (`*ev` at line 164); `ev.Actions.AwaitingInput` is a pointer field, guarded at line 165. No nil-deref risk.
-- **Concurrent writes to `reports`:** Each goroutine writes to a unique `reports[idx]` slot (non-overlapping index range `start..end-1`); no shared-slot race. Verified: `idx := i` is captured inside the loop body (Go 1.26 loop-var fix is in effect per `go.mod`).
-- **Error swallowing:** `dumpTranscript` intentionally swallows write errors (D-18 best-effort transcript); errors are logged via `slog.Warn` before swallowing. The return type is `error` but callers use `_ =`, consistent with the best-effort contract.
-- **Goroutine leaks:** `runWave` defers `cancel()` and calls `eg.Wait()` unconditionally, draining all spawned goroutines. The `block` test path (worker holds on `<-ctx.Done()`) is unblocked by `context.WithTimeout` on the per-child context. `goleak.VerifyTestMain` + per-test `goleak.VerifyNone` confirm leak-free behavior.
-- **Context propagation:** `ic.Ctx = ctx` (the per-child deadline context) is threaded into `agent.InvocationContext` which propagates it into every LLM call and tool dispatch.
-- **Budget sharing:** `rc.ParentBudget.Child(width)` shares the same `*atomic.Int32` step counter by pointer (D-10); no per-child fresh budget is allocated. Children compete on the shared counter, which is the intended design.
-- **`maxDepth()` env reads:** Called once per `Run` invocation (not in a hot path). Consistent with `config.envIntDefault` approach in the rest of the codebase. Not worth caching.
-- **Depth guard correctness:** `checkDepth(depth, max)` returns false when `depth >= max`; the production adapter always injects `Depth: 1` and the default `maxDepth()` is 2, so depth=1 always passes. Forward-compat code (workers cannot recurse because `swarm_spawn` is stripped from their registry via `tools.Without`).
-- **JSON marshaling:** `marshalReports` uses `json.Marshal` over `[]ChildReport`; no custom marshaler, no field mismatches. `ChildReport` tags are verified by `TestChildReport`.
-- **Double goals-cap check:** Both `SwarmSpawn.Execute` (in tools package) and `preflight` check `len(goals) > MaxGoals`. When called through the adapter the tools-layer check fires first; the preflight check is a defense-in-depth for direct `swarm.Run` callers (e.g., `swarm_demo`). Redundant but intentional.
-- **Dead exported symbols:** `StatusFailed` and `StatusNeedsUserInput` are exported but not referenced outside the package. They are part of the `ChildReport.Status` public API contract (JSON wire format), so consumers parsing the JSON array can compare against them. Not flagged.
+**Logic:**
+- D-11 timeout normalization (line 185) correctly preserves `StatusNeedsUserInput` as `{failed,"timeout"}` when a paused worker's deadline fires — the parent cannot proxy a stale pause from a timed-out worker; this is acceptable behavior even if not explicitly documented.
+- The errgroup context shadowing (`egCtx, cancel := context.WithCancel(egCtx)`) is intentional defense: the `WithCancel` layer ensures `childCtx`s inherited by workers are cancelled when `runWave` returns even if the errgroup's own internal cancel races. The chain (errgroup-ctx → WithCancel-ctx → WithTimeout-ctx) is correct.
+- `#61611` spawn-loop guard is valid: prevents goroutine bodies from executing when a parent cancellation fires between goroutine launch and body entry.
+- `Budget.Child(width)` is called `width` times in the pre-goroutine loop before any step is consumed, so all `width` children see the same `Remaining()` and receive equal soft caps (IN-04 invariant satisfied by design for intra-wave siblings; inter-wave soft caps decrease as earlier waves drain the pool — this is intentional per the Budget.Child doc).
+- `maxDepth()` reads `os.Getenv` per-call (once per `Run` invocation). Not a race or hotpath concern.

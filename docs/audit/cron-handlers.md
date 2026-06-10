@@ -1,104 +1,115 @@
 # Audit: internal/cron/handlers
 
-**Verdict:** needs-work — one not-wired bool return value, one cosmetically redundant double-timeout, otherwise clean.
+**Verdict:** needs-work — two real defects and one not-wired return value found across 5 source files.
 
-**Counts:** critical 0 / high 0 / medium 1 / low 2
+**Counts:** critical 0 / high 0 / medium 2 / low 1
 
 ## Findings
 
 ---
 
-### [MEDIUM][NOT-WIRED] `MissedBackupAlert` bool return value is never consumed by its only production caller
+### [MEDIUM][BUG] `drain` captures intermediate event content into the audit summary
 
-**Location:** `internal/cron/handlers/backup.go:79`, `backup.go:222-237`
+**Location:** `internal/cron/handlers/agentjob.go:117–131`
 
 **Confidence:** high
 
 **Detail:**
 
-`MissedBackupAlert` is exported and documented as returning `true` when an alert fires "so the dispatcher can also ride it through the Notifier (D-21)". Its docstring explicitly promises this use case. In the only production call site (line 79):
+`drain` keeps only the most-recently-seen `ev.LLMResponse.Content != ""` as its returned `content`. The `LlmAgent` event stream sets `LLMResponse.Content` on multiple event kinds beyond the terminal `finalEvent`:
+
+- `chunkEvent` — each streaming text delta (e.g., `"Hello"`, `" world"`) overwrites `content` with an incomplete fragment.
+- `toolResultEvent` — carries the tool's result preview (e.g., `"ok"`, `"2+2=4"`) in `LLMResponse.Content`.
+- `toolPreviewEvent` — carries internal debug strings (`"parse error"`, `"completion gate: not done"`) in `LLMResponse.Content`.
+
+In the happy path (agent terminates normally), the last event is `finalEvent` which carries the full accumulated answer, so `content` ends up correct. The bug triggers only when the agent exits `drain` via an `AwaitingInput` (ask_user pause) without having emitted a `finalEvent` first. In that case the last `LLMResponse.Content != ""` event before the pause may be:
+
+1. A `toolResultEvent` (the tool just ran before the model asked the user) — `content` = the tool's raw result preview, not an LLM answer.
+2. A `chunkEvent` (the model started streaming text then switched to ask_user) — `content` = a partial text fragment.
+3. A `toolPreviewEvent` with `"parse error"` (the model issued a malformed `text_response`, then issued `ask_user`) — `content` = `"parse error"`.
+
+The caller at `agentjob.go:85–87` then unconditionally appends non-empty `content` to the audit summary. Sequences (1)–(3) corrupt the `agent_job_runs.summary` row with data that is not a model answer.
+
+**Suggested fix:**
+
+Filter `drain` to only capture content from events that represent the model's final answer. The `finalEvent` is distinguishable: it has both a non-empty `LLMResponse.Content` and a non-empty `LLMResponse.FinishReason` (set to `"stop"` or `"length"`), while `chunkEvent`, `toolResultEvent`, and `toolPreviewEvent` all have an empty `FinishReason`. Add a `FinishReason != ""` guard:
+
+```go
+if ev.LLMResponse != nil && ev.LLMResponse.Content != "" && ev.LLMResponse.FinishReason != "" {
+    content = ev.LLMResponse.Content
+}
+```
+
+This is zero-cost and isolates the final-answer content from intermediate streaming and tool-result events.
+
+---
+
+### [MEDIUM][NOT-WIRED] `MissedBackupAlert` return value is never consumed; the Notifier path it documents is unimplemented
+
+**Location:** `internal/cron/handlers/backup.go:79` and `backup.go:222–237`
+
+**Confidence:** high
+
+**Detail:**
+
+`MissedBackupAlert` is exported and documented as returning `true` "so the dispatcher can also ride it through the Notifier, D-21." The function is called exactly once in production code, at `backup.go:79`:
 
 ```go
 MissedBackupAlert(h.Variant, job.MissedSince, time.Now().UTC())
 ```
 
-the return value is discarded. The alert is delivered exclusively via `slog.Warn` — the Notifier path described in the function comment is never exercised. Callers outside this package (non-test) do not exist (verified by grep across `D:/Aura`). The exported function's advertised contract (Notifier riding) has no wiring to make it real.
+The return value is unconditionally discarded. No caller outside the test suite reads the return value. The `internal/cron/claim.go:39` reference is a comment only. Grep across the entire repo (`D:/Aura`) confirms zero non-test, non-definition, non-comment uses of the boolean return.
 
-This means a missed-backup-past-24h event produces a daemon log line but never reaches the user's Telegram route (D-19/D-21), contrary to the SC#3 requirement description.
+The result is that a backup missed past the 24-hour SC#3 window emits a `slog.Warn` line, but the Notifier path (which would send the alert through the user's notification route, D-21) is never triggered — the handler silently discards the signal after logging.
 
 **Suggested fix:**
 
-Either (a) have `Run` incorporate the alert result into the returned summary/error so the dispatcher's existing Notifier call picks it up, or (b) have `BackupHandler.Run` call the Notifier directly (via a field on the struct), or (c) lower the visibility to unexported and remove the misleading bool (if log-only is the accepted design). The simplest correct fix that preserves the Notifier path:
-
-```go
-// inside Run, after MissedBackupAlert fires:
-alerted := MissedBackupAlert(h.Variant, job.MissedSince, time.Now().UTC())
-// ... rest of Run ...
-summary := fmt.Sprintf("backup %s ok → %s ...", ...)
-if alerted {
-    summary = "[SC#3 MISSED BACKUP ALERT] " + summary
-}
-return summary, nil
-```
-
-This threads the alert through the Notifier via the normal dispatcher summary-notification path (dispatch.go line 158), without adding a Notifier dependency to the handlers package.
+Either (a) wire the return value into a Notifier call in `BackupHandler.Run` (send the SC#3 alert through the same `Notifier.Notify` path the dispatcher uses for normal outcomes), or (b) if the slog-only path is intentional, change the signature to `func MissedBackupAlert(variant BackupVariant, missedSince, now time.Time)` (no return value) to eliminate the documented-but-unused return and the misleading comment about the dispatcher.
 
 ---
 
-### [LOW][BUG] `BackupHandler.Run` creates a redundant inner `WithTimeout` that duplicates the dispatcher's outer budget
+### [LOW][BUG] `backupDir` tilde-expansion uses `os.PathSeparator` to strip the separator after `~`, breaking on Windows when the env var uses a forward-slash path
 
-**Location:** `internal/cron/handlers/backup.go:97`
+**Location:** `internal/cron/handlers/backup.go:190`
 
 **Confidence:** medium
 
 **Detail:**
 
-`BackupHandler.Meta()` returns `MaxDuration: backupMaxDuration` (30 minutes). The cron dispatcher (`dispatch.go`) applies this as a hard deadline to the `ctx` it passes to `Run`. Inside `Run`, another `context.WithTimeout(ctx, backupMaxDuration)` is applied — with the same duration. Because both timers start almost simultaneously, the inner `runCtx` always expires at approximately the same wall time as the outer, making the inner one purely redundant. The only distinction is that the inner cancel is deferred, which is correct hygiene, but the second `backupMaxDuration` constant adds no safety margin.
+```go
+dir = filepath.Join(home, strings.TrimPrefix(strings.TrimPrefix(dir, "~"), string(os.PathSeparator)))
+```
 
-This is not a functional bug (the behavior is correct), but it obscures intent: a reader might think the inner timeout is shorter or deliberately independent of the outer one.
+On Windows, `os.PathSeparator = '\\'`. An env var value of `~/custom-backups` (forward-slash form, which is the documented default and what the test sets) produces:
+
+1. `strings.TrimPrefix("~/custom-backups", "~")` → `"/custom-backups"` (leading forward slash)
+2. `strings.TrimPrefix("/custom-backups", "\\")` → `"/custom-backups"` (no match — the separator is `\` not `/`)
+3. `filepath.Join(home, "/custom-backups")` on Windows → `C:\custom-backups` (filepath.Join treats `/` as a rooted path, strips the drive)
+
+The resulting path is wrong: it resolves to a root-relative path on the current drive instead of under the user's home. The unit test `TestBackupDirExpandsTildeAndEnv` does not detect this because `filepath.Join(home, "custom-backups")` on Windows matches the `filepath.Join(home, "/custom-backups")` only when `home` is on the same drive as the working directory (the test `t.Fatalf` checks string equality, not filesystem reachability).
+
+In practice the backup daemon runs on Linux (the primary platform), so this is latent. It would surface if the operator ever runs the daemon on Windows with a `~`-prefixed `AURA_BACKUP_DIR`.
 
 **Suggested fix:**
 
-Drop the inner `WithTimeout` and just use `ctx` directly in `exec.CommandContext`. The outer dispatcher-applied deadline already provides the bound. If a tighter inner bound is desired, document the intended relationship explicitly:
+Strip any leading path separator (both `/` and `\\`) after removing `~`:
 
 ```go
-// ctx already carries the Meta().MaxDuration deadline from the dispatcher;
-// pass it directly to CommandContext.
-cmd := exec.CommandContext(ctx, docker, args...)
+rest := strings.TrimPrefix(dir, "~")
+rest = strings.TrimLeft(rest, "/\\")
+dir = filepath.Join(home, rest)
 ```
 
 ---
 
-### [LOW][DEAD-CODE] `MissedBackupAlert` bool return value is never read in production (dead return slot)
+## What was checked and found clean
 
-**Location:** `internal/cron/handlers/backup.go:227`
-
-**Confidence:** high
-
-**Detail:**
-
-The `bool` return of `MissedBackupAlert` has zero production consumers (verified by grep: only `backup_test.go` reads it). The function is exported solely for the test and for a production wiring path (Notifier) that does not exist. This is a subset of the NOT-WIRED finding above, flagged separately because the dead return slot also signals that the exported surface is larger than needed.
-
-If the Notifier wiring gap (medium finding above) is accepted as won't-fix, the function should be unexported (`missedBackupAlert`) to remove the false contract from the public API.
-
-**Suggested fix:**
-
-If the Notifier path remains unwired, make the function unexported:
-```go
-func missedBackupAlert(variant BackupVariant, missedSince, now time.Time) bool {
-```
-and update the single call site and the tests (which are in `package handlers`, so they can still call it).
-
----
-
-## Clean sections (classes with no findings)
-
-**BUGS (excluding the double-timeout):** No nil-pointer derefs, no unchecked errors that matter (all `os.Remove`/`os.Stat` errors are either surfaced or deliberately best-effort with a log), no swallowed errors in the happy path, no off-by-one. The `for attempt := 0; attempt <= maxAutoRejects; attempt++` loop correctly runs `maxAutoRejects + 1` iterations. `agentJobGoal` and `reminderText` swallow JSON parse errors intentionally and correctly (empty means "no content" in both cases — degraded but not silently wrong). The `backupDir` tilde expansion correctly handles `~`, `~/path`, and `~path` (the last being non-standard but deterministic).
-
-**RACES:** No goroutine spawning in any handler. `AgentJobHandler.Run` is synchronous. `drain` runs the iterator synchronously; the `for-range` over `iter.Seq2` is single-threaded. `SkillTTLSweepHandler.now` is an unexported, read-once field with no concurrent access. `BackupHandler.dockerCLI` is set at construction and read-only thereafter. No shared mutable state.
-
-**ITERATOR SAFETY (drain early return):** When `drain` returns early on detecting `ev.Actions.AwaitingInput != nil` (agentjob.go:124–126), this is safe: `LlmAgent.Run` calls `emitPauses` then immediately `return`s, so the pause event IS the last yield of that iterator invocation. The Go 1.23 range-over-func mechanism correctly handles the early return (yield returns false on the next call attempt, which never arrives). No goroutine leak; confirmed by the package-level `goleak.VerifyTestMain`.
-
-**NOT-WIRED (handlers registration):** All five `TaskKind` constants (`KindReminder`, `KindAgentJob`, `KindBackupPostgres`, `KindBackupNeo4j`, `KindSkillTTLSweep`) and all five handler types are wired in `cmd/aura/serve.go:232–241`. The `handlerAdapter` at `cmd/aura/serve.go:258–287` correctly projects both `HandlerMeta` and `Job` fields. `SnippetSweeper` is satisfied by `snippetSweeperAdapter` in `cmd/aura/serve_adapters.go:330`.
-
-**DEAD CODE:** `childRegistry`, `newAgentWorker`, `appendLine`, `agentJobGoal`, `assistantAskUserTurn`, `askUserKind`, `newJobBudget`, `drain`, `reminderText` — all called from production paths within the package. `backupDir`, `sweepRetention`, `resolveDocker`, `dumpArgv`, `dumpFilename`, `filePrefix`, `containerName`, `retention` — all called from `BackupHandler.Run`.
+- **No goroutine leaks.** `backup.go` uses `exec.CommandContext` with `defer cancel()`; `agentjob.go` applies a `context.WithTimeout` + `defer cancel()` to the entire agent run. No background goroutines are spawned without joining.
+- **No unchecked errors that matter.** `os.MkdirAll`, `exec.CommandContext`, `os.Stat`, `json.Marshal` in `assistantAskUserTurn` (the `_` discard is acceptable — the input is a compile-time-known map, never fails), and all DB-adjacent paths surface errors correctly.
+- **No resource leaks.** `exec.Command.CombinedOutput()` closes the subprocess; no `io.ReadCloser` or `*sql.Rows` are opened.
+- **No races.** All handlers are value receivers with no shared mutable state. The `budget` shared across `drain` iterations uses `sync/atomic` internally (verified in `internal/agent/budget.go`).
+- **No dead code.** All five exported types (`HandlerMeta`, `Job`, `Handler`, `AgentDeps`, `SnippetSweeper`) and all exported consts, vars, and constructors are consumed by `cmd/aura/serve.go` or the test suite. Unexported helpers (`childRegistry`, `newAgentWorker`, `drain`, `newJobBudget`, `assistantAskUserTurn`, `askUserKind`, `agentJobGoal`, `appendLine`, `backupDir`, `sweepRetention`, `reminderText`) are all reachable from the package's `Run` paths.
+- **No not-wired handlers.** Every `TaskKind` constant (`KindReminder`, `KindAgentJob`, `KindBackupPostgres`, `KindBackupNeo4j`, `KindSkillTTLSweep`) is registered in the dispatcher map at `cmd/aura/serve.go:232–241`.
+- **No integer overflow risks.** `StepBudget int` is passed to `agent.NewBudget` which validates the `int32` range internally.
+- **No SQL/JSON mishandling.** JSON payloads are unmarshalled into typed structs; errors are handled (silently degraded for `reminder`, error-returned for `agent_job`).
+- **No context propagation gaps.** All long-running operations receive the `ctx` from `Run`, further narrowed by `context.WithTimeout`.

@@ -1,14 +1,14 @@
 # Audit: internal/llm
 
-**Verdict:** needs-work — one medium bug (swallowed mid-stream parse error), one low dead-code field, two low dead-code constants.
+**Verdict:** needs-work — one high-severity swallowed error that silently truncates stream failures; three low-severity dead-code items.
 
-**Counts:** critical 0 / high 0 / medium 1 / low 3
+**Counts:** critical 0 / high 1 / medium 1 / low 3
 
 ## Findings
 
 ---
 
-### [MEDIUM][BUG] mid-stream parse error silently swallowed — channel closes without any error signal
+### [HIGH][BUG] parseSSE error silently swallowed — consumer receives a clean channel close on mid-stream failure
 
 **Location:** `internal/llm/openai_compat/client.go:145–165`
 
@@ -16,124 +16,110 @@
 
 **Detail:**
 
-`parseSSE` can return a non-nil error for two causes: a malformed SSE chunk (JSON parse failure) and a non-EOF transport read failure. In both cases the `Stream` goroutine captures the error into `errString`, logs it to the trace file, and exits — closing `out` with no in-band error signal.
+The goroutine launched by `Stream` calls `parseSSE(resp.Body, emit)` and captures the returned error in `parseErr`. The error is serialized to a string and written to the reasoning trace (`reasoningtrace.Record`) but is **never forwarded to the consumer**. When `parseSSE` returns a non-nil error (e.g. a malformed JSON chunk — `"openai_compat: malformed SSE chunk: ..."` — or a transport read error), the goroutine still closes `out` normally. The caller's `for c := range ch` loop exits cleanly with zero indication that the stream was truncated. `llm_agent.go:consume()` then returns a partial text / empty finish_reason with no error, and the agent loop treats the turn as a normal "no finish reason" case. A partial tool-call accumulation would produce an invalid JSON arguments string that is silently dispatched.
 
 ```go
+// client.go:145–165 (abridged)
 res, parseErr := parseSSE(resp.Body, emit)
-errString := ""
-if parseErr != nil {
-    errString = parseErr.Error()   // logged only
-}
-reasoningtrace.Record(...)         // trace only
+// parseErr only goes to the trace — never sent on `out`, never returned
 if res.hasUsage {
-    u := res.usage.toLLMUsage()
-    emit(llm.Chunk{Usage: &u})     // still emits usage even on error
+    emit(llm.Chunk{Usage: &u})
 }
-// goroutine exits → close(out)
+// goroutine exits, `out` is closed — consumer sees a normal end-of-stream
 ```
 
-The consumer (`llm_agent.go:consume`) iterates `for c := range ch` and simply terminates when the channel closes, returning `finish = ""` (empty finish reason) and zero usage. The agent loop then treats this as a normal empty-response turn and routes to `maybeRecoverEmptyResponse()` or `finalize()` — masking an infrastructure failure as a model-side empty reply. A malformed-JSON chunk mid-stream (e.g., a provider sending a partial chunk on network failure) is therefore indistinguishable to the agent from a clean context-cancel or an intentional empty response.
-
-The `llm.Client.Stream` doc comment says "closes the channel on [DONE], EOF, or ctx-cancel" — parse errors are not listed, and there is no `Chunk.Err` field in the interface.
+The `llm.Client` interface contract documents that `Stream` returns `(nil, error)` on pre-flight errors; there is no mechanism to carry a post-flight error through the channel. This is an architectural gap: the channel is `chan llm.Chunk` with no error slot.
 
 **Suggested fix:**
 
-Add a sentinel chunk type to signal in-band parse errors, or add an `Err` field to `llm.Chunk`:
-
-```go
-type Chunk struct {
-    // ... existing fields ...
-    Err error // non-nil on a mid-stream parse/transport error
-}
-```
-
-Then in the goroutine:
-
-```go
-if parseErr != nil {
-    emit(llm.Chunk{Err: parseErr})
-}
-```
-
-And in `consume`, check `c.Err != nil` and propagate it as an infra failure via `yield(nil, err)`. Alternatively, keep the current channel-based design but update the doc comment to document the silent-close-on-error behavior so callers can detect truncation via `finish == ""` and missing usage.
+Add an error chunk variant to `llm.Chunk` (e.g. `Err error`) or use a separate `errCh <-chan error` companion. At minimum, the goroutine should emit a sentinel chunk (e.g. `llm.Chunk{FinishReason: "error"}`) so `consume()` can detect and return an error to the agent loop rather than treating it as a clean stop. A concrete short-term fix: define `Chunk.Err error`; `parseSSE` path emits `llm.Chunk{Err: parseErr}` before closing the channel; `consume()` checks `c.Err != nil` and propagates it.
 
 ---
 
-### [LOW][DEAD-CODE] `toolCallAcc.firstSeen` field written but never read
+### [MEDIUM][NOT-WIRED] ReasoningEffortXHigh / ReasoningEffortMedium / ReasoningEffortMinimal declared but never used in production
 
-**Location:** `internal/llm/openai_compat/accumulate.go:26–54`
+**Location:** `internal/llm/client.go:133,135,137`
 
 **Confidence:** high
 
 **Detail:**
 
-The `toolCallAcc` struct has a `firstSeen int` field and `accumulator.order int` counter that are both written in `add()`:
+Three of the five `ReasoningEffort` constants are never referenced outside the definition file:
 
-```go
-acc = &toolCallAcc{firstSeen: a.order}
-a.order++
-```
+- `ReasoningEffortXHigh = "xhigh"` (line 133)
+- `ReasoningEffortMedium = "medium"` (line 135)
+- `ReasoningEffortMinimal = "minimal"` (line 137)
 
-The field is documented as "records arrival order as a stable tiebreaker." However, `finalize()` sorts by `index` (via `sort.Ints(indices)`), never by `firstSeen`. The `firstSeen` field and `a.order` counter are dead — their values are never consumed.
-
-Verified with `grep -r firstSeen D:/Aura --include="*.go"`: only two write sites, zero read sites.
+Grep across `D:/Aura/**/*.go` confirms the only uses of `ReasoningEffort*` values in production code are `ReasoningEffortHigh`, `ReasoningEffortLow`, and `ReasoningEffortNone` (in `internal/agent/prompt/reasoning_policy.go`). The three orphan constants do not appear in any non-definition, non-test file. They are exported, so technically not dead code by the Go compiler, but there is no wiring path to OpenRouter for them and no test exercises any behaviour specific to these values.
 
 **Suggested fix:**
 
-Remove the `firstSeen int` field from `toolCallAcc` and the `order int` field from `accumulator`. If arrival-order tiebreaking is ever needed (parallel multi-call streams where indices collide), add it back with a sorting key in `finalize()`.
+If the intent is forward-compat scaffolding, add a comment marking them as reserved. If they are genuinely not planned, remove them to reduce the API surface a caller can accidentally mis-use (e.g. `"xhigh"` is not a documented OpenRouter effort level as of this audit).
 
 ---
 
-### [LOW][DEAD-CODE] `ReasoningEffortXHigh` and `ReasoningEffortMinimal` — exported constants with zero non-definition references
+### [LOW][DEAD-CODE] firstSeen / order fields in accumulator are written but never read
 
-**Location:** `internal/llm/client.go:133,137`
+**Location:** `internal/llm/openai_compat/accumulate.go:26,32,41,53–54`
+
+**Confidence:** high
+
+**Detail:**
+
+`toolCallAcc.firstSeen int` is assigned (`firstSeen: a.order`) when a new index is first seen, and `accumulator.order int` is incremented with each new index. The comment says "records arrival order as a stable tiebreaker," but `finalize()` sorts only by the wire index (`sort.Ints(indices)` — line 83) and never reads `firstSeen` or `order`. The two fields are entirely inert.
+
+**Suggested fix:**
+
+Remove `firstSeen` from `toolCallAcc` and `order` from `accumulator`. If arrival-order tiebreaking is needed in the future (e.g. for a provider that sends out-of-order indices), add it back then.
+
+---
+
+### [LOW][DEAD-CODE] Loop-variable shadow `tc := tc` is a no-op in Go 1.22+
+
+**Location:** `internal/llm/openai_compat/sse.go:73`
 
 **Confidence:** high
 
 **Detail:**
 
 ```go
-ReasoningEffortXHigh   ReasoningEffort = "xhigh"
-ReasoningEffortMinimal ReasoningEffort = "minimal"
+for _, tc := range acc.finalize() {
+    tc := tc   // line 73: pre-1.22 loop-capture guard
+    if !emit(llm.Chunk{ToolCall: &tc}) {
 ```
 
-Verified with `grep -r "ReasoningEffortXHigh\|ReasoningEffortMinimal" D:/Aura --include="*.go"`: only the definition lines match. No production code, no test code references them.
-
-`ReasoningEffortMedium` (`"medium"`) is similarly unused: `grep "ReasoningEffortMedium"` returns only its definition line.
-
-These are forward-compat stubs for effort levels that neither `reasoning_policy.go` nor any caller currently exercises. They carry no runtime cost but pollute the exported API surface.
+`go.mod` declares `go 1.26.4`. Since Go 1.22 the loop variable is scoped per iteration; the re-declaration is a no-op. It is harmless but constitutes dead code that misleads readers into thinking a capture problem exists.
 
 **Suggested fix:**
 
-Either document them explicitly as "reserved for future use" (a `//nolint:unused` comment or a `_ = ReasoningEffortXHigh` compile-check in a `_test.go` file to confirm they build), or remove them until the caller that needs them is written. At minimum, add a comment stating they are intentionally unused stubs, so a future linter run does not report a false finding.
+Remove the `tc := tc` line. Modern Go loop semantics make it unnecessary.
 
 ---
 
-### [LOW][DEAD-CODE] `ReasoningEffortMedium` — exported constant with zero non-definition references
+### [LOW][NOT-WIRED] SupportsAudio is tested but never called in production code
 
-**Location:** `internal/llm/client.go:135`
+**Location:** `internal/llm/models.go:51–53`
 
 **Confidence:** high
 
 **Detail:**
 
-See llm-3 above. Listed separately for tracking clarity. `ReasoningEffortMedium = "medium"` has zero references outside its own definition line.
+`SupportsAudio(model string) bool` is defined and tested in `internal/llm/models_test.go`. Grep across `D:/Aura/**/*.go` finds zero non-test, non-definition references: the function is not called by any production package (channels, agent, config, runner, cmd/aura). The doc-comment acknowledges "audio is sidecar-routed this phase" and the function "exists for forward-compat symmetry," but there is no wiring site at all — not even a guarded branch.
 
-**Suggested fix:** Same as llm-3.
+**Suggested fix:**
+
+This is intentional forward-compat scaffolding per the doc-comment; keep it. Consider adding a `//nolint:unused` annotation or a `_ = SupportsAudio` compile-time check test to make the intent explicit and prevent a future linter run from suggesting removal.
 
 ---
 
-## Clean sections
+## What was checked and found clean
 
-The following aspects were checked and found clean:
-
-- **Nil-pointer / unchecked errors:** `Load()` guards every returned pointer before use; `applyFileConfig` / `overlayFile` handle nil `fileConfig` fields correctly. `newHTTPError` calls `io.ReadAll` on a `LimitReader` — no unbounded read. `resp.Body.Close()` is always deferred after a successful `Do()`.
-- **Context propagation:** `http.NewRequestWithContext` carries `ctx` into the HTTP round-trip; `bufio.Reader.ReadString` unblocks when the connection closes on ctx-cancel (~100ms). The `emit` select properly exits on `ctx.Done()`.
-- **Goroutine leaks:** The one goroutine spawned by `Stream` is guaranteed to exit: `resp.Body.Close()` is deferred, and the `emit` select exits on ctx-cancel. `DisableKeepAlives: true` prevents lingering `persistConn` goroutines.
-- **Resource leaks:** `resp.Body` is closed either by `newHTTPError` (non-2xx) or by the `defer func() { _ = resp.Body.Close() }()` in the goroutine (2xx).
-- **Races:** The goroutine closes over `ctx`, `out`, and `resp` — all of which are owned exclusively by the goroutine after launch; `ctx` is read-only from the goroutine side. `accumulator` is single-goroutine by design.
-- **Config load chain:** The 4-tier precedence (default < .env < llm.json < env overrides) is correct; numeric env overrides are fail-fast; the bool toggle is non-fatal (intentional). `overlayFile` never clobbers defaults with a nil pointer.
-- **Price / cost logic:** `CostUSDValue` short-circuits to the provider's reported cost when non-nil (correct D-18 precedence); the table fallback uses exact key match — consistent with all callers passing `cfg.Model` verbatim (which carries the full `:exacto` suffix).
-- **SSE framing:** `bufio.Reader.ReadString('\n')` avoids the `bufio.Scanner` 64 KiB token cap; `[DONE]` is checked before `json.Unmarshal`; `:` comment lines and blank lines are skipped; EOF-without-DONE finalizes correctly.
-- **Tool-call accumulation:** Delta concatenation in `add()` and `sort.Ints`-ordered emission in `finalize()` are correct; the `index`-based sort is deterministic.
-- **Model capability table:** `normalizeModelID` strips `:` suffixes before the map lookup; the conservative `false` default for unknown models is correct for threat T-13-03-UnknownModelVision.
+- **Resource leaks**: `resp.Body` is closed in a `defer` inside the goroutine regardless of `parseSSE` outcome. The `newHTTPError` path closes the body before returning. No unclosed file, row, or ticker found.
+- **Goroutine leaks**: The `emit` select on `ctx.Done()` ensures the stream goroutine exits on cancellation. `DisableKeepAlives: true` prevents lingering `persistConn` goroutines.
+- **Context propagation**: `http.NewRequestWithContext` carries the caller's ctx through to the transport; body read unblocks on cancel.
+- **Races**: The `accumulator` is single-goroutine (owned by the one stream goroutine). `Client.cfg` is read-only after construction. `modelCapabilityTable` is a package-level var written only at init. No shared mutable state found.
+- **JSON/nil safety**: `wireChunk` uses value types for Choices; `usageWire.Cost` is `*float64` and is correctly propagated as a pointer. `json.Unmarshal` on `[]byte(payload)` allocates a new slice — no aliasing risk.
+- **Config load-order**: The 4-tier precedence is correctly implemented; `applyEnvOverrides` is fail-fast on malformed numerics; `envBool` is intentionally non-fatal. `ErrMissingAPIKey` is a proper sentinel compared with `errors.Is`.
+- **Price table**: `defaultPrices()` returns a fresh map each call — no mutation of a shared seed.
+- **`SupportsVision`**: `normalizeModelID` strips `:suffix` and whitespace before a full-id map lookup — the conservative-false-for-unknown-models invariant is correct.
+- **`CostUSDValue` / `CostUSD`**: Delegation is correct; `"n/a"` is returned (not "$0") for unknown models.

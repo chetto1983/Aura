@@ -1,128 +1,141 @@
 # Audit: internal/agui
 
-**Verdict:** needs-work — two real issues: one security gap (URL userinfo regex misses passwords containing `/`), one not-wired exported helper, one low-severity data-loss in error sanitization.
+**Verdict:** needs-work — one protocol-correctness bug in Fanout, one latent goroutine leak in the SSE pump, and one minor constant-duplication drift risk.
 
-**Counts:** critical 0 / high 1 / medium 1 / low 1
+**Counts:** critical 0 / high 1 / medium 2 / low 1
+
+---
 
 ## Findings
 
+### [HIGH][BUG] agui-1: Fanout producer does not stop after converting a source error to RUN_ERROR
+
+**Location:** `internal/agui/fanout.go:85-100`
+
+**Confidence:** high
+
+**Detail:**
+
+After converting a source error to a `RunErrorEvent` (line 86) the producer goroutine falls through to the send loop and then — crucially — re-enters the `for ev, err := range f.source` loop. If the source generator yields additional events after the error (or any future source is written that does not terminate immediately after yielding an error), those events are delivered to subscribers AFTER `RUN_ERROR`, violating the AG-UI run-lifecycle protocol (`RUN_ERROR` must be terminal).
+
+Compare to `streamSSE` (server.go:203-204) which does:
+```go
+s.pumpSend(ctx, out, events.NewRunErrorEvent(sanitizeErr(err)))
+return  // ← stops the producer
+```
+
+The Fanout producer lacks the corresponding `return`:
+```go
+if err != nil {
+    ev = events.NewRunErrorEvent(err.Error())
+    // ← no return; falls through to send and back to the range loop
+}
+```
+
+The existing test `TestFanoutSourceErrorYieldsRunError` does not catch this because `sourceError` terminates naturally after `yield(nil, err)` — the source function body ends, so the range loop exits anyway. The bug is latent: any source that yields `(nil, err)` without returning would trigger post-error delivery.
+
+In current production wiring, `Fanout` is always given a `Translate(...)` output, which maps all errors to `(event, nil)` pairs and never propagates errors in the `err` slot. The error branch in the Fanout producer is therefore dead code in production. The bug only fires if Fanout is composed with a raw (non-Translate-wrapped) source.
+
+**Suggested fix:**
+
+```go
+if err != nil {
+    ev = events.NewRunErrorEvent(err.Error())
+    // send RUN_ERROR then stop — it is a terminal frame
+    for i, sub := range subs {
+        send(ctx, sub, ev, i)
+    }
+    return
+}
+```
+
+Or more simply, add `return` after the send loop when `err != nil` was the trigger.
+
 ---
 
-### [HIGH][BUG] `urlUserinfoPattern` misses passwords containing `/` — base64 secrets leak
+### [MEDIUM][BUG] agui-2: Goroutine leak in streamSSE when write error does not cancel the request context
+
+**Location:** `internal/agui/server.go:196-229`
+
+**Confidence:** medium
+
+**Detail:**
+
+When `writer.WriteEventWithType(...)` returns an error (line 222), the consumer goroutine returns (line 223). The comment says "let the producer drain via ctx". For the producer goroutine to unwind, `ctx.Done()` must fire. In practice — a client disconnect — Go's HTTP server cancels `r.Context()`, so this usually works.
+
+The leak scenario: a write error that is NOT caused by a client disconnect (e.g. a buggy ResponseWriter implementation, a test double that returns an error without cancelling ctx). In that case `ctx` stays live, and `pumpSend` for a lifecycle frame (blocking select with only `out <- ev` and `ctx.Done()`) blocks forever on a full channel that nobody is draining. The producer goroutine leaks.
+
+The existing goroutine test (`TestServer_DisconnectClosesPump`) uses `cancel()` before `resp.Body.Close()`, so it always cancels ctx — it does not exercise the write-error-without-ctx-cancel path.
+
+**Suggested fix:** When the consumer returns due to a write error, cancel the per-connection derived context so the producer is guaranteed to unwind regardless of whether the HTTP server cancels `r.Context()`:
+
+```go
+ctx, cancel := context.WithCancel(r.Context())
+defer cancel()
+// ... pass ctx to streamSSE; the deferred cancel fires when handleRun returns,
+// covering both the success path and any write-error bail-out.
+```
+
+Alternatively: add a dedicated `done` channel that the consumer closes on return, and select on it in `pumpSend`.
+
+---
+
+### [MEDIUM][DEAD-CODE] agui-3: `artifactEventName` internal alias is a maintenance liability
+
+**Location:** `internal/agui/translator.go:23-25`
+
+**Confidence:** high
+
+**Detail:**
+
+```go
+const ArtifactEventName = "aura.artifact"           // exported canonical name
+const artifactEventName = ArtifactEventName          // package-internal alias
+```
+
+The alias was introduced to avoid touching existing translator code after exporting the name. It is referenced only at line 110 of `translator.go` and in two test assertions in `translator_artifact_test.go`. All three references could use `ArtifactEventName` directly. The alias adds an invisible indirection — a reviewer reading line 110 sees `artifactEventName` and must check whether it matches `ArtifactEventName`. If the exported constant is ever renamed, the alias silently tracks it (since it's a const alias, not a string literal), so drift is not possible in Go. The maintenance risk is low but the alias is unnecessary complexity.
+
+Grep confirms zero external references to `artifactEventName` (it is unexported and only appears in `internal/agui`).
+
+**Suggested fix:** Replace the three uses of `artifactEventName` with `ArtifactEventName` and delete the alias constant.
+
+---
+
+### [LOW][BUG] agui-4: `urlUserinfoPattern` does not redact token-as-user with empty password
 
 **Location:** `internal/agui/server.go:381`
 
-**Confidence:** high
+**Confidence:** medium
 
 **Detail:**
 
-`urlUserinfoPattern` is:
+The pattern `(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^\s@]+@` requires the password segment `[^\s@]+` to be non-empty (one or more chars). The common Git/GitHub pattern of embedding a PAT as the username with an empty password — `https://ghp_TOKEN:@github.com/owner/repo` — is not redacted:
+
 ```
-(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@
-```
-
-The password character class `[^/\s@]+` excludes `/`. A password containing a literal slash (base64-encoded secrets commonly do: `AeP/6gR+Xq==`) causes the regex to fail to match the entire userinfo block, so the password leaks into the sanitized error string verbatim.
-
-Verified live:
-- `"https://user:AeP/6gR+Xq==@secret-host/db"` → NOT redacted (full string passes through)
-- `"https://admin:pass/word@host.example.com/v1"` → NOT redacted
-
-The `secretPattern` before this pass only covers five DB schemes (`postgres/mysql/mongodb/redis/amqp`). An HTTP/gRPC/webhook URL with a base64 password hits `urlUserinfoPattern` exclusively. The five DB schemes also commonly use base64 passwords generated by Kubernetes/Docker secrets. If such a DSN uses a scheme not in `secretPattern` (e.g. `cockroachdb://`) and contains a `/` in the password, it also leaks.
-
-**Suggested fix:**
-
-Change the password character class to allow `/`:
-```go
-// Before:
-var urlUserinfoPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^/\s@]+@`)
-// After (allow slash in password, stop only at whitespace or @):
-var urlUserinfoPattern = regexp.MustCompile(`(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:[^\s@]+@`)
+Input:  "error cloning https://ghp_PAT12345:@github.com/owner/repo"
+Output: "error cloning https://ghp_PAT12345:@github.com/owner/repo"
+// ghp_PAT12345 is NOT redacted
 ```
 
-Changing `[^/\s@]+` → `[^\s@]+` for the password segment allows slash while still stopping at whitespace and `@`. The user segment `[^/\s:@]+` correctly prohibits `/` (RFC 3986 compliant) and remains unchanged.
+This can appear in error strings from git operations, webhook callbacks, or MCP server configuration. The `secretPattern` does not cover `https://` URLs (only postgres/mysql/mongodb/redis/amqp schemes), so this slips through both passes.
 
-Add a test case:
-```go
-"base64 password with slash": {
-    in: errors.New("dial https://user:AeP/6gR+Xq==@host/db failed"),
-    wantNoSub: "AeP/6gR",
-},
-```
+The existing `TestSanitizeErr` test does not cover this case.
+
+**Suggested fix:** Change `[^\s@]+` to `[^\s@]*` (zero-or-more) to match the empty-password form, OR add a separate pattern `(?i)([a-z][a-z0-9+.-]*://)[^/\s:@]+:@` for the `token:@host` shape.
 
 ---
 
-### [MEDIUM][NOT-WIRED] `agui.Subscribe` exported helper has zero production callers
+## Clean
 
-**Location:** `internal/agui/client.go:38`
+All other aspects checked and found clean:
 
-**Confidence:** high
-
-**Detail:**
-
-`Subscribe` is an exported convenience function that composes `Translate + NewFanout + Fanout.Subscribe + Fanout.Run` for the single-consumer use case. It is referenced only in `internal/agui/fanout_test.go:315` (a type-alias pin test). No production call site exists anywhere in the repository.
-
-The actual production consumer (`internal/channels/telegram/agui_subscriber.go`) uses `NewFanout` directly with three subscribers (`statusCh`, `contentCh`, `artifactCh`), because the channel always needs fan-out to three, never to one. No planned future caller is documented beyond "amendment #35 agui_subscriber.go seam" (which is already implemented via direct `NewFanout`).
-
-This is not dead code in the `go build` sense (the package compiles and the test exercises it), but it is not-wired as a production feature: the function's stated purpose (single-consumer convenience for a channel consumer) has no consumer.
-
-**Suggested fix:**
-
-Either:
-1. Unexport (`subscribe`) and keep it as an internal helper used only by its test (preferred — avoids polluting the API surface); or
-2. Delete it if there is no foreseeable single-consumer caller (Telegram will always be ≥3 subscribers).
-
----
-
-### [LOW][BUG] `tokenPattern` greedily consumes trailing non-whitespace after credential value — query parameters silently dropped from error messages
-
-**Location:** `internal/agui/server.go:386`
-
-**Confidence:** high
-
-**Detail:**
-
-`tokenPattern` uses `\S+` to match the credential value. Because `\S+` is greedy and matches any non-whitespace character, when a credential appears as a URL query parameter followed by `&param=value`, the entire non-whitespace run is consumed:
-
-```
-"api_key=secretval123&x=1"
-        ↑           ^^^
-        \S+ matches all of this including &x=1
-```
-
-Result: `"api_key=[redacted]"` — `&x=1` is silently lost from the sanitized error string.
-
-This is not a security regression (the secret `secretval123` IS redacted), but it is a **diagnostic data-loss** issue: query parameters appearing after the credential in a URL query string are dropped from the error message without any indication, making the sanitized error less useful for debugging.
-
-The existing `TestSanitizeErr` test for the `api_key` case only checks `wantNoSub: "secretval123"` (secret is gone) and does not assert that `&x=1` is preserved, so this loss is not caught by the test suite.
-
-**Suggested fix:**
-
-Narrow the value character class to stop at `&`, `,`, `;`, `"`, `'` (common token terminators in error strings) while still greedily capturing the credential body:
-
-```go
-var tokenPattern = regexp.MustCompile(`(?i)(bearer\s+|api[_-]?key=|token=)[^\s&,;'"]+`)
-```
-
-This preserves subsequent query parameters like `&x=1` in the sanitized error. Add a test case that asserts both the redaction and the preservation of the trailing parameter.
-
----
-
-## What was checked
-
-**Files read:** `client.go`, `fanout.go`, `server.go`, `translator.go`, `types.go` (all non-test source files in `internal/agui`). Test files (`*_test.go`) read to understand intended behavior.
-
-**Grep coverage across repo:** All `agui.` call sites, `internal/agui` import sites, every exported symbol (`ArtifactEventName`, `Subscribe`, `NewIDGenerator`, `NewServer`, `Translate`, `NewFanout`, `Fanout.Subscribe`, `Fanout.Run`, `ValidateRunInput`, `ErrEmptyThreadID`, `ErrNoMessages`, `IDGenerator`, `ServerConfig`, `Runner`, `ConversationStore`, `Event`, `EventType`).
-
-**Categories verified clean:**
-
-- **Goroutine leaks / concurrency:** `streamSSE` pump goroutine unwinds correctly on both ctx-cancel and write-error paths (Go net/http cancels `r.Context()` on disconnect, so `pumpSend`'s `case <-ctx.Done()` fires). `Fanout.Run` producer goroutine is closed via `defer closeAll(subs)` (always runs, including on source panic). `Subscribe`-before-`Run` invariant enforced by `started.CompareAndSwap` under `mu`. No double-close risk.
-
-- **Mutex safety:** `Fanout.Subscribe` has `defer f.mu.Unlock()` so the deferred unlock fires even if the function panics — the panic-while-holding-mutex concern does not apply. `Fanout.Run` manually unlocks before the second-call panic.
-
-- **Double-sanitization:** The `redactEvent` path in the drain loop and the `sanitizeErr` path in the error branch of `pumpSend` both call `sanitizeString` on `RunErrorEvent.Message`. Since `Translate` never yields a non-nil error (all errors become `RUN_ERROR` events in the event slot), the `sanitizeErr` path is defensive dead code, and double-sanitization is idempotent anyway (`tokenPattern` matching `token=[redacted]` re-emits `token=[redacted]`).
-
-- **Short-circuit in `closeRuns`:** `rs.close(yield) && st.close(yield)` is correct because reasoning and text runs are mutually exclusive (at most one is open at any time), so the second `close()` call is always a no-op returning `true`, and the short-circuit only triggers when the consumer stops iteration — at which point abandoning the (already-false-from-yield) state is correct behavior for an `iter.Seq2` pull iterator.
-
-- **Dead code:** All unexported functions/types/consts are referenced in production paths. The only finding is the exported `Subscribe` helper (above).
-
-- **`sort` vs `slices`:** `stateDeltaOps` uses `sort.Strings`. Not wrong; `slices.Sort` would be the modern idiom but this is not a bug.
+- **nil dereference**: `ev.LLMResponse` is nil-guarded before every field access; `pumpSend` only called with non-nil events; `redactEvent` type-asserts before mutating.
+- **error propagation**: All `conv.Get`/`conv.LoadHistory`/`run.SubmitAnswers` errors are checked; `json.Encoder.Encode` errors are logged (not silently dropped) on the messages endpoint.
+- **race conditions**: `Fanout.subs` mutations are mutex-protected; the `started` atomic is consistent with the mutex; `Server.idgen` is read-only after construction; `redactEvent` mutates only events already dequeued by the sole consumer.
+- **resource leaks**: `streamSSE` producer goroutine closes `out` via `defer close(out)`; Fanout producer closes all subscriber channels via `defer closeAll(subs)`; both unwind on `ctx.Done()`.
+- **CORS logic**: `withCORS` sets ACAO before `next.ServeHTTP`, covering both error responses and the SSE stream.
+- **loop-capture**: Go 1.26.4, not applicable.
+- **`toolResultCallID` branch precedence**: The StateDelta `tool_call_id` key is always a single-key map (verified in `llm_agent_events.go`); no multi-key StateDelta with `tool_call_id` is ever produced, so the branch never silently drops other keys.
+- **`closeRuns` short-circuit**: Both `rs` (reasoning) and `st` (text) state machines are mutually exclusive — proven by the `content` branches' `close(yield)` calls before opening the other; `&&` short-circuit is safe.
+- **`tokenPattern` prefix extraction**: `strings.IndexAny(match, " =\t")` correctly identifies the separator for all three token forms (Bearer space, api_key=, token=) and produces the right prefix in each case.
+- **Wiring**: `agui.NewServer` is mounted in `cmd/aura/serve.go`; `agui.NewFanout`/`Subscribe` are used in `internal/channels/telegram/agui_subscriber.go`; `agui.ArtifactEventName` is consumed in `internal/channels/telegram/artifact.go`.

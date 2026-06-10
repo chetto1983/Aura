@@ -1,150 +1,150 @@
 # Audit: internal/askuser
 
-**Verdict:** needs-work — two medium findings (panic-unsafe transaction, fake/real content mismatch) plus a low doc inconsistency; no critical or high issues.
+**Verdict:** needs-work — three low-severity defects (one aliasing inconsistency, one stale comment with semantic impact, one leaked abstraction); no criticals or highs.
 
-**Counts:** critical 0 / high 0 / medium 2 / low 1
+**Counts:** critical 0 / high 0 / medium 1 / low 3
+
+---
 
 ## Findings
 
-### [MEDIUM][BUG] `MarkResumedBatch` transaction not panic-safe — leaked connection on library panic
+### [MEDIUM][BUG] `fromRow` copies `ResumeContext` defensively but aliases `Options` directly
 
-**Location:** `internal/askuser/store.go:253-292`
+**Location:** `internal/askuser/store.go:333-337`
+
+**Confidence:** high
+
+**Detail:**
+
+```go
+func fromRow(r sqlc.AuraPausedStates) Pending {
+    return Pending{
+        ...
+        Options:       r.Options,                                        // ← shared slice header
+        ResumeContext: append(json.RawMessage(nil), r.ResumeContext...), // ← defensive copy
+    }
+}
+```
+
+`ResumeContext` is copied with `append(nil, ...)` so mutations by the caller cannot reach the sqlc-returned backing array. `Options` is not copied — the returned `Pending.Options` shares the underlying `[]byte` array with the sqlc row. An in-place write to `Pending.Options` (e.g. `pending.Options[0] = '{'`) would corrupt the sqlc buffer.
+
+No caller currently mutates `Options` in-place (all usages unmarshal via `json.Unmarshal` into a fresh struct, which is safe). The risk is latent, but the asymmetry is a footgun for future callers and an internal contract violation relative to `ResumeContext`.
+
+**Suggested fix:**
+
+```go
+Options: append(json.RawMessage(nil), r.Options...),
+```
+
+---
+
+### [LOW][BUG] `autoTerminatedContent` comment claims "accept-shaped" but the action is `cancel`
+
+**Location:** `internal/askuser/store.go:40-43` and `store.go:302`
+
+**Confidence:** high
+
+**Detail:**
+
+The constant comment reads:
+
+```go
+// autoTerminatedContent is the resumed_answer content written when a conversation
+// ends with open pendings (SPEC Req#11). It is an accept-shaped marker so a
+// resumed loop sees a benign answer rather than a missing one.
+```
+
+But the usage encodes the marker with `ActionCancel`, not `ActionAccept`:
+
+```go
+answer, err := encodeAnswer(ResumeAnswer{Action: ActionCancel, Content: autoTerminatedContent})
+```
+
+`ActionCancel` and `ActionAccept` are handled differently by the runner (`runner_resume.go:73-74`): cancel short-circuits to `cancelConversation`, accept injects content and continues. The comment's "accept-shaped" claim is wrong. In practice, `AutoResolveForConversation` is called AFTER the runner has already injected cancelled answers into conversation history and terminated the turn — the `resumed_answer` DB column is then only visible to the `aura paused-states list` CLI, not to any resumed loop. The comment describes non-existent behavior and will mislead future maintainers.
+
+**Suggested fix:** Replace the comment:
+
+```go
+// autoTerminatedContent is stored in resumed_answer when Loop.Stop closes all open
+// pendings for a conversation (SPEC Req#11 / AutoResolveForConversation). The action
+// is ActionCancel — this is a record-keeping marker only; the runner injects the
+// cancellation into conversation history separately before calling AutoResolveForConversation.
+```
+
+---
+
+### [LOW][OTHER] `CleanupResumedOlderThan` leaks `pgtype.Timestamptz` into the public API
+
+**Location:** `internal/askuser/store.go:319`
+
+**Confidence:** high
+
+**Detail:**
+
+```go
+func (s *Store) CleanupResumedOlderThan(ctx context.Context, cutoff pgtype.Timestamptz) error {
+```
+
+All other `Store` methods accept and return plain Go types (`string`, `int`, `json.RawMessage`) and perform pgtype conversion internally. This one method exposes the pgx storage type directly, forcing every caller to import `github.com/jackc/pgx/v5/pgtype` and construct `pgtype.Timestamptz{Time: t, Valid: true}` manually (`cmd/aura/paused_states.go:98`). It is not part of the `PauseStore` interface (runner-facing) so swapping the signature is non-breaking to the interface consumers.
+
+**Suggested fix:**
+
+```go
+func (s *Store) CleanupResumedOlderThan(ctx context.Context, cutoff time.Time) error {
+    if err := s.q.CleanupResumedOlderThan(ctx, pgtype.Timestamptz{Time: cutoff, Valid: true}); err != nil {
+        return fmt.Errorf("cleanup resumed: %w", err)
+    }
+    return nil
+}
+```
+
+---
+
+### [LOW][NOT-WIRED] `Record.ResumedAnswer` discards the `Action` field — action is written to DB but never surfaced to any consumer
+
+**Location:** `internal/askuser/store.go:354-363`, `store.go:215`
 
 **Confidence:** medium
 
 **Detail:**
 
-`MarkResumedBatch` opens a transaction manually with `s.pool.Begin` and guards rollback via a deferred closure that reads the outer `err` variable:
+`decodeResumedAnswer` unmarshals the `{action, content}` JSON but returns only `ans.Content`. The `Record.ResumedAnswer` field (exposed by `ListRecent` to the `aura paused-states list` CLI) carries only the content string; the action (`accept` / `decline` / `cancel`) is silently dropped.
 
 ```go
-tx, err := s.pool.Begin(ctx)
-defer func() {
-    if err != nil {
-        _ = tx.Rollback(ctx)
-    }
-}()
-```
-
-The deferred closure only rolls back when `err != nil`. If a panic occurs at a point where `err` is still `nil` — e.g., during `tx.Exec` before `execErr` is assigned — the deferred closure fires with `err == nil` and skips the rollback. The transaction is never rolled back and the connection is held until the server-side idle timeout.
-
-By contrast, `db.WithTx` (used by every other multi-statement write in the codebase: `AutoResolveForConversation`, `conversations.Store.AppendTurn`, etc.) wraps the deferred in a `recover()` block and rolls back before re-panicking. The internal package comment at `internal/askuser/store.go:55` says both `MarkResumedBatch` and `AutoResolveForConversation` "wrap db.WithTx", which is false — only `AutoResolveForConversation` does.
-
-In practice, panics from `pgx.Tx.Exec` are extremely unlikely. The risk is low-probability but the inconsistency is unnecessary: `MarkResumedBatch` could be refactored to `db.WithTx` the same as its sibling, or the deferred closure should be extended with `recover`.
-
-**Suggested fix:**
-
-Replace the manual `pool.Begin` + deferred rollback with `db.WithTx`:
-
-```go
-func (s *Store) MarkResumedBatch(ctx context.Context, answers map[string]ResumeAnswer) error {
-    if len(answers) == 0 {
-        return nil
-    }
-    return db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
-        for token, ans := range answers {
-            id, err := parseUUID("token", token)
-            if err != nil {
-                return fmt.Errorf("mark resumed batch: %w", err)
-            }
-            answer, err := encodeAnswer(ans)
-            if err != nil {
-                return fmt.Errorf("mark resumed batch %s: %w", token, err)
-            }
-            tag, err := q.DB().Exec(ctx, markResumedSQL, id, answer)
-            if err != nil {
-                return fmt.Errorf("mark resumed batch %s: %w", token, err)
-            }
-            if tag.RowsAffected() == 0 {
-                return fmt.Errorf("mark resumed batch %s: %w", token, ErrPauseNotFound)
-            }
-        }
-        return nil
-    })
+func decodeResumedAnswer(token string, raw []byte) (string, error) {
+    ...
+    var ans ResumeAnswer
+    json.Unmarshal(raw, &ans)
+    return ans.Content, nil  // ans.Action is discarded
 }
 ```
 
-Alternatively, add a `recover` to the existing deferred closure to match `db.WithTx`'s contract.
+The operator querying the CLI cannot distinguish whether a resolved pause was accepted, declined, or cancelled — the STATE column only shows `resolved` vs `pending`, and the ANSWER column only shows the content (which for a cancel is `"user cancelled the request"` or `"<auto-terminated: conversation ended>"`, readable but not machine-distinguishable).
 
----
+This is a UX gap rather than a correctness bug; it is only surfaced as not-wired because the `Action` field is written to every resolved row but no code path reads it back via the Store's public surface.
 
-### [MEDIUM][BUG] Fake `AutoResolveForConversation` writes a different `autoTerminatedContent` than the real store
-
-**Location:**
-- Real constant: `internal/askuser/store.go:43`
-- Fakes: `cmd/aura/cachefakes.go:285`, `cmd/aura/cmdfakes_test.go:248`, `internal/runner/fakes_test.go:377`
-
-**Confidence:** high
-
-**Detail:**
-
-The real `AutoResolveForConversation` writes:
+**Suggested fix:** Add an `Action` field to `Record` and populate it from `decodeResumedAnswer`, or expose the full `ResumeAnswer` on `Record`:
 
 ```go
-const autoTerminatedContent = "<auto-terminated: conversation ended>"
-```
-
-All three in-memory fake implementations write:
-
-```go
-askuser.ResumeAnswer{Action: askuser.ActionCancel, Content: "<auto-terminated>"}
-```
-
-The `Content` values are different strings. Any test or code path that asserts on the `Content` of an auto-resolved pause (e.g., operator tooling that reads `Record.ResumedAnswer` from `ListRecent`) will see different values depending on whether it runs against the real store or a fake. The `autoTerminatedContent` constant is unexported, so the fakes cannot reference it directly — this is the root cause. Because the constant is unexported, it cannot be reused by the fake implementations.
-
-Currently no tests assert on the exact content string of auto-terminated rows (only `action == "cancel"` is checked), so this does not cause test failures today. However, the divergence will silently mask any future behavior that branches on this content, and it means integration tests (real store) and unit tests (fakes) exercise different semantics.
-
-**Suggested fix:**
-
-Export the constant as `AutoTerminatedContent` and reference it from all three fake implementations:
-
-```go
-// internal/askuser/store.go
-const AutoTerminatedContent = "<auto-terminated: conversation ended>"
-```
-
-Then in each fake:
-
-```go
-m.answers[tok] = askuser.ResumeAnswer{Action: askuser.ActionCancel, Content: askuser.AutoTerminatedContent}
+type Record struct {
+    ...
+    Resumed        bool
+    ResumedAction  string // "" when pending; "accept" | "decline" | "cancel" when resolved
+    ResumedAnswer  string
+}
 ```
 
 ---
 
-### [LOW][OTHER] Package doc comment and `db.WithTx` doc incorrectly claim `MarkResumedBatch` uses `db.WithTx`
+## What was checked and found clean
 
-**Location:**
-- `internal/askuser/store.go:5` (package doc)
-- `internal/askuser/store.go:55` (Store type comment)
-- `internal/db/tx.go:12` (db.WithTx doc, out-of-scope file but verifiable)
-
-**Confidence:** high
-
-**Detail:**
-
-Three doc comments assert that `MarkResumedBatch` uses `db.WithTx`:
-
-- `store.go:5`: "db.WithTx for atomic multi-row writes"
-- `store.go:55`: "multi-row atomic writes (MarkResumedBatch, AutoResolveForConversation) wrap db.WithTx"
-- `db/tx.go:12`: lists `askuser.Store.MarkResumedBatch` as a user of `WithTx`
-
-In reality, `MarkResumedBatch` uses a manual `pool.Begin` / defer-rollback pattern. Only `AutoResolveForConversation` calls `db.WithTx`. The docs are stale or were written with a different implementation in mind. This is a documentation bug that obscures the panic-safety gap noted in askuser-1.
-
-**Suggested fix:**
-
-Update the comments to accurately describe the manual transaction pattern, and ideally resolve by fixing askuser-1 (switching to `db.WithTx`).
-
-## Clean (what was checked and found correct)
-
-- **UUID parsing**: all Store methods call `parseUUID` before any DB access; nil-pool tests prove parse short-circuits correctly.
-- **Error classification**: `pgx.ErrNoRows → ErrPauseNotFound` sentinel (GetByToken line 149), `RowsAffected() == 0 → ErrPauseNotFound` (MarkResumed line 237, MarkResumedBatch line 283). No string matching.
-- **Error wrapping**: all `fmt.Errorf` calls use `%w`; no swallowed errors.
-- **Deferred rollback correctness**: in `MarkResumedBatch`, the `err` variable is captured by reference and all error paths assign to it before returning, so the rollback correctly fires on every non-panic error path.
-- **Slice aliasing**: `fromRow` defensively copies `ResumeContext` via `append(json.RawMessage(nil), r.ResumeContext...)` to avoid aliasing with pgx's internal buffer.
-- **`int32` overflow on Priority**: `int32(p.Priority)` at line 129 is unchecked, but Priority is a domain-bounded small integer (0–100 scale); no production caller passes large values. Low enough to not warrant a finding.
-- **`int32` overflow on ListRecent limit**: the `limit <= 0` clamp guarantees `limit >= 1` before cast; all callers pass bounded values (literal 50 or small CLI integers).
-- **Inner `err` shadowing in ListRecent**: the `:=` in the loop body is a new variable scoped to the loop iteration, not the outer `err`; no shadowing hazard.
-- **`encodeAnswer` on `json.Marshal`**: the `%w` wrapper on line 349 uses `%v` for the inner error (`ErrInvalidAnswer` is already the sentinel), which is correct since `json.Marshal(ResumeAnswer{...})` cannot fail (both fields are strings).
-- **Goroutine leaks**: no goroutines are launched; goleak is installed on the integration tier.
-- **Shared mutable state**: `Store` has no fields modified after construction. No races.
-- **Dead code**: `autoTerminatedContent`, `encodeAnswer`, `decodeResumedAnswer`, `fromRow`, `parseUUID` are all reachable. `ErrInvalidAnswer` is exported and returned through the public API even though no current production caller does `errors.Is` on it — this is a valid sentinel for future callers.
-- **Wiring**: all Store methods are exercised via `internal/runner` (interface `PauseStore`), `cmd/aura/chat.go`, `cmd/aura/paused_states.go`, and `internal/agui/server.go`. No method is defined but unreachable.
+- **Transaction lifecycle (`MarkResumedBatch`):** The deferred rollback correctly captures `err` by reference (not value). All early-exit error paths set `err` before `return`, triggering `Rollback`. The Commit-then-Rollback ordering is safe under pgx v5 semantics (aborted tx sends ROLLBACK or drops the connection). No double-commit, no orphaned transaction.
+- **Context propagation:** All public methods accept and thread `ctx` through every DB call. `AutoResolveForConversation` and `MarkResumedBatch` both pass `ctx` to `Begin`/`Rollback`/`Exec`/`Commit`. A cancelled `ctx` at `Rollback` is acceptable (pgx discards the connection).
+- **UUID parsing:** Every UUID-string input goes through `parseUUID`, which returns a clear wrapped error before any DB call. Verified with nil-pool unit tests.
+- **Error sentinel wrapping:** `ErrPauseNotFound` and `ErrInvalidAnswer` are wrapped with `%w` throughout. `errors.Is` chains work correctly.
+- **`MarkResumedBatch` + `AutoResolveForConversation` atomicity:** Batch uses a manual `pool.Begin`/`Rollback`/`Commit` sequence; auto-resolve uses `db.WithTx`. Both are correct.
+- **FIFO ordering:** `ListPendingPausedStates` SQL uses `priority DESC, created_at ASC, token ASC` — the token tiebreaker prevents non-determinism when rows share a transaction timestamp.
+- **`fromRow` copy of `ResumeContext`:** Defensive copy via `append(json.RawMessage(nil), ...)` is correct and non-aliasing.
+- **No goroutine leaks:** The package has no background goroutines. All DB calls are synchronous.
+- **No unchecked errors:** Every `s.q.*` and `tx.*` return value is checked. `Rollback` errors are explicitly discarded (`_ =`) per convention.
+- **Dead code:** `parseUUID`, `encodeAnswer`, `decodeResumedAnswer`, and `fromRow` are all called within the package. No unexported symbol is unreferenced. Exported types (`Store`, `Pending`, `Record`, `InsertParams`, `ResumeAnswer`) and constants (`ActionAccept`, `ActionDecline`, `ActionCancel`, `ErrPauseNotFound`, `ErrInvalidAnswer`) are all consumed by multiple callers across the repo.

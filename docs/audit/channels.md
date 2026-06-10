@@ -1,83 +1,133 @@
 # Audit: internal/channels
 
-**Verdict:** needs-work — three dead-code exports, one misplaced doc comment, one test-only unexported function; no critical bugs or data races found.
+**Verdict:** needs-work — several dead-code and not-wired issues, one logic bug in caption stripping, no critical defects.
 
-**Counts:** critical 0 / high 0 / medium 2 / low 3
+**Counts:** critical 0 / high 0 / medium 3 / low 3
+
+---
 
 ## Findings
 
----
+### [MEDIUM][BUG] tableCaption strips all pipe-containing lines, not just table rows
 
-### [MEDIUM][DEAD-CODE] `EscapeMarkdownV2` is exported but never called in production
-
-**Location:** `internal/channels/telegram/mdv2.go:34`
-
+**Location:** `internal/channels/telegram/renderer.go:265-280`
 **Confidence:** high
 
-**Detail:** `EscapeMarkdownV2` is an exported function for MarkdownV2 escaping. The production renderer (`renderer.go`) uses `RenderTelegramHTML` (HTML parse-mode) and never calls `EscapeMarkdownV2`. No cross-package caller exists anywhere in the repo (`grep telegram.EscapeMarkdownV2` returns zero results). The only callers are within `mdv2_test.go`. The function is dead code that may mislead maintainers into thinking a MarkdownV2 render path is wired.
+**Detail:**
+`tableCaption` excludes every line that contains a `|` character under the assumption that such a line is a markdown table row. This is wrong for prose lines that legitimately contain a pipe character (e.g., `"See Section A | B for details"`, `"options: foo | bar | baz"`). Such prose is silently dropped from the sendPhoto caption, and the user sees a truncated or empty caption with no error.
 
-**Suggested fix:** Unexport to `escapeMarkdownV2` so it's test-accessible in the same package but clearly not a public API, or remove it entirely if the MarkdownV2 path is definitively abandoned in favour of HTML mode.
+**Suggested fix:**
+Only skip lines that match the markdown table row structure (at least one `|`-delimited token that is not the separator row). A minimal fix is to additionally require the line trims to start/end with `|` or contain multiple `|` chars after trimming:
+```go
+// skip only lines that look like a table row (leading/trailing pipe or >=2 separators)
+trimmed := strings.TrimSpace(line)
+if isMDTableRow(trimmed) {
+    continue
+}
+```
+where `isMDTableRow` checks for the `| ... |` pattern or `strings.Count(line, "|") >= 2`.
 
 ---
 
-### [MEDIUM][DEAD-CODE] `PreBlockTable` is exported but never called in production
+### [MEDIUM][DEAD-CODE] `commands.dispatch` is a test-only passthrough never called in production
 
-**Location:** `internal/channels/telegram/tables.go:248`
-
+**Location:** `internal/channels/telegram/commands.go:110-113`
 **Confidence:** high
 
-**Detail:** `PreBlockTable` renders a markdown grid inside a ``` monospace fence as a text fallback. The production `renderer.send` calls `RenderTablePNG` (PNG path) and falls through to `sendText` (HTML path) on PNG failure — it never calls `PreBlockTable`. The only callers are within `tables_test.go`. No cross-package reference exists in the repo. The function is exported dead code.
+**Detail:**
+`dispatch` is an unexported method that simply calls `dispatchRich` and discards the `markup` field:
+```go
+func (c *commands) dispatch(ctx context.Context, chatID int64, text string) (handled bool, reply string) {
+    handled, out := c.dispatchRich(ctx, chatID, text)
+    return handled, out.text
+}
+```
+All 13 call sites are in `commands_test.go`. Production code at `bot_dispatch.go:115` calls `dispatchRich` directly. The method exists only as a test convenience shim that hides the markup return value, causing tests to never exercise the markup path (pagination buttons) through the canonical call chain.
 
-**Suggested fix:** Unexport to `preBlockTable` or remove. If it is intended as a future fallback, wire it into `sendTable` when `RenderTablePNG` fails and the bot cannot send a photo.
+**Suggested fix:**
+Remove `dispatch`. Update the handful of tests that only need the text reply to call `dispatchRich` and ignore `.markup`, or keep a local test helper in the test file itself (unexported to the test package).
 
 ---
 
-### [LOW][DEAD-CODE] `hitl.handleCallback` is an unexported method only called from tests
+### [MEDIUM][DEAD-CODE] `hitl.handleCallback` is never called in production
 
-**Location:** `internal/channels/telegram/hitl.go:106–108`
-
+**Location:** `internal/channels/telegram/hitl.go:106-108`
 **Confidence:** high
 
-**Detail:** `handleCallback` is a thin wrapper around `handleCallbackResult(ctx, data, convID, nil)`. The production dispatch path (`bot_dispatch.go:249`) calls `handleCallbackResult` directly with a non-nil `afterSubmit`. Only `hitl_test.go` calls `handleCallback`. Since both functions live in the same package, the wrapper adds no test isolation; tests can call `handleCallbackResult` with `nil` directly.
+**Detail:**
+```go
+func (h *hitl) handleCallback(ctx context.Context, data, convID string) (resumed bool) {
+    return h.handleCallbackResult(ctx, data, convID, nil).resumed
+}
+```
+All 7 call sites are in `hitl_test.go`. Production dispatch at `bot_dispatch.go:249` calls `handleCallbackResult` directly with the `afterSubmit` callback (which disarms the keyboard). Tests that use `handleCallback` never exercise the keyboard-disarm path, so the production `afterSubmit` logic is untested through this method.
 
-**Suggested fix:** Delete `handleCallback`; update tests to call `h.handleCallbackResult(ctx, data, convID, nil).resumed` explicitly. Alternatively, keep it as an unexported convenience, but annotate with `// test helper` so it is not confused with a wired path.
+**Suggested fix:**
+Remove `handleCallback`. Update tests to call `handleCallbackResult` (with `nil` for `afterSubmit`) — or, if the `afterSubmit` path deserves explicit coverage, add a test for it.
 
 ---
 
-### [LOW][DEAD-CODE] `commands.dispatch` is an unexported method only called from tests
+### [LOW][DEAD-CODE] Dangling orphan doc comment `capRunesTail` with no function body
 
-**Location:** `internal/channels/telegram/commands.go:110–113`
-
+**Location:** `internal/channels/telegram/status_pane.go:355`
 **Confidence:** high
 
-**Detail:** `dispatch` wraps `dispatchRich` and returns only the text field of `commandReply`, discarding the markup. The production text handler (`bot_dispatch.go:115`) calls `dispatchRich` directly. Only `commands_test.go` calls `dispatch`. It is test-only dead code.
+**Detail:**
+The file ends with:
+```go
+// capRunesTail truncates s to at most n runes, preserving the newest content.
+```
+There is no `func capRunesTail(...)` definition anywhere in the repo. The symbol is not referenced by any call site. This is a leftover doc comment from a function that was either never written or was deleted without removing its comment.
 
-**Suggested fix:** Delete `dispatch`; update tests to call `dispatchRich` directly (they can discard the markup field). This removes a wrapper that could mislead a reader into thinking plain-text dispatch is wired in production.
+**Suggested fix:**
+Delete the trailing comment line.
 
 ---
 
-### [LOW][BUG] Doc comment for `promptPendingPause` is misplaced above `hitlHandlesReply`
+### [LOW][NOT-WIRED] `channels.Registry.Register` has no mutex, creating an API footgun
 
-**Location:** `internal/channels/telegram/bot_dispatch.go:435–441`
+**Location:** `internal/channels/registry.go:46-48`
+**Confidence:** medium
 
+**Detail:**
+`Register` writes to `r.channels` map without holding `r.mu`:
+```go
+func (r *Registry) Register(c Channel) {
+    r.channels[c.Name()] = c
+}
+```
+`r.mu` protects `r.started` but not `r.channels`. If `Register` were ever called concurrently with `StartAll` (which iterates `r.channels`), a data race would occur. In the current composition root (`serve_channels.go:75-76`) `Register` is called synchronously before `StartAll`, so this is not a live race today. However the API contract is misleading — callers have no indication that `Register` is not goroutine-safe.
+
+**Suggested fix:**
+Either lock `r.mu` inside `Register` (trivial: one-liner), or add a doc comment to `Register` that explicitly says "must be called before StartAll; not goroutine-safe after StartAll is invoked".
+
+---
+
+### [LOW][DEAD-CODE] `EscapeMarkdownV2` and `PreBlockTable` are exported but never called in production
+
+**Location:** `internal/channels/telegram/mdv2.go:34`, `internal/channels/telegram/tables.go:248`
 **Confidence:** high
 
-**Detail:** The comment block at lines 435–441 ("promptPendingPause renders the FIRST unresolved pause for the chat…") describes `promptPendingPause` (defined at line 483), but is placed immediately before `hitlHandlesReply` (defined at line 442). Go tooling (godoc, IDEs) will render this as the doc comment for `hitlHandlesReply`, and `promptPendingPause` will appear undocumented. The misplacement is a copy-paste residue from a refactor.
+**Detail:**
+Both functions are exported (uppercase) but their only callers are in `*_test.go` files within the same package. `EscapeMarkdownV2` is superseded by the HTML render path (`RenderTelegramHTML` via `gotg_md2html`). `PreBlockTable` is documented as a "zero-dependency fallback" but the renderer never calls it — when `RenderTablePNG` fails, the renderer falls through to `sendText` (plain text), not `PreBlockTable`. The mdv2.go file comment acknowledges the MarkdownV2 mode is "locked in-tree by amendment #4" for a future switch, so these may be intentionally preserved. If that is the case, they should be documented as such rather than appearing to be active code.
 
-**Suggested fix:** Move the comment block to line 483 (immediately before `func (t *Telegram) promptPendingPause`), and add an accurate doc comment for `hitlHandlesReply` explaining its deduplication role.
+**Suggested fix:**
+If these are intentionally kept for a future mode switch: add a package-level comment or a `//nolint:deadcode` annotation explaining why. If the MarkdownV2 path is deferred indefinitely: remove and restore when the renderer switches modes.
 
 ---
 
-## Clean
+## What was checked and found clean
 
-The following areas were checked and found clean:
-
-- **Goroutine lifecycle**: `pulseChatAction` (bot_typing.go) uses a done-channel + `sync.Once` + `<-finished` join — goleak-clean. Turn goroutines are tracked via `t.wg.Add(1)` / `defer t.wg.Done()`. Async document goroutines tracked via `documentsClient.wg`. All three are drained in `Stop`.
-- **Mutex discipline**: `t.mu` guards `t.bot`, `t.started`, `t.cmds`, `t.docs`, `t.tts`, `t.hitlRepliesHandled`. Every field is read/written under the lock at handler registration time. Handler goroutines read these fields after `buildDispatch` completes under `mu`, so no race.
-- **`hitlRepliesHandled` deduplication**: Telebot fires `OnReply` before `OnText` for a reply message (verified in `gopkg.in/telebot.v4@v4.0.0-beta.7/update.go:84–88`). `markHitlReplyHandled` is called in `onReply` before `takeHitlReplyHandled` in `onText`, so the dedup key is always present when `onText` checks it. The map is guarded by `t.mu`.
-- **`callbackData` panic**: Only reachable at call sites that construct the data: approval (`token|accept|yes` ≈ 45 bytes), decline (`token|decline|` ≈ 45 bytes), cancel (`token|cancel|` ≈ 44 bytes), choice (`token|accept|<idx>` ≤ 46 bytes for 2-digit index). All token values come from UUID v7 (36 bytes fixed). The 64-byte ceiling is not reachable in normal operation; the guard is correct.
-- **`documentsClient.Stop` + `stopOnce`**: The poller is stopped before `docs.Stop` is called. No new `OnDocument` messages arrive post-stop, so no new `wg.Add` races the completed `wg.Wait`.
-- **Error classification**: SQLSTATE-based via `errors.As`+`pgErr.Code`, never string matching, in `store.go`. Consistent with the project idiom.
-- **Resource cleanup**: `downloadFile` and all sidecar HTTP responses defer-close their `ReadCloser`/`Body`. No resource leaks found.
-- **`Registry` locking**: `r.mu` guards only `r.started` (written by StartAll, read by StopAll). `r.channels` is written by `Register` and read by `StartAll`/`StopAll` — always sequentially (setup then start), never concurrently. No race in the daemon lifecycle.
-- **`speakIfNeeded` empty convID**: `VoiceModePref("")` is a documented stub (Phase 14 deferred). The empty string is harmless until the real pref store lands; the call site will need updating then.
+- **Nil-pointer dereference risk:** Every handler guards `msg.Chat == nil` and similar before accessing fields. `t.sender(c)` has a fallback to `t.bot` when the assertion fails.
+- **Resource leaks:** All HTTP response bodies are `defer Close()`'d. The fanout producer closes all subscriber channels via `defer closeAll(subs)`. The `pulseChatAction` goroutine is joined by the returned stop function before the outer goroutine exits. `voiceClient.sleep` uses a `time.NewTimer` + `defer timer.Stop()` correctly.
+- **Context propagation:** `daemonCtx` flows from `Start` through all handlers; turn goroutines hold a child context cancelled by `/cancel`; sidecar calls use `withTimeout(ctx)`.
+- **Goroutine leaks:** `t.wg` tracks all turn goroutines. `docs.wg` tracks async convert goroutines. `Stop()` drains both via `docs.Stop(ctx)` then `t.wg.Wait()`. The ordering is correct: the async convert goroutine calls its `onAsync` callback (which may call `t.wg.Add(1)`) before `docs.wg.Done()`, so `docs.Stop` cannot return until after any turn goroutine is registered in `t.wg`.
+- **Race on `hitlRepliesHandled`:** All access is under `t.mu`.
+- **OnReply vs OnText dispatch order:** Telebot v4 dispatches `OnReply` before `OnText` for the same message (`update.go:86,89`), so `markHitlReplyHandled` runs before `takeHitlReplyHandled` — the deduplication is correct.
+- **Callback panic risk (`callbackData`):** UUID tokens (36 chars) + `|accept|yes` = 47 bytes < 64 ceiling. All production call sites are within budget. The panic is a correct compile-time guard against non-UUID tokens (tested in `hitl_test.go:430`).
+- **`documentsClient.Stop` idempotency:** Protected by `sync.Once`; a second call is a no-op.
+- **`Telegram.Start` idempotency:** Double-start guarded by `t.started` flag under `t.mu`.
+- **Error wrapping:** All `fmt.Errorf` calls in the critical path use `%w`. Sentinel errors (`ErrTokenConsumed`, `ErrTokenNotFound`, `ErrAccountExists`) are correctly wrapped and unwrapped via `errors.Is`.
+- **SQLSTATE classification in Store:** Uses `errors.As + pgErr.Code == "23505"`, not string matching.
+- **`splitTelegramText` rune safety:** `capRunes` converts to `[]rune` before slicing. `splitBoundary` does the same. Multi-byte content is not cut mid-character.
+- **`downscaleForVision` overflow:** `h * visionMaxEdge / w` — all operands are `int`, result is `int`. For a 10000×10000 image: `10000*1024 = 10_240_000` which fits in `int32` (let alone `int64`). No overflow.

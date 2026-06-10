@@ -1,111 +1,64 @@
 # Audit: internal/web
 
-**Verdict:** needs-work — two unreachable return statements mask retry logic bugs; one model-visible reason string outside the stable D-38 enum; one map that grows without bound.
-
-**Counts:** critical 0 / high 0 / medium 2 / low 2
-
----
+**Verdict:** needs-work — three dead-code items confirmed; no bugs or races
+**Counts:** critical 0 / high 0 / medium 1 / low 3
 
 ## Findings
 
-### [MEDIUM][DEAD-CODE] Unreachable fallthrough return in `fetchBody`
+### [MEDIUM][DEAD-CODE] `metadataV6Pfx` switch case is unreachable in `classify()`
 
-**Location:** `internal/web/fetcher.go:104`
+**Location:** `internal/web/ssrf.go:55`
 **Confidence:** high
 
-`fetchBody` loops `for attempt := 0; attempt < 2`. On `attempt=0`, every code path either `return`s (success or non-retryable error on line 97/102) or `continue`s to `attempt=1` (retryable + ctx alive, line 99-100). On `attempt=1`, the `attempt == 0` guard on line 99 is always false, so every code path `return`s (line 97 or 102). The loop body never lets the iterator reach 2, so line 104 (`return nil, nil, &WebError{…}`) is never executed.
+`fd00:ec2::/32` is entirely contained within the ULA block `fd00::/8` (which itself is within `fc00::/7`). Go's `netip.Addr.IsPrivate()` returns `true` for any ULA address, so the `ip.IsPrivate()` case at line 46 always fires before the `metadataV6Pfx.Contains(ip)` case at line 55 for every possible input in the `fd00:ec2::/32` range. The branch at line 55-56 is provably unreachable for all valid inputs. The package-level variable `metadataV6Pfx` (`netip.MustParsePrefix("fd00:ec2::/32")`) is initialized at startup (causes a `MustParsePrefix` call in `init`) and checked on every `classify` invocation — with zero effect. This is acknowledged in `ssrf_test.go:39-41` and `.planning/phases/07-web-tools/07-04-SUMMARY.md` as the lone mutation-testing survivor.
 
-This is not currently harmful because lines 97 and 102 cover every observable outcome, but the dead return hides the fact that the retry condition on line 99 also guards against "retry of a non-retryable error" — the structure is misleading and will silently stay wrong if someone adds a third attempt.
+The security posture is unaffected — the address is still blocked by `IsPrivate()`. The cost is a dead branch, an unnecessary `init`-time allocation, and a permanently surviving mutation.
 
-**Suggested fix:** Remove line 104. If the loop bound ever grows beyond 2, replace it with the explicit `return` inside the loop (e.g. last-iteration guard like `searxGet` does):
-
-```go
-func (c *Client) fetchBody(ctx context.Context, convID string, start *url.URL) ([]byte, *url.URL, error) {
-    for attempt := 0; attempt < 2; attempt++ {
-        body, finalURL, err := c.doHops(ctx, convID, start)
-        if err == nil {
-            return body, finalURL, nil
-        }
-        if errors.Is(err, errRetryable) && attempt == 0 && ctx.Err() == nil {
-            continue
-        }
-        return nil, nil, c.classifyFetchErr(err)
-    }
-    // unreachable — remove this line
-}
-```
+**Suggested fix:** Remove the `metadataV6Pfx` variable and its `case metadataV6Pfx.Contains(ip)` switch arm. The `fd00:ec2::/32` range is fully covered by `IsPrivate()`. Update the test comment and the SUMMARY doc.
 
 ---
 
-### [MEDIUM][DEAD-CODE] Unreachable fallthrough return in `searxGet`
+### [LOW][DEAD-CODE] `internalError.redirectFrom` field is never set in production code
 
-**Location:** `internal/web/searxng.go:215`
+**Location:** `internal/web/errors.go:93`, `internal/web/errors.go:109-110`
 **Confidence:** high
 
-Same structural issue. `searxGet` loops `for attempt := 0; attempt < 2`. Every branch on `attempt=1` returns (lines 199, 206, 211, 213) — neither `continue` branch fires on `attempt=1` because both are guarded by `attempt == 1` which triggers a `return`. Line 215 (`return nil, errSearxUnreachable`) is therefore unreachable.
+`internalError` has an unexported `redirectFrom string` field (line 93). The `Error()` method branches on it (lines 109-110). However, no production `internalError` struct literal in `transport.go` (the only file that constructs `internalError` values) ever sets this field — all four call sites omit it (always zero). The branch at `errors.go:109` is dead in production. The field is only set in test fixtures (`ssrf_test.go:244`, `errors_test.go:40`).
 
-The comment on `decodeSearx` says the function closes the body; if line 215 were ever reached after a `continue` on attempt=1 (impossible today), the body would already be closed by `decodeSearx` — but since the line is unreachable, this is moot.
+Since `internalError` is unexported and its constructor is always a struct literal in `transport.go`, the field is provably never populated in production paths.
 
-**Suggested fix:** Remove line 215 or replace the for-loop structure with an explicit two-attempt pattern that makes control flow obvious:
-
-```go
-// attempt 0
-resp0, err := doAttempt(ctx, httpClient, endpoint, c.userAgent())
-if err == nil { return resp0, nil }
-if !isTransientFailure(err, ctx) { return nil, errSearxUnreachable }
-// attempt 1
-resp1, err := doAttempt(ctx, httpClient, endpoint, c.userAgent())
-if err == nil { return resp1, nil }
-return nil, errSearxUnreachable
-```
+**Suggested fix:** Either wire `redirectFrom` in `resolveRedirect` (e.g., `redirectFrom: current.String() + " → " + next.String()`) so debug logs gain the redirect chain detail the field was designed to carry, OR remove the field entirely and its branch in `Error()` if the detail is not needed. The former is more useful.
 
 ---
 
-### [LOW][BUG] Model-visible reason string outside the D-38 stable enum
+### [LOW][DEAD-CODE] `internalError.statusCode` field is always zero in production; `sanitize()` copies a phantom value
 
-**Location:** `internal/web/searxng.go:93`
+**Location:** `internal/web/errors.go:88`, `internal/web/errors.go:139`
 **Confidence:** high
 
-```go
-return nil, &WebError{Code: CodeSearchUnavailable, Reason: "unsupported_category", …}
-```
+`internalError` declares `statusCode int` (line 88). `sanitize()` copies it to `WebError.StatusCode` (line 139). No production `internalError` struct literal ever sets `statusCode` — all four call sites in `transport.go` omit it. Therefore `sanitize(ie).StatusCode` is always `0`, and the `StatusCode` copy in `sanitize()` is a no-op. The HTTP status code is only available in `gateAndRead` (fetcher.go:178), which constructs a `*WebError` directly — never an `internalError` — so the field never gets populated on the SSRF block path where `internalError` is used.
 
-`errors.go` declares the stable reason constants under the comment "These strings are the model-visible `error` field values; they are a contract — never rename without a PRD amendment." The literal `"unsupported_category"` is used only here, is not declared as a constant, and appears in no test assertion. A future rename during a refactor would silently change the model-visible wire format without triggering the audit comment.
-
-**Suggested fix:** Add `ReasonUnsupportedCategory = "unsupported_category"` to the constants block in `errors.go` and use it here.
+**Suggested fix:** Remove `statusCode int` from `internalError` and its copy from `sanitize()`. SSRF blocks have no HTTP status to report; the `WebError.StatusCode` field is populated by the direct `*WebError` path in `gateAndRead` independently.
 
 ---
 
-### [LOW][BUG] `dnsPin` map grows without bound — expired entries never pruned
+### [LOW][NOT-WIRED] `newGuard`'s third parameter is always `nil`; no allowlist wired
 
-**Location:** `internal/web/dnspin.go:50-67`
-**Confidence:** medium
+**Location:** `internal/web/ssrf.go:75`
+**Confidence:** high
 
-`cache.get` (cache.go:83) lazy-evicts the expired in-memory entry on every read miss. `dnsPin.Pinned` (dnspin.go:54) checks expiry but does NOT delete the expired entry — it returns `(zero, false)` and leaves the stale `pinEntry` in the map. Every new `(conv, host)` pair that expires adds a permanent dead entry. For a long-running single-user agent with many conversations and varied hostnames, the map grows monotonically.
+`newGuard(res resolver, pin *dnsPin, _ any) *guard` accepts a third `any` parameter but immediately discards it (blank identifier). Every call site in production (`client.go:28`) and tests passes `nil`. The parameter signature implies a future allowlist or bypass hook was planned but never implemented. The discarded slot adds noise to the constructor API with no benefit.
 
-This is a low-severity memory leak; the single-user design and short TTL (default 60 s) bound the practical impact, but it is inconsistent with the `cache` eviction pattern in the same package.
+**Suggested fix:** Remove the `_ any` parameter from `newGuard` and update all call sites to pass only `res` and `pin`. If an allowlist is needed in a future slice, add it then.
 
-**Suggested fix:** In `Pinned`, delete the expired entry before returning the miss:
+## What Was Checked and Found Clean
 
-```go
-if !ok || !p.now().Before(e.expires) {
-    if ok {
-        delete(p.m, pinKey{conv, host}) // prune expired
-    }
-    return netip.Addr{}, false
-}
-```
-
----
-
-## Checked and found clean
-
-- **Resource leaks / body close:** `resp.Body` is closed in all branches of `doHops` (redirect path: line 128; non-redirect path: line 137) and `decodeSearx` (deferred). No leak path found.
-- **Races:** All shared state (`cache.m`, `dnsPin.m`, `hostThrottle.m`) is guarded by `sync.Mutex`. The semaphore channel in `hostThrottle` is goroutine-safe by construction. No map written concurrently.
-- **SSRF gate completeness:** `dialContext` calls `validateAndPin` before every dial; `control` re-checks the post-resolution IP in the production path; redirect hops are revalidated via `resolveRedirect` before the next dial. IPv4-mapped IPv6 collapse (`Unmap()`) is applied before classification.
-- **Context propagation:** `convID` is stamped via `withConvID` in `doHops` for every hop; `resolveRedirect` passes `ctx` directly to `validateAndPin` (DNS-lookup context) with the explicit `convID` argument, which is correct.
-- **`newGuard` third parameter:** `_ any` is a blank parameter, always `nil`. Mildly vestigial but harmless; golangci-lint does not flag blanked parameters.
-- **Integer overflow in `gateAndRead`:** `int64(capBytes)+1` is safe on 64-bit targets; `len(body) > capBytes` cannot overflow.
-- **Scheme-relative URLs:** `url.Parse("//host/path")` leaves `Scheme=""` which is rejected by `allowedSchemes` on line 58.
-- **`Search` without SSRF gate:** Intentional — SearXNG is an in-network backend, not an arbitrary external host. The `maxSearxBodyBytes` cap provides defense-in-depth on the response.
-- **Dead parameter `_ any` in `newGuard`:** Consistently `nil` everywhere, not a footgun. Flagged as informational only; excluded from the count.
+- **Nil-pointer dereference:** `art.Node == nil` is explicitly guarded in `html.go:59` before `convertNode`. `url.Parse` results are always checked. No unsafe pointer dereferences found.
+- **Resource leaks:** Every `resp.Body` is closed exactly once on all paths in `doHops` (redirect path: line 128; non-redirect path: line 137). `gateAndRead` does not close the body; the caller does. `decodeSearx` uses `defer resp.Body.Close()` correctly. No leaked goroutines (confirmed by goleak harness in `main_test.go`).
+- **Context propagation:** `context.WithTimeout` is used in `Fetch` and `Search`; `cancel()` is always deferred. The conversation ID is propagated via `withConvID`/`convIDFrom` through the request context. No missing cancellation.
+- **Race conditions:** `dnsPin` and `cache` both use `sync.Mutex` guarding their maps on all read and write paths. `hostThrottle` uses a mutex for lazy map creation. No concurrent map access without lock.
+- **JSON/error handling:** `json.Unmarshal` return values are always checked in `fetchFromCache`. `json.Marshal` errors in `fetchToCache` and the search cache path are silently skipped — intentional per the "cache is an optimization, never a correctness dependency" invariant.
+- **Retry logic:** The one-retry loop in `fetchBody` and `searxGet` is correctly bounded at 2 attempts; a cancelled context short-circuits before the second attempt.
+- **SSRF classifier:** `ip.Unmap()` runs before the switch in `classify()`, closing the IPv4-mapped-IPv6 bypass (Pitfall 2). Mixed-record sets fail closed (all records must pass). Hostname blocklist checked before resolution. All expected classes (loopback, private, link-local, CGNAT, unspecified, multicast, this-network) are blocked.
+- **`searxGet` unguarded transport:** Uses a plain `http.Client` instead of the hardened transport. This is intentional design — SearXNG is an operator-configured in-network service (D-02/D-03, comment at searxng.go:237). The endpoint is config-controlled, not user/model-controlled, so SSRF is not in scope for this hop. Not flagged as a bug.
+- **Integer conversion:** `int64(capBytes)+1` in `gateAndRead` is safe since `capBytes` is read from `cfg.WebFetchMaxBodyBytes` which is a normal int; no overflow risk in practice.

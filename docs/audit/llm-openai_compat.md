@@ -1,48 +1,66 @@
 # Audit: internal/llm/openai_compat
 
-**Verdict:** needs-work — two dead-code items; no bugs, no races, no missing wiring
-**Counts:** critical 0 / high 0 / medium 1 / low 1
+**Verdict:** needs-work — two real defects (swallowed parse error, dead struct field); no races; no critical issues.
+
+**Counts:** critical 0 / high 1 / medium 1 / low 1
+
+---
 
 ## Findings
 
-### [MEDIUM][DEAD-CODE] `toolCallAcc.firstSeen` and `accumulator.order` are written but never read
+### [HIGH][BUG] SSE parse errors silently swallowed — consumer cannot distinguish failure from clean stream end
 
-**Location:** `internal/llm/openai_compat/accumulate.go:32,40,53-54`
+**ID:** llm-openai_compat-1
+**File:** `internal/llm/openai_compat/client.go:145-165`
 **Confidence:** high
 
-`toolCallAcc` carries a `firstSeen int` field (line 32). `accumulator` carries an `order int` counter (line 40). In `add()` (lines 53-54), every new index-entry is stamped with `firstSeen: a.order` and `a.order` is incremented. Neither `firstSeen` nor `order` is ever read anywhere in the package or the wider repo (grep across `D:/Aura` confirms zero non-definition, non-test references to `.firstSeen`).
+**Detail:**
+`parseSSE` can return a non-nil error (e.g., `fmt.Errorf("openai_compat: malformed SSE chunk: %w", jErr)` — `sse.go:107`). The goroutine in `Stream` captures this in `errString` and writes it to a reasoningtrace record, but never forwards it to the consumer. The channel simply closes. Because `llm.Chunk` has no error field and `<-chan llm.Chunk` carries no error sidecar, the consumer (the agent's `consume` loop at `llm_agent.go:451`) sees a premature channel close that looks identical to a clean, complete stream. A mid-stream JSON decode error — e.g., from a truncated provider SSE frame — is therefore indistinguishable from a normally terminated stream. The agent will then proceed to process a partial tool-call set or a missing text response as if it were complete, leading to incorrect behavior (silent data loss or a malformed response treated as valid).
 
-`finalize()` sorts accumulated calls by wire index (`sort.Ints(indices)`, line 83), ignoring `firstSeen` entirely. The doc-comment on `toolCallAcc` says "firstSeen records arrival order as a stable tiebreaker" — that role is never exercised.
+Additionally, when a parse error occurs after usage was captured (`res.hasUsage == true`), the goroutine still emits a Usage chunk before closing, which may confuse a consumer that wants to correlate usage to a successful parse.
 
-**Suggested fix:** Remove `firstSeen int` from `toolCallAcc`, remove `order int` from `accumulator`, and remove the write `firstSeen: a.order` / `a.order++` in `add()`. If arrival-order tiebreaking is desired in the future, re-add it with a read site.
+**Suggested fix:**
+Two viable approaches:
+1. Add an `Err error` field to `llm.Chunk` and emit a sentinel chunk `Chunk{Err: parseErr}` before closing. Every consumer does `if c.Err != nil { handle }`. This is the most explicit and composable fix.
+2. Add a second return channel `<-chan error` to `llm.Client.Stream` (a breaking interface change, bigger surgery).
 
----
-
-### [LOW][DEAD-CODE] Redundant loop-variable shadow `tc := tc` in Go 1.26
-
-**Location:** `internal/llm/openai_compat/sse.go:73`
-**Confidence:** high
-
+Option 1 is lower risk. Emit the error chunk immediately after `parseSSE` returns a non-nil error, before the usage emit and before the deferred `close(out)`:
 ```go
-for _, tc := range acc.finalize() {
-    tc := tc  // shadow copy — unnecessary in Go ≥ 1.22
-    if !emit(llm.Chunk{ToolCall: &tc}) {
+res, parseErr := parseSSE(resp.Body, emit)
+if parseErr != nil {
+    emit(llm.Chunk{Err: parseErr})
+}
 ```
-
-Go 1.22 (loopvar fix, enabled by default from 1.22) makes each loop iteration's `tc` a distinct variable, so `&tc` in `emit()` is already stable per-iteration. `go.mod` declares `go 1.26.4`. The shadow copy is a no-op — not harmful, but it's misleading defensive code.
-
-**Suggested fix:** Remove the `tc := tc` line.
+The `emit` select handles both the send and a concurrent cancel safely.
 
 ---
 
-## Clean
+### [MEDIUM][DEAD-CODE] `toolCallAcc.firstSeen` written but never read
 
-The following categories were checked and found clean:
+**ID:** llm-openai_compat-2
+**File:** `internal/llm/openai_compat/accumulate.go:32,53`
+**Confidence:** high
 
-**Bugs:** `parseSSE` correctly handles partial reads (both `line` and `readErr` from `bufio.Reader.ReadString`), the `[DONE]` sentinel is caught before `json.Unmarshal`, `io.EOF` is compared by identity (correct for `bufio.Reader`), and `finalize()` cannot be called twice in one stream. The `newHTTPError` body-read / body-close sequence is correct (read in `newHTTPError`, closed by the caller at `client.go:125` — one close, not two). The final `emit(llm.Chunk{Usage: &u})` at `client.go:164` discards its return value safely — it is the last goroutine statement; either path (ctx cancelled → false, consumer draining → true) exits cleanly via `defer close(out)`. The `wireRequest` struct excludes the API key (set only on the Authorization header), so wire-body tracing cannot leak credentials.
+**Detail:**
+`toolCallAcc` declares a `firstSeen int` field (line 32) documented as "a stable tiebreaker" for emission order. It is set once at construction (`acc = &toolCallAcc{firstSeen: a.order}` — line 53) but never read anywhere in the package or the wider repo (confirmed with grep across `D:/Aura`). The `finalize()` method sorts by wire `index` via `sort.Ints(indices)` and never consults `firstSeen`. The `accumulator.order` counter is likewise only written (incremented implicitly through `firstSeen` assignment) but its value is never used to affect output order.
 
-**Races:** The stream goroutine is the sole owner of `accumulator`, `parseResult`, and `resp.Body`; no shared mutable state is accessed concurrently. `reasoningtrace.Record` is mutex-guarded. The `emit` closure selects on a buffered channel and `ctx.Done()` — both goroutine-safe primitives.
+This dead field inflates struct size, misleads readers (the comment implies a tiebreak that doesn't exist), and will survive indefinitely unless removed because the compiler cannot flag unexported struct fields as unused.
 
-**Not-wired:** `Client.Stream` is wired in `cmd/aura/chat.go`, `internal/runner/live_e2e_test.go`, `internal/agent/live_finalize_test.go`, and multiple eval harnesses. `HTTPError` is used as a typed error by callers via `errors.As`. `Usage`/`toLLMUsage` projects into `llm.Usage` consumed by the agent's `consume()`. `newHTTPError` is called on every non-2xx response. No exported or unexported symbol in the package is unconnected to production flow (other than the `firstSeen` field documented above).
+**Suggested fix:**
+Remove `firstSeen int` from `toolCallAcc`, remove the `a.order` counter from `accumulator`, and remove the `a.order++` increment in `add()`. Update or remove the "stable tiebreaker" comment on line 26. The actual ordering guarantee (by wire `index`) is already implemented and documented in the `finalize` comment on line 74.
 
-**`ToolsCacheControl` in `llm.Request` ignored here:** intentional by design — it is an Anthropic-direct marker, documented in `llm/client.go:112-116`, consumed by the future Anthropic-native wire client only.
+---
+
+### [LOW][NOT-WIRED] `wireRequest` omits `temperature` `omitempty` — sends `temperature:0` for zero-value configs
+
+**ID:** llm-openai_compat-3
+**File:** `internal/llm/openai_compat/client.go:60`
+**Confidence:** medium
+
+**Detail:**
+The `wireRequest.Temperature float64` field has no `omitempty` tag (`json:"temperature"`). When a caller constructs `llm.Request{Temperature: 0}` (which is valid Go zero-value and happens in unit tests and some eval harnesses), the wire body sends `"temperature":0` explicitly. OpenRouter/DeepSeek interprets `temperature:0` as a deliberate "greedy/deterministic" setting, not as "use the model default". This is arguably intentional for production (the default config at `llm/config.go:23` sets `defaultTemperature = 0.7` which is always non-zero for real callers), but any hand-built `llm.Request{}` in tests or future callers that omits `Temperature` silently overrides the provider default with deterministic sampling. The field is not "dead" (it always marshals), but the lack of `omitempty` can produce surprising wire behavior for zero-value callers.
+
+This is flagged low because the production load path (`llm.Load`) always sets a non-zero temperature, and the test harness `testConfig` sets `Temperature: 0.7`.
+
+**Suggested fix:**
+Add `omitempty` (`json:"temperature,omitempty"`) if the intent is to omit the field and let the provider default apply when temperature is zero. If sending `0` explicitly is intentional for deterministic evals, add a comment documenting this.

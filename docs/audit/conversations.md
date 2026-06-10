@@ -1,101 +1,96 @@
 # Audit: internal/conversations
 
-**Verdict:** needs-work — one latent data-integrity bug + one misleading doc comment + one not-wired sentinel; no critical issues.
+**Verdict:** needs-work — two correctness gaps (sidecar orphan accumulation, FTS search silently skips spilled content) and one not-wired interface branch; no critical runtime defects.
 
-**Counts:** critical 0 / high 1 / medium 2 / low 2
+**Counts:** critical 0 / high 2 / medium 1 / low 1
+
+---
 
 ## Findings
 
----
+### [HIGH][BUG] Sidecar file orphaned when AppendTurn transaction rolls back
 
-### [HIGH][BUG] AppendAssistantTurnWithCacheMetric: metric.Seq not set in the Seq>0 fast path
-
-**Location:** `internal/conversations/store.go:312–329`
+**File:** `internal/conversations/store.go:277-305` / `internal/conversations/store_helpers.go:94-106`
 
 **Confidence:** high
 
 **Detail:**
-When `p.Seq > 0` (pre-known sequence number), the `Seq <= 0` allocation branch (lines 332–354) correctly sets `metric.Seq = int32(seq)` inside the transaction. The `Seq > 0` branch (lines 312–329) does NOT update `metric.Seq` to match `p.Seq`; it passes `metric` verbatim to `q.InsertCacheMetric`. A caller that constructs `metric` with `Seq = 0` (the runner always does: `r.cacheMetricParams(convID, 0, u, cost)`) and then triggers this branch would persist a `cache_metrics` row with `seq = 0` for a turn that actually has a non-zero seq.
 
-Today the runner always passes `Seq = 0`, so it never hits the `Seq > 0` branch, masking the bug. Any future caller that passes a pre-known seq will silently write a wrong `cache_metrics.seq`.
+`appendTurnWrites` calls `maybeSpill` which writes the `.content` sidecar file to disk as a pure filesystem side-effect. For the caller-supplied-seq path (`p.Seq > 0`, line 277), this write happens BEFORE the `db.WithTx` call (line 282). If the transaction fails (DB unavailable, constraint violation, aggregate UPDATE error), the sidecar file remains on disk with no corresponding DB turn row.
 
-**Suggested fix:**
-Add `metric.Seq = int32(p.Seq)` inside the `if p.Seq > 0` block immediately before `db.WithTx`:
+For the auto-allocate path (`p.Seq <= 0`, line 290), `appendTurnWrites` is called inside the transaction closure (line 296), so the sidecar write also occurs inside the transaction scope. If `insertTurnAndAggregates` subsequently fails (line 300), the transaction rolls back, again leaving an orphaned file.
 
-```go
-if p.Seq > 0 {
-    metric.Seq = int32(p.Seq)  // ← add this line
-    turn, agg, err := s.appendTurnWrites(p)
-    ...
-}
+The comment at line 272 states "a later boot scan reconciles an orphaned file". However, `scanConversationOrphans` (`orphan_scan.go:61`) operates at conversation-directory granularity only: it removes `conversations/<id>/` directories that have no matching DB row. It does NOT scan individual `<seq>.content` files within a live conversation directory. An orphaned sidecar file within a live conversation's directory accumulates silently and is never cleaned up until the conversation itself is deleted.
+
+`AppendAssistantTurnWithCacheMetric` (line 312) has the identical pattern and the identical gap.
+
+**Suggested fix:** Either (a) scan individual `.content` files within the conversation directory in `scanConversationOrphans` and remove those whose seq has no matching turn row, or (b) move the sidecar write AFTER the transaction commits (requires the transaction to return the allocated seq, which it already does in the auto-allocate path). Option (b) is the lower-risk change: in `AppendTurn` with `p.Seq > 0`, defer the `maybeSpill` call until after `db.WithTx` returns nil.
+
+---
+
+### [HIGH][BUG] FTS search silently excludes sidecar-spilled turns
+
+**File:** `internal/conversations/store.go:482-500` / `internal/db/queries/conversation_turns.sql:33-37`
+
+**Confidence:** high
+
+**Detail:**
+
+`SearchConversationTurns` executes:
+```sql
+WHERE content % $1
+ORDER BY similarity(content, $1) DESC
 ```
 
+The pg_trgm operator `%` returns NULL when its left operand is NULL. Turns with large content that was spilled to a sidecar file have `content = NULL` (see `maybeSpill`, `store_helpers.go:95-105`: the inline `pgtype.Text` field is left zero-valued, i.e., `Valid: false`). The WHERE clause silently excludes these turns from search results.
+
+In the `SearchConversationTurns` projection (line 493), `r.Content.String` will be an empty string for any NULL content row — but such rows cannot reach the projection because the WHERE clause filters them before they reach the scan loop.
+
+The consequence: `SearchConversationTurns` returns incomplete results for any conversation that has ever triggered a sidecar spill. No error is returned and no warning is logged. The caller cannot detect the omission.
+
+**Suggested fix:** Join against the sidecar content or add a fallback. Simplest approach that preserves the locked query contract: in the application layer (`SearchConversationTurns`), if a result has empty `Content`, attempt to read the sidecar file (by querying the turn for its `content_sidecar_path`). Alternatively, extend the SQL to `COALESCE(content, (SELECT content FROM …))` via a CTE — but this changes the LOCKED query, so it requires a D-A5-03 amendment. A stopgap is to log a WARN when spilled turns exist in the searched conversation.
+
 ---
 
-### [MEDIUM][BUG] Sidecar orphan in live conversation not reconciled by boot scan (doc comment incorrect)
+### [MEDIUM][NOT-WIRED] ConversationCleaner interface and Delete cleaner branch are entirely dead in production
 
-**Location:** `internal/conversations/store.go:276–288` (AppendTurn Seq>0 path), comment at line 274
+**File:** `internal/conversations/store.go:49-58, 72, 82, 530-541`
 
 **Confidence:** high
 
 **Detail:**
-The doc comment states: "the file write is not part of the DB atomicity; a later boot scan reconciles an orphaned file if the tx rolls back."
 
-This claim is only correct for the case where the entire conversation row is absent (orphan directory). `ScanOrphans` in `orphan_scan.go` removes `conversations/<id>/` directories that have no matching DB row, but it does NOT scan for individual stale `<seq>.content` files inside a live conversation's directory. If `AppendTurn` with `p.Seq > 0` spills to `conversations/<id>/<seq>.content` and the subsequent transaction rolls back, the sidecar file leaks permanently inside the live conversation's directory — the boot scan never touches it because the conversation row still exists.
+`ConversationCleaner` is an exported interface with one method `PurgeConversationDir(convID string) error`. It is documented as the `sandbox.WorkspaceManager` injection point for a symlink-safe `os.Root` cascade on conversation delete (ROADMAP crit 2, landmine #4).
 
-The runner always passes `Seq = 0`, so today this path is never exercised in production. But the misleading comment could lead a future implementer to rely on non-existent reconciliation.
+Every production call site of `conversations.New` passes a `Config` without the `Cleaner` field:
+- `cmd/aura/chat.go:137-140`: `Config{RunDir: cfg.RunDir, TurnCapBytes: cfg.ConversationTurnCapBytes}` — no `Cleaner`
+- `internal/agui/server_integration_test.go:116`: no `Cleaner`
+- `internal/eval/skills_snippet_reuse_cot_eval_test.go:241`: no `Cleaner`
+- `internal/runner/live_e2e_test.go:138`: no `Cleaner`
 
-**Suggested fix:**
-Either: (a) move `appendTurnWrites` (including `maybeSpill`) INSIDE the `db.WithTx` callback for the `Seq > 0` path as well, so the sidecar write happens inside the transaction scope (same ordering as the `Seq <= 0` path), OR (b) add per-file orphan cleanup to `scanConversationOrphans` that removes `.content` files with no matching DB row. Also correct the doc comment.
+The `if s.cleaner != nil` branch in `Delete` (line 530) is never taken. The symlink-safe `os.Root` cascade described in comments never executes. The existing fallback is `os.RemoveAll` (line 549), which DOES follow symlinks and could be redirected by a malicious symlink inside the sidecar-writable workspace — the exact threat the cleaner was designed to close.
+
+No type outside `internal/conversations` implements `PurgeConversationDir`. The `ConversationCleaner` interface is defined only here.
+
+**Suggested fix:** Wire the cleaner at the composition root (`cmd/aura/chat.go`) by injecting a real implementation (stub or the actual `sandbox.WorkspaceManager.PurgeConversationDir`). Until the sandbox workspace manager exists, at minimum replace `os.RemoveAll` in the `nil`-cleaner fallback with an `os.Root`-based equivalent (available since Go 1.24) to close the traversal gap independently of the injection.
 
 ---
 
-### [MEDIUM][NOT-WIRED] ErrContextWindowExceeded exported sentinel never checked by callers
+### [LOW][BUG] Error message reports seq=0 when auto-allocate fails before seq is assigned
 
-**Location:** `internal/conversations/context.go:49`
+**File:** `internal/conversations/store.go:301-303`
 
 **Confidence:** high
 
 **Detail:**
-`ErrContextWindowExceeded` is an exported sentinel error wrapped with `%w` at line 158. Its purpose (per the comment) is that "the REPL surfaces" it with a special action. However, no caller in the repo performs `errors.Is(err, conversations.ErrContextWindowExceeded)`:
 
-- `internal/runner/runner.go:234–238`: receives the error from `LoadManagedHistory`, propagates it via `yield(nil, err)`.
-- `cmd/aura/chat_repl.go:67`: prints it as `"turn error: ..."`.
-- `internal/agui/server.go` and `internal/channels/telegram`: similarly propagate without type-checking.
+In `AppendTurn` with `p.Seq <= 0`, after `db.WithTx` returns an error, the error message is:
+```go
+return fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
+```
 
-The user-facing error message "start a new chat with `aura chat new`" is embedded in the error string, so the UX is not broken. But the exported sentinel provides no additional programmatic value over an unexported error in its current wired state: no caller can distinguish this from, say, a DB connection error. The AG-UI gateway in particular could benefit from emitting a distinct event type for this recoverable condition.
+If `allocateTurnSeq` itself fails (line 291-294), `p.Seq` has never been updated from 0 (the value the caller passed). The error message says "seq 0", which is misleading for diagnostic purposes: a `seq 0` in the log suggests the seq-allocation step failed rather than the turn-insert step, but the message gives no indication of that.
 
-**Suggested fix:**
-Either check `errors.Is(err, conversations.ErrContextWindowExceeded)` in the runner or REPL to give a distinct UX (e.g., print the message differently, emit a special AG-UI event), or demote `ErrContextWindowExceeded` to unexported (`errContextWindowExceeded`) until a caller needs to type-check it.
+The same pattern exists in `AppendAssistantTurnWithCacheMetric` (line 351-354).
 
----
-
-### [LOW][DEAD-CODE] validateID in Delete's cleaner branch is redundant after parseUUID
-
-**Location:** `internal/conversations/store.go:533–535`
-
-**Confidence:** high
-
-**Detail:**
-`Delete` calls `parseUUID("id", conversationID)` at line 522. A string that passes `parseUUID` is a canonical UUID (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`) that can never contain `..`, `/`, or `\`. The subsequent `validateID("conversation_id", conversationID)` at line 533 (inside the `s.cleaner != nil` branch) will therefore always succeed and never fire its guard. The same is true for `validateID` inside `sidecarDir` → `turnSidecarPath` → `maybeSpill` when the call chain originates from `appendTurnWrites` (which itself calls `parseUUID` first).
-
-The redundancy is harmless but adds confusing defensive code whose invariant is not obvious from the call site.
-
-**Suggested fix:**
-Remove the `validateID` call at line 533 and add a comment explaining the invariant: `// conversationID already validated as a canonical UUID by parseUUID above; path traversal impossible.`
-
----
-
-### [LOW][DEAD-CODE] sweepTmp calls os.RemoveAll on symlinks without the os.Remove treatment given in scanConversationOrphans
-
-**Location:** `internal/conversations/orphan_scan.go:144–155`
-
-**Confidence:** medium
-
-**Detail:**
-`scanConversationOrphans` (line 82–86) explicitly detects symlinks via `Lstat` and removes them with `os.Remove` (not `os.RemoveAll`) to avoid traversing to an external target. `sweepTmp` also uses `os.Lstat` to obtain `ModTime` but then calls `os.RemoveAll(full)` for both directories AND symlinks older than the TTL.
-
-`os.RemoveAll` on a symlink removes the link itself without following it, so this is safe on POSIX systems. However the inconsistency between the two scan functions is a maintenance hazard: the rationale in `scanConversationOrphans` (symlink guard) was evidently not ported to `sweepTmp`, making the security model harder to reason about.
-
-**Suggested fix:**
-Add a symlink check in `sweepTmp` parallel to the one in `scanConversationOrphans`: if `info.Mode()&os.ModeSymlink != 0`, use `os.Remove` instead of `os.RemoveAll`. Document that `os.Remove` vs `os.RemoveAll` is an explicit security choice, not an accident.
+**Suggested fix:** Capture the allocated seq separately or include a contextual note in the error message distinguishing an allocation failure from an insert failure. Alternatively, only format the seq into the error if it was actually allocated (`if p.Seq > 0 { ... }`).
