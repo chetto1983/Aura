@@ -2,6 +2,7 @@ package boundedbuffer
 
 import "sync"
 
+// DefaultLimit is the fallback byte cap for buffers created without a positive limit.
 const DefaultLimit = 4096
 
 // Buffer is a mutex-guarded io.Writer that retains only the newest limit bytes.
@@ -11,6 +12,7 @@ type Buffer struct {
 	limit int
 }
 
+// New returns a Buffer that keeps at most limit newest bytes.
 func New(limit int) *Buffer {
 	if limit <= 0 {
 		limit = DefaultLimit
@@ -43,6 +45,7 @@ func (b *Buffer) String() string {
 	return string(b.buf)
 }
 
+// Len returns the number of retained bytes.
 func (b *Buffer) Len() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()

@@ -38,6 +38,7 @@ const protocolVersion = "2024-11-05"
 // IsTransportError rather than matching opaque OS error strings.
 var ErrTransport = errors.New("mcp transport error")
 
+// IsTransportError reports whether err wraps ErrTransport.
 func IsTransportError(err error) bool {
 	return errors.Is(err, ErrTransport)
 }
