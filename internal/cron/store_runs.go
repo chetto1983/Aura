@@ -12,6 +12,7 @@ import (
 	"math"
 	"time"
 
+	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -99,6 +100,31 @@ type StaleRun struct {
 	TaskID string
 }
 
+// PendingNotification is the domain projection of aura.pending_notifications.
+type PendingNotification struct {
+	ID          string
+	RunID       string
+	NotifyRoute string
+	Body        string
+	NotifyAfter time.Time
+	Attempts    int
+	LastError   string
+	Status      string
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+// InsertPendingNotificationParams carries one durable notification queue write.
+type InsertPendingNotificationParams struct {
+	RunID       string
+	NotifyRoute string
+	Body        string
+	NotifyAfter time.Time
+	Attempts    int
+	LastError   string
+	Status      string
+}
+
 // ScanStaleRuns returns running rows whose last_heartbeat_at is older than
 // staleSeconds — the boot orphan scan input (recover.go). A run still ticking its
 // heartbeat is excluded by construction.
@@ -117,6 +143,91 @@ func (s *Store) ScanStaleRuns(ctx context.Context, staleSeconds float64) ([]Stal
 	return out, nil
 }
 
+// InsertPendingNotification persists a notification that must be delivered by a
+// later scheduler sweep: either a quiet-hours defer or a failed MCP self-send.
+func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNotificationParams) (PendingNotification, error) {
+	runID, err := parseUUID(p.RunID)
+	if err != nil {
+		return PendingNotification{}, fmt.Errorf("insert pending notification: %w", err)
+	}
+	status := p.Status
+	if status == "" {
+		status = "pending"
+	}
+	notifyAfter := p.NotifyAfter
+	if notifyAfter.IsZero() {
+		notifyAfter = time.Now().UTC()
+	}
+	row, err := s.q.InsertPendingNotification(ctx, sqlc.InsertPendingNotificationParams{
+		ID:          newUUID(),
+		RunID:       runID,
+		NotifyRoute: text(p.NotifyRoute),
+		Body:        p.Body,
+		NotifyAfter: tsOrNull(notifyAfter),
+		Attempts:    int32(p.Attempts),
+		LastError:   text(p.LastError),
+		Status:      status,
+	})
+	if err != nil {
+		return PendingNotification{}, fmt.Errorf("insert pending notification for run %q: %w", p.RunID, err)
+	}
+	return pendingNotificationFromRow(row), nil
+}
+
+// SweepDueNotifications selects a bounded batch of due/retryable notifications in
+// a real transaction so FOR UPDATE SKIP LOCKED has effect across concurrent ticks.
+func (s *Store) SweepDueNotifications(ctx context.Context, attemptBound, limit int) ([]PendingNotification, error) {
+	if attemptBound <= 0 || attemptBound > math.MaxInt32 {
+		attemptBound = 1
+	}
+	if limit <= 0 || limit > math.MaxInt32 {
+		limit = 1
+	}
+	var rows []sqlc.AuraPendingNotifications
+	err := db.WithTx(ctx, s.pool, func(q *sqlc.Queries) error {
+		var err error
+		rows, err = q.SweepDueNotifications(ctx, sqlc.SweepDueNotificationsParams{
+			Attempts: int32(attemptBound),
+			Limit:    int32(limit),
+		})
+		return err
+	})
+	if err != nil {
+		return nil, fmt.Errorf("sweep due notifications: %w", err)
+	}
+	out := make([]PendingNotification, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pendingNotificationFromRow(r))
+	}
+	return out, nil
+}
+
+// MarkNotificationDelivered records a successful sweep delivery.
+func (s *Store) MarkNotificationDelivered(ctx context.Context, id string) error {
+	u, err := parseUUID(id)
+	if err != nil {
+		return fmt.Errorf("mark notification delivered: %w", err)
+	}
+	if err := s.q.MarkNotificationDelivered(ctx, u); err != nil {
+		return fmt.Errorf("mark notification delivered %q: %w", id, err)
+	}
+	return nil
+}
+
+// MarkNotificationFailed records an undelivered sweep attempt and increments the
+// retry counter. Once attempts reaches the dispatcher bound, the sweep stops
+// re-selecting the row.
+func (s *Store) MarkNotificationFailed(ctx context.Context, id, lastErr string) error {
+	u, err := parseUUID(id)
+	if err != nil {
+		return fmt.Errorf("mark notification failed: %w", err)
+	}
+	if err := s.q.MarkNotificationFailed(ctx, sqlc.MarkNotificationFailedParams{ID: u, LastError: text(lastErr)}); err != nil {
+		return fmt.Errorf("mark notification failed %q: %w", id, err)
+	}
+	return nil
+}
+
 // MarkUnknownRecovery transitions a stale run to unknown_recovery (D-02 audit row):
 // it stays in agent_job_runs forever (no DELETE grant) as the repudiation trail for
 // a run whose worker died mid-flight.
@@ -129,4 +240,19 @@ func (s *Store) MarkUnknownRecovery(ctx context.Context, runID string) error {
 		return fmt.Errorf("mark unknown_recovery run %q: %w", runID, err)
 	}
 	return nil
+}
+
+func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotification {
+	return PendingNotification{
+		ID:          uuidString(r.ID),
+		RunID:       uuidString(r.RunID),
+		NotifyRoute: r.NotifyRoute.String,
+		Body:        r.Body,
+		NotifyAfter: r.NotifyAfter.Time,
+		Attempts:    int(r.Attempts),
+		LastError:   r.LastError.String,
+		Status:      r.Status,
+		CreatedAt:   r.CreatedAt.Time,
+		UpdatedAt:   r.UpdatedAt.Time,
+	}
 }

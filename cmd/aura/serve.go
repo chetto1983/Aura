@@ -245,13 +245,15 @@ func buildDispatch(chat *chatEnv, store *cron.Store) *cron.Dispatch {
 	}
 
 	notifier := cron.NewNotifier(newSelfSendResolver(chat.reg))
+	quietScheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{})
 	return cron.NewDispatch(hmap, cron.DispatchDeps{
 		Store:          store,
 		Notifier:       notifier,
 		AlertThreshold: scoring.Risky,
 		// DuringQuietHours is a pure Now-based predicate over AURA_SCHEDULER_QUIET_HOURS
 		// (D-23); it holds no tick state, so the live scheduler's method is the predicate.
-		QuietHours: cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{}).DuringQuietHours,
+		QuietHours:    quietScheduler.DuringQuietHours,
+		QuietHoursEnd: quietScheduler.QuietHoursEnd,
 	})
 }
 

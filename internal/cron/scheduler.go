@@ -42,6 +42,10 @@ type Dispatcher interface {
 	Dispatch(ctx context.Context, task Task, c *Claim) error
 }
 
+type notificationSweeper interface {
+	sweepNotifications(ctx context.Context) error
+}
+
 // Scheduler is the in-process tick loop owning the due-task claim lifecycle.
 type Scheduler struct {
 	// Now is the injectable clock (W8). Defaults to time.Now; tests inject a frozen
@@ -166,6 +170,11 @@ func (s *Scheduler) tick(ctx context.Context) error {
 		}(task)
 	}
 	wg.Wait()
+	if sweeper, ok := s.dispatch.(notificationSweeper); ok {
+		if err := sweeper.sweepNotifications(ctx); err != nil {
+			return fmt.Errorf("tick sweep notifications: %w", err)
+		}
+	}
 	return nil
 }
 
@@ -261,24 +270,47 @@ func (s *Scheduler) reschedule(ctx context.Context, task Task) {
 // non-destructive notifications (D-23) — it never gates firing here. An unset or
 // malformed window is "never quiet" (fail-open: notifications are not silently lost).
 func (s *Scheduler) DuringQuietHours(tz string) bool {
+	_, ok := s.QuietHoursEnd(tz)
+	return ok
+}
+
+// QuietHoursEnd returns the end instant of the current quiet-hours window. ok=false
+// when quiet hours are unset/malformed or the scheduler clock is outside the window.
+func (s *Scheduler) QuietHoursEnd(tz string) (time.Time, bool) {
 	window := os.Getenv("AURA_SCHEDULER_QUIET_HOURS")
 	if window == "" {
-		return false
+		return time.Time{}, false
 	}
 	start, end, ok := parseQuietWindow(window)
 	if !ok {
-		return false
+		return time.Time{}, false
 	}
 	loc, err := time.LoadLocation(tz)
 	if err != nil {
 		loc = time.UTC
 	}
-	nowM := minuteOfDay(s.Now().In(loc))
+	now := s.Now().In(loc)
+	nowM := minuteOfDay(now)
+	endTime := func(dayOffset int) time.Time {
+		return time.Date(now.Year(), now.Month(), now.Day(), end/60, end%60, 0, 0, loc).
+			AddDate(0, 0, dayOffset).
+			UTC()
+	}
 	if start <= end {
-		return nowM >= start && nowM < end
+		if nowM >= start && nowM < end {
+			return endTime(0), true
+		}
+		return time.Time{}, false
 	}
 	// Wrap-around window (e.g. 23:00-07:30): quiet if before end OR at/after start.
-	return nowM >= start || nowM < end
+	switch {
+	case nowM >= start:
+		return endTime(1), true
+	case nowM < end:
+		return endTime(0), true
+	default:
+		return time.Time{}, false
+	}
 }
 
 // parseQuietWindow parses "HH:MM-HH:MM" to start/end minute-of-day. ok=false on any

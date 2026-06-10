@@ -88,6 +88,26 @@ func TestDuringQuietHours(t *testing.T) {
 	}
 }
 
+func TestQuietHoursEnd(t *testing.T) {
+	t.Setenv("AURA_SCHEDULER_QUIET_HOURS", "23:00-07:30")
+	late := time.Date(2026, 6, 4, 23, 30, 0, 0, time.UTC)
+	s := NewScheduler(nil, nil, SchedulerConfig{Now: func() time.Time { return late }})
+	end, ok := s.QuietHoursEnd("UTC")
+	if !ok {
+		t.Fatal("late-night wrap-around quiet window should return an end instant")
+	}
+	want := time.Date(2026, 6, 5, 7, 30, 0, 0, time.UTC)
+	if !end.Equal(want) {
+		t.Fatalf("quiet-hours end = %s, want %s", end, want)
+	}
+
+	midday := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	s.Now = func() time.Time { return midday }
+	if end, ok := s.QuietHoursEnd("UTC"); ok {
+		t.Fatalf("outside quiet hours returned end=%s", end)
+	}
+}
+
 func TestDuringQuietHours_UnsetOrMalformedIsNeverQuiet(t *testing.T) {
 	at := time.Date(2026, 6, 4, 2, 0, 0, 0, time.UTC)
 	// Unset.

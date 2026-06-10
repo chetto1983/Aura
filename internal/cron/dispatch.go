@@ -59,15 +59,31 @@ type RunCompleter interface {
 
 var _ RunCompleter = (*Store)(nil)
 
+// PendingNotificationStore is the durable notification queue seam. *Store
+// satisfies it; tests can inject a small fake without a database.
+type PendingNotificationStore interface {
+	InsertPendingNotification(ctx context.Context, p InsertPendingNotificationParams) (PendingNotification, error)
+	SweepDueNotifications(ctx context.Context, attemptBound, limit int) ([]PendingNotification, error)
+	MarkNotificationDelivered(ctx context.Context, id string) error
+	MarkNotificationFailed(ctx context.Context, id, lastErr string) error
+}
+
+var _ PendingNotificationStore = (*Store)(nil)
+
 // DispatchDeps carries the run lifecycle collaborators: the store (run completion),
 // the Notifier (delivery), the alert threshold, and the quiet-hours predicate.
 type DispatchDeps struct {
-	Store          RunCompleter
-	Notifier       Notifier
-	AlertThreshold scoring.RiskTier
+	Store             RunCompleter
+	NotificationStore PendingNotificationStore
+	Notifier          Notifier
+	AlertThreshold    scoring.RiskTier
 	// QuietHours reports whether the current wall time is inside the deferral window
 	// (the scheduler's DuringQuietHours predicate, D-23). Nil = never quiet.
 	QuietHours func(tz string) bool
+	// QuietHoursEnd returns the wall-clock instant when the current quiet-hours
+	// window ends. It is paired with QuietHours so deferred notifications get a
+	// durable notify_after instead of being dropped.
+	QuietHoursEnd func(tz string) (time.Time, bool)
 }
 
 // Dispatch routes a claimed task to its handler and owns the run lifecycle. It
@@ -86,6 +102,11 @@ func NewDispatch(handlers map[TaskKind]Handler, deps DispatchDeps) *Dispatch {
 	if deps.AlertThreshold == "" {
 		deps.AlertThreshold = scoring.Risky
 	}
+	if deps.NotificationStore == nil {
+		if store, ok := deps.Store.(PendingNotificationStore); ok {
+			deps.NotificationStore = store
+		}
+	}
 	return &Dispatch{deps: deps, handlers: handlers}
 }
 
@@ -98,7 +119,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
 	if !ok {
 		err := fmt.Errorf("no handler for kind %q", task.Kind)
 		d.complete(ctx, task, c.RunID, "failed", "", err)
-		d.notify(ctx, task, "", err)
+		d.notify(ctx, task, c.RunID, "", err)
 		return err
 	}
 
@@ -110,7 +131,7 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
 		status = "failed"
 	}
 	d.complete(ctx, task, c.RunID, status, summary, runErr)
-	d.notify(ctx, task, summary, runErr)
+	d.notify(ctx, task, c.RunID, summary, runErr)
 	return runErr
 }
 
@@ -140,7 +161,7 @@ func (d *Dispatch) complete(ctx context.Context, task Task, runID, status, summa
 // non-destructive, non-immediate notification inside quiet hours is deferred —
 // skipped this tick (D-23); a reminder still fires (its delivery IS the task, not an
 // advisory notification).
-func (d *Dispatch) notify(ctx context.Context, task Task, summary string, runErr error) {
+func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string, runErr error) {
 	if d.deps.Notifier == nil {
 		return
 	}
@@ -152,11 +173,21 @@ func (d *Dispatch) notify(ctx context.Context, task Task, summary string, runErr
 
 	immediate := scoring.RequiresImmediateAlert(tier, d.deps.AlertThreshold)
 	if !immediate && runErr == nil && task.Kind != KindReminder && d.deferred(task) {
+		notifyAfter := time.Now().UTC()
+		if end, ok := d.deferredUntil(task); ok {
+			notifyAfter = end
+		}
+		if err := d.insertPendingNotification(ctx, task, runID, text, notifyAfter, "pending", 0, ""); err != nil {
+			slog.Warn("persist deferred scheduler notification", "task", task.ID, "run", runID, "err", err)
+		}
 		slog.Info("notification deferred to quiet-hours window end", "task", task.ID)
 		return
 	}
 	if err := d.deps.Notifier.Notify(ctx, NotifyRoute(task.NotifyRoute), "", text); err != nil {
 		slog.Warn("dispatch notify undelivered (bound-retry on a later tick)", "task", task.ID, "err", err)
+		if perr := d.insertPendingNotification(ctx, task, runID, text, time.Now().UTC(), "failed", 0, err.Error()); perr != nil {
+			slog.Warn("persist failed scheduler notification", "task", task.ID, "run", runID, "err", perr)
+		}
 	}
 }
 
@@ -169,6 +200,37 @@ func (d *Dispatch) deferred(task Task) bool {
 	return d.deps.QuietHours(task.TZ)
 }
 
+func (d *Dispatch) deferredUntil(task Task) (time.Time, bool) {
+	if d.deps.QuietHoursEnd == nil {
+		return time.Time{}, false
+	}
+	return d.deps.QuietHoursEnd(task.TZ)
+}
+
+func (d *Dispatch) insertPendingNotification(
+	ctx context.Context,
+	task Task,
+	runID, body string,
+	notifyAfter time.Time,
+	status string,
+	attempts int,
+	lastErr string,
+) error {
+	if d.deps.NotificationStore == nil {
+		return nil
+	}
+	_, err := d.deps.NotificationStore.InsertPendingNotification(ctx, InsertPendingNotificationParams{
+		RunID:       runID,
+		NotifyRoute: task.NotifyRoute,
+		Body:        body,
+		NotifyAfter: notifyAfter,
+		Attempts:    attempts,
+		LastError:   lastErr,
+		Status:      status,
+	})
+	return err
+}
+
 // taskTier recomputes the risk tier at dispatch from the task's kind + payload (the
 // schedule-time gate already routed Destructive to pending_approval; this recompute
 // drives the immediate-alert decision, D-27). scoring takes the threshold as an
@@ -179,4 +241,31 @@ func (d *Dispatch) taskTier(task Task) scoring.RiskTier {
 		ScheduleKind: string(task.ScheduleKind),
 		Payload:      task.Payload,
 	})
+}
+
+const (
+	pendingNotificationAttemptBound = 3
+	pendingNotificationSweepLimit   = 50
+)
+
+func (d *Dispatch) sweepNotifications(ctx context.Context) error {
+	if d.deps.NotificationStore == nil || d.deps.Notifier == nil {
+		return nil
+	}
+	rows, err := d.deps.NotificationStore.SweepDueNotifications(ctx, pendingNotificationAttemptBound, pendingNotificationSweepLimit)
+	if err != nil {
+		return err
+	}
+	for _, n := range rows {
+		if err := d.deps.Notifier.Notify(ctx, NotifyRoute(n.NotifyRoute), "", n.Body); err != nil {
+			if markErr := d.deps.NotificationStore.MarkNotificationFailed(ctx, n.ID, err.Error()); markErr != nil {
+				slog.Warn("mark scheduler notification failed", "notification", n.ID, "err", markErr)
+			}
+			continue
+		}
+		if err := d.deps.NotificationStore.MarkNotificationDelivered(ctx, n.ID); err != nil {
+			slog.Warn("mark scheduler notification delivered", "notification", n.ID, "err", err)
+		}
+	}
+	return nil
 }

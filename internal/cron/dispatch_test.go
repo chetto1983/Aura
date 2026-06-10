@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // fakeHandler is a scripted cron.Handler for routing/notify tests.
@@ -34,16 +35,67 @@ func (c *fakeCompleter) CompleteRun(_ context.Context, p CompleteRunParams) erro
 	return c.err
 }
 
+type fakeNotificationStore struct {
+	calls []CompleteRunParams
+
+	inserted []InsertPendingNotificationParams
+
+	sweepRows         []PendingNotification
+	sweepAttemptBound int
+	sweepLimit        int
+
+	delivered []string
+	failed    []struct {
+		id  string
+		err string
+	}
+}
+
+func (s *fakeNotificationStore) CompleteRun(_ context.Context, p CompleteRunParams) error {
+	s.calls = append(s.calls, p)
+	return nil
+}
+
+func (s *fakeNotificationStore) InsertPendingNotification(_ context.Context, p InsertPendingNotificationParams) (PendingNotification, error) {
+	s.inserted = append(s.inserted, p)
+	return PendingNotification{ID: "pending-id", RunID: p.RunID, NotifyRoute: p.NotifyRoute, Body: p.Body, NotifyAfter: p.NotifyAfter, Attempts: p.Attempts, LastError: p.LastError, Status: p.Status}, nil
+}
+
+func (s *fakeNotificationStore) SweepDueNotifications(_ context.Context, attemptBound, limit int) ([]PendingNotification, error) {
+	s.sweepAttemptBound = attemptBound
+	s.sweepLimit = limit
+	return s.sweepRows, nil
+}
+
+func (s *fakeNotificationStore) MarkNotificationDelivered(_ context.Context, id string) error {
+	s.delivered = append(s.delivered, id)
+	return nil
+}
+
+func (s *fakeNotificationStore) MarkNotificationFailed(_ context.Context, id, lastErr string) error {
+	s.failed = append(s.failed, struct {
+		id  string
+		err string
+	}{id: id, err: lastErr})
+	return nil
+}
+
 // captureNotifier records every delivery.
 type captureNotifier struct {
 	routes []NotifyRoute
 	texts  []string
 	err    error
+	errs   []error
 }
 
 func (n *captureNotifier) Notify(_ context.Context, route NotifyRoute, _ string, text string) error {
 	n.routes = append(n.routes, route)
 	n.texts = append(n.texts, text)
+	if len(n.errs) > 0 {
+		err := n.errs[0]
+		n.errs = n.errs[1:]
+		return err
+	}
 	return n.err
 }
 
@@ -162,6 +214,89 @@ func TestDispatchQuietHoursDefersNonDestructive(t *testing.T) {
 	// The run is still completed + recorded even when the notification defers.
 	if len(comp.calls) != 1 || comp.calls[0].Status != "completed" {
 		t.Fatalf("the run must complete even when notification defers, got %+v", comp.calls)
+	}
+}
+
+func TestDispatchQuietHoursPersistsPendingNotification(t *testing.T) {
+	t.Parallel()
+	h := &fakeHandler{meta: HandlerMeta{Kind: KindAgentJob}, summary: "routine summary"}
+	store := &fakeNotificationStore{}
+	notif := &captureNotifier{}
+	end := time.Date(2026, 6, 10, 7, 30, 0, 0, time.UTC)
+	d, c := newDispatchFor(t, h, KindAgentJob, DispatchDeps{
+		Store:      store,
+		Notifier:   notif,
+		QuietHours: func(string) bool { return true },
+		QuietHoursEnd: func(string) (time.Time, bool) {
+			return end, true
+		},
+	})
+
+	task := Task{ID: "t5b", Kind: KindAgentJob, Payload: []byte(`{"goal":"summarize the news"}`), NotifyRoute: "whatsapp"}
+	if err := d.Dispatch(context.Background(), task, c); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(notif.texts) != 0 {
+		t.Fatalf("quiet-hours defer must not notify immediately, got %v", notif.texts)
+	}
+	if len(store.inserted) != 1 {
+		t.Fatalf("quiet-hours defer must persist one pending notification, got %+v", store.inserted)
+	}
+	got := store.inserted[0]
+	if got.Status != "pending" || got.RunID != "run-1" || got.NotifyRoute != "whatsapp" || got.Body != "routine summary" {
+		t.Fatalf("pending notification mismatch: %+v", got)
+	}
+	if !got.NotifyAfter.Equal(end) {
+		t.Fatalf("notify_after = %s, want quiet-hours end %s", got.NotifyAfter, end)
+	}
+}
+
+func TestDispatchNotifyFailurePersistsFailedNotification(t *testing.T) {
+	t.Parallel()
+	h := &fakeHandler{meta: HandlerMeta{Kind: KindAgentJob}, summary: "routine summary"}
+	store := &fakeNotificationStore{}
+	notif := &captureNotifier{err: errors.New("mcp send failed")}
+	d, c := newDispatchFor(t, h, KindAgentJob, DispatchDeps{Store: store, Notifier: notif})
+
+	task := Task{ID: "t5c", Kind: KindAgentJob, Payload: []byte(`{"goal":"summarize the news"}`), NotifyRoute: "email"}
+	if err := d.Dispatch(context.Background(), task, c); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+	if len(store.inserted) != 1 {
+		t.Fatalf("failed notification must be persisted, got %+v", store.inserted)
+	}
+	got := store.inserted[0]
+	if got.Status != "failed" || got.Attempts != 0 || got.NotifyRoute != "email" || got.Body != "routine summary" {
+		t.Fatalf("failed notification mismatch: %+v", got)
+	}
+	if got.LastError != "mcp send failed" {
+		t.Fatalf("last_error = %q, want notify error", got.LastError)
+	}
+}
+
+func TestDispatchSweepNotificationsMarksDeliveredAndFailed(t *testing.T) {
+	t.Parallel()
+	store := &fakeNotificationStore{sweepRows: []PendingNotification{
+		{ID: "n1", NotifyRoute: "whatsapp", Body: "delivered"},
+		{ID: "n2", NotifyRoute: "email", Body: "retry later"},
+	}}
+	notif := &captureNotifier{errs: []error{nil, errors.New("still down")}}
+	d := NewDispatch(nil, DispatchDeps{Store: store, Notifier: notif})
+
+	if err := d.sweepNotifications(context.Background()); err != nil {
+		t.Fatalf("sweepNotifications: %v", err)
+	}
+	if store.sweepAttemptBound != pendingNotificationAttemptBound || store.sweepLimit != pendingNotificationSweepLimit {
+		t.Fatalf("sweep bounds = (%d,%d), want (%d,%d)", store.sweepAttemptBound, store.sweepLimit, pendingNotificationAttemptBound, pendingNotificationSweepLimit)
+	}
+	if len(notif.texts) != 2 || notif.texts[0] != "delivered" || notif.texts[1] != "retry later" {
+		t.Fatalf("sweep must attempt each notification, got %v", notif.texts)
+	}
+	if len(store.delivered) != 1 || store.delivered[0] != "n1" {
+		t.Fatalf("successful sweep delivery must mark delivered, got %v", store.delivered)
+	}
+	if len(store.failed) != 1 || store.failed[0].id != "n2" || store.failed[0].err != "still down" {
+		t.Fatalf("failed sweep delivery must mark failed with error, got %+v", store.failed)
 	}
 }
 
