@@ -111,28 +111,35 @@ func execSkill(t *testing.T, tool *SkillTool, args map[string]any) (ToolResult, 
 	return tool.Execute(context.Background(), json.RawMessage(raw))
 }
 
-// TestActionCreatePauses asserts a valid create lands pending via the writer and
-// PAUSES the turn (the *ErrAwaitingUserInput sentinel) — the model never activates.
-func TestActionCreatePauses(t *testing.T) {
-	w := &fakeSkillWriter{}
+// TestActionCreateActivates asserts P5 in-box ungating: a model-authored create the
+// writer activates (returns a non-pending status) yields a NORMAL result, NOT a pause
+// — Claude-Code self-extension parity. The pending/pause fallback is covered by the
+// defensive tests below.
+func TestActionCreateActivates(t *testing.T) {
+	w := &fakeSkillWriter{status: "active"}
 	tool := &SkillTool{Writer: w}
+	ctx := withTestToolCallCtx(context.Background())
 
-	_, err := execSkill(t, tool, map[string]any{
+	raw, _ := json.Marshal(map[string]any{
 		"action":      "create",
 		"name":        "my-skill",
 		"description": "does a thing",
 		"body":        "# instructions",
 	})
+	res, err := tool.Execute(ctx, json.RawMessage(raw))
 
 	var pause *ErrAwaitingUserInput
-	if !errors.As(err, &pause) {
-		t.Fatalf("create: want *ErrAwaitingUserInput pause, got %v", err)
+	if errors.As(err, &pause) {
+		t.Fatalf("create (ungated): must NOT pause, got %v", err)
 	}
-	if pause.Kind != KindApproval {
-		t.Errorf("pause kind = %q, want %q", pause.Kind, KindApproval)
+	if err != nil {
+		t.Fatalf("create (ungated): unexpected error %v", err)
 	}
 	if w.calls != 1 || w.gotAction != "create" || w.gotName != "my-skill" {
 		t.Errorf("writer call = (%d, %q, %q), want (1, create, my-skill)", w.calls, w.gotAction, w.gotName)
+	}
+	if !strings.Contains(res.Preview, "my-skill") || !strings.Contains(strings.ToLower(res.Preview), "active") {
+		t.Fatalf("create result should confirm activation: %q", res.Preview)
 	}
 }
 
@@ -161,8 +168,10 @@ func TestActionCreateBlocklistedIsToolError(t *testing.T) {
 	}
 }
 
-// TestActionDeleteDestructivePriority asserts delete pauses with the higher
-// (Destructive-tier) priority so a removal outranks a routine Risky approval.
+// TestActionDeleteDestructivePriority covers the DEFENSIVE pending fallback: when a
+// still-gated context stages a delete as pending it pauses with the higher
+// (Destructive-tier) priority so a removal outranks a routine Risky approval. The live
+// model path is ungated (TestActionCreateActivates).
 func TestActionDeleteDestructivePriority(t *testing.T) {
 	w := &fakeSkillWriter{}
 	tool := &SkillTool{Writer: w}
@@ -181,9 +190,9 @@ func TestActionDeleteDestructivePriority(t *testing.T) {
 	}
 }
 
-// TestHeadlessAlertFires asserts a wired Alerter receives the pending-skill alert
-// (D-26) when a gated mutation is proposed; the mutation still pauses + never
-// self-activates.
+// TestHeadlessAlertFires covers the DEFENSIVE pending fallback: when a mutation is
+// staged pending, a wired Alerter receives the pending-skill alert (D-26) and the turn
+// pauses. The live model path is ungated (TestActionCreateActivates).
 func TestHeadlessAlertFires(t *testing.T) {
 	w := &fakeSkillWriter{}
 	al := &fakeSkillAlerter{}

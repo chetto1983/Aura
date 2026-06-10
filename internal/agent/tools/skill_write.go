@@ -17,6 +17,12 @@ import (
 // and a faster, grammar-hinted self-correction for the model.
 var skillNameRe = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
 
+// statusPendingApproval mirrors skills.StatusPendingApproval across the read-path
+// boundary (the tools package does not import internal/skills): writeAction reflects
+// the writer's returned status to decide whether to pause (still pending) or return a
+// normal result (ungated/active in-box — P5).
+const statusPendingApproval = "pending_approval"
+
 // validWriteName trims whitespace and enforces the skill-name grammar at the tool
 // boundary for every name-bearing write/lifecycle action, so a structurally-invalid
 // name (blank, whitespace-only, "../" traversal) never reaches the writer regardless
@@ -155,26 +161,25 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 		return ToolResult{}, fmt.Errorf("skill %s %q: %w", action, name, err)
 	}
 
-	tier := scoring.ComputeSkillTier(action, a.Body)
+	// P5 (2026-06-10): in-box self-extension is ungated — the writer auto-activates a
+	// model-authored mutation (container = boundary, Claude-Code parity), returning a
+	// non-pending status. Return a NORMAL result, no human pause; this is now the live
+	// path for create/update/delete (delete de-materializes immediately).
+	if status != statusPendingApproval {
+		return NewResult(ctx, fmt.Sprintf("Skill %s %q is now active (status=%s).", action, name, status))
+	}
 
-	// Headless contexts (swarm worker, cron job) cannot drive an interactive resume:
-	// fire the immediate alert (D-26) so the operator learns of the attempt. The
-	// mutation is already pending and CANNOT self-activate (the writer never calls
-	// Activate). The interactive REPL leaves Alerter nil — the ask_user pause is its
-	// channel.
+	// Defensive fallback: a still-gated context staged this as pending. Fire the
+	// headless alert (D-26) and pause for approval (the model cannot answer — D-03).
+	tier := scoring.ComputeSkillTier(action, a.Body)
 	if t.Alerter != nil {
 		t.Alerter.AlertPendingSkill(ctx, name, string(action), tier)
 	}
-
-	// Pause the turn for human approval. The pause question frames the gated mutation
-	// + its tier; the model cannot answer it (D-03) — only a human resume or the CLI
-	// activates. We return the sentinel so llm_agent_pause.go suspends the turn.
 	question := fmt.Sprintf(
 		"Approve skill %s %q (risk=%s)? It is staged as pending and will NOT take effect until you approve. "+
 			"Approve to activate, or decline to discard the pending change.",
 		action, name, tier,
 	)
-	_ = status // StatusPendingApproval — the pause itself communicates the gate
 	return ToolResult{}, &ErrAwaitingUserInput{
 		Question: question,
 		Kind:     KindApproval,

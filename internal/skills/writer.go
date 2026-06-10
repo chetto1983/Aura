@@ -71,6 +71,12 @@ type AuditActor struct {
 	IdentityID string
 }
 
+// ActorModel is the actor label the in-loop skill tool uses (mirrored by the
+// cmd/aura skillWriterAdapter). A model-authored mutation is ungated in-box (P5,
+// 2026-06-10): WriteMutation auto-activates it instead of staging pending for a
+// human gate, since the whole agent runs inside the container boundary (Phase 17).
+const ActorModel = "model"
+
 // WriteMutation is the model-facing create/update/install/delete entry point. It:
 //  1. computes the tier via scoring.ComputeSkillTier (create/update/install→Risky,
 //     delete→Destructive) and gate via scoring.GateRecommended;
@@ -88,6 +94,14 @@ type AuditActor struct {
 func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, fm Frontmatter, body string, actor AuditActor) (status string, err error) {
 	tier := scoring.ComputeSkillTier(action, body)
 	gate := scoring.GateRecommended(tier)
+	// P5 (2026-06-10): in-box self-extension is ungated. The whole agent runs in the
+	// container (the boundary, Phase 17), so a MODEL-authored mutation activates
+	// immediately (Claude-Code parity) instead of staging pending + a human gate. The
+	// operator CLI path (actor "cli") keeps its gate; the injection blocklist
+	// (ValidateForWrite below) still runs on every path.
+	if actor.ActorID == ActorModel {
+		gate = false
+	}
 
 	if err := ValidateForWrite(fm, body, w.blocklist, w.bodyCapBytes, false); err != nil {
 		return "", fmt.Errorf("write mutation %q: %w", fm.Name, err)

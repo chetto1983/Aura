@@ -25,8 +25,47 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/google/uuid"
 )
+
+// TestWriteMutationModelActorUngated proves P5 (2026-06-10): a MODEL-authored mutation
+// (actor "model") is ungated in-box — WriteMutation auto-activates it (StatusActive) and
+// materializes it into the active dir, instead of staging pending. The operator CLI path
+// (actor "cli") keeps its gate (StatusPendingApproval, not materialized). The container is
+// the boundary (Phase 17), so self-extension needs no human approval (Claude-Code parity).
+func TestWriteMutationModelActorUngated(t *testing.T) {
+	w, root := newMutationWriter(t)
+	ctx := context.Background()
+
+	modelName := "model" + uuid.Must(uuid.NewV7()).String()[:8]
+	status, err := w.WriteMutation(ctx, scoring.SkillCreate,
+		Frontmatter{Name: modelName, Description: "d", Type: TypeInstruction}, "# body",
+		AuditActor{ActorID: ActorModel})
+	if err != nil {
+		t.Fatalf("model WriteMutation: %v", err)
+	}
+	if status != StatusActive {
+		t.Fatalf("model path status = %q, want %q (ungated auto-activate)", status, StatusActive)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "active", modelName, "SKILL.md")); statErr != nil {
+		t.Fatalf("model skill must be materialized into the active dir: %v", statErr)
+	}
+
+	cliName := "cli" + uuid.Must(uuid.NewV7()).String()[:8]
+	status2, err := w.WriteMutation(ctx, scoring.SkillCreate,
+		Frontmatter{Name: cliName, Description: "d", Type: TypeInstruction}, "# body",
+		AuditActor{ActorID: "cli"})
+	if err != nil {
+		t.Fatalf("cli WriteMutation: %v", err)
+	}
+	if status2 != StatusPendingApproval {
+		t.Fatalf("cli path status = %q, want %q (still gated)", status2, StatusPendingApproval)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "active", cliName, "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Fatalf("cli skill must stay pending (not materialized); active present (stat err=%v)", statErr)
+	}
+}
 
 // newMutationWriter builds a fully-configured Writer (all dirs under t.TempDir) over a
 // migrated pool, returning the writer + its root so a test can inspect on-disk state.
