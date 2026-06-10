@@ -38,7 +38,7 @@ func TestResumeAcceptActivates(t *testing.T) {
 
 	name := "ra-" + uuid.Must(uuid.NewV7()).String()[:8]
 	fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
-	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "model"}); err != nil {
+	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "cli"}); err != nil {
 		t.Fatalf("WriteMutation: %v", err)
 	}
 
@@ -75,7 +75,7 @@ func TestResumeDeclineDiscards(t *testing.T) {
 
 	name := "rd-" + uuid.Must(uuid.NewV7()).String()[:8]
 	fm := Frontmatter{Name: name, Description: "d", Type: TypeInstruction}
-	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "model"}); err != nil {
+	if _, err := w.WriteMutation(t.Context(), scoring.SkillCreate, fm, "body", AuditActor{ActorID: "cli"}); err != nil {
 		t.Fatalf("WriteMutation: %v", err)
 	}
 	if _, serr := os.Stat(filepath.Join(root, "pending", name)); serr != nil {

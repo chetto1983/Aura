@@ -124,7 +124,8 @@ func TestPendingNotificationQuietHoursDispatchAndSweep(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InsertRun: %v", err)
 	}
-	notifyAfter := time.Now().UTC().Add(time.Hour)
+	// Postgres timestamptz persists at microsecond precision.
+	notifyAfter := time.Now().UTC().Add(time.Hour).Truncate(time.Microsecond)
 	notif := &captureNotifier{}
 	h := &fakeHandler{meta: HandlerMeta{Kind: KindAgentJob}, summary: "routine summary"}
 	d := NewDispatch(map[TaskKind]Handler{KindAgentJob: h}, DispatchDeps{
