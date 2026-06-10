@@ -200,6 +200,48 @@ func TestCompletionGate_CriticError_FailsOpen(t *testing.T) {
 	}
 }
 
+func TestCompletionGate_CriticTransientOpenRetries(t *testing.T) {
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(mutatingCall("c1")),
+		agenttest.ToolCallTurn(textResponseCall("c2", "file created and verified")),
+		agenttest.FakeTurn{Err: errors.New("wsarecv: connection reset by peer")},
+		agenttest.TextChunks("stop", "DONE"),
+	)
+	a := newGateAgent(t, fc, true)
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if fc.CallCount() != 4 {
+		t.Fatalf("CallCount = %d, want 4 (critic open retry after transient failure)", fc.CallCount())
+	}
+	if got := finalContent(t, evs); got != "file created and verified" {
+		t.Errorf("final = %q, want the accepted answer after critic retry", got)
+	}
+}
+
+func TestCompletionGate_CriticRetryExhaustedFailsOpen(t *testing.T) {
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(mutatingCall("c1")),
+		agenttest.ToolCallTurn(textResponseCall("c2", "answer after retry exhaustion")),
+		agenttest.FakeTurn{Err: errors.New("wsarecv: reset one")},
+		agenttest.FakeTurn{Err: errors.New("wsarecv: reset two")},
+	)
+	a := newGateAgent(t, fc, true)
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{})))
+	if err != nil {
+		t.Fatalf("critic retry exhaustion must still fail open, got error: %v", err)
+	}
+	if fc.CallCount() != 4 {
+		t.Fatalf("CallCount = %d, want 4 (two critic open attempts)", fc.CallCount())
+	}
+	if got := finalContent(t, evs); got != "answer after retry exhaustion" {
+		t.Errorf("final = %q, want fail-open answer", got)
+	}
+}
+
 // TestCompletionGate_ContentStop_Veto: the content-stop fallback (model emits
 // prose, no tool call) is also a voluntary termination. A NOT_DONE veto continues
 // the loop one more turn; the second content-stop is accepted.

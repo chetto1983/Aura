@@ -92,7 +92,7 @@ func (a *LlmAgent) runCompletionCritic(ic InvocationContext, answer string) (don
 	callCtx, cancel := context.WithTimeout(ic.Ctx, time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 	defer cancel()
 
-	ch, err := a.client.Stream(callCtx, req)
+	ch, err := a.streamWithOpenRetry(callCtx, req, ic.RequestID.String()+":completion_critic")
 	if err != nil {
 		return false, "", false
 	}

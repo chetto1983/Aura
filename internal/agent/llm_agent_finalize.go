@@ -101,9 +101,9 @@ const (
 // finalize issues the forced-finalization synthesis turn for an early-termination
 // trip (reason in max_steps / wallclock / dedup) and emits the terminal Event. It
 // builds a tool-free request (ToolChoice="none") from a COPY of history plus the
-// D-03 nudge, calls a.client.Stream DIRECTLY — it never spends another budget step
-// (Req#4 invariant; the bounded ceiling is enforced and tested by
-// TestFinalizeOutsideBudget) — and RETRIES the synthesis ONCE when the first attempt
+// D-03 nudge, opens through the shared stream retry helper, and never spends
+// another budget step (Req#4 invariant; the bounded ceiling is enforced and tested by
+// TestFinalizeOutsideBudget). It RETRIES the synthesis ONCE when the first attempt
 // is empty/errors (D-09). When BOTH attempts fail it falls back to a deterministic
 // Italian stub digesting the gathered RoleTool results (no LLM call) so NO path ever
 // emits empty final prose. The answer is appended to history (mirroring the
@@ -214,7 +214,7 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	callCtx, cancel := context.WithTimeout(ic.Ctx, time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 	defer cancel()
 
-	ch, serr := a.client.Stream(callCtx, req)
+	ch, serr := a.streamWithOpenRetry(callCtx, req, ic.RequestID.String()+":finalize")
 	if serr != nil {
 		return "", llm.Usage{}, fmt.Errorf("finalize synthesis stream: %w", serr)
 	}

@@ -42,7 +42,7 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 		"user":       user,
 	})
 
-	ch, err := a.client.Stream(routeCtx, req)
+	ch, err := a.streamWithOpenRetry(routeCtx, req, "adaptive_reasoning_router")
 	if err != nil {
 		reasoningtrace.Record("adaptive_reasoning_router_error", map[string]any{"error": err.Error(), "fallback_tier": prompt.ReasoningTierLow})
 		return prompt.ReasoningTierLow, true

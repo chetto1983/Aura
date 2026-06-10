@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -88,5 +89,71 @@ func TestLlmAgent_AdaptiveReasoningNoneDoesNotDisableTools(t *testing.T) {
 	}
 	if main.Reasoning.Exclude == nil || !*main.Reasoning.Exclude {
 		t.Fatalf("main Reasoning.Exclude = %v, want true", main.Reasoning.Exclude)
+	}
+}
+
+func TestLlmAgent_AdaptiveReasoningRouterRetriesTransientOpen(t *testing.T) {
+	recordingProvider(t)
+	fc := agenttest.NewFakeClient(
+		agenttest.FakeTurn{Err: errors.New("wsarecv: connection reset by peer")},
+		agenttest.TextChunks("stop", `{"tier":"high"}`),
+		agenttest.TextChunks("stop", "deep answer"),
+	)
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:     fc,
+		LLM:        llm.Config{Model: "m", Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", TotalTimeoutSec: 30, AdaptiveReasoning: true, MaxTokens: 4096},
+		Registry:   testRegistry(),
+		PreviewCap: 2048,
+		RunDir:     t.TempDir(),
+		SessionID:  uuid.Must(uuid.NewV7()).String(),
+		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "debug this production outage"}},
+	})
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	if err != nil {
+		t.Fatalf("Run errored: %v", err)
+	}
+	if got := evs[len(evs)-1].LLMResponse.Content; got != "deep answer" {
+		t.Fatalf("final content = %q, want main turn after router retry", got)
+	}
+	if fc.CallCount() != 3 {
+		t.Fatalf("client calls = %d, want router retry + main", fc.CallCount())
+	}
+	main := fc.Requests[2]
+	if main.Reasoning.Effort != llm.ReasoningEffortHigh {
+		t.Fatalf("main Reasoning.Effort = %q, want high", main.Reasoning.Effort)
+	}
+}
+
+func TestLlmAgent_AdaptiveReasoningRouterRetryExhaustedFallsBackLow(t *testing.T) {
+	recordingProvider(t)
+	fc := agenttest.NewFakeClient(
+		agenttest.FakeTurn{Err: errors.New("wsarecv: reset one")},
+		agenttest.FakeTurn{Err: errors.New("wsarecv: reset two")},
+		agenttest.TextChunks("stop", "fallback answer"),
+	)
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:     fc,
+		LLM:        llm.Config{Model: "m", Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", TotalTimeoutSec: 30, AdaptiveReasoning: true, MaxTokens: 4096},
+		Registry:   testRegistry(),
+		PreviewCap: 2048,
+		RunDir:     t.TempDir(),
+		SessionID:  uuid.Must(uuid.NewV7()).String(),
+		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "debug this production outage"}},
+	})
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	if err != nil {
+		t.Fatalf("retry exhaustion should fall back to low reasoning and continue, got: %v", err)
+	}
+	if got := evs[len(evs)-1].LLMResponse.Content; got != "fallback answer" {
+		t.Fatalf("final content = %q, want fallback main answer", got)
+	}
+	if fc.CallCount() != 3 {
+		t.Fatalf("client calls = %d, want two router attempts + main", fc.CallCount())
+	}
+	main := fc.Requests[2]
+	if main.Reasoning.Effort != llm.ReasoningEffortLow {
+		t.Fatalf("main Reasoning.Effort = %q, want low fallback", main.Reasoning.Effort)
 	}
 }

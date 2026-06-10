@@ -258,10 +258,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					answer += truncationNotice // D-21 — no auto-continue
 				}
 				// Completion gate (D-43): content-stop is also a voluntary termination.
-				// No tool_call to attach feedback to here, so a veto appends the proposed
-				// answer + a user-role nudge and continues one more turn (bounded once).
+				// No tool_call to attach feedback to here, so a veto appends only the
+				// user-role nudge. The vetoed answer must not become durable history:
+				// finalize copies history forward on budget trips.
 				if veto, feedback := a.gateCompletion(ic, answer); veto {
-					a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
 					a.history = append(a.history, llm.Message{Role: llm.RoleUser, Content: feedback})
 					continue
 				}
