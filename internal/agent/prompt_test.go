@@ -59,6 +59,14 @@ func TestPrompt_MechanismNotEnumeration(t *testing.T) {
 // TestPrompt_ByteStable asserts two reads of the prompt are byte-identical — the
 // seed assertion for prefix stability across turns (Req#14). systemMessage() must
 // read no clock and take no per-turn input.
+func TestPrompt_FullToolSurfaceDoctrine(t *testing.T) {
+	for _, needle := range []string{"whole current tool list", "most specific safe tool", "not only software engineering"} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt is missing full tool-surface doctrine %q", needle)
+		}
+	}
+}
+
 func TestPrompt_ByteStable(t *testing.T) {
 	first := systemMessage()
 	second := systemMessage()
