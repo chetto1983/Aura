@@ -230,10 +230,9 @@ func readToolOutputPointer(toolCallID string) string {
 	return fmt.Sprintf("[tool output evicted to save context; page it back via read_tool_output(tool_call_id=%q)]", toolCallID)
 }
 
-// dropOldestPairs removes oldest user/assistant PAIRs after the leading system
-// turn until the history fits hardCap or no droppable pair remains. It preserves
-// the system L0 turn and keeps the non-system remainder even (len(history)%2==0
-// for the non-system part). Returns the reduced turns + the count of pairs dropped.
+// dropOldestPairs removes oldest conversational rounds after the protected head
+// until the history fits hardCap or no droppable round remains. The historical
+// name/signature stays because rot-event accounting consumes its count.
 func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn, int) {
 	// Split off the PROTECTED head: a leading system turn (seq=1) AND the messages[1]
 	// always-block (seq=2, D-07 / Pitfall 3) if present. Neither is ever dropped — the
@@ -255,11 +254,33 @@ func dropOldestPairs(enc *tiktoken.Tiktoken, turns []Turn, hardCap int) ([]Turn,
 		if totalTokens(enc, current) <= hardCap {
 			break
 		}
-		body = body[2:] // drop the oldest pair
+		var dropped bool
+		body, dropped = dropOldestRound(body)
+		if !dropped {
+			break
+		}
 		pairsDropped++
+	}
+	for len(body) > 0 && body[0].Role == llm.RoleTool {
+		body = body[1:]
+		if pairsDropped == 0 {
+			pairsDropped = 1
+		}
 	}
 	reduced := append(append([]Turn(nil), system...), body...)
 	return reduced, pairsDropped
+}
+
+func dropOldestRound(body []Turn) ([]Turn, bool) {
+	if len(body) == 0 {
+		return body, false
+	}
+	for i := 1; i < len(body); i++ {
+		if body[i].Role == llm.RoleUser {
+			return body[i:], true
+		}
+	}
+	return body[:0], true
 }
 
 // totalTokens sums the cl100k_base token estimate over the turns' content +

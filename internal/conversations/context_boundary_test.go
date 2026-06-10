@@ -9,6 +9,7 @@ package conversations
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"strings"
 	"sync"
@@ -41,6 +42,46 @@ func sizedTurns(t *testing.T, enc *tiktoken.Tiktoken, bodyTokens int) []Turn {
 		{Seq: 5, Role: llm.RoleAssistant, Content: "a"},
 	}
 	return turns
+}
+
+func toolCallsJSON(t *testing.T, ids ...string) []byte {
+	t.Helper()
+	calls := make([]llm.ToolCall, len(ids))
+	for i, id := range ids {
+		calls[i].ID = id
+		calls[i].Type = "function"
+		calls[i].Function.Name = "fixture_tool"
+		calls[i].Function.Arguments = "{}"
+	}
+	raw, err := json.Marshal(calls)
+	if err != nil {
+		t.Fatalf("marshal tool calls: %v", err)
+	}
+	return raw
+}
+
+func assertToolRoundsIntact(t *testing.T, msgs []llm.Message) {
+	t.Helper()
+	for i := 0; i < len(msgs); i++ {
+		msg := msgs[i]
+		if msg.Role == llm.RoleTool {
+			t.Fatalf("orphan tool message at index %d: %+v", i, msg)
+		}
+		if msg.Role != llm.RoleAssistant || len(msg.ToolCalls) == 0 {
+			continue
+		}
+		for j, call := range msg.ToolCalls {
+			idx := i + 1 + j
+			if idx >= len(msgs) {
+				t.Fatalf("tool call %q at index %d has no following tool result", call.ID, i)
+			}
+			got := msgs[idx]
+			if got.Role != llm.RoleTool || got.ToolCallID != call.ID {
+				t.Fatalf("tool call %q at index %d must be followed by its tool result, got index %d %+v", call.ID, i, idx, got)
+			}
+		}
+		i += len(msg.ToolCalls)
+	}
 }
 
 // captureSlog installs a slog handler recording WARN+ records for the duration of
@@ -303,6 +344,56 @@ func TestDropOldestPairs_SystemDetectionAndLoop(t *testing.T) {
 	red2, drop2 := dropOldestPairs(enc, noSys, hc2)
 	if drop2 != 1 || len(red2) != 2 || red2[0].Content != "tail q" {
 		t.Fatalf("without a system head the oldest body pair must drop, got dropped=%d reduced=%+v", drop2, red2)
+	}
+}
+
+// TestDropOldestPairs_ToolRoundBoundary pins the H8/D-04 false-green: fixed
+// two-turn slicing can stop with a RoleTool at the body head after cutting into
+// assistant(tool_calls)->tool->tool->assistant. The boundary-aware drop must
+// remove the old tool round whole while preserving any kept tool round intact.
+func TestDropOldestPairs_ToolRoundBoundary(t *testing.T) {
+	enc := mustEncoderRaw(t)
+	bigTool := strings.Repeat("word ", 300)
+	turns := []Turn{
+		{Seq: 1, Role: llm.RoleSystem, Content: "SYSTEM"},
+		{Seq: 2, Role: llm.RoleAssistant, Content: "old tool calls", ToolCalls: toolCallsJSON(t, "call_old_1", "call_old_2")},
+		{Seq: 3, Role: llm.RoleTool, Content: bigTool, ToolCallID: "call_old_1"},
+		{Seq: 4, Role: llm.RoleTool, Content: "old second result", ToolCallID: "call_old_2"},
+		{Seq: 5, Role: llm.RoleAssistant, Content: "old synthesis"},
+		{Seq: 6, Role: llm.RoleUser, Content: "recent q"},
+		{Seq: 7, Role: llm.RoleAssistant, Content: "recent tool call", ToolCalls: toolCallsJSON(t, "call_recent")},
+		{Seq: 8, Role: llm.RoleTool, Content: "recent result", ToolCallID: "call_recent"},
+		{Seq: 9, Role: llm.RoleAssistant, Content: "recent answer"},
+	}
+	oldStrideReduced := []Turn{turns[0], turns[3], turns[4], turns[5], turns[6], turns[7], turns[8]}
+	hardCap := totalTokens(enc, oldStrideReduced) + 5
+	if totalTokens(enc, oldStrideReduced) > hardCap || hardCap >= totalTokens(enc, turns) {
+		t.Fatalf("test setup must make the old 2-stride stop with a RoleTool head")
+	}
+	oldStrideMsgs := toMessages(oldStrideReduced)
+	if oldStrideMsgs[1].Role != llm.RoleTool {
+		t.Fatalf("test setup must model the pre-fix orphan RoleTool head, got %+v", oldStrideMsgs)
+	}
+
+	reduced, dropped := dropOldestPairs(enc, turns, hardCap)
+	if dropped != 1 {
+		t.Fatalf("boundary-aware drop must count the old tool round as one dropped round, got %d", dropped)
+	}
+	msgs := toMessages(reduced)
+	if len(msgs) != 5 || msgs[0].Role != llm.RoleSystem || msgs[1].Role != llm.RoleUser {
+		t.Fatalf("must keep [system, recent user, recent tool round], got %+v", msgs)
+	}
+	if msgs[1].Content != "recent q" {
+		t.Fatalf("old tool round must be removed whole, first body content=%q", msgs[1].Content)
+	}
+	for _, msg := range msgs {
+		if msg.ToolCallID == "call_old_1" || msg.ToolCallID == "call_old_2" {
+			t.Fatalf("old tool results must not survive partially, got %+v", msgs)
+		}
+	}
+	assertToolRoundsIntact(t, msgs)
+	if msgs[3].Role != llm.RoleTool || msgs[3].ToolCallID != "call_recent" {
+		t.Fatalf("kept tool round must retain assistant(tool_calls) before tool result, got %+v", msgs)
 	}
 }
 
