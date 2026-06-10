@@ -46,6 +46,7 @@ type bgShell struct {
 	buf      []byte
 	readOff  int
 	done     bool
+	killed   bool
 	exitCode *int
 }
 
@@ -61,7 +62,9 @@ func (s *bgShell) Write(p []byte) (int, error) {
 func (s *bgShell) finish(waitErr error) {
 	s.mu.Lock()
 	s.done = true
-	if ec, ok := exitCode(waitErr); ok {
+	if s.killed {
+		s.exitCode = nil
+	} else if ec, ok := exitCode(waitErr); ok {
 		s.exitCode = &ec
 	} else if waitErr == nil {
 		zero := 0
@@ -81,6 +84,8 @@ func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
 		chunk = filterLines(chunk, filter)
 	}
 	switch {
+	case s.killed:
+		status = "killed"
 	case !s.done:
 		status = "running"
 	case s.exitCode != nil:
@@ -99,6 +104,9 @@ func (b *BackgroundShells) start(command, dir string, env []string) (string, err
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Env = env
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	cmd.WaitDelay = 5 * time.Second
 	sh := &bgShell{startedAt: time.Now(), cancel: cancel}
 	cmd.Stdout = sh
 	cmd.Stderr = sh
@@ -133,6 +141,10 @@ func (b *BackgroundShells) kill(id string) error {
 	if !ok {
 		return fmt.Errorf("unknown shell_id %q", id)
 	}
+	sh.mu.Lock()
+	sh.killed = true
+	sh.exitCode = nil
+	sh.mu.Unlock()
 	sh.cancel()
 	return nil
 }
