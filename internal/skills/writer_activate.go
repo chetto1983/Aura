@@ -22,6 +22,11 @@ import (
 // The FS promotion + materialize happen BEFORE the tx (reconcilable by the boot
 // scan); the tx is the audit INSERT (all-or-nothing on the audit row).
 func (w *Writer) Activate(ctx context.Context, name string, src ApprovalSource, pausedToken string, actor AuditActor) error {
+	// Match the sibling lifecycle methods: validate before joining name into any
+	// path that can later reach os.RemoveAll through promote/materialize cleanup.
+	if err := SanitizeName(name, name); err != nil {
+		return fmt.Errorf("activate %q: %w", name, err)
+	}
 	srcDir := filepath.Join(w.pendingDir, name)
 	dstDir := filepath.Join(w.activeDir, name)
 

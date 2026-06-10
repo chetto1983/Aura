@@ -298,6 +298,62 @@ func TestSearchConversationTurns_OrderedBySimilarity(t *testing.T) {
 	}
 }
 
+func TestSearchConversationTurnsExcludesDeletedConversations(t *testing.T) {
+	pool := migratedPool(t)
+	s := newStore(t, pool)
+	activeID := newConversation(t, s)
+	deletedID := newConversation(t, s)
+	ctx := context.Background()
+	needle := "needle" + strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+
+	for _, convID := range []string{activeID, deletedID} {
+		if err := s.AppendTurn(ctx, AppendTurnParams{
+			ConversationID: convID,
+			Seq:            1,
+			Role:           llm.RoleUser,
+			Content:        needle + " searchable phrase",
+		}); err != nil {
+			t.Fatalf("AppendTurn %s: %v", convID, err)
+		}
+	}
+	if err := s.UpdateStatus(ctx, deletedID, StatusDeleted); err != nil {
+		t.Fatalf("delete status: %v", err)
+	}
+
+	res, err := s.SearchConversationTurns(ctx, needle, 10)
+	if err != nil {
+		t.Fatalf("SearchConversationTurns: %v", err)
+	}
+	if !containsSearchResult(res, activeID) {
+		t.Fatalf("active conversation result missing: %+v", res)
+	}
+	if containsSearchResult(res, deletedID) {
+		t.Fatalf("deleted conversation leaked into search results: %+v", res)
+	}
+
+	raw, err := os.ReadFile(filepath.Join("..", "db", "queries", "conversation_turns.sql"))
+	if err != nil {
+		t.Fatalf("read locked query file: %v", err)
+	}
+	locked := "SELECT conversation_id, seq, content, similarity(content, $1) AS sim\n" +
+		"FROM aura.conversation_turns\n" +
+		"WHERE content % $1\n" +
+		"ORDER BY similarity(content, $1) DESC\n" +
+		"LIMIT $2;"
+	if !strings.Contains(string(raw), locked) {
+		t.Fatalf("locked SearchConversationTurns SQL clause changed:\n%s", raw)
+	}
+}
+
+func containsSearchResult(results []SearchResult, id string) bool {
+	for _, r := range results {
+		if r.ConversationID == id {
+			return true
+		}
+	}
+	return false
+}
+
 // TestDelete_CascadesAndRemovesSidecar: Delete cascade-removes turns + paused_states
 // and os.RemoveAll's the sidecar dir after commit.
 func TestDelete_CascadesAndRemovesSidecar(t *testing.T) {

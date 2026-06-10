@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/web"
 )
@@ -66,6 +67,10 @@ func (e *WebFetch) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 	var a webFetchArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return ToolResult{}, fmt.Errorf("web_fetch args: %w", err)
+	}
+	a.URL = strings.TrimSpace(a.URL)
+	if a.URL == "" {
+		return ToolResult{}, fmt.Errorf("web_fetch: url is required")
 	}
 
 	page, err := e.Engine.Fetch(ctx, fetchConvID(ctx), a.URL)

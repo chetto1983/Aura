@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"time"
 
 	"github.com/chetto1983/aura/internal/skills"
@@ -21,6 +22,8 @@ import (
 
 const snippetUsage = "usage: aura skills snippet {save <name> --lang <python|shell|js> --code <code> " +
 	"[--desc <d>] [--needs-network] [--needs-workspace]|exec <name> [args...]}"
+
+var snippetExecTimeout = 120 * time.Second
 
 // skillsSnippet dispatches the snippet subcommands.
 func skillsSnippet(ctx context.Context, args []string) {
@@ -105,15 +108,7 @@ func skillsSnippetExec(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	runArgs := append([]string{use.HostPath}, extra...)
-	// use.Interpreter is a fixed language->binary (python3/sh/node) resolved from validated
-	// snippet frontmatter; use.HostPath is the writer-materialized export-dir file, not
-	// arbitrary input. Host exec IS the deliberate execution surface (amendment #50 / D-15c).
-	cmd := exec.CommandContext(ctx, use.Interpreter, runArgs...) // #nosec G204 G702 -- see above
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	runErr := cmd.Run()
-
+	stdout, stderr, exit, runErr := runSnippetProcess(ctx, use, extra)
 	if stdout.Len() > 0 {
 		fmt.Print(stdout.String())
 	}
@@ -121,17 +116,9 @@ func skillsSnippetExec(ctx context.Context, args []string) {
 		fmt.Fprint(os.Stderr, stderr.String())
 	}
 
-	// A non-zero exit (ExitError) carries an exit code; a spawn failure (interpreter
-	// not found) is a hard error, never a stamped run.
-	exit := 0
 	if runErr != nil {
-		var ee *exec.ExitError
-		if errors.As(runErr, &ee) {
-			exit = ee.ExitCode()
-		} else {
-			fmt.Fprintf(os.Stderr, "snippet exec %q: %v\n", name, runErr)
-			os.Exit(1)
-		}
+		fmt.Fprintf(os.Stderr, "snippet exec %q: %v\n", name, runErr)
+		os.Exit(1)
 	}
 
 	// Stamp usage on a clean (exit 0) run — the deterministic operator stamp (D-19).
@@ -143,4 +130,31 @@ func skillsSnippetExec(ctx context.Context, args []string) {
 	if exit != 0 {
 		os.Exit(exit)
 	}
+}
+
+func runSnippetProcess(ctx context.Context, use skills.SnippetUse, extra []string) (bytes.Buffer, bytes.Buffer, int, error) {
+	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt)
+	defer stop()
+	runCtx, cancel := context.WithTimeout(signalCtx, snippetExecTimeout)
+	defer cancel()
+
+	runArgs := append([]string{use.HostPath}, extra...)
+	// use.Interpreter is a fixed language->binary (python3/sh/node) resolved from validated
+	// snippet frontmatter; use.HostPath is the writer-materialized export-dir file, not
+	// arbitrary input. Host exec IS the deliberate execution surface (amendment #50 / D-15c).
+	cmd := exec.CommandContext(runCtx, use.Interpreter, runArgs...) // #nosec G204 G702 -- see above
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	runErr := cmd.Run()
+	if runErr == nil {
+		return stdout, stderr, 0, nil
+	}
+	if runCtx.Err() != nil {
+		return stdout, stderr, 0, runCtx.Err()
+	}
+	var ee *exec.ExitError
+	if errors.As(runErr, &ee) {
+		return stdout, stderr, ee.ExitCode(), nil
+	}
+	return stdout, stderr, 0, runErr
 }

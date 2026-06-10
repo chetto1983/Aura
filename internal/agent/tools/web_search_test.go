@@ -81,6 +81,20 @@ func TestWebSearch_Success(t *testing.T) {
 	}
 }
 
+func TestWebSearchRejectsEmptyQueryBeforeEngine(t *testing.T) {
+	eng := &fakeSearchEngine{}
+	ws := &WebSearch{Engine: eng}
+	ctx := ctxWith(t, "sess-empty-search", "call-empty-search")
+
+	_, err := ws.Execute(ctx, json.RawMessage(`{"query":"   "}`))
+	if err == nil || !strings.Contains(err.Error(), "query is required") {
+		t.Fatalf("empty query err = %v, want query is required", err)
+	}
+	if eng.calls != 0 {
+		t.Fatalf("empty query must not reach search engine; calls=%d", eng.calls)
+	}
+}
+
 // staticEngine confirms *web.Client satisfies both adapter seams at compile time
 // (the production wiring in cmd/aura/main.go depends on this).
 var _ searchEngine = (*web.Client)(nil)

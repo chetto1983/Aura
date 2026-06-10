@@ -64,6 +64,9 @@ func (h *ResumeHandler) Resume(ctx context.Context, action, name, pausedToken st
 // the non-NULL pausedToken (the D-29 ask_user reject row); src=ApprovalCLI carries
 // an empty token.
 func (w *Writer) DiscardPending(ctx context.Context, name string, src ApprovalSource, pausedToken string, actor AuditActor) error {
+	if err := SanitizeName(name, name); err != nil {
+		return fmt.Errorf("discard pending %q: %w", name, err)
+	}
 	pendingDir := filepath.Join(w.pendingDir, name)
 	hash, _ := HashSkillDir(pendingDir) // best-effort content_hash for the recovery path
 

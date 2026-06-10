@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/web"
 )
@@ -77,6 +78,10 @@ func (e *WebSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	var a webSearchArgs
 	if err := json.Unmarshal(raw, &a); err != nil {
 		return ToolResult{}, fmt.Errorf("web_search args: %w", err)
+	}
+	a.Query = strings.TrimSpace(a.Query)
+	if a.Query == "" {
+		return ToolResult{}, fmt.Errorf("web_search: query is required")
 	}
 
 	results, err := e.Engine.Search(ctx, web.SearchParams{

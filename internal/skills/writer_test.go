@@ -78,6 +78,18 @@ func TestSetAlwaysRejectsBadName(t *testing.T) {
 	}
 }
 
+func TestActivateAndDiscardPendingRejectBadName(t *testing.T) {
+	w, _ := newTestWriter(t)
+	for _, bad := range []string{"../escape", "Bad_Name", "a/b", ""} {
+		if err := w.Activate(t.Context(), bad, ApprovalCLI, "", AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("Activate(%q): want ErrInvalidName, got %v", bad, err)
+		}
+		if err := w.DiscardPending(t.Context(), bad, ApprovalCLI, "", AuditActor{ActorID: "cli"}); !errors.Is(err, ErrInvalidName) {
+			t.Errorf("DiscardPending(%q): want ErrInvalidName, got %v", bad, err)
+		}
+	}
+}
+
 // TestArchiveRejectsBadName is the CR-01 regression: Archive validates the name
 // grammar BEFORE joining it into a path (D-30 chokepoint), so a "../" traversal name
 // can never reach Dematerialize/os.RemoveAll outside the export dir. A sentinel tree

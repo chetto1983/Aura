@@ -30,9 +30,11 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/swarm"
 	"github.com/chetto1983/aura/internal/web"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+	_ = godotenv.Load()
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(1)

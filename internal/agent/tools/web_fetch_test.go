@@ -18,9 +18,11 @@ type fakeFetchEngine struct {
 	err       error
 	gotConvID string
 	gotURL    string
+	calls     int
 }
 
 func (f *fakeFetchEngine) Fetch(_ context.Context, convID, rawURL string) (web.Page, error) {
+	f.calls++
 	f.gotConvID, f.gotURL = convID, rawURL
 	return f.page, f.err
 }
@@ -30,9 +32,11 @@ type fakeSearchEngine struct {
 	results []web.Result
 	err     error
 	gotPar  web.SearchParams
+	calls   int
 }
 
 func (f *fakeSearchEngine) Search(_ context.Context, p web.SearchParams) ([]web.Result, error) {
+	f.calls++
 	f.gotPar = p
 	return f.results, f.err
 }
@@ -77,6 +81,20 @@ func TestWebFetch_Spillover(t *testing.T) {
 	// The marshalled page that spilled must round-trip the convID from the ctx.
 	if eng.gotConvID != "sess-fetch" {
 		t.Fatalf("adapter must scope the fetch to the tool-call conversation; gotConvID=%q", eng.gotConvID)
+	}
+}
+
+func TestWebFetchRejectsEmptyURLBeforeEngine(t *testing.T) {
+	eng := &fakeFetchEngine{}
+	wf := &WebFetch{Engine: eng}
+	ctx := ctxWith(t, "sess-empty-fetch", "call-empty-fetch")
+
+	_, err := wf.Execute(ctx, json.RawMessage(`{"url":"   "}`))
+	if err == nil || !strings.Contains(err.Error(), "url is required") {
+		t.Fatalf("empty url err = %v, want url is required", err)
+	}
+	if eng.calls != 0 {
+		t.Fatalf("empty url must not reach fetch engine; calls=%d", eng.calls)
 	}
 }
 

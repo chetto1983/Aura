@@ -488,9 +488,23 @@ func (s *Store) SearchConversationTurns(ctx context.Context, query string, limit
 		return nil, fmt.Errorf("search conversation turns: %w", err)
 	}
 	out := make([]SearchResult, 0, len(rows))
+	statusByConversation := make(map[string]string)
 	for _, r := range rows {
+		convID := uuid.UUID(r.ConversationID.Bytes).String()
+		status, ok := statusByConversation[convID]
+		if !ok {
+			conv, gErr := s.Get(ctx, convID)
+			if gErr != nil {
+				return nil, fmt.Errorf("search conversation turns: load conversation %s status: %w", convID, gErr)
+			}
+			status = conv.Status
+			statusByConversation[convID] = status
+		}
+		if status == StatusDeleted {
+			continue
+		}
 		out = append(out, SearchResult{
-			ConversationID: uuid.UUID(r.ConversationID.Bytes).String(),
+			ConversationID: convID,
 			Seq:            int(r.Seq),
 			Content:        r.Content.String,
 			Similarity:     r.Sim,
