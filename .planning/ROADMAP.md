@@ -39,6 +39,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [ ] **Phase 17: Packaging & Distribution** - end-user install: single fat Aura container image (Go binary + python/uvx + node/npx + pinned mcp-neo4j-cypher so the host needs only Docker) + curl|sh self-host installer with secret-gen + appliance pre-seed door + D-22 keyless-boot relaxation (Slice 14, amendment #47)
 
+- [x] **Phase 18: Slice 7e executable snippet reuse** - steady-state artifact runs under 40s: snippet store/param/run-by-path collapses the 29-30-roundtrip re-authoring loop to ~5 calls (completed 2026-06-08)
+- [ ] **Phase 19: Audit Bug Resolution + E2E Live Test** - resolve the HIGH/MEDIUM correctness findings from the 2026-06-10 deep audit (shell never-answer cluster, SSE/HITL error-swallowing, scheduler dropped-notification contract, microcompact wire-invalidity, LLM stream-error + MCP reconnect gaps) and validate the fixes end-to-end on the live stack
+
 ## Phase Details
 
 ### Phase 0: PRD Amendments
@@ -613,3 +616,32 @@ Plans:
 **Wave 4** *(blocked on 18-02 + 18-03)*
 
 - [x] 18-04-PLAN.md - eval registry parity (register the production skill tool) + steady-state ledger-asserted reuse gate (~5 calls / <40s on the 2nd run, artifact-not-reply) + quality snapshot (operator-gated)
+
+### Phase 19: Audit Bug Resolution + E2E Live Test
+
+**Goal:** Resolve the confirmed correctness/robustness findings from the 2026-06-10 deep parallel audit (`docs/audit/deep-correctness-audit-2026-06-10.md`) and prove the fixes hold end-to-end on the live stack. Priority order from the audit: (1) the **"shell never answers" root-cause cluster** - H4 orphan-child/`WaitDelay` hang + H5 exit-code/stderr head-first truncation + M-b veto re-surfacing vetoed prose; (2) **error-swallowing on user-facing surfaces** - H1 SSE boundary-frame drop (protocol corruption), H2 Telegram `RunErrorEvent` not rendered, H3 async doc-conversion failure silent, H9 LLM mid-stream SSE error swallowed; (3) **not-wired / dropped contracts** - H6/H7 scheduler deferred+undelivered notifications never retried, H10 MCP reconnect-on-use unimplemented, H8 microcompact 2-stride drop producing wire-invalid tool history; (4) the env-ordering class (M-i: central `godotenv.Load()` at `main()`). Each fix lands with a regression test that fails before / passes after, then a live E2E pass on the running stack (Telegram CDP harness + `aura chat` host loop + scheduler + AG-UI SSE) confirms the user-visible behavior.
+**Requirements**: The 26 audit findings (H1-H10, M-a..M-j, L1-L6) + the INFO triage are the de-facto requirements (no new product capability - correctness + validation only). Each finding appears as a `requirements:` id in exactly one fix plan.
+**Depends on:** Phase 18
+**Plans:** 11 plans
+
+Plans:
+
+Wave 1 (7 parallel - independent file sets):
+
+- [ ] 19-01-PLAN.md - Shell never-answer cluster: H4 process-group kill + `cmd.Cancel`/`WaitDelay` (first `//go:build` OS-split in `internal/`) + H5 tail-reserving truncation + L3 cancel status + M-f single writer; rewrite `TestShellExecTimesOut` (D-04)
+- [ ] 19-03-PLAN.md - LLM stream contract: H9 add `Err error` to `llm.Chunk` + emit-before-close (Option a) + main-loop surfaces it; consume orphan `testdata/premature_close.sse` (D-04)
+- [ ] 19-04-PLAN.md - AG-UI transport + shared sanitize: H1 widen `isLifecycleFrame` (rewrite `TestFanoutSlowSubscriberDropped` via `ValidateSequence`, D-04) + M-c Fanout RUN_ERROR/trace redaction (LIVE leak) + M-d multimodal handling + export `SanitizeString`
+- [ ] 19-06-PLAN.md - Microcompact H8: drop by conversational boundary + skip dangling RoleTool head; add `assistant(tool_calls)->tool->tool->assistant` fixture (D-04)
+- [ ] 19-07-PLAN.md - Scheduler durable notification state: migration `0013_pending_notifications` + sqlc + store methods + H6 quiet-hours-defer flush + H7 failed-self-send bounded retry (D-02 build-real)
+- [ ] 19-09-PLAN.md - MCP: H10 lazy reconnecting Server wrapper (re-open+initialize once, refresh description, no supervisor) + M-j bounded-ring stderr in both `safeBuffer` copies (D-02 build-real)
+- [ ] 19-10-PLAN.md - Env-load + residual LOWs: M-i central `godotenv.Load()` (+ free-rider env LOWs, D-01b) + L1 snippet timeout + L2 SanitizeName guards + L4 status filter + L6 empty-arg reject + INFO trust-boundary doc (D-01a)
+
+Wave 2 (depend on a wave-1 plan for shared files/exports):
+
+- [ ] 19-05-PLAN.md - Telegram surface: H2 `RunErrorEvent` render via shared `agui.SanitizeString` + H3 async convert notice + M-e `/cancel`-during-pause; correct stale `serve_channels.go:142` comment (D-04). Depends on 19-04 (SanitizeString export) + 19-09 (serve_channels.go)
+- [ ] 19-08-PLAN.md - Scheduler contract rest: M-g wire `ReschedulesOnRecovery` into `catchUpMissed` + M-h detached terminal write on shutdown + L5 drop inert SKIP LOCKED. Depends on 19-07 (shared cron files + 0013)
+
+Wave 3 (sequential / final):
+
+- [ ] 19-02-PLAN.md - Veto/never-answer: M-b veto appends only the nudge (no resurface on budget trip) + M-a route 3 stream-opens through `streamWithOpenRetry`. Depends on 19-01 + 19-03 (shared `llm_agent.go`/`llm_agent_completion.go`)
+- [ ] 19-11-PLAN.md - Layer-2 live operator sign-off (autonomous: false): real paid-agent + real-user-prompt before/after repro for every user-observable finding (H1/H2/H3/H4/H5/H6/H7/H9/M-b/M-e) recorded in `docs/audit/19-LIVE-SIGNOFF-2026-06-10.md`. Depends on all fix plans
