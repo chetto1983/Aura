@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: ready_to_execute
-stopped_at: "Phase 14 planned; ready to execute Wave 1"
-last_updated: "2026-06-08T19:16:28.258Z"
+status: executing
+stopped_at: Phase 19 context gathered
+last_updated: "2026-06-10T06:52:30.545Z"
 last_activity: 2026-06-08 -- Phase 14 planning complete
 progress:
-  total_phases: 20
+  total_phases: 21
   completed_phases: 16
   total_plans: 110
   completed_plans: 104
-  percent: 80
+  percent: 76
 ---
 
 # Project State
@@ -132,6 +132,7 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 - Phase 16 planned: MCP Sidecar Manager + Third-Party Trust. Scope includes trusted Aura recipes, Calendar fixture recipe, profiles/catalogs, status/doctor/logs, Streamable HTTP, explicit trust approvals, Dockerized/sandboxed third-party local runtime, and mount-time risk-policy enforcement. OpenClaw plugin host remains separate.
 - Phase 17 registered (2026-06-05, amendment #47 / OPS-01): Packaging & Distribution — end-user install collapses the host requirement to only-Docker via a single fat Aura image (Go binary + python/uvx + node/npx + pinned mcp-neo4j-cypher; MCP subprocesses spawn in-image, client.go unchanged) + curl|sh self-host installer (secret-gen) + appliance pre-seed door + D-22 keyless-boot relaxation (serve boots without OPENROUTER_API_KEY, agent call fail-closes). Depends on Phase 13 setup wizard for the deferred-key door. Registered PRD-first (prd.md Slice 14 + ROADMAP P17 + REQUIREMENTS OPS-01) before any code; next = /gsd-spec-phase 17.
 - Phase 18 added (2026-06-06, #53/D-42 follow-up): Slice 7e executable snippet reuse — steady-state artifact runs sotto i 40s. Driver: chat-surface E2E gate measured 151-233s per xlsx run, dominated by 29-30 LLM roundtrips re-authoring the build script from scratch every run (cache healthy at 90-95% hit — NOT the bottleneck). 7e snippet store/param/run-by-path collapses the loop to ~5 calls. Secondary lever registered for later: machine-profile env pinning (Slice 10 Agent.md) kills ~7 probe calls.
+- Phase 19 added (2026-06-10): Audit Bug Resolution + E2E Live Test. Driver: the 2026-06-10 deep parallel audit (10 surface-partitioned agents) confirmed ~11 HIGH + ~10 MEDIUM correctness/robustness findings after adversarial refutation — recorded in `docs/audit/deep-correctness-audit-2026-06-10.md`. Headline = the still-open "shell never answers" UX bug, root-caused to a 3-mechanism cluster (H4 shell orphan-child/no-WaitDelay hang, H5 head-first truncation hiding exit-code/stderr, M-b completion-gate veto re-surfacing vetoed prose on the budget trip). Plus error-swallowing on user-facing surfaces (SSE boundary-frame drop, Telegram RunErrorEvent unrendered, async doc-convert silent, LLM mid-stream SSE error swallowed), dropped scheduler notification contracts, MCP reconnect-on-use unimplemented, microcompact wire-invalid tool history, and the no-central-godotenv env-ordering class. No new product capability — correctness + live validation only. Also repaired two pre-existing ROADMAP overview-bullet gaps (Phase 18 + 19 were missing from the `## Phases` checklist). Next = /gsd-plan-phase 19.
 
 ### Decisions
 
@@ -222,6 +223,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-08T09:48:13.000Z
-Stopped at: Phase 14 planned; ready to execute Wave 1.
-Resume file: .planning/phases/14-onboarding-agent-md/14-01-PLAN.md
+Last session: 2026-06-10T06:52:30.513Z
+Stopped at: Phase 19 context gathered
+Resume file: .planning/phases/19-audit-bug-resolution-e2e-live-test/19-CONTEXT.md
