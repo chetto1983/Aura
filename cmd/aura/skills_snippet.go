@@ -106,7 +106,10 @@ func skillsSnippetExec(ctx context.Context, args []string) {
 	}
 
 	runArgs := append([]string{use.HostPath}, extra...)
-	cmd := exec.CommandContext(ctx, use.Interpreter, runArgs...)
+	// use.Interpreter is a fixed language->binary (python3/sh/node) resolved from validated
+	// snippet frontmatter; use.HostPath is the writer-materialized export-dir file, not
+	// arbitrary input. Host exec IS the deliberate execution surface (amendment #50 / D-15c).
+	cmd := exec.CommandContext(ctx, use.Interpreter, runArgs...) // #nosec G204 G702 -- see above
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	runErr := cmd.Run()
