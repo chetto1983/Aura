@@ -38,6 +38,36 @@ func eventSource(threadID, runID string, n int) iter.Seq2[events.Event, error] {
 	}
 }
 
+func boundaryOverflowSource(afterStartYield chan<- struct{}, continueAfterStart <-chan struct{}) iter.Seq2[events.Event, error] {
+	return func(yield func(events.Event, error) bool) {
+		if !yield(events.NewRunStartedEvent("thread-1", "run-1"), nil) {
+			return
+		}
+		for i := 0; i < fanoutBuffer; i++ {
+			ev := events.NewStateDeltaEvent([]events.JSONPatchOperation{{
+				Op:    "replace",
+				Path:  "/tick",
+				Value: i,
+			}})
+			if !yield(ev, nil) {
+				return
+			}
+		}
+		if !yield(events.NewTextMessageStartEvent("msg-1", events.WithRole("assistant")), nil) {
+			return
+		}
+		close(afterStartYield)
+		<-continueAfterStart
+		if !yield(events.NewTextMessageContentEvent("msg-1", "x"), nil) {
+			return
+		}
+		if !yield(events.NewTextMessageEndEvent("msg-1"), nil) {
+			return
+		}
+		yield(events.NewRunFinishedEventWithOptions("thread-1", "run-1", events.WithSuccessOutcome()), nil)
+	}
+}
+
 // blockingSource yields a first event then blocks until ctx is cancelled, modelling a
 // long-running agent turn whose producer goroutine must exit on cancel (Pitfall 4).
 func blockingSource(ctx context.Context, first events.Event) iter.Seq2[events.Event, error] {
@@ -64,6 +94,15 @@ func drain(ch <-chan events.Event) []events.Event {
 		out = append(out, ev)
 	}
 	return out
+}
+
+func containsEventType(evs []events.Event, typ events.EventType) bool {
+	for _, ev := range evs {
+		if ev.Type() == typ {
+			return true
+		}
+	}
+	return false
 }
 
 func TestFanoutSourceErrorYieldsRunError(t *testing.T) {
@@ -116,21 +155,14 @@ func TestFanoutDistributesToAllSubscribers(t *testing.T) {
 	}
 }
 
-// TestFanoutSlowSubscriberDropped: a slow subscriber whose cap-N buffer overflows has its
-// non-lifecycle deltas DROPPED (the Loop must never stall on a slow consumer's
-// intermediate content), yet the terminal RUN_FINISHED still survives (WR-01). A single
-// subscriber that begins draining only after the producer has overflowed it on deltas
-// exercises both: the dropped deltas (received < full stream) and the blocking lifecycle
-// send that delivers the terminal frame. A genuinely dead (never-read) subscriber is the
-// WR-01 abort-on-ctx-cancel case, covered by TestFanoutCtxCancelClosesAll.
-//
-// Cross-subscriber non-back-pressure (a slow peer not stalling a keeping-pace peer on
-// intermediate deltas) is covered by TestFanoutDistributesToAllSubscribers.
+// TestFanoutSlowSubscriberDropped rewrites the old false-green length check (D-04):
+// the slow subscriber overflows on a repeatable STATE_DELTA, then a boundary START is
+// attempted while the buffer is full. The surviving sub-sequence must still satisfy the
+// public AG-UI conformance checker; a START frame may never be among the dropped frames.
 func TestFanoutSlowSubscriberDropped(t *testing.T) {
-	// goleak.VerifyTestMain in main_test.go covers the package; the producer goroutine
-	// must still exit when the source ends.
-	const n = fanoutBuffer * 4 // well past the cap so the slow subscriber overflows
-	f := NewFanout(eventSource("thread-1", "run-1", n))
+	afterStartYield := make(chan struct{})
+	continueAfterStart := make(chan struct{})
+	f := NewFanout(boundaryOverflowSource(afterStartYield, continueAfterStart))
 	slow := f.Subscribe()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -138,9 +170,26 @@ func TestFanoutSlowSubscriberDropped(t *testing.T) {
 	f.Run(ctx)
 
 	got := make(chan []events.Event, 1)
-	go func() { got <- drain(slow) }()
+	startDrain := func() {
+		go func() { got <- drain(slow) }()
+	}
 
-	want := n + 4 // RUN_STARTED + MSG_START + n CONTENT + MSG_END + RUN_FINISHED
+	select {
+	case <-afterStartYield:
+		startDrain()
+	case <-time.After(100 * time.Millisecond):
+		// Fixed behavior blocks on the non-droppable TEXT_MESSAGE_START until the
+		// slow subscriber drains enough capacity for the boundary frame.
+		startDrain()
+		select {
+		case <-afterStartYield:
+		case <-time.After(time.Second):
+			t.Fatalf("TEXT_MESSAGE_START did not unblock after draining the slow subscriber")
+		}
+	}
+	close(continueAfterStart)
+
+	const fullStream = 1 + fanoutBuffer + 4 // RUN_STARTED + deltas + message start/content/end + RUN_FINISHED
 	var read []events.Event
 	select {
 	case read = <-got:
@@ -149,16 +198,22 @@ func TestFanoutSlowSubscriberDropped(t *testing.T) {
 	}
 	// The slow subscriber may lose intermediate deltas to drop-on-overflow — it never
 	// receives MORE than the full stream, and on a real overflow it receives fewer.
-	if len(read) > want {
-		t.Fatalf("slow subscriber got %d events, want <= %d", len(read), want)
+	if len(read) >= fullStream {
+		t.Fatalf("slow subscriber got %d events, want < %d to prove overflow dropped a repeatable delta", len(read), fullStream)
 	}
 	// The WR-01 invariant, independent of scheduling: the lifecycle prologue and terminal
 	// frame are NEVER among the dropped frames, even when intermediate deltas overflow.
+	if !containsEventType(read, events.EventTypeTextMessageStart) {
+		t.Fatalf("TEXT_MESSAGE_START was dropped; survivors=%v", typesOf(read))
+	}
 	if first := string(read[0].Type()); first != "RUN_STARTED" {
 		t.Fatalf("slow subscriber first = %s, want RUN_STARTED (lifecycle prologue must survive)", first)
 	}
 	if last := string(read[len(read)-1].Type()); last != "RUN_FINISHED" {
 		t.Fatalf("slow subscriber last = %s, want RUN_FINISHED — terminal frame dropped (WR-01 regression)", last)
+	}
+	if err := events.ValidateSequence(read); err != nil {
+		t.Fatalf("surviving AG-UI sequence is invalid: %v; survivors=%v", err, typesOf(read))
 	}
 }
 

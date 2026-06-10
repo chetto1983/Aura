@@ -257,13 +257,26 @@ func (s *Server) pumpSend(ctx context.Context, out chan events.Event, ev events.
 	}
 }
 
-// isLifecycleFrame reports whether an event is a run-lifecycle terminal/boundary frame
-// (RUN_STARTED/RUN_FINISHED/RUN_ERROR). These are non-droppable: dropping the terminal
-// RUN_FINISHED/RUN_ERROR hangs a consumer that waits for it; dropping RUN_STARTED breaks
-// the protocol prologue. Shared by the SSE pump and the in-process fanout (WR-01).
+// isLifecycleFrame reports whether an event is a protocol boundary frame that cannot
+// be dropped under backpressure. Dropping START/END/RESULT/CUSTOM/SNAPSHOT frames can
+// leave delivered deltas without their protocol parent, causing events.ValidateSequence
+// to reject the surviving sub-sequence. Shared by the SSE pump and in-process fanout.
 func isLifecycleFrame(t events.EventType) bool {
 	switch t {
-	case events.EventTypeRunStarted, events.EventTypeRunFinished, events.EventTypeRunError:
+	case events.EventTypeRunStarted,
+		events.EventTypeRunFinished,
+		events.EventTypeRunError,
+		events.EventTypeTextMessageStart,
+		events.EventTypeTextMessageEnd,
+		events.EventTypeToolCallStart,
+		events.EventTypeToolCallEnd,
+		events.EventTypeToolCallResult,
+		events.EventTypeReasoningStart,
+		events.EventTypeReasoningMessageStart,
+		events.EventTypeReasoningMessageEnd,
+		events.EventTypeReasoningEnd,
+		events.EventTypeCustom,
+		events.EventTypeStateSnapshot:
 		return true
 	default:
 		return false
