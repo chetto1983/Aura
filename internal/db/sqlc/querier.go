@@ -50,6 +50,7 @@ type Querier interface {
 	InsertContextRotEvent(ctx context.Context, arg InsertContextRotEventParams) error
 	InsertConversationTurn(ctx context.Context, arg InsertConversationTurnParams) error
 	InsertPausedState(ctx context.Context, arg InsertPausedStateParams) error
+	InsertPendingNotification(ctx context.Context, arg InsertPendingNotificationParams) (AuraPendingNotifications, error)
 	InsertRun(ctx context.Context, arg InsertRunParams) (AuraAgentJobRuns, error)
 	InsertSkillAudit(ctx context.Context, arg InsertSkillAuditParams) (AuraSkillAudit, error)
 	InsertTelegramAccount(ctx context.Context, arg InsertTelegramAccountParams) (AuraTelegramAccounts, error)
@@ -70,6 +71,8 @@ type Querier interface {
 	ListToolInvocationsByConversation(ctx context.Context, conversationID pgtype.UUID) ([]AuraToolInvocations, error)
 	ListTurnsBySeq(ctx context.Context, conversationID pgtype.UUID) ([]AuraConversationTurns, error)
 	LockConversationForTurnAppend(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error)
+	MarkNotificationDelivered(ctx context.Context, id pgtype.UUID) error
+	MarkNotificationFailed(ctx context.Context, arg MarkNotificationFailedParams) error
 	MarkPausedStateResumed(ctx context.Context, arg MarkPausedStateResumedParams) error
 	MarkUnknownRecovery(ctx context.Context, id pgtype.UUID) error
 	NextConversationTurnSeq(ctx context.Context, conversationID pgtype.UUID) (int32, error)
@@ -81,6 +84,7 @@ type Querier interface {
 	// reuses this EXACT query; only the excerpt rendering differs per channel.
 	SearchConversationTurns(ctx context.Context, arg SearchConversationTurnsParams) ([]SearchConversationTurnsRow, error)
 	SetConversationTitleIfNull(ctx context.Context, arg SetConversationTitleIfNullParams) error
+	SweepDueNotifications(ctx context.Context, arg SweepDueNotificationsParams) ([]AuraPendingNotifications, error)
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error

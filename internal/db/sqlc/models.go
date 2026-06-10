@@ -115,6 +115,20 @@ type AuraPausedStates struct {
 	ResumedAnswer      []byte             `json:"resumed_answer"`
 }
 
+// Durable scheduler notification queue (Phase 19 H6/H7): quiet-hours deferred notifications and failed self-send retry state.
+type AuraPendingNotifications struct {
+	ID          pgtype.UUID        `json:"id"`
+	RunID       pgtype.UUID        `json:"run_id"`
+	NotifyRoute pgtype.Text        `json:"notify_route"`
+	Body        string             `json:"body"`
+	NotifyAfter pgtype.Timestamptz `json:"notify_after"`
+	Attempts    int32              `json:"attempts"`
+	LastError   pgtype.Text        `json:"last_error"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
 // Scheduler task definitions (Slice 6 / Phase 10, amendment #46). Grammar triad at|every|cron with per-task IANA tz; next_run_at is UTC, recomputed in-zone (D-06/D-07).
 type AuraSchedulerTasks struct {
 	ID                   pgtype.UUID        `json:"id"`
