@@ -66,18 +66,21 @@ type Usage struct {
 }
 
 // Chunk is one streamed delta from the LLM. Exactly one of Text, Reasoning,
-// ToolCall, or Usage is populated; FinishReason is set on the final content/tool
+// ToolCall, Usage, or Err is populated; FinishReason is set on the final content/tool
 // chunk of the stream. Reasoning carries a chain-of-thought delta (provider
 // `reasoning`/`reasoning_content` field) emitted token-per-token with the same
 // immediacy as Text; it is STREAM-ONLY and never folded into accumulated content
 // (amendment #57). The trailing Usage chunk (when present) carries the final
 // token+cost summary so the agent can read it through the provider-neutral channel.
+// Err carries a terminal streaming error; when non-nil, accumulated text MUST NOT
+// be treated as a complete answer.
 type Chunk struct {
 	Text         string
 	Reasoning    string
 	ToolCall     *ToolCall
 	FinishReason string
 	Usage        *Usage
+	Err          error
 }
 
 // Client is the interface the agent loop targets. Stream returns a channel of

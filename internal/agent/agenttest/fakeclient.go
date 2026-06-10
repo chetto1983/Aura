@@ -106,6 +106,18 @@ func TextChunks(finish string, parts ...string) FakeTurn {
 	return FakeTurn{Chunks: chunks}
 }
 
+// TextThenErr builds a turn that streams partial assistant content and then a
+// terminal stream Err chunk. Consumers must not treat the partial text as a
+// complete answer.
+func TextThenErr(err error, parts ...string) FakeTurn {
+	chunks := make([]llm.Chunk, 0, len(parts)+1)
+	for _, p := range parts {
+		chunks = append(chunks, llm.Chunk{Text: p})
+	}
+	chunks = append(chunks, llm.Chunk{Err: err})
+	return FakeTurn{Chunks: chunks}
+}
+
 // ToolCallTurn builds a turn whose chunks emit the given finalized tool calls then
 // a finish_reason "tool_calls". Each call must already carry its ID + Function.
 func ToolCallTurn(calls ...llm.ToolCall) FakeTurn {

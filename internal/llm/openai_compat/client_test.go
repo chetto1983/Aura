@@ -89,6 +89,79 @@ func TestStream_EndToEnd(t *testing.T) {
 // goleak (package TestMain) catches a leaked read goroutine or lingering
 // persistConn. The server streams one delta then blocks (never sends [DONE]),
 // modelling a slow/hung upstream; only ctx-cancel can end the read.
+func TestStream_PrematureCloseEmitsErrBeforeClose(t *testing.T) {
+	srv := httptest.NewServer(fixtureHandler(t, "premature_close.sse"))
+	defer srv.Close()
+
+	c := New(testConfig(srv.URL))
+	ch, err := c.Stream(context.Background(), llm.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	chunks := drain(ch)
+
+	var text string
+	errIndex := -1
+	for i, ck := range chunks {
+		text += ck.Text
+		if ck.Err != nil {
+			errIndex = i
+		}
+	}
+	if text == "" {
+		t.Fatal("premature fixture emitted no partial text; regression is not exercising truncation")
+	}
+	if errIndex < 0 {
+		t.Fatalf("stream emitted chunks %#v; want terminal Err chunk before close", chunks)
+	}
+	if errIndex != len(chunks)-1 {
+		t.Fatalf("Err chunk index = %d, want final chunk index %d", errIndex, len(chunks)-1)
+	}
+	if !strings.Contains(chunks[errIndex].Err.Error(), "malformed SSE chunk") {
+		t.Fatalf("Err = %v, want malformed SSE chunk error", chunks[errIndex].Err)
+	}
+}
+
+func TestStream_EOFWithoutFinishReasonEmitsUsageThenErr(t *testing.T) {
+	raw := "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":null}]}\n" +
+		"data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2}}\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(raw))
+	}))
+	defer srv.Close()
+
+	c := New(testConfig(srv.URL))
+	ch, err := c.Stream(context.Background(), llm.Request{Model: "m"})
+	if err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	chunks := drain(ch)
+
+	usageIndex := -1
+	errIndex := -1
+	for i, ck := range chunks {
+		if ck.Usage != nil {
+			usageIndex = i
+		}
+		if ck.Err != nil {
+			errIndex = i
+		}
+	}
+	if usageIndex < 0 {
+		t.Fatalf("chunks %#v; want trailing usage before terminal Err", chunks)
+	}
+	if errIndex < 0 {
+		t.Fatalf("chunks %#v; want terminal Err for EOF without finish_reason", chunks)
+	}
+	if usageIndex >= errIndex {
+		t.Fatalf("usage index = %d err index = %d, want usage before terminal Err", usageIndex, errIndex)
+	}
+	if !errors.Is(chunks[errIndex].Err, errStreamMissingFinishReason) {
+		t.Fatalf("Err = %v, want errStreamMissingFinishReason", chunks[errIndex].Err)
+	}
+}
+
 func TestStream_CancelMidStream(t *testing.T) {
 	released := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

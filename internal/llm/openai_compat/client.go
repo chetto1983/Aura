@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"time"
@@ -16,6 +17,8 @@ import (
 // of a momentarily-slow consumer without blocking on every delta. The consumer
 // MUST still drain (llm.Client doc-comment) — this is throughput, not safety.
 const chunkBuffer = 16
+
+var errStreamMissingFinishReason = errors.New("openai_compat: stream ended without finish_reason")
 
 // Client is the handrolled OpenAI-compatible SSE streaming client. It implements
 // llm.Client.Stream against an OpenRouter-shaped /chat/completions endpoint. The
@@ -162,6 +165,12 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 		if res.hasUsage {
 			u := res.usage.toLLMUsage()
 			emit(llm.Chunk{Usage: &u})
+		}
+		switch {
+		case parseErr != nil:
+			emit(llm.Chunk{Err: parseErr})
+		case res.finishReason == "":
+			emit(llm.Chunk{Err: errStreamMissingFinishReason})
 		}
 	}()
 	return out, nil
