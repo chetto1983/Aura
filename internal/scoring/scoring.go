@@ -1,6 +1,6 @@
 // Package scoring is the pure, shared risk-tier module (PRD §Risk-Based
 // Governance, amendment #41 / D-11): it computes a qualitative RiskTier for
-// scheduler tasks, skills, and sandbox calls so consumers can render an
+// scheduler tasks and skills so consumers can render an
 // advisory gate. It is deliberately pure — no DB, no IO, no env read. The alert
 // threshold is supplied by the caller (config owns the env read; this module
 // mirrors dnspin taking its TTL as a constructor arg), keeping every function a
@@ -9,7 +9,6 @@ package scoring
 
 import (
 	"regexp"
-	"strings"
 )
 
 // RiskTier is the qualitative, non-numeric risk classification an action
@@ -26,14 +25,6 @@ const (
 	// Destructive is rm -rf, drop table, force push, send-to-third-party, etc.
 	Destructive RiskTier = "destructive"
 )
-
-// SandboxArgs is the sandbox-tier input. D-12: this is the ONLY scoring path
-// wired in Phase 8 — the execute tool consumes ComputeSandboxTier for its
-// advisory {risk_tier, gate_recommended} preview.
-type SandboxArgs struct {
-	// NetworkAllow is the egress allowlist the model requested (host names).
-	NetworkAllow []string
-}
 
 // TaskArgs is the scheduler-tier input. Built + unit-tested now (D-11) but has
 // NO runtime consumer in Phase 8 — the Scheduler (P10) wires it later (D-12).
@@ -82,34 +73,6 @@ func bumpTier(t RiskTier) RiskTier {
 		return Destructive
 	}
 	return tierOrder[next]
-}
-
-// onlyPyPI reports whether every host in the allowlist is one of the two
-// canonical PyPI install hosts (pypi.org + files.pythonhosted.org). ANY other
-// host — including a lookalike suffix like pypi.org.evil.com — makes the whole
-// allowlist non-PyPI, so it cannot silently downgrade an arbitrary egress to Safe.
-func onlyPyPI(hosts []string) bool {
-	for _, h := range hosts {
-		switch strings.ToLower(h) {
-		case "pypi.org", "files.pythonhosted.org":
-		default:
-			return false
-		}
-	}
-	return true
-}
-
-// ComputeSandboxTier classifies a sandbox call from its egress allowlist (D-12,
-// the only wired path in Phase 8): empty allowlist = no egress = Safe;
-// PyPI-only = legitimate dependency install = Safe; any arbitrary host = Risky.
-func ComputeSandboxTier(a SandboxArgs) RiskTier {
-	if len(a.NetworkAllow) == 0 {
-		return Safe
-	}
-	if onlyPyPI(a.NetworkAllow) {
-		return Safe
-	}
-	return Risky
 }
 
 var destructiveKeyword = regexp.MustCompile(`(?i)\b(rm|delete|drop|purge|truncate)\b`)

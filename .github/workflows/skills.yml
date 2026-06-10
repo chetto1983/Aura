@@ -5,17 +5,17 @@ name: Skills (CAP-07 / CAP-08)
 # shape, no model-facing catalog/installer) + CAP-08 (executable snippets v1) against the
 # live substrate and
 # gates regressions: the unit tier, the db_integration audit tier (SC#1/SC#2), the
-# FuzzSkillValidator smoke (SC#3), the sandbox_integration by-path exec tier (SC#4), the
+# FuzzSkillValidator smoke (SC#3), the by-path snippet-exec tier (SC#4, host python3), the
 # TTL sweep tier, go-mutesting on the two critical files (validator.go + writer.go, ≥70%),
-# and the owned-surface ≥85% coverage floor across the FULL tag matrix (db_integration +
-# sandbox_integration). The LIVE xlsx North-Star cot_eval E2E (D-35) is OPERATOR-run
+# and the owned-surface ≥85% coverage floor across the tag matrix (db_integration). The
+# LIVE xlsx North-Star cot_eval E2E (D-35) is OPERATOR-run
 # (OPENROUTER_API_KEY, paid) and explicitly NOT in CI — see internal/eval/
 # skills_cot_eval_test.go for the operator invocation.
 #
 # NO-SKIP-AS-GREEN (CLAUDE.md): every tagged tier exports the exact env it reads and
 # `CI=true` arms the envOrSkip → t.Fatal-on-unset guard, so a skipped tier FAILS the job
 # rather than passing it green. A sub-second integration runtime is a skip tell — the
-# steps below stand up Postgres + the sandbox-agent so the tiers actually RUN.
+# steps below stand up Postgres so the tiers actually RUN.
 
 on:
   push:
@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   skills-gate:
-    name: Skills gate (unit + db_integration + sandbox_integration + fuzz + mutation + coverage)
+    name: Skills gate (unit + db_integration + fuzz + mutation + coverage)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -44,7 +44,7 @@ jobs:
       POSTGRES_HOST: 127.0.0.1
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
-      # Composed role DSNs the db_integration + sandbox_integration tiers read directly
+      # Composed role DSNs the db_integration tiers read directly
       # (envOrSkip). NOT just the POSTGRES_* primitives — the audit store + migratedPool
       # read AURA_DB_URL/AURA_DB_MIGRATE_URL. Without these the tagged tests SKIP and the
       # job would go falsely green; CI=true turns that skip into a t.Fatal failure.
@@ -52,11 +52,10 @@ jobs:
       AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
       # compose.yaml has a neo4j service with ${NEO4J_PASSWORD:?} fail-fast; any
       # `docker compose` invocation parses the whole file, so the var must be present
-      # even though this job uses only postgres + the sandbox-agent.
+      # even though this job uses only postgres.
       NEO4J_PASSWORD: ci-test-password
-      AURA_SANDBOX_AGENT_URL: http://127.0.0.1:2468
-      # The host export dir the writer materializes ACTIVE snippets into AND the
-      # sandbox-agent mounts read-only at /skills (D-17). The same dir on both sides.
+      # The host export dir the writer materializes ACTIVE snippets into; the SC#4
+      # by-path exec runs them from here on the host (D-17).
       AURA_SKILL_EXPORT_DIR: /tmp/aura-skills-export
       AURA_RUN_DIR: /tmp/aura-run
       # Arms the no-skip-as-green guards: a missing DSN/token under CI t.Fatals.
@@ -94,20 +93,11 @@ jobs:
         # package binaries deadlock on pg_advisory_lock once >2 integration packages exist.
         run: go test -tags db_integration -race -count=1 -p 1 ./internal/skills/ ./internal/cron/...
 
-      - name: Build the sandbox-agent image (bake the xlsx deps, spike 006/007)
-        # The snippet by-path exec tier (SC#4) needs the live container with the baked
-        # openpyxl/defusedxml/lxml/validators deps. Build it from ./docker/sandbox-agent
-        # (the compose `build:` context) — `make sandbox-up` requires the image preloaded.
-        run: docker compose build aura-sandbox-agent
-
-      - name: Start the sandbox-agent (--no-token + /skills mount)
-        run: make sandbox-up
-
-      - name: sandbox_integration tier (SC#4 by-path snippet exec, live container)
-        # The full 7e runtime: save -> activate -> materialize into the live /skills mount
-        # -> exec BY PATH via the real sandbox-agent client -> output captured -> usage
-        # stamped. CI=true + the exported token/url/export-dir arm no-skip-as-green.
-        run: go test -tags 'sandbox_integration db_integration' -race -count=1 -p 1 -run TestSnippetExec ./internal/skills/
+      - name: SC#4 by-path snippet exec tier (host python3)
+        # The full 7e runtime: save -> activate -> materialize into the host export dir ->
+        # exec BY PATH via host python3 -> output captured -> usage stamped. CI=true arms
+        # no-skip-as-green; ubuntu-latest ships python3.
+        run: go test -tags db_integration -race -count=1 -p 1 -run TestSnippetExec ./internal/skills/
 
       - name: go-mutesting spot-check (validator.go + writer.go ≥70% killed)
         # The two CRITICAL files (RESEARCH §Validation Architecture / Phase gate): the
@@ -146,14 +136,13 @@ jobs:
             fi
           done
 
-      - name: Coverage gate (owned surface ≥85% across the FULL tag matrix, CLAUDE.md floor)
-        # The combined figure (CLAUDE.md): the coverage run carries BOTH tags so the
-        # db_integration + sandbox_integration tiers fold into internal/skills coverage.
-        # A unit-only number below 85% must NOT satisfy this gate — AURA_COVERAGE_TAGS
-        # overrides the script default to include sandbox_integration. NO-SKIP-AS-GREEN:
+      - name: Coverage gate (owned surface ≥85% across the tag matrix, CLAUDE.md floor)
+        # The combined figure (CLAUDE.md): the coverage run carries the db_integration tag
+        # so the audit + by-path snippet-exec tiers fold into internal/skills coverage.
+        # A unit-only number below 85% must NOT satisfy this gate. NO-SKIP-AS-GREEN:
         # the tagged tiers t.Fatal under $CI when env is unset, so a skipped tier fails.
         env:
-          AURA_COVERAGE_TAGS: "db_integration sandbox_integration"
+          AURA_COVERAGE_TAGS: "db_integration"
         run: bash scripts/coverage_gate.sh
 
       - name: Tear down

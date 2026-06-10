@@ -1,55 +1,42 @@
-//go:build sandbox_integration && db_integration
+//go:build db_integration
 
-// Live by-path snippet exec E2E (SC#4): save -> activate -> materialize into the ro
-// /skills mount -> exec BY PATH via the real sandbox-agent client -> output captured
-// -> usage stamped. It exercises the FULL 7e snippet runtime against the live stack
-// (the token + the /skills mount + the sandbox-agent container), not a fake.
+// Live by-path snippet exec E2E (SC#4): save -> activate -> materialize into the host
+// export dir -> exec BY PATH via the host interpreter (os/exec) -> output captured ->
+// usage stamped. It exercises the FULL 7e snippet runtime against the live stack on the
+// HOST (the host terminal is the execution surface; no container), not a fake.
 //
-// Requires the stack up AND the export dir wired to the container's /skills mount:
+// Requires the DB stack up AND the export dir set, plus python3 on PATH (present on the
+// CI ubuntu runner):
 //
-//	make sandbox-up                                   # /skills mount
-//	export AURA_SANDBOX_AGENT_URL=http://127.0.0.1:2468
-//	export AURA_SKILL_EXPORT_DIR=<host dir mounted at /skills in the container>
+//	export AURA_SKILL_EXPORT_DIR=<host dir>
 //	export POSTGRES_PASSWORD/AURA_DB_URL/AURA_DB_MIGRATE_URL  # migrated through 0010
-//	go test -tags 'sandbox_integration db_integration' -race -run TestSnippetExec ./internal/skills/ -v
+//	go test -tags db_integration -race -run TestSnippetExec ./internal/skills/ -v
 //
 // No-skip-as-green: envOrSkip t.Fatals under $CI when a required var is unset, so a
 // skipped tier can never report falsely green in the pipeline.
 package skills
 
 import (
+	"bytes"
 	"context"
-	"net/http"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/google/uuid"
 )
 
 // TestSnippetExec is the SC#4 by-path exec proof: the snippet is saved, activated
-// (materialized into the live /skills mount), resolved to its in-sandbox path, and
-// run BY PATH (python3 /skills/<name>/<name>.py) through the real client. The marker
-// stdout proves the file is visible + executable in-container; the usage stamp proves
-// the deterministic operator stamp (D-19).
+// (materialized into the host export dir), resolved to its host path, and run BY PATH
+// (python3 <exportDir>/<name>/<name>.py) on the host. The marker stdout proves the file
+// is visible + executable; the usage stamp proves the deterministic operator stamp (D-19).
 func TestSnippetExec(t *testing.T) {
 	exportDir := envOrSkip(t, "AURA_SKILL_EXPORT_DIR")
-	sandboxURL := envOrSkip(t, "AURA_SANDBOX_AGENT_URL")
 
 	pool := migratedPool(t)
 	ctx := context.Background()
-
-	// sandboxagent.Client uses http.DefaultTransport, whose keep-alive readLoop/
-	// writeLoop goroutines outlive the request; the package goleak gate (main_test.go)
-	// would flag them. Close idle connections before verification (mirrors the tools
-	// live-sandbox test cleanup).
-	t.Cleanup(func() {
-		if tr, ok := http.DefaultTransport.(*http.Transport); ok {
-			tr.CloseIdleConnections()
-		}
-	})
 
 	// A unique name keeps parallel/repeat runs from colliding on the shared export dir.
 	name := "calc" + strings.ReplaceAll(uuid.Must(uuid.NewV7()).String()[:8], "-", "")
@@ -58,7 +45,7 @@ func TestSnippetExec(t *testing.T) {
 		Pool:         pool,
 		PendingDir:   filepath.Join(root, "pending"),
 		ActiveDir:    filepath.Join(root, "active"),
-		ExportDir:    exportDir, // the SAME host dir the container mounts ro at /skills
+		ExportDir:    exportDir,
 		ArchiveDir:   filepath.Join(root, "archived"),
 		Blocklist:    nil,
 		BodyCapBytes: 32768,
@@ -78,7 +65,7 @@ func TestSnippetExec(t *testing.T) {
 		t.Fatalf("SaveSnippet status = %q, want pending_approval", res.Status)
 	}
 
-	// Activate via the CLI source (operator approve) — materializes into the /skills mount.
+	// Activate via the CLI source (operator approve) — materializes into the host export dir.
 	if err := w.Activate(ctx, name, ApprovalCLI, "", AuditActor{ActorID: "cli"}); err != nil {
 		t.Fatalf("Activate: %v", err)
 	}
@@ -87,24 +74,19 @@ func TestSnippetExec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UseSnippet: %v", err)
 	}
-	if !strings.HasPrefix(use.SandboxPath, "/skills/") {
-		t.Fatalf("UseSnippet path = %q, want a /skills/ path", use.SandboxPath)
+	if use.HostPath == "" {
+		t.Fatalf("UseSnippet HostPath is empty, want a materialized host path")
 	}
 
-	// Run BY PATH through the real client (interpreter + path, never the exec bit).
-	client := sandboxagent.New(sandboxagent.Config{BaseURL: sandboxURL, TimeoutSec: 30})
-	run, err := client.Run(ctx, sandboxagent.RunRequest{
-		Command: use.Interpreter,
-		Args:    []string{use.SandboxPath},
-	})
-	if err != nil {
-		t.Fatalf("by-path exec: %v", err)
+	// Run BY PATH on the host (interpreter + path, never the exec bit).
+	cmd := exec.CommandContext(ctx, use.Interpreter, use.HostPath)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("by-path exec: %v, stderr=%q", err, stderr.String())
 	}
-	if run.ExitCode == nil || *run.ExitCode != 0 {
-		t.Fatalf("by-path exec exit = %v, stderr=%q", run.ExitCode, run.Stderr)
-	}
-	if !strings.Contains(run.Stdout, marker) {
-		t.Fatalf("by-path exec stdout = %q, want marker %q", run.Stdout, marker)
+	if !strings.Contains(stdout.String(), marker) {
+		t.Fatalf("by-path exec stdout = %q, want marker %q", stdout.String(), marker)
 	}
 
 	// Stamp usage (the deterministic operator stamp, D-19) and assert it bumped.

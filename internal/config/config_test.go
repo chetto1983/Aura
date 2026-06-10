@@ -110,35 +110,6 @@ func TestLoad_MCPManagedConfigAndEnvOverride(t *testing.T) {
 	}
 }
 
-func TestLoad_SandboxAgentDefaultsAndOverrides(t *testing.T) {
-	clearPostgresEnv(t)
-
-	cfg := LoadDB()
-	if cfg.SandboxAgent.BaseURL != "http://127.0.0.1:2468" {
-		t.Errorf("SandboxAgent.BaseURL default = %q, want loopback sandbox-agent", cfg.SandboxAgent.BaseURL)
-	}
-	if cfg.SandboxAgent.TimeoutSec != 30 {
-		t.Errorf("SandboxAgent.TimeoutSec default = %d, want 30", cfg.SandboxAgent.TimeoutSec)
-	}
-	if cfg.SandboxAgent.Token != "" {
-		t.Errorf("SandboxAgent.Token default = %q, want empty", cfg.SandboxAgent.Token)
-	}
-
-	t.Setenv("AURA_SANDBOX_AGENT_URL", "http://127.0.0.1:3333")
-	t.Setenv("AURA_SANDBOX_AGENT_TIMEOUT_SEC", "45")
-	t.Setenv("AURA_SANDBOX_AGENT_TOKEN", "tok")
-	cfg = LoadDB()
-	if cfg.SandboxAgent.BaseURL != "http://127.0.0.1:3333" {
-		t.Errorf("SandboxAgent.BaseURL override = %q", cfg.SandboxAgent.BaseURL)
-	}
-	if cfg.SandboxAgent.TimeoutSec != 45 {
-		t.Errorf("SandboxAgent.TimeoutSec override = %d", cfg.SandboxAgent.TimeoutSec)
-	}
-	if cfg.SandboxAgent.Token != "tok" {
-		t.Errorf("SandboxAgent.Token override = %q", cfg.SandboxAgent.Token)
-	}
-}
-
 // TestSwarmConfigDefaultsAndOverrides locks the Phase 9 swarm knobs (D-11/D-12/D-13):
 // unset → builtin defaults; set → overrides.
 func TestSwarmConfigDefaultsAndOverrides(t *testing.T) {

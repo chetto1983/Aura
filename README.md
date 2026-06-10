@@ -13,7 +13,7 @@ Four concentric components, nothing else:
 
 1. **Agent loop** — streaming LLM, deferred-tool dispatch, bounded iterations.
 2. **KV cache** — provider-aware prompt caching (DeepSeek auto, Anthropic ephemeral). Stable-prefix discipline; zero `messages[0]` mutation.
-3. **Sandbox** — Python + shell execution in container-isolated workers (seccomp, ulimit, net-deny by default).
+3. **Host terminal** — full `shell_exec` on the host; model-generated code runs in the operator's environment (no container), with the native file tools for structured reads/writes.
 4. **Swarm** — parallel agents in a controlled loop with peer-to-peer talk (tier model, `MAX_SPAWN_DEPTH=3`, shared bus + DM-by-ID).
 
 Persistence: Postgres (`aura.*` schema) + Neo4j via `mcp-neo4j-cypher` (MCP stdio) — the model talks to the graph through MCP exclusively, no native Go adapter.

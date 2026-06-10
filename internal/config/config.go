@@ -23,7 +23,6 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
-	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/joho/godotenv"
 )
 
@@ -42,7 +41,6 @@ type Config struct {
 	MCPServers     map[string]mcp.ServerConfig
 	MCPPolicies    map[string]mcp.ManagedServer
 	MCPServersErr  error
-	SandboxAgent   sandboxagent.Config
 	RunDir         string
 	ToolPreviewCap int
 	OtelExporter   string // AURA_OTEL_EXPORTER ∈ {stdout,otlp,none} (D-06)
@@ -54,10 +52,6 @@ type Config struct {
 	ContextToolEvictAfterTurns int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
 	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — L2.5 picobot hard rolling buffer cap
 	RunDirWarnThresholdBytes   int // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
-
-	// Sandbox execution is provided by a local sandbox-agent container on loopback.
-	// Aura does not download sandbox binaries at boot and does not call an online
-	// sandbox service.
 
 	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
 	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
@@ -217,14 +211,9 @@ func loadBase() *Config {
 			EmbedURL:          envDefault("AURA_EMBED_BASE_URL", "http://127.0.0.1:8081"),
 			EmbedDimensions:   envIntDefault("AURA_EMBED_DIMENSIONS", knowledge.DefaultEmbedDimensions),
 		},
-		MCPServers:    mcpServers,
-		MCPPolicies:   mcpPolicies,
-		MCPServersErr: mcpServersErr,
-		SandboxAgent: sandboxagent.Config{
-			BaseURL:    envDefault("AURA_SANDBOX_AGENT_URL", sandboxagent.DefaultBaseURL),
-			TimeoutSec: envIntDefault("AURA_SANDBOX_AGENT_TIMEOUT_SEC", sandboxagent.DefaultTimeoutSec),
-			Token:      os.Getenv("AURA_SANDBOX_AGENT_TOKEN"),
-		},
+		MCPServers:     mcpServers,
+		MCPPolicies:    mcpPolicies,
+		MCPServersErr:  mcpServersErr,
 		RunDir:         envDefault("AURA_RUN_DIR", defaultRunDir()),
 		ToolPreviewCap: envIntDefault("AURA_CONTEXT_PREVIEW_CAP_BYTES", 2048),
 		OtelExporter:   envDefault("AURA_OTEL_EXPORTER", defaultOtelExporter),

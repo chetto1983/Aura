@@ -41,13 +41,6 @@ func TestBuildRegistry_CoreToolsPresent(t *testing.T) {
 	}
 }
 
-func TestBuildRegistry_RegistersSandboxExec(t *testing.T) {
-	reg := buildRegistry()
-	if _, ok := reg.Get("sandbox_exec"); !ok {
-		t.Fatal("production registry is missing sandbox_exec backed by the local sandbox-agent container")
-	}
-}
-
 // TestBuildRegistry_PassesValidate guards D-10 at the production composition root:
 // buildBaseRegistry runs reg.Validate() before returning, so a regression that
 // deferred every capability tool would surface as a boot os.Exit(1). buildRegistry()
@@ -80,7 +73,6 @@ func TestBuildRegistryWithMCP_MountsConfiguredServer(t *testing.T) {
 				Env:     []string{"AURA_MCP_HELPER=1"},
 			},
 		},
-		SandboxAgent: config.LoadDB().SandboxAgent,
 	}
 
 	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
@@ -114,7 +106,6 @@ func TestBuildRegistryWithMCP_MountsManagedStreamableHTTPServer(t *testing.T) {
 				Trust: mcp.ManagedTrust{Class: mcp.TrustRemoteHTTP},
 			},
 		},
-		SandboxAgent: config.LoadDB().SandboxAgent,
 	}
 
 	reg, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)

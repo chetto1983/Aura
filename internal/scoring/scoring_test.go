@@ -13,34 +13,6 @@ import (
 func TestScoring(t *testing.T) {
 	t.Parallel()
 
-	t.Run("ComputeSandboxTier", func(t *testing.T) {
-		t.Parallel()
-		cases := []struct {
-			name string
-			args SandboxArgs
-			want RiskTier
-		}{
-			{"empty allowlist = no egress = Safe", SandboxArgs{NetworkAllow: nil}, Safe},
-			{"empty slice = no egress = Safe", SandboxArgs{NetworkAllow: []string{}}, Safe},
-			{"pypi.org only = legit install = Safe", SandboxArgs{NetworkAllow: []string{"pypi.org"}}, Safe},
-			{"canonical pip pair = Safe", SandboxArgs{NetworkAllow: []string{"pypi.org", "files.pythonhosted.org"}}, Safe},
-			{"pip pair reversed = Safe", SandboxArgs{NetworkAllow: []string{"files.pythonhosted.org", "pypi.org"}}, Safe},
-			{"files.pythonhosted.org only = Safe", SandboxArgs{NetworkAllow: []string{"files.pythonhosted.org"}}, Safe},
-			{"arbitrary domain = Risky", SandboxArgs{NetworkAllow: []string{"evil.example.com"}}, Risky},
-			{"pypi plus arbitrary = Risky", SandboxArgs{NetworkAllow: []string{"pypi.org", "evil.example.com"}}, Risky},
-			{"lookalike pypi suffix = Risky", SandboxArgs{NetworkAllow: []string{"pypi.org.evil.com"}}, Risky},
-			{"uppercase pypi host normalized = Safe", SandboxArgs{NetworkAllow: []string{"PyPI.org"}}, Safe},
-		}
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				t.Parallel()
-				if got := ComputeSandboxTier(tc.args); got != tc.want {
-					t.Fatalf("ComputeSandboxTier(%+v) = %q, want %q", tc.args, got, tc.want)
-				}
-			})
-		}
-	})
-
 	t.Run("ComputeTaskTier", func(t *testing.T) {
 		t.Parallel()
 		cases := []struct {

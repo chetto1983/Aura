@@ -1,20 +1,21 @@
 // `aura skills snippet {save|exec}` (Slice 7e, plan 11-07). save stages an
 // executable snippet (a type:snippet skill) as pending, gated like any mutation
 // (the operator then `approve`s it). exec is the DETERMINISTIC operator path that
-// runs an ACTIVE snippet BY PATH through the sandbox_exec seam (python3
-// /skills/<name>/<name>.py — never the exec bit, spike 005) AND stamps the usage
-// sidecar (D-04/D-19). There is NO bespoke run code: exec resolves the in-sandbox
-// path via Writer.UseSnippet and calls the same sandboxagent client the model's
-// sandbox_exec tool uses.
+// runs an ACTIVE snippet BY PATH on the HOST (the materialized export-dir file) via
+// os/exec AND stamps the usage sidecar (D-04/D-19). exec resolves the host path +
+// interpreter via Writer.UseSnippet — the same materialized file the model runs
+// through shell_exec.
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"time"
 
-	"github.com/chetto1983/aura/internal/sandboxagent"
 	"github.com/chetto1983/aura/internal/skills"
 )
 
@@ -82,12 +83,11 @@ func skillsSnippetSave(ctx context.Context, args []string) {
 	}
 }
 
-// skillsSnippetExec runs an ACTIVE snippet by path through the sandbox_exec seam and
-// stamps the usage sidecar (SC#4 deterministic operator path, D-04/D-19). It resolves
-// the in-sandbox /skills path + interpreter via Writer.UseSnippet, calls the same
-// sandboxagent client the model's sandbox_exec uses, prints stdout/stderr/exit, and
-// bumps use_count on success. Any trailing args after the name are passed to the
-// snippet (interpreter path arg1 arg2 ...).
+// skillsSnippetExec runs an ACTIVE snippet by path on the HOST and stamps the usage
+// sidecar (SC#4 deterministic operator path, D-04/D-19). It resolves the host export-dir
+// path + interpreter via Writer.UseSnippet, execs <interpreter> <hostPath> via os/exec,
+// prints stdout/stderr/exit, and bumps use_count on a clean run. Any trailing args after
+// the name are passed to the snippet (interpreter path arg1 arg2 ...).
 func skillsSnippetExec(ctx context.Context, args []string) {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "usage: aura skills snippet exec <name> [args...]")
@@ -105,29 +105,33 @@ func skillsSnippetExec(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	client := sandboxagent.New(env.cfg.SandboxAgent)
-	runArgs := append([]string{use.SandboxPath}, extra...)
-	res, runErr := client.Run(ctx, sandboxagent.RunRequest{
-		Command: use.Interpreter,
-		Args:    runArgs,
-	})
-	if runErr != nil {
-		fmt.Fprintf(os.Stderr, "snippet exec %q: %v\n", name, runErr)
-		os.Exit(1)
+	runArgs := append([]string{use.HostPath}, extra...)
+	cmd := exec.CommandContext(ctx, use.Interpreter, runArgs...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	runErr := cmd.Run()
+
+	if stdout.Len() > 0 {
+		fmt.Print(stdout.String())
+	}
+	if stderr.Len() > 0 {
+		fmt.Fprint(os.Stderr, stderr.String())
 	}
 
-	if res.Stdout != "" {
-		fmt.Print(res.Stdout)
-	}
-	if res.Stderr != "" {
-		fmt.Fprint(os.Stderr, res.Stderr)
+	// A non-zero exit (ExitError) carries an exit code; a spawn failure (interpreter
+	// not found) is a hard error, never a stamped run.
+	exit := 0
+	if runErr != nil {
+		var ee *exec.ExitError
+		if errors.As(runErr, &ee) {
+			exit = ee.ExitCode()
+		} else {
+			fmt.Fprintf(os.Stderr, "snippet exec %q: %v\n", name, runErr)
+			os.Exit(1)
+		}
 	}
 
 	// Stamp usage on a clean (exit 0) run — the deterministic operator stamp (D-19).
-	exit := 0
-	if res.ExitCode != nil {
-		exit = *res.ExitCode
-	}
 	if exit == 0 {
 		if serr := env.w.StampUsage(name, time.Now()); serr != nil {
 			fmt.Fprintf(os.Stderr, "snippet exec %q: usage stamp failed: %v\n", name, serr)

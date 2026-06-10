@@ -158,48 +158,8 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
-  # Local sandbox-agent container. Aura talks to this over 127.0.0.1 only via
-  # AURA_SANDBOX_AGENT_URL; the sandbox itself sits on a non-masquerading Docker
-  # bridge so process code has no public internet egress. No Docker socket is mounted.
-  # Built from rivetdev/sandbox-agent + python3 (docker/sandbox-agent/Dockerfile):
-  # the base "-full" tag ships node but not python3, so sandbox_exec can use the
-  # preloaded local aura-sandbox-agent:py3 image without an online pull.
-  aura-sandbox-agent:
-    build:
-      context: ./docker/sandbox-agent
-    image: aura-sandbox-agent:py3
-    pull_policy: never
-    container_name: aura-sandbox-agent
-    restart: unless-stopped
-    # Full-terminal home (amendment #50 / D-15c): the loopback exec endpoint runs
-    # unauthenticated (--no-token). For a single trusted operator on their own box the
-    # bearer was security theater; the real per-identity gate is capability_grants (1.7).
-    command: ["server", "--no-token", "--no-telemetry", "--host", "0.0.0.0", "--port", "2468"]
-    working_dir: /workspace
-    ports:
-      - "127.0.0.1:${AURA_SANDBOX_AGENT_PORT:-2468}:2468"
-    volumes:
-      - aura-sandbox-agent:/workspace
-      # /skills bind mount, read-write (amendment #50 / D-15c inverts spike 005's ro):
-      # the writer materializes ACTIVE snippet skills into AURA_SKILL_EXPORT_DIR and the
-      # full-terminal home sees them at /skills, execed BY PATH (python3 /skills/<name>.py).
-      - ${AURA_SKILL_EXPORT_DIR:-~/.aura/skills/export}:/skills
-    networks:
-      - aura-sandbox-local
-    mem_limit: 2g
-    cpus: 2.0
-    pids_limit: 256
-    security_opt:
-      - "no-new-privileges:true"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:2468/v1/health >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-
   # Local SearXNG backend. Aura talks to this over 127.0.0.1 only via
-  # SEARXNG_URL. Unlike the code sandbox, SearXNG needs outbound egress to query
+  # SEARXNG_URL. SearXNG needs outbound egress to query
   # upstream engines; loopback publishing keeps the service local without cutting
   # off metasearch.
   searxng:
@@ -336,14 +296,9 @@ volumes:
   aura-neo4j:
   aura-neo4j-plugins:
   aura-llama-embed:
-  aura-sandbox-agent:
   aura-ocr-vl:
 
 networks:
-  aura-sandbox-local:
-    driver: bridge
-    driver_opts:
-      com.docker.network.bridge.enable_ip_masquerade: "false"
   # Local SearXNG bridge: host-loopback published; default Docker NAT egress
   # remains enabled so metasearch can reach upstream engines.
   aura-web:

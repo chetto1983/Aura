@@ -251,13 +251,3 @@ func TestChat_MissingKey(t *testing.T) {
 		t.Fatalf("error message is not operator-clear: %v", err)
 	}
 }
-
-func TestBuildChatRegistry_RegistersSandboxExec(t *testing.T) {
-	cfg := &config.Config{
-		SandboxAgent: config.LoadDB().SandboxAgent,
-	}
-	reg := buildBaseRegistry(cfg, nil)
-	if _, ok := reg.Get("sandbox_exec"); !ok {
-		t.Fatal("chat registry is missing sandbox_exec backed by the local sandbox-agent container")
-	}
-}
