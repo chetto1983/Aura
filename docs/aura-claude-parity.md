@@ -14,12 +14,11 @@
 
 Risk classes: **SAFE-ADDITIVE** (do autonomously in-loop) · **ARCHITECTURAL** (needs a design decision / user fork before code) · **BEHAVIORAL** (changes security/approval posture → user fork).
 
-### P1 — Parallel tool dispatch — ARCHITECTURAL — 🔄 NEXT (decided: FULL parallel, 2026-06-10)
+### P1 — Parallel tool dispatch — ✅ DONE (it.4)
 
-- **Gap:** `dispatch` runs tool calls strictly one-at-a-time ([llm_agent.go:301](../internal/agent/llm_agent.go#L301)). Claude Code runs independent calls concurrently. Reading 5 files = 5× the wall-clock.
-- **DECISION (2026-06-10): full parallel** — run all independent calls concurrently, accepting dedup/order semantic changes.
-- **Implementation notes:** the iter.Seq2 `yield` is single-threaded — run `Execute()` in goroutines but SERIALIZE the yields + `RoleTool` history appends, emitting in **original call order** (wire contract: every tool_call_id gets a result). Keep the `text_response` terminal path + the dedup gate (dedup-check up front before launch — [llm_agent.go:341](../internal/agent/llm_agent.go#L341)). `-race` the whole loop; existing dispatch/pause/dedup/finalize tests stay green.
-- **DoD:** a turn with N independent calls completes in ~max(call) not ~sum(call); wire-order + terminal + dedup + `-race` all green.
+- **Gap (closed):** `dispatch` ran tool calls one-at-a-time; reading 5 files was 5× the wall-clock.
+- **Shipped:** `dispatch()` runs the runnable batch's `Execute()` concurrently (`executeBatch`: inline for 1, goroutine fan-out for ≥2) while the dedup gate, `yield`s, and `RoleTool` appends stay serial in original call order; `text_response` handled as terminal after the batch (`runTerminal`). → [llm_agent_parallel.go](../internal/agent/llm_agent_parallel.go) + [llm_agent.go](../internal/agent/llm_agent.go), commit `aa6f36c8`.
+- **DoD met:** a deterministic barrier test proves concurrency + call-order; full `internal/agent` suite green with `-race`; lint 0.
 
 ### P2 — Tool-execution middleware ("the error hook") — SAFE-ADDITIVE — 🔄 IN PROGRESS
 
@@ -46,10 +45,11 @@ Risk classes: **SAFE-ADDITIVE** (do autonomously in-loop) · **ARCHITECTURAL** (
 
 ## Loop state
 
-Forks settled 2026-06-10 (P1 full-parallel, P5 ungate, P3 add). **Done:** P2, P4, P3. **Remaining authorized work:** P1 (full parallel dispatch — riskiest, its own focused iteration) then P5 (ungate skill activation). P2 Slice B (post-tool hook) optional. The loop proceeds through these with atomic per-item commits + `-race`.
+Forks settled 2026-06-10. **Done:** P2, P4, P3, **P1**. **Remaining authorized work:** P5 (ungate in-box skill activation). P2 Slice B (post-tool hook) optional. The loop proceeds with atomic per-item commits + `-race`.
 
 ## Status log
 
 - **2026-06-10 it.1** — spine created; P2 Slice A (typed tool-retry middleware) landed with tests. Next: P4 (background shell_exec) — safe-additive — then stop on the P1/P3/P5 forks.
 - **2026-06-10 it.2** — P4 (background `shell_exec` + `shell_poll`/`shell_kill`) landed with tests, grounded in Claude Code's Bash/BashOutput/KillBash (`D:/tmp/system-prompts-and-models-of-ai-tools/Anthropic`). **Safe-additive work now exhausted.** Remaining: P1 (parallel dispatch), P3 (todo tool), P5 (ungate skill activation) — all user-forks — plus P2 Slice B (post-tool hook, also architectural). The loop now surfaces the forks and pauses for a decision.
 - **2026-06-10 it.3** — forks decided (P1 full-parallel, P5 ungate, P3 add). P3 `todo_write` landed (`51d07bf0`). Confirmed large-output spillover is **Aura-ahead**, not a gap (see "Aura ahead"). Next: P1 (full parallel — the big core-loop change, dedicated iteration) then P5 (ungate).
+- **2026-06-10 it.4** — P1 parallel tool dispatch landed (`aa6f36c8`): concurrent `Execute()`, serial dedup/yield/append in call order, terminal-last; deterministic barrier test + full `-race` green. Only P5 (ungate skills) remains of the authorized work.

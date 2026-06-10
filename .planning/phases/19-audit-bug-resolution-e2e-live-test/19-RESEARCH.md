@@ -610,19 +610,25 @@ The H9 regression test MUST consume `testdata/premature_close.sse` (D-04): feed 
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All three were planner's-discretion items; each is now settled in the Phase 19 plans (the planner
+> adopted every recommendation below). Markers added per the research-resolution protocol.
 
 1. **H6/H7 schema: new table vs columns on `agent_job_runs`?**
    - What we know: no notification-state exists; `agent_job_runs` is audit-forever with an UPDATE grant; a new table gives a clean tx-scoped `FOR UPDATE SKIP LOCKED` sweep.
    - What's unclear: which the planner prefers for minimal-real.
    - Recommendation: new `aura.pending_notifications` table — keeps the audit ledger clean and makes the sweep semantics obvious. Either way, follow 0009's role-separated grants + partial index.
+   - **RESOLVED (19-07):** new `aura.pending_notifications` table via migration `0013_pending_notifications` + role-separated grants/partial index (0009 template).
 
 2. **H4 Windows group-kill mechanism (taskkill /T vs Job Object)?**
    - What we know: POSIX is `Setpgid` + `Kill(-pgid)`; Windows has no `-pgid` kill.
    - What's unclear: taskkill /T (spawn a process) vs a Win32 Job Object (more code, cleaner).
    - Recommendation: taskkill /F /T /PID for minimal-real (D-02); the live H4 test on Windows is the proof. If taskkill proves flaky, escalate to a Job Object.
+   - **RESOLVED (19-01):** `taskkill /F /T /PID` for minimal-real; Job Object is the documented escalation if the live Windows H4 test proves it flaky.
 
 3. **M-c shared sanitize export.** H2 (renderer) and M-c (fanout) both need string-level sanitization; `sanitizeErr` takes an `error`, the renderer/fanout have a `string`. Recommendation: export `SanitizeString` (the existing inner helper at server.go:403) and reuse it on both paths — one redaction contract.
+   - **RESOLVED (19-04):** export `SanitizeString` from `internal/agui/server.go`; consumed by the H2 Telegram renderer (19-05) and the M-c Fanout path — one redaction contract.
 
 ---
 
