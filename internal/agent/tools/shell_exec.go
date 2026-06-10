@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // ShellExec is Aura's keystone host tool: a full terminal. It runs a command line
@@ -166,14 +167,14 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		s.storeCwd(ctx, capturedCwd)
 	}
 	ecPtr := exitCodePtr(runErr, runCtx.Err())
-	rendered := renderShellOutput(combined, runErr, runCtx.Err())
-	rendered = appendShellFooter(rendered, shellExecFooter{
+	body := renderShellBody(combined, runErr, runCtx.Err())
+	footer := renderShellFooter(ctx, body, captured.stderrString(), runErr, runCtx.Err(), shellExecFooter{
 		ExitCode:   ecPtr,
 		Cwd:        finalCwd,
 		DurationMS: time.Since(started).Milliseconds(),
 		TimedOut:   shellTimedOut(runErr, runCtx.Err()),
 	})
-	res, err := NewResult(ctx, rendered)
+	res, err := NewResultReservingTail(ctx, body, footer)
 	if err != nil {
 		return ToolResult{}, err
 	}
@@ -401,28 +402,99 @@ func mergeEnv(extra map[string]string) []string {
 }
 
 func renderShellOutput(output string, runErr, ctxErr error) string {
-	var b strings.Builder
-	b.WriteString(output)
-	switch {
-	case shellTimedOut(runErr, ctxErr):
-		appendStatus(&b, "[command timed out]")
-	case errors.Is(ctxErr, context.Canceled):
-		appendStatus(&b, "[command cancelled]")
-	case runErr != nil:
-		if ec, ok := exitCode(runErr); ok {
-			appendStatus(&b, fmt.Sprintf("[exit code %d]", ec))
-		} else {
-			appendStatus(&b, fmt.Sprintf("[command failed: %v]", runErr))
-		}
+	body := renderShellBody(output, runErr, ctxErr)
+	status := shellStatusLine(runErr, ctxErr)
+	if status == "" {
+		return body
 	}
-	if b.Len() == 0 {
+	var b strings.Builder
+	b.WriteString(body)
+	appendStatus(&b, status)
+	return b.String()
+}
+
+func renderShellBody(output string, runErr, ctxErr error) string {
+	if output == "" && shellStatusLine(runErr, ctxErr) == "" {
 		return "[no output]"
 	}
-	return b.String()
+	return output
+}
+
+func shellStatusLine(runErr, ctxErr error) string {
+	switch {
+	case shellTimedOut(runErr, ctxErr):
+		return "[command timed out]"
+	case errors.Is(ctxErr, context.Canceled):
+		return "[command cancelled]"
+	case runErr != nil:
+		if ec, ok := exitCode(runErr); ok {
+			return fmt.Sprintf("[exit code %d]", ec)
+		}
+		return fmt.Sprintf("[command failed: %v]", runErr)
+	}
+	return ""
 }
 
 func shellTimedOut(runErr, ctxErr error) bool {
 	return errors.Is(ctxErr, context.DeadlineExceeded) || errors.Is(runErr, exec.ErrWaitDelay)
+}
+
+const shellStderrTailCap = 800
+
+func renderShellFooter(ctx context.Context, body, stderr string, runErr, ctxErr error, footer shellExecFooter) string {
+	status := shellStatusLine(runErr, ctxErr)
+	reserved := appendShellFooter(status, footer)
+	if shouldReserveStderrTail(ctx, body, reserved, stderr) {
+		reserved = appendShellFooter(joinFooterSections(status, stderrTailBlock(stderr)), footer)
+	}
+	return reserved
+}
+
+func shouldReserveStderrTail(ctx context.Context, body, reserved, stderr string) bool {
+	if strings.TrimSpace(stderr) == "" {
+		return false
+	}
+	tc, ok := toolCallCtx(ctx)
+	if !ok {
+		return false
+	}
+	return len(body)+len(reserved) > tc.cap
+}
+
+func stderrTailBlock(stderr string) string {
+	tail := strings.TrimRight(truncateTailBytes(stderr, shellStderrTailCap), "\n")
+	if tail == "" {
+		return ""
+	}
+	return "[stderr tail]\n" + tail
+}
+
+func joinFooterSections(parts ...string) string {
+	var b strings.Builder
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(part)
+	}
+	return b.String()
+}
+
+func truncateTailBytes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if len(s) <= n {
+		return s
+	}
+	start := len(s) - n
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
 }
 
 func exitCode(err error) (int, bool) {

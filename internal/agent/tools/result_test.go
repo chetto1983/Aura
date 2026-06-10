@@ -57,6 +57,34 @@ func TestNewResult_LargeSpills(t *testing.T) {
 
 // Test 2 (Req#6 small): a ≤cap output writes no sidecar and the history content
 // equals the raw preview, FullPath empty.
+func TestNewResultReservingTail_LargeKeepsFooter(t *testing.T) {
+	runDir := t.TempDir()
+	body := strings.Repeat("body-", testCap)
+	footer := "\n[exit code 7]\n[aura_shell {\"exit_code\":7}]"
+	ctx := ctxWithRunDir("sess-tail", "call-tail", runDir)
+
+	res, err := NewResultReservingTail(ctx, body, footer)
+	if err != nil {
+		t.Fatalf("NewResultReservingTail: %v", err)
+	}
+	if !res.Truncated {
+		t.Fatal("want Truncated=true for body larger than preview cap")
+	}
+	if !strings.Contains(res.Preview, "[exit code 7]") || !strings.Contains(res.Preview, `"exit_code":7`) {
+		t.Fatalf("preview dropped reserved footer: %q", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "read_tool_output") {
+		t.Fatalf("preview missing read_tool_output pointer: %q", res.Preview)
+	}
+	full, err := os.ReadFile(res.FullPath)
+	if err != nil {
+		t.Fatalf("read sidecar: %v", err)
+	}
+	if string(full) != body+footer {
+		t.Fatal("sidecar must hold the full body plus reserved footer")
+	}
+}
+
 func TestNewResult_SmallNoSidecar(t *testing.T) {
 	runDir := t.TempDir()
 	content := "small output"

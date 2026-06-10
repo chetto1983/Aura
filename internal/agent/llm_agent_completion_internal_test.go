@@ -132,3 +132,23 @@ func TestSideEffectDigest_PrefersLatestVerificationEvidence(t *testing.T) {
 		t.Fatalf("digest kept setup noise but lost the verifier: %q", got)
 	}
 }
+
+func TestSideEffectDigest_KeepsLargeShellFailureFooter(t *testing.T) {
+	a, _ := synthAgent("s")
+	call := llm.ToolCall{ID: "fail", Type: "function"}
+	call.Function.Name = "shell_exec"
+	call.Function.Arguments = `{"command":"generate report"}`
+	result := strings.Repeat("stdout noise ", 80) +
+		"\nERRTAIL: permission denied\n[exit code 7]\n[aura_shell {\"exit_code\":7,\"timed_out\":false}]"
+	a.history = append(a.history,
+		llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{call}},
+		llm.Message{Role: llm.RoleTool, ToolCallID: "fail", Content: result},
+	)
+
+	got := a.sideEffectDigest()
+	for _, needle := range []string{"ERRTAIL: permission denied", "[exit code 7]", "[aura_shell", `"exit_code":7`} {
+		if !strings.Contains(got, needle) {
+			t.Fatalf("digest missing %q from large failure footer: %q", needle, got)
+		}
+	}
+}

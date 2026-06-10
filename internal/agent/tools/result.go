@@ -73,6 +73,9 @@ func sidecarPath(runDir, sessionID, toolCallID string) (string, error) {
 // truncatePreview returns content truncated to at most capBytes, backed off to a
 // UTF-8 rune boundary so a multi-byte rune is never split.
 func truncatePreview(content string, capBytes int) string {
+	if capBytes <= 0 {
+		return ""
+	}
 	if len(content) <= capBytes {
 		return content
 	}
@@ -126,6 +129,54 @@ func NewResult(ctx context.Context, content string) (ToolResult, error) {
 
 	return ToolResult{
 		Preview:   preview + footer,
+		FullPath:  path,
+		Bytes:     total,
+		Truncated: true,
+	}, nil
+}
+
+// NewResultReservingTail behaves like NewResult, but treats footer as
+// always-visible content. It truncates body first, then appends footer, so shell
+// status, stderr tails, and structured exit-code metadata cannot be sliced off by
+// the preview cap.
+func NewResultReservingTail(ctx context.Context, body, footer string) (ToolResult, error) {
+	tc, ok := toolCallCtx(ctx)
+	if !ok {
+		return ToolResult{}, fmt.Errorf("tools.NewResultReservingTail: missing tool-call context (call WithToolCallContext first)")
+	}
+	content := body + footer
+	total := len(content)
+	if total <= tc.cap {
+		return ToolResult{Preview: content, Bytes: total, Truncated: false}, nil
+	}
+
+	bodyCap := tc.cap - len(footer)
+	if bodyCap < 0 {
+		bodyCap = 0
+	}
+	bodyPreview := truncatePreview(body, bodyCap)
+	shown := len(bodyPreview)
+	preview := bodyPreview + footer
+	truncFooter := fmt.Sprintf(
+		"\n\n[output truncated: showing body bytes 0-%d of %d plus reserved footer; read more via read_tool_output(tool_call_id=%q, offset=%d, limit=2048)]",
+		shown, len(body), tc.toolCallID, shown,
+	)
+
+	path, err := sidecarPath(tc.runDir, tc.sessionID, tc.toolCallID)
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("tools.NewResultReservingTail: %w", err)
+	}
+
+	if werr := writeSidecar(path, content); werr != nil {
+		return ToolResult{
+			Preview:   preview + fmt.Sprintf("\n\n[full output unavailable: %s]", werr),
+			Bytes:     total,
+			Truncated: true,
+		}, nil
+	}
+
+	return ToolResult{
+		Preview:   preview + truncFooter,
 		FullPath:  path,
 		Bytes:     total,
 		Truncated: true,

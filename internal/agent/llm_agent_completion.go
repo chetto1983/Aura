@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/llm"
 )
@@ -154,7 +155,7 @@ func (a *LlmAgent) sideEffectDigest() string {
 		line.WriteString("(")
 		line.WriteString(truncateBytes(c.args, criticArgsCap))
 		line.WriteString(") → ")
-		line.WriteString(truncateBytes(results[id], criticResultCap))
+		line.WriteString(truncateBytesKeepingTail(results[id], criticResultCap))
 		lines = append(lines, line.String())
 	}
 	if len(lines) == 0 {
@@ -173,7 +174,38 @@ func (a *LlmAgent) sideEffectDigest() string {
 			break
 		}
 	}
-	return truncateBytes(strings.Join(lines[start:], ""), criticDigestCap)
+	return truncateBytesKeepingTail(strings.Join(lines[start:], ""), criticDigestCap)
+}
+
+func truncateBytesKeepingTail(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if len(s) <= n {
+		return s
+	}
+	const marker = "\n...[truncated]...\n"
+	if n <= len(marker) {
+		return truncateTailBytes(s, n)
+	}
+	remaining := n - len(marker)
+	headCap := remaining / 2
+	tailCap := remaining - headCap
+	return truncateBytes(s, headCap) + marker + truncateTailBytes(s, tailCap)
+}
+
+func truncateTailBytes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	if len(s) <= n {
+		return s
+	}
+	start := len(s) - n
+	for start < len(s) && !utf8.RuneStart(s[start]) {
+		start++
+	}
+	return s[start:]
 }
 
 // parseCriticVerdict reads the DONE / NOT_DONE verdict. NOT_DONE is checked first

@@ -110,6 +110,25 @@ func TestShellExecReportsExitCode(t *testing.T) {
 	}
 }
 
+func TestShellExecLargeFailureKeepsFooter(t *testing.T) {
+	tool := &ShellExec{}
+	ctx := ctxWith(t, "sess-sh-large-fail", "call-sh-large-fail")
+	raw, _ := json.Marshal(shellExecArgs{Command: largeFailingCommand()})
+
+	res, err := tool.Execute(ctx, raw)
+	if err != nil {
+		t.Fatalf("a failing command is a normal result, not a Go error: %v", err)
+	}
+	if !res.Truncated {
+		t.Fatal("large output should be truncated")
+	}
+	for _, needle := range []string{"[exit code 7]", "[aura_shell ", `"exit_code":7`, "ERRTAIL"} {
+		if !strings.Contains(res.Preview, needle) {
+			t.Fatalf("preview missing %q after truncation: %q", needle, res.Preview)
+		}
+	}
+}
+
 // shellIsCmd reports whether the resolved Windows shell is the degraded cmd.exe
 // fallback (no POSIX bash found) — the syntax the tests feed depends on it.
 func shellIsCmd() bool {
@@ -335,6 +354,16 @@ func orphanGrandchildCommand(t *testing.T, pidFile string) string {
 		return fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -File "%s"`, strings.ReplaceAll(scriptPath, `"`, `\"`))
 	}
 	return fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass -File %s", shellQuote(scriptPath))
+}
+
+func largeFailingCommand() string {
+	if runtime.GOOS == "windows" {
+		if shellIsCmd() {
+			return `powershell -NoProfile -Command "$s='x'*10000; [Console]::Out.WriteLine($s); [Console]::Error.WriteLine('ERRTAIL'); exit 7"`
+		}
+		return `powershell -NoProfile -Command '$s="x"*10000; [Console]::Out.WriteLine($s); [Console]::Error.WriteLine("ERRTAIL"); exit 7'`
+	}
+	return "i=0; while [ $i -lt 10000 ]; do printf x; i=$((i+1)); done; printf '\\nERRTAIL\\n' >&2; exit 7"
 }
 
 func readPIDFile(t *testing.T, path string) int {
