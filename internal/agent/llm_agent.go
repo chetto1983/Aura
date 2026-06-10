@@ -222,7 +222,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 
-			text, calls, finish, usage, stopped := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
+			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
 			setSpanAttrs(span, a.cfg.Model, a.cfg.Provider, requestID, usage)
 			span.End()
 			cancel()
@@ -232,6 +232,10 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// the final/tool Event below would panic ("range function continued
 			// iteration after... returned false"). Return now.
 			if stopped {
+				return
+			}
+			if streamErr != nil {
+				yield(nil, streamErr)
 				return
 			}
 
@@ -472,10 +476,19 @@ func (a *LlmAgent) appendToolError(callID string, err error) {
 // they finalize so the Event order is chunk -> tool_call (Req#9).
 func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
 	requestID string, yield func(*Event, error) bool,
-) (text string, calls []llm.ToolCall, finish string, usage llm.Usage, stopped bool) {
+) (text string, calls []llm.ToolCall, finish string, usage llm.Usage, stopped bool, streamErr error) {
 	var b strings.Builder
 	for c := range ch {
 		switch {
+		case c.Err != nil:
+			// H9 stream contract: a terminal provider error means any accumulated
+			// text is incomplete and must never be accepted as the final answer.
+			reasoningtrace.Record("agent_consume_stream_error", map[string]any{
+				"request_id": requestID,
+				"thread_id":  a.sessionID,
+				"error":      c.Err.Error(),
+			})
+			return b.String(), calls, finish, usage, false, c.Err
 		case c.Usage != nil:
 			usage = *c.Usage
 			reasoningtrace.Record("agent_consume_usage_chunk", map[string]any{
@@ -497,7 +510,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 				// then report stopped so Run never yields again (iter.Seq2 contract).
 				for range ch { //nolint:revive // drain-to-close keeps the stream goroutine from leaking
 				}
-				return b.String(), calls, finish, usage, true
+				return b.String(), calls, finish, usage, true, nil
 			}
 		case c.Text != "":
 			b.WriteString(c.Text)
@@ -510,7 +523,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			if !yield(a.chunkEvent(ic, spanID, parentSpanID, c.Text), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
-				return b.String(), calls, finish, usage, true
+				return b.String(), calls, finish, usage, true, nil
 			}
 		case c.Reasoning != "":
 			// Stream-only CoT: yield the reasoning Event but NEVER write to b — the
@@ -524,7 +537,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			if !yield(a.reasoningChunkEvent(ic, spanID, parentSpanID, c.Reasoning), nil) {
 				for range ch { //nolint:revive // drain-to-close
 				}
-				return b.String(), calls, finish, usage, true
+				return b.String(), calls, finish, usage, true, nil
 			}
 		case c.FinishReason != "":
 			finish = c.FinishReason
@@ -535,7 +548,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			})
 		}
 	}
-	return b.String(), calls, finish, usage, false
+	return b.String(), calls, finish, usage, false, nil
 }
 
 // parseTextResponse validates the terminal-tool arguments (D-13). A malformed or

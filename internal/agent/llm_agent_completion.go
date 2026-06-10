@@ -98,6 +98,9 @@ func (a *LlmAgent) runCompletionCritic(ic InvocationContext, answer string) (don
 	}
 	var b strings.Builder
 	for c := range ch {
+		if c.Err != nil {
+			return false, "", false
+		}
 		if c.Text != "" {
 			b.WriteString(c.Text)
 		}

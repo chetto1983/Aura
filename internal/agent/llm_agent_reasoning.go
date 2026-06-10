@@ -49,6 +49,10 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 	}
 	var b strings.Builder
 	for c := range ch {
+		if c.Err != nil {
+			reasoningtrace.Record("adaptive_reasoning_router_error", map[string]any{"error": c.Err.Error(), "fallback_tier": prompt.ReasoningTierLow})
+			return prompt.ReasoningTierLow, true
+		}
 		b.WriteString(c.Text)
 	}
 	raw := strings.TrimSpace(b.String())

@@ -222,6 +222,8 @@ func (a *LlmAgent) synthesize(ic InvocationContext) (answer string, usage llm.Us
 	var b strings.Builder
 	for c := range ch {
 		switch {
+		case c.Err != nil:
+			return "", usage, fmt.Errorf("finalize synthesis stream: %w", c.Err)
 		case c.Usage != nil:
 			usage = *c.Usage
 		case c.Text != "":

@@ -118,6 +118,22 @@ func collect(seq func(yield func(*agent.Event, error) bool)) ([]*agent.Event, er
 	return evs, firstErr
 }
 
+func TestLlmAgent_StreamErrDoesNotFinalizePartialText(t *testing.T) {
+	streamErr := errors.New("mid-stream reset")
+	fc := agenttest.NewFakeClient(agenttest.TextThenErr(streamErr, "partial answer"))
+	a := newAgent(t, fc, llm.Config{})
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(2)})))
+	if !errors.Is(err, streamErr) {
+		t.Fatalf("Run error = %v, want %v", err, streamErr)
+	}
+	for _, ev := range evs {
+		if ev.LLMResponse != nil && ev.LLMResponse.FinishReason != "" {
+			t.Fatalf("partial stream was emitted as terminal answer: %+v", ev.LLMResponse)
+		}
+	}
+}
+
 func TestLlmAgent_ForwardsSessionID(t *testing.T) {
 	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", "ciao"))
 	const sessionID = "conv-session-123"
