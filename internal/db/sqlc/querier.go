@@ -30,6 +30,10 @@ type Querier interface {
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
 	DeleteExpiredTelegramSetupPending(ctx context.Context) (int64, error)
 	DeleteIdentity(ctx context.Context, name string) error
+	// Claim correctness is held by the per-task pg_try_advisory_lock (claim.go), NOT a
+	// row lock here: this SELECT runs on the autocommit pool, so any FOR UPDATE SKIP
+	// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
+	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)

@@ -241,6 +241,66 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 	}
 }
 
+// TestDispatchCompletesRunOnCancelledRootCtx is the M-h regression: a shutdown mid-run
+// cancels the dispatch root ctx, but the terminal run-state write must still land (on
+// the detached ctx) so the run is NOT stuck 'running' until the 90s orphan window.
+// BEFORE the fix CompleteRun(ctx,…) ran on the cancelled root ctx, pgx rejected it, and
+// the dispatcher only logged — leaving the run 'running'. AFTER, the detached
+// WithoutCancel+deadline ctx writes the terminal state.
+func TestDispatchCompletesRunOnCancelledRootCtx(t *testing.T) {
+	pool := migratedPool(t)
+	setupCtx, setupCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer setupCancel()
+	s := New(pool)
+
+	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	task, err := s.CreateTask(setupCtx, CreateTaskParams{
+		Kind: KindReminder, Spec: spec, Payload: []byte(`{"text":"hydrate"}`),
+		NextRunAt: time.Now().Add(5 * time.Minute), NotifyRoute: "stdout",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, task.ID) })
+
+	run, err := s.InsertRun(setupCtx, task.ID, 0)
+	if err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+
+	h := &fakeHandler{meta: HandlerMeta{Kind: KindReminder}, summary: "hydrate"}
+	var buf stdoutBuf
+	d := NewDispatch(map[TaskKind]Handler{KindReminder: h}, DispatchDeps{
+		Store: s, Notifier: &compositeNotifier{out: &buf},
+	})
+	domainTask, err := s.GetTask(setupCtx, task.ID)
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+
+	// Simulate a shutdown signal mid-run: the dispatch root ctx is already cancelled
+	// when complete() runs the terminal write.
+	cancelledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := d.Dispatch(cancelledCtx, domainTask, &Claim{RunID: run.ID}); err != nil {
+		t.Fatalf("Dispatch on cancelled ctx: %v", err)
+	}
+
+	// The terminal write must have landed on the detached ctx — read on a FRESH ctx.
+	readCtx, readCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer readCancel()
+	got, err := s.GetRun(readCtx, run.ID)
+	if err != nil {
+		t.Fatalf("GetRun: %v", err)
+	}
+	if got.Status == "running" {
+		t.Fatalf("run still 'running' after a cancelled-root dispatch — terminal write was dropped (M-h)")
+	}
+	if got.Status != "completed" || got.Summary != "hydrate" {
+		t.Fatalf("run not completed with summary on cancelled root ctx: status=%q summary=%q", got.Status, got.Summary)
+	}
+}
+
 // stdoutBuf is a tiny io.Writer that discards notification output in the integration
 // tests (the delivery path is unit-tested in notify_test.go).
 type stdoutBuf struct{}

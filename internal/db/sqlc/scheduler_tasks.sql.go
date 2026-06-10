@@ -97,9 +97,12 @@ FROM aura.scheduler_tasks
 WHERE status = 'active' AND next_run_at <= now()
 ORDER BY next_run_at ASC
 LIMIT $1
-FOR UPDATE SKIP LOCKED
 `
 
+// Claim correctness is held by the per-task pg_try_advisory_lock (claim.go), NOT a
+// row lock here: this SELECT runs on the autocommit pool, so any FOR UPDATE SKIP
+// LOCKED would release the instant the SELECT returns (inert, L5). The advisory lock
+// is what makes each due task a singleton across concurrent workers.
 func (q *Queries) DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error) {
 	rows, err := q.db.Query(ctx, dueTasks, limit)
 	if err != nil {

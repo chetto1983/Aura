@@ -72,13 +72,16 @@ func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 	return runFromRow(row), nil
 }
 
-// DueTasks returns up to limit active tasks whose next_run_at has passed, locked
-// FOR UPDATE SKIP LOCKED so concurrent workers never collide on the same row (the
-// tick loop's batch pickup). limit is the max-concurrent headroom. The limit is
-// clamped at the store boundary (defensive parity with envInt/int4OrNull): a
-// non-positive limit would yield LIMIT 0 (no task ever dispatched) and a value past
-// 2^31 would wrap to a negative LIMIT (a Postgres error), so any out-of-range input
-// is floored to 1 rather than silently misbehaving (WR-02).
+// DueTasks returns up to limit active tasks whose next_run_at has passed (the tick
+// loop's batch pickup). It does NOT row-lock: the query runs on the autocommit pool,
+// where a FOR UPDATE SKIP LOCKED would release the instant the SELECT returns (inert,
+// L5). Concurrency correctness is held by the per-task pg_try_advisory_lock each worker
+// takes in claim.go, which keeps a due task a singleton across workers for the run's
+// lifetime. limit is the max-concurrent headroom. The limit is clamped at the store
+// boundary (defensive parity with envInt/int4OrNull): a non-positive limit would yield
+// LIMIT 0 (no task ever dispatched) and a value past 2^31 would wrap to a negative
+// LIMIT (a Postgres error), so any out-of-range input is floored to 1 rather than
+// silently misbehaving (WR-02).
 func (s *Store) DueTasks(ctx context.Context, limit int) ([]Task, error) {
 	if limit <= 0 || limit > math.MaxInt32 {
 		limit = 1

@@ -148,15 +148,29 @@ func (d *Dispatch) Dispatch(ctx context.Context, task Task, c *Claim) error {
 	return runErr
 }
 
+// completeRunTimeout bounds the terminal run-state write on the detached ctx (M-h): a
+// short deadline so a wedged DB during shutdown can never hang the drain, while still
+// leaving ample room for the single UPDATE to land.
+const completeRunTimeout = 5 * time.Second
+
 // complete writes the terminal run state. The idempotency key is the run id (each
 // claim opens a unique run; a redelivered completion of the SAME run trips the
 // completed_with_hash UNIQUE constraint and is swallowed as ErrAlreadyRunning, SC#2).
+//
+// The write runs on a ctx DETACHED from the (possibly signal-cancelled) root via
+// context.WithoutCancel + a short deadline (M-h). On graceful shutdown the dispatch
+// ctx is already cancelled, and pgx rejects a query on a cancelled ctx — so the
+// terminal write would only be logged and the run would stay 'running' until the 90s
+// orphan scan reclaimed it. WithoutCancel preserves any tracing values while severing
+// the cancellation, so the run-state ledger stays accurate even mid-shutdown.
 func (d *Dispatch) complete(ctx context.Context, task Task, runID, status, summary string, runErr error) {
 	lastErr := ""
 	if runErr != nil {
 		lastErr = runErr.Error()
 	}
-	err := d.deps.Store.CompleteRun(ctx, CompleteRunParams{
+	writeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), completeRunTimeout)
+	defer cancel()
+	err := d.deps.Store.CompleteRun(writeCtx, CompleteRunParams{
 		RunID:         runID,
 		Status:        status,
 		Summary:       summary,
