@@ -114,7 +114,13 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
-	reg.Register(&tools.ShellExec{})
+	bgShells := tools.NewBackgroundShells()
+	reg.Register(&tools.ShellExec{Background: bgShells})
+	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
+	// output from, and terminate, a background shell_exec job. Deferred — the model
+	// tool_searches for them once it holds a background shell_id to follow.
+	reg.Register(&tools.ShellPoll{Shells: bgShells})
+	reg.Register(&tools.ShellKill{Shells: bgShells})
 	// Native in-process filesystem hands — Claude-Code-style file ergonomics, full
 	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical
 	// skills-library fence (#54 / D-43): fs_write/fs_edit refuse to write inside

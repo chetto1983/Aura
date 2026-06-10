@@ -17,14 +17,19 @@ import (
 // through the host system shell, in-process, with the operator's own privileges —
 // the same power Claude Code's Bash tool has. There is no sandbox hop and no path
 // fence: for a single trusted operator on their own machine the host shell IS the
-// capability (amendment #50 / D-15c). Untrusted, model-generated code still has the
-// deliberate sandbox_exec escalation.
+// capability (amendment #50 / D-15c). For a long job, "background": true returns a
+// shell_id read via shell_poll and stopped via shell_kill.
 type ShellExec struct {
 	// WorkspaceRoot is the default working directory when a call omits cwd and no
 	// tracked cwd exists yet. Empty → the Aura process's current working directory.
 	WorkspaceRoot string
 	// DefaultTimeout caps a call that omits timeout_ms. Zero → defaultShellTimeout.
 	DefaultTimeout time.Duration
+
+	// Background, when set, is the shared registry that holds jobs started with
+	// "background": true so shell_poll/shell_kill (wired to the same registry) can
+	// read and stop them across turns. Nil → background mode is unavailable.
+	Background *BackgroundShells
 
 	// mu guards cwd: the per-session PERSISTENT working directory (Claude-Code
 	// Bash-tool parity — a `cd` in one call carries into the next). Keyed by the
@@ -36,10 +41,11 @@ type ShellExec struct {
 }
 
 type shellExecArgs struct {
-	Command   string            `json:"command"`
-	Cwd       string            `json:"cwd"`
-	TimeoutMs int64             `json:"timeout_ms"`
-	Env       map[string]string `json:"env"`
+	Command    string            `json:"command"`
+	Cwd        string            `json:"cwd"`
+	TimeoutMs  int64             `json:"timeout_ms"`
+	Env        map[string]string `json:"env"`
+	Background bool              `json:"background"`
 }
 
 type shellExecFooter struct {
@@ -58,7 +64,8 @@ func (s *ShellExec) Spec() Spec {
     "command": {"type": "string", "description": "The shell command line to run, e.g. \"ls -la\", \"python3 script.py\", \"git status\". Runs through the host system shell, so pipes, redirects, and && chains all work. For long scripts, create the file with fs_write first, then run it here."},
     "cwd": {"type": "string", "description": "Optional working directory override. Your working directory PERSISTS between calls (a cd carries over) and starts at your workspace."},
     "timeout_ms": {"type": "integer", "minimum": 0, "description": "Optional timeout in milliseconds. Omit for the default (120s)."},
-    "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional extra environment variables for this command only."}
+    "env": {"type": "object", "additionalProperties": {"type": "string"}, "description": "Optional extra environment variables for this command only."},
+    "background": {"type": "boolean", "description": "Run the command in the background and return a shell_id immediately instead of blocking. Read its output later with shell_poll and stop it with shell_kill. Use for long jobs (builds, downloads, dev servers)."}
   },
   "required": ["command"]
 }`)
@@ -69,7 +76,7 @@ func (s *ShellExec) Spec() Spec {
 			"Pipes, redirects, && chains, any installed interpreter (python, node, go), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at your workspace. " +
 			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +
-			"For running untrusted or model-generated code in isolation, use sandbox_exec instead.",
+			"For a long-running job set \"background\": true — it returns immediately with a shell_id you read with shell_poll and stop with shell_kill.",
 		Parameters: params,
 		// Deferred: the full terminal stays available through tool_search, but its
 		// large, permissive schema should not dominate the hot manifest for simple
@@ -93,6 +100,24 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	}
 	if strings.TrimSpace(a.Command) == "" {
 		return ToolResult{}, fmt.Errorf("shell_exec: command is required")
+	}
+
+	if a.Background {
+		if s.Background == nil {
+			return ToolResult{}, fmt.Errorf("shell_exec: background mode is not available in this context")
+		}
+		bgCommand := strings.ReplaceAll(a.Command, "\r\n", "\n")
+		id, err := s.Background.start(bgCommand, s.workdir(ctx, a.Cwd), mergeEnv(a.Env))
+		if err != nil {
+			return ToolResult{}, err
+		}
+		rendered := fmt.Sprintf("Started in the background as %s. Read its output with shell_poll (shell_id=%q); stop it with shell_kill.\n[aura_shell_bg {\"shell_id\":%q,\"status\":\"running\"}]", id, id, id)
+		res, err := NewResult(ctx, rendered)
+		if err != nil {
+			return ToolResult{}, err
+		}
+		res.Meta = &ToolResultMeta{"shell_id": id, "background": true}
+		return res, nil
 	}
 
 	timeout := s.DefaultTimeout
