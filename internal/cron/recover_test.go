@@ -127,6 +127,85 @@ func TestCatchUpMissed_SkipsFutureTasks(t *testing.T) {
 	}
 }
 
+// TestCatchUpMissed_ConsultsReschedulesOnRecovery is the M-g regression: the boot
+// catch-up consults each handler's ReschedulesOnRecovery flag. An overdue task whose
+// handler does NOT reschedule on recovery (false) is NOT returned as a MissedTask (its
+// committed side effect is never replayed) while its cadence is still advanced; a task
+// whose handler DOES reschedule (true) is still returned and fires once. Before the fix
+// the flag was never read and BOTH fired.
+func TestCatchUpMissed_ConsultsReschedulesOnRecovery(t *testing.T) {
+	now := time.Date(2026, 6, 4, 12, 0, 0, 0, time.UTC)
+	pool := migratedPool(t)
+	store := New(pool)
+	// Inject the real flags: reminder=false (no replay), agent_job=true (replays once).
+	s := NewScheduler(pool, store, SchedulerConfig{
+		Now:           func() time.Time { return now },
+		MaxConcurrent: 2,
+		TickInterval:  time.Hour,
+		ReschedulesOnRecovery: func(kind TaskKind) bool {
+			return kind == KindAgentJob
+		},
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	spec, err := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	if err != nil {
+		t.Fatalf("ParseSchedule: %v", err)
+	}
+	overdue := now.Add(-time.Hour) // 12 missed every-5m windows
+
+	noReplay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindReminder, Spec: spec, StepBudget: 8, NextRunAt: overdue})
+	if err != nil {
+		t.Fatalf("CreateTask reminder: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, noReplay.ID) })
+
+	replay, err := store.CreateTask(ctx, CreateTaskParams{Kind: KindAgentJob, Spec: spec, StepBudget: 8, NextRunAt: overdue})
+	if err != nil {
+		t.Fatalf("CreateTask agent_job: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, replay.ID) })
+
+	missed, err := s.catchUpMissed(ctx)
+	if err != nil {
+		t.Fatalf("catchUpMissed: %v", err)
+	}
+
+	inMissed := func(id string) bool {
+		for i := range missed {
+			if missed[i].Task.ID == id {
+				return true
+			}
+		}
+		return false
+	}
+
+	// The reminder (ReschedulesOnRecovery=false) is NOT re-fired — but its cadence DID
+	// advance, so the next window fires normally.
+	if inMissed(noReplay.ID) {
+		t.Error("a ReschedulesOnRecovery=false task must NOT be auto-re-fired at catch-up (M-g)")
+	}
+	reloadedNoReplay, err := store.GetTask(ctx, noReplay.ID)
+	if err != nil {
+		t.Fatalf("GetTask reminder: %v", err)
+	}
+	if want := now.Add(5 * time.Minute); !reloadedNoReplay.NextRunAt.Equal(want) {
+		t.Errorf("non-rescheduling task next_run_at = %s, want cadence still advanced to %s", reloadedNoReplay.NextRunAt, want)
+	}
+
+	// The agent_job (ReschedulesOnRecovery=true) IS re-fired once, carrying MissedSince.
+	if !inMissed(replay.ID) {
+		t.Error("a ReschedulesOnRecovery=true task must still fire once at catch-up (M-g)")
+	}
+	for i := range missed {
+		if missed[i].Task.ID == replay.ID && !missed[i].MissedSince.Equal(overdue) {
+			t.Errorf("agent_job MissedSince = %s, want original overdue %s", missed[i].MissedSince, overdue)
+		}
+	}
+}
+
 // TestStartDispatchesMissedAtBoot is the CR-01 regression: an overdue task at boot
 // must actually FIRE once (not just advance next_run_at). It seeds an overdue task,
 // wires a recording dispatcher, runs Start until the boot catch-up drains, then

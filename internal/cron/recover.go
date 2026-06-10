@@ -45,13 +45,22 @@ type MissedTask struct {
 	MissedSince time.Time
 }
 
-// catchUpMissed collapses every overdue recurring task to ONE catch-up fire (D-18).
-// For each active task whose next_run_at is in the past, it computes the next FUTURE
-// fire (skipping the intervening missed windows so the task fires once, not N times)
-// and advances next_run_at to it; the task's original overdue next_run_at becomes
-// MissedSince. The returned MissedTasks feed the dispatcher (10-05), which fires each
-// once. A one-shot `at` task that is overdue is returned with no forward fire (its
-// next_run_at goes zero) so it fires exactly once and never again.
+// catchUpMissed collapses every overdue recurring task to ONE catch-up fire (D-18),
+// gated by the handler's ReschedulesOnRecovery flag (M-g). For each active task whose
+// next_run_at is in the past it computes the next FUTURE fire (skipping the intervening
+// missed windows) and advances next_run_at to it — so the task ALWAYS resumes its
+// cadence. Whether it is also re-FIRED once at catch-up depends on the handler:
+//
+//   - ReschedulesOnRecovery=true (or unknown — fail-safe to the historical behavior):
+//     the task is returned in MissedTasks carrying its original overdue next_run_at as
+//     MissedSince; the dispatcher fires it once (collapse, not once-per-window).
+//   - ReschedulesOnRecovery=false: the catch-up fire is SKIPPED — a handler that
+//     committed side effects on its prior runs must not replay them on recovery (the
+//     PRD recovery invariant). next_run_at is still advanced so the next window fires
+//     normally; only the missed window is dropped, never re-executed.
+//
+// A one-shot `at` task that is overdue advances to a zero next_run_at (retired) so it
+// fires at most once.
 func (s *Scheduler) catchUpMissed(ctx context.Context) ([]MissedTask, error) {
 	now := s.Now().UTC()
 	tasks, err := s.store.ListActiveTasks(ctx)
@@ -72,13 +81,32 @@ func (s *Scheduler) catchUpMissed(ctx context.Context) ([]MissedTask, error) {
 			slog.Warn("scheduler catch-up next-fire compute failed", "task", task.ID, "err", err)
 			continue
 		}
+		// Advance the cadence regardless of the recovery flag: a non-rescheduling
+		// handler still resumes its schedule, it just does not replay the missed window.
 		if err := s.store.UpdateNextRunAt(ctx, task.ID, next); err != nil {
 			slog.Warn("scheduler catch-up advance failed", "task", task.ID, "err", err)
+			continue
+		}
+		if !s.firesOnRecovery(task.Kind) {
+			slog.Info("scheduler catch-up fire skipped (handler does not reschedule on recovery)",
+				"task", task.ID, "kind", task.Kind)
 			continue
 		}
 		missed = append(missed, MissedTask{Task: task, MissedSince: task.NextRunAt.UTC()})
 	}
 	return missed, nil
+}
+
+// firesOnRecovery reports whether an overdue task of this kind should be re-fired once
+// at boot catch-up (M-g). It consults the injected handler-meta lookup
+// (ReschedulesOnRecovery). A nil lookup — tests, or a scheduler wired before the
+// composition root supplied the seam — fails SAFE to the historical "always fire"
+// behavior so a missing seam never silently drops every catch-up.
+func (s *Scheduler) firesOnRecovery(kind TaskKind) bool {
+	if s.reschedulesOnRecovery == nil {
+		return true
+	}
+	return s.reschedulesOnRecovery(kind)
 }
 
 // specFromTask rebuilds the ScheduleSpec from a persisted Task so NextRunAt can

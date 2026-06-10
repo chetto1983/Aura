@@ -140,8 +140,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	}
 
 	store := cron.New(chat.pool)
+	dispatch := buildDispatch(chat, store)
 	scheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{
-		Dispatch: buildDispatch(chat, store),
+		Dispatch: dispatch,
+		// Consult each kind's ReschedulesOnRecovery at boot catch-up (M-g): a handler
+		// that does not reschedule on recovery (reminder, skill_ttl_sweep) is never
+		// auto-re-fired for a missed window — only its cadence resumes.
+		ReschedulesOnRecovery: dispatch.ReschedulesOnRecovery,
 	})
 	// Seed the daily snippet TTL sweep (D-16) idempotently — only when no
 	// skill_ttl_sweep task already exists. The 0010-widened kind CHECK admits the row.

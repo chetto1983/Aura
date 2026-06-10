@@ -58,6 +58,14 @@ type Scheduler struct {
 	maxConcurrent int
 	tickInterval  time.Duration
 	hbInterval    time.Duration
+	// reschedulesOnRecovery reports a kind's HandlerMeta.ReschedulesOnRecovery (M-g):
+	// the boot catch-up consults it so a handler that does NOT reschedule on recovery
+	// (e.g. a reminder whose window has passed, or any future side-effecting handler)
+	// is never auto-re-fired — its cadence still resumes, but the committed side effect
+	// is not replayed. Nil (tests / pre-wired callers) preserves the historical
+	// fire-every-overdue-task behavior for safety. Supplied by the composition root,
+	// which owns the kind→handler map (the *Dispatch.ReschedulesOnRecovery seam).
+	reschedulesOnRecovery func(kind TaskKind) bool
 }
 
 // SchedulerConfig carries explicit overrides; zero fields fall through to the
@@ -67,6 +75,11 @@ type SchedulerConfig struct {
 	MaxConcurrent int
 	TickInterval  time.Duration
 	Now           func() time.Time
+	// ReschedulesOnRecovery is the M-g catch-up seam: it reports whether a task kind's
+	// handler reschedules (re-fires) on boot recovery. A nil func means "always fire"
+	// (the historical behavior); the composition root passes the *Dispatch lookup so
+	// the flag the handlers already declare is finally consulted.
+	ReschedulesOnRecovery func(kind TaskKind) bool
 }
 
 // NewScheduler builds a Scheduler over an open pool + Store. It resolves the
@@ -86,13 +99,14 @@ func NewScheduler(pool *pgxpool.Pool, store *Store, cfg SchedulerConfig) *Schedu
 		tick = time.Duration(envInt("AURA_SCHEDULER_TICK_SECONDS", int(defaultTickInterval/time.Second))) * time.Second
 	}
 	return &Scheduler{
-		Now:           now,
-		store:         store,
-		pool:          pool,
-		dispatch:      cfg.Dispatch,
-		maxConcurrent: maxC,
-		tickInterval:  tick,
-		hbInterval:    defaultHeartbeatInterval,
+		Now:                   now,
+		store:                 store,
+		pool:                  pool,
+		dispatch:              cfg.Dispatch,
+		maxConcurrent:         maxC,
+		tickInterval:          tick,
+		hbInterval:            defaultHeartbeatInterval,
+		reschedulesOnRecovery: cfg.ReschedulesOnRecovery,
 	}
 }
 

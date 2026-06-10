@@ -95,6 +95,19 @@ type Dispatch struct {
 
 var _ Dispatcher = (*Dispatch)(nil)
 
+// ReschedulesOnRecovery reports a kind's HandlerMeta.ReschedulesOnRecovery (M-g) — the
+// handler-meta lookup seam the boot catch-up consults (recover.go). An unknown kind
+// (no handler) reports false: the dispatcher would fail that kind loud at dispatch
+// time anyway, so the catch-up should not re-fire a kind it cannot route. The
+// composition root passes this method as SchedulerConfig.ReschedulesOnRecovery.
+func (d *Dispatch) ReschedulesOnRecovery(kind TaskKind) bool {
+	h, ok := d.handlers[kind]
+	if !ok {
+		return false
+	}
+	return h.Meta().ReschedulesOnRecovery
+}
+
 // NewDispatch builds the dispatcher from the kind→handler map (no dispatch switch)
 // and the run-lifecycle deps. The map is supplied by the composition root, which
 // adapts the internal/cron/handlers impls into the cron-local Handler interface.

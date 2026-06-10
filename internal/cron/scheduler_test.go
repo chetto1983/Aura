@@ -108,6 +108,64 @@ func TestQuietHoursEnd(t *testing.T) {
 	}
 }
 
+// TestReschedulesOnRecoverySeam proves the M-g catch-up gate (firesOnRecovery): the
+// injected ReschedulesOnRecovery lookup decides whether an overdue task is re-fired at
+// boot, and a nil lookup fails SAFE to the historical always-fire behavior. Before the
+// fix the flag was never read; this asserts the seam is wired from SchedulerConfig
+// through to firesOnRecovery.
+func TestReschedulesOnRecoverySeam(t *testing.T) {
+	// Nil lookup (tests / pre-wired callers): always fire (fail-safe, never drop).
+	nilSeam := NewScheduler(nil, nil, SchedulerConfig{})
+	for _, kind := range []TaskKind{KindReminder, KindAgentJob, KindSkillTTLSweep} {
+		if !nilSeam.firesOnRecovery(kind) {
+			t.Errorf("nil ReschedulesOnRecovery lookup must fail-safe to fire for %q", kind)
+		}
+	}
+
+	// An injected lookup mirroring the real handler flags: agent_job/backup reschedule
+	// (re-fire on recovery), reminder/skill_ttl_sweep do not.
+	reschedules := map[TaskKind]bool{
+		KindReminder:       false,
+		KindAgentJob:       true,
+		KindBackupPostgres: true,
+		KindBackupNeo4j:    true,
+		KindSkillTTLSweep:  false,
+	}
+	s := NewScheduler(nil, nil, SchedulerConfig{
+		ReschedulesOnRecovery: func(kind TaskKind) bool { return reschedules[kind] },
+	})
+	for kind, want := range reschedules {
+		if got := s.firesOnRecovery(kind); got != want {
+			t.Errorf("firesOnRecovery(%q) = %v, want %v", kind, got, want)
+		}
+	}
+	// An unknown kind reports the lookup's value (here false, the map zero value) — the
+	// dispatcher would fail an unroutable kind loud anyway.
+	if s.firesOnRecovery(TaskKind("unknown")) {
+		t.Error("an unknown kind must not be re-fired at catch-up")
+	}
+}
+
+// TestDispatchReschedulesOnRecoveryLookup proves the *Dispatch seam the composition
+// root passes into the scheduler: it reports a kind's HandlerMeta.ReschedulesOnRecovery
+// and false for an unroutable kind.
+func TestDispatchReschedulesOnRecoveryLookup(t *testing.T) {
+	d := NewDispatch(map[TaskKind]Handler{
+		KindReminder: &fakeHandler{meta: HandlerMeta{Kind: KindReminder, ReschedulesOnRecovery: false}},
+		KindAgentJob: &fakeHandler{meta: HandlerMeta{Kind: KindAgentJob, ReschedulesOnRecovery: true}},
+	}, DispatchDeps{Store: &fakeCompleter{}})
+
+	if d.ReschedulesOnRecovery(KindReminder) {
+		t.Error("a reminder handler reports ReschedulesOnRecovery=false")
+	}
+	if !d.ReschedulesOnRecovery(KindAgentJob) {
+		t.Error("an agent_job handler reports ReschedulesOnRecovery=true")
+	}
+	if d.ReschedulesOnRecovery(TaskKind("unmapped")) {
+		t.Error("an unroutable kind must report false (the dispatcher fails it loud)")
+	}
+}
+
 func TestDuringQuietHours_UnsetOrMalformedIsNeverQuiet(t *testing.T) {
 	at := time.Date(2026, 6, 4, 2, 0, 0, 0, time.UTC)
 	// Unset.
