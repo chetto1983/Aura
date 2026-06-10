@@ -4,14 +4,14 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 19 context gathered
-last_updated: "2026-06-10T11:33:55.331Z"
+last_updated: "2026-06-10T11:48:35.649Z"
 last_activity: 2026-06-10
 progress:
   total_phases: 21
   completed_phases: 16
   total_plans: 121
-  completed_plans: 113
-  percent: 76
+  completed_plans: 114
+  percent: 94
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 19 (audit-bug-resolution-e2e-live-test) — EXECUTING
-Plan: 2 of 11
+Plan: 3 of 11
 Status: Ready to execute
 Last activity: 2026-06-10
 
-Progress: [█████████░] 93%
+Progress: [█████████░] 94%
 
 ### Next — Phase 14
 
@@ -123,6 +123,7 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 | Phase 13 P13-07 | ~13min | 2 tasks | 9 files |
 | Phase 13 P13-08 | ~10min | 2 tasks | 9 files |
 | Phase 19 P05 | ~40min | 2 tasks | 6 files |
+| Phase 19 P08 | ~50min | 2 tasks | 11 files |
 
 ## Accumulated Context
 
@@ -192,6 +193,7 @@ Recent decisions affecting current work:
 - [Phase 13]: 13-02 (Wave-1 artifact substrate, UX-02): channel-agnostic file delivery built in two additive halves (D-05/D-06). send_file is a Deferred:true/Mutating:false tool with a {path, caption?} schema; Execute stat-gates the path and, on a ≤50MB readable file, sets res.Meta["artifact"]={path,filename,caption} mirroring the shell_exec OUTBOUND res.Meta seam (NOT the ask_user sentinel — that path is name-gated to ask_user only, amendment #51/D-40, and silently drops any other tool's sentinel). >50MB → file_too_large error ToolResult (never a silent truncation, OQ3/T-13-02-Artifact); unreadable/dir/empty → file_unreadable; neither carries artifact Meta. Caption is ASCII-sanitized in-tool (asciiCaption/foldToASCII: accented Latin folded to base letters, rest dropped — Pitfall 4/T-13-02-CaptionInject), no channel coupling. toolResultEvent (llm_agent_events.go) gained the metaArtifact helper + the lone lift `ev.Actions.ArtifactDelta = art` — the SINGLE named route that populates the previously-unmapped forward-compat ArtifactDelta field (event.go:71); purely additive, a run without the key leaves it nil so every existing event is byte-identical. translator.go gained an additive branch (before STATE_DELTA, mirroring its close-first idiom): a non-empty Actions.ArtifactDelta closes any open run then yields ONE namespaced CUSTOM event NewCustomEvent("aura.artifact", WithValue(descriptor)) and continues — channel-agnostic (D-06), NOT an overloaded TOOL_CALL_RESULT. New CUSTOM golden fixture added (all prior fixtures byte-identical); the property test now interleaves random artifact events under the lifecycle-balance invariants. No "telegram" in either substrate file (grep-clean). The Telegram artifact.go→sendDocument CONSUMER is explicitly 13-06, not this plan (substrate/consumer split). send_file is NOT yet registered into buildBaseRegistry — registration lands with the channel wiring (13-05/13-06). vet/build/test/-race green on internal/agent + internal/agui; golangci-lint 0; all files ≤600 LOC (send_file 178, translator 321). Commits 99397e43/604a0bfa.
 - [Phase 12]: 12-04 (AG-UI Gateway Gate-3 closure, CLOSES Phase 12 / UX-01): scripts/agui_smoke.sh is the live SSE Gate-3 reference — builds aura, seeds a conversation KEY-FREE (docker exec psql), polls 127.0.0.1:9080 (no fixed sleep), POSTs a RunAgentInput and asserts FRAME ground truth (RUN_STARTED…RUN_FINISHED; + REASONING_START…REASONING_END before the first TEXT_MESSAGE_START on the LIVE leg, amendment #57), then GETs the MESSAGES_SNAPSHOT + asserts a 404 chokepoint; two legs (DEGRADED dummy-key CI / LIVE AGUI_SMOKE_LIVE=1). No-skip-as-green: exits non-zero under $CI when the DB env is unset. ci.yml adds ./internal/agui/... to the db_integration -race -p 1 package list (0.04–0.05s round-trips, not a skip tell) + a degraded-leg smoke step. [Rule 1] a malformed/non-UUID thread id now maps to 404 at BOTH handlers (uuid.Parse guard before the store round-trip) instead of leaking the store parse error as a 500 — caught live by the does-not-exist chokepoint (T-12-11). internal/agui coverage 86.8% (owned-surface 86.2%, ≥85%); translator.go mutation 76.2% (48/63 killed, 15 near-equivalent survivors advisory-accepted per db.go/budget.go precedent). Operator DELEGATED the live Gate-3 sign-off to an autonomous E2E loop ("do all E2E test in autonomy and loop until score is >95%") — 11/11 (100%), 3 iterations (2 driver-harness fixes, ZERO product defects); ground truth in D:/tmp/agui-e2e/ (sse.txt ordering, snap.json no-CoT, db_turns.txt assistant len=21, serve.log graceful shutdown, chat_leg.out live 💭 render). Commit 1867c0c2. CAP/UX-01 Phase 12 COMPLETE (6/6 plans).
 - [Phase ?]: Phase 19 19-05: H2 Telegram RunErrorEvent render routes through agui.SanitizeString (one redaction contract); H3 async doc-convert failure notifies via convertFailMessage; M-e /cancel during a pause routes SubmitAnswer(ActionCancel)+clears keyboard via per-chat pausePrompts track at step-0 of onText; D-04 stale serve_channels comment corrected.
+- [Phase ?]: [Phase 19]: 19-08: M-g/M-h/L5 scheduler-contract fixes — catch-up consults ReschedulesOnRecovery (no replay on recovery, nil seam fails safe to always-fire), complete() detaches the terminal write via WithoutCancel+5s (no stuck-running on shutdown), inert autocommit SKIP LOCKED dropped from DueTasks + sqlc regenerated (advisory-lock correctness documented). Both M-g+M-h proven fails-before/passes-after; cron -race db_integration green.
 
 ### Pending Todos
 
@@ -225,6 +227,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-10T11:33:38.189Z
+Last session: 2026-06-10T11:46:30.530Z
 Stopped at: Phase 19 context gathered
 Resume file: None

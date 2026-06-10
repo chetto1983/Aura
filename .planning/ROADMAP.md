@@ -622,7 +622,7 @@ Plans:
 **Goal:** Resolve the confirmed correctness/robustness findings from the 2026-06-10 deep parallel audit (`docs/audit/deep-correctness-audit-2026-06-10.md`) and prove the fixes hold end-to-end on the live stack. Priority order from the audit: (1) the **"shell never answers" root-cause cluster** - H4 orphan-child/`WaitDelay` hang + H5 exit-code/stderr head-first truncation + M-b veto re-surfacing vetoed prose; (2) **error-swallowing on user-facing surfaces** - H1 SSE boundary-frame drop (protocol corruption), H2 Telegram `RunErrorEvent` not rendered, H3 async doc-conversion failure silent, H9 LLM mid-stream SSE error swallowed; (3) **not-wired / dropped contracts** - H6/H7 scheduler deferred+undelivered notifications never retried, H10 MCP reconnect-on-use unimplemented, H8 microcompact 2-stride drop producing wire-invalid tool history; (4) the env-ordering class (M-i: central `godotenv.Load()` at `main()`). Each fix lands with a regression test that fails before / passes after, then a live E2E pass on the running stack (Telegram CDP harness + `aura chat` host loop + scheduler + AG-UI SSE) confirms the user-visible behavior.
 **Requirements**: The 26 audit findings (H1-H10, M-a..M-j, L1-L6) + the INFO triage are the de-facto requirements (no new product capability - correctness + validation only). Each finding appears as a `requirements:` id in exactly one fix plan.
 **Depends on:** Phase 18
-**Plans:** 9/11 plans executed
+**Plans:** 10/11 plans executed
 
 Plans:
 
@@ -639,7 +639,7 @@ Wave 1 (7 parallel - independent file sets):
 Wave 2 (depend on a wave-1 plan for shared files/exports):
 
 - [x] 19-05-PLAN.md - Telegram surface: H2 `RunErrorEvent` render via shared `agui.SanitizeString` + H3 async convert notice + M-e `/cancel`-during-pause; correct stale `serve_channels.go:142` comment (D-04). Depends on 19-04 (SanitizeString export) + 19-09 (serve_channels.go)
-- [ ] 19-08-PLAN.md - Scheduler contract rest: M-g wire `ReschedulesOnRecovery` into `catchUpMissed` + M-h detached terminal write on shutdown + L5 drop inert SKIP LOCKED. Depends on 19-07 (shared cron files + 0013)
+- [x] 19-08-PLAN.md - Scheduler contract rest: M-g wire `ReschedulesOnRecovery` into `catchUpMissed` + M-h detached terminal write on shutdown + L5 drop inert SKIP LOCKED. Depends on 19-07 (shared cron files + 0013)
 
 Wave 3 (sequential / final):
 
