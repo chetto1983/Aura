@@ -40,6 +40,39 @@ func (t *Telegram) hitlHandlesText(daemonCtx context.Context, c tele.Context, ch
 	return true
 }
 
+// pauseCancelledMsg confirms a /cancel resolved a pending ask_user pause (Italian —
+// the output-language directive). Distinct from the turn-cancel confirmation so the
+// user knows the pause (not a running turn) was annulled.
+const pauseCancelledMsg = "Richiesta annullata."
+
+// cancelPendingPause routes a /cancel through the HITL cancel path when an ask_user
+// pause is pending for the chat (M-e). It mirrors the "Annulla" button:
+// SubmitAnswer(…ActionCancel) resolves the paused_states row (the Runner injects the
+// terminating answers + auto-resolves the whole FIFO group), then the tracked prompt
+// keyboard is disarmed so it no longer invites a tap. It returns true when it handled
+// a pending pause; false (with no side effects) when nothing was pending, so the
+// caller falls back to the ordinary in-flight-turn cancel. The Runner stays the sole
+// writer of paused_states — the channel only reads (PendingFor) and resolves
+// (SubmitAnswer).
+func (t *Telegram) cancelPendingPause(daemonCtx context.Context, c tele.Context, chatID int64) bool {
+	if t.deps.Resume == nil {
+		return false
+	}
+	pending, err := t.deps.Resume.PendingFor(daemonCtx, convID(chatID))
+	if err != nil || len(pending) == 0 {
+		return false
+	}
+	if _, serr := t.hitlFor(c, chatID).cancel(daemonCtx, convID(chatID), pending[0].Token); serr != nil {
+		t.notifyHitlSubmitError(c, chatID)
+		return true
+	}
+	if prompt := t.takePausePrompt(chatID); prompt != nil {
+		t.disarmCallbackKeyboard(c.Bot(), prompt)
+	}
+	t.reply(c, pauseCancelledMsg)
+	return true
+}
+
 // hitlHandlesReply routes a ForceReply answer (a reply to the pause prompt) to HITL
 // the same way as hitlHandlesText, additionally marking the reply message id handled
 // so OnText does not double-dispatch it.
@@ -113,7 +146,33 @@ func (t *Telegram) promptPendingPause(ctx context.Context, bot botSender, chatID
 	if t.deps.Resume == nil || ctx.Err() != nil {
 		return
 	}
-	newHitl(t.deps.Resume, nil).prompt(ctx, bot, chatID, convID(chatID))
+	prompt := newHitl(t.deps.Resume, nil).prompt(ctx, bot, chatID, convID(chatID))
+	t.trackPausePrompt(chatID, prompt)
+}
+
+// trackPausePrompt records the last rendered pause-prompt message for a chat so a
+// later /cancel can clear its inline keyboard (M-e). A nil prompt clears the entry.
+func (t *Telegram) trackPausePrompt(chatID int64, prompt *tele.Message) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pausePrompts == nil {
+		t.pausePrompts = make(map[int64]*tele.Message)
+	}
+	if prompt == nil {
+		delete(t.pausePrompts, chatID)
+		return
+	}
+	t.pausePrompts[chatID] = prompt
+}
+
+// takePausePrompt removes and returns the tracked pause-prompt message for a chat
+// (nil when none is tracked). Used by the /cancel pause path to disarm the keyboard.
+func (t *Telegram) takePausePrompt(chatID int64) *tele.Message {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	prompt := t.pausePrompts[chatID]
+	delete(t.pausePrompts, chatID)
+	return prompt
 }
 
 // hitlFor builds a HITL surface whose resume renders the continuation turn through

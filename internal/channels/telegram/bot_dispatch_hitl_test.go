@@ -108,6 +108,112 @@ func TestOnCallbackResumeHonorsBusyGate(t *testing.T) {
 	}
 }
 
+// TestCancelDuringPendingPauseRoutesToHITLCancel proves /cancel during a pending
+// ask_user pause routes through SubmitAnswer(…ActionCancel) — resolving the
+// paused_states row via the Resume dep — AND clears the rendered prompt's inline
+// keyboard (M-e). BEFORE the fix /cancel was intercepted as a plain command that
+// only no-op'd the (absent) in-flight turn ctx, orphaning the pause + leaving the
+// keyboard live, divergent from the "Annulla" button.
+func TestCancelDuringPendingPauseRoutesToHITLCancel(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{
+		pending: []askuser.Pending{{Token: "tok-p", Kind: "approval", Question: "Procedo?"}},
+	}
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Resume = rs
+		d.Cost = &fakeCost{}
+		d.Search = &fakeSearch{}
+	})
+
+	const chatID int64 = 71
+	bot := &dispatchBot{}
+	// Render the pause prompt first so the channel tracks its message for the
+	// keyboard-disarm (the live flow renders a prompt before the user types /cancel).
+	tg.promptPendingPause(context.Background(), tg.sender(msgContext(bot, chatMsg(chatID))), chatID)
+
+	msg := chatMsg(chatID)
+	msg.Text = "/cancel"
+	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onText(/cancel during pause): %v", err)
+	}
+
+	calls := rs.calls()
+	if len(calls) != 1 {
+		t.Fatalf("/cancel during a pause must submit exactly one cancel, got %d", len(calls))
+	}
+	if calls[0].token != "tok-p" || calls[0].action != askuser.ActionCancel {
+		t.Errorf("submit = %+v, want {tok-p cancel}", calls[0])
+	}
+	// The continuation turn must NOT fire (a cancel terminates the turn).
+	if c, _ := rt.snapshot(); c != 0 {
+		t.Errorf("a pause-cancel must NOT drive a continuation turn, got %d", c)
+	}
+	// The tracked prompt's inline keyboard must be cleared (EditReplyMarkup nil).
+	var clearedKeyboard bool
+	for _, e := range bot.recordedEdits() {
+		if e.markup == nil {
+			clearedKeyboard = true
+		}
+	}
+	if !clearedKeyboard {
+		t.Errorf("/cancel must clear the pause prompt's inline keyboard, edits=%+v", bot.recordedEdits())
+	}
+	// And a user-facing cancel confirmation is sent (never silent).
+	var confirmed bool
+	for _, s := range bot.sentTexts() {
+		if strings.Contains(s, pauseCancelledMsg) {
+			confirmed = true
+		}
+	}
+	if !confirmed {
+		t.Errorf("/cancel must confirm the pause was annulled, sent=%v", bot.sentTexts())
+	}
+}
+
+// TestCancelWithNoPendingPausePreservesTurnCancel proves /cancel with NO pending
+// pause keeps the existing in-flight-turn ctx-cancel behavior (M-e must not regress
+// the turn-cancel): no SubmitAnswer is called and the registered turn cancel fires.
+func TestCancelWithNoPendingPausePreservesTurnCancel(t *testing.T) {
+	t.Parallel()
+	rs := &fakeResume{} // no pending pause
+	rt := &recordingTurn{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.Resume = rs
+		d.Cost = &fakeCost{}
+		d.Search = &fakeSearch{}
+	})
+
+	const chatID int64 = 72
+	var turnCancelled bool
+	if !tg.cmds.registerTurn(chatID, func() { turnCancelled = true }) {
+		t.Fatal("failed to register the in-flight turn")
+	}
+
+	bot := &dispatchBot{}
+	msg := chatMsg(chatID)
+	msg.Text = "/cancel"
+	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onText(/cancel no pause): %v", err)
+	}
+
+	if len(rs.calls()) != 0 {
+		t.Errorf("with no pending pause /cancel must NOT submit a HITL cancel, got %d", len(rs.calls()))
+	}
+	if !turnCancelled {
+		t.Error("with no pending pause /cancel must still fire the in-flight turn cancel")
+	}
+	var confirmed bool
+	for _, s := range bot.sentTexts() {
+		if strings.Contains(s, "annullato") {
+			confirmed = true
+		}
+	}
+	if !confirmed {
+		t.Errorf("/cancel must confirm the turn was annulled, sent=%v", bot.sentTexts())
+	}
+}
+
 func TestOnStatusCancelCallbackCancelsTurnAndDisarmsButton(t *testing.T) {
 	t.Parallel()
 	rt := &recordingTurn{}

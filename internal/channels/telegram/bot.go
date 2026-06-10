@@ -126,6 +126,13 @@ type Telegram struct {
 	tts     *ttsClient
 
 	hitlRepliesHandled map[hitlReplyKey]struct{}
+
+	// pausePrompts holds the last-rendered ask_user pause prompt message per chat so
+	// a /cancel text command can clear its inline keyboard (M-e) — the "Annulla"
+	// button path disarms via the callback's message, but a /cancel arrives as a
+	// fresh message with no handle on the prompt. Set when a prompt is rendered,
+	// consumed (and cleared) when the pause resolves. Guarded by mu.
+	pausePrompts map[int64]*tele.Message
 }
 
 type hitlReplyKey struct {

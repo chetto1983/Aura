@@ -68,34 +68,40 @@ func newHitl(r resumeRunner, resume resumeFunc) *hitl {
 
 // prompt renders the FIRST unresolved pause for a conversation (FIFO — the
 // Runner's PendingFor order is authoritative) as an InlineKeyboard or a
-// ForceReply. A conversation with no pending pause is a no-op.
-func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID string) {
+// ForceReply. A conversation with no pending pause is a no-op. It returns the sent
+// prompt message (nil on no-pause/send-fail) so the caller can later disarm its
+// keyboard when a /cancel resolves the pause (M-e).
+func (h *hitl) prompt(ctx context.Context, bot botSender, chatID int64, convID string) *tele.Message {
 	pending, err := h.runner.PendingFor(ctx, convID)
 	if err != nil {
 		slog.Warn("telegram hitl: pending lookup failed", "conv", convID, "err", err)
-		return
+		return nil
 	}
 	if len(pending) == 0 {
-		return
+		return nil
 	}
 	p := pending[0]
 	to := tele.ChatID(chatID)
 	switch p.Kind {
 	case "approval":
-		h.send(bot, to, p.Question, approvalMarkup(p.Token))
+		return h.send(bot, to, p.Question, approvalMarkup(p.Token))
 	case "choice":
-		h.send(bot, to, p.Question, choiceMarkup(p.Token, p.Options))
+		return h.send(bot, to, p.Question, choiceMarkup(p.Token, p.Options))
 	default: // clarification (free-text): force the client into a reply
-		h.send(bot, to, p.Question, &tele.ReplyMarkup{ForceReply: true})
+		return h.send(bot, to, p.Question, &tele.ReplyMarkup{ForceReply: true})
 	}
 }
 
 // send renders one prompt message with a reply markup (best-effort: a failed send
-// must not wedge the turn).
-func (h *hitl) send(bot botSender, to tele.Recipient, text string, markup *tele.ReplyMarkup) {
-	if _, err := bot.Send(to, text, &tele.SendOptions{ReplyMarkup: markup}); err != nil {
+// must not wedge the turn). It returns the sent message so the caller can track it
+// for a later keyboard disarm.
+func (h *hitl) send(bot botSender, to tele.Recipient, text string, markup *tele.ReplyMarkup) *tele.Message {
+	out, err := bot.Send(to, text, &tele.SendOptions{ReplyMarkup: markup})
+	if err != nil {
 		slog.Warn("telegram hitl: prompt send failed", "err", err)
+		return nil
 	}
+	return out
 }
 
 // handleCallback resolves a button press: it parses token|action|value, submits
@@ -201,6 +207,15 @@ func (h *hitl) submit(ctx context.Context, convID, token, action, content string
 		h.resume(ctx, convID)
 	}
 	return true, nil
+}
+
+// cancel resolves a pending pause via the Runner with ActionCancel (the same action
+// the "Annulla" button submits). A cancel terminates the turn — the Runner injects
+// the terminating answers and auto-resolves the whole FIFO group — so NO continuation
+// Turn is driven. The submit error is returned (not swallowed) so the channel can
+// tell the user their cancel did not register.
+func (h *hitl) cancel(ctx context.Context, convID, token string) (resumed bool, err error) {
+	return h.submit(ctx, convID, token, askuser.ActionCancel, "")
 }
 
 // approvalMarkup builds the accept/decline InlineKeyboard for an approval pause.

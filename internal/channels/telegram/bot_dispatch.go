@@ -111,6 +111,15 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 
+		// 0) /cancel during a pending ask_user pause cancels the PAUSE, not a turn
+		// (M-e). This must run BEFORE the command intercept: /cancel is a command, so
+		// dispatchRich would otherwise consume it and only no-op the (absent) in-flight
+		// turn ctx, orphaning the paused_states row + leaving the keyboard live. With no
+		// pending pause cancelPendingPause is inert and the ordinary command path (the
+		// turn-cancel) still handles /cancel below.
+		if name, _ := splitCommand(text); name == "/cancel" && t.cancelPendingPause(daemonCtx, c, chatID) {
+			return nil
+		}
 		// 1) Command intercept — a handled /command never reaches the LLM.
 		if handled, reply := t.cmds.dispatchRich(daemonCtx, chatID, text); handled {
 			t.replyCommand(c, reply)
@@ -248,6 +257,7 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 		_ = c.Respond(callbackToast(action, valid))
 		out := t.hitlFor(c, chatID).handleCallbackResult(daemonCtx, cb.Data, convID(chatID), func(callbackOutcome) {
 			t.disarmCallbackKeyboard(c.Bot(), cb.Message)
+			t.trackPausePrompt(chatID, nil) // this prompt is now disarmed; drop the tracked handle
 		})
 		if out.submitted && !out.resumed {
 			// Not resumed → either more FIFO pauses remain (render the next one) or it
