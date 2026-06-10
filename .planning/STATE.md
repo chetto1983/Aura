@@ -4,8 +4,8 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 19 context gathered
-last_updated: "2026-06-10T07:57:31.770Z"
-last_activity: 2026-06-10 -- Phase 19 planning complete
+last_updated: "2026-06-10T09:06:40.643Z"
+last_activity: 2026-06-10 -- Phase 19 execution started
 progress:
   total_phases: 21
   completed_phases: 16
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 14 — Onboarding + Agent.md
+**Current focus:** Phase 19 — audit-bug-resolution-e2e-live-test
 
 ## Current Position
 
-Phase: 14 (onboarding-agent-md) -- PLANNED
-Plan: 0 of 5 -- ready
-Status: Ready to execute
-Last activity: 2026-06-10 -- Phase 19 planning complete
+Phase: 19 (audit-bug-resolution-e2e-live-test) — EXECUTING
+Plan: 1 of 11
+Status: Executing Phase 19
+Last activity: 2026-06-10 -- Phase 19 execution started
 
 Progress: [████████░░] 80% (16/20 phases)
 
