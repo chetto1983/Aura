@@ -1,11 +1,17 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestShellExecSpecIsDeferred(t *testing.T) {
@@ -176,20 +182,93 @@ func TestShellExecHonorsCwd(t *testing.T) {
 func TestShellExecTimesOut(t *testing.T) {
 	tool := &ShellExec{}
 	ctx := ctxWith(t, "sess-sh", "call-sh")
+	pidFile := filepath.Join(t.TempDir(), "grandchild.pid")
 
-	cmd := "sleep 3"
-	if shellIsCmd() {
-		cmd = "ping -n 4 127.0.0.1"
+	cmd := orphanGrandchildCommand(t, pidFile)
+	timeoutMS := int64(300)
+	if runtime.GOOS == "windows" {
+		timeoutMS = 1500
 	}
-	raw, _ := json.Marshal(shellExecArgs{Command: cmd, TimeoutMs: 200})
+	raw, _ := json.Marshal(shellExecArgs{Command: cmd, TimeoutMs: timeoutMS})
 
+	started := time.Now()
 	res, err := tool.Execute(ctx, raw)
+	elapsed := time.Since(started)
 	if err != nil {
 		t.Fatalf("a timeout is a normal result, not a Go error: %v", err)
 	}
 	if !strings.Contains(res.Preview, "[command timed out]") {
 		t.Fatalf("preview missing timeout marker: %q", res.Preview)
 	}
+	if elapsed > time.Duration(timeoutMS)*time.Millisecond+6*time.Second {
+		t.Fatalf("Execute returned after %s, want within timeout+WaitDelay margin", elapsed)
+	}
+	pid := readPIDFile(t, pidFile)
+	if waitForPIDDead(pid, 2*time.Second) {
+		t.Fatalf("grandchild pid %d is still alive after shell timeout", pid)
+	}
+}
+
+func TestShellExecReportsCancellation(t *testing.T) {
+	tool := &ShellExec{}
+	parent, cancel := context.WithCancel(ctxWith(t, "sess-sh-cancel", "call-sh"))
+
+	cmd := "sleep 30"
+	if shellIsCmd() {
+		cmd = "ping -n 30 127.0.0.1"
+	}
+	raw, _ := json.Marshal(shellExecArgs{Command: cmd, TimeoutMs: 30_000})
+
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		cancel()
+	}()
+	res, err := tool.Execute(parent, raw)
+	if err != nil {
+		t.Fatalf("a cancellation is a normal result, not a Go error: %v", err)
+	}
+	if !strings.Contains(res.Preview, "[command cancelled]") {
+		t.Fatalf("preview missing cancelled marker: %q", res.Preview)
+	}
+	if strings.Contains(res.Preview, "[command timed out]") {
+		t.Fatalf("cancelled run should not be reported as timeout: %q", res.Preview)
+	}
+	if res.Meta == nil {
+		t.Fatal("Meta is nil")
+	}
+	if got, ok := (*res.Meta)["timed_out"].(bool); !ok || got {
+		t.Fatalf("Meta[timed_out] = %#v, want false", (*res.Meta)["timed_out"])
+	}
+}
+
+func TestRenderShellOutputClassifiesWaitDelay(t *testing.T) {
+	got := renderShellOutput("partial output", osexec.ErrWaitDelay, nil)
+	if !strings.Contains(got, "[command timed out]") {
+		t.Fatalf("ErrWaitDelay should render as timeout, got: %q", got)
+	}
+	if strings.Contains(got, "WaitDelay") || strings.Contains(got, "[command failed:") {
+		t.Fatalf("ErrWaitDelay leaked internal failure to model: %q", got)
+	}
+	if ec := exitCodePtr(osexec.ErrWaitDelay, nil); ec != nil {
+		t.Fatalf("ErrWaitDelay exitCodePtr = %#v, want nil", *ec)
+	}
+}
+
+func TestShellExecPreservesStdoutStderrInterleave(t *testing.T) {
+	if shellIsCmd() {
+		t.Skip("cmd.exe fallback: interleave fixture is POSIX-only")
+	}
+	tool := &ShellExec{}
+	ctx := ctxWith(t, "sess-sh-interleave", "call-sh")
+
+	cmd := "printf 'out1\\n'; sleep 0.05; printf 'err1\\n' >&2; sleep 0.05; printf 'out2\\n'; sleep 0.05; printf 'err2\\n' >&2"
+	raw, _ := json.Marshal(shellExecArgs{Command: cmd})
+
+	res, err := tool.Execute(ctx, raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	assertInOrder(t, res.Preview, []string{"out1", "err1", "out2", "err2"})
 }
 
 // TestShellExecCwdPersistsAcrossCalls: Bash-tool parity — a `cd` in one call
@@ -240,6 +319,84 @@ func lastNonEmptyLine(s string) string {
 		}
 	}
 	return ""
+}
+
+func orphanGrandchildCommand(t *testing.T, pidFile string) string {
+	t.Helper()
+	if runtime.GOOS != "windows" {
+		return fmt.Sprintf("sleep 30 & echo $! > %s; sleep 30", shellQuote(pidFile))
+	}
+	scriptPath := filepath.Join(filepath.Dir(pidFile), "orphan-grandchild.ps1")
+	script := fmt.Sprintf("$p = Start-Process -FilePath powershell -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 30' -PassThru\nSet-Content -LiteralPath %s -Value $p.Id\nStart-Sleep -Seconds 30\n", psQuote(pidFile))
+	if err := os.WriteFile(scriptPath, []byte(script), 0o600); err != nil {
+		t.Fatalf("write PowerShell fixture: %v", err)
+	}
+	if shellIsCmd() {
+		return fmt.Sprintf(`powershell -NoProfile -ExecutionPolicy Bypass -File "%s"`, strings.ReplaceAll(scriptPath, `"`, `\"`))
+	}
+	return fmt.Sprintf("powershell -NoProfile -ExecutionPolicy Bypass -File %s", shellQuote(scriptPath))
+}
+
+func readPIDFile(t *testing.T, path string) int {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read grandchild pid file: %v", err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatalf("parse grandchild pid %q: %v", string(raw), err)
+	}
+	if pid <= 0 {
+		t.Fatalf("grandchild pid = %d, want > 0", pid)
+	}
+	return pid
+}
+
+func waitForPIDDead(pid int, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	for {
+		alive, err := processAlive(pid)
+		if err == nil && !alive {
+			return false
+		}
+		if time.Now().After(deadline) {
+			return alive
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func processAlive(pid int) (bool, error) {
+	if runtime.GOOS == "windows" {
+		out, err := osexec.Command("tasklist", "/FI", fmt.Sprintf("PID eq %d", pid), "/FO", "CSV", "/NH").CombinedOutput()
+		if err != nil {
+			return false, err
+		}
+		return strings.Contains(string(out), fmt.Sprintf(`"%d"`, pid)), nil
+	}
+	err := osexec.Command("kill", "-0", strconv.Itoa(pid)).Run()
+	return err == nil, nil
+}
+
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
+}
+
+func psQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
+}
+
+func assertInOrder(t *testing.T, haystack string, needles []string) {
+	t.Helper()
+	pos := 0
+	for _, needle := range needles {
+		idx := strings.Index(haystack[pos:], needle)
+		if idx < 0 {
+			t.Fatalf("missing %q after byte %d in output: %q", needle, pos, haystack)
+		}
+		pos += idx + len(needle)
+	}
 }
 
 // TestShellExecNormalizesCRLF: a model that emits CRLF line endings inside

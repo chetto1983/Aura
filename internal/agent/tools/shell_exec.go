@@ -144,29 +144,34 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	cmd := exec.CommandContext(runCtx, name, args...)
 	cmd.Dir = s.workdir(ctx, a.Cwd)
 	cmd.Env = mergeEnv(a.Env)
+	setProcessGroup(cmd)
+	cmd.Cancel = func() error { return killProcessGroup(cmd) }
+	cmd.WaitDelay = 5 * time.Second
 
-	var stdout, stderr strings.Builder
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	var captured shellOutputCapture
+	cmd.Stdout = captured.stdoutWriter()
+	cmd.Stderr = captured.stderrWriter()
 	runErr := cmd.Run()
 
-	out := stdout.String()
+	out := captured.stdoutString()
+	combined := captured.combinedString()
 	finalCwd := cmd.Dir
 	if posix {
 		var capturedCwd string
 		out, capturedCwd = extractCwdMarker(out)
+		combined, _ = removeCwdMarkerLine(combined)
 		if capturedCwd != "" {
 			finalCwd = capturedCwd
 		}
 		s.storeCwd(ctx, capturedCwd)
 	}
 	ecPtr := exitCodePtr(runErr, runCtx.Err())
-	rendered := renderShellOutput(out, stderr.String(), runErr, runCtx.Err())
+	rendered := renderShellOutput(combined, runErr, runCtx.Err())
 	rendered = appendShellFooter(rendered, shellExecFooter{
 		ExitCode:   ecPtr,
 		Cwd:        finalCwd,
 		DurationMS: time.Since(started).Milliseconds(),
-		TimedOut:   errors.Is(runCtx.Err(), context.DeadlineExceeded),
+		TimedOut:   shellTimedOut(runErr, runCtx.Err()),
 	})
 	res, err := NewResult(ctx, rendered)
 	if err != nil {
@@ -174,13 +179,70 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	}
 	meta := ToolResultMeta{
 		"cwd":       finalCwd,
-		"timed_out": errors.Is(runCtx.Err(), context.DeadlineExceeded),
+		"timed_out": shellTimedOut(runErr, runCtx.Err()),
 	}
 	if ecPtr != nil {
 		meta["exit_code"] = *ecPtr
 	}
 	res.Meta = &meta
 	return res, nil
+}
+
+type shellOutputCapture struct {
+	mu       sync.Mutex
+	combined strings.Builder
+	stdout   strings.Builder
+	stderr   strings.Builder
+}
+
+type shellOutputStream int
+
+const (
+	shellStreamStdout shellOutputStream = iota
+	shellStreamStderr
+)
+
+type shellStreamWriter struct {
+	capture *shellOutputCapture
+	stream  shellOutputStream
+}
+
+func (c *shellOutputCapture) stdoutWriter() *shellStreamWriter {
+	return &shellStreamWriter{capture: c, stream: shellStreamStdout}
+}
+
+func (c *shellOutputCapture) stderrWriter() *shellStreamWriter {
+	return &shellStreamWriter{capture: c, stream: shellStreamStderr}
+}
+
+func (w *shellStreamWriter) Write(p []byte) (int, error) {
+	w.capture.mu.Lock()
+	defer w.capture.mu.Unlock()
+	w.capture.combined.Write(p)
+	if w.stream == shellStreamStderr {
+		w.capture.stderr.Write(p)
+	} else {
+		w.capture.stdout.Write(p)
+	}
+	return len(p), nil
+}
+
+func (c *shellOutputCapture) combinedString() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.combined.String()
+}
+
+func (c *shellOutputCapture) stdoutString() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stdout.String()
+}
+
+func (c *shellOutputCapture) stderrString() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.stderr.String()
 }
 
 // workdir resolves the call's starting directory: explicit cwd arg > the session's
@@ -255,6 +317,28 @@ func extractCwdMarker(stdout string) (clean, dir string) {
 	return clean, strings.TrimSpace(tail)
 }
 
+func removeCwdMarkerLine(output string) (clean, dir string) {
+	idx := strings.LastIndex(output, cwdMarker+" ")
+	if idx < 0 {
+		return output, ""
+	}
+	lineStart := idx
+	for lineStart > 0 && output[lineStart-1] != '\n' {
+		lineStart--
+	}
+	lineEnd := idx + len(cwdMarker) + 1
+	for lineEnd < len(output) && output[lineEnd] != '\n' {
+		lineEnd++
+	}
+	dir = strings.TrimSpace(output[idx+len(cwdMarker)+1 : lineEnd])
+	if lineEnd < len(output) && output[lineEnd] == '\n' {
+		lineEnd++
+	}
+	clean = output[:lineStart] + output[lineEnd:]
+	clean = strings.TrimSuffix(clean, "\n")
+	return clean, dir
+}
+
 // shellIsCmdFallback reports whether the resolved shell is the degraded cmd.exe
 // fallback (no POSIX bash found): no cwd tracking there — cmd has no brace
 // grouping and its cd semantics differ.
@@ -316,16 +400,14 @@ func mergeEnv(extra map[string]string) []string {
 	return env
 }
 
-func renderShellOutput(stdout, stderr string, runErr, ctxErr error) string {
+func renderShellOutput(output string, runErr, ctxErr error) string {
 	var b strings.Builder
-	b.WriteString(stdout)
-	if stderr != "" {
-		ensureTrailingNewline(&b)
-		b.WriteString(stderr)
-	}
+	b.WriteString(output)
 	switch {
-	case errors.Is(ctxErr, context.DeadlineExceeded):
+	case shellTimedOut(runErr, ctxErr):
 		appendStatus(&b, "[command timed out]")
+	case errors.Is(ctxErr, context.Canceled):
+		appendStatus(&b, "[command cancelled]")
 	case runErr != nil:
 		if ec, ok := exitCode(runErr); ok {
 			appendStatus(&b, fmt.Sprintf("[exit code %d]", ec))
@@ -339,6 +421,10 @@ func renderShellOutput(stdout, stderr string, runErr, ctxErr error) string {
 	return b.String()
 }
 
+func shellTimedOut(runErr, ctxErr error) bool {
+	return errors.Is(ctxErr, context.DeadlineExceeded) || errors.Is(runErr, exec.ErrWaitDelay)
+}
+
 func exitCode(err error) (int, bool) {
 	if ee, ok := errors.AsType[*exec.ExitError](err); ok {
 		return ee.ExitCode(), true
@@ -347,7 +433,7 @@ func exitCode(err error) (int, bool) {
 }
 
 func exitCodePtr(runErr, ctxErr error) *int {
-	if errors.Is(ctxErr, context.DeadlineExceeded) {
+	if shellTimedOut(runErr, ctxErr) || errors.Is(ctxErr, context.Canceled) {
 		return nil
 	}
 	if ec, ok := exitCode(runErr); ok {
