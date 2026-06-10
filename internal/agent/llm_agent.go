@@ -289,82 +289,108 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 	}
 }
 
-// dispatch runs the assistant's tool calls in order (D-14). It returns done=true
-// when the turn terminated (text_response or a dedup trip emitted a terminal
-// Event); otherwise the loop continues. The error return is reserved for a real
-// infra failure that must surface in the iter.Seq2 error slot — tool-arg /
-// unknown-tool errors are NOT infra failures (D-15) and stay inline as RoleTool
-// error messages.
+// dispatch runs the assistant's tool calls for one turn (D-14, P1 parallel). The
+// runnable (non-terminal) calls' Execute() run CONCURRENTLY; everything that touches
+// shared single-threaded state — the dedup gate, the iter.Seq2 yields, and the
+// RoleTool history appends — stays serial and in original call order, so the wire
+// contract (one tool_result per tool_call) and cache stability hold. A text_response
+// is the terminal: it is handled AFTER the batch so all requested work runs before
+// the turn finalizes. Returns done=true when the turn terminated (text_response
+// accepted or a dedup trip finalized); otherwise the Run loop continues. The error
+// return is reserved for a real infra failure — tool-arg/unknown-tool errors are NOT
+// infra failures (D-15) and stay inline as RoleTool error messages.
 func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, requestID string,
 	calls []llm.ToolCall, usage llm.Usage, yield func(*Event, error) bool,
 ) (done bool, infraErr error) {
+	// Partition: the FIRST text_response is the terminal; the rest are runnable.
+	terminalIdx := -1
+	runnable := make([]int, 0, len(calls))
 	for i := range calls {
-		call := calls[i]
-
-		if call.Function.Name == terminalTool {
-			answer, perr := parseTextResponse(call.Function.Arguments)
-			if perr != nil {
-				// Malformed terminal args are NOT terminal: feed the error back so
-				// the model self-corrects (D-15), bounded by the budget.
-				a.appendToolError(call.ID, perr)
-				if !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "parse error"), nil) {
-					return true, nil
-				}
-				continue
+		if calls[i].Function.Name == terminalTool {
+			if terminalIdx < 0 {
+				terminalIdx = i
 			}
-			// Completion gate (D-43): on a side-effecting turn, verify the deliverable
-			// before accepting the terminal. A veto treats text_response like a tool
-			// that returned "not done" — append a RoleTool result (keeps the wire valid:
-			// the tool_call now has a matching result) and continue the loop one more
-			// turn. Bounded to one veto per run; fail-open when the critic is broken.
-			if veto, feedback := a.gateCompletion(ic, answer); veto {
-				a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
-				a.appendSyntheticToolResults(calls[i+1:], "skipped: completion gate requested a revised final answer before this sibling tool ran")
-				if !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "completion gate: not done"), nil) {
-					return true, nil
-				}
-				return false, nil
-			}
-			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
-			yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", usage), nil)
-			return true, nil
+			continue
 		}
+		runnable = append(runnable, i)
+	}
 
-		// Dedup gate (D-14): a repeated identical tool call trips with reason
-		// "dedup". Like the budget trip, it forces recovery-or-finalization (Req#2/#3)
-		// instead of a prose-less terminalBudgetEvent. The FIRST trip injects a
-		// tool-specific nudge (call.Function.Name) and returns to the loop for one
-		// more turn; the recovery turn re-issuing the same call re-trips dedup, and
-		// the SECOND trip (recoveryAttempts>=1) routes to finalize — the intended
-		// two-trips-one-nudge path (RESEARCH Open Question #2).
-		canon := canonicalArgs(call.Function.Arguments)
-		if dedup, reason := ic.Budget.BeforeToolCall(call.Function.Name, canon); dedup {
-			a.appendSyntheticToolResults(calls[i:], "skipped: duplicate call suppressed by the dedup guard")
+	// Dedup gate (D-14), serial and in order so the ring observes the same fingerprint
+	// sequence as the old sequential loop. A trip forces recovery-or-finalization like
+	// the budget trip; nothing in this batch has executed yet, so every call gets a
+	// synthetic result, keeping the wire valid before the retry/finalize.
+	canon := make([][]byte, len(calls))
+	for _, i := range runnable {
+		call := calls[i]
+		c := canonicalArgs(call.Function.Arguments)
+		canon[i] = c
+		if dedup, reason := ic.Budget.BeforeToolCall(call.Function.Name, c); dedup {
+			a.appendSyntheticToolResults(calls, "skipped: duplicate call suppressed by the dedup guard")
 			if a.maybeRecover(call.Function.Name) {
 				return false, nil
 			}
 			a.finalize(ic, spanID, parentSpanID, requestID, reason, yield)
 			return true, nil
 		}
+	}
 
+	// Execute the runnable calls (concurrently when >1) then process their results
+	// SERIALLY in original call order: start events first, run, then per-call history
+	// append + AfterToolResult + result event.
+	if len(runnable) > 0 {
 		startedAt := time.Now().UTC()
-		if !yield(a.toolStartEvent(ic, spanID, parentSpanID, call, startedAt), nil) {
-			return true, nil
+		for _, i := range runnable {
+			if !yield(a.toolStartEvent(ic, spanID, parentSpanID, calls[i], startedAt), nil) {
+				return true, nil
+			}
 		}
-		run := a.runTool(ic.Ctx, ic.Budget, call, startedAt)
-		if run.Mutating {
-			a.sideEffected = true // D-43: this turn touched host state → arm the completion gate
+		batch := make([]llm.ToolCall, len(runnable))
+		for k, i := range runnable {
+			batch[k] = calls[i]
 		}
-		preview := run.Preview
-		a.history = append(a.history, llm.Message{
-			Role: llm.RoleTool, ToolCallID: call.ID, Content: preview,
-		})
-		ic.Budget.AfterToolResult(call.Function.Name, canon, []byte(preview))
-		if !yield(a.toolResultEvent(ic, spanID, parentSpanID, run), nil) {
-			return true, nil
+		runs := a.executeBatch(ic.Ctx, ic.Budget, batch, startedAt)
+		for k, i := range runnable {
+			run := runs[k]
+			if run.Mutating {
+				a.sideEffected = true // D-43: this turn touched host state → arm the completion gate
+			}
+			a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: calls[i].ID, Content: run.Preview})
+			ic.Budget.AfterToolResult(calls[i].Function.Name, canon[i], []byte(run.Preview))
+			if !yield(a.toolResultEvent(ic, spanID, parentSpanID, run), nil) {
+				return true, nil
+			}
 		}
 	}
+
+	// Terminal: text_response ends the turn, AFTER the batch ran (D-13).
+	if terminalIdx >= 0 {
+		return a.runTerminal(ic, spanID, parentSpanID, requestID, calls[terminalIdx], usage, yield), nil
+	}
 	return false, nil
+}
+
+// runTerminal handles the text_response terminal call (D-13). A malformed payload
+// feeds the parse error back and continues the loop (done=false); the completion gate
+// (D-43) can veto on a side-effecting turn by appending a RoleTool "not done" result
+// and continuing; otherwise it appends the final answer and emits the terminal
+// finalEvent (done=true). The runnable siblings have already executed this turn, so —
+// unlike the old sequential path — there are never later siblings left to synthesize.
+func (a *LlmAgent) runTerminal(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
+	requestID string, call llm.ToolCall, usage llm.Usage, yield func(*Event, error) bool,
+) (done bool) {
+	answer, perr := parseTextResponse(call.Function.Arguments)
+	if perr != nil {
+		a.appendToolError(call.ID, perr)
+		// yield false (consumer stopped) → done=true; otherwise continue the loop.
+		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "parse error"), nil)
+	}
+	if veto, feedback := a.gateCompletion(ic, answer); veto {
+		a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: feedback})
+		return !yield(a.toolPreviewEvent(ic, spanID, parentSpanID, call.ID, "completion gate: not done"), nil)
+	}
+	a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
+	yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, "stop", usage), nil)
+	return true
 }
 
 func (a *LlmAgent) appendSyntheticToolResults(calls []llm.ToolCall, content string) {
