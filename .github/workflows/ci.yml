@@ -319,6 +319,10 @@ jobs:
       AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC: "10"
       AURA_EMBED_BASE_URL: http://127.0.0.1:8081
       AURA_EMBED_DIMENSIONS: "384"
+      # The host export dir the writer materializes ACTIVE snippets into; the SC#4
+      # by-path snippet exec (now db_integration, host python3) runs them from here, so
+      # the coverage gate's internal/skills tier RUNS instead of a falsely-green skip.
+      AURA_SKILL_EXPORT_DIR: /tmp/aura-skills-export
       # recall@5 = 5/5 is the hard, hardware-independent correctness gate. p95 is
       # latency-sensitive: a shared runner with a cold HNSW index cannot meet the
       # operator's 30ms SC#5 budget (measured 57ms cold vs 1-8ms warm), so it is
@@ -341,7 +345,9 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
-        run: make neo4j-migrate
+        run: |
+          mkdir -p "$AURA_SKILL_EXPORT_DIR"
+          make neo4j-migrate
 
       - name: Knowledge integration suite with race
         run: go test -race -count=1 -tags 'db_integration neo4j_integration' ./internal/knowledge/...
