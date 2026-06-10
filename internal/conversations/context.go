@@ -145,7 +145,7 @@ func applyContextLadder(
 			"conversation_id", conversationID, "tokens", tokensAfterL1, "hard_cap", hardCap)
 	}
 	if hardCap == 0 || tokensAfterL1 <= hardCap {
-		return toMessages(l1), nil
+		return repairManagedToolMessagePairs(toMessages(l1)), nil
 	}
 
 	// L2.5: drop oldest user/assistant PAIRs (preserve system L0 + keep an even
@@ -160,7 +160,7 @@ func applyContextLadder(
 	if err := emit.insertContextRotEvent(ctx, conversationID, pairsDropped, tokensAfterL1, tokensAfter); err != nil {
 		return nil, err
 	}
-	return toMessages(reduced), nil
+	return repairManagedToolMessagePairs(toMessages(reduced)), nil
 }
 
 // injectAlwaysBlock inserts the messages[1] always-block as a protected user-role

@@ -437,7 +437,7 @@ func (s *Store) LoadHistory(ctx context.Context, conversationID string) ([]llm.M
 		}
 		out = append(out, msg)
 	}
-	return out, nil
+	return repairToolMessagePairs(out), nil
 }
 
 // loadTurns fetches the ordered Turn projections, rehydrating sidecar-spilled

@@ -50,6 +50,19 @@ func TestWriterGateRecommendation(t *testing.T) {
 	}
 }
 
+func TestModelMutationBypassesGateExceptAlwaysOn(t *testing.T) {
+	actor := AuditActor{ActorID: ActorModel}
+	if !modelMutationBypassesGate(Frontmatter{Name: "ordinary"}, actor) {
+		t.Fatal("model-authored non-always skill should keep the in-box fast path")
+	}
+	if modelMutationBypassesGate(Frontmatter{Name: "always", Always: true}, actor) {
+		t.Fatal("model-authored always:true skill must stay gated")
+	}
+	if modelMutationBypassesGate(Frontmatter{Name: "cli"}, AuditActor{ActorID: "cli"}) {
+		t.Fatal("operator-authored skill mutations must stay gated")
+	}
+}
+
 // TestWriterRejectsBlocklistedBody proves a model-authored body containing a
 // blocklisted injection sequence is hard-rejected (allowBlocklisted=false) BEFORE
 // any FS write — no pending dir is created.

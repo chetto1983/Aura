@@ -203,3 +203,96 @@ func decodeToolCalls(raw []byte) ([]llm.ToolCall, error) {
 	}
 	return calls, nil
 }
+
+// repairToolMessagePairs removes persisted tool-call fragments that would be
+// rejected by OpenAI-compatible providers on reload. It is intentionally
+// conservative: a valid assistant(tool_calls)->tool... group is preserved
+// byte-for-byte; orphan RoleTool turns and dangling assistant tool-call groups are
+// dropped from the model-visible history.
+func repairToolMessagePairs(in []llm.Message) []llm.Message {
+	return repairToolMessagePairsWith(in, false)
+}
+
+// repairManagedToolMessagePairs is the LoadManagedHistory variant. L1 rewrites old
+// tool turns to compact read_tool_output pointers; preserving those pointers as
+// plain assistant memory keeps the context contract without emitting orphan tool
+// messages to providers.
+func repairManagedToolMessagePairs(in []llm.Message) []llm.Message {
+	return repairToolMessagePairsWith(in, true)
+}
+
+func repairToolMessagePairsWith(in []llm.Message, preserveCompactedToolPointers bool) []llm.Message {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]llm.Message, 0, len(in))
+	for i := 0; i < len(in); {
+		m := in[i]
+		if m.Role == llm.RoleTool {
+			if preserveCompactedToolPointers && compactedToolPointer(m) {
+				out = append(out, managedToolPointerMessage(m))
+			}
+			i++
+			continue
+		}
+		if m.Role != llm.RoleAssistant || len(m.ToolCalls) == 0 {
+			out = append(out, m)
+			i++
+			continue
+		}
+
+		if ok := validToolResultGroup(in, i); ok {
+			out = append(out, in[i:i+1+len(m.ToolCalls)]...)
+			i += 1 + len(m.ToolCalls)
+			continue
+		}
+
+		i++
+		for i < len(in) && in[i].Role == llm.RoleTool {
+			if preserveCompactedToolPointers && compactedToolPointer(in[i]) {
+				out = append(out, managedToolPointerMessage(in[i]))
+			}
+			i++
+		}
+	}
+	return out
+}
+
+func compactedToolPointer(m llm.Message) bool {
+	return strings.HasPrefix(m.Content, "[tool output evicted")
+}
+
+func managedToolPointerMessage(m llm.Message) llm.Message {
+	return llm.Message{Role: llm.RoleAssistant, Content: m.Content}
+}
+
+func validToolResultGroup(in []llm.Message, assistantIdx int) bool {
+	calls := in[assistantIdx].ToolCalls
+	if assistantIdx+len(calls) >= len(in) {
+		return false
+	}
+	want := make(map[string]bool, len(calls))
+	for _, call := range calls {
+		if call.ID == "" || want[call.ID] {
+			return false
+		}
+		want[call.ID] = false
+	}
+	for j := 0; j < len(calls); j++ {
+		msg := in[assistantIdx+1+j]
+		if msg.Role != llm.RoleTool {
+			return false
+		}
+		seen, ok := want[msg.ToolCallID]
+		if !ok || seen {
+			return false
+		}
+		want[msg.ToolCallID] = true
+	}
+	for _, seen := range want {
+		if !seen {
+			return false
+		}
+	}
+	return true
+}

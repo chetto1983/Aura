@@ -85,6 +85,26 @@ func TestTaskSchema(t *testing.T) {
 			t.Errorf("root schema must NOT contain %q (breaks DeepSeek/OpenAI-compat, D-10)", banned)
 		}
 	}
+
+	var props map[string]json.RawMessage
+	if err := json.Unmarshal(root["properties"], &props); err != nil {
+		t.Fatalf("properties is not an object: %v", err)
+	}
+	var action struct {
+		Enum []string `json:"enum"`
+	}
+	if err := json.Unmarshal(props["action"], &action); err != nil {
+		t.Fatalf("action property is not an object: %v", err)
+	}
+	wantActions := []string{"schedule", "list", "cancel", "run_now"}
+	if len(action.Enum) != len(wantActions) {
+		t.Fatalf("action enum = %v, want %v", action.Enum, wantActions)
+	}
+	for i := range wantActions {
+		if action.Enum[i] != wantActions[i] {
+			t.Fatalf("action enum = %v, want %v", action.Enum, wantActions)
+		}
+	}
 }
 
 func TestTaskScheduleCronGoesActive(t *testing.T) {
@@ -169,7 +189,7 @@ func TestTaskList(t *testing.T) {
 	}
 }
 
-func TestTaskCancelRunNowApprove(t *testing.T) {
+func TestTaskCancelRunNow(t *testing.T) {
 	store := &fakeTaskStore{}
 	tool := &TaskTool{Store: store}
 
@@ -185,21 +205,28 @@ func TestTaskCancelRunNowApprove(t *testing.T) {
 	if store.ranNow != "r1" {
 		t.Errorf("run_now routed id %q, want r1", store.ranNow)
 	}
-	if _, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"approve","task_id":"a1"}`)); err != nil {
-		t.Fatalf("approve: %v", err)
-	}
-	if store.approved != "a1" {
-		t.Errorf("approve routed id %q, want a1", store.approved)
-	}
 }
 
 func TestTaskMissingTaskID(t *testing.T) {
 	tool := &TaskTool{Store: &fakeTaskStore{}}
-	for _, action := range []string{"cancel", "run_now", "approve"} {
+	for _, action := range []string{"cancel", "run_now"} {
 		raw := json.RawMessage(`{"action":"` + action + `"}`)
 		if _, err := tool.Execute(context.Background(), raw); err == nil {
 			t.Errorf("action=%s without task_id must error", action)
 		}
+	}
+}
+
+func TestTaskApproveIsNotModelRoutable(t *testing.T) {
+	store := &fakeTaskStore{}
+	tool := &TaskTool{Store: store}
+
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"approve","task_id":"a1"}`))
+	if err == nil || !strings.Contains(err.Error(), "unknown action") {
+		t.Fatalf("approve must be rejected by the model-facing router, got %v", err)
+	}
+	if store.approved != "" {
+		t.Fatalf("approve routed to store despite model-facing removal: %q", store.approved)
 	}
 }
 

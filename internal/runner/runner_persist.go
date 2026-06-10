@@ -26,10 +26,16 @@ import (
 // accumulated here and the SINGLE combined assistant tool_call turn is written once
 // at round end (flushPause), not one assistant turn per Event.
 type turnTracker struct {
-	convID  string
-	paused  bool
-	pauses  []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
-	toolSeq int
+	convID string
+	paused bool
+	pauses []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
+
+	// pendingToolCalls holds the current runnable tool batch until the first result
+	// arrives, when the runner can persist one assistant turn carrying the whole
+	// batch before appending the matching RoleTool turns.
+	pendingToolCalls []llm.ToolCall
+	openToolCalls    map[string]struct{}
+	toolSeq          int
 }
 
 func (t *turnTracker) nextToolInvocationSeq() int {
@@ -48,9 +54,9 @@ func (t *turnTracker) nextToolInvocationSeq() int {
 //     so resume history carries one wire-valid assistant-with-N-tool_calls message.
 //
 // Streamed chunks and model tool_call announcements remain transport-only for
-// conversation_turns. ToolInvocation start/end facts go to the separate append-only
-// ledger, so LoadHistory stays a function of completed turns while audit sees each
-// dispatched tool.
+// conversation_turns. Executed-tool start/end facts also reconstruct the assistant
+// tool_calls + RoleTool turns, while the append-only ledger stays best-effort
+// observability.
 func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
 	if ev == nil {
 		return nil
@@ -59,12 +65,15 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 		return r.persistPause(ctx, tr, ev.Actions.AwaitingInput)
 	}
 	if ev.Actions.ToolInvocation != nil {
+		if err := r.persistToolTurn(ctx, tr, ev.Actions.ToolInvocation); err != nil {
+			return err
+		}
 		// The ledger is operational observability (migration 0011 header), NOT a
 		// permission system: a transient insert failure (pg hiccup, pool exhaustion,
 		// mid-round cancel) must NOT abort the user-facing turn. Log and continue.
 		// Contrast persistPause/persistAssistantAnswer, which gate durable history and
 		// stay turn-fatal below.
-		if err := r.persistToolInvocation(ctx, tr, ev); err != nil {
+		if err := r.persistToolInvocationLedger(ctx, tr, ev); err != nil {
 			ti := ev.Actions.ToolInvocation
 			slog.Warn("tool invocation ledger insert failed (continuing)",
 				"tool", ti.ToolName, "tool_call_id", ti.ToolCallID, "event", ti.Event, "err", err)
@@ -77,7 +86,76 @@ func (r *Runner) persistEvent(ctx context.Context, tr *turnTracker, ev *agent.Ev
 	return nil
 }
 
-func (r *Runner) persistToolInvocation(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
+func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent.ToolInvocation) error {
+	if ti == nil || ti.ToolCallID == "" {
+		return nil
+	}
+	switch ti.Event {
+	case agent.ToolInvocationStart:
+		tr.addPendingToolCall(ti)
+		return nil
+	case agent.ToolInvocationEnd:
+		if _, ok := tr.openToolCalls[ti.ToolCallID]; !ok {
+			// Defensive repair for an end event observed without its start: synthesize
+			// the assistant call from the end payload so we never persist an orphan
+			// RoleTool turn.
+			tr.addPendingToolCall(ti)
+		}
+		if err := r.flushToolCalls(ctx, tr); err != nil {
+			return err
+		}
+		if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+			ConversationID: tr.convID,
+			Role:           llm.RoleTool,
+			Content:        ti.ResultPreview,
+			ToolCallID:     ti.ToolCallID,
+		}); err != nil {
+			return fmt.Errorf("persist tool result turn %s/%s: %w", ti.ToolName, ti.ToolCallID, err)
+		}
+		delete(tr.openToolCalls, ti.ToolCallID)
+		if len(tr.openToolCalls) == 0 {
+			tr.openToolCalls = nil
+		}
+		return nil
+	default:
+		return nil
+	}
+}
+
+func (t *turnTracker) addPendingToolCall(ti *agent.ToolInvocation) {
+	if t.openToolCalls == nil {
+		t.openToolCalls = make(map[string]struct{})
+	}
+	if _, ok := t.openToolCalls[ti.ToolCallID]; ok {
+		return
+	}
+	tc := llm.ToolCall{ID: ti.ToolCallID, Type: "function"}
+	tc.Function.Name = ti.ToolName
+	tc.Function.Arguments = ti.Arguments
+	t.pendingToolCalls = append(t.pendingToolCalls, tc)
+	t.openToolCalls[ti.ToolCallID] = struct{}{}
+}
+
+func (r *Runner) flushToolCalls(ctx context.Context, tr *turnTracker) error {
+	if len(tr.pendingToolCalls) == 0 {
+		return nil
+	}
+	raw, err := json.Marshal(tr.pendingToolCalls)
+	if err != nil {
+		return fmt.Errorf("marshal tool_calls: %w", err)
+	}
+	if err := r.Conv.AppendTurn(ctx, conversations.AppendTurnParams{
+		ConversationID: tr.convID,
+		Role:           llm.RoleAssistant,
+		ToolCalls:      raw,
+	}); err != nil {
+		return fmt.Errorf("persist assistant tool_calls turn: %w", err)
+	}
+	tr.pendingToolCalls = nil
+	return nil
+}
+
+func (r *Runner) persistToolInvocationLedger(ctx context.Context, tr *turnTracker, ev *agent.Event) error {
 	if r.toolInvocations == nil {
 		// A nil ledger is a logged no-op, not a turn-killer: the ledger is observability,
 		// not a required dependency for a turn that dispatches a tool. The prod

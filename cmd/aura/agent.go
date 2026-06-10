@@ -96,6 +96,8 @@ func dryRun(cfg dryRunConfig, w io.Writer) error {
 	if err != nil {
 		return err
 	}
+	runCtx, cancel := budget.WithDeadline(context.Background())
+	defer cancel()
 
 	sub := &agenttest.InfiniteToolCallAgent{AgentName: "infinite", ToolName: dryRunToolName, ToolArgs: "{}"}
 	root := workflow.NewLoop("dry-run", 0, sub) // maxIter=0 → only the budget stops it
@@ -105,7 +107,7 @@ func dryRun(cfg dryRunConfig, w io.Writer) error {
 	// dry-run therefore emits the constant "span_id":"0000000000000000" on every line
 	// by design — see internal/agent/event.go for the deferral rationale.
 	ic := agent.InvocationContext{
-		Ctx:       context.Background(),
+		Ctx:       runCtx,
 		Agent:     root,
 		RequestID: requestID,
 		Branch:    "root",

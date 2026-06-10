@@ -44,6 +44,23 @@ type Spec struct {
 	Mutating bool
 }
 
+// TrustLevel classifies whether a tool result came from host/operator-trusted
+// logic or from attacker-controllable external bytes. The zero value means the
+// result did not explicitly declare provenance.
+type TrustLevel string
+
+const (
+	TrustUntrusted TrustLevel = "untrusted"
+)
+
+// ToolResultProvenance is runtime-only metadata consumed by the agent loop before
+// a tool result is threaded back into the next LLM prompt. It is not rendered in
+// the LLM-visible tool schema.
+type ToolResultProvenance struct {
+	Source string
+	Trust  TrustLevel
+}
+
 // ToolResult is the value a tool's Execute returns. Preview is what the agent
 // puts into the RoleTool history message (it is the full content for small
 // outputs, or a truncated preview + a read_tool_output footer pointer for large
@@ -51,11 +68,12 @@ type Spec struct {
 // FullPath (the sidecar) and Truncated is true; Bytes is always the full
 // (pre-truncation) length of the original content. See tools.NewResult (D-25).
 type ToolResult struct {
-	Preview   string // history-bound content: full content, or preview+footer when Truncated
-	FullPath  string // sidecar path holding the full bytes; empty when not spilled
-	Bytes     int    // full length of the original content in bytes
-	Truncated bool   // true when the output was spilled to a sidecar
-	Meta      *ToolResultMeta
+	Preview    string // history-bound content: full content, or preview+footer when Truncated
+	FullPath   string // sidecar path holding the full bytes; empty when not spilled
+	Bytes      int    // full length of the original content in bytes
+	Truncated  bool   // true when the output was spilled to a sidecar
+	Meta       *ToolResultMeta
+	Provenance *ToolResultProvenance
 }
 
 // ToolResultMeta carries tool-specific structured fields for audit. It is behind

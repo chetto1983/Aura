@@ -49,6 +49,9 @@ func (t *FSEdit) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	if strings.TrimSpace(a.Path) == "" {
 		return ToolResult{}, fmt.Errorf("fs_edit: path is required")
 	}
+	if a.OldString == "" {
+		return ToolResult{}, fmt.Errorf("fs_edit: old_string must be non-empty; use fs_write to create or overwrite a file")
+	}
 	if a.OldString == a.NewString {
 		return ToolResult{}, fmt.Errorf("fs_edit: old_string and new_string are identical")
 	}

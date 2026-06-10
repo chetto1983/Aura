@@ -75,6 +75,48 @@ func TestFSEditUniqueAndAmbiguous(t *testing.T) {
 	}
 }
 
+func TestFSEditRejectsEmptyOldString(t *testing.T) {
+	dir := t.TempDir()
+	ctx := ctxWith(t, "sess-fs-empty-old", "call-fs")
+	tool := &FSEdit{}
+
+	tests := []struct {
+		name       string
+		content    string
+		replaceAll bool
+	}{
+		{name: "non-empty-file", content: "abc\n"},
+		{name: "non-empty-file-replace-all", content: "abc\n", replaceAll: true},
+		{name: "empty-file", content: ""},
+		{name: "empty-file-replace-all", content: "", replaceAll: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := filepath.Join(dir, tt.name+".txt")
+			if err := os.WriteFile(p, []byte(tt.content), 0o644); err != nil {
+				t.Fatal(err)
+			}
+
+			_, err := tool.Execute(ctx, mustJSON(t, fsEditArgs{
+				Path:       p,
+				OldString:  "",
+				NewString:  "x",
+				ReplaceAll: tt.replaceAll,
+			}))
+			if err == nil || !strings.Contains(err.Error(), "old_string must be non-empty") {
+				t.Fatalf("err = %v, want empty old_string rejection", err)
+			}
+			got, readErr := os.ReadFile(p)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if string(got) != tt.content {
+				t.Fatalf("file mutated after rejected empty old_string: got %q want %q", got, tt.content)
+			}
+		})
+	}
+}
+
 func TestFSGrepFindsMatches(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite(t, filepath.Join(dir, "a.go"), "package x\nfunc Target() {}\n")

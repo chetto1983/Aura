@@ -159,6 +159,78 @@ func TestShellExecPassesEnv(t *testing.T) {
 	}
 }
 
+func TestMergeEnvFiltersParentSecretsButKeepsExplicitEnv(t *testing.T) {
+	t.Setenv("AURA_PARENT_TOKEN", "parent-secret")
+	env := mergeEnv(map[string]string{
+		"AURA_CHILD_TOKEN": "child-secret",
+		"AURA_VISIBLE":     "visible",
+	})
+	joined := strings.Join(env, "\x00")
+	if strings.Contains(joined, "parent-secret") {
+		t.Fatalf("secret-shaped parent env leaked into child env: %q", joined)
+	}
+	if !strings.Contains(joined, "AURA_CHILD_TOKEN=child-secret") {
+		t.Fatalf("explicit per-call env must be preserved even for secret-shaped keys: %q", joined)
+	}
+	if !strings.Contains(joined, "AURA_VISIBLE=visible") {
+		t.Fatalf("explicit visible env missing: %q", joined)
+	}
+}
+
+func TestRedactModelPreviewRedactsCredentialShapes(t *testing.T) {
+	got := redactModelPreview("Authorization: Bearer sk-or-v1deadbeefcafebabe\n" +
+		"token=abc123def456\n" +
+		`{"api_key":"ZZZZsecretZZZZ"}`)
+	for _, bad := range []string{"sk-or-v1deadbeefcafebabe", "abc123def456", "ZZZZsecretZZZZ"} {
+		if strings.Contains(got, bad) {
+			t.Fatalf("secret %q survived redaction in %q", bad, got)
+		}
+	}
+	if strings.Count(got, shellRedacted) < 2 {
+		t.Fatalf("redacted preview missing placeholders: %q", got)
+	}
+}
+
+func TestShellExecRedactsModelPreview(t *testing.T) {
+	tool := &ShellExec{}
+	ctx := ctxWith(t, "sess-sh-redact", "call-sh")
+
+	res, err := tool.Execute(ctx, json.RawMessage(`{"command":"echo token=supersecretvalue123"}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if strings.Contains(res.Preview, "supersecretvalue123") {
+		t.Fatalf("preview leaked command output secret: %q", res.Preview)
+	}
+	if !strings.Contains(res.Preview, shellRedacted) {
+		t.Fatalf("preview missing redaction placeholder: %q", res.Preview)
+	}
+}
+
+func TestShellExecEffectiveTimeoutClampsRequestedTimeout(t *testing.T) {
+	t.Setenv(envShellMaxTimeoutMs, "50")
+	if got := effectiveShellTimeout(2*time.Second, 1000); got != 50*time.Millisecond {
+		t.Fatalf("requested timeout was not clamped: got %v want 50ms", got)
+	}
+	if got := effectiveShellTimeout(10*time.Millisecond, 0); got != 10*time.Millisecond {
+		t.Fatalf("default timeout below cap should pass through: got %v", got)
+	}
+}
+
+func TestShellOutputCaptureCapsBuffers(t *testing.T) {
+	capture := newShellOutputCapture(8)
+	if n, err := capture.stdoutWriter().Write([]byte("1234567890")); err != nil || n != 10 {
+		t.Fatalf("write stdout = (%d, %v), want (10,nil)", n, err)
+	}
+	got := capture.stdoutString()
+	if !strings.Contains(got, "output truncated") || !strings.Contains(got, "34567890") {
+		t.Fatalf("capped stdout did not report tail truncation: %q", got)
+	}
+	if strings.Contains(got, "1234567890") {
+		t.Fatalf("capped stdout kept the full payload: %q", got)
+	}
+}
+
 func TestShellExecDefaultsPythonUTF8(t *testing.T) {
 	tool := &ShellExec{}
 	ctx := ctxWith(t, "sess-sh-utf8", "call-sh")

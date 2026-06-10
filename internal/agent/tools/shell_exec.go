@@ -121,13 +121,7 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		return res, nil
 	}
 
-	timeout := s.DefaultTimeout
-	if timeout <= 0 {
-		timeout = defaultShellTimeout
-	}
-	if a.TimeoutMs > 0 {
-		timeout = time.Duration(a.TimeoutMs) * time.Millisecond
-	}
+	timeout := effectiveShellTimeout(s.DefaultTimeout, a.TimeoutMs)
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	started := time.Now()
@@ -149,13 +143,14 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	cmd.Cancel = func() error { return killProcessGroup(cmd) }
 	cmd.WaitDelay = 5 * time.Second
 
-	var captured shellOutputCapture
+	captured := newShellOutputCapture(shellOutputBufCap())
 	cmd.Stdout = captured.stdoutWriter()
 	cmd.Stderr = captured.stderrWriter()
 	runErr := cmd.Run()
 
 	out := captured.stdoutString()
 	combined := captured.combinedString()
+	stderr := captured.stderrString()
 	finalCwd := cmd.Dir
 	if posix {
 		var capturedCwd string
@@ -166,9 +161,11 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		}
 		s.storeCwd(ctx, capturedCwd)
 	}
+	combined = redactModelPreview(combined)
+	stderr = redactModelPreview(stderr)
 	ecPtr := exitCodePtr(runErr, runCtx.Err())
 	body := renderShellBody(combined, runErr, runCtx.Err())
-	footer := renderShellFooter(ctx, body, captured.stderrString(), runErr, runCtx.Err(), shellExecFooter{
+	footer := renderShellFooter(ctx, body, stderr, runErr, runCtx.Err(), shellExecFooter{
 		ExitCode:   ecPtr,
 		Cwd:        finalCwd,
 		DurationMS: time.Since(started).Milliseconds(),
@@ -191,9 +188,55 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 
 type shellOutputCapture struct {
 	mu       sync.Mutex
-	combined strings.Builder
-	stdout   strings.Builder
-	stderr   strings.Builder
+	combined boundedOutputBuffer
+	stdout   boundedOutputBuffer
+	stderr   boundedOutputBuffer
+}
+
+func newShellOutputCapture(capBytes int) *shellOutputCapture {
+	if capBytes <= 0 {
+		capBytes = defaultShellOutputCap
+	}
+	return &shellOutputCapture{
+		combined: boundedOutputBuffer{capBytes: capBytes},
+		stdout:   boundedOutputBuffer{capBytes: capBytes},
+		stderr:   boundedOutputBuffer{capBytes: capBytes},
+	}
+}
+
+type boundedOutputBuffer struct {
+	buf      []byte
+	capBytes int
+	dropped  int64
+}
+
+func (b *boundedOutputBuffer) Write(p []byte) {
+	if len(p) == 0 {
+		return
+	}
+	if b.capBytes <= 0 {
+		b.capBytes = defaultShellOutputCap
+	}
+	if len(p) >= b.capBytes {
+		b.dropped += int64(len(b.buf) + len(p) - b.capBytes)
+		b.buf = append(b.buf[:0], p[len(p)-b.capBytes:]...)
+		return
+	}
+	overflow := len(b.buf) + len(p) - b.capBytes
+	if overflow > 0 {
+		b.dropped += int64(overflow)
+		copy(b.buf, b.buf[overflow:])
+		b.buf = b.buf[:len(b.buf)-overflow]
+	}
+	b.buf = append(b.buf, p...)
+}
+
+func (b *boundedOutputBuffer) String() string {
+	if b.dropped <= 0 {
+		return string(b.buf)
+	}
+	return fmt.Sprintf("[output truncated: dropped %d byte(s); showing last %d byte(s)]\n%s",
+		b.dropped, len(b.buf), string(b.buf))
 }
 
 type shellOutputStream int
@@ -390,7 +433,14 @@ func shellInvocation(command string) (string, []string) {
 // caller's overrides. Python defaults to UTF-8 so model-written scripts with
 // symbols in progress output do not fail under Windows cp1252 consoles.
 func mergeEnv(extra map[string]string) []string {
-	env := os.Environ()
+	env := make([]string, 0, len(os.Environ())+len(extra)+2)
+	for _, kv := range os.Environ() {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok || secretEnvKey(k) {
+			continue
+		}
+		env = append(env, kv)
+	}
 	env = append(env,
 		"PYTHONIOENCODING=utf-8",
 		"PYTHONUTF8=1",

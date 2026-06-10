@@ -34,7 +34,7 @@ import (
 // materializes it into the active dir, instead of staging pending. The operator CLI path
 // (actor "cli") keeps its gate (StatusPendingApproval, not materialized). The container is
 // the boundary (Phase 17), so self-extension needs no human approval (Claude-Code parity).
-func TestWriteMutationModelActorUngated(t *testing.T) {
+func TestWriteMutationModelActorGatePolicy(t *testing.T) {
 	w, root := newMutationWriter(t)
 	ctx := context.Background()
 
@@ -50,6 +50,20 @@ func TestWriteMutationModelActorUngated(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "active", modelName, "SKILL.md")); statErr != nil {
 		t.Fatalf("model skill must be materialized into the active dir: %v", statErr)
+	}
+
+	alwaysName := "always" + uuid.Must(uuid.NewV7()).String()[:8]
+	statusAlways, err := w.WriteMutation(ctx, scoring.SkillCreate,
+		Frontmatter{Name: alwaysName, Description: "d", Type: TypeInstruction, Always: true}, "# body",
+		AuditActor{ActorID: ActorModel})
+	if err != nil {
+		t.Fatalf("model always WriteMutation: %v", err)
+	}
+	if statusAlways != StatusPendingApproval {
+		t.Fatalf("model always path status = %q, want %q (always-on stays gated)", statusAlways, StatusPendingApproval)
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "active", alwaysName, "SKILL.md")); !os.IsNotExist(statErr) {
+		t.Fatalf("model always skill must stay pending (not materialized); active present (stat err=%v)", statErr)
 	}
 
 	cliName := "cli" + uuid.Must(uuid.NewV7()).String()[:8]

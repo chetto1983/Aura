@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"expvar"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -38,6 +39,8 @@ var errUnsupportedUserMessageContent = errors.New("agui: last user message conte
 type ServerConfig struct {
 	CORSPermissive bool
 	BufferCap      int
+	HealthCheck    func(context.Context) error
+	HealthDetails  func() map[string]any
 }
 
 // Runner is the narrow agent-driver surface the server consumes (D-A2-02; *runner.Runner
@@ -76,9 +79,33 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 // the preflight OPTIONS is answered and ACAO is set on every response, including errors.
 func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.Handle("GET /debug/vars", expvar.Handler())
 	mux.HandleFunc("POST /agent/run", s.handleRun)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
 	return s.withCORS(mux)
+}
+
+func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
+	status := http.StatusOK
+	body := map[string]any{"ok": true}
+	if s.cfg.HealthDetails != nil {
+		for k, v := range s.cfg.HealthDetails() {
+			body[k] = v
+		}
+	}
+	if s.cfg.HealthCheck != nil {
+		if err := s.cfg.HealthCheck(r.Context()); err != nil {
+			status = http.StatusServiceUnavailable
+			body["ok"] = false
+			body["error"] = SanitizeString(err.Error())
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(body); err != nil {
+		slog.Warn("agui: encode healthz response", "err", err)
+	}
 }
 
 // withCORS wraps the mux to make CORSPermissive functional rather than half-wired (WR-05).

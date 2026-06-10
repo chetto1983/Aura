@@ -106,7 +106,7 @@ func TestLadder_SC1_L1AloneWritesNoRotEvent(t *testing.T) {
 	turns := []Turn{
 		{Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{Seq: 2, Role: llm.RoleUser, Content: "go"},
-		{Seq: 3, Role: llm.RoleAssistant, Content: "ok"},
+		{Seq: 3, Role: llm.RoleAssistant, Content: "ok", ToolCalls: toolCallsJSON(t, "call_a")},
 		{Seq: 4, Role: llm.RoleTool, Content: bigTool, ToolCallID: "call_a"},
 		{Seq: 20, Role: llm.RoleUser, Content: "more"},
 	}
@@ -123,6 +123,33 @@ func TestLadder_SC1_L1AloneWritesNoRotEvent(t *testing.T) {
 	}
 	if !strings.Contains(msgs[3].Content, "read_tool_output") {
 		t.Errorf("the old tool turn should be evicted by L1, got %q", msgs[3].Content)
+	}
+}
+
+func TestLadder_L1_CompactedOrphanToolPointerStaysModelVisible(t *testing.T) {
+	enc := mustEncoderRaw(t)
+	emit := &fakeRotEmitter{}
+
+	turns := []Turn{
+		{Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
+		{Seq: 2, Role: llm.RoleUser, Content: "go"},
+		{Seq: 3, Role: llm.RoleAssistant, Content: "ok"},
+		{Seq: 4, Role: llm.RoleTool, Content: strings.Repeat("tool output token ", 5000), ToolCallID: "call_a"},
+		{Seq: 20, Role: llm.RoleUser, Content: "more"},
+	}
+	cfg := ContextConfig{ContextWindow: 50000, MaxOutputTokens: 1000, ToolEvictAfterTurns: 10}
+	msgs, err := applyContextLadder(context.Background(), "conv", turns, cfg, enc, emit)
+	if err != nil {
+		t.Fatalf("ladder: %v", err)
+	}
+	if len(msgs) != 5 {
+		t.Fatalf("L1 compacted orphan pointer should remain visible, got %d messages: %+v", len(msgs), msgs)
+	}
+	if msgs[3].Role == llm.RoleTool {
+		t.Fatalf("compacted orphan pointer must not remain an orphan tool role: %+v", msgs[3])
+	}
+	if !strings.Contains(msgs[3].Content, "read_tool_output") {
+		t.Fatalf("old tool output pointer missing from managed history: %+v", msgs[3])
 	}
 }
 

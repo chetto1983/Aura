@@ -237,11 +237,12 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 			return
 		}
 
-		la, ic, err := r.buildAgent(ctx, convID, history)
+		la, ic, cancelAgent, err := r.buildAgent(ctx, convID, history)
 		if err != nil {
 			yield(nil, err)
 			return
 		}
+		defer cancelAgent()
 
 		// Drive one fresh agent round, persisting each emitted turn and observing the
 		// pause Event(s). tracker accumulates what to persist + whether we paused; on a
@@ -333,15 +334,16 @@ func (r *Runner) contextConfig() conversations.ContextConfig {
 // not the agent's). When the loaded history already carries a leading system turn
 // (a persisted seq=1), it is dropped here so the agent's own system message is not
 // duplicated.
-func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Message) (*agent.LlmAgent, agent.InvocationContext, error) {
+func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Message) (*agent.LlmAgent, agent.InvocationContext, context.CancelFunc, error) {
 	requestID, err := uuid.NewV7()
 	if err != nil {
-		return nil, agent.InvocationContext{}, fmt.Errorf("mint request id: %w", err)
+		return nil, agent.InvocationContext{}, nil, fmt.Errorf("mint request id: %w", err)
 	}
 	bud, err := agent.NewBudget(agent.BudgetOptions{})
 	if err != nil {
-		return nil, agent.InvocationContext{}, fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)
+		return nil, agent.InvocationContext{}, nil, fmt.Errorf("budget config (check AURA_LOOP_* env): %w", err)
 	}
+	boundedCtx, cancel := bud.WithDeadline(ctx)
 	seed := stripLeadingSystem(history)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
 		Client:     r.client,
@@ -354,13 +356,13 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 		UserTurns:  seed,
 	})
 	ic := agent.InvocationContext{
-		Ctx:       ctx,
+		Ctx:       boundedCtx,
 		Agent:     la,
 		RequestID: requestID,
 		Branch:    "root",
 		Budget:    bud,
 	}
-	return la, ic, nil
+	return la, ic, cancel, nil
 }
 
 // stripLeadingSystem drops a persisted leading system turn so the agent's own

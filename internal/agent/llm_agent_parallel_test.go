@@ -47,6 +47,48 @@ func (b barrierTool) Execute(ctx context.Context, raw json.RawMessage) (tools.To
 	}
 }
 
+type trackingTool struct {
+	current *atomic.Int32
+	max     *atomic.Int32
+	delay   time.Duration
+}
+
+func (trackingTool) Spec() tools.Spec {
+	return tools.Spec{Name: "tracking", Summary: "test max parallel cap", Parameters: json.RawMessage(`{"type":"object"}`)}
+}
+
+func (t trackingTool) Execute(ctx context.Context, raw json.RawMessage) (tools.ToolResult, error) {
+	cur := t.current.Add(1)
+	for {
+		seen := t.max.Load()
+		if cur <= seen || t.max.CompareAndSwap(seen, cur) {
+			break
+		}
+	}
+	defer t.current.Add(-1)
+	select {
+	case <-ctx.Done():
+		return tools.ToolResult{}, ctx.Err()
+	case <-time.After(t.delay):
+		return tools.ToolResult{Preview: "ok"}, nil
+	}
+}
+
+type contextDeadlineTool struct{}
+
+func (contextDeadlineTool) Spec() tools.Spec {
+	return tools.Spec{Name: "wait_ctx", Summary: "waits for context", Parameters: json.RawMessage(`{"type":"object"}`)}
+}
+
+func (contextDeadlineTool) Execute(ctx context.Context, raw json.RawMessage) (tools.ToolResult, error) {
+	select {
+	case <-ctx.Done():
+		return tools.ToolResult{}, ctx.Err()
+	case <-time.After(5 * time.Second):
+		return tools.ToolResult{Preview: "late"}, nil
+	}
+}
+
 // TestDispatch_ParallelConcurrentAndOrdered: three tool calls in one assistant
 // message run concurrently (the barrier releases only if all three entered Execute
 // together) AND their RoleTool results land in original call order (c1,c2,c3 →
@@ -105,5 +147,82 @@ func TestDispatch_ParallelConcurrentAndOrdered(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("result[%d] = %q, want %q (a timeout = not concurrent; mismatch = wrong order). full: %v", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestRunToolAppliesNodeTimeout(t *testing.T) {
+	recordingProvider(t)
+	t.Setenv("AURA_LOOP_NODE_TIMEOUT_SEC", "1")
+
+	reg := tools.NewRegistry()
+	reg.Register(tools.TextResponse{})
+	reg.Register(contextDeadlineTool{})
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(agenttest.MakeToolCall("c1", "wait_ctx", `{}`)),
+		agenttest.ToolCallTurn(textResponseCall("c2", "done")),
+	)
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:     fc,
+		LLM:        llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 30},
+		Registry:   reg,
+		PreviewCap: 2048,
+		RunDir:     t.TempDir(),
+		SessionID:  uuid.Must(uuid.NewV7()).String(),
+		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "go"}},
+	})
+
+	started := time.Now()
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(5)})))
+	if err != nil {
+		t.Fatalf("run errored: %v", err)
+	}
+	if elapsed := time.Since(started); elapsed > 3*time.Second {
+		t.Fatalf("node timeout did not bound tool execution, elapsed=%s", elapsed)
+	}
+	var sawDeadline bool
+	for _, ev := range evs {
+		if ti := ev.Actions.ToolInvocation; ti != nil && ti.Event == agent.ToolInvocationEnd && strings.Contains(ti.Error, context.DeadlineExceeded.Error()) {
+			sawDeadline = true
+		}
+	}
+	if !sawDeadline {
+		t.Fatalf("tool invocation end event did not record context deadline: %+v", evs)
+	}
+}
+
+func TestDispatch_ParallelRespectsFanoutCap(t *testing.T) {
+	recordingProvider(t)
+	t.Setenv("AURA_LOOP_MAX_PARALLEL_TOOLS", "2")
+
+	tracker := trackingTool{current: &atomic.Int32{}, max: &atomic.Int32{}, delay: 80 * time.Millisecond}
+	reg := tools.NewRegistry()
+	reg.Register(tools.TextResponse{})
+	reg.Register(tracker)
+
+	calls := make([]llm.ToolCall, 0, 5)
+	for i := 0; i < 5; i++ {
+		calls = append(calls, agenttest.MakeToolCall("c"+string(rune('1'+i)), "tracking", `{}`))
+	}
+	fc := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(calls...),
+		agenttest.ToolCallTurn(textResponseCall("done", "done")),
+	)
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:     fc,
+		LLM:        llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 30},
+		Registry:   reg,
+		PreviewCap: 2048,
+		RunDir:     t.TempDir(),
+		SessionID:  uuid.Must(uuid.NewV7()).String(),
+		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "go"}},
+	})
+
+	if _, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)}))); err != nil {
+		t.Fatalf("run errored: %v", err)
+	}
+	if got := tracker.max.Load(); got > 2 {
+		t.Fatalf("observed %d concurrent tools with cap=2", got)
+	} else if got < 2 {
+		t.Fatalf("test did not exercise concurrency, max observed=%d", got)
 	}
 }

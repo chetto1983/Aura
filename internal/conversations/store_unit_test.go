@@ -124,6 +124,45 @@ func TestTurnToMessage(t *testing.T) {
 	}
 }
 
+func TestRepairToolMessagePairsDropsOrphansAndDanglingGroups(t *testing.T) {
+	t.Parallel()
+	callOK := testToolCall("call_ok")
+	callDangling := testToolCall("call_dangling")
+	in := []llm.Message{
+		{Role: llm.RoleUser, Content: "start"},
+		{Role: llm.RoleTool, ToolCallID: "orphan", Content: "orphan result"},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{callOK}},
+		{Role: llm.RoleTool, ToolCallID: "call_ok", Content: "ok"},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{callDangling}},
+		{Role: llm.RoleUser, Content: "next"},
+		{Role: llm.RoleTool, ToolCallID: "late_orphan", Content: "late"},
+	}
+
+	got := repairToolMessagePairs(in)
+	if len(got) != 4 {
+		t.Fatalf("repaired history length = %d, want 4: %+v", len(got), got)
+	}
+	if got[0].Role != llm.RoleUser || got[0].Content != "start" {
+		t.Fatalf("first message = %+v", got[0])
+	}
+	if got[1].Role != llm.RoleAssistant || len(got[1].ToolCalls) != 1 || got[1].ToolCalls[0].ID != "call_ok" {
+		t.Fatalf("valid assistant tool_calls group was not preserved: %+v", got[1])
+	}
+	if got[2].Role != llm.RoleTool || got[2].ToolCallID != "call_ok" || got[2].Content != "ok" {
+		t.Fatalf("valid RoleTool result was not preserved: %+v", got[2])
+	}
+	if got[3].Role != llm.RoleUser || got[3].Content != "next" {
+		t.Fatalf("post-repair user message = %+v", got[3])
+	}
+}
+
+func testToolCall(id string) llm.ToolCall {
+	tc := llm.ToolCall{ID: id, Type: "function"}
+	tc.Function.Name = "shell_exec"
+	tc.Function.Arguments = `{"command":"echo hi"}`
+	return tc
+}
+
 func TestOptionalText(t *testing.T) {
 	t.Parallel()
 	if got := optionalText(""); got.Valid {

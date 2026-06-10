@@ -44,7 +44,7 @@ func IsTransportError(err error) bool {
 }
 
 // ServerConfig declares how to launch one stdio MCP server (Claude-Desktop shape).
-// Env entries ("KEY=value") are appended to the inherited environment.
+// Env entries ("KEY=value") are explicit operator-declared child environment.
 type ServerConfig struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args,omitempty"`
@@ -61,13 +61,18 @@ type ToolDef struct {
 
 // Client wraps one MCP server subprocess. The zero value is unusable; use Open.
 type Client struct {
-	name   string
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout *bufio.Reader
-	stderr *boundedbuffer.Buffer
-	mu     sync.Mutex
-	nextID atomic.Int64
+	name            string
+	cmd             *exec.Cmd
+	stdin           io.WriteCloser
+	stdout          *bufio.Reader
+	stdoutCloser    io.Closer
+	stderr          *boundedbuffer.Buffer
+	mu              sync.Mutex
+	stdinCloseOnce  sync.Once
+	stdoutCloseOnce sync.Once
+	closeOnce       sync.Once
+	closeErr        error
+	nextID          atomic.Int64
 }
 
 // Open spawns the server described by cfg and completes the initialize handshake.
@@ -80,7 +85,7 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 	// G204: Command/Args/Env come from the operator-controlled mcpServers config
 	// (.env / config file), not from untrusted model output.
 	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...) //nolint:gosec
-	cmd.Env = append(os.Environ(), cfg.Env...)
+	cmd.Env = processEnvForMCP(cfg.Env)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, fmt.Errorf("mcp %q: stdin pipe: %w", name, err)
@@ -95,17 +100,80 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 		return nil, fmt.Errorf("mcp %q: spawn %s: %w", name, cfg.Command, err)
 	}
 	c := &Client{
-		name:   name,
-		cmd:    cmd,
-		stdin:  stdin,
-		stdout: bufio.NewReader(stdoutPipe),
-		stderr: stderr,
+		name:         name,
+		cmd:          cmd,
+		stdin:        stdin,
+		stdout:       bufio.NewReader(stdoutPipe),
+		stdoutCloser: stdoutPipe,
+		stderr:       stderr,
 	}
-	if err := c.initialize(); err != nil {
+	if err := c.initializeContext(ctx); err != nil {
 		_ = c.Close()
 		return nil, err
 	}
 	return c, nil
+}
+
+func processEnvForMCP(configured []string) []string {
+	env := make([]string, 0, len(configured)+8)
+	seen := map[string]struct{}{}
+	for _, kv := range os.Environ() {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok || !mcpInheritedEnvKey(k) || secretEnvKey(k) {
+			continue
+		}
+		upper := strings.ToUpper(k)
+		if _, dup := seen[upper]; dup {
+			continue
+		}
+		seen[upper] = struct{}{}
+		env = append(env, kv)
+	}
+	for _, kv := range configured {
+		k, _, ok := strings.Cut(kv, "=")
+		if !ok || strings.TrimSpace(k) == "" {
+			continue
+		}
+		upper := strings.ToUpper(k)
+		if _, dup := seen[upper]; dup {
+			env = replaceEnv(env, k, kv)
+		} else {
+			env = append(env, kv)
+		}
+		seen[upper] = struct{}{}
+	}
+	return env
+}
+
+func mcpInheritedEnvKey(key string) bool {
+	switch strings.ToUpper(key) {
+	case "PATH", "PATHEXT", "SYSTEMROOT", "WINDIR", "COMSPEC", "HOME", "USERPROFILE", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL", "SSL_CERT_FILE", "SSL_CERT_DIR":
+		return true
+	default:
+		return false
+	}
+}
+
+func secretEnvKey(key string) bool {
+	k := strings.ToLower(key)
+	for _, marker := range []string{"token", "secret", "password", "passwd", "api_key", "apikey", "auth", "bearer", "credential", "key"} {
+		if strings.Contains(k, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func replaceEnv(env []string, key, kv string) []string {
+	want := strings.ToUpper(key)
+	for i, existing := range env {
+		k, _, ok := strings.Cut(existing, "=")
+		if ok && strings.ToUpper(k) == want {
+			env[i] = kv
+			return env
+		}
+	}
+	return append(env, kv)
 }
 
 type rpcReq struct {
@@ -131,7 +199,11 @@ type rpcError struct {
 // then the initialized notification). Runs once at Open before the client is
 // shared, so it needs no lock.
 func (c *Client) initialize() error {
-	res, err := c.roundtrip("initialize", map[string]any{
+	return c.initializeContext(context.Background())
+}
+
+func (c *Client) initializeContext(ctx context.Context) error {
+	res, err := c.roundtripContext(ctx, "initialize", map[string]any{
 		"protocolVersion": protocolVersion,
 		"capabilities":    map[string]any{},
 		"clientInfo":      map[string]any{"name": "aura", "version": "0.7"},
@@ -153,17 +225,7 @@ func (c *Client) ListTools(ctx context.Context) ([]ToolDef, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	res, err := c.roundtrip("tools/list", map[string]any{})
-	if err != nil {
-		return nil, fmt.Errorf("mcp %q: tools/list: %w", c.name, err)
-	}
-	var env struct {
-		Tools []ToolDef `json:"tools"`
-	}
-	if err := json.Unmarshal(res, &env); err != nil {
-		return nil, fmt.Errorf("mcp %q: decode tools/list: %w", c.name, err)
-	}
-	return env.Tools, nil
+	return listToolsWith(ctx, c.name, c.roundtripContext)
 }
 
 // CallTool invokes one tool and returns its concatenated text content. A tool that
@@ -173,23 +235,9 @@ func (c *Client) CallTool(ctx context.Context, name string, args map[string]any)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if args == nil {
-		args = map[string]any{}
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	res, err := c.roundtrip("tools/call", map[string]any{"name": name, "arguments": args})
-	if err != nil {
-		return "", fmt.Errorf("mcp %q: call %s: %w", c.name, name, err)
-	}
-	text, isErr, derr := decodeToolResult(res)
-	if derr != nil {
-		return "", fmt.Errorf("mcp %q: call %s: %w", c.name, name, derr)
-	}
-	if isErr {
-		return "", fmt.Errorf("mcp %q: tool %s reported error: %s", c.name, name, text)
-	}
-	return text, nil
+	return callToolWith(ctx, c.name, name, args, c.roundtripContext)
 }
 
 // Ping issues an MCP ping round-trip to confirm the subprocess is alive and
@@ -200,7 +248,7 @@ func (c *Client) Ping(ctx context.Context) error {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	_, err := c.roundtrip("ping", map[string]any{})
+	_, err := c.roundtripContext(ctx, "ping", map[string]any{})
 	if err != nil {
 		return fmt.Errorf("mcp %q: ping: %w", c.name, err)
 	}
@@ -210,6 +258,13 @@ func (c *Client) Ping(ctx context.Context) error {
 // roundtrip writes one request and reads the matching response, skipping any
 // interleaved notifications. Caller holds mu (except initialize, pre-share).
 func (c *Client) roundtrip(method string, params any) (json.RawMessage, error) {
+	return c.roundtripContext(context.Background(), method, params)
+}
+
+func (c *Client) roundtripContext(ctx context.Context, method string, params any) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: %s canceled before send: %w", ErrTransport, method, err)
+	}
 	id := c.nextID.Add(1)
 	enc, err := json.Marshal(rpcReq{JSONRPC: "2.0", ID: id, Method: method, Params: params})
 	if err != nil {
@@ -218,7 +273,7 @@ func (c *Client) roundtrip(method string, params any) (json.RawMessage, error) {
 	if _, err := fmt.Fprintln(c.stdin, string(enc)); err != nil {
 		return nil, fmt.Errorf("%w: send %s: %w%s", ErrTransport, method, err, c.stderrTail())
 	}
-	return c.readResponse(id)
+	return c.readResponseContext(ctx, id)
 }
 
 // notify sends a fire-and-forget notification (no id, no response expected).
@@ -237,6 +292,36 @@ func (c *Client) notify(method string) error {
 // readResponse reads lines until it finds the response whose id matches want,
 // discarding notifications (messages with no id) that the server may interleave.
 func (c *Client) readResponse(want int64) (json.RawMessage, error) {
+	return c.readResponseContext(context.Background(), want)
+}
+
+func (c *Client) readResponseContext(ctx context.Context, want int64) (json.RawMessage, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("%w: recv: %w%s", ErrTransport, err, c.stderrTail())
+	}
+	type readResult struct {
+		res json.RawMessage
+		err error
+	}
+	done := make(chan readResult, 1)
+	go func() {
+		res, err := c.readResponseBlocking(want)
+		done <- readResult{res: res, err: err}
+	}()
+	select {
+	case rr := <-done:
+		return rr.res, rr.err
+	case <-ctx.Done():
+		c.abortTransport()
+		select {
+		case <-done:
+		case <-time.After(100 * time.Millisecond):
+		}
+		return nil, fmt.Errorf("%w: recv timeout: %w%s", ErrTransport, ctx.Err(), c.stderrTail())
+	}
+}
+
+func (c *Client) readResponseBlocking(want int64) (json.RawMessage, error) {
 	for {
 		line, err := c.stdout.ReadBytes('\n')
 		if err != nil {
@@ -297,9 +382,15 @@ const closeWaitTimeout = 5 * time.Second
 // is drained. Safe to call on a test client (no cmd) and idempotent enough for
 // defer.
 func (c *Client) Close() error {
-	if c.stdin != nil {
-		_ = c.stdin.Close()
-	}
+	c.closeOnce.Do(func() {
+		c.closeErr = c.close()
+	})
+	return c.closeErr
+}
+
+func (c *Client) close() error {
+	c.closeStdin()
+	defer c.closeStdout()
 	if c.cmd == nil {
 		return nil
 	}
@@ -309,10 +400,40 @@ func (c *Client) Close() error {
 	case err := <-done:
 		return err
 	case <-time.After(closeWaitTimeout):
-		if c.cmd.Process != nil {
-			_ = c.cmd.Process.Kill()
-		}
+		c.killProcess()
 		return <-done // Wait must still be drained after Kill to release resources
+	}
+}
+
+func (c *Client) closePipes() {
+	c.closeStdin()
+	c.closeStdout()
+}
+
+func (c *Client) closeStdin() {
+	c.stdinCloseOnce.Do(func() {
+		if c.stdin != nil {
+			_ = c.stdin.Close()
+		}
+	})
+}
+
+func (c *Client) closeStdout() {
+	c.stdoutCloseOnce.Do(func() {
+		if c.stdoutCloser != nil {
+			_ = c.stdoutCloser.Close()
+		}
+	})
+}
+
+func (c *Client) abortTransport() {
+	c.closePipes()
+	c.killProcess()
+}
+
+func (c *Client) killProcess() {
+	if c.cmd != nil && c.cmd.Process != nil {
+		_ = c.cmd.Process.Kill()
 	}
 }
 

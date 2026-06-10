@@ -143,6 +143,30 @@ func TestActionCreateActivates(t *testing.T) {
 	}
 }
 
+func TestActionCreateAlwaysPendingPauses(t *testing.T) {
+	w := &fakeSkillWriter{status: "pending_approval"}
+	tool := &SkillTool{Writer: w}
+
+	_, err := execSkill(t, tool, map[string]any{
+		"action":      "create",
+		"name":        "always-skill",
+		"description": "always on",
+		"body":        "# instructions",
+		"always":      true,
+	})
+
+	var pause *ErrAwaitingUserInput
+	if !errors.As(err, &pause) {
+		t.Fatalf("always:true create should pause when writer stages it pending, got %v", err)
+	}
+	if !w.gotAlways {
+		t.Fatal("always:true flag was not forwarded to the writer")
+	}
+	if !strings.Contains(pause.Question, "always-skill") {
+		t.Fatalf("pause question should name the skill: %q", pause.Question)
+	}
+}
+
 // TestActionCreateBlocklistedIsToolError asserts a blocklist/validation reject from
 // the writer (the model path) surfaces as a tool ERROR (self-correct), NOT a pause.
 func TestActionCreateBlocklistedIsToolError(t *testing.T) {

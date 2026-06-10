@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -58,6 +59,7 @@ type Scheduler struct {
 	maxConcurrent int
 	tickInterval  time.Duration
 	hbInterval    time.Duration
+	lastTickUnix  atomic.Int64
 	// reschedulesOnRecovery reports a kind's HandlerMeta.ReschedulesOnRecovery (M-g):
 	// the boot catch-up consults it so a handler that does NOT reschedule on recovery
 	// (e.g. a reminder whose window has passed, or any future side-effecting handler)
@@ -167,6 +169,7 @@ func (s *Scheduler) Start(ctx context.Context) error {
 // tick blocks until all dispatched runs finish so Start's graceful shutdown joins
 // them (no leaked goroutine).
 func (s *Scheduler) tick(ctx context.Context) error {
+	s.markTick()
 	due, err := s.store.DueTasks(ctx, s.maxConcurrent)
 	if err != nil {
 		return fmt.Errorf("tick due tasks: %w", err)
@@ -190,6 +193,24 @@ func (s *Scheduler) tick(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *Scheduler) markTick() {
+	now := time.Now
+	if s.Now != nil {
+		now = s.Now
+	}
+	s.lastTickUnix.Store(now().UTC().UnixNano())
+}
+
+// LastTick returns the scheduler tick timestamp most recently recorded by tick.
+// A zero time means the process has started but no tick has run yet.
+func (s *Scheduler) LastTick() time.Time {
+	n := s.lastTickUnix.Load()
+	if n == 0 {
+		return time.Time{}
+	}
+	return time.Unix(0, n).UTC()
 }
 
 // runOne claims and dispatches a single due task. On a lost advisory lock it logs

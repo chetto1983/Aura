@@ -14,7 +14,7 @@ import (
 
 // TaskTool is the ONE non-deferred scheduling verb the model sees (D-09/D-11).
 // A single manifest entry — name "task" — fronts the whole scheduler grammar via
-// an `action` enum (schedule|list|cancel|run_now|approve) dispatched through an
+// an `action` enum (schedule|list|cancel|run_now) dispatched through an
 // ActionRouter, replacing the pre-rewrite 587-LOC five-tool god-class. It is
 // NON-deferred (D-11): scheduling/reminders are a core verb the model must always
 // see, so its spec stays in the default manifest. The schema is OpenAI-wire-safe
@@ -103,7 +103,7 @@ type taskArgs struct {
 const taskParamsSchema = `{
   "type": "object",
   "properties": {
-    "action": {"type": "string", "enum": ["schedule", "list", "cancel", "run_now", "approve"], "description": "The scheduler operation: schedule (create a task), list (show active + awaiting-approval tasks), cancel (stop a task by id), run_now (fire a task immediately by id), approve (release a pending_approval task by id)."},
+    "action": {"type": "string", "enum": ["schedule", "list", "cancel", "run_now"], "description": "The scheduler operation: schedule (create a task), list (show active + awaiting-approval tasks), cancel (stop a task by id), run_now (fire a task immediately by id)."},
     "schedule_kind": {"type": "string", "enum": ["at", "every", "cron"], "description": "Required when action=schedule. at=one-shot at a fixed instant; every=fixed interval in minutes; cron=a cron expression evaluated in the task timezone."},
     "cron": {"type": "string", "description": "Required when action=schedule and schedule_kind=cron. A standard 5-field cron expression, e.g. '30 9 * * 1-5'."},
     "at": {"type": "string", "description": "Required when action=schedule and schedule_kind=at. An RFC-3339 instant, e.g. '2030-01-01T09:30:00Z'."},
@@ -113,7 +113,7 @@ const taskParamsSchema = `{
     "payload": {"type": "object", "description": "Optional when action=schedule. The task payload: for a reminder {\"text\": \"...\"}, for an agent_job {\"goal\": \"...\"}. Scanned for destructive intent (rm/drop/delete) which gates the task to pending_approval."},
     "step_budget": {"type": "integer", "description": "Optional when action=schedule and kind=agent_job. Maximum agent steps for the job run."},
     "notify": {"type": "string", "enum": ["whatsapp", "email", "stdout"], "description": "Optional when action=schedule. Where the task output is delivered. Defaults to the scheduler default route."},
-    "task_id": {"type": "string", "description": "Required when action=cancel, run_now, or approve. The id of the target task."}
+    "task_id": {"type": "string", "description": "Required when action=cancel or run_now. The id of the target task."}
   },
   "required": ["action"]
 }`
@@ -123,10 +123,10 @@ const taskParamsSchema = `{
 func (t *TaskTool) Spec() Spec {
 	return Spec{
 		Name:    "task",
-		Summary: "Schedule, list, cancel, run, or approve background tasks and reminders.",
-		Description: "Manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres|backup_neo4j); action=list shows active and awaiting-approval tasks; action=cancel/run_now/approve operate on a task_id. " +
+		Summary: "Schedule, list, cancel, or run background tasks and reminders.",
+		Description: "Manage scheduled work via a single action enum. action=schedule creates a one-shot (at), interval (every), or cron task of a kind (reminder|agent_job|backup_postgres|backup_neo4j); action=list shows active and awaiting-approval tasks; action=cancel/run_now operate on a task_id. " +
 			"When the operator asks for recurring or future work (a daily summary, a morning digest, a periodic check, a reminder), schedule it here instead of trying to do it now: a reminder delivers its payload text; an agent_job runs a fresh agent turn AT FIRE TIME with the goal in its payload, so you do NOT need the job's tools available now — the job resolves its own tools when it runs. Put the operator's intent in the payload goal and schedule it. " +
-			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require an explicit approve before they fire.",
+			"Destructive payloads (rm/drop/delete) are routed to pending_approval and require operator approval outside this model-facing tool before they fire.",
 		Parameters: json.RawMessage(taskParamsSchema),
 		Deferred:   false,
 	}
@@ -160,7 +160,6 @@ func (t *TaskTool) actionRouter() *ActionRouter {
 			"list":     t.actionList,
 			"cancel":   t.actionCancel,
 			"run_now":  t.actionRunNow,
-			"approve":  t.actionApprove,
 		})
 	})
 	return t.router
@@ -221,7 +220,11 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	var b strings.Builder
 	fmt.Fprintf(&b, "scheduled task %s (kind=%s, %s, risk=%s, status=%s)", created.ID, a.Kind, spec.summary(), tier, status)
 	if status == "pending_approval" {
-		fmt.Fprintf(&b, "\nAwaiting approval before it fires — approve with action=approve, task_id=%s.", created.ID)
+		b.WriteString("\nAwaiting operator approval before it fires.")
+		/*
+				Legacy encoded approve hint removed from model-visible output.
+			fmt.Fprintf(&b, "\nAwaiting approval before it fires — approve with action=approve, task_id=%s.", created.ID)
+		*/
 		if scoring.RequiresImmediateAlert(tier, t.alertThreshold()) {
 			b.WriteString("\nThis task meets the immediate-alert threshold.")
 		}

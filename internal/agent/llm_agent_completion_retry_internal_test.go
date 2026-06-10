@@ -11,6 +11,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/google/uuid"
 )
 
@@ -243,6 +244,18 @@ func TestRetryableNetworkTextDocumentsPlanMarkers(t *testing.T) {
 	}
 	if retryableStreamOpenError(context.DeadlineExceeded) {
 		t.Fatal("deadline exceeded must not be retried")
+	}
+	if !retryableStreamOpenError(&openai_compat.HTTPError{StatusCode: 429, RetryAfterSec: 1}) {
+		t.Fatal("HTTP 429 should be retryable")
+	}
+	if !retryableStreamOpenError(&openai_compat.HTTPError{StatusCode: 502}) {
+		t.Fatal("HTTP 5xx should be retryable")
+	}
+	if retryableStreamOpenError(&openai_compat.HTTPError{StatusCode: 400}) {
+		t.Fatal("HTTP 400 should not be retried")
+	}
+	if got := streamOpenRetryDelayFor(&openai_compat.HTTPError{StatusCode: 429, RetryAfterSec: 99}); got != streamOpenMaxRetryAfterWait {
+		t.Fatalf("Retry-After delay should be bounded at %s, got %s", streamOpenMaxRetryAfterWait, got)
 	}
 }
 

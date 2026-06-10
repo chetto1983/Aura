@@ -144,6 +144,45 @@ func TestBackgroundShell_Kill(t *testing.T) {
 	}
 }
 
+func TestBackgroundShellBufferCapsAndDropsConsumed(t *testing.T) {
+	sh := &bgShell{bufCap: 8}
+	if n, err := sh.Write([]byte("123456")); err != nil || n != 6 {
+		t.Fatalf("write = (%d, %v), want (6,nil)", n, err)
+	}
+	chunk, status := sh.snapshot(nil)
+	if chunk != "123456" || status != "running" {
+		t.Fatalf("snapshot = (%q,%q), want (123456,running)", chunk, status)
+	}
+	if len(sh.buf) != 0 || sh.readOff != 0 {
+		t.Fatalf("snapshot must drop consumed bytes, buf=%q readOff=%d", sh.buf, sh.readOff)
+	}
+
+	if n, err := sh.Write([]byte("abcdefghijk")); err != nil || n != 11 {
+		t.Fatalf("write long = (%d, %v), want (11,nil)", n, err)
+	}
+	chunk, _ = sh.snapshot(nil)
+	if !strings.Contains(chunk, "background output truncated") || !strings.Contains(chunk, "defghijk") || strings.Contains(chunk, "abc") {
+		t.Fatalf("capped background output should report the retained tail only, got %q", chunk)
+	}
+	if len(sh.buf) != 0 || sh.readOff != 0 {
+		t.Fatalf("post-truncation snapshot must drop consumed bytes, buf=%q readOff=%d", sh.buf, sh.readOff)
+	}
+}
+
+func TestShellPollRedactsModelPreview(t *testing.T) {
+	bg := &BackgroundShells{shells: map[string]*bgShell{"sh_1": &bgShell{bufCap: 1024}}}
+	if _, err := bg.shells["sh_1"].Write([]byte("token=supersecretvalue123\n")); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	body, _ := pollOnce(ctxWith(t, "sess-bg-redact", "call-bg-redact"), t, &ShellPoll{Shells: bg}, "sh_1", "")
+	if strings.Contains(body, "supersecretvalue123") {
+		t.Fatalf("shell_poll leaked secret output: %q", body)
+	}
+	if !strings.Contains(body, shellRedacted) {
+		t.Fatalf("shell_poll output missing redaction placeholder: %q", body)
+	}
+}
+
 func TestBackgroundShell_Errors(t *testing.T) {
 	ctx := ctxWith(t, "sess-bge", "call-bge")
 

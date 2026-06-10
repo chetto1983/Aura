@@ -2,10 +2,18 @@ package agent
 
 import (
 	"context"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
+)
+
+const (
+	envMaxParallelTools     = "AURA_LOOP_MAX_PARALLEL_TOOLS"
+	defaultMaxParallelTools = 4
 )
 
 // executeBatch runs a batch of tool calls' Execute() and returns one toolRunResult
@@ -25,14 +33,33 @@ func (a *LlmAgent) executeBatch(ctx context.Context, budget *Budget, calls []llm
 		}
 		return results
 	}
+	limit := maxParallelTools()
+	if limit > len(calls) {
+		limit = len(calls)
+	}
+	sem := make(chan struct{}, limit)
 	var wg sync.WaitGroup
 	wg.Add(len(calls))
 	for k := range calls {
 		go func(k int) {
+			sem <- struct{}{}
+			defer func() { <-sem }()
 			defer wg.Done()
 			results[k] = a.runTool(ctx, budget, calls[k], startedAt)
 		}(k)
 	}
 	wg.Wait()
 	return results
+}
+
+func maxParallelTools() int {
+	v := strings.TrimSpace(os.Getenv(envMaxParallelTools))
+	if v == "" {
+		return defaultMaxParallelTools
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return defaultMaxParallelTools
+	}
+	return n
 }

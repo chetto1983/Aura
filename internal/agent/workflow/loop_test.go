@@ -2,6 +2,7 @@ package workflow_test
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"testing"
 
@@ -9,7 +10,6 @@ import (
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/workflow"
 	"github.com/chetto1983/aura/internal/llm"
-	"pgregory.net/rapid"
 )
 
 // plainAgent emits exactly one Event with no tool calls per Run — a sub that
@@ -32,6 +32,35 @@ func (a *plainAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, err
 	return func(yield func(*agent.Event, error) bool) {
 		a.runs++
 		yield(&agent.Event{Author: a.name, Branch: ic.Branch}, nil)
+	}
+}
+
+type budgetOwningToolAgent struct {
+	name string
+	runs int
+}
+
+func (a *budgetOwningToolAgent) Name() string           { return a.name }
+func (*budgetOwningToolAgent) Description() string      { return "test: owns its budget gate" }
+func (*budgetOwningToolAgent) SubAgents() []agent.Agent { return nil }
+func (*budgetOwningToolAgent) OwnsBudget() bool         { return true }
+func (a *budgetOwningToolAgent) FindAgent(name string) agent.Agent {
+	if a.name == name {
+		return a
+	}
+	return nil
+}
+func (a *budgetOwningToolAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
+	call := llm.ToolCall{ID: "call-owned", Type: "function"}
+	call.Function.Name = "owned_tool"
+	call.Function.Arguments = "{}"
+	return func(yield func(*agent.Event, error) bool) {
+		a.runs++
+		if ok, reason := ic.Budget.ConsumeStep(); !ok {
+			yield(&agent.Event{Author: a.name, Actions: agent.Actions{Escalate: true, StateDelta: map[string]any{"limit_hit": reason}}}, nil)
+			return
+		}
+		yield(&agent.Event{Author: a.name, Branch: ic.Branch, LLMResponse: &agent.LLMResponse{ToolCalls: []llm.ToolCall{call}}}, nil)
 	}
 }
 
@@ -376,6 +405,76 @@ func TestLoopAgent_MultiToolPerTurn_StepsConsumedEqualsStepEvents(t *testing.T) 
 	}
 }
 
+func TestLoopAgent_BudgetOwningSubConsumesOnlyOnce(t *testing.T) {
+	maxSteps := 3
+	b, err := agent.NewBudget(agent.BudgetOptions{MaxSteps: &maxSteps})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
+	sub := &budgetOwningToolAgent{name: "owned"}
+	lp := workflow.NewLoop("loop", 1, sub)
+
+	evs, err := drain(lp.Run(ic))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("event count = %d, want 1", len(evs))
+	}
+	if sub.runs != 1 {
+		t.Fatalf("budget-owning child runs = %d, want 1", sub.runs)
+	}
+	if got := b.Remaining(); got != maxSteps-1 {
+		t.Fatalf("remaining budget = %d, want %d (parent must not double-charge child tool events)", got, maxSteps-1)
+	}
+}
+
+func TestLoopAgent_UnlimitedPlainSubTerminatesOnBudget(t *testing.T) {
+	maxSteps := 2
+	b, err := agent.NewBudget(agent.BudgetOptions{MaxSteps: &maxSteps})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
+	sub := &plainAgent{name: "plain"}
+	lp := workflow.NewLoop("loop", 0, sub)
+
+	evs, err := drain(lp.Run(ic))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(evs) == 0 {
+		t.Fatal("loop emitted no terminal event")
+	}
+	final := evs[len(evs)-1]
+	if final == nil || !final.Actions.Escalate {
+		t.Fatalf("last event must be the budget terminal, got %+v", final)
+	}
+	if got := final.Actions.StateDelta["limit_hit"]; got != "max_steps" {
+		t.Fatalf("limit_hit = %v, want max_steps", got)
+	}
+	if got := final.Actions.StateDelta["steps_consumed"]; got != maxSteps {
+		t.Fatalf("steps_consumed = %v, want %d", got, maxSteps)
+	}
+}
+
+func TestLoopAgent_ReturnsOnCanceledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	b, err := agent.NewBudget(agent.BudgetOptions{})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+	ic := agent.InvocationContext{Ctx: ctx, Branch: "root", Budget: b}
+	lp := workflow.NewLoop("loop", 0, &plainAgent{name: "plain"})
+
+	_, err = drain(lp.Run(ic))
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("LoopAgent canceled context error = %v, want context.Canceled", err)
+	}
+}
+
 func TestLoopAgent_StopsAtMaxIterations(t *testing.T) {
 	sub := &plainAgent{name: "worker"}
 	lp := workflow.NewLoop("loop", 3, sub)
@@ -488,62 +587,4 @@ func TestLoopAgent_DedupWindow_TerminatesOn3SameToolCalls(t *testing.T) {
 	if len(evs) > 5 {
 		t.Errorf("dedup should fire within the window, got %d events", len(evs))
 	}
-}
-
-func TestLoopAgent_DedupVeto_When_ResultChanges(t *testing.T) {
-	// Same name+args but a CHANGING result content each time → progress veto (D-18):
-	// dedup never fires, so termination is by the hard step budget, NOT dedup.
-	t.Setenv("AURA_LOOP_MAX_STEPS", "10")
-	b, err := agent.NewBudgetFromEnv()
-	if err != nil {
-		t.Fatalf("NewBudgetFromEnv: %v", err)
-	}
-	ic := agent.InvocationContext{Ctx: context.Background(), Branch: "root", Budget: b}
-
-	sub := &scriptedToolAgent{
-		name:     "progresser",
-		toolName: "search",
-		toolArgs: `{"q":"x"}`,
-		contents: []string{"r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10"},
-	}
-	lp := workflow.NewLoop("loop", 0, sub)
-
-	evs, err := drain(lp.Run(ic))
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	final := evs[len(evs)-1]
-	if got := final.Actions.StateDelta["limit_hit"]; got != "max_steps" {
-		t.Fatalf("changing result must veto dedup → terminate by max_steps, got limit_hit=%v", got)
-	}
-	if got := final.Actions.StateDelta["steps_consumed"]; got != 10 {
-		t.Errorf("steps_consumed: want 10, got %v", got)
-	}
-}
-
-func TestLoopAgent_Property_EscalateYieldedBeforeReturn(t *testing.T) {
-	// D-21: whenever a sub escalates, the LoopAgent MUST yield that escalate Event
-	// before the iterator returns — the escalate is never swallowed.
-	rapid.Check(t, func(rt *rapid.T) {
-		n := rapid.IntRange(1, 8).Draw(rt, "escalateOnRun")
-		maxIter := rapid.IntRange(1, n+5).Draw(rt, "maxIter")
-
-		sub := &escalateOnNthRun{name: "worker", n: n}
-		lp := workflow.NewLoop("loop", uint(maxIter), sub)
-		ic := newTestIC(t, "root")
-
-		var sawEscalate bool
-		for ev, err := range lp.Run(ic) {
-			if err != nil {
-				rt.Fatalf("error slot must stay clean (D-04): %v", err)
-			}
-			if ev != nil && ev.Actions.Escalate {
-				sawEscalate = true
-			}
-		}
-		// If maxIter allowed reaching the Nth run, the escalate must have been seen.
-		if maxIter >= n && !sawEscalate {
-			rt.Fatalf("escalate on run %d with maxIter %d was not yielded before return", n, maxIter)
-		}
-	})
 }

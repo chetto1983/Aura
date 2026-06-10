@@ -93,17 +93,7 @@ func (c *HTTPClient) ListTools(ctx context.Context) ([]ToolDef, error) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	res, err := c.roundtripLocked(ctx, "tools/list", map[string]any{})
-	if err != nil {
-		return nil, fmt.Errorf("mcp %q: tools/list: %w", c.name, err)
-	}
-	var env struct {
-		Tools []ToolDef `json:"tools"`
-	}
-	if err := json.Unmarshal(res, &env); err != nil {
-		return nil, fmt.Errorf("mcp %q: decode tools/list: %w", c.name, err)
-	}
-	return env.Tools, nil
+	return listToolsWith(ctx, c.name, c.roundtripLocked)
 }
 
 // CallTool invokes one tool (tools/call) and returns its concatenated text
@@ -112,23 +102,9 @@ func (c *HTTPClient) CallTool(ctx context.Context, name string, args map[string]
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	if args == nil {
-		args = map[string]any{}
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	res, err := c.roundtripLocked(ctx, "tools/call", map[string]any{"name": name, "arguments": args})
-	if err != nil {
-		return "", fmt.Errorf("mcp %q: call %s: %w", c.name, name, err)
-	}
-	text, isErr, derr := decodeToolResult(res)
-	if derr != nil {
-		return "", fmt.Errorf("mcp %q: call %s: %w", c.name, name, derr)
-	}
-	if isErr {
-		return "", fmt.Errorf("mcp %q: tool %s reported error: %s", c.name, name, text)
-	}
-	return text, nil
+	return callToolWith(ctx, c.name, name, args, c.roundtripLocked)
 }
 
 // Ping issues an MCP ping round-trip to confirm the remote server is reachable and

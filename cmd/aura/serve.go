@@ -161,6 +161,19 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	aguiServer := agui.NewServer(chat.run, chat.conv, agui.ServerConfig{
 		CORSPermissive: chat.cfg.AGUICORSPermissive,
 		BufferCap:      chat.cfg.AGUIBufferCap,
+		HealthCheck: func(ctx context.Context) error {
+			if err := chat.pool.Ping(ctx); err != nil {
+				return fmt.Errorf("db ping: %w", err)
+			}
+			return nil
+		},
+		HealthDetails: func() map[string]any {
+			last := scheduler.LastTick()
+			if last.IsZero() {
+				return map[string]any{"scheduler_last_tick": ""}
+			}
+			return map[string]any{"scheduler_last_tick": last.Format(time.RFC3339)}
+		},
 	})
 	httpSrv := &http.Server{
 		Addr:              chat.cfg.AGUIBind,

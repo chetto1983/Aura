@@ -60,11 +60,34 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
 		}
 	}
-	text, err := b.srv.CallTool(ctx, b.name, args)
+	timeout, err := configuredMCPCallTimeout()
 	if err != nil {
-		return tools.NewResult(ctx, "error: "+err.Error())
+		return tools.ToolResult{}, err
 	}
-	return tools.NewResult(ctx, text)
+	callCtx := ctx
+	cancel := func() {}
+	if timeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, timeout)
+	}
+	defer cancel()
+
+	text, err := b.srv.CallTool(callCtx, b.name, args)
+	if err != nil {
+		return b.newUntrustedResult(ctx, "error: "+err.Error())
+	}
+	return b.newUntrustedResult(ctx, text)
+}
+
+func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tools.ToolResult, error) {
+	res, err := tools.NewResult(ctx, text)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	res.Provenance = &tools.ToolResultProvenance{
+		Source: "mcp:" + b.Spec().Name,
+		Trust:  tools.TrustUntrusted,
+	}
+	return res, nil
 }
 
 // Bridge lists srv's tools and adapts each to a tools.Tool, namespacing the

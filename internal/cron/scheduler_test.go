@@ -28,6 +28,18 @@ func TestNewScheduler_DefaultsAndClock(t *testing.T) {
 	}
 }
 
+func TestSchedulerLastTick(t *testing.T) {
+	frozen := time.Date(2026, 6, 4, 9, 45, 0, 0, time.UTC)
+	s := NewScheduler(nil, nil, SchedulerConfig{Now: func() time.Time { return frozen }})
+	if !s.LastTick().IsZero() {
+		t.Fatalf("new scheduler LastTick = %s, want zero", s.LastTick())
+	}
+	s.markTick()
+	if got := s.LastTick(); !got.Equal(frozen) {
+		t.Fatalf("LastTick = %s, want %s", got, frozen)
+	}
+}
+
 func TestNewScheduler_ConfigOverridesEnv(t *testing.T) {
 	t.Setenv("AURA_SCHEDULER_MAX_CONCURRENT_RUNS", "7")
 	t.Setenv("AURA_SCHEDULER_TICK_SECONDS", "15")

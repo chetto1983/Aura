@@ -196,6 +196,24 @@ func TestStderrTailRedactsSecrets(t *testing.T) {
 	}
 }
 
+func TestProcessEnvForMCPFiltersParentSecretsAndKeepsConfiguredEnv(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "parent-secret")
+	t.Setenv("MCP_VISIBLE_MARKER", "not-allowlisted")
+	t.Setenv("PATH", "test-path")
+
+	env := processEnvForMCP([]string{"API_TOKEN=config-secret", "PATH=config-path"})
+	joined := "\x00" + strings.Join(env, "\x00") + "\x00"
+	if strings.Contains(joined, "parent-secret") || strings.Contains(joined, "MCP_VISIBLE_MARKER") {
+		t.Fatalf("unexpected parent env leaked into MCP child env: %q", env)
+	}
+	if !strings.Contains(joined, "\x00API_TOKEN=config-secret\x00") {
+		t.Fatalf("configured MCP secret env must be preserved: %q", env)
+	}
+	if !strings.Contains(joined, "\x00PATH=config-path\x00") {
+		t.Fatalf("configured env should override inherited PATH: %q", env)
+	}
+}
+
 func TestBoundedStderrBufferKeepsTail(t *testing.T) {
 	buf := boundedbuffer.New(64)
 	_, _ = buf.Write([]byte(strings.Repeat("a", 120)))

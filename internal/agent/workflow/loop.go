@@ -3,8 +3,9 @@
 // child-inherits-remaining + SC#4 UUIDv7 OTel-compat.
 //
 // Aura divergences from adk's LoopAgent control flow:
-//   - adk LoopAgent has NO budget; Aura threads ic.Budget through every step
-//     (ConsumeStep per tool-call, D-11) so a runaway sub is bounded (SC#2).
+//   - adk LoopAgent has NO budget; Aura threads ic.Budget through workflow-owned
+//     steps (tool calls for non-budget-owning children, plus empty-pass charges)
+//     so a runaway sub is bounded (SC#2).
 //   - termination on budget exhaustion is signalled by an EXPLICIT Event
 //     (Actions.Escalate + StateDelta), NEVER through the iter error slot (D-04).
 //   - two-phase dedup: BeforeToolCall blocks a repeating tool call before its side
@@ -50,17 +51,13 @@ func (*LoopAgent) Description() string {
 	return "re-runs sub-agents until maxIterations, a sub escalate, or budget exhaustion"
 }
 
-// Run drives the iteration loop. The budget is consumed ONCE PER TOOL CALL (D-11),
-// and each consumed tool call is surfaced as exactly one step Event (WR-05), so
-// steps_consumed always equals the number of yielded step Events — even for a turn
-// carrying multiple tool calls (a multi-tool Event yields one step Event per call;
-// a single-tool turn yields the original Event unchanged, SC#2: 25 step Events +
-// 1 terminal = 26). A non-tool Event consumes no step and is yielded as-is. dedup
-// is checked per tool call via the shared ring (D-09). Every yield is guarded
-// (D-22). On a hard budget stop or a dedup loop it yields one explicit terminal
-// Event then returns (the terminal replaces only the REMAINING tool calls, never
-// an already-consumed one); on a sub escalate it yields the escalate Event then
-// returns (the escalate Event ALWAYS precedes the iterator returning, D-21).
+// Run drives the iteration loop. Workflow-owned children spend budget on tool calls
+// and each consumed tool call is surfaced as exactly one step Event (WR-05). If a
+// non-budget-owning child completes a pass without any tool-call step, the loop
+// charges one workflow step so maxIter=0 cannot hot-spin forever. Budget-owning
+// children are observed without parent-side charging, preserving the single-owner
+// contract for composed trees. Every yield is guarded (D-22); sub escalations are
+// yielded before return (D-21).
 func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
 		if len(a.subs) == 0 {
@@ -68,14 +65,38 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 		}
 		var stepsConsumed int
 		for iterIdx := uint(0); a.maxIterations == 0 || iterIdx < a.maxIterations; iterIdx++ {
+			if err := ic.Ctx.Err(); err != nil {
+				yield(nil, err)
+				return
+			}
 			for _, sub := range a.subs {
+				if err := ic.Ctx.Err(); err != nil {
+					yield(nil, err)
+					return
+				}
 				subIC := ic.WithSubAgent(sub)
 				subIC.Branch = joinBranch(joinBranch(ic.Branch, iterLabel(iterIdx)), sub.Name())
+				subOwnsBudget := agent.AgentOwnsBudget(sub)
+				subSpentBudget := false
 
 				for ev, err := range sub.Run(subIC) {
 					if err != nil {
 						yield(ev, err) // a REAL failure surfaces through the error slot, then stop
 						return
+					}
+					if err := ic.Ctx.Err(); err != nil {
+						yield(nil, err)
+						return
+					}
+
+					if subOwnsBudget {
+						if !yield(ev, nil) {
+							return
+						}
+						if ev != nil && ev.Actions.Escalate {
+							return // sub-driven termination (Req#5b), escalate already yielded (D-21)
+						}
+						continue
 					}
 
 					calls := toolCalls(ev)
@@ -119,10 +140,19 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 						if stop {
 							return
 						}
+						subSpentBudget = true
 					}
 					if ev != nil && ev.Actions.Escalate {
 						return // sub-driven termination (Req#5b), escalate already yielded (D-21)
 					}
+				}
+				if !subOwnsBudget && !subSpentBudget {
+					ok, reason := ic.Budget.ConsumeStep()
+					if !ok {
+						_ = yield(a.terminalEvent(ic, reason, stepsConsumed), nil)
+						return
+					}
+					stepsConsumed++
 				}
 			}
 		}

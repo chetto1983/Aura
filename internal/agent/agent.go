@@ -29,13 +29,30 @@ type Agent interface {
 	Description() string
 	// Run executes one invocation and streams Events. The error slot of the
 	// iter.Seq2 carries only REAL failures (LLM/tool errors); termination and
-	// budget exhaustion are signalled by an explicit Event, never the error slot (D-04).
+	// budget exhaustion are signalled by an explicit Event, never the error slot
+	// (D-04). Agents that consume Budget internally should implement BudgetOwner so
+	// workflow parents do not double-charge their emitted events.
 	Run(InvocationContext) iter.Seq2[*Event, error]
 	// SubAgents returns the direct children (nil for leaf agents).
 	SubAgents() []Agent
 	// FindAgent returns self if name matches, else recurses into SubAgents;
 	// nil if not found (collapses adk's FindAgent/FindSubAgent split).
 	FindAgent(name string) Agent
+}
+
+// BudgetOwner is an optional Agent capability: agents that already enforce their
+// own Budget gates expose it so workflow parents can remain observational instead
+// of double-charging the same shared budget.
+type BudgetOwner interface {
+	OwnsBudget() bool
+}
+
+// AgentOwnsBudget reports whether an agent has opted into owning its own budget
+// gates. Workflow parents use this to keep the single-budget-owner contract for a
+// composed agent tree.
+func AgentOwnsBudget(a Agent) bool {
+	owner, ok := a.(BudgetOwner)
+	return ok && owner.OwnsBudget()
 }
 
 // InvocationContext is single-Run-scoped; never store on a long-lived struct,

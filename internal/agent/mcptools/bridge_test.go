@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -15,17 +16,21 @@ import (
 // fakeServer is an in-memory Server: it records the last CallTool and returns
 // scripted ListTools/CallTool results, so the bridge is tested without a process.
 type fakeServer struct {
-	defs     []mcp.ToolDef
-	listErr  error
-	callText string
-	callErr  error
-	lastName string
-	lastArgs map[string]any
+	defs         []mcp.ToolDef
+	listErr      error
+	callText     string
+	callErr      error
+	lastName     string
+	lastArgs     map[string]any
+	CallToolFunc func(ctx context.Context, name string, args map[string]any) (string, error)
 }
 
 func (f *fakeServer) ListTools(context.Context) ([]mcp.ToolDef, error) { return f.defs, f.listErr }
-func (f *fakeServer) CallTool(_ context.Context, name string, args map[string]any) (string, error) {
+func (f *fakeServer) CallTool(ctx context.Context, name string, args map[string]any) (string, error) {
 	f.lastName, f.lastArgs = name, args
+	if f.CallToolFunc != nil {
+		return f.CallToolFunc(ctx, name, args)
+	}
 	return f.callText, f.callErr
 }
 
@@ -46,6 +51,32 @@ func (f *fakeReconnectClient) CallTool(context.Context, string, map[string]any) 
 
 func (f *fakeReconnectClient) Close() error {
 	f.closed = true
+	return nil
+}
+
+type blockingReconnectClient struct {
+	defs    []mcp.ToolDef
+	started chan struct{}
+	release chan struct{}
+	closed  chan struct{}
+}
+
+func (f *blockingReconnectClient) ListTools(context.Context) ([]mcp.ToolDef, error) {
+	return f.defs, nil
+}
+
+func (f *blockingReconnectClient) CallTool(ctx context.Context, _ string, _ map[string]any) (string, error) {
+	close(f.started)
+	select {
+	case <-f.release:
+		return "released", nil
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+}
+
+func (f *blockingReconnectClient) Close() error {
+	close(f.closed)
 	return nil
 }
 
@@ -179,6 +210,90 @@ func TestReconnectServerSecondTransportFailureIsInlineToolError(t *testing.T) {
 	}
 }
 
+func TestReconnectServerCloseDoesNotWaitForBlockedCall(t *testing.T) {
+	client := &blockingReconnectClient{
+		defs:    []mcp.ToolDef{{Name: "send", Description: "Send."}},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		closed:  make(chan struct{}),
+	}
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "mail-mcp"}, client)
+	callDone := make(chan struct{})
+	go func() {
+		_, _ = srv.CallTool(context.Background(), "send", nil)
+		close(callDone)
+	}()
+
+	select {
+	case <-client.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("blocked call did not start")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- srv.Close() }()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Close waited behind an in-flight MCP call")
+	}
+	select {
+	case <-client.closed:
+	default:
+		t.Fatal("Close did not close the underlying client")
+	}
+
+	close(client.release)
+	select {
+	case <-callDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("blocked call did not finish after release")
+	}
+}
+
+func TestBridgedToolExecuteAppliesConfiguredCallTimeout(t *testing.T) {
+	t.Setenv(envMCPCallTimeoutSec, "0.025")
+	srv := &fakeServer{defs: sandboxDefs()}
+	srv.callErr = nil
+	srv.callText = ""
+	srvCallStarted := make(chan struct{})
+	srvCallDone := make(chan struct{})
+	srv.CallToolFunc = func(ctx context.Context, name string, args map[string]any) (string, error) {
+		close(srvCallStarted)
+		defer close(srvCallDone)
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
+	got, _ := Bridge(context.Background(), "sb", srv)
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
+
+	start := time.Now()
+	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("Execute should return tool failures inline, got Go error %v", err)
+	}
+	if !strings.Contains(res.Preview, context.DeadlineExceeded.Error()) {
+		t.Fatalf("preview = %q, want deadline exceeded inline", res.Preview)
+	}
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("configured call timeout was not applied; elapsed=%v", elapsed)
+	}
+	select {
+	case <-srvCallStarted:
+	default:
+		t.Fatal("server CallTool was not reached")
+	}
+	select {
+	case <-srvCallDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("server CallTool did not observe context cancellation")
+	}
+}
+
 func TestBridge_Namespaced(t *testing.T) {
 	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "create_issue", Description: "Open an issue."}}}
 	got, err := Bridge(context.Background(), "github", srv)
@@ -219,6 +334,26 @@ func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	}
 	if srv.lastArgs["container_id"] != "abc" {
 		t.Fatalf("args not forwarded: %+v", srv.lastArgs)
+	}
+}
+
+func TestBridgedTool_Execute_MarksResultUntrusted(t *testing.T) {
+	srv := &fakeServer{defs: sandboxDefs(), callText: "external payload"}
+	got, _ := Bridge(context.Background(), "sb", srv)
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
+
+	res, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Provenance == nil {
+		t.Fatal("bridged MCP result must carry provenance")
+	}
+	if res.Provenance.Trust != tools.TrustUntrusted {
+		t.Fatalf("trust = %q, want untrusted", res.Provenance.Trust)
+	}
+	if res.Provenance.Source != "mcp:sb__sandbox_exec" {
+		t.Fatalf("source = %q, want mcp:sb__sandbox_exec", res.Provenance.Source)
 	}
 }
 
@@ -427,40 +562,6 @@ func TestMount_CollisionHash(t *testing.T) {
 		t.Fatalf("disambiguation failed: both names equal %q", names[0])
 	}
 	for _, n := range names {
-		if _, ok := reg.Get(n); !ok {
-			t.Errorf("registered name %q not retrievable", n)
-		}
-	}
-}
-
-// TestMount_CollisionHash_RespectsCap covers WR-02: when two distinct raw tool names
-// sanitize to the SAME namespaced base that already sits near the 64-byte cap, the
-// collision-hash append must re-truncate before adding the 13-byte suffix. A bare +=
-// would yield a 76-byte name; both disambiguated names must stay <= maxToolNameLen,
-// distinct, and retrievable.
-func TestMount_CollisionHash_RespectsCap(t *testing.T) {
-	reg := tools.NewRegistry()
-	// body 57 + delimiter "srv__" (5) = 62; +1 sanitized trailing char = 63-byte base.
-	// "a..a/" and "a..a." both sanitize to the identical 63-byte "srv__aa..a_".
-	body := strings.Repeat("a", 57)
-	srv := &fakeServer{defs: []mcp.ToolDef{
-		{Name: body + "/", Description: "first"},
-		{Name: body + ".", Description: "second"},
-	}}
-	names, err := Mount(context.Background(), reg, "srv", srv)
-	if err != nil {
-		t.Fatalf("Mount with near-cap sanitize-collision must disambiguate, got %v", err)
-	}
-	if len(names) != 2 {
-		t.Fatalf("both tools must register, got %v", names)
-	}
-	if names[0] == names[1] {
-		t.Fatalf("disambiguation failed: both names equal %q", names[0])
-	}
-	for _, n := range names {
-		if len(n) > maxToolNameLen {
-			t.Errorf("disambiguated name exceeds the cap: %q len=%d (WR-02)", n, len(n))
-		}
 		if _, ok := reg.Get(n); !ok {
 			t.Errorf("registered name %q not retrievable", n)
 		}

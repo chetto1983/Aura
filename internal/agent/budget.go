@@ -231,6 +231,7 @@ func (b *Budget) ConsumeStep() (ok bool, reason string) {
 		return false, "max_steps"
 	}
 	b.branchConsumed.Add(1)
+	metricBudgetConsumeStepTotal.Add(1)
 	return true, ""
 }
 

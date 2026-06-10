@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -26,12 +28,13 @@ import (
 type BackgroundShells struct {
 	mu     sync.Mutex
 	seq    int
+	bufCap int
 	shells map[string]*bgShell
 }
 
 // NewBackgroundShells builds an empty registry to share across the shell tools.
 func NewBackgroundShells() *BackgroundShells {
-	return &BackgroundShells{shells: map[string]*bgShell{}}
+	return &BackgroundShells{bufCap: shellBackgroundBufCap(), shells: map[string]*bgShell{}}
 }
 
 // bgShell is one detached process. Its combined stdout+stderr accumulate in buf;
@@ -45,6 +48,9 @@ type bgShell struct {
 	mu       sync.Mutex
 	buf      []byte
 	readOff  int
+	bufCap   int
+	dropped  int64
+	reported int64
 	done     bool
 	killed   bool
 	exitCode *int
@@ -55,8 +61,27 @@ type bgShell struct {
 func (s *bgShell) Write(p []byte) (int, error) {
 	s.mu.Lock()
 	s.buf = append(s.buf, p...)
+	s.trimLocked()
 	s.mu.Unlock()
 	return len(p), nil
+}
+
+func (s *bgShell) trimLocked() {
+	capBytes := s.bufCap
+	if capBytes <= 0 {
+		capBytes = defaultShellOutputCap
+	}
+	if len(s.buf) <= capBytes {
+		return
+	}
+	drop := len(s.buf) - capBytes
+	s.buf = append(s.buf[:0], s.buf[drop:]...)
+	s.dropped += int64(drop)
+	if s.readOff >= drop {
+		s.readOff -= drop
+	} else {
+		s.readOff = 0
+	}
 }
 
 func (s *bgShell) finish(waitErr error) {
@@ -80,8 +105,16 @@ func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
 	defer s.mu.Unlock()
 	chunk = string(s.buf[s.readOff:])
 	s.readOff = len(s.buf)
+	if s.dropped > s.reported {
+		chunk = fmt.Sprintf("[background output truncated: dropped %d byte(s)]\n%s", s.dropped-s.reported, chunk)
+		s.reported = s.dropped
+	}
 	if filter != nil {
 		chunk = filterLines(chunk, filter)
+	}
+	if s.readOff > 0 {
+		s.buf = s.buf[s.readOff:]
+		s.readOff = 0
 	}
 	switch {
 	case s.killed:
@@ -107,7 +140,7 @@ func (b *BackgroundShells) start(command, dir string, env []string) (string, err
 	setProcessGroup(cmd)
 	cmd.Cancel = func() error { return killProcessGroup(cmd) }
 	cmd.WaitDelay = 5 * time.Second
-	sh := &bgShell{startedAt: time.Now(), cancel: cancel}
+	sh := &bgShell{startedAt: time.Now(), cancel: cancel, bufCap: b.bufCap}
 	cmd.Stdout = sh
 	cmd.Stderr = sh
 	if err := cmd.Start(); err != nil {
@@ -221,6 +254,7 @@ func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	if strings.TrimSpace(body) == "" {
 		body = "[no new output]"
 	}
+	body = redactModelPreview(body)
 	footer, _ := json.Marshal(map[string]string{"shell_id": a.ShellID, "status": status})
 	rendered := body + "\n[aura_shell_bg " + string(footer) + "]"
 	res, err := NewResult(ctx, rendered)
@@ -229,6 +263,20 @@ func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	}
 	res.Meta = &ToolResultMeta{"shell_id": a.ShellID, "status": status}
 	return res, nil
+}
+
+const envShellBackgroundBufCap = "AURA_SHELL_BG_BUF_CAP"
+
+func shellBackgroundBufCap() int {
+	v := strings.TrimSpace(os.Getenv(envShellBackgroundBufCap))
+	if v == "" {
+		return defaultShellOutputCap
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return defaultShellOutputCap
+	}
+	return n
 }
 
 // ShellKill terminates a background shell_exec job — Claude Code's KillBash.

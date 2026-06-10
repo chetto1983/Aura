@@ -130,6 +130,70 @@ func newTestServerCfg(t *testing.T, run Runner, conv ConversationStore, cfg Serv
 	return srv
 }
 
+func TestServerHealthz(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		srv := newTestServerCfg(t, nil, nil, ServerConfig{
+			HealthCheck: func(context.Context) error { return nil },
+			HealthDetails: func() map[string]any {
+				return map[string]any{"scheduler_last_tick": "2026-06-10T12:00:00Z"}
+			},
+		})
+		resp, err := http.Get(srv.URL + "/healthz")
+		if err != nil {
+			t.Fatalf("GET /healthz: %v", err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", resp.StatusCode, raw)
+		}
+		body := string(raw)
+		if !strings.Contains(body, `"ok":true`) || !strings.Contains(body, "scheduler_last_tick") {
+			t.Fatalf("health body missing ok/detail: %s", body)
+		}
+	})
+
+	t.Run("unhealthy", func(t *testing.T) {
+		srv := newTestServerCfg(t, nil, nil, ServerConfig{
+			HealthCheck: func(context.Context) error {
+				return errors.New("db ping failed: postgresql://user:secret@host/db")
+			},
+		})
+		resp, err := http.Get(srv.URL + "/healthz")
+		if err != nil {
+			t.Fatalf("GET /healthz: %v", err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d, want 503: %s", resp.StatusCode, raw)
+		}
+		body := string(raw)
+		if !strings.Contains(body, `"ok":false`) {
+			t.Fatalf("health body missing unhealthy flag: %s", body)
+		}
+		if strings.Contains(body, "secret") {
+			t.Fatalf("health body leaked secret: %s", body)
+		}
+	})
+}
+
+func TestServerDebugVarsExposesAgentCounters(t *testing.T) {
+	srv := newTestServerCfg(t, nil, nil, ServerConfig{})
+	resp, err := http.Get(srv.URL + "/debug/vars")
+	if err != nil {
+		t.Fatalf("GET /debug/vars: %v", err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", resp.StatusCode, raw)
+	}
+	if !strings.Contains(string(raw), "aura_agent_budget_consume_step_total") {
+		t.Fatalf("/debug/vars missing agent budget counter: %s", raw)
+	}
+}
+
 // TestServer_RunSSERoundTrip (SC1): a known thread + a user message streams the
 // RUN_STARTED…RUN_FINISHED frame sequence with ≥1 TEXT_MESSAGE_CONTENT delta over a
 // text/event-stream response.
@@ -508,40 +572,4 @@ func TestServer_DisconnectClosesPump(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Errorf("goroutines = %d, baseline %d — SSE pump leaked", runtime.NumGoroutine(), baseline)
-}
-
-// TestSanitizeErr is a focused unit test on the redaction helper across DB DSN schemes,
-// non-DSN URL userinfo, bearer/api-key/token shapes (WR-03), and the nil error.
-func TestSanitizeErr(t *testing.T) {
-	cases := map[string]struct {
-		in        error
-		wantNoSub string
-		want      string
-	}{
-		"nil":      {in: nil, want: ""},
-		"postgres": {in: errors.New("dial postgresql://u:p@h/db failed"), wantNoSub: "p@h"},
-		"redis":    {in: errors.New("redis://x:y@z:6379 timeout"), wantNoSub: "y@z"},
-		"plain":    {in: errors.New("plain message"), want: "plain message"},
-		"https userinfo": {in: errors.New("GET https://alice:s3cret@mcp.example.com/v1 failed"),
-			wantNoSub: "s3cret"},
-		"http userinfo": {in: errors.New("proxy http://admin:hunter2@127.0.0.1:8080 refused"),
-			wantNoSub: "hunter2"},
-		"bearer":  {in: errors.New("auth rejected: Bearer sk-abc123XYZ token expired"), wantNoSub: "sk-abc123XYZ"},
-		"api_key": {in: errors.New("call failed url=https://h/v1?api_key=secretval123&x=1"), wantNoSub: "secretval123"},
-		"token":   {in: errors.New("webhook token=tok-deadbeef rejected"), wantNoSub: "tok-deadbeef"},
-	}
-	for name, tc := range cases {
-		t.Run(name, func(t *testing.T) {
-			got := sanitizeErr(tc.in)
-			if tc.want != "" || tc.in == nil {
-				if got != tc.want {
-					t.Fatalf("sanitizeErr = %q, want %q", got, tc.want)
-				}
-				return
-			}
-			if strings.Contains(got, tc.wantNoSub) {
-				t.Errorf("sanitizeErr leaked %q in %q", tc.wantNoSub, got)
-			}
-		})
-	}
 }

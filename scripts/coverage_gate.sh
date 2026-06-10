@@ -6,8 +6,8 @@
 #   - cmd/aura is CLI glue (flag parsing, os.Exit dispatch) — covered behaviourally
 #     by integration + smoke, not by line-unit tests; folding it into a statement
 #     floor measures the wrong thing (it sits ~20% by nature).
-#   - generated (internal/db/sqlc) and pre-rewrite skeletons (agent/tools, sandbox,
-#     swarm, llm/client.go) are owned by later slices; excluded until rewritten.
+#   - generated (internal/db/sqlc) and pre-rewrite skeletons (sandbox, swarm,
+#     llm/client.go) are owned by later slices; excluded until rewritten.
 #
 # Integration tiers REQUIRE the container stack + env (AURA_DB_URL, AURA_DB_MIGRATE_URL,
 # mcp-neo4j-cypher on PATH). Run after `make neo4j-migrate`, or in the CI knowledge
@@ -41,7 +41,7 @@ fi
 # dropped from the floor.
 {
   head -1 "${PROFILE}"
-  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/agent/tools/|/internal/sandbox/|/internal/llm/client\.go:'
+  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/sandbox/|/internal/llm/client\.go:'
 } > "${PROFILE}.filtered"
 
 ROWS="$(grep -c -v '^mode:' "${PROFILE}.filtered" || true)"

@@ -1,0 +1,92 @@
+{
+  "audit_date": "2026-06-10",
+  "audited_path": "d:\\Aura\\internal\\agent",
+  "audited_scope": {
+    "non_test_loc": 9061,
+    "test_loc_approx": 13600,
+    "go_files": 133,
+    "packages": ["internal/agent", "internal/agent/agenttest", "internal/agent/mcptools", "internal/agent/prompt", "internal/agent/tools", "internal/agent/workflow"],
+    "branch": "tabula-rasa",
+    "commit": "0ab722e5"
+  },
+  "reference_paths": [
+    "D:\\tmp\\codex (OpenAI Codex CLI, Rust)",
+    "D:\\tmp\\nanobot (Python channel-agent)",
+    "D:\\tmp\\picobot (Go minimal loop)",
+    "D:\\tmp\\adk-go-study (google/adk-go)"
+  ],
+  "production_readiness_score": 5.5,
+  "score_scale": "0-10",
+  "score_rationale": "Strong, race-clean loop core (8+ in isolation) gated by an under-hardened perimeter: 2 P0 (system-wide hang, prompt-injection blast radius) and 15 P1 incl. host-file corruption, data-loss on resume/crash, conversation-bricking, accidental OOM, secret broadcast, plus absent operational observability. All fixes localized; post Phase 0-1 re-score 7.5-8.",
+  "dimension_scores": {
+    "loop_correctness": 8,
+    "tool_execution": 5,
+    "memory_context": 6,
+    "reliability": 4,
+    "observability": 2,
+    "security": 3,
+    "testing": 7,
+    "maintainability": 8
+  },
+  "measured_coverage": {
+    "internal/agent": 93.3,
+    "internal/agent/mcptools": 83.4,
+    "internal/agent/prompt": 91.9,
+    "internal/agent/tools": 87.5,
+    "internal/agent/workflow": 92.4,
+    "race_clean": true,
+    "test_functions": 406,
+    "fuzz_or_bench": 0
+  },
+  "total_findings": 72,
+  "findings_by_severity": {
+    "P0": 2,
+    "P1": 15,
+    "P2": 31,
+    "P3": 24
+  },
+  "p0_findings": [
+    {"id": "R-02", "title": "MCP stdio tool call has no per-call timeout, holds a mutex across a blocking pipe read", "file": "internal/mcp/client.go, internal/agent/mcptools/bridge_reconnect.go", "confidence": "CONFIRMED"},
+    {"id": "R-01", "title": "Untrusted tool output re-enters the prompt with zero provenance/trust marking", "file": "internal/agent/llm_agent.go:361 + all tool result feeders", "confidence": "CONFIRMED"}
+  ],
+  "top_10_risks": [
+    {"id": "R-01", "title": "Prompt injection via unmarked untrusted tool output -> host RCE + exfiltration", "severity": "P0", "probability": "H", "impact": "H"},
+    {"id": "R-05", "title": "Intra-turn persistence loss -> duplicated mutating side effects on resume/crash", "severity": "P1", "probability": "H", "impact": "H"},
+    {"id": "R-07", "title": "All secrets broadcast to every shell + MCP child; preview unredacted", "severity": "P1", "probability": "H", "impact": "H"},
+    {"id": "R-02", "title": "Hung MCP server wedges every turn + deadlocks shutdown", "severity": "P0", "probability": "M", "impact": "H"},
+    {"id": "R-03", "title": "fs_edit empty old_string corrupts host files", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "R-09", "title": "Auto-activating always:true skill self-extension -> persistent backdoor", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "R-08", "title": "Subprocess output buffered unbounded -> OOM on shared host", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "R-04", "title": "Wallclock cap is inert; in-flight tool/LLM work runs unbounded", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "R-11", "title": "No retry/breaker on provider 429/5xx -> turns die on routine blips", "severity": "P1", "probability": "H", "impact": "M"},
+    {"id": "R-14", "title": "Operationally blind: no metrics, no /healthz", "severity": "P1", "probability": "H", "impact": "M"}
+  ],
+  "recommended_next_actions": [
+    {"id": "A-1", "title": "Reject empty old_string in fs_edit", "effort": "S", "phase": 0},
+    {"id": "A-2", "title": "Per-call MCP timeout + ctx-aware read", "effort": "M", "phase": 0},
+    {"id": "A-3", "title": "Wire Budget.WithDeadline + clamp shell_exec timeout_ms", "effort": "M", "phase": 0},
+    {"id": "A-4", "title": "Cap subprocess output buffers (ring/tail)", "effort": "M", "phase": 0},
+    {"id": "A-5", "title": "Filter the child environment (strip secret-shaped vars)", "effort": "M", "phase": 0}
+  ],
+  "strengths": [
+    "iter.Seq2 discipline airtight; ParallelAgent choreography has no constructible deadlock/leak (race-green)",
+    "Budget core TOCTOU-safe, fan-out-proof, fail-fast env parsing, injectable clock",
+    "Two-tier dedup ring fail-safe by design; no infinite-loop path inside LlmAgent",
+    "Cache-prefix discipline: byte-stable messages[0], volatile hints on a copy; CI-replayed 20 turns",
+    "SSRF hardening in internal/web is best-in-class (dial-time pinning, fail-closed on any blocked record)",
+    "Process-group kill on both OSes; append-only redacted audit ledger; namespaced collision-refusing MCP mounts"
+  ],
+  "reference_patterns_to_adopt": [
+    {"pattern": "Per-tool parallel-safety gate (mutating => exclusive)", "source": "codex parallel.rs:113-119", "effort": "S", "lands_in": "tools/spec.go + llm_agent_parallel.go"},
+    {"pattern": "Reflect-and-retry: per-tool failure counter + 'stop using this tool' injection", "source": "adk-go retryandreflect/plugin.go:45-90", "effort": "S/M", "lands_in": "budget_dedup.go + llm_agent_events.go"},
+    {"pattern": "Stream idle-timeout watchdog (config, not string-match)", "source": "codex client.rs:531", "effort": "M", "lands_in": "internal/llm/openai_compat/client.go"},
+    {"pattern": "Synthesized per-call abort observation on cancel", "source": "codex parallel.rs:135-175", "effort": "M", "lands_in": "llm_agent_parallel.go / tools/shell_exec.go"}
+  ],
+  "documents": [
+    "README.md", "executive-summary.md", "architecture-review.md", "bug-report.md",
+    "infrastructure-audit.md", "security-audit.md", "testing-strategy.md",
+    "industrialization-roadmap.md", "action-plan.md", "risk-register.md",
+    "target-architecture.md", "proposed-patches.md", "audit-index.json",
+    "p0-validation-2026-06-10.md", "p1-validation-2026-06-10.md"
+  ]
+}

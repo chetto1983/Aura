@@ -20,7 +20,6 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
-	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
@@ -66,6 +65,9 @@ type LlmAgent struct {
 	// veto. Both are per-run (a fresh LlmAgent per turn resets them).
 	sideEffected       bool
 	completionAttempts int
+
+	streamRetryUsed bool
+	breaker         *llm.Breaker
 }
 
 var _ Agent = (*LlmAgent)(nil)
@@ -112,6 +114,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		workspace:   cfg.Workspace,
 		builder:     prompt.NewPromptBuilder(),
 		history:     hist,
+		breaker:     llm.NewBreaker(3, 30*time.Second),
 	}
 }
 
@@ -120,6 +123,11 @@ func (a *LlmAgent) Name() string { return a.name }
 
 // Description is the human/LLM-facing one-liner.
 func (a *LlmAgent) Description() string { return a.description }
+
+// OwnsBudget tells workflow parents that LlmAgent already consumes the shared
+// Budget at its own loop gates, so wrappers must not charge its emitted tool-call
+// events a second time.
+func (*LlmAgent) OwnsBudget() bool { return true }
 
 // SubAgents returns nil — LlmAgent is a leaf.
 func (a *LlmAgent) SubAgents() []Agent { return nil }
@@ -235,6 +243,18 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 			if streamErr != nil {
+				if !a.streamRetryUsed && retryableStreamOpenError(streamErr) {
+					a.streamRetryUsed = true
+					if a.breaker != nil {
+						a.breaker.Failure(streamErr)
+					}
+					reasoningtrace.Record("agent_stream_mid_retry", map[string]any{
+						"request_id": requestID,
+						"thread_id":  a.sessionID,
+						"error":      streamErr.Error(),
+					})
+					continue
+				}
 				yield(nil, streamErr)
 				return
 			}
@@ -342,6 +362,7 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 	// SERIALLY in original call order: start events first, run, then per-call history
 	// append + AfterToolResult + result event.
 	if len(runnable) > 0 {
+		metricToolDispatchTotal.Add(int64(len(runnable)))
 		startedAt := time.Now().UTC()
 		for _, i := range runnable {
 			if !yield(a.toolStartEvent(ic, spanID, parentSpanID, calls[i], startedAt), nil) {
@@ -448,16 +469,22 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	run.Mutating = tool.Spec().Mutating
 	toolCtx := tools.WithToolCallContext(ctx, a.sessionID, call.ID, a.runDir, a.previewCap)
 	toolCtx = WithSwarmContext(toolCtx, budget, a.registry, a.client, a.cfg, a.sessionID)
+	if d := budget.NodeTimeout(); d > 0 {
+		var cancel context.CancelFunc
+		toolCtx, cancel = context.WithTimeout(toolCtx, d)
+		defer cancel()
+	}
 	res, err := a.execTool(toolCtx, tool, run.Mutating, json.RawMessage(call.Function.Arguments))
 	run.EndedAt = time.Now().UTC()
 	if err != nil {
 		run.Err = err.Error()
 		run.Preview = "error: " + run.Err
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
+		run.Preview = renderToolResultForPrompt(call.Function.Name, run.Result)
 		return run
 	}
-	run.Preview = res.Preview
 	run.Result = res
+	run.Preview = renderToolResultForPrompt(call.Function.Name, res)
 	return run
 }
 
@@ -549,35 +576,4 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 		}
 	}
 	return b.String(), calls, finish, usage, false, nil
-}
-
-// parseTextResponse validates the terminal-tool arguments (D-13). A malformed or
-// empty payload is an error the loop feeds back to the model, never a panic.
-func parseTextResponse(rawArgs string) (string, error) {
-	var a struct {
-		Text string `json:"text"`
-	}
-	if err := json.Unmarshal([]byte(rawArgs), &a); err != nil {
-		return "", fmt.Errorf("parse error: %w", err)
-	}
-	if strings.TrimSpace(a.Text) == "" {
-		return "", fmt.Errorf("validation error: text_response.text is empty")
-	}
-	return a.Text, nil
-}
-
-// canonicalArgs canonicalizes a tool call's JSON arguments for the dedup
-// fingerprint (the budget's caller-canonicalizes contract, B2). A non-JSON or
-// empty payload falls back to the raw bytes so a malformed-arg storm still dedups
-// on identical raw input.
-func canonicalArgs(rawArgs string) []byte {
-	var v any
-	if err := json.Unmarshal([]byte(rawArgs), &v); err != nil {
-		return []byte(rawArgs)
-	}
-	canon, err := canonicaljson.Marshal(v)
-	if err != nil {
-		return []byte(rawArgs)
-	}
-	return canon
 }

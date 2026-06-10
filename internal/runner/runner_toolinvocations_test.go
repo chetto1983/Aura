@@ -8,12 +8,13 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
+	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/google/uuid"
 )
 
 func TestPersistEvent_PersistsToolInvocationEvents(t *testing.T) {
-	r, _, _ := newTestRunner(t, agenttest.NewFakeClient())
+	r, conv, _ := newTestRunner(t, agenttest.NewFakeClient())
 	ledger := newFakeToolInvocationStore()
 	r.toolInvocations = ledger
 
@@ -75,6 +76,23 @@ func TestPersistEvent_PersistsToolInvocationEvents(t *testing.T) {
 	if got := ledger.events[1]; got.Event != toolinvocations.EventEnd || got.Status != "ok" ||
 		got.ResultBytes != 3 || got.PreviewBytes != 3 || got.ExitCode == nil || *got.ExitCode != 0 {
 		t.Fatalf("end ledger row = %+v", got)
+	}
+
+	hist, err := conv.LoadHistory(context.Background(), convID)
+	if err != nil {
+		t.Fatalf("load history: %v", err)
+	}
+	if len(hist) != 2 {
+		t.Fatalf("persisted history length = %d, want 2: %+v", len(hist), hist)
+	}
+	if got := hist[0]; got.Role != llm.RoleAssistant || len(got.ToolCalls) != 1 ||
+		got.ToolCalls[0].ID != "call-1" ||
+		got.ToolCalls[0].Function.Name != "shell_exec" ||
+		got.ToolCalls[0].Function.Arguments != `{"command":"echo hi"}` {
+		t.Fatalf("assistant tool_calls turn = %+v", got)
+	}
+	if got := hist[1]; got.Role != llm.RoleTool || got.ToolCallID != "call-1" || got.Content != "hi\n" {
+		t.Fatalf("tool result turn = %+v", got)
 	}
 }
 

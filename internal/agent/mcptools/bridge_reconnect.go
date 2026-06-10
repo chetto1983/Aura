@@ -25,6 +25,7 @@ type reconnectingServer struct {
 	client      reconnectingClient
 	bridged     map[string]*bridgedTool
 	refreshHook func()
+	closed      bool
 }
 
 func newReconnectingServer(name string, cfg mcp.ServerConfig, client reconnectingClient) *reconnectingServer {
@@ -32,41 +33,50 @@ func newReconnectingServer(name string, cfg mcp.ServerConfig, client reconnectin
 }
 
 func (s *reconnectingServer) ListTools(ctx context.Context) ([]mcp.ToolDef, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	defs, err := s.client.ListTools(ctx)
-	if !mcp.IsTransportError(err) {
-		return defs, err
-	}
-	defs, err = s.reconnectLocked(ctx)
+	client, err := s.currentClient()
 	if err != nil {
 		return nil, err
 	}
-	return defs, nil
+	defs, err := client.ListTools(ctx)
+	if !mcp.IsTransportError(err) {
+		return defs, err
+	}
+	defs, retry, err := s.reconnectAfterTransport(ctx, client)
+	if err != nil || defs != nil {
+		return defs, err
+	}
+	return retry.ListTools(ctx)
 }
 
 func (s *reconnectingServer) CallTool(ctx context.Context, name string, args map[string]any) (string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	text, err := s.client.CallTool(ctx, name, args)
+	client, err := s.currentClient()
+	if err != nil {
+		return "", err
+	}
+	text, err := client.CallTool(ctx, name, args)
 	if !mcp.IsTransportError(err) {
 		return text, err
 	}
-	if _, err := s.reconnectLocked(ctx); err != nil {
+	_, retry, err := s.reconnectAfterTransport(ctx, client)
+	if err != nil {
 		return "", err
 	}
-	return s.client.CallTool(ctx, name, args)
+	return retry.CallTool(ctx, name, args)
 }
 
 func (s *reconnectingServer) Close() error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.client == nil {
+	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
-	return s.client.Close()
+	s.closed = true
+	client := s.client
+	s.mu.Unlock()
+	if client == nil {
+		return nil
+	}
+	return client.Close()
 }
 
 func (s *reconnectingServer) trackBridgedTools(bridged []tools.Tool) {
@@ -86,6 +96,9 @@ func (s *reconnectingServer) setRefreshHook(hook func()) {
 }
 
 func (s *reconnectingServer) reconnectLocked(ctx context.Context) ([]mcp.ToolDef, error) {
+	if s.closed {
+		return nil, fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
+	}
 	if s.client != nil {
 		_ = s.client.Close()
 	}
@@ -113,4 +126,31 @@ func (s *reconnectingServer) refreshSpecsLocked(defs []mcp.ToolDef) {
 	if changed && s.refreshHook != nil {
 		s.refreshHook()
 	}
+}
+
+func (s *reconnectingServer) currentClient() (reconnectingClient, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.client == nil {
+		return nil, fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
+	}
+	return s.client, nil
+}
+
+func (s *reconnectingServer) reconnectAfterTransport(
+	ctx context.Context, failed reconnectingClient,
+) ([]mcp.ToolDef, reconnectingClient, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return nil, nil, fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
+	}
+	if s.client == failed {
+		defs, err := s.reconnectLocked(ctx)
+		return defs, s.client, err
+	}
+	if s.client == nil {
+		return nil, nil, fmt.Errorf("%w: mcp %q has no client", mcp.ErrTransport, s.name)
+	}
+	return nil, s.client, nil
 }
