@@ -121,14 +121,17 @@ func dockerRuntimeConfig(server mcp.ManagedServer) (mcp.ServerConfig, error) {
 		args = append(args, "--memory", server.Runtime.Memory)
 	}
 	env := append([]string(nil), server.Env...)
-	for _, entry := range server.Env {
+	if len(server.Runtime.Network) > 0 {
+		env = append(env, "AURA_MCP_NETWORK_ALLOW="+strings.Join(server.Runtime.Network, ","))
+	}
+	// Derive the docker `-e KEY` forward flags from the FINAL env (incl. the network
+	// allowlist), not server.Env — otherwise AURA_MCP_NETWORK_ALLOW lands in the docker
+	// process env but is never forwarded into the container.
+	for _, entry := range env {
 		key, _, ok := strings.Cut(entry, "=")
 		if ok && key != "" {
 			args = append(args, "-e", key)
 		}
-	}
-	if len(server.Runtime.Network) > 0 {
-		env = append(env, "AURA_MCP_NETWORK_ALLOW="+strings.Join(server.Runtime.Network, ","))
 	}
 	args = append(args, image)
 	args = append(args, server.Runtime.Command...)

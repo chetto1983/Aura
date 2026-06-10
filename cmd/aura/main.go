@@ -124,6 +124,10 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(&tools.FSEdit{SkillsDir: cfg.SkillsDir})
 	reg.Register(&tools.FSGrep{})
 	reg.Register(&tools.FSGlob{})
+	// send_file hands a host file to the user as an attachment (D-05/D-06). Deferred:
+	// the model tool_searches for it when it has a produced/found file to deliver; the
+	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
+	reg.Register(&tools.SendFile{})
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
 	// the Without(parent, "swarm_spawn") clone the adapter derives per child, never the
 	// tool itself, so a worker cannot recursively fan out. It is Deferred:true, so it
