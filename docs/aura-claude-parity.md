@@ -38,14 +38,15 @@ Risk classes: **SAFE-ADDITIVE** (do autonomously in-loop) · **ARCHITECTURAL** (
 - **Shipped:** `shell_exec` gains `"background": true` → returns a `shell_id` immediately; new deferred `shell_poll` (new-output-since-last + status `running|exited:<code>|killed`, optional regex filter — Claude Code's BashOutput) and `shell_kill` (KillBash). A shared `BackgroundShells` registry wired once at boot keeps jobs pollable across turns. Also fixed `shell_exec`'s stale `sandbox_exec` references. → [internal/agent/tools/shell_bg.go](../internal/agent/tools/shell_bg.go), commit `33ccab12`.
 - **DoD met:** start→poll→complete, incremental read-off, filter, kill, error paths — all green with `-race`; golangci-lint 0 issues.
 
-### P5 — Ungate in-box skill activation (self-extension parity) — BEHAVIORAL — 🔄 QUEUED (decided: ungate, 2026-06-10)
+### P5 — Ungate in-box skill activation (self-extension parity) — ✅ DONE (it.5)
 
-- **Gap:** model-authored skills land `pending_approval` and require a human approve ([[aura-self-extension-no-ceremony]]); Claude Code creates files with no gate.
-- **DECISION (2026-06-10): ungate in-box.** Model-authored skills activate immediately inside the container (the boundary, Phase 17, [[aura-full-host-terminal-primary]]). Touch points: `internal/skills/writer.go` `WriteMutation` (pending → activate) + `internal/agent/tools/skill_write.go` (drops the `ErrAwaitingUserInput` pause); UPDATE the tests asserting `pending_approval` (requirement changed — justify in the commit). Keep the injection blocklist (prompt integrity, orthogonal).
+- **Gap (closed):** model-authored skills landed `pending_approval` + a human approve pause; Claude Code creates files with no gate.
+- **Shipped:** `WriteMutation` flips the gate to false for the model actor (reusing the auto-activate branch → `StatusActive`); `writeAction` returns a normal result on non-pending status (pause kept only as a defensive fallback). Injection blocklist still runs on every path. → [internal/skills/writer.go](../internal/skills/writer.go) + [internal/agent/tools/skill_write.go](../internal/agent/tools/skill_write.go), commit `9cc10202`. Rationale: the whole agent runs inside the container boundary (Phase 17, [[aura-full-host-terminal-primary]]), so self-extension needs no human gate.
+- **DoD met:** tool `TestActionCreateActivates` + a live `db_integration` `TestWriteMutationModelActorUngated` (model→active+materialized, cli→pending) verified against Postgres; `-race` + lint clean.
 
 ## Loop state
 
-Forks settled 2026-06-10. **Done:** P2, P4, P3, **P1**. **Remaining authorized work:** P5 (ungate in-box skill activation). P2 Slice B (post-tool hook) optional. The loop proceeds with atomic per-item commits + `-race`.
+**🎯 PARITY COMPLETE (2026-06-10).** All five gaps closed: P1 parallel dispatch, P2 error-hook retry, P3 `todo_write`, P4 background shell, P5 ungate skills — plus large tool output (already Aura-ahead). The only remaining item, **P2 Slice B** (a PostToolUse hook seam), is an *enhancement*, not a parity gap; leave for a future session if wanted.
 
 ## Status log
 
@@ -53,3 +54,4 @@ Forks settled 2026-06-10. **Done:** P2, P4, P3, **P1**. **Remaining authorized w
 - **2026-06-10 it.2** — P4 (background `shell_exec` + `shell_poll`/`shell_kill`) landed with tests, grounded in Claude Code's Bash/BashOutput/KillBash (`D:/tmp/system-prompts-and-models-of-ai-tools/Anthropic`). **Safe-additive work now exhausted.** Remaining: P1 (parallel dispatch), P3 (todo tool), P5 (ungate skill activation) — all user-forks — plus P2 Slice B (post-tool hook, also architectural). The loop now surfaces the forks and pauses for a decision.
 - **2026-06-10 it.3** — forks decided (P1 full-parallel, P5 ungate, P3 add). P3 `todo_write` landed (`51d07bf0`). Confirmed large-output spillover is **Aura-ahead**, not a gap (see "Aura ahead"). Next: P1 (full parallel — the big core-loop change, dedicated iteration) then P5 (ungate).
 - **2026-06-10 it.4** — P1 parallel tool dispatch landed (`aa6f36c8`): concurrent `Execute()`, serial dedup/yield/append in call order, terminal-last; deterministic barrier test + full `-race` green. Only P5 (ungate skills) remains of the authorized work.
+- **2026-06-10 it.5** — P5 ungate in-box skill activation landed (`9cc10202`), verified live against Postgres. **Parity loop complete** — all 5 gaps closed + large-output Aura-ahead. Loop stopped.
