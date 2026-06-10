@@ -20,22 +20,41 @@ func MountServer(ctx context.Context, reg *tools.Registry, name string, cfg mcp.
 	if err != nil {
 		return nil, nil, err
 	}
-	names, err = Mount(ctx, reg, name, cli)
+	srv := newReconnectingServer(name, cfg, cli)
+	names, err = Mount(ctx, reg, name, srv)
 	if err != nil {
-		_ = cli.Close()
+		_ = srv.Close()
 		return nil, nil, fmt.Errorf("mount %q: %w", name, err)
 	}
-	return cli.Close, names, nil
+	return srv.Close, names, nil
 }
 
 // MountManagedServer opens a managed MCP server (stdio or streamable HTTP,
 // resolved from its config), mounts all advertised tools into reg, and returns a
 // closer for the underlying transport.
 func MountManagedServer(ctx context.Context, reg *tools.Registry, name string, server mcp.ManagedServer) (closer func() error, names []string, err error) {
-	srv, err := openManagedServer(ctx, name, server)
+	if isStreamableHTTPManagedServer(server) {
+		srv, err := mcp.OpenServer(ctx, name, server)
+		if err != nil {
+			return nil, nil, err
+		}
+		names, err = Mount(ctx, reg, name, srv)
+		if err != nil {
+			_ = srv.Close()
+			return nil, nil, fmt.Errorf("mount %q: %w", name, err)
+		}
+		return srv.Close, names, nil
+	}
+
+	cfg, err := managedStdioConfig(name, server)
 	if err != nil {
 		return nil, nil, err
 	}
+	cli, err := mcp.Open(ctx, name, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	srv := newReconnectingServer(name, cfg, cli)
 	names, err = Mount(ctx, reg, name, srv)
 	if err != nil {
 		_ = srv.Close()
@@ -45,12 +64,20 @@ func MountManagedServer(ctx context.Context, reg *tools.Registry, name string, s
 }
 
 func openManagedServer(ctx context.Context, name string, server mcp.ManagedServer) (mcp.Transport, error) {
-	if strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != "" {
+	if isStreamableHTTPManagedServer(server) {
 		return mcp.OpenServer(ctx, name, server)
 	}
-	cfg, err := mcpmanager.RuntimeLaunchConfig(name, server)
+	cfg, err := managedStdioConfig(name, server)
 	if err != nil {
 		return nil, err
 	}
 	return mcp.Open(ctx, name, cfg)
+}
+
+func isStreamableHTTPManagedServer(server mcp.ManagedServer) bool {
+	return strings.TrimSpace(server.Type) == mcp.ServerTypeStreamableHTTP || strings.TrimSpace(server.URL) != ""
+}
+
+func managedStdioConfig(name string, server mcp.ManagedServer) (mcp.ServerConfig, error) {
+	return mcpmanager.RuntimeLaunchConfig(name, server)
 }

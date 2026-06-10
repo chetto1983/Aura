@@ -1,13 +1,6 @@
 // Package mcptools bridges a generic MCP server's tools into Aura's agent tool
-// registry: it lists the server's tools (tools/list) and adapts each to a
-// tools.Tool whose Execute routes through the MCP client's tools/call. This is the
-// platform seam: mount any stdio MCP server and its tools become first-class
-// agent tools, cache-friendly (Deferred) and spill-aware
-// (results flow through tools.NewResult).
-//
-// It depends on both internal/mcp (transport) and internal/agent/tools (the agent
-// contract) via a narrow Server interface, so the generic mcp client stays
-// agent-agnostic and the bridge stays unit-testable with a fake.
+// registry: it lists the server's tools and adapts each to a tools.Tool whose
+// Execute routes through the MCP client's tools/call.
 package mcptools
 
 import (
@@ -15,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -28,23 +22,37 @@ type Server interface {
 }
 
 // emptyObjectSchema is the Parameters fallback for a tool whose server advertised
-// no inputSchema — a valid "any/no args" JSON-Schema object.
+// no inputSchema: a valid "any/no args" JSON-Schema object.
 var emptyObjectSchema = json.RawMessage(`{"type":"object"}`)
 
-// bridgedTool adapts one MCP tool to tools.Tool.
+// bridgedTool adapts one MCP tool to tools.Tool. The spec is atomically swapped
+// when reconnectingServer refreshes tools/list after a transport reconnect.
 type bridgedTool struct {
 	srv  Server
 	name string
-	spec tools.Spec
+	spec atomic.Value
 }
 
-func (b *bridgedTool) Spec() tools.Spec { return b.spec }
+func (b *bridgedTool) Spec() tools.Spec { return b.spec.Load().(tools.Spec) }
+
+func (b *bridgedTool) storeSpec(spec tools.Spec) {
+	b.spec.Store(spec)
+}
+
+func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
+	params, summary, description := specFieldsFromToolDef(d)
+	spec := b.Spec()
+	spec.Summary = summary
+	spec.Description = description
+	spec.Parameters = params
+	spec.Deferred = true
+	b.spec.Store(spec)
+}
 
 // Execute unmarshals the model's args, calls the MCP tool, and threads the text
-// content through tools.NewResult (spill/preview aware). A tool-level failure is
-// returned to the model as inline `error: ...` content so it self-corrects
-// (mirrors web_search's contract), NOT as a loop-fatal Go error; only a missing
-// tool-call context (NewResult precondition) propagates as a Go error.
+// content through tools.NewResult. A tool-level failure is returned to the model
+// as inline `error: ...` content so it self-corrects, not as a loop-fatal Go
+// error; only a missing tool-call context propagates as a Go error.
 func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.ToolResult, error) {
 	var args map[string]any
 	if len(raw) > 0 {
@@ -60,65 +68,79 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 }
 
 // Bridge lists srv's tools and adapts each to a tools.Tool, namespacing the
-// model-facing name as <namespace>__<tool> (sanitized, 64-byte capped) so a mounted
-// server can never silently shadow a built-in. The wire name (bridgedTool.name, used
-// by CallTool) stays RAW — only spec.Name is namespaced. The server's inputSchema
-// passes through as Parameters unchanged.
+// model-facing name as <namespace>__<tool> so a mounted server can never silently
+// shadow a built-in. The wire name used by CallTool stays raw.
 //
-// Bridged tools are Deferred: a real multi-tool MCP server (spike 001: 16 mail
-// tools; spike 002: 12 whatsapp tools) would otherwise flood every per-turn manifest
-// straight into the 30-50-tool degradation zone the 8.1 BM25 tool_search was built to
-// defend. The model sees only name+summary by default and loads the full spec on
-// demand via tool_search, which indexes the deferred tool's name, description, and
-// argument-field names — so deferred MCP tools stay fully discoverable.
+// Bridged tools are Deferred: a real multi-tool MCP server would otherwise flood
+// every per-turn manifest. tool_search indexes the deferred tool's name,
+// description, and argument-field names, so deferred MCP tools stay discoverable.
 func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return bridgeTools(namespace, srv, defs), nil
+	bridged := bridgeTools(namespace, srv, defs)
+	if tracker, ok := srv.(interface{ trackBridgedTools([]tools.Tool) }); ok {
+		tracker.trackBridgedTools(bridged)
+	}
+	return bridged, nil
 }
 
 func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef) []tools.Tool {
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
-		params := emptyObjectSchema
-		if schema := strings.TrimSpace(string(d.InputSchema)); schema != "" && schema != "null" {
-			params = d.InputSchema
-		}
-		out = append(out, &bridgedTool{
-			srv:  srv,
-			name: d.Name,
-			spec: tools.Spec{
-				Name: namespacedName(namespace, d.Name),
-				// The deferred stub is all the model sees by default — append the
-				// required arg names so a first call doesn't have to guess the
-				// shape, fail validation, tool_search the schema, and retry (live
-				// swarm E2E 2026-06-04: that discovery round-trip cost each fresh
-				// worker context ~2 extra LLM turns on whatsapp send_message).
-				Summary:     firstLine(d.Description) + requiredArgsHint(params),
-				Description: strings.TrimSpace(d.Description),
-				Parameters:  params,
-				Deferred:    true,
-			},
-		})
+		bt := &bridgedTool{srv: srv, name: d.Name}
+		bt.storeSpec(specFromToolDef(namespace, d))
+		out = append(out, bt)
 	}
 	return out
+}
+
+func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
+	params, summary, description := specFieldsFromToolDef(d)
+	return tools.Spec{
+		Name:        namespacedName(namespace, d.Name),
+		Summary:     summary,
+		Description: description,
+		Parameters:  params,
+		Deferred:    true,
+	}
+}
+
+func specFieldsFromToolDef(d mcp.ToolDef) (json.RawMessage, string, string) {
+	params := emptyObjectSchema
+	if schema := strings.TrimSpace(string(d.InputSchema)); schema != "" && schema != "null" {
+		params = d.InputSchema
+	}
+	description := strings.TrimSpace(d.Description)
+	return params, firstLine(d.Description) + requiredArgsHint(params), description
 }
 
 // Mount bridges all of srv's advertised tools under namespace and registers them
 // into reg, all-or-nothing. Two distinct raw tool names that sanitize to the same
 // namespaced name are disambiguated with a deterministic hash suffix before
-// registration. It still refuses to clobber an existing tool name (a collision with
-// a built-in or another mounted server is a config error), so a mounted server can
-// never silently shadow a built-in. On any residual collision NOTHING is registered
-// and the colliding name is reported.
+// registration. It still refuses to clobber an existing tool name.
 func Mount(ctx context.Context, reg *tools.Registry, namespace string, srv Server) ([]string, error) {
 	bridged, err := Bridge(ctx, namespace, srv)
 	if err != nil {
 		return nil, err
 	}
-	return registerBridged(reg, bridged)
+	names, err := registerBridged(reg, bridged)
+	if err != nil {
+		return nil, err
+	}
+	if hook, ok := srv.(interface{ setRefreshHook(func()) }); ok {
+		hook.setRefreshHook(func() { invalidateToolSearch(reg) })
+	}
+	return names, nil
+}
+
+func invalidateToolSearch(reg *tools.Registry) {
+	if t, ok := reg.Get("tool_search"); ok {
+		if ts, ok := t.(*tools.ToolSearch); ok {
+			ts.InvalidateIndex()
+		}
+	}
 }
 
 func registerBridged(reg *tools.Registry, bridged []tools.Tool) ([]string, error) {
@@ -131,17 +153,16 @@ func registerBridged(reg *tools.Registry, bridged []tools.Tool) ([]string, error
 		}
 		seenRaw[bt.name] = struct{}{}
 
-		name := bt.spec.Name
-		// Distinct raw names whose namespaced form collides get a deterministic hash
-		// suffix (keyed on the RAW name, so each survivor is unique). Re-truncate first
-		// so the 13-byte suffix never pushes an already-capped name past maxToolNameLen.
+		spec := bt.Spec()
+		name := spec.Name
 		if _, dup := chosen[name]; dup {
-			suf := hashSuffix(bt.spec.Name + "\x00" + bt.name)
+			suf := hashSuffix(spec.Name + "\x00" + bt.name)
 			if len(name)+len(suf) > maxToolNameLen {
 				name = name[:maxToolNameLen-len(suf)]
 			}
 			name += suf
-			bt.spec.Name = name
+			spec.Name = name
+			bt.storeSpec(spec)
 		}
 		if _, exists := reg.Get(name); exists {
 			return nil, fmt.Errorf("mcp bridge: tool %q already registered (collision)", name)
@@ -159,9 +180,7 @@ func registerBridged(reg *tools.Registry, bridged []tools.Tool) ([]string, error
 	return names, nil
 }
 
-// firstLine returns the first non-empty trimmed line of s — the one-line manifest
-// summary. MCP descriptions are "<summary>. \n<detail>", so the first line is the
-// summary.
+// firstLine returns the first non-empty trimmed line of s.
 func firstLine(s string) string {
 	for _, ln := range strings.Split(s, "\n") {
 		if t := strings.TrimSpace(ln); t != "" {
@@ -173,8 +192,7 @@ func firstLine(s string) string {
 
 // requiredArgsHint renders " Required args: a, b." from a JSON-schema's required
 // list so the deferred stub teaches the call shape without carrying the full
-// schema. Returns "" when the schema has no required list (nothing to teach —
-// the model can call with {}).
+// schema. Returns "" when the schema has no required list.
 func requiredArgsHint(schema json.RawMessage) string {
 	var s struct {
 		Required []string `json:"required"`

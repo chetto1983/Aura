@@ -9,7 +9,6 @@ package knowledge
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -20,6 +19,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/chetto1983/aura/internal/boundedbuffer"
 )
 
 const (
@@ -38,7 +39,7 @@ type Client struct {
 	cmd      *exec.Cmd
 	stdin    io.WriteCloser
 	stdout   *bufio.Reader
-	stderr   *safeBuffer
+	stderr   *boundedbuffer.Buffer
 	password string
 	mu       sync.Mutex
 	nextID   atomic.Int64
@@ -66,7 +67,7 @@ func Open(ctx context.Context, cfg *Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("stdout pipe: %w", err)
 	}
-	stderr := &safeBuffer{}
+	stderr := boundedbuffer.New(0)
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("spawn %s: %w (PATH check: pip install mcp-neo4j-cypher==0.6.0)", cfg.MCPBinary, err)
@@ -265,25 +266,6 @@ func (c *Client) redactSecrets(s string) string {
 		s = strings.ReplaceAll(s, c.password, "***")
 	}
 	return pwAssignRE.ReplaceAllString(s, "$1$2***")
-}
-
-// safeBuffer is a mutex-guarded bytes.Buffer usable as cmd.Stderr while the
-// owning goroutine reads it on the error path.
-type safeBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *safeBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *safeBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
 }
 
 // decodeRows extracts row objects from an MCP tools/call result. mcp-neo4j-cypher

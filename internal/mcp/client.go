@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -26,10 +27,20 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/chetto1983/aura/internal/boundedbuffer"
 )
 
 // protocolVersion is the MCP revision Aura negotiates.
 const protocolVersion = "2024-11-05"
+
+// ErrTransport marks a broken MCP transport pipe/session. Callers use
+// IsTransportError rather than matching opaque OS error strings.
+var ErrTransport = errors.New("mcp transport error")
+
+func IsTransportError(err error) bool {
+	return errors.Is(err, ErrTransport)
+}
 
 // ServerConfig declares how to launch one stdio MCP server (Claude-Desktop shape).
 // Env entries ("KEY=value") are appended to the inherited environment.
@@ -53,7 +64,7 @@ type Client struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stdout *bufio.Reader
-	stderr *safeBuffer
+	stderr *boundedbuffer.Buffer
 	mu     sync.Mutex
 	nextID atomic.Int64
 }
@@ -77,7 +88,7 @@ func Open(ctx context.Context, name string, cfg ServerConfig) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mcp %q: stdout pipe: %w", name, err)
 	}
-	stderr := &safeBuffer{}
+	stderr := boundedbuffer.New(0)
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("mcp %q: spawn %s: %w", name, cfg.Command, err)
@@ -204,7 +215,7 @@ func (c *Client) roundtrip(method string, params any) (json.RawMessage, error) {
 		return nil, fmt.Errorf("encode %s: %w", method, err)
 	}
 	if _, err := fmt.Fprintln(c.stdin, string(enc)); err != nil {
-		return nil, fmt.Errorf("send %s: %w%s", method, err, c.stderrTail())
+		return nil, fmt.Errorf("%w: send %s: %w%s", ErrTransport, method, err, c.stderrTail())
 	}
 	return c.readResponse(id)
 }
@@ -216,7 +227,10 @@ func (c *Client) notify(method string) error {
 		return err
 	}
 	_, err = fmt.Fprintln(c.stdin, string(enc))
-	return err
+	if err != nil {
+		return fmt.Errorf("%w: notify %s: %w", ErrTransport, method, err)
+	}
+	return nil
 }
 
 // readResponse reads lines until it finds the response whose id matches want,
@@ -225,7 +239,7 @@ func (c *Client) readResponse(want int64) (json.RawMessage, error) {
 	for {
 		line, err := c.stdout.ReadBytes('\n')
 		if err != nil {
-			return nil, fmt.Errorf("recv: %w%s", err, c.stderrTail())
+			return nil, fmt.Errorf("%w: recv: %w%s", ErrTransport, err, c.stderrTail())
 		}
 		if len(bytes.TrimSpace(line)) == 0 {
 			continue
@@ -312,23 +326,4 @@ func (c *Client) stderrTail() string {
 	}
 	s = RedactSecrets(s)
 	return ": " + s
-}
-
-// safeBuffer is a mutex-guarded bytes.Buffer usable as cmd.Stderr while the error
-// path reads it concurrently.
-type safeBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *safeBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *safeBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
 }

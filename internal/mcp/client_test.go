@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/boundedbuffer"
 )
 
 // fakeServer runs a scripted MCP server over the client's pipes in a goroutine. It
@@ -70,7 +72,7 @@ func (f *fakeServer) write(v map[string]any) {
 // newClientForTest wires the protocol onto raw pipes without spawning a process,
 // so the request/response logic is unit-testable against an in-memory fake server.
 func newClientForTest(name string, stdin io.WriteCloser, stdout io.Reader) *Client {
-	return &Client{name: name, stdin: stdin, stdout: bufio.NewReader(stdout), stderr: &safeBuffer{}}
+	return &Client{name: name, stdin: stdin, stdout: bufio.NewReader(stdout), stderr: boundedbuffer.New(0)}
 }
 
 // newTestPair wires a Client to a fakeServer over two io.Pipes and starts the
@@ -180,7 +182,7 @@ func TestDecodeToolResult(t *testing.T) {
 }
 
 func TestStderrTailRedactsSecrets(t *testing.T) {
-	buf := &safeBuffer{}
+	buf := boundedbuffer.New(0)
 	_, _ = buf.Write([]byte("TOKEN=abc123 SMTP_PASS=hunter2 Authorization: Bearer hidden"))
 	c := &Client{stderr: buf}
 	got := c.stderrTail()
@@ -191,5 +193,22 @@ func TestStderrTailRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(got, "TOKEN=<redacted>") {
 		t.Fatalf("stderr tail missing redaction placeholder: %s", got)
+	}
+}
+
+func TestBoundedStderrBufferKeepsTail(t *testing.T) {
+	buf := boundedbuffer.New(64)
+	_, _ = buf.Write([]byte(strings.Repeat("a", 120)))
+	_, _ = buf.Write([]byte("THE-END"))
+	if got := buf.Len(); got > 64 {
+		t.Fatalf("buffer len = %d, want <= 64", got)
+	}
+	c := &Client{stderr: buf}
+	tail := c.stderrTail()
+	if !strings.Contains(tail, "THE-END") {
+		t.Fatalf("stderr tail lost newest bytes: %q", tail)
+	}
+	if strings.Contains(buf.String(), strings.Repeat("a", 70)) {
+		t.Fatalf("buffer retained too much old content")
 	}
 }

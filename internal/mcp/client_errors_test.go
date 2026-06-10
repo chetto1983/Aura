@@ -5,6 +5,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/boundedbuffer"
 )
 
 func canceledCtx() context.Context {
@@ -42,6 +44,9 @@ func TestStdioRoundtripSendErrorIncludesStderrTail(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "send ping") {
 		t.Fatalf("want send error, got %v", err)
 	}
+	if !IsTransportError(err) {
+		t.Fatalf("send error must be classified as transport, got %v", err)
+	}
 	if !strings.Contains(err.Error(), "startup failed") {
 		t.Fatalf("error should carry stderr tail, got %v", err)
 	}
@@ -53,6 +58,9 @@ func TestStdioReadResponseRecvEOF(t *testing.T) {
 	_, err := c.readResponse(1)
 	if err == nil || !strings.Contains(err.Error(), "recv") {
 		t.Fatalf("want recv error, got %v", err)
+	}
+	if !IsTransportError(err) {
+		t.Fatalf("recv EOF must be classified as transport, got %v", err)
 	}
 }
 
@@ -117,14 +125,14 @@ func TestStdioCallToolDecodeError(t *testing.T) {
 }
 
 func TestStderrTailEmpty(t *testing.T) {
-	c := &Client{stderr: &safeBuffer{}}
+	c := &Client{stderr: boundedbuffer.New(0)}
 	if got := c.stderrTail(); got != "" {
 		t.Fatalf("stderrTail = %q, want empty", got)
 	}
 }
 
 func TestStderrTailCapsLength(t *testing.T) {
-	c := &Client{stderr: &safeBuffer{}}
+	c := &Client{stderr: boundedbuffer.New(0)}
 	_, _ = c.stderr.Write([]byte(strings.Repeat("a", 500)))
 	got := c.stderrTail()
 	// Two leading chars are ": "; the payload is capped at 200.

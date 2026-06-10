@@ -24,12 +24,21 @@ import (
 type ToolSearch struct {
 	Registry *Registry
 
-	once     sync.Once
+	mu       sync.Mutex
 	index    *bm25Index
 	deferred []Tool // index-aligned with the bm25Index documents
 }
 
 const defaultMaxResults = 5
+
+// InvalidateIndex drops the memoized BM25 index so the next search reads current
+// tool specs. MCP reconnect refreshes call this after updating deferred specs.
+func (ts *ToolSearch) InvalidateIndex() {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	ts.index = nil
+	ts.deferred = nil
+}
 
 type toolSearchArgs struct {
 	Query      string `json:"query"`
@@ -188,36 +197,40 @@ func (ts *ToolSearch) match(q string, limit int) []Tool {
 		return out
 	}
 
-	ts.buildIndex()
-	ranked := ts.index.rank(q)
+	idx, deferred := ts.indexSnapshot()
+	ranked := idx.rank(q)
 	if len(ranked) > limit {
 		ranked = ranked[:limit]
 	}
 	out := make([]Tool, 0, len(ranked))
 	for _, r := range ranked {
-		out = append(out, ts.deferred[r.doc])
+		out = append(out, deferred[r.doc])
 	}
 	return out
 }
 
-// buildIndex memoizes the BM25 index over the registry's deferred tools. The
-// Registry is immutable for the run (spec.go), so the index is built once and
-// read lock-free thereafter; sync.Once makes the lazy build race-safe.
-func (ts *ToolSearch) buildIndex() {
-	ts.once.Do(func() {
+// indexSnapshot memoizes the BM25 index over the registry's deferred tools. MCP
+// reconnects can refresh deferred specs, so the snapshot can be invalidated.
+func (ts *ToolSearch) indexSnapshot() (*bm25Index, []Tool) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+	if ts.index == nil {
 		all := ts.Registry.All()
 		// Registry.All iterates a map (random order); sort by Name so equal-score
 		// ties break deterministically and top-K selection is stable per run.
 		sort.Slice(all, func(i, j int) bool { return all[i].Spec().Name < all[j].Spec().Name })
-		var specs []Spec
+		deferred := make([]Tool, 0, len(all))
+		specs := make([]Spec, 0, len(all))
 		for _, t := range all {
 			s := t.Spec()
 			if !s.Deferred {
 				continue
 			}
-			ts.deferred = append(ts.deferred, t)
+			deferred = append(deferred, t)
 			specs = append(specs, s)
 		}
+		ts.deferred = deferred
 		ts.index = newBM25Index(specs)
-	})
+	}
+	return ts.index, append([]Tool(nil), ts.deferred...)
 }

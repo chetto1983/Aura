@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -26,6 +27,26 @@ func (f *fakeServer) ListTools(context.Context) ([]mcp.ToolDef, error) { return 
 func (f *fakeServer) CallTool(_ context.Context, name string, args map[string]any) (string, error) {
 	f.lastName, f.lastArgs = name, args
 	return f.callText, f.callErr
+}
+
+type fakeReconnectClient struct {
+	defs     []mcp.ToolDef
+	callText string
+	callErr  error
+	closed   bool
+}
+
+func (f *fakeReconnectClient) ListTools(context.Context) ([]mcp.ToolDef, error) {
+	return f.defs, nil
+}
+
+func (f *fakeReconnectClient) CallTool(context.Context, string, map[string]any) (string, error) {
+	return f.callText, f.callErr
+}
+
+func (f *fakeReconnectClient) Close() error {
+	f.closed = true
+	return nil
 }
 
 func sandboxDefs() []mcp.ToolDef {
@@ -69,6 +90,92 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	stop := got[1].Spec()
 	if string(stop.Parameters) != `{"type":"object"}` {
 		t.Fatalf("empty inputSchema fallback = %s", stop.Parameters)
+	}
+}
+
+func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
+	oldOpen := openMCPClient
+	t.Cleanup(func() { openMCPClient = oldOpen })
+
+	initial := &fakeReconnectClient{
+		defs:    []mcp.ToolDef{{Name: "send", Description: "Old delivery path."}},
+		callErr: fmt.Errorf("pipe closed: %w", mcp.ErrTransport),
+	}
+	refreshed := &fakeReconnectClient{
+		defs:     []mcp.ToolDef{{Name: "send", Description: "Fresh delivery path."}},
+		callText: "sent",
+	}
+	opens := 0
+	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+		opens++
+		return refreshed, nil
+	}
+
+	reg := tools.NewRegistry()
+	ts := &tools.ToolSearch{Registry: reg}
+	reg.Register(ts)
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "mail-mcp"}, initial)
+	names, err := Mount(context.Background(), reg, "mail", srv)
+	if err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+	if len(names) != 1 {
+		t.Fatalf("mounted names = %v", names)
+	}
+	searchCtx := tools.WithToolCallContext(context.Background(), "sess", "search-1", t.TempDir(), 2048)
+	if res, err := ts.Execute(searchCtx, json.RawMessage(`{"query":"old"}`)); err != nil || !strings.Contains(res.Preview, "Old delivery path.") {
+		t.Fatalf("pre-reconnect search = (%q,%v), want old description", res.Preview, err)
+	}
+
+	tool, _ := reg.Get(names[0])
+	callCtx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
+	res, err := tool.Execute(callCtx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("Execute after reconnect: %v", err)
+	}
+	if res.Preview != "sent" {
+		t.Fatalf("preview = %q, want sent", res.Preview)
+	}
+	if opens != 1 || !initial.closed {
+		t.Fatalf("reconnect did not close/reopen exactly once: opens=%d closed=%v", opens, initial.closed)
+	}
+	if got := tool.Spec().Description; got != "Fresh delivery path." {
+		t.Fatalf("refreshed description = %q", got)
+	}
+	searchCtx2 := tools.WithToolCallContext(context.Background(), "sess", "search-2", t.TempDir(), 2048)
+	if res, err := ts.Execute(searchCtx2, json.RawMessage(`{"query":"fresh"}`)); err != nil || !strings.Contains(res.Preview, "Fresh delivery path.") {
+		t.Fatalf("post-reconnect search = (%q,%v), want refreshed description", res.Preview, err)
+	}
+}
+
+func TestReconnectServerSecondTransportFailureIsInlineToolError(t *testing.T) {
+	oldOpen := openMCPClient
+	t.Cleanup(func() { openMCPClient = oldOpen })
+
+	initial := &fakeReconnectClient{
+		defs:    []mcp.ToolDef{{Name: "send", Description: "Send."}},
+		callErr: fmt.Errorf("first fail: %w", mcp.ErrTransport),
+	}
+	reopened := &fakeReconnectClient{
+		defs:    []mcp.ToolDef{{Name: "send", Description: "Send."}},
+		callErr: fmt.Errorf("second fail: %w", mcp.ErrTransport),
+	}
+	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+		return reopened, nil
+	}
+
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "mail-mcp"}, initial)
+	bridged, err := Bridge(context.Background(), "mail", srv)
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "call-1", t.TempDir(), 2048)
+	res, err := bridged[0].Execute(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("second transport failure must be inline content, got Go error %v", err)
+	}
+	if !strings.HasPrefix(res.Preview, "error: ") || !strings.Contains(res.Preview, "second fail") {
+		t.Fatalf("preview = %q, want inline second failure", res.Preview)
 	}
 }
 

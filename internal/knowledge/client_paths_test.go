@@ -16,6 +16,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/chetto1983/aura/internal/boundedbuffer"
 )
 
 // errDirFS is an fs.FS whose Open always fails, so fs.ReadDir errors.
@@ -52,7 +54,7 @@ func newFakeClient(stdout, password string) (*Client, *fakeStdin) {
 	c := &Client{
 		stdin:    in,
 		stdout:   bufio.NewReader(strings.NewReader(stdout)),
-		stderr:   &safeBuffer{},
+		stderr:   boundedbuffer.New(0),
 		password: password,
 	}
 	return c, in
@@ -159,7 +161,7 @@ func TestInitialize_NotificationSendError(t *testing.T) {
 	c := &Client{
 		stdin:  in,
 		stdout: bufio.NewReader(strings.NewReader(`{"jsonrpc":"2.0","id":1,"result":{}}` + "\n")),
-		stderr: &safeBuffer{},
+		stderr: boundedbuffer.New(0),
 	}
 	if err := c.initialize(); err == nil || !strings.Contains(err.Error(), "initialized notification") {
 		t.Fatalf("want initialized-notification send error, got %v", err)
@@ -203,7 +205,7 @@ func TestOpen_SpawnFailure(t *testing.T) {
 }
 
 func TestStderrTail(t *testing.T) {
-	c := &Client{stderr: &safeBuffer{}, password: "topsecret"}
+	c := &Client{stderr: boundedbuffer.New(0), password: "topsecret"}
 	if c.stderrTail() != "" {
 		t.Error("empty stderr should yield empty tail")
 	}
@@ -213,10 +215,23 @@ func TestStderrTail(t *testing.T) {
 		t.Errorf("stderrTail leaked secret: %q", tail)
 	}
 	// Truncation: >200 bytes keeps only the suffix.
-	c2 := &Client{stderr: &safeBuffer{}}
+	c2 := &Client{stderr: boundedbuffer.New(0)}
 	_, _ = c2.stderr.Write(bytes.Repeat([]byte("x"), 500))
 	if len(c2.stderrTail()) > 210 {
 		t.Errorf("stderrTail not truncated: len=%d", len(c2.stderrTail()))
+	}
+}
+
+func TestBoundedStderrBufferKeepsTail(t *testing.T) {
+	buf := boundedbuffer.New(64)
+	_, _ = buf.Write(bytes.Repeat([]byte("a"), 120))
+	_, _ = buf.Write([]byte("NEO4J-END"))
+	if got := buf.Len(); got > 64 {
+		t.Fatalf("buffer len = %d, want <= 64", got)
+	}
+	c := &Client{stderr: buf}
+	if tail := c.stderrTail(); !strings.Contains(tail, "NEO4J-END") {
+		t.Fatalf("stderr tail lost newest bytes: %q", tail)
 	}
 }
 
