@@ -33,11 +33,11 @@ Risk classes: **SAFE-ADDITIVE** (do autonomously in-loop) · **ARCHITECTURAL** (
 - **Gap:** no structured working memory for long autonomous turns (swarm/cron, 25-step budget). Claude Code has TodoWrite + plan mode; Aura has a step counter + a one-shot recovery nudge.
 - **Fork:** adding an always-on tool mutates the cache-stable manifest and adds a model verb (scope). Overlaps Phase 11f Task Canvas — decide build-vs-reuse. **Needs user steer.**
 
-### P4 — Background `shell_exec` + poll — SAFE-ADDITIVE (isolated) — 💡 PROPOSED
+### P4 — Background `shell_exec` + poll — SAFE-ADDITIVE — ✅ DONE (it.2)
 
-- **Gap:** `shell_exec` is synchronous with a timeout; a 10-min build/download blocks the turn or dies at the cap. Claude Code backgrounds + Monitors.
-- **Target:** an async mode on `shell_exec` that returns a handle; poll/read via the existing `read_tool_output` sidecar pattern. Isolated to `shell_exec.go`.
-- **DoD:** start a long job, get a handle, poll to completion; no goroutine leak (goleak); `-race`.
+- **Gap:** `shell_exec` was synchronous; a 10-min build/download blocked the turn or died at the 120s cap. Claude Code backgrounds + Monitors.
+- **Shipped:** `shell_exec` gains `"background": true` → returns a `shell_id` immediately; new deferred `shell_poll` (new-output-since-last + status `running|exited:<code>|killed`, optional regex filter — Claude Code's BashOutput) and `shell_kill` (KillBash). A shared `BackgroundShells` registry wired once at boot keeps jobs pollable across turns. Also fixed `shell_exec`'s stale `sandbox_exec` references. → [internal/agent/tools/shell_bg.go](../internal/agent/tools/shell_bg.go), commit `33ccab12`.
+- **DoD met:** start→poll→complete, incremental read-off, filter, kill, error paths — all green with `-race`; golangci-lint 0 issues.
 
 ### P5 — Ungate in-box skill activation (self-extension parity) — BEHAVIORAL — ⛔ BLOCKED (user fork)
 
@@ -51,3 +51,4 @@ P1, P3, P5 each carry a fork only the user can settle. The loop does the SAFE-AD
 ## Status log
 
 - **2026-06-10 it.1** — spine created; P2 Slice A (typed tool-retry middleware) landed with tests. Next: P4 (background shell_exec) — safe-additive — then stop on the P1/P3/P5 forks.
+- **2026-06-10 it.2** — P4 (background `shell_exec` + `shell_poll`/`shell_kill`) landed with tests, grounded in Claude Code's Bash/BashOutput/KillBash (`D:/tmp/system-prompts-and-models-of-ai-tools/Anthropic`). **Safe-additive work now exhausted.** Remaining: P1 (parallel dispatch), P3 (todo tool), P5 (ungate skill activation) — all user-forks — plus P2 Slice B (post-tool hook, also architectural). The loop now surfaces the forks and pauses for a decision.
