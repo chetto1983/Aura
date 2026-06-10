@@ -73,16 +73,40 @@ func TestLastUserMessage(t *testing.T) {
 		{Role: types.Role(llm.RoleAssistant), Content: "reply"},
 		{Role: types.Role(llm.RoleUser), Content: "second"},
 	}
-	if got := lastUserMessage(msgs); got == nil || *got != "second" {
+	got, err := lastUserMessage(msgs)
+	if err != nil {
+		t.Fatalf("lastUserMessage returned error: %v", err)
+	}
+	if got == nil || *got != "second" {
 		t.Errorf("lastUserMessage = %v, want second", got)
 	}
 	// No user message → nil.
-	if got := lastUserMessage([]types.Message{{Role: types.Role(llm.RoleAssistant), Content: "x"}}); got != nil {
+	got, err = lastUserMessage([]types.Message{{Role: types.Role(llm.RoleAssistant), Content: "x"}})
+	if err != nil {
+		t.Fatalf("lastUserMessage(no user) error: %v", err)
+	}
+	if got != nil {
 		t.Errorf("lastUserMessage(no user) = %v, want nil", got)
 	}
 	// Empty user content is skipped (not a fresh turn).
-	if got := lastUserMessage([]types.Message{{Role: types.Role(llm.RoleUser), Content: ""}}); got != nil {
+	got, err = lastUserMessage([]types.Message{{Role: types.Role(llm.RoleUser), Content: ""}})
+	if err != nil {
+		t.Fatalf("lastUserMessage(empty user) error: %v", err)
+	}
+	if got != nil {
 		t.Errorf("lastUserMessage(empty user) = %v, want nil", got)
+	}
+	// Multimodal content is rejected explicitly rather than silently replaying
+	// old history with no fresh user turn.
+	_, err = lastUserMessage([]types.Message{{
+		Role: types.Role(llm.RoleUser),
+		Content: []types.InputContent{{
+			Type: types.InputContentTypeText,
+			Text: "hi",
+		}},
+	}})
+	if err == nil {
+		t.Fatal("lastUserMessage(multimodal) error = nil, want explicit rejection")
 	}
 }
 

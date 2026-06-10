@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"iter"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/ag-ui-protocol/ag-ui/sdks/community/go/pkg/core/events"
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/reasoningtrace"
 	"go.uber.org/goleak"
 )
 
@@ -124,6 +127,44 @@ func TestFanoutSourceErrorYieldsRunError(t *testing.T) {
 	}
 	if js := eventJSONString(last); !strings.Contains(js, err.Error()) {
 		t.Fatalf("RUN_ERROR payload %q does not contain source error %q", js, err.Error())
+	}
+}
+
+func TestFanoutSourceErrorRedactedInEventAndTrace(t *testing.T) {
+	tracePath := filepath.Join(t.TempDir(), "trace.jsonl")
+	t.Setenv(reasoningtrace.Env, "1")
+	t.Setenv("AURA_REASONING_TRACE_FILE", tracePath)
+
+	err := errors.New("dial postgresql://user:secret@host/db failed with Bearer sk-live-token")
+	f := NewFanout(sourceError(err))
+	sub := f.Subscribe()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f.Run(ctx)
+
+	got := drain(sub)
+	if len(got) == 0 {
+		t.Fatal("fanout yielded no events")
+	}
+	last := got[len(got)-1]
+	if string(last.Type()) != "RUN_ERROR" {
+		t.Fatalf("last event = %s, want RUN_ERROR; stream=%v", last.Type(), typesOf(got))
+	}
+	wire := eventJSONString(last)
+	for _, leak := range []string{"secret", "sk-live-token", "Bearer sk-live-token"} {
+		if strings.Contains(wire, leak) {
+			t.Fatalf("RUN_ERROR leaked %q in %s", leak, wire)
+		}
+	}
+	trace, err := os.ReadFile(tracePath)
+	if err != nil {
+		t.Fatalf("read reasoning trace: %v", err)
+	}
+	for _, leak := range []string{"secret", "sk-live-token", "Bearer sk-live-token"} {
+		if strings.Contains(string(trace), leak) {
+			t.Fatalf("reasoning trace leaked %q in %s", leak, trace)
+		}
 	}
 }
 

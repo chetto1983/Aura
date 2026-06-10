@@ -28,6 +28,8 @@ import (
 // reaches the SDK decoder.
 const maxRunBodyBytes = 1 << 20
 
+var errUnsupportedUserMessageContent = errors.New("agui: last user message content must be a non-empty string; multimodal input is not supported on this endpoint")
+
 // ServerConfig carries the AG-UI server knobs the daemon resolves from config
 // (AURA_AGUI_*). CORSPermissive gates the `Access-Control-Allow-Origin: *` header
 // (default restrictive, T-12-13); BufferCap is the cap of the per-connection SSE
@@ -142,13 +144,18 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	runID := "run-" + uuid.NewString()
+	userMsg, err := lastUserMessage(in.Messages)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	// ACAO is set centrally by withCORS when CORSPermissive is on (WR-05) so it is present
 	// on the error responses above too, not only this 200 stream.
 
-	runID := "run-" + uuid.NewString()
-	userMsg := lastUserMessage(in.Messages)
 	turn := s.run.Turn(ctx, in.ThreadID, userMsg)
 	s.streamSSE(ctx, w, Translate(in.ThreadID, runID, s.idgen, turn))
 }
@@ -328,16 +335,24 @@ func payloadString(payload any) string {
 // lastUserMessage extracts the final user message from the RunAgentInput history to
 // drive the turn (OQ3). It returns nil when there is no user message (a resume-only
 // run continues over the rehydrated history without a fresh user turn).
-func lastUserMessage(msgs []types.Message) *string {
+func lastUserMessage(msgs []types.Message) (*string, error) {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if string(msgs[i].Role) != llm.RoleUser {
 			continue
 		}
-		if content, ok := msgs[i].Content.(string); ok && content != "" {
-			return &content
+		if content, ok := msgs[i].Content.(string); ok {
+			if content != "" {
+				return &content, nil
+			}
+			continue
+		}
+		if msgs[i].Content != nil {
+			// The runner currently accepts only text. Reject structured multimodal
+			// user content explicitly instead of silently replaying old history.
+			return nil, errUnsupportedUserMessageContent
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // projectMessages projects the persisted llm.Message history onto the AG-UI
@@ -406,14 +421,14 @@ func sanitizeErr(err error) string {
 	if err == nil {
 		return ""
 	}
-	return sanitizeString(err.Error())
+	return SanitizeString(err.Error())
 }
 
-// sanitizeString strips credential-bearing substrings from an arbitrary string: whole DB
+// SanitizeString strips credential-bearing substrings from an arbitrary string: whole DB
 // DSNs collapse to a scheme marker, generic URL userinfo collapses to `scheme://[redacted]@`,
 // and bearer/api-key/token shapes collapse to a `prefix[redacted]` marker (WR-03). The DSN
 // pass runs first so the generic userinfo pass never reaches the five DB schemes.
-func sanitizeString(msg string) string {
+func SanitizeString(msg string) string {
 	out := secretPattern.ReplaceAllStringFunc(msg, func(match string) string {
 		scheme := match
 		if idx := strings.Index(match, "://"); idx >= 0 {
@@ -441,6 +456,6 @@ func redactEvent(ev events.Event) events.Event {
 	if !ok {
 		return ev
 	}
-	re.Message = sanitizeString(re.Message)
+	re.Message = SanitizeString(re.Message)
 	return re
 }

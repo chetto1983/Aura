@@ -83,15 +83,16 @@ func (f *Fanout) Run(ctx context.Context) {
 				return
 			}
 			if err != nil {
-				ev = events.NewRunErrorEvent(err.Error())
+				ev = events.NewRunErrorEvent(SanitizeString(err.Error()))
 			}
 			if ev == nil {
 				continue
 			}
+			traceEvent := redactEvent(ev)
 			reasoningtrace.Record("agui_fanout_source_event", map[string]any{
 				"event_type":        string(ev.Type()),
 				"subscribers_count": len(subs),
-				"event_json":        eventJSONString(ev),
+				"event_json":        eventJSONString(traceEvent),
 			})
 			for i, sub := range subs {
 				if !send(ctx, sub, ev, i) {
@@ -135,7 +136,7 @@ func send(ctx context.Context, sub chan events.Event, ev events.Event, subscribe
 		reasoningtrace.Record("agui_fanout_dropped", map[string]any{
 			"subscriber_index": subscriberIndex,
 			"event_type":       string(ev.Type()),
-			"event_json":       eventJSONString(ev),
+			"event_json":       eventJSONString(redactEvent(ev)),
 		})
 		slog.Warn("agui fanout: subscriber slow, dropping event", "type", ev.Type())
 		return true
