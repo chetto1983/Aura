@@ -418,7 +418,7 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	run.Mutating = tool.Spec().Mutating
 	toolCtx := tools.WithToolCallContext(ctx, a.sessionID, call.ID, a.runDir, a.previewCap)
 	toolCtx = WithSwarmContext(toolCtx, budget, a.registry, a.client, a.cfg, a.sessionID)
-	res, err := tool.Execute(toolCtx, json.RawMessage(call.Function.Arguments))
+	res, err := a.execTool(toolCtx, tool, run.Mutating, json.RawMessage(call.Function.Arguments))
 	run.EndedAt = time.Now().UTC()
 	if err != nil {
 		run.Err = err.Error()
