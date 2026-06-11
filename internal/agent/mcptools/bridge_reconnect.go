@@ -57,11 +57,10 @@ func (s *reconnectingServer) CallTool(ctx context.Context, name string, args map
 	if !mcp.IsTransportError(err) {
 		return text, err
 	}
-	_, retry, err := s.reconnectAfterTransport(ctx, client)
-	if err != nil {
-		return "", err
+	if _, _, reconnectErr := s.reconnectAfterTransport(ctx, client); reconnectErr != nil {
+		return "", reconnectErr
 	}
-	return retry.CallTool(ctx, name, args)
+	return "", fmt.Errorf("%w: mcp %q call %q transport failed after send; reconnected but not replayed: %v", mcp.ErrTransport, s.name, name, err)
 }
 
 func (s *reconnectingServer) Close() error {

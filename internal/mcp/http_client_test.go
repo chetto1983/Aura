@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -43,7 +44,12 @@ func TestHTTPInitializeSessionProtocolAndListTools(t *testing.T) {
 			sawSessionHeader = r.Header.Get("Mcp-Session-Id") == "session-1"
 			sawProtocolHeader = r.Header.Get("MCP-Protocol-Version") == "2025-06-18"
 			writeHTTPRPC(t, w, req.ID, map[string]any{"tools": []map[string]any{
-				{"name": "echo", "description": "Echo text", "inputSchema": map[string]any{"type": "object"}},
+				{
+					"name":        "echo",
+					"description": "Echo text",
+					"inputSchema": map[string]any{"type": "object"},
+					"annotations": map[string]any{"readOnlyHint": true},
+				},
 			}})
 		default:
 			t.Fatalf("unexpected method %q", req.Method)
@@ -63,8 +69,57 @@ func TestHTTPInitializeSessionProtocolAndListTools(t *testing.T) {
 	if len(tools) != 1 || tools[0].Name != "echo" {
 		t.Fatalf("tools = %#v", tools)
 	}
+	if !tools[0].Annotations.ReadOnlyHint {
+		t.Fatalf("annotations = %#v, want readOnlyHint", tools[0].Annotations)
+	}
 	if !sawInitialized || !sawSessionHeader || !sawProtocolHeader {
 		t.Fatalf("headers/notification: initialized=%v session=%v protocol=%v", sawInitialized, sawSessionHeader, sawProtocolHeader)
+	}
+}
+
+func TestHTTPJSONBodyCap(t *testing.T) {
+	srv := httptest.NewServer(httpInitHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(strings.Repeat("x", httpRPCMaxBodyBytes+1)))
+	}))
+	defer srv.Close()
+	c := openHTTPTest(t, srv, HTTPConfig{})
+	defer func() { _ = c.Close() }()
+
+	err := c.Ping(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "response body exceeds") {
+		t.Fatalf("want response body cap error, got %v", err)
+	}
+}
+
+func TestHTTPSSEBodyCap(t *testing.T) {
+	srv := httptest.NewServer(httpInitHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Repeat(": keep-alive\n", (httpRPCMaxBodyBytes/len(": keep-alive\n"))+1)))
+	}))
+	defer srv.Close()
+	c := openHTTPTest(t, srv, HTTPConfig{})
+	defer func() { _ = c.Close() }()
+
+	err := c.Ping(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "response body exceeds") {
+		t.Fatalf("want response body cap error, got %v", err)
+	}
+}
+
+func TestHTTPPostTransportErrorWrapsErrTransport(t *testing.T) {
+	srv := httptest.NewServer(httpInitHandler(t, "", func(w http.ResponseWriter, r *http.Request) {
+		var req rpcReq
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		writeHTTPRPC(t, w, req.ID, map[string]any{})
+	}))
+	c := openHTTPTest(t, srv, HTTPConfig{})
+	srv.Close()
+	defer func() { _ = c.Close() }()
+
+	err := c.Ping(context.Background())
+	if !errors.Is(err, ErrTransport) || !strings.Contains(err.Error(), "http post") {
+		t.Fatalf("want ErrTransport http post error, got %v", err)
 	}
 }
 
