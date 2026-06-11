@@ -56,6 +56,7 @@ type fakeConvStore struct {
 	appendEr error // injectable AppendTurn error
 	failAppN int   // when >0, fail the Nth AppendTurn call with appendEr/errFake
 	appendN  int   // AppendTurn call counter
+	lastCfg  conversations.ContextConfig
 }
 
 func newFakeConvStore() *fakeConvStore {
@@ -221,9 +222,10 @@ func (f *fakeConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message
 	return f.messagesLocked(id), nil
 }
 
-func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, _ conversations.ContextConfig) ([]llm.Message, error) {
+func (f *fakeConvStore) LoadManagedHistory(_ context.Context, id string, cfg conversations.ContextConfig) ([]llm.Message, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastCfg = cfg
 	if f.manErr != nil {
 		return nil, f.manErr
 	}

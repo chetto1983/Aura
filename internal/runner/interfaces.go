@@ -47,6 +47,10 @@ type ConversationStore interface {
 	Delete(ctx context.Context, conversationID string) error
 }
 
+// ContextBlockProvider renders identity-aware context for messages[1]. The Runner
+// composes its output before the legacy AlwaysBlock skill renderer.
+type ContextBlockProvider func(ctx context.Context, identityID string) string
+
 // PauseStore is the narrow paused_states surface the Runner consumes (D-A2-02).
 // *askuser.Store satisfies it implicitly. The Runner is the SOLE caller of Insert
 // (T-04-19: only the Runner writes paused_states, on a pause Event).

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,8 +58,9 @@ type Deps struct {
 	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
 	// every turn so a skill add/remove changes messages[1] without busting messages[0].
-	AlwaysBlock func() string
-	ResumeHook  ResumeHook
+	ContextBlock ContextBlockProvider
+	AlwaysBlock  func() string
+	ResumeHook   ResumeHook
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -91,7 +93,8 @@ type Runner struct {
 	stopTimeout  time.Duration
 	resumeHook   ResumeHook
 
-	alwaysBlock func() string // renders the messages[1] always-block per turn (D-07); nil → empty
+	contextBlock ContextBlockProvider
+	alwaysBlock  func() string // renders the messages[1] always-block per turn (D-07); nil → empty
 
 	wg sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
 }
@@ -133,6 +136,7 @@ func New(d Deps) *Runner {
 		titleTimeout:    titleTimeout,
 		stopTimeout:     stopTimeout,
 		resumeHook:      d.ResumeHook,
+		contextBlock:    d.ContextBlock,
 		alwaysBlock:     d.AlwaysBlock,
 	}
 }
@@ -231,7 +235,12 @@ func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.
 			}
 		}
 
-		history, err := r.Conv.LoadManagedHistory(ctx, convID, r.contextConfig())
+		cfg, err := r.contextConfig(ctx, convID)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		history, err := r.Conv.LoadManagedHistory(ctx, convID, cfg)
 		if err != nil {
 			yield(nil, err)
 			return
@@ -314,17 +323,36 @@ func (r *Runner) appendUserTurn(ctx context.Context, convID, content string) err
 
 // contextConfig builds the L1/L2/L2.5 ladder inputs from the Runner's llm.Config +
 // eviction knob.
-func (r *Runner) contextConfig() conversations.ContextConfig {
-	var block string
-	if r.alwaysBlock != nil {
-		block = r.alwaysBlock()
+func (r *Runner) contextConfig(ctx context.Context, convID string) (conversations.ContextConfig, error) {
+	block, err := r.renderContextBlock(ctx, convID)
+	if err != nil {
+		return conversations.ContextConfig{}, err
 	}
 	return conversations.ContextConfig{
 		ContextWindow:       r.cfg.ContextWindow,
 		MaxOutputTokens:     r.cfg.MaxOutputTokens,
 		ToolEvictAfterTurns: r.evictAfter,
 		AlwaysBlock:         block,
+	}, nil
+}
+
+func (r *Runner) renderContextBlock(ctx context.Context, convID string) (string, error) {
+	var parts []string
+	if r.contextBlock != nil {
+		conv, err := r.Conv.Get(ctx, convID)
+		if err != nil {
+			return "", fmt.Errorf("context block: load conversation identity: %w", err)
+		}
+		if block := strings.TrimSpace(r.contextBlock(ctx, conv.IdentityID)); block != "" {
+			parts = append(parts, block)
+		}
 	}
+	if r.alwaysBlock != nil {
+		if block := strings.TrimSpace(r.alwaysBlock()); block != "" {
+			parts = append(parts, block)
+		}
+	}
+	return strings.Join(parts, "\n\n"), nil
 }
 
 // buildAgent constructs a FRESH LlmAgent seeded with the rehydrated history
