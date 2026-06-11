@@ -23,6 +23,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/mcp"
 	mcpmanager "github.com/chetto1983/aura/internal/mcp/manager"
+	"github.com/chetto1983/aura/internal/profile"
 	"github.com/joho/godotenv"
 )
 
@@ -135,6 +136,10 @@ type Config struct {
 	TTSFormat               string // TTS_FORMAT — voice-note audio format (default opus)
 	DocumentsBaseURL        string // DOCUMENTS_BASE_URL — markitdown /convert base (UX-04 documents leg)
 	MultimodalTimeoutSec    int    // MULTIMODAL_TIMEOUT_SEC — per-request sidecar ceiling (default 120s; CPU OCR on a downscaled photo is well under, but vision needs more headroom than STT/TTS)
+
+	// Phase 14 (Slice 10) Agent.md profile knobs.
+	ProfileDir        string // AURA_PROFILE_DIR — per-identity Agent.md root, default ~/.aura/agents
+	ProfileCertaintyN int    // AURA_PROFILE_CERTAINTY_N — observation threshold for auto-add, default 3
 }
 
 // Load reads .env (best-effort) then populates a Config from environment
@@ -272,6 +277,9 @@ func loadBase() *Config {
 		TTSFormat:               envDefault("TTS_FORMAT", "opus"),
 		DocumentsBaseURL:        os.Getenv("DOCUMENTS_BASE_URL"),
 		MultimodalTimeoutSec:    envIntDefault("MULTIMODAL_TIMEOUT_SEC", 120),
+
+		ProfileDir:        envDefault("AURA_PROFILE_DIR", profile.DefaultRoot()),
+		ProfileCertaintyN: envIntDefault("AURA_PROFILE_CERTAINTY_N", 3),
 	}
 }
 

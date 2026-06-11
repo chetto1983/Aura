@@ -37,6 +37,7 @@ func clearPostgresEnv(t *testing.T) {
 		"MULTIMODAL_BASE_URL", "MULTIMODAL_MODEL", "MULTIMODAL_FALLBACK_MODEL",
 		"STT_BASE_URL", "STT_MODEL",
 		"TTS_BASE_URL", "TTS_VOICE", "TTS_FORMAT",
+		"AURA_PROFILE_DIR", "AURA_PROFILE_CERTAINTY_N",
 	}
 	for _, k := range keys {
 		t.Setenv(k, "")
