@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -103,6 +104,44 @@ func (r *Registry) StopAll(ctx context.Context) error {
 		r.mu.Unlock()
 	}
 	return errors.Join(errs...)
+}
+
+// DeliverToIdentity fans a push out to the started channel that owns identityID,
+// in a deterministic sorted-by-name order (Phase 20 Fork 4 / D-05 — NEVER Go map
+// iteration order, which is nondeterministic the moment a 2nd Deliverer lands).
+// A started Channel that does not implement Deliverer is skipped (it cannot push).
+// The tri-state Deliverer contract drives the fan-out: the first channel to
+// deliver wins (returns true,nil); an owning channel that fails stops the fan-out
+// with (false, err) and never asks a sibling (no double-delivery); when no channel
+// owns the identity it returns (false, nil) so the caller falls back to its route.
+//
+// The lock is held only to snapshot r.started — a Deliver call can block on the
+// network, so it runs unlocked (mirrors StopAll's snapshot-then-release idiom).
+func (r *Registry) DeliverToIdentity(ctx context.Context, identityID, text string) (bool, error) {
+	r.mu.Lock()
+	names := make([]string, 0, len(r.started))
+	snap := make(map[string]Channel, len(r.started))
+	for n, ch := range r.started {
+		names = append(names, n)
+		snap[n] = ch
+	}
+	r.mu.Unlock()
+
+	sort.Strings(names)
+	for _, n := range names {
+		d, ok := snap[n].(Deliverer)
+		if !ok {
+			continue // channel can't push → skip (zero change for a new channel)
+		}
+		delivered, err := d.Deliver(ctx, identityID, text)
+		if err != nil {
+			return false, err // owns-but-failed → stop, no siblings
+		}
+		if delivered {
+			return true, nil // first-delivers-wins
+		}
+	}
+	return false, nil // not-my-user across all → caller falls back to the route
 }
 
 // enabled resolves a channel's enablement: the override wins when it returns

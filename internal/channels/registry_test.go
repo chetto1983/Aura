@@ -255,3 +255,148 @@ func TestRegistryOverrideForcesChannelOnDespiteEnvDisabled(t *testing.T) {
 		t.Errorf("telegram starts = %d, want 1 (override forced on despite env=false)", c.starts())
 	}
 }
+
+// fakeDeliverer is a fakeChannel that ALSO implements Deliverer with a configurable
+// tri-state return + a mutex-guarded call counter. It lets TestRegistryDeliverToIdentity
+// exercise the fan-out contract (sorted order, first-delivers-wins, owns-but-fails
+// stops, not-started never asked) with no live channel.
+type fakeDeliverer struct {
+	fakeChannel
+	delivered    bool
+	deliverErr   error
+	mu           sync.Mutex
+	deliverCalls int
+}
+
+func (d *fakeDeliverer) Deliver(_ context.Context, _, _ string) (bool, error) {
+	d.mu.Lock()
+	d.deliverCalls++
+	d.mu.Unlock()
+	return d.delivered, d.deliverErr
+}
+
+func (d *fakeDeliverer) delivers() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.deliverCalls
+}
+
+func TestRegistryDeliverToIdentity(t *testing.T) {
+	errSend := errors.New("send failed")
+
+	t.Run("first-delivers-wins in sorted order", func(t *testing.T) {
+		// Insertion order (b, a) differs from sort order (a, b): "a" is tried first
+		// and delivers, so "b" must never be asked. Proves SORT order, not insertion.
+		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}, delivered: true}
+		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(b)
+		reg.Register(a)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+
+		ok, err := reg.DeliverToIdentity(context.Background(), "id-1", "hi")
+		if err != nil {
+			t.Fatalf("DeliverToIdentity: unexpected error: %v", err)
+		}
+		if !ok {
+			t.Error("want delivered=true (a owns the identity)")
+		}
+		if a.delivers() != 1 {
+			t.Errorf("a delivers = %d, want 1 (sorted-first tried)", a.delivers())
+		}
+		if b.delivers() != 0 {
+			t.Errorf("b delivers = %d, want 0 (first-delivers-wins stops fan-out)", b.delivers())
+		}
+	})
+
+	t.Run("not-my-user fall-through returns false,nil", func(t *testing.T) {
+		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}}
+		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}}
+		reg := NewRegistry()
+		reg.Register(a)
+		reg.Register(b)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+
+		ok, err := reg.DeliverToIdentity(context.Background(), "id-1", "hi")
+		if err != nil {
+			t.Fatalf("DeliverToIdentity: unexpected error: %v", err)
+		}
+		if ok {
+			t.Error("want delivered=false (no channel owns the identity)")
+		}
+		if a.delivers() != 1 || b.delivers() != 1 {
+			t.Errorf("both must be asked: a=%d b=%d, want 1 1", a.delivers(), b.delivers())
+		}
+	})
+
+	t.Run("owns-but-fails stops without sibling attempt", func(t *testing.T) {
+		// Sorted-first "a" owns-but-fails → fan-out stops; the sibling "b" is never asked.
+		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}, deliverErr: errSend}
+		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(a)
+		reg.Register(b)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+
+		ok, err := reg.DeliverToIdentity(context.Background(), "id-1", "hi")
+		if !errors.Is(err, errSend) {
+			t.Fatalf("DeliverToIdentity error = %v, want it to wrap %v", err, errSend)
+		}
+		if ok {
+			t.Error("want delivered=false on owns-but-fails")
+		}
+		if b.delivers() != 0 {
+			t.Errorf("b delivers = %d, want 0 (owns-but-fails must not try siblings)", b.delivers())
+		}
+	})
+
+	t.Run("not-started channel never asked", func(t *testing.T) {
+		// "a" is registered + started; "b" is registered but disabled (never started).
+		a := &fakeDeliverer{fakeChannel: fakeChannel{name: "a"}}
+		b := &fakeDeliverer{fakeChannel: fakeChannel{name: "b"}}
+		reg := NewRegistry()
+		reg.Register(a)
+		reg.Register(b)
+		t.Setenv("AURA_CHANNEL_B_ENABLED", "false")
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+
+		if _, err := reg.DeliverToIdentity(context.Background(), "id-1", "hi"); err != nil {
+			t.Fatalf("DeliverToIdentity: unexpected error: %v", err)
+		}
+		if b.delivers() != 0 {
+			t.Errorf("b delivers = %d, want 0 (not-started never asked)", b.delivers())
+		}
+	})
+
+	t.Run("started channel without Deliverer silently skipped", func(t *testing.T) {
+		// A plain fakeChannel (Channel but NOT Deliverer) is started alongside a
+		// fakeDeliverer: the non-Deliverer is skipped (no panic), the Deliverer answers.
+		plain := &fakeChannel{name: "a-plain"}
+		deliv := &fakeDeliverer{fakeChannel: fakeChannel{name: "b-deliv"}, delivered: true}
+		reg := NewRegistry()
+		reg.Register(plain)
+		reg.Register(deliv)
+		if err := reg.StartAll(context.Background()); err != nil {
+			t.Fatalf("StartAll: %v", err)
+		}
+
+		ok, err := reg.DeliverToIdentity(context.Background(), "id-1", "hi")
+		if err != nil {
+			t.Fatalf("DeliverToIdentity: unexpected error: %v", err)
+		}
+		if !ok {
+			t.Error("want delivered=true (the Deliverer owns it; the non-Deliverer is skipped)")
+		}
+		if deliv.delivers() != 1 {
+			t.Errorf("deliverer delivers = %d, want 1", deliv.delivers())
+		}
+	})
+}
