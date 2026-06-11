@@ -27,7 +27,8 @@ Thumbs.db
 /aura.db-shm
 /aura.db-wal
 /.env
-/.env.local
+/.env.*
+!/.env.example
 
 # Worktrees + planning workspace (kept locally only)
 /.worktrees/
