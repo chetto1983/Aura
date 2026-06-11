@@ -651,14 +651,14 @@ Wave 3 (sequential / final):
 **Goal:** Scheduled-task notifications (reminders, agent_job summaries, failure/risk alerts) are delivered back to the channel that scheduled them — identity-keyed to the user's 1:1 chat (Telegram) — across both the immediate dispatch path (Step 1) and the quiet-hours-deferred / failed-retry sweep (Step 2), instead of always routing to whatsapp/email/stdout. Fixes the live Phase-19 reminder-agnostic-channel bug via a generic, identity-keyed `channels.Deliverer` seam so future channels plug in with zero scheduler changes.
 **Requirements**: R1-R7 (locked in 20-SPEC.md; no ROADMAP REQ-IDs map to this phase)
 **Depends on:** Phase 19
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 Plans:
 
 **Wave 1** (parallel leaf seams — disjoint files)
 
 - [x] 20-01-PLAN.md — channels.Deliverer interface + Registry.DeliverToIdentity deterministic fan-out + Telegram Store.GetAccountByIdentity + Telegram.Deliver [R2, R3]
-- [ ] 20-02-PLAN.md — Origin + snapshot-identity capture: CreateTaskInput.OriginConversationID + bare-ctx-safe ctx read + cronTaskStore schedule-time conv→identity resolution [R1]
+- [x] 20-02-PLAN.md — Origin + snapshot-identity capture: CreateTaskInput.OriginConversationID + bare-ctx-safe ctx read + cronTaskStore schedule-time conv→identity resolution [R1]
 
 **Wave 2** (blocked on Wave 1)
 

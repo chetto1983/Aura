@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-06-11T15:56:16.093Z"
+stopped_at: Completed 20-02-PLAN.md
+last_updated: "2026-06-11T16:08:35Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 22
   completed_phases: 17
   total_plans: 125
-  completed_plans: 116
-  percent: 77
+  completed_plans: 117
+  percent: 78
 ---
 
 # Project State
@@ -26,8 +26,8 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 20 (scheduler-hardening-full-implementation) — EXECUTING
-Plan: 2 of 4
-Status: Ready to execute
+Plan: 3 of 4
+Status: Ready to execute (20-02 complete; next is Wave 2 / 20-03)
 Last activity: 2026-06-11
 
 Progress: [█████████░] 94%
@@ -125,6 +125,8 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 | Phase 19 P05 | ~40min | 2 tasks | 6 files |
 | Phase 19 P08 | ~50min | 2 tasks | 11 files |
 | Phase 20 P01 | 11 min | 2 tasks | 7 files |
+| Phase 20 P02 | ~7 min | 2 tasks | 4 files |
+| Phase 14 P01 | ~10 min | 4 tasks | 14 files |
 
 ## Accumulated Context
 
