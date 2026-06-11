@@ -72,6 +72,19 @@ func TestDeliverToOrigin(t *testing.T) {
 			want:                want{channelCalled: false, notifierCalled: true},
 		},
 		{
+			// "stdout" is the always-available fallback sink the scheduling agent fills in
+			// as the implicit default route — NOT a deliberate external channel. It must
+			// defer to the origin channel exactly like an unset route (R7 amended after the
+			// Phase 20 live gate: the agent auto-populates notify="stdout"). Only whatsapp/email
+			// pre-empt origin. Without this the headline Telegram-reminder case lands on stdout.
+			name:                "stdout route defers to origin ⇒ channel + no Notifier",
+			preferOriginChannel: true,
+			notifyRoute:         "stdout",
+			identityID:          ownedIdentity,
+			delivered:           true,
+			want:                want{channelCalled: true, notifierCalled: false},
+		},
+		{
 			// un-owned identity ('local'): the gate falls back to the route BEFORE asking
 			// the channel — no stray channel push for a non-onboarded identity.
 			name:                "no owning channel (local) ⇒ Notifier",

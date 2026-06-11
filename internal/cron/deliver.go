@@ -36,13 +36,20 @@ type ChannelDeliverer interface {
 //
 // The gate order is load-bearing:
 //  1. kill-switch off / no ChannelDeliverer → false (legacy route-only, regression guard).
-//  2. an explicit NotifyRoute ALWAYS wins (channel skipped, R7); an un-owned identity
-//     ("" / "local") → route fallback. This is checked BEFORE the channel.
+//  2. a DELIBERATE alternate-channel NotifyRoute (whatsapp/email) wins (channel skipped, R7);
+//     an un-owned identity ("" / "local") → route fallback. Checked BEFORE the channel.
+//
+// "stdout" is the always-available fallback sink (notify.go), NOT a deliberate external
+// channel: the scheduling agent fills it in as the implicit default route, so it must
+// defer to the origin channel exactly like an unset route — otherwise the headline case
+// (a Telegram reminder routing back to its DM) silently lands on the server console. Only
+// whatsapp/email pre-empt origin (R7 amended after the Phase 20 live gate proved the agent
+// auto-populates notify="stdout").
 func (d *Dispatch) originGate(identityID, notifyRoute string) bool {
 	if !d.deps.PreferOriginChannel || d.deps.ChannelDeliverer == nil {
 		return false
 	}
-	if notifyRoute != "" || identityID == "" || identityID == "local" {
+	if (notifyRoute != "" && notifyRoute != "stdout") || identityID == "" || identityID == "local" {
 		return false
 	}
 	return true
