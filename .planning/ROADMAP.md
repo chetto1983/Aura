@@ -645,3 +645,25 @@ Wave 3 (sequential / final):
 
 - [x] 19-02-PLAN.md - Veto/never-answer: M-b veto appends only the nudge (no resurface on budget trip) + M-a route 3 stream-opens through `streamWithOpenRetry`. Depends on 19-01 + 19-03 (shared `llm_agent.go`/`llm_agent_completion.go`)
 - [x] 19-11-PLAN.md - Layer-2 live operator sign-off (autonomous: false): real paid-agent + real-user-prompt before/after repro for every user-observable finding (H1/H2/H3/H4/H5/H6/H7/H9/M-b/M-e) recorded in `docs/audit/19-LIVE-SIGNOFF-2026-06-10.md`. Depends on all fix plans
+
+### Phase 20: scheduler hardening full implementation
+
+**Goal:** Scheduled-task notifications (reminders, agent_job summaries, failure/risk alerts) are delivered back to the channel that scheduled them — identity-keyed to the user's 1:1 chat (Telegram) — across both the immediate dispatch path (Step 1) and the quiet-hours-deferred / failed-retry sweep (Step 2), instead of always routing to whatsapp/email/stdout. Fixes the live Phase-19 reminder-agnostic-channel bug via a generic, identity-keyed `channels.Deliverer` seam so future channels plug in with zero scheduler changes.
+**Requirements**: R1-R7 (locked in 20-SPEC.md; no ROADMAP REQ-IDs map to this phase)
+**Depends on:** Phase 19
+**Plans:** 4 plans (3 waves)
+
+Plans:
+
+**Wave 1** (parallel leaf seams — disjoint files)
+
+- [ ] 20-01-PLAN.md — channels.Deliverer interface + Registry.DeliverToIdentity deterministic fan-out + Telegram Store.GetAccountByIdentity + Telegram.Deliver [R2, R3]
+- [ ] 20-02-PLAN.md — Origin + snapshot-identity capture: CreateTaskInput.OriginConversationID + bare-ctx-safe ctx read + cronTaskStore schedule-time conv→identity resolution [R1]
+
+**Wave 2** (blocked on Wave 1)
+
+- [ ] 20-03-PLAN.md — cron.ChannelDeliverer seam + deliverToOrigin precedence + AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch + serve boot reorder + Step-1 LIVE gate [R4, R5, R7]
+
+**Wave 3** (blocked on Wave 2)
+
+- [ ] 20-04-PLAN.md — migration 0014 (pending_notifications.identity_id text, no FK) + sqlc Insert/Sweep threading + sweepNotifications route-back + db_integration round-trip + Step-2 LIVE gate [R6]
