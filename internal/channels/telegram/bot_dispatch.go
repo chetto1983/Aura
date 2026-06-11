@@ -10,7 +10,8 @@
 // (UX-02/03/04 unreachable). registerHandlers wires them all.
 //
 // Routing rules (plan 13-10):
-//   - OnText  : /start <token> consumes onboarding first; then commands.dispatch
+//   - OnText  : /start <token> consumes onboarding first; then linked-account auth;
+//     then commands.dispatch
 //     intercepts (a /command never drives the LLM — T-13-10-CmdToLLM); else a
 //     pending pause → hitl.handleTextReply; else a turn.
 //   - OnVoice : getFile → voiceClient.Transcribe → turn driven by the transcript;
@@ -63,11 +64,7 @@ func (t *Telegram) buildDispatch() {
 		onboardStore = t.deps.Store
 	}
 	t.onboard = newOnboarding(onboardStore)
-	accounts := t.deps.profileAccounts
-	if accounts == nil && t.deps.Store != nil {
-		accounts = t.deps.Store
-	}
-	t.profile = newProfileOnboarding(t.deps.Profile, accounts)
+	t.profile = newProfileOnboarding(t.deps.Profile, t.accountsForDispatch())
 	t.voice = newVoiceClient(t.deps.Multimodal)
 	t.photo = newPhotoClient(t.deps.Multimodal)
 	t.docs = newDocumentsClient(t.deps.Multimodal)
@@ -116,6 +113,9 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 			t.reply(c, reply)
 			return nil
 		}
+		if !t.requireLinkedMessage(daemonCtx, c, msg) {
+			return nil
+		}
 
 		// 0) /cancel during a pending ask_user pause cancels the PAUSE, not a turn
 		// (M-e). This must run BEFORE the command intercept: /cancel is a command, so
@@ -150,101 +150,6 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		// 3) Ordinary message → a normal turn (runTurn runs it async + shows the
 		// "Aura is working" indicator, so the poller stays free for /cancel).
 		t.runTurn(daemonCtx, c, chatID, text, false)
-		return nil
-	}
-}
-
-func (t *Telegram) profileForDispatch() *profileOnboarding {
-	if t.profile != nil {
-		return t.profile
-	}
-	accounts := t.deps.profileAccounts
-	if accounts == nil && t.deps.Store != nil {
-		accounts = t.deps.Store
-	}
-	return newProfileOnboarding(t.deps.Profile, accounts)
-}
-
-func telegramUserIDFromMessage(msg *tele.Message) int64 {
-	if msg == nil {
-		return 0
-	}
-	if msg.Sender != nil {
-		return msg.Sender.ID
-	}
-	if msg.Chat != nil {
-		return msg.Chat.ID
-	}
-	return 0
-}
-
-func (t *Telegram) onStatusCancelCallback() tele.HandlerFunc {
-	return func(c tele.Context) error {
-		cb := c.Callback()
-		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
-			return nil
-		}
-		reply := "Nessun turno in corso da annullare."
-		if t.cmds != nil {
-			reply = t.cmds.cancel(cb.Message.Chat.ID)
-		}
-		_ = c.Respond(&tele.CallbackResponse{Text: reply})
-		t.disarmCallbackKeyboard(c.Bot(), cb.Message)
-		return nil
-	}
-}
-
-func (t *Telegram) onSearchCallback() tele.HandlerFunc {
-	return func(c tele.Context) error {
-		cb := c.Callback()
-		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
-			return nil
-		}
-		page, closePager, ok := parseSearchCallback(cb.Data)
-		_ = c.Respond(&tele.CallbackResponse{Text: "Ricevuto"})
-		if !ok {
-			return nil
-		}
-		if closePager {
-			if deleter, ok := c.Bot().(botDeleter); ok {
-				_ = deleter.Delete(cb.Message)
-			}
-			return nil
-		}
-		out := t.cmds.searchPage(cb.Message.Chat.ID, page)
-		if out.text == "" {
-			return nil
-		}
-		opts := []any{}
-		if out.markup != nil {
-			opts = append(opts, &tele.SendOptions{ReplyMarkup: out.markup})
-		}
-		if _, err := c.Bot().Edit(cb.Message, out.text, opts...); err != nil {
-			slog.Warn("telegram search: page edit failed", "err", err)
-		}
-		return nil
-	}
-}
-
-func (t *Telegram) onProfileCallback(daemonCtx context.Context) tele.HandlerFunc {
-	return func(c tele.Context) error {
-		cb := c.Callback()
-		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
-			return nil
-		}
-		chatID := cb.Message.Chat.ID
-		out, handled := t.profileForDispatch().handleCallback(daemonCtx, chatID, cb.Data)
-		if !handled {
-			_ = c.Respond(&tele.CallbackResponse{Text: "Non disponibile"})
-			return nil
-		}
-		ack := out.ack
-		if ack == "" {
-			ack = "Ricevuto"
-		}
-		_ = c.Respond(&tele.CallbackResponse{Text: ack})
-		t.disarmCallbackKeyboard(c.Bot(), cb.Message)
-		t.replyProfile(c, out)
 		return nil
 	}
 }
@@ -302,6 +207,10 @@ func (t *Telegram) onReply(daemonCtx context.Context) tele.HandlerFunc {
 		if msg == nil || msg.Chat == nil {
 			return nil
 		}
+		if !t.requireLinkedMessage(daemonCtx, c, msg) {
+			t.markHitlReplyHandled(msg.Chat.ID, msg.ID)
+			return nil
+		}
 		t.hitlHandlesReply(daemonCtx, c, msg.Chat.ID, msg.ID, c.Text())
 		return nil
 	}
@@ -313,6 +222,9 @@ func (t *Telegram) onCallback(daemonCtx context.Context) tele.HandlerFunc {
 	return func(c tele.Context) error {
 		cb := c.Callback()
 		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
+			return nil
+		}
+		if !t.requireLinkedCallback(daemonCtx, c, cb) {
 			return nil
 		}
 		chatID := cb.Message.Chat.ID
@@ -370,6 +282,9 @@ func (t *Telegram) disarmCallbackKeyboard(bot tele.API, msg *tele.Message) {
 // sole writer of paused_states — T-13-10-PauseHijack).
 func (t *Telegram) onCallbackFallback() tele.HandlerFunc {
 	return func(c tele.Context) error {
+		if cb := c.Callback(); cb != nil && !t.requireLinkedCallback(context.Background(), c, cb) {
+			return nil
+		}
 		_ = c.Respond()
 		return nil
 	}
@@ -385,6 +300,9 @@ func (t *Telegram) onVoice(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := msg.Chat.ID
+		if !t.requireLinkedMessage(daemonCtx, c, msg) {
+			return nil
+		}
 		filer, ok := c.Bot().(botFiler)
 		if !ok {
 			return nil
@@ -414,6 +332,9 @@ func (t *Telegram) onPhoto(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := msg.Chat.ID
+		if !t.requireLinkedMessage(daemonCtx, c, msg) {
+			return nil
+		}
 		filer, ok := c.Bot().(botFiler)
 		if !ok {
 			return nil
@@ -447,6 +368,9 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 			return nil
 		}
 		chatID := msg.Chat.ID
+		if !t.requireLinkedMessage(daemonCtx, c, msg) {
+			return nil
+		}
 		filer, ok := c.Bot().(botFiler)
 		if !ok {
 			return nil

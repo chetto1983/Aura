@@ -62,8 +62,9 @@ type Deps struct {
 	// Token is TELEGRAM_BOT_TOKEN (upstream naming).
 	Token string
 
-	// Store is the onboarding/account DB seam (plan 13-01). Optional here: the
-	// core render path does not touch it (onboarding is plan 13-07).
+	// Store is the onboarding/account DB seam (plan 13-01) and the live inbound
+	// auth resolver. If Store (or the test-only profileAccounts override) is nil,
+	// inbound Telegram handlers fail closed except for /start <token> activation.
 	Store *Store
 
 	// Profile is the per-identity Agent.md store. Nil means profile onboarding

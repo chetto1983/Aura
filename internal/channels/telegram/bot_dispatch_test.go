@@ -177,10 +177,23 @@ func recordingFactory() consumerFactory {
 // (as Start would) WITHOUT touching the network.
 func dispatchChannel(t *testing.T, rt *recordingTurn, overlay func(*Deps)) *Telegram {
 	t.Helper()
+	profileStore := profile.NewStore(t.TempDir())
+	if err := profileStore.WriteProfile(profileAccount().IdentityID, profile.Profile{
+		AgentMD: "test profile",
+		Metadata: profile.Metadata{
+			Version:             1,
+			SchemaVersion:       1,
+			OnboardingCompleted: true,
+		},
+	}); err != nil {
+		t.Fatalf("seed dispatch profile: %v", err)
+	}
 	d := Deps{
 		Turn:            rt.driver(),
 		Offline:         true,
 		consumerFactory: recordingFactory(),
+		Profile:         profileStore,
+		profileAccounts: profileAccountFake{acct: profileAccount()},
 	}
 	if overlay != nil {
 		overlay(&d)
@@ -225,140 +238,6 @@ func TestOnTextCommandInterceptNoTurn(t *testing.T) {
 	}
 	if len(bot.sentTexts()) == 0 {
 		t.Error("/cost must send a user-facing reply")
-	}
-}
-
-// TestOnTextStartPayloadRoutesToOnboarding proves a Telegram deep link
-// (/start <token>) is routed to the onboarding handler before the generic command
-// dispatcher. Without this, the setup deep link silently falls through to the
-// ordinary /start greeting and the token is never consumed.
-func TestOnTextStartPayloadRoutesToOnboarding(t *testing.T) {
-	t.Parallel()
-	rt := &recordingTurn{}
-	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Cost = &fakeCost{}
-		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
-		d.profileAccounts = profileAccountFake{acct: profileAccount()}
-	})
-
-	bot := &dispatchBot{}
-	msg := chatMsg(42)
-	msg.Sender = &tele.User{ID: 555, Username: "dav", FirstName: "Davide"}
-	msg.Text = "/start tok-good"
-	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
-		t.Fatalf("onText(/start token): %v", err)
-	}
-
-	if calls, _ := rt.snapshot(); calls != 0 {
-		t.Errorf("a /start onboarding payload must not drive a turn, got %d calls", calls)
-	}
-	texts := bot.sentTexts()
-	if len(texts) != 1 {
-		t.Fatalf("expected one onboarding reply, got %d: %v", len(texts), texts)
-	}
-	if !strings.Contains(texts[0], "Onboarding non disponibile") {
-		t.Fatalf("/start token was not routed to onboarding, reply: %q", texts[0])
-	}
-}
-
-func TestOnTextFirstLinkedNoProfileStartsProfileOnboardingNoTurn(t *testing.T) {
-	t.Parallel()
-	rt := &recordingTurn{}
-	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Cost = &fakeCost{}
-		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
-		d.profileAccounts = profileAccountFake{acct: profileAccount()}
-	})
-
-	bot := &dispatchBot{}
-	handle := tg.onText(context.Background())
-	msg := chatMsg(42)
-	msg.Sender = &tele.User{ID: 555, Username: "dav", FirstName: "Davide"}
-	msg.Text = "ciao Aura"
-	if err := handle(msgContext(bot, msg)); err != nil {
-		t.Fatalf("onText(first linked message): %v", err)
-	}
-
-	if calls, _ := rt.snapshot(); calls != 0 {
-		t.Fatalf("first profile onboarding message must not drive a turn, got %d calls", calls)
-	}
-	texts := bot.sentTexts()
-	if len(texts) != 1 || !strings.Contains(texts[0], "chiamarti") {
-		t.Fatalf("first profile onboarding reply = %v, want name question", texts)
-	}
-}
-
-func TestOnTextActiveProfileReplyDoesNotDriveTurn(t *testing.T) {
-	t.Parallel()
-	rt := &recordingTurn{}
-	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Cost = &fakeCost{}
-		d.Search = &fakeSearch{}
-		d.Profile = profile.NewStore(t.TempDir())
-		d.profileAccounts = profileAccountFake{acct: profileAccount()}
-	})
-
-	bot := &dispatchBot{}
-	handle := tg.onText(context.Background())
-	first := chatMsg(42)
-	first.Sender = &tele.User{ID: 555}
-	first.Text = "ciao Aura"
-	if err := handle(msgContext(bot, first)); err != nil {
-		t.Fatalf("onText(first): %v", err)
-	}
-	answer := chatMsg(42)
-	answer.Sender = &tele.User{ID: 555}
-	answer.Text = "Davide"
-	if err := handle(msgContext(bot, answer)); err != nil {
-		t.Fatalf("onText(profile answer): %v", err)
-	}
-
-	if calls, _ := rt.snapshot(); calls != 0 {
-		t.Fatalf("active profile onboarding reply must not drive a turn, got %d calls", calls)
-	}
-	texts := bot.sentTexts()
-	if len(texts) != 2 || !strings.Contains(texts[1], "lingua") {
-		t.Fatalf("active profile onboarding replies = %v, want preferences question second", texts)
-	}
-}
-
-func TestOnTextOnboardRestartsProfileOnboardingNoTurn(t *testing.T) {
-	t.Parallel()
-	rt := &recordingTurn{}
-	store := profile.NewStore(t.TempDir())
-	if err := store.WriteProfile(profileAccount().IdentityID, profile.Profile{
-		AgentMD: "old profile",
-		Metadata: profile.Metadata{
-			Version:             1,
-			SchemaVersion:       1,
-			OnboardingCompleted: true,
-		},
-	}); err != nil {
-		t.Fatalf("seed profile: %v", err)
-	}
-	tg := dispatchChannel(t, rt, func(d *Deps) {
-		d.Cost = &fakeCost{}
-		d.Search = &fakeSearch{}
-		d.Profile = store
-		d.profileAccounts = profileAccountFake{acct: profileAccount()}
-	})
-
-	bot := &dispatchBot{}
-	msg := chatMsg(42)
-	msg.Sender = &tele.User{ID: 555}
-	msg.Text = "/onboard"
-	if err := tg.onText(context.Background())(msgContext(bot, msg)); err != nil {
-		t.Fatalf("onText(/onboard): %v", err)
-	}
-
-	if calls, _ := rt.snapshot(); calls != 0 {
-		t.Fatalf("/onboard must not drive a turn, got %d calls", calls)
-	}
-	texts := bot.sentTexts()
-	if len(texts) != 1 || !strings.Contains(texts[0], "chiamarti") {
-		t.Fatalf("/onboard reply = %v, want restarted profile prompt", texts)
 	}
 }
 

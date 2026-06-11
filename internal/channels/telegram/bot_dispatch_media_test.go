@@ -266,6 +266,7 @@ func TestStopDrainsAsyncDocumentTurn(t *testing.T) {
 		Offline:         true,
 		consumerFactory: recordingFactory(),
 		Multimodal:      MultimodalConfig{DocumentsBaseURL: srv.URL},
+		profileAccounts: profileAccountFake{acct: profileAccount()},
 		Turn: func(ctx context.Context, _ string, _ *string) iter.Seq2[*agent.Event, error] {
 			return func(yield func(*agent.Event, error) bool) {
 				rt.mu.Lock()
