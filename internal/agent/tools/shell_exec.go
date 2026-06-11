@@ -32,6 +32,10 @@ type ShellExec struct {
 	// read and stop them across turns. Nil → background mode is unavailable.
 	Background *BackgroundShells
 
+	// Approvals is the one-shot ledger for commands matching
+	// AURA_SHELL_DESTRUCTIVE_PATTERNS. Nil fails closed for configured matches.
+	Approvals *ShellApprovals
+
 	// mu guards cwd: the per-session PERSISTENT working directory (Claude-Code
 	// Bash-tool parity — a `cd` in one call carries into the next). Keyed by the
 	// tool-call session id from WithToolCallContext ("" for bare-ctx callers). The
@@ -103,12 +107,25 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 		return ToolResult{}, fmt.Errorf("shell_exec: command is required")
 	}
 
+	// Models occasionally emit CRLF line endings inside command; under the POSIX
+	// shell a stray \r corrupts heredoc terminators and the cwd-tracking wrap
+	// (live run 9, amendment #53 / D-42). Normalize once and use the same command
+	// for destructive matching, approval digesting, and execution.
+	commandForGate := strings.ReplaceAll(a.Command, "\r\n", "\n")
+	workdir := s.workdir(ctx, a.Cwd)
+	approvalRequired, err := s.requireShellApproval(ctx, commandForGate, workdir)
+	if err != nil {
+		return ToolResult{}, err
+	}
+	if approvalRequired != nil {
+		return *approvalRequired, nil
+	}
+
 	if a.Background {
 		if s.Background == nil {
 			return ToolResult{}, fmt.Errorf("shell_exec: background mode is not available in this context")
 		}
-		bgCommand := strings.ReplaceAll(a.Command, "\r\n", "\n")
-		id, err := s.Background.start(bgCommand, s.workdir(ctx, a.Cwd), mergeEnv(a.Env))
+		id, err := s.Background.start(commandForGate, workdir, mergeEnv(a.Env))
 		if err != nil {
 			return ToolResult{}, err
 		}
@@ -126,18 +143,14 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	defer cancel()
 	started := time.Now()
 
-	// Models occasionally emit CRLF line endings inside command; under the POSIX
-	// shell a stray \r corrupts heredoc terminators and the cwd-tracking wrap
-	// (live run 9, amendment #53 / D-42). Normalizing is always safe: no POSIX or
-	// cmd.exe construct needs a literal CR inside a command line.
-	command := strings.ReplaceAll(a.Command, "\r\n", "\n")
+	command := commandForGate
 	posix := !shellIsCmdFallback()
 	if posix {
 		command = wrapForCwdTracking(command)
 	}
 	name, args := shellInvocation(command)
 	cmd := exec.CommandContext(runCtx, name, args...)
-	cmd.Dir = s.workdir(ctx, a.Cwd)
+	cmd.Dir = workdir
 	cmd.Env = mergeEnv(a.Env)
 	setProcessGroup(cmd)
 	cmd.Cancel = func() error { return killProcessGroup(cmd) }
@@ -321,15 +334,6 @@ func (s *ShellExec) storeCwd(ctx context.Context, dir string) {
 		s.cwd = map[string]string{}
 	}
 	s.cwd[shellSessionKey(ctx)] = dir
-}
-
-// shellSessionKey scopes cwd tracking per conversation/session: the session id
-// from WithToolCallContext, "" for bare-ctx callers (unit tests, one-shot CLIs).
-func shellSessionKey(ctx context.Context) string {
-	if tc, ok := toolCallCtx(ctx); ok {
-		return tc.sessionID
-	}
-	return ""
 }
 
 // cwdMarker fences the shell's final $PWD on the last stdout line so Execute can

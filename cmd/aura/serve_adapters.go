@@ -318,6 +318,52 @@ func newSkillResumeHook(cfg *config.Config, pool *pgxpool.Pool) runner.ResumeHoo
 	}
 }
 
+func chainResumeHooks(hooks ...runner.ResumeHook) runner.ResumeHook {
+	filtered := make([]runner.ResumeHook, 0, len(hooks))
+	for _, hook := range hooks {
+		if hook != nil {
+			filtered = append(filtered, hook)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
+		for _, hook := range filtered {
+			if err := hook(ctx, pending, resp); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+}
+
+func newShellResumeHook(approvals *tools.ShellApprovals) runner.ResumeHook {
+	if approvals == nil {
+		return nil
+	}
+	return func(ctx context.Context, pending askuser.Pending, resp runner.ResponseInput) error {
+		if pending.Kind != tools.KindApproval || resp.Action != askuser.ActionAccept || len(pending.ResumeContext) == 0 {
+			return nil
+		}
+		var rc struct {
+			Type          string `json:"type"`
+			CommandSHA256 string `json:"command_sha256"`
+		}
+		if err := json.Unmarshal(pending.ResumeContext, &rc); err != nil {
+			return fmt.Errorf("shell resume context: %w", err)
+		}
+		if rc.Type != "shell_exec_approval" {
+			return nil
+		}
+		if rc.CommandSHA256 == "" {
+			return fmt.Errorf("shell resume context: missing command_sha256")
+		}
+		approvals.Approve(pending.ConversationID, rc.CommandSHA256)
+		return nil
+	}
+}
+
 // skillLoaderRoots is the single source of truth for the loader scan roots
 // (amendment #51 / D-40 + #50): the persistent-install dir <export>/.agents/skills
 // FIRST (where an in-sandbox `cd /skills && npx skills add …` lands a self-installed
