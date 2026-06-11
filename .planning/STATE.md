@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 20 context gathered
-last_updated: "2026-06-11T10:35:46.095Z"
-last_activity: 2026-06-11 -- Phase 20 planning complete
+stopped_at: Completed 20-01-PLAN.md
+last_updated: "2026-06-11T15:56:16.093Z"
+last_activity: 2026-06-11
 progress:
   total_phases: 22
   completed_phases: 17
-  total_plans: 121
-  completed_plans: 115
+  total_plans: 125
+  completed_plans: 116
   percent: 77
 ---
 
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 19 — audit-bug-resolution-e2e-live-test
+**Current focus:** Phase 20 — scheduler-hardening-full-implementation
 
 ## Current Position
 
-Phase: 19 (audit-bug-resolution-e2e-live-test) — EXECUTING
-Plan: 3 of 11
+Phase: 20 (scheduler-hardening-full-implementation) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-06-11 -- Phase 20 planning complete
+Last activity: 2026-06-11
 
 Progress: [█████████░] 94%
 
@@ -124,6 +124,7 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 | Phase 13 P13-08 | ~10min | 2 tasks | 9 files |
 | Phase 19 P05 | ~40min | 2 tasks | 6 files |
 | Phase 19 P08 | ~50min | 2 tasks | 11 files |
+| Phase 20 P01 | 11 min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -195,6 +196,7 @@ Recent decisions affecting current work:
 - [Phase 12]: 12-04 (AG-UI Gateway Gate-3 closure, CLOSES Phase 12 / UX-01): scripts/agui_smoke.sh is the live SSE Gate-3 reference — builds aura, seeds a conversation KEY-FREE (docker exec psql), polls 127.0.0.1:9080 (no fixed sleep), POSTs a RunAgentInput and asserts FRAME ground truth (RUN_STARTED…RUN_FINISHED; + REASONING_START…REASONING_END before the first TEXT_MESSAGE_START on the LIVE leg, amendment #57), then GETs the MESSAGES_SNAPSHOT + asserts a 404 chokepoint; two legs (DEGRADED dummy-key CI / LIVE AGUI_SMOKE_LIVE=1). No-skip-as-green: exits non-zero under $CI when the DB env is unset. ci.yml adds ./internal/agui/... to the db_integration -race -p 1 package list (0.04–0.05s round-trips, not a skip tell) + a degraded-leg smoke step. [Rule 1] a malformed/non-UUID thread id now maps to 404 at BOTH handlers (uuid.Parse guard before the store round-trip) instead of leaking the store parse error as a 500 — caught live by the does-not-exist chokepoint (T-12-11). internal/agui coverage 86.8% (owned-surface 86.2%, ≥85%); translator.go mutation 76.2% (48/63 killed, 15 near-equivalent survivors advisory-accepted per db.go/budget.go precedent). Operator DELEGATED the live Gate-3 sign-off to an autonomous E2E loop ("do all E2E test in autonomy and loop until score is >95%") — 11/11 (100%), 3 iterations (2 driver-harness fixes, ZERO product defects); ground truth in D:/tmp/agui-e2e/ (sse.txt ordering, snap.json no-CoT, db_turns.txt assistant len=21, serve.log graceful shutdown, chat_leg.out live 💭 render). Commit 1867c0c2. CAP/UX-01 Phase 12 COMPLETE (6/6 plans).
 - [Phase ?]: Phase 19 19-05: H2 Telegram RunErrorEvent render routes through agui.SanitizeString (one redaction contract); H3 async doc-convert failure notifies via convertFailMessage; M-e /cancel during a pause routes SubmitAnswer(ActionCancel)+clears keyboard via per-chat pausePrompts track at step-0 of onText; D-04 stale serve_channels comment corrected.
 - [Phase ?]: [Phase 19]: 19-08: M-g/M-h/L5 scheduler-contract fixes — catch-up consults ReschedulesOnRecovery (no replay on recovery, nil seam fails safe to always-fire), complete() detaches the terminal write via WithoutCancel+5s (no stuck-running on shutdown), inert autocommit SKIP LOCKED dropped from DueTasks + sqlc regenerated (advisory-lock correctness documented). Both M-g+M-h proven fails-before/passes-after; cron -race db_integration green.
+- [Phase 20]: 20-01: channels.Deliverer tri-state seam ((false,nil)=try-next/(true,nil)=delivered/(false,err)=owns-but-failed-stop) + Registry.DeliverToIdentity deterministic sort-by-name fan-out + Telegram.Deliver/Store.GetAccountByIdentity (reuses existing sqlc query; non-UUID 'local'->wrapped pgx.ErrNoRows) — Leaf of the Phase 20 dep graph; sort-by-name over Priority() (lower LOC); deliverBot/deliverResolver unexported test seams; 10 unit cases green under -race, lint 0
 
 ### Pending Todos
 
@@ -228,6 +230,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T09:53:15.512Z
-Stopped at: Phase 20 context gathered
-Resume file: .planning/phases/20-scheduler-hardening-full-implementation/20-CONTEXT.md
+Last session: 2026-06-11T15:56:16.079Z
+Stopped at: Completed 20-01-PLAN.md
+Resume file: None
