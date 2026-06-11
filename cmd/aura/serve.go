@@ -108,6 +108,14 @@ func runServe(args []string) {
 	// shutdown it returns nil after the in-flight tick joins its workers.
 	schedErr := env.scheduler.Start(ctx)
 
+	if env.toolHandles.BackgroundShells != nil {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := env.toolHandles.BackgroundShells.Shutdown(shutCtx); err != nil {
+			slog.Warn("aura serve: background shell shutdown", "err", err)
+		}
+		cancel()
+	}
+
 	// Drain the channels Registry + setup server FIRST (StopAll joins the pollers
 	// goleak-clean, Shutdown drains the setup server) — BEFORE env.close() releases
 	// the pool the channels still hold. env.close() runs last (deferred at the top).
