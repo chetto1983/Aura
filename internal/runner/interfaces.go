@@ -49,7 +49,7 @@ type ConversationStore interface {
 
 // ContextBlockProvider renders identity-aware context for messages[1]. The Runner
 // composes its output before the legacy AlwaysBlock skill renderer.
-type ContextBlockProvider func(ctx context.Context, identityID string) string
+type ContextBlockProvider func(ctx context.Context, owner identity.Identity) string
 
 // PauseStore is the narrow paused_states surface the Runner consumes (D-A2-02).
 // *askuser.Store satisfies it implicitly. The Runner is the SOLE caller of Insert
@@ -85,4 +85,5 @@ type ToolInvocationStore interface {
 // when it creates a new conversation (single-user `local` scaffolding, Slice 1.7).
 type IdentityStore interface {
 	GetIdentityByName(ctx context.Context, name string) (identity.Identity, error)
+	GetIdentityByID(ctx context.Context, identityID string) (identity.Identity, error)
 }

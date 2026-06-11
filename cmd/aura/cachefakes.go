@@ -299,6 +299,13 @@ func (memIdentityStore) GetIdentityByName(_ context.Context, name string) (ident
 	return identity.Identity{ID: "00000000-0000-0000-0000-000000000001", Name: "local", Kind: "system"}, nil
 }
 
+func (memIdentityStore) GetIdentityByID(_ context.Context, identityID string) (identity.Identity, error) {
+	if identityID != "00000000-0000-0000-0000-000000000001" {
+		return identity.Identity{}, identity.ErrIdentityNotFound
+	}
+	return identity.Identity{ID: identityID, Name: "local", Kind: "system"}, nil
+}
+
 // memCacheMetricStore is a no-op CacheMetricStore — the audit proves the prefix
 // invariant, not the metrics write (which is the prod-path / integration tier).
 type memCacheMetricStore struct{}

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/agenttest"
+	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 )
 
@@ -17,9 +18,9 @@ func TestProfileContextBlockUsesConversationIdentityAndPrecedesSkills(t *testing
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	var seenIdentity string
-	r.contextBlock = func(_ context.Context, identityID string) string {
-		seenIdentity = identityID
+	var seenIdentity identity.Identity
+	r.contextBlock = func(_ context.Context, owner identity.Identity) string {
+		seenIdentity = owner
 		return "<profile:Agent.md>\nName: Davide\n</profile:Agent.md>"
 	}
 	r.alwaysBlock = func() string {
@@ -29,8 +30,8 @@ func TestProfileContextBlockUsesConversationIdentityAndPrecedesSkills(t *testing
 	if _, err := drain(r.Turn(ctx, convID, userPtr("hello"))); err != nil {
 		t.Fatalf("turn: %v", err)
 	}
-	if seenIdentity != "00000000-0000-0000-0000-000000000001" {
-		t.Fatalf("context provider identity = %q", seenIdentity)
+	if seenIdentity.ID != "00000000-0000-0000-0000-000000000001" || seenIdentity.Name != "local" {
+		t.Fatalf("context provider identity = %+v", seenIdentity)
 	}
 	block := conv.lastCfg.AlwaysBlock
 	profileAt := strings.Index(block, "<profile:Agent.md>")
@@ -47,7 +48,7 @@ func TestProfileContextMissingFallsBackToSkillsOnly(t *testing.T) {
 	ctx := context.Background()
 	mustCreate(t, r, convID)
 
-	r.contextBlock = func(context.Context, string) string { return "" }
+	r.contextBlock = func(context.Context, identity.Identity) string { return "" }
 	r.alwaysBlock = func() string { return "SKILLS-ONLY" }
 
 	if _, err := drain(r.Turn(ctx, convID, userPtr("hello"))); err != nil {

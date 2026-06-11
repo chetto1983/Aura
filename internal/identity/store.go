@@ -95,6 +95,23 @@ func (s *Store) GetIdentityByName(ctx context.Context, name string) (Identity, e
 	return fromRow(r), nil
 }
 
+// GetIdentityByID fetches one identity by UUID. A missing row is reported as
+// ErrIdentityNotFound (wrapped) rather than the raw pgx.ErrNoRows.
+func (s *Store) GetIdentityByID(ctx context.Context, identityID string) (Identity, error) {
+	id, err := parseUUID(identityID)
+	if err != nil {
+		return Identity{}, fmt.Errorf("get identity by id: %w", err)
+	}
+	r, err := s.q.GetIdentityByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Identity{}, fmt.Errorf("get identity id %q: %w", identityID, ErrIdentityNotFound)
+		}
+		return Identity{}, fmt.Errorf("get identity id %q: %w", identityID, err)
+	}
+	return fromRow(r), nil
+}
+
 // DeleteIdentity removes an identity by name. Its capability_grants cascade away
 // via the FK ON DELETE CASCADE (verified by the integration test). Deleting an
 // absent identity is a no-op (DELETE affects zero rows, no error).

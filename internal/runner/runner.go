@@ -343,7 +343,11 @@ func (r *Runner) renderContextBlock(ctx context.Context, convID string) (string,
 		if err != nil {
 			return "", fmt.Errorf("context block: load conversation identity: %w", err)
 		}
-		if block := strings.TrimSpace(r.contextBlock(ctx, conv.IdentityID)); block != "" {
+		owner, err := r.identity.GetIdentityByID(ctx, conv.IdentityID)
+		if err != nil {
+			return "", fmt.Errorf("context block: resolve identity %s: %w", conv.IdentityID, err)
+		}
+		if block := strings.TrimSpace(r.contextBlock(ctx, owner)); block != "" {
 			parts = append(parts, block)
 		}
 	}

@@ -26,6 +26,8 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
+	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/scoring"
 	"github.com/chetto1983/aura/internal/skilladapters"
@@ -346,6 +348,27 @@ func alwaysBlockProvider(cfg *config.Config) func() string {
 			return ""
 		}
 		return block
+	}
+}
+
+func profileContextProvider(cfg *config.Config) runner.ContextBlockProvider {
+	if cfg == nil || cfg.ProfileDir == "" {
+		return func(context.Context, identity.Identity) string { return "" }
+	}
+	store := profile.NewStore(cfg.ProfileDir)
+	return func(ctx context.Context, owner identity.Identity) string {
+		loaded, err := store.ReadProfile(owner.Name)
+		if err != nil && owner.ID != "" && owner.ID != owner.Name {
+			loaded, err = store.ReadProfile(owner.ID)
+		}
+		if err != nil {
+			if errors.Is(err, profile.ErrProfileNotFound) || errors.Is(err, profile.ErrInvalidIdentity) {
+				return ""
+			}
+			slog.Warn("profile context: load Agent.md", "identity", owner.Name, "id", owner.ID, "err", err)
+			return ""
+		}
+		return profile.RenderContextBlock(loaded.AgentMD)
 	}
 }
 

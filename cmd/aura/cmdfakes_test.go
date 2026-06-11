@@ -264,6 +264,13 @@ func (cmdIdentityFake) GetIdentityByName(_ context.Context, name string) (identi
 	return identity.Identity{ID: "00000000-0000-0000-0000-000000000001", Name: "local", Kind: "system"}, nil
 }
 
+func (cmdIdentityFake) GetIdentityByID(_ context.Context, identityID string) (identity.Identity, error) {
+	if identityID != "00000000-0000-0000-0000-000000000001" {
+		return identity.Identity{}, identity.ErrIdentityNotFound
+	}
+	return identity.Identity{ID: identityID, Name: "local", Kind: "system"}, nil
+}
+
 // cmdCacheMetricFake is an in-memory runner.CacheMetricStore for the REPL tests (no DB).
 type cmdCacheMetricFake struct{}
 

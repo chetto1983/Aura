@@ -179,6 +179,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		RunDir:          cfg.RunDir,
 		PreviewCap:      cfg.ToolPreviewCap,
 		EvictAfter:      cfg.ContextToolEvictAfterTurns,
+		ContextBlock:    profileContextProvider(cfg),
 		AlwaysBlock:     alwaysBlockProvider(cfg),
 		ResumeHook:      newSkillResumeHook(cfg, pool),
 	})

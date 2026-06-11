@@ -99,3 +99,21 @@ func TestRenderAgentMDStableAndBounded(t *testing.T) {
 		t.Fatal("checkAgentSize should reject oversized Agent.md")
 	}
 }
+
+func TestRenderContextBlockWrapsAndBoundsAgentMD(t *testing.T) {
+	t.Parallel()
+	block := RenderContextBlock("# Agent.md\n\n## Facts\n- Name: Davide\n")
+	if !strings.HasPrefix(block, ProfileBlockStart+"\n# Agent.md") {
+		t.Fatalf("block missing start marker:\n%s", block)
+	}
+	if !strings.HasSuffix(block, "\n"+ProfileBlockEnd) {
+		t.Fatalf("block missing end marker:\n%s", block)
+	}
+	oversized := RenderContextBlock(strings.Repeat("x", MaxAgentMDBytes+100))
+	if !strings.Contains(oversized, "profile truncated") {
+		t.Fatalf("oversized profile should be truncated with warning:\n%s", oversized[len(oversized)-128:])
+	}
+	if len([]byte(oversized)) > MaxAgentMDBytes+len(ProfileBlockStart)+len(ProfileBlockEnd)+2 {
+		t.Fatalf("bounded block too large: %d", len([]byte(oversized)))
+	}
+}

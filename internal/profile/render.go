@@ -7,6 +7,11 @@ import (
 
 const MaxAgentMDBytes = 32768
 
+const (
+	ProfileBlockStart = "<profile:Agent.md>"
+	ProfileBlockEnd   = "</profile:Agent.md>"
+)
+
 // AgentContent is the structured form rendered into Agent.md.
 type AgentContent struct {
 	Facts              []string
@@ -24,6 +29,16 @@ func RenderAgentMD(c AgentContent) string {
 	writeSection(&b, "Context", c.Context)
 	writeSection(&b, "Custom Instructions", c.CustomInstructions)
 	return b.String()
+}
+
+// RenderContextBlock wraps Agent.md for the protected messages[1] user-role block.
+func RenderContextBlock(agentMD string) string {
+	agentMD = strings.TrimSpace(agentMD)
+	if agentMD == "" {
+		return ""
+	}
+	agentMD = boundedAgentMD(agentMD)
+	return ProfileBlockStart + "\n" + agentMD + "\n" + ProfileBlockEnd
 }
 
 // AddFact inserts a bullet into the Facts section without duplicating it.
@@ -64,6 +79,25 @@ func AddFact(agentMD, fact string) (string, bool, error) {
 		out += "\n"
 	}
 	return out, true, checkAgentSize(out)
+}
+
+func boundedAgentMD(agentMD string) string {
+	if len([]byte(agentMD)) <= MaxAgentMDBytes {
+		return agentMD
+	}
+	const suffix = "\n\n[profile truncated: Agent.md exceeded byte cap]"
+	limit := MaxAgentMDBytes - len([]byte(suffix))
+	if limit < 0 {
+		limit = 0
+	}
+	var b strings.Builder
+	for _, r := range agentMD {
+		if b.Len()+len(string(r)) > limit {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String()) + suffix
 }
 
 func writeSection(b *strings.Builder, name string, items []string) {

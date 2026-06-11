@@ -418,5 +418,14 @@ func (f *fakeIdentityStore) GetIdentityByName(_ context.Context, name string) (i
 	return id, nil
 }
 
+func (f *fakeIdentityStore) GetIdentityByID(_ context.Context, identityID string) (identity.Identity, error) {
+	for _, id := range f.byName {
+		if id.ID == identityID {
+			return id, nil
+		}
+	}
+	return identity.Identity{}, identity.ErrIdentityNotFound
+}
+
 // errFake is a reusable injectable error for the fakes.
 var errFake = errors.New("fake error")
