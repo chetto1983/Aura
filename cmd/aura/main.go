@@ -8,6 +8,7 @@
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
 //	aura neo4j <sub>        — Neo4j lifecycle
 //	aura identity <sub>     — identity + capability_grants (list|get|grant|revoke)
+//	aura profile <sub>      — filesystem Agent.md profile (show|add-fact)
 //	aura paused-states <sub>— HITL pause escape hatch (list|purge --before <ISO> --confirm)
 //	aura chat <sub>         — multi-thread conversation REPL (list|new|resume|archive|unarchive|delete|rename|search)
 //	aura version            — print build metadata (version, commit, build date)
@@ -56,6 +57,8 @@ func main() {
 		runNeo4j(os.Args[2:])
 	case "identity":
 		runIdentity(os.Args[2:])
+	case "profile":
+		runProfile(os.Args[2:])
 	case "paused-states":
 		runPausedStates(os.Args[2:])
 	case "task":
@@ -85,7 +88,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|profile <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|db <sub>|neo4j <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
