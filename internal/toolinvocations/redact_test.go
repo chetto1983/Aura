@@ -115,6 +115,16 @@ func TestRedactForLedger_CleanPassthrough(t *testing.T) {
 	}
 }
 
+func TestRedactForLedger_PostgresTextSafe(t *testing.T) {
+	got := RedactForLedger("before\x00after", ArgsRawCapBytes)
+	if strings.ContainsRune(got, '\x00') {
+		t.Fatalf("ledger value contains NUL byte: %q", got)
+	}
+	if !strings.Contains(got, "[NUL]") {
+		t.Fatalf("ledger value missing replacement marker: %q", got)
+	}
+}
+
 // TestRedactForLedger_Cap asserts the byte cap bounds the output and appends the
 // cap marker, and that a secret beyond the cap is truncated away (not persisted).
 func TestRedactForLedger_Cap(t *testing.T) {

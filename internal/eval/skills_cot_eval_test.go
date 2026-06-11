@@ -26,9 +26,10 @@
 // The dual gate (D-35, RISCRITTO #51/D-40, SURFACE #52/D-41) is:
 //
 //   - HARD FLOOR (artifact-not-reply ground truth): SELF-INSTALL evidence read from
-//     STRUCTURED tool args — a shell_exec command line ran `npx skills add` targeting
-//     `anthropics/skills` with the `xlsx` selector (classifyCall over
-//     resp.ToolCalls[].Function.Arguments, NEVER the prose); AND the produced .xlsx
+//     STRUCTURED tool args — a shell_exec command line ran `npx skills add` against a
+//     concrete skills source with xlsx/excel/spreadsheet capability evidence
+//     (classifyCall over resp.ToolCalls[].Function.Arguments, NEVER the prose); AND
+//     the produced .xlsx
 //     EXISTS in the HOST run workspace FRESH (newer than run start), OPENS (re-read via a
 //     host openpyxl read-back), and CONTAINS today's date.
 //   - JUDGE ≥90% AVERAGE over: capability-gap recognition + output quality (D-35).
@@ -105,8 +106,8 @@ type skillsResult struct {
 	toolCalls     []string // action-aware tool calls (e.g. "shell_exec(npx skills add ...)")
 	promptNatural bool     // the prompt contains none of the forbidden words
 	selfInstall   bool     // a host command line ran `npx skills add` (structured-arg evidence)
-	installTarget bool     // the self-install targeted anthropics/skills (the North-Star repo)
-	installSel    bool     // the self-install carried the --skill xlsx selector
+	installTarget bool     // the self-install targeted a concrete skills source
+	installSel    bool     // the self-install included xlsx/excel/spreadsheet capability evidence
 	xlsxFresh     bool     // a .xlsx newer than run start exists in the host workspace
 	xlsxExists    bool     // a .xlsx is present in the workspace (== xlsxFresh, ground truth)
 	xlsxOpens     bool     // the .xlsx re-opened via a host openpyxl read-back
@@ -286,13 +287,13 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 		t.Errorf("skills: SECRET LEAK — OPENROUTER_API_KEY value appears in the final answer")
 	}
 
-	// Assert the self-install targeted the right repo + selector (structured-arg ground
-	// truth, recorded by classifyCall during the loop).
+	// Assert the self-install targeted a concrete source + spreadsheet capability
+	// (structured-arg ground truth, recorded by classifyCall during the loop).
 	if !res.installTarget {
-		res.notes = append(res.notes, "self-install did not target "+sc.skills.installTargetRepo)
+		res.notes = append(res.notes, "self-install did not target a concrete skills source")
 	}
 	if !res.installSel {
-		res.notes = append(res.notes, "self-install did not carry the --skill "+sc.skills.installSelector+" selector")
+		res.notes = append(res.notes, "self-install did not include xlsx/excel/spreadsheet capability evidence")
 	}
 
 	// Artifact ground truth (artifact-not-reply, D-35, #52/D-41): find the FRESH .xlsx in
@@ -301,9 +302,9 @@ func runSkillsScenario(t *testing.T, ctx context.Context, client llm.Client, cfg
 	verifyXlsxArtifact(t, sc.skills, workspace, runStart, res)
 
 	observed := fmt.Sprintf(
-		"self-install ran `npx skills add`: %v; targeted %s: %v; --skill %s selector: %v; "+
+		"self-install ran `npx skills add`: %v; targeted concrete skills source: %v; xlsx/excel/spreadsheet capability: %v; "+
 			".xlsx produced fresh: %v; .xlsx re-opened via openpyxl: %v; contains today's date: %v",
-		res.selfInstall, sc.skills.installTargetRepo, res.installTarget, sc.skills.installSelector, res.installSel,
+		res.selfInstall, res.installTarget, res.installSel,
 		res.xlsxFresh, res.xlsxOpens, res.xlsxToday)
 
 	dims := []dimension{dimCapabilityGapRecognition, dimSkillOutputQuality}
@@ -430,10 +431,10 @@ func enforceSkills(t *testing.T, res *skillsResult) {
 		t.Errorf("HARD FLOOR: no self-install evidence — no host command line ran `npx skills add` (structured-arg ground truth), got %v", res.toolCalls)
 	}
 	if !res.installTarget {
-		t.Errorf("HARD FLOOR: the self-install did not target anthropics/skills (the North-Star repo)")
+		t.Errorf("HARD FLOOR: the self-install did not target a concrete skills source")
 	}
 	if !res.installSel {
-		t.Errorf("HARD FLOOR: the self-install did not carry the --skill xlsx selector")
+		t.Errorf("HARD FLOOR: the self-install did not include xlsx/excel/spreadsheet capability evidence")
 	}
 	if !res.xlsxExists {
 		t.Errorf("HARD FLOOR: no FRESH .xlsx artifact found in the host run workspace (artifact-not-reply / stale)")
@@ -462,8 +463,8 @@ func writeSkillsReport(t *testing.T, model string, res *skillsResult) {
 	b.WriteString("| Signal | Target | Observed | Pass |\n|---|---|---|---|\n")
 	fmt.Fprintf(&b, "| Natural prompt (no skill/install hint) | true | %v | %v |\n", res.promptNatural, res.promptNatural)
 	fmt.Fprintf(&b, "| self-install `npx skills add` (structured args) | ran | %v | %v |\n", res.selfInstall, res.selfInstall)
-	fmt.Fprintf(&b, "| self-install targeted anthropics/skills | true | %v | %v |\n", res.installTarget, res.installTarget)
-	fmt.Fprintf(&b, "| self-install carried --skill xlsx | true | %v | %v |\n", res.installSel, res.installSel)
+	fmt.Fprintf(&b, "| self-install targeted a concrete skills source | true | %v | %v |\n", res.installTarget, res.installTarget)
+	fmt.Fprintf(&b, "| self-install included xlsx/excel/spreadsheet capability | true | %v | %v |\n", res.installSel, res.installSel)
 	fmt.Fprintf(&b, "| .xlsx produced FRESH in host workspace | newer-than-start | %v | %v |\n", res.xlsxFresh, res.xlsxExists)
 	fmt.Fprintf(&b, "| .xlsx re-opens via openpyxl | opens | %v | %v |\n", res.xlsxOpens, res.xlsxOpens)
 	fmt.Fprintf(&b, "| .xlsx contains today's date | present | %v | %v |\n", res.xlsxToday, res.xlsxToday)

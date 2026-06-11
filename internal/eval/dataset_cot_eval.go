@@ -170,7 +170,7 @@ func scenarios() []scenario {
 			prompts:       []string{"Scrivi un saggio lunghissimo e molto dettagliato, di almeno duemila parole, sulla storia completa dell'Impero Romano dalle origini alla caduta."},
 			dimensions:    []dimension{dimStreamingFidelity, dimCostHonesty},
 			expectLength:  true,
-			tinyMaxTokens: intPtr(64), // force finish_reason="length" deterministically
+			tinyMaxTokens: intPtr(64), // usually exercises finish_reason="length"; deterministic unit coverage owns the forced path
 		},
 		{
 			id: "budget-trip",

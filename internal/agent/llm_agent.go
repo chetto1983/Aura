@@ -273,7 +273,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					a.finalize(ic, spanID, parentSpanID, requestID, "empty_response", yield)
 					return
 				}
-				answer := text
+				answer := normalizeContentStopAnswer(text)
 				if finish == "length" {
 					answer += truncationNotice // D-21 — no auto-continue
 				}

@@ -377,7 +377,8 @@ func (s *Store) appendTurnWrites(p AppendTurnParams) (sqlc.InsertConversationTur
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn: %w", err)
 	}
-	content, sidecarPath, err := s.maybeSpill(p.ConversationID, p.Seq, p.Content)
+	safeContent := postgresTextSafe(p.Content)
+	content, sidecarPath, err := s.maybeSpill(p.ConversationID, p.Seq, safeContent)
 	if err != nil {
 		return sqlc.InsertConversationTurnParams{}, sqlc.UpdateConversationAggregatesParams{}, fmt.Errorf("append turn %s seq %d: %w", p.ConversationID, p.Seq, err)
 	}

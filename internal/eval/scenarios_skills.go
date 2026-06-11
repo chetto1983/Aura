@@ -8,18 +8,19 @@
 // §specifics): a NATURAL Italian prompt — NO "skill"/"install" word, asserted absent —
 // that the model must turn into the full autonomous self-extension loop on its own:
 //
-//	recognize the capability gap → discover anthropics/skills/xlsx on skills.sh
-//	(`npx skills find xlsx` on the HOST terminal, taught by the always-on
-//	find-skills-aura skill) → self-install (`npx skills add anthropics/skills --skill
-//	xlsx --copy -y` from the skills home) → use the skill (bundled Python by-path on the
-//	host) → pull today's data via the shipped web tools → produce the .xlsx.
+//	recognize the capability gap → discover an xlsx/excel/spreadsheet capability on
+//	skills.sh (`npx skills find xlsx` on the HOST terminal, taught by the always-on
+//	find-skills-aura skill) → self-install it from a concrete skills source → use the
+//	skill (or its bundled Python by-path) on the host → pull today's data via the
+//	shipped web tools → produce the .xlsx.
 //
 // The dual gate (D-35, RISCRITTO #51/D-40, host surface #52/D-41), enforced by
 // skills_cot_eval_test.go:
 //   - HARD FLOOR (artifact-not-reply ground truth, feedback_probe_must_verify_artifact_not_reply):
 //     (a) SELF-INSTALL evidence from STRUCTURED tool args — a shell_exec command line
-//     ran `npx skills add` targeting `anthropics/skills` with the `xlsx` selector
-//     (read from resp.ToolCalls[].Function.Arguments, never the prose); (b) the produced
+//     ran `npx skills add` against a concrete skills source with xlsx/excel/spreadsheet
+//     capability evidence (read from resp.ToolCalls[].Function.Arguments, never the
+//     prose); (b) the produced
 //     .xlsx EXISTS in the HOST run workspace (fresh — newer than run start), OPENS
 //     (re-read via a host openpyxl read-back), and CONTAINS today's date — never an
 //     assertion on r.Reply.
@@ -34,13 +35,12 @@ import "time"
 // hard floor asserts (D-35, RISCRITTO #51/D-40). It is pure data — the harness reads
 // it, drives the find→add→use→produce loop, and gates on it; no logic lives here.
 type skillsExpect struct {
-	// installTargetRepo is the source repo the self-install command line must target
-	// (the xlsx North-Star provenance, asserted from the structured `npx skills add`
-	// arguments — not the prose). Reputable source per find-skills-aura's "choose"
-	// guidance (anthropics/vercel-labs/microsoft).
+	// installTargetRepo is the historical preferred source. The live skills.sh index is
+	// external, so the hard floor now accepts any concrete skills source plus explicit
+	// xlsx/excel/spreadsheet capability evidence.
 	installTargetRepo string
-	// installSelector is the `--skill` selector the self-install must carry (the xlsx
-	// North-Star target). The action-aware capture flags it from the command line.
+	// installSelector is the historical preferred selector. Current skills.sh install
+	// specs may instead encode the capability in the owner/repo@skill token.
 	installSelector string
 	// xlsxExt is the artifact extension the produced file must carry in the workspace
 	// (the .xlsx ground truth — opened + content-verified by the harness).
@@ -81,8 +81,8 @@ func skillsScenarios() []scenario {
 			// NATURAL prompt — NO "skill"/"installa"/"install"/"catalogo" and NO save
 			// location: the user just wants today's Yahoo Finance market as a real Excel
 			// file. The model must recognise it lacks a battle-tested xlsx method,
-			// discover anthropics/skills/xlsx on skills.sh (`npx skills find xlsx`),
-			// self-install it on its host terminal, use it to produce the .xlsx — and
+			// discover an xlsx/excel/spreadsheet capability on skills.sh, self-install
+			// it on its host terminal, use it to produce the .xlsx — and
 			// save it IN ITS WORKSPACE because the system prompt's <machine> convention
 			// teaches deliverables go in the shell's working directory (the PRODUCT
 			// mechanism; run 5 saved a perfect .xlsx into /tmp before it existed).

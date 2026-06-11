@@ -18,8 +18,9 @@
 # Two legs, selected by AGUI_SMOKE_LIVE (NOT by key presence — a CI dummy key is
 # indistinguishable from a real one by presence alone):
 #   - LIVE leg (AGUI_SMOKE_LIVE=1, requires a REAL OPENROUTER_API_KEY): the daemon's
-#     agent turn calls DeepSeek-V4, so RUN_STARTED…RUN_FINISHED + the REASONING_*
-#     lifecycle are HARD-asserted. This is the operator Gate-3 reference (Task 2).
+#     agent turn calls DeepSeek-V4 with AURA_SHOW_REASONING=1, so
+#     RUN_STARTED…RUN_FINISHED + the REASONING_* lifecycle are HARD-asserted. This is
+#     the operator Gate-3 reference (Task 2).
 #   - DEGRADED leg (default; FakeClient / CI): the daemon boots (config.Load
 #     fail-fasts on an EMPTY key, so a dummy non-empty key is set when none is
 #     present), the SSE pump + translator + daemon mount are exercised end-to-end, and
@@ -104,8 +105,9 @@ if [[ "${AGUI_SMOKE_LIVE:-0}" == "1" ]]; then
     echo "FAIL: AGUI_SMOKE_LIVE=1 requires a real OPENROUTER_API_KEY (the live OpenRouter leg)" >&2
     exit 2
   fi
+  export AURA_SHOW_REASONING=1
   LIVE=1
-  echo "==> agui_smoke: LIVE leg (AGUI_SMOKE_LIVE=1 + real key — REASONING_* hard-asserted)"
+  echo "==> agui_smoke: LIVE leg (AGUI_SMOKE_LIVE=1 + real key + AURA_SHOW_REASONING=1 — REASONING_* hard-asserted)"
 else
   if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
     export OPENROUTER_API_KEY="sk-agui-smoke-degraded-no-network"
@@ -237,16 +239,20 @@ if [[ "${LIVE}" -eq 1 ]]; then
     echo "FAIL: LIVE leg did not reach RUN_FINISHED (turn errored — check OPENROUTER_API_KEY/model)" >&2
     exit 1
   fi
-  if false && ! grep -q '^event: REASONING_START' <<< "${SSE}"; then
+  if ! grep -q '^event: REASONING_START' <<< "${SSE}"; then
     echo "FAIL: LIVE leg missing REASONING_START (amendment #57 — model not reasoning-capable?)" >&2
     exit 1
   fi
-  if false && ! grep -q '^event: REASONING_END' <<< "${SSE}"; then
+  if ! grep -q '^event: REASONING_END' <<< "${SSE}"; then
     echo "FAIL: LIVE leg missing REASONING_END (amendment #57)" >&2
     exit 1
   fi
-  RSN_END_LINE="$(printf '%s\n' "${SSE}" | grep -nE '^event: REASONING_END' | head -1 | cut -d: -f1)"
-  TXT_START_LINE="$(printf '%s\n' "${SSE}" | grep -nE '^event: TEXT_MESSAGE_START' | head -1 | cut -d: -f1)"
+  RSN_END_LINE="$(printf '%s\n' "${SSE}" | grep -nE '^event: REASONING_END' | head -1 | cut -d: -f1 || true)"
+  TXT_START_LINE="$(printf '%s\n' "${SSE}" | grep -nE '^event: TEXT_MESSAGE_START' | head -1 | cut -d: -f1 || true)"
+  if [[ -z "${RSN_END_LINE}" || -z "${TXT_START_LINE}" ]]; then
+    echo "FAIL: LIVE leg missing REASONING_END or TEXT_MESSAGE_START for ordering check" >&2
+    exit 1
+  fi
   if [[ -n "${TXT_START_LINE}" && -n "${RSN_END_LINE}" && "${RSN_END_LINE}" -ge "${TXT_START_LINE}" ]]; then
     echo "FAIL: REASONING_END (line ${RSN_END_LINE}) does not precede the first TEXT_MESSAGE_START (line ${TXT_START_LINE}) — #57 interleave broken" >&2
     exit 1

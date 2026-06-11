@@ -555,5 +555,25 @@ func TestLlmAgent_LengthTruncation(t *testing.T) {
 	}
 }
 
+// TestLlmAgent_ContentStopTextResponsePayloadUnwrapped hardens the fallback path
+// seen with live providers that occasionally emit text_response args as content.
+func TestLlmAgent_ContentStopTextResponsePayloadUnwrapped(t *testing.T) {
+	recordingProvider(t)
+	fc := agenttest.NewFakeClient(agenttest.TextChunks("stop", `{"text":"risposta pulita"}`))
+	a := newAgent(t, fc, llm.Config{})
+	ic := newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})
+	evs, err := collect(a.Run(ic))
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	last := evs[len(evs)-1]
+	if last.LLMResponse == nil {
+		t.Fatalf("last event missing LLMResponse: %+v", last)
+	}
+	if got := last.LLMResponse.Content; got != "risposta pulita" {
+		t.Fatalf("final content = %q, want unwrapped text_response.text", got)
+	}
+}
+
 // ptr is a tiny int-pointer helper for BudgetOptions.
 func ptr(n int) *int { return &n }

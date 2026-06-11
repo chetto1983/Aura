@@ -284,16 +284,18 @@ func scoreScenario(t *testing.T, ctx context.Context, client llm.Client, cfg llm
 		m.notes = append(m.notes, fmt.Sprintf("cancel teardown=%.0fms gdelta=%d", m.teardownMS, m.goroutineDelta))
 	}
 
-	// length: finish_reason="length" + truncation notice (folded into streaming_fidelity scenario).
+	// length: when the live provider actually returns finish_reason="length", assert
+	// Aura appends the truncation notice. DeepSeek can burn substantial hidden
+	// reasoning tokens and still emit a compact final answer, so "length" is not
+	// deterministic in this live scenario; the forced path is covered by
+	// TestLlmAgent_LengthTruncation.
 	if sc.expectLength {
 		hasNotice := strings.Contains(c.prose, "[risposta troncata: max_tokens]")
-		lengthOK := c.finish == "length" && hasNotice
 		m.notes = append(m.notes, fmt.Sprintf("length finish=%q notice=%v", c.finish, hasNotice))
-		// Fold into streaming_fidelity assertion as an additional signal.
-		if contains(sc.dimensions, dimStreamingFidelity) {
+		if c.finish == "length" && contains(sc.dimensions, dimStreamingFidelity) {
 			cur := m.dimVerdicts[dimStreamingFidelity]
-			record(dimStreamingFidelity, cur && lengthOK) // an extra recorded sample for this dim
-			m.dimVerdicts[dimStreamingFidelity] = cur && lengthOK
+			record(dimStreamingFidelity, cur && hasNotice) // an extra recorded sample only when observed
+			m.dimVerdicts[dimStreamingFidelity] = cur && hasNotice
 		}
 	}
 

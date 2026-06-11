@@ -19,6 +19,7 @@ import (
 // delta is encoded at this scale so the SQL `total_cost_usd + $delta` stays exact.
 const numericScale = 4
 const numericMaxCost = 999999.9999
+const postgresTextNULReplacement = "[NUL]"
 
 // conversationFromRow projects a generated conversations row onto the domain type,
 // converting the pgtype wrappers (Pitfall 5) at the boundary: pgtype.Text title ->
@@ -103,6 +104,13 @@ func (s *Store) maybeSpill(conversationID string, seq int, content string) (pgty
 		return pgtype.Text{}, pgtype.Text{}, fmt.Errorf("write turn sidecar %q: %w", path, err)
 	}
 	return pgtype.Text{}, pgtype.Text{String: path, Valid: true}, nil
+}
+
+func postgresTextSafe(s string) string {
+	if !strings.ContainsRune(s, '\x00') {
+		return s
+	}
+	return strings.ReplaceAll(s, "\x00", postgresTextNULReplacement)
 }
 
 // turnSidecarPath builds the validated <run_dir>/conversations/<id>/<seq>.content

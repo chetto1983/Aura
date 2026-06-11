@@ -34,6 +34,20 @@ func TestFSReadReturnsContentAndWindow(t *testing.T) {
 	}
 }
 
+func TestFSReadRejectsBinaryContent(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "book.xlsx")
+	if err := os.WriteFile(p, []byte{'P', 'K', 0x03, 0x04, 0x00, 'x'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	ctx := ctxWith(t, "sess-fs-binary", "call-fs-binary")
+	tool := &FSRead{}
+
+	if _, err := tool.Execute(ctx, mustJSON(t, fsReadArgs{Path: p})); err == nil || !strings.Contains(err.Error(), "binary") {
+		t.Fatalf("fs_read(binary): err = %v, want binary-file rejection", err)
+	}
+}
+
 func TestFSWriteCreatesFileAndDirs(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "sub", "nested", "out.txt")

@@ -5,8 +5,9 @@
 //
 //   - classifyCall: the PURE action-aware capture (parses a tool call's structured
 //     JSON arguments — the spike-012a pattern — and flags self-install evidence off a
-//     shell_exec command line: `npx skills add` (selfInstall), targeting
-//     `anthropics/skills` (installTarget), with the `--skill xlsx` selector (installSel)).
+//     shell_exec command line: `npx skills add` (selfInstall), targeting a concrete
+//     skills source (installTarget), with xlsx/excel/spreadsheet capability evidence
+//     in the add command (installSel)).
 //     No I/O, no network.
 //   - captureSkillCalls / makeAskCall: thin glue the live harness uses.
 //   - TestClassifyCall_* / TestRegistry_SeamFree: table-driven pure tests that run
@@ -43,16 +44,16 @@ func classifyCall(res *skillsResult, name, rawArgs string) {
 	case "shell_exec":
 		cmd := shellCommandLine(rawArgs)
 		res.toolCalls = append(res.toolCalls, "shell_exec("+oneLine(cmd)+")")
-		flat := strings.Join(strings.Fields(cmd), " ")
+		flat := strings.ToLower(strings.Join(strings.Fields(cmd), " "))
 		// A discovery/listing call (`skills find`, `skills add --list`) is NOT an install.
 		isList := strings.Contains(flat, "skills find") ||
 			(strings.Contains(flat, "skills add") && strings.Contains(flat, "--list"))
 		if strings.Contains(flat, "skills add") && !isList {
 			res.selfInstall = true
-			if strings.Contains(flat, "anthropics/skills") {
+			if hasSkillsSource(flat) {
 				res.installTarget = true
 			}
-			if hasSkillSelector(flat, "xlsx") {
+			if hasSpreadsheetCapability(flat) {
 				res.installSel = true
 			}
 		}
@@ -74,10 +75,29 @@ func shellCommandLine(rawArgs string) string {
 	return strings.TrimSpace(a.Command + " " + strings.Join(a.Args, " "))
 }
 
-// hasSkillSelector reports whether the flattened command line carries `--skill <sel>`
-// (the install selector). It checks both the spaced (`--skill xlsx`) and `=` forms.
+// hasSkillSelector reports whether the flattened command line carries `--skill <sel>`.
+// It checks both the spaced (`--skill xlsx`) and `=` forms.
 func hasSkillSelector(flat, sel string) bool {
 	return strings.Contains(flat, "--skill "+sel) || strings.Contains(flat, "--skill="+sel)
+}
+
+func hasSkillsSource(flat string) bool {
+	fields := strings.Fields(flat)
+	for i, f := range fields {
+		if f != "add" || i+1 >= len(fields) {
+			continue
+		}
+		spec := fields[i+1]
+		return strings.Contains(spec, "/") || strings.Contains(spec, "@")
+	}
+	return false
+}
+
+func hasSpreadsheetCapability(flat string) bool {
+	return hasSkillSelector(flat, "xlsx") ||
+		strings.Contains(flat, "xlsx") ||
+		strings.Contains(flat, "excel") ||
+		strings.Contains(flat, "spreadsheet")
 }
 
 // captureSkillCalls feeds every captured tool call (name + raw args, aligned slices
@@ -130,10 +150,12 @@ func shellArgsArray(command string, args ...string) string {
 
 // TestClassifyCall_SelfInstall is the no-key structural proof that the action-aware
 // capture parses REAL shell_exec command lines: a clean `npx skills add anthropics/skills
-// --skill xlsx` flags selfInstall + installTarget + installSel; a bare add to another repo
-// flags selfInstall only; a discovery `skills find` / `add --list` and a non-install
-// shell_exec flag NONE. It exercises both the canonical single-`command`-string wire and
-// the args-array robustness branch. This catches the spike-012b regression (name-only
+// --skill xlsx` flags selfInstall + installTarget + installSel; a bare add to another
+// source flags selfInstall + installTarget but not installSel; current skills.sh specs
+// like `owner/repo@document-xlsx` also satisfy installSel. Discovery `skills find` /
+// `add --list` and non-install shell_exec flag NONE. It exercises both the canonical
+// single-`command`-string wire and the args-array robustness branch. This catches the
+// spike-012b regression (name-only
 // capture → structurally-unsatisfiable assertion) without a live call.
 func TestClassifyCall_SelfInstall(t *testing.T) {
 	tests := []struct {
@@ -181,8 +203,16 @@ func TestClassifyCall_SelfInstall(t *testing.T) {
 			callName:   "shell_exec",
 			rawArgs:    shellArgs("npx skills add other/repo"),
 			wantSelf:   true,
-			wantTarget: false,
+			wantTarget: true,
 			wantSel:    false,
+		},
+		{
+			name:       "current skills.sh document-xlsx source",
+			callName:   "shell_exec",
+			rawArgs:    shellArgs("npx skills add vasilyu1983/ai-agents-public@document-xlsx --copy -y"),
+			wantSelf:   true,
+			wantTarget: true,
+			wantSel:    true,
 		},
 		{
 			name:       "discovery skills find is not an install",

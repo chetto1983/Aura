@@ -48,6 +48,9 @@ func (t *FSRead) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("fs_read: %w", err)
 	}
+	if looksBinary(b) {
+		return ToolResult{}, fmt.Errorf("fs_read: binary file contains NUL bytes; use a binary-aware tool instead")
+	}
 	content := string(b)
 	if a.Offset > 0 || a.Limit > 0 {
 		content = sliceLines(content, a.Offset, a.Limit)

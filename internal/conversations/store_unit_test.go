@@ -217,6 +217,26 @@ func TestNewStore_DefaultCap(t *testing.T) {
 	}
 }
 
+func TestAppendTurnWrites_PostgresTextSafeContent(t *testing.T) {
+	t.Parallel()
+	s := New(nil, Config{RunDir: t.TempDir(), TurnCapBytes: 1024})
+	turn, _, err := s.appendTurnWrites(AppendTurnParams{
+		ConversationID: "00000000-0000-0000-0000-000000000001",
+		Seq:            1,
+		Role:           llm.RoleTool,
+		Content:        "before\x00after",
+	})
+	if err != nil {
+		t.Fatalf("appendTurnWrites: %v", err)
+	}
+	if strings.ContainsRune(turn.Content.String, '\x00') {
+		t.Fatalf("turn content contains NUL byte: %q", turn.Content.String)
+	}
+	if !strings.Contains(turn.Content.String, "[NUL]") {
+		t.Fatalf("turn content missing replacement marker: %q", turn.Content.String)
+	}
+}
+
 func TestNormalizeSearchLimitBoundsInt32(t *testing.T) {
 	t.Parallel()
 	cases := []struct {

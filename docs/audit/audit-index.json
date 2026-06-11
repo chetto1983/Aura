@@ -87,6 +87,7 @@
     "infrastructure-audit.md", "security-audit.md", "testing-strategy.md",
     "industrialization-roadmap.md", "action-plan.md", "risk-register.md",
     "target-architecture.md", "proposed-patches.md", "audit-index.json",
-    "p0-validation-2026-06-10.md", "p1-validation-2026-06-10.md"
+    "p0-validation-2026-06-10.md", "p1-validation-2026-06-10.md",
+    "e2e-closure-2026-06-11.md"
   ]
 }

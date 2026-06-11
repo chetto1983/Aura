@@ -22,6 +22,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Quality snapshot gate self-test
+        run: bash scripts/quality_snapshot_gate_test.sh
+
+      - name: Quality snapshot gate
+        run: bash scripts/quality_snapshot_gate.sh
 
       - name: Set up Go
         uses: actions/setup-go@v6

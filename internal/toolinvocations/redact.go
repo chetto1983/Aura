@@ -2,6 +2,7 @@ package toolinvocations
 
 import (
 	"regexp"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -15,10 +16,10 @@ import (
 // (toParams) BEFORE a value reaches the durable column, so no caller can write a
 // raw secret into the ledger.
 //
-// Posture: cap FIRST (bound the durable footprint), then redact over the capped
-// string (so an over-cap secret tail is already truncated away, and the redactor
-// scans a bounded input). The caps mirror the existing preview discipline: the
-// result preview cap is AURA_CONTEXT_PREVIEW_CAP_BYTES=2048 (internal/agent), so
+// Posture: replace DB-invalid NUL bytes, cap the durable footprint, then redact
+// over the capped string (so an over-cap secret tail is already truncated away,
+// and the redactor scans a bounded input). The caps mirror the existing preview
+// discipline: the result preview cap is AURA_CONTEXT_PREVIEW_CAP_BYTES=2048 (internal/agent), so
 // result_preview keeps that ceiling here; args_raw gets a larger 8 KiB ceiling
 // because a legitimate multi-tool argument JSON (a long shell script, a write
 // payload) is bulkier than a result preview yet still bounded for the ledger.
@@ -34,6 +35,7 @@ const (
 	ResultPreviewCapBytes = 2 * 1024
 
 	redactedPlaceholder = "[REDACTED]"
+	nulReplacement      = "[NUL]"
 	// capMarker is appended when a value is truncated to its byte cap, so a reader
 	// can tell a capped value from one that happened to end at the boundary.
 	capMarker = "…[capped]"
@@ -81,11 +83,18 @@ func RedactForLedger(s string, capBytes int) string {
 	if s == "" {
 		return ""
 	}
-	capped := capUTF8(s, capBytes)
+	capped := capUTF8(postgresTextSafe(s), capBytes)
 	for _, p := range secretPatterns {
 		capped = p.re.ReplaceAllString(capped, redactedPlaceholder)
 	}
 	return capped
+}
+
+func postgresTextSafe(s string) string {
+	if !strings.ContainsRune(s, '\x00') {
+		return s
+	}
+	return strings.ReplaceAll(s, "\x00", nulReplacement)
 }
 
 // capUTF8 truncates s to at most capBytes bytes WITHOUT splitting a multi-byte
