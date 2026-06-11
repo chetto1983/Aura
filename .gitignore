@@ -31,6 +31,7 @@ Thumbs.db
 !/.env.example
 
 # Worktrees + planning workspace (kept locally only)
+/.worktrees
 /.worktrees/
 /.planning/tmp/
 
