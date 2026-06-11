@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 )
 
 // defaultReadLimit is the byte window read_tool_output returns when limit is
 // omitted, aligned to the preview cap (D-27/A4 — BYTES, not lines).
 const defaultReadLimit = 2048
+
+const maxReadToolOutputLimit = defaultReadLimit * 8
 
 // ReadToolOutput pages byte ranges out of a sidecar file written by NewResult
 // when a prior tool output exceeded the preview cap. Non-deferred builtin: the
@@ -56,6 +59,11 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	if limit <= 0 {
 		limit = defaultReadLimit
 	}
+	clamped := false
+	if limit > maxReadToolOutputLimit {
+		limit = maxReadToolOutputLimit
+		clamped = true
+	}
 
 	tc, ok := toolCallCtx(ctx)
 	if !ok {
@@ -69,7 +77,15 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		return ToolResult{}, fmt.Errorf("read_tool_output: %w", err)
 	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
+	if err != nil && os.IsNotExist(err) && a.ToolCallID == tc.toolCallID && tc.sidecarID != "" && tc.sidecarID != a.ToolCallID {
+		if altPath, altErr := sidecarPath(tc.runDir, tc.sessionID, tc.sidecarID); altErr == nil {
+			alt, altOpenErr := os.Open(altPath)
+			if altOpenErr == nil || !os.IsNotExist(altOpenErr) {
+				path, f, err = altPath, alt, altOpenErr
+			}
+		}
+	}
 	if err != nil {
 		// Unknown / never-spilled id hard-fails (D-15/Req#7) — this becomes a
 		// RoleTool error the model sees, never a panic or empty content.
@@ -78,18 +94,37 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		}
 		return ToolResult{}, fmt.Errorf("read_tool_output: read sidecar: %w", err)
 	}
+	defer f.Close()
 
-	total := len(data)
-	start := a.Offset
+	info, err := f.Stat()
+	if err != nil {
+		return ToolResult{}, fmt.Errorf("read_tool_output: read sidecar: %w", err)
+	}
+	if info.IsDir() {
+		return ToolResult{}, fmt.Errorf("read_tool_output: read sidecar: %s is a directory", path)
+	}
+
+	total := info.Size()
+	start := int64(a.Offset)
 	if start > total {
 		start = total
 	}
-	end := start + limit
-	if end > total {
-		end = total
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return ToolResult{}, fmt.Errorf("read_tool_output: read sidecar: %w", err)
 	}
-	slice := string(data[start:end])
-	footer := fmt.Sprintf("\n\n[showing bytes %d-%d of %d, next offset %d]", start, end, total, end)
+
+	buf := make([]byte, limit)
+	n, err := io.ReadFull(f, buf)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return ToolResult{}, fmt.Errorf("read_tool_output: read sidecar: %w", err)
+	}
+	end := start + int64(n)
+	slice := string(buf[:n])
+	clampNote := ""
+	if clamped {
+		clampNote = fmt.Sprintf("; limit clamped to %d", maxReadToolOutputLimit)
+	}
+	footer := fmt.Sprintf("\n\n[showing bytes %d-%d of %d, next offset %d%s]", start, end, total, end, clampNote)
 	// read_tool_output's own output is bounded by limit, so it never re-spills.
-	return ToolResult{Preview: slice + footer, Bytes: len(slice)}, nil
+	return ToolResult{Preview: slice + footer, Bytes: n}, nil
 }

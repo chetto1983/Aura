@@ -2,10 +2,12 @@ package tools
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -17,6 +19,7 @@ type toolCallContextKey struct{}
 type toolCallContext struct {
 	sessionID  string
 	toolCallID string
+	sidecarID  string
 	runDir     string
 	cap        int
 }
@@ -27,9 +30,18 @@ func WithToolCallContext(ctx context.Context, sessionID, toolCallID, runDir stri
 	return context.WithValue(ctx, toolCallContextKey{}, toolCallContext{
 		sessionID:  sessionID,
 		toolCallID: toolCallID,
+		sidecarID:  newSidecarID(toolCallID),
 		runDir:     runDir,
 		cap:        previewCap,
 	})
+}
+
+func newSidecarID(toolCallID string) string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err == nil {
+		return toolCallID + "-" + hex.EncodeToString(b[:])
+	}
+	return fmt.Sprintf("%s-%x", toolCallID, time.Now().UnixNano())
 }
 
 func toolCallCtx(ctx context.Context) (toolCallContext, bool) {
@@ -37,21 +49,21 @@ func toolCallCtx(ctx context.Context) (toolCallContext, bool) {
 	return v, ok
 }
 
-// validateID rejects any id that could escape <run_dir>/conversations/ once
-// joined into a path: `..` traversal or an embedded path separator (T-03-07).
-// The run_dir + "conversations/" prefix is fixed and never model-controlled; the
-// only model/agent-supplied segments are session_id and tool_call_id, so those
-// are the bytes that must be opaque-id shaped.
+// validateID rejects any id outside the sidecar grammar before it is joined into
+// a path. The run_dir + "conversations/" prefix is fixed and never
+// model-controlled; the model/agent-supplied segments are opaque-id shaped.
 func validateID(kind, id string) error {
 	if id == "" {
 		return fmt.Errorf("%s is empty", kind)
 	}
-	if strings.Contains(id, "..") {
-		return fmt.Errorf("%s %q contains %q", kind, id, "..")
-	}
 	for i := 0; i < len(id); i++ {
-		if id[i] == '/' || id[i] == '\\' || os.IsPathSeparator(id[i]) {
-			return fmt.Errorf("%s %q contains a path separator", kind, id)
+		c := id[i]
+		ok := (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '_' || c == '-'
+		if !ok {
+			return fmt.Errorf("%s %q contains invalid character %q", kind, id, c)
 		}
 	}
 	return nil
@@ -106,12 +118,16 @@ func NewResult(ctx context.Context, content string) (ToolResult, error) {
 
 	preview := truncatePreview(content, tc.cap)
 	shown := len(preview)
+	spillID := tc.sidecarID
+	if spillID == "" {
+		spillID = tc.toolCallID
+	}
 	footer := fmt.Sprintf(
 		"\n\n[output truncated: showing bytes 0-%d of %d; read more via read_tool_output(tool_call_id=%q, offset=%d, limit=2048)]",
-		shown, total, tc.toolCallID, shown,
+		shown, total, spillID, shown,
 	)
 
-	path, err := sidecarPath(tc.runDir, tc.sessionID, tc.toolCallID)
+	path, err := sidecarPath(tc.runDir, tc.sessionID, spillID)
 	if err != nil {
 		// Traversal-shaped id: reject before any write. This is a real error
 		// (T-03-07) — the caller must not have let a malformed id through.
@@ -157,12 +173,16 @@ func NewResultReservingTail(ctx context.Context, body, footer string) (ToolResul
 	bodyPreview := truncatePreview(body, bodyCap)
 	shown := len(bodyPreview)
 	preview := bodyPreview + footer
+	spillID := tc.sidecarID
+	if spillID == "" {
+		spillID = tc.toolCallID
+	}
 	truncFooter := fmt.Sprintf(
 		"\n\n[output truncated: showing body bytes 0-%d of %d plus reserved footer; read more via read_tool_output(tool_call_id=%q, offset=%d, limit=2048)]",
-		shown, len(body), tc.toolCallID, shown,
+		shown, len(body), spillID, shown,
 	)
 
-	path, err := sidecarPath(tc.runDir, tc.sessionID, tc.toolCallID)
+	path, err := sidecarPath(tc.runDir, tc.sessionID, spillID)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("tools.NewResultReservingTail: %w", err)
 	}
@@ -189,5 +209,8 @@ func writeSidecar(path, content string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(content), 0o644)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
