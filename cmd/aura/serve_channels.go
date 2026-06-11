@@ -33,6 +33,7 @@ import (
 	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/setup"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -61,6 +62,7 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 		Turn:               ensuringTurn(chat.run),
 		Token:              tgCfg.BotToken,
 		Store:              telegram.New(chat.pool),
+		Profile:            profile.NewStore(chat.cfg.ProfileDir),
 		Multimodal:         multimodalConfig(chat.cfg),
 		Search:             chat.conv,
 		Cost:               newTodayCost(chat.pool),

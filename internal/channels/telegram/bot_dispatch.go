@@ -63,6 +63,11 @@ func (t *Telegram) buildDispatch() {
 		onboardStore = t.deps.Store
 	}
 	t.onboard = newOnboarding(onboardStore)
+	accounts := t.deps.profileAccounts
+	if accounts == nil && t.deps.Store != nil {
+		accounts = t.deps.Store
+	}
+	t.profile = newProfileOnboarding(t.deps.Profile, accounts)
 	t.voice = newVoiceClient(t.deps.Multimodal)
 	t.photo = newPhotoClient(t.deps.Multimodal)
 	t.docs = newDocumentsClient(t.deps.Multimodal)

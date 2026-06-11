@@ -20,6 +20,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/profile"
 )
 
 // channelName keys AURA_CHANNEL_TELEGRAM_ENABLED (the registry enable gate).
@@ -65,6 +66,10 @@ type Deps struct {
 	// core render path does not touch it (onboarding is plan 13-07).
 	Store *Store
 
+	// Profile is the per-identity Agent.md store. Nil means profile onboarding
+	// degrades with a user-facing setup message instead of panicking.
+	Profile *profile.Store
+
 	// Multimodal carries the 9c sidecar wiring (STT/TTS/vision/documents) the media
 	// handlers (OnVoice/OnPhoto/OnDocument) + the TTS-out path read. A zero value
 	// means a modality is unconfigured — the handler degrades, never panics. Built
@@ -108,6 +113,10 @@ type Deps struct {
 	// common path) builds the real status_pane/renderer. Tests inject recorders to
 	// prove the fanout distribution in isolation. Unexported: not a public knob.
 	consumerFactory consumerFactory
+
+	// profileAccounts overrides the Telegram account resolver for profile
+	// onboarding tests. Nil uses Store, matching production.
+	profileAccounts profileAccountResolver
 }
 
 // Telegram is the Telegram channel: a telebot wrapper implementing
@@ -129,6 +138,7 @@ type Telegram struct {
 	// Stop drains (goleak-clean). Guarded by mu; read under the handler goroutines.
 	cmds    *commands
 	onboard *onboarding
+	profile *profileOnboarding
 	voice   *voiceClient
 	photo   *photoClient
 	docs    *documentsClient
