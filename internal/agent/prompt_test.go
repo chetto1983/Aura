@@ -6,6 +6,20 @@ import (
 	"testing"
 )
 
+func TestPrompt_ProfileContextDoctrine(t *testing.T) {
+	for _, needle := range []string{
+		"Agent.md",
+		"messages[1]",
+		"profile context",
+		"operator-pinned context",
+		"current explicit instruction wins",
+	} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt is missing Agent.md profile doctrine %q", needle)
+		}
+	}
+}
+
 // rfc3339ish matches a date or clock-shaped substring that would poison the
 // cached prefix (Req#14 / D-08). Any hit means a timestamp crept into the prompt.
 var rfc3339ish = regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}`)

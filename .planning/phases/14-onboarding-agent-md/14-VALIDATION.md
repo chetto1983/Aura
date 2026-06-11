@@ -40,7 +40,7 @@ Per-phase validation contract for Phase 14 execution. This is planned coverage; 
 - `scripts/cache_invariant_audit.sh`
 - `go test -race ./internal/profile/ ./internal/onboarding/ ./internal/channels/telegram/ ./internal/runner/ ./cmd/aura/`
 - Cache invariant hashes:
-  - `messages[0]`: `6045fcbd771af0d1f55e9101b32f20b402e3c7e490ca6a895f3588ee95d07b6a`
+  - `messages[0]`: `5c72f20c50c6ea5890ba06c4c21f15fdd06e1d09f95ec085296d83e0dd372517`
   - `messages[1]`: `da26df0f36d67df75de9ddaf3ae782ff3d5ad4a3627bdffda65d236cf63f2378`
   - `skill manifest`: `461e720f5341d73b54c6756036466487809326ac50ac674943818e33efa0d4cf`
 

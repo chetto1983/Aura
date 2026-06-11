@@ -109,9 +109,13 @@ func TestCacheAudit_ProfileContextShape(t *testing.T) {
 	}
 
 	first := reqs[0]
-	if strings.Contains(first.Messages[0].Content, "Agent.md") ||
-		strings.Contains(first.Messages[0].Content, profile.ProfileBlockStart) {
-		t.Fatalf("Agent.md must not leak into messages[0]:\n%s", first.Messages[0].Content)
+	if !strings.Contains(first.Messages[0].Content, "Agent.md") ||
+		!strings.Contains(first.Messages[0].Content, "messages[1]") {
+		t.Fatalf("messages[0] must explain Agent.md profile context doctrine:\n%s", first.Messages[0].Content)
+	}
+	if strings.Contains(first.Messages[0].Content, profile.ProfileBlockStart) ||
+		strings.Contains(first.Messages[0].Content, "Name: Cache Audit") {
+		t.Fatalf("Agent.md profile contents must not leak into messages[0]:\n%s", first.Messages[0].Content)
 	}
 	if first.Messages[1].Role != llm.RoleUser {
 		t.Fatalf("messages[1] role = %q, want user", first.Messages[1].Role)
