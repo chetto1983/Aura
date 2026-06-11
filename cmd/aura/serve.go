@@ -140,7 +140,13 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 	}
 
 	store := cron.New(chat.pool)
-	dispatch := buildDispatch(chat, store)
+	// Build the channels Registry FIRST (Phase 20 boot reorder): buildDispatch wires
+	// the late-bound *channels.Registry pointer as the cron.ChannelDeliverer, so the
+	// Registry must exist before dispatch is assembled. bootChannelsAndSetup needs only
+	// chat + override (both available here) — the per-channel Deliverer capability is
+	// resolved at delivery, not at build, so the late-bound pointer is sufficient.
+	reg, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
+	dispatch := buildDispatch(chat, store, reg)
 	scheduler := cron.NewScheduler(chat.pool, store, cron.SchedulerConfig{
 		Dispatch: dispatch,
 		// Consult each kind's ReschedulesOnRecovery at boot catch-up (M-g): a handler
@@ -181,11 +187,9 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		ReadHeaderTimeout: aguiReadHeaderTimeout,
 	}
 
-	// The channels Registry (Telegram) + the setup-wizard server (:9081) are built
-	// over the same composition root and mounted by runServe (Phase 13, UX-02/03).
-	// The override carries --no-telegram/--only=cli into the registry enable gate.
-	reg, setupSrv := bootChannelsAndSetup(ctx, chat, channelOverride)
-
+	// The channels Registry + the setup-wizard server (:9081) were built above (the
+	// Phase 20 boot reorder) so the Registry could be wired into buildDispatch as the
+	// cron.ChannelDeliverer; runServe StartAll/StopAll them (Phase 13, UX-02/03).
 	return &serveEnv{
 		chatEnv:   chat,
 		store:     store,
@@ -231,12 +235,19 @@ func seedSkillTTLSweep(ctx context.Context, store *cron.Store) error {
 	return nil
 }
 
+// var _ asserts at the composition root that *channels.Registry satisfies the
+// cron-local ChannelDeliverer seam (via its 20-01 DeliverToIdentity method) — the
+// assertion lives in cmd/aura, NOT in cron (cron must not import channels).
+var _ cron.ChannelDeliverer = (*channels.Registry)(nil)
+
 // buildDispatch assembles the cron Dispatcher from the live runtime (D-15/10-05): the
 // real per-TaskKind handlers adapted onto the cron-local Handler seam, the composite
-// Notifier over the mounted MCP self-send registry, and the scheduler's quiet-hours
-// predicate. The agent_job handler runs the parent registry minus swarm_spawn
-// (childRegistry, owned by the handlers package) over the live LLM client.
-func buildDispatch(chat *chatEnv, store *cron.Store) *cron.Dispatch {
+// Notifier over the mounted MCP self-send registry, the scheduler's quiet-hours
+// predicate, and the late-bound *channels.Registry wired as the cron.ChannelDeliverer
+// so a scheduled notification can prefer the origin channel (Phase 20 R4/R7). The
+// agent_job handler runs the parent registry minus swarm_spawn (childRegistry, owned
+// by the handlers package) over the live LLM client.
+func buildDispatch(chat *chatEnv, store *cron.Store, reg *channels.Registry) *cron.Dispatch {
 	agentDeps := handlers.AgentDeps{
 		Client:     chat.client,
 		LLM:        chat.cfg.LLM,
@@ -272,6 +283,11 @@ func buildDispatch(chat *chatEnv, store *cron.Store) *cron.Dispatch {
 		// (D-23); it holds no tick state, so the live scheduler's method is the predicate.
 		QuietHours:    quietScheduler.DuringQuietHours,
 		QuietHoursEnd: quietScheduler.QuietHoursEnd,
+		// Prefer the origin channel (Phase 20 R4/R7): the *channels.Registry satisfies
+		// cron.ChannelDeliverer via DeliverToIdentity. The default-on kill-switch is
+		// resolved once at config load (AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL, default true).
+		ChannelDeliverer:    reg,
+		PreferOriginChannel: chat.cfg.SchedulerPreferOriginChannel,
 	})
 }
 

@@ -78,6 +78,13 @@ type Config struct {
 	// serve composition root passes this into AgentDeps.MaxDuration.
 	AgentJobMaxDurationSec int // AURA_AGENT_JOB_MAX_DURATION_SEC — agent_job end-to-end wall-clock deadline
 
+	// SchedulerPreferOriginChannel is the default-on kill-switch (Phase 20 R5/D-03):
+	// when on, a scheduled notification with an owning identity prefers the origin
+	// channel (a Telegram reminder lands back in that DM) over the per-task route. The
+	// composition root injects it as cron.DispatchDeps.PreferOriginChannel; false →
+	// byte-identical legacy route-only behavior. Unset/malformed → on.
+	SchedulerPreferOriginChannel bool // AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL — prefer the origin channel over the route (default true)
+
 	// Phase 11 (Slice 7) skills knobs (D-34). SkillsDir is the active skill root the
 	// loader scans + builtins materialize into; ExportDir is the ro `/skills` mount
 	// source. Cap knobs bound the per-skill body and the model-visible manifest.
@@ -244,6 +251,8 @@ func loadBase() *Config {
 		MaxSwarmConcurrent:   envIntDefault("AURA_SWARM_MAX_CONCURRENT", 4),
 
 		AgentJobMaxDurationSec: envIntDefault("AURA_AGENT_JOB_MAX_DURATION_SEC", 600),
+
+		SchedulerPreferOriginChannel: envBoolDefault("AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL", true),
 
 		// Phase 11 skills knobs (D-34). Defaults derive from the per-user ~/.aura tree.
 		SkillsDir:             envDefault("AURA_SKILLS_DIR", defaultSkillsDir()),
