@@ -524,10 +524,15 @@ Plans:
   5. CI gate: `docs/aura-quality-snapshot.md` MUST be updated on any P15 PR; missing update fails the build (Amendment #20 quality regression gate)
 
 **Plans**: 5 plans (re-derived against the agent-memory MCP surface, 2026-06-11)
+**Wave 1**
+
 - [ ] 15-01-PLAN.md — Wave 0: PRD amendment #62 (re-scope UX-06..09 to the adopted package; D-12)
 - [ ] 15-02-PLAN.md — Wave 1: `memory` trusted default-on recipe + 16-tool mount wiring (D-05..D-11)
 - [ ] 15-03-PLAN.md — Wave 1: `aura memory` operator CLI (verb -> raw `memory_*` CallTool; D-01/D-02/D-03)
 - [ ] 15-04-PLAN.md — Wave 1: reproducible compose `build:` for the sidecar (vendor fork @ c1c2d65; Pitfall 5)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 15-05-PLAN.md — Wave 2: live `memory_integration` tier + KV-cache invariant confirm (D-04) + advisory snapshot
 
 ## Progress
