@@ -84,6 +84,14 @@ type DispatchDeps struct {
 	// window ends. It is paired with QuietHours so deferred notifications get a
 	// durable notify_after instead of being dropped.
 	QuietHoursEnd func(tz string) (time.Time, bool)
+	// ChannelDeliverer prefers the origin channel over the per-task route (Phase 20
+	// R4/R7). Nil → legacy route-only behavior (the regression guard); the
+	// composition root adapts *channels.Registry onto it.
+	ChannelDeliverer ChannelDeliverer
+	// PreferOriginChannel is the AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch,
+	// resolved once at the composition root (default true). False → byte-identical
+	// legacy route-only behavior even when a ChannelDeliverer is wired (D-03).
+	PreferOriginChannel bool
 }
 
 // Dispatch routes a claimed task to its handler and owns the run lifecycle. It
@@ -208,6 +216,14 @@ func (d *Dispatch) notify(ctx context.Context, task Task, runID, summary string,
 			slog.Warn("persist deferred scheduler notification", "task", task.ID, "run", runID, "err", err)
 		}
 		slog.Info("notification deferred to quiet-hours window end", "task", task.ID)
+		return
+	}
+	// Prefer the origin channel (R4/R7): a reminder set in a Telegram DM lands back
+	// in that DM. deliverToOrigin returns true when delivery is the channel's concern
+	// (delivered, or owns-but-failed-and-queued) — only fall through to the per-task
+	// route when no channel owns the identity / an explicit route was set / the
+	// kill-switch is off.
+	if d.deliverToOrigin(ctx, task, runID, text) {
 		return
 	}
 	if err := d.deps.Notifier.Notify(ctx, NotifyRoute(task.NotifyRoute), "", text); err != nil {
