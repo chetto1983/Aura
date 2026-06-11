@@ -53,7 +53,7 @@ These four forks were the only genuine ambiguities left by the SPEC (ambiguity 0
 - **D-05:** `Registry.DeliverToIdentity` fans out over started channels in a DETERMINISTIC order (stable sort by channel name, or an explicit `Priority` field), never Go map-iteration order. Rationale: Courier ("Best Of"), Novu, AWS Pinpoint all try channels in a declared order until one succeeds — map iteration is nondeterministic and untestable the moment a 2nd `Deliverer` lands. The per-identity preference engine is DEFERRED (see Deferred Ideas) — YAGNI with one `Deliverer` today.
 
 ### Process decision — SPEC reconciliation
-- **D-06:** Forks 1, 2, 4 refine locked SPEC requirements (R1/R2/R4 + Constraints + Acceptance + new env). Chose to AMEND `20-SPEC.md` in the same commit as this CONTEXT so the planner sees no contradiction (rather than leaving the planner to reconcile a stale R4 seam).
+- **D-06 [informational]:** Forks 1, 2, 4 refine locked SPEC requirements (R1/R2/R4 + Constraints + Acceptance + new env). Chose to AMEND `20-SPEC.md` in the same commit as this CONTEXT so the planner sees no contradiction (rather than leaving the planner to reconcile a stale R4 seam). *Process/meta-decision (a discuss-phase bookkeeping choice already executed in commit `2f3f25a3`) — not an implementable plan requirement, so it is not tracked against a plan.*
 
 ### Claude's Discretion
 - Exact env var name (`AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL` proposed; planner/executor may align to catalog conventions).
