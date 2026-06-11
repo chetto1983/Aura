@@ -127,6 +127,8 @@ type AuraPendingNotifications struct {
 	Status      string             `json:"status"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+	// Stable owning identity snapshot (Phase 20, Fork 1): the channel-independent delivery key for the deferred/failed sweep route-back. Plain text, no FK — survives a deleted origin conversation. NULL for legacy/CLI rows → falls back to notify_route.
+	IdentityID pgtype.Text `json:"identity_id"`
 }
 
 // Scheduler task definitions (Slice 6 / Phase 10, amendment #46). Grammar triad at|every|cron with per-task IANA tz; next_run_at is UTC, recomputed in-zone (D-06/D-07).

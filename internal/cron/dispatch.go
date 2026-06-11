@@ -270,6 +270,7 @@ func (d *Dispatch) insertPendingNotification(
 		Attempts:    attempts,
 		LastError:   lastErr,
 		Status:      status,
+		IdentityID:  task.IdentityID,
 	})
 	return err
 }

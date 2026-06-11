@@ -13,11 +13,12 @@ import (
 
 const insertPendingNotification = `-- name: InsertPendingNotification :one
 INSERT INTO aura.pending_notifications (
-    id, run_id, notify_route, body, notify_after, attempts, last_error, status
+    id, run_id, notify_route, body, notify_after, attempts, last_error, status,
+    identity_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, run_id, notify_route, body, notify_after, attempts, last_error,
-    status, created_at, updated_at
+    status, created_at, updated_at, identity_id
 `
 
 type InsertPendingNotificationParams struct {
@@ -29,6 +30,7 @@ type InsertPendingNotificationParams struct {
 	Attempts    int32              `json:"attempts"`
 	LastError   pgtype.Text        `json:"last_error"`
 	Status      string             `json:"status"`
+	IdentityID  pgtype.Text        `json:"identity_id"`
 }
 
 func (q *Queries) InsertPendingNotification(ctx context.Context, arg InsertPendingNotificationParams) (AuraPendingNotifications, error) {
@@ -41,6 +43,7 @@ func (q *Queries) InsertPendingNotification(ctx context.Context, arg InsertPendi
 		arg.Attempts,
 		arg.LastError,
 		arg.Status,
+		arg.IdentityID,
 	)
 	var i AuraPendingNotifications
 	err := row.Scan(
@@ -54,6 +57,7 @@ func (q *Queries) InsertPendingNotification(ctx context.Context, arg InsertPendi
 		&i.Status,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.IdentityID,
 	)
 	return i, err
 }
@@ -90,7 +94,7 @@ func (q *Queries) MarkNotificationFailed(ctx context.Context, arg MarkNotificati
 
 const sweepDueNotifications = `-- name: SweepDueNotifications :many
 SELECT id, run_id, notify_route, body, notify_after, attempts, last_error,
-    status, created_at, updated_at
+    status, created_at, updated_at, identity_id
 FROM aura.pending_notifications
 WHERE (status = 'pending' AND notify_after <= now())
    OR (status = 'failed' AND attempts < $1)
@@ -124,6 +128,7 @@ func (q *Queries) SweepDueNotifications(ctx context.Context, arg SweepDueNotific
 			&i.Status,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.IdentityID,
 		); err != nil {
 			return nil, err
 		}

@@ -76,6 +76,9 @@ type Session struct {
 	Answers      Answers
 	DraftAgentMD string
 	Preferences  profile.Preferences
+
+	pending  []Input
+	prompted bool
 }
 
 func NewSession(identityID, identityName string) *Session {
@@ -113,6 +116,41 @@ func (s *Session) Apply(in Input) (Transition, error) {
 	default:
 		return Transition{}, fmt.Errorf("%w: %s", ErrInvalidIntent, in.Intent)
 	}
+}
+
+func (s *Session) Queue(inputs ...Input) {
+	s.pending = append(s.pending, inputs...)
+}
+
+func (s *Session) nextTransition() (Transition, bool, error) {
+	if s.isTerminal() {
+		return Transition{}, false, nil
+	}
+	if len(s.pending) > 0 && shouldApplyBeforePrompt(s.pending[0]) {
+		out, err := s.applyQueued()
+		return out, true, err
+	}
+	if !s.prompted {
+		s.prompted = true
+		out, ok := s.currentPrompt()
+		return out, ok, nil
+	}
+	if len(s.pending) == 0 {
+		return Transition{}, false, nil
+	}
+	out, err := s.applyQueued()
+	return out, true, err
+}
+
+func (s *Session) applyQueued() (Transition, error) {
+	in := s.pending[0]
+	s.pending = s.pending[1:]
+	out, err := s.Apply(in)
+	if err != nil {
+		return Transition{}, err
+	}
+	s.prompted = !out.Terminal
+	return out, nil
 }
 
 func (s *Session) applyAnswer(in Input) (Transition, error) {
@@ -248,6 +286,22 @@ func (s *Session) questionName() Transition {
 	}
 }
 
+func (s *Session) currentPrompt() (Transition, bool) {
+	switch s.Step {
+	case StepName:
+		return s.questionName(), true
+	case StepPreferences:
+		return s.questionPreferences(), true
+	case StepDraft:
+		if strings.TrimSpace(s.DraftAgentMD) == "" {
+			return Transition{}, false
+		}
+		return s.draft("Draft ready. Confirm, edit, or skip."), true
+	default:
+		return Transition{}, false
+	}
+}
+
 func (s *Session) questionPreferences() Transition {
 	return Transition{
 		Content:    "Which language, timezone, tone, and response length should Aura use?",
@@ -297,4 +351,8 @@ func valueList(prefix, value string) []string {
 
 func boolValue(v *bool) bool {
 	return v != nil && *v
+}
+
+func shouldApplyBeforePrompt(in Input) bool {
+	return in.Intent == IntentSkip || in.Intent == IntentCancel || in.Intent == IntentRestart
 }

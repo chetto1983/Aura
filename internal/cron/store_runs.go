@@ -115,6 +115,10 @@ type PendingNotification struct {
 	Status      string
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	// IdentityID is the stable owning-identity snapshot (Phase 20 R6/Fork 1): the
+	// channel-independent route-back key for the deferred/failed sweep. "" for
+	// legacy/CLI rows (NULL column) → the sweep falls back to NotifyRoute.
+	IdentityID string
 }
 
 // InsertPendingNotificationParams carries one durable notification queue write.
@@ -126,6 +130,9 @@ type InsertPendingNotificationParams struct {
 	Attempts    int
 	LastError   string
 	Status      string
+	// IdentityID snapshots the owning identity so the Step-2 sweep can route the
+	// row back to its origin channel (empty → NULL → route fallback).
+	IdentityID string
 }
 
 // ScanStaleRuns returns running rows whose last_heartbeat_at is older than
@@ -170,6 +177,7 @@ func (s *Store) InsertPendingNotification(ctx context.Context, p InsertPendingNo
 		Attempts:    int32(p.Attempts),
 		LastError:   text(p.LastError),
 		Status:      status,
+		IdentityID:  text(p.IdentityID),
 	})
 	if err != nil {
 		return PendingNotification{}, fmt.Errorf("insert pending notification for run %q: %w", p.RunID, err)
@@ -257,5 +265,6 @@ func pendingNotificationFromRow(r sqlc.AuraPendingNotifications) PendingNotifica
 		Status:      r.Status,
 		CreatedAt:   r.CreatedAt.Time,
 		UpdatedAt:   r.UpdatedAt.Time,
+		IdentityID:  r.IdentityID.String,
 	}
 }
