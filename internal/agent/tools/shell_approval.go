@@ -94,6 +94,28 @@ func (a *ShellApprovals) PendingChallenge(sessionID, digest string) (ShellApprov
 	return challenge, ok
 }
 
+func (a *ShellApprovals) ApproveChallenge(sessionID, digest, question string) error {
+	if a == nil || sessionID == "" || digest == "" {
+		return fmt.Errorf("shell approval challenge %q not found", digest)
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	key := shellApprovalKey(sessionID, digest)
+	challenge, ok := a.pending[key]
+	if !ok {
+		return fmt.Errorf("shell approval challenge %q not found", digest)
+	}
+	if question != challenge.Question {
+		return fmt.Errorf("shell approval challenge %q question mismatch", digest)
+	}
+	if a.approved == nil {
+		a.approved = map[string]struct{}{}
+	}
+	a.approved[key] = struct{}{}
+	delete(a.pending, key)
+	return nil
+}
+
 func (s *ShellExec) requireShellApproval(ctx context.Context, command, cwd string) (*ToolResult, error) {
 	destructive, err := destructiveShellMatch(command)
 	if err != nil {
