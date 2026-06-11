@@ -288,6 +288,7 @@ func botMenuCommands() []tele.Command {
 		{Text: "cancel", Description: "Annulla il turno in corso"},
 		{Text: "cost", Description: "Mostra la spesa cumulativa di oggi"},
 		{Text: "search", Description: "Cerca nei turni salvati"},
+		{Text: "onboard", Description: "Avvia o riavvia il profilo Agent.md"},
 		{Text: "new", Description: "Spiega il thread continuo Telegram"},
 		{Text: "list", Description: "Indica dove sfogliare le conversazioni"},
 		{Text: "reset", Description: "Annulla il turno senza cancellare lo storico"},

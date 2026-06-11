@@ -34,10 +34,10 @@ func (f *fakeSearch) SearchConversationTurns(_ context.Context, query string, li
 
 func newTestCommands(deps commandDeps) *commands { return newCommands(deps) }
 
-// TestCommandsInterceptTenWithoutLLM proves the 10 PRD commands all dispatch as
-// bot-intercept (handled==true) with NO LLM call wired (the turnDriver would
-// t.Fatal). VALIDATION UX-02 "10 commands bot-intercept, no LLM call".
-func TestCommandsInterceptTenWithoutLLM(t *testing.T) {
+// TestCommandsInterceptWithoutLLM proves the Telegram slash commands all dispatch
+// as bot-intercept (handled==true) with NO LLM call wired (the turnDriver would
+// t.Fatal). VALIDATION UX-02 "commands bot-intercept, no LLM call".
+func TestCommandsInterceptWithoutLLM(t *testing.T) {
 	t.Parallel()
 
 	cmds := newTestCommands(commandDeps{
@@ -47,7 +47,7 @@ func TestCommandsInterceptTenWithoutLLM(t *testing.T) {
 		Model:  "deepseek/deepseek-v4-flash:exacto",
 	})
 
-	want := []string{"/start", "/help", "/cancel", "/cost", "/search", "/new", "/list", "/reset", "/whoami", "/stop"}
+	want := []string{"/start", "/help", "/cancel", "/cost", "/search", "/onboard", "/new", "/list", "/reset", "/whoami", "/stop"}
 	for _, c := range want {
 		handled, reply := cmds.dispatch(context.Background(), 42, c)
 		if !handled {
@@ -57,14 +57,14 @@ func TestCommandsInterceptTenWithoutLLM(t *testing.T) {
 			t.Errorf("command %q: empty reply, want a user-facing response", c)
 		}
 	}
-	if len(want) != 10 {
-		t.Fatalf("PRD command set must be exactly 10, got %d", len(want))
+	if len(want) != 11 {
+		t.Fatalf("Telegram command set must be exactly 11, got %d", len(want))
 	}
 }
 
 func TestBotMenuCommandsMirrorInterceptedCommands(t *testing.T) {
 	t.Parallel()
-	want := []string{"start", "help", "cancel", "cost", "search", "new", "list", "reset", "whoami", "stop"}
+	want := []string{"start", "help", "cancel", "cost", "search", "onboard", "new", "list", "reset", "whoami", "stop"}
 	got := botMenuCommands()
 	if len(got) != len(want) {
 		t.Fatalf("menu command count = %d, want %d", len(got), len(want))

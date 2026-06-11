@@ -1,5 +1,5 @@
 // Package telegram — this file is the command dispatcher (UX-02 / SC#3 / SC#5).
-// The 10 PRD slash-commands are intercepted BEFORE any LLM dispatch (the text
+// Telegram slash-commands are intercepted BEFORE any LLM dispatch (the text
 // handler calls dispatch first; a handled command never reaches handleTurn, so
 // a command can never drive an agent turn — T-13-06-CmdLLMBypass). /cost and
 // /search REUSE the locked backends byte-for-byte (llm.CostUSD and
@@ -57,7 +57,7 @@ type commandDeps struct {
 	Model  string
 }
 
-// commands intercepts the 10 PRD slash-commands. It also owns the per-chat
+// commands intercepts Telegram slash-commands. It also owns the per-chat
 // in-flight-turn cancel registry so /cancel can abort a running turn (SC#3).
 type commands struct {
 	deps commandDeps
@@ -129,6 +129,8 @@ func (c *commands) dispatchRich(ctx context.Context, chatID int64, text string) 
 		return true, textReply(c.cost(ctx))
 	case "/search":
 		return true, c.searchRich(ctx, chatID, arg)
+	case "/onboard":
+		return true, textReply("Uso: /onboard avvia o riavvia il profilo Agent.md in questa chat Telegram.")
 	case "/new":
 		return true, textReply("In Telegram questa chat resta un thread continuo. Per aprire o gestire conversazioni separate usa l'app o la CLI.")
 	case "/list":
@@ -148,13 +150,14 @@ func textReply(s string) commandReply {
 	return commandReply{text: s}
 }
 
-// helpText lists the 10 bot-intercept commands (no LLM call drives a command).
+// helpText lists the bot-intercept commands (no LLM call drives a command).
 const helpText = "Comandi Aura:\n" +
 	"/start - saluta o completa un link di setup\n" +
 	"/help - mostra questa lista\n" +
 	"/cancel - annulla il turno in corso\n" +
 	"/cost - mostra la spesa cumulativa di oggi\n" +
 	"/search <testo> - cerca nei turni salvati\n" +
+	"/onboard - avvia o riavvia il profilo Agent.md\n" +
 	"/new - spiega il thread continuo Telegram\n" +
 	"/list - indica dove sfogliare le conversazioni\n" +
 	"/reset - annulla il turno; non cancella lo storico\n" +

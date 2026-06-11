@@ -90,6 +90,7 @@ func (t *Telegram) registerHandlers(daemonCtx context.Context, bot *tele.Bot) {
 	bot.Handle(&tele.InlineButton{Unique: callbackUnique}, t.onCallback(daemonCtx))
 	bot.Handle(&tele.InlineButton{Unique: searchCallbackUnique}, t.onSearchCallback())
 	bot.Handle(&tele.InlineButton{Unique: statusCancelUnique}, t.onStatusCancelCallback())
+	bot.Handle(&tele.InlineButton{Unique: profileCallbackUnique}, t.onProfileCallback(daemonCtx))
 	// A callback NOT matching the HITL button falls through to OnCallback: ack it so
 	// the client clears the spinner; it carries no live pause to resolve (a forged
 	// or stale callback is a no-op — T-13-10-PauseHijack).
@@ -125,6 +126,10 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		if name, _ := splitCommand(text); name == "/cancel" && t.cancelPendingPause(daemonCtx, c, chatID) {
 			return nil
 		}
+		if name, _ := splitCommand(text); name == "/onboard" {
+			t.replyProfile(c, t.profileForDispatch().restart(daemonCtx, chatID, telegramUserIDFromMessage(msg)))
+			return nil
+		}
 		// 1) Command intercept — a handled /command never reaches the LLM.
 		if handled, reply := t.cmds.dispatchRich(daemonCtx, chatID, text); handled {
 			t.replyCommand(c, reply)
@@ -134,11 +139,43 @@ func (t *Telegram) onText(daemonCtx context.Context) tele.HandlerFunc {
 		if t.hitlHandlesText(daemonCtx, c, chatID, text) {
 			return nil
 		}
+		if out, handled := t.profileForDispatch().handleText(daemonCtx, chatID, text); handled {
+			t.replyProfile(c, out)
+			return nil
+		}
+		if out, handled := t.profileForDispatch().maybeStart(daemonCtx, chatID, telegramUserIDFromMessage(msg)); handled {
+			t.replyProfile(c, out)
+			return nil
+		}
 		// 3) Ordinary message → a normal turn (runTurn runs it async + shows the
 		// "Aura is working" indicator, so the poller stays free for /cancel).
 		t.runTurn(daemonCtx, c, chatID, text, false)
 		return nil
 	}
+}
+
+func (t *Telegram) profileForDispatch() *profileOnboarding {
+	if t.profile != nil {
+		return t.profile
+	}
+	accounts := t.deps.profileAccounts
+	if accounts == nil && t.deps.Store != nil {
+		accounts = t.deps.Store
+	}
+	return newProfileOnboarding(t.deps.Profile, accounts)
+}
+
+func telegramUserIDFromMessage(msg *tele.Message) int64 {
+	if msg == nil {
+		return 0
+	}
+	if msg.Sender != nil {
+		return msg.Sender.ID
+	}
+	if msg.Chat != nil {
+		return msg.Chat.ID
+	}
+	return 0
 }
 
 func (t *Telegram) onStatusCancelCallback() tele.HandlerFunc {
@@ -185,6 +222,29 @@ func (t *Telegram) onSearchCallback() tele.HandlerFunc {
 		if _, err := c.Bot().Edit(cb.Message, out.text, opts...); err != nil {
 			slog.Warn("telegram search: page edit failed", "err", err)
 		}
+		return nil
+	}
+}
+
+func (t *Telegram) onProfileCallback(daemonCtx context.Context) tele.HandlerFunc {
+	return func(c tele.Context) error {
+		cb := c.Callback()
+		if cb == nil || cb.Message == nil || cb.Message.Chat == nil {
+			return nil
+		}
+		chatID := cb.Message.Chat.ID
+		out, handled := t.profileForDispatch().handleCallback(daemonCtx, chatID, cb.Data)
+		if !handled {
+			_ = c.Respond(&tele.CallbackResponse{Text: "Non disponibile"})
+			return nil
+		}
+		ack := out.ack
+		if ack == "" {
+			ack = "Ricevuto"
+		}
+		_ = c.Respond(&tele.CallbackResponse{Text: ack})
+		t.disarmCallbackKeyboard(c.Bot(), cb.Message)
+		t.replyProfile(c, out)
 		return nil
 	}
 }
@@ -510,6 +570,19 @@ func (t *Telegram) reply(c tele.Context, text string) {
 	}
 	if err := c.Send(text); err != nil {
 		slog.Warn("telegram: reply send failed", "err", err)
+	}
+}
+
+func (t *Telegram) replyProfile(c tele.Context, out profileReply) {
+	if out.text == "" {
+		return
+	}
+	if out.markup == nil {
+		t.reply(c, out.text)
+		return
+	}
+	if err := c.Send(out.text, &tele.SendOptions{ReplyMarkup: out.markup}); err != nil {
+		slog.Warn("telegram: profile onboarding reply send failed", "err", err)
 	}
 }
 

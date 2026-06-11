@@ -39,6 +39,7 @@ type profileOnboarding struct {
 }
 
 type profileSession struct {
+	mu           sync.Mutex
 	account      Account
 	session      *profileflow.Session
 	awaitingEdit bool
@@ -62,11 +63,11 @@ func (p *profileOnboarding) maybeStart(ctx context.Context, chatID, telegramUser
 	if p == nil {
 		return profileReply{}, false
 	}
-	if p.store == nil {
-		return profileReply{text: "Profilo non disponibile: configurazione profilo mancante."}, true
-	}
 	if p.accounts == nil {
 		return profileReply{}, false
+	}
+	if p.store == nil {
+		return profileReply{text: "Profilo non disponibile: configurazione profilo mancante."}, true
 	}
 	acct, err := p.accounts.GetAccountByTelegramID(ctx, telegramUserID)
 	if err != nil {
@@ -81,6 +82,8 @@ func (p *profileOnboarding) maybeStart(ctx context.Context, chatID, telegramUser
 	p.mu.Lock()
 	ps := p.startLocked(chatID, acct)
 	p.mu.Unlock()
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	return p.runOne(ctx, chatID, ps)
 }
 
@@ -98,6 +101,8 @@ func (p *profileOnboarding) restart(ctx context.Context, chatID, telegramUserID 
 	p.mu.Lock()
 	ps := p.startLocked(chatID, acct)
 	p.mu.Unlock()
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	out, _ := p.runOne(ctx, chatID, ps)
 	return out
 }
@@ -112,6 +117,8 @@ func (p *profileOnboarding) handleText(ctx context.Context, chatID int64, text s
 	if ps == nil {
 		return profileReply{}, false
 	}
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	if ps.awaitingEdit {
 		ps.awaitingEdit = false
 		ps.session.Queue(profileflow.Input{Intent: profileflow.IntentEdit, Answers: answersFromText(text)})
@@ -133,6 +140,8 @@ func (p *profileOnboarding) handleCallback(ctx context.Context, chatID int64, da
 	if ps == nil {
 		return profileReply{ack: "Profilo scaduto o non disponibile."}, true
 	}
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	switch action {
 	case profileActionEdit:
 		ps.awaitingEdit = true
