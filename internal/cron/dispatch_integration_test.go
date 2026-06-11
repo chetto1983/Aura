@@ -10,8 +10,12 @@ package cron
 import (
 	"context"
 	"errors"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/db"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func TestDispatchWritesSummaryToRun(t *testing.T) {
@@ -239,6 +243,106 @@ func TestPendingNotificationFailedSelfSendBoundedRetry(t *testing.T) {
 	if len(notif.texts) != 1+pendingNotificationAttemptBound {
 		t.Fatalf("notification retried past bound: calls=%d want %d", len(notif.texts), 1+pendingNotificationAttemptBound)
 	}
+}
+
+// TestDispatchPendingNotificationIdentityRoundTrip pins the 0014 schema work: the
+// identity_id snapshot threaded by InsertPendingNotification round-trips through
+// SweepDueNotifications + the PendingNotification projection (the Step-2 route-back
+// key). It then asserts migration 0014 reverts cleanly (down drops identity_id) and
+// re-up re-adds it — the no-skip-as-green reversibility gate (T-20-13). This test runs
+// against a live Postgres; a sub-second runtime is a skip tell.
+func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
+	pool := migratedPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	s := New(pool)
+
+	spec, _ := ParseSchedule("every", "", 5, time.Time{}, "Europe/Rome")
+	task, err := s.CreateTask(ctx, CreateTaskParams{
+		Kind: KindAgentJob, Spec: spec, Payload: []byte(`{"goal":"summarize the news"}`),
+		NextRunAt: time.Now().Add(5 * time.Minute), NotifyRoute: "whatsapp",
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	t.Cleanup(func() { cleanupTask(t, pool, task.ID) })
+	run, err := s.InsertRun(ctx, task.ID, 0)
+	if err != nil {
+		t.Fatalf("InsertRun: %v", err)
+	}
+
+	const wantIdentity = "id-roundtrip"
+	// Insert a DUE pending row carrying identity_id (notify_after in the past so the
+	// sweep selects it). Status pending so it is swept on the first pass.
+	inserted, err := s.InsertPendingNotification(ctx, InsertPendingNotificationParams{
+		RunID:       run.ID,
+		NotifyRoute: "whatsapp",
+		Body:        "round-trip body",
+		NotifyAfter: time.Now().UTC().Add(-time.Second),
+		Status:      "pending",
+		IdentityID:  wantIdentity,
+	})
+	if err != nil {
+		t.Fatalf("InsertPendingNotification: %v", err)
+	}
+	if inserted.IdentityID != wantIdentity {
+		t.Fatalf("InsertPendingNotification returned identity_id %q, want %q", inserted.IdentityID, wantIdentity)
+	}
+
+	rows, err := s.SweepDueNotifications(ctx, pendingNotificationAttemptBound, pendingNotificationSweepLimit)
+	if err != nil {
+		t.Fatalf("SweepDueNotifications: %v", err)
+	}
+	var got *PendingNotification
+	for i := range rows {
+		if rows[i].ID == inserted.ID {
+			got = &rows[i]
+			break
+		}
+	}
+	if got == nil {
+		t.Fatalf("swept rows did not include the inserted notification %q (got %d rows)", inserted.ID, len(rows))
+	}
+	if got.IdentityID != wantIdentity {
+		t.Fatalf("identity_id did not round-trip through SweepDueNotifications: got %q, want %q", got.IdentityID, wantIdentity)
+	}
+
+	// Reversibility: down -1 drops identity_id, re-up re-adds it. Probe the column via
+	// information_schema so we assert the SCHEMA, not just a query error.
+	migrateURL := os.Getenv("AURA_DB_MIGRATE_URL")
+	if migrateURL == "" {
+		t.Fatal("AURA_DB_MIGRATE_URL unset after migratedPool — reversibility step needs the migrate DSN")
+	}
+	if columnExists(ctx, t, pool, "identity_id") != true {
+		t.Fatal("identity_id column missing before the down step (migratedPool should have applied 0014)")
+	}
+	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
+		t.Fatalf("MigrateSteps down -1 (revert 0014): %v", err)
+	}
+	if columnExists(ctx, t, pool, "identity_id") != false {
+		t.Fatal("identity_id column still present after the 0014 down migration")
+	}
+	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
+		t.Fatalf("MigrateSteps up 1 (re-apply 0014): %v", err)
+	}
+	if columnExists(ctx, t, pool, "identity_id") != true {
+		t.Fatal("identity_id column missing after re-applying 0014 — re-up is not clean")
+	}
+}
+
+// columnExists probes information_schema for aura.pending_notifications.<col>.
+func columnExists(ctx context.Context, t *testing.T, pool *pgxpool.Pool, col string) bool {
+	t.Helper()
+	var exists bool
+	if err := pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.columns
+			WHERE table_schema = 'aura'
+			  AND table_name = 'pending_notifications'
+			  AND column_name = $1)`, col).Scan(&exists); err != nil {
+		t.Fatalf("probe column %q: %v", col, err)
+	}
+	return exists
 }
 
 // TestDispatchCompletesRunOnCancelledRootCtx is the M-h regression: a shutdown mid-run

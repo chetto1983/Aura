@@ -28,23 +28,36 @@ type ChannelDeliverer interface {
 	DeliverToIdentity(ctx context.Context, identityID, text string) (delivered bool, err error)
 }
 
-// deliverToOrigin prefers the origin channel over the per-task Notifier route. It
-// returns handled=true when delivery is the channel's concern (delivered OR
-// owns-but-failed-and-queued); the caller then skips Notifier.Notify. It returns
-// false to fall through to today's route chain.
+// originGate decides whether a notification keyed on (identityID, notifyRoute)
+// should prefer the origin channel over the per-task Notifier route. It is the
+// SINGLE source of the precedence semantics, shared by BOTH the live-task notify
+// path (deliverToOrigin) and the swept-row sweep path (deliverSweptRow) — no
+// duplicated precedence logic (Pitfall 2 / R4).
 //
-// The gate order is load-bearing (Pitfall 2):
+// The gate order is load-bearing:
 //  1. kill-switch off / no ChannelDeliverer → false (legacy route-only, regression guard).
 //  2. an explicit NotifyRoute ALWAYS wins (channel skipped, R7); an un-owned identity
 //     ("" / "local") → route fallback. This is checked BEFORE the channel.
-//  3. otherwise push to the owning channel; on error queue a failed pending row
-//     (same-channel retry key) and return handled=true WITHOUT calling Notifier
-//     (Pitfall 3 — the owns-but-failed branch must never fall back to a sibling route).
-func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text string) (handled bool) {
+func (d *Dispatch) originGate(identityID, notifyRoute string) bool {
 	if !d.deps.PreferOriginChannel || d.deps.ChannelDeliverer == nil {
 		return false
 	}
-	if task.NotifyRoute != "" || task.IdentityID == "" || task.IdentityID == "local" {
+	if notifyRoute != "" || identityID == "" || identityID == "local" {
+		return false
+	}
+	return true
+}
+
+// deliverToOrigin prefers the origin channel over the per-task Notifier route for a
+// LIVE task. It returns handled=true when delivery is the channel's concern
+// (delivered OR owns-but-failed-and-queued); the caller then skips Notifier.Notify.
+// It returns false to fall through to today's route chain.
+//
+// On owns-but-failed it queues a NEW failed pending row (same-channel retry key,
+// keyed on task.IdentityID) and returns handled=true WITHOUT calling Notifier
+// (Pitfall 3 — the owns-but-failed branch must never fall back to a sibling route).
+func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text string) (handled bool) {
+	if !d.originGate(task.IdentityID, task.NotifyRoute) {
 		return false
 	}
 	delivered, err := d.deps.ChannelDeliverer.DeliverToIdentity(ctx, task.IdentityID, text)
@@ -58,4 +71,38 @@ func (d *Dispatch) deliverToOrigin(ctx context.Context, task Task, runID, text s
 		return true
 	}
 	return delivered
+}
+
+// sweepOutcome is the disposition of a swept row routed through the origin channel.
+type sweepOutcome int
+
+const (
+	// sweepFallback: no origin channel owns the row → caller delivers via Notifier.Notify.
+	sweepFallback sweepOutcome = iota
+	// sweepDelivered: the origin channel delivered → caller marks the row delivered.
+	sweepDelivered
+	// sweepKeep: the origin channel owns-but-failed → caller marks the EXISTING row
+	// failed (same-channel retry on the next sweep) and does NOT fall back to Notifier
+	// (Pitfall 3 — no cross-channel double-delivery during a sweep).
+	sweepKeep
+)
+
+// deliverSweptRow routes one swept pending_notifications row through the SAME origin
+// gate as the live-task path, keyed on the ROW's identity snapshot (there is no live
+// task at sweep time — the row carries the 0014 identity_id). Unlike the live path it
+// never inserts a new pending row: the row already exists, so owns-but-failed returns
+// sweepKeep and the caller marks the existing row failed for the next sweep.
+func (d *Dispatch) deliverSweptRow(ctx context.Context, n PendingNotification) sweepOutcome {
+	if !d.originGate(n.IdentityID, n.NotifyRoute) {
+		return sweepFallback
+	}
+	delivered, err := d.deps.ChannelDeliverer.DeliverToIdentity(ctx, n.IdentityID, n.Body)
+	if err != nil {
+		slog.Warn("origin-channel sweep delivery failed (kept for next sweep)", "notification", n.ID, "err", err)
+		return sweepKeep
+	}
+	if delivered {
+		return sweepDelivered
+	}
+	return sweepFallback
 }

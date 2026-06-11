@@ -301,15 +301,40 @@ func (d *Dispatch) sweepNotifications(ctx context.Context) error {
 		return err
 	}
 	for _, n := range rows {
+		// Prefer the origin channel keyed on the ROW's identity snapshot (R6/Step 2):
+		// a quiet-hours-deferred / failed notification routes back to the channel it
+		// came from after the sweep, not the default route. The gate is the SAME one
+		// the live-task path uses (deliver.go originGate).
+		switch d.deliverSweptRow(ctx, n) {
+		case sweepDelivered:
+			d.markSweptDelivered(ctx, n.ID)
+			continue
+		case sweepKeep:
+			// owns-but-failed: keep the row (same-channel retry next sweep), do NOT
+			// fall back to Notifier (no cross-channel double-delivery, Pitfall 3).
+			d.markSweptFailed(ctx, n.ID, "origin-channel delivery failed")
+			continue
+		case sweepFallback:
+			// no origin channel owns the row (NULL/legacy identity, explicit route, or
+			// kill-switch off) → today's per-task route, byte-identical to pre-Phase-20.
+		}
 		if err := d.deps.Notifier.Notify(ctx, NotifyRoute(n.NotifyRoute), "", n.Body); err != nil {
-			if markErr := d.deps.NotificationStore.MarkNotificationFailed(ctx, n.ID, err.Error()); markErr != nil {
-				slog.Warn("mark scheduler notification failed", "notification", n.ID, "err", markErr)
-			}
+			d.markSweptFailed(ctx, n.ID, err.Error())
 			continue
 		}
-		if err := d.deps.NotificationStore.MarkNotificationDelivered(ctx, n.ID); err != nil {
-			slog.Warn("mark scheduler notification delivered", "notification", n.ID, "err", err)
-		}
+		d.markSweptDelivered(ctx, n.ID)
 	}
 	return nil
+}
+
+func (d *Dispatch) markSweptDelivered(ctx context.Context, id string) {
+	if err := d.deps.NotificationStore.MarkNotificationDelivered(ctx, id); err != nil {
+		slog.Warn("mark scheduler notification delivered", "notification", id, "err", err)
+	}
+}
+
+func (d *Dispatch) markSweptFailed(ctx context.Context, id, lastErr string) {
+	if err := d.deps.NotificationStore.MarkNotificationFailed(ctx, id, lastErr); err != nil {
+		slog.Warn("mark scheduler notification failed", "notification", id, "err", err)
+	}
 }

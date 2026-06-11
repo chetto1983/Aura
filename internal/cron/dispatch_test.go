@@ -300,6 +300,126 @@ func TestDispatchSweepNotificationsMarksDeliveredAndFailed(t *testing.T) {
 	}
 }
 
+// TestDispatchSweepNotificationsPrefersOriginChannel pins the Step-2 route-back: a
+// swept row carrying a real identity_id snapshot delivers via the origin channel
+// (keyed on the ROW's identity, not a live task) under the SAME gate as the live-task
+// path; a NULL-identity legacy row falls back to Notifier.Notify with its route
+// (byte-identical to pre-Phase-20). It asserts the DESTINATION of each branch.
+func TestDispatchSweepNotificationsPrefersOriginChannel(t *testing.T) {
+	t.Parallel()
+	store := &fakeNotificationStore{sweepRows: []PendingNotification{
+		// owned row: real identity, no explicit route → origin channel.
+		{ID: "owned", IdentityID: "id-I", Body: "via channel"},
+		// legacy row: NULL identity (empty) + a route → Notifier fallback.
+		{ID: "legacy", NotifyRoute: "whatsapp", Body: "via route"},
+		// owns-but-fails: real identity, channel errors → keep for next sweep, no Notifier.
+		{ID: "failing", IdentityID: "id-F", Body: "channel down"},
+	}}
+	notif := &captureNotifier{}
+
+	// Script the channel: deliver "id-I", error on "id-F".
+	scripted := &scriptedDeliverer{byIdentity: map[string]struct {
+		delivered bool
+		err       error
+	}{
+		"id-I": {delivered: true},
+		"id-F": {err: errors.New("telegram down")},
+	}}
+
+	d := NewDispatch(nil, DispatchDeps{
+		Store:               store,
+		Notifier:            notif,
+		ChannelDeliverer:    scripted,
+		PreferOriginChannel: true,
+	})
+	if err := d.sweepNotifications(context.Background()); err != nil {
+		t.Fatalf("sweepNotifications: %v", err)
+	}
+
+	// owned → channel delivered, Notifier NOT called for it, row marked delivered.
+	if !scripted.calledFor("id-I") {
+		t.Fatalf("owned row must be delivered via the origin channel keyed on its identity")
+	}
+	if got := scripted.textFor("id-I"); got != "via channel" {
+		t.Fatalf("channel delivered text %q, want the row body", got)
+	}
+	// legacy NULL-identity row → Notifier fallback with its route (regression guard).
+	if len(notif.texts) != 1 || notif.texts[0] != "via route" {
+		t.Fatalf("legacy NULL-identity row must fall back to Notifier with its route, got %v", notif.texts)
+	}
+	if len(notif.routes) != 1 || string(notif.routes[0]) != "whatsapp" {
+		t.Fatalf("legacy fallback route = %v, want whatsapp", notif.routes)
+	}
+	// owns-but-fails → kept (marked failed), Notifier NOT called for it.
+	if !scripted.calledFor("id-F") {
+		t.Fatalf("failing row must attempt the origin channel keyed on its identity")
+	}
+	if !contains(store.delivered, "owned") {
+		t.Fatalf("delivered rows = %v, want the owned row marked delivered", store.delivered)
+	}
+	if contains(store.delivered, "failing") {
+		t.Fatalf("owns-but-failed row must NOT be marked delivered (kept for retry)")
+	}
+	if !failedContains(store.failed, "failing") {
+		t.Fatalf("owns-but-failed row must be marked failed for the next sweep, got %+v", store.failed)
+	}
+}
+
+// scriptedDeliverer returns a per-identity tri-state and records every call, so the
+// sweep route-back test can drive multiple rows with different outcomes in one sweep.
+type scriptedDeliverer struct {
+	byIdentity map[string]struct {
+		delivered bool
+		err       error
+	}
+	calls []struct{ identityID, text string }
+}
+
+func (s *scriptedDeliverer) DeliverToIdentity(_ context.Context, identityID, text string) (bool, error) {
+	s.calls = append(s.calls, struct{ identityID, text string }{identityID, text})
+	r := s.byIdentity[identityID]
+	return r.delivered, r.err
+}
+
+func (s *scriptedDeliverer) calledFor(id string) bool {
+	for _, c := range s.calls {
+		if c.identityID == id {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *scriptedDeliverer) textFor(id string) string {
+	for _, c := range s.calls {
+		if c.identityID == id {
+			return c.text
+		}
+	}
+	return ""
+}
+
+func contains(xs []string, x string) bool {
+	for _, v := range xs {
+		if v == x {
+			return true
+		}
+	}
+	return false
+}
+
+func failedContains(xs []struct {
+	id  string
+	err string
+}, id string) bool {
+	for _, v := range xs {
+		if v.id == id {
+			return true
+		}
+	}
+	return false
+}
+
 func TestDispatchReminderFiresInQuietHours(t *testing.T) {
 	t.Parallel()
 	// A reminder the user explicitly scheduled still fires inside quiet hours — its
