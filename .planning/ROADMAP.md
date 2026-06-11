@@ -651,7 +651,7 @@ Wave 3 (sequential / final):
 **Goal:** Scheduled-task notifications (reminders, agent_job summaries, failure/risk alerts) are delivered back to the channel that scheduled them — identity-keyed to the user's 1:1 chat (Telegram) — across both the immediate dispatch path (Step 1) and the quiet-hours-deferred / failed-retry sweep (Step 2), instead of always routing to whatsapp/email/stdout. Fixes the live Phase-19 reminder-agnostic-channel bug via a generic, identity-keyed `channels.Deliverer` seam so future channels plug in with zero scheduler changes.
 **Requirements**: R1-R7 (locked in 20-SPEC.md; no ROADMAP REQ-IDs map to this phase)
 **Depends on:** Phase 19
-**Plans:** 2/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 
@@ -662,8 +662,8 @@ Plans:
 
 **Wave 2** (blocked on Wave 1)
 
-- [ ] 20-03-PLAN.md — cron.ChannelDeliverer seam + deliverToOrigin precedence + AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch + serve boot reorder + Step-1 LIVE gate [R4, R5, R7]
+- [x] 20-03-PLAN.md — cron.ChannelDeliverer seam + deliverToOrigin precedence + AURA_SCHEDULER_PREFER_ORIGIN_CHANNEL kill-switch + serve boot reorder + Step-1 LIVE gate [R4, R5, R7]
 
 **Wave 3** (blocked on Wave 2)
 
-- [ ] 20-04-PLAN.md — migration 0014 (pending_notifications.identity_id text, no FK) + sqlc Insert/Sweep threading + sweepNotifications route-back + db_integration round-trip + Step-2 LIVE gate [R6]
+- [x] 20-04-PLAN.md — migration 0014 (pending_notifications.identity_id text, no FK) + sqlc Insert/Sweep threading + sweepNotifications route-back + db_integration round-trip + Step-2 LIVE gate [R6]

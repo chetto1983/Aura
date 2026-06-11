@@ -4,14 +4,14 @@ milestone: v0.0.0
 milestone_name: milestone
 status: completed
 stopped_at: Completed 20-01-PLAN.md
-last_updated: "2026-06-11T16:40:27.409Z"
+last_updated: "2026-06-11T17:55:28.339Z"
 last_activity: 2026-06-11
 progress:
   total_phases: 22
-  completed_phases: 17
+  completed_phases: 18
   total_plans: 125
-  completed_plans: 120
-  percent: 77
+  completed_plans: 123
+  percent: 82
 ---
 
 # Project State
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 20 (scheduler-hardening-full-implementation) — EXECUTING
-Plan: 3 of 4
+Phase: 20
+Plan: Not started
 Status: Ready to execute (20-02 complete; next is Wave 2 / 20-03)
 Last activity: 2026-06-11
 
@@ -42,7 +42,7 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 
 **Velocity:**
 
-- Total plans completed: 74
+- Total plans completed: 78
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -63,6 +63,7 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 | 18 | 4 | - | - |
 | 11 | 10 | - | - |
 | 12 | 6 | - | - |
+| 20 | 4 | - | - |
 
 **Recent Trend:**
 
