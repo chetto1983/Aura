@@ -27,6 +27,7 @@ import (
 	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
 )
 
@@ -93,16 +94,17 @@ func cacheAuditMain(ctx context.Context, _ []string, out, errOut io.Writer) int 
 }
 
 // reportHashes prints `request NN: <hex>` for each request's messages[0] and asserts
-// every hash is identical. When a request ALSO carries a messages[1] always-block (D-07)
-// and/or the non-deferred skill tool's manifest-in-Description (D-06) it prints
-// `messages1 NN: <hex>` / `skillman NN: <hex>` and asserts those streams are byte-stable
-// too. The messages[0] invariant is checked FIRST and is unconditional (the original
-// CAP-04 gate); the messages[1]/skill streams are emitted only when present, so a
-// synthetic request list with no skills (the Go-level negative test) still exercises the
-// messages[0] mutation path. The real 20-turn replay wires a fixed skill set, so all
-// three streams ARE present and the script's per-stream 22-line count enforces it
-// (no-skip-as-green). The first drift in ANY stream returns exitMutation with the
-// matching wording; this is the seam the Go-level negative test drives directly.
+// every hash is identical. When a request ALSO carries a messages[1] profile/skills
+// block (D-07 + Phase 14 Agent.md) and/or the non-deferred skill tool's
+// manifest-in-Description (D-06) it prints `messages1 NN: <hex>` / `skillman NN:
+// <hex>` and asserts those streams are byte-stable too. The messages[0] invariant is
+// checked FIRST and is unconditional (the original CAP-04 gate); the messages[1]/skill
+// streams are emitted only when present, so a synthetic request list with no skills
+// still exercises the messages[0] mutation path. The real 20-turn replay wires a fixed
+// profile and skill set, so all three streams ARE present and the script's per-stream
+// 22-line count enforces it (no-skip-as-green). The first drift in ANY stream returns
+// exitMutation with the matching wording; this is the seam the Go-level negative tests
+// drive directly.
 func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 	prev0, set0 := "", false
 	prev1, set1 := "", false
@@ -122,7 +124,7 @@ func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 		}
 		prev0, set0 = h0, true
 
-		// messages[1] always-block (D-07) — only when the request carries one.
+		// messages[1] profile/skills block — only when the request carries one.
 		if len(req.Messages) >= 2 {
 			h1, herr := hashMessages1(req)
 			if herr != nil {
@@ -131,7 +133,7 @@ func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 			}
 			_, _ = fmt.Fprintf(out, "messages1 %02d: %s\n", i+1, h1)
 			if set1 && h1 != prev1 {
-				_, _ = fmt.Fprintf(errOut, "messages[1] always-block mutated at request %d -- diff: %s vs %s\n", i+1, prev1, h1)
+				_, _ = fmt.Fprintf(errOut, "messages[1] profile/skills block mutated at request %d -- diff: %s vs %s\n", i+1, prev1, h1)
 				return exitMutation
 			}
 			prev1, set1 = h1, true
@@ -154,8 +156,8 @@ func reportHashes(reqs []llm.Request, out, errOut io.Writer) int {
 // replayAudit drives the real Runner.Turn loop turn-by-turn and returns every
 // captured request each fixture turn emits. Tool rounds can consume multiple LLM
 // requests inside one Runner.Turn, and each one must preserve messages[0] AND — with
-// a fixed skill set loaded — the messages[1] always-block + the skill tool's
-// manifest-in-Description (Phase 11 D-06/D-07 extension).
+// a fixed Agent.md profile plus skill set loaded — the messages[1] profile/skills
+// block + the skill tool's manifest-in-Description.
 func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]llm.Request, int) {
 	// A throwaway run dir keeps any tool-result spillover (e.g. the tool_search
 	// round) out of the cwd; it is removed when the replay returns.
@@ -167,9 +169,9 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 	defer func() { _ = os.RemoveAll(runDir) }()
 
 	// Fixed deterministic skill set (Phase 11): one always:true skill (feeds the
-	// messages[1] block) + one regular skill (feeds the manifest-in-Description). Both
-	// are byte-stable inputs, so a turn-stable runner must produce a byte-stable
-	// messages[1] + skill Description across all 20 turns.
+	// profile/skills block) + one regular skill (feeds the manifest-in-Description).
+	// These are byte-stable inputs, so a turn-stable runner must produce a
+	// byte-stable messages[1] + skill Description across all 20 turns.
 	auditCfg, cleanupSkills, serr := setupAuditSkills(runDir)
 	if serr != nil {
 		_, _ = fmt.Fprintln(errOut, "cache-audit: setup fixed skill set:", serr)
@@ -191,7 +193,8 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 		Registry:        reg,
 		LLM:             llm.Config{Model: "cache-audit", ContextWindow: 1_000_000, MaxOutputTokens: 32768},
 		RunDir:          runDir,
-		AlwaysBlock:     alwaysBlockProvider(auditCfg), // the messages[1] always-block (D-07)
+		ContextBlock:    profileContextProvider(auditCfg),
+		AlwaysBlock:     alwaysBlockProvider(auditCfg),
 	})
 
 	convID := "00000000-0000-0000-0000-0000000000aa"
@@ -236,12 +239,13 @@ func hashMessages0(req llm.Request) (string, error) {
 	return prompt.PrefixHash(req.Messages, []int{0})
 }
 
-// hashMessages1 fingerprints req.Messages[1] — the messages[1] always-block (D-07).
-// With a fixed always:true skill loaded this must be byte-stable across every turn
-// (a skill add/remove would change it, but the fixed audit skill set never changes).
+// hashMessages1 fingerprints req.Messages[1] — the messages[1] profile/skills block.
+// With a fixed Agent.md profile and always:true skill loaded this must be byte-stable
+// across every turn (a profile or skill update would change it, but the audit fixture
+// never changes).
 func hashMessages1(req llm.Request) (string, error) {
 	if len(req.Messages) < 2 {
-		return "", fmt.Errorf("request is missing messages[1] (always-block)")
+		return "", fmt.Errorf("request is missing messages[1] (profile/skills block)")
 	}
 	return prompt.PrefixHash(req.Messages, []int{1})
 }
@@ -271,18 +275,33 @@ func skillManifestHash(req llm.Request) (string, bool) {
 	return "", false
 }
 
-// setupAuditSkills materializes a FIXED deterministic skill set under runDir/skills:
-// one always:true skill (the messages[1] always-block source) + one regular skill (the
-// manifest-in-Description source). It returns a *config.Config pointing at that dir +
-// the export dir, plus a cleanup. The set never changes during the replay, so a
-// turn-stable runner produces a byte-stable messages[1] + skill Description.
+// setupAuditSkills materializes a FIXED deterministic profile and skill set under
+// runDir: Agent.md for `local`, one always:true skill (the messages[1] skill source),
+// and one regular skill (the manifest-in-Description source). It returns a
+// *config.Config pointing at those dirs, plus a cleanup. The set never changes during
+// the replay, so a turn-stable runner produces a byte-stable messages[1] + skill
+// Description.
 func setupAuditSkills(runDir string) (*config.Config, func(), error) {
+	profileDir := filepath.Join(runDir, "agents")
 	skillsDir := filepath.Join(runDir, "skills")
 	exportDir := filepath.Join(runDir, "skills-export")
-	for _, d := range []string{skillsDir, exportDir} {
+	for _, d := range []string{profileDir, skillsDir, exportDir} {
 		if err := os.MkdirAll(d, 0o750); err != nil {
 			return nil, func() {}, err
 		}
+	}
+	profileStore := profile.NewStore(profileDir)
+	if err := profileStore.WriteProfile("local", profile.Profile{
+		AgentMD: profile.RenderAgentMD(profile.AgentContent{
+			Facts:       []string{"Name: Cache Audit", "Profile fixture: deterministic"},
+			Preferences: []string{"Keep cache-audit prompts stable"},
+			Context:     []string{"This profile is seeded by aura cache-audit"},
+		}),
+		Preferences: profile.Preferences{Lang: "en", ResponseLength: "concise"},
+		Metadata:    profile.Metadata{Version: 1, SchemaVersion: 1, OnboardingCompleted: true},
+		Change:      "seed deterministic cache-audit profile",
+	}); err != nil {
+		return nil, func() {}, err
 	}
 	fixed := []struct {
 		name, body string
@@ -306,6 +325,7 @@ func setupAuditSkills(runDir string) (*config.Config, func(), error) {
 		}
 	}
 	cfg := &config.Config{
+		ProfileDir:            profileDir,
 		SkillsDir:             skillsDir,
 		SkillExportDir:        exportDir,
 		SkillBodyCapBytes:     32768,

@@ -15,7 +15,7 @@
 # Phase 11 (D-06/D-07) extends the audit to THREE byte-stable streams over the same
 # 20-turn replay with a FIXED skill set loaded:
 #   - `request NN:`   — messages[0] (the system prompt; the CAP-04 invariant)
-#   - `messages1 NN:` — messages[1] (the always-on skill block; D-07)
+#   - `messages1 NN:` - messages[1] (the profile-first Agent.md + always-on skill block)
 #   - `skillman NN:`  — the non-deferred skill tool's manifest-in-Description (D-06)
 # A turn-stable runner keeps all three byte-identical across every turn. The wrapper
 # independently counts + diffs each stream; the Go subcommand asserts the same.
@@ -103,7 +103,7 @@ while IFS= read -r line; do
     "messages1 "[0-9][0-9]": "[0-9a-f]*)
       no1=$((no1 + 1)); count1=$((count1 + 1)); hash="${line#*: }"
       if [[ -z "$first1" ]]; then first1="$hash"
-      elif [[ "$hash" != "$first1" ]]; then fail "messages[1] always-block mutated at request ${no1} -- diff: ${first1} vs ${hash}"; fi
+      elif [[ "$hash" != "$first1" ]]; then fail "messages[1] profile/skills block mutated at request ${no1} -- diff: ${first1} vs ${hash}"; fi
       ;;
     "skillman "[0-9][0-9]": "[0-9a-f]*)
       noMan=$((noMan + 1)); countMan=$((countMan + 1)); hash="${line#*: }"
@@ -115,9 +115,9 @@ done <<< "$OUT"
 
 # NO-SKIP-AS-GREEN: each stream MUST have emitted exactly EXPECTED_REQUESTS lines.
 [[ "$count0"   -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'request NN: <hex>' lines (messages[0]), got ${count0} (empty/short output is never a silent pass)"
-[[ "$count1"   -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'messages1 NN: <hex>' lines (messages[1] always-block), got ${count1} (empty/short output is never a silent pass)"
+[[ "$count1"   -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'messages1 NN: <hex>' lines (messages[1] profile/skills block), got ${count1} (empty/short output is never a silent pass)"
 [[ "$countMan" -eq "$EXPECTED_REQUESTS" ]] || fail "expected ${EXPECTED_REQUESTS} 'skillman NN: <hex>' lines (skill manifest-in-Description), got ${countMan} (empty/short output is never a silent pass)"
 
 echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[0] hashes (${first0})"
-echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[1] always-block hashes (${first1})"
+echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical messages[1] profile/skills hashes (${first1})"
 echo "ok (cache invariant gate): ${EXPECTED_REQUESTS} identical skill manifest-in-Description hashes (${firstMan})"

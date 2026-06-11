@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/chetto1983/aura/internal/askuser"
@@ -159,10 +160,26 @@ func (m *memConvStore) LoadHistory(_ context.Context, id string) ([]llm.Message,
 	return m.messagesLocked(id)
 }
 
-func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, _ conversations.ContextConfig) ([]llm.Message, error) {
+func (m *memConvStore) LoadManagedHistory(_ context.Context, id string, cfg conversations.ContextConfig) ([]llm.Message, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.messagesLocked(id)
+	msgs, err := m.messagesLocked(id)
+	if err != nil {
+		return nil, err
+	}
+	block := strings.TrimSpace(cfg.AlwaysBlock)
+	if block == "" {
+		return msgs, nil
+	}
+	insertAt := 0
+	if len(msgs) > 0 && msgs[0].Role == llm.RoleSystem {
+		insertAt = 1
+	}
+	out := make([]llm.Message, 0, len(msgs)+1)
+	out = append(out, msgs[:insertAt]...)
+	out = append(out, llm.Message{Role: llm.RoleUser, Content: block})
+	out = append(out, msgs[insertAt:]...)
+	return out, nil
 }
 
 // messagesLocked rebuilds the loop messages from the persisted turns (the same
