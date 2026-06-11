@@ -69,9 +69,9 @@ func (ReadToolOutput) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	if !ok {
 		return ToolResult{}, fmt.Errorf("read_tool_output: missing tool-call context")
 	}
-	// Reuse the result.go id-validation + path layout (T-03-07): the model
-	// supplies tool_call_id, so it is validated exactly like a spill id before
-	// filepath.Join. session_id comes from the agent's ctx, not the model.
+	// Reuse the result.go id-validation + path layout (T-03-07): the public
+	// argument is named tool_call_id for compatibility, but new footers pass an
+	// opaque sidecar spill id. session_id comes from the agent's ctx, not the model.
 	path, err := sidecarPath(tc.runDir, tc.sessionID, a.ToolCallID)
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("read_tool_output: %w", err)

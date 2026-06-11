@@ -69,17 +69,17 @@ func validateID(kind, id string) error {
 	return nil
 }
 
-// sidecarPath builds the validated sidecar path for a tool call. It rejects
-// traversal-shaped ids BEFORE filepath.Join so a malicious id can never escape
+// sidecarPath builds the validated path for a sidecar spill id. It rejects ids
+// outside the allowlist BEFORE filepath.Join so a malicious id can never escape
 // the fixed <run_dir>/conversations/ prefix (T-03-07).
-func sidecarPath(runDir, sessionID, toolCallID string) (string, error) {
+func sidecarPath(runDir, sessionID, spillID string) (string, error) {
 	if err := validateID("session_id", sessionID); err != nil {
 		return "", err
 	}
-	if err := validateID("tool_call_id", toolCallID); err != nil {
+	if err := validateID("tool_call_id", spillID); err != nil {
 		return "", err
 	}
-	return filepath.Join(runDir, "conversations", sessionID, toolCallID+".result"), nil
+	return filepath.Join(runDir, "conversations", sessionID, spillID+".result"), nil
 }
 
 // truncatePreview returns content truncated to at most capBytes, backed off to a
@@ -103,7 +103,7 @@ func truncatePreview(content string, capBytes int) string {
 // the agent injected via WithToolCallContext. Small outputs (≤cap) become a
 // preview-only result with no disk write; large outputs are truncated on a rune
 // boundary, get a read_tool_output footer pointer, and have their FULL bytes
-// written to <run_dir>/conversations/<session_id>/<tool_call_id>.result. A
+// written to <run_dir>/conversations/<session_id>/<opaque-spill-id>.result. A
 // sidecar write failure degrades clean: the preview carries a "full output
 // unavailable" note and NO error is returned, so the turn continues (D-29).
 func NewResult(ctx context.Context, content string) (ToolResult, error) {

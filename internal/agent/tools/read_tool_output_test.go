@@ -26,6 +26,21 @@ func seedSidecar(t *testing.T, sessionID, callID, content string) context.Contex
 	return ctx
 }
 
+func sidecarIDFromPreview(t *testing.T, preview string) string {
+	t.Helper()
+	const marker = `read_tool_output(tool_call_id="`
+	start := strings.Index(preview, marker)
+	if start < 0 {
+		t.Fatalf("preview missing read_tool_output pointer: %q", preview)
+	}
+	start += len(marker)
+	end := strings.IndexByte(preview[start:], '"')
+	if end < 0 {
+		t.Fatalf("preview has unterminated tool_call_id pointer: %q", preview)
+	}
+	return preview[start : start+end]
+}
+
 // Test 1 (Req#7): offset=50000 limit=100 returns the correct 100-byte slice of
 // the 100KB fixture with a byte-based next-offset footer.
 func TestReadToolOutput_ByteSlice(t *testing.T) {
@@ -49,6 +64,30 @@ func TestReadToolOutput_ByteSlice(t *testing.T) {
 	}
 	if !strings.Contains(res.Preview, "showing bytes 50000-50100 of 100000, next offset 50100") {
 		t.Fatalf("footer wrong: %q", res.Preview)
+	}
+}
+
+func TestReadToolOutput_FreshContextUsesOpaqueFooterID(t *testing.T) {
+	runDir := t.TempDir()
+	content := strings.Repeat("f", 10_000)
+	writeCtx := ctxWithRunDir("sess-fresh", "call-fresh", runDir)
+	spilled, err := NewResult(writeCtx, content)
+	if err != nil {
+		t.Fatalf("NewResult: %v", err)
+	}
+	spillID := sidecarIDFromPreview(t, spilled.Preview)
+	if spillID == "call-fresh" {
+		t.Fatalf("footer must expose opaque sidecar id, got provider id %q", spillID)
+	}
+
+	readCtx := ctxWithRunDir("sess-fresh", "read-call", runDir)
+	args := fmt.Sprintf(`{"tool_call_id":%q,"offset":4096,"limit":10}`, spillID)
+	res, err := ReadToolOutput{}.Execute(readCtx, []byte(args))
+	if err != nil {
+		t.Fatalf("Execute with fresh context: %v", err)
+	}
+	if res.Bytes != 10 || !strings.HasPrefix(res.Preview, "ffffffffff") {
+		t.Fatalf("fresh-context read returned bytes=%d preview %.40q", res.Bytes, res.Preview)
 	}
 }
 

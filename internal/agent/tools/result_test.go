@@ -199,7 +199,7 @@ func TestSidecarLayout(t *testing.T) {
 
 func TestSidecarFilePermissionsAreOwnerOnly(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("Go on Windows does not expose owner-only ACLs through FileMode.Perm")
+		t.Skip("POSIX 0600 mode assertion is not represented by Go FileMode.Perm on Windows")
 	}
 	runDir := t.TempDir()
 	ctx := ctxWithRunDir("sess-perm", "call-perm", runDir)

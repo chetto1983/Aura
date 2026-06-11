@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
+	"strconv"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
@@ -41,6 +43,8 @@ const alwaysBlockSeq = 2
 // marker (not seq+role alone, which a real persisted user turn at seq=2 would
 // collide with), so the ladder protects ONLY the injected block.
 const alwaysBlockMarker = "__aura_always_block__"
+
+var readToolOutputCallIDRe = regexp.MustCompile(`read_tool_output\(tool_call_id=("(?:\\.|[^"\\])*")`)
 
 // ErrContextWindowExceeded is returned by ApplyContextLadder when the history is
 // still over the L2 hard cap after L1 (and L2.5 cannot reduce it — e.g. only the
@@ -213,21 +217,37 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 			continue // never the system turn; only tool turns
 		}
 		if t.Seq < threshold {
-			t.Content = readToolOutputPointer(t.ToolCallID)
+			// Preserve the spill-id pointer minted by tools.NewResult; old rows that
+			// predate opaque sidecar ids fall back to the provider ToolCallID.
+			t.Content = readToolOutputPointer(readToolOutputSpillID(t.Content, t.ToolCallID))
 			t.ContentSidecarPath = "" // already inlined as a pointer
 		}
 	}
 	return out
 }
 
+func readToolOutputSpillID(content, fallback string) string {
+	m := readToolOutputCallIDRe.FindStringSubmatch(content)
+	if len(m) != 2 {
+		return fallback
+	}
+	id, err := strconv.Unquote(m[1])
+	if err != nil || id == "" {
+		return fallback
+	}
+	return id
+}
+
 // readToolOutputPointer is the L1 eviction target: a compact instruction telling
 // the model to page the full output back via read_tool_output (the sidecar is
 // still on disk; only the in-history content is replaced).
-func readToolOutputPointer(toolCallID string) string {
-	if toolCallID == "" {
+// The public parameter stays named tool_call_id, but for new sidecars the value
+// is the opaque spill id from the original footer.
+func readToolOutputPointer(spillID string) string {
+	if spillID == "" {
 		return "[tool output evicted from context; not retrievable]"
 	}
-	return fmt.Sprintf("[tool output evicted to save context; page it back via read_tool_output(tool_call_id=%q)]", toolCallID)
+	return fmt.Sprintf("[tool output evicted to save context; page it back via read_tool_output(tool_call_id=%q)]", spillID)
 }
 
 // dropOldestPairs removes oldest conversational rounds after the protected head
