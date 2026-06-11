@@ -1,10 +1,11 @@
 ---
 phase: 20
 slug: scheduler-hardening-full-implementation
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: validated
+nyquist_compliant: true
+wave_0_complete: true
 created: 2026-06-11
+validated: 2026-06-11
 ---
 
 # Phase 20 — Validation Strategy
@@ -53,11 +54,20 @@ created: 2026-06-11
 
 ## Per-Task Verification Map
 
-> Task IDs are assigned by the planner (`/gsd-plan-phase`). Each task inherits its requirement's tier + command from the map above. The planner fills this table with concrete `{N}-{plan}-{task}` IDs.
+> Filled during `/gsd-validate-phase` (2026-06-11). Each automated command below was **re-run live this session** (not trusted from the SUMMARY/VERIFICATION reports): unit tier under `-race`, db_integration tier under `-race` against live Postgres on `127.0.0.1:5432`. The two LIVE gates were signed off operator-equivalent via the CDP harness (see `20-VERIFICATION.md` §Probe Execution).
 
-| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 20-XX-XX | XX | N | R{n} | unit / db_integration / live | `{per map above}` | ❌ W0 | ⬜ pending |
+| Task ID | Plan | Wave | Req | Test Type | Automated Command / Gate | Test File | Status |
+|---------|------|------|-----|-----------|--------------------------|-----------|--------|
+| 20-01-01 | 01 | 1 | R2 | unit | `go test -race ./internal/channels/ -run TestRegistryDeliverToIdentity` (5 cases) | `registry_test.go` | ✅ green |
+| 20-01-02 | 01 | 1 | R3 | unit | `go test -race ./internal/channels/telegram/ -run TestDeliver` (5 cases + `TestGetAccountByIdentityLocalMapsToNotFound`) | `telegram/deliver_test.go` | ✅ green |
+| 20-02-01 | 02 | 1 | R1 | unit | `go test -race ./internal/agent/tools/ -run TestActionScheduleCapturesOrigin` (with-ctx + bare-ctx) | `tools/task_test.go` | ✅ green |
+| 20-02-02 | 02 | 1 | R1 | db_integration + LIVE | adapter conv→identity snapshot — no unit (composition-root glue, excluded from floor); observed via R6 round-trip + LIVE Step 1 | `dispatch_integration_test.go` / manual | ✅ green |
+| 20-03-01 | 03 | 2 | R4, R7 | unit | `go test -race ./internal/cron/ -run TestDeliverToOrigin` (7 cases incl. R7 stdout-defers-to-origin) | `cron/deliver_test.go` | ✅ green |
+| 20-03-02 | 03 | 2 | R5 (wiring) | build / compile-assert | `go build ./cmd/aura/` + `var _ cron.ChannelDeliverer = (*channels.Registry)(nil)` (serve.go:241) | `cmd/aura/serve.go` | ✅ green |
+| 20-03-03 | 03 | 2 | R5 | **LIVE (hard gate D-04)** | manual CDP Step 1: reminder → same TG chat; `scheduler_tasks.origin_conversation_id` + `identity_id` both set | manual | ✅ signed off |
+| 20-04-01 | 04 | 3 | R6 | db_integration | `go test -tags db_integration -race ./internal/cron/ -run TestDispatchPendingNotificationIdentityRoundTrip` (+ migration 0014 up/down) | `dispatch_integration_test.go` | ✅ green |
+| 20-04-02 | 04 | 3 | R6 | db_integration + LIVE | swept-row route-back (same round-trip test) + LIVE Step 2 | `dispatch_integration_test.go` / manual | ✅ green |
+| 20-04-03 | 04 | 3 | R6 | **LIVE (hard gate D-04)** | manual CDP Step 2: swept notification → origin TG chat; row `status` pending→delivered | manual | ✅ signed off |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -65,12 +75,12 @@ created: 2026-06-11
 
 ## Wave 0 Requirements
 
-- [ ] `internal/channels/registry_test.go` — add `fakeDeliverer` (Channel+Deliverer) + `TestRegistryDeliverToIdentity*` (4 cases)
-- [ ] `internal/channels/telegram/deliver_test.go` — Offline bot + fake Store + recording botSender (3 cases + `'local'` not-my-user)
-- [ ] `internal/cron/dispatch_test.go` (or new `deliver_test.go`) — add `fakeChannelDeliverer` + `TestDeliverToOrigin*` (6 cases incl. kill-switch + nil deps)
-- [ ] `internal/agent/tools/task_test.go` — `actionSchedule` ctx-sessionID capture + bare-ctx `""` (reuse `ctxWith`/`WithToolCallContext` from `result_test.go`)
-- [ ] `internal/cron/` migration-0014 + identity round-trip `db_integration` test (mirror `dispatch_integration_test.go` `migratedPool`)
-- [ ] Live gate recipe for Step 1 + Step 2 (reuse the CDP harness + the 19-11 quiet-hours forcing pattern)
+- [x] `internal/channels/registry_test.go` — `fakeDeliverer` (Channel+Deliverer) + `TestRegistryDeliverToIdentity` (**5 cases**, exceeds the planned 4) ✅
+- [x] `internal/channels/telegram/deliver_test.go` — `sendRecorder` + `stubResolver` + `TestDeliver` (5 cases incl. `'local'` not-my-user) + `TestGetAccountByIdentityLocalMapsToNotFound` boundary ✅
+- [x] `internal/cron/deliver_test.go` — `fakeChannelDeliverer` + `TestDeliverToOrigin` (**7 cases** incl. kill-switch, nil deps, and the R7-amended stdout-defers-to-origin) ✅
+- [x] `internal/agent/tools/task_test.go` — `TestActionScheduleCapturesOrigin` ctx-sessionID capture + bare-ctx `""` (no panic) ✅
+- [x] `internal/cron/dispatch_integration_test.go` — `TestDispatchPendingNotificationIdentityRoundTrip`: migration-0014 up/down + identity round-trip (`migratedPool`), **re-run live this session, 0.15s** ✅
+- [x] Live gate recipe for Step 1 + Step 2 (CDP harness; Step 2 proven via controlled due-row insert exercising the exact `sweepNotifications`→`deliverSweptRow` path) — both signed off ✅
 
 ---
 
@@ -106,12 +116,38 @@ The new behavior decomposes into four orthogonal seams, each fully observed by o
 
 ## Validation Sign-Off
 
-- [ ] All tasks have an `<automated>` verify or a Wave 0 dependency
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 60s (unit tier)
-- [ ] Both LIVE gates (R5 Step 1, R6 Step 2) signed off
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have an `<automated>` verify or a Wave 0 dependency
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (no MISSING — every requirement COVERED)
+- [x] No watch-mode flags
+- [x] Feedback latency < 60s (unit tier ~1s per package)
+- [x] Both LIVE gates (R5 Step 1, R6 Step 2) signed off
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** validated 2026-06-11 (`/gsd-validate-phase 20`)
+
+---
+
+## Validation Audit 2026-06-11
+
+State A audit of the plan-time VALIDATION.md (which was left as a `draft` with a placeholder Per-Task row). Re-ran every automated tier live rather than trusting `20-SUMMARY`/`20-VERIFICATION`.
+
+| Metric | Count |
+|--------|-------|
+| Requirements (R1–R7) | 7 |
+| COVERED | 7 |
+| PARTIAL | 0 |
+| MISSING | 0 |
+| Gaps found | 0 |
+| Resolved (auditor) | 0 |
+| Escalated to manual-only | 0 (R5/R6 LIVE gates were manual-by-design from plan time, not escalations) |
+
+**Live re-run evidence (this session):**
+
+- Symbol existence confirmed on disk for all 5 named tests (no stale-`-run` `[no tests to run]` false-green): `TestRegistryDeliverToIdentity`, `TestDeliver`/`TestGetAccountByIdentityLocalMapsToNotFound`, `TestActionScheduleCapturesOrigin`, `TestDeliverToOrigin`, `TestDispatchPendingNotificationIdentityRoundTrip`.
+- **Unit tier** (`-race`, `-v`, WSL native): 20 subtests fired and passed — Registry 5, Telegram Deliver 5 + boundary 1, origin-capture 2, deliverToOrigin 7 (incl. the R7-amended `stdout route defers to origin`).
+- **db_integration tier** (`-race`, `-tags db_integration`, live Postgres `127.0.0.1:5432` reached from WSL): `TestDispatchPendingNotificationIdentityRoundTrip` PASS 0.15s — insert→sweep identity round-trip + migration 0014 down/up reversibility both exercised against the real DB.
+- **LIVE gates** R5 / R6: operator-equivalent CDP sign-off recorded in `20-VERIFICATION.md` §Probe Execution (accepted by davide, 2026-06-11); R7 amendment override recorded in the verification frontmatter.
+- Working tree clean (no `.tmp`/`testdata/rapid` parallel-session byproducts).
+
+**Verdict:** Phase 20 is **Nyquist-compliant**. The minimum non-redundant set (20 unit cases + 1 db_integration round-trip/migration test + 2 LIVE gates) fully samples the four orthogonal seams; no gap to fill, no auditor spawn required.
