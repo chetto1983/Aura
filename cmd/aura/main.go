@@ -121,8 +121,12 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
+	workspace := ""
+	if wd, err := os.Getwd(); err == nil {
+		workspace = wd
+	}
 	bgShells := tools.NewBackgroundShells()
-	reg.Register(&tools.ShellExec{Background: bgShells})
+	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace, Background: bgShells})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
 	// output from, and terminate, a background shell_exec job. Deferred — the model
 	// tool_searches for them once it holds a background shell_id to follow.
@@ -140,7 +144,7 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	// send_file hands a host file to the user as an attachment (D-05/D-06). Deferred:
 	// the model tool_searches for it when it has a produced/found file to deliver; the
 	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
-	reg.Register(&tools.SendFile{})
+	reg.Register(&tools.SendFile{WorkspaceRoot: workspace})
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
 	// the Without(parent, "swarm_spawn") clone the adapter derives per child, never the
 	// tool itself, so a worker cannot recursively fan out. It is Deferred:true, so it
