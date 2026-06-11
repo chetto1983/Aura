@@ -177,6 +177,29 @@ func (s *Store) GetAccountByTelegramID(ctx context.Context, telegramUserID int64
 	return accountFromRow(row), nil
 }
 
+// GetAccountByIdentity fetches one account by its owning identity_id, the key the
+// scheduler's identity-routed delivery uses (Phase 20 R3). It mirrors
+// GetAccountByTelegramID's error classification but adds the parseUUID boundary the
+// generated query needs (identity_id is uuid). A non-UUID identity (e.g. the CLI's
+// 'local') can never match a real account, so a parse failure maps to a wrapped
+// pgx.ErrNoRows — the same not-found signal as a missing row. That lets Deliver
+// use a single errors.Is(err, pgx.ErrNoRows) branch to mean "not my user" for both
+// the no-account case AND the 'local' case (Pitfall 6), never surfacing an error.
+func (s *Store) GetAccountByIdentity(ctx context.Context, identityID string) (Account, error) {
+	idID, err := parseUUID("identity_id", identityID)
+	if err != nil {
+		return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, pgx.ErrNoRows)
+	}
+	row, err := s.q.GetTelegramAccountByIdentity(ctx, idID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, pgx.ErrNoRows)
+		}
+		return Account{}, fmt.Errorf("get telegram account by identity %q: %w", identityID, err)
+	}
+	return accountFromRow(row), nil
+}
+
 // TouchLastSeen bumps last_seen_at for an account (best-effort activity marker).
 func (s *Store) TouchLastSeen(ctx context.Context, telegramUserID int64) error {
 	if err := s.q.TouchTelegramLastSeen(ctx, telegramUserID); err != nil {

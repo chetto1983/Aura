@@ -142,6 +142,13 @@ type Telegram struct {
 	// fresh message with no handle on the prompt. Set when a prompt is rendered,
 	// consumed (and cleared) when the pause resolves. Guarded by mu.
 	pausePrompts map[int64]*tele.Message
+
+	// deliverBot / deliverResolver are unexported test seams for Deliver (Phase 20
+	// R3): a recording botSender + a stubbed identity→account resolver so the deliver
+	// branches are unit-tested with no live API/DB. nil (the production path) means
+	// Deliver uses the live bot (read under mu) and t.deps.Store. Not public knobs.
+	deliverBot      botSender
+	deliverResolver accountResolver
 }
 
 type hitlReplyKey struct {
