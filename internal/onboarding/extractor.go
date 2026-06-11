@@ -1,0 +1,128 @@
+package onboarding
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+	"github.com/chetto1983/aura/internal/profile"
+)
+
+const maxAnswerFieldBytes = 2048
+
+type Draft struct {
+	AgentMD         string
+	Preferences     profile.Preferences
+	PreferencesJSON string
+}
+
+func ExtractDraft(answers Answers) (Draft, error) {
+	answers = cleanAnswers(answers)
+	prefs := profile.Preferences{
+		Lang:                answers.Lang,
+		Timezone:            answers.Timezone,
+		VoiceMode:           boolValue(answers.VoiceMode),
+		CanProactiveMessage: boolValue(answers.CanProactiveMessage),
+		TonePreference:      answers.TonePreference,
+		ResponseLength:      answers.ResponseLength,
+	}
+
+	md := profile.RenderAgentMD(profile.AgentContent{
+		Facts:              factLines(answers),
+		Preferences:        preferenceLines(answers),
+		CustomInstructions: customInstructionLines(answers),
+	})
+	if len([]byte(md)) > profile.MaxAgentMDBytes {
+		md = truncateBytes(md, profile.MaxAgentMDBytes)
+	}
+	prefsJSON, err := json.Marshal(prefs)
+	if err != nil {
+		return Draft{}, fmt.Errorf("marshal onboarding preferences: %w", err)
+	}
+	return Draft{AgentMD: md, Preferences: prefs, PreferencesJSON: string(prefsJSON)}, nil
+}
+
+func cleanAnswers(a Answers) Answers {
+	a.Name = cleanField(a.Name)
+	a.Lang = cleanField(a.Lang)
+	a.Timezone = cleanField(a.Timezone)
+	a.TonePreference = cleanField(a.TonePreference)
+	a.ResponseLength = cleanField(a.ResponseLength)
+	a.CustomInstructions = cleanField(a.CustomInstructions)
+	return a
+}
+
+func cleanField(s string) string {
+	s = strings.TrimSpace(s)
+	if len([]byte(s)) <= maxAnswerFieldBytes {
+		return s
+	}
+	return truncateBytes(s, maxAnswerFieldBytes)
+}
+
+func factLines(a Answers) []string {
+	if a.Name == "" {
+		return nil
+	}
+	return []string{"Name: " + a.Name}
+}
+
+func preferenceLines(a Answers) []string {
+	var out []string
+	if lang := languagePreference(a.Lang); lang != "" {
+		out = append(out, lang)
+	}
+	if a.Timezone != "" {
+		out = append(out, "Timezone: "+a.Timezone)
+	}
+	if a.TonePreference != "" {
+		out = append(out, "Tone: "+a.TonePreference)
+	}
+	if a.ResponseLength != "" {
+		out = append(out, "Response length: "+a.ResponseLength)
+	}
+	if a.VoiceMode != nil {
+		out = append(out, fmt.Sprintf("Voice mode: %t", boolValue(a.VoiceMode)))
+	}
+	if a.CanProactiveMessage != nil {
+		out = append(out, fmt.Sprintf("Can proactive message: %t", boolValue(a.CanProactiveMessage)))
+	}
+	return out
+}
+
+func customInstructionLines(a Answers) []string {
+	if a.CustomInstructions == "" {
+		return nil
+	}
+	return []string{a.CustomInstructions}
+}
+
+func languagePreference(lang string) string {
+	switch strings.ToLower(strings.TrimSpace(lang)) {
+	case "":
+		return ""
+	case "it", "ita", "italian", "italiano", "italiana":
+		return "Prefer Italian responses"
+	case "en", "eng", "english", "inglese":
+		return "Prefer English responses"
+	default:
+		return "Language: " + lang
+	}
+}
+
+func truncateBytes(s string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	if len([]byte(s)) <= limit {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if b.Len()+len(string(r)) > limit {
+			break
+		}
+		b.WriteRune(r)
+	}
+	return strings.TrimSpace(b.String())
+}

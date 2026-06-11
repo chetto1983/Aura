@@ -237,45 +237,12 @@ func (s *Session) mergeAnswers(in Input) {
 }
 
 func (s *Session) refreshDraft() error {
-	prefs := profile.Preferences{
-		Lang:                s.Answers.Lang,
-		Timezone:            s.Answers.Timezone,
-		TonePreference:      s.Answers.TonePreference,
-		ResponseLength:      s.Answers.ResponseLength,
-		CanProactiveMessage: boolValue(s.Answers.CanProactiveMessage),
-		VoiceMode:           boolValue(s.Answers.VoiceMode),
+	draft, err := ExtractDraft(s.Answers)
+	if err != nil {
+		return err
 	}
-	facts := valueList("Name: ", s.Answers.Name)
-	prefsLines := []string{}
-	if s.Answers.Lang != "" {
-		prefsLines = append(prefsLines, "Language: "+s.Answers.Lang)
-	}
-	if s.Answers.Timezone != "" {
-		prefsLines = append(prefsLines, "Timezone: "+s.Answers.Timezone)
-	}
-	if s.Answers.TonePreference != "" {
-		prefsLines = append(prefsLines, "Tone: "+s.Answers.TonePreference)
-	}
-	if s.Answers.ResponseLength != "" {
-		prefsLines = append(prefsLines, "Response length: "+s.Answers.ResponseLength)
-	}
-	if s.Answers.VoiceMode != nil {
-		prefsLines = append(prefsLines, fmt.Sprintf("Voice mode: %t", boolValue(s.Answers.VoiceMode)))
-	}
-	if s.Answers.CanProactiveMessage != nil {
-		prefsLines = append(prefsLines, fmt.Sprintf("Can proactive message: %t", boolValue(s.Answers.CanProactiveMessage)))
-	}
-	custom := valueList("", s.Answers.CustomInstructions)
-	md := profile.RenderAgentMD(profile.AgentContent{
-		Facts:              facts,
-		Preferences:        prefsLines,
-		CustomInstructions: custom,
-	})
-	if len([]byte(md)) > profile.MaxAgentMDBytes {
-		return fmt.Errorf("onboarding draft exceeds %d bytes", profile.MaxAgentMDBytes)
-	}
-	s.DraftAgentMD = md
-	s.Preferences = prefs
+	s.DraftAgentMD = draft.AgentMD
+	s.Preferences = draft.Preferences
 	return nil
 }
 
@@ -339,14 +306,6 @@ func (s *Session) preferencesJSON() string {
 		return "{}"
 	}
 	return string(raw)
-}
-
-func valueList(prefix, value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	return []string{prefix + value}
 }
 
 func boolValue(v *bool) bool {
