@@ -63,6 +63,11 @@ type CreateTaskInput struct {
 	NotifyRoute  string
 	Status       string
 	NextRunAt    time.Time
+	// OriginConversationID is forwarded from toolCallCtx(ctx).sessionID — the
+	// conversation that scheduled the task; "" for a bare ctx (CLI / unit test).
+	// The tool only forwards the raw id; the conv→identity snapshot happens in the
+	// cmd/aura adapter (so tools never imports internal/conversations).
+	OriginConversationID string
 }
 
 // taskStore is the consumer-declared seam the task tool dispatches against
@@ -199,18 +204,27 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 		status = "pending_approval"
 	}
 
+	// Capture the scheduling conversation id off the tool-call ctx (==a.sessionID,
+	// set at llm_agent.go:470). The two-value form is bare-ctx-safe: a CLI/unit-test
+	// ctx yields "" with no panic (mirror shellSessionKey, shell_exec.go:328-333).
+	originConvID := ""
+	if tc, ok := toolCallCtx(ctx); ok {
+		originConvID = tc.sessionID
+	}
+
 	created, err := t.Store.CreateScheduledTask(ctx, CreateTaskInput{
-		Kind:         a.Kind,
-		ScheduleKind: spec.ScheduleKind,
-		CronExpr:     spec.CronExpr,
-		EveryMinutes: spec.EveryMinutes,
-		RunAt:        spec.RunAt,
-		TZ:           spec.TZ,
-		Payload:      payloadJSON(a.Payload),
-		StepBudget:   a.StepBudget,
-		NotifyRoute:  a.Notify,
-		Status:       status,
-		NextRunAt:    next,
+		Kind:                 a.Kind,
+		ScheduleKind:         spec.ScheduleKind,
+		CronExpr:             spec.CronExpr,
+		EveryMinutes:         spec.EveryMinutes,
+		RunAt:                spec.RunAt,
+		TZ:                   spec.TZ,
+		Payload:              payloadJSON(a.Payload),
+		StepBudget:           a.StepBudget,
+		NotifyRoute:          a.Notify,
+		Status:               status,
+		NextRunAt:            next,
+		OriginConversationID: originConvID,
 	})
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("task schedule: %w", err)

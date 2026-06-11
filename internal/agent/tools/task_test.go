@@ -261,6 +261,42 @@ func TestTaskStoreErrorPropagates(t *testing.T) {
 	}
 }
 
+// TestActionScheduleCapturesOrigin asserts actionSchedule forwards the scheduling
+// conversation id (the tool-call ctx sessionID, set at llm_agent.go:470) as
+// CreateTaskInput.OriginConversationID, and that a bare ctx (CLI / unit test) yields
+// "" with no panic (Pitfall 5 — the two-value toolCallCtx read must be bare-ctx-safe).
+func TestActionScheduleCapturesOrigin(t *testing.T) {
+	scheduleArgs := json.RawMessage(`{"action":"schedule","schedule_kind":"every","every_minutes":10,"kind":"reminder","payload":{"text":"standup"}}`)
+
+	tests := []struct {
+		name      string
+		withCtx   bool
+		wantOrign string
+	}{
+		{name: "tool-call ctx forwards the conversation id", withCtx: true, wantOrign: "conv-C"},
+		{name: "bare ctx yields empty origin, no panic", withCtx: false, wantOrign: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := &fakeTaskStore{}
+			tool := &TaskTool{Store: store}
+
+			ctx := context.Background()
+			if tt.withCtx {
+				ctx = WithToolCallContext(ctx, "conv-C", "call-1", t.TempDir(), 2048)
+			}
+
+			if _, err := tool.Execute(ctx, scheduleArgs); err != nil {
+				t.Fatalf("schedule: %v", err)
+			}
+			if store.created.OriginConversationID != tt.wantOrign {
+				t.Errorf("OriginConversationID = %q, want %q", store.created.OriginConversationID, tt.wantOrign)
+			}
+		})
+	}
+}
+
 // TestRegistryValidatesWithTaskTool mirrors the Phase 9 ValidatesWithSwarmSpawn
 // precedent: a registry holding the non-deferred task tool passes Validate().
 func TestRegistryValidatesWithTaskTool(t *testing.T) {
