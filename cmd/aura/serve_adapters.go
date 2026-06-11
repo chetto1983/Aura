@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/scoring"
@@ -107,13 +109,16 @@ func (s selfSendTool) Send(ctx context.Context, args json.RawMessage) error {
 type cronTaskStore struct {
 	pool  *pgxpool.Pool
 	store *cron.Store
+	conv  *conversations.Store // schedule-time origin-conversation → identity resolver (Phase 20, Fork 1)
 }
 
 // newCronTaskStore builds the adapter over the live pool. A nil pool yields an
 // adapter whose methods error — but the registry only wires it when a pool exists
 // (serve/chat boot); the pool-free manifest path registers the tool with no store.
-func newCronTaskStore(pool *pgxpool.Pool) *cronTaskStore {
-	return &cronTaskStore{pool: pool, store: cron.New(pool)}
+// conv is the conversations.Store the adapter calls to snapshot the owning identity
+// at schedule time; a nil conv leaves the origin un-resolved (identity → 'local').
+func newCronTaskStore(pool *pgxpool.Pool, conv *conversations.Store) *cronTaskStore {
+	return &cronTaskStore{pool: pool, store: cron.New(pool), conv: conv}
 }
 
 // CreateScheduledTask persists a resolved task via cron.Store, honoring the tool's
@@ -127,6 +132,25 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 	if status == "" {
 		status = "active"
 	}
+	// Snapshot the owning identity ONCE at schedule time (transactional-outbox /
+	// Klaviyo pattern, Fork 1 / D-01): a later-deleted origin conversation still
+	// resolves the same owning channel, and the dispatcher (20-03) reads
+	// task.IdentityID directly with zero lookup. An empty identityID defaults to
+	// 'local' in cron.Store (store.go:115-118).
+	identityID := ""
+	if in.OriginConversationID != "" && s.conv != nil {
+		conv, err := s.conv.Get(ctx, in.OriginConversationID)
+		switch {
+		case err == nil:
+			identityID = conv.IdentityID
+		case errors.Is(err, conversations.ErrConversationNotFound):
+			// Origin gone (or a stray id) → leave identityID="" → 'local'; soft, no fail.
+		default:
+			// A real DB error: hard-fail rather than persist a wrong/empty identity,
+			// so the operator sees the failure instead of a misrouted reminder.
+			return tools.ScheduledTask{}, fmt.Errorf("resolve origin identity: %w", err)
+		}
+	}
 	created, err := s.store.CreateTask(ctx, cron.CreateTaskParams{
 		Kind: cron.TaskKind(in.Kind),
 		Spec: cron.ScheduleSpec{
@@ -136,11 +160,13 @@ func (s *cronTaskStore) CreateScheduledTask(ctx context.Context, in tools.Create
 			RunAt:        in.RunAt,
 			TZ:           in.TZ,
 		},
-		Payload:     in.Payload,
-		StepBudget:  in.StepBudget,
-		NextRunAt:   in.NextRunAt,
-		NotifyRoute: in.NotifyRoute,
-		Status:      status,
+		Payload:              in.Payload,
+		StepBudget:           in.StepBudget,
+		NextRunAt:            in.NextRunAt,
+		NotifyRoute:          in.NotifyRoute,
+		Status:               status,
+		IdentityID:           identityID,
+		OriginConversationID: in.OriginConversationID,
 	})
 	if err != nil {
 		return tools.ScheduledTask{}, err

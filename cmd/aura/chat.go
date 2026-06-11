@@ -160,7 +160,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 
 	// The live `task` tool persists against the open pool (10-05 deviation #3): both
 	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB.
-	reg, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool))
+	reg, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool, convStore))
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("mcp: %w", err)
