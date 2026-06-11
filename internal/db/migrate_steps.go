@@ -1,3 +1,5 @@
+//go:build db_integration
+
 package db
 
 import (

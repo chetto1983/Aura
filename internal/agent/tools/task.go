@@ -74,7 +74,6 @@ type taskStore interface {
 	ListScheduledTasks(ctx context.Context) ([]ScheduledTask, error)
 	CancelScheduledTask(ctx context.Context, id string) error
 	RunScheduledTaskNow(ctx context.Context, id string) error
-	ApproveScheduledTask(ctx context.Context, id string) error
 }
 
 // taskArgs is the wire shape of the task tool arguments. Only `action` is
@@ -221,10 +220,6 @@ func (t *TaskTool) actionSchedule(ctx context.Context, raw json.RawMessage) (Too
 	fmt.Fprintf(&b, "scheduled task %s (kind=%s, %s, risk=%s, status=%s)", created.ID, a.Kind, spec.summary(), tier, status)
 	if status == "pending_approval" {
 		b.WriteString("\nAwaiting operator approval before it fires.")
-		/*
-				Legacy encoded approve hint removed from model-visible output.
-			fmt.Fprintf(&b, "\nAwaiting approval before it fires — approve with action=approve, task_id=%s.", created.ID)
-		*/
 		if scoring.RequiresImmediateAlert(tier, t.alertThreshold()) {
 			b.WriteString("\nThis task meets the immediate-alert threshold.")
 		}
@@ -346,18 +341,6 @@ func (t *TaskTool) actionRunNow(ctx context.Context, raw json.RawMessage) (ToolR
 		return ToolResult{}, fmt.Errorf("task run_now: %w", err)
 	}
 	s := "running task " + id + " now"
-	return ToolResult{Preview: s, Bytes: len(s)}, nil
-}
-
-func (t *TaskTool) actionApprove(ctx context.Context, raw json.RawMessage) (ToolResult, error) {
-	id, err := requireTaskID(raw, "approve")
-	if err != nil {
-		return ToolResult{}, err
-	}
-	if err := t.Store.ApproveScheduledTask(ctx, id); err != nil {
-		return ToolResult{}, fmt.Errorf("task approve: %w", err)
-	}
-	s := "approved task " + id + " (now active)"
 	return ToolResult{Preview: s, Bytes: len(s)}, nil
 }
 

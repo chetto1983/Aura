@@ -18,8 +18,10 @@ import (
 // generated sqlc surface, SQLSTATE-based error classification via errors.As +
 // pgErr.Code (never message matching), sentinel errors, pgtype conversion at the
 // boundary. aura.skill_audit is APPEND-ONLY at the database (T-11-04-R1): the role
-// grant withholds UPDATE/DELETE/TRUNCATE and two triggers raise — so this Store
-// exposes only InsertAudit + read paths; there is deliberately no Update/Delete.
+// grant withholds UPDATE/DELETE/TRUNCATE and two triggers raise. Production writes
+// append through InsertAuditTx inside caller-owned transactions; the store exposes
+// read paths in the default build. The db_integration build adds a non-tx insert
+// helper for schema round-trip tests.
 
 // AuditAction enumerates the mutation that produced an audit row. It mirrors the
 // 0010 CHECK on aura.skill_audit.action.
@@ -139,21 +141,6 @@ func (a AuditInsert) toParams() (sqlc.InsertSkillAuditParams, error) {
 		GateTaken:         a.GateTaken,
 		BlocklistOverride: a.BlocklistOverride,
 	}, nil
-}
-
-// InsertAudit appends one audit row via the pool (non-tx). The writer's atomic
-// path inserts via InsertAuditTx so the audit row and the activation bookkeeping
-// commit all-or-nothing.
-func (s *AuditStore) InsertAudit(ctx context.Context, in AuditInsert) (AuditRow, error) {
-	params, err := in.toParams()
-	if err != nil {
-		return AuditRow{}, fmt.Errorf("insert skill audit: %w", err)
-	}
-	row, err := s.q.InsertSkillAudit(ctx, params)
-	if err != nil {
-		return AuditRow{}, fmt.Errorf("insert skill audit %q: %w", in.SkillName, classifyAuditErr(err))
-	}
-	return auditFromRow(row), nil
 }
 
 // InsertAuditTx appends one audit row using a tx-bound Queries (the writer's

@@ -12,17 +12,15 @@ import (
 
 // fakeTaskStore records calls so the action tests assert routing without a DB.
 type fakeTaskStore struct {
-	created    CreateTaskInput
-	createErr  error
-	createID   string
-	listRows   []ScheduledTask
-	listErr    error
-	cancelled  string
-	cancelErr  error
-	ranNow     string
-	runNowErr  error
-	approved   string
-	approveErr error
+	created   CreateTaskInput
+	createErr error
+	createID  string
+	listRows  []ScheduledTask
+	listErr   error
+	cancelled string
+	cancelErr error
+	ranNow    string
+	runNowErr error
 }
 
 func (f *fakeTaskStore) CreateScheduledTask(_ context.Context, in CreateTaskInput) (ScheduledTask, error) {
@@ -46,10 +44,6 @@ func (f *fakeTaskStore) CancelScheduledTask(_ context.Context, id string) error 
 func (f *fakeTaskStore) RunScheduledTaskNow(_ context.Context, id string) error {
 	f.ranNow = id
 	return f.runNowErr
-}
-func (f *fakeTaskStore) ApproveScheduledTask(_ context.Context, id string) error {
-	f.approved = id
-	return f.approveErr
 }
 
 // TestTaskSchema is the load-bearing D-10 gate (nanobot regression #3113): the
@@ -218,15 +212,11 @@ func TestTaskMissingTaskID(t *testing.T) {
 }
 
 func TestTaskApproveIsNotModelRoutable(t *testing.T) {
-	store := &fakeTaskStore{}
-	tool := &TaskTool{Store: store}
+	tool := &TaskTool{Store: &fakeTaskStore{}}
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"action":"approve","task_id":"a1"}`))
 	if err == nil || !strings.Contains(err.Error(), "unknown action") {
 		t.Fatalf("approve must be rejected by the model-facing router, got %v", err)
-	}
-	if store.approved != "" {
-		t.Fatalf("approve routed to store despite model-facing removal: %q", store.approved)
 	}
 }
 

@@ -10,7 +10,7 @@ import (
 
 // ActionRouter dispatches a single tool's `action` enum to a per-action handler
 // (D-09). It is the first consumer of this pattern — the `task` tool routes
-// schedule|list|cancel|run_now|approve through one Execute — and is kept generic
+// schedule|list|cancel|run_now through one Execute — and is kept generic
 // (no cron-specific types) so Slice 7 (skill_*) reuses it verbatim. The point of
 // the router is to keep ONE manifest entry and ONE OpenAI-wire-safe schema per
 // multi-action tool instead of N near-duplicate tool files (the pre-rewrite
