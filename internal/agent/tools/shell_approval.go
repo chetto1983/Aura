@@ -5,7 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"strings"
+	"fmt"
 	"sync"
 )
 
@@ -14,14 +14,25 @@ import (
 type ShellApprovals struct {
 	mu       sync.Mutex
 	approved map[string]struct{}
+	pending  map[string]ShellApprovalChallenge
+}
+
+type ShellApprovalChallenge struct {
+	Command  string
+	Cwd      string
+	Digest   string
+	Question string
 }
 
 func NewShellApprovals() *ShellApprovals {
-	return &ShellApprovals{approved: map[string]struct{}{}}
+	return &ShellApprovals{
+		approved: map[string]struct{}{},
+		pending:  map[string]ShellApprovalChallenge{},
+	}
 }
 
 func ShellApprovalDigest(command, cwd string) string {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(cwd) + "\x00" + strings.TrimSpace(command)))
+	sum := sha256.Sum256([]byte(cwd + "\x00" + command))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -34,7 +45,9 @@ func (a *ShellApprovals) Approve(sessionID, digest string) {
 	if a.approved == nil {
 		a.approved = map[string]struct{}{}
 	}
-	a.approved[shellApprovalKey(sessionID, digest)] = struct{}{}
+	key := shellApprovalKey(sessionID, digest)
+	a.approved[key] = struct{}{}
+	delete(a.pending, key)
 }
 
 func (a *ShellApprovals) Consume(sessionID, digest string) bool {
@@ -51,6 +64,36 @@ func (a *ShellApprovals) Consume(sessionID, digest string) bool {
 	return true
 }
 
+func (a *ShellApprovals) CreateChallenge(sessionID, command, cwd string) ShellApprovalChallenge {
+	digest := ShellApprovalDigest(command, cwd)
+	challenge := ShellApprovalChallenge{
+		Command:  command,
+		Cwd:      cwd,
+		Digest:   digest,
+		Question: shellApprovalQuestion(command, cwd, digest),
+	}
+	if a == nil || sessionID == "" || digest == "" {
+		return challenge
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.pending == nil {
+		a.pending = map[string]ShellApprovalChallenge{}
+	}
+	a.pending[shellApprovalKey(sessionID, digest)] = challenge
+	return challenge
+}
+
+func (a *ShellApprovals) PendingChallenge(sessionID, digest string) (ShellApprovalChallenge, bool) {
+	if a == nil || sessionID == "" || digest == "" {
+		return ShellApprovalChallenge{}, false
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	challenge, ok := a.pending[shellApprovalKey(sessionID, digest)]
+	return challenge, ok
+}
+
 func (s *ShellExec) requireShellApproval(ctx context.Context, command, cwd string) (*ToolResult, error) {
 	destructive, err := destructiveShellMatch(command)
 	if err != nil {
@@ -64,22 +107,32 @@ func (s *ShellExec) requireShellApproval(ctx context.Context, command, cwd strin
 	if s.Approvals.Consume(sessionID, digest) {
 		return nil, nil
 	}
-	res := shellApprovalRequiredResult(digest)
+	challenge := s.Approvals.CreateChallenge(sessionID, command, cwd)
+	res := shellApprovalRequiredResult(challenge)
 	return &res, nil
 }
 
-func shellApprovalRequiredResult(digest string) ToolResult {
+func shellApprovalRequiredResult(challenge ShellApprovalChallenge) ToolResult {
 	payload := map[string]string{
 		"error":          "shell_approval_required",
-		"command_sha256": digest,
+		"command_sha256": challenge.Digest,
+		"command":        challenge.Command,
+		"cwd":            challenge.Cwd,
+		"question":       challenge.Question,
 		"message": "This shell command matches AURA_SHELL_DESTRUCTIVE_PATTERNS. " +
-			"Ask the user for approval with ask_user(kind=approval, resume_context={\"type\":\"shell_exec_approval\",\"command_sha256\":\"" + digest + "\"}), then retry the exact command after acceptance.",
+			"Call ask_user with kind=\"approval\", question exactly equal to the question field, " +
+			"and resume_context={\"type\":\"shell_exec_approval\",\"command_sha256\":\"" + challenge.Digest + "\"}. " +
+			"Retry the exact command only after the user accepts.",
 	}
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		raw = []byte(`{"error":"shell_approval_required"}`)
 	}
 	return ToolResult{Preview: string(raw), Bytes: len(raw)}
+}
+
+func shellApprovalQuestion(command, cwd, digest string) string {
+	return fmt.Sprintf("Approve shell_exec command?\ncwd: %s\ncommand:\n%s\nsha256: %s", cwd, command, digest)
 }
 
 // shellSessionKey scopes shell state per conversation/session: the session id from

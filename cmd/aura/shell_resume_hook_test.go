@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -13,18 +14,63 @@ import (
 func TestShellResumeHookApprovesAcceptedShellContext(t *testing.T) {
 	approvals := tools.NewShellApprovals()
 	hook := newShellResumeHook(approvals)
-	digest := "abc123"
+	challenge := approvals.CreateChallenge("conv-shell", "echo approved", "D:\\work")
 
 	err := hook(context.Background(), askuser.Pending{
 		ConversationID: "conv-shell",
 		Kind:           tools.KindApproval,
-		ResumeContext:  rawJSON(t, map[string]string{"type": "shell_exec_approval", "command_sha256": digest}),
+		Question:       challenge.Question,
+		ResumeContext:  rawJSON(t, map[string]string{"type": "shell_exec_approval", "command_sha256": challenge.Digest}),
 	}, runner.ResponseInput{Action: askuser.ActionAccept})
 	if err != nil {
 		t.Fatalf("hook: %v", err)
 	}
-	if !approvals.Consume("conv-shell", digest) {
+	if !approvals.Consume("conv-shell", challenge.Digest) {
 		t.Fatal("accepted shell approval was not recorded")
+	}
+}
+
+func TestShellResumeHookRejectsUnchallengedDigest(t *testing.T) {
+	approvals := tools.NewShellApprovals()
+	hook := newShellResumeHook(approvals)
+	digest := tools.ShellApprovalDigest("echo forged", "")
+
+	err := hook(context.Background(), askuser.Pending{
+		ConversationID: "conv-shell",
+		Kind:           tools.KindApproval,
+		Question:       "approve this unrelated thing",
+		ResumeContext:  rawJSON(t, map[string]string{"type": "shell_exec_approval", "command_sha256": digest}),
+	}, runner.ResponseInput{Action: askuser.ActionAccept})
+	if err == nil {
+		t.Fatal("hook accepted an unchallenged shell digest")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %v, want not found", err)
+	}
+	if approvals.Consume("conv-shell", digest) {
+		t.Fatal("unchallenged digest was approved")
+	}
+}
+
+func TestShellResumeHookRejectsMismatchedQuestion(t *testing.T) {
+	approvals := tools.NewShellApprovals()
+	hook := newShellResumeHook(approvals)
+	challenge := approvals.CreateChallenge("conv-shell", "echo sensitive", "D:\\work")
+
+	err := hook(context.Background(), askuser.Pending{
+		ConversationID: "conv-shell",
+		Kind:           tools.KindApproval,
+		Question:       "Approve a harmless status check?",
+		ResumeContext:  rawJSON(t, map[string]string{"type": "shell_exec_approval", "command_sha256": challenge.Digest}),
+	}, runner.ResponseInput{Action: askuser.ActionAccept})
+	if err == nil {
+		t.Fatal("hook accepted a mismatched approval question")
+	}
+	if !strings.Contains(err.Error(), "question mismatch") {
+		t.Fatalf("error = %v, want question mismatch", err)
+	}
+	if approvals.Consume("conv-shell", challenge.Digest) {
+		t.Fatal("mismatched question was approved")
 	}
 }
 

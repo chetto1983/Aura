@@ -359,6 +359,13 @@ func newShellResumeHook(approvals *tools.ShellApprovals) runner.ResumeHook {
 		if rc.CommandSHA256 == "" {
 			return fmt.Errorf("shell resume context: missing command_sha256")
 		}
+		challenge, ok := approvals.PendingChallenge(pending.ConversationID, rc.CommandSHA256)
+		if !ok {
+			return fmt.Errorf("shell approval challenge %q not found", rc.CommandSHA256)
+		}
+		if pending.Question != challenge.Question {
+			return fmt.Errorf("shell approval challenge %q question mismatch", rc.CommandSHA256)
+		}
 		approvals.Approve(pending.ConversationID, rc.CommandSHA256)
 		return nil
 	}
