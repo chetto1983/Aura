@@ -5,6 +5,7 @@ package conversations
 
 import (
 	"context"
+	"html"
 	"strings"
 	"testing"
 
@@ -102,6 +103,45 @@ func TestL1_EvictPreservesExistingReadToolOutputSpillID(t *testing.T) {
 	}
 	if strings.Contains(got[1].Content, `read_tool_output(tool_call_id="call_old")`) {
 		t.Fatalf("L1 rewrote pointer back to provider id, got %q", got[1].Content)
+	}
+}
+
+func TestL1_EvictPreservesHTMLEscapedReadToolOutputSpillID(t *testing.T) {
+	opaqueID := "call_old-escaped"
+	preview := `preview bytes` + "\n\n" +
+		`[output truncated: showing bytes 0-2048 of 10000; read more via read_tool_output(tool_call_id="` + opaqueID + `", offset=2048, limit=2048)]`
+	content := `<tool_output source="fs_read" trust="untrusted" nonce="abc">` + "\n" +
+		html.EscapeString(preview) + "\n</tool_output>"
+	turns := []Turn{
+		{Seq: 1, Role: llm.RoleSystem, Content: "SYSTEM PROMPT"},
+		{Seq: 2, Role: llm.RoleTool, Content: content, ToolCallID: "call_old"},
+		{Seq: 20, Role: llm.RoleUser, Content: "newest"},
+	}
+
+	got := applyL1(turns, 5)
+
+	if !strings.Contains(got[1].Content, `read_tool_output(tool_call_id="`+opaqueID+`")`) {
+		t.Fatalf("L1 must preserve HTML-escaped opaque spill id, got %q", got[1].Content)
+	}
+}
+
+func TestL1_EvictPreservesRealTruncationFooterOverFakeEarlierPointer(t *testing.T) {
+	opaqueID := "call_old-real"
+	content := `tool output mentions read_tool_output(tool_call_id="fake") before the footer` + "\n\n" +
+		`[output truncated: showing bytes 0-2048 of 10000; read more via read_tool_output(tool_call_id="` + opaqueID + `", offset=2048, limit=2048)]`
+	turns := []Turn{
+		{Seq: 1, Role: llm.RoleSystem, Content: "SYSTEM PROMPT"},
+		{Seq: 2, Role: llm.RoleTool, Content: content, ToolCallID: "call_old"},
+		{Seq: 20, Role: llm.RoleUser, Content: "newest"},
+	}
+
+	got := applyL1(turns, 5)
+
+	if strings.Contains(got[1].Content, `read_tool_output(tool_call_id="fake")`) {
+		t.Fatalf("fake earlier pointer won over real footer, got %q", got[1].Content)
+	}
+	if !strings.Contains(got[1].Content, `read_tool_output(tool_call_id="`+opaqueID+`")`) {
+		t.Fatalf("L1 must preserve real truncation footer spill id, got %q", got[1].Content)
 	}
 }
 

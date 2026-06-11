@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/db/sqlc"
 	"github.com/chetto1983/aura/internal/llm"
@@ -227,15 +229,22 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 }
 
 func readToolOutputSpillID(content, fallback string) string {
-	m := readToolOutputCallIDRe.FindStringSubmatch(content)
-	if len(m) != 2 {
+	unescaped := html.UnescapeString(content)
+	footerAt := strings.LastIndex(unescaped, "[output truncated:")
+	if footerAt < 0 {
 		return fallback
 	}
-	id, err := strconv.Unquote(m[1])
-	if err != nil || id == "" {
-		return fallback
+	matches := readToolOutputCallIDRe.FindAllStringSubmatch(unescaped[footerAt:], -1)
+	for i := len(matches) - 1; i >= 0; i-- {
+		if len(matches[i]) != 2 {
+			continue
+		}
+		id, err := strconv.Unquote(matches[i][1])
+		if err == nil && id != "" {
+			return id
+		}
 	}
-	return id
+	return fallback
 }
 
 // readToolOutputPointer is the L1 eviction target: a compact instruction telling
