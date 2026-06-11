@@ -27,6 +27,7 @@ type Server interface {
 var emptyObjectSchema = json.RawMessage(`{"type":"object"}`)
 
 const maxMCPDescriptionBytes = 4096
+const maxMCPSummaryBytes = 768
 
 // bridgedTool adapts one MCP tool to tools.Tool. The spec is atomically swapped
 // when reconnectingServer refreshes tools/list after a transport reconnect.
@@ -140,8 +141,32 @@ func specFieldsFromToolDef(d mcp.ToolDef) (json.RawMessage, string, string) {
 	if schema := strings.TrimSpace(string(d.InputSchema)); schema != "" && schema != "null" {
 		params = d.InputSchema
 	}
+	summary := frameMCPSummary(d.Description, params)
 	description := frameMCPDescription(d.Description)
-	return params, firstLine(d.Description) + requiredArgsHint(params), description
+	return params, summary, description
+}
+
+func frameMCPSummary(raw string, params json.RawMessage) string {
+	summary := firstLine(raw)
+	if summary == "" {
+		summary = "none provided"
+	}
+	hint := requiredArgsHint(params)
+	const prefix = "untrusted MCP server summary data: "
+	const marker = " [summary truncated]"
+	framed := prefix + summary + hint
+	if len(framed) <= maxMCPSummaryBytes {
+		return framed
+	}
+	budget := maxMCPSummaryBytes - len(prefix) - len(marker) - len(hint)
+	if budget >= 0 {
+		return prefix + truncateUTF8Bytes(summary, budget) + marker + hint
+	}
+	hintBudget := maxMCPSummaryBytes - len(prefix) - len(marker)
+	if hintBudget <= 0 {
+		return truncateUTF8Bytes(prefix, maxMCPSummaryBytes)
+	}
+	return prefix + marker + truncateUTF8Bytes(hint, hintBudget)
 }
 
 func frameMCPDescription(raw string) string {

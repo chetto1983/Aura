@@ -105,12 +105,13 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	if exec.Name != "sb__sandbox_exec" {
 		t.Fatalf("name = %q, want namespaced sb__sandbox_exec", exec.Name)
 	}
-	// Summary = first description line + required-args hint: the deferred stub is
-	// all the model sees by default, and without the arg names a first call has to
-	// guess the shape, fail validation, tool_search, and retry (live swarm E2E
-	// 2026-06-04 — each fresh worker context paid that round-trip on send_message).
-	if exec.Summary != "Execute commands in the sandboxed environment. Required args: container_id." {
-		t.Fatalf("summary should be first line + required-args hint, got %q", exec.Summary)
+	// The deferred Summary is manifest-visible, so MCP text must be framed as
+	// untrusted while keeping the required-args hint visible for call shape.
+	if !strings.Contains(strings.ToLower(exec.Summary), "untrusted mcp server") ||
+		!strings.Contains(strings.ToLower(exec.Summary), "data") ||
+		!strings.Contains(exec.Summary, "Execute commands in the sandboxed environment.") ||
+		!strings.Contains(exec.Summary, "Required args: container_id.") {
+		t.Fatalf("summary should be framed and include required-args hint, got %q", exec.Summary)
 	}
 	if !exec.Deferred {
 		t.Fatal("bridged tools must be Deferred:true (D-20) — a multi-tool MCP server floods the manifest into the 30-50-tool degradation zone; tool_search loads the full spec on demand")
@@ -177,6 +178,9 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 	}
 	if got := tool.Spec().Description; !strings.Contains(got, "Fresh delivery path.") || !strings.Contains(got, "untrusted MCP server description") {
 		t.Fatalf("refreshed description = %q", got)
+	}
+	if got := tool.Spec().Summary; !strings.Contains(got, "Fresh delivery path.") || !strings.Contains(got, "untrusted MCP server summary data") {
+		t.Fatalf("refreshed summary = %q", got)
 	}
 	if tool.Spec().Mutating {
 		t.Fatal("refreshed readOnlyHint=true should set Mutating:false")
