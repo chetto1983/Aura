@@ -1,9 +1,11 @@
 # Spike / Design — CoT reasoning FIFO (perceived-latency display)
 
-> Status: **IMPLEMENTED (Telegram) + live-E2E verified** 2026-06-11. New `internal/reasoningfifo`
+> Status: **IMPLEMENTED (Telegram + CLI) + live-E2E verified** 2026-06-11. New `internal/reasoningfifo`
 > (rune-capped rolling buffer) + status-pane wiring behind one master switch `AURA_SHOW_REASONING`
 > (default off — preserves the redacted-reasoning privacy default + its tests) with an elapsed-time
-> header. CLI leg (`chat_render.go`) NOT done — bounding/clearing it is the remaining follow-up.
+> header. CLI leg DONE: `cmd/aura/chat_reasoning.go` renders a bounded in-place rolling 💭 line
+> (reuses reasoningfifo, clears on phase-end) — replaced the old unbounded append-only dim stream.
+> Env vars cataloged in prd.md §Indice completo env vars. Only follow-up left: none (closed).
 > Origin: operator observed end users ask "perché Aura è lenta?" during the 30–60 s reasoning
 > wait. Directive: show the CoT in a rolling **4096 UTF-8-char FIFO**, cleared **on each turn**
 > and **on the final answer**. NOT a Phase-19 finding.

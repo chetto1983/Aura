@@ -33,7 +33,7 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 		prose.WriteString(s)
 		_, _ = io.WriteString(w, s)
 	}
-	var reasoningStarted bool
+	reason := newCLIReasoning()
 	for ev, runErr := range seq {
 		if runErr != nil {
 			return prose.String(), finish, usage, paused, runErr
@@ -43,6 +43,7 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 		}
 		if ev.Actions.AwaitingInput != nil {
 			// HITL pause: stop rendering prose; the caller renders the prompt inline.
+			reason.clear(w)
 			paused = true
 			continue
 		}
@@ -52,6 +53,7 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 		resp := ev.LLMResponse
 		switch {
 		case len(resp.ToolCalls) > 0 && !isTerminalToolCall(resp.ToolCalls):
+			reason.clear(w)
 			renderToolActivity(w, resp.ToolCalls)
 		case resp.FinishReason != "":
 			// Final Event: flush the not-yet-streamed remainder of the answer and
@@ -61,6 +63,7 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 			// (flushPause + the auto-title worker) is skipped. Record the terminal
 			// answer/usage and keep draining; the producer ends the round right after
 			// this event, so the range terminates naturally and the worker fires.
+			reason.clear(w)
 			finish = resp.FinishReason
 			flushRemainder(&prose, resp.Content, emit)
 			usage = usageFromStateDelta(ev.Actions.StateDelta)
@@ -72,12 +75,14 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 			// final-Event flush diverge and double-print the answer).
 			continue
 		case resp.Reasoning != "":
-			// Live CoT (amendment #57e): stream the reasoning to the operator to mask
-			// the reasoning-phase latency. It is stream-only — written straight to w,
-			// NEVER to prose, so it never enters the returned/persisted answer.
-			renderReasoning(w, resp.Reasoning, &reasoningStarted)
+			// Live CoT: render a bounded in-place rolling reasoning line to mask the
+			// reasoning-phase latency. Stream-only — written to w via the rolling
+			// window, NEVER to prose, so it never enters the returned/persisted answer.
+			// Only fires when AURA_SHOW_REASONING made the policy stream reasoning.
+			reason.push(w, resp.Reasoning)
 		case resp.Content != "":
 			// Streamed chunk (raw assistant content, content-stop fallback path).
+			reason.clear(w)
 			emit(resp.Content)
 		}
 	}
@@ -143,19 +148,6 @@ func renderToolActivity(w io.Writer, calls []llm.ToolCall) {
 		}
 		_, _ = fmt.Fprintf(w, "\x1b[2m· %s\x1b[0m\n", name)
 	}
-}
-
-// renderReasoning streams a live chain-of-thought delta to w in dim style with a
-// one-time 💭 prefix (amendment #57e), mirroring renderToolActivity's dim ANSI.
-// started tracks whether the prefix has been emitted so the prefix shows once and
-// subsequent deltas continue the same dim line. Reasoning is stream-only — the
-// caller writes it to w only, never to the prose/answer buffer.
-func renderReasoning(w io.Writer, delta string, started *bool) {
-	if !*started {
-		_, _ = io.WriteString(w, "\x1b[2m💭 ")
-		*started = true
-	}
-	_, _ = io.WriteString(w, delta+"\x1b[0m")
 }
 
 // costFooter renders the per-turn footer (D-11): `· {tok} tok ({in} in / {out}
