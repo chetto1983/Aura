@@ -9,41 +9,62 @@ import (
 	"github.com/chetto1983/aura/internal/profile"
 )
 
+// Intent describes the next user action applied to an onboarding session.
 type Intent string
 
 const (
-	IntentAnswer  Intent = "answer"
+	// IntentAnswer records an answer for the current onboarding step.
+	IntentAnswer Intent = "answer"
+	// IntentConfirm accepts and completes the current Agent.md draft.
 	IntentConfirm Intent = "confirm"
-	IntentEdit    Intent = "edit"
-	IntentSkip    Intent = "skip"
-	IntentCancel  Intent = "cancel"
+	// IntentEdit updates the current Agent.md draft with revised answers.
+	IntentEdit Intent = "edit"
+	// IntentSkip ends onboarding without saving a profile.
+	IntentSkip Intent = "skip"
+	// IntentCancel cancels onboarding and resumes normal chat.
+	IntentCancel Intent = "cancel"
+	// IntentRestart resets onboarding to the first step.
 	IntentRestart Intent = "restart"
 )
 
+// Step is the current profile onboarding interview step.
 type Step string
 
 const (
-	StepName        Step = "name"
+	// StepName asks what Aura should call the user.
+	StepName Step = "name"
+	// StepPreferences collects language, timezone, tone, and response-length preferences.
 	StepPreferences Step = "preferences"
-	StepDraft       Step = "draft"
+	// StepDraft presents the Agent.md draft for confirm, edit, or skip.
+	StepDraft Step = "draft"
 )
 
+// Status is the lifecycle state for a profile onboarding session.
 type Status string
 
 const (
-	StatusActive    Status = "active"
-	StatusDraft     Status = "draft"
+	// StatusActive means the interview is still collecting answers.
+	StatusActive Status = "active"
+	// StatusDraft means an Agent.md draft is ready for review.
+	StatusDraft Status = "draft"
+	// StatusCompleted means onboarding produced a confirmed profile.
 	StatusCompleted Status = "completed"
-	StatusSkipped   Status = "skipped"
-	StatusCanceled  Status = "canceled"
+	// StatusSkipped means onboarding ended without saving a profile.
+	StatusSkipped Status = "skipped"
+	// StatusCanceled means onboarding was canceled before completion.
+	StatusCanceled Status = "canceled"
 )
 
 var (
+	// ErrDraftRequired is returned when confirm or edit is requested before a draft exists.
 	ErrDraftRequired = errors.New("onboarding draft required")
-	ErrTerminal      = errors.New("onboarding session is terminal")
+	// ErrTerminal is returned when input is applied to a terminal session.
+	ErrTerminal = errors.New("onboarding session is terminal")
+	// ErrInvalidIntent is returned for an unknown onboarding intent.
 	ErrInvalidIntent = errors.New("invalid onboarding intent")
 )
 
+// Answers contains structured profile facts collected during onboarding.
 type Answers struct {
 	Name                string
 	Lang                string
@@ -55,18 +76,21 @@ type Answers struct {
 	CustomInstructions  string
 }
 
+// Input is one queued user action for the session state machine.
 type Input struct {
 	Intent  Intent
 	Text    string
 	Answers Answers
 }
 
+// Transition is the prompt and state delta emitted after applying input.
 type Transition struct {
 	Content    string
 	StateDelta map[string]any
 	Terminal   bool
 }
 
+// Session tracks one identity's profile onboarding state.
 type Session struct {
 	IdentityID   string
 	IdentityName string
@@ -81,6 +105,7 @@ type Session struct {
 	prompted bool
 }
 
+// NewSession starts profile onboarding for an identity.
 func NewSession(identityID, identityName string) *Session {
 	return &Session{
 		IdentityID:   identityID,
@@ -90,6 +115,7 @@ func NewSession(identityID, identityName string) *Session {
 	}
 }
 
+// Apply applies one input to the session and returns the next transition.
 func (s *Session) Apply(in Input) (Transition, error) {
 	if in.Intent == "" {
 		in.Intent = IntentAnswer
@@ -118,6 +144,7 @@ func (s *Session) Apply(in Input) (Transition, error) {
 	}
 }
 
+// Queue appends inputs that the loop agent will consume in order.
 func (s *Session) Queue(inputs ...Input) {
 	s.pending = append(s.pending, inputs...)
 }

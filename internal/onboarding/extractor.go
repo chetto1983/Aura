@@ -10,12 +10,14 @@ import (
 
 const maxAnswerFieldBytes = 2048
 
+// Draft is the rendered Agent.md plus structured preferences from onboarding answers.
 type Draft struct {
 	AgentMD         string
 	Preferences     profile.Preferences
 	PreferencesJSON string
 }
 
+// ExtractDraft renders a bounded Agent.md draft and preferences from answers.
 func ExtractDraft(answers Answers) (Draft, error) {
 	answers = cleanAnswers(answers)
 	prefs := profile.Preferences{

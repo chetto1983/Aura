@@ -24,8 +24,8 @@ func replaceFile(src, dst string) error {
 		return err
 	}
 	r1, _, callErr := moveFileExW.Call(
-		uintptr(unsafe.Pointer(srcp)),
-		uintptr(unsafe.Pointer(dstp)),
+		uintptr(unsafe.Pointer(srcp)), // #nosec G103 -- MoveFileExW requires UTF-16 pointer conversion.
+		uintptr(unsafe.Pointer(dstp)), // #nosec G103 -- MoveFileExW requires UTF-16 pointer conversion.
 		uintptr(moveFileReplaceExisting|moveFileWriteThrough),
 	)
 	if r1 == 0 {

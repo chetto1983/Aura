@@ -5,11 +5,14 @@ import (
 	"strings"
 )
 
+// MaxAgentMDBytes caps the rendered Agent.md profile size.
 const MaxAgentMDBytes = 32768
 
 const (
+	// ProfileBlockStart marks the beginning of the protected Agent.md context block.
 	ProfileBlockStart = "<profile:Agent.md>"
-	ProfileBlockEnd   = "</profile:Agent.md>"
+	// ProfileBlockEnd marks the end of the protected Agent.md context block.
+	ProfileBlockEnd = "</profile:Agent.md>"
 )
 
 // AgentContent is the structured form rendered into Agent.md.
@@ -117,7 +120,7 @@ func writeSection(b *strings.Builder, name string, items []string) {
 
 func checkAgentSize(md string) error {
 	if len([]byte(md)) > MaxAgentMDBytes {
-		return fmt.Errorf("Agent.md exceeds %d bytes", MaxAgentMDBytes)
+		return fmt.Errorf("agent.md exceeds %d bytes", MaxAgentMDBytes)
 	}
 	return nil
 }

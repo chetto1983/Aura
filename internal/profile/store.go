@@ -22,7 +22,9 @@ const (
 var identityPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
 
 var (
+	// ErrInvalidIdentity is returned when a profile identity is empty, malformed, or escapes the profile root.
 	ErrInvalidIdentity = errors.New("invalid profile identity")
+	// ErrProfileNotFound is returned when one or more required profile files are missing.
 	ErrProfileNotFound = errors.New("profile not found")
 )
 
@@ -254,11 +256,15 @@ func atomicWriteWithReplace(path string, data []byte, replace func(string, strin
 	return nil
 }
 
-func syncDirBestEffort(dir string) error {
+func syncDirBestEffort(dir string) (err error) {
 	f, err := os.Open(dir) // #nosec G304 -- internal caller passes a profile directory.
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() {
+		if closeErr := f.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	return f.Sync()
 }
