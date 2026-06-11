@@ -27,6 +27,19 @@ All P0 and P1 items in this action plan are closed in code. Validation run:
 | A-13 | R-06 | CLOSED | Load-time tool-pair repair prevents orphan tool results from bricking provider history. |
 | A-25 | R-15, R-16 | CLOSED | `BudgetOwner` contract, LoopAgent ctx checks, no double-charge for budget-owning children, empty-pass budget charge. |
 
+## P2 boundary/lifecycle closure update - 2026-06-11
+
+The boundary and lifecycle P2 cluster is closed in code. Validation evidence:
+
+- `go test ./internal/agent/tools ./internal/agent/mcptools ./internal/mcp ./cmd/aura -count=1`
+- `go test -race ./internal/agent/tools ./internal/agent/mcptools ./internal/mcp ./cmd/aura -count=1`
+- `go test ./internal/agent ./internal/llm ./internal/runner ./internal/conversations ./internal/agui ./internal/cron ./internal/agent/workflow ./internal/agent/tools ./internal/skills ./internal/mcp ./cmd/aura -count=1`
+
+Coverage caveat:
+
+- `scripts/coverage_gate.sh` ran to completion but failed the global floor: `77.2% < 85%`.
+- This leaves a repo-wide coverage remediation item outside the P2 boundary/lifecycle risk closure.
+
 ## Immediate (P0/P1) — start now
 
 ### A-1 · Reject empty `old_string` in `fs_edit`

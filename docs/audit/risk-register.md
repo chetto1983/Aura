@@ -5,6 +5,8 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 
 **Closure update - 2026-06-10:** R-01 through R-17 are closed in code by the P0/P1 remediation pass. Residual P2/P3 hardening remains tracked below.
 
+**Closure update - 2026-06-11:** R-18/R-19/R-20/R-21/R-22/R-23/R-24/R-25/R-35/R-43 are closed in code by the P2 boundary/lifecycle pass. See [`p2-boundary-lifecycle-validation-2026-06-11.md`](p2-boundary-lifecycle-validation-2026-06-11.md) for validation evidence and the remaining global coverage-floor caveat.
+
 | ID | Title | Severity | Probability | Impact | Affected area | Mitigation | Status |
 |---|---|---|---|---|---|---|---|
 | R-01 | Prompt injection via unmarked untrusted tool output → host RCE + exfiltration | P0 | H | H | prompt assembly / tool boundary (`llm_agent.go:361`) | Provenance envelope + control-token neutralization (A-11); env filter (A-5); destructive gate (A-18) | CLOSED |
@@ -24,14 +26,14 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | R-15 | LoopAgent×LlmAgent composition double-spends budget + double dedup | P1 | L | M | `workflow/loop.go` + `llm_agent.go` | Single budget owner (A-25) | CLOSED |
 | R-16 | LoopAgent `maxIter=0` hot-spins on a non-tool sub (100% CPU, no escape) | P1 | L | H | `workflow/loop.go:64–129` | Ctx check + per-iteration budget (A-25 / 2.2) | CLOSED |
 | R-17 | Coverage floor doesn't gate `agent/tools` (shell/fs/skill) | P1 | H | M | `scripts/coverage_gate.sh:44` | Remove the exclusion (A-7) | CLOSED |
-| R-18 | `send_file` unfenced → arbitrary host-file exfiltration to channel | P2 | M | H | `tools/send_file.go` | Workspace fence + approval (A-18) | OPEN |
-| R-19 | No enforced backstop on destructive shell commands | P2 | M | H | `shell_exec.go` | Destructive-pattern approval gate (A-18) | PARTIAL (prompt-only) |
-| R-20 | MCP reconnect replays a possibly-completed side effect | P2 | M | M | `bridge_reconnect.go` | Conditional reconnect (A-17) | OPEN |
-| R-21 | Bridged MCP tools never `Mutating` → skip critic, eligible for replay | P2 | M | M | `mcptools/bridge.go` | Default `Mutating` + `readOnlyHint` (A-17) | OPEN |
-| R-22 | MCP tool descriptions trusted verbatim → tool poisoning | P2 | L | H | `mcptools/bridge.go`, `search.go` | Provenance frame + length cap (A-17) | OPEN |
-| R-23 | Sidecar `tool_call_id` collision → wrong data paged as ground truth | P2 | M | M | `tools/result.go` | Turn-seq-prefixed key (A-20) | OPEN (confirm provider id-reuse) |
-| R-24 | `read_tool_output` unbounded `limit` re-inflates truncated output | P2 | M | M | `tools/read_tool_output.go` | Clamp + bounded read (A-19) | OPEN |
-| R-25 | Streamable-HTTP MCP: no reconnect, no body cap → brick / OOM | P2 | L | M | `mcptools/mount.go`, `mcp/http_client.go` | Reconnect decorator + LimitReader (A-17) | OPEN |
+| R-18 | `send_file` unfenced → arbitrary host-file exfiltration to channel | P2 | M | H | `tools/send_file.go` | Workspace fence + outside-workspace refusal/approval signal (A-18) | CLOSED |
+| R-19 | No enforced backstop on destructive shell commands | P2 | M | H | `shell_exec.go` | Destructive-pattern approval gate (A-18) | CLOSED |
+| R-20 | MCP reconnect replays a possibly-completed side effect | P2 | M | M | `bridge_reconnect.go` | Reconnect without replay after `tools/call` transport failure (A-17) | CLOSED |
+| R-21 | Bridged MCP tools never `Mutating` → skip critic, eligible for replay | P2 | M | M | `mcptools/bridge.go` | Default `Mutating` + `readOnlyHint` (A-17) | CLOSED |
+| R-22 | MCP tool descriptions trusted verbatim → tool poisoning | P2 | L | H | `mcptools/bridge.go`, `search.go` | Untrusted framing + length caps for descriptions and manifest summaries (A-17) | CLOSED |
+| R-23 | Sidecar `tool_call_id` collision → wrong data paged as ground truth | P2 | M | M | `tools/result.go` | Host-minted opaque spill id (A-20) | CLOSED |
+| R-24 | `read_tool_output` unbounded `limit` re-inflates truncated output | P2 | M | M | `tools/read_tool_output.go` | Clamp + bounded read (A-19) | CLOSED |
+| R-25 | Streamable-HTTP MCP: no reconnect, no body cap → brick / OOM | P2 | L | M | `mcptools/mount.go`, `mcp/http_client.go` | Reconnect decorator + capped HTTP response bodies (A-17) | CLOSED |
 | R-26 | ledger is best-effort, not a pre-execution audit gate | P2 | M | M | `runner_persist.go` | Write-ahead intent row or document (A-28) | TRACKED |
 | R-27 | `SubmitAnswer` non-atomic → duplicate tool_results | P2 | L | H | `runner_resume.go` | One-transaction inject+mark (A-13) | OPEN |
 | R-28 | L1 microcompact destroys ask_user answers, points to absent sidecars | P2 | M | M | `conversations/context.go:202` | Exempt sidecar-less ids (revisit w/ A-12) | OPEN |
@@ -41,7 +43,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | R-32 | No structured logging in the agent core | P2 | H | M | agent core | slog JSONHandler + correlated logs (A-14) | OPEN |
 | R-33 | `$AURA_RUN_DIR` + reasoningtrace grow monotonically | P2 | M | M | `orphan_scan.go`, `reasoningtrace.go` | TTL sweep + rotation (A-21) | OPEN |
 | R-34 | SIGTERM drops in-flight conversational turns (asymmetric drain) | P2 | M | M | `serve.go`, `bot_dispatch.go` | Bounded turn drain (A-23) | OPEN |
-| R-35 | Background shells: no shutdown kill, no cap, never pruned | P2 | M | M | `shell_bg.go`, `cmd/aura/main.go` | `Shutdown()` + cap + eviction (A-22) | OPEN |
+| R-35 | Background shells: no shutdown kill, no cap, never pruned | P2 | M | M | `shell_bg.go`, `cmd/aura/main.go` | `Shutdown()` + cap + pruning (A-22) | CLOSED |
 | R-36 | No Windows CI lane → Windows kill-path code untested | P2 | M | M | `.github/workflows/ci.yml` | Windows shell lane (A-24) | OPEN |
 | R-37 | Finalize/critic mid-stream errors silently swallowed | P2 | M | L | `llm_agent_finalize.go`, `_completion.go` | Record both errors (A-15) | OPEN |
 | R-38 | Stream-open retry classifies by substring; double-submit risk | P2 | M | L | `llm_agent_stream_retry.go` | Typed classification (A-31) | OPEN |
@@ -49,7 +51,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | R-40 | Primary user channel rides telebot v4 beta | P3 | L | M | `go.mod` | Pin-watch GA; re-run HITL live tests on bump | TRACKED |
 | R-41 | Per-session tool state never evicted in the daemon | P3 | M | L | `todo.go`, `shell_exec.go`, `shell_bg.go` | Evict via ConversationCleaner / TTL (A-33) | OPEN |
 | R-42 | `anyInt` rejects `json.Number` (dormant token-zeroing) | P3 | L | M | `runner_persist.go:334` | Add `json.Number` case (A-33) | OPEN (dormant) |
-| R-43 | Sidecar id permits `:` (Windows ADS) + world-readable perms | P3 | L | M | `tools/result.go` | Allowlist grammar + `0o600` (A-33) | OPEN |
+| R-43 | Sidecar id permits `:` (Windows ADS) + world-readable perms | P3 | L | M | `tools/result.go` | Allowlist grammar + `0o600` (A-33) | CLOSED |
 | R-44 | AG-UI gateway: no per-thread in-flight guard | P3 | L | M | `agui/server.go` | Per-thread singleflight (A-33) | OPEN |
 | R-45 | `Registry.Register` silent overwrite on duplicate name | P3 | L | M | `tools/spec.go:84` | Fail-loud on duplicate (A-33) | OPEN |
 
