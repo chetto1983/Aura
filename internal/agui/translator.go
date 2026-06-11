@@ -18,6 +18,10 @@ import (
 // on the SAME canonical name rather than a duplicated magic string.
 const ArtifactEventName = "aura.artifact"
 
+// redactedReasoningDelta is the placeholder the translator substitutes for a real
+// chain-of-thought delta when showReasoning is false (the default privacy posture).
+// A consumer that opts in (Telegram's AURA_TELEGRAM_SHOW_REASONING) receives the real
+// delta instead so it can render the live CoT.
 const redactedReasoningDelta = "[reasoning redacted]"
 
 // artifactEventName is the package-internal alias kept so the existing translator
@@ -35,13 +39,18 @@ const artifactEventName = ArtifactEventName
 // the deltas (one TEXT_MESSAGE_CONTENT per non-empty delta) and treat the final
 // Event as END-only — its Content is NOT re-emitted as a CONTENT (no double-stream);
 // its usage StateDelta becomes a STATE_DELTA event.
-func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.Event, error]) iter.Seq2[events.Event, error] {
+//
+// showReasoning controls the REASONING_MESSAGE_CONTENT payload: false (the default
+// privacy posture) substitutes redactedReasoningDelta; true passes the real CoT delta
+// through so an opted-in consumer (Telegram's live 💭 window) can display it. The
+// REASONING_* lifecycle envelope is emitted either way — only the delta text differs.
+func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.Event, error], showReasoning bool) iter.Seq2[events.Event, error] {
 	return func(yield func(events.Event, error) bool) {
 		if !yield(events.NewRunStartedEvent(threadID, runID), nil) {
 			return
 		}
 		st := textRunState{idgen: idgen}
-		rs := reasoningRunState{idgen: idgen, threadID: threadID, runID: runID}
+		rs := reasoningRunState{idgen: idgen, threadID: threadID, runID: runID, showReasoning: showReasoning}
 		// closeRuns ends BOTH open runs (reasoning before text is irrelevant since
 		// they never coexist) so any interruption — tool/state/final/pause/error —
 		// drains a dangling reasoning OR text run before the next family opens.
@@ -149,7 +158,7 @@ func Translate(threadID, runID string, idgen IDGenerator, seq iter.Seq2[*agent.E
 					"request_id":      ev.RequestID.String(),
 					"agent_thread_id": ev.ThreadID,
 					"chars":           reasoningtrace.RuneLen(ev.LLMResponse.Reasoning),
-					"redacted":        true,
+					"redacted":        !showReasoning,
 				})
 				if !st.close(yield) {
 					return
@@ -217,11 +226,12 @@ func (s *textRunState) close(yield func(events.Event, error) bool) bool {
 // but the lifecycle has the extra START/END envelope the SDK's REASONING_* family
 // requires (REASONING_START wraps REASONING_MESSAGE_*).
 type reasoningRunState struct {
-	idgen    IDGenerator
-	threadID string
-	runID    string
-	msgID    string
-	open     bool
+	idgen         IDGenerator
+	threadID      string
+	runID         string
+	msgID         string
+	open          bool
+	showReasoning bool // pass the real delta through (true) vs redact (false, default)
 }
 
 // content emits a REASONING_MESSAGE_CONTENT delta, opening the run (REASONING_START
@@ -248,14 +258,18 @@ func (s *reasoningRunState) content(yield func(events.Event, error) bool, delta 
 			return false
 		}
 	}
+	payload := redactedReasoningDelta
+	if s.showReasoning {
+		payload = delta
+	}
 	reasoningtrace.Record("agui_reasoning_content_event", map[string]any{
 		"thread_id":  s.threadID,
 		"run_id":     s.runID,
 		"message_id": s.msgID,
 		"chars":      reasoningtrace.RuneLen(delta),
-		"redacted":   true,
+		"redacted":   !s.showReasoning,
 	})
-	return yield(events.NewReasoningMessageContentEvent(s.msgID, redactedReasoningDelta), nil)
+	return yield(events.NewReasoningMessageContentEvent(s.msgID, payload), nil)
 }
 
 // close ends an open reasoning run (REASONING_MESSAGE_END + REASONING_END) and

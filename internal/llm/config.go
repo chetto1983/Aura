@@ -24,6 +24,7 @@ const (
 	defaultTotalTimeoutSec   = 120
 	defaultConnectTimeoutSec = 10
 	defaultAdaptiveReasoning = true
+	defaultShowReasoning     = false
 
 	// L2 budget inputs (Phase 4 AM, resolves OPEN QUESTION 2). ContextWindow is
 	// the ~1M DeepSeek-V4 window; MaxOutputTokens is a sane reservation cap. The
@@ -53,6 +54,7 @@ const (
 	envTemperature       = "AURA_LLM_TEMPERATURE"
 	envMaxTokens         = "AURA_LLM_MAX_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
 	envAdaptiveReasoning = "AURA_LLM_ADAPTIVE_REASONING"
+	envShowReasoning     = "AURA_SHOW_REASONING"
 	envTotalTimeoutSec   = "AURA_LLM_TOTAL_TIMEOUT_SEC"
 	envConnectTimeoutSec = "AURA_LLM_CONNECT_TIMEOUT_SEC"
 	envContextWindow     = "AURA_MODEL_CONTEXT_WINDOW"
@@ -84,10 +86,20 @@ type Config struct {
 	Temperature       float64
 	MaxTokens         int
 	AdaptiveReasoning bool
-	ContextWindow     int // total model context window (tokens); L2 budget input
-	MaxOutputTokens   int // output-token reservation cap; L2 budget input
-	Headers           map[string]string
-	Prices            map[string]Price
+
+	// ShowReasoning surfaces the model's chain-of-thought instead of redacting it
+	// (AURA_SHOW_REASONING, default false). It is the SINGLE master switch for live
+	// CoT: the adaptive-reasoning policy reads it to request reasoning UNEXCLUDED
+	// (exclude:false → the provider streams the reasoning text; with the default
+	// true the stream carries zero reasoning deltas), and the composition root
+	// propagates it to the Telegram channel so the AG-UI translator passes the real
+	// delta through and the status pane renders the live 💭 window. Default false
+	// keeps the redacted posture end-to-end.
+	ShowReasoning   bool
+	ContextWindow   int // total model context window (tokens); L2 budget input
+	MaxOutputTokens int // output-token reservation cap; L2 budget input
+	Headers         map[string]string
+	Prices          map[string]Price
 
 	// CompletionGate enables the agent's completion critic gate (amendment #54 /
 	// D-43): a voluntary termination (text_response / content-stop) on a turn
@@ -112,6 +124,7 @@ type fileConfig struct {
 	Temperature       *float64          `json:"temperature,omitempty"`
 	MaxTokens         *int              `json:"max_tokens,omitempty"`
 	AdaptiveReasoning *bool             `json:"adaptive_reasoning,omitempty"`
+	ShowReasoning     *bool             `json:"show_reasoning,omitempty"`
 	ContextWindow     *int              `json:"context_window,omitempty"`
 	MaxOutputTokens   *int              `json:"max_output_tokens,omitempty"`
 	Headers           map[string]string `json:"headers,omitempty"`
@@ -136,6 +149,7 @@ func Load() (*Config, error) {
 		Temperature:       defaultTemperature,
 		MaxTokens:         defaultMaxTokens,
 		AdaptiveReasoning: defaultAdaptiveReasoning,
+		ShowReasoning:     defaultShowReasoning,
 		ContextWindow:     defaultContextWindow,
 		MaxOutputTokens:   defaultMaxOutputTokens,
 		TotalTimeoutSec:   defaultTotalTimeoutSec,
@@ -235,6 +249,9 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	if fc.AdaptiveReasoning != nil {
 		cfg.AdaptiveReasoning = *fc.AdaptiveReasoning
 	}
+	if fc.ShowReasoning != nil {
+		cfg.ShowReasoning = *fc.ShowReasoning
+	}
 	if fc.ContextWindow != nil {
 		cfg.ContextWindow = *fc.ContextWindow
 	}
@@ -271,6 +288,9 @@ func applyEnvOverrides(cfg *Config) error {
 	}
 	if v := os.Getenv(envAdaptiveReasoning); v != "" {
 		cfg.AdaptiveReasoning = envBool(envAdaptiveReasoning, cfg.AdaptiveReasoning)
+	}
+	if v := os.Getenv(envShowReasoning); v != "" {
+		cfg.ShowReasoning = envBool(envShowReasoning, cfg.ShowReasoning)
 	}
 	if v, ok, err := envInt(envContextWindow); err != nil {
 		return err

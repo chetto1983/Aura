@@ -58,18 +58,20 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 	tgCfg := telegram.LoadConfig()
 
 	tg := telegram.NewChannel(telegram.Deps{
-		Turn:              ensuringTurn(chat.run),
-		Token:             tgCfg.BotToken,
-		Store:             telegram.New(chat.pool),
-		Multimodal:        multimodalConfig(chat.cfg),
-		Search:            chat.conv,
-		Cost:              newTodayCost(chat.pool),
-		Prices:            chat.cfg.LLM.Prices,
-		Model:             chat.cfg.LLM.Model,
-		Resume:            chat.run,
-		StatusThrottleMS:  tgCfg.StatusThrottleMS,
-		ContentThrottleMS: tgCfg.ContentThrottleMS,
-		ChatRateLimitMS:   tgCfg.ChatRateLimitMS,
+		Turn:               ensuringTurn(chat.run),
+		Token:              tgCfg.BotToken,
+		Store:              telegram.New(chat.pool),
+		Multimodal:         multimodalConfig(chat.cfg),
+		Search:             chat.conv,
+		Cost:               newTodayCost(chat.pool),
+		Prices:             chat.cfg.LLM.Prices,
+		Model:              chat.cfg.LLM.Model,
+		Resume:             chat.run,
+		StatusThrottleMS:   tgCfg.StatusThrottleMS,
+		ContentThrottleMS:  tgCfg.ContentThrottleMS,
+		ChatRateLimitMS:    tgCfg.ChatRateLimitMS,
+		ShowReasoning:      chat.cfg.LLM.ShowReasoning,
+		ReasoningFIFORunes: tgCfg.ReasoningFIFORunes,
 	})
 
 	reg := channels.NewRegistry()

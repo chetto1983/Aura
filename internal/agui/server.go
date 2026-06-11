@@ -184,7 +184,9 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	// on the error responses above too, not only this 200 stream.
 
 	turn := s.run.Turn(ctx, in.ThreadID, userMsg)
-	s.streamSSE(ctx, w, Translate(in.ThreadID, runID, s.idgen, turn))
+	// The HTTP/SSE gateway keeps reasoning redacted (conservative web default); live
+	// CoT surfacing is currently a Telegram-only opt-in (agui_subscriber.go).
+	s.streamSSE(ctx, w, Translate(in.ThreadID, runID, s.idgen, turn, false))
 }
 
 // handleMessages resolves the thread (404) and returns the persisted history as a

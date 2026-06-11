@@ -50,7 +50,7 @@ func collect(t *testing.T, threadID, runID string, gen IDGenerator, evs []*agent
 		}
 	}
 	var out []events.Event
-	for ev, err := range Translate(threadID, runID, gen, seq) {
+	for ev, err := range Translate(threadID, runID, gen, seq, false) {
 		if err != nil {
 			t.Fatalf("translate yielded error: %v", err)
 		}
@@ -249,7 +249,7 @@ func TestTranslatorErrorStops(t *testing.T) {
 		yield(nil, errAGUITest)
 	}
 	var out []events.Event
-	for ev, err := range Translate("thread-1", "run-1", &fixedIDGen{}, seq) {
+	for ev, err := range Translate("thread-1", "run-1", &fixedIDGen{}, seq, false) {
 		if err != nil {
 			t.Fatalf("Translate must not propagate the error in the err slot; it maps to RUN_ERROR: %v", err)
 		}
@@ -281,7 +281,7 @@ func TestTranslatorErrorPathHonorsConsumerStop(t *testing.T) {
 	var got []events.Event
 	// A strict consumer that STOPS at the first END frame — the very frame closeRuns emits
 	// on the error path. A yield after this returns-false is the contract violation.
-	for ev, err := range Translate("thread-1", "run-1", &fixedIDGen{}, seq) {
+	for ev, err := range Translate("thread-1", "run-1", &fixedIDGen{}, seq, false) {
 		if err != nil {
 			t.Fatalf("Translate must not propagate the error in the err slot: %v", err)
 		}
@@ -541,7 +541,7 @@ func collectRapid(rt *rapid.T, evs []*agent.Event) []events.Event {
 		}
 	}
 	var out []events.Event
-	for ev, err := range Translate("thread-1", "run-1", &fixedIDGen{}, seq) {
+	for ev, err := range Translate("thread-1", "run-1", &fixedIDGen{}, seq, false) {
 		if err != nil {
 			rt.Fatalf("translate yielded error: %v", err)
 		}

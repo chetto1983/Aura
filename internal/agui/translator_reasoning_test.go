@@ -139,11 +139,33 @@ func TestTranslatorReasoningGoldenShapes(t *testing.T) {
 				t.Fatalf("REASONING_MESSAGE_CONTENT type = %T", ev)
 			}
 			if msg.Delta != redactedReasoningDelta {
-				t.Fatalf("reasoning content delta = %q, want redacted marker", msg.Delta)
+				t.Fatalf("reasoning content delta = %q, want redacted marker (showReasoning off)", msg.Delta)
 			}
 			continue
 		}
 		assertGoldenShape(t, name, golden[name], ev)
+	}
+}
+
+// TestTranslatorReasoningPassthroughWhenEnabled proves that with showReasoning=true the
+// translator emits the REAL CoT delta (not the redacted marker) so an opted-in consumer
+// — the Telegram live 💭 window — actually sees the reasoning. This is the integration
+// half the redaction default deliberately withholds.
+func TestTranslatorReasoningPassthroughWhenEnabled(t *testing.T) {
+	seq := func(yield func(*agent.Event, error) bool) {
+		yield(reasoning("valuto le brocche da 12 e 7"), nil)
+	}
+	var got string
+	for ev := range Translate("thread-1", "run-1", &fixedIDGen{}, seq, true) {
+		if msg, ok := ev.(*events.ReasoningMessageContentEvent); ok {
+			got = msg.Delta
+		}
+	}
+	if got == redactedReasoningDelta {
+		t.Fatalf("showReasoning=true still redacted the delta: %q", got)
+	}
+	if got != "valuto le brocche da 12 e 7" {
+		t.Fatalf("reasoning delta = %q, want the real CoT text", got)
 	}
 }
 

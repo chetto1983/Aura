@@ -22,7 +22,7 @@ var updateGolden = flag.Bool("update", false, "update golden fixtures")
 // LAST rendered pane text (the final coalesced state). Throttle is disabled (zero)
 // and the clock is fixed so every event renders.
 func drivePane(bot *fakeBot, evs []events.Event) {
-	p := newStatusPane(bot, tele.ChatID(7), 0)
+	p := newStatusPane(bot, tele.ChatID(7), 0, false, 0)
 	p.now = func() time.Time { return time.Unix(0, 0) }
 	p.sleep = func(time.Duration) {}
 	ch := make(chan events.Event, len(evs))
@@ -295,7 +295,7 @@ func TestStatusPaneThrottleCoalesces(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		bot := newFakeBot()
 		throttle := 1500 * time.Millisecond
-		p := newStatusPane(bot, tele.ChatID(7), throttle)
+		p := newStatusPane(bot, tele.ChatID(7), throttle, false, 0)
 
 		ch := make(chan events.Event)
 		done := make(chan struct{})

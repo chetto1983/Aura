@@ -80,6 +80,29 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 	}
 }
 
+// TestAdaptiveReasoningShowReasoningUnexcludes proves the AURA_SHOW_REASONING master
+// switch flips exclude off so the provider streams the real CoT for display. Without
+// this the live window is dead: exclude:true yields zero reasoning deltas (verified).
+func TestAdaptiveReasoningShowReasoningUnexcludes(t *testing.T) {
+	t.Parallel()
+	b := NewPromptBuilder()
+	reg := testRegistry()
+	cfg := testConfig()
+	cfg.AdaptiveReasoning = true
+	cfg.ShowReasoning = true
+
+	hist := []llm.Message{
+		{Role: llm.RoleSystem, Content: "system prefix"},
+		{Role: llm.RoleUser, Content: "scrivi uno script di scraping di la stampa"},
+	}
+	for _, tier := range []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh} {
+		req := b.BuildWithReasoningTier(hist, reg, "openrouter", cfg, Budget{}, tier)
+		if req.Reasoning.Exclude == nil || *req.Reasoning.Exclude {
+			t.Fatalf("tier %q with ShowReasoning: Exclude = %v, want false (stream the CoT)", tier, req.Reasoning.Exclude)
+		}
+	}
+}
+
 func TestAdaptiveReasoningPolicyBoundaries(t *testing.T) {
 	t.Parallel()
 	b := NewPromptBuilder()

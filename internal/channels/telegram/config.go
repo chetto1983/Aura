@@ -28,6 +28,11 @@ type Config struct {
 	ContentThrottleMS int
 	// ChatRateLimitMS bounds the per-chat_id send queue — 1000ms default.
 	ChatRateLimitMS int
+
+	// ReasoningFIFORunes caps the live CoT window (AURA_REASONING_FIFO_RUNES, default
+	// 4096). The on/off master switch is AURA_SHOW_REASONING in llm.Config (propagated
+	// to the channel by the composition root) — this is only the window size.
+	ReasoningFIFORunes int
 }
 
 // LoadConfig reads the Telegram channel config from the environment with
@@ -35,10 +40,11 @@ type Config struct {
 // → fallback, never fatal — a typo in a throttle tweak must not block boot).
 func LoadConfig() Config {
 	return Config{
-		BotToken:          os.Getenv("TELEGRAM_BOT_TOKEN"),
-		StatusThrottleMS:  envIntDefault("AURA_TELEGRAM_STATUS_THROTTLE_MS", 1500),
-		ContentThrottleMS: envIntDefault("AURA_TELEGRAM_CONTENT_THROTTLE_MS", 500),
-		ChatRateLimitMS:   envIntDefault("AURA_TELEGRAM_CHAT_RATE_LIMIT_MS", 1000),
+		BotToken:           os.Getenv("TELEGRAM_BOT_TOKEN"),
+		StatusThrottleMS:   envIntDefault("AURA_TELEGRAM_STATUS_THROTTLE_MS", 1500),
+		ContentThrottleMS:  envIntDefault("AURA_TELEGRAM_CONTENT_THROTTLE_MS", 500),
+		ChatRateLimitMS:    envIntDefault("AURA_TELEGRAM_CHAT_RATE_LIMIT_MS", 1000),
+		ReasoningFIFORunes: envIntDefault("AURA_REASONING_FIFO_RUNES", 4096),
 	}
 }
 

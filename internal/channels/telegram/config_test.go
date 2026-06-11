@@ -8,6 +8,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	t.Setenv("AURA_TELEGRAM_STATUS_THROTTLE_MS", "")
 	t.Setenv("AURA_TELEGRAM_CONTENT_THROTTLE_MS", "")
 	t.Setenv("AURA_TELEGRAM_CHAT_RATE_LIMIT_MS", "")
+	t.Setenv("AURA_REASONING_FIFO_RUNES", "")
 
 	cfg := LoadConfig()
 
@@ -23,6 +24,9 @@ func TestLoadConfigDefaults(t *testing.T) {
 	if cfg.ChatRateLimitMS != 1000 {
 		t.Errorf("ChatRateLimitMS = %d, want 1000", cfg.ChatRateLimitMS)
 	}
+	if cfg.ReasoningFIFORunes != 4096 {
+		t.Errorf("ReasoningFIFORunes = %d, want 4096", cfg.ReasoningFIFORunes)
+	}
 }
 
 func TestLoadConfigOverrides(t *testing.T) {
@@ -30,6 +34,7 @@ func TestLoadConfigOverrides(t *testing.T) {
 	t.Setenv("AURA_TELEGRAM_STATUS_THROTTLE_MS", "2000")
 	t.Setenv("AURA_TELEGRAM_CONTENT_THROTTLE_MS", "750")
 	t.Setenv("AURA_TELEGRAM_CHAT_RATE_LIMIT_MS", "1200")
+	t.Setenv("AURA_REASONING_FIFO_RUNES", "2048")
 
 	cfg := LoadConfig()
 
@@ -45,12 +50,16 @@ func TestLoadConfigOverrides(t *testing.T) {
 	if cfg.ChatRateLimitMS != 1200 {
 		t.Errorf("ChatRateLimitMS = %d, want 1200", cfg.ChatRateLimitMS)
 	}
+	if cfg.ReasoningFIFORunes != 2048 {
+		t.Errorf("ReasoningFIFORunes = %d, want 2048", cfg.ReasoningFIFORunes)
+	}
 }
 
 func TestLoadConfigMalformedFallsBackSilently(t *testing.T) {
 	t.Setenv("AURA_TELEGRAM_STATUS_THROTTLE_MS", "not-a-number")
 	t.Setenv("AURA_TELEGRAM_CONTENT_THROTTLE_MS", "")
 	t.Setenv("AURA_TELEGRAM_CHAT_RATE_LIMIT_MS", "12.5") // non-int
+	t.Setenv("AURA_REASONING_FIFO_RUNES", "lots")
 
 	cfg := LoadConfig()
 
@@ -63,5 +72,8 @@ func TestLoadConfigMalformedFallsBackSilently(t *testing.T) {
 	}
 	if cfg.ChatRateLimitMS != 1000 {
 		t.Errorf("ChatRateLimitMS = %d, want 1000 (malformed → fallback)", cfg.ChatRateLimitMS)
+	}
+	if cfg.ReasoningFIFORunes != 4096 {
+		t.Errorf("ReasoningFIFORunes = %d, want 4096 (malformed → fallback)", cfg.ReasoningFIFORunes)
 	}
 }

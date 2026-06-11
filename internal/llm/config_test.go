@@ -69,6 +69,9 @@ func TestConfigLoadOrder(t *testing.T) {
 		if !cfg.AdaptiveReasoning {
 			t.Error("AdaptiveReasoning = false, want true default")
 		}
+		if cfg.ShowReasoning {
+			t.Error("ShowReasoning = true, want false default (reasoning redacted)")
+		}
 		if cfg.TotalTimeoutSec != 120 || cfg.ConnectTimeoutSec != 10 {
 			t.Errorf("timeouts = %d/%d, want 120/10", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)
 		}

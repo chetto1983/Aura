@@ -68,7 +68,7 @@ func (t *Telegram) handleTurn(ctx context.Context, bot botSender, chatID int64, 
 	idgen := agui.NewIDGenerator()
 	runID := uuid.NewString()
 
-	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), userMsg))
+	translated := agui.Translate(convID(chatID), runID, idgen, t.deps.Turn(ctx, convID(chatID), userMsg), t.deps.ShowReasoning)
 	fo := agui.NewFanout(translated)
 	statusCh := fo.Subscribe()   // → status pane
 	contentCh := fo.Subscribe()  // → renderer
@@ -154,7 +154,7 @@ func (t *Telegram) consumers(bot botSender, to tele.Recipient) (status, content,
 	if t.deps.consumerFactory != nil {
 		return t.deps.consumerFactory(bot, to)
 	}
-	pane := newStatusPane(bot, to, t.statusThrottle())
+	pane := newStatusPane(bot, to, t.statusThrottle(), t.deps.ShowReasoning, t.reasoningFIFORunes())
 	rend := newRenderer(bot, to, t.contentThrottle(), t.chatRateLimit())
 	art := newArtifact(bot, to)
 	return pane, rend, art

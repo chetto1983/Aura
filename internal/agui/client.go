@@ -36,7 +36,7 @@ type EventType = events.EventType
 // (the dual-field reasoning/reasoning_content data-plane, amendment #57). This phase only
 // surfaces the alias — no reasoning parsing is added here.
 func Subscribe(ctx context.Context, threadID, runID string, idgen IDGenerator, turn iter.Seq2[*agent.Event, error]) <-chan Event {
-	f := NewFanout(Translate(threadID, runID, idgen, turn))
+	f := NewFanout(Translate(threadID, runID, idgen, turn, false)) // single-consumer helper keeps reasoning redacted
 	ch := f.Subscribe()
 	f.Run(ctx)
 	return ch

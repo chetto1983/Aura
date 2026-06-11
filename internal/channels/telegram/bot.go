@@ -92,6 +92,15 @@ type Deps struct {
 	ContentThrottleMS int
 	ChatRateLimitMS   int
 
+	// ShowReasoning surfaces the live chain-of-thought in the status pane (default
+	// false → redacted lifecycle). It is the master AURA_SHOW_REASONING switch from
+	// llm.Config, propagated here by the composition root so the agent's exclude flag,
+	// the AG-UI translator's redaction, and this pane all honor one setting.
+	// ReasoningFIFORunes caps that rolling window (zero → the package default) and
+	// comes from telegram.LoadConfig.
+	ShowReasoning      bool
+	ReasoningFIFORunes int
+
 	// Offline forces tele.Settings.Offline (unit tests: no getMe, no network).
 	Offline bool
 
@@ -165,6 +174,15 @@ func (t *Telegram) chatRateLimit() time.Duration {
 	return msOrDefault(t.deps.ChatRateLimitMS, defaultChatRateLimitMS)
 }
 
+// reasoningFIFORunes resolves the live-CoT window cap, applying the package default
+// when the caller left it zero (mirrors the throttle accessors).
+func (t *Telegram) reasoningFIFORunes() int {
+	if t.deps.ReasoningFIFORunes <= 0 {
+		return defaultReasoningFIFORunes
+	}
+	return t.deps.ReasoningFIFORunes
+}
+
 // msOrDefault converts a millisecond count to a Duration, applying fallback for a
 // non-positive value (zero/negative → the PRD default).
 func msOrDefault(ms, fallback int) time.Duration {
@@ -181,6 +199,10 @@ const (
 	defaultStatusThrottleMS  = 1500
 	defaultContentThrottleMS = 500
 	defaultChatRateLimitMS   = 1000
+
+	// defaultReasoningFIFORunes is the live-CoT window cap (spike: 4096-rune rolling
+	// tail) applied when ReasoningFIFORunes is left zero.
+	defaultReasoningFIFORunes = 4096
 )
 
 // Start constructs the telebot bot (a live getMe unless Offline), registers the

@@ -1,9 +1,28 @@
 # Spike / Design — CoT reasoning FIFO (perceived-latency display)
 
-> Status: **DESIGNED, not implemented** (deferred 2026-06-10 to finish Phase 19 first).
+> Status: **IMPLEMENTED (Telegram) + live-E2E verified** 2026-06-11. New `internal/reasoningfifo`
+> (rune-capped rolling buffer) + status-pane wiring behind one master switch `AURA_SHOW_REASONING`
+> (default off — preserves the redacted-reasoning privacy default + its tests) with an elapsed-time
+> header. CLI leg (`chat_render.go`) NOT done — bounding/clearing it is the remaining follow-up.
 > Origin: operator observed end users ask "perché Aura è lenta?" during the 30–60 s reasoning
 > wait. Directive: show the CoT in a rolling **4096 UTF-8-char FIFO**, cleared **on each turn**
 > and **on the final answer**. NOT a Phase-19 finding.
+>
+> **THREE layers had to align — the E2E found two gaps the unit tests missed:**
+>   1. POLICY: `reasoning_policy.go` set `exclude:true` on every tier → verified live to stream
+>      ZERO reasoning deltas. Now `exclude = !cfg.ShowReasoning` (reasoning tokens billed either
+>      way; surfacing costs only delta bandwidth).
+>   2. TRANSLATOR: `agui.Translate` hardcoded `[reasoning redacted]` for ALL consumers. Now takes
+>      a `showReasoning` param — Telegram passes it true, the HTTP/SSE gateway stays false.
+>   3. PANE: renders the rolling window (the only part the unit tests covered).
+>
+> Master switch = `AURA_SHOW_REASONING` (llm.Config, default false) → drives the policy exclude
+> AND is propagated by the composition root to telegram Deps → translator passthrough + pane render.
+> `AURA_REASONING_FIFO_RUNES` (int, default 4096) caps the window. Reset on REASONING_START (turn)
+> + REASONING_END/RUN_FINISHED (final). Window is collapsed-whitespace, tail-keep, double-capped.
+> Live-E2E (`internal/channels/telegram/cot_live_e2e_test.go`, live_e2e tag): real DeepSeek reasoning
+> → real policy(exclude:false) → real translate(passthrough) → real pane; 236 reasoning runes
+> surfaced across 57 edits, no redaction marker, collapses to "completato".
 
 ## Problem
 
