@@ -99,6 +99,39 @@ func TestSnippetInvocationResolvesInterpreter(t *testing.T) {
 	}
 }
 
+// TestSnippetHostInvocationResolvesInterpreter pins the host-primary mirror of
+// SnippetInvocation: aliases normalize once, then return an OS-correct export path
+// plus the structured interpreter.
+func TestSnippetHostInvocationResolvesInterpreter(t *testing.T) {
+	t.Parallel()
+	export := filepath.Join("tmp", "aura-skills")
+	cases := []struct {
+		name     string
+		language string
+		wantPath string
+		wantExec string
+	}{
+		{name: "python alias", language: "python3", wantPath: filepath.Join(export, "calc", "calc.py"), wantExec: "python3"},
+		{name: "shell alias", language: "bash", wantPath: filepath.Join(export, "calc", "calc.sh"), wantExec: "sh"},
+		{name: "js alias", language: "javascript", wantPath: filepath.Join(export, "calc", "calc.js"), wantExec: "node"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			path, interp, err := SnippetHostInvocation("calc", tc.language, export)
+			if err != nil {
+				t.Fatalf("SnippetHostInvocation(%q): %v", tc.language, err)
+			}
+			if path != tc.wantPath || interp != tc.wantExec {
+				t.Fatalf("SnippetHostInvocation(%q) = (%q,%q), want (%q,%q)",
+					tc.language, path, interp, tc.wantPath, tc.wantExec)
+			}
+		})
+	}
+	if _, _, err := SnippetHostInvocation("calc", "ruby", export); !errors.Is(err, ErrInvalidStructure) {
+		t.Fatalf("SnippetHostInvocation(ruby) = %v, want ErrInvalidStructure", err)
+	}
+}
+
 // TestSaveSnippetRejectsBadLanguage asserts SaveSnippet hard-rejects a non-enum
 // language before any FS write (no pending dir created).
 func TestSaveSnippetRejectsBadLanguage(t *testing.T) {
@@ -335,5 +368,91 @@ func TestArchivedUsageStatusUpdatesMovedSidecarWithoutActiveGhost(t *testing.T) 
 	}
 	if u.UseCount != 1 {
 		t.Fatalf("archived sidecar use_count = %d, want preserved count 1", u.UseCount)
+	}
+}
+
+func TestSnippetIsStaleCases(t *testing.T) {
+	t.Parallel()
+	w, root := newTestWriter(t)
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+	cutoff := now.Add(-24 * time.Hour)
+
+	seed := func(name string, typ string) string {
+		t.Helper()
+		dir := filepath.Join(root, "active", name)
+		fm := Frontmatter{Name: name, Description: "d", Type: typ, Language: "python"}
+		writeFile(t, filepath.Join(dir, "SKILL.md"), string(skillFileBytes(fm, "docs")))
+		return filepath.Join(dir, "SKILL.md")
+	}
+
+	seed("fresh", TypeSnippet)
+	if err := w.writeUsageAtomic("fresh", UsageSidecar{Status: "active", LastUsedAt: cutoff.Add(time.Minute), UseCount: 1}); err != nil {
+		t.Fatalf("write fresh usage: %v", err)
+	}
+	if stale, ok := w.snippetIsStale("fresh", cutoff); !ok || stale {
+		t.Fatalf("fresh snippet stale=%v ok=%v, want stale=false ok=true", stale, ok)
+	}
+
+	seed("old", TypeSnippet)
+	if err := w.writeUsageAtomic("old", UsageSidecar{Status: "active", LastUsedAt: cutoff.Add(-time.Minute), UseCount: 1}); err != nil {
+		t.Fatalf("write old usage: %v", err)
+	}
+	if stale, ok := w.snippetIsStale("old", cutoff); !ok || !stale {
+		t.Fatalf("old snippet stale=%v ok=%v, want stale=true ok=true", stale, ok)
+	}
+
+	seed("archived", TypeSnippet)
+	if err := w.writeUsageAtomic("archived", UsageSidecar{Status: "archived", LastUsedAt: cutoff.Add(-time.Hour)}); err != nil {
+		t.Fatalf("write archived usage: %v", err)
+	}
+	if stale, ok := w.snippetIsStale("archived", cutoff); ok || stale {
+		t.Fatalf("archived snippet stale=%v ok=%v, want stale=false ok=false", stale, ok)
+	}
+
+	seed("instruction", TypeInstruction)
+	if stale, ok := w.snippetIsStale("instruction", cutoff); ok || stale {
+		t.Fatalf("instruction stale=%v ok=%v, want stale=false ok=false", stale, ok)
+	}
+
+	mtimed := seed("mtime-old", TypeSnippet)
+	oldTime := cutoff.Add(-time.Hour)
+	if err := os.Chtimes(mtimed, oldTime, oldTime); err != nil {
+		t.Fatalf("chtimes mtime-old: %v", err)
+	}
+	if stale, ok := w.snippetIsStale("mtime-old", cutoff); !ok || !stale {
+		t.Fatalf("mtime-old stale=%v ok=%v, want stale=true ok=true", stale, ok)
+	}
+}
+
+func TestSweepExpiredSnippetsKeepsFreshActiveSnippets(t *testing.T) {
+	t.Parallel()
+	w, root := newTestWriter(t)
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+
+	freshDir := filepath.Join(root, "active", "fresh")
+	fm := Frontmatter{Name: "fresh", Description: "d", Type: TypeSnippet, Language: "python"}
+	writeFile(t, filepath.Join(freshDir, "SKILL.md"), string(skillFileBytes(fm, "docs")))
+	if err := w.writeUsageAtomic("fresh", UsageSidecar{Status: "active", LastUsedAt: now.Add(-time.Hour)}); err != nil {
+		t.Fatalf("write usage: %v", err)
+	}
+
+	writeFile(t, filepath.Join(root, "active", "doc", "SKILL.md"),
+		string(skillFileBytes(Frontmatter{Name: "doc", Description: "d", Type: TypeInstruction}, "docs")))
+	if err := os.MkdirAll(filepath.Join(root, "active", "pending"), 0o750); err != nil {
+		t.Fatalf("mkdir pending sentinel: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "active", "Bad_Name"), 0o750); err != nil {
+		t.Fatalf("mkdir invalid sentinel: %v", err)
+	}
+
+	res, err := w.SweepExpiredSnippets(t.Context(), 24*time.Hour, now, AuditActor{ActorID: "system"})
+	if err != nil {
+		t.Fatalf("SweepExpiredSnippets: %v", err)
+	}
+	if len(res.Archived) != 0 {
+		t.Fatalf("Archived = %v, want none for fresh-only sweep", res.Archived)
+	}
+	if len(res.Kept) != 1 || res.Kept[0] != "fresh" {
+		t.Fatalf("Kept = %v, want [fresh]", res.Kept)
 	}
 }

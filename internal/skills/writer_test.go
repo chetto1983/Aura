@@ -188,3 +188,66 @@ func TestContentHashDeterministic(t *testing.T) {
 		t.Errorf("hash collides across the path/content boundary: %s", h1)
 	}
 }
+
+// TestHashSkillDirMatchesCanonicalFileHash proves an installer-style tree hashes to
+// the same canonical pin as the writer's explicit file map, including nested slash
+// normalized paths.
+func TestHashSkillDirMatchesCanonicalFileHash(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "SKILL.md"), "skill body")
+	writeFile(t, filepath.Join(root, "scripts", "run.py"), "print(42)")
+
+	got, err := HashSkillDir(root)
+	if err != nil {
+		t.Fatalf("HashSkillDir: %v", err)
+	}
+	want := HashSkillFiles(map[string][]byte{
+		"SKILL.md":       []byte("skill body"),
+		"scripts/run.py": []byte("print(42)"),
+	})
+	if got != want {
+		t.Fatalf("HashSkillDir = %s, want %s", got, want)
+	}
+}
+
+func TestPromoteDirReplacesDestination(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "pending", "demo")
+	dst := filepath.Join(root, "active", "demo")
+	writeFile(t, filepath.Join(src, "SKILL.md"), "new")
+	writeFile(t, filepath.Join(dst, "stale.txt"), "old")
+
+	if err := promoteDir(src, dst); err != nil {
+		t.Fatalf("promoteDir: %v", err)
+	}
+	if _, err := os.Stat(src); !os.IsNotExist(err) {
+		t.Fatalf("promoted source should be gone (stat err=%v)", err)
+	}
+	if got := readFile(t, filepath.Join(dst, "SKILL.md")); got != "new" {
+		t.Fatalf("promoted SKILL.md = %q, want new", got)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "stale.txt")); !os.IsNotExist(err) {
+		t.Fatalf("stale destination file should be replaced (stat err=%v)", err)
+	}
+}
+
+func TestAuditActionFor(t *testing.T) {
+	cases := []struct {
+		name string
+		in   scoring.SkillAction
+		want AuditAction
+	}{
+		{name: "create", in: scoring.SkillCreate, want: AuditCreate},
+		{name: "update", in: scoring.SkillUpdate, want: AuditUpdate},
+		{name: "install", in: scoring.SkillInstall, want: AuditInstall},
+		{name: "delete", in: scoring.SkillDelete, want: AuditDelete},
+		{name: "unknown defaults to update", in: scoring.SkillAction("other"), want: AuditUpdate},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := auditActionFor(tc.in); got != tc.want {
+				t.Fatalf("auditActionFor(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
