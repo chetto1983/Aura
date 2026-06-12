@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 )
 
 // --- Req-5a: detection recall on the spike-057 12-trace fixture ---
@@ -52,7 +53,7 @@ func newGoldRanker(margin float64) *goldRanker {
 	return &goldRanker{gold: m, margin: margin}
 }
 
-func (g *goldRanker) Rank(query string) (string, float64, bool) {
+func (g *goldRanker) Rank(_ context.Context, query string) (string, float64, bool) {
 	t, ok := g.gold[query]
 	return t, g.margin, ok
 }
@@ -61,7 +62,7 @@ func TestDetection_RecallOnSpike057Traces(t *testing.T) {
 	ranker := newGoldRanker(0.2) // confident, so the disagreement signal is trusted
 	var tp, fn, fp, tn int
 	for _, tr := range spike057Traces {
-		flagged := isMisroute(tr.q, tr.used, ranker)
+		flagged := isMisroute(context.Background(), tr.q, tr.used, ranker)
 		misroute := !sameTool(tr.used, tr.gold)
 		switch {
 		case flagged && misroute:
@@ -120,20 +121,21 @@ func TestSameTool_SymmetricNamespaceSplit(t *testing.T) {
 // --- Req-5a fallback heuristic: shell/fs improvisation flagged with no ranker ---
 
 func TestDetection_ShellFallbackNeedsNoRanker(t *testing.T) {
+	ctx := context.Background()
 	// The bitcoin failure mode: shell_exec used, no ranker wired at all. The embedding-
 	// free heuristic must still flag it (P0.88/R1.00 alone, spike-057).
-	if !isMisroute("quanto costa il bitcoin adesso?", "shell_exec", nil) {
+	if !isMisroute(ctx, "quanto costa il bitcoin adesso?", "shell_exec", nil) {
 		t.Error("shell_exec improvisation must be flagged even with a nil ranker")
 	}
 	// A non-fallback tool with no ranker cannot be judged a mis-route (no signal).
-	if isMisroute("manda questo file all'utente", "send_file", nil) {
+	if isMisroute(ctx, "manda questo file all'utente", "send_file", nil) {
 		t.Error("a non-fallback tool with no ranker must not be flagged (no disagreement signal)")
 	}
 	// An empty request or empty used-tool is never a mis-route.
-	if isMisroute("", "shell_exec", nil) {
+	if isMisroute(ctx, "", "shell_exec", nil) {
 		t.Error("empty request must not be flagged")
 	}
-	if isMisroute("some request", "", nil) {
+	if isMisroute(ctx, "some request", "", nil) {
 		t.Error("empty used-tool must not be flagged")
 	}
 }
@@ -256,6 +258,12 @@ func (f *fakeEmbedder) Embed(_ context.Context, texts []string) ([][]float64, er
 	return out, nil
 }
 
+func (f *fakeEmbedder) count() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.calls
+}
+
 func TestLearner_ObserveRidesActiveLearn(t *testing.T) {
 	t.Setenv(oracleEnv, "on")
 	emb := &fakeEmbedder{}
@@ -273,16 +281,17 @@ func TestLearner_ObserveRidesActiveLearn(t *testing.T) {
 	}
 	defer l.Close()
 
-	// A flagged mis-route (shell_exec improvisation). Observe embeds + enqueues; the
-	// activelearn worker labels + saves + fires Refresh asynchronously.
+	// A flagged mis-route (shell_exec improvisation). Observe is a non-blocking handoff;
+	// the intake worker embeds + enqueues, then the activelearn worker labels + saves +
+	// fires Refresh — all asynchronously (CR-01).
 	l.Observe("quanto costa il bitcoin adesso?", "shell_exec")
 	<-done // the shared activelearn worker processed the observation
 
 	if saver.count() != 1 {
 		t.Errorf("expected the flagged turn to be labeled+saved once; got %d", saver.count())
 	}
-	if emb.calls == 0 {
-		t.Error("Observe should have embedded the flagged request")
+	if emb.count() == 0 {
+		t.Error("the intake worker should have embedded the flagged request")
 	}
 }
 
@@ -290,12 +299,14 @@ func TestLearner_UnflaggedTurnIsNoOp(t *testing.T) {
 	emb := &fakeEmbedder{}
 	saver := &recordingSaver{}
 	l := New(Config{Embedder: emb, Ranker: newGoldRanker(0.3), Saver: saver, Queue: 8})
-	defer l.Close()
 
-	// An efficient turn (used == gold) must not embed or enqueue anything.
+	// An efficient turn (used == gold) must not embed or enqueue anything. Observe is an
+	// async handoff (CR-01), so join the intake+activelearn workers via Close before
+	// asserting — the unflagged signal is processed (or dropped) but never embeds/saves.
 	l.Observe("fai una web search per le previsioni meteo", "web_search")
-	if emb.calls != 0 {
-		t.Errorf("an unflagged turn embedded %d times; want 0 (Observe short-circuits)", emb.calls)
+	l.Close()
+	if emb.count() != 0 {
+		t.Errorf("an unflagged turn embedded %d times; want 0 (intake worker short-circuits)", emb.count())
 	}
 	if saver.count() != 0 {
 		t.Errorf("an unflagged turn saved %d examples; want 0", saver.count())
@@ -308,5 +319,62 @@ func TestNew_NilWithoutRequiredDeps(t *testing.T) {
 	}
 	if New(Config{Embedder: &fakeEmbedder{}}) != nil {
 		t.Error("New must return nil without a Saver")
+	}
+}
+
+// blockingEmbedder blocks every Embed call until its ctx is cancelled (or the test
+// releases it). It models a hung granite sidecar — the exact failure CR-01 must keep
+// off the turn goroutine. It also proves the intake worker's embed is bounded by the
+// learner's lifetime ctx (Close aborts it).
+type blockingEmbedder struct {
+	entered chan struct{} // closed-on-first-entry signal so the test knows the worker reached Embed
+	once    sync.Once
+}
+
+func (b *blockingEmbedder) Embed(ctx context.Context, _ []string) ([][]float64, error) {
+	b.once.Do(func() { close(b.entered) })
+	<-ctx.Done() // block until the learner's lifetime ctx is cancelled (Close)
+	return nil, ctx.Err()
+}
+
+// TestObserve_NonBlockingEvenWhenEmbedderHangs is the CR-01 regression guard: a hung
+// embed sidecar must NOT delay the turn. Observe runs on the synchronous, lock-held
+// turn path, so it must return promptly regardless of embed latency — the detect+embed
+// work happens on the intake worker. Without the fix, Observe embedded inline and would
+// block here for the full sidecar timeout (or forever).
+func TestObserve_NonBlockingEvenWhenEmbedderHangs(t *testing.T) {
+	emb := &blockingEmbedder{entered: make(chan struct{})}
+	saver := &recordingSaver{}
+	// A nil ranker => the shell-fallback heuristic alone flags shell_exec, so the intake
+	// worker proceeds to the (blocking) exemplar embed without needing a ranker round-trip.
+	l := New(Config{Embedder: emb, Saver: saver, Queue: 8})
+	if l == nil {
+		t.Fatal("New returned nil with embedder+saver wired")
+	}
+
+	// Observe must return effectively instantly even though the embedder will hang. We
+	// bound it generously: a regression (inline embed) would block until Close, far past
+	// this. The turn goroutine never touches the embed.
+	returned := make(chan struct{})
+	go func() {
+		l.Observe("quanto costa il bitcoin adesso?", "shell_exec") // flagged (shell_exec fallback)
+		close(returned)
+	}()
+	select {
+	case <-returned:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Observe blocked on a hung embedder; CR-01 regression (must be a non-blocking handoff)")
+	}
+
+	// Prove the work really reached the worker's embed (so the test isn't vacuously green)
+	// and that Close cancels the in-flight embed (goleak-clean, bounded).
+	select {
+	case <-emb.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("intake worker never reached the embed for a flagged turn")
+	}
+	l.Close() // cancels the lifetime ctx → unblocks the embedder → joins both workers
+	if saver.count() != 0 {
+		t.Errorf("a cancelled embed must not persist an exemplar; saved %d", saver.count())
 	}
 }

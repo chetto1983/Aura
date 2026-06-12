@@ -83,9 +83,11 @@ func (o twoTierOracle) LabelAndSave(ctx context.Context, query string, vec []flo
 
 // label runs the two-tier policy and returns the confirmed tool (ok=false to decline).
 func (o twoTierOracle) label(ctx context.Context, query string) (string, bool) {
-	// Free tier: a confident ranker top-1 is the gold label (no paid call).
+	// Free tier: a confident ranker top-1 is the gold label (no paid call). This runs on
+	// the activelearn worker (off the turn), so ctx is the worker lifetime — the ranking
+	// embed is bounded by Close, never by the user turn.
 	if o.ranker != nil {
-		if top1, margin, ok := o.ranker.Rank(query); ok && top1 != "" && margin >= confidentMargin {
+		if top1, margin, ok := o.ranker.Rank(ctx, query); ok && top1 != "" && margin >= confidentMargin {
 			return top1, true
 		}
 	}

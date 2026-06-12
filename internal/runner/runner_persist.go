@@ -125,10 +125,12 @@ func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent
 		}
 		// Open-Q #3 — the LIVE tool-selection capture site. This is the post-tool-
 		// execution, ToolName-bearing, already-best-effort branch (the ledger insert next
-		// to it is non-fatal too): the correct off-hot-path observation point for the
-		// (request, used-tool) detection signal. Observe is non-blocking (it embeds + the
-		// activelearn worker labels async) and nil-safe, so it MUST NOT abort the turn —
-		// exactly like the ledger insert. Skipped on a resume round (tr.userMsg empty).
+		// to it is non-fatal too): the correct observation point for the (request,
+		// used-tool) detection signal. Observe is a NON-BLOCKING handoff (CR-01): it only
+		// enqueues the raw signal onto a bounded, drop-on-full channel and returns — the
+		// mis-route detection (which embeds) AND the exemplar embed run on the learner's
+		// intake worker, off this lock-held turn goroutine, so a hung embed sidecar can
+		// never wedge the user turn. nil-safe and skipped on a resume round (userMsg empty).
 		if r.toolSelectLearner != nil && tr.userMsg != "" {
 			r.toolSelectLearner.Observe(tr.userMsg, ti.ToolName)
 		}

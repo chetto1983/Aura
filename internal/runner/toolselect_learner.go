@@ -146,11 +146,11 @@ type toolSearchRanker struct {
 	ts *tools.ToolSearch
 }
 
-func (r toolSearchRanker) Rank(query string) (string, float64, bool) {
+func (r toolSearchRanker) Rank(ctx context.Context, query string) (string, float64, bool) {
 	if r.ts == nil {
 		return "", 0, false
 	}
-	return r.ts.RankForLearner(query)
+	return r.ts.RankForLearner(ctx, query)
 }
 
 // lookupToolSearch returns the registered tool_search hook, or nil.

@@ -74,12 +74,17 @@ func (ts *ToolSearch) FoldLearned(examples []toolselectstore.LabeledVec) {
 // bank is empty or the embedder is down (then the detector uses only the embedding-free
 // shell/fs heuristic and the oracle escalates). It builds the bank on demand so a
 // post-turn Observe sees the same deferred corpus a query would.
-func (ts *ToolSearch) RankForLearner(query string) (string, float64, bool) {
-	ranker, _, _, err := ts.ensureBank(context.Background(), query)
+//
+// ctx is the caller's (CR-01): the embed round-trips run off the turn goroutine (the
+// learner's intake/activelearn workers) bounded by the learner's lifetime, so a hung
+// sidecar can no longer wedge the user turn under the runner lock, and Close cancels an
+// in-flight rank.
+func (ts *ToolSearch) RankForLearner(ctx context.Context, query string) (string, float64, bool) {
+	ranker, _, _, err := ts.ensureBank(ctx, query)
 	if err != nil || ranker == nil {
 		return "", 0, false
 	}
-	qVec, err := ts.embedQuery(context.Background(), query)
+	qVec, err := ts.embedQuery(ctx, query)
 	if err != nil || len(qVec) == 0 {
 		return "", 0, false
 	}

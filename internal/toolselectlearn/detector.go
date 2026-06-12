@@ -9,7 +9,10 @@
 // calls Observe(request, usedTool) post-tool-execution and it never blocks the turn.
 package toolselectlearn
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // nsDelimiterStr is the "<namespace>__<tool>" delimiter from the mcptools
 // namespacing (08.1-03), duplicated as a literal (NOT imported — package boundaries:
@@ -69,16 +72,20 @@ func isFallback(usedTool string) bool {
 // semindex ranker (the per-tool centroid bank). ok is false when the ranker is
 // unwired or the bank is empty — then the detector uses only the embedding-free
 // shell/fs heuristic, and the oracle escalates (no free label is trustworthy).
+//
+// Rank takes a ctx (CR-01): ranking embeds the deferred corpus + the request, and that
+// I/O runs entirely off the turn goroutine on the learner's intake/activelearn workers,
+// bounded by the learner's lifetime ctx so Close aborts any in-flight embed.
 type Ranker interface {
-	Rank(query string) (top1 string, margin float64, ok bool)
+	Rank(ctx context.Context, query string) (top1 string, margin float64, ok bool)
 }
 
 // top1 is a small helper so the detector can ask only for the best tool.
-func top1Of(r Ranker, query string) (string, bool) {
+func top1Of(ctx context.Context, r Ranker, query string) (string, bool) {
 	if r == nil {
 		return "", false
 	}
-	t, _, ok := r.Rank(query)
+	t, _, ok := r.Rank(ctx, query)
 	return t, ok
 }
 
@@ -87,15 +94,17 @@ func top1Of(r Ranker, query string) (string, bool) {
 // ranker's top-1 for the request (symmetric sameTool). The shell/fs branch needs no
 // ranker; the disagreement branch is skipped when the ranker is unavailable (ok=false)
 // rather than firing a spurious flag. An empty request or an empty usedTool is never a
-// mis-route (no tool was executed, or no signal).
-func isMisroute(request, usedTool string, ranker Ranker) bool {
+// mis-route (no tool was executed, or no signal). It is called only from the intake
+// worker (CR-01) — never on the turn goroutine — so the ranker's embed I/O is off the
+// hot path; ctx is the learner lifetime, so Close cancels an in-flight rank.
+func isMisroute(ctx context.Context, request, usedTool string, ranker Ranker) bool {
 	if strings.TrimSpace(request) == "" || usedTool == "" {
 		return false
 	}
 	if isFallback(usedTool) {
 		return true
 	}
-	top1, ok := top1Of(ranker, request)
+	top1, ok := top1Of(ctx, ranker, request)
 	if !ok {
 		return false
 	}
