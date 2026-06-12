@@ -27,8 +27,10 @@ findings:
   warning: 7
   info: 6
   total: 14
-status: issues_found
+status: resolved
 ---
+
+> **Resolution (2026-06-12):** CR-01 fixed in commit 4d9b6b35 (inject gates on the unfiltered managed doc; regression TestMemoryDefaultOn_RespectsProfileExclusion). WR-01..07 fixed in the follow-up fix(memory) commit: port validation + hostile-port tests, -race on the CI memory tier, tier gate pinned to the gating URL via isolated managed config, pip constraints.txt (113 pins) wired into the Dockerfile and the :local image rebuilt healthy, t.Errorf in handler goroutines, env-cleared 8091 assertions, quality-snapshot globs re-pointed at the real memory surface. Info findings remain advisory.
 
 # Phase 15: Code Review Report
 
