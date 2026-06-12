@@ -1,6 +1,7 @@
 package documents
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -80,3 +81,24 @@ func TestSearchPropagatesSearchError(t *testing.T) {
 		t.Fatalf("want neo4j down error, got %v", err)
 	}
 }
+
+func TestSearchValueHelpers(t *testing.T) {
+	if got := stringValue(testStringer("boom")); got != "boom" {
+		t.Fatalf("stringValue fmt.Stringer = %q", got)
+	}
+	for _, value := range []any{float32(1.5), int(2), int64(3), int32(4), json.Number("5.5")} {
+		if got := floatValue(value); got == 0 {
+			t.Fatalf("floatValue(%T) = %f", value, got)
+		}
+	}
+	if got := stringSliceValue([]string{"a", "b"}); strings.Join(got, ",") != "a,b" {
+		t.Fatalf("stringSliceValue([]string) = %#v", got)
+	}
+	if got := stringSliceValue(123); got != nil {
+		t.Fatalf("stringSliceValue(default) = %#v", got)
+	}
+}
+
+type testStringer string
+
+func (s testStringer) String() string { return string(s) }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -94,6 +95,56 @@ func TestEmbeddingWorkerMarksCompleteAfterAllChunks(t *testing.T) {
 	}
 }
 
+func TestEmbeddingWorkerEnqueueRunsProcess(t *testing.T) {
+	doc := testDocumentWithChunks(t, 1)
+	indexer := &fakeEmbeddingIndexer{done: make(chan struct{})}
+	worker := &EmbeddingWorker{
+		Generator:  &fakeEmbeddingGenerator{},
+		Indexer:    indexer,
+		BatchSize:  1,
+		MaxRetries: 1,
+		Backoff:    time.Nanosecond,
+	}
+	if err := worker.Enqueue(t.Context(), doc); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-indexer.done:
+	case <-time.After(time.Second):
+		t.Fatal("embedding enqueue did not process")
+	}
+}
+
+func TestEmbeddingWorkerRejectsMissingDependenciesAndEmptyDoc(t *testing.T) {
+	doc := testDocumentWithChunks(t, 1)
+	if err := (&EmbeddingWorker{Indexer: &fakeEmbeddingIndexer{}}).Process(t.Context(), doc); err == nil {
+		t.Fatal("missing generator: want error")
+	}
+	if err := (&EmbeddingWorker{Generator: &fakeEmbeddingGenerator{}}).Process(t.Context(), doc); err == nil {
+		t.Fatal("missing indexer: want error")
+	}
+	worker := &EmbeddingWorker{Generator: &fakeEmbeddingGenerator{}, Indexer: &fakeEmbeddingIndexer{}}
+	if err := worker.Process(t.Context(), ExtractedDocument{}); err != nil {
+		t.Fatalf("empty document = %v", err)
+	}
+}
+
+func TestEmbeddingWorkerStopsOnContextCancelDuringRetry(t *testing.T) {
+	doc := testDocumentWithChunks(t, 1)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	worker := &EmbeddingWorker{
+		Generator:  &fakeEmbeddingGenerator{failures: 10},
+		Indexer:    &fakeEmbeddingIndexer{},
+		BatchSize:  1,
+		MaxRetries: 3,
+		Backoff:    time.Second,
+	}
+	if err := worker.Process(ctx, doc); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled retry error = %v", err)
+	}
+}
+
 type fakeEmbeddingGenerator struct {
 	calls    int
 	failures int
@@ -114,10 +165,15 @@ func (f *fakeEmbeddingGenerator) Embed(_ context.Context, texts []string) ([][]f
 type fakeEmbeddingIndexer struct {
 	calls  int
 	failAt int
+	done   chan struct{}
+	once   sync.Once
 }
 
 func (f *fakeEmbeddingIndexer) UpsertEmbeddings(_ context.Context, _ string, chunks []EmbeddedChunk, _ JobStatus, _ int) (int, error) {
 	f.calls++
+	if f.done != nil {
+		f.once.Do(func() { close(f.done) })
+	}
 	if f.failAt > 0 && f.calls == f.failAt {
 		return 0, errors.New("index failed")
 	}

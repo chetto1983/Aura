@@ -46,3 +46,27 @@ func TestEmbeddingClientRejectsDimensionMismatch(t *testing.T) {
 		t.Fatalf("want dimension error, got %v", err)
 	}
 }
+
+func TestEmbeddingClientHandlesEmptyInputAndDefaultModel(t *testing.T) {
+	client := &EmbeddingClient{BaseURL: "http://127.0.0.1:1"}
+	got, err := client.Embed(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != nil {
+		t.Fatalf("empty input embeddings = %#v", got)
+	}
+	if got := inputModel(""); got != "aura-local-embedding" {
+		t.Fatalf("inputModel default = %q", got)
+	}
+	if got := inputModel("custom"); got != "custom" {
+		t.Fatalf("inputModel custom = %q", got)
+	}
+}
+
+func TestEmbeddingClientRequiresBaseURL(t *testing.T) {
+	_, err := (&EmbeddingClient{}).Embed(t.Context(), []string{"x"})
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
+		t.Fatalf("want base URL error, got %v", err)
+	}
+}

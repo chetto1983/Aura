@@ -109,6 +109,54 @@ func TestIndexerStoresFileNameOnChunks(t *testing.T) {
 	t.Fatal("chunk batch not written")
 }
 
+func TestIndexerUpsertsEmbeddings(t *testing.T) {
+	fake := &fakeKnowledgeClient{}
+	indexer := &Indexer{Client: fake}
+
+	count, err := indexer.UpsertEmbeddings(t.Context(), "doc_1", []EmbeddedChunk{
+		{ID: "chunk_1", Embedding: []float64{0.1, 0.2}},
+	}, JobComplete, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("embedded count = %d", count)
+	}
+	params := fake.writeCalls[0].params
+	if params["status"] != string(JobComplete) || params["embedded_count"] != 1 {
+		t.Fatalf("embedding params = %#v", params)
+	}
+}
+
+func TestIndexerUpsertEmbeddingsNoopAndMissingClient(t *testing.T) {
+	indexer := &Indexer{Client: &fakeKnowledgeClient{}}
+	count, err := indexer.UpsertEmbeddings(t.Context(), "doc_1", nil, JobEmbedding, 0)
+	if err != nil || count != 0 {
+		t.Fatalf("empty embeddings = (%d, %v)", count, err)
+	}
+	_, err = (&Indexer{}).UpsertEmbeddings(t.Context(), "doc_1", []EmbeddedChunk{{ID: "c"}}, JobEmbedding, 0)
+	if err == nil || !strings.Contains(err.Error(), "knowledge client") {
+		t.Fatalf("want missing client error, got %v", err)
+	}
+}
+
+func TestCountFromRowsHandlesNumericShapes(t *testing.T) {
+	cases := []struct {
+		row  map[string]any
+		want int
+	}{
+		{map[string]any{"count": int64(7)}, 7},
+		{map[string]any{"embedded": int32(6)}, 6},
+		{map[string]any{"chunks": float64(5)}, 5},
+		{map[string]any{"other": "x"}, 3},
+	}
+	for _, tc := range cases {
+		if got := countFromRows([]map[string]any{tc.row}, 3); got != tc.want {
+			t.Fatalf("countFromRows(%#v) = %d, want %d", tc.row, got, tc.want)
+		}
+	}
+}
+
 func testDocumentWithChunks(t *testing.T, n int) ExtractedDocument {
 	t.Helper()
 	resp := &ExtractorResponse{Chunks: make([]ExtractedChunk, n)}

@@ -114,6 +114,62 @@ func TestServiceMarksFailedWhenSparseIndexingFails(t *testing.T) {
 	}
 }
 
+func TestServiceDelegatesSearchGetAndList(t *testing.T) {
+	jobs := newFakeJobStore()
+	job, err := jobs.Create(t.Context(), CreateJobParams{
+		SourceID:    "cli",
+		SourceKind:  "local",
+		DocumentID:  "doc_1",
+		ContentHash: "hash",
+		FileName:    "manual.pdf",
+		Status:      JobSearchable,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	searcher := &fakeSearchBackend{hits: []SearchHit{{DocumentID: "doc_1", ChunkID: "chunk_1"}}}
+	service := &Service{Jobs: jobs, Searcher: searcher}
+
+	hits, err := service.Search(t.Context(), SearchRequest{Query: "manual"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || searcher.requests[0].Query != "manual" {
+		t.Fatalf("search = %#v requests=%#v", hits, searcher.requests)
+	}
+	got, err := service.GetJob(t.Context(), job.ID)
+	if err != nil || got.ID != job.ID {
+		t.Fatalf("GetJob = (%#v, %v)", got, err)
+	}
+	list, err := service.ListJobs(t.Context(), 10)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("ListJobs = (%#v, %v)", list, err)
+	}
+}
+
+func TestServiceMissingDependencies(t *testing.T) {
+	if _, err := (&Service{}).Search(t.Context(), SearchRequest{Query: "x"}); err == nil {
+		t.Fatal("Search without backend: want error")
+	}
+	if _, err := (&Service{}).GetJob(t.Context(), "job-1"); err == nil {
+		t.Fatal("GetJob without store: want error")
+	}
+	if _, err := (&Service{}).ListJobs(t.Context(), 1); err == nil {
+		t.Fatal("ListJobs without store: want error")
+	}
+}
+
+func TestServiceRejectsUnsupportedAndDirectoryPaths(t *testing.T) {
+	service := &Service{Jobs: newFakeJobStore(), Extractor: &fakeExtractor{resp: oneChunkResponse()}, Indexer: &fakeSparseIndexer{count: 1}}
+	if _, err := service.IngestPath(t.Context(), IngestRequest{}, t.TempDir()); err == nil || !strings.Contains(err.Error(), "directory") {
+		t.Fatalf("directory path error = %v", err)
+	}
+	txt := writeNamedTempFile(t, "notes.txt", "payload")
+	if _, err := service.IngestPath(t.Context(), IngestRequest{}, txt); err == nil || !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("unsupported path error = %v", err)
+	}
+}
+
 func oneChunkResponse() *ExtractorResponse {
 	return &ExtractorResponse{
 		Title: "Manual",
@@ -166,6 +222,17 @@ type fakeEmbedQueue struct {
 func (f *fakeEmbedQueue) Enqueue(_ context.Context, doc ExtractedDocument) error {
 	f.docs = append(f.docs, doc)
 	return f.err
+}
+
+type fakeSearchBackend struct {
+	hits     []SearchHit
+	err      error
+	requests []SearchRequest
+}
+
+func (f *fakeSearchBackend) Search(_ context.Context, req SearchRequest) ([]SearchHit, error) {
+	f.requests = append(f.requests, req)
+	return f.hits, f.err
 }
 
 type fakeJobStore struct {
