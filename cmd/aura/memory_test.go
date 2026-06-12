@@ -203,11 +203,27 @@ func TestMemoryVerbMappingNegativeCases(t *testing.T) {
 }
 
 func TestMemoryNotConfigured(t *testing.T) {
-	withTempMCPConfig(t) // empty config → no memory server resolves
+	// Memory is default-on (15-02 inject-unless-disabled), so an empty managed
+	// config still resolves the catalog recipe. The unresolvable state is an
+	// explicit `aura mcp disable memory` (Enabled=false, D-09).
+	path := withTempMCPConfig(t)
+	disabled := false
+	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+		memoryServerName: {
+			Type:    mcp.ServerTypeStreamableHTTP,
+			URL:     "http://127.0.0.1:1/mcp/",
+			Source:  "recipe:memory",
+			Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			Enabled: &disabled,
+		},
+	}}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
 	var buf bytes.Buffer
 	err := runMemoryCommand(context.Background(), []string{"search", "x"}, &buf)
 	if err == nil {
-		t.Fatalf("expected error when memory server is not configured")
+		t.Fatalf("expected error when memory server is disabled")
 	}
 	if !strings.Contains(err.Error(), "not configured") {
 		t.Fatalf("error = %v, want a not-configured message", err)
