@@ -331,6 +331,11 @@ jobs:
       # by-path snippet exec (now db_integration, host python3) runs them from here, so
       # the coverage gate's internal/skills tier RUNS instead of a falsely-green skip.
       AURA_SKILL_EXPORT_DIR: /tmp/aura-skills-export
+      # CI-only compose override: cache immutable downloads/plugins without
+      # persisting database/runtime state between hosted runners.
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
+      AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-ci-cache/neo4j-plugins
       # recall@5 = 5/5 is the hard, hardware-independent correctness gate. p95 is
       # latency-sensitive: a shared runner with a cold HNSW index cannot meet the
       # operator's 30ms SC#5 budget (measured 57ms cold vs 1-8ms warm), so it is
@@ -352,10 +357,25 @@ jobs:
           pipx install mcp-neo4j-cypher==0.6.0
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
+      - name: Restore llama.cpp embedding model cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/aura-ci-cache/llama.cpp
+          key: llama-cpp-granite-97m-q8-${{ runner.os }}-v1
+
+      - name: Restore Neo4j plugin cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/aura-ci-cache/neo4j-plugins
+          key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
+
+      - name: Prepare cached Docker bind dirs
         run: |
-          mkdir -p "$AURA_SKILL_EXPORT_DIR"
-          make neo4j-migrate
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR" "$AURA_SKILL_EXPORT_DIR"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+
+      - name: Bring up stack + migrate (postgres + neo4j + embed sidecar)
+        run: make neo4j-migrate
 
       - name: Knowledge integration suite with race
         run: go test -race -count=1 -tags 'db_integration neo4j_integration' ./internal/knowledge/...
@@ -515,6 +535,11 @@ jobs:
       NEO4J_PASSWORD: ci-test-password
       AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
       AURA_NEO4J_DATABASE: neo4j
+      # CI-only compose override: cache immutable downloads/plugins without
+      # persisting database/runtime state between hosted runners.
+      COMPOSE_FILE: compose.yaml:.github/compose.ci-cache.yaml
+      AURA_CI_LLAMA_CACHE_DIR: /tmp/aura-ci-cache/llama.cpp
+      AURA_CI_NEO4J_PLUGINS_DIR: /tmp/aura-ci-cache/neo4j-plugins
       # The live sidecar endpoint the tier reads (compose publishes the memory service
       # on 127.0.0.1:8091; the trailing /mcp/ is the streamable-HTTP path).
       AURA_AGENT_MEMORY_MCP_URL: http://127.0.0.1:8091/mcp/
@@ -533,14 +558,43 @@ jobs:
         # tagged files never rot), even before the sidecar is up.
         run: go vet -tags memory_integration ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
 
+      - name: Restore llama.cpp embedding model cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/aura-ci-cache/llama.cpp
+          key: llama-cpp-granite-97m-q8-${{ runner.os }}-v1
+
+      - name: Restore Neo4j plugin cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/aura-ci-cache/neo4j-plugins
+          key: neo4j-5.26.26-apoc-gds-${{ runner.os }}-v1
+
+      - name: Prepare cached Docker bind dirs
+        run: |
+          mkdir -p "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+          chmod -R a+rwX "$AURA_CI_LLAMA_CACHE_DIR" "$AURA_CI_NEO4J_PLUGINS_DIR"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build agent-memory MCP image with GHA cache
+        uses: docker/build-push-action@v6
+        with:
+          context: ./docker/agent-memory
+          tags: aura-agent-memory-mcp:local
+          load: true
+          cache-from: type=gha,scope=agent-memory-mcp
+          cache-to: type=gha,scope=agent-memory-mcp,mode=max
+
       - name: Bring up Postgres + migrate (default-on managed config reads cfg)
         run: make db-migrate
 
       - name: Bring up Neo4j + embed sidecar
         run: make neo4j-up
 
-      - name: Build + start the agent-memory MCP sidecar (reproducible :local image)
-        run: docker compose up -d --build aura-agent-memory-mcp
+      - name: Start the agent-memory MCP sidecar (cached :local image)
+        run: docker compose up -d --no-build aura-agent-memory-mcp
 
       - name: Wait for the memory sidecar healthy
         run: |
