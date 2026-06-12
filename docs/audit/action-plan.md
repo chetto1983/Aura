@@ -1,193 +1,117 @@
-# Action Plan — Aura `internal/agent`
+# Action Plan — Aura `internal/agent` (2026-06-12)
 
-Concrete engineering backlog, organized by priority. Each task: title · description · owner role · expected outcome · acceptance criteria. Cross-references to [`bug-report.md`](bug-report.md) findings.
+Concrete engineering backlog, by priority. Each task: title · description · owner role · expected outcome · acceptance criteria. Cross-references [`bug-report.md`](bug-report.md).
 
----
-
-## Closure update - 2026-06-10
-
-All P0 and P1 items in this action plan are closed in code. Validation run:
-
-- `go test ./internal/agent ./internal/llm ./internal/runner ./internal/conversations ./internal/agui ./internal/cron ./internal/agent/workflow ./internal/agent/tools ./internal/skills ./internal/mcp`
-
-| Action | Risk(s) | Status | Closure evidence |
-|---|---|---|---|
-| A-1 | R-03 | CLOSED | `fs_edit` rejects empty `old_string`; regression in `internal/agent/tools/fs_test.go`. |
-| A-2 | R-02 | CLOSED | MCP ctx-aware stdio reads, per-call timeout, reconnect mutex fix; see `p0-validation-2026-06-10.md`. |
-| A-3 | R-04 | CLOSED | Runner/CLI derive budget deadline ctx; `runTool` applies `NodeTimeout`; shell timeout is clamped. |
-| A-4 | R-08 | CLOSED | Sync/background shell buffers are capped with truncation markers and poll redaction. |
-| A-5 | R-07 | CLOSED | Shell and MCP child envs strip inherited secret-shaped keys while preserving explicit env. |
-| A-6 | R-10 | CLOSED | `task approve` removed from model-facing schema/router; operator approval path remains. |
-| A-7 | R-17 | CLOSED | `internal/agent/tools` restored to the coverage gate scope. |
-| A-8 | R-14 | CLOSED | `GET /healthz`, scheduler last-tick detail, `/debug/vars` expvar counters. |
-| A-9 | R-11, R-13 | CLOSED | HTTP 429/5xx retry, bounded Retry-After, mid-stream retry salvage, breaker in `internal/llm`. |
-| A-10 | R-12 | CLOSED | `AURA_LOOP_MAX_PARALLEL_TOOLS` semaphore cap with fan-out regression coverage. |
-| A-11 | R-01 | CLOSED | Untrusted tool-output provenance envelope and prompt contract; see `p0-validation-2026-06-10.md`. |
-| A-12 | R-05 | CLOSED | ToolInvocation start/end now journals assistant tool_calls plus RoleTool turns. |
-| A-13 | R-06 | CLOSED | Load-time tool-pair repair prevents orphan tool results from bricking provider history. |
-| A-25 | R-15, R-16 | CLOSED | `BudgetOwner` contract, LoopAgent ctx checks, no double-charge for budget-owning children, empty-pass budget charge. |
-
-## P2 boundary/lifecycle closure update - 2026-06-11
-
-The boundary and lifecycle P2 cluster is closed in code. Validation evidence:
-
-- `go test ./internal/agent/tools ./internal/agent/mcptools ./internal/mcp ./cmd/aura -count=1`
-- `go test -race ./internal/agent/tools ./internal/agent/mcptools ./internal/mcp ./cmd/aura -count=1`
-- `go test ./internal/agent ./internal/llm ./internal/runner ./internal/conversations ./internal/agui ./internal/cron ./internal/agent/workflow ./internal/agent/tools ./internal/skills ./internal/mcp ./cmd/aura -count=1`
-
-Coverage caveat:
-
-- `scripts/coverage_gate.sh` ran to completion but failed the global floor: `77.2% < 85%`.
-- This leaves a repo-wide coverage remediation item outside the P2 boundary/lifecycle risk closure.
-
-## Immediate (P0/P1) — start now
-
-### A-1 · Reject empty `old_string` in `fs_edit`
-- **Description:** Add a guard after unmarshal in `tools/fs_edit.go:Execute` rejecting `OldString == ""`. (Bug P1 / F-06.)
-- **Owner:** Backend engineer (tools).
-- **Expected outcome:** A common model mistake can no longer corrupt host files.
-- **Acceptance:** `fs_edit` with `old_string:""` returns an error and leaves the file byte-unchanged, with and without `replace_all`, on empty and non-empty files; table test added.
-
-### A-2 · Per-call MCP timeout + ctx-aware read
-- **Description:** Wrap `bridgedTool.Execute` in `context.WithTimeout(ctx, AURA_MCP_CALL_TIMEOUT_SEC)`; make `internal/mcp/client.go:readResponse` ctx-aware (reader goroutine + select on `ctx.Done()`), treating timeout as `ErrTransport`; stop holding `s.mu` across blocking I/O. (Bug P0 / F-01.)
-- **Owner:** Backend engineer (MCP/reliability).
-- **Expected outcome:** A hung MCP server no longer wedges the daemon or deadlocks shutdown.
-- **Acceptance:** a fake server that accepts-and-never-replies causes `CallTool` to return a timeout within the ceiling; a second server's tools remain usable; `Close()` returns within its deadline; goleak-clean.
-
-### A-3 · Make the wallclock cancel in-flight work
-- **Description:** Derive `ic.Ctx, cancel := bud.WithDeadline(ctx)` in `runner.buildAgent` and `cmd/aura/agent.go`; wrap each `runTool` with `NodeTimeout()` when >0; clamp `shellExecArgs.TimeoutMs` to `AURA_SHELL_MAX_TIMEOUT_MS`. (Bug P1 / F-03.)
-- **Owner:** Backend engineer (loop/runtime).
-- **Expected outcome:** The 300s wallclock becomes a real cap; no tool can outlive it indefinitely.
-- **Acceptance:** a tool sleeping past the wallclock is cancelled at the deadline; an over-ceiling `timeout_ms` is clamped.
-
-### A-4 · Cap subprocess output buffers
-- **Description:** Ring/tail-cap `shellOutputCapture` (head + last M bytes, `AURA_SHELL_OUTPUT_CAP_BYTES`); have `bgShell.snapshot` drop consumed bytes and enforce `AURA_SHELL_BG_BUF_CAP` with a truncation marker; stream overflow to the existing sidecar. (Bug P1 / F-07.)
-- **Owner:** Backend engineer (tools).
-- **Expected outcome:** No accidental OOM from high-volume or long-lived subprocess output on the shared host.
-- **Acceptance:** a >cap command yields a bounded preview + `[output truncated]`; background `buf` length stays bounded across many polls.
-
-### A-5 · Filter the child environment
-- **Description:** In `mergeEnv` (`shell_exec.go`) and the MCP launch (`mcp/client.go:83`), strip secret-shaped vars (`*_API_KEY`/`*_TOKEN`/`*_PASSWORD`/`*_SECRET`/`OPENROUTER_*`/`TELEGRAM_*`/`POSTGRES_*`/`NEO4J_*`) unless the operator opts a name in; let the model's explicit `env` arg re-add. (Bug P1 / F-05.)
-- **Owner:** Security-minded backend engineer.
-- **Expected outcome:** Secrets are no longer broadcast to every child process.
-- **Acceptance:** `mergeEnv` output excludes a planted `FAKE_API_KEY`; MCP subprocess receives only declared env + a minimal base.
-
-### A-6 · Remove model-facing `task approve`
-- **Description:** Drop `approve` from the `task` tool's model-visible enum and Description; keep it on `aura task approve` CLI + the ask_user resume path. (Bug P1 / F-09.)
-- **Owner:** Backend engineer (scheduler/tools).
-- **Expected outcome:** The model can no longer release its own gated destructive scheduled task.
-- **Acceptance:** a model `task approve` call is rejected or converts to a pause; only CLI/resume releases a `pending_approval` task.
-
-### A-7 · Re-enable the coverage floor on `agent/tools`
-- **Description:** Remove `/internal/agent/tools/` from `scripts/coverage_gate.sh:44`; re-check `/internal/sandbox/` + `/internal/llm/client.go:` for the same staleness. (Bug P1 / coverage gate.)
-- **Owner:** QA / build engineer.
-- **Expected outcome:** The riskiest tool surface is protected by the 85% floor.
-- **Acceptance:** `make coverage` runs with the package in the profile and still passes.
-
-### A-8 · `/healthz` + basic counters
-- **Description:** Add `GET /healthz` (pool `Ping` + scheduler last-tick) to the AG-UI mux; add `expvar` counters at `ConsumeStep`/`dispatch`/`streamWithOpenRetry`. (Bug P1 / metrics.)
-- **Owner:** SRE / backend engineer.
-- **Expected outcome:** The daemon is health-probeable and minimally observable.
-- **Acceptance:** `/healthz` returns 503 on pool failure, 200 otherwise; counters increment.
-
-### A-9 · Provider retry/backoff + circuit breaker
-- **Description:** In `retryableStreamOpenError`, `errors.As` to a provider-neutral HTTP error; retry 429 honoring `RetryAfterSec` (capped) and 5xx with jittered exponential backoff (`AURA_LLM_RETRY_*`); add a consecutive-failure breaker in `internal/llm`. (Bug P1 / F-08.)
-- **Owner:** Backend engineer (LLM client).
-- **Expected outcome:** Turns survive routine provider blips; a provider outage doesn't hammer a dead endpoint.
-- **Acceptance:** table test: 429-with-Retry-After retries with sleep, 503 with backoff, 400 no retry; breaker opens after N failures.
-
-### A-10 · Cap parallel tool fan-out
-- **Description:** Bound `executeBatch` with a semaphore (`AURA_LOOP_MAX_PARALLEL_TOOLS`, default 4–8). (Bug P1 / F / fan-out.)
-- **Owner:** Backend engineer (loop).
-- **Expected outcome:** Model-emitted wide batches can't saturate the host.
-- **Acceptance:** N>cap tool calls run ≤cap concurrently (barrier test).
-
-### A-11 · Provenance-tag untrusted tool output
-- **Description:** In `runTool`, wrap results from `web_fetch`/MCP/`fs_read`/`shell_exec` in a non-spoofable `<tool_output source=… trust="untrusted">…</tool_output>` envelope; neutralize chat-template control tokens (reuse `skills/validator.go` NFKC stripping); add a system-prompt clause that envelope content is data. (Bug P0 / F-02.)
-- **Owner:** Security + prompt engineer (pair).
-- **Expected outcome:** Indirect prompt injection can no longer impersonate instructions.
-- **Acceptance:** a contract test asserts each untrusted-source result is wrapped before `a.history`; a forged `</assistant>` token is neutralized.
-
-### A-12 · Per-event intra-turn persistence
-- **Description:** Journal assistant-tool_call + RoleTool turns through `persistEvent` (the ledger end-events already carry the data), or flush in-memory round history on pause like `flushPause`. (Bug P1 / F-04.)
-- **Owner:** Backend engineer (runner/persistence).
-- **Expected outcome:** Pause/resume and crash no longer lose completed tool work or re-run mutating tools.
-- **Acceptance:** resume rehydrates prior tool rounds; no duplicate mutating dispatch on retry (integration test).
-
-### A-13 · One-transaction pause writes + load-time repair
-- **Description:** Write paused_states row(s) + the combined assistant turn in one `db.WithTx` at round end; add a `LoadManagedHistory` guard that repairs/refuses orphan tool_call/result pairs. (Bug P1 / F / orphan brick.)
-- **Owner:** Backend engineer (runner/persistence).
-- **Expected outcome:** A crash in the pause window can't permanently brick a conversation.
-- **Acceptance:** crash-window simulation does not yield a 400-bound history.
+> **Status note.** The 2026-06-10/11 cycle closed both P0s and most P1s (see the bug-report appendix). This plan covers the open P1/P2/P3 set found in the 2026-06-12 re-audit, including two over-credited prior closures (B-01⊃R-05, B-04⊃R-09).
 
 ---
 
-## Short-term improvements (P2)
+## Immediate (P1 — go-live blockers)
 
-### A-14 · Structured logging
-- slog `JSONHandler` + `AURA_LOG_LEVEL` in `cmd/aura/main.go`; Warn logs at loop terminal decisions with `request_id`+`thread_id`; `llm.Config.LogValue()` redactor. Owner: backend. Acceptance: terminal decisions are logged and correlated; `%+v` of config doesn't leak the key.
+### AP-1 · Close the crash re-execution hazard (B-01)
+- **Description:** Insert a write-ahead tool-intent row (`tool_call_id` + canonical args) inside the *same* transaction that persists the assistant `tool_calls` turn, *before* `executeBatch`. On reload, surface an unmatched intent as a synthetic `RoleTool` ("previous result unknown — verify before re-running") instead of dropping the dangling group. Add idempotency tokens to mutating tools where the underlying op supports it.
+- **Owner:** Backend / runtime engineer.
+- **Expected outcome:** A crash between tool execution and result persistence never causes the model to blindly re-issue the mutating call.
+- **Acceptance:** Integration test — persist the tool-call turn, kill before the result commit, reload; assert the repaired history contains a recovery marker, not a silent drop, and the model does not re-execute.
 
-### A-15 · Surface finalize/critic mid-stream errors
-- `reasoningtrace.Record`/slog in `synthesizeWithFallback` and `runCompletionCritic` ok=false branches. Owner: backend. Acceptance: a forced double-failure logs both errors before the stub.
+### AP-2 · Wrap swarm child reports in the untrusted envelope (B-02)
+- **Description:** Set `res.Provenance = &tools.ToolResultProvenance{Source:"swarm", Trust:tools.TrustUntrusted}` in `internal/swarm/runner_adapter.go` (or add `swarm_spawn` to `untrustedToolNames`).
+- **Owner:** Security / runtime engineer.
+- **Expected outcome:** Swarm-laundered content can no longer reach the parent prompt as trusted text.
+- **Acceptance:** A swarm result containing `</tool_output>` bytes returns HTML-escaped inside an untrusted envelope in the parent history.
 
-### A-16 · Duplicate-`text_response` handling
-- Synthetic results for second-and-later terminal calls in `dispatch`. Owner: backend. Acceptance: a two-`text_response` turn yields a wire-valid next request.
+### AP-3 · Per-thread in-flight guard (B-03)
+- **Description:** Add a `sync.Map[threadID]*sync.Mutex` (or singleflight) to `Runner`, shared by AG-UI and Telegram; reject a second concurrent run on the same thread with `409 Conflict`, or serialize.
+- **Owner:** Backend engineer.
+- **Expected outcome:** Concurrent runs on one conversation can no longer interleave history appends.
+- **Acceptance:** Concurrent `handleRun` on one thread → second returns 409 (or serializes provably); race-detector test on interleaved turns is green.
 
-### A-17 · MCP trust hardening
-- Default bridged tools `Mutating: true` (honor `readOnlyHint`); conditional reconnect (no replay on recv-side error); provenance-frame + length-cap descriptions; wrap HTTP transports in the reconnect decorator + `io.LimitReader`. Owner: backend (MCP). Acceptance: write-capable MCP tools arm the critic and are never auto-replayed; HTTP servers reconnect; bodies are capped.
+### AP-4 · Make the self-extension contract honest + restore the alert (B-04)
+- **Description:** Update the `skill` tool schema `description` + doc comments to state the true auto-activate policy (in-box create/update auto-activate; `always:true` and delete differ); fire the `Alerter`/audit row on the ungated path; decide whether unattended `delete` is intended.
+- **Owner:** Security / runtime engineer.
+- **Expected outcome:** The model and operators are no longer misled; self-extension is auditable.
+- **Acceptance:** Schema-snapshot test matches live gating; an audit/alert row is emitted on ungated model auto-activate.
 
-### A-18 · `send_file` fence + destructive-shell gate
-- Default-fence `send_file` to workspace (`ask_user` for outside); operator-configurable destructive-pattern detector forcing an approval pause. Owner: security backend. Acceptance: outside-workspace delivery and a configured destructive pattern require approval.
+### AP-5 · Boot the tracer in `serve` + JSON structured logging (O-01)
+- **Description:** A shared `obs.Init(cfg)` called by both `serve` and `chat`: boot the OTel tracer (deferred bounded `Shutdown`) and install `slog.SetDefault(JSONHandler)` with base `service`/`version` and `request_id`/`thread_id` correlation threaded into the loop's WARN/ERROR chokepoints.
+- **Owner:** Platform / SRE engineer.
+- **Expected outcome:** Production turns are traced and emit correlated machine-parseable logs.
+- **Acceptance:** A turn under `serve` produces a span (stdout-exporter capture) and JSON logs carrying `request_id`/`thread_id`.
 
-### A-19 · `read_tool_output` limit clamp + bounded read
-- Clamp `limit` to ~4–8× previewCap; `os.Open`+`Seek` instead of `ReadFile`. Owner: backend. Acceptance: a huge `limit` returns a bounded preview; a small window doesn't load the whole sidecar.
+### AP-6 · Prometheus `/metrics` (O-02)
+- **Description:** Adopt `prometheus/client_golang`; add turn/tool/LLM latency histograms, error + SSE-drop counters, in-flight + SSE-connection gauges, and a token/cost counter; mount `promhttp.Handler()` at `GET /metrics`.
+- **Owner:** Platform / SRE engineer.
+- **Expected outcome:** SLO dashboards + alerting on latency/error/cost.
+- **Acceptance:** `/metrics` returns Prometheus text; a turn moves the histograms and error counters.
 
-### A-20 · Sidecar key collision fix
-- Key sidecars by `<turnSeq>_<toolCallID>` or a host-minted UUID stamped in the footer. Owner: backend. Acceptance: two truncated outputs in one session don't overwrite; paging returns the correct bytes. (Confirm provider id-reuse first.)
-
-### A-21 · Disk lifecycle
-- Sidecar TTL sweep in the scheduler (tied to eviction horizon); reasoningtrace rotation + boot WARN + drop the duplicate `history` field. Owner: SRE. Acceptance: `$AURA_RUN_DIR` stops growing for live conversations.
-
-### A-22 · Background-shell shutdown + cap
-- `BackgroundShells.Shutdown()` wired into serve teardown; `AURA_SHELL_BG_MAX`; evict finished shells. Owner: backend. Acceptance: serve teardown kills background jobs; cap enforced.
-
-### A-23 · Bounded conversational-turn drain on SIGTERM
-- WaitGroup-gated drain (`AURA_SHUTDOWN_TURN_GRACE_SEC`) before cancelling turn ctxs, or persist an "interrupted" assistant turn. Owner: backend. Acceptance: an in-flight turn at SIGTERM completes or persists a marker within the grace window.
-
-### A-24 · Test gaps + Windows CI
-- The ~18 tests in `testing-strategy.md`; a `windows-latest` shell lane; fuzz the args boundary. Owner: QA. Acceptance: new tests green; Windows lane green; fuzz corpus in CI.
-
----
-
-## Medium-term architecture work (P1/P2 design)
-
-### A-25 · Single budget owner per agent tree
-- Resolve LoopAgent×LlmAgent double-spend; LoopAgent ctx-check + per-iteration budget. Document on `Agent.Run`. Owner: senior backend. Acceptance: composed budgets consume once; `maxIter=0` over a chat-only sub terminates.
-
-### A-26 · OTel productionization
-- Default exporter honesty; tool/swarm spans; collector behind a compose profile. Owner: SRE. Acceptance: spans land in a collector; default deployment doesn't silently drop.
-
-### A-27 · Prometheus metrics
-- turns, tool dispatch/error/retry, budget trips, pause/resume, MCP reconnects, LLM latency/tokens/cost. Owner: SRE. Acceptance: `/metrics` exposes them; a dashboard renders.
-
-### A-28 · Blocking write-ahead audit (if non-repudiation required)
-- For `Mutating` tools, refuse dispatch when the intent row can't persist; else document observability-only. Owner: security backend. Acceptance: documented decision + enforced behavior.
+### AP-7 · Production container + hardened compose (D-01)
+- **Description:** Multi-stage distroless/alpine `Dockerfile` for `aura` (non-root `USER`); an `aura` compose service with `read_only`, `cap_drop:[ALL]` (+ minimal add-back), `mem_limit`/`cpus`, and a `/healthz` healthcheck; add `cap_drop`/`mem_limit` to sidecars.
+- **Owner:** Platform / DevOps engineer.
+- **Expected outcome:** The privileged agent runs isolated and resource-bounded.
+- **Acceptance:** Image builds in CI, runs non-root, is memory-capped; healthcheck green.
 
 ---
 
-## Long-term industrialization (P2/P3)
+## Short-term (P2 — pre-scale)
 
-### A-29 · Adopt codex per-tool parallel-safety gate
-- Mutating ⇒ exclusive in the batch; reads concurrent. Owner: backend. Acceptance: two mutating tools serialize. (Ref: `D:\tmp\codex\codex-rs\core\src\tools\parallel.rs`.)
+### AP-8 · Fix L1 microcompact answer destruction (M-01)
+Only pointer-rewrite `RoleTool` turns with a real sidecar; leave `ask_user`/small results inline. **Owner:** runtime. **Acceptance:** an `ask_user` answer older than `evictAfter` survives verbatim.
 
-### A-30 · Adopt adk-go reflect-and-retry
-- Per-tool failure counter + "stop using this tool" injection past N. Owner: backend. Acceptance: a repeatedly-failing tool gets routed around instead of burning budget. (Ref: `D:\tmp\adk-go-study\plugin\retryandreflect`.)
+### AP-9 · One-transaction `SubmitAnswer` (M-02)
+Inject + mark-resumed in one `db.WithTx` with a `RowsAffected==0` no-op guard. **Owner:** backend. **Acceptance:** a resume retry → exactly one answer turn + `ErrPauseNotFound`.
 
-### A-31 · Stream idle-timeout watchdog + typed transient classification
-- Config-driven idle deadline; `errors.Is(ECONNRESET/io.ErrUnexpectedEOF)` over substring matching. Owner: backend. Acceptance: idle streams detected by deadline; classification is typed.
+### AP-10 · `hardCap<=0` is a config error, not "protection off" (M-03)
+Return `ErrContextWindowExceeded` (or a per-model floor) instead of skipping L2.5. **Owner:** runtime. **Acceptance:** small-window over-cap history → error/compaction, never raw history.
 
-### A-32 · Mutation scores for the loop core
-- `go-mutesting` on `llm_agent*.go`/`shell_exec.go`/`bridge_reconnect.go` ≥70%, recorded in the quality snapshot. Owner: QA. Acceptance: scores documented.
+### AP-11 · Hoist the breaker + graceful breaker-open (B-05, B-06)
+Process-lifetime breaker on `Runner`; route open to `finalize`. **Owner:** runtime. **Acceptance:** second turn vs 503 short-circuits; pre-open → non-empty terminal Event.
 
-### A-33 · Hygiene sweep
-- Remove dead `renderShellOutput` + `_ = requestID`; `Registry.Register` duplicate guard; fresh-per-turn one-shot guard; tighten sidecar id grammar + `0o600`; `anyInt` `json.Number`; per-thread AG-UI guard. Owner: backend. Acceptance: dead code gone; duplicate registration fails loud.
+### AP-12 · Stream idle-timeout watchdog (B-08)
+Per-chunk idle deadline (`AURA_LLM_STREAM_IDLE_TIMEOUT_SEC`) treated as retryable transport error. **Owner:** llm-client. **Acceptance:** an open-then-stall client aborts within the idle window.
+
+### AP-13 · Unify `secretEnvKey` (B-09)
+One `secret.IsSecretEnvKey` (with `"key"`) across the 3 sites. **Owner:** security. **Acceptance:** `PRIVATE_KEY` redacts identically in shell + MCP.
+
+### AP-14 · `/healthz` dep probes + `/readyz` (O-05); `Config.Validate()` + log redaction (O-04)
+**Owner:** SRE. **Acceptance:** `/healthz` 503 with Neo4j down; empty required secret → non-zero boot exit; DSN-bearing log sanitized.
+
+### AP-15 · Split `shell_exec.go` (B-11); destructive-gate docs + defaults (B-10)
+**Owner:** runtime. **Acceptance:** no file >600 LOC; destructive gate on by default + documented as advisory.
+
+### AP-16 · Lifecycle hygiene (M-06, R-41, M-04)
+Periodic sidecar/reasoningtrace TTL sweep + rotation; `Evict(sessionID)` on session-scoped tools; spill-inside-tx (or sweep reconciliation). **Owner:** runtime/SRE. **Acceptance:** reasoningtrace rotates; archived sidecars + dead session state reclaimed.
+
+### AP-17 · Windows CI lane (O-07); SIGTERM turn drain (O-06)
+**Owner:** DevOps. **Acceptance:** Windows kill-path runs in CI; a turn during SIGTERM reaches a terminal frame within the grace window.
+
+---
+
+## Medium-term (architecture)
+
+### AP-18 · Provenance-by-default tool boundary
+Make `Trust=Untrusted` the default for any externally-sourced `ToolResult`; the prompt builder wraps on `Provenance.Trust`, not a tool-name allowlist. Structurally subsumes B-02 and prevents the next ingress from forgetting. **Owner:** architecture. **Acceptance:** adding a new external tool with no provenance still gets wrapped.
+
+### AP-19 · Write-ahead intent log as the audit gate
+Generalize AP-1's intent row into the pre-execution audit gate, upgrading the best-effort ledger (R-26). **Owner:** architecture. **Acceptance:** every mutating call has a durable pre-execution intent row.
+
+### AP-20 · State-machine turn tracer (adopt nanobot pattern)
+BUDGET_GATE→LLM_CALL→CONSUME→DISPATCH→FINALIZE with per-state `duration_ms` on the Event + trace. **Owner:** runtime/observability. **Acceptance:** per-phase latency visible in a trace tree.
+
+---
+
+## Long-term (industrialization)
+
+### AP-21 · Test apex (T-01 + chaos)
+Fuzz (tool-args, MCP framing), bench (budget/dedup), recorded mutation score for the agent core, and the chaos/regression suite from the testing strategy §4. **Owner:** QA/runtime. **Acceptance:** fuzz+bench in CI; mutation ≥70% documented; B-01/M-01/M-02/M-03/B-03/B-05 regression tests exist and pass.
+
+### AP-22 · Dependency GA tracking (R-40), `anyInt` json.Number (M-07), coverage hygiene (T-04)
+Low-effort cleanups. **Owner:** maintenance. **Acceptance:** telebot GA tracked; `anyInt(json.Number)` handled; `agenttest` out of the floor denominator.
+
+---
+
+## Priority ladder (one screen)
+
+1. **AP-1 → AP-7** (P1 go-live blockers): crash re-execution, swarm envelope, in-flight guard, skill contract, tracer+logs, metrics, container.
+2. **AP-8 → AP-17** (P2 pre-scale): context/resume correctness, breaker, idle watchdog, secret unify, health/config, lifecycle, Windows CI.
+3. **AP-18 → AP-20** (architecture): provenance-by-default, intent-log audit gate, state-machine tracer.
+4. **AP-21 → AP-22** (industrialization): test apex, cleanups.

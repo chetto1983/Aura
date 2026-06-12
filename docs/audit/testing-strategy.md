@@ -1,110 +1,102 @@
-# Testing Strategy — Aura `internal/agent`
+# Testing Strategy — Aura `internal/agent` (2026-06-12)
 
-## Current state (measured live, 2026-06-10)
+## 1. Coverage reality
 
-`go test ./internal/agent/... -count=1 -cover` — **all green**; `go test -race ./internal/agent/... -count=1` — **all 6 packages green**.
+Measured live 2026-06-12 (`go test ./internal/agent/... -count=1 -cover`; `-race` green across all 6 packages):
 
-| Package | Coverage | Wall |
-|---|---|---|
-| `internal/agent` | **93.3%** | 7.8s |
-| `internal/agent/agenttest` | 42.6%¹ | 0.1s |
-| `internal/agent/mcptools` | 83.4% | 0.2s |
-| `internal/agent/prompt` | 91.9% | 0.1s |
-| `internal/agent/tools` | 87.5% | 4.1s |
-| `internal/agent/workflow` | 92.4% | 0.2s |
-
-¹ measurement artifact — `agenttest` mocks/fakeclient are consumed by `internal/agent`'s external tests, whose execution doesn't count toward `agenttest`'s own profile. Not a quality gap, but it drags the owned-surface total.
-
-**Scale:** 68 `_test.go` files, ~13,600 LOC of test code, **406 top-level `Test*` functions**. Zero `Fuzz*`/`Benchmark*` in scope.
-
-### Technique inventory
-
-| Technique | Present | Evidence |
-|---|---|---|
-| Table-driven | Pervasive | `budget_test.go`, `tools/result_test.go`, `prompt/reasoning_policy_test.go` |
-| Property-based (`pgregory.net/rapid`) | 6 sites | `budget_dedup_test.go:415`, `event_test.go:300`, `workflow/loop_test.go:527`, `tools/bm25_test.go:162,177`, `tools/result_test.go:146` + `testdata/rapid` |
-| goleak | Package-wide | `main_test.go` `VerifyTestMain` in agent/tools/mcptools/workflow; per-test `VerifyNone` ×10 in `workflow/parallel_test.go` |
-| Race detector | Yes | green; CI `ci.yml:68–69` runs `-race ./...` |
-| Fakes/mocks | High quality | `agenttest/fakeclient.go` (scripted chunk turns, goleak-clean pre-closed channels), `agenttest/mocks.go` (4 mocks w/ compile-time `var _ agent.Agent`) |
-| Real-concurrency proof | Yes | `llm_agent_parallel_test.go:22–48` barrier tool (structural, not timing) |
-| White-box internal | Yes | `export_test.go` + 5 `*_internal_test.go` |
-| Build-tag live tier | Yes | `live_finalize_test.go` (`//go:build live_finalize`, paid manual gate) |
-| Fuzzing | **No** | zero `f.Fuzz` in scope |
-| Snapshot/golden wire | **No** | `testdata/` holds only rapid failure caches |
-| Mutation testing | Partial | budget.go 82.8% / budget_dedup.go 89.4% / skill_write.go 95.5%; **none for `llm_agent*.go`, `shell_exec.go`, `mcptools`, `workflow`** |
-
-### Realism assessment
-
-**Not "asilo nido" (toy) tests.** Fixtures mirror real wire shapes (streamed chunks with `finish_reason`, finalized tool-call IDs, trailing Usage chunks); shell tests spawn real processes and verify **grandchild PID death** after a timeout kill (`shell_exec_test.go:222–228`); wire-validity tests assert the orphan-tool_result invariant on recorded request history (`llm_agent_wire_validity_test.go:21`); cancellation mid-tool, retry exhaustion, and prefix stability across turns are all pinned.
-
-## Findings
-
-**[P1] The 85% coverage floor does not gate `internal/agent/tools`.** `scripts/coverage_gate.sh:44` filters `/internal/agent/tools/` out with a stale "pre-rewrite skeletons" rationale. The package (32 files incl. `shell_exec.go`, fs tools, web tools, skill tools — 87.5% today) is free to decay below 85% without failing `make coverage`. Highest-leverage finding; one-line fix.
-
-**[P2] No Windows CI lane.** Every `ci.yml` job is `ubuntu-latest`. `shell_exec_windows.go` (`taskkillProcessMissing` 0.0% even on the Windows host), Git-Bash resolution (`shell_exec.go:363–376`), and cmd.exe degraded mode exist only behind `//go:build windows`; POSIX-only fixtures skip on a Git-Bash-less Windows box. Windows-vs-Unix divergence is pinned by nobody but the operator's laptop.
-
-**[P2] MCP reconnect half-tested.** `bridge_reconnect.go`: the `CallTool` reconnect path is covered, but the `ListTools` reconnect branch (55.6%), `Close()` (0.0%, incl. `client==nil`), the double-fault case, and `reconnectLocked`'s post-reconnect `ListTools` failure are untested.
-
-**[P2] `retryableStreamOpenError` tested only via its string-marker tail.** `llm_agent_stream_retry.go:57–75` (58.3%): the `net.Error.Timeout()` and both `url.Error` branches have no test; the marker list is Windows-leaning, so a Linux-deploy regression (dropping `connection reset`) would survive.
-
-**[P2] `truncateTailBytes` duplicated and weakly tested in both copies.** `shell_exec.go:486` (37.5%) and `llm_agent_completion.go:200` (62.5%) — byte-identical; the `n<=0` and rune-boundary branches are uncovered in the shell copy. Also a reusable-code violation.
-
-**[P2] No mutation scores for the loop core.** `llm_agent.go`, `llm_agent_finalize.go`, `shell_exec.go`, `bridge_reconnect.go` — the highest-blast-radius files — have no documented kill rates; the Gate-3 ≥70% requirement is unmet/undocumented for them.
-
-**[P3] Sub-70% functions with real behavior:** `exitCodeFromMeta` 50% (non-int branch), `MountServer`/`MountManagedServer` 33–52% (spawn-failure and mount-rollback `Close()` untested — the "never half-register or leak a process" contract is comment-only), `foldToASCII` 23.5%, `resolveSchedule` 61.5%, `SwarmContext` 0% in-package.
-
-**[P3] No fuzzing on the JSON-args boundary.** Every tool parses model-authored `json.RawMessage`; the truncated-args steering path has one fixture but is never fuzzed.
-
-## Skip-as-green analysis
-
-| Site | Condition | CI verdict |
-|---|---|---|
-| `live_finalize_test.go:72,88` | `OPENROUTER_API_KEY`/`SEARXNG_URL` unset | **Compliant** — skips locally, `t.Fatal` under `$CI`; behind the `live_finalize` tag, deliberately absent from CI. The exception done right. |
-| `tools/shell_exec_test.go:278,299,436` + `shell_bg_test.go:92,115` | cmd.exe fallback (no POSIX bash) | **Run in CI** (ubuntu always has `/bin/sh`). **Latent risk:** if a Windows runner is added without Git Bash, 5 tests vanish silently — no `$CI` guard. |
-| `tools/fs_fence_test.go:108` | `os.UserHomeDir` fails | Benign; unreachable on hosted runners. |
-| `budget_test.go:294,318` | `int` width == int32 | Benign; correct 64-bit platform guard. |
-
-**Net: no skip-as-green violation today.** The unit job runs the whole package matrix under `-race` with no env gating. The real falsely-green vector is the **coverage-gate filter (P1)** silently excluding `agent/tools` from the floor.
-
-## Proposed test pyramid
-
-```
-        ╱ live (paid, tag-gated, manual)  ── live_finalize + a new mcp-live tier
-       ╱  e2e / contract  ── golden pause-event serialization, wire-validity invariants
-      ╱   integration  ── runner persistence/resume, MCP reconnect (fake server), shell real-proc
-     ╱    property  ── truncateTailBytes, dedup, event round-trip, args-parse fuzz
-    ╱     unit (table-driven)  ── the broad base, already strong
-```
-
-The base is healthy; the gaps are at **integration** (persistence/resume, MCP failure modes), **contract** (golden wire shapes), and **fuzz/mutation** (the model-authored-args boundary and the loop core).
-
-### ~16 specific high-value tests to add
-
-| # | Test | File target | Technique | Regression pinned |
+| Package | Prior claim | Measured | Tier | Notes |
 |---|---|---|---|---|
-| 1 | `TestReconnect_ListToolsTransportError` | `mcptools/bridge_test.go` | fake reconnecting client | `bridge_reconnect.go:38–46` |
-| 2 | `TestReconnect_SecondCallFailsAfterReconnect` | `mcptools/bridge_test.go` | fake | error propagation at `:60` (no infinite loop / masked error) |
-| 3 | `TestReconnectingServer_CloseIdempotentAndNilSafe` | `mcptools/bridge_test.go` | fake | `Close()` 0% + double-Close at shutdown |
-| 4 | `TestMountServer_MountFailureClosesClient` | `mcptools/mount_test.go` | fake, colliding names | "never half-register or leak a process" |
-| 5 | `TestRetryableStreamOpenError_NetAndURLErrors` | new internal test | table over typed errors | `stream_retry.go:58–74` (58→~100%) |
-| 6 | `TestTruncateTailBytes_Property` (after folding) | `tools/result_test.go` | rapid | rune-boundary corruption in both copies |
-| 7 | `TestShellExec_StderrTailReservedUnderCap` | `tools/shell_exec_test.go` | real proc + small cap | failing-command diagnostics survive truncation |
-| 8 | `FuzzShellExecArgs` | new fuzz test | native fuzzing, truncated-JSON seed | args-parse panic-freedom + steering contract |
-| 9 | `TestShellExec_TimeoutKeepsPreviousTrackedCwd` | `tools/shell_exec_test.go` | real proc | cwd corruption after a kill |
-| 10 | `TestExitCodeFromMeta_NonIntAndMissing` | `event_test.go` | table | wrong exit code to AG-UI/Telegram |
-| 11 | `TestPauseEvent_GoldenSerialization` | `llm_agent_pause_test.go` + golden | golden/contract | the pause wire shape consumed by `paused_states` |
-| 12 | `TestDispatch_ParallelToolPanicIsolated` | `llm_agent_parallel_test.go` | barrier + panicking tool | siblings' tool_results not orphaned under concurrency |
-| 13 | `TestDispatch_CancelMidParallelBatch_AllCallsAnswered` | `llm_agent_parallel_test.go` | barrier + cancel + goleak | every tool_call_id gets a RoleTool (provider 400 otherwise) |
-| 14 | `TestPrefixStable_AcrossPauseResumeAndToolError` | `llm_agent_test.go` | extend prefix test | KV-cache invariant under non-happy paths |
-| 15 | `TestSwarmContext_RoundTripAndAbsent` | new `swarm_context_test.go` | unit | adapter no-panic-on-absent-key |
-| 16 | `TestFsEdit_EmptyOldStringRejected` | `tools/fs_edit_test.go` | table | the P1 file-corruption bug |
-| 17 | `TestRunner_IntraTurnPersistedAcrossResume` | `internal/runner` test | integration | the P1 persistence-loss bug (after fix) |
-| 18 | `TestMCPCall_TimesOutAndPoisonsTransport` | `internal/mcp` test | fake hung server + goleak | the P0 hang (after fix) |
+| `internal/agent` | 93.3% | **92.5%** | unit-only | In the coverage-gate floor |
+| `internal/agent/tools` | 87.5% | **86.1%** | unit-only | In the floor (R-17 closed — no longer excluded) |
+| `internal/agent/workflow` | 92.4% | **88.8%** | unit-only | In the floor |
+| `internal/agent/mcptools` | 83.4% | **82.7%** | unit-only | In the floor |
+| `internal/agent/prompt` | 91.9% | **92.0%** | unit-only | In the floor |
+| `internal/agent/agenttest` | — | **42.6%** | unit-only | Test-helper package; **dilutes the floor** (T-04) |
 
-## CI recommendations
+The per-package numbers are **honest**. Critically, `internal/agent` and **all** its subpackages have **zero integration-tagged tests** (`grep "//go:build"` finds only `live_finalize`, `windows`, `!windows`) — so for this package, unit-only *is* the full matrix. There is no skip-as-green risk here because there is nothing tier-gated to skip.
 
-1. **Remove `/internal/agent/tools/` from `scripts/coverage_gate.sh:44` now** (P1). Re-check `/internal/sandbox/` + `/internal/llm/client.go:` for the same staleness. Re-baseline: at 87.5% the floor still passes.
-2. **Add a `windows-latest` lane** for the shell surface (`go test ./internal/agent/tools/ -run 'TestShellExec|TestBackgroundShell'`); install Git Bash explicitly or assert `shellIsCmdFallback()==false`; give the POSIX skips a `$CI` fatal guard.
-3. **Wire the new fuzz target** as a seeded corpus-regression run in the unit job (mirror `FuzzSkillValidator` in skills.yml).
-4. **Add the mutation row** for the loop-core files to `docs/aura-quality-snapshot.md` (run `go-mutesting` on them in WSL — the only Gate-3 metric this package has never reported).
-5. **No change to the live tier** — `live_finalize` gating is exemplary; use it as the template if `mcptools` grows a live MCP-process tier.
+### The 93% vs 77.2% "contradiction" — reconciled
+
+They measure different denominators in different environments; both are real, not in conflict:
+
+- **93% is `internal/agent`-scoped, unit-only, env-independent** — and for this package that's the whole matrix.
+- **77.2%** (from `p2-boundary-lifecycle-validation-2026-06-11.md`) is the **repo-wide owned-surface gate run with the container stack DOWN**. On that Windows-bash invocation `$CI` was unset, so the integration tiers in `internal/db`/`cron`/`conversations` **skipped** (locally `envOrSkip` skips; under `$CI` it `t.Fatal`s), collapsing those packages to their unit-only floors (~20-34%) and dragging the aggregate to 77.2%.
+- **With the stack up, the same gate reads ~85.9%** (`docs/aura-quality-snapshot.md`) and **passes**. CI's knowledge + skills jobs run it with the stack and env present.
+
+The agent package's own coverage is not implicated in the 77.2% miss. The repo-wide gate needs a stack-up run (or the `$CI` env) to report green — an operational caveat, not an agent-package gap.
+
+---
+
+## 2. Test quality assessment
+
+### Genuinely strong (preserve)
+
+- **Tool-call wire contract:** `llm_agent_wire_validity_test.go:11` `assertHistoryToolCallsAnswered` enforces "one `tool_result` per `tool_call`" across the dedup-recovery and completion-gate-veto scenarios. This is exactly the contract test a production agent loop needs, and it exists.
+- **Property-based testing is real:** 5 files use `pgregory.net/rapid` — budget total-consumed-never-exceeds-max, Event JSON round-trip byte-identity, BM25, result paging, loop properties.
+- **goleak** via `VerifyTestMain` in `agent`, `tools`, `mcptools`, `workflow`.
+- **Exhaustive dedup coverage** (22 cases: ring eviction, exempt-tools, ping-pong, result-change suppression).
+- **Tests assert artifacts, not `r.Reply`:** the `r.Reply`-only anti-pattern appears 0× in agent tests; assertions target history/requests/budget/filesystem. Mocks carry compile-time interface assertions.
+
+### Gaps (the apex of the pyramid is missing)
+
+| ID | Gap | Evidence | Severity |
+|---|---|---|---|
+| T-01 | **Zero fuzz, zero benchmarks** in the agent runtime | `grep "func Fuzz"`/`func Benchmark` → 0 | P2 |
+| T-01 | **No documented mutation score** for any agent-core file | snapshot documents mutation only for telegram/skills/web/agui — none for `budget*.go`, `llm_agent_completion.go`, tools | P2 |
+| — | **No provider-500-storm / chaos test** | `FakeClient` injects only single-turn / single-mid-stream errors; no N-consecutive-5xx or alternating storm | P2 |
+| — | **No crash/fault-injection test** for B-01 (re-execution), M-02 (duplicate resume) | grep "R-27"/"R-28"/"crash" → none traceable | P2 |
+| T-02 | `foldToASCII` 23.5% covered (filename folding, primary channel) | `send_file.go:193` | P3 |
+| T-03 | Deferred-tool `Spec()` constructors at 0% | `fs_*`/`search.go` | P3 |
+
+---
+
+## 3. Proposed test pyramid
+
+Current shape: a **wide, disciplined unit/property base** (~460 funcs, 73 files) with **no apex** (fault-injection, load) and **no fuzz sublayer**. Target:
+
+```
+            ┌───────────────────────────┐
+            │  E2E / live (gated)        │  cot_eval, live_e2e, live_finalize — keep, add crash-recovery E2E
+            ├───────────────────────────┤
+            │  Chaos / fault-injection   │  ← NEW: crash mid-turn, provider-500 storm, MCP hang, SIGTERM drain
+            ├───────────────────────────┤
+            │  Integration (tagged)      │  ← agent pkg has NONE today; add a tiny tier for runner↔agent persistence
+            ├───────────────────────────┤
+            │  Property + Fuzz           │  property: strong; FUZZ: ← NEW (tool-args, MCP description framing)
+            ├───────────────────────────┤
+            │  Unit (table-driven)       │  strong, ~86-93%
+            └───────────────────────────┘
+```
+
+---
+
+## 4. Top missing regression tests (each tied to a finding)
+
+| Priority | Test | Closes |
+|---|---|---|
+| 1 | `TestRegression_B01_CrashMidTurnNoReExecution` — persist the tool-call turn, kill before the result commit, reload, assert the mutating call is NOT silently dropped (a recovery marker appears, not a re-execution) | B-01 (R-05) |
+| 2 | `TestRegression_M02_NoDuplicateResume` — two resume signals for one pause → exactly one answer turn, second returns `ErrPauseNotFound` | M-02 (R-27) |
+| 3 | `TestRegression_M01_AskUserSurvivesL1Eviction` — an `ask_user` answer older than `evictAfter` survives verbatim, not a dead `read_tool_output` pointer | M-01 (R-28) |
+| 4 | `TestContext_SmallWindowDoesNotDisableProtection` — `ContextWindow:32000` over-cap history → error/compaction, never raw unprotected history | M-03 (R-29) |
+| 5 | `TestLlmAgent_SurvivesProvider500Storm` — N consecutive 5xx across turns → clean surfaced error + budget intact + breaker open across turns | B-05, retry |
+| 6 | `TestRunner_ConcurrentRunsOneThreadSerialize` — two `Turn` on one thread → 409 or provable serialization (race-detector) | B-03 |
+| 7 | `FuzzToolArgsUnmarshal` + `FuzzMCPDescriptionFraming` | T-01, B-15 |
+| 8 | `BenchmarkBudget_BeforeToolCall` / `BenchmarkDedupRing_Push` + recorded mutation score for `budget*.go`, `llm_agent_completion.go` | T-01 |
+
+---
+
+## 5. Suggested CI checks (delta to today)
+
+- **Add a `windows-latest` lane** (build + vet + `internal/agent/tools` units; race if feasible) — the OS-specific kill path ships untested (O-07).
+- **Wire a mutation spot-check** for the agent-core critical files into the phase gate, recorded in a `VALIDATION.md` Manual-Only table per CLAUDE.md (currently undocumented for the core).
+- **Exclude `agenttest/`** from the coverage-gate denominator (it's test infrastructure, like `sqlc`) so the floor reflects real owned surface (T-04).
+- **Add the crash/storm chaos tests above** to the standard unit job (they use the in-memory `FakeClient`, no stack required).
+- **Keep** the existing `-race ./...`, the coverage gate (run with stack + `$CI`), and the live-gated tiers (`cot_eval`, `live_e2e`) exactly as-is — those are good.
+
+---
+
+## 6. Maintainability (testability-adjacent)
+
+- **`shell_exec.go` is 598/600 LOC** (B-11) — split before the next touch forces it past the gate.
+- **Three divergent `secretEnvKey` impls** (B-09) — a single shared helper would be one test instead of three drifting ones.
+- **No fragile package-global state** in the agent core (`todo`/`shell_bg` state is instance-scoped struct fields with mutexes; `swarm_context` uses a typed ctx key with an `ok`-bool, never panics) — verified clean, do not regress.

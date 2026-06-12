@@ -1,93 +1,104 @@
 {
-  "audit_date": "2026-06-10",
+  "audit_date": "2026-06-12",
+  "audit_cycle": "re-audit-2 (fresh deep-dive verifying the 2026-06-10/11 remediation claims against current code)",
   "audited_path": "d:\\Aura\\internal\\agent",
   "audited_scope": {
-    "non_test_loc": 9061,
+    "non_test_loc_approx": 9100,
     "test_loc_approx": 13600,
     "go_files": 133,
+    "test_functions_approx": 460,
     "packages": ["internal/agent", "internal/agent/agenttest", "internal/agent/mcptools", "internal/agent/prompt", "internal/agent/tools", "internal/agent/workflow"],
-    "branch": "tabula-rasa",
-    "commit": "0ab722e5"
+    "adjacent_packages_reviewed": ["internal/runner", "internal/conversations", "internal/askuser", "internal/llm", "internal/mcp", "internal/agui", "internal/config", "cmd/aura", "internal/reasoningtrace", "internal/swarm"],
+    "branch": "tabula-rasa"
   },
   "reference_paths": [
-    "D:\\tmp\\codex (OpenAI Codex CLI, Rust)",
-    "D:\\tmp\\nanobot (Python channel-agent)",
-    "D:\\tmp\\picobot (Go minimal loop)",
-    "D:\\tmp\\adk-go-study (google/adk-go)"
+    "D:\\tmp\\codex (OpenAI Codex CLI, Rust — production, archived)",
+    "D:\\tmp\\nanobot (Python channel-agent — production)",
+    "D:\\tmp\\picobot (Go minimal loop — stable)",
+    "D:\\tmp\\adk-go-study (google/adk-go v1.4 — framework)",
+    "D:\\tmp\\agent-memory (Neo4j Labs — memory framework, orthogonal to loop)"
   ],
-  "production_readiness_score": 5.5,
+  "production_readiness_score": 6.5,
   "score_scale": "0-10",
-  "score_rationale": "Strong, race-clean loop core (8+ in isolation) gated by an under-hardened perimeter: 2 P0 (system-wide hang, prompt-injection blast radius) and 15 P1 incl. host-file corruption, data-loss on resume/crash, conversation-bricking, accidental OOM, secret broadcast, plus absent operational observability. All fixes localized; post Phase 0-1 re-score 7.5-8.",
+  "score_rationale": "The agent CORE LOOP is genuinely production-grade (8.5/10 in isolation): TOCTOU-safe shared-atomic budget, race-clean iter.Seq2 with airtight yield-after-false discipline, two-tier dedup with progress veto, real circuit breaker checked before each call, bounded per-call/per-tool timeouts, untrusted-output provenance envelope (NFKC + HTML-escape + crypto/rand nonce), capped subprocess buffers, symlink-resistant workspace fences. The 2026-06-10/11 P0/P1 remediation is REAL work, not paperwork — most prior closures verify. The score is held down by the PRODUCTION PERIMETER, which this re-audit finds materially weaker than the prior cycle credited: (a) crash-durability gap — mutating tool side effects re-execute after an intra-turn crash (R-05 only half-closed); (b) the serve daemon never boots the tracer and the agent core has no structured logging and no latency/error/cost metrics, so production runs operationally BLIND; (c) no per-thread in-flight guard — concurrent runs on one thread corrupt conversation history; (d) a new trust-boundary hole — swarm child reports re-enter the parent prompt unwrapped; (e) no production container (non-root, resource-bounded) for a runtime that executes arbitrary shell. Core 8.5, perimeter ~4.5 → blended 6.5. Closing the P1 set lands 7.5-8.",
   "dimension_scores": {
-    "loop_correctness": 8,
-    "tool_execution": 5,
+    "loop_correctness": 9,
+    "tool_execution": 7,
     "memory_context": 6,
-    "reliability": 4,
-    "observability": 2,
-    "security": 3,
+    "crash_durability": 4,
+    "reliability": 7,
+    "observability": 3,
+    "security": 6,
     "testing": 7,
-    "maintainability": 8
+    "maintainability": 8,
+    "deployment_ops": 3
   },
   "measured_coverage": {
-    "internal/agent": 93.3,
-    "internal/agent/mcptools": 83.4,
-    "internal/agent/prompt": 91.9,
-    "internal/agent/tools": 87.5,
-    "internal/agent/workflow": 92.4,
-    "race_clean": true,
-    "test_functions": 406,
-    "fuzz_or_bench": 0
+    "internal/agent": 92.5,
+    "internal/agent/tools": 86.1,
+    "internal/agent/workflow": 88.8,
+    "internal/agent/mcptools": 82.7,
+    "internal/agent/prompt": 92.0,
+    "internal/agent/agenttest": 42.6,
+    "note": "Per-package figures are unit-only and honest; internal/agent has ZERO integration-tagged tests so unit-only IS its full matrix. The repo-wide owned-surface gate reads ~77.2% with the container stack DOWN (integration tiers skip locally) and ~85.9% with the stack UP — not a conflict, different denominators.",
+    "race_clean_unit_tier": true,
+    "fuzz_tests_in_agent": 0,
+    "benchmarks_in_agent": 0,
+    "mutation_score_documented_for_agent_core": false
   },
-  "total_findings": 72,
+  "total_findings": 40,
   "findings_by_severity": {
-    "P0": 2,
-    "P1": 15,
-    "P2": 31,
-    "P3": 24
+    "P0": 0,
+    "P1": 8,
+    "P2": 20,
+    "P3": 12
   },
-  "p0_findings": [
-    {"id": "R-02", "title": "MCP stdio tool call has no per-call timeout, holds a mutex across a blocking pipe read", "file": "internal/mcp/client.go, internal/agent/mcptools/bridge_reconnect.go", "confidence": "CONFIRMED"},
-    {"id": "R-01", "title": "Untrusted tool output re-enters the prompt with zero provenance/trust marking", "file": "internal/agent/llm_agent.go:361 + all tool result feeders", "confidence": "CONFIRMED"}
+  "prior_p0_status": [
+    {"id": "R-01", "title": "Untrusted tool output re-enters prompt unmarked", "status": "CLOSED for the 8 direct feeders (trust.go envelope verified); RESIDUAL HOLE: swarm_spawn reports bypass it (see B-02)"},
+    {"id": "R-02", "title": "Hung MCP server wedges every turn + deadlocks shutdown", "status": "CONFIRMED-CLOSED (per-call timeout + ctx-aware read + reconnect-no-replay)"}
   ],
   "top_10_risks": [
-    {"id": "R-01", "title": "Prompt injection via unmarked untrusted tool output -> host RCE + exfiltration", "severity": "P0", "probability": "H", "impact": "H"},
-    {"id": "R-05", "title": "Intra-turn persistence loss -> duplicated mutating side effects on resume/crash", "severity": "P1", "probability": "H", "impact": "H"},
-    {"id": "R-07", "title": "All secrets broadcast to every shell + MCP child; preview unredacted", "severity": "P1", "probability": "H", "impact": "H"},
-    {"id": "R-02", "title": "Hung MCP server wedges every turn + deadlocks shutdown", "severity": "P0", "probability": "M", "impact": "H"},
-    {"id": "R-03", "title": "fs_edit empty old_string corrupts host files", "severity": "P1", "probability": "M", "impact": "H"},
-    {"id": "R-09", "title": "Auto-activating always:true skill self-extension -> persistent backdoor", "severity": "P1", "probability": "M", "impact": "H"},
-    {"id": "R-08", "title": "Subprocess output buffered unbounded -> OOM on shared host", "severity": "P1", "probability": "M", "impact": "H"},
-    {"id": "R-04", "title": "Wallclock cap is inert; in-flight tool/LLM work runs unbounded", "severity": "P1", "probability": "M", "impact": "H"},
-    {"id": "R-11", "title": "No retry/breaker on provider 429/5xx -> turns die on routine blips", "severity": "P1", "probability": "H", "impact": "M"},
-    {"id": "R-14", "title": "Operationally blind: no metrics, no /healthz", "severity": "P1", "probability": "H", "impact": "M"}
+    {"id": "B-01", "title": "Mutating tool side effects RE-EXECUTE after intra-turn crash (R-05 only half-closed — write happens before the result turn is persisted, repair drops the dangling call, model re-issues it)", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "B-02", "title": "Swarm child reports re-enter the PARENT prompt with no untrusted envelope -> indirect prompt-injection laundering across the trust boundary", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "B-03", "title": "No per-thread in-flight guard: concurrent runs on one thread interleave history appends -> conversation corruption + budget double-spend", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "B-04", "title": "Self-extension gate open for always:false skills with stale/misleading tool schema and the compensating operator alert removed (R-09 regressed by P5 policy)", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "O-01", "title": "serve daemon never boots the tracer + zero structured logging in agent core -> production is operationally blind", "severity": "P1", "probability": "H", "impact": "M"},
+    {"id": "O-02", "title": "No latency/error/cost metrics, no Prometheus -> no SLOs, no alerting on regression or error spikes", "severity": "P1", "probability": "H", "impact": "M"},
+    {"id": "D-01", "title": "No production container (non-root, read-only, resource-bounded) for a runtime that executes arbitrary shell_exec", "severity": "P1", "probability": "M", "impact": "H"},
+    {"id": "M-01", "title": "L1 microcompact rewrites ask_user answers (and small results) to a dead read_tool_output pointer -> user's answers silently destroyed after ~10 rounds (R-28)", "severity": "P2", "probability": "M", "impact": "M"},
+    {"id": "M-02", "title": "SubmitAnswer non-atomic across two transactions -> duplicate resume turn on retry bricks the round (R-27)", "severity": "P2", "probability": "L", "impact": "H"},
+    {"id": "R-29", "title": "hardCap<=0 silently disables ALL context-window protection on small-window models (Slice-13 vLLM trigger)", "severity": "P2", "probability": "L", "impact": "H"}
   ],
   "recommended_next_actions": [
-    {"id": "A-1", "title": "Reject empty old_string in fs_edit", "effort": "S", "phase": 0},
-    {"id": "A-2", "title": "Per-call MCP timeout + ctx-aware read", "effort": "M", "phase": 0},
-    {"id": "A-3", "title": "Wire Budget.WithDeadline + clamp shell_exec timeout_ms", "effort": "M", "phase": 0},
-    {"id": "A-4", "title": "Cap subprocess output buffers (ring/tail)", "effort": "M", "phase": 0},
-    {"id": "A-5", "title": "Filter the child environment (strip secret-shaped vars)", "effort": "M", "phase": 0}
+    {"id": "A-1", "title": "Write-ahead tool-intent row + recovery marker instead of dropping dangling calls (close R-05 re-execution)", "effort": "M", "phase": 0},
+    {"id": "A-2", "title": "Set Provenance{Trust:Untrusted} on swarm child reports (close B-02, one line)", "effort": "S", "phase": 0},
+    {"id": "A-3", "title": "Per-thread in-flight guard in Runner shared by AG-UI + Telegram (close B-03)", "effort": "M", "phase": 0},
+    {"id": "A-4", "title": "Boot the tracer in serve + default slog JSON handler with request_id/thread_id correlation (close O-01)", "effort": "S/M", "phase": 1},
+    {"id": "A-5", "title": "Prometheus /metrics with turn/tool/LLM latency histograms, error + inflight + cost (close O-02)", "effort": "M", "phase": 1}
   ],
-  "strengths": [
-    "iter.Seq2 discipline airtight; ParallelAgent choreography has no constructible deadlock/leak (race-green)",
-    "Budget core TOCTOU-safe, fan-out-proof, fail-fast env parsing, injectable clock",
-    "Two-tier dedup ring fail-safe by design; no infinite-loop path inside LlmAgent",
-    "Cache-prefix discipline: byte-stable messages[0], volatile hints on a copy; CI-replayed 20 turns",
-    "SSRF hardening in internal/web is best-in-class (dial-time pinning, fail-closed on any blocked record)",
-    "Process-group kill on both OSes; append-only redacted audit ledger; namespaced collision-refusing MCP mounts"
+  "verified_strengths": [
+    "Budget core TOCTOU-safe (decrement-then-check-then-restore), fan-out-proof shared atomic, fail-fast env parsing, injectable clock",
+    "iter.Seq2 yield-after-false discipline airtight; ParallelAgent + executeBatch have no constructible deadlock/leak (race-green, goleak-guarded)",
+    "Real circuit breaker CHECKED via Allow() before every stream open (not just fed failures); bounded per-call + per-tool timeouts wired end-to-end",
+    "Untrusted-output envelope is genuine: NFKC + html.EscapeString + crypto/rand nonce on all 8 direct feeders, both error and success paths",
+    "Sidecar path safety: strict allowlist id grammar before filepath.Join (no traversal/ADS), 0o600 perms; send_file double-EvalSymlinks fence; MCP reconnect-no-replay",
+    "Excellent tool-call wire-contract test (one tool_result per tool_call) + real pgregory.net/rapid property tests + goleak across 4 packages"
+  ],
+  "verified_over_credited_closures": [
+    {"id": "R-05", "claimed": "CLOSED", "reality": "HALF-CLOSED — per-event journaling closed the observability loss, NOT the mutating re-execution hazard on crash"},
+    {"id": "R-09", "claimed": "CLOSED", "reality": "REGRESSED BY DESIGN — P5 policy auto-activates model-authored always:false skills ungated; the tool schema + doc comments still advertise human approval, and the operator alert no longer fires"}
   ],
   "reference_patterns_to_adopt": [
-    {"pattern": "Per-tool parallel-safety gate (mutating => exclusive)", "source": "codex parallel.rs:113-119", "effort": "S", "lands_in": "tools/spec.go + llm_agent_parallel.go"},
-    {"pattern": "Reflect-and-retry: per-tool failure counter + 'stop using this tool' injection", "source": "adk-go retryandreflect/plugin.go:45-90", "effort": "S/M", "lands_in": "budget_dedup.go + llm_agent_events.go"},
-    {"pattern": "Stream idle-timeout watchdog (config, not string-match)", "source": "codex client.rs:531", "effort": "M", "lands_in": "internal/llm/openai_compat/client.go"},
-    {"pattern": "Synthesized per-call abort observation on cancel", "source": "codex parallel.rs:135-175", "effort": "M", "lands_in": "llm_agent_parallel.go / tools/shell_exec.go"}
+    {"pattern": "Per-message write-ahead checkpoint + crash recovery of unfinished tool calls", "source": "nanobot loop.py:1519-1571", "effort": "M", "lands_in": "internal/runner/runner_persist.go + llm_agent.go dispatch"},
+    {"pattern": "Stream idle-timeout watchdog (per-chunk stall, not whole-call timeout)", "source": "codex client.rs:531 / nanobot runner.py:724", "effort": "M", "lands_in": "internal/llm/openai_compat client + AURA_LLM_STREAM_IDLE_TIMEOUT_SEC"},
+    {"pattern": "State-machine turn tracer (BUDGET_GATE->LLM_CALL->CONSUME->DISPATCH->FINALIZE with per-state duration_ms)", "source": "nanobot loop.py:1136-1181", "effort": "L", "lands_in": "llm_agent.go Run + event.go"},
+    {"pattern": "Reflect-and-retry: per-tool failure counter + 'stop using this tool' injection", "source": "adk-go retryandreflect/plugin.go", "effort": "S/M", "lands_in": "budget_dedup.go + llm_agent_events.go"}
   ],
   "documents": [
     "README.md", "executive-summary.md", "architecture-review.md", "bug-report.md",
     "infrastructure-audit.md", "security-audit.md", "testing-strategy.md",
     "industrialization-roadmap.md", "action-plan.md", "risk-register.md",
     "target-architecture.md", "proposed-patches.md", "audit-index.json",
-    "p0-validation-2026-06-10.md", "p1-validation-2026-06-10.md",
-    "e2e-closure-2026-06-11.md"
+    "re-audit-2026-06-12.md"
   ]
 }

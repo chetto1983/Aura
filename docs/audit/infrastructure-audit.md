@@ -1,117 +1,85 @@
-# Infrastructure Audit — Aura `internal/agent`
+# Infrastructure Audit — Aura `internal/agent` (2026-06-12)
 
-Scope: `internal/agent/**` and its direct integration points (`internal/runner`, `internal/llm`, `internal/mcp`, `cmd/aura`, `compose.yaml`, CI). Line numbers verified against `tabula-rasa` @ `0ab722e5`.
+Scope: `internal/agent/**` and its integration points (`internal/runner`, `internal/llm`, `internal/mcp`, `internal/agui`, `internal/config`, `cmd/aura`, `compose.yaml`, CI). The previous cycle (R-14) added `/healthz` and four counters; this cycle finds the daemon still operationally blind in the ways that matter for go-live.
 
 ---
 
 ## Observability gap matrix
 
-| Signal | Exists? | Quality / Notes |
+| Signal | Exists? | Reality |
 |---|---|---|
-| **Logs** | Partial | slog in outer layers (cron 23, telegram 20, skills 13, conversations 9, swarm); **zero** in `internal/agent` core. Default Go text handler at Info → stderr; no JSON option, no `AURA_LOG_LEVEL`, no rotation. Correlation fields inconsistent (request_id absent from swarm/cron lines). |
-| **Metrics** | **No** | No exporter, no counters anywhere. Only `cache_metrics` PG rows (cache-hit ratio) via `aura cache stats`. |
-| **Traces** | Yes, dark by default | Real OTel SDK (`tracing.go`): per-LLM-call `llm.request` spans with model/provider/tokens/request_id. Default exporter `otlp→localhost:4317` with **no collector in compose** + a process-global no-op error handler → silently dropped. Tool executions and swarm children have **no spans**. |
-| **Health** | No (daemon) / Yes (sidecars) | Every compose sidecar has a healthcheck; `aura serve` has **no `/healthz`**, no readiness, no supervision. A process alive with a wedged scheduler or hung MCP is indistinguishable from healthy. |
-| **Profiling** | **No** | No `net/http/pprof` mount on the daemon. |
-| **Debug trace** | Yes (opt-in) | `AURA_REASONING_TRACE` JSONL — rich but unbounded, temp-dir default, best-effort name-heuristic redaction. |
-| **Audit** | Partial | `tool_invocations` + `skill_audit` PG tables (migrations 0010/0011); Event StateDelta carries termination_reason/limit_hit. Best-effort writes (not a pre-execution gate). |
+| **Logs** | Partial → effectively no | `slog` in outer layers (cron/telegram/skills/conversations/swarm) but **zero** in the `internal/agent` core; failures surface only via debug-gated `reasoningtrace`. `main()` never calls `slog.SetDefault` → Go's default **text** handler to stderr, no JSON, no `service`/`request_id`/`thread_id` correlation. (O-01) |
+| **Metrics** | Minimal | Four monotonic expvar counters (`metrics.go`); no latency histograms, no error rates, no in-flight gauge, no cost, **no Prometheus**. expvar at `/debug/vars` is not scrapeable. (O-02) |
+| **Traces** | REPL-only, dark in the daemon | Real OTel SDK exists, but `aura serve` **never boots it** (only `chat_repl.go:32` does) → the single `llm.request` span is dropped in production. Default exporter `otlp→localhost:4317`, no collector in compose, **process-global no-op error handler** swallows all otel errors. Only `llm.request` spans — no turn/tool spans. (O-01, O-03, O-08) |
+| **Health** | Liveness-ish only | `/healthz` exists (`agui/server.go:82`) but checks **only Postgres** (`pool.Ping`); no Neo4j/embed/provider probe, no `/readyz` liveness/readiness split. (O-05) |
+| **Profiling** | No | No `net/http/pprof` on the daemon. |
+| **Config validation** | LLM key only | Only the API key fail-fasts at boot; empty `NEO4J_PASSWORD`/`POSTGRES_PASSWORD` fail late; numeric/bool knobs silently fall back on parse error. (O-04) |
+| **Graceful shutdown** | Asymmetric | HTTP + scheduler tick drain on SIGTERM, but an in-flight `Runner.Turn` is hard-cancelled mid-call (no bounded turn-completion grace). (O-06) |
+| **Containerization** | Sidecars only | No `Dockerfile` for the agent binary; it ships as a host binary. Sidecars run root, full caps, mostly no `mem_limit`. (D-01) |
+| **CI** | Linux-only | Every job `ubuntu-latest`; no `windows-latest` lane despite OS-specific kill code in shipped Windows binaries. (O-07) |
 
-## Configuration inventory — env vars actually read on `internal/agent` code paths
+---
 
-| Var | Default | Read at | Notes |
+## Prior-claim verification
+
+| ID | Claim | Status | Evidence |
 |---|---|---|---|
-| `AURA_LOOP_MAX_STEPS` | 25 | budget.go:40 | fail-fast on malformed |
-| `AURA_LOOP_MAX_WALLCLOCK_SEC` | 300 | budget.go:41 | **blocks new steps only — never cancels in-flight (P1)** |
-| `AURA_LOOP_DEDUP_WINDOW` | 3 | budget.go:42 | |
-| `AURA_LOOP_BRANCH_SOFT_FRACTION` | 1.0 | budget.go:43 | advisory only |
-| `AURA_LOOP_DEDUP_RESULT_CAP` | 2048 | budget.go:44 | |
-| `AURA_LOOP_NODE_TIMEOUT_SEC` | 0 | budget.go:138 | **DEAD — parsed, never consumed (P1)** |
-| `AURA_LOOP_DEDUP_EXEMPT_TOOLS` | — | budget.go:145 | |
-| `OPENROUTER_API_KEY` | — (fail-fast) | llm/config.go:151 | only secret; header-only use (D-28) |
-| `AURA_LLM_MODEL`/`_BASE_URL`/`_TEMPERATURE`/`_MAX_TOKENS` | deepseek-v4-flash:exacto / openrouter / 0.7 / 4096 | llm/config.go:256–271 | 4-tier precedence incl. `~/.aura/llm.json` |
-| `AURA_LLM_TOTAL_TIMEOUT_SEC` | 120 | llm/config.go:285 | per-LLM-call ctx ceiling (`llm_agent.go:176`) |
-| `AURA_LLM_CONNECT_TIMEOUT_SEC` | 10 | llm/config.go:290 | dialer timeout |
-| `AURA_LLM_ADAPTIVE_REASONING` | true | llm/config.go:272 | router call capped 8s |
-| `AURA_MODEL_CONTEXT_WINDOW`/`_MAX_OUTPUT_TOKENS` | 1M / 32768 | llm/config.go:275–283 | L2 budget inputs; **1M hardcoded for DeepSeek (P2)** |
-| `AURA_COMPLETION_GATE`/`_CRITIC_MODEL` | true / loop model | llm/config.go:167–168 | |
-| `AURA_CONTEXT_PREVIEW_CAP_BYTES` | 2048 | config.go:218 | spillover threshold |
-| `AURA_RUN_DIR` | OS-derived | config.go:217 | sidecar root; **grows unbounded (P2)** |
-| `AURA_OTEL_EXPORTER`/`_ENDPOINT` | otlp / localhost:4317 | config.go:219–220 | **default silently drops (P2)** |
-| `AURA_REASONING_TRACE`/`_FILE` | off / `$TMP/aura-reasoning-trace.jsonl` | reasoningtrace.go:15–16 | **unbounded when on (P2)** |
-| `AURA_SWARM_MAX_GOALS`/`_CHILD_TIMEOUT_SEC`/`_MAX_CONCURRENT`/`_MAX_DEPTH` | 8 / 120 / 4 / (swarm_depth) | config.go:237–239 | enforced |
-| `AURA_RISK_ALERT_THRESHOLD` | (scoring default) | tools/task.go:30 | |
-| `SEARXNG_URL`, `AURA_WEB_*` (6 knobs) | config.go:229–235 | via `web.NewClient` | fetch 30s / search 20s — good |
+| R-14 | `/healthz` + counters + Prometheus | **PARTIAL** | `/healthz` exists (`agui/server.go:82`) but PG-only; still 4 expvars, **no Prometheus** |
+| R-31 | tracing dropped by default + global no-op handler | **OPEN** | `tracing.go:55-66` default otlp→localhost:4317; `tracing.go:63` no-op handler; **and the daemon never boots the tracer at all** |
+| R-32 | no structured logging in agent core | **OPEN** | zero `slog` in `internal/agent/*.go`; default text handler, no correlation |
+| R-34 | SIGTERM drops in-flight turns | **PARTIAL** | HTTP/scheduler drained; conversational turn body hard-cancelled |
+| R-36 | no Windows CI lane | **OPEN** | all jobs `ubuntu-latest` |
+| R-44 | AG-UI no per-thread in-flight guard | **OPEN** | `server.go`/`runner.go` have no per-`convID` lock (also a data-integrity bug, B-03) |
 
-**Missing knobs that should exist:** `AURA_LLM_RETRY_MAX_ATTEMPTS`/`_BASE_MS`, `AURA_MCP_CALL_TIMEOUT_SEC`, `AURA_SHELL_MAX_TIMEOUT_MS`, `AURA_SHELL_OUTPUT_CAP_BYTES`, `AURA_SHELL_BG_BUF_CAP`/`_MAX`, `AURA_LOOP_MAX_PARALLEL_TOOLS`, `AURA_LOG_LEVEL`/`_FORMAT`, `AURA_SHUTDOWN_TURN_GRACE_SEC`, `AURA_RUN_DIR_SIDECAR_TTL_DAYS`, `AURA_REASONING_TRACE_MAX_MB`, `AURA_SHELL_PATH` (Git-Bash override).
+---
 
-## Reliability surfaces
+## What's missing to be industrial-grade
 
-| Surface | Status | Gap |
-|---|---|---|
-| LLM call timeout | ✅ `TotalTimeoutSec` (120s) per call | — |
-| LLM connect timeout | ✅ 10s dialer | — |
-| LLM retry (429/5xx) | ❌ **none** | `Retry-After` parsed and discarded; turn dies on first 429 (P1) |
-| LLM circuit breaker | ❌ **none** | outage hammers a dead provider (P1) |
-| MCP call timeout | ❌ **none** | hangs forever, holds mutex (P0) |
-| MCP reconnect (stdio) | ✅ on transport error | but re-executes the call (at-most-once violated, P2) |
-| MCP reconnect (HTTP) | ❌ **none** | session expiry bricks the server (P2) |
-| Subprocess timeout | ⚠️ default 120s | model can override unbounded (P3); wallclock doesn't cancel it (P1) |
-| Subprocess kill | ✅ process-group on both OSes | well done |
-| Subprocess output cap | ❌ **unbounded RAM** | OOM (P1) |
-| Parallel tool fan-out | ❌ **uncapped** | model-controlled width (P1) |
-| Swarm caps | ✅ depth/goals/concurrent/timeout | well done |
-| Backpressure | ✅ in workflow/parallel (ack-per-event) | absent in `executeBatch` |
-| Graceful shutdown | ⚠️ scheduler/HTTP drain | conversational turns NOT drained (P2) |
-| Wallclock cancellation | ❌ **dead code** | `WithDeadline`/`NodeTimeout` unwired (P1) |
+### Logging (O-01)
+Install a JSON `slog` default in `main()` with base `service`/`version` attrs and an `AURA_LOG_LEVEL` knob; thread a `slog.Logger` (with `request_id`/`thread_id`) into the loop at the chokepoints that currently call `reasoningtrace.Record` — at minimum for WARN/ERROR (stream retry, empty-response recovery, dedup trip, finalize-on-budget, breaker trip). Wrap the handler with a `SanitizeString` `ReplaceAttr` so no line can leak a DSN/key (O-04).
 
-## Resource management
+### Metrics (O-02)
+Adopt `prometheus/client_golang`; mount `promhttp.Handler()` at `GET /metrics`. Minimum set:
+- Histograms: `aura_turn_duration_seconds`, `aura_tool_duration_seconds{tool}` (timing already at `llm_agent.go:366`), `aura_llm_request_duration_seconds`.
+- Counters: `aura_errors_total{kind}` (tool_failure, stream_error, finalize_on_budget, breaker_open, empty_response_recovery), `aura_sse_dropped_total`.
+- Gauges: `aura_inflight_turns`, `aura_sse_connections`.
+- Cost: a counter sourced from `llm.Usage` (prompt/completion/cached tokens, $).
 
-- **Goroutine lifecycle:** excellent — SSE stream goroutine closes on ctx-cancel with drain-to-close at every consumer-stop site; swarm waves use errgroup + spawn-loop guard + per-child timeout; scheduler joins workers; goleak gates in test mains.
-- **File handles:** clean (defer Close).
-- **Buffers:** **unbounded** on shell sync + background output (P1); reasoningtrace JSONL unbounded (P2).
-- **Disk:** `$AURA_RUN_DIR` sidecars + swarm transcripts grow monotonically for live conversations; GC only covers orphans + tmp, only at boot (P2).
+### Tracing (O-01, O-03, O-08)
+Boot the tracer in `runServe` (mirror `chat_repl.go:32`) with a deferred bounded `Shutdown`. Replace the process-global no-op error handler with a rate-limited logging handler (or scope suppression to `Shutdown`). Add an `agent.turn` root span parenting the `llm.request` spans, and a `tool.execute` span per dispatched call.
 
-## Dependency posture (`go.mod`)
+### Health (O-05)
+Extend `HealthCheck` to probe Neo4j (`knowledge/ping`) + embed reachability; add `/readyz` requiring all deps; keep `/healthz` as pure liveness. Provider reachability = a shallow cached check, not a per-probe token burn.
 
-Clean: all modules version-pinned, **no replace directives**, modern OTel v1.44, pgx v5.9.2, goleak in main reqs (test-only use). Two flags:
-1. `gopkg.in/telebot.v4 v4.0.0-beta.9` — the **primary user-facing channel rides a beta**; pin-watch for v4 GA and re-run HITL live tests on bump.
-2. `ag-ui-protocol/ag-ui/sdks/community/go` at a pseudo-version (commit pin of a community SDK).
-3. Indirect `araddon/dateparse` (archived upstream, via readability) — `govulncheck` gates CVEs, so acceptable.
+### Config & secrets (O-04)
+`Config.Validate()` called by `bootServe`: fail-fast on empty required secrets when the subsystem is enabled; WARN (don't silently default) on a parse fallback. Apply log redaction as above.
 
-## Deployment assumptions
+### Deployment (D-01)
+A multi-stage distroless/alpine `Dockerfile` for `aura` with a non-root `USER`; an `aura` compose service with `read_only: true`, `cap_drop: [ALL]` (then add back only what `shell_exec` legitimately needs, or run shell in a sub-sandbox), `mem_limit`/`cpus`, and a `/healthz` healthcheck. Add `cap_drop`/`mem_limit` to the sidecars.
 
-- compose runs **only sidecars** (postgres, neo4j, embed, searxng, STT/TTS/OCR, markitdown, agent-memory-mcp), each with a healthcheck, loopback-published, `restart: unless-stopped`.
-- The **aura daemon runs on the host, unsupervised**: no service unit, no restart policy, no healthcheck (pairs with the missing `/healthz`).
-- **No `.env.example` in the repo** — onboarding depends on the PRD env catalog. *(Note: the IDE shows `.env.example` open; confirm whether it is tracked — the infra auditor found it absent at audit time.)*
-- `aura-ocr-vl` requires the nvidia runtime — `compose up` fails wholesale on a GPU-less host unless deselected.
-- Neo4j heap caps sized for the mini-PC (1G max) — good.
+### Shutdown (O-06)
+Give in-flight turns a bounded completion grace on SIGTERM (derive the turn ctx so shutdown applies a bounded `WithTimeout` rather than immediate cancel), within `aguiShutdownTimeout`.
 
-## Concrete recommendations
+### CI (O-07)
+Add a `windows-latest` job: `go build`, `go vet`, `internal/agent/tools` unit tests (race if feasible); gate the `taskkill` kill-path tests to actually run on Windows.
 
-**P0/P1 (Phase 0–1):**
-1. Per-call MCP timeout + ctx-aware read (`AURA_MCP_CALL_TIMEOUT_SEC`).
-2. Wire `Budget.WithDeadline` into `runner.buildAgent` + `cmd/aura/agent.go`; wrap tools with `NodeTimeout`; clamp `shell_exec timeout_ms`.
-3. Provider retry/backoff honoring `Retry-After` + a minimal circuit breaker in `internal/llm`.
-4. Bound `executeBatch` with `AURA_LOOP_MAX_PARALLEL_TOOLS` (default 4–8).
-5. `GET /healthz` (pool Ping + scheduler last-tick) + `expvar`/Prometheus counters at `ConsumeStep`/`dispatch`/`streamWithOpenRetry`.
+---
 
-**P2 (Phase 1–2):**
-6. `slog.SetDefault(JSONHandler, AURA_LOG_LEVEL)` in `cmd/aura/main.go`; Warn logs at loop terminal decisions with `request_id`+`thread_id`; `llm.Config.LogValue()` redactor.
-7. Default `AURA_OTEL_EXPORTER=none` or warn-on-unreachable; ship a collector behind a compose profile; add tool/swarm spans.
-8. Ring-cap shell buffers; reasoningtrace rotation; sidecar TTL sweep moved into the scheduler.
-9. Bounded conversational-turn drain on SIGTERM (`AURA_SHUTDOWN_TURN_GRACE_SEC`).
-10. Background-shell `Shutdown()` wired into serve teardown + concurrency cap.
+## Disk & resource lifecycle (cross-ref memory audit)
 
-**P3 (Phase 4–5):**
-11. Ship `.env.example`; document a host supervisor (NSSM/Task Scheduler on Windows, systemd unit for WSL/Linux) for `aura serve`.
-12. `net/http/pprof` on the loopback bind behind a flag.
+- **`$AURA_RUN_DIR` sidecars + reasoningtrace grow monotonically** (M-06/R-33): the orphan scan is boot-only and whole-conversation-orphan only; no per-conversation TTL/byte budget; reasoningtrace has no rotation and logs the full history per turn. Add a periodic sweep + rotation.
+- **Per-session tool state never evicted** (R-41): `todo`/`shell_bg` singleton maps keyed by session id are never pruned on conversation delete. Add an `Evict(sessionID)` hook from the `ConversationCleaner`.
+- **Spill-outside-transaction orphans** (M-04): a rolled-back oversized turn leaks a `<seq>.content` file the boot scan never reclaims in a live conversation.
 
-## What is done well
+---
 
-- Budget design (TOCTOU-safe shared atomic, wallclock-first gate, per-branch dedup rings, injectable clock, fail-fast env parsing).
-- Goroutine lifecycle discipline (drain-to-close, `DisableKeepAlives` for goleak determinism, errgroup swarm waves, scheduler worker-join).
-- Graceful-shutdown *ordering* in `aura serve` (signal ctx → scheduler drain → channels StopAll → bounded HTTP shutdowns → reverse-close MCP + pool); `flushPause` on `WithoutCancel` is the right durability carve-out.
-- At-most-once on side effects (mutating tools never retried; transient-by-type classification).
-- Secret discipline at the wire (API key header-only, span attrs key-free, MCP stderr redaction, error bodies bounded at 64 KiB).
-- `mcp.Client.Close` hard-deadline (the 13-minute-hang lesson — now needs applying to the call path, the P0).
-- Scheduler correctness (SKIP LOCKED + advisory locks + heartbeats + missed-fire catch-up) — replica-tolerant by construction.
+## Dependency posture
+
+- `telebot` v4 **beta** on the primary user channel (R-40, tracked): pin-watch for GA; re-run HITL live tests on bump.
+- OTel trace train pinned; `prometheus/client_golang` is the one net-new dependency required by O-02 (well-established, low risk).
+
+---
+
+## Bottom line
+
+The daemon is **shippable as a prototype, not operable as a product**: you cannot trace a request, alert on an error spike, or distinguish a healthy daemon from one with a wedged dependency. None of this is hard — it is the standard observability/deployment surface, currently bolted to the REPL instead of the daemon. The single highest-leverage move is a shared `obs.Init(cfg)` called by both entry points (tracer + JSON slog + Prometheus registry), which closes O-01/O-02/O-03/O-08 together.

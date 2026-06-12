@@ -1,112 +1,91 @@
-# Architecture Review — Aura `internal/agent`
+# Architecture Review — Aura `internal/agent` (2026-06-12)
 
 ## 1. Current architecture
 
-Aura's agent runtime is a **single-goroutine ReAct loop** exposed as a Go 1.23 push iterator (`iter.Seq2[*Event, error]`), composed over an open `Agent` interface, driven by per-context turn drivers, and bounded by a shared budget tree.
+Aura's agent runtime is a **single-goroutine ReAct loop** exposed as a Go push iterator (`iter.Seq2[*Event, error]`), composed over an open `Agent` interface, driven by per-context turn drivers, and bounded by a shared budget tree. Tool execution within a turn fans out to a bounded goroutine pool; everything else (history, dedup gate, yields) stays serial.
 
 ### Component map
 
 | Component | File(s) | Responsibility |
 |---|---|---|
 | `Agent` interface | `agent.go` | Open contract: `Name`/`Description`/`Run`/`SubAgents`/`FindAgent`. Termination is an Event, never the error slot (D-04). |
-| `InvocationContext` | `agent.go:47–74` | Single-Run-scoped, passed by value; carries `Ctx`, `RequestID` (UUIDv7), `SpanID`, `Branch`, shared `*Budget`. `WithContext`/`WithSubAgent` copy, never mutate (D-24). |
-| `LlmAgent` (the loop) | `llm_agent.go` + `llm_agent_*.go` (11 files) | The ReAct run-loop: budget gate → prompt build → streamed LLM call → tool dispatch → terminate. Owns in-memory `history`. |
+| `InvocationContext` | `agent.go:47-74` | Single-Run-scoped, passed by value; carries `Ctx`, `RequestID` (UUIDv7), `SpanID`, `Branch`, shared `*Budget`. `WithContext`/`WithSubAgent` copy, never mutate. |
+| `LlmAgent` (the loop) | `llm_agent.go` + `llm_agent_*.go` (11 files) | ReAct run-loop: budget gate → prompt build → streamed LLM call → tool dispatch → terminate. Owns in-memory `history`. |
 | `Budget` | `budget.go`, `budget_dedup.go` | Shared-atomic step counter + per-branch dedup ring + wallclock deadline + injectable clock. The DoS/loop-storm control. |
+| Parallel tool exec | `llm_agent_parallel.go` | `executeBatch` — bounded (semaphore, `AURA_LOOP_MAX_PARALLEL_TOOLS`, default 4) concurrent tool dispatch; results re-serialized in call order. |
 | Workflow agents | `workflow/loop.go`, `sequential.go`, `parallel.go` | adk-derived orchestrators composing the `Agent` interface. |
 | Tool registry | `tools/registry.go`, `spec.go`, `manifest.go` | Name→tool map, deferred-spec manifest, `Without()` derivation. |
 | Tools | `tools/*.go` (~24 tools) | shell_exec/fs_*/web_*/skill/task/ask_user/send_file/swarm_spawn/read_tool_output/… |
 | Tool search | `tools/search.go`, `bm25.go` | The `tool_search` hook tool — BM25 retrieval over deferred specs. |
 | Result normalization | `tools/result.go`, `read_tool_output.go` | Preview cap + sidecar spillover to `$AURA_RUN_DIR` + paging. |
-| MCP bridge | `mcptools/bridge.go`, `mount.go`, `name.go`, `bridge_reconnect.go` | Mounts external MCP servers as namespaced tools; reconnect-on-use (stdio). |
+| Trust boundary | `trust.go` | Wraps untrusted tool output in `<tool_output trust="untrusted" nonce=…>` (NFKC + HTML-escape + crypto/rand nonce). |
+| MCP bridge | `mcptools/bridge.go`, `mount.go`, `name.go`, `bridge_reconnect.go` | Mounts external MCP servers as namespaced tools; per-call timeout + reconnect-no-replay. |
+| Reliability | `llm_agent_stream_retry.go`, `internal/llm/breaker.go` | Stream-open retry classification + circuit breaker checked via `Allow()` before each call. |
 | Prompt assembly | `prompt/builder.go`, `prompt.go`, `hash.go`, `cache_anthropic.go` | Byte-stable system prompt + volatile-hint tail injection + cache-control seam. |
 | Events | `event.go`, `llm_agent_events.go` | Forward-compat Event/Actions/LLMResponse model; byte-identical JSON round-trip. |
-| Tracing | `tracing.go` | OTel span per LLM call; root span IDs via crypto/rand. |
+| Tracing / metrics | `tracing.go`, `metrics.go` | OTel span per LLM call; 4 expvar counters. |
 | Swarm seam | `swarm_context.go` | Cycle-free ctx key letting `swarm_spawn` reach the parent budget/registry/client. |
 
 ### Control flow (one turn)
 
-A turn driver — the `Runner` (conversations), `swarm.runChild` (workers), `cron/handlers.agentjob` (scheduled), or `cmd/aura agent dry-run` (mock) — constructs a **fresh `LlmAgent` per round**, seeded with DB-rehydrated history whose `messages[0]` is the byte-stable system prompt (never mutated), and an `InvocationContext` carrying a UUIDv7 RequestID and a shared `*Budget`.
+A turn driver — the `Runner` (conversations), `swarm.runChild` (workers), `cron/handlers.agentjob` (scheduled), or `cmd/aura agent dry-run` (mock) — constructs a **fresh `LlmAgent` per turn**, seeded with DB-rehydrated history whose `messages[0]` is the byte-stable system prompt (never mutated), and an `InvocationContext` carrying a UUIDv7 RequestID and a shared `*Budget`.
 
-Each loop iteration (`LlmAgent.Run`, `llm_agent.go:139–293`):
+Each loop iteration (`LlmAgent.Run`, `llm_agent.go:147-313`):
 
-1. **Budget gate** (`ConsumeStep`): wallclock check, then TOCTOU-safe atomic decrement-restore. A trip routes to counter-gated recovery (one nudged extra turn) or forced finalization.
-2. **Prompt assembly** (`builder.Build`): the single chokepoint; tail-injects volatile hints (budget/workspace/time) onto a *copy* of history — `messages[0]` untouched.
-3. **Streamed LLM call**: ctx-bounded by `TotalTimeoutSec` (120s), open-retried twice, consumed chunk-by-chunk (`consume`), re-emitting chunk/reasoning/tool-call Events.
-4. **Tool dispatch** (`dispatch`): partition (first `text_response` = terminal); per-branch two-tier dedup gate; runnable calls executed **concurrently** (`executeBatch`); results collected in original order, appended to history, yielded serially.
-5. **Terminate**: `text_response`, content-stop fallback, budget trip (explicit Event), or a real infra failure (error slot).
+1. **Budget gate** (`ConsumeStep`) — wallclock first, then TOCTOU-safe atomic decrement; a trip triggers one bounded recovery nudge, then `finalize`.
+2. **Bounded call ctx** — `WithTimeout(TotalTimeoutSec)`; a per-LLM-call span starts.
+3. **Prompt build** — the builder reproduces `messages[0]` byte-stable and tail-injects volatile hints (budget, workspace, time) to a *copy*; the cache prefix is never poisoned.
+4. **Stream open with retry + breaker** — `Allow()` gate → `client.Stream`; classified retry on 429/5xx/transport.
+5. **Consume** — drains the stream, re-emitting text/reasoning/tool-call Events; airtight yield-after-false + drain-to-close.
+6. **Dispatch** — partition terminal (`text_response`) from runnable; serial dedup gate; `executeBatch` runs runnable calls concurrently; results re-serialized in call order with per-call history append + `AfterToolResult` + result Event; terminal handled last.
+7. **Terminate** — `text_response` (with an optional completion-gate veto), content-stop fallback, budget-trip finalize, or the error slot for real infra failure.
 
-`ask_user` pauses are name-gated, rewrite the assistant message to ask_user-only calls, and emit `AwaitingInput` Events; the `Runner` is the sole `paused_states` writer; resume is a fresh run over rehydrated history (an iterator cannot be suspended — durability lives entirely in the stores).
+### Persistence & context
 
-### Lifecycle contract
+History is **in-memory within a turn**; the `Runner` journals per-event to Postgres (`conversation_turns`) and rehydrates on the next turn. Oversized tool outputs spill to `$AURA_RUN_DIR/<session>/<seq>.{content,result}` sidecars (`0o600`, opaque-id grammar) and page back via `read_tool_output`. A microcompaction ladder (`conversations/context.go`) protects the provider context window: L1 evicts old tool results to `read_tool_output` pointers, L2.5 drops oldest pairs, the system prompt + always-block are protected.
 
-- **Construction:** caller owns; one `LlmAgent` per turn (fresh-per-turn is enforced only by convention — see P3).
-- **Persistence:** event-sourced but lossy — only the user turn, terminal answer, pause turn, and resume answers reach `conversation_turns`; intra-turn tool work lives only in memory + the observability ledger.
-- **Cancellation:** `ic.Ctx` propagation only; the wallclock budget does not derive a deadline'd ctx (dead code).
-- **Concurrency:** the loop is single-goroutine; the only fan-out is `executeBatch` (uncapped) and the swarm/workflow layers (capped).
+---
 
 ## 2. Agent-loop design analysis
 
-**Strengths (confirmed by adversarial reading):**
+**Strengths (verified, preserve).** The loop is deterministic and debuggable in its happy path, with airtight resource bounds:
 
-- The `iter.Seq2` discipline is airtight — every yield honors yield-after-false, with `stopped` plumbed through `consume`/`dispatch`, and drain-to-close preventing producer-goroutine leaks. `go vet` clean, `-race` green.
-- Recovery is a **counter, never a latch** (the CrewAI #1656 anti-pattern is explicitly designed out); every recovery/finalize/critic path is bounded. There is **no infinite-loop path inside `LlmAgent`**.
-- Dedup is fail-*safe*, not fail-open: args-only fingerprint pre-execution + result-preview progress veto means volatile-result tools look like progress instead of escaping the guard.
-- Mutating tools are never retried; transient classification for tool retries is strictly typed.
-- Cache-prefix hygiene is enforced end-to-end (builder copies, finalize copies, no in-place mutation of LLM-visible history).
+- **Budget** is TOCTOU-safe (decrement-then-check-then-restore), shared by pointer across the whole tree so a depth-3 fan-3 swarm consumes ≤ `max_steps` total, fail-fast on malformed env, with an injectable clock for deterministic wallclock tests.
+- **`iter.Seq2`** discipline is exemplary: every `yield`→false path returns immediately or drains-to-close before reporting `stopped`, so the range-function contract is never violated; no goroutine leaks (goleak-guarded across 4 packages, `-race` green).
+- **Recovery/dedup** are bounded *counters*, not one-shot latches — no CrewAI-style infinite-recovery path; the two-tier dedup ring uses a result-preview progress veto so a volatile-output tool isn't falsely suppressed.
+- **Reliability primitives are real**: the breaker is consulted (`Allow()`) before each stream open; per-call (`TotalTimeoutSec`) and per-tool (`NodeTimeout`) deadlines are wired and the wallclock genuinely cancels in-flight work via `Budget.WithDeadline` (now called from the runner — the prior "dead code" finding is closed).
 
-**Weaknesses (architectural):**
+**Weaknesses (this cycle).** The loop is *correct*; the system around it is not yet *durable* or *observable*:
 
-- **Cancellation is half-built.** `Budget.WithDeadline`/`NodeTimeout` exist but are unwired; in-flight tool/LLM work cannot be cancelled by the wallclock budget. The "hard cap" is soft.
-- **The composition contract is undefined.** Wrapping `LlmAgent` in `LoopAgent` double-spends the budget and double-counts dedup (P1); `LoopAgent` with `maxIter=0` hot-spins on a non-tool sub (P1). The two layers have overlapping, additive budget semantics over shared state with no documented ownership.
-- **The trust boundary is unmodeled.** Tool output of every provenance is appended identically; the prompt builder has no concept of "untrusted data" vs "instruction".
-- **Durability is per-turn-terminal, not per-event.** The persistence seam *sees* every event but writes only terminals; resume reconstructs from a lossy projection.
-- **No backpressure on intra-turn fan-out.** `executeBatch` width is model-controlled and uncapped.
-- **No operational surface.** No metrics, no health, no structured logs in the core; tracing is dropped by default.
+1. **Crash durability is half-built (B-01).** The loop persists per-event, but a mutating tool's side effect commits *before* its result turn is persisted, and crash-recovery *drops* the dangling call → re-execution on resume. The architecture needs a write-ahead intent record between "decided to call" and "executed."
+2. **Concurrency boundary is unguarded (B-03).** The loop is single-goroutine *within* a turn, but nothing serializes *two turns on one thread*. The composition root (Runner) needs a per-thread in-flight guard.
+3. **The trust envelope has a gap (B-02).** `trust.go` wraps the 8 direct untrusted feeders, but the swarm-report path re-enters the parent prompt outside it. Provenance must be set at the swarm adapter.
+4. **The breaker's lifetime undercuts its purpose (B-05).** Reconstructed per turn, it can't span a multi-turn outage. It belongs on the Runner, not the per-turn `LlmAgent`.
+5. **No turn/tool spans, no idle watchdog (O-08, B-08).** Tracing sees only `llm.request`; a stalled-but-open stream is bounded only by the whole-call timeout.
 
-## 3. Main components and responsibilities
+---
 
-(See the component map above.) The package is cleanly factored: every file is ≤600 LOC, concerns are split (`llm_agent_completion.go`, `_finalize.go`, `_retry.go`, `_events.go`, `_parallel.go`, `_pause*.go`), and decisions are documented inline with `D-NN`/`WR-NN`/`SC-N` references. Ownership boundaries are clear for the *happy path*; they blur at (a) the workflow↔LlmAgent budget seam, (b) the runner↔agent persistence seam, and (c) the tool↔untrusted-input seam.
+## 3. Architecture weaknesses (systemic)
 
-## 4. Architecture weaknesses (ranked)
+| Weakness | Where | Consequence |
+|---|---|---|
+| Side-effect-before-durability ordering | `dispatch` ↔ `runner_persist` | Re-executed mutating tools on crash (B-01) |
+| Per-turn-scoped reliability state | `LlmAgent.breaker`, `Budget.dedupRing` | No cross-turn breaker / dedup protection (B-05) |
+| No composition-root concurrency control | `Runner.Turn` | Conversation corruption on concurrent runs (B-03) |
+| Observability bolted to the REPL, not the daemon | `serve.go` vs `chat_repl.go` | Production untraced + unlogged (O-01) |
+| Trust envelope applied at the tool boundary, not the prompt-assembly boundary | `trust.go` keyed on a tool allowlist | New untrusted ingress (swarm) silently bypasses it (B-02) |
+| Session-scoped tool state never evicted | `todo`, `shell_bg` singletons | Slow daemon leak (R-41) |
+| Context ladder conflates "no cap" with "under cap" | `context.go:153` | Protection silently off on small-window models (M-03) |
 
-1. **Trust boundary not represented in the type system.** A `RoleTool` message carries no provenance. *Fix:* a `Provenance` field on tool results, rendered as a non-spoofable envelope by the builder.
-2. **Cancellation is advisory.** *Fix:* derive the run ctx from `Budget.WithDeadline`; wrap each tool with `NodeTimeout`.
-3. **Composition semantics undefined.** *Fix:* a single budget owner per tree; document on `Agent.Run`.
-4. **Persistence is lossy.** *Fix:* journal intra-turn tool turns; one-transaction pause writes.
-5. **External-call resilience is ad-hoc.** *Fix:* a shared retry/backoff/breaker in `internal/llm`; a per-call MCP timeout.
-6. **No operational telemetry.** *Fix:* `expvar`/Prometheus counters + `/healthz` + structured slog.
+---
 
-## 5. Suggested target architecture
+## 4. Suggested target architecture (incremental, not a rewrite)
 
-See [`target-architecture.md`](target-architecture.md) for the full design. In brief, the target keeps the loop core intact and adds five thin layers:
+The current design is sound; the target is the same loop with the perimeter hardened. See [`target-architecture.md`](target-architecture.md) for the full diagram. The four structural moves:
 
-```
-                       ┌─────────────────────────────────────────┐
-   SIGTERM ──drain──▶  │  Daemon (aura serve): /healthz, /metrics │
-                       │  graceful turn-drain, slog JSON           │
-                       └───────────────┬───────────────────────────┘
-                                       │
-        ┌──────────────────────────────▼──────────────────────────┐
-        │  Turn driver (Runner / swarm / cron)                     │
-        │  • derives ctx from Budget.WithDeadline (real cancel)    │
-        │  • journals EVERY event (intra-turn durability)          │
-        │  • one-transaction pause writes                          │
-        └──────────────────────────────┬──────────────────────────┘
-                                        │
-        ┌──────────────────────────────▼──────────────────────────┐
-        │  LlmAgent loop  (UNCHANGED CORE — keep as-is)            │
-        │  budget gate → build → stream → dispatch → terminate     │
-        │  + mid-stream retry  + parallel-tool semaphore           │
-        └───────┬───────────────────────────────┬──────────────────┘
-                │                                │
-   ┌────────────▼─────────┐          ┌───────────▼──────────────────┐
-   │ llm.Client + shared  │          │ Tool layer                    │
-   │ retry/backoff/breaker│          │ • provenance-tagged results   │
-   │ (429/5xx, Retry-After)│         │ • filtered child env          │
-   └──────────────────────┘          │ • bounded output buffers      │
-                                      │ • MCP per-call timeout        │
-                                      │ • destructive-action gate     │
-                                      └───────────────────────────────┘
-```
+1. **Durability boundary.** Introduce a write-ahead tool-intent log: `decide → persist intent (tx) → execute → persist result (tx)`. Recovery reads unmatched intents and surfaces them as "verify before re-running" markers instead of dropping them. This closes B-01 and subsumes the best-effort ledger (R-26) and the nanobot checkpoint-recovery pattern.
+2. **Trust at the prompt-assembly boundary.** Move the untrusted-envelope decision from a tool-name allowlist (`trust.go`) to a property of every `ToolResult` (`Provenance`), defaulting `Trust=Untrusted` for any externally-sourced result (web, MCP, fs, shell, **swarm**). The prompt builder wraps on `Provenance.Trust`, so a new ingress can't forget to opt in. Closes B-02 structurally.
+3. **Reliability state on the Runner.** Hoist the circuit breaker (and optionally a cross-turn dedup of *mutating* calls) to the process-lifetime `Runner`, injected into each `LlmAgent`. Add a per-thread in-flight guard there too. Closes B-03 and B-05.
+4. **Observability as a first-class boot concern.** A single `obs.Init(cfg)` called by *both* `serve` and `chat` that installs the tracer, the `slog` JSON handler (with `service`/`version` base attrs), and the Prometheus registry; spans for `agent.turn` and `tool.execute`; a stream idle watchdog. Closes O-01/O-02/O-08, B-08.
 
-The principle (per the project's "no atomic bombs / minimal industrial shape" directive): **do not touch the loop core — it is correct.** Add the smallest layers that close the perimeter: a real cancellation ctx, a resilient LLM client, a provenance-aware tool boundary, per-event journaling, and an operational surface. Each is independently shippable.
+These four are independent and individually shippable, each closing a cluster of findings without touching the verified-correct loop core.

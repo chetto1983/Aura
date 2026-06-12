@@ -1,69 +1,67 @@
-# Risk Register — Aura `internal/agent`
+# Risk Register — Aura `internal/agent` (2026-06-12)
 
-Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated), PARTIAL (some defense exists), TRACKED (accepted with a documented decision pending). All risks are OPEN at audit time unless noted.
+Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated), PARTIAL (some defense exists), TRACKED (accepted, decision pending), CLOSED (verified fixed).
 
+**History.** 2026-06-10 closed R-01..R-17 (P0/P1 pass). 2026-06-11 closed R-18..R-25, R-35, R-43 (P2 boundary pass). This 2026-06-12 re-audit **re-opens two over-credited closures** (R-05 as B-01, R-09 as B-04) and adds new findings (`B-/O-/D-/M-` IDs) from the production-perimeter review.
 
-**Closure update - 2026-06-10:** R-01 through R-17 are closed in code by the P0/P1 remediation pass. Residual P2/P3 hardening remains tracked below.
+## Active risks (2026-06-12)
 
-**Closure update - 2026-06-11:** R-18/R-19/R-20/R-21/R-22/R-23/R-24/R-25/R-35/R-43 are closed in code by the P2 boundary/lifecycle pass. See [`p2-boundary-lifecycle-validation-2026-06-11.md`](p2-boundary-lifecycle-validation-2026-06-11.md) for validation evidence and the remaining global coverage-floor caveat.
-
-| ID | Title | Severity | Probability | Impact | Affected area | Mitigation | Status |
+| ID | Title | Sev | Prob | Impact | Area | Mitigation | Status |
 |---|---|---|---|---|---|---|---|
-| R-01 | Prompt injection via unmarked untrusted tool output → host RCE + exfiltration | P0 | H | H | prompt assembly / tool boundary (`llm_agent.go:361`) | Provenance envelope + control-token neutralization (A-11); env filter (A-5); destructive gate (A-18) | CLOSED |
-| R-02 | Hung MCP server wedges every turn + deadlocks shutdown | P0 | M | H | `mcp/client.go`, `mcptools/bridge_reconnect.go` | Per-call timeout + ctx-aware read (A-2) | CLOSED |
-| R-03 | `fs_edit` empty `old_string` corrupts host files | P1 | M | H | `tools/fs_edit.go` | Reject empty `old_string` (A-1) | CLOSED |
-| R-04 | Wallclock cap is inert; in-flight tool/LLM work runs unbounded | P1 | M | H | `budget.go` (dead `WithDeadline`), `runner.go` | Wire `WithDeadline` + `NodeTimeout` + clamp `timeout_ms` (A-3) | CLOSED |
-| R-05 | Intra-turn persistence loss → duplicated mutating side effects on resume/crash | P1 | H | H | `runner_persist.go`, `llm_agent.go` | Per-event journaling (A-12) | CLOSED |
-| R-06 | Crash in pause window → orphan tool_result → conversation 400s forever | P1 | L | H | `runner_persist.go` (two-phase pause write) | One-transaction pause + load-time repair (A-13) | CLOSED |
-| R-07 | All secrets broadcast to every shell + MCP child; preview unredacted | P1 | H | H | `shell_exec.go:393`, `mcp/client.go:83` | Child-env filter (A-5) + preview redaction (A-21/3.6) | CLOSED |
-| R-08 | Subprocess output buffered unbounded → OOM on the shared host | P1 | M | H | `shell_exec.go`, `shell_bg.go` | Ring/tail cap (A-4) | CLOSED |
-| R-09 | Auto-activating `always:true` skill self-extension → persistent backdoor | P1 | M | H | `skills/writer.go`, `tools/skill_write.go` | Gate `always:true` + alert + fix stale contract (A-... / 3.2) | CLOSED |
-| R-10 | Model self-approves its own gated destructive scheduled task | P1 | M | M | `tools/task.go:106` | Remove model-facing `approve` (A-6) | CLOSED |
-| R-11 | No retry/breaker on provider 429/5xx → turns die on routine blips | P1 | H | M | `llm_agent_stream_retry.go` | Retry/backoff + breaker (A-9) | CLOSED |
-| R-12 | Uncapped model-controlled parallel tool fan-out saturates the host | P1 | M | M | `llm_agent_parallel.go` | Semaphore cap (A-10) | CLOSED |
-| R-13 | Mid-stream LLM error kills a near-complete turn, orphans side effects | P1 | H | M | `llm_agent.go:consume` | Bounded re-issue from the loop (A-... / 1.7) | CLOSED |
-| R-14 | Operationally blind: no metrics, no `/healthz` — P0 hang undetectable | P1 | H | M | `agui/server.go`, agent core | `/healthz` + counters (A-8), Prometheus (A-27) | CLOSED |
-| R-15 | LoopAgent×LlmAgent composition double-spends budget + double dedup | P1 | L | M | `workflow/loop.go` + `llm_agent.go` | Single budget owner (A-25) | CLOSED |
-| R-16 | LoopAgent `maxIter=0` hot-spins on a non-tool sub (100% CPU, no escape) | P1 | L | H | `workflow/loop.go:64–129` | Ctx check + per-iteration budget (A-25 / 2.2) | CLOSED |
-| R-17 | Coverage floor doesn't gate `agent/tools` (shell/fs/skill) | P1 | H | M | `scripts/coverage_gate.sh:44` | Remove the exclusion (A-7) | CLOSED |
-| R-18 | `send_file` unfenced → arbitrary host-file exfiltration to channel | P2 | M | H | `tools/send_file.go` | Workspace fence + outside-workspace refusal/approval signal (A-18) | CLOSED |
-| R-19 | No enforced backstop on destructive shell commands | P2 | M | H | `shell_exec.go` | Destructive-pattern approval gate (A-18) | CLOSED |
-| R-20 | MCP reconnect replays a possibly-completed side effect | P2 | M | M | `bridge_reconnect.go` | Reconnect without replay after `tools/call` transport failure (A-17) | CLOSED |
-| R-21 | Bridged MCP tools never `Mutating` → skip critic, eligible for replay | P2 | M | M | `mcptools/bridge.go` | Default `Mutating` + `readOnlyHint` (A-17) | CLOSED |
-| R-22 | MCP tool descriptions trusted verbatim → tool poisoning | P2 | L | H | `mcptools/bridge.go`, `search.go` | Untrusted framing + length caps for descriptions and manifest summaries (A-17) | CLOSED |
-| R-23 | Sidecar `tool_call_id` collision → wrong data paged as ground truth | P2 | M | M | `tools/result.go` | Host-minted opaque spill id (A-20) | CLOSED |
-| R-24 | `read_tool_output` unbounded `limit` re-inflates truncated output | P2 | M | M | `tools/read_tool_output.go` | Clamp + bounded read (A-19) | CLOSED |
-| R-25 | Streamable-HTTP MCP: no reconnect, no body cap → brick / OOM | P2 | L | M | `mcptools/mount.go`, `mcp/http_client.go` | Reconnect decorator + capped HTTP response bodies (A-17) | CLOSED |
-| R-26 | ledger is best-effort, not a pre-execution audit gate | P2 | M | M | `runner_persist.go` | Write-ahead intent row or document (A-28) | TRACKED |
-| R-27 | `SubmitAnswer` non-atomic → duplicate tool_results | P2 | L | H | `runner_resume.go` | One-transaction inject+mark (A-13) | OPEN |
-| R-28 | L1 microcompact destroys ask_user answers, points to absent sidecars | P2 | M | M | `conversations/context.go:202` | Exempt sidecar-less ids (revisit w/ A-12) | OPEN |
-| R-29 | `hardCap` clamps to 0 → disables all context protection (small models) | P2 | L | H | `conversations/context.go:66` | Treat cap≤0 as config error; per-model window | OPEN (future Slice-13) |
-| R-30 | Oversized final round silently discarded → model sees no user request | P2 | L | M | `conversations/context.go:274` | Return `dropped=false` when empty (route to error) | OPEN |
-| R-31 | Tracing dropped by default + global no-op error handler | P2 | H | L | `tracing.go:63`, `config.go` | Exporter honesty + collector profile (A-26) | OPEN |
-| R-32 | No structured logging in the agent core | P2 | H | M | agent core | slog JSONHandler + correlated logs (A-14) | OPEN |
-| R-33 | `$AURA_RUN_DIR` + reasoningtrace grow monotonically | P2 | M | M | `orphan_scan.go`, `reasoningtrace.go` | TTL sweep + rotation (A-21) | OPEN |
-| R-34 | SIGTERM drops in-flight conversational turns (asymmetric drain) | P2 | M | M | `serve.go`, `bot_dispatch.go` | Bounded turn drain (A-23) | OPEN |
-| R-35 | Background shells: no shutdown kill, no cap, never pruned | P2 | M | M | `shell_bg.go`, `cmd/aura/main.go` | `Shutdown()` + cap + pruning (A-22) | CLOSED |
-| R-36 | No Windows CI lane → Windows kill-path code untested | P2 | M | M | `.github/workflows/ci.yml` | Windows shell lane (A-24) | OPEN |
-| R-37 | Finalize/critic mid-stream errors silently swallowed | P2 | M | L | `llm_agent_finalize.go`, `_completion.go` | Record both errors (A-15) | OPEN |
-| R-38 | Stream-open retry classifies by substring; double-submit risk | P2 | M | L | `llm_agent_stream_retry.go` | Typed classification (A-31) | OPEN |
-| R-39 | Duplicate `text_response` → dangling tool_call → 400 | P2 | L | M | `llm_agent.go:dispatch` | Synthetic results for extras (A-16) | OPEN |
-| R-40 | Primary user channel rides telebot v4 beta | P3 | L | M | `go.mod` | Pin-watch GA; re-run HITL live tests on bump | TRACKED |
-| R-41 | Per-session tool state never evicted in the daemon | P3 | M | L | `todo.go`, `shell_exec.go`, `shell_bg.go` | Evict via ConversationCleaner / TTL (A-33) | OPEN |
-| R-42 | `anyInt` rejects `json.Number` (dormant token-zeroing) | P3 | L | M | `runner_persist.go:334` | Add `json.Number` case (A-33) | OPEN (dormant) |
-| R-43 | Sidecar id permits `:` (Windows ADS) + world-readable perms | P3 | L | M | `tools/result.go` | Allowlist grammar + `0o600` (A-33) | CLOSED |
-| R-44 | AG-UI gateway: no per-thread in-flight guard | P3 | L | M | `agui/server.go` | Per-thread singleflight (A-33) | OPEN |
-| R-45 | `Registry.Register` silent overwrite on duplicate name | P3 | L | M | `tools/spec.go:84` | Fail-loud on duplicate (A-33) | OPEN |
+| B-01 | Mutating tool side effects re-execute after intra-turn crash (R-05 was over-credited) | P1 | M | H | dispatch ↔ persistence ordering | Write-ahead intent row + recovery marker (AP-1) | OPEN |
+| B-02 | Swarm child reports re-enter parent prompt with no untrusted envelope | P1 | M | H | `swarm/runner_adapter.go`, `trust.go` | Set `Provenance{Trust:Untrusted}` (AP-2) | OPEN |
+| B-03 | No per-thread in-flight guard → conversation corruption + budget double-spend | P1 | M | H | `agui/server.go`, `runner.go` | Per-thread guard in Runner (AP-3) | OPEN |
+| B-04 | Self-extension gate open for `always:false` + lying schema + lost alert (R-09 regressed by P5) | P1 | M | H | `skills/writer.go`, `tools/skill.go` | Honest schema + restore alert (AP-4) | OPEN |
+| O-01 | `serve` never boots tracer + zero structured logging → prod blind | P1 | H | M | `serve.go`, agent core | `obs.Init` tracer + JSON slog (AP-5) | OPEN |
+| O-02 | No latency/error/cost metrics, no Prometheus | P1 | H | M | `metrics.go` | Prometheus `/metrics` (AP-6) | OPEN |
+| D-01 | No production container for the privileged agent binary | P1 | M | H | repo root, `compose.yaml` | Dockerfile + hardened compose (AP-7) | OPEN |
+| M-01 | L1 microcompact destroys `ask_user` answers → dead pointer (R-28) | P2 | M | M | `conversations/context.go:208` | Pointer-rewrite only sidecar-backed turns (AP-8) | OPEN |
+| M-02 | `SubmitAnswer` non-atomic → duplicate resume bricks the round (R-27) | P2 | L | H | `runner_resume.go:77` | One-transaction inject+mark (AP-9) | OPEN |
+| M-03 | `hardCap<=0` silently disables all context protection (R-29) | P2 | L | H | `context.go:66,153` | Treat ≤0 as config error / per-model floor (AP-10) | OPEN |
+| B-05 | Circuit breaker per-turn → no cross-turn protection | P2 | M | M | `llm_agent.go:117` | Hoist to Runner singleton (AP-11) | OPEN |
+| B-06 | Breaker-open routes to error slot, not finalize | P2 | M | L | `llm_agent.go:225` | Route to finalize (AP-11) | OPEN |
+| B-07 | `LoopAgent` maxIter=0 hot-spins on a budget-owning sub (latent, off prod path) | P2 | L | H | `workflow/loop.go:67` | Require >0 or break on no-progress (AP) | OPEN |
+| O-03 | otel global no-op error handler silences all prod otel errors (R-31) | P2 | H | L | `tracing.go:63` | Rate-limited logging handler (AP-5) | OPEN |
+| O-04 | No boot secret validation; no secret-redacting log handler (R-32 adj.) | P2 | M | M | `config.go`, `serve.go:130` | `Config.Validate()` + redact `ReplaceAttr` (AP-14) | OPEN |
+| O-05 | `/healthz` PG-only; no Neo4j/provider readiness; no `/readyz` (R-14 residual) | P2 | M | M | `serve.go:178`, `agui/server.go` | Dep probes + `/readyz` (AP-14) | OPEN |
+| B-08 | No stream idle-timeout watchdog (stall bounded only by total timeout) | P2 | M | M | `internal/llm`, `llm_agent.go:184` | Per-chunk idle watchdog (AP-12) | OPEN |
+| B-09 | Divergent `secretEnvKey`; shell leaks bare `*_KEY` (R-07 divergence) | P2 | M | M | `shell_exec_env.go:22`, `mcp/client.go:164` | One shared `IsSecretEnvKey` (AP-13) | OPEN |
+| B-10 | Destructive-shell gate regex-bypassable + off by default (R-19 residual) | P2 | M | M | `shell_exec_env.go:71` | Document advisory + default patterns (AP-15) | OPEN |
+| B-11 | `shell_exec.go` 598/600 LOC god-class | P2 | H | L | `tools/shell_exec.go` | Pre-emptive split (AP-15) | OPEN |
+| M-04 | Sidecar spill outside tx → orphan-on-rollback unreclaimed in live conv | P2 | M | L | `conversations/store.go:296` | Spill-inside-tx or sweep reconciliation (AP-16) | OPEN |
+| M-05 | `dropOldestRound` can drop the newest user turn (R-30 residual) | P2 | L | M | `context.go:281` | Never drop the newest round (AP-10) | OPEN |
+| M-06 | `$AURA_RUN_DIR` + reasoningtrace grow monotonically (R-33) | P2 | M | M | `orphan_scan.go`, `reasoningtrace.go` | Periodic TTL sweep + rotation (AP-16) | OPEN |
+| O-06 | SIGTERM hard-cancels in-flight turns (asymmetric drain) (R-34) | P2 | M | M | `serve.go` | Bounded turn drain (AP-17) | OPEN |
+| O-07 | No Windows CI lane; OS-specific kill code untested (R-36) | P2 | M | M | `.github/workflows/ci.yml` | `windows-latest` lane (AP-17) | OPEN |
+| R-41 | Per-session tool state never evicted in the daemon | P2 | M | L | `todo.go`, `shell_bg.go` | `Evict(sessionID)` hook (AP-16) | OPEN |
+| T-01 | No fuzz/bench + no mutation score for agent core | P2 | H | M | agent test suite | Fuzz+bench+mutation (AP-21) | OPEN |
+| M-07 | `anyInt` rejects `json.Number` (dormant token-zeroing) (R-42) | P3 | L | M | `runner_persist.go:412` | Add `json.Number` case (AP-22) | OPEN (dormant) |
+| B-12 | Mid-stream retry replays partial chunks to the user (cosmetic) | P3 | M | L | `llm_agent.go:245`, `chat_render.go` | Buffer chunks until clean completion | OPEN |
+| B-13 | Stream-open retry classifies by substring fallback (R-38 residual) | P3 | M | L | `llm_agent_stream_retry.go:96` | Typed sentinels (`ECONNRESET`/`ErrUnexpectedEOF`) | OPEN |
+| O-08 | Span coverage `llm.request`-only; no turn/tool spans | P3 | M | L | `tracing.go`, `llm_agent.go` | `agent.turn` + `tool.execute` spans (AP-20) | OPEN |
+| B-14 | `Registry.Register` silent overwrite on duplicate (R-45) | P3 | L | M | `tools/registry.go:102` | Fail-loud on duplicate | OPEN |
+| B-15 | Unframed/uncapped MCP argument-schema descriptions (R-22 residual) | P3 | L | H | `bridge.go:140`, `search.go:177` | Cap+frame arg descriptions | OPEN |
+| B-16 | `fs_grep`/`fs_glob` no node/time budget (`path:/` full-disk scan) | P3 | L | M | `fs_grep.go`, `fs_glob.go` | Node-count/deadline cap | OPEN |
+| T-02 | `foldToASCII` 23.5% covered (primary channel filename folding) | P3 | L | L | `send_file.go:193` | Table test | OPEN |
+| T-03 | Deferred-tool `Spec()` 0% covered | P3 | L | L | `fs_*`/`search.go` | Golden well-formed-spec test | OPEN |
+| T-04 | `agenttest` dilutes the coverage floor | P3 | M | L | `agenttest`, `coverage_gate.sh:44` | Exclude from denominator | OPEN |
+| M-08 | `EnsureConversation` race reconciliation masks real create failure | P3 | L | L | `runner.go:186` | Classify `23505` before swallowing | OPEN |
+| R-26 | Ledger best-effort, not a pre-execution audit gate | P2 | M | M | `runner_persist.go` | Subsume into write-ahead intent log (AP-19) | TRACKED |
+| R-40 | Primary channel on telebot v4 beta | P3 | L | M | `go.mod` | Pin-watch GA; re-run HITL tests on bump | TRACKED |
+
+## Verified CLOSED (do not re-open)
+
+R-01 (untrusted envelope, direct feeders), R-02 (MCP per-call timeout), R-03 (`fs_edit` empty `old_string`), R-04 (`WithDeadline`/`NodeTimeout` wired + shell clamp), R-06 (one-tx pause + load-time repair), R-07-shell (child-env denylist + preview redaction — see B-09 for the divergence), R-08 (subprocess ring/tail cap), R-10 (model-facing `task approve` removed), R-11 (retry + breaker checked before call — see B-05 for lifetime), R-12 (parallel fan-out cap), R-13 (mid-stream bounded re-issue), R-15 (`OwnsBudget` single owner), R-16 (ctx check + empty-pass charge — see B-07 for the budget-owner edge), R-17 (coverage gate covers `agent/tools`), R-18 (`send_file` fence), R-20 (MCP reconnect-no-replay), R-21 (MCP default `Mutating`), R-23/R-24/R-43 (sidecar id grammar + perms + clamp), R-35 (bg-shell `Shutdown`/cap/prune), R-37 (finalize/critic errors recorded), R-39 (terminal-after-batch partition).
 
 ## Top 10 by exposure (severity × probability × impact)
 
-1. **R-01** Prompt injection (P0, H/H)
-2. **R-05** Intra-turn persistence loss → duplicate side effects (P1, H/H)
-3. **R-07** Secrets broadcast to children (P1, H/H)
-4. **R-02** MCP hang wedges daemon (P0, M/H)
-5. **R-03** `fs_edit` file corruption (P1, M/H)
-6. **R-09** Auto-activating skill backdoor (P1, M/H)
-7. **R-08** Subprocess OOM (P1, M/H)
-8. **R-04** Inert wallclock cap (P1, M/H)
-9. **R-11** No provider retry/breaker (P1, H/M)
-10. **R-14** Operationally blind (P1, H/M)
+1. **B-01** Mutating re-execution on crash (P1, M/H)
+2. **B-02** Swarm prompt-injection laundering (P1, M/H)
+3. **B-03** Conversation corruption under concurrency (P1, M/H)
+4. **B-04** Self-extension open + lying contract (P1, M/H)
+5. **O-01** Production untraced + unlogged (P1, H/M)
+6. **O-02** No latency/error/cost metrics (P1, H/M)
+7. **D-01** No production container (P1, M/H)
+8. **M-01** `ask_user` answers destroyed by compaction (P2, M/M)
+9. **M-03** Small-window context protection silently off (P2, L/H)
+10. **M-02** Non-atomic resume bricks the round (P2, L/H)
