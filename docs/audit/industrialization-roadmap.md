@@ -4,6 +4,8 @@ Step-by-step plan to take the agent runtime from strong-prototype to production-
 
 **Guiding principle (project doctrine "no atomic bombs / minimal industrial shape"):** the loop core is correct — do not rewrite it. Add the smallest layers that close the perimeter. Every item below is localized.
 
+> **Progress (verified 2026-06-13 — see [`reconciliation-2026-06-13.md`](reconciliation-2026-06-13.md)).** Phase 0 is **COMPLETE** and the Phase 1 P1s (O-01, O-02) + Phase 4's D-01 are **DONE** — closed by commit `ec7fe2f6` after this roadmap was written, each with a passing acceptance test. The score moved 6.5 → ~7.5 (the predicted "closing the P1 set lands 7.5–8"). What remains is the **P2/P3 perimeter**: Phase 1 reliability leftovers (B-05/06, B-08, O-03, O-05, O-08), Phase 2 (M-01..M-04 except M-05-done, B-07, B-09, B-11-nominal), Phase 3 (O-04-partial, B-10, B-15-partial, B-16), Phase 4 (O-06, O-07, M-06-partial, R-41), Phase 5 (T-01, T-03-partial, T-04, M-07, chaos).
+
 ---
 
 ## Phase 0 — Stabilization (durability + trust + concurrency)

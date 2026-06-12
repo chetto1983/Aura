@@ -3,6 +3,8 @@
 **Audited path:** `d:\Aura\internal\agent` (+ adjacent `internal/runner`, `internal/conversations`, `internal/askuser`, `internal/llm`, `internal/mcp`, `internal/agui`, `internal/config`, `cmd/aura`).
 **Branch:** `tabula-rasa` · **Latest cycle:** 2026-06-12 (re-audit-2) · **Prior cycles:** 2026-06-10, 2026-06-11.
 
+> **Verified status as of 2026-06-13 → [`reconciliation-2026-06-13.md`](reconciliation-2026-06-13.md).** The P1 gate (B-01..B-04, O-01, O-02, D-01) was **CLOSED + tested** by commit `ec7fe2f6` after this audit was written. Current verified state: **score ~7.5 · 0 P1 open · 10 CLOSED / 6 PARTIAL / 22 OPEN / 2 TRACKED.** The tables below are the 2026-06-12 snapshot; the reconciliation note and `risk-register.md` carry the live status.
+
 This is a fresh, evidence-based re-audit that *verifies the prior remediation claims against the current code* rather than re-deriving from scratch. Every finding carries a `file:line`, an impact statement, and a recommended fix. Where a prior "CLOSED" does not hold, it is flagged as over-credited with evidence.
 
 ---

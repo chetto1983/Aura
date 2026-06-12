@@ -4,6 +4,8 @@
 
 > Supersedes the 2026-06-10 executive summary (score 5.5). This cycle re-verifies the 06-10/06-11 remediation against current code: most P0/P1 closures hold; two are over-credited; several new operational and durability gaps surface.
 
+> **⚠️ Status moved on 2026-06-13.** This summary's "6.5 / 8 P1 open" reflects the morning of 2026-06-12. Commit `ec7fe2f6` then **closed the entire P1 gate** (B-01..B-04, O-01, O-02, D-01) with passing acceptance tests. Verified current state: **score ~7.5; 0 P1 open; 10 CLOSED / 6 PARTIAL / 22 OPEN / 2 TRACKED.** See [`reconciliation-2026-06-13.md`](reconciliation-2026-06-13.md).
+
 ---
 
 ## Verdict

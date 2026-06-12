@@ -1,6 +1,7 @@
 {
   "audit_date": "2026-06-12",
   "audit_cycle": "re-audit-2 (fresh deep-dive verifying the 2026-06-10/11 remediation claims against current code)",
+  "status_verified": "2026-06-13 — the P1 gate (B-01..B-04, O-01, O-02, D-01) was CLOSED + tested by commit ec7fe2f6 AFTER this index was authored; see reconciliation-2026-06-13.md for per-finding verified status",
   "audited_path": "d:\\Aura\\internal\\agent",
   "audited_scope": {
     "non_test_loc_approx": 9100,
@@ -18,8 +19,10 @@
     "D:\\tmp\\adk-go-study (google/adk-go v1.4 — framework)",
     "D:\\tmp\\agent-memory (Neo4j Labs — memory framework, orthogonal to loop)"
   ],
-  "production_readiness_score": 6.5,
+  "production_readiness_score": 7.5,
+  "production_readiness_score_at_audit": 6.5,
   "score_scale": "0-10",
+  "score_rationale_2026_06_13": "Re-scored 6.5 -> 7.5 after verifying that ec7fe2f6 genuinely closed all seven P1 go-live blockers (each with a passing acceptance test; B-01 read down to its recovery-marker test). Held below 8 by 22 OPEN + 6 PARTIAL P2/P3 items (no stream idle watchdog, per-turn breaker, microcompact ask_user answer-loss, no /readyz, no Windows CI, no agent-core fuzz/bench/mutation). Core loop ~8.5; perimeter now ~6.5.",
   "score_rationale": "The agent CORE LOOP is genuinely production-grade (8.5/10 in isolation): TOCTOU-safe shared-atomic budget, race-clean iter.Seq2 with airtight yield-after-false discipline, two-tier dedup with progress veto, real circuit breaker checked before each call, bounded per-call/per-tool timeouts, untrusted-output provenance envelope (NFKC + HTML-escape + crypto/rand nonce), capped subprocess buffers, symlink-resistant workspace fences. The 2026-06-10/11 P0/P1 remediation is REAL work, not paperwork — most prior closures verify. The score is held down by the PRODUCTION PERIMETER, which this re-audit finds materially weaker than the prior cycle credited: (a) crash-durability gap — mutating tool side effects re-execute after an intra-turn crash (R-05 only half-closed); (b) the serve daemon never boots the tracer and the agent core has no structured logging and no latency/error/cost metrics, so production runs operationally BLIND; (c) no per-thread in-flight guard — concurrent runs on one thread corrupt conversation history; (d) a new trust-boundary hole — swarm child reports re-enter the parent prompt unwrapped; (e) no production container (non-root, resource-bounded) for a runtime that executes arbitrary shell. Core 8.5, perimeter ~4.5 → blended 6.5. Closing the P1 set lands 7.5-8.",
   "dimension_scores": {
     "loop_correctness": 9,
@@ -53,6 +56,17 @@
     "P2": 20,
     "P3": 12
   },
+  "findings_by_status_2026_06_13": {
+    "CLOSED": 10,
+    "PARTIAL": 6,
+    "OPEN": 22,
+    "TRACKED": 2,
+    "closed_ids": ["B-01", "B-02", "B-03", "B-04", "O-01", "O-02", "D-01", "M-05", "B-11", "T-02"],
+    "partial_ids": ["B-07", "B-13", "M-06", "O-04", "B-15", "T-03"],
+    "open_ids": ["B-05", "B-06", "B-08", "B-12", "M-01", "M-02", "M-03", "M-04", "M-07", "M-08", "R-41", "O-03", "O-05", "O-06", "O-07", "O-08", "B-09", "B-10", "B-14", "B-16", "T-01", "T-04"],
+    "tracked_ids": ["R-26", "R-40"],
+    "note": "B-11 is CLOSED only nominally (shell_exec.go at 599/600 LOC); O-04 PARTIAL (redaction yes, Config.Validate() no)"
+  },
   "prior_p0_status": [
     {"id": "R-01", "title": "Untrusted tool output re-enters prompt unmarked", "status": "CLOSED for the 8 direct feeders (trust.go envelope verified); RESIDUAL HOLE: swarm_spawn reports bypass it (see B-02)"},
     {"id": "R-02", "title": "Hung MCP server wedges every turn + deadlocks shutdown", "status": "CONFIRMED-CLOSED (per-call timeout + ctx-aware read + reconnect-no-replay)"}
@@ -76,6 +90,7 @@
     {"id": "A-4", "title": "Boot the tracer in serve + default slog JSON handler with request_id/thread_id correlation (close O-01)", "effort": "S/M", "phase": 1},
     {"id": "A-5", "title": "Prometheus /metrics with turn/tool/LLM latency histograms, error + inflight + cost (close O-02)", "effort": "M", "phase": 1}
   ],
+  "recommended_next_actions_status_2026_06_13": "A-1..A-5 are DONE (closed by ec7fe2f6, verified). The remaining roadmap is P2/P3: reliability (B-05/06 breaker, B-08 idle watchdog), memory correctness (M-01 microcompact, M-02 resume-atomicity, M-03 hardCap, M-04 spill-tx), ops (O-03/05/06/07/08, O-04 Config.Validate), security (B-09 secret-unify, B-10 gate, B-14 register, B-16 fs-walk), test apex (T-01 fuzz/bench/mutation, T-04). See reconciliation-2026-06-13.md.",
   "verified_strengths": [
     "Budget core TOCTOU-safe (decrement-then-check-then-restore), fan-out-proof shared atomic, fail-fast env parsing, injectable clock",
     "iter.Seq2 yield-after-false discipline airtight; ParallelAgent + executeBatch have no constructible deadlock/leak (race-green, goleak-guarded)",
@@ -99,6 +114,6 @@
     "infrastructure-audit.md", "security-audit.md", "testing-strategy.md",
     "industrialization-roadmap.md", "action-plan.md", "risk-register.md",
     "target-architecture.md", "proposed-patches.md", "audit-index.json",
-    "re-audit-2026-06-12.md"
+    "re-audit-2026-06-12.md", "reconciliation-2026-06-13.md"
   ]
 }
