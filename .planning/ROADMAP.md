@@ -515,13 +515,21 @@ Plans:
 **Depends on**: Phase 14
 **Requirements**: UX-06, UX-07, UX-08, UX-09
 **Slices**: ~~11a, 11b, 11c, 11d, 11e~~ → **superseded by Amendment #61 (agent-memory MCP adoption)**; 11f Task Canvas (#25) remains independent. Plan-phase will re-derive the slice breakdown around the MCP sidecar wiring + `aura memory` commands.
-**Success Criteria** (what must be TRUE):
+**Success Criteria** *(re-derived against the agent-memory MCP surface — PRD amendment #62, D-12)* (what must be TRUE):
 
-  1. Operator runs `aura memory ingest <file.pdf>` twice (same file) and observes second run skipped via content-hash dedup; first run produces `:Document` + N `:Chunk` (with 768d `embedding`) + extracted `:Entity` nodes; embed boot assertion (Pitfall #7) confirms `model.output_dim == AURA_EMBED_DIMENSIONS`
-  2. Operator runs the entity-resolution chaos test (10 goroutines concurrently ingesting "Mario Rossi" with whitespace + case variations) and observes exactly one `:Entity {name:'mario rossi', type:'Person'}` node afterward (UNIQUE constraint + MERGE pattern correct — Pitfall #15 fix)
-  3. Operator runs `aura memory search "<query>"` and observes hybrid retrieval (HNSW + BM25 + 1-hop graph) results with LLM re-rank, recall@5 ≥ 0.8 on 100K-chunk synthetic corpus, p95 ≤ 30ms vector search; result snapshot appended to `docs/aura-quality-snapshot.md`
-  4. After a multi-turn conversation, operator observes a new `:AgentEpisode` written to the graph; cross-conv pattern triggers a new `:AgentInsight` node; `aura memory recall-insights --since=7d` returns top-K with retrieval cached for `AURA_AGENT_INSIGHT_CACHE_TTL_SEC` (Pitfall #3 + Amendment #11 — `messages[2]` cache-stable)
-  5. CI gate: `docs/aura-quality-snapshot.md` MUST be updated on any P15 PR; missing update fails the build (Amendment #20 quality regression gate)
+  1. **Default-on managed mount**: a fresh machine boots with the 16 `memory__*` tools mounted (Deferred, namespaced) via the trusted, default-on `memory` managed recipe — **no `aura mcp install` required** — and a down sidecar fails soft (boot continues, structured self-correctable result), per D-08/D-09
+  2. **Operator CLI round-trip**: `aura memory <verb>` (search/context/add-entity/add-fact/add-preference/sessions/trace) round-trips against the live sidecar via raw `memory_*` `CallTool`
+  3. **Agent recall path**: the real `LlmAgent` loop drives `tool_search → memory__memory_search → text_response` and returns seeded content (the spike-035 path on the real bridge)
+  4. **KV-cache invariant unchanged**: `scripts/cache_invariant_audit.sh` still passes unchanged — no `messages[2]` insight stream is added (D-04); pull-on-demand never touches the cacheable prefix
+  5. **Reproducible build + advisory snapshot**: `docker compose build aura-agent-memory-mcp` builds from a vendored Dockerfile (fork @ `c1c2d65`, replacing `:spike-fixed`); advisory recall@5/p95 measured against the package are appended to `docs/aura-quality-snapshot.md` (amendment #20 snapshot gate still applies, now advisory not pass-fail)
+
+> **Bespoke Success Criteria** *(superseded by Amendment #61/#62 — retained as design reference, NOT implementation targets)*:
+>
+>   1. Operator runs `aura memory ingest <file.pdf>` twice (same file) and observes second run skipped via content-hash dedup; first run produces `:Document` + N `:Chunk` (with 768d `embedding`) + extracted `:Entity` nodes; embed boot assertion (Pitfall #7) confirms `model.output_dim == AURA_EMBED_DIMENSIONS`
+>   2. Operator runs the entity-resolution chaos test (10 goroutines concurrently ingesting "Mario Rossi" with whitespace + case variations) and observes exactly one `:Entity {name:'mario rossi', type:'Person'}` node afterward (UNIQUE constraint + MERGE pattern correct — Pitfall #15 fix)
+>   3. Operator runs `aura memory search "<query>"` and observes hybrid retrieval (HNSW + BM25 + 1-hop graph) results with LLM re-rank, recall@5 ≥ 0.8 on 100K-chunk synthetic corpus, p95 ≤ 30ms vector search; result snapshot appended to `docs/aura-quality-snapshot.md`
+>   4. After a multi-turn conversation, operator observes a new `:AgentEpisode` written to the graph; cross-conv pattern triggers a new `:AgentInsight` node; `aura memory recall-insights --since=7d` returns top-K with retrieval cached for `AURA_AGENT_INSIGHT_CACHE_TTL_SEC` (Pitfall #3 + Amendment #11 — `messages[2]` cache-stable)
+>   5. CI gate: `docs/aura-quality-snapshot.md` MUST be updated on any P15 PR; missing update fails the build (Amendment #20 quality regression gate)
 
 **Plans**: 5 plans (re-derived against the agent-memory MCP surface, 2026-06-11)
 **Wave 1**
