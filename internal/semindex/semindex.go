@@ -19,6 +19,13 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
+// Item is one PerItem bank entry: a label paired with its (caller-provided or
+// embedded) vector. The Ranker appends these incrementally (D-03).
+type Item struct {
+	Label string
+	Vec   []float64
+}
+
 // Scored pairs a label with its cosine score against a query. It is the Ranker's
 // PerItem result shape (mirrors the bm25 scoredDoc analog, exported with a
 // label). Margin lives on the Classifier result only — it does not pollute this.
