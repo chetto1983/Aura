@@ -33,6 +33,7 @@ type Config struct {
 // callsites that still hold the narrow provider interface.
 type ShutdownFunc func(context.Context) error
 
+// Shutdown flushes and releases the wrapped observability provider.
 func (f ShutdownFunc) Shutdown(ctx context.Context) error {
 	if f == nil {
 		return nil

@@ -74,7 +74,7 @@ func New(cfg Config) *Learner {
 	if q <= 0 {
 		q = defaultQueue
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // G118: cancel is retained on Learner and called by Close.
 	l := &Learner{
 		oracle:  cfg.Oracle,
 		saver:   cfg.Saver,
