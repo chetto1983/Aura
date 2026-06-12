@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -85,6 +86,81 @@ func TestRenderToolDefs_Namespaced(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("order[%d] = %q, want %q (namespaced names must sort alphabetically)", i, got[i], want[i])
 		}
+	}
+}
+
+func TestFilesystemToolSpecsDescribeOperationalContracts(t *testing.T) {
+	tests := []struct {
+		name        string
+		tool        Tool
+		wantName    string
+		wantSummary string
+		wantPhrases []string
+		wantMutate  bool
+	}{
+		{
+			name:        "read",
+			tool:        &FSRead{},
+			wantName:    "fs_read",
+			wantSummary: "Read a file from disk.",
+			wantPhrases: []string{"1-based `offset`", "Read a file with this tool BEFORE editing", "large result pages"},
+		},
+		{
+			name:        "edit",
+			tool:        &FSEdit{},
+			wantName:    "fs_edit",
+			wantSummary: "Replace an exact string in a file.",
+			wantPhrases: []string{"Read the file first", "must be UNIQUE", "`replace_all`"},
+			wantMutate:  true,
+		},
+		{
+			name:        "write",
+			tool:        &FSWrite{},
+			wantName:    "fs_write",
+			wantSummary: "Write a file to disk (create or overwrite).",
+			wantPhrases: []string{"COMPLETE `content`", "prefer fs_edit", "Always report the absolute path"},
+			wantMutate:  true,
+		},
+		{
+			name:        "glob",
+			tool:        &FSGlob{},
+			wantName:    "fs_glob",
+			wantSummary: "Find files by name pattern.",
+			wantPhrases: []string{"Find files by NAME", "`**`", "use fs_grep to search their contents"},
+		},
+		{
+			name:        "grep",
+			tool:        &FSGrep{},
+			wantName:    "fs_grep",
+			wantSummary: "Search file contents with a regexp.",
+			wantPhrases: []string{"Search file CONTENTS", "RE2 regular expression", "To find files by NAME use fs_glob"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			spec := tt.tool.Spec()
+			if spec.Name != tt.wantName {
+				t.Fatalf("Name = %q, want %q", spec.Name, tt.wantName)
+			}
+			if spec.Summary != tt.wantSummary {
+				t.Fatalf("Summary = %q, want %q", spec.Summary, tt.wantSummary)
+			}
+			if spec.Deferred {
+				t.Fatal("filesystem tools must be visible without deferred discovery")
+			}
+			if spec.Mutating != tt.wantMutate {
+				t.Fatalf("Mutating = %v, want %v", spec.Mutating, tt.wantMutate)
+			}
+			if len(spec.Parameters) == 0 || !json.Valid(spec.Parameters) {
+				t.Fatalf("Parameters are not valid JSON: %s", spec.Parameters)
+			}
+			for _, phrase := range tt.wantPhrases {
+				if !strings.Contains(spec.Description, phrase) {
+					t.Fatalf("Description for %s missing %q: %s", tt.wantName, phrase, spec.Description)
+				}
+			}
+		})
 	}
 }
 

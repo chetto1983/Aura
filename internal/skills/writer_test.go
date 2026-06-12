@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/scoring"
@@ -172,6 +173,52 @@ func TestWriterPendingWrite(t *testing.T) {
 		if e.Name() != "fmt-skill" {
 			t.Errorf("leftover entry in pending dir: %q", e.Name())
 		}
+	}
+}
+
+func TestWriteInstallPendingPreAuditFailures(t *testing.T) {
+	w, root := newTestWriter(t)
+	fm := Frontmatter{Name: "installer", Description: "d", Type: TypeInstruction}
+
+	w.pendingDir = ""
+	if _, err := w.WriteInstallPending(t.Context(), fm, "body", filepath.Join(root, "staged"), "sha256:test", AuditActor{ActorID: "cli"}); err == nil || !strings.Contains(err.Error(), "pending dir not configured") {
+		t.Fatalf("WriteInstallPending without pendingDir = %v, want configured error", err)
+	}
+
+	w.pendingDir = filepath.Join(root, "pending")
+	_, err := w.WriteInstallPending(t.Context(), fm, "body", filepath.Join(root, "missing-staged"), "sha256:test", AuditActor{ActorID: "cli"})
+	if err == nil || !strings.Contains(err.Error(), "copy staged tree") {
+		t.Fatalf("WriteInstallPending with missing staged tree = %v, want copy error", err)
+	}
+	entries, readErr := os.ReadDir(w.pendingDir)
+	if readErr != nil {
+		t.Fatalf("read pending dir: %v", readErr)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("failed install pending write left temp entries: %v", entries)
+	}
+}
+
+func TestLifecycleMethodsSurfacePreAuditFilesystemErrors(t *testing.T) {
+	w, _ := newTestWriter(t)
+	actor := AuditActor{ActorID: "cli"}
+
+	if err := w.Activate(t.Context(), "missing", ApprovalCLI, "", actor); err == nil || !strings.Contains(err.Error(), "hash pending") {
+		t.Fatalf("Activate missing pending = %v, want hash pending error", err)
+	}
+	if err := w.Archive(t.Context(), "missing", ApprovalCLI, actor); err == nil || !strings.Contains(err.Error(), "move to archived") {
+		t.Fatalf("Archive missing active = %v, want move error", err)
+	}
+	if err := w.Restore(t.Context(), "missing", ApprovalCLI, actor); err == nil || !strings.Contains(err.Error(), "promote archived->active") {
+		t.Fatalf("Restore missing archive entry = %v, want promote error", err)
+	}
+
+	w.archiveDir = ""
+	if err := w.Restore(t.Context(), "missing", ApprovalCLI, actor); err == nil || !strings.Contains(err.Error(), "archive dir not configured") {
+		t.Fatalf("Restore without archive dir = %v, want configured error", err)
+	}
+	if err := w.SetAlways(t.Context(), "missing", true, actor); err == nil || !strings.Contains(err.Error(), "read active SKILL.md") {
+		t.Fatalf("SetAlways missing active skill = %v, want read error", err)
 	}
 }
 
