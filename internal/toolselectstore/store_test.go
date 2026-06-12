@@ -3,6 +3,7 @@ package toolselectstore
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 )
 
@@ -107,5 +108,41 @@ func TestStore_LoadExamples_ParsesAPOCJSONString(t *testing.T) {
 	}
 	if got[1].Tool != "document_search" || len(got[1].Vec) != 2 {
 		t.Errorf("raw-list row mis-parsed: %+v", got[1])
+	}
+}
+
+func TestStore_LoadExamples_PropagatesReadError(t *testing.T) {
+	g := &fakeGraph{readErr: errors.New("neo4j down")}
+	s := &Store{Client: g}
+	if _, err := s.LoadExamples(context.Background()); err == nil {
+		t.Error("LoadExamples must propagate the Read error")
+	}
+}
+
+func TestAsString_NonString(t *testing.T) {
+	if asString(42) != "" {
+		t.Error("asString of a non-string must be empty")
+	}
+	if asString(nil) != "" {
+		t.Error("asString of nil must be empty")
+	}
+}
+
+func TestAsFloats_AllTransportForms(t *testing.T) {
+	// int64 and int elements (some transports return integral embeddings as ints).
+	if got := asFloats([]any{int64(1), int(2), 3.0}); len(got) != 3 || got[0] != 1 || got[1] != 2 || got[2] != 3 {
+		t.Errorf("asFloats mixed-int list = %v", got)
+	}
+	// A non-numeric element aborts the parse (returns nil) — never a partial vector.
+	if got := asFloats([]any{1.0, "nope"}); got != nil {
+		t.Errorf("asFloats with a non-numeric element must return nil, got %v", got)
+	}
+	// An unsupported top-level type returns nil.
+	if got := asFloats(42); got != nil {
+		t.Errorf("asFloats of an unsupported type must return nil, got %v", got)
+	}
+	// An empty APOC-JSON array decodes to a zero-length slice (not an error).
+	if got := asFloats("[]"); len(got) != 0 {
+		t.Errorf("asFloats of an empty JSON array = %v", got)
 	}
 }

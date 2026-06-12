@@ -39,6 +39,30 @@ func TestClassifier_RankVecsArgmaxAndMargin(t *testing.T) {
 	}
 }
 
+func TestClassifier_GroupCosine(t *testing.T) {
+	t.Parallel()
+	c := NewClassifier(&fakeEmbedder{})
+	c.AddVecs("chat", []float64{1, 0, 0})
+	c.AddVecs("code", []float64{0, 0, 1})
+
+	// A query on chat's axis scores cosine 1 to its centroid, 0 to code's.
+	if cc, ok := c.GroupCosine("chat", []float64{1, 0, 0}); !ok || !approxEq(cc, 1.0) {
+		t.Fatalf("GroupCosine(chat) = %v ok=%v; want 1.0 ok", cc, ok)
+	}
+	if cc, ok := c.GroupCosine("code", []float64{1, 0, 0}); !ok || !approxEq(cc, 0.0) {
+		t.Fatalf("GroupCosine(code) = %v ok=%v; want 0.0 ok", cc, ok)
+	}
+	// A missing group is (0, false).
+	if cc, ok := c.GroupCosine("absent", []float64{1, 0, 0}); ok || cc != 0 {
+		t.Fatalf("GroupCosine(absent) = %v ok=%v; want 0 not-ok", cc, ok)
+	}
+	// A nil classifier is (0, false).
+	var nilC *Classifier
+	if cc, ok := nilC.GroupCosine("chat", []float64{1, 0, 0}); ok || cc != 0 {
+		t.Fatalf("nil classifier GroupCosine = %v ok=%v; want 0 not-ok", cc, ok)
+	}
+}
+
 func TestClassifier_AddFoldsIntoGroupCentroid(t *testing.T) {
 	t.Parallel()
 	c := NewClassifier(&fakeEmbedder{})
