@@ -223,6 +223,22 @@ func (c *Client) Cypher(ctx context.Context, query string, params map[string]any
 	return resp.Result, nil
 }
 
+func (c *Client) Read(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
+	result, err := c.Cypher(ctx, query, params, false)
+	if err != nil {
+		return nil, err
+	}
+	return decodeRows(result)
+}
+
+func (c *Client) Write(ctx context.Context, query string, params map[string]any) ([]map[string]any, error) {
+	result, err := c.Cypher(ctx, query, params, true)
+	if err != nil {
+		return nil, err
+	}
+	return decodeRows(result)
+}
+
 // Close shuts the subprocess down by closing its stdin and waiting for exit.
 func (c *Client) Close() error {
 	c.mu.Lock()
@@ -296,9 +312,15 @@ func decodeRows(result json.RawMessage) ([]map[string]any, error) {
 	if len(env.Content) == 0 || strings.TrimSpace(env.Content[0].Text) == "" {
 		return nil, nil
 	}
+	payload := []byte(env.Content[0].Text)
 	var rows []map[string]any
-	if err := json.Unmarshal([]byte(env.Content[0].Text), &rows); err != nil {
+	if err := json.Unmarshal(payload, &rows); err == nil {
+		return rows, nil
+	} else {
+		var row map[string]any
+		if objectErr := json.Unmarshal(payload, &row); objectErr == nil {
+			return []map[string]any{row}, nil
+		}
 		return nil, fmt.Errorf("decode cypher rows: %w", err)
 	}
-	return rows, nil
 }

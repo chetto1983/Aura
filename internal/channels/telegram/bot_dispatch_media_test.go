@@ -14,6 +14,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/documents"
 )
 
 // TestOnVoiceRoutesToTranscribe proves a voice update downloads the OGG bytes and
@@ -145,6 +146,33 @@ func TestOnDocumentSyncRoutesToConvert(t *testing.T) {
 	}
 	if hits.Load() != 1 {
 		t.Errorf("convert hits = %d, want 1", hits.Load())
+	}
+}
+
+func TestOnDocumentPipelineRoutesToIngestWhenConfigured(t *testing.T) {
+	t.Parallel()
+	rt := &recordingTurn{}
+	ingest := &recordingDocumentIngest{}
+	tg := dispatchChannel(t, rt, func(d *Deps) {
+		d.DocumentIngest = ingest
+	})
+
+	bot := &dispatchBot{ogg: []byte("small pdf")}
+	msg := chatMsg(36)
+	msg.Document = &tele.Document{FileName: "doc.pdf"}
+	if err := tg.onDocument(context.Background())(msgContext(bot, msg)); err != nil {
+		t.Fatalf("onDocument: %v", err)
+	}
+	tg.wg.Wait()
+
+	if calls, _ := rt.snapshot(); calls != 0 {
+		t.Fatalf("pipeline document ingest must not drive a markdown turn, got %d", calls)
+	}
+	if ingest.calls != 1 || ingest.req.SourceKind != "telegram" {
+		t.Fatalf("ingest calls=%d req=%#v", ingest.calls, ingest.req)
+	}
+	if texts := bot.sentTexts(); len(texts) == 0 || !strings.Contains(texts[len(texts)-1], "Ho indicizzato") {
+		t.Fatalf("missing indexed reply, sent=%v", texts)
 	}
 }
 
@@ -346,4 +374,23 @@ func TestOnDocumentRefuseTier(t *testing.T) {
 	if texts := bot.sentTexts(); len(texts) != 1 || !strings.Contains(texts[0], "troppo grande") {
 		t.Errorf("a refused document must send the refuse copy, got %v", texts)
 	}
+}
+
+type recordingDocumentIngest struct {
+	calls int
+	req   documents.IngestRequest
+	path  string
+}
+
+func (r *recordingDocumentIngest) IngestPath(_ context.Context, req documents.IngestRequest, path string) (*documents.Job, error) {
+	r.calls++
+	r.req = req
+	r.path = path
+	return &documents.Job{
+		ID:           "job-1",
+		DocumentID:   "doc-1",
+		FileName:     req.FileName,
+		Status:       documents.JobSearchable,
+		SparseChunks: 1,
+	}, nil
 }

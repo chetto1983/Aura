@@ -82,10 +82,10 @@ func newDocumentsClient(cfg MultimodalConfig) *documentsClient {
 // with the user-facing message and never touches the sidecar.
 func (d *documentsClient) Convert(ctx context.Context, payload []byte, fileName string, onAsync documentAsyncCallback) (ConvertResult, error) {
 	switch {
-	case len(payload) >= refuseTierMinBytes:
+	case len(payload) > refuseTierMinBytes:
 		return ConvertResult{Status: ConvertRefused, Message: documentRefuseMessage}, nil
 
-	case len(payload) >= asyncTierMinBytes:
+	case len(payload) > asyncTierMinBytes:
 		d.wg.Add(1)
 		// Detach from the request ctx: the async conversion outlives the inbound
 		// handler call. Stop drains the goroutine via wg (goleak-clean).

@@ -19,6 +19,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/channels"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/profile"
 )
@@ -37,6 +38,10 @@ var _ channels.Channel = (*Telegram)(nil)
 // synthetic event stream through the real Translate→Fanout path without a live
 // Runner/DB (the bot is exercised Offline).
 type turnDriver func(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error]
+
+type documentIngestor interface {
+	IngestPath(ctx context.Context, req documents.IngestRequest, path string) (*documents.Job, error)
+}
 
 // botSender is the narrow telebot surface the render consumers (status_pane.go /
 // renderer.go) call. *tele.Bot satisfies it implicitly; tests inject a recording
@@ -76,6 +81,11 @@ type Deps struct {
 	// means a modality is unconfigured — the handler degrades, never panics. Built
 	// by the composition root from config.Config (serve_channels.go).
 	Multimodal MultimodalConfig
+
+	// DocumentIngest optionally routes document uploads into Aura's native
+	// document ingestion pipeline. Nil preserves the legacy convert-to-markdown
+	// path used by existing deployments and tests.
+	DocumentIngest documentIngestor
 
 	// Command backends drive the bot-intercept dispatch (commands.go). Search ==
 	// conversations.SearchConversationTurns (CLI parity); Cost == the cachemetrics

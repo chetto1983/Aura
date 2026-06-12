@@ -82,6 +82,27 @@ type AuraConversations struct {
 	Metadata          []byte             `json:"metadata"`
 }
 
+// Durable document ingestion job state. Neo4j stores document/chunk graph data; Postgres tracks lifecycle and progress.
+type AuraDocumentIngestJobs struct {
+	ID             pgtype.UUID        `json:"id"`
+	SourceID       string             `json:"source_id"`
+	SourceKind     string             `json:"source_kind"`
+	DocumentID     string             `json:"document_id"`
+	ContentHash    string             `json:"content_hash"`
+	OriginalPath   string             `json:"original_path"`
+	FileName       string             `json:"file_name"`
+	MimeType       string             `json:"mime_type"`
+	SizeBytes      int64              `json:"size_bytes"`
+	Status         string             `json:"status"`
+	SparseChunks   int32              `json:"sparse_chunks"`
+	EmbeddedChunks int32              `json:"embedded_chunks"`
+	Error          pgtype.Text        `json:"error"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	SearchableAt   pgtype.Timestamptz `json:"searchable_at"`
+	CompletedAt    pgtype.Timestamptz `json:"completed_at"`
+}
+
 // Identity scaffolding (Slice 1.7). Single-user: one seeded `local`/system row with the fixed UUID ...001.
 type AuraIdentities struct {
 	ID        pgtype.UUID        `json:"id"`
