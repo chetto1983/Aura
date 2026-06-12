@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 08.2 context gathered
-last_updated: "2026-06-12T19:02:18.531Z"
-last_activity: 2026-06-12 -- Phase 08.2 planning complete
+last_updated: "2026-06-12T19:42:46.299Z"
+last_activity: 2026-06-12
 progress:
   total_phases: 23
   completed_phases: 19
   total_plans: 135
-  completed_plans: 128
+  completed_plans: 129
   percent: 83
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 15 — memory-subsystem
+**Current focus:** Phase 08.2 — semantic-tool-search-unified-semindex
 
 ## Current Position
 
-Phase: 15 (memory-subsystem) — COMPLETE (5/5 plans)
-Plan: 5 of 5
+Phase: 08.2 (semantic-tool-search-unified-semindex) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-12 -- Phase 08.2 planning complete
+Last activity: 2026-06-12
 
-Progress: [█████████░] 98%
+Progress: [██████████] 96%
 
 ### Next — Phase 17 (Packaging)
 
@@ -132,6 +132,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 | Phase 14 P03 | ~30 min | 3 tasks | 6 files |
 | Phase 15 P15-01 | ~6min | 2 tasks | 3 files |
 | Phase 15 P15-05 | ~75min | 2 tasks | 7 files |
+| Phase 08.2 P08.2-01 | ~30min | 2 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -207,6 +208,7 @@ Recent decisions affecting current work:
 - [Phase ?]: 15-01: PRD amendment #62 re-scopes UX-06..09 to the adopted agent-memory MCP surface (D-12); landed before any Go code (PRD-first Wave-0 gate)
 - [Phase ?]: 15-01: 384d already the live state (D-11) — no 768d->384d migration drop; #62 supersedes the stale 768d framing of #61 node (2)
 - [Phase 15]: 15-05: live memory_integration tier proves the rebuilt aura-agent-memory-mcp:local image — 16-tool Deferred+memory__* mount (D-06/D-07), aura memory seed/read, reasoning-trace round-trip read via graph_query not memory_get_observations (re-scoped UX-09), agent recall loop tool_search->memory__memory_search->text_response (D-03), and dedup non-merge. The dedup must-have re-framed to its true anti-regression (T-15-05-01): a genuinely-new entity must be STORED distinct and NOT auto-merged (action!=merged); action=none is unreachable on a shared accumulated graph because the 384d granite embedder clusters short entity names at ~0.85-0.93 (flagged band), so flagged (store-distinct + pending SAME_AS) and none both satisfy the provenance-safe-dedup fix — only a spurious merged at ~0.997 is the regression. [Rule 1] corrected the 15-03 aura memory trace mapping to the live tool contract (start session_id+task NOT name; step trace_id+observation NOT description; observations session_id NOT trace_id). [Rule 3] dropped 6 stale 768d agent-memory Neo4j vector indexes so the 384d :local sidecar boots (D-11 alignment; CI on a fresh graph needs no drop). D-04 KV-cache invariant confirmed unchanged (22 messages[0]/messages[1]/skillman hashes, no messages[2] stream). UX-08 advisory snapshot recall@5=10/10=1.000 p95=44.55ms appended to docs/aura-quality-snapshot.md (advisory, not a gate). CI memory-integration-test job runs the tier no-skip-as-green. Idle-conn reaping keeps package goleak green over the live HTTP transport (test-only). Commits a433b493/e017aa5d.
+- [Phase 08.2]: 08.2-01: extracted internal/semindex foundation — one lock-free pure-math core (cosine/-2.0 sentinel + l2normalize + centroid-nil-on-empty + margin top-2 gap; lifted VERBATIM from reasoning_classifier.go:218-264; no sync/context/ANN per Req-8) + two typed wrappers Classifier(Centroid → Verdict{Label,Score,Margin,Ok}) and Ranker(PerItem → []Scored top-K, append-only bank = D-03 incremental door, bm25 stable-sort insertion-index tie-break), each one sync.RWMutex; Margin on Classifier ONLY (D-01); semindex owns the Embedder seam byte-identical to documents.EmbeddingClient (no adapter, Req-1). -race clean, golangci-lint 0, coverage 92.1%. Rejected single-Index-with-mode-enum (D-01). Commits eec73cfe + 48987033
 
 ### Pending Todos
 
@@ -240,6 +242,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T15:17:49.322Z
+Last session: 2026-06-12T19:42:13.840Z
 Stopped at: Phase 08.2 context gathered
-Resume file: .planning/phases/08.2-semantic-tool-search-unified-semindex/08.2-CONTEXT.md
+Resume file: None
