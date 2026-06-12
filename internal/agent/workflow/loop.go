@@ -69,6 +69,7 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 				yield(nil, err)
 				return
 			}
+			remainingBefore := ic.Budget.Remaining()
 			for _, sub := range a.subs {
 				if err := ic.Ctx.Err(); err != nil {
 					yield(nil, err)
@@ -154,6 +155,13 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 					}
 					stepsConsumed++
 				}
+			}
+			// No-progress guard (B-07): with no iteration ceiling, an iteration that
+			// advanced the budget by zero steps (a budget-owning sub that neither spent
+			// nor escalated) would hot-spin forever. Require forward progress or stop.
+			if a.maxIterations == 0 && ic.Budget.Remaining() == remainingBefore {
+				_ = yield(a.terminalEventKind(ic, "no_progress", "no_progress", stepsConsumed), nil)
+				return
 			}
 		}
 	}
@@ -259,6 +267,13 @@ func scopeToToolCall(ev *agent.Event, tc llm.ToolCall, last bool) *agent.Event {
 // carries termination_reason/limit_hit/steps_consumed. termination is Event-only,
 // never the iter error slot.
 func (a *LoopAgent) terminalEvent(ic agent.InvocationContext, reason string, stepsConsumed int) *agent.Event {
+	return a.terminalEventKind(ic, "budget_exhausted", reason, stepsConsumed)
+}
+
+// terminalEventKind builds an explicit termination Event (D-04) with an arbitrary
+// termination_reason — "budget_exhausted" for the budget/dedup path, "no_progress"
+// for the B-07 no-progress guard. Escalate=true; never the iter error slot.
+func (a *LoopAgent) terminalEventKind(ic agent.InvocationContext, kind, reason string, stepsConsumed int) *agent.Event {
 	return &agent.Event{
 		RequestID: ic.RequestID,
 		SpanID:    ic.SpanID,
@@ -267,7 +282,7 @@ func (a *LoopAgent) terminalEvent(ic agent.InvocationContext, reason string, ste
 		Actions: agent.Actions{
 			Escalate: true,
 			StateDelta: map[string]any{
-				"termination_reason": "budget_exhausted",
+				"termination_reason": kind,
 				"limit_hit":          reason,
 				"steps_consumed":     stepsConsumed,
 			},
