@@ -9,17 +9,20 @@ import (
 const memoryRecipeName = "memory"
 
 // injectDefaultOnMemory adds the `memory` recipe to policies unless the operator
-// opted out (D-08 default-on, D-09 respect disable). Memory is a core capability →
-// on out of the box, so a fresh machine mounts it with no `aura mcp install`.
+// has ANY say of their own (D-08 default-on, D-09 respect disable). Memory is a
+// core capability → on out of the box, so a fresh machine mounts it with no
+// `aura mcp install`.
 //
 // Precedence (highest first):
-//  1. An explicit/operator entry already in policies wins (do not override a
-//     customized URL).
-//  2. An AURA_MCP_SERVERS_JSON override (already landed in envOverridden, with the
+//  1. An AURA_MCP_SERVERS_JSON override (already landed in envOverridden, with the
 //     overlapping policy deleted by the caller) wins — do not re-inject.
-//  3. An explicit `aura mcp disable memory` (Enabled=false in the managed doc) keeps
-//     memory unmounted, mirroring RunnableManagedServers' disable check.
-//  4. Otherwise inject LookupCatalog("memory").Server.
+//  2. ANY explicit `memory` entry in the managed doc wins — enabled (already in
+//     policies), disabled (`aura mcp disable memory`), trust-blocked, or excluded
+//     by the active profile. The check is against the UNFILTERED
+//     managed.MCPServers, not the profile-filtered policies map: a customized URL
+//     excluded by the active profile must NOT be silently replaced by the catalog
+//     recipe, and a profile that excludes memory keeps it unmounted (CR-01).
+//  3. Otherwise (no operator entry at all) inject LookupCatalog("memory").Server.
 func injectDefaultOnMemory(policies map[string]mcp.ManagedServer, managed mcp.ManagedConfig, envOverridden map[string]mcp.ServerConfig) {
 	if _, ok := policies[memoryRecipeName]; ok {
 		return
@@ -27,7 +30,9 @@ func injectDefaultOnMemory(policies map[string]mcp.ManagedServer, managed mcp.Ma
 	if _, ok := envOverridden[memoryRecipeName]; ok {
 		return
 	}
-	if s, ok := managed.MCPServers[memoryRecipeName]; ok && s.Enabled != nil && !*s.Enabled {
+	if _, ok := managed.MCPServers[memoryRecipeName]; ok {
+		// Explicit operator entry (disabled, blocked, or profile-excluded —
+		// the enabled+active case already returned via policies above).
 		return
 	}
 	recipe, ok := mcpmanager.LookupCatalog(memoryRecipeName)

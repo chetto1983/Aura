@@ -103,6 +103,50 @@ func TestMemoryDefaultOn_RespectsExplicitInstall(t *testing.T) {
 	}
 }
 
+// TestMemoryDefaultOn_RespectsProfileExclusion proves the CR-01 fix: an explicit
+// memory entry (custom URL) excluded by the ACTIVE profile must stay unmounted —
+// the inject must consult the unfiltered managed doc, never re-add memory at the
+// catalog URL behind the operator's profile selection.
+func TestMemoryDefaultOn_RespectsProfileExclusion(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "servers.json")
+	clearMCPEnv(t, path)
+
+	doc := mcp.ManagedConfig{
+		ActiveProfile: "work",
+		Profiles: map[string]mcp.ManagedProfile{
+			"work": {Servers: []string{"other"}},
+		},
+		MCPServers: map[string]mcp.ManagedServer{
+			"memory": {
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    "http://127.0.0.1:18091/mcp/",
+				Source: "recipe:memory",
+				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			},
+			"other": {
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    "http://127.0.0.1:19000/mcp/",
+				Source: "recipe:other",
+				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			},
+		},
+	}
+	if err := mcp.SaveManagedConfig(path, doc); err != nil {
+		t.Fatalf("save managed config: %v", err)
+	}
+
+	cfg := LoadDB()
+	if cfg.MCPServersErr != nil {
+		t.Fatalf("loadMCPServers err = %v, want nil", cfg.MCPServersErr)
+	}
+	if got, ok := cfg.MCPPolicies["memory"]; ok {
+		t.Fatalf("memory mounted (URL %q) despite active-profile exclusion (CR-01): %#v", got.URL, cfg.MCPPolicies)
+	}
+	if _, ok := cfg.MCPPolicies["other"]; !ok {
+		t.Fatalf("profile-selected server missing: %#v", cfg.MCPPolicies)
+	}
+}
+
 // TestMemoryDefaultOn_EnvServersOverrideWins proves an AURA_MCP_SERVERS_JSON entry
 // named "memory" still wins — the inject lands AFTER the envServers delete loop.
 func TestMemoryDefaultOn_EnvServersOverrideWins(t *testing.T) {
