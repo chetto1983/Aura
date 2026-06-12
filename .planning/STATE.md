@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: completed
+status: executing
 stopped_at: Phase 15 context gathered
-last_updated: "2026-06-11T20:09:18.044Z"
-last_activity: 2026-06-11 -- Phase 15 planning complete
+last_updated: "2026-06-12T06:42:37.992Z"
+last_activity: 2026-06-12 -- Phase 15 execution started
 progress:
   total_phases: 22
   completed_phases: 18
-  total_plans: 125
+  total_plans: 130
   completed_plans: 123
   percent: 82
 ---
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 20 — scheduler-hardening-full-implementation
+**Current focus:** Phase 15 — memory-subsystem
 
 ## Current Position
 
-Phase: 20
-Plan: Not started
-Status: Ready to execute (20-02 complete; next is Wave 2 / 20-03)
-Last activity: 2026-06-11 -- Phase 15 planning complete
+Phase: 15 (memory-subsystem) — EXECUTING
+Plan: 1 of 5
+Status: Executing Phase 15
+Last activity: 2026-06-12 -- Phase 15 execution started
 
 Progress: [█████████░] 94%
 
