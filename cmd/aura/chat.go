@@ -190,6 +190,14 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 	// leaves it seed-only and never blocks boot.
 	var reasoningStore *reasoningstore.Store
 	var toolSelectStore *toolselectstore.Store
+	// WR-05 — coupling note: the tool-selection active-learning loop has NO independent
+	// enable flag. It deliberately rides AURA_LLM_REASONING_LEARNING (cfg.LLM.ReasoningLearning)
+	// below: the toolSelectStore is constructed only inside this gate, sharing the SAME
+	// graph client the reasoning learner opens (no extra mcp-neo4j-cypher subprocess). So
+	// reasoning-tier self-improvement OFF ⇒ tool-selection self-improvement OFF too, and
+	// vice versa; they cannot be toggled independently. AURA_TOOLSELECT_ORACLE gates only
+	// the PAID escalation tier, never whether the loop runs at all. (Documented per WR-05;
+	// a dedicated env var was deliberately NOT added to avoid scope expansion.)
 	if cfg.LLM.ReasoningLearning {
 		if gclient, gerr := knowledge.Open(ctx, &cfg.Neo4j); gerr != nil {
 			fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
