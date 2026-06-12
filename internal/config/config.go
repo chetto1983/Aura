@@ -169,6 +169,25 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// Validate fails fast on an empty REQUIRED infrastructure secret so a misconfigured
+// deploy errors at boot with a named cause instead of a late, cryptic DB auth
+// failure or a silently degraded graph (O-04). The LLM API key has its own
+// fail-fast in llm.Load (D-22); this covers the composed DB DSN and the Neo4j
+// password. The daemon/REPL boot wires it in; the DB-only commands (LoadDB) skip it.
+func (c *Config) Validate() error {
+	var missing []string
+	if strings.TrimSpace(c.DB.URL) == "" {
+		missing = append(missing, "POSTGRES_PASSWORD (or AURA_DB_URL)")
+	}
+	if strings.TrimSpace(c.Neo4j.Password) == "" {
+		missing = append(missing, "NEO4J_PASSWORD")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("config: required secret(s) unset: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
 // LoadDB loads the non-LLM configuration only. DB-admin commands
 // (aura db migrate/ping/status/reset) must NOT require an LLM API key — migration
 // is a pure DB operation, and Load's fail-fast empty-key (D-22) would otherwise

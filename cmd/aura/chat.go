@@ -143,6 +143,12 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Fail fast on an empty required infra secret (O-04) before opening any
+	// connection, so a misconfigured deploy errors at boot with a named cause
+	// instead of a late DB auth failure or a silently degraded graph.
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 
 	pool, err := db.Open(ctx, &cfg.DB)
 	if err != nil {
