@@ -487,3 +487,34 @@ func TestToolSearch_FusionKillSwitchOff(t *testing.T) {
 		t.Fatalf("pure-embedding (fusion off) did not rank web_fetch #1: %q", res.Preview)
 	}
 }
+
+// BenchmarkToolSearchRank measures the per-query embed+rank+tiebreak cost (Req-8)
+// over a corpus-sized bank (~64 tools, spike-055's 53–115 range). The bank is
+// pre-warmed so the benchmark times ONLY the query path (embed the query, brute-force
+// cosine over the bank, guarded BM25 tiebreak) — no ANN. The unit benchmark uses the
+// deterministic bagEmbedder so the rank cost is measured FREE (spike-055: 85µs@115
+// tools excluding the granite round-trip); the live ≤20ms TOTAL (embed dominates) is
+// the operator-gated Manual-Only row. Run with `-benchtime=3s` for a stable sample.
+func BenchmarkToolSearchRank(b *testing.B) {
+	reg := NewRegistry()
+	const corpus = 64
+	for i := range corpus {
+		reg.Register(bm25Tool{
+			name: fmt.Sprintf("tool_%02d", i),
+			desc: fmt.Sprintf("capability number %d for handling task family %d operations", i, i%7),
+		})
+	}
+	ts := &ToolSearch{Registry: reg, Embed: &bagEmbedder{}}
+	ctx := WithToolCallContext(context.Background(), "bench", "bc", b.TempDir(), testCap)
+	// Pre-warm the embedding bank so the loop measures only the query path.
+	if _, err := ts.match(ctx, "warm up the bank", defaultMaxResults); err != nil {
+		b.Fatalf("pre-warm: %v", err)
+	}
+
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := ts.match(ctx, "handling task family operations", defaultMaxResults); err != nil {
+			b.Fatalf("match: %v", err)
+		}
+	}
+}
