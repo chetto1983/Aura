@@ -31,7 +31,7 @@ func (t *FSWrite) Spec() Spec {
 	return Spec{
 		Name:        "fs_write",
 		Summary:     "Write a file to disk (create or overwrite).",
-		Description: "Write a whole file to the host filesystem: parent directories are created as needed and any existing file is OVERWRITTEN (this replaces the file, it does not append). Pass the COMPLETE `content`. For a small change to an existing file prefer fs_edit, which preserves the rest of the file; use fs_write to create a new file or fully replace one. Never author file content through the shell — heredocs and quoted echo/printf break on quoting; this tool stores content exactly. Always report the absolute path of what you wrote.",
+		Description: "Write a whole file to the host filesystem: parent directories are created as needed and any existing file is OVERWRITTEN (this replaces the file, it does not append). Pass the COMPLETE `content`. For a small change to an existing file prefer fs_edit, which preserves the rest of the file; use fs_write to create a new file or fully replace one. Never author file content through the shell — heredocs and quoted echo/printf break on quoting; this tool stores content exactly. Always report the absolute path of what you wrote. Example: {\"path\":\"results/report.md\",\"content\":\"# Results\\n\\nAll tests passed.\\n\"}.",
 		Parameters:  params,
 		Deferred:    false,
 		Mutating:    true,

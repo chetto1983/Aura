@@ -34,7 +34,7 @@ func (t *FSEdit) Spec() Spec {
 	return Spec{
 		Name:        "fs_edit",
 		Summary:     "Replace an exact string in a file.",
-		Description: "Replace an exact string in a file — the surgical way to change an existing file without rewriting it. Read the file first (fs_read) so `old_string` matches the on-disk bytes exactly, including indentation. `old_string` must be UNIQUE in the file: if it is not, the edit fails — add surrounding context to make it unique, or set `replace_all` to change every occurrence (use this to rename a symbol). `new_string` must differ from `old_string`. Returns the count of replacements. Prefer editing an existing file over overwriting it with fs_write.",
+		Description: "Replace an exact string in a file — the surgical way to change an existing file without rewriting it. Read the file first (fs_read) so `old_string` matches the on-disk bytes exactly, including indentation. `old_string` must be UNIQUE in the file: if it is not, the edit fails — add surrounding context to make it unique, or set `replace_all` to change every occurrence (use this to rename a symbol). `new_string` must differ from `old_string`. Returns the count of replacements. Prefer editing an existing file over overwriting it with fs_write. Example: {\"path\":\"internal/server.go\",\"old_string\":\"port := 8080\",\"new_string\":\"port := 9090\"}; to rename every occurrence, {\"path\":\"app.py\",\"old_string\":\"old_name\",\"new_string\":\"new_name\",\"replace_all\":true}.",
 		Parameters:  params,
 		Deferred:    false,
 		Mutating:    true,

@@ -51,7 +51,7 @@ func (ts *ToolSearch) Spec() Spec {
   "properties": {
     "query": {
       "type": "string",
-      "description": "Either 'select:Name1,Name2' to load specific tools by name, or a keyword phrase ranked by BM25 over deferred tool names, descriptions, and parameters."
+      "description": "Either 'select:Name1,Name2' to load specific tools by name, or a keyword phrase ranked by BM25 over deferred tool names, descriptions, and parameters. Example: a phrase like 'search the current web for prices or news' or 'send a file to the user'; or 'select:web_fetch,web_search' to load specific tools by exact name."
     },
     "max_results": {
       "type": "integer",

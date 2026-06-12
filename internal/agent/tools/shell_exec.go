@@ -78,6 +78,7 @@ func (s *ShellExec) Spec() Spec {
 		Name:    "shell_exec",
 		Summary: "Run a shell command on the host — a full terminal.",
 		Description: "Run a command line through the host system shell, in-process, with full access to the machine — use it for local commands, builds, scripts, and glue work that dedicated tools do not cover. " +
+			"Do NOT reach for it when a dedicated tool fits: to read, search, or write files use fs_read / fs_grep / fs_glob and fs_write / fs_edit (they return structured results and page large files instead of flooding context); to get current web facts like a price, the weather, or today's news use the dedicated web search/fetch tools (load them with tool_search if they are not in your list). Reaching for the shell because the specific tool is not visible is the most common mistake. " +
 			"Pipes, redirects, && chains, any installed interpreter (python, node, go), git, and filesystem work all just work. " +
 			"Your working directory persists between calls (a cd carries over) and starts at your workspace. " +
 			"Returns combined stdout and stderr plus a final [aura_shell {...}] JSON footer with exit_code, cwd, duration_ms, and timed_out; rely on that footer instead of spending separate pwd or exit-code calls. " +

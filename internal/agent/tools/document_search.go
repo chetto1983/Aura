@@ -30,7 +30,9 @@ func (t *DocumentSearch) Spec() Spec {
 		Description: "Search documents that Aura has indexed through the native Neo4j document pipeline. " +
 			"Use this for questions about uploaded PDFs, spreadsheets, and DOCX files. " +
 			"Results are chunks with document id, chunk id, file name, locator (page, sheet/rows, or section), score, and text. " +
-			"Set document_id when the user is asking about a specific indexed document. Keep limit small unless broad recall is needed.",
+			"Set document_id when the user is asking about a specific indexed document. Keep limit small unless broad recall is needed. " +
+			"Use it for the user's OWN uploaded/indexed files — NOT the public web (that is the web search/fetch tools). " +
+			"Example: {\"query\":\"valvola di sicurezza della caldaia\",\"limit\":5}.",
 		Parameters: json.RawMessage(`{
   "type": "object",
   "properties": {
