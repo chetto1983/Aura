@@ -268,7 +268,15 @@ func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, e
 	// (D-07). The learned boost is a STRICT no-op below min-support/tau, so the no-fold
 	// path leaves the Plan-03 order unchanged.
 	ranked := guardedTiebreak(stage1, bm25Names)
-	ranked = ts.learned.rerank(ranked, qVecs)
+	// Snapshot ts.learned under the lock before use (WR-02): the field is written under
+	// ts.mu (EnableLearnedBoost) and read under ts.mu (FoldLearned); reading it lock-free
+	// here is a latent data race the moment EnableLearnedBoost is ever exercised
+	// concurrently with a turn. The *learnedBoost itself is internally RWMutex-guarded, so
+	// only the pointer read needs the lock.
+	ts.mu.Lock()
+	learned := ts.learned
+	ts.mu.Unlock()
+	ranked = learned.rerank(ranked, qVecs)
 	if len(ranked) > limit {
 		ranked = ranked[:limit]
 	}
