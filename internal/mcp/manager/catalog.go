@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -12,9 +13,12 @@ import (
 // memoryRecipeURL composes the loopback streamable-HTTP URL for the agent-memory
 // sidecar. The port derives from AURA_AGENT_MEMORY_MCP_PORT (the name compose.yaml
 // already uses, AURA_<DOMAIN>_<UNIT> convention), defaulting to 8091 — no new env var.
+// The value is validated as a TCP port (1-65535) before interpolation: anything
+// else (e.g. "8091@evil.example" via the URL userinfo trick) would retarget the
+// loopback-by-construction recipe off-host, so garbage falls back to 8091 (WR-01).
 func memoryRecipeURL() string {
 	port := strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_PORT"))
-	if port == "" {
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
 		port = "8091"
 	}
 	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)

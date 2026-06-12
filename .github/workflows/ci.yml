@@ -549,7 +549,8 @@ jobs:
       - name: Live memory_integration tier (16-tool mount + CLI + recall + dedup)
         # Runs the tagged tests across the three owning packages against the live,
         # rebuilt sidecar. -p 1 keeps the shared Neo4j graph writes serialized.
-        run: go test -tags memory_integration -count=1 -p 1 ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
+        # -race matches every other live tier (db/web/knowledge/telegram — WR-02).
+        run: go test -race -tags memory_integration -count=1 -p 1 ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
 
       - name: Tear down
         if: always()

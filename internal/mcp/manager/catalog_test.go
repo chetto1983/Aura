@@ -34,6 +34,7 @@ func TestCatalogIncludesTrustedRecipesAndCalendarFixture(t *testing.T) {
 }
 
 func TestCatalogIncludesMemoryStreamableHTTPRecipe(t *testing.T) {
+	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "") // literal-8091 assertion below; a sourced .env must not skew it (WR-06)
 	memory, ok := LookupCatalog("memory")
 	if !ok {
 		t.Fatal("memory recipe missing from BuiltInCatalog")
@@ -66,6 +67,24 @@ func TestCatalogMemoryURLHonorsPortEnv(t *testing.T) {
 	}
 	if memory.Server.URL != "http://127.0.0.1:9191/mcp/" {
 		t.Fatalf("memory Server.URL = %q, want port from AURA_AGENT_MEMORY_MCP_PORT", memory.Server.URL)
+	}
+}
+
+// TestCatalogMemoryURLRejectsNonPortEnv proves WR-01: a non-port value (userinfo
+// trick, negative, overflow, junk) falls back to 8091 instead of being
+// interpolated into the loopback URL.
+func TestCatalogMemoryURLRejectsNonPortEnv(t *testing.T) {
+	for _, bad := range []string{"8091@evil.example", "0", "65536", "-1", "junk", "80 91"} {
+		t.Run(bad, func(t *testing.T) {
+			t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", bad)
+			memory, ok := LookupCatalog("memory")
+			if !ok {
+				t.Fatal("memory recipe missing from BuiltInCatalog")
+			}
+			if memory.Server.URL != "http://127.0.0.1:8091/mcp/" {
+				t.Fatalf("port %q produced URL %q, want fallback 8091 loopback", bad, memory.Server.URL)
+			}
+		})
 	}
 }
 

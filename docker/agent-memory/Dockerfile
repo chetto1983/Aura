@@ -32,11 +32,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc \
 WORKDIR /app
 
 # Copy metadata first for layer caching, then the vendored package source.
-COPY pyproject.toml README.md README-pypi.md ./
+COPY pyproject.toml README.md README-pypi.md constraints.txt ./
 COPY src/ ./src/
 
 # Install the vendored fork with the MCP server + Google + OpenAI-compat provider
 # extras (the embedder + OpenRouter LLM both speak the OpenAI wire shape).
-RUN pip install --no-cache-dir -e ".[mcp,google,openai]"
+# constraints.txt pins every transitive dep (pip freeze of the validated build):
+# pyproject.toml uses >= floors, so without -c every rebuild floats the dependency
+# set and the build is reproducible in name only (WR-04). Regenerate with:
+#   docker run --rm --entrypoint pip aura-agent-memory-mcp:local freeze --exclude-editable
+RUN pip install --no-cache-dir -c constraints.txt -e ".[mcp,google,openai]"
 
 EXPOSE 8080

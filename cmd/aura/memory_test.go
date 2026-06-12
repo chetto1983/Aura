@@ -88,11 +88,15 @@ func (rec *recordingMemoryMCPServer) args() map[string]any {
 	return rec.lastArgs
 }
 
+// writeMemoryRPC runs on httptest handler goroutines — t.Fatalf is illegal off the
+// test goroutine (it would leak the handler), so failures report via t.Errorf (WR-05).
 func writeMemoryRPC(t *testing.T, w http.ResponseWriter, id *int64, result any) {
 	t.Helper()
 	raw, err := json.Marshal(result)
 	if err != nil {
-		t.Fatalf("marshal result: %v", err)
+		t.Errorf("marshal result: %v", err)
+		http.Error(w, "marshal", http.StatusInternalServerError)
+		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(map[string]any{
@@ -100,7 +104,7 @@ func writeMemoryRPC(t *testing.T, w http.ResponseWriter, id *int64, result any) 
 		"id":      id,
 		"result":  json.RawMessage(raw),
 	}); err != nil {
-		t.Fatalf("encode rpc: %v", err)
+		t.Errorf("encode rpc: %v", err)
 	}
 }
 

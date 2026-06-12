@@ -34,6 +34,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/chetto1983/aura/internal/mcp"
 )
 
 // memoryTierGate fails under $CI / skips locally when the live sidecar URL is unset,
@@ -45,8 +47,30 @@ import (
 // production Close() (which must not close a shared client).
 func memoryTierGate(t *testing.T) {
 	t.Helper()
-	if strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_URL")) != "" ||
-		strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_PORT")) != "" {
+	url := strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_URL"))
+	if url == "" {
+		if port := strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_PORT")); port != "" {
+			url = "http://127.0.0.1:" + port + "/mcp/"
+		}
+	}
+	if url != "" {
+		// Pin the CLI to the EXACT endpoint that gated the tier live, via an
+		// isolated managed config: without this the verb router resolves through
+		// the operator's real servers.json + the catalog port default, so a
+		// non-default gate URL would dial the wrong endpoint and a local run
+		// would read/write the operator's own config and graph (WR-03).
+		path := withTempMCPConfig(t)
+		doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
+			"memory": {
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    url,
+				Source: "recipe:memory",
+				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
+			},
+		}}
+		if err := mcp.SaveManagedConfig(path, doc); err != nil {
+			t.Fatalf("pin memory tier managed config: %v", err)
+		}
 		t.Cleanup(func() {
 			http.DefaultClient.CloseIdleConnections()
 			time.Sleep(200 * time.Millisecond)

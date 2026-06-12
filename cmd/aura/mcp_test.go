@@ -47,6 +47,7 @@ func TestMCPInstallCalculatorWritesRecipe(t *testing.T) {
 
 func TestMCPRecipesListsBuiltins(t *testing.T) {
 	withTempMCPConfig(t)
+	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "") // literal-8091 assertion below; a sourced .env must not skew it (WR-06)
 
 	var out bytes.Buffer
 	if err := runMCPCommand(context.Background(), []string{"recipes"}, &out); err != nil {
