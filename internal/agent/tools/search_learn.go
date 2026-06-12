@@ -92,10 +92,17 @@ func (ts *ToolSearch) RankForLearner(ctx context.Context, query string) (string,
 	if len(scored) == 0 {
 		return "", 0, false
 	}
-	margin := scored[0].Score
-	if len(scored) > 1 {
-		margin = scored[0].Score - scored[1].Score
+	// margin is the top-2 cosine GAP — the free-vs-escalate confidence signal. With
+	// fewer than two tools scored there is no gap, so return margin 0 (WR-03): the
+	// absolute top-1 cosine is NOT a confidence measure (a single-tool bank trivially
+	// clears confidentMargin for almost any request), and returning it would auto-confirm
+	// the only tool as a gold label and amplify the gravity-well bias the two-tier oracle
+	// gate exists to prevent. Margin 0 makes the single-tool case "uncertain" → the oracle
+	// escalates instead of trusting a non-existent gap.
+	if len(scored) < 2 {
+		return scored[0].Label, 0, true
 	}
+	margin := scored[0].Score - scored[1].Score
 	return scored[0].Label, margin, true
 }
 

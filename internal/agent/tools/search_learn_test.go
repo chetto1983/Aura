@@ -142,3 +142,53 @@ func sameOrder(a, b []semindex.Scored) bool {
 	}
 	return true
 }
+
+// WR-03: on a single-tool deferred corpus there is NO top-2 gap, so RankForLearner must
+// report margin 0 (treated as not-confident → the oracle escalates), never the absolute
+// top-1 cosine. Returning the raw cosine would auto-confirm the only tool as a gold
+// label for arbitrary requests and amplify the gravity-well bias the two-tier gate
+// exists to prevent.
+func TestRankForLearner_SingleToolCorpusReturnsZeroMargin(t *testing.T) {
+	reg := NewRegistry()
+	// One deferred tool whose concept axis matches the query's, so the absolute cosine is
+	// high (≈1) — exactly the case where returning the raw cosine would be (wrongly)
+	// "confident".
+	only := corpusTool{name: "web_search", desc: conceptToolset[0].desc, concept: "websearch"}
+	reg.Register(only)
+	ts := &ToolSearch{Registry: reg, Embed: newConceptEmbedder()}
+
+	top1, margin, ok := ts.RankForLearner(context.Background(), "quanto costa il bitcoin adesso?")
+	if !ok {
+		t.Fatal("RankForLearner should rank a single-tool corpus (ok=true)")
+	}
+	if top1 != "web_search" {
+		t.Errorf("top1 = %q; want web_search (the only tool)", top1)
+	}
+	if margin != 0 {
+		t.Errorf("single-tool margin = %.3f; want exactly 0 (no top-2 gap ⇒ not confident)", margin)
+	}
+}
+
+// With two or more tools scored, RankForLearner reports the real top-2 cosine GAP as the
+// confidence signal (the WR-03 fix only zeroes the single-tool case, never a true gap).
+func TestRankForLearner_TwoToolCorpusReturnsTop2Gap(t *testing.T) {
+	reg := NewRegistry()
+	for _, ct := range []corpusTool{
+		{name: "web_search", desc: conceptToolset[0].desc, concept: "websearch"},
+		{name: "translator", desc: conceptToolset[9].desc, concept: "translate"},
+	} {
+		reg.Register(ct)
+	}
+	ts := &ToolSearch{Registry: reg, Embed: newConceptEmbedder()}
+
+	top1, margin, ok := ts.RankForLearner(context.Background(), "quanto costa il bitcoin adesso?")
+	if !ok {
+		t.Fatal("RankForLearner should rank a two-tool corpus (ok=true)")
+	}
+	if top1 != "web_search" {
+		t.Errorf("top1 = %q; want web_search (the on-axis tool)", top1)
+	}
+	if margin <= 0 {
+		t.Errorf("two-tool margin = %.3f; want a positive top-2 gap (websearch axis ≫ translate axis)", margin)
+	}
+}
