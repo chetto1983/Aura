@@ -146,7 +146,7 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 	}
 
 	reg := tools.NewRegistry()
-	ts := &tools.ToolSearch{Registry: reg}
+	ts := &tools.ToolSearch{Registry: reg, Embed: bagEmbedder{}}
 	reg.Register(ts)
 	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "mail-mcp"}, initial)
 	names, err := Mount(context.Background(), reg, "mail", srv)
