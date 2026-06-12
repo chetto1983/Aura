@@ -13,6 +13,16 @@ import (
 
 const reasoningRouterSystemPrompt = "Classify the latest user request into one reasoning tier for the next assistant turn. Reply only JSON: {\"tier\":\"none\"|\"low\"|\"high\"}. none=greeting/simple stable fact/direct short transform. low=current web/news/weather/prices/schedules/lookups or small tool use. high=coding/debugging/design/proofs/scraping/multi-step analysis."
 
+// resolveClassifier prefers the shared injected classifier (production, anchors
+// built once); it falls back to a per-agent one built from Embedder when only
+// that is supplied (tests/standalone). nil when neither is wired.
+func resolveClassifier(cfg LlmAgentConfig) *prompt.ReasoningClassifier {
+	if cfg.Classifier != nil {
+		return cfg.Classifier
+	}
+	return prompt.NewReasoningClassifier(cfg.Embedder, cfg.ExampleStore)
+}
+
 func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningTier, bool) {
 	if !a.cfg.AdaptiveReasoning || !prompt.IsOpenRouterReasoningTarget(a.cfg.Provider, a.cfg.BaseURL) {
 		return "", false

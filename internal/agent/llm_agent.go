@@ -89,13 +89,14 @@ type LlmAgentConfig struct {
 	SessionID   string // Event.ThreadID; sidecar dir key (D-26)
 	Workspace   string // the shell workspace path, rendered into the per-turn tail hint (#52/D-41); "" omits
 	UserTurns   []llm.Message
-	// Embedder, when non-nil, wires the local embedding-based reasoning-tier
-	// classifier (replaces the per-turn LLM router round-trip). nil => the agent
-	// keeps using the LLM router for adaptive reasoning.
-	Embedder prompt.Embedder
-	// ExampleStore, when non-nil, folds oracle-labeled examples into the
-	// classifier's centroids (self-improvement, spike 053). Ignored if Embedder
-	// is nil.
+	// Classifier is the SHARED long-lived reasoning-tier classifier (anchors built
+	// once, reused across turns). Production injects this via the Runner so the
+	// 18-seed anchor build + Neo4j example load is amortized, not paid per turn.
+	Classifier *prompt.ReasoningClassifier
+	// Embedder/ExampleStore are a convenience for tests/standalone construction:
+	// when Classifier is nil and Embedder is set, NewLlmAgent builds a per-agent
+	// classifier. Production leaves these unset and passes Classifier instead.
+	Embedder     prompt.Embedder
 	ExampleStore prompt.ExampleStore
 }
 
@@ -128,7 +129,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		builder:     prompt.NewPromptBuilder(),
 		history:     hist,
 		breaker:     llm.NewBreaker(3, 30*time.Second),
-		classifier:  prompt.NewReasoningClassifier(cfg.Embedder, cfg.ExampleStore),
+		classifier:  resolveClassifier(cfg),
 	}
 }
 
