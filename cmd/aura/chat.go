@@ -180,18 +180,21 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
 
-	// Reasoning-tier self-improvement store: a graph client over the
-	// mcp-neo4j-cypher subprocess lets the classifier fold oracle-labeled
-	// :ReasoningExample nodes into its centroids (read), and the async learner
-	// write new ones (when AURA_LLM_REASONING_LEARNING is on). Best-effort — a
-	// missing binary or a down Neo4j leaves the classifier seed-only, never
-	// blocks chat boot.
+	// Reasoning-tier self-improvement (spike 053) is one opt-in feature behind
+	// AURA_LLM_REASONING_LEARNING: only when it is on do we open a graph client
+	// (the mcp-neo4j-cypher subprocess) so the classifier can fold oracle-labeled
+	// :ReasoningExample nodes (read) and the async learner write new ones. Default
+	// OFF means the classifier runs seed-only — its validated baseline — with zero
+	// extra subprocess. Best-effort even when on: a missing binary or a down Neo4j
+	// leaves it seed-only and never blocks boot.
 	var reasoningStore *reasoningstore.Store
-	if gclient, gerr := knowledge.Open(ctx, &cfg.Neo4j); gerr != nil {
-		fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
-	} else {
-		mcpClosers = append(mcpClosers, gclient.Close)
-		reasoningStore = &reasoningstore.Store{Client: gclient}
+	if cfg.LLM.ReasoningLearning {
+		if gclient, gerr := knowledge.Open(ctx, &cfg.Neo4j); gerr != nil {
+			fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
+		} else {
+			mcpClosers = append(mcpClosers, gclient.Close)
+			reasoningStore = &reasoningstore.Store{Client: gclient}
+		}
 	}
 
 	client := openai_compat.New(cfg.LLM)

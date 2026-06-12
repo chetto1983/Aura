@@ -110,10 +110,12 @@ type Config struct {
 	CompletionGate        bool
 	CompletionCriticModel string
 
-	// ReasoningLearning enables the async self-improvement worker (spike 053):
-	// uncertain reasoning-tier classifications are oracle-labeled off the hot path
-	// and saved to Neo4j so the classifier improves over time. Default OFF — it
-	// spends (bounded, async) LLM-oracle tokens. AURA_LLM_REASONING_LEARNING=true.
+	// ReasoningLearning is the single switch for the reasoning-tier
+	// self-improvement feature (spike 053). When ON it opens the Neo4j example
+	// store so the classifier folds stored oracle-labeled examples (read) AND the
+	// async worker labels uncertain turns off the hot path and saves new ones
+	// (write). Default OFF: the classifier runs seed-only (its validated baseline)
+	// with no extra subprocess and no oracle-token spend. AURA_LLM_REASONING_LEARNING.
 	ReasoningLearning bool
 }
 
