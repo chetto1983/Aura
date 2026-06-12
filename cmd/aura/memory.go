@@ -26,7 +26,7 @@ const memoryUsage = "usage: aura memory {search <query>|context <query>|sessions
 	"add-entity <name> [type] [description]|add-fact <subject> <predicate> <object>|" +
 	"add-preference <category> <preference>|store-message <session-id> <role> <content>|" +
 	"get-entity <name>|relationship <from> <type> <to>|export|" +
-	"trace {start <name>|step <trace-id> <description>|complete <trace-id>|observations <trace-id>}|" +
+	"trace {start <session-id> <task>|step <trace-id> <observation>|complete <trace-id> [outcome]|observations <session-id>}|" +
 	"query <cypher>}"
 
 func runMemory(args []string) {
@@ -165,39 +165,50 @@ func memoryRelationshipArgs(args []string) (string, map[string]any, error) {
 	}, nil
 }
 
+// memoryTraceArgs maps the `trace` reasoning-memory subverbs to the live MCP tool
+// contract (verified against the running sidecar, spike 035 / plan 15-05): a trace is
+// keyed by session_id+task at start, steps and completion are keyed by trace_id, and
+// observations are read back BY SESSION (memory_get_observations takes session_id, not
+// trace_id). The step free-text lands in `observation` so it is recallable.
 func memoryTraceArgs(args []string) (string, map[string]any, error) {
-	sub, err := arg(args, 0, "trace", "{start <name>|step <trace-id> <description>|complete <trace-id>|observations <trace-id>}")
+	sub, err := arg(args, 0, "trace", "{start <session-id> <task>|step <trace-id> <observation>|complete <trace-id> [outcome]|observations <session-id>}")
 	if err != nil {
 		return "", nil, err
 	}
 	rest := args[1:]
 	switch sub {
 	case "start":
-		name, err := arg(rest, 0, "trace start", "<name>")
-		if err != nil {
-			return "", nil, err
+		if len(rest) < 2 {
+			return "", nil, fmt.Errorf("memory trace start requires <session-id> <task>")
 		}
-		return "memory_start_trace", map[string]any{"name": name}, nil
+		return "memory_start_trace", map[string]any{
+			"session_id": rest[0],
+			"task":       strings.Join(rest[1:], " "),
+		}, nil
 	case "step":
 		if len(rest) < 2 {
-			return "", nil, fmt.Errorf("memory trace step requires <trace-id> <description>")
+			return "", nil, fmt.Errorf("memory trace step requires <trace-id> <observation>")
 		}
 		return "memory_record_step", map[string]any{
 			"trace_id":    rest[0],
-			"description": strings.Join(rest[1:], " "),
+			"observation": strings.Join(rest[1:], " "),
 		}, nil
 	case "complete":
-		id, err := arg(rest, 0, "trace complete", "<trace-id>")
+		id, err := arg(rest, 0, "trace complete", "<trace-id> [outcome]")
 		if err != nil {
 			return "", nil, err
 		}
-		return "memory_complete_trace", map[string]any{"trace_id": id}, nil
+		call := map[string]any{"trace_id": id}
+		if outcome := strings.Join(rest[min(len(rest), 1):], " "); outcome != "" {
+			call["outcome"] = outcome
+		}
+		return "memory_complete_trace", call, nil
 	case "observations":
-		id, err := arg(rest, 0, "trace observations", "<trace-id>")
+		sid, err := arg(rest, 0, "trace observations", "<session-id>")
 		if err != nil {
 			return "", nil, err
 		}
-		return "memory_get_observations", map[string]any{"trace_id": id}, nil
+		return "memory_get_observations", map[string]any{"session_id": sid}, nil
 	default:
 		return "", nil, fmt.Errorf("unknown memory trace subverb %q", sub)
 	}

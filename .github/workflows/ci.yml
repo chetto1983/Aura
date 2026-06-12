@@ -474,3 +474,83 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           AURA_E2E_CHAT_ID: ${{ secrets.AURA_E2E_CHAT_ID }}
         run: go test -race -count=1 -tags telegram_integration ./internal/channels/telegram/
+
+  memory-integration-test:
+    name: Memory MCP (memory_integration tier, live agent-memory sidecar)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30  # guards against a hung image build / model warm-up
+    # Phase 15 (Slice 11, memory subsystem). Brings up the agent-memory MCP sidecar
+    # (built reproducibly from docker/agent-memory by plan 15-04) + its Neo4j graph +
+    # the embed sidecar, then runs the memory_integration tier against the LIVE,
+    # rebuilt image: 16-tool Deferred + memory__* mount (D-06/D-07), `aura memory`
+    # seed/read + reasoning-trace round-trip (re-scoped UX-09), agent recall loop
+    # (D-03), and dedup non-merge of a distinct entity (D-10 / spike-034 anti-regression).
+    # NO-SKIP-AS-GREEN: AURA_AGENT_MEMORY_MCP_URL is exported so the tier RUNS; the
+    # tests t.Fatal under $CI when it is unset (a skipped tier fails the gate, never
+    # passes it green — CLAUDE.md). On a FRESH CI Neo4j the sidecar creates its vector
+    # indexes at 384d itself, so no index alignment is needed (the local 768d->384d
+    # drop in 15-05 was a one-off on the operator's accumulated graph).
+    env:
+      CI: "true"  # arms the no-skip-as-green t.Fatal in the tier
+      POSTGRES_USER: aura
+      POSTGRES_PASSWORD: ci-test-password
+      POSTGRES_DB: aura
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      AURA_DB_URL: postgres://aura_app:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://aura_migrate:ci-test-password@127.0.0.1:5432/aura?sslmode=disable
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ci-test-password
+      AURA_NEO4J_BOLT_URL: bolt://127.0.0.1:7687
+      AURA_NEO4J_DATABASE: neo4j
+      # The live sidecar endpoint the tier reads (compose publishes the memory service
+      # on 127.0.0.1:8091; the trailing /mcp/ is the streamable-HTTP path).
+      AURA_AGENT_MEMORY_MCP_URL: http://127.0.0.1:8091/mcp/
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Compile the memory_integration tier (always — no-skip-as-green floor)
+        # The tier ALWAYS compiles in CI (the cheap, always-green floor proving the
+        # tagged files never rot), even before the sidecar is up.
+        run: go vet -tags memory_integration ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
+
+      - name: Bring up Postgres + migrate (default-on managed config reads cfg)
+        run: make db-migrate
+
+      - name: Bring up Neo4j + embed sidecar
+        run: make neo4j-up
+
+      - name: Build + start the agent-memory MCP sidecar (reproducible :local image)
+        run: docker compose up -d --build aura-agent-memory-mcp
+
+      - name: Wait for the memory sidecar healthy
+        run: |
+          ok=""
+          for i in $(seq 1 60); do
+            status="$(docker inspect -f '{{.State.Health.Status}}' aura-agent-memory-mcp 2>/dev/null || echo starting)"
+            echo "aura-agent-memory-mcp health: $status"
+            [ "$status" = "healthy" ] && ok=1 && break
+            sleep 5
+          done
+          if [ -z "$ok" ]; then
+            echo "aura-agent-memory-mcp did not become healthy" >&2
+            docker logs aura-agent-memory-mcp --tail 80 || true
+            exit 1
+          fi
+
+      - name: Live memory_integration tier (16-tool mount + CLI + recall + dedup)
+        # Runs the tagged tests across the three owning packages against the live,
+        # rebuilt sidecar. -p 1 keeps the shared Neo4j graph writes serialized.
+        run: go test -tags memory_integration -count=1 -p 1 ./internal/agent/mcptools/ ./cmd/aura/ ./internal/agent/
+
+      - name: Tear down
+        if: always()
+        run: docker compose down
