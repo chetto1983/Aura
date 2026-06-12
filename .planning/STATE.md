@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 15 context gathered
-last_updated: "2026-06-12T06:42:37.992Z"
-last_activity: 2026-06-12 -- Phase 15 execution started
+stopped_at: "Completed 15-01-PLAN.md (PRD amendment #62 re-scope)"
+last_updated: "2026-06-12T06:49:03.215Z"
+last_activity: 2026-06-12
 progress:
   total_phases: 22
   completed_phases: 18
   total_plans: 130
-  completed_plans: 123
+  completed_plans: 124
   percent: 82
 ---
 
@@ -26,9 +26,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 15 (memory-subsystem) — EXECUTING
-Plan: 1 of 5
-Status: Executing Phase 15
-Last activity: 2026-06-12 -- Phase 15 execution started
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-06-12
 
 Progress: [█████████░] 94%
 
@@ -130,6 +130,7 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 | Phase 14 P01 | ~10 min | 4 tasks | 14 files |
 | Phase 14 P02 | ~35 min | 4 tasks | 16 files |
 | Phase 14 P03 | ~30 min | 3 tasks | 6 files |
+| Phase 15 P15-01 | ~6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -202,6 +203,8 @@ Recent decisions affecting current work:
 - [Phase ?]: Phase 19 19-05: H2 Telegram RunErrorEvent render routes through agui.SanitizeString (one redaction contract); H3 async doc-convert failure notifies via convertFailMessage; M-e /cancel during a pause routes SubmitAnswer(ActionCancel)+clears keyboard via per-chat pausePrompts track at step-0 of onText; D-04 stale serve_channels comment corrected.
 - [Phase ?]: [Phase 19]: 19-08: M-g/M-h/L5 scheduler-contract fixes — catch-up consults ReschedulesOnRecovery (no replay on recovery, nil seam fails safe to always-fire), complete() detaches the terminal write via WithoutCancel+5s (no stuck-running on shutdown), inert autocommit SKIP LOCKED dropped from DueTasks + sqlc regenerated (advisory-lock correctness documented). Both M-g+M-h proven fails-before/passes-after; cron -race db_integration green.
 - [Phase 20]: 20-01: channels.Deliverer tri-state seam ((false,nil)=try-next/(true,nil)=delivered/(false,err)=owns-but-failed-stop) + Registry.DeliverToIdentity deterministic sort-by-name fan-out + Telegram.Deliver/Store.GetAccountByIdentity (reuses existing sqlc query; non-UUID 'local'->wrapped pgx.ErrNoRows) — Leaf of the Phase 20 dep graph; sort-by-name over Priority() (lower LOC); deliverBot/deliverResolver unexported test seams; 10 unit cases green under -race, lint 0
+- [Phase ?]: 15-01: PRD amendment #62 re-scopes UX-06..09 to the adopted agent-memory MCP surface (D-12); landed before any Go code (PRD-first Wave-0 gate)
+- [Phase ?]: 15-01: 384d already the live state (D-11) — no 768d->384d migration drop; #62 supersedes the stale 768d framing of #61 node (2)
 
 ### Pending Todos
 
@@ -235,6 +238,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-11T19:27:08.799Z
-Stopped at: Phase 15 context gathered
-Resume file: .planning/phases/15-memory-subsystem/15-CONTEXT.md
+Last session: 2026-06-12T06:49:03.206Z
+Stopped at: Completed 15-01-PLAN.md (PRD amendment #62 re-scope)
+Resume file: None

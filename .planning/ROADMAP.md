@@ -534,7 +534,7 @@ Plans:
 **Plans**: 5 plans (re-derived against the agent-memory MCP surface, 2026-06-11)
 **Wave 1**
 
-- [ ] 15-01-PLAN.md — Wave 0: PRD amendment #62 (re-scope UX-06..09 to the adopted package; D-12)
+- [x] 15-01-PLAN.md — Wave 0: PRD amendment #62 (re-scope UX-06..09 to the adopted package; D-12)
 - [ ] 15-02-PLAN.md — Wave 1: `memory` trusted default-on recipe + 16-tool mount wiring (D-05..D-11)
 - [ ] 15-03-PLAN.md — Wave 1: `aura memory` operator CLI (verb -> raw `memory_*` CallTool; D-01/D-02/D-03)
 - [ ] 15-04-PLAN.md — Wave 1: reproducible compose `build:` for the sidecar (vendor fork @ c1c2d65; Pitfall 5)
@@ -564,7 +564,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 12. AG-UI Gateway | 6/6 | Complete    | 2026-06-07 |
 | 13. Channels + Telegram + Multimodal | 10/10 | Complete | 2026-06-08 |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
-| 15. Memory Subsystem | 0/TBD | Not started (de-risked: spikes 031-035 ✓ + Amendment #61 — adopts agent-memory MCP) | - |
+| 15. Memory Subsystem | 1/5 | In Progress|  |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
 | 17. Packaging & Distribution | 0/TBD | Not started | - |
 
@@ -573,7 +573,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 10/10 plans complete
+**Plans:** 1/5 plans executed
 
 **Success Criteria** (what must be TRUE):
 

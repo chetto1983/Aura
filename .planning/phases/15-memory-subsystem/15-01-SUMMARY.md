@@ -110,3 +110,8 @@ first attempt; no Rule 1–4 deviations, no auth gates, no checkpoints.
 ## Known Stubs
 
 None — doc-only plan, no code, no data sources, no placeholders.
+
+## Self-Check: PASSED
+
+- `15-01-SUMMARY.md` exists.
+- Commits `05e680e4`, `2eda202d`, `d38e0f55` all present in `git log`.
