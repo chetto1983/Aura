@@ -290,6 +290,17 @@ Plans:
 
 **Plans:** Completed 2026-06-03 via the sandbox-agent pivot — the generic MCP client + bridge were built first (commits `7d7dbbd6`..`0ebb3d81`), then superseded by the local sandbox-agent container (`b98ddaff` "Use local sandbox-agent container", `341e595e` CI fallout fix). Prior 08-01..08-11 bespoke plans + the code-sandbox-mcp cut are historical (artifacts retained in the phase dir).
 
+### Phase 08.2: Semantic tool_search + unified semindex (INSERTED)
+
+**Goal:** [Urgent work - to be planned]
+**Requirements**: TBD
+**Depends on:** Phase 08
+**Plans:** 0 plans
+
+Plans:
+
+- [ ] TBD (run /gsd-plan-phase 08.2 to break down)
+
 ### Phase 08.1: Tool Search hardening — Anthropic defer_loading parity (INSERTED)
 
 **Goal:** Harden the in-process `tool_search` hook to Anthropic `defer_loading` parity so tool-selection accuracy stays high as the catalog grows past the 30-50-tool degradation threshold: BM25 ranking over an expanded index (name + description + recursive arg names/descriptions), a `max_results` top-K cap (default 5), `<server>__<tool>` MCP namespacing with sanitize + 64B cap + collision hash, a registry-derived dynamic source-orientation in the `tool_search` Description, and a >=1-non-deferred fail-closed guard - all in-process, stdlib-only, cache-safe (no `SystemPrompt`/`Render()` order changes).
