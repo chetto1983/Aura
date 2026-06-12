@@ -52,14 +52,17 @@ func TestWriterGateRecommendation(t *testing.T) {
 
 func TestModelMutationBypassesGateExceptAlwaysOn(t *testing.T) {
 	actor := AuditActor{ActorID: ActorModel}
-	if !modelMutationBypassesGate(Frontmatter{Name: "ordinary"}, actor) {
+	if !modelMutationBypassesGate(scoring.SkillCreate, Frontmatter{Name: "ordinary"}, actor) {
 		t.Fatal("model-authored non-always skill should keep the in-box fast path")
 	}
-	if modelMutationBypassesGate(Frontmatter{Name: "always", Always: true}, actor) {
+	if modelMutationBypassesGate(scoring.SkillCreate, Frontmatter{Name: "always", Always: true}, actor) {
 		t.Fatal("model-authored always:true skill must stay gated")
 	}
-	if modelMutationBypassesGate(Frontmatter{Name: "cli"}, AuditActor{ActorID: "cli"}) {
+	if modelMutationBypassesGate(scoring.SkillCreate, Frontmatter{Name: "cli"}, AuditActor{ActorID: "cli"}) {
 		t.Fatal("operator-authored skill mutations must stay gated")
+	}
+	if modelMutationBypassesGate(scoring.SkillDelete, Frontmatter{Name: "delete-me"}, actor) {
+		t.Fatal("model-authored delete must stay gated")
 	}
 }
 

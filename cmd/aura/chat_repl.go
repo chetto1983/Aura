@@ -24,13 +24,24 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/runner"
 )
 
 // newTracer wires the OTel TracerProvider from the AURA_OTEL_* config (flushed by
 // the caller on exit). Extracted from the old runChat so the REPL boot path reuses it.
 func newTracer(ctx context.Context, cfg *config.Config) (agent.TracerProvider, error) {
-	return agent.NewTracerProvider(ctx, cfg.OtelExporter, cfg.OtelEndpoint)
+	v, _, _ := buildInfo()
+	shutdown, err := obs.Init(ctx, obs.Config{
+		Service:      "aura",
+		Version:      v,
+		OtelExporter: cfg.OtelExporter,
+		OtelEndpoint: cfg.OtelEndpoint,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return obs.ShutdownFunc(shutdown), nil
 }
 
 // chatLoop is the testable REPL core. It reads a user line, drives runner.Turn,

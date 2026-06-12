@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,37 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
+
+type preExecPersistProbeTool struct {
+	conv   *fakeConvStore
+	convID string
+}
+
+func (p preExecPersistProbeTool) Spec() tools.Spec {
+	return tools.Spec{
+		Name:        "pre_exec_probe",
+		Summary:     "Probe pre-execution persistence.",
+		Description: "Probe pre-execution persistence.",
+		Parameters:  json.RawMessage(`{"type":"object"}`),
+		Mutating:    true,
+	}
+}
+
+func (p preExecPersistProbeTool) Execute(ctx context.Context, _ json.RawMessage) (tools.ToolResult, error) {
+	p.conv.mu.Lock()
+	seen := false
+	for _, turn := range p.conv.turns[p.convID] {
+		if turn.Role == llm.RoleAssistant && strings.Contains(string(turn.ToolCalls), "pre_exec_probe") {
+			seen = true
+			break
+		}
+	}
+	p.conv.mu.Unlock()
+	if !seen {
+		return tools.NewResult(ctx, "assistant tool_calls missing before mutating execution")
+	}
+	return tools.NewResult(ctx, "assistant tool_calls persisted before mutating execution")
+}
 
 // newTestRunner builds a Runner over the in-memory fakes + a scripted FakeClient,
 // with a registry carrying ask_user + text_response so the agent can pause and
@@ -231,6 +263,37 @@ func TestResume_NoSilentReRun_SC4(t *testing.T) {
 	if toolAnswers != 1 || !sawAnswer {
 		t.Fatalf("SC-4: want the injected RoleTool answer carrying %q (toolAnswers=%d, sawAnswer=%v)", "Rome", toolAnswers, sawAnswer)
 	}
+}
+
+func TestTurnPersistsAssistantToolCallsBeforeMutatingToolExecutes(t *testing.T) {
+	client := agenttest.NewFakeClient(
+		agenttest.ToolCallTurn(
+			agenttest.MakeToolCall("call-probe", "pre_exec_probe", `{}`),
+			textResponseCall("call-final", "done"),
+		),
+	)
+	r, conv, _ := newTestRunner(t, client)
+	convID := newConvID(t)
+	r.registry.Register(preExecPersistProbeTool{conv: conv, convID: convID})
+	ctx := context.Background()
+	mustCreate(t, r, convID)
+
+	if _, err := drain(r.Turn(ctx, convID, userPtr("probe"))); err != nil {
+		t.Fatalf("turn: %v", err)
+	}
+	hist, err := conv.LoadHistory(ctx, convID)
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	for _, m := range hist {
+		if m.Role == llm.RoleTool && m.ToolCallID == "call-probe" {
+			if strings.Contains(m.Content, "missing before mutating execution") {
+				t.Fatalf("tool executed before assistant tool_calls were persisted: %q", m.Content)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing RoleTool result for pre_exec_probe: %+v", hist)
 }
 
 // TestStop_AutoResolvesAndJoinsWaitGroup asserts Stop auto-resolves orphan pendings

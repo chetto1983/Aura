@@ -55,5 +55,10 @@ func (a *RunnerAdapter) Run(ctx context.Context, goals []string) (tools.ToolResu
 	if err != nil {
 		return tools.ToolResult{}, err
 	}
-	return tools.NewResult(ctx, out)
+	res, err := tools.NewResult(ctx, out)
+	if err != nil {
+		return tools.ToolResult{}, err
+	}
+	res.Provenance = &tools.ToolResultProvenance{Source: "swarm", Trust: tools.TrustUntrusted}
+	return res, nil
 }

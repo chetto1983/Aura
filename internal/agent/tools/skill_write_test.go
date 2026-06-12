@@ -143,6 +143,29 @@ func TestActionCreateActivates(t *testing.T) {
 	}
 }
 
+func TestActionCreateActivePathStillAlertsWhenAlerterWired(t *testing.T) {
+	w := &fakeSkillWriter{status: "active"}
+	al := &fakeSkillAlerter{}
+	tool := &SkillTool{Writer: w, Alerter: al}
+	ctx := withTestToolCallCtx(context.Background())
+
+	raw, _ := json.Marshal(map[string]any{
+		"action":      "create",
+		"name":        "auto-skill",
+		"description": "does a thing",
+		"body":        "# instructions",
+	})
+	if _, err := tool.Execute(ctx, json.RawMessage(raw)); err != nil {
+		t.Fatalf("create active path: %v", err)
+	}
+	if al.alerts != 1 || al.name != "auto-skill" || al.action != "create" {
+		t.Fatalf("active-path alert = (%d, %q, %q), want (1, auto-skill, create)", al.alerts, al.name, al.action)
+	}
+	if al.tier != scoring.Risky {
+		t.Fatalf("active-path alert tier = %q, want risky", al.tier)
+	}
+}
+
 func TestActionCreateAlwaysPendingPauses(t *testing.T) {
 	w := &fakeSkillWriter{status: "pending_approval"}
 	tool := &SkillTool{Writer: w}

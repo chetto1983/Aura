@@ -32,6 +32,7 @@ import (
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/scoring"
 )
 
@@ -86,6 +87,25 @@ func runServe(args []string) {
 		os.Exit(exitInfra)
 	}
 	defer env.close()
+
+	v, _, _ := buildInfo()
+	shutdownObs, err := obs.Init(ctx, obs.Config{
+		Service:      "aura",
+		Version:      v,
+		OtelExporter: env.cfg.OtelExporter,
+		OtelEndpoint: env.cfg.OtelEndpoint,
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "aura serve observability:", err)
+		os.Exit(exitInfra)
+	}
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownObs(shutCtx); err != nil {
+			slog.Warn("aura serve: observability shutdown", "err", err)
+		}
+	}()
 
 	// The AG-UI HTTP server runs in its own goroutine alongside the scheduler tick
 	// loop. ListenAndServe returning anything other than ErrServerClosed (the clean

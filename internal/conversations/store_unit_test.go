@@ -124,7 +124,7 @@ func TestTurnToMessage(t *testing.T) {
 	}
 }
 
-func TestRepairToolMessagePairsDropsOrphansAndDanglingGroups(t *testing.T) {
+func TestRepairToolMessagePairsDropsOrphansAndRecoversDanglingGroups(t *testing.T) {
 	t.Parallel()
 	callOK := testToolCall("call_ok")
 	callDangling := testToolCall("call_dangling")
@@ -139,8 +139,8 @@ func TestRepairToolMessagePairsDropsOrphansAndDanglingGroups(t *testing.T) {
 	}
 
 	got := repairToolMessagePairs(in)
-	if len(got) != 4 {
-		t.Fatalf("repaired history length = %d, want 4: %+v", len(got), got)
+	if len(got) != 6 {
+		t.Fatalf("repaired history length = %d, want 6: %+v", len(got), got)
 	}
 	if got[0].Role != llm.RoleUser || got[0].Content != "start" {
 		t.Fatalf("first message = %+v", got[0])
@@ -151,8 +151,44 @@ func TestRepairToolMessagePairsDropsOrphansAndDanglingGroups(t *testing.T) {
 	if got[2].Role != llm.RoleTool || got[2].ToolCallID != "call_ok" || got[2].Content != "ok" {
 		t.Fatalf("valid RoleTool result was not preserved: %+v", got[2])
 	}
-	if got[3].Role != llm.RoleUser || got[3].Content != "next" {
-		t.Fatalf("post-repair user message = %+v", got[3])
+	if got[3].Role != llm.RoleAssistant || len(got[3].ToolCalls) != 1 || got[3].ToolCalls[0].ID != "call_dangling" {
+		t.Fatalf("dangling assistant tool_call was not preserved: %+v", got[3])
+	}
+	if got[4].Role != llm.RoleTool || got[4].ToolCallID != "call_dangling" ||
+		!strings.Contains(got[4].Content, "previous result unknown") ||
+		!strings.Contains(got[4].Content, "verify before re-running") {
+		t.Fatalf("recovery marker for dangling call is wrong: %+v", got[4])
+	}
+	if got[5].Role != llm.RoleUser || got[5].Content != "next" {
+		t.Fatalf("post-repair user message = %+v", got[5])
+	}
+}
+
+func TestRepairToolMessagePairsTurnsDanglingAssistantToolCallIntoRecoveryMarker(t *testing.T) {
+	t.Parallel()
+	callDangling := testToolCall("call_unknown")
+	in := []llm.Message{
+		{Role: llm.RoleUser, Content: "start"},
+		{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{callDangling}},
+		{Role: llm.RoleUser, Content: "after crash"},
+	}
+
+	got := repairToolMessagePairs(in)
+	if len(got) != 4 {
+		t.Fatalf("repaired history length = %d, want 4: %+v", len(got), got)
+	}
+	if got[1].Role != llm.RoleAssistant || len(got[1].ToolCalls) != 1 {
+		t.Fatalf("dangling assistant tool_call must stay visible: %+v", got[1])
+	}
+	if got[2].Role != llm.RoleTool || got[2].ToolCallID != "call_unknown" {
+		t.Fatalf("dangling tool_call must receive a synthetic RoleTool marker: %+v", got[2])
+	}
+	if !strings.Contains(got[2].Content, "previous result unknown") ||
+		!strings.Contains(got[2].Content, "verify before re-running") {
+		t.Fatalf("recovery marker did not warn the model to verify first: %q", got[2].Content)
+	}
+	if got[3].Role != llm.RoleUser || got[3].Content != "after crash" {
+		t.Fatalf("post-crash user message must remain after repaired group: %+v", got[3])
 	}
 }
 

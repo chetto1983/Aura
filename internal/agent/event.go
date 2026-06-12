@@ -88,6 +88,8 @@ type ToolInvocation struct {
 	ToolName          string         `json:"tool_name"`
 	Arguments         string         `json:"arguments,omitempty"`
 	ArgsBytes         int            `json:"args_bytes,omitempty"`
+	BatchIndex        int            `json:"batch_index,omitempty"`
+	BatchSize         int            `json:"batch_size,omitempty"`
 	StartedAt         *time.Time     `json:"started_at,omitempty"`
 	EndedAt           *time.Time     `json:"ended_at,omitempty"`
 	DurationMS        int64          `json:"duration_ms,omitempty"`

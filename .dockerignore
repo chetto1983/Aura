@@ -1,0 +1,9 @@
+.git
+.worktrees
+output
+.env
+.env.*
+*.log
+coverage.out
+tmp
+internal/runner/conversations

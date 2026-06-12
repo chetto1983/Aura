@@ -160,18 +160,21 @@ func (t *SkillTool) writeAction(ctx context.Context, raw json.RawMessage, action
 	if err != nil {
 		return ToolResult{}, fmt.Errorf("skill %s %q: %w", action, name, err)
 	}
+	tier := scoring.ComputeSkillTier(action, a.Body)
 
 	// P5 (2026-06-10): in-box self-extension is ungated — the writer auto-activates a
 	// model-authored mutation (container = boundary, Claude-Code parity), returning a
 	// non-pending status. Return a NORMAL result, no human pause; this is now the live
 	// path for create/update/delete (delete de-materializes immediately).
 	if status != statusPendingApproval {
+		if t.Alerter != nil {
+			t.Alerter.AlertPendingSkill(ctx, name, string(action), tier)
+		}
 		return NewResult(ctx, fmt.Sprintf("Skill %s %q is now active (status=%s).", action, name, status))
 	}
 
 	// Defensive fallback: a still-gated context staged this as pending. Fire the
 	// headless alert (D-26) and pause for approval (the model cannot answer — D-03).
-	tier := scoring.ComputeSkillTier(action, a.Body)
 	if t.Alerter != nil {
 		t.Alerter.AlertPendingSkill(ctx, name, string(action), tier)
 	}
