@@ -26,6 +26,8 @@ Ground-truth probe of the MCP infrastructure Phase 9 (Swarm Minimal) depends on 
 
 **Session 11 (2026-06-12, spikes 043a-046):** operator-approved large-document ingestion spike framed by Aura's Telegram markitdown path and `zylon-ai/private-gpt` source at commit `8ac84e3c35ba48447d7b0eb136f5a1369bab7b2d`. Outcome: Aura already has async conversion and visible failure callbacks, but the 5/50 MiB boundary implementation drifts from comments and the current multipart/sidecar path is not memory-bounded for 5-50 MiB documents. PrivateGPT is useful as a reference architecture, not a dependency: borrow early job IDs, status polling, file-hash idempotency, bounded batches, progress callbacks, and temporary cleanup; do not import the Python/Celery/S3/Qdrant stack. Phase-15 document memory ingest needs provenance-scoped chunk identity (`source_id`, `document_id`, `content_hash`, chunk hash/index/count/byte offsets). Local retrieval/citation signal is validated, but live vector/MCP recall and p95 remain future adapter work.
 
+**Session 12 (2026-06-12, spike 047):** follow-up after the dense-embedding E2E over the real Siemens G220 manual was interrupted as too slow. Outcome: the correct first lane is not synchronous dense embedding. A page-aware PyMuPDF + sparse TF-IDF index made the 28.97 MiB / 830-page manual searchable in 1.626s with retrieval p95 0.0017s and industrial score 90.4/100. Dense vectors become background enrichment after an early `searchable` job state.
+
 ## Requirements
 
 - Mail + WhatsApp sends in tests go ONLY to the user's own mailbox/number; ground truth = read-back via the same MCP server.
@@ -69,6 +71,9 @@ Ground-truth probe of the MCP infrastructure Phase 9 (Swarm Minimal) depends on 
 - Every chunk write must carry `source_id`, `document_id`, `content_hash`, `chunk_hash`, `chunk_index`, `chunk_count`, `byte_start`, and `byte_end`. The idempotency key is provenance plus content hash; entity names are not chunk dedup keys.
 - PrivateGPT is reference material only. Borrow its lifecycle semantics (async task ID, status endpoint, file-hash no-op for same artifact, different-artifact preservation, bounded batches, temp cleanup) without adopting its Celery/S3/Qdrant dependency shape.
 - Retrieval acceptance for document memory must eventually be a live vector or hybrid smoke: convert -> chunk -> embed -> write -> retrieve seeded beginning/middle/end facts with citations and p95.
+- Real industrial PDF ingest must expose `searchable` after page text extraction + sparse/page-aware indexing; dense embeddings run after that in the background.
+- Do not synchronously embed 1000+ chunks before the user can search. The Siemens G220 manual proves sparse first-lane ingest is fast enough for immediate use.
+- Production retrieval must down-rank table-of-contents hits or resolve them to their actual section pages before showing the final citation.
 
 **Phase-11 requirements (emerged from spikes 003-006, binding for `/gsd-plan-phase 11`):**
 
@@ -168,3 +173,4 @@ The premise "9c serviti con vLLM su GPU 4GB" is DEAD (spike 020 INVALIDATED — 
 | 044 | memory-ingest-provenance-dedup | standard | Given converted markdown from a large document, when chunks are written under source/document/content-hash provenance, then re-ingest is a no-op and similar documents do not over-merge | VALIDATED (contract harness: same provenance no-op, different document preserved, chunk metadata complete) | phase-15, memory, ingestion, provenance, dedup |
 | 045 | large-doc-retrieval-signal | standard | Given seeded facts at beginning/middle/end of a large document, when chunk retrieval runs, then the right chunks return with source/citation metadata and latency is recorded | PARTIAL (local retrieval/citation signal passes; live vector/MCP recall and p95 remain future adapter work) | phase-15, retrieval, graphrag, large-doc |
 | 046 | telegram-ingest-job-ux | standard | Given a 5-50 MiB Telegram document, when conversion plus memory ingest runs async, then the user gets accepted/progress/success/failure/refused/canceled/pollable job states | VALIDATED (small job-state contract covers lifecycle Aura should expose before long-running ingest work starts) | telegram, ingestion, async, ux |
+| 047 | fast-lane-industrial-pdf-ingest | standard | Given the real 830-page Siemens G220 manual, when Aura extracts page text and builds a sparse index before dense embeddings, then the manual becomes searchable in seconds with page citations and an industrial score | VALIDATED (28.97 MiB/830 pages -> 1035 chunks; fast ingest 1.626s; retrieval p95 0.0017s; industrial score 90.4/100; dense vectors move to background) | large-doc, pdf, ingestion, retrieval, industrial-manual, phase-15 |
