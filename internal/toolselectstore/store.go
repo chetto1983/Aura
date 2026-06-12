@@ -12,6 +12,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 )
 
 // GraphClient is the narrow Cypher seam Store needs. *knowledge.Client satisfies
@@ -89,6 +90,16 @@ func (s *Store) LoadExamples(ctx context.Context) ([]LabeledVec, error) {
 // anti-amplification guards (min-support, boost cap) would then have to untangle; a
 // query-keyed UPSERT keeps the bank honest at the source.
 func (s *Store) Save(ctx context.Context, query, tool string, vec []float64) error {
+	// Reject an empty tool/embedding at the store boundary (WR-04). LoadExamples skips a
+	// len(vec)==0 row, so persisting one creates a permanently un-loadable dead node that
+	// still consumes the hash-keyed MERGE slot — and because the caller (activelearn)
+	// treats a non-error Save as committed and keeps the content hash in its seen-set, the
+	// same query is never retried with a valid embedding. Returning an error keeps the
+	// write retryable. This is a public seam, so the guard lives here even though the
+	// toolselect Observe path also checks upstream (defense-in-depth).
+	if tool == "" || len(vec) == 0 {
+		return fmt.Errorf("toolselectstore: refusing to save empty tool/embedding (tool=%q, vec_len=%d)", tool, len(vec))
+	}
 	_, err := s.Client.Write(ctx, saveQuery, map[string]any{
 		"rows": []map[string]any{{
 			"hash":      hashQuery(query),

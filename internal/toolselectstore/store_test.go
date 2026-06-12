@@ -85,6 +85,34 @@ func (s *Store) lastHash(g *fakeGraph) string {
 	return rows[0]["hash"].(string)
 }
 
+// WR-04: Save must reject an empty tool/embedding at the store boundary rather than
+// persist an un-loadable dead row (LoadExamples skips len(vec)==0) that still poisons
+// the caller's seen-set. The error keeps the write retryable, and no Write is issued.
+func TestStore_Save_RejectsEmptyToolOrEmbedding(t *testing.T) {
+	cases := []struct {
+		name string
+		tool string
+		vec  []float64
+	}{
+		{"empty embedding", "web_search", nil},
+		{"zero-length embedding", "web_search", []float64{}},
+		{"empty tool", "", []float64{0.1, 0.2}},
+		{"both empty", "", nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			g := &fakeGraph{}
+			s := &Store{Client: g}
+			if err := s.Save(context.Background(), "some query", c.tool, c.vec); err == nil {
+				t.Errorf("Save(%q, vec_len=%d) must error (refuse the empty write)", c.tool, len(c.vec))
+			}
+			if g.lastWriteParams != nil {
+				t.Errorf("a refused Save must not issue a Write; params=%v", g.lastWriteParams)
+			}
+		})
+	}
+}
+
 func TestStore_LoadExamples_ParsesAPOCJSONString(t *testing.T) {
 	// The read query returns the embedding as an APOC JSON string; asFloats must parse
 	// it. A blank tool or an undecodable embedding is skipped.
