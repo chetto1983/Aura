@@ -22,7 +22,11 @@ import (
 // It is Deferred (path/caption schema + an inline example, the deferred-tool rule)
 // and NON-Mutating (it reads a file and describes a delivery — no host state
 // changes), so it never arms the completion-gate critic.
-type SendFile struct{}
+type SendFile struct {
+	// WorkspaceRoot, when set, fences delivery to files whose real path stays
+	// inside this workspace. Empty preserves legacy unrestricted delivery.
+	WorkspaceRoot string
+}
 
 // maxSendFileBytes is the upload ceiling enforced before a descriptor is emitted
 // (the Bot-API document upload limit). A file over the cap returns a
@@ -76,6 +80,15 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 		return errorResult("file_unreadable", "no path was provided; pass the absolute path of the file to deliver"), nil
 	}
 
+	resolved, ok, ferr := s.checkWorkspace(path)
+	if ferr != nil {
+		return errorResult("file_unreadable", fmt.Sprintf("cannot resolve %q: %v", path, ferr)), nil
+	}
+	if !ok {
+		return outsideWorkspaceResult(resolved, s.WorkspaceRoot), nil
+	}
+	path = resolved
+
 	info, err := os.Stat(path)
 	if err != nil {
 		return errorResult("file_unreadable", fmt.Sprintf("cannot read %q: %v", path, err)), nil
@@ -101,6 +114,42 @@ func (s *SendFile) Execute(_ context.Context, raw json.RawMessage) (ToolResult, 
 		Bytes:   len(preview),
 		Meta:    &meta,
 	}, nil
+}
+
+func (s *SendFile) checkWorkspace(path string) (string, bool, error) {
+	root := strings.TrimSpace(s.WorkspaceRoot)
+	if root == "" {
+		return path, true, nil
+	}
+	rootAbs, err := filepath.Abs(root)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve workspace root: %w", err)
+	}
+	rootReal, err := filepath.EvalSymlinks(rootAbs)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve workspace root symlinks: %w", err)
+	}
+	pathAbs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false, fmt.Errorf("resolve path: %w", err)
+	}
+	pathReal, err := filepath.EvalSymlinks(pathAbs)
+	if err != nil {
+		return "", false, err
+	}
+	rel, err := filepath.Rel(rootReal, pathReal)
+	if err != nil {
+		return pathReal, false, nil
+	}
+	if rel == "." || (!filepath.IsAbs(rel) && rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))) {
+		return pathReal, true, nil
+	}
+	return pathReal, false, nil
+}
+
+func outsideWorkspaceResult(path, root string) ToolResult {
+	return errorResult("outside_workspace_requires_approval",
+		fmt.Sprintf("%q is outside workspace %q. Ask the user for approval with ask_user(kind=approval, resume_context={\"type\":\"send_file_outside_workspace\",\"path\":%q}), then deliver a workspace copy or use an operator-approved path.", path, root, path))
 }
 
 // errorResult builds the inline {error,message} object the model self-corrects on

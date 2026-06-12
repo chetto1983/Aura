@@ -96,12 +96,26 @@ func buildRegistry() *tools.Registry {
 	return buildBaseRegistry(cfg, nil)
 }
 
+type runtimeToolHandles struct {
+	BackgroundShells *tools.BackgroundShells
+	ShellApprovals   *tools.ShellApprovals
+}
+
 // buildBaseRegistry is the shared composition root for every boot path. ts is the
 // live scheduler store the non-deferred `task` tool persists against (D-11): serve/
 // chat inject the cronTaskStore over the open pool; the pool-free manifest paths
 // (`aura tools`, buildRegistry) pass nil — the tool still registers (its Spec needs no
 // store) so the manifest lists it, and an Execute without a store would error loudly.
 func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
+	reg, _ := buildBaseRegistryWithHandles(cfg, ts)
+	return reg
+}
+
+func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools.Registry, runtimeToolHandles) {
+	handles := runtimeToolHandles{
+		BackgroundShells: tools.NewBackgroundShells(),
+		ShellApprovals:   tools.NewShellApprovals(),
+	}
 	reg := tools.NewRegistry()
 	reg.Register(tools.TextResponse{})
 	reg.Register(&tools.ToolSearch{Registry: reg})
@@ -121,13 +135,16 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
-	bgShells := tools.NewBackgroundShells()
-	reg.Register(&tools.ShellExec{Background: bgShells})
+	workspace := ""
+	if wd, err := os.Getwd(); err == nil {
+		workspace = wd
+	}
+	reg.Register(&tools.ShellExec{WorkspaceRoot: workspace, Background: handles.BackgroundShells, Approvals: handles.ShellApprovals})
 	// shell_poll / shell_kill mirror Claude Code's BashOutput / KillBash: read new
 	// output from, and terminate, a background shell_exec job. Deferred — the model
 	// tool_searches for them once it holds a background shell_id to follow.
-	reg.Register(&tools.ShellPoll{Shells: bgShells})
-	reg.Register(&tools.ShellKill{Shells: bgShells})
+	reg.Register(&tools.ShellPoll{Shells: handles.BackgroundShells})
+	reg.Register(&tools.ShellKill{Shells: handles.BackgroundShells})
 	// Native in-process filesystem hands — Claude-Code-style file ergonomics, full
 	// host access, no path fence (amendment #50 / D-15c) EXCEPT the surgical
 	// skills-library fence (#54 / D-43): fs_write/fs_edit refuse to write inside
@@ -140,7 +157,7 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 	// send_file hands a host file to the user as an attachment (D-05/D-06). Deferred:
 	// the model tool_searches for it when it has a produced/found file to deliver; the
 	// agent loop lifts its artifact Meta onto the AG-UI ArtifactDelta the channel renders.
-	reg.Register(&tools.SendFile{})
+	reg.Register(&tools.SendFile{WorkspaceRoot: workspace})
 	// swarm_spawn registers into the PARENT registry ONLY (D-08/D-10): workers receive
 	// the Without(parent, "swarm_spawn") clone the adapter derives per child, never the
 	// tool itself, so a worker cannot recursively fan out. It is Deferred:true, so it
@@ -155,16 +172,16 @@ func buildBaseRegistry(cfg *config.Config, ts *cronTaskStore) *tools.Registry {
 		fmt.Fprintln(os.Stderr, "registry:", err)
 		os.Exit(1)
 	}
-	return reg
+	return reg, handles
 }
 
-func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskStore) (*tools.Registry, []func() error, error) {
+func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskStore) (*tools.Registry, runtimeToolHandles, []func() error, error) {
 	if cfg.MCPServersErr != nil {
-		return nil, nil, cfg.MCPServersErr
+		return nil, runtimeToolHandles{}, nil, cfg.MCPServersErr
 	}
-	reg := buildBaseRegistry(cfg, ts)
+	reg, handles := buildBaseRegistryWithHandles(cfg, ts)
 	if len(cfg.MCPServers) == 0 && len(cfg.MCPPolicies) == 0 {
-		return reg, nil, nil
+		return reg, handles, nil, nil
 	}
 
 	seen := map[string]struct{}{}
@@ -201,7 +218,7 @@ func buildRegistryWithMCP(ctx context.Context, cfg *config.Config, ts *cronTaskS
 		}
 		closers = append(closers, closer)
 	}
-	return reg, closers, nil
+	return reg, handles, closers, nil
 }
 
 func closeMCPServers(closers []func() error) error {
@@ -215,7 +232,7 @@ func closeMCPServers(closers []func() error) error {
 }
 
 func printTools() {
-	reg, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil)
+	reg, _, closers, err := buildRegistryWithMCP(context.Background(), config.LoadDB(), nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "mcp:", err)
 		os.Exit(1)

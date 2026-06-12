@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -172,9 +173,8 @@ func TestTruncatePreview_RuneBoundary(t *testing.T) {
 	}
 }
 
-// Test 4 (Req#8): the sidecar path is exactly
-// <run_dir>/conversations/<session_id>/<tool_call_id>.result and the dir is
-// created lazily on first persist.
+// Test 4 (Req#8): the sidecar path stays inside the session directory, carries
+// the provider id plus an opaque suffix, and is created lazily on first persist.
 func TestSidecarLayout(t *testing.T) {
 	runDir := t.TempDir()
 	ctx := ctxWithRunDir("sess-XYZ", "call-ABC", runDir)
@@ -182,12 +182,75 @@ func TestSidecarLayout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewResult: %v", err)
 	}
-	want := filepath.Join(runDir, "conversations", "sess-XYZ", "call-ABC.result")
-	if res.FullPath != want {
-		t.Fatalf("FullPath = %q, want %q", res.FullPath, want)
+	wantDir := filepath.Join(runDir, "conversations", "sess-XYZ")
+	if filepath.Dir(res.FullPath) != wantDir {
+		t.Fatalf("FullPath dir = %q, want %q", filepath.Dir(res.FullPath), wantDir)
 	}
-	if _, err := os.Stat(want); err != nil {
+	if !strings.HasSuffix(res.FullPath, ".result") {
+		t.Fatalf("FullPath = %q, want .result suffix", res.FullPath)
+	}
+	if !strings.Contains(filepath.Base(res.FullPath), "call-ABC-") {
+		t.Fatalf("FullPath base = %q, want provider id plus opaque suffix", filepath.Base(res.FullPath))
+	}
+	if _, err := os.Stat(res.FullPath); err != nil {
 		t.Fatalf("sidecar not created lazily: %v", err)
+	}
+}
+
+func TestSidecarFilePermissionsAreOwnerOnly(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX 0600 mode assertion is not represented by Go FileMode.Perm on Windows")
+	}
+	runDir := t.TempDir()
+	ctx := ctxWithRunDir("sess-perm", "call-perm", runDir)
+	res, err := NewResult(ctx, strings.Repeat("x", testCap+100))
+	if err != nil {
+		t.Fatalf("NewResult: %v", err)
+	}
+	info, err := os.Stat(res.FullPath)
+	if err != nil {
+		t.Fatalf("stat sidecar: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("sidecar permissions = %#o, want 0600", got)
+	}
+}
+
+func TestSidecarIDRejectsWindowsADSColon(t *testing.T) {
+	runDir := t.TempDir()
+	ctx := ctxWithRunDir("sess", "call:ads", runDir)
+	_, err := NewResult(ctx, strings.Repeat("p", testCap+100))
+	if err == nil {
+		t.Fatal("want an error for a colon in tool_call_id")
+	}
+	if !strings.Contains(err.Error(), "invalid character") {
+		t.Fatalf("want invalid character error, got %q", err.Error())
+	}
+}
+
+func TestNewResult_ReusedProviderToolCallIDDoesNotOverwriteSidecar(t *testing.T) {
+	runDir := t.TempDir()
+	ctx1 := WithToolCallContext(context.Background(), "sess-reuse", "call-reused", runDir, testCap)
+	ctx2 := WithToolCallContext(context.Background(), "sess-reuse", "call-reused", runDir, testCap)
+
+	res1, err := NewResult(ctx1, strings.Repeat("a", testCap+100))
+	if err != nil {
+		t.Fatalf("NewResult first: %v", err)
+	}
+	res2, err := NewResult(ctx2, strings.Repeat("b", testCap+100))
+	if err != nil {
+		t.Fatalf("NewResult second: %v", err)
+	}
+	if res1.FullPath == res2.FullPath {
+		t.Fatalf("reused provider tool_call_id overwrote sidecar path %q", res1.FullPath)
+	}
+	got1, err := os.ReadFile(res1.FullPath)
+	if err != nil || !strings.HasPrefix(string(got1), "aaa") {
+		t.Fatalf("first sidecar not preserved, bytes=%q err=%v", string(got1[:min(len(got1), 8)]), err)
+	}
+	got2, err := os.ReadFile(res2.FullPath)
+	if err != nil || !strings.HasPrefix(string(got2), "bbb") {
+		t.Fatalf("second sidecar not preserved, bytes=%q err=%v", string(got2[:min(len(got2), 8)]), err)
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -86,6 +87,102 @@ func TestSendFileExecuteSetsArtifactMeta(t *testing.T) {
 	}
 	if res.Bytes != len(res.Preview) {
 		t.Fatalf("Bytes = %d, want preview length %d", res.Bytes, len(res.Preview))
+	}
+}
+
+func TestSendFileAllowsWorkspacePath(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "report.txt")
+	if err := os.WriteFile(path, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]string{"path": path})
+	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-root", "call-sf-root"), raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Meta == nil {
+		t.Fatal("workspace file must produce artifact meta")
+	}
+	art := (*res.Meta)["artifact"].(map[string]any)
+	if got := art["path"]; got != path {
+		t.Fatalf("artifact.path = %v, want resolved path %q", got, path)
+	}
+}
+
+func TestSendFileAllowsWorkspacePathWithDotDotPrefixName(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "..report.txt")
+	if err := os.WriteFile(path, []byte("ok"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]string{"path": path})
+	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-dotdot-name", "call-sf-dotdot-name"), raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Meta == nil {
+		t.Fatalf("in-workspace filename beginning with '..' must produce artifact meta, got %q", res.Preview)
+	}
+}
+
+func TestSendFileRejectsOutsideWorkspace(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]string{"path": outside})
+	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-out", "call-sf-out"), raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Meta != nil {
+		t.Fatal("outside-workspace path must not produce artifact meta")
+	}
+	if !strings.Contains(res.Preview, "outside_workspace_requires_approval") {
+		t.Fatalf("want outside-workspace approval result, got %q", res.Preview)
+	}
+	if !strings.Contains(res.Preview, "ask_user") {
+		t.Fatalf("result must instruct the model to ask_user, got %q", res.Preview)
+	}
+}
+
+func TestSendFileRejectsSymlinkEscape(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows symlink creation requires privileges on some runners")
+	}
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "secret.txt")
+	if err := os.WriteFile(outside, []byte("secret"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	link := filepath.Join(root, "linked-secret.txt")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatalf("symlink: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]string{"path": link})
+	res, err := (&SendFile{WorkspaceRoot: root}).Execute(ctxWith(t, "sess-sf-link", "call-sf-link"), raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Meta != nil || !strings.Contains(res.Preview, "outside_workspace_requires_approval") {
+		t.Fatalf("symlink escape must be refused, got meta=%v preview=%q", res.Meta, res.Preview)
+	}
+}
+
+func TestSendFileNoWorkspacePreservesLegacyBehavior(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.txt")
+	if err := os.WriteFile(path, []byte("legacy"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	raw, _ := json.Marshal(map[string]string{"path": path})
+	res, err := (&SendFile{}).Execute(ctxWith(t, "sess-sf-legacy", "call-sf-legacy"), raw)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res.Meta == nil {
+		t.Fatal("empty WorkspaceRoot must preserve legacy artifact delivery")
 	}
 }
 

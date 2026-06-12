@@ -144,6 +144,81 @@ func TestBackgroundShell_Kill(t *testing.T) {
 	}
 }
 
+func TestBackgroundShellsCapRunningJobs(t *testing.T) {
+	if shellIsCmdFallback() {
+		t.Skip("cmd.exe fallback has no sleep; cap fixture needs a long-running command")
+	}
+	t.Setenv("AURA_SHELL_BG_MAX", "1")
+	bg := NewBackgroundShells()
+	id, err := bg.start("sleep 2", "", mergeEnv(nil))
+	if err != nil {
+		t.Fatalf("start first: %v", err)
+	}
+	defer func() { _ = bg.kill(id) }()
+	if _, err := bg.start("sleep 2", "", mergeEnv(nil)); err == nil {
+		t.Fatal("want cap error for second running background shell")
+	} else if !strings.Contains(err.Error(), "cap") || !strings.Contains(err.Error(), "1") {
+		t.Fatalf("cap error = %v, want mention cap 1", err)
+	}
+}
+
+func TestBackgroundShellsPrunesFinishedBeforeCap(t *testing.T) {
+	t.Setenv("AURA_SHELL_BG_MAX", "1")
+	bg := NewBackgroundShells()
+	id, err := bg.start("echo done", "", mergeEnv(nil))
+	if err != nil {
+		t.Fatalf("start first: %v", err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if sh, ok := bg.get(id); ok {
+			sh.mu.Lock()
+			done := sh.done
+			sh.mu.Unlock()
+			if done {
+				break
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, err := bg.start("echo second", "", mergeEnv(nil)); err != nil {
+		t.Fatalf("finished shell should be pruned before cap check: %v", err)
+	}
+}
+
+func TestBackgroundShellsShutdownKillsRunning(t *testing.T) {
+	if shellIsCmdFallback() {
+		t.Skip("cmd.exe fallback has no sleep; shutdown fixture needs a long-running command")
+	}
+	bg := NewBackgroundShells()
+	id, err := bg.start("sleep 30", "", mergeEnv(nil))
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := bg.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown: %v", err)
+	}
+	sh, ok := bg.get(id)
+	if !ok {
+		t.Fatalf("shell %s missing", id)
+	}
+	sh.mu.Lock()
+	killed := sh.killed
+	done := sh.done
+	sh.mu.Unlock()
+	if !killed {
+		t.Fatal("shutdown must mark running shell killed")
+	}
+	if !done {
+		t.Fatal("shutdown must wait for shell completion")
+	}
+	if err := bg.Shutdown(ctx); err != nil {
+		t.Fatalf("second Shutdown should be harmless: %v", err)
+	}
+}
+
 func TestBackgroundShellBufferCapsAndDropsConsumed(t *testing.T) {
 	sh := &bgShell{bufCap: 8}
 	if n, err := sh.Write([]byte("123456")); err != nil || n != 6 {

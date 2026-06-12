@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -9,8 +10,9 @@ import (
 )
 
 const (
-	envShellMaxTimeoutMs = "AURA_SHELL_MAX_TIMEOUT_MS"
-	envShellOutputBufCap = "AURA_SHELL_OUTPUT_BUF_CAP"
+	envShellMaxTimeoutMs        = "AURA_SHELL_MAX_TIMEOUT_MS"
+	envShellOutputBufCap        = "AURA_SHELL_OUTPUT_BUF_CAP"
+	envShellDestructivePatterns = "AURA_SHELL_DESTRUCTIVE_PATTERNS"
 
 	defaultShellMaxTimeout = 10 * time.Minute
 	defaultShellOutputCap  = 1 << 20
@@ -64,6 +66,40 @@ func shellOutputBufCap() int {
 		return defaultShellOutputCap
 	}
 	return n
+}
+
+func destructiveShellMatch(command string) (bool, error) {
+	patterns, err := destructiveShellPatterns()
+	if err != nil {
+		return false, err
+	}
+	for _, re := range patterns {
+		if re.MatchString(command) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func destructiveShellPatterns() ([]*regexp.Regexp, error) {
+	raw := strings.TrimSpace(os.Getenv(envShellDestructivePatterns))
+	if raw == "" {
+		return nil, nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]*regexp.Regexp, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		re, err := regexp.Compile(part)
+		if err != nil {
+			return nil, fmt.Errorf("%s: compile %q: %w", envShellDestructivePatterns, part, err)
+		}
+		out = append(out, re)
+	}
+	return out, nil
 }
 
 var shellSecretPatterns = []*regexp.Regexp{

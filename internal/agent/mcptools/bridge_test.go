@@ -35,10 +35,11 @@ func (f *fakeServer) CallTool(ctx context.Context, name string, args map[string]
 }
 
 type fakeReconnectClient struct {
-	defs     []mcp.ToolDef
-	callText string
-	callErr  error
-	closed   bool
+	defs      []mcp.ToolDef
+	callText  string
+	callErr   error
+	callCount int
+	closed    bool
 }
 
 func (f *fakeReconnectClient) ListTools(context.Context) ([]mcp.ToolDef, error) {
@@ -46,6 +47,7 @@ func (f *fakeReconnectClient) ListTools(context.Context) ([]mcp.ToolDef, error) 
 }
 
 func (f *fakeReconnectClient) CallTool(context.Context, string, map[string]any) (string, error) {
+	f.callCount++
 	return f.callText, f.callErr
 }
 
@@ -103,12 +105,13 @@ func TestBridge_TranslatesTools(t *testing.T) {
 	if exec.Name != "sb__sandbox_exec" {
 		t.Fatalf("name = %q, want namespaced sb__sandbox_exec", exec.Name)
 	}
-	// Summary = first description line + required-args hint: the deferred stub is
-	// all the model sees by default, and without the arg names a first call has to
-	// guess the shape, fail validation, tool_search, and retry (live swarm E2E
-	// 2026-06-04 — each fresh worker context paid that round-trip on send_message).
-	if exec.Summary != "Execute commands in the sandboxed environment. Required args: container_id." {
-		t.Fatalf("summary should be first line + required-args hint, got %q", exec.Summary)
+	// The deferred Summary is manifest-visible, so MCP text must be framed as
+	// untrusted while keeping the required-args hint visible for call shape.
+	if !strings.Contains(strings.ToLower(exec.Summary), "untrusted mcp server") ||
+		!strings.Contains(strings.ToLower(exec.Summary), "data") ||
+		!strings.Contains(exec.Summary, "Execute commands in the sandboxed environment.") ||
+		!strings.Contains(exec.Summary, "Required args: container_id.") {
+		t.Fatalf("summary should be framed and include required-args hint, got %q", exec.Summary)
 	}
 	if !exec.Deferred {
 		t.Fatal("bridged tools must be Deferred:true (D-20) — a multi-tool MCP server floods the manifest into the 30-50-tool degradation zone; tool_search loads the full spec on demand")
@@ -133,7 +136,7 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 		callErr: fmt.Errorf("pipe closed: %w", mcp.ErrTransport),
 	}
 	refreshed := &fakeReconnectClient{
-		defs:     []mcp.ToolDef{{Name: "send", Description: "Fresh delivery path."}},
+		defs:     []mcp.ToolDef{{Name: "send", Description: "Fresh delivery path.", Annotations: mcp.ToolAnnotations{ReadOnlyHint: true}}},
 		callText: "sent",
 	}
 	opens := 0
@@ -164,14 +167,23 @@ func TestReconnectServerRetriesAndRefreshesToolSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute after reconnect: %v", err)
 	}
-	if res.Preview != "sent" {
-		t.Fatalf("preview = %q, want sent", res.Preview)
+	if !strings.Contains(res.Preview, "not replayed") {
+		t.Fatalf("preview = %q, want no-replay transport error", res.Preview)
 	}
 	if opens != 1 || !initial.closed {
 		t.Fatalf("reconnect did not close/reopen exactly once: opens=%d closed=%v", opens, initial.closed)
 	}
-	if got := tool.Spec().Description; got != "Fresh delivery path." {
+	if initial.callCount != 1 || refreshed.callCount != 0 {
+		t.Fatalf("call replay policy mismatch: initial=%d refreshed=%d", initial.callCount, refreshed.callCount)
+	}
+	if got := tool.Spec().Description; !strings.Contains(got, "Fresh delivery path.") || !strings.Contains(got, "untrusted MCP server description") {
 		t.Fatalf("refreshed description = %q", got)
+	}
+	if got := tool.Spec().Summary; !strings.Contains(got, "Fresh delivery path.") || !strings.Contains(got, "untrusted MCP server summary data") {
+		t.Fatalf("refreshed summary = %q", got)
+	}
+	if tool.Spec().Mutating {
+		t.Fatal("refreshed readOnlyHint=true should set Mutating:false")
 	}
 	searchCtx2 := tools.WithToolCallContext(context.Background(), "sess", "search-2", t.TempDir(), 2048)
 	if res, err := ts.Execute(searchCtx2, json.RawMessage(`{"query":"fresh"}`)); err != nil || !strings.Contains(res.Preview, "Fresh delivery path.") {
@@ -205,8 +217,11 @@ func TestReconnectServerSecondTransportFailureIsInlineToolError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second transport failure must be inline content, got Go error %v", err)
 	}
-	if !strings.HasPrefix(res.Preview, "error: ") || !strings.Contains(res.Preview, "second fail") {
-		t.Fatalf("preview = %q, want inline second failure", res.Preview)
+	if !strings.HasPrefix(res.Preview, "error: ") || !strings.Contains(res.Preview, "not replayed") {
+		t.Fatalf("preview = %q, want inline no-replay transport failure", res.Preview)
+	}
+	if initial.callCount != 1 || reopened.callCount != 0 {
+		t.Fatalf("call replay policy mismatch: initial=%d reopened=%d", initial.callCount, reopened.callCount)
 	}
 }
 

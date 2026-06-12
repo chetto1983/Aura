@@ -15,6 +15,7 @@ import (
 
 const httpProtocolVersion = "2025-06-18"
 const httpSSEMaxLineBytes = 1024 * 1024
+const httpRPCMaxBodyBytes = 8 << 20
 
 // HTTPConfig declares how to reach a Streamable-HTTP MCP server: its endpoint URL
 // plus optional static headers, bearer token, and an override http.Client.
@@ -197,7 +198,7 @@ func (c *HTTPClient) post(ctx context.Context, payload any, includeProtocol bool
 	c.decorate(req, includeProtocol)
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: http post: %w", ErrTransport, err)
 	}
 	if resp.StatusCode == http.StatusUnauthorized {
 		defer func() { _ = resp.Body.Close() }()
@@ -234,11 +235,18 @@ func (c *HTTPClient) decorate(req *http.Request, includeProtocol bool) {
 
 func decodeHTTPRPC(body io.ReadCloser, wantID int64, contentType string) (json.RawMessage, error) {
 	defer func() { _ = body.Close() }()
+	data, err := io.ReadAll(io.LimitReader(body, httpRPCMaxBodyBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read response body: %w", err)
+	}
+	if len(data) > httpRPCMaxBodyBytes {
+		return nil, fmt.Errorf("response body exceeds %d bytes", httpRPCMaxBodyBytes)
+	}
 	if strings.Contains(contentType, "text/event-stream") {
-		return decodeHTTPSSE(body, wantID)
+		return decodeHTTPSSE(bytes.NewReader(data), wantID)
 	}
 	var resp rpcResp
-	if err := json.NewDecoder(body).Decode(&resp); err != nil {
+	if err := json.NewDecoder(bytes.NewReader(data)).Decode(&resp); err != nil {
 		return nil, fmt.Errorf("decode response: %w", err)
 	}
 	return rpcResult(resp, wantID)

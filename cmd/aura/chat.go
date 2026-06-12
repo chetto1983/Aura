@@ -46,19 +46,25 @@ const chatUsage = "usage: aura chat {list|new|resume [<id>]|archive <id>|unarchi
 // chatEnv is the booted composition root shared by every chat subcommand: the
 // config, the open pool, the three Stores, and the Runner that drives the REPL.
 type chatEnv struct {
-	cfg        *config.Config
-	pool       *pgxpool.Pool
-	conv       *conversations.Store
-	pause      *askuser.Store
-	identity   *identity.Store
-	run        *runner.Runner
-	client     llm.Client
-	reg        *tools.Registry
-	mcpClosers []func() error
+	cfg         *config.Config
+	pool        *pgxpool.Pool
+	conv        *conversations.Store
+	pause       *askuser.Store
+	identity    *identity.Store
+	run         *runner.Runner
+	client      llm.Client
+	reg         *tools.Registry
+	toolHandles runtimeToolHandles
+	mcpClosers  []func() error
 }
 
 // close releases the pool (the OTel TracerProvider is owned by the REPL path).
 func (e *chatEnv) close() {
+	if e.toolHandles.BackgroundShells != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = e.toolHandles.BackgroundShells.Shutdown(ctx)
+	}
 	_ = closeMCPServers(e.mcpClosers)
 	if e.pool != nil {
 		e.pool.Close()
@@ -160,7 +166,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 
 	// The live `task` tool persists against the open pool (10-05 deviation #3): both
 	// `aura chat` and `aura serve` get the scheduler verb wired to the real DB.
-	reg, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool, convStore))
+	reg, toolHandles, mcpClosers, err := buildRegistryWithMCP(ctx, cfg, newCronTaskStore(pool, convStore))
 	if err != nil {
 		pool.Close()
 		return nil, fmt.Errorf("mcp: %w", err)
@@ -181,9 +187,9 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		EvictAfter:      cfg.ContextToolEvictAfterTurns,
 		ContextBlock:    profileContextProvider(cfg),
 		AlwaysBlock:     alwaysBlockProvider(cfg),
-		ResumeHook:      newSkillResumeHook(cfg, pool),
+		ResumeHook:      chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals)),
 	})
-	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, mcpClosers: mcpClosers}, nil
+	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
 }
 
 // chatList prints the persisted conversations with their title + aggregates.

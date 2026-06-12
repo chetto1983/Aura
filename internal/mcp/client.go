@@ -51,12 +51,19 @@ type ServerConfig struct {
 	Env     []string `json:"env,omitempty"`
 }
 
-// ToolDef is one entry from tools/list: the LLM-facing name, description, and the
-// raw JSON-Schema the bridge translates into an Aura tool schema.
+// ToolAnnotations carries optional trust/action hints advertised by an MCP
+// server for one tool.
+type ToolAnnotations struct {
+	ReadOnlyHint bool `json:"readOnlyHint"`
+}
+
+// ToolDef is one entry from tools/list: the LLM-facing name, description, raw
+// JSON-Schema, and annotations the bridge translates into an Aura tool schema.
 type ToolDef struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	InputSchema json.RawMessage `json:"inputSchema"`
+	Annotations ToolAnnotations `json:"annotations"`
 }
 
 // Client wraps one MCP server subprocess. The zero value is unusable; use Open.

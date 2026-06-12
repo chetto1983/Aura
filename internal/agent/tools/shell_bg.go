@@ -29,12 +29,13 @@ type BackgroundShells struct {
 	mu     sync.Mutex
 	seq    int
 	bufCap int
+	max    int
 	shells map[string]*bgShell
 }
 
 // NewBackgroundShells builds an empty registry to share across the shell tools.
 func NewBackgroundShells() *BackgroundShells {
-	return &BackgroundShells{bufCap: shellBackgroundBufCap(), shells: map[string]*bgShell{}}
+	return &BackgroundShells{bufCap: shellBackgroundBufCap(), max: shellBackgroundMax(), shells: map[string]*bgShell{}}
 }
 
 // bgShell is one detached process. Its combined stdout+stderr accumulate in buf;
@@ -143,21 +144,111 @@ func (b *BackgroundShells) start(command, dir string, env []string) (string, err
 	sh := &bgShell{startedAt: time.Now(), cancel: cancel, bufCap: b.bufCap}
 	cmd.Stdout = sh
 	cmd.Stderr = sh
-	if err := cmd.Start(); err != nil {
-		cancel()
-		return "", fmt.Errorf("background start: %w", err)
-	}
 	b.mu.Lock()
+	if b.shells == nil {
+		b.shells = map[string]*bgShell{}
+	}
+	b.pruneFinishedLocked()
+	if b.max > 0 && b.runningCountLocked() >= b.max {
+		b.mu.Unlock()
+		cancel()
+		return "", fmt.Errorf("background shell cap reached (%d); poll or kill an existing shell", b.max)
+	}
 	b.seq++
 	id := fmt.Sprintf("sh_%d", b.seq)
 	sh.id = id
 	b.shells[id] = sh
 	b.mu.Unlock()
+	if err := cmd.Start(); err != nil {
+		cancel()
+		sh.mu.Lock()
+		sh.done = true
+		sh.killed = true
+		sh.exitCode = nil
+		sh.mu.Unlock()
+		b.mu.Lock()
+		delete(b.shells, id)
+		b.mu.Unlock()
+		return "", fmt.Errorf("background start: %w", err)
+	}
 	go func() {
 		sh.finish(cmd.Wait())
 		cancel()
 	}()
 	return id, nil
+}
+
+func (b *BackgroundShells) pruneFinishedLocked() {
+	for id, sh := range b.shells {
+		sh.mu.Lock()
+		done := sh.done
+		sh.mu.Unlock()
+		if done {
+			delete(b.shells, id)
+		}
+	}
+}
+
+func (b *BackgroundShells) runningCountLocked() int {
+	n := 0
+	for _, sh := range b.shells {
+		sh.mu.Lock()
+		running := !sh.done && !sh.killed
+		sh.mu.Unlock()
+		if running {
+			n++
+		}
+	}
+	return n
+}
+
+func (b *BackgroundShells) Shutdown(ctx context.Context) error {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	shells := make([]*bgShell, 0, len(b.shells))
+	for _, sh := range b.shells {
+		shells = append(shells, sh)
+	}
+	b.mu.Unlock()
+
+	for _, sh := range shells {
+		var cancel context.CancelFunc
+		sh.mu.Lock()
+		if !sh.done {
+			sh.killed = true
+			sh.exitCode = nil
+			cancel = sh.cancel
+		}
+		sh.mu.Unlock()
+		if cancel != nil {
+			cancel()
+		}
+	}
+
+	t := time.NewTicker(10 * time.Millisecond)
+	defer t.Stop()
+	for {
+		allDone := true
+		for _, sh := range shells {
+			sh.mu.Lock()
+			done := sh.done
+			sh.mu.Unlock()
+			if !done {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
 }
 
 func (b *BackgroundShells) get(id string) (*bgShell, bool) {
@@ -265,7 +356,10 @@ func (p *ShellPoll) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	return res, nil
 }
 
-const envShellBackgroundBufCap = "AURA_SHELL_BG_BUF_CAP"
+const (
+	envShellBackgroundBufCap = "AURA_SHELL_BG_BUF_CAP"
+	envShellBackgroundMax    = "AURA_SHELL_BG_MAX"
+)
 
 func shellBackgroundBufCap() int {
 	v := strings.TrimSpace(os.Getenv(envShellBackgroundBufCap))
@@ -275,6 +369,18 @@ func shellBackgroundBufCap() int {
 	n, err := strconv.Atoi(v)
 	if err != nil || n <= 0 {
 		return defaultShellOutputCap
+	}
+	return n
+}
+
+func shellBackgroundMax() int {
+	v := strings.TrimSpace(os.Getenv(envShellBackgroundMax))
+	if v == "" {
+		return 8
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 8
 	}
 	return n
 }
