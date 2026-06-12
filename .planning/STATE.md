@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: verifying
-stopped_at: Completed 08.2-05-PLAN.md (phase 08.2 complete)
-last_updated: "2026-06-12T21:03:48.453Z"
+status: ready_to_plan
+stopped_at: Phase 08.2 complete (5/5) — ready to discuss Phase 09
+last_updated: 2026-06-12T21:45:31.015Z
 last_activity: 2026-06-12
 progress:
   total_phases: 23
   completed_phases: 20
   total_plans: 135
-  completed_plans: 133
+  completed_plans: 137
   percent: 87
 ---
 
@@ -21,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 08.2 — semantic-tool-search-unified-semindex
+**Current focus:** Phase 09 — swarm minimal
 
 ## Current Position
 
-Phase: 08.2 (semantic-tool-search-unified-semindex) — EXECUTING
-Plan: 5 of 5
-Status: Phase complete — ready for verification
+Phase: 09
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-06-12
 
 Progress: [██████████] 99%
@@ -42,7 +42,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 
 **Velocity:**
 
-- Total plans completed: 78
+- Total plans completed: 83
 - Average duration: —
 - Total execution time: 0.0 hours
 
@@ -64,6 +64,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 | 11 | 10 | - | - |
 | 12 | 6 | - | - |
 | 20 | 4 | - | - |
+| 08.2 | 5 | - | - |
 
 **Recent Trend:**
 
