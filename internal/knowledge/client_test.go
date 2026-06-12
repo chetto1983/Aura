@@ -107,13 +107,20 @@ func TestPing_Full(t *testing.T) {
 
 // TestReset_ReappliesSchema exercises the apply path end-to-end: Reset drops the
 // schema, clears the audit, and re-Migrates (covering Exec, splitCypherStatements,
-// and the Migrate apply branch). After it, version 1 is freshly recorded.
+// and the Migrate apply branch). After it, EVERY embedded migration is freshly
+// recorded — the expectation derives from the embedded FS, not a hardcoded count,
+// so shipping a new .cypher migration does not stale this assertion.
 func TestReset_ReappliesSchema(t *testing.T) {
 	ctx := context.Background()
 	schema := openTestSchema(ctx, t)
 	defer schema.Close(ctx)
 	pool := testPool(ctx, t)
 	defer pool.Close()
+
+	migs, err := loadMigrations(cypherFS)
+	if err != nil || len(migs) == 0 {
+		t.Fatalf("loadMigrations(cypherFS): n=%d err=%v", len(migs), err)
+	}
 
 	if err := Reset(ctx, schema, pool); err != nil {
 		t.Fatalf("Reset: %v", err)
@@ -122,8 +129,13 @@ func TestReset_ReappliesSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Status after reset: %v", err)
 	}
-	if len(rows) != 1 || rows[0].Version != 1 {
-		t.Fatalf("after reset want exactly version 1 applied, got %+v", rows)
+	if len(rows) != len(migs) {
+		t.Fatalf("after reset want all %d embedded migrations applied, got %+v", len(migs), rows)
+	}
+	for i, row := range rows {
+		if row.Version != migs[i].version {
+			t.Fatalf("after reset row %d has version %d, want embedded migration version %d (%+v)", i, row.Version, migs[i].version, rows)
+		}
 	}
 	// Schema must be back: a second migrate is a no-op.
 	n, err := Migrate(ctx, schema, pool)

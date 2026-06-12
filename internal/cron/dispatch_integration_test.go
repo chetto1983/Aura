@@ -316,14 +316,23 @@ func TestDispatchPendingNotificationIdentityRoundTrip(t *testing.T) {
 	if columnExists(ctx, t, pool, "identity_id") != true {
 		t.Fatal("identity_id column missing before the down step (migratedPool should have applied 0014)")
 	}
-	if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
-		t.Fatalf("MigrateSteps down -1 (revert 0014): %v", err)
+	// Migrations newer than 0014 (e.g. 0015 document_ingest_jobs) sit on top of
+	// the head, so the distance from head to 0014's down is not a fixed -1. Walk
+	// down one step at a time (bounded) until 0014's down drops identity_id, then
+	// re-up the same number of steps — the assertion stays pinned to 0014's
+	// reversibility, not to 0014 being the latest migration.
+	downSteps := 0
+	for columnExists(ctx, t, pool, "identity_id") {
+		if downSteps >= 8 {
+			t.Fatalf("identity_id still present after %d down steps — 0014's down did not drop it", downSteps)
+		}
+		if err := db.MigrateSteps(ctx, migrateURL, -1); err != nil {
+			t.Fatalf("MigrateSteps down -1 (step %d toward reverting 0014): %v", downSteps+1, err)
+		}
+		downSteps++
 	}
-	if columnExists(ctx, t, pool, "identity_id") != false {
-		t.Fatal("identity_id column still present after the 0014 down migration")
-	}
-	if err := db.MigrateSteps(ctx, migrateURL, 1); err != nil {
-		t.Fatalf("MigrateSteps up 1 (re-apply 0014): %v", err)
+	if err := db.MigrateSteps(ctx, migrateURL, downSteps); err != nil {
+		t.Fatalf("MigrateSteps up %d (re-apply through 0014): %v", downSteps, err)
 	}
 	if columnExists(ctx, t, pool, "identity_id") != true {
 		t.Fatal("identity_id column missing after re-applying 0014 — re-up is not clean")
