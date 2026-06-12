@@ -1,0 +1,13 @@
+# Keep the build context tight: ship only pyproject.toml + README*.md + src/.
+# Tests, VCS metadata, and Python build byproducts are not needed in the image
+# (and excluding them keeps the supply-chain surface minimal — T-15-04-02).
+.git
+.gitignore
+tests/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/

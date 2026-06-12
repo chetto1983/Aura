@@ -98,7 +98,10 @@ services:
   # the Windows-published `127.0.0.1:7687` port. Aura can mount it as streamable
   # HTTP at http://127.0.0.1:${AURA_AGENT_MEMORY_MCP_PORT:-8091}/mcp/.
   aura-agent-memory-mcp:
-    image: ${AURA_AGENT_MEMORY_MCP_IMAGE:-aura-agent-memory-mcp:spike-fixed}
+    build:
+      context: ./docker/agent-memory     # vendored fork src/ pinned at c1c2d65
+    image: ${AURA_AGENT_MEMORY_MCP_IMAGE:-aura-agent-memory-mcp:local}
+    pull_policy: never
     container_name: aura-agent-memory-mcp
     restart: unless-stopped
     depends_on:
