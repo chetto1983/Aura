@@ -344,6 +344,12 @@ func loadMCPServers() (map[string]mcp.ServerConfig, map[string]mcp.ManagedServer
 		out[name] = cfg
 		delete(policies, name)
 	}
+	// Default-on (D-08): memory is a core capability, so it mounts out of the box
+	// with no `aura mcp install`. Injected AFTER the env delete loop so an
+	// AURA_MCP_SERVERS_JSON override of `memory` still wins; respects an explicit
+	// `aura mcp disable memory` (D-09). On a fresh machine this makes len(policies)
+	// non-zero — the intended default-on behavior.
+	injectDefaultOnMemory(policies, managed, envServers)
 	if len(out) == 0 && len(policies) == 0 {
 		return nil, nil, nil
 	}

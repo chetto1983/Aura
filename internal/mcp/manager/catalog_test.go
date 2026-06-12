@@ -13,7 +13,7 @@ func TestCatalogIncludesTrustedRecipesAndCalendarFixture(t *testing.T) {
 	for _, entry := range catalog {
 		names = append(names, entry.Name)
 	}
-	wantNames := []string{"calculator", "calendar", "mail", "whatsapp"}
+	wantNames := []string{"calculator", "calendar", "mail", "memory", "whatsapp"}
 	if !reflect.DeepEqual(names, wantNames) {
 		t.Fatalf("catalog names = %#v, want %#v", names, wantNames)
 	}
@@ -30,6 +30,42 @@ func TestCatalogIncludesTrustedRecipesAndCalendarFixture(t *testing.T) {
 	}
 	if !containsString(calendar.RequiredEnv, "AURA_CALENDAR_MODE=fixture") {
 		t.Fatalf("calendar required env missing fixture mode: %#v", calendar.RequiredEnv)
+	}
+}
+
+func TestCatalogIncludesMemoryStreamableHTTPRecipe(t *testing.T) {
+	memory, ok := LookupCatalog("memory")
+	if !ok {
+		t.Fatal("memory recipe missing from BuiltInCatalog")
+	}
+	if memory.TrustClass != mcp.TrustTrustedRecipe {
+		t.Fatalf("memory TrustClass = %q, want %q (D-08 trusted)", memory.TrustClass, mcp.TrustTrustedRecipe)
+	}
+	if memory.Server.Trust.Class != mcp.TrustTrustedRecipe {
+		t.Fatalf("memory Server.Trust.Class = %q, want %q", memory.Server.Trust.Class, mcp.TrustTrustedRecipe)
+	}
+	if memory.Server.Type != mcp.ServerTypeStreamableHTTP {
+		t.Fatalf("memory Server.Type = %q, want %q", memory.Server.Type, mcp.ServerTypeStreamableHTTP)
+	}
+	if memory.Server.URL != "http://127.0.0.1:8091/mcp/" {
+		t.Fatalf("memory Server.URL = %q, want loopback /mcp/ URL", memory.Server.URL)
+	}
+	if memory.Server.Command != "" {
+		t.Fatalf("memory Server.Command = %q, want empty (HTTP recipe has no launch command)", memory.Server.Command)
+	}
+	if memory.Source != "recipe:memory" {
+		t.Fatalf("memory Source = %q, want recipe:memory", memory.Source)
+	}
+}
+
+func TestCatalogMemoryURLHonorsPortEnv(t *testing.T) {
+	t.Setenv("AURA_AGENT_MEMORY_MCP_PORT", "9191")
+	memory, ok := LookupCatalog("memory")
+	if !ok {
+		t.Fatal("memory recipe missing from BuiltInCatalog")
+	}
+	if memory.Server.URL != "http://127.0.0.1:9191/mcp/" {
+		t.Fatalf("memory Server.URL = %q, want port from AURA_AGENT_MEMORY_MCP_PORT", memory.Server.URL)
 	}
 }
 

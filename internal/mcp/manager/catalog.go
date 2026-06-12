@@ -1,10 +1,24 @@
 package manager
 
 import (
+	"fmt"
+	"os"
 	"sort"
+	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
 )
+
+// memoryRecipeURL composes the loopback streamable-HTTP URL for the agent-memory
+// sidecar. The port derives from AURA_AGENT_MEMORY_MCP_PORT (the name compose.yaml
+// already uses, AURA_<DOMAIN>_<UNIT> convention), defaulting to 8091 — no new env var.
+func memoryRecipeURL() string {
+	port := strings.TrimSpace(os.Getenv("AURA_AGENT_MEMORY_MCP_PORT"))
+	if port == "" {
+		port = "8091"
+	}
+	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
+}
 
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
 // LLM-facing metadata (summary, trust class, runtime) with the concrete
@@ -20,7 +34,7 @@ type CatalogEntry struct {
 }
 
 // BuiltInCatalog returns the curated set of shipped MCP server recipes
-// (calculator, calendar, mail, whatsapp), sorted by name.
+// (calculator, calendar, mail, memory, whatsapp), sorted by name.
 func BuiltInCatalog() []CatalogEntry {
 	entries := []CatalogEntry{
 		{
@@ -107,6 +121,23 @@ func BuiltInCatalog() []CatalogEntry {
 				Source:  "recipe:whatsapp",
 				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 				Runtime: mcp.ManagedRuntime{Kind: "local"},
+			},
+		},
+		{
+			// neo4j-labs agent-memory, the first HTTP recipe. Mounts the full 16-tool
+			// surface Deferred + memory__*-namespaced through the existing
+			// MountManagedServer (D-06/D-07). Trusted (NOT remote_http) so it can mount
+			// default-on (D-08); the URL has no launch Command (HTTP recipe).
+			Name:       "memory",
+			Summary:    "neo4j-labs agent-memory (POLE+O + reasoning traces) over streamable-HTTP",
+			Source:     "recipe:memory",
+			TrustClass: mcp.TrustTrustedRecipe,
+			Runtime:    "local",
+			Server: mcp.ManagedServer{
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    memoryRecipeURL(),
+				Source: "recipe:memory",
+				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 			},
 		},
 	}

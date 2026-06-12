@@ -53,18 +53,27 @@ func TestMCPRecipesListsBuiltins(t *testing.T) {
 		t.Fatalf("mcp recipes: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"calculator", "mail", "whatsapp", "calendar", "trusted_recipe"} {
+	for _, want := range []string{"calculator", "mail", "whatsapp", "calendar", "memory", "trusted_recipe"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("recipes output missing %q:\n%s", want, got)
 		}
+	}
+	// The memory recipe must list as a trusted_recipe sourced from recipe:memory
+	// (D-08 default-on trusted; A1 trusted_recipe, NOT remote_http).
+	if !strings.Contains(got, "memory\ttrusted_recipe\tlocal\trecipe:memory") {
+		t.Fatalf("recipes output missing memory trusted_recipe row:\n%s", got)
 	}
 
 	out.Reset()
 	if err := runMCPCommand(context.Background(), []string{"recipes", "--json"}, &out); err != nil {
 		t.Fatalf("mcp recipes --json: %v", err)
 	}
-	if got := out.String(); !strings.Contains(got, `"name":"calendar"`) || !strings.Contains(got, `"AURA_CALENDAR_MODE=fixture"`) {
+	got = out.String()
+	if !strings.Contains(got, `"name":"calendar"`) || !strings.Contains(got, `"AURA_CALENDAR_MODE=fixture"`) {
 		t.Fatalf("recipes json missing calendar fixture metadata:\n%s", got)
+	}
+	if !strings.Contains(got, `"name":"memory"`) || !strings.Contains(got, `"http://127.0.0.1:8091/mcp/"`) {
+		t.Fatalf("recipes json missing memory streamable-http recipe:\n%s", got)
 	}
 }
 
