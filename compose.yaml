@@ -34,7 +34,7 @@ services:
       AURA_SKILLS_DIR: /var/lib/aura/skills
       AURA_SKILL_EXPORT_DIR: /var/lib/aura/exported-skills
       AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
     volumes:
