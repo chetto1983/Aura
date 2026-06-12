@@ -122,3 +122,35 @@ coexisting with the Windows desktop:
 
 Spike 020's vLLM wall does NOT apply to llama.cpp: weights + CUDA context +
 KV for E2B at 4k context all fit inside the free ~2.9 GiB.
+
+### Follow-up: KV-vs-context sweep — full 128K fits in 4 GB
+
+Operator question: "does full context need an 8 GB GPU?" Measured by sweeping
+`-c` from PowerShell (NOT bash — the bash sweep died on the documented MSYS
+mount mangling, `/models/...` → `C:/Program Files/Git/models/...`; that error
+is the artifact, not a VRAM wall):
+
+| `-c` (context) | VRAM total (desktop incl.) | Result |
+|---|---|---|
+| 4096 | 3705 MiB | OK |
+| 32768 | 2849 MiB | OK |
+| **131072 (128K, model max)** | **3451 MiB** | **OK, server listening** |
+
+Findings:
+
+1. **8 GB is NOT required for E2B at full context.** Gemma 4 E2B's max trained
+   context is `n_ctx_train = 131072` (128K) and it loads fully GPU-offloaded
+   (`-ngl 99`, 4 unified slots) at **3451 MiB total** — under the 4096 ceiling
+   with the desktop running.
+2. **KV growth is sub-linear** thanks to Gemma's sliding-window attention
+   (5:1 local:global layers): 32K→128K (4× context) added only ~600 MiB.
+   The earlier "KV grows linearly" assumption was wrong for this architecture.
+3. **This build defaults to `-fit on`** ("fitting params to device memory"):
+   without an explicit `-ngl`, llama.cpp auto-redistributes layers to CPU to
+   fit VRAM instead of OOMing — a graceful fallback on 4 GB. Passing `-ngl 99`
+   overrides it ("n_gpu_layers already set by user to 99, abort").
+
+8 GB becomes the floor only for: **E4B** (4.2 GiB weights alone), **mmproj on
+GPU** for fast vision (+1.2 GiB — kept on CPU in spike 050 precisely to hold
+the 4 GB fit), larger models, or heavy concurrency. Context length alone does
+not push E2B past 4 GB.
