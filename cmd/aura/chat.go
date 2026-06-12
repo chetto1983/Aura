@@ -38,6 +38,7 @@ import (
 	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/toolinvocations"
+	"github.com/chetto1983/aura/internal/toolselectstore"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -188,12 +189,17 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 	// extra subprocess. Best-effort even when on: a missing binary or a down Neo4j
 	// leaves it seed-only and never blocks boot.
 	var reasoningStore *reasoningstore.Store
+	var toolSelectStore *toolselectstore.Store
 	if cfg.LLM.ReasoningLearning {
 		if gclient, gerr := knowledge.Open(ctx, &cfg.Neo4j); gerr != nil {
 			fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
 		} else {
 			mcpClosers = append(mcpClosers, gclient.Close)
 			reasoningStore = &reasoningstore.Store{Client: gclient}
+			// The tool-selection active-learning loop (D-06/D-07) rides the SAME graph
+			// client: when the reasoning learner is on (and Neo4j opened) the tool_search
+			// ranker also self-improves via :ToolSelectionExample. No extra subprocess.
+			toolSelectStore = &toolselectstore.Store{Client: gclient}
 		}
 	}
 
@@ -227,6 +233,9 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 	if reasoningStore != nil {
 		deps.ExampleStore = reasoningStore
 		deps.ReasoningSaver = reasoningStore
+	}
+	if toolSelectStore != nil {
+		deps.ToolSelectSaver = toolSelectStore
 	}
 	run := runner.New(deps)
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil

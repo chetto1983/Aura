@@ -4,6 +4,8 @@ import (
 	"context"
 	"os"
 	"strings"
+
+	"github.com/chetto1983/aura/internal/toolselectstore"
 )
 
 // oracleEnv is the kill-switch for the PAID escalation tier (T-08.2-16, the
@@ -39,6 +41,14 @@ type Teacher interface {
 // satisfies it.
 type Saver interface {
 	Save(ctx context.Context, query, tool string, vec []float64) error
+}
+
+// ExampleLoader loads the full confirmed-example set for the Refresh re-fold.
+// *toolselectstore.Store satisfies it (LoadExamples). The runner's Refresh hook
+// type-asserts the Saver to this so the loop re-folds the per-tool centroids after a
+// save without toolselectlearn importing toolselectstore.
+type ExampleLoader interface {
+	LoadExamples(ctx context.Context) ([]toolselectstore.LabeledVec, error)
 }
 
 // twoTierOracle adapts the tool-selection two-tier labeling + persistence into the

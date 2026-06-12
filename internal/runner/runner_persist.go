@@ -27,8 +27,14 @@ import (
 // at round end (flushPause), not one assistant turn per Event.
 type turnTracker struct {
 	convID string
-	paused bool
-	pauses []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
+	// userMsg is the round's user request, threaded here so the off-hot-path tool-
+	// selection capture (persistToolTurn on ToolInvocationEnd) can pair it with the
+	// executed tool name and feed the active-learning detector (Open-Q #3). Empty on a
+	// resume round (userMsg=nil at turn start) — then no (request, used-tool) signal is
+	// captured, which is correct (the request already produced its tool turns).
+	userMsg string
+	paused  bool
+	pauses  []*agent.AwaitingInput // the round's ask_user pauses, flushed as ONE assistant turn
 
 	// pendingToolCalls holds the current runnable tool batch until the first result
 	// arrives, when the runner can persist one assistant turn carrying the whole
@@ -116,6 +122,15 @@ func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent
 			ToolCallID:     ti.ToolCallID,
 		}); err != nil {
 			return fmt.Errorf("persist tool result turn %s/%s: %w", ti.ToolName, ti.ToolCallID, err)
+		}
+		// Open-Q #3 — the LIVE tool-selection capture site. This is the post-tool-
+		// execution, ToolName-bearing, already-best-effort branch (the ledger insert next
+		// to it is non-fatal too): the correct off-hot-path observation point for the
+		// (request, used-tool) detection signal. Observe is non-blocking (it embeds + the
+		// activelearn worker labels async) and nil-safe, so it MUST NOT abort the turn —
+		// exactly like the ledger insert. Skipped on a resume round (tr.userMsg empty).
+		if r.toolSelectLearner != nil && tr.userMsg != "" {
+			r.toolSelectLearner.Observe(tr.userMsg, ti.ToolName)
 		}
 		delete(tr.openToolCalls, ti.ToolCallID)
 		if len(tr.openToolCalls) == 0 {

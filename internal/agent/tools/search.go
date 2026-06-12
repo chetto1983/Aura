@@ -44,6 +44,11 @@ type ToolSearch struct {
 	// MCP-mount refresh (InvalidateIndex) can detect and embed ONLY the delta (D-03).
 	banked map[string]struct{}
 	specs  []Spec // bm25-aligned deferred specs (sorted by Name)
+
+	// learned is the stage-2 per-tool centroid boost (D-07, search_learn.go), folded
+	// by the tool-selection active-learning loop. nil until wired by the composition
+	// root; when nil (or empty) the stage-1 description ranking stands alone.
+	learned *learnedBoost
 }
 
 const defaultMaxResults = 5
@@ -244,14 +249,26 @@ func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, e
 		// Empty deferred corpus — nothing to rank. Capability gap (empty), not error.
 		return nil, nil
 	}
-	// Embedding-primary semantic ranking (spike-056). Request more than the cap so
-	// the guarded tiebreak can reorder within the confident region before capping.
-	rankWidth := limit + fusionGuardTopK
-	result := ranker.Rank(ctx, q, rankWidth)
-	if result.Err != nil {
-		return nil, result.Err // Req-6: embed sidecar down on the query embed
+	// Embed the query ONCE (Req-6: a sidecar-down error surfaces here) and reuse the
+	// vector for BOTH the stage-1 description ranking AND the stage-2 learned-centroid
+	// boost — no second embed for the learned stage.
+	qVecs, err := ts.embedQuery(ctx, q)
+	if err != nil {
+		return nil, err // Req-6: embed sidecar down on the query embed
 	}
-	ranked := guardedTiebreak(result.Results, bm25Names)
+	if len(qVecs) == 0 {
+		// A degenerate empty embedding is a capability gap, not an infra error.
+		return nil, nil
+	}
+	// Stage-1: embedding-primary description ranking (spike-056). Request more than the
+	// cap so the guarded tiebreak can reorder within the confident region before capping.
+	rankWidth := limit + fusionGuardTopK
+	stage1 := ranker.RankVecs(qVecs, rankWidth)
+	// Guarded BM25 tiebreak (Plan 03), then the margin-gated learned stage-2 boost
+	// (D-07). The learned boost is a STRICT no-op below min-support/tau, so the no-fold
+	// path leaves the Plan-03 order unchanged.
+	ranked := guardedTiebreak(stage1, bm25Names)
+	ranked = ts.learned.rerank(ranked, qVecs)
 	if len(ranked) > limit {
 		ranked = ranked[:limit]
 	}
@@ -262,6 +279,20 @@ func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, e
 		}
 	}
 	return out, nil
+}
+
+// embedQuery embeds a single free-text query into one vector, surfacing the embedder
+// error verbatim (Req-6). It is the single embed per tool_search call — reused by both
+// ranking stages.
+func (ts *ToolSearch) embedQuery(ctx context.Context, q string) ([]float64, error) {
+	vecs, err := ts.Embed.Embed(ctx, []string{q})
+	if err != nil {
+		return nil, err
+	}
+	if len(vecs) != 1 || len(vecs[0]) == 0 {
+		return nil, nil
+	}
+	return vecs[0], nil
 }
 
 // ensureBank lazily builds (and incrementally extends) the embedding bank over the

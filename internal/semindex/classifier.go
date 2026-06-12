@@ -99,6 +99,30 @@ func (c *Classifier) RankVecs(vec []float64) Verdict {
 	return Verdict{Label: best, Score: bestScore, Margin: margin(scores), Ok: true}
 }
 
+// GroupCosine returns the cosine of a query vector to ONE named group's centroid
+// (lazily memoizing that centroid), plus whether the group exists. Unlike RankVecs
+// (which returns the argmax across all groups), this scores a single caller-chosen
+// label — the lever a stage-2 per-tool boost needs: "how close is this query to THIS
+// tool's learned centroid?". The query is L2-normalized internally (parity with
+// RankVecs). A missing group or an empty bank returns (0, false).
+func (c *Classifier) GroupCosine(label string, vec []float64) (float64, bool) {
+	if c == nil {
+		return 0, false
+	}
+	c.mu.Lock() // write lock: may memoize the centroid
+	defer c.mu.Unlock()
+	exemplars, ok := c.groups[label]
+	if !ok || len(exemplars) == 0 {
+		return 0, false
+	}
+	cen := c.centroids[label]
+	if cen == nil {
+		cen = centroid(exemplars)
+		c.centroids[label] = cen
+	}
+	return cosine(l2normalize(vec), cen), true
+}
+
 // Rank embeds a single query text and ranks it (D-01 text-in door). The
 // embedder error is surfaced verbatim (Req-6 error surface).
 func (c *Classifier) Rank(ctx context.Context, text string) (Verdict, error) {

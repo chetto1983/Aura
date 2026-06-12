@@ -19,6 +19,7 @@ import (
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoninglearn"
+	"github.com/chetto1983/aura/internal/toolselectlearn"
 	"github.com/google/uuid"
 )
 
@@ -95,6 +96,21 @@ type Deps struct {
 	// is set; nil => no learning. The composition root passes the same Neo4j store
 	// as ExampleStore.
 	ReasoningSaver reasoninglearn.Saver
+	// ToolSelectSaver persists oracle-confirmed (query -> tool) examples for the
+	// tool-selection active-learning loop (D-06/D-07) to :ToolSelectionExample. nil =>
+	// the loop is off (the tool_search ranker runs without the learned stage-2 boost).
+	// The composition root passes a *toolselectstore.Store over the same Neo4j client
+	// as ReasoningSaver, when the graph client opened.
+	ToolSelectSaver toolselectlearn.Saver
+}
+
+// toolSelectObserver is the narrow seam the runner holds for the tool-selection
+// active-learning loop: the post-turn capture (Observe) + shutdown (Close). It lets a
+// test inject a fake to prove the Open-Q #3 wiring (Observe IS called on a real turn),
+// not just the synthetic exemplar unit tests. *toolselectlearn.Learner satisfies it.
+type toolSelectObserver interface {
+	Observe(request, usedTool string)
+	Close()
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -127,10 +143,11 @@ type Runner struct {
 	stopTimeout  time.Duration
 	resumeHook   ResumeHook
 
-	contextBlock ContextBlockProvider
-	alwaysBlock  func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
-	classifier   *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
-	learner      *reasoninglearn.Learner     // async self-improvement worker; nil unless ReasoningLearning is on
+	contextBlock      ContextBlockProvider
+	alwaysBlock       func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
+	classifier        *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
+	learner           *reasoninglearn.Learner     // async reasoning self-improvement worker; nil unless ReasoningLearning is on
+	toolSelectLearner toolSelectObserver          // async tool-selection self-improvement worker (Open-Q #3); nil unless a saver is wired
 
 	threadLocks sync.Map
 	wg          sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
@@ -190,6 +207,15 @@ func New(d Deps) *Runner {
 	// Attach the async self-improvement worker (no-op unless ReasoningLearning is
 	// enabled and a save-capable store is wired).
 	r.learner = buildReasoningLearner(d, classifier)
+	// Attach the tool-selection active-learning loop (D-06/D-07): the detector + the
+	// two-tier DeepSeek oracle on the activelearn core, with Refresh re-folding the
+	// per-tool centroids into the tool_search ranker. No-op unless a ToolSelectSaver is
+	// wired. It reuses the SAME granite embedder already wired into the ranker above.
+	// Assign through a typed nil-guard so a nil *Learner does not become a non-nil
+	// interface (which would NPE the Observe/Close paths).
+	if tsl := buildToolSelectLearner(d); tsl != nil {
+		r.toolSelectLearner = tsl
+	}
 	return r
 }
 
@@ -232,11 +258,14 @@ func wireToolSearchEmbedder(reg *tools.Registry, embedder prompt.Embedder) {
 	}
 }
 
-// CloseLearner stops the async reasoning self-improvement worker, if any. The
-// composition root calls it at process shutdown (nil-safe).
+// CloseLearner stops the async self-improvement workers (reasoning + tool-selection),
+// if any. The composition root calls it at process shutdown (nil-safe).
 func (r *Runner) CloseLearner() {
 	if r != nil {
 		r.learner.Close()
+		if r.toolSelectLearner != nil {
+			r.toolSelectLearner.Close()
+		}
 	}
 }
 
@@ -391,6 +420,9 @@ func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string)
 		// because the agent emits one pause Event per call but rewrites its history to
 		// a single multi-tool_call assistant message.
 		tr := &turnTracker{convID: convID}
+		if userMsg != nil {
+			tr.userMsg = *userMsg // thread the round's request for the tool-select capture (Open-Q #3)
+		}
 		// flushPause writes the single combined assistant ask_user tool_call turn (CR-02)
 		// — the message the injected RoleTool answers attach to on resume. It MUST run
 		// even when the consumer stops iterating ON the pause Event: the AG-UI translator
