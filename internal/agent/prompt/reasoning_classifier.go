@@ -15,6 +15,20 @@ type Embedder interface {
 	Embed(ctx context.Context, texts []string) ([][]float64, error)
 }
 
+// LabeledVec is one stored reasoning example: an L2-normalized embedding plus
+// the tier an oracle (the LLM router) assigned to it.
+type LabeledVec struct {
+	Tier ReasoningTier
+	Vec  []float64
+}
+
+// ExampleStore loads oracle-labeled examples that the classifier folds into its
+// per-tier centroids (the self-improvement substrate, spike 053). nil store =>
+// the classifier uses the curated seeds alone. Backed by Neo4j in production.
+type ExampleStore interface {
+	LoadExamples(ctx context.Context) ([]LabeledVec, error)
+}
+
 // Reasoning-tier anchors. The tier definitions are the production router's own
 // wording; the seeds are the few-shot examples validated in spike 052 (variant
 // B: 90% accuracy / 92% none-vs-rest over a 60-prompt held-out set, ~10ms CPU).
@@ -72,18 +86,31 @@ var trivialGreetings = map[string]struct{}{
 // latency root cause) with a single ~10ms local embed + cosine argmax.
 type ReasoningClassifier struct {
 	embed Embedder
+	store ExampleStore // optional: oracle-labeled examples folded into centroids
 
 	mu      sync.Mutex
 	anchors map[ReasoningTier][]float64 // L2-normalized centroids; built lazily once
 }
 
-// NewReasoningClassifier returns a classifier over the given embedder, or nil if
-// embed is nil (callers treat nil as "no classifier wired" and fall back).
-func NewReasoningClassifier(embed Embedder) *ReasoningClassifier {
+// NewReasoningClassifier returns a classifier over the given embedder (and an
+// optional ExampleStore for self-improvement), or nil if embed is nil (callers
+// treat nil as "no classifier wired" and fall back to the LLM router).
+func NewReasoningClassifier(embed Embedder, store ExampleStore) *ReasoningClassifier {
 	if embed == nil {
 		return nil
 	}
-	return &ReasoningClassifier{embed: embed}
+	return &ReasoningClassifier{embed: embed, store: store}
+}
+
+// Refresh drops the cached centroids so the next Classify rebuilds them,
+// re-folding any newly stored examples. Safe to call concurrently.
+func (c *ReasoningClassifier) Refresh() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.anchors = nil
+	c.mu.Unlock()
 }
 
 // Classify returns the reasoning tier for userText and true when it produced a
@@ -130,14 +157,30 @@ func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (map[ReasoningT
 	if c.anchors != nil {
 		return c.anchors, nil
 	}
-	built := make(map[ReasoningTier][]float64, len(classifierTierOrder))
+	// Per-tier vectors start from the curated def+seeds (always authoritative).
+	perTier := make(map[ReasoningTier][][]float64, len(classifierTierOrder))
 	for _, t := range classifierTierOrder {
 		texts := append([]string{reasoningTierDefs[t]}, reasoningTierSeeds[t]...)
 		vecs, err := c.embed.Embed(ctx, texts)
 		if err != nil {
 			return nil, err
 		}
-		built[t] = meanNormalize(vecs)
+		perTier[t] = vecs
+	}
+	// Fold in oracle-labeled examples (self-improvement). A store error is
+	// non-fatal: fall back to seed-only centroids rather than failing the turn.
+	if c.store != nil {
+		if examples, err := c.store.LoadExamples(ctx); err == nil {
+			for _, ex := range examples {
+				if ex.Tier.Valid() && len(ex.Vec) > 0 {
+					perTier[ex.Tier] = append(perTier[ex.Tier], l2normalize(ex.Vec))
+				}
+			}
+		}
+	}
+	built := make(map[ReasoningTier][]float64, len(classifierTierOrder))
+	for _, t := range classifierTierOrder {
+		built[t] = meanNormalize(perTier[t])
 	}
 	c.anchors = built
 	return c.anchors, nil

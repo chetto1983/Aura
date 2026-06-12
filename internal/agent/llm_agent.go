@@ -93,6 +93,10 @@ type LlmAgentConfig struct {
 	// classifier (replaces the per-turn LLM router round-trip). nil => the agent
 	// keeps using the LLM router for adaptive reasoning.
 	Embedder prompt.Embedder
+	// ExampleStore, when non-nil, folds oracle-labeled examples into the
+	// classifier's centroids (self-improvement, spike 053). Ignored if Embedder
+	// is nil.
+	ExampleStore prompt.ExampleStore
 }
 
 // NewLlmAgent builds an LlmAgent. messages[0] is ALWAYS the byte-stable system
@@ -124,7 +128,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		builder:     prompt.NewPromptBuilder(),
 		history:     hist,
 		breaker:     llm.NewBreaker(3, 30*time.Second),
-		classifier:  prompt.NewReasoningClassifier(cfg.Embedder),
+		classifier:  prompt.NewReasoningClassifier(cfg.Embedder, cfg.ExampleStore),
 	}
 }
 
