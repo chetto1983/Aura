@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,6 +15,11 @@ import (
 // Env is the switch that enables JSONL reasoning trace output.
 const Env = "AURA_REASONING_TRACE"
 const fileEnv = "AURA_REASONING_TRACE_FILE"
+const maxBytesEnv = "AURA_REASONING_TRACE_MAX_BYTES"
+
+// defaultMaxTraceBytes caps the active JSONL trace before it rotates to a single
+// .1 backup, so an always-on trace cannot grow the run dir without bound (M-06).
+const defaultMaxTraceBytes int64 = 8 << 20 // 8 MiB
 
 var mu sync.Mutex
 
@@ -60,6 +66,7 @@ func Record(stage string, fields map[string]any) {
 		slog.Warn("reasoning trace: mkdir failed", "path", p, "err", err)
 		return
 	}
+	rotateIfOversized(p)
 	// #nosec G304 -- AURA_REASONING_TRACE_FILE is an operator-controlled debug destination.
 	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
@@ -70,6 +77,31 @@ func Record(stage string, fields map[string]any) {
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		slog.Warn("reasoning trace: write failed", "path", p, "err", err)
 	}
+}
+
+// maxTraceBytes is the active-file rotation threshold: AURA_REASONING_TRACE_MAX_BYTES
+// when it parses to a positive int, else the 8 MiB default.
+func maxTraceBytes() int64 {
+	if v := strings.TrimSpace(os.Getenv(maxBytesEnv)); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultMaxTraceBytes
+}
+
+// rotateIfOversized renames an over-cap trace to a single .1 backup so the active
+// file restarts empty (M-06). Best-effort under the caller's lock: a failed rotate
+// just keeps appending. os.Remove precedes Rename because a Windows Rename cannot
+// replace an existing target.
+func rotateIfOversized(p string) {
+	fi, err := os.Stat(p)
+	if err != nil || fi.Size() < maxTraceBytes() {
+		return
+	}
+	backup := p + ".1"
+	_ = os.Remove(backup)
+	_ = os.Rename(p, backup)
 }
 
 // RuneLen returns the number of UTF-8 runes in s for trace-size metadata.
