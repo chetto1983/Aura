@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"encoding/json"
 	"strings"
 	"time"
 
@@ -10,8 +9,6 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/reasoningtrace"
 )
-
-const reasoningRouterSystemPrompt = "Classify the latest user request into one reasoning tier for the next assistant turn. Reply only JSON: {\"tier\":\"none\"|\"low\"|\"high\"}. none=greeting/simple stable fact/direct short transform. low=current web/news/weather/prices/schedules/lookups or small tool use. high=coding/debugging/design/proofs/scraping/multi-step analysis."
 
 // resolveClassifier prefers the shared injected classifier (production, anchors
 // built once); it falls back to a per-agent one built from Embedder when only
@@ -55,7 +52,7 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 	enabled := false
 	req := llm.Request{
 		Model:       a.cfg.Model,
-		Messages:    []llm.Message{{Role: llm.RoleSystem, Content: reasoningRouterSystemPrompt}, {Role: llm.RoleUser, Content: user}},
+		Messages:    []llm.Message{{Role: llm.RoleSystem, Content: prompt.ReasoningRouterSystemPrompt}, {Role: llm.RoleUser, Content: user}},
 		Temperature: 0,
 		MaxTokens:   32,
 		Reasoning:   llm.ReasoningConfig{Enabled: &enabled},
@@ -84,7 +81,7 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 		b.WriteString(c.Text)
 	}
 	raw := strings.TrimSpace(b.String())
-	tier := parseReasoningRouterTier(raw)
+	tier := prompt.ParseReasoningRouterTier(raw)
 	if !tier.Valid() {
 		reasoningtrace.Record("adaptive_reasoning_router_invalid", map[string]any{"raw": raw, "fallback_tier": prompt.ReasoningTierLow})
 		return prompt.ReasoningTierLow, true
@@ -102,37 +99,4 @@ func (a *LlmAgent) reasoningRouterTimeout() time.Duration {
 		return total
 	}
 	return 8 * time.Second
-}
-
-func parseReasoningRouterTier(raw string) prompt.ReasoningTier {
-	var obj struct {
-		Tier string `json:"tier"`
-	}
-	body := strings.TrimSpace(raw)
-	if start := strings.Index(body, "{"); start >= 0 {
-		if end := strings.LastIndex(body, "}"); end >= start {
-			body = body[start : end+1]
-		}
-	}
-	if err := json.Unmarshal([]byte(body), &obj); err == nil {
-		return normalizeReasoningTier(obj.Tier)
-	}
-	return normalizeReasoningTier(raw)
-}
-
-func normalizeReasoningTier(s string) prompt.ReasoningTier {
-	s = strings.ToLower(strings.TrimSpace(s))
-	s = strings.Trim(s, "` \t\r\n\"'")
-	s = strings.TrimPrefix(s, "json")
-	s = strings.TrimSpace(s)
-	switch s {
-	case "none", "no", "off", "false":
-		return prompt.ReasoningTierNone
-	case "low", "small", "light":
-		return prompt.ReasoningTierLow
-	case "high", "deep":
-		return prompt.ReasoningTierHigh
-	default:
-		return ""
-	}
 }

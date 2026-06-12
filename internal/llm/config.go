@@ -65,6 +65,7 @@ const (
 	// directly — no extra plumbing through runner.Deps / LlmAgentConfig.
 	envCompletionGate        = "AURA_COMPLETION_GATE"
 	envCompletionCriticModel = "AURA_COMPLETION_CRITIC_MODEL"
+	envReasoningLearning     = "AURA_LLM_REASONING_LEARNING"
 )
 
 // ErrMissingAPIKey is the clear, non-panic error surfaced when the API key is
@@ -108,6 +109,12 @@ type Config struct {
 	// it on. CompletionCriticModel overrides the critic model; empty → Model.
 	CompletionGate        bool
 	CompletionCriticModel string
+
+	// ReasoningLearning enables the async self-improvement worker (spike 053):
+	// uncertain reasoning-tier classifications are oracle-labeled off the hot path
+	// and saved to Neo4j so the classifier improves over time. Default OFF — it
+	// spends (bounded, async) LLM-oracle tokens. AURA_LLM_REASONING_LEARNING=true.
+	ReasoningLearning bool
 }
 
 // fileConfig mirrors the JSON shape of ~/.aura/llm.json. Every field is a
@@ -180,6 +187,7 @@ func Load() (*Config, error) {
 	// model is reused at call time.
 	cfg.CompletionGate = envBool(envCompletionGate, defaultCompletionGate)
 	cfg.CompletionCriticModel = os.Getenv(envCompletionCriticModel)
+	cfg.ReasoningLearning = envBool(envReasoningLearning, false)
 
 	if cfg.APIKey == "" {
 		return nil, ErrMissingAPIKey

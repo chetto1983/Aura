@@ -17,6 +17,7 @@ import (
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/chetto1983/aura/internal/reasoninglearn"
 	"github.com/google/uuid"
 )
 
@@ -70,6 +71,11 @@ type Deps struct {
 	// ExampleStore folds oracle-labeled examples (Neo4j :ReasoningExample) into
 	// the classifier's centroids (self-improvement, spike 053). nil => seed-only.
 	ExampleStore prompt.ExampleStore
+	// ReasoningSaver persists new oracle-labeled examples for the async learner
+	// (the write half of self-improvement). Enabled only when LLM.ReasoningLearning
+	// is set; nil => no learning. The composition root passes the same Neo4j store
+	// as ExampleStore.
+	ReasoningSaver reasoninglearn.Saver
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -105,6 +111,7 @@ type Runner struct {
 	contextBlock ContextBlockProvider
 	alwaysBlock  func() string               // renders the messages[1] always-block per turn (D-07); nil → empty
 	classifier   *prompt.ReasoningClassifier // SHARED reasoning-tier classifier (anchors built once); nil → LLM router
+	learner      *reasoninglearn.Learner     // async self-improvement worker; nil unless ReasoningLearning is on
 
 	wg sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
 }
@@ -130,7 +137,10 @@ func New(d Deps) *Runner {
 			workspace = filepath.ToSlash(wd)
 		}
 	}
-	return &Runner{
+	// Build the reasoning-tier classifier ONCE here so its 18-seed anchors + Neo4j
+	// example load are amortized across every turn, not rebuilt per turn.
+	classifier := prompt.NewReasoningClassifier(d.Embedder, d.ExampleStore)
+	r := &Runner{
 		Conv:            d.Conv,
 		pause:           d.Pause,
 		identity:        d.Identity,
@@ -148,9 +158,19 @@ func New(d Deps) *Runner {
 		resumeHook:      d.ResumeHook,
 		contextBlock:    d.ContextBlock,
 		alwaysBlock:     d.AlwaysBlock,
-		// Build the reasoning-tier classifier ONCE here so its 18-seed anchors +
-		// Neo4j example load are amortized across every turn, not rebuilt per turn.
-		classifier: prompt.NewReasoningClassifier(d.Embedder, d.ExampleStore),
+		classifier:      classifier,
+	}
+	// Attach the async self-improvement worker (no-op unless ReasoningLearning is
+	// enabled and a save-capable store is wired).
+	r.learner = buildReasoningLearner(d, classifier)
+	return r
+}
+
+// CloseLearner stops the async reasoning self-improvement worker, if any. The
+// composition root calls it at process shutdown (nil-safe).
+func (r *Runner) CloseLearner() {
+	if r != nil {
+		r.learner.Close()
 	}
 }
 

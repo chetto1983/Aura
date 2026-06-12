@@ -24,7 +24,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
@@ -68,6 +67,11 @@ func (e *chatEnv) close() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = e.toolHandles.BackgroundShells.Shutdown(ctx)
+	}
+	// Drain the async reasoning learner BEFORE the graph client it writes through
+	// is closed (mcpClosers below holds gclient.Close).
+	if e.run != nil {
+		e.run.CloseLearner()
 	}
 	_ = closeMCPServers(e.mcpClosers)
 	if e.pool != nil {
@@ -176,11 +180,13 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
 
-	// Reasoning-tier self-improvement store (read path): a graph client over the
+	// Reasoning-tier self-improvement store: a graph client over the
 	// mcp-neo4j-cypher subprocess lets the classifier fold oracle-labeled
-	// :ReasoningExample nodes into its centroids. Best-effort — a missing binary
-	// or a down Neo4j leaves the classifier seed-only, never blocks chat boot.
-	var reasoningStore prompt.ExampleStore
+	// :ReasoningExample nodes into its centroids (read), and the async learner
+	// write new ones (when AURA_LLM_REASONING_LEARNING is on). Best-effort — a
+	// missing binary or a down Neo4j leaves the classifier seed-only, never
+	// blocks chat boot.
+	var reasoningStore *reasoningstore.Store
 	if gclient, gerr := knowledge.Open(ctx, &cfg.Neo4j); gerr != nil {
 		fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
 	} else {
@@ -189,7 +195,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 	}
 
 	client := openai_compat.New(cfg.LLM)
-	run := runner.New(runner.Deps{
+	deps := runner.Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,
 		Identity:        idStore,
@@ -212,8 +218,14 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 			Client:     documentHTTPClient(cfg),
 			Dimensions: cfg.Neo4j.EmbedDimensions,
 		},
-		ExampleStore: reasoningStore,
-	})
+	}
+	// Set the store-backed fields only when the graph client opened (a nil
+	// *Store wrapped in an interface would be a non-nil interface and panic).
+	if reasoningStore != nil {
+		deps.ExampleStore = reasoningStore
+		deps.ReasoningSaver = reasoningStore
+	}
+	run := runner.New(deps)
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
 }
 

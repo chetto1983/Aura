@@ -29,6 +29,14 @@ type ExampleStore interface {
 	LoadExamples(ctx context.Context) ([]LabeledVec, error)
 }
 
+// Learner observes every embedding-based classification so a background worker
+// can oracle-label the uncertain ones (low margin) and grow the example store
+// (self-improvement, spike 053). Observe MUST be non-blocking — it runs on the
+// turn's hot path. nil learner => no observation.
+type Learner interface {
+	Observe(text string, vec []float64, margin float64)
+}
+
 // Reasoning-tier anchors. The tier definitions are the production router's own
 // wording; the seeds are the few-shot examples validated in spike 052 (variant
 // B: 90% accuracy / 92% none-vs-rest over a 60-prompt held-out set, ~10ms CPU).
@@ -85,11 +93,20 @@ var trivialGreetings = map[string]struct{}{
 // It replaces the per-turn LLM "router" round-trip (the adaptive-reasoning
 // latency root cause) with a single ~10ms local embed + cosine argmax.
 type ReasoningClassifier struct {
-	embed Embedder
-	store ExampleStore // optional: oracle-labeled examples folded into centroids
+	embed   Embedder
+	store   ExampleStore // optional: oracle-labeled examples folded into centroids
+	learner Learner      // optional: observes classifications for self-improvement
 
 	mu      sync.Mutex
 	anchors map[ReasoningTier][]float64 // L2-normalized centroids; built lazily once
+}
+
+// SetLearner attaches a self-improvement learner (safe to call once at wiring
+// time, before concurrent Classify). nil is a no-op.
+func (c *ReasoningClassifier) SetLearner(l Learner) {
+	if c != nil {
+		c.learner = l
+	}
 }
 
 // NewReasoningClassifier returns a classifier over the given embedder (and an
@@ -135,15 +152,20 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 		return "", false
 	}
 	q := l2normalize(vecs[0])
-	best, bestScore := ReasoningTier(""), -2.0
+	best, bestScore, second := ReasoningTier(""), -2.0, -2.0
 	for _, t := range classifierTierOrder {
 		s := cosineSimilarity(q, anchors[t])
 		if s > bestScore {
-			best, bestScore = t, s
+			second, best, bestScore = bestScore, t, s
+		} else if s > second {
+			second = s
 		}
 	}
 	if !best.Valid() {
 		return "", false
+	}
+	if c.learner != nil {
+		c.learner.Observe(userText, q, bestScore-second)
 	}
 	return best, true
 }
