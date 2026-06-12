@@ -4,14 +4,14 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: "Completed 15-01-PLAN.md (PRD amendment #62 re-scope)"
-last_updated: "2026-06-12T07:09:54.931Z"
+last_updated: "2026-06-12T07:36:53.889Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 22
-  completed_phases: 18
+  completed_phases: 19
   total_plans: 130
-  completed_plans: 124
-  percent: 82
+  completed_plans: 128
+  percent: 86
 ---
 
 # Project State
@@ -25,18 +25,18 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 15 (memory-subsystem) — EXECUTING
-Plan: 2 of 5
-Status: Ready to execute
+Phase: 15 (memory-subsystem) — COMPLETE (5/5 plans)
+Plan: 5 of 5
+Status: Phase 15 complete — ready for /gsd-verify-work 15 then /gsd-complete-milestone
 Last activity: 2026-06-12
 
-Progress: [█████████░] 94%
+Progress: [█████████░] 98%
 
-### Next — Phase 14
+### Next — Phase 17 (Packaging)
 
-Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegram/setup seams.
+Phase 15 (memory subsystem) is complete: PRD amendment #62 re-scope (15-01), default-on managed memory recipe (15-02), `aura memory` CLI (15-03), reproducible `:local` sidecar build (15-04), and the live `memory_integration` tier + D-04 cache confirm + UX-08 advisory snapshot (15-05). All five plans shipped; the rebuilt `aura-agent-memory-mcp:local` image is proven live.
 
-`/gsd-execute-phase 14` -- start Wave 1 with profile filesystem/CLI plus identity-aware `messages[1]` prompt injection. Remaining after 14: 15 Memory -> 17 Packaging.
+Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to validate the memory subsystem, then `/gsd-complete-milestone` / `/gsd-spec-phase 17`.
 
 ## Performance Metrics
 
@@ -131,6 +131,7 @@ Phase 14 is planned from spike artifacts 036-039 and the current Phase 13 Telegr
 | Phase 14 P02 | ~35 min | 4 tasks | 16 files |
 | Phase 14 P03 | ~30 min | 3 tasks | 6 files |
 | Phase 15 P15-01 | ~6min | 2 tasks | 3 files |
+| Phase 15 P15-05 | ~75min | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -205,6 +206,7 @@ Recent decisions affecting current work:
 - [Phase 20]: 20-01: channels.Deliverer tri-state seam ((false,nil)=try-next/(true,nil)=delivered/(false,err)=owns-but-failed-stop) + Registry.DeliverToIdentity deterministic sort-by-name fan-out + Telegram.Deliver/Store.GetAccountByIdentity (reuses existing sqlc query; non-UUID 'local'->wrapped pgx.ErrNoRows) — Leaf of the Phase 20 dep graph; sort-by-name over Priority() (lower LOC); deliverBot/deliverResolver unexported test seams; 10 unit cases green under -race, lint 0
 - [Phase ?]: 15-01: PRD amendment #62 re-scopes UX-06..09 to the adopted agent-memory MCP surface (D-12); landed before any Go code (PRD-first Wave-0 gate)
 - [Phase ?]: 15-01: 384d already the live state (D-11) — no 768d->384d migration drop; #62 supersedes the stale 768d framing of #61 node (2)
+- [Phase 15]: 15-05: live memory_integration tier proves the rebuilt aura-agent-memory-mcp:local image — 16-tool Deferred+memory__* mount (D-06/D-07), aura memory seed/read, reasoning-trace round-trip read via graph_query not memory_get_observations (re-scoped UX-09), agent recall loop tool_search->memory__memory_search->text_response (D-03), and dedup non-merge. The dedup must-have re-framed to its true anti-regression (T-15-05-01): a genuinely-new entity must be STORED distinct and NOT auto-merged (action!=merged); action=none is unreachable on a shared accumulated graph because the 384d granite embedder clusters short entity names at ~0.85-0.93 (flagged band), so flagged (store-distinct + pending SAME_AS) and none both satisfy the provenance-safe-dedup fix — only a spurious merged at ~0.997 is the regression. [Rule 1] corrected the 15-03 aura memory trace mapping to the live tool contract (start session_id+task NOT name; step trace_id+observation NOT description; observations session_id NOT trace_id). [Rule 3] dropped 6 stale 768d agent-memory Neo4j vector indexes so the 384d :local sidecar boots (D-11 alignment; CI on a fresh graph needs no drop). D-04 KV-cache invariant confirmed unchanged (22 messages[0]/messages[1]/skillman hashes, no messages[2] stream). UX-08 advisory snapshot recall@5=10/10=1.000 p95=44.55ms appended to docs/aura-quality-snapshot.md (advisory, not a gate). CI memory-integration-test job runs the tier no-skip-as-green. Idle-conn reaping keeps package goleak green over the live HTTP transport (test-only). Commits a433b493/e017aa5d.
 
 ### Pending Todos
 
@@ -238,6 +240,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T06:49:03.206Z
+Last session: 2026-06-12T07:36:23.700Z
 Stopped at: Completed 15-01-PLAN.md (PRD amendment #62 re-scope)
 Resume file: None

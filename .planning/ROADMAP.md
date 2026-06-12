@@ -33,7 +33,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced (completed 2026-06-07)
 - [x] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, voice/image/document multimodal sidecars, commands, HITL, artifact delivery, TTS-out, and live inbound command validation closed on 2026-06-08.
 - [ ] **Phase 14: Onboarding + AGENT.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
-- [ ] **Phase 15: Memory Subsystem** - **Amendment #61 (2026-06-08): adopts the forked `neo4j-labs/agent-memory` MCP sidecar off-the-shelf** (POLE+O long-term + short-term + reasoning, mounted via streamable-HTTP), superseding the bespoke 11a/11b/11d/11e build. Spikes 031-035 VALIDATED live (mount, write/read, dedup-chaos, agent-loop recall); provenance-safe-dedup fork fix re-validated. Owned-surface = Go wiring + `aura memory` commands.
+- [x] **Phase 15: Memory Subsystem** - **Amendment #61 (2026-06-08): adopts the forked `neo4j-labs/agent-memory` MCP sidecar off-the-shelf** (POLE+O long-term + short-term + reasoning, mounted via streamable-HTTP), superseding the bespoke 11a/11b/11d/11e build. Spikes 031-035 VALIDATED live (mount, write/read, dedup-chaos, agent-loop recall); provenance-safe-dedup fork fix re-validated. Owned-surface = Go wiring + `aura memory` commands. (completed 2026-06-12)
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
  (completed 2026-06-04)
 
@@ -541,7 +541,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 15-05-PLAN.md — Wave 2: live `memory_integration` tier + KV-cache invariant confirm (D-04) + advisory snapshot
+- [x] 15-05-PLAN.md — Wave 2: live `memory_integration` tier + KV-cache invariant confirm (D-04) + advisory snapshot
 
 ## Progress
 
@@ -564,7 +564,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 12. AG-UI Gateway | 6/6 | Complete    | 2026-06-07 |
 | 13. Channels + Telegram + Multimodal | 10/10 | Complete | 2026-06-08 |
 | 14. Onboarding + Agent.md | 0/TBD | Not started | - |
-| 15. Memory Subsystem | 4/5 | In Progress|  |
+| 15. Memory Subsystem | 5/5 | Complete   | 2026-06-12 |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
 | 17. Packaging & Distribution | 0/TBD | Not started | - |
 
@@ -573,7 +573,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 **Goal:** Build Aura's MCP manager/control plane: profiles, richer recipes, doctor/status/logs, Calendar fixture recipe, Streamable HTTP support, explicit trust approvals, sandboxed third-party local runtime, and tool risk-policy enforcement.
 **Requirements**: CAP-09 / MCP-V2-01 amendment gate in 16-01
 **Depends on:** Phase 15
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 **Success Criteria** (what must be TRUE):
 

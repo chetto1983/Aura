@@ -50,8 +50,8 @@
 - [ ] **UX-05**: User onboarding + `Agent.md` profile per identity (filesystem `~/.aura/agents/<id>/Agent.md`, NON Neo4j). Iniettato come `messages[1]` (NON `messages[0]` per preservare KV cache). [Slice 10]
 - [ ] **UX-06**: ~~Memory ingestion documents → chunks → embeddings via Document → Chunk → Entity pipeline~~ **RE-SCOPED (PRD amendment #62, D-12): DEFERRED to a future phase** — the adopted `neo4j-labs/agent-memory` package is conversation/entity memory, NOT a chunked doc-RAG engine; the file/URL → markitdown → chunk → embed → entity pipeline is net-new owned surface out of Phase 15. [superseded by #61; deferred per #62]
 - [ ] **UX-07**: ~~Entity resolution + knowledge graph community detection via GDS Leiden. UNIQUE constraint + chaos test~~ **RE-SCOPED (PRD amendment #62, D-12):** entity resolution is owned by the adopted package (POLE+O taxonomy + provenance-safe-dedup, spike 034); Leiden community detection stays deferred (amendment #27, unchanged). [superseded by #61; re-scoped per #62]
-- [ ] **UX-08**: ~~GraphRAG hybrid retrieval recall@5 ≥ 0.8 / p95 ≤ 30ms hard gate~~ **RE-SCOPED (PRD amendment #62, D-12):** hybrid-retrieval recall@5/p95 become **ADVISORY snapshots** measured against the *package's* retrieval and appended to `docs/aura-quality-snapshot.md` (the amendment #20 snapshot-update gate still applies; no Aura-owned WRRF/p95 pass-fail gate). [superseded by #61; re-scoped per #62]
-- [ ] **UX-09**: ~~Agent journal cross-conversation insights with cached `messages[2]` injection~~ **RE-SCOPED (PRD amendment #62, D-12):** agent-written reasoning/insight memories recalled **on demand** via the package's reasoning-trace tools (`memory_start_trace`/`record_step`/`complete_trace`/`get_observations`); **no cached `messages[2]` injection** (D-04, KV invariant holds trivially) and **no background journal cron**. [superseded by #61; re-scoped per #62]
+- [x] **UX-08**: ~~GraphRAG hybrid retrieval recall@5 ≥ 0.8 / p95 ≤ 30ms hard gate~~ **RE-SCOPED (PRD amendment #62, D-12):** hybrid-retrieval recall@5/p95 become **ADVISORY snapshots** measured against the *package's* retrieval and appended to `docs/aura-quality-snapshot.md` (the amendment #20 snapshot-update gate still applies; no Aura-owned WRRF/p95 pass-fail gate). [superseded by #61; re-scoped per #62]
+- [x] **UX-09**: ~~Agent journal cross-conversation insights with cached `messages[2]` injection~~ **RE-SCOPED (PRD amendment #62, D-12):** agent-written reasoning/insight memories recalled **on demand** via the package's reasoning-trace tools (`memory_start_trace`/`record_step`/`complete_trace`/`get_observations`); **no cached `messages[2]` injection** (D-04, KV invariant holds trivially) and **no background journal cron**. [superseded by #61; re-scoped per #62]
 
 ### Operations (Slice 14)
 
@@ -131,8 +131,8 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | UX-05 | Phase 14 — Onboarding + Agent.md | Pending |
 | UX-06 | Phase 15 — Memory Subsystem | Pending |
 | UX-07 | Phase 15 — Memory Subsystem | Pending |
-| UX-08 | Phase 15 — Memory Subsystem | Pending |
-| UX-09 | Phase 15 — Memory Subsystem | Pending |
+| UX-08 | Phase 15 — Memory Subsystem | Complete |
+| UX-09 | Phase 15 — Memory Subsystem | Complete |
 | OPS-01 | Phase 17 — Packaging & Distribution | Pending |
 
 **Coverage:**
