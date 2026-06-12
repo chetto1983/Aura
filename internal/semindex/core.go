@@ -24,6 +24,12 @@ func l2normalize(v []float64) []float64 {
 	return out
 }
 
+// Normalize is the exported L2-normalization a consumer needs when it must hold
+// the normalized query vector itself (e.g. the reasoning classifier feeds it to
+// its self-improvement learner) without duplicating the core math. RankVecs/
+// RankVecs already normalize internally, so Normalize is idempotent there.
+func Normalize(v []float64) []float64 { return l2normalize(v) }
+
 // cosine assumes both inputs are already L2-normalized (anchors and the query
 // both are), so it is a plain dot product. On a length mismatch it returns the
 // -2.0 "impossible cosine" sentinel — load-bearing for the no-best fallback

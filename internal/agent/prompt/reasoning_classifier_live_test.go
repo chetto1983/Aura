@@ -58,7 +58,7 @@ func TestReasoningClassifierLive(t *testing.T) {
 		Dimensions: knowledge.DefaultEmbedDimensions,
 	}
 	defer embedder.Client.CloseIdleConnections() // goleak: drain keep-alive conns
-	c := prompt.NewReasoningClassifier(embedder)
+	c := prompt.NewReasoningClassifier(embedder, nil)
 	if c == nil {
 		t.Fatal("classifier nil with a real embedder")
 	}

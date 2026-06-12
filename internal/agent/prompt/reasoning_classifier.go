@@ -2,21 +2,22 @@ package prompt
 
 import (
 	"context"
-	"math"
 	"strings"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/semindex"
 )
 
-// Embedder is the narrow embedding seam the reasoning classifier needs. It
-// matches documents.EmbeddingClient.Embed exactly so the production granite
-// sidecar client satisfies it without an adapter. Defined here (the consumer)
-// to keep agent/prompt free of an embedding-package import.
-type Embedder interface {
-	Embed(ctx context.Context, texts []string) ([][]float64, error)
-}
+// Embedder is the narrow embedding seam the reasoning classifier needs. It is a
+// type alias of semindex.Embedder (the shared embedding-index core owns the
+// canonical seam) so documents.EmbeddingClient satisfies both with no adapter
+// and the classifier and the tool ranker depend on one interface (D-01).
+type Embedder = semindex.Embedder
 
 // LabeledVec is one stored reasoning example: an L2-normalized embedding plus
-// the tier an oracle (the LLM router) assigned to it.
+// the tier an oracle (the LLM router) assigned to it. Reasoning-specific —
+// reasoningstore/reasoninglearn import it from here; it does NOT move to
+// semindex (relocating it cascade-breaks those packages).
 type LabeledVec struct {
 	Tier ReasoningTier
 	Vec  []float64
@@ -72,8 +73,8 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 	},
 }
 
-// classifierTierOrder fixes the iteration order so argmax ties break
-// deterministically (none < low < high) regardless of map iteration.
+// classifierTierOrder fixes the build order so anchors are added per tier in a
+// stable sequence (none < low < high) regardless of map iteration.
 var classifierTierOrder = []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh}
 
 // trivialGreetings is the conservative pre-filter allowlist: an exact normalized
@@ -91,14 +92,17 @@ var trivialGreetings = map[string]struct{}{
 // ReasoningClassifier maps a user turn to a reasoning tier by semantic proximity
 // to the per-tier anchor centroids, using Aura's local granite embedding sidecar.
 // It replaces the per-turn LLM "router" round-trip (the adaptive-reasoning
-// latency root cause) with a single ~10ms local embed + cosine argmax.
+// latency root cause) with a single ~10ms local embed + cosine argmax. The
+// centroid/cosine/margin math lives in semindex.Classifier (Centroid mode); this
+// type owns only the tier policy (defs/seeds, greeting pre-filter, soft fallback).
 type ReasoningClassifier struct {
 	embed   Embedder
 	store   ExampleStore // optional: oracle-labeled examples folded into centroids
 	learner Learner      // optional: observes classifications for self-improvement
 
-	mu      sync.Mutex
-	anchors map[ReasoningTier][]float64 // L2-normalized centroids; built lazily once
+	mu    sync.Mutex
+	cls   *semindex.Classifier // per-tier centroid bank; built lazily once
+	built bool                 // false => the next Classify rebuilds the bank
 }
 
 // SetLearner attaches a self-improvement learner (safe to call once at wiring
@@ -126,7 +130,8 @@ func (c *ReasoningClassifier) Refresh() {
 		return
 	}
 	c.mu.Lock()
-	c.anchors = nil
+	c.cls = nil
+	c.built = false
 	c.mu.Unlock()
 }
 
@@ -138,12 +143,12 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 	if c == nil {
 		return "", false
 	}
-	if normalizeForGreeting(userText) != "" {
-		if _, ok := trivialGreetings[normalizeForGreeting(userText)]; ok {
+	if g := normalizeForGreeting(userText); g != "" {
+		if _, ok := trivialGreetings[g]; ok {
 			return ReasoningTierNone, true
 		}
 	}
-	anchors, err := c.ensureAnchors(ctx)
+	cls, err := c.ensureAnchors(ctx)
 	if err != nil {
 		return "", false
 	}
@@ -151,43 +156,37 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 	if err != nil || len(vecs) != 1 || len(vecs[0]) == 0 {
 		return "", false
 	}
-	q := l2normalize(vecs[0])
-	best, bestScore, second := ReasoningTier(""), -2.0, -2.0
-	for _, t := range classifierTierOrder {
-		s := cosineSimilarity(q, anchors[t])
-		if s > bestScore {
-			second, best, bestScore = bestScore, t, s
-		} else if s > second {
-			second = s
-		}
-	}
-	if !best.Valid() {
+	v := semindex.Normalize(vecs[0])
+	verdict := cls.RankVecs(v)
+	tier := ReasoningTier(verdict.Label)
+	if !verdict.Ok || !tier.Valid() {
 		return "", false
 	}
 	if c.learner != nil {
-		c.learner.Observe(userText, q, bestScore-second)
+		c.learner.Observe(userText, v, verdict.Margin)
 	}
-	return best, true
+	return tier, true
 }
 
-// ensureAnchors builds the per-tier centroids once (def + seeds, mean of
-// L2-normalized embeddings). A build failure is NOT cached: the next call
-// retries, so a transiently-down sidecar self-heals.
-func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (map[ReasoningTier][]float64, error) {
+// ensureAnchors builds the per-tier centroid bank once (def + seeds, folded by
+// semindex.Classifier into the per-group mean of L2-normalized embeddings). A
+// build failure is NOT cached: the next call retries, so a transiently-down
+// sidecar self-heals (mirror of the semindex build-failure-not-cached rule).
+func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (*semindex.Classifier, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.anchors != nil {
-		return c.anchors, nil
+	if c.built && c.cls != nil {
+		return c.cls, nil
 	}
+	cls := semindex.NewClassifier(c.embed)
 	// Per-tier vectors start from the curated def+seeds (always authoritative).
-	perTier := make(map[ReasoningTier][][]float64, len(classifierTierOrder))
 	for _, t := range classifierTierOrder {
 		texts := append([]string{reasoningTierDefs[t]}, reasoningTierSeeds[t]...)
 		vecs, err := c.embed.Embed(ctx, texts)
 		if err != nil {
-			return nil, err
+			return nil, err // not cached: a retry rebuilds the whole bank
 		}
-		perTier[t] = vecs
+		cls.AddVecs(string(t), vecs...)
 	}
 	// Fold in oracle-labeled examples (self-improvement). A store error is
 	// non-fatal: fall back to seed-only centroids rather than failing the turn.
@@ -195,17 +194,13 @@ func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (map[ReasoningT
 		if examples, err := c.store.LoadExamples(ctx); err == nil {
 			for _, ex := range examples {
 				if ex.Tier.Valid() && len(ex.Vec) > 0 {
-					perTier[ex.Tier] = append(perTier[ex.Tier], l2normalize(ex.Vec))
+					cls.AddVecs(string(ex.Tier), ex.Vec)
 				}
 			}
 		}
 	}
-	built := make(map[ReasoningTier][]float64, len(classifierTierOrder))
-	for _, t := range classifierTierOrder {
-		built[t] = meanNormalize(perTier[t])
-	}
-	c.anchors = built
-	return c.anchors, nil
+	c.cls, c.built = cls, true
+	return c.cls, nil
 }
 
 // normalizeForGreeting lowercases, trims surrounding whitespace, and strips a
@@ -213,52 +208,4 @@ func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (map[ReasoningT
 func normalizeForGreeting(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	return strings.TrimRight(s, " .!?,;:")
-}
-
-func l2normalize(v []float64) []float64 {
-	var n float64
-	for _, x := range v {
-		n += x * x
-	}
-	n = math.Sqrt(n)
-	if n == 0 {
-		return v
-	}
-	out := make([]float64, len(v))
-	for i, x := range v {
-		out[i] = x / n
-	}
-	return out
-}
-
-// cosineSimilarity assumes both inputs are already L2-normalized (anchors and
-// the query both are), so it is a plain dot product.
-func cosineSimilarity(a, b []float64) float64 {
-	if len(a) != len(b) {
-		return -2.0
-	}
-	var d float64
-	for i := range a {
-		d += a[i] * b[i]
-	}
-	return d
-}
-
-// meanNormalize averages the vectors then L2-normalizes the centroid.
-func meanNormalize(vecs [][]float64) []float64 {
-	if len(vecs) == 0 {
-		return nil
-	}
-	acc := make([]float64, len(vecs[0]))
-	for _, v := range vecs {
-		for i := range acc {
-			if i < len(v) {
-				acc[i] += v[i]
-			}
-		}
-	}
-	for i := range acc {
-		acc[i] /= float64(len(vecs))
-	}
-	return l2normalize(acc)
 }
