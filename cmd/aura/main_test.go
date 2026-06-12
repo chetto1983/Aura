@@ -19,8 +19,14 @@ func TestMain(m *testing.M) {
 
 func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
 	path := withTempMCPConfig(t)
+	// Disable the default-on memory recipe (15-02 / D-08) so this test isolates the
+	// blocked-server assertion: with memory off, the ONLY policy is the blocked
+	// server, which must be filtered out (no closer). The memory default-on +
+	// disable-respect path is covered by config.TestMemoryDefaultOn*.
+	disabled := false
 	doc := mcp.ManagedConfig{MCPServers: map[string]mcp.ManagedServer{
 		"blocked": {Command: "aura-nonexistent-mcp-binary-xyz", Source: "manual", Trust: mcp.ManagedTrust{Class: mcp.TrustBlocked}},
+		"memory":  {Type: mcp.ServerTypeStreamableHTTP, URL: "http://127.0.0.1:8091/mcp/", Source: "recipe:memory", Enabled: &disabled, Trust: mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe}},
 	}}
 	if err := mcp.SaveManagedConfig(path, doc); err != nil {
 		t.Fatalf("save config: %v", err)
@@ -28,6 +34,9 @@ func TestBuildRegistryBlockedManagedServerNotLaunched(t *testing.T) {
 	cfg := config.LoadDB()
 	if _, ok := cfg.MCPServers["blocked"]; ok {
 		t.Fatal("blocked managed server must be filtered before chat boot")
+	}
+	if _, ok := cfg.MCPPolicies["memory"]; ok {
+		t.Fatal("explicitly disabled memory must not reach policies")
 	}
 	reg, _, closers, err := buildRegistryWithMCP(context.Background(), cfg, nil)
 	defer func() { _ = closeMCPServers(closers) }()
