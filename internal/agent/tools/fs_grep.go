@@ -38,7 +38,7 @@ func (t *FSGrep) Spec() Spec {
 	return Spec{
 		Name:        "fs_grep",
 		Summary:     "Search file contents with a regexp.",
-		Description: "Search file contents across a directory tree using an RE2 regular expression and return matching lines as path:line: text. Optionally restrict to a path and a filename glob. Binary files and .git/node_modules/vendor are skipped.",
+		Description: "Search file CONTENTS across a directory tree with an RE2 regular expression; returns matching lines as `path:line: text`. `pattern` is the regex; optionally restrict to a `path` (file or directory, default workspace root) and a filename `glob` (e.g. `*.go`). Binary files and .git/node_modules/vendor are skipped; results cap at max_results (default 200). Use this for content search instead of shell grep so matches come back structured. To find files by NAME use fs_glob; to read a known range use fs_read.",
 		Parameters:  params,
 		Deferred:    false,
 	}

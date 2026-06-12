@@ -34,7 +34,7 @@ func (t *FSEdit) Spec() Spec {
 	return Spec{
 		Name:        "fs_edit",
 		Summary:     "Replace an exact string in a file.",
-		Description: "Perform an exact-string replacement in a file. old_string must match the file byte-for-byte and be unique unless replace_all is true; this keeps edits surgical and unambiguous. Returns the number of occurrences replaced.",
+		Description: "Replace an exact string in a file — the surgical way to change an existing file without rewriting it. Read the file first (fs_read) so `old_string` matches the on-disk bytes exactly, including indentation. `old_string` must be UNIQUE in the file: if it is not, the edit fails — add surrounding context to make it unique, or set `replace_all` to change every occurrence (use this to rename a symbol). `new_string` must differ from `old_string`. Returns the count of replacements. Prefer editing an existing file over overwriting it with fs_write.",
 		Parameters:  params,
 		Deferred:    false,
 		Mutating:    true,

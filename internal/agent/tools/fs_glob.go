@@ -34,7 +34,7 @@ func (t *FSGlob) Spec() Spec {
 	return Spec{
 		Name:        "fs_glob",
 		Summary:     "Find files by name pattern.",
-		Description: "Find files whose path matches a glob pattern (*, ?, and ** for crossing directories) and return the matching paths, sorted. .git/node_modules/vendor are skipped.",
+		Description: "Find files by NAME across a directory tree; returns matching paths, sorted. `pattern` is a glob over forward-slash paths — `*` and `?` within a path segment, `**` to cross directories (e.g. `**/*.go`, `cmd/*/main.go`); optionally set a `path` root (default workspace). .git/node_modules/vendor are skipped; results cap at max_results (default 500). Use this to locate files by name; use fs_grep to search their contents.",
 		Parameters:  params,
 		Deferred:    false,
 	}
