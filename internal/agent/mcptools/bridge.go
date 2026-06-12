@@ -28,6 +28,8 @@ var emptyObjectSchema = json.RawMessage(`{"type":"object"}`)
 
 const maxMCPDescriptionBytes = 4096
 const maxMCPSummaryBytes = 768
+const maxMCPArgDescBytes = 512
+const mcpArgDescTruncated = " [truncated]"
 
 // bridgedTool adapts one MCP tool to tools.Tool. The spec is atomically swapped
 // when reconnectingServer refreshes tools/list after a transport reconnect.
@@ -139,11 +141,54 @@ func specFromToolDef(namespace string, d mcp.ToolDef) tools.Spec {
 func specFieldsFromToolDef(d mcp.ToolDef) (json.RawMessage, string, string) {
 	params := emptyObjectSchema
 	if schema := strings.TrimSpace(string(d.InputSchema)); schema != "" && schema != "null" {
-		params = d.InputSchema
+		params = capSchemaDescriptions(d.InputSchema)
 	}
 	summary := frameMCPSummary(d.Description, params)
 	description := frameMCPDescription(d.Description)
 	return params, summary, description
+}
+
+// capSchemaDescriptions truncates every "description" string anywhere in an
+// MCP-provided JSON Schema to maxMCPArgDescBytes (B-15): a server-controlled
+// argument description is an injection/flood surface that otherwise reaches the
+// model and tool_search uncapped. On any parse/marshal failure it falls back to
+// the empty-object schema rather than forwarding the raw bytes.
+func capSchemaDescriptions(raw json.RawMessage) json.RawMessage {
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return emptyObjectSchema
+	}
+	capDescriptions(v, 0)
+	out, err := json.Marshal(v)
+	if err != nil {
+		return emptyObjectSchema
+	}
+	return out
+}
+
+// capDescriptions walks a decoded JSON value and truncates every "description"
+// string (at any nesting — property descriptions, items, $defs) to the cap. The
+// depth bound stops a pathological deeply-nested schema from exhausting the stack.
+func capDescriptions(v any, depth int) {
+	if depth > 16 {
+		return
+	}
+	switch n := v.(type) {
+	case map[string]any:
+		for k, val := range n {
+			if k == "description" {
+				if s, ok := val.(string); ok && len(s) > maxMCPArgDescBytes {
+					n[k] = truncateUTF8Bytes(s, maxMCPArgDescBytes) + mcpArgDescTruncated
+				}
+				continue
+			}
+			capDescriptions(val, depth+1)
+		}
+	case []any:
+		for _, item := range n {
+			capDescriptions(item, depth+1)
+		}
+	}
 }
 
 func frameMCPSummary(raw string, params json.RawMessage) string {

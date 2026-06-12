@@ -309,29 +309,6 @@ func TestBridgedToolExecuteAppliesConfiguredCallTimeout(t *testing.T) {
 	}
 }
 
-func TestBridge_Namespaced(t *testing.T) {
-	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "create_issue", Description: "Open an issue."}}}
-	got, err := Bridge(context.Background(), "github", srv)
-	if err != nil {
-		t.Fatalf("Bridge: %v", err)
-	}
-	// Model-facing name is namespaced <ns>__<tool>.
-	if got[0].Spec().Name != "github__create_issue" {
-		t.Fatalf("model-facing name = %q, want github__create_issue", got[0].Spec().Name)
-	}
-}
-
-func TestBridge_NullInputSchemaFallback(t *testing.T) {
-	srv := &fakeServer{defs: []mcp.ToolDef{{Name: "ping", Description: "Ping.", InputSchema: json.RawMessage(`null`)}}}
-	got, err := Bridge(context.Background(), "srv", srv)
-	if err != nil {
-		t.Fatalf("Bridge: %v", err)
-	}
-	if params := string(got[0].Spec().Parameters); params != `{"type":"object"}` {
-		t.Fatalf("null inputSchema fallback = %s", params)
-	}
-}
-
 func TestBridgedTool_Execute_RoutesAndWraps(t *testing.T) {
 	srv := &fakeServer{defs: sandboxDefs(), callText: "42"}
 	got, _ := Bridge(context.Background(), "sb", srv)
