@@ -44,6 +44,21 @@ Effect on this snapshot: the GraphRAG recall@5 row above implicitly depends on `
 
 ---
 
+## Memory (Phase 15, agent-memory MCP) — advisory recall@5 / p95
+
+**Advisory snapshot (NOT a hard pass/fail gate).** PRD amendment #62 (D-12) re-scoped UX-08: recall@5 and p95 for the memory subsystem are measured against the **adopted `neo4j-labs/agent-memory` MCP package's** retrieval, not an Aura-owned WRRF/latency gate. The package owns retrieval (its upstream CI + TCK validate the engine); Aura asserts the WIRING + recall path. The amendment-#20 snapshot-update gate still applies (this file MUST be updated on a P15 PR), but recall@5/p95 are advisory here — they do not block merge on a threshold.
+
+| Metric | Value | Method | Last measured | Status |
+|---|---|---|---|---|
+| Memory recall@5 (advisory) | **10/10 = 1.000** | semantic `memory_search` over a 10-item seeded set; target memory in top-5 | 2026-06-12 | ADVISORY — re-scoped UX-08 |
+| Memory search p95 (advisory) | **44.55 ms** (median 26.38 ms) | wall-clock of each `memory_search` call, warm sidecar | 2026-06-12 | ADVISORY — re-scoped UX-08 |
+
+**Measurement method:** 10 distinct one-sentence memories (espresso/cycling/neo4j/telegram/piedmont/sandbox/embedding/scheduler/swarm/skills topics), each carrying a unique `SNAP-*` tag, were seeded via `memory_store_message` under a fresh session against the **rebuilt** `aura-agent-memory-mcp:local` image (plan 15-04, vendored fork `c1c2d65`, 384d `granite-embedding-97m-multilingual`). Each was then retrieved by its body text via `memory_search` (`limit=5`, `memory_types=["messages"]`); recall@5 counts the queries whose tagged memory appeared in the top-5, p95 is the 95th-percentile call latency. Measured on the operator host (warm sidecar). The figure is advisory: recall@5 is hardware-independent (strong here at 1.000), while p95 reflects the warm-sidecar latency on operator hardware (above the 30 ms aspirational figure that #62 down-scoped from a gate to a snapshot).
+
+**Scope note:** this advisory block is distinct from the matrix's `GraphRAG retrieval recall@5 @ 100K corpus` / `Vector search p95 @ 100K corpus` rows, which remain `NOT_E2E_FUTURE_BENCHMARK` (a 100K-corpus benchmark harness, deferred). This is the Phase-15 agent-memory MCP wiring snapshot over a small seeded set, not the 100K benchmark.
+
+---
+
 ## CI gate contract
 
 The gate script `scripts/quality_snapshot_gate.sh` (implemented in Phase 20) does the following:
