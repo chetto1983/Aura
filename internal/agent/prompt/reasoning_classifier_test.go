@@ -47,9 +47,11 @@ func vecFor(text string) []float64 {
 		return false
 	}
 	switch {
-	case hasAny("script", "debug", "schema", "dimostra", "rifattor", "scraping", "python", "codice", "progetta"):
+	case hasAny("script", "debug", "schema", "dimostra", "rifattor", "scraping", "python", "codice", "progetta",
+		"ottimizza", "algoritmo", "stack trace", "pipeline", "build"):
 		return []float64{0, 0, 1} // high
-	case hasAny("meteo", "tempo", "notizie", "bitcoin", "farmacia", "ristorante", "prezzo", "orari", "cerca", "costa"):
+	case hasAny("meteo", "tempo", "notizie", "bitcoin", "farmacia", "ristorante", "prezzo", "orari", "cerca", "costa",
+		"treno", "partita", "traffico", "autostrada"):
 		return []float64{0, 1, 0} // low
 	default:
 		return []float64{1, 0, 0} // none

@@ -44,11 +44,18 @@ type Learner interface {
 // Anchors generalize semantically — these phrases are NOT an enumeration of all
 // inputs, they are prototypes the embedding model interpolates between.
 var reasoningTierDefs = map[ReasoningTier]string{
-	ReasoningTierNone: "saluto, ringraziamento, chiacchiera, fatto semplice e stabile, o trasformazione breve e diretta",
-	ReasoningTierLow:  "informazione corrente dal web: meteo, notizie, prezzi, orari, ricerche e lookup, oppure piccolo uso di strumenti",
-	ReasoningTierHigh: "scrittura di codice, debug, progettazione, dimostrazioni, scraping, analisi in piu passaggi",
+	ReasoningTierNone: "saluto, ringraziamento, chiacchiera, fatto semplice e stabile gia noto, piccolo calcolo aritmetico, o trasformazione breve e diretta come una traduzione",
+	ReasoningTierLow:  "informazione corrente dal web che cambia nel tempo: meteo, notizie, prezzi, orari di apertura, orari dei mezzi, traffico, risultati sportivi, ricerche e lookup, oppure piccolo uso di strumenti",
+	ReasoningTierHigh: "scrittura di codice, debug di errori, progettazione di schemi e sistemi, dimostrazioni matematiche, ottimizzazione di algoritmi, scraping, analisi di stack trace, pipeline e build, analisi in piu passaggi",
 }
 
+// reasoningTierSeeds are the curated few-shot exemplars (spike-052 variant B:
+// 90% accuracy / 92% none-vs-rest). They are prototypes the embedding model
+// interpolates between, NOT an enumeration. Each tier carries one exemplar per
+// recurring intent shape on the live Italian corpus (stable facts + arithmetic +
+// transforms for none; the full set of changes-over-time lookups for low; the
+// full code/proof/design/analysis spread for high) so the per-tier centroid sits
+// at the semantic center of its tier rather than leaning toward one sub-intent.
 var reasoningTierSeeds = map[ReasoningTier][]string{
 	ReasoningTierNone: {
 		"ciao",
@@ -56,6 +63,9 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 		"come ti chiami?",
 		"ripeti per favore",
 		"traduci 'gatto' in inglese",
+		"qual e la capitale dell'Italia?",
+		"quanto fa 7 per 8?",
+		"a presto, buona giornata",
 	},
 	ReasoningTierLow: {
 		"che tempo fa a Torino domani?",
@@ -63,6 +73,9 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 		"quanto costa il bitcoin adesso?",
 		"a che ora chiude la farmacia?",
 		"trova un ristorante aperto stasera vicino a me",
+		"quando parte il prossimo treno per Milano?",
+		"come e finita la partita di ieri?",
+		"c'e traffico in autostrada adesso?",
 	},
 	ReasoningTierHigh: {
 		"scrivi uno script python per fare scraping di un sito con gestione errori",
@@ -70,6 +83,9 @@ var reasoningTierSeeds = map[ReasoningTier][]string{
 		"progetta lo schema di un database per un e-commerce",
 		"dimostra per induzione che la somma dei primi n numeri e n(n+1)/2",
 		"rifattorizza questo modulo in piu file mantenendo i test verdi",
+		"ottimizza questo algoritmo che e troppo lento",
+		"analizza questo stack trace e trova la causa dell'errore",
+		"crea una pipeline di build e test per il progetto",
 	},
 }
 

@@ -87,12 +87,16 @@ func TestReasoningClassifierLive(t *testing.T) {
 	accPct := 100 * correct / n
 	nvrPct := 100 * noneVsRest / n
 	t.Logf("LIVE production classifier: accuracy %d%% (%d/%d) | none-vs-rest %d%% (%d/%d)", accPct, correct, n, nvrPct, noneVsRest, n)
-	// Thresholds track the spike-052 validated floor (90%/92%) with headroom for
-	// a smaller corpus; a regression below these is a real signal.
-	if accPct < 80 {
-		t.Errorf("live accuracy %d%% < 80%% floor", accPct)
+	// Thresholds are the spike-052 validated floor (90% accuracy / 92%
+	// none-vs-rest), RAISED here from the shipped 80/88 per the 2026-06-12
+	// operator amendment (D-04) as a deliberate accuracy improvement, sequenced
+	// AFTER the Plan-02 behavior-equivalence proof. A regression below these is a
+	// real signal — the seed/anchor set is tuned to meet this floor on the live
+	// Italian corpus.
+	if accPct < 90 {
+		t.Errorf("live accuracy %d%% < 90%% floor", accPct)
 	}
-	if nvrPct < 88 {
-		t.Errorf("live none-vs-rest %d%% < 88%% floor", nvrPct)
+	if nvrPct < 92 {
+		t.Errorf("live none-vs-rest %d%% < 92%% floor", nvrPct)
 	}
 }
