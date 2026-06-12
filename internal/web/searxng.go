@@ -14,7 +14,7 @@ import (
 
 // SearchParams is the validated, model-supplied search request (D-09). Domains are
 // hostnames only (D-12); Category is an enum (general|news, D-11); TimeRange is
-// day|month|year. IncludeMetadata toggles the second result tier (D-08).
+// day|week|month|year. IncludeMetadata toggles the second result tier (D-08).
 type SearchParams struct {
 	Query           string
 	MaxResults      int
@@ -71,9 +71,10 @@ var auraCategoryToSearXNG = map[string]string{
 	"news":    "news",
 }
 
-// validTimeRanges is the accepted time_range enum (day|month|year). An unknown
-// value is dropped rather than forwarded so a malformed param cannot reach SearXNG.
-var validTimeRanges = map[string]struct{}{"day": {}, "month": {}, "year": {}}
+// validTimeRanges is the accepted time_range enum (day|week|month|year — the set
+// SearXNG forwards to engines that support it). An unknown value is dropped rather
+// than forwarded so a malformed param cannot reach SearXNG.
+var validTimeRanges = map[string]struct{}{"day": {}, "week": {}, "month": {}, "year": {}}
 
 // errSearxUnreachable is the internal sentinel an unreachable/non-2xx SearXNG wraps;
 // Search maps it to web_search_unavailable{searxng_unreachable} (D-06).
@@ -185,7 +186,7 @@ func (c *Client) searxGet(ctx context.Context, values url.Values) (*searxRespons
 	// rides ctx, not the client.
 	httpClient := &http.Client{Transport: &http.Transport{DisableKeepAlives: true}}
 
-	for attempt := 0; attempt < 2; attempt++ {
+	for attempt := range 2 {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 		if err != nil {
 			return nil, err

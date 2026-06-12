@@ -46,9 +46,9 @@ func (e *WebSearch) Spec() Spec {
   "properties": {
     "query": {"type": "string", "description": "The search query. Plain words; no engine-specific operators are needed."},
     "max_results": {"type": "integer", "minimum": 1, "maximum": 25, "description": "Optional cap on the number of results returned (default: the server cap). Omit to use the default."},
-    "category": {"type": "string", "enum": ["general", "news"], "description": "Optional result category. general (default) for broad web results; news for recent reporting."},
+    "category": {"type": "string", "enum": ["general", "news"], "description": "Result category. general (default): broad web results, reference pages, and current structured facts (a live price, a definition). news: recent reporting — use it WITH time_range:day|week for the latest developments, breaking events, or 'what happened recently' queries."},
     "language": {"type": "string", "description": "Optional BCP-47-ish language hint (e.g. en, it, de). Omit for the engine default."},
-    "time_range": {"type": "string", "enum": ["day", "month", "year"], "description": "Optional recency window. Omit for no time filter."},
+    "time_range": {"type": "string", "enum": ["day", "week", "month", "year"], "description": "Optional recency window for engines that support it. Use day or week for breaking/recent topics. Omit for no time filter."},
     "domains": {"type": "array", "items": {"type": "string"}, "description": "Optional list of bare hostnames (e.g. wikipedia.org) to restrict results to. Hostnames only — no scheme or path."},
     "include_metadata": {"type": "boolean", "description": "When true, attach a metadata tier (engine, score, category, published_at, thumbnail) to each result. Default false keeps the lean {title,url,snippet} shape."}
   },
@@ -59,10 +59,11 @@ func (e *WebSearch) Spec() Spec {
 		Summary: "Search the public web via the configured SearXNG instance.",
 		Description: "Search the public web through the configured private SearXNG meta-search instance and get back a ranked list of {title, url, snippet} results. " +
 			"Use it to find pages, recent news, or candidate URLs you can then read with web_fetch. " +
-			"You can narrow results with an optional category (general|news), a language hint, a recency time_range (day|month|year), and a domains allowlist of bare hostnames. " +
-			"Set include_metadata:true only when you need the engine/score/published_at tier — the default lean shape is cheaper. " +
-			"Example: {\"query\":\"Neo4j HNSW vector index\",\"max_results\":5}. " +
-			"Example (news, last day): {\"query\":\"EU AI Act\",\"category\":\"news\",\"time_range\":\"day\"}. " +
+			"Freshness matters: the general category returns broad web results (good for reference and current structured facts like a live price or a definition) but its snippets can be cached and undated. " +
+			"For the latest developments, breaking news, or anything time-sensitive ('today', 'latest', 'recent'), set category:news together with time_range:day or week, and pass include_metadata:true to read each result's published_at so you can prefer the freshest. " +
+			"You can also narrow with a language hint and a domains allowlist of bare hostnames. " +
+			"Example (reference): {\"query\":\"Neo4j HNSW vector index\",\"max_results\":5}. " +
+			"Example (latest news): {\"query\":\"EU AI Act\",\"category\":\"news\",\"time_range\":\"day\",\"include_metadata\":true}. " +
 			"Example (domain-scoped): {\"query\":\"site reliability\",\"domains\":[\"wikipedia.org\"]}.",
 		Parameters: params,
 		Deferred:   true,

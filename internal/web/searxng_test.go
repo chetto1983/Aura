@@ -260,6 +260,13 @@ func TestBuildQuery(t *testing.T) {
 		}
 	})
 
+	t.Run("week time_range is forwarded", func(t *testing.T) {
+		v := c.buildQuery(SearchParams{Query: "x", TimeRange: "week"}, "general")
+		if v.Get("time_range") != "week" {
+			t.Errorf("time_range = %q, want week (newly accepted value)", v.Get("time_range"))
+		}
+	})
+
 	t.Run("invalid time_range dropped, no site clause when no valid domain", func(t *testing.T) {
 		v := c.buildQuery(SearchParams{
 			Query:     "x",
