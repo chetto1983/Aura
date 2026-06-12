@@ -93,6 +93,11 @@ func (r *Runner) persistToolTurn(ctx context.Context, tr *turnTracker, ti *agent
 	switch ti.Event {
 	case agent.ToolInvocationStart:
 		tr.addPendingToolCall(ti)
+		if ti.BatchSize > 0 && ti.BatchIndex == ti.BatchSize-1 {
+			if err := r.flushToolCalls(ctx, tr); err != nil {
+				return err
+			}
+		}
 		return nil
 	case agent.ToolInvocationEnd:
 		if _, ok := tr.openToolCalls[ti.ToolCallID]; !ok {

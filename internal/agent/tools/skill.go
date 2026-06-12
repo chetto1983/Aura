@@ -111,6 +111,21 @@ const skillParamsSchema = `{
   "required": ["action"]
 }`
 
+const skillParamsSchemaHonest = `{
+  "type": "object",
+  "properties": {
+    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need - recoverable with restore). Model-authored create/update with always:false activate immediately in this container after validation and audit; always:true create/update and delete require approval and are staged pending before they take effect. save_snippet stages the snippet as pending too (it activates after operator approval); restore/archive take effect immediately."},
+    "name": {"type": "string", "description": "Required when action=info, use, create, update, delete, save_snippet, restore, or archive. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, remove, save, restore, or archive."},
+    "description": {"type": "string", "description": "Required when action=create or update (and optional for save_snippet). A one-line summary of what the skill/snippet does (shown in the skill manifest)."},
+    "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
+    "language": {"type": "string", "enum": ["python", "shell", "js"], "description": "Required when action=save_snippet. The language of the snippet code (python, shell, or js)."},
+    "code": {"type": "string", "description": "Required when action=save_snippet. The executable snippet body (the code that will be saved and later run by path)."},
+    "always": {"type": "boolean", "description": "Optional when action=create or update. always:false is the in-box auto-activation path for model-authored create/update; always:true changes the always-on prompt block and is approval-gated."},
+    "query": {"type": "string", "description": "Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
+  },
+  "required": ["action"]
+}`
+
 // Spec returns the non-deferred manifest entry (D-05). The Description IS the
 // turn-stable, alphabetical skill manifest (D-06) computed from the loader
 // snapshot — the model reads it to choose a skill, then calls action=use.
@@ -119,7 +134,7 @@ func (t *SkillTool) Spec() Spec {
 		Name:        "skill",
 		Summary:     "List, inspect, and apply skills that extend your capabilities.",
 		Description: t.manifestDescription(),
-		Parameters:  json.RawMessage(skillParamsSchema),
+		Parameters:  json.RawMessage(skillParamsSchemaHonest),
 		Deferred:    false,
 	}
 }

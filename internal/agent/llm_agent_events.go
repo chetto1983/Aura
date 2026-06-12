@@ -57,7 +57,7 @@ func (a *LlmAgent) toolCallEvent(ic InvocationContext, spanID [8]byte, parentSpa
 }
 
 func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte,
-	call llm.ToolCall, startedAt time.Time,
+	call llm.ToolCall, startedAt time.Time, batchIndex, batchSize int,
 ) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
 	ts := startedAt.UTC()
@@ -67,6 +67,8 @@ func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSp
 		ToolName:   call.Function.Name,
 		Arguments:  call.Function.Arguments,
 		ArgsBytes:  len(call.Function.Arguments),
+		BatchIndex: batchIndex,
+		BatchSize:  batchSize,
 		StartedAt:  &ts,
 	}
 	return ev
@@ -78,6 +80,7 @@ func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSp
 // id is passed for forward-compat callers but not stamped on the Event yet.
 func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, run toolRunResult) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
+	recordToolDuration(run.EndedAt.Sub(run.StartedAt))
 	ev.LLMResponse = &LLMResponse{Content: run.Preview}
 	// Stamp the tool_call_id so a prose consumer (the REPL renderer) can tell this
 	// raw tool-result preview apart from a streamed assistant chunk — both carry

@@ -97,7 +97,7 @@ func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, 
 	// P5 (2026-06-10): ordinary in-box self-extension is ungated. always:true is
 	// deliberately excluded: it changes the always-on prompt block for every future
 	// turn, so it remains human-reviewed.
-	if modelMutationBypassesGate(fm, actor) {
+	if modelMutationBypassesGate(action, fm, actor) {
 		gate = false
 	}
 
@@ -109,7 +109,24 @@ func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, 
 
 	if action == scoring.SkillDelete {
 		// Delete is a de-materialize + archive + audit, not a pending write.
-		return w.Delete(ctx, fm.Name, actor)
+		if !gate {
+			return w.Delete(ctx, fm.Name, actor)
+		}
+		if err := db.WithTx(ctx, w.pool, func(q *sqlc.Queries) error {
+			return InsertAuditTx(ctx, q, AuditInsert{
+				ActorID:         actor.ActorID,
+				IdentityID:      actor.IdentityID,
+				SkillName:       fm.Name,
+				Action:          AuditDelete,
+				ContentHash:     hash,
+				ApprovalSource:  ApprovalNone,
+				GateRecommended: true,
+				GateTaken:       false,
+			})
+		}); err != nil {
+			return "", fmt.Errorf("delete skill %q: audit: %w", fm.Name, err)
+		}
+		return StatusPendingApproval, nil
 	}
 
 	if err := w.writePending(fm.Name, fm, body); err != nil {
@@ -143,8 +160,13 @@ func (w *Writer) WriteMutation(ctx context.Context, action scoring.SkillAction, 
 	return StatusPendingApproval, nil
 }
 
-func modelMutationBypassesGate(fm Frontmatter, actor AuditActor) bool {
-	return actor.ActorID == ActorModel && !fm.Always
+func modelMutationBypassesGate(action scoring.SkillAction, fm Frontmatter, actor AuditActor) bool {
+	switch action {
+	case scoring.SkillCreate, scoring.SkillUpdate:
+		return actor.ActorID == ActorModel && !fm.Always
+	default:
+		return false
+	}
 }
 
 // WriteInstallPending lands an installed skill (a possibly-multi-file tree already

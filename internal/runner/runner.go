@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"log/slog"
@@ -34,6 +35,24 @@ const autoTitleMinSeq = 3
 // localIdentityName is the seeded single-user identity that owns new conversations
 // (Slice 1.7 scaffolding).
 const localIdentityName = "local"
+
+// ErrThreadBusy reports that a caller tried to start a second concurrent run for
+// the same conversation through a non-blocking channel such as AG-UI.
+var ErrThreadBusy = errors.New("thread already has an in-flight run")
+
+type threadLockHeldKey struct{}
+
+// WithThreadLockHeld marks a context whose caller already owns the per-thread
+// runner lock. It lets HTTP gateways reject busy threads up front without making
+// Runner.Turn take the same lock twice.
+func WithThreadLockHeld(ctx context.Context) context.Context {
+	return context.WithValue(ctx, threadLockHeldKey{}, true)
+}
+
+func threadLockHeld(ctx context.Context) bool {
+	held, _ := ctx.Value(threadLockHeldKey{}).(bool)
+	return held
+}
 
 // Deps are the Runner's constructor inputs: the three consumer-side Stores (narrow
 // interfaces, D-A2-02), the LLM client + tool registry the fresh per-round LlmAgent
@@ -96,7 +115,8 @@ type Runner struct {
 	contextBlock ContextBlockProvider
 	alwaysBlock  func() string // renders the messages[1] always-block per turn (D-07); nil → empty
 
-	wg sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
+	threadLocks sync.Map
+	wg          sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
 }
 
 // New builds a Runner over the supplied dependencies, applying the timeout
@@ -209,6 +229,38 @@ func (r *Runner) EnsureConversation(ctx context.Context, convID string) error {
 // yield-after-false guard is honored (never yield again once the consumer returns
 // false).
 func (r *Runner) Turn(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
+	if threadLockHeld(ctx) {
+		return r.turnLocked(ctx, convID, userMsg)
+	}
+	return func(yield func(*agent.Event, error) bool) {
+		mu := r.lockForThread(convID)
+		mu.Lock()
+		defer mu.Unlock()
+		for ev, err := range r.turnLocked(WithThreadLockHeld(ctx), convID, userMsg) {
+			if !yield(ev, err) {
+				return
+			}
+		}
+	}
+}
+
+// TryLockThread attempts to acquire the per-conversation run lock without
+// blocking. HTTP transports use it to return 409 instead of queueing an SSE run
+// behind an already-active request.
+func (r *Runner) TryLockThread(convID string) (func(), bool) {
+	mu := r.lockForThread(convID)
+	if !mu.TryLock() {
+		return nil, false
+	}
+	return mu.Unlock, true
+}
+
+func (r *Runner) lockForThread(convID string) *sync.Mutex {
+	actual, _ := r.threadLocks.LoadOrStore(convID, &sync.Mutex{})
+	return actual.(*sync.Mutex)
+}
+
+func (r *Runner) turnLocked(ctx context.Context, convID string, userMsg *string) iter.Seq2[*agent.Event, error] {
 	return func(yield func(*agent.Event, error) bool) {
 		// Persist the new user turn (if any) BEFORE rehydrating so the agent sees it.
 		if userMsg != nil {

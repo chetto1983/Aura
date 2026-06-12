@@ -21,6 +21,7 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 // maxRunBodyBytes caps the POST /agent/run request body (Tampering/DoS guard,
@@ -53,6 +54,10 @@ type Runner interface {
 	SubmitAnswers(ctx context.Context, answers map[string]runner.ResponseInput) (int, error)
 }
 
+type threadTryLocker interface {
+	TryLockThread(threadID string) (func(), bool)
+}
+
 // Server is the minimal AG-UI HTTP gateway (Slice 8b): POST /agent/run streams a
 // translated agent turn as SSE, GET /threads/{id}/messages returns the persisted
 // history as a MESSAGES_SNAPSHOT JSON body. It is the thinnest glue over EXISTING
@@ -81,6 +86,7 @@ func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.Handle("GET /debug/vars", expvar.Handler())
+	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /agent/run", s.handleRun)
 	mux.HandleFunc("GET /threads/{id}/messages", s.handleMessages)
 	return s.withCORS(mux)
@@ -164,6 +170,24 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "thread lookup failed", http.StatusInternalServerError)
 		return
 	}
+	userMsg, err := lastUserMessage(in.Messages)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var unlock func()
+	if locker, ok := s.run.(threadTryLocker); ok {
+		var locked bool
+		unlock, locked = locker.TryLockThread(in.ThreadID)
+		if !locked {
+			http.Error(w, runner.ErrThreadBusy.Error(), http.StatusConflict)
+			return
+		}
+		defer unlock()
+		ctx = runner.WithThreadLockHeld(ctx)
+	}
+
 	if len(in.Resume) > 0 {
 		if _, err := s.run.SubmitAnswers(ctx, resumeAnswers(in.Resume)); err != nil {
 			http.Error(w, sanitizeErr(err), http.StatusBadRequest)
@@ -172,11 +196,6 @@ func (s *Server) handleRun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	runID := "run-" + uuid.NewString()
-	userMsg, err := lastUserMessage(in.Messages)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -288,6 +307,7 @@ func (s *Server) pumpSend(ctx context.Context, out chan events.Event, ev events.
 	case <-ctx.Done():
 		return false
 	default:
+		recordSSEDropped()
 		slog.Warn("agui server: SSE client slow, dropping event", "type", ev.Type())
 		return true
 	}

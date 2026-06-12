@@ -7,6 +7,49 @@
 name: aura
 
 services:
+  aura:
+    build:
+      context: .
+    image: ${AURA_IMAGE:-aura:local}
+    pull_policy: never
+    container_name: aura
+    restart: unless-stopped
+    user: "65532:65532"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: ${AURA_MEM_LIMIT:-768m}
+    cpus: ${AURA_CPUS:-1.0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      AURA_AGUI_BIND: 0.0.0.0:9080
+      AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_RUN_DIR: /var/lib/aura/runs
+      AURA_SKILLS_DIR: /var/lib/aura/skills
+      AURA_SKILL_EXPORT_DIR: /var/lib/aura/exported-skills
+      AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:?OPENROUTER_API_KEY required in .env}
+    ports:
+      - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
+    volumes:
+      - aura-runs:/var/lib/aura/runs
+      - aura-skills:/var/lib/aura/skills
+      - aura-exported-skills:/var/lib/aura/exported-skills
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    healthcheck:
+      test: [ "CMD", "/aura", "version" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   postgres:
     image: postgres:17.10-alpine3.23
     container_name: aura-postgres
@@ -295,6 +338,9 @@ services:
       start_period: 40s                        # first-boot: markitdown[all] import
 
 volumes:
+  aura-runs:
+  aura-skills:
+  aura-exported-skills:
   aura-postgres:
   aura-neo4j:
   aura-neo4j-plugins:

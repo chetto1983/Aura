@@ -27,7 +27,7 @@ func (a *LlmAgent) streamWithOpenRetry(ctx context.Context, req llm.Request, req
 				return nil, err
 			}
 		}
-		metricLLMStreamOpenTotal.Add(1)
+		recordLLMStreamOpen()
 		ch, err := a.client.Stream(ctx, req)
 		if err == nil {
 			if a.breaker != nil {
@@ -58,7 +58,7 @@ func (a *LlmAgent) streamWithOpenRetry(ctx context.Context, req llm.Request, req
 		if attempt == streamOpenMaxAttempts {
 			return nil, err
 		}
-		metricLLMStreamRetryTotal.Add(1)
+		recordLLMStreamRetry()
 		timer := time.NewTimer(streamOpenRetryDelayFor(err))
 		select {
 		case <-ctx.Done():

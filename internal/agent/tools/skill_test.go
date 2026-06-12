@@ -105,6 +105,22 @@ func TestSkillSpecSchemaDiscipline(t *testing.T) {
 	}
 }
 
+func TestSkillToolSchemaStatesActualAutoActivationPolicy(t *testing.T) {
+	t.Parallel()
+	spec := (&SkillTool{}).Spec()
+	schema := string(spec.Parameters)
+	for _, want := range []string{
+		"always:false",
+		"activate immediately",
+		"always:true",
+		"delete require approval",
+	} {
+		if !strings.Contains(schema, want) {
+			t.Fatalf("skill schema does not state %q in the live policy: %s", want, schema)
+		}
+	}
+}
+
 func TestSkillRegistryValidates(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()

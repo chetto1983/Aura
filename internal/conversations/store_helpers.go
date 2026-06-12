@@ -215,8 +215,10 @@ func decodeToolCalls(raw []byte) ([]llm.ToolCall, error) {
 // repairToolMessagePairs removes persisted tool-call fragments that would be
 // rejected by OpenAI-compatible providers on reload. It is intentionally
 // conservative: a valid assistant(tool_calls)->tool... group is preserved
-// byte-for-byte; orphan RoleTool turns and dangling assistant tool-call groups are
-// dropped from the model-visible history.
+// byte-for-byte; orphan RoleTool turns are dropped from the model-visible history.
+// A dangling assistant tool-call group is repaired with synthetic RoleTool markers
+// so a crash after a mutating tool executed cannot make the model blindly re-issue
+// the same call on resume.
 func repairToolMessagePairs(in []llm.Message) []llm.Message {
 	return repairToolMessagePairsWith(in, false)
 }
@@ -255,15 +257,80 @@ func repairToolMessagePairsWith(in []llm.Message, preserveCompactedToolPointers 
 			continue
 		}
 
-		i++
-		for i < len(in) && in[i].Role == llm.RoleTool {
-			if preserveCompactedToolPointers && compactedToolPointer(in[i]) {
-				out = append(out, managedToolPointerMessage(in[i]))
-			}
+		if !validToolCallIDs(m.ToolCalls) {
 			i++
+			for i < len(in) && in[i].Role == llm.RoleTool {
+				if preserveCompactedToolPointers && compactedToolPointer(in[i]) {
+					out = append(out, managedToolPointerMessage(in[i]))
+				}
+				i++
+			}
+			continue
 		}
+
+		out, i = appendRecoveredToolResultGroup(out, in, i)
 	}
 	return out
+}
+
+func appendRecoveredToolResultGroup(out []llm.Message, in []llm.Message, assistantIdx int) ([]llm.Message, int) {
+	assistant := in[assistantIdx]
+	out = append(out, assistant)
+	seen := make(map[string]llm.Message, len(assistant.ToolCalls))
+	i := assistantIdx + 1
+	for i < len(in) && in[i].Role == llm.RoleTool {
+		msg := in[i]
+		if _, ok := seen[msg.ToolCallID]; !ok && toolCallHasID(assistant.ToolCalls, msg.ToolCallID) {
+			seen[msg.ToolCallID] = msg
+		}
+		i++
+	}
+	for _, call := range assistant.ToolCalls {
+		if msg, ok := seen[call.ID]; ok {
+			out = append(out, msg)
+			continue
+		}
+		out = append(out, llm.Message{
+			Role:       llm.RoleTool,
+			ToolCallID: call.ID,
+			Content:    recoveryToolResultContent(call),
+		})
+	}
+	return out, i
+}
+
+func recoveryToolResultContent(call llm.ToolCall) string {
+	name := strings.TrimSpace(call.Function.Name)
+	if name == "" {
+		name = "unknown"
+	}
+	return fmt.Sprintf("error: previous result unknown after crash recovery for tool %q; verify before re-running this tool call.", name)
+}
+
+func validToolCallIDs(calls []llm.ToolCall) bool {
+	seen := make(map[string]struct{}, len(calls))
+	for _, call := range calls {
+		if call.ID == "" {
+			return false
+		}
+		if _, ok := seen[call.ID]; ok {
+			return false
+		}
+		seen[call.ID] = struct{}{}
+	}
+	return true
+}
+
+func toolCallHasID(calls []llm.ToolCall, id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, call := range calls {
+		if call.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func compactedToolPointer(m llm.Message) bool {

@@ -58,6 +58,12 @@ func TestRunnerAdapterDrivesEngine(t *testing.T) {
 	if reports[0].Status != StatusOK || reports[1].Status != StatusOK {
 		t.Fatalf("both workers should finish ok: %+v", reports)
 	}
+	if res.Provenance == nil {
+		t.Fatal("swarm reports must carry untrusted provenance")
+	}
+	if res.Provenance.Source != "swarm" || res.Provenance.Trust != tools.TrustUntrusted {
+		t.Fatalf("swarm provenance = %+v, want source=swarm trust=untrusted", res.Provenance)
+	}
 }
 
 // TestRunnerAdapterWorkerRegistryExcludesSwarmSpawn re-asserts the flat-v1 invariant
