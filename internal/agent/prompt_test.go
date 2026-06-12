@@ -20,6 +20,30 @@ func TestPrompt_ProfileContextDoctrine(t *testing.T) {
 	}
 }
 
+// TestPrompt_MemoryDoctrine asserts the Phase-15 memory doctrine: D-01
+// agent-decides writes (deliberate, no ceremony), D-03 pull-on-demand recall
+// (search before answering/asking), D-09 fail-soft posture — mechanism-level
+// only, no volatile memory_* tool names (D-07 keeps them behind tool_search).
+func TestPrompt_MemoryDoctrine(t *testing.T) {
+	for _, needle := range []string{
+		"persistent long-term memory",
+		"pull-on-demand",
+		"search memory BEFORE answering",
+		"without ceremony",
+		"reasoning trace",
+		"fail-soft",
+	} {
+		if !strings.Contains(SystemPrompt, needle) {
+			t.Errorf("system prompt is missing memory doctrine %q", needle)
+		}
+	}
+	for _, volatile := range []string{"memory_search", "memory_add_entity", "memory__"} {
+		if strings.Contains(SystemPrompt, volatile) {
+			t.Errorf("system prompt enumerates memory tool surface %q (mechanism-not-enumeration, D-07)", volatile)
+		}
+	}
+}
+
 // rfc3339ish matches a date or clock-shaped substring that would poison the
 // cached prefix (Req#14 / D-08). Any hit means a timestamp crept into the prompt.
 var rfc3339ish = regexp.MustCompile(`\d{4}-\d{2}-\d{2}|\d{2}:\d{2}:\d{2}`)

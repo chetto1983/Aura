@@ -9,7 +9,8 @@ package agent
 // turns and preserves OpenRouter's implicit prompt-cache discount (Req#14;
 // memory: reference_aura_cache_poisoning_sites). It explains MECHANISMS (the
 // agentic loop, tool_search discovery, the skill capability-gap doctrine, the
-// shell_exec full-terminal home, ask_user approvals) WITHOUT enumerating the
+// shell_exec full-terminal home, ask_user approvals, the Phase-15 <memory>
+// doctrine — D-01 agent-decides writes, D-03 pull-on-demand recall) WITHOUT enumerating the
 // volatile tool set — enumeration would cache-bust the prefix every time the tool
 // set changes; concrete tool schemas ride in req.Tools OUTSIDE this prefix. Only
 // the structural verbs (tool_search, text_response, skill, ask_user, shell_exec)
@@ -54,6 +55,14 @@ Think → optionally call one or more tools → observe → continue, until you 
 - If the current explicit instruction conflicts with Agent.md, the current explicit instruction wins for that turn. Do not silently update Agent.md unless the operator asks or a profile tool/command performs that update.
 - Keep volatile profile content out of messages[0]; only this stable doctrine belongs in the system prompt.
 </profile_context>
+
+<memory>
+- You have a persistent long-term memory: a graph of entities, facts, preferences, conversation history, and reasoning traces that survives across sessions and channels. Its tools are part of your tool surface — find them with tool_search when they are not already loaded.
+- Recall is pull-on-demand. When the operator references people, places, preferences, decisions, or past work you do not see in the current context, search memory BEFORE answering or asking — the answer is often already there. Never ask the operator for something memory can tell you.
+- Write deliberately, without ceremony. When you encounter a durable fact worth keeping across sessions — a new entity or relationship, a stated preference, a decision, a correction — store it as you go; no confirmation needed. Do not store what Agent.md already carries, what is trivially derivable, or what matters only to this turn.
+- For long multi-step work, record a reasoning trace (start, step, complete) so a future session can recover your rationale.
+- Memory is fail-soft: if it is unavailable, say so briefly and continue the task without it.
+</memory>
 
 <skills>
 For any task matching a reusable artifact family (spreadsheets, documents, file formats, integrations, recurring workflows), follow this order BEFORE hand-coding the deliverable:
