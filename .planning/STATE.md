@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 08.2-04-PLAN.md
-last_updated: "2026-06-12T21:00:00.000Z"
+status: verifying
+stopped_at: Completed 08.2-05-PLAN.md (phase 08.2 complete)
+last_updated: "2026-06-12T21:03:48.453Z"
 last_activity: 2026-06-12
 progress:
   total_phases: 23
-  completed_phases: 19
+  completed_phases: 20
   total_plans: 135
-  completed_plans: 132
-  percent: 83
+  completed_plans: 133
+  percent: 87
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 Phase: 08.2 (semantic-tool-search-unified-semindex) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-06-12
 
-Progress: [██████████] 97%
+Progress: [██████████] 99%
 
 ### Next — Phase 17 (Packaging)
 
@@ -136,6 +136,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 | Phase 08.2 P08.2-02 | ~25min | 2 tasks | 4 files |
 | Phase 08.2 P03 | ~70 min | 3 tasks | 8 files |
 | Phase 08.2 P08.2-04 | ~30min | 2 tasks | 8 files |
+| Phase 08.2 P08.2-05 | ~20min | 3 tasks | 18 files |
 
 ## Accumulated Context
 
@@ -214,6 +215,7 @@ Recent decisions affecting current work:
 - [Phase 08.2]: 08.2-01: extracted internal/semindex foundation — one lock-free pure-math core (cosine/-2.0 sentinel + l2normalize + centroid-nil-on-empty + margin top-2 gap; lifted VERBATIM from reasoning_classifier.go:218-264; no sync/context/ANN per Req-8) + two typed wrappers Classifier(Centroid → Verdict{Label,Score,Margin,Ok}) and Ranker(PerItem → []Scored top-K, append-only bank = D-03 incremental door, bm25 stable-sort insertion-index tie-break), each one sync.RWMutex; Margin on Classifier ONLY (D-01); semindex owns the Embedder seam byte-identical to documents.EmbeddingClient (no adapter, Req-1). -race clean, golangci-lint 0, coverage 92.1%. Rejected single-Index-with-mode-enum (D-01). Commits eec73cfe + 48987033
 - [Phase 08.2]: tool_search free-text ranking is now SEMANTIC (granite-embedding cosine via semindex.Ranker over the reused searchDocument bank); BM25 survives only as a guarded intersection-gated tiebreak behind AURA_TOOLSEARCH_FUSION (spike-056, NOT naive RRF)
 - [Phase 08.2]: The embed sidecar is a HARD dependency for tool_search (explicit Req-6 error when down) but the reasoning classifier KEEPS its soft LLM-router fallback (risk #9); the boot health-check logs, never fail-fast (Open-Q #2)
+- [Phase 08.2]: 08.2-05 (PHASE COMPLETE): tool-selection active-learning loop — internal/toolselectstore (:ToolSelectionExample, BOTH Cypher list-param workarounds, MERGE on sha256(query) idempotent) + internal/toolselectlearn (mis-route detector with symmetric sameTool split-on-__ NOT HasSuffix [risk #3]; two-tier oracle = free confident-margin top-1 else DeepSeek router gated by AURA_TOOLSELECT_ORACLE=on|off, no new sidecar Req-8) on internal/activelearn (2nd consumer, D-05) + a margin-gated stage-2 learned boost in search_learn.go (per-tool centroid, positives-only Rocchio γ=0; fires only when support>=3 AND centroid_cos>τ, additive β clamped to ε·desc_cos; strict no-op otherwise; 4 anti-amplification guards incl. oracle-in-loop RankForLearner ranks the stage-1 bank never the learned centroids). Open-Q #3 RESOLVED: Observe(userMsg, toolName) captured LIVE at runner_persist.go persistEvent / agent.ToolInvocationEnd (off hot path, non-blocking, nil-safe), proven by a real-turn wiring test. -race + goleak clean, lint 0, coverage 100/93.3/86.2/92.1%. Live :ToolSelectionExample round-trip deferred to a keyed reasoning_live Neo4j run (compiles + t.Fatal-under-CI). New env: AURA_TOOLSELECT_ORACLE. Commits e1133d86 + c0ff5e1f + 4a6c5311 + 087c3ea0
 
 ### Pending Todos
 
@@ -247,6 +249,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-12T20:25:36.816Z
-Stopped at: Completed 08.2-03-PLAN.md
+Last session: 2026-06-12T21:03:48.439Z
+Stopped at: Completed 08.2-05-PLAN.md (phase 08.2 complete — all 5 plans shipped)
 Resume file: None

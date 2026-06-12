@@ -295,7 +295,7 @@ Plans:
 **Goal:** `tool_search` ranks deferred tools by granite-embedding semantic cosine (replacing keyword-only BM25), served by a new reusable `internal/semindex` core that also absorbs the reasoning-tier classifier and gains a tool-selection active-learning loop — beating the BM25 baseline (top-1 ≥ 0.50 / MRR@10 ≥ 0.60) on the documented corpus with no per-query regression and no reasoning-tier regression.
 **Requirements**: SPEC Req-1..Req-8 + CONTEXT D-01..D-07 (ROADMAP placeholder was "TBD")
 **Depends on:** Phase 08
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 Plans:
 
@@ -303,7 +303,7 @@ Plans:
 - [x] 08.2-02-PLAN.md — reasoning classifier structural behavior-preserving migration onto `semindex.Classifier` + Embedder alias + behavior-equivalence test [Req-4, D-04, D-01]
 - [x] 08.2-03-PLAN.md — semantic `tool_search` ranker (guarded BM25 tiebreak) + incremental MCP-mount re-embed + embed hard-dep error surface + cache invariant [Req-2, Req-3, Req-6, Req-7, Req-8, D-02, D-03]
 - [x] 08.2-04-PLAN.md — `internal/activelearn` label-agnostic mechanism + `reasoninglearn` refactor + live-test repair + reasoning accuracy raise to 90/92 [Req-4, Req-5, D-05, D-04]
-- [ ] 08.2-05-PLAN.md — tool-selection active-learning loop: detector + `toolselectstore` + DeepSeek oracle + positives-only-Rocchio stage-2 boost + anti-amplification guards [Req-5, Req-8, D-05, D-06, D-07]
+- [x] 08.2-05-PLAN.md — tool-selection active-learning loop: detector + `toolselectstore` + DeepSeek oracle + positives-only-Rocchio stage-2 boost + anti-amplification guards [Req-5, Req-8, D-05, D-06, D-07]
 
 ### Phase 08.1: Tool Search hardening — Anthropic defer_loading parity (INSERTED)
 
