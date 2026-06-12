@@ -255,6 +255,10 @@ func TestDecodeRows_Branches(t *testing.T) {
 	if err != nil || len(rows) != 1 || rows[0]["id"] != "a" {
 		t.Errorf("valid rows: got %v err %v", rows, err)
 	}
+	rows, err = decodeRows([]byte(`{"content":[{"type":"text","text":"{\"_contains_updates\": true, \"nodes_created\": 1}"}]}`))
+	if err != nil || len(rows) != 1 || rows[0]["nodes_created"] != float64(1) {
+		t.Errorf("write summary object: got %v err %v", rows, err)
+	}
 }
 
 func TestPingEmbed_ErrorBranches(t *testing.T) {
@@ -435,6 +439,37 @@ func TestLoadMigrations_Variants(t *testing.T) {
 	// ReadDir failure.
 	if _, err := loadMigrations(errDirFS{}); err == nil || !strings.Contains(err.Error(), "read embedded migrations") {
 		t.Errorf("readdir error: got %v", err)
+	}
+}
+
+func TestEmbeddedMigrationsIncludeDocumentSchemaAfterInitialChunkSchema(t *testing.T) {
+	migs, err := loadMigrations(cypherFS)
+	if err != nil {
+		t.Fatalf("load embedded migrations: %v", err)
+	}
+	var initIndex, docIndex = -1, -1
+	for i, mig := range migs {
+		switch mig.name {
+		case "0001_init":
+			initIndex = i
+		case "0002_documents":
+			docIndex = i
+		}
+	}
+	if initIndex == -1 {
+		t.Fatal("embedded migrations missing 0001_init")
+	}
+	if docIndex == -1 {
+		t.Fatal("embedded migrations missing 0002_documents")
+	}
+	if initIndex >= docIndex {
+		t.Fatalf("document schema must load after initial chunk schema: init=%d documents=%d", initIndex, docIndex)
+	}
+	if !strings.Contains(migs[docIndex].body, "CREATE CONSTRAINT document_id IF NOT EXISTS") {
+		t.Fatal("document migration should create document_id constraint")
+	}
+	if !strings.Contains(migs[docIndex].body, "CREATE INDEX chunk_document_id IF NOT EXISTS") {
+		t.Fatal("document migration should create chunk_document_id index")
 	}
 }
 

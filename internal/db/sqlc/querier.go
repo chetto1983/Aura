@@ -25,6 +25,7 @@ type Querier interface {
 	CountTelegramAccounts(ctx context.Context) (int64, error)
 	CountTurns(ctx context.Context, conversationID pgtype.UUID) (int64, error)
 	CreateConversation(ctx context.Context, arg CreateConversationParams) (AuraConversations, error)
+	CreateDocumentIngestJob(ctx context.Context, arg CreateDocumentIngestJobParams) (AuraDocumentIngestJobs, error)
 	CreateIdentity(ctx context.Context, arg CreateIdentityParams) (AuraIdentities, error)
 	CreateTask(ctx context.Context, arg CreateTaskParams) (AuraSchedulerTasks, error)
 	DeleteConversation(ctx context.Context, id pgtype.UUID) error
@@ -36,6 +37,8 @@ type Querier interface {
 	// is what makes each due task a singleton across concurrent workers.
 	DueTasks(ctx context.Context, limit int32) ([]AuraSchedulerTasks, error)
 	GetConversation(ctx context.Context, id pgtype.UUID) (AuraConversations, error)
+	GetDocumentIngestJob(ctx context.Context, id pgtype.UUID) (AuraDocumentIngestJobs, error)
+	GetDocumentIngestJobByDocumentID(ctx context.Context, documentID string) (AuraDocumentIngestJobs, error)
 	GetIdentityByID(ctx context.Context, id pgtype.UUID) (AuraIdentities, error)
 	GetIdentityByName(ctx context.Context, name string) (AuraIdentities, error)
 	GetPausedStateByToken(ctx context.Context, token pgtype.UUID) (AuraPausedStates, error)
@@ -68,6 +71,7 @@ type Querier interface {
 	ListConversations(ctx context.Context, includeArchived bool) ([]AuraConversations, error)
 	ListIdentities(ctx context.Context) ([]AuraIdentities, error)
 	ListPendingPausedStates(ctx context.Context, conversationID pgtype.UUID) ([]AuraPausedStates, error)
+	ListRecentDocumentIngestJobs(ctx context.Context, limit int32) ([]AuraDocumentIngestJobs, error)
 	ListRecentPausedStates(ctx context.Context, limit int32) ([]AuraPausedStates, error)
 	ListSkillAudit(ctx context.Context, arg ListSkillAuditParams) ([]AuraSkillAudit, error)
 	ListSkillAuditByName(ctx context.Context, skillName string) ([]AuraSkillAudit, error)
@@ -92,6 +96,8 @@ type Querier interface {
 	TouchTelegramLastSeen(ctx context.Context, telegramUserID int64) error
 	UpdateConversationAggregates(ctx context.Context, arg UpdateConversationAggregatesParams) error
 	UpdateConversationStatus(ctx context.Context, arg UpdateConversationStatusParams) error
+	UpdateDocumentIngestJobProgress(ctx context.Context, arg UpdateDocumentIngestJobProgressParams) (AuraDocumentIngestJobs, error)
+	UpdateDocumentIngestJobStatus(ctx context.Context, arg UpdateDocumentIngestJobStatusParams) (AuraDocumentIngestJobs, error)
 	UpdateHeartbeat(ctx context.Context, id pgtype.UUID) error
 	UpdateNextRunAt(ctx context.Context, arg UpdateNextRunAtParams) error
 }

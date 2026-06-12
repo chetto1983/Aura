@@ -57,6 +57,8 @@ func main() {
 		runDB(os.Args[2:])
 	case "neo4j":
 		runNeo4j(os.Args[2:])
+	case "docs":
+		runDocs(os.Args[2:])
 	case "identity":
 		runIdentity(os.Args[2:])
 	case "profile":
@@ -90,7 +92,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|profile <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|profile <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|docs <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
@@ -135,6 +137,7 @@ func buildBaseRegistryWithHandles(cfg *config.Config, ts *cronTaskStore) (*tools
 	webEngine := web.NewClient(cfg)
 	reg.Register(&tools.WebSearch{Engine: webEngine})
 	reg.Register(&tools.WebFetch{Engine: webEngine}) // manifest auto-sorts (web_fetch < web_search); never hand-order
+	reg.Register(&tools.DocumentSearch{Searcher: docsToolSearcher{cfg: cfg}})
 	// shell_exec is the full host terminal — THE execution surface (amendment #50 / D-15c).
 	// Deferred so simple chat/web turns do not carry a giant shell schema in the hot manifest.
 	workspace := ""

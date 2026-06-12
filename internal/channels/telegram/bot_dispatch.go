@@ -28,8 +28,13 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"time"
 
+	"github.com/chetto1983/aura/internal/documents"
 	tele "gopkg.in/telebot.v4"
 )
 
@@ -382,6 +387,9 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 			slog.Warn("telegram: document download failed", "chat", chatID, "err", err)
 			return nil
 		}
+		if t.deps.DocumentIngest != nil {
+			return t.ingestTelegramDocument(daemonCtx, c, chatID, payload, msg.Document.FileName)
+		}
 		sender := t.sender(c)
 		notifier, _ := sender.(botNotifier)
 		asyncResult := func(_ string, markdown string, convErr error) {
@@ -418,6 +426,60 @@ func (t *Telegram) onDocument(daemonCtx context.Context) tele.HandlerFunc {
 		}
 		return nil
 	}
+}
+
+func (t *Telegram) ingestTelegramDocument(ctx context.Context, c tele.Context, chatID int64, payload []byte, fileName string) error {
+	switch {
+	case len(payload) > refuseTierMinBytes:
+		t.reply(c, documentRefuseMessage)
+		return nil
+	case len(payload) > asyncTierMinBytes:
+		t.reply(c, documentAcceptedMessage)
+	}
+
+	path, cleanup, err := writeTelegramDocumentTemp(payload, fileName)
+	if err != nil {
+		slog.Warn("telegram: document temp write failed", "chat", chatID, "err", err)
+		t.reply(c, convertFailMessage)
+		return nil
+	}
+	defer cleanup()
+
+	start := time.Now()
+	job, err := t.deps.DocumentIngest.IngestPath(ctx, documents.IngestRequest{
+		SourceID:   fmt.Sprintf("telegram:%d", chatID),
+		SourceKind: "telegram",
+		FileName:   fileName,
+	}, path)
+	if err != nil {
+		slog.Warn("telegram: document ingest failed", "chat", chatID, "err", err)
+		t.reply(c, convertFailMessage)
+		return nil
+	}
+	t.reply(c, fmt.Sprintf("Ho indicizzato %q in %.1fs. Puoi farmi domande sul documento.", job.FileName, time.Since(start).Seconds()))
+	return nil
+}
+
+func writeTelegramDocumentTemp(payload []byte, fileName string) (string, func(), error) {
+	suffix := filepath.Ext(fileName)
+	if suffix == "" {
+		suffix = ".bin"
+	}
+	f, err := os.CreateTemp("", "aura-telegram-doc-*"+suffix)
+	if err != nil {
+		return "", func() {}, err
+	}
+	path := f.Name()
+	if _, err = f.Write(payload); err != nil {
+		_ = f.Close()
+		_ = os.Remove(path)
+		return "", func() {}, err
+	}
+	if err = f.Close(); err != nil {
+		_ = os.Remove(path)
+		return "", func() {}, err
+	}
+	return path, func() { _ = os.Remove(path) }, nil
 }
 
 // runTurn drives ONE inbound turn through the per-turn fanout under a cancellable

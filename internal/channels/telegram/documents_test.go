@@ -101,6 +101,70 @@ func TestDocumentsAsyncTier(t *testing.T) {
 	}
 }
 
+func TestDocumentTierAllowsExactlyFiveMiBSync(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(convertHandler(t, &hits, "# exact five", http.StatusOK))
+	defer srv.Close()
+
+	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
+	defer dc.Stop(context.Background())
+
+	res, err := dc.Convert(context.Background(), make([]byte, asyncTierMinBytes), "exact-5.pdf", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != ConvertSync {
+		t.Fatalf("status = %v, want ConvertSync", res.Status)
+	}
+}
+
+func TestDocumentTierAllowsExactlyFiftyMiBAsync(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(convertHandler(t, &hits, "# exact fifty", http.StatusOK))
+	defer srv.Close()
+
+	done := make(chan struct{}, 1)
+	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
+	defer dc.Stop(context.Background())
+
+	res, err := dc.Convert(context.Background(), make([]byte, refuseTierMinBytes), "exact-50.pdf",
+		func(string, string, error) { done <- struct{}{} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != ConvertAsync {
+		t.Fatalf("status = %v, want ConvertAsync", res.Status)
+	}
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("async exact 50MiB conversion did not finish")
+	}
+}
+
+func TestDocumentTierRefusesOverFiftyMiB(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(convertHandler(t, &hits, "unused", http.StatusOK))
+	defer srv.Close()
+
+	dc := newDocumentsClient(MultimodalConfig{DocumentsBaseURL: srv.URL})
+	defer dc.Stop(context.Background())
+
+	res, err := dc.Convert(context.Background(), make([]byte, refuseTierMinBytes+1), "over-50.pdf", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Status != ConvertRefused {
+		t.Fatalf("status = %v, want ConvertRefused", res.Status)
+	}
+	if hits.Load() != 0 {
+		t.Fatalf("hits = %d, want 0", hits.Load())
+	}
+}
+
 // TestDocumentsAsyncTierUsesPerRequestCallbacks proves async conversion results
 // are delivered to the callback passed with that Convert call, not through mutable
 // client-wide state that a later document can overwrite.

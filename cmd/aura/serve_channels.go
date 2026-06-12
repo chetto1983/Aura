@@ -64,6 +64,7 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 		Store:              telegram.New(chat.pool),
 		Profile:            profile.NewStore(chat.cfg.ProfileDir),
 		Multimodal:         multimodalConfig(chat.cfg),
+		DocumentIngest:     newRuntimeDocumentIngestor(chat.cfg, chat.pool),
 		Search:             chat.conv,
 		Cost:               newTodayCost(chat.pool),
 		Prices:             chat.cfg.LLM.Prices,

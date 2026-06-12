@@ -11,7 +11,10 @@ RUN pip install --no-cache-dir \
     "markitdown[all]==0.1.6" \
     "fastapi==0.115.6" \
     "uvicorn[standard]==0.34.0" \
-    "python-multipart==0.0.20"
+    "python-multipart==0.0.20" \
+    "PyMuPDF==1.24.14" \
+    "openpyxl==3.1.5" \
+    "python-docx==1.1.2"
 
 WORKDIR /app
 COPY app.py .
