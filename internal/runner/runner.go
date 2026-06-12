@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
@@ -61,6 +62,11 @@ type Deps struct {
 	ContextBlock ContextBlockProvider
 	AlwaysBlock  func() string
 	ResumeHook   ResumeHook
+	// Embedder wires the local embedding-based reasoning-tier classifier into
+	// each per-turn agent (replaces the LLM router round-trip). nil => the agent
+	// falls back to the LLM router. The composition root passes the granite
+	// sidecar client (documents.EmbeddingClient over Neo4j.EmbedURL).
+	Embedder prompt.Embedder
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -94,7 +100,8 @@ type Runner struct {
 	resumeHook   ResumeHook
 
 	contextBlock ContextBlockProvider
-	alwaysBlock  func() string // renders the messages[1] always-block per turn (D-07); nil → empty
+	alwaysBlock  func() string   // renders the messages[1] always-block per turn (D-07); nil → empty
+	embedder     prompt.Embedder // local embedding classifier seam for adaptive reasoning; nil → LLM router
 
 	wg sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
 }
@@ -138,6 +145,7 @@ func New(d Deps) *Runner {
 		resumeHook:      d.ResumeHook,
 		contextBlock:    d.ContextBlock,
 		alwaysBlock:     d.AlwaysBlock,
+		embedder:        d.Embedder,
 	}
 }
 
@@ -386,6 +394,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 		SessionID:  convID, // session_id == conversation_id (D-26)
 		Workspace:  r.workspace,
 		UserTurns:  seed,
+		Embedder:   r.embedder,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

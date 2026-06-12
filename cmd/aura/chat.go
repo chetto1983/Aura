@@ -30,6 +30,7 @@ import (
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/db"
+	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
@@ -188,6 +189,14 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		ContextBlock:    profileContextProvider(cfg),
 		AlwaysBlock:     alwaysBlockProvider(cfg),
 		ResumeHook:      chainResumeHooks(newSkillResumeHook(cfg, pool), newShellResumeHook(toolHandles.ShellApprovals)),
+		// Local embedding-based reasoning-tier classifier (granite sidecar):
+		// replaces the per-turn LLM router round-trip. Empty EmbedURL => the agent
+		// falls back to the LLM router.
+		Embedder: &documents.EmbeddingClient{
+			BaseURL:    cfg.Neo4j.EmbedURL,
+			Client:     documentHTTPClient(cfg),
+			Dimensions: cfg.Neo4j.EmbedDimensions,
+		},
 	})
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
 }

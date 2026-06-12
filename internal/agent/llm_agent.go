@@ -68,6 +68,11 @@ type LlmAgent struct {
 
 	streamRetryUsed bool
 	breaker         *llm.Breaker
+
+	// classifier is the local embedding-based reasoning-tier router (nil when no
+	// embedder is wired). When present, adaptiveReasoningTier uses it instead of
+	// the per-turn LLM router round-trip; the LLM router remains the fallback.
+	classifier *prompt.ReasoningClassifier
 }
 
 var _ Agent = (*LlmAgent)(nil)
@@ -84,6 +89,10 @@ type LlmAgentConfig struct {
 	SessionID   string // Event.ThreadID; sidecar dir key (D-26)
 	Workspace   string // the shell workspace path, rendered into the per-turn tail hint (#52/D-41); "" omits
 	UserTurns   []llm.Message
+	// Embedder, when non-nil, wires the local embedding-based reasoning-tier
+	// classifier (replaces the per-turn LLM router round-trip). nil => the agent
+	// keeps using the LLM router for adaptive reasoning.
+	Embedder prompt.Embedder
 }
 
 // NewLlmAgent builds an LlmAgent. messages[0] is ALWAYS the byte-stable system
@@ -115,6 +124,7 @@ func NewLlmAgent(cfg LlmAgentConfig) *LlmAgent {
 		builder:     prompt.NewPromptBuilder(),
 		history:     hist,
 		breaker:     llm.NewBreaker(3, 30*time.Second),
+		classifier:  prompt.NewReasoningClassifier(cfg.Embedder),
 	}
 }
 

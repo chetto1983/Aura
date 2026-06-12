@@ -22,6 +22,24 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 		return prompt.ReasoningTierLow, true
 	}
 
+	// Fast path: the local embedding classifier (granite sidecar, ~10ms) replaces
+	// the per-turn LLM router round-trip. On any embed failure it returns false
+	// and we fall through to the LLM router below (graceful degradation).
+	if a.classifier != nil {
+		if tier, ok := a.classifier.Classify(ctx, user); ok {
+			reasoningtrace.Record("adaptive_reasoning_classifier_decision", map[string]any{
+				"thread_id": a.sessionID,
+				"tier":      tier,
+				"source":    "embedding",
+			})
+			return tier, true
+		}
+		reasoningtrace.Record("adaptive_reasoning_classifier_miss", map[string]any{
+			"thread_id": a.sessionID,
+			"fallback":  "llm_router",
+		})
+	}
+
 	routeCtx, cancel := context.WithTimeout(ctx, a.reasoningRouterTimeout())
 	defer cancel()
 	enabled := false
