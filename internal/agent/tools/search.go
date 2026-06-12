@@ -65,6 +65,18 @@ func (ts *ToolSearch) InvalidateIndex() {
 	// The embedding bank is append-only and survives invalidation: the next search
 	// embeds only the newly-advertised tools and appends them. Only the BM25 index
 	// (cheap to rebuild) and the bm25-aligned spec slice are dropped.
+	//
+	// KNOWN LIMITATION (WR-01): the bank is keyed by tool Name and is APPEND-ONLY, so a
+	// reconnect that changes an EXISTING tool's description (same Name, new searchDocument)
+	// does NOT refresh that tool's embedding — its semantic vector stays computed against
+	// the stale description until the process restarts. The BM25 tiebreak rebuilds over the
+	// current specs and masks this in lexical tests, but the primary embedding signal is
+	// stale. This is an intentional constraint: append-only insertion order is load-bearing
+	// (D-03 incremental re-embed + the byte-stable manifest's insertion-index tie-break,
+	// shared with the semindex.Ranker core). A by-doc-hash re-embed would need replace/remove
+	// on the shared append-only ranker (risking that invariant) or a full-corpus rebuild
+	// (defeating D-03), so it is deferred rather than bolted on here. New tools (new Name)
+	// embed correctly; only changed-description-on-reconnect is affected.
 	ts.bm25 = nil
 	ts.specs = nil
 }
@@ -348,7 +360,10 @@ func (ts *ToolSearch) ensureBank(ctx context.Context, query string) (*semindex.R
 		ts.banked = make(map[string]struct{})
 	}
 
-	// Embed ONLY the delta — tools not yet in the bank (D-03 incremental append).
+	// Embed ONLY the delta — tools not yet in the bank by Name (D-03 incremental append).
+	// WR-01 known limitation: this diffs on Name only, so a tool whose DESCRIPTION changed
+	// on an MCP reconnect (same Name) is NOT re-embedded — its vector stays stale. See the
+	// InvalidateIndex doc for why the append-only-by-Name constraint is intentional.
 	var newSpecs []Spec
 	for _, s := range specs {
 		if _, ok := ts.banked[s.Name]; !ok {
