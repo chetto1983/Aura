@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/prompt"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/cachemetrics"
@@ -32,8 +33,10 @@ import (
 	"github.com/chetto1983/aura/internal/db"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/chetto1983/aura/internal/llm/openai_compat"
+	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/toolinvocations"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -173,6 +176,18 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		return nil, fmt.Errorf("mcp: %w", err)
 	}
 
+	// Reasoning-tier self-improvement store (read path): a graph client over the
+	// mcp-neo4j-cypher subprocess lets the classifier fold oracle-labeled
+	// :ReasoningExample nodes into its centroids. Best-effort — a missing binary
+	// or a down Neo4j leaves the classifier seed-only, never blocks chat boot.
+	var reasoningStore prompt.ExampleStore
+	if gclient, gerr := knowledge.Open(ctx, &cfg.Neo4j); gerr != nil {
+		fmt.Fprintln(os.Stderr, "warn: reasoning example store unavailable:", gerr)
+	} else {
+		mcpClosers = append(mcpClosers, gclient.Close)
+		reasoningStore = &reasoningstore.Store{Client: gclient}
+	}
+
 	client := openai_compat.New(cfg.LLM)
 	run := runner.New(runner.Deps{
 		Conv:            convStore,
@@ -197,6 +212,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 			Client:     documentHTTPClient(cfg),
 			Dimensions: cfg.Neo4j.EmbedDimensions,
 		},
+		ExampleStore: reasoningStore,
 	})
 	return &chatEnv{cfg: cfg, pool: pool, conv: convStore, pause: pauseStore, identity: idStore, run: run, client: client, reg: reg, toolHandles: toolHandles, mcpClosers: mcpClosers}, nil
 }

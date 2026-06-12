@@ -67,6 +67,9 @@ type Deps struct {
 	// falls back to the LLM router. The composition root passes the granite
 	// sidecar client (documents.EmbeddingClient over Neo4j.EmbedURL).
 	Embedder prompt.Embedder
+	// ExampleStore folds oracle-labeled examples (Neo4j :ReasoningExample) into
+	// the classifier's centroids (self-improvement, spike 053). nil => seed-only.
+	ExampleStore prompt.ExampleStore
 }
 
 // ResumeHook is called after a paused ask_user response is persisted and before
@@ -100,8 +103,9 @@ type Runner struct {
 	resumeHook   ResumeHook
 
 	contextBlock ContextBlockProvider
-	alwaysBlock  func() string   // renders the messages[1] always-block per turn (D-07); nil → empty
-	embedder     prompt.Embedder // local embedding classifier seam for adaptive reasoning; nil → LLM router
+	alwaysBlock  func() string       // renders the messages[1] always-block per turn (D-07); nil → empty
+	embedder     prompt.Embedder     // local embedding classifier seam for adaptive reasoning; nil → LLM router
+	exampleStore prompt.ExampleStore // oracle-labeled examples folded into classifier centroids; nil → seed-only
 
 	wg sync.WaitGroup // tracks the auto-title workers (D-A5-01); Stop joins it (goleak-clean)
 }
@@ -146,6 +150,7 @@ func New(d Deps) *Runner {
 		contextBlock:    d.ContextBlock,
 		alwaysBlock:     d.AlwaysBlock,
 		embedder:        d.Embedder,
+		exampleStore:    d.ExampleStore,
 	}
 }
 
@@ -386,15 +391,16 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 	boundedCtx, cancel := bud.WithDeadline(ctx)
 	seed := stripLeadingSystem(history)
 	la := agent.NewLlmAgent(agent.LlmAgentConfig{
-		Client:     r.client,
-		LLM:        r.cfg,
-		Registry:   r.registry,
-		PreviewCap: r.previewCap,
-		RunDir:     r.runDir,
-		SessionID:  convID, // session_id == conversation_id (D-26)
-		Workspace:  r.workspace,
-		UserTurns:  seed,
-		Embedder:   r.embedder,
+		Client:       r.client,
+		LLM:          r.cfg,
+		Registry:     r.registry,
+		PreviewCap:   r.previewCap,
+		RunDir:       r.runDir,
+		SessionID:    convID, // session_id == conversation_id (D-26)
+		Workspace:    r.workspace,
+		UserTurns:    seed,
+		Embedder:     r.embedder,
+		ExampleStore: r.exampleStore,
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,
