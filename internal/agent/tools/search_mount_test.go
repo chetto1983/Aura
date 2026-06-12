@@ -6,7 +6,51 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/chetto1983/aura/internal/semindex"
 )
+
+// TestGuardedTiebreak_PromotesConfidentBM25Hit: when BM25 returns a SMALL set (≤5)
+// and the hit is inside embedding's top-15, the guard promotes it above an embedding
+// near-tie. Proves the tiebreak actually FIRES (not just no-ops).
+func TestGuardedTiebreak_PromotesConfidentBM25Hit(t *testing.T) {
+	t.Setenv("AURA_TOOLSEARCH_FUSION", "guarded")
+	emb := []semindex.Scored{
+		{Label: "alpha", Score: 0.80},
+		{Label: "beta", Score: 0.79}, // near-tie with alpha
+	}
+	// BM25 confidently prefers beta (small result-set, beta in embedding top-15).
+	out := guardedTiebreak(emb, []string{"beta"})
+	if out[0].Label != "beta" {
+		t.Fatalf("guarded tiebreak did not promote the confident BM25 hit: got %s first", out[0].Label)
+	}
+}
+
+// TestGuardedTiebreak_NoOpWhenFlooded: a large BM25 result-set (>5 = noisy) is a
+// strict no-op; the embedding order is returned unchanged (spike-056: a flooding BM25
+// has no confident signal). Also covers the kill-switch and out-of-top-15 cases.
+func TestGuardedTiebreak_NoOpWhenFlooded(t *testing.T) {
+	t.Setenv("AURA_TOOLSEARCH_FUSION", "guarded")
+	emb := []semindex.Scored{{Label: "alpha", Score: 0.80}, {Label: "beta", Score: 0.79}}
+
+	flooded := []string{"beta", "c", "d", "e", "f", "g"} // 6 > 5 -> no-op
+	if out := guardedTiebreak(emb, flooded); out[0].Label != "alpha" {
+		t.Errorf("flooded BM25 must be a no-op, got %s first", out[0].Label)
+	}
+	// A confident BM25 hit OUTSIDE embedding's top-15 is ignored (intersection gate).
+	wide := make([]semindex.Scored, 0, 20)
+	for i := range 20 {
+		wide = append(wide, semindex.Scored{Label: fmt.Sprintf("t%02d", i), Score: 1.0 - float64(i)*0.01})
+	}
+	if out := guardedTiebreak(wide, []string{"t19"}); out[0].Label != "t00" {
+		t.Errorf("BM25 hit outside top-15 must be ignored, got %s first", out[0].Label)
+	}
+	// Kill-switch off => unchanged regardless.
+	t.Setenv("AURA_TOOLSEARCH_FUSION", "off")
+	if out := guardedTiebreak(emb, []string{"beta"}); out[0].Label != "alpha" {
+		t.Errorf("fusion off must be a no-op, got %s first", out[0].Label)
+	}
+}
 
 // TestToolSearch_IncrementalMountEmbedsOnlyDelta (Req-3 / D-03): the FIRST search
 // embeds every deferred tool (N); after N more deferred tools are registered and
