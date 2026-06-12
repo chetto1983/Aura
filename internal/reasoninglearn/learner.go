@@ -3,15 +3,18 @@
 // turns, labels them with an LLM oracle off the hot path, and saves the
 // (embedding, tier) example so the classifier converges toward the oracle's
 // accuracy over time — without ever adding latency to a user turn.
+//
+// The queue/dedup/margin/drop-on-full/goleak-clean mechanism lives in the shared
+// label-agnostic internal/activelearn core; this package supplies only the
+// reasoning-specific I/O (the ReasoningTier Oracle + the Neo4j Saver) and keeps
+// its existing prompt.Learner-satisfying Observe and its New(cfg) signature so
+// the composition root and the live E2E are unchanged (D-05, behavior-preserving).
 package reasoninglearn
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"strings"
-	"sync"
 
+	"github.com/chetto1983/aura/internal/activelearn"
 	"github.com/chetto1983/aura/internal/agent/prompt"
 )
 
@@ -34,30 +37,30 @@ type Config struct {
 	Queue       int
 }
 
-const (
-	defaultMarginFloor = 0.05
-	defaultQueue       = 64
-)
-
-// Learner implements prompt.Learner. One bounded background goroutine drains
-// observations; Observe never blocks the caller.
+// Learner implements prompt.Learner. It delegates the bounded-queue/dedup/margin/
+// drop-on-full/goleak-clean mechanism to internal/activelearn, supplying a
+// reasoning-specific oracle that labels a ReasoningTier and persists it. Observe
+// never blocks the caller.
 type Learner struct {
-	oracle  Oracle
-	saver   Saver
-	refresh func()
-	floor   float64
-
-	ch     chan observation
-	seen   sync.Map // content-hash -> struct{}; one label per unique text, ever
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	once   sync.Once
+	inner *activelearn.Learner
 }
 
-type observation struct {
-	text string
-	vec  []float64
+// reasoningOracle adapts the reasoning Oracle+Saver into the label-agnostic
+// activelearn.Oracle: it labels the text with a tier, validates it, and persists
+// the example, reporting saved=true only when both committed. A label miss, an
+// invalid tier, or a save error returns saved=false so activelearn deletes the
+// content hash and a later attempt can retry the transient failure.
+type reasoningOracle struct {
+	oracle Oracle
+	saver  Saver
+}
+
+func (o reasoningOracle) LabelAndSave(ctx context.Context, text string, vec []float64) bool {
+	tier, ok := o.oracle.Label(ctx, text)
+	if !ok || !tier.Valid() {
+		return false
+	}
+	return o.saver.Save(ctx, text, vec, tier) == nil
 }
 
 // New starts the worker. Returns nil if oracle or saver is missing (the
@@ -66,76 +69,23 @@ func New(cfg Config) *Learner {
 	if cfg.Oracle == nil || cfg.Saver == nil {
 		return nil
 	}
-	floor := cfg.MarginFloor
-	if floor <= 0 {
-		floor = defaultMarginFloor
-	}
-	q := cfg.Queue
-	if q <= 0 {
-		q = defaultQueue
-	}
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gosec // G118: cancel is retained on Learner and called by Close.
-	l := &Learner{
-		oracle:  cfg.Oracle,
-		saver:   cfg.Saver,
-		refresh: cfg.Refresh,
-		floor:   floor,
-		ch:      make(chan observation, q),
-		ctx:     ctx,
-		cancel:  cancel,
-	}
-	l.wg.Add(1)
-	go l.run()
-	return l
+	inner := activelearn.New(activelearn.Config{
+		Oracle:      reasoningOracle{oracle: cfg.Oracle, saver: cfg.Saver},
+		Refresh:     cfg.Refresh,
+		MarginFloor: cfg.MarginFloor,
+		Queue:       cfg.Queue,
+	})
+	return &Learner{inner: inner}
 }
 
 // Observe enqueues an uncertain classification for async labeling. It is
 // non-blocking: above the margin floor, already-seen, or queue-full inputs are
 // dropped silently so the turn's hot path is never delayed.
 func (l *Learner) Observe(text string, vec []float64, margin float64) {
-	if l == nil || margin >= l.floor || strings.TrimSpace(text) == "" {
+	if l == nil {
 		return
 	}
-	if _, dup := l.seen.Load(hashText(text)); dup {
-		return
-	}
-	cp := make([]float64, len(vec))
-	copy(cp, vec)
-	select {
-	case l.ch <- observation{text: text, vec: cp}:
-	default: // queue full — drop, never block the turn
-	}
-}
-
-func (l *Learner) run() {
-	defer l.wg.Done()
-	for {
-		select {
-		case <-l.ctx.Done():
-			return
-		case o := <-l.ch:
-			l.process(o)
-		}
-	}
-}
-
-func (l *Learner) process(o observation) {
-	h := hashText(o.text)
-	if _, dup := l.seen.LoadOrStore(h, struct{}{}); dup {
-		return
-	}
-	tier, ok := l.oracle.Label(l.ctx, o.text)
-	if !ok || !tier.Valid() {
-		l.seen.Delete(h) // let a later attempt retry a transient oracle failure
-		return
-	}
-	if err := l.saver.Save(l.ctx, o.text, o.vec, tier); err != nil {
-		l.seen.Delete(h)
-		return
-	}
-	if l.refresh != nil {
-		l.refresh()
-	}
+	l.inner.Observe(text, vec, margin)
 }
 
 // Close stops the worker and waits for the in-flight observation to finish
@@ -144,11 +94,5 @@ func (l *Learner) Close() {
 	if l == nil {
 		return
 	}
-	l.once.Do(l.cancel)
-	l.wg.Wait()
-}
-
-func hashText(text string) string {
-	sum := sha256.Sum256([]byte(text))
-	return hex.EncodeToString(sum[:])
+	l.inner.Close()
 }
