@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/chetto1983/aura/internal/semindex"
 )
 
 // ToolSearch is the built-in hook tool that lets the LLM fetch full specs of
@@ -15,29 +17,51 @@ import (
 // `select:<name>,<name>` argument or a free-text query to load the full
 // Description+Parameters into context.
 //
-// Free-text queries are ranked by an in-process Okapi BM25 scorer (bm25.go) over
-// an expanded per-tool search document, then capped to max_results. The `select:`
-// path resolves any registered tool by exact name and stays uncapped.
+// Free-text queries are ranked SEMANTICALLY by granite-embedding cosine
+// (semindex.Ranker, PerItem) over an expanded per-tool search document (the same
+// flattened searchDocument BM25 builds — D-02, spike-056 "bm25doc input"), then
+// capped to max_results. BM25 contributes only as a guarded, intersection-gated
+// tiebreak (search_fusion.go). The `select:` path resolves any registered tool by
+// exact name and stays uncapped — a different mechanism (load-by-name).
 //
 // This is a NON-DEFERRED tool — always visible — so the model can find it
-// without recursion.
+// without recursion. The embed sidecar is a HARD dependency for free-text ranking
+// (Req-6): with it down, Execute returns an explicit model-visible error (never an
+// empty/garbage ranking). The `select:` path needs no embedder.
 type ToolSearch struct {
 	Registry *Registry
 
-	mu       sync.Mutex
-	index    *bm25Index
-	deferred []Tool // index-aligned with the bm25Index documents
+	// Embed is the granite-embedding seam used to embed the per-tool search docs
+	// and the query (semindex.Embedder; documents.EmbeddingClient satisfies it with
+	// no adapter). Wired by the composition root (runner). nil => free-text ranking
+	// returns an explicit error (Req-6); the select: path still works.
+	Embed semindex.Embedder
+
+	mu     sync.Mutex
+	ranker *semindex.Ranker // embedding bank over the deferred searchDocument texts
+	bm25   *bm25Index       // kept for the guarded tiebreak (search_fusion.go)
+	// banked is the set of tool Names currently embedded in the ranker, so the
+	// MCP-mount refresh (InvalidateIndex) can detect and embed ONLY the delta (D-03).
+	banked map[string]struct{}
+	specs  []Spec // bm25-aligned deferred specs (sorted by Name)
 }
 
 const defaultMaxResults = 5
 
-// InvalidateIndex drops the memoized BM25 index so the next search reads current
-// tool specs. MCP reconnect refreshes call this after updating deferred specs.
+// InvalidateIndex signals that the deferred tool set may have changed (an MCP
+// reconnect advertised new specs). It stays a ZERO-ARG signal (the bridge seam is
+// unchanged): ToolSearch detects the delta itself on the next search by diffing the
+// registry's deferred names against the embedded bank, and embeds ONLY the additions
+// (D-03 incremental re-embed — exactly N new Embed calls per N-tool mount). The BM25
+// tiebreak index is dropped so it rebuilds over the current deferred set.
 func (ts *ToolSearch) InvalidateIndex() {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	ts.index = nil
-	ts.deferred = nil
+	// The embedding bank is append-only and survives invalidation: the next search
+	// embeds only the newly-advertised tools and appends them. Only the BM25 index
+	// (cheap to rebuild) and the bm25-aligned spec slice are dropped.
+	ts.bm25 = nil
+	ts.specs = nil
 }
 
 type toolSearchArgs struct {
@@ -51,7 +75,7 @@ func (ts *ToolSearch) Spec() Spec {
   "properties": {
     "query": {
       "type": "string",
-      "description": "Either 'select:Name1,Name2' to load specific tools by name, or a keyword phrase ranked by BM25 over deferred tool names, descriptions, and parameters. Example: a phrase like 'search the current web for prices or news' or 'send a file to the user'; or 'select:web_fetch,web_search' to load specific tools by exact name."
+      "description": "Either 'select:Name1,Name2' to load specific tools by name, or a natural-language phrase ranked by semantic similarity over deferred tool names, descriptions, and parameters. Example: a phrase like 'search the current web for prices or news' or 'send a file to the user'; or 'select:web_fetch,web_search' to load specific tools by exact name."
     },
     "max_results": {
       "type": "integer",
@@ -70,8 +94,8 @@ func (ts *ToolSearch) Spec() Spec {
 }
 
 const toolSearchLeadIn = "# Tool discovery\n\n" +
-	"Searches deferred-tool metadata with BM25 and loads matching tool schemas for the next model call. " +
-	"Use 'select:Name1,Name2' for direct selection, or a keyword phrase ranked over deferred tool names, descriptions, and parameters. " +
+	"Searches deferred-tool metadata by semantic similarity and loads matching tool schemas for the next model call. " +
+	"Use 'select:Name1,Name2' for direct selection, or a natural-language phrase ranked over deferred tool names, descriptions, and parameters. " +
 	"Some tools are not provided upfront; use this tool (`tool_search`) to discover and load them.\n\n" +
 	"You have access to deferred tools from the following sources:\n"
 
@@ -81,6 +105,9 @@ const toolSearchLeadIn = "# Tool discovery\n\n" +
 // instead of being left to improvise ad-hoc code. The old `{"action":"catalog",...}`
 // routing was removed: that action was deleted in 11-09 (#51/D-40), and discovery+install
 // now ride the host terminal (`npx skills find/add`), taught by find-skills-aura.
+//
+// This is the CAPABILITY-GAP path (no tool matched the query) — distinct from the
+// INFRA-ERROR path (embed sidecar down), which returns an explicit error from Execute.
 const noMatchOrientation = "no matching tools. " +
 	"If the capability you need is a packaged task family (spreadsheets, documents, file formats, integrations, recurring workflows), " +
 	"the always-on find-skills skill teaches how to discover and install skills from the open ecosystem in your terminal — " +
@@ -100,6 +127,8 @@ const nsDelimiterStr = "__"
 // manifest and any variance would bust the OpenRouter implicit cache (T-08.1-07).
 // Only source names and (sorted) tool names flow in — no raw multi-line tool
 // description is concatenated (T-08.1-08). A nil registry yields the "None"-blurb.
+// Per-query ranking happens INSIDE Execute only and NEVER touches this Description
+// (Req-7 cache invariant).
 func toolSearchDescription(reg *Registry) string {
 	return toolSearchLeadIn + sourceOrientation(reg)
 }
@@ -162,7 +191,14 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 		limit = *args.MaxResults
 	}
 
-	matches := ts.match(q, limit)
+	matches, err := ts.match(ctx, q, limit)
+	if err != nil {
+		// Req-6 INFRA-ERROR path: the embed sidecar is a hard dependency for free-text
+		// ranking — surface an explicit, model-visible, retryable error. This is
+		// DISTINCT from the capability-gap path below (no tool matched): a down sidecar
+		// must never masquerade as "no matching tools" or an empty/garbage ranking.
+		return ToolResult{}, fmt.Errorf("tool_search: semantic ranking unavailable (embed sidecar): %w", err)
+	}
 	if len(matches) == 0 {
 		// Orientation tail (amendment #49): the no-result moment IS the capability
 		// gap — route the model into the skills system instead of ad-hoc code. The
@@ -181,10 +217,13 @@ func (ts *ToolSearch) Execute(ctx context.Context, raw json.RawMessage) (ToolRes
 	return NewResult(ctx, b.String())
 }
 
-// match resolves a query to tools. The `select:` path resolves any registered
-// tool by exact name and ignores limit (uncapped). The keyword path ranks
-// deferred-only tools by BM25 and returns the top-limit positive-scoring matches.
-func (ts *ToolSearch) match(q string, limit int) []Tool {
+// match resolves a query to tools. The `select:` path resolves any registered tool
+// by exact name and ignores limit (uncapped) — UNCHANGED, needs no embedder. The
+// free-text path ranks deferred-only tools by granite-embedding cosine (semindex)
+// with a guarded BM25 tiebreak and returns the top-limit matches. A non-nil error
+// is the embed-sidecar-down INFRA error (Req-6), distinct from an empty result
+// (capability gap).
+func (ts *ToolSearch) match(ctx context.Context, q string, limit int) ([]Tool, error) {
 	if sel, ok := strings.CutPrefix(q, "select:"); ok {
 		names := strings.Split(sel, ",")
 		out := make([]Tool, 0, len(names))
@@ -194,43 +233,125 @@ func (ts *ToolSearch) match(q string, limit int) []Tool {
 				out = append(out, t)
 			}
 		}
-		return out
+		return out, nil
 	}
 
-	idx, deferred := ts.indexSnapshot()
-	ranked := idx.rank(q)
+	ranker, bm25Names, byName, err := ts.ensureBank(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	if ranker == nil {
+		// Empty deferred corpus — nothing to rank. Capability gap (empty), not error.
+		return nil, nil
+	}
+	// Embedding-primary semantic ranking (spike-056). Request more than the cap so
+	// the guarded tiebreak can reorder within the confident region before capping.
+	rankWidth := limit + fusionGuardTopK
+	result := ranker.Rank(ctx, q, rankWidth)
+	if result.Err != nil {
+		return nil, result.Err // Req-6: embed sidecar down on the query embed
+	}
+	ranked := guardedTiebreak(result.Results, bm25Names)
 	if len(ranked) > limit {
 		ranked = ranked[:limit]
 	}
 	out := make([]Tool, 0, len(ranked))
 	for _, r := range ranked {
-		out = append(out, deferred[r.doc])
+		if t, ok := byName[r.Label]; ok {
+			out = append(out, t)
+		}
 	}
-	return out
+	return out, nil
 }
 
-// indexSnapshot memoizes the BM25 index over the registry's deferred tools. MCP
-// reconnects can refresh deferred specs, so the snapshot can be invalidated.
-func (ts *ToolSearch) indexSnapshot() (*bm25Index, []Tool) {
+// ensureBank lazily builds (and incrementally extends) the embedding bank over the
+// registry's deferred tools, then returns the ranker, the BM25-ranked tool NAMES for
+// the query (the guarded-tiebreak signal), and the Name->Tool map. The embedding
+// input is searchDocument(spec) (reused VERBATIM from bm25.go — D-02, NOT the raw
+// description). The bank is keyed by tool Name. On the first call it embeds every
+// deferred tool; on later calls (after an MCP-mount InvalidateIndex) it embeds ONLY
+// the delta — tools whose Name is not yet banked — and appends them (D-03: exactly N
+// new Embed calls per N-tool mount). The BM25 tiebreak index is (re)built over the
+// current deferred set. A nil embedder or an embed error returns an error (Req-6 hard
+// dependency), never a silent empty bank. The BM25 query rank is computed under the
+// lock so it stays aligned with the (sorted) spec slice.
+func (ts *ToolSearch) ensureBank(ctx context.Context, query string) (*semindex.Ranker, []string, map[string]Tool, error) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
-	if ts.index == nil {
-		all := ts.Registry.All()
-		// Registry.All iterates a map (random order); sort by Name so equal-score
-		// ties break deterministically and top-K selection is stable per run.
-		sort.Slice(all, func(i, j int) bool { return all[i].Spec().Name < all[j].Spec().Name })
-		deferred := make([]Tool, 0, len(all))
-		specs := make([]Spec, 0, len(all))
-		for _, t := range all {
-			s := t.Spec()
-			if !s.Deferred {
-				continue
-			}
-			deferred = append(deferred, t)
-			specs = append(specs, s)
+
+	// Deferred tools, sorted by Name so equal-score ties break deterministically and
+	// the BM25 index alignment is stable per run (mirror of the prior indexSnapshot).
+	all := ts.Registry.All()
+	sort.Slice(all, func(i, j int) bool { return all[i].Spec().Name < all[j].Spec().Name })
+	byName := make(map[string]Tool, len(all))
+	specs := make([]Spec, 0, len(all))
+	for _, t := range all {
+		s := t.Spec()
+		if !s.Deferred {
+			continue
 		}
-		ts.deferred = deferred
-		ts.index = newBM25Index(specs)
+		specs = append(specs, s)
+		byName[s.Name] = t
 	}
-	return ts.index, append([]Tool(nil), ts.deferred...)
+	// Empty corpus is a CAPABILITY GAP, not an infra error: there is nothing to embed
+	// or rank regardless of the embedder, so do not require the sidecar here (a
+	// nil ranker drives match's empty -> noMatchOrientation path).
+	if len(specs) == 0 {
+		return nil, nil, byName, nil
+	}
+
+	// With deferred tools present, the embed sidecar IS required (Req-6 hard dep).
+	if ts.Embed == nil {
+		return nil, nil, nil, fmt.Errorf("no embedder wired")
+	}
+	if ts.ranker == nil {
+		ts.ranker = semindex.NewRanker(ts.Embed)
+		ts.banked = make(map[string]struct{})
+	}
+
+	// Embed ONLY the delta — tools not yet in the bank (D-03 incremental append).
+	var newSpecs []Spec
+	for _, s := range specs {
+		if _, ok := ts.banked[s.Name]; !ok {
+			newSpecs = append(newSpecs, s)
+		}
+	}
+	if len(newSpecs) > 0 {
+		items := make([]semindex.Item, 0, len(newSpecs))
+		texts := make([]string, 0, len(newSpecs))
+		for _, s := range newSpecs {
+			texts = append(texts, searchDocument(s))
+		}
+		vecs, err := ts.Embed.Embed(ctx, texts)
+		if err != nil {
+			return nil, nil, nil, err // Req-6: not cached — a retry re-embeds the delta
+		}
+		for i, s := range newSpecs {
+			if i < len(vecs) {
+				items = append(items, semindex.Item{Label: s.Name, Vec: vecs[i]})
+			}
+		}
+		ts.ranker.AddVecs(items...)
+		for _, s := range newSpecs {
+			ts.banked[s.Name] = struct{}{}
+		}
+	}
+
+	if ts.bm25 == nil {
+		ts.bm25 = newBM25Index(specs)
+		ts.specs = specs
+	}
+	// BM25-ranked NAMES for the query (the guarded-tiebreak signal). doc indices map
+	// back to ts.specs (bm25-aligned). Computed here, under the lock, so the index and
+	// the spec slice can never drift apart.
+	scored := ts.bm25.rank(query)
+	bm25Names := make([]string, 0, len(scored))
+	for _, s := range scored {
+		if s.doc < len(ts.specs) {
+			bm25Names = append(bm25Names, ts.specs[s.doc].Name)
+		}
+	}
+	// Return the fresh, goroutine-local byName map (never the shared one) so match
+	// can read it lock-free without racing a concurrent ensureBank write.
+	return ts.ranker, bm25Names, byName, nil
 }

@@ -3,12 +3,72 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"hash/fnv"
+	"math"
 	"regexp"
 	"strings"
 	"sync"
 	"testing"
 )
+
+// bagEmbedder is a deterministic, sidecar-free fake Embedder used across the
+// tool_search tests. It embeds text as an L2-normalized bag-of-words vector over a
+// fixed hashed vocabulary: each lowercase alphanumeric token sets one dimension, so
+// the cosine between a query and a tool's searchDocument is high exactly when they
+// SHARE tokens. This preserves the keyword-test semantics under the semantic ranker
+// (a query word present in a tool's Name/Description ranks that tool high) WITHOUT a
+// granite sidecar, keeping CI free and deterministic (RESEARCH Wave-0 fixture). The
+// `calls` counter is how Req-3 asserts "exactly N new embeds"; `failQuery`/`failUntil`
+// drive the Req-6 error-surface and transient-recovery tests.
+type bagEmbedder struct {
+	mu        sync.Mutex
+	calls     int  // total Embed invocations (per-call, regardless of batch size)
+	embedded  int  // total texts embedded across all calls (the "N tools" lever)
+	failUntil int  // error for the first failUntil calls (transient-recovery)
+	failQuery bool // error on every call (Req-6 hard-down sidecar)
+}
+
+const bagEmbedDims = 1024
+
+func (f *bagEmbedder) Embed(_ context.Context, texts []string) ([][]float64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.failQuery || f.calls <= f.failUntil {
+		return nil, errors.New("embed sidecar down")
+	}
+	f.embedded += len(texts)
+	out := make([][]float64, len(texts))
+	for i, t := range texts {
+		out[i] = bagVec(t)
+	}
+	return out, nil
+}
+
+// bagVec is the deterministic bag-of-words vector: one hashed dimension per token,
+// L2-normalized (so cosine = shared-token overlap). Token set mirrors bm25.tokenize.
+func bagVec(text string) []float64 {
+	v := make([]float64, bagEmbedDims)
+	for _, tok := range tokenize(text) {
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(tok))
+		v[h.Sum32()%bagEmbedDims] += 1
+	}
+	var n float64
+	for _, x := range v {
+		n += x * x
+	}
+	if n == 0 {
+		return v
+	}
+	n = math.Sqrt(n)
+	for i := range v {
+		v[i] /= n
+	}
+	return v
+}
 
 // searchableTool is a deferred tool whose Name and Summary share NO common
 // substring, so a keyword can match exactly one of the two fields. This makes
@@ -31,11 +91,21 @@ func (searchableTool) Execute(context.Context, json.RawMessage) (ToolResult, err
 
 func newSearch(t *testing.T, tools ...Tool) (*ToolSearch, context.Context) {
 	t.Helper()
+	ts, _, ctx := newSearchWithEmbedder(t, tools...)
+	return ts, ctx
+}
+
+// newSearchWithEmbedder builds a ToolSearch wired to a deterministic bagEmbedder and
+// returns the embedder too, so a test can assert the embed-call count (Req-3) or the
+// error surface (Req-6) by flipping its fail flags.
+func newSearchWithEmbedder(t *testing.T, tools ...Tool) (*ToolSearch, *bagEmbedder, context.Context) {
+	t.Helper()
 	reg := NewRegistry()
 	for _, tl := range tools {
 		reg.Register(tl)
 	}
-	return &ToolSearch{Registry: reg}, ctxWith(t, "sess-s", "call-s")
+	emb := &bagEmbedder{}
+	return &ToolSearch{Registry: reg, Embed: emb}, emb, ctxWith(t, "sess-s", "call-s")
 }
 
 func TestToolSearchSpecIsVisibleAndSchemaIsValid(t *testing.T) {
@@ -335,4 +405,85 @@ func TestToolSearchConcurrentExecute(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+// TestToolSearch_SemanticRanksByEmbedding: a free-text query ranks the tool whose
+// searchDocument shares its tokens #1 under the semantic ranker (semindex over the
+// bag-of-words embedding). Proves the keyword branch now routes through embedding,
+// not BM25 — the headline behavior change.
+func TestToolSearch_SemanticRanksByEmbedding(t *testing.T) {
+	ts, ctx := newSearch(t,
+		bm25Tool{name: "web_fetch", desc: "retrieve a url and render markdown"},
+		bm25Tool{name: "calculator", desc: "evaluate arithmetic expressions"},
+		bm25Tool{name: "calendar", desc: "list meetings and appointments"},
+	)
+	res, err := ts.Execute(ctx, []byte(`{"query":"arithmetic expressions","max_results":1}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(res.Preview, "## calculator") {
+		t.Fatalf("semantic ranker did not put calculator #1 for 'arithmetic expressions': %q", res.Preview)
+	}
+}
+
+// TestToolSearch_EmbedSidecarDownReturnsExplicitError (Req-6 INFRA-ERROR): with the
+// embedder erroring, Execute returns a NON-NIL error mentioning the embed sidecar —
+// NEVER the noMatchOrientation capability-gap text, NEVER an empty match list. The
+// hard dependency must be model-visible and distinct from "no matching tools".
+func TestToolSearch_EmbedSidecarDownReturnsExplicitError(t *testing.T) {
+	ts, emb, ctx := newSearchWithEmbedder(t,
+		bm25Tool{name: "web_fetch", desc: "retrieve a url"},
+	)
+	emb.failQuery = true
+
+	res, err := ts.Execute(ctx, []byte(`{"query":"fetch a web page"}`))
+	if err == nil {
+		t.Fatalf("Execute with a down embedder returned nil error; got result %q", res.Preview)
+	}
+	if strings.Contains(res.Preview, "no matching tools") {
+		t.Fatal("a down sidecar masqueraded as the capability-gap (noMatchOrientation) path")
+	}
+	if !strings.Contains(err.Error(), "embed") {
+		t.Errorf("error does not name the embed dependency: %v", err)
+	}
+}
+
+// TestToolSearch_NilEmbedderErrorsFreeTextButSelectWorks (Req-6 + D-02): with NO
+// embedder wired, the free-text path returns an explicit error (it has no ranker),
+// while the `select:` exact-name path still resolves tools (it needs no embedder).
+func TestToolSearch_NilEmbedderErrorsFreeTextButSelectWorks(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(bm25Tool{name: "web_fetch", desc: "retrieve a url"})
+	ts := &ToolSearch{Registry: reg} // no Embed
+	ctx := ctxWith(t, "sess-nil", "call-nil")
+
+	if _, err := ts.Execute(ctx, []byte(`{"query":"fetch a web page"}`)); err == nil {
+		t.Error("free-text query with no embedder must error (hard dependency), got nil")
+	}
+
+	res, err := ts.Execute(ctx, []byte(`{"query":"select:web_fetch"}`))
+	if err != nil {
+		t.Fatalf("select: with no embedder must still work: %v", err)
+	}
+	if !strings.Contains(res.Preview, "## web_fetch") {
+		t.Errorf("select: failed to resolve by exact name without an embedder: %q", res.Preview)
+	}
+}
+
+// TestToolSearch_FusionKillSwitchOff (D-02a): AURA_TOOLSEARCH_FUSION=off falls back
+// to pure embedding (the guard never fires). Ranking still works — the env only
+// controls whether the BM25 tiebreak participates, never whether search functions.
+func TestToolSearch_FusionKillSwitchOff(t *testing.T) {
+	t.Setenv("AURA_TOOLSEARCH_FUSION", "off")
+	ts, ctx := newSearch(t,
+		bm25Tool{name: "web_fetch", desc: "retrieve a url and render markdown"},
+		bm25Tool{name: "calculator", desc: "evaluate arithmetic"},
+	)
+	res, err := ts.Execute(ctx, []byte(`{"query":"render markdown","max_results":1}`))
+	if err != nil {
+		t.Fatalf("Execute with fusion off: %v", err)
+	}
+	if !strings.Contains(res.Preview, "## web_fetch") {
+		t.Fatalf("pure-embedding (fusion off) did not rank web_fetch #1: %q", res.Preview)
+	}
 }
