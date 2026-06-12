@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -258,6 +260,42 @@ func TestRetryableNetworkTextDocumentsPlanMarkers(t *testing.T) {
 		t.Fatalf("Retry-After delay should be bounded at %s, got %s", streamOpenMaxRetryAfterWait, got)
 	}
 }
+
+// TestRetryableStreamOpenError_TypedSentinels proves the retry classifier uses
+// errors.Is on typed network sentinels, not only substring matching (B-13). A
+// sentinel wrapped in an error whose message carries NO substring marker is still
+// retryable — the substring table alone would miss it (e.g. a platform that renders
+// syscall.ECONNRESET as "forcibly closed", not "connection reset").
+func TestRetryableStreamOpenError_TypedSentinels(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+	}{
+		{"io.ErrUnexpectedEOF", io.ErrUnexpectedEOF},
+		{"io.EOF", io.EOF},
+		{"syscall.ECONNRESET", syscall.ECONNRESET},
+		{"syscall.ECONNREFUSED", syscall.ECONNREFUSED},
+		{"syscall.ETIMEDOUT", syscall.ETIMEDOUT},
+	} {
+		wrapped := opaqueWrapErr{msg: "upstream stream interrupted", inner: tc.err}
+		if !retryableStreamOpenError(wrapped) {
+			t.Errorf("%s wrapped with a marker-free message must be retryable via errors.Is", tc.name)
+		}
+	}
+	if retryableStreamOpenError(errors.New("invalid api key configuration")) {
+		t.Error("opaque non-network error must NOT be retried")
+	}
+}
+
+// opaqueWrapErr wraps a sentinel via Unwrap while presenting a message that
+// contains none of the substring markers — so only errors.Is can classify it.
+type opaqueWrapErr struct {
+	msg   string
+	inner error
+}
+
+func (e opaqueWrapErr) Error() string { return e.msg }
+func (e opaqueWrapErr) Unwrap() error { return e.inner }
 
 func TestStreamOpenRetryDoesNotSleepPastContext(t *testing.T) {
 	client := &retryClient{errs: []error{errors.New("wsarecv: slow reset")}}

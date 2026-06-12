@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/url"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -92,6 +94,15 @@ func retryableStreamOpenError(err error) bool {
 		if urlErr.Err != nil && retryableNetworkText(urlErr.Err.Error()) {
 			return true
 		}
+	}
+	// Typed network sentinels are the primary classifier (B-13): errors.Is sees a
+	// wrapped sentinel even when its rendered message carries no substring marker
+	// (e.g. a platform that renders ECONNRESET as "forcibly closed"). The substring
+	// table below is the last-resort fallback for platform strings without a sentinel.
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, syscall.ETIMEDOUT) {
+		return true
 	}
 	return retryableNetworkText(err.Error())
 }
