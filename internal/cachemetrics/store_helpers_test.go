@@ -2,6 +2,8 @@ package cachemetrics
 
 import (
 	"math"
+	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,6 +161,35 @@ func TestNewInsertParams(t *testing.T) {
 
 	if _, err := NewInsertParams(MetricParams{ConversationID: "not-a-uuid"}); err == nil {
 		t.Fatal("NewInsertParams with a bad UUID: want error, got nil")
+	}
+
+	// A cost outside numeric(10,4) range is rejected with a contextual error naming the
+	// offending conversation/seq, not silently truncated (WR-01/IN-06).
+	_, err = NewInsertParams(MetricParams{
+		ConversationID: convID,
+		Seq:            9,
+		CostUSD:        numericMaxCost + 1,
+	})
+	if err == nil {
+		t.Fatal("NewInsertParams with an out-of-range cost: want error, got nil")
+	}
+	if got := err.Error(); !strings.Contains(got, "seq 9") || !strings.Contains(got, convID) {
+		t.Errorf("cost-overflow error must name conversation/seq, got %q", got)
+	}
+}
+
+// TestFloatFromNumeric_Float64ValueError covers the read-boundary guard for a numeric
+// whose Float64Value() conversion errors (an Int/Exp magnitude that overflows ParseFloat
+// to ErrRange). It reads as 0 — a malformed stored cost never panics the cache-stats path.
+func TestFloatFromNumeric_Float64ValueError(t *testing.T) {
+	t.Parallel()
+	huge, _ := new(big.Int).SetString("1"+strings.Repeat("0", 40), 10)
+	n := pgtype.Numeric{Int: huge, Exp: 2147483647, Valid: true}
+	if _, err := n.Float64Value(); err == nil {
+		t.Skip("this pgtype build does not error on the overflow numeric; branch unreachable here")
+	}
+	if got := floatFromNumeric(n); got != 0 {
+		t.Errorf("numeric whose Float64Value errors must read as 0, got %v", got)
 	}
 }
 
