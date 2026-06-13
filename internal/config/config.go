@@ -53,6 +53,7 @@ type Config struct {
 	ContextToolEvictAfterTurns int // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 microcompact eviction age
 	HistoryHardCapTurns        int // AURA_HISTORY_HARD_CAP_TURNS — L2.5 picobot hard rolling buffer cap
 	RunDirWarnThresholdBytes   int // AURA_RUN_DIR_WARN_THRESHOLD_BYTES — boot du WARN threshold (audit-only)
+	RunDirSweepIntervalSec     int // AURA_RUN_DIR_SWEEP_INTERVAL_SEC — periodic sidecar-sweep cadence in `serve` (M-06); <=0 disables the worker (boot sweep still runs)
 
 	// Phase 7 (Slice 5) web_search/web_fetch knobs. SearxngURL is the upstream-
 	// canonical name (NO AURA_ prefix); an empty value is NOT boot-fatal — it is
@@ -262,6 +263,7 @@ func loadBase() *Config {
 		ContextToolEvictAfterTurns: envIntDefault("AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS", 10),
 		HistoryHardCapTurns:        envIntDefault("AURA_HISTORY_HARD_CAP_TURNS", 50),
 		RunDirWarnThresholdBytes:   envIntDefault("AURA_RUN_DIR_WARN_THRESHOLD_BYTES", 1073741824),
+		RunDirSweepIntervalSec:     envIntDefault("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", 3600),
 
 		// Phase 7 web knobs. SEARXNG_URL has an empty default on purpose (D-05):
 		// missing is fail-closed at call time, never a boot error.

@@ -30,6 +30,7 @@ import (
 
 	"github.com/chetto1983/aura/internal/agui"
 	"github.com/chetto1983/aura/internal/channels"
+	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
 	"github.com/chetto1983/aura/internal/knowledge"
@@ -64,6 +65,11 @@ type serveEnv struct {
 	// setupSrv is the loopback setup-wizard HTTP server (:9081, Slice 9a/UX-03), a
 	// third http.Server sibling to httpSrv. runServe runs + Shutdowns it fail-soft.
 	setupSrv *http.Server
+
+	// sweeper is the periodic sidecar-sweep worker (audit M-06 part 2): in a long-
+	// running daemon sidecars accumulate between reboots, so it re-runs the boot
+	// ScanOrphans on AURA_RUN_DIR_SWEEP_INTERVAL_SEC. runServe Start/Stops it.
+	sweeper *conversations.Sweeper
 }
 
 // runServe is the `aura serve` entry point: boot, start the tick loop, block on a
@@ -134,6 +140,11 @@ func runServe(args []string) {
 	// fail-soft siblings of the AG-UI gateway: a failed channel or a taken setup
 	// port is logged, never aborts the daemon (T-13-09-DaemonAbort).
 	startChannelSubsystems(ctx, env.channels, env.setupSrv)
+
+	// Periodic sidecar sweep (M-06 part 2): launched on the work ctx (NOT signal-
+	// derived) so a SIGTERM does not kill an in-flight filesystem walk mid-sweep; the
+	// drain joins it. A disabled interval launches no goroutine. Stopped in drainShutdown.
+	env.sweeper.Start(ctx)
 
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
 	// Start blocks until signalCtx is cancelled (SIGINT/SIGTERM) or it returns an
@@ -237,6 +248,15 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		ReadHeaderTimeout: aguiReadHeaderTimeout,
 	}
 
+	// Periodic sidecar sweep (M-06 part 2): the boot ScanOrphans is one-shot, so a
+	// long-running daemon would let aged/orphaned sidecars accumulate between reboots.
+	// This worker re-runs the SAME boot sweep (orphan dirs + tmp TTL + audit size WARN)
+	// on AURA_RUN_DIR_SWEEP_INTERVAL_SEC; <=0 disables it (the boot sweep still runs).
+	sweeper := conversations.NewRunDirSweeper(chat.pool, conversations.ScanParams{
+		RunDir:             chat.cfg.RunDir,
+		WarnThresholdBytes: int64(chat.cfg.RunDirWarnThresholdBytes),
+	}, time.Duration(chat.cfg.RunDirSweepIntervalSec)*time.Second)
+
 	// The channels Registry + the setup-wizard server (:9081) were built above (the
 	// Phase 20 boot reorder) so the Registry could be wired into buildDispatch as the
 	// cron.ChannelDeliverer; runServe StartAll/StopAll them (Phase 13, UX-02/03).
@@ -247,6 +267,7 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		httpSrv:   httpSrv,
 		channels:  reg,
 		setupSrv:  setupSrv,
+		sweeper:   sweeper,
 	}, nil
 }
 

@@ -19,7 +19,7 @@ func clearPostgresEnv(t *testing.T) {
 		"POSTGRES_HOST", "POSTGRES_PORT", "POSTGRES_SSLMODE",
 		"AURA_DB_APP_ROLE", "AURA_DB_MIGRATE_ROLE",
 		"AURA_DB_URL", "AURA_DB_MIGRATE_URL", "AURA_DB_BOOTSTRAP_URL",
-		"AURA_RUN_DIR", "AURA_CONTEXT_PREVIEW_CAP_BYTES",
+		"AURA_RUN_DIR", "AURA_CONTEXT_PREVIEW_CAP_BYTES", "AURA_RUN_DIR_SWEEP_INTERVAL_SEC",
 		"NEO4J_USER", "NEO4J_PASSWORD", "AURA_NEO4J_BOLT_URL", "AURA_NEO4J_DATABASE",
 		"AURA_MCP_NEO4J_CYPHER_BIN", "AURA_MCP_NEO4J_CONNECT_TIMEOUT_SEC",
 		"AURA_EMBED_BASE_URL", "AURA_EMBED_DIMENSIONS",
@@ -483,6 +483,19 @@ func TestWebDefaults_AppliedAndNotFatal(t *testing.T) {
 	}
 	if full.SearxngURL != "" {
 		t.Errorf("Load(): SearxngURL must stay empty when unset, got %q", full.SearxngURL)
+	}
+}
+
+// TestRunDirSweepIntervalDefaultAndOverride asserts the M-06 periodic-sweep cadence
+// knob: a 1h default when unset, and an env override (incl. the <=0 disable value).
+func TestRunDirSweepIntervalDefaultAndOverride(t *testing.T) {
+	clearPostgresEnv(t)
+	if cfg := LoadDB(); cfg.RunDirSweepIntervalSec != 3600 {
+		t.Errorf("RunDirSweepIntervalSec: want 3600 default, got %d", cfg.RunDirSweepIntervalSec)
+	}
+	t.Setenv("AURA_RUN_DIR_SWEEP_INTERVAL_SEC", "0") // <=0 disables the periodic worker
+	if cfg := LoadDB(); cfg.RunDirSweepIntervalSec != 0 {
+		t.Errorf("RunDirSweepIntervalSec: want 0 (disabled) override, got %d", cfg.RunDirSweepIntervalSec)
 	}
 }
 

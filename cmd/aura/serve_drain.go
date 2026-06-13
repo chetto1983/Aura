@@ -84,6 +84,13 @@ func drainWithGrace(drain func(), grace time.Duration) drainResult {
 func drainShutdown(workCtx context.Context, env *serveEnv) {
 	stopChannelSubsystems(workCtx, env.channels, env.setupSrv)
 
+	// Stop the periodic sidecar sweep (M-06 part 2) under its own bounded join: an
+	// in-flight tick runs to completion, a hung walk cannot wedge shutdown. Idempotent
+	// when the worker was disabled (a non-positive interval launched no goroutine).
+	if env.sweeper != nil {
+		env.sweeper.Stop()
+	}
+
 	shutCtx, cancel := context.WithTimeout(context.Background(), aguiShutdownTimeout)
 	defer cancel()
 	if err := env.httpSrv.Shutdown(shutCtx); err != nil {
