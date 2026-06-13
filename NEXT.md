@@ -25,7 +25,7 @@ Tutte le fasi 0–13, 15, 16, 18, 19, 20 sono chiuse (`[x]` in ROADMAP). Restano
 ## Salute repo
 
 - **CI verde**: CI + CodeQL + Skills + `windows-unit` (O-07).
-- **Coverage** owned-surface **86.0%** (re-measured 2026-06-13 @ HEAD 19078ff9 via `make coverage`, full integration matrix su stack live; floor ≥85%). Drag principali: `skilladapters` 0.0%, reasoningtrace 71.8%, runner 72.4%, onboarding 79.0%.
+- **Coverage** owned-surface **90.3%** (re-measured 2026-06-13 @ HEAD 882df109 via `make coverage`, full integration matrix su stack live; **ogni package owned ≥85%**, floor `swarm` 85.4%). Campagna coverage 2026-06-13: 16 package sotto-floor portati ≥85% (skilladapters 0→100%, reasoningtrace 71.8→95.8%, cron/handlers 71.1→96.9%, runner 72.4→96.2%, db 76.5→90.2%, onboarding 79→96.8%, …); `-race` pulito (untagged + db tagged).
 - Quality snapshot living doc: [docs/aura-quality-snapshot.md](docs/aura-quality-snapshot.md).
 
 ## Note igiene (non bloccanti)
