@@ -6,7 +6,7 @@ Project guidance for Claude Code (claude.ai/code) on this codebase.
 
 Tabula-rasa rewrite, 2026-05-27. Prior implementation at git tag `pre-rewrite-2026-05-27`.
 
-> **Resume work** (aggiornato 2026-06-06): vedi [NEXT.md](NEXT.md) per stato corrente + ripresa. Fasi completate: 0÷11 + 16 + 18 (15/20 — restano 12 AG-UI, 13 Telegram, 14 Onboarding, 15 Memory, 17 Packaging). Coverage owned-surface 86.1%, CI verde (CI + CodeQL + Skills). Next action raccomandata: `/gsd-discuss-phase 12` (AG-UI Gateway).
+> **Resume work** (aggiornato 2026-06-13): stato corrente + ripresa in [.planning/state.md](.planning/state.md) (full) e [NEXT.md](NEXT.md) (dashboard). **20/23 fasi complete.** Dalla nota precedente sono SHIPPED 12 (AG-UI), 13 (Telegram), 15 (Memory), oltre a 16/18/19/20. Restano aperte solo due: **14 Onboarding** — implementata + automated-green, manca live Telegram operator sign-off + flip ROADMAP (vedi `.planning/phases/14-*/14-VALIDATION.md`, status `automated_passed_manual_pending`) — e **17 Packaging** — solo `17-SPEC.md`, 16/16 acceptance non spuntate, l'ultima fase non implementata. CI verde (CI + CodeQL + Skills). Coverage owned-surface ≈91.7% (vedi §Quality tooling & gates; re-measure con `make coverage`). Next action: chiudere il live sign-off di Phase 14, poi `/gsd-spec-phase 17`.
 
 - **Spike findings for Aura** (implementation patterns, constraints, gotchas — skills self-extension, sandbox runtime, MCP live servers, AG-UI gateway, Telegram channel) → `Skill("spike-findings-Aura")`
 
