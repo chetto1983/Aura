@@ -75,17 +75,36 @@ type ContextConfig struct {
 	AlwaysBlock string
 }
 
-// hardCap computes the L2 hard cap from the config (SPEC Req#10).
+// hardCap computes the L2 hard cap from the config (SPEC Req#10:
+// hard_cap = ContextWindow - max(MaxOutputTokens, 20000) - 13000). The formula is
+// kept unchanged whenever it is already positive (normal/large windows). For a
+// small-window model where the fixed reservation exceeds the window the formula is
+// non-positive; instead of clamping to 0 (which disabled L2/L2.5 protection
+// entirely — finding M-03) it floors to a positive smallWindowHardCapFloor so L2.5
+// truncation stays active. A degenerate ContextWindow <= 0 still yields 0.
 func (c ContextConfig) hardCap() int {
 	out := c.MaxOutputTokens
 	if out < l2MinOutputReservation {
 		out = l2MinOutputReservation
 	}
 	cap := c.ContextWindow - out - l2HeadroomTokens
-	if cap < 0 {
-		cap = 0
+	if cap <= 0 {
+		cap = smallWindowHardCapFloor(c.ContextWindow)
 	}
 	return cap
+}
+
+// smallWindowHardCapFloor returns the positive L2 cap used when the SPEC Req#10
+// formula is non-positive (M-03). Adopting the nanobot precedent (a budget <= 0
+// clamps to max(128, window//2) rather than disabling history management), Aura
+// floors to ContextWindow/2 so L2.5 stays active on small windows. A window <= 0 is
+// a misconfiguration with no usable budget, so it returns 0 (the only remaining
+// hardCap==0 path; boot fail-fast is the seam to reject it).
+func smallWindowHardCapFloor(window int) int {
+	if window <= 0 {
+		return 0
+	}
+	return window / 2
 }
 
 // rotEmitter is the narrow write surface ApplyContextLadder needs to record an L2.5
@@ -151,7 +170,10 @@ func applyContextLadder(
 
 	// L2: budget gate. Over the warn cap (0.75×hard) → audit WARN; over the hard cap
 	// → fall through to L2.5. If under the hard cap, we are done after L1 (SC-1:
-	// zero rot rows).
+	// zero rot rows). hardCap == 0 is now reached ONLY by a degenerate ContextWindow
+	// <= 0 (M-03 floors every positive small window to ContextWindow/2 so it takes
+	// the normal budget path); that misconfig has no usable budget, so the gate
+	// returns the L1 history rather than erroring.
 	if hardCap > 0 && tokensAfterL1 > int(float64(hardCap)*l2WarnRatio) && tokensAfterL1 <= hardCap {
 		slog.Warn("conversation context over the L2 warn cap",
 			"conversation_id", conversationID, "tokens", tokensAfterL1, "hard_cap", hardCap)

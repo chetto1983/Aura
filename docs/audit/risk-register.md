@@ -19,7 +19,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | D-01 | No production container for the privileged agent binary | P1 | M | H | repo root, `compose.yaml` | Dockerfile + hardened compose (AP-7) | **CLOSED** |
 | M-01 | L1 microcompact destroys `ask_user` answers → dead pointer (R-28) | P2 | M | M | `conversations/context.go` (applyL1) | Pointer-rewrite only sidecar-backed turns (AP-8) | **CLOSED** |
 | M-02 | `SubmitAnswer` non-atomic → duplicate resume bricks the round (R-27) | P2 | L | H | `runner_resume.go:77` | Gate-first reorder: MarkResumed before inject (full single-tx deferred) | **CLOSED** |
-| M-03 | `hardCap<=0` silently disables all context protection (R-29) | P2 | L | H | `context.go` (hardCap gate, **test-locked**) | Treat ≤0 as config error / per-model floor (AP-10) | OPEN |
+| M-03 | `hardCap<=0` silently disables all context protection (R-29) | P2 | L | H | `context.go` (hardCap gate) | Nanobot-style floor: a non-positive SPEC formula clamps to a positive `ContextWindow/2` so L2.5 stays active (only `ContextWindow<=0` yields 0) | **CLOSED** |
 | B-05 | Circuit breaker per-turn → no cross-turn protection | P2 | M | M | `llm_agent.go:131` | Hoist to Runner singleton (AP-11) | **CLOSED** |
 | B-06 | Breaker-open routes to error slot, not finalize | P2 | M | L | `llm_agent.go` (streamWithOpenRetry) | Route to finalize (AP-11) | **CLOSED** |
 | B-07 | `LoopAgent` maxIter=0 hot-spins on a budget-owning sub (latent, off prod path) | P2 | L | H | `workflow/loop.go` | No-progress guard | **CLOSED** |

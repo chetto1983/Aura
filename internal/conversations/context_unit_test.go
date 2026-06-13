@@ -318,9 +318,18 @@ func TestHardCap(t *testing.T) {
 	if got := c2.hardCap(); got != 100000-30000-13000 {
 		t.Errorf("hardCap large output: got %d", got)
 	}
-	// Tiny window → clamped to 0.
+	// Tiny window: the formula is non-positive (1000 - 20000 - 13000 = -32000).
+	// M-03 floors it to a positive ContextWindow/2 (500) instead of clamping to 0,
+	// so L2.5 protection stays active on small windows (the old got==0 assertion
+	// encoded the protection-OFF bug this fix closes).
 	c3 := ContextConfig{ContextWindow: 1000, MaxOutputTokens: 1}
-	if got := c3.hardCap(); got != 0 {
-		t.Errorf("hardCap clamp: got %d", got)
+	if got := c3.hardCap(); got != 1000/2 {
+		t.Errorf("hardCap small-window floor: got %d, want %d", got, 1000/2)
+	}
+	// A degenerate window <= 0 has no usable budget → still 0 (the only remaining
+	// hardCap==0 path).
+	c4 := ContextConfig{ContextWindow: 0, MaxOutputTokens: 1}
+	if got := c4.hardCap(); got != 0 {
+		t.Errorf("hardCap degenerate window<=0: got %d, want 0", got)
 	}
 }

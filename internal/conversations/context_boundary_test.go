@@ -157,12 +157,16 @@ func TestLadder_L2WarnBand_Boundaries(t *testing.T) {
 	}
 }
 
-// TestLadder_HardCapGate_AtAndAbove pins context.go:122
+// TestLadder_HardCapGate_AtAndAbove pins context.go
 // `if hardCap == 0 || tokensAfterL1 <= hardCap { return early }`.
 //   - hardCap == tokens EXACTLY -> return the L1 result, ZERO rot events
 //     (kills `<=`->`<`, which would fall through to L2.5 and drop a pair).
-//   - hardCap == 0 (tiny window) -> return early with the full history, no error
-//     (kills `false || ...`, which would run L2.5 against a 0 cap).
+//   - hardCap == 0 (degenerate ContextWindow <= 0) -> return early with the full
+//     history, no error (kills `false || ...`, which would run L2.5 against a 0
+//     cap). M-03: a small-but-positive window no longer reaches the hardCap==0
+//     branch (it floors to ContextWindow/2 and still protects — see
+//     TestLadder_SmallWindowFloor_ProtectsNotRaw); only a ContextWindow<=0
+//     misconfig yields hardCap==0, which this sub-case now exercises.
 func TestLadder_HardCapGate_AtAndAbove(t *testing.T) {
 	enc := mustEncoderRaw(t)
 	turns := sizedTurns(t, enc, 400)
@@ -181,9 +185,18 @@ func TestLadder_HardCapGate_AtAndAbove(t *testing.T) {
 		t.Fatalf("exactly at hardCap must keep all %d turns, got %d", len(turns), len(msgs))
 	}
 
-	// (b) hardCap == 0: the hardCap==0 short-circuit returns the full history.
+	// (b) hardCap == 0 via a degenerate ContextWindow <= 0. Before M-03 this branch
+	// was reached by any small window (formula clamped to 0) and silently disabled
+	// L2.5 — that protection-OFF behavior was the bug M-03 fixes, so the sub-case is
+	// repointed to the only genuine hardCap==0 path that remains: a window<=0
+	// misconfig (smallWindowHardCapFloor returns 0 for window<=0). The short-circuit
+	// must still return the full history without error.
+	degenerate := ContextConfig{ContextWindow: 0, MaxOutputTokens: 1, ToolEvictAfterTurns: 1_000_000}
+	if hc := degenerate.hardCap(); hc != 0 {
+		t.Fatalf("a ContextWindow<=0 misconfig must yield hardCap==0, got %d", hc)
+	}
 	emit0 := &fakeRotEmitter{}
-	msgs0, err0 := applyContextLadder(context.Background(), "conv", turns, windowFor(0), enc, emit0)
+	msgs0, err0 := applyContextLadder(context.Background(), "conv", turns, degenerate, enc, emit0)
 	if err0 != nil {
 		t.Fatalf("hardCap==0 must return early without error, got %v", err0)
 	}
