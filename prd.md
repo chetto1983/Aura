@@ -1196,6 +1196,15 @@ via the fail-fast `envInt` helper under `AURA_MODEL_CONTEXT_WINDOW` /
 `AURA_CONVERSATION_TURN_CAP_BYTES=65536`, `AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS=10`,
 `AURA_HISTORY_HARD_CAP_TURNS=50`, `AURA_RUN_DIR_WARN_THRESHOLD_BYTES=1073741824`.
 
+**Amendment (M-03, 2026-06-13) — small-window `hard_cap` floor.** The formula above
+is unchanged for normal/large windows. For small-window models where it yields a
+non-positive value (the ~33k floor of `max(MaxOutputTokens,20000)+13000` exceeds the
+window — e.g. a Slice 13 local vLLM), `hard_cap` clamps to a positive `ContextWindow/2`
+floor instead of `0`, so L2.5 truncation stays active rather than silently disabling
+context protection on small windows (a window ≤ 0 misconfig still yields 0). This adopts
+the nanobot precedent (`max(128, window//2)` on a non-positive budget); see
+`docs/audit/M-03-context-window-research.md`.
+
 **Spillover is a sidecar FILE, not a table (resolves Phase-4 OPEN QUESTION 3).**
 Conversation-turn content over `AURA_CONVERSATION_TURN_CAP_BYTES` spills to
 `$AURA_RUN_DIR/conversations/<id>/<seq>.content` with `conversation_turns.content
