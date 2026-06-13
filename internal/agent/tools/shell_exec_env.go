@@ -10,8 +10,12 @@ import (
 )
 
 const (
-	envShellMaxTimeoutMs        = "AURA_SHELL_MAX_TIMEOUT_MS"
-	envShellOutputBufCap        = "AURA_SHELL_OUTPUT_BUF_CAP"
+	envShellMaxTimeoutMs = "AURA_SHELL_MAX_TIMEOUT_MS"
+	envShellOutputBufCap = "AURA_SHELL_OUTPUT_BUF_CAP"
+	// envShellDestructivePatterns overrides the on-by-default conservative
+	// ADVISORY destructive-command set (B-10): a comma-separated list of RE2
+	// patterns REPLACES the default; the empty string or "off" disables the gate.
+	// Advisory, not a security boundary — see defaultDestructivePatterns.
 	envShellDestructivePatterns = "AURA_SHELL_DESTRUCTIVE_PATTERNS"
 
 	defaultShellMaxTimeout = 10 * time.Minute
@@ -71,9 +75,43 @@ func destructiveShellMatch(command string) (bool, error) {
 	return false, nil
 }
 
+// defaultDestructivePatterns is the conservative, on-by-default ADVISORY set
+// (B-10 / AP-15). It is NOT a security boundary: the matching is regex over the
+// raw command line, so a determined model can phrase around it (e.g. via a
+// variable, a heredoc, or an alias) — the real boundary is the host/sandbox
+// policy and the operator's own privileges. Its job is to put an obvious
+// "are you sure?" approval pause in front of the handful of commands that wipe a
+// disk or fork-bomb a machine, so an accidental destructive call does not run
+// unattended. Kept narrow on purpose: each pattern targets a whole-tree / device
+// wipe, NOT an ordinary `rm file.txt`, so legitimate work is never gated. The
+// operator can replace the set with AURA_SHELL_DESTRUCTIVE_PATTERNS, or disable
+// the gate entirely with the empty string or "off".
+var defaultDestructivePatterns = []*regexp.Regexp{
+	// rm -rf / (and -fr, optional sudo, root or top-level path) — whole-tree wipe.
+	regexp.MustCompile(`(?i)\brm\s+(-[a-z]*\s+)*-?[rf]*\s*-?[rf]+[a-z]*\s+(--no-preserve-root\s+)?/(\s|$|\w)`),
+	// mkfs.* — formatting a filesystem onto a device.
+	regexp.MustCompile(`(?i)\bmkfs(\.[a-z0-9]+)?\b`),
+	// dd writing to a raw block device.
+	regexp.MustCompile(`(?i)\bdd\b[^\n]*\bof=/dev/[a-z]`),
+	// Classic fork bomb.
+	regexp.MustCompile(`:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:`),
+	// Redirect (truncate) into a raw block device.
+	regexp.MustCompile(`>\s*/dev/(sd|nvme|hd|vd|xvd|disk)[a-z0-9]*`),
+}
+
+// destructiveShellPatterns returns the active ADVISORY pattern set (B-10). The
+// gate is ON BY DEFAULT: an UNSET AURA_SHELL_DESTRUCTIVE_PATTERNS yields the
+// conservative built-in set (defaultDestructivePatterns), so a clearly
+// destructive command trips the approval pause without the operator opting in.
+// An explicit value REPLACES the default (no merge); the empty string or "off"
+// is the explicit opt-out that disables the gate.
 func destructiveShellPatterns() ([]*regexp.Regexp, error) {
-	raw := strings.TrimSpace(os.Getenv(envShellDestructivePatterns))
-	if raw == "" {
+	raw, set := os.LookupEnv(envShellDestructivePatterns)
+	raw = strings.TrimSpace(raw)
+	if !set {
+		return defaultDestructivePatterns, nil
+	}
+	if raw == "" || strings.EqualFold(raw, "off") {
 		return nil, nil
 	}
 	parts := strings.Split(raw, ",")
