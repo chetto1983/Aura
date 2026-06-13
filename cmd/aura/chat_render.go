@@ -237,6 +237,11 @@ func anyFloat(v any) (float64, bool) {
 		return f, true
 	case int:
 		return float64(f), true
+	case json.Number:
+		// M-07 sibling: a UseNumber decoder or a jsonb round-trip widens cost_usd
+		// to json.Number; parse it instead of silently zeroing the wire cost.
+		n, err := f.Float64()
+		return n, err == nil
 	default:
 		return 0, false
 	}

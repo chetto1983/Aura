@@ -231,6 +231,18 @@ func TestUsageFromStateDelta(t *testing.T) {
 			t.Errorf("non-numeric json.Number -> %d, want 0 fallback", u.CachedTokens)
 		}
 	})
+	// M-07 sibling: anyFloat must parse a json.Number cost_usd too, not zero it.
+	// A non-numeric json.Number falls back to no-cost like any unparseable input.
+	t.Run("json_number_cost", func(t *testing.T) {
+		u := usageFromStateDelta(map[string]any{"cost_usd": json.Number("4.2")})
+		if u.Cost == nil || *u.Cost != 4.2 {
+			t.Errorf("json.Number cost_usd -> %v, want 4.2", u.Cost)
+		}
+		bad := usageFromStateDelta(map[string]any{"cost_usd": json.Number("nope")})
+		if bad.Cost != nil {
+			t.Errorf("non-numeric json.Number cost_usd -> %v, want nil fallback", bad.Cost)
+		}
+	})
 }
 
 // TestConfigGet_Success drives configGet's print path (no os.Exit) under a temp

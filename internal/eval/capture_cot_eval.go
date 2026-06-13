@@ -13,6 +13,7 @@
 package eval
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 
@@ -217,6 +218,11 @@ func anyFloat(v any) (float64, bool) {
 		return f, true
 	case int:
 		return float64(f), true
+	case json.Number:
+		// M-07 sibling: the StateDelta is decoded with UseNumber, so cost_usd can
+		// arrive as a json.Number; parse it instead of silently dropping the cost.
+		n, err := f.Float64()
+		return n, err == nil
 	default:
 		return 0, false
 	}
