@@ -25,7 +25,7 @@ Tutte le fasi 0–13, 15, 16, 18, 19, 20 sono chiuse (`[x]` in ROADMAP). Restano
 ## Salute repo
 
 - **CI verde**: CI + CodeQL + Skills + `windows-unit` (O-07).
-- **Coverage** owned-surface ≈91.7% (vedi `CLAUDE.md` §Quality tooling & gates; re-measure con `make coverage` a stack su).
+- **Coverage** owned-surface **86.0%** (re-measured 2026-06-13 @ HEAD 19078ff9 via `make coverage`, full integration matrix su stack live; floor ≥85%). Drag principali: `skilladapters` 0.0%, reasoningtrace 71.8%, runner 72.4%, onboarding 79.0%.
 - Quality snapshot living doc: [docs/aura-quality-snapshot.md](docs/aura-quality-snapshot.md).
 
 ## Note igiene (non bloccanti)
