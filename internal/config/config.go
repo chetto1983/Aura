@@ -111,6 +111,14 @@ type Config struct {
 	AGUICORSPermissive bool   // AURA_AGUI_CORS_PERMISSIVE — dev-only permissive CORS (default restrictive)
 	AGUIBufferCap      int    // AURA_AGUI_BUFFER_CAP — SSE/fanout subscriber buffer cap (default 64)
 
+	// ServeShutdownGraceSec bounds the in-flight turn drain on a SIGTERM/SIGINT
+	// (audit O-06 / AP-17): on the signal the daemon stops accepting new work, then
+	// gives in-flight turns up to this window to reach a terminal frame before the
+	// work ctx is hard-cancelled as the final backstop. Default 25s — a real turn
+	// rarely exceeds it; a misconfigured non-positive value degrades to immediate
+	// hard-cancel (no wedge).
+	ServeShutdownGraceSec int // AURA_SERVE_SHUTDOWN_GRACE_SEC — bounded in-flight turn drain window on shutdown (default 25)
+
 	// Phase 13 (Slice 9) channels + setup-wizard + multimodal knobs. Aura-native
 	// knobs use the AURA_<DOMAIN>_<UNIT> convention; third-party sidecars keep
 	// upstream naming (MULTIMODAL_*/STT_*/TTS_*) per the CLAUDE.md exception. All
@@ -287,6 +295,8 @@ func loadBase() *Config {
 		AGUIBind:           envDefault("AURA_AGUI_BIND", "127.0.0.1:9080"),
 		AGUICORSPermissive: envBoolDefault("AURA_AGUI_CORS_PERMISSIVE", false),
 		AGUIBufferCap:      envIntDefault("AURA_AGUI_BUFFER_CAP", 64),
+
+		ServeShutdownGraceSec: envIntDefault("AURA_SERVE_SHUTDOWN_GRACE_SEC", 25),
 
 		// Phase 13 channels + setup + multimodal. Setup bind defaults to :9081 —
 		// a loopback port DISTINCT from the AG-UI :9080 (separate-port requirement).

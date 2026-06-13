@@ -37,8 +37,10 @@ import (
 	"github.com/chetto1983/aura/internal/scoring"
 )
 
-// aguiShutdownTimeout bounds the graceful drain of in-flight SSE streams when the
-// daemon shuts down (after the scheduler tick loop returns on ctx-cancel).
+// aguiShutdownTimeout bounds the HTTP-layer drain of in-flight SSE streams inside
+// drainShutdown (the bounded-drain body, O-06/AP-17). The outer drainWithGrace
+// (AURA_SERVE_SHUTDOWN_GRACE_SEC) bounds the whole drain; this is the inner
+// http.Server.Shutdown deadline so a slow SSE client cannot wedge the HTTP teardown.
 const aguiShutdownTimeout = 10 * time.Second
 
 // aguiReadHeaderTimeout bounds the request-header read to defang slow-loris on the
@@ -77,17 +79,26 @@ func runServe(args []string) {
 	}
 	override, _ := serveTelegramOverride(args)
 
-	// signal.NotifyContext cancels the root ctx on SIGINT/SIGTERM; the scheduler's
-	// Start returns on that cancel after the in-flight tick drains (graceful, D-15).
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	// signal.NotifyContext cancels signalCtx on SIGINT/SIGTERM; the scheduler's Start
+	// returns on that cancel after the in-flight tick drains (graceful, D-15). The
+	// signal is ONLY the stop-trigger — it must NOT directly cancel the per-turn work
+	// ctx, or an in-flight turn is hard-killed mid-stream instead of reaching its
+	// terminal frame (audit O-06 / AP-17). workCtx is therefore a SEPARATE,
+	// background-derived ctx that parents the actual work (the channel handler turns +
+	// HTTP requests); on the signal the daemon stops accepting NEW work, drains the
+	// in-flight turns under a bounded grace, THEN workCancel fires as the final backstop.
+	signalCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	workCtx, workCancel := context.WithCancel(context.Background())
+	defer workCancel()
 
-	env, err := bootServe(ctx, override)
+	env, err := bootServe(workCtx, override)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "aura serve:", err)
 		os.Exit(exitInfra)
 	}
 	defer env.close()
+	ctx := workCtx
 
 	v, _, _ := buildInfo()
 	shutdownObs, err := obs.Init(ctx, obs.Config{
@@ -125,9 +136,11 @@ func runServe(args []string) {
 	startChannelSubsystems(ctx, env.channels, env.setupSrv)
 
 	slog.Info("aura serve: scheduler daemon started", "tick", "running")
-	// Start blocks until ctx is cancelled (signal) or it returns an error; on a clean
-	// shutdown it returns nil after the in-flight tick joins its workers.
-	schedErr := env.scheduler.Start(ctx)
+	// Start blocks until signalCtx is cancelled (SIGINT/SIGTERM) or it returns an
+	// error; on a clean shutdown it returns nil after the in-flight tick joins its
+	// workers. workCtx is STILL LIVE here, so an in-flight turn keeps running while
+	// the bounded drain below gives it a grace window to finalize (O-06/AP-17).
+	schedErr := env.scheduler.Start(signalCtx)
 
 	if env.toolHandles.BackgroundShells != nil {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -137,19 +150,21 @@ func runServe(args []string) {
 		cancel()
 	}
 
-	// Drain the channels Registry + setup server FIRST (StopAll joins the pollers
-	// goleak-clean, Shutdown drains the setup server) — BEFORE env.close() releases
-	// the pool the channels still hold. env.close() runs last (deferred at the top).
-	stopChannelSubsystems(ctx, env.channels, env.setupSrv)
-
-	// Graceful HTTP drain on shutdown: bound the in-flight SSE streams so a slow client
-	// cannot wedge shutdown forever. Runs on a fresh ctx (the root ctx is already
-	// cancelled by the signal that returned Start).
-	shutCtx, cancel := context.WithTimeout(context.Background(), aguiShutdownTimeout)
-	defer cancel()
-	if err := env.httpSrv.Shutdown(shutCtx); err != nil {
-		slog.Warn("aura serve: agui http server shutdown", "err", err)
+	// Bounded in-flight turn drain (O-06/AP-17): the signal stopped NEW work, but a
+	// turn already mid-stream must reach its terminal frame rather than being hard-
+	// killed. drainShutdown stops the poller + HTTP listener (no new turns) and joins
+	// the in-flight turns under the grace window; only AFTER the grace does workCancel
+	// fire as the final backstop. drainWithGrace never blocks past the grace on an
+	// overrunning turn — the backstop unwedges it. workCtx parents the per-turn work,
+	// so it stays valid for the whole drain (it is NOT signal-derived).
+	grace := time.Duration(env.cfg.ServeShutdownGraceSec) * time.Second
+	res := drainWithGrace(func() { drainShutdown(workCtx, env) }, grace)
+	if res == drainResultTimedOut {
+		slog.Warn("aura serve: in-flight turn drain exceeded grace, forcing shutdown", "grace", grace)
 	}
+	// Final backstop: cancel the work ctx so any straggler past the grace unwinds, and
+	// env.close() (deferred at the top) releases the pool the channels held.
+	workCancel()
 
 	if schedErr != nil {
 		fmt.Fprintln(os.Stderr, "aura serve: scheduler stopped:", schedErr)
