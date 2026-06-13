@@ -215,6 +215,22 @@ func TestUsageFromStateDelta(t *testing.T) {
 			t.Errorf("unknown-type cost_usd -> %v, want nil (no fabricated cost)", u.Cost)
 		}
 	})
+	// M-07: a jsonb round-trip (or a UseNumber decoder) widens token counts to
+	// json.Number; anyInt must parse them, not silently zero the usage row. A
+	// non-numeric json.Number falls back to 0 like any other unparseable input.
+	t.Run("json_number_tokens", func(t *testing.T) {
+		u := usageFromStateDelta(map[string]any{
+			"prompt_tokens":     json.Number("11"),
+			"completion_tokens": json.Number("5"),
+			"cache_hit_tokens":  json.Number("nope"),
+		})
+		if u.PromptTokens != 11 || u.CompletionTokens != 5 {
+			t.Errorf("json.Number tokens = %d/%d, want 11/5", u.PromptTokens, u.CompletionTokens)
+		}
+		if u.CachedTokens != 0 {
+			t.Errorf("non-numeric json.Number -> %d, want 0 fallback", u.CachedTokens)
+		}
+	})
 }
 
 // TestConfigGet_Success drives configGet's print path (no os.Exit) under a temp

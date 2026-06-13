@@ -439,6 +439,13 @@ func anyInt(v any) int {
 		return int(n)
 	case float64:
 		return int(n)
+	case json.Number:
+		// A UseNumber decoder or a jsonb round-trip widens token counts to
+		// json.Number (M-07); parse it instead of silently zeroing the usage row.
+		if i, err := n.Int64(); err == nil {
+			return int(i)
+		}
+		return 0
 	default:
 		return 0
 	}

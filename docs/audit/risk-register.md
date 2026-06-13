@@ -37,7 +37,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | O-07 | No Windows CI lane; OS-specific kill code untested (R-36) | P2 | M | M | `.github/workflows/ci.yml` | `windows-latest` lane (AP-17) | OPEN |
 | R-41 | Per-session tool state never evicted in the daemon | P2 | M | L | `todo.go`, `shell_bg.go` | `Evict(sessionID)` hook (AP-16) | OPEN |
 | T-01 | No fuzz/bench + no mutation score for agent core | P2 | H | M | agent test suite | Fuzz+bench+mutation (AP-21) | OPEN |
-| M-07 | `anyInt` rejects `json.Number` (dormant token-zeroing) (R-42) | P3 | L | M | `runner_persist.go` + `chat_render.go` | Add `json.Number` case (AP-22) | OPEN (dormant) |
+| M-07 | `anyInt` rejects `json.Number` (dormant token-zeroing) (R-42) | P3 | L | M | `runner_persist.go` + `chat_render.go` | Add `json.Number` case (AP-22) | **CLOSED** |
 | B-12 | Mid-stream retry replays partial chunks to the user (cosmetic) | P3 | M | L | `llm_agent.go`, `chat_render.go` | Buffer chunks until clean completion | OPEN |
 | B-13 | Stream-open retry classifies by substring fallback (R-38 residual) | P3 | M | L | `llm_agent_stream_retry.go` | Typed sentinels (`ECONNRESET`/`ErrUnexpectedEOF`) | **CLOSED** |
 | O-08 | Span coverage `llm.request`-only; no turn/tool spans | P3 | M | L | `tracing.go`, `llm_agent.go` | `agent.turn` + `tool.execute` spans (AP-20) | OPEN |
