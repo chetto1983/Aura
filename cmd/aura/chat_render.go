@@ -48,6 +48,16 @@ func renderRunnerTurn(w io.Writer, seq iterSeq2) (answer, finish string, usage l
 			paused = true
 			continue
 		}
+		if ev.Actions.DiscardStreamed {
+			// Mid-stream retry repudiation (B-12): the partial chunks already streamed
+			// are stale. Erase the shown partial from the terminal and reset the prose
+			// buffer so the retry renders over a blank slate — no partial+answer. This
+			// fires ONLY on a rare retry; the common no-retry path never sees it, so
+			// live token-by-token streaming is untouched.
+			reason.clear(w)
+			discardStreamed(&prose, w)
+			continue
+		}
 		if ev.LLMResponse == nil {
 			continue
 		}
@@ -115,6 +125,27 @@ func flushRemainder(prose *strings.Builder, finalAnswer string, emit func(string
 	// Divergent: reset and emit the full answer.
 	prose.Reset()
 	emit(finalAnswer)
+}
+
+// discardStreamed erases the partial prose a failed stream attempt already showed
+// (B-12 mid-stream retry) and resets the buffer so the retry renders clean. It moves
+// the cursor to column 0, up over each newline the partial spanned, then clears to
+// the end of the screen (\x1b[J) — covering a multi-line partial. A no-op when
+// nothing was streamed yet (an empty partial leaves the cursor where it is).
+func discardStreamed(prose *strings.Builder, w io.Writer) {
+	partial := prose.String()
+	if partial == "" {
+		return
+	}
+	lines := strings.Count(partial, "\n")
+	var b strings.Builder
+	b.WriteString("\r")
+	for range lines {
+		b.WriteString("\x1b[A")
+	}
+	b.WriteString("\x1b[J")
+	_, _ = io.WriteString(w, b.String())
+	prose.Reset()
 }
 
 // isToolResultPreview reports whether ev is a tool-result Event (the raw tool

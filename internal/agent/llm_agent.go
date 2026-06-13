@@ -307,6 +307,14 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 						"thread_id":  a.sessionID,
 						"error":      streamErr.Error(),
 					})
+					// Repudiate the partial chunks the failed attempt already streamed
+					// (B-12) before the retry streams fresh — otherwise the consumer shows
+					// partial+answer. A consumer stop here ends the run (iter.Seq2 contract:
+					// no further yield after a false return).
+					if !yield(a.discardStreamedEvent(ic, spanID, parentSpanID), nil) {
+						turnReason = "consumer_stopped"
+						return
+					}
 					continue
 				}
 				turnReason = "stream_error"

@@ -49,6 +49,16 @@ func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, par
 	return ev
 }
 
+// discardStreamedEvent is the mid-stream-retry repudiation signal (B-12): a marker
+// Event (no LLMResponse) whose Actions.DiscardStreamed tells a streaming consumer to
+// drop the partial chunks the failed attempt already showed, so the retry renders
+// over a blank slate. Emitted once, right before the retry re-enters the loop.
+func (a *LlmAgent) discardStreamedEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte) *Event {
+	ev := a.newEvent(ic, spanID, parentSpanID)
+	ev.Actions.DiscardStreamed = true
+	return ev
+}
+
 // toolCallEvent announces a finalized tool call before dispatch (D-12 activity).
 func (a *LlmAgent) toolCallEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, call llm.ToolCall) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)

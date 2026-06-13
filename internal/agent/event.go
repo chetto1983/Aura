@@ -71,6 +71,15 @@ type Actions struct {
 	ArtifactDelta  map[string]any  `json:"artifact_delta,omitempty"` // produced-artifact deltas (forward-compat)
 	AwaitingInput  *AwaitingInput  `json:"awaiting_input,omitempty"` // HITL pause payload (Slice 1.5); nil unless ask_user fired
 	ToolInvocation *ToolInvocation `json:"tool_invocation,omitempty"`
+	// DiscardStreamed is the mid-stream-retry repudiation signal (B-12). When a
+	// stream fails mid-way and the loop retries, the partial chunk Events the failed
+	// attempt already streamed are stale; the agent emits ONE Event carrying this
+	// flag BEFORE the retry's fresh chunks so a streaming consumer (the REPL renderer,
+	// the AG-UI gateway) drops what it has shown so far and renders the retry over a
+	// blank slate — instead of the user seeing partial+answer. It fires ONLY on a
+	// retry, so live token-by-token streaming on the common no-retry path is
+	// untouched (no buffering). Omitted on the wire unless set.
+	DiscardStreamed bool `json:"discard_streamed,omitempty"`
 }
 
 // ToolInvocationStart and ToolInvocationEnd label tool invocation lifecycle events.
