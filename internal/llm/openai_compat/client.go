@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"time"
@@ -20,6 +21,12 @@ const chunkBuffer = 16
 
 var errStreamMissingFinishReason = errors.New("openai_compat: stream ended without finish_reason")
 
+// ErrStreamIdleTimeout marks a stream that opened cleanly but then stalled — no
+// chunk arrived within the per-chunk idle window (B-08). It is a RETRYABLE transport
+// stall (the agent's stream classifier treats it like ECONNRESET), distinct from the
+// whole-call timeout that rides the request ctx.
+var ErrStreamIdleTimeout = errors.New("openai_compat: stream idle timeout (no chunk within the idle window)")
+
 // Client is the handrolled OpenAI-compatible SSE streaming client. It implements
 // llm.Client.Stream against an OpenRouter-shaped /chat/completions endpoint. The
 // API key lives in cfg and is written ONLY onto the Authorization header at
@@ -27,6 +34,10 @@ var errStreamMissingFinishReason = errors.New("openai_compat: stream ended witho
 type Client struct {
 	cfg        llm.Config
 	httpClient *http.Client
+	// streamIdleTimeout bounds the gap between successive stream chunks (B-08). >0
+	// arms a per-chunk watchdog that aborts a stalled stream with ErrStreamIdleTimeout;
+	// 0 disables it. Set from cfg.StreamIdleTimeoutSec in New (tests override directly).
+	streamIdleTimeout time.Duration
 }
 
 var _ llm.Client = (*Client)(nil)
@@ -39,7 +50,8 @@ var _ llm.Client = (*Client)(nil)
 // IdleConnTimeout and trip goleak on short test subsets — PATTERNS / Req#3).
 func New(cfg llm.Config) *Client {
 	return &Client{
-		cfg: cfg,
+		cfg:               cfg,
+		streamIdleTimeout: time.Duration(cfg.StreamIdleTimeoutSec) * time.Second,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				DialContext: (&net.Dialer{
@@ -107,9 +119,16 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 		"trace_file":     reasoningtrace.Path(),
 	})
 
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+	// A cancellable child ctx lets the idle watchdog (B-08) abort a stalled read
+	// without disturbing the caller's ctx. The caller's ctx still governs delivery
+	// (emit selects on it) so the terminal error chunk is delivered even after an
+	// idle-cancel; cancelStream is released in the goroutine's defer on every path.
+	streamCtx, cancelStream := context.WithCancel(ctx)
+
+	httpReq, err := http.NewRequestWithContext(streamCtx, http.MethodPost,
 		c.cfg.BaseURL+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
+		cancelStream()
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -121,11 +140,13 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
+		cancelStream()
 		return nil, err
 	}
 	if resp.StatusCode/100 != 2 {
 		herr := newHTTPError(resp)
 		_ = resp.Body.Close()
+		cancelStream()
 		return nil, herr
 	}
 	reasoningtrace.Record("openai_compat_response_start", map[string]any{
@@ -136,6 +157,7 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 	out := make(chan llm.Chunk, chunkBuffer)
 	go func() {
 		defer close(out)
+		defer cancelStream()
 		defer func() { _ = resp.Body.Close() }()
 		emit := func(ch llm.Chunk) bool {
 			select {
@@ -145,7 +167,16 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 				return false
 			}
 		}
-		res, parseErr := parseSSE(resp.Body, emit)
+		// Idle watchdog (B-08): reset on every byte from the wire (data OR keep-alive)
+		// so a long reasoning phase does not trip it; a dead connection does.
+		var reader io.Reader = resp.Body
+		var watchdog *idleWatchdog
+		if c.streamIdleTimeout > 0 {
+			watchdog = startIdleWatchdog(c.streamIdleTimeout, cancelStream)
+			defer watchdog.stop()
+			reader = &idleResettingReader{r: resp.Body, w: watchdog}
+		}
+		res, parseErr := parseSSE(reader, emit)
 		errString := ""
 		if parseErr != nil {
 			errString = parseErr.Error()
@@ -167,6 +198,10 @@ func (c *Client) Stream(ctx context.Context, req llm.Request) (<-chan llm.Chunk,
 			emit(llm.Chunk{Usage: &u})
 		}
 		switch {
+		case watchdog.firedIdle():
+			// The watchdog cancelled the read; parseErr is the resulting
+			// context.Canceled. Surface the retryable idle stall, not the raw cancel.
+			emit(llm.Chunk{Err: ErrStreamIdleTimeout})
 		case parseErr != nil:
 			emit(llm.Chunk{Err: parseErr})
 		case res.finishReason == "":

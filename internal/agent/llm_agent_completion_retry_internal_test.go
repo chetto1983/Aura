@@ -287,6 +287,20 @@ func TestRetryableStreamOpenError_TypedSentinels(t *testing.T) {
 	}
 }
 
+// TestRetryableStreamOpenError_IdleTimeout proves B-08's classifier half: a stream
+// idle-timeout stall is a RETRYABLE transport error, so the loop's mid-stream retry
+// path fires once on it (mirroring ECONNRESET). It is matched via errors.Is, so a
+// wrapped, marker-free message is still retryable.
+func TestRetryableStreamOpenError_IdleTimeout(t *testing.T) {
+	if !retryableStreamOpenError(openai_compat.ErrStreamIdleTimeout) {
+		t.Fatal("ErrStreamIdleTimeout must be retryable (B-08)")
+	}
+	wrapped := opaqueWrapErr{msg: "upstream stream stalled", inner: openai_compat.ErrStreamIdleTimeout}
+	if !retryableStreamOpenError(wrapped) {
+		t.Fatal("a wrapped ErrStreamIdleTimeout must be retryable via errors.Is")
+	}
+}
+
 // opaqueWrapErr wraps a sentinel via Unwrap while presenting a message that
 // contains none of the substring markers — so only errors.Is can classify it.
 type opaqueWrapErr struct {

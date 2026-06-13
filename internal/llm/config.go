@@ -23,8 +23,15 @@ const (
 	defaultMaxTokens         = 4096
 	defaultTotalTimeoutSec   = 120
 	defaultConnectTimeoutSec = 10
-	defaultAdaptiveReasoning = true
-	defaultShowReasoning     = false
+	// defaultStreamIdleTimeoutSec bounds a stream stall (B-08): no bytes at all —
+	// not even an SSE keep-alive comment — within this window aborts the read as a
+	// retryable transport stall. The watchdog resets on ANY bytes (keep-alives
+	// included), so a long reasoning phase that streams `: OPENROUTER PROCESSING`
+	// pings does NOT trip it; only a dead connection does. It fires before the 120s
+	// total-call timeout so a hung upstream is caught early. 0 disables it.
+	defaultStreamIdleTimeoutSec = 60
+	defaultAdaptiveReasoning    = true
+	defaultShowReasoning        = true
 
 	// L2 budget inputs (Phase 4 AM, resolves OPEN QUESTION 2). ContextWindow is
 	// the ~1M DeepSeek-V4 window; MaxOutputTokens is a sane reservation cap. The
@@ -48,17 +55,18 @@ const (
 // AURA_LLM_* env var names (AURA_<DOMAIN>_<UNIT> convention). OPENROUTER_API_KEY
 // stays the canonical third-party secret name (NOT renamed to AURA_*).
 const (
-	envAPIKey            = "OPENROUTER_API_KEY" //nolint:gosec // G101: env var NAME, not a credential
-	envModel             = "AURA_LLM_MODEL"
-	envBaseURL           = "AURA_LLM_BASE_URL"
-	envTemperature       = "AURA_LLM_TEMPERATURE"
-	envMaxTokens         = "AURA_LLM_MAX_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
-	envAdaptiveReasoning = "AURA_LLM_ADAPTIVE_REASONING"
-	envShowReasoning     = "AURA_SHOW_REASONING"
-	envTotalTimeoutSec   = "AURA_LLM_TOTAL_TIMEOUT_SEC"
-	envConnectTimeoutSec = "AURA_LLM_CONNECT_TIMEOUT_SEC"
-	envContextWindow     = "AURA_MODEL_CONTEXT_WINDOW"
-	envMaxOutputTokens   = "AURA_MODEL_MAX_OUTPUT_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
+	envAPIKey               = "OPENROUTER_API_KEY" //nolint:gosec // G101: env var NAME, not a credential
+	envModel                = "AURA_LLM_MODEL"
+	envBaseURL              = "AURA_LLM_BASE_URL"
+	envTemperature          = "AURA_LLM_TEMPERATURE"
+	envMaxTokens            = "AURA_LLM_MAX_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
+	envAdaptiveReasoning    = "AURA_LLM_ADAPTIVE_REASONING"
+	envShowReasoning        = "AURA_SHOW_REASONING"
+	envTotalTimeoutSec      = "AURA_LLM_TOTAL_TIMEOUT_SEC"
+	envConnectTimeoutSec    = "AURA_LLM_CONNECT_TIMEOUT_SEC"
+	envStreamIdleTimeoutSec = "AURA_LLM_STREAM_IDLE_TIMEOUT_SEC"
+	envContextWindow        = "AURA_MODEL_CONTEXT_WINDOW"
+	envMaxOutputTokens      = "AURA_MODEL_MAX_OUTPUT_TOKENS" //nolint:gosec // G101 false positive: env var NAME, not a credential
 
 	// Completion gate knobs (amendment #54 / D-43). AURA_COMPLETION_* domain
 	// (not AURA_LLM_*) but they ride in llm.Config because the agent reads cfg
@@ -84,9 +92,13 @@ type Config struct {
 	APIKey            string
 	TotalTimeoutSec   int
 	ConnectTimeoutSec int
-	Temperature       float64
-	MaxTokens         int
-	AdaptiveReasoning bool
+	// StreamIdleTimeoutSec bounds the gap with NO bytes on an open stream (B-08).
+	// >0 arms a per-read idle watchdog in the openai_compat client that aborts a
+	// stalled stream with a retryable ErrStreamIdleTimeout; 0 disables it.
+	StreamIdleTimeoutSec int
+	Temperature          float64
+	MaxTokens            int
+	AdaptiveReasoning    bool
 
 	// ShowReasoning surfaces the model's chain-of-thought instead of redacting it
 	// (AURA_SHOW_REASONING, default false). It is the SINGLE master switch for live
@@ -124,20 +136,21 @@ type Config struct {
 // JSON null/zero would otherwise clobber a default). The prices map overrides
 // the seeded table entry-by-entry.
 type fileConfig struct {
-	Provider          *string           `json:"provider,omitempty"`
-	Model             *string           `json:"model,omitempty"`
-	BaseURL           *string           `json:"base_url,omitempty"`
-	APIKey            *string           `json:"api_key,omitempty"`
-	TotalTimeoutSec   *int              `json:"total_timeout_sec,omitempty"`
-	ConnectTimeoutSec *int              `json:"connect_timeout_sec,omitempty"`
-	Temperature       *float64          `json:"temperature,omitempty"`
-	MaxTokens         *int              `json:"max_tokens,omitempty"`
-	AdaptiveReasoning *bool             `json:"adaptive_reasoning,omitempty"`
-	ShowReasoning     *bool             `json:"show_reasoning,omitempty"`
-	ContextWindow     *int              `json:"context_window,omitempty"`
-	MaxOutputTokens   *int              `json:"max_output_tokens,omitempty"`
-	Headers           map[string]string `json:"headers,omitempty"`
-	Prices            map[string]Price  `json:"prices,omitempty"`
+	Provider             *string           `json:"provider,omitempty"`
+	Model                *string           `json:"model,omitempty"`
+	BaseURL              *string           `json:"base_url,omitempty"`
+	APIKey               *string           `json:"api_key,omitempty"`
+	TotalTimeoutSec      *int              `json:"total_timeout_sec,omitempty"`
+	ConnectTimeoutSec    *int              `json:"connect_timeout_sec,omitempty"`
+	StreamIdleTimeoutSec *int              `json:"stream_idle_timeout_sec,omitempty"`
+	Temperature          *float64          `json:"temperature,omitempty"`
+	MaxTokens            *int              `json:"max_tokens,omitempty"`
+	AdaptiveReasoning    *bool             `json:"adaptive_reasoning,omitempty"`
+	ShowReasoning        *bool             `json:"show_reasoning,omitempty"`
+	ContextWindow        *int              `json:"context_window,omitempty"`
+	MaxOutputTokens      *int              `json:"max_output_tokens,omitempty"`
+	Headers              map[string]string `json:"headers,omitempty"`
+	Prices               map[string]Price  `json:"prices,omitempty"`
 }
 
 // Load resolves the LLM configuration with the locked 4-tier precedence
@@ -152,17 +165,18 @@ func Load() (*Config, error) {
 	_ = godotenv.Load() // best-effort; .env feeds OPENROUTER_API_KEY into the env
 
 	cfg := &Config{
-		Provider:          defaultProvider,
-		Model:             defaultModel,
-		BaseURL:           defaultBaseURL,
-		Temperature:       defaultTemperature,
-		MaxTokens:         defaultMaxTokens,
-		AdaptiveReasoning: defaultAdaptiveReasoning,
-		ShowReasoning:     defaultShowReasoning,
-		ContextWindow:     defaultContextWindow,
-		MaxOutputTokens:   defaultMaxOutputTokens,
-		TotalTimeoutSec:   defaultTotalTimeoutSec,
-		ConnectTimeoutSec: defaultConnectTimeoutSec,
+		Provider:             defaultProvider,
+		Model:                defaultModel,
+		BaseURL:              defaultBaseURL,
+		Temperature:          defaultTemperature,
+		MaxTokens:            defaultMaxTokens,
+		AdaptiveReasoning:    defaultAdaptiveReasoning,
+		ShowReasoning:        defaultShowReasoning,
+		ContextWindow:        defaultContextWindow,
+		MaxOutputTokens:      defaultMaxOutputTokens,
+		TotalTimeoutSec:      defaultTotalTimeoutSec,
+		ConnectTimeoutSec:    defaultConnectTimeoutSec,
+		StreamIdleTimeoutSec: defaultStreamIdleTimeoutSec,
 		Headers: map[string]string{
 			"HTTP-Referer": headerReferer,
 			"X-Title":      headerTitle,
@@ -250,6 +264,9 @@ func overlayFile(cfg *Config, fc *fileConfig) {
 	if fc.ConnectTimeoutSec != nil {
 		cfg.ConnectTimeoutSec = *fc.ConnectTimeoutSec
 	}
+	if fc.StreamIdleTimeoutSec != nil {
+		cfg.StreamIdleTimeoutSec = *fc.StreamIdleTimeoutSec
+	}
 	if fc.Temperature != nil {
 		cfg.Temperature = *fc.Temperature
 	}
@@ -321,6 +338,11 @@ func applyEnvOverrides(cfg *Config) error {
 		return err
 	} else if ok {
 		cfg.ConnectTimeoutSec = v
+	}
+	if v, ok, err := envInt(envStreamIdleTimeoutSec); err != nil {
+		return err
+	} else if ok {
+		cfg.StreamIdleTimeoutSec = v
 	}
 	return nil
 }

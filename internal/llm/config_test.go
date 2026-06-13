@@ -76,6 +76,9 @@ func TestConfigLoadOrder(t *testing.T) {
 		if cfg.TotalTimeoutSec != 120 || cfg.ConnectTimeoutSec != 10 {
 			t.Errorf("timeouts = %d/%d, want 120/10", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)
 		}
+		if cfg.StreamIdleTimeoutSec != 60 {
+			t.Errorf("StreamIdleTimeoutSec = %d, want 60 default (B-08)", cfg.StreamIdleTimeoutSec)
+		}
 		if cfg.Headers["HTTP-Referer"] == "" || cfg.Headers["X-Title"] != "Aura" {
 			t.Errorf("attribution headers missing: %#v", cfg.Headers)
 		}
@@ -197,6 +200,7 @@ func TestConfigEnvNumericOverrides(t *testing.T) {
 	t.Setenv("AURA_LLM_MAX_TOKENS", "256")
 	t.Setenv("AURA_LLM_TOTAL_TIMEOUT_SEC", "45")
 	t.Setenv("AURA_LLM_CONNECT_TIMEOUT_SEC", "7")
+	t.Setenv("AURA_LLM_STREAM_IDLE_TIMEOUT_SEC", "33")
 	t.Setenv("AURA_LLM_BASE_URL", "https://env.example/v1")
 	t.Setenv("AURA_LLM_ADAPTIVE_REASONING", "false")
 
@@ -212,6 +216,9 @@ func TestConfigEnvNumericOverrides(t *testing.T) {
 	}
 	if cfg.TotalTimeoutSec != 45 || cfg.ConnectTimeoutSec != 7 {
 		t.Errorf("timeouts = %d/%d, want 45/7", cfg.TotalTimeoutSec, cfg.ConnectTimeoutSec)
+	}
+	if cfg.StreamIdleTimeoutSec != 33 {
+		t.Errorf("StreamIdleTimeoutSec = %d, want 33 from env override", cfg.StreamIdleTimeoutSec)
 	}
 	if cfg.BaseURL != "https://env.example/v1" {
 		t.Errorf("BaseURL = %q, want the env value", cfg.BaseURL)

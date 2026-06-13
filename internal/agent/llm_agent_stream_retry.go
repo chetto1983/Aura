@@ -95,6 +95,11 @@ func retryableStreamOpenError(err error) bool {
 			return true
 		}
 	}
+	// A stream idle-timeout stall (B-08) is a retryable transport error: the stream
+	// opened cleanly then went silent, so a fresh attempt may succeed.
+	if errors.Is(err, openai_compat.ErrStreamIdleTimeout) {
+		return true
+	}
 	// Typed network sentinels are the primary classifier (B-13): errors.Is sees a
 	// wrapped sentinel even when its rendered message carries no substring marker
 	// (e.g. a platform that renders ECONNRESET as "forcibly closed"). The substring
