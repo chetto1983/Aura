@@ -214,6 +214,16 @@ func TestProcessEnvForMCPFiltersParentSecretsAndKeepsConfiguredEnv(t *testing.T)
 	}
 }
 
+func TestProcessEnvForMCPStripsPrivateKeyFromChild(t *testing.T) {
+	// B-09 acceptance: PRIVATE_KEY must be stripped from the MCP child env,
+	// identically to the shell child path (shared secret.IsSecretEnvKey).
+	t.Setenv("PRIVATE_KEY", "leaked-private-key-material")
+	joined := strings.Join(processEnvForMCP(nil), "\x00")
+	if strings.Contains(joined, "leaked-private-key-material") || strings.Contains(joined, "PRIVATE_KEY=") {
+		t.Fatalf("PRIVATE_KEY leaked into MCP child env: %q", joined)
+	}
+}
+
 func TestBoundedStderrBufferKeepsTail(t *testing.T) {
 	buf := boundedbuffer.New(64)
 	_, _ = buf.Write([]byte(strings.Repeat("a", 120)))

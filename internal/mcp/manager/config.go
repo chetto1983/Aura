@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // ImportOptions controls how ImportProfile merges an incoming managed config,
@@ -82,7 +83,7 @@ func RedactEnv(env []string) []string {
 			out = append(out, entry)
 			continue
 		}
-		if isSecretEnvKey(key) && !isPlaceholderValue(key, value) {
+		if secret.IsSecretEnvKey(key) && !isPlaceholderValue(key, value) {
 			out = append(out, key+"=${"+key+"}")
 			continue
 		}
@@ -118,7 +119,7 @@ func mergeEnvPreserveCredentials(existing, incoming []string) []string {
 		// must never clobber a configured secret. But when the existing value is itself a
 		// placeholder, the incoming value wins so a real credential replaces it — the prior
 		// code kept the existing placeholder even when a real credential was incoming.
-		if prior, ok := existingByKey[key]; ok && isSecretEnvKey(key) && !isPlaceholderValue(key, prior) {
+		if prior, ok := existingByKey[key]; ok && secret.IsSecretEnvKey(key) && !isPlaceholderValue(key, prior) {
 			out = append(out, prior)
 			continue
 		}
@@ -139,16 +140,6 @@ func cutEnv(entry string) (key, value string, ok bool) {
 		return "", "", false
 	}
 	return key, value, true
-}
-
-func isSecretEnvKey(key string) bool {
-	lower := strings.ToLower(key)
-	for _, marker := range []string{"token", "secret", "pass", "key", "auth", "bearer", "credential"} {
-		if strings.Contains(lower, marker) {
-			return true
-		}
-	}
-	return false
 }
 
 func isPlaceholderValue(key, value string) bool {

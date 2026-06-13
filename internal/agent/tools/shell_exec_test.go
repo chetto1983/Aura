@@ -177,6 +177,16 @@ func TestMergeEnvFiltersParentSecretsButKeepsExplicitEnv(t *testing.T) {
 	}
 }
 
+func TestMergeEnvStripsPrivateKeyFromChild(t *testing.T) {
+	// B-09 acceptance: a bare *_KEY parent secret must not be inherited by the
+	// shell child — the same outcome the MCP path already had.
+	t.Setenv("PRIVATE_KEY", "leaked-private-key-material")
+	joined := strings.Join(mergeEnv(nil), "\x00")
+	if strings.Contains(joined, "leaked-private-key-material") || strings.Contains(joined, "PRIVATE_KEY=") {
+		t.Fatalf("PRIVATE_KEY leaked into shell child env: %q", joined)
+	}
+}
+
 func TestRedactModelPreviewRedactsCredentialShapes(t *testing.T) {
 	got := redactModelPreview("Authorization: Bearer sk-or-v1deadbeefcafebabe\n" +
 		"token=abc123def456\n" +

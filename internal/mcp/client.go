@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/boundedbuffer"
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // protocolVersion is the MCP revision Aura negotiates.
@@ -126,7 +127,7 @@ func processEnvForMCP(configured []string) []string {
 	seen := map[string]struct{}{}
 	for _, kv := range os.Environ() {
 		k, _, ok := strings.Cut(kv, "=")
-		if !ok || !mcpInheritedEnvKey(k) || secretEnvKey(k) {
+		if !ok || !mcpInheritedEnvKey(k) || secret.IsSecretEnvKey(k) {
 			continue
 		}
 		upper := strings.ToUpper(k)
@@ -159,16 +160,6 @@ func mcpInheritedEnvKey(key string) bool {
 	default:
 		return false
 	}
-}
-
-func secretEnvKey(key string) bool {
-	k := strings.ToLower(key)
-	for _, marker := range []string{"token", "secret", "password", "passwd", "api_key", "apikey", "auth", "bearer", "credential", "key"} {
-		if strings.Contains(k, marker) {
-			return true
-		}
-	}
-	return false
 }
 
 func replaceEnv(env []string, key, kv string) []string {

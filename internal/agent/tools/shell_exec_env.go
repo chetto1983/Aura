@@ -19,16 +19,6 @@ const (
 	shellRedacted          = "[REDACTED]"
 )
 
-func secretEnvKey(key string) bool {
-	k := strings.ToLower(key)
-	for _, marker := range []string{"token", "secret", "password", "passwd", "api_key", "apikey", "auth", "bearer", "credential"} {
-		if strings.Contains(k, marker) {
-			return true
-		}
-	}
-	return false
-}
-
 func effectiveShellTimeout(defaultTimeout time.Duration, requestedMs int64) time.Duration {
 	timeout := defaultTimeout
 	if timeout <= 0 {

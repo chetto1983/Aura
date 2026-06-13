@@ -12,6 +12,8 @@ import (
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/chetto1983/aura/internal/secret"
 )
 
 // ShellExec is Aura's keystone host tool: a full terminal. It runs a command line
@@ -407,7 +409,7 @@ func mergeEnv(extra map[string]string) []string {
 	env := make([]string, 0, len(os.Environ())+len(extra)+2)
 	for _, kv := range os.Environ() {
 		k, _, ok := strings.Cut(kv, "=")
-		if !ok || secretEnvKey(k) {
+		if !ok || secret.IsSecretEnvKey(k) {
 			continue
 		}
 		env = append(env, kv)
