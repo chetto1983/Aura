@@ -5,7 +5,9 @@ package conversations
 
 import (
 	"context"
+	"errors"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -318,6 +320,86 @@ func TestInsertContextRotEvent_BadUUID(t *testing.T) {
 	if err := s.insertContextRotEvent(context.Background(), "bad", 1, 10, 5); err == nil {
 		t.Error("insertContextRotEvent(bad id): want error")
 	}
+}
+
+// TestCleanupSidecarOnTxError_RemovesSpilledFileOnRollback proves M-04 / AP-16:
+// when the turn-append transaction rolls back AFTER appendTurnWrites already spilled
+// oversized content to a sidecar file, the orphaned file is removed (the rolled-back
+// DB row never points at it). On a successful tx the file is KEPT (it is the durable
+// home of the committed turn's content). No DB is needed: appendTurnWrites does the
+// real spill and cleanupSidecarOnTxError takes the tx step as an injectable seam.
+func TestCleanupSidecarOnTxError_RemovesSpilledFileOnRollback(t *testing.T) {
+	t.Parallel()
+	const convID = "00000000-0000-0000-0000-000000000001"
+
+	t.Run("rollback removes orphan", func(t *testing.T) {
+		t.Parallel()
+		s := New(nil, Config{RunDir: t.TempDir(), TurnCapBytes: 16})
+		turn, _, err := s.appendTurnWrites(AppendTurnParams{
+			ConversationID: convID, Seq: 1, Role: llm.RoleAssistant,
+			Content: strings.Repeat("x", 200), // > cap → forces a real sidecar spill
+		})
+		if err != nil {
+			t.Fatalf("appendTurnWrites: %v", err)
+		}
+		path := turn.ContentSidecarPath.String
+		if path == "" {
+			t.Fatal("expected a spilled sidecar path")
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("sidecar file must exist after spill: %v", err)
+		}
+
+		injected := errors.New("injected post-spill rollback")
+		got := cleanupSidecarOnTxError(
+			func() error { return injected },
+			func() string { return turn.ContentSidecarPath.String },
+		)
+		if !errors.Is(got, injected) {
+			t.Fatalf("want injected error propagated, got %v", got)
+		}
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("orphaned sidecar must be removed on rollback, stat err=%v", err)
+		}
+	})
+
+	t.Run("success keeps file", func(t *testing.T) {
+		t.Parallel()
+		s := New(nil, Config{RunDir: t.TempDir(), TurnCapBytes: 16})
+		turn, _, err := s.appendTurnWrites(AppendTurnParams{
+			ConversationID: convID, Seq: 2, Role: llm.RoleAssistant,
+			Content: strings.Repeat("y", 200),
+		})
+		if err != nil {
+			t.Fatalf("appendTurnWrites: %v", err)
+		}
+		path := turn.ContentSidecarPath.String
+		if path == "" {
+			t.Fatal("expected a spilled sidecar path")
+		}
+		got := cleanupSidecarOnTxError(
+			func() error { return nil },
+			func() string { return turn.ContentSidecarPath.String },
+		)
+		if got != nil {
+			t.Fatalf("success path must not error, got %v", got)
+		}
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("committed turn's sidecar must be KEPT on success: %v", err)
+		}
+	})
+
+	t.Run("no spill nothing to remove", func(t *testing.T) {
+		t.Parallel()
+		injected := errors.New("rollback with no spill")
+		got := cleanupSidecarOnTxError(
+			func() error { return injected },
+			func() string { return "" }, // inline turn → no sidecar
+		)
+		if !errors.Is(got, injected) {
+			t.Fatalf("want injected error propagated, got %v", got)
+		}
+	})
 }
 
 // TestSidecarDir_TraversalRejected proves the path-traversal guard.

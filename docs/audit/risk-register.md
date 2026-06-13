@@ -30,7 +30,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | B-09 | Divergent `secretEnvKey`; shell leaks bare `*_KEY` (R-07 divergence) | P2 | M | M | `shell_exec_env.go:22`, `mcp/client.go:164` | One shared `IsSecretEnvKey` (AP-13) | OPEN |
 | B-10 | Destructive-shell gate regex-bypassable + off by default (R-19 residual) | P2 | M | M | `shell_exec_env.go` | Document advisory + default patterns (AP-15) | OPEN |
 | B-11 | `shell_exec.go` god-class risk | P2 | H | L | `tools/shell_exec.go` | Pre-emptive split (AP-15) | CLOSED* |
-| M-04 | Sidecar spill outside tx → orphan-on-rollback unreclaimed in live conv | P2 | M | L | `conversations/store.go` | Spill-inside-tx or sweep reconciliation (AP-16) | OPEN |
+| M-04 | Sidecar spill outside tx → orphan-on-rollback unreclaimed in live conv | P2 | M | L | `conversations/store.go` | Cleanup-on-rollback: best-effort `os.Remove` the just-spilled sidecar when the turn-append tx errors (AP-16); boot orphan scan remains the backstop | **CLOSED** |
 | M-05 | `dropOldestRound` can drop the newest user turn (R-30 residual) | P2 | L | M | `context.go` | Never drop the newest round (AP-10) | CLOSED |
 | M-06 | `$AURA_RUN_DIR` + reasoningtrace grow monotonically (R-33) | P2 | M | M | `orphan_scan.go`, `reasoningtrace.go` | reasoningtrace rotation DONE; periodic sidecar sweep pending (AP-16) | PARTIAL |
 | O-06 | SIGTERM hard-cancels in-flight turns (asymmetric drain) (R-34) | P2 | M | M | `serve.go` | Bounded turn drain (AP-17) | OPEN |
