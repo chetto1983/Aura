@@ -22,6 +22,7 @@ import (
 	"errors"
 	"iter"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -137,7 +138,22 @@ func (c *todayCost) TodayUsage(ctx context.Context) (promptTokens, completionTok
 		return 0, 0, nil, err
 	}
 	cost := agg.TotalCostUSD
-	return int(agg.TotalPromptTokens), 0, &cost, nil
+	return clampInt64ToInt(agg.TotalPromptTokens), 0, &cost, nil
+}
+
+// clampInt64ToInt narrows an int64 token count to int, saturating into the int
+// range rather than truncating/sign-flipping when int is 32-bit (the aggregate's
+// source decodes via strconv.ParseInt, so the value is attacker-influenced in
+// principle even though real token sums are tiny). Negative sums clamp to 0.
+func clampInt64ToInt(v int64) int {
+	switch {
+	case v < 0:
+		return 0
+	case v > math.MaxInt:
+		return math.MaxInt
+	default:
+		return int(v)
+	}
 }
 
 // ensuringTurn wraps Runner.Turn so the first inbound message for a chat lazily

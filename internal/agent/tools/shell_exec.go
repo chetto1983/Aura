@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"runtime"
@@ -170,7 +171,7 @@ func (s *ShellExec) Execute(ctx context.Context, raw json.RawMessage) (ToolResul
 	finalCwd := cmd.Dir
 	if posix {
 		var capturedCwd string
-		out, capturedCwd = extractCwdMarker(out)
+		_, capturedCwd = extractCwdMarker(out)
 		combined, _ = removeCwdMarkerLine(combined)
 		if capturedCwd != "" {
 			finalCwd = capturedCwd
@@ -402,12 +403,28 @@ func shellInvocation(command string) (string, []string) {
 	return "/bin/sh", []string{"-c", command}
 }
 
+// mergeEnvCap returns a non-negative slice-capacity hint for mergeEnv, saturating
+// to maxInt rather than wrapping if the parent+extra+2 sum ever overflowed (it
+// cannot in practice — both are live-process len() values — but an unbounded add
+// feeding make() is an arithmetic-safety footgun CodeQL flags).
+func mergeEnvCap(parentLen, extraLen int) int {
+	const defaults = 2
+	if parentLen < 0 || extraLen < 0 {
+		return 0
+	}
+	if parentLen > math.MaxInt-extraLen-defaults {
+		return math.MaxInt
+	}
+	return parentLen + extraLen + defaults
+}
+
 // mergeEnv returns the process env plus Aura's runtime-safe defaults and the
 // caller's overrides. Python defaults to UTF-8 so model-written scripts with
 // symbols in progress output do not fail under Windows cp1252 consoles.
 func mergeEnv(extra map[string]string) []string {
-	env := make([]string, 0, len(os.Environ())+len(extra)+2)
-	for _, kv := range os.Environ() {
+	parent := os.Environ()
+	env := make([]string, 0, mergeEnvCap(len(parent), len(extra)))
+	for _, kv := range parent {
 		k, _, ok := strings.Cut(kv, "=")
 		if !ok || secret.IsSecretEnvKey(k) {
 			continue

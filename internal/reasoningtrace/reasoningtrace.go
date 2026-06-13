@@ -3,6 +3,7 @@ package reasoningtrace
 import (
 	"encoding/json"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -41,12 +42,27 @@ func Path() string {
 	return filepath.Join(os.TempDir(), "aura-reasoning-trace.jsonl")
 }
 
+// traceRowCap returns a non-negative map-capacity hint for the trace row,
+// saturating to maxInt rather than wrapping if fieldCount+4 ever overflowed (it
+// cannot in practice — fieldCount is a live map len() — but an unbounded add
+// feeding make() is an arithmetic-safety footgun CodeQL flags).
+func traceRowCap(fieldCount int) int {
+	const fixed = 4
+	if fieldCount < 0 {
+		return fixed
+	}
+	if fieldCount > math.MaxInt-fixed {
+		return math.MaxInt
+	}
+	return fieldCount + fixed
+}
+
 // Record writes a JSONL row with redacted fields when tracing is enabled.
 func Record(stage string, fields map[string]any) {
 	if !Enabled() {
 		return
 	}
-	row := make(map[string]any, len(fields)+4)
+	row := make(map[string]any, traceRowCap(len(fields)))
 	row["ts"] = time.Now().UTC().Format(time.RFC3339Nano)
 	row["pid"] = os.Getpid()
 	row["stage"] = stage

@@ -83,10 +83,11 @@ func (s *Store) GetRun(ctx context.Context, id string) (Run, error) {
 // LIMIT (a Postgres error), so any out-of-range input is floored to 1 rather than
 // silently misbehaving (WR-02).
 func (s *Store) DueTasks(ctx context.Context, limit int) ([]Task, error) {
-	if limit <= 0 || limit > math.MaxInt32 {
-		limit = 1
+	var lim int32 = 1
+	if limit > 0 && limit <= math.MaxInt32 {
+		lim = int32(limit)
 	}
-	rows, err := s.q.DueTasks(ctx, int32(limit))
+	rows, err := s.q.DueTasks(ctx, lim)
 	if err != nil {
 		return nil, fmt.Errorf("due tasks: %w", err)
 	}
