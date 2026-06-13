@@ -21,6 +21,7 @@ import (
 	"github.com/chetto1983/aura/internal/reasoninglearn"
 	"github.com/chetto1983/aura/internal/toolselectlearn"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 // defaultTitleTimeout bounds the best-effort auto-title LLM call (D-A5-01); it
@@ -328,12 +329,23 @@ func (r *Runner) EnsureConversation(ctx context.Context, convID string) error {
 		return nil
 	}
 	if _, err := r.NewConversationWithID(ctx, convID); err != nil {
-		if _, getErr := r.Conv.Get(ctx, convID); getErr == nil {
+		// Only a 23505 unique_violation is the benign lost-create race (a concurrent
+		// first-message creator won); classify by SQLSTATE, never by the row's mere
+		// presence — that would mask a real create failure (FK/constraint/connection)
+		// as "already exists" (M-08).
+		if isUniqueViolation(err) {
 			return nil // a concurrent creator won the race — the row now exists
 		}
 		return err
 	}
 	return nil
+}
+
+// isUniqueViolation classifies a pgx error as SQLSTATE 23505 via errors.As +
+// pgErr.Code — never string-matching the message (mirrors identity/cron/telegram).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
 // Turn drives ONE LLM round over the conversation and is the sole loop-driver

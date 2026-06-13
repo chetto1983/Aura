@@ -46,17 +46,19 @@ func (f *fakeCacheMetricStore) count() int {
 // keeps ordered turns per conversation so LoadHistory reconstructs them, and tracks
 // the title + aggregates the Runner sets. No DB → supports the 85% coverage floor.
 type fakeConvStore struct {
-	mu       sync.Mutex
-	convs    map[string]*conversations.Conversation
-	turns    map[string][]conversations.AppendTurnParams
-	cache    *fakeCacheMetricStore
-	titleErr error // injectable SetTitleIfNull error (auto-title resilience test)
-	manErr   error // injectable LoadManagedHistory error
-	countErr error // injectable CountTurns error
-	appendEr error // injectable AppendTurn error
-	failAppN int   // when >0, fail the Nth AppendTurn call with appendEr/errFake
-	appendN  int   // AppendTurn call counter
-	lastCfg  conversations.ContextConfig
+	mu        sync.Mutex
+	convs     map[string]*conversations.Conversation
+	turns     map[string][]conversations.AppendTurnParams
+	cache     *fakeCacheMetricStore
+	titleErr  error // injectable SetTitleIfNull error (auto-title resilience test)
+	manErr    error // injectable LoadManagedHistory error
+	countErr  error // injectable CountTurns error
+	appendEr  error // injectable AppendTurn error
+	failAppN  int   // when >0, fail the Nth AppendTurn call with appendEr/errFake
+	appendN   int   // AppendTurn call counter
+	createEr  error // injectable Create error (EnsureConversation classification test)
+	createRow bool  // when true, store the row even though Create returns createEr (a lost concurrent-create race the re-Get reconciles)
+	lastCfg   conversations.ContextConfig
 }
 
 func newFakeConvStore() *fakeConvStore {
@@ -70,6 +72,12 @@ func (f *fakeConvStore) Create(_ context.Context, p conversations.CreateParams) 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	c := conversations.Conversation{ID: p.ID, IdentityID: p.IdentityID, Status: conversations.StatusActive, Model: p.Model}
+	if f.createEr != nil {
+		if f.createRow {
+			f.convs[p.ID] = &c // a concurrent creator won the race: the row exists despite our error
+		}
+		return conversations.Conversation{}, f.createEr
+	}
 	f.convs[p.ID] = &c
 	return c, nil
 }
