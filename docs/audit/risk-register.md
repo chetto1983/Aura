@@ -29,7 +29,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | B-08 | No stream idle-timeout watchdog (stall bounded only by total timeout) | P2 | M | M | `internal/llm`, `llm_agent.go` | Per-chunk idle watchdog (AP-12) | **CLOSED** |
 | B-09 | Divergent `secretEnvKey`; shell leaks bare `*_KEY` (R-07 divergence) | P2 | M | M | `shell_exec_env.go:22`, `mcp/client.go:164` | One shared `secret.IsSecretEnvKey` (AP-13): canonical superset-marker predicate in new `internal/secret/envkey.go` now called by all 3 sites (shell child-env, MCP child-env, MCP managed-config export); the 3 divergent local copies deleted; `PRIVATE_KEY` (and every `*_KEY`) now redacts identically on shell + MCP — RED→GREEN cross-site acceptance tests | **CLOSED** |
 | B-10 | Destructive-shell gate regex-bypassable + off by default (R-19 residual) | P2 | M | M | `shell_exec_env.go` | Document advisory + default patterns (AP-15) | **CLOSED** |
-| B-11 | `shell_exec.go` god-class risk | P2 | H | L | `tools/shell_exec.go` | Pre-emptive split (AP-15) | CLOSED* |
+| B-11 | `shell_exec.go` god-class risk | P2 | H | L | `tools/shell_exec.go` | Genuinely split: R-41 extracted `shell_exec_session.go`; now 584 LOC | **CLOSED** |
 | M-04 | Sidecar spill outside tx → orphan-on-rollback unreclaimed in live conv | P2 | M | L | `conversations/store.go` | Cleanup-on-rollback: best-effort `os.Remove` the just-spilled sidecar when the turn-append tx errors (AP-16); boot orphan scan remains the backstop | **CLOSED** |
 | M-05 | `dropOldestRound` can drop the newest user turn (R-30 residual) | P2 | L | M | `context.go` | Never drop the newest round (AP-10) | CLOSED |
 | M-06 | `$AURA_RUN_DIR` + reasoningtrace grow monotonically (R-33) | P2 | M | M | `orphan_scan.go`, `reasoningtrace.go`, `sweeper.go` | reasoningtrace rotation [part 1] + periodic sidecar sweep/reclaim [part 2] now both done: a `conversations.Sweeper` interval worker (`AURA_RUN_DIR_SWEEP_INTERVAL_SEC`, default 1h, ≤0 disables) re-runs the boot `ScanOrphans` (orphan dirs + tmp TTL + audit size WARN) without a restart, Start/Stopped on the serve daemon's goleak-clean drain (AP-16) | **CLOSED** |
@@ -51,24 +51,22 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | R-26 | Ledger best-effort, not a pre-execution audit gate | P2 | M | M | `runner_persist.go` | Subsume into write-ahead intent log (AP-19) | TRACKED |
 | R-40 | Primary channel on telebot v4 beta | P3 | L | M | `go.mod` | Pin-watch GA; re-run HITL tests on bump | TRACKED |
 
-\* **B-11** sits at 599/600 LOC — it satisfies "no file >600 LOC" only by one line and re-breaches on the next touch; treat as nominal, not resolved.
+\* **B-11** was at 599/600 LOC (nominal) at the AM audit; R-41's session-state work extracted `shell_exec_session.go`, so `shell_exec.go` is now **584 LOC** with real headroom — genuinely resolved, not at the wire.
 
 ## Verified CLOSED (do not re-open)
 
 **P1 gate (`ec7fe2f6`, 2026-06-12, each with a passing acceptance test — see [`reconciliation-2026-06-13.md`](reconciliation-2026-06-13.md)):** B-01 (write-ahead ordering + recovery marker), B-02 (swarm untrusted provenance), B-03 (per-thread 409 guard), B-04 (honest skill schema + restored alert), O-01 (`obs.Init` tracer + JSON slog), O-02 (Prometheus `/metrics`), D-01 (non-root Dockerfile + hardened compose).
 
-**P2/P3:** M-05 (tail-preserving drop + `ErrContextWindowExceeded`), T-02 (`foldToASCII` table test), B-11 (599 LOC — nominal).
+**P2/P3:** M-05 (tail-preserving drop + `ErrContextWindowExceeded`), T-02 (`foldToASCII` table test), B-11 (genuinely split — `shell_exec_session.go`, 584 LOC).
 
 **Prior cycles:** R-01 (untrusted envelope, direct feeders), R-02 (MCP per-call timeout), R-03 (`fs_edit` empty `old_string`), R-04 (`WithDeadline`/`NodeTimeout` wired + shell clamp), R-06 (one-tx pause + load-time repair), R-07-shell (child-env denylist — see B-09 for the divergence), R-08 (subprocess ring/tail cap), R-10 (model-facing `task approve` removed), R-11 (retry + breaker checked before call — see B-05 for lifetime), R-12 (parallel fan-out cap), R-13, R-15 (`OwnsBudget`), R-16 (see B-07 for the budget-owner edge), R-17, R-18 (`send_file` fence), R-20/R-21 (MCP reconnect-no-replay + default Mutating), R-23/R-24/R-43 (sidecar id grammar + perms), R-35, R-37, R-39.
 
-## Top exposure now (P1 gate closed; open P2/P3 only)
+## Top exposure now (2026-06-13 PM — close-out complete)
 
-1. **M-01** `ask_user` answers destroyed by L1 compaction (P2, M/M)
-2. **M-03** small-window context protection silently off (P2, L/H)
-3. **M-02** non-atomic resume bricks the round (P2, L/H)
-4. **B-05/B-06** breaker per-turn + ungraceful open (P2, M)
-5. **B-08** no stream idle-timeout watchdog (P2, M/M)
-6. **M-04** sidecar orphan-on-rollback (P2, M/L)
-7. **B-09** divergent secret redaction — shell leaks `*_KEY` (P2, M/M)
-8. **O-05 / O-06 / O-07** no `/readyz`, no SIGTERM drain, no Windows CI (P2, M/M)
-9. **B-16** unbounded `fs_grep`/`fs_glob` walk (P3, L/M)
+The morning's top-exposure list (M-01, M-02, M-03, B-05/06, B-08, M-04, B-09, O-05/06, B-16, …) is **all closed**. The only remaining items:
+
+1. **O-07** — no Windows CI lane (P2, M/M) — the lone OPEN finding; deferred because its acceptance ("Windows kill-path runs in CI") can only be confirmed by an actual `windows-latest` CI run.
+2. **R-26** (TRACKED) — ledger best-effort, not a pre-execution audit gate (accepted, subsume into the write-ahead intent log).
+3. **R-40** (TRACKED) — primary channel on telebot v4 beta (pin-watch GA).
+
+> Separately, 5 pre-existing CodeQL high/warning alerts (allocation-size-overflow ×2, incorrect-integer-conversion ×2, dead-assignment) were fixed 2026-06-13 (`a2f395a1`); the rescan shows 0 open. These were arithmetic-safety issues outside this register.

@@ -8,16 +8,18 @@ Four read-only verification passes (reliability/loop · memory/context · ops/ob
 
 ## Score
 
-**6.5 → ~7.5.** All P1 go-live blockers are genuinely closed and tested (the audit predicted "closing the P1 set lands 7.5–8"). The score is held below 8 by the **22 OPEN + 6 PARTIAL P2/P3** items (no idle watchdog, per-turn breaker, microcompact answer-loss, no `/readyz`, no Windows CI, no fuzz/bench/mutation). Core loop ≈8.5; perimeter now ≈6.5.
+**6.5 → ~7.5 (2026-06-13 AM) → perimeter hardened (2026-06-13 PM).** All P1 go-live blockers were closed first; this session then closed every remaining P2/P3 except **O-07**. The specific gaps that the AM note said held the score below 8 — no idle watchdog, per-turn breaker, microcompact answer-loss, no `/readyz`, no Windows CI, no fuzz/bench/mutation — are now closed (B-08, B-05/06, M-01, O-05, T-01; O-07 Windows CI is the lone exception, deferred). The remaining gap is a CI lane to add, not a code defect.
 
-## Tally (40 findings)
+## Tally (40 findings) — final 2026-06-13 PM
 
 | Status | Count | IDs |
 |---|---|---|
-| **CLOSED** | 10 | B-01, B-02, B-03, B-04, O-01, O-02, D-01 (the P1 gate) · M-05, B-11, T-02 |
-| **PARTIAL** | 6 | B-07, B-13, M-06, O-04, B-15, T-03 |
-| **OPEN** | 22 | B-05, B-06, B-08, B-12, M-01, M-02, M-03, M-04, M-07, M-08, R-41, O-03, O-05, O-06, O-07, O-08, B-09, B-10, B-14, B-16, T-01, T-04 |
-| **TRACKED** | 2 | R-26, R-40 |
+| **CLOSED** | 37 | the P1 gate (B-01–B-04, O-01, O-02, D-01) + every other finding except O-07 — full list in `audit-index.json` `closed_ids`; per-finding evidence in the cluster tables below |
+| **PARTIAL** | 0 | — |
+| **OPEN** | 1 | O-07 (Windows CI lane — deferred; acceptance "Windows kill-path runs in CI" needs an actual `windows-latest` CI run to verify) |
+| **TRACKED** | 2 | R-26 (ledger-as-audit-gate, accepted), R-40 (telebot v4 GA pin-watch) |
+
+> The 10/6/22/2 split below the historical sections is the 2026-06-13 **morning** snapshot, superseded by this table.
 
 ## P1 gate — CLOSED & tested (`ec7fe2f6`, post-audit)
 
@@ -47,7 +49,9 @@ Four read-only verification passes (reliability/loop · memory/context · ops/ob
 | B-15 | PARTIAL | Bridged MCP tool desc/summary framed; **arg-schema field descriptions still unframed/uncapped**. |
 | T-03 | PARTIAL | Each deferred tool's `Spec()` tested individually; **no single golden sweep** over all deferred specs. |
 
-## Genuinely OPEN — the real remaining roadmap (22)
+## Roadmap that was open at the 2026-06-13 morning audit (22) — ALL executed this session except O-07
+
+> Historical record of the morning's open set. Every item below is now CLOSED (see the cluster tables further down for per-finding evidence + commits) **except O-07** (Windows CI lane, deferred). Kept for the audit trail.
 
 - **Reliability:** B-05 (per-turn breaker, `llm_agent.go:131`), B-06 (breaker-open → error slot not finalize), B-08 (no stream idle watchdog), B-12 (live partial-chunk replay, cosmetic), M-08 (`EnsureConversation` masks 23505).
 - **Memory/context:** M-01 (microcompact destroys `ask_user` answers — `context.go` `applyL1` has no sidecar guard), M-02 (`SubmitAnswer` inject + mark are **separate** txns — `runner_resume.go:77`), M-03 (`hardCap<=0` returns raw history; the bug is **test-locked** in `context_boundary_test.go`), M-04 (sidecar spill outside the tx), M-07 (`anyInt` lacks `json.Number` in **both** copies — `runner_persist.go` + `chat_render.go`), R-41 (per-session tool state never evicted).
@@ -55,9 +59,9 @@ Four read-only verification passes (reliability/loop · memory/context · ops/ob
 - **Security:** B-09 (divergent `secretEnvKey` — `PRIVATE_KEY` redacts in MCP, not shell), B-10 (destructive gate off by default, no conservative defaults), B-14 (`Registry.Register` silent overwrite), B-16 (`fs_grep`/`fs_glob` no node/deadline cap).
 - **Test apex:** T-01 (no fuzz, no agent-core mutation score, bench targets the wrong path), T-04 (`agenttest` still in the coverage denominator).
 
-## Sequencing for the close-out
+## Sequencing for the close-out — EXECUTED 2026-06-13 PM
 
-Reliability + memory correctness first (B-05/06, B-08, M-01, M-02, M-03, M-04), then ops/security (O-03/04/05/06/07/08, B-09/10/14/16), then test apex (T-01/03/04) and cleanups (M-07, B-12, M-08). Two need a design decision before coding: **M-03** (what `hardCap≤0` should do for small-window models) and **B-11** (whether to actually split the 599-LOC file or leave it at the wire).
+This planned sequence was carried out in order: reliability (B-05/06, B-08) → memory (M-01, M-02, M-03, M-04, M-07, R-41) → ops (O-03, O-05, O-06, O-08) → security (B-09, B-10, B-14, B-16) → cleanups + test apex (M-08, T-04, M-06 part 2, B-12, T-01). Both design-calls were resolved: **M-03** took the nanobot-style `ContextWindow/2` floor (researched, `M-03-context-window-research.md`); **B-11** was genuinely split (R-41 extracted `shell_exec_session.go`; `shell_exec.go` now 584 LOC). The only item NOT closed is **O-07** (Windows CI lane — deferred, needs a CI run to verify). 5 pre-existing CodeQL high alerts were also fixed (`a2f395a1`, 0 open after rescan), and the amendment-#20 quality snapshot was re-measured (CI green).
 
 ## Closures landed 2026-06-13 (the PARTIAL set, TDD-first, one atomic commit each)
 
