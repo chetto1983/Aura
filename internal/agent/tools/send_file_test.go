@@ -105,8 +105,17 @@ func TestSendFileAllowsWorkspacePath(t *testing.T) {
 		t.Fatal("workspace file must produce artifact meta")
 	}
 	art := (*res.Meta)["artifact"].(map[string]any)
-	if got := art["path"]; got != path {
-		t.Fatalf("artifact.path = %v, want resolved path %q", got, path)
+	// SendFile returns the EvalSymlinks-resolved workspace path (the fence at
+	// send_file.go:136). Compare against the resolved form, not the raw join, so the
+	// test is robust to a t.TempDir() carrying a symlink (macOS /var) or an 8.3 short
+	// name (a Windows CI runner whose user > 8 chars yields RUNNER~1, while the fence
+	// resolves it to the long form).
+	want, serr := filepath.EvalSymlinks(path)
+	if serr != nil {
+		t.Fatalf("evalsymlinks want: %v", serr)
+	}
+	if got := art["path"]; got != want {
+		t.Fatalf("artifact.path = %v, want resolved path %q", got, want)
 	}
 }
 
