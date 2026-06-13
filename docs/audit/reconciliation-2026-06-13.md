@@ -58,3 +58,16 @@ Four read-only verification passes (reliability/loop · memory/context · ops/ob
 ## Sequencing for the close-out
 
 Reliability + memory correctness first (B-05/06, B-08, M-01, M-02, M-03, M-04), then ops/security (O-03/04/05/06/07/08, B-09/10/14/16), then test apex (T-01/03/04) and cleanups (M-07, B-12, M-08). Two need a design decision before coding: **M-03** (what `hardCap≤0` should do for small-window models) and **B-11** (whether to actually split the 599-LOC file or leave it at the wire).
+
+## Closures landed 2026-06-13 (the PARTIAL set, TDD-first, one atomic commit each)
+
+| ID | Commit | What landed |
+|---|---|---|
+| B-13 | `b5767c2a` | typed network sentinels (`io.ErrUnexpectedEOF`/`io.EOF`/`syscall.ECONNRESET`/`ECONNREFUSED`/`ETIMEDOUT`) as the primary retry classifier; substring table demoted to last-resort fallback |
+| B-15 | `66e014a5` | recursive 512-byte cap on every MCP arg-schema `description`; `bridge_spec_test.go` split to hold the 600-LOC line |
+| O-04 | `a6373124` | `Config.Validate()` fail-fast on empty DB DSN / `NEO4J_PASSWORD`, wired into the shared chat/serve boot before any connection opens |
+| B-07 | `99ccf919` | no-progress guard terminates a `maxIter=0` loop whose budget-owning sub neither spends nor escalates; `terminalEventKind` carries the reason |
+| M-06 | `a822b1b5` | reasoningtrace rotates to a `.1` backup at a byte cap (`AURA_REASONING_TRACE_MAX_BYTES`, default 8 MiB) — **part 1 only** |
+| T-03 | `298d04ea` | golden well-formed-spec sweep over the 18 built-in tools (unique names, present summary/description, JSON-object params, deferred-richness) |
+
+**Result: 5 PARTIAL → CLOSED.** M-06 advanced to rotation-done; its **periodic sidecar TTL sweep + archived-sidecar reclaim** half remains a background-worker + reclaim-policy feature deferred to its own pass. Updated tally: **15 CLOSED / 1 PARTIAL (M-06) / 22 OPEN / 2 TRACKED.**

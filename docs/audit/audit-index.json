@@ -57,15 +57,15 @@
     "P3": 12
   },
   "findings_by_status_2026_06_13": {
-    "CLOSED": 10,
-    "PARTIAL": 6,
+    "CLOSED": 15,
+    "PARTIAL": 1,
     "OPEN": 22,
     "TRACKED": 2,
-    "closed_ids": ["B-01", "B-02", "B-03", "B-04", "O-01", "O-02", "D-01", "M-05", "B-11", "T-02"],
-    "partial_ids": ["B-07", "B-13", "M-06", "O-04", "B-15", "T-03"],
+    "closed_ids": ["B-01", "B-02", "B-03", "B-04", "O-01", "O-02", "D-01", "M-05", "B-11", "T-02", "B-07", "B-13", "O-04", "B-15", "T-03"],
+    "partial_ids": ["M-06"],
     "open_ids": ["B-05", "B-06", "B-08", "B-12", "M-01", "M-02", "M-03", "M-04", "M-07", "M-08", "R-41", "O-03", "O-05", "O-06", "O-07", "O-08", "B-09", "B-10", "B-14", "B-16", "T-01", "T-04"],
     "tracked_ids": ["R-26", "R-40"],
-    "note": "B-11 is CLOSED only nominally (shell_exec.go at 599/600 LOC); O-04 PARTIAL (redaction yes, Config.Validate() no)"
+    "note": "2026-06-13 PM: the 6 PARTIAL findings were worked TDD-first — 5 CLOSED (B-07,B-13,O-04,B-15,T-03), M-06 advanced to rotation-done (periodic sidecar sweep pending). B-11 is CLOSED only nominally (shell_exec.go at 599/600 LOC). Commits in reconciliation-2026-06-13.md."
   },
   "prior_p0_status": [
     {"id": "R-01", "title": "Untrusted tool output re-enters prompt unmarked", "status": "CLOSED for the 8 direct feeders (trust.go envelope verified); RESIDUAL HOLE: swarm_spawn reports bypass it (see B-02)"},
