@@ -76,6 +76,7 @@ Reliability + memory correctness first (B-05/06, B-08, M-01, M-02, M-03, M-04), 
 
 | ID | Commit | What landed |
 |---|---|---|
-| B-05 | _(this commit)_ | breaker hoisted to a **process-lifetime Runner singleton** (`Deps.Breaker` → `Runner.breaker`, defaulted via `llm.NewDefaultBreaker`) and injected into every per-turn agent (`LlmAgentConfig.Breaker`) so a provider outage trips cross-turn protection — the per-turn breaker reset on each rebuild and never opened. Tests: `TestInjectedBreakerIsSharedNotPerAgent` (agent mechanism), `TestRunnerInjectsSharedBreakerIntoEveryTurn` (Runner wiring), `TestNewDefaultBreakerUsesPolicyDefaults` (policy single-source). |
+| B-05 | `52c0565b` | breaker hoisted to a **process-lifetime Runner singleton** (`Deps.Breaker` → `Runner.breaker`, defaulted via `llm.NewDefaultBreaker`) and injected into every per-turn agent (`LlmAgentConfig.Breaker`) so a provider outage trips cross-turn protection — the per-turn breaker reset on each rebuild and never opened. Refactor-on-touch: `consume` split to `llm_agent_consume.go`. Tests: `TestInjectedBreakerIsSharedNotPerAgent` (agent mechanism), `TestRunnerInjectsSharedBreakerIntoEveryTurn` (Runner wiring), `TestNewDefaultBreakerUsesPolicyDefaults` (policy single-source). |
+| B-06 | _(this commit)_ | breaker-open now routes to `finalize()` (a non-empty terminal Event via the deterministic stub digest) instead of the iter.Seq2 **error slot** — graceful degradation, not an infra failure. `finalize`'s own synthesis short-circuits the same open breaker and falls through to the stub, so the terminal is always non-empty. Test: `TestBreakerOpenRoutesToFinalize`. |
 
-Running tally after this section: **16 CLOSED / 1 PARTIAL (M-06) / 21 OPEN / 2 TRACKED.**
+Running tally after this section: **17 CLOSED / 1 PARTIAL (M-06) / 20 OPEN / 2 TRACKED.**

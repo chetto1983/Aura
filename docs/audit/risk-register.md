@@ -21,7 +21,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | M-02 | `SubmitAnswer` non-atomic → duplicate resume bricks the round (R-27) | P2 | L | H | `runner_resume.go:77` | One-transaction inject+mark (AP-9) | OPEN |
 | M-03 | `hardCap<=0` silently disables all context protection (R-29) | P2 | L | H | `context.go` (hardCap gate, **test-locked**) | Treat ≤0 as config error / per-model floor (AP-10) | OPEN |
 | B-05 | Circuit breaker per-turn → no cross-turn protection | P2 | M | M | `llm_agent.go:131` | Hoist to Runner singleton (AP-11) | **CLOSED** |
-| B-06 | Breaker-open routes to error slot, not finalize | P2 | M | L | `llm_agent.go` (streamWithOpenRetry) | Route to finalize (AP-11) | OPEN |
+| B-06 | Breaker-open routes to error slot, not finalize | P2 | M | L | `llm_agent.go` (streamWithOpenRetry) | Route to finalize (AP-11) | **CLOSED** |
 | B-07 | `LoopAgent` maxIter=0 hot-spins on a budget-owning sub (latent, off prod path) | P2 | L | H | `workflow/loop.go` | No-progress guard | **CLOSED** |
 | O-03 | otel global no-op error handler silences all prod otel errors (R-31) | P2 | H | L | `tracing.go:63` | Rate-limited logging handler (AP-5) | OPEN |
 | O-04 | No boot secret validation; no secret-redacting log handler (R-32 adj.) | P2 | M | M | `config.go`, `obs/init.go` | `Config.Validate()` + redact `ReplaceAttr` (AP-14) | **CLOSED** |

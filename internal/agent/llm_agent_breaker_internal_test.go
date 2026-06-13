@@ -3,11 +3,13 @@ package agent
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
+	"github.com/google/uuid"
 )
 
 // TestInjectedBreakerIsSharedNotPerAgent proves B-05: a breaker injected via
@@ -64,5 +66,47 @@ func TestInjectedBreakerIsSharedNotPerAgent(t *testing.T) {
 	}
 	if c3.calls != 1 {
 		t.Fatalf("control agent must call its provider exactly once, calls=%d", c3.calls)
+	}
+}
+
+// TestBreakerOpenRoutesToFinalize proves B-06: an open breaker at the start of a turn
+// is graceful degradation, not an infra failure. The loop must route to finalize() —
+// a NON-EMPTY terminal Event — instead of the iter.Seq2 error slot, and must never
+// call the provider (the breaker short-circuits the stream open). finalize's own
+// synthesis hits the same open breaker and falls back to the deterministic stub
+// digest, which is non-empty even with no gathered results.
+func TestBreakerOpenRoutesToFinalize(t *testing.T) {
+	open := llm.NewBreaker(1, time.Hour)
+	open.Failure(errors.New("provider down"))
+
+	client := &retryClient{chunks: []llm.Chunk{{Text: "must never be called"}}}
+	reg := tools.NewRegistry()
+	reg.Register(tools.TextResponse{})
+	a := NewLlmAgent(LlmAgentConfig{
+		Client:    client,
+		LLM:       llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 30},
+		Registry:  reg,
+		RunDir:    t.TempDir(),
+		SessionID: uuid.Must(uuid.NewV7()).String(),
+		UserTurns: []llm.Message{{Role: llm.RoleUser, Content: "hi"}},
+		Breaker:   open,
+	})
+	budget, err := NewBudget(BudgetOptions{})
+	if err != nil {
+		t.Fatalf("NewBudget: %v", err)
+	}
+
+	evs, err := collectInternal(a.Run(InvocationContext{
+		Ctx: context.Background(), RequestID: uuid.Must(uuid.NewV7()), Budget: budget,
+	}))
+	if err != nil {
+		t.Fatalf("an open breaker must NOT surface via the iter.Seq2 error slot, got %v", err)
+	}
+	final := finalInternal(t, evs)
+	if strings.TrimSpace(final) == "" {
+		t.Fatal("an open-breaker turn must still emit a non-empty terminal answer (finalize)")
+	}
+	if client.calls != 0 {
+		t.Fatalf("an open breaker must short-circuit before calling the provider, calls=%d", client.calls)
 	}
 }

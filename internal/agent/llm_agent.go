@@ -13,6 +13,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"strings"
@@ -256,6 +257,15 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			if err != nil {
 				span.End()
 				cancel()
+				if errors.Is(err, llm.ErrBreakerOpen) {
+					// Breaker-open is graceful degradation, not an infra failure (B-06):
+					// finalize from whatever was already gathered instead of surfacing the
+					// iter.Seq2 error slot. finalize's own synthesis short-circuits the same
+					// open breaker and falls back to the deterministic stub digest, so the
+					// terminal Event is always non-empty.
+					a.finalize(ic, spanID, parentSpanID, requestID, "breaker_open", yield)
+					return
+				}
 				yield(nil, err) // REAL infra failure → error slot (D-15)
 				return
 			}
