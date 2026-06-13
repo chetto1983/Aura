@@ -63,6 +63,11 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 	})).With("service", service, "version", version)
 	slog.SetDefault(logger)
 
+	// Surface OTel SDK errors (export failures, queue-full drops) through the
+	// structured logger instead of swallowing them — rate-limited so a broken
+	// exporter cannot flood the logs (O-03).
+	installOTelErrorHandler(logger)
+
 	exporter := cfg.OtelExporter
 	if exporter == "" {
 		exporter = defaultExporter

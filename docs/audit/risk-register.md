@@ -23,7 +23,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | B-05 | Circuit breaker per-turn → no cross-turn protection | P2 | M | M | `llm_agent.go:131` | Hoist to Runner singleton (AP-11) | **CLOSED** |
 | B-06 | Breaker-open routes to error slot, not finalize | P2 | M | L | `llm_agent.go` (streamWithOpenRetry) | Route to finalize (AP-11) | **CLOSED** |
 | B-07 | `LoopAgent` maxIter=0 hot-spins on a budget-owning sub (latent, off prod path) | P2 | L | H | `workflow/loop.go` | No-progress guard | **CLOSED** |
-| O-03 | otel global no-op error handler silences all prod otel errors (R-31) | P2 | H | L | `tracing.go:63` | Rate-limited logging handler (AP-5) | OPEN |
+| O-03 | otel global no-op error handler silences all prod otel errors (R-31) | P2 | H | L | `tracing.go:63` | Rate-limited slog handler in `obs.Init` (AP-5): logs each OTel error WARN, ≤1/window (60s default), next emission carries the suppressed count; covers every exporter mode (no-op deleted from the otlp branch) | **CLOSED** |
 | O-04 | No boot secret validation; no secret-redacting log handler (R-32 adj.) | P2 | M | M | `config.go`, `obs/init.go` | `Config.Validate()` + redact `ReplaceAttr` (AP-14) | **CLOSED** |
 | O-05 | `/healthz` PG-only; no Neo4j/provider readiness; no `/readyz` (R-14 residual) | P2 | M | M | `serve.go`, `agui/server.go` | Dep probes + `/readyz` (AP-14) | OPEN |
 | B-08 | No stream idle-timeout watchdog (stall bounded only by total timeout) | P2 | M | M | `internal/llm`, `llm_agent.go` | Per-chunk idle watchdog (AP-12) | **CLOSED** |

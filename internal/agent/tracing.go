@@ -53,14 +53,13 @@ func newTracerProvider(ctx context.Context, mode, endpoint string) (*sdktrace.Tr
 	case exporterStdout:
 		exp, err = stdouttrace.New()
 	default: // otlp (the D-06 default)
-		// Genuinely silent-drop without a collector (A2): the OTel SDK reports
-		// export failures (e.g. "export timeout: connection refused" on the
-		// default localhost:4317 with no collector) through the GLOBAL error
-		// handler, which otherwise logs to stderr and pollutes the REPL on exit —
-		// even though Shutdown's returned error is intentionally ignored. A no-op
-		// handler makes the documented silent-drop real; spans still batch + ship
-		// once a collector appears.
-		otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) {}))
+		// Without a collector the OTel SDK reports export failures (e.g. "export
+		// timeout: connection refused" on the default localhost:4317) through the
+		// GLOBAL error handler. The process-global handler is installed by
+		// obs.Init (rate-limited slog, O-03) so those errors surface but a broken
+		// exporter cannot flood the logs — this branch no longer installs a no-op
+		// that would silently swallow every future export error process-wide.
+		// Spans still batch in the background and ship once a collector appears.
 		exp, err = otlptracegrpc.New(ctx,
 			otlptracegrpc.WithEndpoint(endpoint),
 			otlptracegrpc.WithInsecure())
