@@ -102,6 +102,14 @@ func (t *TodoTool) Execute(ctx context.Context, raw json.RawMessage) (ToolResult
 	return NewResult(ctx, renderTodos(a.Todos))
 }
 
+// Evict reclaims a finished session's todo list (SessionEvictor, R-41). An unknown
+// session id is a no-op; concurrency-safe under the same mutex that guards byID.
+func (t *TodoTool) Evict(sessionID string) {
+	t.mu.Lock()
+	delete(t.byID, sessionID)
+	t.mu.Unlock()
+}
+
 func renderTodos(todos []todoItem) string {
 	if len(todos) == 0 {
 		return "[todo list cleared]"

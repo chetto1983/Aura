@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 )
 
@@ -168,4 +169,26 @@ func shellSessionKey(ctx context.Context) string {
 
 func shellApprovalKey(sessionID, digest string) string {
 	return sessionID + "\x00" + digest
+}
+
+// Evict reclaims a finished session's approval ledger (SessionEvictor, R-41). The
+// maps are keyed by sessionID+"\x00"+digest, so every entry under the session
+// prefix is dropped. An unknown session id is a no-op; concurrency-safe under a.mu.
+func (a *ShellApprovals) Evict(sessionID string) {
+	if a == nil || sessionID == "" {
+		return
+	}
+	prefix := sessionID + "\x00"
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for k := range a.approved {
+		if strings.HasPrefix(k, prefix) {
+			delete(a.approved, k)
+		}
+	}
+	for k := range a.pending {
+		if strings.HasPrefix(k, prefix) {
+			delete(a.pending, k)
+		}
+	}
 }

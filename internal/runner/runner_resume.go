@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/askuser"
 	"github.com/chetto1983/aura/internal/conversations"
 	"github.com/chetto1983/aura/internal/llm"
@@ -230,6 +231,7 @@ func (r *Runner) Stop(ctx context.Context, convID string) error {
 	if resolveErr == nil {
 		resolveErr = r.pause.AutoResolveForConversation(ctx, convID)
 	}
+	r.evictSessionToolState(convID)
 	if !r.waitWorkers(r.stopTimeout) {
 		// The drain timed out — surface it, but the auto-resolve already ran.
 		if resolveErr != nil {
@@ -241,6 +243,24 @@ func (r *Runner) Stop(ctx context.Context, convID string) error {
 		return fmt.Errorf("stop %s: auto-resolve: %w", convID, resolveErr)
 	}
 	return nil
+}
+
+// evictSessionToolState reclaims the conversation's per-session tool state so a
+// long-running `serve` daemon does not leak it as conversations come and go (audit
+// R-41 / AP-16). It ranges the tool registry and calls Evict(convID) on every tool
+// implementing tools.SessionEvictor (todo_write's list, shell_exec's tracked cwd,
+// the shell-approval ledger). sessionID == conversationID per D-26. Each Evict is
+// idempotent and self-locked, so this is safe to call on a conversation with no
+// tracked state.
+func (r *Runner) evictSessionToolState(convID string) {
+	if r.registry == nil {
+		return
+	}
+	for _, t := range r.registry.All() {
+		if ev, ok := t.(tools.SessionEvictor); ok {
+			ev.Evict(convID)
+		}
+	}
 }
 
 // waitWorkers blocks until the auto-title WaitGroup drains or the timeout elapses,

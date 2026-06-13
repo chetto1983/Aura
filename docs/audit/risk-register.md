@@ -35,7 +35,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | M-06 | `$AURA_RUN_DIR` + reasoningtrace grow monotonically (R-33) | P2 | M | M | `orphan_scan.go`, `reasoningtrace.go` | reasoningtrace rotation DONE; periodic sidecar sweep pending (AP-16) | PARTIAL |
 | O-06 | SIGTERM hard-cancels in-flight turns (asymmetric drain) (R-34) | P2 | M | M | `serve.go` | Bounded turn drain (AP-17) | OPEN |
 | O-07 | No Windows CI lane; OS-specific kill code untested (R-36) | P2 | M | M | `.github/workflows/ci.yml` | `windows-latest` lane (AP-17) | OPEN |
-| R-41 | Per-session tool state never evicted in the daemon | P2 | M | L | `todo.go`, `shell_bg.go` | `Evict(sessionID)` hook (AP-16) | OPEN |
+| R-41 | Per-session tool state never evicted in the daemon | P2 | M | L | `todo.go`, `shell_exec.go`, `shell_approval.go` | `SessionEvictor.Evict(sessionID)` hook; `Runner.Stop` ranges the registry and evicts the todo list + shell cwd + approval ledger when a conversation ends (AP-16) | **CLOSED** |
 | T-01 | No fuzz/bench + no mutation score for agent core | P2 | H | M | agent test suite | Fuzz+bench+mutation (AP-21) | OPEN |
 | M-07 | `anyInt` rejects `json.Number` (dormant token-zeroing) (R-42) | P3 | L | M | `runner_persist.go` + `chat_render.go` | Add `json.Number` case (AP-22) | **CLOSED** |
 | B-12 | Mid-stream retry replays partial chunks to the user (cosmetic) | P3 | M | L | `llm_agent.go`, `chat_render.go` | Buffer chunks until clean completion | OPEN |
