@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -39,6 +41,37 @@ func TestWithout(t *testing.T) {
 	if len(child.All()) != 2 || len(parent.All()) != 3 {
 		t.Errorf("child=%d parent=%d, want child=2 parent=3", len(child.All()), len(parent.All()))
 	}
+}
+
+// TestRegisterDistinctNamesSucceeds asserts the normal path: registering tools
+// with distinct names keeps every one of them.
+func TestRegisterDistinctNamesSucceeds(t *testing.T) {
+	r := NewRegistry()
+	r.Register(stubTool{name: "alpha"})
+	r.Register(stubTool{name: "beta"})
+	if len(r.All()) != 2 {
+		t.Fatalf("want 2 tools, got %d", len(r.All()))
+	}
+}
+
+// TestRegisterDuplicateNamePanics asserts B-14: a duplicate name is a startup
+// programming error (a name collision silently shadowing a tool) and must FAIL
+// LOUD — like net/http's duplicate-route panic — not be swallowed by a silent
+// overwrite.
+func TestRegisterDuplicateNamePanics(t *testing.T) {
+	r := NewRegistry()
+	r.Register(stubTool{name: "dup"})
+
+	defer func() {
+		rec := recover()
+		if rec == nil {
+			t.Fatal("a duplicate tool-name registration must panic, not silently overwrite")
+		}
+		if msg := fmt.Sprint(rec); !strings.Contains(msg, "dup") {
+			t.Fatalf("panic message should name the colliding tool, got %q", msg)
+		}
+	}()
+	r.Register(stubTool{name: "dup"})
 }
 
 // TestWithoutMultipleNames asserts dropping several names at once and that an

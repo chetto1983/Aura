@@ -24,6 +24,7 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/prompt"
+	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/canonicaljson"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
@@ -179,7 +180,10 @@ func replayAudit(ctx context.Context, turns []fixtureTurn, errOut io.Writer) ([]
 	}
 	defer cleanupSkills()
 
-	reg := buildRegistry()
+	// buildRegistry already wires a default `skill` tool; the audit replaces it with
+	// its own deterministic one (fixed skill set → byte-stable Description across the
+	// 20 turns). Drop the default first so Register does not collide (B-14 fail-loud).
+	reg := tools.Without(buildRegistry(), skillManifestName)
 	reg.Register(newSkillTool(auditCfg, nil)) // non-deferred; manifest rides its Description (D-06)
 
 	client := agenttest.NewFakeClient(scriptTurns(turns)...)

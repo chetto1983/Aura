@@ -41,7 +41,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | B-12 | Mid-stream retry replays partial chunks to the user (cosmetic) | P3 | M | L | `llm_agent.go`, `chat_render.go` | Buffer chunks until clean completion | OPEN |
 | B-13 | Stream-open retry classifies by substring fallback (R-38 residual) | P3 | M | L | `llm_agent_stream_retry.go` | Typed sentinels (`ECONNRESET`/`ErrUnexpectedEOF`) | **CLOSED** |
 | O-08 | Span coverage `llm.request`-only; no turn/tool spans | P3 | M | L | `tracing.go`, `llm_agent.go` | `agent.turn` + `tool.execute` spans (AP-20) | **CLOSED** (`agent.turn` wraps the Run loop, `tool.execute` per dispatch; `llm.request`+`tool.execute` nest under `agent.turn` via the threaded turn ctx) |
-| B-14 | `Registry.Register` silent overwrite on duplicate (R-45) | P3 | L | M | `tools/spec.go:102` | Fail-loud on duplicate | OPEN |
+| B-14 | `Registry.Register` silent overwrite on duplicate (R-45) | P3 | L | M | `tools/spec.go:102` | Fail-loud on duplicate | **CLOSED** |
 | B-15 | Unframed/uncapped MCP argument-schema descriptions (R-22 residual) | P3 | L | H | `bridge.go`, `search.go` | Cap arg-schema descriptions | **CLOSED** |
 | B-16 | `fs_grep`/`fs_glob` no node/time budget (`path:/` full-disk scan) | P3 | L | M | `fs_grep.go`, `fs_glob.go` | Node-count/deadline cap | OPEN |
 | T-02 | `foldToASCII` primary-channel filename folding undertested | P3 | L | L | `send_file.go` | Table test | CLOSED |

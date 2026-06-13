@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 )
 
 // ErrNoNonDeferredTool is returned by Registry.Validate when no actionable
@@ -99,8 +100,20 @@ func NewRegistry() *Registry {
 	return &Registry{tools: make(map[string]Tool)}
 }
 
+// Register adds a tool to the registry, keyed by its Spec().Name. Registration
+// is a boot-time operation (the registry is immutable for the lifetime of a run),
+// so a duplicate name is a programming error — two tools fighting for one name,
+// where a silent overwrite would shadow the first tool and leave the model
+// dispatching against whichever happened to register last. It therefore FAILS
+// LOUD with a panic at registration time, the same way net/http panics on a
+// duplicate route. Register has no error return because no caller can sensibly
+// recover from a static wiring collision: fix the wiring.
 func (r *Registry) Register(t Tool) {
-	r.tools[t.Spec().Name] = t
+	name := t.Spec().Name
+	if _, dup := r.tools[name]; dup {
+		panic(fmt.Sprintf("tools.Registry.Register: duplicate tool name %q — a tool with this name is already registered", name))
+	}
+	r.tools[name] = t
 }
 
 func (r *Registry) Get(name string) (Tool, bool) {
