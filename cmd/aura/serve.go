@@ -32,6 +32,7 @@ import (
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/cron"
 	"github.com/chetto1983/aura/internal/cron/handlers"
+	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/obs"
 	"github.com/chetto1983/aura/internal/scoring"
 )
@@ -208,6 +209,12 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 			}
 			return map[string]any{"scheduler_last_tick": last.Format(time.RFC3339)}
 		},
+		// /readyz reflects the daemon's REQUIRED backends (O-05/AP-14): Postgres
+		// (the open pool) and Neo4j (a native-driver connectivity dial — the daemon
+		// holds no long-lived graph client, the MCP subprocess is conditional). When
+		// any required dep is unreachable /readyz answers 503 so an orchestrator
+		// stops routing to this instance; /healthz stays a cheap PG-only liveness.
+		ReadinessProbes: serveReadinessProbes(chat),
 	})
 	httpSrv := &http.Server{
 		Addr:              chat.cfg.AGUIBind,
@@ -226,6 +233,28 @@ func bootServe(ctx context.Context, channelOverride func(name string) (enabled, 
 		channels:  reg,
 		setupSrv:  setupSrv,
 	}, nil
+}
+
+// serveReadinessProbes builds the /readyz probe set over the daemon's required
+// backends (O-05/AP-14): Postgres (the open pool's Ping) and Neo4j (a bounded
+// native-driver connectivity dial). The daemon holds no long-lived graph client —
+// the mcp-neo4j-cypher subprocess is opened only behind the reasoning-learner gate
+// — so the Neo4j probe dials from cfg.Neo4j each call; the per-probe timeout in the
+// agui handler bounds it. A probe whose dependency handle is absent (a nil pool)
+// is omitted rather than reported as a false failure.
+func serveReadinessProbes(chat *chatEnv) []agui.ReadinessProbe {
+	probes := make([]agui.ReadinessProbe, 0, 2)
+	if chat.pool != nil {
+		probes = append(probes, agui.ReadinessProbe{
+			Name:  "postgres",
+			Check: func(ctx context.Context) error { return chat.pool.Ping(ctx) },
+		})
+	}
+	probes = append(probes, agui.ReadinessProbe{
+		Name:  "neo4j",
+		Check: func(ctx context.Context) error { return knowledge.VerifyConnectivity(ctx, &chat.cfg.Neo4j) },
+	})
+	return probes
 }
 
 // seedSkillTTLSweep idempotently seeds the daily snippet TTL-sweep task (D-16): it

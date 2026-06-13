@@ -37,11 +37,16 @@ var errUnsupportedUserMessageContent = errors.New("agui: last user message conte
 // (default restrictive, T-12-13); BufferCap is the cap of the per-connection SSE
 // pump channel (drop-on-full, never block the Loop, T-12-09). A non-positive
 // BufferCap falls back to the fanout default.
+// ReadinessProbes are the required-dependency checks /readyz runs (O-05/AP-14):
+// /healthz stays a cheap LIVENESS check, /readyz reflects whether the required
+// backends (PG + Neo4j) are reachable. An empty list reports ready (the daemon was
+// started without gated deps).
 type ServerConfig struct {
-	CORSPermissive bool
-	BufferCap      int
-	HealthCheck    func(context.Context) error
-	HealthDetails  func() map[string]any
+	CORSPermissive  bool
+	BufferCap       int
+	HealthCheck     func(context.Context) error
+	HealthDetails   func() map[string]any
+	ReadinessProbes []ReadinessProbe
 }
 
 // Runner is the narrow agent-driver surface the server consumes (D-A2-02; *runner.Runner
@@ -85,6 +90,7 @@ func NewServer(run Runner, conv ConversationStore, cfg ServerConfig) *Server {
 func (s *Server) Mux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /readyz", s.handleReadyz)
 	mux.Handle("GET /debug/vars", expvar.Handler())
 	mux.Handle("GET /metrics", promhttp.Handler())
 	mux.HandleFunc("POST /agent/run", s.handleRun)
