@@ -1,11 +1,14 @@
 package tools
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // Native in-process filesystem tools (fs_read/fs_write/fs_edit/fs_grep/fs_glob)
@@ -156,4 +159,90 @@ func looksBinary(b []byte) bool {
 		}
 	}
 	return false
+}
+
+// Walk-budget caps (B-16): fs_grep/fs_glob walk an arbitrary tree, so a `path:/`
+// (or any huge directory) could otherwise scan the whole disk and wedge a turn —
+// the maxResults cap only bounds MATCHES, not nodes VISITED, so a walk that
+// matches nothing still touches every file. The node-count and deadline caps
+// below bound the walk itself; on hitting either the walk stops early and the
+// tool flags walkTruncatedMarker so the model knows the scan was capped, not
+// exhaustive. Both are tunable for an operator who deliberately greps a large
+// tree; the defaults are generous enough for ordinary project trees.
+const (
+	envFSWalkNodeCap   = "AURA_FS_WALK_NODE_CAP"
+	envFSWalkTimeoutMs = "AURA_FS_WALK_TIMEOUT_MS"
+
+	defaultFSWalkNodeCap  = 50000
+	defaultFSWalkDeadline = 5 * time.Second
+
+	walkTruncatedMarker = "[walk truncated: hit the node/time budget — results are partial, not exhaustive; narrow `path` or `glob`]"
+)
+
+func fsWalkNodeCap() int {
+	if v := strings.TrimSpace(os.Getenv(envFSWalkNodeCap)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultFSWalkNodeCap
+}
+
+func fsWalkDeadline() time.Duration {
+	if v := strings.TrimSpace(os.Getenv(envFSWalkTimeoutMs)); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return time.Duration(n) * time.Millisecond
+		}
+	}
+	return defaultFSWalkDeadline
+}
+
+// walkBudget bounds a directory walk by a node-count cap AND a deadline. The
+// caller increments it once per visited entry (via step) and checks exceeded()
+// to stop early. It also honors an already-threaded ctx deadline/cancellation so
+// a turn-level timeout aborts the walk too. nodes is single-goroutine (WalkDir is
+// sequential), so no atomics are needed.
+type walkBudget struct {
+	ctx      context.Context
+	nodeCap  int
+	deadline time.Time
+	nodes    int
+}
+
+func newWalkBudget(ctx context.Context) *walkBudget {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	deadline := time.Now().Add(fsWalkDeadline())
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline = d
+	}
+	return &walkBudget{ctx: ctx, nodeCap: fsWalkNodeCap(), deadline: deadline}
+}
+
+// step counts one visited entry and reports whether the budget is now exhausted.
+func (b *walkBudget) step() bool {
+	b.nodes++
+	return b.exceeded()
+}
+
+// exceeded reports whether the node cap, the deadline, or ctx cancellation has
+// been hit. The node-count check (cheap) is tried before the clock read.
+func (b *walkBudget) exceeded() bool {
+	if b.nodes >= b.nodeCap {
+		return true
+	}
+	if b.ctx.Err() != nil {
+		return true
+	}
+	return !time.Now().Before(b.deadline)
+}
+
+// withWalkTruncation appends the truncation marker to a walk's rendered output
+// when the budget stopped it early, so the model treats the result as partial.
+func withWalkTruncation(out string, truncated bool) string {
+	if !truncated {
+		return out
+	}
+	return out + "\n" + walkTruncatedMarker
 }

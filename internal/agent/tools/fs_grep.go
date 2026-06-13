@@ -62,8 +62,14 @@ func (t *FSGrep) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 	}
 	root := rootOrDefault(t.WorkspaceRoot, a.Path)
 
+	budget := newWalkBudget(ctx)
+	var truncated bool
 	var out []string
 	walkErr := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if budget.step() {
+			truncated = true
+			return filepath.SkipAll
+		}
 		if err != nil {
 			return nil // unreadable entry: skip, don't abort the whole walk
 		}
@@ -88,9 +94,9 @@ func (t *FSGrep) Execute(ctx context.Context, raw json.RawMessage) (ToolResult, 
 		return ToolResult{}, fmt.Errorf("fs_grep: %w", walkErr)
 	}
 	if len(out) == 0 {
-		return NewResult(ctx, "[no matches]")
+		return NewResult(ctx, withWalkTruncation("[no matches]", truncated))
 	}
-	return NewResult(ctx, strings.Join(out, "\n"))
+	return NewResult(ctx, withWalkTruncation(strings.Join(out, "\n"), truncated))
 }
 
 func grepFile(path, root string, re *regexp.Regexp, maxResults int, out *[]string) {

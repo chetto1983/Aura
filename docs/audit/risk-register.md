@@ -43,7 +43,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | O-08 | Span coverage `llm.request`-only; no turn/tool spans | P3 | M | L | `tracing.go`, `llm_agent.go` | `agent.turn` + `tool.execute` spans (AP-20) | **CLOSED** (`agent.turn` wraps the Run loop, `tool.execute` per dispatch; `llm.request`+`tool.execute` nest under `agent.turn` via the threaded turn ctx) |
 | B-14 | `Registry.Register` silent overwrite on duplicate (R-45) | P3 | L | M | `tools/spec.go:102` | Fail-loud on duplicate | **CLOSED** |
 | B-15 | Unframed/uncapped MCP argument-schema descriptions (R-22 residual) | P3 | L | H | `bridge.go`, `search.go` | Cap arg-schema descriptions | **CLOSED** |
-| B-16 | `fs_grep`/`fs_glob` no node/time budget (`path:/` full-disk scan) | P3 | L | M | `fs_grep.go`, `fs_glob.go` | Node-count/deadline cap | OPEN |
+| B-16 | `fs_grep`/`fs_glob` no node/time budget (`path:/` full-disk scan) | P3 | L | M | `fs_grep.go`, `fs_glob.go` | Node-count/deadline cap | **CLOSED** |
 | T-02 | `foldToASCII` primary-channel filename folding undertested | P3 | L | L | `send_file.go` | Table test | CLOSED |
 | T-03 | Deferred-tool `Spec()` golden coverage | P3 | L | L | `fs_*`/`search.go` | Golden well-formed-spec test | **CLOSED** |
 | T-04 | `agenttest` dilutes the coverage floor | P3 | M | L | `agenttest`, `coverage_gate.sh:44` | Exclude from denominator | OPEN |
