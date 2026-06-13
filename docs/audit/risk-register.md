@@ -46,7 +46,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | B-16 | `fs_grep`/`fs_glob` no node/time budget (`path:/` full-disk scan) | P3 | L | M | `fs_grep.go`, `fs_glob.go` | Node-count/deadline cap | **CLOSED** |
 | T-02 | `foldToASCII` primary-channel filename folding undertested | P3 | L | L | `send_file.go` | Table test | CLOSED |
 | T-03 | Deferred-tool `Spec()` golden coverage | P3 | L | L | `fs_*`/`search.go` | Golden well-formed-spec test | **CLOSED** |
-| T-04 | `agenttest` dilutes the coverage floor | P3 | M | L | `agenttest`, `coverage_gate.sh:44` | Exclude from denominator | OPEN |
+| T-04 | `agenttest` dilutes the coverage floor | P3 | M | L | `agenttest`, `coverage_gate.sh:44` | Exclude from denominator | **CLOSED** |
 | M-08 | `EnsureConversation` race reconciliation masks real create failure | P3 | L | L | `runner.go` | Classify `23505` before swallowing | **CLOSED** |
 | R-26 | Ledger best-effort, not a pre-execution audit gate | P2 | M | M | `runner_persist.go` | Subsume into write-ahead intent log (AP-19) | TRACKED |
 | R-40 | Primary channel on telebot v4 beta | P3 | L | M | `go.mod` | Pin-watch GA; re-run HITL tests on bump | TRACKED |

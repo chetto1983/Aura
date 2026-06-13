@@ -217,7 +217,7 @@ Fix issues before moving on.
 **Gates (enforced in CI, runnable locally):**
 - `make quality` — pre-push, no containers: vet + build + file-size + lint(+dupl) + test-race + vuln.
 - `make quality-full` — `quality` + coverage gate (needs stack up via `make neo4j-migrate`).
-- `make coverage` → `scripts/coverage_gate.sh` — **owned-surface floor ≥85%** (`internal/*` minus generated `sqlc` + pre-rewrite skeletons; `cmd/aura` glue excluded as it's behaviourally covered). Tunable via `AURA_COVERAGE_MIN`. Current: **≈91.7%** (passes natively in WSL).
+- `make coverage` → `scripts/coverage_gate.sh` — **owned-surface floor ≥85%** (`internal/*` minus generated `sqlc` + pre-rewrite skeletons + test-support `internal/agent/agenttest`; `cmd/aura` glue excluded as it's behaviourally covered). Tunable via `AURA_COVERAGE_MIN`. Current: **≈91.7%** (passes natively in WSL).
 - `make vuln` → `govulncheck ./...` — supply-chain CVE scan (CI `vulncheck` job).
 - `dupl` is enabled in `.golangci.yml` (threshold 100, `_test.go` excluded — table tests are intentionally repetitive).
 - Mutation spot-check ≥70% on each phase's critical file(s); documented in the phase `VALIDATION.md` Manual-Only table (db.go 82.8%, budget.go/budget_dedup.go 89.4%).

@@ -8,6 +8,9 @@
 #     floor measures the wrong thing (it sits ~20% by nature).
 #   - generated (internal/db/sqlc) and pre-rewrite skeletons (sandbox, swarm,
 #     llm/client.go) are owned by later slices; excluded until rewritten.
+#   - internal/agent/agenttest is test-support (shared Agent fakes/mocks for
+#     other packages' tests, like sqlc is generated); its own low self-coverage
+#     dilutes the floor without measuring any owned runtime surface (T-04).
 #
 # Integration tiers REQUIRE the container stack + env (AURA_DB_URL, AURA_DB_MIGRATE_URL,
 # mcp-neo4j-cypher on PATH). Run after `make neo4j-migrate`, or in the CI knowledge
@@ -41,7 +44,7 @@ fi
 # dropped from the floor.
 {
   head -1 "${PROFILE}"
-  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/sandbox/|/internal/llm/client\.go:'
+  grep -v '^mode:' "${PROFILE}" | grep -vE '/internal/db/sqlc/|/internal/sandbox/|/internal/agent/agenttest/|/internal/llm/client\.go:'
 } > "${PROFILE}.filtered"
 
 ROWS="$(grep -c -v '^mode:' "${PROFILE}.filtered" || true)"
