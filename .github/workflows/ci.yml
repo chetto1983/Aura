@@ -76,6 +76,33 @@ jobs:
       - name: go test -race
         run: go test -race -count=1 ./...
 
+  windows-unit:
+    name: Windows unit (OS-specific kill + atomic-write paths, O-07)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go build (windows/amd64)
+        run: go build ./...
+
+      - name: go test (unit tier — exercises the windows kill + atomic-write paths)
+        # O-07 / R-36: the OS-specific process-kill (shell_exec_windows.go:
+        # CREATE_NEW_PROCESS_GROUP + `taskkill /F /T /PID`) and the atomic file-write
+        # (profile/atomic_windows.go) only compile + run under GOOS=windows, so the
+        # Linux unit lane never exercised them. This runs the full unit tier on
+        # windows-latest. NO -race: the race detector is already covered on the Linux
+        # unit lane, and CGO race on the hosted Windows runner is finicky for zero
+        # extra OS-kill-path signal. NO integration tags: the Windows runner has no
+        # docker stack (db/neo4j/web/memory tiers are Linux-only by design).
+        run: go test -count=1 ./...
+
   cache-invariant:
     name: KV-cache prefix invariant gate (Postgres-free)
     runs-on: ubuntu-latest
