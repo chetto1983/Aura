@@ -101,13 +101,13 @@ type Config struct {
 	AdaptiveReasoning    bool
 
 	// ShowReasoning surfaces the model's chain-of-thought instead of redacting it
-	// (AURA_SHOW_REASONING, default false). It is the SINGLE master switch for live
+	// (AURA_SHOW_REASONING, default true). It is the SINGLE master switch for live
 	// CoT: the adaptive-reasoning policy reads it to request reasoning UNEXCLUDED
 	// (exclude:false → the provider streams the reasoning text; with the default
 	// true the stream carries zero reasoning deltas), and the composition root
 	// propagates it to the Telegram channel so the AG-UI translator passes the real
-	// delta through and the status pane renders the live 💭 window. Default false
-	// keeps the redacted posture end-to-end.
+	// delta through and the status pane renders the live 💭 window. Default true
+	// surfaces the live CoT end-to-end (set AURA_SHOW_REASONING=false to redact).
 	ShowReasoning   bool
 	ContextWindow   int // total model context window (tokens); L2 budget input
 	MaxOutputTokens int // output-token reservation cap; L2 budget input
