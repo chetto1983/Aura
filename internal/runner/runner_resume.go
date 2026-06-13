@@ -74,11 +74,19 @@ func (r *Runner) SubmitAnswer(ctx context.Context, token string, resp ResponseIn
 		return r.cancelConversation(ctx, pending.ConversationID)
 	}
 
-	if err := r.injectAnswer(ctx, pending, resp); err != nil {
-		return 0, err
-	}
+	// Claim the pause FIRST (M-02): MarkResumed's RowsAffected==0 gate returns
+	// ErrPauseNotFound for an unknown or already-resumed token, so a duplicate resume
+	// is rejected BEFORE any answer turn is injected. The old order injected first,
+	// letting a retry append a SECOND answer turn for the same tool_call (two tool
+	// results for one tool_call → a wire-invalid rehydrated round). Inject + hook run
+	// only once the claim succeeds. Residual: a MarkResumed-then-injectAnswer DB
+	// failure (rare) leaves the pause claimed without an answer; the deeper fix is one
+	// cross-store transaction (deferred — see audit M-02).
 	if err := r.pause.MarkResumed(ctx, token, toResumeAnswer(resp)); err != nil {
 		return 0, fmt.Errorf("submit answer: %w", err)
+	}
+	if err := r.injectAnswer(ctx, pending, resp); err != nil {
+		return 0, err
 	}
 	if err := r.applyResumeHook(ctx, pending, resp); err != nil {
 		return 0, fmt.Errorf("submit answer: %w", err)

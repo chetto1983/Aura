@@ -57,15 +57,15 @@
     "P3": 12
   },
   "findings_by_status_2026_06_13": {
-    "CLOSED": 19,
+    "CLOSED": 20,
     "PARTIAL": 1,
-    "OPEN": 18,
+    "OPEN": 17,
     "TRACKED": 2,
-    "closed_ids": ["B-01", "B-02", "B-03", "B-04", "O-01", "O-02", "D-01", "M-05", "B-11", "T-02", "B-07", "B-13", "O-04", "B-15", "T-03", "B-05", "B-06", "B-08", "M-01"],
+    "closed_ids": ["B-01", "B-02", "B-03", "B-04", "O-01", "O-02", "D-01", "M-05", "B-11", "T-02", "B-07", "B-13", "O-04", "B-15", "T-03", "B-05", "B-06", "B-08", "M-01", "M-02"],
     "partial_ids": ["M-06"],
-    "open_ids": ["B-12", "M-02", "M-03", "M-04", "M-07", "M-08", "R-41", "O-03", "O-05", "O-06", "O-07", "O-08", "B-09", "B-10", "B-14", "B-16", "T-01", "T-04"],
+    "open_ids": ["B-12", "M-03", "M-04", "M-07", "M-08", "R-41", "O-03", "O-05", "O-06", "O-07", "O-08", "B-09", "B-10", "B-14", "B-16", "T-01", "T-04"],
     "tracked_ids": ["R-26", "R-40"],
-    "note": "2026-06-13 PM: the 6 PARTIAL findings were worked TDD-first — 5 CLOSED (B-07,B-13,O-04,B-15,T-03), M-06 advanced to rotation-done (periodic sidecar sweep pending). B-11 is CLOSED only nominally (shell_exec.go at 599/600 LOC). Reliability cluster CLOSED: B-05 (breaker hoisted to a Runner process-lifetime singleton), B-06 (breaker-open routes to finalize, not the iter.Seq2 error slot), B-08 (stream idle watchdog AURA_LLM_STREAM_IDLE_TIMEOUT_SEC, keep-alive-resilient, emits retryable ErrStreamIdleTimeout). Memory cluster: M-01 CLOSED (L1 microcompact only evicts sidecar-backed tool turns, so ask_user answers/small results survive verbatim). Commits in reconciliation-2026-06-13.md."
+    "note": "2026-06-13 PM: the 6 PARTIAL findings were worked TDD-first — 5 CLOSED (B-07,B-13,O-04,B-15,T-03), M-06 advanced to rotation-done (periodic sidecar sweep pending). B-11 is CLOSED only nominally (shell_exec.go at 599/600 LOC). Reliability cluster CLOSED: B-05 (breaker hoisted to a Runner process-lifetime singleton), B-06 (breaker-open routes to finalize, not the iter.Seq2 error slot), B-08 (stream idle watchdog AURA_LLM_STREAM_IDLE_TIMEOUT_SEC, keep-alive-resilient, emits retryable ErrStreamIdleTimeout). Memory cluster: M-01 CLOSED (L1 microcompact only evicts sidecar-backed tool turns), M-02 CLOSED via gate-first reorder (MarkResumed before inject — a duplicate resume returns ErrPauseNotFound before any second answer turn; meets AP-9 acceptance, full single-tx deferred by user decision, residual mark-then-inject-fail window documented). Commits in reconciliation-2026-06-13.md."
   },
   "prior_p0_status": [
     {"id": "R-01", "title": "Untrusted tool output re-enters prompt unmarked", "status": "CLOSED for the 8 direct feeders (trust.go envelope verified); RESIDUAL HOLE: swarm_spawn reports bypass it (see B-02)"},
