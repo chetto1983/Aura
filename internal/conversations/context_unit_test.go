@@ -66,7 +66,7 @@ func TestL1_EvictsOldToolTurns_NeverSeq1(t *testing.T) {
 		{Seq: 1, Role: llm.RoleSystem, Content: "SYSTEM PROMPT"},
 		{Seq: 2, Role: llm.RoleUser, Content: "do a thing"},
 		{Seq: 3, Role: llm.RoleAssistant, Content: "calling tool"},
-		{Seq: 4, Role: llm.RoleTool, Content: "huge old tool output", ToolCallID: "call_old"},
+		{Seq: 4, Role: llm.RoleTool, Content: "huge old tool output", ToolCallID: "call_old", ContentSidecarPath: "/run/sidecar/call_old"},
 		{Seq: 15, Role: llm.RoleTool, Content: "recent tool output", ToolCallID: "call_new"},
 	}
 	got := applyL1(turns, 10) // evict tool turns with seq < (15-10)=5
@@ -154,6 +154,38 @@ func TestL1_DisabledWhenEvictNonPositive(t *testing.T) {
 	}
 }
 
+// TestApplyL1_PreservesNonSidecarToolAnswers pins M-01: L1 must only rewrite a
+// RoleTool turn to a read_tool_output pointer when it is actually sidecar-backed (a
+// spill footer or a ContentSidecarPath). An ask_user answer — and any small inline
+// result — is NOT spilled, so rewriting it to a pointer creates a DEAD reference the
+// model can never page back, silently destroying the user's answer after ~10 rounds.
+// Such a turn must survive verbatim; a sidecar-backed neighbor must still be evicted.
+func TestApplyL1_PreservesNonSidecarToolAnswers(t *testing.T) {
+	footered := "preview\n\n[output truncated: showing bytes 0-2048 of 9999; read more via read_tool_output(tool_call_id=\"spill_x\", offset=2048, limit=2048)]"
+	turns := []Turn{
+		{Seq: 1, Role: llm.RoleSystem, Content: "sys"},
+		{Seq: 2, Role: llm.RoleTool, Content: "Rome", ToolCallID: "ask_user_1"},                        // ask_user answer: no sidecar
+		{Seq: 3, Role: llm.RoleTool, Content: "small ok", ToolCallID: "tiny_1"},                        // small inline result: no sidecar
+		{Seq: 4, Role: llm.RoleTool, Content: footered, ToolCallID: "big_1"},                           // sidecar-backed (footer)
+		{Seq: 5, Role: llm.RoleTool, Content: "p", ToolCallID: "path_1", ContentSidecarPath: "/run/x"}, // sidecar-backed (path)
+		{Seq: 40, Role: llm.RoleUser, Content: "now"},
+	}
+	got := applyL1(turns, 5) // threshold = 35; seq 2..5 all old
+
+	if got[1].Content != "Rome" {
+		t.Fatalf("a non-sidecar ask_user answer must survive verbatim, got %q", got[1].Content)
+	}
+	if got[2].Content != "small ok" {
+		t.Fatalf("a small non-sidecar result must survive verbatim, got %q", got[2].Content)
+	}
+	if !strings.Contains(got[3].Content, `read_tool_output(tool_call_id="spill_x")`) {
+		t.Fatalf("a footer-backed result must still be evicted to its spill pointer, got %q", got[3].Content)
+	}
+	if !strings.Contains(got[4].Content, "read_tool_output") || got[4].ContentSidecarPath != "" {
+		t.Fatalf("a ContentSidecarPath-backed result must still be evicted (and path cleared), got %q path=%q", got[4].Content, got[4].ContentSidecarPath)
+	}
+}
+
 // TestLadder_SC1_L1AloneWritesNoRotEvent: a history bloated ONLY by large tool
 // outputs is brought under budget by L1 alone → ZERO context_rot_events rows (SC-1).
 func TestLadder_SC1_L1AloneWritesNoRotEvent(t *testing.T) {
@@ -167,7 +199,7 @@ func TestLadder_SC1_L1AloneWritesNoRotEvent(t *testing.T) {
 		{Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{Seq: 2, Role: llm.RoleUser, Content: "go"},
 		{Seq: 3, Role: llm.RoleAssistant, Content: "ok", ToolCalls: toolCallsJSON(t, "call_a")},
-		{Seq: 4, Role: llm.RoleTool, Content: bigTool, ToolCallID: "call_a"},
+		{Seq: 4, Role: llm.RoleTool, Content: bigTool, ToolCallID: "call_a", ContentSidecarPath: "/run/sidecar/call_a"},
 		{Seq: 20, Role: llm.RoleUser, Content: "more"},
 	}
 	cfg := ContextConfig{ContextWindow: 50000, MaxOutputTokens: 1000, ToolEvictAfterTurns: 10}
@@ -194,7 +226,7 @@ func TestLadder_L1_CompactedOrphanToolPointerStaysModelVisible(t *testing.T) {
 		{Seq: 1, Role: llm.RoleSystem, Content: "you are aura"},
 		{Seq: 2, Role: llm.RoleUser, Content: "go"},
 		{Seq: 3, Role: llm.RoleAssistant, Content: "ok"},
-		{Seq: 4, Role: llm.RoleTool, Content: strings.Repeat("tool output token ", 5000), ToolCallID: "call_a"},
+		{Seq: 4, Role: llm.RoleTool, Content: strings.Repeat("tool output token ", 5000), ToolCallID: "call_a", ContentSidecarPath: "/run/sidecar/call_a"},
 		{Seq: 20, Role: llm.RoleUser, Content: "more"},
 	}
 	cfg := ContextConfig{ContextWindow: 50000, MaxOutputTokens: 1000, ToolEvictAfterTurns: 10}

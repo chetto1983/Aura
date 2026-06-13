@@ -89,7 +89,7 @@ func TestProfileBlockSurvivesL1ToolEviction(t *testing.T) {
 		{Seq: 1, Role: llm.RoleSystem, Content: "s"},
 		{Seq: 2, Role: llm.RoleUser, Content: "run tool"},
 		{Seq: 3, Role: llm.RoleAssistant, Content: "calling"},
-		{Seq: 4, Role: llm.RoleTool, Content: "old tool output", ToolCallID: "call_old"},
+		{Seq: 4, Role: llm.RoleTool, Content: "old tool output", ToolCallID: "call_old", ContentSidecarPath: "/run/sidecar/call_old"},
 		{Seq: 20, Role: llm.RoleUser, Content: "next"},
 	}
 	cfg := windowFor(1_000_000)

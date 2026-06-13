@@ -258,8 +258,8 @@ func TestL1_EvictBoundary_ZeroDisablesAndSeqThreshold(t *testing.T) {
 	turns2 := []Turn{
 		{Seq: 1, Role: llm.RoleTool, Content: "system-pos tool", ToolCallID: "c1"}, // protected by seq==1
 		{Seq: 5, Role: llm.RoleAssistant, Content: "old non-tool"},                 // protected by role!=tool
-		{Seq: 19, Role: llm.RoleTool, Content: "below threshold", ToolCallID: "c19"},
-		{Seq: 20, Role: llm.RoleTool, Content: "at threshold", ToolCallID: "c20"},
+		{Seq: 19, Role: llm.RoleTool, Content: "below threshold", ToolCallID: "c19", ContentSidecarPath: "/run/sidecar/c19"},
+		{Seq: 20, Role: llm.RoleTool, Content: "at threshold", ToolCallID: "c20", ContentSidecarPath: "/run/sidecar/c20"},
 		{Seq: 30, Role: llm.RoleUser, Content: "newest"},
 	}
 	g := applyL1(turns2, 10)

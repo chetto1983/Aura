@@ -81,3 +81,11 @@ Reliability + memory correctness first (B-05/06, B-08, M-01, M-02, M-03, M-04), 
 | B-08 | _(this commit)_ | per-read **stream idle watchdog** in the openai_compat client (`AURA_LLM_STREAM_IDLE_TIMEOUT_SEC`, default 60s, 0 disables). Resets on ANY bytes from the wire — data OR `: OPENROUTER PROCESSING` keep-alives — so a long reasoning phase never trips it; only a dead connection does. On a stall it cancels the read and emits a **retryable** `ErrStreamIdleTimeout`, which the agent's stream classifier retries once before surfacing. Tests: `TestStream_IdleTimeoutAbortsStall`, `TestStream_IdleTimeoutDisabledWhenZero`, `TestRetryableStreamOpenError_IdleTimeout` + config default/override. |
 
 Running tally after this section: **18 CLOSED / 1 PARTIAL (M-06) / 19 OPEN / 2 TRACKED.**
+
+## Memory-correctness cluster — OPEN → CLOSED (2026-06-13, TDD-first, one atomic commit each)
+
+| ID | Commit | What landed |
+|---|---|---|
+| M-01 | _(this commit)_ | L1 microcompact (`applyL1`) now rewrites a `RoleTool` turn to a `read_tool_output` pointer **only when it is sidecar-backed** (`isSidecarBacked`: a `[output truncated:` footer or a `ContentSidecarPath`). A non-spilled turn — an `ask_user` answer or a small inline result — has nowhere to page back from, so the old unconditional rewrite created a dead pointer that silently destroyed the content after ~evictAfter rounds (R-28). Test: `TestApplyL1_PreservesNonSidecarToolAnswers`; 5 pre-existing fixtures that evicted unrealistic large-non-footer turns were made sidecar-backed (production always spills large outputs with a footer). |
+
+Running tally after this section: **19 CLOSED / 1 PARTIAL (M-06) / 18 OPEN / 2 TRACKED.**

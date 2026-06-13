@@ -17,7 +17,7 @@ Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated),
 | O-01 | `serve` never boots tracer + zero structured logging → prod blind | P1 | H | M | `serve.go`, agent core | `obs.Init` tracer + JSON slog (AP-5) | **CLOSED** |
 | O-02 | No latency/error/cost metrics, no Prometheus | P1 | H | M | `metrics.go` | Prometheus `/metrics` (AP-6) | **CLOSED** |
 | D-01 | No production container for the privileged agent binary | P1 | M | H | repo root, `compose.yaml` | Dockerfile + hardened compose (AP-7) | **CLOSED** |
-| M-01 | L1 microcompact destroys `ask_user` answers → dead pointer (R-28) | P2 | M | M | `conversations/context.go` (applyL1) | Pointer-rewrite only sidecar-backed turns (AP-8) | OPEN |
+| M-01 | L1 microcompact destroys `ask_user` answers → dead pointer (R-28) | P2 | M | M | `conversations/context.go` (applyL1) | Pointer-rewrite only sidecar-backed turns (AP-8) | **CLOSED** |
 | M-02 | `SubmitAnswer` non-atomic → duplicate resume bricks the round (R-27) | P2 | L | H | `runner_resume.go:77` | One-transaction inject+mark (AP-9) | OPEN |
 | M-03 | `hardCap<=0` silently disables all context protection (R-29) | P2 | L | H | `context.go` (hardCap gate, **test-locked**) | Treat ≤0 as config error / per-model floor (AP-10) | OPEN |
 | B-05 | Circuit breaker per-turn → no cross-turn protection | P2 | M | M | `llm_agent.go:131` | Hoist to Runner singleton (AP-11) | **CLOSED** |

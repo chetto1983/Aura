@@ -48,6 +48,12 @@ const alwaysBlockMarker = "__aura_always_block__"
 
 var readToolOutputCallIDRe = regexp.MustCompile(`read_tool_output\(tool_call_id=("(?:\\.|[^"\\])*")`)
 
+// spillFooterMarker is the prefix tools.NewResult writes when it spills a large
+// output to a sidecar. Its presence (or a ContentSidecarPath) means the full bytes
+// are retrievable via read_tool_output — the only case where L1 may rewrite a tool
+// turn to a pointer (M-01).
+const spillFooterMarker = "[output truncated:"
+
 // ErrContextWindowExceeded is returned by ApplyContextLadder when the history is
 // still over the L2 hard cap after L1 (and L2.5 cannot reduce it — e.g. only the
 // system turn remains). It is a normal-flow error the REPL surfaces (suggesting
@@ -218,7 +224,7 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 		if t.Seq == 1 || t.Role != llm.RoleTool {
 			continue // never the system turn; only tool turns
 		}
-		if t.Seq < threshold {
+		if t.Seq < threshold && isSidecarBacked(*t) {
 			// Preserve the spill-id pointer minted by tools.NewResult; old rows that
 			// predate opaque sidecar ids fall back to the provider ToolCallID.
 			t.Content = readToolOutputPointer(readToolOutputSpillID(t.Content, t.ToolCallID))
@@ -228,9 +234,21 @@ func applyL1(turns []Turn, evictAfter int) []Turn {
 	return out
 }
 
+// isSidecarBacked reports whether a RoleTool turn's full content is retrievable via
+// read_tool_output — either an explicit ContentSidecarPath or an inline spill footer
+// (M-01). Only such turns may be evicted to a pointer; a non-spilled turn (an
+// ask_user answer, a small result) has nowhere to page back from, so rewriting it
+// would create a dead pointer that silently destroys the content.
+func isSidecarBacked(t Turn) bool {
+	if t.ContentSidecarPath != "" {
+		return true
+	}
+	return strings.Contains(html.UnescapeString(t.Content), spillFooterMarker)
+}
+
 func readToolOutputSpillID(content, fallback string) string {
 	unescaped := html.UnescapeString(content)
-	footerAt := strings.LastIndex(unescaped, "[output truncated:")
+	footerAt := strings.LastIndex(unescaped, spillFooterMarker)
 	if footerAt < 0 {
 		return fallback
 	}
