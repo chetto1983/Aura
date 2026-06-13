@@ -70,12 +70,16 @@ type Deps struct {
 	Client          llm.Client
 	Registry        *tools.Registry
 	LLM             llm.Config
-	RunDir          string
-	PreviewCap      int
-	EvictAfter      int    // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
-	Workspace       string // shell workspace announced per turn (#52/D-41); "" → the process cwd
-	TitleTimeout    time.Duration
-	StopTimeout     time.Duration
+	// Breaker is the SHARED process-lifetime LLM circuit breaker (B-05). The
+	// composition root may inject one; nil => New mints the default. It is threaded
+	// into every per-turn agent so a provider outage trips cross-turn protection.
+	Breaker      *llm.Breaker
+	RunDir       string
+	PreviewCap   int
+	EvictAfter   int    // AURA_CONTEXT_TOOL_EVICT_AFTER_TURNS — L1 eviction age
+	Workspace    string // shell workspace announced per turn (#52/D-41); "" → the process cwd
+	TitleTimeout time.Duration
+	StopTimeout  time.Duration
 	// AlwaysBlock renders the messages[1] always-on skill block per turn from current
 	// loader state (D-07). The composition root wires it over skills.RenderAlwaysBlock
 	// + the live loader; nil means no skills are wired (the block is empty). Rebuilt
@@ -134,6 +138,7 @@ type Runner struct {
 	client     llm.Client
 	registry   *tools.Registry
 	cfg        llm.Config
+	breaker    *llm.Breaker // SHARED process-lifetime LLM circuit breaker, injected into every per-turn agent (B-05)
 	runDir     string
 	previewCap int
 	evictAfter int
@@ -203,6 +208,13 @@ func New(d Deps) *Runner {
 		contextBlock:    d.ContextBlock,
 		alwaysBlock:     d.AlwaysBlock,
 		classifier:      classifier,
+		breaker:         d.Breaker,
+	}
+	// One process-lifetime breaker shared by every per-turn agent (B-05). A provider
+	// outage trips it once and short-circuits subsequent turns until cooldown — the
+	// per-turn breaker reset on each rebuild and never opened across turns.
+	if r.breaker == nil {
+		r.breaker = llm.NewDefaultBreaker()
 	}
 	// Attach the async self-improvement worker (no-op unless ReasoningLearning is
 	// enabled and a save-capable store is wired).
@@ -550,6 +562,7 @@ func (r *Runner) buildAgent(ctx context.Context, convID string, history []llm.Me
 		Workspace:  r.workspace,
 		UserTurns:  seed,
 		Classifier: r.classifier, // shared, anchors built once
+		Breaker:    r.breaker,    // shared process-lifetime breaker (B-05)
 	})
 	ic := agent.InvocationContext{
 		Ctx:       boundedCtx,

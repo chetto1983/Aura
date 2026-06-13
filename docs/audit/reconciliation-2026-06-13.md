@@ -71,3 +71,11 @@ Reliability + memory correctness first (B-05/06, B-08, M-01, M-02, M-03, M-04), 
 | T-03 | `298d04ea` | golden well-formed-spec sweep over the 18 built-in tools (unique names, present summary/description, JSON-object params, deferred-richness) |
 
 **Result: 5 PARTIAL → CLOSED.** M-06 advanced to rotation-done; its **periodic sidecar TTL sweep + archived-sidecar reclaim** half remains a background-worker + reclaim-policy feature deferred to its own pass. Updated tally: **15 CLOSED / 1 PARTIAL (M-06) / 22 OPEN / 2 TRACKED.**
+
+## Reliability cluster — OPEN → CLOSED (2026-06-13, TDD-first, one atomic commit each)
+
+| ID | Commit | What landed |
+|---|---|---|
+| B-05 | _(this commit)_ | breaker hoisted to a **process-lifetime Runner singleton** (`Deps.Breaker` → `Runner.breaker`, defaulted via `llm.NewDefaultBreaker`) and injected into every per-turn agent (`LlmAgentConfig.Breaker`) so a provider outage trips cross-turn protection — the per-turn breaker reset on each rebuild and never opened. Tests: `TestInjectedBreakerIsSharedNotPerAgent` (agent mechanism), `TestRunnerInjectsSharedBreakerIntoEveryTurn` (Runner wiring), `TestNewDefaultBreakerUsesPolicyDefaults` (policy single-source). |
+
+Running tally after this section: **16 CLOSED / 1 PARTIAL (M-06) / 21 OPEN / 2 TRACKED.**

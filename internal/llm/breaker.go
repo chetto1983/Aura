@@ -10,6 +10,21 @@ import (
 // ErrBreakerOpen marks calls rejected while the LLM circuit breaker is cooling down.
 var ErrBreakerOpen = errors.New("llm breaker open")
 
+// DefaultBreakerThreshold / DefaultBreakerCooldown are the single source of truth for
+// the LLM circuit-breaker policy. The Runner mints ONE breaker with these (B-05,
+// process-lifetime, shared across turns) and the agent's standalone fallback uses the
+// same values, so the policy is never spelled twice.
+const (
+	DefaultBreakerThreshold = 3
+	DefaultBreakerCooldown  = 30 * time.Second
+)
+
+// NewDefaultBreaker builds a breaker with the default policy (DefaultBreakerThreshold
+// consecutive failures open it for DefaultBreakerCooldown).
+func NewDefaultBreaker() *Breaker {
+	return NewBreaker(DefaultBreakerThreshold, DefaultBreakerCooldown)
+}
+
 // Breaker tracks consecutive retryable LLM failures and opens for a cooldown after
 // the configured threshold is reached.
 type Breaker struct {

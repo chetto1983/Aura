@@ -32,3 +32,21 @@ func TestBreakerOpensAfterThresholdAndResetsOnSuccess(t *testing.T) {
 		t.Fatalf("success should close breaker: %v", err)
 	}
 }
+
+// TestNewDefaultBreakerUsesPolicyDefaults pins the single source of truth for the
+// breaker policy (B-05): the shared Runner breaker and the agent fallback both build
+// via NewDefaultBreaker so the threshold/cooldown live in one place. It opens after
+// exactly DefaultBreakerThreshold consecutive failures.
+func TestNewDefaultBreakerUsesPolicyDefaults(t *testing.T) {
+	b := NewDefaultBreaker()
+	for i := range DefaultBreakerThreshold - 1 {
+		b.Failure(errors.New("transient"))
+		if err := b.Allow(); err != nil {
+			t.Fatalf("failure %d/%d must keep the breaker closed, got %v", i+1, DefaultBreakerThreshold, err)
+		}
+	}
+	b.Failure(errors.New("threshold"))
+	if err := b.Allow(); !errors.Is(err, ErrBreakerOpen) {
+		t.Fatalf("the %dth failure must open the breaker, got %v", DefaultBreakerThreshold, err)
+	}
+}
