@@ -368,12 +368,21 @@ func TestSpan_PerCall(t *testing.T) {
 	if _, err := collect(a.Run(ic)); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	spans := rec.Ended()
-	if len(spans) != 1 {
-		t.Fatalf("recorded %d spans, want exactly 1 (one call)", len(spans))
+	// Exactly one llm.request span per LLM call (one call here). The run also records
+	// an agent.turn wrapper span (O-08), so count the llm.request spans specifically
+	// rather than the total — the per-call contract is what this test guards.
+	var llmSpans int
+	for _, s := range rec.Ended() {
+		if s.Name() != "llm.request" {
+			continue
+		}
+		llmSpans++
+		if !s.SpanContext().SpanID().IsValid() {
+			t.Errorf("llm.request span_id invalid: %v", s.SpanContext().SpanID())
+		}
 	}
-	if spans[0].Name() != "llm.request" || !spans[0].SpanContext().SpanID().IsValid() {
-		t.Errorf("span = {name:%q valid:%v}, want llm.request + valid span_id", spans[0].Name(), spans[0].SpanContext().SpanID().IsValid())
+	if llmSpans != 1 {
+		t.Fatalf("recorded %d llm.request spans, want exactly 1 (one call)", llmSpans)
 	}
 }
 

@@ -179,7 +179,17 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 	spanID, parentSpanID := rootSpanIDs()
 	requestID := ic.RequestID.String()
 
+	// agent.turn wraps the whole loop (O-08): the per-call llm.request and per-tool
+	// tool.execute spans nest under it via the threaded ctx, so a trace shows
+	// per-turn and per-tool latency, not just the flat per-LLM-call coverage. The
+	// span ends on EVERY Run return path through the deferred endTurnSpan over this
+	// closure; turnReason carries the terminal outcome stamped at End.
+	turnCtx, turnSpan := startTurnSpan(ic.Ctx, requestID, a.sessionID)
+	ic = ic.WithContext(turnCtx)
+
 	return func(yield func(*Event, error) bool) {
+		turnReason := "incomplete"
+		defer func() { endTurnSpan(turnSpan, turnReason) }()
 		var adaptiveTier prompt.ReasoningTier
 		var adaptiveTierSet bool
 		var adaptiveTierOK bool
@@ -207,6 +217,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					skipBudgetGate = true
 					continue
 				}
+				turnReason = reason
 				a.finalize(ic, spanID, parentSpanID, requestID, reason, yield)
 				return
 			}
@@ -263,9 +274,11 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					// iter.Seq2 error slot. finalize's own synthesis short-circuits the same
 					// open breaker and falls back to the deterministic stub digest, so the
 					// terminal Event is always non-empty.
+					turnReason = "breaker_open"
 					a.finalize(ic, spanID, parentSpanID, requestID, "breaker_open", yield)
 					return
 				}
+				turnReason = "stream_open_error"
 				yield(nil, err) // REAL infra failure → error slot (D-15)
 				return
 			}
@@ -280,6 +293,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// the final/tool Event below would panic ("range function continued
 			// iteration after... returned false"). Return now.
 			if stopped {
+				turnReason = "consumer_stopped"
 				return
 			}
 			if streamErr != nil {
@@ -295,6 +309,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					})
 					continue
 				}
+				turnReason = "stream_error"
 				yield(nil, streamErr)
 				return
 			}
@@ -310,6 +325,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					if a.maybeRecoverEmptyResponse() {
 						continue
 					}
+					turnReason = "empty_response"
 					a.finalize(ic, spanID, parentSpanID, requestID, "empty_response", yield)
 					return
 				}
@@ -326,6 +342,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					continue
 				}
 				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, Content: answer})
+				turnReason = "content_stop"
 				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, finish, usage), nil)
 				return
 			}
@@ -336,16 +353,19 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			// assistant tool-call message and dispatch sequentially (D-14).
 			if pauses := a.pauseCalls(ic.Ctx, calls); len(pauses) > 0 {
 				a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: pauseToolCalls(pauses)})
+				turnReason = "ask_user_pause"
 				a.emitPauses(ic, spanID, parentSpanID, pauses, yield)
 				return
 			}
 			a.history = append(a.history, llm.Message{Role: llm.RoleAssistant, ToolCalls: calls})
 			done, infraErr := a.dispatch(ic, spanID, parentSpanID, requestID, calls, usage, yield)
 			if infraErr != nil {
+				turnReason = "dispatch_infra_error"
 				yield(nil, infraErr)
 				return
 			}
 			if done {
+				turnReason = "tool_terminal"
 				return
 			}
 			// loop: the next LLM call sees the appended RoleTool results.
@@ -500,14 +520,22 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	}
 	tool, ok := a.registry.Get(call.Function.Name)
 	if !ok {
+		// An unknown tool still gets a tool.execute span (O-08) so the trace shows the
+		// failed dispatch; mutating is unknown here, so it stays false.
+		_, span := startToolSpan(ctx, call.Function.Name, false)
 		run.EndedAt = time.Now().UTC()
 		run.Err = fmt.Sprintf("unknown tool %q", call.Function.Name)
 		run.Preview = "error: " + run.Err
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
+		endToolSpan(span, run.Err)
 		return run
 	}
 	run.Mutating = tool.Spec().Mutating
-	toolCtx := tools.WithToolCallContext(ctx, a.sessionID, call.ID, a.runDir, a.previewCap)
+	// tool.execute span (O-08): one per dispatch, nested under agent.turn via ctx so a
+	// trace shows per-tool latency. Concurrent (executeBatch) dispatches each start
+	// their own span off the shared turn ctx — otel spans are safe to start in parallel.
+	spanCtx, span := startToolSpan(ctx, call.Function.Name, run.Mutating)
+	toolCtx := tools.WithToolCallContext(spanCtx, a.sessionID, call.ID, a.runDir, a.previewCap)
 	toolCtx = WithSwarmContext(toolCtx, budget, a.registry, a.client, a.cfg, a.sessionID)
 	if d := budget.NodeTimeout(); d > 0 {
 		var cancel context.CancelFunc
@@ -521,10 +549,12 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		run.Preview = "error: " + run.Err
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
 		run.Preview = renderToolResultForPrompt(call.Function.Name, run.Result)
+		endToolSpan(span, run.Err)
 		return run
 	}
 	run.Result = res
 	run.Preview = renderToolResultForPrompt(call.Function.Name, res)
+	endToolSpan(span, "")
 	return run
 }
 

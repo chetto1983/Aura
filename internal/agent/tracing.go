@@ -109,9 +109,61 @@ func rootSpanIDs() (span [8]byte, parent *[8]byte) {
 
 // startLLMSpan starts the per-call "llm.request" span from ic.Ctx (Req#13). The
 // returned context carries the span; the caller MUST call span.End() (deferred or
-// explicit) exactly once per LLM call.
+// explicit) exactly once per LLM call. When ctx already carries an "agent.turn"
+// span (the loop threads it through, O-08), this span nests under it.
 func startLLMSpan(ctx context.Context) (context.Context, oteltrace.Span) {
 	return otel.Tracer(tracerName).Start(ctx, "llm.request")
+}
+
+// startTurnSpan starts the "agent.turn" span wrapping the whole Run loop (O-08).
+// The returned context becomes the parent for every per-call llm.request and
+// per-tool tool.execute span this turn, so a trace shows per-turn latency. The
+// caller MUST End() it on every Run return path (deferred over the iter.Seq2
+// closure). request_id and thread_id are stamped now; the terminal outcome is
+// stamped on End via endTurnSpan.
+func startTurnSpan(ctx context.Context, requestID, threadID string) (context.Context, oteltrace.Span) {
+	ctx, span := otel.Tracer(tracerName).Start(ctx, "agent.turn")
+	span.SetAttributes(
+		attribute.String("aura.request_id", requestID),
+		attribute.String("aura.thread_id", threadID),
+	)
+	return ctx, span
+}
+
+// endTurnSpan stamps the terminal outcome on the agent.turn span and ends it. A
+// nil/no-op span tolerates this (the SDK guards a zero span). reason is the
+// terminal path label ("text_response"/"content_stop"/"max_steps"/... or "" when
+// none applies); it is stamped only when non-empty so the deferred zero-value call
+// site stays cheap.
+func endTurnSpan(span oteltrace.Span, reason string) {
+	if reason != "" {
+		span.SetAttributes(attribute.String("aura.turn_outcome", reason))
+	}
+	span.End()
+}
+
+// startToolSpan starts the per-dispatch "tool.execute" span (O-08), nested under
+// the agent.turn span carried by ctx. The caller MUST End() it when the tool
+// returns. name + mutating are stamped now; success/error is stamped on End via
+// endToolSpan. Span creation is cheap and never fatal — a no-op tracer mints a
+// dropped span without allocating an exporter record.
+func startToolSpan(ctx context.Context, name string, mutating bool) (context.Context, oteltrace.Span) {
+	ctx, span := otel.Tracer(tracerName).Start(ctx, "tool.execute")
+	span.SetAttributes(
+		attribute.String("tool.name", name),
+		attribute.Bool("tool.mutating", mutating),
+	)
+	return ctx, span
+}
+
+// endToolSpan stamps the tool outcome (success flag + the error string when one
+// occurred) and ends the tool.execute span. errMsg is "" on success.
+func endToolSpan(span oteltrace.Span, errMsg string) {
+	span.SetAttributes(attribute.Bool("tool.success", errMsg == ""))
+	if errMsg != "" {
+		span.SetAttributes(attribute.String("tool.error", errMsg))
+	}
+	span.End()
 }
 
 // setSpanAttrs stamps the llm.request span with the cost/identity attributes
