@@ -1,0 +1,9 @@
+# Spike 059 — minimal FAT full-power image (the SPEC "not a jail" shape).
+# Proves shell_exec / self-extension parity that the audit's distroless image breaks.
+# Deliberately NOT distroless, NOT read-only, NOT non-root: full power inside the box.
+FROM debian:bookworm-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 nodejs ca-certificates procps \
+ && rm -rf /var/lib/apt/lists/*
+# No USER directive -> runs as root inside its own box (Claude-Code parity).
+CMD ["sleep", "infinity"]
