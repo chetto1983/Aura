@@ -28,17 +28,21 @@ func NewLLMAnswerExtractor(client llm.Client, model string) *LLMAnswerExtractor 
 }
 
 type extractDTO struct {
-	Role      string   `json:"role"`
-	Company   string   `json:"company"`
-	Location  string   `json:"location"`
-	Timezone  string   `json:"timezone"`
-	Lang      string   `json:"lang"`
-	Expertise []string `json:"expertise"`
-	Stack     []string `json:"stack"`
-	Projects  []string `json:"projects"`
-	Goals     []string `json:"goals"`
-	Interests []string `json:"interests"`
-	People    []string `json:"people"`
+	Name           string   `json:"name"`
+	Role           string   `json:"role"`
+	Company        string   `json:"company"`
+	Location       string   `json:"location"`
+	Timezone       string   `json:"timezone"`
+	Lang           string   `json:"lang"`
+	Expertise      []string `json:"expertise"`
+	Stack          []string `json:"stack"`
+	Projects       []string `json:"projects"`
+	Goals          []string `json:"goals"`
+	Interests      []string `json:"interests"`
+	People         []string `json:"people"`
+	TonePreference string   `json:"tone_preference"`
+	ResponseLength string   `json:"response_length"`
+	VoiceMode      *bool    `json:"voice_mode"`
 }
 
 // Extract runs a one-shot LLM call and returns structured Answers for the given step.
@@ -72,9 +76,11 @@ func (e *LLMAnswerExtractor) Extract(ctx context.Context, step Step, raw string)
 		return fallbackAnswers(step, raw), nil
 	}
 	return Answers{
+		Name: dto.Name,
 		Role: dto.Role, Company: dto.Company, Location: dto.Location, Timezone: dto.Timezone, Lang: dto.Lang,
 		Expertise: dto.Expertise, Stack: dto.Stack, Projects: dto.Projects, Goals: dto.Goals,
 		Interests: dto.Interests, People: dto.People,
+		TonePreference: dto.TonePreference, ResponseLength: dto.ResponseLength, VoiceMode: dto.VoiceMode,
 	}, nil
 }
 
@@ -115,14 +121,16 @@ func extractSystemPrompt(step Step) string {
 		"Keep values short; preserve the user's language. "
 	switch step {
 	case StepIdentity:
-		return base + `Fields: {"role":"","company":"","location":"","timezone":"","lang":""}.`
+		return base + `Fields: {"name":"","role":"","company":"","location":"","timezone":"","lang":""}. name is the user's first name or preferred name (not their full job title or sentence).`
 	case StepWork:
 		return base + `Fields: {"expertise":[],"stack":[]}.`
 	case StepProjects:
 		return base + `Fields: {"projects":[],"goals":[]}.`
 	case StepSocial:
 		return base + `Fields: {"interests":[],"people":[]}. For people use "Name — role".`
+	case StepStyle:
+		return base + `Fields: {"tone_preference":"","response_length":"","lang":"","voice_mode":null}. tone_preference is one of "direct","friendly","formal"; response_length is one of "short","normal","detailed"; voice_mode is true only if the user wants spoken/voice replies. Map synonyms (e.g. "amichevole"->friendly, "diretto"->direct, "formale"->formal, "breve"->short, "normale"->normal, "dettagliata"->detailed).`
 	default:
-		return base + `Fields: {"role":"","company":"","location":"","timezone":"","lang":"","expertise":[],"stack":[],"projects":[],"goals":[],"interests":[],"people":[]}. Extract every field the user mentions or corrects.`
+		return base + `Fields: {"name":"","role":"","company":"","location":"","timezone":"","lang":"","expertise":[],"stack":[],"projects":[],"goals":[],"interests":[],"people":[],"tone_preference":"","response_length":"","voice_mode":null}. Extract every field the user mentions or corrects.`
 	}
 }

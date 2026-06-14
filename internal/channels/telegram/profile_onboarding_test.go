@@ -181,6 +181,8 @@ func (fakeExtractor) Extract(_ context.Context, step profileflow.Step, _ string)
 		return profileflow.Answers{Projects: []string{"Aura"}, Goals: []string{"ship Phase 14"}}, nil
 	case profileflow.StepSocial:
 		return profileflow.Answers{Interests: []string{"AI agents"}, People: []string{"Andrea — business partner"}}, nil
+	case profileflow.StepStyle:
+		return profileflow.Answers{TonePreference: "friendly", ResponseLength: "normal"}, nil
 	case profileflow.StepDraft:
 		// Simulates the LLM correcting "Afenti Ai" → "Agenti AI" during an edit.
 		return profileflow.Answers{Stack: []string{"Agenti AI"}}, nil
@@ -209,7 +211,13 @@ func TestProfileOnboarding_RichInterviewWritesProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("profile not written: %v", err)
 	}
-	for _, want := range []string{"## Projects & Goals", "- Aura", "## People", "Andrea — business partner", "## Expertise & Tools", "Stack: Go, Neo4j"} {
+	for _, want := range []string{
+		"## Projects & Goals", "- Aura",
+		"## People", "Andrea — business partner",
+		"## Expertise & Tools", "Stack: Go, Neo4j",
+		"- Name: Davide",
+		"Tone: friendly",
+	} {
 		if !strings.Contains(got.AgentMD, want) {
 			t.Errorf("Agent.md missing %q:\n%s", want, got.AgentMD)
 		}

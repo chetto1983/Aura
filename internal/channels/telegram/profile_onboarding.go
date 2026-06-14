@@ -144,7 +144,7 @@ func (p *profileOnboarding) handleText(ctx context.Context, chatID int64, text s
 	} else {
 		step := ps.session.Step
 		var ans profileflow.Answers
-		if p.extractor != nil && step != profileflow.StepStyle {
+		if p.extractor != nil {
 			if extracted, err := p.extractor.Extract(ctx, step, text); err == nil {
 				ans = extracted
 			} else {
