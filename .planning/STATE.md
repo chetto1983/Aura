@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Phase 17 context gathered (box model settled via spikes 059-062)
-last_updated: "2026-06-14T12:50:00Z"
-last_activity: 2026-06-14 -- Phase 14 closed (onboarding enrichment + live operator sign-off)
+stopped_at: Completed 17-01-PLAN.md
+last_updated: "2026-06-14T12:26:59.095Z"
+last_activity: 2026-06-14
 progress:
   total_phases: 23
-  completed_phases: 21
+  completed_phases: 20
   total_plans: 143
-  completed_plans: 135
+  completed_plans: 134
   percent: 87
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Phase 09 — swarm minimal
+**Current focus:** Phase 17 — packaging-distribution
 
 ## Current Position
 
-Phase: 09
-Plan: Not started
+Phase: 17 (packaging-distribution) — EXECUTING
+Plan: 2 of 8
 Status: Ready to execute
-Last activity: 2026-06-14 -- Phase 17 planning complete
+Last activity: 2026-06-14
 
-Progress: [██████████] 99%
+Progress: [█████████░] 94%
 
 ### Next — Phase 17 (Packaging)
 
@@ -138,6 +138,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 | Phase 08.2 P03 | ~70 min | 3 tasks | 8 files |
 | Phase 08.2 P08.2-04 | ~30min | 2 tasks | 8 files |
 | Phase 08.2 P08.2-05 | ~20min | 3 tasks | 18 files |
+| Phase 17 P01 | ~6min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -218,6 +219,9 @@ Recent decisions affecting current work:
 - [Phase 08.2]: tool_search free-text ranking is now SEMANTIC (granite-embedding cosine via semindex.Ranker over the reused searchDocument bank); BM25 survives only as a guarded intersection-gated tiebreak behind AURA_TOOLSEARCH_FUSION (spike-056, NOT naive RRF)
 - [Phase 08.2]: The embed sidecar is a HARD dependency for tool_search (explicit Req-6 error when down) but the reasoning classifier KEEPS its soft LLM-router fallback (risk #9); the boot health-check logs, never fail-fast (Open-Q #2)
 - [Phase 08.2]: 08.2-05 (PHASE COMPLETE): tool-selection active-learning loop — internal/toolselectstore (:ToolSelectionExample, BOTH Cypher list-param workarounds, MERGE on sha256(query) idempotent) + internal/toolselectlearn (mis-route detector with symmetric sameTool split-on-__ NOT HasSuffix [risk #3]; two-tier oracle = free confident-margin top-1 else DeepSeek router gated by AURA_TOOLSELECT_ORACLE=on|off, no new sidecar Req-8) on internal/activelearn (2nd consumer, D-05) + a margin-gated stage-2 learned boost in search_learn.go (per-tool centroid, positives-only Rocchio γ=0; fires only when support>=3 AND centroid_cos>τ, additive β clamped to ε·desc_cos; strict no-op otherwise; 4 anti-amplification guards incl. oracle-in-loop RankForLearner ranks the stage-1 bank never the learned centroids). Open-Q #3 RESOLVED: Observe(userMsg, toolName) captured LIVE at runner_persist.go persistEvent / agent.ToolInvocationEnd (off hot path, non-blocking, nil-safe), proven by a real-turn wiring test. -race + goleak clean, lint 0, coverage 100/93.3/86.2/92.1%. Live :ToolSelectionExample round-trip deferred to a keyed reasoning_live Neo4j run (compiles + t.Fatal-under-CI). New env: AURA_TOOLSELECT_ORACLE. Commits e1133d86 + c0ff5e1f + 4a6c5311 + 087c3ea0
+- [Phase 17]: Amendment #63 is the Phase 17 pre-code PRD-first gate. — No Phase 17 code starts until the packaging box model is documented in PRD and SPEC.
+- [Phase 17]: gVisor is optional transparent host isolation, not capability stripping. — Aura keeps full parity inside the container while runsc thickens the host boundary for native Linux appliances.
+- [Phase 17]: The ec7fe2f6 audit jail is explicitly reverted; Docker Sandboxes is deferred. — The audit jail breaks shell_exec/self-extension; sbx is not suitable for the persistent native Linux compose appliance target.
 
 ### Pending Todos
 
@@ -251,6 +255,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T08:39:18.473Z
-Stopped at: Phase 17 context gathered (box model settled via spikes 059-062)
-Resume file: .planning/phases/17-packaging-distribution/17-CONTEXT.md
+Last session: 2026-06-14T12:26:59.083Z
+Stopped at: Completed 17-01-PLAN.md
+Resume file: None

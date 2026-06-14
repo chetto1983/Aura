@@ -581,7 +581,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 14. Onboarding + Agent.md | 5/5 | Complete | 2026-06-14 |
 | 15. Memory Subsystem | 5/5 | Complete   | 2026-06-12 |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
-| 17. Packaging & Distribution | 0/TBD | Not started | - |
+| 17. Packaging & Distribution | 1/8 | In Progress|  |
 
 ### Phase 16: MCP Sidecar Manager + Third-Party Trust
 
@@ -626,7 +626,7 @@ Plans:
 
 **Plans**: 8 plans (3 waves)
 
-- [ ] 17-01-PLAN.md — D-04 PRD/SPEC amendment gate (add gVisor tier, record ec7fe2f6 revert, defer sbx) [Wave 1]
+- [x] 17-01-PLAN.md — D-04 PRD/SPEC amendment gate (add gVisor tier, record ec7fe2f6 revert, defer sbx) [Wave 1]
 - [ ] 17-02-PLAN.md — Fat docker/aura/Dockerfile + D-01 revert of the distroless jail + de-harden the compose aura service [Wave 2]
 - [ ] 17-03-PLAN.md — In-container docker-runtime guard (D-08) + whatsapp sibling recipe (D-07) [Wave 2]
 - [ ] 17-04-PLAN.md — D-22 keyless boot + agent-call fail-closed llm_not_configured (D-10) [Wave 2]
