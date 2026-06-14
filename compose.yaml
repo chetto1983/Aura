@@ -10,18 +10,14 @@ services:
   aura:
     build:
       context: .
+      dockerfile: docker/aura/Dockerfile
     image: ${AURA_IMAGE:-aura:local}
     pull_policy: never
     container_name: aura
     restart: unless-stopped
-    user: "65532:65532"
-    read_only: true
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
     mem_limit: ${AURA_MEM_LIMIT:-768m}
     cpus: ${AURA_CPUS:-1.0}
+    pids_limit: ${AURA_PIDS_LIMIT:-512}
     depends_on:
       postgres:
         condition: service_healthy
@@ -44,7 +40,7 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
-      test: [ "CMD", "/aura", "version" ]
+      test: [ "CMD", "aura", "version" ]
       interval: 30s
       timeout: 5s
       retries: 3
