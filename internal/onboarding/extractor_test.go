@@ -22,7 +22,7 @@ func TestExtractDraftIncludesFactsAndPreferences(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Name: Davide",
-		"Prefer Italian responses",
+		"Reply language: it",
 		"Timezone: Europe/Rome",
 		"Tone: technical",
 		"Response length: short",

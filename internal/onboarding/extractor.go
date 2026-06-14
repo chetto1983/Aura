@@ -85,9 +85,6 @@ func identityLines(a Answers) []string {
 	if a.Timezone != "" {
 		out = append(out, "Timezone: "+a.Timezone)
 	}
-	if lang := languagePreference(a.Lang); lang != "" {
-		out = append(out, lang)
-	}
 	return out
 }
 
