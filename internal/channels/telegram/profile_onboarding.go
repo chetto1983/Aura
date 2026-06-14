@@ -254,10 +254,16 @@ func replyFromEvent(chatID int64, ev *agent.Event) profileReply {
 	state := ev.Actions.StateDelta
 	step, _ := state["onboarding_step"].(string)
 	switch profileflow.Step(step) {
-	case profileflow.StepName:
-		return profileReply{text: "Come posso chiamarti?"}
-	case profileflow.StepPreferences:
-		return profileReply{text: "Che lingua, timezone, tono e lunghezza delle risposte preferisci?"}
+	case profileflow.StepIdentity:
+		return profileReply{text: "Come ti chiami, di cosa ti occupi (ruolo + azienda/team) e dove sei (fuso orario)?"}
+	case profileflow.StepWork:
+		return profileReply{text: "Quali sono le tue competenze principali e lo stack/strumenti che usi di solito?"}
+	case profileflow.StepProjects:
+		return profileReply{text: "A cosa stai lavorando in questo periodo e quali obiettivi hai?"}
+	case profileflow.StepSocial:
+		return profileReply{text: "Quali sono i tuoi interessi e le persone ricorrenti con cui collabori (nome + ruolo)?"}
+	case profileflow.StepStyle:
+		return profileReply{text: "Come preferisci che ti risponda? (tono: diretto/amichevole/formale; lunghezza: breve/normale/dettagliata; lingua; voce on/off)"}
 	case profileflow.StepDraft:
 		draft, _ := state["profile_draft"].(string)
 		return profileReply{
@@ -320,7 +326,7 @@ func identityLabel(acct Account) string {
 }
 
 func answersForStep(step profileflow.Step, text string) profileflow.Answers {
-	if step == profileflow.StepName {
+	if step == profileflow.StepIdentity {
 		return profileflow.Answers{Name: strings.TrimSpace(text)}
 	}
 	return answersFromText(text)

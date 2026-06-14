@@ -112,8 +112,8 @@ func TestOnTextFirstLinkedNoProfileStartsProfileOnboardingNoTurn(t *testing.T) {
 		t.Fatalf("first profile onboarding message must not drive a turn, got %d calls", calls)
 	}
 	texts := bot.sentTexts()
-	if len(texts) != 1 || !strings.Contains(texts[0], "chiamarti") {
-		t.Fatalf("first profile onboarding reply = %v, want name question", texts)
+	if len(texts) != 1 || !strings.Contains(texts[0], "chiami") {
+		t.Fatalf("first profile onboarding reply = %v, want identity question", texts)
 	}
 }
 
@@ -146,8 +146,8 @@ func TestOnTextActiveProfileReplyDoesNotDriveTurn(t *testing.T) {
 		t.Fatalf("active profile onboarding reply must not drive a turn, got %d calls", calls)
 	}
 	texts := bot.sentTexts()
-	if len(texts) != 2 || !strings.Contains(texts[1], "lingua") {
-		t.Fatalf("active profile onboarding replies = %v, want preferences question second", texts)
+	if len(texts) != 2 || !strings.Contains(texts[1], "competenze") {
+		t.Fatalf("active profile onboarding replies = %v, want work question second", texts)
 	}
 }
 
@@ -184,8 +184,8 @@ func TestOnTextOnboardRestartsProfileOnboardingNoTurn(t *testing.T) {
 		t.Fatalf("/onboard must not drive a turn, got %d calls", calls)
 	}
 	texts := bot.sentTexts()
-	if len(texts) != 1 || !strings.Contains(texts[0], "chiamarti") {
-		t.Fatalf("/onboard reply = %v, want restarted profile prompt", texts)
+	if len(texts) != 1 || !strings.Contains(texts[0], "chiami") {
+		t.Fatalf("/onboard reply = %v, want restarted identity prompt", texts)
 	}
 }
 

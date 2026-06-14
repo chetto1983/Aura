@@ -9,21 +9,37 @@ import (
 	tele "gopkg.in/telebot.v4"
 )
 
+// driveToStyle sends blank answers for identity+work+projects+social, returning
+// the last reply (which should be the style question). Returns false if any step
+// fails or is not handled.
+func driveToStyle(t *testing.T, po *profileOnboarding, chatID int64) bool {
+	t.Helper()
+	steps := []string{"Davide — dev", "", "", ""}
+	for i, text := range steps {
+		_, ok := po.handleText(context.Background(), chatID, text)
+		if !ok {
+			t.Errorf("step %d handleText not handled", i)
+			return false
+		}
+	}
+	return true
+}
+
 func TestProfileOnboardingConfirmWritesProfile(t *testing.T) {
 	ctx := context.Background()
 	store := profile.NewStore(t.TempDir())
 	po := newProfileOnboarding(store, profileAccountFake{acct: profileAccount()})
 
 	start, handled := po.maybeStart(ctx, 42, 555)
-	if !handled || !strings.Contains(start.text, "chiamarti") {
-		t.Fatalf("maybeStart = (%+v, %v), want first question", start, handled)
+	if !handled || !strings.Contains(start.text, "chiami") {
+		t.Fatalf("maybeStart = (%+v, %v), want identity question", start, handled)
 	}
-	if out, handled := po.handleText(ctx, 42, "Davide"); !handled || !strings.Contains(out.text, "lingua") {
-		t.Fatalf("name answer = (%+v, %v), want preferences question", out, handled)
+	if !driveToStyle(t, po, 42) {
+		t.Fatal("could not drive to style step")
 	}
 	draft, handled := po.handleText(ctx, 42, "italiano Europe/Rome tono tecnico risposte brevi voce")
 	if !handled || !strings.Contains(draft.text, "confermare") || draft.markup == nil {
-		t.Fatalf("preferences answer = (%+v, %v), want draft with buttons", draft, handled)
+		t.Fatalf("style answer = (%+v, %v), want draft with buttons", draft, handled)
 	}
 	assertProfileCallbackDataBounded(t, draft.markup)
 
@@ -77,7 +93,9 @@ func TestProfileOnboardingEditRevisesDraftBeforeConfirm(t *testing.T) {
 	po := newProfileOnboarding(store, profileAccountFake{acct: profileAccount()})
 
 	po.maybeStart(ctx, 42, 555)
-	po.handleText(ctx, 42, "Davide")
+	if !driveToStyle(t, po, 42) {
+		t.Fatal("could not drive to style step")
+	}
 	po.handleText(ctx, 42, "italiano Europe/Rome risposte concise")
 	edit, handled := po.handleCallback(ctx, 42, profileCallbackData(42, profileActionEdit))
 	if !handled || !strings.Contains(edit.text, "modifiche") {

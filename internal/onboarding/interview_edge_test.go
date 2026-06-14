@@ -3,7 +3,6 @@ package onboarding
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/agent"
@@ -31,8 +30,8 @@ func TestNewInterviewStepAgentNilSession(t *testing.T) {
 	if a == nil || a.session == nil {
 		t.Fatal("nil session must be replaced with a fresh session")
 	}
-	if a.session.Step != StepName || a.session.Status != StatusActive {
-		t.Fatalf("default session state = %q/%q, want name/active", a.session.Step, a.session.Status)
+	if a.session.Step != StepIdentity || a.session.Status != StatusActive {
+		t.Fatalf("default session state = %q/%q, want identity/active", a.session.Step, a.session.Status)
 	}
 }
 
@@ -111,10 +110,10 @@ func TestInterviewStepAgentRunSurfacesTransitionError(t *testing.T) {
 }
 
 func TestInterviewLoopQueuedRestartIsFullReset(t *testing.T) {
-	// restart is a shouldApplyBeforePrompt intent: it is applied before the name
+	// restart is a shouldApplyBeforePrompt intent: it is applied before the identity
 	// prompt and performs a full session reset (*s = *NewSession), which discards
 	// any remaining queued inputs. The trailing skip is therefore dropped, and the
-	// loop emits exactly the re-asked name question (non-terminal).
+	// loop emits exactly the re-asked identity question (non-terminal).
 	s := NewSession("identity-1", "local")
 	s.Queue(
 		Input{Intent: IntentRestart},
@@ -127,11 +126,11 @@ func TestInterviewLoopQueuedRestartIsFullReset(t *testing.T) {
 	if events[0].Actions.Escalate {
 		t.Fatal("restart re-prompt must not escalate")
 	}
-	if !strings.Contains(events[0].LLMResponse.Content, "What should Aura call you") {
-		t.Fatalf("restart should re-ask the name, got %q", events[0].LLMResponse.Content)
+	if events[0].LLMResponse.Content != string(StepIdentity) {
+		t.Fatalf("restart should re-ask the identity question, got %q", events[0].LLMResponse.Content)
 	}
-	if s.Status != StatusActive || s.Step != StepName {
-		t.Fatalf("after queued restart status/step = %q/%q, want active/name", s.Status, s.Step)
+	if s.Status != StatusActive || s.Step != StepIdentity {
+		t.Fatalf("after queued restart status/step = %q/%q, want active/identity", s.Status, s.Step)
 	}
 	if len(s.pending) != 0 {
 		t.Fatalf("restart should clear the pending queue, %d left", len(s.pending))
@@ -139,9 +138,8 @@ func TestInterviewLoopQueuedRestartIsFullReset(t *testing.T) {
 }
 
 func TestInterviewLoopSkipBeforePromptShortCircuits(t *testing.T) {
-	// A queued skip is applied before the name prompt (shouldApplyBeforePrompt),
-	// terminating immediately without ever asking the name. This exercises the
-	// skip-before-prompt branch of nextTransition.
+	// A queued skip is applied before the identity prompt (shouldApplyBeforePrompt),
+	// terminating immediately without ever asking the identity question.
 	s := NewSession("identity-1", "local")
 	s.Queue(Input{Intent: IntentSkip})
 	events := drainOnboarding(t, NewLoop(s, 8))
@@ -161,7 +159,7 @@ func TestInterviewLoopSkipBeforePromptShortCircuits(t *testing.T) {
 }
 
 func TestInterviewLoopCancelBeforeAnyPrompt(t *testing.T) {
-	// cancel is a shouldApplyBeforePrompt intent: it short-circuits the name prompt.
+	// cancel is a shouldApplyBeforePrompt intent: it short-circuits the identity prompt.
 	s := NewSession("identity-1", "local")
 	s.Queue(Input{Intent: IntentCancel})
 	events := drainOnboarding(t, NewLoop(s, 8))

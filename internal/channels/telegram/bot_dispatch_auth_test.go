@@ -234,8 +234,11 @@ func TestOnProfileCallbackLinkedConfirmsOnboarding(t *testing.T) {
 
 	for _, text := range []string{
 		"/onboard",
-		"Davide",
-		"italiano Europe/Rome tono tecnico risposte brevi voce",
+		"Davide — developer",      // identity
+		"Go, Postgres",            // work
+		"Aura project",            // projects
+		"music, Andrea — partner", // social
+		"italiano Europe/Rome tono tecnico risposte brevi voce", // style → draft
 	} {
 		msg := chatMsg(42)
 		msg.Sender = &tele.User{ID: 555}

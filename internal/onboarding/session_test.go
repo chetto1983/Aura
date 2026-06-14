@@ -64,9 +64,19 @@ func TestSessionSkipAndCancelAreTerminal(t *testing.T) {
 
 func TestSessionEditReopensDraftAndCanConfirm(t *testing.T) {
 	s := NewSession("identity-1", "local")
-	if _, err := s.Apply(Input{Intent: IntentAnswer, Answers: Answers{Name: "Davide"}}); err != nil {
-		t.Fatalf("name answer: %v", err)
+	// Drive through all 5 collecting steps.
+	steps := []Input{
+		{Intent: IntentAnswer, Answers: Answers{Name: "Davide"}},
+		{Intent: IntentAnswer, Answers: Answers{}},
+		{Intent: IntentAnswer, Answers: Answers{}},
+		{Intent: IntentAnswer, Answers: Answers{}},
 	}
+	for i, in := range steps {
+		if _, err := s.Apply(in); err != nil {
+			t.Fatalf("step %d answer: %v", i, err)
+		}
+	}
+	// Final collecting step (style) → produces draft.
 	draft, err := s.Apply(Input{Intent: IntentAnswer, Answers: Answers{
 		Lang:           "it",
 		Timezone:       "Europe/Rome",
@@ -74,10 +84,10 @@ func TestSessionEditReopensDraftAndCanConfirm(t *testing.T) {
 		ResponseLength: "concise",
 	}})
 	if err != nil {
-		t.Fatalf("preferences answer: %v", err)
+		t.Fatalf("style answer: %v", err)
 	}
 	if s.Status != StatusDraft || s.Step != StepDraft {
-		t.Fatalf("after preferences status/step = %q/%q, want draft/%q", s.Status, s.Step, StepDraft)
+		t.Fatalf("after style status/step = %q/%q, want draft/%q", s.Status, s.Step, StepDraft)
 	}
 	profileDraft, _ := draft.StateDelta["profile_draft"].(string)
 	if !strings.Contains(profileDraft, "Agent.md") {
@@ -110,5 +120,28 @@ func TestSessionEditReopensDraftAndCanConfirm(t *testing.T) {
 	}
 	if got, _ := done.StateDelta["resume_chat"].(bool); !got {
 		t.Fatalf("resume_chat = %v, want true", done.StateDelta["resume_chat"])
+	}
+}
+
+func TestSession_FiveStepFlow(t *testing.T) {
+	s := NewSession("id1", "Davide")
+	if s.Step != StepIdentity {
+		t.Fatalf("first step = %q, want %q", s.Step, StepIdentity)
+	}
+	steps := []Step{StepIdentity, StepWork, StepProjects, StepSocial, StepStyle}
+	for i, want := range steps {
+		if s.Step != want {
+			t.Fatalf("step %d = %q, want %q", i, s.Step, want)
+		}
+		out, err := s.Apply(Input{Intent: IntentAnswer, Answers: Answers{Name: "Davide"}})
+		if err != nil {
+			t.Fatalf("apply step %d: %v", i, err)
+		}
+		if i < len(steps)-1 && out.Terminal {
+			t.Fatalf("step %d unexpectedly terminal", i)
+		}
+	}
+	if s.Step != StepDraft || s.Status != StatusDraft {
+		t.Fatalf("after style: step=%q status=%q, want draft/draft", s.Step, s.Status)
 	}
 }

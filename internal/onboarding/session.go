@@ -31,10 +31,16 @@ const (
 type Step string
 
 const (
-	// StepName asks what Aura should call the user.
-	StepName Step = "name"
-	// StepPreferences collects language, timezone, tone, and response-length preferences.
-	StepPreferences Step = "preferences"
+	// StepIdentity asks name, role, company, and location.
+	StepIdentity Step = "identity"
+	// StepWork collects expertise and tech stack.
+	StepWork Step = "work"
+	// StepProjects collects active projects and goals.
+	StepProjects Step = "projects"
+	// StepSocial collects interests and key collaborators.
+	StepSocial Step = "social"
+	// StepStyle collects tone, language, response-length, and voice preferences.
+	StepStyle Step = "style"
 	// StepDraft presents the Agent.md draft for confirm, edit, or skip.
 	StepDraft Step = "draft"
 )
@@ -66,7 +72,19 @@ var (
 
 // Answers contains structured profile facts collected during onboarding.
 type Answers struct {
-	Name                string
+	Name      string
+	Role      string
+	Company   string
+	Location  string
+	Expertise []string
+	Stack     []string
+	Projects  []string
+	Goals     []string
+	Interests []string
+	People    []string // e.g. "Andrea — business partner"
+	Vetoes    []string
+
+	// style/preferences
 	Lang                string
 	Timezone            string
 	TonePreference      string
@@ -107,12 +125,7 @@ type Session struct {
 
 // NewSession starts profile onboarding for an identity.
 func NewSession(identityID, identityName string) *Session {
-	return &Session{
-		IdentityID:   identityID,
-		IdentityName: identityName,
-		Step:         StepName,
-		Status:       StatusActive,
-	}
+	return &Session{IdentityID: identityID, IdentityName: identityName, Step: StepIdentity, Status: StatusActive}
 }
 
 // Apply applies one input to the session and returns the next transition.
@@ -138,7 +151,7 @@ func (s *Session) Apply(in Input) (Transition, error) {
 		return s.terminal("Onboarding canceled. Normal chat resumes.", map[string]any{"canceled": true}), nil
 	case IntentRestart:
 		s.restart()
-		return s.questionName(), nil
+		return s.question(StepIdentity), nil
 	default:
 		return Transition{}, fmt.Errorf("%w: %s", ErrInvalidIntent, in.Intent)
 	}
@@ -183,10 +196,19 @@ func (s *Session) applyQueued() (Transition, error) {
 func (s *Session) applyAnswer(in Input) (Transition, error) {
 	s.mergeAnswers(in)
 	switch s.Step {
-	case StepName:
-		s.Step = StepPreferences
-		return s.questionPreferences(), nil
-	case StepPreferences, StepDraft:
+	case StepIdentity:
+		s.Step = StepWork
+		return s.question(StepWork), nil
+	case StepWork:
+		s.Step = StepProjects
+		return s.question(StepProjects), nil
+	case StepProjects:
+		s.Step = StepSocial
+		return s.question(StepSocial), nil
+	case StepSocial:
+		s.Step = StepStyle
+		return s.question(StepStyle), nil
+	case StepStyle, StepDraft:
 		if err := s.refreshDraft(); err != nil {
 			return Transition{}, err
 		}
@@ -234,33 +256,56 @@ func (s *Session) isTerminal() bool {
 
 func (s *Session) mergeAnswers(in Input) {
 	a := in.Answers
-	if a.Name == "" && s.Step == StepName && strings.TrimSpace(in.Text) != "" {
+	if a.Name == "" && s.Step == StepIdentity && strings.TrimSpace(in.Text) != "" {
 		a.Name = strings.TrimSpace(in.Text)
 	}
-	if a.Name != "" {
-		s.Answers.Name = strings.TrimSpace(a.Name)
-	}
-	if a.Lang != "" {
-		s.Answers.Lang = strings.TrimSpace(a.Lang)
-	}
-	if a.Timezone != "" {
-		s.Answers.Timezone = strings.TrimSpace(a.Timezone)
-	}
-	if a.TonePreference != "" {
-		s.Answers.TonePreference = strings.TrimSpace(a.TonePreference)
-	}
-	if a.ResponseLength != "" {
-		s.Answers.ResponseLength = strings.TrimSpace(a.ResponseLength)
-	}
+	mergeStr(&s.Answers.Name, a.Name)
+	mergeStr(&s.Answers.Role, a.Role)
+	mergeStr(&s.Answers.Company, a.Company)
+	mergeStr(&s.Answers.Location, a.Location)
+	mergeStr(&s.Answers.Lang, a.Lang)
+	mergeStr(&s.Answers.Timezone, a.Timezone)
+	mergeStr(&s.Answers.TonePreference, a.TonePreference)
+	mergeStr(&s.Answers.ResponseLength, a.ResponseLength)
+	mergeStr(&s.Answers.CustomInstructions, a.CustomInstructions)
+	s.Answers.Expertise = mergeSlice(s.Answers.Expertise, a.Expertise)
+	s.Answers.Stack = mergeSlice(s.Answers.Stack, a.Stack)
+	s.Answers.Projects = mergeSlice(s.Answers.Projects, a.Projects)
+	s.Answers.Goals = mergeSlice(s.Answers.Goals, a.Goals)
+	s.Answers.Interests = mergeSlice(s.Answers.Interests, a.Interests)
+	s.Answers.People = mergeSlice(s.Answers.People, a.People)
+	s.Answers.Vetoes = mergeSlice(s.Answers.Vetoes, a.Vetoes)
 	if a.VoiceMode != nil {
 		s.Answers.VoiceMode = a.VoiceMode
 	}
 	if a.CanProactiveMessage != nil {
 		s.Answers.CanProactiveMessage = a.CanProactiveMessage
 	}
-	if a.CustomInstructions != "" {
-		s.Answers.CustomInstructions = strings.TrimSpace(a.CustomInstructions)
+}
+
+func mergeStr(dst *string, v string) {
+	if strings.TrimSpace(v) != "" {
+		*dst = strings.TrimSpace(v)
 	}
+}
+
+func mergeSlice(dst, add []string) []string {
+	seen := make(map[string]struct{}, len(dst))
+	for _, d := range dst {
+		seen[d] = struct{}{}
+	}
+	for _, v := range add {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		if _, ok := seen[v]; ok {
+			continue
+		}
+		seen[v] = struct{}{}
+		dst = append(dst, v)
+	}
+	return dst
 }
 
 func (s *Session) refreshDraft() error {
@@ -273,19 +318,14 @@ func (s *Session) refreshDraft() error {
 	return nil
 }
 
-func (s *Session) questionName() Transition {
-	return Transition{
-		Content:    "What should Aura call you?",
-		StateDelta: s.state("onboarding_step", string(StepName)),
-	}
+func (s *Session) question(step Step) Transition {
+	return Transition{Content: string(step), StateDelta: s.state("onboarding_step", string(step))}
 }
 
 func (s *Session) currentPrompt() (Transition, bool) {
 	switch s.Step {
-	case StepName:
-		return s.questionName(), true
-	case StepPreferences:
-		return s.questionPreferences(), true
+	case StepIdentity, StepWork, StepProjects, StepSocial, StepStyle:
+		return s.question(s.Step), true
 	case StepDraft:
 		if strings.TrimSpace(s.DraftAgentMD) == "" {
 			return Transition{}, false
@@ -293,13 +333,6 @@ func (s *Session) currentPrompt() (Transition, bool) {
 		return s.draft("Draft ready. Confirm, edit, or skip."), true
 	default:
 		return Transition{}, false
-	}
-}
-
-func (s *Session) questionPreferences() Transition {
-	return Transition{
-		Content:    "Which language, timezone, tone, and response length should Aura use?",
-		StateDelta: s.state("onboarding_step", string(StepPreferences)),
 	}
 }
 

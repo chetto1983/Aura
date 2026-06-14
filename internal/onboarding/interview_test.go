@@ -14,6 +14,9 @@ func TestInterviewLoopConfirmEmitsProfileState(t *testing.T) {
 	s := NewSession("identity-1", "local")
 	s.Queue(
 		Input{Intent: IntentAnswer, Answers: Answers{Name: "Davide"}},
+		Input{Intent: IntentAnswer, Answers: Answers{}},
+		Input{Intent: IntentAnswer, Answers: Answers{}},
+		Input{Intent: IntentAnswer, Answers: Answers{}},
 		Input{Intent: IntentAnswer, Answers: Answers{
 			Lang:           "it",
 			Timezone:       "Europe/Rome",
@@ -24,16 +27,17 @@ func TestInterviewLoopConfirmEmitsProfileState(t *testing.T) {
 		Input{Intent: IntentConfirm},
 	)
 
-	loop := NewLoop(s, 8)
+	loop := NewLoop(s, 12)
 	if loop.FindAgent("InterviewStepAgent") == nil {
 		t.Fatal("loop must contain InterviewStepAgent")
 	}
 	events := drainOnboarding(t, loop)
-	if len(events) != 4 {
-		t.Fatalf("confirm path emitted %d events, want 4", len(events))
+	// 5 step questions + 1 draft + 1 confirm-terminal = 7 events.
+	if len(events) != 7 {
+		t.Fatalf("confirm path emitted %d events, want 7", len(events))
 	}
-	if !strings.Contains(events[0].LLMResponse.Content, "What should Aura call you") {
-		t.Fatalf("first event should ask for a name, got %q", events[0].LLMResponse.Content)
+	if events[0].LLMResponse.Content != string(StepIdentity) {
+		t.Fatalf("first event should be the identity question, got %q", events[0].LLMResponse.Content)
 	}
 	assertNoToolCalls(t, events)
 
@@ -81,14 +85,18 @@ func TestInterviewLoopEditEmitsRevisedDraftBeforeConfirm(t *testing.T) {
 	s := NewSession("identity-1", "local")
 	s.Queue(
 		Input{Intent: IntentAnswer, Answers: Answers{Name: "Davide"}},
+		Input{Intent: IntentAnswer, Answers: Answers{}},
+		Input{Intent: IntentAnswer, Answers: Answers{}},
+		Input{Intent: IntentAnswer, Answers: Answers{}},
 		Input{Intent: IntentAnswer, Answers: Answers{Lang: "it", Timezone: "Europe/Rome", ResponseLength: "concise"}},
 		Input{Intent: IntentEdit, Answers: Answers{ResponseLength: "short"}},
 		Input{Intent: IntentConfirm},
 	)
 
-	events := drainOnboarding(t, NewLoop(s, 8))
-	if len(events) != 5 {
-		t.Fatalf("edit path emitted %d events, want 5", len(events))
+	events := drainOnboarding(t, NewLoop(s, 12))
+	// 5 step questions + 1 draft + 1 revised-draft + 1 confirm-terminal = 8 events.
+	if len(events) != 8 {
+		t.Fatalf("edit path emitted %d events, want 8", len(events))
 	}
 	revisedDraft, _ := events[len(events)-2].Actions.StateDelta["profile_draft"].(string)
 	if !strings.Contains(revisedDraft, "Response length: short") {

@@ -34,14 +34,14 @@ func TestSessionRestartFromTerminalReopensInterview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("restart: %v", err)
 	}
-	if s.Status != StatusActive || s.Step != StepName {
-		t.Fatalf("after restart status/step = %q/%q, want active/name", s.Status, s.Step)
+	if s.Status != StatusActive || s.Step != StepIdentity {
+		t.Fatalf("after restart status/step = %q/%q, want active/identity", s.Status, s.Step)
 	}
 	if s.IdentityID != "identity-9" || s.IdentityName != "operator" {
 		t.Fatalf("restart lost identity: id=%q name=%q", s.IdentityID, s.IdentityName)
 	}
-	if !strings.Contains(out.Content, "What should Aura call you") {
-		t.Fatalf("restart should re-ask the name question, got %q", out.Content)
+	if out.Content != string(StepIdentity) {
+		t.Fatalf("restart should re-ask the identity question, got %q", out.Content)
 	}
 	if out.Terminal {
 		t.Fatal("restart transition must not be terminal")
@@ -51,7 +51,7 @@ func TestSessionRestartFromTerminalReopensInterview(t *testing.T) {
 func TestSessionRestartClearsPriorAnswers(t *testing.T) {
 	s := NewSession("identity-2", "local")
 	if _, err := s.Apply(Input{Intent: IntentAnswer, Answers: Answers{Name: "Davide"}}); err != nil {
-		t.Fatalf("name answer: %v", err)
+		t.Fatalf("identity answer: %v", err)
 	}
 	if s.Answers.Name != "Davide" {
 		t.Fatalf("pre-restart name = %q, want Davide", s.Answers.Name)
@@ -62,8 +62,8 @@ func TestSessionRestartClearsPriorAnswers(t *testing.T) {
 	if s.Answers.Name != "" {
 		t.Fatalf("restart should clear answers, got name %q", s.Answers.Name)
 	}
-	if s.Step != StepName {
-		t.Fatalf("restart step = %q, want %q", s.Step, StepName)
+	if s.Step != StepIdentity {
+		t.Fatalf("restart step = %q, want %q", s.Step, StepIdentity)
 	}
 }
 
@@ -84,14 +84,14 @@ func TestSessionEmptyIntentDefaultsToAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("empty-intent apply: %v", err)
 	}
-	if s.Step != StepPreferences {
-		t.Fatalf("after default answer step = %q, want %q", s.Step, StepPreferences)
+	if s.Step != StepWork {
+		t.Fatalf("after default answer step = %q, want %q", s.Step, StepWork)
 	}
 	if s.Answers.Name != "Davide" {
 		t.Fatalf("text answer not merged as name: %q", s.Answers.Name)
 	}
-	if !strings.Contains(out.Content, "language") {
-		t.Fatalf("default-intent transition should advance to preferences, got %q", out.Content)
+	if out.Content != string(StepWork) {
+		t.Fatalf("default-intent transition should advance to work, got %q", out.Content)
 	}
 }
 
@@ -106,19 +106,19 @@ func TestSessionEditBeforeDraftRejected(t *testing.T) {
 	}
 }
 
-func TestMergeAnswersTextOnlyAtNameStep(t *testing.T) {
+func TestMergeAnswersTextOnlyAtIdentityStep(t *testing.T) {
 	s := NewSession("identity-1", "local")
-	// At StepName with no explicit Answers.Name, free Text becomes the name.
+	// At StepIdentity with no explicit Answers.Name, free Text becomes the name.
 	s.mergeAnswers(Input{Text: "  Grace  "})
 	if s.Answers.Name != "Grace" {
 		t.Fatalf("name from text = %q, want Grace", s.Answers.Name)
 	}
 
-	// Past StepName, free Text is NOT promoted to a name.
-	s.Step = StepPreferences
-	s.mergeAnswers(Input{Text: "Europe/Rome"})
+	// Past StepIdentity, free Text is NOT promoted to a name.
+	s.Step = StepWork
+	s.mergeAnswers(Input{Text: "Go, Postgres"})
 	if s.Answers.Name != "Grace" {
-		t.Fatalf("text at preferences step overwrote name: %q", s.Answers.Name)
+		t.Fatalf("text at work step overwrote name: %q", s.Answers.Name)
 	}
 }
 
@@ -168,20 +168,47 @@ func TestMergeAnswersPreservesExistingOnEmptyFields(t *testing.T) {
 }
 
 func TestCurrentPromptPerStep(t *testing.T) {
-	t.Run("name step", func(t *testing.T) {
+	t.Run("identity step", func(t *testing.T) {
 		s := NewSession("id", "n")
 		out, ok := s.currentPrompt()
-		if !ok || !strings.Contains(out.Content, "What should Aura call you") {
-			t.Fatalf("name prompt ok=%v content=%q", ok, out.Content)
+		if !ok || out.Content != string(StepIdentity) {
+			t.Fatalf("identity prompt ok=%v content=%q", ok, out.Content)
 		}
 	})
 
-	t.Run("preferences step", func(t *testing.T) {
+	t.Run("work step", func(t *testing.T) {
 		s := NewSession("id", "n")
-		s.Step = StepPreferences
+		s.Step = StepWork
 		out, ok := s.currentPrompt()
-		if !ok || !strings.Contains(out.Content, "language") {
-			t.Fatalf("preferences prompt ok=%v content=%q", ok, out.Content)
+		if !ok || out.Content != string(StepWork) {
+			t.Fatalf("work prompt ok=%v content=%q", ok, out.Content)
+		}
+	})
+
+	t.Run("projects step", func(t *testing.T) {
+		s := NewSession("id", "n")
+		s.Step = StepProjects
+		out, ok := s.currentPrompt()
+		if !ok || out.Content != string(StepProjects) {
+			t.Fatalf("projects prompt ok=%v content=%q", ok, out.Content)
+		}
+	})
+
+	t.Run("social step", func(t *testing.T) {
+		s := NewSession("id", "n")
+		s.Step = StepSocial
+		out, ok := s.currentPrompt()
+		if !ok || out.Content != string(StepSocial) {
+			t.Fatalf("social prompt ok=%v content=%q", ok, out.Content)
+		}
+	})
+
+	t.Run("style step", func(t *testing.T) {
+		s := NewSession("id", "n")
+		s.Step = StepStyle
+		out, ok := s.currentPrompt()
+		if !ok || out.Content != string(StepStyle) {
+			t.Fatalf("style prompt ok=%v content=%q", ok, out.Content)
 		}
 	})
 
