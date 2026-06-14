@@ -122,7 +122,25 @@ func (p *profileOnboarding) handleText(ctx context.Context, chatID int64, text s
 	defer ps.mu.Unlock()
 	if ps.awaitingEdit {
 		ps.awaitingEdit = false
-		ps.session.Queue(profileflow.Input{Intent: profileflow.IntentEdit, Answers: answersFromText(text)})
+		ans := answersFromText(text)
+		if p.extractor != nil {
+			if extracted, err := p.extractor.Extract(ctx, ps.session.Step, text); err == nil {
+				extracted.TonePreference = ans.TonePreference
+				extracted.ResponseLength = ans.ResponseLength
+				extracted.VoiceMode = ans.VoiceMode
+				extracted.CanProactiveMessage = ans.CanProactiveMessage
+				if extracted.Lang == "" {
+					extracted.Lang = ans.Lang
+				}
+				if extracted.Timezone == "" {
+					extracted.Timezone = ans.Timezone
+				}
+				ans = extracted
+			} else {
+				slog.Warn("telegram profile onboarding: extract (edit)", "err", err)
+			}
+		}
+		ps.session.Queue(profileflow.Input{Intent: profileflow.IntentEdit, Answers: ans})
 	} else {
 		step := ps.session.Step
 		var ans profileflow.Answers

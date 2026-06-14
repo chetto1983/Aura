@@ -236,13 +236,51 @@ func (s *Session) edit(in Input) (Transition, error) {
 	if strings.TrimSpace(s.DraftAgentMD) == "" {
 		return Transition{}, ErrDraftRequired
 	}
-	s.mergeAnswers(in)
+	s.replaceAnswers(in.Answers)
 	if err := s.refreshDraft(); err != nil {
 		return Transition{}, err
 	}
 	s.Step = StepDraft
 	s.Status = StatusDraft
 	return s.draft("Draft updated. Confirm, edit, or skip."), nil
+}
+
+// replaceAnswers overwrites the fields present in a (an edit/correction restates a
+// fact, so it replaces rather than accumulates like the progressive interview).
+func (s *Session) replaceAnswers(a Answers) {
+	replaceStr(&s.Answers.Name, a.Name)
+	replaceStr(&s.Answers.Role, a.Role)
+	replaceStr(&s.Answers.Company, a.Company)
+	replaceStr(&s.Answers.Location, a.Location)
+	replaceStr(&s.Answers.Lang, a.Lang)
+	replaceStr(&s.Answers.Timezone, a.Timezone)
+	replaceStr(&s.Answers.TonePreference, a.TonePreference)
+	replaceStr(&s.Answers.ResponseLength, a.ResponseLength)
+	replaceStr(&s.Answers.CustomInstructions, a.CustomInstructions)
+	replaceSlice(&s.Answers.Expertise, a.Expertise)
+	replaceSlice(&s.Answers.Stack, a.Stack)
+	replaceSlice(&s.Answers.Projects, a.Projects)
+	replaceSlice(&s.Answers.Goals, a.Goals)
+	replaceSlice(&s.Answers.Interests, a.Interests)
+	replaceSlice(&s.Answers.People, a.People)
+	if a.VoiceMode != nil {
+		s.Answers.VoiceMode = a.VoiceMode
+	}
+	if a.CanProactiveMessage != nil {
+		s.Answers.CanProactiveMessage = a.CanProactiveMessage
+	}
+}
+
+func replaceStr(dst *string, v string) {
+	if strings.TrimSpace(v) != "" {
+		*dst = strings.TrimSpace(v)
+	}
+}
+
+func replaceSlice(dst *[]string, v []string) {
+	if len(v) > 0 {
+		*dst = v
+	}
 }
 
 func (s *Session) restart() {

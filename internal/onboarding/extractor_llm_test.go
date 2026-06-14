@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/llm"
@@ -39,5 +40,33 @@ func TestLLMAnswerExtractor_BadJSONFallsBack(t *testing.T) {
 	}
 	if len(got.Projects) != 1 || got.Projects[0] != "lavoro su Aura" {
 		t.Errorf("fallback projects = %v", got.Projects)
+	}
+}
+
+func TestExtractSystemPrompt_CorrectsAndFullDefault(t *testing.T) {
+	// Every prompt must instruct the model to correct misspellings.
+	for _, step := range []Step{StepIdentity, StepWork, StepProjects, StepSocial, StepDraft, Step("unknown")} {
+		p := extractSystemPrompt(step)
+		if !strings.Contains(p, "Correct obvious misspellings") {
+			t.Errorf("step %q prompt missing misspelling correction directive:\n%s", step, p)
+		}
+	}
+
+	// The default (non-scoped) path at StepDraft must expose all fields so an
+	// edit correction can update any fact.
+	dflt := extractSystemPrompt(StepDraft)
+	for _, field := range []string{"expertise", "stack", "projects", "people"} {
+		if !strings.Contains(dflt, field) {
+			t.Errorf("default/StepDraft prompt missing field %q:\n%s", field, dflt)
+		}
+	}
+
+	// Scoped steps must still expose only their own fields.
+	work := extractSystemPrompt(StepWork)
+	if !strings.Contains(work, "expertise") || !strings.Contains(work, "stack") {
+		t.Errorf("StepWork prompt missing scoped fields:\n%s", work)
+	}
+	if strings.Contains(work, "projects") || strings.Contains(work, "interests") {
+		t.Errorf("StepWork prompt leaks non-work fields:\n%s", work)
 	}
 }

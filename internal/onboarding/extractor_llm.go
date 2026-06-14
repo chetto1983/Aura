@@ -111,6 +111,7 @@ func fallbackAnswers(step Step, raw string) Answers {
 func extractSystemPrompt(step Step) string {
 	const base = "You extract structured profile facts from one onboarding answer. " +
 		"Reply with a SINGLE JSON object and nothing else. Use empty string/array for unknown fields. " +
+		"Correct obvious misspellings and normalize names, technologies, companies, and places to their standard spelling and capitalization. " +
 		"Keep values short; preserve the user's language. "
 	switch step {
 	case StepIdentity:
@@ -122,6 +123,6 @@ func extractSystemPrompt(step Step) string {
 	case StepSocial:
 		return base + `Fields: {"interests":[],"people":[]}. For people use "Name — role".`
 	default:
-		return base + `Fields: {}.`
+		return base + `Fields: {"role":"","company":"","location":"","timezone":"","lang":"","expertise":[],"stack":[],"projects":[],"goals":[],"interests":[],"people":[]}. Extract every field the user mentions or corrects.`
 	}
 }

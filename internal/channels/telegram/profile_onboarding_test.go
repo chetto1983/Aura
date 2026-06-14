@@ -181,6 +181,9 @@ func (fakeExtractor) Extract(_ context.Context, step profileflow.Step, _ string)
 		return profileflow.Answers{Projects: []string{"Aura"}, Goals: []string{"ship Phase 14"}}, nil
 	case profileflow.StepSocial:
 		return profileflow.Answers{Interests: []string{"AI agents"}, People: []string{"Andrea — business partner"}}, nil
+	case profileflow.StepDraft:
+		// Simulates the LLM correcting "Afenti Ai" → "Agenti AI" during an edit.
+		return profileflow.Answers{Stack: []string{"Agenti AI"}}, nil
 	default:
 		return profileflow.Answers{}, nil
 	}
@@ -210,5 +213,74 @@ func TestProfileOnboarding_RichInterviewWritesProfile(t *testing.T) {
 		if !strings.Contains(got.AgentMD, want) {
 			t.Errorf("Agent.md missing %q:\n%s", want, got.AgentMD)
 		}
+	}
+}
+
+// TestProfileOnboarding_EditViaExtractorReplacesStack verifies that when the
+// user taps Modifica and sends a correction, the LLM extractor is called (not
+// the keyword parser), the corrected value REPLACES the old one in the draft,
+// and the saved Agent.md contains the corrected value and NOT the old typo.
+func TestProfileOnboarding_EditViaExtractorReplacesStack(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	acct := Account{TelegramUserID: 2, IdentityID: "id2", Username: "dav2"}
+	p := newProfileOnboarding(store, profileAccountFake{acct: acct})
+	p.extractor = fakeExtractor{}
+
+	chatID, uid := int64(2), int64(2)
+	if _, ok := p.maybeStart(ctx, chatID, uid); !ok {
+		t.Fatal("maybeStart should start onboarding")
+	}
+
+	// Drive through identity/work(with typo)/projects/social/style answers.
+	// fakeExtractor returns Stack: ["Go", "Neo4j"] for StepWork — the typo is
+	// injected directly to simulate an earlier bad extraction.
+	for _, ans := range []string{"Davide dev Aura", "Go Neo4j", "Aura", "AI; Andrea", "diretto breve"} {
+		p.handleText(ctx, chatID, ans)
+	}
+
+	// Inject the typo directly so we can verify replacement.
+	p.mu.Lock()
+	ps := p.sessions[chatID]
+	p.mu.Unlock()
+	ps.mu.Lock()
+	ps.session.Answers.Stack = []string{"Afenti Ai"}
+	_, _ = ps.session.Apply(profileflow.Input{Intent: profileflow.IntentAnswer, Answers: profileflow.Answers{Lang: "it"}})
+	ps.mu.Unlock()
+
+	// Tap Modifica.
+	edit, handled := p.handleCallback(ctx, chatID, profileCallbackData(chatID, profileActionEdit))
+	if !handled || !strings.Contains(edit.text, "modifiche") {
+		t.Fatalf("edit callback = (%+v, %v), want edit prompt", edit, handled)
+	}
+
+	// Send correction text; fakeExtractor.StepDraft returns Stack: ["Agenti AI"].
+	revised, handled := p.handleText(ctx, chatID, "lo stack è Agenti AI")
+	if !handled {
+		t.Fatalf("edit handleText not handled: %+v", revised)
+	}
+	if strings.Contains(revised.text, "Afenti Ai") {
+		t.Fatalf("revised draft still contains old typo:\n%s", revised.text)
+	}
+	if !strings.Contains(revised.text, "Agenti AI") {
+		t.Fatalf("revised draft missing corrected value:\n%s", revised.text)
+	}
+
+	// Confirm.
+	done, handled := p.handleCallback(ctx, chatID, profileCallbackData(chatID, profileActionConfirm))
+	if !handled || !strings.Contains(done.text, "Profilo salvato") {
+		t.Fatalf("confirm = (%+v, %v), want saved", done, handled)
+	}
+
+	loaded, err := store.ReadProfile(acct.IdentityID)
+	if err != nil {
+		t.Fatalf("ReadProfile: %v", err)
+	}
+	if strings.Contains(loaded.AgentMD, "Afenti Ai") {
+		t.Fatalf("saved Agent.md still contains old typo:\n%s", loaded.AgentMD)
+	}
+	if !strings.Contains(loaded.AgentMD, "Agenti AI") {
+		t.Fatalf("saved Agent.md missing corrected value:\n%s", loaded.AgentMD)
 	}
 }

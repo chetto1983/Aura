@@ -145,3 +145,48 @@ func TestSession_FiveStepFlow(t *testing.T) {
 		t.Fatalf("after style: step=%q status=%q, want draft/draft", s.Step, s.Status)
 	}
 }
+
+// TestSession_EditReplacesSliceField asserts that IntentEdit REPLACES a slice
+// field rather than appending to it, so a correction ("Agenti AI") removes the
+// old typo ("Afenti Ai") instead of accumulating both.
+func TestSession_EditReplacesSliceField(t *testing.T) {
+	s := NewSession("id1", "Davide")
+
+	// Build a session at draft stage with a typo in Stack.
+	for _, in := range []Input{
+		{Intent: IntentAnswer, Answers: Answers{Name: "Davide", Role: "dev", Company: "Aura"}},
+		{Intent: IntentAnswer, Answers: Answers{Expertise: []string{"backend"}, Stack: []string{"Afenti Ai"}}},
+		{Intent: IntentAnswer, Answers: Answers{Projects: []string{"Aura"}}},
+		{Intent: IntentAnswer, Answers: Answers{Interests: []string{"AI"}}},
+		{Intent: IntentAnswer, Answers: Answers{Lang: "it", Timezone: "Europe/Rome"}},
+	} {
+		if _, err := s.Apply(in); err != nil {
+			t.Fatalf("drive to draft: %v", err)
+		}
+	}
+	if s.Step != StepDraft {
+		t.Fatalf("expected StepDraft, got %q", s.Step)
+	}
+	if !strings.Contains(s.DraftAgentMD, "Afenti Ai") {
+		t.Fatalf("expected typo in initial draft:\n%s", s.DraftAgentMD)
+	}
+
+	// Apply an edit with the corrected stack.
+	_, err := s.Apply(Input{Intent: IntentEdit, Answers: Answers{Stack: []string{"Agenti AI"}}})
+	if err != nil {
+		t.Fatalf("edit: %v", err)
+	}
+
+	if len(s.Answers.Stack) != 1 {
+		t.Fatalf("Stack len = %d, want 1 (REPLACED not appended): %v", len(s.Answers.Stack), s.Answers.Stack)
+	}
+	if s.Answers.Stack[0] != "Agenti AI" {
+		t.Fatalf("Stack[0] = %q, want %q", s.Answers.Stack[0], "Agenti AI")
+	}
+	if strings.Contains(s.DraftAgentMD, "Afenti Ai") {
+		t.Fatalf("draft still contains the old typo:\n%s", s.DraftAgentMD)
+	}
+	if !strings.Contains(s.DraftAgentMD, "Agenti AI") {
+		t.Fatalf("draft missing corrected value:\n%s", s.DraftAgentMD)
+	}
+}
