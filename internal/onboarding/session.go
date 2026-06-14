@@ -318,8 +318,28 @@ func (s *Session) refreshDraft() error {
 	return nil
 }
 
+// question returns the next-step prompt. Content is a neutral English sentence
+// (a self-describing fallback); channels MAY override the user-facing text by
+// switching on StateDelta["onboarding_step"] (the Telegram channel renders Italian).
 func (s *Session) question(step Step) Transition {
-	return Transition{Content: string(step), StateDelta: s.state("onboarding_step", string(step))}
+	return Transition{Content: questionText(step), StateDelta: s.state("onboarding_step", string(step))}
+}
+
+func questionText(step Step) string {
+	switch step {
+	case StepIdentity:
+		return "What should Aura call you, what do you do (role + company/team), and where are you (timezone)?"
+	case StepWork:
+		return "What are your main areas of expertise and the tools/stack you usually use?"
+	case StepProjects:
+		return "What are you working on right now, and what are your goals?"
+	case StepSocial:
+		return "What are your interests, and who do you regularly work with (name + role)?"
+	case StepStyle:
+		return "How would you like Aura to respond? (tone, length, language, voice on/off)"
+	default:
+		return string(step)
+	}
 }
 
 func (s *Session) currentPrompt() (Transition, bool) {

@@ -40,8 +40,11 @@ func TestSessionRestartFromTerminalReopensInterview(t *testing.T) {
 	if s.IdentityID != "identity-9" || s.IdentityName != "operator" {
 		t.Fatalf("restart lost identity: id=%q name=%q", s.IdentityID, s.IdentityName)
 	}
-	if out.Content != string(StepIdentity) {
-		t.Fatalf("restart should re-ask the identity question, got %q", out.Content)
+	if got, _ := out.StateDelta["onboarding_step"].(string); got != string(StepIdentity) {
+		t.Fatalf("restart should re-ask the identity question, StateDelta[onboarding_step] = %q, want %q", got, string(StepIdentity))
+	}
+	if out.Content == "" {
+		t.Fatal("restart transition Content must not be empty")
 	}
 	if out.Terminal {
 		t.Fatal("restart transition must not be terminal")
@@ -90,8 +93,11 @@ func TestSessionEmptyIntentDefaultsToAnswer(t *testing.T) {
 	if s.Answers.Name != "Davide" {
 		t.Fatalf("text answer not merged as name: %q", s.Answers.Name)
 	}
-	if out.Content != string(StepWork) {
-		t.Fatalf("default-intent transition should advance to work, got %q", out.Content)
+	if got, _ := out.StateDelta["onboarding_step"].(string); got != string(StepWork) {
+		t.Fatalf("default-intent transition should advance to work, StateDelta[onboarding_step] = %q, want %q", got, string(StepWork))
+	}
+	if out.Content == "" {
+		t.Fatal("transition Content must not be empty")
 	}
 }
 
@@ -171,8 +177,11 @@ func TestCurrentPromptPerStep(t *testing.T) {
 	t.Run("identity step", func(t *testing.T) {
 		s := NewSession("id", "n")
 		out, ok := s.currentPrompt()
-		if !ok || out.Content != string(StepIdentity) {
+		if !ok || out.Content == "" {
 			t.Fatalf("identity prompt ok=%v content=%q", ok, out.Content)
+		}
+		if got, _ := out.StateDelta["onboarding_step"].(string); got != string(StepIdentity) {
+			t.Fatalf("identity prompt StateDelta[onboarding_step] = %q, want %q", got, string(StepIdentity))
 		}
 	})
 
@@ -180,8 +189,11 @@ func TestCurrentPromptPerStep(t *testing.T) {
 		s := NewSession("id", "n")
 		s.Step = StepWork
 		out, ok := s.currentPrompt()
-		if !ok || out.Content != string(StepWork) {
+		if !ok || out.Content == "" {
 			t.Fatalf("work prompt ok=%v content=%q", ok, out.Content)
+		}
+		if got, _ := out.StateDelta["onboarding_step"].(string); got != string(StepWork) {
+			t.Fatalf("work prompt StateDelta[onboarding_step] = %q, want %q", got, string(StepWork))
 		}
 	})
 
@@ -189,8 +201,11 @@ func TestCurrentPromptPerStep(t *testing.T) {
 		s := NewSession("id", "n")
 		s.Step = StepProjects
 		out, ok := s.currentPrompt()
-		if !ok || out.Content != string(StepProjects) {
+		if !ok || out.Content == "" {
 			t.Fatalf("projects prompt ok=%v content=%q", ok, out.Content)
+		}
+		if got, _ := out.StateDelta["onboarding_step"].(string); got != string(StepProjects) {
+			t.Fatalf("projects prompt StateDelta[onboarding_step] = %q, want %q", got, string(StepProjects))
 		}
 	})
 
@@ -198,8 +213,11 @@ func TestCurrentPromptPerStep(t *testing.T) {
 		s := NewSession("id", "n")
 		s.Step = StepSocial
 		out, ok := s.currentPrompt()
-		if !ok || out.Content != string(StepSocial) {
+		if !ok || out.Content == "" {
 			t.Fatalf("social prompt ok=%v content=%q", ok, out.Content)
+		}
+		if got, _ := out.StateDelta["onboarding_step"].(string); got != string(StepSocial) {
+			t.Fatalf("social prompt StateDelta[onboarding_step] = %q, want %q", got, string(StepSocial))
 		}
 	})
 
@@ -207,8 +225,11 @@ func TestCurrentPromptPerStep(t *testing.T) {
 		s := NewSession("id", "n")
 		s.Step = StepStyle
 		out, ok := s.currentPrompt()
-		if !ok || out.Content != string(StepStyle) {
+		if !ok || out.Content == "" {
 			t.Fatalf("style prompt ok=%v content=%q", ok, out.Content)
+		}
+		if got, _ := out.StateDelta["onboarding_step"].(string); got != string(StepStyle) {
+			t.Fatalf("style prompt StateDelta[onboarding_step] = %q, want %q", got, string(StepStyle))
 		}
 	})
 

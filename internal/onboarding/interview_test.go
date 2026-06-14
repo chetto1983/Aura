@@ -36,8 +36,11 @@ func TestInterviewLoopConfirmEmitsProfileState(t *testing.T) {
 	if len(events) != 7 {
 		t.Fatalf("confirm path emitted %d events, want 7", len(events))
 	}
-	if events[0].LLMResponse.Content != string(StepIdentity) {
-		t.Fatalf("first event should be the identity question, got %q", events[0].LLMResponse.Content)
+	if events[0].LLMResponse.Content == "" {
+		t.Fatal("first event Content must not be empty")
+	}
+	if got, _ := events[0].Actions.StateDelta["onboarding_step"].(string); got != string(StepIdentity) {
+		t.Fatalf("first event should be the identity step, StateDelta[onboarding_step] = %q, want %q", got, string(StepIdentity))
 	}
 	assertNoToolCalls(t, events)
 

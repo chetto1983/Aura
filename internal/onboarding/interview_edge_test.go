@@ -126,8 +126,11 @@ func TestInterviewLoopQueuedRestartIsFullReset(t *testing.T) {
 	if events[0].Actions.Escalate {
 		t.Fatal("restart re-prompt must not escalate")
 	}
-	if events[0].LLMResponse.Content != string(StepIdentity) {
-		t.Fatalf("restart should re-ask the identity question, got %q", events[0].LLMResponse.Content)
+	if events[0].LLMResponse.Content == "" {
+		t.Fatal("restart re-prompt Content must not be empty")
+	}
+	if got, _ := events[0].Actions.StateDelta["onboarding_step"].(string); got != string(StepIdentity) {
+		t.Fatalf("restart should re-ask the identity step, StateDelta[onboarding_step] = %q, want %q", got, string(StepIdentity))
 	}
 	if s.Status != StatusActive || s.Step != StepIdentity {
 		t.Fatalf("after queued restart status/step = %q/%q, want active/identity", s.Status, s.Step)
