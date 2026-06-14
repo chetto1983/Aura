@@ -13,7 +13,7 @@ The end-user flow collapses from today's developer dance (git clone → `make to
 
 ## Background
 
-Aura distributes today as a goreleaser static binary + `compose.yaml` running sidecars (postgres, neo4j, llama-embed, agent-memory-mcp, searxng, the multimodal STT/TTS/OCR/markitdown set). There is **no Dockerfile for the `aura` app itself** — it runs via `go run`/the goreleaser binary on the host.
+Aura distributes today as a goreleaser static binary + `compose.yaml` running sidecars (postgres, neo4j, llama-embed, agent-memory-mcp, searxng, the multimodal STT/TTS/OCR/markitdown set), while the audit commit `ec7fe2f6` later added a distroless root `Dockerfile` plus a hardened `aura` compose service. That audit jail is now explicitly reverted by this phase (D-01): the full-power fat Aura box replaces it so the container remains Aura's computer, not a capability-stripped jail.
 
 Two facts make a host-run Aura the wrong shape:
 
@@ -104,6 +104,12 @@ This phase ships the artifacts that make the box real: a fat Aura image, an `aur
     - Target: a bundled Caddy reverse proxy terminates TLS (internal CA / self-signed) and enforces a generated shared access token, fronting **only** the user-facing surface (setup wizard; AG-UI gateway when Phase 12 exists; any LAN-exposed UI). Postgres, Neo4j, embed, agent-memory-mcp, the multimodal sidecars, and the whatsapp bridge remain loopback-only and are never LAN-reachable.
     - Acceptance: from another LAN host the wizard is reachable over HTTPS only with the token (no token → 401/403); a LAN connection to Postgres (5432), Neo4j (7687), embed (8081), agent-memory-mcp (8091), or any sidecar is refused/unreachable.
 
+11b. **Optional gVisor strong-isolation appliance tier (D-03)**: a transparent host boundary for native-Linux appliances, not capability stripping inside Aura's box.
+    - Current: the locked SPEC has only the baseline plain container edge; the gVisor tier was settled later by spikes 059-062 plus spike 010 and therefore requires this amendment.
+    - Target: `compose.gvisor.yaml` adds `runtime: runsc` to the `aura` service as an opt-in appliance override. gVisor interposes a userspace kernel so the host gets thicker walls while Aura keeps full parity inside: full Linux, container root, writable rootfs, `shell_exec`, self-extension, and `mcp-neo4j-cypher` still work (spike 010 proved the python/subprocess workload survives `runsc`). This is native-Linux amd64+arm64 only, OFF on Docker Desktop dev, and invoked with `docker compose -f compose.yaml -f compose.gvisor.yaml up -d`.
+    - Provisioning prerequisite: `runsc` must already be registered in the host `/etc/docker/daemon.json` through the gVisor apt repo or `runsc install` plus `systemctl reload docker`; compose cannot install a Docker runtime. gVisor requires Linux 4.14.77+.
+    - Accepted residual: gVisor adds latency on syscall-/I-O-heavy paths, so it is optional on the CPU-budgeted mini-PC.
+
 ### D. Distribution
 
 12. **curl|sh installer (Linux/macOS) + HW preflight + idempotent secrets**: one command installs the whole stack.
@@ -134,7 +140,7 @@ This phase ships the artifacts that make the box real: a fat Aura image, an `aur
 ## Boundaries
 
 **In scope:**
-- The hardened `aura` container as the security boundary: non-root, no Docker socket, `no-new-privileges`, `cap_drop: ALL`, read-only rootfs + tmpfs, pid/mem/cpu limits, host-controlled named-volume mounts, secrets via env.
+- The `aura` container as the host boundary by packaging, host-controlled mounts, the no-host-Docker-socket invariant, and `cpus`/`mem`/`pids` stability limits; **no capability stripping** is in scope.
 - Host-coupling removals: whatsapp → sibling whatsmeow bridge; `RuntimeDocker`/gateway forbidden inside the box (siblings + streamable-HTTP instead) with a clear in-container error.
 - Fat multi-arch Aura image (`docker/aura/Dockerfile`): python/uvx + node/npx + pinned mcp-neo4j-cypher + pre-baked trusted recipes.
 - `compose.yaml` additions: hardened `aura` service, one-shot `aura-migrate`, `aura-home` volume, bundled Caddy reverse proxy, whatsapp sibling, `restart: unless-stopped`.
@@ -227,6 +233,10 @@ Status: ✓ = met minimum, ⚠ = below minimum (planner treats as assumption)
 | R4 | whatsapp host coupling? | **Sibling whatsmeow bridge**; the image carries no `wsl.exe`. |
 | R5 | Scope breadth of the rewrite? | **Full distribution scope retained**, re-centered on the boundary model; behavior guardrails (injection blocklist, skills HITL) untouched as non-host-security concerns. |
 | R6 | Why should Aura have restrictions Claude Code doesn't? | **It shouldn't.** The container is Aura's full computer, not a jail — no `cap_drop`/read-only-rootfs/forced-non-root/seccomp tightening. Full parity inside (writable fs, own root, full egress, self-extension). The container is kept for **packaging** + a **resettable host edge** for unattended/external-input turns; the lone invariant is no host Docker socket; resource limits are mini-PC stability, not security. |
+
+**Amendment — 2026-06-14 (box-model settlement, PRD amendment #63):**
+
+Spikes 059-062 plus spike 010 settled the final box model before execution. The SPEC now records Req 11b, the optional `compose.gvisor.yaml` / `runtime: runsc` appliance tier, as transparent gVisor host isolation that preserves full parity inside the `aura` container. It also records the `ec7fe2f6` audit-jail revert (distroless root `Dockerfile`, `cap_drop: ALL`, `read_only: true`, forced non-root `65532`) and the Docker Sandboxes (`sbx`) deferral; sbx remains a future direction signal, including docker-in-box without a host socket as a possible future lift for Req 3.
 
 ---
 
