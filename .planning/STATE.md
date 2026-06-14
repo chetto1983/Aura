@@ -4,13 +4,13 @@ milestone: v0.0.0
 milestone_name: milestone
 status: executing
 stopped_at: Phase 17 context gathered (box model settled via spikes 059-062)
-last_updated: "2026-06-14T10:17:46.602Z"
-last_activity: 2026-06-14 -- Phase 17 planning complete
+last_updated: "2026-06-14T12:50:00Z"
+last_activity: 2026-06-14 -- Phase 14 closed (onboarding enrichment + live operator sign-off)
 progress:
   total_phases: 23
-  completed_phases: 20
+  completed_phases: 21
   total_plans: 143
-  completed_plans: 133
+  completed_plans: 135
   percent: 87
 ---
 
@@ -150,6 +150,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 - Phase 18 added (2026-06-06, #53/D-42 follow-up): Slice 7e executable snippet reuse — steady-state artifact runs sotto i 40s. Driver: chat-surface E2E gate measured 151-233s per xlsx run, dominated by 29-30 LLM roundtrips re-authoring the build script from scratch every run (cache healthy at 90-95% hit — NOT the bottleneck). 7e snippet store/param/run-by-path collapses the loop to ~5 calls. Secondary lever registered for later: machine-profile env pinning (Slice 10 Agent.md) kills ~7 probe calls.
 - Phase 19 added (2026-06-10): Audit Bug Resolution + E2E Live Test. Driver: the 2026-06-10 deep parallel audit (10 surface-partitioned agents) confirmed ~11 HIGH + ~10 MEDIUM correctness/robustness findings after adversarial refutation — recorded in `docs/audit/deep-correctness-audit-2026-06-10.md`. Headline = the still-open "shell never answers" UX bug, root-caused to a 3-mechanism cluster (H4 shell orphan-child/no-WaitDelay hang, H5 head-first truncation hiding exit-code/stderr, M-b completion-gate veto re-surfacing vetoed prose on the budget trip). Plus error-swallowing on user-facing surfaces (SSE boundary-frame drop, Telegram RunErrorEvent unrendered, async doc-convert silent, LLM mid-stream SSE error swallowed), dropped scheduler notification contracts, MCP reconnect-on-use unimplemented, microcompact wire-invalid tool history, and the no-central-godotenv env-ordering class. No new product capability — correctness + live validation only. Also repaired two pre-existing ROADMAP overview-bullet gaps (Phase 18 + 19 were missing from the `## Phases` checklist). Next = /gsd-plan-phase 19.
 - Phase 20 added (2026-06-11): scheduler hardening full implementation. Driver: the reminder-agnostic-channel bug found live during Phase 19 19-11 sign-off (a reminder set via the Telegram bot fired but routed to whatsapp/stdout, never back to Telegram) — Davide flagged it a bug and directed a generic fix ("send to the channel that scheduled it; easy to add new channels without reinventing the wheel"). Execution-ready design already exists at `.planning/spikes/reminder-agnostic-channel.md` (identity-keyed `channels.Deliverer` seam + `Registry.DeliverToIdentity` fan-out + Telegram impl + `dispatch.deliverToOrigin`). Ground-truth 2026-06-11 confirmed the scaffolding is already in place (scheduler_tasks.origin_conversation_id since migration 0009; cron.Task carries IdentityID+OriginConversationID; GetTelegramAccountByIdentity SQL+sqlc both exist) — the gaps are population (CreateTaskInput has no origin field; actionSchedule ignores the ctx sessionID) + the delivery seam. Step 1 (~8 files, NO migration) fully ships the headline reminder loop because reminders bypass quiet-hours deferral (dispatch.go:202 `task.Kind != KindReminder`) → never hit the pending/sweep path; Step 2 migration 0014 (pending_notifications.origin_conversation_id) is only for agent_job/advisory deferred notifications. Open design forks for discuss/plan: route precedence (explicit `notify` vs origin-channel default), identity resolution (schedule-time task.IdentityID vs delivery-time IdentityForConversation seam), owns-but-fails/double-delivery. Next = /gsd-spec-phase 20 (or /gsd-discuss-phase 20).
+- Phase 14 closed (2026-06-14): onboarding enriched to 5-step LLM-extraction interview + 8-section Agent.md; live operator sign-off recorded (Davide /onboard → Conferma → onboarding_completed:true). Spec/plan under docs/superpowers/.
 
 ### Decisions
 

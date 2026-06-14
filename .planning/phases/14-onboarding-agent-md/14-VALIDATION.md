@@ -1,8 +1,9 @@
 ---
 phase: 14
 slug: onboarding-agent-md
-status: automated_passed_manual_pending
-nyquist_compliant: pending_live_telegram_signoff
+status: passed
+nyquist_compliant: true
+live_signoff: 2026-06-14
 created: 2026-06-08
 validated_by: gsd-plan-phase 14
 ---
@@ -32,7 +33,7 @@ Per-phase validation contract for Phase 14 execution. This is planned coverage; 
 | UX-05 | Context ladder protects profile/skills block through L2.5 trimming | unit | `go test ./internal/conversations/ -run 'AlwaysBlock|Profile'` | `internal/conversations/context_profile_test.go` | PASS - covered by 2026-06-11 integrated run |
 | UX-05 | Onboarding LoopAgent confirm/skip/edit emits terminal state deltas | unit | `go test ./internal/onboarding/ -run 'Loop|Confirm|Skip|Edit'` | `internal/onboarding/interview_test.go` | PASS - covered by 2026-06-11 integrated run |
 | UX-05 | Telegram first-run profile onboarding intercepts before normal LLM turn | unit + integration | `go test ./internal/channels/telegram/ -run 'ProfileOnboarding|Onboard|StartPayload|Command|HITL'` | `internal/channels/telegram/profile_onboarding_test.go`, `internal/channels/telegram/bot_dispatch_test.go` | PASS - covered by 2026-06-11 integrated run |
-| UX-05 | Live Telegram first user confirms profile and sees normal chat resume | manual/operator | `go test -tags telegram_integration ./internal/channels/telegram/ -run ProfileOnboarding` when available | `docs/aura-quality-snapshot.md` | MANUAL PENDING - blocking Task 2 |
+| UX-05 | Live Telegram first user confirms profile and sees normal chat resume | manual/operator | `go test -tags telegram_integration ./internal/channels/telegram/ -run ProfileOnboarding` when available | `docs/aura-quality-snapshot.md` | PASS - live operator sign-off 2026-06-14 (Davide, /onboard → Conferma → Agent.md written, onboarding_completed:true) |
 
 ## Automated Evidence - 2026-06-11
 
@@ -56,5 +57,24 @@ Per-phase validation contract for Phase 14 execution. This is planned coverage; 
 - [x] CLI `profile show` and `profile add-fact` tests pass.
 - [x] Cache audit proves `messages[0]` constant and profile at `messages[1]`.
 - [x] Telegram profile onboarding confirm/skip/edit tests pass.
-- [ ] Live Telegram operator sign-off recorded.
-- [ ] ROADMAP/REQUIREMENTS/docs updated after live sign-off.
+- [x] Live Telegram operator sign-off recorded.
+- [x] ROADMAP/REQUIREMENTS/docs updated after live sign-off.
+
+## Live Sign-off - 2026-06-14
+
+**Operator:** Davide (identity `local`, @DavMar1983_Bot)
+**Action:** Ran `/onboard` in Telegram, completed the 5-step interview, tapped **Conferma**. Bot replied "Profilo salvato. Riprendo la chat normale."
+
+**Ground-truth evidence (disk, 2026-06-14 12:40):**
+- `~/.aura/agents/00000000-0000-0000-0000-000000000001/Agent.md` written with populated sections: Identity (Name: Davide, Role, Location), Expertise & Tools (Domains, Stack), People, Style (Tone: friendly, Response length: normal, Voice mode: true).
+- `metadata.json` → `"onboarding_completed": true`
+- `preferences.json` → `tone_preference: friendly, response_length: normal, voice_mode: true, location`
+
+**Onboarding enrichment (shipped this session, beyond original skeleton):**
+- 5-step interview flow: Identity / Work / Projects / Social / Style
+- LLM-based answer extraction into a standardized 8-section Agent.md (Identity / Expertise & Tools / Projects & Goals / Interests / People / Style / Vetoes / Custom Instructions)
+- Misspell-correction + normalization in extraction; Modifica (edit) flow re-uses the extractor
+- Design spec: `docs/superpowers/specs/2026-06-14-personal-onboarding-agentmd-design.md`
+- Plan: `docs/superpowers/plans/2026-06-14-personal-onboarding-agentmd.md`
+
+**Coverage:** `internal/profile` 89.5%, `internal/onboarding` 90.4%; full untagged suite green; golangci-lint 0 issues.

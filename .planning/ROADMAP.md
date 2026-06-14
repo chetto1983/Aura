@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 11: Skills** - instruction-based skills (7a/b/c/d) + executable snippets v1 (7e-core) + audit trigger (completed 2026-06-06)
 - [x] **Phase 12: AG-UI Gateway** - SSE event protocol transport with `agent ⇸ agui` import boundary enforced (completed 2026-06-07)
 - [x] **Phase 13: Channels + Telegram + Multimodal** - Telegram primary channel, setup wizard, voice/image/document multimodal sidecars, commands, HITL, artifact delivery, TTS-out, and live inbound command validation closed on 2026-06-08.
-- [ ] **Phase 14: Onboarding + AGENT.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]`
+- [x] **Phase 14: Onboarding + AGENT.md** - User onboarding LoopAgent + Agent.md profile injected at `messages[1]` (completed 2026-06-14 — live operator sign-off; enriched to 5-step LLM-extraction onboarding + 8-section Agent.md)
 - [x] **Phase 15: Memory Subsystem** - **Amendment #61 (2026-06-08): adopts the forked `neo4j-labs/agent-memory` MCP sidecar off-the-shelf** (POLE+O long-term + short-term + reasoning, mounted via streamable-HTTP), superseding the bespoke 11a/11b/11d/11e build. Spikes 031-035 VALIDATED live (mount, write/read, dedup-chaos, agent-loop recall); provenance-safe-dedup fork fix re-validated. Owned-surface = Go wiring + `aura memory` commands. (completed 2026-06-12)
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
  (completed 2026-06-04)
@@ -414,20 +414,20 @@ Wave 4:
 
 **Wave 1** (parallel foundations)
 
-- [ ] 14-01-PLAN.md — Profile filesystem store + CLI: `internal/profile` owns per-identity `Agent.md`, `preferences.json`, `metadata.json`, and `changelog.md`; Windows uses replace-with-write-through instead of bare overwrite; `aura profile show/add-fact` exposes the operator surface.
-- [ ] 14-02-PLAN.md — Identity-aware `messages[1]` injection: runner resolves the active identity, composes profile-first always block, preserves `messages[0]` byte stability, and extends the cache audit to prove Agent.md stays at protected user-role `messages[1]`.
+- [x] 14-01-PLAN.md — Profile filesystem store + CLI: `internal/profile` owns per-identity `Agent.md`, `preferences.json`, `metadata.json`, and `changelog.md`; Windows uses replace-with-write-through instead of bare overwrite; `aura profile show/add-fact` exposes the operator surface. (completed)
+- [x] 14-02-PLAN.md — Identity-aware `messages[1]` injection: runner resolves the active identity, composes profile-first always block, preserves `messages[0]` byte stability, and extends the cache audit to prove Agent.md stays at protected user-role `messages[1]`. (completed)
 
 **Wave 2** (blocked on Wave 1)
 
-- [ ] 14-03-PLAN.md — Profile onboarding workflow: build the `LoopAgent[InterviewStepAgent]` conversation, deterministic profile extraction/rendering, and confirmation escalation via `Event{Actions.Escalate=true}`.
+- [x] 14-03-PLAN.md — Profile onboarding workflow: build the `LoopAgent[InterviewStepAgent]` conversation, deterministic profile extraction/rendering, and confirmation escalation via `Event{Actions.Escalate=true}`. (completed)
 
 **Wave 3** (blocked on Wave 2)
 
-- [ ] 14-04-PLAN.md — Telegram profile onboarding integration: first-time profile onboarding and `/onboard` route, while keeping Phase 13 setup `/start <token>` account activation separate and higher priority.
+- [x] 14-04-PLAN.md — Telegram profile onboarding integration: first-time profile onboarding and `/onboard` route, while keeping Phase 13 setup `/start <token>` account activation separate and higher priority. (completed)
 
 **Wave 4** (blocked on Wave 3)
 
-- [ ] 14-05-PLAN.md — Integrated verification and live signoff: cache-invariant replay, CLI profile update proof, Telegram live checkpoint, docs/status closure, and UX-05 completion evidence.
+- [x] 14-05-PLAN.md — Integrated verification and live signoff: cache-invariant replay, CLI profile update proof, Telegram live checkpoint, docs/status closure, and UX-05 completion evidence. (completed 2026-06-14)
 
 **Cross-cutting constraints**: `Agent.md` must be filesystem-backed, not Neo4j/Postgres; it must inject at `messages[1]` as `RoleUser`, never `messages[0]` or a second system message; cache audit and live validation must pass before UX-05 is marked complete.
 
@@ -578,7 +578,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 11. Skills | 10/10 | Complete    | 2026-06-06 |
 | 12. AG-UI Gateway | 6/6 | Complete    | 2026-06-07 |
 | 13. Channels + Telegram + Multimodal | 10/10 | Complete | 2026-06-08 |
-| 14. Onboarding + Agent.md | 0/TBD | Not started | - |
+| 14. Onboarding + Agent.md | 5/5 | Complete | 2026-06-14 |
 | 15. Memory Subsystem | 5/5 | Complete   | 2026-06-12 |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
 | 17. Packaging & Distribution | 0/TBD | Not started | - |
