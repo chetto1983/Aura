@@ -167,8 +167,8 @@ func TestCacheAudit_Mutation_Exit1(t *testing.T) {
 func TestCacheAudit_ProfileMutationMessages1Only_Exit1(t *testing.T) {
 	system := llm.Message{Role: llm.RoleSystem, Content: "stable prefix"}
 	skills := "\n\nActive skill instructions (always-on):\n\nfixed skill body"
-	profileV1 := profile.RenderContextBlock("# Agent.md\n\n## Facts\n- Name: Cache Audit\n") + skills
-	profileV2 := profile.RenderContextBlock("# Agent.md\n\n## Facts\n- Name: Cache Audit\n- Updated preference\n") + skills
+	profileV1 := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Cache Audit\n") + skills
+	profileV2 := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Cache Audit\n- Updated preference\n") + skills
 	reqs := []llm.Request{
 		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: profileV1}}},
 		{Messages: []llm.Message{system, {Role: llm.RoleUser, Content: profileV1}}},

@@ -102,6 +102,7 @@ func TestRenderAgentMDStableAndBounded(t *testing.T) {
 }
 
 func TestRenderAgentMD_EightSections(t *testing.T) {
+	t.Parallel()
 	got := RenderAgentMD(AgentContent{
 		Identity:           []string{"Preferred name: Davide", "Role: dev @ Aura"},
 		ExpertiseTools:     []string{"Stack: Go, Neo4j"},
@@ -126,14 +127,34 @@ func TestRenderAgentMD_EightSections(t *testing.T) {
 			t.Errorf("RenderAgentMD missing %q in:\n%s", want, got)
 		}
 	}
-	if i, j := strings.Index(got, "## Identity"), strings.Index(got, "## Expertise & Tools"); i == -1 || j == -1 || i > j {
-		t.Errorf("section order wrong: Identity at %d, Expertise at %d", i, j)
+	// Verify the FULL canonical section order by checking byte offsets are strictly increasing.
+	canonicalOrder := []string{
+		"## Identity",
+		"## Expertise & Tools",
+		"## Projects & Goals",
+		"## Interests",
+		"## People",
+		"## Style",
+		"## Vetoes",
+		"## Custom Instructions",
+	}
+	prev := -1
+	for _, heading := range canonicalOrder {
+		pos := strings.Index(got, heading)
+		if pos == -1 {
+			t.Errorf("canonical heading %q not found in output", heading)
+			continue
+		}
+		if pos <= prev {
+			t.Errorf("section order wrong: %q at offset %d is not after previous section at offset %d", heading, pos, prev)
+		}
+		prev = pos
 	}
 }
 
 func TestRenderContextBlockWrapsAndBoundsAgentMD(t *testing.T) {
 	t.Parallel()
-	block := RenderContextBlock("# Agent.md\n\n## Facts\n- Name: Davide\n")
+	block := RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Davide\n")
 	if !strings.HasPrefix(block, ProfileBlockStart+"\n# Agent.md") {
 		t.Fatalf("block missing start marker:\n%s", block)
 	}

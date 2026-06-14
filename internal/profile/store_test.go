@@ -15,7 +15,7 @@ func TestStoreWriteUpdateRead(t *testing.T) {
 	s.now = fixedClock()
 
 	first := Profile{
-		AgentMD:     "# Agent.md\n\n## Facts\n- Name: Davide\n\n## Preferences\n- Prefer Italian responses.\n",
+		AgentMD:     "# Agent.md\n\n## Identity\n- Name: Davide\n\n## Style\n- Prefer Italian responses.\n",
 		Preferences: Preferences{Lang: "it", ResponseLength: "short"},
 		Metadata:    Metadata{Version: 1, OnboardingCompleted: true},
 		Change:      "initial onboarding profile",
@@ -24,7 +24,7 @@ func TestStoreWriteUpdateRead(t *testing.T) {
 		t.Fatalf("initial WriteProfile: %v", err)
 	}
 	second := first
-	second.AgentMD = "# Agent.md\n\n## Facts\n- Name: Davide\n\n## Preferences\n- Prefer Italian responses.\n- Prefer short technical answers.\n"
+	second.AgentMD = "# Agent.md\n\n## Identity\n- Name: Davide\n\n## Style\n- Prefer Italian responses.\n- Prefer short technical answers.\n"
 	second.Metadata.Version = 2
 	second.Change = "added response-length preference"
 	if err := s.WriteProfile("local", second); err != nil {

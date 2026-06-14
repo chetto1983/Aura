@@ -13,7 +13,7 @@ func TestProfileSkillsBlockSurvivesL25Reduction(t *testing.T) {
 	enc := mustEncoderRaw(t)
 
 	const systemContent = "SYSTEM-PROMPT"
-	block := profile.RenderContextBlock("# Agent.md\n\n## Facts\n- Name: Davide\n") +
+	block := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Davide\n") +
 		"\n\nActive skill instructions (always-on):\n\nPROFILE-SKILL-MARKER"
 
 	body := strings.Repeat("word ", 50)
@@ -84,7 +84,7 @@ func TestProfileBlockOmittedWhenContextBlockEmpty(t *testing.T) {
 
 func TestProfileBlockSurvivesL1ToolEviction(t *testing.T) {
 	enc := mustEncoderRaw(t)
-	block := profile.RenderContextBlock("# Agent.md\n\n## Facts\n- Keep exact profile block\n")
+	block := profile.RenderContextBlock("# Agent.md\n\n## Identity\n- Keep exact profile block\n")
 	turns := []Turn{
 		{Seq: 1, Role: llm.RoleSystem, Content: "s"},
 		{Seq: 2, Role: llm.RoleUser, Content: "run tool"},

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// AddFact inserts fact under Agent.md's Facts section and appends the changelog.
+// AddFact inserts fact under Agent.md's Identity section and appends the changelog.
 func (s *Store) AddFact(identity, fact string) (bool, error) {
 	fact = strings.TrimSpace(fact)
 	if fact == "" {

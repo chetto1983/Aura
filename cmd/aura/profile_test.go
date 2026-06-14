@@ -22,7 +22,7 @@ func TestProfileAddFactThenShow(t *testing.T) {
 	showOut := captureStdout(t, func() {
 		profileShow([]string{"--identity", "local"})
 	})
-	for _, want := range []string{"Agent.md", "- Facts", "  - I prefer Italian responses"} {
+	for _, want := range []string{"Agent.md", "- Identity", "  - I prefer Italian responses"} {
 		if !strings.Contains(showOut, want) {
 			t.Fatalf("show output missing %q:\n%s", want, showOut)
 		}
