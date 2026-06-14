@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: executing
-stopped_at: Completed 17-07-PLAN.md
-last_updated: "2026-06-14T13:50:49.929Z"
-last_activity: 2026-06-14
+status: completed
+stopped_at: Completed 17-08-PLAN.md
+last_updated: "2026-06-14T14:09:44.330Z"
+last_activity: 2026-06-14 -- Phase 17 marked complete
 progress:
   total_phases: 23
-  completed_phases: 20
+  completed_phases: 21
   total_plans: 143
-  completed_plans: 140
-  percent: 87
+  completed_plans: 141
+  percent: 91
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 17 (packaging-distribution) — EXECUTING
+Phase: 17 — COMPLETE
 Plan: 8 of 8
-Status: Ready to execute
-Last activity: 2026-06-14
+Status: Phase 17 complete
+Last activity: 2026-06-14 -- Phase 17 marked complete
 
-Progress: [██████████] 98%
+Progress: [██████████] 99%
 
 ### Next — Phase 17 (Packaging)
 
@@ -145,6 +145,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 | Phase 17 P05 | ~45min | 2 tasks | 4 files |
 | Phase 17 P06 | ~25min | 4 tasks | 12 files |
 | Phase 17 P07 | ~50min | 3 tasks | 5 files |
+| Phase 17 P08 | ~60min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -243,6 +244,9 @@ Recent decisions affecting current work:
 - [Phase 17]: Installer preserves existing env secrets
 - [Phase 17]: GoReleaser image build keeps existing Dockerfile
 - [Phase 17]: gVisor remains opt-in native Linux
+- [Phase 17]: Backups use socketless network dumps
+- [Phase 17]: Restore docs are operator-first
+- [Phase 17]: Neo4j backup uses direct Bolt export
 
 ### Pending Todos
 
@@ -276,6 +280,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T13:50:49.430Z
-Stopped at: Completed 17-07-PLAN.md
+Last session: 2026-06-14T14:09:27.957Z
+Stopped at: Completed 17-08-PLAN.md
 Resume file: None

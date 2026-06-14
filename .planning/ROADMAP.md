@@ -37,7 +37,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 16: MCP Sidecar Manager + Third-Party Trust** - MCP manager/control plane with profiles, recipes, trust approvals, sandboxed third-party runtime, Streamable HTTP, doctor/status/logs, and risk-policy enforcement
  (completed 2026-06-04)
 
-- [ ] **Phase 17: Packaging & Distribution** - end-user install: single fat Aura container image (Go binary + python/uvx + node/npx + pinned mcp-neo4j-cypher so the host needs only Docker) + curl|sh self-host installer with secret-gen + appliance pre-seed door + D-22 keyless-boot relaxation (Slice 14, amendment #47)
+- [x] **Phase 17: Packaging & Distribution** - end-user install: single fat Aura container image (Go binary + python/uvx + node/npx + pinned mcp-neo4j-cypher so the host needs only Docker) + curl|sh self-host installer with secret-gen + appliance pre-seed door + D-22 keyless-boot relaxation (Slice 14, amendment #47) (completed 2026-06-14)
 
 - [x] **Phase 18: Slice 7e executable snippet reuse** - steady-state artifact runs under 40s: snippet store/param/run-by-path collapses the 29-30-roundtrip re-authoring loop to ~5 calls (completed 2026-06-08)
 - [x] **Phase 19: Audit Bug Resolution + E2E Live Test** - resolve the HIGH/MEDIUM correctness findings from the 2026-06-10 deep audit (shell never-answer cluster, SSE/HITL error-swallowing, scheduler dropped-notification contract, microcompact wire-invalidity, LLM stream-error + MCP reconnect gaps) and validate the fixes end-to-end on the live stack (completed 2026-06-10)
@@ -581,7 +581,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 14. Onboarding + Agent.md | 5/5 | Complete | 2026-06-14 |
 | 15. Memory Subsystem | 5/5 | Complete   | 2026-06-12 |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
-| 17. Packaging & Distribution | 7/8 | In Progress|  |
+| 17. Packaging & Distribution | 8/8 | Complete   | 2026-06-14 |
 
 ### Phase 16: MCP Sidecar Manager + Third-Party Trust
 
@@ -633,7 +633,7 @@ Plans:
 - [x] 17-05-PLAN.md — aura doctor aggregate health check (D-09) [Wave 2]
 - [x] 17-06-PLAN.md — Compose topology: aura-migrate, aura-home, whatsapp sibling, Caddy TLS+token, compose.gvisor.yaml, AURA_BACKUP_DIR bind-mounts [Wave 3]
 - [x] 17-07-PLAN.md — Distribution: install.sh + goreleaser ghcr multi-arch + systemd autostart [Wave 3]
-- [ ] 17-08-PLAN.md — Backup wiring (resolve the docker-exec paradox, network pg_dump) + README rewrite [Wave 3]
+- [x] 17-08-PLAN.md — Backup wiring (resolve the docker-exec paradox, network pg_dump) + README rewrite [Wave 3]
 
 ### Phase 18: Slice 7e executable snippet reuse - steady-state artifact runs sotto i 40s
 
