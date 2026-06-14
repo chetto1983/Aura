@@ -38,13 +38,17 @@ func (a *LlmAgent) chunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID
 // (not Content) so the reasoning is stream-only and never enters accumulated content.
 func (a *LlmAgent) reasoningChunkEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, text string) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
-	ev.LLMResponse = &LLMResponse{Reasoning: redactedReasoningDelta}
+	reasoning := redactedReasoningDelta
+	if a.cfg.ShowReasoning {
+		reasoning = text
+	}
+	ev.LLMResponse = &LLMResponse{Reasoning: reasoning}
 	reasoningtrace.Record("agent_event_reasoning_created", map[string]any{
 		"request_id": ic.RequestID.String(),
 		"thread_id":  a.sessionID,
 		"branch":     ic.Branch,
 		"chars":      reasoningtrace.RuneLen(text),
-		"redacted":   true,
+		"redacted":   !a.cfg.ShowReasoning,
 	})
 	return ev
 }

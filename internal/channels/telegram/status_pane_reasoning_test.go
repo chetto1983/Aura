@@ -105,6 +105,25 @@ func TestStatusPaneReasoningShowsElapsed(t *testing.T) {
 	}
 }
 
+func TestStatusPaneReasoningSuppressesRedactedSentinelWhenEnabled(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePaneReasoning(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningStartEvent("rsn1"),
+		events.NewReasoningMessageContentEvent("rsn1", "[reasoning redacted]"),
+		events.NewReasoningMessageContentEvent("rsn1", "[reasoning redacted]"),
+	}, 4096, time.Unix(30, 0), time.Unix(42, 0))
+
+	got := lastText(bot)
+	if strings.Contains(got, "[reasoning redacted]") {
+		t.Fatalf("redacted reasoning sentinel must never render when live reasoning is enabled, got %q", got)
+	}
+	if !strings.Contains(got, "in corso") {
+		t.Fatalf("sentinel-only reasoning should fall back to lifecycle text, got %q", got)
+	}
+}
+
 // Even with live CoT enabled, the window clears on the final answer: the pane collapses
 // to "completato" and never leaves raw reasoning frozen on the last edit.
 func TestStatusPaneLiveReasoningClearsOnFinal(t *testing.T) {

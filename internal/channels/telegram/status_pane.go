@@ -38,6 +38,10 @@ const (
 // model self-corrects on the next round. Mirrors tools.AskUser{}.Spec().Name.
 const hitlPauseToolName = "ask_user"
 
+// redactedReasoningSentinel mirrors the upstream agent/AG-UI privacy placeholder.
+// It is control text, not user-facing reasoning, so the live pane suppresses it.
+const redactedReasoningSentinel = "[reasoning redacted]"
+
 // toolState tracks one tool call's lifecycle in the pane (ordered by first-seen).
 type toolState struct {
 	name   string
@@ -141,7 +145,9 @@ func (p *statusPane) handle(ev events.Event) {
 		p.dirty = true
 	case *events.ReasoningMessageContentEvent:
 		if p.showReasoning {
-			p.fifo.Push(e.Delta)
+			if delta := displayableReasoningDelta(e.Delta); delta != "" {
+				p.fifo.Push(delta)
+			}
 		}
 		reasoningtrace.Record("telegram_status_reasoning_delta", map[string]any{
 			"message_id": e.MessageID,
@@ -426,6 +432,17 @@ func safeReasoningState(s string) string {
 // multi-line reasoning blob renders as one compact rolling 💭 line.
 func collapseWhitespace(s string) string {
 	return strings.Join(strings.Fields(s), " ")
+}
+
+func displayableReasoningDelta(s string) string {
+	if !strings.Contains(s, redactedReasoningSentinel) {
+		return s
+	}
+	clean := strings.ReplaceAll(s, redactedReasoningSentinel, " ")
+	if strings.TrimSpace(clean) == "" {
+		return ""
+	}
+	return clean
 }
 
 // capRunesTail truncates s to at most n runes, preserving the NEWEST (trailing)
