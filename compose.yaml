@@ -19,24 +19,39 @@ services:
     cpus: ${AURA_CPUS:-1.0}
     pids_limit: ${AURA_PIDS_LIMIT:-512}
     depends_on:
+      aura-migrate:
+        condition: service_completed_successfully
       postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      aura-llama-embed:
         condition: service_healthy
     environment:
       AURA_AGUI_BIND: 0.0.0.0:9080
+      AURA_SETUP_BIND: 0.0.0.0:9081
       AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
       AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_CONFIG_DIR: /var/lib/aura
       AURA_RUN_DIR: /var/lib/aura/runs
       AURA_SKILLS_DIR: /var/lib/aura/skills
       AURA_SKILL_EXPORT_DIR: /var/lib/aura/exported-skills
+      AURA_BACKUP_DIR: /backups
+      AURA_NEO4J_BOLT_URL: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
+      AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
+      AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-384}
       AURA_OTEL_EXPORTER: ${AURA_OTEL_EXPORTER:-none}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     ports:
       - "127.0.0.1:${AURA_AGUI_PORT:-9080}:9080"
+      - "127.0.0.1:${AURA_SETUP_PORT:-9081}:9081"
     volumes:
-      - aura-runs:/var/lib/aura/runs
-      - aura-skills:/var/lib/aura/skills
-      - aura-exported-skills:/var/lib/aura/exported-skills
+      - aura-home:/var/lib/aura
+      - ${AURA_BACKUP_DIR:-./backups}:/backups
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
     healthcheck:
@@ -46,6 +61,55 @@ services:
       retries: 3
       start_period: 10s
 
+  aura-migrate:
+    build:
+      context: .
+      dockerfile: docker/aura/Dockerfile
+    image: ${AURA_IMAGE:-aura:local}
+    pull_policy: never
+    container_name: aura-migrate
+    restart: "no"
+    entrypoint: ["sh", "-lc"]
+    command: "aura db migrate && aura neo4j migrate"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    environment:
+      AURA_DB_URL: postgres://${AURA_DB_APP_ROLE:-aura_app}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_DB_MIGRATE_URL: postgres://${AURA_DB_MIGRATE_ROLE:-aura_migrate}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_DB_BOOTSTRAP_URL: postgres://${POSTGRES_USER:-aura}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}@postgres:5432/${POSTGRES_DB:-aura}?sslmode=disable
+      AURA_CONFIG_DIR: /var/lib/aura
+      AURA_NEO4J_BOLT_URL: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:?NEO4J_PASSWORD required in .env}
+      AURA_NEO4J_DATABASE: ${AURA_NEO4J_DATABASE:-neo4j}
+      AURA_EMBED_BASE_URL: http://aura-llama-embed:8081
+      AURA_EMBED_DIMENSIONS: ${AURA_EMBED_DIMENSIONS:-384}
+    volumes:
+      - aura-home:/var/lib/aura
+
+  caddy:
+    image: caddy:2
+    container_name: aura-caddy
+    restart: unless-stopped
+    depends_on:
+      aura:
+        condition: service_healthy
+    environment:
+      AURA_ACCESS_TOKEN: ${AURA_ACCESS_TOKEN:?AURA_ACCESS_TOKEN required in .env}
+    ports:
+      - "0.0.0.0:${AURA_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    healthcheck:
+      test: ["CMD", "caddy", "version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   postgres:
     image: postgres:17.10-alpine3.23
     container_name: aura-postgres
@@ -54,10 +118,12 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-aura}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required in .env}
       POSTGRES_DB: ${POSTGRES_DB:-aura}
+      AURA_BACKUP_DIR: /backups
     ports:
       - "${POSTGRES_HOST:-127.0.0.1}:${POSTGRES_PORT:-5432}:5432"
     volumes:
       - aura-postgres:/var/lib/postgresql/data
+      - ${AURA_BACKUP_DIR:-./backups}:/backups
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aura} -d ${POSTGRES_DB:-aura}"]
       interval: 5s
@@ -82,6 +148,7 @@ services:
       NEO4J_dbms_memory_heap_initial__size: 512m
       NEO4J_dbms_memory_heap_max__size: 1G
       NEO4J_dbms_memory_pagecache_size: 512m
+      AURA_BACKUP_DIR: /backups
     ports:
       - "127.0.0.1:7474:7474"
       - "127.0.0.1:7687:7687"
@@ -90,6 +157,7 @@ services:
     volumes:
       - aura-neo4j:/data
       - aura-neo4j-plugins:/plugins
+      - ${AURA_BACKUP_DIR:-./backups}:/backups
     healthcheck:
       test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$$AURA_NEO4J_HC_PW\" --database neo4j 'RETURN 1' || exit 1"]
       interval: 10s
@@ -200,6 +268,30 @@ services:
       timeout: 5s
       retries: 12
       start_period: 30s
+
+  # Optional WhatsApp MCP sibling. Aura's catalog points at the loopback host
+  # publish, and Aura boot never depends on this service being healthy.
+  whatsapp:
+    build:
+      context: ./docker/whatsapp
+    image: ${AURA_WHATSAPP_MCP_IMAGE:-aura-whatsapp-mcp:local}
+    pull_policy: never
+    container_name: aura-whatsapp
+    restart: unless-stopped
+    environment:
+      WHATSAPP_BRIDGE_PORT: ${AURA_WHATSAPP_BRIDGE_PORT:-8081}
+      WHATSAPP_API_BASE_URL: http://127.0.0.1:${AURA_WHATSAPP_BRIDGE_PORT:-8081}/api
+    ports:
+      - "127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080"
+    volumes:
+      - aura-whatsapp-session:/app/whatsapp-bridge/store
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import socket; s=socket.create_connection(('127.0.0.1', 8080), 5); s.close()\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   # Local SearXNG backend. Aura talks to this over 127.0.0.1 only via
   # SEARXNG_URL. SearXNG needs outbound egress to query
   # upstream engines; loopback publishing keeps the service local without cutting
@@ -334,13 +426,13 @@ services:
       start_period: 40s                        # first-boot: markitdown[all] import
 
 volumes:
-  aura-runs:
-  aura-skills:
-  aura-exported-skills:
+  aura-home:
   aura-postgres:
   aura-neo4j:
   aura-neo4j-plugins:
   aura-llama-embed:
+  aura-whatsapp-session:
+  caddy-data:
   aura-ocr-vl:
 
 networks:

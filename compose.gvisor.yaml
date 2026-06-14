@@ -1,0 +1,14 @@
+# Optional transparent-isolation tier for native-Linux/arm64 appliances:
+#   docker compose -f compose.yaml -f compose.gvisor.yaml up -d
+#
+# Host-provision runsc first; Compose cannot install a container runtime:
+#   sudo runsc install
+#   sudo systemctl reload docker
+# Keep the corresponding /etc/docker/daemon.json runtime registration in place.
+#
+# Apply this only on native Linux arm64 with Linux 4.14.77+; keep it OFF on
+# Docker Desktop dev. This adds the runsc boundary while preserving full in-box
+# parity; the residual cost is performance, not capability stripping.
+services:
+  aura:
+    runtime: runsc

@@ -1,0 +1,21 @@
+:443 {
+	tls internal
+
+	@authed `header({'X-Aura-Token': '{$AURA_ACCESS_TOKEN}'}) || query({'token': '{$AURA_ACCESS_TOKEN}'})`
+	@agui path /agent/* /threads/* /healthz /readyz /debug/vars /metrics
+	@setup path /setup/*
+
+	handle @authed {
+		handle @agui {
+			reverse_proxy aura:9080
+		}
+
+		handle @setup {
+			reverse_proxy aura:9081
+		}
+
+		respond 404
+	}
+
+	respond 401
+}

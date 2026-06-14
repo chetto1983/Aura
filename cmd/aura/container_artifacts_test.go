@@ -14,7 +14,13 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 	dockerfile := readProjectFile(t, root, "docker/aura/Dockerfile")
 	compose := readProjectFile(t, root, "compose.yaml")
+	gvisor := readProjectFile(t, root, "compose.gvisor.yaml")
+	caddyfile := readProjectFile(t, root, "caddy/Caddyfile")
+	whatsappDockerfile := readProjectFile(t, root, "docker/whatsapp/Dockerfile")
 	dockerignore := readProjectFile(t, root, ".dockerignore")
+	if _, err := os.Stat(filepath.Join(root, "docker/whatsapp/whatsapp-mcp-src.tar.gz")); err != nil {
+		t.Fatalf("docker/whatsapp/whatsapp-mcp-src.tar.gz missing: %v", err)
+	}
 
 	for _, want := range []string{
 		"FROM golang:",
@@ -35,6 +41,21 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		"dockerfile: docker/aura/Dockerfile",
 		"OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}",
 		"AURA_AGUI_BIND: 0.0.0.0:9080",
+		"AURA_SETUP_BIND: 0.0.0.0:9081",
+		"aura-migrate:",
+		"service_completed_successfully",
+		"command: \"aura db migrate && aura neo4j migrate\"",
+		"AURA_CONFIG_DIR: /var/lib/aura",
+		"aura-home:/var/lib/aura",
+		"127.0.0.1:${AURA_SETUP_PORT:-9081}:9081",
+		"whatsapp:",
+		"127.0.0.1:${AURA_WHATSAPP_MCP_PORT:-8092}:8080",
+		"aura-whatsapp-session:/app/whatsapp-bridge/store",
+		"caddy:",
+		"0.0.0.0:${AURA_HTTPS_PORT:-443}:443",
+		"caddy-data:/data",
+		"AURA_BACKUP_DIR: /backups",
+		"${AURA_BACKUP_DIR:-./backups}:/backups",
 		"mem_limit:",
 		"cpus:",
 		"healthcheck:",
@@ -43,9 +64,59 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 			t.Fatalf("compose.yaml missing %q", want)
 		}
 	}
-	for _, retired := range []string{"read_only: true", "cap_drop:"} {
+	if strings.Count(compose, "0.0.0.0:${AURA_HTTPS_PORT:-443}:443") != 1 {
+		t.Fatalf("compose.yaml should publish only caddy on non-loopback 443")
+	}
+	for _, retired := range []string{
+		"read_only: true",
+		"cap_drop:",
+		"aura-runs:",
+		"aura-skills:",
+		"aura-exported-skills:",
+	} {
 		if strings.Contains(compose, retired) {
 			t.Fatalf("compose.yaml still contains retired hardening knob %q", retired)
+		}
+	}
+	for _, want := range []string{
+		"tls internal",
+		"@authed",
+		"X-Aura-Token",
+		"query({'token': '{$AURA_ACCESS_TOKEN}'})",
+		"reverse_proxy aura:9080",
+		"reverse_proxy aura:9081",
+		"respond 401",
+	} {
+		if !strings.Contains(caddyfile, want) {
+			t.Fatalf("caddy/Caddyfile missing %q:\n%s", want, caddyfile)
+		}
+	}
+	if strings.Contains(caddyfile, "forward_auth") {
+		t.Fatalf("caddy/Caddyfile should use a local token matcher, not forward_auth:\n%s", caddyfile)
+	}
+	for _, want := range []string{
+		"docker compose -f compose.yaml -f compose.gvisor.yaml up -d",
+		"runsc install",
+		"runtime: runsc",
+	} {
+		if !strings.Contains(gvisor, want) {
+			t.Fatalf("compose.gvisor.yaml missing %q:\n%s", want, gvisor)
+		}
+	}
+	for _, retired := range []string{"cap_drop", "read_only"} {
+		if strings.Contains(gvisor, retired) {
+			t.Fatalf("compose.gvisor.yaml should not contain %q:\n%s", retired, gvisor)
+		}
+	}
+	for _, want := range []string{
+		"FROM golang:bookworm AS bridge-build",
+		"FROM python:3.11-slim",
+		"whatsapp-mcp-src.tar.gz",
+		"CGO_ENABLED=1 go build",
+		"WHATSAPP_BRIDGE_PORT=8081",
+	} {
+		if !strings.Contains(whatsappDockerfile, want) {
+			t.Fatalf("docker/whatsapp/Dockerfile missing %q:\n%s", want, whatsappDockerfile)
 		}
 	}
 	for _, want := range []string{".git", ".worktrees", "output", ".env"} {
