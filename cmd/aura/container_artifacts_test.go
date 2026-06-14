@@ -126,6 +126,69 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 	}
 }
 
+func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
+	root := repoRootForTest(t)
+	installer := readProjectFile(t, root, "scripts/install.sh")
+	releaser := readProjectFile(t, root, ".goreleaser.yaml")
+	unit := readProjectFile(t, root, "deploy/aura.service")
+
+	for _, want := range []string{
+		"set -euo pipefail",
+		"AURA_INSTALL_SKIP_HW",
+		"Aura requires at least 4 CPU cores",
+		"Aura requires at least 16 GiB RAM",
+		"Aura requires at least 20 GiB free disk",
+		"50 GiB free disk is recommended",
+		"https://get.docker.com",
+		"brew install --cask docker",
+		"openssl rand -hex 32",
+		"chmod 600 .env",
+		"existing .env is missing",
+		"AURA_ACCESS_TOKEN",
+		"docker compose -f compose.yaml up -d",
+		"docker compose -f compose.yaml -f compose.gvisor.yaml up -d",
+		"https://${host}/setup/?token=${token}",
+	} {
+		if !strings.Contains(installer, want) {
+			t.Fatalf("scripts/install.sh missing %q:\n%s", want, installer)
+		}
+	}
+	for _, want := range []string{
+		"dockers_v2:",
+		"dockerfile: docker/aura/Dockerfile",
+		"ghcr.io/chetto1983/aura",
+		"{{ .Tag }}",
+		"linux/amd64",
+		"linux/arm64",
+		"extra_files:",
+		"go.mod",
+		"go.sum",
+		"cmd",
+		"internal",
+	} {
+		if !strings.Contains(releaser, want) {
+			t.Fatalf(".goreleaser.yaml missing %q:\n%s", want, releaser)
+		}
+	}
+	if strings.Contains(releaser, "latest") {
+		t.Fatalf(".goreleaser.yaml should not emit a latest image tag:\n%s", releaser)
+	}
+	for _, want := range []string{
+		"After=network-online.target docker.service",
+		"WorkingDirectory=/opt/aura",
+		"ExecStart=/usr/bin/docker compose -f /opt/aura/compose.yaml up -d",
+		"ExecStop=/usr/bin/docker compose -f /opt/aura/compose.yaml down",
+		"WantedBy=multi-user.target",
+		"runsc install",
+		"dpkg --print-architecture",
+		"native Linux only; never Docker Desktop",
+	} {
+		if !strings.Contains(unit, want) {
+			t.Fatalf("deploy/aura.service missing %q:\n%s", want, unit)
+		}
+	}
+}
+
 func repoRootForTest(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()

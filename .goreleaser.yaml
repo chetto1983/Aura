@@ -1,4 +1,4 @@
-# goreleaser v2 — https://goreleaser.com
+# goreleaser v2 - https://goreleaser.com
 # Validate locally:  goreleaser check  &&  goreleaser build --snapshot --clean
 # A real release fires from the `Release` workflow on a pushed `v*` tag.
 version: 2
@@ -45,6 +45,29 @@ archives:
 
 checksum:
   name_template: "checksums.txt"
+
+dockers_v2:
+  - id: aura-image
+    ids:
+      - aura
+    dockerfile: docker/aura/Dockerfile
+    images:
+      - ghcr.io/chetto1983/aura
+    tags:
+      - "{{ .Tag }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    extra_files:
+      - go.mod
+      - go.sum
+      - cmd
+      - internal
+    labels:
+      org.opencontainers.image.title: Aura
+      org.opencontainers.image.source: https://github.com/chetto1983/Aura
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"

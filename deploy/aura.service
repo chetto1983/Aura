@@ -1,0 +1,42 @@
+# Aura appliance compose unit.
+#
+# Install:
+#   sudo install -d /opt/aura
+#   sudo cp compose.yaml compose.gvisor.yaml /opt/aura/
+#   sudo cp -r caddy /opt/aura/
+#   sudo cp deploy/aura.service /etc/systemd/system/aura.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now aura.service
+#   journalctl -u aura.service -f
+#
+# Optional gVisor tier (native Linux only; never Docker Desktop):
+#   sudo apt-get update && sudo apt-get install -y apt-transport-https ca-certificates curl gnupg
+#   curl -fsSL https://gvisor.dev/archive.key \
+#     | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+#   echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" \
+#     | sudo tee /etc/apt/sources.list.d/gvisor.list >/dev/null
+#   sudo apt-get update && sudo apt-get install -y runsc
+#   sudo runsc install
+#   sudo systemctl reload docker
+# Then add a systemd drop-in that appends `-f /opt/aura/compose.gvisor.yaml`.
+# gVisor requires Linux 4.14.77+ and supports amd64/arm64; it is a transparent
+# isolation boundary, not capability stripping.
+
+[Unit]
+Description=Aura appliance compose stack
+Documentation=https://github.com/chetto1983/aura
+After=network-online.target docker.service
+Wants=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/aura
+ExecStart=/usr/bin/docker compose -f /opt/aura/compose.yaml up -d
+ExecStop=/usr/bin/docker compose -f /opt/aura/compose.yaml down
+TimeoutStartSec=0
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target
