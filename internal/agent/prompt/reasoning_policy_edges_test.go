@@ -40,8 +40,34 @@ func TestMaxTokensCappingBranches(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := tc.tier.maxTokens(tc.configuredMax); got != tc.want {
+			if got := tc.tier.maxTokens(tc.configuredMax, false); got != tc.want {
 				t.Fatalf("%s.maxTokens(%d) = %d, want %d", tc.tier, tc.configuredMax, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestMaxTokensToolFloor covers the tool-capable floor branch: with tools present,
+// every tier returns the full configured budget (the operator's positive cap is still
+// honored), never the 512/2048 visible-answer ceiling that truncated tool-call args.
+func TestMaxTokensToolFloor(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name          string
+		tier          ReasoningTier
+		configuredMax int
+		want          int
+	}{
+		{"none tier full default budget", ReasoningTierNone, 0, 4096},
+		{"low tier full default budget", ReasoningTierLow, 0, 4096},
+		{"none tier honors a generous configured cap", ReasoningTierNone, 16000, 16000},
+		{"low tier still honors a tight operator cap", ReasoningTierLow, 1000, 1000},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := tc.tier.maxTokens(tc.configuredMax, true); got != tc.want {
+				t.Fatalf("%s.maxTokens(%d, hasTools) = %d, want %d", tc.tier, tc.configuredMax, got, tc.want)
 			}
 		})
 	}

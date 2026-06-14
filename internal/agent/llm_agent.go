@@ -68,7 +68,14 @@ type LlmAgent struct {
 	completionAttempts int
 
 	streamRetryUsed bool
-	breaker         *llm.Breaker
+
+	// truncatedToolTurns counts consecutive turns whose tool call was cut mid-JSON by
+	// the output budget (finish_reason="length"). Per-run (a fresh LlmAgent per turn
+	// resets it); maxTruncatedToolTurns bounds the nudge-then-finalize sequence so a
+	// truncated tool call can never thrash (the 203-turn disaster, 2026-06-14).
+	truncatedToolTurns int
+
+	breaker *llm.Breaker
 
 	// classifier is the local embedding-based reasoning-tier router (nil when no
 	// embedder is wired). When present, adaptiveReasoningTier uses it instead of
@@ -353,6 +360,18 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				turnReason = "content_stop"
 				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, finish, usage), nil)
 				return
+			}
+
+			// A finish_reason="length" tool-call turn has truncated arguments (D-21
+			// extended to tool calls): nudge once, finalize on a repeat — never dispatch
+			// a truncated batch. Rationale + counter in llm_agent_truncation.go.
+			switch a.classifyToolTruncation(finish) {
+			case truncationFinalize:
+				turnReason = "tool_args_truncated"
+				a.finalize(ic, spanID, parentSpanID, requestID, "tool_args_truncated", yield)
+				return
+			case truncationContinue:
+				continue
 			}
 
 			// 4. Intra-turn exclusivity (D-A1-07): if any call is an ask_user pause,

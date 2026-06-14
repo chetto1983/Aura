@@ -15,6 +15,11 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 	cfg := testConfig()
 	cfg.AdaptiveReasoning = true
 
+	// This build runs with testRegistry() (tools present), so every tier now keeps
+	// the full configured output budget (4096): the per-tier 512/2048 ceiling only
+	// ever meant to bound a pure-chat visible answer, and starving a tool-capable turn
+	// truncated tool-call arguments mid-JSON (the 203-turn disaster, 2026-06-14). The
+	// tier distinction lives in Reasoning.Effort (asserted below), not max_tokens.
 	cases := []struct {
 		name       string
 		tier       ReasoningTier
@@ -27,14 +32,14 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 			tier:       ReasoningTierNone,
 			wantEffort: llm.ReasoningEffortNone,
 			wantExcl:   true,
-			wantTokens: 512,
+			wantTokens: 4096,
 		},
 		{
 			name:       "low_reasoning",
 			tier:       ReasoningTierLow,
 			wantEffort: llm.ReasoningEffortLow,
 			wantExcl:   true,
-			wantTokens: 2048,
+			wantTokens: 4096,
 		},
 		{
 			name:       "high_reasoning",
@@ -77,6 +82,49 @@ func TestAdaptiveReasoningTierApplication(t *testing.T) {
 				t.Fatal("adaptive reasoning must keep tools in the main request")
 			}
 		})
+	}
+}
+
+// TestAdaptiveReasoningToolTurnNotStarved is the regression guard for the 2026-06-14
+// 203-turn truncation disaster: a turn that CAN emit tool calls must keep the full
+// output budget even at the none/low reasoning tier. The tier ceiling bounds the
+// VISIBLE answer, but a tool call's arguments (a fs_write file body or a shell_exec
+// script) ARE the output and get cut mid-JSON at 512/2048 -> "unexpected end of JSON
+// input" + a retry loop the dedup ring can't catch. Reasoning EFFORT still tiers.
+func TestAdaptiveReasoningToolTurnNotStarved(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	cfg.AdaptiveReasoning = true
+	want := configuredOrDefault(cfg.MaxTokens)
+	for _, tier := range []ReasoningTier{ReasoningTierNone, ReasoningTierLow, ReasoningTierHigh} {
+		req := &llm.Request{Tools: []llm.ToolDef{{}}, MaxTokens: cfg.MaxTokens}
+		ApplyAdaptiveReasoning(req, cfg.Provider, cfg, tier)
+		if req.MaxTokens != want {
+			t.Fatalf("tier %q with tools: MaxTokens = %d, want full budget %d (not starved)", tier, req.MaxTokens, want)
+		}
+	}
+}
+
+// TestAdaptiveReasoningNoToolTurnKeepsTierCeiling proves the reasoning-tier output
+// reduction still applies when a turn genuinely has NO tools to call — the ceiling
+// only ever meant to keep a pure-chat visible answer short.
+func TestAdaptiveReasoningNoToolTurnKeepsTierCeiling(t *testing.T) {
+	t.Parallel()
+	cfg := testConfig()
+	cfg.AdaptiveReasoning = true
+	cases := []struct {
+		tier ReasoningTier
+		want int
+	}{
+		{ReasoningTierNone, 512},
+		{ReasoningTierLow, 2048},
+	}
+	for _, tc := range cases {
+		req := &llm.Request{MaxTokens: cfg.MaxTokens} // no tools
+		ApplyAdaptiveReasoning(req, cfg.Provider, cfg, tc.tier)
+		if req.MaxTokens != tc.want {
+			t.Fatalf("tier %q no tools: MaxTokens = %d, want %d", tc.tier, req.MaxTokens, tc.want)
+		}
 	}
 }
 

@@ -43,7 +43,7 @@ func ApplyAdaptiveReasoning(req *llm.Request, provider string, cfg llm.Config, t
 	}
 
 	req.Reasoning = tier.reasoning(cfg.ShowReasoning)
-	req.MaxTokens = tier.maxTokens(cfg.MaxTokens)
+	req.MaxTokens = tier.maxTokens(cfg.MaxTokens, len(req.Tools) > 0)
 }
 
 // IsOpenRouterReasoningTarget reports whether provider/baseURL support this
@@ -90,7 +90,16 @@ func (t ReasoningTier) reasoning(showReasoning bool) llm.ReasoningConfig {
 	}
 }
 
-func (t ReasoningTier) maxTokens(configuredMax int) int {
+func (t ReasoningTier) maxTokens(configuredMax int, hasTools bool) int {
+	// Tool-capable turns keep the full configured output budget at every tier. The
+	// tier ceiling (512/2048) bounds the VISIBLE answer, but a tool call's arguments
+	// — a fs_write file body or a shell_exec script — ARE the output and get cut
+	// mid-JSON at a low ceiling, yielding "unexpected end of JSON input" and a retry
+	// loop the dedup ring can't catch (the 203-turn chart disaster, 2026-06-14). The
+	// reasoning EFFORT still tiers via reasoning(); only the output budget is floored.
+	if hasTools {
+		return configuredOrDefault(configuredMax)
+	}
 	switch t {
 	case ReasoningTierHigh:
 		return configuredOrDefault(configuredMax)
