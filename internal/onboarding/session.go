@@ -82,7 +82,7 @@ type Answers struct {
 	Goals     []string
 	Interests []string
 	People    []string // e.g. "Andrea — business partner"
-	Vetoes    []string
+	Vetoes    []string // hard "never do" rules; not interview-collected yet (set via direct profile edit / future passive extraction)
 
 	// style/preferences
 	Lang                string

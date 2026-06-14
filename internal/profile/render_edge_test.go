@@ -19,7 +19,7 @@ func TestRenderContextBlockEmptyInputReturnsEmpty(t *testing.T) {
 // A non-empty profile under the cap is wrapped verbatim (no truncation marker).
 func TestRenderContextBlockUnderCapNotTruncated(t *testing.T) {
 	t.Parallel()
-	block := RenderContextBlock("# Agent.md\n\n## Facts\n- Name: Davide\n")
+	block := RenderContextBlock("# Agent.md\n\n## Identity\n- Name: Davide\n")
 	if strings.Contains(block, "profile truncated") {
 		t.Fatalf("under-cap profile must not be truncated:\n%s", block)
 	}

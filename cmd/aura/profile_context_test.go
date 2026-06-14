@@ -15,7 +15,7 @@ func TestProfileContextProviderReadsIdentityName(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "agents")
 	store := profile.NewStore(root)
 	if err := store.WriteProfile("local", profile.Profile{
-		AgentMD: "# Agent.md\n\n## Facts\n- Name: Davide\n",
+		AgentMD: "# Agent.md\n\n## Identity\n- Name: Davide\n",
 		Change:  "seed profile",
 	}); err != nil {
 		t.Fatalf("WriteProfile: %v", err)
