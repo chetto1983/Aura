@@ -5,130 +5,216 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
 
-Self-hosted agent runtime. Tabula-rasa rewrite (2026-05-27).
+Aura is a self-hosted agent runtime packaged as a Docker Compose appliance. The
+default stack brings up Aura, Postgres, Neo4j, the local embedding sidecar, Caddy
+TLS/token access, and optional MCP siblings.
 
-## Scope
+## Quick Start
 
-Four concentric components, nothing else:
+### Linux or macOS
 
-1. **Agent loop** — streaming LLM, deferred-tool dispatch, bounded iterations.
-2. **KV cache** — provider-aware prompt caching (DeepSeek auto, Anthropic ephemeral). Stable-prefix discipline; zero `messages[0]` mutation.
-3. **Host terminal** — full `shell_exec` on the host; model-generated code runs in the operator's environment (no container), with the native file tools for structured reads/writes.
-4. **Swarm** — parallel agents in a controlled loop with peer-to-peer talk (tier model, `MAX_SPAWN_DEPTH=3`, shared bus + DM-by-ID).
-
-Persistence: Postgres (`aura.*` schema) + Neo4j via `mcp-neo4j-cypher` (MCP stdio) — the model talks to the graph through MCP exclusively, no native Go adapter.
-
-## Quick start
-
-**Prerequisites:** Go (see [`go.mod`](go.mod)), Docker, a POSIX shell. On Windows, **WSL** is recommended — it runs the whole stack and test matrix natively (see [development](#development)).
+Install Docker, then run the installer from a release tag:
 
 ```bash
-git clone https://github.com/chetto1983/Aura.git && cd Aura
-cp .env.example .env             # set POSTGRES_PASSWORD / NEO4J_PASSWORD
-make tools && lefthook install   # quality toolchain + git hooks (one-time)
-
-make neo4j-migrate               # up: Postgres + Neo4j + embed sidecar, run migrations
-go run ./cmd/aura version        # build metadata
-go run ./cmd/aura agent dry-run --request-id auto   # stream Events through the Budget tree
+curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/vX.Y.Z/scripts/install.sh | bash
 ```
 
-### CLI
+The installer checks hardware, creates `.env` with generated `POSTGRES_PASSWORD`,
+`NEO4J_PASSWORD`, and `AURA_ACCESS_TOKEN`, downloads the Compose/Caddy assets, and
+starts the stack. Re-running it keeps an existing `.env` intact.
 
+Optional appliance mode installs a systemd unit under `/opt/aura`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chetto1983/Aura/vX.Y.Z/scripts/install.sh | sudo bash -s -- --appliance
 ```
-aura serve              run the long-lived agent runtime (production default)
+
+Add `--gvisor` on native Linux Docker hosts that should run Aura under `runsc`.
+Docker Desktop is intentionally not supported for that isolation tier.
+
+### Windows
+
+Use Docker Desktop and the shipped Compose files. From PowerShell in the Aura
+checkout or release directory:
+
+```powershell
+function New-Hex { -join ((1..32) | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }) }
+@"
+POSTGRES_PASSWORD=$(New-Hex)
+POSTGRES_USER=aura
+POSTGRES_DB=aura
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=$(New-Hex)
+AURA_NEO4J_DATABASE=neo4j
+AURA_IMAGE=ghcr.io/chetto1983/aura:vX.Y.Z
+AURA_ACCESS_TOKEN=$(New-Hex)
+AURA_BACKUP_DIR=./backups
+OPENROUTER_API_KEY=
+"@ | Set-Content -Path .env -Encoding ascii
+
+docker compose up -d
+```
+
+Set `OPENROUTER_API_KEY` before production use. For local development images,
+replace `AURA_IMAGE` with `aura:local` after building the image.
+
+### Access
+
+Aura publishes AG-UI and setup on loopback and Caddy on HTTPS:
+
+```text
+https://localhost/setup/?token=<AURA_ACCESS_TOKEN>
+```
+
+Caddy uses `tls internal`. Browsers on other LAN machines will warn until they
+trust the local CA root from the `caddy-data` volume:
+
+```bash
+docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt > aura-caddy-root.crt
+```
+
+## Updates
+
+Update the appliance with Compose. Volumes persist, and the `aura-migrate`
+one-shot runs Postgres and Neo4j migrations before the Aura service starts:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+## Backup And Restore
+
+Scheduled backups run inside the socketless Aura box. Postgres is dumped over the
+Compose network with `pg_dump`, and Neo4j is exported over Bolt with APOC into
+`AURA_BACKUP_DIR`:
+
+```text
+./backups/postgres-YYYYMMDDTHHMMSSZ.dump
+./backups/neo4j-YYYYMMDDTHHMMSSZ.cypher
+```
+
+Run the restore drill against the current Compose stack:
+
+```bash
+set -a
+. ./.env
+set +a
+scripts/restore_drill.sh
+```
+
+The drill restores Postgres into a temporary `aura_restore_drill` database and
+feeds the latest Neo4j `.cypher` backup through `cypher-shell`.
+
+Manual restore commands:
+
+```bash
+docker compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" postgres \
+  pg_restore -U "${POSTGRES_USER:-aura}" -d "${POSTGRES_DB:-aura}" \
+  --clean --if-exists --no-owner --no-acl /backups/postgres-YYYYMMDDTHHMMSSZ.dump
+
+docker compose exec -T neo4j \
+  cypher-shell -a bolt://neo4j:7687 -u "${NEO4J_USER:-neo4j}" -p "$NEO4J_PASSWORD" \
+  -d "${AURA_NEO4J_DATABASE:-neo4j}" "MATCH (n) DETACH DELETE n;"
+
+docker compose exec -T neo4j \
+  cypher-shell -a bolt://neo4j:7687 -u "${NEO4J_USER:-neo4j}" -p "$NEO4J_PASSWORD" \
+  -d "${AURA_NEO4J_DATABASE:-neo4j}" < ./backups/neo4j-YYYYMMDDTHHMMSSZ.cypher
+```
+
+Neo4j Community has a single writable database in this deployment, so the Neo4j
+restore command rebuilds that graph. Take a fresh backup before restoring over a
+live graph.
+
+## Optional WhatsApp MCP
+
+The `whatsapp` service is an optional sibling mounted through Aura's MCP catalog.
+It uses an unofficial whatsmeow-based client, so it carries WhatsApp Terms of Service and account-ban risk. First pairing is headless:
+
+```bash
+docker compose logs -f whatsapp
+```
+
+Scan the QR code shown in the logs. Aura boot never depends on this service.
+
+## Retired Host Setup
+
+The host no longer needs a separate `pip install mcp-neo4j-cypher==0.6.0`; the
+Neo4j MCP runtime is built into the Aura image. Old host-level Python installs and
+the earlier WSL WhatsApp MCP install can be removed after migrating to the Compose
+appliance.
+
+## CLI
+
+```text
+aura serve              run the long-lived agent runtime
 aura shell              interactive REPL against the agent loop
-aura agent dry-run      drive a mock LoopAgent through the Budget tree (one Event per JSON line)
-aura tools              print the tool manifest (active + deferred)
+aura agent dry-run      drive a mock LoopAgent through the Budget tree
+aura tools              print the tool manifest
 aura mcp <sub>          managed MCP servers: install | add | list | doctor | tools | enable | disable | remove
-aura db <sub>           Postgres lifecycle:  migrate | ping | status | reset
-aura neo4j <sub>        Neo4j lifecycle:     migrate | ping | status | reset | cypher
-aura version            build metadata (version, commit, date)
-```
-
-(`serve` / `shell` are stubbed until their slices land — see [status](#status).)
-
-### Generic MCP Tool Mounts
-
-Aura can manage stdio MCP servers with `aura mcp`. Managed servers are stored in
-`~/.aura/mcp/servers.json`, mounted as agent tools at `aura chat` boot, and shown
-by `aura tools`.
-
-```bash
-aura mcp install calculator
-aura mcp doctor calculator
-aura mcp tools calculator
-```
-
-For custom servers, add the stdio command directly:
-
-```bash
-aura mcp add local --env TOKEN=... -- python server.py --stdio
-```
-
-`AURA_MCP_SERVERS_JSON` remains available as an env-only override for ad-hoc or
-CI usage. It accepts a Claude-Desktop-style `mcpServers` JSON value and overrides
-same-named managed entries:
-
-```bash
-export AURA_MCP_SERVERS_JSON='{"mcpServers":{"calculator":{"command":"uvx","args":["--from","calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git","--","calculator-mcp-server","--stdio"]}}}'
-go run ./cmd/aura tools
+aura db <sub>           Postgres lifecycle: migrate | ping | status | reset
+aura neo4j <sub>        Neo4j lifecycle: migrate | ping | status | reset | cypher
+aura version            build metadata
 ```
 
 ## Development
 
-The repo ships an industrial quality gate. The same checks run in CI and locally:
+For source builds, install Go from [`go.mod`](go.mod), Docker, and a POSIX shell.
+On Windows, WSL is the recommended development environment.
 
 ```bash
-make quality        # vet · build · file-size(≤600 LOC) · lint(+dupl,gofmt) · test-race · vuln  — no containers
-make neo4j-migrate  # stack up
-make quality-full   # quality + coverage floor (owned surface ≥ 85%)
+git clone https://github.com/chetto1983/Aura.git
+cd Aura
+cp .env.example .env
+make tools
+lefthook install
+make neo4j-migrate
+go run ./cmd/aura version
+go run ./cmd/aura agent dry-run --request-id auto
+```
+
+Quality gates:
+
+```bash
+make quality
+make neo4j-migrate
+make quality-full
 ```
 
 | Target | Does |
 |--------|------|
-| `make tools` | install the toolchain (golangci-lint, govulncheck, dupl, lefthook, go-mutesting, …) |
-| `make lint` / `make vet` | golangci-lint (errcheck, staticcheck, gosec, revive, dupl, gofmt) / `go vet` |
+| `make tools` | install the quality toolchain |
+| `make lint` / `make vet` | lint and `go vet` |
 | `make vuln` | `govulncheck` supply-chain scan |
 | `make test-race` | `go test -race ./...` |
-| `make coverage` | owned-surface coverage floor ≥ 85% (needs the stack up) |
-| `make smoke` | Italian retrieval smoke — recall@5 = 5/5, p95 reported |
-| `make restore-drill` | `pg_dump` → `pg_restore` under 90s |
+| `make coverage` | owned-surface coverage floor |
+| `make smoke` | retrieval smoke |
+| `make restore-drill` | Postgres plus Neo4j restore drill |
 
-Git hooks (via [lefthook](https://lefthook.dev)) run gofmt/vet/file-size on commit and lint/build on push. **WSL** is a full dev environment (gcc + make + CGO + the Docker stack via `127.0.0.1`); see [`CLAUDE.md`](CLAUDE.md) §Quality tooling & gates for the cross-environment matrix and toolchain locations.
+## Project Layout
 
-## Project layout
-
-```
-cmd/aura/                CLI entry + subcommands (db, neo4j, agent, version)
-internal/agent/          Agent interface, Event, Budget tree, workflow agents (Sequential/Loop/Parallel)
-internal/db/             Postgres: pgx pool, golang-migrate, sqlc bindings, redaction
-internal/knowledge/      Neo4j: MCP client, Cypher migrations, embedding ping, smoke
-internal/config/         env → typed config
-internal/canonicaljson/  deterministic JSON (RFC-8785-like) for dedup fingerprints
-scripts/                 smoke, restore drill, coverage gate, file-size cap
-.planning/               GSD planning artifacts (PRD-derived; not part of code review)
+```text
+cmd/aura/                CLI entry and subcommands
+internal/agent/          Agent interface, Event, Budget tree, workflow agents
+internal/db/             Postgres: pgx pool, golang-migrate, sqlc bindings
+internal/knowledge/      Neo4j MCP client, Cypher migrations, embedding ping
+internal/config/         environment to typed config
+internal/canonicaljson/  deterministic JSON for dedup fingerprints
+scripts/                 install, smoke, restore drill, coverage, file-size cap
+.planning/               GSD planning artifacts
 ```
 
-## Architecture & process
+## Scope
 
-Aura is built **PRD-first**: [`prd.md`](prd.md) is the source of truth and [`CLAUDE.md`](CLAUDE.md) the working contract. Work proceeds in numbered slices through a phased GSD workflow (spec → discuss → plan → execute → verify → review). Persistence is Postgres `aura.*` + Neo4j HNSW (384d cosine).
+Aura is PRD-first. Persistence is Postgres plus Neo4j HNSW, with graph access
+through MCP for model-facing tools. The default packaged deployment keeps Aura
+socketless: no Docker socket is mounted into the Aura container.
 
-## What's deliberately not here
+## Contributing And Security
 
-- Telegram bot (optional plugin binary, separate concern), web dashboard, setup wizard/tray
-- Wiki `.md` filesystem with git tracking; FTS5 / Qdrant / in-memory graph index
-- OCR / markitdown / whisper ingestion (return later as Neo4j-MCP-mediated tools)
-
-History of the prior implementation is preserved at git tag `pre-rewrite-2026-05-27`.
-
-## Status
-
-Bootstrap. Phase 1 (Postgres + Neo4j infra) and Phase 2 (agent cornerstone: `Agent` interface + workflow agents + Budget tree) are in. See [`CHANGELOG.md`](CHANGELOG.md).
-
-## Contributing & security
-
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Report vulnerabilities privately per [`SECURITY.md`](SECURITY.md) — never in a public issue.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Report vulnerabilities privately per
+[`SECURITY.md`](SECURITY.md), never in a public issue.
 
 ## License
 
-[MIT](LICENSE) © 2026 Davide Marchetto.
+[MIT](LICENSE) Copyright 2026 Davide Marchetto.

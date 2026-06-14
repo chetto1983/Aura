@@ -4,62 +4,62 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// Backup container names + retention (D-26). The container names are the compose
-// service names (RESEARCH Open Q2: stability is operator-config — the backup tests
-// are Manual-Only / t.Fatal-under-CI because of it).
 const (
-	pgContainer    = "aura-postgres"
-	neo4jContainer = "aura-neo4j"
+	backupRetentionPostgres = 14 * 24 * time.Hour
+	backupRetentionNeo4j    = 7 * 24 * time.Hour
 
-	backupRetentionPostgres = 14 * 24 * time.Hour // PRD 14d rolling
-	backupRetentionNeo4j    = 7 * 24 * time.Hour  // PRD 7d rolling
-
-	backupMaxDuration = 30 * time.Minute // a dump can be slow; bound it generously
+	backupMaxDuration = 30 * time.Minute
 
 	// missedBackupAlertAfter is the SC#3 window: a nightly backup still missed this
-	// long after its scheduled fire emits an alert log line (the user is not watching
-	// a daemon; the alert is the repudiation trail, D-20).
+	// long after its scheduled fire emits an alert log line.
 	missedBackupAlertAfter = 24 * time.Hour
 )
+
+const neo4jExportCypherAll = `
+CALL apoc.export.cypher.all(null, {
+  stream: true,
+  streamStatements: true,
+  batchSize: 1000,
+  format: 'cypher-shell'
+})
+YIELD cypherStatements
+RETURN cypherStatements
+`
 
 // BackupVariant selects the database a BackupHandler dumps.
 type BackupVariant string
 
-// The two backup variants: a Postgres pg_dump and a Neo4j neo4j-admin dump (D-26).
 const (
 	BackupPostgres BackupVariant = "postgres"
 	BackupNeo4j    BackupVariant = "neo4j"
 )
 
-// BackupHandler dumps a database via `docker exec` with a FIXED argv (D-26): the
-// argv is operator-config constants, NEVER model output, so there is no injection
-// surface (T-10-16); docker is LookPath-gated and the socket is NEVER mounted
-// (T-10-15). The dump lands in AURA_BACKUP_DIR (default ~/.aura/backups/) and a
-// rolling retention sweep prunes old dumps.
+type pgDumper func(context.Context, postgresDumpRequest) error
+type neo4jDumper func(context.Context, neo4jDumpRequest) error
+
+// BackupHandler dumps a database from inside the Aura box without a Docker socket.
 //
-// OPERATOR PRECONDITION (WR-04): `docker exec ... pg_dump -f <dest>` writes <dest>
-// INSIDE the database container's filesystem, not on the host. For the dump to
-// survive on the host at AURA_BACKUP_DIR, the operator MUST bind-mount the host
-// AURA_BACKUP_DIR into the postgres/neo4j containers at the SAME path. Run verifies
-// the artifact exists on the host after the dump and returns a terminal error if it
-// does not — so a missing bind-mount fails loudly instead of reporting a misleading
-// "ok" for a file that landed only in the container's ephemeral FS.
+// Postgres uses network pg_dump against the migrate-role DSN. Neo4j uses APOC over
+// Bolt and writes cypher-shell-compatible statements. Both variants write directly
+// into AURA_BACKUP_DIR, which compose bind-mounts to the host-visible backup dir.
 type BackupHandler struct {
-	Variant BackupVariant
-	// dockerCLI is the resolved `docker` path; empty means resolve via LookPath at
-	// Run time. The seam lets tests inject a fake CLI without touching PATH.
-	dockerCLI string
+	Variant     BackupVariant
+	pgDumper    pgDumper
+	neo4jDumper neo4jDumper
 }
 
-// Meta declares the backup contract: a missed nightly backup DOES reschedule on
-// recovery (D-18) and the wall budget is generous (a dump is I/O-bound).
+// Meta declares the backup contract: a missed nightly backup reschedules on
+// recovery and the wall budget is generous because dumps are I/O-bound.
 func (h BackupHandler) Meta() HandlerMeta {
 	kind := KindBackupPostgres
 	if h.Variant == BackupNeo4j {
@@ -68,20 +68,10 @@ func (h BackupHandler) Meta() HandlerMeta {
 	return HandlerMeta{Kind: kind, MaxDuration: backupMaxDuration, ReschedulesOnRecovery: true}
 }
 
-// Run resolves docker (LookPath-gated), runs the fixed-argv dump into AURA_BACKUP_DIR,
-// sweeps the retention window, and returns a summary capturing the dump path + exit
-// status. A docker-absent host is a terminal error the dispatcher records + notifies
-// (D-21) — never a silent no-op.
+// Run executes the fixed backup path, verifies the host-visible artifact exists,
+// sweeps old dumps, and returns a concise operator summary.
 func (h BackupHandler) Run(ctx context.Context, job Job) (string, error) {
-	// SC#3: a boot catch-up run for a backup still missed past the 24h window emits
-	// an alert (D-18). job.MissedSince is non-zero only on a catch-up run; a normal
-	// on-time run never alerts.
 	MissedBackupAlert(h.Variant, job.MissedSince, time.Now().UTC())
-
-	docker, err := h.resolveDocker()
-	if err != nil {
-		return "", err
-	}
 
 	dir, err := backupDir()
 	if err != nil {
@@ -92,71 +82,269 @@ func (h BackupHandler) Run(ctx context.Context, job Job) (string, error) {
 	}
 
 	dest := filepath.Join(dir, h.dumpFilename(time.Now().UTC()))
-	args := h.dumpArgv(dest)
-
 	runCtx, cancel := context.WithTimeout(ctx, backupMaxDuration)
 	defer cancel()
 
-	// G204: docker + the argv are operator-config constants (container names + dump
-	// flags), NEVER model output (T-10-16). The socket is never mounted (T-10-15).
-	cmd := exec.CommandContext(runCtx, docker, args...) //nolint:gosec
-	out, runErr := cmd.CombinedOutput()
-	if runErr != nil {
-		return "", fmt.Errorf("backup %s: docker exec failed: %w: %s", h.Variant, runErr, strings.TrimSpace(string(out)))
+	if err := h.dump(runCtx, dest); err != nil {
+		return "", err
 	}
-
-	// docker exec wrote dest inside the container; verify it actually materialized on
-	// the host (the bind-mount precondition). A missing artifact is a terminal error,
-	// never a misleading "ok" for a dump the host does not have (WR-04).
 	if _, statErr := os.Stat(dest); statErr != nil {
-		return "", fmt.Errorf("backup %s: dump not found on host at %s after docker exec "+
-			"(bind-mount AURA_BACKUP_DIR into the %s container at the same path): %w",
-			h.Variant, dest, h.containerName(), statErr)
+		return "", fmt.Errorf("backup %s: dump not found at %s after backup: %w", h.Variant, dest, statErr)
 	}
 
 	swept := sweepRetention(dir, h.filePrefix(), h.retention())
-	return fmt.Sprintf("backup %s ok → %s (pruned %d old dump(s))", h.Variant, dest, swept), nil
+	return fmt.Sprintf("backup %s ok -> %s (pruned %d old dump(s))", h.Variant, dest, swept), nil
 }
 
-// containerName is the compose service the variant dumps from (for the WR-04
-// missing-artifact error message).
-func (h BackupHandler) containerName() string {
+func (h BackupHandler) dump(ctx context.Context, dest string) error {
 	if h.Variant == BackupNeo4j {
-		return neo4jContainer
+		req, err := neo4jDumpRequestFromEnv(dest)
+		if err != nil {
+			return err
+		}
+		dump := h.neo4jDumper
+		if dump == nil {
+			dump = defaultNeo4jDumper
+		}
+		if err := dump(ctx, req); err != nil {
+			return fmt.Errorf("backup neo4j: APOC export failed: %w", err)
+		}
+		return nil
 	}
-	return pgContainer
-}
 
-// resolveDocker returns the injected CLI or LookPath-resolves `docker`. A missing
-// docker binary is a terminal error (the backup cannot proceed) — surfaced, not
-// swallowed (D-21).
-func (h BackupHandler) resolveDocker() (string, error) {
-	if h.dockerCLI != "" {
-		return h.dockerCLI, nil
-	}
-	docker, err := exec.LookPath("docker")
+	req, err := postgresDumpRequestFromEnv(dest)
 	if err != nil {
-		return "", fmt.Errorf("backup %s: docker not found on PATH: %w", h.Variant, err)
+		return err
 	}
-	return docker, nil
+	dump := h.pgDumper
+	if dump == nil {
+		dump = defaultPostgresDumper
+	}
+	if err := dump(ctx, req); err != nil {
+		return fmt.Errorf("backup postgres: pg_dump failed: %w", err)
+	}
+	return nil
 }
 
-// dumpArgv builds the FIXED docker-exec argv for the variant (D-26): pg_dump -Fc for
-// Postgres, neo4j-admin database dump for Neo4j. dest is the in-container/host path
-// the dump streams to; for Postgres -f writes inside the container's mounted volume
-// space — here the redirect is via the dump file path the operator's volume maps. The
-// argv carries NO interpolated payload — only the constant container + flags + the
-// app-computed dest path.
-func (h BackupHandler) dumpArgv(dest string) []string {
-	if h.Variant == BackupNeo4j {
-		return []string{"exec", neo4jContainer, "neo4j-admin", "database", "dump", "neo4j", "--to-path", dest}
+type postgresDumpRequest struct {
+	Dest     string
+	Host     string
+	Port     string
+	User     string
+	Password string
+	Database string
+}
+
+func (r postgresDumpRequest) argv() []string {
+	return []string{
+		"-h", r.Host,
+		"-p", r.Port,
+		"-U", r.User,
+		"-Fc",
+		"-f", r.Dest,
+		"-d", r.Database,
 	}
-	return []string{"exec", pgContainer, "pg_dump", "-U", "aura_migrate", "-Fc", "-f", dest, "aura"}
+}
+
+func postgresDumpRequestFromEnv(dest string) (postgresDumpRequest, error) {
+	if raw := strings.TrimSpace(os.Getenv("AURA_DB_MIGRATE_URL")); raw != "" {
+		return postgresDumpRequestFromURL(dest, raw)
+	}
+
+	req := postgresDumpRequest{
+		Dest:     dest,
+		Host:     envOr("POSTGRES_HOST", "postgres"),
+		Port:     envOr("POSTGRES_PORT", "5432"),
+		User:     envOr("AURA_DB_MIGRATE_ROLE", "aura_migrate"),
+		Password: os.Getenv("POSTGRES_PASSWORD"),
+		Database: envOr("POSTGRES_DB", "aura"),
+	}
+	return req, req.validate()
+}
+
+func postgresDumpRequestFromURL(dest, raw string) (postgresDumpRequest, error) {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return postgresDumpRequest{}, fmt.Errorf("backup postgres: parse AURA_DB_MIGRATE_URL: %w", err)
+	}
+	password, _ := u.User.Password()
+	if password == "" {
+		password = os.Getenv("POSTGRES_PASSWORD")
+	}
+	req := postgresDumpRequest{
+		Dest:     dest,
+		Host:     u.Hostname(),
+		Port:     u.Port(),
+		User:     u.User.Username(),
+		Password: password,
+		Database: strings.TrimPrefix(u.Path, "/"),
+	}
+	if req.Port == "" {
+		req.Port = "5432"
+	}
+	if req.User == "" {
+		req.User = envOr("AURA_DB_MIGRATE_ROLE", "aura_migrate")
+	}
+	if req.Database == "" {
+		req.Database = envOr("POSTGRES_DB", "aura")
+	}
+	return req, req.validate()
+}
+
+func (r postgresDumpRequest) validate() error {
+	var missing []string
+	if strings.TrimSpace(r.Host) == "" {
+		missing = append(missing, "host")
+	}
+	if strings.TrimSpace(r.Port) == "" {
+		missing = append(missing, "port")
+	}
+	if strings.TrimSpace(r.User) == "" {
+		missing = append(missing, "user")
+	}
+	if strings.TrimSpace(r.Password) == "" {
+		missing = append(missing, "password")
+	}
+	if strings.TrimSpace(r.Database) == "" {
+		missing = append(missing, "database")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("backup postgres: missing %s (set AURA_DB_MIGRATE_URL or POSTGRES_*)", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func defaultPostgresDumper(ctx context.Context, req postgresDumpRequest) error {
+	// G204: pg_dump and argv are operator-configured infrastructure values, never
+	// model output. The password is passed via PGPASSWORD, not argv.
+	cmd := exec.CommandContext(ctx, "pg_dump", req.argv()...) //nolint:gosec
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+req.Password)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+type neo4jDumpRequest struct {
+	Dest     string
+	BoltURL  string
+	User     string
+	Password string
+	Database string
+}
+
+func neo4jDumpRequestFromEnv(dest string) (neo4jDumpRequest, error) {
+	req := neo4jDumpRequest{
+		Dest:     dest,
+		BoltURL:  envOr("AURA_NEO4J_BOLT_URL", "bolt://neo4j:7687"),
+		User:     envOr("NEO4J_USER", "neo4j"),
+		Password: os.Getenv("NEO4J_PASSWORD"),
+		Database: envOr("AURA_NEO4J_DATABASE", "neo4j"),
+	}
+	return req, req.validate()
+}
+
+func (r neo4jDumpRequest) validate() error {
+	var missing []string
+	if strings.TrimSpace(r.BoltURL) == "" {
+		missing = append(missing, "bolt URL")
+	}
+	if strings.TrimSpace(r.User) == "" {
+		missing = append(missing, "user")
+	}
+	if strings.TrimSpace(r.Password) == "" {
+		missing = append(missing, "password")
+	}
+	if strings.TrimSpace(r.Database) == "" {
+		missing = append(missing, "database")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("backup neo4j: missing %s (set AURA_NEO4J_BOLT_URL/NEO4J_*)", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func defaultNeo4jDumper(ctx context.Context, req neo4jDumpRequest) error {
+	driver, err := neo4j.NewDriverWithContext(req.BoltURL, neo4j.BasicAuth(req.User, req.Password, ""))
+	if err != nil {
+		return fmt.Errorf("neo4j driver init: %w", err)
+	}
+	defer func() { _ = driver.Close(ctx) }()
+
+	session := driver.NewSession(ctx, neo4j.SessionConfig{
+		DatabaseName: req.Database,
+		AccessMode:   neo4j.AccessModeWrite,
+	})
+	defer func() { _ = session.Close(ctx) }()
+
+	result, err := session.Run(ctx, neo4jExportCypherAll, nil)
+	if err != nil {
+		return fmt.Errorf("run apoc export: %w", err)
+	}
+
+	var statements []string
+	for result.Next(ctx) {
+		raw, ok := result.Record().Get("cypherStatements")
+		if !ok || raw == nil {
+			continue
+		}
+		stmt, ok := raw.(string)
+		if !ok {
+			return fmt.Errorf("cypherStatements has type %T, want string", raw)
+		}
+		statements = append(statements, stmt)
+	}
+	if err := result.Err(); err != nil {
+		return fmt.Errorf("read apoc export: %w", err)
+	}
+	if _, err := result.Consume(ctx); err != nil {
+		return fmt.Errorf("consume apoc export: %w", err)
+	}
+	return writeNeo4jCypherFile(req.Dest, statements)
+}
+
+func writeNeo4jCypherFile(dest string, statements []string) error {
+	tmp := dest + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create %s: %w", tmp, err)
+	}
+	success := false
+	defer func() {
+		_ = f.Close()
+		if !success {
+			_ = os.Remove(tmp)
+		}
+	}()
+
+	for _, stmt := range statements {
+		if _, err := f.WriteString(stmt); err != nil {
+			return fmt.Errorf("write %s: %w", tmp, err)
+		}
+		if !strings.HasSuffix(stmt, "\n") {
+			if _, err := f.WriteString("\n"); err != nil {
+				return fmt.Errorf("write newline to %s: %w", tmp, err)
+			}
+		}
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close %s: %w", tmp, err)
+	}
+	if err := os.Rename(tmp, dest); err != nil {
+		return fmt.Errorf("rename %s to %s: %w", tmp, dest, err)
+	}
+	success = true
+	return nil
 }
 
 // dumpFilename builds the timestamped dump filename for the variant.
 func (h BackupHandler) dumpFilename(t time.Time) string {
-	return fmt.Sprintf("%s-%s.dump", h.filePrefix(), t.Format("20060102T150405Z"))
+	suffix := ".dump"
+	if h.Variant == BackupNeo4j {
+		suffix = ".cypher"
+	}
+	return fmt.Sprintf("%s-%s%s", h.filePrefix(), t.Format("20060102T150405Z"), suffix)
 }
 
 // filePrefix is the per-variant retention-sweep prefix.
@@ -167,7 +355,7 @@ func (h BackupHandler) filePrefix() string {
 	return "postgres"
 }
 
-// retention is the per-variant rolling window (D-26: 14d Postgres, 7d Neo4j).
+// retention is the per-variant rolling window.
 func (h BackupHandler) retention() time.Duration {
 	if h.Variant == BackupNeo4j {
 		return backupRetentionNeo4j
@@ -175,8 +363,15 @@ func (h BackupHandler) retention() time.Duration {
 	return backupRetentionPostgres
 }
 
+func envOr(key, fallback string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return fallback
+}
+
 // backupDir resolves AURA_BACKUP_DIR (default ~/.aura/backups/), expanding a leading
-// ~ to the user home (the env-catalog default uses the ~ form).
+// ~ to the user home.
 func backupDir() (string, error) {
 	dir := strings.TrimSpace(os.Getenv("AURA_BACKUP_DIR"))
 	if dir == "" {
@@ -192,9 +387,8 @@ func backupDir() (string, error) {
 	return dir, nil
 }
 
-// sweepRetention deletes dumps older than window in dir matching prefix, returning
-// the count pruned. It is best-effort: an un-deletable file is logged and skipped
-// (the dump itself already succeeded — a stuck old file must not fail the backup).
+// sweepRetention deletes old Postgres .dump files and Neo4j .cypher files. It also
+// prunes the legacy Neo4j .dump suffix so old artifacts age out after the model swap.
 func sweepRetention(dir, prefix string, window time.Duration) int {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -203,7 +397,7 @@ func sweepRetention(dir, prefix string, window time.Duration) int {
 	cutoff := time.Now().Add(-window)
 	pruned := 0
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix+"-") || !strings.HasSuffix(e.Name(), ".dump") {
+		if e.IsDir() || !strings.HasPrefix(e.Name(), prefix+"-") || !isBackupArtifact(e.Name()) {
 			continue
 		}
 		info, infoErr := e.Info()
@@ -219,11 +413,12 @@ func sweepRetention(dir, prefix string, window time.Duration) int {
 	return pruned
 }
 
-// MissedBackupAlert emits an alert log line when a nightly backup is STILL missed
-// past the SC#3 window after catch-up (missedSince is the original slipped fire,
-// now is the current time). It returns true when an alert fired (so the dispatcher
-// can also ride it through the Notifier, D-21). A zero missedSince (the task was not
-// missed) never alerts.
+func isBackupArtifact(name string) bool {
+	return strings.HasSuffix(name, ".dump") || strings.HasSuffix(name, ".cypher")
+}
+
+// MissedBackupAlert emits an alert log line when a nightly backup is still missed
+// past the SC#3 window after catch-up. A zero missedSince never alerts.
 func MissedBackupAlert(variant BackupVariant, missedSince, now time.Time) bool {
 	if missedSince.IsZero() {
 		return false

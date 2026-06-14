@@ -189,6 +189,47 @@ func TestDistributionSurfaceArtifactsMatchReleaseContract(t *testing.T) {
 	}
 }
 
+func TestBackupLifecycleDocsMatchApplianceContract(t *testing.T) {
+	root := repoRootForTest(t)
+	restoreDrill := readProjectFile(t, root, "scripts/restore_drill.sh")
+	readme := readProjectFile(t, root, "README.md")
+
+	for _, want := range []string{
+		"pg_restore",
+		"cypher-shell",
+		"bolt://neo4j:7687",
+		"NEO4J_DUMPFILE",
+		"neo4j-*.cypher",
+	} {
+		if !strings.Contains(restoreDrill, want) {
+			t.Fatalf("scripts/restore_drill.sh missing %q:\n%s", want, restoreDrill)
+		}
+	}
+	for _, want := range []string{
+		"install.sh",
+		"Docker Desktop",
+		"PowerShell",
+		"AURA_ACCESS_TOKEN",
+		"docker compose pull",
+		"docker compose up -d",
+		"aura-migrate",
+		"pg_restore",
+		"cypher-shell",
+		"mcp-neo4j-cypher",
+		"WhatsApp Terms of Service",
+		"Scan the QR code",
+		"tls internal",
+		"no Docker socket",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README.md missing %q", want)
+		}
+	}
+	if strings.Index(readme, "## Quick Start") > strings.Index(readme, "## Development") {
+		t.Fatalf("README.md should lead with the end-user quick start before development")
+	}
+}
+
 func repoRootForTest(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()

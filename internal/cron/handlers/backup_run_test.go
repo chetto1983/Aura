@@ -2,71 +2,44 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 )
 
-// runFakeDocker is the fake-`docker` body the backup Run tests drive: BackupHandler.Run
-// re-execs this test binary as the docker CLI (the standard os/exec self-exec pattern,
-// mirrored from internal/mcp), and TestMain dispatches here when AURA_BACKUP_HELPER=1
-// BEFORE running the suite (recursion-safe). It scans the docker argv for the dump
-// destination (after `-f` for pg_dump or `--to-path` for neo4j-admin) and, per
-// AURA_BACKUP_HELPER_MODE, either materializes that file (happy path), exits non-zero
-// (docker-exec-failed path), or does nothing (the WR-04 missing-artifact path).
-func runFakeDocker() {
-	switch os.Getenv("AURA_BACKUP_HELPER_MODE") {
-	case "fail":
-		// stderr + non-zero exit so CombinedOutput carries the message and Run wraps it.
-		_, _ = os.Stderr.WriteString("docker: simulated dump failure\n")
-		os.Exit(2)
-	case "no-artifact":
-		// Succeed but never write the dump (bind-mount absent → file only in container).
-		os.Exit(0)
-	}
-	if dest := helperDestArg(os.Args[1:]); dest != "" {
-		_ = os.WriteFile(dest, []byte("fake-dump-bytes"), 0o600)
-	}
-	os.Exit(0)
-}
-
-// helperDestArg extracts the dump destination from a docker-exec argv: the token after
-// `-f` (pg_dump) or after `--to-path` (neo4j-admin database dump).
-func helperDestArg(argv []string) string {
-	for i, a := range argv {
-		if (a == "-f" || a == "--to-path") && i+1 < len(argv) {
-			return argv[i+1]
-		}
-	}
-	return ""
-}
-
-// fakeDockerHandler returns a BackupHandler whose dockerCLI re-execs this test binary as
-// the fake docker described above, in the given mode ("" = write the artifact).
-func fakeDockerHandler(variant BackupVariant) BackupHandler {
-	return BackupHandler{Variant: variant, dockerCLI: os.Args[0]}
-}
-
-// helperEnv sets the env the fake-docker re-exec reads. exec.Command inherits the parent
-// env, so t.Setenv on the test process flows through to the spawned helper.
-func helperEnv(t *testing.T, mode string) {
+func setBackupEnv(t *testing.T, dir string) {
 	t.Helper()
-	t.Setenv("AURA_BACKUP_HELPER", "1")
-	if mode != "" {
-		t.Setenv("AURA_BACKUP_HELPER_MODE", mode)
-	}
+	t.Setenv("AURA_BACKUP_DIR", dir)
+	t.Setenv("AURA_DB_MIGRATE_URL", "postgres://aura_migrate:pg-secret@postgres:5432/aura?sslmode=disable")
+	t.Setenv("AURA_NEO4J_BOLT_URL", "bolt://neo4j:7687")
+	t.Setenv("NEO4J_USER", "neo4j")
+	t.Setenv("NEO4J_PASSWORD", "graph-secret")
+	t.Setenv("AURA_NEO4J_DATABASE", "neo4j")
 }
 
-func TestBackupRunWritesDumpAndSweeps(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("AURA_BACKUP_DIR", dir)
-	helperEnv(t, "")
+func fakePostgresHandler(fn func(context.Context, postgresDumpRequest) error) BackupHandler {
+	return BackupHandler{Variant: BackupPostgres, pgDumper: fn}
+}
 
-	// Seed a stale postgres dump that the retention sweep must prune, plus a fresh one
-	// it must keep, so the success path exercises sweepRetention's prune branch too.
+func fakeNeo4jHandler(fn func(context.Context, neo4jDumpRequest) error) BackupHandler {
+	return BackupHandler{Variant: BackupNeo4j, neo4jDumper: fn}
+}
+
+func writePostgresDump(_ context.Context, req postgresDumpRequest) error {
+	return os.WriteFile(req.Dest, []byte("fake-postgres-dump"), 0o600)
+}
+
+func writeNeo4jDump(_ context.Context, req neo4jDumpRequest) error {
+	return os.WriteFile(req.Dest, []byte("CREATE (:AuraBackup);\n"), 0o600)
+}
+
+func TestBackupRunWritesPostgresDumpAndSweeps(t *testing.T) {
+	dir := t.TempDir()
+	setBackupEnv(t, dir)
+
 	stalePath := filepath.Join(dir, "postgres-20200101T000000Z.dump")
 	if err := os.WriteFile(stalePath, []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
@@ -76,114 +49,140 @@ func TestBackupRunWritesDumpAndSweeps(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	summary, err := fakeDockerHandler(BackupPostgres).Run(context.Background(), Job{})
+	var gotReq postgresDumpRequest
+	h := fakePostgresHandler(func(ctx context.Context, req postgresDumpRequest) error {
+		gotReq = req
+		return writePostgresDump(ctx, req)
+	})
+	summary, err := h.Run(context.Background(), Job{})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	if !strings.Contains(summary, "backup postgres ok") {
-		t.Fatalf("summary missing ok marker: %q", summary)
+	if gotReq.Host != "postgres" {
+		t.Fatalf("pg_dump host = %q, want postgres", gotReq.Host)
 	}
-	if !strings.Contains(summary, "pruned 1 old dump(s)") {
-		t.Fatalf("summary should report the 1 pruned stale dump, got %q", summary)
+	joined := strings.Join(gotReq.argv(), " ")
+	if !strings.Contains(joined, "-h postgres") {
+		t.Fatalf("pg_dump argv should target the compose network host: %v", gotReq.argv())
+	}
+	if strings.Contains(joined, "docker") || strings.Contains(joined, "exec") {
+		t.Fatalf("pg_dump argv must contain no docker exec path: %v", gotReq.argv())
+	}
+	if !strings.Contains(summary, "backup postgres ok") || !strings.Contains(summary, "pruned 1 old dump(s)") {
+		t.Fatalf("unexpected summary: %q", summary)
 	}
 	if _, statErr := os.Stat(stalePath); !os.IsNotExist(statErr) {
 		t.Fatal("the stale dump should have been swept by the retention pass")
 	}
-	// The fresh dump the helper wrote this run must exist on the host (WR-04 verify).
-	entries, _ := os.ReadDir(dir)
-	freshFound := false
-	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), "postgres-") && e.Name() != "postgres-20200101T000000Z.dump" {
-			freshFound = true
-		}
-	}
-	if !freshFound {
-		t.Fatalf("expected the run's fresh dump artifact on the host in %s", dir)
+	if !containsFileWith(dir, "postgres-", ".dump") {
+		t.Fatalf("expected a fresh postgres dump in %s", dir)
 	}
 }
 
-func TestBackupRunNeo4jVariantWritesDump(t *testing.T) {
+func TestBackupRunNeo4jVariantWritesCypherDump(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AURA_BACKUP_DIR", dir)
-	helperEnv(t, "")
+	setBackupEnv(t, dir)
 
-	summary, err := fakeDockerHandler(BackupNeo4j).Run(context.Background(), Job{})
+	var gotReq neo4jDumpRequest
+	h := fakeNeo4jHandler(func(ctx context.Context, req neo4jDumpRequest) error {
+		gotReq = req
+		return writeNeo4jDump(ctx, req)
+	})
+	summary, err := h.Run(context.Background(), Job{})
 	if err != nil {
 		t.Fatalf("neo4j Run: %v", err)
+	}
+	if gotReq.BoltURL != "bolt://neo4j:7687" {
+		t.Fatalf("neo4j bolt URL = %q, want bolt://neo4j:7687", gotReq.BoltURL)
 	}
 	if !strings.Contains(summary, "backup neo4j ok") {
 		t.Fatalf("neo4j summary missing ok marker: %q", summary)
 	}
-	entries, _ := os.ReadDir(dir)
-	if len(entries) == 0 {
-		t.Fatalf("expected a neo4j dump artifact in %s", dir)
-	}
-	if !strings.HasPrefix(entries[0].Name(), "neo4j-") {
-		t.Fatalf("neo4j dump prefix = %q, want neo4j-", entries[0].Name())
+	if !containsFileWith(dir, "neo4j-", ".cypher") {
+		t.Fatalf("expected a neo4j .cypher artifact in %s", dir)
 	}
 }
 
-func TestBackupRunDockerExecFailureIsTerminal(t *testing.T) {
+func TestBackupRunDumpFailureIsTerminal(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AURA_BACKUP_DIR", dir)
-	helperEnv(t, "fail")
+	setBackupEnv(t, dir)
 
-	_, err := fakeDockerHandler(BackupPostgres).Run(context.Background(), Job{})
+	_, err := fakePostgresHandler(func(context.Context, postgresDumpRequest) error {
+		return errors.New("simulated pg_dump failure")
+	}).Run(context.Background(), Job{})
 	if err == nil {
-		t.Fatal("a non-zero docker exec must be a terminal error (D-21), not a silent no-op")
+		t.Fatal("a dump failure must be terminal")
 	}
-	if !strings.Contains(err.Error(), "docker exec failed") {
-		t.Fatalf("error should name the docker-exec failure, got %v", err)
+	if !strings.Contains(err.Error(), "pg_dump failed") || !strings.Contains(err.Error(), "simulated pg_dump failure") {
+		t.Fatalf("error should carry the pg_dump failure, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "simulated dump failure") {
-		t.Fatalf("error should carry the combined output, got %v", err)
+}
+
+func TestBackupRunNeo4jDumpFailureIsTerminal(t *testing.T) {
+	dir := t.TempDir()
+	setBackupEnv(t, dir)
+
+	_, err := fakeNeo4jHandler(func(context.Context, neo4jDumpRequest) error {
+		return errors.New("simulated apoc failure")
+	}).Run(context.Background(), Job{})
+	if err == nil {
+		t.Fatal("a Neo4j dump failure must be terminal")
+	}
+	if !strings.Contains(err.Error(), "APOC export failed") || !strings.Contains(err.Error(), "simulated apoc failure") {
+		t.Fatalf("error should carry the APOC failure, got %v", err)
 	}
 }
 
 func TestBackupRunMissingArtifactIsTerminal(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AURA_BACKUP_DIR", dir)
-	helperEnv(t, "no-artifact")
+	setBackupEnv(t, dir)
 
-	_, err := fakeDockerHandler(BackupNeo4j).Run(context.Background(), Job{})
+	_, err := fakeNeo4jHandler(func(context.Context, neo4jDumpRequest) error {
+		return nil
+	}).Run(context.Background(), Job{})
 	if err == nil {
-		t.Fatal("a dump that succeeded in-container but never landed on the host must fail (WR-04)")
+		t.Fatal("a dump that never lands in AURA_BACKUP_DIR must fail")
 	}
-	if !strings.Contains(err.Error(), "dump not found on host") {
-		t.Fatalf("error should be the WR-04 missing-artifact message, got %v", err)
-	}
-	// The WR-04 message names the container to bind-mount — exercises containerName().
-	if !strings.Contains(err.Error(), neo4jContainer) {
-		t.Fatalf("WR-04 error should name the neo4j container to bind-mount, got %v", err)
+	if !strings.Contains(err.Error(), "dump not found at") {
+		t.Fatalf("error should name the missing artifact, got %v", err)
 	}
 }
 
-func TestBackupRunDockerAbsentIsTerminal(t *testing.T) {
+func TestBackupRunMissingConfigIsTerminal(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("AURA_BACKUP_DIR", dir)
-	// dockerCLI left empty + an empty PATH forces LookPath to fail deterministically.
-	t.Setenv("PATH", "")
+	t.Setenv("AURA_DB_MIGRATE_URL", "")
+	t.Setenv("POSTGRES_PASSWORD", "")
 
-	h := BackupHandler{Variant: BackupPostgres}
-	_, err := h.Run(context.Background(), Job{})
+	_, err := fakePostgresHandler(writePostgresDump).Run(context.Background(), Job{})
 	if err == nil {
-		t.Fatal("a docker-absent host must surface a terminal error (D-21)")
+		t.Fatal("missing Postgres dump config must fail")
 	}
-	if !strings.Contains(err.Error(), "docker not found on PATH") {
-		t.Fatalf("error should be the LookPath-gated docker-absent message, got %v", err)
+	if !strings.Contains(err.Error(), "missing password") {
+		t.Fatalf("error should name missing password, got %v", err)
+	}
+}
+
+func TestBackupRunNeo4jMissingConfigIsTerminal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("AURA_BACKUP_DIR", dir)
+	t.Setenv("NEO4J_PASSWORD", "")
+
+	_, err := fakeNeo4jHandler(writeNeo4jDump).Run(context.Background(), Job{})
+	if err == nil {
+		t.Fatal("missing Neo4j dump config must fail")
+	}
+	if !strings.Contains(err.Error(), "missing password") {
+		t.Fatalf("error should name missing password, got %v", err)
 	}
 }
 
 func TestBackupRunEmitsMissedAlertOnCatchUp(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("AURA_BACKUP_DIR", dir)
-	helperEnv(t, "")
+	setBackupEnv(t, dir)
 
-	// A boot catch-up run whose original fire slipped >24h: Run calls MissedBackupAlert
-	// at the top. We can't trivially capture the slog line here, but the run must still
-	// complete successfully with the alert path taken (no panic, summary written).
 	job := Job{MissedSince: time.Now().Add(-48 * time.Hour)}
-	summary, err := fakeDockerHandler(BackupPostgres).Run(context.Background(), job)
+	summary, err := fakePostgresHandler(writePostgresDump).Run(context.Background(), job)
 	if err != nil {
 		t.Fatalf("catch-up Run: %v", err)
 	}
@@ -192,8 +191,6 @@ func TestBackupRunEmitsMissedAlertOnCatchUp(t *testing.T) {
 	}
 }
 
-// TestBackupDumpFilenameTimestamped pins the per-variant filename format (prefix +
-// UTC compact timestamp + .dump), covering dumpFilename + filePrefix for both variants.
 func TestBackupDumpFilenameTimestamped(t *testing.T) {
 	t.Parallel()
 	at := time.Date(2026, 6, 13, 4, 30, 5, 0, time.UTC)
@@ -203,13 +200,11 @@ func TestBackupDumpFilenameTimestamped(t *testing.T) {
 		t.Fatalf("postgres dump filename = %q", pg)
 	}
 	neo := BackupHandler{Variant: BackupNeo4j}.dumpFilename(at)
-	if neo != "neo4j-20260613T043005Z.dump" {
+	if neo != "neo4j-20260613T043005Z.cypher" {
 		t.Fatalf("neo4j dump filename = %q", neo)
 	}
 }
 
-// TestBackupRetentionPerVariant pins the rolling windows (D-26: 14d Postgres, 7d Neo4j)
-// and the container-name mapping, covering retention + containerName for both variants.
 func TestBackupRetentionPerVariant(t *testing.T) {
 	t.Parallel()
 	if got := (BackupHandler{Variant: BackupPostgres}).retention(); got != backupRetentionPostgres {
@@ -218,16 +213,8 @@ func TestBackupRetentionPerVariant(t *testing.T) {
 	if got := (BackupHandler{Variant: BackupNeo4j}).retention(); got != backupRetentionNeo4j {
 		t.Fatalf("neo4j retention = %s, want %s", got, backupRetentionNeo4j)
 	}
-	if got := (BackupHandler{Variant: BackupPostgres}).containerName(); got != pgContainer {
-		t.Fatalf("postgres container = %q, want %q", got, pgContainer)
-	}
-	if got := (BackupHandler{Variant: BackupNeo4j}).containerName(); got != neo4jContainer {
-		t.Fatalf("neo4j container = %q, want %q", got, neo4jContainer)
-	}
 }
 
-// TestBackupDirDefaultsToHomeAuraBackups covers the no-env default branch of backupDir
-// (the `~/.aura/backups` fallback), distinct from the existing explicit-env test.
 func TestBackupDirDefaultsToHomeAuraBackups(t *testing.T) {
 	t.Setenv("AURA_BACKUP_DIR", "")
 	dir, err := backupDir()
@@ -241,9 +228,78 @@ func TestBackupDirDefaultsToHomeAuraBackups(t *testing.T) {
 	}
 }
 
-// TestSweepRetentionMissingDirIsZero covers sweepRetention's ReadDir-error branch: a
-// nonexistent directory is a harmless 0 prune (the dump itself must not fail on a sweep
-// of a directory that does not exist yet).
+func TestBackupDirExpandsTildeAndEnv(t *testing.T) {
+	t.Setenv("AURA_BACKUP_DIR", "~/custom-backups")
+	dir, err := backupDir()
+	if err != nil {
+		t.Fatalf("backupDir: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	if want := filepath.Join(home, "custom-backups"); dir != want {
+		t.Fatalf("backupDir = %q, want %q", dir, want)
+	}
+
+	t.Setenv("AURA_BACKUP_DIR", "/abs/path")
+	dir, err = backupDir()
+	if err != nil {
+		t.Fatalf("backupDir abs: %v", err)
+	}
+	if dir != "/abs/path" {
+		t.Fatalf("backupDir abs = %q, want /abs/path", dir)
+	}
+}
+
+func TestSweepRetentionPrunesOldKeepsFresh(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	old := filepath.Join(dir, "postgres-20200101T000000Z.dump")
+	fresh := filepath.Join(dir, "postgres-20260604T000000Z.dump")
+	other := filepath.Join(dir, "neo4j-20200101T000000Z.cypher")
+	for _, p := range []string{old, fresh, other} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stale := time.Now().Add(-30 * 24 * time.Hour)
+	for _, p := range []string{old, other} {
+		if err := os.Chtimes(p, stale, stale); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pruned := sweepRetention(dir, "postgres", backupRetentionPostgres)
+	if pruned != 1 {
+		t.Fatalf("expected 1 postgres dump pruned, got %d", pruned)
+	}
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatal("the stale postgres dump should have been pruned")
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatal("the fresh postgres dump must be kept")
+	}
+	if _, err := os.Stat(other); err != nil {
+		t.Fatal("a different-prefix dump must not be swept by the postgres sweep")
+	}
+}
+
+func TestSweepRetentionPrunesLegacyDumpAndCypherSuffixes(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	oldDump := filepath.Join(dir, "neo4j-20200101T000000Z.dump")
+	oldCypher := filepath.Join(dir, "neo4j-20200102T000000Z.cypher")
+	for _, p := range []string{oldDump, oldCypher} {
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, time.Now().Add(-30*24*time.Hour), time.Now().Add(-30*24*time.Hour)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if pruned := sweepRetention(dir, "neo4j", backupRetentionNeo4j); pruned != 2 {
+		t.Fatalf("neo4j sweep should prune legacy .dump and current .cypher, got %d", pruned)
+	}
+}
+
 func TestSweepRetentionMissingDirIsZero(t *testing.T) {
 	t.Parallel()
 	missing := filepath.Join(t.TempDir(), "does-not-exist")
@@ -252,17 +308,15 @@ func TestSweepRetentionMissingDirIsZero(t *testing.T) {
 	}
 }
 
-// TestSweepRetentionIgnoresNonMatching covers the skip branches: a subdirectory, a
-// wrong-prefix file, and a non-.dump file are all left untouched even when stale.
 func TestSweepRetentionIgnoresNonMatching(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
-	subdir := filepath.Join(dir, "postgres-subdir.dump") // dir, not file — skipped
+	subdir := filepath.Join(dir, "postgres-subdir.dump")
 	if err := os.Mkdir(subdir, 0o750); err != nil {
 		t.Fatal(err)
 	}
-	wrongExt := filepath.Join(dir, "postgres-20200101T000000Z.txt") // wrong suffix
-	noPrefix := filepath.Join(dir, "random-20200101T000000Z.dump")  // wrong prefix
+	wrongExt := filepath.Join(dir, "postgres-20200101T000000Z.txt")
+	noPrefix := filepath.Join(dir, "random-20200101T000000Z.dump")
 	for _, p := range []string{wrongExt, noPrefix} {
 		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
@@ -277,7 +331,6 @@ func TestSweepRetentionIgnoresNonMatching(t *testing.T) {
 	if pruned := sweepRetention(dir, "postgres", backupRetentionPostgres); pruned != 0 {
 		t.Fatalf("non-matching entries must not be swept, pruned %d", pruned)
 	}
-	// All three survive.
 	for _, p := range []string{subdir, wrongExt, noPrefix} {
 		if _, err := os.Stat(p); err != nil {
 			t.Fatalf("non-matching entry %s should survive the sweep", p)
@@ -285,53 +338,29 @@ func TestSweepRetentionIgnoresNonMatching(t *testing.T) {
 	}
 }
 
-// TestBackupRunMkdirFailureIsTerminal covers Run's MkdirAll-error branch: when
-// AURA_BACKUP_DIR points UNDER a path component that is a regular file, MkdirAll can't
-// create the directory and Run returns a terminal "mkdir" error before exec'ing docker.
 func TestBackupRunMkdirFailureIsTerminal(t *testing.T) {
 	base := t.TempDir()
-	// Make `base/afile` a regular file, then ask for a backup dir BENEATH it — MkdirAll
-	// must fail because a path component is not a directory.
 	notADir := filepath.Join(base, "afile")
 	if err := os.WriteFile(notADir, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("AURA_BACKUP_DIR", filepath.Join(notADir, "backups"))
-	helperEnv(t, "")
 
-	_, err := fakeDockerHandler(BackupPostgres).Run(context.Background(), Job{})
+	_, err := fakePostgresHandler(writePostgresDump).Run(context.Background(), Job{})
 	if err == nil {
-		t.Fatal("a backup dir under a non-directory must fail at MkdirAll (terminal, D-21)")
+		t.Fatal("a backup dir under a non-directory must fail at MkdirAll")
 	}
 	if !strings.Contains(err.Error(), "mkdir") {
 		t.Fatalf("error should name the mkdir failure, got %v", err)
 	}
 }
 
-// TestResolveDockerInjectedSeam covers resolveDocker's injected-CLI branch (the early
-// return when dockerCLI is set) distinctly from the LookPath path.
-func TestResolveDockerInjectedSeam(t *testing.T) {
-	t.Parallel()
-	h := BackupHandler{Variant: BackupPostgres, dockerCLI: "/usr/local/bin/docker-fake"}
-	got, err := h.resolveDocker()
-	if err != nil {
-		t.Fatalf("resolveDocker with an injected CLI must not error: %v", err)
+func containsFileWith(dir, prefix, suffix string) bool {
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) && strings.HasSuffix(e.Name(), suffix) {
+			return true
+		}
 	}
-	if got != "/usr/local/bin/docker-fake" {
-		t.Fatalf("resolveDocker = %q, want the injected CLI", got)
-	}
-}
-
-// guardArgv keeps the imported slices package referenced even if the argv assertions are
-// later trimmed; it pins dumpArgv's two-variant shape alongside the run-level coverage.
-func TestBackupDumpArgvVariantsConsistent(t *testing.T) {
-	t.Parallel()
-	pg := BackupHandler{Variant: BackupPostgres}.dumpArgv("/d/pg.dump")
-	neo := BackupHandler{Variant: BackupNeo4j}.dumpArgv("/d/neo")
-	if slices.Equal(pg, neo) {
-		t.Fatal("the two variants must produce different argv")
-	}
-	if pg[1] != pgContainer || neo[1] != neo4jContainer {
-		t.Fatalf("argv[1] must be the variant container: pg=%q neo=%q", pg[1], neo[1])
-	}
+	return false
 }
