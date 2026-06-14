@@ -22,14 +22,17 @@ func TestAdaptiveReasoningTierWireE2E(t *testing.T) {
 		AdaptiveReasoning: true,
 	}
 
+	// The tier sets ONLY the reasoning effort; max_tokens is NEVER reduced — it stays at
+	// the configured cfg.MaxTokens (4096) for every tier (the 2026-06-14 contract: the
+	// per-tier 512/2048 ceiling truncated tool-call arguments mid-JSON).
 	cases := []struct {
 		tier      prompt.ReasoningTier
 		effort    string
 		exclude   bool
 		maxTokens int
 	}{
-		{prompt.ReasoningTierNone, "none", true, 512},
-		{prompt.ReasoningTierLow, "low", true, 2048},
+		{prompt.ReasoningTierNone, "none", true, 4096},
+		{prompt.ReasoningTierLow, "low", true, 4096},
 		{prompt.ReasoningTierHigh, "high", true, 4096},
 	}
 
