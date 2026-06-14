@@ -40,8 +40,10 @@ RETURN cypherStatements
 type BackupVariant string
 
 const (
+	// BackupPostgres selects the Postgres pg_dump backup.
 	BackupPostgres BackupVariant = "postgres"
-	BackupNeo4j    BackupVariant = "neo4j"
+	// BackupNeo4j selects the Neo4j APOC Cypher export backup.
+	BackupNeo4j BackupVariant = "neo4j"
 )
 
 type pgDumper func(context.Context, postgresDumpRequest) error
@@ -306,7 +308,9 @@ func defaultNeo4jDumper(ctx context.Context, req neo4jDumpRequest) error {
 
 func writeNeo4jCypherFile(dest string, statements []string) error {
 	tmp := dest + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	// G304: dest is app-computed from backupDir plus a timestamped filename, not
+	// model/user payload, and the backup must write to the operator-selected dir.
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600) //nolint:gosec
 	if err != nil {
 		return fmt.Errorf("create %s: %w", tmp, err)
 	}
