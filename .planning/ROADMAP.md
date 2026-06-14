@@ -624,7 +624,16 @@ Plans:
   4. Operator re-runs the installer and observes it is idempotent (existing `.env` secrets preserved, not regenerated); the `aura-home` volume survives an image upgrade (`llm.json` / `mcp/servers.json` / `Agent.md` retained).
   5. Operator observes the image published to `ghcr.io` pinned by release tag; goreleaser still produces the host binary for dev; the appliance path = same compose + image with `.env` pre-seeded (no curl step).
 
-**Plans**: TBD
+**Plans**: 8 plans (3 waves)
+
+- [ ] 17-01-PLAN.md — D-04 PRD/SPEC amendment gate (add gVisor tier, record ec7fe2f6 revert, defer sbx) [Wave 1]
+- [ ] 17-02-PLAN.md — Fat docker/aura/Dockerfile + D-01 revert of the distroless jail + de-harden the compose aura service [Wave 2]
+- [ ] 17-03-PLAN.md — In-container docker-runtime guard (D-08) + whatsapp sibling recipe (D-07) [Wave 2]
+- [ ] 17-04-PLAN.md — D-22 keyless boot + agent-call fail-closed llm_not_configured (D-10) [Wave 2]
+- [ ] 17-05-PLAN.md — aura doctor aggregate health check (D-09) [Wave 2]
+- [ ] 17-06-PLAN.md — Compose topology: aura-migrate, aura-home, whatsapp sibling, Caddy TLS+token, compose.gvisor.yaml, AURA_BACKUP_DIR bind-mounts [Wave 3]
+- [ ] 17-07-PLAN.md — Distribution: install.sh + goreleaser ghcr multi-arch + systemd autostart [Wave 3]
+- [ ] 17-08-PLAN.md — Backup wiring (resolve the docker-exec paradox, network pg_dump) + README rewrite [Wave 3]
 
 ### Phase 18: Slice 7e executable snippet reuse - steady-state artifact runs sotto i 40s
 
