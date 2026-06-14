@@ -273,7 +273,7 @@ func replyFromEvent(chatID int64, ev *agent.Event) profileReply {
 	case profileflow.StepIdentity:
 		return profileReply{text: "Come ti chiami, di cosa ti occupi (ruolo + azienda/team) e dove sei (fuso orario)?"}
 	case profileflow.StepWork:
-		return profileReply{text: "Quali sono le tue competenze principali e lo stack/strumenti che usi di solito?"}
+		return profileReply{text: "Quali sono le tue competenze principali e lo stack/strumenti che usi di solito?"} //nolint:misspell // Italian user-facing prompt
 	case profileflow.StepProjects:
 		return profileReply{text: "A cosa stai lavorando in questo periodo e quali obiettivi hai?"}
 	case profileflow.StepSocial:

@@ -70,6 +70,7 @@ func (t *Telegram) buildDispatch() {
 	}
 	t.onboard = newOnboarding(onboardStore)
 	t.profile = newProfileOnboarding(t.deps.Profile, t.accountsForDispatch())
+	t.profile.extractor = t.deps.AnswerExtractor
 	t.voice = newVoiceClient(t.deps.Multimodal)
 	t.photo = newPhotoClient(t.deps.Multimodal)
 	t.docs = newDocumentsClient(t.deps.Multimodal)

@@ -10,6 +10,7 @@ import (
 	tele "gopkg.in/telebot.v4"
 
 	"github.com/chetto1983/aura/internal/askuser"
+	profileflow "github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 )
 
@@ -146,7 +147,7 @@ func TestOnTextActiveProfileReplyDoesNotDriveTurn(t *testing.T) {
 		t.Fatalf("active profile onboarding reply must not drive a turn, got %d calls", calls)
 	}
 	texts := bot.sentTexts()
-	if len(texts) != 2 || !strings.Contains(texts[1], "competenze") {
+	if len(texts) != 2 || !strings.Contains(texts[1], "competenze") { //nolint:misspell // Italian user-facing prompt
 		t.Fatalf("active profile onboarding replies = %v, want work question second", texts)
 	}
 }
@@ -291,4 +292,28 @@ func (s *activationAccountStore) GetAccountByTelegramID(_ context.Context, teleg
 		return Account{}, errors.New("no linked account")
 	}
 	return acct, nil
+}
+
+// fakeAnswerExtractor is a minimal profileflow.AnswerExtractor for wiring tests.
+type fakeAnswerExtractor struct{}
+
+func (fakeAnswerExtractor) Extract(_ context.Context, _ profileflow.Step, _ string) (profileflow.Answers, error) {
+	return profileflow.Answers{}, nil
+}
+
+// TestBuildDispatchWiresAnswerExtractor guards that buildDispatch sets the
+// extractor on the eagerly-built profileOnboarding so profileForDispatch's
+// early-return path delivers an extractor-carrying instance to production.
+// Without the t.profile.extractor assignment in buildDispatch, this test fails.
+func TestBuildDispatchWiresAnswerExtractor(t *testing.T) {
+	t.Parallel()
+	fake := fakeAnswerExtractor{}
+	tg := dispatchChannel(t, &recordingTurn{}, func(d *Deps) {
+		d.AnswerExtractor = fake
+	})
+	// profileForDispatch returns the pre-built t.profile when it is non-nil (the
+	// production path taken after buildDispatch). The extractor must be set.
+	if tg.profileForDispatch().extractor == nil {
+		t.Fatal("buildDispatch must wire AnswerExtractor onto the profileOnboarding; extractor is nil (onboarding LLM extraction is silently inert in production)")
+	}
 }
