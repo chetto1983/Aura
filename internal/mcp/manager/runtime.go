@@ -3,6 +3,7 @@ package manager
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -16,7 +17,10 @@ const (
 	RuntimeDockerGateway = mcp.RuntimeKindDockerGateway
 )
 
-var errMCPServerBlocked = errors.New("mcp server blocked")
+var (
+	errMCPServerBlocked         = errors.New("mcp server blocked")
+	errDockerRuntimeInContainer = errors.New("docker runtime unavailable inside the container - deploy as a compose sibling and mount via URL")
+)
 
 // RuntimeServers builds launchable ServerConfigs for the active profile's
 // runnable stdio servers, excluding streamable-HTTP servers; it returns nil
@@ -87,8 +91,14 @@ func RuntimeLaunchConfig(name string, server mcp.ManagedServer) (mcp.ServerConfi
 	}
 	switch runtimeKind(server) {
 	case RuntimeDocker:
+		if os.Getenv("AURA_IN_CONTAINER") == "1" {
+			return mcp.ServerConfig{}, fmt.Errorf("%w (server %q)", errDockerRuntimeInContainer, name)
+		}
 		return dockerRuntimeConfig(server)
 	case RuntimeDockerGateway:
+		if os.Getenv("AURA_IN_CONTAINER") == "1" {
+			return mcp.ServerConfig{}, fmt.Errorf("%w (server %q)", errDockerRuntimeInContainer, name)
+		}
 		return dockerGatewayRuntimeConfig(name, server)
 	default:
 		if strings.TrimSpace(server.Command) == "" {
