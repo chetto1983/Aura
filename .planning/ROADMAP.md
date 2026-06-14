@@ -41,6 +41,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 18: Slice 7e executable snippet reuse** - steady-state artifact runs under 40s: snippet store/param/run-by-path collapses the 29-30-roundtrip re-authoring loop to ~5 calls (completed 2026-06-08)
 - [x] **Phase 19: Audit Bug Resolution + E2E Live Test** - resolve the HIGH/MEDIUM correctness findings from the 2026-06-10 deep audit (shell never-answer cluster, SSE/HITL error-swallowing, scheduler dropped-notification contract, microcompact wire-invalidity, LLM stream-error + MCP reconnect gaps) and validate the fixes end-to-end on the live stack (completed 2026-06-10)
+- [ ] **Phase 21: Plugins — Hooks (Slice EXT-1)** - in-process `HookManager` on `LlmAgent` (5 fixed loop insertion points, first-non-nil-wins, in-process Go + trust-gated out-of-process command-program authoring, governance-composing) — first slice of the EXT-01 unified extension capability (PRD amendment #63); SPEC.md locked 2026-06-14
 
 ## Phase Details
 
@@ -709,3 +710,19 @@ Plans:
 **Wave 3** (blocked on Wave 2)
 
 - [x] 20-04-PLAN.md — migration 0014 (pending_notifications.identity_id text, no FK) + sqlc Insert/Sweep threading + sweepNotifications route-back + db_integration round-trip + Step-2 LIVE gate [R6]
+
+### Phase 21: Plugins — Hooks (Slice EXT-1)
+
+**Goal:** Aura's agent loop gains a registrable in-process `HookManager` fired at five fixed points of `LlmAgent.Run`, letting first-party Go hooks and trust-gated out-of-process command programs observe, rewrite, or veto model/tool calls — with byte-identical loop behavior when zero hooks are registered. First slice of the EXT-01 unified extension capability (PRD amendment #63).
+**Depends on:** Phase 20
+**Requirements**: EXT-01 (Slice EXT-1); SPEC = `21-SPEC.md` (6 requirements locked, ambiguity 0.11)
+**Slices**: EXT-1 (hooks only; EXT-2 manifest/installer + EXT-3 self-install are separate future phases)
+**Success Criteria** (what must be TRUE):
+
+  1. With zero hooks registered, `LlmAgent.Run` emits a byte-identical Event sequence + identical `tool_invocations` rows vs baseline; `scripts/cache_invariant_audit.sh` stays green.
+  2. A registered in-process `BeforeTool` hook can veto (synthetic result) AND rewrite args; the `tool_invocations` ledger records the rewritten args (re-emit verified).
+  3. First-non-nil-wins across multiple hooks; a `BeforeModel` hook can short-circuit with a synthesized response (budget `ConsumeStep` fired first).
+  4. An out-of-process command-program hook applies allow/deny/rewrite from stdin-JSON; a hash-mismatched or timed-out command hook is refused (not executed).
+  5. budget + dedup + `ask_user` gates still fire with hooks present; `goleak` + `-race` clean; owned-surface coverage ≥85%; mutation ≥70% on the hook-dispatch file.
+
+**Status:** SPEC.md written 2026-06-14 (ambiguity 0.11, 6 requirements). Next: `/gsd-discuss-phase 21`.

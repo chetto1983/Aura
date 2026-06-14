@@ -4928,6 +4928,33 @@ finché non c'è approval (agente via ask_user OPPURE utente via CLI). Audit log
 
 ---
 
+## §Capability — Aura Plugins (Unified Extension) — amendment #63 (2026-06-14)
+
+> **Amendment #63 (operator directive *"i want extend Aura easily"*, 2026-06-14) — NEW v1 capability `EXT-01`; SUPERSEDES the "OpenClaw plugin hosting = v2 / out-of-scope" framing (REQUIREMENTS.md `CAP-09` note + `MCP-V2-01`).** Aura adopts an **Aura-owned, in-process extension model** — explicitly NOT the OpenClaw Node-sidecar compatibility host of `docs/superpowers/specs/2026-06-02-openclaw-plugin-compatibility-design.md` (that spec is **shelved as over-engineering**). Grounded in `docs/research/2026-06-14-aura-plugin-architecture-research.md` (5 codebase surveys of ADK-Go/Codex/OpenHuman/nanobot/picobot + adversarially-verified online pass) and the file:line seam map of 2026-06-14; design contract: `docs/superpowers/specs/2026-06-14-aura-plugins-unified-extension-design.md`.
+
+**Why (verified finding).** Standard MCP is a tools-only substrate (extensions are opt-in, non-conformance-mandatory). Every production agent runtime surveyed adds **tools/providers/channels/hooks as in-process seams**, with **MCP as the out-of-process adapter for tool-shaped capabilities** — which Aura already has (`tools.Registry` + `mcptools.bridge` unify native and MCP tools kind-blind to the model; gated skills `Writer`/`Loader`; the `channels.Channel` framework). No Node sidecar, no dynamic native-code ABI, no OpenClaw binary compatibility is required to obtain the *capabilities*.
+
+**The model.** One declarative manifest **`aura.plugin.json`** that *composes primitives Aura already has*, fanned out by one CLI installer **`aura plugins {add|list|inspect|enable|disable|remove}`** (hand-rolled `switch`, mirroring `runMCP`/`runSkills` at `cmd/aura/main.go`) to the existing machinery. The same manifest serves **three audiences**: (A) Aura self-extending at runtime (no ceremony), (B) the CLI installer, (C) developers adding native Go seams.
+
+| Manifest key | Fans out to | Existing seam |
+|---|---|---|
+| `mcp[]` | `mcpInstall` → `~/.aura/mcp/servers.json` | `internal/mcp/manager` catalog + `mcptools.bridge` |
+| `skills[]` | skills `Writer.WriteMutation` (gated, transactional) | `internal/skills` |
+| `hooks[]` | new in-process `HookManager` | **new** (the only real gap) |
+
+**Locked decisions (2026-06-14):** (1) command + manifest = **`aura plugins` / `aura.plugin.json`**; (2) hook authoring = **both** in-process Go (mutating hot path) + out-of-process command programs (observe/approve-deny, trust-hash gated, Codex shape); (3) **providers + channels DEFERRED** (`llm.Client` stays `AURA_LLM_MODEL` config; new channels remain a native-Go surface).
+
+**Delivery — three sequenced slices (one module per slice, ≤2 staged ahead):**
+- **Slice EXT-1 — Hooks (Phase 21, first):** a `HookManager` on `LlmAgent` (injected via `LlmAgentConfig`, parallel to `Classifier`/`Breaker`) fired at five loop points the seam map pinned (`BeforeModel` `llm_agent.go:266`, `BeforeTool` `:419`→`:444`, `AfterTool` `:450`, `OnTurnStart/End` `:187`/`:192`), with ADK "first-non-nil-wins / early-exit" semantics. **This generalizes five interceptors the loop already hardcodes** (completion-critic veto `:348`, dedup veto `:419`, result-spillover rewrite, reasoning router, provenance stamp).
+- **Slice EXT-2 — Bundle manifest + installer:** `aura.plugin.json` parse/validate + `aura plugins …` fan-out + new append-only migration **0016 `plugins_audit`** (mirrors `skill_audit` 0010).
+- **Slice EXT-3 — Self-install loop:** Aura self-installs via the same manifest, governed by **`capability_grants`** — today *built but completely unwired* (`internal/identity/store.go`, `'*'` seeded); this finally gives it a job (replaces per-call approval with the no-ceremony doctrine). Runtime tool additions rebuild the registry per turn (Runner already builds a fresh `LlmAgent` each turn — respects the immutable-for-a-run, panic-on-dup `tools.Registry`).
+
+**Anti-feature carve-out (does NOT violate "no auto-rewrite substrate source code"):** the hook layer is a **host-owned** seam — compiled-in Go callbacks or governed command programs registered through the host — NOT the agent rewriting `internal/agent/llm_agent.go`. Aura still owns the loop; hooks are an extension point on it, the same posture as the existing critic/dedup interceptors. **Governance composition is load-bearing:** hooks run *alongside* budget (`:215`), dedup (`:419`), and the `ask_user` pause, never bypassing them; a `BeforeTool` arg-rewrite MUST re-emit the ToolInvocation Event so the `tool_invocations` ledger records the rewritten args.
+
+**Out-of-scope (unchanged):** OpenClaw binary/manifest compatibility; a public plugin marketplace; provider/channel manifest extension (deferred); any code-loading plugin host.
+
+---
+
 ## Caps & Limits (Area #8 closed 2026-05-28)
 
 Aura ha 4 cap distinti con **semantica diversa** — non un valore unico polimorfico. Tutti env-overrideable, default tarati per chat tipica.

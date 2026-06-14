@@ -41,6 +41,10 @@
 
 - [x] **CAP-09 / MCP-V2-01**: Aura MCP Manager control plane for v1. Managed MCP config grows profiles, recipe/catalog metadata, trust classes (`trusted_recipe`, `trusted_local`, `sandboxed_local`, `remote_http`, `blocked`), Streamable HTTP transport, doctor/status/logs, Calendar fixture recipe, sandboxed third-party local runtime, explicit trust approvals, redacted profile export, and mount-time tool risk-policy enforcement. New third-party local commands default to `blocked`; OpenClaw plugin-host runtime remains out-of-scope. [Phase 16 amendment]
 
+### Extension (Slice EXT — amendment #63)
+
+- [ ] **EXT-01**: Aura Plugins — unified in-process extension model. ONE `aura.plugin.json` manifest composing primitives Aura already has (MCP servers + skills + hooks) + an `aura plugins {add,list,inspect,enable,disable,remove}` installer fanning out to existing machinery; serves three audiences (agent self-extend, CLI install, native Go seams). Delivered in 3 sequenced slices: **EXT-1** in-process `HookManager` (5 `LlmAgent.Run` insertion points, first-non-nil-wins, in-process Go + trust-gated out-of-process command programs, governance-composing) → **EXT-2** manifest + installer + migration 0016 `plugins_audit` → **EXT-3** self-install loop wiring the (today unwired) `capability_grants`. NO OpenClaw Node sidecar, NO dynamic native-code ABI; providers/channels deferred. Supersedes the "plugin hosting = v2" framing of MCP-V2-01. [amendment #63 — design `docs/superpowers/specs/2026-06-14-aura-plugins-unified-extension-design.md`, research `docs/research/2026-06-14-aura-plugin-architecture-research.md`]
+
 ### Transport + UX (Slice 8–11)
 
 - [x] **UX-01**: AG-UI gateway con SSE event protocol transport, thin wrapper over in-process emitter. `internal/agent` MUST NOT import `internal/agui` (boundary enforced via static analysis). [Slice 8]
@@ -134,13 +138,14 @@ Populated by gsd-roadmapper during roadmap creation. Phase column references `.p
 | UX-08 | Phase 15 — Memory Subsystem | Complete |
 | UX-09 | Phase 15 — Memory Subsystem | Complete |
 | OPS-01 | Phase 17 — Packaging & Distribution | Pending |
+| EXT-01 | Phase 21 — Plugins — Hooks (Slice EXT-1) | Pending (SPEC.md locked 2026-06-14; EXT-2/EXT-3 phases TBD) |
 
 **Coverage:**
 
-- v1 requirements: 29 total (1 PRD + 3 INFRA + 5 CORE + 10 CAP + 9 UX + 1 OPS)
-- Mapped to phases: 29
+- v1 requirements: 30 total (1 PRD + 3 INFRA + 5 CORE + 10 CAP + 9 UX + 1 OPS + 1 EXT)
+- Mapped to phases: 30 (EXT-01 → Phase 21, amendment #63)
 - Unmapped: 0 ✓
-- Phases used: 19 (P0 through P18)
+- Phases used: 20 (P0 through P21; EXT-01 spans P21–P23, only P21 created)
 
 ---
 *Requirements defined: 2026-05-29*
