@@ -77,6 +77,10 @@ func TestPostgresDumpRequestFromURLRejectsMissingHost(t *testing.T) {
 
 func TestPostgresDumpRequestFromEnvDefaultsToComposeNetwork(t *testing.T) {
 	t.Setenv("AURA_DB_MIGRATE_URL", "")
+	// Isolate POSTGRES_HOST so the compose-network DEFAULT is exercised: the CI
+	// integration tiers export POSTGRES_HOST=127.0.0.1 (for the host-side DSN), which
+	// otherwise leaks in and overrides the default this test asserts.
+	t.Setenv("POSTGRES_HOST", "")
 	t.Setenv("POSTGRES_PASSWORD", "secret")
 	req, err := postgresDumpRequestFromEnv("/backups/postgres.dump")
 	if err != nil {
