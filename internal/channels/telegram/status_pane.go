@@ -67,6 +67,8 @@ type statusPane struct {
 	// showReasoning surfaces the live CoT in the 💭 line via fifo (a rolling rune-capped
 	// window); started stamps RUN_STARTED for the elapsed-time header. When showReasoning
 	// is false the pane keeps the redacted lifecycle label and fifo stays empty.
+	// fifo accumulates the whole turn's reasoning across all spans (spans separated by
+	// " · "); it is reset only on RunFinished so the user can read thoughts while tools run.
 	showReasoning bool
 	fifo          *reasoningfifo.FIFO
 	started       time.Time
@@ -129,8 +131,13 @@ func (p *statusPane) handle(ev events.Event) {
 			p.dirty = true
 		}
 	case *events.ReasoningStartEvent:
+		// Accumulate across spans: don't reset. If a prior span already pushed content
+		// into the window, insert a visible separator so spans don't run together.
+		// " · " uses non-whitespace glyphs so collapseWhitespace doesn't eat it.
+		if p.showReasoning && strings.TrimSpace(p.fifo.String()) != "" {
+			p.fifo.Push(" · ")
+		}
 		p.thinking = "in corso"
-		p.fifo.Reset() // clear-on-(re)start: each reasoning span gets a fresh window
 		p.dirty = true
 	case *events.ReasoningMessageContentEvent:
 		if p.showReasoning {
@@ -146,8 +153,9 @@ func (p *statusPane) handle(ev events.Event) {
 		}
 		p.dirty = true
 	case *events.ReasoningEndEvent:
+		// Span ended — keep the FIFO content so the user can read the reasoning while
+		// the turn continues (e.g. tools run between spans). Clear happens on RunFinished.
 		p.thinking = "completato"
-		p.fifo.Reset() // clear-on-final: collapse the window back to the compact label
 		p.dirty = true
 	case *events.StateDeltaEvent:
 		p.applyCost(e.Delta)
@@ -156,9 +164,9 @@ func (p *statusPane) handle(ev events.Event) {
 		p.done = true
 		p.dirty = true
 	case *events.RunFinishedEvent:
-		// Keep the compact final 💭 line: Telegram users read it as the run's last
-		// visible status, while msg #2 carries the actual answer. Clear the live window
-		// so a turn that ended without a REASONING_END still collapses to the label.
+		// Turn done: clear the live reasoning window so the final pane always shows
+		// "completato" (the safe label) rather than frozen raw thoughts. msg #2 carries
+		// the actual answer; the status pane is just a lifecycle indicator from here.
 		p.done = true
 		p.fifo.Reset()
 		p.dirty = true

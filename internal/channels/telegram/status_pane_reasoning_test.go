@@ -155,6 +155,79 @@ func TestStatusPaneLiveReasoningRespectsTelegramCap(t *testing.T) {
 	}
 }
 
+// Reasoning content persists in the FIFO after ReasoningEnd so the user can read it
+// while subsequent tools run. The window is not cleared between span end and run done.
+func TestStatusPaneReasoningPersistsThroughTurn(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePaneReasoning(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningStartEvent("rsn1"),
+		events.NewReasoningMessageContentEvent("rsn1", "thinking about X"),
+		events.NewReasoningEndEvent("rsn1"),
+		events.NewToolCallStartEvent("c1", "web_search"),
+		events.NewToolCallResultEvent("m", "c1", "results"),
+	}, 4096, time.Unix(30, 0), time.Unix(30, 0))
+
+	got := lastText(bot)
+	if !strings.Contains(got, "thinking about X") {
+		t.Fatalf("reasoning must persist after span end while turn continues, got %q", got)
+	}
+	if !strings.Contains(got, "web_search") {
+		t.Fatalf("tool must also appear alongside live reasoning, got %q", got)
+	}
+}
+
+// Multi-span turns accumulate all reasoning into the FIFO separated by " · "; neither
+// span is lost before the run finishes.
+func TestStatusPaneReasoningAccumulatesAcrossSpans(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePaneReasoning(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningStartEvent("rsn1"),
+		events.NewReasoningMessageContentEvent("rsn1", "alpha"),
+		events.NewReasoningEndEvent("rsn1"),
+		events.NewToolCallStartEvent("c1", "web_search"),
+		events.NewToolCallResultEvent("m", "c1", "ok"),
+		events.NewReasoningStartEvent("rsn2"),
+		events.NewReasoningMessageContentEvent("rsn2", "beta"),
+	}, 4096, time.Unix(30, 0), time.Unix(30, 0))
+
+	got := lastText(bot)
+	if !strings.Contains(got, "alpha") {
+		t.Fatalf("first span must survive into second span, got %q", got)
+	}
+	if !strings.Contains(got, "beta") {
+		t.Fatalf("second span must appear in the window, got %q", got)
+	}
+	// The separator " · " must join the two spans.
+	if !strings.Contains(got, "·") {
+		t.Fatalf("spans must be separated by \" · \" in the window, got %q", got)
+	}
+}
+
+// After RunFinished the live window is cleared: "completato" shows, raw thoughts gone.
+func TestStatusPaneReasoningClearsOnRunFinished(t *testing.T) {
+	t.Parallel()
+	bot := newFakeBot()
+	drivePaneReasoning(bot, []events.Event{
+		events.NewRunStartedEvent("t", "r"),
+		events.NewReasoningStartEvent("rsn1"),
+		events.NewReasoningMessageContentEvent("rsn1", "TURN-THOUGHT detail"),
+		events.NewReasoningEndEvent("rsn1"),
+		events.NewRunFinishedEvent("t", "r"),
+	}, 4096, time.Unix(30, 0), time.Unix(30, 0))
+
+	got := lastText(bot)
+	if strings.Contains(got, "TURN-THOUGHT") {
+		t.Fatalf("reasoning window must be cleared on RunFinished, got %q", got)
+	}
+	if !strings.Contains(got, "completato") {
+		t.Fatalf("final pane must show \"completato\" after run done, got %q", got)
+	}
+}
+
 // With the flag OFF (default), the pane keeps the redacted lifecycle even when deltas
 // stream — the regression guard for the privacy default alongside the new feature.
 func TestStatusPaneDefaultStillRedactsReasoning(t *testing.T) {
