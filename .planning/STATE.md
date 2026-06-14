@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 17-06-PLAN.md
-last_updated: "2026-06-14T13:33:35.014Z"
+stopped_at: Completed 17-07-PLAN.md
+last_updated: "2026-06-14T13:50:49.929Z"
 last_activity: 2026-06-14
 progress:
   total_phases: 23
   completed_phases: 20
   total_plans: 143
-  completed_plans: 139
+  completed_plans: 140
   percent: 87
 ---
 
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 17 (packaging-distribution) — EXECUTING
-Plan: 7 of 8
+Plan: 8 of 8
 Status: Ready to execute
 Last activity: 2026-06-14
 
-Progress: [██████████] 97%
+Progress: [██████████] 98%
 
 ### Next — Phase 17 (Packaging)
 
@@ -144,6 +144,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 | Phase 17 P04 | ~35min | 2 tasks | 10 files |
 | Phase 17 P05 | ~45min | 2 tasks | 4 files |
 | Phase 17 P06 | ~25min | 4 tasks | 12 files |
+| Phase 17 P07 | ~50min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -239,6 +240,9 @@ Recent decisions affecting current work:
 - [Phase 17]: Compose backups share /backups in-container
 - [Phase 17]: Caddy token gate stays local
 - [Phase 17]: WhatsApp source vendored as tarball
+- [Phase 17]: Installer preserves existing env secrets
+- [Phase 17]: GoReleaser image build keeps existing Dockerfile
+- [Phase 17]: gVisor remains opt-in native Linux
 
 ### Pending Todos
 
@@ -272,6 +276,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T13:33:34.748Z
-Stopped at: Completed 17-06-PLAN.md
+Last session: 2026-06-14T13:50:49.430Z
+Stopped at: Completed 17-07-PLAN.md
 Resume file: None
