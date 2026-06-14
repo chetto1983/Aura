@@ -49,6 +49,41 @@ func TestExtractDraftIncludesFactsAndPreferences(t *testing.T) {
 	}
 }
 
+func TestExtractDraft_RichSections(t *testing.T) {
+	d, err := ExtractDraft(Answers{
+		Name: "Davide", Role: "dev", Company: "Aura", Timezone: "Europe/Rome", Lang: "it",
+		Location: "Cuneo",
+		Stack:    []string{"Go", "Neo4j"}, Projects: []string{"Aura"}, Goals: []string{"ship Phase 14"},
+		Interests: []string{"AI agents"}, People: []string{"Andrea — business partner"},
+		Vetoes: []string{"No em-dashes"}, TonePreference: "direct", ResponseLength: "short",
+		Expertise: []string{"backend"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"## Identity\n- Name: Davide",
+		"Role: dev @ Aura",
+		"Location: Cuneo",
+		"## Expertise & Tools\n- Domains: backend",
+		"Stack: Go, Neo4j",
+		"## Projects & Goals",
+		"- Aura",
+		"Goal: ship Phase 14",
+		"## Interests\n- AI agents",
+		"## People\n- Andrea — business partner",
+		"## Style",
+		"## Vetoes\n- No em-dashes",
+	} {
+		if !strings.Contains(d.AgentMD, want) {
+			t.Errorf("draft missing %q:\n%s", want, d.AgentMD)
+		}
+	}
+	if d.Preferences.Lang != "it" || d.Preferences.Timezone != "Europe/Rome" || d.Preferences.Location != "Cuneo" {
+		t.Errorf("prefs not carried: %+v", d.Preferences)
+	}
+}
+
 func TestExtractDraftBoundsOutput(t *testing.T) {
 	draft, err := ExtractDraft(Answers{
 		Name:               "Davide",

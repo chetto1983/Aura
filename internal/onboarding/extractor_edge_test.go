@@ -78,20 +78,21 @@ func TestLanguagePreferenceMapping(t *testing.T) {
 	}
 }
 
-func TestFactLinesEmptyName(t *testing.T) {
-	if got := factLines(Answers{}); got != nil {
-		t.Fatalf("factLines with empty name = %v, want nil", got)
+func TestIdentityLinesEmptyName(t *testing.T) {
+	if got := identityLines(Answers{}); got != nil {
+		t.Fatalf("identityLines with empty answers = %v, want nil", got)
 	}
-	if got := factLines(Answers{Name: "Ada"}); len(got) != 1 || got[0] != "Name: Ada" {
-		t.Fatalf("factLines = %v, want [Name: Ada]", got)
+	got := identityLines(Answers{Name: "Ada"})
+	if len(got) != 1 || got[0] != "Name: Ada" {
+		t.Fatalf("identityLines = %v, want [Name: Ada]", got)
 	}
 }
 
-func TestPreferenceLinesVoiceModeFalseStillRenders(t *testing.T) {
+func TestStyleLinesVoiceModeFalseStillRenders(t *testing.T) {
 	voice := false
-	got := preferenceLines(Answers{VoiceMode: &voice})
+	got := styleLines(Answers{VoiceMode: &voice})
 	if len(got) != 1 || got[0] != "Voice mode: false" {
-		t.Fatalf("preferenceLines = %v, want [Voice mode: false]", got)
+		t.Fatalf("styleLines = %v, want [Voice mode: false]", got)
 	}
 }
 

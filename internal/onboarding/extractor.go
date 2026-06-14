@@ -23,6 +23,7 @@ func ExtractDraft(answers Answers) (Draft, error) {
 	prefs := profile.Preferences{
 		Lang:                answers.Lang,
 		Timezone:            answers.Timezone,
+		Location:            answers.Location,
 		VoiceMode:           boolValue(answers.VoiceMode),
 		CanProactiveMessage: boolValue(answers.CanProactiveMessage),
 		TonePreference:      answers.TonePreference,
@@ -30,8 +31,13 @@ func ExtractDraft(answers Answers) (Draft, error) {
 	}
 
 	md := profile.RenderAgentMD(profile.AgentContent{
-		Identity:           factLines(answers),
-		Style:              preferenceLines(answers),
+		Identity:           identityLines(answers),
+		ExpertiseTools:     expertiseLines(answers),
+		ProjectsGoals:      projectGoalLines(answers),
+		Interests:          bulletLines(answers.Interests),
+		People:             bulletLines(answers.People),
+		Style:              styleLines(answers),
+		Vetoes:             bulletLines(answers.Vetoes),
 		CustomInstructions: customInstructionLines(answers),
 	})
 	if len([]byte(md)) > profile.MaxAgentMDBytes {
@@ -46,6 +52,9 @@ func ExtractDraft(answers Answers) (Draft, error) {
 
 func cleanAnswers(a Answers) Answers {
 	a.Name = cleanField(a.Name)
+	a.Role = cleanField(a.Role)
+	a.Company = cleanField(a.Company)
+	a.Location = cleanField(a.Location)
 	a.Lang = cleanField(a.Lang)
 	a.Timezone = cleanField(a.Timezone)
 	a.TonePreference = cleanField(a.TonePreference)
@@ -62,32 +71,86 @@ func cleanField(s string) string {
 	return truncateBytes(s, maxAnswerFieldBytes)
 }
 
-func factLines(a Answers) []string {
-	if a.Name == "" {
-		return nil
-	}
-	return []string{"Name: " + a.Name}
-}
-
-func preferenceLines(a Answers) []string {
+func identityLines(a Answers) []string {
 	var out []string
-	if lang := languagePreference(a.Lang); lang != "" {
-		out = append(out, lang)
+	if a.Name != "" {
+		out = append(out, "Name: "+a.Name)
+	}
+	if role := joinRoleCompany(a.Role, a.Company); role != "" {
+		out = append(out, "Role: "+role)
+	}
+	if a.Location != "" {
+		out = append(out, "Location: "+a.Location)
 	}
 	if a.Timezone != "" {
 		out = append(out, "Timezone: "+a.Timezone)
 	}
+	if lang := languagePreference(a.Lang); lang != "" {
+		out = append(out, lang)
+	}
+	return out
+}
+
+func joinRoleCompany(role, company string) string {
+	switch {
+	case role != "" && company != "":
+		return role + " @ " + company
+	case role != "":
+		return role
+	case company != "":
+		return company
+	default:
+		return ""
+	}
+}
+
+func expertiseLines(a Answers) []string {
+	var out []string
+	if len(a.Expertise) > 0 {
+		out = append(out, "Domains: "+strings.Join(a.Expertise, ", "))
+	}
+	if len(a.Stack) > 0 {
+		out = append(out, "Stack: "+strings.Join(a.Stack, ", "))
+	}
+	return out
+}
+
+func projectGoalLines(a Answers) []string {
+	out := bulletLines(a.Projects)
+	for _, g := range a.Goals {
+		if g = strings.TrimSpace(g); g != "" {
+			out = append(out, "Goal: "+g)
+		}
+	}
+	return out
+}
+
+func styleLines(a Answers) []string {
+	var out []string
 	if a.TonePreference != "" {
 		out = append(out, "Tone: "+a.TonePreference)
 	}
 	if a.ResponseLength != "" {
 		out = append(out, "Response length: "+a.ResponseLength)
 	}
+	if a.Lang != "" {
+		out = append(out, "Reply language: "+a.Lang)
+	}
 	if a.VoiceMode != nil {
 		out = append(out, fmt.Sprintf("Voice mode: %t", boolValue(a.VoiceMode)))
 	}
 	if a.CanProactiveMessage != nil {
 		out = append(out, fmt.Sprintf("Can proactive message: %t", boolValue(a.CanProactiveMessage)))
+	}
+	return out
+}
+
+func bulletLines(items []string) []string {
+	var out []string
+	for _, it := range items {
+		if it = strings.TrimSpace(it); it != "" {
+			out = append(out, it)
+		}
 	}
 	return out
 }
