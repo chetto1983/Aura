@@ -4,6 +4,7 @@
 //	aura shell              — interactive REPL against the agent loop
 //	aura agent dry-run      — drive a mock LoopAgent through the Budget tree, one Event per JSON line (SC#4)
 //	aura web <sub>          — web tooling: doctor (SearXNG reachability) | tool web_search/web_fetch '<json>'
+//	aura doctor             - aggregate runtime dependency health check
 //	aura tools              — print the tool manifest (active + deferred)
 //	aura db <sub>           — Postgres lifecycle (migrate|ping|status|reset)
 //	aura neo4j <sub>        — Neo4j lifecycle
@@ -53,6 +54,8 @@ func main() {
 		runSwarmDemo(os.Args[2:])
 	case "web":
 		runWeb(os.Args[2:])
+	case "doctor":
+		runDoctor(os.Args[2:])
 	case "db":
 		runDB(os.Args[2:])
 	case "neo4j":
@@ -92,7 +95,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|chat <sub>|config <sub>|identity <sub>|profile <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|docs <sub>|version}")
+	fmt.Fprintln(os.Stderr, "usage: aura {serve|shell|doctor|chat <sub>|config <sub>|identity <sub>|profile <sub>|paused-states <sub>|task <sub>|skills <sub>|agent <sub>|swarm-demo|web <doctor|tool ...>|tools|mcp <sub>|memory <sub>|db <sub>|neo4j <sub>|docs <sub>|version}")
 }
 
 func buildRegistry() *tools.Registry {
