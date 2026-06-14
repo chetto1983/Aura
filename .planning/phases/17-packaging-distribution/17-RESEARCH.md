@@ -567,19 +567,21 @@ The security model here is **inverted from a typical phase**: the threat model i
 
 **These assumptions need user/planner confirmation before becoming locked decisions.** A1/A4 map to the existing planner-choice flags; A2/A3/A5 are executor-resolved build details; A6 is a small compose-knob confirm.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **The Req 16 backup execution model (the `docker exec` paradox).**
+> All three resolved during planning (2026-06-14); each maps to a specific plan task. No plan changes pending — the resolutions are encoded in the plans and recorded here for traceability.
+
+1. **The Req 16 backup execution model (the `docker exec` paradox).** — **RESOLVED → 17-08 Task 1** (`checkpoint:decision`, default **option (b)** in-box network `pg_dump`; the box stays socket-less).
    - What we know: `BackupHandler.Run` uses `docker exec` (backup.go:41-53); the `aura` box has no socket.
    - What's unclear: which of the three resolution options (separate socketed backup service / network `pg_dump` from in-box / host-side timer) the operator prefers.
    - Recommendation: **option (b)** — network `pg_dump`/sidecar dump from inside the box — best preserves "the box stays a box." Surface as the highest-priority plan decision.
 
-2. **Caddy token enforcement mechanism (D-11 planner-choice).**
+2. **Caddy token enforcement mechanism (D-11 planner-choice).** — **RESOLVED → 17-06 Task 3** (header/`@token` matcher returning 401/403; verified by the live 401-without-token probe).
    - What we know: shared token + TLS internal CA, fronting wizard + AG-UI only.
    - What's unclear: `forward_auth` vs a header/`@token` matcher.
    - Recommendation: planner picks; verify with the 401-without-token live probe.
 
-3. **`aura-skills`/`aura-runs` → `aura-home` dev volume migration.**
+3. **`aura-skills`/`aura-runs` → `aura-home` dev volume migration.** — **RESOLVED → 17-06 Task 1** (`aura-home` is the greenfield appliance volume; dev volume mapping is a documented manual step, not auto-migrated).
    - What we know: the appliance is greenfield (no migration); dev has existing `aura-skills`/`aura-runs` volumes.
    - What's unclear: whether to auto-migrate dev volumes or document a manual mapping.
    - Recommendation: document a manual dev mapping; the appliance ships clean.

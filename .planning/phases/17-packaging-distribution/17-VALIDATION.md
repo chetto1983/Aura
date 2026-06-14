@@ -48,9 +48,29 @@ created: 2026-06-14
 > an `<automated>` `go test` verify; packaging tasks get a machine-checkable
 > shell/Docker assertion (live-Docker integration tier).
 
-| Task ID | Plan | Wave | Requirement | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|------------|-----------------|-----------|-------------------|-------------|--------|
-| {N}-01-01 | 01 | 1 | OPS-01 / Req-{XX} | T-17-XX / — | {expected secure behavior or "N/A"} | unit / integration | `{command}` | ✅ / ❌ W0 | ⬜ pending |
+| Task ID | Plan | Wave | Requirement (SPEC AC) | Threat Ref | Secure Behavior | Test Type | Automated Command | File Exists | Status |
+|---------|------|------|-----------------------|------------|-----------------|-----------|-------------------|-------------|--------|
+| 17-01-01 | 01 | 1 | OPS-01 / D-04 | — | PRD-first: amendment lands before any code; gVisor tier added as transparent boundary | docs | `grep -q "gVisor" prd.md` | ✅ | ⬜ pending |
+| 17-01-02 | 01 | 1 | OPS-01 / D-01 | — | ec7fe2f6 revert recorded; stale SPEC Background + in-scope line corrected | docs | `grep -q "ec7fe2f6" .planning/phases/17-packaging-distribution/17-SPEC.md` | ✅ | ⬜ pending |
+| 17-02-01 | 02 | 2 | OPS-01 / AC5,6,7,2 | T-17-secret | 4 runtimes resolve in-image; `docker history` clean (no secret layer) | integration (build) | `docker buildx build … && docker run --rm <img> sh -c 'command -v python3 node uvx mcp-neo4j-cypher'` | ❌ W0 | ⬜ pending |
+| 17-02-02 | 02 | 2 | OPS-01 / AC1 (D-01) | T-17-jail | distroless root Dockerfile removed | static | `! grep -rq "gcr.io/distroless" Dockerfile` | ✅ | ⬜ pending |
+| 17-02-03 | 02 | 2 | OPS-01 / AC1 (D-01/02) | T-17-jail | de-harden: no cap_drop/read_only/user 65532 on aura service | static | `! grep -q 'cap_drop' compose.yaml` | ✅ | ⬜ pending |
+| 17-03-01 | 03 | 2 | OPS-01 / AC3 (D-08) | T-17-socket | in-box docker-runtime returns clear "deploy as sibling" error | unit | `go test ./internal/mcp/manager/ -run TestRuntimeGuard` | ❌ W0 | ⬜ pending |
+| 17-03-02 | 03 | 2 | OPS-01 / AC4 (D-07) | — | whatsapp resolves to sibling; no wsl.exe; fail-soft when down | unit | `go test ./internal/mcp/manager/ -run TestWhatsapp` | ❌ W0 | ⬜ pending |
+| 17-04-01 | 04 | 2 | OPS-01 / AC9 (D-10) | T-17-keyless | serve boots w/o key; LoadDB()/db migrate unchanged | unit | `go test ./internal/llm/ ./internal/config/ -run …Keyless…` | ❌ W0 | ⬜ pending |
+| 17-04-02 | 04 | 2 | OPS-01 / AC9 (D-10) | T-17-keyless | agent call w/o key fail-CLOSED → `llm_not_configured` | integration | `go test ./cmd/aura/ -run 'TestServeKeyless\|TestLLMNotConfigured'` | ❌ W0 | ⬜ pending |
+| 17-05-01 | 05 | 2 | OPS-01 / AC10 (D-09) | — | per-check + non-zero exit; no `docker compose ps`; direct probes | unit/integration | `go test ./cmd/aura/ -run TestDoctor` | ❌ W0 | ⬜ pending |
+| 17-05-02 | 05 | 2 | OPS-01 / AC10 (D-09) | — | `aura doctor` wired into the cobra command tree | build | `grep -q 'case "doctor"' cmd/aura/main.go && go build ./...` | ✅ | ⬜ pending |
+| 17-06-01 | 06 | 3 | OPS-01 / AC8,1,2 | — | aura-migrate gate + aura-home persists + restart unless-stopped | integration (live) | `grep -q 'service_completed_successfully' compose.yaml` (+ live `compose up`) | ✅ | ⬜ pending |
+| 17-06-02 | 06 | 3 | OPS-01 / AC4,3 | T-17-loopback | whatsapp sibling loopback-only; streamable-HTTP mount | integration (live) | `test -f docker/whatsapp/Dockerfile` (+ live tools list) | ✅ | ⬜ pending |
+| 17-06-03 | 06 | 3 | OPS-01 / AC11 | T-17-loopback | Caddy TLS+token fronts user surface; data/sidecars never LAN | integration (live) | `test -f caddy/Caddyfile` (+ live 401-without-token probe) | ✅ | ⬜ pending |
+| 17-06-04 | 06 | 3 | OPS-01 / D-03 | — | optional gVisor tier transparent (full parity in-box) | integration (manual) | `test -f compose.gvisor.yaml && grep -q 'runsc' compose.gvisor.yaml` | ✅ | ⬜ pending |
+| 17-07-01 | 07 | 3 | OPS-01 / AC12,13 | — | idempotent secret-gen; HW preflight warn/abort; zero host python/node/pip | shell/integration | `bash -n scripts/install.sh && grep -q 'openssl rand' scripts/install.sh` (+ clean-host manual) | ✅ | ⬜ pending |
+| 17-07-02 | 07 | 3 | OPS-01 / AC14 | — | ghcr image pinned per tag (never latest); host binary retained | build | `grep -q 'ghcr.io' .goreleaser.yaml` | ✅ | ⬜ pending |
+| 17-07-03 | 07 | 3 | OPS-01 / AC15 | — | systemd autostart on power-on | static (manual reboot) | `test -f deploy/aura.service` | ✅ | ⬜ pending |
+| 17-08-01 | 08 | 3 | OPS-01 / AC16 | T-17-socket | backup model decided (no `docker exec` in socket-less box) | manual (checkpoint) | `<human-check>` decision (default option-b network `pg_dump`) | n/a | ⬜ pending |
+| 17-08-02 | 08 | 3 | OPS-01 / AC16 | — | network `pg_dump` writes to host-visible `AURA_BACKUP_DIR` | unit/integration | `go test ./internal/cron/handlers/ -run TestBackup` | ❌ W0 | ⬜ pending |
+| 17-08-03 | 08 | 3 | OPS-01 / AC16,13 | — | documented restore drill + `docker compose pull` update path | docs | `grep -q 'docker compose pull' README.md` | ✅ | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
