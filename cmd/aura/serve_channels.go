@@ -34,6 +34,7 @@ import (
 	"github.com/chetto1983/aura/internal/channels/telegram"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/identity"
+	"github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/setup"
@@ -76,6 +77,7 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 		ChatRateLimitMS:    tgCfg.ChatRateLimitMS,
 		ShowReasoning:      chat.cfg.LLM.ShowReasoning,
 		ReasoningFIFORunes: tgCfg.ReasoningFIFORunes,
+		AnswerExtractor:    onboarding.NewLLMAnswerExtractor(chat.client, chat.cfg.LLM.Model),
 	})
 
 	reg := channels.NewRegistry()
