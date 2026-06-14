@@ -20,6 +20,20 @@ func TestPrompt_ProfileContextDoctrine(t *testing.T) {
 	}
 }
 
+// TestPrompt_ProfileUsageRules asserts the relevance-gate, privacy, and
+// language-override rules for Agent.md profile usage are present.
+func TestPrompt_ProfileUsageRules(t *testing.T) {
+	for _, want := range []string{
+		"only when it is relevant",
+		"infer or surface sensitive",
+		"explicit in-message language request overrides",
+	} {
+		if !strings.Contains(SystemPrompt, want) {
+			t.Errorf("system prompt missing profile usage rule %q", want)
+		}
+	}
+}
+
 // TestPrompt_MemoryDoctrine asserts the Phase-15 memory doctrine: D-01
 // agent-decides writes (deliberate, no ceremony), D-03 pull-on-demand recall
 // (search before answering/asking), D-09 fail-soft posture — mechanism-level
