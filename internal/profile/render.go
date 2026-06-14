@@ -17,9 +17,13 @@ const (
 
 // AgentContent is the structured form rendered into Agent.md.
 type AgentContent struct {
-	Facts              []string
-	Preferences        []string
-	Context            []string
+	Identity           []string
+	ExpertiseTools     []string
+	ProjectsGoals      []string
+	Interests          []string
+	People             []string
+	Style              []string
+	Vetoes             []string
 	CustomInstructions []string
 }
 
@@ -27,9 +31,13 @@ type AgentContent struct {
 func RenderAgentMD(c AgentContent) string {
 	var b strings.Builder
 	b.WriteString("# Agent.md\n")
-	writeSection(&b, "Facts", c.Facts)
-	writeSection(&b, "Preferences", c.Preferences)
-	writeSection(&b, "Context", c.Context)
+	writeSection(&b, "Identity", c.Identity)
+	writeSection(&b, "Expertise & Tools", c.ExpertiseTools)
+	writeSection(&b, "Projects & Goals", c.ProjectsGoals)
+	writeSection(&b, "Interests", c.Interests)
+	writeSection(&b, "People", c.People)
+	writeSection(&b, "Style", c.Style)
+	writeSection(&b, "Vetoes", c.Vetoes)
 	writeSection(&b, "Custom Instructions", c.CustomInstructions)
 	return b.String()
 }
@@ -44,7 +52,7 @@ func RenderContextBlock(agentMD string) string {
 	return ProfileBlockStart + "\n" + agentMD + "\n" + ProfileBlockEnd
 }
 
-// AddFact inserts a bullet into the Facts section without duplicating it.
+// AddFact inserts a bullet into the Identity section without duplicating it.
 func AddFact(agentMD, fact string) (string, bool, error) {
 	fact = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(fact), "-"))
 	if fact == "" {
@@ -53,24 +61,24 @@ func AddFact(agentMD, fact string) (string, bool, error) {
 	bullet := "- " + fact
 	lines := splitLines(agentMD)
 	if len(lines) == 0 {
-		out := RenderAgentMD(AgentContent{Facts: []string{fact}})
+		out := RenderAgentMD(AgentContent{Identity: []string{fact}})
 		return out, true, checkAgentSize(out)
 	}
-	factsAt := sectionIndex(lines, "Facts")
-	if factsAt == -1 {
+	identityAt := sectionIndex(lines, "Identity")
+	if identityAt == -1 {
 		insertAt := 1
 		if strings.TrimSpace(lines[0]) != "# Agent.md" {
 			insertAt = 0
 		}
-		lines = insertLines(lines, insertAt, "", "## Facts", bullet)
+		lines = insertLines(lines, insertAt, "", "## Identity", bullet)
 		out := strings.Join(lines, "\n")
 		if !strings.HasSuffix(out, "\n") {
 			out += "\n"
 		}
 		return out, true, checkAgentSize(out)
 	}
-	end := nextSectionIndex(lines, factsAt+1)
-	for _, line := range lines[factsAt+1 : end] {
+	end := nextSectionIndex(lines, identityAt+1)
+	for _, line := range lines[identityAt+1 : end] {
 		if strings.TrimSpace(line) == bullet {
 			return agentMD, false, nil
 		}

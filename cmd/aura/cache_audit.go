@@ -297,9 +297,9 @@ func setupAuditSkills(runDir string) (*config.Config, func(), error) {
 	profileStore := profile.NewStore(profileDir)
 	if err := profileStore.WriteProfile("local", profile.Profile{
 		AgentMD: profile.RenderAgentMD(profile.AgentContent{
-			Facts:       []string{"Name: Cache Audit", "Profile fixture: deterministic"},
-			Preferences: []string{"Keep cache-audit prompts stable"},
-			Context:     []string{"This profile is seeded by aura cache-audit"},
+			Identity: []string{"Name: Cache Audit", "Profile fixture: deterministic"},
+			Style:    []string{"Keep cache-audit prompts stable"},
+			People:   []string{"This profile is seeded by aura cache-audit"},
 		}),
 		Preferences: profile.Preferences{Lang: "en", ResponseLength: "concise"},
 		Metadata:    profile.Metadata{Version: 1, SchemaVersion: 1, OnboardingCompleted: true},

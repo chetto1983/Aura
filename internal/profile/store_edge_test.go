@@ -326,7 +326,7 @@ func TestStoreAddFactOversizeError(t *testing.T) {
 	s.now = fixedClock()
 	// Seed a profile whose Agent.md already nearly fills the cap.
 	bigFact := strings.Repeat("x", MaxAgentMDBytes-64)
-	seed := RenderAgentMD(AgentContent{Facts: []string{bigFact}})
+	seed := RenderAgentMD(AgentContent{Identity: []string{bigFact}})
 	if err := s.WriteProfile("local", Profile{AgentMD: seed}); err != nil {
 		t.Fatalf("seed WriteProfile: %v", err)
 	}

@@ -30,8 +30,8 @@ func ExtractDraft(answers Answers) (Draft, error) {
 	}
 
 	md := profile.RenderAgentMD(profile.AgentContent{
-		Facts:              factLines(answers),
-		Preferences:        preferenceLines(answers),
+		Identity:           factLines(answers),
+		Style:              preferenceLines(answers),
 		CustomInstructions: customInstructionLines(answers),
 	})
 	if len([]byte(md)) > profile.MaxAgentMDBytes {

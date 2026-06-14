@@ -19,9 +19,7 @@ func (s *Store) AddFact(identity, fact string) (bool, error) {
 	}
 	now := s.now().Format(time.RFC3339)
 	p := Profile{
-		AgentMD: RenderAgentMD(AgentContent{
-			Facts: []string{},
-		}),
+		AgentMD: RenderAgentMD(AgentContent{}),
 		Metadata: Metadata{
 			Version:       1,
 			SchemaVersion: 1,

@@ -32,6 +32,7 @@ var (
 type Preferences struct {
 	Lang                string `json:"lang,omitempty"`
 	Timezone            string `json:"timezone,omitempty"`
+	Location            string `json:"location,omitempty"`
 	VoiceMode           bool   `json:"voice_mode,omitempty"`
 	CanProactiveMessage bool   `json:"can_proactive_message,omitempty"`
 	TonePreference      string `json:"tone_preference,omitempty"`

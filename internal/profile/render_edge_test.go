@@ -58,13 +58,13 @@ func TestAddFactOnEmptyAgentMDRendersFresh(t *testing.T) {
 	if !strings.HasPrefix(out, "# Agent.md\n") {
 		t.Fatalf("fresh render missing title header:\n%s", out)
 	}
-	if !strings.Contains(out, "## Facts\n- Name: Davide\n") {
-		t.Fatalf("fresh render missing Facts bullet:\n%s", out)
+	if !strings.Contains(out, "## Identity\n- Name: Davide\n") {
+		t.Fatalf("fresh render missing Identity bullet:\n%s", out)
 	}
 }
 
-// When Agent.md has no Facts section and no "# Agent.md" header line, the new
-// Facts section is inserted at the very top (insertAt = 0 branch).
+// When Agent.md has no Identity section and no "# Agent.md" header line, the new
+// Identity section is inserted at the very top (insertAt = 0 branch).
 func TestAddFactNoHeaderNoFactsInsertsAtTop(t *testing.T) {
 	t.Parallel()
 	md := "## Notes\nkeep this\n"
@@ -76,15 +76,15 @@ func TestAddFactNoHeaderNoFactsInsertsAtTop(t *testing.T) {
 		t.Fatal("AddFact added = false, want true")
 	}
 	// insertAt == 0 prepends a blank separator line before the new section.
-	if !strings.HasPrefix(out, "\n## Facts\n- Name: Davide") {
-		t.Fatalf("Facts section should be inserted at top:\n%q", out)
+	if !strings.HasPrefix(out, "\n## Identity\n- Name: Davide") {
+		t.Fatalf("Identity section should be inserted at top:\n%q", out)
 	}
 	if !strings.Contains(out, "## Notes\nkeep this") {
 		t.Fatalf("existing Notes section must be preserved:\n%s", out)
 	}
 }
 
-// With a "# Agent.md" header present but no Facts section, the new section lands
+// With a "# Agent.md" header present but no Identity section, the new section lands
 // right after the header (insertAt = 1 branch) with a blank separator line.
 func TestAddFactHeaderNoFactsInsertsAfterHeader(t *testing.T) {
 	t.Parallel()
@@ -96,8 +96,8 @@ func TestAddFactHeaderNoFactsInsertsAfterHeader(t *testing.T) {
 	if !added {
 		t.Fatal("AddFact added = false, want true")
 	}
-	if !strings.HasPrefix(out, "# Agent.md\n\n## Facts\n- Name: Davide") {
-		t.Fatalf("Facts must follow the header line:\n%s", out)
+	if !strings.HasPrefix(out, "# Agent.md\n\n## Identity\n- Name: Davide") {
+		t.Fatalf("Identity must follow the header line:\n%s", out)
 	}
 	if !strings.Contains(out, "## Notes\nkeep this") {
 		t.Fatalf("Notes section must survive:\n%s", out)
@@ -105,25 +105,25 @@ func TestAddFactHeaderNoFactsInsertsAfterHeader(t *testing.T) {
 }
 
 // writeSection skips bullet entries that are empty after dash/space trimming,
-// so a Facts list with blank entries renders only the meaningful ones.
+// so an Identity list with blank entries renders only the meaningful ones.
 func TestRenderAgentMDSkipsEmptyItems(t *testing.T) {
 	t.Parallel()
 	md := RenderAgentMD(AgentContent{
-		Facts: []string{"Name: Davide", "", "  ", "- ", "Role: builder"},
+		Identity: []string{"Name: Davide", "", "  ", "- ", "Role: builder"},
 	})
 	if strings.Count(md, "- ") != 2 {
-		t.Fatalf("only two non-empty facts should render:\n%s", md)
+		t.Fatalf("only two non-empty identity items should render:\n%s", md)
 	}
 	if !strings.Contains(md, "- Name: Davide\n") || !strings.Contains(md, "- Role: builder\n") {
-		t.Fatalf("expected facts missing:\n%s", md)
+		t.Fatalf("expected identity items missing:\n%s", md)
 	}
 }
 
-// AddFact appends to an existing Facts section that is the final section in the
+// AddFact appends to an existing Identity section that is the final section in the
 // document (nextSectionIndex returns len(lines)).
 func TestAddFactAppendsToTrailingFactsSection(t *testing.T) {
 	t.Parallel()
-	md := "# Agent.md\n\n## Facts\n- Name: Davide\n"
+	md := "# Agent.md\n\n## Identity\n- Name: Davide\n"
 	out, added, err := AddFact(md, "Role: builder")
 	if err != nil {
 		t.Fatalf("AddFact: %v", err)
@@ -132,7 +132,7 @@ func TestAddFactAppendsToTrailingFactsSection(t *testing.T) {
 		t.Fatal("AddFact added = false, want true")
 	}
 	if !strings.Contains(out, "- Name: Davide\n- Role: builder") {
-		t.Fatalf("new fact should append to the trailing Facts section:\n%s", out)
+		t.Fatalf("new fact should append to the trailing Identity section:\n%s", out)
 	}
 }
 
@@ -173,7 +173,7 @@ func TestParseSectionsCapturesBodyAndTreeRendersIt(t *testing.T) {
 // (current == -1 guard) and treats blank lines as separators.
 func TestParseSectionsIgnoresPreambleAndBlanks(t *testing.T) {
 	t.Parallel()
-	md := "# Agent.md\nstray preamble before any section\n\n## Facts\n- Name: Davide\n"
+	md := "# Agent.md\nstray preamble before any section\n\n## Identity\n- Name: Davide\n"
 	sections := ParseSections(md)
 	if len(sections) != 1 {
 		t.Fatalf("ParseSections count = %d, want 1: %#v", len(sections), sections)
@@ -182,7 +182,7 @@ func TestParseSectionsIgnoresPreambleAndBlanks(t *testing.T) {
 		t.Fatalf("preamble must not leak into a section body: %#v", sections[0].Body)
 	}
 	if len(sections[0].Items) != 1 || sections[0].Items[0] != "Name: Davide" {
-		t.Fatalf("Facts not parsed: %#v", sections[0].Items)
+		t.Fatalf("Identity not parsed: %#v", sections[0].Items)
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 
 func TestAddFactIdempotentAndPreservesUnknownSections(t *testing.T) {
 	t.Parallel()
-	agentMD := "# Agent.md\n\n## Preferences\n- Prefer Italian responses.\n\n## Notes\nkeep this\n"
+	agentMD := "# Agent.md\n\n## Style\n- Prefer Italian responses.\n\n## Notes\nkeep this\n"
 	got, added, err := AddFact(agentMD, "I prefer concise answers")
 	if err != nil {
 		t.Fatalf("AddFact: %v", err)
@@ -15,8 +15,8 @@ func TestAddFactIdempotentAndPreservesUnknownSections(t *testing.T) {
 	if !added {
 		t.Fatal("AddFact first call added=false, want true")
 	}
-	if !strings.Contains(got, "## Facts\n- I prefer concise answers") {
-		t.Fatalf("facts section missing inserted fact:\n%s", got)
+	if !strings.Contains(got, "## Identity\n- I prefer concise answers") {
+		t.Fatalf("identity section missing inserted fact:\n%s", got)
 	}
 	if !strings.Contains(got, "## Notes\nkeep this") {
 		t.Fatalf("unknown section was not preserved:\n%s", got)
@@ -68,19 +68,20 @@ func TestStoreAddFactWritesProfileAndChangelog(t *testing.T) {
 func TestParseSectionsAndFormatTree(t *testing.T) {
 	t.Parallel()
 	md := RenderAgentMD(AgentContent{
-		Facts:              []string{"Name: Davide"},
-		Preferences:        []string{"Prefer Italian responses."},
+		Identity:           []string{"Name: Davide"},
+		Style:              []string{"Prefer Italian responses."},
 		CustomInstructions: []string{"Keep it direct."},
 	})
 	sections := ParseSections(md)
-	if len(sections) != 4 {
-		t.Fatalf("ParseSections count = %d, want 4: %#v", len(sections), sections)
+	// RenderAgentMD emits all 8 sections (even empty ones get a heading).
+	if len(sections) != 8 {
+		t.Fatalf("ParseSections count = %d, want 8: %#v", len(sections), sections)
 	}
-	if sections[1].Title != "Preferences" || sections[1].Items[0] != "Prefer Italian responses." {
-		t.Fatalf("Preferences section not parsed: %#v", sections[1])
+	if sections[0].Title != "Identity" || sections[0].Items[0] != "Name: Davide" {
+		t.Fatalf("Identity section not parsed: %#v", sections[0])
 	}
 	tree := FormatSectionTree(md)
-	for _, want := range []string{"Agent.md", "- Preferences", "  - Prefer Italian responses.", "- Custom Instructions"} {
+	for _, want := range []string{"Agent.md", "- Style", "  - Prefer Italian responses.", "- Custom Instructions"} {
 		if !strings.Contains(tree, want) {
 			t.Fatalf("tree missing %q:\n%s", want, tree)
 		}
@@ -89,7 +90,7 @@ func TestParseSectionsAndFormatTree(t *testing.T) {
 
 func TestRenderAgentMDStableAndBounded(t *testing.T) {
 	t.Parallel()
-	c := AgentContent{Facts: []string{"Name: Davide"}}
+	c := AgentContent{Identity: []string{"Name: Davide"}}
 	a := RenderAgentMD(c)
 	b := RenderAgentMD(c)
 	if a != b {
@@ -97,6 +98,36 @@ func TestRenderAgentMDStableAndBounded(t *testing.T) {
 	}
 	if err := checkAgentSize(strings.Repeat("x", MaxAgentMDBytes+1)); err == nil {
 		t.Fatal("checkAgentSize should reject oversized Agent.md")
+	}
+}
+
+func TestRenderAgentMD_EightSections(t *testing.T) {
+	got := RenderAgentMD(AgentContent{
+		Identity:           []string{"Preferred name: Davide", "Role: dev @ Aura"},
+		ExpertiseTools:     []string{"Stack: Go, Neo4j"},
+		ProjectsGoals:      []string{"Aura personal assistant"},
+		Interests:          []string{"AI agents"},
+		People:             []string{"Andrea — business partner"},
+		Style:              []string{"Reply language: Italian"},
+		Vetoes:             []string{"No em-dashes"},
+		CustomInstructions: []string{"Be concise"},
+	})
+	for _, want := range []string{
+		"## Identity\n- Preferred name: Davide",
+		"## Expertise & Tools\n- Stack: Go, Neo4j",
+		"## Projects & Goals\n- Aura personal assistant",
+		"## Interests\n- AI agents",
+		"## People\n- Andrea — business partner",
+		"## Style\n- Reply language: Italian",
+		"## Vetoes\n- No em-dashes",
+		"## Custom Instructions\n- Be concise",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("RenderAgentMD missing %q in:\n%s", want, got)
+		}
+	}
+	if i, j := strings.Index(got, "## Identity"), strings.Index(got, "## Expertise & Tools"); i == -1 || j == -1 || i > j {
+		t.Errorf("section order wrong: Identity at %d, Expertise at %d", i, j)
 	}
 }
 
