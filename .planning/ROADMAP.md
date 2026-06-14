@@ -581,7 +581,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 6 → 7 → 8 →
 | 14. Onboarding + Agent.md | 5/5 | Complete | 2026-06-14 |
 | 15. Memory Subsystem | 5/5 | Complete   | 2026-06-12 |
 | 16. MCP Sidecar Manager + Third-Party Trust | 8/8 | Complete    | 2026-06-04 |
-| 17. Packaging & Distribution | 5/8 | In Progress|  |
+| 17. Packaging & Distribution | 6/8 | In Progress|  |
 
 ### Phase 16: MCP Sidecar Manager + Third-Party Trust
 
@@ -631,7 +631,7 @@ Plans:
 - [x] 17-03-PLAN.md — In-container docker-runtime guard (D-08) + whatsapp sibling recipe (D-07) [Wave 2]
 - [x] 17-04-PLAN.md — D-22 keyless boot + agent-call fail-closed llm_not_configured (D-10) [Wave 2]
 - [x] 17-05-PLAN.md — aura doctor aggregate health check (D-09) [Wave 2]
-- [ ] 17-06-PLAN.md — Compose topology: aura-migrate, aura-home, whatsapp sibling, Caddy TLS+token, compose.gvisor.yaml, AURA_BACKUP_DIR bind-mounts [Wave 3]
+- [x] 17-06-PLAN.md — Compose topology: aura-migrate, aura-home, whatsapp sibling, Caddy TLS+token, compose.gvisor.yaml, AURA_BACKUP_DIR bind-mounts [Wave 3]
 - [ ] 17-07-PLAN.md — Distribution: install.sh + goreleaser ghcr multi-arch + systemd autostart [Wave 3]
 - [ ] 17-08-PLAN.md — Backup wiring (resolve the docker-exec paradox, network pg_dump) + README rewrite [Wave 3]
 
