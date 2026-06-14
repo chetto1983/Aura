@@ -24,6 +24,17 @@ func memoryRecipeURL() string {
 	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
 }
 
+// whatsappRecipeURL composes the loopback streamable-HTTP URL for the WhatsApp
+// sibling. The sibling publishes port 8092 by default; garbage falls back to
+// loopback 8092 so userinfo-style values cannot retarget the recipe off-host.
+func whatsappRecipeURL() string {
+	port := strings.TrimSpace(os.Getenv("AURA_WHATSAPP_MCP_PORT"))
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		port = "8092"
+	}
+	return fmt.Sprintf("http://127.0.0.1:%s/mcp/", port)
+}
+
 // CatalogEntry describes a built-in managed MCP server recipe, pairing
 // LLM-facing metadata (summary, trust class, runtime) with the concrete
 // mcp.ManagedServer launch spec used to install it.
@@ -112,19 +123,15 @@ func BuiltInCatalog() []CatalogEntry {
 		},
 		{
 			Name:       "whatsapp",
-			Summary:    "chetto1983/whatsapp-mcp (whatsmeow bridge in WSL, stdio via wsl.exe)",
+			Summary:    "chetto1983/whatsapp-mcp whatsmeow bridge sibling (FastMCP streamable-HTTP)",
 			Source:     "recipe:whatsapp",
 			TrustClass: mcp.TrustTrustedRecipe,
 			Runtime:    "local",
 			Server: mcp.ManagedServer{
-				Command: "wsl.exe",
-				Args: []string{
-					"-e", "bash", "-lc",
-					"cd ~/whatsapp-mcp/whatsapp-mcp-server && uv run main.py",
-				},
-				Source:  "recipe:whatsapp",
-				Trust:   mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
-				Runtime: mcp.ManagedRuntime{Kind: "local"},
+				Type:   mcp.ServerTypeStreamableHTTP,
+				URL:    whatsappRecipeURL(),
+				Source: "recipe:whatsapp",
+				Trust:  mcp.ManagedTrust{Class: mcp.TrustTrustedRecipe},
 			},
 		},
 		{

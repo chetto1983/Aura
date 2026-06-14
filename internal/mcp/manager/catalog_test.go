@@ -2,6 +2,7 @@ package manager
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/chetto1983/aura/internal/mcp"
@@ -83,6 +84,52 @@ func TestCatalogMemoryURLRejectsNonPortEnv(t *testing.T) {
 			}
 			if memory.Server.URL != "http://127.0.0.1:8091/mcp/" {
 				t.Fatalf("port %q produced URL %q, want fallback 8091 loopback", bad, memory.Server.URL)
+			}
+		})
+	}
+}
+
+func TestCatalogIncludesWhatsappStreamableHTTPRecipe(t *testing.T) {
+	t.Setenv("AURA_WHATSAPP_MCP_PORT", "")
+
+	whatsapp, ok := LookupCatalog("whatsapp")
+	if !ok {
+		t.Fatal("whatsapp recipe missing from BuiltInCatalog")
+	}
+	if whatsapp.TrustClass != mcp.TrustTrustedRecipe {
+		t.Fatalf("whatsapp TrustClass = %q, want %q", whatsapp.TrustClass, mcp.TrustTrustedRecipe)
+	}
+	if whatsapp.Server.Trust.Class != mcp.TrustTrustedRecipe {
+		t.Fatalf("whatsapp Server.Trust.Class = %q, want %q", whatsapp.Server.Trust.Class, mcp.TrustTrustedRecipe)
+	}
+	if whatsapp.Server.Type != mcp.ServerTypeStreamableHTTP {
+		t.Fatalf("whatsapp Server.Type = %q, want %q", whatsapp.Server.Type, mcp.ServerTypeStreamableHTTP)
+	}
+	if whatsapp.Server.URL != "http://127.0.0.1:8092/mcp/" {
+		t.Fatalf("whatsapp Server.URL = %q, want loopback /mcp/ URL", whatsapp.Server.URL)
+	}
+	if whatsapp.Server.Command != "" {
+		t.Fatalf("whatsapp Server.Command = %q, want empty for HTTP recipe", whatsapp.Server.Command)
+	}
+	if strings.Contains(strings.ToLower(whatsapp.Summary), "wsl") {
+		t.Fatalf("whatsapp Summary still references WSL: %q", whatsapp.Summary)
+	}
+}
+
+func TestCatalogWhatsappURLHonorsPortEnv(t *testing.T) {
+	t.Setenv("AURA_WHATSAPP_MCP_PORT", "9192")
+
+	if got := whatsappRecipeURL(); got != "http://127.0.0.1:9192/mcp/" {
+		t.Fatalf("whatsappRecipeURL() = %q, want configured loopback port", got)
+	}
+}
+
+func TestCatalogWhatsappURLRejectsNonPortEnv(t *testing.T) {
+	for _, bad := range []string{"8092@evil.example", "0", "65536", "-1", "junk", "80 92"} {
+		t.Run(bad, func(t *testing.T) {
+			t.Setenv("AURA_WHATSAPP_MCP_PORT", bad)
+			if got := whatsappRecipeURL(); got != "http://127.0.0.1:8092/mcp/" {
+				t.Fatalf("port %q produced URL %q, want fallback 8092 loopback", bad, got)
 			}
 		})
 	}
