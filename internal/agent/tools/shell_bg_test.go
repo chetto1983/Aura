@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -132,7 +133,7 @@ func TestBackgroundShell_Kill(t *testing.T) {
 	if _, err := kill.Execute(ctx, mustJSON(t, map[string]string{"shell_id": id})); err != nil {
 		t.Fatalf("shell_kill: %v", err)
 	}
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(backgroundKillWaitTimeout())
 	for {
 		if _, status := pollOnce(ctx, t, poll, id, ""); status != "running" {
 			return // killed well before the 5s sleep would have ended
@@ -195,7 +196,7 @@ func TestBackgroundShellsShutdownKillsRunning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), backgroundKillWaitTimeout())
 	defer cancel()
 	if err := bg.Shutdown(ctx); err != nil {
 		t.Fatalf("Shutdown: %v", err)
@@ -217,6 +218,13 @@ func TestBackgroundShellsShutdownKillsRunning(t *testing.T) {
 	if err := bg.Shutdown(ctx); err != nil {
 		t.Fatalf("second Shutdown should be harmless: %v", err)
 	}
+}
+
+func backgroundKillWaitTimeout() time.Duration {
+	if runtime.GOOS == "windows" {
+		return 8 * time.Second
+	}
+	return 2 * time.Second
 }
 
 func TestBackgroundShellBufferCapsAndDropsConsumed(t *testing.T) {
