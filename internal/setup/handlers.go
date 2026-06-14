@@ -141,13 +141,16 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			if !done {
 				continue
 			}
+			// Onboarding completed: burn the one-time setup token BEFORE signaling
+			// completion (the wizard's single-use contract — a second navigation 401s).
+			// Invalidating first closes the race where a client that has just read the
+			// event fires a follow-up /setup/* request before the burn lands — observed
+			// only on the slower Windows CI runner (locally + Linux were fast enough).
+			s.InvalidateToken()
 			writeSSE(w, ev)
 			if flusher != nil {
 				flusher.Flush()
 			}
-			// Onboarding completed: burn the one-time setup token (the wizard's
-			// single-use contract — a second navigation 401s) and close the stream.
-			s.InvalidateToken()
 			return
 		}
 	}
