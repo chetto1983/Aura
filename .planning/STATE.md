@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
 status: executing
-stopped_at: Completed 17-01-PLAN.md
-last_updated: "2026-06-14T12:26:59.095Z"
+stopped_at: Completed 17-02-PLAN.md
+last_updated: "2026-06-14T12:38:03.636Z"
 last_activity: 2026-06-14
 progress:
   total_phases: 23
   completed_phases: 20
   total_plans: 143
-  completed_plans: 134
+  completed_plans: 135
   percent: 87
 ---
 
@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 ## Current Position
 
 Phase: 17 (packaging-distribution) — EXECUTING
-Plan: 2 of 8
+Plan: 3 of 8
 Status: Ready to execute
 Last activity: 2026-06-14
 
@@ -139,6 +139,7 @@ Remaining phases: 17 Packaging (the last open phase). `/gsd-verify-work 15` to v
 | Phase 08.2 P08.2-04 | ~30min | 2 tasks | 8 files |
 | Phase 08.2 P08.2-05 | ~20min | 3 tasks | 18 files |
 | Phase 17 P01 | ~6min | 2 tasks | 2 files |
+| Phase 17 P02 | ~10min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -222,6 +223,8 @@ Recent decisions affecting current work:
 - [Phase 17]: Amendment #63 is the Phase 17 pre-code PRD-first gate. — No Phase 17 code starts until the packaging box model is documented in PRD and SPEC.
 - [Phase 17]: gVisor is optional transparent host isolation, not capability stripping. — Aura keeps full parity inside the container while runsc thickens the host boundary for native Linux appliances.
 - [Phase 17]: The ec7fe2f6 audit jail is explicitly reverted; Docker Sandboxes is deferred. — The audit jail breaks shell_exec/self-extension; sbx is not suitable for the persistent native Linux compose appliance target.
+- [Phase 17]: The Aura image runtime is Debian slim, not distroless, so the agent has full Linux parity inside the box. — The distroless audit jail broke shell_exec, self-extension, and MCP subprocess execution.
+- [Phase 17]: The compose aura service keeps cpus/mem/pids stability limits but drops non-root/read-only/cap-drop/no-new-privileges jail directives. — The box boundary is packaging, mounts, and no host Docker socket, not internal capability stripping.
 
 ### Pending Todos
 
@@ -255,6 +258,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T12:26:59.083Z
-Stopped at: Completed 17-01-PLAN.md
+Last session: 2026-06-14T12:38:03.621Z
+Stopped at: Completed 17-02-PLAN.md
 Resume file: None
