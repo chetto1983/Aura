@@ -131,8 +131,14 @@ func TestCypherClient_RejectsConcatenatedInjection(t *testing.T) {
 	}
 }
 
-// TestComposeYAML_LoopbackOnly reads the repo compose.yaml and asserts every
-// published host port binds to 127.0.0.1 (T-1.07-02 / T-1.07-03). Pure file I/O.
+// caddyPublicIngress is the ONE sanctioned non-loopback published port: the caddy
+// reverse-proxy HTTPS front door of the Phase-17 appliance topology, gated by
+// AURA_ACCESS_TOKEN. Every other published port must stay loopback-only.
+const caddyPublicIngress = `0.0.0.0:${AURA_HTTPS_PORT:-443}:443`
+
+// TestComposeYAML_LoopbackOnly reads the repo compose.yaml and asserts every published
+// host port binds to 127.0.0.1 — except the single sanctioned caddy public ingress
+// (T-1.07-02 / T-1.07-03). Pure file I/O.
 func TestComposeYAML_LoopbackOnly(t *testing.T) {
 	data, err := os.ReadFile("../../compose.yaml")
 	if err != nil {
@@ -149,7 +155,11 @@ func TestComposeYAML_LoopbackOnly(t *testing.T) {
 		if strings.Count(mapping, ":") < 2 {
 			continue
 		}
-		// Loopback-safe if the host segment is (or defaults to) 127.0.0.1.
+		// The caddy HTTPS ingress is the one sanctioned public port (appliance front
+		// door, token-gated); everything else must default to loopback.
+		if mapping == caddyPublicIngress {
+			continue
+		}
 		if !strings.Contains(mapping, "127.0.0.1") {
 			t.Errorf("non-loopback port mapping found: %q", mapping)
 		}

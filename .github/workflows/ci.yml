@@ -9,6 +9,13 @@ on:
 permissions:
   contents: read
 
+# AURA_ACCESS_TOKEN is :?-required by the caddy service in compose.yaml (the Phase-17
+# appliance HTTPS ingress). compose interpolates the WHOLE file on any `compose up`, so
+# every job that touches compose needs it set — a non-secret CI placeholder is enough
+# (caddy itself is never started in CI; this only satisfies interpolation).
+env:
+  AURA_ACCESS_TOKEN: ci-not-a-secret
+
 # Cancel in-flight runs of the same ref when a new push lands (saves runner minutes
 # on rapid pushes; in-flight runs on other refs are untouched).
 concurrency:

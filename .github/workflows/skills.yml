@@ -38,6 +38,9 @@ jobs:
     env:
       # Postgres primitives compose.yaml interpolates + the bootstrap the migratedPool
       # helper composes (EnsureRoles needs the superuser DSN from POSTGRES_PASSWORD).
+      # AURA_ACCESS_TOKEN satisfies the caddy :? interpolation (Phase-17 appliance ingress;
+      # caddy is never started here) so `compose up postgres` doesn't fail to parse.
+      AURA_ACCESS_TOKEN: ci-not-a-secret
       POSTGRES_USER: aura
       POSTGRES_PASSWORD: ci-test-password
       POSTGRES_DB: aura
