@@ -34,7 +34,6 @@ import (
 	"github.com/chetto1983/aura/internal/identity"
 	"github.com/chetto1983/aura/internal/knowledge"
 	"github.com/chetto1983/aura/internal/llm"
-	"github.com/chetto1983/aura/internal/llm/openai_compat"
 	"github.com/chetto1983/aura/internal/reasoningstore"
 	"github.com/chetto1983/aura/internal/runner"
 	"github.com/chetto1983/aura/internal/toolinvocations"
@@ -132,14 +131,25 @@ func bootChatNamed(ctx context.Context, label string) *chatEnv {
 	return env
 }
 
-// bootChatEnv is the error-returning composition root shared by `aura chat` and
-// `aura serve` (D-15). It loads config, opens the pool, constructs the Stores, runs
+// bootChatEnv is the error-returning composition root for `aura chat` (D-15). It
+// uses fail-fast config.Load; serve shares the lower helper through bootServeChatEnv.
+// It loads config, opens the pool, constructs the Stores, runs
 // the boot orphan scan (Req#12) BEFORE serving, initializes the tiktoken encoder
 // once, mounts MCP, and constructs the Runner. It NEVER calls os.Exit — every failure
 // is returned so serve can shut down its already-booted resources cleanly (Pitfall 6:
 // an os.Exit in the shared boot would skip a daemon's graceful shutdown).
 func bootChatEnv(ctx context.Context) (*chatEnv, error) {
-	cfg, err := config.Load()
+	return bootChatEnvWithConfig(ctx, config.Load)
+}
+
+// bootServeChatEnv shares the chat composition root with serve's keyless LLM
+// config loader. Runtime LLM calls still fail closed if no key is configured.
+func bootServeChatEnv(ctx context.Context) (*chatEnv, error) {
+	return bootChatEnvWithConfig(ctx, config.LoadServe)
+}
+
+func bootChatEnvWithConfig(ctx context.Context, loadConfig func() (*config.Config, error)) (*chatEnv, error) {
+	cfg, err := loadConfig()
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +227,7 @@ func bootChatEnv(ctx context.Context) (*chatEnv, error) {
 		}
 	}
 
-	client := openai_compat.New(cfg.LLM)
+	client := newLLMClient(cfg.LLM)
 	deps := runner.Deps{
 		Conv:            convStore,
 		Pause:           pauseStore,

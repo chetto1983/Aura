@@ -162,6 +162,17 @@ type fileConfig struct {
 // AURA_LLM_* numeric value IS fail-fast (budget.go style). An empty APIKey after
 // the whole chain returns ErrMissingAPIKey — never a panic, never a silent default.
 func Load() (*Config, error) {
+	return load(false)
+}
+
+// LoadAllowEmptyKey resolves the same configuration tiers as Load but permits an
+// empty API key. Long-lived daemons use this to boot setup channels; the LLM call
+// path still fails closed before any upstream request.
+func LoadAllowEmptyKey() (*Config, error) {
+	return load(true)
+}
+
+func load(allowEmptyKey bool) (*Config, error) {
 	_ = godotenv.Load() // best-effort; .env feeds OPENROUTER_API_KEY into the env
 
 	cfg := &Config{
@@ -205,7 +216,7 @@ func Load() (*Config, error) {
 	cfg.CompletionCriticModel = os.Getenv(envCompletionCriticModel)
 	cfg.ReasoningLearning = envBool(envReasoningLearning, false)
 
-	if cfg.APIKey == "" {
+	if cfg.APIKey == "" && !allowEmptyKey {
 		return nil, ErrMissingAPIKey
 	}
 	return cfg, nil

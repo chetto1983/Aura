@@ -178,6 +178,18 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
+// LoadServe reads the full daemon config but permits an empty LLM API key so the
+// setup wizard and channels can boot. LLM turns still fail closed at call time.
+func LoadServe() (*Config, error) {
+	cfg := loadBase()
+	llmCfg, err := llm.LoadAllowEmptyKey()
+	if err != nil {
+		return nil, fmt.Errorf("config: load llm: %w", err)
+	}
+	cfg.LLM = *llmCfg
+	return cfg, nil
+}
+
 // Validate fails fast on an empty REQUIRED infrastructure secret so a misconfigured
 // deploy errors at boot with a named cause instead of a late, cryptic DB auth
 // failure or a silently degraded graph (O-04). The LLM API key has its own

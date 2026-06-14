@@ -24,6 +24,12 @@ func clearLLMEnv(t *testing.T) {
 		"AURA_SHOW_REASONING",
 		"AURA_LLM_TOTAL_TIMEOUT_SEC",
 		"AURA_LLM_CONNECT_TIMEOUT_SEC",
+		"AURA_LLM_STREAM_IDLE_TIMEOUT_SEC",
+		"AURA_MODEL_CONTEXT_WINDOW",
+		"AURA_MODEL_MAX_OUTPUT_TOKENS",
+		"AURA_COMPLETION_GATE",
+		"AURA_COMPLETION_CRITIC_MODEL",
+		"AURA_LLM_REASONING_LEARNING",
 	} {
 		t.Setenv(k, "")
 	}
@@ -149,6 +155,29 @@ func TestConfigMissingKey(t *testing.T) {
 	}
 	if !errors.Is(err, llm.ErrMissingAPIKey) {
 		t.Fatalf("err = %v, want ErrMissingAPIKey", err)
+	}
+}
+
+func TestLoadAllowEmptyKeyAllowsEmptyAPIKey(t *testing.T) {
+	isolateHome(t)
+	clearLLMEnv(t)
+
+	cfg, err := llm.LoadAllowEmptyKey()
+	if err != nil {
+		t.Fatalf("LoadAllowEmptyKey: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("LoadAllowEmptyKey returned nil config")
+	}
+	if cfg.APIKey != "" {
+		t.Fatalf("APIKey = %q, want empty", cfg.APIKey)
+	}
+	if cfg.Model != "deepseek/deepseek-v4-flash:exacto" {
+		t.Fatalf("Model = %q, want default model", cfg.Model)
+	}
+
+	if _, err := llm.Load(); !errors.Is(err, llm.ErrMissingAPIKey) {
+		t.Fatalf("Load() with the same empty key err = %v, want ErrMissingAPIKey", err)
 	}
 }
 

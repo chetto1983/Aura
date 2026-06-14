@@ -189,7 +189,7 @@ func runServe(args []string) {
 // Dispatcher wired with the live handlers, Notifier, and quiet-hours predicate. A boot
 // failure returns the error so runServe can exit cleanly without a leaked pool/MCP.
 func bootServe(ctx context.Context, channelOverride func(name string) (enabled, ok bool)) (*serveEnv, error) {
-	chat, err := bootChatEnv(ctx)
+	chat, err := bootServeChatEnv(ctx)
 	if err != nil {
 		return nil, err
 	}
