@@ -31,8 +31,9 @@ type profileAccountResolver interface {
 }
 
 type profileOnboarding struct {
-	store    *profile.Store
-	accounts profileAccountResolver
+	store     *profile.Store
+	accounts  profileAccountResolver
+	extractor profileflow.AnswerExtractor
 
 	mu       sync.Mutex
 	sessions map[int64]*profileSession
@@ -123,7 +124,22 @@ func (p *profileOnboarding) handleText(ctx context.Context, chatID int64, text s
 		ps.awaitingEdit = false
 		ps.session.Queue(profileflow.Input{Intent: profileflow.IntentEdit, Answers: answersFromText(text)})
 	} else {
-		ps.session.Queue(profileflow.Input{Intent: profileflow.IntentAnswer, Text: text, Answers: answersForStep(ps.session.Step, text)})
+		step := ps.session.Step
+		var ans profileflow.Answers
+		if p.extractor != nil && step != profileflow.StepStyle {
+			if extracted, err := p.extractor.Extract(ctx, step, text); err == nil {
+				ans = extracted
+			} else {
+				slog.Warn("telegram profile onboarding: extract", "step", step, "err", err)
+				ans = answersFromText(text)
+			}
+		} else {
+			ans = answersFromText(text)
+		}
+		if step == profileflow.StepIdentity && ans.Name == "" {
+			ans.Name = strings.TrimSpace(text)
+		}
+		ps.session.Queue(profileflow.Input{Intent: profileflow.IntentAnswer, Text: text, Answers: ans})
 	}
 	out, handled := p.runOne(ctx, chatID, ps)
 	return out, handled
@@ -323,13 +339,6 @@ func identityLabel(acct Account) string {
 		return acct.FirstName
 	}
 	return acct.IdentityID
-}
-
-func answersForStep(step profileflow.Step, text string) profileflow.Answers {
-	if step == profileflow.StepIdentity {
-		return profileflow.Answers{Name: strings.TrimSpace(text)}
-	}
-	return answersFromText(text)
 }
 
 func answersFromText(text string) profileflow.Answers {

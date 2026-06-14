@@ -20,7 +20,9 @@ func (t *Telegram) profileForDispatch() *profileOnboarding {
 	if t.profile != nil {
 		return t.profile
 	}
-	return newProfileOnboarding(t.deps.Profile, t.accountsForDispatch())
+	p := newProfileOnboarding(t.deps.Profile, t.accountsForDispatch())
+	p.extractor = t.deps.AnswerExtractor
+	return p
 }
 
 func (t *Telegram) accountsForDispatch() profileAccountResolver {

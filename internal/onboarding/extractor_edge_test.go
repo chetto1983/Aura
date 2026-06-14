@@ -32,7 +32,7 @@ func TestExtractDraftEnglishAndProactivePreferences(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractDraft: %v", err)
 	}
-	if !strings.Contains(draft.AgentMD, "Reply language: English") {
+	if !strings.Contains(draft.AgentMD, "Prefer English responses") {
 		t.Fatalf("English language preference missing:\n%s", draft.AgentMD)
 	}
 	if !strings.Contains(draft.AgentMD, "Can proactive message: true") {
@@ -48,7 +48,7 @@ func TestExtractDraftUnknownLanguageFallsThrough(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractDraft: %v", err)
 	}
-	if !strings.Contains(draft.AgentMD, "Reply language: Klingon") {
+	if !strings.Contains(draft.AgentMD, "Language: Klingon") {
 		t.Fatalf("unknown language should fall through to verbatim line:\n%s", draft.AgentMD)
 	}
 }

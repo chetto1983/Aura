@@ -130,8 +130,8 @@ func styleLines(a Answers) []string {
 	if a.ResponseLength != "" {
 		out = append(out, "Response length: "+a.ResponseLength)
 	}
-	if a.Lang != "" {
-		out = append(out, "Reply language: "+a.Lang)
+	if lp := languagePreference(a.Lang); lp != "" {
+		out = append(out, lp)
 	}
 	if a.VoiceMode != nil {
 		out = append(out, fmt.Sprintf("Voice mode: %t", boolValue(a.VoiceMode)))

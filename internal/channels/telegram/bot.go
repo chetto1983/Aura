@@ -21,6 +21,7 @@ import (
 	"github.com/chetto1983/aura/internal/channels"
 	"github.com/chetto1983/aura/internal/documents"
 	"github.com/chetto1983/aura/internal/llm"
+	profileflow "github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 )
 
@@ -75,6 +76,10 @@ type Deps struct {
 	// Profile is the per-identity Agent.md store. Nil means profile onboarding
 	// degrades with a user-facing setup message instead of panicking.
 	Profile *profile.Store
+
+	// AnswerExtractor parses free-text onboarding answers (Identity/Work/Projects/
+	// Social) into structured fields. Nil → those steps fall back to keyword parsing.
+	AnswerExtractor profileflow.AnswerExtractor
 
 	// Multimodal carries the 9c sidecar wiring (STT/TTS/vision/documents) the media
 	// handlers (OnVoice/OnPhoto/OnDocument) + the TTS-out path read. A zero value

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	profileflow "github.com/chetto1983/aura/internal/onboarding"
 	"github.com/chetto1983/aura/internal/profile"
 	tele "gopkg.in/telebot.v4"
 )
@@ -162,6 +163,52 @@ func assertProfileCallbackDataBounded(t *testing.T, markup *tele.ReplyMarkup) {
 			if len(button.Data) > callbackDataMaxBytes {
 				t.Fatalf("callback data %q is %d bytes, want <= %d", button.Data, len(button.Data), callbackDataMaxBytes)
 			}
+		}
+	}
+}
+
+// fakeExtractor returns canned structured Answers per step, proving the
+// Work/Projects/Social answers flow into the rendered Agent.md.
+type fakeExtractor struct{}
+
+func (fakeExtractor) Extract(_ context.Context, step profileflow.Step, _ string) (profileflow.Answers, error) {
+	switch step {
+	case profileflow.StepIdentity:
+		return profileflow.Answers{Name: "Davide", Role: "dev", Company: "Aura"}, nil
+	case profileflow.StepWork:
+		return profileflow.Answers{Expertise: []string{"backend"}, Stack: []string{"Go", "Neo4j"}}, nil
+	case profileflow.StepProjects:
+		return profileflow.Answers{Projects: []string{"Aura"}, Goals: []string{"ship Phase 14"}}, nil
+	case profileflow.StepSocial:
+		return profileflow.Answers{Interests: []string{"AI agents"}, People: []string{"Andrea — business partner"}}, nil
+	default:
+		return profileflow.Answers{}, nil
+	}
+}
+
+func TestProfileOnboarding_RichInterviewWritesProfile(t *testing.T) {
+	dir := t.TempDir()
+	store := profile.NewStore(dir)
+	p := newProfileOnboarding(store, profileAccountFake{acct: Account{TelegramUserID: 1, IdentityID: "id1", Username: "dav"}})
+	p.extractor = fakeExtractor{}
+
+	chatID, uid := int64(1), int64(1)
+	if _, ok := p.maybeStart(context.Background(), chatID, uid); !ok {
+		t.Fatal("maybeStart should start onboarding for a profile-less identity")
+	}
+	// 5 answers: identity, work, projects, social, style.
+	for _, ans := range []string{"Davide dev Aura", "Go Neo4j", "Aura", "AI; Andrea", "diretto breve"} {
+		p.handleText(context.Background(), chatID, ans)
+	}
+	p.handleCallback(context.Background(), chatID, profileCallbackData(chatID, profileActionConfirm))
+
+	got, err := store.ReadProfile("id1")
+	if err != nil {
+		t.Fatalf("profile not written: %v", err)
+	}
+	for _, want := range []string{"## Projects & Goals", "- Aura", "## People", "Andrea — business partner", "## Expertise & Tools", "Stack: Go, Neo4j"} {
+		if !strings.Contains(got.AgentMD, want) {
+			t.Errorf("Agent.md missing %q:\n%s", want, got.AgentMD)
 		}
 	}
 }
