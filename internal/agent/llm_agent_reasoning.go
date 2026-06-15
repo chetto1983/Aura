@@ -30,8 +30,9 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 	}
 
 	// Fast path: the local embedding classifier (granite sidecar, ~10ms) replaces
-	// the per-turn LLM router round-trip. On any embed failure it returns false
-	// and we fall through to the LLM router below (graceful degradation).
+	// the per-turn LLM router round-trip. On any embed failure it returns false;
+	// when a classifier is wired, degrade to static low reasoning instead of
+	// spending a second network call every turn.
 	if a.classifier != nil {
 		if tier, ok := a.classifier.Classify(ctx, user); ok {
 			reasoningtrace.Record("adaptive_reasoning_classifier_decision", map[string]any{
@@ -43,8 +44,9 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 		}
 		reasoningtrace.Record("adaptive_reasoning_classifier_miss", map[string]any{
 			"thread_id": a.sessionID,
-			"fallback":  "llm_router",
+			"fallback":  "static_low",
 		})
+		return prompt.ReasoningTierLow, true
 	}
 
 	routeCtx, cancel := context.WithTimeout(ctx, a.reasoningRouterTimeout())
@@ -100,12 +102,13 @@ func (a *LlmAgent) adaptiveReasoningTier(ctx context.Context) (prompt.ReasoningT
 }
 
 func (a *LlmAgent) reasoningRouterTimeout() time.Duration {
+	const maxReasoningRouterTimeout = 2 * time.Second
 	total := time.Duration(a.cfg.TotalTimeoutSec) * time.Second
 	if total <= 0 {
-		return 8 * time.Second
+		return maxReasoningRouterTimeout
 	}
-	if total < 8*time.Second {
+	if total < maxReasoningRouterTimeout {
 		return total
 	}
-	return 8 * time.Second
+	return maxReasoningRouterTimeout
 }

@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -9,6 +10,12 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 	"github.com/google/uuid"
 )
+
+type failingReasoningEmbedder struct{}
+
+func (failingReasoningEmbedder) Embed(context.Context, []string) ([][]float64, error) {
+	return nil, errors.New("embedding sidecar unavailable")
+}
 
 func TestLlmAgent_AdaptiveReasoningRouterKeepsToolsVisible(t *testing.T) {
 	recordingProvider(t)
@@ -155,5 +162,40 @@ func TestLlmAgent_AdaptiveReasoningRouterRetryExhaustedFallsBackLow(t *testing.T
 	main := fc.Requests[2]
 	if main.Reasoning.Effort != llm.ReasoningEffortLow {
 		t.Fatalf("main Reasoning.Effort = %q, want low fallback", main.Reasoning.Effort)
+	}
+}
+
+func TestLlmAgent_AdaptiveReasoningClassifierFailureUsesStaticLow(t *testing.T) {
+	recordingProvider(t)
+	fc := agenttest.NewFakeClient(
+		agenttest.TextChunks("stop", "static fallback answer"),
+	)
+	a := agent.NewLlmAgent(agent.LlmAgentConfig{
+		Client:     fc,
+		LLM:        llm.Config{Model: "m", Provider: "openrouter", BaseURL: "https://openrouter.ai/api/v1", TotalTimeoutSec: 30, AdaptiveReasoning: true, MaxTokens: 4096},
+		Registry:   testRegistry(),
+		PreviewCap: 2048,
+		RunDir:     t.TempDir(),
+		SessionID:  uuid.Must(uuid.NewV7()).String(),
+		UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "debug this production outage"}},
+		Embedder:   failingReasoningEmbedder{},
+	})
+
+	evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(25)})))
+	if err != nil {
+		t.Fatalf("Run errored: %v", err)
+	}
+	if got := evs[len(evs)-1].LLMResponse.Content; got != "static fallback answer" {
+		t.Fatalf("final content = %q", got)
+	}
+	if fc.CallCount() != 1 {
+		t.Fatalf("client calls = %d, want main only (no LLM router)", fc.CallCount())
+	}
+	main := fc.Requests[0]
+	if main.ToolChoice == "none" {
+		t.Fatal("main request must not be the router request")
+	}
+	if main.Reasoning.Effort != llm.ReasoningEffortLow {
+		t.Fatalf("main Reasoning.Effort = %q, want static low fallback", main.Reasoning.Effort)
 	}
 }

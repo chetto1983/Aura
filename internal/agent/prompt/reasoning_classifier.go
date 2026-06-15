@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/chetto1983/aura/internal/semindex"
+	"golang.org/x/sync/singleflight"
 )
 
 // Embedder is the narrow embedding seam the reasoning classifier needs. It is a
@@ -116,9 +117,11 @@ type ReasoningClassifier struct {
 	store   ExampleStore // optional: oracle-labeled examples folded into centroids
 	learner Learner      // optional: observes classifications for self-improvement
 
-	mu    sync.Mutex
-	cls   *semindex.Classifier // per-tier centroid bank; built lazily once
-	built bool                 // false => the next Classify rebuilds the bank
+	mu         sync.Mutex
+	build      singleflight.Group
+	generation uint64
+	cls        *semindex.Classifier // per-tier centroid bank; built lazily once
+	built      bool                 // false => the next Classify rebuilds the bank
 }
 
 // SetLearner attaches a self-improvement learner (safe to call once at wiring
@@ -148,13 +151,15 @@ func (c *ReasoningClassifier) Refresh() {
 	c.mu.Lock()
 	c.cls = nil
 	c.built = false
+	c.generation++
+	c.build.Forget("anchors")
 	c.mu.Unlock()
 }
 
 // Classify returns the reasoning tier for userText and true when it produced a
 // usable verdict. It returns ("", false) on any embedding failure so the caller
-// can fall back to the LLM router — the embedding path is an optimization, never
-// a hard dependency. The greeting pre-filter answers without any embed call.
+// can fall back conservatively; the embedding path is an optimization, never a
+// hard dependency. The greeting pre-filter answers without any embed call.
 func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (ReasoningTier, bool) {
 	if c == nil {
 		return "", false
@@ -190,10 +195,42 @@ func (c *ReasoningClassifier) Classify(ctx context.Context, userText string) (Re
 // sidecar self-heals (mirror of the semindex build-failure-not-cached rule).
 func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (*semindex.Classifier, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if c.built && c.cls != nil {
-		return c.cls, nil
+		cls := c.cls
+		c.mu.Unlock()
+		return cls, nil
 	}
+	c.mu.Unlock()
+
+	v, err, _ := c.build.Do("anchors", func() (any, error) {
+		c.mu.Lock()
+		if c.built && c.cls != nil {
+			cls := c.cls
+			c.mu.Unlock()
+			return cls, nil
+		}
+		generation := c.generation
+		c.mu.Unlock()
+
+		cls, err := c.buildAnchors(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		c.mu.Lock()
+		if c.generation == generation {
+			c.cls, c.built = cls, true
+		}
+		c.mu.Unlock()
+		return cls, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return v.(*semindex.Classifier), nil
+}
+
+func (c *ReasoningClassifier) buildAnchors(ctx context.Context) (*semindex.Classifier, error) {
 	cls := semindex.NewClassifier(c.embed)
 	// Per-tier vectors start from the curated def+seeds (always authoritative).
 	for _, t := range classifierTierOrder {
@@ -215,8 +252,7 @@ func (c *ReasoningClassifier) ensureAnchors(ctx context.Context) (*semindex.Clas
 			}
 		}
 	}
-	c.cls, c.built = cls, true
-	return c.cls, nil
+	return cls, nil
 }
 
 // normalizeForGreeting lowercases, trims surrounding whitespace, and strips a

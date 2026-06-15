@@ -5,7 +5,9 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeEmbedder maps each text to a 3-dim one-hot by keyword so the per-tier
@@ -113,6 +115,105 @@ func TestReasoningClassifier_AnchorBuildRetriesAfterTransientFailure(t *testing.
 	}
 	if _, ok := c.Classify(context.Background(), "debugga lo script"); !ok {
 		t.Fatal("second classify should succeed after the sidecar recovers (build not cached on failure)")
+	}
+}
+
+type blockingAnchorEmbedder struct {
+	started     chan struct{}
+	release     chan struct{}
+	blocked     atomic.Bool
+	anchorCalls atomic.Int32
+	queryCalls  atomic.Int32
+}
+
+func (e *blockingAnchorEmbedder) Embed(ctx context.Context, texts []string) ([][]float64, error) {
+	if len(texts) > 1 {
+		e.anchorCalls.Add(1)
+		if e.blocked.CompareAndSwap(false, true) {
+			close(e.started)
+			select {
+			case <-e.release:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+	} else {
+		e.queryCalls.Add(1)
+	}
+	out := make([][]float64, len(texts))
+	for i, text := range texts {
+		out[i] = vecFor(text)
+	}
+	return out, nil
+}
+
+func TestReasoningClassifier_RefreshDoesNotWaitForAnchorEmbed(t *testing.T) {
+	emb := &blockingAnchorEmbedder{started: make(chan struct{}), release: make(chan struct{})}
+	c := NewReasoningClassifier(emb, nil)
+	classifyDone := make(chan struct{})
+	go func() {
+		_, _ = c.Classify(context.Background(), "debugga lo script")
+		close(classifyDone)
+	}()
+
+	select {
+	case <-emb.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("anchor embed did not start")
+	}
+
+	refreshDone := make(chan struct{})
+	go func() {
+		c.Refresh()
+		close(refreshDone)
+	}()
+	select {
+	case <-refreshDone:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("Refresh waited behind a blocked anchor embed")
+	}
+
+	close(emb.release)
+	select {
+	case <-classifyDone:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("classify did not finish after releasing embedder")
+	}
+}
+
+func TestReasoningClassifier_ConcurrentColdStartSingleFlightsAnchorBuild(t *testing.T) {
+	emb := &blockingAnchorEmbedder{started: make(chan struct{}), release: make(chan struct{})}
+	c := NewReasoningClassifier(emb, nil)
+	const callers = 8
+	errs := make(chan string, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			got, ok := c.Classify(context.Background(), "debugga lo script")
+			if !ok || got != ReasoningTierHigh {
+				errs <- string(got)
+				return
+			}
+			errs <- ""
+		}()
+	}
+
+	select {
+	case <-emb.started:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("anchor embed did not start")
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(emb.release)
+	for i := 0; i < callers; i++ {
+		if got := <-errs; got != "" {
+			t.Fatalf("caller %d got %q, want high", i, got)
+		}
+	}
+	if got := emb.anchorCalls.Load(); got != int32(len(classifierTierOrder)) {
+		t.Fatalf("anchor build calls = %d, want one build of %d tier batches", got, len(classifierTierOrder))
+	}
+	if got := emb.queryCalls.Load(); got != callers {
+		t.Fatalf("query embed calls = %d, want one per caller", got)
 	}
 }
 
