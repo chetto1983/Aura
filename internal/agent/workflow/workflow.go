@@ -14,16 +14,36 @@ func joinBranch(parent, child string) string {
 }
 
 // findInTree implements the shared FindAgent contract for an orchestrator: return
-// self when name matches, else depth-first recurse into the subs; nil when the
-// name is absent from the whole subtree (D-01).
+// self when name matches, else recurse into the subtree; nil when the name is
+// absent (D-01).
+//
+// AG-037: the Agent interface is open by design, so a misconfigured graph can be
+// cyclic or diamond-shaped (an agent appearing under two parents, or a back-edge
+// to an ancestor). A naive recursion through sub.FindAgent would stack-overflow.
+// This traversal is iterative with a visited set keyed by agent identity, so a
+// cycle terminates and a diamond is visited once. It descends via SubAgents()
+// (the structural contract) rather than delegating to each sub's FindAgent, so
+// the visited set is honored across the whole subtree.
 func findInTree(self agent.Agent, subs []agent.Agent, name string) agent.Agent {
 	if self.Name() == name {
 		return self
 	}
-	for _, sub := range subs {
-		if found := sub.FindAgent(name); found != nil {
-			return found
+	visited := map[agent.Agent]struct{}{self: {}}
+	queue := append([]agent.Agent(nil), subs...)
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		if cur == nil {
+			continue
 		}
+		if _, seen := visited[cur]; seen {
+			continue
+		}
+		visited[cur] = struct{}{}
+		if cur.Name() == name {
+			return cur
+		}
+		queue = append(queue, cur.SubAgents()...)
 	}
 	return nil
 }

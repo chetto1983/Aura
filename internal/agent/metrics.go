@@ -31,6 +31,7 @@ type agentMetrics struct {
 	costUSDTotal                  *expvar.Float
 	spanExportFailuresTotal       *expvar.Int
 	spanIDEntropyFailuresTotal    *expvar.Int
+	prefixDriftTotal              *expvar.Int
 	promBudgetConsumeStepTotal    prometheus.Counter
 	promToolDispatchTotal         prometheus.Counter
 	promLLMStreamOpenTotal        prometheus.Counter
@@ -47,6 +48,7 @@ type agentMetrics struct {
 	promCostUSDTotal              prometheus.Counter
 	promSpanExportFailuresTotal   prometheus.Counter
 	promSpanIDEntropyFailureTotal prometheus.Counter
+	promPrefixDriftTotal          prometheus.Counter
 }
 
 func newAgentMetrics(reg prometheus.Registerer, publishExpvar bool) *agentMetrics {
@@ -68,6 +70,7 @@ func newAgentMetrics(reg prometheus.Registerer, publishExpvar bool) *agentMetric
 		costUSDTotal:               newExpvarFloat("aura_agent_cost_usd_total", publishExpvar),
 		spanExportFailuresTotal:    newExpvarInt("aura_agent_span_export_failures_total", publishExpvar),
 		spanIDEntropyFailuresTotal: newExpvarInt("aura_agent_span_id_entropy_failures_total", publishExpvar),
+		prefixDriftTotal:           newExpvarInt("aura_agent_prefix_drift_total", publishExpvar),
 
 		promBudgetConsumeStepTotal: registerCounter(reg, prometheus.CounterOpts{
 			Name: "aura_agent_budget_consume_step_total",
@@ -135,7 +138,16 @@ func newAgentMetrics(reg prometheus.Registerer, publishExpvar bool) *agentMetric
 			Name: "aura_agent_span_id_entropy_failures_total",
 			Help: "Total span-id entropy failures recovered with a zero-id fallback.",
 		}),
+		promPrefixDriftTotal: registerCounter(reg, prometheus.CounterOpts{
+			Name: "aura_agent_prefix_drift_total",
+			Help: "Total times a BeforeModel hook rewrite changed the cache-stable messages prefix (AG-031).",
+		}),
 	}
+}
+
+func recordPrefixDrift() {
+	metrics.prefixDriftTotal.Add(1)
+	metrics.promPrefixDriftTotal.Inc()
 }
 
 func recordBudgetConsumeStep() {

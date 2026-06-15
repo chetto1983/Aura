@@ -50,6 +50,25 @@ func Run(ctx context.Context, rc RunConfig, goals []string) (string, error) {
 		return msg, nil
 	}
 
+	// AG-038: atomically RESERVE the parent's post-swarm synthesis budget before the
+	// fan-out so a concurrent consumer cannot race it away (the old Remaining() check
+	// was TOCTOU-best-effort). The reserved steps are withheld from the shared pool —
+	// children cannot spend them — and released after the waves complete so the
+	// parent's aggregation turn has them. A failed reservation rejects the spawn.
+	if rc.ParentBudget != nil {
+		if rem := rc.ParentBudget.Remaining(); rem < len(goals)+budgetReserve {
+			return fmt.Sprintf(
+				"error: insufficient budget — %d goals need %d steps but only %d remain; reduce goals or answer directly",
+				len(goals), len(goals)+budgetReserve, rem), nil
+		}
+		if !rc.ParentBudget.TryReserve(budgetReserve) {
+			return fmt.Sprintf(
+				"error: insufficient budget — could not reserve %d steps for synthesis; reduce goals or answer directly",
+				budgetReserve), nil
+		}
+		defer rc.ParentBudget.Release(budgetReserve)
+	}
+
 	reports := make([]ChildReport, len(goals))
 	concurrent := rc.Cfg.MaxSwarmConcurrent
 	if concurrent < 1 {
@@ -87,12 +106,8 @@ func preflight(rc RunConfig, goals []string) (string, bool) {
 			"error: too many goals — %d requested but the cap is %d; reduce the goals or run them in fewer, broader subtasks",
 			len(goals), goalsCap), false
 	}
-	// Snapshot Remaining() ONCE before the fan-out for equal sibling shares (D-09).
-	if rem := rc.ParentBudget.Remaining(); rem < len(goals)+budgetReserve {
-		return fmt.Sprintf(
-			"error: insufficient budget — %d goals need %d steps but only %d remain; reduce goals or answer directly",
-			len(goals), len(goals)+budgetReserve, rem), false
-	}
+	// The budget admission + atomic synthesis reservation (AG-038) is done in Run,
+	// not here, so the reserve cannot be raced away between this check and the spawn.
 	return "", true
 }
 

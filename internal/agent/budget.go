@@ -241,6 +241,34 @@ func (b *Budget) ConsumeStep() (ok bool, reason string) {
 	return true, ""
 }
 
+// TryReserve atomically removes n steps from the shared pool, returning true on
+// success. It is the TOCTOU-safe form of a Remaining() check (AG-038): a swarm
+// parent reserves its post-fan-out synthesis budget BEFORE spawning children so a
+// concurrent consumer cannot race the reservation away. On failure the pool is
+// left unchanged (every overshooting reservation undoes its own decrement, like
+// ConsumeStep). n<=0 is a no-op success. Pair every successful TryReserve with a
+// Release once the reserved work is done (or abandoned).
+func (b *Budget) TryReserve(n int) bool {
+	if n <= 0 {
+		return true
+	}
+	if remaining := b.steps.Add(int32(-n)); remaining < 0 {
+		b.steps.Add(int32(n)) // restore — the reservation did not fit
+		return false
+	}
+	return true
+}
+
+// Release returns n previously-reserved steps to the shared pool (AG-038). It is
+// the inverse of TryReserve; n<=0 is a no-op. Releasing more than was reserved
+// would inflate the pool, so callers must Release exactly what they reserved.
+func (b *Budget) Release(n int) {
+	if n <= 0 {
+		return
+	}
+	b.steps.Add(int32(n))
+}
+
 // Remaining is the current shared step balance (never negative once restored).
 func (b *Budget) Remaining() int {
 	n := b.steps.Load()

@@ -390,11 +390,13 @@ func TestSwarmBudgetInheritance(t *testing.T) {
 	if rem := rc.ParentBudget.Remaining(); rem < 0 {
 		t.Errorf("shared budget went negative: %d", rem)
 	}
-	// The tree consumed at most parentBudget steps total (shared atomic), not
-	// 4*parentBudget. Remaining started at 20; the recovery/finalize turns ride
-	// outside the gate, so Remaining must be 0 (fully drained) and never < 0.
-	if rem := rc.ParentBudget.Remaining(); rem != 0 {
-		t.Errorf("Remaining = %d, want 0 (the greedy tree drains the shared 20-step pool)", rem)
+	// AG-038: the synthesis reserve (budgetReserve=3) is now ATOMICALLY withheld
+	// from the children and RELEASED after Run returns, so the greedy children drain
+	// only the non-reserved pool (20-3=17) and Remaining is the released reserve (3),
+	// never 0 — the parent's synthesis turn is genuinely protected. The shared-atomic
+	// bound still holds (≤ parentBudget total, never < 0).
+	if rem := rc.ParentBudget.Remaining(); rem != budgetReserve {
+		t.Errorf("Remaining = %d, want %d (the synthesis reserve is protected and released after Run)", rem, budgetReserve)
 	}
 }
 

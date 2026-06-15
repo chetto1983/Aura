@@ -21,6 +21,17 @@ type swarmCtxKey struct{}
 // each worker SessionID and the transcript dir. config.Config (RunDir, swarm caps)
 // is NOT carried here — the adapter holds it as a construction-time field, so this
 // package never imports internal/config.
+//
+// CONCURRENT-READ CONTRACT (AG-062): every field is shared READ-ONLY across the
+// fanned-out swarm workers. The *Registry is immutable post-boot (the agent
+// registry is built once and never mutated during a run), so concurrent Get/All
+// reads are safe without locking. The Budget's shared *atomic.Int32 step counter
+// is the ONLY mutable cross-worker state and is atomic by construction (Child
+// forks a distinct dedup ring per worker — no shared map). The llm.Client must be
+// safe for concurrent Stream calls (the production OpenRouter client is). No
+// worker writes any of these fields; a worker that needs per-call state derives it
+// (Budget.Child, Without(registry,...)) rather than mutating the shared value. The
+// `-race` swarm fan-out test (runner_adapter_test / swarm_test) guards this.
 type SwarmContextValue struct {
 	Budget   *Budget
 	Registry *tools.Registry

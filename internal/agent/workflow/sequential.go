@@ -63,8 +63,15 @@ func (a *SequentialAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event
 					return
 				}
 				// A sub error aborts the chain (parity with LoopAgent): later subs must
-				// not run in a degraded state after a known failure (Req#4).
+				// not run in a degraded state after a known failure (Req#4). AG-061: emit
+				// a chain_aborted_at StateDelta marker naming the aborting sub so an
+				// observer can see WHERE the chain stopped (the error slot alone does not
+				// identify the sub).
 				if err != nil {
+					yield(&agent.Event{
+						Author:  a.name,
+						Actions: agent.Actions{StateDelta: map[string]any{"chain_aborted_at": sub.Name()}},
+					}, nil)
 					return
 				}
 				if ev != nil && ev.Actions.Escalate {

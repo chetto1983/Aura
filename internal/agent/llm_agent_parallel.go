@@ -39,17 +39,26 @@ func (a *LlmAgent) executeBatch(ctx context.Context, budget *Budget, calls []llm
 	if limit > len(calls) {
 		limit = len(calls)
 	}
-	sem := make(chan struct{}, limit)
+	// AG-064: a bounded WORKER POOL — spawn exactly `limit` workers that pull call
+	// indices off a channel, instead of spawning one goroutine per call (each then
+	// blocking on a semaphore). For a very wide tool batch this caps the live
+	// goroutine count at `limit` rather than N. Each worker writes only its own
+	// results[k] slot, so there is still no shared mutable state to guard.
+	indices := make(chan int)
 	var wg sync.WaitGroup
-	wg.Add(len(calls))
-	for k := range calls {
-		go func(k int) {
-			sem <- struct{}{}
-			defer func() { <-sem }()
+	wg.Add(limit)
+	for w := 0; w < limit; w++ {
+		go func() {
 			defer wg.Done()
-			results[k] = a.runToolRecovering(ctx, budget, calls[k], startedAt)
-		}(k)
+			for k := range indices {
+				results[k] = a.runToolRecovering(ctx, budget, calls[k], startedAt)
+			}
+		}()
 	}
+	for k := range calls {
+		indices <- k
+	}
+	close(indices)
 	wg.Wait()
 	return results
 }

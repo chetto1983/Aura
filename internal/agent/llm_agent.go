@@ -300,6 +300,8 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				"reasoning":   req.Reasoning,
 				"history":     a.history,
 			})
+			// AG-031: snapshot messages[0] before the hook to detect cache drift.
+			prefixBefore := prefixSnapshot(req.Messages)
 			if res, err := a.hooks.BeforeModel(spanCtx, &req); err != nil {
 				span.End()
 				cancel()
@@ -322,6 +324,9 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, res.FinishReason, res.Usage), nil)
 				return
 			}
+			// AG-031: the request proceeds — detect a hook rewrite that drifted the
+			// cache-stable prefix and emit the prefix_drift metric.
+			a.checkPrefixDrift(prefixBefore, req.Messages, requestID)
 			llmStarted := time.Now()
 			ch, err := a.streamWithOpenRetry(spanCtx, req, requestID)
 			if err != nil {
