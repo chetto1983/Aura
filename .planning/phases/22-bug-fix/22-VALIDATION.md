@@ -7,8 +7,8 @@ wave_0_complete: true
 created: 2026-06-15
 updated: 2026-06-15
 evidence_head: 036575b5
-mutation_score: pending-operator
-coverage: pending-operator
+mutation_score: "budget_dedup 85.5% · bridge_reconnect 73.4% · llm_agent_parallel 73.7% (all ≥70%)"
+coverage: "89.4% owned-surface (≥85%)"
 ---
 
 # Phase 22 — Agent Perimeter Hardening: Validation Strategy
@@ -45,7 +45,7 @@ coverage: pending-operator
 |---|---------|--------|----------|
 | A1 | `go build ./...` | ✅ PASS (exit 0) | whole module builds |
 | A2 | `go vet ./...` | ✅ PASS (exit 0) | no diagnostics |
-| A3 | `go test ./...` (untagged) | ✅ all `internal/...` PASS; ⚠️ `cmd/aura` 1 failure | only `TestProductionContainerArtifactsMatchFatImageContract` (pre-existing `:nitro`/`:exacto` compose drift from `136325dc`; out of scope, in `deferred-items.md`) |
+| A3 | `go test ./...` (untagged) | ✅ all PASS (whole module, exit 0) | the former `cmd/aura` `TestProductionContainerArtifactsMatchFatImageContract` failure was the `:nitro`/`:exacto` compose drift — resolved 2026-06-15 (`e2b0d82a`) by de-hardcoding the test to assert the env-override PATTERN, not a tag (model stays 100% `.env`-configurable) |
 | A4 | `go test -race ./internal/agent/... ./internal/swarm/...` | ✅ PASS (exit 0) | race-clean: agent, agenttest, mcptools, prompt, tools, workflow, swarm |
 | A5 | `bash scripts/cache_invariant_audit.sh` | ✅ PASS (exit 0) | 22 identical `messages[0]`/`messages[1]`/skill-manifest hashes — KV prefix stable after the 22-05 skill-schema edit |
 
@@ -57,21 +57,38 @@ in the wave SUMMARYs (22-01..22-04). 22-05 added `TestSkillSchemaIsHonestNotDish
 
 ---
 
-## Part B — PENDING OPERATOR SIGN-OFF (NOT run in this checkout)
+## Part B — QUALITY BAR (B1/B2 executed 2026-06-15 on the live stack) + LIVE SIGN-OFF (B3 pending)
 
-> Deferred to the operator: B1 wipes the shared Postgres (parallel sessions active);
-> B2 needs the WSL `~/go/bin` toolchain; B3 needs the full live multi-service daemon.
+> B1/B2 were run by the orchestrator against the live Docker stack (all services
+> healthy) on the operator's go-ahead — B1 reset the shared Postgres by design.
+> Only **B3 (full live-stack sign-off)** remains operator-coordinated.
 > Exact commands + acceptance live in
 > [`docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`](../../../docs/audit/22-LIVE-SIGNOFF-2026-06-15.md)
 > Parts B1–B3.
 
 | # | Gate | Command (abridged) | Acceptance | Status |
 |---|------|--------------------|------------|--------|
-| B1 | Coverage ≥85% owned-surface | `make coverage` (stack up, **PG wipe**) | ≥85% combined across `db_integration neo4j_integration`; every owned pkg ≥85% | `pending` |
-| B2a | Lint | `golangci-lint run ./...` | 0 issues | `pending` |
-| B2b | Vuln | `govulncheck ./...` | 0 actionable CVEs | `pending` |
-| B2c | Mutation ≥70% killed | `go-mutesting` on `llm_agent_parallel.go`, `budget_dedup.go`, `mcptools/bridge_reconnect.go` | ≥70% killed each, or documented near-equivalent-survivor autopsy | `pending` |
-| B3 | Full live stack | `aura serve` + acceptance matrix | per the live-signoff B3 table (metrics scrape, CDP Telegram, GLM-OCR fs-cap, MCP reconnect, reasoning fallback, skill self-extension, DSN boundary, ledger redaction) | `pending` |
+| B1 | Coverage ≥85% owned-surface | `make coverage` (stack up, **PG wipe**) | ≥85% combined across `db_integration neo4j_integration` | ✅ **89.4%** (exit 0) |
+| B2a | Lint | `golangci-lint run ./...` | 0 issues | ✅ **0 issues** (whole module) |
+| B2b | Vuln | `govulncheck ./...` | 0 actionable CVEs | ✅ **no vulnerabilities** |
+| B2c | Mutation ≥70% killed | `go-mutesting` on `llm_agent_parallel.go`, `budget_dedup.go`, `mcptools/bridge_reconnect.go` | ≥70% killed each, or documented near-equivalent-survivor autopsy | ✅ **budget_dedup 85.5% · bridge_reconnect 73.4% · llm_agent_parallel 73.7%** |
+| B3 | Full live stack | `aura serve` + acceptance matrix | per the live-signoff B3 table (metrics scrape, CDP Telegram, GLM-OCR fs-cap, MCP reconnect, reasoning fallback, skill self-extension, DSN boundary, ledger redaction) | ⏳ `pending` (operator) |
+
+### B2c mutation autopsy (post-hardening)
+
+Initial spot-check found two files below 70% — resolved by adding targeted kill tests
+(no production-code change, no test weakening):
+
+- **`mcptools/bridge_reconnect.go` 58.5% → 73.4%** (+14 killed): `bridge_reconnect_mutation_test.go`
+  pins the `reconnectBackoff` schedule, the `currentClient` nil-guard, the breaker
+  elapsed/open gate, successful-reconnect state resets (client swap + failure reset),
+  refresh-hook dispatch, and lock-release on the already-closed `Close` path.
+- **`llm_agent_parallel.go` 47.4% → 73.7%** (+5 killed): `llm_agent_parallel_internal_test.go`
+  pins `maxParallelTools` env-guard fallbacks (a 0 would deadlock the worker pool);
+  `llm_agent_parallel_metrics_test.go` pins the panic-recovery observability (recovered-panic
+  + per-tool error counters). The 5 remaining survivors are **provably equivalent** — the
+  `len(calls)<=1` fast-path bypass and idle-worker `limit` reductions preserve behavior
+  because the worker-pool path handles a single call correctly; advisory-accepted.
 
 ---
 
@@ -92,20 +109,27 @@ AG-034 (→`internal/toolinvocations`), AG-041 (→`cmd/aura`).
 
 ---
 
-## Known out-of-scope (not fixed in Phase 22)
+## Formerly out-of-scope — resolved 2026-06-15 (operator directive "fix all findings")
 
-- `cmd/aura` `TestProductionContainerArtifactsMatchFatImageContract` — pre-existing
-  compose `:nitro`/`:exacto` drift (`136325dc`). `deferred-items.md`.
-- `internal/skills` dead funcs (`BM25Corpus`, `SnippetInvocation`,
-  `ValidateNameAgainstDir`) flagged by `deadcode` — outside the Phase-22 audited
-  surface; NOT AG-### findings. `deferred-items.md`.
+- ✅ `cmd/aura` `TestProductionContainerArtifactsMatchFatImageContract` — the compose
+  `:nitro`/`:exacto` drift is fixed by de-hardcoding the test (`e2b0d82a`): it now
+  asserts the env-override pattern `AURA_LLM_MODEL: ${AURA_LLM_MODEL:-…}` rather than a
+  fixed tag, so the model stays fully `.env`-configurable. `config.go`/`prices.go`
+  untouched. `go test ./...` is now whole-module green.
+- ✅ `internal/skills` `deadcode` flags (`BM25Corpus`, `SnippetInvocation`,
+  `ValidateNameAgainstDir`) — investigated: **not a defect.** Each is tested and
+  intended (spike consumer / installer chokepoint / overflow-ranker backing); `deadcode`
+  flags them only because it traces from `cmd/aura` main and can't see the
+  channel/swarm/test entry surfaces (same false-positive class as ~37 other entries).
+  No deletion — removing tested code would be a regression. `deferred-items.md`.
 
 ---
 
 ## Gate-3 status
 
-- **Automated floor:** ✅ green (build/vet/test/race/cache), modulo the documented
-  out-of-scope compose-drift test.
-- **Coverage / mutation / live:** ⏳ `pending` operator sign-off (Part B).
+- **Automated floor:** ✅ green (build/vet/test/race/cache) — whole module, zero failures.
+- **Quality bar (B1/B2):** ✅ coverage 89.4% · lint 0 · vuln clean · mutation ≥70% on all
+  three critical files (autopsy above).
+- **Live sign-off (B3):** ⏳ `pending` — operator-coordinated full live-stack pass (TODO 2026-06-16).
 - **Audit residue:** ✅ zero — 64/64 AG-### disposed in the ledger; HARDEN-01..12 all
   mapped.
