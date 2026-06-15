@@ -205,10 +205,15 @@ func TestResume_NoSilentReRun_SC4(t *testing.T) {
 		// Turn 2 (after resume): the model answers with a terminal text_response.
 		agenttest.ToolCallTurn(textResponseCall("call-2", "Rome it is.")),
 	)
-	r, _, pause := newTestRunner(t, client)
+	r, conv, pause := newTestRunner(t, client)
 	convID := newConvID(t)
 	ctx := context.Background()
 	mustCreate(t, r, convID)
+	// This test measures the resume round only. Mark the fake conversation titled so
+	// the best-effort auto-title worker cannot add an unrelated LLM request.
+	if err := conv.Rename(ctx, convID, "Resume invariant"); err != nil {
+		t.Fatalf("mark titled: %v", err)
+	}
 
 	if _, err := drain(r.Turn(ctx, convID, userPtr("Where am I?"))); err != nil {
 		t.Fatalf("turn 1: %v", err)
