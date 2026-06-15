@@ -3,6 +3,7 @@ package agent_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -89,11 +90,30 @@ func (contextDeadlineTool) Execute(ctx context.Context, raw json.RawMessage) (to
 	}
 }
 
+type panicTool struct{}
+
+func (panicTool) Spec() tools.Spec {
+	return tools.Spec{Name: "panic_tool", Summary: "panics for panic firewall tests", Parameters: json.RawMessage(`{"type":"object"}`)}
+}
+
+func (panicTool) Execute(context.Context, json.RawMessage) (tools.ToolResult, error) {
+	panic("panic tool boom")
+}
+
 // TestDispatch_ParallelConcurrentAndOrdered: three tool calls in one assistant
 // message run concurrently (the barrier releases only if all three entered Execute
 // together) AND their RoleTool results land in original call order (c1,c2,c3 →
 // barrier-ok-1,2,3). A "barrier-timeout" anywhere means the batch ran sequentially.
 func TestDispatch_ParallelConcurrentAndOrdered(t *testing.T) {
+	runParallelConcurrentAndOrdered(t)
+}
+
+func TestDispatch_ParallelDedupRingRaceClean(t *testing.T) {
+	runParallelConcurrentAndOrdered(t)
+}
+
+func runParallelConcurrentAndOrdered(t *testing.T) {
+	t.Helper()
 	recordingProvider(t)
 	const n = 3
 	bar := barrierTool{n: n, started: &atomic.Int32{}, release: make(chan struct{})}
@@ -147,6 +167,69 @@ func TestDispatch_ParallelConcurrentAndOrdered(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("result[%d] = %q, want %q (a timeout = not concurrent; mismatch = wrong order). full: %v", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestExecuteBatch_PanickingToolSurfacesModelVisibleError(t *testing.T) {
+	recordingProvider(t)
+
+	for _, tc := range []struct {
+		name  string
+		calls []llm.ToolCall
+	}{
+		{
+			name:  "inline_single_call",
+			calls: []llm.ToolCall{agenttest.MakeToolCall("panic-1", "panic_tool", `{}`)},
+		},
+		{
+			name: "parallel_batch_call",
+			calls: []llm.ToolCall{
+				agenttest.MakeToolCall("panic-1", "panic_tool", `{}`),
+				agenttest.MakeToolCall("panic-2", "panic_tool", `{}`),
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reg := tools.NewRegistry()
+			reg.Register(tools.TextResponse{})
+			reg.Register(panicTool{})
+
+			fc := agenttest.NewFakeClient(
+				agenttest.ToolCallTurn(tc.calls...),
+				agenttest.ToolCallTurn(textResponseCall("done", "done")),
+			)
+			a := agent.NewLlmAgent(agent.LlmAgentConfig{
+				Client:     fc,
+				LLM:        llm.Config{Model: "m", Provider: "p", TotalTimeoutSec: 30},
+				Registry:   reg,
+				PreviewCap: 2048,
+				RunDir:     t.TempDir(),
+				SessionID:  uuid.Must(uuid.NewV7()).String(),
+				UserTurns:  []llm.Message{{Role: llm.RoleUser, Content: "go"}},
+			})
+
+			evs, err := collect(a.Run(newIC(t, agent.BudgetOptions{MaxSteps: ptr(10)})))
+			if err != nil {
+				t.Fatalf("run errored: %v", err)
+			}
+			var sawPanicResult int
+			for _, ev := range evs {
+				ti := ev.Actions.ToolInvocation
+				if ti == nil || ti.Event != agent.ToolInvocationEnd {
+					continue
+				}
+				if ti.Status != "error" || !strings.Contains(ti.Error, "panic: panic tool boom") {
+					t.Fatalf("tool invocation end = status %q error %q, want panic error", ti.Status, ti.Error)
+				}
+				if !strings.Contains(ti.ResultPreview, "panic tool boom") {
+					t.Fatalf("result preview %q must be model-visible panic detail", ti.ResultPreview)
+				}
+				sawPanicResult++
+			}
+			if sawPanicResult != len(tc.calls) {
+				t.Fatalf("saw %d panic tool results, want %d (%s)", sawPanicResult, len(tc.calls), fmt.Sprint(tc.calls))
+			}
+		})
 	}
 }
 

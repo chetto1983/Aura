@@ -210,6 +210,13 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 			endTurnSpan(turnSpan, turnReason)
 		}()
+		defer func() {
+			if r := recover(); r != nil {
+				recordRecoveredPanic("llm_agent_run")
+				turnReason = "panic"
+				yield(nil, fmt.Errorf("agent panic: %v", r))
+			}
+		}()
 		if err := a.hooks.OnTurnStart(ic.Ctx, a.hookTurn(ic, "")); err != nil {
 			turnReason = "hook_turn_start_error"
 			yield(nil, err)

@@ -85,6 +85,8 @@ func (r *routerClient) Stream(ctx context.Context, req llm.Request) (<-chan llm.
 	switch o.kind {
 	case "fail":
 		return nil, errors.New("scripted worker failure")
+	case "panic":
+		panic("scripted worker panic")
 	case "block":
 		<-ctx.Done() // hold until the per-child timeout cancels us
 		return nil, ctx.Err()
@@ -256,6 +258,30 @@ func TestSwarmFailureIsolation(t *testing.T) {
 	}
 	if reports[1].Error == "" {
 		t.Error("failed report carries no error message")
+	}
+}
+
+func TestSwarmPanicIsolation(t *testing.T) {
+	defer goleak.VerifyNone(t)
+	r := newRouter().
+		route("alpha", outcome{kind: "ok", text: "A done"}).
+		route("bravo", outcome{kind: "panic"}).
+		route("charlie", outcome{kind: "ok", text: "C done"})
+	rc := testRunConfig(t, r, 25)
+
+	out, err := Run(context.Background(), rc, []string{"alpha task", "bravo task", "charlie task"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	reports := parseReports(t, out)
+	if reports[0].Status != StatusOK || reports[2].Status != StatusOK {
+		t.Errorf("siblings cancelled by panic: [0]=%q [2]=%q, want both ok", reports[0].Status, reports[2].Status)
+	}
+	if reports[1].Status != StatusFailed {
+		t.Fatalf("panic report status = %q, want failed", reports[1].Status)
+	}
+	if !strings.Contains(reports[1].Error, "panic") || !strings.Contains(reports[1].Error, "scripted worker panic") {
+		t.Fatalf("panic report error = %q, want recovered panic detail", reports[1].Error)
 	}
 }
 

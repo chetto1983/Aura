@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/chetto1983/aura/internal/agent/panicobs"
 )
 
 // Background shell support (parity P4) mirrors Claude Code's
@@ -99,6 +101,16 @@ func (s *bgShell) finish(waitErr error) {
 	s.mu.Unlock()
 }
 
+func (s *bgShell) finishPanic(recovered any) {
+	msg := fmt.Sprintf("panic: %v", recovered)
+	_, _ = s.Write([]byte(msg + "\n"))
+	s.mu.Lock()
+	s.done = true
+	one := 1
+	s.exitCode = &one
+	s.mu.Unlock()
+}
+
 // snapshot returns the output produced since the last poll (advancing readOff) and
 // the current status line: running | exited:<code> | killed.
 func (s *bgShell) snapshot(filter *regexp.Regexp) (chunk, status string) {
@@ -171,11 +183,19 @@ func (b *BackgroundShells) start(command, dir string, env []string) (string, err
 		b.mu.Unlock()
 		return "", fmt.Errorf("background start: %w", err)
 	}
-	go func() {
-		sh.finish(cmd.Wait())
-		cancel()
-	}()
+	go runBackgroundShellReaper(sh, cmd.Wait, cancel)
 	return id, nil
+}
+
+func runBackgroundShellReaper(sh *bgShell, wait func() error, cancel context.CancelFunc) {
+	defer cancel()
+	defer func() {
+		if r := recover(); r != nil {
+			panicobs.Record(panicobs.SiteShellBGReaper)
+			sh.finishPanic(r)
+		}
+	}()
+	sh.finish(wait())
 }
 
 func (b *BackgroundShells) pruneFinishedLocked() {

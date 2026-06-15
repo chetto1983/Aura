@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/panicobs"
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/config"
 	"github.com/chetto1983/aura/internal/llm"
@@ -112,6 +113,12 @@ func runWave(ctx context.Context, rc RunConfig, goals []string, reports []ChildR
 		idx := i
 		childBudget := rc.ParentBudget.Child(width)
 		eg.Go(func() error {
+			defer func() {
+				if r := recover(); r != nil {
+					panicobs.Record(panicobs.SiteSwarmWave)
+					reports[idx] = panicChildReport(idx, r)
+				}
+			}()
 			if egCtx.Err() != nil { // #61611 spawn-loop guard
 				return nil
 			}
@@ -122,6 +129,15 @@ func runWave(ctx context.Context, rc RunConfig, goals []string, reports []ChildR
 		})
 	}
 	_ = eg.Wait()
+}
+
+func panicChildReport(idx int, recovered any) ChildReport {
+	return ChildReport{
+		GoalIndex: idx,
+		ChildID:   fmt.Sprintf("w%d", idx+1),
+		Status:    StatusFailed,
+		Error:     fmt.Sprintf("panic: %v", recovered),
+	}
 }
 
 // runChild constructs one worker (parent registry minus swarm_spawn, flat SessionID,

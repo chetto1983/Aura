@@ -4,6 +4,7 @@ import (
 	"expvar"
 	"time"
 
+	"github.com/chetto1983/aura/internal/agent/panicobs"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -65,4 +66,8 @@ func recordToolDuration(d time.Duration) {
 		return
 	}
 	promToolDuration.Observe(d.Seconds())
+}
+
+func recordRecoveredPanic(site string) {
+	panicobs.Record(site)
 }

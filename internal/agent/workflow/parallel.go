@@ -29,9 +29,11 @@ package workflow
 
 import (
 	"context"
+	"fmt"
 	"iter"
 
 	"github.com/chetto1983/aura/internal/agent"
+	"github.com/chetto1983/aura/internal/agent/panicobs"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -140,7 +142,13 @@ func runSub(
 	sub agent.Agent,
 	results chan<- result,
 	done <-chan bool,
-) error {
+) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			panicobs.Record(panicobs.SiteWorkflowParallel)
+			err = fmt.Errorf("parallel child %q panic: %v", sub.Name(), r)
+		}
+	}()
 	for ev, err := range sub.Run(ic) {
 		if err != nil {
 			return err // a REAL failure surfaces through the error slot (D-04)

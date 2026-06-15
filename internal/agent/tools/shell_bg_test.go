@@ -220,6 +220,27 @@ func TestBackgroundShellsShutdownKillsRunning(t *testing.T) {
 	}
 }
 
+func TestBackgroundShellReaperPanicRecoverMarksFailedDone(t *testing.T) {
+	sh := &bgShell{bufCap: 1024}
+	cancelled := false
+	runBackgroundShellReaper(sh, func() error {
+		panic("reaper boom")
+	}, func() {
+		cancelled = true
+	})
+
+	if !cancelled {
+		t.Fatal("reaper must always cancel after wait exits or panics")
+	}
+	chunk, status := sh.snapshot(nil)
+	if status != "exited:1" {
+		t.Fatalf("status = %q, want exited:1", status)
+	}
+	if !strings.Contains(chunk, "panic: reaper boom") {
+		t.Fatalf("snapshot missing panic detail: %q", chunk)
+	}
+}
+
 func backgroundKillWaitTimeout() time.Duration {
 	if runtime.GOOS == "windows" {
 		return 8 * time.Second

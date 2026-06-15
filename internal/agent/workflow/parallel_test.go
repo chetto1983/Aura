@@ -3,6 +3,7 @@ package workflow_test
 import (
 	"context"
 	"iter"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -417,6 +418,43 @@ func TestParallelAgent_RealChildError_SurfacesThroughErrorSlot(t *testing.T) {
 	_, err := drain(root.Run(ic))
 	if err == nil {
 		t.Fatalf("a real child error must surface through the error slot (D-04)")
+	}
+}
+
+type panickingAgent struct {
+	name string
+}
+
+func (a *panickingAgent) Name() string           { return a.name }
+func (*panickingAgent) Description() string      { return "test: panics from Run iterator body" }
+func (*panickingAgent) SubAgents() []agent.Agent { return nil }
+func (a *panickingAgent) FindAgent(name string) agent.Agent {
+	if a.name == name {
+		return a
+	}
+	return nil
+}
+func (a *panickingAgent) Run(agent.InvocationContext) iter.Seq2[*agent.Event, error] {
+	return func(yield func(*agent.Event, error) bool) {
+		panic("parallel child boom")
+	}
+}
+
+func TestParallelAgent_PanickingChildSurfacesThroughErrorSlot(t *testing.T) {
+	defer goleak.VerifyNone(t)
+
+	root := workflow.NewParallel(
+		"root",
+		&slowAgent{name: "ok", n: 1, delay: time.Millisecond},
+		&panickingAgent{name: "bad"},
+	)
+
+	_, err := drain(root.Run(budgetIC(t, "root", 100)))
+	if err == nil {
+		t.Fatal("panicking child must surface as an error, not crash or disappear")
+	}
+	if !strings.Contains(err.Error(), "panic") || !strings.Contains(err.Error(), "parallel child boom") {
+		t.Fatalf("error = %v, want recovered panic detail", err)
 	}
 }
 
