@@ -37,7 +37,7 @@ func TestMCPInstallCalculatorWritesRecipe(t *testing.T) {
 	if calc.Command != "uvx" {
 		t.Fatalf("calculator command = %q, want uvx", calc.Command)
 	}
-	if strings.Join(calc.Args, " ") != "--from calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git -- calculator-mcp-server --stdio" {
+	if strings.Join(calc.Args, " ") != "--from calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08 -- calculator-mcp-server --stdio" {
 		t.Fatalf("calculator args not recipe-shaped: %#v", calc.Args)
 	}
 	if !strings.Contains(out.String(), "ok: installed calculator") {

@@ -37,9 +37,20 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /uvx /usr/local/bin/
 
 RUN pip install --no-cache-dir --break-system-packages mcp-neo4j-cypher==0.6.0
 
-RUN uvx --from "calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git" \
-        calculator-mcp-server --help >/dev/null \
-    && npm cache add "github:martinzarfl/mail-mcp"
+# calculator: warm uvx at a pinned commit (chetto1983 fork) so it runs with egress
+# blocked — an unpinned HEAD re-fetches and fails offline (Phase 17 AC7).
+RUN uvx --from "calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08" \
+        calculator-mcp-server --help >/dev/null
+
+# mail: vendored at a pinned commit, built + globally installed so the `mail-mcp`
+# bin runs fully offline (no GitHub dependency at runtime). See docker/aura/PROVENANCE.md.
+COPY docker/aura/mail-mcp-src.tar.gz /tmp/mail-mcp-src.tar.gz
+RUN mkdir -p /opt/mail-mcp \
+    && tar -xzf /tmp/mail-mcp-src.tar.gz -C /opt/mail-mcp --strip-components=1 \
+    && npm --prefix /opt/mail-mcp ci \
+    && npm --prefix /opt/mail-mcp run build \
+    && npm install -g /opt/mail-mcp \
+    && rm -f /tmp/mail-mcp-src.tar.gz
 
 ENV AURA_IN_CONTAINER=1
 

@@ -107,8 +107,12 @@ func TestProductionContainerArtifactsMatchFatImageContract(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"localhost:443 {",
+		// AC11: a `:443` catch-all + on-demand internal cert so LAN clients reach
+		// the wizard by IP/hostname (a `localhost:443` site only served the
+		// localhost SNI and failed the handshake for any other name).
+		":443 {",
 		"tls internal",
+		"on_demand",
 		"@authed",
 		"X-Aura-Token",
 		"query({'token': '{$AURA_ACCESS_TOKEN}'})",

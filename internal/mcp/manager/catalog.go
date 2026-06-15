@@ -68,7 +68,10 @@ func BuiltInCatalog() []CatalogEntry {
 				Command: "uvx",
 				Args: []string{
 					"--from",
-					"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git",
+					// Pinned commit so uvx reuses the warm-cached git checkout
+					// offline; an unpinned HEAD re-fetches and fails with egress
+					// blocked (Phase 17 AC7).
+					"calculator-mcp-server@git+https://github.com/chetto1983/calculator-mcp-server.git@46a1e66709bc387e8c223f15ec25fb5ae3a1af08",
 					"--",
 					"calculator-mcp-server",
 					"--stdio",
@@ -104,17 +107,16 @@ func BuiltInCatalog() []CatalogEntry {
 		},
 		{
 			Name:        "mail",
-			Summary:     "martinzarfl/mail-mcp over stdio (SMTP/IMAP env config)",
+			Summary:     "mail-mcp vendored bin over stdio (SMTP/IMAP env config)",
 			Source:      "recipe:mail",
 			TrustClass:  mcp.TrustTrustedRecipe,
 			Runtime:     "local",
 			RequiredEnv: []string{"SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"},
 			Server: mcp.ManagedServer{
-				Command: "npx",
-				Args: []string{
-					"-y",
-					"github:martinzarfl/mail-mcp",
-				},
+				// Vendored + globally installed in docker/aura/Dockerfile so it
+				// runs fully offline with no GitHub dependency (Phase 17 AC7).
+				// See docker/aura/PROVENANCE.md.
+				Command: "mail-mcp",
 				Env: []string{
 					"SMTP_HOST=smtp.gmail.com",
 					"SMTP_PORT=465",

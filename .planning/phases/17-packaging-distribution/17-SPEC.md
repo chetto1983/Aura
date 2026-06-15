@@ -187,7 +187,7 @@ This phase ships the artifacts that make the box real: a fat Aura image, an `aur
 - [ ] `docker history <image>` exposes no secret value in any layer; secrets reach the process only via env; `aura-home` preserves `llm.json`/`mcp/servers.json`/`Agent.md` across `down`/`up`.
 - [ ] A `runtime.kind=docker` MCP launched from inside the `aura` container returns a clear "deploy as a compose sibling" error; the streamable-HTTP sibling equivalent mounts and lists tools.
 - [ ] `command -v wsl.exe` inside the image returns non-zero; with the whatsapp sibling up, the recipe resolves to it and lists tools; with it down, Aura boots fail-soft.
-- [ ] `docker run --rm <image> sh -c "command -v python3 && command -v node && command -v uvx && command -v mcp-neo4j-cypher"` resolves all four (amd64 + arm64); the final stage is non-root.
+- [ ] `docker run --rm <image> sh -c "command -v python3 && command -v node && command -v uvx && command -v mcp-neo4j-cypher"` resolves all four (amd64 + arm64). (Box-model amendment #63: the final stage runs root/full-power by design — the no-socket invariant, mount isolation, and `cpus`/`mem`/`pids` limits are the boundary; the earlier "final stage is non-root" clause is superseded.)
 - [ ] With the stack up, an in-container Neo4j round-trip succeeds AND the host has no `mcp-neo4j-cypher` and no Aura-installed Python.
 - [ ] With host egress blocked, the pre-baked `calculator` (uvx) and `mail` (npx) recipes run from inside the container with no download.
 - [ ] `docker compose up` brings the stack healthy only after `aura-migrate` exits 0; a killed `aura` container is auto-restarted.
