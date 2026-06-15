@@ -2,11 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
-status: planning
-last_updated: "2026-06-15T13:37:53.150Z"
-last_activity: 2026-06-15
+status: Roadmap created — awaiting Phase 22 spec/plan
+stopped_at: Phase 22 context gathered
+last_updated: "2026-06-15T13:52:36.381Z"
+last_activity: 2026-06-15 — v1.0.0 roadmap created (Phases 22–27, 33 requirements mapped, 0 unmapped)
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,20 +21,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Milestone v0.0.0 closeout
+**Current focus:** Milestone v1.0.0 — Aura Deep Search Web Cockpit (roadmap created; Phases 22–27)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 22 — Agent Perimeter Hardening (not started)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-06-15 — Milestone v1.0.0 started
+Status: Roadmap created — awaiting Phase 22 spec/plan
+Last activity: 2026-06-15 — v1.0.0 roadmap created (Phases 22–27, 33 requirements mapped, 0 unmapped)
 
-### Next — Milestone Closeout
+### Next — Plan Phase 22
 
-All v0.0.0 milestone phases are complete and summarized. Phase 21 shipped EXT-1 hooks (`HookManager`, five LlmAgent insertion points, in-process hooks, trust-gated command hooks) and the stale roadmap/requirements summary gaps have been synced.
+The v1.0.0 roadmap is in place. Six phases derived from the 33 milestone requirements, build order per `research/ARCHITECTURE.md` §7 (A→B→C→D→E→F):
 
-Remaining action: rerun closeout audits, then archive the milestone with `/gsd-complete-milestone`.
+- **Phase 22 — Agent Perimeter Hardening** (HARDEN-01..12) — pre-existing spec at `.planning/phases/22-bug-fix/22-SPEC.md`; gates web exposure. FIRST.
+- **Phase 23 — Web Foundation — Serve + Embed + Auth** (WEB-01..04) — single-binary embedded SPA + GAP-2 auth boundary; gates every UI surface.
+- **Phase 24 — Chat + Approval Center** (CHAT-01..04, APRV-01..03) — Core-Value chat loop + cross-thread HITL queue.
+- **Phase 25 — Typed-Display Protocol + Router** (DISP-01..05, SWARM-01) — GAP-1 `aura.display` spine + display router.
+- **Phase 26 — Neo4j Graph Explorer** (GRAPH-01..04) — graph normalizer + read-only Cypher guard + WebGL canvas.
+- **Phase 27 — Governance Boards + Web Onboarding** (GOV-01..03, ONBD-01..02) — read-only boards + web setup wizard.
+
+Phases 23–27 are UI phases (`ui_phase: true` — design contract gate applies). Governance writes (GOVW) + `ui_control` shell (SHELL) are deferred to a follow-up milestone.
+
+Remaining action: `/gsd-plan-phase 22` (the spec already exists from `/gsd-spec-phase 22`).
 
 ## Performance Metrics
 
@@ -147,6 +157,8 @@ Remaining action: rerun closeout audits, then archive the milestone with `/gsd-c
 ## Accumulated Context
 
 ### Roadmap Evolution
+
+- v1.0.0 roadmap created (2026-06-15): the Aura Deep Search Web Cockpit milestone (33 requirements) was decomposed into 6 phases (22-27) at coarse granularity, build order per research/ARCHITECTURE.md sec.7 (A->B->C->D->E->F). Phase 22 (Agent Perimeter Hardening, HARDEN-01..12) is the pre-existing bug-fix spec and gates web exposure. Phase 23 (Web Foundation, WEB-01..04) is the serve/embed/GAP-2-auth foundation that gates every UI surface. Phase 24 (Chat + Approval Center, CHAT/APRV, 7 reqs) is the Core-Value loop over mostly-existing backend. Phase 25 (Typed-Display Protocol + Router, DISP-01..05 + SWARM-01, 6 reqs) is the GAP-1 spine. Phase 26 (Neo4j Graph Explorer, GRAPH-01..04). Phase 27 (Governance Boards + Web Onboarding, GOV + ONBD, 5 reqs). All 33 mapped, 0 orphaned. GOVW write surfaces + ui_control SHELL shell deferred to v2 (out of scope this milestone). Next = /gsd-plan-phase 22.
 
 - Phase 07.1 inserted after Phase 7: Forced-finalization loop fix: LlmAgent must always return a final answer (budget/dedup trip currently emits empty); surfaced by Phase 7 meteo E2E. See docs/research/agent-loop-forced-finalization.md (URGENT)
 - Phase 08.1 inserted after Phase 8: Tool Search hardening to Anthropic defer_loading parity: BM25/semantic search (reuse PG FTS + embed sidecar) replacing substring match, search argument-name/description fields, MCP tool namespacing, >=1-non-deferred guard. Matters as tool count grows toward the 30-50 selection-accuracy threshold (P11 skills/7e snippets + future stdio MCP mounts via the retained mcptools seam; P8 landed as single-tool sandbox-agent, MCP bridge dormant). (URGENT)
@@ -278,9 +290,9 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-06-14T14:09:27.957Z
-Stopped at: Completed 17-08-PLAN.md
-Resume file: None
+Last session: 2026-06-15T13:52:36.373Z
+Stopped at: Phase 22 context gathered
+Resume file: .planning/phases/22-bug-fix/22-CONTEXT.md
 
 ## Operator Next Steps
 
