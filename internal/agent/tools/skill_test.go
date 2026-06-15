@@ -121,6 +121,28 @@ func TestSkillToolSchemaStatesActualAutoActivationPolicy(t *testing.T) {
 	}
 }
 
+// TestSkillSchemaIsHonestNotDishonest is the AG-011/AG-044 regression: the live
+// skill schema must NOT carry the old dishonest "you cannot approve your own
+// changes" claim (the dead skillParamsSchema const advertised approval-gating that
+// the code never enforces — single-operator in-box auto-activation is the live
+// path). Exactly one schema backs the Spec, and it states the real trust boundary.
+func TestSkillSchemaIsHonestNotDishonest(t *testing.T) {
+	t.Parallel()
+	schema := string((&SkillTool{}).Spec().Parameters)
+	for _, dishonest := range []string{
+		"you cannot approve your own changes",
+		"require explicit human approval before they take effect",
+	} {
+		if strings.Contains(schema, dishonest) {
+			t.Fatalf("skill schema still carries the dishonest gated claim %q; the live path is in-box auto-activation: %s", dishonest, schema)
+		}
+	}
+	// The honest schema names the actual single-operator activation boundary.
+	if !strings.Contains(schema, "activate immediately in this container") {
+		t.Fatalf("skill schema must honestly state in-container auto-activation: %s", schema)
+	}
+}
+
 func TestSkillRegistryValidates(t *testing.T) {
 	t.Parallel()
 	reg := NewRegistry()

@@ -87,30 +87,25 @@ type skillArgs struct {
 	Query  string `json:"query"`
 }
 
-// skillParamsSchema is the OpenAI-wire-safe JSON schema (D-10), mirroring
-// taskParamsSchema's discipline VERBATIM: the root object's only required field is
-// `action`; per-action requirements are spelled out in the field descriptions.
-// There is intentionally NO root-level oneOf/anyOf/enum — a root enum 400s
-// OpenAI-compat providers (DeepSeek). The `action` property does carry an enum
-// (a property-level enum on a string is wire-safe), as does the `language` property
-// for save_snippet. The snippet-lifecycle actions (save_snippet/restore/archive) are
-// wired (18-03). Discovery+install is NOT a tool action (amendment #51 / D-40 — the
-// find-skills always-on skill teaches `npx skills find/add` in the sandbox).
-const skillParamsSchema = `{
-  "type": "object",
-  "properties": {
-    "action": {"type": "string", "enum": ["list", "info", "use", "create", "update", "delete", "save_snippet", "restore", "archive"], "description": "The skill operation: list (show available skills; pass an optional query to rank by relevance); info (read a skill's body for inspection by name); use (apply a skill's instructions, or run a stored snippet by path, by name); create (author a new skill); update (revise an existing skill); delete (remove a skill); save_snippet (store a reusable executable code snippet so you can re-run it by path on a later turn instead of re-authoring it); restore (un-archive a previously archived snippet back to active); archive (de-activate a snippet you no longer need — recoverable with restore). create/update/delete are STAGED as pending and require explicit human approval before they take effect — you cannot approve your own changes. save_snippet stages the snippet as pending too (it activates after operator approval); restore/archive take effect immediately."},
-    "name": {"type": "string", "description": "Required when action=info, use, create, update, delete, save_snippet, restore, or archive. The exact skill/snippet name (lowercase, [a-z0-9-], 1-64 chars) to inspect, apply, author, revise, remove, save, restore, or archive."},
-    "description": {"type": "string", "description": "Required when action=create or update (and optional for save_snippet). A one-line summary of what the skill/snippet does (shown in the skill manifest)."},
-    "body": {"type": "string", "description": "Required when action=create or update. The markdown instructions that make up the skill."},
-    "language": {"type": "string", "enum": ["python", "shell", "js"], "description": "Required when action=save_snippet. The language of the snippet code (python, shell, or js)."},
-    "code": {"type": "string", "description": "Required when action=save_snippet. The executable snippet body (the code that will be saved and later run by path)."},
-    "always": {"type": "boolean", "description": "Optional when action=create or update. When true the skill's instructions are always applied (an always-on skill); always-on skills are gated like any other change and reviewed loudly."},
-    "query": {"type": "string", "description": "Optional when action=list (ranks the skill list by relevance when the full manifest is too large to show at once)."}
-  },
-  "required": ["action"]
-}`
-
+// skillParamsSchemaHonest is the ONE OpenAI-wire-safe JSON schema the skill tool
+// exposes (D-10), mirroring taskParamsSchema's discipline VERBATIM: the root
+// object's only required field is `action`; per-action requirements are spelled out
+// in the field descriptions. There is intentionally NO root-level oneOf/anyOf/enum —
+// a root enum 400s OpenAI-compat providers (DeepSeek). The `action` property does
+// carry an enum (a property-level enum on a string is wire-safe), as does the
+// `language` property for save_snippet. The snippet-lifecycle actions
+// (save_snippet/restore/archive) are wired (18-03). Discovery+install is NOT a tool
+// action (amendment #51 / D-40 — the find-skills always-on skill teaches
+// `npx skills find/add` in the sandbox).
+//
+// HONESTY (AG-011 / AG-044): the descriptions state the ACTUAL single-operator trust
+// boundary, not an unenforced approval gate. Aura runs for one trusted operator on
+// their own host (amendment #50 / D-15c): a model-authored create/update with
+// always:false activates IMMEDIATELY in this container after validation+audit
+// (Claude-Code self-extension parity, P5 2026-06-10). Only always:true changes (which
+// edit the always-on system-prompt block) and delete remain approval-gated. The dead
+// duplicate that claimed "you cannot approve your own changes" was removed (AG-044) —
+// the code never enforced it, so the schema no longer advertises it.
 const skillParamsSchemaHonest = `{
   "type": "object",
   "properties": {
