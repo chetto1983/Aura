@@ -1,9 +1,82 @@
+<div align="center">
+
+<img src="public/Logo.png" alt="Aura logo" width="160" height="160" />
+
 # Aura
 
-[![CI](https://github.com/chetto1983/Aura/actions/workflows/ci.yml/badge.svg?branch=tabula-rasa)](https://github.com/chetto1983/Aura/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml/badge.svg?branch=tabula-rasa)](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml)
+**A local-first, provider-neutral AI agent platform — in Go.**
+
+One binary. Your hardware. Your data. A capable agent with a full terminal,
+graph-backed memory, self-authored skills, and multi-channel access.
+
+[![CI](https://github.com/chetto1983/Aura/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/chetto1983/Aura/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml/badge.svg?branch=master)](https://github.com/chetto1983/Aura/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)](go.mod)
+
+</div>
+
+---
+
+## What is Aura?
+
+Aura is a personal AI agent that runs on the user's own machine. A single Go binary
+hosts the agent runtime, a broad tool surface (host shell + filesystem, web, documents,
+scheduling, skills), multi-channel access (CLI, Telegram, AG-UI/SSE web), and a
+Postgres + Neo4j memory — talking to a swappable LLM (DeepSeek-V4 over OpenRouter by
+default) plus a few local CPU sidecars. It is built as a **product, not a prototype**.
+
+> **Strategic context:** Aura is designed to ship as a **DGX Spark + software bundle** for
+> SMBs that want a private, capable assistant on hardware they own.
+
+## At a glance
+
+| | |
+|---|---|
+| **Language** | Go 1.26 |
+| **Size** | ~25k LOC · 49 internal packages |
+| **Test coverage** | **90.3%** owned-surface (hard floor 85% per package) |
+| **Test discipline** | table-driven · property-based · fuzz · `-race` · `goleak` · mutation |
+| **CI** | green — build/vet/lint · CodeQL · integration (Postgres / Neo4j) |
+| **Persistence** | Postgres (15 migrations, sqlc, pgx) + Neo4j (HNSW 384-d + APOC + GDS) |
+| **Default LLM** | DeepSeek-V4 via OpenRouter — provider-neutral, swap by config |
+| **Status** | 20/23 build phases shipped · v1.0.0 (web cockpit) in progress |
+
+## Key features
+
+- **Streaming agent loop** with a shared *budget tree* (step + wall-clock caps) and a tool-loop *dedup ring* — bounded, predictable cost.
+- **Deferred-tool pattern + semantic `tool_search`** — dozens of tools (incl. dynamic MCP tools) stay discoverable at near-zero per-turn token cost.
+- **Adaptive reasoning router** — a local embedding classifier picks reasoning effort in ~10 ms and self-improves off the hot path.
+- **Full host terminal + filesystem tools** — real operating power, with destructive-command approval gates and secret redaction.
+- **Graph-native memory** — documents become a searchable Neo4j graph (FTS + HNSW vectors); conversations persist with a context-management ladder.
+- **Self-extension** — the agent authors and runs its own skills, and mounts MCP servers (calculator, mail, calendar, whatsapp, memory).
+- **Multi-channel** — CLI REPL, Telegram (voice/photo/docs/HITL), and a web cockpit over AG-UI/SSE.
+
+## Architecture (one screen)
+
+```text
+Transport & UX     cmd/aura (CLI) · channels (+telegram) · agui (SSE) · setup · askuser
+Agent runtime      agent (LlmAgent, Budget, Events, hooks) · workflow (Seq/Par/Loop) · swarm
+Tools & MCP        agent/tools (registry, deferred, tool_search, fs/shell/web/skill) · mcp (+bridge, manager)
+Intelligence       llm (+openai_compat) · semindex (embed-index core) · reasoning* · activelearn · scoring
+Capabilities       web · skills · cron · onboarding · documents · eval
+Persistence        db (Postgres+sqlc) · knowledge (Neo4j) · conversations · identity · profile · secret
+Observability      obs · panicobs · reasoningtrace · toolinvocations · cachemetrics
+```
+
+## Documentation
+
+| Doc | For |
+|---|---|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | How the system is built — layers, turn lifecycle, invariants |
+| [docs/TECHNICAL_OVERVIEW.md](docs/TECHNICAL_OVERVIEW.md) | CTO / due-diligence overview — problem, differentiators, maturity |
+| [docs/CAPABILITIES.md](docs/CAPABILITIES.md) | Capability matrix — shipped / in-progress / roadmap |
+| [docs/CODEBASE_MAP.md](docs/CODEBASE_MAP.md) | Exhaustive function-level inventory (all 49 packages) |
+| [CLAUDE.md](CLAUDE.md) · [prd.md](prd.md) | Engineering guidance · product requirements (source of truth) |
+
+---
+
+## Deployment (Docker Compose appliance)
 
 Aura is a self-hosted agent runtime packaged as a Docker Compose appliance. The
 default stack brings up Aura, Postgres, Neo4j, the local embedding sidecar, Caddy
