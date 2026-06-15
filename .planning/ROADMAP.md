@@ -43,7 +43,7 @@
 
 Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md`. The operator directive (2026-06-15) is to **stand up the industrial frontend foundation FIRST** — research-locked toolchain, linter/formatter CI gate, design-token dark-operator theme, brand, and the embedded build/test pipeline — before any cockpit feature code. Build order: harden the agent perimeter first (Phase 22), then the research-first frontend industrial foundation (Phase 23), then the serve/auth/health web host (Phase 24), then the Core-Value chat+approval loop (Phase 25), then the GAP-1 typed-display spine + router (Phase 26), then the self-contained graph explorer (Phase 27), then read-only governance + web onboarding (Phase 28), and finally the governance WRITE surfaces — MCP configuration + skills install/lifecycle (Phase 29), the highest-risk surfaces landing last after auth + the approval center + the read-only boards are proven. The `ui_control` operator-OS shell (SHELL) and scheduler write surfaces (GOVW-03) are deferred to a follow-up milestone.
 
-- [ ] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit to Gate-3 so the web exposure lands on a hardened base (HARDEN-01..12)
+- [x] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit so the web exposure lands on a hardened base (HARDEN-01..12) — all 5 plans executed + automated-green 2026-06-15 (AG-001..064 ledgered, none dropped); Gate-3 close awaits the operator Part-B live sign-off (coverage ≥85% / WSL quality / live stack — `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`)
 - [ ] **Phase 23: Frontend Infrastructure & Industrial Foundation** — Research-first industrial frontend foundation: locked decision record + Vite/React/TS embed scaffold + linter/formatter/type-check CI gate + design-token dark-operator theme + brand + Node-24 build/test pipeline, BEFORE any feature code (FND-01..06)
 - [ ] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04)
 - [ ] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue (CHAT-01..04, APRV-01..03)
@@ -165,7 +165,7 @@ Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway
 | Phase | Milestone | Plans | Status | Completed |
 | ----- | --------- | ----- | ------ | --------- |
 | 0–21 (substrate) | v0.0.0 | 144/144 | ✅ Shipped | 2026-06-15 |
-| 22. Agent Perimeter Hardening | v1.0.0 | 4/5 | In Progress|  |
+| 22. Agent Perimeter Hardening | v1.0.0 | 5/5 | Complete   | 2026-06-15 |
 | 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 0/? | Not started | - |
 | 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 0/? | Not started | - |
 | 25. Chat + Approval Center | v1.0.0 | 0/? | Not started | - |

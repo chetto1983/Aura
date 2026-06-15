@@ -22,7 +22,7 @@ Remediation of the 2026-06-15 `internal/agent` production-readiness audit (`docs
 - [x] **HARDEN-08**: Unknown-tool and swarm-child output is default-untrusted and cannot launder prompt injection (AG-052)
 - [x] **HARDEN-09**: Loop / budget / workflow correctness — bounded and validated (AG-035..043)
 - [x] **HARDEN-10**: Tool execution is memory-safe, evictable, and consistent — fs size cap, cycle guard, dedup growth bound, etc. (AG-014..046)
-- [ ] **HARDEN-11**: Skill self-extension docs match behavior; dead code removed (AG-011/044/051)
+- [x] **HARDEN-11**: Skill self-extension docs match behavior; dead code removed (AG-011/044/051)
 - [x] **HARDEN-12**: Every in-scope finding closed to Gate-3 with its named regression test; ≥85% owned-surface coverage holds; nothing silently dropped
 
 ### Frontend Foundation (FND) — Phase 23, research-first, before any feature code
@@ -152,7 +152,7 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 | HARDEN-08 | Phase 22 | Complete |
 | HARDEN-09 | Phase 22 | Complete |
 | HARDEN-10 | Phase 22 | Complete |
-| HARDEN-11 | Phase 22 | Pending |
+| HARDEN-11 | Phase 22 | Complete |
 | HARDEN-12 | Phase 22 | Complete |
 | FND-01 | Phase 23 | Pending |
 | FND-02 | Phase 23 | Pending |

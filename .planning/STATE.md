@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 22 context gathered
-last_updated: "2026-06-15T18:37:25.945Z"
+stopped_at: Completed 22-05-PLAN.md (Phase 22 automated-green; operator Part-B live sign-off pending)
+last_updated: "2026-06-15T19:02:36.807Z"
 last_activity: 2026-06-15
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 5
-  completed_plans: 4
-  percent: 0
+  completed_plans: 5
+  percent: 13
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 22 (bug-fix) — EXECUTING
-Plan: 2 of 5
-Status: Ready to execute
+Phase: 22 (bug-fix) — AUTOMATED-GREEN (operator live sign-off pending)
+Plan: 5 of 5 (all plans executed)
+Status: 22-05 complete — Phase 22 awaits operator Part-B sign-off (coverage / WSL quality / live stack)
 Last activity: 2026-06-15
 
 ### Next -- Execute Phase 22
@@ -44,7 +44,7 @@ The v1.0.0 roadmap is revised per the operator directive (2026-06-15): the indus
 
 Phases 23–28 are UI phases (`ui_phase: true` — design contract gate applies). Phase 23 is research-first (its industrial-infra RESEARCH.md runs at plan time before any scaffolding code). Governance writes (GOVW) + `ui_control` shell (SHELL) are deferred to a follow-up milestone.
 
-Remaining action: `/gsd-execute-phase 22`.
+Remaining action: operator runs the Phase-22 Part-B sign-off (`make coverage` ≥85%, WSL `golangci-lint`/`govulncheck`/`go-mutesting` ≥70% on the three critical files, and the full `aura serve` live-stack acceptance matrix — runbook in `docs/audit/22-LIVE-SIGNOFF-2026-06-15.md`), then flip Phase 22 to complete and proceed to `/gsd-plan-phase 23`.
 
 ## Performance Metrics
 
@@ -157,11 +157,13 @@ Remaining action: `/gsd-execute-phase 22`.
 | Phase 22 P22-01 | 14min | 2 tasks | 13 files |
 | Phase 22 P22-02 | 18min | 2 tasks | 21 files |
 | Phase 22 P22-04 | ~95min | 4 tasks | 32 files |
+| Phase 22 P22-05 | ~15min | 4 tasks | 12 files |
 
 ## Accumulated Context
 
 ### Phase 22 Execution
 
+- 22-05 closed (2026-06-15): phase close-out wave. Skill honesty (AG-011/044/051): deleted the dead duplicate `skillParamsSchema` const (it claimed "you cannot approve your own changes" — an approval gate the code never enforced); the single honest `skillParamsSchemaHonest` was already wired in `Spec()`; comment rewritten to the real single-operator boundary (`always:false` create/update auto-activates in-container after validate+audit; `always:true`+delete approval-gated); AG-051 dormant pause-sentinel confirmed harmless (pause is name-gated to `ask_user`, `TestAskUserOnlyPauseConstraint` green). Confirm/route (AG-028/034/041/043): `deadcode` confirmed `openManagedServer` unreachable → removed + branches re-covered via `MountManagedServer`; AG-034 redaction is purely in the DB store layer (`internal/toolinvocations.RedactForLedger`, D-09) — confirmed+routed with an agent-side contract test, no `event.go` change; AG-041 (`Budget.WithDeadline` @ `cmd/aura/agent.go:99`) and AG-043 (goleak break-at-every-index) confirmed closed by 22-03/22-04. Ledger: `docs/audit/22-finding-ledger.md` names all AG-001..064 with constrained dispositions (52 fixed+test, 3 confirmed+routed, 9 accepted+rationale) + HARDEN-01..12 traceability; `docs/audit/README.md` + `audit-index.json` reconciled (63→64 count note). Validation: automated bar green (`go build`/`go vet`/`go test ./...` untagged — only the pre-existing out-of-scope `cmd/aura` compose-drift test fails; `go test -race ./internal/agent/... ./internal/swarm/...`; `cache_invariant_audit.sh` 22 identical hashes), with the destructive coverage gate + WSL quality bar + full live stack recorded PENDING-OPERATOR (no fabricated pass). Commits `5d8f070e`, `657b438b`, `036575b5`, `fa298087`; summary `.planning/phases/22-bug-fix/22-05-SUMMARY.md`. **Phase 22 is automated-green; HARDEN-11 + HARDEN-12 done; Gate-3 close awaits operator Part-B sign-off.**
 - 22-04 closed (2026-06-15): broad P2/P3 operational hardening wave. Hooks (AG-003/004/030/054/058): per-hook FailPolicy (FailOpen contains a fault, FailClosed aborts; recover-wrapped in-process hooks), absolute hook paths, exit-zero rewrite gate, bounded+audited rewrites. Provenance (AG-052): default-untrusted for unknown + swarm-child output (explicit `trustedToolNames` allowlist); dedup now hashes the RAW preview (the per-call nonce would defeat the veto) and control-plane signals/event projection stay unwrapped. Tools (AG-014..020/045/046/050): `AURA_FS_MAX_READ_BYTES`=10 MiB stat-then-reject + paging hint, atomic fs_edit (temp+rename), `BackgroundShells` SessionEvictor + poll-prune, every `agent_job` gated to pending_approval, cwd validation + `filepath.Clean` approval digest, `send_file` `RequireWorkspace` fail-closed flag, tool_search description-hash re-embed on reconnect, unified `**` grep/glob, sidecar absolute-runDir assertion. Workflow (AG-031/037/038/043/059..064): cycle-safe `findInTree` (visited BFS), runtime `aura_agent_prefix_drift_total` metric, atomic `Budget.TryReserve/Release` synthesis reservation, parallel break-at-every-index goleak stress, `chain_aborted_at` marker, documented swarm-context concurrent-read contract, bounded `executeBatch` worker pool. AG-059/060 accepted-documented (cooperative leaf/escalate semantics). Verification: `go test`/`-race` on internal/agent/..., tools, workflow, swarm — all green. Commits `d4280d2f`, `f99c3ae3`, `75987d50`, `92d469b7`; summary `.planning/phases/22-bug-fix/22-04-SUMMARY.md`. Pre-existing unrelated failure (cmd/aura container-artifact compose drift) logged to deferred-items.md.
 - 22-02 closed (2026-06-15): shell and hook subprocess env now filters inherited and explicit secret-shaped values through `secret.IsSecretEnvVar`; DSN credentials are redacted in shell previews; default reasoning trace stores hash/count/byte summaries for prompt/history fields unless `AURA_REASONING_TRACE=full` is explicitly selected. Observability minimum added: `aura_agent_turn_total`, LLM duration/error, tool error, hook, token/cost, panic, span export failure, and span entropy fallback metrics plus structured slog at turn/LLM/tool/hook/panic/tracing boundaries. Verification: `go test ./internal/secret ./internal/reasoningtrace -count=1`; focused shell/hook/metric tests; `go test ./internal/agent/... -count=1`. Commits `408d841d`, `d94919a4`; summary `.planning/phases/22-bug-fix/22-02-SUMMARY.md`.
 - 22-01 closed (2026-06-15): AG-001 panic firewall converts executeBatch, LlmAgent.Run, workflow child, swarm child, and shell_bg reaper panics into model-visible per-call/per-child failures while incrementing bounded panic metric sites via `internal/agent/panicobs`. AG-002/AG-039/AG-040 dedup ring now has private mutex protection, stale result pruning on eviction, and period-3+ cycle detection. Verification: focused race tests plus `go test -race ./internal/agent/... ./internal/swarm/... -count=1`. Commits `62a81cde`, `86cb7a22`; summary `.planning/phases/22-bug-fix/22-01-SUMMARY.md`.
