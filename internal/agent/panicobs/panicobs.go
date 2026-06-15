@@ -8,6 +8,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// Recovery-site labels for Record and Count: low-cardinality Prometheus/expvar
+// label values naming where a panic was recovered. siteUnknown is the fallback
+// for any site not in allowedSites, keeping label cardinality bounded.
 const (
 	SiteExecuteBatch     = "execute_batch"
 	SiteLlmAgentRun      = "llm_agent_run"
@@ -34,12 +37,16 @@ var (
 	}, []string{"site"})
 )
 
+// Record increments the recovered-panic counter (expvar + Prometheus) for site,
+// normalizing any unrecognized site to siteUnknown to bound label cardinality.
 func Record(site string) {
 	site = normalizeSite(site)
 	expRecoveredPanics.Add(site, 1)
 	promRecoveredPanics.WithLabelValues(site).Inc()
 }
 
+// Count returns the number of recovered panics recorded for site (expvar-backed),
+// or 0 if none; the site is normalized before lookup.
 func Count(site string) int64 {
 	if v := expRecoveredPanics.Get(normalizeSite(site)); v != nil {
 		if i, ok := v.(*expvar.Int); ok {
