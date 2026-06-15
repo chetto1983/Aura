@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0.0
 milestone_name: Aura Deep Search Web Cockpit
 status: executing
-stopped_at: Phase 22 context gathered
-last_updated: "2026-06-15T14:08:33.657Z"
-last_activity: 2026-06-15 -- Phase 22 planning complete
+stopped_at: Phase 22 plan 22-01 completed; ready for 22-02
+last_updated: "2026-06-15T14:35:56.145Z"
+last_activity: 2026-06-15 -- Phase 22 plan 22-01 completed; ready for 22-02
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 5
-  completed_plans: 0
-  percent: 0
+  completed_plans: 1
+  percent: 20
 ---
 
 # Project State
@@ -21,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-29)
 
 **Core value:** Substrate agentico domain-neutral — un runtime Go che esegue un agentic loop multi-tool affidabile con identity, channels, skills e memory come overlay configurabili.
-**Current focus:** Milestone v1.0.0 — Aura Deep Search Web Cockpit (roadmap revised; Phases 22–28; frontend industrial foundation set up first as Phase 23)
+**Current focus:** Phase 22 — bug-fix
 
 ## Current Position
 
-Phase: 22 -- Agent Perimeter Hardening (planned)
-Plan: 5 plans in waves 1-5
+Phase: 22 (bug-fix) — EXECUTING
+Plan: 2 of 5
 Status: Ready to execute
-Last activity: 2026-06-15 -- Phase 22 planning complete
+Last activity: 2026-06-15 -- Phase 22 plan 22-01 completed; ready for 22-02
 
 ### Next -- Execute Phase 22
 
@@ -154,8 +154,13 @@ Remaining action: `/gsd-execute-phase 22`.
 | Phase 17 P06 | ~25min | 4 tasks | 12 files |
 | Phase 17 P07 | ~50min | 3 tasks | 5 files |
 | Phase 17 P08 | ~60min | 3 tasks | 8 files |
+| Phase 22 P22-01 | 14min | 2 tasks | 13 files |
 
 ## Accumulated Context
+
+### Phase 22 Execution
+
+- 22-01 closed (2026-06-15): AG-001 panic firewall converts executeBatch, LlmAgent.Run, workflow child, swarm child, and shell_bg reaper panics into model-visible per-call/per-child failures while incrementing bounded panic metric sites via `internal/agent/panicobs`. AG-002/AG-039/AG-040 dedup ring now has private mutex protection, stale result pruning on eviction, and period-3+ cycle detection. Verification: focused race tests plus `go test -race ./internal/agent/... ./internal/swarm/... -count=1`. Commits `62a81cde`, `86cb7a22`; summary `.planning/phases/22-bug-fix/22-01-SUMMARY.md`.
 
 ### Roadmap Evolution
 

@@ -12,18 +12,18 @@
 
 Remediation of the 2026-06-15 `internal/agent` production-readiness audit (`docs/audit/`); detail locked in `.planning/phases/22-bug-fix/22-SPEC.md`. Moves blended production-readiness 6.5 → ≥8.0 (multi-tenant-only security slices explicitly deferred there).
 
-- [ ] **HARDEN-01**: A panicking tool / swarm child / `shell_bg` reaper goroutine cannot crash `aura serve`; the panic surfaces as a model-visible per-call error (AG-001, P0)
-- [ ] **HARDEN-02**: The dedup ring is concurrency-safe by construction (mutex), race-clean under parallel dispatch (AG-002)
+- [x] **HARDEN-01**: A panicking tool / swarm child / `shell_bg` reaper goroutine cannot crash `aura serve`; the panic surfaces as a model-visible per-call error (AG-001, P0)
+- [x] **HARDEN-02**: The dedup ring is concurrency-safe by construction (mutex), race-clean under parallel dispatch (AG-002)
 - [ ] **HARDEN-03**: A flapping/hung MCP server degrades gracefully — single-flight reconnect outside the lock, backoff + circuit breaker, sane `=0`/`-1` timeout semantics (AG-005/006)
 - [ ] **HARDEN-04**: Credentials (DSN-shaped env, secrets) do not leak to shell children, hook subprocesses, or the reasoning trace by default (AG-010/009/003)
 - [ ] **HARDEN-05**: Production is observable — turn-outcome / LLM-latency / error / token / hook metrics + agent `slog`; telemetry cannot crash the daemon (AG-012/013/033)
 - [ ] **HARDEN-06**: An embed-sidecar outage adds no per-turn latency cliff (reasoning-router fallback policy, AG-008)
 - [ ] **HARDEN-07**: A hook fault is contained, not turn-fatal (fail-soft hook policy, AG-004)
 - [ ] **HARDEN-08**: Unknown-tool and swarm-child output is default-untrusted and cannot launder prompt injection (AG-052)
-- [ ] **HARDEN-09**: Loop / budget / workflow correctness — bounded and validated (AG-035..043)
+- [x] **HARDEN-09**: Loop / budget / workflow correctness — bounded and validated (AG-035..043)
 - [ ] **HARDEN-10**: Tool execution is memory-safe, evictable, and consistent — fs size cap, cycle guard, dedup growth bound, etc. (AG-014..046)
 - [ ] **HARDEN-11**: Skill self-extension docs match behavior; dead code removed (AG-011/044/051)
-- [ ] **HARDEN-12**: Every in-scope finding closed to Gate-3 with its named regression test; ≥85% owned-surface coverage holds; nothing silently dropped
+- [x] **HARDEN-12**: Every in-scope finding closed to Gate-3 with its named regression test; ≥85% owned-surface coverage holds; nothing silently dropped
 
 ### Frontend Foundation (FND) — Phase 23, research-first, before any feature code
 
@@ -142,18 +142,18 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| HARDEN-01 | Phase 22 | Pending |
-| HARDEN-02 | Phase 22 | Pending |
+| HARDEN-01 | Phase 22 | Complete |
+| HARDEN-02 | Phase 22 | Complete |
 | HARDEN-03 | Phase 22 | Pending |
 | HARDEN-04 | Phase 22 | Pending |
 | HARDEN-05 | Phase 22 | Pending |
 | HARDEN-06 | Phase 22 | Pending |
 | HARDEN-07 | Phase 22 | Pending |
 | HARDEN-08 | Phase 22 | Pending |
-| HARDEN-09 | Phase 22 | Pending |
+| HARDEN-09 | Phase 22 | Complete |
 | HARDEN-10 | Phase 22 | Pending |
 | HARDEN-11 | Phase 22 | Pending |
-| HARDEN-12 | Phase 22 | Pending |
+| HARDEN-12 | Phase 22 | Complete |
 | FND-01 | Phase 23 | Pending |
 | FND-02 | Phase 23 | Pending |
 | FND-03 | Phase 23 | Pending |
