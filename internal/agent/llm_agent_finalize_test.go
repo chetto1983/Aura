@@ -234,7 +234,13 @@ func TestFinalizeFallback(t *testing.T) {
 		if last.LLMResponse == nil || !strings.HasPrefix(last.LLMResponse.Content, stubLeadIn) {
 			t.Fatalf("terminal content = %q, want the D-09 stub lead-in prefix", contentOf(last))
 		}
-		if !strings.Contains(last.LLMResponse.Content, "- echo: "+toolPreview) {
+		// AG-052: echo is now untrusted-by-default, so its RoleTool history content is
+		// wrapped in the nonce envelope (which HTML-escapes the payload); the stub
+		// bullet labels the tool and embeds the (escaped) preview inside the envelope.
+		_ = toolPreview
+		if !strings.Contains(last.LLMResponse.Content, "- echo: ") ||
+			!strings.Contains(last.LLMResponse.Content, `trust="untrusted"`) ||
+			!strings.Contains(last.LLMResponse.Content, "same") {
 			t.Errorf("stub missing the per-RoleTool bullet; got:\n%s", last.LLMResponse.Content)
 		}
 	})

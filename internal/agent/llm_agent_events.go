@@ -95,7 +95,12 @@ func (a *LlmAgent) toolStartEvent(ic InvocationContext, spanID [8]byte, parentSp
 func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentSpanID *[8]byte, run toolRunResult) *Event {
 	ev := a.newEvent(ic, spanID, parentSpanID)
 	recordToolDuration(run.EndedAt.Sub(run.StartedAt))
-	ev.LLMResponse = &LLMResponse{Content: run.Preview}
+	// The event projection surfaces the RAW tool preview (run.Result.Preview), not
+	// the nonce-wrapped prompt rendering (run.Preview): the UI/REPL/AG-UI consumer
+	// and the audit ToolInvocation want the clean tool output, while only the
+	// model-facing history carries the untrusted envelope (AG-052).
+	rawPreview := run.Result.Preview
+	ev.LLMResponse = &LLMResponse{Content: rawPreview}
 	// Stamp the tool_call_id so a prose consumer (the REPL renderer) can tell this
 	// raw tool-result preview apart from a streamed assistant chunk — both carry
 	// the text in LLMResponse.Content with no FinishReason, so without this marker
@@ -120,8 +125,8 @@ func (a *LlmAgent) toolResultEvent(ic InvocationContext, spanID [8]byte, parentS
 		DurationMS:        run.EndedAt.Sub(run.StartedAt).Milliseconds(),
 		Status:            status,
 		Error:             run.Err,
-		ResultPreview:     run.Preview,
-		PreviewBytes:      len(run.Preview),
+		ResultPreview:     rawPreview,
+		PreviewBytes:      len(rawPreview),
 		ResultBytes:       run.Result.Bytes,
 		ResultTruncated:   run.Result.Truncated,
 		ResultSidecarPath: run.Result.FullPath,

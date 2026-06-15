@@ -571,9 +571,11 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		run.Err = err.Error()
 		recordToolError(call.Function.Name)
 		slog.Error("agent tool error", "tool", call.Function.Name, "tool_call_id", call.ID, "err", err)
+		// An Execute error (and the ErrAwaitingUserInput pause sentinel rendered as
+		// `error: awaiting user input`) is an agent-synthesized control-plane string,
+		// not external tool content — it is NOT wrapped in the untrusted envelope.
 		run.Preview = "error: " + run.Err
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
-		run.Preview = renderToolResultForPrompt(call.Function.Name, run.Result)
 		endToolSpan(span, run.Err)
 		return run
 	}

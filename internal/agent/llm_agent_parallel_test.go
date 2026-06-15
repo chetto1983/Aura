@@ -153,10 +153,17 @@ func runParallelConcurrentAndOrdered(t *testing.T) {
 	if len(fc.Requests) < 2 {
 		t.Fatalf("want >=2 LLM requests, got %d", len(fc.Requests))
 	}
+	// AG-052: barrier is untrusted-by-default now, so each RoleTool result is wrapped
+	// in the nonce envelope; extract the embedded barrier token to assert ordering.
 	var got []string
 	for _, m := range fc.Requests[1].Messages {
-		if m.Role == llm.RoleTool && strings.HasPrefix(m.Content, "barrier-") {
-			got = append(got, m.Content)
+		if m.Role != llm.RoleTool {
+			continue
+		}
+		for _, want := range []string{"barrier-ok-1", "barrier-ok-2", "barrier-ok-3"} {
+			if strings.Contains(m.Content, want) {
+				got = append(got, want)
+			}
 		}
 	}
 	want := []string{"barrier-ok-1", "barrier-ok-2", "barrier-ok-3"}

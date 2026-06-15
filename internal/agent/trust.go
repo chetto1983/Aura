@@ -11,15 +11,20 @@ import (
 	"github.com/chetto1983/aura/internal/agent/tools"
 )
 
-var untrustedToolNames = map[string]struct{}{
-	"web_fetch":        {},
-	"web_search":       {},
-	"fs_read":          {},
-	"fs_grep":          {},
-	"fs_glob":          {},
-	"read_tool_output": {},
-	"shell_exec":       {},
-	"shell_poll":       {},
+// trustedToolNames is the explicit allowlist of genuinely-safe built-ins whose
+// output is deterministic/internal and never embeds external, file, web, or
+// swarm-child content. Everything NOT on this list (including all MCP/unknown
+// tools and every content-embedding built-in) defaults to UNTRUSTED so the
+// parent prompt wraps it in the nonce envelope (AG-052: fail-safe default
+// inverts the previous unknown→trusted behavior). An explicit TrustUntrusted
+// provenance always wins regardless of this list.
+var trustedToolNames = map[string]struct{}{
+	"current_time":  {},
+	"text_response": {},
+	"ask_user":      {},
+	"todo_write":    {},
+	"tool_search":   {},
+	"shell_kill":    {},
 }
 
 func renderToolResultForPrompt(toolName string, res tools.ToolResult) string {
@@ -38,10 +43,10 @@ func untrustedSource(toolName string, res tools.ToolResult) (string, bool) {
 		}
 		return source, true
 	}
-	if _, ok := untrustedToolNames[toolName]; ok {
-		return toolName, true
+	if _, ok := trustedToolNames[toolName]; ok {
+		return "", false
 	}
-	return "", false
+	return toolName, true
 }
 
 func wrapUntrustedToolOutput(source, content string) string {

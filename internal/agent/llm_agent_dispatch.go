@@ -101,7 +101,11 @@ func (a *LlmAgent) dispatch(ic InvocationContext, spanID [8]byte, parentSpanID *
 				a.sideEffected = true // D-43: this turn touched host state; arm the completion gate.
 			}
 			a.history = append(a.history, llm.Message{Role: llm.RoleTool, ToolCallID: calls[i].ID, Content: run.Preview})
-			ic.Budget.AfterToolResult(calls[i].Function.Name, canon[i], []byte(run.Preview))
+			// Dedup hashes the RAW result preview, not run.Preview: the prompt-facing
+			// rendering wraps untrusted output in a per-call random nonce envelope
+			// (AG-052), which would make every identical result look different and
+			// defeat the progress veto. The underlying tool output is the stable signal.
+			ic.Budget.AfterToolResult(calls[i].Function.Name, canon[i], []byte(run.Result.Preview))
 			if !yield(a.toolResultEvent(ic, spanID, parentSpanID, run), nil) {
 				return true, nil
 			}

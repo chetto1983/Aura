@@ -175,8 +175,11 @@ func TestLlmAgentHooks_BeforeToolVetoSkipsExecution(t *testing.T) {
 	if end == nil {
 		t.Fatal("missing vetoed tool end event")
 	}
-	if end.ResultPreview != "synthetic veto" {
-		t.Fatalf("result preview = %q, want synthetic veto", end.ResultPreview)
+	// AG-052: echo is untrusted-by-default, so the synthetic veto result is rendered
+	// inside the nonce envelope; the veto payload must be present and the real tool
+	// must not have executed.
+	if !strings.Contains(end.ResultPreview, "synthetic veto") {
+		t.Fatalf("result preview = %q, want synthetic veto embedded", end.ResultPreview)
 	}
 	if strings.Contains(end.ResultPreview, "real") {
 		t.Fatalf("veto did not skip real tool execution: %q", end.ResultPreview)
@@ -206,13 +209,16 @@ func TestLlmAgentHooks_AfterToolCanRewriteResult(t *testing.T) {
 			end = ti
 		}
 	}
-	if end == nil || end.ResultPreview != "after rewrite" {
+	// AG-052: echo is untrusted-by-default, so the rewritten result is wrapped in the
+	// nonce envelope; the rewrite payload must be embedded in both the end event and
+	// the next request's RoleTool message.
+	if end == nil || !strings.Contains(end.ResultPreview, "after rewrite") {
 		t.Fatalf("tool end = %+v, want after rewrite", end)
 	}
 	second := fc.Requests[1]
 	var saw bool
 	for _, m := range second.Messages {
-		if m.Role == llm.RoleTool && m.Content == "after rewrite" {
+		if m.Role == llm.RoleTool && strings.Contains(m.Content, "after rewrite") {
 			saw = true
 		}
 	}
