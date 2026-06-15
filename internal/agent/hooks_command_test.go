@@ -15,7 +15,24 @@ import (
 	"github.com/chetto1983/aura/internal/agent"
 	"github.com/chetto1983/aura/internal/agent/agenttest"
 	"github.com/chetto1983/aura/internal/agent/tools"
+	"github.com/chetto1983/aura/internal/llm"
 )
+
+func TestCommandHook_BeforeModelRewrite(t *testing.T) {
+	h := newTestCommandHook(t, "rewrite_model", 2*time.Second, trustedHookHash(t))
+	req := llm.Request{Model: "original-model"}
+
+	res, err := h.BeforeModel(context.Background(), &req)
+	if err != nil {
+		t.Fatalf("BeforeModel: %v", err)
+	}
+	if res != nil {
+		t.Fatalf("BeforeModel result = %+v, want in-place rewrite", res)
+	}
+	if got := req.Model; got != "hook-model" {
+		t.Fatalf("model = %q, want hook-model", got)
+	}
+}
 
 func TestCommandHook_BeforeToolRewrite(t *testing.T) {
 	h := newTestCommandHook(t, "rewrite_tool", 2*time.Second, trustedHookHash(t))
@@ -46,6 +63,32 @@ func TestCommandHook_BeforeToolDeny(t *testing.T) {
 	}
 	if got := res.Result.Preview; got != "denied by command" {
 		t.Fatalf("preview = %q, want denied by command", got)
+	}
+}
+
+func TestCommandHook_AfterToolRewrite(t *testing.T) {
+	h := newTestCommandHook(t, "rewrite_result", 2*time.Second, trustedHookHash(t))
+	call := agenttest.MakeToolCall("c1", "echo", `{"v":"real"}`)
+	res := tools.ToolResult{Preview: "original", Bytes: len("original")}
+
+	next, err := h.AfterTool(context.Background(), call, res)
+	if err != nil {
+		t.Fatalf("AfterTool: %v", err)
+	}
+	if next == nil || next.Result == nil {
+		t.Fatalf("AfterTool result = %+v, want rewritten result", next)
+	}
+	if got := next.Result.Preview; got != "rewritten by command" {
+		t.Fatalf("preview = %q, want rewritten by command", got)
+	}
+}
+
+func TestCommandHook_OnTurnEndDeny(t *testing.T) {
+	h := newTestCommandHook(t, "deny_turn_end", 2*time.Second, trustedHookHash(t))
+
+	err := h.OnTurnEnd(context.Background(), agent.HookTurn{AgentName: "aura"})
+	if err == nil || !strings.Contains(err.Error(), "stop end") {
+		t.Fatalf("OnTurnEnd error = %v, want denial message", err)
 	}
 }
 
@@ -84,6 +127,14 @@ func TestCommandHookHelperProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	switch mode {
+	case "rewrite_model":
+		if event.Event != "before_model" || event.Request == nil {
+			fmt.Fprintf(os.Stderr, "unexpected event: %+v\n", event)
+			os.Exit(2)
+		}
+		req := *event.Request
+		req.Model = "hook-model"
+		writeHookDecision(agent.CommandHookDecision{Decision: "rewrite", Request: &req})
 	case "rewrite_tool":
 		if event.Event != "before_tool" || event.ToolCall == nil {
 			fmt.Fprintf(os.Stderr, "unexpected event: %+v\n", event)
@@ -95,6 +146,11 @@ func TestCommandHookHelperProcess(t *testing.T) {
 	case "deny_tool":
 		res := tools.ToolResult{Preview: "denied by command", Bytes: len("denied by command")}
 		writeHookDecision(agent.CommandHookDecision{Decision: "deny", ToolResult: &res})
+	case "rewrite_result":
+		res := tools.ToolResult{Preview: "rewritten by command", Bytes: len("rewritten by command")}
+		writeHookDecision(agent.CommandHookDecision{Decision: "rewrite", ToolResult: &res})
+	case "deny_turn_end":
+		writeHookDecision(agent.CommandHookDecision{Decision: "deny", Message: "stop end"})
 	case "sleep":
 		time.Sleep(3 * time.Second)
 		writeHookDecision(agent.CommandHookDecision{Decision: "allow"})
