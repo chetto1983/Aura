@@ -39,6 +39,18 @@ type costBackend interface {
 	TodayUsage(ctx context.Context) (promptTokens, completionTokens int, providerCost *float64, err error)
 }
 
+// clearBackend is the consumer-side seam over the locked conversation hard-delete
+// (conversations.Store.Delete). /clear deletes the chat's conversation row, which
+// cascades to its turns, pending pauses, cache metrics and tool invocations and
+// purges the sidecar dir (the migrations FK these ON DELETE CASCADE). The next
+// inbound message lazily re-creates a fresh conversation (serve_channels.go
+// ensuringTurn → Runner.EnsureConversation), so /clear is the Telegram-native
+// "start over" — parity with the CLI's `aura chat delete`. Declared here (not an
+// imported *conversations.Store) so the dispatcher stays unit-testable with a double.
+type clearBackend interface {
+	Delete(ctx context.Context, conversationID string) error
+}
+
 // searchResultLimit bounds the /search backend call (the CLI default).
 const searchResultLimit = 20
 
@@ -53,6 +65,7 @@ const (
 type commandDeps struct {
 	Search searchBackend
 	Cost   costBackend
+	Clear  clearBackend
 	Prices map[string]llm.Price
 	Model  string
 }
@@ -132,11 +145,13 @@ func (c *commands) dispatchRich(ctx context.Context, chatID int64, text string) 
 	case "/onboard":
 		return true, textReply("Uso: /onboard avvia o riavvia il profilo Agent.md in questa chat Telegram.")
 	case "/new":
-		return true, textReply("In Telegram questa chat resta un thread continuo. Per aprire o gestire conversazioni separate usa l'app o la CLI.")
+		return true, textReply("In Telegram questa chat resta un thread continuo. Per ricominciare da capo usa /clear; per aprire o gestire conversazioni separate usa l'app o la CLI.")
 	case "/list":
 		return true, textReply("Usa l'app per sfogliare le conversazioni; qui ogni chat è un thread continuo.")
 	case "/reset":
-		return true, textReply(c.cancel(chatID) + "\nLo storico resta come prima in questa build Telegram.")
+		return true, textReply(c.cancel(chatID) + "\nPer cancellare anche lo storico usa /clear.")
+	case "/clear":
+		return true, textReply(c.clear(ctx, chatID))
 	case "/whoami":
 		return true, textReply("Sei l'utente locale di questa istanza di Aura.")
 	case "/stop":
@@ -161,6 +176,7 @@ const helpText = "Comandi Aura:\n" +
 	"/new - spiega il thread continuo Telegram\n" +
 	"/list - indica dove sfogliare le conversazioni\n" +
 	"/reset - annulla il turno; non cancella lo storico\n" +
+	"/clear - cancella la conversazione corrente e ricomincia\n" +
 	"/whoami - mostra l'identita collegata\n" +
 	"/stop - annulla il turno; il bot resta attivo\n\n" +
 	"In Telegram questa chat e un thread continuo. Puoi mandare testo, vocali, foto o documenti."
@@ -168,15 +184,44 @@ const helpText = "Comandi Aura:\n" +
 // cancel fires the in-flight turn's ctx-cancel for a chat (SC#3) and confirms. A
 // /cancel with no running turn is a clean no-op confirmation (idempotent).
 func (c *commands) cancel(chatID int64) string {
+	if c.fireCancel(chatID) {
+		return "Turno annullato."
+	}
+	return "Nessun turno in corso da annullare."
+}
+
+// fireCancel cancels (and deregisters) a chat's in-flight turn ctx, reporting
+// whether a turn was actually running. It is the shared mechanism behind /cancel
+// (which confirms to the user) and /clear (which must stop a turn BEFORE deleting
+// the conversation row it would append to). Idempotent: a no-op when nothing runs.
+func (c *commands) fireCancel(chatID int64) bool {
 	c.mu.Lock()
 	cancel := c.cancels[chatID]
 	delete(c.cancels, chatID)
 	c.mu.Unlock()
 	if cancel == nil {
-		return "Nessun turno in corso da annullare."
+		return false
 	}
 	cancel()
-	return "Turno annullato."
+	return true
+}
+
+// clear is /clear: the Telegram-native "start over". It first cancels any in-flight
+// turn so its goroutine stops before the row it appends to is deleted (a late
+// AppendTurn after the delete would FK-fail harmlessly and be logged; cancelling
+// first minimises that window). It then hard-deletes the chat's conversation, which
+// cascades to turns, pending pauses, cache metrics and tool invocations and purges
+// the sidecar dir. The next inbound message lazily re-creates a fresh conversation
+// (ensuringTurn → Runner.EnsureConversation), so no further reset step is needed.
+func (c *commands) clear(ctx context.Context, chatID int64) string {
+	c.fireCancel(chatID)
+	if c.deps.Clear == nil {
+		return "Cancellazione della conversazione non disponibile."
+	}
+	if err := c.deps.Clear.Delete(ctx, convID(chatID)); err != nil {
+		return "Non sono riuscita a cancellare la conversazione, riprova."
+	}
+	return "Conversazione cancellata. Ricominciamo da capo."
 }
 
 // cost renders today's cumulative spend using the SAME llm.CostUSD the CLI footer

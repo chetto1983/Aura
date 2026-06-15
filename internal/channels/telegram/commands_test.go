@@ -32,6 +32,21 @@ func (f *fakeSearch) SearchConversationTurns(_ context.Context, query string, li
 	return f.results, nil
 }
 
+// fakeClear is the clearBackend double. It records the conversation id passed to
+// Delete and the call count so the /clear tests can assert the dispatcher deletes
+// the SAME deterministic convID the chat maps to, and surfaces an injectable error.
+type fakeClear struct {
+	lastID string
+	calls  int
+	err    error
+}
+
+func (f *fakeClear) Delete(_ context.Context, conversationID string) error {
+	f.calls++
+	f.lastID = conversationID
+	return f.err
+}
+
 func newTestCommands(deps commandDeps) *commands { return newCommands(deps) }
 
 // TestCommandsInterceptWithoutLLM proves the Telegram slash commands all dispatch
@@ -47,7 +62,7 @@ func TestCommandsInterceptWithoutLLM(t *testing.T) {
 		Model:  "deepseek/deepseek-v4-flash:exacto",
 	})
 
-	want := []string{"/start", "/help", "/cancel", "/cost", "/search", "/onboard", "/new", "/list", "/reset", "/whoami", "/stop"}
+	want := []string{"/start", "/help", "/cancel", "/cost", "/search", "/onboard", "/new", "/list", "/reset", "/clear", "/whoami", "/stop"}
 	for _, c := range want {
 		handled, reply := cmds.dispatch(context.Background(), 42, c)
 		if !handled {
@@ -57,14 +72,14 @@ func TestCommandsInterceptWithoutLLM(t *testing.T) {
 			t.Errorf("command %q: empty reply, want a user-facing response", c)
 		}
 	}
-	if len(want) != 11 {
-		t.Fatalf("Telegram command set must be exactly 11, got %d", len(want))
+	if len(want) != 12 {
+		t.Fatalf("Telegram command set must be exactly 12, got %d", len(want))
 	}
 }
 
 func TestBotMenuCommandsMirrorInterceptedCommands(t *testing.T) {
 	t.Parallel()
-	want := []string{"start", "help", "cancel", "cost", "search", "onboard", "new", "list", "reset", "whoami", "stop"}
+	want := []string{"start", "help", "cancel", "cost", "search", "onboard", "new", "list", "reset", "clear", "whoami", "stop"}
 	got := botMenuCommands()
 	if len(got) != len(want) {
 		t.Fatalf("menu command count = %d, want %d", len(got), len(want))
@@ -321,6 +336,77 @@ func TestCancelClearsRegistryEntry(t *testing.T) {
 	cmds.unregisterTurn(7)
 	if _, _ = cmds.dispatch(context.Background(), 7, "/cancel"); fired != 0 {
 		t.Errorf("a deregistered turn must not be cancelled, fired=%d", fired)
+	}
+}
+
+// TestClearDeletesChatConversation proves /clear hard-deletes the SAME deterministic
+// convID the chat maps to (the Telegram-native "start over") and confirms.
+func TestClearDeletesChatConversation(t *testing.T) {
+	t.Parallel()
+	be := &fakeClear{}
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &fakeCost{}, Clear: be})
+
+	handled, reply := cmds.dispatch(context.Background(), 42, "/clear")
+	if !handled {
+		t.Fatal("/clear must be handled (bot-intercept, never the LLM)")
+	}
+	if be.calls != 1 {
+		t.Fatalf("/clear must delete exactly once, got %d", be.calls)
+	}
+	if want := convID(42); be.lastID != want {
+		t.Errorf("/clear must delete the chat's deterministic convID %q, got %q", want, be.lastID)
+	}
+	if reply == "" {
+		t.Error("/clear should confirm to the user")
+	}
+}
+
+// TestClearCancelsInflightTurnBeforeDelete proves /clear stops a running turn before
+// deleting the row it appends to (so a late AppendTurn can't outlive the delete).
+func TestClearCancelsInflightTurnBeforeDelete(t *testing.T) {
+	t.Parallel()
+	be := &fakeClear{}
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &fakeCost{}, Clear: be})
+
+	turnCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cmds.registerTurn(42, cancel)
+
+	if _, _ = cmds.dispatch(context.Background(), 42, "/clear"); turnCtx.Err() == nil {
+		t.Error("/clear must cancel the in-flight turn ctx before deleting the conversation")
+	}
+	if be.calls != 1 {
+		t.Fatalf("/clear must still delete after cancelling, got %d calls", be.calls)
+	}
+}
+
+// TestClearBackendErrorReported proves a delete failure surfaces a user-facing
+// message (handled), never a panic or an empty reply.
+func TestClearBackendErrorReported(t *testing.T) {
+	t.Parallel()
+	be := &fakeClear{err: errors.New("boom")}
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &fakeCost{}, Clear: be})
+
+	handled, reply := cmds.dispatch(context.Background(), 42, "/clear")
+	if !handled {
+		t.Fatal("/clear must be handled even on a backend error")
+	}
+	if reply == "" {
+		t.Error("/clear backend error should surface a user-facing message")
+	}
+}
+
+// TestClearNilBackendDegradesGracefully proves a /clear with no Clear backend wired
+// is a handled "unavailable" reply (never a panic) — the nil-backend contract.
+func TestClearNilBackendDegradesGracefully(t *testing.T) {
+	t.Parallel()
+	cmds := newTestCommands(commandDeps{Search: &fakeSearch{}, Cost: &fakeCost{}})
+	handled, reply := cmds.dispatch(context.Background(), 42, "/clear")
+	if !handled {
+		t.Fatal("/clear with no backend must still be handled")
+	}
+	if reply == "" {
+		t.Error("/clear with no backend should return an unavailable hint")
 	}
 }
 

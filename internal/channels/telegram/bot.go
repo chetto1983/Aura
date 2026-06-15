@@ -94,10 +94,12 @@ type Deps struct {
 
 	// Command backends drive the bot-intercept dispatch (commands.go). Search ==
 	// conversations.SearchConversationTurns (CLI parity); Cost == the cachemetrics
-	// daily aggregation; Prices/Model render the /cost USD via llm.CostUSD. A nil
-	// backend degrades its command to an "unavailable" reply (never a panic).
+	// daily aggregation; Clear == conversations.Store.Delete (the /clear hard-delete);
+	// Prices/Model render the /cost USD via llm.CostUSD. A nil backend degrades its
+	// command to an "unavailable" reply (never a panic).
 	Search searchBackend
 	Cost   costBackend
+	Clear  clearBackend
 	Prices map[string]llm.Price
 	Model  string
 
@@ -308,6 +310,7 @@ func botMenuCommands() []tele.Command {
 		{Text: "new", Description: "Spiega il thread continuo Telegram"},
 		{Text: "list", Description: "Indica dove sfogliare le conversazioni"},
 		{Text: "reset", Description: "Annulla il turno senza cancellare lo storico"},
+		{Text: "clear", Description: "Cancella la conversazione corrente e ricomincia"},
 		{Text: "whoami", Description: "Mostra l'identita collegata"},
 		{Text: "stop", Description: "Annulla il turno; il bot resta attivo"},
 	}

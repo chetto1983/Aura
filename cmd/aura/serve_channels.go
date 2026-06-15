@@ -69,6 +69,7 @@ func bootChannelsAndSetup(ctx context.Context, chat *chatEnv, override func(name
 		DocumentIngest:     newRuntimeDocumentIngestor(chat.cfg, chat.pool),
 		Search:             chat.conv,
 		Cost:               newTodayCost(chat.pool),
+		Clear:              chat.conv,
 		Prices:             chat.cfg.LLM.Prices,
 		Model:              chat.cfg.LLM.Model,
 		Resume:             chat.run,
