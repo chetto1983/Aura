@@ -87,9 +87,8 @@ reason: "Auto-install legs need a Docker-less Linux host. Windows-Docker-Desktop
 
 ### 15. ghcr Multi-arch Publish + Pinned Tag (AC14)
 expected: tagged release → public ghcr.io/<org>/aura:<tag> (amd64+arm64) + host binaries; compose references pinned tag.
-result: blocked
-blocked_by: release-build
-reason: "Needs a release tag + CI with buildx/QEMU. Static proxy green (.goreleaser.yaml dockers_v2)."
+result: pass
+note: LIVE-VERIFIED via the v0.1.0 release (run 27533765549, 30m13s, all steps green). Anonymous ghcr manifest GET → HTTP 200 (PUBLIC); OCI index carries linux/amd64 + linux/arm64. GitHub Release v0.1.0 published with host-binary archives (darwin/linux/windows × amd64/arm64) + checksums.txt. compose pins via `image: ${AURA_IMAGE:-aura:local}` (appliance sets AURA_IMAGE=ghcr.io/chetto1983/aura:v0.1.0). release.yml now wires GHA layer cache. Minor follow-up: release actions on Node20 (forced to Node24 from 2026-06-16 — bump action majors).
 
 ### 16. systemd Reboot Autostart (AC15)
 expected: after appliance reboot, stack healthy with no human action.
@@ -105,11 +104,11 @@ note: Backup leg LIVE-PROVEN: `go test -tags 'db_integration backup_live' -run T
 ## Summary
 
 total: 17
-passed: 12
+passed: 13
 issues: 0
 pending: 0
 skipped: 0
-blocked: 5
+blocked: 4
 
 ## Gaps
 
@@ -120,11 +119,11 @@ blocked: 5
 - AC7 (test 8) — offline recipes: FIXED. calculator pinned to chetto1983 fork @46a1e66; mail vendored (docker/aura/mail-mcp-src.tar.gz + PROVENANCE.md) + globally installed. Verified offline on aura:p17ac7. Files: internal/mcp/manager/catalog.go, docker/aura/Dockerfile, docker/aura/PROVENANCE.md, docker/aura/mail-mcp-src.tar.gz.
 - AC11 (test 12) — LAN reachability: FIXED. caddy/Caddyfile `localhost:443` → `:443 { tls internal { on_demand } }`; verified for localhost + LAN hostname + LAN IP. Contract test updated (cmd/aura/container_artifacts_test.go).
 - AC16 (test 17) — backup: live backup artifact proven via the tagged backup_live test.
+- AC14 (test 15) — ghcr multi-arch publish: LIVE via the v0.1.0 release — public amd64+arm64 image (anonymous pull HTTP 200) + host-binary archives + GHA-cached release.yml. Files: .github/workflows/release.yml, .goreleaser.yaml.
 
 ### Blocked — operator real-hardware sign-off (documented in 17-VALIDATION.md Manual-Only)
 - AC8 (test 9) — auto-restart on native-Linux (Docker Desktop platform quirk confirmed; config correct).
 - AC12 (test 13) — curl|sh on a clean Linux VM.
 - AC13 (test 14) — Docker-less Linux auto-install + Windows PowerShell .env path.
-- AC14 (test 15) — ghcr multi-arch publish (release tag + CI buildx).
 - AC15 (test 16) — systemd reboot autostart on a native-Linux appliance.
 - AC16 residual — destructive Neo4j restore + `compose pull` newer-tag update path.
