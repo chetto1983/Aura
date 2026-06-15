@@ -166,6 +166,21 @@ func TestCommandHookHelperProcess(t *testing.T) {
 		writeHookDecision(agent.CommandHookDecision{Decision: "rewrite", ToolResult: &res})
 	case "deny_turn_end":
 		writeHookDecision(agent.CommandHookDecision{Decision: "deny", Message: "stop end"})
+	case "rewrite_model_then_crash":
+		req := *event.Request
+		req.Model = "hook-model"
+		writeHookDecision(agent.CommandHookDecision{Decision: "rewrite", Request: &req})
+		os.Exit(7)
+	case "deny_then_crash":
+		writeHookDecision(agent.CommandHookDecision{Decision: "deny", Message: "crashed but denied"})
+		os.Exit(7)
+	case "oversized_model_rewrite":
+		req := *event.Request
+		req.Messages = make([]llm.Message, 0, 5000)
+		for i := 0; i < 5000; i++ {
+			req.Messages = append(req.Messages, llm.Message{Role: llm.RoleUser, Content: "x"})
+		}
+		writeHookDecision(agent.CommandHookDecision{Decision: "rewrite", Request: &req})
 	case "sleep":
 		time.Sleep(3 * time.Second)
 		writeHookDecision(agent.CommandHookDecision{Decision: "allow"})
