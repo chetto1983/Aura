@@ -248,6 +248,90 @@ func TestBudget_Dedup_PingPongRequiresStableRepeat(t *testing.T) {
 	}
 }
 
+func TestBudget_Dedup_Period3CycleTerminates(t *testing.T) {
+	b := newTestBudget(100, 6)
+	args := map[string][]byte{
+		"A": canon(t, map[string]any{"k": "A"}),
+		"B": canon(t, map[string]any{"k": "B"}),
+		"C": canon(t, map[string]any{"k": "C"}),
+	}
+	result := []byte("stable")
+
+	for i, key := range []string{"A", "B", "C", "A", "B", "C"} {
+		if dedup, reason := b.BeforeToolCall("tool", args[key]); dedup {
+			t.Fatalf("warmup call %d (%s) deduped early with reason %q", i+1, key, reason)
+		}
+		b.AfterToolResult("tool", args[key], result)
+	}
+
+	dedup, reason := b.BeforeToolCall("tool", args["A"])
+	if !dedup {
+		t.Fatal("A-B-C-A-B-C-A should trigger period-3 cycle dedup before another full cycle burns budget")
+	}
+	if reason != "dedup" {
+		t.Fatalf("reason: want dedup, got %q", reason)
+	}
+}
+
+func TestBudget_BeforeAfterToolResult_Concurrent(t *testing.T) {
+	b := newTestBudget(10000, 6)
+
+	const goroutines = 16
+	const iterations = 200
+	argPool := make([][][]byte, goroutines)
+	for g := 0; g < goroutines; g++ {
+		argPool[g] = make([][]byte, 12)
+		for i := 0; i < 12; i++ {
+			argPool[g][i] = canon(t, map[string]any{
+				"g": g,
+				"i": i,
+			})
+		}
+	}
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		g := g
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				args := argPool[g][i%len(argPool[g])]
+				dedup, _ := b.BeforeToolCall("tool", args)
+				if !dedup {
+					b.AfterToolResult("tool", args, []byte(fmt.Sprintf("result-%d", i%3)))
+				}
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+func TestDedupRingPush_PrunesEvictedResult(t *testing.T) {
+	b := newTestBudget(100, 3)
+	var fps []fingerprint
+	for i := 0; i < 5; i++ {
+		args := canon(t, map[string]any{"i": i})
+		fp := computeFingerprint("tool", args)
+		fps = append(fps, fp)
+		if dedup, _ := b.BeforeToolCall("tool", args); dedup {
+			t.Fatalf("unique call %d should not dedup", i)
+		}
+		b.AfterToolResult("tool", args, []byte("result"))
+	}
+
+	if _, ok := b.dedupRing.results[fps[0]]; ok {
+		t.Fatal("result for evicted fingerprint should be pruned")
+	}
+	for _, fp := range fps[1:] {
+		if _, ok := b.dedupRing.results[fp]; !ok {
+			t.Fatalf("live fingerprint %x missing result tracking", fp)
+		}
+	}
+	if got, want := len(b.dedupRing.results), len(b.dedupRing.entries); got != want {
+		t.Fatalf("results map size = %d, want live ring size %d", got, want)
+	}
+}
+
 func TestBudget_Child_DistinctDedupRing(t *testing.T) {
 	parent := newTestBudget(100, 3)
 	args := canon(t, map[string]any{"x": 1})

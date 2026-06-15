@@ -24,6 +24,7 @@ import (
 	"crypto/sha256"
 	"os"
 	"strings"
+	"sync"
 )
 
 // dedupRing is a per-branch ring buffer of recent tool-call fingerprints plus the
@@ -31,6 +32,7 @@ import (
 // governs period-1 (A-A-A) repeat detection, while >=4 slots are needed to observe
 // a period-2 ping-pong (A-B-A-B) (D-20).
 type dedupRing struct {
+	mu      sync.Mutex
 	window  int
 	entries []fingerprint               // ring buffer, newest appended; len capped at cap(entries)
 	results map[fingerprint]resultTrack // per-fingerprint result-preview progress tracking (veto)
@@ -80,17 +82,23 @@ func computeFingerprint(name string, argsCanonicalJSON []byte) fingerprint {
 }
 
 // push appends fp to the ring, evicting the oldest entry when at capacity.
+// Caller must hold r.mu.
 func (r *dedupRing) push(fp fingerprint) {
 	c := cap(r.entries)
 	if len(r.entries) < c {
 		r.entries = append(r.entries, fp)
 		return
 	}
+	evicted := r.entries[0]
 	copy(r.entries, r.entries[1:])
 	r.entries[c-1] = fp
+	if !r.containsEntry(evicted) {
+		delete(r.results, evicted)
+	}
 }
 
 // countConsecutive returns the number of trailing entries equal to fp (period-1).
+// Caller must hold r.mu.
 func (r *dedupRing) countConsecutive(fp fingerprint) int {
 	n := 0
 	for i := len(r.entries) - 1; i >= 0; i-- {
@@ -104,6 +112,7 @@ func (r *dedupRing) countConsecutive(fp fingerprint) int {
 
 // isPingPong reports an A-B-A-B period-2 cycle ending at the would-be next fp==A:
 // the last three entries are A,B,A (so appending A makes A,B,A,B). period-2 (D-20).
+// Caller must hold r.mu.
 func (r *dedupRing) isPingPong(fp fingerprint) bool {
 	n := len(r.entries)
 	if n < 3 {
@@ -113,6 +122,49 @@ func (r *dedupRing) isPingPong(fp fingerprint) bool {
 	return a == fp && a2 == fp && b != fp
 }
 
+// isRepeatedCycle reports a period-3+ loop that has already completed two stable
+// cycles and is about to start a third. Caller must hold r.mu.
+func (r *dedupRing) isRepeatedCycle(fp fingerprint) bool {
+	n := len(r.entries)
+	for period := 3; period*2 <= n; period++ {
+		if r.entries[n-period] != fp {
+			continue
+		}
+		if r.equalBlocks(n-period*2, n-period, period) && r.stableBlock(n-period, period) {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *dedupRing) equalBlocks(a, b, n int) bool {
+	for i := 0; i < n; i++ {
+		if r.entries[a+i] != r.entries[b+i] {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *dedupRing) stableBlock(start, n int) bool {
+	for i := 0; i < n; i++ {
+		track, seen := r.results[r.entries[start+i]]
+		if !seen || track.repeats < 1 {
+			return false
+		}
+	}
+	return true
+}
+
+func (r *dedupRing) containsEntry(fp fingerprint) bool {
+	for _, entry := range r.entries {
+		if entry == fp {
+			return true
+		}
+	}
+	return false
+}
+
 // BeforeToolCall is the PRE-EXECUTION dedup gate (D-18). The caller passes the
 // already-canonical args bytes (B2). It returns (true, "dedup") when the same
 // fingerprint has repeated to the window threshold (period-1) OR forms a period-2
@@ -120,15 +172,18 @@ func (r *dedupRing) isPingPong(fp fingerprint) bool {
 // the side effect re-runs. Exempt tools (AURA_LOOP_DEDUP_EXEMPT_TOOLS, D-19) never
 // dedup. The fingerprint is recorded so the next call can detect the repeat.
 func (b *Budget) BeforeToolCall(name string, argsCanonicalJSON []byte) (dedup bool, reason string) {
-	if _, exempt := b.exemptTools[name]; exempt {
-		b.dedupRing.push(computeFingerprint(name, argsCanonicalJSON))
-		return false, ""
-	}
 	fp := computeFingerprint(name, argsCanonicalJSON)
 	r := b.dedupRing
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exempt := b.exemptTools[name]; exempt {
+		r.push(fp)
+		return false, ""
+	}
 
 	period1 := r.countConsecutive(fp)+1 >= r.window
 	period2 := r.isPingPong(fp)
+	periodN := r.isRepeatedCycle(fp)
 
 	// Progress veto (D-18 fail-safe): dedup only when the recorded result preview
 	// for this fingerprint has stayed UNCHANGED for as many repeats as the matched
@@ -155,7 +210,7 @@ func (b *Budget) BeforeToolCall(name string, argsCanonicalJSON []byte) (dedup bo
 
 	r.push(fp)
 
-	if (period1 && stableP1) || (period2 && stableP2) {
+	if (period1 && stableP1) || (period2 && stableP2) || periodN {
 		return true, "dedup"
 	}
 	return false, ""
@@ -173,6 +228,8 @@ func (b *Budget) AfterToolResult(name string, argsCanonicalJSON, resultPreview [
 	}
 	fp := computeFingerprint(name, argsCanonicalJSON)
 	r := b.dedupRing
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	preview := resultPreview
 	if b.resultCap > 0 && len(preview) > b.resultCap {
