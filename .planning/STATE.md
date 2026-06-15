@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v0.0.0
 milestone_name: milestone
-status: completed
-stopped_at: Completed Phase 21 EXT-1 hooks closeout
-last_updated: "2026-06-15T00:00:00.000Z"
-last_activity: 2026-06-15 -- Phase 21 implemented; pending close blockers cleared
+status: Awaiting next milestone
+stopped_at: Completed 17-08-PLAN.md
+last_updated: "2026-06-15T13:26:35.326Z"
+last_activity: 2026-06-15 — Milestone v0.0.0 completed and archived
 progress:
-  total_phases: 24
+  total_phases: 25
   completed_phases: 24
   total_plans: 144
   completed_plans: 144
-  percent: 100
+  percent: 96
 ---
 
 # Project State
@@ -25,12 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-29)
 
 ## Current Position
 
-Phase: 21 — COMPLETE
-Plan: 1 of 1
-Status: All milestone phases complete
-Last activity: 2026-06-15 -- Phase 21 EXT-1 hooks implemented and traceability synced
-
-Progress: [██████████] 100%
+Phase: Milestone v0.0.0 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-06-15 — Milestone v0.0.0 completed and archived
 
 ### Next — Milestone Closeout
 
@@ -159,6 +157,7 @@ Remaining action: rerun closeout audits, then archive the milestone with `/gsd-c
 - Phase 19 added (2026-06-10): Audit Bug Resolution + E2E Live Test. Driver: the 2026-06-10 deep parallel audit (10 surface-partitioned agents) confirmed ~11 HIGH + ~10 MEDIUM correctness/robustness findings after adversarial refutation — recorded in `docs/audit/deep-correctness-audit-2026-06-10.md`. Headline = the still-open "shell never answers" UX bug, root-caused to a 3-mechanism cluster (H4 shell orphan-child/no-WaitDelay hang, H5 head-first truncation hiding exit-code/stderr, M-b completion-gate veto re-surfacing vetoed prose on the budget trip). Plus error-swallowing on user-facing surfaces (SSE boundary-frame drop, Telegram RunErrorEvent unrendered, async doc-convert silent, LLM mid-stream SSE error swallowed), dropped scheduler notification contracts, MCP reconnect-on-use unimplemented, microcompact wire-invalid tool history, and the no-central-godotenv env-ordering class. No new product capability — correctness + live validation only. Also repaired two pre-existing ROADMAP overview-bullet gaps (Phase 18 + 19 were missing from the `## Phases` checklist). Next = /gsd-plan-phase 19.
 - Phase 20 added (2026-06-11): scheduler hardening full implementation. Driver: the reminder-agnostic-channel bug found live during Phase 19 19-11 sign-off (a reminder set via the Telegram bot fired but routed to whatsapp/stdout, never back to Telegram) — Davide flagged it a bug and directed a generic fix ("send to the channel that scheduled it; easy to add new channels without reinventing the wheel"). Execution-ready design already exists at `.planning/spikes/reminder-agnostic-channel.md` (identity-keyed `channels.Deliverer` seam + `Registry.DeliverToIdentity` fan-out + Telegram impl + `dispatch.deliverToOrigin`). Ground-truth 2026-06-11 confirmed the scaffolding is already in place (scheduler_tasks.origin_conversation_id since migration 0009; cron.Task carries IdentityID+OriginConversationID; GetTelegramAccountByIdentity SQL+sqlc both exist) — the gaps are population (CreateTaskInput has no origin field; actionSchedule ignores the ctx sessionID) + the delivery seam. Step 1 (~8 files, NO migration) fully ships the headline reminder loop because reminders bypass quiet-hours deferral (dispatch.go:202 `task.Kind != KindReminder`) → never hit the pending/sweep path; Step 2 migration 0014 (pending_notifications.origin_conversation_id) is only for agent_job/advisory deferred notifications. Open design forks for discuss/plan: route precedence (explicit `notify` vs origin-channel default), identity resolution (schedule-time task.IdentityID vs delivery-time IdentityForConversation seam), owns-but-fails/double-delivery. Next = /gsd-spec-phase 20 (or /gsd-discuss-phase 20).
 - Phase 14 closed (2026-06-14): onboarding enriched to 5-step LLM-extraction interview + 8-section Agent.md; live operator sign-off recorded (Davide /onboard → Conferma → onboarding_completed:true). Spec/plan under docs/superpowers/.
+- Phase 22 added (2026-06-15): bug fix. Natural input is the fresh `internal/agent` production-readiness audit (`docs/audit/`, cycle 2026-06-15 @ HEAD 136325dc): 1 P0 + 12 P1 + 26 P2 + 24 P3, score 6.5/10. Headline P0 = no `recover()` in any spawned goroutine (verified repo-wide) → one panicking tool crashes the whole multi-channel `serve` daemon (AG-001). P1 cluster: dedup concurrent-map-write race (AG-002), command-hook TOCTOU + full-env secret exposure + no fail-soft (AG-003/004), MCP reconnect livelock + `=0`-timeout hang (AG-005/006), no capability gate on mutating MCP tools (AG-007), reasoning-router latency cliff (AG-008), plaintext PII in reasoning trace (AG-009), DB-password DSN leak into shell children (AG-010), ungated skill self-activation (AG-011, =prior B-04), no SLO metrics / no structured logs (AG-012/013, =prior O-02/O-01). Full backlog + proposed patches in `docs/audit/{bug-report,action-plan,proposed-patches}.md`. Scope to be defined at /gsd-spec-phase 22. Next = /gsd-plan-phase 22 (or /gsd-spec-phase 22 to scope which findings this phase covers).
 
 ### Decisions
 
@@ -283,3 +282,7 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: 2026-06-14T14:09:27.957Z
 Stopped at: Completed 17-08-PLAN.md
 Resume file: None
+
+## Operator Next Steps
+
+- Start the next milestone with /gsd-new-milestone
