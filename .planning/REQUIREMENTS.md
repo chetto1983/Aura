@@ -14,10 +14,10 @@ Remediation of the 2026-06-15 `internal/agent` production-readiness audit (`docs
 
 - [x] **HARDEN-01**: A panicking tool / swarm child / `shell_bg` reaper goroutine cannot crash `aura serve`; the panic surfaces as a model-visible per-call error (AG-001, P0)
 - [x] **HARDEN-02**: The dedup ring is concurrency-safe by construction (mutex), race-clean under parallel dispatch (AG-002)
-- [ ] **HARDEN-03**: A flapping/hung MCP server degrades gracefully — single-flight reconnect outside the lock, backoff + circuit breaker, sane `=0`/`-1` timeout semantics (AG-005/006)
+- [x] **HARDEN-03**: A flapping/hung MCP server degrades gracefully — single-flight reconnect outside the lock, backoff + circuit breaker, sane `=0`/`-1` timeout semantics (AG-005/006)
 - [x] **HARDEN-04**: Credentials (DSN-shaped env, secrets) do not leak to shell children, hook subprocesses, or the reasoning trace by default (AG-010/009/003)
 - [x] **HARDEN-05**: Production is observable — turn-outcome / LLM-latency / error / token / hook metrics + agent `slog`; telemetry cannot crash the daemon (AG-012/013/033)
-- [ ] **HARDEN-06**: An embed-sidecar outage adds no per-turn latency cliff (reasoning-router fallback policy, AG-008)
+- [x] **HARDEN-06**: An embed-sidecar outage adds no per-turn latency cliff (reasoning-router fallback policy, AG-008)
 - [ ] **HARDEN-07**: A hook fault is contained, not turn-fatal (fail-soft hook policy, AG-004)
 - [ ] **HARDEN-08**: Unknown-tool and swarm-child output is default-untrusted and cannot launder prompt injection (AG-052)
 - [x] **HARDEN-09**: Loop / budget / workflow correctness — bounded and validated (AG-035..043)
@@ -144,10 +144,10 @@ Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0
 |-------------|-------|--------|
 | HARDEN-01 | Phase 22 | Complete |
 | HARDEN-02 | Phase 22 | Complete |
-| HARDEN-03 | Phase 22 | Pending |
+| HARDEN-03 | Phase 22 | Complete |
 | HARDEN-04 | Phase 22 | Complete |
 | HARDEN-05 | Phase 22 | Complete |
-| HARDEN-06 | Phase 22 | Pending |
+| HARDEN-06 | Phase 22 | Complete |
 | HARDEN-07 | Phase 22 | Pending |
 | HARDEN-08 | Phase 22 | Pending |
 | HARDEN-09 | Phase 22 | Complete |
