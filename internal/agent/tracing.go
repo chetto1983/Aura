@@ -9,6 +9,8 @@ package agent
 import (
 	"context"
 	"crypto/rand"
+	"io"
+	"log/slog"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -30,6 +32,8 @@ const (
 // tracerName is the instrumentation scope for every span this package starts.
 const tracerName = "github.com/chetto1983/aura/internal/agent"
 
+var spanIDReader io.Reader = rand.Reader
+
 // newTracerProvider builds the real exporter per AURA_OTEL_EXPORTER ∈
 // {otlp,stdout,none} (D-05/D-06). "none" returns a no-exporter provider (spans
 // are minted but dropped — zero overhead, never an error). "otlp" targets the
@@ -42,6 +46,7 @@ func newTracerProvider(ctx context.Context, mode, endpoint string) (*sdktrace.Tr
 	if mode == exporterNone {
 		tp := sdktrace.NewTracerProvider() // no exporter wired = no-op spans
 		otel.SetTracerProvider(tp)
+		slog.Info("agent tracing exporter configured", "mode", mode, "endpoint", endpoint)
 		return tp, nil
 	}
 
@@ -65,11 +70,18 @@ func newTracerProvider(ctx context.Context, mode, endpoint string) (*sdktrace.Tr
 			otlptracegrpc.WithInsecure())
 	}
 	if err != nil {
+		recordSpanExportFailure()
+		slog.Error("agent tracing exporter setup failed", "mode", mode, "endpoint", endpoint, "err", err)
 		return nil, err
 	}
 
-	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exp))
+	tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(countingSpanExporter{
+		SpanExporter: exp,
+		mode:         mode,
+		endpoint:     endpoint,
+	}))
 	otel.SetTracerProvider(tp)
+	slog.Info("agent tracing exporter configured", "mode", mode, "endpoint", endpoint)
 	return tp, nil
 }
 
@@ -91,12 +103,30 @@ func NewTracerProvider(ctx context.Context, mode, endpoint string) (TracerProvid
 	return newTracerProvider(ctx, mode, endpoint)
 }
 
-// mintSpanID returns a fresh 8-byte OTel/W3C SpanID from crypto/rand (D-04). It
-// panics only if the OS entropy source fails, which is unrecoverable.
+type countingSpanExporter struct {
+	sdktrace.SpanExporter
+	mode     string
+	endpoint string
+}
+
+func (e countingSpanExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
+	err := e.SpanExporter.ExportSpans(ctx, spans)
+	if err != nil {
+		recordSpanExportFailure()
+		slog.Warn("agent span export failed", "mode", e.mode, "endpoint", e.endpoint, "err", err)
+	}
+	return err
+}
+
+// mintSpanID returns a fresh 8-byte OTel/W3C SpanID from crypto/rand (D-04). A
+// transient entropy failure is telemetry degradation, not a reason to crash the
+// agent process; return the zero-id fallback and count/log the fault.
 func mintSpanID() [8]byte {
 	var id [8]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		panic("agent: crypto/rand failed minting SpanID: " + err.Error())
+	if _, err := io.ReadFull(spanIDReader, id[:]); err != nil {
+		recordSpanIDEntropyFailure()
+		slog.Error("agent span id entropy failed", "err", err)
+		return [8]byte{}
 	}
 	return id
 }

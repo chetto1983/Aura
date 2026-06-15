@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -189,6 +190,7 @@ func (a *LlmAgent) FindAgent(name string) Agent {
 func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 	spanID, parentSpanID := rootSpanIDs()
 	requestID := ic.RequestID.String()
+	slog.Info("agent turn start", "request_id", requestID, "thread_id", a.sessionID, "agent", a.name)
 
 	// agent.turn wraps the whole loop (O-08): the per-call llm.request and per-tool
 	// tool.execute spans nest under it via the threaded ctx, so a trace shows
@@ -208,6 +210,8 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 					"error":      err.Error(),
 				})
 			}
+			recordTurnOutcome(turnReason)
+			slog.Info("agent turn end", "request_id", requestID, "thread_id", a.sessionID, "outcome", turnReason)
 			endTurnSpan(turnSpan, turnReason)
 		}()
 		defer func() {
@@ -318,8 +322,12 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				yield(a.finalEvent(ic, spanID, parentSpanID, requestID, answer, res.FinishReason, res.Usage), nil)
 				return
 			}
+			llmStarted := time.Now()
 			ch, err := a.streamWithOpenRetry(spanCtx, req, requestID)
 			if err != nil {
+				recordLLMDuration(time.Since(llmStarted))
+				recordLLMError(llmErrorKind("stream_open", err))
+				slog.Error("agent llm call error", "request_id", requestID, "thread_id", a.sessionID, "kind", llmErrorKind("stream_open", err), "err", err)
 				span.End()
 				cancel()
 				if errors.Is(err, llm.ErrBreakerOpen) {
@@ -338,6 +346,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 			}
 
 			text, calls, finish, usage, stopped, streamErr := a.consume(ch, ic, spanID, parentSpanID, requestID, yield)
+			recordLLMDuration(time.Since(llmStarted))
 			setSpanAttrs(span, a.cfg.Model, a.cfg.Provider, requestID, usage)
 			span.End()
 			cancel()
@@ -351,6 +360,8 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				return
 			}
 			if streamErr != nil {
+				recordLLMError(llmErrorKind("stream", streamErr))
+				slog.Error("agent llm call error", "request_id", requestID, "thread_id", a.sessionID, "kind", llmErrorKind("stream", streamErr), "err", streamErr)
 				if !a.streamRetryUsed && retryableStreamOpenError(streamErr) {
 					a.streamRetryUsed = true
 					if a.breaker != nil {
@@ -375,6 +386,7 @@ func (a *LlmAgent) Run(ic InvocationContext) iter.Seq2[*Event, error] {
 				yield(nil, streamErr)
 				return
 			}
+			slog.Info("agent llm call end", "request_id", requestID, "thread_id", a.sessionID, "finish_reason", finish, "tool_calls", len(calls))
 
 			// 3. No tool calls → terminal (content-stop fallback, D-13/D-16).
 			if len(calls) == 0 {
@@ -534,6 +546,8 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 		_, span := startToolSpan(ctx, call.Function.Name, false)
 		run.EndedAt = time.Now().UTC()
 		run.Err = fmt.Sprintf("unknown tool %q", call.Function.Name)
+		recordToolError(call.Function.Name)
+		slog.Error("agent tool error", "tool", call.Function.Name, "tool_call_id", call.ID, "err", run.Err)
 		run.Preview = "error: " + run.Err
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
 		endToolSpan(span, run.Err)
@@ -555,6 +569,8 @@ func (a *LlmAgent) runTool(ctx context.Context, budget *Budget, call llm.ToolCal
 	run.EndedAt = time.Now().UTC()
 	if err != nil {
 		run.Err = err.Error()
+		recordToolError(call.Function.Name)
+		slog.Error("agent tool error", "tool", call.Function.Name, "tool_call_id", call.ID, "err", err)
 		run.Preview = "error: " + run.Err
 		run.Result = tools.ToolResult{Preview: run.Preview, Bytes: len(run.Preview)}
 		run.Preview = renderToolResultForPrompt(call.Function.Name, run.Result)

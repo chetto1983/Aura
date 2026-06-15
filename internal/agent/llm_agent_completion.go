@@ -92,19 +92,28 @@ func (a *LlmAgent) runCompletionCritic(ic InvocationContext, answer string) (don
 	callCtx, cancel := context.WithTimeout(ic.Ctx, time.Duration(a.cfg.TotalTimeoutSec)*time.Second)
 	defer cancel()
 
+	started := time.Now()
 	ch, err := a.streamWithOpenRetry(callCtx, req, ic.RequestID.String()+":completion_critic")
 	if err != nil {
+		recordLLMDuration(time.Since(started))
+		recordLLMError(llmErrorKind("completion_critic_open", err))
 		return false, "", false
 	}
 	var b strings.Builder
 	for c := range ch {
 		if c.Err != nil {
+			recordLLMDuration(time.Since(started))
+			recordLLMError(llmErrorKind("completion_critic_stream", c.Err))
 			return false, "", false
+		}
+		if c.Usage != nil {
+			recordUsage(*c.Usage)
 		}
 		if c.Text != "" {
 			b.WriteString(c.Text)
 		}
 	}
+	recordLLMDuration(time.Since(started))
 	return parseCriticVerdict(b.String())
 }
 

@@ -112,6 +112,21 @@ func retryableStreamOpenError(err error) bool {
 	return retryableNetworkText(err.Error())
 }
 
+func llmErrorKind(prefix string, err error) string {
+	switch {
+	case errors.Is(err, llm.ErrBreakerOpen):
+		return "breaker_open"
+	case errors.Is(err, context.Canceled):
+		return prefix + "_canceled"
+	case errors.Is(err, context.DeadlineExceeded):
+		return prefix + "_deadline"
+	case retryableStreamOpenError(err):
+		return prefix + "_retryable"
+	default:
+		return prefix
+	}
+}
+
 func retryableNetworkText(s string) bool {
 	s = strings.ToLower(s)
 	for _, marker := range []string{

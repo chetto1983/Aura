@@ -58,6 +58,7 @@ func (a *LlmAgent) runToolRecovering(ctx context.Context, budget *Budget, call l
 	defer func() {
 		if r := recover(); r != nil {
 			recordRecoveredPanic("execute_batch")
+			recordToolError(call.Function.Name)
 			endedAt := time.Now().UTC()
 			msg := fmt.Sprintf("panic: %v", r)
 			preview := "error: " + msg

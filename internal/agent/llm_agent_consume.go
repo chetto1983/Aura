@@ -35,6 +35,7 @@ func (a *LlmAgent) consume(ch <-chan llm.Chunk, ic InvocationContext, spanID [8]
 			return b.String(), calls, finish, usage, false, c.Err
 		case c.Usage != nil:
 			usage = *c.Usage
+			recordUsage(usage)
 			reasoningtrace.Record("agent_consume_usage_chunk", map[string]any{
 				"request_id":        requestID,
 				"thread_id":         a.sessionID,

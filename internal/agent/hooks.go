@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/llm"
@@ -75,9 +76,12 @@ func (m *HookManager) OnTurnStart(ctx context.Context, turn HookTurn) error {
 	}
 	for _, h := range m.hooks {
 		if err := h.OnTurnStart(ctx, turn); err != nil {
+			recordHookOutcome("turn_start", "error")
+			slog.Warn("agent hook error", "point", "turn_start", "request_id", turn.RequestID, "thread_id", turn.ThreadID, "err", err)
 			return err
 		}
 	}
+	recordHookOutcome("turn_start", "ok")
 	return nil
 }
 
@@ -89,9 +93,16 @@ func (m *HookManager) BeforeModel(ctx context.Context, req *llm.Request) (*Model
 	for _, h := range m.hooks {
 		res, err := h.BeforeModel(ctx, req)
 		if err != nil || res != nil {
+			if err != nil {
+				recordHookOutcome("before_model", "error")
+				slog.Warn("agent hook error", "point", "before_model", "err", err)
+			} else {
+				recordHookOutcome("before_model", "result")
+			}
 			return res, err
 		}
 	}
+	recordHookOutcome("before_model", "allow")
 	return nil, nil
 }
 
@@ -103,9 +114,16 @@ func (m *HookManager) BeforeTool(ctx context.Context, call llm.ToolCall) (*ToolH
 	for _, h := range m.hooks {
 		res, err := h.BeforeTool(ctx, call)
 		if err != nil || res != nil {
+			if err != nil {
+				recordHookOutcome("before_tool", "error")
+				slog.Warn("agent hook error", "point", "before_tool", "tool", call.Function.Name, "err", err)
+			} else {
+				recordHookOutcome("before_tool", "result")
+			}
 			return res, err
 		}
 	}
+	recordHookOutcome("before_tool", "allow")
 	return nil, nil
 }
 
@@ -117,9 +135,16 @@ func (m *HookManager) AfterTool(ctx context.Context, call llm.ToolCall, res tool
 	for _, h := range m.hooks {
 		next, err := h.AfterTool(ctx, call, res)
 		if err != nil || next != nil {
+			if err != nil {
+				recordHookOutcome("after_tool", "error")
+				slog.Warn("agent hook error", "point", "after_tool", "tool", call.Function.Name, "err", err)
+			} else {
+				recordHookOutcome("after_tool", "result")
+			}
 			return next, err
 		}
 	}
+	recordHookOutcome("after_tool", "allow")
 	return nil, nil
 }
 
@@ -130,9 +155,12 @@ func (m *HookManager) OnTurnEnd(ctx context.Context, turn HookTurn) error {
 	}
 	for _, h := range m.hooks {
 		if err := h.OnTurnEnd(ctx, turn); err != nil {
+			recordHookOutcome("turn_end", "error")
+			slog.Warn("agent hook error", "point", "turn_end", "request_id", turn.RequestID, "thread_id", turn.ThreadID, "err", err)
 			return err
 		}
 	}
+	recordHookOutcome("turn_end", "ok")
 	return nil
 }
 
