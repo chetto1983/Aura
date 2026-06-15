@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/chetto1983/aura/internal/mcp"
 )
@@ -371,17 +373,164 @@ func TestReconnectServer_ReconnectAfterTransportClosed(t *testing.T) {
 	}
 }
 
-// TestReconnectServer_ReconnectLockedClosed covers reconnectLocked's own closed
-// guard directly (defensive: the only caller already holds the lock and checks
-// closed, but the guard is load-bearing if a future caller forgets).
-func TestReconnectServer_ReconnectLockedClosed(t *testing.T) {
-	client := &errReconnectClient{}
-	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, client)
-	srv.mu.Lock()
-	srv.closed = true
-	_, err := srv.reconnectLocked(context.Background())
-	srv.mu.Unlock()
-	if !mcp.IsTransportError(err) || !strings.Contains(err.Error(), "is closed") {
-		t.Fatalf("reconnectLocked on a closed server should be transport-closed, got %v", err)
+func TestReconnectServer_ReconnectOpenDoesNotHoldLock(t *testing.T) {
+	initial := &errReconnectClient{
+		listErrs: []error{fmt.Errorf("pipe closed: %w", mcp.ErrTransport)},
+	}
+	openStarted := make(chan struct{})
+	releaseOpen := make(chan struct{})
+	old := openMCPClient
+	t.Cleanup(func() { openMCPClient = old })
+	openMCPClient = func(ctx context.Context, _ string, _ mcp.ServerConfig) (reconnectingClient, error) {
+		close(openStarted)
+		select {
+		case <-releaseOpen:
+			return &fakeReconnectClient{defs: []mcp.ToolDef{{Name: "fresh", Description: "Fresh."}}}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, initial)
+	listDone := make(chan error, 1)
+	go func() {
+		_, err := srv.ListTools(context.Background())
+		listDone <- err
+	}()
+
+	select {
+	case <-openStarted:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("reconnect open did not start")
+	}
+
+	closeDone := make(chan error, 1)
+	go func() { closeDone <- srv.Close() }()
+	select {
+	case err := <-closeDone:
+		if err != nil {
+			t.Fatalf("Close: %v", err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("Close waited behind a reconnect open")
+	}
+
+	close(releaseOpen)
+	select {
+	case err := <-listDone:
+		if !mcp.IsTransportError(err) || !strings.Contains(err.Error(), "is closed") {
+			t.Fatalf("ListTools should observe closed server after concurrent Close, got %v", err)
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("ListTools did not return after reconnect was released")
+	}
+}
+
+type alwaysTransportListClient struct {
+	calls  atomic.Int32
+	closed atomic.Bool
+}
+
+func (c *alwaysTransportListClient) ListTools(context.Context) ([]mcp.ToolDef, error) {
+	c.calls.Add(1)
+	return nil, fmt.Errorf("pipe closed: %w", mcp.ErrTransport)
+}
+
+func (c *alwaysTransportListClient) CallTool(context.Context, string, map[string]any) (string, error) {
+	return "", fmt.Errorf("pipe closed: %w", mcp.ErrTransport)
+}
+
+func (c *alwaysTransportListClient) Close() error {
+	c.closed.Store(true)
+	return nil
+}
+
+func TestReconnectServer_ConcurrentTransportFailuresSingleFlight(t *testing.T) {
+	initial := &alwaysTransportListClient{}
+	openStarted := make(chan struct{})
+	releaseOpen := make(chan struct{})
+	var opens atomic.Int32
+	old := openMCPClient
+	t.Cleanup(func() { openMCPClient = old })
+	openMCPClient = func(ctx context.Context, _ string, _ mcp.ServerConfig) (reconnectingClient, error) {
+		if opens.Add(1) == 1 {
+			close(openStarted)
+		}
+		select {
+		case <-releaseOpen:
+			return &fakeReconnectClient{defs: []mcp.ToolDef{{Name: "fresh", Description: "Fresh."}}}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, initial)
+	const callers = 8
+	errs := make(chan error, callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			defs, err := srv.ListTools(context.Background())
+			if err == nil && (len(defs) != 1 || defs[0].Name != "fresh") {
+				err = fmt.Errorf("unexpected defs: %v", defs)
+			}
+			errs <- err
+		}()
+	}
+
+	select {
+	case <-openStarted:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("reconnect open did not start")
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(releaseOpen)
+	for i := 0; i < callers; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("caller %d: %v", i, err)
+		}
+	}
+	if got := opens.Load(); got != 1 {
+		t.Fatalf("concurrent transport failures should single-flight one open, got %d", got)
+	}
+	if !initial.closed.Load() {
+		t.Fatal("failed client should be closed after successful reconnect")
+	}
+}
+
+func TestReconnectServer_ReconnectBreakerOpensAfterFailures(t *testing.T) {
+	initial := &errReconnectClient{
+		listErrs: []error{
+			fmt.Errorf("pipe 1: %w", mcp.ErrTransport),
+			fmt.Errorf("pipe 2: %w", mcp.ErrTransport),
+			fmt.Errorf("pipe 3: %w", mcp.ErrTransport),
+			fmt.Errorf("pipe 4: %w", mcp.ErrTransport),
+		},
+	}
+	openErr := errors.New("spawn refused")
+	var opens atomic.Int32
+	old := openMCPClient
+	t.Cleanup(func() { openMCPClient = old })
+	openMCPClient = func(context.Context, string, mcp.ServerConfig) (reconnectingClient, error) {
+		opens.Add(1)
+		return nil, openErr
+	}
+
+	srv := newReconnectingServer("mail", mcp.ServerConfig{Command: "fake"}, initial)
+	for i := 0; i < mcpReconnectBreakerAfter; i++ {
+		_, err := srv.ListTools(context.Background())
+		if !errors.Is(err, openErr) {
+			t.Fatalf("failure %d should surface open error, got %v", i+1, err)
+		}
+		srv.mu.Lock()
+		srv.nextReconnectAfter = time.Time{}
+		srv.mu.Unlock()
+	}
+
+	_, err := srv.ListTools(context.Background())
+	if !mcp.IsTransportError(err) || !strings.Contains(err.Error(), "breaker open") {
+		t.Fatalf("post-threshold reconnect should fail fast with breaker-open transport error, got %v", err)
+	}
+	if got := opens.Load(); got != mcpReconnectBreakerAfter {
+		t.Fatalf("breaker-open call should not spawn again, opens=%d", got)
 	}
 }

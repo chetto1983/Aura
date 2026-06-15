@@ -1,8 +1,10 @@
 package mcptools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -16,7 +18,7 @@ func TestBridge_DefaultsMCPToolsMutatingUnlessReadOnlyHint(t *testing.T) {
 		{Name: "delete_doc", Description: "Delete."},
 		{Name: "write_doc", Description: "Write.", Annotations: mcp.ToolAnnotations{ReadOnlyHint: false}},
 	}}
-	bridged := bridgeTools("docs", srv, srv.defs)
+	bridged := bridgeTools("docs", srv, srv.defs, defaultMCPCallTimeout)
 	got := map[string]bool{}
 	for _, tool := range bridged {
 		got[tool.Spec().Name] = tool.Spec().Mutating
@@ -29,6 +31,35 @@ func TestBridge_DefaultsMCPToolsMutatingUnlessReadOnlyHint(t *testing.T) {
 	}
 	if !got["docs__write_doc"] {
 		t.Fatal("readOnlyHint=false must be Mutating:true")
+	}
+}
+
+func TestBridgedToolRefreshSpecWarnsOnMutatingAndRequiredArgChanges(t *testing.T) {
+	var logs bytes.Buffer
+	old := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(old) })
+
+	srv := &fakeServer{defs: []mcp.ToolDef{
+		{Name: "send", Description: "Send.", InputSchema: json.RawMessage(`{"type":"object","required":["to"]}`)},
+	}}
+	bridged := bridgeTools("mail", srv, srv.defs, defaultMCPCallTimeout)
+	bt := bridged[0].(*bridgedTool)
+	bt.refreshSpec(mcp.ToolDef{
+		Name:        "send",
+		Description: "Send safely.",
+		InputSchema: json.RawMessage(`{"type":"object","required":["recipient"]}`),
+		Annotations: mcp.ToolAnnotations{
+			ReadOnlyHint: true,
+		},
+	})
+
+	out := logs.String()
+	if !strings.Contains(out, "mutating flag changed") {
+		t.Fatalf("missing mutating-flip warning in logs: %s", out)
+	}
+	if !strings.Contains(out, "required args changed") {
+		t.Fatalf("missing required-args warning in logs: %s", out)
 	}
 }
 

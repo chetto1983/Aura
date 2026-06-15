@@ -3,6 +3,8 @@ package mcptools
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,14 +37,24 @@ func TestConfiguredMCPCallTimeout(t *testing.T) {
 			t.Fatalf("1.5 should be 1.5s, got %v", d)
 		}
 	})
-	t.Run("zero disables the deadline", func(t *testing.T) {
+	t.Run("zero returns default", func(t *testing.T) {
 		t.Setenv(envMCPCallTimeoutSec, "0")
 		d, err := configuredMCPCallTimeout()
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
+		if d != defaultMCPCallTimeout {
+			t.Fatalf("0 should return default %v, got %v", defaultMCPCallTimeout, d)
+		}
+	})
+	t.Run("minus one disables the deadline", func(t *testing.T) {
+		t.Setenv(envMCPCallTimeoutSec, "-1")
+		d, err := configuredMCPCallTimeout()
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
 		if d != 0 {
-			t.Fatalf("0 should disable the deadline (return 0), got %v", d)
+			t.Fatalf("-1 should disable the deadline (return 0), got %v", d)
 		}
 	})
 	t.Run("non-numeric is an error", func(t *testing.T) {
@@ -51,37 +63,38 @@ func TestConfiguredMCPCallTimeout(t *testing.T) {
 			t.Fatal("a non-numeric value must be an error")
 		}
 	})
-	t.Run("negative is an error", func(t *testing.T) {
+	t.Run("less than minus one is an error", func(t *testing.T) {
 		t.Setenv(envMCPCallTimeoutSec, "-5")
 		if _, err := configuredMCPCallTimeout(); err == nil {
-			t.Fatal("a negative value must be an error")
+			t.Fatal("a value less than -1 must be an error")
 		}
 	})
 }
 
-// TestBridgedTool_Execute_BadTimeoutEnvIsGoError covers Execute's timeout-config
-// error branch: an unparseable AURA_MCP_CALL_TIMEOUT_SEC fails before the call, and
-// the underlying server is never reached.
-func TestBridgedTool_Execute_BadTimeoutEnvIsGoError(t *testing.T) {
+// TestBridge_BadTimeoutEnvFailsBeforeListTools covers boot-time timeout validation:
+// an unparseable AURA_MCP_CALL_TIMEOUT_SEC fails before tools/list, and the server
+// is never reached.
+func TestBridge_BadTimeoutEnvFailsBeforeListTools(t *testing.T) {
 	t.Setenv(envMCPCallTimeoutSec, "garbage")
 	srv := &fakeServer{defs: sandboxDefs(), callText: "unused"}
-	got, _ := Bridge(context.Background(), "sb", srv)
-	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), 2048)
 
-	_, err := got[0].Execute(ctx, json.RawMessage(`{"container_id":"abc"}`))
+	got, err := Bridge(context.Background(), "sb", srv)
 	if err == nil {
-		t.Fatal("a bad timeout-config env must propagate as a Go error")
+		t.Fatal("a bad timeout-config env must fail Bridge")
+	}
+	if got != nil {
+		t.Fatalf("Bridge should not return tools on timeout config failure, got %v", got)
 	}
 	if srv.lastName != "" {
 		t.Fatalf("the server must not be called when timeout config fails, got call to %q", srv.lastName)
 	}
 }
 
-// TestBridgedTool_Execute_NoDeadlineWhenTimeoutZero covers Execute's timeout==0
-// branch: with the deadline disabled the call still routes through and returns the
-// scripted text (no WithTimeout wrapper is applied).
-func TestBridgedTool_Execute_NoDeadlineWhenTimeoutZero(t *testing.T) {
-	t.Setenv(envMCPCallTimeoutSec, "0")
+// TestBridgedTool_Execute_NoDeadlineWhenTimeoutMinusOne covers Execute's
+// timeout==0 branch: with the deadline explicitly disabled the call still routes
+// through and returns the scripted text (no WithTimeout wrapper is applied).
+func TestBridgedTool_Execute_NoDeadlineWhenTimeoutMinusOne(t *testing.T) {
+	t.Setenv(envMCPCallTimeoutSec, "-1")
 	var sawDeadline bool
 	srv := &fakeServer{defs: sandboxDefs(), callText: "ok"}
 	srv.CallToolFunc = func(ctx context.Context, _ string, _ map[string]any) (string, error) {
@@ -99,7 +112,7 @@ func TestBridgedTool_Execute_NoDeadlineWhenTimeoutZero(t *testing.T) {
 		t.Fatalf("preview = %q, want ok", res.Preview)
 	}
 	if sawDeadline {
-		t.Fatal("timeout=0 must NOT install a context deadline")
+		t.Fatal("timeout=-1 must NOT install a context deadline")
 	}
 }
 
@@ -228,6 +241,61 @@ func TestCapDescriptions_ShallowDescriptionStillCapped(t *testing.T) {
 // hint-overflow branch (budget < 0 → fall through to truncating the hint itself):
 // a tool with a required-args list long enough to blow the summary budget on its
 // own must still produce a bounded, framed summary that keeps the untrusted prefix.
+func TestCapSchemaDescriptions_OverLargeSchemaFallsBackToEmptyObject(t *testing.T) {
+	huge := json.RawMessage(`{"type":"object","description":"` + strings.Repeat("x", maxMCPSchemaBytes) + `"}`)
+	srv := &fakeServer{defs: []mcp.ToolDef{
+		{Name: "huge", Description: "Huge schema.", InputSchema: huge},
+	}}
+	got, err := Bridge(context.Background(), "srv", srv)
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	if string(got[0].Spec().Parameters) != `{"type":"object"}` {
+		t.Fatalf("oversized schema should fall back to empty-object, got %s", got[0].Spec().Parameters)
+	}
+}
+
+func TestCapSchemaDescriptions_TooManyPropertiesFallsBackToEmptyObject(t *testing.T) {
+	props := make(map[string]any, maxMCPSchemaProperties+1)
+	for i := 0; i <= maxMCPSchemaProperties; i++ {
+		props["field_"+strconv.Itoa(i)] = map[string]any{"type": "string"}
+	}
+	schemaBytes, err := json.Marshal(map[string]any{"type": "object", "properties": props})
+	if err != nil {
+		t.Fatalf("marshal schema: %v", err)
+	}
+	srv := &fakeServer{defs: []mcp.ToolDef{
+		{Name: "wide", Description: "Wide schema.", InputSchema: json.RawMessage(schemaBytes)},
+	}}
+	got, err := Bridge(context.Background(), "srv", srv)
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	if string(got[0].Spec().Parameters) != `{"type":"object"}` {
+		t.Fatalf("wide schema should fall back to empty-object, got %s", got[0].Spec().Parameters)
+	}
+}
+
+func TestCapMCPErrorContent(t *testing.T) {
+	srv := &fakeServer{defs: sandboxDefs(), callErr: errors.New(strings.Repeat("E", maxMCPErrorPreviewBytes*2))}
+	got, err := Bridge(context.Background(), "sb", srv)
+	if err != nil {
+		t.Fatalf("Bridge: %v", err)
+	}
+	ctx := tools.WithToolCallContext(context.Background(), "sess", "tc1", t.TempDir(), maxMCPErrorPreviewBytes*4)
+
+	res, err := got[0].Execute(ctx, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(res.Preview) > maxMCPErrorPreviewBytes {
+		t.Fatalf("error preview exceeded cap: len=%d cap=%d", len(res.Preview), maxMCPErrorPreviewBytes)
+	}
+	if !strings.HasSuffix(res.Preview, mcpErrorTruncated) {
+		t.Fatalf("capped error should carry truncation marker, got suffix %.40q", res.Preview[len(res.Preview)-40:])
+	}
+}
+
 func TestFrameMCPSummary_HugeRequiredHintTruncatesHint(t *testing.T) {
 	// Build a required list whose rendered hint exceeds the summary budget (~713
 	// bytes after the fixed prefix+marker), forcing the budget<0 path.

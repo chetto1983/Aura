@@ -7,8 +7,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
@@ -29,14 +32,19 @@ var emptyObjectSchema = json.RawMessage(`{"type":"object"}`)
 const maxMCPDescriptionBytes = 4096
 const maxMCPSummaryBytes = 768
 const maxMCPArgDescBytes = 512
+const maxMCPSchemaBytes = 16 * 1024
+const maxMCPSchemaProperties = 128
+const maxMCPErrorPreviewBytes = 2048
 const mcpArgDescTruncated = " [truncated]"
+const mcpErrorTruncated = " [error truncated]"
 
 // bridgedTool adapts one MCP tool to tools.Tool. The spec is atomically swapped
 // when reconnectingServer refreshes tools/list after a transport reconnect.
 type bridgedTool struct {
-	srv  Server
-	name string
-	spec atomic.Value
+	srv         Server
+	name        string
+	callTimeout time.Duration
+	spec        atomic.Value
 }
 
 func (b *bridgedTool) Spec() tools.Spec { return b.spec.Load().(tools.Spec) }
@@ -48,11 +56,27 @@ func (b *bridgedTool) storeSpec(spec tools.Spec) {
 func (b *bridgedTool) refreshSpec(d mcp.ToolDef) {
 	params, summary, description := specFieldsFromToolDef(d)
 	spec := b.Spec()
+	oldMutating := spec.Mutating
+	oldRequired := requiredArgNames(spec.Parameters)
 	spec.Summary = summary
 	spec.Description = description
 	spec.Parameters = params
 	spec.Deferred = defaultDeferredForNamespace(namespaceFromSpecName(spec.Name))
 	spec.Mutating = !d.Annotations.ReadOnlyHint
+	if oldMutating != spec.Mutating {
+		slog.Warn("mcp tool mutating flag changed on reconnect",
+			"tool", spec.Name,
+			"old_mutating", oldMutating,
+			"new_mutating", spec.Mutating,
+		)
+	}
+	if newRequired := requiredArgNames(params); !sameStrings(oldRequired, newRequired) {
+		slog.Warn("mcp tool required args changed on reconnect",
+			"tool", spec.Name,
+			"old_required", strings.Join(oldRequired, ","),
+			"new_required", strings.Join(newRequired, ","),
+		)
+	}
 	b.spec.Store(spec)
 }
 
@@ -67,20 +91,16 @@ func (b *bridgedTool) Execute(ctx context.Context, raw json.RawMessage) (tools.T
 			return tools.ToolResult{}, fmt.Errorf("mcp tool %s args: %w", b.name, err)
 		}
 	}
-	timeout, err := configuredMCPCallTimeout()
-	if err != nil {
-		return tools.ToolResult{}, err
-	}
 	callCtx := ctx
 	cancel := func() {}
-	if timeout > 0 {
-		callCtx, cancel = context.WithTimeout(ctx, timeout)
+	if b.callTimeout > 0 {
+		callCtx, cancel = context.WithTimeout(ctx, b.callTimeout)
 	}
 	defer cancel()
 
 	text, err := b.srv.CallTool(callCtx, b.name, args)
 	if err != nil {
-		return b.newUntrustedResult(ctx, "error: "+err.Error())
+		return b.newUntrustedResult(ctx, capMCPErrorContent(err))
 	}
 	return b.newUntrustedResult(ctx, text)
 }
@@ -108,21 +128,25 @@ func (b *bridgedTool) newUntrustedResult(ctx context.Context, text string) (tool
 // tools need default visibility because proactive memory behavior depends on the
 // model seeing the memory surface without a separate discovery step.
 func Bridge(ctx context.Context, namespace string, srv Server) ([]tools.Tool, error) {
+	callTimeout, err := configuredMCPCallTimeout()
+	if err != nil {
+		return nil, err
+	}
 	defs, err := srv.ListTools(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bridged := bridgeTools(namespace, srv, defs)
+	bridged := bridgeTools(namespace, srv, defs, callTimeout)
 	if tracker, ok := srv.(interface{ trackBridgedTools([]tools.Tool) }); ok {
 		tracker.trackBridgedTools(bridged)
 	}
 	return bridged, nil
 }
 
-func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef) []tools.Tool {
+func bridgeTools(namespace string, srv Server, defs []mcp.ToolDef, callTimeout time.Duration) []tools.Tool {
 	out := make([]tools.Tool, 0, len(defs))
 	for _, d := range defs {
-		bt := &bridgedTool{srv: srv, name: d.Name}
+		bt := &bridgedTool{srv: srv, name: d.Name, callTimeout: callTimeout}
 		bt.storeSpec(specFromToolDef(namespace, d))
 		out = append(out, bt)
 	}
@@ -168,13 +192,22 @@ func specFieldsFromToolDef(d mcp.ToolDef) (json.RawMessage, string, string) {
 // model and tool_search uncapped. On any parse/marshal failure it falls back to
 // the empty-object schema rather than forwarding the raw bytes.
 func capSchemaDescriptions(raw json.RawMessage) json.RawMessage {
+	if len(raw) > maxMCPSchemaBytes {
+		return emptyObjectSchema
+	}
 	var v any
 	if err := json.Unmarshal(raw, &v); err != nil {
+		return emptyObjectSchema
+	}
+	if countSchemaProperties(v, 0) > maxMCPSchemaProperties {
 		return emptyObjectSchema
 	}
 	capDescriptions(v, 0)
 	out, err := json.Marshal(v)
 	if err != nil {
+		return emptyObjectSchema
+	}
+	if len(out) > maxMCPSchemaBytes {
 		return emptyObjectSchema
 	}
 	return out
@@ -203,6 +236,45 @@ func capDescriptions(v any, depth int) {
 			capDescriptions(item, depth+1)
 		}
 	}
+}
+
+func countSchemaProperties(v any, depth int) int {
+	if depth > 16 {
+		return 0
+	}
+	switch n := v.(type) {
+	case map[string]any:
+		total := 0
+		for k, val := range n {
+			if k == "properties" {
+				if props, ok := val.(map[string]any); ok {
+					total += len(props)
+				}
+			}
+			total += countSchemaProperties(val, depth+1)
+		}
+		return total
+	case []any:
+		total := 0
+		for _, item := range n {
+			total += countSchemaProperties(item, depth+1)
+		}
+		return total
+	default:
+		return 0
+	}
+}
+
+func capMCPErrorContent(err error) string {
+	text := "error: " + err.Error()
+	if len(text) <= maxMCPErrorPreviewBytes {
+		return text
+	}
+	limit := maxMCPErrorPreviewBytes - len(mcpErrorTruncated)
+	if limit < 0 {
+		limit = 0
+	}
+	return truncateUTF8Bytes(text, limit) + mcpErrorTruncated
 }
 
 func frameMCPSummary(raw string, params json.RawMessage) string {
@@ -345,4 +417,28 @@ func requiredArgsHint(schema json.RawMessage) string {
 		return ""
 	}
 	return " Required args: " + strings.Join(s.Required, ", ") + "."
+}
+
+func requiredArgNames(schema json.RawMessage) []string {
+	var s struct {
+		Required []string `json:"required"`
+	}
+	if err := json.Unmarshal(schema, &s); err != nil || len(s.Required) == 0 {
+		return nil
+	}
+	required := append([]string(nil), s.Required...)
+	sort.Strings(required)
+	return required
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }

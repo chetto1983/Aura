@@ -18,11 +18,14 @@ func configuredMCPCallTimeout() (time.Duration, error) {
 		return defaultMCPCallTimeout, nil
 	}
 	sec, err := strconv.ParseFloat(raw, 64)
-	if err != nil || sec < 0 {
-		return 0, fmt.Errorf("%s=%q: not a valid non-negative seconds value", envMCPCallTimeoutSec, raw)
+	if err != nil || sec < -1 {
+		return 0, fmt.Errorf("%s=%q: must be -1 for no timeout, 0 for default, or a positive seconds value", envMCPCallTimeoutSec, raw)
+	}
+	if sec == -1 {
+		return 0, nil
 	}
 	if sec == 0 {
-		return 0, nil
+		return defaultMCPCallTimeout, nil
 	}
 	return time.Duration(sec * float64(time.Second)), nil
 }

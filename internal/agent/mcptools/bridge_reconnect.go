@@ -3,7 +3,9 @@ package mcptools
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/chetto1983/aura/internal/agent/tools"
 	"github.com/chetto1983/aura/internal/mcp"
@@ -18,18 +20,42 @@ var openMCPClient = func(ctx context.Context, name string, cfg mcp.ServerConfig)
 	return mcp.Open(ctx, name, cfg)
 }
 
+const (
+	defaultMCPReconnectTimeout = 10 * time.Second
+	mcpReconnectBreakerAfter   = 3
+	mcpReconnectCooldown       = 30 * time.Second
+	mcpReconnectBackoffMin     = 500 * time.Millisecond
+	mcpReconnectBackoffMax     = 30 * time.Second
+)
+
 type reconnectingServer struct {
-	mu          sync.Mutex
-	name        string
-	cfg         mcp.ServerConfig
-	client      reconnectingClient
-	bridged     map[string]*bridgedTool
-	refreshHook func()
-	closed      bool
+	mu               sync.Mutex
+	name             string
+	cfg              mcp.ServerConfig
+	client           reconnectingClient
+	bridged          map[string]*bridgedTool
+	refreshHook      func()
+	closed           bool
+	reconnectTimeout time.Duration
+
+	reconnecting        bool
+	reconnectDone       chan struct{}
+	lastReconnectDefs   []mcp.ToolDef
+	lastReconnectClient reconnectingClient
+	lastReconnectErr    error
+	reconnectFailures   int
+	breakerOpenUntil    time.Time
+	nextReconnectAfter  time.Time
 }
 
 func newReconnectingServer(name string, cfg mcp.ServerConfig, client reconnectingClient) *reconnectingServer {
-	return &reconnectingServer{name: name, cfg: cfg, client: client, bridged: map[string]*bridgedTool{}}
+	return &reconnectingServer{
+		name:             name,
+		cfg:              cfg,
+		client:           client,
+		bridged:          map[string]*bridgedTool{},
+		reconnectTimeout: defaultMCPReconnectTimeout,
+	}
 }
 
 func (s *reconnectingServer) ListTools(ctx context.Context) ([]mcp.ToolDef, error) {
@@ -94,26 +120,6 @@ func (s *reconnectingServer) setRefreshHook(hook func()) {
 	s.refreshHook = hook
 }
 
-func (s *reconnectingServer) reconnectLocked(ctx context.Context) ([]mcp.ToolDef, error) {
-	if s.closed {
-		return nil, fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
-	}
-	if s.client != nil {
-		_ = s.client.Close()
-	}
-	next, err := openMCPClient(ctx, s.name, s.cfg)
-	if err != nil {
-		return nil, fmt.Errorf("reconnect mcp %q: %w", s.name, err)
-	}
-	s.client = next
-	defs, err := s.client.ListTools(ctx)
-	if err != nil {
-		return nil, err
-	}
-	s.refreshSpecsLocked(defs)
-	return defs, nil
-}
-
 func (s *reconnectingServer) refreshSpecsLocked(defs []mcp.ToolDef) {
 	changed := false
 	for _, d := range defs {
@@ -139,17 +145,164 @@ func (s *reconnectingServer) currentClient() (reconnectingClient, error) {
 func (s *reconnectingServer) reconnectAfterTransport(
 	ctx context.Context, failed reconnectingClient,
 ) ([]mcp.ToolDef, reconnectingClient, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.closed {
-		return nil, nil, fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
+	for {
+		s.mu.Lock()
+		if s.closed {
+			s.mu.Unlock()
+			return nil, nil, fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
+		}
+		if s.client != failed {
+			retry := s.client
+			s.mu.Unlock()
+			if retry == nil {
+				return nil, nil, fmt.Errorf("%w: mcp %q has no client", mcp.ErrTransport, s.name)
+			}
+			return nil, retry, nil
+		}
+		if s.client == nil {
+			s.mu.Unlock()
+			return nil, nil, fmt.Errorf("%w: mcp %q has no client", mcp.ErrTransport, s.name)
+		}
+		now := time.Now()
+		if err := s.reconnectBreakerErrorLocked(now); err != nil {
+			s.mu.Unlock()
+			return nil, nil, err
+		}
+		if s.reconnecting {
+			done := s.reconnectDone
+			s.mu.Unlock()
+			return s.waitForReconnect(ctx, done)
+		}
+		if delay := time.Until(s.nextReconnectAfter); delay > 0 {
+			s.mu.Unlock()
+			if err := sleepContext(ctx, delay); err != nil {
+				return nil, nil, err
+			}
+			continue
+		}
+
+		done := make(chan struct{})
+		timeout := s.reconnectTimeout
+		s.reconnecting = true
+		s.reconnectDone = done
+		s.mu.Unlock()
+
+		defs, next, err := s.openReplacement(ctx, timeout)
+
+		var closeFailed bool
+		var closeNext reconnectingClient
+		s.mu.Lock()
+		if s.closed {
+			if next != nil {
+				closeNext = next
+			}
+			defs = nil
+			next = nil
+			err = fmt.Errorf("%w: mcp %q is closed", mcp.ErrTransport, s.name)
+		} else if err == nil {
+			s.client = next
+			s.refreshSpecsLocked(defs)
+			s.reconnectFailures = 0
+			s.breakerOpenUntil = time.Time{}
+			s.nextReconnectAfter = time.Time{}
+			closeFailed = failed != nil && failed != next
+		} else {
+			s.recordReconnectFailureLocked(time.Now(), err)
+		}
+		s.lastReconnectDefs = defs
+		s.lastReconnectClient = next
+		s.lastReconnectErr = err
+		s.reconnecting = false
+		close(done)
+		s.mu.Unlock()
+
+		if closeFailed {
+			_ = failed.Close()
+		}
+		if closeNext != nil {
+			_ = closeNext.Close()
+		}
+		return defs, next, err
 	}
-	if s.client == failed {
-		defs, err := s.reconnectLocked(ctx)
-		return defs, s.client, err
+}
+
+func (s *reconnectingServer) openReplacement(parent context.Context, timeout time.Duration) ([]mcp.ToolDef, reconnectingClient, error) {
+	if timeout <= 0 {
+		timeout = defaultMCPReconnectTimeout
 	}
-	if s.client == nil {
-		return nil, nil, fmt.Errorf("%w: mcp %q has no client", mcp.ErrTransport, s.name)
+	reconnectCtx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
+	defer cancel()
+
+	next, err := openMCPClient(reconnectCtx, s.name, s.cfg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("reconnect mcp %q: %w", s.name, err)
 	}
-	return nil, s.client, nil
+	defs, err := next.ListTools(reconnectCtx)
+	if err != nil {
+		_ = next.Close()
+		return nil, nil, err
+	}
+	return defs, next, nil
+}
+
+func (s *reconnectingServer) waitForReconnect(
+	ctx context.Context,
+	done <-chan struct{},
+) ([]mcp.ToolDef, reconnectingClient, error) {
+	select {
+	case <-done:
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		return s.lastReconnectDefs, s.lastReconnectClient, s.lastReconnectErr
+	case <-ctx.Done():
+		return nil, nil, ctx.Err()
+	}
+}
+
+func (s *reconnectingServer) reconnectBreakerErrorLocked(now time.Time) error {
+	if s.breakerOpenUntil.IsZero() || !now.Before(s.breakerOpenUntil) {
+		return nil
+	}
+	return fmt.Errorf("%w: mcp %q reconnect breaker open until %s", mcp.ErrTransport, s.name, s.breakerOpenUntil.Format(time.RFC3339))
+}
+
+func (s *reconnectingServer) recordReconnectFailureLocked(now time.Time, err error) {
+	s.reconnectFailures++
+	backoff := reconnectBackoff(s.reconnectFailures)
+	s.nextReconnectAfter = now.Add(backoff)
+	if s.reconnectFailures >= mcpReconnectBreakerAfter {
+		s.breakerOpenUntil = now.Add(mcpReconnectCooldown)
+	}
+	slog.Warn("mcp reconnect failed",
+		"server", s.name,
+		"failures", s.reconnectFailures,
+		"backoff", backoff.String(),
+		"breaker_open_until", s.breakerOpenUntil.Format(time.RFC3339),
+		"error", err,
+	)
+}
+
+func reconnectBackoff(failures int) time.Duration {
+	if failures <= 0 {
+		return 0
+	}
+	delay := mcpReconnectBackoffMin
+	for i := 1; i < failures && delay < mcpReconnectBackoffMax; i++ {
+		delay *= 2
+		if delay > mcpReconnectBackoffMax {
+			return mcpReconnectBackoffMax
+		}
+	}
+	return delay
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
