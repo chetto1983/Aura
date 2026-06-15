@@ -116,9 +116,15 @@ func NewBudget(opts BudgetOptions) (*Budget, error) {
 	if err != nil {
 		return nil, err
 	}
+	if maxSteps32 < 1 {
+		return nil, fmt.Errorf("%s=%q: must be >= 1", envMaxSteps, strconv.Itoa(maxSteps))
+	}
 	wallclockSec, err := resolveInt(opts.MaxWallclockSec, envMaxWallclockSec, defaultBudgetWallclockSec)
 	if err != nil {
 		return nil, err
+	}
+	if wallclockSec < 1 {
+		return nil, fmt.Errorf("%s=%q: must be >= 1", envMaxWallclockSec, strconv.Itoa(wallclockSec))
 	}
 	dedupWindow, err := resolveInt(opts.DedupWindow, envDedupWindow, defaultDedupWindow)
 	if err != nil {

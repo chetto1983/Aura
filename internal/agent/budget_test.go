@@ -313,6 +313,27 @@ func TestNewBudgetFromEnv_FailFast_MaxStepsOutOfInt32Range(t *testing.T) {
 	}
 }
 
+func TestNewBudgetFromEnv_FailFast_MaxStepsMustBePositive(t *testing.T) {
+	for _, v := range []string{"0", "-1"} {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv(envMaxSteps, v)
+			t.Setenv(envMaxWallclockSec, "")
+			t.Setenv(envDedupWindow, "")
+			t.Setenv(envBranchSoftFraction, "")
+			t.Setenv(envNodeTimeoutSec, "")
+			t.Setenv(envDedupResultCap, "")
+
+			_, err := NewBudgetFromEnv()
+			if err == nil {
+				t.Fatalf("%s=%s must fail-fast as non-positive", envMaxSteps, v)
+			}
+			if !strings.Contains(err.Error(), "must be >= 1") {
+				t.Fatalf("positive-range error should require >= 1, got %q", err.Error())
+			}
+		})
+	}
+}
+
 func TestNewBudget_Options_MaxStepsRejectsInt32Overflow(t *testing.T) {
 	if strconv.IntSize <= 32 {
 		t.Skip("int cannot exceed int32 on this platform")
@@ -334,6 +355,26 @@ func TestNewBudget_Options_MaxStepsRejectsInt32Overflow(t *testing.T) {
 	}
 }
 
+func TestNewBudget_Options_MaxStepsMustBePositive(t *testing.T) {
+	for _, maxSteps := range []int{0, -1} {
+		t.Run(strconv.Itoa(maxSteps), func(t *testing.T) {
+			t.Setenv(envMaxWallclockSec, "")
+			t.Setenv(envDedupWindow, "")
+			t.Setenv(envBranchSoftFraction, "")
+			t.Setenv(envNodeTimeoutSec, "")
+			t.Setenv(envDedupResultCap, "")
+
+			_, err := NewBudget(BudgetOptions{MaxSteps: &maxSteps})
+			if err == nil {
+				t.Fatalf("MaxSteps override %d must fail-fast as non-positive", maxSteps)
+			}
+			if !strings.Contains(err.Error(), "must be >= 1") {
+				t.Fatalf("positive-range error should require >= 1, got %q", err.Error())
+			}
+		})
+	}
+}
+
 func TestNewBudgetFromEnv_FailFast_MalformedWallclock(t *testing.T) {
 	t.Setenv(envMaxWallclockSec, "not-a-number")
 	_, err := NewBudgetFromEnv()
@@ -342,6 +383,47 @@ func TestNewBudgetFromEnv_FailFast_MalformedWallclock(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), envMaxWallclockSec) {
 		t.Fatalf("error should name the offending var, got %q", err.Error())
+	}
+}
+
+func TestNewBudgetFromEnv_FailFast_WallclockMustBePositive(t *testing.T) {
+	for _, v := range []string{"0", "-1"} {
+		t.Run(v, func(t *testing.T) {
+			t.Setenv(envMaxWallclockSec, v)
+			t.Setenv(envMaxSteps, "")
+			t.Setenv(envDedupWindow, "")
+			t.Setenv(envBranchSoftFraction, "")
+			t.Setenv(envNodeTimeoutSec, "")
+			t.Setenv(envDedupResultCap, "")
+
+			_, err := NewBudgetFromEnv()
+			if err == nil {
+				t.Fatalf("%s=%s must fail-fast as non-positive", envMaxWallclockSec, v)
+			}
+			if !strings.Contains(err.Error(), "must be >= 1") {
+				t.Fatalf("positive-range error should require >= 1, got %q", err.Error())
+			}
+		})
+	}
+}
+
+func TestNewBudget_Options_WallclockMustBePositive(t *testing.T) {
+	for _, wallclockSec := range []int{0, -1} {
+		t.Run(strconv.Itoa(wallclockSec), func(t *testing.T) {
+			t.Setenv(envMaxSteps, "")
+			t.Setenv(envDedupWindow, "")
+			t.Setenv(envBranchSoftFraction, "")
+			t.Setenv(envNodeTimeoutSec, "")
+			t.Setenv(envDedupResultCap, "")
+
+			_, err := NewBudget(BudgetOptions{MaxWallclockSec: &wallclockSec})
+			if err == nil {
+				t.Fatalf("MaxWallclockSec override %d must fail-fast as non-positive", wallclockSec)
+			}
+			if !strings.Contains(err.Error(), "must be >= 1") {
+				t.Fatalf("positive-range error should require >= 1, got %q", err.Error())
+			}
+		})
 	}
 }
 

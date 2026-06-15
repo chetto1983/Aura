@@ -25,6 +25,8 @@ import (
 	"github.com/chetto1983/aura/internal/llm"
 )
 
+const defaultLoopMaxIterations uint = 1000
+
 // LoopAgent re-runs its sub-agents until one of three terminal conditions fires:
 // (a) maxIterations passes completed, (b) a sub emits Actions.Escalate=true, or
 // (c) the shared Budget is exhausted (hard max_steps/wallclock) or a tool call is
@@ -36,9 +38,10 @@ type LoopAgent struct {
 	subs          []agent.Agent
 }
 
-// NewLoop returns an agent.Agent (the interface, D-02 factory). maxIter==0 means
-// "iterate until escalate or budget exhaustion" (no iteration ceiling). The
-// typed-nil guard (D-02) is implicit: a non-nil *LoopAgent is always boxed.
+// NewLoop returns an agent.Agent (the interface, D-02 factory). maxIter==0 uses
+// the built-in safety ceiling while still stopping earlier on escalate, budget,
+// dedup, context cancellation, or no-progress. The typed-nil guard (D-02) is
+// implicit: a non-nil *LoopAgent is always boxed.
 func NewLoop(name string, maxIter uint, subs ...agent.Agent) agent.Agent {
 	return &LoopAgent{name: name, maxIterations: maxIter, subs: subs}
 }
@@ -64,7 +67,13 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 			return
 		}
 		var stepsConsumed int
-		for iterIdx := uint(0); a.maxIterations == 0 || iterIdx < a.maxIterations; iterIdx++ {
+		maxIterations := a.maxIterations
+		defaultCeiling := false
+		if maxIterations == 0 {
+			maxIterations = defaultLoopMaxIterations
+			defaultCeiling = true
+		}
+		for iterIdx := uint(0); iterIdx < maxIterations; iterIdx++ {
 			if err := ic.Ctx.Err(); err != nil {
 				yield(nil, err)
 				return
@@ -163,6 +172,12 @@ func (a *LoopAgent) Run(ic agent.InvocationContext) iter.Seq2[*agent.Event, erro
 				_ = yield(a.terminalEventKind(ic, "no_progress", "no_progress", stepsConsumed), nil)
 				return
 			}
+		}
+		if defaultCeiling {
+			if branchConsumed := ic.Budget.BranchConsumed(); branchConsumed > stepsConsumed {
+				stepsConsumed = branchConsumed
+			}
+			_ = yield(a.terminalEventKind(ic, "iteration_limit", "max_iterations", stepsConsumed), nil)
 		}
 	}
 }

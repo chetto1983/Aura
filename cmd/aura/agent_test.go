@@ -199,6 +199,25 @@ func TestDryRun_MalformedEnv_FailsFast(t *testing.T) {
 	}
 }
 
+func TestDryRun_NonPositiveBudgetOverridesFailFast(t *testing.T) {
+	cases := map[string]dryRunConfig{
+		"max-steps-zero":     {requestID: "auto", maxSteps: 0, maxWallclockSec: -1, dedupWindow: -1},
+		"wallclock-sec-zero": {requestID: "auto", maxSteps: -1, maxWallclockSec: 0, dedupWindow: -1},
+	}
+	for name, cfg := range cases {
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := dryRun(cfg, &buf)
+			if err == nil {
+				t.Fatal("expected non-positive budget override to fail-fast")
+			}
+			if !strings.Contains(err.Error(), "must be >= 1") {
+				t.Fatalf("error should require a positive value, got %v", err)
+			}
+		})
+	}
+}
+
 func TestRunAgent_DryRun_HappyPath_WritesToStdout(t *testing.T) {
 	// runAgent's success path returns normally (it only os.Exits on error). Capture
 	// os.Stdout to confirm it emits Event lines through the dispatcher.
