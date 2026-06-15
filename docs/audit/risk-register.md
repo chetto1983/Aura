@@ -1,72 +1,77 @@
-# Risk Register — Aura `internal/agent`
+# Risk Register — `internal/agent`
 
-Probability/Impact: H (high) / M (medium) / L (low). Status: OPEN (unmitigated), PARTIAL (some defense exists, acceptance not fully met), TRACKED (accepted, decision pending), CLOSED (verified fixed + test).
+**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc`
+Probability / Impact: **H** (high) / **M** (medium) / **L** (low). Status: **OPEN** (unmitigated) · **PARTIAL** (some defense, acceptance not fully met) · **TRACKED** (accepted, decision pending) · **GOOD** (verified strong, no action).
 
-> **Status verified 2026-06-13** against the `tabula-rasa` working tree — see [`reconciliation-2026-06-13.md`](reconciliation-2026-06-13.md) for method + evidence. The 2026-06-12 table below was written before commit `ec7fe2f6 "fix(audit): close P1 items"`; the **Status** column now reflects re-verification, not the morning snapshot.
-
-**History.** 2026-06-10 closed R-01..R-17 (P0/P1 pass). 2026-06-11 closed R-18..R-25, R-35, R-43 (P2 boundary pass). The 2026-06-12 re-audit re-opened two over-credited closures (R-05→B-01, R-09→B-04) and added `B-/O-/D-/M-` findings. **2026-06-12 PM `ec7fe2f6` closed the entire P1 gate** (B-01–B-04, O-01, O-02, D-01), each with a passing acceptance test; 2026-06-13 verification confirms it and re-checks every P2/P3.
-
-## Active risks (Status as of 2026-06-13)
-
-| ID | Title | Sev | Prob | Impact | Area | Mitigation | Status |
+| ID | Title | Sev | Prob | Impact | Affected area | Mitigation | Status |
 |---|---|---|---|---|---|---|---|
-| B-01 | Mutating tool side effects re-execute after intra-turn crash (R-05 was over-credited) | P1 | M | H | dispatch ↔ persistence ordering | Write-ahead intent row + recovery marker (AP-1) | **CLOSED** |
-| B-02 | Swarm child reports re-enter parent prompt with no untrusted envelope | P1 | M | H | `swarm/runner_adapter.go`, `trust.go` | Set `Provenance{Trust:Untrusted}` (AP-2) | **CLOSED** |
-| B-03 | No per-thread in-flight guard → conversation corruption + budget double-spend | P1 | M | H | `agui/server.go`, `runner.go` | Per-thread guard in Runner (AP-3) | **CLOSED** |
-| B-04 | Self-extension gate open for `always:false` + lying schema + lost alert (R-09 regressed by P5) | P1 | M | H | `skills/writer.go`, `tools/skill.go` | Honest schema + restore alert (AP-4) | **CLOSED** |
-| O-01 | `serve` never boots tracer + zero structured logging → prod blind | P1 | H | M | `serve.go`, agent core | `obs.Init` tracer + JSON slog (AP-5) | **CLOSED** |
-| O-02 | No latency/error/cost metrics, no Prometheus | P1 | H | M | `metrics.go` | Prometheus `/metrics` (AP-6) | **CLOSED** |
-| D-01 | No production container for the privileged agent binary | P1 | M | H | repo root, `compose.yaml` | Dockerfile + hardened compose (AP-7) | **CLOSED** |
-| M-01 | L1 microcompact destroys `ask_user` answers → dead pointer (R-28) | P2 | M | M | `conversations/context.go` (applyL1) | Pointer-rewrite only sidecar-backed turns (AP-8) | **CLOSED** |
-| M-02 | `SubmitAnswer` non-atomic → duplicate resume bricks the round (R-27) | P2 | L | H | `runner_resume.go:77` | Gate-first reorder: MarkResumed before inject (full single-tx deferred) | **CLOSED** |
-| M-03 | `hardCap<=0` silently disables all context protection (R-29) | P2 | L | H | `context.go` (hardCap gate) | Nanobot-style floor: a non-positive SPEC formula clamps to a positive `ContextWindow/2` so L2.5 stays active (only `ContextWindow<=0` yields 0) | **CLOSED** |
-| B-05 | Circuit breaker per-turn → no cross-turn protection | P2 | M | M | `llm_agent.go:131` | Hoist to Runner singleton (AP-11) | **CLOSED** |
-| B-06 | Breaker-open routes to error slot, not finalize | P2 | M | L | `llm_agent.go` (streamWithOpenRetry) | Route to finalize (AP-11) | **CLOSED** |
-| B-07 | `LoopAgent` maxIter=0 hot-spins on a budget-owning sub (latent, off prod path) | P2 | L | H | `workflow/loop.go` | No-progress guard | **CLOSED** |
-| O-03 | otel global no-op error handler silences all prod otel errors (R-31) | P2 | H | L | `tracing.go:63` | Rate-limited slog handler in `obs.Init` (AP-5): logs each OTel error WARN, ≤1/window (60s default), next emission carries the suppressed count; covers every exporter mode (no-op deleted from the otlp branch) | **CLOSED** |
-| O-04 | No boot secret validation; no secret-redacting log handler (R-32 adj.) | P2 | M | M | `config.go`, `obs/init.go` | `Config.Validate()` + redact `ReplaceAttr` (AP-14) | **CLOSED** |
-| O-05 | `/healthz` PG-only; no Neo4j/provider readiness; no `/readyz` (R-14 residual) | P2 | M | M | `serve.go`, `agui/server.go` | `/readyz` readiness endpoint over an injectable `ReadinessProbe` seam; serve wires PG-pool `Ping` + native-driver Neo4j `VerifyConnectivity` (`knowledge.VerifyConnectivity`, bounded 3s/probe); 503 (naming the failed dep, sanitized) when any required backend is unreachable; `/healthz` stays a cheap PG-only liveness (AP-14) | **CLOSED** |
-| B-08 | No stream idle-timeout watchdog (stall bounded only by total timeout) | P2 | M | M | `internal/llm`, `llm_agent.go` | Per-chunk idle watchdog (AP-12) | **CLOSED** |
-| B-09 | Divergent `secretEnvKey`; shell leaks bare `*_KEY` (R-07 divergence) | P2 | M | M | `shell_exec_env.go:22`, `mcp/client.go:164` | One shared `secret.IsSecretEnvKey` (AP-13): canonical superset-marker predicate in new `internal/secret/envkey.go` now called by all 3 sites (shell child-env, MCP child-env, MCP managed-config export); the 3 divergent local copies deleted; `PRIVATE_KEY` (and every `*_KEY`) now redacts identically on shell + MCP — RED→GREEN cross-site acceptance tests | **CLOSED** |
-| B-10 | Destructive-shell gate regex-bypassable + off by default (R-19 residual) | P2 | M | M | `shell_exec_env.go` | Document advisory + default patterns (AP-15) | **CLOSED** |
-| B-11 | `shell_exec.go` god-class risk | P2 | H | L | `tools/shell_exec.go` | Genuinely split: R-41 extracted `shell_exec_session.go`; now 584 LOC | **CLOSED** |
-| M-04 | Sidecar spill outside tx → orphan-on-rollback unreclaimed in live conv | P2 | M | L | `conversations/store.go` | Cleanup-on-rollback: best-effort `os.Remove` the just-spilled sidecar when the turn-append tx errors (AP-16); boot orphan scan remains the backstop | **CLOSED** |
-| M-05 | `dropOldestRound` can drop the newest user turn (R-30 residual) | P2 | L | M | `context.go` | Never drop the newest round (AP-10) | CLOSED |
-| M-06 | `$AURA_RUN_DIR` + reasoningtrace grow monotonically (R-33) | P2 | M | M | `orphan_scan.go`, `reasoningtrace.go`, `sweeper.go` | reasoningtrace rotation [part 1] + periodic sidecar sweep/reclaim [part 2] now both done: a `conversations.Sweeper` interval worker (`AURA_RUN_DIR_SWEEP_INTERVAL_SEC`, default 1h, ≤0 disables) re-runs the boot `ScanOrphans` (orphan dirs + tmp TTL + audit size WARN) without a restart, Start/Stopped on the serve daemon's goleak-clean drain (AP-16) | **CLOSED** |
-| O-06 | SIGTERM hard-cancels in-flight turns (asymmetric drain) (R-34) | P2 | M | M | `serve.go` | Bounded turn drain (AP-17): the per-turn work ctx is a background-derived `workCtx`, NOT the signal ctx, so a SIGTERM no longer hard-kills a turn mid-stream; on the signal the daemon stops accepting new work (poller + HTTP listener) and joins in-flight turns under a `AURA_SERVE_SHUTDOWN_GRACE_SEC` grace (default 25s) via the testable `drainWithGrace` helper, THEN `workCancel` fires as the final backstop (never wedges past the grace) | **CLOSED** |
-| O-07 | No Windows CI lane; OS-specific kill code untested (R-36) | P2 | M | M | `.github/workflows/ci.yml` | `windows-unit` job on `windows-latest` runs the unit tier (covers `shell_exec_windows.go` taskkill + `profile/atomic_windows.go`); locally Windows-verified green | **CLOSED** |
-| R-41 | Per-session tool state never evicted in the daemon | P2 | M | L | `todo.go`, `shell_exec.go`, `shell_approval.go` | `SessionEvictor.Evict(sessionID)` hook; `Runner.Stop` ranges the registry and evicts the todo list + shell cwd + approval ledger when a conversation ends (AP-16) | **CLOSED** |
-| T-01 | No fuzz/bench + no mutation score for agent core | P2 | H | M | agent test suite | Fuzz+bench+mutation (AP-21): 5 fuzz targets over the untrusted-input parsers (`parseTextResponse`, `normalizeContentStopAnswer`, `canonicalArgs`, the `<tool_output>` envelope `wrapUntrustedToolOutput`, and the provenance-aware render path) — each ran clean -fuzztime + runs as a CI test via its seed corpus; 4 benchmarks on the REAL per-step hot path (`ConsumeStep` TOCTOU gate + parallel, two-tier dedup `BeforeToolCall`/round-trip) replacing the mislocated `tools.BenchmarkToolSearchRank` (a once-per-turn retrieval query, not the loop spine); mutation documented for `budget.go` (the agent-core critical file, ≥70% target) in `T-01-test-apex.md`; B-01/M-01/M-02/M-03/B-03/B-05 regression tests verified present + passing | **CLOSED** |
-| M-07 | `anyInt` rejects `json.Number` (dormant token-zeroing) (R-42) | P3 | L | M | `runner_persist.go` + `chat_render.go` | Add `json.Number` case (AP-22) | **CLOSED** |
-| B-12 | Mid-stream retry replays partial chunks to the user (cosmetic) | P3 | M | L | `llm_agent.go`, `chat_render.go` | Emit a `DiscardStreamed` repudiation Event on the mid-stream retry; the renderer erases the shown partial + resets the prose buffer so the retry renders clean — NO buffering, so live token-by-token streaming on the common no-retry path is preserved | **CLOSED** |
-| B-13 | Stream-open retry classifies by substring fallback (R-38 residual) | P3 | M | L | `llm_agent_stream_retry.go` | Typed sentinels (`ECONNRESET`/`ErrUnexpectedEOF`) | **CLOSED** |
-| O-08 | Span coverage `llm.request`-only; no turn/tool spans | P3 | M | L | `tracing.go`, `llm_agent.go` | `agent.turn` + `tool.execute` spans (AP-20) | **CLOSED** (`agent.turn` wraps the Run loop, `tool.execute` per dispatch; `llm.request`+`tool.execute` nest under `agent.turn` via the threaded turn ctx) |
-| B-14 | `Registry.Register` silent overwrite on duplicate (R-45) | P3 | L | M | `tools/spec.go:102` | Fail-loud on duplicate | **CLOSED** |
-| B-15 | Unframed/uncapped MCP argument-schema descriptions (R-22 residual) | P3 | L | H | `bridge.go`, `search.go` | Cap arg-schema descriptions | **CLOSED** |
-| B-16 | `fs_grep`/`fs_glob` no node/time budget (`path:/` full-disk scan) | P3 | L | M | `fs_grep.go`, `fs_glob.go` | Node-count/deadline cap | **CLOSED** |
-| T-02 | `foldToASCII` primary-channel filename folding undertested | P3 | L | L | `send_file.go` | Table test | CLOSED |
-| T-03 | Deferred-tool `Spec()` golden coverage | P3 | L | L | `fs_*`/`search.go` | Golden well-formed-spec test | **CLOSED** |
-| T-04 | `agenttest` dilutes the coverage floor | P3 | M | L | `agenttest`, `coverage_gate.sh:44` | Exclude from denominator | **CLOSED** |
-| M-08 | `EnsureConversation` race reconciliation masks real create failure | P3 | L | L | `runner.go` | Classify `23505` before swallowing | **CLOSED** |
-| R-26 | Ledger best-effort, not a pre-execution audit gate | P2 | M | M | `runner_persist.go` | Subsume into write-ahead intent log (AP-19) | TRACKED |
-| R-40 | Primary channel on telebot v4 beta | P3 | L | M | `go.mod` | Pin-watch GA; re-run HITL tests on bump | TRACKED |
+| AG-001 | Unrecovered panic in spawned goroutine crashes the daemon | P0 | M | H | `executeBatch`, `workflow/parallel`, `swarm.runWave`, `shell_bg` | `recover()` in every goroutine + Runner backstop; panic→error | OPEN |
+| AG-002 | `dedupRing` concurrent-map-write fatal (latent) | P1 | L | H | `budget_dedup.go` | `sync.Mutex` on the ring | OPEN |
+| AG-003 | Hook exec TOCTOU + full-env secrets + unvalidated rewrite | P1 | M | H | `hooks_command.go` | minimal-env, exec-by-fd, validate rewrites, audit | OPEN |
+| AG-004 | A failing/slow hook aborts the whole turn | P1 | M | M | `hooks_command.go`, `hooks.go` | per-hook fail-soft policy + recover | OPEN |
+| AG-005 | MCP reconnect: lock-during-IO, ctx-coupled, no backoff/breaker | P1 | M | H | `mcptools/bridge_reconnect.go` | single-flight off-lock, `WithoutCancel`, backoff+breaker | OPEN |
+| AG-006 | `AURA_MCP_CALL_TIMEOUT_SEC=0` → unbounded hang + held mutex | P1 | M | H | `mcptools/timeout.go`, `bridge.go` | `0`→default; bounded turn ctx; boot-validate | OPEN |
+| AG-007 | No capability gate on mutating MCP tools; reconnect flips Mutating | P1 | M | H | `llm_agent_dispatch.go`, `bridge_reconnect.go` | wire `capability_grants` at dispatch; warn on flip | OPEN |
+| AG-008 | Reasoning-router LLM fallback = ≤8s extra round-trip/turn on sidecar degrade | P1 | M | M | `llm_agent_reasoning.go` | static-tier fallback; embed breaker; opt-in router | OPEN |
+| AG-009 | Full prompts/history/PII logged to reasoning trace | P1 | M | M | `reasoningtrace/*`, `llm_agent.go:290` | don't dump history by default; cap fields; doc PII | OPEN |
+| AG-010 | DB password leaks into `shell_exec` children via DSN env | P1 | M | H | `shell_exec.go`, `secret/envkey.go` | DSN markers + value-scan redaction | OPEN |
+| AG-011 | Skill self-activation ungated despite gated-looking spec (prior B-04) | P1 | M | H | `skill_write.go`, `skill.go` | gate or honestly document + alert; delete dead schema | OPEN |
+| AG-012 | No latency/error/cost/outcome metrics — no SLOs (prior O-02) | P1 | H | M | `metrics.go` | full metric set; non-default registry | OPEN |
+| AG-013 | No structured logs; tracing silent-drop + panic risk (prior O-01) | P1 | H | M | `tracing.go`, agent core | slog; never-panic span ID; boot-log exporter | OPEN |
+| AG-014 | No fs size cap → OOM/turn-wedge on large file | P2 | M | M | `tools/fs_*` | `AURA_FS_MAX_READ_BYTES`; auto-page | OPEN |
+| AG-015 | Background-shell buffers leak in long-lived daemon | P2 | M | M | `tools/shell_bg.go` | `SessionEvictor`; prune on poll/kill | OPEN |
+| AG-016 | Deferred `agent_job` gated only by keywords | P2 | L | M | `tools/task.go` | gate all schedules or surface at fire time | OPEN |
+| AG-022 | Cross-server MCP name collision drops whole server silently | P2 | L | M | `mcptools/name.go`, boot loop | boot-validate namespace uniqueness; escalate WARN | OPEN |
+| AG-024 | After-send MCP transport fail → mutating tool double-exec | P2 | L | M | `mcptools/bridge_reconnect.go` | failed-after-send sentinel; non-retryable | OPEN |
+| AG-025 | Hostile MCP schema (1000s props) bloats manifest/index | P2 | L | M | `mcptools/bridge.go` | total-size + property-count cap | OPEN |
+| AG-027 | Per-call env parse; malformed value = loop-fatal MCP calls | P2 | L | M | `mcptools/bridge.go`, `timeout.go` | resolve+validate at boot | OPEN |
+| AG-028 | Dead code `openManagedServer` (NEEDS CONFIRMATION) | P2 | L | L | `mcptools/mount.go` | `deadcode`; remove if unref | OPEN |
+| AG-029 | Registry "immutable" relies on undocumented atomic-swap | P2 | L | M | `mcptools/bridge.go`, `tools/spec.go` | document + `-race` reconnect-during-dispatch test | OPEN |
+| AG-030 | Non-zero hook exit + parseable decision swallows runErr | P2 | L | M | `hooks_command.go` | require exit 0 for rewrite | OPEN |
+| AG-031 | No runtime cache-prefix invariant; hook rewrite busts cache silently | P2 | M | M | `prompt/hash.go` (test-only use) | per-turn PrefixHash compare + drift metric | OPEN |
+| AG-032 | classifier `ensureAnchors` holds lock across network calls | P2 | M | M | `prompt/reasoning_classifier.go` | build off-lock / singleflight | OPEN |
+| AG-033 | `mintSpanID` panics on entropy failure | P2 | L | M | `tracing.go` | zero-ID fallback; never panic | OPEN |
+| AG-034 | `ToolInvocation` raw args/preview/Meta — ledger redaction unconfirmed | P2 | M | M | `event.go` + persistence | redact + cap before DB write | NEEDS CONFIRMATION |
+| AG-035 | `maxIterations==0` loop bounded only by budget/no-progress | P2 | L | M | `workflow/loop.go` | default iteration ceiling; require wallclock ctx | OPEN |
+| AG-036 | `max_steps`/`wallclock` not validated `>0`; `=0` disables runtime | P2 | L | M | `budget.go` | reject `<1` at `NewBudget` | OPEN |
+| AG-037 | `findInTree` no cycle guard → stack overflow on cyclic tree | P2 | L | M | `workflow/workflow.go` | visited-set / depth bound | OPEN |
+| AG-038 | Swarm `budgetReserve=3` is best-effort (TOCTOU), not reserved | P2 | M | L | `budget.go`, `swarm.go` | atomic reserve/restore or document | OPEN |
+| AG-039 | Dedup `results` map grows unbounded over a run | P2 | L | L | `budget_dedup.go` | prune on eviction / cap | OPEN |
+| AG-040 | Dedup misses period-3+ cycles | P2 | L | M | `budget_dedup.go` | repeated-subsequence detection | OPEN |
+| AG-041 | Wallclock is step-boundary soft gate; `WithDeadline` unwired | P2 | M | M | `budget.go` (unwired) | wire into run ctx | NEEDS CONFIRMATION |
+| AG-042 | No crash-resume checkpoint (in-memory state) | P2 | M | M | `llm_agent.go` (Runner) | incremental snapshot keyed by sessionID | TRACKED |
+| AG-043 | Parallel result-closer goroutine leak edge | P2 | L | M | `workflow/parallel.go` | goleak stress test | NEEDS CONFIRMATION |
+| AG-052 | Unknown-tool output defaults trusted; swarm reports unwrapped (prior B-02) | P3→P1* | M | H* | `trust.go`, swarm | default-untrusted; propagate provenance | OPEN |
+| AG-018 | Model `cwd` unvalidated; approval digest not normalized | P3 | L | L | `tools/shell_exec_session.go` | stat + clean + normalize | OPEN |
+| AG-019 | `send_file` fence silently off when WorkspaceRoot empty | P2 | L | M | `tools/send_file.go` | fail closed in non-CLI | OPEN |
+| AG-020 | MCP-reconnect stale embedding degrades tool selection | P2 | M | L | `tools/search.go` | per-tool desc hash; rebuild on change | OPEN |
+| AG-044 | Dead duplicate `skillParamsSchema` | P3 | L | L | `tools/skill.go` | delete | OPEN |
+| AG-045 | Non-atomic in-place fs writes (crash-truncate, edit race) | P3 | L | M | `tools/fs_edit.go` | temp+rename | OPEN |
+| AG-046 | Inconsistent glob semantics (fs_grep vs fs_glob) | P3 | L | L | `tools/fs_grep.go` | unify or document | OPEN |
+| AG-049 | SSRF gate has no destination-port restriction | P3 | L | L | `internal/web` | optional port policy | TRACKED |
+| AG-054 | Bare hook command resolved against runtime PATH | P3 | L | M | `hooks_command.go` | require absolute paths | OPEN |
+| AG-055 | Reasoning seeds Italian-only | P3 | L | L | `prompt/reasoning_classifier.go` | multilingual seeds / document | OPEN |
+| AG-057 | Duplicated expvar+Prometheus globals; promauto panics on re-reg | P3 | L | L | `metrics.go` | custom registry | OPEN |
+| AG-058 | Hook short-circuit undocumented; no recover around in-proc hooks | P3 | L | M | `hooks.go` | document + recover | OPEN |
+| AG-062 | `SwarmContextValue` concurrent-read contract implicit | P3 | L | M | `swarm_context.go` | document + `-race` fan-out test | OPEN |
+| — | SSRF hardening (pinned-IP, scheme allowlist, metadata block, redirect re-val) | — | — | — | `internal/web` | — | GOOD |
+| — | `trust.go` nonce-fenced untrusted-output envelope | — | — | — | `trust.go` | — | GOOD |
+| — | KV-cache stable-prefix discipline | — | — | — | `prompt/builder.go` | — | GOOD |
+| — | Shared-atomic budget defeats `max_steps^depth` fan-out bomb | — | — | — | `budget.go` | — | GOOD |
+| — | Non-empty terminal contract (synthesis → Italian stub) | — | — | — | `llm_agent_finalize.go` | — | GOOD |
+| — | Bounded recovery/completion/truncation counters (no infinite loop) | — | — | — | `llm_agent*.go` | — | GOOD |
 
-\* **B-11** was at 599/600 LOC (nominal) at the AM audit; R-41's session-state work extracted `shell_exec_session.go`, so `shell_exec.go` is now **584 LOC** with real headroom — genuinely resolved, not at the wire.
+\* **AG-052** is rated P3 within the strict single-operator model but **P1 with H impact** once the daemon synthesizes swarm-worker output that may carry attacker-controlled web/file content — the realistic deployment. Treat as P1 for planning.
 
-## Verified CLOSED (do not re-open)
+## Top-10 risks (by severity × probability × impact)
 
-**P1 gate (`ec7fe2f6`, 2026-06-12, each with a passing acceptance test — see [`reconciliation-2026-06-13.md`](reconciliation-2026-06-13.md)):** B-01 (write-ahead ordering + recovery marker), B-02 (swarm untrusted provenance), B-03 (per-thread 409 guard), B-04 (honest skill schema + restored alert), O-01 (`obs.Init` tracer + JSON slog), O-02 (Prometheus `/metrics`), D-01 (non-root Dockerfile + hardened compose).
-
-**P2/P3:** M-05 (tail-preserving drop + `ErrContextWindowExceeded`), T-02 (`foldToASCII` table test), B-11 (genuinely split — `shell_exec_session.go`, 584 LOC).
-
-**Prior cycles:** R-01 (untrusted envelope, direct feeders), R-02 (MCP per-call timeout), R-03 (`fs_edit` empty `old_string`), R-04 (`WithDeadline`/`NodeTimeout` wired + shell clamp), R-06 (one-tx pause + load-time repair), R-07-shell (child-env denylist — see B-09 for the divergence), R-08 (subprocess ring/tail cap), R-10 (model-facing `task approve` removed), R-11 (retry + breaker checked before call — see B-05 for lifetime), R-12 (parallel fan-out cap), R-13, R-15 (`OwnsBudget`), R-16 (see B-07 for the budget-owner edge), R-17, R-18 (`send_file` fence), R-20/R-21 (MCP reconnect-no-replay + default Mutating), R-23/R-24/R-43 (sidecar id grammar + perms), R-35, R-37, R-39.
-
-## Top exposure now (2026-06-13 PM — close-out complete)
-
-The morning's top-exposure list (M-01, M-02, M-03, B-05/06, B-08, M-04, B-09, O-05/06, B-16, …) is **all closed**. The only remaining items:
-
-1. **O-07** — no Windows CI lane (P2, M/M) — the lone OPEN finding; deferred because its acceptance ("Windows kill-path runs in CI") can only be confirmed by an actual `windows-latest` CI run.
-2. **R-26** (TRACKED) — ledger best-effort, not a pre-execution audit gate (accepted, subsume into the write-ahead intent log).
-3. **R-40** (TRACKED) — primary channel on telebot v4 beta (pin-watch GA).
-
-> Separately, 5 pre-existing CodeQL high/warning alerts (allocation-size-overflow ×2, incorrect-integer-conversion ×2, dead-assignment) were fixed 2026-06-13 (`a2f395a1`); the rescan shows 0 open. These were arithmetic-safety issues outside this register.
+1. **AG-001** — daemon-wide crash from one panicking tool (P0).
+2. **AG-005** — MCP reconnect livelock / head-of-line freeze (P1, M·H).
+3. **AG-003** — hook TOCTOU + secret-env exposure (P1, M·H).
+4. **AG-007** — no capability gate on mutating MCP tools (P1, M·H).
+5. **AG-010** — DB password leaks to shell children (P1, M·H).
+6. **AG-011** — ungated skill self-activation / injection persistence (P1, M·H).
+7. **AG-052** — swarm/unknown-tool output not enveloped → indirect injection (P1*, M·H).
+8. **AG-006** — `=0` timeout unbounded hang (P1, M·H).
+9. **AG-012/AG-013** — production blindness, no SLO/alerting (P1, H·M).
+10. **AG-002** — latent dedup concurrent-map-write fatal (P1, L·H).

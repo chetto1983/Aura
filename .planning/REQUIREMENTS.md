@@ -25,6 +25,17 @@ Remediation of the 2026-06-15 `internal/agent` production-readiness audit (`docs
 - [ ] **HARDEN-11**: Skill self-extension docs match behavior; dead code removed (AG-011/044/051)
 - [ ] **HARDEN-12**: Every in-scope finding closed to Gate-3 with its named regression test; ≥85% owned-surface coverage holds; nothing silently dropped
 
+### Frontend Foundation (FND) — Phase 23, research-first, before any feature code
+
+Industrial frontend foundation established and documented BEFORE cockpit feature coding (operator directive 2026-06-15). Research-first: a deep industrial-infra pass locks the toolchain/theme/build choices, then the foundation is scaffolded.
+
+- [ ] **FND-01**: Deep industrial-infra research pass produces a documented, locked foundation decision record (linter ruleset, formatter, design-token architecture, package/repo layout, build + release pipeline, frontend test harness) — `RESEARCH.md` / `docs/` — before feature code begins
+- [ ] **FND-02**: Vite 8 + React 19 + TypeScript package scaffold with a `//go:embed all:dist` pipeline producing a binary-embeddable `dist/` consumed by `aura serve` (a branded placeholder shell renders from the single binary)
+- [ ] **FND-03**: Frontend linter + formatter + type-check (ESLint/Biome + Prettier + `tsc --noEmit`) wired into CI as a blocking, zero-warning gate — parity with the Go `golangci-lint` discipline
+- [ ] **FND-04**: Design-token theme system — `tokens.json` → Tailwind 4 `@theme` mapping the dark operator-cockpit palette (elysia-informed board) + density modes, applied before app boot (no flash)
+- [ ] **FND-05**: Brand integration — `public/Logo.png` in the app-shell header + favicon + PWA/theme-color metadata, per the ux-spec Copy Contract (no marketing hero text)
+- [ ] **FND-06**: Frontend test harness (Vitest + component/E2E runner) + the Node 24 multi-stage Docker build stage producing the embedded asset with no Node in the runtime image
+
 ### Web Foundation (WEB) — Slice A (gates everything)
 
 - [ ] **WEB-01**: Operator can open the cockpit served by `aura serve` from the single binary (SPA embedded via `//go:embed`), with API / `/agent` / health routes excluded from the SPA catch-all so API 404s stay real errors
@@ -107,22 +118,75 @@ Deferred to a follow-up milestone (acknowledged, not in this roadmap).
 
 ## Open Decisions (resolve in discuss-phase)
 
-- **NVL license**: `@neo4j-nvl/*` is a CUSTOM Neo4j license (not MIT) — must be reviewed before the commercial DGX-Spark bundle. MIT fallback = Cytoscape.js 3.34.0 (more work, fully permissive). Decide before Slice F (GRAPH).
-- **`showReasoning` web policy**: CoT is a deliberate Telegram opt-in today (redacted by default at `server.go:214`); the web cockpit needs an explicit policy (CHAT-03).
+- **NVL license**: `@neo4j-nvl/*` is a CUSTOM Neo4j license (not MIT) — must be reviewed before the commercial DGX-Spark bundle. MIT fallback = Cytoscape.js 3.34.0 (more work, fully permissive). Decide before Phase 27 (GRAPH / Slice F).
+- **`showReasoning` web policy**: CoT is a deliberate Telegram opt-in today (redacted by default at `server.go:214`); the web cockpit needs an explicit policy (CHAT-03, Phase 25).
+- **Frontend linter/formatter choice** (FND-03): ESLint+Prettier vs Biome — resolve in the Phase 23 industrial-infra research pass (FND-01) before scaffolding.
 
 ## Traceability
 
-Populated by the roadmapper during ROADMAP.md creation. Each REQ-ID maps to exactly one phase (continuing numbering from Phase 22).
+Each REQ-ID maps to exactly one phase (numbering continues from Phase 21; v1.0.0 = Phases 22–28). Phase 23 (Frontend Infrastructure & Industrial Foundation) was inserted per the operator directive 2026-06-15 to establish the industrial frontend foundation before any feature code; the former Phases 23–27 shifted to 24–28.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| (filled by roadmapper) | — | Pending |
+| HARDEN-01 | Phase 22 | Pending |
+| HARDEN-02 | Phase 22 | Pending |
+| HARDEN-03 | Phase 22 | Pending |
+| HARDEN-04 | Phase 22 | Pending |
+| HARDEN-05 | Phase 22 | Pending |
+| HARDEN-06 | Phase 22 | Pending |
+| HARDEN-07 | Phase 22 | Pending |
+| HARDEN-08 | Phase 22 | Pending |
+| HARDEN-09 | Phase 22 | Pending |
+| HARDEN-10 | Phase 22 | Pending |
+| HARDEN-11 | Phase 22 | Pending |
+| HARDEN-12 | Phase 22 | Pending |
+| FND-01 | Phase 23 | Pending |
+| FND-02 | Phase 23 | Pending |
+| FND-03 | Phase 23 | Pending |
+| FND-04 | Phase 23 | Pending |
+| FND-05 | Phase 23 | Pending |
+| FND-06 | Phase 23 | Pending |
+| WEB-01 | Phase 24 | Pending |
+| WEB-02 | Phase 24 | Pending |
+| WEB-03 | Phase 24 | Pending |
+| WEB-04 | Phase 24 | Pending |
+| CHAT-01 | Phase 25 | Pending |
+| CHAT-02 | Phase 25 | Pending |
+| CHAT-03 | Phase 25 | Pending |
+| CHAT-04 | Phase 25 | Pending |
+| APRV-01 | Phase 25 | Pending |
+| APRV-02 | Phase 25 | Pending |
+| APRV-03 | Phase 25 | Pending |
+| DISP-01 | Phase 26 | Pending |
+| DISP-02 | Phase 26 | Pending |
+| DISP-03 | Phase 26 | Pending |
+| DISP-04 | Phase 26 | Pending |
+| DISP-05 | Phase 26 | Pending |
+| SWARM-01 | Phase 26 | Pending |
+| GRAPH-01 | Phase 27 | Pending |
+| GRAPH-02 | Phase 27 | Pending |
+| GRAPH-03 | Phase 27 | Pending |
+| GRAPH-04 | Phase 27 | Pending |
+| GOV-01 | Phase 28 | Pending |
+| GOV-02 | Phase 28 | Pending |
+| GOV-03 | Phase 28 | Pending |
+| ONBD-01 | Phase 28 | Pending |
+| ONBD-02 | Phase 28 | Pending |
 
 **Coverage:**
-- v1 requirements: 33 total (12 HARDEN + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD)
-- Mapped to phases: 0 (pending roadmapper)
-- Unmapped: 33 ⚠️
+- v1 requirements: 39 total (12 HARDEN + 6 FND + 4 WEB + 4 CHAT + 3 APRV + 5 DISP + 4 GRAPH + 1 SWARM + 3 GOV + 2 ONBD)
+- Mapped to phases: 39 ✓
+- Unmapped: 0 ✓
+
+**Phase distribution:**
+- Phase 22 (Agent Perimeter Hardening): HARDEN-01..12 (12)
+- Phase 23 (Frontend Infrastructure & Industrial Foundation): FND-01..06 (6)
+- Phase 24 (Web Foundation — Serve + Auth + Health): WEB-01..04 (4)
+- Phase 25 (Chat + Approval Center): CHAT-01..04, APRV-01..03 (7)
+- Phase 26 (Typed-Display Protocol + Router): DISP-01..05, SWARM-01 (6)
+- Phase 27 (Neo4j Graph Explorer): GRAPH-01..04 (4)
+- Phase 28 (Governance Boards + Web Onboarding): GOV-01..03, ONBD-01..02 (5)
 
 ---
 *Requirements defined: 2026-06-15*
-*Last updated: 2026-06-15 after milestone v1.0.0 definition*
+*Last updated: 2026-06-15 — roadmap revised; Frontend Foundation (FND-01..06) added as research-first Phase 23 per operator directive; all 39 v1 requirements mapped to Phases 22–28 (0 unmapped)*

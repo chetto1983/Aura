@@ -1,201 +1,197 @@
-# Proposed Patches — Aura `internal/agent` (2026-06-12)
+# Proposed Patches — `internal/agent`
 
-Patch-style recommendations for each major open finding from the 2026-06-12 re-audit. **None are applied** — this is design guidance. Snippets are illustrative pseudocode anchored to real symbols; adapt to exact signatures when implementing.
-
-Each patch: affected file/function · reason · before/after behavior · suggested approach · tests required before merging · rollback considerations.
-
-> The prior cycle's patches (PP-1..PP-18, the P0/P1 pass) landed in code and are recorded in the bug-report appendix. This file covers the open set.
+**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc`
+Patch-style recommendations for the major findings. **None are applied** — this is design guidance. Snippets are illustrative pseudocode anchored to real symbols; adapt to exact signatures when implementing. Each patch lists: affected file · affected function · reason · before/after behavior · implementation approach · tests required · rollback.
 
 ---
 
-## PP-A1 — Write-ahead tool-intent + recovery marker (B-01)
+## PP-1 — Panic firewall in spawned goroutines (AG-001, P0)
 
-- **Affected:** `internal/agent/llm_agent.go` `dispatch`; `internal/runner/runner_persist.go`; `internal/conversations/store_helpers.go` `repairToolMessagePairsWith`.
-- **Reason:** A mutating tool's host side effect commits before its result turn is persisted; crash-recovery drops the dangling call, so the model re-issues it → duplicated side effects.
-- **Before:** `executeBatch` runs → on a later event the assistant tool_calls + RoleTool result persist. Crash between them → repair drops the group silently.
-- **After:** the assistant tool_calls turn + a `pending` intent row persist in one tx *before* execution; the result + `done` flip persist after. Recovery surfaces an unmatched `pending` as a synthetic RoleTool "verify before re-running".
+- **Affected file(s):** `internal/agent/llm_agent_parallel.go`, `internal/agent/workflow/parallel.go`, `internal/swarm/swarm.go`, `internal/agent/tools/shell_bg.go`
+- **Affected function(s):** `executeBatch`, `runSub`, `runWave`, `bgShell.start` reaper
+- **Reason:** A panic in any spawned goroutine crashes the whole process; `recover()` in the parent goroutine cannot catch it. For `aura serve` this is daemon-wide.
+- **Before:** `go func(k int){ …; results[k]=a.runTool(...) }(k)` — a panicking tool kills the process.
+- **After:** the panic becomes a per-call `toolRunResult{Err:"panic: …"}` the model sees; the daemon survives.
 - **Approach:**
   ```go
-  // before executeBatch, in one tx with the assistant tool_calls turn:
-  for _, i := range runnable {
-      persistIntent(tx, sessionID, calls[i].ID, calls[i].Function.Name, canon[i]) // status=pending
-  }
-  // after each result:
-  markIntentDone(tx, calls[i].ID) // same tx as AppendTurn(result)
-  // in repairManagedToolMessagePairs: an assistant tool_call whose intent is pending-with-no-result
-  // becomes a synthetic RoleTool("[recovery] previous result unknown — verify before re-running"),
-  // NOT a dropped group.
+  // executeBatch goroutine body:
+  go func(k int) {
+      sem <- struct{}{}
+      defer func() { <-sem }()
+      defer wg.Done()
+      defer func() {
+          if r := recover(); r != nil {
+              recordPanic("executeBatch", calls[k].Function.Name)
+              results[k] = toolRunResult{
+                  ToolCallID: calls[k].ID, ToolName: calls[k].Function.Name,
+                  Err: fmt.Sprintf("panic: %v", r),
+                  Preview: "error: tool panicked",
+                  EndedAt: time.Now().UTC(),
+              }
+          }
+      }()
+      results[k] = a.runTool(ctx, budget, calls[k], startedAt)
+  }(k)
   ```
-  Add an idempotency token to mutating tool specs where the op supports it (e.g. `fs_write` is naturally idempotent on identical content; `shell_exec` is not — mark it).
-- **Tests:** integration — persist tool_call turn, kill before result commit, reload, assert a recovery marker (not a drop, not a re-execution); unit on `repair` for the pending-no-result case.
-- **Rollback:** the intent table is additive; drop the recovery branch to revert to drop-on-dangling. Migration is forward-only — gate behind a feature flag for the first release.
+  Mirror in `runSub` (forward a `{status:failed}` child report once) and `runWave`. Add a Runner-level `defer recover()` around the per-turn `Run` consumption as a backstop. **Do not** rely on this for AG-002 (concurrent-map-write is a fatal, not a panic).
+- **Tests required:** `-race`+`goleak` table test with a panicking fake tool through `executeBatch`, `parallel.Run`, `swarm.runWave`; assert process survives + error surfaces.
+- **Rollback:** purely additive defers; revert the commit. No behavior change on the happy path.
 
-## PP-A2 — Wrap swarm reports in the untrusted envelope (B-02)
+## PP-2 — Mutex on the dedup ring (AG-002, P1)
 
-- **Affected:** `internal/swarm/runner_adapter.go` (the `tools.NewResult` site, ~:54).
-- **Reason:** swarm child summaries re-enter the parent prompt outside the `<tool_output trust="untrusted">` envelope.
-- **Before:** `res := tools.NewResult(ctx, out)` — no provenance → parent reads it as trusted.
-- **After:** `res.Provenance = &tools.ToolResultProvenance{Source:"swarm", Trust:tools.TrustUntrusted}` → `renderToolResultForPrompt` wraps + NFKC/HTML-escapes it.
-- **Approach:** one-line provenance set; or add `"swarm_spawn"` to `untrustedToolNames` in `trust.go`. Prefer the provenance set (it's the structural direction — see PP-A18).
-- **Tests:** a swarm result containing `</tool_output>` bytes returns HTML-escaped inside an untrusted envelope in the parent history.
-- **Rollback:** trivial revert; no schema/state change.
+- **Affected file:** `internal/agent/budget_dedup.go`
+- **Affected function:** `dedupRing.BeforeToolCall`, `AfterToolResult`, `push`, `countConsecutive`, `isPingPong`
+- **Reason:** `entries`/`results` are mutated lock-free under a cross-file "serial caller" convention adjacent to concurrent `executeBatch`; a future change → fatal concurrent map write.
+- **Before:** no lock; safe only by convention.
+- **After:** all ring mutations guarded; safe regardless of caller.
+- **Approach:** add `mu sync.Mutex` to `dedupRing`; `Lock`/`defer Unlock` at the top of each exported method. Keep `Budget.Child`'s per-branch ring fork.
+- **Tests required:** `-race` concurrent `Before/AfterToolResult` hammer + multi-tool `dispatch` with `>1` parallel tools.
+- **Rollback:** remove the mutex; revert. No API change.
 
-## PP-A3 — Per-thread in-flight guard (B-03)
+## PP-3 — MCP reconnect resilience (AG-005/AG-006, P1)
 
-- **Affected:** `internal/runner/runner.go` `Turn`; `internal/agui/server.go` `handleRun`.
-- **Reason:** concurrent runs on one thread interleave history appends → corruption + budget double-spend.
-- **Before:** `Turn` loads + mutates history with no serialization.
-- **After:** a per-`threadID` lock (or singleflight) serializes (or rejects with 409) concurrent runs.
+- **Affected file:** `internal/agent/mcptools/bridge_reconnect.go`, `bridge.go`, `timeout.go`
+- **Affected function:** `reconnectAfterTransport`, `reconnectLocked`, `Execute`, `configuredMCPCallTimeout`
+- **Reason:** lock held across spawn+handshake+list; reconnect bound to the failed call's ctx; no backoff/breaker; `=0` disables the timeout.
+- **Before:** one transport blip freezes the server; a crash-loop re-spawns every call; `=0` → unbounded hang.
+- **After:** reconnect is single-flight off-lock with its own deadline; backoff + breaker bound a flapping server; `=0` means default.
 - **Approach:**
   ```go
-  // Runner:
-  locks sync.Map // threadID -> *sync.Mutex
-  func (r *Runner) Turn(ctx, threadID, ...) {
-      mu := r.lockFor(threadID); 
-      if !mu.TryLock() { return ErrThreadBusy } // AG-UI maps to 409; channels may block instead
-      defer mu.Unlock()
-      ... // existing body
-  }
+  // reconnect outside s.mu:
+  defs, err, _ := s.reconnectGroup.Do("reconnect", func() (any, error) {
+      rctx, cancel := context.WithTimeout(context.WithoutCancel(parent), reconnectTimeout)
+      defer cancel()
+      if s.breaker.Open() { return nil, ErrTransport }
+      c, defs, err := openMCPClient(rctx, s.cfg)         // spawn+handshake+list, no s.mu held
+      if err != nil { s.breaker.Failure(); backoffSleep(); return nil, err }
+      s.mu.Lock(); s.client = c; s.mu.Unlock()           // publish under lock only
+      s.breaker.Success(); return defs, nil
+  })
+  // timeout.go: sec==0 -> return defaultMCPCallTimeout; sec<0 -> infinite (explicit)
   ```
-  Decide reject-vs-serialize per channel: AG-UI → 409; Telegram → serialize (queue) so a fast double-tap doesn't drop a message.
-- **Tests:** concurrent `handleRun` on one thread → 409 (or provable serialization); race-detector test on interleaved turns.
-- **Rollback:** remove the lock; behavior reverts. No persistence change.
+  Resolve+validate the timeout once at mount, store on the server.
+- **Tests required:** concurrent-call-during-slow-reconnect (no head-of-line stall); crash-loop server (breaker opens after N); hung server with `=0` bounded by default; goleak.
+- **Rollback:** feature-flag the new reconnect path; revert to the in-lock reconnect if regressions appear.
 
-## PP-A4 — Honest self-extension contract + restored alert (B-04)
+## PP-4 — Command-hook sandbox + fail-soft (AG-003/AG-004, P1)
 
-- **Affected:** `internal/agent/tools/skill.go` (schema `description` ~:99-112; doc comment ~:14-25); `internal/skills/writer.go` (the ungated `modelMutationBypassesGate` path ~:146-148).
-- **Reason:** the schema/comments claim human approval that no longer happens for `always:false`; the operator alert no longer fires.
-- **Before:** schema says "STAGED as pending … require explicit human approval"; reality auto-activates; no alert.
-- **After:** schema states the true policy; an alert/audit row fires on the ungated auto-activate.
-- **Approach:** edit the schema string + comments to: "create/update with `always:false` activate immediately in this container; `always:true` and delete require approval." In `writer.go`, on the ungated path call `w.alerter.Alert(...)` (or emit an audit row) before returning `StatusActive`.
-- **Tests:** schema-snapshot test that the description matches live gating; assert an alert/audit row on ungated model auto-activate.
-- **Rollback:** the schema edit is text; the alert is additive. To revert the policy itself (re-gate), flip `modelMutationBypassesGate` — but that is a product decision, out of audit scope.
-
----
-
-## PP-A5 — `obs.Init(cfg)`: tracer in `serve` + JSON slog (O-01)
-
-- **Affected:** new `internal/obs/init.go`; `cmd/aura/serve.go` `runServe`; `cmd/aura/chat_repl.go`; `cmd/aura/main.go`.
-- **Reason:** the daemon never boots the tracer; the agent core has no structured logging.
-- **Before:** tracer installed only in the REPL; default text `slog`, no correlation.
-- **After:** both entry points call `obs.Init(ctx, cfg)` → installs the OTel provider (deferred bounded `Shutdown`), `slog.SetDefault(JSONHandler)` with base attrs + a redacting `ReplaceAttr`; the loop logs WARN/ERROR with `request_id`/`thread_id`.
+- **Affected file:** `internal/agent/hooks_command.go`, `hooks.go`
+- **Affected function:** `run`, `verifyTrust`, `BeforeModel`, `HookManager.*`
+- **Reason:** TOCTOU between hash and exec; full `os.Environ()` (secrets) to the child; unvalidated wholesale request rewrite; any hook error aborts the turn.
+- **Before:** `cmd.Env = append(os.Environ(), h.env...)`; hash-then-exec; `*req = *decision.Request`; error → turn dies.
+- **After:** minimal env; exec the held fd; validated/bounded rewrites with an audit record; non-security hook failures degrade (fail-open) instead of aborting.
 - **Approach:**
   ```go
-  func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) {
-      slog.SetDefault(slog.New(redacting(slog.NewJSONHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))).
-          With("service","aura","version",buildVersion))
-      tp, err := agent.NewTracerProvider(ctx, cfg.OtelExporter, cfg.OtelEndpoint)
-      return tp.Shutdown, err
+  // minimal env:
+  cmd.Env = append([]string{"PATH=" + os.Getenv("PATH")}, h.env...)
+  // close TOCTOU: open once, hash the fd, exec /proc/self/fd/N (or require root-owned path)
+  // validate rewrite:
+  if decision.Request != nil {
+      if err := validateHookRequest(decision.Request); err != nil { return nil, err }
+      reasoningtrace.Record("hook_rewrite", map[string]any{"hook": h.name, "kind": "request"})
+      *req = *decision.Request
   }
+  // HookManager: per-hook FailPolicy; on err under fail_open -> log+metric+allow
   ```
-  Thread a `*slog.Logger` (or `slog.With(...)`) into `LlmAgent` at the `reasoningtrace.Record` WARN/ERROR chokepoints.
-- **Tests:** a turn under `serve` produces a span (stdout exporter capture); a capture handler asserts correlated JSON records.
-- **Rollback:** `obs.Init` is additive; revert by not calling it (REPL keeps its own path).
+- **Tests required:** child env has no secret-named vars; oversized/invalid rewrite rejected; failing hook completes under fail_open, aborts under fail_closed; rewrite emits an audit record.
+- **Rollback:** the env-allowlist and fail-policy are config-gated; default the policy to today's behavior behind a flag if needed, then flip.
 
-## PP-A6 — Prometheus `/metrics` (O-02)
+## PP-5 — Secret boundary: DSN-aware redaction (AG-010, P1)
 
-- **Affected:** `internal/agent/metrics.go` (replace expvars); `internal/agui/server.go` (mount); `llm_agent.go:366` (record tool duration).
-- **Reason:** no latency/error/cost metrics.
-- **Before:** four monotonic expvar counters at `/debug/vars`.
-- **After:** Prometheus histograms/counters/gauges at `GET /metrics`.
-- **Approach:** define a `Metrics` struct over `prometheus.Registry`; record turn/tool/LLM durations, errors, in-flight, SSE, cost; `mux.Handle("/metrics", promhttp.HandlerFor(reg, ...))`.
-- **Tests:** registry assertion that a turn moves the histograms/error counters; `/metrics` returns Prometheus text.
-- **Rollback:** keep expvars in parallel for one release; remove `/metrics` to revert.
+- **Affected file:** `internal/secret/envkey.go`, `internal/agent/tools/shell_exec_env.go`
+- **Affected function:** `IsSecretEnvKey`, `secretEnvMarkers`, output redactor
+- **Reason:** `AURA_DB_URL=postgres://u:PASS@h` passes the substring denylist and reaches shell children.
+- **Before:** denylist = `key,token,secret,pass,auth,bearer,credential,private,cert`.
+- **After:** DSN-shaped keys are recognized; DSN credentials in output are masked.
+- **Approach:**
+  ```go
+  secretEnvMarkers = append(secretEnvMarkers, "url", "dsn", "uri", "conn", "pwd", "cookie", "session", "jwt")
+  // plus a value-scan: if value matches `^[a-z][a-z0-9+.-]*://[^:/?#]+:[^@/?#]+@`, treat as secret
+  // output redactor: add pattern ://([^:@/]+):([^@/]+)@  -> ://$1:***@
+  ```
+  Beware false-positives: `url`/`uri` are broad — pair the name marker with the value-scan so only credential-bearing values are stripped/redacted.
+- **Tests required:** `IsSecretEnvKey("AURA_DB_URL")==true`; a shell child cannot read the DSN; redactor masks `postgres://u:p@h`; a non-credential `*_URL` is not over-redacted.
+- **Rollback:** revert the marker list; the value-scan is independent and can be toggled.
 
-## PP-A7 — Production container + hardened compose (D-01)
+## PP-6 — Observability minimum (AG-012/AG-013/AG-033, P1)
 
-- **Affected:** new `Dockerfile`, `.dockerignore`; `compose.yaml`.
-- **Reason:** the privileged agent runs uncontainerized; sidecars unhardened.
-- **Approach:** multi-stage build (`golang:1.x` → `gcr.io/distroless/base-nossl`), non-root `USER 65532`; an `aura` compose service with `read_only: true`, `cap_drop:[ALL]`, `mem_limit`, `cpus`, `healthcheck: curl /healthz`; add `cap_drop`/`mem_limit` to sidecars. (Note: `shell_exec` may need a writable workspace mount + minimal caps — scope them explicitly rather than running full-privilege.)
-- **Tests:** CI image build; runs-non-root assertion; healthcheck smoke.
-- **Rollback:** the host-binary path is unaffected; the image is additive.
+- **Affected file:** `internal/agent/metrics.go`, `tracing.go`, `llm_agent.go` (+ dispatch/finalize emit points)
+- **Affected function:** new metric registrations; `mintSpanID`; turn/tool emit points
+- **Reason:** no latency/error/cost/outcome metrics; no slog; telemetry can panic.
+- **Before:** ~5 counters; span-only latency; `mintSpanID` panics on entropy failure.
+- **After:** full metric set + slog + never-panic telemetry.
+- **Approach:**
+  ```go
+  // metrics.go (non-default registry):
+  turnTotal = factory.NewCounterVec("aura_agent_turn_total", []string{"outcome"})
+  llmDur    = factory.NewHistogram("aura_agent_llm_call_duration_seconds", buckets)
+  llmErr    = factory.NewCounterVec("aura_agent_llm_errors_total", []string{"kind"})
+  toolErr   = factory.NewCounterVec("aura_agent_tool_errors_total", []string{"tool"})
+  // emit: at each terminal turnReason -> turnTotal.WithLabelValues(turnReason).Inc()
+  // tracing.go mintSpanID:
+  if _, err := rand.Read(id[:]); err != nil { recordSpanIDFailure(); return [8]byte{} }
+  // slog at turn start / terminal / tool error keyed by request_id, thread_id
+  ```
+- **Tests required:** each terminal `turnReason` increments its counter; a tool error increments `tool_errors_total`; injecting an entropy failure does not panic.
+- **Rollback:** metrics/logs are additive; revert. The `mintSpanID` change is strictly safer.
 
----
+## PP-7 — Capability gate on mutating tools (AG-007/AG-011, P1)
 
-## PP-A8 — L1 microcompact: only pointer-rewrite sidecar-backed turns (M-01)
+- **Affected file:** `internal/agent/llm_agent_dispatch.go`, `internal/agent/tools/skill_write.go`, `tools/skill.go`
+- **Affected function:** `dispatch` (pre-exec), `writeAction`
+- **Reason:** mutating MCP tools and self-authored skills run with no per-call authorization.
+- **Before:** `Mutating` only sets `sideEffected`; skill auto-activates.
+- **After:** `Mutating && Untrusted` consults `capability_grants`; skill activation gated or honestly documented + alerted; dead schema removed.
+- **Approach:**
+  ```go
+  // dispatch, before executeBatch, for each runnable call:
+  if spec.Mutating && provenance == TrustUntrusted {
+      switch grants.Authorize(ic.Ctx, call, spec) {
+      case Deny:    vetoResults[i] = denied(call); continue
+      case Confirm: return askUserConfirm(call)   // route through ask_user
+      case Allow:   // proceed
+      }
+  }
+  // skill_write.go: delete skillParamsSchema; if ungated-by-policy, emit operator alert + audit
+  ```
+- **Tests required:** mutating MCP tool without a grant refused/confirmed; self-authored skill stays pending or alerts; exactly one skill schema referenced.
+- **Rollback:** the gate defaults to `Allow` when no grants are configured (today's behavior) — safe to ship dark, then tighten.
 
-- **Affected:** `internal/conversations/context.go` `applyL1` (~:208-229).
-- **Reason:** rewriting an `ask_user`/small result to a `read_tool_output` pointer destroys it (no sidecar to page back).
-- **Before:** every `RoleTool` turn older than `evictAfter` becomes a pointer.
-- **After:** only rewrite when `t.ContentSidecarPath != ""` or the `[output truncated:` footer is present; leave the rest inline (L2.5 pair-drop handles them).
-- **Approach:** add the sidecar-presence guard to the rewrite condition.
-- **Tests:** an `ask_user` answer older than `evictAfter` survives verbatim, not a pointer.
-- **Rollback:** revert the guard.
+## PP-8 — Default-untrusted provenance for unknown tools & swarm reports (AG-052, P1 in deployment)
 
-## PP-A9 — One-transaction `SubmitAnswer` (M-02)
+- **Affected file:** `internal/agent/trust.go`, `internal/swarm/runner_adapter.go`
+- **Affected function:** `untrustedSource`, swarm report projection
+- **Reason:** unknown-tool output and `swarm_spawn` child reports (which embed children's web/fs output) are treated as trusted and not enveloped → indirect prompt-injection laundering.
+- **Before:** hardcoded `untrustedToolNames` set; default = trusted.
+- **After:** default = untrusted unless explicitly marked trusted; swarm reports carry untrusted provenance.
+- **Approach:** invert the default in `untrustedSource` (unknown → true), keep an explicit `trustedToolNames` allowlist for built-ins that are genuinely safe; stamp `Provenance.Trust = TrustUntrusted` on swarm child reports so the parent wraps them.
+- **Tests required:** a swarm child's malicious web content is enveloped in the parent prompt; a built-in safe tool stays trusted.
+- **Rollback:** revert the default; the allowlist remains a no-op.
 
-- **Affected:** `internal/runner/runner_resume.go`; `internal/askuser/store.go`; a new `Conv` store seam.
-- **Reason:** inject + mark-resumed are two transactions → duplicate answer turn on retry.
-- **After:** `InsertConversationTurn` + `markResumedSQL UPDATE … WHERE resumed_at IS NULL` in one `db.WithTx`; `RowsAffected==0` makes a re-submit a no-op.
-- **Tests:** a resume retry → exactly one answer turn + `ErrPauseNotFound`.
-- **Rollback:** revert to the two-call path.
+## PP-9 — Config validation + active wallclock (AG-036/AG-006/AG-027/AG-041, P2)
 
-## PP-A10 — `hardCap<=0` is a config error (M-03)
+- **Affected file:** `internal/agent/budget.go`, `internal/agent/mcptools/timeout.go`, composition root
+- **Affected function:** `NewBudget`, `configuredMCPCallTimeout`, run-ctx setup
+- **Reason:** `max_steps=0` silently disables the runtime; MCP timeout parsed per-call (malformed = loop-fatal); wallclock is a soft step-boundary gate.
+- **Before:** no positivity check; hot-path env parse; `WithDeadline` unwired.
+- **After:** fail-loud at boot on bad config; timeout resolved once; wallclock an active ctx deadline.
+- **Approach:** `if maxSteps < 1 || wallclockSec < 1 { return errMalformed }` in `NewBudget`; resolve MCP timeout at mount; `ic.Ctx = Budget.WithDeadline(parent)` at the run root.
+- **Tests required:** `NewBudget(0)`/negative errors; a malformed MCP timeout fails at boot not mid-run; total wall-time is bounded.
+- **Rollback:** the validations are independent; revert individually.
 
-- **Affected:** `internal/conversations/context.go` (~:66, :153).
-- **Reason:** clamping to 0 disables L2.5 silently on small-window models.
-- **After:** `hardCap<=0` returns `ErrContextWindowExceeded` (or applies a per-model floor) instead of returning raw history.
-- **Tests:** small-window over-cap history → error/compaction, never raw history.
-- **Rollback:** revert the guard.
+## PP-10 — fs size cap (AG-014, P2)
 
-## PP-A11 — Process-lifetime breaker + graceful open (B-05, B-06)
-
-- **Affected:** `internal/runner/runner.go` (own the breaker); `internal/agent/llm_agent.go` (accept it via config; route open to finalize).
-- **After:** the breaker persists across turns; breaker-open → `finalize(reason="breaker_open")`, not the error slot.
-- **Tests:** two turns vs a 503 client → second short-circuited; pre-open → non-empty terminal Event.
-- **Rollback:** revert to per-turn construction.
-
-## PP-A12 — Stream idle-timeout watchdog (B-08)
-
-- **Affected:** `internal/llm/openai_compat` stream; `internal/agent/llm_agent.go` `consume`; config (`AURA_LLM_STREAM_IDLE_TIMEOUT_SEC`).
-- **After:** if no chunk arrives within the idle window, close the stream and surface a retryable transport error (the existing mid-stream retry re-issues once).
-- **Tests:** an open-then-stall fake client → turn aborts within the idle window.
-- **Rollback:** disable via env (set to 0).
-
-## PP-A13 — Unify `secretEnvKey` (B-09)
-
-- **Affected:** new `internal/secret/envkey.go`; callers in `shell_exec_env.go`, `mcp/client.go`, `mcp/manager/config.go`.
-- **After:** one `IsSecretEnvKey` (markers incl. `"key"`, `"private"`, `"cert"`) used everywhere.
-- **Tests:** `PRIVATE_KEY` redacts identically in shell + MCP.
-- **Rollback:** revert callers to the local copies.
-
----
-
-## PP-A14 — Boot validation + log redaction (O-04); health dep probes (O-05)
-
-- **Affected:** `internal/config/config.go` (`Validate()`); `cmd/aura/serve.go` (`HealthCheck`, `/readyz`).
-- **After:** boot fail-fasts on empty required secrets; a redacting `ReplaceAttr` strips DSNs from logs; `/healthz` (liveness) + `/readyz` (PG+Neo4j+embed).
-- **Tests:** empty `NEO4J_PASSWORD` → non-zero exit; DSN-bearing log sanitized; `/healthz` 503 with Neo4j down.
-- **Rollback:** make `Validate()` warn-only; keep the single `/healthz`.
-
-## PP-A15 — Split `shell_exec.go` (B-11); destructive-gate defaults+docs (B-10)
-
-- **Affected:** `internal/agent/tools/shell_exec.go` → `shell_exec_args.go`; docs.
-- **After:** no file >600 LOC; the destructive gate ships a conservative default pattern set and is documented as advisory, not a sandbox.
-- **Tests:** file-size gate green; gate-on-by-default smoke.
-- **Rollback:** the split is mechanical; the doc/defaults are additive.
-
-## PP-A16 — Lifecycle sweeps + session eviction (M-06, R-41, M-04)
-
-- **Affected:** `internal/conversations/orphan_scan.go` (periodic sweep); `internal/reasoningtrace` (rotation); session-scoped tools (`Evict`); `conversations/store.go` (spill-inside-tx).
-- **After:** archived-conversation sidecars + dead session state are reclaimed; reasoningtrace rotates; spill no longer orphans on rollback.
-- **Tests:** reasoningtrace rotates at cap; deleting N conversations frees their `todo`/`shell_bg` entries; a rolled-back oversized turn leaves no orphan spill.
-- **Rollback:** sweeps are additive (can be disabled by interval=0).
-
----
-
-## PP-A17 (P3 cluster) — small, low-risk fixes
-
-- **`anyInt` json.Number (M-07):** add `case json.Number: n,err := f.Int64(); if err==nil { return int(n) }` — mirror `anyFloat`. Test: `anyInt(json.Number("100"))==100`. Rollback: trivial.
-- **Typed stream-retry classification (B-13):** prefer `errors.Is(err, syscall.ECONNRESET)`/`io.ErrUnexpectedEOF` over substring text. Test: typed-path classification. Rollback: keep the text fallback.
-- **`Registry.Register` fail-loud (B-14):** return an error on duplicate name. Test: double `Register` → error. Rollback: revert to overwrite.
-- **Cap+frame MCP arg descriptions (B-15):** apply `frameMCPDescription`+cap to bridged `Parameters`. Rollback: revert.
-- **`fs_grep`/`fs_glob` node budget (B-16):** count nodes, abort at cap/deadline. Rollback: revert.
-- **Buffer stream chunks until clean completion (B-12):** emit on success, drop on retry. Test: render path shows no garbled duplicate. Rollback: revert.
-- **Exclude `agenttest` from the coverage floor (T-04):** add the path to `coverage_gate.sh:44`. Rollback: revert.
+- **Affected file:** `internal/agent/tools/fs_read.go`, `fs_write.go`, `fs_edit.go`
+- **Affected function:** `FSRead.Execute`, `FSWrite.Execute`, `FSEdit.Execute`
+- **Reason:** no size ceiling → OOM/turn-wedge on a multi-GB file.
+- **Before:** `os.ReadFile` whole file; `fs_read` also `string(b)` = 2× memory.
+- **After:** files over `AURA_FS_MAX_READ_BYTES` are rejected with a clear error (or auto-paged via offset/limit).
+- **Approach:** `os.Stat` then reject over cap, or `io.LimitReader` with a hard limit; `fs_read` suggests `offset`/`limit` paging in the error.
+- **Tests required:** a file over the cap returns a clean error, not an OOM; under-cap reads unaffected.
+- **Rollback:** raise the cap to `MaxInt` to disable; revert.
 
 ---
 
-## Cross-cutting rollback note
+## Patch sequencing
 
-All Phase 0/1 patches are additive or behind a flag; none alter the verified-correct loop core. The one forward-only migration is the tool-intent table (PP-A1) — gate it behind a feature flag for the first release so a rollback degrades to the current drop-on-dangling behavior rather than failing on an unknown table.
+PP-1 → PP-2 (crash firewall) → PP-3 (MCP) → PP-5 → PP-6 (secret + visibility) → PP-4 → PP-7 → PP-8 (gating) → PP-9 → PP-10 (hardening). PP-1 and PP-2 are the smallest and remove the two crash-class defects — land them first, each behind its own atomic commit with the named regression test.

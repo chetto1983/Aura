@@ -1,117 +1,90 @@
-# Action Plan — Aura `internal/agent` (2026-06-12)
+# Action Plan — `internal/agent`
 
-Concrete engineering backlog, by priority. Each task: title · description · owner role · expected outcome · acceptance criteria. Cross-references [`bug-report.md`](bug-report.md).
-
-> **Status note.** The 2026-06-10/11 cycle closed both P0s and most P1s (see the bug-report appendix). This plan covers the open P1/P2/P3 set found in the 2026-06-12 re-audit, including two over-credited prior closures (B-01⊃R-05, B-04⊃R-09).
-
----
-
-## Immediate (P1 — go-live blockers)
-
-### AP-1 · Close the crash re-execution hazard (B-01)
-- **Description:** Insert a write-ahead tool-intent row (`tool_call_id` + canonical args) inside the *same* transaction that persists the assistant `tool_calls` turn, *before* `executeBatch`. On reload, surface an unmatched intent as a synthetic `RoleTool` ("previous result unknown — verify before re-running") instead of dropping the dangling group. Add idempotency tokens to mutating tools where the underlying op supports it.
-- **Owner:** Backend / runtime engineer.
-- **Expected outcome:** A crash between tool execution and result persistence never causes the model to blindly re-issue the mutating call.
-- **Acceptance:** Integration test — persist the tool-call turn, kill before the result commit, reload; assert the repaired history contains a recovery marker, not a silent drop, and the model does not re-execute.
-
-### AP-2 · Wrap swarm child reports in the untrusted envelope (B-02)
-- **Description:** Set `res.Provenance = &tools.ToolResultProvenance{Source:"swarm", Trust:tools.TrustUntrusted}` in `internal/swarm/runner_adapter.go` (or add `swarm_spawn` to `untrustedToolNames`).
-- **Owner:** Security / runtime engineer.
-- **Expected outcome:** Swarm-laundered content can no longer reach the parent prompt as trusted text.
-- **Acceptance:** A swarm result containing `</tool_output>` bytes returns HTML-escaped inside an untrusted envelope in the parent history.
-
-### AP-3 · Per-thread in-flight guard (B-03)
-- **Description:** Add a `sync.Map[threadID]*sync.Mutex` (or singleflight) to `Runner`, shared by AG-UI and Telegram; reject a second concurrent run on the same thread with `409 Conflict`, or serialize.
-- **Owner:** Backend engineer.
-- **Expected outcome:** Concurrent runs on one conversation can no longer interleave history appends.
-- **Acceptance:** Concurrent `handleRun` on one thread → second returns 409 (or serializes provably); race-detector test on interleaved turns is green.
-
-### AP-4 · Make the self-extension contract honest + restore the alert (B-04)
-- **Description:** Update the `skill` tool schema `description` + doc comments to state the true auto-activate policy (in-box create/update auto-activate; `always:true` and delete differ); fire the `Alerter`/audit row on the ungated path; decide whether unattended `delete` is intended.
-- **Owner:** Security / runtime engineer.
-- **Expected outcome:** The model and operators are no longer misled; self-extension is auditable.
-- **Acceptance:** Schema-snapshot test matches live gating; an audit/alert row is emitted on ungated model auto-activate.
-
-### AP-5 · Boot the tracer in `serve` + JSON structured logging (O-01)
-- **Description:** A shared `obs.Init(cfg)` called by both `serve` and `chat`: boot the OTel tracer (deferred bounded `Shutdown`) and install `slog.SetDefault(JSONHandler)` with base `service`/`version` and `request_id`/`thread_id` correlation threaded into the loop's WARN/ERROR chokepoints.
-- **Owner:** Platform / SRE engineer.
-- **Expected outcome:** Production turns are traced and emit correlated machine-parseable logs.
-- **Acceptance:** A turn under `serve` produces a span (stdout-exporter capture) and JSON logs carrying `request_id`/`thread_id`.
-
-### AP-6 · Prometheus `/metrics` (O-02)
-- **Description:** Adopt `prometheus/client_golang`; add turn/tool/LLM latency histograms, error + SSE-drop counters, in-flight + SSE-connection gauges, and a token/cost counter; mount `promhttp.Handler()` at `GET /metrics`.
-- **Owner:** Platform / SRE engineer.
-- **Expected outcome:** SLO dashboards + alerting on latency/error/cost.
-- **Acceptance:** `/metrics` returns Prometheus text; a turn moves the histograms and error counters.
-
-### AP-7 · Production container + hardened compose (D-01)
-- **Description:** Multi-stage distroless/alpine `Dockerfile` for `aura` (non-root `USER`); an `aura` compose service with `read_only`, `cap_drop:[ALL]` (+ minimal add-back), `mem_limit`/`cpus`, and a `/healthz` healthcheck; add `cap_drop`/`mem_limit` to sidecars.
-- **Owner:** Platform / DevOps engineer.
-- **Expected outcome:** The privileged agent runs isolated and resource-bounded.
-- **Acceptance:** Image builds in CI, runs non-root, is memory-capped; healthcheck green.
+**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc` · Cross-references [`bug-report.md`](bug-report.md).
+Concrete engineering backlog by priority. Each task: title · description · owner role · expected outcome · acceptance criteria.
 
 ---
 
-## Short-term (P2 — pre-scale)
+## Immediate (P0 / P1 — before production)
 
-### AP-8 · Fix L1 microcompact answer destruction (M-01)
-Only pointer-rewrite `RoleTool` turns with a real sidecar; leave `ask_user`/small results inline. **Owner:** runtime. **Acceptance:** an `ask_user` answer older than `evictAfter` survives verbatim.
+### A1. Panic firewall in all spawned goroutines — `AG-001` (P0)
+- **Description:** Add a `safeGo`-style recover wrapper to every goroutine body in `executeBatch` (`llm_agent_parallel.go:43`), `workflow/parallel.go runSub`, `swarm.runWave`, and the `shell_bg` reaper; convert a recovered panic into a per-call `toolRunResult{Err}` / per-child `{status:failed}` report. Add a Runner-level per-turn recover backstop.
+- **Owner:** Runtime/concurrency engineer.
+- **Expected outcome:** A panicking tool degrades to a model-visible error; the daemon never dies from one turn.
+- **Acceptance:** `-race`+`goleak` test dispatches a panicking fake tool through all three paths; process survives; error surfaces; no goroutine leak.
 
-### AP-9 · One-transaction `SubmitAnswer` (M-02)
-Inject + mark-resumed in one `db.WithTx` with a `RowsAffected==0` no-op guard. **Owner:** backend. **Acceptance:** a resume retry → exactly one answer turn + `ErrPauseNotFound`.
+### A2. Mutex on `dedupRing` — `AG-002` (P1)
+- **Description:** Guard `entries`/`results` in `budget_dedup.go` with a `sync.Mutex`.
+- **Owner:** Runtime engineer.
+- **Expected outcome:** No concurrent-map-write fatal even if a future change shares a ring across goroutines.
+- **Acceptance:** `-race` concurrent `Before/AfterToolResult` hammer + multi-tool `dispatch` green.
 
-### AP-10 · `hardCap<=0` is a config error, not "protection off" (M-03)
-Return `ErrContextWindowExceeded` (or a per-model floor) instead of skipping L2.5. **Owner:** runtime. **Acceptance:** small-window over-cap history → error/compaction, never raw history.
+### A3. MCP resilience — `AG-005` / `AG-006` (P1)
+- **Description:** `singleflight` reconnect performed *outside* `s.mu`; reconnect with `context.WithoutCancel(parent)` + a dedicated timeout; exponential backoff + per-server circuit breaker with cooldown. Treat `AURA_MCP_CALL_TIMEOUT_SEC=0` as "default"; resolve+validate timeouts at boot.
+- **Owner:** Integrations engineer.
+- **Expected outcome:** A flapping/hung MCP server degrades gracefully instead of freezing or thrashing the runtime.
+- **Acceptance:** concurrent-call test shows no head-of-line block during a slow reconnect; crash-loop server trips breaker after N; hung server bounded by the default deadline; no leaked call goroutines.
 
-### AP-11 · Hoist the breaker + graceful breaker-open (B-05, B-06)
-Process-lifetime breaker on `Runner`; route open to `finalize`. **Owner:** runtime. **Acceptance:** second turn vs 503 short-circuits; pre-open → non-empty terminal Event.
+### A4. Hook surface hardening — `AG-003` / `AG-004` (P1)
+- **Description:** Default hook `cmd.Env` to a minimal allowlist (no inherited provider/DB secrets); exec the held fd (or require a root-owned path) to close the TOCTOU; validate hook-supplied `Request`/`ToolCall`/`ToolResult` bounds; add a per-hook `fail_open`/`fail_closed` policy (default `fail_open` for non-security hooks); `reasoningtrace.Record` every rewrite/deny; wrap in-process hook calls in `recover()`.
+- **Owner:** Platform/security engineer.
+- **Expected outcome:** A hook fault or compromise is contained; secrets don't leak to hook subprocesses.
+- **Acceptance:** child env has no secret-named vars; a failing hook completes the turn under `fail_open`; an oversized rewrite is rejected; rewrites appear in the audit trail.
 
-### AP-12 · Stream idle-timeout watchdog (B-08)
-Per-chunk idle deadline (`AURA_LLM_STREAM_IDLE_TIMEOUT_SEC`) treated as retryable transport error. **Owner:** llm-client. **Acceptance:** an open-then-stall client aborts within the idle window.
+### A5. Secret boundary — `AG-010` / `AG-009` (P1)
+- **Description:** Add URL/DSN markers (`url,dsn,uri,conn,pwd,cookie,session,jwt`) to `secret.IsSecretEnvKey` + a `scheme://user:pass@` value-scan; add a DSN pattern to the shell output redactor. Stop dumping full `history` to the reasoning trace by default; cap per-field size.
+- **Owner:** Security engineer.
+- **Expected outcome:** DB password no longer reaches shell children or the model; no plaintext-conversation-at-rest by default.
+- **Acceptance:** `IsSecretEnvKey("AURA_DB_URL")==true`; a shell child cannot read the composed DSN; trace does not write verbatim history by default.
 
-### AP-13 · Unify `secretEnvKey` (B-09)
-One `secret.IsSecretEnvKey` (with `"key"`) across the 3 sites. **Owner:** security. **Acceptance:** `PRIVATE_KEY` redacts identically in shell + MCP.
+### A6. Observability minimum — `AG-012` / `AG-013` / `AG-033` (P1)
+- **Description:** `slog` at turn/LLM/tool/hook boundaries (request_id/thread_id keyed); add `turn_total{outcome}`, `llm_call_duration_seconds`, `llm_errors_total{kind}`, `tool_errors_total{tool}`, token + hook + span-export-failure counters (non-default registry); `mintSpanID` falls back to zero ID instead of panicking; boot-log the exporter mode.
+- **Owner:** Observability/SRE engineer.
+- **Expected outcome:** SLOs + alerting possible; telemetry can't crash the daemon.
+- **Acceptance:** each terminal `turnReason` increments a counter; an LLM-latency histogram is scraped; injecting an entropy failure does not panic.
 
-### AP-14 · `/healthz` dep probes + `/readyz` (O-05); `Config.Validate()` + log redaction (O-04)
-**Owner:** SRE. **Acceptance:** `/healthz` 503 with Neo4j down; empty required secret → non-zero boot exit; DSN-bearing log sanitized.
+### A7. Capability gate on mutating tools — `AG-007` / `AG-011` (P1)
+- **Description:** Consult `capability_grants` (Slice 1.7) at dispatch for `Mutating && Untrusted` MCP tools; reconcile skill self-activation (delete dead `skillParamsSchema`, gate or honestly document + restore the operator alert).
+- **Owner:** Security/runtime engineer.
+- **Expected outcome:** Per-call authorization for side-effecting and self-modifying actions.
+- **Acceptance:** a mutating MCP tool without a grant is refused/confirmed; a self-authored skill stays pending or emits an alert; exactly one skill schema is referenced.
 
-### AP-15 · Split `shell_exec.go` (B-11); destructive-gate docs + defaults (B-10)
-**Owner:** runtime. **Acceptance:** no file >600 LOC; destructive gate on by default + documented as advisory.
-
-### AP-16 · Lifecycle hygiene (M-06, R-41, M-04)
-Periodic sidecar/reasoningtrace TTL sweep + rotation; `Evict(sessionID)` on session-scoped tools; spill-inside-tx (or sweep reconciliation). **Owner:** runtime/SRE. **Acceptance:** reasoningtrace rotates; archived sidecars + dead session state reclaimed.
-
-### AP-17 · Windows CI lane (O-07); SIGTERM turn drain (O-06)
-**Owner:** DevOps. **Acceptance:** Windows kill-path runs in CI; a turn during SIGTERM reaches a terminal frame within the grace window.
-
----
-
-## Medium-term (architecture)
-
-### AP-18 · Provenance-by-default tool boundary
-Make `Trust=Untrusted` the default for any externally-sourced `ToolResult`; the prompt builder wraps on `Provenance.Trust`, not a tool-name allowlist. Structurally subsumes B-02 and prevents the next ingress from forgetting. **Owner:** architecture. **Acceptance:** adding a new external tool with no provenance still gets wrapped.
-
-### AP-19 · Write-ahead intent log as the audit gate
-Generalize AP-1's intent row into the pre-execution audit gate, upgrading the best-effort ledger (R-26). **Owner:** architecture. **Acceptance:** every mutating call has a durable pre-execution intent row.
-
-### AP-20 · State-machine turn tracer (adopt nanobot pattern)
-BUDGET_GATE→LLM_CALL→CONSUME→DISPATCH→FINALIZE with per-state `duration_ms` on the Event + trace. **Owner:** runtime/observability. **Acceptance:** per-phase latency visible in a trace tree.
-
----
-
-## Long-term (industrialization)
-
-### AP-21 · Test apex (T-01 + chaos)
-Fuzz (tool-args, MCP framing), bench (budget/dedup), recorded mutation score for the agent core, and the chaos/regression suite from the testing strategy §4. **Owner:** QA/runtime. **Acceptance:** fuzz+bench in CI; mutation ≥70% documented; B-01/M-01/M-02/M-03/B-03/B-05 regression tests exist and pass.
-
-### AP-22 · Dependency GA tracking (R-40), `anyInt` json.Number (M-07), coverage hygiene (T-04)
-Low-effort cleanups. **Owner:** maintenance. **Acceptance:** telebot GA tracked; `anyInt(json.Number)` handled; `agenttest` out of the floor denominator.
+### A8. Reasoning-router fallback policy — `AG-008` (P1)
+- **Description:** When the classifier is wired but abstains/errors, short-circuit to a static `ReasoningTierLow` instead of an LLM router round-trip; make the LLM router opt-in; add an embed-sidecar circuit breaker; cap the router timeout far below 8s.
+- **Owner:** Runtime engineer.
+- **Expected outcome:** No per-turn latency cliff when the embed sidecar is down.
+- **Acceptance:** with the embedder erroring, no router LLM call is issued (or one then breaker-open); turn latency unaffected.
 
 ---
 
-## Priority ladder (one screen)
+## Short-term improvements (P2)
 
-1. **AP-1 → AP-7** (P1 go-live blockers): crash re-execution, swarm envelope, in-flight guard, skill contract, tracer+logs, metrics, container.
-2. **AP-8 → AP-17** (P2 pre-scale): context/resume correctness, breaker, idle watchdog, secret unify, health/config, lifecycle, Windows CI.
-3. **AP-18 → AP-20** (architecture): provenance-by-default, intent-log audit gate, state-machine tracer.
-4. **AP-21 → AP-22** (industrialization): test apex, cleanups.
+- **A9. Config validation at boot** (`AG-036`/`AG-027`): reject `max_steps<1`/`wallclock<1`; resolve MCP timeout once at boot; no hot-path env reads. *(Backend engineer.)*
+- **A10. fs size cap** (`AG-014`): `AURA_FS_MAX_READ_BYTES`, stat-then-reject or hard-limit stream; auto-page. *(Tools engineer.)*
+- **A11. Active wallclock deadline** (`AG-041`): wire `Budget.WithDeadline` into the run ctx. *(Runtime engineer.)*
+- **A12. MCP name-collision + schema-size** (`AG-022`/`AG-023`/`AG-025`): boot-validate namespace uniqueness; cap total schema bytes/property count. *(Integrations engineer.)*
+- **A13. Default-untrusted provenance** (`AG-052`): unknown tools + `swarm_spawn` reports treated untrusted. *(Security engineer.)*
+- **A14. Background-shell eviction + tree-cycle guard** (`AG-015`/`AG-037`): `SessionEvictor` on `BackgroundShells`; visited-set in `findInTree`. *(Runtime engineer.)*
+- **A15. Dedup hardening** (`AG-039`/`AG-040`): prune `results` on eviction; period-3+ cycle detection. *(Runtime engineer.)*
+- **A16. agent_job gating** (`AG-016`): gate deferred schedules or surface at fire time. *(Scheduler engineer.)*
+
+## Medium-term architecture work
+
+- **A17. Crash-resume checkpoint** (`AG-042`): incremental snapshot of history+counters keyed by sessionID (Runner). *(Persistence engineer.)*
+- **A18. Cache-prefix drift detector** (`AG-031`): compute+compare `PrefixHash` per turn after `BeforeModel`; emit a `prefix_drift` metric. *(Runtime engineer.)*
+- **A19. classifier cold-start lock scope** (`AG-032`): build the anchor bank outside `c.mu` / `singleflight`. *(Runtime engineer.)*
+- **A20. `/readyz` + dependency breakers** (infra §6/§10): readiness probe; embed + per-MCP breakers. *(SRE.)*
+
+## Long-term industrialization
+
+- **A21. Production container** (prior D-01): non-root, read-only rootfs, resource limits for arbitrary-shell runtime. *(Platform engineer.)*
+- **A22. Per-thread in-flight guard** (prior B-03, agui/runner): prevent concurrent-run history corruption. *(Runtime engineer.)*
+- **A23. Multi-tenant gate** (security §7): re-rate AG-003/AG-007/AG-011 as P0 + add a real sandbox before any off-operator deployment. *(Security lead.)*
+- **A24. Chaos/soak CI tier** (testing §3): panic injection, crash-loop MCP, hung server. *(QA/SRE.)*
+- **A25. Dead-code + contract docs** (`AG-044`/`AG-028`/`AG-029`): `deadcode ./...` clean; document load-bearing concurrency contracts. *(Any engineer on touch.)*
+
+---
+
+## Suggested execution order
+
+`A1 → A2 → A3 → A5 → A6` (crash + secret + visibility) → `A4 → A7 → A8 → A9–A16` (gating + hardening) → `A17–A20` (durability + arch) → `A21–A25` (deploy-safe + maintain). A1+A2 are hours-to-a-day each and remove the two crash-class issues — do them first.

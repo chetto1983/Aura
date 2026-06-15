@@ -1,102 +1,73 @@
-# Testing Strategy — Aura `internal/agent` (2026-06-12)
+# Testing Strategy — `internal/agent`
 
-## 1. Coverage reality
+**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc`
 
-Measured live 2026-06-12 (`go test ./internal/agent/... -count=1 -cover`; `-race` green across all 6 packages):
+## 1. Current coverage reality
 
-| Package | Prior claim | Measured | Tier | Notes |
-|---|---|---|---|---|
-| `internal/agent` | 93.3% | **92.5%** | unit-only | In the coverage-gate floor |
-| `internal/agent/tools` | 87.5% | **86.1%** | unit-only | In the floor (R-17 closed — no longer excluded) |
-| `internal/agent/workflow` | 92.4% | **88.8%** | unit-only | In the floor |
-| `internal/agent/mcptools` | 83.4% | **82.7%** | unit-only | In the floor |
-| `internal/agent/prompt` | 91.9% | **92.0%** | unit-only | In the floor |
-| `internal/agent/agenttest` | — | **42.6%** | unit-only | Test-helper package; **dilutes the floor** (T-04) |
+The agent package is **well-tested by volume and breadth** — this is a genuine strength, not a gap.
 
-The per-package numbers are **honest**. Critically, `internal/agent` and **all** its subpackages have **zero integration-tagged tests** (`grep "//go:build"` finds only `live_finalize`, `windows`, `!windows`) — so for this package, unit-only *is* the full matrix. There is no skip-as-green risk here because there is nothing tier-gated to skip.
+| Signal | Value | Evidence |
+|---|---|---|
+| Test files | 105 | `find internal/agent -name '*_test.go'` |
+| Test LOC | ~19,399 | vs ~12,115 non-test LOC (1.6× ratio) |
+| Goroutine-leak detection | ✅ | `goleak` in `main_test.go` (TestMain), `mcptools/main_test.go`, finalize tests |
+| Property-based tests | ✅ | `workflow/loop_property_test.go`, `budget_dedup_test.go` |
+| Fuzz tests | ✅ | `agent_fuzz_test.go`, `tools/result_test.go`, `tools/bm25_test.go` |
+| Contract tests | ✅ | `workflow/workflow_contract_test.go`, `llm_agent_wire_validity_test.go` |
+| Internal/white-box tests | ✅ | `*_internal_test.go` for finalize/completion/pause |
+| Integration tier | ⚠️ partial | `//go:build memory_integration` (agent + mcptools); DB/Neo4j tiers live in other packages |
+| Live/E2E | ⚠️ gated | `cot_eval` (OPENROUTER_API_KEY), `reasoning_classifier_live_test.go`, `live_finalize_test.go` — not in default CI |
 
-### The 93% vs 77.2% "contradiction" — reconciled
+Coverage is reported at ~90% owned-surface (project `make coverage`, ≥85% floor). The loop's hard invariants are well-locked: `TestFinalizeOutsideBudget`, `TestAskUserOnlyPauseConstraint`, the truncation/recovery counter tests, wire-validity, and the cache-prefix hash test all exist.
 
-They measure different denominators in different environments; both are real, not in conflict:
+## 2. The gap is not *quantity* — it is *failure-mode coverage*
 
-- **93% is `internal/agent`-scoped, unit-only, env-independent** — and for this package that's the whole matrix.
-- **77.2%** (from `p2-boundary-lifecycle-validation-2026-06-11.md`) is the **repo-wide owned-surface gate run with the container stack DOWN**. On that Windows-bash invocation `$CI` was unset, so the integration tiers in `internal/db`/`cron`/`conversations` **skipped** (locally `envOrSkip` skips; under `$CI` it `t.Fatal`s), collapsing those packages to their unit-only floors (~20-34%) and dragging the aggregate to 77.2%.
-- **With the stack up, the same gate reads ~85.9%** (`docs/aura-quality-snapshot.md`) and **passes**. CI's knowledge + skills jobs run it with the stack and env present.
+The findings in `bug-report.md` cluster in areas the existing tests do **not** exercise:
 
-The agent package's own coverage is not implicated in the 77.2% miss. The repo-wide gate needs a stack-up run (or the `$CI` env) to report green — an operational caveat, not an agent-package gap.
-
----
-
-## 2. Test quality assessment
-
-### Genuinely strong (preserve)
-
-- **Tool-call wire contract:** `llm_agent_wire_validity_test.go:11` `assertHistoryToolCallsAnswered` enforces "one `tool_result` per `tool_call`" across the dedup-recovery and completion-gate-veto scenarios. This is exactly the contract test a production agent loop needs, and it exists.
-- **Property-based testing is real:** 5 files use `pgregory.net/rapid` — budget total-consumed-never-exceeds-max, Event JSON round-trip byte-identity, BM25, result paging, loop properties.
-- **goleak** via `VerifyTestMain` in `agent`, `tools`, `mcptools`, `workflow`.
-- **Exhaustive dedup coverage** (22 cases: ring eviction, exempt-tools, ping-pong, result-change suppression).
-- **Tests assert artifacts, not `r.Reply`:** the `r.Reply`-only anti-pattern appears 0× in agent tests; assertions target history/requests/budget/filesystem. Mocks carry compile-time interface assertions.
-
-### Gaps (the apex of the pyramid is missing)
-
-| ID | Gap | Evidence | Severity |
-|---|---|---|---|
-| T-01 | **Zero fuzz, zero benchmarks** in the agent runtime | `grep "func Fuzz"`/`func Benchmark` → 0 | P2 |
-| T-01 | **No documented mutation score** for any agent-core file | snapshot documents mutation only for telegram/skills/web/agui — none for `budget*.go`, `llm_agent_completion.go`, tools | P2 |
-| — | **No provider-500-storm / chaos test** | `FakeClient` injects only single-turn / single-mid-stream errors; no N-consecutive-5xx or alternating storm | P2 |
-| — | **No crash/fault-injection test** for B-01 (re-execution), M-02 (duplicate resume) | grep "R-27"/"R-28"/"crash" → none traceable | P2 |
-| T-02 | `foldToASCII` 23.5% covered (filename folding, primary channel) | `send_file.go:193` | P3 |
-| T-03 | Deferred-tool `Spec()` constructors at 0% | `fs_*`/`search.go` | P3 |
-
----
+| Gap | Finding | Missing test |
+|---|---|---|
+| **Panic isolation** | AG-001 | No test dispatches a *panicking* tool through `executeBatch`/`parallel.Run`/`swarm.runWave` and asserts the process survives. This is the single highest-value missing test. |
+| **Concurrent dedup-ring race** | AG-002 | No `-race` test fans `>1` parallel tools through `dispatch` hammering the ring. |
+| **MCP reconnect under concurrency** | AG-005 | No test asserts concurrent calls don't head-of-line-block during a slow reconnect, or that a crash-looping server trips backoff/breaker. |
+| **`=0` timeout hang** | AG-006 | No test asserts a hung MCP server is bounded when the timeout env is `0`. |
+| **Hook fail-soft** | AG-004 | No test asserts a failing/timed-out/panicking hook degrades vs aborts the turn. |
+| **Reasoning-router fallback latency** | AG-008 | No test asserts that an embed-sidecar outage does **not** trigger an LLM router round-trip every turn. |
+| **Secret-env boundary** | AG-010 | No test asserts `AURA_DB_URL` is stripped from shell children / `IsSecretEnvKey("AURA_DB_URL")`. |
+| **Cycle in agent tree** | AG-037 | No test asserts `findInTree` survives a cyclic/diamond tree. |
+| **Budget validation** | AG-036 | No test asserts `max_steps=0`/negative is rejected at construction. |
+| **Active wallclock** | AG-041 | No test asserts total wall-time is bounded (vs step-boundary soft gate). |
 
 ## 3. Proposed test pyramid
 
-Current shape: a **wide, disciplined unit/property base** (~460 funcs, 73 files) with **no apex** (fault-injection, load) and **no fuzz sublayer**. Target:
-
 ```
-            ┌───────────────────────────┐
-            │  E2E / live (gated)        │  cot_eval, live_e2e, live_finalize — keep, add crash-recovery E2E
-            ├───────────────────────────┤
-            │  Chaos / fault-injection   │  ← NEW: crash mid-turn, provider-500 storm, MCP hang, SIGTERM drain
-            ├───────────────────────────┤
-            │  Integration (tagged)      │  ← agent pkg has NONE today; add a tiny tier for runner↔agent persistence
-            ├───────────────────────────┤
-            │  Property + Fuzz           │  property: strong; FUZZ: ← NEW (tool-args, MCP description framing)
-            ├───────────────────────────┤
-            │  Unit (table-driven)       │  strong, ~86-93%
-            └───────────────────────────┘
+            ╱ live/E2E (gated)   — cot_eval, live_finalize, classifier live; keep nightly
+          ╱  chaos/soak          — NEW: panic injection, crash-loop MCP, hung server, OOM-large-file
+        ╱    integration         — memory_integration + NEW: MCP reconnect, hook subprocess, swarm fan-out -race
+      ╱      property/fuzz        — loop, dedup, event, bm25, args (HAVE; extend to budget validation + name collision)
+    ╱        unit (white+black)   — HAVE strong base; add panic/race/secret-env/cycle/timeout cases
 ```
 
----
+The base is already strong; the pyramid is **missing its chaos/soak tier entirely** and has integration gaps around the concurrency/resilience findings.
 
-## 4. Top missing regression tests (each tied to a finding)
+## 4. Critical regression tests to add (in priority order)
 
-| Priority | Test | Closes |
-|---|---|---|
-| 1 | `TestRegression_B01_CrashMidTurnNoReExecution` — persist the tool-call turn, kill before the result commit, reload, assert the mutating call is NOT silently dropped (a recovery marker appears, not a re-execution) | B-01 (R-05) |
-| 2 | `TestRegression_M02_NoDuplicateResume` — two resume signals for one pause → exactly one answer turn, second returns `ErrPauseNotFound` | M-02 (R-27) |
-| 3 | `TestRegression_M01_AskUserSurvivesL1Eviction` — an `ask_user` answer older than `evictAfter` survives verbatim, not a dead `read_tool_output` pointer | M-01 (R-28) |
-| 4 | `TestContext_SmallWindowDoesNotDisableProtection` — `ContextWindow:32000` over-cap history → error/compaction, never raw unprotected history | M-03 (R-29) |
-| 5 | `TestLlmAgent_SurvivesProvider500Storm` — N consecutive 5xx across turns → clean surfaced error + budget intact + breaker open across turns | B-05, retry |
-| 6 | `TestRunner_ConcurrentRunsOneThreadSerialize` — two `Turn` on one thread → 409 or provable serialization (race-detector) | B-03 |
-| 7 | `FuzzToolArgsUnmarshal` + `FuzzMCPDescriptionFraming` | T-01, B-15 |
-| 8 | `BenchmarkBudget_BeforeToolCall` / `BenchmarkDedupRing_Push` + recorded mutation score for `budget*.go`, `llm_agent_completion.go` | T-01 |
+1. **Panic firewall** (AG-001): table of panicking fake tools → `executeBatch`, `parallel.Run`, `swarm.runWave` all return a per-call/per-child error, process survives, under `-race` + `goleak`.
+2. **Dedup-ring race** (AG-002): `-race` concurrent `BeforeToolCall`/`AfterToolResult` + a full multi-tool `dispatch` with `>1` parallel tools.
+3. **MCP resilience** (AG-005/AG-006): fake server that (a) reconnects slowly → no head-of-line block, (b) crash-loops → backoff + breaker-open, (c) hangs with timeout `0` → bounded by default deadline, no goroutine leak.
+4. **Hook fail-soft** (AG-004): hook that errors/times-out/panics → `fail_open` completes the turn, `fail_closed` aborts with a clear reason; assert secret-named env vars are absent from the child.
+5. **Secret boundary** (AG-010): `IsSecretEnvKey("AURA_DB_URL")==true`; a shell child cannot read the composed DSN.
+6. **Tree-cycle + budget validation** (AG-037/AG-036): cyclic tree → bounded (no stack overflow); `max_steps∈{0,-1}` → construction error.
+7. **Reasoning-router fallback** (AG-008): embedder forced to error → static tier, no router LLM call (or one then breaker-open).
+8. **Cache-prefix drift** (AG-031): a `BeforeModel` hook rewrite that changes `messages[0]` → assert detected/metric emitted.
 
----
+## 5. Suggested CI checks
 
-## 5. Suggested CI checks (delta to today)
+- **Keep:** `go vet`, `go build`, `golangci-lint` (+`dupl`), `go test -race`, `govulncheck`, coverage gate (≥85% owned), `goleak` in TestMain. The "no-skip-as-green" discipline (integration tiers `t.Fatal` under `$CI` when env unset) is excellent — keep it.
+- **Add:** a `-race`-mandatory lane for the new concurrency tests (panic firewall, dedup race, MCP reconnect, swarm fan-out). Windows + Linux lanes already exist (prior O-07).
+- **Add:** a nightly chaos lane (panic injection, crash-loop MCP, hung server) — these are deterministic enough to run in CI with fakes, not just live.
+- **Add:** mutation spot-check (`go-mutesting`, project standard ≥70% killed) on the newly-touched critical files (`llm_agent_parallel.go`, `budget_dedup.go`, `mcptools/bridge_reconnect.go`) after the fixes land.
+- **Add:** a metric-contract test (AG-012) asserting each terminal `turnReason` maps to a labeled counter once the metrics are added.
 
-- **Add a `windows-latest` lane** (build + vet + `internal/agent/tools` units; race if feasible) — the OS-specific kill path ships untested (O-07).
-- **Wire a mutation spot-check** for the agent-core critical files into the phase gate, recorded in a `VALIDATION.md` Manual-Only table per CLAUDE.md (currently undocumented for the core).
-- **Exclude `agenttest/`** from the coverage-gate denominator (it's test infrastructure, like `sqlc`) so the floor reflects real owned surface (T-04).
-- **Add the crash/storm chaos tests above** to the standard unit job (they use the in-memory `FakeClient`, no stack required).
-- **Keep** the existing `-race ./...`, the coverage gate (run with stack + `$CI`), and the live-gated tiers (`cot_eval`, `live_e2e`) exactly as-is — those are good.
+## 6. Bottom line
 
----
-
-## 6. Maintainability (testability-adjacent)
-
-- **`shell_exec.go` is 598/600 LOC** (B-11) — split before the next touch forces it past the gate.
-- **Three divergent `secretEnvKey` impls** (B-09) — a single shared helper would be one test instead of three drifting ones.
-- **No fragile package-global state** in the agent core (`todo`/`shell_bg` state is instance-scoped struct fields with mutexes; `swarm_context` uses a typed ctx key with an `ok`-bool, never panics) — verified clean, do not regress.
+Testing is the project's **second-strongest** area after the loop core. The action is not "write more tests broadly" — it is to add the **specific failure-mode tests** (panic, race, resilience, secret-boundary) that would have caught the P0/P1 findings, and to stand up the missing **chaos/soak tier**. Each fix in `action-plan.md` ships with its regression test named above.

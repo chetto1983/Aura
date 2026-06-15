@@ -1,102 +1,92 @@
-# Target Architecture — Aura `internal/agent` (2026-06-12)
+# Target Architecture — `internal/agent`
 
-The proposed industrial-grade design. **The loop core is kept intact** — it is verified correct. The target adds thin, independently-shippable layers that close the perimeter: a durability boundary, a provenance-by-default tool boundary, process-lifetime reliability state, a concurrency guard, and a unified observability surface.
+**Audit cycle:** 2026-06-15 · **HEAD:** `136325dc`
 
----
+The proposed industrial-grade design. **The loop core is kept intact** — it is verified correct (bounded recovery, non-empty terminal contract, cache-stable assembly, shared-atomic budget). The target adds **thin, independently-shippable layers** that close the operational perimeter without touching the reasoning algorithm.
 
 ## Design principles
 
-1. **Preserve the core.** `LlmAgent`'s ReAct loop, the budget tree, the dedup ring, the `iter.Seq2` contract, the parallel `executeBatch`, and the cache-prefix discipline are sound. No rewrite — only additive layers and surgical fixes at named seams.
-2. **The trust boundary is a type, not a tool-name allowlist.** Untrusted data is tagged at ingestion (`ToolResult.Provenance`) and the prompt builder wraps on that property. A new ingress cannot forget to opt in.
-3. **Durability brackets every side effect.** A mutating tool's effect is bracketed by a write-ahead intent record (before) and a result record (after), both transactional. Recovery never silently drops a half-completed call.
-4. **Reliability state outlives the turn.** The circuit breaker (and any cross-turn mutating-call dedup) lives on the process-lifetime `Runner`, not the per-turn `LlmAgent`.
-5. **One observability init, both entry points.** Tracer + structured logger + metrics registry are installed once by a shared `obs.Init(cfg)` called by `serve` and `chat` alike.
+1. **The loop is the asset — wrap it, don't rewrite it.** Every change below is additive or a boundary swap; none alters the `iter.Seq2` Event contract or the termination semantics.
+2. **Fail-soft by default, fail-loud at boot.** Transient runtime faults (panicking tool, hung MCP, down sidecar, failing hook) degrade to a model-visible error or a graceful finalize; configuration faults crash at startup, not mid-run.
+3. **Provenance and capability are per-call, not per-boundary.** Trust decisions ride with the data and the action, not with a server-admission flag set once.
+4. **Observability is a first-class output, not a side effect.** Every turn emits a structured log line + metrics + a span; telemetry can never crash the process.
 
----
+## Target module map
+
+```
+┌─────────────────────────── Runner (composition root) ───────────────────────────┐
+│  per-turn recover backstop · slog root · tracer boot · checkpoint store           │
+└───────────────────────────────────────────┬──────────────────────────────────────┘
+                                             │
+                 ┌───────────────────────────▼───────────────────────────┐
+                 │                  LlmAgent.Run (UNCHANGED)               │
+                 │  budget gate → build → hooks → stream → consume →       │
+                 │  truncation → pause → dispatch → finalize               │
+                 └───┬───────────┬───────────┬───────────┬───────────┬─────┘
+                     │           │           │           │           │
+        ┌────────────▼──┐ ┌──────▼─────┐ ┌───▼──────┐ ┌──▼────────┐ ┌▼───────────────┐
+        │ panic firewall│ │ capability │ │ MCP      │ │ secret    │ │ observability  │
+        │  safeGo(...)  │ │ gate       │ │ resilience│ │ boundary  │ │ surface        │
+        │  recover→err  │ │ (grants)   │ │ layer    │ │           │ │                │
+        └───────────────┘ └────────────┘ └──────────┘ └───────────┘ └────────────────┘
+            NEW (P0)         NEW (P1)        NEW (P1)      HARDEN(P1)     NEW (P1)
+```
+
+## Layer specifications
+
+### L1 — Panic firewall (NEW, AG-001/AG-002)
+- **Boundary:** `safeGo(label string, fn func() error) error` wrapper used by `executeBatch`, `workflow/parallel.runSub`, `swarm.runWave`, the `shell_bg` reaper, and in-process hook calls.
+- **Behavior:** `defer recover()` → translate to a typed error (per-call `toolRunResult{Err}` / per-child `{status:failed}` / hook error routed by fail-soft policy). Increment `aura_agent_panic_total{site}`. A Runner-level per-turn `recover` is the last backstop.
+- **Note:** concurrent-map-writes are Go *fatals* not panics — the `dedupRing` mutex (AG-002) is the separate, required fix.
+- **Failure handling:** a panic becomes a model-visible error preview; the daemon and sibling turns/channels are unaffected.
+
+### L2 — Capability gate (NEW, AG-007/AG-011/AG-052)
+- **Interface:** `Authorize(ctx, ToolCall, spec) (Decision, error)` consulted in `dispatch` for `spec.Mutating && provenance==Untrusted`.
+- **Backing:** `capability_grants` (Slice 1.7). Decisions: `allow` / `confirm-via-ask_user` / `deny`. Skill activation routes through the same gate.
+- **Provenance default:** unknown-tool output and `swarm_spawn` child reports default to **untrusted** (wrapped in the nonce envelope) unless explicitly marked trusted — the fail-safe direction.
+- **Failure handling:** no grant → confirm or deny, never silent execution.
+
+### L3 — MCP resilience layer (NEW, AG-005/AG-006/AG-024/AG-027)
+- **Reconnect:** `singleflight` keyed per server, executed *outside* `s.mu`; swap `s.client` under the lock only to publish. Reconnect ctx = `context.WithoutCancel(parent)` + dedicated timeout.
+- **Backoff + breaker:** exponential backoff with ceiling; per-server circuit breaker (open after N consecutive reconnect failures, cooldown).
+- **Timeouts:** resolved + validated once at mount/boot; `0` → default; an explicit `-1` sentinel for infinite; the agent turn always carries a hard ceiling ctx.
+- **Mutating semantics:** after-send transport failures marked non-retryable to the model; reconnect Mutating-flip logged.
+- **Failure handling:** a flapping/hung server degrades to `ErrTransport` for a cooldown window; never freezes the runtime or thrashes spawns.
+
+### L4 — Secret boundary (HARDEN, AG-010/AG-003/AG-009)
+- **`IsSecretEnvKey`:** add URL/DSN markers (`url,dsn,uri,conn,pwd,cookie,session,jwt`) + a `scheme://user:pass@` value-scan; output redactor gains a DSN pattern.
+- **Command hooks:** `cmd.Env` defaults to a minimal allowlist (`PATH` + explicit `cfg.Env`); exec-by-fd to close the TOCTOU; validate hook-supplied requests; audit every rewrite.
+- **Reasoning trace:** treat as sensitive-at-rest; don't dump full history by default; cap per-field size before redaction.
+- **Failure handling:** secrets never reach shell children, hook subprocesses, or the trace by default.
+
+### L5 — Observability surface (NEW, AG-012/AG-013/AG-033)
+- **Logs:** `slog` at turn-start, terminal `turnReason`, tool error, hook decision — keyed by `request_id`/`thread_id`.
+- **Metrics:** `aura_agent_turn_total{outcome}`, `llm_call_duration_seconds`, `llm_errors_total{kind}`, `tool_errors_total{tool}`, `tokens_total{kind}`, `hook_total{event,decision}`, `span_export_failures_total`, `panic_total{site}` — on a non-default registry.
+- **Tracing:** `mintSpanID` falls back to zero-ID on entropy failure (never panics); boot-log the exporter mode + endpoint; confirm the daemon boots the tracer.
+- **Failure handling:** a missing collector or entropy hiccup degrades telemetry, never the process.
+
+### L6 — Durability boundary (NEW, AG-042/AG-041)
+- **Checkpoint:** incremental snapshot of `history` + budget counters + dedup ring keyed by `sessionID`, written by the Runner at step boundaries; resume reconstructs the loop on restart.
+- **Active deadline:** `Budget.WithDeadline(parent)` threaded into the root `ic.Ctx` so the wallclock is an active cancellation, not just a step-boundary gate.
+- **Failure handling:** a crash mid-run resumes from the last checkpoint; total wall-time is hard-bounded.
 
 ## Runtime flow (target)
 
-```
- channel/AG-UI/cron ─▶ Runner.Turn(threadID)
-                         │  ① per-thread in-flight guard (singleflight)        [B-03]
-                         │  ② rehydrate history (DB) + microcompact ladder
-                         │  ③ build LlmAgent  ── inject: process-lifetime breaker [B-05]
-                         │                              + shared obs logger/meter
-                         ▼
-                   LlmAgent.Run  (iter.Seq2, unchanged core)
-                         │  budget gate ─▶ build prompt (wraps on Provenance.Trust) [B-02/AP-18]
-                         │  stream-open (breaker.Allow + retry + idle watchdog)      [B-08]
-                         │  consume (chunk/reasoning/tool-call events)
-                         │  dispatch:
-                         │     ├─ serial dedup gate
-                         │     ├─ WRITE-AHEAD intent rows (tx) ──────────────┐       [B-01]
-                         │     ├─ executeBatch (bounded concurrent)          │
-                         │     └─ persist results (tx) + AfterToolResult ◀───┘
-                         ▼
-                   terminate: text_response | content-stop | finalize | error
-                         │
-            spans: agent.turn ▷ {llm.request, tool.execute}  + JSON logs + Prometheus  [O-01/02/08]
-```
-
-Everything in the inner box is the current, verified-correct loop. The bracketed annotations are the only additions.
-
----
-
-## Module boundaries
-
-| Module | Today | Target change |
-|---|---|---|
-| `agent` (loop) | `LlmAgent` owns history, breaker, dedup ring | Breaker injected from Runner; rest unchanged |
-| `runner` | builds a fresh `LlmAgent` per turn, journals per-event | + per-thread in-flight guard; + write-ahead intent log; owns the process-lifetime breaker |
-| `tools` | `ToolResult` with optional `Provenance` | `Provenance` default `Trust=Untrusted` for externally-sourced results; `Registry.Register` fail-loud on dup |
-| `agent` prompt assembly (`trust.go` → builder) | tool-name allowlist decides wrapping | builder wraps on `ToolResult.Provenance.Trust` — applies to swarm, MCP, future ingresses uniformly |
-| `swarm` | child report → unwrapped parent result | sets `Provenance{Trust:Untrusted}` |
-| `conversations/context` | L1 rewrites all old `RoleTool`; `hardCap<=0` disables L2.5 | L1 only rewrites sidecar-backed turns; `hardCap<=0` is a config error |
-| `obs` (new) | tracer in REPL only; 4 expvars; text logs | `obs.Init(cfg)` → tracer + JSON slog + Prometheus, called by both entry points; `agent.turn`/`tool.execute` spans |
-| `llm` | per-call timeout, breaker, retry | + stream idle-timeout watchdog |
-| deployment | host binary + sidecars | non-root distroless image + resource-bounded compose service |
-
----
-
-## Observability model
-
-- **Logs:** JSON `slog`, base attrs `service`/`version`/`env`, per-turn `request_id`/`thread_id`/`identity`; WARN/ERROR at the loop chokepoints (stream retry, empty-response recovery, dedup trip, finalize-on-budget, breaker trip). Secret-redacting `ReplaceAttr`.
-- **Metrics (Prometheus):** `aura_turn_duration_seconds`, `aura_tool_duration_seconds{tool}`, `aura_llm_request_duration_seconds` (histograms); `aura_errors_total{kind}`, `aura_sse_dropped_total` (counters); `aura_inflight_turns`, `aura_sse_connections` (gauges); `aura_tokens_total{kind}` + cost.
-- **Traces:** `agent.turn` root span per turn parenting `llm.request` and `tool.execute(tool)` spans; honest exporter error handler.
-- **Health:** `/healthz` (liveness) vs `/readyz` (PG + Neo4j + embed reachability); `/metrics`; optional `/debug/pprof`.
-
----
-
-## Failure-handling model
-
-| Failure | Today | Target |
-|---|---|---|
-| Provider 429/5xx | retry + per-turn breaker | retry + **process-lifetime** breaker; breaker-open → graceful finalize |
-| Stalled stream (open, no chunks) | bounded by whole-call timeout | per-chunk idle watchdog → retryable transport error |
-| Crash mid-turn (mutating tool) | result lost, call dropped, **re-executed** | write-ahead intent → recovery surfaces "verify before re-running" |
-| Crash in pause window | one-tx pause + load-time repair (CLOSED) | unchanged |
-| Resume retry | non-atomic, can duplicate | one-transaction inject+mark |
-| Concurrent runs on one thread | interleave + corrupt | per-thread guard (409 or serialize) |
-| SIGTERM mid-turn | hard cancel | bounded completion grace |
-| Hung MCP server | per-call timeout + reconnect-no-replay (CLOSED) | unchanged |
-
----
+1. Runner mints `request_id`, opens a span, sets up `slog` context, registers the per-turn recover backstop, and (if resuming) loads the checkpoint.
+2. `LlmAgent.Run` proceeds unchanged, but: tool dispatch goes through L1 (panic firewall) + L2 (capability gate); MCP calls go through L3; shell/hook env goes through L4.
+3. Every terminal `turnReason` emits an L5 log + metric; the checkpoint (L6) is updated at step boundaries.
+4. On any transient fault (panic, hung MCP, down sidecar, failing hook) the system degrades to a model-visible error or a graceful finalize — the existing non-empty terminal contract guarantees the user still gets prose.
 
 ## Persistence / checkpointing strategy
 
-The durability boundary is the central new invariant:
+| State | Today | Target |
+|---|---|---|
+| Conversation history | in-memory (D-26) | + incremental checkpoint (L6), Runner-owned |
+| Budget counters / dedup ring | in-memory | + checkpoint snapshot |
+| HITL pause | durable (`aura.paused_states`) | unchanged (already correct) |
+| Large tool outputs | sidecar in `$AURA_RUN_DIR` | unchanged |
+| Skill activations / scheduled jobs | persisted | + capability-gated (L2) |
 
-```
-decide tool call
-  └─▶ BEGIN tx: persist assistant tool_calls turn + intent row(s) (tool_call_id, canon args, status=pending)  COMMIT
-        └─▶ execute (host side effect happens here)
-              └─▶ BEGIN tx: persist RoleTool result + intent.status=done  COMMIT
-```
+## What deliberately stays the same
 
-On reload, any `intent.status=pending` with no matching result is a half-completed call: the recovery path injects a synthetic `RoleTool` ("previous result unknown — verify before re-running") rather than dropping the group, so the model reconciles instead of blindly re-issuing. This single mechanism closes B-01, subsumes the best-effort ledger (R-26 → audit gate), and implements the nanobot checkpoint-recovery pattern in Aura's transactional idiom. Oversized turn content continues to spill to `0o600` sidecars, but the spill write moves inside the commit path (or is reconciled by the periodic sweep) to close the orphan-on-rollback leak (M-04).
-
----
-
-## What explicitly does NOT change
-
-The budget tree (shared atomic + dedup ring + injectable clock), the `iter.Seq2` yield-after-false discipline, the bounded recovery/completion counters, the byte-stable `messages[0]` cache prefix, the parallel `executeBatch` semaphore, the sidecar id grammar + perms, the `send_file` symlink fence, the MCP reconnect-no-replay, and the process-group kill paths are all verified correct and are preserved as-is. The target is the same engine with a hardened chassis.
+The loop's control flow, the `iter.Seq2` Event contract, the budget tree's shared-atomic design, the cache-stable prompt assembly, the SSRF hardening, and the nonce untrusted-output envelope are all verified-correct and are **not** changed. The target is a perimeter, not a rewrite.

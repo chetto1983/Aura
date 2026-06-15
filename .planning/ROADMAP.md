@@ -3,7 +3,7 @@
 ## Milestones
 
 - ✅ **v0.0.0 Substrate** — Phases 0–21 (shipped 2026-06-15) — full details in [`milestones/v0.0.0-ROADMAP.md`](milestones/v0.0.0-ROADMAP.md)
-- 📋 **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22+ (planning — `/gsd-new-milestone`)
+- 📋 **v1.0.0 Aura Deep Search Web Cockpit** — Phases 22–28 (planning)
 
 ## Phases
 
@@ -41,11 +41,115 @@
 
 ### 📋 v1.0.0 Aura Deep Search Web Cockpit (Planning)
 
-Phases populated by `/gsd-new-milestone` (roadmapper). Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md`.
+Embedded Vite + React + assistant-ui operator cockpit over the AG-UI/SSE gateway, per `docs/design/aura-deep-search-figma/ux-spec.md`. The operator directive (2026-06-15) is to **stand up the industrial frontend foundation FIRST** — research-locked toolchain, linter/formatter CI gate, design-token dark-operator theme, brand, and the embedded build/test pipeline — before any cockpit feature code. Build order: harden the agent perimeter first (Phase 22), then the research-first frontend industrial foundation (Phase 23), then the serve/auth/health web host (Phase 24), then the Core-Value chat+approval loop (Phase 25), then the GAP-1 typed-display spine + router (Phase 26), then the self-contained graph explorer (Phase 27), then read-only governance + web onboarding (Phase 28). Governance write surfaces (GOVW) and the `ui_control` operator-OS shell (SHELL) are deferred to a follow-up milestone.
+
+- [ ] **Phase 22: Agent Perimeter Hardening** — Remediate the `internal/agent` production-readiness audit to Gate-3 so the web exposure lands on a hardened base (HARDEN-01..12)
+- [ ] **Phase 23: Frontend Infrastructure & Industrial Foundation** — Research-first industrial frontend foundation: locked decision record + Vite/React/TS embed scaffold + linter/formatter/type-check CI gate + design-token dark-operator theme + brand + Node-24 build/test pipeline, BEFORE any feature code (FND-01..06)
+- [ ] **Phase 24: Web Foundation — Serve + Auth + Health** — Single-binary SPA host on `aura serve` (SPA-fallback route exclusion) with the GAP-2 web-auth boundary + non-loopback boot guard + runtime health shell (WEB-01..04)
+- [ ] **Phase 25: Chat + Approval Center** — assistant-ui chat lane over SSE + conversation management + cost/cache footer + cross-thread HITL approval queue (CHAT-01..04, APRV-01..03)
+- [ ] **Phase 26: Typed-Display Protocol + Router** — GAP-1 `aura.display` event + Go normalizer + frontend display router for web/document/code/table/chart + system-event cards + source explorer + swarm report (DISP-01..05, SWARM-01)
+- [ ] **Phase 27: Neo4j Graph Explorer** — Go graph-normalizer + read-only Cypher guard + WebGL canvas + node inspector + path strip (GRAPH-01..04)
+- [ ] **Phase 28: Governance Boards + Web Onboarding** — Read-only MCP / skills / scheduler boards + web setup/onboarding wizard over the existing onboarding LoopAgent (GOV-01..03, ONBD-01..02)
+
+## Phase Details
+
+### Phase 22: Agent Perimeter Hardening
+**Goal**: The `internal/agent` operational perimeter is production-ready (blended readiness 6.5 → ≥8.0) so the cockpit's web exposure lands on a hardened base — the spec is locked in `.planning/phases/22-bug-fix/22-SPEC.md`.
+**Depends on**: Nothing (first phase of v1.0.0; gates web exposure)
+**Requirements**: HARDEN-01, HARDEN-02, HARDEN-03, HARDEN-04, HARDEN-05, HARDEN-06, HARDEN-07, HARDEN-08, HARDEN-09, HARDEN-10, HARDEN-11, HARDEN-12
+**Success Criteria** (what must be TRUE):
+  1. A deliberately-panicking tool / swarm child / `shell_bg` reaper goroutine dispatched through `executeBatch` / `parallel.Run` / `swarm.runWave` does not crash `aura serve`; the panic surfaces as a model-visible per-call error with no goroutine leak (race+goleak proven)
+  2. A flapping or hung MCP server degrades gracefully (single-flight off-lock reconnect, backoff + circuit breaker, `AURA_MCP_CALL_TIMEOUT_SEC=0` bounded by the default deadline) and a failing hook completes the turn under `fail_open`
+  3. Credentials do not leak: `IsSecretEnvKey("AURA_DB_URL")` is true, a `shell_exec` child cannot read the composed DSN, hook child env carries no secret-named vars, and the reasoning trace does not write verbatim history by default
+  4. Production is observable — each terminal turn outcome increments a labeled Prometheus counter, an LLM-latency histogram is scrapeable, and an injected entropy failure does not panic the daemon
+  5. A finding-coverage ledger maps every `AG-###` to fixed+test / accepted+rationale / confirmed+routed; `make coverage` ≥85% owned-surface, full CI + `cache_invariant_audit.sh` green, mutation spot-check ≥70% on the touched critical files
+**Plans**: TBD
+
+### Phase 23: Frontend Infrastructure & Industrial Foundation
+**Goal**: The industrial frontend foundation exists and is documented BEFORE any cockpit feature code — a research-locked decision record fixes the toolchain/theme/build choices, then the foundation is scaffolded: a Vite 8 + React 19 + TypeScript package whose `//go:embed all:dist` output is baked into the single binary and renders a branded, dark-operator-themed placeholder shell from `aura serve`, behind a blocking zero-warning lint/format/type-check CI gate, with the Node-24 multi-stage Docker build producing the embedded asset (no Node in the runtime image). (Operator directive 2026-06-15: foundation first.)
+**Depends on**: Phase 22 (hardened perimeter precedes any web exposure)
+**Requirements**: FND-01, FND-02, FND-03, FND-04, FND-05, FND-06
+**Research-first**: yes — the industrial-infra research pass (FND-01) runs at plan time before any scaffolding code; its `RESEARCH.md` / decision record (linter ruleset, formatter, design-token architecture, package/repo layout, build + release pipeline, frontend test harness) is the Gate-1 artifact the rest of the phase builds against.
+**Success Criteria** (what must be TRUE):
+  1. The documented industrial-infra foundation decision record exists and is approved — it locks the linter ruleset, formatter, design-token architecture, `web/` package/repo layout, build + release pipeline, and frontend test harness before any feature code begins (FND-01)
+  2. `aura serve` serves a branded placeholder shell embedded in the single binary via `//go:embed all:dist`, with the dark-operator theme + density applied before paint (no flash); the same `dist/` builds reproducibly from `web/` (FND-02, FND-04, FND-05)
+  3. `npm run lint` + `npm run format --check` + `tsc --noEmit` pass with zero warnings and run as a blocking CI gate — parity with the Go `golangci-lint` discipline (FND-03)
+  4. `public/Logo.png` renders in the app-shell header with a matching favicon + PWA/theme-color metadata, and no marketing hero text appears in the primary viewport (per the ux-spec Copy Contract) (FND-05)
+  5. The Node-24 multi-stage Docker build produces the embedded `dist` with no Node in the runtime image, and the Vitest + component/E2E harness runs green in CI (FND-06)
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 24: Web Foundation — Serve + Auth + Health
+**Goal**: The operator can reach the embedded cockpit SPA served by the single `aura serve` binary — the real SPA host over the Phase-23 embed pipeline, with the SPA catch-all excluding API/`/agent`/health routes, behind a minimal GAP-2 web-auth boundary that activates the dormant `capability_grants` scaffolding, fails fast on an unguarded non-loopback bind, and surfaces a read-only runtime health shell — preserving the single-binary deploy invariant.
+**Depends on**: Phase 23 (the embed pipeline + theme + build foundation must exist before the real SPA host)
+**Requirements**: WEB-01, WEB-02, WEB-03, WEB-04
+**Success Criteria** (what must be TRUE):
+  1. Operator opens the cockpit URL served by `aura serve` (SPA embedded via the Phase-23 `//go:embed` pipeline) and the app shell loads from the single binary; an API / `/agent` / health path that does not exist returns a real 404, never the SPA `index.html`
+  2. `aura serve` refuses to boot bound to a non-loopback address unless web auth is configured (fail-fast guard), and stays bootable on loopback as before
+  3. A mutating route is rejected without authentication when exposed beyond loopback — supported via a reverse-proxy boundary with zero Go change, and via an in-binary signed session cookie (HttpOnly + Secure + SameSite=Strict) bound to an identity row
+  4. The app shell renders with theme/density applied before boot (no flash) and shows a read-only runtime health panel aggregating `/healthz` + `/readyz` + status
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 25: Chat + Approval Center
+**Goal**: The operator can run the Core-Value agent loop end-to-end from the cockpit — send a prompt, watch the streamed answer, manage conversations, see cost/cache, and resolve HITL interrupts from a cross-thread queue — over the existing AG-UI/SSE transport and `conversations.Store` / `askuser.Store`.
+**Depends on**: Phase 24 (serve + auth boundary)
+**Requirements**: CHAT-01, CHAT-02, CHAT-03, CHAT-04, APRV-01, APRV-02, APRV-03
+**Success Criteria** (what must be TRUE):
+  1. Operator types a prompt and watches the assistant response stream token-by-token over `POST /agent/run` (SSE) in an assistant-ui chat lane
+  2. Operator browses, FTS-searches, renames, archives, and deletes conversations through thin HTTP adapters over `conversations.Store`, and can open a reasoning drawer + live tool-activity stream governed by an explicit `showReasoning` policy
+  3. Operator sees per-turn cost and cache-hit metrics in a footer
+  4. Operator sees a cross-thread list of pending `ask_user` / HITL interrupts (question, options, priority, source) and can accept / decline / cancel one to resume the run over the existing `Interrupt` / `Resume[]` protocol
+  5. A stale or auto-terminated approval renders its terminal state with no silent loss
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 26: Typed-Display Protocol + Router
+**Goal**: The backend emits a namespaced `aura.display` typed-display protocol (GAP-1) produced by a Go normalizer, and the cockpit renders it through a `switch(payload.type)` display router — turning opaque tool output into inspectable, paginated, source-viewable typed evidence (web/document/code/table/chart), safe system-event cards, a source explorer, and a swarm worker-report table.
+**Depends on**: Phase 25 (chat lane is where typed displays render); Phase 22 (default-untrusted provenance / swarm envelope hardening underpins SWARM-01)
+**Requirements**: DISP-01, DISP-02, DISP-03, DISP-04, DISP-05, SWARM-01
+**Success Criteria** (what must be TRUE):
+  1. The backend emits a namespaced `aura.display` CUSTOM event carrying a typed `DisplayPayload` from a Go normalizer (`internal/agent/display/`), via an additive `Actions.Display` slot, with the `messages[0]` KV-cache invariant preserved (CI gate green)
+  2. The cockpit renders typed displays via a `switch(payload.type)` router for `web_result`, `document`, `code`, `local_artifact`, `table`, and `chart`, and the operator can inspect a display's raw-data / source view, paginate result groups, and see citation bubbles on completed answers
+  3. Web-safety backend error classes render as typed `system_event` cards showing only safe reasons (no SSRF internals), driven by the `internal/web/errors.go` enum
+  4. The operator can use a Source Explorer with Table / Metadata / Configuration views
+  5. A `swarm_spawn` child report renders as a typed `swarm_report` table over `ChildReport` with no inter-agent chat / mailbox theater
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 27: Neo4j Graph Explorer
+**Goal**: The operator can open a dedicated read-only Neo4j evidence-graph workspace — a Go graph-normalizer turns MCP Cypher rows into the `{nodes, edges, paths, schema, query}` contract, served over REST, and rendered as an interactive WebGL canvas with a node inspector and path strip — answering evidence/path questions, never a decorative hairball.
+**Depends on**: Phase 26 (graph_chunk inline displays + display router); Phase 24 (REST/auth boundary)
+**Requirements**: GRAPH-01, GRAPH-02, GRAPH-03, GRAPH-04
+**Success Criteria** (what must be TRUE):
+  1. A Go graph-normalizer (`internal/knowledge/graphview.go`) converts Neo4j MCP results to the `{nodes, edges, paths, schema, query}` contract and serves it over REST (`GET /api/graph/schema`, `POST /api/graph/query`), not the chat SSE stream
+  2. Operator opens the Graph Explorer (WebGL canvas) and sees evidence paths with label-family color encoding and a readable path strip below the canvas
+  3. Operator selects a node and inspects its label / properties / degree / neighbors / citations; on mobile and keyboard, tap/focus opens the inspector (hover is never the only access path)
+  4. Graph queries are read-only by default (read-only Cypher guard rejecting `CREATE/MERGE/SET/DELETE/DROP`) with a Cypher preview, and dense graphs default to filtered evidence paths rather than hairballs
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 28: Governance Boards + Web Onboarding
+**Goal**: The operator can view the substrate's governance state read-only — MCP servers, the skills library, and the scheduler board — and a new operator can complete a web onboarding/setup wizard that links identity and seeds the `Agent.md` profile through the existing onboarding LoopAgent. (Governance writes and `ui_control` are deferred to a follow-up milestone.)
+**Depends on**: Phase 24 (serve + auth + REST boundary); Phase 25 (approval/HITL surface that the onboarding flow resumes through)
+**Requirements**: GOV-01, GOV-02, GOV-03, ONBD-01, ONBD-02
+**Success Criteria** (what must be TRUE):
+  1. Operator views MCP servers read-only — source, status, env health, doctor result, mounted tool count, allowlist/risk policy (raw secrets never shown)
+  2. Operator views the skills library read-only across active / pending / archived / audit tabs, and pending skills are not runnable or prompt-injectable from the board
+  3. Operator views the scheduler board read-only — tasks, schedule, next run, status, run history, heartbeat
+  4. A new operator completes a web onboarding / setup wizard (beyond the `:9081` loopback setup) that links identity and seeds the `Agent.md` profile, driving the existing onboarding LoopAgent with confirm/edit/skip and without duplicate LLM turns
+**Plans**: TBD
+**UI hint**: yes
 
 ## Progress
 
 | Phase | Milestone | Plans | Status | Completed |
 | ----- | --------- | ----- | ------ | --------- |
 | 0–21 (substrate) | v0.0.0 | 144/144 | ✅ Shipped | 2026-06-15 |
-| 22+ (cockpit) | v1.0.0 | — | 📋 Planning | — |
+| 22. Agent Perimeter Hardening | v1.0.0 | 0/? | Not started | - |
+| 23. Frontend Infrastructure & Industrial Foundation | v1.0.0 | 0/? | Not started | - |
+| 24. Web Foundation — Serve + Auth + Health | v1.0.0 | 0/? | Not started | - |
+| 25. Chat + Approval Center | v1.0.0 | 0/? | Not started | - |
+| 26. Typed-Display Protocol + Router | v1.0.0 | 0/? | Not started | - |
+| 27. Neo4j Graph Explorer | v1.0.0 | 0/? | Not started | - |
+| 28. Governance Boards + Web Onboarding | v1.0.0 | 0/? | Not started | - |
